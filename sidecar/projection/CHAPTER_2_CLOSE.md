@@ -1,20 +1,24 @@
-# Chapter 2 close — in-flight scaffold
+# Chapter 2 close — synthesis
 
-This document is the chapter-2 close synthesis, accumulating findings
-across the chapter as it progresses. Chapter 2 opened at session 13
-(post-chapter-1 doc-hygiene) and continues in flight.
+This document is the chapter-2 close synthesis. **Chapter 2 closed
+at session 25** (sessions 13–25 inclusive) covering three sub-arcs:
+Diagnostics writer (sessions 13–16); OSSYS adapter implementation
+(sessions 17–24); chapter-close runway (sessions 23–25). The chapter
+ran the chapter-mid-audit discipline at three points (subagents #1
+session 22, #2 session 23, #3 session 25 — the chapter close itself)
+plus pre-scoping subagents (#4 DacpacEmitter, #5 SnapshotRowsets) at
+session 25.
 
-**Status:** scaffold. Sessions 13–22+ have produced substantive work
-that will summarize here when chapter 2 closes. This file is a
-**working surface for accumulating findings during the chapter**
-(per the session-23 documentation hygiene; the scaffold-early
-disposition lets MINOR/OPEN audit findings land before the formal
-chapter close).
+**Status:** **closed (session 25).** This document is the chapter-2
+synthesis and the chapter-3 entry-point document for the OSSYS arc's
+forward signals. The scaffold-during-chapter discipline (session 23)
+proved its worth — findings landed continuously rather than being
+re-derived at close.
 
-The chapter-close ritual (`DECISIONS 2026-05-14`) names the seven
-load-bearing items every chapter close must execute. This document
-will cover them when chapter 2 closes; until then, it accumulates
-material the ritual will need.
+The chapter-close ritual (`DECISIONS 2026-05-14`, session-25 amendment
+adding item 8 V1-input-envelope walk) names eight load-bearing items
+every chapter close must execute. The ritual's execution lives in
+the "Chapter-close ritual execution" section below.
 
 ## Chapter 2 arc (sessions 13–current)
 
@@ -211,20 +215,418 @@ here as in-flight observations:
     has not surfaced demand for the third evidence type that
     would unblock it.
 
-## How to update this document
+## Chapter-close ritual execution (session 25)
 
-  - **Per-session updates** to the in-flight scaffold are
-    encouraged — when a session surfaces an open question or
-    finding that belongs at chapter close, append it here rather
-    than deferring to chapter close to rediscover.
-  - **At chapter close** (session 25 planned), this document gets
-    a synthesis-by-subagent pass mirroring chapter-1's close,
-    incorporating the accumulated material.
-  - **Append-only discipline applies**: don't overwrite open
-    questions when they're answered; mark them resolved with the
-    DECISIONS reference.
+The eight load-bearing items per `DECISIONS 2026-05-14 — Chapter-
+close ritual` (session 15; session-25 amendment for item 8). Each
+records "clean" or names the remediation entry. Subagents #1, #2,
+#3 dispatched at session 22, 23, and 25 covered most of the
+ritual's coverage by their direct walks; this section records the
+chapter-2-specific findings and the "clean" verdicts.
 
-The scaffold-early disposition is itself a session-23 hygiene
-discipline: instead of letting findings accumulate as informal chat
-context that gets lost between sessions, they land in a working
-surface that survives the conversation.
+### Item 1: Active deferrals index scan
+
+**Status:** clean (after session 24 commit 1 cash-out + session
+25 commit 4 cleanup).
+
+  - **DacFx / DacpacEmitter trigger** — fired silently sessions
+    18–22; cashed out at session 24 commit 1 (re-defer with
+    tighter trigger; canary chapter is the locus). The same-shape
+    silent-trigger fire as the transform-registry miss; the
+    chapter-mid-audit caught it before chapter close.
+  - **`SnapshotRowsets` and `LiveOssysConnection` variants** —
+    documented as deferred in `CatalogReader.fs:36-68` since
+    session 18, never in the index. Added at session 25 commit 4.
+  - **Cross-module FK IR refinement** — added at session 25 commit
+    4 as the highest-priority deferred slice for chapter 3.
+  - **All other rows** — status verified at session 25 commit 4
+    with session-tagged status updates.
+
+The Active-deferrals-scan dimension was added to the
+chapter-mid-audit dispatch shape at session 24 commit 2 (from
+subagent #2's cross-cutting observation that pointer drift and
+trigger-fire drift are different cost classes).
+
+### Item 2: Contract-vs-implementation cross-reference walk
+
+**Status:** clean for chapter-2 substantive surfaces. Session 24's
+static-entity slice surfaced an implicit-coverage finding (the
+adapter's `if isStatic then [Static []] else []` branch had
+shipped at session 18 without fixture coverage). The slice
+closed the gap; the finding seeded a discipline question
+(input-conditional adapter paths) that subagent #3 evaluated at
+session 25.
+
+Subagent #3 found one additional implicit-coverage instance:
+**rule 13's `deleteRule` mapping has five branches, but only
+`Protect` is fixture-exercised** (subagent #3 M2). The other
+four branches (Delete, Ignore, SetNull, null) ship without
+explicit fixture coverage. Logged for chapter 3's chapter-open
+pickup if any of those branches surfaces in a fixture.
+
+### Item 3: CLAUDE.md staleness check
+
+**Status:** clean after session 25 commits 2, 3, 5, 7, 8.
+
+  - Reading order updated (HANDOFF/HANDOFF_CHAPTER_1 pattern;
+    CHAPTER_2_CLOSE before CHAPTER_1_CLOSE; A1 forwarding pointer
+    noted; OSSYS adapter named in code listing).
+  - Operating-disciplines table extended with three previously-
+    missing rows (admire-mode spectrum; writer codification
+    stability mark; opportunityEntry extraction-defer); two
+    pointer-cleanup fixes; three ambiguous-date pointer
+    disambiguations; three new chapter-2 contributions added
+    (three-class typology; chapter-mid-audit; trace-before-
+    fixture; V1-input-envelope walk). Plus chapter-level scope
+    deferrals row added.
+  - F# feature surface section: no chapter-2 feature changes.
+    `Async`/`Task` at the OSSYS boundary noted in the descriptor;
+    the boundary's wrapper-overhead question deferred to
+    chapter 3 canary (open question O4 in subagent #2's audit
+    resolved at session 25 commit 7).
+
+### Item 4: README.md staleness check
+
+**Status:** addressed at session 23 commit 1 (chapter-mid hygiene
+work). README rewritten to absorb chapter-2 substantive work:
+`Projection.Adapters.Osm` added to layout; `Diagnostics.fs` added
+to Core file list; `Projection.Pipeline` and read-side adapter
+added to reserved slots. Subsequent chapter-2 work has not
+warranted further README updates; the content is current as of
+chapter-2 close.
+
+### Item 5: HANDOFF.md / CHAPTER_N_CLOSE.md scope
+
+**Status:** clean. Session 23 commit 4 renamed `CHAPTER_CLOSE.md`
+→ `CHAPTER_1_CLOSE.md` and scaffolded `CHAPTER_2_CLOSE.md`
+(this document). Session 25 commit 8 renamed `HANDOFF.md` →
+`HANDOFF_CHAPTER_1.md` and wrote new `HANDOFF.md` as the chapter-
+2-to-chapter-3 letter. Append-only documentation discipline
+preserved across both renames.
+
+The naming convention now established: unnumbered names are the
+"latest" (active fresh-agent entry point); numbered names are
+historical preservations. Future chapter closes follow the same
+shape.
+
+### Item 6: Fresh-eye walk
+
+**Status:** clean. Three fresh-eye subagent walks executed across
+the chapter:
+
+  - **Subagent #1 (session 22)** — cross-document consistency
+    audit. Surfaced 6 CRITICAL, 21 MINOR, 7 OPEN findings.
+    CRITICAL fixed at session 23 hygiene work; MINOR rolled into
+    this scaffold; OPEN resolved at session 25 commit 7.
+  - **Subagent #2 (session 23)** — Active deferrals + operating-
+    disciplines audit. Surfaced 1 CRITICAL (DacFx silent fire),
+    9 MINOR (split into index-snapshot drift cluster + table
+    propagation gaps cluster), 3 OPEN. CRITICAL fixed at session
+    24 commit 1; MINOR fixed at session 25 commits 4–5; OPEN
+    resolved at session 25 commit 7.
+  - **Subagent #3 (session 25 — chapter close itself)** — OSSYS
+    chapter completeness audit. Surfaced 1 CRITICAL (`onDisk`
+    silent drop), 11 MINOR, 7 OPEN. CRITICAL fixed at session 25
+    commit 1; MINOR cluster addressed at session 25 commits 4–6;
+    OPEN resolved at session 25 commit 7.
+
+The chapter ran the fresh-eye discipline three times — exceeds
+the chapter-close-ritual's single-walk minimum. The
+chapter-mid-audit codification (session 23) is itself the
+discipline that produced this multi-walk shape.
+
+### Item 7: Operating-disciplines table currency
+
+**Status:** clean after session 25 commit 5. Three previously-
+missing rows added (admire-mode spectrum; writer codification
+stability mark; opportunityEntry extraction-defer at N=3-of-
+distinct-shapes); plus the chapter-2 contributions added in
+their respective commits (chapter-mid-audit at session 23;
+trace-before-fixture at session 23; three-class typology at
+session 25 commit 2; V1-input-envelope walk via the
+chapter-close ritual row at session 25 commit 3; strategic-
+frame axis-naming at chapter open at session 25 commit 7).
+
+The table now has 22 rows reflecting the cumulative discipline
+surface across chapters 1 and 2.
+
+### Item 8: V1-input-envelope walk (added at session 25)
+
+**Status:** clean for OSSYS chapter at chapter-2 close (session
+25 commit 6). Subagent #3 walked `SnapshotJsonBuilder.cs`
+field-by-field against the OSSYS won't-carry-forward list and
+the running translation-rules amendments. Surfaced:
+
+  - **One CRITICAL silent drop** (`attributes[].onDisk`
+    envelope, eleven structured fields) — resolved at session
+    25 commit 1 with explicit won't-carry rationale +
+    re-open trigger.
+  - **Three additional MINOR silent drops** — `module.isSystem`,
+    `module.isActive`, `attributes[].default`,
+    `attributes[].refEntity_isActive` — resolved at session 25
+    commit 6 with explicit won't-carry-forward additions.
+  - **One additional V1 element** (`module.isSystem` /
+    `module.isActive`) — collapsed under entity-level rule 17
+    handling for `isSystem`; rule 18's filter extended to
+    `module.isActive` per session 25 commit 7's O2 resolution.
+
+The walk discipline operating during its own first execution at
+chapter-2 close: this is the meta-pattern (audits-generate-
+disciplines) operating in real-time. The discipline surfaced
+silent drops; codifying it ensures future V1↔V2 chapters
+inherit the practice.
+
+## Chapter-2 substantive deliverables summary
+
+  - **Diagnostics writer** — `Projection.Core/Diagnostics.fs`
+    landed at session 14 commit 3 with `Lineage<Diagnostics<_>>`
+    composition. Three-pass codification stability mark earned
+    at session 16 (UniqueIndex, Nullability, ForeignKey).
+  - **OSSYS catalog adapter** — `Projection.Adapters.Osm/CatalogReader.fs`
+    (~720 lines). Six substantive slices producing **25
+    translation rules** across the JSON path (`SnapshotJson`
+    variant of `SnapshotSource`; `SnapshotFile` reserved;
+    `SnapshotRowsets` and `LiveOssysConnection` deferred). Six
+    embedded V1 fixtures with hand-built expected V2 Catalog
+    values; all differential tests pass.
+  - **Three-class typology** for V1↔V2 translation findings —
+    JSON-projection-lossiness / V2-boundary-discipline /
+    alternative-IR-surface. Codified at chapter-2 close
+    (`DECISIONS 2026-05-21`).
+  - **Audit disciplines** — chapter-mid-audit (session 23);
+    trace-before-fixture (session 23); V1-input-envelope walk
+    (session 25). The audits-generate-disciplines meta-pattern
+    is the chapter-2 closing arc's most distinctive feature.
+
+## Chapter-2 documentation deliverables summary
+
+  - `CHAPTER_1_CLOSE.md` (renamed at session 23 commit 4 — append-only preservation).
+  - `CHAPTER_2_CLOSE.md` (this document; scaffolded session 23 commit 4; finalized session 25).
+  - `HANDOFF_CHAPTER_1.md` (renamed at session 25 commit 8 — append-only preservation).
+  - `HANDOFF.md` (rewritten at session 25 commit 8 as the chapter-2-to-chapter-3 letter).
+  - `README.md` rewritten at session 23 commit 1.
+  - `CLAUDE.md` extended with five new operating-disciplines rows + propagation-gap fixes.
+  - `ADMIRE.md` OSSYS entry transitioned from `chapter-open scoping (session 17)` → `extracting (in flight, N slices)` (session 23) → `extracted (chapter 2 close — JSON path; hybrid mode operating)` (session 25).
+  - `AXIOMS.md` A1 forwarding pointer added at session 23 commit 5.
+  - `DECISIONS.md` extended with ~40 substantive entries across chapter 2 (counting amendments) covering the Diagnostics writer codification, the OSSYS adapter chapter, the meta-codifications, and the chapter-close OPEN-question resolutions.
+
+## Forward signals for chapter 3 (final shape)
+
+Three plausible chapter-3 arcs in approximate priority order:
+
+  - **`Projection.Pipeline` canary chapter** (highest leverage).
+    Strategic-frame axis-4 from session 17. Multi-session work
+    (DacFx, testcontainers, ephemeral SQL Server, read-side
+    adapter integration). The DacFx trigger (re-deferred at
+    session 24) fires here. Subagent #4 pre-scoped the
+    DacpacEmitter chapter (see "Subagent #4 pre-scope summary"
+    below); the report is the chapter-open input.
+  - **`SnapshotRowsets` implementation chapter** (independent of
+    canary; resolves the JSON-projection-lossiness class).
+    Subagent #5 pre-scoped the chapter (see "Subagent #5 pre-
+    scope summary" below). Subagent #5's recommendation: open
+    SnapshotRowsets **parallel-to or before** canary, so that
+    canary inherits a Catalog with full SsKey carriage. Reverses
+    the chapter-3 priority ordering originally proposed at
+    session 24.
+  - **Cross-module FK slice** (small completeness step;
+    refines OSSYS rule 16's same-module assumption). The
+    handoff's caveat: rule 14's "walk attributes[isReference=1]"
+    assumption may not hold cross-module because V1's
+    `attributes[].refEntityId` is a numeric within-module
+    pointer; the cross-module case may force walking
+    `relationships[]` instead. Trace-before-fixture applies.
+
+The two pre-scope subagent reports are the chapter-open inputs
+for those chapters. Each lives as a chapter-3 entry-point
+document.
+
+### Subagent #4 pre-scope summary — DacpacEmitter chapter
+
+(Full report dispatched at session 25; key findings preserved
+here as the chapter-open input.)
+
+**The DacFx API surface.** Four classes V2 needs:
+`Microsoft.SqlServer.Dac.Model.TSqlModel` (model construction
+via script-text-driven `AddObjects`); `TSqlObject` (loosely-
+typed handle for traversal); `Microsoft.SqlServer.Dac.DacPackage`
+(the `.dacpac` artifact); `Microsoft.SqlServer.Dac.DacServices`
+(the deployment driver). **Critical observation:** DacFx's
+public API is script-text-driven, not object-graph-driven —
+V2 feeds `CREATE TABLE …` scripts into the model rather than
+constructing typed Tables / Columns directly. The trunk's
+`Osm.Smo` uses SMO (live-DB-administration), not DacFx; **no
+DacFx code exists anywhere in the repository today**.
+DacpacEmitter would be the first DacFx integration.
+
+**F# vs C# layering recommendation.** DacFx's idiom (disposable
+scopes, mutable model state, exception-driven validation) is
+the exact "object-instantiation-heavy, foreign-API-I/O" shape
+`DECISIONS 2026-05-09` (adapter-language rule) sends to C#.
+Recommendation: **DacFx wrapper lives in C# inside
+`Projection.Pipeline` (or a new `Projection.Targets.SSDT.Dacpac`
+C# project); F# DacpacEmitter calls across a value-typed seam**
+(`Catalog -> Result<byte[]>`).
+
+**Byte-determinism — the critical risk.** Vanilla `BuildPackage`
+produces non-byte-deterministic output: `Origin.xml` embeds
+wall-clock `Operation` timestamps; the model.xml checksum
+derives from that; zip-entry timestamps differ per run. **T1's
+"same input ⇒ byte-identical output" does not hold for DACPAC
+bytes out of the box.** Three resolution strategies:
+(a) post-hoc canonicalization of the zip; (b) redefine T1 for
+binary emitters as content-equality via DacFx round-trip;
+(c) hybrid. Recommendation: (b) for the algebra; (a) when a
+snapshot consumer requires byte-stable artifacts. **Likely
+requires a T1 amendment** at chapter open.
+
+**IR-to-DacFx impedance.** Module → no DacFx peer (likely
+emitter-side annotation only; Schema comes from
+`Kind.Physical.Schema`). Kind → `CREATE TABLE`. Attribute →
+column. Reference → FK constraint. Index → index object.
+Modality marks (Static / TenantScoped / SoftDeletable) → no
+DacFx counterpart; Static populations route to a separate
+`StaticSeedsEmitter`; TenantScoped / SoftDeletable shape
+tables via pass-time additions. Origin axis → no DacFx peer;
+Π is origin-blind once a kind reaches the emitter (Selection
+filtered upstream in a pass per A12).
+
+**T11 sibling-Π commutativity.** For DACPAC bytes, T11 requires
+load-and-enumerate via `DacPackage.Load` + `model.GetObjects` +
+assertion on Table-per-Kind by SsKey root. Heavier than text
+emitters' grep-able form; cost acceptable.
+
+**Recommended chapter-open scoping.** Sequencing: read-side
+adapter first, DacpacEmitter second (confirms session-24
+cash-out's framing). Minimal first slice: single-table Catalog
+→ load → enumerate → assert one Table with two Columns and a
+PK constraint. Defer byte-determinism; cover content-determinism
+via DacFx round-trip. Add T11 commutativity test across
+RawTextEmitter and DacpacEmitter agreeing on attribute type
+rendering.
+
+**Eight risks / open questions** for the chapter-open document
+to explicitly defer or escalate (byte-determinism strategy;
+F#/C# wrapper layering; Module → Schema mapping; modality marks
+at the dacpac surface; pre/post-deployment scripts; Origin
+handling; DacFx version pinning; PackageMetadata choices).
+
+### Subagent #5 pre-scope summary — SnapshotRowsets chapter
+
+(Full report dispatched at session 25; key findings preserved
+here as the chapter-open input.)
+
+**V1 rowset shape.** V1's SQL extraction emits **23 rowsets**
+(`outsystems_metadata_rowsets.sql:956-1184`). Phase-1 rowsets
+1–3 (modules / entities / attributes) are sufficient to
+resolve all three known JSON-projection-lossiness members:
+`EspaceKind` (rowset 1), `IsSystemEntity` and `EntitySsKey`
+(rowset 2), `AttrSsKey` (rowset 3). The lossiness happens at
+exactly one layer — V1's `SnapshotJsonBuilder` field selection
+plus the `FOR JSON PATH` aggregations in rowsets 19–23. **All
+lossy fields travel intact through phase-1 rowsets**;
+`SnapshotRowsets` consumes rowsets 1–18 (the structural raw
+layer; not the JSON aggregations).
+
+**Multi-rowset deserialization architecture.**
+**Recommendation: per-rowset hand-written F# DTO records,
+bundle delivered via a single carrier-DU variant**
+(`SnapshotRowsets of bundle: RowsetBundle`), with materialization
+located inside the OSSYS adapter (preserving F# core's no-I/O
+discipline). C# DataReader streaming is the natural language
+for the loader, but **the loader lives above the adapter** in
+a future `Projection.Adapters.Osm.SqlClient` C# project;
+the adapter sees only the value-typed `RowsetBundle`. Tests
+construct bundles directly as fixture data, mirroring the
+existing `v1MinimalFixture` string-fixture pattern.
+
+**DTO shape.** Hand-written F# records first; type providers
+stay deferred. `SqlClientProvider` would require DB
+connectivity at compile time — strictly worse CI fragility
+than `JsonProvider`. The hand-written DTOs already exist in C#
+at `IOutsystemsMetadataReader.cs:71-207`; F# transcription is
+mechanical. Hand-maintenance burden is bounded by V1 SQL's
+slow evolution cadence.
+
+**Integration with `CatalogReader.parse`.** Add `SnapshotRowsets`
+variant to the closed DU; add a third match arm calling new
+`parseRowsetBundle`; existing `parseJsonString` /
+`parseDocument` paths untouched. The closed-DU empirical-test
+discipline predicts F# exhaustiveness errors light up only at
+the match site; if more reshape, the seam is wrong.
+
+**SsKey-shape divergence under the rowset path.** Rules 1–3's
+synthesis convention (`OS_KIND_<modName>_<entName>`) may
+either coexist with Guid-string SsKeys (option 1: per-source
+SsKey shape; simpler implementation, loses parity-test
+surface) or be canonicalized at translation time (option 2:
+both paths emit the same SsKey shape; defers to a future IR
+refinement). Subagent #5 recommends option 1 for the first
+slice; option 2 is deferred to a follow-on slice when cross-
+source parity tests demand it.
+
+**Class-of-lossiness coverage plan (5–6 substantive slices):**
+slice 1 SsKey at all three levels (highest leverage; foundational;
+resolves the A1 bound); slice 2 reference-bearing under rowset
+path; slice 3 `EspaceKind` activation (refines rule 17 from
+placeholder to three-way real); slice 4 `isSystemEntity`
+activation (likely demands an IR refinement); slice 5 cross-
+source parity tests; deferred slices for per-table column
+structure, check constraints, future members.
+
+**Coexistence with `SnapshotJson` after `SnapshotRowsets`
+ships.** Both paths coexist permanently in the closed DU. No
+deprecation path is named. `SnapshotJson` remains the simpler
+test surface for fixture-driven slice work that doesn't
+exercise lossiness members; `SnapshotJson` is the fallback
+when rowsets are unavailable.
+
+**Recommendation: open SnapshotRowsets parallel-to or before
+canary, not after.** Reverses the original chapter-3 priority
+ordering. Reasoning: the canary's DacFx work needs a Catalog
+input; if the canary opens with the JSON path's Catalog, the
+SsKey-bound question recurs against DacFx behavior;
+SnapshotRowsets resolved first means the canary inherits a
+Catalog with full SsKey carriage. SnapshotRowsets is also
+structurally smaller scope (no DacFx, no testcontainers, no
+ephemeral DB).
+
+**Estimated arc length: 5–6 sessions** (mirroring chapter-2's
+six-slice OSSYS arc). First slice is heavier (DTO surface +
+variant scaffolding); subsequent slices are lighter (re-
+exercising already-traced fixtures under the rowset path);
+slice 5 is parity discipline.
+
+**Seven risks / open questions** for chapter-open: SsKey-shape
+divergence resolution; `EspaceKind` value semantics; C#-shell
+loader project location; whether SnapshotRowsets triggers
+`ICatalogReader` interface materialization (subagent #5's
+read: it does not — same source, second variant); whether
+fixture-driven IR refinements are in scope for the first arc
+(`isSystemEntity` activation likely demands one); whether
+parity tests are unit or integration; whether the V1 C# DTO
+surface should be re-mirrored or re-derived.
+
+### Implication for chapter-3 sequencing
+
+Subagent #5's recommendation (open SnapshotRowsets before
+canary) and subagent #4's recommendation (canary opens with
+read-side adapter first, then DacpacEmitter) are compatible if
+chapter 3 splits into two arcs: **SnapshotRowsets arc** runs
+parallel-to-or-before the **canary arc**. The chapter-3 agent
+inherits two opens; either or both may run before cross-module
+FK lands as a tactical-completeness step.
+
+## How this document was used
+
+  - **Per-session updates** during sessions 23–25 — findings
+    landed continuously rather than being re-derived at close.
+    The scaffold-early disposition (session 23 hygiene) proved
+    its worth.
+  - **At chapter close (session 25)** — this document
+    incorporated the accumulated material plus the chapter-close
+    ritual execution (above).
+  - **Append-only discipline applied** — open questions were
+    resolved at session 25 commit 7 in DECISIONS rather than
+    overwritten here; the OPEN-questions sections remain as
+    historical record.

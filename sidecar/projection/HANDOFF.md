@@ -96,13 +96,16 @@ The dispositions chapter 2 inherited from chapter 1 hold; chapter 2 added a hand
 Per `CHAPTER_2_CLOSE.md`, the chapter-3 priorities are:
 
 1. **Read this letter, CLAUDE.md, CHAPTER_2_CLOSE.md, and the recent DECISIONS entries** — orient. ~30 minutes.
-2. **Decide chapter-3 sequencing.** Three plausible chapter-3 arcs, in approximate priority order:
-   - **`Projection.Pipeline` canary chapter** — the strategic-frame axis-4 chapter. Highest leverage; consumes everything chapter 2 produced; brings DacFx, testcontainers, ephemeral SQL Server, read-side adapter into V2. The DacFx trigger fires here.
-   - **`SnapshotRowsets` implementation chapter** — resolves the JSON-projection-lossiness class. Independent of canary; can run in parallel or sequentially. Subagent #5's pre-scope (session 25 commit 9) is the entry point.
+2. **Decide chapter-3 sequencing.** Three plausible chapter-3 arcs:
+   - **`SnapshotRowsets` implementation chapter** — resolves the JSON-projection-lossiness class (SsKey at every level; `EspaceKind`; `isSystemEntity`). Subagent #5's pre-scope (in `CHAPTER_2_CLOSE.md`) recommends opening this **parallel-to or before** canary, so the canary inherits a Catalog with full SsKey carriage. Estimated arc length: 5–6 sessions; first slice is heavier (DTO surface + variant scaffolding); slices 2–4 re-exercise already-traced fixtures; slice 5 is cross-source parity discipline.
+   - **`Projection.Pipeline` canary chapter** — the strategic-frame axis-4 chapter. Highest leverage; consumes everything chapter 2 produced; brings DacFx, testcontainers, ephemeral SQL Server, read-side adapter into V2. Subagent #4's pre-scope (in `CHAPTER_2_CLOSE.md`) recommends canary opens with **read-side adapter first, then DacpacEmitter** (confirms session-24 cash-out's framing). The DacFx trigger fires when DacpacEmitter implementation begins. Subagent #4 also flags the byte-determinism risk: vanilla `BuildPackage` is non-deterministic; T1 likely needs amendment for binary emitters.
    - **Cross-module FK slice** — small (one fixture; rule extension); could land before or after either chapter as a tactical-completeness step. Refines OSSYS rule 16's same-module assumption. Per the trace-before-fixture pattern, trace V1's cross-module FK encoding first; the question shape may force walking `relationships[]` instead of `attributes[isReference=1]`.
+
+   Subagent #4's and #5's recommendations are compatible: SnapshotRowsets arc runs parallel-to-or-before the canary arc; cross-module FK is a tactical-completeness step that lands when convenient.
+
 3. **Open the chapter you choose** with a chapter-open document naming the strategic-frame axes (`DECISIONS 2026-05-15` shape; the OSSYS chapter is the worked example). Multi-session chapters earn this discipline at chapter open.
 
-The two pre-scope subagent reports (#4 DacpacEmitter; #5 SnapshotRowsets) are the chapter-open inputs for those chapters. If they landed before chapter 2 close, see `CHAPTER_2_CLOSE.md` for the integration. If they landed after, the dispatch records sit in this commit's session-25 close.
+The two pre-scope subagent reports (#4 DacpacEmitter; #5 SnapshotRowsets) live in `CHAPTER_2_CLOSE.md` as chapter-open inputs.
 
 After the chapter-open scoping, the substantive work begins. Operate the chapter-mid-audit at every 3–5 substantive sessions; operate the chapter-close ritual at chapter close (eight items, including the V1-input-envelope walk for V1↔V2 translation chapters).
 
