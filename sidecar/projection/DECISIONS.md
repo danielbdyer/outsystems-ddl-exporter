@@ -3946,3 +3946,234 @@ them all without forcing accommodation?" Two consumers with the
 same shape and one with a different shape is N=2-and-N=1, not N=3.
 The discipline against speculative abstraction extends to
 classifying consumers by shape before counting.
+
+## 2026-05-15 — Strategic frame for the OSSYS implementation chapter (architectural commitments)
+
+**Status:** decided (strategic frame; load-bearing for the OSSYS arc and beyond)
+**Context:** Session 17 opens the OSSYS catalog adapter implementation
+chapter. Multiple architectural commitments emerged from conversation
+between session 16's close and session 17's opening; none had landed
+in DECISIONS yet. This entry codifies them so they exist as
+load-bearing context for the OSSYS arc and for the chapters that
+follow (data emission, deployment integration, validation).
+
+The frame is **strategic, not implementation-spec.** Specific
+implementation choices land as their own DECISIONS entries when
+those chapters open. This entry names the architectural axes;
+subsequent entries fill them in.
+
+### Posture 1, extended — V2 emits artifacts; deployment is downstream; the canary is upstream
+
+The original Posture 1 stance: **V2 emits artifacts; ADO/Octopus
+deploys to dev/staging/prod; V2 is not in the deployment path.**
+The boundary is structural — V2's job ends when the artifacts are
+written; downstream tooling owns the deploy.
+
+The session-17 extension adds an **upstream pipeline canary**:
+before V2 publishes the artifacts, the export pipeline self-validates
+the artifacts against an ephemeral Docker SQL Server instance. The
+artifacts must apply cleanly against an empty database; if the
+canary fails, the export halts and the artifacts are not published.
+
+The canary is **upstream of publication, not downstream of
+deployment.** The deployment path remains ADO/Octopus territory;
+the canary is the export pipeline's own self-validation. This
+addresses a real failure mode V1 doesn't catch — artifacts that
+look correct in isolation but don't apply cleanly together.
+
+The canary's mechanism:
+
+  - Spin up an ephemeral SQL Server container (testcontainers).
+  - Apply the emitted artifacts (schema first, then seeds, then
+    bootstrap) using DacFx for schema and direct script execution
+    for data.
+  - Read the resulting database state back through a read-side
+    adapter (see below) into a V2 Catalog.
+  - Compare the read-back Catalog to the source-of-truth Catalog
+    that produced the artifacts. Any discrepancy halts the
+    export.
+
+The canary is **opt-in** at first — declared on EmissionPolicy or
+its successor — but the architectural axis is named here so future
+chapters know where it fits.
+
+### Read-side adapter as a new architectural axis
+
+The OSSYS adapter is the **write-side ingestion path**: take
+OutSystems metadata, produce a V2 Catalog. The **read-side
+adapter** is its sibling: take a SQL Server database, produce a
+V2 Catalog by reading schema metadata back. Two distinct adapters,
+both producing `Result<Catalog>`, both at the boundary.
+
+The read-side adapter has **two consumers from day one**:
+
+  1. **The canary's read-back step** (described above). The export
+     pipeline writes artifacts, applies them to an ephemeral SQL
+     Server, and reads back the resulting state to compare against
+     the source Catalog.
+  2. **Optional production observation.** A future operator might
+     point V2's read-side adapter at a production database to
+     observe the deployed schema's actual shape — useful for
+     drift detection, post-deployment audits, and the V1
+     `dmm-diff.json` equivalent.
+
+Two consumers from day one is exactly the threshold the
+two-consumer rule predicts (`DECISIONS 2026-05-13 — Emergent
+primitives` and the session-16 shape-classification refinement).
+The read-side adapter earns its place architecturally, not
+speculatively.
+
+The read-side adapter is **not in scope for the OSSYS chapter
+opening** — it's a sibling architectural commitment named here so
+the OSSYS write-side adapter doesn't accidentally calcify in a
+shape that the read-side can't mirror.
+
+### Refactor.log emission with deterministic SsKey-to-GUID via UUIDv5
+
+V1 emits a `refactorlog` artifact (per the SSDT pattern) tracking
+schema-rename events. The artifact requires GUIDs to identify
+renamed objects.
+
+V2's refactor.log emission uses **UUIDv5** to derive GUIDs
+deterministically from `SsKey` values plus a stable namespace.
+The choice eliminates a class of state V2 would otherwise need to
+maintain — V1 tracks (or risks losing) GUID-to-object mappings
+across runs; V2 derives the GUID at emission time and the same
+SsKey always produces the same GUID. **No separate state.**
+
+The UUIDv5 approach is structural-commitment-via-construction-
+validation (`AXIOMS.md` operational principle) applied to GUIDs:
+every GUID is derived; the derivation is deterministic; the
+mapping is the function, not a stored table.
+
+Implementation lands when the refactorlog emitter does. Naming
+the choice now prevents the emitter from accidentally introducing
+state-tracking machinery before this commitment is honored.
+
+### Three data-emission classes named explicitly
+
+V2 distinguishes three classes of data emission, each with its own
+artifact shape and its own deployment semantics:
+
+  1. **StaticSeeds.** Static-entity populations carried by the
+     catalog itself (per A7 — Static modality is part of catalog
+     structure). Emitted as MERGE seed scripts; deployed
+     idempotently; expected to apply cleanly against existing
+     populations or to seed empty tables.
+
+  2. **MigrationDependencies.** Operator-policy-declared regular
+     entities whose populations need to be carried forward as part
+     of the migration. These are entities the operator has
+     specifically marked — *MigrationDependency is a policy
+     choice, not a structural property of Kind.* The catalog
+     doesn't carry "this is a migration dependency"; the policy
+     does. Same kind of separation as A18 amended (Policy is
+     intent; Catalog is evidence).
+
+  3. **Bootstrap.** A variable-composition emission class governed
+     by a closed DU on `EmissionPolicy`:
+     ```fsharp
+     type BootstrapComposition =
+         | AllRemaining       // default — everything not in StaticSeeds or MigrationDependencies
+         | AllExceptStatic    // everything except static populations
+         | AllData            // everything (including static populations)
+     ```
+     The DU is **closed** so consumers can pattern-match
+     exhaustively; new variants land at meaningful inflection
+     points per `DECISIONS 2026-05-13 — Discrete-rationale DUs`.
+
+The three classes are **distinct artifacts**, not three shapes of
+one artifact. Each class has its own emitter; the canary applies
+them in order; the deployment pipeline carries all three.
+
+### Verisimilitude policy held until real demand
+
+A "verisimilitude policy" — controlling how faithfully V2's data
+emission reproduces V1's exact byte sequence vs. how aggressively
+V2 reformats — was discussed but **deferred until a real
+validation consumer demands it.** Premature design here would
+codify a policy axis that today has no consumer.
+
+Forward trigger: when a real operator complains that V2's emission
+differs from V1's in a way that breaks downstream tooling, the
+verisimilitude policy lands. Not before.
+
+### Projection.Pipeline as a new C# project
+
+The canary's mechanism (testcontainers, DacFx, ephemeral SQL Server,
+script execution) involves I/O, async, third-party dependencies, and
+runtime concerns that V2's F# Core forbids by codification (per
+CLAUDE.md's F# feature surface — purity-first sort; effect, time,
+concurrency forbidden in Core).
+
+The right home for the canary's orchestration is a **new C# project,
+`Projection.Pipeline`**. C# is appropriate for:
+
+  - DacFx integration (the .NET ecosystem's natural language for
+    DacFx is C#)
+  - Testcontainers usage (testcontainers.NET works fine from F#
+    but is more idiomatic in C#)
+  - Async orchestration with explicit Task/await semantics
+  - Coordination between F# pure-core (the Catalog comparison
+    logic) and the I/O surfaces
+
+The codification preserves: **F# Core's purity is unchanged;
+adapters at the boundary may use what Core forbids; the canary's
+orchestration is at the boundary by definition.**
+
+The project name `Projection.Pipeline` distinguishes from
+`Projection.Adapters.*` (which are F# value-returning boundaries)
+because the canary is more orchestration than adapter — it
+coordinates multiple adapters and emitters into a single workflow.
+
+### Docker SQL Server version hardcoded to match production
+
+The canary's ephemeral SQL Server container is pinned to **the
+exact SQL Server version that production runs**. Hardcoded; no
+configuration knob; no version range.
+
+Rationale: the canary's value-prop is "the artifacts apply cleanly
+in production." The signal is meaningful only if the canary's
+target matches production's. A version range introduces a class of
+canary-passes-but-production-fails failures the canary exists to
+prevent.
+
+The hardcoded value lives at the canary's configuration surface
+(`Projection.Pipeline`'s configuration). When production upgrades,
+the canary upgrades atomically with it. The few-months-horizon
+framing applies: short-lived hardcoding, not permanent.
+
+### What's not in this entry
+
+Specific implementation choices for any of the above are
+**deferred to their own DECISIONS entries** when the relevant
+chapters open:
+
+  - The OSSYS adapter's parse signature → Position B entry
+    (session 17 commit 4)
+  - The read-side adapter's specific shape → its own chapter
+    when it opens
+  - The three data-emission classes' specific artifact formats →
+    each emitter's chapter
+  - The canary's specific orchestration → `Projection.Pipeline`
+    chapter when it opens
+  - The refactor.log emitter's UUIDv5 namespace and exact derivation
+    → that emitter's chapter
+
+This entry's role is to **name the architectural axes** so future
+chapters land into a coherent frame. The axes are load-bearing;
+the implementations are deferred.
+
+**Reasoning / consequences.** Without this strategic frame, each
+of the eight commitments would land separately as the chapter
+that needs it opens, and the cross-chapter coherence would be
+incidental. With the frame, every chapter that opens against one
+of these axes inherits the other seven as context.
+
+The frame is **subject to refinement** as chapters open and surface
+real evidence — the OSSYS adapter chapter may surface a parse-
+signature question that affects the read-side adapter's shape; the
+canary's first real run may surface a verisimilitude need; the
+three-emission-class scheme may need a fourth class. Refinements
+land as amendments to this entry or as their own entries that
+reference it.
