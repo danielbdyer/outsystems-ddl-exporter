@@ -3686,3 +3686,158 @@ named; the refinement is the right rule now that one of its edge
 cases (anticipation grounded in concrete planning) has surfaced.
 The next agent who finds another edge case extends this entry or
 writes a successor; the discipline is alive, not frozen.
+
+## 2026-05-13 — Session 14 closing addendum (post-reflection additions: F# feature surface + abstraction-extraction refinement)
+
+**Status:** decided (session 14 closing addendum; supplements `DECISIONS 2026-05-13 — Session 14 closing` above)
+**Context:** The session 14 closing reflection (entry above) was
+written after commit 9. Two further commits landed during the
+post-reflection discussion: a new section in CLAUDE.md mapping V2's
+posture against F#'s broader feature surface (commit 10), and a
+DECISIONS entry refining the two-consumer threshold with the
+anticipation-vs-speculation framework (commit 11). This addendum
+folds them into the session 14 record so the recap is honest about
+the full session, not just its planned scope.
+
+**Updated commit list — session 14 in full** (12 commits):
+
+| # | Scope | Verdict |
+|---|---|---|
+| 1 | Audit-discipline refinement DECISIONS — contract-vs-test audits must also walk contract-vs-implementation | landed before substantive work; preserved the session-13 audit-during-validation finding before opening the new chapter |
+| 2 | UniqueIndex opportunity-stream Skip stub reserved | Skip-to-Behavioral activation discipline (`DECISIONS 2026-05-10`) — reserve the contract name first, activate when the gating dependency lands |
+| 3 | Diagnostics writer (`Projection.Core/Diagnostics.fs` + tests) | the gating dependency itself; closed three-way Severity (Info/Warning/Error); single channel for now per `DECISIONS 2026-05-06`; LineageDiagnostics dual writer; 17 unit tests |
+| 4 | Pass return-type codification DECISIONS entry (false start preserved) | discipline before code; sibling-function instinct mis-cited the closed-DU rule; right rule is "type signature names the production" |
+| 5 | UniqueIndexPass.run migrates to `Lineage<Diagnostics<UniqueIndexDecisionSet>>` + named accessors + Skip-to-Behavioral activation | the activation; ~14 test sites migrated mechanically; named accessors absorbed during the work to fix the smell that surfaced |
+| 6 | Named-accessor DECISIONS entry (smell-fix codification) | discipline after code (the helpers landed inline in commit 5; the discipline naming followed); preserved the .Value.Value smell as a recognizable trigger |
+| 7 | CLAUDE.md (navigation + operating-discipline index + programming-style center target) | meta-document over canonical surfaces; substantive entries continue to land in DECISIONS; programming-style section captures the gravitational center new code lands in by default |
+| 8 | OSSYS catalog adapter ADMIRE stub | undocumented production boundary made explicit; implementation deferred to a substantive multi-session arc; migration path outlined |
+| 9 | End-to-end milestone (5 tests) + session 14 reflection (entry above) | UniqueIndex with opportunity stream end-to-end through Lineage<Diagnostics<_>>; reflection found three operating disciplines emerged during the work, mirroring session-8 strategy-layer codification's three refinements |
+| **10** | **F# feature surface section in CLAUDE.md** | **post-reflection addition; organized by the meta-rule "V2 Core is purity-first; effect/time/concurrency/runtime-metaprogramming are consciously deferred from Core, available in adapters when role demands"; four buckets (used / underused / consciously deferred / out of scope for Core) with re-open triggers** |
+| **11** | **Anticipation vs. speculation in abstraction extraction (DECISIONS refinement)** | **post-reflection addition; surfaced during the discussion of object expressions for hypothetical ICatalogReader and IDiagnosticSink; refines the two-consumer threshold with three positions (A/B/C) and an empirical test for "shape visible enough"; preserves the discipline against speculation while permitting Position B for grounded anticipation** |
+| 12 | This addendum — folds the post-reflection additions into the session 14 record | landed |
+
+**Test baseline (unchanged from the original closing entry):** 616
+passed / 9 skipped / 625 total. Commits 10, 11, and 12 are
+documentation-only; no code changed.
+
+### Two operating disciplines added by the post-reflection commits
+
+The session 14 closing entry above named three operating disciplines
+that emerged during the substantive work (audit-discipline
+refinement; pass return-type codification; named accessors). The
+post-reflection commits added two more:
+
+  4. **F#-feature-surface mapping (CLAUDE.md commit 10).** Not a
+     DECISIONS entry, but the same shape of operating discipline:
+     names the gravitational sort (purity-first; effect / time /
+     concurrency / runtime-metaprogramming deferred from Core). The
+     value-prop is descriptive — future agents reading CLAUDE.md
+     before opening code see which features are in play, which are
+     candidates with explicit triggers, and which are consciously
+     deferred. Pairs with the operating-disciplines table in the
+     same file.
+
+  5. **Anticipation-vs-speculation refinement (DECISIONS commit 11).**
+     A genuine refinement to the two-consumer threshold (`DECISIONS
+     2026-05-13 — Emergent primitives`). The original threshold
+     said "extract at the second consumer." Applied literally that
+     defers `ICatalogReader` even when DACPAC is named in V2's
+     vocabulary docs as a planned source. The refinement preserves
+     the discipline (no speculation) while permitting Position B
+     (structural alignment when the shape is concrete enough).
+     Three positions (A/B/C); empirical test for shape visibility;
+     worked examples for V2's pending abstraction questions.
+
+### Updated count of session-14 operating disciplines: five
+
+  1. **Contract-vs-implementation cross-reference in audits.**
+     Audits walking contract-vs-test must also walk
+     contract-vs-implementation. The "no test, no implementation"
+     row is feature gap, not test gap.
+  2. **Pass return-type codification.** Passes return
+     `Lineage<'output>` for decisions only;
+     `Lineage<Diagnostics<'output>>` when they produce decisions
+     plus observer-relevant findings. The shape names the
+     production.
+  3. **Named accessors for stacked types.** Stacked types deserve
+     named accessors at call sites where nested access loses
+     self-description. The `lineage.Value.Value` smell is the
+     trigger.
+  4. **F#-feature-surface mapping** (CLAUDE.md). Purity-first sort:
+     effect, time, concurrency, and runtime metaprogramming
+     deferred from Core; available in adapters when role demands.
+     Each underused feature has an adoption trigger; each
+     consciously-deferred feature has a re-open trigger.
+  5. **Anticipation vs. speculation in abstraction extraction.**
+     The two-consumer threshold refined: extract at the second
+     consumer's *shape* visibility, not its literal arrival.
+     Three positions (A/B/C) with an empirical test for choosing
+     among them.
+
+The first three were named during commits 1, 4, and 6
+respectively. The fourth and fifth were named during commits 10
+and 11 — both as a result of the *discussion about* what session
+14's work meant, not from the substantive work itself. This is its
+own meta-pattern: **disciplines emerge from substantive work
+(commits 1–9) and from substantive reflection on that work
+(commits 10–12)**. The audit-during-validation discipline catches
+the first kind; the chapter-closing reflection (and any
+post-closing extensions) catches the second.
+
+### Updated forward signals for session 15
+
+The forward signals from the original closing entry stand
+(Diagnostics writer's second consumer; OSSYS adapter
+implementation; OrderingPolicy + junction heuristic + Faker +
+three-channel Diagnostics split deferred). Two refinements from
+the post-reflection commits:
+
+  - **OSSYS adapter implementation chapter starts in Position B.**
+    Per the anticipation-vs-speculation refinement, the adapter's
+    primary entry point should be designed as
+    `parse : string -> Task<Result<Catalog>>` — exactly the shape
+    a future `ICatalogReader` interface would have. The interface
+    itself defers until a second catalog source materializes; the
+    structural alignment lands as part of the OSSYS adapter chapter.
+    The implementing agent should record the Position B choice in
+    the OSSYS implementation's DECISIONS entry.
+  - **Diagnostics-writer second consumer activation (Nullability
+    #6/#7) inherits the pass return-type codification.**
+    `NullabilityPass.run` migrates from
+    `Catalog -> Policy -> Profile -> Lineage<NullabilityDecisionSet>`
+    to `Catalog -> Policy -> Profile -> Lineage<Diagnostics<NullabilityDecisionSet>>`.
+    Test sites update mechanically; the Skip stubs flip to
+    `[<Fact>]` asserting on the Entries surface. Same shape as
+    UniqueIndex commit 5; expect ~10–15 test sites in
+    `NullabilityPassTests.fs` to migrate.
+
+### Closing (revised)
+
+Session 14 was the Diagnostics writer chapter-open. The writer's
+codification carried three refinements during validation
+(architectural disciplines surfaced from the substantive work) and
+two more refinements during reflection (operating disciplines
+surfaced from the discussion about the substantive work). The
+codification absorbed both kinds: the audit-during-validation
+discipline catches the first; the reflection-and-extension
+discipline catches the second. Five new operating disciplines
+total — the largest single-session output of disciplines in the
+chapter so far.
+
+Test baseline: 616 passed / 9 skipped / 625 total. Build green.
+Twelve commits, all pushed.
+
+The codebase, the canonical docs, and the meta-document
+(CLAUDE.md) are now mutually consistent and mutually reinforcing.
+A fresh agent reading CLAUDE.md sees the reading order, the
+operating disciplines, the programming-style center target, and
+the F# feature surface map; following the pointers reaches the
+substantive disciplines in DECISIONS; following those reaches the
+formal system in AXIOMS, the V1↔V2 bridge in ADMIRE, and the
+audit synthesis in CHAPTER_CLOSE. Each surface plays its named
+role; none competes with the others.
+
+Hold the spine.
+
+— Session 14 (the Diagnostics writer chapter-open, with
+post-reflection extensions)
