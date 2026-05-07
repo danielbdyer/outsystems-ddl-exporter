@@ -4721,6 +4721,55 @@ sub-section is the load-bearing rule for future agents. The
 amendment-discipline pattern: original text preserved; new
 text supersedes; future readers see the lineage.
 
+##### 2026-05-17 (session 20 strengthening — composability finding)
+
+The session-20 external-entity slice surfaced a finding that
+**strengthens the canonical-resolution choice beyond what was
+visible at decision time**: V1's JSON projection layer is
+structurally lossy in a class-shaped way, not coincidentally on
+two unrelated fields.
+
+The class has at least three currently-known members:
+
+  - **SsKey at every level** — `EspaceSSKey`, `EntitySSKey`,
+    `PrimaryKeySSKey`, `AttrSSKey` all stripped at JSON
+    aggregation (session 18 finding).
+  - **`EspaceKind`** — string column on `dbo.ossys_Espace`
+    encoding the IS-vs-Direct distinction; stripped at JSON
+    aggregation (session 20 finding via the external-entity
+    fixture).
+  - **`isSystemEntity`** — present in the `#Ent` rowset; not
+    written by `SnapshotJsonBuilder` (observed during the
+    session-20 trace; not yet exercised by a fixture).
+
+Future fixtures may surface additional class members (per-table
+column structure that `FOR JSON PATH` collapses; check-constraint
+definitions; etc.). Each is a member of the same class.
+
+**The reframing.** Option 1 (extend `SnapshotJsonBuilder`)
+solves only one class member at a time. Option 2 (`SnapshotRowsets`)
+absorbs the class structurally — once the variant implements,
+**all class members resolve together**. The `EspaceKind` finding
+from session 20 is empirical confirmation of what was an
+architectural intuition at canonical-decision time: the rowsets
+are the right level of abstraction to consume from, because the
+JSON-projection lossiness is a structural property of that
+projection layer, not a per-field oversight.
+
+**The architectural commitment was more right than was visible
+when it was made.** The operator's decision rests on a stronger
+foundation now: the choice covers a class of lossiness, not just
+the originally-named SsKey question.
+
+**For the agent who opens the `SnapshotRowsets` implementation
+chapter:** the implementation is not a one-bug fix. It's the
+resolution to a class. Future fixtures are likely to surface
+additional class members; the implementation needs to absorb
+those too. The class is named in this entry's session-20
+amendment to the Origin entry below (rule 17's amendment
+section); reference it from the implementation chapter when it
+opens.
+
 ### Translation rules the minimal fixture forced
 
 | # | V1 input shape | V2 output | Rationale |
