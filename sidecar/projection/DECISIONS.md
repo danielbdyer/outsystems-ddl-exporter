@@ -4212,6 +4212,40 @@ chapter continues without immediate need to resolve the
 SsKey-source choice; the canary's later integration work will
 inherit whichever trigger has fired by then.
 
+#### 2026-05-17 (session 20 amendment) — input-source choice closed; canary's bound resolves when SnapshotRowsets lands
+
+The session-19 amendment above named three reachable triggers
+for resolving the canary's roll-forward minimally-invasive
+guarantee. **Operator decision (per `DECISIONS 2026-05-15 —
+OSSYS adapter translation rules`, session-20 amendment): Option
+2 (`SnapshotRowsets` variant) is the canonical resolution
+path.** This sub-section sharpens the canary's dependency
+accordingly.
+
+**The canary's roll-forward minimally-invasive guarantee
+resolves when the `SnapshotRowsets` variant implements.** Until
+that implementation lands, V2 continues consuming `SnapshotJson`
+with name-synthesized SsKey; the canary deploys cleanly but
+renames-across-the-input-path render as drop-create. This is
+**graceful-degradation-pending** behavior — correct, just
+noisier than the post-resolution state.
+
+The session-19 framing of "graceful degradation; choice is
+open" updates to **"graceful degradation pending; resolution
+chosen; implementation sequences in."** Future agents opening
+canary, read-side adapter, or `Projection.Pipeline` chapters
+inherit `SnapshotRowsets` as the assumed input source for the
+roll-forward-rename logic.
+
+**Implementation timing for the canary's dependency.** The
+`SnapshotRowsets` variant lands when chapter 2's organic flow
+brings it — likely after the current OSSYS adapter chapter
+completes its translation work. The canary's roll-forward
+logic, when its chapter opens, can be designed against the
+post-resolution state; the bound documented here applies only
+to interim deployments where `SnapshotRowsets` has not yet
+shipped.
+
 This entry's role is to **name the architectural axes** so future
 chapters land into a coherent frame. The axes are load-bearing;
 the implementations are deferred.
@@ -4607,6 +4641,85 @@ canary's roll-forward minimally-invasive guarantee is bounded
 by which of the three triggers is operating. See the strategic-
 frame entry's session-19 amendment for the specific
 canary-rename-handling implication.
+
+#### 2026-05-17 (session 20 amendment) — operator decision: SnapshotRowsets is canonical
+
+**The choice is closed.** Operator decision: **Option 2
+(`SnapshotRowsets` as a third closed-DU variant on
+`SnapshotSource`) is the canonical resolution path.** This
+decision is not subject to relitigation; future sessions inherit
+`SnapshotRowsets` as the assumed input source for OSSYS
+metadata when the bound on A1 needs to resolve.
+
+**Rationale.** Rowsets carry richer information than the
+aggregated JSON does. Three concrete advantages over the
+JSON-only path:
+
+  1. **SSKey natively at every level.** `EspaceSSKey`,
+     `EntitySSKey`, `PrimaryKeySSKey`, `AttrSSKey` are present
+     in the rowsets; the V2 catalog reader reads them directly
+     rather than synthesizing from names. A1's
+     identity-survives-rename guarantee resolves to its full
+     promise through this input path.
+  2. **Per-table column structure preserved.** V1's `FOR JSON
+     PATH` aggregations collapse some structural information
+     that the rowsets retain. Specific examples will surface as
+     fixtures grow under the OSSYS arc; the rowsets-as-input
+     path future-proofs the boundary against the
+     eleven-deferred-fields backlog the session-18 entry named
+     and the session-19 entry extended.
+  3. **Independent of V1 pipeline cooperation.** Unlike Option
+     1 (extending `SnapshotJsonBuilder`), V2 doesn't depend on
+     V1-side changes to land. The rowsets already exist as
+     trailing SELECTs in `outsystems_metadata_rowsets.sql`;
+     V2's adapter takes them in whatever persisted form the
+     operational layer provides (multi-rowset JSON, per-table
+     CSV, etc.).
+
+**Why not Option 1 (extend `SnapshotJsonBuilder`).** Simpler
+than Option 2 — line-level additive work to the JSON
+projections — but solves only the immediate SSKey question.
+Doesn't address the broader collapse of structural information
+the JSON aggregation introduces; doesn't future-proof the V2
+boundary against the deferred-fields backlog. The operator
+considered Option 1 and chose against it.
+
+**Why not Option 3 (`LiveOssysConnection`).** More
+architecturally substantial than Option 2 — V2 maintains its
+own database connection running the SQL or equivalent
+extraction. Reserved as a future variant for the case where V2
+needs to operate without V1's chain in the loop entirely. The
+operator considered Option 3 and chose against it for now;
+Option 3 remains as a future variant when its specific demand
+surfaces.
+
+**Implementation timing.** The actual `SnapshotRowsets` variant
+lands when chapter 2's organic flow brings it — likely after
+the current OSSYS adapter chapter completes its translation
+work through the existing `SnapshotJson` path. The variant is
+its own coherent slice when it opens. **Until implementation
+lands, V2 continues consuming `SnapshotJson` with
+name-synthesized SsKey; the bound on A1 through that path
+remains as documented in this entry's original session-18
+content.**
+
+**The canonical resolution exists in documentation now; the
+code follows when sequencing brings it.** Future sessions
+opening canary chapters, read-side adapter chapters, or
+roll-forward chapters inherit `SnapshotRowsets` as the assumed
+input source. If implementation surfaces refinements during the
+work (DTO shape questions, multi-rowset deserialization
+choices, integration with existing parser code), those land as
+their own DECISIONS entries — but the architectural commitment
+to the variant itself is fixed.
+
+**Entry-shape note for future readers.** This sub-section
+supersedes the "three paths, choice open" framing in the
+session-19 amendment above. The session-19 framing is preserved
+verbatim as the historical lineage of the decision; this
+sub-section is the load-bearing rule for future agents. The
+amendment-discipline pattern: original text preserved; new
+text supersedes; future readers see the lineage.
 
 ### Translation rules the minimal fixture forced
 
