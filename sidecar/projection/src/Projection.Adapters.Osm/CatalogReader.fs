@@ -281,11 +281,35 @@ module CatalogReader =
     // Translation — V1 entity → V2 Kind.
     // -----------------------------------------------------------------------
 
+    /// V1 isExternal → V2 Origin three-way collapse rule (session 20).
+    ///
+    /// Through the JSON-snapshot path V2 consumes today, V2 sees only
+    /// the boolean `isExternal` flag at entity level. V1's
+    /// IS-vs-Direct distinction is encoded in `EspaceKind` (string
+    /// column at the espace/rowset level) which `SnapshotJsonBuilder`
+    /// does NOT write to `osm_model.json`. The full distinction is
+    /// **bound by the input path**:
+    ///
+    ///   - `isExternal: false` → OsNative (clear)
+    ///   - `isExternal: true`  → ExternalViaIntegrationStudio (placeholder)
+    ///
+    /// The `ExternalViaIntegrationStudio` placeholder reflects that
+    /// IS extensions are the standard V1 mechanism for external
+    /// entities; most isExternal=true cases are IS-imported. Direct
+    /// external entities (no IS step) exist but are rarer. The
+    /// bound resolves when the `SnapshotRowsets` variant lands —
+    /// rowsets carry `EspaceKind` natively, enabling the full
+    /// three-way distinction. See `DECISIONS 2026-05-15 — OSSYS
+    /// adapter translation rules`, session-20 amendment for the
+    /// bounded-A1-equivalent disposition.
+    ///
+    /// The session-18 placeholder for this branch was
+    /// `ExternalDirect`; that choice was made before the empirical
+    /// pressure of an external-entity fixture. Session 20's fixture
+    /// surfaced the question; the placeholder updates under the
+    /// pressure. Documented in the session-20 DECISIONS amendment.
     let private parseOrigin (isExternal: bool) : Origin =
-        // Minimal-fixture rule: isExternal=false → OsNative.
-        // The IS-vs-Direct collapse for isExternal=true is deferred
-        // (see session 18 commit 4 DECISIONS entry).
-        if isExternal then ExternalDirect else OsNative
+        if isExternal then ExternalViaIntegrationStudio else OsNative
 
     /// Extract a Reference from a V1 attribute that carries
     /// `isReference: 1` plus its `refEntity_*` and
