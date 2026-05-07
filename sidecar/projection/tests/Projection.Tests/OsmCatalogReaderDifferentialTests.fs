@@ -393,3 +393,133 @@ let ``differential: V1 reference-bearing fixture parses into a Catalog with the 
                 errors)
     | Success actual ->
         Assert.Equal<Catalog>(expectedReferenceCatalog, actual)
+
+// ---------------------------------------------------------------------------
+// External-entity fixture (session 20 — third slice in the OSSYS arc).
+//
+// Surfaces the deferred Origin three-way collapse rule from the
+// session 17 ADMIRE chapter scope. Two prior slices passed without
+// exercising this question; the empirical pressure for it arrives
+// only when a fixture forces it.
+//
+// Trace performed before writing this fixture:
+//   - V1's IS-vs-Direct distinction is encoded in `EspaceKind`
+//     (string column) at the rowset level (#E, espaceKind column
+//     in `outsystems_metadata_rowsets.sql:96`).
+//   - `SnapshotJsonBuilder` does NOT write `EspaceKind` to
+//     osm_model.json. Through the JSON-snapshot path, V2 sees only
+//     module-level `isSystem`/`isActive` and entity-level
+//     `isExternal`/`isActive`/`isStatic`.
+//   - **Through the JSON path, V2 cannot distinguish IS-vs-Direct.**
+//     The bound on the Origin three-way collapse is documented and
+//     resolves through the same input-path expansion as the SsKey
+//     bound (SnapshotRowsets variant per `DECISIONS 2026-05-15 —
+//     OSSYS adapter translation rules`, session-20 amendment).
+//
+// Placeholder rule under the JSON path (this slice):
+//   - `isExternal: false` → OsNative
+//   - `isExternal: true`  → ExternalViaIntegrationStudio
+//
+// The placeholder picks ExternalViaIntegrationStudio because IS
+// extensions ARE the standard V1 mechanism for external entities;
+// most isExternal=true cases are IS-imported. Convention-bearing
+// example: V1's edge-case fixture has an "ExtBilling" module
+// (the "Ext" prefix is conventional for IS-extension modules).
+//
+// Note: this PLACEHOLDER REPLACES the session-18 placeholder
+// (`ExternalDirect`). The session-18 minimal fixture had only
+// `isExternal: false` entities and never exercised the
+// `isExternal: true` branch; the speculative ExternalDirect choice
+// was made without empirical pressure. This slice provides the
+// pressure; the rule changes under it. Captured in commit 3's
+// DECISIONS amendment.
+// ---------------------------------------------------------------------------
+
+let private v1ExternalFixture : string =
+    """{
+  "exportedAtUtc": "2026-05-17T00:00:00.0000000+00:00",
+  "modules": [
+    {
+      "name": "ExtBilling",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "BillingAccount",
+          "physicalName": "BILLING_ACCOUNT",
+          "isStatic": false,
+          "isExternal": true,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "billing",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": true,
+              "isAutoNumber": true,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": "int",
+              "physical_isPresentButInactive": 0
+            }
+          ],
+          "relationships": [],
+          "indexes": [],
+          "triggers": []
+        }
+      ]
+    }
+  ]
+}"""
+
+let private extBillingModuleKey = mkKey "OS_MOD_ExtBilling"
+let private billingAccountKindKey = mkKey "OS_KIND_ExtBilling_BillingAccount"
+let private billingAccountIdAttrKey = mkKey "OS_ATTR_ExtBilling_BillingAccount_Id"
+
+let private expectedExternalCatalog : Catalog =
+    let billingAccount : Kind =
+        { SsKey    = billingAccountKindKey
+          Name     = mkName "BillingAccount"
+          Origin   = ExternalViaIntegrationStudio
+          Modality = []
+          Physical = { Schema = "billing"; Table = "BILLING_ACCOUNT" }
+          Attributes = [
+              { SsKey        = billingAccountIdAttrKey
+                Name         = mkName "Id"
+                Type         = Integer
+                Column       = { ColumnName = "ID"; IsNullable = false }
+                IsPrimaryKey = true
+                IsMandatory  = true }
+          ]
+          References = []
+          Indexes    = [] }
+    { Modules = [
+        { SsKey = extBillingModuleKey
+          Name  = mkName "ExtBilling"
+          Kinds = [ billingAccount ] } ] }
+
+[<Fact>]
+let ``differential: V1 external-entity fixture parses with Origin = ExternalViaIntegrationStudio`` () =
+    let result = parseSync (CatalogReader.SnapshotJson v1ExternalFixture)
+    match result with
+    | Failure errors ->
+        Assert.Fail(
+            sprintf
+                "Expected Result.Success; got Result.Failure with %d error(s): %A"
+                errors.Length
+                errors)
+    | Success actual ->
+        Assert.Equal<Catalog>(expectedExternalCatalog, actual)
