@@ -5552,6 +5552,128 @@ members per class. Future findings classify into one or the
 other before implementation begins; the resolution shape
 follows from the classification.
 
+#### 2026-05-20 (session 24 amendment) — static-entity fixture surfaces two translation rules and one implicit-coverage finding
+
+Session 24's static-entity fixture is the chapter's sixth
+substantive slice and the last substantive slice in chapter 2.
+The fixture exercises the V2 `Modality = [Static []]` translation
+that has shipped without explicit fixture coverage since session
+18.
+
+**Trace before fixture (admire-mode at slice level):** V1's SQL
+extraction at `src/AdvancedSql/outsystems_metadata_rowsets.sql:929`
+emits `CAST(CASE WHEN en.DataKind = 'staticEntity' THEN 1 ELSE 0
+END AS bit) AS [isStatic]`. V1's JSON projection at
+`src/Osm.Pipeline/SqlExtraction/SnapshotJsonBuilder.cs:207` writes
+`writer.WriteBoolean("isStatic", string.Equals(entity.DataKind,
+"staticEntity", ...))`. The `isStatic` boolean is faithfully
+carried through the JSON path. **The static-entity *populations*
+flow through a separate V1 extraction pipeline** — population data
+arrives at V2 via `Projection.Adapters.Sql/Static.fs`'s
+`attachStaticPopulations`, consuming a separately-emitted
+`static-entities.*.json` rather than the `osm_model.json` snapshot
+the OSSYS adapter consumes.
+
+**Classification:** V2-boundary-discipline class. V1 has the
+information; V2's IR scope is split between the OSSYS adapter
+(modality flag only) and the Static SQL adapter (populations).
+This split is itself a V2 design choice that mirrors V1's own
+extraction split. Same shape as session 21's inactive-records
+resolution.
+
+**The two new translation rules:**
+
+| #  | V1 input shape | V2 output | Rationale |
+|----|---|---|---|
+| 24 | `entity.isStatic: true` | `Kind.Modality = [Static []]` (empty population) | Static-entity modality flag. Empty population is intentional — the OSSYS adapter's responsibility ends at the modality marker; populations flow through `Projection.Adapters.Sql/Static.attachStaticPopulations`, which consumes a separately-emitted `static-entities.*.json` and composes onto a Catalog already carrying the `[Static []]` markers. The split mirrors V1's own extraction split. |
+| 25 | `entity.isStatic: false` | `Kind.Modality = []` (no Static mark) | Direct mapping. The `Modality` list is empty for non-static entities; a kind without `Static` in its modality list is treated as a dynamic entity by all downstream consumers. |
+
+**What this commit explicitly does NOT carry forward:**
+
+  - **Static-entity population data inside the OSSYS adapter.** V1's
+    `osm_model.json` does not carry population data; population data
+    lives in the separate `static-entities.*.json` extraction. The
+    OSSYS adapter must produce `[Static []]` (empty population)
+    rather than attempt to derive populations from the model JSON.
+    The downstream `Projection.Adapters.Sql/Static.fs` is
+    responsible for filling populations against the marker. No
+    re-open trigger — the split is V2's design intent.
+  - **`Modality.Inactive`, `Modality.SoftDeletable`, `Modality.TenantScoped`** —
+    V2's `Catalog.fs:52-55` ModalityMark DU has variants beyond
+    `Static`. None are in V1's JSON snapshot today (the V1 model
+    has no analogous markers). If future fixtures surface these
+    via different V1 fields (e.g., a soft-delete column convention),
+    rules extend under empirical pressure.
+
+**The implicit-coverage finding.** The static-entity translation
+implementation has shipped at `CatalogReader.fs:578` since session
+18 (`if isStatic then [ Static [] ] else []`) — written
+defensively while building the minimal-slice infrastructure. Five
+prior fixtures (sessions 18–22) all carried `isStatic: false`; no
+fixture exercised the `true` branch until this slice. The
+implementation worked; the contract was uncovered.
+
+This is a small instance of a real discipline question: **when
+implementation ships ahead of fixture coverage, the contract is
+asserted by the type system and by inspection rather than by
+test.** The session-22 chapter-mid-audit dispatch could in
+principle have caught this — "scan the OSSYS adapter for
+implementations whose code paths no fixture exercises" — but the
+audit's framing (cross-document consistency, Active deferrals
+scan after the session 24 amendment) does not include
+contract-vs-implementation walking at the adapter level. The
+session 14 audit-discipline refinement (`DECISIONS 2026-05-13`)
+codified contract-vs-implementation cross-reference for
+pass-and-strategy work; the same shape applies at adapter level
+but with different criteria — implementation paths whose input
+condition has not been fixture-exercised.
+
+The slice's resolution recovers the contract gap by adding the
+fixture; codifying the discipline lesson here lets future
+chapter-close audits include "are there input-conditional
+adapter paths uncovered by fixture?" as a dimension. **The
+discipline does not yet need its own DECISIONS row; it surfaces
+here to be tested at chapter close — if subagent #3 (the OSSYS
+chapter completeness audit) flags additional uncovered paths,
+the discipline earns its row.**
+
+**Updated chapter status:**
+
+  - Session 18: rules 1–11 (minimal slice — module / kind /
+    attribute structure)
+  - Session 19: rules 12–16 (reference-bearing slice — FK
+    SsKey / deleteRule / cross-attribute)
+  - Session 20: rule 17 (Origin three-way placeholder under
+    JSON-path bound)
+  - Session 21: rule 18 (inactive-records boundary)
+  - Session 22: rules 19–23 (index translation — five rules)
+  - Session 24: rules 24–25 (static-entity modality flag — two rules)
+
+**Twenty-five translation rules total** in the running list
+across six substantive slices. The chapter has now exercised
+all four V2 Kind sub-shapes (Attributes; References; Indexes;
+Modality) plus the boundary disciplines (Origin; inactive-
+records; static-entity split). The cross-module FK slice
+remains plausibly substantive but defers to fresh context per
+the chapter-close handoff (see CHAPTER_2_CLOSE.md and the
+session-23 runway plan).
+
+**Class summary** (per the session-22 two-classes amendment):
+
+  - Lossiness class: SsKey (rules 1-3 synthesis vs the bound);
+    EspaceKind (rule 17's bound). Two members exercised; both
+    resolve through SnapshotRowsets.
+  - Boundary-discipline class: inactive-records (rule 18); index
+    translation choices (rules 19–23); static-entity split
+    (rules 24–25). Three members exercised; each member's
+    resolution is independent.
+
+Three boundary-discipline members empirically confirms the class
+as the more populated of the two — the lossiness class has a
+single-source resolution (SnapshotRowsets); the boundary-
+discipline class accumulates multiple members, each with
+independent resolution shapes.
+
 ## 2026-05-19 — Chapter-mid-audit as a routine practice
 
 **Status:** decided (operating discipline; pairs with the chapter-close ritual)
