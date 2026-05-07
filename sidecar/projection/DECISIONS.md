@@ -5485,3 +5485,108 @@ The class distinction is now empirically confirmed across two
 members per class. Future findings classify into one or the
 other before implementation begins; the resolution shape
 follows from the classification.
+
+## 2026-05-19 — Chapter-mid-audit as a routine practice
+
+**Status:** decided (operating discipline; pairs with the chapter-close ritual)
+**Context:** Session 22 dispatched a cross-document consistency audit
+subagent during a substantive-work session — not at chapter close.
+The audit surfaced 6 CRITICAL, 21 MINOR, and 7 OPEN findings, of which
+the cross-cutting observation (most CRITICAL findings tracked to a
+single phenomenon — OSSYS chapter sessions 18–22 faithfully recorded
+as DECISIONS amendments but not propagated back to index documents)
+identified a real gap in the chapter-close ritual's coverage.
+
+The chapter-close ritual (`DECISIONS 2026-05-14`) handles propagation
+at chapter boundaries but not at chapter-mid-flight. Multi-session
+chapters that run for many sessions accumulate propagation debt
+between substantive work and downstream documentation surfaces;
+the ritual doesn't catch it until chapter close, at which point the
+debt has compounded.
+
+**The audit-as-routine practice fills this gap.** Session 22's
+dispatch demonstrated its value: drift surfaced now is cheaper to
+address than drift surfaced at close. The 6 CRITICAL findings
+became session 23's documentation-hygiene work; the 21 MINOR
+findings landed in `CHAPTER_2_CLOSE.md`'s scaffold for chapter close
+to address.
+
+**Decision:** **Chapter-mid-audit is a routine practice alongside
+the chapter-close ritual.** Multi-session chapters that run for
+more than ~5 sessions should dispatch a cross-document consistency
+audit subagent at intervals during the chapter — typically when
+substantive work has accumulated enough to make propagation drift
+plausible.
+
+**The dispatch pattern:**
+
+  1. **Brief the subagent.** Self-contained prompt; specify the
+     document pairs to walk; specify the categorization scheme
+     (CRITICAL / MINOR / OPEN); specify "surface, not act"; specify
+     the working directory and word budget. The session-22 dispatch
+     is the worked template.
+
+  2. **Run in parallel** with substantive work. The audit doesn't
+     need real-time review; the session that dispatches it can
+     continue substantive work while the subagent runs in the
+     background. The agent's findings arrive via completion
+     notification; integration into the session's summary is a
+     synthesis step at session close.
+
+  3. **Categorize findings.** CRITICAL gets immediate-fix-or-explain
+     in the next hygiene work (typically the next session, unless
+     blocking). MINOR rolls into the chapter-close synthesis via
+     `CHAPTER_2_CLOSE.md` (or its successor's scaffold). OPEN
+     warrants discussion; can land in hygiene work if architectural
+     answers emerge naturally, or defer to chapter close.
+
+  4. **Don't act in the dispatch session.** The audit's job is
+     surface, not act. Findings get reviewed in the next hygiene
+     session. This separation keeps the substantive-work session
+     focused.
+
+**Cadence relative to chapter-close ritual:**
+
+  | Practice | When | Job |
+  |---|---|---|
+  | **Chapter-mid-audit** (this entry) | At intervals during multi-session chapters | Surface mid-flight propagation drift; categorize findings; land them in the in-flight close scaffold |
+  | **Chapter-close ritual** (`DECISIONS 2026-05-14`) | At chapter close | Execute seven load-bearing items; produce the chapter's CHAPTER_N_CLOSE synthesis |
+
+The two are **complementary**, not redundant. Mid-audit catches drift
+before it compounds; close ritual integrates the accumulated material
+into the formal close synthesis.
+
+**The session-22 worked example** sets the dispatch pattern. The
+subagent walked seven document pairs (DECISIONS↔AXIOMS,
+DECISIONS↔ADMIRE, DECISIONS↔CHAPTER_CLOSE, ADMIRE↔source code,
+CLAUDE.md↔DECISIONS, CLAUDE.md↔source code, README↔all of the above);
+findings categorized by criticality; output budgeted at 1500–2200
+words; "surface, not act" enforced. Future chapter-mid-audits follow
+the same shape with adjusted document pairs as new surfaces accumulate.
+
+**On the subagent dispatch's cost.** The session-22 dispatch hit a
+budget limit on its first attempt and required re-dispatch. The
+practice carries this cost: subagent runs are stateful with respect
+to the dispatching session's budget. When a re-dispatch is needed,
+the second attempt can use the same prompt unchanged. Future agents
+running this practice should expect occasional dispatch failures
+and treat them as routine rather than as evidence the practice is
+broken.
+
+**Reasoning / consequences.** The chapter-close ritual addressed
+chapter-boundary drift; chapter-mid-audit addresses chapter-mid-
+flight drift. Together they form a complete propagation-correction
+shape for multi-session chapters. The session-22 audit's value-prop
+was demonstrably real — without it, the OSSYS ADMIRE entry would
+have remained at "chapter-open scoping (session 17)" through chapter
+close, the README would have remained materially stale, and the
+chapter-2 close synthesis would have inherited substantial drift.
+The practice pays for itself; codifying it makes future chapters
+inherit the value.
+
+**Forward-looking:** subsequent multi-session chapters dispatch
+chapter-mid-audits at appropriate intervals (typically every 3–5
+substantive sessions, or when a session's substantive work feels
+like it's accumulated enough to warrant the check). Sessions 24
+and 25 of chapter 2 will dispatch their own audits per the
+session-23 runway plan.
