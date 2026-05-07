@@ -171,11 +171,16 @@ V1 invariants now defended in V2 by `NormalizeStaticPopulationsTests.fs`:
 
 Differential testing (V1 vs V2 on shared golden fixtures
 `tests/Fixtures/emission/edge-case/Seeds/AppCore/StaticEntities.seed.sql`
-and the matrix-temporal variant) lands when the Catalog Reader exists
-to coerce V1 fixture inputs into V2 form. Until then the contract is
-defended by property-based and behavioral tests; the V1 fixtures are
-the gold standard and the differential check is a follow-on commit
-once the boundary adapter is in place.
+and the matrix-temporal variant) **landed at session 5 commit 3** as
+`StaticAdapterDifferentialTests.fs`. Three `V1 contract:`-prefixed
+tests assert the V1 fixture round-trip directly through V2's adapter
+boundary. The V1 fixtures remain the gold standard and the V2
+expectation embedded in the test file is the V2 contract; any V1
+fixture change requires a deliberate V2 expectation update. The
+property-based and behavioral tests in `NormalizeStaticPopulationsTests.
+fs` continue to defend the invariants alongside the differential.
+(`CHAPTER_CLOSE.md §2.11` flagged this acknowledgement as missing;
+session 13 added it.)
 
 ### Migration path
 
@@ -600,7 +605,17 @@ property + behavioral coverage carries the contract first.
 
 ## 2026-05-10 — `UniqueIndexDecisionOrchestrator` (`src/Osm.Validation/Tightening/UniqueIndexDecisionOrchestrator.cs`)
 
-**Status:** admired (placement decided)
+**Status:** **extracted (differential confirmed)** — V1-migration mode
+(`DECISIONS 2026-05-13 — admire spectrum`). V2's `Projection.Core.
+Strategies.UniqueIndexRules` + `Projection.Core.Passes.UniqueIndexPass`
+jointly carry V1's binary-decision contract into V2 under the codified
+strategy layer (`DECISIONS 2026-05-11 — Strategy-layer codification`).
+`UniqueIndexPassTests.fs` and `UniqueIndexRulesTests.fs` exercise the
+behavioral contract; the V1 `UniqueIndexDecisionStrategyTests`
+divergences (Aggressive-mode collapse; included-columns boundary)
+remain documented in this entry below but are not yet locked down by
+explicit `Skip` stubs in `UniqueIndexPassTests.fs` (`CHAPTER_CLOSE.md
+§2.7`; addressed in session 13's skip-stub completion).
 
 **Significance.** The fourth V1 admire migration. Crucially, the
 **second `TighteningIntervention` variant** — the closed DU
@@ -825,7 +840,19 @@ V2 should add (V1 lacks coverage for these):
 
 ## 2026-05-11 — `ForeignKeyEvaluator` (`src/Osm.Validation/Tightening/ForeignKeyEvaluator.cs`)
 
-**Status:** admired (placement decided)
+**Status:** **extracted (differential confirmed)** — V1-migration mode
+(`DECISIONS 2026-05-13 — admire spectrum`). V2's `Projection.Core.
+Strategies.ForeignKeyRules` + `Projection.Core.Passes.ForeignKeyPass`
+jointly carry V1's evaluator contract into V2; the strategy layer's
+fourth instance and the empirical confirmation that the codification
+holds without revision (`DECISIONS 2026-05-11 — Strategy-layer
+codification: empirical verdict after the fourth instance`).
+`ForeignKeyPassTests.fs` and `ForeignKeyRulesTests.fs` exercise the
+behavioral contract. The `DeleteRuleIgnore` rationale-on-success
+divergence (V1 emits a rationale string on a successful decision; V2
+emits none) is documented below but not yet locked down by an explicit
+`Skip` stub (`CHAPTER_CLOSE.md §2.7`; addressed in session 13's
+skip-stub completion).
 
 **Significance.** The fifth V1 admire migration; the **third
 `TighteningIntervention` variant** lands the registered-intervention
@@ -1165,7 +1192,19 @@ work) inherit the strategy-layer's foundation.
 
 ## 2026-05-07 — `EntityDependencySorter` (`src/Osm.Emission/Seeds/EntityDependencySorter.cs`)
 
-**Status:** admired (placement decided)
+**Status:** **extracted (differential confirmed)** — V1-migration mode
+(`DECISIONS 2026-05-13 — admire spectrum`). V2's `Projection.Core.
+Passes.TopologicalOrderPass` + `Projection.Core.Strategies.
+CycleResolution` jointly carry V1's sorter contract into V2 under the
+algebra/domain split that named the strategy layer (`DECISIONS
+2026-05-09 — Algebra/domain split pattern`). `TopologicalOrderTests.fs`
+and `TopologicalOrderPassTests.fs` exercise behavioral contract;
+`CycleResolutionTests.fs` covers the structural-strategy seam.
+Two V1 contracts ADMIRE flags as Behavioral V2 translations remain
+unimplemented as of session 12 (`SortByForeignKeys_SkipsAutoDetection
+WhenManualCyclesExist`, `SortByForeignKeys_DefersJunctionTablesWhen
+EdgesMissing`); both are addressed in session 13 (`CHAPTER_CLOSE.md
+§4 priority 4`).
 
 ### What it does (algebraic terms)
 
@@ -1356,7 +1395,21 @@ until then property + behavioral tests carry the contract.
 
 ## 2026-05-12 — V1 profiling depth (`src/Osm.Pipeline/Profiling/SqlDataProfiler.cs`, `src/Osm.Domain/Profiling/*.cs`)
 
-**Status:** admired (gap analysis; no V1 component to migrate)
+**Status:** **extracted (V2-growth confirmed)** — V2-growth mode
+(`DECISIONS 2026-05-13 — admire spectrum`; this entry was named there
+as the V2-growth template). V2's `AttributeDistribution` DU now carries
+two operational variants — `Categorical of CategoricalDistribution`
+(session 9) and `Numeric of NumericDistribution` (session 10) — under
+the structural-commitment-via-construction-validation principle
+(`AXIOMS.md` operational principle, line 555+). The `ProfileStatistics`
+adapter (`Projection.Adapters.Sql/ProfileStatistics.fs`) is the V2
+boundary; `DistributionsEmitter` (`Projection.Targets.Distributions/`)
+is the first sibling Π consuming the rich evidence; the rich-profiling
+end-to-end milestone (`RichProfilingEndToEndTests.fs`) validates the
+full pipeline. Faker (synthetic-data Π) remains deferred until at least
+a third evidence type lands or the limitations of two are explicitly
+accepted (`HANDOFF.md`, "What's deferred"; `CHAPTER_CLOSE.md §4
+priority 8`).
 
 **Significance.** The first admire entry that surfaces **V1 absence
 to fill, not V1 logic to migrate**. Every prior admire (six entries)
@@ -1656,8 +1709,17 @@ test discipline is therefore:
 
 ## 2026-05-13 — `CategoricalUniqueness` (per-attribute distribution-driven uniqueness inference)
 
-**Status:** admired (placement decided) — **hybrid mode**
-(DECISIONS 2026-05-13 — admire spectrum).
+**Status:** **extracted (differential confirmed)** — **hybrid mode**
+(`DECISIONS 2026-05-13 — admire spectrum`). V2's `Projection.Core.
+Strategies.CategoricalUniquenessRules` + `Projection.Core.Passes.
+CategoricalUniquenessPass` carry the per-attribute decision logic;
+`CategoricalUniquenessRulesTests.fs` and `CategoricalUniquenessPass
+Tests.fs` exercise the V2-only contract (no V1 differential exists for
+the V2-growth share). The strategy layer's third real test passed
+without forcing a fourth refinement (`DECISIONS 2026-05-13 —
+Strategy-layer codification reaches stability mark`); the hybrid admire
+mode worked as the framework's first applied instance (`DECISIONS
+2026-05-13 — Session 11 reflection`).
 
 **Significance.** The fourth registered-intervention strategy under
 the codified strategy layer (DECISIONS 2026-05-11), and the first
