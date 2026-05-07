@@ -4,9 +4,14 @@ The formal system the projection sidecar implements. Code refers to this
 document by axiom number in comments and test names. A failing test pointing
 at axiom A12 should send a reader directly to the section below.
 
-The system has thirty-one axioms (A1–A31) generating ten theorems (T1–T10).
-The axioms are grouped into eight thematic clusters; the theorems cluster
-by what falls out of the construction.
+The original V1 algebraic spec stated thirty-one axioms (A1–A31)
+generating ten theorems (T1–T10). V2 has extended the system: A6, A12,
+A17, A18, and T1 carry amendments (recorded under "V2 Amendments"
+below); A32, A33, A34, and T11 are new. The current count is **A1–A34
+generating T1–T11** with five amended originals. The axioms are grouped
+into eight thematic clusters; the theorems cluster by what falls out of
+the construction. Code and tests cite the **amended** form when both
+exist; the original form is the historical lineage of the amendment.
 
 ---
 
@@ -165,6 +170,13 @@ belongs in a pass.
 
   *Enforcement.* The projector module takes only an enriched IR; no policy
   parameter enters Π.
+
+  *Amended (2026-05-12).* See "A18 amended — Π consumes evidence subsets,
+  never Policy" near the end of this file. The amendment makes explicit
+  which inputs **are** available to Π (whichever subset of `Catalog ×
+  Profile` the emitter needs) and codifies the closed denial on Policy.
+  The amended form is load-bearing for the three-sibling-Π architecture;
+  the original above is the historical statement of the rule.
 
 **A19. Each pass is a structure-preserving endofunctor on the catalog.** A
 pass has signature `Catalog -> Lineage<Catalog>` (or fails inside the
