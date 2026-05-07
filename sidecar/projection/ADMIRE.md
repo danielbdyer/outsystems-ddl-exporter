@@ -2060,3 +2060,217 @@ Commits 4 and 5 decide both. Per the user's session-11 brief and
 the shared-trigger discipline (DECISIONS 2026-05-11), they cash
 out together rather than in isolation.
 
+
+---
+
+## 2026-05-13 — OSSYS catalog producer (`src/AdvancedSql/outsystems_metadata_rowsets.sql` → `MetadataSnapshotRunner` → `SnapshotJsonBuilder` → `osm_model.json`)
+
+**Status:** **admired (stub — V2 implementation deferred)** — **hybrid
+mode** (`DECISIONS 2026-05-13` — admire spectrum). This is the
+undocumented production boundary `CHAPTER_CLOSE.md §2.10` flagged.
+V2's catalog reader does not yet exist; production V2 will need to
+consume real OutSystems metadata via this path. Today, V2 catalogs
+are built by F# fixture builders in `Projection.Tests` — every
+end-to-end test, every milestone, every differential test feeds
+through fixture-constructed catalogs rather than real metadata.
+
+This entry is **scoping**, not implementation. It names the V1
+source, the V2 boundary that needs to exist, the gating-dependency
+graph downstream, and the work the next implementing chapter
+inherits. The implementation is a substantive multi-session arc.
+
+### What the V1 producer does (algebraic terms)
+
+V1's catalog producer is a three-stage pipeline:
+
+  1. **`src/AdvancedSql/outsystems_metadata_rowsets.sql`** (1184
+     lines). A T-SQL script that runs against an OutSystems platform
+     database (the schema named `OSSYS_*` plus user data in
+     `OSUSR_*`). Produces multiple named result sets covering
+     modules, entities, attributes, references, indexes, static
+     populations, profiling probes, etc. Pure read; no DDL emission.
+  2. **`MetadataSnapshotRunner`** (407 lines). Executes the script
+     against a `DbConnection`, dispatches each result set to a
+     registered `IResultSetProcessor` implementation, and accumulates
+     the rows into an in-memory `OutsystemsMetadataSnapshot` (a
+     C# DTO graph specific to V1's domain).
+  3. **`SnapshotJsonBuilder`** (288 lines). Translates the in-memory
+     snapshot into the canonical `osm_model.json` document — the
+     serialized form V1's downstream pipeline consumes. The JSON
+     document is the formal V1↔V2 contract.
+
+The producer is impure (it reads from a SQL Server connection),
+returns `Result<OutsystemsMetadataSnapshot>`, and is the
+authoritative source of structural truth about a deployed
+OutSystems environment.
+
+### V2 placement
+
+**F# adapter at the boundary; V2 does not consume V1's C# domain
+types.** The V2-growth share is the V2 IR translation; the
+V1-migration share is the JSON parsing (V1's `osm_model.json` is
+the V2 contract). The recommended shape:
+
+  - **`src/Projection.Adapters.Osm/CatalogReader.fs`** — F# adapter
+    consuming the JSON document and producing `Result<Catalog>`.
+    Lives alongside `Projection.Adapters.Sql` (which today carries
+    `Static.fs`, `ProfileSnapshot.fs`, `ProfileStatistics.fs`).
+    The V1 SQL script and `MetadataSnapshotRunner` continue to live
+    on the V1 side; V2's adapter consumes only the JSON document
+    they produce. The two-language boundary (F# adapter / SQL
+    producer) keeps determinism testable in V2 without requiring a
+    live database in the V2 test surface.
+  - **Coordinate translation at the boundary.** V1's
+    `EntityName` becomes V2's `SsKey` (per the V1↔V2 vocabulary
+    mapping in `README.md`). V1's `TableName` becomes V2's
+    `PhysicalRealization`. V1's `ModuleModel` becomes `Module`.
+    The translation is structural; the V2 IR does not retain the
+    V1 type names.
+  - **Differential validation.** V1 fixture catalogs already exist
+    under `tests/Fixtures/`; the natural V2 differential is a test
+    pass that round-trips a V1 fixture through the new adapter and
+    asserts the V2 catalog matches a hand-built V2 fixture. Same
+    pattern as `StaticAdapterDifferentialTests.fs` (session 5
+    commit 3).
+
+### Inputs and outputs (V2 IR)
+
+Consumes: a V1-shaped `osm_model.json` document (typically read
+from a file path; the adapter takes a stream / string and parses).
+
+Produces: `Result<Catalog>` — the V2 IR. Validation errors surface
+as `ValidationError` instances with codes namespaced
+`adapter.osm.*` (parsing failures, missing required fields, type
+correspondences that don't translate cleanly). On success, a
+fully-populated `Catalog` ready to consume by every V2 pass.
+
+The adapter is a *fact-emitter* in the diagnostics sense — it may
+emit `DiagnosticEntry` values via the new Diagnostics writer
+(`DECISIONS 2026-05-06`; session 14 commit 3) for parser warnings
+that don't fail the parse but the operator should review (e.g.,
+"static cell coercion fell back to string for an unmapped type").
+The `Source` field for adapter diagnostics is `adapter:OSSYS` per
+the convention codified in `Diagnostics.fs`.
+
+### Existing test coverage (V1)
+
+V1's test coverage of the producer:
+
+  - `tests/Osm.Pipeline.Tests/SqlExtraction/SnapshotJsonBuilderTests.cs`
+    — unit tests on the JSON serialization shape.
+  - Integration tests under `tests/Osm.Etl.Integration.Tests/` —
+    end-to-end pipeline tests consuming real fixture JSON.
+
+V2's test surface for the adapter (when implemented):
+
+  - **Behavioral parity tests.** Round-trip a V1 fixture's JSON
+    through the V2 adapter; assert the produced `Catalog` matches a
+    hand-built V2 fixture.
+  - **Property tests.** Permutation invariance (input JSON object
+    keys re-ordered produce identical V2 catalog); idempotence
+    (parsing twice yields equal catalogs); structural-commitment
+    validation surfaces (a malformed JSON document fails the parse
+    with a typed error, never produces a degenerate catalog).
+  - **Differential tests against `tests/Fixtures/edge-case`** —
+    same pattern as `StaticAdapterDifferentialTests.fs`.
+  - **Skip stubs for V1 contracts V2 deliberately doesn't honor.**
+    For example, V1 carries fields V2's IR doesn't model (V1
+    domain-prescriptive types lost in translation); each surfaces
+    as a Skip stub naming the divergence. Same discipline as
+    session 13's stubs.
+
+### Migration path
+
+The implementing chapter's outline:
+
+  1. **JSON parser scaffold.** F# JSON deserialization
+     (`System.Text.Json` per `DECISIONS 2026-05-06` — Built-ins
+     first; no hand-rolled serialization). DTO records mirroring
+     V1's JSON shape live in
+     `Projection.Adapters.Osm/Internal.fs` (private; not exposed).
+  2. **Translation pass.** DTO → V2 IR. Coordinate translation
+     (V1 names → V2 SsKeys); type-correspondence translation
+     (V1 `DataType` → V2's IR types); structural-commitment
+     validation at every smart-constructor call site.
+  3. **Differential test fixture.** Embed a small V1 JSON fixture
+     in the test file (matches the pattern from
+     `StaticAdapterDifferentialTests.fs`); assert the V2 catalog
+     matches a hand-built V2 fixture.
+  4. **Property-test sweep.** Permutation invariance, idempotence,
+     malformed-input rejection. FsCheck.Xunit for the
+     combinatorial surface.
+  5. **Integration with the existing milestones.**
+     `EndToEndDifferentialTests.fs` and `RichProfilingEndToEndTests.fs`
+     today build catalogs from F# fixture builders; the integrating
+     commit teaches them to optionally consume the new adapter
+     when a real fixture path is provided. Backward compatibility
+     for fixture-built catalogs is maintained — the adapter is a
+     new entry point, not a replacement.
+  6. **Diagnostics-writer integration.** Adapter parse warnings
+     (e.g., "fell back to string coercion for an unmapped data
+     type") emit `DiagnosticEntry` values via the
+     `LineageDiagnostics`-shaped pipeline. This is the second
+     consumer of the Diagnostics writer (after UniqueIndexPass
+     opportunity-stream from session 14 commit 5) and likely
+     surfaces refinements during validation.
+
+### Edges / risks
+
+The substantive risks the implementing chapter inherits, beyond
+the routine mechanical risks of a JSON parser:
+
+  - **V1's JSON shape is V2's contract — stability matters.** The
+    V1 `osm_model.json` schema is what V2 must consume reliably.
+    Any V1-side change to the JSON shape becomes a V2-side
+    breaking change. The adapter needs versioning or tolerance
+    against minor V1 evolutions (e.g., new fields V2 ignores).
+    Defer the strategy until evidence forces it; record the
+    constraint here so the next agent doesn't be surprised.
+  - **Coordinate translation is lossy in one direction.** V2's
+    `SsKey` carries identity but discards V1's full coordinate
+    context (schema, table, physical naming). Round-trip from
+    `osm_model.json` → V2 `Catalog` → back-to-some-V1-form is **not**
+    expected to be lossless; V2's IR is the authoritative shape,
+    and any artifact V2 emits is grounded in V2's IR, not in the
+    original JSON. The adapter is one-way.
+  - **Performance / streaming considerations.** Real production
+    `osm_model.json` documents are large (tens of MB for
+    enterprise-sized OutSystems factories). A naive
+    `JsonSerializer.Deserialize<T>` reads the whole document into
+    memory; a streaming `Utf8JsonReader`-based parser is better
+    for production scale. Defer until evidence forces a choice;
+    start with the simple form.
+  - **Static-cell coercion divergences from V1.** V1's
+    `FixtureStaticEntityDataProvider.ConvertJsonValue` does
+    type-aware decoding (Boolean, Integer, Decimal, DateOnly,
+    TimeOnly, DateTime, DateTimeOffset, Guid) using catalog
+    `DataType`. V2's existing `Static.fs` (`Projection.Adapters.Sql`)
+    only handles raw JSON primitive kinds. The new
+    `Projection.Adapters.Osm.CatalogReader` should align with V1's
+    type-aware coercion, **or** explicitly defer with a DECISIONS
+    entry naming the deferral. Real-fixture decimals and dates
+    will surface this as a real issue (`CHAPTER_CLOSE.md §2.8`
+    flagged the divergence).
+  - **Profile sourcing is separate.** This adapter handles
+    *catalog* (structural) data only. Profile (empirical evidence)
+    is sourced from V1's profiling pipeline via a different
+    boundary; `Projection.Adapters.Sql/ProfileSnapshot.fs` already
+    exists for that. The two adapters compose at the
+    `ProjectionInput` level, not at the source level.
+
+### Why this entry exists now
+
+`CHAPTER_CLOSE.md §4 priority 7` named this as a session-14 priority
+("OSSYS catalog adapter ADMIRE stub") and session 14 took it. The
+audit's framing — "this is the assumed-but-not-documented V1→V2
+boundary for the catalog itself" — held: V2 had carried the
+implicit assumption that a real catalog reader exists, but no
+ADMIRE entry, DECISIONS entry, or code surface said so. This stub
+makes the boundary explicit and the work nameable.
+
+The implementation chapter is its own substantive arc — likely
+multi-session, likely demanding refinements during validation
+(audit-during-validation discipline applies). The next-chapter
+agent inherits this entry as the starting point and follows the
+migration path outline above. Implementation does not start in
+this commit; the explicit framing is the deliverable.
