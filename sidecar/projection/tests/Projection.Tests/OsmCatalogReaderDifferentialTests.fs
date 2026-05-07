@@ -715,3 +715,268 @@ let ``differential: V1 mixed-active fixture filters inactive records at the boun
                 errors)
     | Success actual ->
         Assert.Equal<Catalog>(expectedMixedActiveCatalog, actual)
+
+// ---------------------------------------------------------------------------
+// Index-bearing fixture (session 22 — fifth slice in the OSSYS arc).
+//
+// Trace performed before writing the fixture (admire-mode at slice
+// level; same discipline as sessions 20-21):
+//   - V1 carries the indexes[] array through to JSON; rich shape
+//     including name, isPrimary, kind, isUnique, plus per-column
+//     attribute, physicalColumn, ordinal, isIncluded, direction.
+//     Plus storage/performance fields (isDisabled, isPadded,
+//     fill_factor, etc.) and structural fields (filterDefinition,
+//     dataSpace, partitionColumns, dataCompression).
+//   - V2's Index shape is narrow: SsKey, Name, Columns (SsKey list),
+//     IsUnique, IsPrimaryKey. Five fields.
+//   - Most V1 fields don't fit V2's IR. Per the OSSYS ADMIRE entry
+//     (section "What V2 will explicitly NOT carry forward"),
+//     V1 included-columns (isIncluded=true) are dropped at the
+//     boundary; V2's Columns carries only key columns.
+//
+// Classification: V2-boundary-discipline class (per session 22's
+// two-classes amendment). V1 has the info; V2's IR scope is what's
+// being chosen. The translation rules are V2's own architectural
+// choices about scope, not input-path-bound questions.
+//
+// Translation rules the fixture forces:
+//   1. Index SsKey synthesis:
+//      OS_IDX_<modName>_<entName>_<indexName>
+//   2. V1 `isUnique` → V2 Index.IsUnique (direct)
+//   3. V1 `isPrimary` → V2 Index.IsPrimaryKey (direct)
+//   4. V1 columns[].attribute → V2 SsKey via lookup
+//      (OS_ATTR_<modName>_<entName>_<attribute>)
+//   5. V1 columns[].isIncluded=true → DROP from V2's Columns list
+//      (key columns only; documented in the OSSYS ADMIRE entry)
+//   6. V1 columns[].ordinal → V2 preserves order via sort-by-ordinal
+//      in the boundary
+//
+// Won't-carry-forward (extending the list):
+//   - kind (V1 string; redundant with IsPrimaryKey + IsUnique)
+//   - isPlatformAuto (V1 OSIDX_-prefixed marker; V2 has no axis)
+//   - isDisabled, isPadded, fill_factor, ignoreDupKey,
+//     allowRowLocks, allowPageLocks, noRecompute
+//     (storage/performance attributes)
+//   - filterDefinition (filtered indexes; V2 has no filter axis)
+//   - dataSpace, partitionColumns, dataCompression (storage)
+//   - columns[].direction (asc/desc; V2 has no per-column direction
+//     axis today; could surface as an IR refinement under "IR
+//     grows under evidence" if a future emitter needs it)
+//   - columns[].physicalColumn (V2 derives physical from the
+//     attribute's ColumnRealization; redundant)
+//
+// Fixture: one entity (User) with three indexes:
+//   - PK_USER (isPrimary=true, isUnique=true, single column Id)
+//   - UX_USER_EMAIL (isPrimary=false, isUnique=true, single column Email)
+//   - IX_USER_NAME (isPrimary=false, isUnique=false, composite on
+//     LastName + FirstName + an INCLUDE column EmailLower that V2
+//     drops)
+// ---------------------------------------------------------------------------
+
+let private v1IndexFixture : string =
+    """{
+  "exportedAtUtc": "2026-05-19T00:00:00.0000000+00:00",
+  "modules": [
+    {
+      "name": "AppCore",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "User",
+          "physicalName": "OSUSR_APPCORE_USER",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null, "precision": null, "scale": null, "default": null,
+              "isMandatory": true, "isIdentifier": true, "isAutoNumber": true, "isActive": true,
+              "isReference": 0,
+              "refEntityId": null, "refEntity_name": null, "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null, "reference_hasDbConstraint": 0,
+              "external_dbType": null, "physical_isPresentButInactive": 0
+            },
+            {
+              "name": "Email",
+              "physicalName": "EMAIL",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 250, "precision": null, "scale": null, "default": null,
+              "isMandatory": true, "isIdentifier": false, "isAutoNumber": false, "isActive": true,
+              "isReference": 0,
+              "refEntityId": null, "refEntity_name": null, "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null, "reference_hasDbConstraint": 0,
+              "external_dbType": null, "physical_isPresentButInactive": 0
+            },
+            {
+              "name": "LastName",
+              "physicalName": "LASTNAME",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 100, "precision": null, "scale": null, "default": null,
+              "isMandatory": true, "isIdentifier": false, "isAutoNumber": false, "isActive": true,
+              "isReference": 0,
+              "refEntityId": null, "refEntity_name": null, "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null, "reference_hasDbConstraint": 0,
+              "external_dbType": null, "physical_isPresentButInactive": 0
+            },
+            {
+              "name": "FirstName",
+              "physicalName": "FIRSTNAME",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 100, "precision": null, "scale": null, "default": null,
+              "isMandatory": true, "isIdentifier": false, "isAutoNumber": false, "isActive": true,
+              "isReference": 0,
+              "refEntityId": null, "refEntity_name": null, "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null, "reference_hasDbConstraint": 0,
+              "external_dbType": null, "physical_isPresentButInactive": 0
+            },
+            {
+              "name": "EmailLower",
+              "physicalName": "EMAILLOWER",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 250, "precision": null, "scale": null, "default": null,
+              "isMandatory": false, "isIdentifier": false, "isAutoNumber": false, "isActive": true,
+              "isReference": 0,
+              "refEntityId": null, "refEntity_name": null, "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null, "reference_hasDbConstraint": 0,
+              "external_dbType": null, "physical_isPresentButInactive": 0
+            }
+          ],
+          "relationships": [],
+          "indexes": [
+            {
+              "name": "PK_USER",
+              "isPrimary": true,
+              "kind": "PrimaryKey",
+              "isUnique": true,
+              "isPlatformAuto": 0,
+              "columns": [
+                { "attribute": "Id", "physicalColumn": "ID", "ordinal": 1, "isIncluded": false, "direction": "ASC" }
+              ]
+            },
+            {
+              "name": "UX_USER_EMAIL",
+              "isPrimary": false,
+              "kind": "Index",
+              "isUnique": true,
+              "isPlatformAuto": 0,
+              "columns": [
+                { "attribute": "Email", "physicalColumn": "EMAIL", "ordinal": 1, "isIncluded": false, "direction": "ASC" }
+              ]
+            },
+            {
+              "name": "IX_USER_NAME",
+              "isPrimary": false,
+              "kind": "Index",
+              "isUnique": false,
+              "isPlatformAuto": 0,
+              "columns": [
+                { "attribute": "LastName",   "physicalColumn": "LASTNAME",   "ordinal": 1, "isIncluded": false, "direction": "ASC" },
+                { "attribute": "FirstName",  "physicalColumn": "FIRSTNAME",  "ordinal": 2, "isIncluded": false, "direction": "ASC" },
+                { "attribute": "EmailLower", "physicalColumn": "EMAILLOWER", "ordinal": 3, "isIncluded": true,  "direction": "ASC" }
+              ]
+            }
+          ],
+          "triggers": []
+        }
+      ]
+    }
+  ]
+}"""
+
+let private userIndexLastNameAttrKey  = mkKey "OS_ATTR_AppCore_User_LastName"
+let private userIndexFirstNameAttrKey = mkKey "OS_ATTR_AppCore_User_FirstName"
+let private userIndexEmailLowerAttrKey = mkKey "OS_ATTR_AppCore_User_EmailLower"
+
+let private pkUserIndexKey      = mkKey "OS_IDX_AppCore_User_PK_USER"
+let private uxUserEmailIndexKey = mkKey "OS_IDX_AppCore_User_UX_USER_EMAIL"
+let private ixUserNameIndexKey  = mkKey "OS_IDX_AppCore_User_IX_USER_NAME"
+
+let private expectedIndexCatalog : Catalog =
+    let userKind : Kind =
+        { SsKey    = userKindKey
+          Name     = mkName "User"
+          Origin   = OsNative
+          Modality = []
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER" }
+          Attributes = [
+              { SsKey        = userIdAttrKey
+                Name         = mkName "Id"
+                Type         = Integer
+                Column       = { ColumnName = "ID"; IsNullable = false }
+                IsPrimaryKey = true
+                IsMandatory  = true }
+              { SsKey        = userEmailAttrKey
+                Name         = mkName "Email"
+                Type         = Text
+                Column       = { ColumnName = "EMAIL"; IsNullable = false }
+                IsPrimaryKey = false
+                IsMandatory  = true }
+              { SsKey        = userIndexLastNameAttrKey
+                Name         = mkName "LastName"
+                Type         = Text
+                Column       = { ColumnName = "LASTNAME"; IsNullable = false }
+                IsPrimaryKey = false
+                IsMandatory  = true }
+              { SsKey        = userIndexFirstNameAttrKey
+                Name         = mkName "FirstName"
+                Type         = Text
+                Column       = { ColumnName = "FIRSTNAME"; IsNullable = false }
+                IsPrimaryKey = false
+                IsMandatory  = true }
+              { SsKey        = userIndexEmailLowerAttrKey
+                Name         = mkName "EmailLower"
+                Type         = Text
+                Column       = { ColumnName = "EMAILLOWER"; IsNullable = true }
+                IsPrimaryKey = false
+                IsMandatory  = false }
+          ]
+          References = []
+          Indexes = [
+              { SsKey        = pkUserIndexKey
+                Name         = mkName "PK_USER"
+                Columns      = [ userIdAttrKey ]
+                IsUnique     = true
+                IsPrimaryKey = true }
+              { SsKey        = uxUserEmailIndexKey
+                Name         = mkName "UX_USER_EMAIL"
+                Columns      = [ userEmailAttrKey ]
+                IsUnique     = true
+                IsPrimaryKey = false }
+              { SsKey        = ixUserNameIndexKey
+                Name         = mkName "IX_USER_NAME"
+                Columns      = [ userIndexLastNameAttrKey; userIndexFirstNameAttrKey ]
+                // EmailLower (isIncluded: true) is DROPPED at the boundary;
+                // V2's Columns carries only key columns per the OSSYS
+                // ADMIRE entry's "what V2 will explicitly NOT carry
+                // forward" section.
+                IsUnique     = false
+                IsPrimaryKey = false }
+          ] }
+    { Modules = [
+        { SsKey = appCoreModuleKey
+          Name  = mkName "AppCore"
+          Kinds = [ userKind ] } ] }
+
+[<Fact>]
+let ``differential: V1 index-bearing fixture parses with PK + unique + non-unique-with-include indexes`` () =
+    let result = parseSync (CatalogReader.SnapshotJson v1IndexFixture)
+    match result with
+    | Failure errors ->
+        Assert.Fail(
+            sprintf
+                "Expected Result.Success; got Result.Failure with %d error(s): %A"
+                errors.Length
+                errors)
+    | Success actual ->
+        Assert.Equal<Catalog>(expectedIndexCatalog, actual)
