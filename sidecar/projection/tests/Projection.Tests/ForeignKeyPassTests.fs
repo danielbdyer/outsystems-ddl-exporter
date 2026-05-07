@@ -313,3 +313,12 @@ let ``catalog passes through unchanged: structural by signature`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true true)
     let _ = ForeignKeyPass.run sampleCatalog policy Profile.empty
     Assert.Equal(3, (Catalog.allKinds sampleCatalog).Length)
+
+// ---------------------------------------------------------------------------
+// V1 divergences — explicit skip stubs naming intentional V2 differences
+// (CHAPTER_CLOSE.md §2.7; session 13 skip-stub completion).
+// ---------------------------------------------------------------------------
+
+[<Fact(Skip = "V1 ForeignKeyEvaluatorTests.TreatMissingDeleteRuleAsIgnore_AllowsCreation asserts that a successful FK decision (CreateConstraint=true) carries the rationale string TighteningRationales.DeleteRuleIgnore alongside PolicyEnableCreation. V2's structured-rationale ForeignKeyOutcome carries no rationale string on a successful decision — by codification (DECISIONS 2026-05-11) lineage events fire only on actual decisions and the outcome variant carries the structured reason, not a free-form string. The V1 audit-trail concern (a successful FK decision noting that delete-rule-missing was tolerated) belongs to the Diagnostics writer when it lands (DECISIONS 2026-05-06).")>]
+let ``V1 ForeignKey: DeleteRuleIgnore rationale on successful decision — SKIPPED (V2 divergence)`` () =
+    ()

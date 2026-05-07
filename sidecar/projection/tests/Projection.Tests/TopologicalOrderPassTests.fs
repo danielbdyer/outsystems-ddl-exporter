@@ -571,3 +571,12 @@ let ``post-symmetric-closure catalog is cyclic; emitters compose correctly`` () 
     // Symmetric closure introduced an inverse on Customer → Order
     // alongside the original Order → Customer; the FK graph is now cyclic.
     Assert.Equal(Alphabetical, result.Value.Mode)
+
+// ---------------------------------------------------------------------------
+// V1 divergences — explicit skip stubs naming intentional V2 differences
+// (CHAPTER_CLOSE.md §2.7; session 13 skip-stub completion).
+// ---------------------------------------------------------------------------
+
+[<Fact(Skip = "V1 EntityDependencySorterTests.SortByForeignKeys_ResolvesSanitizedEffectiveNames asserts that the sorter resolves FK references via per-table 'effective sanitized physical name' (the post-sanitization SQL identifier). V2's TopologicalOrder operates over SsKey identity (A1, A4) — sanitization is a NamingMorphism concern that runs before emission, not before ordering. The boundary case (sanitized-name collisions resolving to distinct SsKeys) is therefore reachable only when V2 decides to model multi-name physical realizations as part of the IR. Reserve the test name; promote to Behavioral when the IR refinement lands.")>]
+let ``V1 TopologicalOrder: resolves sanitized effective names — SKIPPED (V2 divergence)`` () =
+    ()
