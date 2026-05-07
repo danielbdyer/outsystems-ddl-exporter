@@ -2510,6 +2510,80 @@ will hold. Session 11's finding earns the codification its place
 across the rest of V2 — it is no longer a discipline being tested,
 it is a discipline being inherited.
 
+### 2026-05-13 (session 13 amendment) — softening the claim to its evidence
+
+**Status:** appended (forward-pointing refinement; original entry preserved)
+
+The claim above ("the codification's stability mark") is true for what
+the codification has been tested on. It is **softer than the entry's
+phrasing makes it sound** when read against the shape of the testing.
+Honest restatement:
+
+  **The codification has absorbed three real instances within a
+  coherent shape — per-record decisions keyed by a single SsKey,
+  evaluated synchronously, returning one decision per (record ×
+  intervention) pair.** The four core predictions held without forcing
+  a fourth refinement *under that shape*. The empirical claim is
+  bounded by the shape that was tested.
+
+The three instances tested:
+
+  - **NullabilityRules** — context `Attribute`; decision keyed by
+    `Attribute.SsKey`.
+  - **UniqueIndexRules / ForeignKeyRules** — context `Kind × Index`
+    or `Kind × Reference (× Catalog)`; decision keyed by `Index.SsKey`
+    or `Reference.SsKey`.
+  - **CategoricalUniquenessRules** — context `Attribute`; decision
+    keyed by `Attribute.SsKey`.
+
+All three are per-record (the unit of decision is a single IR record),
+single-key (one `SsKey` identifies the decision), synchronous (the
+strategy returns immediately; no async / IO / writer-effect wrapping),
+and single-decision-per-invocation (`evaluate` returns one
+`'decision`, not a list).
+
+**The genuine untested seams.** A heterogeneous fourth strategy that
+breaks any of those three shape constraints might surface a fourth
+refinement the codification cannot absorb without amendment:
+
+  - **Multi-key strategies.** A `JointDistribution` strategy keyed by
+    *two* `SsKey`s (e.g., FK pair statistics) — `'context` is two
+    records, the decision is a relation, the lineage event needs to
+    carry both keys. The current `Composition.fanOut` wraps a single
+    iteration over a single `'context` enumerator; multi-key would
+    likely need a different combinator.
+  - **Async or effectful strategies.** A strategy whose `evaluate`
+    needs to await an external probe, write a Diagnostics event, or
+    emit a `Result<'decision>` — the current
+    `StrategyEvaluator<'context, 'config, 'decision>` alias forecloses
+    on this by typing the return as `'decision` directly. A strategy
+    that returns `Async<'decision>` or `Result<'decision>` would force
+    either a second alias or a generalization.
+  - **Multi-decision-per-invocation strategies.** A strategy that
+    decides multiple things from one input (e.g., a strategy producing
+    both a Nullability decision *and* a UniqueIndex decision from the
+    same evidence) — the current shape returns one decision; producing
+    multiple would force the FanOutConfig to grow a `decisionList`
+    accumulator or the strategy to be split.
+
+**Disposition.** None of these heterogeneous-shape cases have a
+consumer today. Per the two-consumer threshold (`DECISIONS 2026-05-13
+— Emergent primitives`), we don't pre-absorb the refinement. The
+amendment exists to mark the boundary of the claim:
+
+  - "The codification has absorbed three instances within a coherent
+    shape" — confirmed empirically.
+  - "The codification will absorb the next instance" — confirmed
+    *if and only if* the next instance shares the shape; otherwise the
+    next instance is the codification's fourth real test, and the
+    test's outcome is empirical, not predicted.
+
+Future agents who read the original entry should also read this
+amendment. The original's framing was earned at session 12 against the
+evidence available; this amendment names the evidence's shape so the
+next instance — when it arrives — is recognized as a fourth test, not
+treated as a fourth confirmation by inertia.
+
 ## 2026-05-13 — Discrete-rationale DUs absorb continuous evidence by adding variants at meaningful inflection points
 
 **Status:** decided (recognized property of the rationale-DU pattern)
