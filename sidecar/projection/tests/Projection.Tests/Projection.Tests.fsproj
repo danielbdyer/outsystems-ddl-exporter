@@ -64,6 +64,7 @@
     <ProjectReference Include="..\..\src\Projection.Targets.Json\Projection.Targets.Json.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Targets.Distributions\Projection.Targets.Distributions.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.Sql\Projection.Adapters.Sql.fsproj" />
+    <ProjectReference Include="..\..\src\Projection.Adapters.Osm\Projection.Adapters.Osm.fsproj" />
   </ItemGroup>
 
 </Project>
