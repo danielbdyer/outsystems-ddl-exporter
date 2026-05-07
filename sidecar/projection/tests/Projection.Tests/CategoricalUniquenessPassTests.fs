@@ -230,7 +230,7 @@ let ``coexistence: ForeignKeyPass ignores CategoricalUniqueness interventions`` 
             [ ForeignKey            ("fk-1", fkCfg)
               CategoricalUniqueness ("cu-1", catUniqCfg) ]
     let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
-    Assert.All(lineage.Value.Decisions, fun d ->
+    Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("fk-1", d.InterventionId))
 
 // ---------------------------------------------------------------------------

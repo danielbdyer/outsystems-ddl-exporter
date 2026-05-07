@@ -57,7 +57,7 @@ let ``structural commitment: empty Policy yields emptyDecisionSet`` () =
     let lineage = ForeignKeyPass.run sampleCatalog Policy.empty Profile.empty
     Assert.Equal<ForeignKeyDecisionSet>(
         ForeignKeyRules.emptyDecisionSet,
-        lineage.Value)
+        ForeignKeyPass.decisionsOf lineage)
 
 [<Fact>]
 let ``structural commitment: empty Policy emits no lineage events`` () =
@@ -78,7 +78,7 @@ let ``structural commitment: a policy with only Nullability/UniqueIndex interven
             [ Nullability ("null-1", nullCfg)
               UniqueIndex ("uniq-1", uniqCfg) ]
     let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
-    Assert.Empty(lineage.Value.Decisions)
+    Assert.Empty((LineageDiagnostics.payload lineage).Decisions)
     Assert.Empty(lineage.Trail)
 
 [<Fact>]
@@ -89,7 +89,7 @@ let ``structural commitment: empty Tightening with non-empty other axes still yi
             Emission  = EmissionPolicy.combined
             Insertion = InsertNew }
     let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
-    Assert.Empty(lineage.Value.Decisions)
+    Assert.Empty((LineageDiagnostics.payload lineage).Decisions)
     Assert.Empty(lineage.Trail)
 
 // ---------------------------------------------------------------------------
@@ -102,20 +102,20 @@ let ``one intervention: yields one decision per reference across the catalog`` (
     let policy = policyWithIntervention "v1-style" (mkConfig true true true)
     let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
     let totalReferences = (allReferences sampleCatalog).Length
-    Assert.Equal(totalReferences, lineage.Value.Decisions.Length)
+    Assert.Equal(totalReferences, (LineageDiagnostics.payload lineage).Decisions.Length)
 
 [<Fact>]
 let ``one intervention: every decision references its intervention id`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true true)
     let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
-    Assert.All(lineage.Value.Decisions, fun d ->
+    Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("v1-style", d.InterventionId))
 
 [<Fact>]
 let ``one intervention: emits one Annotated lineage event per decision`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true true)
     let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
-    Assert.Equal(lineage.Value.Decisions.Length, lineage.Trail.Length)
+    Assert.Equal((LineageDiagnostics.payload lineage).Decisions.Length, lineage.Trail.Length)
     Assert.All(lineage.Trail, fun e ->
         match e.TransformKind with
         | Annotated _ -> ()
@@ -151,7 +151,7 @@ let ``two interventions: emit decisions for every (reference, intervention) pair
               ForeignKey ("beta",  cfg) ]
     let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
     let totalReferences = (allReferences sampleCatalog).Length
-    Assert.Equal(totalReferences * 2, lineage.Value.Decisions.Length)
+    Assert.Equal(totalReferences * 2, (LineageDiagnostics.payload lineage).Decisions.Length)
 
 [<Fact>]
 let ``two interventions: decisions are tagged with their producing intervention`` () =
@@ -162,11 +162,11 @@ let ``two interventions: decisions are tagged with their producing intervention`
               ForeignKey ("beta",  cfg) ]
     let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
     let alphaCount =
-        lineage.Value.Decisions
+        (LineageDiagnostics.payload lineage).Decisions
         |> List.filter (fun d -> d.InterventionId = "alpha")
         |> List.length
     let betaCount =
-        lineage.Value.Decisions
+        (LineageDiagnostics.payload lineage).Decisions
         |> List.filter (fun d -> d.InterventionId = "beta")
         |> List.length
     Assert.Equal(alphaCount, betaCount)
@@ -191,8 +191,8 @@ let ``coexistence: ForeignKeyPass ignores Nullability and UniqueIndex interventi
               ForeignKey  ("fk-1",   fkCfg) ]
     let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
     let totalReferences = (allReferences sampleCatalog).Length
-    Assert.Equal(totalReferences, lineage.Value.Decisions.Length)
-    Assert.All(lineage.Value.Decisions, fun d ->
+    Assert.Equal(totalReferences, (LineageDiagnostics.payload lineage).Decisions.Length)
+    Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("fk-1", d.InterventionId))
 
 [<Fact>]
@@ -236,7 +236,7 @@ let ``orphan handling: profile shows orphans + AllowNoCheckCreation=true ⇒ Scr
             ForeignKeys = [ mkReality orderRef.SsKey true 8L Succeeded ] }
     let lineage = ForeignKeyPass.run sampleCatalog policy profile
     let orderDecision =
-        lineage.Value.Decisions
+        (LineageDiagnostics.payload lineage).Decisions
         |> List.find (fun d -> d.ReferenceKey = orderRef.SsKey)
     Assert.Equal(
         ForeignKeyOutcome.EnforceConstraint (ScriptWithNoCheck 8L),
@@ -251,7 +251,7 @@ let ``T1: ForeignKeyPass is deterministic on the triple`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true true)
     let r1 = ForeignKeyPass.run sampleCatalog policy Profile.empty
     let r2 = ForeignKeyPass.run sampleCatalog policy Profile.empty
-    Assert.Equal<ForeignKeyDecisionSet>(r1.Value, r2.Value)
+    Assert.Equal<ForeignKeyDecisionSet>(ForeignKeyPass.decisionsOf r1, ForeignKeyPass.decisionsOf r2)
     Assert.Equal<LineageEvent list>(r1.Trail, r2.Trail)
 
 // ---------------------------------------------------------------------------
@@ -276,8 +276,8 @@ let ``contract: ForeignKeyPass is invariant under input permutation``
         if reverseModules then { withModules with Modules = List.rev withModules.Modules }
         else withModules
     let policy = policyWithIntervention "v1-style" (mkConfig true true true)
-    let direct   = (ForeignKeyPass.run sampleCatalog policy Profile.empty).Value
-    let permuted = (ForeignKeyPass.run (perturb sampleCatalog) policy Profile.empty).Value
+    let direct   = ForeignKeyPass.decisionsOf (ForeignKeyPass.run sampleCatalog policy Profile.empty)
+    let permuted = ForeignKeyPass.decisionsOf (ForeignKeyPass.run (perturb sampleCatalog) policy Profile.empty)
     direct = permuted
 
 // ---------------------------------------------------------------------------
@@ -315,10 +315,55 @@ let ``catalog passes through unchanged: structural by signature`` () =
     Assert.Equal(3, (Catalog.allKinds sampleCatalog).Length)
 
 // ---------------------------------------------------------------------------
-// V1 divergences — explicit skip stubs naming intentional V2 differences
-// (CHAPTER_CLOSE.md §2.7; session 13 skip-stub completion).
+// Activated V1 contract — V1 OpportunityBuilder's audit-trail concern for
+// successful FK decisions with a caveat (V1's
+// `(CreateConstraint=true, ScriptWithNoCheck=true)` shape). Activation
+// per the Skip-to-Behavioral pattern (DECISIONS 2026-05-10) once the
+// Diagnostics writer landed (session 14 commit 3) and the pass return-
+// type codification reached its third real test (session 16).
+//
+// **Note on the V1↔V2 mapping:** the session 13 Skip stub was named
+// against V1's `TreatMissingDeleteRuleAsIgnore_AllowsCreation` test,
+// which has no clean V2 mapping today (V2's `Reference.OnDelete` is a
+// closed DU with no missing/null variant, and `isIgnoreRule` always
+// returns false). The original Skip rationale assumed a V2 case that
+// is unreachable from V2 fixtures. Session 16's activation redirects
+// to V2's *actual* success-with-caveat variant —
+// `EnforceConstraint(ScriptWithNoCheck(orphanCount))` — which is the
+// genuine V2 equivalent of V1's "constraint created with audit-worthy
+// caveat" shape. The substantive concern (audit-trail visibility for
+// successful-but-caveated decisions) is honored; the V1↔V2 path is
+// the one V2's IR actually models.
 // ---------------------------------------------------------------------------
 
-[<Fact(Skip = "V1 ForeignKeyEvaluatorTests.TreatMissingDeleteRuleAsIgnore_AllowsCreation asserts that a successful FK decision (CreateConstraint=true) carries the rationale string TighteningRationales.DeleteRuleIgnore alongside PolicyEnableCreation. V2's structured-rationale ForeignKeyOutcome carries no rationale string on a successful decision — by codification (DECISIONS 2026-05-11) lineage events fire only on actual decisions and the outcome variant carries the structured reason, not a free-form string. The V1 audit-trail concern (a successful FK decision noting that delete-rule-missing was tolerated) belongs to the Diagnostics writer when it lands (DECISIONS 2026-05-06).")>]
-let ``V1 ForeignKey: DeleteRuleIgnore rationale on successful decision — SKIPPED (V2 divergence)`` () =
-    ()
+[<Fact>]
+let ``V1 ForeignKey: success-with-caveat decision (ScriptWithNoCheck) emits a Warning DiagnosticEntry`` () =
+    // Profile shows orphans + AllowNoCheckCreation=true ⇒ V2's
+    // success-with-caveat case: the constraint IS created (with the
+    // NoCheck flag) and the diagnostic notes the toleration.
+    let policy = policyWithIntervention "v1-style" (mkConfig true true true)
+    let profile =
+        { Profile.empty with
+            ForeignKeys = [ mkReality orderRef.SsKey true 8L Succeeded ] }
+    let lineage = ForeignKeyPass.run sampleCatalog policy profile
+
+    // Decision side: confirm the orderRef decision is
+    // EnforceConstraint(ScriptWithNoCheck _).
+    let decisions = (ForeignKeyPass.decisionsOf lineage).Decisions
+    let orderDecision =
+        decisions |> List.find (fun d -> d.ReferenceKey = orderRef.SsKey)
+    match orderDecision.Outcome with
+    | ForeignKeyOutcome.EnforceConstraint (ScriptWithNoCheck _) -> ()
+    | other -> Assert.Fail(sprintf "Expected EnforceConstraint(ScriptWithNoCheck _), got %A" other)
+
+    // Diagnostic side: the orderRef decision produced one Warning
+    // entry with the success-with-caveat code prefix.
+    let entries = LineageDiagnostics.entries lineage
+    let orderEntry =
+        entries |> List.find (fun e -> e.SsKey = Some orderRef.SsKey)
+    Assert.Equal(Warning, orderEntry.Severity)
+    Assert.Equal("foreignKey", orderEntry.Source)
+    Assert.Equal("tightening.foreignKey.scriptWithNoCheck", orderEntry.Code)
+    Assert.True(orderEntry.Metadata.ContainsKey "interventionId")
+    Assert.Equal("v1-style", orderEntry.Metadata.["interventionId"])
+    Assert.Contains("NOCHECK", orderEntry.Message)
