@@ -980,3 +980,136 @@ let ``differential: V1 index-bearing fixture parses with PK + unique + non-uniqu
                 errors)
     | Success actual ->
         Assert.Equal<Catalog>(expectedIndexCatalog, actual)
+
+// ---------------------------------------------------------------------------
+// Static-entity fixture (session 24 — sixth slice in the OSSYS arc; last
+// substantive slice in chapter 2).
+//
+// Trace-before-fixture finding (V2-boundary-discipline class). V1's SQL
+// extraction at `src/AdvancedSql/outsystems_metadata_rowsets.sql:929`
+// emits `isStatic = (DataKind = 'staticEntity')`. V1's JSON projection
+// at `src/Osm.Pipeline/SqlExtraction/SnapshotJsonBuilder.cs:207` writes
+// it as `"isStatic": <bool>` on the entity. V2's adapter already maps
+// `isStatic: true` → `Modality = [Static []]` at `CatalogReader.fs:578`;
+// the implementation has shipped since session 18 but no fixture has
+// covered it (the five prior fixtures all carried `isStatic: false`).
+// This slice closes that gap.
+//
+// **Empty population is intentional.** The OSSYS adapter's
+// responsibility ends at the modality flag. Static-entity *population*
+// data (the rows of the lookup table) flows through a separate V1
+// extraction pipeline (`static-entities.*.json`) and arrives at V2 via
+// `Projection.Adapters.Sql/Static.attachStaticPopulations`, which
+// composes onto a Catalog that already carries `Static []` markers.
+// The split mirrors V1's own extraction split — model JSON carries
+// the schema-shape fact; static-data JSON carries the population. The
+// OSSYS adapter must produce `[Static []]` (empty population) so the
+// downstream Static adapter has the marker to fill against.
+//
+// Fixture: one entity (Country) — a typical lookup table — with two
+// attributes (Id PK + Code). `isStatic: true`. No references; no
+// indexes. The minimal shape that exercises the modality flag.
+// ---------------------------------------------------------------------------
+
+let private v1StaticEntityFixture : string =
+    """{
+  "exportedAtUtc": "2026-05-20T00:00:00.0000000+00:00",
+  "modules": [
+    {
+      "name": "AppCore",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "Country",
+          "physicalName": "OSUSR_APPCORE_COUNTRY",
+          "isStatic": true,
+          "isExternal": false,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null, "precision": null, "scale": null, "default": null,
+              "isMandatory": true, "isIdentifier": true, "isAutoNumber": true, "isActive": true,
+              "isReference": 0,
+              "refEntityId": null, "refEntity_name": null, "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null, "reference_hasDbConstraint": 0,
+              "external_dbType": null, "physical_isPresentButInactive": 0
+            },
+            {
+              "name": "Code",
+              "physicalName": "CODE",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 8, "precision": null, "scale": null, "default": null,
+              "isMandatory": true, "isIdentifier": false, "isAutoNumber": false, "isActive": true,
+              "isReference": 0,
+              "refEntityId": null, "refEntity_name": null, "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null, "reference_hasDbConstraint": 0,
+              "external_dbType": null, "physical_isPresentButInactive": 0
+            }
+          ],
+          "relationships": [],
+          "indexes": [],
+          "triggers": []
+        }
+      ]
+    }
+  ]
+}"""
+
+let private countryKindKey     = mkKey "OS_KIND_AppCore_Country"
+let private countryIdAttrKey   = mkKey "OS_ATTR_AppCore_Country_Id"
+let private countryCodeAttrKey = mkKey "OS_ATTR_AppCore_Country_Code"
+
+let private expectedStaticEntityCatalog : Catalog =
+    let countryKind : Kind =
+        { SsKey    = countryKindKey
+          Name     = mkName "Country"
+          Origin   = OsNative
+          // The static-entity translation rule (session 24): V1
+          // `isStatic: true` → V2 `Modality = [Static []]`. Empty
+          // population is intentional — the OSSYS adapter's
+          // responsibility ends at the modality flag; populations
+          // flow through `Projection.Adapters.Sql/Static.fs`
+          // separately.
+          Modality = [ Static [] ]
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_COUNTRY" }
+          Attributes = [
+              { SsKey        = countryIdAttrKey
+                Name         = mkName "Id"
+                Type         = Integer
+                Column       = { ColumnName = "ID"; IsNullable = false }
+                IsPrimaryKey = true
+                IsMandatory  = true }
+              { SsKey        = countryCodeAttrKey
+                Name         = mkName "Code"
+                Type         = Text
+                Column       = { ColumnName = "CODE"; IsNullable = false }
+                IsPrimaryKey = false
+                IsMandatory  = true }
+          ]
+          References = []
+          Indexes    = [] }
+    { Modules = [
+        { SsKey = appCoreModuleKey
+          Name  = mkName "AppCore"
+          Kinds = [ countryKind ] } ] }
+
+[<Fact>]
+let ``differential: V1 static-entity fixture parses with Modality = [Static []]`` () =
+    let result = parseSync (CatalogReader.SnapshotJson v1StaticEntityFixture)
+    match result with
+    | Failure errors ->
+        Assert.Fail(
+            sprintf
+                "Expected Result.Success; got Result.Failure with %d error(s): %A"
+                errors.Length
+                errors)
+    | Success actual ->
+        Assert.Equal<Catalog>(expectedStaticEntityCatalog, actual)
