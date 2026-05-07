@@ -47,6 +47,7 @@
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />
     <Compile Include="RichProfilingEndToEndTests.fs" />
+    <Compile Include="DiagnosticsEndToEndTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

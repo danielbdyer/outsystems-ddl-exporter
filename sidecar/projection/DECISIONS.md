@@ -3308,3 +3308,260 @@ Diagnostics split when it lands; future writer compositions; deeply
 nested IR records) inherit the convention: provide named accessors
 at the consumer surface whenever the structural shape requires
 counted projections at call sites.
+
+## 2026-05-13 — Session 14 closing: Diagnostics writer landed, three operating disciplines emerged, OSSYS scoped
+
+**Status:** decided (session 14 closing marker; routes findings to session 15)
+**Context:** Session 14 was the Diagnostics writer chapter-open per
+session 13's recommendation (`DECISIONS 2026-05-13 — Session 13
+closing`) and the prior agent's read (`HANDOFF.md`). Twelve sessions
+of consistent demand made the deferral cheaper to cash out than to
+continue holding. The session was scoped as Diagnostics writer +
+first consumer + OSSYS ADMIRE stub + reflection. All four landed,
+plus three operating disciplines that emerged during the work.
+
+**What landed in session 14** (nine commits):
+
+| # | Scope | Verdict |
+|---|---|---|
+| 1 | Audit-discipline refinement DECISIONS entry — contract-vs-test audits must also walk contract-vs-implementation | landed; cashed out the session-13 audit-during-validation finding (priority-4 was feature-work, not test-work) before substantive work began |
+| 2 | UniqueIndex opportunity-stream Skip stub reserved | landed; reserved the contract name per the activation discipline (`DECISIONS 2026-05-10`) |
+| 3 | Diagnostics writer (`Projection.Core/Diagnostics.fs` + tests) | landed; `Diagnostics<'a>` parallel to `Lineage<'a>`; `LineageDiagnostics.bind` for the dual writer; closed three-way Severity (Info/Warning/Error); single channel for now per `DECISIONS 2026-05-06` |
+| 4 | Pass return-type codification DECISIONS entry (with preserved false start) | landed; the sibling-function instinct named alongside the chosen path so future agents recognize the temptation |
+| 5 | UniqueIndexPass.run migrated to `Lineage<Diagnostics<UniqueIndexDecisionSet>>` + named accessors + Skip-to-Behavioral activation | landed; ~14 test sites migrated mechanically; the V1 OpportunityBuilder.TryCreate contract activated as 3 [<Fact>] tests |
+| 6 | Named-accessor DECISIONS entry (smell-fix codification) | landed; the `lineage.Value.Value` smell surfaced during commit 5; helpers added before commit shipped; discipline codified |
+| 7 | CLAUDE.md (navigation + operating-discipline index + programming-style center target) | landed; meta-document over the canonical surfaces; substantive entries continue to land in DECISIONS |
+| 8 | OSSYS catalog adapter ADMIRE stub | landed; the undocumented production boundary (`CHAPTER_CLOSE.md §2.10`) made explicit; implementation deferred to a substantive multi-session arc |
+| 9 | This entry — session 14 closing reflection | landed |
+
+**Test baseline:** 616 passed, 9 skipped, 625 total (was 585/3/588
+at chapter close after session 13; net +31 tests, of which 5 were
+end-to-end milestone, 9 were Diagnostics-writer unit tests, 3 were
+UniqueIndex Skip activation, 3 were named-accessor structural
+tests, plus migration-related additions). Build green; no warnings
+beyond the pre-existing nullness warning in
+`DistributionsEmitterTests.fs:126`.
+
+### Did the writer's codification carry refinements?
+
+Yes. Three operating disciplines emerged during the work — none
+were on the agenda; all three followed the same pattern (surfaced
+during substantive work; named with false start preserved;
+substantive work continued under the new discipline before the
+commit shipped). The codification's first real test produced the
+same kind of refinements the strategy layer's first real test did
+at session 8 (`DECISIONS 2026-05-11 — Strategy-layer codification:
+empirical verdict after the fourth instance` carried three
+refinements). The pattern repeats: novel infrastructure validated
+under pressure produces refinements during validation, and the
+audit-during-validation discipline catches them.
+
+| Refinement | Surfaced during | Disposition |
+|---|---|---|
+| **Pass return-type codification** — passes return `Lineage<'output>` when they produce only decisions; `Lineage<Diagnostics<'output>>` when they produce decisions plus observer-relevant findings | First-consumer activation (commit 5) | DECISIONS entry committed before code (commit 4); preserves the sibling-function false start (closed-DU discipline mis-cited for return-type generalization); applies to all future passes that grow diagnostic emission |
+| **Named accessors for stacked types** — provide module-level accessors when nested access loses self-description | Test-site migration (commit 5) | Helpers added during commit 5; DECISIONS entry committed afterward (commit 6); the smell test ("would a reader need the type definition open in another window?") generalizes across stacked-type designs |
+| **Audit-discipline refinement** — contract-vs-test audits must also walk contract-vs-implementation | Session 13's TopologicalOrderPass finding (priority-4 was feature-work) | DECISIONS entry committed before substantive work began (commit 1); names the four-row classification table (test×impl); mandates fresh-eye walk at chapter close |
+
+The first two refine the architectural codification (passes and
+their consumer surfaces); the third refines the chapter-close audit
+protocol. All three are now load-bearing.
+
+### Did Severity want to be a closed DU or a more open shape?
+
+Closed three-way (`Info | Warning | Error`) held under session 14's
+testing. V1 uses two-way (`Info | Warning`); V2 added `Error` so
+invariant-violation entries have a structural place rather than
+being misclassified Warnings consumers re-discriminate. The first
+consumer (UniqueIndex opportunity-stream) emits `Warning`
+exclusively — `Info` and `Error` have no V2 use today. The
+"add variants at meaningful inflection points" discipline (`DECISIONS
+2026-05-13 — Discrete-rationale DUs`) suggests deferring further
+refinement until evidence forces it.
+
+A possible future refinement: a `Severity` band for "operator must
+review before applying" (distinct from `Error` which is invariant
+violation; distinct from `Warning` which is "the operator should
+review"). The OSSYS catalog adapter's parser warnings (e.g., "fell
+back to string coercion for an unmapped type") might want a
+sub-`Warning` band that downstream consumers route differently.
+Surface when the OSSYS adapter lands; don't pre-decide.
+
+The three-channel split (operator/auditor/developer per the
+constitution) remains deferred. The single-channel writer is
+sufficient at the first consumer; the channel split costs nothing
+to defer because the `Source` field already routes consumers by
+producer.
+
+### Did the Lineage × Diagnostics composition surface tension?
+
+Two tensions, both addressed:
+
+  1. **The doubled `.Value.Value` access pattern** at consumer
+     sites. Resolved by `LineageDiagnostics.payload`,
+     `LineageDiagnostics.entries`, and `LineageDiagnostics.diagnostics`
+     plus domain shortcuts like `UniqueIndexPass.decisionsOf`.
+     Codified in the named-accessor DECISIONS entry.
+  2. **The return-type vs sibling-function decision** for
+     UniqueIndexPass. Resolved by the pass return-type codification:
+     the type signature names what the function produces; sibling
+     functions fragment that and accumulate vestigial-by-construction
+     `*WithDiagnostics` halves across passes. Codified in the pass
+     return-type DECISIONS entry.
+
+No tension at the algebra level. `LineageDiagnostics.bind` threads
+both trails predictably; the dual writer's monad laws hold; both
+trails concatenate chronologically per A24-equivalent. The composition
+is straightforward — if anything, simpler than the strategy-layer
+codification's `FanOutConfig` machinery (which has four type
+parameters; `LineageDiagnostics` has one).
+
+### Findings beyond the brief
+
+  1. **The Skip-to-Behavioral activation pattern from `DECISIONS
+     2026-05-10` worked end-to-end as predicted.** Reserved the
+     contract name in commit 2 (Skip stub); landed the gating
+     dependency in commit 3 (writer); activated in commit 5 (Skip →
+     3 [<Fact>] tests asserting the contract). The pattern is
+     mechanical when the gating dependency is a structural
+     primitive; expect future activations of NullabilityPass V1
+     #6/#7 and ForeignKey DeleteRuleIgnore to follow the same
+     shape.
+
+  2. **CLAUDE.md as a navigation document rather than a substantive
+     surface works.** The Operating disciplines table makes
+     cross-cutting practices discoverable from a first-read
+     posture without competing with DECISIONS as a substantive
+     surface. The Programming style section captures the
+     gravitational center; new code lands inside it by default.
+     Future agents who only read CLAUDE.md before opening code
+     should still produce code that respects the discipline; the
+     test will be a future fresh agent's read-through.
+
+  3. **The audit-during-validation discipline produced three
+     substantive paydowns this session.** Two architectural (pass
+     return-type, named accessors); one meta-architectural (audit
+     discipline refinement). The pattern noted in
+     `CHAPTER_CLOSE.md §5` ("five paydowns across sessions 4, 5, 7,
+     8, 11") extends; session 14 added three more in a single
+     session. This is the discipline working faster than expected,
+     not slower.
+
+  4. **The session 14 cadence — discipline DECISIONS entries
+     before the code that applies them — proved valuable.** The
+     pass return-type codification (commit 4) preceded the
+     migration (commit 5); the audit-discipline refinement (commit
+     1) preceded the substantive work; the named-accessor
+     discipline (commit 6) followed the migration but the helpers
+     themselves were added before the migration commit shipped.
+     Recording the discipline near where it applies — and
+     preserving the false start — pays compound interest.
+
+  5. **The test ripple from the return-type change was small and
+     mechanical.** ~14 sites in UniqueIndexPassTests; 1 each in
+     three sibling test files. Mechanical sed-style migration;
+     named accessors made the second pass land cleaner. The cost
+     of return-type changes is small enough that the
+     sibling-function instinct is essentially never the right
+     answer for V2's pass shape.
+
+### Forward signals for session 15
+
+  1. **Diagnostics writer's second consumer.** Three Skip stubs
+     gated on the writer:
+       - `V1NullabilityParityTests.fs` #6 — Analyze creates
+         remediation opportunity (Nullability)
+       - `V1NullabilityParityTests.fs` #7 — Analyze skips opportunity
+         for intentional nullability (Nullability)
+       - `ForeignKeyPassTests.fs` — DeleteRuleIgnore rationale on
+         successful decision (ForeignKey)
+     Activating Nullability #6/#7 together is the natural next
+     move (single pass; two stubs share the gating dependency;
+     same activation pattern as UniqueIndex). NullabilityPass.run
+     migrates to `Lineage<Diagnostics<NullabilityDecisionSet>>`
+     per the pass return-type codification; its test sites update
+     mechanically; #6 and #7 promote from Skip to [<Fact>].
+
+  2. **OSSYS catalog adapter implementation.** Substantive
+     multi-session arc per the ADMIRE stub (commit 8). Could open
+     in session 15 if the implementing agent prefers larger scope;
+     could wait until session 16+ if the smaller activation work
+     comes first.
+
+  3. **ForeignKeyPass DeleteRuleIgnore activation.** Same pattern
+     as UniqueIndex; smaller scope (one stub). Could be session 15
+     if Nullability is too ambitious; could be session 16+
+     otherwise.
+
+  4. **OrderingPolicy axis + junction heuristic.** Still deferred
+     from session 13's finding. The two reserved Skip stubs in
+     `TopologicalOrderPassTests.fs` continue to wait. Lower priority
+     than the Diagnostics activation work; could reasonably wait
+     for session 16+.
+
+  5. **Faker emitter.** Still deferred per `CHAPTER_CLOSE.md §4
+     priority 8` and the two-evidence-types-only constraint. No
+     session-14 finding changed this; defer until either a third
+     evidence type lands or a use case forces proceeding with two.
+
+  6. **Three-channel Diagnostics split** continues deferred. No
+     consumer has demanded operator/auditor/developer
+     differentiation yet; the single-channel writer is sufficient
+     at the first consumer. Surface when a real consumer demands
+     it.
+
+The (1) → (2) ranking matches the prior agent's read across two
+sessions of orientation and substantive work. The activation work
+compounds quickly (each Skip stub activated is one less gating
+dependency in `CHAPTER_CLOSE.md §2.5`'s V1-outputs-without-V2
+backlog); the OSSYS adapter is bigger in scope but unblocks every
+production V2 use case. Session 15 should pick one as opening
+direction; the other waits.
+
+### Disposition I inherited and am passing forward
+
+  - **Audit during validation.** Three paydowns this session; the
+    discipline produces findings faster than the work consumes
+    them. Operating it remains the highest-leverage inheritance.
+  - **Document the false starts.** Session 14's two architectural
+    DECISIONS entries (pass return-type, named accessors) both
+    preserved the wrong rule alongside the right one. Future
+    agents recognize the temptation when it recurs.
+  - **Disciplines emerge from the work.** Operating
+    audit-during-validation produces operating disciplines as
+    side effects. The session-14 DECISIONS entries were not
+    planned; the session's substantive work surfaced them. This is
+    expected, not coincidental.
+  - **Discipline DECISIONS entries pair with code commits, not
+    follow them.** Recording the discipline near where it applies
+    (commit 4 before commit 5; commit 1 before substantive work)
+    makes the discipline visible to anyone reviewing the commit
+    history; following the code with a separate discipline commit
+    risks the discipline being invisible to the work that produced
+    it.
+  - **CLAUDE.md as navigation, not substance.** The new file
+    points at canonical surfaces and indexes operating disciplines
+    without becoming a fifth canonical surface. Substantive
+    entries continue to land in DECISIONS.
+
+### Closing
+
+Session 14 was the Diagnostics writer chapter-open. The writer's
+codification carried three refinements during validation — exactly
+the pattern session 8's strategy-layer codification produced.
+The first consumer activated mechanically per the Skip-to-Behavioral
+discipline. The OSSYS catalog adapter is now nameable as a
+substantive multi-session arc; session 15 inherits the option
+between extending the writer's consumer surface (Nullability,
+ForeignKey activations) or opening the OSSYS implementation chapter.
+
+The test baseline grew from 588 to 625 over sessions 13 and 14.
+The substantive infrastructure grew by one new module (Diagnostics)
+plus one new ADMIRE entry (OSSYS adapter stub). The disciplines
+grew by four (active-deferrals index from session 13; audit
+refinement, pass return-type, named accessors from session 14).
+The codebase is, by every measure, more honest about what it has
+done and what it has yet to do.
+
+Hold the spine.
+
+— Session 14 (the Diagnostics writer chapter-open)
