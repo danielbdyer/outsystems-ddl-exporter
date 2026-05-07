@@ -580,3 +580,30 @@ let ``post-symmetric-closure catalog is cyclic; emitters compose correctly`` () 
 [<Fact(Skip = "V1 EntityDependencySorterTests.SortByForeignKeys_ResolvesSanitizedEffectiveNames asserts that the sorter resolves FK references via per-table 'effective sanitized physical name' (the post-sanitization SQL identifier). V2's TopologicalOrder operates over SsKey identity (A1, A4) — sanitization is a NamingMorphism concern that runs before emission, not before ordering. The boundary case (sanitized-name collisions resolving to distinct SsKeys) is therefore reachable only when V2 decides to model multi-name physical realizations as part of the IR. Reserve the test name; promote to Behavioral when the IR refinement lands.")>]
 let ``V1 TopologicalOrder: resolves sanitized effective names — SKIPPED (V2 divergence)`` () =
     ()
+
+// ---------------------------------------------------------------------------
+// V2 contracts ADMIRE promises but V2 has not yet built — Skip stubs
+// reserve the test names so future implementation lands cleanly into
+// the named contract. (CHAPTER_CLOSE.md §4 priority 4; session 13
+// audit-during-validation finding: the priority-4 work is feature
+// implementation, not test addition. See session 13 closing DECISIONS
+// entry for the disposition.)
+//
+// Both stubs wait on infrastructure the IR does not yet carry:
+//   - Policy.fs has no Ordering axis carrying manual-cycle config.
+//   - TopologicalOrderPass version 3 implements Kahn + Tarjan +
+//     asymmetric-2-cycle resolver; no junction-table heuristic.
+//   - TopologicalOrder.OrderingMode declares JunctionDeferred but the
+//     pass never produces it.
+//
+// When OrderingPolicy + the junction heuristic land, replace the
+// Skip(...) attribute with [<Fact>] and implement the assertions.
+// ---------------------------------------------------------------------------
+
+[<Fact(Skip = "V2 contract reserved by ADMIRE.md (EntityDependencySorter row, V1 EntityDependencySorterTests:485-624). Awaits OrderingPolicy axis carrying manual-cycle configuration. Today V2's TopologicalOrderPass has no policy parameter; manual cycle override has no representation.")>]
+let ``V1 TopologicalOrder: skips auto-detection when manual cycles exist — RESERVED (V2 feature pending)`` () =
+    ()
+
+[<Fact(Skip = "V2 contract reserved by ADMIRE.md (EntityDependencySorter row, V1 EntityDependencySorterTests:714-843). Awaits the junction-table heuristic and OrderingPolicy.DeferJunctions flag. Today V2 declares OrderingMode.JunctionDeferred in the DU but TopologicalOrderPass never produces it; no heuristic detects bridge tables. ADMIRE flags 'junction-table heuristic false positives' as a real risk; the test name is reserved so the implementation lands behind a behavioral lock.")>]
+let ``V1 TopologicalOrder: defers junction tables when edges missing — RESERVED (V2 feature pending)`` () =
+    ()

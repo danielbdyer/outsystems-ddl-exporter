@@ -1201,10 +1201,19 @@ algebra/domain split that named the strategy layer (`DECISIONS
 and `TopologicalOrderPassTests.fs` exercise behavioral contract;
 `CycleResolutionTests.fs` covers the structural-strategy seam.
 Two V1 contracts ADMIRE flags as Behavioral V2 translations remain
-unimplemented as of session 12 (`SortByForeignKeys_SkipsAutoDetection
-WhenManualCyclesExist`, `SortByForeignKeys_DefersJunctionTablesWhen
-EdgesMissing`); both are addressed in session 13 (`CHAPTER_CLOSE.md
-§4 priority 4`).
+**features-not-yet-built** as of session 13 (`SortByForeignKeys_
+SkipsAutoDetectionWhenManualCyclesExist`,
+`SortByForeignKeys_DefersJunctionTablesWhenEdgesMissing`). Session 13
+audit-during-validation finding: `CHAPTER_CLOSE.md §4 priority 4`
+listed these as missing tests, but V2 lacks the supporting IR — there
+is no `OrderingPolicy` axis carrying manual-cycle config and no
+junction-table heuristic in `TopologicalOrderPass v3`
+(`OrderingMode.JunctionDeferred` is declared in the DU but never
+produced). Session 13 reserved the contract names via Skip stubs in
+`TopologicalOrderPassTests.fs` so the implementation lands behind a
+behavioral lock when the supporting IR ships. Implementation itself
+is substantive next-chapter work, larger than the original priority-4
+ranking suggested.
 
 ### What it does (algebraic terms)
 
