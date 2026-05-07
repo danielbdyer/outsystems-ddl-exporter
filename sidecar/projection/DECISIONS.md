@@ -3686,6 +3686,23 @@ finding (either "clean" or a remediation entry); items marked
      entries by date. New disciplines added during the chapter
      are reflected; deprecated disciplines are removed or marked
      superseded.
+  8. **V1-input-envelope walk** (added at session 25 chapter-2
+     close per the audit's recommendation; applies to V1↔V2
+     translation chapters and chapters where a structured input
+     envelope has comprehensive content). Walk the input envelope
+     field-by-field at chapter close to identify silent drops not
+     yet on the won't-carry-forward list. The trace-before-fixture
+     pattern catches per-slice questions; the envelope walk
+     catches chapter-level coverage gaps. For the OSSYS chapter,
+     the walk is `SnapshotJsonBuilder.cs` field-by-field against
+     the won't-carry-forward list in ADMIRE plus the running
+     translation-rules amendments. For future V1↔V2 chapters
+     (DACPAC, OData, etc.), the walk is the analogous V1-side
+     envelope-projection code. Findings categorize into the
+     three-class typology (lossiness / boundary-discipline /
+     alternative-IR-surface; see `DECISIONS 2026-05-21 — Chapter
+     2 close: alternative-IR-surface class`). See the session-25
+     amendment below for the discipline's origin and rationale.
 
 ### Informal items
 
@@ -3738,6 +3755,63 @@ will likely refine across chapters — items will be added, items
 will be marked informal-now-load-bearing as the discipline matures.
 Each refinement updates this entry or appends a successor; the
 discipline is alive, not frozen.
+
+#### 2026-05-21 (session 25 amendment) — V1-input-envelope walk added as load-bearing item 8
+
+Subagent #3's chapter-2-close audit (OSSYS chapter completeness)
+surfaced that the chapter grew its won't-carry-forward list
+opportunistically under fixture pressure (V2-IR shape coverage)
+rather than under V1-input pressure (walking
+`SnapshotJsonBuilder.cs` field-by-field). Six fixtures surfaced
+six rule-bearing surfaces, but the V1 input envelope contains
+additional information envelopes — `attributes[].onDisk`,
+`attributes[].default`, `module.isSystem`/`isActive`,
+`refEntity_isActive`, and others — that no fixture has yet
+forced the chapter to consider. The trace-before-fixture
+discipline caught what mattered for each slice; it did not
+walk V1's full envelope at chapter open or chapter close.
+
+Subagent #3's diagnosis: this is a different discipline gap
+from the implicit-coverage finding session 24 surfaced. Session
+24 was about V2-implementation-paths-not-fixture-exercised; this
+is about V1-input-envelope-not-walked. The won't-carry-forward
+list has never been audited against the V1 envelope projection
+code field-by-field until subagent #3 performed that walk at
+chapter close.
+
+**The pattern parallels session 24's chapter-mid-audit
+refinement:** a missing audit dimension surfaces during the
+audit's own operation. The codebase's audit disciplines are
+growing through their own use — the audits are not just
+artifacts but *generative mechanisms producing further audit
+disciplines*. Session 24 added active-deferrals scan to the
+chapter-mid-audit; session 25 adds V1-envelope walk to the
+chapter-close ritual. The meta-pattern (audits generating
+disciplines) is the chapter-2 closing arc's most distinctive
+intellectual feature.
+
+**Decision: V1-input-envelope walk is load-bearing item 8 on
+the chapter-close ritual.** Applies to V1↔V2 translation
+chapters and chapters where a structured input envelope has
+comprehensive content. Walks the V1-side envelope-projection
+code field-by-field. Findings categorize into the three-class
+typology (lossiness / boundary-discipline / alternative-IR-
+surface).
+
+**The ritual is now eight items.** Item 8 is the chapter-2
+contribution; it is structurally a chapter-close-only item
+(differs from the other seven in being chapter-class-conditional
+rather than chapter-class-universal).
+
+**Forward-looking.** Subsequent V1↔V2 translation chapters
+(DACPAC adapter chapter; OData adapter chapter; future input
+sources) inherit item 8 as a chapter-close obligation. The
+chapter-3 canary chapter is not a translation chapter (it's a
+deployment-validation chapter); item 8 is conditional and does
+not apply there. Item 8's applicability is judged at chapter
+open: if the chapter's structural shape is "consume V1 input;
+emit V2 output," item 8 applies; if the chapter is V2-internal
+or V2-to-external, item 8 does not.
 
 The general lesson generalizes the audit-during-validation pattern:
 **recurring audits codify into rituals; ad-hoc investigations don't
