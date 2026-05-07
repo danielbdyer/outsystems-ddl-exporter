@@ -4008,3 +4008,199 @@ The general lesson generalizes the audit-during-validation pattern:
 compound.** Rituals do — once codified, future iterations follow
 the named pattern, contribute their findings, and refine the
 ritual itself based on what surfaces.
+
+## 2026-05-14 — Session 15 reflection: writer codification's second real test, rent-paying check on session-14 post-reflection disciplines
+
+**Status:** decided (session 15 closing reflection; smaller in scope than session 14 by design)
+**Context:** Session 15's job was the Diagnostics writer's
+second-consumer activation: NullabilityPass migrates to
+`Lineage<Diagnostics<NullabilityDecisionSet>>`; the V1 #6/#7 Skip
+stubs from V1NullabilityParityTests flip to `[<Fact>]`. Smaller
+than session 14 by design (Diagnostics writer was the chapter-open;
+this is the second-consumer activation that earns the codification
+its first piece of empirical evidence beyond its central case). Six
+commits planned; six commits landed, all on the substantive work.
+
+**What landed in session 15** (six commits):
+
+| # | Scope | Verdict |
+|---|---|---|
+| 1 | CLAUDE.md maintenance: cross-reference F#-feature-surface deferrals into Active deferrals index + codify chapter-close ritual | landed; addresses both maintenance concerns from session 14's operator-led reflection |
+| 2 | NullabilityPass.run migrates to `Lineage<Diagnostics<NullabilityDecisionSet>>` + opportunity-entry mapping for the three relevant outcomes | landed; ~13 test sites across 9 files migrated mechanically |
+| 3 | Activate V1 #6 / V1 #7 Skip stubs (Skip-to-Behavioral) | landed; both passing; the two stubs reserved at session 13 commit 4 are now active contracts |
+| 4 | End-to-end milestone: Nullability + UniqueIndex opportunity streams together | landed; 3 new tests; cross-pass independence confirmed; T1 byte-determinism extended to Nullability dual writer |
+| 5 | This entry — session 15 reflection | landed |
+
+(Four substantive commits + the maintenance commit + this
+reflection = six total. Session 14 closing's recommendation to
+keep session 15 to four-to-six commits held; the work shaped the
+cadence.)
+
+**Test baseline:** 621 passed / 7 skipped / 628 total. Net since
+session-14 close (616/9/625): +5 passed, -2 skipped, +3 total. The
+two activations turned Skip-with-empty-body into Fact-with-real-
+assertions; the three end-to-end tests are net-new.
+
+### Did the writer's codification require any refinement?
+
+**No.** The codification at session 14 close had three predictions:
+
+  1. The pass return-type codification (`Lineage<'output>` vs
+     `Lineage<Diagnostics<'output>>`) would absorb the second pass
+     migration mechanically.
+  2. The named-accessor discipline (`LineageDiagnostics.payload`,
+     `.entries`; domain shortcuts like `Pass.decisionsOf`) would
+     keep call sites readable through the migration.
+  3. The Skip-to-Behavioral activation pattern (`DECISIONS
+     2026-05-10`) would be mechanically repeatable for the
+     second-consumer activation.
+
+All three held. No refinement to the writer was required;
+diagnostic emission was a straightforward mapping from outcome
+variants to entries; the test ripple was mechanical (~13 sites,
+all sed-style migrations); the Skip stubs flipped cleanly. The
+codebase's gravitational center absorbed the second pass without
+strain.
+
+**An honest note on what's NOT proven yet.** Session 11's
+strategy-layer codification reached its stability mark at the
+*third* real test (`DECISIONS 2026-05-13 — Strategy-layer
+codification reaches stability mark`); the writer's codification
+has now had two. The codification has *not* earned a stability
+claim by N=2; the third real test (likely ForeignKey
+DeleteRuleIgnore activation in session 16+) is what would. Any
+claim that "the writer's codification holds" is currently bounded
+by what's been tested — UniqueIndex's per-index granularity and
+Nullability's per-attribute granularity, both within the
+"per-record decision keyed by single SsKey" shape that the
+session-13 stability-mark amendment named as the tested seam.
+
+### Rent-paying check on session-14 post-reflection disciplines
+
+The session 14 closing addendum named two reflection-driven
+disciplines that emerged after the substantive work and flagged
+that they should be watched for whether they earn their keep:
+**F#-feature-surface mapping** (CLAUDE.md commit 10 of session 14)
+and **anticipation-vs-speculation refinement** (DECISIONS commit
+11 of session 14). Session 15's rent-paying check:
+
+  - **F#-feature-surface mapping.** Did session 15 reach for a
+    feature outside the gravitational center? No instances. The
+    activation work used closed DUs, smart constructors,
+    `Result<'a>`, the named-accessor helpers, sed-style migration,
+    Skip-to-Behavioral. Nothing prompted a question like "should
+    we use a computation expression here?" or "should
+    NullabilityPass return `Async<...>` for a future probe-await
+    case?" The mapping was descriptive of what the codebase uses;
+    session 15's work reaffirmed the description without
+    consulting the section explicitly. Verdict: **the section did
+    not actively shape session 15** — the patterns it documents
+    are deeply enough internalized that session-15 work followed
+    them without needing the reference. Rent-paying status:
+    **descriptive paid as documentation; not yet paid as
+    behavior-shaping.** The next agent's session-opening read may
+    paid more rent if it averts a misstep; today the section is
+    decoration that may earn its keep later.
+
+  - **Anticipation-vs-speculation refinement.** Did session 15
+    encounter a case where the three positions (A/B/C) helped?
+    Indirectly — the chapter-close ritual entry (commit 1) had a
+    moment of "should the chapter-close-ritual be DECISIONS-only
+    or have a CLAUDE.md pointer?" The choice (both, with DECISIONS
+    as the load-bearing surface) wasn't framed in A/B/C terms
+    explicitly, but the underlying logic was Position B: the
+    DECISIONS entry is the substantive abstraction; the CLAUDE.md
+    pointer is the structural alignment that lets future agents
+    discover the discipline from a first-read posture. The
+    refinement helped clarify the choice; the chapter-close ritual
+    landed cleanly. Verdict: **the refinement paid rent by
+    sharpening one judgment call** — minor, but real. Future tests
+    of the refinement (the OSSYS adapter's ICatalogReader Position
+    B, when that chapter opens) will be the bigger validations.
+
+  - **Chapter-close ritual codification (session 15 commit 1).**
+    Itself a discipline produced during reflection on session 14;
+    rent-paying check is whether the next chapter close runs the
+    ritual cleanly. That happens at chapter close, not in session
+    15. Marker for the future agent: when chapter 2 closes, the
+    ritual's seven load-bearing items must be executed and the
+    result recorded.
+
+### Findings beyond the brief
+
+  - **The named-accessor discipline absorbed the migration
+    mechanically.** Test sites went from `lineage.Value.Decisions`
+    to `(LineageDiagnostics.payload lineage).Decisions` via sed;
+    the `decisionFor` helper in V1NullabilityParityTests updated
+    its type signature; no manual rewrites needed. The discipline
+    paid rent the first time it was tested.
+
+  - **The closed-DU exhaustiveness check on `opportunityEntry`
+    surfaced one alignment moment.** When mapping the three
+    Nullability outcomes (`EnforceNotNull`, `KeepNullable`,
+    `RequireOperatorApproval`) plus their inner reasons to
+    diagnostic entries, F# exhaustiveness forced explicit handling
+    of `KeepNullable(OperatorOverride)`, `KeepNullable(NoTighteningSignal)`,
+    and `KeepNullable(RelaxedUnderEvidence)` separately. This was
+    the discipline working as predicted: the type system caught
+    the case discrimination at compile time. The audit dividend
+    was that `RelaxedUnderEvidence` deserved its own diagnostic
+    (audit-worthy: relaxation chosen under evidence) — a finding
+    that wasn't on the original "V1 OpportunityBuilder" mapping
+    list, surfaced because the closed-DU exhaustiveness made me
+    consider the variant explicitly.
+
+  - **The two-consumer rule for emergent primitives (`DECISIONS
+    2026-05-13`) implicitly held.** The opportunityEntry mapping
+    is now duplicated across UniqueIndexPass and NullabilityPass
+    (each has its own `opportunityEntry` private function with
+    similar shape). At N=2 the duplication is small enough that
+    extracting a primitive isn't worth the cost; if a third pass
+    grows the same shape, the abstraction earns its place.
+    Watching this is itself an instance of the discipline's
+    operating principle.
+
+### Forward signals for session 16
+
+  - **ForeignKey DeleteRuleIgnore activation** (the third
+    Diagnostics writer consumer). The Skip stub in
+    `ForeignKeyPassTests.fs` was reserved at session 13 commit 4
+    explicitly gated on the writer. Activation is the smallest
+    next move — one stub; one diagnostic emission; same shape as
+    UniqueIndex and Nullability. After this, the writer's
+    codification has had three real tests; the stability-mark
+    claim becomes earnable.
+  - **OSSYS adapter implementation chapter** opens whenever Danny
+    directs. Position B per the anticipation-vs-speculation
+    refinement; primary entry point shape `parse : string ->
+    Task<Result<Catalog>>`; ICatalogReader interface defers until
+    a second source materializes. Expected to be a multi-session
+    arc; opening is itself a substantive choice.
+  - **OrderingPolicy axis + junction heuristic, Faker, three-channel
+    Diagnostics split** continue deferred. No session-15 finding
+    changed this.
+
+### Disposition I inherited and am passing forward
+
+  - **The cadence holds.** Session 15 was smaller by design and
+    landed smaller by reality. Six commits, four substantive plus
+    maintenance plus reflection. The audit-during-validation
+    discipline produced one dividend (the `RelaxedUnderEvidence`
+    diagnostic addition); no new operating disciplines emerged
+    during the work. This is what a healthy mid-chapter session
+    looks like: substantive work, mechanical rendering, one or
+    two findings, no new disciplines on the agenda.
+  - **The maintenance-now-not-later discipline paid off.** The
+    chapter-close ritual codified at the start of session 15
+    (commit 1) addressed two concerns from session 14's
+    reflection. Future agents reading CLAUDE.md after a chapter
+    boundary will know the ritual exists.
+  - **The codification at N=2 is not yet at its stability mark.**
+    The third real test (likely ForeignKey DeleteRuleIgnore)
+    earns the claim; until then, "the codification holds" is true
+    for what's been tested but not yet a claim about the next
+    instance.
+
+Hold the spine.
+
+— Session 15 (the Diagnostics writer's second-consumer activation)
