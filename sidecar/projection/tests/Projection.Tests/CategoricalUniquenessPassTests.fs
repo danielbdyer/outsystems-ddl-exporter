@@ -217,7 +217,7 @@ let ``coexistence: UniqueIndexPass ignores CategoricalUniqueness interventions``
             [ UniqueIndex           ("uniq-1", uniqCfg)
               CategoricalUniqueness ("cu-1",   catUniqCfg) ]
     let lineage = UniqueIndexPass.run sampleCatalog policy Profile.empty
-    Assert.All(lineage.Value.Decisions, fun d ->
+    Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("uniq-1", d.InterventionId))
 
 [<Fact>]

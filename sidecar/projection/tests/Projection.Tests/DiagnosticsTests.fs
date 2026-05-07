@@ -145,27 +145,61 @@ let private lineageEvent (key: SsKey) (kind: TransformKind) =
 [<Fact>]
 let ``LineageDiagnostics.ofValue is empty in both trails`` () =
     let m = LineageDiagnostics.ofValue 42
-    Assert.Equal(42, m.Value.Value)
+    Assert.Equal(42, LineageDiagnostics.payload m)
     Assert.Empty(m.Trail)
-    Assert.Empty(m.Value.Entries)
+    Assert.Empty(LineageDiagnostics.entries m)
 
 [<Fact>]
 let ``LineageDiagnostics.ofLineage preserves the lineage trail`` () =
     let key = mkKey "k"
     let inner = Lineage.ofValueWith (lineageEvent key Touched) 1
     let dual = LineageDiagnostics.ofLineage inner
-    Assert.Equal(1, dual.Value.Value)
+    Assert.Equal(1, LineageDiagnostics.payload dual)
     Assert.Single(dual.Trail) |> ignore
-    Assert.Empty(dual.Value.Entries)
+    Assert.Empty(LineageDiagnostics.entries dual)
 
 [<Fact>]
 let ``LineageDiagnostics.ofDiagnostics preserves the diagnostics entries`` () =
     let e = entry "P" Info "c" "m"
     let inner = Diagnostics.ofValueWith e 1
     let dual = LineageDiagnostics.ofDiagnostics inner
-    Assert.Equal(1, dual.Value.Value)
+    Assert.Equal(1, LineageDiagnostics.payload dual)
     Assert.Empty(dual.Trail)
-    Assert.Equal<DiagnosticEntry list>([e], dual.Value.Entries)
+    Assert.Equal<DiagnosticEntry list>([e], LineageDiagnostics.entries dual)
+
+// Self-descriptive accessors for the dual writer. These tests use raw
+// record access deliberately — they verify the helpers project the
+// structure they claim. Other tests consume the helpers; reaching past
+// the helper to .Value.Value is the smell the helpers exist to
+// address.
+
+[<Fact>]
+let ``LineageDiagnostics.payload returns the deep value (raw structural assertion)`` () =
+    let dual = LineageDiagnostics.ofValue 42
+    Assert.Equal(dual.Value.Value, LineageDiagnostics.payload dual)
+    Assert.Equal(42, LineageDiagnostics.payload dual)
+
+[<Fact>]
+let ``LineageDiagnostics.entries returns the diagnostic entries (raw structural assertion)`` () =
+    let e1 = entry "P" Info "c1" "m1"
+    let e2 = entry "P" Warning "c2" "m2"
+    let dual =
+        LineageDiagnostics.ofValue 0
+        |> LineageDiagnostics.tellDiagnostic e1
+        |> LineageDiagnostics.tellDiagnostic e2
+    Assert.Equal<DiagnosticEntry list>(dual.Value.Entries, LineageDiagnostics.entries dual)
+    Assert.Equal<DiagnosticEntry list>([e1; e2], LineageDiagnostics.entries dual)
+
+[<Fact>]
+let ``LineageDiagnostics.diagnostics returns the inner Diagnostics (raw structural assertion)`` () =
+    let e = entry "P" Info "c" "m"
+    let dual =
+        LineageDiagnostics.ofValue 7
+        |> LineageDiagnostics.tellDiagnostic e
+    let diag = LineageDiagnostics.diagnostics dual
+    Assert.Equal(dual.Value, diag)
+    Assert.Equal(7, diag.Value)
+    Assert.Equal<DiagnosticEntry list>([e], diag.Entries)
 
 [<Fact>]
 let ``LineageDiagnostics.tellLineage appends a lineage event without touching diagnostics`` () =
@@ -212,9 +246,9 @@ let ``A24-equivalent: LineageDiagnostics.bind concatenates both trails chronolog
 
     let m2 = LineageDiagnostics.bind f m1
 
-    Assert.Equal(11, m2.Value.Value)
+    Assert.Equal(11, LineageDiagnostics.payload m2)
     Assert.Equal<LineageEvent list>([evt1; evt2], m2.Trail)
-    Assert.Equal<DiagnosticEntry list>([e1; e2], m2.Value.Entries)
+    Assert.Equal<DiagnosticEntry list>([e1; e2], LineageDiagnostics.entries m2)
 
 [<Fact>]
 let ``LineageDiagnostics.map preserves both trails`` () =
@@ -228,9 +262,9 @@ let ``LineageDiagnostics.map preserves both trails`` () =
         |> LineageDiagnostics.tellDiagnostic e
         |> LineageDiagnostics.map (fun n -> n * 2)
 
-    Assert.Equal(10, m.Value.Value)
+    Assert.Equal(10, LineageDiagnostics.payload m)
     Assert.Equal<LineageEvent list>([evt], m.Trail)
-    Assert.Equal<DiagnosticEntry list>([e], m.Value.Entries)
+    Assert.Equal<DiagnosticEntry list>([e], LineageDiagnostics.entries m)
 
 // ---------------------------------------------------------------------------
 // Structural commitment — DiagnosticEntry's SsKey field is option, so

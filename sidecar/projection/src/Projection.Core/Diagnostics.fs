@@ -191,3 +191,20 @@ module LineageDiagnostics =
     /// Append several Diagnostic entries.
     let tellDiagnostics (entries: DiagnosticEntry list) (m: Lineage<Diagnostics<'a>>) : Lineage<Diagnostics<'a>> =
         Lineage.map (Diagnostics.tellMany entries) m
+
+    /// The deep payload — the inner value after both writer layers
+    /// are stripped. Self-descriptive accessor for the doubly-nested
+    /// shape; replaces the `m.Value.Value` access pattern that requires
+    /// readers to count `Value` projections to know which writer they
+    /// land in.
+    let payload (m: Lineage<Diagnostics<'a>>) : 'a = m.Value.Value
+
+    /// All diagnostic entries from the inner Diagnostics writer.
+    /// Symmetric with the outer `m.Trail` for the Lineage writer; both
+    /// accessors name the trail they return.
+    let entries (m: Lineage<Diagnostics<'a>>) : DiagnosticEntry list = m.Value.Entries
+
+    /// The full inner `Diagnostics<'a>` — useful for callers that want
+    /// both payload and entries together but do not care about the
+    /// lineage trail.
+    let diagnostics (m: Lineage<Diagnostics<'a>>) : Diagnostics<'a> = m.Value
