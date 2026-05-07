@@ -44,6 +44,33 @@ redeploys, refactors, and migrations. Identity is the spine.
   *Enforcement.* `SsKey` is a value type on every IR node.
   *Property test.* Identity is preserved across name mutations.
 
+  *Bounded under input-path lossiness (2026-05-19).* The
+  identity-survives-rename guarantee is **bounded by what the input
+  source preserves**. Through V2's current `SnapshotJson` path
+  (consuming V1's `osm_model.json`), `SsKey` is **synthesized
+  deterministically from name fields** because V1's JSON projection
+  layer strips the SSKey columns the rowsets carry — a documented
+  member of the JSON-projection-lossiness class. Through that path,
+  renames in the source OutSystems platform produce different
+  `SsKey` values in V2's IR; A1's identity-survives-rename
+  guarantee is not honored for renames that traverse the
+  JSON-snapshot path.
+
+  The bound resolves when V2's catalog reader gains access to the
+  rowset SSKeys directly — the operator-decided canonical
+  resolution is the `SnapshotRowsets` variant of `SnapshotSource`
+  (per `DECISIONS 2026-05-15 — OSSYS adapter parse signature` and
+  the session-20 amendment to `DECISIONS 2026-05-15 — OSSYS
+  adapter translation rules`). The bound applies only to the
+  current `SnapshotJson` input path; future input paths (the
+  planned `SnapshotRowsets`; an eventual `LiveOssysConnection`)
+  honor A1 fully because they have access to V1's SSKey
+  primitives.
+
+  Documented divergence; not a bug. Future agents reading A1
+  should follow the bound's full disposition in DECISIONS rather
+  than assume A1 is unconditional through every path.
+
 **A2. Identity is not name.** Identity is what the name refers to. Names are
 presentation; identity is what persists.
 
