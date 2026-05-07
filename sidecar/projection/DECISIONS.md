@@ -1851,6 +1851,88 @@ test discipline expectations follow accordingly. The session-9
 admire stands as the V2-growth template; future V2-growth admires
 follow its structure.
 
+#### 2026-05-19 (session 23 amendment) — status framework extension for multi-session chapters in flight
+
+The session-22 cross-document audit surfaced a framework gap: the
+admire status framework was designed for chapters that complete in
+a single bounded arc. Chapters that run for many sessions (the
+OSSYS adapter chapter, for instance — five substantive slices
+across sessions 18–22) accumulate work that is **clearly past
+"chapter-open scoping"** but **not yet "extracted (...) confirmed"**.
+The framework had no status that fit the in-flight state.
+
+Without a fitting status, multi-session chapter entries either
+understate (`chapter-open scoping` after five slices misleads) or
+overstate (`extracted (differential confirmed)` premature when the
+chapter has known remaining substantive work). The OSSYS ADMIRE
+entry sat at `chapter-open scoping (session 17)` through session
+22 because no better status existed in the framework.
+
+**Decision: extend the framework with a partial-extracted status
+for multi-session chapters in flight.** The status string:
+
+  **`extracting (in flight, N slices)`**
+
+where `N` names the count of substantive slices the chapter has
+landed at the time of writing. The status is **explicit about
+in-flight-ness**: future readers know the entry is current as of
+N slices, not stable.
+
+Naming choices considered:
+
+  - `extracting (in flight, N slices)` — chosen. Active verb form
+    ("extracting") symmetric with the past form ("extracted").
+    `(in flight, N slices)` parameter gives concrete state. Reads
+    naturally: `extracting (in flight, 5 slices)` for the OSSYS
+    chapter at session 22 close.
+  - `partially-extracted (chapter in flight)` — rejected. Compound
+    past form is awkward; "partially-extracted" reads as a static
+    fraction rather than active progression.
+  - `in-progress-extraction` — rejected. Too long; reads as a
+    noun phrase rather than a status.
+
+The chosen form pairs cleanly with the existing four status
+strings:
+
+  | Status | When |
+  |---|---|
+  | `admired (placement decided)` | V2 placement chosen; no implementation yet |
+  | `chapter-open scoping (session N)` | Chapter just opened; strategic frame + ADMIRE chapter scope landed; no substantive slices yet |
+  | **`extracting (in flight, N slices)`** | **Chapter past chapter-open; substantive slices landing; not yet at chapter close** |
+  | `extracted (differential confirmed)` | Chapter complete; differential tests confirm the contract |
+
+**Update protocol.** When a chapter close lands, the status moves
+from `extracting (in flight, N slices)` to
+`extracted (differential confirmed)` (or the V2-growth /
+hybrid-mode equivalent). When a substantive slice ships within
+the chapter, the entry's `N` updates to reflect the new count.
+Updates happen as part of each session's work, not just at chapter
+close — keeping the status accurate is the responsibility of the
+session that lands the slice.
+
+**Worked example.** The OSSYS catalog producer entry transitions
+from `chapter-open scoping (session 17)` → `extracting (in flight,
+5 slices)` (session 23 application). The chapter close in
+session 25 will transition it to whatever extracted-status applies
+at completion. Future multi-session chapters follow the same
+pattern.
+
+**Reasoning / consequences.** The extension closes the
+framework gap surfaced by the session-22 audit. Multi-session
+chapters can keep their ADMIRE status accurate without forcing
+premature `extracted` claims or misleading `chapter-open scoping`
+holdovers. The framework is small (one new status string); the
+update discipline is small (per-slice update of `N`); the audit-
+trail compounds because future agents reading ADMIRE see the
+chapter's progression at a glance.
+
+The entry-template implications: the in-flight status's
+"Existing test coverage" subsection should accumulate as fixtures
+land, rather than being purely forward-looking. Forward-looking
+shape ("V2's test surface for the adapter (when implemented):")
+applies to `chapter-open scoping`; landed-shape ("V2's test surface
+includes:") applies to `extracting (in flight, N slices)`.
+
 ## 2026-05-13 — Session 10 reflection: closed-DU expansion validated; forward signals
 
 **Status:** decided (operating discipline; session 11 hand-off)
