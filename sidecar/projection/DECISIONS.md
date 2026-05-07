@@ -4160,6 +4160,58 @@ chapters open:
   - The refactor.log emitter's UUIDv5 namespace and exact derivation
     → that emitter's chapter
 
+#### 2026-05-16 (session 19 amendment) — canary's rename-handling depends on the SsKey-source path
+
+The canary's roll-forward minimally-invasive guarantee — that
+deployments to a fresh database render minimum diff against the
+prior snapshot — depends on **SsKey preservation across renames
+in the input source**. T8's structural diff is keyed by SsKey;
+when source changes between snapshot N-1 and snapshot N include
+a rename, the diff produces a `RENAME` only when SsKey is
+preserved across the change.
+
+**With the current OSSYS path** (`SnapshotJson` consuming V1's
+canonical `osm_model.json`, which is lossy on SSKey per
+`DECISIONS 2026-05-15 — OSSYS adapter translation rules`,
+amended in session 19): a renamed entity produces a different
+synthesized SsKey, so the diff sees `DELETE old + INSERT new`.
+The canary's deployment-success leg still passes (the new state
+deploys cleanly against an empty database); the deployment
+script that gets generated drops and recreates the renamed
+object — the **noisy mode** the strategic frame names V2 as
+avoiding.
+
+**The minimally-invasive guarantee is bounded by the input
+path:**
+
+  - With name-synthesized SsKey through the current JSON path:
+    renames-across-the-JSON-path render as drop-create.
+  - With any of the three re-open triggers fired
+    (`SnapshotJsonBuilder` line-level fix; `SnapshotRowsets`
+    variant; `LiveOssysConnection`): the bound resolves and
+    renames produce structural-rename diffs.
+
+**Graceful-degradation-shaped.** Drop-create renames are
+**correct** (state matches end-to-end); they are just **noisy**.
+Production operators will notice. The bound is documented; the
+resolution path is reachable; the choice is open until either
+empirical pressure (rename-fixture friction during the OSSYS
+chapter) or a chapter or operator decision selects.
+
+**This amendment exists because future agents opening the canary,
+read-side adapter, or `Projection.Pipeline` chapters will need
+to know which trigger has fired by the time they reach the
+roll-forward-rename logic.** Making the dependency explicit in
+the strategic frame keeps it visible across the gating-dependency
+graph rather than leaving it implicit at the OSSYS adapter
+boundary.
+
+**No immediate work.** This amendment is documentation of the
+constraint, not a directive to act on it. The OSSYS adapter
+chapter continues without immediate need to resolve the
+SsKey-source choice; the canary's later integration work will
+inherit whichever trigger has fired by then.
+
 This entry's role is to **name the architectural axes** so future
 chapters land into a coherent frame. The axes are load-bearing;
 the implementations are deferred.
@@ -4468,6 +4520,93 @@ This is the kind of finding the test-driven path was supposed
 to surface — the rule was not visible from the orientation
 reading; it became visible only when the parser had to produce
 SsKey values for the assertion.
+
+#### 2026-05-16 (session 19 amendment) — sharpened by SQL evidence; third re-open path; operator confirmation
+
+Reading V1's `outsystems_metadata_rowsets.sql` directly sharpens
+the original characterization. The lossiness is **at exactly one
+projection layer**, not end-to-end:
+
+```
+ossys_* tables  →  temp tables (#E, #Ent, #Attr — SSKey present)
+                →  trailing rowsets (SELECTs at script bottom — SSKey present)
+                                                ↘
+                                                  JSON pre-aggregations (#AttrJson,
+                                                  #ModuleJson via FOR JSON PATH —
+                                                  SSKey stripped)
+                                                ↘
+                                                  osm_model.json (SSKey stripped)
+```
+
+`#E` carries `EspaceSSKey`; `#Ent` carries `EntitySSKey` and
+`PrimaryKeySSKey`; `#Attr` carries `AttrSSKey`. The trailing
+rowset SELECTs at the bottom of the script all emit those
+columns. The data is available everywhere upstream of the JSON
+projection layer; what's lost is what the JSON `FOR JSON PATH`
+projections happen not to include.
+
+**The first re-open trigger is much cheaper than the original
+entry implied.** Calling it "extending `SnapshotJsonBuilder`"
+is technically correct but undersells the work: the existing
+JSON projections already SELECT from `#Attr`, `#Ent`, `#E`.
+Adding `a.AttrSSKey AS [ssKey]` (or similar) to the existing
+`FOR JSON PATH` projections is **line-level additive, low-risk,
+no upstream change**. The SQL extraction is already producing
+the data; the canonical osm_model.json's projection is the only
+thing that elides it.
+
+**A third re-open path the original entry didn't enumerate.** The
+SQL emits *both* the JSON for the canonical osm_model.json *and*
+the trailing rowsets as result sets. If V2's input could be the
+rowsets directly (delivered as some persisted form — multi-rowset
+JSON, CSV per table, whatever the operational layer provides),
+V2 gets SSKey natively without V1 pipeline cooperation. This
+would land as a third `SnapshotSource` variant alongside
+`SnapshotFile` and `SnapshotJson` — perhaps `SnapshotRowsets`
+of some input type — and exercises the closed-DU expansion
+discipline cleanly.
+
+**Three paths, all confirmed reachable by the operator:**
+
+  1. **`SnapshotJsonBuilder` line-level fix** — V1 cooperation;
+     preserves V2's existing single-input-source posture; smallest
+     diff at the V1 boundary.
+  2. **`SnapshotRowsets` variant** — V2-internal; adds a new
+     parsing surface to V2 but no V1 change required; exercises
+     closed-DU expansion at `SnapshotSource`.
+  3. **`LiveOssysConnection` variant** — substantial; V2
+     maintains its own database connection running the SQL or
+     equivalent extraction; reserved for future demand.
+
+The choice between the three is **open**. The operator has
+confirmed any of them works; the trade-offs differ:
+
+  - **Path 1** depends on V1 pipeline cooperation but is
+    architecturally invisible to V2.
+  - **Path 2** requires no V1 cooperation but expands V2's
+    parsing surface.
+  - **Path 3** is the most architecturally substantial and
+    reserved for the case where V2 needs to operate without
+    V1's chain in the loop.
+
+**The bounded-A1-claim disposition is unchanged** — through the
+current `SnapshotJson` path V2 uses today, A1 is bounded; the
+bound resolves when any of the three triggers fires. What
+changes is that **the resolution is more reachable than the
+original entry implied** — Path 1 is line-level work; Path 2 is
+a closed-DU expansion within V2.
+
+**No code change today.** Adding `SnapshotRowsets` speculatively
+would violate the closed-DU expansion discipline (one consumer
+needed; zero exist). The variant is named here so it's
+discoverable when a real consumer surfaces; the entry is
+amendment-only documentation.
+
+**Strategic-frame implication (cross-reference).** The pipeline
+canary's roll-forward minimally-invasive guarantee is bounded
+by which of the three triggers is operating. See the strategic-
+frame entry's session-19 amendment for the specific
+canary-rename-handling implication.
 
 ### Translation rules the minimal fixture forced
 
