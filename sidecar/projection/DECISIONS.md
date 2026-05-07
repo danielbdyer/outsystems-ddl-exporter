@@ -6168,3 +6168,187 @@ landing here is consistent with the existing operating-
 discipline shape). The chapter-2 close has produced one of its
 most consequential intellectual artifacts: a complete typology
 for V1↔V2 translation findings that future chapters operate.
+
+## 2026-05-21 — Chapter 2 close: OPEN-question resolutions
+
+**Status:** decided (chapter-2 close — resolves the OPEN questions
+from the chapter-mid-audits at sessions 22, 23, and 25)
+**Context:** The chapter-mid-audits (subagents #1, #2, #3)
+surfaced OPEN questions throughout the chapter. Per the
+chapter-mid-audit discipline, OPEN questions warrant explicit
+decision-or-defer at chapter close. This entry resolves them
+together so the chapter-3 handoff inherits a clean slate of
+decisions rather than a backlog.
+
+### From subagent #2 (session 23)
+
+**Subagent #2 O1 — Adapter-boundary deferrals scope in the
+Active deferrals index.** Sessions 18–22 produced 10+
+adapter-translation deferrals with explicit re-open triggers
+(auto-number axis; cross-module FK; `IsExternalEntity` Origin
+three-way; `Modality.Inactive` carry-through; filter-definition
+indexes; `physical_isPresentButInactive`; etc.). The index's
+scope statement admits architectural IR refinements but is
+silent on adapter-boundary deferrals.
+
+**Resolution: yes, expand the index's scope to include adapter-
+boundary deferrals that have explicit re-open triggers and
+architectural significance.** Cross-catalog FK is already in the
+index; cross-module FK is structurally adjacent. Subagent #2
+flagged `SnapshotRowsets` and `LiveOssysConnection` as deferrals
+with explicit re-open triggers; both are now in the index
+(session 25 commit 4). The OSSYS-translation-rule deferrals
+that don't rise to architectural IR refinement (e.g., specific
+field translation rules that defer until a fixture surfaces
+them — like `physical_isPresentButInactive`) stay in the
+DECISIONS amendments to the OSSYS translation-rules entry where
+they're already discoverable from rule context. The
+distinction: architectural IR refinements (DU expansions; new
+adapter variants; new IR axes) belong in the index;
+field-specific rules belong in the rules amendments.
+
+The index's scope statement is updated implicitly by the new
+rows added at session 25 commit 4; no scope-statement rewrite
+needed because the new rows demonstrate the broader scope
+empirically.
+
+**Subagent #2 O2 — Chapter-level scope deferrals discipline-
+table entry.** The OSSYS strategic-frame entry
+(`DECISIONS.md:4032`) codifies a chapter-open pattern that
+other future chapters (Pipeline canary; SnapshotRowsets) are
+explicitly named as inheriting from. Should it earn a
+discipline-table entry?
+
+**Resolution: yes.** The pattern is structurally a discipline —
+"do strategic-frame axis naming at chapter open" — and it is
+demonstrably reusable (the framework extension amendment
+explicitly applies to multi-session chapters generally). A row
+gets added at this commit (see CLAUDE.md update below).
+
+**Subagent #2 O3 — Trace-before-fixture pointer suffix drift.**
+Row at `CLAUDE.md` cites `DECISIONS 2026-05-19 — Trace-before-
+fixture pattern at slice level (session 23)`. The DECISIONS
+entry header reads `(codified at N=3)`. Suffix-convention
+inconsistency.
+
+**Resolution: small fix at session 25 commit 2 (row already
+updated to `(session 23; codified at N=3)`).** No structural
+issue; the inconsistency was readable, the cleanup is just
+hygiene.
+
+### From subagent #3 (session 25)
+
+**Subagent #3 O1 — Rule 21 ambiguity for `isPrimary: true,
+isUnique: false`.** V1's domain disallows the combination at
+SQL level, but V2's `Index` DU at `Catalog.fs:159-164` makes
+both bools independent. The adapter does not validate the
+combination; a malformed input would produce a structurally-
+incoherent V2 `Index`.
+
+**Resolution: stay literal at the adapter; document the bound
+explicitly here.** Rule 21 says `Index.IsPrimaryKey = isPrimary`
+(direct); rule 20 says `Index.IsUnique = isUnique` (direct).
+Both are coordinate maps. The combination `isPrimary: true,
+isUnique: false` is not constructible from V1 SQL (V1's domain
+enforces uniqueness on PK structurally); if it appeared in V1's
+JSON output, it would be an upstream V1 bug rather than a V2
+adapter responsibility. V2's adapter-boundary discipline is
+"reflect what V1 says"; **upstream-coherence enforcement is
+not the adapter's responsibility**. Future fixtures may force
+re-evaluation if a V1 bug surfaces with this shape; until then,
+the literal mapping is correct. The smallest honest-now choice
+matches the existing rule wording.
+
+**Subagent #3 O2 — `module.isActive: false` adapter behavior.**
+The adapter's behavior on `module.isActive: false` is silent
+(no filter, no error). Rule 18 deferred the question explicitly.
+
+**Resolution: filter at adapter, consistent with rule 18's
+inactive-records handling.** When V1 emits `module.isActive:
+false`, the OSSYS adapter drops the entire module (and all its
+entities). Same disposition as inactive entities and inactive
+attributes. The won't-carry-forward list (session 25 commit 6)
+names this; rule 18 extends to the module level. **Status:
+codified here; implementation lands in chapter 3 if a fixture
+surfaces a `module.isActive: false` case** — until then, the
+rule is documented but no V1 fixture exercises the path. The
+chapter-mid-audit will catch if a future fixture surfaces the
+case before the implementation extends.
+
+**Subagent #3 O3 — `attributes[].onDisk` Profile routing.**
+Should the OSSYS adapter route `onDisk` to V2's Profile rather
+than silently drop?
+
+**Resolution: addressed at session 25 commit 1 + commit 2.** The
+disposition is "silently dropped at OSSYS; routes to read-side
+adapter when that chapter materializes." If the read-side
+adapter chapter discovers a drift-detection use case requiring
+both V1's recorded reality and deployed reality as separate
+sources, the OSSYS adapter routes onDisk to Profile alongside
+the read-side adapter's emission. **Re-open trigger sits in the
+read-side adapter chapter, not in OSSYS chapter 2's close.**
+
+**Subagent #3 O4 — Won't-carry-forward list as Active-deferrals-
+shaped surface.** The won't-carry-forward list grew over six
+slices and at chapter-2 close still had gaps. Should it have
+the same audit discipline as the Active deferrals index?
+
+**Resolution: defer with rationale.** The V1-input-envelope walk
+discipline added as chapter-close ritual item 8 (session 25
+commit 3) addresses the gap structurally — the won't-carry-
+forward list is audited at chapter close against the V1
+envelope projection code field-by-field. The Active deferrals
+index pattern (re-open triggers; structural conditions) does
+not map cleanly onto won't-carry-forward members (which are
+choices about what V2's IR doesn't carry, not deferrals
+awaiting structural conditions). The two surfaces are
+complementary, not duplicative; the V1-envelope-walk discipline
+is the correct integration point. If the won't-carry-forward
+list grows beyond what the chapter-close walk catches, the
+question re-opens.
+
+**Subagent #3 O5 — Cross-module FK chapter-3 handoff.** The
+chapter-2 close handoff names cross-module FK as "highest-
+priority deferred slice" but the scaffold doesn't carry V1's
+`relationships[]` detail.
+
+**Resolution: defer to handoff document.** Session 25 commit 10
+(handoff document) carries the V1 `relationships[]` shape and
+the rule-14-may-not-hold-cross-module warning explicitly.
+
+**Subagent #3 O6 — `SnapshotRowsets` handoff lossiness-class
+framing.** The chapter-2 work has earned the canonical-
+resolution-as-class framing; the handoff should preserve it.
+
+**Resolution: defer to handoff document.** Session 25 commit 10
+preserves the framing; subagent #5 pre-scope (session 25 commit
+9) extends it.
+
+**Subagent #3 O7 — DacpacEmitter as canary's second
+deliverable.** Subagent #2's CRITICAL was cashed out at session
+24 commit 1. The chapter-3 handoff should make the sequencing
+explicit: "DacpacEmitter is the second deliverable in canary,
+after the read-side adapter integration."
+
+**Resolution: confirmed in handoff document.** Session 25
+commit 10 carries the explicit sequencing.
+
+### Why these resolutions land at chapter close together
+
+The chapter-mid-audit discipline (`DECISIONS 2026-05-19`, session
+23 + session 24 amendment) names "OPEN warrants discussion;
+defer to chapter close" as one of three category dispositions.
+Chapter close is the right venue: the audit dispatch session
+focused on substantive work; the chapter close synthesizes.
+Bundling them in one entry preserves the chapter-mid-audit's
+discipline ("don't act in dispatch session; review at next
+hygiene") while producing concrete decisions before chapter 3
+opens.
+
+**Reasoning / consequences.** Chapter 3 opens with a clean
+backlog: every OPEN question from the three chapter-mid-audits
+has either landed as a decision (codified, implementation
+deferred to a chapter that will do the work) or as an explicit
+defer with rationale (re-open trigger named, re-evaluation venue
+named). The chapter-3 agent inherits decisions, not unfinished
+arguments.
