@@ -5201,3 +5201,99 @@ chapter-open's named uncertainties have all been answered
 under empirical pressure. The chapter's discipline is
 operating; the running list is auditable; the bounds are
 documented.
+
+#### 2026-05-19 (session 22 documentation hygiene) — naming the two classes of resolution patterns explicitly
+
+Sessions 18, 20, and 21 together produced findings that fit
+into two structurally distinct classes. The composability
+finding from session 20 named the first class (lossiness);
+session 21's inactive-records resolution implicitly distinguished
+the second class (boundary discipline) by resolving differently.
+This sub-section names both classes explicitly so future agents
+reading the chapter's accumulated translation surface see the
+distinction up front rather than re-deriving it.
+
+**The two classes:**
+
+  1. **JSON-projection-lossiness class.** The information is
+     **upstream of V2's current input but stripped at V1's JSON
+     projection layer**. V2 cannot make the translation through
+     the current `SnapshotJson` path because the data isn't
+     visible. Resolution: **input-path expansion** via the
+     `SnapshotRowsets` variant (per `DECISIONS 2026-05-15 — OSSYS
+     adapter translation rules`, session-20 amendment); the
+     class resolves *all members together* when the variant
+     implements.
+
+     Currently-known members:
+
+       - **SsKey at every level** (session 18) — stripped at JSON
+         aggregation; rowsets carry it.
+       - **`EspaceKind`** (session 20) — encodes IS-vs-Direct;
+         stripped at JSON aggregation; rowsets carry it.
+       - **`isSystemEntity`** (observed during session-20 trace;
+         not yet exercised by a fixture) — entity-level system
+         flag; stripped at JSON aggregation; rowsets carry it.
+
+     Likely future members: per-table column structure that
+     `FOR JSON PATH` collapses; check-constraint definitions;
+     additional fields the JSON projections happen not to
+     include.
+
+  2. **V2-boundary-discipline class.** The information **is
+     visible to V2 through the current input**; the translation
+     question is V2's own architectural choice about what to do
+     with it. Resolution: **V2's own boundary discipline** —
+     filter at adapter, carry through the IR, refine the IR with
+     a new axis, etc. The choice is bounded by what V2's
+     architecture today supports vs what consumer demand would
+     need; the smallest honest-now choice is documented; the
+     bound resolves on a named consumer-demand trigger.
+
+     Currently-known members:
+
+       - **Inactive-records boundary** (session 21) — V1 carries
+         IsActive flags through to JSON; V2 has the choice
+         between filter-at-adapter (chosen) and carry-through
+         (deferred to consumer demand).
+
+     Likely future members: any V1 field that V2 receives but
+     V2's IR has no axis for (e.g., trigger metadata when a
+     fixture surfaces it; computed-column definitions; field-
+     level descriptions / `meta` strings).
+
+**Why naming the classes matters operationally.**
+
+The two classes have **different resolution paths** and
+**different coupling characteristics**:
+
+  - Lossiness-class findings **compose** through one resolution
+    (`SnapshotRowsets` implementation absorbs all members
+    together). The agent who opens that chapter inherits a
+    class to resolve, not a list of bugs to fix.
+  - Boundary-discipline findings **don't compose** the same
+    way. Each member's resolution depends on its specific
+    consumer demand and its specific IR-refinement implications;
+    they are individually negotiated. A future
+    `Modality.Inactive` variant doesn't automatically extend to
+    cover triggers, computed columns, etc.
+
+**The trace-before-fixture pattern classifies findings into one
+or the other before implementation begins.** Session 20's trace
+of `EspaceKind` placed it in the lossiness class (not in the
+JSON; in the rowsets); session 21's trace of `Is_Active`/
+`isActive` placed it in the boundary-discipline class (carried
+through to JSON; V2 has the choice). Future slices apply the
+same trace-before-fixture admire-mode discipline; the
+classification informs the resolution shape.
+
+**This sub-section refines, not replaces, session 20's
+composability finding.** The lossiness class is one half; the
+boundary-discipline class is the other half. Together they
+form the chapter's accumulated structural picture of V1↔V2
+translation.
+
+**No code change.** Documentation hygiene only. Future
+findings classify into one of the two classes (or surface a
+third if neither fits, which would itself be a substantive
+finding worth marking explicitly).
