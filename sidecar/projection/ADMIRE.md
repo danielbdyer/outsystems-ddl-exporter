@@ -2412,6 +2412,34 @@ domain-prescriptive vocabulary. Specific carry-forward exclusions:
     The OSSYS adapter does NOT pass through V1-side filter
     parameters; selection happens after the catalog is read.
     Reads-everything-then-filters is the V2 disposition.
+  - **Module-level `isSystem` and `isActive`.** V1 emits both at
+    the module element (`SnapshotJsonBuilder.cs:120-121, 168-169`).
+    V2's adapter consumes neither. `module.isSystem` carries the
+    same semantic content as `entity.isSystemEntity` at module
+    level; V2's `Origin` DU collapses both at the entity level
+    via the JSON-projection-lossiness route (rule 17 placeholder).
+    `module.isActive` parallels `entity.isActive` (rule 18 filters
+    inactive entities; the module-level case defers until a
+    fixture forces the question — see open question O2 resolved
+    at session-25 chapter close).
+  - **Per-attribute `default`.** V1 emits `attributes[].default`
+    (the `DefaultValue` from `#Attr` at
+    `outsystems_metadata_rowsets.sql:757`). Carries semantic
+    content (column default value); V2's IR has no per-attribute
+    default axis at the OSSYS-adapter level. The default-value
+    information is part of physical reality; future emitters
+    that need defaults pull from V2's Profile / read-side adapter
+    output (alternative-IR-surface class), not from the OSSYS
+    adapter. Re-open trigger: emitter chapter that needs default
+    values at IR scope rather than emit-time scope.
+  - **Per-attribute `refEntity_isActive`.** V1 emits the FK
+    target's `isActive` flag at
+    `outsystems_metadata_rowsets.sql:765`. Could matter for
+    cross-module FK or for cases where the source is active but
+    the target was retired. The OSSYS adapter ignores it; rule 18's
+    filter operates on source attributes only. Re-open trigger:
+    cross-module FK slice surfaces a case where target activity
+    matters (chapter 3 deferred slice).
   - **Per-attribute `onDisk` envelope.** V1 emits a structured
     sub-object per attribute (`outsystems_metadata_rowsets.sql:770-790`)
     containing eleven physical-reality fields: `isNullable`,
