@@ -88,8 +88,8 @@ let private policyWith (config: NullabilityTighteningConfig) : Policy =
         Tightening =
             { Interventions = [ Nullability ("v1-parity", config) ] } }
 
-let private decisionFor (key: SsKey) (lineage: Lineage<NullabilityDecisionSet>) : NullabilityDecision =
-    lineage.Value.Decisions
+let private decisionFor (key: SsKey) (lineage: Lineage<Diagnostics<NullabilityDecisionSet>>) : NullabilityDecision =
+    (LineageDiagnostics.payload lineage).Decisions
     |> List.find (fun d -> d.AttributeKey = key)
 
 // ---------------------------------------------------------------------------

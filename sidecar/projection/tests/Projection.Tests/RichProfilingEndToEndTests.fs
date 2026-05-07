@@ -590,7 +590,7 @@ let ``MILESTONE 11: five-strategy coexistence holds end-to-end on the rich-profi
     let uniqLineage = UniqueIndexPass.run endToEndCatalog policy profile
     let fkLineage   = ForeignKeyPass.run   endToEndCatalog policy profile
     let cuLineage   = CategoricalUniquenessPass.run endToEndCatalog policy profile
-    Assert.All(nullLineage.Value.Decisions, fun d -> Assert.Equal("null-1", d.InterventionId))
+    Assert.All((LineageDiagnostics.payload nullLineage).Decisions, fun d -> Assert.Equal("null-1", d.InterventionId))
     Assert.All((LineageDiagnostics.payload uniqLineage).Decisions, fun d -> Assert.Equal("uniq-1", d.InterventionId))
     Assert.All(fkLineage.Value.Decisions,   fun d -> Assert.Equal("fk-1",   d.InterventionId))
     Assert.All(cuLineage.Value.Decisions,   fun d -> Assert.Equal("cu-1",   d.InterventionId))

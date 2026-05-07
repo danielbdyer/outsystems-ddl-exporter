@@ -230,7 +230,7 @@ let ``coexistence: NullabilityPass ignores UniqueIndex interventions in a mixed 
             [ Nullability ("null-1", nullCfg)
               UniqueIndex ("uniq-1", uniqCfg) ]
     let lineage = NullabilityPass.run indexedCatalog policy Profile.empty
-    Assert.All(lineage.Value.Decisions, fun d ->
+    Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("null-1", d.InterventionId))
 
 // ---------------------------------------------------------------------------

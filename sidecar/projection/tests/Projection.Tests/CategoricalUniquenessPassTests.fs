@@ -205,7 +205,7 @@ let ``coexistence: NullabilityPass ignores CategoricalUniqueness interventions``
             [ Nullability           ("null-1", nullCfg)
               CategoricalUniqueness ("cu-1",   catUniqCfg) ]
     let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
-    Assert.All(lineage.Value.Decisions, fun d ->
+    Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("null-1", d.InterventionId))
 
 [<Fact>]
