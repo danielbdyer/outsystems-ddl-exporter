@@ -2065,19 +2065,25 @@ out together rather than in isolation.
 
 ## 2026-05-13 — OSSYS catalog producer (`src/AdvancedSql/outsystems_metadata_rowsets.sql` → `MetadataSnapshotRunner` → `SnapshotJsonBuilder` → `osm_model.json`)
 
-**Status:** **admired (stub — V2 implementation deferred)** — **hybrid
-mode** (`DECISIONS 2026-05-13` — admire spectrum). This is the
-undocumented production boundary `CHAPTER_CLOSE.md §2.10` flagged.
-V2's catalog reader does not yet exist; production V2 will need to
-consume real OutSystems metadata via this path. Today, V2 catalogs
-are built by F# fixture builders in `Projection.Tests` — every
-end-to-end test, every milestone, every differential test feeds
-through fixture-constructed catalogs rather than real metadata.
+**Status:** **chapter-open scoping (session 17)** — **hybrid mode**
+(`DECISIONS 2026-05-13` — admire spectrum). The OSSYS implementation
+chapter opens at session 17 with this entry as the chapter scoping
+document. Implementation is deferred to subsequent sessions in the
+arc; session 17's deliverable is strategic frame + ADMIRE chapter
+scope + Position B parse signature.
 
-This entry is **scoping**, not implementation. It names the V1
-source, the V2 boundary that needs to exist, the gating-dependency
-graph downstream, and the work the next implementing chapter
-inherits. The implementation is a substantive multi-session arc.
+This is the undocumented production boundary `CHAPTER_CLOSE.md
+§2.10` flagged. V2's catalog reader does not yet exist; production
+V2 will need to consume real OutSystems metadata via this path.
+Today, V2 catalogs are built by F# fixture builders in
+`Projection.Tests` — every end-to-end test, every milestone, every
+differential test feeds through fixture-constructed catalogs
+rather than real metadata.
+
+The OSSYS chapter exists in the strategic frame
+(`DECISIONS 2026-05-15 — Strategic frame for the OSSYS implementation
+chapter`) as one of eight load-bearing axes; this entry scopes the
+chapter against that frame.
 
 ### What the V1 producer does (algebraic terms)
 
@@ -2103,6 +2109,247 @@ The producer is impure (it reads from a SQL Server connection),
 returns `Result<OutsystemsMetadataSnapshot>`, and is the
 authoritative source of structural truth about a deployed
 OutSystems environment.
+
+### V1's extracted shape — the rowsets, in detail
+
+The 1184-line SQL script reconciles two distinct sources of truth:
+**OutSystems intent** (the `OSSYS_*` metadata tables describing
+what the platform thinks the schema should be) and **physical
+reality** (`sys.tables`, `sys.columns`, `sys.indexes`, `sys.foreign_keys`
+describing what the database actually contains). The reconciliation
+is a real architectural concern V2 must inherit — V2's IR must
+distinguish what the source declares from what the data shows.
+
+The script exports ~22 named rowsets in a fixed order. The
+`MetadataSnapshotRunner` registers an `IResultSetProcessor` per
+rowset name; rowset order is preserved on the wire but processors
+key by name. Inventoried by purpose:
+
+**Module / entity / attribute backbone:**
+
+  - `#E` — espaces (modules): EspaceId, EspaceName, IsSystemModule,
+    ModuleIsActive, EspaceKind, **EspaceSSKey**.
+  - `#Ent` — entities: EntityId, EntityName, PhysicalTableName,
+    EspaceId, EntityIsActive, IsSystemEntity, IsExternalEntity,
+    DataKind (Static / Regular / etc.), PrimaryKeySSKey, **EntitySSKey**,
+    EntityDescription.
+  - `#Attr` — attributes: AttrId, EntityId, AttrName, **AttrSSKey**,
+    DataType, Length, Precision, Scale, DefaultValue, IsMandatory,
+    AttrIsActive, IsAutoNumber, IsIdentifier, RefEntityId,
+    OriginalName, ExternalColumnType, DeleteRule, PhysicalColumnName,
+    DatabaseColumnName, LegacyType, Decimals, OriginalType,
+    AttrDescription.
+  - `#RefResolved` — relationship resolution: AttrId → reference
+    target entity (id, name, physical name, active flag).
+
+The `*SSKey` columns are V1's identity primitives. They survive
+renames and refactors per the OutSystems platform's contract; V2's
+`SsKey` value type wraps them.
+
+**Physical reality reconciliation:**
+
+  - `#PhysTbls` — physical tables matched to entities: EntityId,
+    SchemaName, TableName, object_id.
+  - `#ColumnReality` — physical column metadata per attribute:
+    AttrId, IsNullable, SqlType, MaxLength, Precision, Scale,
+    CollationName, IsIdentity, IsComputed, ComputedDefinition,
+    DefaultConstraintName, DefaultDefinition, PhysicalColumn.
+  - `#ColumnCheckReality` — check constraints attached to columns:
+    AttrId, ConstraintName, Definition, IsNotTrusted.
+  - `#AttrCheckJson` — aggregated check-constraint JSON per attribute.
+  - `#PhysColsPresent` — which logical attributes still exist
+    physically (the inactive-but-physically-present case).
+
+**Indexes:**
+
+  - `#AllIdx` — all indexes (IX + UQ + PK): EntityId, object_id,
+    index_id, IndexName, IsUnique, IsPrimary, Kind, FilterDefinition,
+    IsDisabled, IsPadded, Fill_Factor, IgnoreDupKey, AllowRowLocks,
+    AllowPageLocks, NoRecompute, DataSpaceName, DataSpaceType,
+    PartitionColumnsJson, DataCompressionJson.
+  - `#IdxColsMapped` — index columns mapped to attributes by
+    physical or human name: EntityId, IndexName, Ordinal,
+    PhysicalColumn, IsIncluded, Direction, HumanAttr.
+
+**Foreign keys (physical reality):**
+
+  - `#FkReality` — actual FK constraints: EntityId, FkObjectId,
+    FkName, DeleteAction, UpdateAction, ReferencedObjectId,
+    ReferencedEntityId, ReferencedSchema, ReferencedTable, **IsNoCheck**.
+  - `#FkColumns` — column mappings per FK constraint.
+  - `#FkAttrMap` — which attributes participate in actual FKs.
+  - `#AttrHasFK` — flag: does this attribute have a real FK
+    constraint?
+  - `#FkColumnsJson` / `#FkAttrJson` — aggregated JSON for downstream
+    consumers.
+
+**Triggers:**
+
+  - `#Triggers` — trigger metadata per entity: TriggerName,
+    IsDisabled, TriggerDefinition.
+
+**Aggregated JSON shapes (the canonical osm_model.json structure):**
+
+  - `#AttrJson`, `#RelJson`, `#IdxJson`, `#TriggerJson` — per-entity
+    aggregates produced via `FOR JSON PATH`.
+  - `#ModuleJson` — per-module aggregate combining all of the
+    above.
+
+The final `osm_model.json` document is the assembly of these
+aggregates — a single JSON file with `exportedAtUtc`, an array of
+`modules`, each containing an array of `entities`, each containing
+arrays of `attributes`, `indexes`, `relationships`, `triggers`. The
+nested shape is what `Projection.Tests/Fixtures/*.json` mirror; V2's
+`CatalogReader` will consume the same shape.
+
+### What V2 will carry forward
+
+The V2 catalog reader's job is to translate V1's reconciled output
+into V2's IR. The carry-forward set:
+
+  - **Identity primitives.** V1's `*SSKey` values become V2's
+    `SsKey` instances. The translation is direct; V2 does not
+    re-derive identity, it adopts V1's.
+  - **Module / entity / attribute / reference / index structure.**
+    The four-level hierarchy (modules → entities → attributes /
+    references / indexes) maps cleanly to V2's `Catalog → Module →
+    Kind → (Attribute | Reference | Index)`.
+  - **Physical realization.** V1's reconciled `db_schema` /
+    `physicalName` / `databaseColumnName` becomes V2's
+    `PhysicalRealization` (kind level) and `Column.ColumnName`
+    (attribute level).
+  - **Modality marks.** V1's `DataKind` ("Static" / regular /
+    etc.) becomes V2's `Modality.Static` / etc. Static populations
+    flow into the catalog per A7.
+  - **Type information.** V1's `DataType` / `LegacyType` /
+    `ExternalColumnType` plus the `ColumnReality` SqlType becomes
+    V2's `Attribute.Type` plus the `Column` shape. The V2 type
+    correspondence (`DataType` → V2 algebraic type) is policy
+    territory per A13; the *raw* type information is what the
+    adapter carries forward.
+  - **Origin.** V1's `IsExternalEntity` plus the espace's
+    `IsSystemModule` flag map to V2's `Origin` three-way
+    (`OsNative` / `ExternalViaIntegrationStudio` / `ExternalDirect`).
+    The exact mapping rule is implementation-territory; the input
+    fields are named here.
+  - **Reference targets and delete rules.** V1's `RefEntityId` +
+    `DeleteRule` map to V2's `Reference.TargetKind` + `OnDelete`.
+    The `RefResolved` rowset's pre-computed lookup helps the
+    adapter avoid reconciling these per-row.
+  - **Index structure.** V1's `AllIdx` + `IdxColsMapped` map to
+    V2's `Index.SsKey` / `Name` / `Columns` / `IsUnique` /
+    `IsPrimaryKey`.
+
+### What V2 will explicitly NOT carry forward
+
+V2's IR is generic algebraic; it does not carry V1's
+domain-prescriptive vocabulary. Specific carry-forward exclusions:
+
+  - **V1-specific type names.** `OsmModel`, `EntityModel`,
+    `AttributeModel`, `RelationshipModel`, `ModuleModel` —
+    these are V1's domain types. V2's adapter consumes the
+    JSON document directly (or DTOs that mirror the JSON shape);
+    V2 does not depend on V1's C# types. The boundary is data,
+    not typed cross-references — per the cherry-pick discipline
+    (`HANDOFF.md` — Cherry-pick discipline).
+  - **Trigger metadata.** V1 carries triggers in `#Triggers` and
+    emits them downstream. V2's IR has no Trigger type today.
+    Triggers are deferred until a real V2 use case demands them
+    (`CHAPTER_CLOSE.md §2.5` lists triggers as V1 outputs without
+    V2 equivalents). When the use case lands, the IR refinement
+    discipline applies — the OSSYS adapter retrieves the data
+    from `#Triggers`; the IR grows; the emitter follows.
+  - **Computed-column definitions.** V1's `ComputedDefinition`
+    field surfaces `IsComputed=true` columns; V2's IR has no
+    Computed-column variant. Same disposition as triggers —
+    deferred until evidence forces the IR refinement.
+  - **Partition / data-compression metadata.** V1's
+    `PartitionColumnsJson` / `DataCompressionJson` fields. V2's
+    IR has no concept; out of scope until a real consumer demands.
+  - **Catalog (database) names.** V1 uses `db_catalog` to permit
+    cross-catalog FKs; V2's `Reference` has no `Catalog` field.
+    Reserved as a deferred IR refinement (Active deferrals index).
+    The OSSYS adapter ignores `db_catalog` for now; if a fixture
+    surfaces a non-null `db_catalog`, the adapter flags it via
+    diagnostic emission.
+  - **Diagnostic side-effects.** V1's extraction has no
+    diagnostic-emission discipline; the script itself THROWs on
+    unexpected conditions. V2's adapter wraps everything in
+    `Result<Catalog>` plus optional `Diagnostics<_>` entries;
+    THROW-style failures become `Error` severity entries.
+  - **Filter parameters.** V1's `@ModuleNamesCsv`, `@IncludeSystem`,
+    `@IncludeInactive`, `@OnlyActiveAttributes`, `@EntityFilterJson`
+    are V1's input-level filters. V2's `Selection` axis on Policy
+    handles equivalent filtering at the IR level (per A12 amended).
+    The OSSYS adapter does NOT pass through V1-side filter
+    parameters; selection happens after the catalog is read.
+    Reads-everything-then-filters is the V2 disposition.
+
+### What's structurally different in V2's IR
+
+V1's snapshot models things V2's IR doesn't, and vice versa.
+Naming the differences before the implementation chapter opens
+makes the translation rule explicit:
+
+  - **V2 distinguishes structure (Catalog) from evidence (Profile).**
+    V1 conflates them — `OutsystemsMetadataSnapshot` carries
+    both schema metadata AND probe-shaped reality (HasOrphan /
+    NullCount-equivalents are not in V1 the same way they are in
+    V2's `Profile`). V2's adapter splits V1's reconciled output
+    into a structural Catalog and an evidence Profile. The
+    OSSYS adapter's primary concern is Catalog construction;
+    Profile sourcing happens through `ProfileSnapshot.fs` from
+    a separate input.
+  - **V2's `Origin` is a closed three-way DU.** V1's flags
+    (`IsSystemEntity`, `IsExternalEntity`) are independent
+    booleans. The V2 mapping requires deciding how the V1 boolean
+    pair collapses to V2's closed three-way — implementation
+    territory; the rule lands in the adapter's chapter.
+  - **V2's `OnDelete` is a closed DU; V1's `DeleteRule` is a
+    string (or null).** V1 supports `TreatMissingDeleteRuleAsIgnore`
+    as a config knob because V1's DeleteRule can be missing.
+    V2's `OnDelete` has no missing variant. The OSSYS adapter
+    must decide a translation rule for V1's nullable DeleteRule;
+    the chapter that addresses this lands a DECISIONS entry on
+    the rule. (Note: this is the same gap session 16's FK
+    activation surfaced, where V2's `DeleteRuleIgnored` keep-reason
+    is unreachable from V2 fixtures today. The OSSYS adapter is
+    where it becomes reachable.)
+  - **V2's `Modality` is a list.** V1's `DataKind` is a single
+    string per entity. The adapter normalizes V1's single string
+    to V2's modality list.
+  - **V2 has no `IsActive` / `IsDisabled` axis on most types.**
+    V1's metadata threads activity flags throughout. V2's
+    Selection policy handles "what's included" at the policy
+    level; the IR doesn't carry per-record activity. The OSSYS
+    adapter will need to decide: filter inactive records at the
+    boundary (V2 IR sees only active), or carry them through and
+    let Policy filter (V2 IR has all). Implementation choice;
+    both are defensible.
+  - **V2 has no separate "physical column name vs database column
+    name" axis.** V1's `PhysicalColumnName` and `DatabaseColumnName`
+    are different fields (one is OutSystems' canonical, one is
+    the sys.columns reality). V2's `Column.ColumnName` is one
+    string; the adapter chooses which V1 field to use (the
+    reconciled name in `#Attr.PhysicalColumnName` post-backfill is
+    the canonical choice).
+  - **V2's `IsPrimaryKey` is per-attribute; V1's PK is per-index.**
+    V1 represents the PK via `IsIdentifier=true` on attributes
+    AND a separate index entry with `IsPrimary=true`. V2 carries
+    `IsPrimaryKey` on Attribute (per session-3 IR refinement).
+    The translation rule is: V2's `Attribute.IsPrimaryKey =
+    V1's IsIdentifier`. The PK index itself is also represented
+    in V2's `Index` list with `IsPrimaryKey=true`.
+
+### Carry-forward summary
+
+The OSSYS adapter is fundamentally a **reconciliation translator**:
+it takes V1's already-reconciled (intent vs reality) snapshot and
+projects it into V2's IR shape. The reconciliation work is V1's;
+V2's adapter does shape translation. This division preserves the
+F#-pure-core discipline (V2 doesn't run SQL; V2 reads JSON the V1
+chain produces) while inheriting V1's hard-won reconciliation
+logic.
 
 ### V2 placement
 
