@@ -5070,3 +5070,134 @@ JSON; per-table column structure that `FOR JSON PATH`
 collapses; check-constraint definitions; etc.). Each is
 deferred-by-input-path until `SnapshotRowsets` lands; the
 single resolution covers them all.
+
+#### 2026-05-18 (session 21 amendment) — mixed-active fixture surfaces inactive-records boundary; chapter-open backlog clears
+
+Session 21's mixed-active fixture surfaced the deferred
+inactive-records boundary choice that the session 17 OSSYS
+ADMIRE chapter scope flagged as the third (and last) of its
+deferred translation questions.
+
+**Trace before fixture (admire-mode discipline at the slice
+level — same as session 20):** V1 SQL carries IsActive flags
+through to JSON at three levels — module-level (line 924),
+entity-level (line 931), attribute-level (line 759). V1 SQL
+also has SQL-layer pre-filtering parameters
+(`@IncludeInactive` line 127; `@OnlyActiveAttributes` line
+254). **The flags ARE visible to V2 through the JSON path.**
+Unlike the SsKey question (session 18) and the IS-vs-Direct
+question (session 20), inactive-records-handling is **NOT a
+member of the JSON-projection-lossiness class** — V2 has the
+information; the boundary choice is genuine.
+
+**The boundary choice and its rationale:**
+
+The architectural alternatives:
+
+  - **Filter at adapter** — entity/attribute with `isActive: false`
+    is dropped from the V2 Catalog at parse time.
+  - **Carry through with IsActive axis** — V2 IR grows a
+    per-record IsActive axis (on Kind / Attribute, or as a
+    `Modality.Inactive` variant); the Selection policy filters
+    at projection time per A18 amended (filtering is operator
+    intent, which is Policy).
+
+A18 amended (Π consumes Catalog × Profile, never Policy)
+argues for carry-through in principle — filtering is operator
+intent, not catalog evidence. But:
+
+  - V2 IR has no per-record IsActive axis today; carry-through
+    requires substantive IR refinement.
+  - "IR grows under evidence" — no current V2 consumer demands
+    the inactive records' presence in V2's IR. No emitter
+    uses them; no pass consumes them; no Selection policy axis
+    today reads "include inactive" or "exclude inactive."
+  - The adapter's existing return shape `Task<Result<Catalog>>`
+    cannot carry per-record auditability for dropped records;
+    that requires extending the return shape to a
+    Diagnostics-bearing variant (which is its own future
+    slice).
+
+**Decision: filter at adapter for now; document the bound.**
+The smallest honest-now implementation. The bound resolves
+when one of the following triggers fires:
+
+  - **A real consumer demands inactive records' presence in
+    V2's IR.** Likely candidates: a refactor.log emission
+    that needs inactive entities to compute deletion sets; a
+    multi-environment Selection policy that wants different
+    inclusion rules for different deployments. When such a
+    consumer surfaces, the IR grows (likely as a
+    `Modality.Inactive` variant for entity-level, plus a
+    per-attribute axis for attribute-level — the exact shape
+    depends on the consumer); the adapter changes to
+    carry-through; this rule supersedes.
+  - **The adapter's return shape extends to support
+    Diagnostics-attached audit.** When the adapter's return
+    shape grows from `Task<Result<Catalog>>` to a
+    Diagnostics-bearing variant (likely
+    `Task<Result<Diagnostics<Catalog>>>` or similar), the
+    silent drop becomes audited drop — each filtered record
+    emits a `DiagnosticEntry` with `Source = "adapter:Osm"`,
+    `Severity = Info`, `Code = "adapter.osm.inactiveRecordDropped"`,
+    and the dropped record's identity. The structural rule
+    stays "filter at adapter"; the audit improves.
+
+**The new translation rule (rule 18, extending the running
+list):**
+
+| #  | V1 input shape | V2 output | Rationale |
+|----|---|---|---|
+| 18 | `entity.isActive: false` or `attribute.isActive: false` (default missing → true per V1's SQL `ISNULL(Is_Active, 1)` semantics) | Inactive entities are dropped from the V2 Catalog at parse time; inactive attributes are dropped from their Kind's `Attributes` list. | Filter at adapter under "IR grows under evidence" — no current consumer demands inactive records' presence in V2's IR. The drop is silent today; the future Diagnostics-attached audit is named in the bound. The carry-through alternative defers until a real consumer surfaces. |
+
+**Module-level `isActive: false`** is **not** exercised by the
+mixed-active fixture and not yet handled by the parser.
+Defers until a fixture forces the question. The most likely
+shape: same filter rule (drop the module entirely), but
+modules are coproduct cells (A11) and dropping a module drops
+all its entities, which is a bigger semantic claim than
+dropping individual records. Surface when a fixture requires
+it.
+
+**`physical_isPresentButInactive` field** in V1's JSON (line
+769 of SnapshotJsonBuilder; example at the
+`DeprecatedField` attribute in this slice's fixture, value 1)
+is **read but discarded today**. V1's SQL surfaces this as a
+derived flag — the attribute's logical IsActive is false but
+the physical column exists. V2's adapter has no use for the
+flag because it filters the inactive attribute before
+encountering it. Re-open trigger: a Diagnostics-bearing
+adapter that wants to surface "the physical column is still
+present even though the logical attribute is retired" as an
+audit-trail concern.
+
+#### Chapter-open backlog clears at session 21 — natural within-chapter milestone
+
+The chapter has now cleared all three deferred translation
+questions named in the session 17 OSSYS ADMIRE chapter scope:
+
+  - **Origin three-way collapse** — resolved session 20 (rule
+    17 + bounded-by-input-path disposition + composability
+    finding pointing at the SnapshotRowsets canonical
+    resolution).
+  - **Reference DeleteRule** — resolved across sessions 18–19
+    via the Ignore-mapping composition (rule 13's full table
+    + the V2-NoAction-as-Ignore-target finding that resolved
+    the unreachable-`DeleteRuleIgnored`-keep-reason loose end
+    from session 16).
+  - **Inactive-records boundary** — resolved this session
+    (rule 18 + bound documented + carry-through trigger
+    named).
+
+Eighteen translation rules total in the running list across
+four substantive slices.
+
+This is a **natural within-chapter milestone**, not a
+chapter-close. The chapter has more substantive slices ahead
+— index-bearing, static-entity, cross-module FK, plus
+whatever new V1 fields surface from real fixtures as the
+adapter is exercised against larger inputs. But the
+chapter-open's named uncertainties have all been answered
+under empirical pressure. The chapter's discipline is
+operating; the running list is auditable; the bounds are
+documented.
