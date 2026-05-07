@@ -31,12 +31,41 @@ open Projection.Core
 [<RequireQualifiedAccess>]
 module CatalogReader =
 
-    /// The input slot on the parse function. Closed DU; a future
-    /// `LiveOssysConnection` variant lands as explicit DU expansion
-    /// when V2 grows a SQL-running entry point per the re-open
-    /// trigger named in `DECISIONS 2026-05-15 — OSSYS adapter parse
-    /// signature`. Until that trigger fires, V1's JSON chain remains
-    /// the metadata producer; V2 reads its output.
+    /// The input slot on the parse function. Closed DU.
+    ///
+    /// **Two variants today; one variant planned (canonical
+    /// resolution); one variant reserved.**
+    ///
+    ///   - `SnapshotFile` and `SnapshotJson` are the current
+    ///     consumers. Both feed V1's canonical `osm_model.json`
+    ///     shape; SsKey is name-synthesized; the bound on A1 is
+    ///     documented (`DECISIONS 2026-05-15 — OSSYS adapter
+    ///     translation rules`).
+    ///
+    ///   - **Planned: `SnapshotRowsets`.** Per the operator
+    ///     decision recorded in `DECISIONS 2026-05-15 — OSSYS
+    ///     adapter translation rules`, session-20 amendment, the
+    ///     canonical resolution to the lossy-SSKey question is to
+    ///     consume V1's trailing rowsets directly. Rowsets carry
+    ///     SSKey natively and preserve per-table column structure
+    ///     the `FOR JSON PATH` aggregations collapse. The variant
+    ///     itself lands when chapter 2's organic flow brings it —
+    ///     likely after the current OSSYS adapter chapter
+    ///     completes its translation work through `SnapshotJson`.
+    ///     The operator decision is locked; not subject to
+    ///     relitigation.
+    ///
+    ///   - **Reserved: `LiveOssysConnection`.** A future variant
+    ///     for the case where V2 needs to operate without V1's
+    ///     chain in the loop entirely. Per `DECISIONS 2026-05-15 —
+    ///     OSSYS adapter parse signature`, deferred until its
+    ///     specific demand surfaces.
+    ///
+    /// Adding `SnapshotRowsets` speculatively today would violate
+    /// the closed-DU expansion discipline (one consumer needed;
+    /// zero exist). The variant is named here so future readers of
+    /// the code see the architectural commitment without having to
+    /// read DECISIONS to discover it.
     type SnapshotSource =
         /// Path to a V1-produced `osm_model.json` file on disk.
         | SnapshotFile of path: string
