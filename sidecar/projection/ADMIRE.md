@@ -2383,6 +2383,40 @@ domain-prescriptive vocabulary. Specific carry-forward exclusions:
     The OSSYS adapter does NOT pass through V1-side filter
     parameters; selection happens after the catalog is read.
     Reads-everything-then-filters is the V2 disposition.
+  - **Per-attribute `onDisk` envelope.** V1 emits a structured
+    sub-object per attribute (`outsystems_metadata_rowsets.sql:770-790`)
+    containing eleven physical-reality fields: `isNullable`,
+    `sqlType`, `maxLength`, `precision`, `scale`, `collation`,
+    `isIdentity`, `isComputed`, `computedDefinition`,
+    `defaultDefinition`, `defaultConstraint`, plus
+    `checkConstraints`. V1's `SnapshotJsonBuilder` includes the
+    envelope inside `attributes[]`. V2's OSSYS adapter does not
+    consume any of it.
+
+    **Rationale: physical-reality is read-side-adapter territory.**
+    `onDisk` is V1's snapshot of physical reality at extraction
+    time; the read-side adapter (a future chapter) is V2's read of
+    physical reality at deployment-validation time. They are
+    parallel sources of the same information class at different
+    temporal points. For the canary use case, the read-side
+    adapter is the source of truth (it queries the deployed
+    database directly); OSSYS's `onDisk` would be redundant when
+    read-side lands.
+
+    The chapter implementing the read-side adapter confirms this
+    redundancy or refutes it. **Re-open trigger:** if the read-
+    side adapter chapter discovers that V1's `onDisk` (V1-extracted
+    reality at one point in time) and the read-side adapter's
+    output (deployed reality at deployment-validation time) need
+    to be compared as separate sources to detect drift, then the
+    OSSYS adapter routes `onDisk` to V2's Profile alongside the
+    read-side adapter's emission. Until that chapter, the OSSYS
+    `onDisk` envelope is silently dropped.
+
+    The decision and rationale codified at `DECISIONS 2026-05-21 —
+    Chapter 2 close: alternative-IR-surface class` (session 25;
+    third translation-finding class). The `onDisk` envelope is
+    the first member of that class made explicit.
 
 ### What's structurally different in V2's IR
 
