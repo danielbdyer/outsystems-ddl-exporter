@@ -16,6 +16,7 @@
     <Compile Include="Fixtures.fs" />
     <Compile Include="CatalogTests.fs" />
     <Compile Include="LineageTests.fs" />
+    <Compile Include="DiagnosticsTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
     <Compile Include="ProfileFixtures.fs" />
     <Compile Include="ProfileTests.fs" />
