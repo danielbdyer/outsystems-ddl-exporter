@@ -13,32 +13,46 @@ substantive surfaces are unchanged.
 
 ## Reading order for a fresh agent
 
-1. **`HANDOFF.md`** — bridge letter from the prior chapter. Short on
-   purpose. Names what is load-bearing and what is deferred.
-2. **`CHAPTER_1_CLOSE.md`** — chapter-1 audit synthesis (sessions 1–12).
-   Read §1 (confirmations), §2 (drift), §4 (priorities), §5
-   (accumulated judgment), §7 (notes for the replacement).
-3. **`AXIOMS.md`** — the formal system. A1–A34 / T1–T11 with five
+1. **`HANDOFF.md`** — bridge letter from the most-recent-closed
+   chapter. Short on purpose. Names what is load-bearing and what
+   is deferred. Older chapters' handoff letters preserved at
+   `HANDOFF_CHAPTER_<N>.md` (currently `HANDOFF_CHAPTER_1.md`).
+2. **`CHAPTER_2_CLOSE.md`** — chapter-2 close synthesis (sessions
+   13–25). Read for the OSSYS adapter chapter's accumulated
+   state (25 translation rules), the three-class typology, the
+   meta-codifications (chapter-mid-audit; trace-before-fixture;
+   V1-envelope-walk), and the chapter-3 forward signals.
+3. **`CHAPTER_1_CLOSE.md`** — chapter-1 close synthesis (sessions
+   1–12). Read for historical context. Some priorities listed
+   there have been resolved by chapter 2 (Diagnostics writer
+   cashed out; OSSYS adapter shipped); the disciplines and
+   load-bearing commitments persist.
+4. **`AXIOMS.md`** — the formal system. A1–A34 / T1–T11 with
    amended originals. A18's amendment at the bottom is the
    load-bearing form for sibling Π's; the original A18 carries a
-   forwarding pointer.
-4. **`DECISIONS.md`** — append-only resolved-questions log. Read the
+   forwarding pointer. A1's bound on identity-survives-rename
+   through the JSON path is documented at the bottom (added
+   session 23).
+5. **`DECISIONS.md`** — append-only resolved-questions log. Read the
    most recent ten entries first; older entries remain in force
    unless explicitly superseded. Two indexes at the top:
    *Active deferrals* (catches silent-trigger fires across chapters)
    and *Operating disciplines* (cross-cutting practices, pointing
    at the substantive entries).
-5. **`ADMIRE.md`** — V1↔V2 bridge. One entry per V1 component
+6. **`ADMIRE.md`** — V1↔V2 bridge. One entry per V1 component
    admired and placed in V2. Three modes: V1-migration / V2-growth
-   / hybrid (`DECISIONS 2026-05-13` — admire spectrum).
-6. **`README.md`** — surface-level orientation; updated when
-   cumulative decisions warrant. Not the source of truth for any
-   specific question.
-7. **The code.** `Projection.sln`. Strategies in
+   / hybrid (`DECISIONS 2026-05-13` — admire spectrum). Multi-
+   session chapters use `extracting (in flight, N slices)` while
+   in flight (session 23 amendment).
+7. **`README.md`** — surface-level orientation; updated at chapter
+   closes. Not the source of truth for any specific question.
+8. **The code.** `Projection.sln`. Strategies in
    `src/Projection.Core/Strategies/`; passes in
    `src/Projection.Core/Passes/`; sibling Π emitters in
    `src/Projection.Targets.{SSDT,Json,Distributions}/`; F# adapters
-   in `src/Projection.Adapters.Sql/`.
+   in `src/Projection.Adapters.{Sql,Osm}/`. The OSSYS adapter at
+   `src/Projection.Adapters.Osm/CatalogReader.fs` is chapter 2's
+   substantive deliverable.
 
 ## Operating disciplines — the cross-cutting practices
 
