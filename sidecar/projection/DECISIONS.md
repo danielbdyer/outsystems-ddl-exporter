@@ -2416,3 +2416,204 @@ strategy infrastructure is solid; the rich-profiling foundation
 has two evidence types operational; and the next big move — Faker
 or third evidence type or cross-attribute strategies — has clean
 empirical context to choose from. Hold the cadence.
+
+## 2026-05-13 — Strategy-layer codification reaches stability mark
+
+**Status:** decided (operating discipline; trust signal for future authors)
+**Context:** Session 8's codification of the strategy layer carried
+three refinements during its initial validation
+(`RequireQualifiedAccess` on KeepReason DUs; variable-arity context
+for evaluate; total-decisions/named-skips). Sessions 9 and 10
+extended the rich-profiling vector under the codification; session
+11 ran the codification's third real test through a genuinely new
+domain (distribution-driven decisions on continuous evidence). No
+fourth refinement was required.
+
+**Decision:** **The strategy layer's codification is at its
+stability mark.** The four core predictions (pure functions, typed
+seam, structured rationale DUs covering the decision space, total
+decisions with named skips) plus the recognized conventions
+(Strategies/ folder placement, `<Domain>Rules` naming,
+`RequireQualifiedAccess` on KeepReason DUs, FanOutConfig delegation)
+have absorbed the variation a new domain brings without amendment.
+
+**The empirical test for "stability":**
+
+  1. The codification was named in session 8 (a descriptive pass
+     over three existing instances).
+  2. It was tested under closely-related variation through session
+     10 (per-attribute / per-index / per-reference granularities;
+     binary-question evidence).
+  3. It was tested under genuinely new pressure in session 11
+     (distribution-driven decisions, finer-grained evidence, hybrid
+     V1-migration / V2-growth admire mode).
+  4. None of those tests forced a fourth refinement. The absence of
+     finding is itself the finding.
+
+**What stability means in practice:** future strategy migrations
+after this point inherit a codification that has been validated on
+its central case (Nullability), on its variation case (UniqueIndex,
+ForeignKey), and on its first new-domain case (CategoricalUniqueness)
+without amendment. The pattern is now load-bearing in a way it
+wasn't at session 10 close. Future authors absorb the conventions
+(`AttributeKey`-as-first-field, `<Domain>Rules` suffix,
+`Composition.fanOut` delegation, `StrategyEvaluator` alias for
+typed seams) and trust they hold.
+
+**What stability does not mean:** it does not mean the codification
+is finished. New domains may surface new pressure. The next
+amendment, if it comes, will be evidence; the current absence of
+amendment is also evidence. Future agents should record either
+outcome in this entry's lineage.
+
+**Reasoning / consequences.** Empirical confirmation that an
+abstraction holds is stronger than predictive confidence that it
+will hold. Session 11's finding earns the codification its place
+across the rest of V2 — it is no longer a discipline being tested,
+it is a discipline being inherited.
+
+## 2026-05-13 — Discrete-rationale DUs absorb continuous evidence by adding variants at meaningful inflection points
+
+**Status:** decided (recognized property of the rationale-DU pattern)
+**Context:** Session 11's brief speculated that distribution-aware
+decision logic might stress the structured-rationale DU pattern by
+forcing a confidence dimension alongside the discrete variants —
+"this column's distribution suggests X with confidence Y." The
+session-11 reflection found the opposite: confidence didn't surface
+as a separate dimension because the keep-reason variants themselves
+modeled discrete confidence bands. The pattern absorbed continuous
+evidence without parametric confidence values.
+
+**Decision:** **Structured-rationale DUs absorb continuous evidence
+by adding variants at meaningful inflection points, not by carrying
+parametric confidence values.** This is a recognized property of
+the rationale-DU pattern; future strategy authors design new
+variants around evidential thresholds rather than reaching for
+numeric confidence scores.
+
+**The worked example.** `CategoricalUniquenessKeepReason` distinguishes:
+
+  - `NoCategoricalEvidence` — no observation at all (zero confidence)
+  - `EvidenceMissing` — probe attempted, didn't succeed reliably
+    (unknown confidence)
+  - `VocabularyTruncated` — evidence is a known prefix; full
+    vocabulary unknown (bounded-by-truncation confidence)
+  - `DistinctCountBelowThreshold` — vocabulary too small to merit
+    inference (insufficient confidence)
+  - `DuplicatesObserved` — direct contradiction (negative confidence)
+
+Five discrete bands, each named at a meaningful inflection point.
+A parametric `confidence: decimal` field on a coarser variant would
+have collapsed the structural distinctions into a number that
+downstream consumers would need to re-discriminate.
+
+**`VocabularyTruncated` distinct from `EvidenceMissing` is the
+sharpest case.** Both fall in the "we don't know enough" region.
+Conflating them under a single low-confidence variant would lose a
+meaningful distinction: truncated evidence is a *known unknown*
+(probe ran, capped the vocabulary at a configured limit; the
+unobserved vocabulary may extend the distinct count); missing
+evidence is an *unknown unknown* (probe didn't succeed; nothing
+observed). Different variants because the consumer's response
+differs.
+
+**The principle generalizes:**
+
+  - Continuous evidence (distinct counts, percentiles, sample
+    sizes) flows in.
+  - The strategy decides which discrete band the evidence falls
+    into based on configured thresholds and structural commitments.
+  - The variant that fires names the band.
+  - Downstream consumers pattern-match on the variant; no parsing
+    of confidence numbers required.
+
+**When to deviate.** If a future strategy genuinely returns a
+continuous-valued confidence (e.g., a Bayesian prior that callers
+need as a numeric input to further computation), the variant gains
+a `confidence: decimal` field rather than the DU shape changing.
+The principle: continuous values live as fields on variants; the
+variant identifies the regime, the field carries the magnitude.
+
+**Reasoning / consequences.** Future strategy authors faced with
+continuous evidence have a structural answer to "we need
+confidence" — add the right variant, not a confidence number on a
+coarser variant. This keeps rationale DUs pattern-match-friendly
+and downstream consumers free of confidence-threshold parsing.
+Joins the strategy-layer codification (DECISIONS 2026-05-11) and
+the structural-commitment-via-construction-validation principle
+(AXIOMS.md 2026-05-12) as a recognized operational primitive of
+V2's reliability texture.
+
+## 2026-05-13 — Chapter close: audit-by-subagent verification, drift findings, next-chapter priorities
+
+**Status:** decided (chapter closure marker; routes findings to
+next chapter)
+**Context:** Session 12 ran a five-agent parallel audit (V1 input
+contracts, V1 output contracts, V1 test coverage, architectural-doc
+drift, build-graph and dependency hygiene) as the first formal
+verification pass on the V2 sidecar after eleven build-and-validate
+sessions. The synthesis lives in `CHAPTER_CLOSE.md` at the
+projection root; the handoff letter for the next-chapter agent
+lives in `HANDOFF.md`. This DECISIONS entry records the chapter
+closure and routes the findings.
+
+**Decision:** **The chapter ends. The next chapter opens with
+CHAPTER_CLOSE.md and HANDOFF.md as orientation documents.**
+Findings documented; resolutions deferred to the next chapter per
+the leave-clean-ground discipline (don't fix in the audit session).
+
+**Audit summary** (full detail in CHAPTER_CLOSE.md):
+
+| Audit axis | Verdict |
+|---|---|
+| F#-pure-core / no-I/O-in-Core | Confirmed clean |
+| Strategy-layer placement matches codification | Confirmed clean |
+| Sibling Π independence (A18 amended) | Confirmed clean |
+| Composition-pattern adherence (`fanOut` delegation) | Confirmed clean |
+| Project reference graph (inward flow) | Confirmed clean |
+| Closed-DU exhaustiveness | Confirmed clean (one acknowledged trade-off in `TighteningPolicy` filter helpers) |
+| ADMIRE entry status strings | Drift — five of nine entries stale |
+| README.md | Drift — materially behind eleven sessions of work |
+| AXIOMS.md opening summary | Drift — still says "thirty-one axioms" |
+| Three-mode admire framework adoption | Drift — only one entry strictly follows |
+| V1 outputs without V2 equivalents | Documented backlog (Diagnostics writer is the gating dependency) |
+| Transform registry deferral | Drift — trigger fired at N=4, codebase at N=10, no cash-out logged |
+| Skip-stub asymmetry across V2 test files | Drift — three test files lack stubs the canonical pattern would prescribe |
+| V1↔V2 adapter / emitter divergences | ~10 cosmetic-to-medium drifts without DECISIONS audit trail |
+
+**Top 10 next-chapter priorities** (full detail in
+CHAPTER_CLOSE.md §4):
+
+  1. README.md absorbs the eleven-session state
+  2. ADMIRE status sweep (5 entries) + mode annotations
+  3. Skip-stub completion across V2 test files
+  4. Two missing V2 TopologicalOrderPass tests (manual cycle, junction deferral)
+  5. Transform registry cash-out (build or re-defer with rationale)
+  6. Diagnostics writer scoping
+  7. OSSYS catalog adapter ADMIRE stub
+  8. Faker emitter (deferred until third evidence type)
+  9. Build-graph and dependency hygiene cleanups
+  10. Adapter / emitter divergence DECISIONS batch entry
+
+**Discipline preserved through the chapter:**
+
+  - **Audit before commit** (DECISIONS 2026-05-09 — Audits surface
+    things not on the agenda). Session 12 is the first
+    chapter-scale audit applying this discipline at the chapter
+    boundary, not just the commit boundary.
+  - **Leave clean ground, not perfect ground.** The audit
+    documents drift; resolution belongs to the next chapter.
+    Documenting findings is the audit's product; fixing them is
+    different work with different tradeoffs.
+  - **Documentation is the bridge.** A fresh agent inherits the
+    codebase plus three documents (CHAPTER_CLOSE.md, HANDOFF.md,
+    and the existing canonical trio AXIOMS / DECISIONS / ADMIRE).
+    Honest documentation is the chapter's deliverable to its
+    successor.
+
+**Reasoning / consequences.** Chapter closure is a real
+architectural event — it marks where the prior chapter's
+accumulated judgment becomes documentation a fresh agent can
+inherit. Without this marker, the next chapter starts with the
+codebase but not the context; with this marker, it starts with
+both. The chapter ends here.
