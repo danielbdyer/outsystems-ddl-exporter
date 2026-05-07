@@ -2065,24 +2065,28 @@ out together rather than in isolation.
 
 ## 2026-05-13 — OSSYS catalog producer (`src/AdvancedSql/outsystems_metadata_rowsets.sql` → `MetadataSnapshotRunner` → `SnapshotJsonBuilder` → `osm_model.json`)
 
-**Status:** **extracting (in flight, 5 slices)** — **hybrid mode**
-(`DECISIONS 2026-05-13` — admire spectrum, session-23 amendment
-extending the framework with the in-flight status). Five
-substantive translation slices have landed across sessions 18–22
-through the `SnapshotJson` input path; the chapter has more
-substantive work ahead (static-entity, cross-module FK, plus the
-canonical `SnapshotRowsets` variant when sequencing brings it).
+**Status:** **extracted (chapter 2 close — JSON path; hybrid mode
+operating)** — `DECISIONS 2026-05-13` — admire spectrum, session-23
+amendment for the in-flight status, session-25 chapter-2-close
+transition to extracted. Six substantive translation slices have
+landed across sessions 18–22 and 24 through the `SnapshotJson`
+input path; the chapter closes with the JSON path operationally
+complete and the canonical `SnapshotRowsets` variant pre-scoped at
+session 25 commit 11 (subagent #5) for chapter-3+ implementation.
+The cross-module FK slice defers to fresh context as the highest-
+priority deferred slice for the chapter-3 handoff.
 
 V2's catalog reader exists at `src/Projection.Adapters.Osm/CatalogReader.fs`
 and consumes V1's `osm_model.json` shape via the `SnapshotJson`
-variant of `SnapshotSource`. Twenty-three translation rules have
+variant of `SnapshotSource`. **Twenty-five translation rules** have
 landed in the running list at `DECISIONS 2026-05-15 — OSSYS
-adapter translation rules`. Production V2 will eventually consume
-real OutSystems metadata via the canonical `SnapshotRowsets`
-variant (operator-decided per `DECISIONS 2026-05-15` session-20
-amendment); until that variant lands, V2 catalogs come from V1's
-JSON output with name-synthesized SsKey (the bound on A1's
-identity-survives-rename guarantee through the JSON path).
+adapter translation rules` across six substantive slices. Production
+V2 will eventually consume real OutSystems metadata via the
+canonical `SnapshotRowsets` variant (operator-decided per
+`DECISIONS 2026-05-15` session-20 amendment); until that variant
+lands, V2 catalogs come from V1's JSON output with name-synthesized
+SsKey (the bound on A1's identity-survives-rename guarantee
+through the JSON path).
 
 The OSSYS chapter exists in the strategic frame
 (`DECISIONS 2026-05-15 — Strategic frame for the OSSYS implementation
@@ -2113,20 +2117,45 @@ chapter against that frame.
     synthesis; V1 `isUnique`/`isPrimary` → V2 `IsUnique`/
     `IsPrimaryKey`; included-columns drop at the boundary;
     columns-by-ordinal sort.
+  - **Session 24** — static-entity slice (last substantive slice
+    in chapter 2). Rules 24–25 reaffirming session 18's rule 10
+    under empirical pressure with enriched rationale: V1
+    `isStatic: true` → V2 `Modality = [Static []]` (empty
+    population intentional; the OSSYS adapter's responsibility
+    ends at the modality flag; population data flows through
+    `Projection.Adapters.Sql/Static.fs` separately, mirroring
+    V1's own extraction split).
 
-### What remains plausible in the chapter
+### Chapter-2 close — three classes of translation findings now visible
 
-  - **Static-entity slice** (session 24 lean) — exercises
-    `Modality.Static` end-to-end; couples with
-    `Projection.Adapters.Sql/Static.fs` for population data.
-    Cross-cutting work bridging adapter + adapter + IR.
+The chapter has produced the complete typology of V1↔V2
+translation findings, codified at chapter-2 close
+(`DECISIONS 2026-05-21 — Chapter 2 close: alternative-IR-surface
+class`):
+
+  1. **JSON-projection-lossiness** — V2 can't see X (resolved by
+     `SnapshotRowsets`). Members: SsKey at every level; `EspaceKind`
+     IS-vs-Direct distinction; `isSystemEntity`.
+  2. **V2-boundary-discipline** — V2 sees X; V2's IR has no axis;
+     V2 chooses (filter, carry-through, IR refinement). Members:
+     inactive-records (rule 18); index translation choices (rules
+     19–23); static-entity split (rules 24–25).
+  3. **Alternative-IR-surface** — V2 sees X; primary IR has no
+     axis; parallel V2 surface is the natural home. Members: V1
+     `deleteRuleCode: "Ignore"` → Diagnostics emission (rule 13);
+     V1 `attributes[].onDisk` envelope → routes to Profile / read-
+     side adapter when that chapter materializes.
+
+### What remains for chapter 3
+
   - **Cross-module FK slice** — refines rule 16's same-module
     assumption. Defers to fresh context per the chapter's
     runway plan; named in the chapter-close handoff document
-    as the highest-priority deferred slice for the new context.
+    as the highest-priority deferred slice for chapter 3.
   - **Canonical `SnapshotRowsets` variant** — separate
-    architectural slice when sequencing brings it. Lands the
-    canonical resolution to the JSON-projection-lossiness class.
+    architectural slice when sequencing brings it. Pre-scoped at
+    session 25 commit 11 (subagent #5). Lands the canonical
+    resolution to the JSON-projection-lossiness class.
 
 ### What the V1 producer does (algebraic terms)
 
