@@ -347,3 +347,7 @@ let ``V1 UniqueIndex: Aggressive mode without evidence requires remediation — 
 [<Fact(Skip = "V1 UniqueIndexDecisionStrategy.EvidenceModeTreatsIncludedColumnsAsSingleColumnIndex: V1 augments composite indexes with INCLUDE columns and special-cases the included-column boundary against the single-column unique signal. V2 does not yet model index-included-columns at the IR level (the Index DU has no IncludedColumns slot); the boundary case is reachable only when the IR refinement lands. Reserve the test name; promote to Behavioral when the IR grows.")>]
 let ``V1 UniqueIndex: evidence mode treats included columns as single-column index — SKIPPED (V2 divergence)`` () =
     ()
+
+[<Fact(Skip = "V1 OpportunityBuilder.TryCreate(UniqueIndexAnalysis, ColumnCoordinate) emits an Opportunity record for every UniqueIndex decision that does not enforce uniqueness or that requires remediation. The opportunity carries a summary, a Risk classification, the rationales, and the index/column coordinates. V2's UniqueIndexPass.run today produces UniqueIndexDecisionSet only; the opportunity-stream-equivalent gates on the Diagnostics writer (DECISIONS 2026-05-06). Activation: when the writer lands, UniqueIndexPass.runWithDiagnostics is the entry point that emits opportunity-style DiagnosticEntry values; this Skip flips to [<Fact>] and asserts on the Entries surface.")>]
+let ``V1 UniqueIndex: opportunity-stream emits remediation entry for non-enforced indexes — RESERVED (gates on Diagnostics writer)`` () =
+    ()
