@@ -4177,3 +4177,230 @@ canary's first real run may surface a verisimilitude need; the
 three-emission-class scheme may need a fourth class. Refinements
 land as amendments to this entry or as their own entries that
 reference it.
+
+## 2026-05-15 — OSSYS adapter parse signature (Position B; input slot decided)
+
+**Status:** decided (Position B per `DECISIONS 2026-05-13 — Anticipation vs. speculation in abstraction extraction`)
+**Context:** Session 17's chapter-open work names the OSSYS adapter
+as the V2 boundary for OutSystems metadata ingestion. The
+anticipation-vs-speculation refinement (session 14 commit 11)
+recommends Position B for cases where a future abstraction's
+shape is visible but its arrival is not concrete. `ICatalogReader`
+is the named future abstraction (a second catalog source —
+DACPAC, OData, in-memory test reader — would surface it). Position
+B says: design the function signature to map cleanly to the
+eventual interface; defer the interface itself.
+
+This entry records Position B for the OSSYS adapter and decides
+the open `<input>` slot the session-17 instruction explicitly
+flagged.
+
+### Decision
+
+**The OSSYS adapter's canonical entry-point signature is:**
+
+```fsharp
+module Projection.Adapters.Osm.CatalogReader
+
+val parse : SnapshotSource -> Task<Result<Catalog>>
+```
+
+**The `<input>` slot is the V1-produced JSON snapshot, lifted
+into a small typed value:**
+
+```fsharp
+type SnapshotSource =
+    /// Path to a V1-produced osm_model.json file on disk. Read
+    /// synchronously inside the Task; the adapter is async at the
+    /// boundary for ecosystem consistency, not because the file
+    /// I/O itself benefits from it.
+    | SnapshotFile of path: string
+    /// In-memory snapshot string. Useful for tests and for
+    /// pipelines that produce the snapshot in-memory rather than
+    /// via disk.
+    | SnapshotJson of json: string
+```
+
+The `SnapshotSource` DU is **closed** (per the strategy-layer
+codification's discipline of closed-DU expansion when consumers
+are at meaningful inflection points). Adding a third variant
+(e.g., `LiveOssysConnection of connectionString` once V2 grows a
+SQL-running entry point) lands as an explicit DU expansion,
+not a silent open variant.
+
+### Position B rationale: shape alignment for `ICatalogReader`
+
+The session-14 anticipation-vs-speculation refinement named
+`ICatalogReader` as a Position B candidate. The OSSYS adapter's
+chapter-open is the moment to honor that: design the signature
+so a future interface lands as a one-line wrapper, not a
+retrofit.
+
+The Position B alignment:
+
+```fsharp
+// Future, when a second catalog source materializes:
+type ICatalogReader =
+    abstract Read : SnapshotSource -> Task<Result<Catalog>>
+
+// OSSYS adapter wraps trivially via object expression:
+let osmReader : ICatalogReader =
+    { new ICatalogReader with
+        member _.Read source = Projection.Adapters.Osm.CatalogReader.parse source }
+
+// A DACPAC reader (when it lands) wraps the same way:
+let dacpacReader : ICatalogReader =
+    { new ICatalogReader with
+        member _.Read source = Projection.Adapters.Dacpac.CatalogReader.parse source }
+```
+
+The `SnapshotSource` DU is the abstraction's input parameter even
+in the single-adapter case. A future DACPAC reader's variants
+(`DacpacFile`, `DacpacBytes`) would expand the same DU, OR a
+distinct `DacpacSource` DU would parallel it. Position B doesn't
+require the DUs to merge — it requires the *signature shape* to
+align so the interface, when it lands, doesn't force retrofit.
+
+### Why JSON snapshot, not live OSSYS connection
+
+The session-17 instruction asked: connection string to a live
+OutSystems database, path to a JSON snapshot file, or a DU
+accepting either?
+
+**Decision: JSON snapshot only at chapter-open.** The
+`SnapshotSource` DU has two variants today (file-path and
+in-memory string); a third (`LiveOssysConnection`) is a Position-C
+deferral with explicit re-open trigger.
+
+**Rationale for the JSON-only choice:**
+
+  1. **Preserves V1's reconciliation chain.** V1's 1184-line SQL
+     script does the hard work of intent-vs-reality reconciliation
+     (per the OSSYS ADMIRE chapter scope, session 17 commit 2).
+     Re-implementing that work in V2 would be a substantial
+     additional chapter; V2's OSSYS adapter does shape translation
+     from V1's already-reconciled JSON, not re-reconciliation
+     from raw SQL.
+  2. **Preserves F# Core's no-I/O / no-time discipline at the
+     test surface.** Reading a JSON file is a single point of
+     I/O at the boundary; running the OSSYS SQL script is a
+     full DbConnection lifecycle, async DB I/O, and ~22 rowset
+     processors. JSON-path keeps the boundary thin.
+  3. **The V2 fixture pattern already mirrors the JSON shape.**
+     `tests/Fixtures/model.*.json` files are V1-shaped today;
+     consuming them directly via the JSON-path adapter is the
+     differential test V2 needs (per the OSSYS ADMIRE chapter
+     scope's "differential validation" section).
+  4. **The canary path stays clean.** The strategic frame's
+     canary (session 17 commit 1) needs a Catalog input; reading
+     it from a JSON snapshot is what V2's existing test surface
+     does. The canary doesn't need a live OutSystems instance to
+     validate emission; the canary applies V2's emitted artifacts
+     against an ephemeral SQL Server, which is unrelated to the
+     OSSYS adapter's input.
+
+**Re-open trigger for `LiveOssysConnection`:** when a real
+operator workflow demands V2 ingest OutSystems metadata directly
+without staging through V1's JSON chain (e.g., a CLI surface
+where the operator points V2 at an OutSystems database and V2
+runs the extraction itself, replacing V1's `MetadataSnapshotRunner`
+in V2's stack). Until that workflow surfaces, V1's SQL chain
+remains the metadata producer; V2 reads its JSON output.
+
+The `SnapshotSource` DU is the carrier for this future expansion.
+When the trigger fires, a third variant lands; the parse function
+gains a third branch; the rest of the adapter is unchanged.
+
+### Why `Task<Result<Catalog>>`, not `Result<Catalog>`
+
+The signature uses `Task<Result<Catalog>>` even though file I/O
+on the JSON-path could be synchronous. The `Task` wrapping serves
+two purposes:
+
+  1. **`ICatalogReader` interface alignment.** A future DACPAC
+     adapter (DACPAC files unzip and parse asynchronously) and
+     a future `LiveOssysConnection` variant (DB I/O is async by
+     definition) both need `Task<...>` shape. Placing the OSSYS
+     adapter under the same shape today means the interface, when
+     it lands, doesn't have to upcast sync `Result` to async
+     `Task<Result>`.
+  2. **Ecosystem consistency.** The trunk's V1 adapter
+     (`MetadataSnapshotRunner.ExecuteAsync`) returns
+     `Task<Result<OutsystemsMetadataSnapshot>>`. V2's OSSYS
+     adapter mirroring the shape simplifies the C#-from-F#
+     interop story when `Projection.Pipeline` (the canary's C#
+     orchestration project) wants to call into V2's adapter.
+
+The trade-off is small ceremony at the JSON-path call site
+(`async { ... } |> Async.StartAsTask` or equivalent) in exchange
+for shape alignment with future async-by-nature variants.
+
+### Where the entry point lives (project structure)
+
+The OSSYS adapter lives in a new project:
+`src/Projection.Adapters.Osm/`. Sibling to `Projection.Adapters.Sql/`
+(which today carries `Static.fs`, `ProfileSnapshot.fs`,
+`ProfileStatistics.fs`). The choice of a separate project rather
+than a file under `Projection.Adapters.Sql/` reflects the
+adapter's distinct role:
+
+  - `Projection.Adapters.Sql` is for SQL-Server-side metadata
+    (column reality, FK reality, profile probes). It does NOT
+    read OutSystems platform metadata; it reads database
+    structural reality.
+  - `Projection.Adapters.Osm` is for OutSystems-platform metadata
+    (the OSSYS_* / OSUSR_* schema). It does NOT read database
+    structural reality directly; it consumes V1's reconciled
+    output.
+
+The two adapters are siblings in the same architectural axis
+(both read external metadata into V2's IR) but separate projects
+because their input domains differ. The split also makes
+test-fixture organization clearer: `Projection.Tests/Fixtures/`
+JSON files belong to the Osm adapter's test surface; profile
+snapshot fixtures belong to the Sql adapter's.
+
+### What this entry doesn't decide
+
+  - **The DTO shape inside the adapter.** Whether to use
+    `System.Text.Json.JsonDocument`, hand-written DTO records, a
+    type provider, or something else is implementation-territory
+    for the next chapter in the OSSYS arc.
+  - **Translation rules for V1↔V2 vocabulary.** The mapping rules
+    for V1 `IsExternalEntity` + `IsSystemModule` → V2 `Origin`,
+    V1 nullable `DeleteRule` → V2 closed `OnDelete`, etc., are
+    implementation decisions that land in the relevant chapter.
+  - **Test fixture strategy.** Whether to embed fixtures inline
+    (per `StaticAdapterDifferentialTests.fs`'s pattern) or to
+    consume V1's `tests/Fixtures/` JSON files directly is a test-
+    surface decision the chapter-open hasn't reached yet.
+  - **Diagnostic emission.** The OSSYS adapter will likely emit
+    `DiagnosticEntry` values for parser warnings (per the
+    Diagnostics writer that landed at session 14 commit 3); the
+    return type extension to `Lineage<Diagnostics<Catalog>>` is
+    deferred until the implementation chapter decides whether
+    the adapter's diagnostics warrant the dual-writer shape or
+    a simpler `Result<Catalog * DiagnosticEntry list>` tuple.
+
+### Reasoning / consequences
+
+The Position B framing says: **shape now, interface later.** The
+parse signature is the shape; the interface is the deferral.
+Future agents implementing the OSSYS adapter inherit the
+signature as a constraint; future agents wrapping it in
+`ICatalogReader` (when a second source materializes) inherit the
+trivial wrapping path.
+
+The JSON-only-at-chapter-open choice is itself a Position-B move
+on the input slot: design `SnapshotSource` as a closed DU so a
+future `LiveOssysConnection` variant lands cleanly, but don't
+build it today. Two-consumer threshold (within a shape) applies
+recursively — the variant earns its place when a second consumer
+demands SQL-direct ingestion, not before.
+
+This entry pairs with `DECISIONS 2026-05-15 — Strategic frame for
+the OSSYS implementation chapter` (session 17 commit 1) and the
+OSSYS ADMIRE chapter scope (session 17 commit 2). Together they
+form the chapter-open: the strategic axes; the V1↔V2 chapter
+scope; the canonical entry signature. The implementation
+chapters open from here.
