@@ -3565,3 +3565,124 @@ done and what it has yet to do.
 Hold the spine.
 
 — Session 14 (the Diagnostics writer chapter-open)
+
+## 2026-05-13 — Anticipation vs. speculation in abstraction extraction (refinement of the two-consumer threshold)
+
+**Status:** decided (operating discipline; refinement of `DECISIONS 2026-05-13 — Emergent primitives earn their place through multi-consumer demand`)
+**Context:** Session 14's discussion of object expressions for
+hypothetical `ICatalogReader` and `IDiagnosticSink` interfaces
+surfaced a question the two-consumer threshold doesn't directly
+answer. The `ICatalogReader` case looks plausibly worth amortizing
+up front (DACPAC support is named in V2's vocabulary docs;
+`README.md` calls out "DACPAC, OData, or other sources later" as
+the algebra's whole reason for using generic algebraic names; the
+OSSYS adapter implementation chapter is the natural moment to make
+the interface decision once before the function shape is calcified
+by callers). The `IDiagnosticSink` case looks distinctly *not*
+worth amortizing (writer-vs-sink semantics are genuinely
+uncertain; the first real downstream consumer's shape will
+constrain the design in a way speculation cannot). The two-consumer
+threshold treated symmetrically would defer both; the cases are
+not symmetric.
+
+**The reframing:** **The two-consumer threshold is not "wait for
+the second consumer to literally exist" — it is "wait for the
+second consumer's *shape* to be visible enough to validate the
+abstraction."** When the shape is visible, the threshold is met by
+anticipation; when the shape isn't, speculation about the
+abstraction is what the threshold guards against. The discipline
+is against speculative abstraction, not against thoughtful
+anticipation.
+
+**Three positions for any abstraction-extraction question:**
+
+| Position | What it means | When it applies |
+|---|---|---|
+| **A — Amortize fully now** | Define the abstraction (interface, helper, primitive, etc.) today; route all consumers through it. Pay full cost up front. | When the second consumer's shape *and* arrival are both highly probable within the next few sessions. Rare; usually a sign we're past the threshold and just hadn't noticed. |
+| **B — Amortize structurally only** | Don't define the abstraction today, but design the function signatures / module shapes / value types so they map cleanly to the eventual abstraction. When the second consumer arrives, the abstraction lands as a one-line wrapper; no retrofit. Pay structural cost up front, defer concrete cost. | When the second consumer's *shape* is visible and validatable (we know what the abstraction would look like) but its *arrival* is not yet concrete. The discipline preserved: no speculative abstraction; the discipline relaxed: design with anticipated shape in mind. |
+| **C — Defer fully** | Build whatever's natural for the first consumer; let the second consumer force the abstraction. Retrofit cost is real but small in F# (object expressions, type aliases, monad bindings all keep the cost low). | When the second consumer's shape is genuinely uncertain. The risk of premature naming is higher than the cost of retrofit. |
+
+**Worked examples:**
+
+| Abstraction | Position | Rationale |
+|---|---|---|
+| `ICatalogReader` (multiple catalog sources: OSSYS, DACPAC, OData, in-memory fixtures) | **B** | DACPAC's shape is concrete enough to design for. The OSSYS adapter's primary entry point should be `parse : string -> Task<Result<Catalog>>` — exactly the shape the future interface would have. Interface itself defers until a second source materializes; structural alignment lands in the OSSYS implementation chapter. |
+| `IDiagnosticSink` (streaming consumers of Diagnostics entries) | **C** | Writer-vs-sink semantics are the deeper question; V2 chose writer (entries accumulate in a value; consumer reads). The first real downstream consumer (JSON manifest emitter, operator dashboard, telemetry consumer) will constrain whether sink semantics are needed. Three plausible futures, three different right answers. Wait for the first consumer to surface the question. |
+| Composition primitives (`fallback`, `accumulate`, `wrap`, `lift`) | **C** | Sketched at session 8; deferred at session 11 commit cash-out (`DECISIONS 2026-05-13 — Composition vocabulary cash-out`). The first consumer's shape isn't visible — we don't know what the second pass that needs `accumulate` would look like, what the second strategy that needs `wrap` would instrument, etc. The shape isn't validatable; speculation would name the wrong abstraction. |
+| `StrategyEvaluator` alias (now codified) | **B → A retroactively** | Sketched at session 8 (Position B; the shape was visible across three strategies); cashed out at session 11 commit 5 when the fourth strategy made the shape empirically real (`DECISIONS 2026-05-13 — Generic StrategyEvaluator alias cash-out`). The retrospective Position A landing was actually a Position B that ripened into A through real consumer demand. |
+
+**The empirical test for "shape visible enough":**
+
+  1. **Can you write the abstraction's signature without making
+     contested choices?** If yes, the shape is visible. If you find
+     yourself pausing on "should this be `Async` or sync?" or
+     "should it return `Result` or throw?" — those are the contested
+     choices that mean the shape isn't visible enough yet.
+  2. **Can you predict the second consumer's call site without
+     consulting an external source?** If yes, anticipation is
+     grounded. If you're reaching for "well, it depends on what the
+     downstream design is" — the second consumer's shape is
+     speculative, not visible.
+  3. **Would naming the abstraction now constrain the second
+     consumer's design in ways you'd be confident about?** If yes,
+     the abstraction earns its place by anticipation. If naming it
+     now would force the second consumer into a shape that might be
+     wrong — you're speculating, not anticipating.
+
+**The discipline restated:**
+
+  - Position B is acceptable when all three empirical tests pass.
+    The structural cost (designing the function with the
+    anticipated abstraction in mind) is small; the future cost
+    saved (no retrofit) is real.
+  - Position A requires both shape visibility AND a concrete second
+    consumer. Without the concrete consumer, A is just speculation
+    in disguise.
+  - Position C is the default. When in doubt, defer; F# makes
+    retrofit cheap.
+
+**Why this refinement matters.** The two-consumer threshold has
+served the codebase well — `fallback` / `accumulate` / `wrap` /
+`lift` deferred at session 11 are still deferred at session 14
+because no consumer has surfaced their shape; the discipline
+caught what would have been speculative abstraction. But applied
+*as a literal rule* it would also defer `ICatalogReader` even when
+DACPAC is named in V2's vocabulary docs as a planned source. That's
+treating anticipation as speculation, which loses information.
+
+The refinement preserves the discipline's value (no abstractions
+named on hope alone) while permitting Position B (structural
+alignment when the shape is concrete enough). Future agents
+applying the discipline have the three positions plus the empirical
+test to choose among them; the choice is now nuanced, not
+mechanical.
+
+**Pairs with three other entries in this session:**
+
+  - `DECISIONS 2026-05-13 — Emergent primitives earn their place
+    through multi-consumer demand` — the original threshold this
+    refinement extends.
+  - `DECISIONS 2026-05-13 — Pass return-type codification` (session
+    14) — also in the abstraction-design family; the discipline
+    there is "the type signature names the production." This entry
+    says the timing of when to introduce that signature follows
+    the visibility-of-shape rule.
+  - `DECISIONS 2026-05-13 — Named accessors for stacked types`
+    (session 14) — the smell-fix discipline for nested access; the
+    timing of when to extract a named accessor follows the same
+    rule (when call sites recur enough that the accessor's shape
+    is visible).
+
+**Reasoning / consequences.** Future abstraction-extraction
+decisions explicitly choose among A, B, or C and apply the empirical
+test. The decision is captured in the relevant DECISIONS entry or
+the commit message that introduces the abstraction. Documentation
+of the position taken — and the test result — pays compound
+interest when a future agent revisits the choice.
+
+The general lesson: **disciplines refine through use, not through
+restatement.** The two-consumer threshold was the right rule when
+named; the refinement is the right rule now that one of its edge
+cases (anticipation grounded in concrete planning) has surfaced.
+The next agent who finds another edge case extends this entry or
+writes a successor; the discipline is alive, not frozen.
