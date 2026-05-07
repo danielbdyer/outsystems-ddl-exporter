@@ -1,0 +1,281 @@
+# CLAUDE.md — V2 Sidecar Navigation
+
+This file is the first-read pointer for fresh agents. It does **not**
+substitute for the canonical documents — it points at them. All
+substantive disciplines, axioms, and resolved questions live in the
+files this document indexes; this file's only job is to make sure
+nothing load-bearing is missed.
+
+If you are an agent opening this codebase for the first time, read
+the documents in the order this file lists. If you are an agent
+returning across sessions, this is the navigation surface; the
+substantive surfaces are unchanged.
+
+## Reading order for a fresh agent
+
+1. **`HANDOFF.md`** — bridge letter from the prior chapter. Short on
+   purpose. Names what is load-bearing and what is deferred.
+2. **`CHAPTER_CLOSE.md`** — chapter-1 audit synthesis (sessions 1–12).
+   Read §1 (confirmations), §2 (drift), §4 (priorities), §5
+   (accumulated judgment), §7 (notes for the replacement).
+3. **`AXIOMS.md`** — the formal system. A1–A34 / T1–T11 with five
+   amended originals. A18's amendment at the bottom is the
+   load-bearing form for sibling Π's; the original A18 carries a
+   forwarding pointer.
+4. **`DECISIONS.md`** — append-only resolved-questions log. Read the
+   most recent ten entries first; older entries remain in force
+   unless explicitly superseded. Two indexes at the top:
+   *Active deferrals* (catches silent-trigger fires across chapters)
+   and *Operating disciplines* (cross-cutting practices, pointing
+   at the substantive entries).
+5. **`ADMIRE.md`** — V1↔V2 bridge. One entry per V1 component
+   admired and placed in V2. Three modes: V1-migration / V2-growth
+   / hybrid (`DECISIONS 2026-05-13` — admire spectrum).
+6. **`README.md`** — surface-level orientation; updated when
+   cumulative decisions warrant. Not the source of truth for any
+   specific question.
+7. **The code.** `Projection.sln`. Strategies in
+   `src/Projection.Core/Strategies/`; passes in
+   `src/Projection.Core/Passes/`; sibling Π emitters in
+   `src/Projection.Targets.{SSDT,Json,Distributions}/`; F# adapters
+   in `src/Projection.Adapters.Sql/`.
+
+## Operating disciplines — the cross-cutting practices
+
+These disciplines cut across substantive work. Each links to its
+codifying DECISIONS entry; if you find yourself working against one
+of them, write the amendment first.
+
+| Discipline | Where to find the rationale |
+|---|---|
+| **Audit during validation** — when something second-order surfaces during the work, act on it before shipping. Five paydowns across sessions 4, 5, 7, 8, 11; three more during session 14. | `DECISIONS 2026-05-09` — Audits surface things not on the agenda |
+| **IR grows under evidence, not speculation** — types, fields, DU variants, and helpers land when a consumer demands them. Two-consumer threshold for helper extraction. | `DECISIONS 2026-05-07` — IR grows under evidence, not speculation |
+| **Total decisions, named skips** — strategies return decisions for every input; "no decision" is a named `KeepReason` variant rather than silence. | `DECISIONS 2026-05-11` — Strategy-layer codification: empirical verdict (refinement 3) |
+| **Closed-DU expansion empirical-test discipline** — when adding a variant, F# exhaustiveness errors should light up only at match sites; if callers outside the variant's module need reshaping, the seam is wrong. | `DECISIONS 2026-05-13` — Closed-DU expansion: empirical confirmation |
+| **Two-consumer threshold for emergent primitives** — extract a helper / primitive at the second consumer, not the first. Codified for `fanOut`; deferred for `fallback` / `accumulate` / `wrap` / `lift`. | `DECISIONS 2026-05-13` — Emergent primitives earn their place through multi-consumer demand |
+| **Decimal as default for continuous statistical evidence** — T1 byte-determinism requires it; `float`/`double` arithmetic varies by host. | `DECISIONS 2026-05-13` — Decimal is the default for continuous statistical evidence |
+| **Discrete-rationale DUs absorb continuous evidence by adding variants at meaningful inflection points** — don't reach for `confidence: decimal` on a coarser variant; add the variant that names the band. | `DECISIONS 2026-05-13` — Discrete-rationale DUs absorb continuous evidence |
+| **Pass return-type codification** — passes return `Lineage<'output>` when they produce only decisions; `Lineage<Diagnostics<'output>>` when they produce decisions plus observer-relevant findings. The shape names the production. | `DECISIONS 2026-05-13` — Pass return-type codification (session 14) |
+| **Named accessors for stacked types whose nested access loses self-description** — `lineage.Value.Value` is a smell when readers must count projections to know which writer they're on. Provide module-level accessors. | `DECISIONS 2026-05-13` — Named accessors for stacked types (session 14) |
+| **Contract-vs-implementation cross-reference in audits** — any audit walking contract-vs-test must also walk contract-vs-implementation. The "no test, no implementation" finding is a feature gap, not a test gap. | `DECISIONS 2026-05-13` — Audit discipline refinement (session 14) |
+| **Active deferrals re-checked at chapter close** — silent-trigger fires get caught by table-scan, not by chronological re-read. The transform-registry deferral fired without cash-out for ~7 sessions; the index exists so it doesn't recur. | `DECISIONS.md` § Active deferrals — index (session 13) |
+| **Document the false starts** — preserve the wrong rule alongside the right one. Future agents recognize the temptation when it recurs; documentation captures the discipline's discovery, not just its outcome. | Session 14 commits 4 and 6 (see preserved-false-start prose in those entries) |
+
+## Load-bearing commitments — do not break without writing the amendment first
+
+These are not negotiable without an explicit DECISIONS entry that
+names the prior commitment and supersedes it. If you find yourself
+wanting to break one, write the amendment first.
+
+- **F#-pure-core / no-I/O-in-Core.** `Projection.Core` has zero I/O.
+  Audited clean (`CHAPTER_CLOSE.md §1.1`).
+- **A18 amended.** Π consumes whichever subset of `Catalog × Profile`
+  it needs, but never `Policy`. Catalog and Profile are *evidence*;
+  Policy is *intent*. If you reach for Policy from inside an emitter,
+  you are in the wrong layer — the work belongs in a pass.
+- **Strategy-layer codification (`DECISIONS 2026-05-11`).** Pure
+  functions of IR fields; typed function-type seam
+  (`StrategyEvaluator<'context, 'config, 'decision>`); structured
+  rationale DUs covering the decision space exhaustively; lineage
+  events on actual decisions; module name advertises domain
+  (`<Domain>Rules` suffix); total decisions with named skips.
+- **`Composition.fanOut` for registered-intervention pass drivers.**
+  All registered-intervention pass drivers delegate to it.
+- **Decimal as default for continuous statistical evidence.**
+- **Sibling-Π commutativity (T11).** Every Π's output should mention
+  every catalog kind by SsKey root.
+
+## Programming style — the center target
+
+The codebase has a coherent style. These are the gravitational
+patterns; new code lands inside them by default. Each guideline
+points at the canonical rationale rather than restating it. Where
+the canonical surface is the code itself, the pattern is named.
+
+### Posture
+
+- **The type system is the contract.** Smart constructors return
+  `Result<'a>` for every value type that carries an invariant; closed
+  DUs make exhaustiveness compiler-checked; identity (`SsKey`,
+  `Name`) is a distinct type the compiler refuses to confuse with a
+  string. The first place to encode a constraint is the type system,
+  not a runtime check. (`AXIOMS.md` operational principle —
+  structural-commitment-via-construction-validation.)
+- **Determinism is constructed, not validated.** Sort by `SsKey`
+  before scanning. Use `decimal` for continuous statistical evidence
+  (never `float`/`double`). No `DateTime.Now`, `Random`, or I/O in
+  Core — the boundary supplies clock values; passes consume them.
+  T1 byte-determinism holds because every choice supports it.
+- **Defaults are minimal.** No comments unless the WHY is
+  non-obvious. No abstractions unless a second consumer forces
+  extraction. No fields, variants, or helpers ahead of evidence. IR
+  grows under demand, not speculation. Premature anything is the
+  failure mode.
+- **Make divergences visible.** When V2 deliberately differs from
+  V1, the difference surfaces as a `Skip` test stub at the test-file
+  level, not as ADMIRE prose. When a strategy makes "no decision,"
+  the named keep-reason variant says so structurally; silence is
+  forbidden. Total decisions, named skips.
+- **Audit during the work.** When something second-order surfaces,
+  act on it before shipping. The codification absorbs refinements
+  during validation, not afterward. Five paydowns across sessions
+  4–11; three more during session 14. (`DECISIONS 2026-05-09` —
+  Audits surface things not on the agenda.)
+
+### Types
+
+- **Records for products; closed DUs for sums.** F# records carry
+  PascalCase fields; closed DUs widen only when evidence forces a
+  new variant.
+- **Smart constructors return `Result<'a>`.** Every value type whose
+  invariants the type system can't express directly carries a
+  `create` that returns `Result<'a>` and rejects malformed inputs.
+  Downstream consumers pattern-match without re-validating; the
+  invariant rides on every value. Worked examples:
+  `CategoricalDistribution.create`, `NumericDistribution.create`,
+  `SsKey.original`, `Name.create`.
+- **`[<RequireQualifiedAccess>]` when case names may collide.**
+  Outcome and KeepReason DUs across strategies share generic case
+  names (`PolicyDisabled`, `EvidenceMissing`); F# resolves
+  ambiguity by picking one, which produces silent miscompilation.
+  Add the attribute when names are likely to recur. Worked
+  examples: `NullabilityOutcome`, `UniqueIndexOutcome`,
+  `ForeignKeyOutcome`.
+- **`option` for absence; never null.** `Nullable=enable` plus
+  `TreatWarningsAsErrors=true` is the project setting; null escapes
+  fail compilation.
+- **Identity is a type, not a string.** `SsKey` is a single-case DU
+  (`Original of string | Derived of original × reason`); core code
+  never holds a string in a place where identity belongs. Names
+  (`Name`) are presentation-only.
+- **Generic algebraic names in the core; domain-prescriptive names
+  at the boundary.** `Kind`, `Module`, `Catalog`, `Reference` —
+  not `Entity`, `Application`, `Model`, `FK`. The trunk's
+  domain-prescriptive vocabulary lives in adapter translation.
+
+### Functions
+
+- **Pure functions, top to bottom.** Pipe operator `|>` is the
+  default; reads as "do this, then this, then this." Mutable state
+  only function-local for performance-sensitive algorithms (Tarjan
+  SCC, ResizeArray accumulators) — never module-level.
+- **Explicit type annotations on public surfaces.** Inferred types
+  on private helpers. The canonical pass shape is
+  `Catalog -> Policy -> Profile -> Lineage<'output>` (or
+  `Lineage<Diagnostics<'output>>` when the pass produces both
+  decisions and observer-relevant findings; see pass return-type
+  codification).
+- **Composition over open-coding.** Use the existing primitives
+  (`Composition.fanOut`, `Lineage.bind`, `Diagnostics.tellMany`,
+  `LineageDiagnostics.bind`). Don't reinvent. Don't extract a new
+  primitive until a second consumer needs it.
+- **Result composition for boundary code.** Adapters return
+  `Result<'a>`; consumers compose with `Result.bind`. Exceptions
+  only for true invariant violations the type system couldn't
+  prevent.
+- **Named accessors for stacked types whose nested access loses
+  self-description.** `lineage.Value.Value` is a smell when readers
+  must count projections; `LineageDiagnostics.payload`,
+  `LineageDiagnostics.entries`, and domain shortcuts like
+  `UniqueIndexPass.decisionsOf` are the discipline.
+
+### Documentation in code
+
+- **Default to no comments.** Well-named identifiers state WHAT.
+  Comments belong only where WHY is non-obvious — a subtle
+  invariant, a hidden constraint, a workaround that surprises.
+- **Cite the canonical surface.** Comments and docstrings reference
+  the axiom (`// A24: trail is f ++ g, earliest-first`) or
+  decision (`// per DECISIONS 2026-05-09 — observable identity on
+  empty policy`) that justifies the shape. Cross-references
+  compound; they keep the canonical docs reachable from the code.
+- **Don't restate what the code does.** "Returns the deep payload"
+  on `payload` is appropriate; "increments the counter by one" on
+  `incrementByOne` is not.
+- **No multi-paragraph docstrings; no multi-line comment blocks.**
+  Triple-slash F# docstrings on public types and modules are short
+  paragraphs that name the algebraic role and the canonical
+  reference. Detail belongs in DECISIONS.
+
+### Tests
+
+- **Test names cite the axiom or theorem they enforce.** F#
+  backtick-quoted identifiers carry the law:
+  `` ``A4: kinds with same SsKey are structurally equal`` ``,
+  `` ``T1: Project is deterministic`` ``,
+  `` ``A24: trail is chronological under bind`` ``. Failing tests
+  point directly at the law they claim to satisfy.
+- **`Skip = "..."` for deliberate V2 divergences from V1.** The
+  rationale lives in the Skip string. The test appears in test
+  discovery so the divergence is structurally visible. Reserve
+  contract names via Skip stubs *before* implementation lands; flip
+  Skip to `[<Fact>]` when the gating dependency arrives.
+- **`Skip` rationale either names the reachability gap (a feature
+  not yet built) or the deliberate divergence (V2 chose differently).**
+  Don't conflate. A reserved-but-unbuilt contract is different
+  from a deliberately-omitted V1 contract.
+- **Property tests for combinatorial spaces; example tests for
+  specific contracts.** FsCheck.Xunit covers permutation
+  invariance, idempotence, deterministic-output-under-shuffling.
+  xUnit covers worked examples that name a specific behavior.
+- **Per-file test helpers at the top.** `let private mkKey`,
+  `let private entry`, etc. — small named constructors for the
+  file's fixtures. Avoids boilerplate in each test; keeps the
+  test's intent visible.
+- **Don't re-validate smart-constructor invariants.** The
+  `Result<'a>` from a `create` is unwrapped via `Result.value` in
+  test fixtures; the production code trusts the value. Tests for
+  the constructor itself test rejection; tests for downstream
+  consumers don't.
+
+### Naming
+
+- **Types: generic algebraic names.** `Kind`, `Module`, `Catalog`,
+  `Reference`, `Profile`. The codebase serves OutSystems today and
+  must accommodate DACPAC, OData, etc.
+- **Modules: `<Domain>Rules` for registered-intervention
+  strategies.** `NullabilityRules`, `UniqueIndexRules`,
+  `ForeignKeyRules`, `CategoricalUniquenessRules`. Other suffixes
+  admissible when the call pattern differs (e.g.,
+  `CycleResolution` is a structural strategy, not a registered
+  intervention).
+- **Pass modules under `Passes/` named after the pass.**
+  `NullabilityPass`, `UniqueIndexPass`, etc. Pass version is a
+  `[<Literal>]` constant inside the module.
+- **Source / Code conventions for diagnostics.** `Source` is
+  `<PassName>` or `adapter:<adapter-name>` or
+  `emitter:<emitter-name>`. `Code` is dot-separated with a
+  routing top-prefix (`tightening.*`, `profiling.*`, `adapter.*`).
+
+### Cross-cutting commitments (carried from the operating disciplines table)
+
+- Every transformation runs inside `Lineage<_>` (A25). Every
+  pass-produced decision emits one lineage event. Lineage trail is
+  earliest-first under bind (A24).
+- Profile is independent of Catalog and Policy (A34); no
+  back-references. Passes that don't consume Profile produce
+  identical output for `Profile.empty` and any populated profile.
+- Π consumes whichever subset of `Catalog × Profile` it needs but
+  never `Policy` (A18 amended). If an emitter wants what feels
+  like Policy, the work is enrichment (a pass) producing
+  emitter-consumable values.
+- Pass return shape names what the pass produces:
+  `Lineage<'output>` for decisions only, `Lineage<Diagnostics<'output>>`
+  when decisions plus observer-relevant findings.
+
+## What this file is not
+
+- It is not a substitute for the canonical docs.
+- It is not where new disciplines land. Substantive entries continue
+  to land in `DECISIONS.md`; this file's "Operating disciplines"
+  table updates to point at the new entry.
+- It is not where load-bearing commitments are debated. The list
+  above mirrors `HANDOFF.md`'s "What's load-bearing" section; if a
+  commitment is removed there, this file updates to match.
+
+## Closing
+
+The codebase has earned its current shape because the disciplines
+above were operated. The disciplines are not constraints; they are
+the load-bearing structure that lets each chapter ahead support
+more weight than the one behind. Hold the spine.
