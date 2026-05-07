@@ -4404,3 +4404,178 @@ OSSYS ADMIRE chapter scope (session 17 commit 2). Together they
 form the chapter-open: the strategic axes; the V1↔V2 chapter
 scope; the canonical entry signature. The implementation
 chapters open from here.
+
+## 2026-05-15 — OSSYS adapter translation rules (chapter session 18; rules surfaced under empirical pressure)
+
+**Status:** decided (chapter rules — extends as the OSSYS arc continues)
+**Context:** Session 18 opened the OSSYS adapter implementation
+chapter via the differential-test path: a minimal V1 fixture (one
+module, one entity, two attributes) embedded in
+`OsmCatalogReaderDifferentialTests.fs`; an expected V2 Catalog
+hand-built; the parser implemented just enough to make the
+assertion pass. Working under empirical pressure surfaced six
+translation rules and one substantive architectural finding. This
+entry captures them as the chapter's running translation-rules
+list per the session 17 instruction's discipline.
+
+The list **extends** as the OSSYS arc continues — each session
+adding rules under the same empirical discipline. New rules land
+either as amendments to this entry or as their own entries that
+reference it.
+
+### The substantive architectural finding: V1's JSON is lossy on SSKey identity
+
+V1's metadata extraction chain produces SSKey values at the SQL
+rowset layer (`EspaceSSKey`, `EntitySSKey`, `AttrSSKey` columns
+per `outsystems_metadata_rowsets.sql`). The in-memory
+`OutsystemsMetadataSnapshot` carries them. **But
+`SnapshotJsonBuilder` does NOT write them to the canonical
+`osm_model.json` document.** The assembled JSON carries names and
+physical names; the SSKeys are discarded at JSON serialization.
+
+V2's identity-survives-rename promise (A1) is bounded by what's
+in the input. For the JSON-snapshot path, V2's `CatalogReader`
+**synthesizes** `SsKey` deterministically from name fields:
+
+  - Module: `OS_MOD_<ModuleName>`
+  - Kind:   `OS_KIND_<ModuleName>_<EntityName>`
+  - Attribute: `OS_ATTR_<ModuleName>_<EntityName>_<AttrName>`
+
+The synthesis is stable across runs of identical input; same
+JSON in, same SsKey out. Renames in the source OutSystems
+platform produce different SsKey values in V2's IR — A1's
+identity-survives-rename guarantee is **not honored** for renames
+that traverse the JSON-snapshot path.
+
+**Re-open triggers** (when this synthesis convention should be
+revisited):
+
+  - **V1's `SnapshotJsonBuilder` is extended to emit SSKeys.**
+    The cleanest fix; preserves V1's chain-shape and makes V2's
+    identity stable across renames.
+  - **An alternative input source carries SSKeys natively.**
+    A future `LiveOssysConnection` variant (per `DECISIONS
+    2026-05-15 — OSSYS adapter parse signature`) running the
+    SQL extraction directly would have access to the rowset
+    SSKey columns; the synthesis convention becomes a fallback
+    rather than the primary path.
+
+Until either trigger fires, the synthesis convention is the
+canonical V2 identity for OSSYS-sourced catalogs. **Documented
+divergence; not a bug.**
+
+This is the kind of finding the test-driven path was supposed
+to surface — the rule was not visible from the orientation
+reading; it became visible only when the parser had to produce
+SsKey values for the assertion.
+
+### Translation rules the minimal fixture forced
+
+| # | V1 input shape | V2 output | Rationale |
+|---|---|---|---|
+| 1 | Module `name` (string) | `Module.SsKey = OS_MOD_<name>`, `Module.Name = Name.create name` | SsKey synthesis (see finding above). The Name DU validates non-blank; module-level translation fails early on blank input. |
+| 2 | Entity `name` + parent module `name` | `Kind.SsKey = OS_KIND_<modName>_<entName>` | Synthesis includes module name to disambiguate same-named entities across modules. |
+| 3 | Attribute `name` + parent entity + module | `Attribute.SsKey = OS_ATTR_<modName>_<entName>_<attrName>` | Three-level naming preserves attribute identity across module / entity rename scenarios. |
+| 4 | `dataType: "Identifier"` | `Attribute.Type = Integer` | OutSystems' Identifier data type is the standard PK type; V2 maps it to the Integer primitive. The `isAutoNumber` flag is read but discarded today (V2 IR has no auto-number axis; deferred). |
+| 5 | `dataType: "Text"` | `Attribute.Type = Text` | Direct mapping. The `length` field is read but discarded today (V2 IR has no per-attribute length axis; SQL-type translation handles length at emit time per Policy A13). |
+| 6 | `physicalName` (string) | `Attribute.Column.ColumnName = physicalName` | Direct. The `originalName` and `databaseColumnName` fields are not in this fixture; their translation rule lands when a fixture surfaces them. |
+| 7 | `isMandatory: true \| false` | `Attribute.IsMandatory = isMandatory`, `Attribute.Column.IsNullable = not isMandatory` | The IsNullable proxy is **catalog-only**; it derives nullability from logical mandatory rather than from physical evidence. Profile evidence (when wired) refines it. The OSSYS adapter's job is structural; physical-reality reconciliation lives in V1's SQL chain (already done before V2 sees the JSON) and in `Projection.Adapters.Sql/ProfileSnapshot.fs` (separate input). |
+| 8 | `isIdentifier: true \| false` | `Attribute.IsPrimaryKey = isIdentifier` | Direct. V1's `isIdentifier` flag corresponds to V2's structural PK marker. |
+| 9 | Entity `db_schema` + `physicalName` | `Kind.Physical = { Schema; Table }` | Direct; the V1 JSON's reconciled `db_schema` already accounts for any `db_catalog` context (which V2 ignores per the OSSYS ADMIRE chapter scope's "what V2 will explicitly NOT carry forward" section). |
+| 10 | `isStatic: true` → `Modality = [Static []]`; `isStatic: false` → `Modality = []` | Per A7. Static populations themselves come from a separate input (V1's static-data JSON via `Projection.Adapters.Sql/Static.fs`). The OSSYS adapter sets the modality marker; the populations join later. |
+| 11 | `isExternal: false` → `Origin = OsNative`; `isExternal: true` → `Origin = ExternalDirect` | **Placeholder rule for the minimal fixture.** The full collapse rule for V1's `IsExternalEntity` + `IsSystemEntity` + Integration-Studio metadata into V2's three-way `Origin` DU is **deferred** until a fixture surfaces the IS-vs-Direct distinction. The `ExternalDirect` mapping is the conservative placeholder; it does not claim to be the right rule for every external entity. |
+
+### What this commit explicitly does NOT carry forward (yet)
+
+Fields the minimal fixture contains but the parser ignores:
+
+  - `attributes[].originalName` — V1's pre-rename name; V2 has no
+    rename-history axis on Attribute. Defer until a use case
+    demands it (likely the refactor.log emission per the
+    strategic frame).
+  - `attributes[].length` / `precision` / `scale` — V1 type
+    metadata. V2 IR's `PrimitiveType` is abstract; concrete
+    SQL-type details land in emitter-time policy (A13). Defer
+    until either the IR grows a length-bearing variant or a
+    consumer demands the discriminated translation.
+  - `attributes[].isAutoNumber` — V1 auto-number flag; V2 IR
+    has no auto-number axis on Attribute. Defer.
+  - `attributes[].isActive` — V1 activity flag. Per the OSSYS
+    ADMIRE chapter scope, V2's `Selection` policy handles
+    activity at the policy level. The minimal fixture sets
+    everything to `isActive=true`; the reader currently does
+    not check it. Re-open trigger: a fixture with mixed-active
+    entities or attributes surfaces the boundary-vs-policy
+    decision (filter at adapter, or carry through with a
+    distinct V2 representation).
+  - `attributes[].isReference` / `refEntityId` / `refEntity_name`
+    / `reference_deleteRuleCode` etc. — Reference translation.
+    The minimal fixture has `isReference: 0` for both
+    attributes; references aren't exercised. The next session
+    in the OSSYS arc likely adds a reference-bearing fixture
+    and surfaces the V1 nullable `DeleteRule` → V2 closed
+    `OnDelete` translation rule.
+  - `attributes[].external_dbType` — External-DB type for
+    integration-studio attributes. Defer with the Origin
+    rule.
+  - `attributes[].physical_isPresentButInactive` — V1's
+    inactive-but-physically-present marker. Defer with the
+    activity rule.
+  - `entities[].relationships` — Reference list. Empty in this
+    fixture; translation defers to the reference-bearing fixture.
+  - `entities[].indexes` — Index list. Empty in this fixture;
+    translation defers to the index-bearing fixture.
+  - `entities[].triggers` — Trigger list. Empty in this fixture;
+    per the OSSYS ADMIRE chapter scope, V2 has no Trigger IR
+    type today. Defer until consumer demand surfaces the IR
+    refinement.
+  - `entities[].db_catalog` — Cross-catalog FK marker. Per the
+    Active deferrals index, the cross-catalog IR refinement is
+    reserved-but-unreachable; the fixture has `null`; the
+    parser ignores the field.
+  - `entities[].meta` — Entity description string. V2 IR has no
+    description axis. Defer.
+  - Top-level `exportedAtUtc` — V1 export timestamp. V2 has no
+    catalog-level timestamp; the `Lineage` writer captures
+    when each pass runs. Defer with explicit not-carried.
+
+### Discipline going forward
+
+The chapter accumulates translation rules under empirical
+pressure. Each subsequent session in the OSSYS arc extends the
+running list with new rules surfaced by new fixtures. The
+discipline:
+
+  1. New fixture lands in `OsmCatalogReaderDifferentialTests.fs`
+     (or a sibling test file) embedding a V1 shape that surfaces
+     a translation question.
+  2. Test fails until the parser handles the new shape.
+  3. Parser implementation lands; new translation rules surface.
+  4. The rules are appended to this entry (or a sibling entry
+     references them) with the empirical example attached.
+
+This is the same shape as the strategy-layer codification's
+empirical-verdict process (`DECISIONS 2026-05-11 — Strategy-layer
+codification: empirical verdict after the fourth instance`):
+rules emerge from real consumers, not from speculation about
+hypothetical shapes. The chapter's running list is the
+audit-trail.
+
+### Reasoning / consequences
+
+The differential-test path produced exactly the value session 17's
+instruction predicted: rules surfaced under code pressure rather
+than under speculative reasoning. The SsKey-lossy-JSON finding
+specifically would have been hard to anticipate from the
+orientation reading alone — it became visible only when the
+parser had to produce SsKey values for the assertion. Future
+chapter sessions following the same path are likely to surface
+similar findings; the running translation-rules list is how the
+chapter accumulates them auditably.
+
+The won't-carry-forward list (above) extends the OSSYS ADMIRE
+entry's chapter-scope section with concrete examples from the
+minimal fixture. As subsequent fixtures land, more V1 fields
+will surface that need either-way decisions; keeping them
+explicit (rather than letting them emerge silently as gaps) is
+the discipline session 17's instruction named.
