@@ -4718,3 +4718,77 @@ minimal fixture. As subsequent fixtures land, more V1 fields
 will surface that need either-way decisions; keeping them
 explicit (rather than letting them emerge silently as gaps) is
 the discipline session 17's instruction named.
+
+#### 2026-05-16 (session 19 amendment) — reference-bearing fixture extends the running list with five FK translation rules
+
+Session 19's reference-bearing fixture (User → Account FK with
+`reference_deleteRuleCode: "Protect"`) surfaced five translation
+rules under empirical pressure. Appended to the running list as
+rules 12–16; the table-shape from the original entry continues.
+
+**The deferred V1 nullable `deleteRuleCode` → V2 closed `OnDelete`
+question is now resolved.** Session 17's OSSYS ADMIRE chapter
+scope named this as one of three deferred translation questions;
+it lands here as rule 13 with the full mapping table per V1's
+existing convention in `Osm.Smo/SmoEntityEmitter.cs`.
+
+| #  | V1 input shape | V2 output | Rationale |
+|----|---|---|---|
+| 12 | Source attribute name + parent entity + module (when `isReference: 1`) | `Reference.SsKey = OS_REF_<modName>_<entName>_<attrName>` | Reference SsKey synthesis. The reference identifies by its source coordinate; an attribute carries at most one outgoing reference in V1's metadata, so the source coordinate is unique. |
+| 13 | `reference_deleteRuleCode: "Protect"` | `Reference.OnDelete = NoAction` | V1 → V2 mapping per `Osm.Smo/SmoEntityEmitter.cs`. The full table: `"Delete" → Cascade`; `"Protect" → NoAction`; `"Ignore" → NoAction`; `"SetNull" → SetNull`; `null → NoAction` (the V1 `TreatMissingDeleteRuleAsIgnore` default). The minimal fixture exercises only "Protect"; the full table lands so subsequent fixtures don't re-litigate. **Note:** `"Ignore"` collapses to V2 `NoAction` because V2's `ReferenceAction` DU has no Ignore variant and V1's "Ignore" is semantically `NoAction` at the SQL level (the V1 audit-worthy "we tolerated a missing delete-rule" concern belongs to the Diagnostics writer, per session 16 commit 1's FK activation). The session 18 finding that V2's `DeleteRuleIgnored` keep-reason is unreachable from V2 fixtures resolves here too: if V1's `deleteRuleCode` is `"Ignore"`, V2's `OnDelete` becomes `NoAction` and the reference is *enforced* (V2 doesn't decline to enforce); the V1 audit-trail concern emits a Diagnostics entry rather than a structural keep-reason. |
+| 14 | V1 attributes with `isReference: 1` carry full reference fields (`refEntity_name`, `reference_deleteRuleCode`, etc.) | Walk attributes for `isReference: 1`; ignore the `relationships[]` array | V1 carries reference info in two places — on the source attribute and in the parent entity's `relationships[]` array (with `viaAttributeName + toEntity_name + hasDbConstraint`). The V2 adapter walks the attribute fields because they carry every field the V2 `Reference` shape needs. The `relationships[]` array is V1's aggregated cross-check; it could become a verification surface later but is not the primary source. **Documented divergence:** V1's two-source representation collapses to V2's one-source extraction. |
+| 15 | Source attribute name | `Reference.Name = Name.create attrName` | V1 has no separate "relationship name" field; the via-attribute carries the relationship's display identity. The V2 `Reference.Name` derives from the attribute name (e.g., User's `AccountId` attribute produces a Reference named "AccountId"). Same-shape with V2's existing convention for un-named structural elements. |
+| 16 | V1 `refEntity_name` (within the same module's catalog) | `Reference.TargetKind = OS_KIND_<sourceModule>_<refEntity_name>` | Same-module assumption. Cross-module FK references would require either: (a) carrying `refEntity_module` in V1's JSON (V1 does not today), or (b) V2 adapter scanning all modules to disambiguate (problematic when names collide). The same-module rule covers every fixture seen so far; cross-module references defer until a fixture surfaces the case (re-open trigger). |
+
+#### What this commit explicitly does NOT carry forward (FK extensions)
+
+Adding to the won't-carry-forward list:
+
+  - `attributes[].refEntityId` — V1's numeric foreign-key-target
+    pointer. V2 uses synthesized SsKey via name; the numeric ID
+    is V1's internal database ID, not stable across deployments.
+    The parser reads but ignores the field.
+  - `attributes[].refEntity_physicalName` — V1's pre-resolved
+    target physical table name. V2 derives the target's physical
+    realization from the target Kind, not from the source
+    attribute. Redundant under the same-module assumption.
+  - `attributes[].reference_hasDbConstraint` — V1's flag for
+    whether the physical FK constraint exists at the database
+    level. V2's `Reference` carries no "is enforced" axis at the
+    structural level — that distinction lives in `Profile`
+    (empirical evidence, per A34's separation of structure from
+    evidence) and in `ForeignKeyOutcome.EnforceConstraint(...)`
+    decisions. The catalog reader surfaces structural FKs only;
+    the Profile-side reader (separate input) carries
+    `hasDbConstraint`-equivalent evidence.
+  - `entities[].relationships[]` — entity-level aggregated
+    relationship array. V2 walks attributes for primary
+    extraction; relationships[] is unconsumed. Re-open trigger:
+    if a future fixture surfaces a relationship that exists in
+    relationships[] but NOT in attributes[isReference=1] (or
+    vice versa), the divergence forces a cross-check.
+
+#### Updated chapter status
+
+Two slices through the OSSYS adapter chapter:
+
+  - Session 18: minimal slice (one entity, two non-reference
+    attributes). Eleven translation rules surfaced.
+  - Session 19: reference-bearing slice (two entities, one
+    reference). Five additional rules surfaced; the deferred
+    deleteRuleCode question resolved.
+
+Sixteen rules total in the running list. The two remaining
+deferred questions from the session 17 ADMIRE chapter scope:
+
+  - V1 `IsExternalEntity` + `IsSystemEntity` → V2 `Origin`
+    three-way DU. Still pending; minimal and reference fixtures
+    both have `isExternal: false`. A fixture with an external
+    entity (Integration Studio or Direct) surfaces it.
+  - Inactive-records boundary choice (filter at adapter or
+    carry through and let Selection filter). Still pending; all
+    fixtures so far have `isActive: true` everywhere. A
+    mixed-active fixture surfaces it.
+
+These continue to defer; the chapter's discipline holds — rules
+land under empirical pressure, not under speculative reasoning.
