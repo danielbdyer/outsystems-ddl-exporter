@@ -143,6 +143,23 @@ module CatalogReader =
                         "typeMismatch"
                         (sprintf "Property '%s' is not a string." name))
 
+    /// Read an `isActive` flag with V1's default-true semantics. V1's
+    /// SQL coerces missing/null `Is_Active` columns to active=true
+    /// (per `outsystems_metadata_rowsets.sql:94, 116, 239`). V2's
+    /// adapter mirrors that semantically: a missing `isActive`
+    /// property is treated as active=true; explicit `false` is
+    /// inactive; explicit `true` is active.
+    ///
+    /// Used by the inactive-records filter at the boundary
+    /// (`DECISIONS 2026-05-15 — OSSYS adapter translation rules`,
+    /// session-21 amendment): `entity.isActive: false` drops the
+    /// entity from the V2 Catalog; `attribute.isActive: false`
+    /// drops the attribute from its Kind's Attributes list.
+    let private isActiveOrDefault (element: JsonElement) : bool =
+        match element.TryGetProperty("isActive") with
+        | true, value when value.ValueKind = JsonValueKind.False -> false
+        | _ -> true
+
     let private getBool (element: JsonElement) (name: string) : Result<bool> =
         match getProperty element name with
         | Failure errors -> Failure errors
@@ -390,10 +407,18 @@ module CatalogReader =
           Success isStatic, Success isExternal ->
             let kindKey   = kindSsKey moduleName entityName
             let kindName  = Name.create entityName
+            // Inactive-records filter (session 21): attributes with
+            // `isActive: false` are dropped at the boundary. The
+            // session-21 DECISIONS amendment captures the rule, the
+            // bound, and the silent-drop disposition pending the
+            // future adapter-return-shape extension to support
+            // Diagnostics-attached audit.
             let attrJsonList =
                 match entityJson.TryGetProperty("attributes") with
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
-                    arr.EnumerateArray() |> Seq.toList
+                    arr.EnumerateArray()
+                    |> Seq.filter isActiveOrDefault
+                    |> Seq.toList
                 | _ -> []
             let attrsResults =
                 attrJsonList
@@ -457,10 +482,16 @@ module CatalogReader =
         | Success rawName ->
             let modKey  = moduleSsKey rawName
             let modName = Name.create rawName
+            // Inactive-records filter (session 21): entities with
+            // `isActive: false` are dropped at the boundary. Same
+            // disposition as the attribute-level filter in
+            // parseKind. The DECISIONS amendment captures the
+            // rule.
             let entitiesArr =
                 match moduleJson.TryGetProperty("entities") with
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
                     arr.EnumerateArray()
+                    |> Seq.filter isActiveOrDefault
                     |> Seq.toList
                     |> List.map (parseKind rawName)
                 | _ ->
