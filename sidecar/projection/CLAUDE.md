@@ -60,6 +60,8 @@ of them, write the amendment first.
 | **Contract-vs-implementation cross-reference in audits** — any audit walking contract-vs-test must also walk contract-vs-implementation. The "no test, no implementation" finding is a feature gap, not a test gap. | `DECISIONS 2026-05-13` — Audit discipline refinement (session 14) |
 | **Active deferrals re-checked at chapter close** — silent-trigger fires get caught by table-scan, not by chronological re-read. The transform-registry deferral fired without cash-out for ~7 sessions; the index exists so it doesn't recur. | `DECISIONS.md` § Active deferrals — index (session 13) |
 | **Document the false starts** — preserve the wrong rule alongside the right one. Future agents recognize the temptation when it recurs; documentation captures the discipline's discovery, not just its outcome. | Session 14 commits 4 and 6 (see preserved-false-start prose in those entries) |
+| **Anticipation vs. speculation in abstraction extraction** — refines the two-consumer threshold with three positions (A/B/C) and an empirical test for "shape visible enough." Position B (structural alignment when the shape is concrete) earns its place; Position A (full extraction) requires both shape visibility and concrete second consumer; Position C (defer fully) is the default. | `DECISIONS 2026-05-13` — Anticipation vs. speculation in abstraction extraction (session 14) |
+| **Chapter-close ritual** — seven load-bearing items every chapter close must execute (Active deferrals scan; contract-vs-implementation walk; CLAUDE.md / README.md staleness checks; HANDOFF + CHAPTER_CLOSE scope; fresh-eye walk; operating-disciplines table currency). Recurring audits codify into rituals; ad-hoc investigations don't compound. | `DECISIONS 2026-05-14` — Chapter-close ritual (session 15) |
 
 ## Load-bearing commitments — do not break without writing the amendment first
 
@@ -358,6 +360,22 @@ two-consumer threshold and the smell-test apply.
 - It is not where load-bearing commitments are debated. The list
   above mirrors `HANDOFF.md`'s "What's load-bearing" section; if a
   commitment is removed there, this file updates to match.
+
+## Maintenance
+
+This file's currency is checked at every chapter close per the
+**chapter-close ritual** (see Operating disciplines table).
+Specifically: the Operating disciplines table must point at
+current DECISIONS entries; the F# feature surface must reflect
+what the codebase uses; the programming-style center target must
+describe patterns visible in the code; the load-bearing
+commitments must mirror `HANDOFF.md`. If any has drifted, the fix
+lands during the close — not in the next chapter.
+
+CLAUDE.md is at higher drift risk than the other canonical
+surfaces because it indexes them. Session-15 codification of the
+chapter-close ritual exists to make that risk structural rather
+than aspirational.
 
 ## Closing
 

@@ -38,13 +38,18 @@ table before continuing.
 | **Composition primitive `wrap`** | 2026-05-13 (Composition vocabulary cash-out) | Per-strategy diagnostics emerge (likely tied to Diagnostics writer) | 0 consumers |
 | **Composition primitive `lift`** | 2026-05-13 (Composition vocabulary cash-out) | A strategy reused across different IR granularities (e.g., Nullability rule on view columns) | 0 consumers |
 | **Strategy registry mechanism** | 2026-05-11 (Strategy layer: a named architectural vector) | N≥4–6 strategies make name-keyed lookup useful | 6 strategy modules; no caller demands lookup by name |
-| **Diagnostics writer** | 2026-05-06 (Diagnostics live in a writer parallel to Lineage) | First downstream artifact gates on operator-channel telemetry | **Demand consistent across 12 sessions; multiple gated artifacts (`decision-log.json`, `opportunities.json`, `validations.json`, `dmm-diff.json`, opportunity-stream half of UniqueIndex, operator-approval handoff for FK/Nullability). `CHAPTER_CLOSE.md §4 priority 6` flags as next-chapter substantive work.** |
+| **Diagnostics writer** | 2026-05-06 (Diagnostics live in a writer parallel to Lineage) | First downstream artifact gates on operator-channel telemetry | **Cashed out — session 14 commit 3 landed `Projection.Core/Diagnostics.fs`. UniqueIndex opportunity stream activated as first consumer (session 14 commit 5). Three-channel split (operator/auditor/developer) remains deferred until a real consumer demands differentiation.** |
 | **`RequireQualifiedAccess` retrofit** on `UniqueIndexKeepReason` / `ForeignKeyKeepReason` / similar | 2026-05-11 refinement 1 (Strategy-layer codification empirical verdict) | DU is next substantively modified | No modification since session 8 |
 | **`CycleResolution.ResolutionStep.Reason` migration to structured DU** | 2026-05-11 (Strategy layer: a named architectural vector — caveat) | A second resolver strategy lands per the 2026-05-08 pluggability deferral | No second resolver; reason field still free-form string |
 | **Cross-catalog FK detection IR refinement** (`Catalog : string option` on `Reference` and `ForeignKeyKeepReason.CrossCatalogBlocked` made reachable) | 2026-05-13 (Closed-DU expansion: empirical confirmation) | A fixture exercising cross-catalog FKs surfaces the gap | Reserved DU variant exists but is unreachable; do not delete |
 | **Faker emitter (synthetic-data Π)** | 2026-05-13 (Session 11 reflection) | Either a third evidence type lands, or a use case forces proceeding with two evidence types and accepting the limitations | Two evidence types operational (Categorical, Numeric); no third in scope |
 | **DacFx integration in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-06 (DacFx integration deferred to first real-fixture milestone) | First real-fixture milestone arrives via the OSSYS catalog adapter | OSSYS catalog adapter itself not yet built (`CHAPTER_CLOSE.md §2.10`) |
 | **Multi-spine state pattern** | 2026-05-06 (Multi-spine state pattern is endorsed but not yet built) | A real use case surfaces in the algebra | None yet |
+| **Three-channel Diagnostics split** (operator / auditor / developer) | 2026-05-06 (Diagnostics live in a writer parallel to Lineage) | A real downstream consumer demands per-channel routing | Single channel sufficient at first consumer (UniqueIndex opportunity stream); deferred until host shell or telemetry consumer surfaces |
+| **Reflection** (`typeof<>`, attribute scanning for plugin discovery) | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | A real consumer demands name-keyed strategy dispatch (paired with the strategy registry mechanism deferral above) | Closed-DU + typed-seam dispatches at compile time today; no reflective discovery needed |
+| **Object expressions** (`{ new IInterface with ... }`) for adapter-side abstractions | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | V2 grows interface-based polymorphism (e.g., `IDiagnosticSink` for streaming consumers; `ICatalogReader` after a second catalog source materializes) | Codebase has zero interface boundaries today; all polymorphism via DU pattern matching |
+| **Type providers** (`JsonProvider` for `osm_model.json`) | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | OSSYS adapter ships and JSON-shape evolution becomes a maintenance burden | OSSYS adapter starts with hand-written DTOs (per the ADMIRE stub); type-provider promotion is a later optimization |
+| **`ICatalogReader` interface** (Position B → A) | 2026-05-13 (Anticipation vs. speculation in abstraction extraction) | A second catalog source materializes (DACPAC, OData, in-memory test reader unifying with OSSYS) | OSSYS adapter implementation chapter starts in Position B (`parse : string -> Task<Result<Catalog>>` shape); interface defers until second source |
 
 **Discipline.** Each deferral here was logged as the right call **at the
 time it was made** under "IR grows under evidence." A deferral is not a
@@ -56,6 +61,31 @@ silently between reviews, the audit-during-validation discipline expects
 a cash-out entry before substantive work continues — that is the lesson
 the transform-registry miss surfaced (`DECISIONS 2026-05-13 — Transform
 registry cash-out`).
+
+**Scope of the index.** This index lists **deferrals with explicit
+re-open triggers** — both architectural (composition primitives, IR
+refinements, registry mechanisms) and feature-surface (reflection,
+object expressions, type providers consciously deferred per the
+CLAUDE.md F# feature surface section). Both share the same shape: a
+deferred decision with a structural condition that, when met, requires
+a cash-out entry. The index does **not** list:
+
+  - **Adoption-trigger candidates** from CLAUDE.md's "Aligned but
+    underused" section (computation expressions, active patterns,
+    units of measure). Those are aspirational adoption signals, not
+    re-open obligations — adopting them is encouraged when the
+    trigger fires but the trigger firing does not by itself demand
+    a cash-out entry. They live in CLAUDE.md as guidance, not in
+    DECISIONS as load-bearing.
+  - **Out-of-scope-for-Core** features (Async/Task,
+    MailboxProcessor, FRP). Those are scope rules, not deferrals —
+    they are forbidden in Core regardless of demand and only land
+    in adapters when the adapter's role demands them. They live
+    in CLAUDE.md as scope guidance.
+
+This distinction matters: the Active deferrals index is the list
+the chapter-close audit must scan; aspirational guidance and scope
+rules don't need that level of attention.
 
 ---
 
@@ -3841,3 +3871,140 @@ Hold the spine.
 
 — Session 14 (the Diagnostics writer chapter-open, with
 post-reflection extensions)
+
+## 2026-05-14 — Chapter-close ritual: the things to check at every chapter boundary
+
+**Status:** decided (operating discipline; codifies the chapter-close ritual the prior chapter operated informally and the next chapter should operate explicitly)
+**Context:** Session 14 (chapter-close audit, conducted in session 12)
+caught the transform-registry deferral that had fired silently. The
+session-13 audit-during-validation produced the
+contract-vs-implementation refinement
+(`DECISIONS 2026-05-13 — Audit discipline refinement`). Session 14's
+operator-led reflection raised two more concerns:
+
+  - The F#-feature-surface section in CLAUDE.md has re-open
+    triggers; if those are not cross-referenced from the Active
+    deferrals index, silent-trigger fires can recur in a different
+    surface. (Now fixed; commit 1 of session 15 added the
+    consciously-deferred features to the index.)
+  - CLAUDE.md will drift the same way README.md did — a fresh agent
+    rewrote the README at session 13 because eleven sessions of
+    accumulated change had made it stale. CLAUDE.md is at higher
+    risk because it indexes other docs that themselves change.
+
+The fix-each-thing-once approach addressed both. But the underlying
+problem is structural: chapter-close audits have run as ad-hoc
+investigations, not as a codified ritual. The next chapter close
+will benefit from a named, repeatable list of things to check.
+
+**Decision:** **The chapter-close ritual is codified. Every chapter
+close must execute the items below before declaring the chapter
+done.** Items marked "load-bearing" must produce a written
+finding (either "clean" or a remediation entry); items marked
+"informal" are encouraged but not required.
+
+### Load-bearing items
+
+  1. **Active deferrals index scan.** Walk every entry in the
+     Active deferrals index at the top of `DECISIONS.md`. For each:
+     verify the trigger condition still describes the right
+     condition; verify the current state still describes reality;
+     if the trigger has fired since the last scan, log a cash-out
+     entry. The transform-registry miss is the worked example of
+     what happens without this scan.
+  2. **Contract-vs-implementation cross-reference walk.** Per
+     `DECISIONS 2026-05-13 — Audit discipline refinement`, every
+     ADMIRE entry's promised V2 contracts must be checked against
+     both the test surface AND the implementation surface. The
+     four-row classification table (test×impl) routes findings:
+     "no test, no implementation" is feature-gap; "no test,
+     implementation exists" is test-gap; etc.
+  3. **CLAUDE.md staleness check.** Walk every section of
+     CLAUDE.md against the current state of the canonical surfaces
+     it indexes. Reading order pointer still resolves to the right
+     documents; operating-disciplines table still points at
+     current DECISIONS entries; F#-feature-surface section still
+     reflects what the codebase uses; programming-style center
+     target still describes patterns visible in the code. If
+     anything has drifted, fix it during the close — don't leave
+     it for the next chapter.
+  4. **README.md staleness check.** Same shape as CLAUDE.md but
+     for the README — surface-level orientation. Session 13
+     rewrote it after eleven sessions of drift; the discipline
+     prevents that recurring.
+  5. **HANDOFF.md / CHAPTER_CLOSE.md scope.** Each chapter
+     produces its own HANDOFF letter and CHAPTER_CLOSE audit
+     synthesis at the close. Chapter 1's CHAPTER_CLOSE.md (sessions
+     1–12) lives at the projection root; chapter 2's belongs
+     adjacent or under a chapter-numbered subfolder. The next
+     chapter's handoff should not overwrite chapter 1's; the
+     append-only documentation discipline is structural.
+  6. **Fresh-eye walk.** Per `DECISIONS 2026-05-13 — Audit
+     discipline refinement`, chapter-close audits explicitly
+     include a fresh-eye walk — either by a subagent configured to
+     ignore accumulated context, or by a fresh-agent review at
+     the chapter boundary itself. Familiarity hides what fresh
+     eyes find.
+  7. **Operating disciplines table currency.** CLAUDE.md's
+     operating-disciplines table must point at current DECISIONS
+     entries by date. New disciplines added during the chapter
+     are reflected; deprecated disciplines are removed or marked
+     superseded.
+
+### Informal items
+
+  - **Test baseline diff.** Test count delta from chapter open to
+    close, broken down by added vs migrated vs deleted. Useful for
+    the chapter's quantitative narrative; not load-bearing.
+  - **Forward-signal triage.** Each chapter close names forward
+    signals for the next chapter; the ritual encourages but does
+    not require ranking them with rationale.
+  - **Discipline rent-paying check.** Per session-14 closing
+    addendum's distinction between during-work disciplines and
+    reflection-driven disciplines, the chapter close may include
+    a brief check on whether each post-reflection discipline got
+    used during the chapter — did it shape future code, or did it
+    age without being consulted? Useful for catching descriptive
+    orientation that didn't earn its keep.
+
+### Where the ritual lives
+
+  - **This DECISIONS entry** is the load-bearing surface; the
+    ritual is structurally captured here.
+  - **CLAUDE.md's "Chapter-close ritual" section** is the
+    navigational pointer; future fresh agents read CLAUDE.md
+    first and see the ritual indexed there. Substantive details
+    stay in this entry.
+  - **Each chapter's CHAPTER_CLOSE.md** records the result of
+    running the ritual — clean items, remediation entries,
+    findings.
+
+### Why this entry exists
+
+The chapter-close audit in session 12 caught real problems but
+operated as an ad-hoc investigation. Session 13's reflection
+flagged that the transform-registry miss happened because the
+chronological-append discipline of DECISIONS doesn't surface "this
+trigger has fired." The Active deferrals index addressed that
+specific failure mode; this entry addresses the broader one — that
+the entire chapter-close audit should be a codified ritual, not a
+re-derivation each time.
+
+The session-14 operator-led reflection raised two CLAUDE.md
+maintenance concerns; both are real and both belong in the ritual.
+Codifying the ritual now makes CLAUDE.md maintenance load-bearing
+rather than aspirational; it converts the user's named worry into
+a structural answer.
+
+**Reasoning / consequences.** Future chapter closes execute the
+seven load-bearing items and write the result. The ritual itself
+will likely refine across chapters — items will be added, items
+will be marked informal-now-load-bearing as the discipline matures.
+Each refinement updates this entry or appends a successor; the
+discipline is alive, not frozen.
+
+The general lesson generalizes the audit-during-validation pattern:
+**recurring audits codify into rituals; ad-hoc investigations don't
+compound.** Rituals do — once codified, future iterations follow
+the named pattern, contribute their findings, and refine the
+ritual itself based on what surfaces.
