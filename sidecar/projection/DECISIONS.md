@@ -5590,3 +5590,112 @@ substantive sessions, or when a session's substantive work feels
 like it's accumulated enough to warrant the check). Sessions 24
 and 25 of chapter 2 will dispatch their own audits per the
 session-23 runway plan.
+
+## 2026-05-19 — Trace-before-fixture pattern at slice level (codified at N=3)
+
+**Status:** decided (operating discipline; codifies the pattern at N=3 with consistent shape)
+**Context:** Sessions 20, 21, and 22 each dispatched a V1 metadata
+trace before writing the slice's failing differential test. Three
+instances; same shape; same value-add. The pattern is sufficiently
+demonstrated to earn codification per the chapter's two-consumer
+threshold for emergent disciplines.
+
+The pattern's shape:
+
+  1. **Trace V1's actual handling first** — read V1's SQL extraction
+     script and JSON projection logic for the field/feature about to
+     be tested. Identify what V1 carries through to JSON vs what V1
+     strips at the projection layer.
+  2. **Classify the finding** — into either the JSON-projection-
+     lossiness class (information stripped at the JSON layer; V2
+     bound by input path) or the V2-boundary-discipline class
+     (information visible to V2; V2's IR scope is what's chosen).
+     The two-classes distinction (`DECISIONS 2026-05-15 — OSSYS
+     adapter translation rules`, session-22 documentation hygiene)
+     names the two paths.
+  3. **Then write the failing test** — fixture and expected V2
+     Catalog hand-built in light of the classification. The
+     classification informs the resolution shape: lossiness-class
+     findings get bounded-by-input-path placeholders; boundary-
+     discipline-class findings get IR-scope-choice rules.
+  4. **Implement under empirical pressure** — minimum to make the
+     test pass; document the won't-carry-forward extensions.
+  5. **Record translation rules** — DECISIONS amendment captures
+     the rules surfaced under empirical pressure plus the
+     classification.
+
+**Empirical record (the three instances):**
+
+  | Session | Slice | Trace finding | Class |
+  |---|---|---|---|
+  | 20 | External-entity | `EspaceKind` encodes IS-vs-Direct at espace/rowset level; stripped at JSON projection | Lossiness |
+  | 21 | Mixed-active | `IsActive` flags carried through to JSON at three levels (module / entity / attribute); V1 also has SQL pre-filter parameters | Boundary-discipline |
+  | 22 | Index-bearing | `indexes[]` JSON has rich shape (storage attrs, structural fields, columns array); all visible to V2 | Boundary-discipline |
+
+In each case, the trace identified the resolution shape **before**
+implementation began. The session-20 trace was particularly
+load-bearing — without it, the implementation would have plausibly
+made the wrong assumption (synthesize Origin from `isExternal`
+boolean alone, treating it as if V1's full information were
+present). The trace surfaced that V1 had richer information at the
+rowset level that the JSON projection had stripped — placing the
+question in the lossiness class with a known canonical resolution
+(`SnapshotRowsets`). The implementation could then land a
+placeholder rule with bound documented, rather than overclaim
+distinction.
+
+**Decision:** **The trace-before-fixture pattern is codified.** When
+the OSSYS adapter chapter (or any future chapter doing V1↔V2
+translation work) writes a new slice, the trace happens first; the
+classification informs the test shape; the implementation lands
+under empirical pressure with the won't-carry-forward list growing
+to absorb V1 fields the V2 IR doesn't model.
+
+**Relation to admire-mode (`HANDOFF.md` "What's load-bearing").**
+The pattern is **slice-level admire-mode**, distinct from
+chapter-level admire-mode. Chapter-level admire happens once at
+chapter open (per the OSSYS ADMIRE chapter scope from session 17);
+slice-level admire happens per fixture as new V1 fields surface.
+Both honor the broader admire-mode discipline (read V1 first,
+identify what V2 will carry forward, name what V2 won't carry
+forward); the slice-level form applies the same shape at a smaller
+scope.
+
+The two operate at different cadences:
+
+  | Admire-mode level | When | Output |
+  |---|---|---|
+  | **Chapter level** | At chapter open | ADMIRE chapter scope document; carry-forward set; won't-carry-forward set; structural-difference list |
+  | **Slice level** (this entry) | Per fixture during the chapter | Class classification (lossiness vs boundary-discipline); rules informed by classification; won't-carry-forward extensions |
+
+The hierarchy is real: slice-level admire surfaces specific findings
+that the chapter-level admire's structural-difference list named at
+the right level of abstraction. Session 21's `Is_Active` trace
+confirmed the chapter-level note about activity flags; session 20's
+`EspaceKind` trace surfaced a specific case the chapter-level
+"V1↔V2 vocabulary mapping" hadn't fully traced.
+
+**Why codify now (N=3 with consistent shape).** The pattern's
+two-consumer threshold cleared at session 21 (instances 20, 21);
+session 22 was the third instance with the same shape. Per the
+emergent-primitives discipline (`DECISIONS 2026-05-13`), the
+threshold is N=2 for codification; this codification at N=3 is
+slightly conservative but pairs naturally with the broader
+chapter-mid-audit codification landing in this session.
+
+**Forward signals.** Subsequent slices in the OSSYS chapter (and
+any future V1↔V2 chapters) operate the pattern explicitly. Static-
+entity slice (session 24) dispatches a trace of V1's static
+populations handling first; cross-module FK slice (deferred to
+fresh context) dispatches a trace of V1's cross-module FK encoding
+first. Each trace classifies before the fixture lands.
+
+**Reasoning / consequences.** The trace-before-fixture pattern is
+a small but real discipline that has paid rent across three
+substantive slices. Codifying it makes the pattern explicit to
+future agents who would otherwise either re-derive it (and likely
+get it right; the pattern is structurally natural) or skip it (and
+risk wrong-class assumptions like the speculative-Origin case from
+session 18). The codification is a checked-implicit-pattern;
+operating it is a small per-slice discipline that compounds into
+correct class classification across the chapter's running rules.
