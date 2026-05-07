@@ -2240,6 +2240,62 @@ into V2's IR. The carry-forward set:
     V2's `Index.SsKey` / `Name` / `Columns` / `IsUnique` /
     `IsPrimaryKey`.
 
+**The trailing rowsets carry information the JSON aggregation
+strips** (session-20 amendment per
+`DECISIONS 2026-05-15 — OSSYS adapter translation rules`,
+session-20 amendment). The rowsets emitted by
+`outsystems_metadata_rowsets.sql` (`#E`, `#Ent`, `#Attr`, etc.)
+preserve fields that V1's `FOR JSON PATH` aggregations strip
+during projection into `osm_model.json`:
+
+  - **`SSKey` at every level.** `EspaceSSKey`, `EntitySSKey`,
+    `PrimaryKeySSKey`, `AttrSSKey` are present in the rowsets;
+    they are absent from the assembled JSON. V2's
+    `SnapshotJson`-path adapter synthesizes SsKey from name
+    fields today (per `DECISIONS 2026-05-15 — OSSYS adapter
+    translation rules`, rule 1–3); the canonical
+    `SnapshotRowsets` variant (when implementation lands) reads
+    SSKeys directly.
+  - **Per-table column structure.** The rowsets retain
+    structural metadata that the JSON aggregation collapses.
+    Specific examples will surface as fixtures grow under the
+    OSSYS arc; the rowsets-as-input path future-proofs the V2
+    boundary against the deferred-fields backlog.
+  - **Other fields the JSON projections happen not to include.**
+    The lossiness is at exactly one projection layer
+    (`#AttrJson`, `#ModuleJson` via `FOR JSON PATH`), not
+    end-to-end; data is available everywhere upstream.
+
+### Canonical input path — evolving from JSON-only to JSON+Rowsets
+
+The OSSYS adapter's input path is **evolving**:
+
+  - **Current (sessions 18–19):** `SnapshotJson` only. V2
+    consumes V1's canonical `osm_model.json`; SsKey is
+    name-synthesized; the bound on A1's
+    identity-survives-rename guarantee is documented per
+    `DECISIONS 2026-05-15 — OSSYS adapter translation rules`.
+  - **Planned:** `SnapshotJson` + `SnapshotRowsets`. The
+    `SnapshotRowsets` variant lands as a third closed-DU case
+    on `SnapshotSource` when chapter 2's organic flow brings
+    it. Per the operator decision in `DECISIONS 2026-05-15 —
+    OSSYS adapter translation rules`, session-20 amendment,
+    the canonical resolution to the lossy-SSKey question is
+    `SnapshotRowsets`. Implementation timing: likely after the
+    current OSSYS adapter chapter completes its translation
+    work through the `SnapshotJson` path.
+  - **Future (out of scope today):** `LiveOssysConnection` for
+    the case where V2 needs to operate without V1's chain in
+    the loop entirely. Reserved as a future variant per
+    `DECISIONS 2026-05-15 — OSSYS adapter parse signature`.
+
+**Until `SnapshotRowsets` implements**, V2's catalog reader
+continues operating through the `SnapshotJson` path with the
+documented bounds. The two paths will coexist when the variant
+lands — `SnapshotJson` remains valid; `SnapshotRowsets` is the
+path that resolves A1's bound and provides the richer
+extensibility surface.
+
 ### What V2 will explicitly NOT carry forward
 
 V2's IR is generic algebraic; it does not carry V1's
