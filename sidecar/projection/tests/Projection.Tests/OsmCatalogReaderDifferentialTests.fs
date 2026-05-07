@@ -523,3 +523,195 @@ let ``differential: V1 external-entity fixture parses with Origin = ExternalViaI
                 errors)
     | Success actual ->
         Assert.Equal<Catalog>(expectedExternalCatalog, actual)
+
+// ---------------------------------------------------------------------------
+// Mixed-active fixture (session 21 — fourth slice in the OSSYS arc).
+//
+// Surfaces the deferred inactive-records boundary choice from the
+// session 17 ADMIRE chapter scope. Three prior slices passed
+// without exercising this question; the empirical pressure for it
+// arrives only when a fixture forces it.
+//
+// Trace performed before writing this fixture:
+//   - V1 SQL carries IsActive flags through to JSON at three levels:
+//     `module.isActive` (line 924), entity-level `isActive` (line
+//     931), attribute-level `isActive` (line 759).
+//   - V1 SQL also has SQL-layer pre-filtering parameters
+//     (`@IncludeInactive` line 127; `@OnlyActiveAttributes` line
+//     254) that reduce the rowsets before JSON aggregation.
+//   - **The flags ARE visible to V2 through the JSON path** —
+//     unlike SsKey (session 18) or EspaceKind (session 20), this
+//     is NOT a member of the JSON-projection-lossiness class. The
+//     boundary choice is genuine; V2 has the information.
+//
+// Boundary disposition for this slice (filter at adapter):
+//   - V2 IR has no per-record IsActive axis today; carry-through
+//     would require IR refinement (substantive — adding an IsActive
+//     axis to Kind / Attribute, or a Modality.Inactive variant).
+//   - "IR grows under evidence" — no current consumer demands the
+//     inactive records' presence in V2's IR.
+//   - A18 amended (Π consumes Catalog × Profile, never Policy)
+//     argues for carry-through in principle (filtering is
+//     operator intent), but the smallest honest-now implementation
+//     is filter-at-adapter with the bound documented.
+//
+// Filter rule:
+//   - `entity.isActive: false` → entity dropped from the V2 Catalog
+//   - `attribute.isActive: false` → attribute dropped from its Kind's
+//     Attributes list (entity remains)
+//   - `module.isActive: false` → not exercised by this fixture;
+//     defers until a fixture forces the question
+//
+// Auditability: Diagnostics-attached audit of dropped records is a
+// future extension when the adapter's return shape grows from
+// `Task<Result<Catalog>>` to a Diagnostics-bearing variant. Today's
+// drop is silent. The DECISIONS amendment captures this.
+// ---------------------------------------------------------------------------
+
+let private v1MixedActiveFixture : string =
+    """{
+  "exportedAtUtc": "2026-05-18T00:00:00.0000000+00:00",
+  "modules": [
+    {
+      "name": "AppCore",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "ActiveEntity",
+          "physicalName": "OSUSR_APPCORE_ACTIVE",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": true,
+              "isAutoNumber": true,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
+            },
+            {
+              "name": "DeprecatedField",
+              "physicalName": "DEPRECATEDFIELD",
+              "originalName": null,
+              "dataType": "Text",
+              "length": 100,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": false,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": false,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 1
+            }
+          ],
+          "relationships": [],
+          "indexes": [],
+          "triggers": []
+        },
+        {
+          "name": "RetiredEntity",
+          "physicalName": "OSUSR_APPCORE_RETIRED",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": false,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": true,
+              "isAutoNumber": true,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
+            }
+          ],
+          "relationships": [],
+          "indexes": [],
+          "triggers": []
+        }
+      ]
+    }
+  ]
+}"""
+
+let private activeEntityKindKey = mkKey "OS_KIND_AppCore_ActiveEntity"
+let private activeEntityIdAttrKey = mkKey "OS_ATTR_AppCore_ActiveEntity_Id"
+
+let private expectedMixedActiveCatalog : Catalog =
+    let activeEntity : Kind =
+        { SsKey    = activeEntityKindKey
+          Name     = mkName "ActiveEntity"
+          Origin   = OsNative
+          Modality = []
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_ACTIVE" }
+          Attributes = [
+              { SsKey        = activeEntityIdAttrKey
+                Name         = mkName "Id"
+                Type         = Integer
+                Column       = { ColumnName = "ID"; IsNullable = false }
+                IsPrimaryKey = true
+                IsMandatory  = true }
+              // DeprecatedField (isActive: false) is dropped at the boundary.
+          ]
+          References = []
+          Indexes    = [] }
+    // RetiredEntity (isActive: false) is dropped at the boundary.
+    { Modules = [
+        { SsKey = appCoreModuleKey
+          Name  = mkName "AppCore"
+          Kinds = [ activeEntity ] } ] }
+
+[<Fact>]
+let ``differential: V1 mixed-active fixture filters inactive records at the boundary`` () =
+    let result = parseSync (CatalogReader.SnapshotJson v1MixedActiveFixture)
+    match result with
+    | Failure errors ->
+        Assert.Fail(
+            sprintf
+                "Expected Result.Success; got Result.Failure with %d error(s): %A"
+                errors.Length
+                errors)
+    | Success actual ->
+        Assert.Equal<Catalog>(expectedMixedActiveCatalog, actual)
