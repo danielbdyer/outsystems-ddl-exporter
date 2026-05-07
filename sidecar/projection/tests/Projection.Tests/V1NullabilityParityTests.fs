@@ -88,8 +88,8 @@ let private policyWith (config: NullabilityTighteningConfig) : Policy =
         Tightening =
             { Interventions = [ Nullability ("v1-parity", config) ] } }
 
-let private decisionFor (key: SsKey) (lineage: Lineage<NullabilityDecisionSet>) : NullabilityDecision =
-    lineage.Value.Decisions
+let private decisionFor (key: SsKey) (lineage: Lineage<Diagnostics<NullabilityDecisionSet>>) : NullabilityDecision =
+    (LineageDiagnostics.payload lineage).Decisions
     |> List.find (fun d -> d.AttributeKey = key)
 
 // ---------------------------------------------------------------------------
@@ -202,24 +202,85 @@ let ``V1 #5: Aggressive mode unique-signal-with-remediation — SKIPPED (V2 dive
     ()
 
 // ---------------------------------------------------------------------------
-// V1 #6, #7 — Opportunity-creation tests
-//   V1 input:  EvidenceGated + Mandatory + 12 nulls (or non-mandatory + 0 nulls).
-//   V1 output: builder.Opportunities is populated (or not).
-//   V2 status: SKIP — V2 separates Diagnostics from NullabilityDecisionSet
-//   (DECISIONS 2026-05-06 — Diagnostics live in a writer parallel to
-//   Lineage). Opportunity creation belongs to a Diagnostics consumer,
-//   not to the structural decision set. The decisions themselves are
-//   covered by V1 #1–#3 above; the opportunity-stream wire-up arrives
-//   when the Diagnostics writer lands.
+// V1 #6, #7 — Opportunity-creation tests (activated session 15)
+//   V1 #6 input:  EvidenceGated + Mandatory + 12/100 nulls + budget 5%
+//                 + AllowMandatoryRelaxation=false.
+//   V1 #6 output: builder.Opportunities is populated (one
+//                 remediation opportunity for the mandatory column).
+//   V2 #6 form:   RequireOperatorApproval(MandatoryButHasNullsBeyondBudget)
+//                 produces a Warning DiagnosticEntry on the
+//                 NullabilityPass.run output's diagnostic stream.
+//                 V1's opportunity record's structural payload
+//                 maps to the entry's Source / Severity / Code /
+//                 Message / SsKey / Metadata.
+//
+//   V1 #7 input:  Non-mandatory column + 0 nulls.
+//   V1 #7 output: builder.Opportunities is empty (intentional
+//                 nullability — no opportunity).
+//   V2 #7 form:   KeepNullable(NoTighteningSignal) produces no
+//                 DiagnosticEntry. The diagnostic stream is empty
+//                 with respect to that attribute.
+//
+//   Activation per DECISIONS 2026-05-10 (Skip-to-Behavioral
+//   activation pattern) and DECISIONS 2026-05-13 (pass return-type
+//   codification). The Diagnostics writer landed at session 14
+//   commit 3; UniqueIndexPass activated as first consumer at
+//   session 14 commit 5; NullabilityPass activated as second
+//   consumer at session 15 commits 2-3.
 // ---------------------------------------------------------------------------
 
-[<Fact(Skip = "V2 separates Diagnostics from decision set (DECISIONS 2026-05-06); opportunity wire-up arrives with the Diagnostics writer.")>]
-let ``V1 #6: Analyze creates remediation opportunity — SKIPPED (V2 divergence)`` () =
-    ()
+[<Fact>]
+let ``V1 #6: Analyze creates remediation opportunity — Diagnostics stream emits one Warning entry`` () =
+    let catalog = buildCatalog true true            // mandatory column
+    let profile = buildProfile 100L 12L             // 12 nulls in 100 rows
+    let cfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
+    let lineage = NullabilityPass.run catalog (policyWith cfg) profile
 
-[<Fact(Skip = "V2 separates Diagnostics from decision set (DECISIONS 2026-05-06); opportunity wire-up arrives with the Diagnostics writer.")>]
-let ``V1 #7: Analyze skips opportunity for intentional nullability — SKIPPED (V2 divergence)`` () =
-    ()
+    // Decision side: mandatory column with nulls beyond budget +
+    // relaxation forbidden ⇒ RequireOperatorApproval (V1 #3 already
+    // covers the decision; this test asserts the diagnostic
+    // emission V1 #6 was the V1 representative for).
+    let decision = decisionFor mandatoryAttributeKey lineage
+    match decision.Outcome with
+    | NullabilityOutcome.RequireOperatorApproval _ -> ()
+    | other -> Assert.Fail(sprintf "Expected RequireOperatorApproval, got %A" other)
+
+    // Diagnostic side: exactly one Warning entry, tagged with the
+    // mandatory column's SsKey and a tightening.nullability.* code.
+    let entries = LineageDiagnostics.entries lineage
+    Assert.Single(entries) |> ignore
+    let entry = entries.[0]
+    Assert.Equal(Warning, entry.Severity)
+    Assert.Equal("nullability", entry.Source)
+    Assert.Equal("tightening.nullability.requireOperatorApproval", entry.Code)
+    Assert.Equal(Some mandatoryAttributeKey, entry.SsKey)
+    Assert.True(entry.Metadata.ContainsKey "interventionId")
+    Assert.Equal("v1-parity", entry.Metadata.["interventionId"])
+    Assert.False(System.String.IsNullOrWhiteSpace entry.Message)
+
+[<Fact>]
+let ``V1 #7: Analyze skips opportunity for intentional nullability — Diagnostics stream emits no entry for that attribute`` () =
+    // Non-mandatory column + nullable + no nulls. V1's
+    // OpportunityBuilder produces no opportunity for intentional
+    // nullability; V2's mapping: KeepNullable(NoTighteningSignal)
+    // produces no DiagnosticEntry.
+    let catalog = buildCatalog true false           // non-mandatory column
+    let profile = buildProfile 100L 0L              // zero nulls
+    let cfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
+    let lineage = NullabilityPass.run catalog (policyWith cfg) profile
+
+    let decision = decisionFor mandatoryAttributeKey lineage
+    match decision.Outcome with
+    | NullabilityOutcome.KeepNullable NoTighteningSignal -> ()
+    | other -> Assert.Fail(sprintf "Expected KeepNullable(NoTighteningSignal), got %A" other)
+
+    // The mandatory-named-but-actually-non-mandatory column is the
+    // intentional-nullability case; no diagnostic entry references
+    // it. The PK column also produces no diagnostic (EnforceNotNull
+    // outcome → None per the opportunityEntry mapping).
+    let entries = LineageDiagnostics.entries lineage
+    Assert.All(entries, fun e ->
+        Assert.NotEqual(Some mandatoryAttributeKey, e.SsKey))
 
 // ---------------------------------------------------------------------------
 // V1 #8 — NullabilityOverride_Should_Keep_Column_Nullable

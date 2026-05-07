@@ -205,7 +205,7 @@ let ``coexistence: NullabilityPass ignores CategoricalUniqueness interventions``
             [ Nullability           ("null-1", nullCfg)
               CategoricalUniqueness ("cu-1",   catUniqCfg) ]
     let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
-    Assert.All(lineage.Value.Decisions, fun d ->
+    Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("null-1", d.InterventionId))
 
 [<Fact>]
@@ -217,7 +217,7 @@ let ``coexistence: UniqueIndexPass ignores CategoricalUniqueness interventions``
             [ UniqueIndex           ("uniq-1", uniqCfg)
               CategoricalUniqueness ("cu-1",   catUniqCfg) ]
     let lineage = UniqueIndexPass.run sampleCatalog policy Profile.empty
-    Assert.All(lineage.Value.Decisions, fun d ->
+    Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("uniq-1", d.InterventionId))
 
 [<Fact>]
@@ -230,7 +230,7 @@ let ``coexistence: ForeignKeyPass ignores CategoricalUniqueness interventions`` 
             [ ForeignKey            ("fk-1", fkCfg)
               CategoricalUniqueness ("cu-1", catUniqCfg) ]
     let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
-    Assert.All(lineage.Value.Decisions, fun d ->
+    Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("fk-1", d.InterventionId))
 
 // ---------------------------------------------------------------------------

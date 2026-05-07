@@ -34,7 +34,7 @@ let private policyWithInterventions (interventions: TighteningIntervention list)
 [<Fact>]
 let ``structural commitment: empty Policy yields emptyDecisionSet`` () =
     let lineage = NullabilityPass.run sampleCatalog Policy.empty Profile.empty
-    Assert.Equal<NullabilityDecisionSet>(NullabilityRules.emptyDecisionSet, lineage.Value)
+    Assert.Equal<NullabilityDecisionSet>(NullabilityRules.emptyDecisionSet, NullabilityPass.decisionsOf lineage)
 
 [<Fact>]
 let ``structural commitment: empty Policy emits no lineage events`` () =
@@ -51,7 +51,7 @@ let ``structural commitment: empty Tightening with non-empty other axes still yi
             Emission  = EmissionPolicy.combined
             Insertion = InsertNew }
     let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
-    Assert.Empty(lineage.Value.Decisions)
+    Assert.Empty((LineageDiagnostics.payload lineage).Decisions)
     Assert.Empty(lineage.Trail)
 
 // ---------------------------------------------------------------------------
@@ -67,20 +67,20 @@ let ``one intervention: yields one decision per attribute on every kind`` () =
     let totalAttributes =
         Catalog.allKinds sampleCatalog
         |> List.sumBy (fun k -> k.Attributes.Length)
-    Assert.Equal(totalAttributes, lineage.Value.Decisions.Length)
+    Assert.Equal(totalAttributes, (LineageDiagnostics.payload lineage).Decisions.Length)
 
 [<Fact>]
 let ``one intervention: every decision references its intervention id`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig 0.0m false [])
     let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
-    Assert.All(lineage.Value.Decisions, fun d ->
+    Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("v1-style", d.InterventionId))
 
 [<Fact>]
 let ``one intervention: emits one Annotated lineage event per decision`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig 0.0m false [])
     let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
-    Assert.Equal(lineage.Value.Decisions.Length, lineage.Trail.Length)
+    Assert.Equal((LineageDiagnostics.payload lineage).Decisions.Length, lineage.Trail.Length)
     Assert.All(lineage.Trail, fun e ->
         match e.TransformKind with
         | Annotated _ -> ()
@@ -122,7 +122,7 @@ let ``two interventions: emit decisions for every (attribute, intervention) pair
     let totalAttributes =
         Catalog.allKinds sampleCatalog
         |> List.sumBy (fun k -> k.Attributes.Length)
-    Assert.Equal(totalAttributes * 2, lineage.Value.Decisions.Length)
+    Assert.Equal(totalAttributes * 2, (LineageDiagnostics.payload lineage).Decisions.Length)
 
 [<Fact>]
 let ``two interventions: decisions are tagged with their producing intervention`` () =
@@ -133,11 +133,11 @@ let ``two interventions: decisions are tagged with their producing intervention`
               Nullability ("beta",  cfg) ]
     let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
     let alphaCount =
-        lineage.Value.Decisions
+        (LineageDiagnostics.payload lineage).Decisions
         |> List.filter (fun d -> d.InterventionId = "alpha")
         |> List.length
     let betaCount =
-        lineage.Value.Decisions
+        (LineageDiagnostics.payload lineage).Decisions
         |> List.filter (fun d -> d.InterventionId = "beta")
         |> List.length
     Assert.Equal(alphaCount, betaCount)
@@ -157,7 +157,7 @@ let ``overrides survive through the pass: a KeepNullable override produces KeepN
     let policy = policyWithIntervention "with-override" cfg
     let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
     let pkDecision =
-        lineage.Value.Decisions
+        (LineageDiagnostics.payload lineage).Decisions
         |> List.find (fun d -> d.AttributeKey = pkAttr.SsKey)
     Assert.Equal(NullabilityOutcome.KeepNullable OperatorOverride, pkDecision.Outcome)
 
@@ -170,7 +170,7 @@ let ``T1: NullabilityPass is deterministic on the triple`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig 0.0m false [])
     let r1 = NullabilityPass.run sampleCatalog policy Profile.empty
     let r2 = NullabilityPass.run sampleCatalog policy Profile.empty
-    Assert.Equal<NullabilityDecisionSet>(r1.Value, r2.Value)
+    Assert.Equal<NullabilityDecisionSet>(NullabilityPass.decisionsOf r1, NullabilityPass.decisionsOf r2)
     Assert.Equal<LineageEvent list>(r1.Trail, r2.Trail)
 
 // ---------------------------------------------------------------------------

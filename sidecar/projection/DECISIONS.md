@@ -21,6 +21,77 @@ and title rather than rewriting it.
 
 ---
 
+## Active deferrals — index
+
+Deferred decisions with explicit trigger conditions. The chapter-close
+audit (session 12) found one trigger had fired silently (transform
+registry, N=10 with N≥4 deferral); session 13 cashed it out and
+introduced this index so the failure mode does not recur. Future agents
+scan this section before committing to substantive work; if a trigger
+has fired since the last review, log the cash-out entry below the
+table before continuing.
+
+| Deferral | First logged | Trigger condition | Status (current; session-N tag indicates last update) |
+|---|---|---|---|
+| **Composition primitive `fallback`** | 2026-05-13 (Composition vocabulary cash-out) | A second strategy returns "no decision" / Defer outcome and another picks up | 0 consumers (session 25) |
+| **Composition primitive `accumulate`** | 2026-05-13 (Composition vocabulary cash-out) | A second pass needs to consume multiple-strategy decisions at once | 0 consumers (session 25) |
+| **Composition primitive `wrap`** | 2026-05-13 (Composition vocabulary cash-out) | Per-strategy diagnostics emerge (likely tied to Diagnostics writer) | 0 consumers (session 25) |
+| **Composition primitive `lift`** | 2026-05-13 (Composition vocabulary cash-out) | A strategy reused across different IR granularities (e.g., Nullability rule on view columns) | 0 consumers (session 25) |
+| **Strategy registry mechanism** | 2026-05-11 (Strategy layer: a named architectural vector) | N≥4–6 strategies make name-keyed lookup useful | 5 strategy modules (UniqueIndexRules / NullabilityRules / ForeignKeyRules / CategoricalUniquenessRules / CycleResolution); Composition is the primitive module, not a strategy. No caller demands lookup by name (session 25) |
+| **Diagnostics writer** | 2026-05-06 (Diagnostics live in a writer parallel to Lineage) | First downstream artifact gates on operator-channel telemetry | **Cashed out — session 14 commit 3 landed `Projection.Core/Diagnostics.fs`. UniqueIndex opportunity stream activated as first consumer (session 14 commit 5). Three-channel split (operator/auditor/developer) remains deferred until a real consumer demands differentiation.** |
+| **`RequireQualifiedAccess` retrofit** on `UniqueIndexKeepReason` / `ForeignKeyKeepReason` / similar | 2026-05-11 refinement 1 (Strategy-layer codification empirical verdict) | A DU's variants change shape (added/removed/renamed) — substantive structural modification, not interpretive resolution | `ForeignKeyKeepReason` got `MissingTarget` (session 19) and the unreachable-`DeleteRuleIgnored` interpretive resolution (session 19; `DECISIONS.md:5048` rule 13). Neither rose to "structural modification" warranting retrofit; trigger sharpened at session 25 to clarify the threshold. Today neither `UniqueIndexKeepReason` nor `ForeignKeyKeepReason` carry the attribute (session 25) |
+| **`CycleResolution.ResolutionStep.Reason` migration to structured DU** | 2026-05-11 (Strategy layer: a named architectural vector — caveat) | A second resolver strategy lands per the 2026-05-08 pluggability deferral | No second resolver; reason field still free-form string (session 25) |
+| **Cross-catalog FK detection IR refinement** (`Catalog : string option` on `Reference` and `ForeignKeyKeepReason.CrossCatalogBlocked` made reachable) | 2026-05-13 (Closed-DU expansion: empirical confirmation) | A fixture exercising cross-catalog FKs surfaces the gap | Reserved DU variant exists but is unreachable; do not delete (session 25) |
+| **Cross-module FK IR refinement** | 2026-05-19 (rule 16's same-module assumption — session 19 reference-bearing slice) | A fixture exercising cross-module FK surfaces the gap | Same-module assumption operational across all six chapter-2 fixtures; the cross-module case is the highest-priority deferred slice for chapter 3 (session 25 — added per subagent #2 / subagent #3 audit) |
+| **Faker emitter (synthetic-data Π)** | 2026-05-13 (Session 11 reflection) | Either a third evidence type lands, or a use case forces proceeding with two evidence types and accepting the limitations | Two evidence types operational (Categorical, Numeric); no third in scope (session 25) |
+| **DacFx integration in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-06 (DacFx integration deferred to first real-fixture milestone) | A real Catalog (from any adapter) flows end-to-end through a pipeline exercising sibling-Π commutativity (T11) on real metadata; canary chapter (`Projection.Pipeline`) is the natural locus | **Re-deferred at session 24 with tighter trigger condition** (original trigger fired silently sessions 18–22; sequenced for chapter 3 canary chapter; see `2026-05-06` entry's session-24 amendment) |
+| **Multi-spine state pattern** | 2026-05-06 (Multi-spine state pattern is endorsed but not yet built) | A real use case surfaces in the algebra | None yet (session 25) |
+| **Three-channel Diagnostics split** (operator / auditor / developer) | 2026-05-06 (Diagnostics live in a writer parallel to Lineage) | A real downstream consumer demands per-channel routing | Single channel sufficient at first consumer (UniqueIndex opportunity stream); deferred until host shell or telemetry consumer surfaces (session 25) |
+| **Reflection** (`typeof<>`, attribute scanning for plugin discovery) | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | A real consumer demands name-keyed strategy dispatch (paired with the strategy registry mechanism deferral above) | Closed-DU + typed-seam dispatches at compile time today; no reflective discovery needed (session 25) |
+| **Object expressions** (`{ new IInterface with ... }`) for adapter-side abstractions | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | V2 grows interface-based polymorphism (e.g., `IDiagnosticSink` for streaming consumers; `ICatalogReader` after a second catalog source materializes) | Codebase has zero interface boundaries today; all polymorphism via DU pattern matching (session 25) |
+| **Type providers** (`JsonProvider` for `osm_model.json`) | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | OSSYS adapter ships and JSON-shape evolution becomes a maintenance burden | OSSYS adapter ships at session 18 with hand-written DTOs; JSON-shape evolution has not yet surfaced as a burden (session 25) |
+| **`ICatalogReader` interface** (Position B → A) | 2026-05-13 (Anticipation vs. speculation in abstraction extraction) | A second catalog source materializes (DACPAC, OData, in-memory test reader unifying with OSSYS) | OSSYS adapter implementation chapter starts in Position B (`parse : SnapshotSource -> Task<Result<Catalog>>` shape; session 18); interface defers until second source (session 25) |
+| **`SnapshotRowsets` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature, session-20 amendment) | The JSON-projection-lossiness class needs unblocking — A1 SsKey bound resolution; `EspaceKind` distinction; `isSystemEntity` evidence; future class members (per `DECISIONS 2026-05-19 — naming the two classes of resolution patterns explicitly`) | Operator-decided canonical resolution; not subject to relitigation. Variant reserved in `SnapshotSource` DU (`CatalogReader.fs:36-56`). Pre-scoped at session 25 commit 11 (subagent #5); chapter 3+ implements (session 25) |
+| **`LiveOssysConnection` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature) | V2 needs to operate without V1's chain in the loop entirely (real DB-touching variant) | Reserved in `SnapshotSource` DU (`CatalogReader.fs:58-62`); chapter-3+ when canary's deployment-validation arc materializes (session 25) |
+
+**Discipline.** Each deferral here was logged as the right call **at the
+time it was made** under "IR grows under evidence." A deferral is not a
+TODO — the cash-out point is a structural condition, not a date. The
+table tells future agents which conditions to monitor; the discipline is
+to review the table when surveying CHAPTER_CLOSE-ranked priorities, when
+adding a strategy or pass, and at chapter close. If a trigger has fired
+silently between reviews, the audit-during-validation discipline expects
+a cash-out entry before substantive work continues — that is the lesson
+the transform-registry miss surfaced (`DECISIONS 2026-05-13 — Transform
+registry cash-out`).
+
+**Scope of the index.** This index lists **deferrals with explicit
+re-open triggers** — both architectural (composition primitives, IR
+refinements, registry mechanisms) and feature-surface (reflection,
+object expressions, type providers consciously deferred per the
+CLAUDE.md F# feature surface section). Both share the same shape: a
+deferred decision with a structural condition that, when met, requires
+a cash-out entry. The index does **not** list:
+
+  - **Adoption-trigger candidates** from CLAUDE.md's "Aligned but
+    underused" section (computation expressions, active patterns,
+    units of measure). Those are aspirational adoption signals, not
+    re-open obligations — adopting them is encouraged when the
+    trigger fires but the trigger firing does not by itself demand
+    a cash-out entry. They live in CLAUDE.md as guidance, not in
+    DECISIONS as load-bearing.
+  - **Out-of-scope-for-Core** features (Async/Task,
+    MailboxProcessor, FRP). Those are scope rules, not deferrals —
+    they are forbidden in Core regardless of demand and only land
+    in adapters when the adapter's role demands them. They live
+    in CLAUDE.md as scope guidance.
+
+This distinction matters: the Active deferrals index is the list
+the chapter-close audit must scan; aspirational guidance and scope
+rules don't need that level of attention.
+
+---
+
 ## 2026-05-06 — Sidecar lives at `sidecar/projection/` with its own solution
 
 **Status:** decided
@@ -417,6 +488,72 @@ DACPAC bytes.
 giving up the human-readable diff oracle. The migration is additive —
 real-fixture work introduces DacFx alongside, not replacing, the raw-
 text emitter.
+
+#### 2026-05-20 (session 24 amendment) — trigger fired silently across sessions 18–22; cash-out is a re-defer with a tighter trigger condition
+
+The session-23 chapter-mid-audit (subagent #2; see
+`DECISIONS 2026-05-19 — Chapter-mid-audit as a routine practice`)
+surfaced that this deferral's trigger condition has been
+empirically satisfied without a cash-out entry being written. The
+original trigger condition reads "first real-fixture milestone
+arrives via the OSSYS catalog adapter." The OSSYS catalog adapter
+shipped at session 18 (`Projection.Adapters.Osm/CatalogReader.fs`)
+and operated across five real fixtures (minimal, reference-bearing,
+external-entity, mixed-active, index-bearing) producing 23+
+translation rules across sessions 18–22. The structural condition
+is met; seven sessions have accumulated against a satisfied
+trigger.
+
+This is the same shape as the transform-registry miss the Active
+deferrals index was created to prevent — a structural condition has
+been satisfied, no cash-out entry has been written, and substantive
+work has accumulated. The audit-during-validation discipline expects
+a cash-out before the next substantive work. This amendment is that
+cash-out.
+
+**The trigger as originally written was scoped imprecisely.** "First
+real-fixture milestone arrives via the OSSYS catalog adapter" reads
+naturally as "OSSYS adapter exists with real fixtures," which is now
+true. But the original 2026-05-06 entry's substantive intent — read
+in context of the surrounding decisions about RawTextEmitter as
+debug oracle and DacpacEmitter as the third sibling Π built when
+real metadata flows through — is tighter: the milestone that opens
+DacpacEmitter work is a real Catalog (from OSSYS) feeding through
+the **emitter chain**, not just the **adapter** ingesting OSSYS
+metadata. The OSSYS adapter parses to a Catalog; nothing yet
+consumes that Catalog through Π emitters in a real-fixture
+end-to-end shape. The chapter that opens DacpacEmitter work is
+the canary chapter (`Projection.Pipeline` — see
+`DECISIONS 2026-05-15 — OSSYS adapter strategic frame`, axis 4),
+which is sequenced for chapter 3.
+
+**Re-defer with tighter trigger condition.** DacpacEmitter remains
+deferred. The new trigger condition: **a real Catalog (from any
+adapter — OSSYS, DACPAC, in-memory) flows end-to-end through a
+pipeline that exercises sibling-Π commutativity (T11) on real
+metadata.** The canary chapter (`Projection.Pipeline`) is the
+natural locus. When that chapter opens substantive deployment-arc
+work, this trigger fires and DacpacEmitter implementation lands.
+
+**Why this amendment matters beyond the bookkeeping.** The audit
+surfaced not just this individual trigger fire but a structural
+gap in how the index discipline operates: an agent ships work that
+satisfies a deferral's structural condition without scanning the
+index for fired triggers. The chapter-mid-audit codification
+(`DECISIONS 2026-05-19`) added at session 23 catches pointer drift
+but does not yet require active-deferrals-scanning as an explicit
+audit dimension; the session-24 refinement amends that. The two
+amendments — this cash-out and the chapter-mid-audit refinement —
+are paired: they together close the structural gap the audit
+surfaced.
+
+**Update to the Active deferrals index.** The DacpacEmitter row's
+status updates from "OSSYS catalog adapter itself not yet built"
+(stale since session 18) to "**Re-deferred at session 24 with
+tighter trigger condition** — sequenced for canary chapter
+(`Projection.Pipeline`); see this amendment for rationale." The
+trigger condition column updates to reflect the tightened
+scoping.
 
 ## 2026-05-07 — Contract testing is the V1↔V2 bridge
 
@@ -1783,6 +1920,88 @@ test discipline expectations follow accordingly. The session-9
 admire stands as the V2-growth template; future V2-growth admires
 follow its structure.
 
+#### 2026-05-19 (session 23 amendment) — status framework extension for multi-session chapters in flight
+
+The session-22 cross-document audit surfaced a framework gap: the
+admire status framework was designed for chapters that complete in
+a single bounded arc. Chapters that run for many sessions (the
+OSSYS adapter chapter, for instance — five substantive slices
+across sessions 18–22) accumulate work that is **clearly past
+"chapter-open scoping"** but **not yet "extracted (...) confirmed"**.
+The framework had no status that fit the in-flight state.
+
+Without a fitting status, multi-session chapter entries either
+understate (`chapter-open scoping` after five slices misleads) or
+overstate (`extracted (differential confirmed)` premature when the
+chapter has known remaining substantive work). The OSSYS ADMIRE
+entry sat at `chapter-open scoping (session 17)` through session
+22 because no better status existed in the framework.
+
+**Decision: extend the framework with a partial-extracted status
+for multi-session chapters in flight.** The status string:
+
+  **`extracting (in flight, N slices)`**
+
+where `N` names the count of substantive slices the chapter has
+landed at the time of writing. The status is **explicit about
+in-flight-ness**: future readers know the entry is current as of
+N slices, not stable.
+
+Naming choices considered:
+
+  - `extracting (in flight, N slices)` — chosen. Active verb form
+    ("extracting") symmetric with the past form ("extracted").
+    `(in flight, N slices)` parameter gives concrete state. Reads
+    naturally: `extracting (in flight, 5 slices)` for the OSSYS
+    chapter at session 22 close.
+  - `partially-extracted (chapter in flight)` — rejected. Compound
+    past form is awkward; "partially-extracted" reads as a static
+    fraction rather than active progression.
+  - `in-progress-extraction` — rejected. Too long; reads as a
+    noun phrase rather than a status.
+
+The chosen form pairs cleanly with the existing four status
+strings:
+
+  | Status | When |
+  |---|---|
+  | `admired (placement decided)` | V2 placement chosen; no implementation yet |
+  | `chapter-open scoping (session N)` | Chapter just opened; strategic frame + ADMIRE chapter scope landed; no substantive slices yet |
+  | **`extracting (in flight, N slices)`** | **Chapter past chapter-open; substantive slices landing; not yet at chapter close** |
+  | `extracted (differential confirmed)` | Chapter complete; differential tests confirm the contract |
+
+**Update protocol.** When a chapter close lands, the status moves
+from `extracting (in flight, N slices)` to
+`extracted (differential confirmed)` (or the V2-growth /
+hybrid-mode equivalent). When a substantive slice ships within
+the chapter, the entry's `N` updates to reflect the new count.
+Updates happen as part of each session's work, not just at chapter
+close — keeping the status accurate is the responsibility of the
+session that lands the slice.
+
+**Worked example.** The OSSYS catalog producer entry transitions
+from `chapter-open scoping (session 17)` → `extracting (in flight,
+5 slices)` (session 23 application). The chapter close in
+session 25 will transition it to whatever extracted-status applies
+at completion. Future multi-session chapters follow the same
+pattern.
+
+**Reasoning / consequences.** The extension closes the
+framework gap surfaced by the session-22 audit. Multi-session
+chapters can keep their ADMIRE status accurate without forcing
+premature `extracted` claims or misleading `chapter-open scoping`
+holdovers. The framework is small (one new status string); the
+update discipline is small (per-slice update of `N`); the audit-
+trail compounds because future agents reading ADMIRE see the
+chapter's progression at a glance.
+
+The entry-template implications: the in-flight status's
+"Existing test coverage" subsection should accumulate as fixtures
+land, rather than being purely forward-looking. Forward-looking
+shape ("V2's test surface for the adapter (when implemented):")
+applies to `chapter-open scoping`; landed-shape ("V2's test surface
+includes:") applies to `extracting (in flight, N slices)`.
+
 ## 2026-05-13 — Session 10 reflection: closed-DU expansion validated; forward signals
 
 **Status:** decided (operating discipline; session 11 hand-off)
@@ -2472,6 +2691,80 @@ will hold. Session 11's finding earns the codification its place
 across the rest of V2 — it is no longer a discipline being tested,
 it is a discipline being inherited.
 
+### 2026-05-13 (session 13 amendment) — softening the claim to its evidence
+
+**Status:** appended (forward-pointing refinement; original entry preserved)
+
+The claim above ("the codification's stability mark") is true for what
+the codification has been tested on. It is **softer than the entry's
+phrasing makes it sound** when read against the shape of the testing.
+Honest restatement:
+
+  **The codification has absorbed three real instances within a
+  coherent shape — per-record decisions keyed by a single SsKey,
+  evaluated synchronously, returning one decision per (record ×
+  intervention) pair.** The four core predictions held without forcing
+  a fourth refinement *under that shape*. The empirical claim is
+  bounded by the shape that was tested.
+
+The three instances tested:
+
+  - **NullabilityRules** — context `Attribute`; decision keyed by
+    `Attribute.SsKey`.
+  - **UniqueIndexRules / ForeignKeyRules** — context `Kind × Index`
+    or `Kind × Reference (× Catalog)`; decision keyed by `Index.SsKey`
+    or `Reference.SsKey`.
+  - **CategoricalUniquenessRules** — context `Attribute`; decision
+    keyed by `Attribute.SsKey`.
+
+All three are per-record (the unit of decision is a single IR record),
+single-key (one `SsKey` identifies the decision), synchronous (the
+strategy returns immediately; no async / IO / writer-effect wrapping),
+and single-decision-per-invocation (`evaluate` returns one
+`'decision`, not a list).
+
+**The genuine untested seams.** A heterogeneous fourth strategy that
+breaks any of those three shape constraints might surface a fourth
+refinement the codification cannot absorb without amendment:
+
+  - **Multi-key strategies.** A `JointDistribution` strategy keyed by
+    *two* `SsKey`s (e.g., FK pair statistics) — `'context` is two
+    records, the decision is a relation, the lineage event needs to
+    carry both keys. The current `Composition.fanOut` wraps a single
+    iteration over a single `'context` enumerator; multi-key would
+    likely need a different combinator.
+  - **Async or effectful strategies.** A strategy whose `evaluate`
+    needs to await an external probe, write a Diagnostics event, or
+    emit a `Result<'decision>` — the current
+    `StrategyEvaluator<'context, 'config, 'decision>` alias forecloses
+    on this by typing the return as `'decision` directly. A strategy
+    that returns `Async<'decision>` or `Result<'decision>` would force
+    either a second alias or a generalization.
+  - **Multi-decision-per-invocation strategies.** A strategy that
+    decides multiple things from one input (e.g., a strategy producing
+    both a Nullability decision *and* a UniqueIndex decision from the
+    same evidence) — the current shape returns one decision; producing
+    multiple would force the FanOutConfig to grow a `decisionList`
+    accumulator or the strategy to be split.
+
+**Disposition.** None of these heterogeneous-shape cases have a
+consumer today. Per the two-consumer threshold (`DECISIONS 2026-05-13
+— Emergent primitives`), we don't pre-absorb the refinement. The
+amendment exists to mark the boundary of the claim:
+
+  - "The codification has absorbed three instances within a coherent
+    shape" — confirmed empirically.
+  - "The codification will absorb the next instance" — confirmed
+    *if and only if* the next instance shares the shape; otherwise the
+    next instance is the codification's fourth real test, and the
+    test's outcome is empirical, not predicted.
+
+Future agents who read the original entry should also read this
+amendment. The original's framing was earned at session 12 against the
+evidence available; this amendment names the evidence's shape so the
+next instance — when it arrives — is recognized as a fourth test, not
+treated as a fourth confirmation by inertia.
+
 ## 2026-05-13 — Discrete-rationale DUs absorb continuous evidence by adding variants at meaningful inflection points
 
 **Status:** decided (recognized property of the rationale-DU pattern)
@@ -2552,17 +2845,17 @@ next chapter)
 contracts, V1 output contracts, V1 test coverage, architectural-doc
 drift, build-graph and dependency hygiene) as the first formal
 verification pass on the V2 sidecar after eleven build-and-validate
-sessions. The synthesis lives in `CHAPTER_CLOSE.md` at the
+sessions. The synthesis lives in `CHAPTER_1_CLOSE.md` at the
 projection root; the handoff letter for the next-chapter agent
 lives in `HANDOFF.md`. This DECISIONS entry records the chapter
 closure and routes the findings.
 
 **Decision:** **The chapter ends. The next chapter opens with
-CHAPTER_CLOSE.md and HANDOFF.md as orientation documents.**
+CHAPTER_1_CLOSE.md and HANDOFF.md as orientation documents.**
 Findings documented; resolutions deferred to the next chapter per
 the leave-clean-ground discipline (don't fix in the audit session).
 
-**Audit summary** (full detail in CHAPTER_CLOSE.md):
+**Audit summary** (full detail in CHAPTER_1_CLOSE.md):
 
 | Audit axis | Verdict |
 |---|---|
@@ -2582,7 +2875,7 @@ the leave-clean-ground discipline (don't fix in the audit session).
 | V1↔V2 adapter / emitter divergences | ~10 cosmetic-to-medium drifts without DECISIONS audit trail |
 
 **Top 10 next-chapter priorities** (full detail in
-CHAPTER_CLOSE.md §4):
+CHAPTER_1_CLOSE.md §4):
 
   1. README.md absorbs the eleven-session state
   2. ADMIRE status sweep (5 entries) + mode annotations
@@ -2606,7 +2899,7 @@ CHAPTER_CLOSE.md §4):
     Documenting findings is the audit's product; fixing them is
     different work with different tradeoffs.
   - **Documentation is the bridge.** A fresh agent inherits the
-    codebase plus three documents (CHAPTER_CLOSE.md, HANDOFF.md,
+    codebase plus three documents (CHAPTER_1_CLOSE.md, HANDOFF.md,
     and the existing canonical trio AXIOMS / DECISIONS / ADMIRE).
     Honest documentation is the chapter's deliverable to its
     successor.
@@ -2617,3 +2910,3445 @@ accumulated judgment becomes documentation a fresh agent can
 inherit. Without this marker, the next chapter starts with the
 codebase but not the context; with this marker, it starts with
 both. The chapter ends here.
+
+## 2026-05-13 — Transform registry cash-out: deferral resolved as overtaken-by-evidence
+
+**Status:** decided (deferred-decisions cash-out, session-13)
+**Context:** `DECISIONS 2026-05-06 — Transform registry deferred until N≥4 passes`
+committed to revisit the transform registry when N reached 4. The
+codebase reached N=4 around session 6 and now stands at N=10
+(`Passes/CanonicalizeIdentity`, `NamingMorphism`, `NormalizeStaticPopulations`,
+`SymmetricClosure`, `TopologicalOrderPass`, `VisibilityMask`,
+`NullabilityPass`, `UniqueIndexPass`, `ForeignKeyPass`,
+`CategoricalUniquenessPass`). No subsequent DECISIONS entry either
+built the registry or re-deferred with rationale. The chapter-close
+audit (`CHAPTER_1_CLOSE.md §2.6`) flagged this as the most consequential
+silent-trigger miss: an explicit deferral with a numerical trigger that
+fired without a cash-out logged.
+
+**Decision:** **The transform registry is not built. The deferral
+resolves as overtaken-by-evidence.**
+
+**Rationale.** The 2026-05-06 deferral was sized against a *single
+linear pipeline composed via `>>`* — the masterwork's
+`pass1 >> pass2 >> pass3` framing where the registry's value was
+explicit ordering constraints, discoverability through reflection, and
+startup validation across a unified pipeline. V2 did not evolve into
+that shape. What V2 evolved into, instead, is **per-use-case driver
+functions** that compose passes ad hoc:
+
+  - The end-to-end milestone (`EndToEndDifferentialTests.fs`)
+    composes `CanonicalizeIdentity → NormalizeStaticPopulations →
+    SymmetricClosure → NullabilityPass → ...` for the Nullability
+    use case.
+  - The rich-profiling milestone (`RichProfilingEndToEndTests.fs`)
+    composes a different subset for distribution-aware emission.
+  - The strategy-driven passes (`NullabilityPass`, `UniqueIndexPass`,
+    `ForeignKeyPass`, `CategoricalUniquenessPass`) all delegate to
+    `Composition.fanOut` — but the inter-pass composition lives in
+    each test's setup or in each emitter's `emitFromInput` helper, not
+    in a global registry.
+  - There is no single "the V2 pipeline" to register passes against;
+    there are use cases (differential parity, rich profiling, future
+    Faker, future DacFx milestone) that compose subsets of the
+    available passes with different ordering and different evidence
+    inputs.
+
+The registry's value-proposition (one place to declare ordering;
+reflection-driven discovery; centralized startup validation) was
+written for a single-pipeline architecture. V2's per-use-case driver
+pattern doesn't have a single pipeline; each use case names its own
+composition explicitly, and the explicitness is itself the
+documentation. A registry would either become a per-use-case-driver
+*alternative* implementation (no value over what exists) or a
+*global* layer above the drivers (an abstraction over abstractions
+without empirical demand).
+
+**The numeric trigger was right; the framing was overtaken.** N≥4
+passes was the threshold predicted in the pipeline-style framing; in
+the driver-pattern framing the question becomes "does any driver
+benefit from registering passes by name?" and the answer is "no driver
+demands it." The numeric trigger fired honestly; the framing it
+referred to had been overtaken before the trigger was reached.
+
+**The lesson.** Deferrals with numerical triggers need explicit
+re-evaluation when the triggering condition is met, even if the
+work has continued in directions that make the deferral feel
+irrelevant. The 2026-05-06 deferral fired around session 6 (when the
+fourth pass landed); no agent caught it until the chapter-close audit
+in session 12. The structural answer is the new
+**Active deferrals — index** at the top of this file (introduced in
+session 13 alongside this entry). Future agents scan that table when
+surveying priorities; if a trigger has fired silently, the cash-out
+happens before substantive work continues.
+
+**Reasoning / consequences.** This entry closes the deferral
+explicitly. Future agents who read `DECISIONS 2026-05-06 — Transform
+registry deferred` should follow the back-reference to this entry and
+understand that the registry is not in V2's future under the current
+architecture. If a future use case demands a global pass-registration
+layer (e.g., the OSSYS catalog adapter exposes a multi-pipeline shape
+the driver pattern can't absorb), this cash-out is itself reversible
+under "IR grows under evidence" — but the demand has to surface, not
+the trigger.
+
+The active-deferrals index codifies the discipline so the same silent
+miss does not recur for `RequireQualifiedAccess` retrofit, the
+`CycleResolution.ResolutionStep.Reason` migration, the cross-catalog
+FK refinement, or any composition primitive whose second consumer
+arrives quietly.
+
+## 2026-05-13 — Session 13 closing: doc-hygiene chapter-open landed; one substantive finding deferred
+
+**Status:** decided (session 13 closing marker; routes findings to session 14)
+**Context:** Session 12 (chapter close) routed three classes of work
+to session 13: documentation hygiene (priorities 1–3); two
+deferred-decisions cash-outs (priority 5 transform registry; the
+stability-mark claim was self-flagged as possibly too strong); two
+missing TopologicalOrderPass tests (priority 4). Session 13 inherited
+the doc-hygiene work as the chapter-open opening — the prior agent's
+explicit recommendation.
+
+**What landed in session 13** (eight commits):
+
+| # | Scope | Verdict |
+|---|---|---|
+| 1 | README.md absorbs eleven sessions of state | landed; F# adapters, four-axis Policy, actual project layout, strategy layer, rich profiling, composition primitives, A18 amended, Diagnostics writer flagged, OSSYS catalog adapter named |
+| 2 | AXIOMS.md opening + A18 forwarding pointer | landed; opening now acknowledges A1–A34 / T1–T11 with five amended originals; A18 original points forward to its load-bearing amendment |
+| 3 | ADMIRE status sweep | landed; five entries updated to `extracted (...)` with mode annotations under three-mode framework; EntitySeedDeterminizer entry now acknowledges `StaticAdapterDifferentialTests.fs` as the differential landing it promised |
+| 4 | Skip-stub completion (V1NullabilityParity pattern) | landed in three test files; four new Skip stubs (UniqueIndex Aggressive mode, UniqueIndex included-columns boundary, ForeignKey DeleteRuleIgnore rationale, TopologicalOrder sanitized-effective-names) |
+| 5 | Transform registry cash-out + Active deferrals index | landed; the deferral resolves as overtaken-by-evidence (V2 evolved into per-use-case driver functions, not a single linear pipeline); new index at top of DECISIONS lists ten active deferrals with trigger conditions so silent triggers get caught structurally |
+| 6 | Stability-mark amendment | landed; appended forward-pointing refinement softening the claim to its evidence (three instances within a coherent shape — per-record decisions keyed by a single SsKey); names three genuine untested seams (multi-key, async, multi-decision) |
+| 7 | TopologicalOrderPass V2 contracts reserved | landed as Skip stubs (not as full Behavioral tests); see substantive finding below |
+| 8 | This entry — session 13 closing summary | landed |
+
+**Test baseline:** 585 passed, 9 skipped, 594 total (was 585/3/588 at
+chapter close). The 6 new skips (4 V1-divergence + 2 reserved) widen
+test discovery's surface for V2's named divergences without changing
+the passing-test count. Build green; no warnings beyond a pre-existing
+nullness warning in `DistributionsEmitterTests.fs:126` that predates
+session 13.
+
+**Substantive finding from priority 4 (audit-during-validation).**
+`CHAPTER_1_CLOSE.md §4 priority 4` listed "two missing
+TopologicalOrderPass tests" with cost "moderate — depends on whether
+OrderingPolicy already supports these knobs in V2 IR." It does not.
+V2's Policy has Selection / Emission / Insertion / Tightening axes;
+no Ordering axis. `TopologicalOrderPass.run` takes no Policy
+parameter (it is `Catalog -> Lineage<TopologicalOrder>`). Manual-cycle
+override has no representation. The junction-table heuristic is not
+implemented; `OrderingMode.JunctionDeferred` is declared in the DU
+but the pass never produces it. The two contracts ADMIRE flags as
+Behavioral V2 translations are **features-not-yet-built**, not
+just-missing-tests.
+
+Disposition for session 13: reserve the contract names via Skip
+stubs (commit 7). Implementation belongs to a substantive next-chapter
+move under the audit-during-validation discipline — surface the
+finding, name the disposition, defer the build to a session that
+takes it as scope. The audit-induced expansion of priority 4 is
+itself the discipline working.
+
+**Recommended priorities for session 14, with rationale.**
+
+  1. **Diagnostics writer.** Twelve sessions of consistent demand;
+     gating dependency for at least seven concrete artifacts and
+     pipelines (`decision-log.json`, `opportunities.json`,
+     `validations.json`, `dmm-diff.json`, opportunity-stream half of
+     UniqueIndex, operator-approval handoff for FK and Nullability,
+     V1 nullability `Analyze()` pipeline). The deferral has been
+     intellectually honest at every prior session ("don't build
+     speculatively"), but the demand is consistent enough that
+     building is now plausibly cheaper than continuing to defer. My
+     read aligns with `CHAPTER_1_CLOSE.md §4 priority 6` and the prior
+     agent's "I'd revisit if I had more time" item: the writer's
+     value-prop is no longer speculative. Recommend session 14 scopes
+     the writer (single-channel for now per the constitution; three
+     channels later) and lands at least one downstream artifact
+     consuming it (probably opportunity-stream because it's the
+     cheapest first consumer).
+  2. **OSSYS catalog adapter.** The undocumented production boundary
+     (`CHAPTER_1_CLOSE.md §2.10` and `§4 priority 7`). V2 catalogs are
+     today built by F# fixtures; production V2 needs to consume real
+     OutSystems metadata via the V1 `outsystems_metadata_rowsets.sql`
+     → `MetadataSnapshotRunner` → `SnapshotJsonBuilder` → V2 path. No
+     ADMIRE entry covers this. Probably a session-14 ADMIRE stub; the
+     implementation itself is a separate larger chapter.
+  3. **OrderingPolicy axis + junction heuristic** (deferred priority
+     from session 13). Cashes out the priority-4 work the audit found
+     was bigger than ranked. The TopologicalOrderPass tests reserved
+     in commit 7 then promote from Skip to `[<Fact>]`. Lower
+     immediate-value than (1)/(2); could reasonably wait for session
+     15 unless a real cycle-resolution use case forces it earlier.
+  4. **Faker emitter.** Per `CHAPTER_1_CLOSE.md §4 priority 8` and the
+     two-evidence-types-only constraint, defer until either a third
+     evidence type lands or Faker proceeds with two and accepts the
+     limitations. Not session 14 unless one of (1)/(2)/(3) opens it
+     up.
+
+The ranking (1) → (2) is gated on which produces more downstream
+demand quickly; the prior agent's "Diagnostics writer first, OSSYS
+catalog adapter second" framing matches my read after orientation.
+Faker remains genuinely deferred.
+
+**Disposition I inherited and am passing forward.**
+
+  - **Audit during validation.** Discovered priority-4 was feature
+    work not test work; logged the finding before pretending the
+    full priority was met. Same discipline that produced five
+    paydowns across sessions 4, 5, 7, 8, 11.
+  - **Total decisions, named skips.** Six new Skip stubs across
+    three test files now name V2 divergences and un-built features
+    that previously lived only in ADMIRE prose.
+  - **Documentation is the bridge.** Every commit in session 13
+    leaves the docs honest enough that the next agent reading only
+    the docs would understand what changed and why.
+  - **Defer with structure, not just intention.** The
+    "Active deferrals" index codifies the discipline that the
+    transform-registry miss surfaced. Future trigger-fires get
+    caught by table-scan, not by chronological re-read.
+
+**Closing.** Session 13 was doc-hygiene plus two deferred-decision
+cash-outs plus one audit-induced finding. The codebase is unchanged
+(no code touched outside test-file Skip stubs). The documentation is
+honest in places it was stale before. The deferred decisions index
+exists so the silent-trigger failure mode does not recur. Session 14
+inherits a chapter whose first substantive decision is whether to
+build the Diagnostics writer, ADMIRE the OSSYS catalog producer, or
+take a different opening based on demand the next agent reads from
+the codebase. The doc-hygiene chapter-open is what it claimed to be:
+not new architecture, just clean ground for the chapter ahead to
+support more weight than the one behind.
+
+Hold the spine.
+
+— Session 13 (the doc-hygiene chapter-open)
+
+## 2026-05-13 — Audit discipline refinement: contract-vs-implementation cross-reference
+
+**Status:** decided (audit-discipline operating principle; refinement of `DECISIONS 2026-05-09 — Audits surface things not on the agenda` and the `CHAPTER_1_CLOSE.md` audit-by-subagent verification approach)
+**Context:** Session 13's audit-during-validation produced a finding
+the chapter-close audit (session 12) had missed: priority-4 work
+("two missing TopologicalOrderPass tests") was actually feature-work
+("two un-built V2 contracts — no `OrderingPolicy` axis, no
+junction-table heuristic, `OrderingMode.JunctionDeferred` declared
+but never produced"). The miss was not random. The session-12 audit
+dispatched five parallel subagents against ADMIRE entries, V1 test
+coverage, V1 input/output contracts, doc drift, and build-graph
+hygiene — none of which cross-referenced ADMIRE-promised V2 contracts
+against the implementation modules to verify feature-completeness.
+The audit walked **contract → test** ("does the test exist?") but
+did not walk **contract → implementation** ("does the feature the
+test would assert exist?"). Both walks are needed; only one was done.
+
+**Decision:** **Any audit that walks a contract-vs-test
+cross-reference must also walk a contract-vs-implementation
+cross-reference.** Without it, audits systematically undercount the
+substantive backlog and present feature-work as test-work — exactly
+what session 12's priority-4 entry did.
+
+**The structural lesson generalizes.** ADMIRE entries promise V2
+contracts in three modes (V1-migration / V2-growth / hybrid;
+`DECISIONS 2026-05-13 — admire spectrum`). Each promised contract
+has three states the audit must distinguish:
+
+  | Contract → test? | Contract → implementation? | Diagnosis |
+  |---|---|---|
+  | Test exists | Implementation exists | Migrated; ADMIRE entry should be `extracted (differential confirmed)` |
+  | Test exists | No implementation | Test will fail; the implementation is the gap |
+  | No test | Implementation exists | Test gap; the audit's contract-vs-test walk catches this |
+  | No test | No implementation | **Feature gap** — the audit's contract-vs-test walk **misclassifies this as a test gap** unless implementation is also walked |
+
+The fourth row is the failure mode. Session 12 found the third row
+on UniqueIndex / ForeignKey / Topological skip-stub asymmetry
+(`CHAPTER_1_CLOSE.md §2.7`); session 13's skip-stub completion (commit
+4) addressed the test gaps. Session 13's TopologicalOrderPass
+finding was the fourth row — the implementation didn't exist; the
+contract-vs-test walk reported "missing test" because there was
+nothing to compare against.
+
+**Discipline going forward:**
+
+  1. **Chapter-close audits run two cross-references in parallel.**
+     One subagent walks ADMIRE-contracts × V2-tests; another walks
+     ADMIRE-contracts × V2-implementation. Findings are reported
+     against both axes; the tabular form above lets readers see
+     which row the finding falls into.
+  2. **Contract-vs-implementation walks check three things:**
+     module presence (does the named V2 module exist?), feature
+     presence (do the IR types and policy fields the contract
+     names exist?), and behavior presence (does the implementation
+     produce the named outcomes? — `OrderingMode.JunctionDeferred`
+     declared but never produced is the canonical anti-pattern).
+  3. **The result of the two walks combines into a single
+     priority-ranked findings list.** "Missing test, implementation
+     exists" is mechanical to fix (add the test; lock the
+     contract). "Missing implementation" is a substantive deferred
+     decision that needs DECISIONS-entry routing, not test-priority
+     ranking.
+
+**The fresh-agent observation.** This miss came from someone who
+had never read the code before. The session-12 chapter-close audit
+was conducted by an agent with eleven sessions of accumulated
+familiarity; the familiarity made the un-built `OrderingPolicy`
+axis invisible-because-known. Session 13's fresh agent (no prior
+context) cross-referenced ADMIRE → implementation as a normal part
+of orientation — there was no familiarity to elide. The general
+form: **fresh agents at chapter boundaries find things that the
+prior chapter's accumulated familiarity hid.**
+
+This argues for a structural disposition: chapter-close audits
+should explicitly include a "fresh-eye walk" — either by a subagent
+configured to ignore accumulated context, or by a fresh-agent
+review at the chapter boundary itself. Session 13's read-in served
+as a de facto fresh-eye walk; future chapter closes should make it
+deliberate.
+
+**Reasoning / consequences.** The audit-during-validation
+discipline (`DECISIONS 2026-05-09`) caught the priority-4 miss
+during session 13's work — exactly the failure mode it exists to
+catch. This entry refines the *chapter-close audit* protocol so the
+miss doesn't recur. The next chapter close (whenever it lands) will
+benefit: contract-vs-implementation walk runs alongside
+contract-vs-test walk; findings classify against the four-row
+table; fresh-eye review is structural rather than incidental.
+
+The Active deferrals index (`session 13 commit 5`) and this
+audit-discipline refinement are paired: the index makes deferred
+decisions visible across chapters; this refinement makes the
+distinction between deferred-test-work and deferred-feature-work
+visible within an audit. Both compound: the index catches silent
+trigger-fires; this discipline catches misclassified findings.
+
+## 2026-05-13 — Pass return-type codification: `Lineage<Diagnostics<'a>>` when the pass produces both
+
+**Status:** decided (operating discipline; pass-codification refinement; preserves the false start so future agents recognize the temptation)
+**Context:** Session 14 commit 4 needed to wire `UniqueIndexPass`
+to the new Diagnostics writer (commit 3) so the V1 OpportunityBuilder
+contract (V2 Skip stub reserved in commit 2) could activate. The
+return-type question surfaced: should `UniqueIndexPass.run` keep its
+existing `Catalog -> Policy -> Profile -> Lineage<UniqueIndexDecisionSet>`
+shape and gain a sibling
+`runWithDiagnostics : ... -> Lineage<Diagnostics<UniqueIndexDecisionSet>>`,
+or should `run` itself migrate to the dual-writer shape?
+
+**The false start I want recorded.** Initial choice was the sibling
+function. The justification cited at the time: the closed-DU
+expansion empirical-test discipline (`DECISIONS 2026-05-13 — Closed-DU
+expansion: empirical confirmation`) — "the seam is positioned
+correctly if F# exhaustiveness errors light up only at match sites
+and no callers outside the variant's module need reshaping. If they
+do, the seam is wrong and you're being told that." Twenty existing
+`UniqueIndexPass.run` call sites in tests would have updated under
+the return-type change, which felt like a violation of that rule. So
+I picked the sibling — `run` unchanged, `runWithDiagnostics` as a
+new entry point that internally wraps `run`'s output with
+post-hoc-constructed diagnostic entries.
+
+**Why the citation was wrong.** The closed-DU expansion discipline
+is about *DU variant additions* — does the seam absorb a new variant
+without forcing reshapes at consumer sites? That's a property of
+variant-level changes against pattern-match sites. **Return-type
+generalization is a different category.** The empirical test for
+return-type changes is not "do callers reshape?" — it is "does the
+type signature accurately name what the function produces?"
+
+The two disciplines look superficially similar (both involve "do
+callers change?") and the closed-DU one is load-bearing in V2's
+recent codification, which made it the available rule when the
+question came up. But the rules apply to different change shapes;
+reaching for the closed-DU discipline on a return-type question is
+a category error. Future agents who notice test ripple from a
+return-type change and feel the pull toward the closed-DU rule
+should pause and ask: **am I adding a DU variant, or am I changing
+what the function produces?** The disciplines diverge there.
+
+**Why the sibling shape is wrong long-run.** A sibling
+`runWithDiagnostics` synthesizes diagnostic entries post-hoc from
+the decision set — the diagnostics aren't truly "what the pass
+produces," they're "what a wrapper produces from the pass's
+output." That's a tell: the canonical entry point should return what
+the pass actually does. More structurally, every pass that grows
+diagnostic emission later (`NullabilityPass` activates V1 #6/#7;
+`ForeignKeyPass` activates the DeleteRuleIgnore stub from session
+13; `CategoricalUniquenessPass` whenever it surfaces an audit-trail
+need) faces the same fork. The codebase ends up with
+`Pass.run` (vestigial-by-construction; the historical lineage-only
+shape) and `Pass.runWithDiagnostics` (the actual canonical entry
+point) duplicated across four passes. The vestigial half stays in
+test code forever because removing it would break callers — exactly
+the test-stability bias that made the sibling tempting in the first
+place, perpetuated.
+
+**The right framing — the shape that names the production.** A
+pass's return type should capture what the pass produces. The same
+discipline names `A18 amended` (Π consumes whichever subset of
+`Catalog × Profile` it needs — type signature names the inputs) and
+`A32` (passes may produce values consumed by emitters — the
+EnrichedCatalog or sibling value names the production). Type
+signatures are honest: they name what flows in and out. Passes that
+produce only decisions return `Lineage<'output>`. Passes that
+produce decisions plus observer-relevant findings return
+`Lineage<Diagnostics<'output>>`. The shape declares the production;
+callers update mechanically when production changes.
+
+**Decision:** **Passes return `Lineage<'output>` when they produce
+only decisions, and `Lineage<Diagnostics<'output>>` when they
+produce decisions plus observer-relevant diagnostics.** The variant
+arrives at meaningful inflection points — mirrors `DECISIONS
+2026-05-13` on rationale DUs absorbing continuous evidence (variants
+at meaningful inflection points beats parametric values on coarser
+variants); the same principle applied to function shapes. No
+sibling-function half-measure.
+
+**Worked example (commit 5).** `UniqueIndexPass.run` migrates from
+`Catalog -> Policy -> Profile -> Lineage<UniqueIndexDecisionSet>` to
+`Catalog -> Policy -> Profile -> Lineage<Diagnostics<UniqueIndexDecisionSet>>`.
+The pass body now emits a `DiagnosticEntry` for every decision that
+does not enforce uniqueness or that requires remediation (mirroring
+V1 `OpportunityBuilder.TryCreate`). Test sites (~20 in test files)
+update mechanically: `lineage.Value` becomes `dual.Value.Value`. A
+small helper `UniqueIndexPass.decisionsOf` extracts the
+`UniqueIndexDecisionSet` from the dual writer for tests that only
+care about decisions; tests that care about diagnostics access
+`dual.Value.Entries` directly.
+
+**Forward signal.** When `NullabilityPass`, `ForeignKeyPass`, or
+`CategoricalUniquenessPass` next grow diagnostic emission, they
+follow the same migration. Don't add a sibling function. Change the
+return type. Pay the test ripple. The cost is one-time; the
+discipline is permanent. Each migration is independent — passes that
+don't yet emit diagnostics keep their `Lineage<'output>` shape.
+
+**The general rule, named.** When a function's category of output
+grows (decisions → decisions + diagnostics; pure → effectful;
+single-value → multi-value), change the signature to name the new
+production. Test ripple is information about *where the function is
+called from*; it is not evidence the seam is wrong. The closed-DU
+discipline applies to DU variant additions; return-type
+generalizations have their own discipline, and that discipline is
+"name the production."
+
+**Reasoning / consequences.** Recording the false start is itself
+the discipline's value-add to future agents. The closed-DU rule will
+be tempting again — it's load-bearing, it's recent, it's available.
+The right reflex when a return-type change forces test ripple is
+*not* to reach for closed-DU; it is to ask whether the new return
+type names the production accurately. If yes, the ripple is the
+cost of honesty in the type system. If no, the change is wrong and
+the question is what the right shape is.
+
+This entry pairs with the audit-discipline refinement (session 14
+commit 1 — contract-vs-implementation cross-reference) as a session
+that produced two operating-discipline entries before producing
+substantive infrastructure. Both were named because both could
+recur. Future agents inherit the disciplines and the false starts
+together.
+
+## 2026-05-13 — Named accessors for stacked types whose nested access loses self-description
+
+**Status:** decided (operating discipline; smell-fix codification; preserves the false start)
+**Context:** Session 14 commit 5 migrated `UniqueIndexPass.run` from
+`Lineage<UniqueIndexDecisionSet>` to
+`Lineage<Diagnostics<UniqueIndexDecisionSet>>` per the pass
+return-type codification (`DECISIONS 2026-05-13` — pass return-type
+codification). The migration's first cut updated test sites with
+the literal access pattern `lineage.Value.Value.Decisions`. During
+the work, the user surfaced the question: "is `lineage.Value.Value`
+a code smell in that it's not self-descriptive?" The answer is yes,
+and the disposition generalizes.
+
+**The false start preserved.** The mechanical migration produced
+~14 call sites of the form `lineage.Value.Value.Decisions`. Each
+read forces the reader to count `.Value` projections to know which
+writer they land in. The first `.Value` strips the outer `Lineage`
+wrapper; the second strips the inner `Diagnostics` wrapper; the
+third reaches `.Decisions` on the underlying `UniqueIndexDecisionSet`.
+F# infers the types correctly, but the consumer expression encodes
+no semantic intent — `Value` of a `Lineage<...>` and `Value` of a
+`Diagnostics<...>` share a name, and the reader has to know the
+field-naming convention to disambiguate.
+
+The smell is real. The smell test that names it:
+
+  **Would a reader of this expression need the type definition open
+  in another window to know which level they're on?**
+
+If yes, the access pattern is not self-descriptive and the
+discipline is to provide named accessors that name the intent at
+each level.
+
+**Decision:** **Stacked types deserve named accessors at call sites
+where nested access loses self-description.** Whenever a stacked
+writer (or any nested type) creates a `.Field.Field` access pattern
+at multiple consumer sites, and the structural shape requires the
+reader to count nesting levels to know which level they're on, the
+discipline is to provide module-level accessors that name what's
+being reached for.
+
+**The pattern shape:**
+
+```
+module <DualOrStackedType> =
+    let <intentName1>  : <Stacked<'a>> -> <X>  = ...
+    let <intentName2>  : <Stacked<'a>> -> <Y>  = ...
+    let payload        : <Stacked<'a>> -> 'a   = ...   (the deep value, named)
+```
+
+For the dual writer `Lineage<Diagnostics<'a>>` (this commit's
+example), the helpers are:
+
+  - `LineageDiagnostics.payload      : Lineage<Diagnostics<'a>> -> 'a`
+  - `LineageDiagnostics.entries      : Lineage<Diagnostics<'a>> -> DiagnosticEntry list`
+  - `LineageDiagnostics.diagnostics  : Lineage<Diagnostics<'a>> -> Diagnostics<'a>`
+  - `m.Trail` stays as-is (single Field at the outer level; already
+    self-descriptive — the smell is specifically about nested
+    repetition, not single access)
+
+Domain-named shortcuts compose cleanly with the generic helpers.
+`UniqueIndexPass.decisionsOf` delegates to
+`LineageDiagnostics.payload`; the domain shortcut reads more
+clearly than the generic accessor at consumer sites
+(`UniqueIndexPass.decisionsOf lineage` over
+`LineageDiagnostics.payload lineage`), but both are self-descriptive
+and the underlying structure is asserted in one place.
+
+**Where the discipline applies (and where it does not):**
+
+  - **Applies:** consumer sites that read through a stacked type to
+    a deep value. The named accessor declares intent.
+  - **Does not apply:** structural assertion tests for the writer
+    itself. `LineageDiagnostics.payload` is *defined* as
+    `m.Value.Value`; the test that asserts the helper does what it
+    claims must read `m.Value.Value` directly to verify the helper.
+    Reaching past the helper at a structural-test site is the test's
+    purpose.
+  - **Does not apply:** single-level access where the field name is
+    unambiguous in context (`m.Trail` for `Lineage<...>`,
+    `m.Entries` for `Diagnostics<...>` — single Field access at the
+    outer layer is self-descriptive).
+
+**The general smell test, restated:**
+
+  - One `.Field` access: usually self-descriptive; the field name
+    carries the intent.
+  - Two `.Field.Field` of the same name: smell; the reader counts
+    levels to know which writer they're on.
+  - Two `.Field.OtherField` of different names: usually fine; the
+    second name disambiguates.
+  - Three or more `.Field`: smell regardless of name uniqueness;
+    nested access at depth loses structural intent even when each
+    name is distinct.
+
+The boundary is not an exact line; the test is whether a reader can
+tell, from the expression alone, what's being reached for.
+
+**Pairs with the pass return-type codification.** Honest signatures
++ readable consumers is the joint commitment. The pass return-type
+codification (`DECISIONS 2026-05-13` — pass return-type) says:
+*change the type signature when the production grows.* This entry
+says: *provide named accessors when the new type's consumer pattern
+loses self-description.* Together, the two disciplines keep both
+the type system and the call sites honest.
+
+**Why the false start is preserved.** The same temptation will
+recur: future agents migrating to a stacked type will produce
+`.Value.Value` access patterns by default, and the smell will read
+as "F# being F#" rather than as a discipline gap. This entry exists
+so the next agent recognizes the smell as soluble and not as a
+language artifact. The named-accessor discipline applies; the smell
+test is the trigger.
+
+**A meta-pattern across session 14 entries.** This is the third
+operating discipline session 14 has produced — alongside the
+audit-discipline refinement (`DECISIONS 2026-05-13` —
+contract-vs-implementation cross-reference) and the pass
+return-type codification. All three followed the same pattern:
+
+  1. The discipline surfaced during substantive work, not as a
+     planned discipline-codification effort.
+  2. The discipline was named and recorded *with the false start
+     preserved*, so future agents recognize the temptation when it
+     recurs.
+  3. The substantive work continued under the new discipline before
+     the commit shipped.
+
+This meta-pattern itself is worth naming: **disciplines emerge from
+the work, not from speculation about the work.** Audit-during-
+validation (`DECISIONS 2026-05-09`) is the upstream discipline; the
+three session-14 entries are downstream consequences of operating
+that discipline at a chapter-open. Future chapters that operate
+audit-during-validation should expect to produce disciplines of
+this shape; recording them with their false starts is the
+convention this session establishes.
+
+**Reasoning / consequences.** The named-accessor discipline is now
+named, codified, and discoverable from any call site that imports
+`Projection.Core`. Future stacked-type designs (a third-channel
+Diagnostics split when it lands; future writer compositions; deeply
+nested IR records) inherit the convention: provide named accessors
+at the consumer surface whenever the structural shape requires
+counted projections at call sites.
+
+## 2026-05-13 — Anticipation vs. speculation in abstraction extraction (refinement of the two-consumer threshold)
+
+**Status:** decided (operating discipline; refinement of `DECISIONS 2026-05-13 — Emergent primitives earn their place through multi-consumer demand`)
+**Context:** Session 14's discussion of object expressions for
+hypothetical `ICatalogReader` and `IDiagnosticSink` interfaces
+surfaced a question the two-consumer threshold doesn't directly
+answer. The `ICatalogReader` case looks plausibly worth amortizing
+up front (DACPAC support is named in V2's vocabulary docs;
+`README.md` calls out "DACPAC, OData, or other sources later" as
+the algebra's whole reason for using generic algebraic names; the
+OSSYS adapter implementation chapter is the natural moment to make
+the interface decision once before the function shape is calcified
+by callers). The `IDiagnosticSink` case looks distinctly *not*
+worth amortizing (writer-vs-sink semantics are genuinely
+uncertain; the first real downstream consumer's shape will
+constrain the design in a way speculation cannot). The two-consumer
+threshold treated symmetrically would defer both; the cases are
+not symmetric.
+
+**The reframing:** **The two-consumer threshold is not "wait for
+the second consumer to literally exist" — it is "wait for the
+second consumer's *shape* to be visible enough to validate the
+abstraction."** When the shape is visible, the threshold is met by
+anticipation; when the shape isn't, speculation about the
+abstraction is what the threshold guards against. The discipline
+is against speculative abstraction, not against thoughtful
+anticipation.
+
+**Three positions for any abstraction-extraction question:**
+
+| Position | What it means | When it applies |
+|---|---|---|
+| **A — Amortize fully now** | Define the abstraction (interface, helper, primitive, etc.) today; route all consumers through it. Pay full cost up front. | When the second consumer's shape *and* arrival are both highly probable within the next few sessions. Rare; usually a sign we're past the threshold and just hadn't noticed. |
+| **B — Amortize structurally only** | Don't define the abstraction today, but design the function signatures / module shapes / value types so they map cleanly to the eventual abstraction. When the second consumer arrives, the abstraction lands as a one-line wrapper; no retrofit. Pay structural cost up front, defer concrete cost. | When the second consumer's *shape* is visible and validatable (we know what the abstraction would look like) but its *arrival* is not yet concrete. The discipline preserved: no speculative abstraction; the discipline relaxed: design with anticipated shape in mind. |
+| **C — Defer fully** | Build whatever's natural for the first consumer; let the second consumer force the abstraction. Retrofit cost is real but small in F# (object expressions, type aliases, monad bindings all keep the cost low). | When the second consumer's shape is genuinely uncertain. The risk of premature naming is higher than the cost of retrofit. |
+
+**Worked examples:**
+
+| Abstraction | Position | Rationale |
+|---|---|---|
+| `ICatalogReader` (multiple catalog sources: OSSYS, DACPAC, OData, in-memory fixtures) | **B** | DACPAC's shape is concrete enough to design for. The OSSYS adapter's primary entry point should be `parse : string -> Task<Result<Catalog>>` — exactly the shape the future interface would have. Interface itself defers until a second source materializes; structural alignment lands in the OSSYS implementation chapter. |
+| `IDiagnosticSink` (streaming consumers of Diagnostics entries) | **C** | Writer-vs-sink semantics are the deeper question; V2 chose writer (entries accumulate in a value; consumer reads). The first real downstream consumer (JSON manifest emitter, operator dashboard, telemetry consumer) will constrain whether sink semantics are needed. Three plausible futures, three different right answers. Wait for the first consumer to surface the question. |
+| Composition primitives (`fallback`, `accumulate`, `wrap`, `lift`) | **C** | Sketched at session 8; deferred at session 11 commit cash-out (`DECISIONS 2026-05-13 — Composition vocabulary cash-out`). The first consumer's shape isn't visible — we don't know what the second pass that needs `accumulate` would look like, what the second strategy that needs `wrap` would instrument, etc. The shape isn't validatable; speculation would name the wrong abstraction. |
+| `StrategyEvaluator` alias (now codified) | **B → A retroactively** | Sketched at session 8 (Position B; the shape was visible across three strategies); cashed out at session 11 commit 5 when the fourth strategy made the shape empirically real (`DECISIONS 2026-05-13 — Generic StrategyEvaluator alias cash-out`). The retrospective Position A landing was actually a Position B that ripened into A through real consumer demand. |
+
+**The empirical test for "shape visible enough":**
+
+  1. **Can you write the abstraction's signature without making
+     contested choices?** If yes, the shape is visible. If you find
+     yourself pausing on "should this be `Async` or sync?" or
+     "should it return `Result` or throw?" — those are the contested
+     choices that mean the shape isn't visible enough yet.
+  2. **Can you predict the second consumer's call site without
+     consulting an external source?** If yes, anticipation is
+     grounded. If you're reaching for "well, it depends on what the
+     downstream design is" — the second consumer's shape is
+     speculative, not visible.
+  3. **Would naming the abstraction now constrain the second
+     consumer's design in ways you'd be confident about?** If yes,
+     the abstraction earns its place by anticipation. If naming it
+     now would force the second consumer into a shape that might be
+     wrong — you're speculating, not anticipating.
+
+**The discipline restated:**
+
+  - Position B is acceptable when all three empirical tests pass.
+    The structural cost (designing the function with the
+    anticipated abstraction in mind) is small; the future cost
+    saved (no retrofit) is real.
+  - Position A requires both shape visibility AND a concrete second
+    consumer. Without the concrete consumer, A is just speculation
+    in disguise.
+  - Position C is the default. When in doubt, defer; F# makes
+    retrofit cheap.
+
+**Why this refinement matters.** The two-consumer threshold has
+served the codebase well — `fallback` / `accumulate` / `wrap` /
+`lift` deferred at session 11 are still deferred at session 14
+because no consumer has surfaced their shape; the discipline
+caught what would have been speculative abstraction. But applied
+*as a literal rule* it would also defer `ICatalogReader` even when
+DACPAC is named in V2's vocabulary docs as a planned source. That's
+treating anticipation as speculation, which loses information.
+
+The refinement preserves the discipline's value (no abstractions
+named on hope alone) while permitting Position B (structural
+alignment when the shape is concrete enough). Future agents
+applying the discipline have the three positions plus the empirical
+test to choose among them; the choice is now nuanced, not
+mechanical.
+
+**Pairs with three other entries in this session:**
+
+  - `DECISIONS 2026-05-13 — Emergent primitives earn their place
+    through multi-consumer demand` — the original threshold this
+    refinement extends.
+  - `DECISIONS 2026-05-13 — Pass return-type codification` (session
+    14) — also in the abstraction-design family; the discipline
+    there is "the type signature names the production." This entry
+    says the timing of when to introduce that signature follows
+    the visibility-of-shape rule.
+  - `DECISIONS 2026-05-13 — Named accessors for stacked types`
+    (session 14) — the smell-fix discipline for nested access; the
+    timing of when to extract a named accessor follows the same
+    rule (when call sites recur enough that the accessor's shape
+    is visible).
+
+**Reasoning / consequences.** Future abstraction-extraction
+decisions explicitly choose among A, B, or C and apply the empirical
+test. The decision is captured in the relevant DECISIONS entry or
+the commit message that introduces the abstraction. Documentation
+of the position taken — and the test result — pays compound
+interest when a future agent revisits the choice.
+
+The general lesson: **disciplines refine through use, not through
+restatement.** The two-consumer threshold was the right rule when
+named; the refinement is the right rule now that one of its edge
+cases (anticipation grounded in concrete planning) has surfaced.
+The next agent who finds another edge case extends this entry or
+writes a successor; the discipline is alive, not frozen.
+
+## 2026-05-14 — Chapter-close ritual: the things to check at every chapter boundary
+
+**Status:** decided (operating discipline; codifies the chapter-close ritual the prior chapter operated informally and the next chapter should operate explicitly)
+**Context:** Session 14 (chapter-close audit, conducted in session 12)
+caught the transform-registry deferral that had fired silently. The
+session-13 audit-during-validation produced the
+contract-vs-implementation refinement
+(`DECISIONS 2026-05-13 — Audit discipline refinement`). Session 14's
+operator-led reflection raised two more concerns:
+
+  - The F#-feature-surface section in CLAUDE.md has re-open
+    triggers; if those are not cross-referenced from the Active
+    deferrals index, silent-trigger fires can recur in a different
+    surface. (Now fixed; commit 1 of session 15 added the
+    consciously-deferred features to the index.)
+  - CLAUDE.md will drift the same way README.md did — a fresh agent
+    rewrote the README at session 13 because eleven sessions of
+    accumulated change had made it stale. CLAUDE.md is at higher
+    risk because it indexes other docs that themselves change.
+
+The fix-each-thing-once approach addressed both. But the underlying
+problem is structural: chapter-close audits have run as ad-hoc
+investigations, not as a codified ritual. The next chapter close
+will benefit from a named, repeatable list of things to check.
+
+**Decision:** **The chapter-close ritual is codified. Every chapter
+close must execute the items below before declaring the chapter
+done.** Items marked "load-bearing" must produce a written
+finding (either "clean" or a remediation entry); items marked
+"informal" are encouraged but not required.
+
+### Load-bearing items
+
+  1. **Active deferrals index scan.** Walk every entry in the
+     Active deferrals index at the top of `DECISIONS.md`. For each:
+     verify the trigger condition still describes the right
+     condition; verify the current state still describes reality;
+     if the trigger has fired since the last scan, log a cash-out
+     entry. The transform-registry miss is the worked example of
+     what happens without this scan.
+  2. **Contract-vs-implementation cross-reference walk.** Per
+     `DECISIONS 2026-05-13 — Audit discipline refinement`, every
+     ADMIRE entry's promised V2 contracts must be checked against
+     both the test surface AND the implementation surface. The
+     four-row classification table (test×impl) routes findings:
+     "no test, no implementation" is feature-gap; "no test,
+     implementation exists" is test-gap; etc.
+  3. **CLAUDE.md staleness check.** Walk every section of
+     CLAUDE.md against the current state of the canonical surfaces
+     it indexes. Reading order pointer still resolves to the right
+     documents; operating-disciplines table still points at
+     current DECISIONS entries; F#-feature-surface section still
+     reflects what the codebase uses; programming-style center
+     target still describes patterns visible in the code. If
+     anything has drifted, fix it during the close — don't leave
+     it for the next chapter.
+  4. **README.md staleness check.** Same shape as CLAUDE.md but
+     for the README — surface-level orientation. Session 13
+     rewrote it after eleven sessions of drift; the discipline
+     prevents that recurring.
+  5. **HANDOFF.md / CHAPTER_1_CLOSE.md scope.** Each chapter
+     produces its own HANDOFF letter and CHAPTER_CLOSE audit
+     synthesis at the close. Chapter 1's CHAPTER_1_CLOSE.md (sessions
+     1–12) lives at the projection root; chapter 2's belongs
+     adjacent or under a chapter-numbered subfolder. The next
+     chapter's handoff should not overwrite chapter 1's; the
+     append-only documentation discipline is structural.
+  6. **Fresh-eye walk.** Per `DECISIONS 2026-05-13 — Audit
+     discipline refinement`, chapter-close audits explicitly
+     include a fresh-eye walk — either by a subagent configured to
+     ignore accumulated context, or by a fresh-agent review at
+     the chapter boundary itself. Familiarity hides what fresh
+     eyes find.
+  7. **Operating disciplines table currency.** CLAUDE.md's
+     operating-disciplines table must point at current DECISIONS
+     entries by date. New disciplines added during the chapter
+     are reflected; deprecated disciplines are removed or marked
+     superseded.
+  8. **V1-input-envelope walk** (added at session 25 chapter-2
+     close per the audit's recommendation; applies to V1↔V2
+     translation chapters and chapters where a structured input
+     envelope has comprehensive content). Walk the input envelope
+     field-by-field at chapter close to identify silent drops not
+     yet on the won't-carry-forward list. The trace-before-fixture
+     pattern catches per-slice questions; the envelope walk
+     catches chapter-level coverage gaps. For the OSSYS chapter,
+     the walk is `SnapshotJsonBuilder.cs` field-by-field against
+     the won't-carry-forward list in ADMIRE plus the running
+     translation-rules amendments. For future V1↔V2 chapters
+     (DACPAC, OData, etc.), the walk is the analogous V1-side
+     envelope-projection code. Findings categorize into the
+     three-class typology (lossiness / boundary-discipline /
+     alternative-IR-surface; see `DECISIONS 2026-05-21 — Chapter
+     2 close: alternative-IR-surface class`). See the session-25
+     amendment below for the discipline's origin and rationale.
+
+### Informal items
+
+  - **Test baseline diff.** Test count delta from chapter open to
+    close, broken down by added vs migrated vs deleted. Useful for
+    the chapter's quantitative narrative; not load-bearing.
+  - **Forward-signal triage.** Each chapter close names forward
+    signals for the next chapter; the ritual encourages but does
+    not require ranking them with rationale.
+  - **Discipline rent-paying check.** Per session-14 closing
+    addendum's distinction between during-work disciplines and
+    reflection-driven disciplines, the chapter close may include
+    a brief check on whether each post-reflection discipline got
+    used during the chapter — did it shape future code, or did it
+    age without being consulted? Useful for catching descriptive
+    orientation that didn't earn its keep.
+
+### Where the ritual lives
+
+  - **This DECISIONS entry** is the load-bearing surface; the
+    ritual is structurally captured here.
+  - **CLAUDE.md's "Chapter-close ritual" section** is the
+    navigational pointer; future fresh agents read CLAUDE.md
+    first and see the ritual indexed there. Substantive details
+    stay in this entry.
+  - **Each chapter's CHAPTER_1_CLOSE.md** records the result of
+    running the ritual — clean items, remediation entries,
+    findings.
+
+### Why this entry exists
+
+The chapter-close audit in session 12 caught real problems but
+operated as an ad-hoc investigation. Session 13's reflection
+flagged that the transform-registry miss happened because the
+chronological-append discipline of DECISIONS doesn't surface "this
+trigger has fired." The Active deferrals index addressed that
+specific failure mode; this entry addresses the broader one — that
+the entire chapter-close audit should be a codified ritual, not a
+re-derivation each time.
+
+The session-14 operator-led reflection raised two CLAUDE.md
+maintenance concerns; both are real and both belong in the ritual.
+Codifying the ritual now makes CLAUDE.md maintenance load-bearing
+rather than aspirational; it converts the user's named worry into
+a structural answer.
+
+**Reasoning / consequences.** Future chapter closes execute the
+seven load-bearing items and write the result. The ritual itself
+will likely refine across chapters — items will be added, items
+will be marked informal-now-load-bearing as the discipline matures.
+Each refinement updates this entry or appends a successor; the
+discipline is alive, not frozen.
+
+#### 2026-05-21 (session 25 amendment) — V1-input-envelope walk added as load-bearing item 8
+
+Subagent #3's chapter-2-close audit (OSSYS chapter completeness)
+surfaced that the chapter grew its won't-carry-forward list
+opportunistically under fixture pressure (V2-IR shape coverage)
+rather than under V1-input pressure (walking
+`SnapshotJsonBuilder.cs` field-by-field). Six fixtures surfaced
+six rule-bearing surfaces, but the V1 input envelope contains
+additional information envelopes — `attributes[].onDisk`,
+`attributes[].default`, `module.isSystem`/`isActive`,
+`refEntity_isActive`, and others — that no fixture has yet
+forced the chapter to consider. The trace-before-fixture
+discipline caught what mattered for each slice; it did not
+walk V1's full envelope at chapter open or chapter close.
+
+Subagent #3's diagnosis: this is a different discipline gap
+from the implicit-coverage finding session 24 surfaced. Session
+24 was about V2-implementation-paths-not-fixture-exercised; this
+is about V1-input-envelope-not-walked. The won't-carry-forward
+list has never been audited against the V1 envelope projection
+code field-by-field until subagent #3 performed that walk at
+chapter close.
+
+**The pattern parallels session 24's chapter-mid-audit
+refinement:** a missing audit dimension surfaces during the
+audit's own operation. The codebase's audit disciplines are
+growing through their own use — the audits are not just
+artifacts but *generative mechanisms producing further audit
+disciplines*. Session 24 added active-deferrals scan to the
+chapter-mid-audit; session 25 adds V1-envelope walk to the
+chapter-close ritual. The meta-pattern (audits generating
+disciplines) is the chapter-2 closing arc's most distinctive
+intellectual feature.
+
+**Decision: V1-input-envelope walk is load-bearing item 8 on
+the chapter-close ritual.** Applies to V1↔V2 translation
+chapters and chapters where a structured input envelope has
+comprehensive content. Walks the V1-side envelope-projection
+code field-by-field. Findings categorize into the three-class
+typology (lossiness / boundary-discipline / alternative-IR-
+surface).
+
+**The ritual is now eight items.** Item 8 is the chapter-2
+contribution; it is structurally a chapter-close-only item
+(differs from the other seven in being chapter-class-conditional
+rather than chapter-class-universal).
+
+**Forward-looking.** Subsequent V1↔V2 translation chapters
+(DACPAC adapter chapter; OData adapter chapter; future input
+sources) inherit item 8 as a chapter-close obligation. The
+chapter-3 canary chapter is not a translation chapter (it's a
+deployment-validation chapter); item 8 is conditional and does
+not apply there. Item 8's applicability is judged at chapter
+open: if the chapter's structural shape is "consume V1 input;
+emit V2 output," item 8 applies; if the chapter is V2-internal
+or V2-to-external, item 8 does not.
+
+The general lesson generalizes the audit-during-validation pattern:
+**recurring audits codify into rituals; ad-hoc investigations don't
+compound.** Rituals do — once codified, future iterations follow
+the named pattern, contribute their findings, and refine the
+ritual itself based on what surfaces.
+
+## 2026-05-14 — DECISIONS is for resolved questions, not session narrative
+
+**Status:** decided (operating discipline; corrects a drift introduced during session 14)
+**Context:** Session 14 introduced session-closing reflections as
+DECISIONS entries (commits 9 and 12) and session 15 followed with
+its own reflection. These entries were narrative recaps —
+commit lists, test baselines, forward signals, rent-paying checks
+— with cross-references to the individual substantive entries
+made during the session. The substantive content already lives in
+those individual entries; the narrative wrapper duplicated it
+once and then aged immediately.
+
+The user surfaced the drift directly and asked for the session 14
+and 15 reflections to be removed. Right call. Codifying the rule
+so the drift does not recur.
+
+**Decision:** **DECISIONS.md is for substantive resolved questions
+only.** Session-narrative content — closing summaries, commit
+lists, forward signals, rent-paying checks, "what surfaced this
+session" — does not belong here.
+
+**The substance test:** would this entry still be useful in six
+months? If yes, it belongs in DECISIONS. If it ages with the
+session, it belongs elsewhere.
+
+  - **Substantive (in DECISIONS):** disciplines, refinements,
+    cash-outs of deferrals, amendments to existing entries,
+    codifications of patterns, decisions about specific design
+    questions. Worked examples: pass return-type codification;
+    named accessors for stacked types; anticipation vs.
+    speculation refinement; chapter-close ritual.
+  - **Session narrative (NOT in DECISIONS):** commit lists,
+    test-baseline diffs, forward signals for the next session,
+    "what surfaced during the work" recaps, rent-paying checks on
+    specific disciplines, session-by-session reflections.
+
+**Where session narrative belongs instead:**
+
+  - **Commit messages.** In-flight findings during the work; the
+    "what surfaced" content lands as part of the commit that
+    addressed it. Disciplines named separately as their own
+    DECISIONS entries.
+  - **PR descriptions.** Summary of what shipped; forward signals
+    for the next chapter; rent-paying observations.
+  - **`HANDOFF.md` updates.** When a chapter closes and a new
+    agent inherits, the bridge document captures the relevant
+    context.
+  - **`CHAPTER_1_CLOSE.md`** (or its equivalent for future
+    chapters). Chapter-end audit synthesis lives there; that's
+    where commit lists and forward signals belong.
+  - **The conversation itself.** Reflections shared with the
+    operator during the session — rent-paying checks, "did the
+    discipline hold?" observations, "here's what I'd watch
+    next" — are conversational, not durable. They go in the
+    chat, not in DECISIONS.
+
+**The drift that produced this entry.** Session 14's closing
+entry was useful framing for session 15's opening — it named the
+five disciplines and the meta-pattern about disciplines emerging
+from work and reflection. But that framing lived in DECISIONS for
+about three days before it was redundant; the disciplines
+themselves were already documented in their own entries; the
+forward signals were already in HANDOFF-style conversation. The
+narrative wrapper aged faster than DECISIONS' append-only
+discipline assumed.
+
+The session 15 reflection compounded the drift — it extended the
+narrative pattern with a rent-paying check structure that, while
+useful as a check, shouldn't have lived in DECISIONS.
+
+**Why it was tempting.** DECISIONS feels like the "official"
+record of what a session produced; reflections naturally want to
+live where the disciplines they observe live. The discipline-vs-
+narrative line wasn't drawn explicitly; the drift happened by
+default.
+
+**The corrective rule, restated for the future:**
+
+  Each substantive DECISIONS entry stands on its own. It is
+  discoverable from the chronological log, from the Active
+  deferrals index (if it codifies a deferral), from the operating
+  disciplines table in CLAUDE.md (if it codifies a cross-cutting
+  practice), and from cross-references in other entries. Session
+  narrative does not need a separate substantive entry to be
+  discoverable; the individual disciplines are already
+  discoverable.
+
+  When closing a session, the agent's reflection lives in the
+  conversation with the operator, in the PR description, or in
+  HANDOFF.md if the chapter is closing. The agent does not write
+  a DECISIONS entry summarizing the session.
+
+**Reasoning / consequences.** DECISIONS stays load-bearing only
+where it earns rent. The narrative gets pruned (session 14 and 15
+reflections removed in a follow-up commit). The discipline holds
+going forward; future agents inherit the rule explicitly so the
+drift does not recur.
+
+The general lesson: **append-only disciplines need a complementary
+prune-when-wrong discipline.** Append-only protects against
+revisionism; prune-when-wrong protects against narrative drift.
+The two pair: substantive content stays; narrative gets pruned
+when the rule is violated.
+
+## 2026-05-14 — Writer codification reaches its stability mark (heterogeneous third test held)
+
+**Status:** decided (codification stability earned through three real tests; mirrors `DECISIONS 2026-05-13 — Strategy-layer codification reaches stability mark`)
+**Context:** The Diagnostics writer landed at session 14 commit 3
+with three predictions about how the dual-writer pattern would
+behave: (1) the pass return-type codification (`Lineage<'output>`
+vs `Lineage<Diagnostics<'output>>`) would absorb pass migrations
+mechanically; (2) the named-accessor discipline would keep call
+sites readable through migrations; (3) the Skip-to-Behavioral
+activation pattern would be mechanically repeatable for new
+consumers. Session 14 (UniqueIndex) and session 15 (Nullability)
+provided two real tests of these predictions; both passed. The
+codification was held back from a stability claim per `DECISIONS
+2026-05-13 — Stability mark amendment` — N=2 within a coherent
+shape (per-record decisions keyed by single SsKey, both emitting
+on failure-side variants of their outcome DUs) earns less than
+N=3 with at least one heterogeneous instance.
+
+Session 16 ran the third test on ForeignKey, deliberately chosen
+to be heterogeneous in emission shape: ForeignKey emits diagnostics
+on **both** failure-side keep-reasons (mirroring UniqueIndex /
+Nullability) **and** on a success-with-caveat variant
+(`EnforceConstraint(ScriptWithNoCheck(orphanCount))`) within a
+single pass. The substantive question: does the writer absorb
+both shapes side-by-side without structural refinement?
+
+**Decision:** **The Diagnostics writer codification reaches its
+stability mark.** The four core predictions all held under the
+heterogeneous third test:
+
+| Prediction | ForeignKey outcome |
+|---|---|
+| Pass return-type codification absorbs the migration | ✓ ForeignKeyPass.run migrated to `Lineage<Diagnostics<ForeignKeyDecisionSet>>` mechanically; ~14 test sites updated via sed; no refinement to the writer or the codification required |
+| Named-accessor discipline keeps call sites readable | ✓ `LineageDiagnostics.payload`, `ForeignKeyPass.decisionsOf` — same shape as the prior two passes; no smell-fix discoveries |
+| Skip-to-Behavioral activation is mechanically repeatable | ✓ The session-13 Skip stub redirected to V2's actual success-with-caveat case (the V1 anchor was unreachable from V2 fixtures); the activation flipped to `[<Fact>]` cleanly |
+| Diagnostic emission shape absorbs heterogeneity | ✓ Success-with-caveat (`EnforceConstraint(ScriptWithNoCheck _)`) and keep-reason (`DoNotEnforce(...)`) emissions produce structurally identical `DiagnosticEntry` values (same Source / Severity / field shape); only the `Code` prefix routes them. No structural distinction needed at the entry level |
+
+**The empirical test for stability — the same one the strategy-layer codification used:**
+
+  1. The codification was named in session 14 (a descriptive pass
+     after the first instance — UniqueIndex).
+  2. It was tested under closely-related variation through session
+     15 (Nullability — second instance with similar shape, both
+     failure-side keep-reasons within "per-record decision keyed
+     by single SsKey" shape).
+  3. It was tested under genuinely new pressure in session 16
+     (ForeignKey — third instance with heterogeneous emission:
+     keep-reasons + success-with-caveat within one pass, plus
+     two reserved-but-unreachable variants for IR-refinement
+     completeness).
+  4. None of those tests forced a refinement. The absence of
+     finding is itself the finding.
+
+**What stability means in practice.** Future writer-consumer
+activations after this point inherit a codification that has been
+validated on:
+
+  - Its central case (UniqueIndex per-index granularity, failure-
+    side emission on PolicyDisabled / DataHasDuplicates / etc.)
+  - Its variation case (Nullability per-attribute granularity,
+    same failure-side shape with one audit-worthy
+    KeepNullable(RelaxedUnderEvidence))
+  - Its heterogeneous case (ForeignKey per-reference granularity,
+    failure-side AND success-with-caveat emission within one pass)
+
+Future agents migrating the fourth pass to the dual writer (likely
+CategoricalUniqueness if a use case demands diagnostic emission, or
+a future pass migrating from a third-channel split if that lands)
+absorb the codification's conventions and trust they hold:
+`Lineage<Diagnostics<DecisionSet>>` shape; `opportunityEntry`-style
+mapping function; `LineageDiagnostics.payload` named accessor;
+`Pass.decisionsOf` domain shortcut; same closed-DU exhaustiveness
+discipline.
+
+**What stability does not mean** (preserving the session-13 amendment's framing):
+
+  - It does not mean the codification is finished. New pressure
+    may surface refinements — the three-channel split (operator /
+    auditor / developer per the constitution) is the most plausible
+    refinement vector when a real consumer demands per-channel
+    routing. The `Severity` field's three-way DU (Info | Warning |
+    Error) may grow if a fourth band emerges. The `Metadata` field's
+    `Map<string, string>` may promote to a typed DU when a consumer
+    demands typed payload.
+  - The stability claim is bounded by what's been tested. The three
+    real tests were all single-channel synchronous emission with
+    `Map<string, string>` metadata. Multi-channel, async-emitting,
+    or typed-metadata consumers would be fourth-test-shaped.
+
+Within those bounds, the stability mark is earned.
+
+**Reasoning / consequences.** The Diagnostics writer's codification
+has now been validated on the same empirical pattern the strategy-
+layer codification was: descriptive pass → variation case →
+heterogeneous case → no fourth refinement required. Future writer
+work inherits a codification that holds; future stability marks for
+other codifications follow the same N=3-with-heterogeneity protocol.
+
+**The general lesson:** **stability claims earn their place through
+heterogeneous third tests, not structurally-similar third tests.**
+A third consumer with the same shape as the first two adds confidence
+to a coherent-shape claim but doesn't extend the claim. A third
+consumer with a different shape (like ForeignKey's success-with-
+caveat alongside keep-reasons) tests whether the codification's
+seams are positioned to absorb variation, not just to repeat the
+same pattern. The protocol should be honored in future codification
+work — when designing the third real test of any codification, pick
+the case that stresses the seams you suspect, not the case that
+confirms what you already know.
+
+## 2026-05-14 — opportunityEntry stays inlined: N=3 of two distinct shapes, not N=3 of one
+
+**Status:** decided (extraction question evaluated empirically; defer)
+**Context:** Three passes (UniqueIndex, Nullability, ForeignKey)
+each have a private `opportunityEntry` function that maps decisions
+to `DiagnosticEntry option`. At surface count this is N=3 — the
+two-consumer threshold (`DECISIONS 2026-05-13 — Emergent primitives`)
+plus the anticipation-vs-speculation refinement (`DECISIONS
+2026-05-13 — Anticipation vs. speculation`) suggest extraction
+becomes a question at N=3. The session 14 reflection (now pruned;
+preserved in commit history) and the session 15 reflection both
+flagged the question for explicit evaluation here.
+
+The substantive question — does the opportunityEntry-style mapping
+earn primitive extraction at N=3? — has a more nuanced answer than
+naive consumer-counting.
+
+**The empirical inventory of the three opportunityEntry functions:**
+
+| Pass | Input type | Mapping shape | Code prefix |
+|---|---|---|---|
+| UniqueIndex | `UniqueIndexDecision` | `match decision.Outcome with` → `EnforceUnique _` → None; `DoNotEnforce reason` → match-on-reason → entry | `tightening.uniqueIndex.<reason>` |
+| Nullability | `NullabilityDecision` | `match decision.Outcome with` → `EnforceNotNull _` → None; `KeepNullable reason` → match-on-reason → entry (3 of 3 reasons handled, 2 emit None); `RequireOperatorApproval conflict` → match-on-conflict → entry | `tightening.nullability.<reason>` |
+| ForeignKey | `ForeignKeyDecision` | `match decision.Outcome with` → `EnforceConstraint evidence` → match-on-evidence → entry-or-None (3 of 3 evidence handled; 1 emits Some, 2 emit None); `DoNotEnforce reason` → match-on-reason → entry (7 of 7 reasons handled, all emit Some) | `tightening.foreignKey.<reason>` |
+
+**The shape distinction.** UniqueIndex and Nullability share a
+deeper shape: only the failure-side variant of the outcome
+emits-with-payload-mapping. The positive-side
+(`EnforceUnique _` / `EnforceNotNull _`) collapses to `None`
+without further inspection. ForeignKey is structurally different:
+the positive-side (`EnforceConstraint evidence`) requires
+inspection because one of three evidence variants
+(`ScriptWithNoCheck _`) emits-with-payload while the other two
+collapse to `None`.
+
+**Two shapes, not one:**
+
+  - **Shape A (N=2 — UniqueIndex, Nullability)**: positive-side
+    is uniformly None; only the failure-side discriminates. The
+    extracted primitive would be roughly:
+    ```fsharp
+    type DiagnosticPolicy<'outcome, 'failure> = {
+        IsFailure : 'outcome -> 'failure option
+        FailureToEntry : 'failure -> DiagnosticEntry
+    }
+    ```
+  - **Shape B (N=1 — ForeignKey)**: both positive-side and
+    failure-side discriminate; positive-side has at least one
+    success-with-caveat. The extracted primitive would be roughly:
+    ```fsharp
+    type DiagnosticPolicy<'outcome> = {
+        OutcomeToEntry : 'outcome -> DiagnosticEntry option
+    }
+    ```
+
+The Shape-B form actually generalizes Shape-A (every Shape-A
+function trivially fits the Shape-B signature). But the extraction's
+ergonomics suffer at Shape-A consumers — they'd have to write
+boilerplate handling positive-side variants that always collapse to
+None.
+
+**Decision:** **Defer extraction. The apparent N=3 is N=2-of-shape-A
+plus N=1-of-shape-B; neither shape has reached the two-consumer
+threshold within itself.**
+
+The honest interpretation of the codebase's emission patterns:
+
+  - Shape-A has two consumers (UniqueIndex, Nullability). At N=2
+    the two-consumer threshold suggests the abstraction earns its
+    place — but only within Shape-A.
+  - Shape-B has one consumer (ForeignKey). At N=1 the threshold is
+    not yet met.
+  - Extracting a primitive that subsumes both shapes (the Shape-B
+    generalization) would force Shape-A consumers to write boilerplate
+    they don't need today; that's the "speculative abstraction"
+    failure mode the discipline guards against.
+  - Extracting a Shape-A-only primitive would leave ForeignKey
+    inlined; the inconsistency creates its own friction.
+  - Inlining all three preserves the per-pass clarity (each
+    `opportunityEntry` is locally readable) at the cost of
+    duplication — but the duplication is small (~30 lines each)
+    and stable.
+
+**The forward trigger for re-evaluation:**
+
+  - **A fourth pass** (e.g., CategoricalUniquenessPass migrating to
+    diagnostic emission, or a future pass like a Faker emitter that
+    co-emits diagnostics) gives the question a fourth data point. If
+    the fourth pass fits Shape-A, that's N=3 of Shape-A — extraction
+    earns its place within Shape-A; ForeignKey's Shape-B remains
+    inlined as the heterogeneous case. If the fourth pass fits
+    Shape-B, that's N=2 of Shape-B — extraction earns its place
+    within Shape-B; the Shape-A passes can opt into the same
+    primitive at the cost of trivial boilerplate, or stay
+    Shape-A-extracted.
+
+  - **A consumer outside the pass layer** (e.g., the Faker emitter
+    consuming decisions plus diagnostics from upstream passes; or a
+    CLI shell composing per-strategy diagnostics across passes)
+    might surface a need for a primitive that operates on
+    `DiagnosticEntry list` rather than on outcome-to-entry mapping.
+    That would be a different abstraction question entirely.
+
+**Position B re-applied (per `DECISIONS 2026-05-13 — Anticipation vs. speculation`).**
+
+  - Position A (extract fully now): wrong — the apparent N=3 is
+    actually N=2+N=1 of distinct shapes; extracting against either
+    shape introduces speculative cost.
+  - Position B (structural alignment without extraction): the
+    three opportunityEntry functions already share a structural
+    shape — same input/output types modulo decision-type
+    parameter, same use of `match decision.Outcome`, same
+    `mkEntry` helper pattern. A future agent extracting can do so
+    mechanically. No code change needed today; the structural
+    alignment is honored by inlined consistency.
+  - Position C (defer fully): the chosen disposition. Inlining at
+    N=3-of-two-shapes preserves clarity; extraction becomes a
+    question again at N=4 with concrete shape evidence.
+
+**Reasoning / consequences.** Naive consumer-counting would have
+extracted at N=3 and produced a primitive that one of three
+consumers fits awkwardly. Looking at the shape distinction reveals
+that N=3 is the wrong count; the right counts are N=2 and N=1.
+The two-consumer threshold (within a shape, not across shapes) is
+honored by deferring; the anticipation-vs-speculation refinement
+is honored by recognizing that ForeignKey's heterogeneity is real
+shape variation, not a misclassification.
+
+**The general lesson:** **count consumers within a shape, not
+across shapes.** When evaluating extraction, the question is "do N
+consumers share the same shape such that one abstraction serves
+them all without forcing accommodation?" Two consumers with the
+same shape and one with a different shape is N=2-and-N=1, not N=3.
+The discipline against speculative abstraction extends to
+classifying consumers by shape before counting.
+
+## 2026-05-15 — Strategic frame for the OSSYS implementation chapter (architectural commitments)
+
+**Status:** decided (strategic frame; load-bearing for the OSSYS arc and beyond)
+**Context:** Session 17 opens the OSSYS catalog adapter implementation
+chapter. Multiple architectural commitments emerged from conversation
+between session 16's close and session 17's opening; none had landed
+in DECISIONS yet. This entry codifies them so they exist as
+load-bearing context for the OSSYS arc and for the chapters that
+follow (data emission, deployment integration, validation).
+
+The frame is **strategic, not implementation-spec.** Specific
+implementation choices land as their own DECISIONS entries when
+those chapters open. This entry names the architectural axes;
+subsequent entries fill them in.
+
+### Posture 1, extended — V2 emits artifacts; deployment is downstream; the canary is upstream
+
+The original Posture 1 stance: **V2 emits artifacts; ADO/Octopus
+deploys to dev/staging/prod; V2 is not in the deployment path.**
+The boundary is structural — V2's job ends when the artifacts are
+written; downstream tooling owns the deploy.
+
+The session-17 extension adds an **upstream pipeline canary**:
+before V2 publishes the artifacts, the export pipeline self-validates
+the artifacts against an ephemeral Docker SQL Server instance. The
+artifacts must apply cleanly against an empty database; if the
+canary fails, the export halts and the artifacts are not published.
+
+The canary is **upstream of publication, not downstream of
+deployment.** The deployment path remains ADO/Octopus territory;
+the canary is the export pipeline's own self-validation. This
+addresses a real failure mode V1 doesn't catch — artifacts that
+look correct in isolation but don't apply cleanly together.
+
+The canary's mechanism:
+
+  - Spin up an ephemeral SQL Server container (testcontainers).
+  - Apply the emitted artifacts (schema first, then seeds, then
+    bootstrap) using DacFx for schema and direct script execution
+    for data.
+  - Read the resulting database state back through a read-side
+    adapter (see below) into a V2 Catalog.
+  - Compare the read-back Catalog to the source-of-truth Catalog
+    that produced the artifacts. Any discrepancy halts the
+    export.
+
+The canary is **opt-in** at first — declared on EmissionPolicy or
+its successor — but the architectural axis is named here so future
+chapters know where it fits.
+
+### Read-side adapter as a new architectural axis
+
+The OSSYS adapter is the **write-side ingestion path**: take
+OutSystems metadata, produce a V2 Catalog. The **read-side
+adapter** is its sibling: take a SQL Server database, produce a
+V2 Catalog by reading schema metadata back. Two distinct adapters,
+both producing `Result<Catalog>`, both at the boundary.
+
+The read-side adapter has **two consumers from day one**:
+
+  1. **The canary's read-back step** (described above). The export
+     pipeline writes artifacts, applies them to an ephemeral SQL
+     Server, and reads back the resulting state to compare against
+     the source Catalog.
+  2. **Optional production observation.** A future operator might
+     point V2's read-side adapter at a production database to
+     observe the deployed schema's actual shape — useful for
+     drift detection, post-deployment audits, and the V1
+     `dmm-diff.json` equivalent.
+
+Two consumers from day one is exactly the threshold the
+two-consumer rule predicts (`DECISIONS 2026-05-13 — Emergent
+primitives` and the session-16 shape-classification refinement).
+The read-side adapter earns its place architecturally, not
+speculatively.
+
+The read-side adapter is **not in scope for the OSSYS chapter
+opening** — it's a sibling architectural commitment named here so
+the OSSYS write-side adapter doesn't accidentally calcify in a
+shape that the read-side can't mirror.
+
+### Refactor.log emission with deterministic SsKey-to-GUID via UUIDv5
+
+V1 emits a `refactorlog` artifact (per the SSDT pattern) tracking
+schema-rename events. The artifact requires GUIDs to identify
+renamed objects.
+
+V2's refactor.log emission uses **UUIDv5** to derive GUIDs
+deterministically from `SsKey` values plus a stable namespace.
+The choice eliminates a class of state V2 would otherwise need to
+maintain — V1 tracks (or risks losing) GUID-to-object mappings
+across runs; V2 derives the GUID at emission time and the same
+SsKey always produces the same GUID. **No separate state.**
+
+The UUIDv5 approach is structural-commitment-via-construction-
+validation (`AXIOMS.md` operational principle) applied to GUIDs:
+every GUID is derived; the derivation is deterministic; the
+mapping is the function, not a stored table.
+
+Implementation lands when the refactorlog emitter does. Naming
+the choice now prevents the emitter from accidentally introducing
+state-tracking machinery before this commitment is honored.
+
+### Three data-emission classes named explicitly
+
+V2 distinguishes three classes of data emission, each with its own
+artifact shape and its own deployment semantics:
+
+  1. **StaticSeeds.** Static-entity populations carried by the
+     catalog itself (per A7 — Static modality is part of catalog
+     structure). Emitted as MERGE seed scripts; deployed
+     idempotently; expected to apply cleanly against existing
+     populations or to seed empty tables.
+
+  2. **MigrationDependencies.** Operator-policy-declared regular
+     entities whose populations need to be carried forward as part
+     of the migration. These are entities the operator has
+     specifically marked — *MigrationDependency is a policy
+     choice, not a structural property of Kind.* The catalog
+     doesn't carry "this is a migration dependency"; the policy
+     does. Same kind of separation as A18 amended (Policy is
+     intent; Catalog is evidence).
+
+  3. **Bootstrap.** A variable-composition emission class governed
+     by a closed DU on `EmissionPolicy`:
+     ```fsharp
+     type BootstrapComposition =
+         | AllRemaining       // default — everything not in StaticSeeds or MigrationDependencies
+         | AllExceptStatic    // everything except static populations
+         | AllData            // everything (including static populations)
+     ```
+     The DU is **closed** so consumers can pattern-match
+     exhaustively; new variants land at meaningful inflection
+     points per `DECISIONS 2026-05-13 — Discrete-rationale DUs`.
+
+The three classes are **distinct artifacts**, not three shapes of
+one artifact. Each class has its own emitter; the canary applies
+them in order; the deployment pipeline carries all three.
+
+### Verisimilitude policy held until real demand
+
+A "verisimilitude policy" — controlling how faithfully V2's data
+emission reproduces V1's exact byte sequence vs. how aggressively
+V2 reformats — was discussed but **deferred until a real
+validation consumer demands it.** Premature design here would
+codify a policy axis that today has no consumer.
+
+Forward trigger: when a real operator complains that V2's emission
+differs from V1's in a way that breaks downstream tooling, the
+verisimilitude policy lands. Not before.
+
+### Projection.Pipeline as a new C# project
+
+The canary's mechanism (testcontainers, DacFx, ephemeral SQL Server,
+script execution) involves I/O, async, third-party dependencies, and
+runtime concerns that V2's F# Core forbids by codification (per
+CLAUDE.md's F# feature surface — purity-first sort; effect, time,
+concurrency forbidden in Core).
+
+The right home for the canary's orchestration is a **new C# project,
+`Projection.Pipeline`**. C# is appropriate for:
+
+  - DacFx integration (the .NET ecosystem's natural language for
+    DacFx is C#)
+  - Testcontainers usage (testcontainers.NET works fine from F#
+    but is more idiomatic in C#)
+  - Async orchestration with explicit Task/await semantics
+  - Coordination between F# pure-core (the Catalog comparison
+    logic) and the I/O surfaces
+
+The codification preserves: **F# Core's purity is unchanged;
+adapters at the boundary may use what Core forbids; the canary's
+orchestration is at the boundary by definition.**
+
+The project name `Projection.Pipeline` distinguishes from
+`Projection.Adapters.*` (which are F# value-returning boundaries)
+because the canary is more orchestration than adapter — it
+coordinates multiple adapters and emitters into a single workflow.
+
+### Docker SQL Server version hardcoded to match production
+
+The canary's ephemeral SQL Server container is pinned to **the
+exact SQL Server version that production runs**. Hardcoded; no
+configuration knob; no version range.
+
+Rationale: the canary's value-prop is "the artifacts apply cleanly
+in production." The signal is meaningful only if the canary's
+target matches production's. A version range introduces a class of
+canary-passes-but-production-fails failures the canary exists to
+prevent.
+
+The hardcoded value lives at the canary's configuration surface
+(`Projection.Pipeline`'s configuration). When production upgrades,
+the canary upgrades atomically with it. The few-months-horizon
+framing applies: short-lived hardcoding, not permanent.
+
+### What's not in this entry
+
+Specific implementation choices for any of the above are
+**deferred to their own DECISIONS entries** when the relevant
+chapters open:
+
+  - The OSSYS adapter's parse signature → Position B entry
+    (session 17 commit 4)
+  - The read-side adapter's specific shape → its own chapter
+    when it opens
+  - The three data-emission classes' specific artifact formats →
+    each emitter's chapter
+  - The canary's specific orchestration → `Projection.Pipeline`
+    chapter when it opens
+  - The refactor.log emitter's UUIDv5 namespace and exact derivation
+    → that emitter's chapter
+
+#### 2026-05-16 (session 19 amendment) — canary's rename-handling depends on the SsKey-source path
+
+The canary's roll-forward minimally-invasive guarantee — that
+deployments to a fresh database render minimum diff against the
+prior snapshot — depends on **SsKey preservation across renames
+in the input source**. T8's structural diff is keyed by SsKey;
+when source changes between snapshot N-1 and snapshot N include
+a rename, the diff produces a `RENAME` only when SsKey is
+preserved across the change.
+
+**With the current OSSYS path** (`SnapshotJson` consuming V1's
+canonical `osm_model.json`, which is lossy on SSKey per
+`DECISIONS 2026-05-15 — OSSYS adapter translation rules`,
+amended in session 19): a renamed entity produces a different
+synthesized SsKey, so the diff sees `DELETE old + INSERT new`.
+The canary's deployment-success leg still passes (the new state
+deploys cleanly against an empty database); the deployment
+script that gets generated drops and recreates the renamed
+object — the **noisy mode** the strategic frame names V2 as
+avoiding.
+
+**The minimally-invasive guarantee is bounded by the input
+path:**
+
+  - With name-synthesized SsKey through the current JSON path:
+    renames-across-the-JSON-path render as drop-create.
+  - With any of the three re-open triggers fired
+    (`SnapshotJsonBuilder` line-level fix; `SnapshotRowsets`
+    variant; `LiveOssysConnection`): the bound resolves and
+    renames produce structural-rename diffs.
+
+**Graceful-degradation-shaped.** Drop-create renames are
+**correct** (state matches end-to-end); they are just **noisy**.
+Production operators will notice. The bound is documented; the
+resolution path is reachable; the choice is open until either
+empirical pressure (rename-fixture friction during the OSSYS
+chapter) or a chapter or operator decision selects.
+
+**This amendment exists because future agents opening the canary,
+read-side adapter, or `Projection.Pipeline` chapters will need
+to know which trigger has fired by the time they reach the
+roll-forward-rename logic.** Making the dependency explicit in
+the strategic frame keeps it visible across the gating-dependency
+graph rather than leaving it implicit at the OSSYS adapter
+boundary.
+
+**No immediate work.** This amendment is documentation of the
+constraint, not a directive to act on it. The OSSYS adapter
+chapter continues without immediate need to resolve the
+SsKey-source choice; the canary's later integration work will
+inherit whichever trigger has fired by then.
+
+#### 2026-05-17 (session 20 amendment) — input-source choice closed; canary's bound resolves when SnapshotRowsets lands
+
+The session-19 amendment above named three reachable triggers
+for resolving the canary's roll-forward minimally-invasive
+guarantee. **Operator decision (per `DECISIONS 2026-05-15 —
+OSSYS adapter translation rules`, session-20 amendment): Option
+2 (`SnapshotRowsets` variant) is the canonical resolution
+path.** This sub-section sharpens the canary's dependency
+accordingly.
+
+**The canary's roll-forward minimally-invasive guarantee
+resolves when the `SnapshotRowsets` variant implements.** Until
+that implementation lands, V2 continues consuming `SnapshotJson`
+with name-synthesized SsKey; the canary deploys cleanly but
+renames-across-the-input-path render as drop-create. This is
+**graceful-degradation-pending** behavior — correct, just
+noisier than the post-resolution state.
+
+The session-19 framing of "graceful degradation; choice is
+open" updates to **"graceful degradation pending; resolution
+chosen; implementation sequences in."** Future agents opening
+canary, read-side adapter, or `Projection.Pipeline` chapters
+inherit `SnapshotRowsets` as the assumed input source for the
+roll-forward-rename logic.
+
+**Implementation timing for the canary's dependency.** The
+`SnapshotRowsets` variant lands when chapter 2's organic flow
+brings it — likely after the current OSSYS adapter chapter
+completes its translation work. The canary's roll-forward
+logic, when its chapter opens, can be designed against the
+post-resolution state; the bound documented here applies only
+to interim deployments where `SnapshotRowsets` has not yet
+shipped.
+
+This entry's role is to **name the architectural axes** so future
+chapters land into a coherent frame. The axes are load-bearing;
+the implementations are deferred.
+
+**Reasoning / consequences.** Without this strategic frame, each
+of the eight commitments would land separately as the chapter
+that needs it opens, and the cross-chapter coherence would be
+incidental. With the frame, every chapter that opens against one
+of these axes inherits the other seven as context.
+
+The frame is **subject to refinement** as chapters open and surface
+real evidence — the OSSYS adapter chapter may surface a parse-
+signature question that affects the read-side adapter's shape; the
+canary's first real run may surface a verisimilitude need; the
+three-emission-class scheme may need a fourth class. Refinements
+land as amendments to this entry or as their own entries that
+reference it.
+
+## 2026-05-15 — OSSYS adapter parse signature (Position B; input slot decided)
+
+**Status:** decided (Position B per `DECISIONS 2026-05-13 — Anticipation vs. speculation in abstraction extraction`)
+**Context:** Session 17's chapter-open work names the OSSYS adapter
+as the V2 boundary for OutSystems metadata ingestion. The
+anticipation-vs-speculation refinement (session 14 commit 11)
+recommends Position B for cases where a future abstraction's
+shape is visible but its arrival is not concrete. `ICatalogReader`
+is the named future abstraction (a second catalog source —
+DACPAC, OData, in-memory test reader — would surface it). Position
+B says: design the function signature to map cleanly to the
+eventual interface; defer the interface itself.
+
+This entry records Position B for the OSSYS adapter and decides
+the open `<input>` slot the session-17 instruction explicitly
+flagged.
+
+### Decision
+
+**The OSSYS adapter's canonical entry-point signature is:**
+
+```fsharp
+module Projection.Adapters.Osm.CatalogReader
+
+val parse : SnapshotSource -> Task<Result<Catalog>>
+```
+
+**The `<input>` slot is the V1-produced JSON snapshot, lifted
+into a small typed value:**
+
+```fsharp
+type SnapshotSource =
+    /// Path to a V1-produced osm_model.json file on disk. Read
+    /// synchronously inside the Task; the adapter is async at the
+    /// boundary for ecosystem consistency, not because the file
+    /// I/O itself benefits from it.
+    | SnapshotFile of path: string
+    /// In-memory snapshot string. Useful for tests and for
+    /// pipelines that produce the snapshot in-memory rather than
+    /// via disk.
+    | SnapshotJson of json: string
+```
+
+The `SnapshotSource` DU is **closed** (per the strategy-layer
+codification's discipline of closed-DU expansion when consumers
+are at meaningful inflection points). Adding a third variant
+(e.g., `LiveOssysConnection of connectionString` once V2 grows a
+SQL-running entry point) lands as an explicit DU expansion,
+not a silent open variant.
+
+### Position B rationale: shape alignment for `ICatalogReader`
+
+The session-14 anticipation-vs-speculation refinement named
+`ICatalogReader` as a Position B candidate. The OSSYS adapter's
+chapter-open is the moment to honor that: design the signature
+so a future interface lands as a one-line wrapper, not a
+retrofit.
+
+The Position B alignment:
+
+```fsharp
+// Future, when a second catalog source materializes:
+type ICatalogReader =
+    abstract Read : SnapshotSource -> Task<Result<Catalog>>
+
+// OSSYS adapter wraps trivially via object expression:
+let osmReader : ICatalogReader =
+    { new ICatalogReader with
+        member _.Read source = Projection.Adapters.Osm.CatalogReader.parse source }
+
+// A DACPAC reader (when it lands) wraps the same way:
+let dacpacReader : ICatalogReader =
+    { new ICatalogReader with
+        member _.Read source = Projection.Adapters.Dacpac.CatalogReader.parse source }
+```
+
+The `SnapshotSource` DU is the abstraction's input parameter even
+in the single-adapter case. A future DACPAC reader's variants
+(`DacpacFile`, `DacpacBytes`) would expand the same DU, OR a
+distinct `DacpacSource` DU would parallel it. Position B doesn't
+require the DUs to merge — it requires the *signature shape* to
+align so the interface, when it lands, doesn't force retrofit.
+
+### Why JSON snapshot, not live OSSYS connection
+
+The session-17 instruction asked: connection string to a live
+OutSystems database, path to a JSON snapshot file, or a DU
+accepting either?
+
+**Decision: JSON snapshot only at chapter-open.** The
+`SnapshotSource` DU has two variants today (file-path and
+in-memory string); a third (`LiveOssysConnection`) is a Position-C
+deferral with explicit re-open trigger.
+
+**Rationale for the JSON-only choice:**
+
+  1. **Preserves V1's reconciliation chain.** V1's 1184-line SQL
+     script does the hard work of intent-vs-reality reconciliation
+     (per the OSSYS ADMIRE chapter scope, session 17 commit 2).
+     Re-implementing that work in V2 would be a substantial
+     additional chapter; V2's OSSYS adapter does shape translation
+     from V1's already-reconciled JSON, not re-reconciliation
+     from raw SQL.
+  2. **Preserves F# Core's no-I/O / no-time discipline at the
+     test surface.** Reading a JSON file is a single point of
+     I/O at the boundary; running the OSSYS SQL script is a
+     full DbConnection lifecycle, async DB I/O, and ~22 rowset
+     processors. JSON-path keeps the boundary thin.
+  3. **The V2 fixture pattern already mirrors the JSON shape.**
+     `tests/Fixtures/model.*.json` files are V1-shaped today;
+     consuming them directly via the JSON-path adapter is the
+     differential test V2 needs (per the OSSYS ADMIRE chapter
+     scope's "differential validation" section).
+  4. **The canary path stays clean.** The strategic frame's
+     canary (session 17 commit 1) needs a Catalog input; reading
+     it from a JSON snapshot is what V2's existing test surface
+     does. The canary doesn't need a live OutSystems instance to
+     validate emission; the canary applies V2's emitted artifacts
+     against an ephemeral SQL Server, which is unrelated to the
+     OSSYS adapter's input.
+
+**Re-open trigger for `LiveOssysConnection`:** when a real
+operator workflow demands V2 ingest OutSystems metadata directly
+without staging through V1's JSON chain (e.g., a CLI surface
+where the operator points V2 at an OutSystems database and V2
+runs the extraction itself, replacing V1's `MetadataSnapshotRunner`
+in V2's stack). Until that workflow surfaces, V1's SQL chain
+remains the metadata producer; V2 reads its JSON output.
+
+The `SnapshotSource` DU is the carrier for this future expansion.
+When the trigger fires, a third variant lands; the parse function
+gains a third branch; the rest of the adapter is unchanged.
+
+### Why `Task<Result<Catalog>>`, not `Result<Catalog>`
+
+The signature uses `Task<Result<Catalog>>` even though file I/O
+on the JSON-path could be synchronous. The `Task` wrapping serves
+two purposes:
+
+  1. **`ICatalogReader` interface alignment.** A future DACPAC
+     adapter (DACPAC files unzip and parse asynchronously) and
+     a future `LiveOssysConnection` variant (DB I/O is async by
+     definition) both need `Task<...>` shape. Placing the OSSYS
+     adapter under the same shape today means the interface, when
+     it lands, doesn't have to upcast sync `Result` to async
+     `Task<Result>`.
+  2. **Ecosystem consistency.** The trunk's V1 adapter
+     (`MetadataSnapshotRunner.ExecuteAsync`) returns
+     `Task<Result<OutsystemsMetadataSnapshot>>`. V2's OSSYS
+     adapter mirroring the shape simplifies the C#-from-F#
+     interop story when `Projection.Pipeline` (the canary's C#
+     orchestration project) wants to call into V2's adapter.
+
+The trade-off is small ceremony at the JSON-path call site
+(`async { ... } |> Async.StartAsTask` or equivalent) in exchange
+for shape alignment with future async-by-nature variants.
+
+### Where the entry point lives (project structure)
+
+The OSSYS adapter lives in a new project:
+`src/Projection.Adapters.Osm/`. Sibling to `Projection.Adapters.Sql/`
+(which today carries `Static.fs`, `ProfileSnapshot.fs`,
+`ProfileStatistics.fs`). The choice of a separate project rather
+than a file under `Projection.Adapters.Sql/` reflects the
+adapter's distinct role:
+
+  - `Projection.Adapters.Sql` is for SQL-Server-side metadata
+    (column reality, FK reality, profile probes). It does NOT
+    read OutSystems platform metadata; it reads database
+    structural reality.
+  - `Projection.Adapters.Osm` is for OutSystems-platform metadata
+    (the OSSYS_* / OSUSR_* schema). It does NOT read database
+    structural reality directly; it consumes V1's reconciled
+    output.
+
+The two adapters are siblings in the same architectural axis
+(both read external metadata into V2's IR) but separate projects
+because their input domains differ. The split also makes
+test-fixture organization clearer: `Projection.Tests/Fixtures/`
+JSON files belong to the Osm adapter's test surface; profile
+snapshot fixtures belong to the Sql adapter's.
+
+### What this entry doesn't decide
+
+  - **The DTO shape inside the adapter.** Whether to use
+    `System.Text.Json.JsonDocument`, hand-written DTO records, a
+    type provider, or something else is implementation-territory
+    for the next chapter in the OSSYS arc.
+  - **Translation rules for V1↔V2 vocabulary.** The mapping rules
+    for V1 `IsExternalEntity` + `IsSystemModule` → V2 `Origin`,
+    V1 nullable `DeleteRule` → V2 closed `OnDelete`, etc., are
+    implementation decisions that land in the relevant chapter.
+  - **Test fixture strategy.** Whether to embed fixtures inline
+    (per `StaticAdapterDifferentialTests.fs`'s pattern) or to
+    consume V1's `tests/Fixtures/` JSON files directly is a test-
+    surface decision the chapter-open hasn't reached yet.
+  - **Diagnostic emission.** The OSSYS adapter will likely emit
+    `DiagnosticEntry` values for parser warnings (per the
+    Diagnostics writer that landed at session 14 commit 3); the
+    return type extension to `Lineage<Diagnostics<Catalog>>` is
+    deferred until the implementation chapter decides whether
+    the adapter's diagnostics warrant the dual-writer shape or
+    a simpler `Result<Catalog * DiagnosticEntry list>` tuple.
+
+### Reasoning / consequences
+
+The Position B framing says: **shape now, interface later.** The
+parse signature is the shape; the interface is the deferral.
+Future agents implementing the OSSYS adapter inherit the
+signature as a constraint; future agents wrapping it in
+`ICatalogReader` (when a second source materializes) inherit the
+trivial wrapping path.
+
+The JSON-only-at-chapter-open choice is itself a Position-B move
+on the input slot: design `SnapshotSource` as a closed DU so a
+future `LiveOssysConnection` variant lands cleanly, but don't
+build it today. Two-consumer threshold (within a shape) applies
+recursively — the variant earns its place when a second consumer
+demands SQL-direct ingestion, not before.
+
+This entry pairs with `DECISIONS 2026-05-15 — Strategic frame for
+the OSSYS implementation chapter` (session 17 commit 1) and the
+OSSYS ADMIRE chapter scope (session 17 commit 2). Together they
+form the chapter-open: the strategic axes; the V1↔V2 chapter
+scope; the canonical entry signature. The implementation
+chapters open from here.
+
+## 2026-05-15 — OSSYS adapter translation rules (chapter session 18; rules surfaced under empirical pressure)
+
+**Status:** decided (chapter rules — extends as the OSSYS arc continues)
+**Context:** Session 18 opened the OSSYS adapter implementation
+chapter via the differential-test path: a minimal V1 fixture (one
+module, one entity, two attributes) embedded in
+`OsmCatalogReaderDifferentialTests.fs`; an expected V2 Catalog
+hand-built; the parser implemented just enough to make the
+assertion pass. Working under empirical pressure surfaced six
+translation rules and one substantive architectural finding. This
+entry captures them as the chapter's running translation-rules
+list per the session 17 instruction's discipline.
+
+The list **extends** as the OSSYS arc continues — each session
+adding rules under the same empirical discipline. New rules land
+either as amendments to this entry or as their own entries that
+reference it.
+
+### The substantive architectural finding: V1's JSON is lossy on SSKey identity
+
+V1's metadata extraction chain produces SSKey values at the SQL
+rowset layer (`EspaceSSKey`, `EntitySSKey`, `AttrSSKey` columns
+per `outsystems_metadata_rowsets.sql`). The in-memory
+`OutsystemsMetadataSnapshot` carries them. **But
+`SnapshotJsonBuilder` does NOT write them to the canonical
+`osm_model.json` document.** The assembled JSON carries names and
+physical names; the SSKeys are discarded at JSON serialization.
+
+V2's identity-survives-rename promise (A1) is bounded by what's
+in the input. For the JSON-snapshot path, V2's `CatalogReader`
+**synthesizes** `SsKey` deterministically from name fields:
+
+  - Module: `OS_MOD_<ModuleName>`
+  - Kind:   `OS_KIND_<ModuleName>_<EntityName>`
+  - Attribute: `OS_ATTR_<ModuleName>_<EntityName>_<AttrName>`
+
+The synthesis is stable across runs of identical input; same
+JSON in, same SsKey out. Renames in the source OutSystems
+platform produce different SsKey values in V2's IR — A1's
+identity-survives-rename guarantee is **not honored** for renames
+that traverse the JSON-snapshot path.
+
+**Re-open triggers** (when this synthesis convention should be
+revisited):
+
+  - **V1's `SnapshotJsonBuilder` is extended to emit SSKeys.**
+    The cleanest fix; preserves V1's chain-shape and makes V2's
+    identity stable across renames.
+  - **An alternative input source carries SSKeys natively.**
+    A future `LiveOssysConnection` variant (per `DECISIONS
+    2026-05-15 — OSSYS adapter parse signature`) running the
+    SQL extraction directly would have access to the rowset
+    SSKey columns; the synthesis convention becomes a fallback
+    rather than the primary path.
+
+Until either trigger fires, the synthesis convention is the
+canonical V2 identity for OSSYS-sourced catalogs. **Documented
+divergence; not a bug.**
+
+This is the kind of finding the test-driven path was supposed
+to surface — the rule was not visible from the orientation
+reading; it became visible only when the parser had to produce
+SsKey values for the assertion.
+
+#### 2026-05-16 (session 19 amendment) — sharpened by SQL evidence; third re-open path; operator confirmation
+
+Reading V1's `outsystems_metadata_rowsets.sql` directly sharpens
+the original characterization. The lossiness is **at exactly one
+projection layer**, not end-to-end:
+
+```
+ossys_* tables  →  temp tables (#E, #Ent, #Attr — SSKey present)
+                →  trailing rowsets (SELECTs at script bottom — SSKey present)
+                                                ↘
+                                                  JSON pre-aggregations (#AttrJson,
+                                                  #ModuleJson via FOR JSON PATH —
+                                                  SSKey stripped)
+                                                ↘
+                                                  osm_model.json (SSKey stripped)
+```
+
+`#E` carries `EspaceSSKey`; `#Ent` carries `EntitySSKey` and
+`PrimaryKeySSKey`; `#Attr` carries `AttrSSKey`. The trailing
+rowset SELECTs at the bottom of the script all emit those
+columns. The data is available everywhere upstream of the JSON
+projection layer; what's lost is what the JSON `FOR JSON PATH`
+projections happen not to include.
+
+**The first re-open trigger is much cheaper than the original
+entry implied.** Calling it "extending `SnapshotJsonBuilder`"
+is technically correct but undersells the work: the existing
+JSON projections already SELECT from `#Attr`, `#Ent`, `#E`.
+Adding `a.AttrSSKey AS [ssKey]` (or similar) to the existing
+`FOR JSON PATH` projections is **line-level additive, low-risk,
+no upstream change**. The SQL extraction is already producing
+the data; the canonical osm_model.json's projection is the only
+thing that elides it.
+
+**A third re-open path the original entry didn't enumerate.** The
+SQL emits *both* the JSON for the canonical osm_model.json *and*
+the trailing rowsets as result sets. If V2's input could be the
+rowsets directly (delivered as some persisted form — multi-rowset
+JSON, CSV per table, whatever the operational layer provides),
+V2 gets SSKey natively without V1 pipeline cooperation. This
+would land as a third `SnapshotSource` variant alongside
+`SnapshotFile` and `SnapshotJson` — perhaps `SnapshotRowsets`
+of some input type — and exercises the closed-DU expansion
+discipline cleanly.
+
+**Three paths, all confirmed reachable by the operator:**
+
+  1. **`SnapshotJsonBuilder` line-level fix** — V1 cooperation;
+     preserves V2's existing single-input-source posture; smallest
+     diff at the V1 boundary.
+  2. **`SnapshotRowsets` variant** — V2-internal; adds a new
+     parsing surface to V2 but no V1 change required; exercises
+     closed-DU expansion at `SnapshotSource`.
+  3. **`LiveOssysConnection` variant** — substantial; V2
+     maintains its own database connection running the SQL or
+     equivalent extraction; reserved for future demand.
+
+The choice between the three is **open**. The operator has
+confirmed any of them works; the trade-offs differ:
+
+  - **Path 1** depends on V1 pipeline cooperation but is
+    architecturally invisible to V2.
+  - **Path 2** requires no V1 cooperation but expands V2's
+    parsing surface.
+  - **Path 3** is the most architecturally substantial and
+    reserved for the case where V2 needs to operate without
+    V1's chain in the loop.
+
+**The bounded-A1-claim disposition is unchanged** — through the
+current `SnapshotJson` path V2 uses today, A1 is bounded; the
+bound resolves when any of the three triggers fires. What
+changes is that **the resolution is more reachable than the
+original entry implied** — Path 1 is line-level work; Path 2 is
+a closed-DU expansion within V2.
+
+**No code change today.** Adding `SnapshotRowsets` speculatively
+would violate the closed-DU expansion discipline (one consumer
+needed; zero exist). The variant is named here so it's
+discoverable when a real consumer surfaces; the entry is
+amendment-only documentation.
+
+**Strategic-frame implication (cross-reference).** The pipeline
+canary's roll-forward minimally-invasive guarantee is bounded
+by which of the three triggers is operating. See the strategic-
+frame entry's session-19 amendment for the specific
+canary-rename-handling implication.
+
+#### 2026-05-17 (session 20 amendment) — operator decision: SnapshotRowsets is canonical
+
+**The choice is closed.** Operator decision: **Option 2
+(`SnapshotRowsets` as a third closed-DU variant on
+`SnapshotSource`) is the canonical resolution path.** This
+decision is not subject to relitigation; future sessions inherit
+`SnapshotRowsets` as the assumed input source for OSSYS
+metadata when the bound on A1 needs to resolve.
+
+**Rationale.** Rowsets carry richer information than the
+aggregated JSON does. Three concrete advantages over the
+JSON-only path:
+
+  1. **SSKey natively at every level.** `EspaceSSKey`,
+     `EntitySSKey`, `PrimaryKeySSKey`, `AttrSSKey` are present
+     in the rowsets; the V2 catalog reader reads them directly
+     rather than synthesizing from names. A1's
+     identity-survives-rename guarantee resolves to its full
+     promise through this input path.
+  2. **Per-table column structure preserved.** V1's `FOR JSON
+     PATH` aggregations collapse some structural information
+     that the rowsets retain. Specific examples will surface as
+     fixtures grow under the OSSYS arc; the rowsets-as-input
+     path future-proofs the boundary against the
+     eleven-deferred-fields backlog the session-18 entry named
+     and the session-19 entry extended.
+  3. **Independent of V1 pipeline cooperation.** Unlike Option
+     1 (extending `SnapshotJsonBuilder`), V2 doesn't depend on
+     V1-side changes to land. The rowsets already exist as
+     trailing SELECTs in `outsystems_metadata_rowsets.sql`;
+     V2's adapter takes them in whatever persisted form the
+     operational layer provides (multi-rowset JSON, per-table
+     CSV, etc.).
+
+**Why not Option 1 (extend `SnapshotJsonBuilder`).** Simpler
+than Option 2 — line-level additive work to the JSON
+projections — but solves only the immediate SSKey question.
+Doesn't address the broader collapse of structural information
+the JSON aggregation introduces; doesn't future-proof the V2
+boundary against the deferred-fields backlog. The operator
+considered Option 1 and chose against it.
+
+**Why not Option 3 (`LiveOssysConnection`).** More
+architecturally substantial than Option 2 — V2 maintains its
+own database connection running the SQL or equivalent
+extraction. Reserved as a future variant for the case where V2
+needs to operate without V1's chain in the loop entirely. The
+operator considered Option 3 and chose against it for now;
+Option 3 remains as a future variant when its specific demand
+surfaces.
+
+**Implementation timing.** The actual `SnapshotRowsets` variant
+lands when chapter 2's organic flow brings it — likely after
+the current OSSYS adapter chapter completes its translation
+work through the existing `SnapshotJson` path. The variant is
+its own coherent slice when it opens. **Until implementation
+lands, V2 continues consuming `SnapshotJson` with
+name-synthesized SsKey; the bound on A1 through that path
+remains as documented in this entry's original session-18
+content.**
+
+**The canonical resolution exists in documentation now; the
+code follows when sequencing brings it.** Future sessions
+opening canary chapters, read-side adapter chapters, or
+roll-forward chapters inherit `SnapshotRowsets` as the assumed
+input source. If implementation surfaces refinements during the
+work (DTO shape questions, multi-rowset deserialization
+choices, integration with existing parser code), those land as
+their own DECISIONS entries — but the architectural commitment
+to the variant itself is fixed.
+
+**Entry-shape note for future readers.** This sub-section
+supersedes the "three paths, choice open" framing in the
+session-19 amendment above. The session-19 framing is preserved
+verbatim as the historical lineage of the decision; this
+sub-section is the load-bearing rule for future agents. The
+amendment-discipline pattern: original text preserved; new
+text supersedes; future readers see the lineage.
+
+##### 2026-05-17 (session 20 strengthening — composability finding)
+
+The session-20 external-entity slice surfaced a finding that
+**strengthens the canonical-resolution choice beyond what was
+visible at decision time**: V1's JSON projection layer is
+structurally lossy in a class-shaped way, not coincidentally on
+two unrelated fields.
+
+The class has at least three currently-known members:
+
+  - **SsKey at every level** — `EspaceSSKey`, `EntitySSKey`,
+    `PrimaryKeySSKey`, `AttrSSKey` all stripped at JSON
+    aggregation (session 18 finding).
+  - **`EspaceKind`** — string column on `dbo.ossys_Espace`
+    encoding the IS-vs-Direct distinction; stripped at JSON
+    aggregation (session 20 finding via the external-entity
+    fixture).
+  - **`isSystemEntity`** — present in the `#Ent` rowset; not
+    written by `SnapshotJsonBuilder` (observed during the
+    session-20 trace; not yet exercised by a fixture).
+
+Future fixtures may surface additional class members (per-table
+column structure that `FOR JSON PATH` collapses; check-constraint
+definitions; etc.). Each is a member of the same class.
+
+**The reframing.** Option 1 (extend `SnapshotJsonBuilder`)
+solves only one class member at a time. Option 2 (`SnapshotRowsets`)
+absorbs the class structurally — once the variant implements,
+**all class members resolve together**. The `EspaceKind` finding
+from session 20 is empirical confirmation of what was an
+architectural intuition at canonical-decision time: the rowsets
+are the right level of abstraction to consume from, because the
+JSON-projection lossiness is a structural property of that
+projection layer, not a per-field oversight.
+
+**The architectural commitment was more right than was visible
+when it was made.** The operator's decision rests on a stronger
+foundation now: the choice covers a class of lossiness, not just
+the originally-named SsKey question.
+
+**For the agent who opens the `SnapshotRowsets` implementation
+chapter:** the implementation is not a one-bug fix. It's the
+resolution to a class. Future fixtures are likely to surface
+additional class members; the implementation needs to absorb
+those too. The class is named in this entry's session-20
+amendment to the Origin entry below (rule 17's amendment
+section); reference it from the implementation chapter when it
+opens.
+
+### Translation rules the minimal fixture forced
+
+| # | V1 input shape | V2 output | Rationale |
+|---|---|---|---|
+| 1 | Module `name` (string) | `Module.SsKey = OS_MOD_<name>`, `Module.Name = Name.create name` | SsKey synthesis (see finding above). The Name DU validates non-blank; module-level translation fails early on blank input. |
+| 2 | Entity `name` + parent module `name` | `Kind.SsKey = OS_KIND_<modName>_<entName>` | Synthesis includes module name to disambiguate same-named entities across modules. |
+| 3 | Attribute `name` + parent entity + module | `Attribute.SsKey = OS_ATTR_<modName>_<entName>_<attrName>` | Three-level naming preserves attribute identity across module / entity rename scenarios. |
+| 4 | `dataType: "Identifier"` | `Attribute.Type = Integer` | OutSystems' Identifier data type is the standard PK type; V2 maps it to the Integer primitive. The `isAutoNumber` flag is **silently dropped** at the V2 boundary today (V2 IR has no auto-number axis; deferred). [session-25 wording fix: original phrasing said "read but discarded today" — the adapter does not in fact call `getProperty`/`getBool` on `isAutoNumber`; subagent #3 audit M3.] |
+| 5 | `dataType: "Text"` | `Attribute.Type = Text` | Direct mapping. The `length` field is read but discarded today (V2 IR has no per-attribute length axis; SQL-type translation handles length at emit time per Policy A13). |
+| 6 | `physicalName` (string) | `Attribute.Column.ColumnName = physicalName` | Direct. The `originalName` and `databaseColumnName` fields are not in this fixture; their translation rule lands when a fixture surfaces them. |
+| 7 | `isMandatory: true \| false` | `Attribute.IsMandatory = isMandatory`, `Attribute.Column.IsNullable = not isMandatory` | The IsNullable proxy is **catalog-only**; it derives nullability from logical mandatory rather than from physical evidence. Profile evidence (when wired) refines it. The OSSYS adapter's job is structural; physical-reality reconciliation lives in V1's SQL chain (already done before V2 sees the JSON) and in `Projection.Adapters.Sql/ProfileSnapshot.fs` (separate input). |
+| 8 | `isIdentifier: true \| false` | `Attribute.IsPrimaryKey = isIdentifier` | Direct. V1's `isIdentifier` flag corresponds to V2's structural PK marker. |
+| 9 | Entity `db_schema` + `physicalName` | `Kind.Physical = { Schema; Table }` | Direct; the V1 JSON's reconciled `db_schema` already accounts for any `db_catalog` context (which V2 ignores per the OSSYS ADMIRE chapter scope's "what V2 will explicitly NOT carry forward" section). |
+| 10 | `isStatic: true` → `Modality = [Static []]`; `isStatic: false` → `Modality = []` | Per A7. Static populations themselves come from a separate input (V1's static-data JSON via `Projection.Adapters.Sql/Static.fs`). The OSSYS adapter sets the modality marker; the populations join later. |
+| 11 | `isExternal: false` → `Origin = OsNative`; `isExternal: true` → `Origin = ExternalDirect` | **SUPERSEDED by rule 17 (session 20).** Original placeholder for the minimal fixture; the IS-vs-Direct distinction was deferred at the time. Session 20's external-entity slice (`DECISIONS.md:5231` rule 17 — JSON path bound) replaced the `ExternalDirect` mapping with `ExternalViaIntegrationStudio` under empirical pressure. The adapter at `CatalogReader.fs:337-338` implements rule 17. Original retained for chapter-close-audit lineage; live rule is 17. |
+
+### What this commit explicitly does NOT carry forward (yet)
+
+Fields the minimal fixture contains but the parser ignores:
+
+  - `attributes[].originalName` — V1's pre-rename name; V2 has no
+    rename-history axis on Attribute. Defer until a use case
+    demands it (likely the refactor.log emission per the
+    strategic frame).
+  - `attributes[].length` / `precision` / `scale` — V1 type
+    metadata. V2 IR's `PrimitiveType` is abstract; concrete
+    SQL-type details land in emitter-time policy (A13). Defer
+    until either the IR grows a length-bearing variant or a
+    consumer demands the discriminated translation.
+  - `attributes[].isAutoNumber` — V1 auto-number flag; V2 IR
+    has no auto-number axis on Attribute. Defer.
+  - `attributes[].isActive` — V1 activity flag. Per the OSSYS
+    ADMIRE chapter scope, V2's `Selection` policy handles
+    activity at the policy level. The minimal fixture sets
+    everything to `isActive=true`; the reader currently does
+    not check it. Re-open trigger: a fixture with mixed-active
+    entities or attributes surfaces the boundary-vs-policy
+    decision (filter at adapter, or carry through with a
+    distinct V2 representation).
+  - `attributes[].isReference` / `refEntityId` / `refEntity_name`
+    / `reference_deleteRuleCode` etc. — Reference translation.
+    The minimal fixture has `isReference: 0` for both
+    attributes; references aren't exercised. The next session
+    in the OSSYS arc likely adds a reference-bearing fixture
+    and surfaces the V1 nullable `DeleteRule` → V2 closed
+    `OnDelete` translation rule.
+  - `attributes[].external_dbType` — External-DB type for
+    integration-studio attributes. Defer with the Origin
+    rule.
+  - `attributes[].physical_isPresentButInactive` — V1's
+    inactive-but-physically-present marker. Defer with the
+    activity rule.
+  - `entities[].relationships` — Reference list. Empty in this
+    fixture; translation defers to the reference-bearing fixture.
+  - `entities[].indexes` — Index list. Empty in this fixture;
+    translation defers to the index-bearing fixture.
+  - `entities[].triggers` — Trigger list. Empty in this fixture;
+    per the OSSYS ADMIRE chapter scope, V2 has no Trigger IR
+    type today. Defer until consumer demand surfaces the IR
+    refinement.
+  - `entities[].db_catalog` — Cross-catalog FK marker. Per the
+    Active deferrals index, the cross-catalog IR refinement is
+    reserved-but-unreachable; the fixture has `null`; the
+    parser ignores the field.
+  - `entities[].meta` — Entity description string. V2 IR has no
+    description axis. Defer.
+  - Top-level `exportedAtUtc` — V1 export timestamp. V2 has no
+    catalog-level timestamp; the `Lineage` writer captures
+    when each pass runs. Defer with explicit not-carried.
+
+### Discipline going forward
+
+The chapter accumulates translation rules under empirical
+pressure. Each subsequent session in the OSSYS arc extends the
+running list with new rules surfaced by new fixtures. The
+discipline:
+
+  1. New fixture lands in `OsmCatalogReaderDifferentialTests.fs`
+     (or a sibling test file) embedding a V1 shape that surfaces
+     a translation question.
+  2. Test fails until the parser handles the new shape.
+  3. Parser implementation lands; new translation rules surface.
+  4. The rules are appended to this entry (or a sibling entry
+     references them) with the empirical example attached.
+
+This is the same shape as the strategy-layer codification's
+empirical-verdict process (`DECISIONS 2026-05-11 — Strategy-layer
+codification: empirical verdict after the fourth instance`):
+rules emerge from real consumers, not from speculation about
+hypothetical shapes. The chapter's running list is the
+audit-trail.
+
+### Reasoning / consequences
+
+The differential-test path produced exactly the value session 17's
+instruction predicted: rules surfaced under code pressure rather
+than under speculative reasoning. The SsKey-lossy-JSON finding
+specifically would have been hard to anticipate from the
+orientation reading alone — it became visible only when the
+parser had to produce SsKey values for the assertion. Future
+chapter sessions following the same path are likely to surface
+similar findings; the running translation-rules list is how the
+chapter accumulates them auditably.
+
+The won't-carry-forward list (above) extends the OSSYS ADMIRE
+entry's chapter-scope section with concrete examples from the
+minimal fixture. As subsequent fixtures land, more V1 fields
+will surface that need either-way decisions; keeping them
+explicit (rather than letting them emerge silently as gaps) is
+the discipline session 17's instruction named.
+
+#### 2026-05-16 (session 19 amendment) — reference-bearing fixture extends the running list with five FK translation rules
+
+Session 19's reference-bearing fixture (User → Account FK with
+`reference_deleteRuleCode: "Protect"`) surfaced five translation
+rules under empirical pressure. Appended to the running list as
+rules 12–16; the table-shape from the original entry continues.
+
+**The deferred V1 nullable `deleteRuleCode` → V2 closed `OnDelete`
+question is now resolved.** Session 17's OSSYS ADMIRE chapter
+scope named this as one of three deferred translation questions;
+it lands here as rule 13 with the full mapping table per V1's
+existing convention in `Osm.Smo/SmoEntityEmitter.cs`.
+
+| #  | V1 input shape | V2 output | Rationale |
+|----|---|---|---|
+| 12 | Source attribute name + parent entity + module (when `isReference: 1`) | `Reference.SsKey = OS_REF_<modName>_<entName>_<attrName>` | Reference SsKey synthesis. The reference identifies by its source coordinate; an attribute carries at most one outgoing reference in V1's metadata, so the source coordinate is unique. |
+| 13 | `reference_deleteRuleCode: "Protect"` | `Reference.OnDelete = NoAction` | V1 → V2 mapping per `Osm.Smo/SmoEntityEmitter.cs`. The full table: `"Delete" → Cascade`; `"Protect" → NoAction`; `"Ignore" → NoAction`; `"SetNull" → SetNull`; `null → NoAction` (the V1 `TreatMissingDeleteRuleAsIgnore` default). The minimal fixture exercises only "Protect"; the full table lands so subsequent fixtures don't re-litigate. **Note:** `"Ignore"` collapses to V2 `NoAction` because V2's `ReferenceAction` DU has no Ignore variant and V1's "Ignore" is semantically `NoAction` at the SQL level (the V1 audit-worthy "we tolerated a missing delete-rule" concern belongs to the Diagnostics writer, per session 16 commit 1's FK activation). The session 18 finding that V2's `DeleteRuleIgnored` keep-reason is unreachable from V2 fixtures resolves here too: if V1's `deleteRuleCode` is `"Ignore"`, V2's `OnDelete` becomes `NoAction` and the reference is *enforced* (V2 doesn't decline to enforce); the V1 audit-trail concern emits a Diagnostics entry rather than a structural keep-reason. |
+| 14 | V1 attributes with `isReference: 1` carry full reference fields (`refEntity_name`, `reference_deleteRuleCode`, etc.) | Walk attributes for `isReference: 1`; ignore the `relationships[]` array | V1 carries reference info in two places — on the source attribute and in the parent entity's `relationships[]` array (with `viaAttributeName + toEntity_name + hasDbConstraint`). The V2 adapter walks the attribute fields because they carry every field the V2 `Reference` shape needs. The `relationships[]` array is V1's aggregated cross-check; it could become a verification surface later but is not the primary source. **Documented divergence:** V1's two-source representation collapses to V2's one-source extraction. |
+| 15 | Source attribute name | `Reference.Name = Name.create attrName` | V1 has no separate "relationship name" field; the via-attribute carries the relationship's display identity. The V2 `Reference.Name` derives from the attribute name (e.g., User's `AccountId` attribute produces a Reference named "AccountId"). Same-shape with V2's existing convention for un-named structural elements. |
+| 16 | V1 `refEntity_name` (within the same module's catalog) | `Reference.TargetKind = OS_KIND_<sourceModule>_<refEntity_name>` | Same-module assumption. Cross-module FK references would require either: (a) carrying `refEntity_module` in V1's JSON (V1 does not today), or (b) V2 adapter scanning all modules to disambiguate (problematic when names collide). The same-module rule covers every fixture seen so far; cross-module references defer until a fixture surfaces the case (re-open trigger). |
+
+#### What this commit explicitly does NOT carry forward (FK extensions)
+
+Adding to the won't-carry-forward list:
+
+  - `attributes[].refEntityId` — V1's numeric foreign-key-target
+    pointer. V2 uses synthesized SsKey via name; the numeric ID
+    is V1's internal database ID, not stable across deployments.
+    The parser reads but ignores the field.
+  - `attributes[].refEntity_physicalName` — V1's pre-resolved
+    target physical table name. V2 derives the target's physical
+    realization from the target Kind, not from the source
+    attribute. Redundant under the same-module assumption.
+  - `attributes[].reference_hasDbConstraint` — V1's flag for
+    whether the physical FK constraint exists at the database
+    level. V2's `Reference` carries no "is enforced" axis at the
+    structural level — that distinction lives in `Profile`
+    (empirical evidence, per A34's separation of structure from
+    evidence) and in `ForeignKeyOutcome.EnforceConstraint(...)`
+    decisions. The catalog reader surfaces structural FKs only;
+    the Profile-side reader (separate input) carries
+    `hasDbConstraint`-equivalent evidence.
+  - `entities[].relationships[]` — entity-level aggregated
+    relationship array. V2 walks attributes for primary
+    extraction; relationships[] is unconsumed. Re-open trigger:
+    if a future fixture surfaces a relationship that exists in
+    relationships[] but NOT in attributes[isReference=1] (or
+    vice versa), the divergence forces a cross-check.
+
+#### Updated chapter status
+
+Two slices through the OSSYS adapter chapter:
+
+  - Session 18: minimal slice (one entity, two non-reference
+    attributes). Eleven translation rules surfaced.
+  - Session 19: reference-bearing slice (two entities, one
+    reference). Five additional rules surfaced; the deferred
+    deleteRuleCode question resolved.
+
+Sixteen rules total in the running list. The two remaining
+deferred questions from the session 17 ADMIRE chapter scope:
+
+  - V1 `IsExternalEntity` + `IsSystemEntity` → V2 `Origin`
+    three-way DU. Still pending; minimal and reference fixtures
+    both have `isExternal: false`. A fixture with an external
+    entity (Integration Studio or Direct) surfaces it.
+  - Inactive-records boundary choice (filter at adapter or
+    carry through and let Selection filter). Still pending; all
+    fixtures so far have `isActive: true` everywhere. A
+    mixed-active fixture surfaces it.
+
+These continue to defer; the chapter's discipline holds — rules
+land under empirical pressure, not under speculative reasoning.
+
+#### 2026-05-17 (session 20 amendment) — external-entity fixture surfaces the Origin translation rule; placeholder updated under empirical pressure
+
+Session 20's external-entity fixture surfaced the Origin
+three-way collapse rule that the session 17 OSSYS ADMIRE chapter
+scope flagged as one of three deferred translation questions.
+Three substantive findings landed under the same fixture-driven
+empirical-pressure discipline.
+
+**Finding 1: V1's IS-vs-Direct distinction is encoded in
+`EspaceKind`, which is NOT carried through V1's JSON projection.**
+Trace performed before writing the fixture:
+
+  - `EspaceKind` is a string column on `dbo.ossys_Espace`
+    (V1 OutSystems platform metadata) read by V1's
+    `outsystems_metadata_rowsets.sql` at line 96 (`#E.EspaceKind`).
+  - The trailing rowset SELECT for the `#E` table emits
+    `EspaceKind` (line 961 of the same file).
+  - **`SnapshotJsonBuilder` does NOT write `EspaceKind` to
+    `osm_model.json`.** The JSON output for modules carries only
+    `name`, `isSystem`, `isActive`, `entities`. The IS-vs-Direct
+    distinction is invisible to V2 through the `SnapshotJson`
+    path.
+
+This composes with the SsKey-lossy-JSON finding from session 18:
+both deferred translation questions resolve through the same
+input-path expansion (the `SnapshotRowsets` variant per
+`DECISIONS 2026-05-15 — OSSYS adapter translation rules`,
+session-20 amendment of the lossy-SSKey rule). The
+`SnapshotRowsets` canonical resolution covers a **class** of
+JSON-projection-lossiness questions, not just the SsKey question
+that surfaced first.
+
+**Finding 2: The session-18 placeholder for `isExternal: true`
+was speculative; the session-20 fixture provides empirical
+pressure to revise it.** Session 18's parser mapped
+`isExternal: true` to `ExternalDirect` as a placeholder. That
+choice was made when no fixture exercised the `isExternal: true`
+branch; the rule was speculative. The session-20 fixture
+mirrors V1's existing `model.edge-case.json` shape (the
+`ExtBilling` module — the "Ext" prefix is conventional for
+IS-extension modules in V1's domain). The placeholder updates
+under that pressure to `ExternalViaIntegrationStudio`.
+
+**The new placeholder rule (rule 17, extending the running
+list):**
+
+| #  | V1 input shape | V2 output | Rationale |
+|----|---|---|---|
+| 17 | Entity `isExternal` boolean (through the JSON path; `EspaceKind` not visible to V2) | `isExternal: false` → `OsNative`; `isExternal: true` → `ExternalViaIntegrationStudio` | Through the JSON-snapshot path, V2 cannot distinguish IS-vs-Direct because `EspaceKind` is stripped at the JSON projection layer. Placeholder picks `ExternalViaIntegrationStudio` because IS extensions are the standard V1 mechanism for external entities; most `isExternal=true` cases are IS-imported. The full three-way distinction (with `ExternalDirect` for non-IS external entities) resolves when `SnapshotRowsets` implements and `EspaceKind` becomes visible. **This rule supersedes the session-18 placeholder (`ExternalDirect`)** which was speculative without empirical pressure. |
+
+**Finding 3: The bounded-A1-equivalent disposition extends to
+Origin.** Through the `SnapshotJson` path, V2's three-way
+`Origin` discrimination is bounded — `OsNative` and
+`ExternalViaIntegrationStudio` are reachable; `ExternalDirect`
+is unreachable from V2 fixtures because the JSON shape can't
+distinguish it from IS-extension external entities. This is the
+same shape as the bounded-A1 disposition from the session-18
+SsKey finding. **Documented divergence; not a bug.**
+
+The bound resolves identically to the SsKey bound — through
+the same `SnapshotRowsets` canonical-resolution path. When
+`SnapshotRowsets` implements, the V2 catalog reader gains
+access to `EspaceKind` and the Origin translation rule
+refines:
+
+  - `isExternal: false` → `OsNative` (unchanged)
+  - `isExternal: true` AND `EspaceKind: "Extension"` (or whatever
+    the IS-marker turns out to be) → `ExternalViaIntegrationStudio`
+  - `isExternal: true` AND not the IS-marker → `ExternalDirect`
+
+The exact rule needs the empirical evidence of what
+`EspaceKind` values appear and what they mean — that's the
+work for the session that lands `SnapshotRowsets`.
+
+**Updated chapter status (translation rules in the running list):**
+
+  - Sessions 18: rules 1–11 (minimal slice — module / kind /
+    attribute structure, type primitives, modality)
+  - Session 19: rules 12–16 (reference-bearing slice — FK
+    SsKey synthesis, deleteRuleCode mapping, attributes-as-
+    primary-source, same-module assumption)
+  - Session 20: rule 17 (Origin three-way placeholder under
+    JSON-path bound)
+
+Seventeen rules total in the running list.
+
+**One deferred translation question remains** (from the session
+17 ADMIRE chapter scope):
+
+  - Inactive-records boundary choice (filter at adapter or
+    carry through and let Selection filter). All fixtures so
+    far have `isActive: true` everywhere. A mixed-active
+    fixture surfaces it.
+
+This continues to defer; the chapter's discipline holds — rules
+land under empirical pressure, not under speculative reasoning.
+
+**The composability finding is itself worth marking.** Two
+deferred translation questions (lossy-SSKey from session 18,
+IS-vs-Direct from session 20) both resolve through the same
+input-path expansion (`SnapshotRowsets`). The OSSYS chapter is
+discovering that the `JSON projection layer is structurally
+lossy in a class-shaped way — multiple V1 fields are stripped at
+the same projection layer; the resolution to any single one
+generalizes to all. The class is named here so future agents
+opening the `SnapshotRowsets` implementation chapter inherit
+the framing: it's not three separate fixes; it's one resolution
+to a class of lossiness.
+
+Future fixtures may surface additional members of the same
+class (e.g., `isSystemEntity` is in the rowsets but not the
+JSON; per-table column structure that `FOR JSON PATH`
+collapses; check-constraint definitions; etc.). Each is
+deferred-by-input-path until `SnapshotRowsets` lands; the
+single resolution covers them all.
+
+#### 2026-05-18 (session 21 amendment) — mixed-active fixture surfaces inactive-records boundary; chapter-open backlog clears
+
+Session 21's mixed-active fixture surfaced the deferred
+inactive-records boundary choice that the session 17 OSSYS
+ADMIRE chapter scope flagged as the third (and last) of its
+deferred translation questions.
+
+**Trace before fixture (admire-mode discipline at the slice
+level — same as session 20):** V1 SQL carries IsActive flags
+through to JSON at three levels — module-level (line 924),
+entity-level (line 931), attribute-level (line 759). V1 SQL
+also has SQL-layer pre-filtering parameters
+(`@IncludeInactive` line 127; `@OnlyActiveAttributes` line
+254). **The flags ARE visible to V2 through the JSON path.**
+Unlike the SsKey question (session 18) and the IS-vs-Direct
+question (session 20), inactive-records-handling is **NOT a
+member of the JSON-projection-lossiness class** — V2 has the
+information; the boundary choice is genuine.
+
+**The boundary choice and its rationale:**
+
+The architectural alternatives:
+
+  - **Filter at adapter** — entity/attribute with `isActive: false`
+    is dropped from the V2 Catalog at parse time.
+  - **Carry through with IsActive axis** — V2 IR grows a
+    per-record IsActive axis (on Kind / Attribute, or as a
+    `Modality.Inactive` variant); the Selection policy filters
+    at projection time per A18 amended (filtering is operator
+    intent, which is Policy).
+
+A18 amended (Π consumes Catalog × Profile, never Policy)
+argues for carry-through in principle — filtering is operator
+intent, not catalog evidence. But:
+
+  - V2 IR has no per-record IsActive axis today; carry-through
+    requires substantive IR refinement.
+  - "IR grows under evidence" — no current V2 consumer demands
+    the inactive records' presence in V2's IR. No emitter
+    uses them; no pass consumes them; no Selection policy axis
+    today reads "include inactive" or "exclude inactive."
+  - The adapter's existing return shape `Task<Result<Catalog>>`
+    cannot carry per-record auditability for dropped records;
+    that requires extending the return shape to a
+    Diagnostics-bearing variant (which is its own future
+    slice).
+
+**Decision: filter at adapter for now; document the bound.**
+The smallest honest-now implementation. The bound resolves
+when one of the following triggers fires:
+
+  - **A real consumer demands inactive records' presence in
+    V2's IR.** Likely candidates: a refactor.log emission
+    that needs inactive entities to compute deletion sets; a
+    multi-environment Selection policy that wants different
+    inclusion rules for different deployments. When such a
+    consumer surfaces, the IR grows (likely as a
+    `Modality.Inactive` variant for entity-level, plus a
+    per-attribute axis for attribute-level — the exact shape
+    depends on the consumer); the adapter changes to
+    carry-through; this rule supersedes.
+  - **The adapter's return shape extends to support
+    Diagnostics-attached audit.** When the adapter's return
+    shape grows from `Task<Result<Catalog>>` to a
+    Diagnostics-bearing variant (likely
+    `Task<Result<Diagnostics<Catalog>>>` or similar), the
+    silent drop becomes audited drop — each filtered record
+    emits a `DiagnosticEntry` with `Source = "adapter:Osm"`,
+    `Severity = Info`, `Code = "adapter.osm.inactiveRecordDropped"`,
+    and the dropped record's identity. The structural rule
+    stays "filter at adapter"; the audit improves.
+
+**The new translation rule (rule 18, extending the running
+list):**
+
+| #  | V1 input shape | V2 output | Rationale |
+|----|---|---|---|
+| 18 | `entity.isActive: false` or `attribute.isActive: false` (default missing → true per V1's SQL `ISNULL(Is_Active, 1)` semantics) | Inactive entities are dropped from the V2 Catalog at parse time; inactive attributes are dropped from their Kind's `Attributes` list. | Filter at adapter under "IR grows under evidence" — no current consumer demands inactive records' presence in V2's IR. The drop is silent today; the future Diagnostics-attached audit is named in the bound. The carry-through alternative defers until a real consumer surfaces. |
+
+**Module-level `isActive: false`** is **not** exercised by the
+mixed-active fixture and not yet handled by the parser.
+Defers until a fixture forces the question. The most likely
+shape: same filter rule (drop the module entirely), but
+modules are coproduct cells (A11) and dropping a module drops
+all its entities, which is a bigger semantic claim than
+dropping individual records. Surface when a fixture requires
+it.
+
+**`physical_isPresentButInactive` field** in V1's JSON (line
+769 of SnapshotJsonBuilder; example at the
+`DeprecatedField` attribute in this slice's fixture, value 1)
+is **read but discarded today**. V1's SQL surfaces this as a
+derived flag — the attribute's logical IsActive is false but
+the physical column exists. V2's adapter has no use for the
+flag because it filters the inactive attribute before
+encountering it. Re-open trigger: a Diagnostics-bearing
+adapter that wants to surface "the physical column is still
+present even though the logical attribute is retired" as an
+audit-trail concern.
+
+#### Chapter-open backlog clears at session 21 — natural within-chapter milestone
+
+The chapter has now cleared all three deferred translation
+questions named in the session 17 OSSYS ADMIRE chapter scope:
+
+  - **Origin three-way collapse** — resolved session 20 (rule
+    17 + bounded-by-input-path disposition + composability
+    finding pointing at the SnapshotRowsets canonical
+    resolution).
+  - **Reference DeleteRule** — resolved across sessions 18–19
+    via the Ignore-mapping composition (rule 13's full table
+    + the V2-NoAction-as-Ignore-target finding that resolved
+    the unreachable-`DeleteRuleIgnored`-keep-reason loose end
+    from session 16).
+  - **Inactive-records boundary** — resolved this session
+    (rule 18 + bound documented + carry-through trigger
+    named).
+
+Eighteen translation rules total in the running list across
+four substantive slices.
+
+This is a **natural within-chapter milestone**, not a
+chapter-close. The chapter has more substantive slices ahead
+— index-bearing, static-entity, cross-module FK, plus
+whatever new V1 fields surface from real fixtures as the
+adapter is exercised against larger inputs. But the
+chapter-open's named uncertainties have all been answered
+under empirical pressure. The chapter's discipline is
+operating; the running list is auditable; the bounds are
+documented.
+
+#### 2026-05-19 (session 22 documentation hygiene) — naming the two classes of resolution patterns explicitly
+
+Sessions 18, 20, and 21 together produced findings that fit
+into two structurally distinct classes. The composability
+finding from session 20 named the first class (lossiness);
+session 21's inactive-records resolution implicitly distinguished
+the second class (boundary discipline) by resolving differently.
+This sub-section names both classes explicitly so future agents
+reading the chapter's accumulated translation surface see the
+distinction up front rather than re-deriving it.
+
+**The two classes:**
+
+  1. **JSON-projection-lossiness class.** The information is
+     **upstream of V2's current input but stripped at V1's JSON
+     projection layer**. V2 cannot make the translation through
+     the current `SnapshotJson` path because the data isn't
+     visible. Resolution: **input-path expansion** via the
+     `SnapshotRowsets` variant (per `DECISIONS 2026-05-15 — OSSYS
+     adapter translation rules`, session-20 amendment); the
+     class resolves *all members together* when the variant
+     implements.
+
+     Currently-known members:
+
+       - **SsKey at every level** (session 18) — stripped at JSON
+         aggregation; rowsets carry it.
+       - **`EspaceKind`** (session 20) — encodes IS-vs-Direct;
+         stripped at JSON aggregation; rowsets carry it.
+       - **`isSystemEntity`** (observed during session-20 trace;
+         not yet exercised by a fixture) — entity-level system
+         flag; stripped at JSON aggregation; rowsets carry it.
+
+     Likely future members: per-table column structure that
+     `FOR JSON PATH` collapses; check-constraint definitions;
+     additional fields the JSON projections happen not to
+     include.
+
+  2. **V2-boundary-discipline class.** The information **is
+     visible to V2 through the current input**; the translation
+     question is V2's own architectural choice about what to do
+     with it. Resolution: **V2's own boundary discipline** —
+     filter at adapter, carry through the IR, refine the IR with
+     a new axis, etc. The choice is bounded by what V2's
+     architecture today supports vs what consumer demand would
+     need; the smallest honest-now choice is documented; the
+     bound resolves on a named consumer-demand trigger.
+
+     Currently-known members:
+
+       - **Inactive-records boundary** (session 21) — V1 carries
+         IsActive flags through to JSON; V2 has the choice
+         between filter-at-adapter (chosen) and carry-through
+         (deferred to consumer demand).
+
+     Likely future members: any V1 field that V2 receives but
+     V2's IR has no axis for (e.g., trigger metadata when a
+     fixture surfaces it; computed-column definitions; field-
+     level descriptions / `meta` strings).
+
+**Why naming the classes matters operationally.**
+
+The two classes have **different resolution paths** and
+**different coupling characteristics**:
+
+  - Lossiness-class findings **compose** through one resolution
+    (`SnapshotRowsets` implementation absorbs all members
+    together). The agent who opens that chapter inherits a
+    class to resolve, not a list of bugs to fix.
+  - Boundary-discipline findings **don't compose** the same
+    way. Each member's resolution depends on its specific
+    consumer demand and its specific IR-refinement implications;
+    they are individually negotiated. A future
+    `Modality.Inactive` variant doesn't automatically extend to
+    cover triggers, computed columns, etc.
+
+**The trace-before-fixture pattern classifies findings into one
+or the other before implementation begins.** Session 20's trace
+of `EspaceKind` placed it in the lossiness class (not in the
+JSON; in the rowsets); session 21's trace of `Is_Active`/
+`isActive` placed it in the boundary-discipline class (carried
+through to JSON; V2 has the choice). Future slices apply the
+same trace-before-fixture admire-mode discipline; the
+classification informs the resolution shape.
+
+**This sub-section refines, not replaces, session 20's
+composability finding.** The lossiness class is one half; the
+boundary-discipline class is the other half. Together they
+form the chapter's accumulated structural picture of V1↔V2
+translation.
+
+**No code change.** Documentation hygiene only. Future
+findings classify into one of the two classes (or surface a
+third if neither fits, which would itself be a substantive
+finding worth marking explicitly).
+
+#### 2026-05-19 (session 22 amendment) — index-bearing fixture surfaces five index translation rules
+
+Session 22's index-bearing fixture surfaced five translation
+rules under empirical pressure (rules 19–23). The fixture
+exercised three V2-IR-relevant index shapes (PK; unique non-PK;
+composite non-unique with included columns) within a single
+entity.
+
+**Trace before fixture (admire-mode at slice level):** V1 carries
+the indexes[] array through to JSON via the
+`outsystems_metadata_rowsets.sql` aggregations (`#AllIdx`,
+`#IdxColsMapped`, `#IdxColsJson`, `#IdxJson`). The JSON shape
+includes name, isPrimary, kind, isUnique, isPlatformAuto,
+storage/perf attributes (isDisabled / isPadded / fill_factor /
+ignoreDupKey / etc.), structural fields (filterDefinition,
+dataSpace, partitionColumns, dataCompression), and a columns
+array with attribute / physicalColumn / ordinal / isIncluded /
+direction per column. **All visible to V2 through the JSON
+path.**
+
+**Classification:** V2-boundary-discipline class. V1 has the
+information; V2's IR scope is what's being chosen. The
+translation rules are V2's own architectural choices about
+scope, not input-path-bound questions. Same shape as the
+inactive-records resolution (session 21).
+
+**The five new translation rules:**
+
+| #  | V1 input shape | V2 output | Rationale |
+|----|---|---|---|
+| 19 | Index `name` + parent entity + module | `Index.SsKey = OS_IDX_<modName>_<entName>_<indexName>` | Index SsKey synthesis. V1's IndexName is unique per entity (per the SQL extraction's `#AllIdx` clustered key). The synthesis convention extends the existing module/kind/attribute/reference pattern. |
+| 20 | `index.isUnique` (boolean) | `Index.IsUnique = isUnique` | Direct mapping. |
+| 21 | `index.isPrimary` (boolean) | `Index.IsPrimaryKey = isPrimary` | Direct mapping. V2 distinguishes IsPrimaryKey from IsUnique at the structural level (V1 treats PK as a unique index, but V2 separates the concerns per the Index DU's design notes in `Catalog.fs:144-146`). |
+| 22 | `index.columns[].attribute` (string, attribute name within parent entity) | `Index.Columns = [SsKey list]` (resolved via `attributeSsKey moduleName entityName attribute`); sorted by `columns[].ordinal`; `columns[].isIncluded=true` entries dropped at the boundary | Same-entity attribute resolution. V1's `attribute` field names the attribute by string within the parent entity; V2 resolves to the synthesized SsKey. The included-columns drop is the canonical V2 boundary choice (per the OSSYS ADMIRE entry's "what V2 will explicitly NOT carry forward" section); V2's Columns carries only key columns. The ordinal sort preserves key-column order. |
+| 23 | Index records have no `isActive` field on the index itself | All indexes are carried through; no filter | V1's index metadata is at storage-object level (sys.indexes); there's no logical activity flag on indexes. The session-21 inactive-records filter does NOT extend to indexes. If a future fixture surfaces inactive-index handling (e.g., V2 grows a per-index activity flag for some emitter), the rule extends under empirical pressure. |
+
+**What this commit explicitly does NOT carry forward (FK
+extensions for indexes):**
+
+  - `index.kind` — V1 string field ("Index" / "PrimaryKey" /
+    "UniqueIndex" etc.). Redundant with V2's IsUnique +
+    IsPrimaryKey flags; V1's `kind` field encodes the same
+    distinctions structurally.
+  - `index.isPlatformAuto` — V1 marker for OSIDX_-prefixed
+    platform-generated indexes. V2 has no auto-generated marker
+    today. If a future emitter needs to skip platform-auto
+    indexes (e.g., to avoid scripting OutSystems-internal
+    indexes the platform regenerates), the rule extends.
+  - **Storage/performance attributes** — `isDisabled`,
+    `isPadded`, `fill_factor`, `ignoreDupKey`, `allowRowLocks`,
+    `allowPageLocks`, `noRecompute`. V2's Index has no axis for
+    these. They're DDL-emission concerns, not catalog structure;
+    if a future emitter wants WITH-clause scripting, the rule
+    extends.
+  - `index.filterDefinition` — V1 carries SQL Server filtered-
+    index definitions. V2 has no filtered-index axis. Defer
+    until a fixture surfaces a filtered index that matters to
+    the V2 IR.
+  - `index.dataSpace`, `index.partitionColumns`,
+    `index.dataCompression` — Storage placement metadata; V2 has
+    no axis. Same disposition as filter.
+  - `columns[].direction` — Per-column ASC/DESC ordering. V2's
+    Index.Columns is a positional SsKey list; no per-column
+    direction axis. If a future emitter wants direction-aware
+    DDL (e.g., descending PK for time-series tables), the rule
+    extends.
+  - `columns[].physicalColumn` — V1 redundancy; V2 derives
+    physical name from the attribute's ColumnRealization rather
+    than from the index column entry. The redundancy in V1 was
+    likely for cross-validation; V2 doesn't need it because
+    V2's IR resolves through SsKey identity.
+
+**Updated chapter status:**
+
+  - Sessions 18: rules 1–11 (minimal slice — module / kind /
+    attribute structure)
+  - Session 19: rules 12–16 (reference-bearing slice — FK
+    SsKey / deleteRule / cross-attribute)
+  - Session 20: rule 17 (Origin three-way placeholder under
+    JSON-path bound)
+  - Session 21: rule 18 (inactive-records boundary)
+  - Session 22: rules 19–23 (index translation — five rules)
+
+**Twenty-three translation rules total** in the running list
+across five substantive slices. The chapter has now exercised
+all four V2 Kind sub-shapes (Attributes; References; Indexes;
+Modality) plus the boundary disciplines (Origin; inactive-
+records). Two substantive slices likely remain plausible:
+static-entity (exercises Modality.Static populations end-to-end,
+couples with Projection.Adapters.Sql/Static.fs); cross-module
+FK (refines rule 16's same-module assumption).
+
+**Class summary** (per the session-22 two-classes amendment):
+
+  - Lossiness class: SsKey (rule 1-3 synthesis vs the bound);
+    EspaceKind (rule 17's bound). Two members exercised; both
+    resolve through SnapshotRowsets.
+  - Boundary-discipline class: inactive-records (rule 18);
+    index translation choices (rules 19–23). Multiple members
+    exercised; each member's resolution is independent.
+
+The class distinction is now empirically confirmed across two
+members per class. Future findings classify into one or the
+other before implementation begins; the resolution shape
+follows from the classification.
+
+#### 2026-05-20 (session 24 amendment) — static-entity fixture surfaces two translation rules and one implicit-coverage finding
+
+Session 24's static-entity fixture is the chapter's sixth
+substantive slice and the last substantive slice in chapter 2.
+The fixture exercises the V2 `Modality = [Static []]` translation
+that has shipped without explicit fixture coverage since session
+18.
+
+**Trace before fixture (admire-mode at slice level):** V1's SQL
+extraction at `src/AdvancedSql/outsystems_metadata_rowsets.sql:929`
+emits `CAST(CASE WHEN en.DataKind = 'staticEntity' THEN 1 ELSE 0
+END AS bit) AS [isStatic]`. V1's JSON projection at
+`src/Osm.Pipeline/SqlExtraction/SnapshotJsonBuilder.cs:207` writes
+`writer.WriteBoolean("isStatic", string.Equals(entity.DataKind,
+"staticEntity", ...))`. The `isStatic` boolean is faithfully
+carried through the JSON path. **The static-entity *populations*
+flow through a separate V1 extraction pipeline** — population data
+arrives at V2 via `Projection.Adapters.Sql/Static.fs`'s
+`attachStaticPopulations`, consuming a separately-emitted
+`static-entities.*.json` rather than the `osm_model.json` snapshot
+the OSSYS adapter consumes.
+
+**Classification:** V2-boundary-discipline class. V1 has the
+information; V2's IR scope is split between the OSSYS adapter
+(modality flag only) and the Static SQL adapter (populations).
+This split is itself a V2 design choice that mirrors V1's own
+extraction split. Same shape as session 21's inactive-records
+resolution.
+
+**The two new translation rules:**
+
+| #  | V1 input shape | V2 output | Rationale |
+|----|---|---|---|
+| 24 | `entity.isStatic: true` | `Kind.Modality = [Static []]` (empty population) | Static-entity modality flag. Empty population is intentional — the OSSYS adapter's responsibility ends at the modality marker; populations flow through `Projection.Adapters.Sql/Static.attachStaticPopulations`, which consumes a separately-emitted `static-entities.*.json` and composes onto a Catalog already carrying the `[Static []]` markers. The split mirrors V1's own extraction split. |
+| 25 | `entity.isStatic: false` | `Kind.Modality = []` (no Static mark) | Direct mapping. The `Modality` list is empty for non-static entities; a kind without `Static` in its modality list is treated as a dynamic entity by all downstream consumers. |
+
+**What this commit explicitly does NOT carry forward:**
+
+  - **Static-entity population data inside the OSSYS adapter.** V1's
+    `osm_model.json` does not carry population data; population data
+    lives in the separate `static-entities.*.json` extraction. The
+    OSSYS adapter must produce `[Static []]` (empty population)
+    rather than attempt to derive populations from the model JSON.
+    The downstream `Projection.Adapters.Sql/Static.fs` is
+    responsible for filling populations against the marker. No
+    re-open trigger — the split is V2's design intent.
+  - **`Modality.Inactive`, `Modality.SoftDeletable`, `Modality.TenantScoped`** —
+    V2's `Catalog.fs:52-55` ModalityMark DU has variants beyond
+    `Static`. None are in V1's JSON snapshot today (the V1 model
+    has no analogous markers). If future fixtures surface these
+    via different V1 fields (e.g., a soft-delete column convention),
+    rules extend under empirical pressure.
+
+**The implicit-coverage finding.** The static-entity translation
+implementation has shipped at `CatalogReader.fs:578` since session
+18 (`if isStatic then [ Static [] ] else []`) — written
+defensively while building the minimal-slice infrastructure. Five
+prior fixtures (sessions 18–22) all carried `isStatic: false`; no
+fixture exercised the `true` branch until this slice. The
+implementation worked; the contract was uncovered.
+
+This is a small instance of a real discipline question: **when
+implementation ships ahead of fixture coverage, the contract is
+asserted by the type system and by inspection rather than by
+test.** The session-22 chapter-mid-audit dispatch could in
+principle have caught this — "scan the OSSYS adapter for
+implementations whose code paths no fixture exercises" — but the
+audit's framing (cross-document consistency, Active deferrals
+scan after the session 24 amendment) does not include
+contract-vs-implementation walking at the adapter level. The
+session 14 audit-discipline refinement (`DECISIONS 2026-05-13`)
+codified contract-vs-implementation cross-reference for
+pass-and-strategy work; the same shape applies at adapter level
+but with different criteria — implementation paths whose input
+condition has not been fixture-exercised.
+
+The slice's resolution recovers the contract gap by adding the
+fixture; codifying the discipline lesson here lets future
+chapter-close audits include "are there input-conditional
+adapter paths uncovered by fixture?" as a dimension. **The
+discipline does not yet need its own DECISIONS row; it surfaces
+here to be tested at chapter close — if subagent #3 (the OSSYS
+chapter completeness audit) flags additional uncovered paths,
+the discipline earns its row.**
+
+**Updated chapter status:**
+
+  - Session 18: rules 1–11 (minimal slice — module / kind /
+    attribute structure)
+  - Session 19: rules 12–16 (reference-bearing slice — FK
+    SsKey / deleteRule / cross-attribute)
+  - Session 20: rule 17 (Origin three-way placeholder under
+    JSON-path bound)
+  - Session 21: rule 18 (inactive-records boundary)
+  - Session 22: rules 19–23 (index translation — five rules)
+  - Session 24: rules 24–25 (static-entity modality flag — two rules)
+
+**Twenty-five translation rules total** in the running list
+across six substantive slices. The chapter has now exercised
+all four V2 Kind sub-shapes (Attributes; References; Indexes;
+Modality) plus the boundary disciplines (Origin; inactive-
+records; static-entity split). The cross-module FK slice
+remains plausibly substantive but defers to fresh context per
+the chapter-close handoff (see CHAPTER_2_CLOSE.md and the
+session-23 runway plan).
+
+**Class summary** (per the session-22 two-classes amendment):
+
+  - Lossiness class: SsKey (rules 1-3 synthesis vs the bound);
+    EspaceKind (rule 17's bound). Two members exercised; both
+    resolve through SnapshotRowsets.
+  - Boundary-discipline class: inactive-records (rule 18); index
+    translation choices (rules 19–23); static-entity split
+    (rules 24–25). Three members exercised; each member's
+    resolution is independent.
+
+Three boundary-discipline members empirically confirms the class
+as the more populated of the two — the lossiness class has a
+single-source resolution (SnapshotRowsets); the boundary-
+discipline class accumulates multiple members, each with
+independent resolution shapes.
+
+## 2026-05-19 — Chapter-mid-audit as a routine practice
+
+**Status:** decided (operating discipline; pairs with the chapter-close ritual)
+**Context:** Session 22 dispatched a cross-document consistency audit
+subagent during a substantive-work session — not at chapter close.
+The audit surfaced 6 CRITICAL, 21 MINOR, and 7 OPEN findings, of which
+the cross-cutting observation (most CRITICAL findings tracked to a
+single phenomenon — OSSYS chapter sessions 18–22 faithfully recorded
+as DECISIONS amendments but not propagated back to index documents)
+identified a real gap in the chapter-close ritual's coverage.
+
+The chapter-close ritual (`DECISIONS 2026-05-14`) handles propagation
+at chapter boundaries but not at chapter-mid-flight. Multi-session
+chapters that run for many sessions accumulate propagation debt
+between substantive work and downstream documentation surfaces;
+the ritual doesn't catch it until chapter close, at which point the
+debt has compounded.
+
+**The audit-as-routine practice fills this gap.** Session 22's
+dispatch demonstrated its value: drift surfaced now is cheaper to
+address than drift surfaced at close. The 6 CRITICAL findings
+became session 23's documentation-hygiene work; the 21 MINOR
+findings landed in `CHAPTER_2_CLOSE.md`'s scaffold for chapter close
+to address.
+
+**Decision:** **Chapter-mid-audit is a routine practice alongside
+the chapter-close ritual.** Multi-session chapters that run for
+more than ~5 sessions should dispatch a cross-document consistency
+audit subagent at intervals during the chapter — typically when
+substantive work has accumulated enough to make propagation drift
+plausible.
+
+**The dispatch pattern:**
+
+  1. **Brief the subagent.** Self-contained prompt; specify the
+     document pairs to walk; specify the categorization scheme
+     (CRITICAL / MINOR / OPEN); specify "surface, not act"; specify
+     the working directory and word budget. The session-22 dispatch
+     is the worked template.
+
+  2. **Run in parallel** with substantive work. The audit doesn't
+     need real-time review; the session that dispatches it can
+     continue substantive work while the subagent runs in the
+     background. The agent's findings arrive via completion
+     notification; integration into the session's summary is a
+     synthesis step at session close.
+
+  3. **Categorize findings.** CRITICAL gets immediate-fix-or-explain
+     in the next hygiene work (typically the next session, unless
+     blocking). MINOR rolls into the chapter-close synthesis via
+     `CHAPTER_2_CLOSE.md` (or its successor's scaffold). OPEN
+     warrants discussion; can land in hygiene work if architectural
+     answers emerge naturally, or defer to chapter close.
+
+  4. **Don't act in the dispatch session.** The audit's job is
+     surface, not act. Findings get reviewed in the next hygiene
+     session. This separation keeps the substantive-work session
+     focused.
+
+**Cadence relative to chapter-close ritual:**
+
+  | Practice | When | Job |
+  |---|---|---|
+  | **Chapter-mid-audit** (this entry) | At intervals during multi-session chapters | Surface mid-flight propagation drift; categorize findings; land them in the in-flight close scaffold |
+  | **Chapter-close ritual** (`DECISIONS 2026-05-14`) | At chapter close | Execute seven load-bearing items; produce the chapter's CHAPTER_N_CLOSE synthesis |
+
+The two are **complementary**, not redundant. Mid-audit catches drift
+before it compounds; close ritual integrates the accumulated material
+into the formal close synthesis.
+
+**The session-22 worked example** sets the dispatch pattern. The
+subagent walked seven document pairs (DECISIONS↔AXIOMS,
+DECISIONS↔ADMIRE, DECISIONS↔CHAPTER_CLOSE, ADMIRE↔source code,
+CLAUDE.md↔DECISIONS, CLAUDE.md↔source code, README↔all of the above);
+findings categorized by criticality; output budgeted at 1500–2200
+words; "surface, not act" enforced. Future chapter-mid-audits follow
+the same shape with adjusted document pairs as new surfaces accumulate.
+
+**On the subagent dispatch's cost.** The session-22 dispatch hit a
+budget limit on its first attempt and required re-dispatch. The
+practice carries this cost: subagent runs are stateful with respect
+to the dispatching session's budget. When a re-dispatch is needed,
+the second attempt can use the same prompt unchanged. Future agents
+running this practice should expect occasional dispatch failures
+and treat them as routine rather than as evidence the practice is
+broken.
+
+**Reasoning / consequences.** The chapter-close ritual addressed
+chapter-boundary drift; chapter-mid-audit addresses chapter-mid-
+flight drift. Together they form a complete propagation-correction
+shape for multi-session chapters. The session-22 audit's value-prop
+was demonstrably real — without it, the OSSYS ADMIRE entry would
+have remained at "chapter-open scoping (session 17)" through chapter
+close, the README would have remained materially stale, and the
+chapter-2 close synthesis would have inherited substantial drift.
+The practice pays for itself; codifying it makes future chapters
+inherit the value.
+
+**Forward-looking:** subsequent multi-session chapters dispatch
+chapter-mid-audits at appropriate intervals (typically every 3–5
+substantive sessions, or when a session's substantive work feels
+like it's accumulated enough to warrant the check). Sessions 24
+and 25 of chapter 2 will dispatch their own audits per the
+session-23 runway plan.
+
+#### 2026-05-20 (session 24 amendment) — Active deferrals scan is a required dispatch dimension
+
+The session-23 chapter-mid-audit (subagent #2; the second audit
+under this practice) surfaced 1 CRITICAL finding — the DacFx /
+DacpacEmitter trigger had fired silently across sessions 18–22 —
+plus a cross-cutting observation: **propagation gaps cluster into
+two phenomena, only one of which the chapter-mid-audit dispatch
+shape explicitly covered.**
+
+Phenomenon A: pointer drift between substantive DECISIONS entries
+and the index documents that should reflect them (CLAUDE.md
+operating-disciplines table; CHAPTER_N_CLOSE.md scaffolds; README;
+ADMIRE entry status). Session-22 audit subagent #1 surfaced this
+class; session-23 hygiene addressed it.
+
+Phenomenon B: trigger-fire drift in the Active deferrals index.
+Substantive work satisfies a deferral's structural condition
+without the agent shipping the work scanning the index for fired
+triggers. Subagent #2 surfaced one CRITICAL instance (DacFx) and
+named it as the more expensive class — pointer drift means
+documents say slightly stale things; trigger drift means *actual
+work that should have begun didn't begin*. The cost difference
+is structural.
+
+**The session-22 dispatch did not include "scan the Active
+deferrals index for silent firings" as an explicit document pair.**
+The audit walked seven document pairs (DECISIONS↔AXIOMS,
+DECISIONS↔ADMIRE, etc.) but the Active deferrals index sits as a
+section *within* DECISIONS, and "deferral status conditions vs.
+substantive work shipped this chapter" was not a named dimension.
+Subagent #2 found the DacFx fire only because its prompt was
+explicit about the Active deferrals index as a dimension; without
+that explicit framing, mid-audits would catch pointer drift but
+miss the more expensive class.
+
+**Decision: Active deferrals scan is a required dimension on every
+chapter-mid-audit dispatch.** The dispatch pattern's four steps
+(brief, run-in-parallel, categorize, don't-act) extend to a fifth
+explicit dimension on the briefing:
+
+  5. **Walk the Active deferrals index against the chapter's
+     substantive work.** For each row, evaluate whether the
+     trigger condition has been satisfied by work landed in the
+     chapter (or earlier work the previous audits did not catch).
+     Categorize fires as CRITICAL (the audit-during-validation
+     discipline expects a cash-out before further substantive
+     work). The dispatch prompt explicitly names this as a
+     required dimension, not an emergent one.
+
+This is the discipline operating on itself: the audit just ran,
+surfaced the structural gap in its own dispatch shape, and the
+discipline absorbs the refinement before its next operation.
+
+**Worked example for the next dispatch.** The session-25 chapter
+close (planned dispatch of subagents #4 and #5) and any session-24
+subagent #3 dispatch include the Active deferrals scan as an
+explicit dimension. The session-22 dispatch's seven document pairs
+become eight, with the eighth being "Active deferrals index ↔
+substantive work shipped this chapter."
+
+**Why the refinement lands now and not at chapter close.** The
+chapter-mid-audit codification is fresh (session 23). Refining it
+while the next dispatch is still ahead keeps the discipline
+coherent before it operates again — the session-23 codification
+establishes the practice; the session-24 amendment closes the
+structural gap the practice's own first operation surfaced. Same
+shape as the strategy-layer codification's refinements landing
+during validation rather than after (see
+`DECISIONS 2026-05-09 — Audits surface things not on the agenda`).
+
+## 2026-05-19 — Trace-before-fixture pattern at slice level (codified at N=3)
+
+**Status:** decided (operating discipline; codifies the pattern at N=3 with consistent shape)
+**Context:** Sessions 20, 21, and 22 each dispatched a V1 metadata
+trace before writing the slice's failing differential test. Three
+instances; same shape; same value-add. The pattern is sufficiently
+demonstrated to earn codification per the chapter's two-consumer
+threshold for emergent disciplines.
+
+The pattern's shape:
+
+  1. **Trace V1's actual handling first** — read V1's SQL extraction
+     script and JSON projection logic for the field/feature about to
+     be tested. Identify what V1 carries through to JSON vs what V1
+     strips at the projection layer.
+  2. **Classify the finding** — into either the JSON-projection-
+     lossiness class (information stripped at the JSON layer; V2
+     bound by input path) or the V2-boundary-discipline class
+     (information visible to V2; V2's IR scope is what's chosen).
+     The two-classes distinction (`DECISIONS 2026-05-15 — OSSYS
+     adapter translation rules`, session-22 documentation hygiene)
+     names the two paths.
+  3. **Then write the failing test** — fixture and expected V2
+     Catalog hand-built in light of the classification. The
+     classification informs the resolution shape: lossiness-class
+     findings get bounded-by-input-path placeholders; boundary-
+     discipline-class findings get IR-scope-choice rules.
+  4. **Implement under empirical pressure** — minimum to make the
+     test pass; document the won't-carry-forward extensions.
+  5. **Record translation rules** — DECISIONS amendment captures
+     the rules surfaced under empirical pressure plus the
+     classification.
+
+**Empirical record (the three instances):**
+
+  | Session | Slice | Trace finding | Class |
+  |---|---|---|---|
+  | 20 | External-entity | `EspaceKind` encodes IS-vs-Direct at espace/rowset level; stripped at JSON projection | Lossiness |
+  | 21 | Mixed-active | `IsActive` flags carried through to JSON at three levels (module / entity / attribute); V1 also has SQL pre-filter parameters | Boundary-discipline |
+  | 22 | Index-bearing | `indexes[]` JSON has rich shape (storage attrs, structural fields, columns array); all visible to V2 | Boundary-discipline |
+
+In each case, the trace identified the resolution shape **before**
+implementation began. The session-20 trace was particularly
+load-bearing — without it, the implementation would have plausibly
+made the wrong assumption (synthesize Origin from `isExternal`
+boolean alone, treating it as if V1's full information were
+present). The trace surfaced that V1 had richer information at the
+rowset level that the JSON projection had stripped — placing the
+question in the lossiness class with a known canonical resolution
+(`SnapshotRowsets`). The implementation could then land a
+placeholder rule with bound documented, rather than overclaim
+distinction.
+
+**Decision:** **The trace-before-fixture pattern is codified.** When
+the OSSYS adapter chapter (or any future chapter doing V1↔V2
+translation work) writes a new slice, the trace happens first; the
+classification informs the test shape; the implementation lands
+under empirical pressure with the won't-carry-forward list growing
+to absorb V1 fields the V2 IR doesn't model.
+
+**Relation to admire-mode (`HANDOFF.md` "What's load-bearing").**
+The pattern is **slice-level admire-mode**, distinct from
+chapter-level admire-mode. Chapter-level admire happens once at
+chapter open (per the OSSYS ADMIRE chapter scope from session 17);
+slice-level admire happens per fixture as new V1 fields surface.
+Both honor the broader admire-mode discipline (read V1 first,
+identify what V2 will carry forward, name what V2 won't carry
+forward); the slice-level form applies the same shape at a smaller
+scope.
+
+The two operate at different cadences:
+
+  | Admire-mode level | When | Output |
+  |---|---|---|
+  | **Chapter level** | At chapter open | ADMIRE chapter scope document; carry-forward set; won't-carry-forward set; structural-difference list |
+  | **Slice level** (this entry) | Per fixture during the chapter | Class classification (lossiness vs boundary-discipline); rules informed by classification; won't-carry-forward extensions |
+
+The hierarchy is real: slice-level admire surfaces specific findings
+that the chapter-level admire's structural-difference list named at
+the right level of abstraction. Session 21's `Is_Active` trace
+confirmed the chapter-level note about activity flags; session 20's
+`EspaceKind` trace surfaced a specific case the chapter-level
+"V1↔V2 vocabulary mapping" hadn't fully traced.
+
+**Why codify now (N=3 with consistent shape).** The pattern's
+two-consumer threshold cleared at session 21 (instances 20, 21);
+session 22 was the third instance with the same shape. Per the
+emergent-primitives discipline (`DECISIONS 2026-05-13`), the
+threshold is N=2 for codification; this codification at N=3 is
+slightly conservative but pairs naturally with the broader
+chapter-mid-audit codification landing in this session.
+
+**Forward signals.** Subsequent slices in the OSSYS chapter (and
+any future V1↔V2 chapters) operate the pattern explicitly. Static-
+entity slice (session 24) dispatches a trace of V1's static
+populations handling first; cross-module FK slice (deferred to
+fresh context) dispatches a trace of V1's cross-module FK encoding
+first. Each trace classifies before the fixture lands.
+
+**Reasoning / consequences.** The trace-before-fixture pattern is
+a small but real discipline that has paid rent across three
+substantive slices. Codifying it makes the pattern explicit to
+future agents who would otherwise either re-derive it (and likely
+get it right; the pattern is structurally natural) or skip it (and
+risk wrong-class assumptions like the speculative-Origin case from
+session 18). The codification is a checked-implicit-pattern;
+operating it is a small per-slice discipline that compounds into
+correct class classification across the chapter's running rules.
+
+## 2026-05-21 — Chapter 2 close: alternative-IR-surface class (third translation-finding class)
+
+**Status:** decided (operating discipline; chapter-2 close
+codification — completes the V1↔V2 translation-finding typology)
+**Context:** Session 25's chapter-close audit (subagent #3 — OSSYS
+chapter completeness) surfaced a third class of V1↔V2 translation
+finding that the chapter has been operating implicitly without
+naming. The two-class typology (`DECISIONS 2026-05-19 — naming the
+two classes of resolution patterns explicitly`, session 22
+documentation hygiene) covered:
+
+  1. **JSON-projection-lossiness class** — V2 cannot see X
+     because V1's JSON projection strips it; resolved via input-
+     path expansion (`SnapshotRowsets`).
+  2. **V2-boundary-discipline class** — V2 sees X but has no
+     axis; resolved via V2's own architectural choice (filter,
+     carry through, refine IR with new variant).
+
+Subagent #3's `onDisk` finding (the eleven-field per-attribute
+envelope V1 emits and V2 silently drops) does not fit either
+class cleanly: V2 *does* see `onDisk` (it's in the JSON), so it's
+not lossiness; V2's IR has no axis for `onDisk` *as such*, so it
+looks boundary-discipline; but V2 *does* have a parallel
+structure (Profile) that is the natural home for the same
+information. The "no axis" framing of the boundary-discipline
+class doesn't capture the third option — *route to alternative
+surface*.
+
+**Decision: the typology is three classes, not two.** The third
+class is named explicitly here.
+
+  3. **Alternative-IR-surface class.** V2 sees X through the
+     current input; V2's primary IR (Catalog) has no axis for it;
+     **but V2 has a parallel structure (Profile, Diagnostics, or
+     a future surface) that is the natural home for the same
+     information class.** Resolution: **route to the alternative
+     surface**; possibly identify the alternative as canonical,
+     making V1 input redundant (when a parallel V2 chain produces
+     the same evidence at a different temporal point).
+
+**Currently-known members:**
+
+  - **V1 `deleteRuleCode: "Ignore"` → V2 `OnDelete: NoAction` +
+    Diagnostics emission** (session 19; rule 13). V1's "Ignore"
+    encodes the audit-trail concern "we tolerated a missing delete-
+    rule." V2's `ReferenceAction` DU has no `Ignore` variant; the
+    `NoAction` collapse is structural. The audit-trail concern
+    routes to V2's Diagnostics writer (the alternative surface),
+    where structured-rationale emission preserves V1's audit
+    intent without polluting Catalog's structural typing.
+  - **V1 `attributes[].onDisk` envelope → silently dropped by
+    OSSYS adapter; routes to V2's Profile (or read-side-adapter
+    output) when read-side adapter chapter materializes** (session
+    25 commit 1; ADMIRE entry's won't-carry-forward addition).
+    The eleven physical-reality fields (`sqlType`, `maxLength`,
+    `collation`, `isIdentity`, `isComputed`, `computedDefinition`,
+    `defaultDefinition`, `defaultConstraint`, `checkConstraints`,
+    plus more) are V1's snapshot of physical reality at extraction
+    time; V2's read-side adapter is V2's read at deployment-
+    validation time. Parallel sources of the same information
+    class. The read-side adapter is canonical for the canary use
+    case (it queries deployed reality directly); OSSYS `onDisk`
+    is *redundant* until the read-side chapter discovers a drift-
+    detection use case requiring both.
+
+**Two members empirically confirms the class** at the same N=2
+threshold the boundary-discipline class earned its naming at
+(session 22). The chapter has now produced the complete typology
+of V1↔V2 translation findings.
+
+**The three classes operationally:**
+
+| Class | Symptom | Resolution shape | Composability |
+|---|---|---|---|
+| **JSON-projection-lossiness** | V2 can't see X | Input-path expansion (e.g., `SnapshotRowsets`) | All members compose through one resolution |
+| **V2-boundary-discipline** | V2 sees X; V2 IR has no axis; choose | Filter-at-adapter, carry-through, or IR-refinement-under-demand | Members don't compose; each negotiates independently |
+| **Alternative-IR-surface** | V2 sees X; primary IR has no axis; parallel V2 surface is the natural home | Route to alternative surface (Profile, Diagnostics, future surface); possibly identify alternative as canonical | Each member routes independently; the routing target may make V1 input redundant |
+
+**The trace-before-fixture pattern extends to three-class
+classification.** Future slices apply the same trace-before-
+fixture discipline; the classification informs the resolution
+shape. A finding that initially looks boundary-discipline ("V2
+has no axis") gets re-evaluated against the alternative-IR-
+surface question ("does V2 have a parallel surface that's the
+natural home?") before resolution lands. The session-25 onDisk
+finding is the worked example: initial framing was "won't-carry
+under boundary-discipline shape"; trace and re-evaluation
+surfaced the read-side adapter as the alternative surface;
+resolution shape became "won't-carry-with-route-to-alternative-
+when-that-chapter-lands."
+
+**Why naming this class matters operationally.**
+
+The alternative-IR-surface class has different *coupling
+characteristics* from the other two:
+
+  - **Couples chapters across V2's surfaces.** `onDisk`'s
+    resolution depends on the read-side adapter chapter; the
+    DeleteRule-Ignore resolution depended on the Diagnostics
+    writer chapter. The class is structurally cross-chapter,
+    where the other two classes are structurally within-chapter
+    (lossiness resolves through one input-path-expansion chapter;
+    boundary-discipline resolves through one IR-refinement-or-
+    boundary-choice chapter).
+  - **Re-evaluates V1 input as potentially redundant.** When the
+    alternative V2 surface is canonical (read-side adapter for
+    `onDisk`), the V1 input is not just "not-carried" but
+    "redundant-with-canonical-V2-source." This is a different
+    disposition from "V2 has no axis"; it carries a different
+    re-open trigger ("does the alternative surface need
+    cross-validation against V1's source?" rather than "does
+    consumer demand surface a need for the IR axis?").
+
+**Forward-looking.** Subsequent V1↔V2 translation chapters (and
+chapters bridging V2 to anything else, which the codebase will
+accumulate as DACPAC, OData, etc. adapters land per A18 and A21)
+inherit the three-class framework. The class typology is now
+complete enough to operate as a checked surface during chapter-
+open scoping, slice-level trace-before-fixture, and chapter-
+close ritual. The chapter-2 work has produced the typology; the
+chapter-3+ work operates it.
+
+**Reasoning / consequences.** Naming the third class makes the
+chapter's complete typology explicit. Future chapters dealing
+with V1↔V2 translation (or V2 to anything else) inherit the
+three-class framework: input lossiness, boundary discipline,
+alternative-surface routing. The trace-before-fixture pattern
+extends to three-class classification at N=3 (already at N=3
+on classification practice from session 22; the class extension
+landing here is consistent with the existing operating-
+discipline shape). The chapter-2 close has produced one of its
+most consequential intellectual artifacts: a complete typology
+for V1↔V2 translation findings that future chapters operate.
+
+## 2026-05-21 — Chapter 2 close: OPEN-question resolutions
+
+**Status:** decided (chapter-2 close — resolves the OPEN questions
+from the chapter-mid-audits at sessions 22, 23, and 25)
+**Context:** The chapter-mid-audits (subagents #1, #2, #3)
+surfaced OPEN questions throughout the chapter. Per the
+chapter-mid-audit discipline, OPEN questions warrant explicit
+decision-or-defer at chapter close. This entry resolves them
+together so the chapter-3 handoff inherits a clean slate of
+decisions rather than a backlog.
+
+### From subagent #2 (session 23)
+
+**Subagent #2 O1 — Adapter-boundary deferrals scope in the
+Active deferrals index.** Sessions 18–22 produced 10+
+adapter-translation deferrals with explicit re-open triggers
+(auto-number axis; cross-module FK; `IsExternalEntity` Origin
+three-way; `Modality.Inactive` carry-through; filter-definition
+indexes; `physical_isPresentButInactive`; etc.). The index's
+scope statement admits architectural IR refinements but is
+silent on adapter-boundary deferrals.
+
+**Resolution: yes, expand the index's scope to include adapter-
+boundary deferrals that have explicit re-open triggers and
+architectural significance.** Cross-catalog FK is already in the
+index; cross-module FK is structurally adjacent. Subagent #2
+flagged `SnapshotRowsets` and `LiveOssysConnection` as deferrals
+with explicit re-open triggers; both are now in the index
+(session 25 commit 4). The OSSYS-translation-rule deferrals
+that don't rise to architectural IR refinement (e.g., specific
+field translation rules that defer until a fixture surfaces
+them — like `physical_isPresentButInactive`) stay in the
+DECISIONS amendments to the OSSYS translation-rules entry where
+they're already discoverable from rule context. The
+distinction: architectural IR refinements (DU expansions; new
+adapter variants; new IR axes) belong in the index;
+field-specific rules belong in the rules amendments.
+
+The index's scope statement is updated implicitly by the new
+rows added at session 25 commit 4; no scope-statement rewrite
+needed because the new rows demonstrate the broader scope
+empirically.
+
+**Subagent #2 O2 — Chapter-level scope deferrals discipline-
+table entry.** The OSSYS strategic-frame entry
+(`DECISIONS.md:4032`) codifies a chapter-open pattern that
+other future chapters (Pipeline canary; SnapshotRowsets) are
+explicitly named as inheriting from. Should it earn a
+discipline-table entry?
+
+**Resolution: yes.** The pattern is structurally a discipline —
+"do strategic-frame axis naming at chapter open" — and it is
+demonstrably reusable (the framework extension amendment
+explicitly applies to multi-session chapters generally). A row
+gets added at this commit (see CLAUDE.md update below).
+
+**Subagent #2 O3 — Trace-before-fixture pointer suffix drift.**
+Row at `CLAUDE.md` cites `DECISIONS 2026-05-19 — Trace-before-
+fixture pattern at slice level (session 23)`. The DECISIONS
+entry header reads `(codified at N=3)`. Suffix-convention
+inconsistency.
+
+**Resolution: small fix at session 25 commit 2 (row already
+updated to `(session 23; codified at N=3)`).** No structural
+issue; the inconsistency was readable, the cleanup is just
+hygiene.
+
+### From subagent #3 (session 25)
+
+**Subagent #3 O1 — Rule 21 ambiguity for `isPrimary: true,
+isUnique: false`.** V1's domain disallows the combination at
+SQL level, but V2's `Index` DU at `Catalog.fs:159-164` makes
+both bools independent. The adapter does not validate the
+combination; a malformed input would produce a structurally-
+incoherent V2 `Index`.
+
+**Resolution: stay literal at the adapter; document the bound
+explicitly here.** Rule 21 says `Index.IsPrimaryKey = isPrimary`
+(direct); rule 20 says `Index.IsUnique = isUnique` (direct).
+Both are coordinate maps. The combination `isPrimary: true,
+isUnique: false` is not constructible from V1 SQL (V1's domain
+enforces uniqueness on PK structurally); if it appeared in V1's
+JSON output, it would be an upstream V1 bug rather than a V2
+adapter responsibility. V2's adapter-boundary discipline is
+"reflect what V1 says"; **upstream-coherence enforcement is
+not the adapter's responsibility**. Future fixtures may force
+re-evaluation if a V1 bug surfaces with this shape; until then,
+the literal mapping is correct. The smallest honest-now choice
+matches the existing rule wording.
+
+**Subagent #3 O2 — `module.isActive: false` adapter behavior.**
+The adapter's behavior on `module.isActive: false` is silent
+(no filter, no error). Rule 18 deferred the question explicitly.
+
+**Resolution: filter at adapter, consistent with rule 18's
+inactive-records handling.** When V1 emits `module.isActive:
+false`, the OSSYS adapter drops the entire module (and all its
+entities). Same disposition as inactive entities and inactive
+attributes. The won't-carry-forward list (session 25 commit 6)
+names this; rule 18 extends to the module level. **Status:
+codified here; implementation lands in chapter 3 if a fixture
+surfaces a `module.isActive: false` case** — until then, the
+rule is documented but no V1 fixture exercises the path. The
+chapter-mid-audit will catch if a future fixture surfaces the
+case before the implementation extends.
+
+**Subagent #3 O3 — `attributes[].onDisk` Profile routing.**
+Should the OSSYS adapter route `onDisk` to V2's Profile rather
+than silently drop?
+
+**Resolution: addressed at session 25 commit 1 + commit 2.** The
+disposition is "silently dropped at OSSYS; routes to read-side
+adapter when that chapter materializes." If the read-side
+adapter chapter discovers a drift-detection use case requiring
+both V1's recorded reality and deployed reality as separate
+sources, the OSSYS adapter routes onDisk to Profile alongside
+the read-side adapter's emission. **Re-open trigger sits in the
+read-side adapter chapter, not in OSSYS chapter 2's close.**
+
+**Subagent #3 O4 — Won't-carry-forward list as Active-deferrals-
+shaped surface.** The won't-carry-forward list grew over six
+slices and at chapter-2 close still had gaps. Should it have
+the same audit discipline as the Active deferrals index?
+
+**Resolution: defer with rationale.** The V1-input-envelope walk
+discipline added as chapter-close ritual item 8 (session 25
+commit 3) addresses the gap structurally — the won't-carry-
+forward list is audited at chapter close against the V1
+envelope projection code field-by-field. The Active deferrals
+index pattern (re-open triggers; structural conditions) does
+not map cleanly onto won't-carry-forward members (which are
+choices about what V2's IR doesn't carry, not deferrals
+awaiting structural conditions). The two surfaces are
+complementary, not duplicative; the V1-envelope-walk discipline
+is the correct integration point. If the won't-carry-forward
+list grows beyond what the chapter-close walk catches, the
+question re-opens.
+
+**Subagent #3 O5 — Cross-module FK chapter-3 handoff.** The
+chapter-2 close handoff names cross-module FK as "highest-
+priority deferred slice" but the scaffold doesn't carry V1's
+`relationships[]` detail.
+
+**Resolution: defer to handoff document.** Session 25 commit 10
+(handoff document) carries the V1 `relationships[]` shape and
+the rule-14-may-not-hold-cross-module warning explicitly.
+
+**Subagent #3 O6 — `SnapshotRowsets` handoff lossiness-class
+framing.** The chapter-2 work has earned the canonical-
+resolution-as-class framing; the handoff should preserve it.
+
+**Resolution: defer to handoff document.** Session 25 commit 10
+preserves the framing; subagent #5 pre-scope (session 25 commit
+9) extends it.
+
+**Subagent #3 O7 — DacpacEmitter as canary's second
+deliverable.** Subagent #2's CRITICAL was cashed out at session
+24 commit 1. The chapter-3 handoff should make the sequencing
+explicit: "DacpacEmitter is the second deliverable in canary,
+after the read-side adapter integration."
+
+**Resolution: confirmed in handoff document.** Session 25
+commit 10 carries the explicit sequencing.
+
+### Why these resolutions land at chapter close together
+
+The chapter-mid-audit discipline (`DECISIONS 2026-05-19`, session
+23 + session 24 amendment) names "OPEN warrants discussion;
+defer to chapter close" as one of three category dispositions.
+Chapter close is the right venue: the audit dispatch session
+focused on substantive work; the chapter close synthesizes.
+Bundling them in one entry preserves the chapter-mid-audit's
+discipline ("don't act in dispatch session; review at next
+hygiene") while producing concrete decisions before chapter 3
+opens.
+
+**Reasoning / consequences.** Chapter 3 opens with a clean
+backlog: every OPEN question from the three chapter-mid-audits
+has either landed as a decision (codified, implementation
+deferred to a chapter that will do the work) or as an explicit
+defer with rationale (re-open trigger named, re-evaluation venue
+named). The chapter-3 agent inherits decisions, not unfinished
+arguments.

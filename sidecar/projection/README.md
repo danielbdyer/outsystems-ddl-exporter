@@ -10,7 +10,7 @@ present or absent, and every commit here is cherry-pick safe.
 ## What this is
 
 A faithful implementation of the algebra described in `AXIOMS.md`. A
-catalog of identity-keyed kinds, lensed by a three-axis policy and
+catalog of identity-keyed kinds, lensed by a four-axis policy and
 informed by empirical profile evidence, runs through a factored functor
 (`Project = Π ∘ E`) to produce immutable content-addressed snapshots whose
 construction makes determinism, lineage, modular composition, refactor
@@ -18,31 +18,104 @@ safety, and cross-projection consistency constitutive properties of the
 system rather than external disciplines.
 
 The pure core has no I/O, no mutation, and no dependence on time. All
-effects live at the boundary, in C# adapters that produce F# value types
-the core consumes. The two-language partition is the algebra/I-O seam.
+effects live at the boundary, in **F# adapters** (the language partition
+was relocated by `DECISIONS 2026-05-09`; the original "F# core / C# shell"
+framing has been superseded). Adapters return F# value types the core
+consumes. The two-language partition is no longer the algebra/I-O seam;
+the seam is structural — `Projection.Core` has zero I/O, adapters do.
 
 ## Layout
 
+The current layout (chapter 2 in flight; OSSYS adapter implementation
+arc — sessions 17–22+):
+
     sidecar/projection/
-      README.md            - this file
-      AXIOMS.md            - the formal system + V2 amendments, axiom-numbered
-      DECISIONS.md         - append-only log of resolved questions
-      ADMIRE.md            - append-only log of V1 admirations and V2 placements
-      global.json          - SDK pin (mirrors trunk: 9.0.305, rollForward: disable)
-      .editorconfig        - F#-aware formatting scoped to this folder
-      Projection.sln       - V2's own solution; not added to trunk sln
-      src/
-        Projection.Core/                  - F#: IR, passes, projector, lineage
-      tests/
-        Projection.Tests/                 - F#: property and unit tests
+      README.md              - this file
+      CLAUDE.md              - first-read pointer for fresh agents
+      HANDOFF.md             - bridge letter to the next-chapter agent
+      CHAPTER_1_CLOSE.md     - chapter 1 audit synthesis (sessions 1-12)
+      CHAPTER_2_CLOSE.md     - chapter 2 in-flight close scaffold (sessions 13+)
+      AXIOMS.md              - the formal system + V2 amendments, axiom-numbered
+      DECISIONS.md           - append-only log of resolved questions
+      ADMIRE.md              - append-only log of V1 admirations and V2 placements
+      global.json            - SDK pin (mirrors trunk: 9.0.305, rollForward: disable)
+      .editorconfig          - F#-aware formatting scoped to this folder
+      Projection.sln         - V2's own solution; not added to trunk sln
 
-Targets and adapters that follow in subsequent sessions:
+      src/Projection.Core/                  - F#: IR, passes, projector, lineage, diagnostics
+        Catalog.fs, Identity.fs, Lineage.fs, Diagnostics.fs,
+        Policy.fs, Profile.fs, Result.fs, TopologicalOrder.fs
+        Passes/                             - registered-intervention + structural passes
+          CanonicalizeIdentity, NamingMorphism, NormalizeStaticPopulations,
+          SymmetricClosure, TopologicalOrderPass, VisibilityMask,
+          NullabilityPass, UniqueIndexPass, ForeignKeyPass,
+          CategoricalUniquenessPass
+        Strategies/                         - domain decision logic; algebra/domain split
+          CycleResolution, NullabilityRules, UniqueIndexRules,
+          ForeignKeyRules, CategoricalUniquenessRules, Composition
 
-      src/Projection.Targets.SSDT/        - F#: Π_SSDT (raw text first, DacFx later)
-      src/Projection.Targets.Json/        - F#: Π_Json (sibling-functor proof)
-      src/Projection.Adapters.Sql/        - C#: SQL Server boundary; OSSYS/OSUSR
-      src/Projection.Adapters.Files/      - C#: file system; snapshot store
-      src/Projection.Host.Cli/            - C#: imperative shell; orchestrator
+      src/Projection.Targets.SSDT/          - F#: Π_SSDT (RawTextEmitter; DacpacEmitter deferred)
+      src/Projection.Targets.Json/          - F#: Π_Json (sibling-functor proof)
+      src/Projection.Targets.Distributions/ - F#: Π_Distributions (rich-profile diagnostic)
+
+      src/Projection.Adapters.Sql/          - F#: SQL Server boundary (Static cell coercion;
+                                              ProfileSnapshot; ProfileStatistics)
+      src/Projection.Adapters.Osm/          - F#: OutSystems metadata boundary
+                                              (CatalogReader; SnapshotSource closed DU
+                                              with planned SnapshotRowsets variant)
+
+      tests/Projection.Tests/               - F#: property, unit, differential, end-to-end
+
+Slots reserved for future sessions (not yet built):
+
+      src/Projection.Pipeline/              - C#: canary orchestration (DacFx, testcontainers,
+                                              ephemeral SQL Server). Strategic-frame axis per
+                                              `DECISIONS 2026-05-15 — Strategic frame`.
+      src/Projection.Adapters.Sql.ReadSide/ - F#: SQL-Server-back read-side adapter (canary
+                                              read-back + optional production observation).
+                                              Strategic-frame axis.
+      src/Projection.Adapters.Files/        - C#: file system; snapshot store
+      src/Projection.Host.Cli/              - C#: imperative shell; orchestrator
+      src/Projection.Targets.SSDT.DacpacEmitter/ - F#: real CREATE TABLE / DacFx
+      src/Projection.Targets.Faker/         - F#: synthetic-data Π consuming Profile
+
+Plus the planned **`SnapshotRowsets` variant** of `SnapshotSource` in
+`Projection.Adapters.Osm.CatalogReader` — operator-decided canonical
+resolution to V1's JSON-projection lossiness class
+(`DECISIONS 2026-05-15 — OSSYS adapter translation rules`, session-20
+amendment). Lands when chapter 2's organic flow brings it.
+
+## What's already shipped (built primitives)
+
+The chapter-1 close (sessions 1–12) plus chapter 2's substantive work
+to date have built:
+
+- **The algebraic core** — `Catalog`, `Profile`, `Policy` (four-axis),
+  `SsKey` identity, the IR pass framework, `Lineage<'a>`.
+- **The Diagnostics writer** (`Projection.Core/Diagnostics.fs`,
+  session 14 commit 3) — single-channel writer parallel to Lineage.
+  `Lineage<Diagnostics<'a>>` dual-writer composition for passes that
+  produce decisions plus observer-relevant findings. The codification
+  reached its stability mark at session 16 (heterogeneous third test
+  via ForeignKey activation).
+- **The strategy-layer codification** at its stability mark (session
+  11) — Nullability, UniqueIndex, ForeignKey, CategoricalUniqueness
+  all under the codified pattern.
+- **Three sibling Π emitters** (SSDT raw text; JSON; Distributions)
+  honoring A18 amended.
+- **Three boundary adapters** — `Static.fs`, `ProfileSnapshot.fs`,
+  `ProfileStatistics.fs` under `Projection.Adapters.Sql`; the OSSYS
+  catalog reader under `Projection.Adapters.Osm` (in flight).
+
+The two un-built primitives now gating substantive forward work:
+
+  - **The OSSYS adapter's `SnapshotRowsets` variant** — operator-
+    decided; lands when sequencing brings it. Resolves the
+    JSON-projection-lossiness class (SsKey, EspaceKind,
+    isSystemEntity).
+  - **The pipeline canary** (`Projection.Pipeline` C# project) —
+    strategic-frame axis. Self-validates artifacts against
+    ephemeral docker SQL Server before publication.
 
 ## Three substantive inputs and one temporal dimension
 
@@ -51,11 +124,20 @@ substantive inputs:
 
 - **Catalog** is structural truth — what kinds exist. Changes when schema
   changes. Sourced from a Catalog Reader at the boundary (V1's
-  `OsmModel`).
-- **Policy** is operator intent — three orthogonal axes (Selection,
-  Emission, Insertion). Changes when humans decide.
+  `OsmModel`). The OSSYS catalog adapter
+  (`src/Projection.Adapters.Osm/CatalogReader.fs`) consumes V1's
+  `osm_model.json` shape via the `SnapshotJson` variant of
+  `SnapshotSource`; the canonical `SnapshotRowsets` variant
+  (operator-decided) lands when sequencing brings it. Original
+  chapter-2 backlog framing in `CHAPTER_1_CLOSE.md §2.10` and
+  `§4 priority 7`.
+- **Policy** is operator intent — **four** orthogonal axes (Selection,
+  Emission, Insertion, **Tightening**). Tightening was added per
+  `DECISIONS 2026-05-09 — A12 amended again` when the NullabilityEvaluator
+  admire surfaced the need. Changes when humans decide.
 - **Profile** is empirical evidence — what the data actually shows. Used
-  by tightening passes (nullability, FK enforcement). May be empty for
+  by tightening passes (nullability, FK enforcement, uniqueness inference)
+  and by emitters that surface evidence (Distributions). May be empty for
   use cases that need no evidence.
 
 Plus one temporal dimension:
@@ -63,10 +145,67 @@ Plus one temporal dimension:
 - **Lifecycle** is time — the partial order under which all three evolve.
 
 `Project : (Catalog, Policy, Profile) → Surface`. `E : (Catalog, Policy,
-Profile) → EnrichedCatalog`. `Π : EnrichedCatalog → Surface`.
+Profile) → EnrichedCatalog`. `Π : EnrichedCatalog → Surface`, where each
+`Π` consumes whichever subset of `Catalog × Profile` it needs but never
+`Policy` (the load-bearing `A18 amended`, `DECISIONS 2026-05-12`). Three
+sibling Π's are operational today: SSDT (`Catalog -> string`), JSON
+(`Catalog -> string`), Distributions (`Catalog -> Profile -> string`).
 
 See `AXIOMS.md` for the full system, the V2 amendments, and the new
-axioms.
+axioms (A32–A34, T11). Read top-to-bottom; A18's amendment lives at the
+bottom of the file and is the load-bearing form.
+
+## The strategy layer
+
+Domain decision logic lives in `Projection.Core/Strategies/` as a named
+architectural concern adjacent to the algebraic core (`DECISIONS
+2026-05-11 — Strategy layer: a named architectural vector`). The
+codification reached its stability mark at session 11 (`DECISIONS
+2026-05-13 — Strategy-layer codification reaches stability mark`), having
+absorbed three real instances (Nullability, UniqueIndex/ForeignKey,
+CategoricalUniqueness) under a coherent shape (per-record decisions keyed
+by a single SsKey).
+
+Canonical shape of a strategy module:
+
+1. Pure functions of IR fields; no I/O, no mutable state.
+2. A typed function-type alias is the seam:
+   `StrategyEvaluator<'context, 'config, 'decision> =
+      string -> 'config -> 'context -> Profile -> 'decision`
+   (`DECISIONS 2026-05-13 — Generic StrategyEvaluator alias cash-out`).
+3. Structured rationale DUs cover the decision space exhaustively.
+   Continuous evidence is absorbed by adding variants at meaningful
+   inflection points, not by carrying parametric confidence values
+   (`DECISIONS 2026-05-13 — Discrete-rationale DUs`).
+4. Lineage events fire only on actual decisions; total decisions with
+   named-skip variants in the outcome DU.
+5. Module name advertises the domain — `<Domain>Rules` suffix.
+
+Pass drivers in `Projection.Core/Passes/` delegate to
+`Composition.fanOut` when iterating registered interventions
+(`DECISIONS 2026-05-13 — Composition vocabulary cash-out`). Four other
+composition primitives (`fallback`, `accumulate`, `wrap`, `lift`) are
+codified-but-deferred until a second consumer arrives.
+
+## The rich-profiling vector
+
+`Profile` carries empirical evidence beyond simple null/orphan counts.
+Two `AttributeDistribution` variants are operational:
+
+- `Categorical of CategoricalDistribution` — value frequencies with
+  truncation as a first-class concern (`VocabularyTruncated` distinct
+  from `EvidenceMissing`).
+- `Numeric of NumericDistribution` — percentile bundle (Min, P25, P50,
+  P75, P95, P99, Max) using `decimal` as the canonical type for
+  continuous statistical evidence (`DECISIONS 2026-05-13 — Decimal is
+  the default`).
+
+Every distribution carries its invariants via smart constructors
+returning `Result<'a>` — the **structural-commitment-via-construction-
+validation** principle (`AXIOMS.md`, line 555+). Future evidence types
+follow the same template; Faker (synthetic-data Π) is deferred until at
+least a third evidence type lands or the limitations of two are
+explicitly accepted (`HANDOFF.md`, "What's deferred").
 
 ## V1 ↔ V2 vocabulary mapping
 
@@ -85,7 +224,7 @@ Reader's translation. The mapping:
 | `RelationshipModel` | `Reference`            | directional FK edge           |
 | `EntityName`        | wrapped in `SsKey`     | logical identity, not display |
 | `TableName`         | `PhysicalRealization`  | physical projection           |
-| `ProfileSnapshot`   | `Profile` (commit 2)   | empirical evidence            |
+| `ProfileSnapshot`   | `Profile`              | empirical evidence            |
 
 Identity in V2 is whatever survives V1's most aggressive refactoring. For
 OutSystems, that is the logical entity name (`EntityName`), not the
@@ -103,6 +242,9 @@ From inside `sidecar/projection/`:
 V2's solution is independent of the trunk's `OutSystemsModelToSql.sln`.
 Either solution builds standalone.
 
+Current baseline: 631 passed, 7 skipped (V2-divergence + reserved-but-
+unbuilt-feature stubs), 638 total (session 22).
+
 ## Conventions inherited from the trunk
 
 - .NET 9 SDK pinned to 9.0.305 (matches trunk `global.json`).
@@ -115,8 +257,8 @@ Either solution builds standalone.
 
 ## Conventions specific to V2
 
-- F# core has no I/O, no mutation, no time. C# adapters return F# value
-  types. The boundary is named, typed, and tested.
+- F# core has no I/O, no mutation, no time. F# adapters at the boundary
+  return F# value types. The boundary is named, typed, and tested.
 - Every transformation pass is a pure function `Catalog -> Lineage<Catalog>`
   (or `(Catalog, Policy, Profile) -> Lineage<Catalog>` when it consumes
   policy or profile evidence).
@@ -128,13 +270,35 @@ Either solution builds standalone.
 - Lineage (`Lineage<'a>`) is foundational provenance — constitutive,
   content-addressable, used for replay and refactor safety. A separate
   `Diagnostics<'a>` writer (single-channel for now, three-channel later
-  per the constitution) carries human-consumable telemetry.
+  per the constitution) carries human-consumable telemetry. Not yet
+  implemented; gating dependency for several V2 outputs.
+- Where V2 deliberately diverges from a V1 contract, the divergence
+  surfaces as a `Skip` test stub at the test-file level, not as
+  ADMIRE-prose commentary. `V1NullabilityParityTests.fs` is the canonical
+  pattern.
 
 ## Pointers
 
-- Read `AXIOMS.md` first, including the V2 Amendments at the bottom.
-  The code assumes the system.
-- `DECISIONS.md` records resolved questions (V1 sidecar mandate +
-  V2 mandate + per-question resolutions).
-- `ADMIRE.md` records V1 admirations and their V2 placements; the
-  bridge between V1's working knowledge and V2's pure architecture.
+For the next-chapter agent, read in this order:
+
+1. `CLAUDE.md` — first-read pointer. Reading order, operating-disciplines
+   table, programming-style center target, F# feature surface map.
+2. `HANDOFF.md` — bridge letter; short on purpose.
+3. `CHAPTER_1_CLOSE.md` — chapter-1 audit synthesis (sessions 1–12);
+   §4 ranks chapter-2 priorities, §5 carries the prior agent's
+   accumulated judgment.
+4. `CHAPTER_2_CLOSE.md` — chapter-2 in-flight close scaffold; accumulating
+   findings across sessions 13+ as the chapter progresses.
+5. `AXIOMS.md` — the formal system. A18's amendment at the bottom is the
+   load-bearing form; A1 carries the bounded-disposition forwarding
+   pointer to its DECISIONS amendments.
+6. `DECISIONS.md` — append-only resolution log. The most recent entries
+   cover the OSSYS adapter implementation chapter; older entries remain
+   in force unless explicitly superseded. An "Active deferrals" index
+   at the top tracks deferred decisions with their trigger conditions.
+7. `ADMIRE.md` — V1↔V2 bridge; one entry per V1 component admired and
+   placed in V2.
+
+This README is updated when the cumulative decisions warrant it (per
+the chapter-close ritual codified at `DECISIONS 2026-05-14`); it is
+not the source of truth for any specific question.

@@ -36,8 +36,27 @@ module ForeignKeyPass =
     /// - the lineage event detail format changes
     /// - the iteration order changes
     /// - the decision-collection semantics change
+    /// - the diagnostic-entry shape, code namespace, or message
+    ///   templates change (consumers grep on Code; bumping the
+    ///   version makes a behavior-preserving rename detectable)
+    ///
+    /// v1 — Lineage<ForeignKeyDecisionSet>; no diagnostic emission.
+    /// v2 — Lineage<Diagnostics<ForeignKeyDecisionSet>>; emits one
+    ///       Warning DiagnosticEntry per DoNotEnforce decision AND
+    ///       per EnforceConstraint(ScriptWithNoCheck(_)) decision
+    ///       (the success-with-caveat case where orphans were
+    ///       observed but the operator allowed NoCheck creation).
+    ///       Heterogeneous emission shape is the third real test of
+    ///       the writer's codification (DECISIONS 2026-05-13 — Pass
+    ///       return-type codification): the prior two consumers
+    ///       (UniqueIndex, Nullability) emitted only on
+    ///       failure-side variants of their outcome DUs;
+    ///       ForeignKey emits on both failure-side keep-reasons
+    ///       and one success-side caveat variant within a single
+    ///       pass. Whether the writer absorbs the heterogeneity
+    ///       cleanly is the substantive session-16 question.
     [<Literal>]
-    let version : int = 1
+    let version : int = 2
 
     [<Literal>]
     let private passName : string = "foreignKey"
@@ -82,21 +101,143 @@ module ForeignKeyPass =
             |> List.sortBy (fun r -> r.SsKey)
             |> List.map (fun r -> k, r))
 
+    /// Map a `ForeignKeyDecision` to an opportunity-style diagnostic
+    /// entry, or `None` if the decision is structurally clean (no
+    /// observer-relevant caveat).
+    ///
+    /// **Heterogeneous emission shape (the session-16 test).** Unlike
+    /// `UniqueIndexPass.opportunityEntry` and
+    /// `NullabilityPass.opportunityEntry`, which emit only on
+    /// failure-side variants (`DoNotEnforce` keep-reasons, with one
+    /// audit-worthy `KeepNullable(RelaxedUnderEvidence)`), ForeignKey
+    /// emits on both:
+    ///
+    ///   - **All `DoNotEnforce` keep-reasons** (mirroring the prior
+    ///     two consumers' shape). V1's `OpportunityBuilder` exists
+    ///     only for UniqueIndex; V2's keep-reason emission for
+    ///     ForeignKey is V2-growth — the audit chain gains reasons
+    ///     V1 lacked because V1 silently skipped (per session-8
+    ///     refinement 3, "Total decisions, named skips").
+    ///
+    ///   - **One success-with-caveat** —
+    ///     `EnforceConstraint(ScriptWithNoCheck(orphanCount))`. The
+    ///     constraint *is* created; the diagnostic notes that
+    ///     orphans were observed but tolerated under NoCheck. This
+    ///     is the heterogeneous variant: a successful decision that
+    ///     warrants observer attention.
+    ///
+    /// Code namespace: `tightening.foreignKey.<reason>`.
+    let private opportunityEntry (decision: ForeignKeyDecision) : DiagnosticEntry option =
+        let mkEntry severity code message =
+            { Source   = passName
+              Severity = severity
+              Code     = code
+              Message  = message
+              SsKey    = Some decision.ReferenceKey
+              Metadata =
+                  Map.ofList [
+                      "interventionId", decision.InterventionId
+                      "outcome",        sprintf "%A" decision.Outcome
+                  ] }
+
+        match decision.Outcome with
+        | ForeignKeyOutcome.EnforceConstraint DatabaseConstraintPresent ->
+            None
+        | ForeignKeyOutcome.EnforceConstraint (NoEvidenceObstacle _) ->
+            None
+        | ForeignKeyOutcome.EnforceConstraint (ScriptWithNoCheck orphanCount) ->
+            // Success-with-caveat: V2's NoCheck-mode workaround.
+            // V1's `(CreateConstraint=true, ScriptWithNoCheck=true)`
+            // collapses to this evidence variant; the audit-trail
+            // concern V1 surfaced via rationale strings is V2's
+            // diagnostic emission.
+            Some (mkEntry
+                    Warning
+                    "tightening.foreignKey.scriptWithNoCheck"
+                    (sprintf
+                        "Foreign-key constraint scripted with NOCHECK because %d orphan row(s) were observed and operator policy allows it. Row-validation is deferred; remediate orphan rows before re-enabling enforcement."
+                        orphanCount))
+        | ForeignKeyOutcome.DoNotEnforce PolicyDisabled ->
+            Some (mkEntry
+                    Warning
+                    "tightening.foreignKey.policyDisabled"
+                    "Foreign-key constraint was not created. Enable policy support before enforcement can proceed.")
+        | ForeignKeyOutcome.DoNotEnforce (DataHasOrphans orphanCount) ->
+            Some (mkEntry
+                    Warning
+                    "tightening.foreignKey.dataHasOrphans"
+                    (sprintf
+                        "Foreign-key constraint was not created. Profile observed %d orphan row(s); remediate the data or enable AllowNoCheckCreation before enforcement can proceed."
+                        orphanCount))
+        | ForeignKeyOutcome.DoNotEnforce CrossSchemaBlocked ->
+            Some (mkEntry
+                    Warning
+                    "tightening.foreignKey.crossSchemaBlocked"
+                    "Foreign-key constraint was not created. The reference crosses schema boundaries and AllowCrossSchema is disabled.")
+        | ForeignKeyOutcome.DoNotEnforce CrossCatalogBlocked ->
+            // Reserved DU variant; unreachable from V2 fixtures
+            // today (V2's IR has no Catalog field on Reference).
+            // Pattern-match completeness keeps the shape ready for
+            // the IR refinement (ADMIRE.md 2026-05-11).
+            Some (mkEntry
+                    Warning
+                    "tightening.foreignKey.crossCatalogBlocked"
+                    "Foreign-key constraint was not created. The reference crosses catalog boundaries and AllowCrossCatalog is disabled.")
+        | ForeignKeyOutcome.DoNotEnforce DeleteRuleIgnored ->
+            // Currently unreachable from V2 fixtures (V2's
+            // Reference.OnDelete DU has no Ignore variant; V1's
+            // "Ignore" maps to V2's NoAction semantically).
+            // Reserved-but-emit-when-reached so the audit chain is
+            // ready when the V2 catalog reader synthesizes a
+            // V1-equivalent representation. See session 13's Skip
+            // stub on this contract for the V1↔V2 mapping note.
+            Some (mkEntry
+                    Warning
+                    "tightening.foreignKey.deleteRuleIgnored"
+                    "Foreign-key constraint was not created. The reference's delete rule resolved to Ignore.")
+        | ForeignKeyOutcome.DoNotEnforce EvidenceMissing ->
+            Some (mkEntry
+                    Warning
+                    "tightening.foreignKey.evidenceMissing"
+                    "Foreign-key constraint was not created. Profile probe did not succeed reliably; collect evidence before enforcement can proceed.")
+        | ForeignKeyOutcome.DoNotEnforce MissingTarget ->
+            // V2's audit dividend (session-8 refinement 3): V1
+            // silently skipped references to missing targets; V2
+            // surfaces the absence explicitly.
+            Some (mkEntry
+                    Warning
+                    "tightening.foreignKey.missingTarget"
+                    "Foreign-key constraint was not created. The reference's target kind is absent from the catalog.")
+
     /// Run the ForeignKeyPass.
     ///
     /// **Observable identity on empty policy.** When no `ForeignKey`
     /// interventions are registered, the result is the empty decision
-    /// set with an empty trail. No work is done; no events are emitted;
-    /// the catalog is not consulted. V2's strict default holds for the
-    /// per-reference granularity exactly as it does for per-attribute
-    /// and per-index.
+    /// set with an empty trail and an empty diagnostic stream. No
+    /// work is done; no events are emitted; no diagnostics are
+    /// emitted; the catalog is not consulted. V2's strict default
+    /// holds for the per-reference granularity exactly as it does
+    /// for per-attribute and per-index.
     ///
-    /// **Decision composition.** When interventions are registered, the
-    /// pass emits one `ForeignKeyDecision` per (reference × intervention)
-    /// pair, plus one `Annotated` lineage event per decision.
-    /// Iteration order is deterministic: kinds by `SsKey`, references
-    /// by `SsKey`, interventions by registration order.
-    let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<ForeignKeyDecisionSet> =
+    /// **Decision composition.** When interventions are registered,
+    /// the pass emits one `ForeignKeyDecision` per (reference ×
+    /// intervention) pair, plus one `Annotated` lineage event per
+    /// decision, plus one `Warning` `DiagnosticEntry` per outcome
+    /// variant whose semantics warrant observer attention (every
+    /// `DoNotEnforce` keep-reason and the
+    /// `EnforceConstraint(ScriptWithNoCheck)` success-with-caveat
+    /// variant). Iteration order is deterministic: kinds by
+    /// `SsKey`, references by `SsKey`, interventions by
+    /// registration order. Diagnostic entries follow decision order
+    /// (chronological per A24-equivalent for the dual writer).
+    ///
+    /// **Pass return-type codification (`DECISIONS 2026-05-13`).**
+    /// `Lineage<Diagnostics<...>>` names the production: this pass
+    /// produces decisions plus observer-relevant diagnostics, and
+    /// the type signature names what the pass produces. Same shape
+    /// as `UniqueIndexPass.run` and `NullabilityPass.run`; this is
+    /// the codification's third real test.
+    let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<ForeignKeyDecisionSet>> =
         // ForeignKey's evaluate takes the catalog as an additional
         // input (cross-attribute reach for target-kind lookup, schema
         // comparison). The closure captures it from the enclosing
@@ -110,4 +251,18 @@ module ForeignKeyPass =
             WrapDecisions      = fun decisions -> { Decisions = decisions }
             BuildEvent         = decisionEvent
         }
-        Composition.fanOut fanOutConfig catalog policy profile
+        let lineage = Composition.fanOut fanOutConfig catalog policy profile
+        let entries = lineage.Value.Decisions |> List.choose opportunityEntry
+        { Value = { Value = lineage.Value; Entries = entries }
+          Trail = lineage.Trail }
+
+    /// Convenience accessor for tests and consumers that only care
+    /// about the decision set (not the diagnostic stream). Domain-
+    /// named shortcut for `LineageDiagnostics.payload`. Pattern:
+    /// prefer `LineageDiagnostics.entries` when diagnostics matter,
+    /// `decisionsOf` when only the decisions matter, and
+    /// `LineageDiagnostics.payload` when no domain shortcut is
+    /// available. Mirrors `UniqueIndexPass.decisionsOf` and
+    /// `NullabilityPass.decisionsOf`.
+    let decisionsOf (result: Lineage<Diagnostics<ForeignKeyDecisionSet>>) : ForeignKeyDecisionSet =
+        LineageDiagnostics.payload result

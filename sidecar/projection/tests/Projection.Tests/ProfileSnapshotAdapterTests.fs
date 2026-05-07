@@ -294,5 +294,5 @@ let ``composition: profile-adapter output feeds NullabilityPass under empty Tigh
     // Observable identity on empty Tightening — the pass produces no
     // decisions even with rich Profile data, because no intervention
     // is registered. Profile is read into the pass but ignored.
-    Assert.Empty(lineage.Value.Decisions)
+    Assert.Empty((LineageDiagnostics.payload lineage).Decisions)
     Assert.Empty(lineage.Trail)

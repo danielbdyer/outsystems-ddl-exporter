@@ -171,11 +171,16 @@ V1 invariants now defended in V2 by `NormalizeStaticPopulationsTests.fs`:
 
 Differential testing (V1 vs V2 on shared golden fixtures
 `tests/Fixtures/emission/edge-case/Seeds/AppCore/StaticEntities.seed.sql`
-and the matrix-temporal variant) lands when the Catalog Reader exists
-to coerce V1 fixture inputs into V2 form. Until then the contract is
-defended by property-based and behavioral tests; the V1 fixtures are
-the gold standard and the differential check is a follow-on commit
-once the boundary adapter is in place.
+and the matrix-temporal variant) **landed at session 5 commit 3** as
+`StaticAdapterDifferentialTests.fs`. Three `V1 contract:`-prefixed
+tests assert the V1 fixture round-trip directly through V2's adapter
+boundary. The V1 fixtures remain the gold standard and the V2
+expectation embedded in the test file is the V2 contract; any V1
+fixture change requires a deliberate V2 expectation update. The
+property-based and behavioral tests in `NormalizeStaticPopulationsTests.
+fs` continue to defend the invariants alongside the differential.
+(`CHAPTER_1_CLOSE.md §2.11` flagged this acknowledgement as missing;
+session 13 added it.)
 
 ### Migration path
 
@@ -600,7 +605,17 @@ property + behavioral coverage carries the contract first.
 
 ## 2026-05-10 — `UniqueIndexDecisionOrchestrator` (`src/Osm.Validation/Tightening/UniqueIndexDecisionOrchestrator.cs`)
 
-**Status:** admired (placement decided)
+**Status:** **extracted (differential confirmed)** — V1-migration mode
+(`DECISIONS 2026-05-13 — admire spectrum`). V2's `Projection.Core.
+Strategies.UniqueIndexRules` + `Projection.Core.Passes.UniqueIndexPass`
+jointly carry V1's binary-decision contract into V2 under the codified
+strategy layer (`DECISIONS 2026-05-11 — Strategy-layer codification`).
+`UniqueIndexPassTests.fs` and `UniqueIndexRulesTests.fs` exercise the
+behavioral contract; the V1 `UniqueIndexDecisionStrategyTests`
+divergences (Aggressive-mode collapse; included-columns boundary)
+remain documented in this entry below but are not yet locked down by
+explicit `Skip` stubs in `UniqueIndexPassTests.fs` (`CHAPTER_1_CLOSE.md
+§2.7`; addressed in session 13's skip-stub completion).
 
 **Significance.** The fourth V1 admire migration. Crucially, the
 **second `TighteningIntervention` variant** — the closed DU
@@ -825,7 +840,19 @@ V2 should add (V1 lacks coverage for these):
 
 ## 2026-05-11 — `ForeignKeyEvaluator` (`src/Osm.Validation/Tightening/ForeignKeyEvaluator.cs`)
 
-**Status:** admired (placement decided)
+**Status:** **extracted (differential confirmed)** — V1-migration mode
+(`DECISIONS 2026-05-13 — admire spectrum`). V2's `Projection.Core.
+Strategies.ForeignKeyRules` + `Projection.Core.Passes.ForeignKeyPass`
+jointly carry V1's evaluator contract into V2; the strategy layer's
+fourth instance and the empirical confirmation that the codification
+holds without revision (`DECISIONS 2026-05-11 — Strategy-layer
+codification: empirical verdict after the fourth instance`).
+`ForeignKeyPassTests.fs` and `ForeignKeyRulesTests.fs` exercise the
+behavioral contract. The `DeleteRuleIgnore` rationale-on-success
+divergence (V1 emits a rationale string on a successful decision; V2
+emits none) is documented below but not yet locked down by an explicit
+`Skip` stub (`CHAPTER_1_CLOSE.md §2.7`; addressed in session 13's
+skip-stub completion).
 
 **Significance.** The fifth V1 admire migration; the **third
 `TighteningIntervention` variant** lands the registered-intervention
@@ -1165,7 +1192,28 @@ work) inherit the strategy-layer's foundation.
 
 ## 2026-05-07 — `EntityDependencySorter` (`src/Osm.Emission/Seeds/EntityDependencySorter.cs`)
 
-**Status:** admired (placement decided)
+**Status:** **extracted (differential confirmed)** — V1-migration mode
+(`DECISIONS 2026-05-13 — admire spectrum`). V2's `Projection.Core.
+Passes.TopologicalOrderPass` + `Projection.Core.Strategies.
+CycleResolution` jointly carry V1's sorter contract into V2 under the
+algebra/domain split that named the strategy layer (`DECISIONS
+2026-05-09 — Algebra/domain split pattern`). `TopologicalOrderTests.fs`
+and `TopologicalOrderPassTests.fs` exercise behavioral contract;
+`CycleResolutionTests.fs` covers the structural-strategy seam.
+Two V1 contracts ADMIRE flags as Behavioral V2 translations remain
+**features-not-yet-built** as of session 13 (`SortByForeignKeys_
+SkipsAutoDetectionWhenManualCyclesExist`,
+`SortByForeignKeys_DefersJunctionTablesWhenEdgesMissing`). Session 13
+audit-during-validation finding: `CHAPTER_1_CLOSE.md §4 priority 4`
+listed these as missing tests, but V2 lacks the supporting IR — there
+is no `OrderingPolicy` axis carrying manual-cycle config and no
+junction-table heuristic in `TopologicalOrderPass v3`
+(`OrderingMode.JunctionDeferred` is declared in the DU but never
+produced). Session 13 reserved the contract names via Skip stubs in
+`TopologicalOrderPassTests.fs` so the implementation lands behind a
+behavioral lock when the supporting IR ships. Implementation itself
+is substantive next-chapter work, larger than the original priority-4
+ranking suggested.
 
 ### What it does (algebraic terms)
 
@@ -1356,7 +1404,21 @@ until then property + behavioral tests carry the contract.
 
 ## 2026-05-12 — V1 profiling depth (`src/Osm.Pipeline/Profiling/SqlDataProfiler.cs`, `src/Osm.Domain/Profiling/*.cs`)
 
-**Status:** admired (gap analysis; no V1 component to migrate)
+**Status:** **extracted (V2-growth confirmed)** — V2-growth mode
+(`DECISIONS 2026-05-13 — admire spectrum`; this entry was named there
+as the V2-growth template). V2's `AttributeDistribution` DU now carries
+two operational variants — `Categorical of CategoricalDistribution`
+(session 9) and `Numeric of NumericDistribution` (session 10) — under
+the structural-commitment-via-construction-validation principle
+(`AXIOMS.md` operational principle, line 555+). The `ProfileStatistics`
+adapter (`Projection.Adapters.Sql/ProfileStatistics.fs`) is the V2
+boundary; `DistributionsEmitter` (`Projection.Targets.Distributions/`)
+is the first sibling Π consuming the rich evidence; the rich-profiling
+end-to-end milestone (`RichProfilingEndToEndTests.fs`) validates the
+full pipeline. Faker (synthetic-data Π) remains deferred until at least
+a third evidence type lands or the limitations of two are explicitly
+accepted (`HANDOFF.md`, "What's deferred"; `CHAPTER_1_CLOSE.md §4
+priority 8`).
 
 **Significance.** The first admire entry that surfaces **V1 absence
 to fill, not V1 logic to migrate**. Every prior admire (six entries)
@@ -1656,8 +1718,17 @@ test discipline is therefore:
 
 ## 2026-05-13 — `CategoricalUniqueness` (per-attribute distribution-driven uniqueness inference)
 
-**Status:** admired (placement decided) — **hybrid mode**
-(DECISIONS 2026-05-13 — admire spectrum).
+**Status:** **extracted (differential confirmed)** — **hybrid mode**
+(`DECISIONS 2026-05-13 — admire spectrum`). V2's `Projection.Core.
+Strategies.CategoricalUniquenessRules` + `Projection.Core.Passes.
+CategoricalUniquenessPass` carry the per-attribute decision logic;
+`CategoricalUniquenessRulesTests.fs` and `CategoricalUniquenessPass
+Tests.fs` exercise the V2-only contract (no V1 differential exists for
+the V2-growth share). The strategy layer's third real test passed
+without forcing a fourth refinement (`DECISIONS 2026-05-13 —
+Strategy-layer codification reaches stability mark`); the hybrid admire
+mode worked as the framework's first applied instance (`DECISIONS
+2026-05-13 — Session 11 reflection`).
 
 **Significance.** The fourth registered-intervention strategy under
 the codified strategy layer (DECISIONS 2026-05-11), and the first
@@ -1989,3 +2060,654 @@ Commits 4 and 5 decide both. Per the user's session-11 brief and
 the shared-trigger discipline (DECISIONS 2026-05-11), they cash
 out together rather than in isolation.
 
+
+---
+
+## 2026-05-13 — OSSYS catalog producer (`src/AdvancedSql/outsystems_metadata_rowsets.sql` → `MetadataSnapshotRunner` → `SnapshotJsonBuilder` → `osm_model.json`)
+
+**Status:** **extracted (chapter 2 close — JSON path; hybrid mode
+operating)** — `DECISIONS 2026-05-13` — admire spectrum, session-23
+amendment for the in-flight status, session-25 chapter-2-close
+transition to extracted. Six substantive translation slices have
+landed across sessions 18–22 and 24 through the `SnapshotJson`
+input path; the chapter closes with the JSON path operationally
+complete and the canonical `SnapshotRowsets` variant pre-scoped at
+session 25 commit 11 (subagent #5) for chapter-3+ implementation.
+The cross-module FK slice defers to fresh context as the highest-
+priority deferred slice for the chapter-3 handoff.
+
+V2's catalog reader exists at `src/Projection.Adapters.Osm/CatalogReader.fs`
+and consumes V1's `osm_model.json` shape via the `SnapshotJson`
+variant of `SnapshotSource`. **Twenty-five translation rules** have
+landed in the running list at `DECISIONS 2026-05-15 — OSSYS
+adapter translation rules` across six substantive slices. Production
+V2 will eventually consume real OutSystems metadata via the
+canonical `SnapshotRowsets` variant (operator-decided per
+`DECISIONS 2026-05-15` session-20 amendment); until that variant
+lands, V2 catalogs come from V1's JSON output with name-synthesized
+SsKey (the bound on A1's identity-survives-rename guarantee
+through the JSON path).
+
+The OSSYS chapter exists in the strategic frame
+(`DECISIONS 2026-05-15 — Strategic frame for the OSSYS implementation
+chapter`) as one of eight load-bearing axes; this entry scopes the
+chapter against that frame.
+
+### Slices landed (chapter 2 in-flight progression)
+
+  - **Session 18** — minimal slice (one entity, two non-reference
+    attributes). Rules 1–11 in the running list. SsKey synthesis
+    via name-derivation; structural translation; type primitives
+    Identifier/Text → Integer/Text; placeholder Origin rule.
+  - **Session 19** — reference-bearing slice. Rules 12–16. FK SsKey
+    synthesis; V1 `reference_deleteRuleCode` → V2 `OnDelete`
+    mapping; same-module assumption for `TargetKind`; `attributes[]`
+    as primary source for references (relationships[] is V1's
+    aggregation).
+  - **Session 20** — external-entity slice. Rule 17. Origin
+    three-way placeholder under JSON-path bound (V1's `EspaceKind`
+    encoding stripped at JSON projection — a member of the
+    JSON-projection-lossiness class; `isExternal: true` placeholder
+    is `ExternalViaIntegrationStudio`).
+  - **Session 21** — mixed-active slice. Rule 18. Inactive-records
+    boundary choice (filter at adapter; bound documented;
+    carry-through deferred to consumer demand). The
+    V2-boundary-discipline class named explicitly.
+  - **Session 22** — index-bearing slice. Rules 19–23. Index SsKey
+    synthesis; V1 `isUnique`/`isPrimary` → V2 `IsUnique`/
+    `IsPrimaryKey`; included-columns drop at the boundary;
+    columns-by-ordinal sort.
+  - **Session 24** — static-entity slice (last substantive slice
+    in chapter 2). Rules 24–25 reaffirming session 18's rule 10
+    under empirical pressure with enriched rationale: V1
+    `isStatic: true` → V2 `Modality = [Static []]` (empty
+    population intentional; the OSSYS adapter's responsibility
+    ends at the modality flag; population data flows through
+    `Projection.Adapters.Sql/Static.fs` separately, mirroring
+    V1's own extraction split).
+
+### Chapter-2 close — three classes of translation findings now visible
+
+The chapter has produced the complete typology of V1↔V2
+translation findings, codified at chapter-2 close
+(`DECISIONS 2026-05-21 — Chapter 2 close: alternative-IR-surface
+class`):
+
+  1. **JSON-projection-lossiness** — V2 can't see X (resolved by
+     `SnapshotRowsets`). Members: SsKey at every level; `EspaceKind`
+     IS-vs-Direct distinction; `isSystemEntity`.
+  2. **V2-boundary-discipline** — V2 sees X; V2's IR has no axis;
+     V2 chooses (filter, carry-through, IR refinement). Members:
+     inactive-records (rule 18); index translation choices (rules
+     19–23); static-entity split (rules 24–25).
+  3. **Alternative-IR-surface** — V2 sees X; primary IR has no
+     axis; parallel V2 surface is the natural home. Members: V1
+     `deleteRuleCode: "Ignore"` → Diagnostics emission (rule 13);
+     V1 `attributes[].onDisk` envelope → routes to Profile / read-
+     side adapter when that chapter materializes.
+
+### What remains for chapter 3
+
+  - **Cross-module FK slice** — refines rule 16's same-module
+    assumption. Defers to fresh context per the chapter's
+    runway plan; named in the chapter-close handoff document
+    as the highest-priority deferred slice for chapter 3.
+  - **Canonical `SnapshotRowsets` variant** — separate
+    architectural slice when sequencing brings it. Pre-scoped at
+    session 25 commit 11 (subagent #5). Lands the canonical
+    resolution to the JSON-projection-lossiness class.
+
+### What the V1 producer does (algebraic terms)
+
+V1's catalog producer is a three-stage pipeline:
+
+  1. **`src/AdvancedSql/outsystems_metadata_rowsets.sql`** (1184
+     lines). A T-SQL script that runs against an OutSystems platform
+     database (the schema named `OSSYS_*` plus user data in
+     `OSUSR_*`). Produces multiple named result sets covering
+     modules, entities, attributes, references, indexes, static
+     populations, profiling probes, etc. Pure read; no DDL emission.
+  2. **`MetadataSnapshotRunner`** (407 lines). Executes the script
+     against a `DbConnection`, dispatches each result set to a
+     registered `IResultSetProcessor` implementation, and accumulates
+     the rows into an in-memory `OutsystemsMetadataSnapshot` (a
+     C# DTO graph specific to V1's domain).
+  3. **`SnapshotJsonBuilder`** (288 lines). Translates the in-memory
+     snapshot into the canonical `osm_model.json` document — the
+     serialized form V1's downstream pipeline consumes. The JSON
+     document is the formal V1↔V2 contract.
+
+The producer is impure (it reads from a SQL Server connection),
+returns `Result<OutsystemsMetadataSnapshot>`, and is the
+authoritative source of structural truth about a deployed
+OutSystems environment.
+
+### V1's extracted shape — the rowsets, in detail
+
+The 1184-line SQL script reconciles two distinct sources of truth:
+**OutSystems intent** (the `OSSYS_*` metadata tables describing
+what the platform thinks the schema should be) and **physical
+reality** (`sys.tables`, `sys.columns`, `sys.indexes`, `sys.foreign_keys`
+describing what the database actually contains). The reconciliation
+is a real architectural concern V2 must inherit — V2's IR must
+distinguish what the source declares from what the data shows.
+
+The script exports ~22 named rowsets in a fixed order. The
+`MetadataSnapshotRunner` registers an `IResultSetProcessor` per
+rowset name; rowset order is preserved on the wire but processors
+key by name. Inventoried by purpose:
+
+**Module / entity / attribute backbone:**
+
+  - `#E` — espaces (modules): EspaceId, EspaceName, IsSystemModule,
+    ModuleIsActive, EspaceKind, **EspaceSSKey**.
+  - `#Ent` — entities: EntityId, EntityName, PhysicalTableName,
+    EspaceId, EntityIsActive, IsSystemEntity, IsExternalEntity,
+    DataKind (Static / Regular / etc.), PrimaryKeySSKey, **EntitySSKey**,
+    EntityDescription.
+  - `#Attr` — attributes: AttrId, EntityId, AttrName, **AttrSSKey**,
+    DataType, Length, Precision, Scale, DefaultValue, IsMandatory,
+    AttrIsActive, IsAutoNumber, IsIdentifier, RefEntityId,
+    OriginalName, ExternalColumnType, DeleteRule, PhysicalColumnName,
+    DatabaseColumnName, LegacyType, Decimals, OriginalType,
+    AttrDescription.
+  - `#RefResolved` — relationship resolution: AttrId → reference
+    target entity (id, name, physical name, active flag).
+
+The `*SSKey` columns are V1's identity primitives. They survive
+renames and refactors per the OutSystems platform's contract; V2's
+`SsKey` value type wraps them.
+
+**Physical reality reconciliation:**
+
+  - `#PhysTbls` — physical tables matched to entities: EntityId,
+    SchemaName, TableName, object_id.
+  - `#ColumnReality` — physical column metadata per attribute:
+    AttrId, IsNullable, SqlType, MaxLength, Precision, Scale,
+    CollationName, IsIdentity, IsComputed, ComputedDefinition,
+    DefaultConstraintName, DefaultDefinition, PhysicalColumn.
+  - `#ColumnCheckReality` — check constraints attached to columns:
+    AttrId, ConstraintName, Definition, IsNotTrusted.
+  - `#AttrCheckJson` — aggregated check-constraint JSON per attribute.
+  - `#PhysColsPresent` — which logical attributes still exist
+    physically (the inactive-but-physically-present case).
+
+**Indexes:**
+
+  - `#AllIdx` — all indexes (IX + UQ + PK): EntityId, object_id,
+    index_id, IndexName, IsUnique, IsPrimary, Kind, FilterDefinition,
+    IsDisabled, IsPadded, Fill_Factor, IgnoreDupKey, AllowRowLocks,
+    AllowPageLocks, NoRecompute, DataSpaceName, DataSpaceType,
+    PartitionColumnsJson, DataCompressionJson.
+  - `#IdxColsMapped` — index columns mapped to attributes by
+    physical or human name: EntityId, IndexName, Ordinal,
+    PhysicalColumn, IsIncluded, Direction, HumanAttr.
+
+**Foreign keys (physical reality):**
+
+  - `#FkReality` — actual FK constraints: EntityId, FkObjectId,
+    FkName, DeleteAction, UpdateAction, ReferencedObjectId,
+    ReferencedEntityId, ReferencedSchema, ReferencedTable, **IsNoCheck**.
+  - `#FkColumns` — column mappings per FK constraint.
+  - `#FkAttrMap` — which attributes participate in actual FKs.
+  - `#AttrHasFK` — flag: does this attribute have a real FK
+    constraint?
+  - `#FkColumnsJson` / `#FkAttrJson` — aggregated JSON for downstream
+    consumers.
+
+**Triggers:**
+
+  - `#Triggers` — trigger metadata per entity: TriggerName,
+    IsDisabled, TriggerDefinition.
+
+**Aggregated JSON shapes (the canonical osm_model.json structure):**
+
+  - `#AttrJson`, `#RelJson`, `#IdxJson`, `#TriggerJson` — per-entity
+    aggregates produced via `FOR JSON PATH`.
+  - `#ModuleJson` — per-module aggregate combining all of the
+    above.
+
+The final `osm_model.json` document is the assembly of these
+aggregates — a single JSON file with `exportedAtUtc`, an array of
+`modules`, each containing an array of `entities`, each containing
+arrays of `attributes`, `indexes`, `relationships`, `triggers`. The
+nested shape is what `Projection.Tests/Fixtures/*.json` mirror; V2's
+`CatalogReader` will consume the same shape.
+
+### What V2 will carry forward
+
+The V2 catalog reader's job is to translate V1's reconciled output
+into V2's IR. The carry-forward set:
+
+  - **Identity primitives.** V1's `*SSKey` values become V2's
+    `SsKey` instances. The translation is direct; V2 does not
+    re-derive identity, it adopts V1's.
+  - **Module / entity / attribute / reference / index structure.**
+    The four-level hierarchy (modules → entities → attributes /
+    references / indexes) maps cleanly to V2's `Catalog → Module →
+    Kind → (Attribute | Reference | Index)`.
+  - **Physical realization.** V1's reconciled `db_schema` /
+    `physicalName` / `databaseColumnName` becomes V2's
+    `PhysicalRealization` (kind level) and `Column.ColumnName`
+    (attribute level).
+  - **Modality marks.** V1's `DataKind` ("Static" / regular /
+    etc.) becomes V2's `Modality.Static` / etc. Static populations
+    flow into the catalog per A7.
+  - **Type information.** V1's `DataType` / `LegacyType` /
+    `ExternalColumnType` plus the `ColumnReality` SqlType becomes
+    V2's `Attribute.Type` plus the `Column` shape. The V2 type
+    correspondence (`DataType` → V2 algebraic type) is policy
+    territory per A13; the *raw* type information is what the
+    adapter carries forward.
+  - **Origin.** V1's `IsExternalEntity` plus the espace's
+    `IsSystemModule` flag map to V2's `Origin` three-way
+    (`OsNative` / `ExternalViaIntegrationStudio` / `ExternalDirect`).
+    The exact mapping rule is implementation-territory; the input
+    fields are named here.
+  - **Reference targets and delete rules.** V1's `RefEntityId` +
+    `DeleteRule` map to V2's `Reference.TargetKind` + `OnDelete`.
+    The `RefResolved` rowset's pre-computed lookup helps the
+    adapter avoid reconciling these per-row.
+  - **Index structure.** V1's `AllIdx` + `IdxColsMapped` map to
+    V2's `Index.SsKey` / `Name` / `Columns` / `IsUnique` /
+    `IsPrimaryKey`.
+
+**The trailing rowsets carry information the JSON aggregation
+strips** (session-20 amendment per
+`DECISIONS 2026-05-15 — OSSYS adapter translation rules`,
+session-20 amendment). The rowsets emitted by
+`outsystems_metadata_rowsets.sql` (`#E`, `#Ent`, `#Attr`, etc.)
+preserve fields that V1's `FOR JSON PATH` aggregations strip
+during projection into `osm_model.json`:
+
+  - **`SSKey` at every level.** `EspaceSSKey`, `EntitySSKey`,
+    `PrimaryKeySSKey`, `AttrSSKey` are present in the rowsets;
+    they are absent from the assembled JSON. V2's
+    `SnapshotJson`-path adapter synthesizes SsKey from name
+    fields today (per `DECISIONS 2026-05-15 — OSSYS adapter
+    translation rules`, rule 1–3); the canonical
+    `SnapshotRowsets` variant (when implementation lands) reads
+    SSKeys directly.
+  - **Per-table column structure.** The rowsets retain
+    structural metadata that the JSON aggregation collapses.
+    Specific examples will surface as fixtures grow under the
+    OSSYS arc; the rowsets-as-input path future-proofs the V2
+    boundary against the deferred-fields backlog.
+  - **Other fields the JSON projections happen not to include.**
+    The lossiness is at exactly one projection layer
+    (`#AttrJson`, `#ModuleJson` via `FOR JSON PATH`), not
+    end-to-end; data is available everywhere upstream.
+
+### Canonical input path — evolving from JSON-only to JSON+Rowsets
+
+The OSSYS adapter's input path is **evolving**:
+
+  - **Current (sessions 18–19):** `SnapshotJson` only. V2
+    consumes V1's canonical `osm_model.json`; SsKey is
+    name-synthesized; the bound on A1's
+    identity-survives-rename guarantee is documented per
+    `DECISIONS 2026-05-15 — OSSYS adapter translation rules`.
+  - **Planned:** `SnapshotJson` + `SnapshotRowsets`. The
+    `SnapshotRowsets` variant lands as a third closed-DU case
+    on `SnapshotSource` when chapter 2's organic flow brings
+    it. Per the operator decision in `DECISIONS 2026-05-15 —
+    OSSYS adapter translation rules`, session-20 amendment,
+    the canonical resolution to the lossy-SSKey question is
+    `SnapshotRowsets`. Implementation timing: likely after the
+    current OSSYS adapter chapter completes its translation
+    work through the `SnapshotJson` path.
+  - **Future (out of scope today):** `LiveOssysConnection` for
+    the case where V2 needs to operate without V1's chain in
+    the loop entirely. Reserved as a future variant per
+    `DECISIONS 2026-05-15 — OSSYS adapter parse signature`.
+
+**Until `SnapshotRowsets` implements**, V2's catalog reader
+continues operating through the `SnapshotJson` path with the
+documented bounds. The two paths will coexist when the variant
+lands — `SnapshotJson` remains valid; `SnapshotRowsets` is the
+path that resolves A1's bound and provides the richer
+extensibility surface.
+
+### What V2 will explicitly NOT carry forward
+
+V2's IR is generic algebraic; it does not carry V1's
+domain-prescriptive vocabulary. Specific carry-forward exclusions:
+
+  - **V1-specific type names.** `OsmModel`, `EntityModel`,
+    `AttributeModel`, `RelationshipModel`, `ModuleModel` —
+    these are V1's domain types. V2's adapter consumes the
+    JSON document directly (or DTOs that mirror the JSON shape);
+    V2 does not depend on V1's C# types. The boundary is data,
+    not typed cross-references — per the cherry-pick discipline
+    (`HANDOFF.md` — Cherry-pick discipline).
+  - **Trigger metadata.** V1 carries triggers in `#Triggers` and
+    emits them downstream. V2's IR has no Trigger type today.
+    Triggers are deferred until a real V2 use case demands them
+    (`CHAPTER_1_CLOSE.md §2.5` lists triggers as V1 outputs without
+    V2 equivalents). When the use case lands, the IR refinement
+    discipline applies — the OSSYS adapter retrieves the data
+    from `#Triggers`; the IR grows; the emitter follows.
+  - **Computed-column definitions.** V1's `ComputedDefinition`
+    field surfaces `IsComputed=true` columns; V2's IR has no
+    Computed-column variant. Same disposition as triggers —
+    deferred until evidence forces the IR refinement.
+  - **Partition / data-compression metadata.** V1's
+    `PartitionColumnsJson` / `DataCompressionJson` fields. V2's
+    IR has no concept; out of scope until a real consumer demands.
+  - **Catalog (database) names.** V1 uses `db_catalog` to permit
+    cross-catalog FKs; V2's `Reference` has no `Catalog` field.
+    Reserved as a deferred IR refinement (Active deferrals index).
+    The OSSYS adapter ignores `db_catalog` for now; if a fixture
+    surfaces a non-null `db_catalog`, the adapter flags it via
+    diagnostic emission.
+  - **Diagnostic side-effects.** V1's extraction has no
+    diagnostic-emission discipline; the script itself THROWs on
+    unexpected conditions. V2's adapter wraps everything in
+    `Result<Catalog>` plus optional `Diagnostics<_>` entries;
+    THROW-style failures become `Error` severity entries.
+  - **Filter parameters.** V1's `@ModuleNamesCsv`, `@IncludeSystem`,
+    `@IncludeInactive`, `@OnlyActiveAttributes`, `@EntityFilterJson`
+    are V1's input-level filters. V2's `Selection` axis on Policy
+    handles equivalent filtering at the IR level (per A12 amended).
+    The OSSYS adapter does NOT pass through V1-side filter
+    parameters; selection happens after the catalog is read.
+    Reads-everything-then-filters is the V2 disposition.
+  - **Module-level `isSystem` and `isActive`.** V1 emits both at
+    the module element (`SnapshotJsonBuilder.cs:120-121, 168-169`).
+    V2's adapter consumes neither. `module.isSystem` carries the
+    same semantic content as `entity.isSystemEntity` at module
+    level; V2's `Origin` DU collapses both at the entity level
+    via the JSON-projection-lossiness route (rule 17 placeholder).
+    `module.isActive` parallels `entity.isActive` (rule 18 filters
+    inactive entities; the module-level case defers until a
+    fixture forces the question — see open question O2 resolved
+    at session-25 chapter close).
+  - **Per-attribute `default`.** V1 emits `attributes[].default`
+    (the `DefaultValue` from `#Attr` at
+    `outsystems_metadata_rowsets.sql:757`). Carries semantic
+    content (column default value); V2's IR has no per-attribute
+    default axis at the OSSYS-adapter level. The default-value
+    information is part of physical reality; future emitters
+    that need defaults pull from V2's Profile / read-side adapter
+    output (alternative-IR-surface class), not from the OSSYS
+    adapter. Re-open trigger: emitter chapter that needs default
+    values at IR scope rather than emit-time scope.
+  - **Per-attribute `refEntity_isActive`.** V1 emits the FK
+    target's `isActive` flag at
+    `outsystems_metadata_rowsets.sql:765`. Could matter for
+    cross-module FK or for cases where the source is active but
+    the target was retired. The OSSYS adapter ignores it; rule 18's
+    filter operates on source attributes only. Re-open trigger:
+    cross-module FK slice surfaces a case where target activity
+    matters (chapter 3 deferred slice).
+  - **Per-attribute `onDisk` envelope.** V1 emits a structured
+    sub-object per attribute (`outsystems_metadata_rowsets.sql:770-790`)
+    containing eleven physical-reality fields: `isNullable`,
+    `sqlType`, `maxLength`, `precision`, `scale`, `collation`,
+    `isIdentity`, `isComputed`, `computedDefinition`,
+    `defaultDefinition`, `defaultConstraint`, plus
+    `checkConstraints`. V1's `SnapshotJsonBuilder` includes the
+    envelope inside `attributes[]`. V2's OSSYS adapter does not
+    consume any of it.
+
+    **Rationale: physical-reality is read-side-adapter territory.**
+    `onDisk` is V1's snapshot of physical reality at extraction
+    time; the read-side adapter (a future chapter) is V2's read of
+    physical reality at deployment-validation time. They are
+    parallel sources of the same information class at different
+    temporal points. For the canary use case, the read-side
+    adapter is the source of truth (it queries the deployed
+    database directly); OSSYS's `onDisk` would be redundant when
+    read-side lands.
+
+    The chapter implementing the read-side adapter confirms this
+    redundancy or refutes it. **Re-open trigger:** if the read-
+    side adapter chapter discovers that V1's `onDisk` (V1-extracted
+    reality at one point in time) and the read-side adapter's
+    output (deployed reality at deployment-validation time) need
+    to be compared as separate sources to detect drift, then the
+    OSSYS adapter routes `onDisk` to V2's Profile alongside the
+    read-side adapter's emission. Until that chapter, the OSSYS
+    `onDisk` envelope is silently dropped.
+
+    The decision and rationale codified at `DECISIONS 2026-05-21 —
+    Chapter 2 close: alternative-IR-surface class` (session 25;
+    third translation-finding class). The `onDisk` envelope is
+    the first member of that class made explicit.
+
+### What's structurally different in V2's IR
+
+V1's snapshot models things V2's IR doesn't, and vice versa.
+Naming the differences before the implementation chapter opens
+makes the translation rule explicit:
+
+  - **V2 distinguishes structure (Catalog) from evidence (Profile).**
+    V1 conflates them — `OutsystemsMetadataSnapshot` carries
+    both schema metadata AND probe-shaped reality (HasOrphan /
+    NullCount-equivalents are not in V1 the same way they are in
+    V2's `Profile`). V2's adapter splits V1's reconciled output
+    into a structural Catalog and an evidence Profile. The
+    OSSYS adapter's primary concern is Catalog construction;
+    Profile sourcing happens through `ProfileSnapshot.fs` from
+    a separate input.
+  - **V2's `Origin` is a closed three-way DU.** V1's flags
+    (`IsSystemEntity`, `IsExternalEntity`) are independent
+    booleans. The V2 mapping requires deciding how the V1 boolean
+    pair collapses to V2's closed three-way — implementation
+    territory; the rule lands in the adapter's chapter.
+  - **V2's `OnDelete` is a closed DU; V1's `DeleteRule` is a
+    string (or null).** V1 supports `TreatMissingDeleteRuleAsIgnore`
+    as a config knob because V1's DeleteRule can be missing.
+    V2's `OnDelete` has no missing variant. The OSSYS adapter
+    must decide a translation rule for V1's nullable DeleteRule;
+    the chapter that addresses this lands a DECISIONS entry on
+    the rule. (Note: this is the same gap session 16's FK
+    activation surfaced, where V2's `DeleteRuleIgnored` keep-reason
+    is unreachable from V2 fixtures today. The OSSYS adapter is
+    where it becomes reachable.)
+  - **V2's `Modality` is a list.** V1's `DataKind` is a single
+    string per entity. The adapter normalizes V1's single string
+    to V2's modality list.
+  - **V2 has no `IsActive` / `IsDisabled` axis on most types.**
+    V1's metadata threads activity flags throughout. V2's
+    Selection policy handles "what's included" at the policy
+    level; the IR doesn't carry per-record activity. The OSSYS
+    adapter will need to decide: filter inactive records at the
+    boundary (V2 IR sees only active), or carry them through and
+    let Policy filter (V2 IR has all). Implementation choice;
+    both are defensible.
+  - **V2 has no separate "physical column name vs database column
+    name" axis.** V1's `PhysicalColumnName` and `DatabaseColumnName`
+    are different fields (one is OutSystems' canonical, one is
+    the sys.columns reality). V2's `Column.ColumnName` is one
+    string; the adapter chooses which V1 field to use (the
+    reconciled name in `#Attr.PhysicalColumnName` post-backfill is
+    the canonical choice).
+  - **V2's `IsPrimaryKey` is per-attribute; V1's PK is per-index.**
+    V1 represents the PK via `IsIdentifier=true` on attributes
+    AND a separate index entry with `IsPrimary=true`. V2 carries
+    `IsPrimaryKey` on Attribute (per session-3 IR refinement).
+    The translation rule is: V2's `Attribute.IsPrimaryKey =
+    V1's IsIdentifier`. The PK index itself is also represented
+    in V2's `Index` list with `IsPrimaryKey=true`.
+
+### Carry-forward summary
+
+The OSSYS adapter is fundamentally a **reconciliation translator**:
+it takes V1's already-reconciled (intent vs reality) snapshot and
+projects it into V2's IR shape. The reconciliation work is V1's;
+V2's adapter does shape translation. This division preserves the
+F#-pure-core discipline (V2 doesn't run SQL; V2 reads JSON the V1
+chain produces) while inheriting V1's hard-won reconciliation
+logic.
+
+### V2 placement
+
+**F# adapter at the boundary; V2 does not consume V1's C# domain
+types.** The V2-growth share is the V2 IR translation; the
+V1-migration share is the JSON parsing (V1's `osm_model.json` is
+the V2 contract). The recommended shape:
+
+  - **`src/Projection.Adapters.Osm/CatalogReader.fs`** — F# adapter
+    consuming the JSON document and producing `Result<Catalog>`.
+    Lives alongside `Projection.Adapters.Sql` (which today carries
+    `Static.fs`, `ProfileSnapshot.fs`, `ProfileStatistics.fs`).
+    The V1 SQL script and `MetadataSnapshotRunner` continue to live
+    on the V1 side; V2's adapter consumes only the JSON document
+    they produce. The two-language boundary (F# adapter / SQL
+    producer) keeps determinism testable in V2 without requiring a
+    live database in the V2 test surface.
+  - **Coordinate translation at the boundary.** V1's
+    `EntityName` becomes V2's `SsKey` (per the V1↔V2 vocabulary
+    mapping in `README.md`). V1's `TableName` becomes V2's
+    `PhysicalRealization`. V1's `ModuleModel` becomes `Module`.
+    The translation is structural; the V2 IR does not retain the
+    V1 type names.
+  - **Differential validation.** V1 fixture catalogs already exist
+    under `tests/Fixtures/`; the natural V2 differential is a test
+    pass that round-trips a V1 fixture through the new adapter and
+    asserts the V2 catalog matches a hand-built V2 fixture. Same
+    pattern as `StaticAdapterDifferentialTests.fs` (session 5
+    commit 3).
+
+### Inputs and outputs (V2 IR)
+
+Consumes: a V1-shaped `osm_model.json` document (typically read
+from a file path; the adapter takes a stream / string and parses).
+
+Produces: `Result<Catalog>` — the V2 IR. Validation errors surface
+as `ValidationError` instances with codes namespaced
+`adapter.osm.*` (parsing failures, missing required fields, type
+correspondences that don't translate cleanly). On success, a
+fully-populated `Catalog` ready to consume by every V2 pass.
+
+The adapter is a *fact-emitter* in the diagnostics sense — it may
+emit `DiagnosticEntry` values via the new Diagnostics writer
+(`DECISIONS 2026-05-06`; session 14 commit 3) for parser warnings
+that don't fail the parse but the operator should review (e.g.,
+"static cell coercion fell back to string for an unmapped type").
+The `Source` field for adapter diagnostics is `adapter:OSSYS` per
+the convention codified in `Diagnostics.fs`.
+
+### Existing test coverage (V1)
+
+V1's test coverage of the producer:
+
+  - `tests/Osm.Pipeline.Tests/SqlExtraction/SnapshotJsonBuilderTests.cs`
+    — unit tests on the JSON serialization shape.
+  - Integration tests under `tests/Osm.Etl.Integration.Tests/` —
+    end-to-end pipeline tests consuming real fixture JSON.
+
+V2's test surface for the adapter (when implemented):
+
+  - **Behavioral parity tests.** Round-trip a V1 fixture's JSON
+    through the V2 adapter; assert the produced `Catalog` matches a
+    hand-built V2 fixture.
+  - **Property tests.** Permutation invariance (input JSON object
+    keys re-ordered produce identical V2 catalog); idempotence
+    (parsing twice yields equal catalogs); structural-commitment
+    validation surfaces (a malformed JSON document fails the parse
+    with a typed error, never produces a degenerate catalog).
+  - **Differential tests against `tests/Fixtures/edge-case`** —
+    same pattern as `StaticAdapterDifferentialTests.fs`.
+  - **Skip stubs for V1 contracts V2 deliberately doesn't honor.**
+    For example, V1 carries fields V2's IR doesn't model (V1
+    domain-prescriptive types lost in translation); each surfaces
+    as a Skip stub naming the divergence. Same discipline as
+    session 13's stubs.
+
+### Migration path
+
+The implementing chapter's outline:
+
+  1. **JSON parser scaffold.** F# JSON deserialization
+     (`System.Text.Json` per `DECISIONS 2026-05-06` — Built-ins
+     first; no hand-rolled serialization). DTO records mirroring
+     V1's JSON shape live in
+     `Projection.Adapters.Osm/Internal.fs` (private; not exposed).
+  2. **Translation pass.** DTO → V2 IR. Coordinate translation
+     (V1 names → V2 SsKeys); type-correspondence translation
+     (V1 `DataType` → V2's IR types); structural-commitment
+     validation at every smart-constructor call site.
+  3. **Differential test fixture.** Embed a small V1 JSON fixture
+     in the test file (matches the pattern from
+     `StaticAdapterDifferentialTests.fs`); assert the V2 catalog
+     matches a hand-built V2 fixture.
+  4. **Property-test sweep.** Permutation invariance, idempotence,
+     malformed-input rejection. FsCheck.Xunit for the
+     combinatorial surface.
+  5. **Integration with the existing milestones.**
+     `EndToEndDifferentialTests.fs` and `RichProfilingEndToEndTests.fs`
+     today build catalogs from F# fixture builders; the integrating
+     commit teaches them to optionally consume the new adapter
+     when a real fixture path is provided. Backward compatibility
+     for fixture-built catalogs is maintained — the adapter is a
+     new entry point, not a replacement.
+  6. **Diagnostics-writer integration.** Adapter parse warnings
+     (e.g., "fell back to string coercion for an unmapped data
+     type") emit `DiagnosticEntry` values via the
+     `LineageDiagnostics`-shaped pipeline. This is the second
+     consumer of the Diagnostics writer (after UniqueIndexPass
+     opportunity-stream from session 14 commit 5) and likely
+     surfaces refinements during validation.
+
+### Edges / risks
+
+The substantive risks the implementing chapter inherits, beyond
+the routine mechanical risks of a JSON parser:
+
+  - **V1's JSON shape is V2's contract — stability matters.** The
+    V1 `osm_model.json` schema is what V2 must consume reliably.
+    Any V1-side change to the JSON shape becomes a V2-side
+    breaking change. The adapter needs versioning or tolerance
+    against minor V1 evolutions (e.g., new fields V2 ignores).
+    Defer the strategy until evidence forces it; record the
+    constraint here so the next agent doesn't be surprised.
+  - **Coordinate translation is lossy in one direction.** V2's
+    `SsKey` carries identity but discards V1's full coordinate
+    context (schema, table, physical naming). Round-trip from
+    `osm_model.json` → V2 `Catalog` → back-to-some-V1-form is **not**
+    expected to be lossless; V2's IR is the authoritative shape,
+    and any artifact V2 emits is grounded in V2's IR, not in the
+    original JSON. The adapter is one-way.
+  - **Performance / streaming considerations.** Real production
+    `osm_model.json` documents are large (tens of MB for
+    enterprise-sized OutSystems factories). A naive
+    `JsonSerializer.Deserialize<T>` reads the whole document into
+    memory; a streaming `Utf8JsonReader`-based parser is better
+    for production scale. Defer until evidence forces a choice;
+    start with the simple form.
+  - **Static-cell coercion divergences from V1.** V1's
+    `FixtureStaticEntityDataProvider.ConvertJsonValue` does
+    type-aware decoding (Boolean, Integer, Decimal, DateOnly,
+    TimeOnly, DateTime, DateTimeOffset, Guid) using catalog
+    `DataType`. V2's existing `Static.fs` (`Projection.Adapters.Sql`)
+    only handles raw JSON primitive kinds. The new
+    `Projection.Adapters.Osm.CatalogReader` should align with V1's
+    type-aware coercion, **or** explicitly defer with a DECISIONS
+    entry naming the deferral. Real-fixture decimals and dates
+    will surface this as a real issue (`CHAPTER_1_CLOSE.md §2.8`
+    flagged the divergence).
+  - **Profile sourcing is separate.** This adapter handles
+    *catalog* (structural) data only. Profile (empirical evidence)
+    is sourced from V1's profiling pipeline via a different
+    boundary; `Projection.Adapters.Sql/ProfileSnapshot.fs` already
+    exists for that. The two adapters compose at the
+    `ProjectionInput` level, not at the source level.
+
+### Why this entry exists now
+
+`CHAPTER_1_CLOSE.md §4 priority 7` named this as a session-14 priority
+("OSSYS catalog adapter ADMIRE stub") and session 14 took it. The
+audit's framing — "this is the assumed-but-not-documented V1→V2
+boundary for the catalog itself" — held: V2 had carried the
+implicit assumption that a real catalog reader exists, but no
+ADMIRE entry, DECISIONS entry, or code surface said so. This stub
+makes the boundary explicit and the work nameable.
+
+The implementation chapter is its own substantive arc — likely
+multi-session, likely demanding refinements during validation
+(audit-during-validation discipline applies). The next-chapter
+agent inherits this entry as the starting point and follows the
+migration path outline above. Implementation does not start in
+this commit; the explicit framing is the deliverable.

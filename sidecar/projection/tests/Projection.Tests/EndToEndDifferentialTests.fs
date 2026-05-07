@@ -210,11 +210,11 @@ let ``MILESTONE: three-input projection passes end-to-end through both adapters 
     let totalAttributes =
         Catalog.allKinds catalogWithPopulations
         |> List.sumBy (fun k -> k.Attributes.Length)
-    Assert.Equal(totalAttributes, lineage.Value.Decisions.Length)
+    Assert.Equal(totalAttributes, (LineageDiagnostics.payload lineage).Decisions.Length)
 
     // 6. PK / NOT NULL columns enforce; nullable non-PK columns keep nullable.
     let decisionFor (key: SsKey) =
-        lineage.Value.Decisions
+        (LineageDiagnostics.payload lineage).Decisions
         |> List.find (fun d -> d.AttributeKey = key)
 
     // Parent.Id: PK → EnforceNotNull(PrimaryKey).
@@ -309,7 +309,7 @@ let ``DIFFERENTIAL: V1 Cautious-mode equivalent produces same outcomes for V2-ex
     // (LogicalMandatoryNoNulls, RelaxedUnderEvidence,
     // MandatoryButHasNullsBeyondBudget) are unreachable until IsMandatory
     // lands on Attribute.
-    Assert.All(lineage.Value.Decisions, fun d ->
+    Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         match d.Outcome with
         | NullabilityOutcome.EnforceNotNull PrimaryKey -> ()
         | NullabilityOutcome.EnforceNotNull PhysicallyNotNull -> ()
@@ -346,7 +346,7 @@ let ``T1 extended: end-to-end pipeline is deterministic on the triple`` () =
 
     let r1 = runOnce ()
     let r2 = runOnce ()
-    Assert.Equal<NullabilityDecisionSet>(r1.Value, r2.Value)
+    Assert.Equal<NullabilityDecisionSet>(NullabilityPass.decisionsOf r1, NullabilityPass.decisionsOf r2)
     Assert.Equal<LineageEvent list>(r1.Trail, r2.Trail)
 
 // ---------------------------------------------------------------------------
@@ -365,5 +365,5 @@ let ``structural commitment end-to-end: rich Catalog + Profile + empty Tightenin
         ProfileSnapshot.attach cat profileMicroFkProtectJson
         |> Result.value
     let lineage = NullabilityPass.run cat Policy.empty profile
-    Assert.Empty(lineage.Value.Decisions)
+    Assert.Empty((LineageDiagnostics.payload lineage).Decisions)
     Assert.Empty(lineage.Trail)
