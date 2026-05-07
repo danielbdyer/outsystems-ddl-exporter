@@ -3038,3 +3038,128 @@ decisions visible across chapters; this refinement makes the
 distinction between deferred-test-work and deferred-feature-work
 visible within an audit. Both compound: the index catches silent
 trigger-fires; this discipline catches misclassified findings.
+
+## 2026-05-13 — Pass return-type codification: `Lineage<Diagnostics<'a>>` when the pass produces both
+
+**Status:** decided (operating discipline; pass-codification refinement; preserves the false start so future agents recognize the temptation)
+**Context:** Session 14 commit 4 needed to wire `UniqueIndexPass`
+to the new Diagnostics writer (commit 3) so the V1 OpportunityBuilder
+contract (V2 Skip stub reserved in commit 2) could activate. The
+return-type question surfaced: should `UniqueIndexPass.run` keep its
+existing `Catalog -> Policy -> Profile -> Lineage<UniqueIndexDecisionSet>`
+shape and gain a sibling
+`runWithDiagnostics : ... -> Lineage<Diagnostics<UniqueIndexDecisionSet>>`,
+or should `run` itself migrate to the dual-writer shape?
+
+**The false start I want recorded.** Initial choice was the sibling
+function. The justification cited at the time: the closed-DU
+expansion empirical-test discipline (`DECISIONS 2026-05-13 — Closed-DU
+expansion: empirical confirmation`) — "the seam is positioned
+correctly if F# exhaustiveness errors light up only at match sites
+and no callers outside the variant's module need reshaping. If they
+do, the seam is wrong and you're being told that." Twenty existing
+`UniqueIndexPass.run` call sites in tests would have updated under
+the return-type change, which felt like a violation of that rule. So
+I picked the sibling — `run` unchanged, `runWithDiagnostics` as a
+new entry point that internally wraps `run`'s output with
+post-hoc-constructed diagnostic entries.
+
+**Why the citation was wrong.** The closed-DU expansion discipline
+is about *DU variant additions* — does the seam absorb a new variant
+without forcing reshapes at consumer sites? That's a property of
+variant-level changes against pattern-match sites. **Return-type
+generalization is a different category.** The empirical test for
+return-type changes is not "do callers reshape?" — it is "does the
+type signature accurately name what the function produces?"
+
+The two disciplines look superficially similar (both involve "do
+callers change?") and the closed-DU one is load-bearing in V2's
+recent codification, which made it the available rule when the
+question came up. But the rules apply to different change shapes;
+reaching for the closed-DU discipline on a return-type question is
+a category error. Future agents who notice test ripple from a
+return-type change and feel the pull toward the closed-DU rule
+should pause and ask: **am I adding a DU variant, or am I changing
+what the function produces?** The disciplines diverge there.
+
+**Why the sibling shape is wrong long-run.** A sibling
+`runWithDiagnostics` synthesizes diagnostic entries post-hoc from
+the decision set — the diagnostics aren't truly "what the pass
+produces," they're "what a wrapper produces from the pass's
+output." That's a tell: the canonical entry point should return what
+the pass actually does. More structurally, every pass that grows
+diagnostic emission later (`NullabilityPass` activates V1 #6/#7;
+`ForeignKeyPass` activates the DeleteRuleIgnore stub from session
+13; `CategoricalUniquenessPass` whenever it surfaces an audit-trail
+need) faces the same fork. The codebase ends up with
+`Pass.run` (vestigial-by-construction; the historical lineage-only
+shape) and `Pass.runWithDiagnostics` (the actual canonical entry
+point) duplicated across four passes. The vestigial half stays in
+test code forever because removing it would break callers — exactly
+the test-stability bias that made the sibling tempting in the first
+place, perpetuated.
+
+**The right framing — the shape that names the production.** A
+pass's return type should capture what the pass produces. The same
+discipline names `A18 amended` (Π consumes whichever subset of
+`Catalog × Profile` it needs — type signature names the inputs) and
+`A32` (passes may produce values consumed by emitters — the
+EnrichedCatalog or sibling value names the production). Type
+signatures are honest: they name what flows in and out. Passes that
+produce only decisions return `Lineage<'output>`. Passes that
+produce decisions plus observer-relevant findings return
+`Lineage<Diagnostics<'output>>`. The shape declares the production;
+callers update mechanically when production changes.
+
+**Decision:** **Passes return `Lineage<'output>` when they produce
+only decisions, and `Lineage<Diagnostics<'output>>` when they
+produce decisions plus observer-relevant diagnostics.** The variant
+arrives at meaningful inflection points — mirrors `DECISIONS
+2026-05-13` on rationale DUs absorbing continuous evidence (variants
+at meaningful inflection points beats parametric values on coarser
+variants); the same principle applied to function shapes. No
+sibling-function half-measure.
+
+**Worked example (commit 5).** `UniqueIndexPass.run` migrates from
+`Catalog -> Policy -> Profile -> Lineage<UniqueIndexDecisionSet>` to
+`Catalog -> Policy -> Profile -> Lineage<Diagnostics<UniqueIndexDecisionSet>>`.
+The pass body now emits a `DiagnosticEntry` for every decision that
+does not enforce uniqueness or that requires remediation (mirroring
+V1 `OpportunityBuilder.TryCreate`). Test sites (~20 in test files)
+update mechanically: `lineage.Value` becomes `dual.Value.Value`. A
+small helper `UniqueIndexPass.decisionsOf` extracts the
+`UniqueIndexDecisionSet` from the dual writer for tests that only
+care about decisions; tests that care about diagnostics access
+`dual.Value.Entries` directly.
+
+**Forward signal.** When `NullabilityPass`, `ForeignKeyPass`, or
+`CategoricalUniquenessPass` next grow diagnostic emission, they
+follow the same migration. Don't add a sibling function. Change the
+return type. Pay the test ripple. The cost is one-time; the
+discipline is permanent. Each migration is independent — passes that
+don't yet emit diagnostics keep their `Lineage<'output>` shape.
+
+**The general rule, named.** When a function's category of output
+grows (decisions → decisions + diagnostics; pure → effectful;
+single-value → multi-value), change the signature to name the new
+production. Test ripple is information about *where the function is
+called from*; it is not evidence the seam is wrong. The closed-DU
+discipline applies to DU variant additions; return-type
+generalizations have their own discipline, and that discipline is
+"name the production."
+
+**Reasoning / consequences.** Recording the false start is itself
+the discipline's value-add to future agents. The closed-DU rule will
+be tempting again — it's load-bearing, it's recent, it's available.
+The right reflex when a return-type change forces test ripple is
+*not* to reach for closed-DU; it is to ask whether the new return
+type names the production accurately. If yes, the ripple is the
+cost of honesty in the type system. If no, the change is wrong and
+the question is what the right shape is.
+
+This entry pairs with the audit-discipline refinement (session 14
+commit 1 — contract-vs-implementation cross-reference) as a session
+that produced two operating-discipline entries before producing
+substantive infrastructure. Both were named because both could
+recur. Future agents inherit the disciplines and the false starts
+together.
