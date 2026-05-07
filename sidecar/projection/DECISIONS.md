@@ -5297,3 +5297,109 @@ translation.
 findings classify into one of the two classes (or surface a
 third if neither fits, which would itself be a substantive
 finding worth marking explicitly).
+
+#### 2026-05-19 (session 22 amendment) — index-bearing fixture surfaces five index translation rules
+
+Session 22's index-bearing fixture surfaced five translation
+rules under empirical pressure (rules 19–23). The fixture
+exercised three V2-IR-relevant index shapes (PK; unique non-PK;
+composite non-unique with included columns) within a single
+entity.
+
+**Trace before fixture (admire-mode at slice level):** V1 carries
+the indexes[] array through to JSON via the
+`outsystems_metadata_rowsets.sql` aggregations (`#AllIdx`,
+`#IdxColsMapped`, `#IdxColsJson`, `#IdxJson`). The JSON shape
+includes name, isPrimary, kind, isUnique, isPlatformAuto,
+storage/perf attributes (isDisabled / isPadded / fill_factor /
+ignoreDupKey / etc.), structural fields (filterDefinition,
+dataSpace, partitionColumns, dataCompression), and a columns
+array with attribute / physicalColumn / ordinal / isIncluded /
+direction per column. **All visible to V2 through the JSON
+path.**
+
+**Classification:** V2-boundary-discipline class. V1 has the
+information; V2's IR scope is what's being chosen. The
+translation rules are V2's own architectural choices about
+scope, not input-path-bound questions. Same shape as the
+inactive-records resolution (session 21).
+
+**The five new translation rules:**
+
+| #  | V1 input shape | V2 output | Rationale |
+|----|---|---|---|
+| 19 | Index `name` + parent entity + module | `Index.SsKey = OS_IDX_<modName>_<entName>_<indexName>` | Index SsKey synthesis. V1's IndexName is unique per entity (per the SQL extraction's `#AllIdx` clustered key). The synthesis convention extends the existing module/kind/attribute/reference pattern. |
+| 20 | `index.isUnique` (boolean) | `Index.IsUnique = isUnique` | Direct mapping. |
+| 21 | `index.isPrimary` (boolean) | `Index.IsPrimaryKey = isPrimary` | Direct mapping. V2 distinguishes IsPrimaryKey from IsUnique at the structural level (V1 treats PK as a unique index, but V2 separates the concerns per the Index DU's design notes in `Catalog.fs:144-146`). |
+| 22 | `index.columns[].attribute` (string, attribute name within parent entity) | `Index.Columns = [SsKey list]` (resolved via `attributeSsKey moduleName entityName attribute`); sorted by `columns[].ordinal`; `columns[].isIncluded=true` entries dropped at the boundary | Same-entity attribute resolution. V1's `attribute` field names the attribute by string within the parent entity; V2 resolves to the synthesized SsKey. The included-columns drop is the canonical V2 boundary choice (per the OSSYS ADMIRE entry's "what V2 will explicitly NOT carry forward" section); V2's Columns carries only key columns. The ordinal sort preserves key-column order. |
+| 23 | Index records have no `isActive` field on the index itself | All indexes are carried through; no filter | V1's index metadata is at storage-object level (sys.indexes); there's no logical activity flag on indexes. The session-21 inactive-records filter does NOT extend to indexes. If a future fixture surfaces inactive-index handling (e.g., V2 grows a per-index activity flag for some emitter), the rule extends under empirical pressure. |
+
+**What this commit explicitly does NOT carry forward (FK
+extensions for indexes):**
+
+  - `index.kind` — V1 string field ("Index" / "PrimaryKey" /
+    "UniqueIndex" etc.). Redundant with V2's IsUnique +
+    IsPrimaryKey flags; V1's `kind` field encodes the same
+    distinctions structurally.
+  - `index.isPlatformAuto` — V1 marker for OSIDX_-prefixed
+    platform-generated indexes. V2 has no auto-generated marker
+    today. If a future emitter needs to skip platform-auto
+    indexes (e.g., to avoid scripting OutSystems-internal
+    indexes the platform regenerates), the rule extends.
+  - **Storage/performance attributes** — `isDisabled`,
+    `isPadded`, `fill_factor`, `ignoreDupKey`, `allowRowLocks`,
+    `allowPageLocks`, `noRecompute`. V2's Index has no axis for
+    these. They're DDL-emission concerns, not catalog structure;
+    if a future emitter wants WITH-clause scripting, the rule
+    extends.
+  - `index.filterDefinition` — V1 carries SQL Server filtered-
+    index definitions. V2 has no filtered-index axis. Defer
+    until a fixture surfaces a filtered index that matters to
+    the V2 IR.
+  - `index.dataSpace`, `index.partitionColumns`,
+    `index.dataCompression` — Storage placement metadata; V2 has
+    no axis. Same disposition as filter.
+  - `columns[].direction` — Per-column ASC/DESC ordering. V2's
+    Index.Columns is a positional SsKey list; no per-column
+    direction axis. If a future emitter wants direction-aware
+    DDL (e.g., descending PK for time-series tables), the rule
+    extends.
+  - `columns[].physicalColumn` — V1 redundancy; V2 derives
+    physical name from the attribute's ColumnRealization rather
+    than from the index column entry. The redundancy in V1 was
+    likely for cross-validation; V2 doesn't need it because
+    V2's IR resolves through SsKey identity.
+
+**Updated chapter status:**
+
+  - Sessions 18: rules 1–11 (minimal slice — module / kind /
+    attribute structure)
+  - Session 19: rules 12–16 (reference-bearing slice — FK
+    SsKey / deleteRule / cross-attribute)
+  - Session 20: rule 17 (Origin three-way placeholder under
+    JSON-path bound)
+  - Session 21: rule 18 (inactive-records boundary)
+  - Session 22: rules 19–23 (index translation — five rules)
+
+**Twenty-three translation rules total** in the running list
+across five substantive slices. The chapter has now exercised
+all four V2 Kind sub-shapes (Attributes; References; Indexes;
+Modality) plus the boundary disciplines (Origin; inactive-
+records). Two substantive slices likely remain plausible:
+static-entity (exercises Modality.Static populations end-to-end,
+couples with Projection.Adapters.Sql/Static.fs); cross-module
+FK (refines rule 16's same-module assumption).
+
+**Class summary** (per the session-22 two-classes amendment):
+
+  - Lossiness class: SsKey (rule 1-3 synthesis vs the bound);
+    EspaceKind (rule 17's bound). Two members exercised; both
+    resolve through SnapshotRowsets.
+  - Boundary-discipline class: inactive-records (rule 18);
+    index translation choices (rules 19–23). Multiple members
+    exercised; each member's resolution is independent.
+
+The class distinction is now empirically confirmed across two
+members per class. Future findings classify into one or the
+other before implementation begins; the resolution shape
+follows from the classification.
