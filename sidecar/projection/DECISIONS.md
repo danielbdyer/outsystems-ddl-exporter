@@ -4204,3 +4204,107 @@ and **anticipation-vs-speculation refinement** (DECISIONS commit
 Hold the spine.
 
 — Session 15 (the Diagnostics writer's second-consumer activation)
+
+## 2026-05-14 — DECISIONS is for resolved questions, not session narrative
+
+**Status:** decided (operating discipline; corrects a drift introduced during session 14)
+**Context:** Session 14 introduced session-closing reflections as
+DECISIONS entries (commits 9 and 12) and session 15 followed with
+its own reflection. These entries were narrative recaps —
+commit lists, test baselines, forward signals, rent-paying checks
+— with cross-references to the individual substantive entries
+made during the session. The substantive content already lives in
+those individual entries; the narrative wrapper duplicated it
+once and then aged immediately.
+
+The user surfaced the drift directly and asked for the session 14
+and 15 reflections to be removed. Right call. Codifying the rule
+so the drift does not recur.
+
+**Decision:** **DECISIONS.md is for substantive resolved questions
+only.** Session-narrative content — closing summaries, commit
+lists, forward signals, rent-paying checks, "what surfaced this
+session" — does not belong here.
+
+**The substance test:** would this entry still be useful in six
+months? If yes, it belongs in DECISIONS. If it ages with the
+session, it belongs elsewhere.
+
+  - **Substantive (in DECISIONS):** disciplines, refinements,
+    cash-outs of deferrals, amendments to existing entries,
+    codifications of patterns, decisions about specific design
+    questions. Worked examples: pass return-type codification;
+    named accessors for stacked types; anticipation vs.
+    speculation refinement; chapter-close ritual.
+  - **Session narrative (NOT in DECISIONS):** commit lists,
+    test-baseline diffs, forward signals for the next session,
+    "what surfaced during the work" recaps, rent-paying checks on
+    specific disciplines, session-by-session reflections.
+
+**Where session narrative belongs instead:**
+
+  - **Commit messages.** In-flight findings during the work; the
+    "what surfaced" content lands as part of the commit that
+    addressed it. Disciplines named separately as their own
+    DECISIONS entries.
+  - **PR descriptions.** Summary of what shipped; forward signals
+    for the next chapter; rent-paying observations.
+  - **`HANDOFF.md` updates.** When a chapter closes and a new
+    agent inherits, the bridge document captures the relevant
+    context.
+  - **`CHAPTER_CLOSE.md`** (or its equivalent for future
+    chapters). Chapter-end audit synthesis lives there; that's
+    where commit lists and forward signals belong.
+  - **The conversation itself.** Reflections shared with the
+    operator during the session — rent-paying checks, "did the
+    discipline hold?" observations, "here's what I'd watch
+    next" — are conversational, not durable. They go in the
+    chat, not in DECISIONS.
+
+**The drift that produced this entry.** Session 14's closing
+entry was useful framing for session 15's opening — it named the
+five disciplines and the meta-pattern about disciplines emerging
+from work and reflection. But that framing lived in DECISIONS for
+about three days before it was redundant; the disciplines
+themselves were already documented in their own entries; the
+forward signals were already in HANDOFF-style conversation. The
+narrative wrapper aged faster than DECISIONS' append-only
+discipline assumed.
+
+The session 15 reflection compounded the drift — it extended the
+narrative pattern with a rent-paying check structure that, while
+useful as a check, shouldn't have lived in DECISIONS.
+
+**Why it was tempting.** DECISIONS feels like the "official"
+record of what a session produced; reflections naturally want to
+live where the disciplines they observe live. The discipline-vs-
+narrative line wasn't drawn explicitly; the drift happened by
+default.
+
+**The corrective rule, restated for the future:**
+
+  Each substantive DECISIONS entry stands on its own. It is
+  discoverable from the chronological log, from the Active
+  deferrals index (if it codifies a deferral), from the operating
+  disciplines table in CLAUDE.md (if it codifies a cross-cutting
+  practice), and from cross-references in other entries. Session
+  narrative does not need a separate substantive entry to be
+  discoverable; the individual disciplines are already
+  discoverable.
+
+  When closing a session, the agent's reflection lives in the
+  conversation with the operator, in the PR description, or in
+  HANDOFF.md if the chapter is closing. The agent does not write
+  a DECISIONS entry summarizing the session.
+
+**Reasoning / consequences.** DECISIONS stays load-bearing only
+where it earns rent. The narrative gets pruned (session 14 and 15
+reflections removed in a follow-up commit). The discipline holds
+going forward; future agents inherit the rule explicitly so the
+drift does not recur.
+
+The general lesson: **append-only disciplines need a complementary
+prune-when-wrong discipline.** Append-only protects against
+revisionism; prune-when-wrong protects against narrative drift.
+The two pair: substantive content stays; narrative gets pruned
+when the rule is violated.
