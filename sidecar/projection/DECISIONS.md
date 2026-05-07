@@ -21,6 +21,44 @@ and title rather than rewriting it.
 
 ---
 
+## Active deferrals — index
+
+Deferred decisions with explicit trigger conditions. The chapter-close
+audit (session 12) found one trigger had fired silently (transform
+registry, N=10 with N≥4 deferral); session 13 cashed it out and
+introduced this index so the failure mode does not recur. Future agents
+scan this section before committing to substantive work; if a trigger
+has fired since the last review, log the cash-out entry below the
+table before continuing.
+
+| Deferral | First logged | Trigger condition | Status as of session 13 |
+|---|---|---|---|
+| **Composition primitive `fallback`** | 2026-05-13 (Composition vocabulary cash-out) | A second strategy returns "no decision" / Defer outcome and another picks up | 0 consumers |
+| **Composition primitive `accumulate`** | 2026-05-13 (Composition vocabulary cash-out) | A second pass needs to consume multiple-strategy decisions at once | 0 consumers |
+| **Composition primitive `wrap`** | 2026-05-13 (Composition vocabulary cash-out) | Per-strategy diagnostics emerge (likely tied to Diagnostics writer) | 0 consumers |
+| **Composition primitive `lift`** | 2026-05-13 (Composition vocabulary cash-out) | A strategy reused across different IR granularities (e.g., Nullability rule on view columns) | 0 consumers |
+| **Strategy registry mechanism** | 2026-05-11 (Strategy layer: a named architectural vector) | N≥4–6 strategies make name-keyed lookup useful | 6 strategy modules; no caller demands lookup by name |
+| **Diagnostics writer** | 2026-05-06 (Diagnostics live in a writer parallel to Lineage) | First downstream artifact gates on operator-channel telemetry | **Demand consistent across 12 sessions; multiple gated artifacts (`decision-log.json`, `opportunities.json`, `validations.json`, `dmm-diff.json`, opportunity-stream half of UniqueIndex, operator-approval handoff for FK/Nullability). `CHAPTER_CLOSE.md §4 priority 6` flags as next-chapter substantive work.** |
+| **`RequireQualifiedAccess` retrofit** on `UniqueIndexKeepReason` / `ForeignKeyKeepReason` / similar | 2026-05-11 refinement 1 (Strategy-layer codification empirical verdict) | DU is next substantively modified | No modification since session 8 |
+| **`CycleResolution.ResolutionStep.Reason` migration to structured DU** | 2026-05-11 (Strategy layer: a named architectural vector — caveat) | A second resolver strategy lands per the 2026-05-08 pluggability deferral | No second resolver; reason field still free-form string |
+| **Cross-catalog FK detection IR refinement** (`Catalog : string option` on `Reference` and `ForeignKeyKeepReason.CrossCatalogBlocked` made reachable) | 2026-05-13 (Closed-DU expansion: empirical confirmation) | A fixture exercising cross-catalog FKs surfaces the gap | Reserved DU variant exists but is unreachable; do not delete |
+| **Faker emitter (synthetic-data Π)** | 2026-05-13 (Session 11 reflection) | Either a third evidence type lands, or a use case forces proceeding with two evidence types and accepting the limitations | Two evidence types operational (Categorical, Numeric); no third in scope |
+| **DacFx integration in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-06 (DacFx integration deferred to first real-fixture milestone) | First real-fixture milestone arrives via the OSSYS catalog adapter | OSSYS catalog adapter itself not yet built (`CHAPTER_CLOSE.md §2.10`) |
+| **Multi-spine state pattern** | 2026-05-06 (Multi-spine state pattern is endorsed but not yet built) | A real use case surfaces in the algebra | None yet |
+
+**Discipline.** Each deferral here was logged as the right call **at the
+time it was made** under "IR grows under evidence." A deferral is not a
+TODO — the cash-out point is a structural condition, not a date. The
+table tells future agents which conditions to monitor; the discipline is
+to review the table when surveying CHAPTER_CLOSE-ranked priorities, when
+adding a strategy or pass, and at chapter close. If a trigger has fired
+silently between reviews, the audit-during-validation discipline expects
+a cash-out entry before substantive work continues — that is the lesson
+the transform-registry miss surfaced (`DECISIONS 2026-05-13 — Transform
+registry cash-out`).
+
+---
+
 ## 2026-05-06 — Sidecar lives at `sidecar/projection/` with its own solution
 
 **Status:** decided
@@ -2617,3 +2655,90 @@ accumulated judgment becomes documentation a fresh agent can
 inherit. Without this marker, the next chapter starts with the
 codebase but not the context; with this marker, it starts with
 both. The chapter ends here.
+
+## 2026-05-13 — Transform registry cash-out: deferral resolved as overtaken-by-evidence
+
+**Status:** decided (deferred-decisions cash-out, session-13)
+**Context:** `DECISIONS 2026-05-06 — Transform registry deferred until N≥4 passes`
+committed to revisit the transform registry when N reached 4. The
+codebase reached N=4 around session 6 and now stands at N=10
+(`Passes/CanonicalizeIdentity`, `NamingMorphism`, `NormalizeStaticPopulations`,
+`SymmetricClosure`, `TopologicalOrderPass`, `VisibilityMask`,
+`NullabilityPass`, `UniqueIndexPass`, `ForeignKeyPass`,
+`CategoricalUniquenessPass`). No subsequent DECISIONS entry either
+built the registry or re-deferred with rationale. The chapter-close
+audit (`CHAPTER_CLOSE.md §2.6`) flagged this as the most consequential
+silent-trigger miss: an explicit deferral with a numerical trigger that
+fired without a cash-out logged.
+
+**Decision:** **The transform registry is not built. The deferral
+resolves as overtaken-by-evidence.**
+
+**Rationale.** The 2026-05-06 deferral was sized against a *single
+linear pipeline composed via `>>`* — the masterwork's
+`pass1 >> pass2 >> pass3` framing where the registry's value was
+explicit ordering constraints, discoverability through reflection, and
+startup validation across a unified pipeline. V2 did not evolve into
+that shape. What V2 evolved into, instead, is **per-use-case driver
+functions** that compose passes ad hoc:
+
+  - The end-to-end milestone (`EndToEndDifferentialTests.fs`)
+    composes `CanonicalizeIdentity → NormalizeStaticPopulations →
+    SymmetricClosure → NullabilityPass → ...` for the Nullability
+    use case.
+  - The rich-profiling milestone (`RichProfilingEndToEndTests.fs`)
+    composes a different subset for distribution-aware emission.
+  - The strategy-driven passes (`NullabilityPass`, `UniqueIndexPass`,
+    `ForeignKeyPass`, `CategoricalUniquenessPass`) all delegate to
+    `Composition.fanOut` — but the inter-pass composition lives in
+    each test's setup or in each emitter's `emitFromInput` helper, not
+    in a global registry.
+  - There is no single "the V2 pipeline" to register passes against;
+    there are use cases (differential parity, rich profiling, future
+    Faker, future DacFx milestone) that compose subsets of the
+    available passes with different ordering and different evidence
+    inputs.
+
+The registry's value-proposition (one place to declare ordering;
+reflection-driven discovery; centralized startup validation) was
+written for a single-pipeline architecture. V2's per-use-case driver
+pattern doesn't have a single pipeline; each use case names its own
+composition explicitly, and the explicitness is itself the
+documentation. A registry would either become a per-use-case-driver
+*alternative* implementation (no value over what exists) or a
+*global* layer above the drivers (an abstraction over abstractions
+without empirical demand).
+
+**The numeric trigger was right; the framing was overtaken.** N≥4
+passes was the threshold predicted in the pipeline-style framing; in
+the driver-pattern framing the question becomes "does any driver
+benefit from registering passes by name?" and the answer is "no driver
+demands it." The numeric trigger fired honestly; the framing it
+referred to had been overtaken before the trigger was reached.
+
+**The lesson.** Deferrals with numerical triggers need explicit
+re-evaluation when the triggering condition is met, even if the
+work has continued in directions that make the deferral feel
+irrelevant. The 2026-05-06 deferral fired around session 6 (when the
+fourth pass landed); no agent caught it until the chapter-close audit
+in session 12. The structural answer is the new
+**Active deferrals — index** at the top of this file (introduced in
+session 13 alongside this entry). Future agents scan that table when
+surveying priorities; if a trigger has fired silently, the cash-out
+happens before substantive work continues.
+
+**Reasoning / consequences.** This entry closes the deferral
+explicitly. Future agents who read `DECISIONS 2026-05-06 — Transform
+registry deferred` should follow the back-reference to this entry and
+understand that the registry is not in V2's future under the current
+architecture. If a future use case demands a global pass-registration
+layer (e.g., the OSSYS catalog adapter exposes a multi-pipeline shape
+the driver pattern can't absorb), this cash-out is itself reversible
+under "IR grows under evidence" — but the demand has to surface, not
+the trigger.
+
+The active-deferrals index codifies the discipline so the same silent
+miss does not recur for `RequireQualifiedAccess` retrofit, the
+`CycleResolution.ResolutionStep.Reason` migration, the cross-catalog
+FK refinement, or any composition primitive whose second consumer
+arrives quietly.
