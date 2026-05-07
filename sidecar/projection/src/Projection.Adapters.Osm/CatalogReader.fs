@@ -109,6 +109,15 @@ module CatalogReader =
         : Result<SsKey> =
         SsKey.original (sprintf "OS_REF_%s_%s_%s" sourceModuleName sourceEntityName viaAttrName)
 
+    /// Index SsKey synthesis (session 22). Indexes identify by their
+    /// V1 IndexName, scoped to the entity. V1's `IndexName` is unique
+    /// per entity per V1's SQL extraction (`#AllIdx` keyed by
+    /// `EntityId, IndexName`).
+    let private indexSsKey
+        (moduleName: string) (entityName: string) (indexName: string)
+        : Result<SsKey> =
+        SsKey.original (sprintf "OS_IDX_%s_%s_%s" moduleName entityName indexName)
+
     // -----------------------------------------------------------------------
     // JSON helpers — light wrappers over System.Text.Json.JsonElement.
     // These are private; they exist to keep the translation code
@@ -394,6 +403,100 @@ module CatalogReader =
                             "Required reference fields missing on an attribute in '%s.%s'."
                             sourceModuleName sourceEntityName))
 
+    /// Extract one V2 Index from a V1 index JSON entry.
+    ///
+    /// V1's index JSON shape (per `outsystems_metadata_rowsets.sql`,
+    /// `#IdxJson` aggregation at line 864+) carries: `name`,
+    /// `isPrimary`, `kind`, `isUnique`, `isPlatformAuto`, plus
+    /// storage/perf attributes (`isDisabled` / `isPadded` / etc.),
+    /// structural fields (`filterDefinition`, `dataSpace`,
+    /// `partitionColumns`, `dataCompression`), and `columns` array.
+    /// V2's `Index` shape consumes only `name`, `isPrimary`,
+    /// `isUnique`, plus the key columns from `columns[]`.
+    ///
+    /// **Included-columns drop.** Per the OSSYS ADMIRE entry's
+    /// "what V2 will explicitly NOT carry forward" section, V1
+    /// `columns[]` entries with `isIncluded: true` are dropped at
+    /// the boundary; V2's `Columns` carries only key columns.
+    /// Documented divergence; not a bug.
+    ///
+    /// **Column ordering.** V1 carries `columns[].ordinal` to
+    /// preserve key-column order. V2's adapter sorts by ordinal
+    /// before flattening to `Columns: SsKey list`.
+    let private parseIndex
+        (moduleName: string) (entityName: string) (indexJson: JsonElement)
+        : Result<Index> =
+        let nameResult      = getString indexJson "name"
+        let isPrimaryResult = getBool   indexJson "isPrimary"
+        let isUniqueResult  = getBool   indexJson "isUnique"
+        match nameResult, isPrimaryResult, isUniqueResult with
+        | Success indexName, Success isPrimary, Success isUnique ->
+            let indexKey  = indexSsKey moduleName entityName indexName
+            let indexNm   = Name.create indexName
+            // Walk columns[]; filter isIncluded=true; sort by ordinal;
+            // resolve each key column's attribute name to its V2 SsKey.
+            let keyColResults =
+                match indexJson.TryGetProperty("columns") with
+                | true, arr when arr.ValueKind = JsonValueKind.Array ->
+                    arr.EnumerateArray()
+                    |> Seq.toList
+                    |> List.choose (fun col ->
+                        // Drop isIncluded=true (V1 included columns).
+                        match col.TryGetProperty("isIncluded") with
+                        | true, v when v.ValueKind = JsonValueKind.True -> None
+                        | _ -> Some col)
+                    |> List.map (fun col ->
+                        // Best-effort ordinal extraction; missing
+                        // ordinal sorts as 0 (preserves first-in-array
+                        // for malformed-but-readable inputs).
+                        let ordinal =
+                            match col.TryGetProperty("ordinal") with
+                            | true, o when o.ValueKind = JsonValueKind.Number ->
+                                match o.TryGetInt32() with
+                                | true, n -> n
+                                | _       -> 0
+                            | _ -> 0
+                        let attrNameResult = getString col "attribute"
+                        ordinal, attrNameResult)
+                    |> List.sortBy fst
+                    |> List.map snd
+                    |> List.map (fun attrNameRes ->
+                        match attrNameRes with
+                        | Failure es -> Failure es
+                        | Success an -> attributeSsKey moduleName entityName an)
+                | _ -> []
+            let foldedKeyCols =
+                keyColResults
+                |> List.fold
+                    (fun acc next ->
+                        match acc, next with
+                        | Success xs, Success x -> Result.success (xs @ [x])
+                        | Failure es, _         -> Failure es
+                        | _, Failure es         -> Failure es)
+                    (Result.success [])
+            match indexKey, indexNm, foldedKeyCols with
+            | Success k, Success n, Success cols ->
+                Result.success
+                    { SsKey        = k
+                      Name         = n
+                      Columns      = cols
+                      IsUnique     = isUnique
+                      IsPrimaryKey = isPrimary }
+            | _ ->
+                Result.failureOf (
+                    adapterError
+                        "indexBuild"
+                        (sprintf
+                            "Failed to build index '%s' on '%s.%s'."
+                            indexName moduleName entityName))
+        | _ ->
+            Result.failureOf (
+                adapterError
+                    "indexFields"
+                    (sprintf
+                        "Required index fields missing on an entity in '%s.%s'."
+                        moduleName entityName))
+
     let private parseKind
         (moduleName: string) (entityJson: JsonElement)
         : Result<Kind> =
@@ -448,8 +551,29 @@ module CatalogReader =
                         | Failure es, _                -> Failure es
                         | _, Failure es                -> Failure es)
                     (Result.success [])
-            match kindKey, kindName, foldedAttrs, foldedRefs with
-            | Success k, Success n, Success attrs, Success refs ->
+            // Collect index results — session 22; iterate the
+            // entity's `indexes[]` array. The inactive-records
+            // filter (session 21) does NOT extend to indexes today;
+            // V1 index records have no `isActive` field on the
+            // index itself (storage-level objects in V1's metadata).
+            let indexResults =
+                match entityJson.TryGetProperty("indexes") with
+                | true, arr when arr.ValueKind = JsonValueKind.Array ->
+                    arr.EnumerateArray()
+                    |> Seq.toList
+                    |> List.map (parseIndex moduleName entityName)
+                | _ -> []
+            let foldedIdx =
+                indexResults
+                |> List.fold
+                    (fun acc next ->
+                        match acc, next with
+                        | Success xs, Success x -> Result.success (xs @ [x])
+                        | Failure es, _         -> Failure es
+                        | _, Failure es         -> Failure es)
+                    (Result.success [])
+            match kindKey, kindName, foldedAttrs, foldedRefs, foldedIdx with
+            | Success k, Success n, Success attrs, Success refs, Success idxs ->
                 let modality =
                     if isStatic then [ Static [] ] else []
                 Result.success
@@ -460,7 +584,7 @@ module CatalogReader =
                       Physical   = { Schema = schema; Table = physicalName }
                       Attributes = attrs
                       References = refs
-                      Indexes    = [] }
+                      Indexes    = idxs }
             | _ ->
                 Result.failureOf (
                     adapterError
