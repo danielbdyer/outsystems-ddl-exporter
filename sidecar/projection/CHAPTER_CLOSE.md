@@ -355,4 +355,69 @@ The V2 sidecar is in a state where a next-chapter agent can reason about it from
 
 The chapter ends here. The next chapter inherits a strategy layer that has been validated on its central case, on its variation case, and on its first new-domain case without amendment — load-bearing in a way the codification wasn't at session 8's close. The next chapter also inherits the documentation hygiene work above as the first three actions before any new building begins.
 
+---
+
+## 7. Notes for my replacement — what I'd tell you over coffee
+
+The previous six sections are findings. This one is different: first person, unguarded, dispositional. Things I noticed but didn't pursue, places I defaulted to a pattern because it was familiar, decisions I'd revisit if I had more time. The audit synthesis is for your understanding of state; this section is for your understanding of how to inhabit the codebase. Treat it as you'd treat a colleague's quick note before they go on leave.
+
+### Things I'm less confident about than the audit makes them sound
+
+**The strategy-layer codification's "stability mark."** I wrote that confidently because session 11's third test passed without a fourth refinement, and that's a real signal. But the three tests so far — Nullability, UniqueIndex/ForeignKey, CategoricalUniqueness — all share a deeper shape: per-record decisions keyed by a single SsKey. If a future variant breaks that (a `JointDistribution` strategy keyed by *two* SsKeys, or a strategy whose evaluate is fundamentally async, or one that produces multiple decisions per invocation), I think the codification will need a fourth refinement and I haven't tested whether it'll absorb that gracefully. The empirical claim "the codification holds" is true for what's been tested. It's not the same claim as "the codification is finished."
+
+**Whether `CategoricalUniqueness` was the right strategy choice for session 11.** I picked it because it surfaced architectural variation (per-attribute granularity for a uniqueness-style decision) while keeping the evidence shape simple. The codification absorbed it cleanly. But the strategy's *useful* — does it have a downstream consumer in the next chapter? Nothing today reads its `SuggestUnique` decisions. If Faker doesn't use them and no anomaly strategy materializes, it's well-tested infrastructure with no payload. That's fine for codification validation; it's a real question for production use.
+
+**The `StrategyEvaluator<>` alias I codified at session 11.** It names the shape that's already enforced at the FanOutConfig boundary. It's documentary unless a strategy author types their evaluate against it. The four existing strategies don't — they get the type by inference through FanOutConfig.Evaluate. If you read the alias in DECISIONS and expected structural enforcement, you'll find a type-level rename instead. I think that's the right call but it's softer than the DECISIONS entry might read.
+
+**The `Composition.fanOut` extraction's long-term ergonomics.** Four type parameters on `FanOutConfig<'context, 'config, 'decision, 'decisionSet>` is a lot. At N=4 strategies it works. At N=6 or N=7 with new evidence shapes I'm not sure it'll feel right. There's a smell I haven't fully named — something about whether the wrapper records (each strategy's decision set, e.g., `{ Decisions: NullabilityDecision list }`) earn their place or whether they're vestigial wrapping that the codification could collapse. I'd revisit this if a fifth strategy shipped and the FanOutConfig started feeling like ceremony rather than seam.
+
+### Things I noticed but didn't pursue
+
+**The DECISIONS.md is at 2400+ lines and growing.** The chronological append-only discipline is honest, but the read cost compounds. AXIOMS works because amendments live next to the originals. DECISIONS doesn't have that — you have to know the keyword to find related entries. There's a need for a topical index eventually. I considered building one and decided it was speculative work; you'll know better than me when the read cost becomes friction.
+
+**The `Composition.fs` file has 72 lines of comments before the first code line.** That's intentional per the codification — the comments are load-bearing for DECISIONS 2026-05-13. But it reads as ceremony to a fresh eye. If you ever decide the codification's not paying off (which I don't think it will, but I might be wrong), the comments are absorbed work that should be re-evaluated as a unit, not stripped piecemeal.
+
+**The skip-stub asymmetry I documented in §2.7.** The honest reason it exists is *momentum*. `V1NullabilityParityTests.fs` was the canonical pattern but we shipped UniqueIndex / ForeignKey / etc. with admire-prose-only divergence documentation because we were moving fast. That's not what the discipline says. The discipline says: when V2 deliberately doesn't honor a V1 contract, that gets a Skip-stub at the test-file level so it shows up in test discovery. We violated it three times. CHAPTER_CLOSE.md §4 priority 3 is the cleanup; I'm flagging it here because the *pattern* of "this discipline applies but we shipped without it" is worth recognizing as a smell, not just as a doc-hygiene task.
+
+**Things in `obj/` that occasionally leaked into grep results during the audits.** Nothing semantic, just noise — F# leaves intermediate artifacts that show up in keyword searches. The build-graph audit handled it correctly. Worth knowing because it'll happen to you too.
+
+**A few minor inconsistencies probably hiding in the rich-profiling vector.** I made each small choice (decimal for percentiles, sample-size floor of 5, alphabetical sort of frequencies, truncation as a structural commitment) carefully but I haven't gone back and checked them against each other. If a third evidence type lands and one of these conventions doesn't extend, that's where the inconsistency surfaces. None high-stakes; just probably there.
+
+### Places I defaulted to the familiar pattern
+
+**The `ProfileStatistics` adapter as a sibling to `ProfileSnapshot.attach`.** I made that call quickly. The trade-off "more files, clearer boundaries" vs "fewer files, lower navigation cost" is real. At N=2 sibling adapters it feels right. At N=5 (when temporal density and joint distributions land) it might not. I went with siblings because it matched the strategy-layer-as-folder discipline; that's a defensible reason but I'm not sure it's the *right* reason long-term.
+
+**The closure-based adaptation in `ForeignKeyPass` that captures `catalog`.** I documented it carefully as the pattern, but if you read the four pass drivers side-by-side, ForeignKey's is structurally asymmetric to the other three. The closure works; it's the documented honor of "uniform signature shape but variable arity context." But a fresh reviewer will probably bounce off it the first time. The DECISIONS entry justifies it; the code itself doesn't telegraph "this is the right shape" loudly enough.
+
+**Embedding `Projection.Adapters.Sql.Static` as a pattern setter inside `EntitySeedDeterminizer`'s ADMIRE entry rather than splitting it out.** That made the 2026-05-09 ADMIRE cross-reference text confusing ("the second is implicit in this same status"). The convention "every admired thing gets its own entry" hasn't held universally. The split would have been cheap; I didn't do it because EntitySeedDeterminizer's admire was already long.
+
+### Decisions I'd revisit if I had more time
+
+**The Diagnostics writer deferral.** Every session has hit something that wants it. We've kept saying "later." I held the line on not building speculatively, which is correct under the discipline, but I'm genuinely uncertain whether building it at session 6 (when the first opportunity-stream Skip case landed) would have unblocked more downstream work than the speculative cost of building it without all its consumers being known. Whether the deferral was right or whether I should have built it earlier — I don't know. The next chapter will probably build it whether or not it's prioritized; the demand is too consistent.
+
+**The transform registry deferral firing at N=4 with no cash-out logged.** I caught this in the chapter-close audit, not earlier. That's a real miss. The deferral has been dead-letter since session 8 or 9; I noticed when reading DECISIONS end-to-end for the audit. The lesson: deferred decisions with explicit numerical triggers need a periodic check that the trigger hasn't quietly fired. None of my disciplines surface this; it requires re-reading old DECISIONS. Worth a forward-looking habit.
+
+**The `RawTextEmitter` running on the synthetic-milestone form for so long.** DacFx integration was deferred at session 1; it's still deferred at session 12. We've added emitters and strategies on top of what was supposed to be a placeholder. The longer the placeholder runs, the more decisions land in the placeholder's style. I'm uncertain whether that's healthy (the placeholder's been good enough; defer until evidence forces) or whether it's accumulating tech debt that will cost when the real fixtures arrive. I default to "defer until evidence forces"; you may have better information than I did.
+
+### Tells I learned to recognize
+
+**"This feels expedient" is a smell.** When I caught myself reaching for a pattern because it was familiar rather than because it was right, the result usually leaked into the docs as awkward wording later (the "embedded pattern setter" example above). The tell: if I'm hesitating about whether to write a DECISIONS entry, I probably should write one — the hesitation is the discipline's reflex saying "this needs to be visible."
+
+**A subagent's report being too tidy means I asked the wrong question.** The five audit reports varied in confidence — the build-graph audit said "Confirmed clean" a lot, the doc-drift audit found ten distinct issues, the V1 test audit surfaced two genuinely missing tests. The asymmetry is real signal, not noise. When all audits report "all clean" that's the moment to ask whether the audits were probing the right things.
+
+**The codification's stability is itself testable.** The session-11 reflection that said "no fourth refinement was required" was the codification passing a test. I didn't recognize that framing until session 12; you should recognize it earlier. Absence of finding is finding when the test was honestly probing.
+
+### Where I'd want a fresh reader to second-guess me
+
+- The **CHAPTER_CLOSE.md priority ranking** in §4. I ranked README first because it's the highest-leverage doc work. You might disagree if the next chapter's first move is the Diagnostics writer or the OSSYS catalog adapter, in which case those should jump up.
+- The **stability-mark DECISIONS entry** I wrote at session 12. It claims the codification is at stability based on three tests. If you read it and feel the claim is too strong for the evidence, that's a fair reading. The amendment-or-not question is empirical; one heterogeneous fourth strategy can change the answer.
+- The **two-consumer threshold** for emergent primitives (DECISIONS 2026-05-13). I codified it; it served. But if you find a case where one consumer's pattern is so clean that not extracting feels like leaving value on the table, the threshold is a guideline not a law. The discipline is "extract when it earns its place" — count is a proxy for earning, not the only measure.
+- The **closing posture of "hold the spine."** I've been signing off this way because the user did first. It's become a phrase I find useful — meaning roughly "don't drift mid-session under pressure to ship." If it doesn't resonate for you, drop it. The disposition matters more than the phrase.
+
+### One last thing
+
+The audit-during-validation discipline produced five paydowns across sessions 4, 5, 7, 8, 11. None were on the agenda. All landed because the discipline was "act on what surfaces" rather than "ship what's planned." This is the single most valuable inheritance from the prior chapter — not any specific finding but the disposition that produces findings.
+
+If you skip everything else in this section, keep this: when something surfaces during the work that wasn't planned, treat the surfacing itself as evidence and act on it before shipping. The codebase has earned its current shape because that disposition was operated; it'll keep earning its shape if you operate it too.
+
 Hold the spine.
