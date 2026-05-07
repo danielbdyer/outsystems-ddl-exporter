@@ -3700,3 +3700,249 @@ prune-when-wrong discipline.** Append-only protects against
 revisionism; prune-when-wrong protects against narrative drift.
 The two pair: substantive content stays; narrative gets pruned
 when the rule is violated.
+
+## 2026-05-14 — Writer codification reaches its stability mark (heterogeneous third test held)
+
+**Status:** decided (codification stability earned through three real tests; mirrors `DECISIONS 2026-05-13 — Strategy-layer codification reaches stability mark`)
+**Context:** The Diagnostics writer landed at session 14 commit 3
+with three predictions about how the dual-writer pattern would
+behave: (1) the pass return-type codification (`Lineage<'output>`
+vs `Lineage<Diagnostics<'output>>`) would absorb pass migrations
+mechanically; (2) the named-accessor discipline would keep call
+sites readable through migrations; (3) the Skip-to-Behavioral
+activation pattern would be mechanically repeatable for new
+consumers. Session 14 (UniqueIndex) and session 15 (Nullability)
+provided two real tests of these predictions; both passed. The
+codification was held back from a stability claim per `DECISIONS
+2026-05-13 — Stability mark amendment` — N=2 within a coherent
+shape (per-record decisions keyed by single SsKey, both emitting
+on failure-side variants of their outcome DUs) earns less than
+N=3 with at least one heterogeneous instance.
+
+Session 16 ran the third test on ForeignKey, deliberately chosen
+to be heterogeneous in emission shape: ForeignKey emits diagnostics
+on **both** failure-side keep-reasons (mirroring UniqueIndex /
+Nullability) **and** on a success-with-caveat variant
+(`EnforceConstraint(ScriptWithNoCheck(orphanCount))`) within a
+single pass. The substantive question: does the writer absorb
+both shapes side-by-side without structural refinement?
+
+**Decision:** **The Diagnostics writer codification reaches its
+stability mark.** The four core predictions all held under the
+heterogeneous third test:
+
+| Prediction | ForeignKey outcome |
+|---|---|
+| Pass return-type codification absorbs the migration | ✓ ForeignKeyPass.run migrated to `Lineage<Diagnostics<ForeignKeyDecisionSet>>` mechanically; ~14 test sites updated via sed; no refinement to the writer or the codification required |
+| Named-accessor discipline keeps call sites readable | ✓ `LineageDiagnostics.payload`, `ForeignKeyPass.decisionsOf` — same shape as the prior two passes; no smell-fix discoveries |
+| Skip-to-Behavioral activation is mechanically repeatable | ✓ The session-13 Skip stub redirected to V2's actual success-with-caveat case (the V1 anchor was unreachable from V2 fixtures); the activation flipped to `[<Fact>]` cleanly |
+| Diagnostic emission shape absorbs heterogeneity | ✓ Success-with-caveat (`EnforceConstraint(ScriptWithNoCheck _)`) and keep-reason (`DoNotEnforce(...)`) emissions produce structurally identical `DiagnosticEntry` values (same Source / Severity / field shape); only the `Code` prefix routes them. No structural distinction needed at the entry level |
+
+**The empirical test for stability — the same one the strategy-layer codification used:**
+
+  1. The codification was named in session 14 (a descriptive pass
+     after the first instance — UniqueIndex).
+  2. It was tested under closely-related variation through session
+     15 (Nullability — second instance with similar shape, both
+     failure-side keep-reasons within "per-record decision keyed
+     by single SsKey" shape).
+  3. It was tested under genuinely new pressure in session 16
+     (ForeignKey — third instance with heterogeneous emission:
+     keep-reasons + success-with-caveat within one pass, plus
+     two reserved-but-unreachable variants for IR-refinement
+     completeness).
+  4. None of those tests forced a refinement. The absence of
+     finding is itself the finding.
+
+**What stability means in practice.** Future writer-consumer
+activations after this point inherit a codification that has been
+validated on:
+
+  - Its central case (UniqueIndex per-index granularity, failure-
+    side emission on PolicyDisabled / DataHasDuplicates / etc.)
+  - Its variation case (Nullability per-attribute granularity,
+    same failure-side shape with one audit-worthy
+    KeepNullable(RelaxedUnderEvidence))
+  - Its heterogeneous case (ForeignKey per-reference granularity,
+    failure-side AND success-with-caveat emission within one pass)
+
+Future agents migrating the fourth pass to the dual writer (likely
+CategoricalUniqueness if a use case demands diagnostic emission, or
+a future pass migrating from a third-channel split if that lands)
+absorb the codification's conventions and trust they hold:
+`Lineage<Diagnostics<DecisionSet>>` shape; `opportunityEntry`-style
+mapping function; `LineageDiagnostics.payload` named accessor;
+`Pass.decisionsOf` domain shortcut; same closed-DU exhaustiveness
+discipline.
+
+**What stability does not mean** (preserving the session-13 amendment's framing):
+
+  - It does not mean the codification is finished. New pressure
+    may surface refinements — the three-channel split (operator /
+    auditor / developer per the constitution) is the most plausible
+    refinement vector when a real consumer demands per-channel
+    routing. The `Severity` field's three-way DU (Info | Warning |
+    Error) may grow if a fourth band emerges. The `Metadata` field's
+    `Map<string, string>` may promote to a typed DU when a consumer
+    demands typed payload.
+  - The stability claim is bounded by what's been tested. The three
+    real tests were all single-channel synchronous emission with
+    `Map<string, string>` metadata. Multi-channel, async-emitting,
+    or typed-metadata consumers would be fourth-test-shaped.
+
+Within those bounds, the stability mark is earned.
+
+**Reasoning / consequences.** The Diagnostics writer's codification
+has now been validated on the same empirical pattern the strategy-
+layer codification was: descriptive pass → variation case →
+heterogeneous case → no fourth refinement required. Future writer
+work inherits a codification that holds; future stability marks for
+other codifications follow the same N=3-with-heterogeneity protocol.
+
+**The general lesson:** **stability claims earn their place through
+heterogeneous third tests, not structurally-similar third tests.**
+A third consumer with the same shape as the first two adds confidence
+to a coherent-shape claim but doesn't extend the claim. A third
+consumer with a different shape (like ForeignKey's success-with-
+caveat alongside keep-reasons) tests whether the codification's
+seams are positioned to absorb variation, not just to repeat the
+same pattern. The protocol should be honored in future codification
+work — when designing the third real test of any codification, pick
+the case that stresses the seams you suspect, not the case that
+confirms what you already know.
+
+## 2026-05-14 — opportunityEntry stays inlined: N=3 of two distinct shapes, not N=3 of one
+
+**Status:** decided (extraction question evaluated empirically; defer)
+**Context:** Three passes (UniqueIndex, Nullability, ForeignKey)
+each have a private `opportunityEntry` function that maps decisions
+to `DiagnosticEntry option`. At surface count this is N=3 — the
+two-consumer threshold (`DECISIONS 2026-05-13 — Emergent primitives`)
+plus the anticipation-vs-speculation refinement (`DECISIONS
+2026-05-13 — Anticipation vs. speculation`) suggest extraction
+becomes a question at N=3. The session 14 reflection (now pruned;
+preserved in commit history) and the session 15 reflection both
+flagged the question for explicit evaluation here.
+
+The substantive question — does the opportunityEntry-style mapping
+earn primitive extraction at N=3? — has a more nuanced answer than
+naive consumer-counting.
+
+**The empirical inventory of the three opportunityEntry functions:**
+
+| Pass | Input type | Mapping shape | Code prefix |
+|---|---|---|---|
+| UniqueIndex | `UniqueIndexDecision` | `match decision.Outcome with` → `EnforceUnique _` → None; `DoNotEnforce reason` → match-on-reason → entry | `tightening.uniqueIndex.<reason>` |
+| Nullability | `NullabilityDecision` | `match decision.Outcome with` → `EnforceNotNull _` → None; `KeepNullable reason` → match-on-reason → entry (3 of 3 reasons handled, 2 emit None); `RequireOperatorApproval conflict` → match-on-conflict → entry | `tightening.nullability.<reason>` |
+| ForeignKey | `ForeignKeyDecision` | `match decision.Outcome with` → `EnforceConstraint evidence` → match-on-evidence → entry-or-None (3 of 3 evidence handled; 1 emits Some, 2 emit None); `DoNotEnforce reason` → match-on-reason → entry (7 of 7 reasons handled, all emit Some) | `tightening.foreignKey.<reason>` |
+
+**The shape distinction.** UniqueIndex and Nullability share a
+deeper shape: only the failure-side variant of the outcome
+emits-with-payload-mapping. The positive-side
+(`EnforceUnique _` / `EnforceNotNull _`) collapses to `None`
+without further inspection. ForeignKey is structurally different:
+the positive-side (`EnforceConstraint evidence`) requires
+inspection because one of three evidence variants
+(`ScriptWithNoCheck _`) emits-with-payload while the other two
+collapse to `None`.
+
+**Two shapes, not one:**
+
+  - **Shape A (N=2 — UniqueIndex, Nullability)**: positive-side
+    is uniformly None; only the failure-side discriminates. The
+    extracted primitive would be roughly:
+    ```fsharp
+    type DiagnosticPolicy<'outcome, 'failure> = {
+        IsFailure : 'outcome -> 'failure option
+        FailureToEntry : 'failure -> DiagnosticEntry
+    }
+    ```
+  - **Shape B (N=1 — ForeignKey)**: both positive-side and
+    failure-side discriminate; positive-side has at least one
+    success-with-caveat. The extracted primitive would be roughly:
+    ```fsharp
+    type DiagnosticPolicy<'outcome> = {
+        OutcomeToEntry : 'outcome -> DiagnosticEntry option
+    }
+    ```
+
+The Shape-B form actually generalizes Shape-A (every Shape-A
+function trivially fits the Shape-B signature). But the extraction's
+ergonomics suffer at Shape-A consumers — they'd have to write
+boilerplate handling positive-side variants that always collapse to
+None.
+
+**Decision:** **Defer extraction. The apparent N=3 is N=2-of-shape-A
+plus N=1-of-shape-B; neither shape has reached the two-consumer
+threshold within itself.**
+
+The honest interpretation of the codebase's emission patterns:
+
+  - Shape-A has two consumers (UniqueIndex, Nullability). At N=2
+    the two-consumer threshold suggests the abstraction earns its
+    place — but only within Shape-A.
+  - Shape-B has one consumer (ForeignKey). At N=1 the threshold is
+    not yet met.
+  - Extracting a primitive that subsumes both shapes (the Shape-B
+    generalization) would force Shape-A consumers to write boilerplate
+    they don't need today; that's the "speculative abstraction"
+    failure mode the discipline guards against.
+  - Extracting a Shape-A-only primitive would leave ForeignKey
+    inlined; the inconsistency creates its own friction.
+  - Inlining all three preserves the per-pass clarity (each
+    `opportunityEntry` is locally readable) at the cost of
+    duplication — but the duplication is small (~30 lines each)
+    and stable.
+
+**The forward trigger for re-evaluation:**
+
+  - **A fourth pass** (e.g., CategoricalUniquenessPass migrating to
+    diagnostic emission, or a future pass like a Faker emitter that
+    co-emits diagnostics) gives the question a fourth data point. If
+    the fourth pass fits Shape-A, that's N=3 of Shape-A — extraction
+    earns its place within Shape-A; ForeignKey's Shape-B remains
+    inlined as the heterogeneous case. If the fourth pass fits
+    Shape-B, that's N=2 of Shape-B — extraction earns its place
+    within Shape-B; the Shape-A passes can opt into the same
+    primitive at the cost of trivial boilerplate, or stay
+    Shape-A-extracted.
+
+  - **A consumer outside the pass layer** (e.g., the Faker emitter
+    consuming decisions plus diagnostics from upstream passes; or a
+    CLI shell composing per-strategy diagnostics across passes)
+    might surface a need for a primitive that operates on
+    `DiagnosticEntry list` rather than on outcome-to-entry mapping.
+    That would be a different abstraction question entirely.
+
+**Position B re-applied (per `DECISIONS 2026-05-13 — Anticipation vs. speculation`).**
+
+  - Position A (extract fully now): wrong — the apparent N=3 is
+    actually N=2+N=1 of distinct shapes; extracting against either
+    shape introduces speculative cost.
+  - Position B (structural alignment without extraction): the
+    three opportunityEntry functions already share a structural
+    shape — same input/output types modulo decision-type
+    parameter, same use of `match decision.Outcome`, same
+    `mkEntry` helper pattern. A future agent extracting can do so
+    mechanically. No code change needed today; the structural
+    alignment is honored by inlined consistency.
+  - Position C (defer fully): the chosen disposition. Inlining at
+    N=3-of-two-shapes preserves clarity; extraction becomes a
+    question again at N=4 with concrete shape evidence.
+
+**Reasoning / consequences.** Naive consumer-counting would have
+extracted at N=3 and produced a primitive that one of three
+consumers fits awkwardly. Looking at the shape distinction reveals
+that N=3 is the wrong count; the right counts are N=2 and N=1.
+The two-consumer threshold (within a shape, not across shapes) is
+honored by deferring; the anticipation-vs-speculation refinement
+is honored by recognizing that ForeignKey's heterogeneity is real
+shape variation, not a misclassification.
+
+**The general lesson:** **count consumers within a shape, not
+across shapes.** When evaluating extraction, the question is "do N
+consumers share the same shape such that one abstraction serves
+them all without forcing accommodation?" Two consumers with the
+same shape and one with a different shape is N=2-and-N=1, not N=3.
+The discipline against speculative abstraction extends to
+classifying consumers by shape before counting.
