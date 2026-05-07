@@ -5957,3 +5957,137 @@ risk wrong-class assumptions like the speculative-Origin case from
 session 18). The codification is a checked-implicit-pattern;
 operating it is a small per-slice discipline that compounds into
 correct class classification across the chapter's running rules.
+
+## 2026-05-21 — Chapter 2 close: alternative-IR-surface class (third translation-finding class)
+
+**Status:** decided (operating discipline; chapter-2 close
+codification — completes the V1↔V2 translation-finding typology)
+**Context:** Session 25's chapter-close audit (subagent #3 — OSSYS
+chapter completeness) surfaced a third class of V1↔V2 translation
+finding that the chapter has been operating implicitly without
+naming. The two-class typology (`DECISIONS 2026-05-19 — naming the
+two classes of resolution patterns explicitly`, session 22
+documentation hygiene) covered:
+
+  1. **JSON-projection-lossiness class** — V2 cannot see X
+     because V1's JSON projection strips it; resolved via input-
+     path expansion (`SnapshotRowsets`).
+  2. **V2-boundary-discipline class** — V2 sees X but has no
+     axis; resolved via V2's own architectural choice (filter,
+     carry through, refine IR with new variant).
+
+Subagent #3's `onDisk` finding (the eleven-field per-attribute
+envelope V1 emits and V2 silently drops) does not fit either
+class cleanly: V2 *does* see `onDisk` (it's in the JSON), so it's
+not lossiness; V2's IR has no axis for `onDisk` *as such*, so it
+looks boundary-discipline; but V2 *does* have a parallel
+structure (Profile) that is the natural home for the same
+information. The "no axis" framing of the boundary-discipline
+class doesn't capture the third option — *route to alternative
+surface*.
+
+**Decision: the typology is three classes, not two.** The third
+class is named explicitly here.
+
+  3. **Alternative-IR-surface class.** V2 sees X through the
+     current input; V2's primary IR (Catalog) has no axis for it;
+     **but V2 has a parallel structure (Profile, Diagnostics, or
+     a future surface) that is the natural home for the same
+     information class.** Resolution: **route to the alternative
+     surface**; possibly identify the alternative as canonical,
+     making V1 input redundant (when a parallel V2 chain produces
+     the same evidence at a different temporal point).
+
+**Currently-known members:**
+
+  - **V1 `deleteRuleCode: "Ignore"` → V2 `OnDelete: NoAction` +
+    Diagnostics emission** (session 19; rule 13). V1's "Ignore"
+    encodes the audit-trail concern "we tolerated a missing delete-
+    rule." V2's `ReferenceAction` DU has no `Ignore` variant; the
+    `NoAction` collapse is structural. The audit-trail concern
+    routes to V2's Diagnostics writer (the alternative surface),
+    where structured-rationale emission preserves V1's audit
+    intent without polluting Catalog's structural typing.
+  - **V1 `attributes[].onDisk` envelope → silently dropped by
+    OSSYS adapter; routes to V2's Profile (or read-side-adapter
+    output) when read-side adapter chapter materializes** (session
+    25 commit 1; ADMIRE entry's won't-carry-forward addition).
+    The eleven physical-reality fields (`sqlType`, `maxLength`,
+    `collation`, `isIdentity`, `isComputed`, `computedDefinition`,
+    `defaultDefinition`, `defaultConstraint`, `checkConstraints`,
+    plus more) are V1's snapshot of physical reality at extraction
+    time; V2's read-side adapter is V2's read at deployment-
+    validation time. Parallel sources of the same information
+    class. The read-side adapter is canonical for the canary use
+    case (it queries deployed reality directly); OSSYS `onDisk`
+    is *redundant* until the read-side chapter discovers a drift-
+    detection use case requiring both.
+
+**Two members empirically confirms the class** at the same N=2
+threshold the boundary-discipline class earned its naming at
+(session 22). The chapter has now produced the complete typology
+of V1↔V2 translation findings.
+
+**The three classes operationally:**
+
+| Class | Symptom | Resolution shape | Composability |
+|---|---|---|---|
+| **JSON-projection-lossiness** | V2 can't see X | Input-path expansion (e.g., `SnapshotRowsets`) | All members compose through one resolution |
+| **V2-boundary-discipline** | V2 sees X; V2 IR has no axis; choose | Filter-at-adapter, carry-through, or IR-refinement-under-demand | Members don't compose; each negotiates independently |
+| **Alternative-IR-surface** | V2 sees X; primary IR has no axis; parallel V2 surface is the natural home | Route to alternative surface (Profile, Diagnostics, future surface); possibly identify alternative as canonical | Each member routes independently; the routing target may make V1 input redundant |
+
+**The trace-before-fixture pattern extends to three-class
+classification.** Future slices apply the same trace-before-
+fixture discipline; the classification informs the resolution
+shape. A finding that initially looks boundary-discipline ("V2
+has no axis") gets re-evaluated against the alternative-IR-
+surface question ("does V2 have a parallel surface that's the
+natural home?") before resolution lands. The session-25 onDisk
+finding is the worked example: initial framing was "won't-carry
+under boundary-discipline shape"; trace and re-evaluation
+surfaced the read-side adapter as the alternative surface;
+resolution shape became "won't-carry-with-route-to-alternative-
+when-that-chapter-lands."
+
+**Why naming this class matters operationally.**
+
+The alternative-IR-surface class has different *coupling
+characteristics* from the other two:
+
+  - **Couples chapters across V2's surfaces.** `onDisk`'s
+    resolution depends on the read-side adapter chapter; the
+    DeleteRule-Ignore resolution depended on the Diagnostics
+    writer chapter. The class is structurally cross-chapter,
+    where the other two classes are structurally within-chapter
+    (lossiness resolves through one input-path-expansion chapter;
+    boundary-discipline resolves through one IR-refinement-or-
+    boundary-choice chapter).
+  - **Re-evaluates V1 input as potentially redundant.** When the
+    alternative V2 surface is canonical (read-side adapter for
+    `onDisk`), the V1 input is not just "not-carried" but
+    "redundant-with-canonical-V2-source." This is a different
+    disposition from "V2 has no axis"; it carries a different
+    re-open trigger ("does the alternative surface need
+    cross-validation against V1's source?" rather than "does
+    consumer demand surface a need for the IR axis?").
+
+**Forward-looking.** Subsequent V1↔V2 translation chapters (and
+chapters bridging V2 to anything else, which the codebase will
+accumulate as DACPAC, OData, etc. adapters land per A18 and A21)
+inherit the three-class framework. The class typology is now
+complete enough to operate as a checked surface during chapter-
+open scoping, slice-level trace-before-fixture, and chapter-
+close ritual. The chapter-2 work has produced the typology; the
+chapter-3+ work operates it.
+
+**Reasoning / consequences.** Naming the third class makes the
+chapter's complete typology explicit. Future chapters dealing
+with V1↔V2 translation (or V2 to anything else) inherit the
+three-class framework: input lossiness, boundary discipline,
+alternative-surface routing. The trace-before-fixture pattern
+extends to three-class classification at N=3 (already at N=3
+on classification practice from session 22; the class extension
+landing here is consistent with the existing operating-
+discipline shape). The chapter-2 close has produced one of its
+most consequential intellectual artifacts: a complete typology
+for V1↔V2 translation findings that future chapters operate.
