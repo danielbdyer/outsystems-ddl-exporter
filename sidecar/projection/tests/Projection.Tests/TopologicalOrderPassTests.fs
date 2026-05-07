@@ -574,7 +574,7 @@ let ``post-symmetric-closure catalog is cyclic; emitters compose correctly`` () 
 
 // ---------------------------------------------------------------------------
 // V1 divergences — explicit skip stubs naming intentional V2 differences
-// (CHAPTER_CLOSE.md §2.7; session 13 skip-stub completion).
+// (CHAPTER_1_CLOSE.md §2.7; session 13 skip-stub completion).
 // ---------------------------------------------------------------------------
 
 [<Fact(Skip = "V1 EntityDependencySorterTests.SortByForeignKeys_ResolvesSanitizedEffectiveNames asserts that the sorter resolves FK references via per-table 'effective sanitized physical name' (the post-sanitization SQL identifier). V2's TopologicalOrder operates over SsKey identity (A1, A4) — sanitization is a NamingMorphism concern that runs before emission, not before ordering. The boundary case (sanitized-name collisions resolving to distinct SsKeys) is therefore reachable only when V2 decides to model multi-name physical realizations as part of the IR. Reserve the test name; promote to Behavioral when the IR refinement lands.")>]
@@ -584,7 +584,7 @@ let ``V1 TopologicalOrder: resolves sanitized effective names — SKIPPED (V2 di
 // ---------------------------------------------------------------------------
 // V2 contracts ADMIRE promises but V2 has not yet built — Skip stubs
 // reserve the test names so future implementation lands cleanly into
-// the named contract. (CHAPTER_CLOSE.md §4 priority 4; session 13
+// the named contract. (CHAPTER_1_CLOSE.md §4 priority 4; session 13
 // audit-during-validation finding: the priority-4 work is feature
 // implementation, not test addition. See session 13 closing DECISIONS
 // entry for the disposition.)

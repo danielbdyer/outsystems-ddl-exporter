@@ -43,7 +43,7 @@ table before continuing.
 | **`CycleResolution.ResolutionStep.Reason` migration to structured DU** | 2026-05-11 (Strategy layer: a named architectural vector — caveat) | A second resolver strategy lands per the 2026-05-08 pluggability deferral | No second resolver; reason field still free-form string |
 | **Cross-catalog FK detection IR refinement** (`Catalog : string option` on `Reference` and `ForeignKeyKeepReason.CrossCatalogBlocked` made reachable) | 2026-05-13 (Closed-DU expansion: empirical confirmation) | A fixture exercising cross-catalog FKs surfaces the gap | Reserved DU variant exists but is unreachable; do not delete |
 | **Faker emitter (synthetic-data Π)** | 2026-05-13 (Session 11 reflection) | Either a third evidence type lands, or a use case forces proceeding with two evidence types and accepting the limitations | Two evidence types operational (Categorical, Numeric); no third in scope |
-| **DacFx integration in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-06 (DacFx integration deferred to first real-fixture milestone) | First real-fixture milestone arrives via the OSSYS catalog adapter | OSSYS catalog adapter itself not yet built (`CHAPTER_CLOSE.md §2.10`) |
+| **DacFx integration in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-06 (DacFx integration deferred to first real-fixture milestone) | First real-fixture milestone arrives via the OSSYS catalog adapter | OSSYS catalog adapter itself not yet built (`CHAPTER_1_CLOSE.md §2.10`) |
 | **Multi-spine state pattern** | 2026-05-06 (Multi-spine state pattern is endorsed but not yet built) | A real use case surfaces in the algebra | None yet |
 | **Three-channel Diagnostics split** (operator / auditor / developer) | 2026-05-06 (Diagnostics live in a writer parallel to Lineage) | A real downstream consumer demands per-channel routing | Single channel sufficient at first consumer (UniqueIndex opportunity stream); deferred until host shell or telemetry consumer surfaces |
 | **Reflection** (`typeof<>`, attribute scanning for plugin discovery) | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | A real consumer demands name-keyed strategy dispatch (paired with the strategy registry mechanism deferral above) | Closed-DU + typed-seam dispatches at compile time today; no reflective discovery needed |
@@ -2776,17 +2776,17 @@ next chapter)
 contracts, V1 output contracts, V1 test coverage, architectural-doc
 drift, build-graph and dependency hygiene) as the first formal
 verification pass on the V2 sidecar after eleven build-and-validate
-sessions. The synthesis lives in `CHAPTER_CLOSE.md` at the
+sessions. The synthesis lives in `CHAPTER_1_CLOSE.md` at the
 projection root; the handoff letter for the next-chapter agent
 lives in `HANDOFF.md`. This DECISIONS entry records the chapter
 closure and routes the findings.
 
 **Decision:** **The chapter ends. The next chapter opens with
-CHAPTER_CLOSE.md and HANDOFF.md as orientation documents.**
+CHAPTER_1_CLOSE.md and HANDOFF.md as orientation documents.**
 Findings documented; resolutions deferred to the next chapter per
 the leave-clean-ground discipline (don't fix in the audit session).
 
-**Audit summary** (full detail in CHAPTER_CLOSE.md):
+**Audit summary** (full detail in CHAPTER_1_CLOSE.md):
 
 | Audit axis | Verdict |
 |---|---|
@@ -2806,7 +2806,7 @@ the leave-clean-ground discipline (don't fix in the audit session).
 | V1↔V2 adapter / emitter divergences | ~10 cosmetic-to-medium drifts without DECISIONS audit trail |
 
 **Top 10 next-chapter priorities** (full detail in
-CHAPTER_CLOSE.md §4):
+CHAPTER_1_CLOSE.md §4):
 
   1. README.md absorbs the eleven-session state
   2. ADMIRE status sweep (5 entries) + mode annotations
@@ -2830,7 +2830,7 @@ CHAPTER_CLOSE.md §4):
     Documenting findings is the audit's product; fixing them is
     different work with different tradeoffs.
   - **Documentation is the bridge.** A fresh agent inherits the
-    codebase plus three documents (CHAPTER_CLOSE.md, HANDOFF.md,
+    codebase plus three documents (CHAPTER_1_CLOSE.md, HANDOFF.md,
     and the existing canonical trio AXIOMS / DECISIONS / ADMIRE).
     Honest documentation is the chapter's deliverable to its
     successor.
@@ -2853,7 +2853,7 @@ codebase reached N=4 around session 6 and now stands at N=10
 `NullabilityPass`, `UniqueIndexPass`, `ForeignKeyPass`,
 `CategoricalUniquenessPass`). No subsequent DECISIONS entry either
 built the registry or re-deferred with rationale. The chapter-close
-audit (`CHAPTER_CLOSE.md §2.6`) flagged this as the most consequential
+audit (`CHAPTER_1_CLOSE.md §2.6`) flagged this as the most consequential
 silent-trigger miss: an explicit deferral with a numerical trigger that
 fired without a cash-out logged.
 
@@ -2961,7 +2961,7 @@ nullness warning in `DistributionsEmitterTests.fs:126` that predates
 session 13.
 
 **Substantive finding from priority 4 (audit-during-validation).**
-`CHAPTER_CLOSE.md §4 priority 4` listed "two missing
+`CHAPTER_1_CLOSE.md §4 priority 4` listed "two missing
 TopologicalOrderPass tests" with cost "moderate — depends on whether
 OrderingPolicy already supports these knobs in V2 IR." It does not.
 V2's Policy has Selection / Emission / Insertion / Tightening axes;
@@ -2991,7 +2991,7 @@ itself the discipline working.
      intellectually honest at every prior session ("don't build
      speculatively"), but the demand is consistent enough that
      building is now plausibly cheaper than continuing to defer. My
-     read aligns with `CHAPTER_CLOSE.md §4 priority 6` and the prior
+     read aligns with `CHAPTER_1_CLOSE.md §4 priority 6` and the prior
      agent's "I'd revisit if I had more time" item: the writer's
      value-prop is no longer speculative. Recommend session 14 scopes
      the writer (single-channel for now per the constitution; three
@@ -2999,7 +2999,7 @@ itself the discipline working.
      consuming it (probably opportunity-stream because it's the
      cheapest first consumer).
   2. **OSSYS catalog adapter.** The undocumented production boundary
-     (`CHAPTER_CLOSE.md §2.10` and `§4 priority 7`). V2 catalogs are
+     (`CHAPTER_1_CLOSE.md §2.10` and `§4 priority 7`). V2 catalogs are
      today built by F# fixtures; production V2 needs to consume real
      OutSystems metadata via the V1 `outsystems_metadata_rowsets.sql`
      → `MetadataSnapshotRunner` → `SnapshotJsonBuilder` → V2 path. No
@@ -3011,7 +3011,7 @@ itself the discipline working.
      in commit 7 then promote from Skip to `[<Fact>]`. Lower
      immediate-value than (1)/(2); could reasonably wait for session
      15 unless a real cycle-resolution use case forces it earlier.
-  4. **Faker emitter.** Per `CHAPTER_CLOSE.md §4 priority 8` and the
+  4. **Faker emitter.** Per `CHAPTER_1_CLOSE.md §4 priority 8` and the
      two-evidence-types-only constraint, defer until either a third
      evidence type lands or Faker proceeds with two and accepts the
      limitations. Not session 14 unless one of (1)/(2)/(3) opens it
@@ -3057,7 +3057,7 @@ Hold the spine.
 
 ## 2026-05-13 — Audit discipline refinement: contract-vs-implementation cross-reference
 
-**Status:** decided (audit-discipline operating principle; refinement of `DECISIONS 2026-05-09 — Audits surface things not on the agenda` and the `CHAPTER_CLOSE.md` audit-by-subagent verification approach)
+**Status:** decided (audit-discipline operating principle; refinement of `DECISIONS 2026-05-09 — Audits surface things not on the agenda` and the `CHAPTER_1_CLOSE.md` audit-by-subagent verification approach)
 **Context:** Session 13's audit-during-validation produced a finding
 the chapter-close audit (session 12) had missed: priority-4 work
 ("two missing TopologicalOrderPass tests") was actually feature-work
@@ -3092,7 +3092,7 @@ has three states the audit must distinguish:
 
 The fourth row is the failure mode. Session 12 found the third row
 on UniqueIndex / ForeignKey / Topological skip-stub asymmetry
-(`CHAPTER_CLOSE.md §2.7`); session 13's skip-stub completion (commit
+(`CHAPTER_1_CLOSE.md §2.7`); session 13's skip-stub completion (commit
 4) addressed the test gaps. Session 13's TopologicalOrderPass
 finding was the fourth row — the implementation didn't exist; the
 contract-vs-test walk reported "missing test" because there was
@@ -3602,9 +3602,9 @@ finding (either "clean" or a remediation entry); items marked
      for the README — surface-level orientation. Session 13
      rewrote it after eleven sessions of drift; the discipline
      prevents that recurring.
-  5. **HANDOFF.md / CHAPTER_CLOSE.md scope.** Each chapter
+  5. **HANDOFF.md / CHAPTER_1_CLOSE.md scope.** Each chapter
      produces its own HANDOFF letter and CHAPTER_CLOSE audit
-     synthesis at the close. Chapter 1's CHAPTER_CLOSE.md (sessions
+     synthesis at the close. Chapter 1's CHAPTER_1_CLOSE.md (sessions
      1–12) lives at the projection root; chapter 2's belongs
      adjacent or under a chapter-numbered subfolder. The next
      chapter's handoff should not overwrite chapter 1's; the
@@ -3645,7 +3645,7 @@ finding (either "clean" or a remediation entry); items marked
     navigational pointer; future fresh agents read CLAUDE.md
     first and see the ritual indexed there. Substantive details
     stay in this entry.
-  - **Each chapter's CHAPTER_CLOSE.md** records the result of
+  - **Each chapter's CHAPTER_1_CLOSE.md** records the result of
     running the ritual — clean items, remediation entries,
     findings.
 
@@ -3726,7 +3726,7 @@ session, it belongs elsewhere.
   - **`HANDOFF.md` updates.** When a chapter closes and a new
     agent inherits, the bridge document captures the relevant
     context.
-  - **`CHAPTER_CLOSE.md`** (or its equivalent for future
+  - **`CHAPTER_1_CLOSE.md`** (or its equivalent for future
     chapters). Chapter-end audit synthesis lives there; that's
     where commit lists and forward signals belong.
   - **The conversation itself.** Reflections shared with the

@@ -179,7 +179,7 @@ expectation embedded in the test file is the V2 contract; any V1
 fixture change requires a deliberate V2 expectation update. The
 property-based and behavioral tests in `NormalizeStaticPopulationsTests.
 fs` continue to defend the invariants alongside the differential.
-(`CHAPTER_CLOSE.md §2.11` flagged this acknowledgement as missing;
+(`CHAPTER_1_CLOSE.md §2.11` flagged this acknowledgement as missing;
 session 13 added it.)
 
 ### Migration path
@@ -614,7 +614,7 @@ strategy layer (`DECISIONS 2026-05-11 — Strategy-layer codification`).
 behavioral contract; the V1 `UniqueIndexDecisionStrategyTests`
 divergences (Aggressive-mode collapse; included-columns boundary)
 remain documented in this entry below but are not yet locked down by
-explicit `Skip` stubs in `UniqueIndexPassTests.fs` (`CHAPTER_CLOSE.md
+explicit `Skip` stubs in `UniqueIndexPassTests.fs` (`CHAPTER_1_CLOSE.md
 §2.7`; addressed in session 13's skip-stub completion).
 
 **Significance.** The fourth V1 admire migration. Crucially, the
@@ -851,7 +851,7 @@ codification: empirical verdict after the fourth instance`).
 behavioral contract. The `DeleteRuleIgnore` rationale-on-success
 divergence (V1 emits a rationale string on a successful decision; V2
 emits none) is documented below but not yet locked down by an explicit
-`Skip` stub (`CHAPTER_CLOSE.md §2.7`; addressed in session 13's
+`Skip` stub (`CHAPTER_1_CLOSE.md §2.7`; addressed in session 13's
 skip-stub completion).
 
 **Significance.** The fifth V1 admire migration; the **third
@@ -1204,7 +1204,7 @@ Two V1 contracts ADMIRE flags as Behavioral V2 translations remain
 **features-not-yet-built** as of session 13 (`SortByForeignKeys_
 SkipsAutoDetectionWhenManualCyclesExist`,
 `SortByForeignKeys_DefersJunctionTablesWhenEdgesMissing`). Session 13
-audit-during-validation finding: `CHAPTER_CLOSE.md §4 priority 4`
+audit-during-validation finding: `CHAPTER_1_CLOSE.md §4 priority 4`
 listed these as missing tests, but V2 lacks the supporting IR — there
 is no `OrderingPolicy` axis carrying manual-cycle config and no
 junction-table heuristic in `TopologicalOrderPass v3`
@@ -1417,7 +1417,7 @@ is the first sibling Π consuming the rich evidence; the rich-profiling
 end-to-end milestone (`RichProfilingEndToEndTests.fs`) validates the
 full pipeline. Faker (synthetic-data Π) remains deferred until at least
 a third evidence type lands or the limitations of two are explicitly
-accepted (`HANDOFF.md`, "What's deferred"; `CHAPTER_CLOSE.md §4
+accepted (`HANDOFF.md`, "What's deferred"; `CHAPTER_1_CLOSE.md §4
 priority 8`).
 
 **Significance.** The first admire entry that surfaces **V1 absence
@@ -2354,7 +2354,7 @@ domain-prescriptive vocabulary. Specific carry-forward exclusions:
   - **Trigger metadata.** V1 carries triggers in `#Triggers` and
     emits them downstream. V2's IR has no Trigger type today.
     Triggers are deferred until a real V2 use case demands them
-    (`CHAPTER_CLOSE.md §2.5` lists triggers as V1 outputs without
+    (`CHAPTER_1_CLOSE.md §2.5` lists triggers as V1 outputs without
     V2 equivalents). When the use case lands, the IR refinement
     discipline applies — the OSSYS adapter retrieves the data
     from `#Triggers`; the IR grows; the emitter follows.
@@ -2595,7 +2595,7 @@ the routine mechanical risks of a JSON parser:
     `Projection.Adapters.Osm.CatalogReader` should align with V1's
     type-aware coercion, **or** explicitly defer with a DECISIONS
     entry naming the deferral. Real-fixture decimals and dates
-    will surface this as a real issue (`CHAPTER_CLOSE.md §2.8`
+    will surface this as a real issue (`CHAPTER_1_CLOSE.md §2.8`
     flagged the divergence).
   - **Profile sourcing is separate.** This adapter handles
     *catalog* (structural) data only. Profile (empirical evidence)
@@ -2606,7 +2606,7 @@ the routine mechanical risks of a JSON parser:
 
 ### Why this entry exists now
 
-`CHAPTER_CLOSE.md §4 priority 7` named this as a session-14 priority
+`CHAPTER_1_CLOSE.md §4 priority 7` named this as a session-14 priority
 ("OSSYS catalog adapter ADMIRE stub") and session 14 took it. The
 audit's framing — "this is the assumed-but-not-documented V1→V2
 boundary for the catalog itself" — held: V2 had carried the

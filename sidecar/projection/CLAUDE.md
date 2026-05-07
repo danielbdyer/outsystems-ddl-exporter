@@ -15,7 +15,7 @@ substantive surfaces are unchanged.
 
 1. **`HANDOFF.md`** — bridge letter from the prior chapter. Short on
    purpose. Names what is load-bearing and what is deferred.
-2. **`CHAPTER_CLOSE.md`** — chapter-1 audit synthesis (sessions 1–12).
+2. **`CHAPTER_1_CLOSE.md`** — chapter-1 audit synthesis (sessions 1–12).
    Read §1 (confirmations), §2 (drift), §4 (priorities), §5
    (accumulated judgment), §7 (notes for the replacement).
 3. **`AXIOMS.md`** — the formal system. A1–A34 / T1–T11 with five
@@ -62,7 +62,7 @@ of them, write the amendment first.
 | **Document the false starts** — preserve the wrong rule alongside the right one. Future agents recognize the temptation when it recurs; documentation captures the discipline's discovery, not just its outcome. | Session 14 commits 4 and 6 (see preserved-false-start prose in those entries) |
 | **Anticipation vs. speculation in abstraction extraction** — refines the two-consumer threshold with three positions (A/B/C) and an empirical test for "shape visible enough." Position B (structural alignment when the shape is concrete) earns its place; Position A (full extraction) requires both shape visibility and concrete second consumer; Position C (defer fully) is the default. | `DECISIONS 2026-05-13` — Anticipation vs. speculation in abstraction extraction (session 14) |
 | **Chapter-close ritual** — seven load-bearing items every chapter close must execute (Active deferrals scan; contract-vs-implementation walk; CLAUDE.md / README.md staleness checks; HANDOFF + CHAPTER_CLOSE scope; fresh-eye walk; operating-disciplines table currency). Recurring audits codify into rituals; ad-hoc investigations don't compound. | `DECISIONS 2026-05-14` — Chapter-close ritual (session 15) |
-| **DECISIONS is for resolved questions, not session narrative** — substantive entries (disciplines, refinements, cash-outs, codifications) stay; session-narrative content (commit lists, test baselines, forward signals, rent-paying checks, recaps) lives in commit messages, PR descriptions, HANDOFF.md, CHAPTER_CLOSE.md, or the conversation. The substance test: would this entry still be useful in six months? Append-only protects against revisionism; prune-when-wrong protects against narrative drift. | `DECISIONS 2026-05-14` — DECISIONS is for resolved questions (session 15) |
+| **DECISIONS is for resolved questions, not session narrative** — substantive entries (disciplines, refinements, cash-outs, codifications) stay; session-narrative content (commit lists, test baselines, forward signals, rent-paying checks, recaps) lives in commit messages, PR descriptions, HANDOFF.md, CHAPTER_1_CLOSE.md, or the conversation. The substance test: would this entry still be useful in six months? Append-only protects against revisionism; prune-when-wrong protects against narrative drift. | `DECISIONS 2026-05-14` — DECISIONS is for resolved questions (session 15) |
 
 ## Load-bearing commitments — do not break without writing the amendment first
 
@@ -71,7 +71,7 @@ names the prior commitment and supersedes it. If you find yourself
 wanting to break one, write the amendment first.
 
 - **F#-pure-core / no-I/O-in-Core.** `Projection.Core` has zero I/O.
-  Audited clean (`CHAPTER_CLOSE.md §1.1`).
+  Audited clean (`CHAPTER_1_CLOSE.md §1.1`).
 - **A18 amended.** Π consumes whichever subset of `Catalog × Profile`
   it needs, but never `Policy`. Catalog and Profile are *evidence*;
   Policy is *intent*. If you reach for Policy from inside an emitter,

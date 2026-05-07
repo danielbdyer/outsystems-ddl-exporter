@@ -124,9 +124,13 @@ substantive inputs:
 
 - **Catalog** is structural truth — what kinds exist. Changes when schema
   changes. Sourced from a Catalog Reader at the boundary (V1's
-  `OsmModel`). The OSSYS catalog adapter that consumes real OutSystems
-  metadata is itself not yet built; current V2 catalogs are constructed by
-  test fixtures (`CHAPTER_CLOSE.md §2.10` and `§4 priority 7`).
+  `OsmModel`). The OSSYS catalog adapter
+  (`src/Projection.Adapters.Osm/CatalogReader.fs`) consumes V1's
+  `osm_model.json` shape via the `SnapshotJson` variant of
+  `SnapshotSource`; the canonical `SnapshotRowsets` variant
+  (operator-decided) lands when sequencing brings it. Original
+  chapter-2 backlog framing in `CHAPTER_1_CLOSE.md §2.10` and
+  `§4 priority 7`.
 - **Policy** is operator intent — **four** orthogonal axes (Selection,
   Emission, Insertion, **Tightening**). Tightening was added per
   `DECISIONS 2026-05-09 — A12 amended again` when the NullabilityEvaluator

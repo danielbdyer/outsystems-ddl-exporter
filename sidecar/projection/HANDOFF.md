@@ -6,27 +6,27 @@ To the next-chapter agent. Read this before anything else in the V2 sidecar. It 
 
 You have inherited eleven sessions of build-and-validate work plus one session of chapter-close audit (session 12). The V2 sidecar lives at `sidecar/projection/`. It builds; 585 of 588 tests pass; 3 are intentional Skip-with-rationale stubs. The architecture is honest and the disciplines hold.
 
-You are not starting from scratch. You are continuing a multi-chapter arc whose accumulated judgment is partly in the canonical documents (`AXIOMS.md`, `DECISIONS.md`, `ADMIRE.md`) and partly in `CHAPTER_CLOSE.md` next to this letter.
+You are not starting from scratch. You are continuing a multi-chapter arc whose accumulated judgment is partly in the canonical documents (`AXIOMS.md`, `DECISIONS.md`, `ADMIRE.md`) and partly in `CHAPTER_1_CLOSE.md` next to this letter.
 
 ## What to read, in order
 
-1. **`README.md`** — but know it is materially stale. The first three priorities in CHAPTER_CLOSE.md exist to fix this. If you read README.md uncritically you will get the project structure wrong.
+1. **`README.md`** — but know it is materially stale. The first three priorities in CHAPTER_1_CLOSE.md exist to fix this. If you read README.md uncritically you will get the project structure wrong.
 2. **`HANDOFF.md`** (this file) — the bridge between what the prior chapter knew and what you need to know.
-3. **`CHAPTER_CLOSE.md`** — the chapter-close audit synthesis. Sections of immediate relevance:
+3. **`CHAPTER_1_CLOSE.md`** — the chapter-close audit synthesis. Sections of immediate relevance:
    - §1 (Confirmations) — the disciplines you can trust.
    - §2 (Drift) — what to fix early; many are docs, not code.
    - §4 (Recommended priorities) — your next-chapter ranking.
    - §5 (Accumulated judgment) — what the prior agent was uncertain about, what the codification's untested seams are, what you should *not* do.
 4. **`AXIOMS.md`** — the algebra. A1–A34 / T1–T11 with V2 amendments appended. Read top-to-bottom once; reference thereafter. **Note:** A18 has a critical amendment at the bottom of the file (line 507+) that the original A18 (line 163) does not point to. Read both.
 5. **`DECISIONS.md`** — chronological operating discipline. Long. Read the most recent ten entries first; they capture the strategy-layer codification (DECISIONS 2026-05-11), the rich-profiling cash-outs (2026-05-12, 2026-05-13), and the chapter-close routing (final entries). Older entries are still in force unless explicitly superseded.
-6. **`ADMIRE.md`** — V1 components and their V2 placements. **Five entries have stale status strings**; CHAPTER_CLOSE.md §2.1 lists them. Don't assume the status string is current.
+6. **`ADMIRE.md`** — V1 components and their V2 placements. **Five entries have stale status strings**; CHAPTER_1_CLOSE.md §2.1 lists them. Don't assume the status string is current.
 7. **The code.** Project structure: see `Projection.sln`. Strategy modules in `src/Projection.Core/Strategies/`; pass drivers in `src/Projection.Core/Passes/`; sibling Π emitters in `src/Projection.Targets.{SSDT,Json,Distributions}/`; F# adapters in `src/Projection.Adapters.Sql/`.
 
 ## What's load-bearing
 
 These commitments are not negotiable without explicit DECISIONS entries amending them. If you find yourself wanting to break one, write the amendment first.
 
-- **F#-pure-core / no-I/O-in-Core.** `Projection.Core` has zero I/O. Adapters at the boundary do I/O. Audited clean (CHAPTER_CLOSE.md §1.1).
+- **F#-pure-core / no-I/O-in-Core.** `Projection.Core` has zero I/O. Adapters at the boundary do I/O. Audited clean (CHAPTER_1_CLOSE.md §1.1).
 - **A18 amended.** Π consumes whichever subset of `Catalog × Profile` it needs, but never `Policy`. Catalog and Profile are *evidence*; Policy is *intent*. If you reach for Policy from inside an emitter, you are in the wrong layer — the work belongs in a pass.
 - **Strategy-layer codification (DECISIONS 2026-05-11).** Pure functions of IR fields; typed function-type seam (`StrategyEvaluator<'context, 'config, 'decision>`); structured rationale DUs covering the decision space exhaustively; lineage events on actual decisions; module name advertises domain (`<Domain>Rules` suffix); total decisions with named skips.
 - **`Composition.fanOut` for registered-intervention pass drivers.** All four current pass drivers delegate to it. Adding a fifth registered-intervention strategy means one more `FanOutConfig` construction, not a new from-scratch driver.
@@ -42,7 +42,7 @@ These deferrals are explicit. If your work surfaces the cash-out trigger, log a 
 
 - **Composition primitives `fallback`, `accumulate`, `wrap`, `lift`** — codified-but-deferred at session 11 (DECISIONS 2026-05-13). Each has zero current consumers; the threshold is two. If a use case arrives, log it and extract.
 - **Strategy registry mechanism** — deferred at session 8; no consumers yet.
-- **Transform registry** — DECISIONS 2026-05-06 deferred at N≥4 passes; we are at N=10. **The trigger fired without cash-out.** Per CHAPTER_CLOSE.md §4 priority 5, log either (a) build the registry now, or (b) explain why the original framing was overtaken by the per-use-case driver pattern V2 evolved into. Do not ignore.
+- **Transform registry** — DECISIONS 2026-05-06 deferred at N≥4 passes; we are at N=10. **The trigger fired without cash-out.** Per CHAPTER_1_CLOSE.md §4 priority 5, log either (a) build the registry now, or (b) explain why the original framing was overtaken by the per-use-case driver pattern V2 evolved into. Do not ignore.
 - **Diagnostics writer** — DECISIONS 2026-05-06 reserved the slot; no implementation. Multiple downstream artifacts (`decision-log.json`, `opportunities.json`, `validations.json`, `dmm-diff.json`, the opportunity-stream half of UniqueIndex, the operator-approval handoff for FK/Nullability) gate on it. Probably your highest-impact next-chapter milestone if the doc-hygiene work is done.
 - **`RequireQualifiedAccess` retrofit** on `UniqueIndexKeepReason` and `ForeignKeyKeepReason` — DECISIONS 2026-05-11 refinement 1 says retrofit when next substantively modified. If you touch either file substantively, do the retrofit.
 - **`CycleResolution.ResolutionStep.Reason` migration to structured DU** — same trigger as above.
@@ -72,7 +72,7 @@ The prior chapter operated under a few dispositions worth inheriting:
 
 ## Where to start
 
-Per CHAPTER_CLOSE.md §4, the recommended order is:
+Per CHAPTER_1_CLOSE.md §4, the recommended order is:
 
 1. **README.md absorption** — ~1 hour. Highest-leverage doc work; misroutes everything that follows if left stale.
 2. **ADMIRE status sweep** — ~30 minutes. Five entries.

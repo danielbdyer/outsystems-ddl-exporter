@@ -332,7 +332,7 @@ let ``catalog passes through unchanged: structural by signature`` () =
 
 // ---------------------------------------------------------------------------
 // V1 divergences — explicit skip stubs naming intentional V2 differences
-// (CHAPTER_CLOSE.md §2.7; session 13 skip-stub completion).
+// (CHAPTER_1_CLOSE.md §2.7; session 13 skip-stub completion).
 //
 // Mirrors the V1NullabilityParityTests.fs canonical pattern: where V2
 // deliberately doesn't honor a V1 contract, surface the divergence as a
