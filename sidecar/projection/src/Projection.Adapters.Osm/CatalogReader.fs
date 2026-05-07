@@ -71,6 +71,15 @@ module CatalogReader =
         : Result<SsKey> =
         SsKey.original (sprintf "OS_ATTR_%s_%s_%s" moduleName entityName attrName)
 
+    /// Reference SsKey synthesis (session 19). The reference identifies
+    /// by its source coordinate — `<srcModule>_<srcEntity>_<viaAttr>`
+    /// uniquely names an FK because each attribute carries at most one
+    /// outgoing reference in V1's metadata.
+    let private referenceSsKey
+        (sourceModuleName: string) (sourceEntityName: string) (viaAttrName: string)
+        : Result<SsKey> =
+        SsKey.original (sprintf "OS_REF_%s_%s_%s" sourceModuleName sourceEntityName viaAttrName)
+
     // -----------------------------------------------------------------------
     // JSON helpers — light wrappers over System.Text.Json.JsonElement.
     // These are private; they exist to keep the translation code
@@ -118,6 +127,51 @@ module CatalogReader =
                         "typeMismatch"
                         (sprintf "Property '%s' is not a boolean." name))
 
+    /// V1 carries some boolean-shaped flags as numbers (0/1) rather
+    /// than JSON booleans — `isReference`, `reference_hasDbConstraint`,
+    /// `physical_isPresentButInactive`. This helper accepts either
+    /// shape; non-zero is true.
+    let private getIntFlag (element: JsonElement) (name: string) : Result<bool> =
+        match getProperty element name with
+        | Failure errors -> Failure errors
+        | Success value ->
+            match value.ValueKind with
+            | JsonValueKind.Number ->
+                match value.TryGetInt32() with
+                | true, n -> Result.success (n <> 0)
+                | _ ->
+                    Result.failureOf (
+                        adapterError
+                            "typeMismatch"
+                            (sprintf "Property '%s' is not an integer flag." name))
+            | JsonValueKind.True  -> Result.success true
+            | JsonValueKind.False -> Result.success false
+            | _ ->
+                Result.failureOf (
+                    adapterError
+                        "typeMismatch"
+                        (sprintf "Property '%s' is not a numeric flag or boolean." name))
+
+    /// Optional string property. Returns `None` for missing or
+    /// JSON-null values, `Some s` for non-null strings, `Failure`
+    /// when the property exists but is not a string.
+    let private getOptionalString (element: JsonElement) (name: string) : Result<string option> =
+        match element.TryGetProperty(name) with
+        | false, _ -> Result.success None
+        | true, value ->
+            match value.ValueKind with
+            | JsonValueKind.Null      -> Result.success None
+            | JsonValueKind.Undefined -> Result.success None
+            | JsonValueKind.String ->
+                match value.GetString() with
+                | null    -> Result.success None
+                | raw     -> Result.success (Some raw)
+            | _ ->
+                Result.failureOf (
+                    adapterError
+                        "typeMismatch"
+                        (sprintf "Property '%s' is not a string when present." name))
+
     // -----------------------------------------------------------------------
     // Translation — DataType string → V2 PrimitiveType.
     // The mapping rule is documented in session 18 commit 4 DECISIONS
@@ -135,6 +189,26 @@ module CatalogReader =
                 adapterError
                     "unmappedDataType"
                     (sprintf "DataType '%s' has no V2 PrimitiveType mapping yet." other))
+
+    /// V1 reference_deleteRuleCode → V2 ReferenceAction. Mirrors the
+    /// V1 mapping in `Osm.Smo/SmoEntityEmitter.cs`:
+    ///   "Delete"  → Cascade
+    ///   "Protect" → NoAction
+    ///   "Ignore"  → NoAction
+    ///   null      → NoAction (V1's TreatMissingDeleteRuleAsIgnore default)
+    /// Other / unmapped values fail with adapter.osm.unmappedDeleteRule.
+    let private parseDeleteRule (code: string option) : Result<ReferenceAction> =
+        match code with
+        | None              -> Result.success NoAction
+        | Some "Delete"     -> Result.success Cascade
+        | Some "Protect"    -> Result.success NoAction
+        | Some "Ignore"     -> Result.success NoAction
+        | Some "SetNull"    -> Result.success SetNull
+        | Some other ->
+            Result.failureOf (
+                adapterError
+                    "unmappedDeleteRule"
+                    (sprintf "reference_deleteRuleCode '%s' has no V2 ReferenceAction mapping yet." other))
 
     // -----------------------------------------------------------------------
     // Translation — V1 attribute → V2 Attribute.
@@ -184,6 +258,72 @@ module CatalogReader =
         // (see session 18 commit 4 DECISIONS entry).
         if isExternal then ExternalDirect else OsNative
 
+    /// Extract a Reference from a V1 attribute that carries
+    /// `isReference: 1` plus its `refEntity_*` and
+    /// `reference_deleteRuleCode` fields. Returns `None` for
+    /// non-reference attributes; `Some Reference` for FK-bearing
+    /// ones; `Failure` when the attribute claims isReference=1 but
+    /// the required fields are missing or malformed.
+    ///
+    /// V1's relationships[] array carries the same information in an
+    /// aggregated form (viaAttributeName + toEntity_name +
+    /// hasDbConstraint). The V2 adapter walks attributes[] directly
+    /// because the attribute carries every field the Reference shape
+    /// needs; the relationships[] array becomes a cross-check rather
+    /// than the primary source.
+    ///
+    /// Same-module assumption: TargetKind is synthesized as
+    /// OS_KIND_<sourceModule>_<refEntity_name>. Cross-module FK
+    /// references would surface a richer rule when a fixture forces
+    /// the question; the minimal session-19 fixture is same-module.
+    let private parseReference
+        (sourceModuleName: string) (sourceEntityName: string) (attrJson: JsonElement)
+        : Result<Reference option> =
+        match getIntFlag attrJson "isReference" with
+        | Failure errors -> Failure errors
+        | Success false  -> Result.success None
+        | Success true ->
+            let attrNameResult     = getString          attrJson "name"
+            let refEntityNameResult = getOptionalString attrJson "refEntity_name"
+            let deleteRuleResult   = getOptionalString attrJson "reference_deleteRuleCode"
+            match attrNameResult, refEntityNameResult, deleteRuleResult with
+            | Success attrName, Success (Some refEntityName), Success deleteRuleCode ->
+                let refKey      = referenceSsKey sourceModuleName sourceEntityName attrName
+                let refName     = Name.create attrName
+                let srcAttrKey  = attributeSsKey sourceModuleName sourceEntityName attrName
+                let tgtKindKey  = kindSsKey sourceModuleName refEntityName
+                let onDelete    = parseDeleteRule deleteRuleCode
+                match refKey, refName, srcAttrKey, tgtKindKey, onDelete with
+                | Success rKey, Success rName, Success srcKey, Success tgtKey, Success rule ->
+                    Result.success (Some
+                        { SsKey           = rKey
+                          Name            = rName
+                          SourceAttribute = srcKey
+                          TargetKind      = tgtKey
+                          OnDelete        = rule })
+                | _, _, _, _, Failure es -> Failure es
+                | _ ->
+                    Result.failureOf (
+                        adapterError
+                            "referenceBuild"
+                            (sprintf
+                                "Failed to build reference for attribute '%s' on '%s.%s'."
+                                attrName sourceModuleName sourceEntityName))
+            | Success attrName, Success None, _ ->
+                Result.failureOf (
+                    adapterError
+                        "referenceFields"
+                        (sprintf
+                            "Attribute '%s' on '%s.%s' has isReference=1 but no refEntity_name."
+                            attrName sourceModuleName sourceEntityName))
+            | _ ->
+                Result.failureOf (
+                    adapterError
+                        "referenceFields"
+                        (sprintf
+                            "Required reference fields missing on an attribute in '%s.%s'."
+                            sourceModuleName sourceEntityName))
+
     let private parseKind
         (moduleName: string) (entityJson: JsonElement)
         : Result<Kind> =
@@ -197,17 +337,20 @@ module CatalogReader =
           Success isStatic, Success isExternal ->
             let kindKey   = kindSsKey moduleName entityName
             let kindName  = Name.create entityName
-            let attrsArr  =
+            let attrJsonList =
                 match entityJson.TryGetProperty("attributes") with
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
-                    arr.EnumerateArray()
-                    |> Seq.toList
-                    |> List.map (parseAttribute moduleName entityName)
-                | _ ->
-                    []
+                    arr.EnumerateArray() |> Seq.toList
+                | _ -> []
+            let attrsResults =
+                attrJsonList
+                |> List.map (parseAttribute moduleName entityName)
+            let refResults =
+                attrJsonList
+                |> List.map (parseReference moduleName entityName)
             // Collect attribute results — first failure wins.
             let foldedAttrs =
-                attrsArr
+                attrsResults
                 |> List.fold
                     (fun acc next ->
                         match acc, next with
@@ -215,8 +358,20 @@ module CatalogReader =
                         | Failure es, _          -> Failure es
                         | _, Failure es          -> Failure es)
                     (Result.success [])
-            match kindKey, kindName, foldedAttrs with
-            | Success k, Success n, Success attrs ->
+            // Collect reference results — first failure wins. None
+            // entries are dropped; Some entries flatten into a list.
+            let foldedRefs =
+                refResults
+                |> List.fold
+                    (fun acc next ->
+                        match acc, next with
+                        | Success xs, Success None     -> Result.success xs
+                        | Success xs, Success (Some r) -> Result.success (xs @ [r])
+                        | Failure es, _                -> Failure es
+                        | _, Failure es                -> Failure es)
+                    (Result.success [])
+            match kindKey, kindName, foldedAttrs, foldedRefs with
+            | Success k, Success n, Success attrs, Success refs ->
                 let modality =
                     if isStatic then [ Static [] ] else []
                 Result.success
@@ -226,7 +381,7 @@ module CatalogReader =
                       Modality   = modality
                       Physical   = { Schema = schema; Table = physicalName }
                       Attributes = attrs
-                      References = []
+                      References = refs
                       Indexes    = [] }
             | _ ->
                 Result.failureOf (
