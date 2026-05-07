@@ -10,7 +10,7 @@ present or absent, and every commit here is cherry-pick safe.
 ## What this is
 
 A faithful implementation of the algebra described in `AXIOMS.md`. A
-catalog of identity-keyed kinds, lensed by a three-axis policy and
+catalog of identity-keyed kinds, lensed by a four-axis policy and
 informed by empirical profile evidence, runs through a factored functor
 (`Project = Π ∘ E`) to produce immutable content-addressed snapshots whose
 construction makes determinism, lineage, modular composition, refactor
@@ -18,31 +18,61 @@ safety, and cross-projection consistency constitutive properties of the
 system rather than external disciplines.
 
 The pure core has no I/O, no mutation, and no dependence on time. All
-effects live at the boundary, in C# adapters that produce F# value types
-the core consumes. The two-language partition is the algebra/I-O seam.
+effects live at the boundary, in **F# adapters** (the language partition
+was relocated by `DECISIONS 2026-05-09`; the original "F# core / C# shell"
+framing has been superseded). Adapters return F# value types the core
+consumes. The two-language partition is no longer the algebra/I-O seam;
+the seam is structural — `Projection.Core` has zero I/O, adapters do.
 
 ## Layout
 
+The current layout (twelve sessions in):
+
     sidecar/projection/
       README.md            - this file
+      HANDOFF.md           - bridge letter to the next-chapter agent
+      CHAPTER_CLOSE.md     - chapter 1 audit synthesis (sessions 1-12)
       AXIOMS.md            - the formal system + V2 amendments, axiom-numbered
       DECISIONS.md         - append-only log of resolved questions
       ADMIRE.md            - append-only log of V1 admirations and V2 placements
       global.json          - SDK pin (mirrors trunk: 9.0.305, rollForward: disable)
       .editorconfig        - F#-aware formatting scoped to this folder
       Projection.sln       - V2's own solution; not added to trunk sln
-      src/
-        Projection.Core/                  - F#: IR, passes, projector, lineage
-      tests/
-        Projection.Tests/                 - F#: property and unit tests
 
-Targets and adapters that follow in subsequent sessions:
+      src/Projection.Core/                  - F#: IR, passes, projector, lineage
+        Catalog.fs, Identity.fs, Lineage.fs,
+        Policy.fs, Profile.fs, Result.fs, TopologicalOrder.fs
+        Passes/                             - registered-intervention + structural passes
+          CanonicalizeIdentity, NamingMorphism, NormalizeStaticPopulations,
+          SymmetricClosure, TopologicalOrderPass, VisibilityMask,
+          NullabilityPass, UniqueIndexPass, ForeignKeyPass,
+          CategoricalUniquenessPass
+        Strategies/                         - domain decision logic; algebra/domain split
+          CycleResolution, NullabilityRules, UniqueIndexRules,
+          ForeignKeyRules, CategoricalUniquenessRules, Composition
 
-      src/Projection.Targets.SSDT/        - F#: Π_SSDT (raw text first, DacFx later)
-      src/Projection.Targets.Json/        - F#: Π_Json (sibling-functor proof)
-      src/Projection.Adapters.Sql/        - C#: SQL Server boundary; OSSYS/OSUSR
-      src/Projection.Adapters.Files/      - C#: file system; snapshot store
-      src/Projection.Host.Cli/            - C#: imperative shell; orchestrator
+      src/Projection.Targets.SSDT/          - F#: Π_SSDT (RawTextEmitter; DacFx deferred)
+      src/Projection.Targets.Json/          - F#: Π_Json (sibling-functor proof)
+      src/Projection.Targets.Distributions/ - F#: Π_Distributions (rich-profile diagnostic)
+
+      src/Projection.Adapters.Sql/          - F#: SQL Server boundary (Static cell coercion;
+                                              ProfileSnapshot; ProfileStatistics)
+
+      tests/Projection.Tests/               - F#: property, unit, differential, end-to-end
+
+Slots reserved for future sessions (not yet built):
+
+      src/Projection.Adapters.Files/        - C#: file system; snapshot store
+      src/Projection.Host.Cli/              - C#: imperative shell; orchestrator
+      src/Projection.Targets.SSDT.DacpacEmitter/ - F#: real CREATE TABLE / DacFx
+      src/Projection.Targets.Faker/         - F#: synthetic-data Π consuming Profile
+
+The next major un-built primitive is the **Diagnostics writer** — a
+single-channel telemetry monad parallel to Lineage (`DECISIONS
+2026-05-06`). It gates V2 equivalents for `decision-log.json`,
+`opportunities.json`, `validations.json`, `dmm-diff.json`, the
+opportunity-stream half of UniqueIndex, and the operator-approval handoff
+for FK/Nullability. See `CHAPTER_CLOSE.md §4 priority 6`.
 
 ## Three substantive inputs and one temporal dimension
 
@@ -51,11 +81,16 @@ substantive inputs:
 
 - **Catalog** is structural truth — what kinds exist. Changes when schema
   changes. Sourced from a Catalog Reader at the boundary (V1's
-  `OsmModel`).
-- **Policy** is operator intent — three orthogonal axes (Selection,
-  Emission, Insertion). Changes when humans decide.
+  `OsmModel`). The OSSYS catalog adapter that consumes real OutSystems
+  metadata is itself not yet built; current V2 catalogs are constructed by
+  test fixtures (`CHAPTER_CLOSE.md §2.10` and `§4 priority 7`).
+- **Policy** is operator intent — **four** orthogonal axes (Selection,
+  Emission, Insertion, **Tightening**). Tightening was added per
+  `DECISIONS 2026-05-09 — A12 amended again` when the NullabilityEvaluator
+  admire surfaced the need. Changes when humans decide.
 - **Profile** is empirical evidence — what the data actually shows. Used
-  by tightening passes (nullability, FK enforcement). May be empty for
+  by tightening passes (nullability, FK enforcement, uniqueness inference)
+  and by emitters that surface evidence (Distributions). May be empty for
   use cases that need no evidence.
 
 Plus one temporal dimension:
@@ -63,10 +98,67 @@ Plus one temporal dimension:
 - **Lifecycle** is time — the partial order under which all three evolve.
 
 `Project : (Catalog, Policy, Profile) → Surface`. `E : (Catalog, Policy,
-Profile) → EnrichedCatalog`. `Π : EnrichedCatalog → Surface`.
+Profile) → EnrichedCatalog`. `Π : EnrichedCatalog → Surface`, where each
+`Π` consumes whichever subset of `Catalog × Profile` it needs but never
+`Policy` (the load-bearing `A18 amended`, `DECISIONS 2026-05-12`). Three
+sibling Π's are operational today: SSDT (`Catalog -> string`), JSON
+(`Catalog -> string`), Distributions (`Catalog -> Profile -> string`).
 
 See `AXIOMS.md` for the full system, the V2 amendments, and the new
-axioms.
+axioms (A32–A34, T11). Read top-to-bottom; A18's amendment lives at the
+bottom of the file and is the load-bearing form.
+
+## The strategy layer
+
+Domain decision logic lives in `Projection.Core/Strategies/` as a named
+architectural concern adjacent to the algebraic core (`DECISIONS
+2026-05-11 — Strategy layer: a named architectural vector`). The
+codification reached its stability mark at session 11 (`DECISIONS
+2026-05-13 — Strategy-layer codification reaches stability mark`), having
+absorbed three real instances (Nullability, UniqueIndex/ForeignKey,
+CategoricalUniqueness) under a coherent shape (per-record decisions keyed
+by a single SsKey).
+
+Canonical shape of a strategy module:
+
+1. Pure functions of IR fields; no I/O, no mutable state.
+2. A typed function-type alias is the seam:
+   `StrategyEvaluator<'context, 'config, 'decision> =
+      string -> 'config -> 'context -> Profile -> 'decision`
+   (`DECISIONS 2026-05-13 — Generic StrategyEvaluator alias cash-out`).
+3. Structured rationale DUs cover the decision space exhaustively.
+   Continuous evidence is absorbed by adding variants at meaningful
+   inflection points, not by carrying parametric confidence values
+   (`DECISIONS 2026-05-13 — Discrete-rationale DUs`).
+4. Lineage events fire only on actual decisions; total decisions with
+   named-skip variants in the outcome DU.
+5. Module name advertises the domain — `<Domain>Rules` suffix.
+
+Pass drivers in `Projection.Core/Passes/` delegate to
+`Composition.fanOut` when iterating registered interventions
+(`DECISIONS 2026-05-13 — Composition vocabulary cash-out`). Four other
+composition primitives (`fallback`, `accumulate`, `wrap`, `lift`) are
+codified-but-deferred until a second consumer arrives.
+
+## The rich-profiling vector
+
+`Profile` carries empirical evidence beyond simple null/orphan counts.
+Two `AttributeDistribution` variants are operational:
+
+- `Categorical of CategoricalDistribution` — value frequencies with
+  truncation as a first-class concern (`VocabularyTruncated` distinct
+  from `EvidenceMissing`).
+- `Numeric of NumericDistribution` — percentile bundle (Min, P25, P50,
+  P75, P95, P99, Max) using `decimal` as the canonical type for
+  continuous statistical evidence (`DECISIONS 2026-05-13 — Decimal is
+  the default`).
+
+Every distribution carries its invariants via smart constructors
+returning `Result<'a>` — the **structural-commitment-via-construction-
+validation** principle (`AXIOMS.md`, line 555+). Future evidence types
+follow the same template; Faker (synthetic-data Π) is deferred until at
+least a third evidence type lands or the limitations of two are
+explicitly accepted (`HANDOFF.md`, "What's deferred").
 
 ## V1 ↔ V2 vocabulary mapping
 
@@ -85,7 +177,7 @@ Reader's translation. The mapping:
 | `RelationshipModel` | `Reference`            | directional FK edge           |
 | `EntityName`        | wrapped in `SsKey`     | logical identity, not display |
 | `TableName`         | `PhysicalRealization`  | physical projection           |
-| `ProfileSnapshot`   | `Profile` (commit 2)   | empirical evidence            |
+| `ProfileSnapshot`   | `Profile`              | empirical evidence            |
 
 Identity in V2 is whatever survives V1's most aggressive refactoring. For
 OutSystems, that is the logical entity name (`EntityName`), not the
@@ -103,6 +195,9 @@ From inside `sidecar/projection/`:
 V2's solution is independent of the trunk's `OutSystemsModelToSql.sln`.
 Either solution builds standalone.
 
+Current baseline: 585 passing, 3 expected V2-divergence skips, 588 total
+(`CHAPTER_CLOSE.md §1.7`).
+
 ## Conventions inherited from the trunk
 
 - .NET 9 SDK pinned to 9.0.305 (matches trunk `global.json`).
@@ -115,8 +210,8 @@ Either solution builds standalone.
 
 ## Conventions specific to V2
 
-- F# core has no I/O, no mutation, no time. C# adapters return F# value
-  types. The boundary is named, typed, and tested.
+- F# core has no I/O, no mutation, no time. F# adapters at the boundary
+  return F# value types. The boundary is named, typed, and tested.
 - Every transformation pass is a pure function `Catalog -> Lineage<Catalog>`
   (or `(Catalog, Policy, Profile) -> Lineage<Catalog>` when it consumes
   policy or profile evidence).
@@ -128,13 +223,30 @@ Either solution builds standalone.
 - Lineage (`Lineage<'a>`) is foundational provenance — constitutive,
   content-addressable, used for replay and refactor safety. A separate
   `Diagnostics<'a>` writer (single-channel for now, three-channel later
-  per the constitution) carries human-consumable telemetry.
+  per the constitution) carries human-consumable telemetry. Not yet
+  implemented; gating dependency for several V2 outputs.
+- Where V2 deliberately diverges from a V1 contract, the divergence
+  surfaces as a `Skip` test stub at the test-file level, not as
+  ADMIRE-prose commentary. `V1NullabilityParityTests.fs` is the canonical
+  pattern.
 
 ## Pointers
 
-- Read `AXIOMS.md` first, including the V2 Amendments at the bottom.
-  The code assumes the system.
-- `DECISIONS.md` records resolved questions (V1 sidecar mandate +
-  V2 mandate + per-question resolutions).
-- `ADMIRE.md` records V1 admirations and their V2 placements; the
-  bridge between V1's working knowledge and V2's pure architecture.
+For the next-chapter agent, read in this order:
+
+1. `HANDOFF.md` — bridge letter; short on purpose.
+2. `CHAPTER_CLOSE.md` — chapter-1 audit synthesis; §4 ranks next-chapter
+   priorities, §5 carries the prior agent's accumulated judgment.
+3. `AXIOMS.md` — the formal system. A18's amendment at the bottom is the
+   load-bearing form; the original A18 has no forwarding pointer in the
+   current draft (a fix landed in session 13).
+4. `DECISIONS.md` — append-only resolution log. The most recent ten
+   entries cover the strategy-layer codification, rich-profiling
+   cash-outs, and chapter-close routing; older entries remain in force
+   unless explicitly superseded. A "Deferred decisions" index at the
+   top tracks active deferrals with their trigger conditions.
+5. `ADMIRE.md` — V1↔V2 bridge; one entry per V1 component admired and
+   placed in V2.
+
+This README is updated when the cumulative decisions warrant it; it is
+not the source of truth for any specific question.
