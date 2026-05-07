@@ -2065,25 +2065,68 @@ out together rather than in isolation.
 
 ## 2026-05-13 — OSSYS catalog producer (`src/AdvancedSql/outsystems_metadata_rowsets.sql` → `MetadataSnapshotRunner` → `SnapshotJsonBuilder` → `osm_model.json`)
 
-**Status:** **chapter-open scoping (session 17)** — **hybrid mode**
-(`DECISIONS 2026-05-13` — admire spectrum). The OSSYS implementation
-chapter opens at session 17 with this entry as the chapter scoping
-document. Implementation is deferred to subsequent sessions in the
-arc; session 17's deliverable is strategic frame + ADMIRE chapter
-scope + Position B parse signature.
+**Status:** **extracting (in flight, 5 slices)** — **hybrid mode**
+(`DECISIONS 2026-05-13` — admire spectrum, session-23 amendment
+extending the framework with the in-flight status). Five
+substantive translation slices have landed across sessions 18–22
+through the `SnapshotJson` input path; the chapter has more
+substantive work ahead (static-entity, cross-module FK, plus the
+canonical `SnapshotRowsets` variant when sequencing brings it).
 
-This is the undocumented production boundary `CHAPTER_CLOSE.md
-§2.10` flagged. V2's catalog reader does not yet exist; production
-V2 will need to consume real OutSystems metadata via this path.
-Today, V2 catalogs are built by F# fixture builders in
-`Projection.Tests` — every end-to-end test, every milestone, every
-differential test feeds through fixture-constructed catalogs
-rather than real metadata.
+V2's catalog reader exists at `src/Projection.Adapters.Osm/CatalogReader.fs`
+and consumes V1's `osm_model.json` shape via the `SnapshotJson`
+variant of `SnapshotSource`. Twenty-three translation rules have
+landed in the running list at `DECISIONS 2026-05-15 — OSSYS
+adapter translation rules`. Production V2 will eventually consume
+real OutSystems metadata via the canonical `SnapshotRowsets`
+variant (operator-decided per `DECISIONS 2026-05-15` session-20
+amendment); until that variant lands, V2 catalogs come from V1's
+JSON output with name-synthesized SsKey (the bound on A1's
+identity-survives-rename guarantee through the JSON path).
 
 The OSSYS chapter exists in the strategic frame
 (`DECISIONS 2026-05-15 — Strategic frame for the OSSYS implementation
 chapter`) as one of eight load-bearing axes; this entry scopes the
 chapter against that frame.
+
+### Slices landed (chapter 2 in-flight progression)
+
+  - **Session 18** — minimal slice (one entity, two non-reference
+    attributes). Rules 1–11 in the running list. SsKey synthesis
+    via name-derivation; structural translation; type primitives
+    Identifier/Text → Integer/Text; placeholder Origin rule.
+  - **Session 19** — reference-bearing slice. Rules 12–16. FK SsKey
+    synthesis; V1 `reference_deleteRuleCode` → V2 `OnDelete`
+    mapping; same-module assumption for `TargetKind`; `attributes[]`
+    as primary source for references (relationships[] is V1's
+    aggregation).
+  - **Session 20** — external-entity slice. Rule 17. Origin
+    three-way placeholder under JSON-path bound (V1's `EspaceKind`
+    encoding stripped at JSON projection — a member of the
+    JSON-projection-lossiness class; `isExternal: true` placeholder
+    is `ExternalViaIntegrationStudio`).
+  - **Session 21** — mixed-active slice. Rule 18. Inactive-records
+    boundary choice (filter at adapter; bound documented;
+    carry-through deferred to consumer demand). The
+    V2-boundary-discipline class named explicitly.
+  - **Session 22** — index-bearing slice. Rules 19–23. Index SsKey
+    synthesis; V1 `isUnique`/`isPrimary` → V2 `IsUnique`/
+    `IsPrimaryKey`; included-columns drop at the boundary;
+    columns-by-ordinal sort.
+
+### What remains plausible in the chapter
+
+  - **Static-entity slice** (session 24 lean) — exercises
+    `Modality.Static` end-to-end; couples with
+    `Projection.Adapters.Sql/Static.fs` for population data.
+    Cross-cutting work bridging adapter + adapter + IR.
+  - **Cross-module FK slice** — refines rule 16's same-module
+    assumption. Defers to fresh context per the chapter's
+    runway plan; named in the chapter-close handoff document
+    as the highest-priority deferred slice for the new context.
+  - **Canonical `SnapshotRowsets` variant** — separate
+    architectural slice when sequencing brings it. Lands the
+    canonical resolution to the JSON-projection-lossiness class.
 
 ### What the V1 producer does (algebraic terms)
 
