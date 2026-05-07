@@ -263,6 +263,92 @@ the canonical surface is the code itself, the pattern is named.
   `Lineage<'output>` for decisions only, `Lineage<Diagnostics<'output>>`
   when decisions plus observer-relevant findings.
 
+## F# feature surface — alignment, conscious omissions, candidates
+
+The codebase uses a deliberate slice of F#'s feature surface. Most
+of what's idiomatic F# is either already aligned with V2's posture
+or consciously deferred for principled reasons. This section names
+each major feature, where it sits, and the trigger that would
+re-open the question. The general meta-rule:
+
+  **V2 Core is purity-first; anything that introduces effect, time,
+  concurrency, or runtime metaprogramming is consciously deferred
+  from Core. Adapters at the boundary may use what Core forbids,
+  when the adapter's role demands it.**
+
+### Already used (aligned and load-bearing)
+
+| Feature | Where it appears | Why it's used |
+|---|---|---|
+| **Closed discriminated unions** | Every IR type (`SsKey`, `Origin`, `TighteningIntervention`, every outcome / keep-reason DU) | The type system is the contract; closed DUs make exhaustiveness compiler-checked. The closed-DU empirical-test discipline (`DECISIONS 2026-05-13`) is itself load-bearing. |
+| **Smart constructors returning `Result<'a>`** | `SsKey.original`, `Name.create`, `CategoricalDistribution.create`, `NumericDistribution.create`, `NullabilityTighteningConfig.create`, etc. | Structural-commitment-via-construction-validation principle (`AXIOMS.md` operational principle). Every value carries its own truth. |
+| **Records with structural equality** | All IR types | Equality is by content; T1 byte-determinism rests on structural comparison being honest. |
+| **Functor + monad operators** (`>>=`, `<!>`) | `Result`, `Lineage`. `Diagnostics` and `LineageDiagnostics` use named functions (`bind`, `map`) at present. | Idiomatic F# for chained computation; reads like the algebraic spec. |
+| **Pipe operator `\|>`** | Everywhere | The default composition idiom; reads top-to-bottom. |
+| **`[<RequireQualifiedAccess>]`** | Modules whose case names risk collision (`NullabilityOutcome`, `UniqueIndexOutcome`, `ForeignKeyOutcome`, `Lineage`, `Diagnostics`, `LineageDiagnostics`, `Composition`, `Catalog`, `Profile`, `TopologicalOrder`, etc.) | Required when generic case names (`PolicyDisabled`, `EvidenceMissing`) recur across DUs; F# resolves ambiguity by picking one, which produces silent miscompilation. |
+| **`let inline` for operators** | `>>=`, `<!>` on `Result` and `Lineage` | Removes the function-call overhead on hot-path operators; enables F# to specialize on the closure shape. |
+| **List / sequence comprehensions with `yield`** | `Composition.fanOut`, `TopologicalOrderPass`, list-of-conditional-keys patterns in tests | Idiomatic for building lists with conditional inclusion; clearer than `List.collect`. |
+| **FsCheck.Xunit property tests** | Permutation invariance, idempotence, structural-commitment validation | Sweeps combinatorial spaces example-based tests can't reach. |
+| **Backtick-quoted test names** | Every test | Tests are prose: `` ``A24: trail is chronological under bind`` ``. |
+
+### Aligned but underused (candidates whose trigger has not fired)
+
+| Feature | Where it could fit | Trigger to adopt |
+|---|---|---|
+| **Function composition `>>` / `<<`** | Helpers like `decisionsOf` (currently `LineageDiagnostics.payload >> ...` pattern available); some `let f x = g x \|> h \|> i` chains could be `let f = g >> h >> i`. | When a private helper is plumbing-only (no parameter name carries documentation value). Don't rewrite existing `\|>` chains on principle; adopt where point-free reads as well or better than parameter-named. |
+| **Computation expressions / DSLs** (`lineage { ... }`, `diagnostics { ... }`, `lineageDiagnostics { ... }`) | The three writers are monads; they could expose builder syntax. Today they expose `bind` / `map` / `tell` directly. | When consumer chains grow long enough that the operator-style noise outweighs the explicit operations. Today the longest chain is `\|> Lineage.bind ... \|> Lineage.bind ...` at three steps; that's bearable. Adoption costs one `Builder` type per writer; benefit is idiomatic F# at consumer sites. Surface when consumer feedback shows the chains are noisy. |
+| **Active patterns** (`(\|Foo\|_\|)`) | Multi-step matches like `opportunityEntry` (match on `Outcome`, then nested match on `KeepReason`); same shape repeated in future passes that emit per-decision diagnostics. | When the same nested-match pattern appears in three or more places (the codebase's two-consumer threshold for primitives, plus one for a recognizable DSL). Would absorb the inner DU traversal into a named pattern: `(\|EnforceUnique\|DoNotEnforce\|)`. Don't pre-extract; surface when the pattern recurs. |
+| **Units of measure** (`[<Measure>] type ms`, `[<Measure>] type pct`) | `NumericDistribution`'s percentile fields are `decimal`; nothing prevents passing a count where a percentile is expected. Could be `decimal<pct>`, `int64<rows>`, etc. | When a numeric-mix-up bug surfaces in real fixture data, OR when a strategy starts mixing percentile and count values in the same expression and the type system would help. Today's smart constructors enforce monotonicity; units of measure would add a complementary axis (dimensionality). |
+| **Pattern-matching on records with shape literals** (`{ Foo = Bar }`) | Test fixtures and pattern-matching consumers. Today consumers usually destructure via `record.Field`. | When destructuring the same set of fields recurs across consumers; record-shape patterns make the consumer's intent visible. |
+| **`[<NoComparison>]` / `[<NoEquality>]`** | Types where structural equality is misleading (none today; every IR type's structural equality is correct). | When a type carries cached state or order-sensitive payload that should not participate in equality. Surface when an IR refinement breaks the invariant "structural equality = semantic equality." |
+
+### Consciously deferred (re-open triggers explicit)
+
+| Feature | Why deferred | Trigger to re-open |
+|---|---|---|
+| **Reflection** (`typeof<>`, `GetType()`, attribute scanning) | The strategy registry mechanism (deferred at session 8) is reflection's natural home — find every type implementing `IStrategy` at startup. V2's strategy-layer codification dispatches via `FanOutConfig` directly; no name-keyed lookup is needed. | When a real consumer demands name-keyed strategy dispatch (e.g., a CLI surface that takes a strategy id from operator input). Pairs with the "Strategy registry mechanism" entry in the Active deferrals index. |
+| **Object expressions** (`{ new IInterface with ... }`) | The codebase has very few interface boundaries. Polymorphism is via DU pattern matching, not interface dispatch. | When V2 grows interface-based polymorphism (e.g., `IDiagnosticSink` for streaming consumers in adapters; `ICatalogReader` for multiple sources). Object expressions are the right tool; they should land when the abstraction lands. |
+| **Type providers** (`JsonProvider`, etc.) | Could provide compile-time access to the `osm_model.json` schema for the OSSYS adapter. Hand-written DTOs are simpler at first; the type-provider story has tooling fragility (CI integration; F# tooling versions). | When the OSSYS adapter ships and JSON-shape evolution becomes a maintenance burden. The OSSYS ADMIRE stub (session 14 commit 8) starts with hand-written DTOs; promotion to a type provider is a later optimization, not a session-15 default. |
+| **DU member methods** (DUs carrying their own operation methods) | V2 convention is "types are data; modules carry operations." Coupling them is rejected — modules can be `[<RequireQualifiedAccess>]`'d, replaced, augmented; member methods can't. | Never on principle. The conscious omission is a stylistic load-bearing commitment. |
+| **Anonymous records** (`{\| Foo = 1; Bar = 2 \|}`) | Throwaway intermediate values are rare in V2; named records make the intent visible. | When a test / boundary needs to construct a typed value that's truly one-off and doesn't merit its own type definition. Selective adoption; don't introduce as a pattern. |
+| **`[<Struct>]` records / DUs** | Memory layout is not a bottleneck; immutability + GC is fine for the IR's scale. | When profiling shows allocation pressure on a hot pass. Premature `[<Struct>]` adoption can slow code by introducing copies; defer until evidence forces it. |
+
+### Out of scope for Core (available in adapters when their role demands)
+
+V2 Core's pure-core / no-I/O / no-time / no-mutation discipline
+forbids these from `Projection.Core` regardless of how
+idiomatic they are in F#. They may appear in adapters at the
+boundary or in downstream consumer surfaces (CLI, streaming
+diagnostic consumers, future host shells) when the adapter's role
+demands it.
+
+| Feature | Why out of scope for Core | Where it would land |
+|---|---|---|
+| **`Async<'a>` / `Task<'a>`** | Core is synchronous by design. T1 byte-determinism requires deterministic execution; async introduces scheduler nondeterminism. Strategies are synchronous (DECISIONS 2026-05-13 — Pass return-type codification names this as a stability-mark caveat). | Adapters that hit DB / file system. The OSSYS catalog adapter (ADMIRE stub session 14 commit 8) will use `Task<Result<Catalog>>` at the boundary; the synchronous core consumes the result, not the Task. |
+| **`MailboxProcessor` / actor modeling** | Core has no concurrent state and no message-passing. Mutable state inside Core is strictly function-local for performance-sensitive algorithms. | Adapters that need concurrent state — connection pooling for the OSSYS catalog adapter; streaming Diagnostics consumers in a future host shell that fans entries out to multiple sinks. Never in `Projection.Core`. |
+| **FRP / `IObservable<'a>` / Reactive Extensions** | Core has no event streams. Lineage and Diagnostics are writers, not observables — entries accumulate in the value-carrier, they don't propagate by subscription. | A future Diagnostics consumer that streams to operator dashboards lives outside Core (downstream of the writer). The writer's contract is "produce entries"; the consumer's contract is "react to entries." Different responsibilities, different surfaces. |
+| **`System.Reflection` for attribute scanning** | The closed-DU + typed-seam codification means dispatch is type-checked at compile time, not discovered at runtime. A reflection-based registry would replace compile-time guarantees with runtime ones. | If a future host shell needs plugin discovery (load strategy DLLs from a directory at startup), reflection lives in the host. The Core's strategy modules continue to be statically linked. |
+
+### How to read this section
+
+This taxonomy is descriptive of session-14's state, not prescriptive
+of session-15. Each "underused" candidate has a trigger that
+should be respected — don't adopt computation expressions because
+they're cool; adopt them when consumer chains have grown long
+enough that the operator-style chains are unreadable. Each
+"consciously deferred" entry has a re-open trigger; if the
+trigger fires, the deferral converts to a DECISIONS entry that
+either adopts the feature or re-defers with explicit rationale
+(same protocol as the Active deferrals index).
+
+The meta-rule above (purity-first; adapters at the boundary may
+use what Core forbids) is the gravitational sort: when in doubt
+about a feature, ask whether it introduces effect, time,
+concurrency, or runtime metaprogramming. If yes, it lives in an
+adapter, not in Core. If no, the question becomes "does the
+feature pay its weight at the call sites I have today?" — the
+two-consumer threshold and the smell-test apply.
+
 ## What this file is not
 
 - It is not a substitute for the canonical docs.
