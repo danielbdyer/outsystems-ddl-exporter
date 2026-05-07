@@ -410,6 +410,42 @@ inherit the practice.
   - `AXIOMS.md` A1 forwarding pointer added at session 23 commit 5.
   - `DECISIONS.md` extended with ~40 substantive entries across chapter 2 (counting amendments) covering the Diagnostics writer codification, the OSSYS adapter chapter, the meta-codifications, and the chapter-close OPEN-question resolutions.
 
+## Chapter-2 test baseline at close
+
+**632 passed; 7 skipped; 0 failed across 639 tests** at session-25 close.
+Baseline up from chapter-1 close's 585/588 (3 Skip stubs); chapter 2
+added Diagnostics writer tests, OSSYS differential tests across six
+slices, and various chapter-2-introduced unit tests. The 7 Skips are
+intentional (the chapter-2 deferred contracts: `SnapshotFile`
+variant; multi-rowset paths; etc.). Failed: 0.
+
+## Closing
+
+Chapter 2 closes with the OSSYS catalog adapter operational on the
+JSON path; the Diagnostics writer codified at its stability mark;
+the three-class typology for V1↔V2 translation findings complete;
+the audit-generates-discipline meta-pattern visible across three
+chapter-mid-audits. The chapter ran for 13 sessions (sessions
+13–25) producing six substantive slices on the OSSYS arc plus
+multiple meta-codifications.
+
+The chapter-2 architect inherited a chapter-1 codebase whose
+disciplines held under audit. The chapter-3 agent inherits a
+chapter-2 codebase whose disciplines have *grown* under their own
+operation. The most distinctive intellectual artifact is the
+three-class typology; the most distinctive operational pattern is
+that audits generate disciplines (each chapter-mid-audit produced
+a refinement of the next audit's dispatch shape — chapter-mid-
+audit codification at session 23; active-deferrals scan at session
+24; V1-input-envelope walk at session 25). Future chapters
+inherit both the typology and the meta-pattern.
+
+The chapter ahead is yours to shape. The disciplines above are
+the load-bearing structure that lets the chapter ahead support
+more weight than the one behind. **Hold the spine.**
+
+— The session 13–25 architect.
+
 ## Forward signals for chapter 3 (final shape)
 
 Three plausible chapter-3 arcs in approximate priority order:
