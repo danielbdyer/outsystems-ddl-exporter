@@ -4905,3 +4905,119 @@ deferred questions from the session 17 ADMIRE chapter scope:
 
 These continue to defer; the chapter's discipline holds — rules
 land under empirical pressure, not under speculative reasoning.
+
+#### 2026-05-17 (session 20 amendment) — external-entity fixture surfaces the Origin translation rule; placeholder updated under empirical pressure
+
+Session 20's external-entity fixture surfaced the Origin
+three-way collapse rule that the session 17 OSSYS ADMIRE chapter
+scope flagged as one of three deferred translation questions.
+Three substantive findings landed under the same fixture-driven
+empirical-pressure discipline.
+
+**Finding 1: V1's IS-vs-Direct distinction is encoded in
+`EspaceKind`, which is NOT carried through V1's JSON projection.**
+Trace performed before writing the fixture:
+
+  - `EspaceKind` is a string column on `dbo.ossys_Espace`
+    (V1 OutSystems platform metadata) read by V1's
+    `outsystems_metadata_rowsets.sql` at line 96 (`#E.EspaceKind`).
+  - The trailing rowset SELECT for the `#E` table emits
+    `EspaceKind` (line 961 of the same file).
+  - **`SnapshotJsonBuilder` does NOT write `EspaceKind` to
+    `osm_model.json`.** The JSON output for modules carries only
+    `name`, `isSystem`, `isActive`, `entities`. The IS-vs-Direct
+    distinction is invisible to V2 through the `SnapshotJson`
+    path.
+
+This composes with the SsKey-lossy-JSON finding from session 18:
+both deferred translation questions resolve through the same
+input-path expansion (the `SnapshotRowsets` variant per
+`DECISIONS 2026-05-15 — OSSYS adapter translation rules`,
+session-20 amendment of the lossy-SSKey rule). The
+`SnapshotRowsets` canonical resolution covers a **class** of
+JSON-projection-lossiness questions, not just the SsKey question
+that surfaced first.
+
+**Finding 2: The session-18 placeholder for `isExternal: true`
+was speculative; the session-20 fixture provides empirical
+pressure to revise it.** Session 18's parser mapped
+`isExternal: true` to `ExternalDirect` as a placeholder. That
+choice was made when no fixture exercised the `isExternal: true`
+branch; the rule was speculative. The session-20 fixture
+mirrors V1's existing `model.edge-case.json` shape (the
+`ExtBilling` module — the "Ext" prefix is conventional for
+IS-extension modules in V1's domain). The placeholder updates
+under that pressure to `ExternalViaIntegrationStudio`.
+
+**The new placeholder rule (rule 17, extending the running
+list):**
+
+| #  | V1 input shape | V2 output | Rationale |
+|----|---|---|---|
+| 17 | Entity `isExternal` boolean (through the JSON path; `EspaceKind` not visible to V2) | `isExternal: false` → `OsNative`; `isExternal: true` → `ExternalViaIntegrationStudio` | Through the JSON-snapshot path, V2 cannot distinguish IS-vs-Direct because `EspaceKind` is stripped at the JSON projection layer. Placeholder picks `ExternalViaIntegrationStudio` because IS extensions are the standard V1 mechanism for external entities; most `isExternal=true` cases are IS-imported. The full three-way distinction (with `ExternalDirect` for non-IS external entities) resolves when `SnapshotRowsets` implements and `EspaceKind` becomes visible. **This rule supersedes the session-18 placeholder (`ExternalDirect`)** which was speculative without empirical pressure. |
+
+**Finding 3: The bounded-A1-equivalent disposition extends to
+Origin.** Through the `SnapshotJson` path, V2's three-way
+`Origin` discrimination is bounded — `OsNative` and
+`ExternalViaIntegrationStudio` are reachable; `ExternalDirect`
+is unreachable from V2 fixtures because the JSON shape can't
+distinguish it from IS-extension external entities. This is the
+same shape as the bounded-A1 disposition from the session-18
+SsKey finding. **Documented divergence; not a bug.**
+
+The bound resolves identically to the SsKey bound — through
+the same `SnapshotRowsets` canonical-resolution path. When
+`SnapshotRowsets` implements, the V2 catalog reader gains
+access to `EspaceKind` and the Origin translation rule
+refines:
+
+  - `isExternal: false` → `OsNative` (unchanged)
+  - `isExternal: true` AND `EspaceKind: "Extension"` (or whatever
+    the IS-marker turns out to be) → `ExternalViaIntegrationStudio`
+  - `isExternal: true` AND not the IS-marker → `ExternalDirect`
+
+The exact rule needs the empirical evidence of what
+`EspaceKind` values appear and what they mean — that's the
+work for the session that lands `SnapshotRowsets`.
+
+**Updated chapter status (translation rules in the running list):**
+
+  - Sessions 18: rules 1–11 (minimal slice — module / kind /
+    attribute structure, type primitives, modality)
+  - Session 19: rules 12–16 (reference-bearing slice — FK
+    SsKey synthesis, deleteRuleCode mapping, attributes-as-
+    primary-source, same-module assumption)
+  - Session 20: rule 17 (Origin three-way placeholder under
+    JSON-path bound)
+
+Seventeen rules total in the running list.
+
+**One deferred translation question remains** (from the session
+17 ADMIRE chapter scope):
+
+  - Inactive-records boundary choice (filter at adapter or
+    carry through and let Selection filter). All fixtures so
+    far have `isActive: true` everywhere. A mixed-active
+    fixture surfaces it.
+
+This continues to defer; the chapter's discipline holds — rules
+land under empirical pressure, not under speculative reasoning.
+
+**The composability finding is itself worth marking.** Two
+deferred translation questions (lossy-SSKey from session 18,
+IS-vs-Direct from session 20) both resolve through the same
+input-path expansion (`SnapshotRowsets`). The OSSYS chapter is
+discovering that the `JSON projection layer is structurally
+lossy in a class-shaped way — multiple V1 fields are stripped at
+the same projection layer; the resolution to any single one
+generalizes to all. The class is named here so future agents
+opening the `SnapshotRowsets` implementation chapter inherit
+the framing: it's not three separate fixes; it's one resolution
+to a class of lossiness.
+
+Future fixtures may surface additional members of the same
+class (e.g., `isSystemEntity` is in the rowsets but not the
+JSON; per-table column structure that `FOR JSON PATH`
+collapses; check-constraint definitions; etc.). Each is
+deferred-by-input-path until `SnapshotRowsets` lands; the
+single resolution covers them all.
