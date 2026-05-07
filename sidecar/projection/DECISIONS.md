@@ -5657,6 +5657,76 @@ like it's accumulated enough to warrant the check). Sessions 24
 and 25 of chapter 2 will dispatch their own audits per the
 session-23 runway plan.
 
+#### 2026-05-20 (session 24 amendment) — Active deferrals scan is a required dispatch dimension
+
+The session-23 chapter-mid-audit (subagent #2; the second audit
+under this practice) surfaced 1 CRITICAL finding — the DacFx /
+DacpacEmitter trigger had fired silently across sessions 18–22 —
+plus a cross-cutting observation: **propagation gaps cluster into
+two phenomena, only one of which the chapter-mid-audit dispatch
+shape explicitly covered.**
+
+Phenomenon A: pointer drift between substantive DECISIONS entries
+and the index documents that should reflect them (CLAUDE.md
+operating-disciplines table; CHAPTER_N_CLOSE.md scaffolds; README;
+ADMIRE entry status). Session-22 audit subagent #1 surfaced this
+class; session-23 hygiene addressed it.
+
+Phenomenon B: trigger-fire drift in the Active deferrals index.
+Substantive work satisfies a deferral's structural condition
+without the agent shipping the work scanning the index for fired
+triggers. Subagent #2 surfaced one CRITICAL instance (DacFx) and
+named it as the more expensive class — pointer drift means
+documents say slightly stale things; trigger drift means *actual
+work that should have begun didn't begin*. The cost difference
+is structural.
+
+**The session-22 dispatch did not include "scan the Active
+deferrals index for silent firings" as an explicit document pair.**
+The audit walked seven document pairs (DECISIONS↔AXIOMS,
+DECISIONS↔ADMIRE, etc.) but the Active deferrals index sits as a
+section *within* DECISIONS, and "deferral status conditions vs.
+substantive work shipped this chapter" was not a named dimension.
+Subagent #2 found the DacFx fire only because its prompt was
+explicit about the Active deferrals index as a dimension; without
+that explicit framing, mid-audits would catch pointer drift but
+miss the more expensive class.
+
+**Decision: Active deferrals scan is a required dimension on every
+chapter-mid-audit dispatch.** The dispatch pattern's four steps
+(brief, run-in-parallel, categorize, don't-act) extend to a fifth
+explicit dimension on the briefing:
+
+  5. **Walk the Active deferrals index against the chapter's
+     substantive work.** For each row, evaluate whether the
+     trigger condition has been satisfied by work landed in the
+     chapter (or earlier work the previous audits did not catch).
+     Categorize fires as CRITICAL (the audit-during-validation
+     discipline expects a cash-out before further substantive
+     work). The dispatch prompt explicitly names this as a
+     required dimension, not an emergent one.
+
+This is the discipline operating on itself: the audit just ran,
+surfaced the structural gap in its own dispatch shape, and the
+discipline absorbs the refinement before its next operation.
+
+**Worked example for the next dispatch.** The session-25 chapter
+close (planned dispatch of subagents #4 and #5) and any session-24
+subagent #3 dispatch include the Active deferrals scan as an
+explicit dimension. The session-22 dispatch's seven document pairs
+become eight, with the eighth being "Active deferrals index ↔
+substantive work shipped this chapter."
+
+**Why the refinement lands now and not at chapter close.** The
+chapter-mid-audit codification is fresh (session 23). Refining it
+while the next dispatch is still ahead keeps the discipline
+coherent before it operates again — the session-23 codification
+establishes the practice; the session-24 amendment closes the
+structural gap the practice's own first operation surfaced. Same
+shape as the strategy-layer codification's refinements landing
+during validation rather than after (see
+`DECISIONS 2026-05-09 — Audits surface things not on the agenda`).
+
 ## 2026-05-19 — Trace-before-fixture pattern at slice level (codified at N=3)
 
 **Status:** decided (operating discipline; codifies the pattern at N=3 with consistent shape)
