@@ -2816,3 +2816,129 @@ miss does not recur for `RequireQualifiedAccess` retrofit, the
 `CycleResolution.ResolutionStep.Reason` migration, the cross-catalog
 FK refinement, or any composition primitive whose second consumer
 arrives quietly.
+
+## 2026-05-13 — Session 13 closing: doc-hygiene chapter-open landed; one substantive finding deferred
+
+**Status:** decided (session 13 closing marker; routes findings to session 14)
+**Context:** Session 12 (chapter close) routed three classes of work
+to session 13: documentation hygiene (priorities 1–3); two
+deferred-decisions cash-outs (priority 5 transform registry; the
+stability-mark claim was self-flagged as possibly too strong); two
+missing TopologicalOrderPass tests (priority 4). Session 13 inherited
+the doc-hygiene work as the chapter-open opening — the prior agent's
+explicit recommendation.
+
+**What landed in session 13** (eight commits):
+
+| # | Scope | Verdict |
+|---|---|---|
+| 1 | README.md absorbs eleven sessions of state | landed; F# adapters, four-axis Policy, actual project layout, strategy layer, rich profiling, composition primitives, A18 amended, Diagnostics writer flagged, OSSYS catalog adapter named |
+| 2 | AXIOMS.md opening + A18 forwarding pointer | landed; opening now acknowledges A1–A34 / T1–T11 with five amended originals; A18 original points forward to its load-bearing amendment |
+| 3 | ADMIRE status sweep | landed; five entries updated to `extracted (...)` with mode annotations under three-mode framework; EntitySeedDeterminizer entry now acknowledges `StaticAdapterDifferentialTests.fs` as the differential landing it promised |
+| 4 | Skip-stub completion (V1NullabilityParity pattern) | landed in three test files; four new Skip stubs (UniqueIndex Aggressive mode, UniqueIndex included-columns boundary, ForeignKey DeleteRuleIgnore rationale, TopologicalOrder sanitized-effective-names) |
+| 5 | Transform registry cash-out + Active deferrals index | landed; the deferral resolves as overtaken-by-evidence (V2 evolved into per-use-case driver functions, not a single linear pipeline); new index at top of DECISIONS lists ten active deferrals with trigger conditions so silent triggers get caught structurally |
+| 6 | Stability-mark amendment | landed; appended forward-pointing refinement softening the claim to its evidence (three instances within a coherent shape — per-record decisions keyed by a single SsKey); names three genuine untested seams (multi-key, async, multi-decision) |
+| 7 | TopologicalOrderPass V2 contracts reserved | landed as Skip stubs (not as full Behavioral tests); see substantive finding below |
+| 8 | This entry — session 13 closing summary | landed |
+
+**Test baseline:** 585 passed, 9 skipped, 594 total (was 585/3/588 at
+chapter close). The 6 new skips (4 V1-divergence + 2 reserved) widen
+test discovery's surface for V2's named divergences without changing
+the passing-test count. Build green; no warnings beyond a pre-existing
+nullness warning in `DistributionsEmitterTests.fs:126` that predates
+session 13.
+
+**Substantive finding from priority 4 (audit-during-validation).**
+`CHAPTER_CLOSE.md §4 priority 4` listed "two missing
+TopologicalOrderPass tests" with cost "moderate — depends on whether
+OrderingPolicy already supports these knobs in V2 IR." It does not.
+V2's Policy has Selection / Emission / Insertion / Tightening axes;
+no Ordering axis. `TopologicalOrderPass.run` takes no Policy
+parameter (it is `Catalog -> Lineage<TopologicalOrder>`). Manual-cycle
+override has no representation. The junction-table heuristic is not
+implemented; `OrderingMode.JunctionDeferred` is declared in the DU
+but the pass never produces it. The two contracts ADMIRE flags as
+Behavioral V2 translations are **features-not-yet-built**, not
+just-missing-tests.
+
+Disposition for session 13: reserve the contract names via Skip
+stubs (commit 7). Implementation belongs to a substantive next-chapter
+move under the audit-during-validation discipline — surface the
+finding, name the disposition, defer the build to a session that
+takes it as scope. The audit-induced expansion of priority 4 is
+itself the discipline working.
+
+**Recommended priorities for session 14, with rationale.**
+
+  1. **Diagnostics writer.** Twelve sessions of consistent demand;
+     gating dependency for at least seven concrete artifacts and
+     pipelines (`decision-log.json`, `opportunities.json`,
+     `validations.json`, `dmm-diff.json`, opportunity-stream half of
+     UniqueIndex, operator-approval handoff for FK and Nullability,
+     V1 nullability `Analyze()` pipeline). The deferral has been
+     intellectually honest at every prior session ("don't build
+     speculatively"), but the demand is consistent enough that
+     building is now plausibly cheaper than continuing to defer. My
+     read aligns with `CHAPTER_CLOSE.md §4 priority 6` and the prior
+     agent's "I'd revisit if I had more time" item: the writer's
+     value-prop is no longer speculative. Recommend session 14 scopes
+     the writer (single-channel for now per the constitution; three
+     channels later) and lands at least one downstream artifact
+     consuming it (probably opportunity-stream because it's the
+     cheapest first consumer).
+  2. **OSSYS catalog adapter.** The undocumented production boundary
+     (`CHAPTER_CLOSE.md §2.10` and `§4 priority 7`). V2 catalogs are
+     today built by F# fixtures; production V2 needs to consume real
+     OutSystems metadata via the V1 `outsystems_metadata_rowsets.sql`
+     → `MetadataSnapshotRunner` → `SnapshotJsonBuilder` → V2 path. No
+     ADMIRE entry covers this. Probably a session-14 ADMIRE stub; the
+     implementation itself is a separate larger chapter.
+  3. **OrderingPolicy axis + junction heuristic** (deferred priority
+     from session 13). Cashes out the priority-4 work the audit found
+     was bigger than ranked. The TopologicalOrderPass tests reserved
+     in commit 7 then promote from Skip to `[<Fact>]`. Lower
+     immediate-value than (1)/(2); could reasonably wait for session
+     15 unless a real cycle-resolution use case forces it earlier.
+  4. **Faker emitter.** Per `CHAPTER_CLOSE.md §4 priority 8` and the
+     two-evidence-types-only constraint, defer until either a third
+     evidence type lands or Faker proceeds with two and accepts the
+     limitations. Not session 14 unless one of (1)/(2)/(3) opens it
+     up.
+
+The ranking (1) → (2) is gated on which produces more downstream
+demand quickly; the prior agent's "Diagnostics writer first, OSSYS
+catalog adapter second" framing matches my read after orientation.
+Faker remains genuinely deferred.
+
+**Disposition I inherited and am passing forward.**
+
+  - **Audit during validation.** Discovered priority-4 was feature
+    work not test work; logged the finding before pretending the
+    full priority was met. Same discipline that produced five
+    paydowns across sessions 4, 5, 7, 8, 11.
+  - **Total decisions, named skips.** Six new Skip stubs across
+    three test files now name V2 divergences and un-built features
+    that previously lived only in ADMIRE prose.
+  - **Documentation is the bridge.** Every commit in session 13
+    leaves the docs honest enough that the next agent reading only
+    the docs would understand what changed and why.
+  - **Defer with structure, not just intention.** The
+    "Active deferrals" index codifies the discipline that the
+    transform-registry miss surfaced. Future trigger-fires get
+    caught by table-scan, not by chronological re-read.
+
+**Closing.** Session 13 was doc-hygiene plus two deferred-decision
+cash-outs plus one audit-induced finding. The codebase is unchanged
+(no code touched outside test-file Skip stubs). The documentation is
+honest in places it was stale before. The deferred decisions index
+exists so the silent-trigger failure mode does not recur. Session 14
+inherits a chapter whose first substantive decision is whether to
+build the Diagnostics writer, ADMIRE the OSSYS catalog producer, or
+take a different opening based on demand the next agent reads from
+the codebase. The doc-hygiene chapter-open is what it claimed to be:
+not new architecture, just clean ground for the chapter ahead to
+support more weight than the one behind.
+
+Hold the spine.
+
+— Session 13 (the doc-hygiene chapter-open)
