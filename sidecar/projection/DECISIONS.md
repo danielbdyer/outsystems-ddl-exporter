@@ -43,7 +43,7 @@ table before continuing.
 | **`CycleResolution.ResolutionStep.Reason` migration to structured DU** | 2026-05-11 (Strategy layer: a named architectural vector — caveat) | A second resolver strategy lands per the 2026-05-08 pluggability deferral | No second resolver; reason field still free-form string |
 | **Cross-catalog FK detection IR refinement** (`Catalog : string option` on `Reference` and `ForeignKeyKeepReason.CrossCatalogBlocked` made reachable) | 2026-05-13 (Closed-DU expansion: empirical confirmation) | A fixture exercising cross-catalog FKs surfaces the gap | Reserved DU variant exists but is unreachable; do not delete |
 | **Faker emitter (synthetic-data Π)** | 2026-05-13 (Session 11 reflection) | Either a third evidence type lands, or a use case forces proceeding with two evidence types and accepting the limitations | Two evidence types operational (Categorical, Numeric); no third in scope |
-| **DacFx integration in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-06 (DacFx integration deferred to first real-fixture milestone) | First real-fixture milestone arrives via the OSSYS catalog adapter | OSSYS catalog adapter itself not yet built (`CHAPTER_1_CLOSE.md §2.10`) |
+| **DacFx integration in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-06 (DacFx integration deferred to first real-fixture milestone) | A real Catalog (from any adapter) flows end-to-end through a pipeline exercising sibling-Π commutativity (T11) on real metadata; canary chapter (`Projection.Pipeline`) is the natural locus | **Re-deferred at session 24 with tighter trigger condition** (original trigger fired silently sessions 18–22; sequenced for chapter 3 canary chapter; see `2026-05-06` entry's session-24 amendment) |
 | **Multi-spine state pattern** | 2026-05-06 (Multi-spine state pattern is endorsed but not yet built) | A real use case surfaces in the algebra | None yet |
 | **Three-channel Diagnostics split** (operator / auditor / developer) | 2026-05-06 (Diagnostics live in a writer parallel to Lineage) | A real downstream consumer demands per-channel routing | Single channel sufficient at first consumer (UniqueIndex opportunity stream); deferred until host shell or telemetry consumer surfaces |
 | **Reflection** (`typeof<>`, attribute scanning for plugin discovery) | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | A real consumer demands name-keyed strategy dispatch (paired with the strategy registry mechanism deferral above) | Closed-DU + typed-seam dispatches at compile time today; no reflective discovery needed |
@@ -485,6 +485,72 @@ DACPAC bytes.
 giving up the human-readable diff oracle. The migration is additive —
 real-fixture work introduces DacFx alongside, not replacing, the raw-
 text emitter.
+
+#### 2026-05-20 (session 24 amendment) — trigger fired silently across sessions 18–22; cash-out is a re-defer with a tighter trigger condition
+
+The session-23 chapter-mid-audit (subagent #2; see
+`DECISIONS 2026-05-19 — Chapter-mid-audit as a routine practice`)
+surfaced that this deferral's trigger condition has been
+empirically satisfied without a cash-out entry being written. The
+original trigger condition reads "first real-fixture milestone
+arrives via the OSSYS catalog adapter." The OSSYS catalog adapter
+shipped at session 18 (`Projection.Adapters.Osm/CatalogReader.fs`)
+and operated across five real fixtures (minimal, reference-bearing,
+external-entity, mixed-active, index-bearing) producing 23+
+translation rules across sessions 18–22. The structural condition
+is met; seven sessions have accumulated against a satisfied
+trigger.
+
+This is the same shape as the transform-registry miss the Active
+deferrals index was created to prevent — a structural condition has
+been satisfied, no cash-out entry has been written, and substantive
+work has accumulated. The audit-during-validation discipline expects
+a cash-out before the next substantive work. This amendment is that
+cash-out.
+
+**The trigger as originally written was scoped imprecisely.** "First
+real-fixture milestone arrives via the OSSYS catalog adapter" reads
+naturally as "OSSYS adapter exists with real fixtures," which is now
+true. But the original 2026-05-06 entry's substantive intent — read
+in context of the surrounding decisions about RawTextEmitter as
+debug oracle and DacpacEmitter as the third sibling Π built when
+real metadata flows through — is tighter: the milestone that opens
+DacpacEmitter work is a real Catalog (from OSSYS) feeding through
+the **emitter chain**, not just the **adapter** ingesting OSSYS
+metadata. The OSSYS adapter parses to a Catalog; nothing yet
+consumes that Catalog through Π emitters in a real-fixture
+end-to-end shape. The chapter that opens DacpacEmitter work is
+the canary chapter (`Projection.Pipeline` — see
+`DECISIONS 2026-05-15 — OSSYS adapter strategic frame`, axis 4),
+which is sequenced for chapter 3.
+
+**Re-defer with tighter trigger condition.** DacpacEmitter remains
+deferred. The new trigger condition: **a real Catalog (from any
+adapter — OSSYS, DACPAC, in-memory) flows end-to-end through a
+pipeline that exercises sibling-Π commutativity (T11) on real
+metadata.** The canary chapter (`Projection.Pipeline`) is the
+natural locus. When that chapter opens substantive deployment-arc
+work, this trigger fires and DacpacEmitter implementation lands.
+
+**Why this amendment matters beyond the bookkeeping.** The audit
+surfaced not just this individual trigger fire but a structural
+gap in how the index discipline operates: an agent ships work that
+satisfies a deferral's structural condition without scanning the
+index for fired triggers. The chapter-mid-audit codification
+(`DECISIONS 2026-05-19`) added at session 23 catches pointer drift
+but does not yet require active-deferrals-scanning as an explicit
+audit dimension; the session-24 refinement amends that. The two
+amendments — this cash-out and the chapter-mid-audit refinement —
+are paired: they together close the structural gap the audit
+surfaced.
+
+**Update to the Active deferrals index.** The DacpacEmitter row's
+status updates from "OSSYS catalog adapter itself not yet built"
+(stale since session 18) to "**Re-deferred at session 24 with
+tighter trigger condition** — sequenced for canary chapter
+(`Projection.Pipeline`); see this amendment for rationale." The
+trigger condition column updates to reflect the tightened
+scoping.
 
 ## 2026-05-07 — Contract testing is the V1↔V2 bridge
 
