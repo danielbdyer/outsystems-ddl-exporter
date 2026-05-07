@@ -1,0 +1,67 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <GenerateProgramFile>true</GenerateProgramFile>
+    <RootNamespace>Projection.Tests</RootNamespace>
+    <AssemblyName>Projection.Tests</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="ScaffoldingTests.fs" />
+    <Compile Include="ResultTests.fs" />
+    <Compile Include="Fixtures.fs" />
+    <Compile Include="CatalogTests.fs" />
+    <Compile Include="LineageTests.fs" />
+    <Compile Include="CanonicalizeIdentityTests.fs" />
+    <Compile Include="ProfileFixtures.fs" />
+    <Compile Include="ProfileTests.fs" />
+    <Compile Include="AttributeDistributionTests.fs" />
+    <Compile Include="PolicyTests.fs" />
+    <Compile Include="TopologicalOrderTests.fs" />
+    <Compile Include="VisibilityMaskTests.fs" />
+    <Compile Include="NamingMorphismTests.fs" />
+    <Compile Include="NormalizeStaticPopulationsTests.fs" />
+    <Compile Include="SymmetricClosureTests.fs" />
+    <Compile Include="TopologicalOrderPassTests.fs" />
+    <Compile Include="CycleResolutionTests.fs" />
+    <Compile Include="StaticAdapterDifferentialTests.fs" />
+    <Compile Include="NullabilityRulesTests.fs" />
+    <Compile Include="NullabilityPassTests.fs" />
+    <Compile Include="UniqueIndexRulesTests.fs" />
+    <Compile Include="UniqueIndexPassTests.fs" />
+    <Compile Include="ForeignKeyRulesTests.fs" />
+    <Compile Include="ForeignKeyPassTests.fs" />
+    <Compile Include="CategoricalUniquenessRulesTests.fs" />
+    <Compile Include="CategoricalUniquenessPassTests.fs" />
+    <Compile Include="CompositionTests.fs" />
+    <Compile Include="ProfileSnapshotAdapterTests.fs" />
+    <Compile Include="ProfileStatisticsAdapterTests.fs" />
+    <Compile Include="EndToEndDifferentialTests.fs" />
+    <Compile Include="V1NullabilityParityTests.fs" />
+    <Compile Include="RawTextEmitterTests.fs" />
+    <Compile Include="JsonEmitterTests.fs" />
+    <Compile Include="DistributionsEmitterTests.fs" />
+    <Compile Include="RichProfilingEndToEndTests.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <PackageReference Include="FsCheck.Xunit" Version="2.16.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Projection.Core\Projection.Core.fsproj" />
+    <ProjectReference Include="..\..\src\Projection.Targets.SSDT\Projection.Targets.SSDT.fsproj" />
+    <ProjectReference Include="..\..\src\Projection.Targets.Json\Projection.Targets.Json.fsproj" />
+    <ProjectReference Include="..\..\src\Projection.Targets.Distributions\Projection.Targets.Distributions.fsproj" />
+    <ProjectReference Include="..\..\src\Projection.Adapters.Sql\Projection.Adapters.Sql.fsproj" />
+  </ItemGroup>
+
+</Project>
