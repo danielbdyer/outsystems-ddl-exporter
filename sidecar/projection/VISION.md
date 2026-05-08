@@ -1,6 +1,12 @@
 # V2 — Vision
 
 > **Documentation map.** This is the canonical vision document for V2 (the F# sidecar of the OutSystems DDL exporter). The current vision is the body of this file; the original revision-1 vision is preserved verbatim at the end as historical context. The four-subagent review that produced revision 2 — synthesis, reasoning resolutions R1–R8, and eight verbatim subagent reports (Appendices A–H) — lives in `VISION_REVIEW.md`. Tactical decisions live in `DECISIONS.md`; algebraic claims in `AXIOMS.md`; chapter-bridge context in `HANDOFF.md`; V1↔V2 placement in `ADMIRE.md`.
+>
+> **Companion strategic surfaces** (added 2026-05-08):
+> - `BACKLOG.md` — ~375 inventoried items by chapter, status, disposition.
+> - `PLAYBOOK.md` — technical guidance bridging vision to implementation; recurring patterns; decision trees; anti-patterns; per-chapter strategic notes.
+> - `SPINE.md` — the deeper structural rendering: the system as a category; seven primitives; seven tessellating patterns; six structural inferences (sheaf, adjunction, Hom-set, quotient, continuation, tessellation instance); ten concrete leverage points.
+> - `STAGING.md` — Stage 0 foundation phase: the work to ship *before* chapter 3.1 opens; twelve dependencies that compound across every subsequent chapter.
 
 This document carries V2's strategic frame across context boundaries. Read it once at session-open. Re-read when sequencing decisions feel unmoored from the larger arc. Extend it when the work surfaces a strategic implication the current text doesn't yet carry; per the append-only discipline, prefer adding sections over rewriting.
 
@@ -142,6 +148,31 @@ Five compounding wins make full realization plausible in the cutover quarter rat
 5. **Triangulation comparator: three Catalogs, two diffs** (Appendix F §6). `C_ossys` (V2's expected from OSSYS), `C_v1` (read-side from V1's deploy), `C_round` (V2 passes applied to `C_v1`). Pairwise diffs attribute every divergence to V1 / V2 / comparator. Solves the "V2 inherits V1 bugs" critique structurally.
 
 Each of these is independently load-bearing and independently shippable.
+
+## The deeper structure
+
+`SPINE.md` (added 2026-05-08) renders the V2 system at deeper levels: the system *is* a category in the technical sense; the chapter pre-scopes are concrete morphism constructions. The structure tessellates across **seven patterns** (Π Emitter / Adapter / Pass / Render / Compare / Property / Diff) over **seven primitives** (SsKey-keyed Map / Writer-monad accumulation / Ordered linearization / Smart-constructor invariants / Origin tagging / Erasure declaration / Closed DUs with structured rationale).
+
+Six structural inferences fall out:
+- **The four-input projection is a sheaf over (time × environment).** R4 (multi-environment property) is literally the sheaf gluing condition. Four-environment cutover is one algebra applied to four `(Policy, Profile)` pairs — no separate code paths.
+- **`emit` and `read-side` form an adjunction** modulo Π-erasure. The canary's fixpoint claim tests the adjunction's unit; drift detection is the unit's failure surfaced as a diff.
+- **`CatalogDiff` is the morphism set** in catalog-evolution category. `RefactorLogEmitter` isn't special — it's just another Π whose evidence happens to be a morphism. The asymmetry was an illusion of names.
+- **The fallback ladder is a quotient** on the projection's range. Three tiers = three CI configurations selecting which projection is authoritative — *not* three implementations. T-30 decision is a YAML edit.
+- **Property tests are continuations.** The shrinker walks the morphism chain in reverse to the smallest counterexample.
+- **Each chapter is one tessellation instance** of one pattern with one type variable. The slice list is the *implementation*; the pattern is the *contract*.
+
+## Foundation phase (Stage 0)
+
+Per `STAGING.md`, a foundation phase ships **before chapter 3.1 opens**. Stage 0 codifies the categorical structure as F# types so every subsequent chapter is a body implementation, not a co-derivation of the type signatures.
+
+Twelve items across four tiers (~3,000 LOC):
+
+- **Tier 1 (documentation):** AXIOMS amendment scaffolding; DECISIONS pre-chapter-3 governance burst (R6 split-brain rule, chapter sequencing, CLAUDE reading-order, T-30/T-15 fallback gates, Stage 0 commitment); ADMIRE/AXIOMS/CLAUDE currency checks; cross-references to SPINE/PLAYBOOK/STAGING.
+- **Tier 2 (type keystone):** `Emitter<'element>`, `Adapter<'source, 'internal, 'error>`, `Pass<'output>`, `Render<'element, 'output>`, `Compare<'tolerance>`, `Property`, `Diff` as F# type aliases in `Projection.Core/Types.fs`.
+- **Tier 3 (structural commitment):** `ArtifactByKind` + `SsKey` four-variant + `CatalogDiff` per `CHAPTER_3_PRESCOPE_ARTIFACTBYKIND_REFACTOR.md`.
+- **Tier 4 (primitive support, parallel):** `Render` module skeletons; property combinator library; Tolerance taxonomy with named flag list; `config/default-tightening.json` port (BACKLOG CRITICAL gap); test support consolidation lifting V1's `tests/Osm.TestSupport/` patterns into F#; multi-environment generator skeleton.
+
+Stage 0 pays back at chapter 3.3: every chapter beyond that is pure compounding. Drift detection ships as a CI cron job (no chapter); RemediationEmitter ships as a one-line composition; future emitters cost ~100 LOC each.
 
 ## Chapter 3 plan
 

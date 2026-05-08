@@ -7,12 +7,16 @@
 
 **~375 items.** Cumulative, not chapter-specific. Use the cross-cutting indexes at the end to filter by chapter or status.
 
+**Companion strategic surfaces** (added 2026-05-08): `PLAYBOOK.md` for technical guidance and decision trees; `SPINE.md` for the deeper categorical structure (seven patterns, seven primitives, six structural inferences); `STAGING.md` for the Stage 0 foundation phase (twelve dependencies that compound across every subsequent chapter).
+
 ---
 
 ## Contents
 
 - [Executive summary](#executive-summary)
 - [Reading guide](#reading-guide)
+- [Stage 0: foundation phase (per STAGING.md)](#stage-0-foundation-phase-per-stagingmd)
+- [Free corollaries (per SPINE leverage points)](#free-corollaries-per-spine-leverage-points)
 - [Section 1: Extraction + Domain (V1 input surface)](#section-1--extraction--domain-v1-input-surface)
 - [Section 2: Profile + Tightening passes](#section-2--profile--tightening-passes)
 - [Section 3: SSDT/SMO schema emission](#section-3--ssdtsmo-schema-emission)
@@ -67,6 +71,45 @@
 5. **No cutover-fallback decision framework operationalized** (items 7.11, 7.53, 7.54). The three-tier ladder is in VISION; T-30/T-15 gates are not in DECISIONS.md; V1 warm-start is a hard rule but not codified.
 
 ---
+
+## Stage 0: foundation phase (per STAGING.md)
+
+Before chapter 3.1 opens, **Stage 0** ships as one coherent unit (~3,000 LOC; ~12-15 sessions). Stage 0 codifies the seven SPINE patterns as F# types so every subsequent chapter is a body implementation rather than a co-derivation of type signatures.
+
+| # | Item | Tier | LOC | Pays back at |
+|---|---|---|---|---|
+| **S0.A** | Type primitives in `Projection.Core/Types.fs` (`Emitter<'element>`, `Adapter<...>`, `Pass<...>`, `Render<...>`, `Compare<...>`, `Property`, `Diff`) | Tier 2 | ~50 | every chapter (signatures match) |
+| **S0.B** | `ArtifactByKind` + `SsKey` four-variant DU + `CatalogDiff` foundation | Tier 3 | ~700 src + ~520 test | chapter 3.5 (RefactorLogEmitter); chapter 4.4 (RemediationEmitter) |
+| **S0.C** | `Projection.Core/Render.fs` skeletons (`concatSql`, `toJsonDocument`, `toDacpac`, `toSsdtDirectory`, `toRefactorLogXml`) | Tier 4 | ~80 | chapter 3.3 + 3.5 + 4.1.A |
+| **S0.D** | Property combinator library (`.&&.`, `.||.`, `negate`) | Tier 4 | ~50 | chapter 3.4 + 4.x |
+| **S0.E** | `Tolerance` taxonomy (12 named flags + DECISIONS citations) | Tier 4 | ~30 | chapter 3.1 (calibration slice) |
+| **S0.F** | AXIOMS amendment scaffolding (T1-binary, T11-typed, T11-diff, A1-fourvar, A35, A36, A32 cash-out) | Tier 1 | ~40 | every chapter close ritual |
+| **S0.G** | DECISIONS pre-chapter-3 governance burst (R6, ch3 sequencing, CLAUDE pointer, T-30/T-15 gates, Stage 0 commitment) | Tier 1 | ~600 | chapter 3.1 open |
+| **S0.H** | `config/default-tightening.json` port (CRITICAL gap from item 6.17) | Tier 4 | ~80 src + ~50 config | chapter 3.1 (canary calibration) |
+| **S0.I** | Test support consolidation (lift V1's `tests/Osm.TestSupport/` patterns into F# `Projection.Tests.Support`) | Tier 4 | ~600 test | chapter 3.1, 3.4, 4.1.A, 4.1.B, 4.4 |
+| **S0.J** | Active deferrals scan + ADMIRE/AXIOMS/CLAUDE currency checks | Tier 1 | ~50 docs | chapter 3.1 open |
+| **S0.K** | Multi-environment Profile/Policy generator skeleton | Tier 4 | ~30 test | chapter 3.4 (`policyOrthogonal` predicate) |
+| **S0.L** | VISION + BACKLOG cross-references to SPINE/PLAYBOOK/STAGING | Tier 1 | ~180 docs | every fresh-agent session |
+
+**Sequencing:** Tier 1 (documentation) parallel and first. Tier 2 (type keystone S0.A) second. Tier 3 (S0.B structural refactor) third. Tier 4 (support modules S0.C, S0.D, S0.E, S0.H, S0.I, S0.K) parallel and fourth.
+
+**After Stage 0:** chapter 3.1 opens with all primitives in place; the chapter is a *consumer* of Stage 0's types, not a co-developer of them.
+
+## Free corollaries (per SPINE leverage points)
+
+Several backlog items are **free corollaries** of foundation work — they ship without being chapters.
+
+| Backlog item | Free given | SPINE leverage |
+|---|---|---|
+| Drift detection on four real DBs (item 7.52) | Read-side adapter (chapter 3.1) + Compare (Stage 0 / chapter 3.1) | L3 — drift is one CI cron job, not a chapter |
+| RemediationEmitter (chapter 4.4) | DacpacEmitter (chapter 3.3) + CatalogDiff (Stage 0) + Render.toDacpac (S0.C) | L4 — one-line composition; chapter is ~360 LOC |
+| Drift across schema versions (no chapter) | CatalogDiff (Stage 0) + diff composition | L5 — `CatalogDiff.compose` from existing primitive |
+| Multi-environment cutover (chapter 3.4 + ad-hoc) | Multi-env generator (S0.K) + `policyOrthogonal` predicate | L6 — one algebra applied N times |
+| GraphQL emitter (deferred) | `Emitter<GraphqlTypeDef>` + `Render.toGraphqlSchema` | L7 — ~100 LOC body; T11 free |
+| Future Faker / OData / REST-API readers (deferred) | `Adapter<'source, 'internal, 'error>` typed pattern | L7 + L8 — type variable choice; pattern free |
+| V1 sunset per environment (item 7.10) | Fallback ladder DECISIONS entry (S0.G) + per-env quotient configuration | L9 — YAML edit per environment |
+
+**Implication:** the BACKLOG's ~375 items overstate the *implementation* surface. After Stage 0, the actual chapter delivery surface is closer to ~250 items; the rest are inherited or free corollaries.
 
 ## Reading guide
 
