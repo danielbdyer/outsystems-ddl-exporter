@@ -232,6 +232,14 @@ working material; resolution disposition follows.
      amendment (axis 4): T1 holds at the projection language's normal
      form; binary canonicalization is operational. Re-opens only when
      a snapshot consumer demands byte-stable artifacts.
+     **Refined by subagent #6 (`CHAPTER_3_SCOUTING_DACFX_BEHAVIOR.md`):**
+     non-determinism surface is exactly 6 values — Origin.xml's
+     `<Identity>` GUID + `<Start>` + `<End>` plus 4 zip-entry
+     `LastWriteTime` fields. `model.xml`, `DacMetadata.xml`,
+     `[Content_Types].xml` are byte-identical across runs. The
+     pre-scope's "model.xml checksum derives from timestamps" claim was
+     imprecise: checksum is SHA-256 of bytes, timestamp-independent.
+     Post-hoc canonicalizer is small-surface, not zip-format-fragile.
   2. **F#-vs-C# wrapper layering for DacpacEmitter.** Open until slice
      5 (DacpacEmitter implementation). Default per subagent #4: C#
      wrapper inside `Projection.Pipeline` (or a new
@@ -260,6 +268,44 @@ working material; resolution disposition follows.
      `Version = derived from snapshot hash` (per A22 — content-
      addressed snapshots); `Description = generated stamp`. Avoid
      embedding wall-clock time anywhere.
+     **Refined by subagent #6:** `PackageMetadata.Version` is parsed
+     as `System.Version` and silently truncates non-conforming strings
+     to empty. The "derived from snapshot hash" disposition needs a
+     Version-shape encoder; proposed shape (subagent #6's
+     recommendation) — four int32 DWORDs of the SHA-256, encoded as
+     `major.minor.build.revision`. Slice 5 implements the encoder.
+
+## Forward signals for slice 5 (DacpacEmitter — from subagent #6)
+
+Beyond refinements to the eight risks above, subagent #6 surfaced four
+findings outside the original pre-scope's scope. They constrain
+DacpacEmitter's implementation shape:
+
+  - **Finding #9 — `AddObjects` is one-statement-per-call** (DacFx
+    SQL71006). DacpacEmitter must emit one `CREATE TABLE` script per
+    `AddObjects` call; concatenated multi-statement scripts fail.
+    Constraint shape carries through to: separate calls per kind;
+    separate calls per FK constraint when constraints are
+    `ALTER TABLE ... ADD CONSTRAINT`.
+  - **Finding #10 — `ALTER TABLE ... ADD <column>` is rejected**
+    (SQL70645). Columns must be inline in `CREATE TABLE`. DacpacEmitter
+    must declare all columns at table-creation time; no column-add
+    after the fact.
+  - **Finding #11 — Cycles are DacFx-tolerant.** `BuildPackage`
+    accepts cyclic FK definitions; `Validate()` reports zero messages
+    on cycles. V2's `CycleResolution` strategy (chapter 1) operates
+    above the DacFx layer — DacFx does not reject cycles; the V2
+    pre-emit pass does. Slice 6 round-trip closure should include
+    a cycle fixture exercising both layers.
+  - **Finding #12 — Malformed-input `TSqlModel(path, Memory)` failures
+    surface as one diagnostic shape:** `DacServicesException` "Could
+    not load schema model from package." Read-side adapter's `loadModel`
+    helper already wraps with `tryWith`; the error code surface is
+    therefore well-bounded.
+
+Slice 5 inherits these as construction discipline. The scout's full
+report at `CHAPTER_3_SCOUTING_DACFX_BEHAVIOR.md` is the canonical
+surface; this section is a slice-planning summary.
 
 ## Forward signals from session 26
 
