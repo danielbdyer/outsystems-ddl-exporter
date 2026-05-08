@@ -6352,3 +6352,163 @@ deferred to a chapter that will do the work) or as an explicit
 defer with rationale (re-open trigger named, re-evaluation venue
 named). The chapter-3 agent inherits decisions, not unfinished
 arguments.
+
+## 2026-05-22 — Chapter 3 sequencing: canary opens on JSON path; SnapshotRowsets deferred until its forcing function fires
+
+**Status:** decided (chapter-3 sequencing; reverses subagent #5's
+chapter-2-close pre-scope recommendation).
+
+**Context:** Chapter-2 close produced two pre-scope subagent reports
+(`CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md` for canary;
+`CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md` for SnapshotRowsets).
+Subagent #5 recommended opening SnapshotRowsets parallel-to or
+*before* canary on the reasoning that "the canary's DacFx work
+needs a Catalog input; if the canary opens with the JSON path's
+Catalog, future canary work re-asks the SsKey-bound question
+against DacFx's behavior; SnapshotRowsets resolved first means the
+canary inherits a Catalog with full SsKey carriage." That
+recommendation collapses lossiness-class resolution into a canary
+prerequisite. The chapter-2 architect's handoff letter flagged the
+collapse as worth disambiguating before chapter-3 sequencing chose
+itself; this entry runs the disambiguation.
+
+### The synthesis-not-carriage disambiguation
+
+The OSSYS adapter today synthesizes SsKey from name strings —
+`OS_MOD_<modName>`, `OS_KIND_<modName>_<entName>`,
+`OS_ATTR_<modName>_<entName>_<attrName>`,
+`OS_REF_<srcModule>_<srcEntity>_<viaAttr>`,
+`OS_IDX_<modName>_<entName>_<idxName>` (`CatalogReader.fs:92-119`).
+V1's actual Guid SsKey is dropped at the JSON projection (the
+A1-bound finding from session 18; `DECISIONS 2026-05-15 — OSSYS
+adapter translation rules` and the A1 forwarding pointer in
+`AXIOMS.md`).
+
+The canary's structural validation loop is **emit Π → deploy to
+ephemeral SQL Server → DACPAC reader Π (read back) → compare
+Catalogs by SsKey** (per A4). The read-back side has no V1 Guid
+available — SQL Server stores `[schema].[table]` and column names,
+nothing else; whatever SsKey the read-side adapter produces must
+be synthesized from SQL Server metadata. The compare-by-SsKey
+therefore requires **synthesis-convention stability between
+input-Catalog and read-back-Catalog**, not V1-Guid carriage. The
+JSON path's `OS_KIND_<mod>_<ent>` form delivers that today, as
+long as the future read-side adapter mirrors the convention.
+
+**Subagent #5's "canary needs SsKey carriage from SnapshotRowsets"
+premise overstates the dependency.** The canary's correctness
+condition is round-trip identity under a stable synthesis
+convention; it is closed under the input source.
+
+### Where SnapshotRowsets actually forces
+
+The lossiness-class members SnapshotRowsets resolves are real, but
+their forcing functions are not the canary's structural loop:
+
+  - **A1's bound (identity-survives-rename through the JSON path).**
+    Synthesized SsKey changes when V1 renames the entity; V1's
+    Guid SsKey is the only stable identity surviving rename. The
+    consumer that demands stable-identity-under-rename is
+    refactor.log / UUIDv5 generation territory (per the
+    refactor.log section of `DECISIONS 2026-05-15 — Strategic
+    frame for the OSSYS implementation chapter`). Until that
+    consumer materializes, A1's bound is a documented constraint,
+    not an unmet demand.
+  - **`EspaceKind` three-way Origin refinement.** Rule 17 (session
+    20) currently collapses external entities to
+    `ExternalViaIntegrationStudio` because V1's JSON projection
+    does not surface `EspaceKind`. Activating the three-way
+    distinction requires either a downstream consumer
+    distinguishing IS-extension from Direct external (no such
+    consumer exists today) or a fixture demanding the
+    distinction (none yet authored).
+  - **`isSystemEntity` activation.** The flag is named in V1's
+    rowset shape (`#Ent`) but absent from the JSON projection. No
+    V2 IR axis exists for it; activation likely demands an
+    IR-refinement (a `Modality.System` variant or a
+    `Kind.IsSystem: bool` field — a boundary-discipline question
+    per the three-class typology).
+
+These forcing functions are **consumer-side**, not abstract. Until
+a real consumer demands one of them, opening SnapshotRowsets is
+solving a clean abstract problem ahead of evidence — exactly the
+IR-grows-under-evidence anti-pattern.
+
+### Resulting sequencing
+
+  1. **Session 26 — cross-module FK slice (chapter-2 deferral
+     payment).** Single-session tactical-completeness step paying
+     down the chapter-2 deferral on rule 16's same-module
+     assumption. The chapter-3 handoff names V1's
+     `relationships[]` shape as the trace target since
+     `attributes[].refEntityId` is module-internal numeric.
+     Trace-before-fixture runs against the `relationships[]`
+     question; classify the finding into the three-class typology
+     before resolution lands; the slice ends up the size it ends
+     up. If the trace surfaces that V1's cross-module routing
+     requires a shape rule 14's "won't-carry `relationships[]`"
+     assumption ruled out, the slice expands to two sessions (rule
+     14 amendment + revised attribute walk). Named "session 26 —
+     chapter-2 deferral payment" rather than "chapter 3 first
+     slice" — see *Why session 26 is named, not chapter-3 first
+     slice* below.
+
+  2. **Chapter 3 — `Projection.Pipeline` canary chapter.**
+     Multi-session arc opening after session 26. Subagent #4's
+     read-side-adapter-first ordering is structurally clean; the
+     T1 byte-determinism amendment lands at chapter-open as
+     substantive AXIOMS work before any DacpacEmitter code, in
+     parallel to A18's amendment shape. Suggested amendment
+     framing: **T1 holds at the level of the projection language's
+     normal form** — bytes for text/JSON; loaded `TSqlModel`
+     structure for binary/DACPAC; byte-canonicalization is a
+     separable operational concern handled post-hoc when a
+     snapshot consumer requires byte-stability. The canary's
+     read-side adapter mirrors the OSSYS synthesis convention
+     (`CatalogReader.fs:92-119`) exactly; deviations require an
+     amendment.
+
+  3. **`SnapshotRowsets` deferred until its forcing function
+     fires.** The Active deferrals index row (session 25) already
+     names the trigger surface ("JSON-projection-lossiness class
+     needs unblocking — A1 SsKey bound resolution; `EspaceKind`
+     distinction; `isSystemEntity` evidence"); this entry sharpens
+     the trigger interpretation: the trigger fires when a **real
+     consumer** demands one of those resolutions, not when the
+     lossiness class is acknowledged in the abstract. The
+     pre-scope report at `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md`
+     remains the chapter-open input when a forcing function
+     materializes.
+
+### Why session 26 is named, not chapter-3 first slice
+
+Chapter 2's convention treats "chapter" as a multi-session arc
+warranting chapter-open document, chapter-mid-audits at every 3–5
+substantive sessions, and chapter-close ritual. A single-session
+tactical-completeness slice does not earn that ceremony. The
+cross-module FK slice is named **session 26 — chapter-2 deferral
+payment** rather than "chapter 3 prelude" or "micro-chapter."
+Chapter 3 opens at the start of the canary arc; its chapter-open
+document references this entry as the sequencing rationale.
+
+### Reasoning / consequences
+
+The reversal of subagent #5's recommendation is preserved here as
+explicit chapter-3 sequencing rather than ambient inclusion in a
+future chapter-open document. The structural insight — **canary's
+validation loop is closed under name-based synthesis when the
+read-side adapter mirrors the OSSYS convention** — is itself a
+piece of architectural reasoning worth preserving; it informs the
+read-side adapter's chapter-open shape and forecloses the SsKey
+divergence as a canary-time question.
+
+Subagent #5's pre-scope report remains valid as the chapter-open
+input *when* SnapshotRowsets opens; only the sequencing
+recommendation is reversed. The substance of the report (V1
+rowset shape; multi-rowset deserialization architecture; SsKey-
+shape divergence options; class-of-lossiness coverage plan) holds.
+
+Future chapters dealing with V1↔V2 translation should apply the
+same disambiguation discipline: separate lossiness-class
+acknowledgment from the canary-prerequisite question. Resolution
+shape and sequencing are different questions.
