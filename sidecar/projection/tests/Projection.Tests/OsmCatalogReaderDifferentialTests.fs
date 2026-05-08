@@ -395,6 +395,408 @@ let ``differential: V1 reference-bearing fixture parses into a Catalog with the 
         Assert.Equal<Catalog>(expectedReferenceCatalog, actual)
 
 // ---------------------------------------------------------------------------
+// Cross-module FK fixture (session 26 — chapter-2 deferral payment).
+//
+// Adds a second module (`Billing`) whose `Invoice` entity holds a
+// reference to `Account` in module `AppCore`. Exercises rule 16
+// (amended) per `DECISIONS 2026-05-22 — Cross-module FK trace
+// findings`: the parser's global-walk resolver looks up the target
+// entity by (refEntity_name, refEntity_physicalName) across the
+// modules tree; same-module FK is the special case where the
+// resolver returns the source module.
+//
+// Trace findings preserved here for orientation:
+//   - V1's `attributes[].refEntityId` is a numeric internal DB ID
+//     without module context (outsystems_metadata_rowsets.sql:761-767).
+//   - V1's `relationships[]` shape also drops the target module
+//     (`:817-823`); rule 14's "won't-carry" stays correct.
+//   - V1 internally resolves cross-module via `LegacyType` parsed
+//     for `bt<RefEspaceSSKey>*<RefEntitySSKey>` joined to `#Ent`
+//     (`:268-339`); the JSON projection drops the SsKey and the
+//     resolved module.
+//   - V1's full JSON envelope (modules[].entities[]) IS structurally
+//     complete for module-by-entity reachability; global walk
+//     recovers cross-module routing.
+// ---------------------------------------------------------------------------
+
+let private v1CrossModuleFixture : string =
+    """{
+  "exportedAtUtc": "2026-05-22T00:00:00.0000000+00:00",
+  "modules": [
+    {
+      "name": "AppCore",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "Account",
+          "physicalName": "OSUSR_APPCORE_ACCOUNT",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": true,
+              "isAutoNumber": true,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
+            }
+          ],
+          "relationships": [],
+          "indexes": [],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "Billing",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "Invoice",
+          "physicalName": "OSUSR_BILLING_INVOICE",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "attributes": [
+            {
+              "name": "Id",
+              "physicalName": "ID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": true,
+              "isAutoNumber": true,
+              "isActive": true,
+              "isReference": 0,
+              "refEntityId": null,
+              "refEntity_name": null,
+              "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
+            },
+            {
+              "name": "AccountId",
+              "physicalName": "ACCOUNTID",
+              "originalName": null,
+              "dataType": "Identifier",
+              "length": null,
+              "precision": null,
+              "scale": null,
+              "default": null,
+              "isMandatory": true,
+              "isIdentifier": false,
+              "isAutoNumber": false,
+              "isActive": true,
+              "isReference": 1,
+              "refEntityId": 1,
+              "refEntity_name": "Account",
+              "refEntity_physicalName": "OSUSR_APPCORE_ACCOUNT",
+              "reference_deleteRuleCode": "Protect",
+              "reference_hasDbConstraint": 1,
+              "external_dbType": null,
+              "physical_isPresentButInactive": 0
+            }
+          ],
+          "relationships": [
+            {
+              "viaAttributeName": "AccountId",
+              "toEntity_name": "Account",
+              "toEntity_physicalName": "OSUSR_APPCORE_ACCOUNT",
+              "hasDbConstraint": 1
+            }
+          ],
+          "indexes": [],
+          "triggers": []
+        }
+      ]
+    }
+  ]
+}"""
+
+let private billingModuleKey            = mkKey "OS_MOD_Billing"
+let private invoiceKindKey              = mkKey "OS_KIND_Billing_Invoice"
+let private invoiceIdAttrKey            = mkKey "OS_ATTR_Billing_Invoice_Id"
+let private invoiceAccountIdAttrKey     = mkKey "OS_ATTR_Billing_Invoice_AccountId"
+let private invoiceAccountReferenceKey  = mkKey "OS_REF_Billing_Invoice_AccountId"
+
+let private expectedCrossModuleCatalog : Catalog =
+    let accountKind : Kind =
+        { SsKey    = accountKindKey
+          Name     = mkName "Account"
+          Origin   = OsNative
+          Modality = []
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_ACCOUNT" }
+          Attributes = [
+              { SsKey        = accountIdAttrKey
+                Name         = mkName "Id"
+                Type         = Integer
+                Column       = { ColumnName = "ID"; IsNullable = false }
+                IsPrimaryKey = true
+                IsMandatory  = true }
+          ]
+          References = []
+          Indexes    = [] }
+    let invoiceKind : Kind =
+        { SsKey    = invoiceKindKey
+          Name     = mkName "Invoice"
+          Origin   = OsNative
+          Modality = []
+          Physical = { Schema = "dbo"; Table = "OSUSR_BILLING_INVOICE" }
+          Attributes = [
+              { SsKey        = invoiceIdAttrKey
+                Name         = mkName "Id"
+                Type         = Integer
+                Column       = { ColumnName = "ID"; IsNullable = false }
+                IsPrimaryKey = true
+                IsMandatory  = true }
+              { SsKey        = invoiceAccountIdAttrKey
+                Name         = mkName "AccountId"
+                Type         = Integer
+                Column       = { ColumnName = "ACCOUNTID"; IsNullable = false }
+                IsPrimaryKey = false
+                IsMandatory  = true }
+          ]
+          References = [
+              { SsKey           = invoiceAccountReferenceKey
+                Name            = mkName "AccountId"
+                SourceAttribute = invoiceAccountIdAttrKey
+                TargetKind      = accountKindKey
+                OnDelete        = NoAction }
+          ]
+          Indexes    = [] }
+    { Modules = [
+        { SsKey = appCoreModuleKey
+          Name  = mkName "AppCore"
+          Kinds = [ accountKind ] }
+        { SsKey = billingModuleKey
+          Name  = mkName "Billing"
+          Kinds = [ invoiceKind ] } ] }
+
+[<Fact>]
+let ``differential: V1 cross-module FK fixture resolves target via global walk (rule 16 amended)`` () =
+    let result = parseSync (CatalogReader.SnapshotJson v1CrossModuleFixture)
+    match result with
+    | Failure errors ->
+        Assert.Fail(
+            sprintf
+                "Expected Result.Success; got Result.Failure with %d error(s): %A"
+                errors.Length
+                errors)
+    | Success actual ->
+        Assert.Equal<Catalog>(expectedCrossModuleCatalog, actual)
+
+// Homonym ambiguity (strict disposition per DECISIONS 2026-05-22).
+// Two modules each have an entity with name=Account and
+// physicalName=OSUSR_APPCORE_ACCOUNT (contrived; real V1 data does
+// not exhibit this — physicalName is typically module-prefixed).
+// The reference cannot be unambiguously resolved; the adapter emits
+// `referenceTargetAmbiguous` Failure.
+
+let private v1AmbiguousTargetFixture : string =
+    """{
+  "exportedAtUtc": "2026-05-22T00:00:00.0000000+00:00",
+  "modules": [
+    {
+      "name": "ModuleA",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "Account",
+          "physicalName": "OSUSR_SHARED_ACCOUNT",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "attributes": [
+            { "name": "Id", "physicalName": "ID", "originalName": null,
+              "dataType": "Identifier", "length": null, "precision": null,
+              "scale": null, "default": null, "isMandatory": true,
+              "isIdentifier": true, "isAutoNumber": true, "isActive": true,
+              "isReference": 0, "refEntityId": null, "refEntity_name": null,
+              "refEntity_physicalName": null, "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0, "external_dbType": null,
+              "physical_isPresentButInactive": 0 }
+          ],
+          "relationships": [], "indexes": [], "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "ModuleB",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "Account",
+          "physicalName": "OSUSR_SHARED_ACCOUNT",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "attributes": [
+            { "name": "Id", "physicalName": "ID", "originalName": null,
+              "dataType": "Identifier", "length": null, "precision": null,
+              "scale": null, "default": null, "isMandatory": true,
+              "isIdentifier": true, "isAutoNumber": true, "isActive": true,
+              "isReference": 0, "refEntityId": null, "refEntity_name": null,
+              "refEntity_physicalName": null, "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0, "external_dbType": null,
+              "physical_isPresentButInactive": 0 }
+          ],
+          "relationships": [], "indexes": [], "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "ModuleC",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "Order",
+          "physicalName": "OSUSR_MODC_ORDER",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "attributes": [
+            { "name": "Id", "physicalName": "ID", "originalName": null,
+              "dataType": "Identifier", "length": null, "precision": null,
+              "scale": null, "default": null, "isMandatory": true,
+              "isIdentifier": true, "isAutoNumber": true, "isActive": true,
+              "isReference": 0, "refEntityId": null, "refEntity_name": null,
+              "refEntity_physicalName": null, "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0, "external_dbType": null,
+              "physical_isPresentButInactive": 0 },
+            { "name": "AccountId", "physicalName": "ACCOUNTID",
+              "originalName": null, "dataType": "Identifier", "length": null,
+              "precision": null, "scale": null, "default": null,
+              "isMandatory": true, "isIdentifier": false,
+              "isAutoNumber": false, "isActive": true, "isReference": 1,
+              "refEntityId": 1, "refEntity_name": "Account",
+              "refEntity_physicalName": "OSUSR_SHARED_ACCOUNT",
+              "reference_deleteRuleCode": "Protect",
+              "reference_hasDbConstraint": 1, "external_dbType": null,
+              "physical_isPresentButInactive": 0 }
+          ],
+          "relationships": [
+            { "viaAttributeName": "AccountId", "toEntity_name": "Account",
+              "toEntity_physicalName": "OSUSR_SHARED_ACCOUNT",
+              "hasDbConstraint": 1 }
+          ],
+          "indexes": [], "triggers": []
+        }
+      ]
+    }
+  ]
+}"""
+
+[<Fact>]
+let ``differential: cross-module FK with homonym (name+physicalName collision) yields strict referenceTargetAmbiguous Failure`` () =
+    let result = parseSync (CatalogReader.SnapshotJson v1AmbiguousTargetFixture)
+    match result with
+    | Success _ ->
+        Assert.Fail("Expected Failure with referenceTargetAmbiguous; got Success.")
+    | Failure errors ->
+        let codes = errors |> List.map (fun (e: ValidationError) -> e.Code)
+        Assert.Contains("adapter.osm.referenceTargetAmbiguous", codes)
+
+// Dangling reference: refEntity_name + physicalName not present in
+// any module's entities[]. Strict disposition surfaces this as
+// `referenceTargetMissing` Failure.
+
+let private v1DanglingTargetFixture : string =
+    """{
+  "exportedAtUtc": "2026-05-22T00:00:00.0000000+00:00",
+  "modules": [
+    {
+      "name": "AppCore",
+      "isSystem": false,
+      "isActive": true,
+      "entities": [
+        {
+          "name": "Order",
+          "physicalName": "OSUSR_APPCORE_ORDER",
+          "isStatic": false,
+          "isExternal": false,
+          "isActive": true,
+          "db_catalog": null,
+          "db_schema": "dbo",
+          "attributes": [
+            { "name": "Id", "physicalName": "ID", "originalName": null,
+              "dataType": "Identifier", "length": null, "precision": null,
+              "scale": null, "default": null, "isMandatory": true,
+              "isIdentifier": true, "isAutoNumber": true, "isActive": true,
+              "isReference": 0, "refEntityId": null, "refEntity_name": null,
+              "refEntity_physicalName": null, "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0, "external_dbType": null,
+              "physical_isPresentButInactive": 0 },
+            { "name": "AccountId", "physicalName": "ACCOUNTID",
+              "originalName": null, "dataType": "Identifier", "length": null,
+              "precision": null, "scale": null, "default": null,
+              "isMandatory": true, "isIdentifier": false,
+              "isAutoNumber": false, "isActive": true, "isReference": 1,
+              "refEntityId": 99, "refEntity_name": "MissingTarget",
+              "refEntity_physicalName": "OSUSR_NOWHERE_MISSINGTARGET",
+              "reference_deleteRuleCode": "Protect",
+              "reference_hasDbConstraint": 1, "external_dbType": null,
+              "physical_isPresentButInactive": 0 }
+          ],
+          "relationships": [
+            { "viaAttributeName": "AccountId", "toEntity_name": "MissingTarget",
+              "toEntity_physicalName": "OSUSR_NOWHERE_MISSINGTARGET",
+              "hasDbConstraint": 1 }
+          ],
+          "indexes": [], "triggers": []
+        }
+      ]
+    }
+  ]
+}"""
+
+[<Fact>]
+let ``differential: cross-module FK with no matching target yields strict referenceTargetMissing Failure`` () =
+    let result = parseSync (CatalogReader.SnapshotJson v1DanglingTargetFixture)
+    match result with
+    | Success _ ->
+        Assert.Fail("Expected Failure with referenceTargetMissing; got Success.")
+    | Failure errors ->
+        let codes = errors |> List.map (fun (e: ValidationError) -> e.Code)
+        Assert.Contains("adapter.osm.referenceTargetMissing", codes)
+
+// ---------------------------------------------------------------------------
 // External-entity fixture (session 20 — third slice in the OSSYS arc).
 //
 // Surfaces the deferred Origin three-way collapse rule from the

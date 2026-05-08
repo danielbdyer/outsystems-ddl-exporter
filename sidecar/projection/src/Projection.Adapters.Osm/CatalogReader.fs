@@ -228,6 +228,82 @@ module CatalogReader =
                         (sprintf "Property '%s' is not a string when present." name))
 
     // -----------------------------------------------------------------------
+    // Cross-module reference resolution.
+    //
+    // V1's JSON envelope does not carry the target entity's module on a
+    // reference (`attributes[].refEntity_*` and `relationships[]` both
+    // drop module routing). The envelope IS structurally complete for
+    // module-by-entity reachability via the modules tree, however, so
+    // a global walk recovers the routing. Per DECISIONS 2026-05-22 —
+    // Cross-module FK trace findings: rule 16 widens to global-walk
+    // resolution keyed by (refEntity_name, refEntity_physicalName);
+    // strict Failure on zero or multiple matches.
+    // -----------------------------------------------------------------------
+
+    /// Walk every module's `entities[]` and index on the
+    /// (entityName, physicalName) pair. The returned function resolves
+    /// a reference target's module from those two fields. Strict
+    /// disposition: zero matches → "referenceTargetMissing";
+    /// multiple matches → "referenceTargetAmbiguous".
+    let private buildModuleResolver
+        (root: JsonElement)
+        : string -> string -> Result<string> =
+        let entries =
+            match root.TryGetProperty("modules") with
+            | true, modulesArr when modulesArr.ValueKind = JsonValueKind.Array ->
+                modulesArr.EnumerateArray()
+                |> Seq.collect (fun moduleJson ->
+                    match moduleJson.TryGetProperty("name") with
+                    | true, modNameProp
+                      when modNameProp.ValueKind = JsonValueKind.String ->
+                        match modNameProp.GetString() with
+                        | null -> Seq.empty
+                        | modName ->
+                            match moduleJson.TryGetProperty("entities") with
+                            | true, entArr when entArr.ValueKind = JsonValueKind.Array ->
+                                entArr.EnumerateArray()
+                                |> Seq.choose (fun entJson ->
+                                    match
+                                        entJson.TryGetProperty("name"),
+                                        entJson.TryGetProperty("physicalName")
+                                    with
+                                    | (true, n), (true, p)
+                                      when n.ValueKind = JsonValueKind.String
+                                        && p.ValueKind = JsonValueKind.String ->
+                                        match n.GetString(), p.GetString() with
+                                        | null, _
+                                        | _, null -> None
+                                        | nStr, pStr -> Some (nStr, pStr, modName)
+                                    | _ -> None)
+                            | _ -> Seq.empty
+                    | _ -> Seq.empty)
+                |> Seq.toList
+            | _ -> []
+        fun (entityName: string) (physicalName: string) ->
+            let matches =
+                entries
+                |> List.filter (fun (n, p, _) -> n = entityName && p = physicalName)
+                |> List.map (fun (_, _, m) -> m)
+            match matches with
+            | [single] -> Result.success single
+            | [] ->
+                Result.failureOf (
+                    adapterError
+                        "referenceTargetMissing"
+                        (sprintf
+                            "Reference target entity '(%s, %s)' not found in any module's entities[]."
+                            entityName physicalName))
+            | _ ->
+                Result.failureOf (
+                    adapterError
+                        "referenceTargetAmbiguous"
+                        (sprintf
+                            "Reference target '(%s, %s)' matches multiple modules (%s); strict disposition until a homonym fixture surfaces."
+                            entityName
+                            physicalName
+                            (String.concat ", " matches)))
+
+    // -----------------------------------------------------------------------
     // Translation — DataType string → V2 PrimitiveType.
     // The mapping rule is documented in session 18 commit 4 DECISIONS
     // entry. The fixture-driven implementation discipline applies:
@@ -349,29 +425,40 @@ module CatalogReader =
     /// hasDbConstraint). The V2 adapter walks attributes[] directly
     /// because the attribute carries every field the Reference shape
     /// needs; the relationships[] array becomes a cross-check rather
-    /// than the primary source.
+    /// than the primary source. (Rule 14, session 19; preserved.)
     ///
-    /// Same-module assumption: TargetKind is synthesized as
-    /// OS_KIND_<sourceModule>_<refEntity_name>. Cross-module FK
-    /// references would surface a richer rule when a fixture forces
-    /// the question; the minimal session-19 fixture is same-module.
+    /// Cross-module FK target resolution: per DECISIONS 2026-05-22 —
+    /// Cross-module FK trace findings, rule 16 (amended). The target's
+    /// module is resolved by global walk across the JSON envelope's
+    /// modules tree, keyed by (refEntity_name, refEntity_physicalName).
+    /// The resolver is built once at parseDocument and threaded
+    /// through; same-module FK is the special case where the resolver
+    /// returns the source module name.
     let private parseReference
+        (resolveTargetModule: string -> string -> Result<string>)
         (sourceModuleName: string) (sourceEntityName: string) (attrJson: JsonElement)
         : Result<Reference option> =
         match getIntFlag attrJson "isReference" with
         | Failure errors -> Failure errors
         | Success false  -> Result.success None
         | Success true ->
-            let attrNameResult     = getString          attrJson "name"
-            let refEntityNameResult = getOptionalString attrJson "refEntity_name"
-            let deleteRuleResult   = getOptionalString attrJson "reference_deleteRuleCode"
-            match attrNameResult, refEntityNameResult, deleteRuleResult with
-            | Success attrName, Success (Some refEntityName), Success deleteRuleCode ->
+            let attrNameResult              = getString          attrJson "name"
+            let refEntityNameResult         = getOptionalString attrJson "refEntity_name"
+            let refEntityPhysicalResult     = getOptionalString attrJson "refEntity_physicalName"
+            let deleteRuleResult            = getOptionalString attrJson "reference_deleteRuleCode"
+            match attrNameResult, refEntityNameResult, refEntityPhysicalResult, deleteRuleResult with
+            | Success attrName,
+              Success (Some refEntityName),
+              Success (Some refEntityPhysical),
+              Success deleteRuleCode ->
                 let refKey      = referenceSsKey sourceModuleName sourceEntityName attrName
                 let refName     = Name.create attrName
                 let srcAttrKey  = attributeSsKey sourceModuleName sourceEntityName attrName
-                let tgtKindKey  = kindSsKey sourceModuleName refEntityName
                 let onDelete    = parseDeleteRule deleteRuleCode
+                let tgtKindKey  =
+                    resolveTargetModule refEntityName refEntityPhysical
+                    |> Result.bind (fun targetModule ->
+                        kindSsKey targetModule refEntityName)
                 match refKey, refName, srcAttrKey, tgtKindKey, onDelete with
                 | Success rKey, Success rName, Success srcKey, Success tgtKey, Success rule ->
                     Result.success (Some
@@ -380,6 +467,7 @@ module CatalogReader =
                           SourceAttribute = srcKey
                           TargetKind      = tgtKey
                           OnDelete        = rule })
+                | _, _, _, Failure es, _ -> Failure es
                 | _, _, _, _, Failure es -> Failure es
                 | _ ->
                     Result.failureOf (
@@ -388,12 +476,19 @@ module CatalogReader =
                             (sprintf
                                 "Failed to build reference for attribute '%s' on '%s.%s'."
                                 attrName sourceModuleName sourceEntityName))
-            | Success attrName, Success None, _ ->
+            | Success attrName, Success None, _, _ ->
                 Result.failureOf (
                     adapterError
                         "referenceFields"
                         (sprintf
                             "Attribute '%s' on '%s.%s' has isReference=1 but no refEntity_name."
+                            attrName sourceModuleName sourceEntityName))
+            | Success attrName, Success (Some _), Success None, _ ->
+                Result.failureOf (
+                    adapterError
+                        "referenceFields"
+                        (sprintf
+                            "Attribute '%s' on '%s.%s' has isReference=1 with refEntity_name but no refEntity_physicalName; cross-module resolution requires the (name, physicalName) pair per rule 16."
                             attrName sourceModuleName sourceEntityName))
             | _ ->
                 Result.failureOf (
@@ -498,6 +593,7 @@ module CatalogReader =
                         moduleName entityName))
 
     let private parseKind
+        (resolveTargetModule: string -> string -> Result<string>)
         (moduleName: string) (entityJson: JsonElement)
         : Result<Kind> =
         let nameResult       = getString entityJson "name"
@@ -528,7 +624,7 @@ module CatalogReader =
                 |> List.map (parseAttribute moduleName entityName)
             let refResults =
                 attrJsonList
-                |> List.map (parseReference moduleName entityName)
+                |> List.map (parseReference resolveTargetModule moduleName entityName)
             // Collect attribute results — first failure wins.
             let foldedAttrs =
                 attrsResults
@@ -585,11 +681,16 @@ module CatalogReader =
                       Attributes = attrs
                       References = refs
                       Indexes    = idxs }
-            | _ ->
-                Result.failureOf (
-                    adapterError
-                        "kindBuild"
-                        (sprintf "Failed to build kind '%s' in module '%s'." entityName moduleName))
+            // Preserve inner failures (e.g., adapter.osm.referenceTargetMissing,
+            // referenceTargetAmbiguous, referenceFields) instead of collapsing
+            // to a generic kindBuild — diagnostic codes need to survive the
+            // outer cascade. Per DECISIONS 2026-05-22 — Cross-module FK trace
+            // findings (strict disposition).
+            | Failure es, _, _, _, _ -> Failure es
+            | _, Failure es, _, _, _ -> Failure es
+            | _, _, Failure es, _, _ -> Failure es
+            | _, _, _, Failure es, _ -> Failure es
+            | _, _, _, _, Failure es -> Failure es
         | _ ->
             Result.failureOf (
                 adapterError
@@ -600,7 +701,10 @@ module CatalogReader =
     // Translation — V1 module → V2 Module.
     // -----------------------------------------------------------------------
 
-    let private parseModule (moduleJson: JsonElement) : Result<Module> =
+    let private parseModule
+        (resolveTargetModule: string -> string -> Result<string>)
+        (moduleJson: JsonElement)
+        : Result<Module> =
         let nameResult = getString moduleJson "name"
         match nameResult with
         | Success rawName ->
@@ -617,7 +721,7 @@ module CatalogReader =
                     arr.EnumerateArray()
                     |> Seq.filter isActiveOrDefault
                     |> Seq.toList
-                    |> List.map (parseKind rawName)
+                    |> List.map (parseKind resolveTargetModule rawName)
                 | _ ->
                     []
             let foldedKinds =
@@ -633,11 +737,11 @@ module CatalogReader =
             | Success k, Success n, Success kinds ->
                 Result.success
                     { SsKey = k; Name = n; Kinds = kinds }
-            | _ ->
-                Result.failureOf (
-                    adapterError
-                        "moduleBuild"
-                        (sprintf "Failed to build module '%s'." rawName))
+            // Preserve inner failures rather than collapsing to a generic
+            // moduleBuild error.
+            | Failure es, _, _ -> Failure es
+            | _, Failure es, _ -> Failure es
+            | _, _, Failure es -> Failure es
         | _ ->
             Result.failureOf (
                 adapterError
@@ -649,12 +753,19 @@ module CatalogReader =
     // -----------------------------------------------------------------------
 
     let private parseDocument (root: JsonElement) : Result<Catalog> =
+        // Build the cross-module FK target resolver once per document
+        // (per DECISIONS 2026-05-22 — Cross-module FK trace findings;
+        // rule 16 amended). The resolver closes over the entire
+        // modules tree's (entityName, physicalName) → moduleName
+        // index, then is threaded through parseModule → parseKind →
+        // parseReference.
+        let resolveTargetModule = buildModuleResolver root
         match root.TryGetProperty("modules") with
         | true, arr when arr.ValueKind = JsonValueKind.Array ->
             let modulesList =
                 arr.EnumerateArray()
                 |> Seq.toList
-                |> List.map parseModule
+                |> List.map (parseModule resolveTargetModule)
             let folded =
                 modulesList
                 |> List.fold
