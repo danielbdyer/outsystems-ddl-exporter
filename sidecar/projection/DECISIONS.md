@@ -6512,3 +6512,205 @@ Future chapters dealing with V1↔V2 translation should apply the
 same disambiguation discipline: separate lossiness-class
 acknowledgment from the canary-prerequisite question. Resolution
 shape and sequencing are different questions.
+
+## 2026-05-22 — Cross-module FK trace: rule 16 widens to global-walk; rule 14 stays correct; handoff hypothesis empirically falsified
+
+**Status:** decided (session 26 — chapter-2 deferral payment;
+trace-before-fixture honored; classification under
+empirical-pressure, no new typology class).
+
+**Context:** The chapter-2 architect's handoff letter named
+cross-module FK as the highest-priority deferred slice for
+chapter 3 and explicitly hypothesized that walking V1's
+`relationships[]` array (rule 14's "won't-carry") might be
+forced by the cross-module case, since `attributes[].refEntityId`
+is a numeric internal database ID without module context. The
+chapter-3 sequencing entry (`DECISIONS 2026-05-22` — chapter-3
+sequencing) named session 26 as the cross-module FK slice, with
+trace-before-fixture preceding any parser change. This entry
+records the trace findings and the rule disambiguation that
+followed.
+
+### Trace findings (V1 input shape)
+
+Walk of V1's SQL extraction (`outsystems_metadata_rowsets.sql`)
+plus the JSON projection (`SnapshotJsonBuilder.cs`) confirms:
+
+  - **Attributes JSON shape for FK** (`outsystems_metadata_rowsets.sql:761-767`):
+    `[refEntityId]` (INT, numeric internal DB ID, no module
+    context); `[refEntity_name]`, `[refEntity_physicalName]`,
+    `[refEntity_isActive]`. **No `refEntity_module` field.** The
+    architect's premise on the source-side encoding holds.
+  - **Relationships JSON shape** (`:817-823`): `[viaAttributeId]`,
+    `[viaAttributeName]`, `[toEntity_name]`,
+    `[toEntity_physicalName]`, `[deleteRuleCode]`,
+    `[hasDbConstraint]`, `[actualConstraints]`. **Also no module
+    field.** **Walking `relationships[]` does not carry information
+    `attributes[]` lacks.** The architect's hypothesis on rule 14
+    is empirically falsified.
+  - **V1's internal cross-module resolution** (`:268-339` —
+    `#RefResolved`): parses `RefEntitySSKey` from `LegacyType`
+    (`bt<RefEspaceSSKey>*<RefEntitySSKey>` for cross-module legacy
+    boundary types); joins to `#Ent` by SsKey; recovers target
+    module via `eByKey.EspaceId → #E.EspaceName`. **All of this is
+    internal to the SQL extraction; the JSON projection drops the
+    SsKey and the resolved module.**
+  - **The JSON envelope V2 receives is structurally complete for
+    sources.** The structure is `modules[].entities[].attributes[]`,
+    so the adapter walking the tree always knows the source
+    module. What's missing is a *direct* link from
+    `attributes[].refEntity_*` to the target's module.
+  - **Recoverability via global walk.** The full envelope contains
+    every module's entities; a parser can build an
+    `(entityName, physicalName) → moduleName` map across the whole
+    envelope, then resolve each reference's target module by
+    lookup. Risks: homonym entities across modules; the
+    `(name, physicalName)` pair is more disambiguating than name
+    alone since physicalName is typically module-prefixed in V1's
+    actual data.
+
+### Classification
+
+Empirical pressure forcing rule revision under
+rules-under-empirical-pressure. **No new typology class needed.**
+
+  - **Not JSON-projection-lossiness in the strict sense.** The
+    info is recoverable from the envelope's structure (the
+    modules tree is structurally complete for module-by-entity
+    reachability), just not directly indexed per-attribute. The
+    parser does extra work to recover it, but the lossy-bit is
+    indexing, not erasure.
+  - **Not alternative-IR-surface.** No parallel V2 surface in
+    play; V2's `Reference.TargetKind: SsKey` is the natural home
+    and remains so.
+  - **Not V2-boundary-discipline.** V2's IR is fine; the
+    question is purely about how the parser walks V1's input
+    shape.
+
+The finding is structurally a **V1-input-walk question** with a
+parser fix. Rule revision under empirical pressure is the
+established discipline; it absorbs this.
+
+### Rule 14 stays correct
+
+> Rule 14 (`DECISIONS 2026-05-15 — OSSYS adapter translation
+> rules`, line 5126; session 19): "Walk attributes for
+> `isReference: 1`; ignore the `relationships[]` array. The
+> `relationships[]` array is V1's aggregated cross-check; it
+> could become a verification surface later but is not the
+> primary source."
+
+The rule is preserved as written. The architect's specific
+hypothesis (walking `relationships[]` would resolve cross-module
+routing) was empirically wrong — `relationships[]` and
+`attributes[]` carry the same target identity (`name`,
+`physicalName`); neither carries the target's module. The rule's
+underlying claim ("two-source representation collapses to
+one-source extraction") holds at the cross-module case unchanged.
+
+### Rule 16 widens (canonical amended text)
+
+The rule's session-19 wording (line 5128) named two resolution
+options (`(a)` carrying `refEntity_module` in V1's JSON;
+`(b)` V2 adapter scanning all modules) and chose neither under
+the same-module assumption. Empirical pressure now selects
+option `(b)` with a disambiguator addressing the
+"problematic when names collide" caveat the original wording
+flagged.
+
+**Amended rule 16 (canonical wording; supersedes session-19 text):**
+
+> Rule 16 (amended). V1 reference target's module is resolved
+> via **global walk across the JSON envelope's `modules[]`
+> tree**, keyed by `(refEntity_name, refEntity_physicalName)`
+> pair against each module's `entities[]` `(name, physicalName)`.
+> `Reference.TargetKind = OS_KIND_<resolvedTargetModule>_<refEntity_name>`.
+> If exactly one module contains an entity matching the pair,
+> resolution succeeds. If zero or multiple modules match,
+> resolution emits `Failure` with an adapter error citing the
+> ambiguity (no match: dangling reference; multiple: homonym
+> ambiguity). **Strict disposition** until a homonym fixture
+> surfaces in real V1 data.
+
+**Source-side rule (rule-16's same-module-assumption complement)
+ collapses.** The original rule synthesized
+`OS_KIND_<sourceModule>_<refEntity_name>` — implicitly conflating
+target module with source module. The amended rule treats
+target module as a parser-resolved value independent of source
+module; same-module FKs are a special case (the global walk
+finds the target in the source module) rather than the
+structural rule.
+
+### Strict homonym disposition (this slice's choice)
+
+The amended rule's "Failure on zero or multiple matches" is the
+strict variant of two reasonable shapes; the permissive variant
+would be "Diagnostics + best-effort first-match" (V1's
+tolerate-and-log disposition). This slice picks **strict**.
+
+Reasoning:
+
+  - **Empirical posture.** Until a homonym fixture surfaces,
+    optimizing for it is solving an abstract problem ahead of
+    evidence (the IR-grows-under-evidence anti-pattern applied to
+    error-handling shapes). The pair-key disambiguation handles
+    the realistic case; `(name, physicalName)` collisions across
+    modules are very rare in V1's actual data because V1
+    physicalName is typically module-prefixed.
+  - **Failure surfaces problems early.** Permissive silently
+    routes to first-match, which could be wrong; the canary's
+    structural validation loop would eventually catch a
+    misrouted FK, but with much slower feedback than an explicit
+    parser-time error.
+  - **Consistent with `parseReference`'s existing shape.** The
+    function already returns `Failure` on missing reference
+    fields (`CatalogReader.fs:391-404`); ambiguity Failure
+    follows the same pattern. Departures from established shapes
+    warrant explicit justification; "V1's tolerate-and-log
+    disposition" doesn't meet that bar without evidence that real
+    V1 data exhibits the case.
+
+**Refinement path.** When (if) a homonym fixture surfaces in real
+V1 data — same-name same-physicalName entities across modules —
+the rule extends. Likely to Diagnostics + best-effort with a
+richer disambiguator (something carried in source-side
+attributes; perhaps the `dataType` legacy-bt encoding when
+present); possibly to a structured keying scheme. That's a future
+slice operating under empirical pressure, not this one.
+
+### Reasoning / consequences
+
+The handoff letter — a canonical document the chapter-2 architect
+wrote as the entry-point — guessed at a parser fix
+(walk `relationships[]`) that the trace falsified. The
+disambiguation belongs in DECISIONS as architectural correction
+because: (a) modifying HANDOFF.md after publication violates the
+append-only documentation discipline (`DECISIONS 2026-05-21 —
+Chapter 2 close: OPEN-question resolutions`, session-25 framing);
+(b) future readers walking HANDOFF.md → DECISIONS chronologically
+should see the explicit correction; (c) chapter-2's
+"rules-amendments-atomic-with-implementation" pattern applied to
+incremental rule additions within an established arc, where this
+case is architectural correction of a published hypothesis.
+
+The implementation commit follows this entry. The amended rule 16
+canonical wording lives here and will be referenced from the
+adapter docstring and the cross-module fixture's expected-Catalog
+construction.
+
+The Active deferrals index row for **Cross-module FK IR
+refinement** (`DECISIONS.md:45`) is settled by this entry plus
+the implementation commit — the deferral cashes out as
+"resolved at parser layer via global-walk; no IR refinement
+required." The original deferral framing anticipated possible
+IR-refinement (a `Reference.TargetCatalog` or `Reference.TargetModule`
+field); the trace shows the parser-layer resolution suffices, and
+the IR stays unchanged.
+
+The chapter-2 architect's general framing was correct in spirit
+(cross-module case forces revision); only the specific location
+hypothesis (rule 14) was empirically wrong. The trace-before-
+fixture discipline did its job: revealed the architectural guess
+was wrong about which parser fix, even when the general framing
+held. Future chapters operating the discipline inherit this
+worked example.
