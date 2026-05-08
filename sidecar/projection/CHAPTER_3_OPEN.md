@@ -188,19 +188,40 @@ slice 1; refines under empirical pressure.
 
 ## Slice plan (sketch; refines under empirical pressure)
 
-| Slice | Scope | What it surfaces |
-|---|---|---|
-| **1** (this session) | T1 amendment + new `Projection.Adapters.Dacpac` project + `parseDacpac : byte[] -> Result<Catalog>` for one-Module / one-Kind / two-Attribute fixture (PK + Name); no FKs, no indexes, no modality | DacFx parse path (pure-F#, no DB); minimum viable Catalog from DACPAC; T1 normal-form codified |
-| **2** | References (FKs) — single-table with self-FK or two-table with cross-table FK | DacFx FK enumeration; reference SsKey synthesis under read-side path |
-| **3** | Indexes — single-column unique, composite, non-unique | DacFx index enumeration |
-| **4** | Composite primary keys + multi-Module fixture | Module → Schema decision (axis 7); package-metadata channel for Module name |
-| **5** | DacpacEmitter (`Projection.Targets.SSDT.DacpacEmitter`) — emit Π consuming Catalog, producing DACPAC bytes via DacFx | C# wrapper layering decision (axis 5); first sibling-Π exercising T11 with read-side adapter |
-| **6** | First end-to-end loop offline — emit DACPAC bytes, immediately read them back, assert round-trip closure | T1 amendment exercised on real metadata; T11 commutativity |
-| **7+** | Testcontainers + ephemeral SQL Server; `DacServices.Deploy` + `DacServices.Extract`; full canary loop closure | Deployment-time invariants; byte-determinism question if a snapshot consumer demands byte-stability (axis 4 follow-on) |
+| Slice | Status | Scope | What it surfaced / will surface |
+|---|---|---|---|
+| **1** | ✅ closed (session 27) | T1 amendment + new `Projection.Adapters.Dacpac` project + `parseDacpac` for one-Module / one-Kind / two-Attribute fixture (PK + Name) | DacFx parse path (pure-F#, no DB); minimum viable Catalog from DACPAC; T1 normal-form codified before any binary-emitter code |
+| **2** | ✅ closed (session 28) | References (FKs) — cross-table FK in single-module fixture; `parseReference` + `parseReferenceAction` (DacFx `ForeignKeyAction` → V2 `ReferenceAction`); `multiColumnFk` Failure for >1 source columns until empirical pressure forces an IR refinement | Per-attribute Reference shape mirrors OSSYS rule 16; SetDefault → `unmappedFkAction` Failure (V2 has no SetDefault); reference SsKey synthesis under read-side path |
+| **3** | ✅ closed (session 28) | Indexes — single-column unique, composite non-unique; `parseIndex`; PK structurally distinct (DacFx `PrimaryKeyConstraint` is not `Index`) | `DacIndex.TypeClass` + `GetParent` filter (relationship-based enumeration not exposed in DacFx 162); index column ordering preserved via DacFx referenced-relationship traversal |
+| **4** | ✅ closed (session 28) | Composite primary key — test-only slice confirming slice-1's `primaryKeyColumnNames` Set<string> shape handles multi-column PKs structurally | No parser change; existing implementation handles composite PKs via `pkColumns.Contains` |
+| **5** | open | DacpacEmitter (`Projection.Targets.SSDT.DacpacEmitter`) — emit Π consuming Catalog, producing DACPAC bytes via DacFx | C# wrapper layering decision (axis 5); first sibling-Π exercising T11 with read-side adapter; subagent #6 (DacFx BuildPackage scout, dispatched session 28) refines axis-4 byte-determinism risk under empirical pressure |
+| **6** | open | First end-to-end loop offline — emit DACPAC bytes, immediately read them back, assert round-trip closure | T1 amendment exercised on real metadata; T11 commutativity; SsKey synthesis convention's stability under round-trip (axis 3) |
+| **7+** | open | Testcontainers + ephemeral SQL Server; `DacServices.Deploy` + `DacServices.Extract`; full canary loop closure | Deployment-time invariants; byte-determinism question if a snapshot consumer demands byte-stability (axis 4 follow-on); multi-Module fixture forces axis-7 Module → Schema decision |
 
 The slice plan is sketch-grade; chapter-2's six-slice OSSYS arc landed
-in the order it landed, not the order session 17 sketched. Same
-disposition here.
+in the order it landed, not the order session 17 sketched. Session 28
+bundled slices 2/3/4 in one session because DacFx's API is well-defined
+and the empirical novelty per slice was low (mechanical extension; no
+unexpected impedance). The discipline is "atomic commits; classify
+findings before resolution lands; chapter-mid-audit at 3-5 sessions
+in" — bundling is fine when the work allows.
+
+## Session log (chapter-3 progress)
+
+  - **Session 27** — Chapter-open document; T1 amendment to AXIOMS;
+    slice 1 (read-side adapter; one-Kind / two-Attribute fixture).
+    Test baseline 632→637 (+2: slice-1 differential + T1-amended
+    round-trip).
+  - **Session 28** — Slices 2/3/4 bundled (FKs, indexes, composite
+    PKs). Subagent #6 (DacFx BuildPackage behavior scout) dispatched
+    in parallel for forthcoming DacpacEmitter sequencing (slice 5).
+    Test baseline 637→640 (+3: slice-2 cross-table FK, slice-3
+    indexes, slice-4 composite PK). One latent DacFx surprise found
+    and resolved: `Microsoft.SqlServer.Dac.Model.Index` exposes
+    `Unique` not `IsUnique`, and indexes are top-level model objects
+    enumerated via `GetObjects` + `GetParent` filter (no `Host`
+    relationship exists for Index). Aliased `DacIndex` to
+    disambiguate from V2's `Catalog.Index` IR type.
 
 ## Open questions (chapter-3 working surface)
 
