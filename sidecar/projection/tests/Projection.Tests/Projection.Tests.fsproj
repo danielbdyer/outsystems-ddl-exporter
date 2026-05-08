@@ -31,6 +31,7 @@
     <Compile Include="CycleResolutionTests.fs" />
     <Compile Include="StaticAdapterDifferentialTests.fs" />
     <Compile Include="OsmCatalogReaderDifferentialTests.fs" />
+    <Compile Include="DacpacCatalogReaderDifferentialTests.fs" />
     <Compile Include="NullabilityRulesTests.fs" />
     <Compile Include="NullabilityPassTests.fs" />
     <Compile Include="UniqueIndexRulesTests.fs" />
@@ -66,6 +67,7 @@
     <ProjectReference Include="..\..\src\Projection.Targets.Distributions\Projection.Targets.Distributions.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.Sql\Projection.Adapters.Sql.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.Osm\Projection.Adapters.Osm.fsproj" />
+    <ProjectReference Include="..\..\src\Projection.Adapters.Dacpac\Projection.Adapters.Dacpac.fsproj" />
   </ItemGroup>
 
 </Project>
