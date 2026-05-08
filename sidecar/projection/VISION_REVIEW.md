@@ -2,14 +2,20 @@
 
 **Date:** 2026-05-08
 **Reviews:** VISION.md @ commit `2fb51ef`
-**Method:** four parallel subagent evaluations (skeptical critique, cutover risk audit, scope/feasibility review, sequencing plan), one synthesis pass, one reasoning pass on resolvable concerns.
+**Method:** four parallel subagent evaluations (skeptical critique, cutover risk audit, scope/feasibility review, sequencing plan), one synthesis pass, one reasoning pass on resolvable concerns, then four follow-up subagents on work-smarter angles (canary as property test, V2-as-V1-canary dogfood, radical scope cut, type-system refactor).
+
+**Outcome:** revision 2 of the vision lives in `VISION_REVISION_2.md`. The original `VISION.md` is preserved as historical context. Read `VISION_REVISION_2.md` first when sequencing work.
 
 This document is the synthesis. Each subagent's full report is preserved verbatim in an appendix:
 
 - **Appendix A** — `VISION_REVIEW_APPENDIX_A_SKEPTICAL_CRITIQUE.md` — pressure-test of the document's rhetorical and claim structure.
 - **Appendix B** — `VISION_REVIEW_APPENDIX_B_CUTOVER_RISK_AUDIT.md` — operational risk audit against the External Entities cutover scenario.
 - **Appendix C** — `VISION_REVIEW_APPENDIX_C_SCOPE_FEASIBILITY.md` — delivery-focused scope review for the cutover quarter.
-- **Appendix D** — `VISION_REVIEW_APPENDIX_D_SEQUENCING_PLAN.md` — implementation plan for chapters 3 and 4.
+- **Appendix D** — `VISION_REVIEW_APPENDIX_D_SEQUENCING_PLAN.md` — initial implementation plan for chapters 3 and 4 (superseded in part by Appendix F's chapter-3 re-sequencing).
+- **Appendix E** — `VISION_REVIEW_APPENDIX_E_CANARY_PROPERTY_TESTS.md` — canary as FsCheck property-test surface; tier-1 pure / tier-2 container-pooled / tier-3 nightly. ~600 lines test code replaces ~2000+ lines of curated integration tests.
+- **Appendix F** — `VISION_REVIEW_APPENDIX_F_V2_VERIFIES_V1.md` — V2 as V1's canary, before V2 emits anything. Read-side adapter via `INFORMATION_SCHEMA`/`sys.*` (not DacFx Extract); triangulation comparator over three Catalogs. Pulls read-side adapter to chapter 3.1.
+- **Appendix G** — `VISION_REVIEW_APPENDIX_G_RADICAL_SCOPE_CUT.md` — defer-vs-keep table on every "informational widening" item, with hard triggers. Cuts platform-survival, six-dim Faker scoring, AI-agent substrate as a section, and OSS contribution.
+- **Appendix H** — `VISION_REVIEW_APPENDIX_H_TYPE_SYSTEM_REFACTOR.md` — `ArtifactByKind<'element>` private DU + `SsKey` four-variant split + `CatalogDiff`. Turns T11 and A1 into type theorems, not disciplines. Migration sequence is incremental over three chapters.
 
 ---
 

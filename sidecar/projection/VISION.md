@@ -1,5 +1,7 @@
 # V2 — Vision
 
+> **Revision 2 (2026-05-08):** much of this document is superseded by `VISION_REVISION_2.md`. Read revision 2 first when sequencing work. This document is preserved as historical context per the append-only discipline. The §"informational widening" and §"post-cutover trajectory" in particular have been substantially cut in revision 2. See `VISION_REVIEW.md` and appendices A–H for the review evidence.
+
 This document carries V2's strategic frame across context boundaries. It is distinct from HANDOFF.md (the chapter-bridge tactical letter) and CHAPTER_N_CLOSE.md (the chapter-arc syntheses). This is the strategic substrate underneath both: what V2 is for, what it must do, what it ultimately becomes.
 
 Read it once at session-open. Re-read when sequencing decisions feel unmoored from the larger arc. Extend it when the work surfaces a strategic implication the current text doesn't yet carry.
