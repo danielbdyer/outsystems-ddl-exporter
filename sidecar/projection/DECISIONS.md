@@ -6714,3 +6714,104 @@ fixture discipline did its job: revealed the architectural guess
 was wrong about which parser fix, even when the general framing
 held. Future chapters operating the discipline inherit this
 worked example.
+
+## 2026-05-23 — T1 amended again: determinism at the projection language's normal form
+
+**Status:** decided (chapter-3 open — first substantive AXIOMS work
+before any DacpacEmitter or read-side adapter code, paralleling
+A18's amendment shape).
+
+**Context:** Chapter 3 is the canary chapter (`Projection.Pipeline`,
+strategic-frame axis-4 from session 17). Subagent #4's pre-scope
+report (`CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md`) flagged byte-
+determinism as the highest-leverage open question DacpacEmitter
+raises: vanilla `BuildPackage` emits non-byte-deterministic DACPAC
+bytes because Origin.xml embeds wall-clock timestamps (the
+model.xml checksum derives from them; zip-entry timestamps differ
+per run). T1's session-13 amendment "same triple, same surface,
+bit-identical" cannot hold for DACPAC bytes out of the box.
+
+The chapter-open document (`CHAPTER_3_OPEN.md`, axis 4) named the T1
+amendment as the first substantive AXIOMS work — landed at chapter
+open before any binary-emitter code, in parallel to A18's amendment
+shape (where the algebraic principle landed before consumer code
+exercised it).
+
+**Decision: T1's "same triple, same surface" parameterizes over the
+projection language's equality.** AXIOMS.md amendment landed at the
+bottom of the file, paralleling A12's "amended again" pattern (A12
+was amended 2026-05-06 then "amended again" 2026-05-09). T1 was
+amended 2026-05-06 ("determinism extends to the triple"); now
+"amended again 2026-05-23" parameterizes the surface's equality over
+the projection language.
+
+  - **Text/JSON Π's** — equality is byte-equality. Differential
+    tests assert `Assert.Equal<string>(expected, actual)`. Bit-
+    identical output for same triple.
+  - **Binary Π's (DacpacEmitter)** — equality is loaded-equality:
+    round-trip through the artifact's parser. For DACPAC:
+    `DacPackage.Load(stream)` → `new TSqlModel(...)` →
+    `model.GetObjects(...)`. Same triple → same enumerated
+    structure under the parser's equality. The byte sequence may
+    vary across runs (timestamp drift); the loaded form does not.
+  - **Byte-canonicalization** is a separable operational concern.
+    When a snapshot consumer requires byte-stable artifacts (cache
+    keys, content-addressed stores), a post-hoc canonicalizer
+    rewrites timestamp-bearing members to pinned values. The
+    canonicalizer is operational; the algebra is algebraic.
+
+The full canonical wording of the amendment lives at the bottom of
+`AXIOMS.md` ("## T1 amended again (2026-05-23) — determinism at the
+projection language's normal form"). Citations from code and tests
+default to the amended form per the AXIOMS conventions section.
+
+### Why land this at chapter open rather than slice-by-slice
+
+Subagent #4's pre-scope characterized this as "the highest-leverage
+open question DacpacEmitter raises." Two paths considered:
+
+  1. **Slice-by-slice resolution.** Land DacpacEmitter's first slice;
+     observe the byte-determinism failure under T1 property tests;
+     amend T1 then. Smaller commits; T1 amendment under empirical
+     pressure.
+  2. **Chapter-open codification.** T1 amendment lands first; the
+     algebra defines what "deterministic surface" means for binary
+     Π's; DacpacEmitter implementation follows under the codified
+     algebra.
+
+Path 2 chosen because: the T1 question is structural across all
+binary Π's, not specific to DacpacEmitter — future Parquet/protobuf/
+OData Π's inherit the same shape. Codifying the algebra at chapter
+open lets every binary-Π slice in chapter 3+ inherit the load-
+equality form without re-relitigating. This parallels A18 amended
+(2026-05-12) — landed when the algebraic question was clearly named
+even before the third Π exhausted the original A18's scope.
+
+The path-2 disposition also keeps the chapter-open scope honest:
+"the chapter actually opening" (chapter-2 architect's framing)
+includes the algebra the chapter rests on. T1's normal-form clause
+is load-bearing for the canary loop; landing it before the loop's
+implementation prevents drift.
+
+### Forward-looking
+
+Future chapters introducing new projection languages inherit the
+amendment's parameterization. The amendment also forecloses a
+potential anti-pattern: future readers inspecting DacpacEmitter's
+first slice should not look for byte-equality assertions in tests;
+the assertion shape is loaded-equality round-trip. The amendment
+makes this structural rather than convention.
+
+The byte-canonicalization concern remains open as a follow-on
+(`CHAPTER_3_OPEN.md` axis 4): when a snapshot consumer demands
+byte-stable artifacts, the canonicalizer becomes a real concern.
+Until then, the algebra holds at the loaded form and that is
+sufficient.
+
+**Reasoning / consequences.** T1's parameterization over surface
+equality is structural, not convenience. Future Π authors emitting
+non-text artifacts inherit the load-equality discipline by default;
+text/JSON Π authors inherit byte-equality by default; the
+canonicalizer concern surfaces only when consumer demand surfaces
+it. The algebra accommodates the surface's natural equality without
+forcing a single equality operator across heterogeneous Π's.

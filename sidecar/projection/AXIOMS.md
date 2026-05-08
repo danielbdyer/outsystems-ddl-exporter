@@ -654,3 +654,81 @@ should follow the same discipline:
 
 The axioms have a history. The history is part of how the system tells its
 truth across time.
+
+---
+
+## T1 amended again (2026-05-23) — determinism at the projection language's normal form
+
+**Empirical refinement** surfaced at chapter-3 open by the canary
+chapter's first substantive scope: subagent #4's pre-scope of
+`DacpacEmitter` flagged that vanilla `BuildPackage` produces
+non-byte-deterministic DACPAC output (Origin.xml embeds wall-clock
+timestamps; the model.xml checksum derives from them; zip-entry
+timestamps differ per run). The session-13 amendment "same triple,
+same surface, bit-identical" cannot hold for DACPAC bytes out of the
+box. T1 needs a level of indirection that names what *equality of
+surface* means for each Π's projection language.
+
+**Amended again (V2 chapter 3 open):** `Project` is a pure function on
+the triple `(catalog, policy, profile) → surface`. T1 holds at the
+level of the **projection language's normal form**:
+
+  - **Text and JSON Π's** (`RawTextEmitter`, `JsonEmitter`,
+    `DistributionsEmitter`) — normal form is *bytes*. Same triple,
+    same UTF-8 byte sequence; bit-identical.
+  - **Binary Π's** (`DacpacEmitter` and other future structured-
+    artifact emitters) — normal form is the **loaded representation**
+    obtained by round-tripping through the artifact's parser. For
+    DACPAC: load via `DacPackage.Load(stream)` + `new TSqlModel(...)`;
+    enumerate via `model.GetObjects(...)`; the structural enumeration
+    is the surface. Same triple, same enumerated structure under the
+    parser's equality.
+  - **Byte-canonicalization** is a **separable operational concern**,
+    handled post-hoc when a snapshot consumer requires byte-stable
+    artifacts (e.g., a content-addressed snapshot store that hashes
+    the bytes). The post-hoc canonicalizer rewrites timestamp-bearing
+    members (Origin.xml; zip-entry headers) with pinned values; T1's
+    algebraic claim continues to hold against the loaded
+    representation regardless of whether canonicalization runs.
+
+The amendment makes explicit which Π class a given emitter belongs to
+and which equality the algebra claims for it. Π's that emit text/JSON
+inherit the strict byte-equality form; Π's that emit binary
+artifacts inherit the loaded-equality form. Both forms are
+deterministic in the algebraic sense; they differ in the equality
+operator the determinism is stated against.
+
+The architectural reasoning, not just the rule:
+
+  - **Determinism is the algebra's property; equality is the
+    surface's property.** Determinism says "same triple → same
+    surface"; equality says "what 'same' means for this surface."
+    Different surfaces have different natural equalities; the algebra
+    accommodates this by parameterizing T1 over the surface's
+    equality.
+  - **Binary surfaces have lossy serialization.** DACPAC is a zip-of-
+    XML; the zip serialization adds wall-clock timestamps that have
+    no algebraic content. Equality at the loaded form discards what
+    the algebra never produced.
+  - **The post-hoc canonicalizer is a separate concern.** When a
+    consumer needs byte-stability (snapshot stores; cache keys), the
+    canonicalizer rewrites the lossy-serialization metadata to pinned
+    values. The canonicalizer is operational; the algebra is
+    algebraic.
+
+  *Enforcement.* Each Π module documents its normal form at the
+  module level. Text/JSON Π's enforce byte-equality in differential
+  tests (`Assert.Equal<string>(expected, actual)`). Binary Π's
+  enforce loaded-equality via round-trip
+  (`parseDacpac (emitDacpac catalog) = catalog`).
+  *Property test.* `T1: Project is deterministic on (catalog, policy,
+  profile)` — extended for binary Π's: `T1 (loaded form): emit |>
+  parse |> emit |> parse = parse |> emit |> parse`. Same triple →
+  same loaded representation under the parser's equality.
+
+**Future amendments under the same shape.** Future Π's emitting
+artifacts in additional projection languages (e.g., a future Π
+emitting Parquet, a Π emitting protobuf, a Π emitting an OData
+service description) inherit the same disposition — text/JSON-like
+languages enforce byte-equality, binary languages enforce
+loaded-equality, and the canonicalization concern is operational.
