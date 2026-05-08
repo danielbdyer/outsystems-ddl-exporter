@@ -10,7 +10,7 @@ This revision absorbs the four-subagent review (`VISION_REVIEW.md` + appendices 
 
 - **Cut the §"informational widening"** — platform-survival rhetoric, AI-agent substrate as a section, six-dimension Faker quality scoring, open-source contribution, recipes-as-Terraform. None had a forcing function or a cutover dividend (Appendix G).
 - **Promoted drift detection to cutover-critical.** Read-side adapter pointed at four real DBs is the cutover's safety net, not post-cutover trajectory (Appendix C, Appendix G).
-- **Sharpened V2's unique contribution vs. V1.** V1 emits SQL scripts; V2 emits DACPACs. The cutover's refactor.log and idempotent diff-deploy demands cannot be reached by incremental V1 work (R1 in `VISION_REVIEW.md`).
+- **Sharpened V2's unique contribution vs. V1.** V2 emits a *sibling chorus* of synchronized projections — SSDT DDL (production deployment, promoted to Azure DevOps integration test), CDC-aware data inserts (`StaticSeeds` / `MigrationDependencies` / `Bootstrap`), DACPAC (fast iteration and baselining), refactor log, distributions. V1 hand-curates one surface; V2 emits all from a single `Catalog × Policy × Profile` triple. T11 is the cross-validation surface (R1 in `VISION_REVIEW.md`).
 - **Added acceptance criteria** replacing unfalsifiable rhetoric ("sovereignty," "constitutive," "auditability is type-system-encoded").
 - **Added cutover fallback ladder** (V1-only / V2-augmented / V2-driver) with T-30-day decision criterion (Appendix D §6).
 - **Added the dogfood frame.** V2 verifies V1 starting *this week* via the existing `JsonEmitter` round-trip — before any new V2 emitter ships (Appendix F).
@@ -20,17 +20,24 @@ This revision absorbs the four-subagent review (`VISION_REVIEW.md` + appendices 
 
 ## What V2 uniquely contributes
 
-V1 ships the cutover-relevant capabilities VISION.md revision 1 listed (extraction, two-phase inserts, FK reflow, multi-environment promotion). The skeptic was right to flag this (Appendix A §2). V2's load-bearing differentiator is *artifact class*, not capability overlap:
+V1 ships the cutover-relevant capabilities VISION.md revision 1 listed (extraction, two-phase inserts, FK reflow, multi-environment promotion). The skeptic was right to flag this (Appendix A §2). V2's load-bearing differentiator is **the sibling chorus + verification**, not displacement of any single V1 surface.
 
-- **V1 emits SQL scripts.** Imperative DDL + DML.
-- **V2 emits DACPACs.** Declarative deployment artifacts.
+**Target artifacts (all sibling Π's of the same Catalog).** V2 emits multiple synchronized projections, each shaped for its consumer:
 
-Two cutover demands require DACPAC-class artifacts, and these are durable, not aesthetic:
+- **SSDT DDL** (per-table `.sql` shape, V1's existing format) — the **production deployment** surface. Promoted into the Azure DevOps integration-test lane and verified by the canary read-back before merge. V2's emitter is opinionated, deterministic, and refactor-log-aware.
+- **CDC-aware data inserts** — `StaticSeedsEmitter` / `MigrationDependenciesEmitter` / `BootstrapEmitter` (chapter 4.1) produce data emissions that respect CDC-tracked tables: topologically-sorted two-phase insertion, redeploy-idempotent, and tagged so insert plans avoid spurious change records on tables where CDC is enabled. This is one of the load-bearing cutover demands; V2 makes it algebraic where V1 does it by hand.
+- **DACPAC** — the **fast-iteration and baselining** surface. Declarative artifact for ephemeral-DB deploy via DacFx, used in canary tier-1/tier-2 property tests for sub-second-to-150ms feedback cycles. Refactor.log records ride alongside, communicating renames so DacFx incremental deploys ALTER rather than DROP+CREATE. The DACPAC is *not the only* deployment artifact — it is the artifact whose iteration cost is small enough to drive the canary's property-test surface (Appendix E).
+- **Refactor log** (`RefactorLogEmitter`) — sibling Π over `CatalogDiff`. SSDT-native format consumed by both the SSDT and DACPAC paths.
+- **Distributions** (`DistributionsEmitter`, shipped) — evidence projection consumed by tightening passes and operator diagnostics.
 
-1. **Refactor.log records.** SQL scripts cannot communicate "this column was renamed" to a target database. Every redeploy of a renamed column under a script DROPs and CREATEs — losing data and triggering CDC noise. Refactor.log is the SSDT-native mechanism that lets a redeploy ALTER instead. V2's `RefactorLogEmitter` produces the SSDT-format file directly.
-2. **Idempotent diff-deploy.** SQL scripts must be hand-ordered or templatized per environment. DacFx computes the diff against the current target state and only issues the deltas. This is what makes "schema and data evolve continuously; the extraction gets re-run regularly" tractable across four environments without bespoke per-environment scripting.
+V1 emits one artifact class (SSDT scripts) hand-curated per environment; V2 emits the chorus from a single Catalog × Policy × Profile triple. T11 (sibling-Π commutativity) is the cross-validation surface: if SSDT and DACPAC disagree on a kind's shape, one of them has a bug. V2 also adds **verifiable correctness** (canary loop on whichever surface is deployed) and **partial-state remediation** (`RemediationEmitter` as a thin composition over `CatalogDiff`), neither of which V1 has and neither requires V1 changes.
 
-V1 cannot reach either by incremental work — the scripting model is structurally different from the declarative model. V2 also adds **verifiable correctness** (canary loop) and **partial-state remediation** (`RemediationEmitter` as a thin composition), neither of which V1 has and neither requires V1 changes.
+**Verification posture, two lanes:**
+
+- **Fast lane (DACPAC).** Tier-1 property tests run pure (no Docker) on the F# emitter's `TSqlModel` round-trip. Tier-2 property tests run against testcontainers ephemeral SQL Server. Sub-second to ~150ms per case. Drives most of the canary's coverage.
+- **Promoted lane (SSDT + CDC-aware data inserts).** Once a slice is fast-lane-green, V2 emits the SSDT shape + CDC-aware data inserts and promotes the artifact into Azure DevOps's integration-test environment. The canary reads the deployed schema via the read-side adapter (chapter 3.1) and asserts equality-by-SsKey against the V2-expected Catalog. The redeploy-zero-ALTER assertion runs on the live integration target — this is where CDC-safety is actually verified.
+
+Both lanes use the same `Catalog × Policy × Profile` algebra and the same `Emitter<'element>` shape. The DACPAC is fast; the SSDT + data lane is real. The canary verifies both.
 
 ## The forcing function (compressed)
 
@@ -127,20 +134,28 @@ Each of these is independently load-bearing and independently shippable.
 
 **3.2 SnapshotRowsets adapter variant.** Resolves JSON-projection lossiness (`EspaceKind`, `IsSystemEntity`, `EntitySsKey`, etc.). Unblocks A1 for renames (`OssysOriginal` SsKeys become available). Cross-module FK rule (rule 16) tactical-completeness step lands inside slice 2 or 3.
 
-**3.3 DacpacEmitter** (F# emits T-SQL strings; C# DacFx wrapper in `Projection.Targets.SSDT.Dacpac` C# project). T1 amends to "byte-determinism for text/JSON; content-determinism via DacFx model-API equality for binary." Byte-canonicalization is a post-pass in the C# wrapper; canary's compare layer goes through model API.
+**3.3 DacpacEmitter (fast-iteration surface)** (F# emits T-SQL strings; C# DacFx wrapper in `Projection.Targets.SSDT.Dacpac` C# project). T1 amends to "byte-determinism for text/JSON; content-determinism via DacFx model-API equality for binary." Byte-canonicalization is a post-pass in the C# wrapper; canary's compare layer goes through model API. This is the iteration target for the property-test surface — its 150ms-per-case feedback loop is what makes tier-2 properties cheap.
 
-**3.4 Canary closure with property-test predicate library.** Tier-1 pure properties for T1/T11/T2/A18; tier-2 container-pooled deploy properties for round-trip + idempotent-redeploy + renameSurvives + policyOrthogonal. The redeploy-zero-ALTER assertion lands here.
+**3.4 Canary closure with property-test predicate library.** Tier-1 pure properties for T1/T11/T2/A18; tier-2 container-pooled deploy properties for round-trip + idempotent-redeploy + renameSurvives + policyOrthogonal against the DACPAC surface. The redeploy-zero-ALTER assertion lands here for the DACPAC fast lane; the SSDT/data-insert lane gets the same assertion in chapter 4.1's promoted-lane integration test.
 
-**3.5 RefactorLogEmitter as Π over `CatalogDiff`** (Appendix H §6). UUIDv5 maps V1 SSKey Guids to V2 `V1Mapped` SsKeys. Refactor.log XML is SSDT-native format consumed by DacFx incremental deploy.
+**3.5 RefactorLogEmitter as Π over `CatalogDiff`** (Appendix H §6). UUIDv5 maps V1 SSKey Guids to V2 `V1Mapped` SsKeys. Refactor.log XML is SSDT-native format consumed by both the DACPAC and SSDT deploy paths.
 
 **Drift-detection job** (promoted from post-cutover): read-side adapter pointed at four real DBs on a schedule, surfacing deltas as `Diagnostics` findings. Free given 3.1 lands.
 
-## Chapter 4 plan (compressed)
+## Chapter 4 plan — the production-deployment chorus
 
-**4.1** Data-emission triumvirate (`StaticSeedsEmitter` → `MigrationDependenciesEmitter` → `BootstrapEmitter`) with `EmissionPolicy` DU.
-**4.2** User FK reflow as a real Policy axis + pass + sibling Π. `UserMatchingStrategy = ByEmail | BySsKey | ManualOverride | FallbackToSystemUser`. `UserRemapContext = Map<SsKey, Map<SourceUserId, TargetUserId>>` produced by discovery pass, consumed by the triumvirate.
-**4.3** Operational diagnostics V2 (decision-log/opportunities/validations equivalents) consuming the existing `Diagnostics<'a>` writer.
-**4.4** `RemediationEmitter` (composes read-side + DacpacEmitter over `CatalogDiff`).
+Chapter 3 closes with the DACPAC fast lane and the canary's property-test surface. Chapter 4 adds the **promoted lane**: the SSDT DDL emitter + CDC-aware data inserts that go through Azure DevOps integration tests for production deployment.
+
+**4.1 SSDT DDL emitter (sibling Π) + CDC-aware data triumvirate.**
+- `Projection.Targets.SSDT.DdlEmitter` (F# `Emitter<SsdtFile>` returning per-table content keyed by SsKey). Composes via `Render.toSsdtDirectory`; output shape matches V1's `<outDir>/Modules/<Module>/<Schema>.<Tbl>.sql` convention (Appendix F §1 names the seam). DACPAC and SSDT DDL are sibling Π's of the same Catalog — T11 cross-validates them.
+- `StaticSeedsEmitter` → `MigrationDependenciesEmitter` → `BootstrapEmitter` with `EmissionPolicy` DU (`AllRemaining` default / `AllExceptStatic` / `AllData`). All three are CDC-aware: each consumes a `CdcAwareness` configuration (per-table CDC-enabled flag from the deployed schema's `sys.tables` / `cdc.change_tables`) and plans inserts to be redeploy-idempotent. The redeploy-zero-CDC-record assertion is the integration-test verification on the promoted lane.
+- Promoted-lane integration test: emit SSDT + data inserts → deploy to Azure DevOps integration environment → canary read-back compares to V2-expected Catalog → redeploy → assert zero ALTERs and zero CDC records on tracked tables.
+
+**4.2 User FK reflow as a real Policy axis + pass + sibling Π.** `UserMatchingStrategy = ByEmail | BySsKey | ManualOverride | FallbackToSystemUser`. `UserRemapContext = Map<SsKey, Map<SourceUserId, TargetUserId>>` produced by discovery pass, consumed by the data triumvirate at emission time.
+
+**4.3 Operational diagnostics V2** (decision-log/opportunities/validations equivalents) consuming the existing `Diagnostics<'a>` writer. The three-channel split (operator/auditor/developer) deferred from chapter 2 fires here if the consumers diverge.
+
+**4.4 `RemediationEmitter`** (composes read-side + DacpacEmitter or DdlEmitter over `CatalogDiff`). Partial-state recovery primitive for the failure mode VISION revision 1 named but did not close (R5 in `VISION_REVIEW.md`).
 
 ## What's deferred (compressed from the original five paragraphs)
 
@@ -158,9 +173,9 @@ Each of these is independently load-bearing and independently shippable.
 
 ## Closing
 
-V1 ships the cutover. V2 makes it verifiable, reversible, and repeatable. Three structural type theorems (T1 / T11 / A1 encoded as types, not disciplines), one property-test surface (FsCheck + tiered predicates), one read-side adapter (delivering value before any new emitter ships), and one triangulation comparator are the load-bearing structure. Everything else is parking lot until a forcing function fires.
+V1 ships the cutover. V2 makes it verifiable, reversible, and repeatable, across two verification lanes — the DACPAC fast lane that drives the property-test surface, and the SSDT-DDL-plus-CDC-aware-data-inserts promoted lane that goes through Azure DevOps integration tests for production deployment. Three structural type theorems (T1 / T11 / A1 encoded as types, not disciplines), one property-test surface (FsCheck + tiered predicates), one read-side adapter (delivering value before any new emitter ships), one triangulation comparator, and a sibling chorus that cross-validates DACPAC against SSDT against the deployed schema are the load-bearing structure. Everything else is parking lot until a forcing function fires.
 
-The five acceptance criteria above are testable. The fallback ladder is named. The drift-detection job covers continuing operations past the cutover. The chapter 3 sequence is concrete and starts delivering value in week one.
+The five acceptance criteria above are testable. The fallback ladder is named. The drift-detection job covers continuing operations past the cutover. The chapter 3 sequence is concrete and starts delivering value in week one; the chapter 4 sequence promotes V2 from "verifies V1" to "emits production artifacts V1 cannot reach."
 
 Hold the spine. Cut the rest.
 
