@@ -257,15 +257,17 @@ module Deploy =
         b.InitialCatalog <- dbName
         b.ConnectionString
 
-    /// `CREATE DATABASE [<dbName>];` text, composed via `String.Concat`
-    /// rather than `sprintf` per the no-string-concatenation
-    /// discipline. The `[` / `]` brackets are bracket-quoting
-    /// (mirrors `Render.quote`); the trailing `;` matches T-SQL
-    /// statement convention. Caller-supplied `dbName` is trusted
-    /// (test fixtures only); SQL injection is not a concern at
-    /// this boundary.
+    /// `CREATE DATABASE [<dbName>];` text. Bracket-quoting flows
+    /// through `Render.quote` (which delegates to ScriptDom's
+    /// `Identifier.EncodeIdentifier`) — eliminates the manual
+    /// `[` / `]` literals (audit Top-10 #10: single source of truth
+    /// for SQL identifier quoting). The trailing `;` is T-SQL
+    /// statement convention. Caller-supplied `dbName` flows through
+    /// the canonical SQL identifier encoder, so values containing
+    /// `]` (which would close the bracket prematurely) are
+    /// structurally escaped at the boundary.
     let private createDatabaseSql (dbName: string) : string =
-        String.Concat("CREATE DATABASE [", dbName, "];")
+        String.Concat("CREATE DATABASE ", Render.quote dbName, ";")
 
     let private createDatabase (masterConn: string) (dbName: string) : Task<unit> =
         task {

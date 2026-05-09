@@ -416,23 +416,32 @@ module ReadSide =
     /// dispose on EOF or exception. Callers must drain to `None`
     /// (or accept that abandoned streams clean up at GC).
     let readRowsStream (cnn: SqlConnection) (kind: Kind) : AsyncStream<StaticRow> =
+        // Bracket-quoting flows through ScriptDom's
+        // `Identifier.EncodeIdentifier` (canonical, vendor-supplied
+        // SQL-identifier encoder). Eliminates the prior `sprintf
+        // "[%s]"` hand-rolled bracket-quoting at three call sites
+        // (column names, schema, table) — audit Top-10 #10: single
+        // source of truth for SQL identifier quoting.
+        let encode = Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier
         let columns =
             kind.Attributes
-            |> List.map (fun a -> sprintf "[%s]" a.Column.ColumnName)
-            |> String.concat ", "
+            |> List.map (fun a -> encode a.Column.ColumnName)
+            |> String.concat ", "  // LINT-ALLOW: terminal SQL-text-emission boundary; segments are typed (already encoded)
         let pkCol =
             kind.Attributes
             |> List.tryFind (fun a -> a.IsPrimaryKey)
             |> Option.map (fun a -> a.Column.ColumnName)
             |> Option.defaultValue (
                 kind.Attributes |> List.head |> fun a -> a.Column.ColumnName)
+        let qualified =
+            System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; segments are typed (each via Identifier.EncodeIdentifier)
+                ".",
+                [| encode kind.Physical.Schema; encode kind.Physical.Table |])
         let cmdText =
-            sprintf
-                "SELECT %s FROM [%s].[%s] ORDER BY [%s]"
-                columns
-                kind.Physical.Schema
-                kind.Physical.Table
-                pkCol
+            System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; columns/qualified/encode results are typed safe segments
+                "SELECT ", columns,
+                " FROM ", qualified,
+                " ORDER BY ", encode pkCol)
         let mutable cmdOpt : SqlCommand option = None
         let mutable readerOpt : SqlDataReader option = None
         let mutable rowIdx = 0
