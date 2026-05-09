@@ -6352,3 +6352,694 @@ deferred to a chapter that will do the work) or as an explicit
 defer with rationale (re-open trigger named, re-evaluation venue
 named). The chapter-3 agent inherits decisions, not unfinished
 arguments.
+
+## 2026-05-22 — Stage 0 foundation phase ships as one coherent unit before chapter 3.1 opens
+
+**Status:** decided (Stage 0 commitment; per `STAGING.md`)
+**Context:** `SPINE.md` rendered the V2 system as a category in the
+technical sense — seven tessellating patterns (Π Emitter / Adapter /
+Pass / Render / Compare / Property / Diff) over seven recurring
+primitives (SsKey-keyed Map / Writer-monad accumulation / Ordered
+linearization / Smart-constructor invariants / Origin tagging /
+Erasure declaration / Closed DUs with structured rationale), with
+six structural inferences (sheaf gluing / adjunction / Hom-set /
+quotient / continuation / tessellation instance) and ten leverage
+points. The chapter pre-scopes (3.1, 3.2, 3.3, 3.4, 3.5, 4.1.A,
+4.1.B, 4.2, 4.3, 4.4) are concrete morphism constructions —
+instantiations of the seven patterns with chapter-specific type
+variables.
+
+The foundation insight: if the patterns and primitives are codified
+**first** — as F# types in `Projection.Core` rather than as
+conventions implicit across eight pre-scope documents — every
+chapter inherits the contracts at compile time. The chapter writes
+the *body* of the pattern; the *signature* is fixed.
+
+Without the foundation phase, every chapter re-derives the pattern
+shape under chapter-local pressure. With it, the chapter writes
+itself.
+
+**Decision:** Per `STAGING.md` (revision authored 2026-05-08), Stage 0
+ships as **one coherent unit** before chapter 3.1 opens. Stage 0 is
+**not** chapter 3.1; Stage 0 is **everything that ships before chapter
+3.1 opens**. The unit comprises twelve items, sequenced in four tiers:
+
+**Tier 1 — documentation hygiene + governance burst (no code; ship in
+parallel; first-session goal):**
+
+1. **S0.F** — `AXIOMS.md` amendment scaffolding (placeholder headers
+   with TBD bodies for each pending amendment; chapter agents fill at
+   close).
+2. **S0.G** — `DECISIONS.md` governance burst (this entry plus four
+   companions: R6 split-brain rule; chapter 3 sequencing decision;
+   CLAUDE.md reading-order update; T-30 / T-15 fallback ladder gates).
+3. **S0.J** — Active deferrals scan + ADMIRE / AXIOMS / CLAUDE /
+   HANDOFF currency checks (documentation hygiene).
+4. **S0.L** — `VISION.md` + `BACKLOG.md` cross-references to SPINE /
+   PLAYBOOK / STAGING (documentation; verified current as of `630e32c`).
+
+**Tier 2 — type primitives keystone (depends on Tier 1; foundation
+for all subsequent code):**
+
+5. **S0.A** — Type primitives in `src/Projection.Core/Types.fs` (the
+   seven tessellating-pattern signatures as F# type aliases; ~50 LOC).
+
+**Tier 3 — structural commitment refactor (depends on Tier 2; the
+largest single Stage 0 item):**
+
+6. **S0.B** — `ArtifactByKind<'a>` + `SsKey` four-variant DU split +
+   `CatalogDiff` per `CHAPTER_3_PRESCOPE_ARTIFACTBYKIND_REFACTOR.md`.
+   Six slices, ~700 LOC source + ~520 LOC test, runs across 4-5
+   sessions.
+
+**Tier 4 — primitive support modules (depends on Tier 3; can ship in
+parallel):**
+
+7. **S0.C** — `Projection.Core/Render.fs` skeletons (per-target
+   composition layer; `failwith` stubs filled per chapter; ~80 LOC).
+8. **S0.D** — `tests/Projection.Tests/PropertyCombinators.fs` (`.&&.`,
+   `.||.`, `negate`, `conditional`; ~50 LOC).
+9. **S0.E** — `Projection.Core/Verification/Tolerance.fs` taxonomy
+   (named flag list; permissive / strict defaults; ~30 LOC; every
+   flag carries a doc citation to its V1 file:line).
+10. **S0.H** — Configuration port (`config/default-tightening.json`
+    + `Projection.Adapters.Sql/PolicyDefaults.fs`; ~80 LOC + ~50
+    LOC config).
+11. **S0.I** — Test support consolidation (`Projection.Tests.Support`
+    new shared library lifting V1's `Osm.TestSupport` patterns;
+    ~600 LOC test).
+12. **S0.K** — Multi-environment Profile/Policy generator skeleton
+    (extends `tests/Projection.Tests/CatalogGen.fs`; ~30 LOC).
+
+**Stage 0 totals ~3,110 LOC across source / test / docs; ~12-15
+sessions of focused work.** Per `STAGING.md` U1–U10, Stage 0 pays
+back at chapter 3.3; every chapter beyond that is pure compounding
+(~30-40% LOC reduction per chapter; ~2,500-3,500 LOC saved across
+chapters 3.1–4.4).
+
+**Reasoning / consequences.**
+
+The decision to ship Stage 0 as one unit (rather than threading the
+twelve items through chapters 3.1+ on demand) is load-bearing for
+two reasons:
+
+1. **Type signatures are contracts; bodies are implementations.** If
+   `Emitter<'element> = Catalog -> Result<ArtifactByKind<'element>,
+   EmitError>` is an F# type alias before chapter 3.1 opens, every
+   chapter's emitter signature matches by typing — the F# compiler
+   enforces the pattern. If the type alias lands during chapter 3.3
+   instead, chapters 3.1 and 3.2 have already shipped emitters whose
+   signatures *don't* match the alias, and the alias becomes a
+   lagging-indicator rather than a leading contract. SPINE inference
+   I6 (chapter as tessellation instance) requires the contract to
+   precede its instances.
+
+2. **Foundation drift compounds.** The closed-DU expansion empirical
+   test (`DECISIONS 2026-05-13`) holds because `SsKey` is a closed DU.
+   The foundation refactor that splits `SsKey` into the four-variant
+   DU (`OssysOriginal | Synthesized | DerivedFrom | V1Mapped`)
+   touches every consumer of `SsKey` — including chapter-1's three
+   sibling emitters and chapter-2's OSSYS adapter. Performing the
+   split *before* chapter 3.1 opens means the new chapter's code
+   pattern-matches against the four-variant DU from its first line;
+   performing it *during* chapter 3.1 means chapter 3.1's slices
+   fight refactoring pressure they didn't choose. The "big-bang
+   within Core" framing in the pre-scope is a deliberate choice to
+   absorb the disruption once.
+
+The Stage 0 commitment is the structural answer to "should we just
+start chapter 3.1 and refactor as we go?" The answer per SPINE +
+STAGING: **no**, because the cost of the refactor is independent
+of when it lands, but the *compounding* of consumer-side type-
+discipline is monotonically front-loaded. Land the refactor before
+the consumers exist; consumers inherit type discipline by typing.
+
+**The chapter-1 baseline (631 passing tests) holds at every Stage 0
+step.** Tier 1 items are documentation-only and trivially preserve
+the baseline. Tier 2 (S0.A type primitives) adds a file but no
+runtime behavior. Tier 3 (S0.B structural refactor) is staged across
+six slices; each slice keeps the baseline green. Tier 4 modules add
+new test coverage rather than perturbing existing tests.
+
+**Stage 0 closes when all twelve items ship, the baseline holds,
+the AXIOMS amendments are scheduled with TBD bodies (S0.F
+scaffolding), and the chapter-close ritual confirms no drift on the
+canonical surfaces (S0.J).** Chapter 3.1's slice 1 then ships *the
+same day*: the JSON round-trip canary uses the existing JsonEmitter
++ CatalogReader pair through Stage 0's new types.
+
+**This entry IS Stage 0.G.5 — the Stage-0-commitment governance
+entry.** The four sibling entries (R6; chapter 3 sequencing; CLAUDE
+reading-order; T-30/T-15 gates) land in the same governance burst.
+Together, the five entries operationalize the foundation phase.
+
+## 2026-05-22 — R6: Split-brain governance rule for the dual-track cutover window
+
+**Status:** decided (R6 from `VISION_REVIEW.md`; cutover-window
+governance rule for the dual-track operating mode)
+**Context:** During the cutover window, V1 and V2 will both be
+producing emissions for the same Catalog × Policy × Profile triple.
+V1 owns the production-deployment write path; V2 emits the same
+artifacts in parallel for verification. Without a governance rule
+for *which* emission ships when V1 and V2 disagree, the dual-track
+mode produces split-brain — two artifacts purporting to be the
+production deployment, with no operationally-defined arbiter.
+
+`VISION_REVIEW.md` reasoning resolution R6 (referenced from VISION.md
+§"Cutover fallback ladder", V2-augmented path) frames the governance
+posture: **V2 owns no production write path.** This eliminates
+split-brain by construction — there is exactly one production write
+path (V1's), and V2's role is verification, not displacement. The
+question this entry resolves is: how does V2's verification couple
+into the PR pipeline operationally?
+
+Without an operational rule, three failure modes loom:
+1. V1 and V2 disagree; the PR ships V1's artifact; the disagreement
+   is not surfaced and accumulates as undetected drift.
+2. V1 and V2 disagree; reviewers are uncertain which to trust;
+   merge stalls; cutover schedule slips.
+3. V1 and V2 agree consistently; V2's verification feels redundant;
+   the verification surface atrophies.
+
+**Decision:** During dual-track operation (chapters 3.1 onward,
+through V2-driver mode at the earliest), **V2 emits-but-doesn't-ship.
+V2's emission feeds the canary; the canary asserts V1 ≈ V2 modulo
+named tolerances; disagreement blocks the PR. V2's transition to
+production write path (V2-driver mode) is per-environment-per-
+artifact-type, gated on N=10 consecutive green canary runs and
+explicit operator sign-off.**
+
+Operational shape:
+
+1. **PR pipeline carries V1's artifact as the production write path.**
+   This is the existing V1 surface; no changes.
+2. **V2 emits in parallel.** The PR pipeline (Azure DevOps) invokes
+   V2 against the same Catalog × Policy × Profile triple V1 received
+   and writes V2's artifact bundle alongside V1's.
+3. **Canary asserts V1 ≈ V2 modulo Tolerance.** The Tolerance taxonomy
+   (S0.E; thirteen named flags per `CHAPTER_3_PRESCOPE_READSIDE_ADAPTER.md`
+   §10) declares which divergences are absorbed by name (e.g.,
+   `IgnoreIndexNames`, `NewlineNormalization`, `IgnoreFingerprintHash`);
+   the comparator returns a structural Diff over the SsKey-keyed
+   `ArtifactByKind` shape.
+4. **Disagreement blocks the PR.** A Diff that is not empty after
+   tolerance erasure is a structural disagreement; the PR pipeline
+   fails. Reviewers triage: (a) is V1 wrong; (b) is V2 wrong; (c) is
+   the divergence a known tolerance the taxonomy doesn't yet name?
+   Cases (a) and (b) are bug-fix tasks; case (c) earns a new
+   Tolerance flag *with* a DECISIONS entry citing the V1 file:line
+   that produces the divergence.
+5. **Per-environment-per-artifact-type V2-driver transition.** V2
+   does not become the production write path globally. The
+   transition is a switch flipped per environment (dev → qa → UAT
+   → prod) per artifact type (SSDT DDL, DACPAC, RefactorLog, data
+   inserts). Each switch is gated on **N=10 consecutive green
+   canary runs** for that environment-artifact pair, plus
+   **explicit operator sign-off**. The N=10 threshold is a
+   discipline, not a magic number — it's a tractable signal that
+   the canary's tolerance calibration matches operational reality
+   across at least two weeks of schema-evolution cadence (assuming
+   ~daily PR throughput).
+6. **V1 stays warm through cutover+30.** Even after every
+   environment-artifact pair has flipped to V2-driver mode, V1's
+   emission path is preserved as a fallback for 30 days post-cutover.
+   See the T-30 / T-15 fallback ladder entry (sibling DECISIONS
+   entry) for the full ladder.
+
+**Reasoning / consequences.**
+
+R6 is the structural answer to "which emission ships?" The answer
+is: **always V1's, until both the canary and the operator agree
+otherwise, per environment-artifact pair.** V2's value is not in
+shipping a different artifact; V2's value is in producing a
+verification surface that V1 alone does not possess.
+
+Three load-bearing properties follow:
+
+- **Split-brain by construction is impossible during dual-track.**
+  V1 owns the write path; V2 emits but cannot ship. The canary's
+  blocking semantic ensures that disagreements surface
+  operationally — they cannot accumulate silently.
+- **The Tolerance taxonomy is the governance surface.** Every
+  divergence between V1 and V2 either matches a named tolerance
+  (acceptable) or fails the canary (blocking). New tolerances earn
+  a DECISIONS entry; the taxonomy grows under empirical pressure,
+  not speculation. The tolerance flags are not bug-acceptance
+  switches — they are deliberate-divergence declarations, each
+  citing the V1 file:line that produces the divergence and naming
+  the V2 reason for accepting it.
+- **The N=10 + sign-off gate is per-pair, not global.** The
+  transition decision is a function of (environment, artifact type)
+  — there are ~16 such pairs (4 environments × 4 artifact types).
+  Each pair flips when its evidence supports the flip; no pair
+  flips because another pair already did. The cutover does not
+  require a coordinated global switch; it is an additive sequence
+  of pair-flips, each independently auditable.
+
+The dual-track window starts when V2 ships chapter 3.1's first
+canary integration and ends when **all sixteen pairs** have flipped
+to V2-driver mode (the V2-driver row of the fallback ladder). The
+window may be long; that is fine — V1's warmth is the safety, not a
+liability.
+
+**This entry is R6's operational form.** The strategic frame lives
+in `VISION.md` §"Cutover fallback ladder" and `VISION_REVIEW.md` R6;
+this entry codifies the rule the canary's pipeline implements and
+the gate the operator flips. Future agents extending the canary
+(chapter 3.4) read this entry alongside the Tolerance taxonomy
+(S0.E) to understand why the tolerance flags exist and what the
+canary's blocking semantic guards against.
+
+## 2026-05-22 — Chapter 3 sequencing: read-side adapter promoted to chapter 3.1 (was 3.2)
+
+**Status:** decided (chapter 3 sequencing; promotes the read-side
+adapter to the chapter-opening slice; per `VISION_REVIEW.md`
+Appendix F dogfood reframing and subagent #5's pre-scope on
+SnapshotRowsets)
+**Context:** As of chapter-2 close, three plausible chapter-3 arcs
+were on the table per `HANDOFF.md`:
+
+- **`SnapshotRowsets` implementation chapter** — resolves the
+  JSON-projection-lossiness class (SsKey at every level, EspaceKind,
+  isSystemEntity); subagent #5's pre-scope.
+- **`Projection.Pipeline` canary chapter** — strategic-frame axis-4;
+  brings DacFx, testcontainers, ephemeral SQL Server, read-side
+  adapter into V2; subagent #4's pre-scope.
+- **Cross-module FK slice** — small tactical-completeness step;
+  refines OSSYS rule 16's same-module assumption.
+
+The handoff explicitly noted that subagent #4's and #5's
+recommendations were compatible: SnapshotRowsets runs parallel-to or
+before the canary; cross-module FK lands when convenient.
+
+The dogfood reframing in `VISION_REVIEW.md` Appendix F (and
+referenced from `VISION.md` §"Chapter 3 plan") sharpened the picture:
+**the read-side adapter has two consumers from day one** —
+(1) verification of V1's emissions against ephemeral deployments,
+and (2) drift detection between source-of-truth catalogs (V1's
+`osm_model.json` round-trip via `JsonEmitter`) and deployed reality
+(read-side adapter against an ephemeral SQL Server). Both consumers
+exist before any new emitter ships. Per the two-consumer threshold
+(`DECISIONS 2026-05-13` — anticipation vs. speculation), the
+read-side adapter earns its place from the first slice; speculative
+deferral is not an option.
+
+**Decision:** **Chapter 3 sequencing is reorganized around the
+read-side adapter as chapter 3.1's centerpiece, with SnapshotRowsets
+promoted to 3.2 and DacpacEmitter to 3.3.** The full sequence:
+
+| Chapter | Title | Centerpiece deliverable | LOC est. |
+|---|---|---|---|
+| **3.1** | Read-side adapter + comparator + Projection.Pipeline shell | `Projection.Adapters.Sql.ReadSide.CatalogReader` matching `Adapter<connStr × schemas, Catalog, ReadSideError>`; `CatalogEquivalence` comparator matching `Compare<Tolerance>`; canary tier-1 property tests on the JsonEmitter round-trip | ~30 items per BACKLOG |
+| **3.2** | SnapshotRowsets adapter variant | `SnapshotSource.SnapshotRowsets` variant; multi-rowset deserialization; closes the JSON-projection-lossiness class | ~25 items |
+| **3.3** | DacpacEmitter + DacFx wrapper | `Projection.Targets.SSDT.DacpacEmitter` matching `Emitter<TSqlObjectScript>`; `Projection.Targets.SSDT.Dacpac` C# DacFx interop project; T1 amendment for binary normal-form composition | ~25 items |
+| **3.4** | Canary as property-test surface | Tier-1 / tier-2 / tier-3 property tests; FsCheck generators; multi-environment generator (S0.K) extended; ~12 predicates | ~12 items |
+| **3.5** | RefactorLogEmitter + CatalogDiff | `Emitter<RefactorLogEntry list>` matching the `EmitterOverDiff` pattern; `CatalogDiff` exhaustiveness amendment (A36 candidate); `OssysOriginal` SsKey access from `SnapshotRowsets` | ~10 items |
+| **3-cross-cutting** | ArtifactByKind + SsKey four-variant + CatalogDiff foundation | Stage 0's S0.B; ships **before** 3.1 opens, not as a chapter | ~8 items |
+
+The cross-module FK slice (handoff's third option) lands as a
+chapter-3.x sub-slice when convenient — most likely during chapter
+3.2 SnapshotRowsets work, since the cross-module case may force
+walking V1's `relationships[]` array and SnapshotRowsets has
+adapter-side touch points.
+
+**Reasoning / consequences.**
+
+The promotion is structurally motivated, not aesthetically. Three
+points:
+
+1. **Two-consumer earned membership.** Per `DECISIONS 2026-05-13`
+   anticipation-vs-speculation Position A (full extraction requires
+   shape visibility *plus* a concrete second consumer), the
+   read-side adapter passes both gates from day one. Verification
+   is consumer one; drift detection is consumer two. The earlier
+   plan's Position B (defer the adapter; ship SnapshotRowsets first)
+   underweights the dogfood frame — V2 can verify V1 *now*, before
+   any new emitter ships, simply by reading both V1's `osm_model.json`
+   (via `JsonEmitter` round-trip) and the deployed reality (via
+   read-side adapter) and comparing. The "now" here is operationally
+   real: the trunk has thirteen UAT environments where the V1
+   pipeline already runs; V2 can ride that pipeline as a
+   verification-only sidecar without touching any production write
+   path.
+
+2. **The canary's tolerance taxonomy needs a fixed point.** Without
+   the read-side adapter, the canary's tolerance flags
+   (`IgnoreIndexNames`, etc.) are abstract — names without referents.
+   With the read-side adapter as chapter 3.1's centerpiece, every
+   tolerance flag earns its DECISIONS entry from the first slice
+   that observes a divergence in deployed reality. The taxonomy
+   grows under empirical pressure (the OSSYS chapter-2 discipline);
+   chapter 3.1's slice 5 (Tolerance profile calibration; per the
+   pre-scope) is exactly the slice that codifies what "modulo
+   tolerance" means concretely.
+
+3. **SnapshotRowsets is sequenced *after* the read-side adapter
+   precisely because the read-side adapter unblocks the dogfood
+   frame.** Subagent #5's pre-scope notes that SnapshotRowsets
+   "should run parallel-to or before the canary"; the parallel-to
+   reading is correct here. Chapter 3.1 opens with the dogfood
+   frame using existing `SnapshotJson`; chapter 3.2 SnapshotRowsets
+   work proceeds in parallel and lands when ready, at which point
+   the canary upgrades to consume the higher-fidelity catalog.
+   The A1-bound resolution (per `AXIOMS.md` A1's bottom note;
+   `DECISIONS 2026-05-15` session-20 amendment) lands at chapter
+   3.2's close, not 3.1's. **Chapter 3.1 ships under the bound;
+   the bound's lift is chapter 3.2's contribution.**
+
+The sequencing also aligns with subagent #4's DacpacEmitter
+pre-scope: chapter 3.3 (DacpacEmitter) consumes a Catalog flowing
+through chapter 3.1's Projection.Pipeline shell against ephemeral
+SQL Server (via the read-side adapter and the C# DacFx wrapper).
+The DacFx trigger's tighter re-deferral condition (`DECISIONS
+2026-05-06` session-24 amendment) names "a real Catalog flowing
+end-to-end through a pipeline exercising T11 sibling-Π
+commutativity on real metadata; canary chapter is the natural
+locus" — chapter 3.3 is exactly that locus.
+
+**Implication for the chapter-3 agent.** Chapter 3.1 opens with the
+read-side adapter as its centerpiece. Slice 1 is the JSON
+round-trip canary using existing `JsonEmitter` + `CatalogReader`;
+slice 2 ships the read-side adapter skeleton + queries 1-2; slices
+3-4 extend; slice 5 codifies tolerances; slice 6 lands the
+Projection.Pipeline orchestrator. The closing chapter-3.1
+deliverable: **V2 verifies V1 against ephemeral SQL Server, with
+named tolerances, with a triangulation comparator, with the seven
+type primitives in production use.** The cutover fallback ladder's
+V2-augmented mode is operational at chapter 3.1's close.
+
+**This entry supersedes the implicit chapter-3 sequencing carried
+by `HANDOFF.md` §"Where to start".** The handoff letter named three
+plausible arcs without ordering them; this entry orders them. The
+handoff's framing — that subagent #4's and #5's recommendations are
+compatible — survives; the addition is the explicit ordering and
+the dogfood-frame reasoning that motivates it.
+
+## 2026-05-22 — CLAUDE.md reading-order update: VISION.md added to canonical surface list
+
+**Status:** decided (CLAUDE.md fresh-agent reading order; per Stage
+0 governance burst)
+**Context:** `CLAUDE.md` lists the reading order for fresh agents
+in §"Reading order for a fresh agent". As of session 25 close, the
+list named (1) HANDOFF.md, (2) CHAPTER_2_CLOSE.md, (3)
+CHAPTER_1_CLOSE.md, (4) AXIOMS.md, (5) DECISIONS.md, (6) ADMIRE.md,
+(7) README.md, (8) the code. The list predates the 2026-05-08
+strategic-surface burst that added `VISION.md`, `SPINE.md`,
+`PLAYBOOK.md`, `STAGING.md`, and `BACKLOG.md` as companion
+canonical documents.
+
+`VISION.md` is the strategic frame — the cutover as forcing
+function; the sibling chorus + verification posture; acceptance
+criteria; the cutover fallback ladder. It is **load-bearing for
+fresh agents** in a way that the sub-companion documents
+(`SPINE.md`, `PLAYBOOK.md`, `STAGING.md`) elaborate but do not
+substitute. A fresh agent who reads HANDOFF + AXIOMS + DECISIONS
+without VISION inherits the tactical posture but not the strategic
+*why*; VISION's "what V2 uniquely contributes" section is the
+answer to "should I prioritize this chapter or that one?" that the
+tactical surfaces presuppose.
+
+The chapter-close ritual (`DECISIONS 2026-05-14`) makes CLAUDE.md
+currency a load-bearing item. Adding VISION.md to the reading
+order is not a cosmetic update; it is a structural correction of
+a list that has drifted out of date relative to the canonical
+surface set.
+
+**Decision:** **`VISION.md` is added to CLAUDE.md's "Reading order
+for a fresh agent" section as item 1.5 — read after HANDOFF.md and
+before CHAPTER_2_CLOSE.md.** The companion strategic surfaces
+(`SPINE.md`, `PLAYBOOK.md`, `STAGING.md`, `BACKLOG.md`) are
+documented in the reading order's preamble as **on-demand**
+references — read when the relevant work surfaces them, not as
+part of the canonical first-read pass.
+
+The full updated reading order:
+
+1. **HANDOFF.md** — bridge letter from the most-recent-closed
+   chapter.
+2. **VISION.md** *(new)* — strategic frame; cutover as forcing
+   function; acceptance criteria; cutover fallback ladder. Read
+   for the *why*. Companion strategic surfaces (`SPINE.md`,
+   `PLAYBOOK.md`, `STAGING.md`, `BACKLOG.md`) referenced on
+   demand.
+3. **CHAPTER_2_CLOSE.md** — chapter-2 close synthesis.
+4. **CHAPTER_1_CLOSE.md** — chapter-1 close synthesis.
+5. **AXIOMS.md** — the formal system.
+6. **DECISIONS.md** — append-only resolved-questions log.
+7. **ADMIRE.md** — V1↔V2 bridge.
+8. **README.md** — surface-level orientation.
+9. **The code.**
+
+KICKOFF.md (added at `1cdfe1e`) is the fresh-agent first-message
+brief — the 5-minute orientation that points at the canonical
+surfaces in the order this entry codifies. KICKOFF is the
+on-ramp; the canonical reading order is the ramp itself.
+
+**Reasoning / consequences.**
+
+The update has three downstream consequences:
+
+1. **Fresh agents reach VISION before tactical surfaces.** A
+   fresh agent reading HANDOFF + VISION before AXIOMS / DECISIONS
+   has the strategic frame in context when interpreting the
+   tactical entries. Without VISION, the entry "DacFx trigger
+   re-deferred to canary chapter" reads as schedule juggling;
+   *with* VISION, it reads as "the canary is the verification
+   surface; DacFx without the canary has no consumer." The
+   strategic surface is the structural why for tactical entries
+   that otherwise read as detached judgment calls.
+
+2. **The chapter-close ritual scans for currency on this section.**
+   The chapter-close ritual (`DECISIONS 2026-05-14`) item 3
+   ("CLAUDE.md / README.md staleness checks") explicitly walks the
+   reading-order section. As new strategic surfaces land
+   (post-Stage 0, plausibly: a `RUNBOOK.md` if cutover ops
+   warrants; a `RISKS.md` if the active deferrals index
+   outgrows DECISIONS' top), the ritual catches the drift. This
+   entry sets the precedent: **strategic surfaces earn explicit
+   placement in the reading order or explicit on-demand
+   designation**, not silent omission.
+
+3. **The companion-strategic-surface designation prevents
+   reading-order bloat.** SPINE / PLAYBOOK / STAGING / BACKLOG
+   each carry ~500-900 lines. Including them all in the canonical
+   first-read pass extends the orientation hour to a half-day; the
+   on-demand designation respects the differential weight
+   (strategic frame for everyone vs. structural-mechanics for
+   chapter-open scoping). The designation is itself a discipline:
+   **first-read pass is short and load-bearing; companion
+   surfaces are deeply useful but consulted by the chapter agent
+   for the chapter's needs**.
+
+The update is small in lines (one new bullet plus the on-demand
+preamble) but compounds: every fresh-agent session from now on
+reaches the strategic frame before the tactical entries.
+
+**This entry pairs with the CLAUDE.md edit landing in the same
+Stage 0 governance burst.** The DECISIONS entry codifies the
+decision; the CLAUDE.md edit operationalizes it.
+
+## 2026-05-22 — T-30 / T-15 cutover fallback ladder gates
+
+**Status:** decided (cutover-time fallback gates; per
+`VISION.md` §"Cutover fallback ladder" and the R6 split-brain
+governance entry)
+**Context:** `VISION.md` §"Cutover fallback ladder" names three
+operating modes for the cutover window: V2-driver (V2 owns the
+write path; V1 is fallback), V2-augmented (V1 drives; V2 verifies),
+and V1-only (V1 ships alone; V2 does not run). The ladder names
+the modes but did not codify the *gates* — the structural
+conditions under which the operating mode shifts as the cutover
+date approaches.
+
+Without operationalized gates, three failure modes loom:
+1. **V2-driver pursued past readiness.** Chapter 3 closes with a
+   green canary on synthetic fixtures; chapter 4 ships partially;
+   the team flips to V2-driver because the schedule says "now."
+   Production data integrity risk: V2's chapter 4 isn't yet
+   shipping the cutover-blocking artifacts, so the V2-driver flip
+   is reckless.
+2. **V2-augmented unwound at the last minute.** The canary
+   surfaces a tolerance-flag-needing divergence at T-7 days; the
+   team panics and disables V2; the canary surface goes dark; the
+   cutover loses its verification posture in the highest-risk
+   week.
+3. **V1-only declared too late.** V2's chapters 3-4 are
+   structurally on track but behaving unstably under operational
+   load (testcontainers contention; CI flake; tolerance-taxonomy
+   churn); the team waits until T-3 days to fall back to V1-only,
+   leaving no time to validate V1's standalone path.
+
+The ladder needs T-30 and T-15 gates: structural conditions at
+fixed dates that determine which operating mode the cutover
+window enters and whether late-stage retreat is permitted.
+
+**Decision:** **V2-driver mode requires four conditions met by
+T-30 (thirty days before cutover); V2-augmented and V1-only fall
+out of the gate's negative branches.**
+
+### V2-driver gate (T-30)
+
+V2-driver mode is the aspirational target — V2 owns the production
+write path; V1 stays warm as a fallback. **All four conditions
+below must be met by T-30 days for V2-driver to be the cutover
+mode:**
+
+(a) **Chapter 3 closed with green canary on full 300-table
+    Catalog.** Chapter 3.5's RefactorLogEmitter has shipped;
+    chapter 3.4's canary has run successfully across the full
+    Catalog (not synthetic fixtures); the read-side adapter
+    against ephemeral SQL Server holds for all 300 tables; T1
+    binary-normal-form composition (chapter 3.3 amendment) holds
+    on real DACPAC artifacts.
+
+(b) **Chapter 4.1 (data triumvirate) shipping.** Chapter 4.1.A
+    (SSDT DDL emitter) and chapter 4.1.B (CDC-aware data
+    triumvirate — `StaticSeedsEmitter`, `MigrationDependenciesEmitter`,
+    `BootstrapEmitter`) are operational; the change-detection
+    predicate for CDC-tracked tables (chapter 4.1.B slice 6) holds
+    on the `change_tracked` table set; redeploy-zero-ALTERs
+    property holds.
+
+(c) **Chapter 4.2 (User FK reflow) shipping.** The four V1
+    pipeline-step distillation has shipped:
+    `UserMatchingStrategy` DU; `UserRemapContext` value;
+    `UserFkReflowPass.discover` produces the context; sibling
+    Π's consume the context (the A32 cash-out — see the AXIOMS
+    amendment scaffolding entry). User FKs (CreatedBy, UpdatedBy)
+    remap correctly across all four environments under operator-
+    supplied mapping inputs.
+
+(d) **≥1 full UAT dry-run.** A complete environment-by-environment
+    dry-run of the cutover sequence (dev → qa → UAT → prod
+    against UAT-equivalent infrastructure) has shipped, with
+    cross-environment Profile/Policy pairs producing structurally-
+    consistent artifacts. Subagent #4's pre-scope notes the
+    byte-determinism risk of vanilla DacFx `BuildPackage`; this
+    dry-run's success implies that risk has been fully mitigated.
+
+If all four conditions hold at T-30, the cutover proceeds in
+V2-driver mode per environment per artifact type, gated on the
+N=10 + sign-off discipline (R6).
+
+### V2-augmented fallback (T-30 yellow)
+
+If any subset of (a)-(d) fails at T-30 but the canary surface is
+operational and stable, the cutover falls back to V2-augmented
+mode: **V1 drives the cutover; V2 runs the canary as a
+verification-only sidecar.** V2 emits, deploys to ephemeral, reads
+back, compares to V1's emission and to V2's expected Catalog.
+Disagreement blocks the PR (R6's blocking semantic). V2 owns no
+production write path. This is the **safe-default mode** for the
+cutover window — V1's existing capability ships the cutover; V2's
+verification posture surfaces drift without taking on production
+risk.
+
+The T-30 gate **does not require all conditions** for V2-augmented;
+it requires only that the canary surface itself is operational
+(chapter 3 closed; tolerance taxonomy stable; comparator returning
+structural Diffs; PR blocking semantic wired up). A partial chapter
+4 is acceptable for V2-augmented because the verification surface
+operates against whichever artifacts V1 ships.
+
+### V1-only retreat (T-15 unstable)
+
+If between T-30 and T-15 the canary itself becomes unstable
+(testcontainers contention causing CI flake at >10% rate;
+tolerance-taxonomy churn requiring multiple per-week DECISIONS
+entries; the comparator producing inconsistent Diffs across
+re-runs against the same input), the cutover falls back to
+V1-only mode: **V1 ships the cutover alone; V2 does not run
+during the cutover window.** V2 development continues post-cutover;
+the cutover-quarter trajectory completes through V1's existing
+capability without V2's verification surface.
+
+The T-15 gate is operational (canary stability), not structural
+(chapter completion). T-15 is fifteen days before cutover —
+sufficient time to validate V1's standalone path against the
+final environment-by-environment sequence without V2's
+verification overhead.
+
+### Hard rule: V1 stays warm through cutover+30
+
+Regardless of which mode the cutover enters, **V1's emission path
+is preserved as a fallback for thirty days post-cutover.** V1's
+codebase remains buildable; its CI lane remains green; its
+emission script remains runnable. If a post-cutover defect
+surfaces in V2's emissions (unlikely but possible), the operator
+can re-emit via V1 within the cutover+30 window. The V1 sunset
+decision is deferred to **chapter 5+** when all four environments
+have run V2 emissions for one full schema-evolution cycle and the
+operator has explicit confidence in V2's standalone behavior.
+
+**Reasoning / consequences.**
+
+The gate dates (T-30, T-15) are structural choices, not arbitrary
+calendar markers:
+
+- **T-30 is the earliest operationally-meaningful gate.** Less
+  than thirty days before cutover, late-stage chapter work cannot
+  reach production-ready stability under any reasonable schedule.
+  The gate names the four conditions because each is a structurally
+  load-bearing chapter-cluster (read-side + canary + DACPAC for
+  3.x; SSDT + data for 4.1; User FK reflow for 4.2; UAT dry-run
+  for cross-environment integration). Missing any of the four
+  produces a cutover risk that V2-augmented absorbs but V2-driver
+  does not.
+
+- **T-15 is the safety gate.** Fifteen days is enough for the
+  team to validate V1's standalone path through the final
+  environment sequence (dev → qa → UAT → prod) without V2 in the
+  loop. Less than fifteen days, the V1-only path itself becomes
+  high-risk because operators have lost familiarity with running
+  the cutover without V2's verification feedback. T-15 is the
+  point at which V1-only retreat is *still* operationally safe;
+  after T-15, retreat becomes "ship and pray."
+
+- **The hard cutover+30 V1-warm rule is non-negotiable.** It is
+  the cutover's deepest fallback layer; it survives every gate
+  decision because it costs nothing operationally (V1 already
+  exists; preserving its build is keeping a green lane green).
+  The cost is purely calendric — chapter 5+ work that depends on
+  V1 retirement defers thirty days. That is acceptable.
+
+**Three load-bearing properties follow from the gates:**
+
+1. **The cutover decision criterion at T-30 is mechanically
+   evaluable.** Each of (a)-(d) is a yes/no structural check; the
+   operator does not exercise judgment on whether the chapter has
+   "shipped enough" — the chapter's close synthesis is the
+   evidence. This makes the T-30 review a *audit*, not a
+   *negotiation*.
+
+2. **The T-15 retreat is reversible-cost-bounded.** Falling back
+   to V1-only at T-15 costs the team V2's verification posture
+   for the cutover window itself. It does **not** cost the team
+   V2's chapter 3-4 work — that work continues, and the canary
+   resumes post-cutover as part of cutover+30 validation. The
+   retreat is not a sunset; it is a pause.
+
+3. **The four-environment cutover stays per-environment-per-
+   artifact-type.** The gates determine the *mode*; R6 governs
+   the per-pair flips inside the chosen mode. The two
+   abstractions compose: the gate sets the ladder rung; R6
+   determines per-pair progression along the rung.
+
+**Operational implication.** The chapter-3 and chapter-4 agents
+working between now and T-30 know the four conditions explicitly.
+Chapter 3.5 cannot defer to a later chapter without forfeiting
+condition (a); chapter 4.1's slice list must close all
+cutover-blocking properties to honor (b); chapter 4.2 must close
+the User FK reflow before T-30 to honor (c); the UAT dry-run must
+be scheduled against (a)-(c)'s readiness to honor (d). The chapter
+backlogs inherit the gate as a structural deadline.
+
+**This entry codifies the cutover fallback ladder's gates.** The
+ladder itself lives in `VISION.md` §"Cutover fallback ladder"; R6
+(per-pair governance during dual-track) lives in the sibling
+DECISIONS entry; the AXIOMS amendments scheduled at chapter
+closes (T1, T11×2, A1, A35, A36, A32 cash-out) align with the
+chapters whose closure conditions (a)-(d) require. **Together
+the three governance entries (R6, sequencing, gates) plus the
+Stage 0 commitment and the CLAUDE.md reading-order update
+operationalize the cutover-quarter trajectory.**

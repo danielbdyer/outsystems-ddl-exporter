@@ -4,6 +4,8 @@ To the next-chapter agent. Read this before anything else in the V2 sidecar. It 
 
 The chapter-1 handoff letter is preserved at `HANDOFF_CHAPTER_1.md` adjacent to this file. Read it after this one if you want the chapter-1 architect's framing of what they handed off.
 
+> **Update — Stage 0 in flight (2026-05-22).** Between this letter (session 25 close) and chapter 3.1 opening, the **Stage 0 foundation phase** ships per `STAGING.md`. Per `DECISIONS 2026-05-22 — Stage 0 foundation phase ships as one coherent unit`, the twelve foundation items land before any chapter-3 slice. Tier 1 (the documentation-only governance burst — `AXIOMS.md` amendment scaffolding; five `DECISIONS.md` governance entries; ADMIRE / AXIOMS / CLAUDE / HANDOFF currency checks; VISION / BACKLOG cross-references) lands first; Tiers 2–4 follow in sequence. The chapter-3 sequencing decision (`DECISIONS 2026-05-22 — Chapter 3 sequencing`) supersedes the "three plausible chapter-3 arcs" framing in §"Where to start" below: the read-side adapter is the chapter 3.1 centerpiece; SnapshotRowsets is 3.2; DacpacEmitter is 3.3; canary as property-test surface is 3.4; RefactorLogEmitter + CatalogDiff is 3.5. Cross-module FK lands as a sub-slice within chapter 3.x when convenient. **Read `KICKOFF.md` for the 5-minute fresh-agent orientation; read `STAGING.md` for the Stage 0 inventory; read the five 2026-05-22 DECISIONS entries for the governance frame.**
+
 ## Where you are
 
 You have inherited two closed chapters of the V2 sidecar:

@@ -654,3 +654,235 @@ should follow the same discipline:
 
 The axioms have a history. The history is part of how the system tells its
 truth across time.
+
+---
+
+# Amendments scheduled (chapter close)
+
+The following amendments are scheduled for commitment at chapter close.
+Each chapter agent writes the amendment text at chapter-close ritual
+step 6 ("CHAPTER_N_CLOSE.md scope includes AXIOMS amendments"; per
+`DECISIONS 2026-05-14`). The scaffolding here is the **placeholder
+list** — chapter agents fill the body when the chapter that earns the
+amendment closes.
+
+The scaffolding is itself a discipline: pending amendments live as
+named placeholders rather than as memory. A chapter agent reading
+this section at chapter close knows immediately which amendments
+their chapter is responsible for — the alternative (silent obligation
+carried in handoff letters) has produced trigger-fire-without-cash-out
+at least once (the transform-registry deferral; `DECISIONS 2026-05-13
+— Transform registry cash-out`). The placeholder list is a structural
+forcing function: chapter close cannot complete without resolving the
+placeholders for the chapter it closes.
+
+The scaffolding entries below are appended in the Stage 0 governance
+burst (per `DECISIONS 2026-05-22 — Stage 0 foundation phase ships as
+one coherent unit`); the bodies fill at the chapters named in each
+heading.
+
+## T1 amended (binary normal-form composition) — TBD chapter 3.3 close
+
+**Scheduled at chapter 3.3 close** (DacpacEmitter + DacFx wrapper;
+per `DECISIONS 2026-05-22 — Chapter 3 sequencing`).
+
+[Body to be written at chapter 3.3 close.]
+
+**Anticipated content.** The original T1 (and its 2026-05-06 amendment
+to the triple) names byte-determinism: same `(catalog, policy, profile)`
+triple → bit-identical surface. The DacpacEmitter chapter introduces
+binary artifacts — DACPAC files — whose byte-equality is **not**
+deterministic under vanilla DacFx `BuildPackage`. Subagent #4's
+pre-scope flags this risk explicitly. The chapter-3.3 amendment
+extends T1 to a **binary-normal-form** composition: byte-determinism
+holds for text artifacts (SSDT DDL .sql files; JSON; Distributions);
+**model-equivalence** (DacFx round-trip equality on the in-memory
+`TSqlModel`) is the form determinism takes for binary artifacts. The
+two forms compose: the canary's tier-1 property tests assert byte-
+determinism on text emissions and model-equivalence on binary
+emissions, with the property `t1ByteEqualOrModelEquivalent` as the
+unifying canary predicate.
+
+The CDC-safety property (revision 1's `idempotentRedeploy`) becomes
+**T1 × DacFx idempotent-redeploy**, not T1 alone. The composition
+is the cutover-blocking property; the chapter closes when the
+composition is structurally enforced and tested.
+
+## T11 amended (structural type encoding) — TBD chapter 3 cross-cutting close
+
+**Scheduled at chapter-3 cross-cutting close** (the `ArtifactByKind`
++ `SsKey` four-variant + `CatalogDiff` foundation refactor; per
+`CHAPTER_3_PRESCOPE_ARTIFACTBYKIND_REFACTOR.md` and Stage 0 item
+S0.B).
+
+[Body to be written at the cross-cutting close.]
+
+**Anticipated content.** The original T11 (sibling-Π commutativity;
+"every Π's output should mention every catalog kind by SsKey root")
+is a property test today — substring-search across emitted text
+enforces the law at the test layer. The cross-cutting refactor
+encodes T11 **structurally**: `ArtifactByKind<'element>` is an
+SsKey-keyed Map whose smart constructor enforces "every SsKey in
+the source Catalog appears as a key." The emitter signature
+`Emitter<'element> = Catalog -> Result<ArtifactByKind<'element>,
+EmitError>` carries the law in its type — T11 stops being substring
+discipline and becomes type discipline. The amendment names the
+shift: T11 is a **type theorem**, not a property test.
+
+The retirement of substring T11 enforcement tests (S0.B slice 6;
+per `STAGING.md`) is the operational consequence; the amendment is
+the codification of *why* the retirement is correct.
+
+## T11 amended again (diff-typed inputs) — TBD chapter 3.5 close
+
+**Scheduled at chapter 3.5 close** (RefactorLogEmitter + CatalogDiff;
+per `DECISIONS 2026-05-22 — Chapter 3 sequencing`).
+
+[Body to be written at chapter 3.5 close.]
+
+**Anticipated content.** Chapter 3.5 introduces `EmitterOverDiff
+<'element> = CatalogDiff -> Result<ArtifactByKind<'element>,
+EmitError>` — emitters whose input is a Catalog-typed diff rather
+than a Catalog. T11's sibling-Π commutativity must extend: the
+diff-typed emitter's output `ArtifactByKind` keys must be a subset
+of `Diff.allKinds` (SsKeys mentioned in either source or target
+of the diff), not the full Catalog. The amendment names the
+extension: **T11 holds over diff-typed inputs by typing
+`ArtifactByKind` over the diff's SsKey set rather than the
+Catalog's.**
+
+The smart constructor on `ArtifactByKind` enforces the property at
+construction — same discipline as the cross-cutting amendment,
+extended to diff-typed inputs. The pattern is monotonic: every new
+emitter type variable (Catalog, CatalogDiff, future variants) is a
+specialization of the same `ArtifactByKind` shape.
+
+## A1 amended (four-variant SsKey) — TBD chapter 3 cross-cutting close
+
+**Scheduled at chapter-3 cross-cutting close** (the `SsKey`
+four-variant DU split; per `CHAPTER_3_PRESCOPE_ARTIFACTBYKIND_REFACTOR.md`
+slice 5 and Stage 0 item S0.B).
+
+[Body to be written at the cross-cutting close.]
+
+**Anticipated content.** A1's bound on identity-survives-rename
+through the JSON path (added at session 23; documented at the bottom
+of A1) names the JSON-projection-lossiness class — V1's
+`osm_model.json` strips SSKey columns, so V2's IR synthesizes SsKeys
+from name fields rather than carrying V1's actual SSKey values.
+The four-variant DU split codifies the bound **type-stratifically**:
+
+```fsharp
+type SsKey =
+    | OssysOriginal of string             // V1's SSKey, carried verbatim
+    | Synthesized of source: string       // V2-synthesized from name fields
+    | DerivedFrom of parent: SsKey * reason: string  // existing Derived
+    | V1Mapped of original: SsKey * v1: string  // remap envelope
+```
+
+A1's identity-survives-rename guarantee splits along the variants:
+`OssysOriginal` honors A1 unconditionally; `Synthesized` honors A1
+only over name preservation (renames produce new `Synthesized`
+keys); `DerivedFrom` honors A1 transitively through the parent;
+`V1Mapped` honors A1 over both the V1 envelope and the original.
+The amendment codifies the per-variant guarantees and names the
+input-path-by-variant correspondence (`SnapshotJson` produces
+`Synthesized`; `SnapshotRowsets` produces `OssysOriginal`).
+
+The `SnapshotRowsets` chapter (3.2) is the chapter that produces
+`OssysOriginal` SsKeys at scale; the cross-cutting close prepares
+the type-system surface, and chapter 3.2 fills the consumer side.
+
+## A35 candidate (Π-erased axes named) — TBD chapter 3.4 close
+
+**Scheduled at chapter 3.4 close** (Canary as property-test surface;
+per `DECISIONS 2026-05-22 — Chapter 3 sequencing`).
+
+[Body to be written at chapter 3.4 close; promoted from candidate to
+A35 if it earns commitment.]
+
+**Anticipated content.** The DACPAC round-trip cannot preserve every
+axis of the Catalog — index names, check constraint names, default
+constraint names, extended properties, header comments, and several
+other axes are erased or normalized by DacFx's model layer. The
+canary's `equalModuloDacpacErasure` predicate declares the erasure
+set explicitly; A35 candidate names the declaration **the function
+IS the axiom**. The Tolerance taxonomy (S0.E) is the operational
+form; A35 is the algebraic form. Whether A35 lands as an axiom
+(shaping the algebra at the canonical-form level) or stays as the
+Tolerance taxonomy (shaping the comparator's erasure set without
+algebra-level commitment) is the chapter-3.4 close decision.
+
+The candidate's promotion criterion: **A35 lands as an axiom if and
+only if every Π whose output is binary requires the same erasure
+declaration** (i.e., the axiom is invariant across Π's, not specific
+to DACPAC). If only DacpacEmitter requires it, the Tolerance
+taxonomy is the right home and A35 stays a candidate.
+
+## A36 candidate (CatalogDiff exhaustiveness) — TBD chapter 3.5 close
+
+**Scheduled at chapter 3.5 close** (RefactorLogEmitter + CatalogDiff;
+per `DECISIONS 2026-05-22 — Chapter 3 sequencing`).
+
+[Body to be written at chapter 3.5 close; promoted from candidate to
+A36 if it earns commitment.]
+
+**Anticipated content.** `CatalogDiff` is a value type produced by
+`DiffOf<Catalog> = Catalog -> Catalog -> Result<CatalogDiff, EmitError>`.
+Its smart constructor enforces an exhaustiveness invariant: every
+SsKey in `source ∪ target` is in **exactly one** of four
+disposition variants — `Renamed | Added | Removed | Unchanged`.
+The candidate names the invariant as A36 — a structural-commitment
+axiom in the same family as A4 (identity equality is structural)
+and A34 (Profile independence). The smart-constructor enforces;
+the type system rejects malformed diffs.
+
+The candidate's promotion criterion: **A36 lands if the
+exhaustiveness invariant holds across multiple Diff variants**
+(CatalogDiff today; future variants like ProfileDiff or PolicyDiff,
+should they materialize). If only CatalogDiff requires it, the
+invariant lives on the type's smart constructor and stays
+implementation-level.
+
+## A32 cash-out — TBD chapter 4.2 close
+
+**Scheduled at chapter 4.2 close** (User FK reflow as Policy; per
+`DECISIONS 2026-05-22 — T-30 / T-15 gates` condition (c)).
+
+[Body to be written at chapter 4.2 close.]
+
+**Anticipated content.** A32 (passes may produce values consumed by
+emitters; 2026-05-06) named the algebraic shape but had no concrete
+instance. Chapter 4.2 lands the first instance: `UserFkReflowPass`
+discovers user-mapping context (`UserRemapContext`) from a
+`UserMatchingStrategy` DU; sibling Π's consume the context. The
+cash-out is the section of A32 that names the worked example —
+"discovery is one E-pass producing a `UserRemapContext` value;
+application is two sibling Π's: an INSERT-mode Π consuming
+`(catalog, context)` and an UPDATE-mode Π consuming `(context)`
+alone." The masterwork's "dual-mode transform" framing (UAT-Users
+discovery in Stage 3, application in Stage 5 INSERT or Stage 6
+UPDATE) is the V1 form; chapter 4.2 produces the V2 algebraic form.
+
+The cash-out also closes the structural property test:
+`A32: discovered value visible to emitter` becomes a concrete
+xUnit test asserting that both Π's see the same `UserRemapContext`
+and that identity correspondences hold across both surfaces (a
+special case of T4 sibling-functor commutativity).
+
+---
+
+## On the scaffolding discipline
+
+These seven scheduled amendments (T1, T11×2, A1, A35, A36, A32
+cash-out) span chapters 3.3, 3.4, 3.5, 4.2, and the chapter-3
+cross-cutting close. The scaffolding section above is the
+single-source list; each chapter close writes the amendment text
+in the placeholder block above and updates the heading from "TBD"
+to the close date.
+
+**Per `DECISIONS 2026-05-22 — Stage 0 foundation phase`, the
+scaffolding lands at Stage 0 Tier 1 (S0.F) before chapter 3.1
+opens.** Future chapters that surface new amendment candidates
+append to this section at chapter open with TBD bodies; the
+scaffolding grows monotonically with the chapter pre-scopes.
