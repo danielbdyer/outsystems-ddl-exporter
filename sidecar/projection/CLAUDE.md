@@ -32,7 +32,16 @@ work surfaces them, not as part of the canonical first-read pass.
    `PLAYBOOK.md` for technical guidance; `STAGING.md` for the Stage
    0 foundation phase; `BACKLOG.md` for the full ~375-item
    inventory) are referenced on demand.
-3. **`CHAPTER_2_CLOSE.md`** — chapter-2 close synthesis (sessions
+3. **`CHAPTER_3_1_CLOSE.md`** — chapter-3.1 close synthesis (sessions
+   27–36). The canary chapter. Read for the M1–M3 milestone sequence;
+   the four meta-codifications (bench-driven optimization, stream-
+   realization pattern, five-agent epistemic-tier audit, harmonization-
+   via-parameterization); forward signals into chapter 3.2 / 3.5 /
+   4.1 / 4.2. **Companion file:** `AUDIT_2026_05_DDD_HEXAGONAL_FP.md`
+   carries the chapter-close five-agent DDD/Hexagonal/FP audit with
+   Tier 1/2/3/4 backlog by epistemic level + leverage. The next-
+   chapter agent reads both at chapter open.
+4. **`CHAPTER_2_CLOSE.md`** — chapter-2 close synthesis (sessions
    13–25). Read for the OSSYS adapter chapter's accumulated
    state (25 translation rules), the three-class typology, the
    meta-codifications (chapter-mid-audit; trace-before-fixture;
@@ -42,13 +51,11 @@ work surfaces them, not as part of the canonical first-read pass.
    full audit report); `CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md`
    (subagent #4's chapter-open input); and
    `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md` (subagent #5's
-   chapter-open input). The chapter-3 agent reads the pre-scope
-   documents at chapter-open.
-4. **`CHAPTER_1_CLOSE.md`** — chapter-1 close synthesis (sessions
+   chapter-open input).
+5. **`CHAPTER_1_CLOSE.md`** — chapter-1 close synthesis (sessions
    1–12). Read for historical context. Some priorities listed
-   there have been resolved by chapter 2 (Diagnostics writer
-   cashed out; OSSYS adapter shipped); the disciplines and
-   load-bearing commitments persist.
+   there have been resolved by chapters 2 / 3.1; the disciplines
+   and load-bearing commitments persist.
 5. **`AXIOMS.md`** — the formal system. A1–A34 / T1–T11 with
    amended originals. A18's amendment near the bottom is the
    load-bearing form for sibling Π's; the original A18 carries a
@@ -119,7 +126,12 @@ of them, write the amendment first.
 | **Stage 0 foundation phase ships as one coherent unit before chapter 3.1 opens** — the twelve foundation items (S0.A–S0.L per `STAGING.md`) are codified in F# types (Tier 2), structural commitment (Tier 3), and primitive support (Tier 4) before any chapter-3 slice opens. Tier 1 is documentation hygiene + governance burst (S0.F AXIOMS scaffolding; S0.G five DECISIONS entries; S0.J currency checks; S0.L cross-references). The Stage 0 commitment is the structural answer to "should we just start chapter 3.1 and refactor as we go?" Per SPINE inference I6, the contract precedes its instances. | `DECISIONS 2026-05-22` — Stage 0 foundation phase ships as one coherent unit |
 | **R6 split-brain governance during dual-track** — V2 emits-but-doesn't-ship while V1 owns the production write path; the canary asserts V1 ≈ V2 modulo named tolerances; disagreement blocks the PR; per-environment-per-artifact-type V2-driver transition is gated on N=10 consecutive green canary runs plus operator sign-off. The four-environment cutover stays per-pair; the gate flips when its evidence supports the flip. The Tolerance taxonomy (S0.E) is the governance surface — every divergence either matches a named tolerance or fails the canary. | `DECISIONS 2026-05-22` — R6: Split-brain governance rule for the dual-track cutover window |
 | **T-30 / T-15 cutover fallback ladder gates** — V2-driver mode requires four conditions met by T-30: (a) chapter 3 closed with green canary on full 300-table Catalog; (b) chapter 4.1 (data triumvirate) shipping; (c) chapter 4.2 (User FK reflow) shipping; (d) ≥1 full UAT dry-run. T-30 yellow → V2-augmented (V1 drives, V2 verifies). T-15 unstable (canary CI flake >10%; tolerance churn) → V1-only retreat. Hard rule: V1 stays warm through cutover+30 regardless. The gates determine the ladder rung; R6 governs per-pair progression along the rung. | `DECISIONS 2026-05-22` — T-30 / T-15 cutover fallback ladder gates |
-| **AXIOMS amendments scaffolded at chapter open; bodies filled at chapter close** — the "Amendments scheduled (chapter close)" section at the bottom of `AXIOMS.md` is the placeholder list for pending amendments (T1 binary-normal-form; T11 structural-type encoding; T11 diff-typed inputs; A1 four-variant SsKey; A35 candidate; A36 candidate; A32 cash-out). Chapter agents fill the body when the chapter that earns the amendment closes. Future chapters that surface new candidates append placeholders at chapter open. The scaffolding is a structural forcing function: chapter close cannot complete without resolving its placeholders. | `DECISIONS 2026-05-22` — Stage 0 foundation phase (S0.F scaffolding) and the seven scheduled headings in `AXIOMS.md` |
+| **AXIOMS amendments scaffolded at chapter open; bodies filled at chapter close** — the "Amendments scheduled (chapter close)" section at the bottom of `AXIOMS.md` is the placeholder list for pending amendments. Chapter 3.1 close cashed A35 (Π's output is a deterministic statement stream), A36 (bulk-vs-incremental is realization-layer policy), A39 (aggregate-root smart-constructor invariants), A40 (harmonization-via-parameterization). Renumbered the prior A35/A36 candidates (Π-erased axes; CatalogDiff exhaustiveness) to A37/A38. Chapter agents fill the body when the chapter that earns the amendment closes. The scaffolding is a structural forcing function: chapter close cannot complete without resolving its placeholders. | `DECISIONS 2026-05-22` — Stage 0 foundation phase (S0.F scaffolding); chapter-3.1 close (sessions 27–36) for A35/A36/A39/A40 |
+| **Bench-driven optimization protocol** — performance optimizations at hot paths require three-candidate / 2-refuted / 1-confirmed shape with bench data. Refuted swaps are documented with bench data so the same swap doesn't recur. The bench surface is how V2 earns its perf claims, the same way the canary's PhysicalSchema diff earns its fidelity claims. | `DECISIONS 2026-05-24 — Bench surface caught two wrong-direction canary optimizations` |
+| **Stream-realization pattern (chapter-3.1 contribution)** — Π's canonical output is a typed deterministic stream (`seq<Statement>` for SSDT). Realization layers (`Render.toText`, `Deploy.executeStream`) consume the stream and choose their emission form. The algebra (A18 / T1 / T11) holds at the stream level; bulk-vs-incremental deploy is realization-layer policy invisible to Π (A35 / A36). | `DECISIONS 2026-05-28 — Session 34 / A35 cash-out` and `Session 34 / A36 cash-out` |
+| **Writer-fidelity discipline (chapter-3.1 contribution)** — pass drivers MUST use `LineageDiagnostics.tellDiagnostics` / `Lineage.ofValueAndEvents` (the canonical primitives); manual record-building is forbidden. The dual-writer's algebraic surface is activated across pass drivers; future pass drivers inherit the discipline. | `DECISIONS 2026-05-30 — Session 36 / Writer-fidelity codification` |
+| **Harmonization-via-parameterization (chapter-3.1 contribution)** — when two implementations of an algorithm diverge on a single semantic axis, parameterize the algorithm on that axis, produce both projections from one implementation, and let consumers choose. Worked example: `SelfLoopPolicy` in `TopologicalOrderPass` (chapter-3.1 collapsed `RawTextEmitter.emissionOrder`'s duplicate Kahn into the pass). Codified as A40. | `DECISIONS 2026-05-30 — Session 36 / Topological-sort harmonization via SelfLoopPolicy` |
+| **Five-agent epistemic-tier audit at chapter close (chapter-3.1 contribution)** — multi-agent parallel audit dispatched at chapter close covering tightly orthogonal concerns (UL / Hex / VO / FP / ACL). Each agent classifies findings B&W vs SUBJ + H/M/L; convergence-map is the synthesis primary surface; Tier 1/2/3/4 backlog organizes findings by epistemic level + leverage. Audits are routed (named items in named chapters with named pre-scopes), not piled. Worked example: `AUDIT_2026_05_DDD_HEXAGONAL_FP.md`. | `DECISIONS 2026-05-30 — Session 36 / Five-agent DDD/Hexagonal/FP audit protocol` |
 
 ## Load-bearing commitments — do not break without writing the amendment first
 
@@ -143,7 +155,27 @@ wanting to break one, write the amendment first.
   All registered-intervention pass drivers delegate to it.
 - **Decimal as default for continuous statistical evidence.**
 - **Sibling-Π commutativity (T11).** Every Π's output should mention
-  every catalog kind by SsKey root.
+  every catalog kind by SsKey root. **Note:** T11 is currently
+  *aspirational* not structural — three Π's return `string`. Chapter
+  3.5's Π port realization makes T11 structural via the typed
+  `ArtifactByKind<'element>` surface.
+- **A35 (chapter-3.1).** Π's canonical output is a typed
+  deterministic *statement stream* (`seq<Statement>` for SSDT).
+  Realization layers consume the stream and choose their emission
+  form; the algebra holds at the stream level.
+- **A36 (chapter-3.1).** Bulk-vs-incremental is realization-layer
+  policy. How a realization deploys (`SqlBulkCopy`, per-row INSERT,
+  file write, network protocol) is invisible to Π.
+- **A39 (chapter-3.1).** Aggregate-root smart-constructor
+  invariants. `Catalog.create` / `Module.create` / `ColumnProfile.create`
+  enforce referential-integrity / empirical-probe invariants in one
+  pass; consumers that flow through `create` trust the value.
+- **A40 (chapter-3.1).** Harmonization-via-parameterization.
+  Single-axis-divergent implementations earn one parameterized
+  algorithm; same algorithm, multiple projections.
+- **Writer-fidelity (chapter-3.1).** `LineageDiagnostics.tellDiagnostics`
+  and `Lineage.ofValueAndEvents` are the canonical pass-driver
+  primitives. Manual record-building is forbidden.
 - **V2 owns no production write path during dual-track (R6).** Per
   `DECISIONS 2026-05-22 — R6`, V2 emits-but-doesn't-ship while V1
   owns the production write path. The canary asserts V1 ≈ V2 modulo
@@ -373,6 +405,12 @@ re-open the question. The general meta-rule:
 | **List / sequence comprehensions with `yield`** | `Composition.fanOut`, `TopologicalOrderPass`, list-of-conditional-keys patterns in tests | Idiomatic for building lists with conditional inclusion; clearer than `List.collect`. |
 | **FsCheck.Xunit property tests** | Permutation invariance, idempotence, structural-commitment validation | Sweeps combinatorial spaces example-based tests can't reach. |
 | **Backtick-quoted test names** | Every test | Tests are prose: `` ``A24: trail is chronological under bind`` ``. |
+| **Typed statement-stream Π output** (`seq<Statement>`) | `Projection.Targets.SSDT.RawTextEmitter.statements`; `Render.toText` and `Deploy.executeStream` are realizations. | A35 cash-out (chapter-3.1). Π's canonical form is a typed deterministic stream; realizations are sibling consumers. |
+| **`AsyncStream<'a> = unit -> Task<'a option>`** | `Projection.Adapters.Sql.AsyncStream` (pull-based streaming primitive); `ReadSide.readRowsStream`. | Async-side streaming (Core stays sync). Combinators: `map`, `mapAsync`, `iter`, `fold`, `bufferUpTo`, `probe`, `batchesOf`. Bench observability via `AsyncStream.probe`. |
+| **`Bench.streamProbe` / `AsyncStream.probe`** | `Render.toText`, `Deploy.executeStream`, `RawTextEmitter.emit`, `ReadSide.readRowsStream`. | First-class stream observability. Records `<label>` (total ms) and `<label>.elements` (count) on enumeration completion. |
+| **`Array.Parallel.map` for CPU-bound parallelism** | `PhysicalSchema.toPhysicalRows` (per-row SHA256). | Independent per-row work; deterministic output ordering preserved (Set-membership downstream). |
+| **`SHA256.HashData` (allocation-free)** | `PhysicalSchema.hashStaticRowBytes`; `RowDigester.hashRowBytes`. | Replaces `SHA256.Create() + ComputeHash` to drop instance allocations on the per-row hashing hot path. |
+| **`SqlBulkCopy` realization** (`Bulk.copyRows` + `Deploy.executeStream`) | `Projection.Pipeline.Bulk` + `Deploy.executeStream` folds consecutive `InsertRow` runs. | A36 realization. Bulk-vs-incremental is realization-layer policy; same algebra. |
 
 ### Aligned but underused (candidates whose trigger has not fired)
 

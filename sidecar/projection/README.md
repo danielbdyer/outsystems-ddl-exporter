@@ -26,25 +26,34 @@ the seam is structural — `Projection.Core` has zero I/O, adapters do.
 
 ## Layout
 
-The current layout (chapter 2 in flight; OSSYS adapter implementation
-arc — sessions 17–22+):
+The current layout (chapter 3.1 closed at session 36; canary milestone
+sequence + audit + first refactor batch shipped — see
+`CHAPTER_3_1_CLOSE.md` and `AUDIT_2026_05_DDD_HEXAGONAL_FP.md`):
 
     sidecar/projection/
       README.md              - this file
-      CLAUDE.md              - first-read pointer for fresh agents
-      HANDOFF.md             - bridge letter to the next-chapter agent
-      CHAPTER_1_CLOSE.md     - chapter 1 audit synthesis (sessions 1-12)
-      CHAPTER_2_CLOSE.md     - chapter 2 in-flight close scaffold (sessions 13+)
-      AXIOMS.md              - the formal system + V2 amendments, axiom-numbered
-      DECISIONS.md           - append-only log of resolved questions
+      KICKOFF.md             - 5-minute fresh-agent orientation
+      CLAUDE.md              - navigation surface; operating disciplines
+      HANDOFF.md             - bridge letter from chapter-3.1 close
+      HANDOFF_CHAPTER_1.md   - preserved chapter-1 close letter
+      HANDOFF_CHAPTER_2.md   - preserved chapter-2 close letter
+      CHAPTER_1_CLOSE.md     - chapter-1 close synthesis (sessions 1-12)
+      CHAPTER_2_CLOSE.md     - chapter-2 close synthesis (sessions 13-25)
+      CHAPTER_3_1_CLOSE.md   - chapter-3.1 close synthesis (sessions 27-36)
+      AUDIT_2026_05_DDD_HEXAGONAL_FP.md - five-agent audit at chapter-3.1 close
+      AXIOMS.md              - formal system; A1-A40 with amendments
+      DECISIONS.md           - append-only log of resolved questions (~95 entries)
       ADMIRE.md              - append-only log of V1 admirations and V2 placements
-      global.json            - SDK pin (mirrors trunk: 9.0.305, rollForward: disable)
+      VISION.md / SPINE.md / PLAYBOOK.md / STAGING.md / BACKLOG.md - strategic surfaces
+      CHAPTER_3_PRESCOPE_*.md / CHAPTER_4_PRESCOPE_*.md - per-chapter pre-scope docs
+      global.json            - SDK pin (9.0.305, rollForward: disable)
       .editorconfig          - F#-aware formatting scoped to this folder
-      Projection.sln         - V2's own solution; not added to trunk sln
+      Projection.sln         - V2's own solution
 
       src/Projection.Core/                  - F#: IR, passes, projector, lineage, diagnostics
-        Catalog.fs, Identity.fs, Lineage.fs, Diagnostics.fs,
-        Policy.fs, Profile.fs, Result.fs, TopologicalOrder.fs
+        Catalog.fs, Coordinates.fs, Identity.fs, Lineage.fs, Diagnostics.fs,
+        Policy.fs, Profile.fs, Result.fs, TopologicalOrder.fs, Bench.fs,
+        ArtifactByKind.fs, PhysicalSchema.fs, Types.fs
         Passes/                             - registered-intervention + structural passes
           CanonicalizeIdentity, NamingMorphism, NormalizeStaticPopulations,
           SymmetricClosure, TopologicalOrderPass, VisibilityMask,
@@ -54,9 +63,24 @@ arc — sessions 17–22+):
           CycleResolution, NullabilityRules, UniqueIndexRules,
           ForeignKeyRules, CategoricalUniquenessRules, Composition
 
-      src/Projection.Targets.SSDT/          - F#: Π_SSDT (RawTextEmitter; DacpacEmitter deferred)
+      src/Projection.Targets.SSDT/          - F#: Π_SSDT (Statement DU + Render + RawTextEmitter)
+        Statement.fs                        - typed statement-stream form (A35 cash-out)
+        Render.fs                           - statement → SQL text realization
+        RawTextEmitter.fs                   - Catalog → seq<Statement>
       src/Projection.Targets.Json/          - F#: Π_Json (sibling-functor proof)
       src/Projection.Targets.Distributions/ - F#: Π_Distributions (rich-profile diagnostic)
+
+      src/Projection.Adapters.Osm/          - F#: V1 JSON → V2 Catalog (OSSYS adapter)
+      src/Projection.Adapters.Sql/          - F#: SQL Server readback / static / profile adapters
+        AsyncStream.fs                      - pull-based async streaming primitive
+        ReadSide.fs                         - schema + row readback (streaming)
+        Static.fs / ProfileSnapshot.fs / ProfileStatistics.fs
+
+      src/Projection.Pipeline/              - F#: orchestration + canary
+        Pipeline.fs                         - composition surface
+        Bulk.fs                             - SqlBulkCopy realization layer (A36 cash-out)
+        Deploy.fs                           - canary; executeStream; Docker JIT bring-up
+      src/Projection.Cli/                   - thin driving adapter
 
       src/Projection.Adapters.Sql/          - F#: SQL Server boundary (Static cell coercion;
                                               ProfileSnapshot; ProfileStatistics)
@@ -268,31 +292,48 @@ unbuilt-feature stubs), 638 total (session 22).
 - Identity (`SsKey`) is never used as a string in core code. Names are
   presentation strings only.
 - Lineage (`Lineage<'a>`) is foundational provenance — constitutive,
-  content-addressable, used for replay and refactor safety. A separate
-  `Diagnostics<'a>` writer (single-channel for now, three-channel later
-  per the constitution) carries human-consumable telemetry. Not yet
-  implemented; gating dependency for several V2 outputs.
+  content-addressable, used for replay and refactor safety. A
+  `Diagnostics<'a>` writer carries human-consumable telemetry; the
+  dual writer `Lineage<Diagnostics<'a>>` is the pass-with-findings
+  shape. Writer codification at chapter-2 stability mark; chapter-3.1
+  added writer-fidelity discipline (`LineageDiagnostics.tellDiagnostics`
+  and `Lineage.ofValueAndEvents` are the canonical primitives; manual
+  record-building forbidden).
 - Where V2 deliberately diverges from a V1 contract, the divergence
   surfaces as a `Skip` test stub at the test-file level, not as
-  ADMIRE-prose commentary. `V1NullabilityParityTests.fs` is the canonical
-  pattern.
+  ADMIRE-prose commentary.
+
+## Status at chapter-3.1 close (sessions 27–36)
+
+- **713 tests passing** (697 non-canary + 16 canary).
+- **Canary scale ceiling**: 500k rows in 27s warm (5 tables × 100k rows
+  per table; 22.6× speedup vs pre-session-35).
+- **Forcing-function fixture**: 300 tables / 200 entities / 100 static /
+  2,000 seed rows / FK chains across 8 modules.
+- **Bench surface**: ~170 instrumented call sites across Core / Adapters
+  / Targets / Pipeline; stream observability via `Bench.streamProbe` /
+  `AsyncStream.probe`.
+- **AXIOMS** at A40 (chapter-3.1 cashed A35, A36, A39, A40; partial
+  advance on A32; T1 strengthened to statement-stream determinism).
 
 ## Pointers
 
 For the next-chapter agent, read in this order:
 
-1. `CLAUDE.md` — first-read pointer. Reading order, operating-disciplines
-   table, programming-style center target, F# feature surface map.
-2. `HANDOFF.md` — bridge letter; short on purpose.
-3. `CHAPTER_1_CLOSE.md` — chapter-1 audit synthesis (sessions 1–12);
-   §4 ranks chapter-2 priorities, §5 carries the prior agent's
-   accumulated judgment.
-4. `CHAPTER_2_CLOSE.md` — chapter-2 in-flight close scaffold; accumulating
-   findings across sessions 13+ as the chapter progresses.
-5. `AXIOMS.md` — the formal system. A18's amendment at the bottom is the
-   load-bearing form; A1 carries the bounded-disposition forwarding
-   pointer to its DECISIONS amendments.
-6. `DECISIONS.md` — append-only resolution log. The most recent entries
+1. `KICKOFF.md` — 5-minute fresh-agent orientation.
+2. `CLAUDE.md` — navigation surface; operating-disciplines table;
+   load-bearing commitments.
+3. `HANDOFF.md` — bridge letter from chapter-3.1 close; short on purpose.
+4. `CHAPTER_3_1_CLOSE.md` — chapter-3.1 close synthesis (sessions
+   27–36); four meta-codifications; forward signals.
+5. `AUDIT_2026_05_DDD_HEXAGONAL_FP.md` — chapter-close five-agent audit;
+   Tier 1/2/3/4 backlog by epistemic level + leverage.
+6. `CHAPTER_2_CLOSE.md` — chapter-2 close synthesis (OSSYS adapter; 25
+   translation rules; three-class typology).
+7. `CHAPTER_1_CLOSE.md` — chapter-1 close synthesis; historical context.
+8. `AXIOMS.md` — formal system; A1–A40. A35/A36/A39/A40 are chapter-3.1
+   contributions.
+9. `DECISIONS.md` — append-only resolution log. The most recent entries
    cover the OSSYS adapter implementation chapter; older entries remain
    in force unless explicitly superseded. An "Active deferrals" index
    at the top tracks deferred decisions with their trigger conditions.

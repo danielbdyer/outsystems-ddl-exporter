@@ -1,7 +1,9 @@
 # V2 — The Spine at Multiple Levels
 
-**Date:** 2026-05-08
+**Date:** 2026-05-08; **chapter-3.1-close update:** 2026-05-30
 **Purpose:** Render the deeper structural shape of the V2 system — the primitives that recur, the patterns that tessellate, the inferences that only become visible once all the chapter pre-scopes, the backlog, and the algebraic foundation are in view simultaneously. The PLAYBOOK names *what* and *how*; this document names the *why-it-fits-together*.
+
+> **Chapter-3.1-close note (2026-05-30).** Pattern Π's output realized as `seq<Statement>` for SSDT (sessions 34, 36 — A35 cash-out). Π's canonical form is no longer presumed `string`; it is a typed deterministic stream. Realizations (`Render.toText`, `Deploy.executeStream`) are sibling consumers of the same stream. Pattern Pass produced its first cross-emitter consumer instance: `TopologicalOrderPass.runWith` consumed by `RawTextEmitter.emissionOrder` (A32 partial advance). Inference I6 (contract precedes instances) was vindicated by the chapter-3.1 audit's "declared ports unrealized" finding (`AUDIT_2026_05_DDD_HEXAGONAL_FP.md`); chapter 3.5's Π port realization closes the structural gap.
 
 This is the document to consult when a chapter's slice plan feels arbitrary. It is to surface the shape such that the next slice writes itself.
 

@@ -1,7 +1,9 @@
 # V2 — Master Backlog: V1 Parity + Stated Intent
 
-**Date:** 2026-05-08
+**Date:** 2026-05-08; **chapter-3.1-close update:** 2026-05-30
 **Method:** Eight parallel subagent surveys (V1 extraction+domain; V1 profile+tightening; V1 SSDT/SMO emission; V1 data emission+UAT+migration; V1 pipeline+CLI; V1 DMM+AdvancedSql+test infra; V2 intent gaps + ADMIRE + AXIOMS amendments outstanding). Each subagent walked its area exhaustively against `/home/user/outsystems-ddl-exporter/src/` (V1 trunk) and `sidecar/projection/` (V2 sidecar).
+
+> **Chapter-3.1-close note (2026-05-30).** Chapter 3.1 closed at session 36; canary milestone sequence (M1–M3) shipped, structural-fidelity round-trip (PhysicalSchema four-axis) holds at 300 tables / 500k rows; bulk realization layer + streaming readside + typed Π statement-stream output landed; five-agent DDD/Hexagonal/FP audit conducted with first refactor batch shipped. Items closed by chapter 3.1: M1–M3 canary milestones; bench observability; type fidelity (NVARCHAR/DECIMAL/IDENTITY); data plane (PhysicalSchema row axis); typed Π output; bulk realization; streaming readside; enterprise-scale optimizations (~22.6× speedup at 500k rows); aggregate-root smart constructors; topological-sort harmonization. Items opened by the audit (~20 forward signals) routed to specific sub-chapters: chapter 3.2 (SnapshotRowsets), 3.5 (Π port realization + RefactorLog), 4.1 (data triumvirate), 4.2 (User FK reflow + Identity DU refactor). See `CHAPTER_3_1_CLOSE.md` and `AUDIT_2026_05_DDD_HEXAGONAL_FP.md` for the substantive rollout.
 
 **Scope:** This document inventories every V1 capability V2 must reach parity with, every V2-intent commitment per `VISION.md` revision 2, and every cross-cutting governance/documentation gap. Items are tagged by **V2 status**, **recommended chapter**, and **disposition** (parity / divergence-named / widening / defer-with-trigger / cut / won't-carry-forward).
 

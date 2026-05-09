@@ -7364,3 +7364,367 @@ how V2 earns its perf claims, the same way the canary's
 PhysicalSchema diff earns its fidelity claims. Both rest on
 making the relevant evidence cheap to produce.
 
+
+
+## 2026-05-26 — Session 32 / Type fidelity round-trip — IR carries Length / Precision / Scale / IsIdentity
+
+The canary's PhysicalSchema-axis comparison previously caught
+`(schema, table, column, type, nullable, isPrimaryKey)` drift but
+silently absorbed declared-length and identity-property
+divergences (NVARCHAR(50) → NVARCHAR(MAX) absorbed; INT IDENTITY →
+INT absorbed). Session 32 closed the gap: `Attribute` grows
+`Length : int option`, `Precision : int option`, `Scale : int
+option`, `IsIdentity : bool`. ReadSide reads from
+`INFORMATION_SCHEMA.COLUMNS` (CHARACTER_MAXIMUM_LENGTH /
+NUMERIC_PRECISION / NUMERIC_SCALE) and `sys.columns.is_identity`.
+The 300-table forcing-function fixture round-trips with full
+type fidelity green.
+
+`PhysicalSchema.PhysicalColumn` extended with `Length` /
+`Precision` / `Scale` / `IsIdentity`; diff renderer prints them
+when present. T1 byte-determinism strengthens to type-declaration
+round-trip: identical input declares identical output across runs.
+
+
+## 2026-05-27 — Session 33 / Data plane round-trip — PhysicalSchema.Rows axis + StaticRow.Values raw IR contract
+
+`PhysicalSchema` grows a fourth axis: `Rows : Set<PhysicalRow>`
+(SHA256-hashed). Each `PhysicalRow = { Schema; Table; Hash }`
+where `Hash` is SHA256 over sorted `<column>=<value>` pairs.
+ReadSide reads row data per kind (default threshold: 1000 rows)
+and populates `Kind.Modality = [ Static rows ]`. RawTextEmitter
+emits `INSERT INTO ... VALUES (...);` from the IR; the
+round-trip closes the data axis at static-table scale.
+
+**The IR contract for `StaticRow.Values : Map<Name, string>` is:
+raw invariant-culture strings, no SQL quoting.** Both ReadSide
+(`formatRawValue`) and the V1 JSON adapter (`Static.fs`)
+produce raw strings; the emitter (`Render.formatSqlLiteral`)
+quotes per `PrimitiveType`. The contract centralizes the
+convention so all producers/consumers agree.
+
+`""` denotes NULL by convention. `Truncation` to 5 entries in
+`PhysicalSchema.renderDiff` for row diffs at scale (failure
+diagnostics).
+
+
+## 2026-05-28 — Session 34 / A35 cash-out: Π's output is a deterministic statement stream
+
+Session 34 cashed AXIOMS' A35 candidate. Π's canonical output is
+no longer `string`; it is `seq<Statement>` — a typed,
+deterministic, lazy stream. New file `Statement.fs` carries the
+DU (`Blank | Comment | CreateTable | InsertRow | SetIdentityInsert`).
+`Render.toText` is one realization of the stream; `Deploy.executeStream`
+is another. Both consume the same upstream.
+
+T1 byte-determinism strengthens to *statement-stream
+determinism*: identical Catalog produces identical Statement
+sequence; `Render.toText` produces identical bytes from
+identical streams. The stream is the canonical form; the bytes
+are a realization.
+
+`RawTextEmitter.emit : Catalog -> string` becomes a back-compat
+wrapper for `statements >> Render.toText`. Existing callers
+unchanged. Future emitters (Json, Distributions) inherit the
+stream-output pattern as their typed structured form.
+
+
+## 2026-05-28 — Session 34 / A36 cash-out: bulk-vs-incremental is realization-layer policy
+
+Session 34 cashed A36 candidate. `Deploy.executeStream` consumes
+a `seq<Statement>` and folds consecutive `InsertRow` runs
+(matching `(TableId, columnShape)`) into `SqlBulkCopy` batches
+(KeepIdentity, KeepNulls). Non-InsertRow statements (DDL,
+SetIdentityInsert) flush via a text-batch path. The realization
+layer chooses between bulk and per-row INSERT based on a single
+policy parameter (`DefaultBulkBatchSize`); the algebra at the
+stream level is invariant.
+
+**A36 in operational form**: the same Π output produces both
+the diffable .sql text (via `Render.toText`) and the bulk-
+deployed target database (via `Deploy.executeStream`). Two
+realizations; one canonical stream. T1 byte-determinism on the
+stream level subsumes the realization-layer choice — bytes-out
+from `toText` are deterministic, observable post-state from
+`executeStream` is deterministic; both rest on the stream's
+statement-level determinism.
+
+
+## 2026-05-28 — Session 34 / AsyncStream as V2's streaming primitive (sync-Core / async-adapter split)
+
+Streaming on the async side of the pipeline uses `AsyncStream<'a> =
+unit -> Task<'a option>` (pull-based, single-shot). New module
+in `Projection.Adapters.Sql` carries `map / mapAsync / iter /
+fold / toList / bufferUpTo / probe / batchesOf` combinators.
+`ReadSide.readRowsStream : SqlConnection -> Kind ->
+AsyncStream<StaticRow>` is the canonical row source.
+
+Core stays sync (no Task in Core per the F#-pure-core
+commitment). Adapters can stream; Core-resident algorithms
+(e.g., `RowDigester`) consume materialized values, with
+`bufferUpTo` and `toList` providing the bridge.
+
+The eight-of-eleven-combinators-unused state is acknowledged
+(per session-36 audit Agent 4 #12); retained for chapter-4
+data-triumvirate consumer pressure or retracted at chapter-4
+close if pressure doesn't materialize.
+
+
+## 2026-05-28 — Session 34 / Bench stream observability — `streamProbe` / `AsyncStream.probe` first-class
+
+The bench surface gains streaming-aware probes:
+- `Bench.streamProbe : string -> seq<'a> -> seq<'a>` (sync,
+  Core).
+- `AsyncStream.probe : string -> AsyncStream<'a> ->
+  AsyncStream<'a>` (async, in Adapters.Sql).
+
+Each records `<label>` (total ms across enumeration) and
+`<label>.elements` (count) at upstream EOF. Pass-through with
+RAII-shaped semantics. Used at four+ sites (RawTextEmitter,
+Render.toText, Deploy.executeStream, ReadSide.readRowsStream).
+
+**Stream observability is first-class.** The bench surface
+isn't just per-function; it's per-stream-stage. Operators
+reading the bench table see throughput per realization layer
+(Π statement stream → executeStream input → bulk.copyRows
+batches) on the same run.
+
+
+## 2026-05-29 — Session 35 / Bulk fixture loader as test-side realization
+
+`Deploy.runWideCanaryWithLoader : (SqlConnection -> Task<unit>) ->
+(Catalog -> seq<Statement>) -> Task<Result<WideCanaryReport>>`
+parameterizes the source-loader over a function instead of a SQL
+string. `runWideCanary` becomes a thin wrapper. Test fixtures
+expose `BulkSeeds : StaticTableSeed list` for typed bulk
+seed-loading via `Bulk.copyRows` (SqlBulkCopy with KeepIdentity).
+
+Source loading at 500k rows: 585s → 3.7s (157× speedup).
+Bench-driven; the text-INSERT path was the wall, the bulk path
+removed it entirely. Bulk + text variants coexist as parallel
+test surfaces.
+
+
+## 2026-05-29 — Session 35 / RowDigester streaming digest as chapter-4 row-axis seam
+
+`RowDigester` lives in Core, sync, commutative-monoid carrier.
+`State = { Count : int64; Acc : byte[] }` (32-byte sum mod
+2^256 of per-row SHA256s); `add` and `finalize` are the
+operations. Order-independent: streaming order doesn't matter.
+
+`PhysicalSchema.RowDigests : Set<PhysicalRowDigest>` is the
+fourth axis (`{ Schema; Table; Count; AggregateHash }`). Today
+populated only by digest-aware producers; the per-row Set
+remains for small inline rows.
+
+**Scaffolding for chapter 4.1.** Transactional rows (>100k per
+table) won't fit `Modality.Static`'s materialization budget;
+chapter 4.1's data triumvirate uses `RowDigester` to fold rows
+through a streaming pass without holding them in IR memory.
+
+
+## 2026-05-29 — Session 35 / Big-O codification — HashSet diff, Result.aggregate, parallel hashing, lifted FK Maps
+
+Session 35's Big-O agent identified ~27 algorithmic findings;
+the high-leverage subset shipped:
+
+- **`Result.aggregate` helper**: replaces the `xs @ [x]` O(N²)
+  fold pattern at 4 ReadSide sites. Aggregates errors across
+  the sequence rather than short-circuiting.
+- **`ResizeArray` for `kindsWithRows` accumulator**: replaces
+  `xs <- xs @ [y]` O(N²) prepend in the readside row-loading
+  loop.
+- **`HashSet.ExceptWith` for `PhysicalSchema.diff`**: replaces
+  `Set.difference` at the 8 axes; matters when canaries fail
+  with millions of mismatched rows.
+- **`SHA256.HashData` static API**: drops per-row instance
+  allocation (1M garbage objects/run at 500k-row scale).
+- **`Array.Parallel.map` for row hashing**: SHA256 is CPU-bound,
+  embarrassingly parallel; 1M hashes in 2.5s on multi-core.
+- **`Map<SsKey, Kind>` and `Map<SsKey, Attribute>` lifted once**
+  at `PhysicalSchema.toPhysicalForeignKeys` and
+  `RawTextEmitter.fkDef`. FK projection: O(K · R) catalog scans
+  → O(R) hash lookups (~450k linear ops → ~1500 hashed).
+
+Result: 500k-row warm canary 610s → 27s (22.6× speedup).
+
+**The discipline**: Big-O analysis at chapter close flags
+algorithmic violations against the codebase's own scale targets.
+Each finding ships independently, each ships with a measured
+delta.
+
+
+## 2026-05-30 — Session 36 / Five-agent DDD/Hexagonal/FP audit protocol
+
+Chapter-close audit dispatched five agents in parallel covering
+tightly orthogonal concerns:
+
+| Agent | Lens |
+|---|---|
+| 1 | Ubiquitous language & bounded contexts |
+| 2 | Hexagonal architecture (ports / adapters / dependency direction) |
+| 3 | DDD aggregates / entities / value objects / invariants |
+| 4 | FP composition primitives & algebraic structures |
+| 5 | V1↔V2 anti-corruption layer fidelity |
+
+Each agent classifies findings as **B&W** (objectively a leak;
+no design judgment needed) vs **SUBJ** (judgment call), and
+ranks **H/M/L** for refactor leverage.
+
+**Convergence map** — multi-axis confirmation as confidence
+signal — is the synthesis primary surface. Worked examples in
+the audit (preserved at `AUDIT_2026_05_DDD_HEXAGONAL_FP.md`):
+3-axis confirmation on TableId-lift, identity-vocabulary leak,
+SSDT-vocabulary collapse; 2-axis on type-correspondence ownership,
+declared-ports-unrealized.
+
+**Tier 1/2/3/4 backlog discipline** organizes findings by
+epistemic level + leverage. Tier 1 = B&W H (act without
+ceremony); Tier 2 = B&W M; Tier 3 = SUBJ H (decisions for
+operator); Tier 4 = SUBJ M.
+
+**Audits are routed, not piled.** ~30 findings; 10 acted on at
+session 36 (B&W ship-without-ceremony subset); ~20 routed to
+named sub-chapters (3.2 / 3.5 / 4.1 / 4.2) with explicit
+pre-scope alignment. The discipline: audit findings become named
+items in named chapters with named pre-scopes, not a TODO list.
+
+
+## 2026-05-30 — Session 36 / Coordinates bounded context — TableId lifted to Core
+
+`TableId = { Schema : string; Table : string }` lives in
+`Projection.Core/Coordinates.fs` with smart constructor
+(`TableId.create` rejects blanks) and a canonical
+`TableId.qualified` rendering (`"[schema].[table]"`).
+`PhysicalRealization` aliased to `TableId`; SSDT-local `TableId`
+in `Statement.fs` retired; `Bulk.copyRows` and
+`Render.tableQualified` delegate to `TableId.qualified`.
+
+**Stage 1 of Coordinates.** Stage 2 (typed `SchemaName` /
+`TableName` / `ColumnName` value objects) deferred — would
+require ripple updates at ~64 sites (`kind.Physical.Schema` /
+`.Table` / `a.Column.ColumnName` reads). Defer until a real
+consumer pays for the explicit `value` projections.
+
+The lift is multi-axis confirmed by chapter-3.1 audit
+(Agent 1 #1/#2, Agent 2 #19, Agent 3 #1/#2/#3) — strongest
+B&W finding in the audit.
+
+
+## 2026-05-30 — Session 36 / Aggregate smart constructors — Catalog.create / Module.create with referential-integrity invariants
+
+`Module.create : SsKey -> Name -> Kind list -> Result<Module>`
+enforces "Kind SsKeys disjoint within the module" (A11 cell
+invariant). `Catalog.create : Module list -> Result<Catalog>`
+enforces five invariants in one pass with errors aggregated:
+
+1. Module SsKeys disjoint (A11).
+2. Kind SsKeys disjoint across all modules.
+3. Every `Reference.SourceAttribute` exists on its owning Kind.
+4. Every `Reference.TargetKind` exists in the catalog.
+5. Every `Index.Columns` SsKey exists on its owning Kind.
+
+Existing record-literal construction continues to work
+(back-compat); `create` is the gated entry consumers flow
+through to make invariants structural.
+
+`RawTextEmitter.fkDef` / `PhysicalSchema.toPhysicalForeignKeys`
+previously each silently dropped on dangling references; the
+invariants now live with the type, not in the consumer.
+
+Companion: `ColumnProfile.create` enforces `0 ≤ NullCount ≤
+RowCount` (chapter-3.1 audit Agent 3 #20). `NullabilityRules`
+divides without precondition; `create` is the structural
+substitute.
+
+
+## 2026-05-30 — Session 36 / Topological-sort harmonization via SelfLoopPolicy
+
+`RawTextEmitter.emissionOrder` previously re-implemented Kahn's
+algorithm. `TopologicalOrderPass` already provided one. Divergent
+on a single axis: the pass treated self-loops as 1-node SCCs
+(cycle path); the emitter skipped them since SQL Server allows
+inline self-FK constraints in CREATE TABLE.
+
+Resolution: `SelfLoopPolicy = TreatAsCycle | SkipSelfEdges` DU
+in `TopologicalOrder.fs`; `TopologicalOrderPass.runWith :
+SelfLoopPolicy -> Catalog -> Lineage<TopologicalOrder>` produces
+both projections from one algorithm. `run` defaults to
+`TreatAsCycle` (existing pass semantics); `RawTextEmitter`
+consumes `runWith SkipSelfEdges` and uses the resulting `Order`
+field directly.
+
+**Harmonization-via-parameterization** as a meta-pattern:
+single-axis-divergent implementations earn one parameterized
+algorithm. Same algorithm; multiple projections; consumers
+choose. Worked example for chapters ahead.
+
+A33 (deterministic-ordered schema emission) is satisfied
+structurally — same algorithm, two projections.
+
+
+## 2026-05-30 — Session 36 / Writer-fidelity codification — LineageDiagnostics.tellDiagnostics is canonical
+
+Three pass drivers (`NullabilityPass:192`, `UniqueIndexPass:182`,
+`ForeignKeyPass:255`) hand-built `{ Value = { Value =
+lineage.Value; Entries = entries }; Trail = lineage.Trail }`
+records, bypassing `LineageDiagnostics.tellDiagnostics` /
+`ofLineage`. Session 36 adopted the writer's API at all three
+sites.
+
+Plus: `Lineage.ofValueAndEvents : LineageEvent list -> 'a ->
+Lineage<'a>` extracted as the canonical "value + trail in one
+shot" primitive. Replaces `Lineage.tellMany events
+(Lineage.ofValue x)` at 6 terminal-event passes. Two-consumer
+threshold for this shape was crossed at session 8 and never
+closed.
+
+**Manual writer-state construction is forbidden.** Pass
+drivers MUST use `LineageDiagnostics.tellDiagnostics` /
+`Lineage.ofValueAndEvents`. The dual-writer's algebraic surface
+is now activated for the first time across the actual passes
+that produce both decisions and diagnostics. Future pass
+drivers inherit the discipline.
+
+
+## 2026-05-30 — Session 36 / Adapter alias retired from Core
+
+`type Adapter<'source, 'inner> = 'source -> Task<Result<'inner>>`
+in `Projection.Core/Types.fs` opened `System.Threading.Tasks` in
+Core, contradicting the load-bearing F#-pure-core / no-Task-in-
+Core commitment. The alias had no consumers in Core code (only
+a Stage-0 reservation test in `TypesTests.fs` referenced it).
+
+Resolution: alias retired; `System.Threading.Tasks` import
+removed from `Types.fs`; the test reservation rewires to a
+bare task-shaped signature `string -> Task<Result<int>>`.
+Adapters at the boundary declare their task-shaped signatures
+inline.
+
+**Closed-DU expansion empirical-test discipline applies to
+ports too.** The fix isn't to add more port declarations — it's
+either to *realize* with a real consumer or to *retire* the
+declaration. Worked example: this alias retired with no
+consumer; the chapter-3.5 Π port realization will *realize*
+the `Emitter<'element>` declaration with three real consumers.
+
+
+## 2026-05-30 — Session 36 / Lazy Docker JIT bring-up at the test boundary
+
+`Deploy.Docker.ensureRunning : unit -> bool` probes
+responsiveness via `docker version` (active probe; 2s ceiling)
+and best-effort spawns `sudo dockerd` with poll-until-ready
+(named constants: `BringupBudgetMs = 30000`, `BringupPollMs =
+200`). Tests' `skipIfNoDocker` switched from `isAvailable`
+(static socket-file probe) to `ensureRunning` so a mid-session
+daemon drop no longer turns canary tests into spurious failures.
+
+The poll loop is *poll-until-ready*, not a fixed wait. Budget
+consumes only when the daemon genuinely failed to start.
+Constants justified by empirical bring-up time (1-3s typical;
+10× p99 = 30s ceiling).
+
+Production code Deploy.Docker module owns the bring-up.
+Test-side `skipIfNoDocker` consumes it. The session-start hook
+remains the primary bring-up path; `ensureRunning` is the
+mid-session safety net.
