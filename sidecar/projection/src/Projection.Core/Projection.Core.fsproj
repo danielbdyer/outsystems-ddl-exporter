@@ -23,6 +23,7 @@
     <Compile Include="Strategies/CategoricalUniquenessRules.fs" />
     <Compile Include="Lineage.fs" />
     <Compile Include="Diagnostics.fs" />
+    <Compile Include="Types.fs" />
     <Compile Include="Strategies/Composition.fs" />
     <Compile Include="Passes/CanonicalizeIdentity.fs" />
     <Compile Include="Passes/VisibilityMask.fs" />
