@@ -1,5 +1,14 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE: operator-facing performance instrumentation; the
+// `Bench` module's purpose is human-readable bench output and JSON
+// persistence for cross-session diff. `sprintf` for label suffixes
+// and table-render text is the discipline's allowed exception per
+// `DECISIONS 2026-05-09 — Built-in obligation` ("operator-facing
+// diagnostic surface; format strings fit"). The JSON path itself
+// goes through `Utf8JsonWriter`; this exemption is for the human
+// surface only.
+
 open System
 open System.Collections.Generic
 open System.Diagnostics

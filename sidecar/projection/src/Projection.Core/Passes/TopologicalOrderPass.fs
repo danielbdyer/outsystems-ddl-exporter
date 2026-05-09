@@ -1,5 +1,13 @@
 namespace Projection.Core.Passes
 
+// LINT-ALLOW-FILE: pass-driver lineage diagnostic prose. The pass
+// emits human-readable status strings (e.g., "topologicalOrder vN:
+// %d nodes, %d edges, %d missing") via `sprintf` for operator-
+// facing lineage entries. The structural pass output (`Order`,
+// `Cycles`) is fully typed; only the diagnostic-string surface
+// falls under the discipline's allowed exception per
+// `DECISIONS 2026-05-09 — Built-in obligation`.
+
 open Projection.Core
 
 /// The topological-order pass — produces a `TopologicalOrder` value

@@ -1,5 +1,18 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE: `renderDiff` produces operator-facing multi-line
+// diagnostic text (the canary's failure-message surface). `sprintf`
+// is the discipline's allowed exception per `DECISIONS 2026-05-09 —
+// Built-in obligation` for human-readable diagnostic interpolation.
+// The structural diff data (`PhysicalSchemaDiff` record) and its
+// hashing / comparison surfaces use built-in BCL primitives
+// (`SHA256.HashData`, `Set.difference`, `HashSet.ExceptWith`); only
+// the operator-facing render falls under the exemption. Future
+// chapter 3.7 ScriptDom adoption may replace the SQL-type
+// sub-renderers (length / precision / scale formatters) with typed
+// `DataTypeReference` AST emission; out of scope for the current
+// allowlist scope.
+
 /// A column's physical-schema coordinate — the structural-fidelity
 /// axis that survives the deploy → read round-trip. Used by the
 /// canary's round-trip property test (M3 onward) to compare two

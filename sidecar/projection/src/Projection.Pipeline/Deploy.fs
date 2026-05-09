@@ -195,8 +195,13 @@ module Deploy =
         /// Pipeline concern). Per-segment formatting goes through
         /// `String.Concat` rather than `sprintf`.
         let guidBased : DatabaseNameGenerator =
+            // The `guidBased` binding IS the sanctioned `Guid.NewGuid`
+            // site — the reified non-determinism boundary. Audit
+            // Lens-2 Tier-1 discharged: Guid.NewGuid is now type-
+            // visible through the seam, not hidden inside a private
+            // function.
             fun () ->
-                let suffix = Guid.NewGuid().ToString("N").Substring(0, 12)
+                let suffix = Guid.NewGuid().ToString("N").Substring(0, 12)  // LINT-ALLOW: reified non-determinism boundary
                 suffix
 
     let private uniqueDatabaseName

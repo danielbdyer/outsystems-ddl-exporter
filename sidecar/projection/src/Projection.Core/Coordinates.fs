@@ -62,6 +62,13 @@ module TableId =
 
     /// `[schema].[table]` — SQL Server qualified-identifier form.
     /// The single canonical rendering; emitters and adapters consume
-    /// this to avoid the `sprintf "[%s].[%s]"` recurring at 5+ sites.
+    /// this so the `[…]`/`.` bracketing doesn't recur at multiple
+    /// sites. Per the no-string-concatenation discipline (`DECISIONS
+    /// 2026-05-09`), composes via `String.Concat`'s 5-arg overload
+    /// over typed segments rather than `sprintf "[%s].[%s]"`. The
+    /// ScriptDom-adoption chapter (3.7 candidate) makes this surface
+    /// unnecessary by pushing identifier-bracketing into
+    /// `MultiPartIdentifier` typed AST; this helper retires when
+    /// ScriptDom lands.
     let qualified (t: TableId) : string =
-        sprintf "[%s].[%s]" t.Schema t.Table
+        System.String.Concat("[", t.Schema, "].[", t.Table, "]")

@@ -1,5 +1,17 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE: validation-error message construction in
+// `Module.create` / `Catalog.create` / `Reference.attach` smart
+// constructors uses `sprintf "...%A..."` to interpolate typed
+// `SsKey` values. The `%A` formatter is F#'s closed-DU structural
+// pretty-printer — the canonical "stringify a typed value" surface.
+// Per `DECISIONS 2026-05-09 — Built-in obligation`, this is the
+// allowed exception (no BCL alternative emits closed-DU
+// pretty-printed text). Audit-deferred Tier-2 #14 names typed
+// `Outcome.toDiagnosticString` per DU as the eventual home; the
+// same shape would absorb these. Until then, `sprintf "%A"` IS
+// the typed pretty-print.
+
 /// Presentation name for a catalog node. Names are policy-transformed (A15)
 /// and never participate in identity (A2). The DU prevents accidental
 /// confusion with `SsKey`.

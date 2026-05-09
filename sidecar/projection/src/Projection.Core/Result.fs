@@ -20,7 +20,9 @@ module ValidationError =
 
     let private requireNonBlank (paramName: string) (value: string) : unit =
         if System.String.IsNullOrWhiteSpace value then
-            invalidArg paramName (sprintf "%s must be provided." paramName)
+            invalidArg
+                paramName
+                (System.String.Concat(paramName, " must be provided."))
 
     /// Build a `ValidationError` with no metadata.
     let create (code: string) (message: string) : ValidationError =

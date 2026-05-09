@@ -77,6 +77,13 @@ module ColumnProfile =
     /// computes `NullCount / RowCount` without checking these
     /// invariants; constructing through `create` makes the
     /// strategy's preconditions structural.
+    /// Invariant-culture `int64` formatting. Per the no-string-
+    /// concatenation discipline, integer interpolation in diagnostic
+    /// messages goes through this helper rather than `sprintf "%d"`
+    /// to keep T1 byte-determinism culture-invariant.
+    let private intInv (i: int64) : string =
+        i.ToString System.Globalization.CultureInfo.InvariantCulture
+
     let create
         (attributeKey: SsKey)
         (rowCount: int64)
@@ -87,20 +94,22 @@ module ColumnProfile =
             Result.failureOf
                 (ValidationError.create
                     "columnProfile.rowCount.negative"
-                    (sprintf "RowCount must be ≥ 0; got %d." rowCount))
+                    (System.String.Concat("RowCount must be ≥ 0; got ", intInv rowCount, ".")))
         elif nullCount < 0L then
             Result.failureOf
                 (ValidationError.create
                     "columnProfile.nullCount.negative"
-                    (sprintf "NullCount must be ≥ 0; got %d." nullCount))
+                    (System.String.Concat("NullCount must be ≥ 0; got ", intInv nullCount, ".")))
         elif nullCount > rowCount then
             Result.failureOf
                 (ValidationError.create
                     "columnProfile.nullCount.exceedsRows"
-                    (sprintf
-                        "NullCount (%d) cannot exceed RowCount (%d)."
-                        nullCount
-                        rowCount))
+                    (System.String.Concat(
+                        "NullCount (",
+                        intInv nullCount,
+                        ") cannot exceed RowCount (",
+                        intInv rowCount,
+                        ").")))
         else
             Result.success
                 {

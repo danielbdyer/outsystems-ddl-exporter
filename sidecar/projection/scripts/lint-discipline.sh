@@ -96,6 +96,16 @@ is_comment_line() {
     [[ "$trimmed" == //* ]]
 }
 
+# Returns 0 (true) if the file carries a top-of-file
+# `// LINT-ALLOW-FILE: <rationale>` marker. Used for files whose
+# entire purpose is operator-facing rendering (Bench output,
+# PhysicalSchema diff prose, etc.) where format strings are the
+# discipline's allowed exception.
+file_has_allowlist_marker() {
+    local file="$1"
+    head -n 30 "$file" 2>/dev/null | grep -q 'LINT-ALLOW-FILE'
+}
+
 scan() {
     local rule="$1"
     local path="$2"
@@ -112,7 +122,12 @@ scan() {
         rest="${hit#*:}"
         line_part="${rest%%:*}"
         content="${rest#*:}"
-        # Allowlist via per-line marker.
+        # File-level allowlist via `// LINT-ALLOW-FILE` marker (top
+        # of file). Operator-facing rendering files exempt en masse.
+        if file_has_allowlist_marker "$file_part"; then
+            continue
+        fi
+        # Per-line allowlist via `// LINT-ALLOW` marker.
         if printf '%s' "$content" | grep -q 'LINT-ALLOW'; then
             continue
         fi

@@ -1,5 +1,15 @@
 namespace Projection.Core.Passes
 
+// LINT-ALLOW-FILE: pass-driver `%A` Outcome / KeepReason pretty-
+// print is the F# closed-DU stringification surface for typed
+// diagnostic strings. The audit (`Codebase determinism +
+// non-built-in audit`, 2026-05-09 Lens-1 Tier-4 / Lens-2 acceptance)
+// recommended typed `Outcome.toDiagnosticString` per DU as the
+// follow-on; until that lands, `%A` is the F#-native pretty-
+// printer (no typed alternative built into BCL or this codebase).
+// Tracked at `HANDOFF.md` deferred-but-might-fire as "typed
+// Outcome.toDiagnosticString".
+
 open Projection.Core
 
 /// The CategoricalUniquenessPass — V2's first **distribution-aware**
