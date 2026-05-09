@@ -75,6 +75,29 @@ module SsKey =
         else
             Result.success (Synthesized (source, basis))
 
+    /// Build a `Synthesized` SsKey from a synthesis convention and a
+    /// typed basis-component list. Joins via `String.concat "_"` —
+    /// the canonical separator the OSSYS adapter conventions use
+    /// (e.g., `"OS_KIND" + ["AppCore"; "User"]` → `Synthesized
+    /// ("OS_KIND", "AppCore_User")`). Per the no-string-concatenation
+    /// discipline (`DECISIONS 2026-05-09`), adapters compose typed
+    /// component lists rather than `sprintf "%s_%s"`. Pairs
+    /// structurally with the legacy `original` parser's prefix-match
+    /// over `knownSynthSources`: build via this constructor; parse
+    /// back via `original`. Each component must be non-blank;
+    /// rejects on first blank.
+    let synthesizedComposite
+        (source: string)
+        (basisParts: string list)
+        : Result<SsKey> =
+        if System.String.IsNullOrWhiteSpace source then
+            Result.failureOf synthSourceEmpty
+        elif basisParts |> List.exists System.String.IsNullOrWhiteSpace then
+            Result.failureOf synthBasisEmpty
+        else
+            let basis = basisParts |> String.concat "_"
+            Result.success (Synthesized (source, basis))
+
     /// Build a `DerivedFrom` SsKey from a parent identity and a
     /// documented reason. Rejects blank reasons with
     /// `ValidationError "sskey.derivedReason.empty"`. Used by passes
@@ -116,10 +139,17 @@ module SsKey =
         if System.String.IsNullOrWhiteSpace value then
             Result.failureOf legacyValueEmpty
         else
+            // Build the prefix sentinel for each known source via
+            // `String.Concat` rather than `+` (no-string-concat
+            // discipline). The sentinel `"<src>_"` is the structural
+            // marker the synthesizer wrote out via
+            // `synthesizedComposite`; matching it here is the parser
+            // half of the round-trip.
             let prefixMatch =
                 knownSynthSources
                 |> List.tryFind (fun src ->
-                    value.StartsWith(src + "_", System.StringComparison.Ordinal))
+                    let sentinel = System.String.Concat(src, "_")
+                    value.StartsWith(sentinel, System.StringComparison.Ordinal))
             match prefixMatch with
             | Some src ->
                 let basis = value.Substring(src.Length + 1)
@@ -152,7 +182,13 @@ module SsKey =
     let rec rootOriginal (key: SsKey) : string =
         match key with
         | OssysOriginal g -> g.ToString "N"
-        | Synthesized (source, basis) -> sprintf "%s_%s" source basis
+        | Synthesized (source, basis) ->
+            // Round-trip with the `original` parser at line ~119:
+            // `original` reads `<src>_<basis>` and recovers the
+            // pair; `rootOriginal` projects `Synthesized (src, basis)`
+            // back to the same surface form. Composes via
+            // `String.Concat` (no `sprintf`).
+            System.String.Concat(source, "_", basis)
         | DerivedFrom (parent, _) -> rootOriginal parent
         | V1Mapped (v1, _) -> v1.ToString "N"
 

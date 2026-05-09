@@ -97,16 +97,23 @@ module CatalogReader =
     // `OS_KIND`, etc.) explicitly; the basis is the dot-separated
     // identifier coordinate.
 
+    // Per the no-string-concatenation discipline (`DECISIONS
+    // 2026-05-09`), synthesis-basis composition flows through
+    // `SsKey.synthesizedComposite` over typed component lists rather
+    // than `sprintf "%s_%s"` / `sprintf "%s_%s_%s"`. The constructor
+    // joins via `String.concat "_"` and pairs structurally with the
+    // legacy `SsKey.original` parser's prefix-match.
+
     let private moduleSsKey (moduleName: string) : Result<SsKey> =
         SsKey.synthesized "OS_MOD" moduleName
 
     let private kindSsKey (moduleName: string) (entityName: string) : Result<SsKey> =
-        SsKey.synthesized "OS_KIND" (sprintf "%s_%s" moduleName entityName)
+        SsKey.synthesizedComposite "OS_KIND" [ moduleName; entityName ]
 
     let private attributeSsKey
         (moduleName: string) (entityName: string) (attrName: string)
         : Result<SsKey> =
-        SsKey.synthesized "OS_ATTR" (sprintf "%s_%s_%s" moduleName entityName attrName)
+        SsKey.synthesizedComposite "OS_ATTR" [ moduleName; entityName; attrName ]
 
     /// Reference SsKey synthesis (session 19). The reference identifies
     /// by its source coordinate — `<srcModule>_<srcEntity>_<viaAttr>`
@@ -115,7 +122,7 @@ module CatalogReader =
     let private referenceSsKey
         (sourceModuleName: string) (sourceEntityName: string) (viaAttrName: string)
         : Result<SsKey> =
-        SsKey.synthesized "OS_REF" (sprintf "%s_%s_%s" sourceModuleName sourceEntityName viaAttrName)
+        SsKey.synthesizedComposite "OS_REF" [ sourceModuleName; sourceEntityName; viaAttrName ]
 
     /// Index SsKey synthesis (session 22). Indexes identify by their
     /// V1 IndexName, scoped to the entity. V1's `IndexName` is unique
@@ -124,7 +131,7 @@ module CatalogReader =
     let private indexSsKey
         (moduleName: string) (entityName: string) (indexName: string)
         : Result<SsKey> =
-        SsKey.synthesized "OS_IDX" (sprintf "%s_%s_%s" moduleName entityName indexName)
+        SsKey.synthesizedComposite "OS_IDX" [ moduleName; entityName; indexName ]
 
     // -----------------------------------------------------------------------
     // JSON helpers — light wrappers over System.Text.Json.JsonElement.
