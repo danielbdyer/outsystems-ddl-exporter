@@ -96,6 +96,7 @@ module JsonEmitter =
         w.WriteEndObject()
 
     let private writeKind (w: Utf8JsonWriter) (k: Kind) : unit =
+        use _ = Bench.scope "emit.json.kind"
         w.WriteStartObject()
         w.WriteString("ssKey",  renderSsKey k.SsKey)
         w.WriteString("name",   Name.value k.Name)
@@ -104,21 +105,22 @@ module JsonEmitter =
         w.WritePropertyName("physical"); writePhysical w k.Physical
         w.WritePropertyName("attributes")
         w.WriteStartArray()
-        for a in k.Attributes do writeAttribute w a
+        k.Attributes |> Bench.iterDo "emit.json.attribute" (writeAttribute w)
         w.WriteEndArray()
         w.WritePropertyName("references")
         w.WriteStartArray()
-        for r in k.References do writeReference w r
+        k.References |> Bench.iterDo "emit.json.reference" (writeReference w)
         w.WriteEndArray()
         w.WriteEndObject()
 
     let private writeModule (w: Utf8JsonWriter) (m: Module) : unit =
+        use _ = Bench.scope "emit.json.module"
         w.WriteStartObject()
         w.WriteString("ssKey", renderSsKey m.SsKey)
         w.WriteString("name",  Name.value m.Name)
         w.WritePropertyName("kinds")
         w.WriteStartArray()
-        for k in m.Kinds do writeKind w k
+        m.Kinds |> Bench.iterDo "emit.json.moduleKind" (writeKind w)
         w.WriteEndArray()
         w.WriteEndObject()
 
@@ -146,7 +148,8 @@ module JsonEmitter =
             writer.WriteNumber("version", version)
             writer.WritePropertyName("modules")
             writer.WriteStartArray()
-            for m in catalog.Modules do writeModule writer m
+            catalog.Modules
+            |> Bench.iterDo "emit.json.catalogModule" (writeModule writer)
             writer.WriteEndArray()
             writer.WriteEndObject()
             writer.Flush()

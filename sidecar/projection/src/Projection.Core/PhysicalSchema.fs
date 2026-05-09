@@ -61,7 +61,7 @@ module PhysicalSchema =
 
     let private toPhysicalColumns (k: Kind) : PhysicalColumn list =
         k.Attributes
-        |> List.map (fun a ->
+        |> Bench.iterMap "physicalSchema.attribute" (fun a ->
             {
                 Schema = k.Physical.Schema
                 Table = k.Physical.Table
@@ -77,9 +77,10 @@ module PhysicalSchema =
     /// Origin, Modality, References, and Indexes are projected
     /// out by construction.
     let ofCatalog (c: Catalog) : PhysicalSchema =
+        use _ = Bench.scope "physicalSchema.ofCatalog"
         c.Modules
-        |> List.collect (fun m -> m.Kinds)
-        |> List.collect toPhysicalColumns
+        |> List.collect (fun m ->
+            m.Kinds |> Bench.iterMap "physicalSchema.kind" toPhysicalColumns |> List.concat)
         |> Set.ofList
 
     /// Diff two `PhysicalSchema` values. The first is the source

@@ -190,10 +190,11 @@ module ReadSide =
         (columnRows: list<string * string * string * string * bool>)
         (primaryKeySet: Set<string * string * string>)
         : Result<Kind> =
+        use _ = Bench.scope "readside.buildKind"
         // collect all attributes for this (schema, table)
         let attrResults =
             columnRows
-            |> List.map (fun (_, _, col, dt, nl) ->
+            |> Bench.iterMap "readside.buildAttribute" (fun (_, _, col, dt, nl) ->
                 buildAttribute schema table col dt nl primaryKeySet)
         let aggregated =
             attrResults
@@ -250,7 +251,7 @@ module ReadSide =
                 let kindResults =
                     columnRows
                     |> List.groupBy (fun (s, t, _, _, _) -> s, t)
-                    |> List.map (fun ((schema, table), rows) ->
+                    |> Bench.iterMap "readside.kindGroup" (fun ((schema, table), rows) ->
                         buildKind schema table rows primaryKeySet)
                 let kindsAggregated =
                     kindResults

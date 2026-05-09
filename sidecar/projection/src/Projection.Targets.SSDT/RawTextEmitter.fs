@@ -86,6 +86,7 @@ module RawTextEmitter =
         sb.AppendLine() |> ignore
 
     let private renderTable (sb: StringBuilder) (k: Kind) : unit =
+        use _ = Bench.scope "emit.rawText.kind"
         renderKindHeader sb k
         let qualified =
             sprintf "%s.%s" (quote k.Physical.Schema) (quote k.Physical.Table)
@@ -103,7 +104,7 @@ module RawTextEmitter =
         let hasPkConstraint = not (List.isEmpty pkColumns)
         let lastColumnIdx = k.Attributes.Length - 1
         k.Attributes
-        |> List.iteri (fun i a ->
+        |> Bench.iteriDo "emit.rawText.attribute" (fun i a ->
             let name = quote a.Column.ColumnName
             let typ = defaultSqlType a.Type
             let nullness = if a.Column.IsNullable then "NULL" else "NOT NULL"
@@ -128,7 +129,8 @@ module RawTextEmitter =
     /// pass removed it) we emit a comment noting the dangling reference
     /// rather than silently dropping the FK.
     let private renderReferences (sb: StringBuilder) (catalog: Catalog) (k: Kind) : unit =
-        for r in k.References do
+        k.References
+        |> Bench.iterDo "emit.rawText.reference" (fun r ->
             sb.AppendLine() |> ignore
             sb.Append("ALTER TABLE ")
                 .Append(quote k.Physical.Schema).Append('.').Append(quote k.Physical.Table)
@@ -160,14 +162,16 @@ module RawTextEmitter =
                   .Append("    ON DELETE ").Append(renderAction r.OnDelete).AppendLine(";")
                 |> ignore
             | None ->
-                sb.AppendLine("-- WARNING: target kind not present in catalog; FK omitted") |> ignore
+                sb.AppendLine("-- WARNING: target kind not present in catalog; FK omitted") |> ignore)
 
     let private renderStaticPopulations (sb: StringBuilder) (k: Kind) : unit =
-        for m in k.Modality do
+        k.Modality
+        |> Bench.iterDo "emit.rawText.modality" (fun m ->
             match m with
             | Static rows ->
                 sb.Append("-- Static populations: ").Append(rows.Length).AppendLine(" rows") |> ignore
-                for row in rows do
+                rows
+                |> Bench.iterDo "emit.rawText.staticRow" (fun row ->
                     sb.Append("--   ").Append(rootKey row.Identifier) |> ignore
                     let pairs =
                         row.Values
@@ -176,18 +180,20 @@ module RawTextEmitter =
                         |> String.concat ", "
                     if pairs <> "" then
                         sb.Append(" { ").Append(pairs).Append(" }") |> ignore
-                    sb.AppendLine() |> ignore
-            | _ -> ()
+                    sb.AppendLine() |> ignore)
+            | _ -> ())
 
     let private renderModule (sb: StringBuilder) (catalog: Catalog) (m: Module) : unit =
+        use _ = Bench.scope "emit.rawText.module"
         sb.AppendLine() |> ignore
         sb.Append("-- Module: ").Append(Name.value m.Name)
             .Append(" (").Append(rootKey m.SsKey).Append(')').AppendLine() |> ignore
-        for k in m.Kinds do
+        m.Kinds
+        |> Bench.iterDo "emit.rawText.moduleKind" (fun k ->
             sb.AppendLine() |> ignore
             renderTable sb k
             renderReferences sb catalog k
-            renderStaticPopulations sb k
+            renderStaticPopulations sb k)
 
     // -----------------------------------------------------------------------
     // Public surface.
@@ -202,6 +208,6 @@ module RawTextEmitter =
             .Append(version).AppendLine() |> ignore
         sb.AppendLine("-- Project = Π_SSDT ∘ E") |> ignore
         sb.AppendLine("-- (synthetic-milestone form: raw text, dependency-free)") |> ignore
-        for m in catalog.Modules do
-            renderModule sb catalog m
+        catalog.Modules
+        |> Bench.iterDo "emit.rawText.catalogModule" (renderModule sb catalog)
         sb.ToString()

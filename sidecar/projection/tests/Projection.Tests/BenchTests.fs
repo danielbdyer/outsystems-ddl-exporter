@@ -123,6 +123,42 @@ let ``Bench: persistJson writes a JSON file at the given path with the tag and s
             Directory.Delete(tempDir, recursive = true)
 
 [<Fact>]
+let ``Bench: iterDo records one sample per element`` () =
+    Bench.reset ()
+    [ 5; 5; 5 ] |> Bench.iterDo "test.iterDo" (fun ms -> Thread.Sleep ms)
+    let stats = Bench.snapshot ()
+    let entry = stats |> List.find (fun s -> s.Label = "test.iterDo")
+    Assert.Equal(3, entry.Count)
+    // Total ≈ 15ms (3 iterations × 5ms); allow slack for jitter.
+    Assert.True(
+        entry.TotalMs >= 12L,
+        sprintf "expected total >= 12 (3 × 5ms with slack); got %d" entry.TotalMs)
+
+[<Fact>]
+let ``Bench: iteriDo forwards index and records one sample per element`` () =
+    Bench.reset ()
+    let received = ResizeArray<int * string>()
+    [ "a"; "b"; "c" ]
+    |> Bench.iteriDo "test.iteriDo" (fun i x -> received.Add(i, x))
+    let stats = Bench.snapshot ()
+    let entry = stats |> List.find (fun s -> s.Label = "test.iteriDo")
+    Assert.Equal(3, entry.Count)
+    Assert.Equal<(int * string) list>(
+        [ 0, "a"; 1, "b"; 2, "c" ],
+        List.ofSeq received)
+
+[<Fact>]
+let ``Bench: iterMap projects values and records one sample per element`` () =
+    Bench.reset ()
+    let result =
+        [ 1; 2; 3; 4 ]
+        |> Bench.iterMap "test.iterMap" (fun x -> x * 10)
+    Assert.Equal<int list>([ 10; 20; 30; 40 ], result)
+    let stats = Bench.snapshot ()
+    let entry = stats |> List.find (fun s -> s.Label = "test.iterMap")
+    Assert.Equal(4, entry.Count)
+
+[<Fact>]
 let ``Bench: defaultPath produces a sortable timestamped path under bench/<tag>/`` () =
     let path = Bench.defaultPath "/tmp/example" "wide-canary-enterprise"
     Assert.Contains("bench", path)

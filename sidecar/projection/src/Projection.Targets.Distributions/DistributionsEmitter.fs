@@ -130,6 +130,7 @@ module DistributionsEmitter =
         (profile: Profile)
         (k: Kind)
         : unit =
+        use _ = Bench.scope "emit.distributions.kind"
         w.WriteStartObject()
         w.WriteString("ssKey", renderSsKey k.SsKey)
         w.WriteString("name", Name.value k.Name)
@@ -140,8 +141,9 @@ module DistributionsEmitter =
         // Sort attributes by SsKey for deterministic output regardless
         // of catalog input order — the same discipline that
         // TopologicalOrderPass and the strategy passes apply.
-        for a in k.Attributes |> List.sortBy (fun a -> a.SsKey) do
-            writeAttribute w profile a
+        k.Attributes
+        |> List.sortBy (fun a -> a.SsKey)
+        |> Bench.iterDo "emit.distributions.attribute" (writeAttribute w profile)
         w.WriteEndArray()
         w.WriteEndObject()
 
@@ -150,13 +152,15 @@ module DistributionsEmitter =
         (profile: Profile)
         (m: Module)
         : unit =
+        use _ = Bench.scope "emit.distributions.module"
         w.WriteStartObject()
         w.WriteString("ssKey", renderSsKey m.SsKey)
         w.WriteString("name", Name.value m.Name)
         w.WritePropertyName("kinds")
         w.WriteStartArray()
-        for k in m.Kinds |> List.sortBy (fun k -> k.SsKey) do
-            writeKind w profile k
+        m.Kinds
+        |> List.sortBy (fun k -> k.SsKey)
+        |> Bench.iterDo "emit.distributions.moduleKind" (writeKind w profile)
         w.WriteEndArray()
         w.WriteEndObject()
 
@@ -212,8 +216,9 @@ module DistributionsEmitter =
             w.WriteNumber("version", version)
             w.WritePropertyName("modules")
             w.WriteStartArray()
-            for m in catalog.Modules |> List.sortBy (fun m -> m.SsKey) do
-                writeModule w profile m
+            catalog.Modules
+            |> List.sortBy (fun m -> m.SsKey)
+            |> Bench.iterDo "emit.distributions.catalogModule" (writeModule w profile)
             w.WriteEndArray()
             w.WriteEndObject()
             w.Flush()

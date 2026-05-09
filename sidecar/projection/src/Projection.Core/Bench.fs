@@ -98,6 +98,55 @@ module Bench =
                 sw.Stop()
                 record label sw.ElapsedMilliseconds }
 
+    // -----------------------------------------------------------------
+    // Iterator combinators — record one sample *per element* so per-
+    // iteration distribution surfaces in stats. Per session-30 operator
+    // framing: "stats that roll up with iterations of cycles of events
+    // (anything done in a loop) tracked at intervals with statistical
+    // analysis."
+    //
+    // Semantically equivalent to the explicit `for x in xs do`
+    // form-with-`use` decoration, written in point-free shape so callers
+    // can apply via `|>` and forget about the timing surface.
+    //
+    // After decoration, snapshots show per-iteration distribution:
+    //
+    //     | emit.rawText.kind                |   300 |  450 |   1 | 1.5  |   1 |   3 |  12 |  18 |
+    //     | emit.rawText.attribute           |  9000 |  720 |   0 | 0.08 |   0 |   1 |   2 |   8 |
+    //
+    // Count = #iterations, Mean = per-iteration mean (ms), P95/P99
+    // surface slow-tail iterations. The fast-path overhead is one
+    // Stopwatch + one dictionary entry per iteration (~µs); negligible
+    // at V2's scale (300-table catalog ≈ 10K iterations across all
+    // emitter loops).
+    // -----------------------------------------------------------------
+
+    /// Time each iteration of a side-effecting body. Use as:
+    ///
+    ///     catalog.Modules
+    ///     |> Bench.iterDo "emit.rawText.module" (renderModule sb catalog)
+    let iterDo (label: string) (f: 'a -> unit) (xs: seq<'a>) : unit =
+        for x in xs do
+            use _ = scope label
+            f x
+
+    /// Indexed iter — forwards the iteration index to the body.
+    /// Useful for loops whose body branches on first / last element
+    /// (e.g., comma-separator logic inside `renderTable`).
+    let iteriDo (label: string) (f: int -> 'a -> unit) (xs: 'a list) : unit =
+        xs
+        |> List.iteri (fun i x ->
+            use _ = scope label
+            f i x)
+
+    /// Time each iteration of a transformation. Stats per element;
+    /// returns the projected list. Drop-in replacement for `List.map`.
+    let iterMap (label: string) (f: 'a -> 'b) (xs: 'a list) : 'b list =
+        xs
+        |> List.map (fun x ->
+            use _ = scope label
+            f x)
+
     let private percentile (sorted: int64 array) (p: float) : int64 =
         if sorted.Length = 0 then
             0L
