@@ -13,6 +13,7 @@
     <Compile Include="Statement.fs" />
     <Compile Include="Render.fs" />
     <Compile Include="RawTextEmitter.fs" />
+    <Compile Include="RefactorLogEmitter.fs" />
   </ItemGroup>
 
   <ItemGroup>

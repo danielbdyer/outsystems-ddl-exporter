@@ -2,6 +2,7 @@ module Projection.Tests.UuidV5Tests
 
 open System
 open Xunit
+open FsCheck
 open FsCheck.Xunit
 open Projection.Core
 
@@ -76,23 +77,29 @@ let ``UuidV5: variant high nibble is 8 9 a or b`` () =
 // Determinism — same inputs produce same Guid.
 // ---------------------------------------------------------------------------
 
+// FsCheck's runtime generators can produce null `string` even though
+// F# 9's `Nullable=enable` declares `string` non-nullable; FsCheck
+// doesn't see the F# type-system signal. `NonNull<string>` filters
+// to the type's non-null inhabitants, matching the F#/Core contract
+// (Core treats null at boundaries; UuidV5 only sees non-null inputs).
+
 [<Property(MaxTest = 50)>]
-let ``UuidV5 is deterministic across repeat invocations`` (name: string) =
-    let s = if isNull name then "" else name
+let ``UuidV5 is deterministic across repeat invocations`` (name: NonNull<string>) =
+    let s = name.Get
     let a = UuidV5.create dnsNamespace s
     let b = UuidV5.create dnsNamespace s
     a = b
 
 [<Property(MaxTest = 50)>]
-let ``UuidV5 is namespace-sensitive`` (name: string) =
-    let s = if isNull name then "" else name
+let ``UuidV5 is namespace-sensitive`` (name: NonNull<string>) =
+    let s = name.Get
     let viaDns = UuidV5.create dnsNamespace s
     let viaUrl = UuidV5.create urlNamespace s
     viaDns <> viaUrl
 
 [<Property(MaxTest = 50)>]
-let ``UuidV5 is name-sensitive`` (a: string) (b: string) =
-    let sa = if isNull a then "" else a
-    let sb = if isNull b then "" else b
+let ``UuidV5 is name-sensitive`` (a: NonNull<string>) (b: NonNull<string>) =
+    let sa = a.Get
+    let sb = b.Get
     if sa = sb then true
     else UuidV5.create dnsNamespace sa <> UuidV5.create dnsNamespace sb
