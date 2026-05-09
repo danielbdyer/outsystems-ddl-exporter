@@ -54,6 +54,8 @@
     <Compile Include="DiagnosticsEndToEndTests.fs" />
     <Compile Include="EndToEndPipelineTests.fs" />
     <Compile Include="CanaryDeployTests.fs" />
+    <Compile Include="Fixtures/SourceSchema.fs" />
+    <Compile Include="CanaryRoundTripTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -7043,3 +7043,195 @@ chapters whose closure conditions (a)-(d) require. **Together
 the three governance entries (R6, sequencing, gates) plus the
 Stage 0 commitment and the CLAUDE.md reading-order update
 operationalize the cutover-quarter trajectory.**
+
+## 2026-05-23 — Source SQL Server with OutSystems semantics is the canary's primary wide integration surface
+
+**Status:** decided (canary integration-surface frame; per session 28
+operator framing alongside the M2→M3 milestone push)
+**Context:** M2 shipped the deploy half of the canary loop (V2's
+emitted SSDT → ephemeral SQL Server → table count). M3 lands the
+read-side adapter that closes the loop (deployed schema → V2 IR
+reconstruction). The question of *what fixture* the canary's
+round-trip property runs against is structurally load-bearing —
+the canary only catches what the fixtures stretch.
+
+The current minimal fixture (`v1MinimalFixture` in
+`OsmCatalogReaderDifferentialTests.fs` and
+`EndToEndPipelineTests.fs`) is one module, one entity, two
+attributes, no FKs, no indexes, no static data. It is the smallest
+fixture that exercises the OSSYS adapter's translation rules and
+is appropriate for unit-test-style assertions on parser output.
+But it does **not** exercise:
+
+  - Multi-table relationships (FK chains; cycle resolution)
+  - The full PrimitiveType matrix (Identifier, Decimal, Boolean,
+    DateTime, Date, Time, Binary, Guid)
+  - Multi-tenant patterns (TENANT_ID columns; TenantScoped modality)
+  - Audit columns (CREATEDBY/CREATEDON/UPDATEDBY/UPDATEDON; user FK
+    reflow per chapter 4.2)
+  - Static-entity populations
+  - External-entity origins (OssysOriginal SsKey wiring)
+  - Index variety (PK-as-clustered vs heap; non-unique with INCLUDE)
+  - SS_KEY column variety (the `OssysOriginal` four-variant from
+    slice 5.5 only matters when fixtures carry the GUID column)
+  - Cross-module references
+  - The 300-table scale that VISION.md's forcing function names
+
+The forcing function (per `VISION.md`) is a **300-table OutSystems
+11 system facing an External Entities cutover**. If the canary's
+fixture is a one-table toy, the canary will pass while V2 silently
+ships catalog-corrupting bugs on real operator data. The fixture
+shape determines what the canary catches.
+
+**Decision:** The canary's primary wide integration surface is a
+**SQL Server fixture with OutSystems semantics**, deployed to an
+ephemeral container (per M2's testcontainers infrastructure), grown
+iteratively over time to cover OutSystems' full schema-shape
+vocabulary. Per session-28 operator framing:
+
+  > "Set up a source SQL server environment that tries its best to
+  > mirror the semantics of what the OutSystems SQL must therefore
+  > look like."
+  > — operator, session 28
+
+The source SQL Server is **not** the OSSYS metadata DB; it is the
+**operator's application database** — the OSUSR_*-shaped tables an
+OutSystems platform creates for entities. The conventions to
+mirror:
+
+  - **Table naming.** `OSUSR_<MODULE-CODE>_<ENTITY-NAME>` with
+    upper-case (e.g., `OSUSR_M3_CUSTOMER`). Module code is the
+    short identifier; entity name is the entity's physical name.
+  - **Identity columns.** `[ID] INT NOT NULL IDENTITY(1,1) PRIMARY
+    KEY` for auto-number entities. Identifier-typed columns
+    elsewhere are typed `INT`.
+  - **Multi-tenant marker.** `[TENANT_ID] INT NOT NULL` on
+    multi-tenant entities; OutSystems platform-side discriminator.
+  - **Audit columns.** `[CREATEDBY] INT NULL` (FK to User entity),
+    `[CREATEDON] DATETIME2 NOT NULL`, `[UPDATEDBY] INT NULL`,
+    `[UPDATEDON] DATETIME2 NOT NULL`. Wired through every entity
+    that participates in the cutover's user-FK-reflow story
+    (chapter 4.2).
+  - **Stable-key column.** `[SS_KEY] UNIQUEIDENTIFIER NOT NULL` —
+    OutSystems' GUID-based identity primitive that the
+    `OssysOriginal` SsKey variant (slice 5.5) carries verbatim.
+    Source for the `SnapshotRowsets` adapter variant when chapter
+    3.2 ships.
+  - **NVARCHAR length.** OutSystems' Text type maps to
+    `NVARCHAR(N)` with operator-supplied length (50 / 100 / 250 /
+    500 / 1000 / 2000 / 4000 / MAX). Not always MAX.
+  - **Decimal precision.** `DECIMAL(P, S)` with operator-supplied
+    precision and scale. Common: `DECIMAL(18, 4)`, `DECIMAL(38, 8)`,
+    `DECIMAL(8, 2)` for currency.
+  - **Boolean as BIT.** No `TINYINT` substitution.
+  - **Foreign-key style.** Named constraints
+    (`FK_OSUSR_M3_CUSTOMER_USERID_OSUSR_M3_USER`); ON DELETE
+    NO ACTION by default; some `ON DELETE CASCADE` for owned-aggregate
+    relationships.
+  - **Index style.** Clustered PK; non-unique secondary indexes
+    with `INCLUDE` columns for covering common query patterns;
+    occasional unique non-PK indexes for natural-key uniqueness.
+
+**Reasoning / consequences.**
+
+The integration-surface frame has three load-bearing properties:
+
+1. **The canary's round-trip property is meaningful only at
+   representative scale.** A property test that asserts "every
+   table the source has appears in the target with the same
+   columns" catches bugs only across the table/column shapes the
+   source actually has. If the source is one table, the property
+   passes for any single-table emitter. If the source has 30
+   tables with realistic FK chains, identity columns, multi-tenant
+   markers, audit columns, and varied data types, the same
+   property is structurally rich and surfaces real
+   defect-classes (missing audit columns, wrong nullability on
+   FK-target IDs, type-mapping inconsistencies on Decimal
+   precision, ...).
+
+2. **Iterative growth is the model.** The source DDL fixture
+   starts small (M3: 2-3 tables exercising the FK-target +
+   audit-column shape). It grows iteratively as new defects
+   surface or new shapes need coverage. The DECISIONS entry that
+   would land here at chapter 3.4 close ("canary fixture corpus
+   reaches stability mark") tracks the growth trajectory; the
+   stability mark is when adding new shapes stops surfacing new
+   classes of defect (typically N=3 of consecutive shape additions
+   that produce zero new failures). Per the codification-stability-
+   mark discipline (`DECISIONS 2026-05-14 — Writer codification
+   reaches its stability mark`), the canary's fixture corpus
+   follows the same N=3 protocol.
+
+3. **The source fixture is itself the contract for what V2 must
+   support.** Tracing the OutSystems platform's actual schema
+   conventions means the fixture is *not* synthetic — it is a
+   minimum-viable-OutSystems schema that V2 has to handle without
+   compromise. New conventions surface as new fixture shapes; the
+   adapter / emitter / pass surface evolves to support each new
+   shape under the canary's blocking semantic. This is the
+   trace-before-fixture discipline (`DECISIONS 2026-05-19`)
+   extended to schema-shape coverage: trace OutSystems' actual
+   conventions; classify the gap; resolve.
+
+**Operational shape.**
+
+  - Source DDL fixture lives at
+    `tests/Projection.Tests/Fixtures/SourceSchema.fs` (initially
+    embedded F# string; promoted to `.sql` resource files when
+    the corpus exceeds ~500 LOC of DDL).
+  - The canary's wide integration test (`CanaryRoundTripTests.fs`)
+    deploys the source DDL to an ephemeral SQL Server, reads it
+    back via the read-side adapter (M3), runs V2's emitter on the
+    reconstructed Catalog, deploys to a *second* ephemeral
+    container, reads back, and asserts source ≈ target modulo
+    named tolerances.
+  - The Tolerance taxonomy (Stage 0 S0.E; M4) names which
+    divergences are absorbed as known emitter-IR limitations
+    (e.g., `IgnoreColumnLength` while NVARCHAR length isn't in
+    the IR; `IgnoreIdentityProperty` while IDENTITY isn't in the
+    IR). Every tolerance flag earns a DECISIONS entry citing the
+    source-fixture shape that motivated it and the IR refinement
+    or emitter improvement that would resolve it.
+  - As the fixture corpus grows, V2's IR grows with it (per
+    `DECISIONS 2026-05-07 — IR grows under evidence`). Each new
+    fixture shape that surfaces an IR gap earns either an IR
+    refinement (with corresponding adapter/emitter work) or a
+    tolerance flag (with the deferred-IR-work logged as an Active
+    deferral).
+
+**This entry establishes the canary's wide integration surface
+as load-bearing for V2's verifiable-cutover guarantee.** It is
+sibling to the R6 split-brain governance rule (`DECISIONS
+2026-05-22 — R6`): R6 names the per-pair flip discipline at the
+PR-pipeline scale; this entry names the property-test surface at
+the canary scale. Together they are how V2 earns its
+verifiable-cutover guarantee — R6 says "the canary's verdict
+blocks the PR"; this entry says "the canary's verdict is
+meaningful because the source covers operator reality."
+
+**Reading order for fixture additions.** Future agents adding
+fixture shapes follow the trace-before-fixture pattern:
+
+  1. Identify the OutSystems shape needing coverage (e.g., a new
+     PrimitiveType, a new modality, a new index variety).
+  2. Trace what the OutSystems platform actually emits to disk
+     (V1's `SnapshotJsonBuilder` at
+     `src/Osm.Pipeline/SqlExtraction/SnapshotJsonBuilder.cs`
+     names the conventions; SQL Server documentation for the
+     specific column type / index style fills the rest).
+  3. Add the shape to `SourceSchema.fs` as a new table or column
+     in an existing table.
+  4. Run the canary's round-trip test; observe the defect that
+     surfaces.
+  5. Either improve V2's IR/adapter/emitter to handle the shape,
+     OR add a tolerance flag (S0.E) with a DECISIONS entry citing
+     the source-fixture shape and the deferred resolution.
+  6. Retire the tolerance when the IR/emitter improvement lands.
+
+The forcing function: V2 ships when the source fixture covers the
+operator's actual 300-table schema, all defects are either
+resolved or named as deferred tolerances, and the canary's
+round-trip is green on full-scale fixtures. That is when V2
+earns the V2-driver row of the cutover fallback ladder per
+`DECISIONS 2026-05-22 — T-30 / T-15 cutover fallback ladder gates`.
+

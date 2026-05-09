@@ -90,20 +90,36 @@ module RawTextEmitter =
         let qualified =
             sprintf "%s.%s" (quote k.Physical.Schema) (quote k.Physical.Table)
         sb.Append("CREATE TABLE ").Append(qualified).AppendLine(" (") |> ignore
-        // Trailing inline comment makes commas tricky; emit each line as
-        // "<column-decl><sep>  -- <name> (<sskey>)[ PK]" with sep being
-        // "," for all but the last line.
-        let lastIdx = k.Attributes.Length - 1
+        // PK constraint emission (M3 prep): if any attributes carry
+        // IsPrimaryKey, append a trailing CONSTRAINT clause so the
+        // deployed table actually carries a PRIMARY KEY (rather than
+        // just the inline `-- PK` comment marker). The canary's
+        // round-trip property requires this fidelity to compare
+        // PhysicalSchema.IsPrimaryKey across source and target.
+        let pkColumns =
+            k.Attributes
+            |> List.filter (fun a -> a.IsPrimaryKey)
+            |> List.map (fun a -> a.Column.ColumnName)
+        let hasPkConstraint = not (List.isEmpty pkColumns)
+        let lastColumnIdx = k.Attributes.Length - 1
         k.Attributes
         |> List.iteri (fun i a ->
             let name = quote a.Column.ColumnName
             let typ = defaultSqlType a.Type
             let nullness = if a.Column.IsNullable then "NULL" else "NOT NULL"
-            let sep = if i < lastIdx then "," else ""
+            let needsComma = i < lastColumnIdx || hasPkConstraint
+            let sep = if needsComma then "," else ""
             let pkTag = if a.IsPrimaryKey then " PK" else ""
             sb.Append("    ").Append(name).Append(' ').Append(typ).Append(' ').Append(nullness)
                 .Append(sep).Append("  -- ").Append(Name.value a.Name).Append(" (").Append(rootKey a.SsKey).Append(')')
                 .Append(pkTag).AppendLine() |> ignore)
+        if hasPkConstraint then
+            let pkColumnList = pkColumns |> List.map quote |> String.concat ", "
+            let pkConstraintName =
+                sprintf "PK_%s_%s" k.Physical.Schema k.Physical.Table
+            sb.Append("    CONSTRAINT ").Append(quote pkConstraintName)
+                .Append(" PRIMARY KEY (").Append(pkColumnList).AppendLine(")")
+            |> ignore
         sb.AppendLine(");") |> ignore
 
     /// Render the FK constraints from a kind's references. The target
