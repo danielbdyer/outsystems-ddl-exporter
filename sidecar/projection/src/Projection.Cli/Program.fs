@@ -88,9 +88,9 @@ let private dumpBench (tag: string) : unit =
         printfn ""
         printfn "Bench (sorted by total time):"
         printfn "%s" (Bench.renderTable stats)
-        let path = Bench.defaultPath (Directory.GetCurrentDirectory()) tag
+        let path = BenchSink.defaultPath (Directory.GetCurrentDirectory()) tag
         try
-            Bench.persistJson path tag stats
+            BenchSink.persistJson path tag stats
             printfn ""
             printfn "  bench snapshot: %s" path
         with ex ->

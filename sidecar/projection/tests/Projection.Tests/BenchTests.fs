@@ -5,6 +5,7 @@ open System.IO
 open System.Threading
 open Xunit
 open Projection.Core
+open Projection.Pipeline
 
 /// Smoke tests for `Projection.Core.Bench`. Per session-29 framing,
 /// the canary's flywheel rests on Bench surfacing time use across
@@ -104,7 +105,10 @@ let ``Bench: renderTable signals empty snapshot rather than producing a header-o
     Assert.Contains("no samples", table)
 
 [<Fact>]
-let ``Bench: persistJson writes a JSON file at the given path with the tag and stats`` () =
+let ``BenchSink: persistJson writes a JSON file at the given path with the tag and stats`` () =
+    // Chapter-3.6 audit Tier-1 #1 cash-out: file-write boundary
+    // lives at `Projection.Pipeline.BenchSink.persistJson`; the
+    // typed `Bench.Run` envelope stays in Core (pure value).
     Bench.reset ()
     do resetThenScope "test.persist" 15
     let stats = Bench.snapshot ()
@@ -112,7 +116,7 @@ let ``Bench: persistJson writes a JSON file at the given path with the tag and s
         Path.Combine(Path.GetTempPath(), sprintf "bench-tests-%s" (Guid.NewGuid().ToString "N"))
     let path = Path.Combine(tempDir, "snapshot.json")
     try
-        Bench.persistJson path "smoke-tag" stats
+        BenchSink.persistJson path "smoke-tag" stats
         Assert.True(File.Exists path)
         let content = File.ReadAllText path
         Assert.Contains("smoke-tag", content)
@@ -159,8 +163,8 @@ let ``Bench: iterMap projects values and records one sample per element`` () =
     Assert.Equal(4, entry.Count)
 
 [<Fact>]
-let ``Bench: defaultPath produces a sortable timestamped path under bench/<tag>/`` () =
-    let path = Bench.defaultPath "/tmp/example" "wide-canary-enterprise"
+let ``BenchSink: defaultPath produces a sortable timestamped path under bench/<tag>/`` () =
+    let path = BenchSink.defaultPath "/tmp/example" "wide-canary-enterprise"
     Assert.Contains("bench", path)
     Assert.Contains("wide-canary-enterprise", path)
     Assert.EndsWith(".json", path)
