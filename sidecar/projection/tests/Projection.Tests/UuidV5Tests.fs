@@ -79,27 +79,27 @@ let ``UuidV5: variant high nibble is 8 9 a or b`` () =
 
 // FsCheck's runtime generators can produce null `string` even though
 // F# 9's `Nullable=enable` declares `string` non-nullable; FsCheck
-// doesn't see the F# type-system signal. `NonNull<string>` filters
+// doesn't see the F# type-system signal. `NonNull<string | null>` filters
 // to the type's non-null inhabitants, matching the F#/Core contract
 // (Core treats null at boundaries; UuidV5 only sees non-null inputs).
 
 [<Property(MaxTest = 50)>]
-let ``UuidV5 is deterministic across repeat invocations`` (name: NonNull<string>) =
-    let s = name.Get
+let ``UuidV5 is deterministic across repeat invocations`` (name: NonNull<string | null>) =
+    let s : string = nonNull name.Get
     let a = UuidV5.create dnsNamespace s
     let b = UuidV5.create dnsNamespace s
     a = b
 
 [<Property(MaxTest = 50)>]
-let ``UuidV5 is namespace-sensitive`` (name: NonNull<string>) =
-    let s = name.Get
+let ``UuidV5 is namespace-sensitive`` (name: NonNull<string | null>) =
+    let s : string = nonNull name.Get
     let viaDns = UuidV5.create dnsNamespace s
     let viaUrl = UuidV5.create urlNamespace s
     viaDns <> viaUrl
 
 [<Property(MaxTest = 50)>]
-let ``UuidV5 is name-sensitive`` (a: NonNull<string>) (b: NonNull<string>) =
-    let sa = a.Get
-    let sb = b.Get
+let ``UuidV5 is name-sensitive`` (a: NonNull<string | null>) (b: NonNull<string | null>) =
+    let sa : string = nonNull a.Get
+    let sb : string = nonNull b.Get
     if sa = sb then true
     else UuidV5.create dnsNamespace sa <> UuidV5.create dnsNamespace sb

@@ -3,6 +3,17 @@
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
+    <!--
+      Strictness for test code mirrors production: warnings are
+      errors. Per the user's "strictness for maximum validity /
+      verifiability is a virtue" principle (chapter 3.5 slice υ
+      sidebar), tests carry the same nullness + warnings-as-errors
+      discipline as production fsprojs. Tests use the F# 9
+      `nonNull` helper to coerce BCL nullable returns (`XElement
+      .Attribute`, `XDocument.Root`, `out string` from ScriptDom,
+      etc.) where the test invariant guarantees non-null.
+    -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <GenerateProgramFile>true</GenerateProgramFile>

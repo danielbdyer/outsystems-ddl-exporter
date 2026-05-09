@@ -7,6 +7,23 @@ open Projection.Core
 open Projection.Targets.SSDT
 open Projection.Tests.Fixtures
 
+// `System.Xml.Linq` returns nullable references throughout
+// (`XDocument.Root`, `XElement.Attribute`, `XName.op_Implicit`).
+// F# 9 with `Nullable=enable` + `TreatWarningsAsErrors=true` requires
+// every nullable return to be coerced before use. Per the user's
+// "strictness for maximum validity / verifiability is a virtue"
+// principle, these helpers fail loudly if the test invariant
+// (well-formed XML with the expected structure) is violated.
+
+let private root (doc: XDocument) : XElement = nonNull doc.Root
+
+let private xname (s: string) : XName = nonNull (XName.op_Implicit s)
+
+let private attr (name: string) (el: XElement) : XAttribute =
+    nonNull (el.Attribute(xname name))
+
+let private xnamespace (uri: string) : XNamespace = nonNull (XNamespace.op_Implicit uri)
+
 type private FsResult<'a, 'b> = Microsoft.FSharp.Core.Result<'a, 'b>
 
 let private mustOk (r: FsResult<'a, 'b>) : 'a =
@@ -64,7 +81,8 @@ let ``T1: RefactorLogRender.toRefactorLogXml is byte-identical across repeat inv
 // substring search per the no-string-concatenation discipline.
 // ---------------------------------------------------------------------------
 
-let private operationsNamespace = XNamespace.op_Implicit "http://schemas.microsoft.com/sqlserver/dac/Serialization/2012/02"
+let private operationsNamespace =
+    xnamespace "http://schemas.microsoft.com/sqlserver/dac/Serialization/2012/02"
 
 let private parseDoc (xml: string) : XDocument =
     XDocument.Parse(xml, LoadOptions.PreserveWhitespace)
@@ -72,19 +90,17 @@ let private parseDoc (xml: string) : XDocument =
 [<Fact>]
 let ``RefactorLogRender: root element is Operations with the SSDT namespace and Version="1.0"`` () =
     let doc = renderOnce () |> parseDoc
-    let root = doc.Root
-    Assert.NotNull(root)
-    Assert.Equal("Operations", root.Name.LocalName)
-    Assert.Equal(operationsNamespace.NamespaceName, root.Name.NamespaceName)
-    let versionAttr = root.Attribute(XName.op_Implicit "Version")
-    Assert.NotNull(versionAttr)
+    let r = root doc
+    Assert.Equal("Operations", r.Name.LocalName)
+    Assert.Equal(operationsNamespace.NamespaceName, r.Name.NamespaceName)
+    let versionAttr = attr "Version" r
     Assert.Equal("1.0", versionAttr.Value)
 
 [<Fact>]
 let ``RefactorLogRender: one-rename diff produces exactly one Operation element`` () =
     let doc = renderOnce () |> parseDoc
     let operations =
-        doc.Root.Elements(operationsNamespace + "Operation")
+        (root doc).Elements(operationsNamespace + "Operation")
         |> Seq.toList
     Assert.Equal(1, List.length operations)
 
@@ -92,11 +108,9 @@ let ``RefactorLogRender: one-rename diff produces exactly one Operation element`
 let ``RefactorLogRender: rename Operation carries Name="Rename Refactor" and pinned ChangeDateTime`` () =
     let doc = renderOnce () |> parseDoc
     let op =
-        doc.Root.Elements(operationsNamespace + "Operation") |> Seq.head
-    let nameAttr = op.Attribute(XName.op_Implicit "Name")
-    let changeAttr = op.Attribute(XName.op_Implicit "ChangeDateTime")
-    Assert.Equal("Rename Refactor", nameAttr.Value)
-    Assert.Equal("2000-01-01T00:00:00Z", changeAttr.Value)
+        (root doc).Elements(operationsNamespace + "Operation") |> Seq.head
+    Assert.Equal("Rename Refactor", (attr "Name" op).Value)
+    Assert.Equal("2000-01-01T00:00:00Z", (attr "ChangeDateTime" op).Value)
 
 [<Fact>]
 let ``RefactorLogRender: rename Operation Key matches UuidV5-derived OperationKey`` () =
@@ -113,20 +127,17 @@ let ``RefactorLogRender: rename Operation Key matches UuidV5-derived OperationKe
     let xml = RefactorLogRender.toRefactorLogXml artifact
     let doc = parseDoc xml
     let op =
-        doc.Root.Elements(operationsNamespace + "Operation") |> Seq.head
-    let keyAttr = op.Attribute(XName.op_Implicit "Key")
-    Assert.Equal(entry.OperationKey.ToString("D"), keyAttr.Value)
+        (root doc).Elements(operationsNamespace + "Operation") |> Seq.head
+    Assert.Equal(entry.OperationKey.ToString("D"), (attr "Key" op).Value)
 
 [<Fact>]
 let ``RefactorLogRender: rename Operation has five Property children with the expected (Name, Value) pairs`` () =
     let doc = renderOnce () |> parseDoc
     let op =
-        doc.Root.Elements(operationsNamespace + "Operation") |> Seq.head
+        (root doc).Elements(operationsNamespace + "Operation") |> Seq.head
     let properties =
         op.Elements(operationsNamespace + "Property")
-        |> Seq.map (fun p ->
-            p.Attribute(XName.op_Implicit "Name").Value,
-            p.Attribute(XName.op_Implicit "Value").Value)
+        |> Seq.map (fun p -> (attr "Name" p).Value, (attr "Value" p).Value)
         |> Seq.toList
     let expected =
         [
@@ -150,7 +161,7 @@ let ``RefactorLogRender: identity diff produces an Operations element with no Op
     let xml = RefactorLogRender.toRefactorLogXml artifact
     let doc = parseDoc xml
     let operations =
-        doc.Root.Elements(operationsNamespace + "Operation")
+        (root doc).Elements(operationsNamespace + "Operation")
         |> Seq.toList
     Assert.Empty(operations)
 

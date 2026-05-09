@@ -122,7 +122,7 @@ let ``frequencies render in alphabetical-by-value order`` () =
                     let freqs = a.GetProperty("distribution").GetProperty("frequencies")
                     let values =
                         [ for f in freqs.EnumerateArray() ->
-                            f.GetProperty("value").GetString() ]
+                            nonNull (f.GetProperty("value").GetString()) ]
                     Assert.Equal<string list>([ "CA"; "MX"; "US" ], values)
 
 // ---------------------------------------------------------------------------

@@ -35,12 +35,13 @@ open Projection.Tests.Fixtures
 let private parseSql (sql: string) : TSqlFragment * ParseError list =
     let parser = TSql160Parser(initialQuotedIdentifiers = true)
     use reader = new StringReader(sql)
-    let mutable errors : System.Collections.Generic.IList<ParseError> = null
+    let mutable errors : System.Collections.Generic.IList<ParseError> | null = null
     let fragment = parser.Parse(reader, &errors)
     let errorList =
-        if isNull errors then []
-        else [ for e in errors -> e ]
-    fragment, errorList
+        match errors with
+        | null -> []
+        | es -> [ for e in es -> e ]
+    nonNull fragment, errorList
 
 // ---------------------------------------------------------------------------
 // CreateTable — typed AST emission round-trip.
