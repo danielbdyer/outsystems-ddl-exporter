@@ -708,30 +708,85 @@ The CDC-safety property (revision 1's `idempotentRedeploy`) becomes
 is the cutover-blocking property; the chapter closes when the
 composition is structurally enforced and tested.
 
-## T11 amended (structural type encoding) — TBD chapter 3 cross-cutting close
+## T11 amended (structural type encoding) — chapter 3.5 slices α–δ (2026-05-09)
 
-**Scheduled at chapter-3 cross-cutting close** (the `ArtifactByKind`
-+ `SsKey` four-variant + `CatalogDiff` foundation refactor; per
-`CHAPTER_3_PRESCOPE_ARTIFACTBYKIND_REFACTOR.md` and Stage 0 item
-S0.B).
+**Cashed at chapter 3.5 Π port realization slice arc** (slices α
+[`RawTextEmitter.emitSlices`], β [`JsonEmitter.emitSlices`], γ
+[`DistributionsEmitter.emitSlices`], δ [substring-discipline
+retirement; type-theorem worked examples at
+`tests/Projection.Tests/T11TypeTheoremTests.fs`]).
 
-[Body to be written at the cross-cutting close.]
+**Statement.** The original T11 (sibling-Π commutativity; "every
+Π's output should mention every catalog kind by SsKey root") was
+a *substring* property — `Assert.Contains(SsKey.rootOriginal
+k.SsKey, output)` across emitted text — in `JsonEmitterTests.fs`
+and `RichProfilingEndToEndTests.fs`. The amendment encodes T11
+**structurally**:
 
-**Anticipated content.** The original T11 (sibling-Π commutativity;
-"every Π's output should mention every catalog kind by SsKey root")
-is a property test today — substring-search across emitted text
-enforces the law at the test layer. The cross-cutting refactor
-encodes T11 **structurally**: `ArtifactByKind<'element>` is an
-SsKey-keyed Map whose smart constructor enforces "every SsKey in
-the source Catalog appears as a key." The emitter signature
-`Emitter<'element> = Catalog -> Result<ArtifactByKind<'element>,
-EmitError>` carries the law in its type — T11 stops being substring
-discipline and becomes type discipline. The amendment names the
-shift: T11 is a **type theorem**, not a property test.
+```fsharp
+type ArtifactByKind<'element> = private ArtifactByKind of Map<SsKey, 'element>
 
-The retirement of substring T11 enforcement tests (S0.B slice 6;
-per `STAGING.md`) is the operational consequence; the amendment is
-the codification of *why* the retirement is correct.
+module ArtifactByKind =
+    let create
+        (catalog: Catalog)
+        (slices: Map<SsKey, 'a>)
+        : Result<ArtifactByKind<'a>, EmitError> = ...
+    // Smart constructor enforces strict equality between the
+    // slice's keyset and `Catalog.allKinds`'s SsKey set.
+    // Missing key → `KindNotProduced`; extra key → `UnexpectedKind`.
+
+type Emitter<'element> =
+    Catalog -> Result<ArtifactByKind<'element>, EmitError>
+```
+
+T11 holds **by construction**: any two `ArtifactByKind` values
+built from the same Catalog have equal keysets, because the smart
+constructor refuses to build either with a divergent keyset. Two
+sibling Π's running on the same enriched Catalog produce
+`ArtifactByKind` values with `Set.equal (keys a) (keys b)`,
+regardless of per-element type. The substring discipline retires
+because the type proves what the substring tested.
+
+**Operational consequences.**
+
+- `RawTextEmitter.emitSlices : Emitter<Statement list>` produces
+  per-kind statement slices keyed by SsKey.
+- `JsonEmitter.emitSlices : Emitter<string>` produces per-kind
+  JSON-text slices keyed by SsKey (the per-element type is
+  `string` for first slice; `JsonObject` ladders up under
+  consumer pressure per the chapter-open §8 two-consumer
+  threshold).
+- `DistributionsEmitter.emitSlices : EmitterWithProfile<string>`
+  is the first realization of `EmitterWithProfile<'element>`
+  (`Types.fs:55`); the same `ArtifactByKind` smart constructor
+  enforces T11 on the Profile-consuming variant.
+- Legacy `emit` realizations route through the typed seam — the
+  `ArtifactByKind` smart constructor is the canonical path; an
+  `Error` from it is a structural invariant breach surfaced as
+  `invalidOp` at the realization site (unreachable when fed
+  `Catalog.allKinds`'s own keys).
+- Substring T11 enforcement at `JsonEmitterTests.fs:96-105` and
+  `RichProfilingEndToEndTests.fs:280-289` retires; the
+  type-theorem worked examples at `T11TypeTheoremTests.fs`
+  replace them. The surviving `T4` and `T11: physical
+  realization` tests test rendering invariants, not kind
+  coverage — they stay.
+
+**Verification surface.** `T11TypeTheoremTests.fs` carries four
+worked examples — three per-emitter `emitSlices key-set equals
+Catalog.allKinds` tests + one cross-emitter sibling-commutativity
+test (`RawText`, `Json`, `Distributions` keysets pairwise equal).
+`ArtifactByKindTests.fs` carries the rejection-direction (smart
+constructor refuses missing / extra keys with the named
+`KindNotProduced` / `UnexpectedKind` error variants). Together
+these close the T11 verification surface.
+
+**Companion amendment scheduled.** `T11 amended again (diff-typed
+inputs)` extends the type theorem to `EmitterOverDiff<'element> =
+CatalogDiff -> Result<ArtifactByKind<'element>, EmitError>` when
+chapter 3.5's substantive deliverable (`RefactorLogEmitter` over
+`CatalogDiff`) lands. Same discipline; the keyset is bound to
+the diff's SsKey set rather than the source Catalog's.
 
 ## T11 amended again (diff-typed inputs) — TBD chapter 3.5 close
 

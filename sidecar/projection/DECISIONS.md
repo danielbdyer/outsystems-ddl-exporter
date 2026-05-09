@@ -7728,3 +7728,115 @@ Production code Deploy.Docker module owns the bring-up.
 Test-side `skipIfNoDocker` consumes it. The session-start hook
 remains the primary bring-up path; `ensureRunning` is the
 mid-session safety net.
+
+
+## 2026-05-09 — Chapter 3.5 open / strategic frame for the Π port realization runway
+
+Chapter 3.5 opens. Per `DECISIONS 2026-05-15 — Strategic frame
+for the OSSYS implementation chapter`, multi-session chapters
+earn a chapter-open document at chapter open; chapter 3.5
+inherits the discipline. The chapter-open document at
+`CHAPTER_3_5_OPEN.md` names eight strategic-frame axes:
+(1) hexagonal port realization vs declaration; (2) DDD T11 as
+type theorem; (3) FP composition over the port; (4) streaming /
+A35 at the per-kind boundary; (5) Big-O O(N log N) per-key
+composition; (6) `Emitter<'element>` as canonical primitive;
+(7) ACL unaffected (V2-internal architectural realization);
+(8) two-consumer threshold for richer per-element types.
+
+The chapter's substantive deliverable is `RefactorLogEmitter`
+over `CatalogDiff` (per `CHAPTER_3_PRESCOPE_REFACTORLOG_AND_CATALOG_DIFF.md`).
+The chapter-3.5 pre-scope §1 named the pre-condition: the typed
+`Emitter<'element>` port realized for the existing three sibling
+Π's *before* the diff-typed fourth sibling lands. Otherwise
+`RefactorLogEmitter` ships into a port whose shape was only
+declared, never inhabited; the asymmetry the chapter is meant
+to eliminate (T11 prose vs T11 type) survives the chapter that
+was supposed to retire it.
+
+Chapter 3.5 therefore opens with the Π port realization as its
+first slice arc — chapter-3.1 audit Tier-1 #7's deferred item
+becomes chapter 3.5's runway.
+
+
+## 2026-05-09 — Chapter 3.5 slices α / β / γ / δ — Π port realization shipped
+
+Three sibling Π's converge on the typed `Emitter<'element>`
+port shape. The realization arc:
+
+- **Slice α — `RawTextEmitter.emitSlices : Emitter<Statement
+  list>`**. Per-kind value is `Statement list` per A35 (Π's
+  canonical output is a typed deterministic statement stream).
+  The legacy `statements` and `emit` realizations route through
+  the typed seam; the `composeFromArtifact` private weaver
+  reconstitutes the whole-catalog stream by adding preamble +
+  module-header transitions + per-kind slices in topological
+  order via `TopologicalOrderPass.runWith SkipSelfEdges`.
+
+- **Slice β — `JsonEmitter.emitSlices : Emitter<string>`**.
+  Per-kind value is the kind's JSON object as compact UTF-8
+  text (`writeKind` rendered through a depth-0 `Utf8JsonWriter`
+  with `Indented = false`). Composer in `emit` re-parses each
+  per-kind fragment via `JsonNode.Parse` and writes through the
+  indented document writer so depth-tracking matches the
+  surrounding catalog document. Property insertion order is
+  preserved by `JsonObject` so the round trip is
+  byte-deterministic.
+
+- **Slice γ — `DistributionsEmitter.emitSlices :
+  EmitterWithProfile<string>`**. First realization of
+  `EmitterWithProfile<'element>` (`Types.fs:55`); same
+  compact-then-indent compositional pattern as JsonEmitter.
+  The diff-typed sibling `EmitterOverDiff` realizes when
+  chapter 3.5's substantive deliverable (`RefactorLogEmitter`)
+  lands on the runway after this slice arc.
+
+- **Slice δ — T11 type-theorem worked examples; substring
+  discipline retired**. New `T11TypeTheoremTests.fs` carries
+  three per-emitter `emitSlices key-set equals Catalog.allKinds`
+  tests + one cross-emitter sibling-commutativity test.
+  Substring enforcement at `JsonEmitterTests.fs:96-105` and
+  `RichProfilingEndToEndTests.fs:280-289` retired with
+  pointer-comments naming the structural successor. Surviving
+  T11 tests at `JsonEmitterTests.fs` (physical realization) and
+  T4 tests stay — they test rendering invariants, not kind
+  coverage.
+
+**T11 amended (cashed, 2026-05-09).** AXIOMS.md amendment
+filled — T11 stops being substring discipline and becomes a
+type theorem. The smart constructor on `ArtifactByKind` is the
+load-bearing surface; any two `ArtifactByKind` values built
+from the same Catalog have equal keysets by construction.
+
+**Two-consumer threshold honored on per-element types.**
+Per-kind values stay simple (`Statement list`, `string`,
+`string`) for first slice; richer types (`JsonObject` for Json,
+typed `DistributionSlice` for Distributions, `seq<Statement>`
+for the bulk-aware realization in chapter 4.1) earn their place
+under second-consumer pressure (DacpacEmitter, drift detection,
+data triumvirate).
+
+**Big-O.** `ArtifactByKind` is `Map<SsKey, _>` — O(log N)
+lookup; smart-constructor's set-difference is O(N log N) where
+N = catalog kinds. Per-key composition through
+`composeFromArtifact` walks the topological order O(N) times
+with O(log N) Map lookups → O(N log N). Same shape as legacy
+implementation; structurally right for chapter-4.4 drift
+detection where `Map<SsKey, DriftKind>` replaces today's
+byte-string-diff (Appendix H §H.8).
+
+**Test count at slice δ close**: 707 fast-suite + 8 T11-specific
++ 4 canary round-trip = 719 tests green at byte-identity.
+
+**Chapter-3.1 audit Tier-1 #7 closed**: declared `Emitter
+<'element>` port realized at three concrete consumers; closed-
+DU expansion empirical-test discipline applies to ports too —
+the audit's prescription was either *realize* or *retire*; this
+slice arc realized.
+
+**Forward signal.** Chapter 3.5's substantive deliverable
+(`CatalogDiff.between` + `RefactorLogEmitter` +
+`Render.toRefactorLogXml`) opens after this slice arc lands.
+Inherits the realized seam; T11 trivializes for the diff-typed
+sibling via the `EmitterOverDiff<'element>` shape already
+declared at `Types.fs:62-63`.
