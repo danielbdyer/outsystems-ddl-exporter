@@ -1,127 +1,116 @@
 {
-  "CapturedAtUtc": "2026-05-09T22:02:24.4777514Z",
+  "CapturedAtUtc": "2026-05-09T22:36:59.5794528Z",
   "Tag": "canary",
   "Stats": [
     {
       "Label": "deploy.runWideCanary",
       "Count": 1,
-      "TotalMs": 1665,
-      "MinMs": 1665,
-      "MaxMs": 1665,
-      "MeanMs": 1665,
-      "P50Ms": 1665,
-      "P95Ms": 1665,
-      "P99Ms": 1665
+      "TotalMs": 1663,
+      "MinMs": 1663,
+      "MaxMs": 1663,
+      "MeanMs": 1663,
+      "P50Ms": 1663,
+      "P95Ms": 1663,
+      "P99Ms": 1663
     },
     {
       "Label": "deploy.useContainer",
       "Count": 1,
-      "TotalMs": 1661,
-      "MinMs": 1661,
-      "MaxMs": 1661,
-      "MeanMs": 1661,
-      "P50Ms": 1661,
-      "P95Ms": 1661,
-      "P99Ms": 1661
+      "TotalMs": 1660,
+      "MinMs": 1660,
+      "MaxMs": 1660,
+      "MeanMs": 1660,
+      "P50Ms": 1660,
+      "P95Ms": 1660,
+      "P99Ms": 1660
     },
     {
       "Label": "deploy.useContainer.warm",
       "Count": 1,
-      "TotalMs": 1632,
-      "MinMs": 1632,
-      "MaxMs": 1632,
-      "MeanMs": 1632,
-      "P50Ms": 1632,
-      "P95Ms": 1632,
-      "P99Ms": 1632
-    },
-    {
-      "Label": "readside.read",
-      "Count": 2,
-      "TotalMs": 781,
-      "MinMs": 344,
-      "MaxMs": 437,
-      "MeanMs": 390.5,
-      "P50Ms": 344,
-      "P95Ms": 437,
-      "P99Ms": 437
+      "TotalMs": 1630,
+      "MinMs": 1630,
+      "MaxMs": 1630,
+      "MeanMs": 1630,
+      "P50Ms": 1630,
+      "P95Ms": 1630,
+      "P99Ms": 1630
     },
     {
       "Label": "deploy.createDatabase",
       "Count": 2,
-      "TotalMs": 728,
-      "MinMs": 241,
-      "MaxMs": 487,
-      "MeanMs": 364,
-      "P50Ms": 241,
-      "P95Ms": 487,
-      "P99Ms": 487
-    },
-    {
-      "Label": "deploy.runWideCanary.sourcePhase",
-      "Count": 1,
-      "TotalMs": 490,
-      "MinMs": 490,
+      "TotalMs": 735,
+      "MinMs": 245,
       "MaxMs": 490,
-      "MeanMs": 490,
-      "P50Ms": 490,
+      "MeanMs": 367.5,
+      "P50Ms": 245,
       "P95Ms": 490,
       "P99Ms": 490
     },
     {
-      "Label": "readside.readPrimaryKeys",
+      "Label": "readside.read",
       "Count": 2,
-      "TotalMs": 278,
-      "MinMs": 130,
-      "MaxMs": 148,
-      "MeanMs": 139,
-      "P50Ms": 130,
-      "P95Ms": 148,
-      "P99Ms": 148
+      "TotalMs": 688,
+      "MinMs": 301,
+      "MaxMs": 387,
+      "MeanMs": 344,
+      "P50Ms": 301,
+      "P95Ms": 387,
+      "P99Ms": 387
+    },
+    {
+      "Label": "readside.readSchemaCombined",
+      "Count": 2,
+      "TotalMs": 652,
+      "MinMs": 298,
+      "MaxMs": 354,
+      "MeanMs": 326,
+      "P50Ms": 298,
+      "P95Ms": 354,
+      "P99Ms": 354
+    },
+    {
+      "Label": "deploy.runWideCanary.sourcePhase",
+      "Count": 1,
+      "TotalMs": 493,
+      "MinMs": 493,
+      "MaxMs": 493,
+      "MeanMs": 493,
+      "P50Ms": 493,
+      "P95Ms": 493,
+      "P99Ms": 493
     },
     {
       "Label": "deploy.runWideCanary.targetPhase",
       "Count": 1,
-      "TotalMs": 242,
-      "MinMs": 242,
-      "MaxMs": 242,
-      "MeanMs": 242,
-      "P50Ms": 242,
-      "P95Ms": 242,
-      "P99Ms": 242
+      "TotalMs": 246,
+      "MinMs": 246,
+      "MaxMs": 246,
+      "MeanMs": 246,
+      "P50Ms": 246,
+      "P95Ms": 246,
+      "P99Ms": 246
     },
     {
-      "Label": "readside.readColumnRows",
+      "Label": "deploy.executeBatch",
       "Count": 2,
-      "TotalMs": 210,
-      "MinMs": 98,
-      "MaxMs": 112,
-      "MeanMs": 105,
-      "P50Ms": 98,
-      "P95Ms": 112,
-      "P99Ms": 112
+      "TotalMs": 110,
+      "MinMs": 11,
+      "MaxMs": 99,
+      "MeanMs": 55,
+      "P50Ms": 11,
+      "P95Ms": 99,
+      "P99Ms": 99
     },
     {
-      "Label": "readside.readForeignKeys",
+      "Label": "batchSplitter.scriptDom",
       "Count": 2,
-      "TotalMs": 175,
-      "MinMs": 75,
-      "MaxMs": 100,
-      "MeanMs": 87.5,
-      "P50Ms": 75,
-      "P95Ms": 100,
-      "P99Ms": 100
-    },
-    {
-      "Label": "readside.readIdentityColumns",
-      "Count": 2,
-      "TotalMs": 74,
-      "MinMs": 36,
-      "MaxMs": 38,
-      "MeanMs": 37,
-      "P50Ms": 36,
-      "P95Ms": 38,
-      "P99Ms": 38
+      "TotalMs": 82,
+      "MinMs": 1,
+      "MaxMs": 81,
+      "MeanMs": 41,
+      "P50Ms": 1,
+      "P95Ms": 81,
+      "P99Ms": 81
     },
     {
       "Label": "deploy.executeStream",
@@ -135,73 +124,62 @@
       "P99Ms": 52
     },
     {
-      "Label": "deploy.executeStream.input",
-      "Count": 1,
-      "TotalMs": 39,
-      "MinMs": 39,
-      "MaxMs": 39,
-      "MeanMs": 39,
-      "P50Ms": 39,
-      "P95Ms": 39,
-      "P99Ms": 39
-    },
-    {
       "Label": "emit.rawText.statements",
       "Count": 1,
-      "TotalMs": 38,
-      "MinMs": 38,
-      "MaxMs": 38,
-      "MeanMs": 38,
-      "P50Ms": 38,
-      "P95Ms": 38,
-      "P99Ms": 38
+      "TotalMs": 37,
+      "MinMs": 37,
+      "MaxMs": 37,
+      "MeanMs": 37,
+      "P50Ms": 37,
+      "P95Ms": 37,
+      "P99Ms": 37
     },
     {
-      "Label": "deploy.executeBatch",
-      "Count": 2,
-      "TotalMs": 23,
-      "MinMs": 9,
-      "MaxMs": 14,
-      "MeanMs": 11.5,
-      "P50Ms": 9,
-      "P95Ms": 14,
-      "P99Ms": 14
+      "Label": "deploy.executeStream.input",
+      "Count": 1,
+      "TotalMs": 37,
+      "MinMs": 37,
+      "MaxMs": 37,
+      "MeanMs": 37,
+      "P50Ms": 37,
+      "P95Ms": 37,
+      "P99Ms": 37
     },
     {
       "Label": "deploy.executeBatch.segment",
       "Count": 2,
-      "TotalMs": 20,
+      "TotalMs": 24,
       "MinMs": 9,
-      "MaxMs": 11,
-      "MeanMs": 10,
+      "MaxMs": 15,
+      "MeanMs": 12,
       "P50Ms": 9,
-      "P95Ms": 11,
-      "P99Ms": 11
+      "P95Ms": 15,
+      "P99Ms": 15
     },
     {
       "Label": "emit.rawText.emitSlices",
       "Count": 1,
-      "TotalMs": 16,
-      "MinMs": 16,
-      "MaxMs": 16,
-      "MeanMs": 16,
-      "P50Ms": 16,
-      "P95Ms": 16,
-      "P99Ms": 16
-    },
-    {
-      "Label": "readside.kindGroup",
-      "Count": 4,
-      "TotalMs": 14,
-      "MinMs": 0,
-      "MaxMs": 14,
-      "MeanMs": 3.5,
-      "P50Ms": 0,
-      "P95Ms": 14,
-      "P99Ms": 14
+      "TotalMs": 15,
+      "MinMs": 15,
+      "MaxMs": 15,
+      "MeanMs": 15,
+      "P50Ms": 15,
+      "P95Ms": 15,
+      "P99Ms": 15
     },
     {
       "Label": "readside.buildKind",
+      "Count": 4,
+      "TotalMs": 13,
+      "MinMs": 0,
+      "MaxMs": 13,
+      "MeanMs": 3.25,
+      "P50Ms": 0,
+      "P95Ms": 13,
+      "P99Ms": 13
+    },
+    {
+      "Label": "readside.kindGroup",
       "Count": 4,
       "TotalMs": 13,
       "MinMs": 0,
@@ -223,17 +201,6 @@
       "P99Ms": 11
     },
     {
-      "Label": "deploy.runWideCanary.diff",
-      "Count": 1,
-      "TotalMs": 10,
-      "MinMs": 10,
-      "MaxMs": 10,
-      "MeanMs": 10,
-      "P50Ms": 10,
-      "P95Ms": 10,
-      "P99Ms": 10
-    },
-    {
       "Label": "readside.buildAttribute",
       "Count": 36,
       "TotalMs": 9,
@@ -242,6 +209,17 @@
       "MeanMs": 0.25,
       "P50Ms": 0,
       "P95Ms": 0,
+      "P99Ms": 9
+    },
+    {
+      "Label": "deploy.runWideCanary.diff",
+      "Count": 1,
+      "TotalMs": 9,
+      "MinMs": 9,
+      "MaxMs": 9,
+      "MeanMs": 9,
+      "P50Ms": 9,
+      "P95Ms": 9,
       "P99Ms": 9
     },
     {
@@ -258,13 +236,13 @@
     {
       "Label": "emit.rawText.kind",
       "Count": 2,
-      "TotalMs": 5,
+      "TotalMs": 6,
       "MinMs": 0,
-      "MaxMs": 5,
-      "MeanMs": 2.5,
+      "MaxMs": 6,
+      "MeanMs": 3,
       "P50Ms": 0,
-      "P95Ms": 5,
-      "P99Ms": 5
+      "P95Ms": 6,
+      "P99Ms": 6
     },
     {
       "Label": "physicalSchema.ofCatalog",
@@ -302,13 +280,13 @@
     {
       "Label": "readside.attachReferences",
       "Count": 4,
-      "TotalMs": 1,
+      "TotalMs": 0,
       "MinMs": 0,
-      "MaxMs": 1,
-      "MeanMs": 0.25,
+      "MaxMs": 0,
+      "MeanMs": 0,
       "P50Ms": 0,
-      "P95Ms": 1,
-      "P99Ms": 1
+      "P95Ms": 0,
+      "P99Ms": 0
     },
     {
       "Label": "deploy.runWideCanary.emit",
