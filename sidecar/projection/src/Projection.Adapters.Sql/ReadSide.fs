@@ -397,11 +397,108 @@ module ReadSide =
                 let bytes = v :?> byte[]
                 System.Convert.ToHexString bytes
 
-    /// Read all rows of a table for round-trip comparison. Returns
-    /// `None` if the table's row count exceeds `maxRows` (skip
-    /// large tables to keep the canary's wall time bounded —
-    /// transactional tables typically have many rows; static
-    /// lookup tables have few).
+    /// Stream a table's rows as an `AsyncStream<StaticRow>` — pull-
+    /// based, bench-instrumented, no row materialization. Per
+    /// session-34, the streaming readside is the canonical row
+    /// source; `readRows` is a buffered wrapper retained for the
+    /// existing per-row PhysicalSchema axis where small-table
+    /// granularity is wanted.
+    ///
+    /// The reader's lifetime tracks the stream: the underlying
+    /// `SqlCommand` and `SqlDataReader` open on first pull and
+    /// dispose on EOF or exception. Callers must drain to `None`
+    /// (or accept that abandoned streams clean up at GC).
+    let readRowsStream (cnn: SqlConnection) (kind: Kind) : AsyncStream<StaticRow> =
+        let columns =
+            kind.Attributes
+            |> List.map (fun a -> sprintf "[%s]" a.Column.ColumnName)
+            |> String.concat ", "
+        let pkCol =
+            kind.Attributes
+            |> List.tryFind (fun a -> a.IsPrimaryKey)
+            |> Option.map (fun a -> a.Column.ColumnName)
+            |> Option.defaultValue (
+                kind.Attributes |> List.head |> fun a -> a.Column.ColumnName)
+        let cmdText =
+            sprintf
+                "SELECT %s FROM [%s].[%s] ORDER BY [%s]"
+                columns
+                kind.Physical.Schema
+                kind.Physical.Table
+                pkCol
+        let mutable cmdOpt : SqlCommand option = None
+        let mutable readerOpt : SqlDataReader option = None
+        let mutable rowIdx = 0
+        let mutable disposed = false
+        let dispose () =
+            if not disposed then
+                disposed <- true
+                match readerOpt with
+                | Some r -> r.Dispose()
+                | None -> ()
+                match cmdOpt with
+                | Some c -> c.Dispose()
+                | None -> ()
+                readerOpt <- None
+                cmdOpt <- None
+        let openReader () =
+            task {
+                use _ = Bench.scope "readside.readRowsStream.open"
+                let cmd = cnn.CreateCommand()
+                cmd.CommandText <- cmdText
+                cmd.CommandTimeout <- 0
+                cmdOpt <- Some cmd
+                let! reader = cmd.ExecuteReaderAsync()
+                readerOpt <- Some reader
+            }
+        let pull () : Task<StaticRow option> =
+            task {
+                if disposed then return None
+                else
+                    try
+                        if Option.isNone readerOpt then do! openReader ()
+                        let r = Option.get readerOpt
+                        let! more = r.ReadAsync()
+                        if not more then
+                            dispose ()
+                            return None
+                        else
+                            let values =
+                                kind.Attributes
+                                |> List.mapi (fun i a ->
+                                    let raw : obj | null =
+                                        if r.IsDBNull i then null
+                                        else r.GetValue i
+                                    a.Name, formatRawValue a.Type raw)
+                                |> Map.ofList
+                            let basis =
+                                sprintf
+                                    "%s.%s.%d"
+                                    kind.Physical.Schema
+                                    kind.Physical.Table
+                                    rowIdx
+                            rowIdx <- rowIdx + 1
+                            match SsKey.synthesized "READSIDE_ROW" basis with
+                            | Success rowKey ->
+                                return Some { Identifier = rowKey; Values = values }
+                            | Failure _ ->
+                                // SsKey.synthesized only fails on blank input;
+                                // basis is non-blank by construction.
+                                dispose ()
+                                return None
+                    with ex ->
+                        dispose ()
+                        return raise ex
+            }
+        pull
+        |> AsyncStream.probe (sprintf "readside.readRowsStream.%s.%s" kind.Physical.Schema kind.Physical.Table)
+        |> AsyncStream.probe "readside.readRowsStream.all"
+
+    /// Buffered wrapper: probe COUNT(*), and if ≤ `maxRows`, drain
+    /// `readRowsStream` into a list. Above threshold, return `None`
+    /// without opening the row reader. Per session-34, this is the
+    /// existing-shape API for the per-row PhysicalSchema axis;
+    /// large-table digesting goes through `readRowsStream` directly.
     let private readRows
         (cnn: SqlConnection)
         (kind: Kind)
@@ -409,7 +506,6 @@ module ReadSide =
         : Task<StaticRow list option> =
         task {
             use _ = Bench.scope "readside.readRows"
-            // Probe row count first; skip if over threshold.
             use countCmd = cnn.CreateCommand()
             countCmd.CommandText <-
                 sprintf
@@ -423,71 +519,9 @@ module ReadSide =
             elif count = 0 then
                 return Some []
             else
-                let columns =
-                    kind.Attributes
-                    |> List.map (fun a -> sprintf "[%s]" a.Column.ColumnName)
-                    |> String.concat ", "
-                // ORDER BY PK for stable iteration. Fall back to
-                // first column if no PK (shouldn't happen on
-                // OutSystems shapes but defends against operator
-                // schemas without PK).
-                let pkCol =
-                    kind.Attributes
-                    |> List.tryFind (fun a -> a.IsPrimaryKey)
-                    |> Option.map (fun a -> a.Column.ColumnName)
-                    |> Option.defaultValue (
-                        kind.Attributes
-                        |> List.head
-                        |> fun a -> a.Column.ColumnName)
-                use cmd = cnn.CreateCommand()
-                cmd.CommandText <-
-                    sprintf
-                        "SELECT %s FROM [%s].[%s] ORDER BY [%s]"
-                        columns
-                        kind.Physical.Schema
-                        kind.Physical.Table
-                        pkCol
-                use! reader = cmd.ExecuteReaderAsync()
-                let rows = ResizeArray<StaticRow>()
-                let mutable hasMore = true
-                let mutable rowIdx = 0
-                while hasMore do
-                    let! more = reader.ReadAsync()
-                    if more then
-                        let values =
-                            kind.Attributes
-                            |> List.mapi (fun i a ->
-                                let raw : obj | null =
-                                    if reader.IsDBNull i then null
-                                    else reader.GetValue i
-                                a.Name, formatRawValue a.Type raw)
-                            |> Map.ofList
-                        // Synthesize a row identifier from the
-                        // (schema, table, row-index) coordinate.
-                        // The canary's row-set comparison hashes
-                        // by content so the identifier doesn't
-                        // need to match across runs.
-                        match
-                            SsKey.synthesized
-                                "READSIDE_ROW"
-                                (sprintf
-                                    "%s.%s.%d"
-                                    kind.Physical.Schema
-                                    kind.Physical.Table
-                                    rowIdx)
-                        with
-                        | Success rowKey ->
-                            rows.Add({ Identifier = rowKey; Values = values })
-                            rowIdx <- rowIdx + 1
-                        | Failure _ ->
-                            // SsKey.synthesized only fails on blank
-                            // inputs; the basis here is non-blank
-                            // by construction, so this branch is
-                            // unreachable.
-                            ()
-                    else
-                        hasMore <- false
-                return Some (List.ofSeq rows)
+                let stream = readRowsStream cnn kind
+                let! rows = AsyncStream.toList stream
+                return Some rows
         }
 
     let private buildKind
@@ -658,14 +692,15 @@ module ReadSide =
                     match kindsWithRefsAggregated with
                     | Failure errors -> return Result.failure errors
                     | Success kindsWithRefs ->
-                        // Per session-33 — pull row data for tables
-                        // small enough to round-trip through V2 IR
-                        // (default threshold: 1000 rows). Static
-                        // OutSystems lookup tables fit comfortably;
-                        // transactional tables typically exceed and
-                        // get skipped (their data plane is chapter
-                        // 4.1 territory).
-                        let maxRows = 1000
+                        // Per session-34 — threshold lifted to 100k.
+                        // Below that, rows materialize into V2 IR
+                        // (`Modality.Static`) for the per-row PhysicalSchema
+                        // axis; above, the round-trip falls back to
+                        // schema-only (no rows in IR). Streaming
+                        // realizations (`readRowsStream`) bypass the
+                        // threshold and feed digesters directly without
+                        // IR materialization — chapter-4.1 territory.
+                        let maxRows = 100_000
                         let mutable kindsWithRows = []
                         for k in kindsWithRefs do
                             let! rowsOpt = readRows cnn k maxRows

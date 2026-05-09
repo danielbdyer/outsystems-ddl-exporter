@@ -147,6 +147,82 @@ module Bench =
             use _ = scope label
             f x)
 
+    // -----------------------------------------------------------------
+    // Stream-flavored probes — first-class observability for lazy
+    // sequences. Per session-34 — Π's canonical output is a
+    // `seq<Statement>` and ReadSide's row source is a streaming
+    // pipeline; tracking *throughput* (elements / sec) and *backpressure*
+    // (per-element transit time) is as load-bearing as scoping
+    // synchronous bodies.
+    //
+    // Two complementary metrics, recorded under separate labels so the
+    // bench table shows both:
+    //
+    //     | <label>          | total elapsed (ms)       — wall time across the full enumeration
+    //     | <label>.elements | total element count      — enumeration size at completion
+    //
+    // Throughput is `elements / (elapsed / 1000)`. The renderer treats
+    // both as ordinary samples; operators reading the table compute
+    // throughput by inspection. Future bench-tracker scripts can
+    // structurally lift the pair into a `rows/sec` column.
+    //
+    // **Pass-through.** `streamProbe` neither buffers nor materializes;
+    // it taps the lazy enumeration and yields each element through.
+    // T1 byte-determinism is preserved because element order is
+    // unchanged.
+    // -----------------------------------------------------------------
+
+    let private recordCount (label: string) (count: int64) : unit =
+        record (sprintf "%s.elements" label) count
+
+    /// Wrap a synchronous sequence with throughput instrumentation.
+    /// Records `<label>` (wall-time in ms across the full enumeration)
+    /// and `<label>.elements` (element count) on completion.
+    /// Pass-through; doesn't buffer.
+    ///
+    /// Use as:
+    ///
+    ///     statements catalog
+    ///     |> Bench.streamProbe "emit.statements"
+    ///     |> Render.toText
+    ///
+    /// Composes naturally with `|>`. Multiple probes on a chain stack
+    /// without re-materializing.
+    let streamProbe (label: string) (xs: seq<'a>) : seq<'a> =
+        seq {
+            let sw = Stopwatch.StartNew()
+            let mutable count = 0L
+            for x in xs do
+                count <- count + 1L
+                yield x
+            sw.Stop()
+            record label sw.ElapsedMilliseconds
+            recordCount label count
+        }
+
+    /// Time the body executed per element of a sequence, including
+    /// the upstream production transit (wall-clock between yields).
+    /// Use when backpressure analysis matters; for total throughput
+    /// `streamProbe` is cheaper.
+    let streamTransit (label: string) (xs: seq<'a>) : seq<'a> =
+        seq {
+            let mutable previous = Stopwatch.GetTimestamp()
+            for x in xs do
+                let now = Stopwatch.GetTimestamp()
+                let ticks = now - previous
+                let ms = ticks * 1000L / Stopwatch.Frequency
+                record label ms
+                previous <- now
+                yield x
+        }
+
+    /// Surface an external counter to bench. Use for metrics derived
+    /// outside the scope/iter/stream-probe surface (e.g., bytes
+    /// emitted, rows bulk-copied) that operators want in the same
+    /// rollup table.
+    let recordSample (label: string) (sample: int64) : unit =
+        record label sample
+
     let private percentile (sorted: int64 array) (p: float) : int64 =
         if sorted.Length = 0 then
             0L

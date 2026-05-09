@@ -117,14 +117,127 @@ module Deploy =
             return ()
         }
 
+    /// Sqlcmd-style `GO` batch separator. Lines matching `^\s*GO\s*$`
+    /// split a script into independent batches; SqlClient's
+    /// `ExecuteNonQueryAsync` runs one segment at a time. Per
+    /// session-34 — large fixture loads (≥ 50k INSERTs) routinely
+    /// blow past sensible per-batch sizes; chunk emission +
+    /// splitting keeps each round-trip bounded without changing
+    /// SQL semantics. Scripts without `GO` markers run as a single
+    /// segment, identical to the v1 behaviour.
+    let private goSplitter : System.Text.RegularExpressions.Regex =
+        System.Text.RegularExpressions.Regex(
+            @"^\s*GO\s*$",
+            System.Text.RegularExpressions.RegexOptions.Multiline
+            ||| System.Text.RegularExpressions.RegexOptions.Compiled)
+
     let private executeBatch (cnn: SqlConnection) (sql: string) : Task<unit> =
         task {
             use _ = Bench.scope "deploy.executeBatch"
-            use cmd = cnn.CreateCommand()
-            cmd.CommandText <- sql
-            cmd.CommandTimeout <- 60
-            let! _ = cmd.ExecuteNonQueryAsync()
-            return ()
+            let segments =
+                goSplitter.Split sql
+                |> Array.filter (fun s -> not (System.String.IsNullOrWhiteSpace s))
+            Bench.recordSample "deploy.executeBatch.segments" (int64 segments.Length)
+            for segment in segments do
+                use _ = Bench.scope "deploy.executeBatch.segment"
+                use cmd = cnn.CreateCommand()
+                cmd.CommandText <- segment
+                // Per session-34 — `0` disables the client-side command
+                // timeout. SQL Server handles the work; we just wait.
+                cmd.CommandTimeout <- 0
+                let! _ = cmd.ExecuteNonQueryAsync()
+                ()
+        }
+
+    /// Default bulk batch size — empirically tuned for SqlBulkCopy
+    /// throughput. Larger batches amortize round-trip cost; too-large
+    /// batches inflate memory. 1000 lands in the throughput plateau
+    /// for transactional row sizes (≈100–500 bytes / row) without
+    /// committing more than ~1 MB per batch.
+    [<Literal>]
+    let private DefaultBulkBatchSize : int = 1000
+
+    /// Bulk-aware realization of Π's statement stream. Per session-34
+    /// — folds consecutive `InsertRow`s for the same `(TableId,
+    /// columnShape)` into `SqlBulkCopy` batches; non-`InsertRow`
+    /// statements (DDL / IDENTITY toggles) flush via `executeBatch`
+    /// so their ordering relative to the inserts is preserved.
+    /// Decorative `Comment` / `Blank` statements are skipped — they
+    /// belong to `Render.toText`, not to execution.
+    ///
+    /// **Streaming.** The `seq<Statement>` is consumed lazily; only
+    /// the active bulk batch is buffered (≤ `DefaultBulkBatchSize`
+    /// rows). DDL accumulates into a text buffer flushed at every
+    /// transition into a non-DDL statement, so DDL ordering is
+    /// preserved against inserts.
+    ///
+    /// **Observability.** `streamProbe` taps the upstream statement
+    /// stream; per-batch bench scopes (`deploy.bulk.copyRows`,
+    /// `deploy.bulk.copyRows.batchSize`) record batch-level
+    /// throughput. Operators reading the bench table see the row
+    /// count, batch count, total wall time per realization.
+    let executeStream (cnn: SqlConnection) (statements: seq<Statement>) : Task<unit> =
+        task {
+            use _ = Bench.scope "deploy.executeStream"
+            let buffer = ResizeArray<CellValue list>()
+            let mutable currentTable : TableId option = None
+            let mutable currentShape : string list option = None
+            let pendingDdl = System.Text.StringBuilder()
+
+            let flushBulk () =
+                task {
+                    if buffer.Count > 0 then
+                        match currentTable with
+                        | Some t ->
+                            let rows = buffer |> List.ofSeq
+                            do! Bulk.copyRows cnn t rows
+                        | None -> ()
+                        buffer.Clear()
+                        currentTable <- None
+                        currentShape <- None
+                }
+
+            let flushDdl () =
+                task {
+                    if pendingDdl.Length > 0 then
+                        let sql = pendingDdl.ToString()
+                        pendingDdl.Clear() |> ignore
+                        do! executeBatch cnn sql
+                }
+
+            let appendDdl (s: Statement) =
+                let sb = System.Text.StringBuilder()
+                Render.toSql sb s
+                pendingDdl.Append(sb.ToString()) |> ignore
+
+            for s in Bench.streamProbe "deploy.executeStream.input" statements do
+                match s with
+                | Blank | Comment _ -> ()
+                | CreateTable _ ->
+                    do! flushBulk ()
+                    appendDdl s
+                | SetIdentityInsert _ ->
+                    do! flushBulk ()
+                    appendDdl s
+                | InsertRow (table, values) ->
+                    let shape = values |> List.map (fun v -> v.Column)
+                    let canAppend =
+                        match currentTable, currentShape with
+                        | Some t, Some sh -> t = table && sh = shape
+                        | _ -> false
+                    if not canAppend then
+                        do! flushBulk ()
+                        do! flushDdl ()
+                        currentTable <- Some table
+                        currentShape <- Some shape
+                    buffer.Add values
+                    if buffer.Count >= DefaultBulkBatchSize then
+                        do! flushBulk ()
+                        currentTable <- Some table
+                        currentShape <- Some shape
+
+            do! flushBulk ()
+            do! flushDdl ()
         }
 
     let private countUserTables (cnn: SqlConnection) : Task<int> =
@@ -315,7 +428,7 @@ module Deploy =
     /// container disposes on completion; both databases go with it.
     let runWideCanary
         (sourceDdl: string)
-        (emit: Catalog -> string)
+        (emit: Catalog -> seq<Statement>)
         : Task<Result<WideCanaryReport>> =
         task {
             use _ = Bench.scope "deploy.runWideCanary"
@@ -373,9 +486,10 @@ module Deploy =
                                     Errors = sourceErrors
                                 }
 
-                            // Phase 2: emit V2's SSDT, deploy to target,
-                            // read it back.
-                            let emittedSql =
+                            // Phase 2: emit V2's SSDT statement stream,
+                            // execute via the bulk-aware realization,
+                            // read the target back.
+                            let stmts =
                                 use _ = Bench.scope "deploy.runWideCanary.emit"
                                 emit src
                             do!
@@ -392,7 +506,7 @@ module Deploy =
                             try
                                 use cnn = new SqlConnection(targetConn)
                                 do! cnn.OpenAsync()
-                                do! executeBatch cnn emittedSql
+                                do! executeStream cnn stmts
                                 // Phase 3: derive TablesCreated from the
                                 // readside Catalog (same optimization as
                                 // the source phase).

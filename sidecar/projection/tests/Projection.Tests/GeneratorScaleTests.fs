@@ -50,7 +50,7 @@ let private runCanaryAgainst
             fixture.SeedData.Length
             fixture.SeedRowCount
         let task =
-            Deploy.runWideCanary fixture.Combined RawTextEmitter.emit
+            Deploy.runWideCanary fixture.Combined RawTextEmitter.statements
         let result = task.GetAwaiter().GetResult()
         match result with
         | Success report -> Some report
@@ -106,6 +106,56 @@ let ``Generator scale: MEDIUM fixture (~75 tables) round-trips green with FK rou
             sprintf
                 "medium fixture round-trip failed:\n%s"
                 (PhysicalSchema.renderDiff report.Diff))
+
+/// Per session-34 — bulk-path stress canaries. Five static tables
+/// × N rows per table validates the `Deploy.executeStream` /
+/// `Bulk.copyRows` realization layer at enterprise volumes. The
+/// canary's six-axis empty diff property holds; the bench surface
+/// surfaces throughput (`deploy.bulk.copyRows.batchSize`,
+/// `deploy.executeStream.input.elements`) so cross-run regression
+/// is structural. Each gated on `PROJECTION_RUN_BULK_CANARY=1`.
+let private runBulkCanary (label: string) (spec: GenerateSpec) : unit =
+    let envVar =
+        match System.Environment.GetEnvironmentVariable "PROJECTION_RUN_BULK_CANARY" with
+        | null -> ""
+        | v -> v
+    if envVar <> "1" then
+        printfn "SKIP bulk canary [%s]: set PROJECTION_RUN_BULK_CANARY=1 to run." label
+    else
+        Bench.reset ()
+        match runCanaryAgainst label spec with
+        | None -> ()
+        | Some report ->
+            summarizeDiff label report
+            Assert.Equal(
+                report.SourceReport.TablesCreated,
+                report.TargetReport.TablesCreated)
+            Assert.True(
+                PhysicalSchema.isEqual report.Diff,
+                sprintf
+                    "bulk canary [%s] failed:\n%s"
+                    label
+                    (PhysicalSchema.renderDiff report.Diff))
+            // First-class stream observability: surface the bench
+            // table at end so operators see throughput per realization
+            // layer (Π statement stream → executeStream input →
+            // bulk.copyRows batches) on the same run.
+            let top =
+                Bench.snapshot ()
+                |> List.truncate 25
+            printfn "\nBench (top 25, label=%s):\n%s\n" label (Bench.renderTable top)
+
+[<Fact>]
+let ``Generator bulk: 1k rows/table (5 tables = 5k rows) round-trips via bulk path`` () =
+    runBulkCanary "bulk1k" GenerateSpec.bulk1k
+
+[<Fact>]
+let ``Generator bulk: 10k rows/table (5 tables = 50k rows) round-trips via bulk path`` () =
+    runBulkCanary "bulk10k" GenerateSpec.bulk10k
+
+[<Fact>]
+let ``Generator bulk: 100k rows/table (5 tables = 500k rows) round-trips via bulk path`` () =
+    runBulkCanary "bulk100k" GenerateSpec.bulk100k
 
 /// Per session-33 — the 300-table forcing-function canary, gated
 /// behind `PROJECTION_RUN_REALISTIC_CANARY` so the unit-test loop

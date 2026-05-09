@@ -100,6 +100,27 @@ module GenerateSpec =
             Seed = 42
         }
 
+    /// Bulk-path stress fixtures: few tables, many rows per table.
+    /// Per session-34 — exercise the `Deploy.executeStream` /
+    /// `Bulk.copyRows` realization at enterprise row volumes. Five
+    /// static tables × N rows each isolates the bulk path's
+    /// throughput and memory profile from the schema-side scaling
+    /// covered by `realistic`.
+    let private bulkSpec (rowsPerTable: int) : GenerateSpec =
+        {
+            Modules = 1
+            Entities = 0
+            StaticEntities = 5
+            AvgAttrsPerEntity = 5
+            FkDensity = 0.0
+            StaticRowsPerEntity = rowsPerTable
+            Seed = 42
+        }
+
+    let bulk1k : GenerateSpec = bulkSpec 1_000
+    let bulk10k : GenerateSpec = bulkSpec 10_000
+    let bulk100k : GenerateSpec = bulkSpec 100_000
+
 [<RequireQualifiedAccess>]
 module FixtureGenerator =
 
@@ -311,6 +332,14 @@ module FixtureGenerator =
     /// give realistic-looking variety so the canary's row-data
     /// round-trip exercises a meaningful sample of string content,
     /// boolean distribution, GUID coverage.
+    /// Sqlcmd-style batch chunk size. Per session-34 — `Deploy.executeBatch`
+    /// splits SQL on `^\s*GO\s*$` markers and runs each segment in
+    /// its own round-trip; chunking keeps any one batch's text size
+    /// bounded so SqlClient round-trips and SQL Server parse time
+    /// stay reasonable at 100k+ row scale.
+    [<Literal>]
+    let private SeedBatchSize : int = 1_000
+
     let private generateStaticSeed
         (rng: Random)
         (rowsPerEntity: int)
@@ -318,6 +347,8 @@ module FixtureGenerator =
         (sb: StringBuilder)
         : unit =
         for i in 1 .. rowsPerEntity do
+            if i > 1 && (i - 1) % SeedBatchSize = 0 then
+                sb.AppendLine "GO" |> ignore
             let labelIdx = rng.Next statusLabels.Length
             let label = sprintf "%s %d" statusLabels[labelIdx] i
             let codeIdx = rng.Next statusCodes.Length
@@ -336,6 +367,8 @@ module FixtureGenerator =
                     active
                     guid)
             |> ignore
+        if rowsPerEntity > 0 then
+            sb.AppendLine "GO" |> ignore
 
     /// Generate a fixture matching the spec. Deterministic per
     /// `spec.Seed`: same spec → same DDL byte-for-byte.

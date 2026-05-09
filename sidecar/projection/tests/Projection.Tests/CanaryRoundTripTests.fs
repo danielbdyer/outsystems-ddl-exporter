@@ -149,7 +149,7 @@ let ``M3: V2-internal closure — programmatic Catalog round-trips through emit 
 let ``M3 wide canary: minimal OutSystems-shaped source DDL round-trips through V2's emitter with empty PhysicalSchema diff`` () =
     if skipIfNoDocker "wide-canary-minimal" then
         let task =
-            Deploy.runWideCanary SourceFixtures.SourceSchema.minimal RawTextEmitter.emit
+            Deploy.runWideCanary SourceFixtures.SourceSchema.minimal RawTextEmitter.statements
         let outcome = task.GetAwaiter().GetResult()
 
         let report =
@@ -187,7 +187,7 @@ let ``M3 wide canary: realistic OutSystems-shaped source DDL surfaces emitter / 
         let task =
             Deploy.runWideCanary
                 SourceFixtures.SourceSchema.realistic
-                RawTextEmitter.emit
+                RawTextEmitter.statements
         let outcome = task.GetAwaiter().GetResult()
 
         let report =
@@ -232,7 +232,7 @@ let ``M3 wide canary: enterprise OutSystems-shaped source (3 modules / 10 tables
         let task =
             Deploy.runWideCanary
                 SourceFixtures.SourceSchema.enterprise
-                RawTextEmitter.emit
+                RawTextEmitter.statements
         let outcome = task.GetAwaiter().GetResult()
 
         let report =

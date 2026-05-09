@@ -1,75 +1,29 @@
 namespace Projection.Targets.SSDT
 
-open System
-open System.Text
 open Projection.Core
-open Projection.Core.Passes
 
-/// Raw .sql-style text emitter — the first sibling Π for V2. The output
-/// is diffable text reflecting every kind, attribute, and reference in
-/// the catalog. This is the synthetic-fixture milestone form per
-/// DECISIONS.md (2026-05-06 — Π_SSDT first emission target is raw
-/// .sql-style text); DacFx-backed real SSDT artifacts arrive later.
+/// Π_SSDT — the first sibling Π for V2. Per session-34, Π's
+/// canonical output is a `seq<Statement>` (typed, deterministic,
+/// lazy); `Render.toText` is the .sql-text realization,
+/// `Deploy.executeStream` is the bulk-aware execution realization.
+/// Both consume the same statement stream, so the algebra (A18 / T1
+/// / T11) holds at the stream level — bulk-vs-incremental deploy is
+/// realization-layer policy, invisible to Π.
 ///
-/// Π is mechanical (A18): no policy parameter enters this module. The
-/// type-correspondence mapping below is the synthetic-milestone default;
-/// when Policy lands as a structured input it will replace these
-/// hard-codes.
+/// Per A18, no policy parameter enters this module. The
+/// type-correspondence mapping lives in `Render.columnSqlType` and
+/// is shared between the two realizations so emit-time text and
+/// deploy-time SQL never drift.
 [<RequireQualifiedAccess>]
 module RawTextEmitter =
 
-    /// Emitter version. The lineage / output may change shape across
-    /// versions; bump when the textual layout or the synthetic type map
-    /// is altered.
+    /// Emitter version. Bump when the textual layout or the synthetic
+    /// type map alters; the version banner emits as the first
+    /// `Comment` in the statement stream.
     [<Literal>]
-    let version : int = 1
+    let version : int = 2
 
-    // -----------------------------------------------------------------------
-    // Synthetic-milestone defaults. These belong in Policy when Policy
-    // lands; for now they are constants here so Π stays mechanical.
-    // -----------------------------------------------------------------------
-
-    let private defaultSqlType (t: PrimitiveType) : string =
-        match t with
-        | Integer  -> "INT"
-        | Decimal  -> "DECIMAL(18, 4)"
-        | Text     -> "NVARCHAR(MAX)"
-        | Boolean  -> "BIT"
-        | DateTime -> "DATETIME2"
-        | Date     -> "DATE"
-        | Time     -> "TIME"
-        | Binary   -> "VARBINARY(MAX)"
-        | Guid     -> "UNIQUEIDENTIFIER"
-
-    /// Per session-32 — render a column's SQL type with length /
-    /// precision / scale honored when the IR carries them. Falls
-    /// back to `defaultSqlType` for types where length / precision
-    /// don't apply, or when the IR fields are `None`.
-    let private columnSqlType (a: Attribute) : string =
-        match a.Type with
-        | Text ->
-            match a.Length with
-            | Some n when n > 0 -> sprintf "NVARCHAR(%d)" n
-            | _ -> "NVARCHAR(MAX)"
-        | Binary ->
-            match a.Length with
-            | Some n when n > 0 -> sprintf "VARBINARY(%d)" n
-            | _ -> "VARBINARY(MAX)"
-        | Decimal ->
-            match a.Precision, a.Scale with
-            | Some p, Some s -> sprintf "DECIMAL(%d, %d)" p s
-            | Some p, None -> sprintf "DECIMAL(%d, 0)" p
-            | _ -> "DECIMAL(18, 4)"
-        | other -> defaultSqlType other
-
-    let private renderAction (a: ReferenceAction) : string =
-        match a with
-        | NoAction -> "NO ACTION"
-        | Cascade  -> "CASCADE"
-        | SetNull  -> "SET NULL"
-        | Restrict -> "NO ACTION"  // SQL Server: Restrict is encoded as NO ACTION
-
-    let private quote (s: string) : string = sprintf "[%s]" s
+    let private rootKey (k: SsKey) : string = SsKey.rootOriginal k
 
     let private originLabel (o: Origin) : string =
         match o with
@@ -83,237 +37,133 @@ module RawTextEmitter =
         | TenantScoped  -> "TenantScoped"
         | SoftDeletable -> "SoftDeletable"
 
-    let private rootKey (k: SsKey) : string = SsKey.rootOriginal k
+    let private toTableId (k: Kind) : TableId =
+        { Schema = k.Physical.Schema; Table = k.Physical.Table }
 
-    /// Per session-33 — Π's row-emission formatter. Takes the raw
-    /// invariant-culture string V2's IR stores in `StaticRow.Values`
-    /// and produces a SQL Server literal expression suitable for
-    /// embedding in an INSERT VALUES clause. The IR contract (raw
-    /// values, no SQL quoting) is established by the boundary
-    /// adapters (`Projection.Adapters.Sql.ReadSide.formatRawValue`
-    /// for live readback; `Projection.Adapters.Sql.Static` for V1
-    /// JSON ingestion). Π consumes the canonical raw form here.
-    ///
-    /// Empty string ⇒ NULL — matches both adapters' null
-    /// conventions. Single quotes inside Text values are escaped by
-    /// doubling per T-SQL.
-    let private formatSqlLiteral (typ: PrimitiveType) (raw: string) : string =
-        if raw = "" then "NULL"
+    let private toReferenceActionSql (a: ReferenceAction) : ReferenceActionSql =
+        match a with
+        | NoAction -> NoActionSql
+        | Cascade  -> CascadeSql
+        | SetNull  -> SetNullSql
+        | Restrict -> NoActionSql
+
+    let private columnDef (a: Attribute) : ColumnDef =
+        {
+            Name = a.Column.ColumnName
+            Type = a.Type
+            Length = a.Length
+            Precision = a.Precision
+            Scale = a.Scale
+            Nullable = a.Column.IsNullable
+            IsIdentity = a.IsIdentity
+            IsPrimaryKey = a.IsPrimaryKey
+            Provenance = sprintf "%s (%s)" (Name.value a.Name) (rootKey a.SsKey)
+        }
+
+    let private kindHeaderText (k: Kind) : string =
+        let baseLine =
+            sprintf
+                "Kind: %s (%s) origin=%s"
+                (Name.value k.Name) (rootKey k.SsKey) (originLabel k.Origin)
+        if List.isEmpty k.Modality then baseLine
         else
-            match typ with
-            | Integer -> raw
-            | Decimal -> raw
-            | Boolean ->
-                match raw.ToLowerInvariant() with
-                | "true" | "1" -> "1"
-                | _ -> "0"
-            | DateTime | Date | Time | Guid ->
-                sprintf "'%s'" raw
-            | Text ->
-                sprintf "N'%s'" (raw.Replace("'", "''"))
-            | Binary ->
-                if raw.StartsWith("0x", System.StringComparison.OrdinalIgnoreCase) then raw
-                else "0x" + raw
-
-    // -----------------------------------------------------------------------
-    // Per-element rendering. Each function takes a StringBuilder so the
-    // emitter is allocation-friendly without sacrificing purity.
-    // -----------------------------------------------------------------------
-
-    let private renderAttribute (sb: StringBuilder) (a: Attribute) : unit =
-        let name = quote a.Column.ColumnName
-        let typ = defaultSqlType a.Type
-        let nullness = if a.Column.IsNullable then "NULL" else "NOT NULL"
-        sb.Append("    ").Append(name).Append(' ').Append(typ).Append(' ').Append(nullness)
-            .Append("  -- ").Append(Name.value a.Name).Append(" (").Append(rootKey a.SsKey).Append(')')
-        |> ignore
-
-    let private renderKindHeader (sb: StringBuilder) (k: Kind) : unit =
-        sb.Append("-- Kind: ").Append(Name.value k.Name)
-            .Append(" (").Append(rootKey k.SsKey).Append(") origin=")
-            .Append(originLabel k.Origin) |> ignore
-        if not (List.isEmpty k.Modality) then
             let labels = k.Modality |> List.map modalityLabel |> String.concat ", "
-            sb.Append(" modality=[").Append(labels).Append(']') |> ignore
-        sb.AppendLine() |> ignore
+            sprintf "%s modality=[%s]" baseLine labels
 
-    /// Resolve a Reference into the inline FK clause string (no
-    /// trailing comma; caller positions). Returns `None` when the
-    /// target Kind isn't in the catalog (dangling reference) — the
-    /// caller emits a comment marker instead of a half-formed clause.
-    let private inlineFkClause (catalog: Catalog) (k: Kind) (r: Reference) : string option =
+    let private moduleHeaderText (m: Module) : string =
+        sprintf "Module: %s (%s)" (Name.value m.Name) (rootKey m.SsKey)
+
+    let private fkDef (catalog: Catalog) (k: Kind) (r: Reference) : ForeignKeyDef option =
+        use _ = Bench.scope "emit.rawText.reference"
         let sourceColumnOpt =
             k.Attributes
             |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
             |> Option.map (fun a -> a.Column.ColumnName)
         match sourceColumnOpt, Catalog.tryFindKind r.TargetKind catalog with
         | Some sourceColumn, Some target ->
-            let targetPkOpt =
-                target.Attributes
-                |> List.tryFind (fun a -> a.IsPrimaryKey)
-                |> Option.map (fun a -> a.Column.ColumnName)
-            match targetPkOpt with
-            | Some targetPk ->
-                Some
-                    (sprintf
-                        "    CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s.%s (%s)"
-                        (quote (sprintf "FK_%s" (rootKey r.SsKey)))
-                        (quote sourceColumn)
-                        (quote target.Physical.Schema)
-                        (quote target.Physical.Table)
-                        (quote targetPk))
-            | None -> None
+            target.Attributes
+            |> List.tryFind (fun a -> a.IsPrimaryKey)
+            |> Option.map (fun pkAttr ->
+                {
+                    Name = sprintf "FK_%s" (rootKey r.SsKey)
+                    SourceColumn = sourceColumn
+                    Target = toTableId target
+                    TargetColumn = pkAttr.Column.ColumnName
+                    OnDelete = toReferenceActionSql r.OnDelete
+                })
         | _ -> None
 
-    let private renderTable (catalog: Catalog) (sb: StringBuilder) (k: Kind) : unit =
-        use _ = Bench.scope "emit.rawText.kind"
-        renderKindHeader sb k
-        let qualified =
-            sprintf "%s.%s" (quote k.Physical.Schema) (quote k.Physical.Table)
-        sb.Append("CREATE TABLE ").Append(qualified).AppendLine(" (") |> ignore
-        // PK constraint emission (M3 prep): if any attributes carry
-        // IsPrimaryKey, append a trailing CONSTRAINT clause so the
-        // deployed table actually carries a PRIMARY KEY.
+    let private pkDef (k: Kind) : PrimaryKeyDef option =
         let pkColumns =
             k.Attributes
             |> List.filter (fun a -> a.IsPrimaryKey)
             |> List.map (fun a -> a.Column.ColumnName)
-        let hasPkConstraint = not (List.isEmpty pkColumns)
-        // Per the V2 backlog: FKs are inline within the CREATE TABLE
-        // statement (not trailing ALTER TABLE batch). The emitter's
-        // outer loop sorts kinds in topological order so a FK's
-        // target Kind has already emitted by the time the source
-        // CREATE TABLE runs (self-references are SQL-Server-legal
-        // inline; inter-table cycles need a separate slice).
-        let fkClauses =
-            k.References
-            |> Bench.iterMap "emit.rawText.reference" (inlineFkClause catalog k)
-            |> List.choose id
-        let hasFkClauses = not (List.isEmpty fkClauses)
-        let lastColumnIdx = k.Attributes.Length - 1
-        k.Attributes
-        |> Bench.iteriDo "emit.rawText.attribute" (fun i a ->
-            let name = quote a.Column.ColumnName
-            let typ = columnSqlType a
-            let identityClause = if a.IsIdentity then " IDENTITY(1,1)" else ""
-            let nullness = if a.Column.IsNullable then "NULL" else "NOT NULL"
-            let needsComma = i < lastColumnIdx || hasPkConstraint || hasFkClauses
-            let sep = if needsComma then "," else ""
-            let pkTag = if a.IsPrimaryKey then " PK" else ""
-            sb.Append("    ").Append(name).Append(' ').Append(typ)
-                .Append(identityClause).Append(' ').Append(nullness)
-                .Append(sep).Append("  -- ").Append(Name.value a.Name).Append(" (").Append(rootKey a.SsKey).Append(')')
-                .Append(pkTag).AppendLine() |> ignore)
-        if hasPkConstraint then
-            let pkColumnList = pkColumns |> List.map quote |> String.concat ", "
-            let pkConstraintName =
-                sprintf "PK_%s_%s" k.Physical.Schema k.Physical.Table
-            let pkSep = if hasFkClauses then "," else ""
-            sb.Append("    CONSTRAINT ").Append(quote pkConstraintName)
-                .Append(" PRIMARY KEY (").Append(pkColumnList).Append(")").AppendLine(pkSep)
-            |> ignore
-        // Inline FK clauses (one per Reference). Each except the
-        // last gets a trailing comma.
-        if hasFkClauses then
-            let lastFkIdx = fkClauses.Length - 1
-            fkClauses
-            |> List.iteri (fun i clause ->
-                let sep = if i < lastFkIdx then "," else ""
-                sb.Append(clause).AppendLine(sep) |> ignore)
-        sb.AppendLine(");") |> ignore
+        if List.isEmpty pkColumns then None
+        else
+            Some
+                {
+                    Name = sprintf "PK_%s_%s" k.Physical.Schema k.Physical.Table
+                    Columns = pkColumns
+                }
 
-    /// Per session-33 — emit one INSERT per row in `Kind.Modality`'s
-    /// `Static` populations. The data plane joins the canary's
-    /// round-trip surface: source DB → ReadSide(Static rows) →
-    /// Π_SSDT(INSERT statements) → deploy → ReadSide → byte-identical
-    /// row hashes. Without the INSERTs the target DB is structurally
-    /// correct but row-empty, and PhysicalSchema's `Rows` axis would
-    /// flag every source row as missing.
-    ///
-    /// Columns absent from a row's `Values` map are omitted from
-    /// that row's INSERT (rather than emitted as NULL) so partial
-    /// fixtures (e.g., the synthetic `Country` whose Values lacks
-    /// the IDENTITY `Id`) still produce valid INSERTs. SQL Server
-    /// fills omitted columns with their default / NULL.
-    ///
-    /// IDENTITY columns: when any attribute is IDENTITY, the row
-    /// block is bracketed with `SET IDENTITY_INSERT ... ON/OFF` so
-    /// the round-trip preserves the source's PK values byte-for-byte.
-    let private renderStaticPopulations (sb: StringBuilder) (k: Kind) : unit =
-        k.Modality
-        |> Bench.iterDo "emit.rawText.modality" (fun m ->
-            match m with
-            | Static rows ->
-                sb.Append("-- Static populations: ").Append(rows.Length).AppendLine(" rows") |> ignore
-                if not (List.isEmpty rows) then
-                    let qualified =
-                        sprintf "%s.%s" (quote k.Physical.Schema) (quote k.Physical.Table)
-                    let hasIdentity =
-                        k.Attributes |> List.exists (fun a -> a.IsIdentity)
-                    if hasIdentity then
-                        sb.Append("SET IDENTITY_INSERT ").Append(qualified).AppendLine(" ON;") |> ignore
-                    rows
-                    |> Bench.iterDo "emit.rawText.staticRow" (fun row ->
-                        let presentAttrs =
-                            k.Attributes
-                            |> List.choose (fun a ->
-                                match Map.tryFind a.Name row.Values with
-                                | Some v -> Some (a, v)
-                                | None -> None)
-                        if not (List.isEmpty presentAttrs) then
-                            let cols =
-                                presentAttrs
-                                |> List.map (fun (a, _) -> quote a.Column.ColumnName)
-                                |> String.concat ", "
-                            let vals =
-                                presentAttrs
-                                |> List.map (fun (a, v) -> formatSqlLiteral a.Type v)
-                                |> String.concat ", "
-                            sb.Append("INSERT INTO ").Append(qualified)
-                                .Append(" (").Append(cols).Append(") VALUES (")
-                                .Append(vals).AppendLine(");") |> ignore)
-                    if hasIdentity then
-                        sb.Append("SET IDENTITY_INSERT ").Append(qualified).AppendLine(" OFF;") |> ignore
-            | _ -> ())
+    let private cellValue (a: Attribute) (raw: string) : CellValue =
+        { Column = a.Column.ColumnName; Type = a.Type; Raw = raw }
 
-    let private renderModule (sb: StringBuilder) (catalog: Catalog) (m: Module) : unit =
-        use _ = Bench.scope "emit.rawText.module"
-        sb.AppendLine() |> ignore
-        sb.Append("-- Module: ").Append(Name.value m.Name)
-            .Append(" (").Append(rootKey m.SsKey).Append(')').AppendLine() |> ignore
-        m.Kinds
-        |> Bench.iterDo "emit.rawText.moduleKind" (fun k ->
-            sb.AppendLine() |> ignore
-            renderTable catalog sb k
-            renderStaticPopulations sb k)
+    /// Emit one row's INSERT statement (or skip if no values present
+    /// for any attribute). Per session-33 — partial fixtures (e.g.,
+    /// inline-fixture rows that omit IDENTITY columns) emit only the
+    /// columns whose values the row carries.
+    let private rowToInsert (k: Kind) (row: StaticRow) : Statement option =
+        use _ = Bench.scope "emit.rawText.staticRow"
+        let values =
+            k.Attributes
+            |> List.choose (fun a ->
+                Map.tryFind a.Name row.Values
+                |> Option.map (cellValue a))
+        if List.isEmpty values then None
+        else Some (InsertRow (toTableId k, values))
 
-    // -----------------------------------------------------------------------
-    // Public surface.
-    // -----------------------------------------------------------------------
+    let private rowStatements (k: Kind) : seq<Statement> =
+        seq {
+            for m in k.Modality do
+                match m with
+                | Static rows ->
+                    yield Comment (sprintf "Static populations: %d rows" rows.Length)
+                    if not (List.isEmpty rows) then
+                        let table = toTableId k
+                        let hasIdentity = k.Attributes |> List.exists (fun a -> a.IsIdentity)
+                        if hasIdentity then yield SetIdentityInsert (table, true)
+                        for row in rows do
+                            match rowToInsert k row with
+                            | Some s -> yield s
+                            | None -> ()
+                        if hasIdentity then yield SetIdentityInsert (table, false)
+                | _ -> ()
+        }
+
+    let private kindStatements (catalog: Catalog) (k: Kind) : seq<Statement> =
+        seq {
+            use _ = Bench.scope "emit.rawText.kind"
+            yield Blank
+            yield Comment (kindHeaderText k)
+            let columns = k.Attributes |> List.map columnDef
+            let pk = pkDef k
+            let fks = k.References |> List.choose (fkDef catalog k)
+            yield CreateTable (toTableId k, columns, pk, fks)
+            yield! rowStatements k
+        }
 
     /// Emitter-local topological sort. Returns kinds in an order
     /// such that each kind's FK targets appear earlier (or in the
     /// same kind, for self-references which are SQL-Server-legal
-    /// inline). Differs from `TopologicalOrderPass` in that
-    /// self-edges are ignored — the pass's broader use case treats
-    /// self-loops as cycles needing resolution, but for inline FK
-    /// emission they're fine.
-    ///
-    /// Inter-table cycles (A → B → A) still aren't handled; those
-    /// cyclic kinds emit at the tail in alphabetical SsKey order,
-    /// and their inline FKs will fail at deploy time. The OutSystems
-    /// patterns the canary targets don't have inter-table cycles;
-    /// if a fixture surfaces one, this emitter will need a second
-    /// ALTER-TABLE-fallback pass for the cycle members.
+    /// inline). Self-edges skipped; inter-table cycles emit at the
+    /// tail in alphabetical SsKey order. Per session-31 / A33 —
+    /// SsKey-stable tiebreaking keeps the order itself deterministic.
     let private emissionOrder (catalog: Catalog) : Kind list =
         use _ = Bench.scope "emit.rawText.topologicalSort"
         let allKinds = Catalog.allKinds catalog
         let kindByKey = allKinds |> List.map (fun k -> k.SsKey, k) |> Map.ofList
         let presentKeys = allKinds |> List.map (fun k -> k.SsKey) |> Set.ofList
-        // Adjacency: target → sources-that-depend-on-target.
-        // Indegree: source → count of targets it depends on.
-        // Self-edges (source = target) skipped: SQL allows self-FKs
-        // inline.
         let adjacency, indegree =
             allKinds
             |> List.fold
@@ -338,8 +188,6 @@ module RawTextEmitter =
                                 updatedAdj, updatedInd)
                         (adj, ind))
                 (Map.empty, allKinds |> List.map (fun k -> k.SsKey, 0) |> Map.ofList)
-        // Kahn's: pop ready (indegree 0) in SsKey order, decrement
-        // children's indegree, repeat.
         let mutable currentIndegree = indegree
         let mutable ready =
             allKinds
@@ -359,7 +207,6 @@ module RawTextEmitter =
                 currentIndegree <- Map.add child childInd currentIndegree
                 if childInd = 0 then
                     ready <- (child :: ready) |> List.sort
-        // Cyclic remainder (inter-table cycles) at the tail.
         let emitted = Set.ofSeq result
         let remainder =
             allKinds
@@ -370,52 +217,51 @@ module RawTextEmitter =
         allOrdered
         |> List.choose (fun key -> Map.tryFind key kindByKey)
 
-    /// Emit the catalog as raw .sql-style text. Output is deterministic:
-    /// for any byte-identical input catalog, output is byte-identical
-    /// across runs (T1).
-    ///
-    /// **Inline FK constraints + topological emission order.** Per
-    /// the V2 backlog's "FKs created inline" decision, FK
-    /// constraints emit *inside* their owning CREATE TABLE (as
-    /// `CONSTRAINT [FK_…] FOREIGN KEY […] REFERENCES …` clauses)
-    /// rather than as trailing `ALTER TABLE` statements. To support
-    /// inline FKs without forward-reference deploy failures, kinds
-    /// are emitted in topological order — every FK target is
-    /// already declared by the time its source's CREATE TABLE runs.
-    /// Self-references (a kind's FK to its own PK) are SQL-Server-
-    /// legal inline; the emitter's topological sort skips self-edges
-    /// so self-FK kinds emit in their normal position.
-    ///
-    /// Per A33 (Schema-Data Ordering Law), schema emission's
-    /// canonical order is deterministic; this Kahn's algorithm uses
-    /// SsKey-stable tiebreaking, so the order is itself deterministic
-    /// — preserving the diff-stability property A33 requires.
+    let private moduleByKindKey (catalog: Catalog) : Map<SsKey, Module> =
+        catalog.Modules
+        |> List.collect (fun m -> m.Kinds |> List.map (fun k -> k.SsKey, m))
+        |> Map.ofList
+
+    /// Π's canonical statement stream. Pure, lazy, deterministic.
+    /// Consumers iterate as needed; realization layers
+    /// (`Render.toText`, `Deploy.executeStream`) choose how each
+    /// statement materializes. Module / kind grouping comments emit
+    /// as `Comment`; vertical spacing as `Blank`. Per A18 + A35,
+    /// no policy enters; the same Catalog produces the same stream
+    /// byte-for-byte across runs (T1 strengthened to statement-level
+    /// determinism).
+    let statements (catalog: Catalog) : seq<Statement> =
+        seq {
+            use _ = Bench.scope "emit.rawText.statements"
+            yield Comment
+                (sprintf
+                    "Generated by Projection.Targets.SSDT.RawTextEmitter v%d"
+                    version)
+            yield Comment "Project = Π_SSDT ∘ E"
+            yield Comment "(synthetic-milestone form: typed statement stream)"
+            let modByKey = moduleByKindKey catalog
+            let mutable currentModuleKey : SsKey option = None
+            for k in emissionOrder catalog do
+                let moduleKey =
+                    match Map.tryFind k.SsKey modByKey with
+                    | Some m -> Some m.SsKey
+                    | None -> None
+                match moduleKey, currentModuleKey with
+                | Some mk, prev when Some mk <> prev ->
+                    let m = modByKey[k.SsKey]
+                    yield Blank
+                    yield Comment (moduleHeaderText m)
+                    currentModuleKey <- Some mk
+                | _ -> ()
+                yield! kindStatements catalog k
+        }
+
+    /// Back-compat .sql-text realization — `statements >> Render.toText`,
+    /// stream-probed for throughput observability. T1 byte-determinism
+    /// holds because `statements` is deterministic and `Render.toText`
+    /// is deterministic in its input.
     let emit (catalog: Catalog) : string =
         use _ = Bench.scope "emit.rawText.emit"
-        let sb = StringBuilder(2048)
-        sb.Append("-- Generated by Projection.Targets.SSDT.RawTextEmitter v")
-            .Append(version).AppendLine() |> ignore
-        sb.AppendLine("-- Project = Π_SSDT ∘ E") |> ignore
-        sb.AppendLine("-- (synthetic-milestone form: raw text, dependency-free)") |> ignore
-        let kindsByModuleKey : Map<SsKey, Module> =
-            catalog.Modules
-            |> List.collect (fun m -> m.Kinds |> List.map (fun k -> k.SsKey, m))
-            |> Map.ofList
-        let mutable currentModuleKey : SsKey option = None
-        for k in emissionOrder catalog do
-            let moduleKey =
-                match Map.tryFind k.SsKey kindsByModuleKey with
-                | Some m -> Some m.SsKey
-                | None -> None
-            match moduleKey, currentModuleKey with
-            | Some mk, prev when Some mk <> prev ->
-                let m = kindsByModuleKey[k.SsKey]
-                sb.AppendLine() |> ignore
-                sb.Append("-- Module: ").Append(Name.value m.Name)
-                    .Append(" (").Append(rootKey m.SsKey).Append(')').AppendLine() |> ignore
-                currentModuleKey <- Some mk
-            | _ -> ()
-            sb.AppendLine() |> ignore
-            renderTable catalog sb k
-            renderStaticPopulations sb k
-        sb.ToString()
+        statements catalog
+        |> Bench.streamProbe "emit.rawText.statementStream"
+        |> Render.toText

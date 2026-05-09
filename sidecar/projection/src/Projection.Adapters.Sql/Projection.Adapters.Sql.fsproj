@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="AsyncStream.fs" />
     <Compile Include="Static.fs" />
     <Compile Include="ProfileSnapshot.fs" />
     <Compile Include="ProfileStatistics.fs" />

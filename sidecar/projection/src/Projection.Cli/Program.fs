@@ -142,7 +142,7 @@ let private runCanary (sourceDdlPath: string) : int =
     else
         let sourceDdl = File.ReadAllText sourceDdlPath
         printfn "projection: spinning up ephemeral SQL Server for the wide canary..."
-        let task = Deploy.runWideCanary sourceDdl RawTextEmitter.emit
+        let task = Deploy.runWideCanary sourceDdl RawTextEmitter.statements
         let result = task.GetAwaiter().GetResult()
         let exitCode =
             match result with
