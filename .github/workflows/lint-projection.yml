@@ -1,0 +1,41 @@
+name: lint-projection
+
+# Defense-in-depth for the V2 sidecar's lint-discipline guardrail.
+#
+# The pre-commit hook
+# (`sidecar/projection/scripts/git-hooks/pre-commit`) catches
+# violations locally before commit. This workflow re-runs the
+# `lint-discipline.sh` script on PRs that touch `sidecar/projection/`,
+# blocking merges when violations slip past local hooks.
+#
+# Per the FP strict-mode discipline (`DECISIONS 2026-05-09`), every
+# legitimate exception carries a per-line `LINT-ALLOW: <rationale>`
+# marker, a top-of-file `LINT-ALLOW-FILE: <rationale>` /
+# `LINT-ALLOW-FILE-MUTATION: <rationale>` marker, or a paired
+# DECISIONS amendment. Bypassing CI requires explicit operator
+# acknowledgement.
+
+on:
+  pull_request:
+    paths:
+      - 'sidecar/projection/**'
+      - '.github/workflows/lint-projection.yml'
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'sidecar/projection/**'
+
+jobs:
+  lint-discipline:
+    name: lint-discipline guardrail
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run lint-discipline.sh
+        run: |
+          chmod +x sidecar/projection/scripts/lint-discipline.sh
+          sidecar/projection/scripts/lint-discipline.sh --ci

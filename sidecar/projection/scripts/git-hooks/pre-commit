@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+#
+# V2 sidecar pre-commit hook — runs `lint-discipline.sh` whenever
+# staged files include any F# source under `sidecar/projection/`.
+#
+# The hook is fast (~50ms over the V2 source tree). It exits non-
+# zero on any violation, blocking the commit. To install:
+#
+#   sidecar/projection/scripts/install-hooks.sh
+#
+# To bypass for a single commit (e.g., emergency hotfix):
+#
+#   git commit --no-verify
+#
+# Per the FP strict-mode discipline (`DECISIONS 2026-05-09`), bypass
+# is the explicit-acknowledgement-of-deviance escape hatch — it
+# should be paired with a follow-on slice that retires the
+# discipline-violation.
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Locate the V2 sidecar tree from the repo root.
+# ---------------------------------------------------------------------------
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SIDECAR="$REPO_ROOT/sidecar/projection"
+LINT_SCRIPT="$SIDECAR/scripts/lint-discipline.sh"
+
+if [[ ! -x "$LINT_SCRIPT" ]]; then
+    # Lint script absent or not executable — bypass quietly so the
+    # hook is forward-compatible with future repository layouts.
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Skip the lint when no V2 F# files are staged. Local-V1-only commits
+# pay zero cost.
+# ---------------------------------------------------------------------------
+
+staged_v2=$(
+    git diff --cached --name-only --diff-filter=ACM \
+        | grep -E '^sidecar/projection/.*\.fs$' || true
+)
+
+if [[ -z "$staged_v2" ]]; then
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Run the lint discipline guardrail.
+# ---------------------------------------------------------------------------
+
+echo "lint-discipline: running guardrail over $SIDECAR/src/ ..."
+
+if ! "$LINT_SCRIPT" --ci; then
+    echo ""
+    echo "=== Pre-commit blocked: lint-discipline reported violations ==="
+    echo ""
+    echo "Review the violations above. Either:"
+    echo "  1. Refactor (preferred — drives V2's hardline FP discipline)."
+    echo "  2. Add a per-line  // LINT-ALLOW: <rationale>  marker."
+    echo "  3. Add a top-of-file  // LINT-ALLOW-FILE: <rationale>  marker."
+    echo "  4. Open a paired DECISIONS amendment naming the relaxation."
+    echo "  5. Bypass with  git commit --no-verify  (explicit deviance)."
+    echo ""
+    exit 1
+fi

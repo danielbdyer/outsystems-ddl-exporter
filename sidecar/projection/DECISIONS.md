@@ -8307,3 +8307,175 @@ they ship). Each rule names the discipline it enforces:
 script now enforces 15 rules over `src/`. Today's clean state
 sets the baseline; any new violation requires either
 refactoring or a paired DECISIONS amendment with rationale.
+
+
+## 2026-05-09 — Extended lint discipline: hexagonal coupling, Big-O anti-patterns, regression-preventatives, pre-commit hook
+
+V2's lint guardrail extends from 15 rules to 22, broadens scope
+beyond Core where the discipline applies broadly, fixes a build-
+output false-positive in scan paths, and ships a pre-commit hook
++ CI workflow so the guardrail runs at *every* commit and PR.
+Per the user's principle: **"default to explicit acknowledgement
+of deviance"** — every legitimate exception carries an explicit
+`LINT-ALLOW` marker (per-line) or `LINT-ALLOW-FILE` /
+`LINT-ALLOW-FILE-MUTATION` marker (top-of-file) with rationale.
+
+**Lint script fixes:**
+
+  - **Build-output exclusion.** All scans now use
+    `--exclude-dir=obj --exclude-dir=bin --exclude-dir=.git`,
+    eliminating false positives on generated `*.AssemblyInfo.fs`
+    files (had reported 8 spurious `System.Reflection`
+    occurrences).
+
+**Extended scope:**
+
+  - The `string-format` / `random-banned` / `datetime-now` /
+    `guid-newguid` / `type-erasure` / `mutable-record-field`
+    rules continue to apply broadly across `src/`. The
+    `core-sprintf` / `string-plus` / `core-failwith` /
+    `core-async-block` / `core-concurrency-primitive` rules
+    remain Core-scoped (boundary code legitimately uses
+    `sprintf` / `task {`-blocks for SQL emission, etc.; the
+    discipline holds at Core).
+
+**Three new opinionated rules (regression-preventative + audit-
+backed):**
+
+  - **Rule 16 — `nowarn-banned`**: bans `#nowarn` directive
+    anywhere in production. Silencing a compiler warning is
+    explicit-deviance bypass; the discipline is to fix the
+    underlying issue or open a paired DECISIONS amendment, not
+    to selectively silence per-file. Today: zero occurrences.
+
+  - **Rule 17 — `reflection-banned`**: bans `open
+    System.Reflection` in production. Reflection is consciously
+    deferred per `CLAUDE.md` F# feature surface; the closed-DU +
+    typed-seam codification means dispatch is type-checked at
+    compile time, not discovered at runtime.
+
+  - **Rule 18 — `obj-typed`**: bans `obj`-typed parameters /
+    returns (`: obj )`, `: obj ->`, `: obj` at line-end). F#
+    closed-DU + generic dispatch is the structural alternative;
+    `obj` is type erasure dressed as a parameter.
+
+**One new opinionated rule (Big-O):**
+
+  - **Rule 19 — `big-o-list-append-singleton`**: bans `xs @ [x]`
+    list-append-singleton anywhere in production. `List.append`
+    is O(N); inside a fold it grows O(N²). Idioms: `x :: xs`
+    + `List.rev` at consumption time, OR `Result.aggregate`
+    (V2's reified accumulator), OR `LineageBuffer` (typed
+    opaque accumulator). The audit's chapter-3.1 close cashed
+    `Result.aggregate` as the Big-O fix for Result-fold
+    aggregation; this rule structurally enforces the migration.
+    Writer-monad `tell` (Lineage / Diagnostics) carries a
+    per-line `LINT-ALLOW` because `tell` is the algebraic
+    primitive (terminal annotation), not a fold accumulator.
+    `LineageBuffer` is the high-rate path.
+
+**Three new opinionated rules (hexagonal architecture):**
+
+  - **Rule 20 — `hex-core-coupling`**: Core files (under
+    `Projection.Core/`) cannot `open Projection.<Adapters |
+    Targets | Pipeline | Cli>`. Core has no V2 dependencies;
+    the dependency direction Core <- Adapters / Targets <-
+    Pipeline <- CLI is one-way. The compiler enforces this at
+    the project-reference level; the lint catches accidental
+    cross-namespace `open`s at the file level.
+
+  - **Rule 21 — `hex-target-coupling`**: Target files (under
+    `Projection.Targets.*/`) cannot `open Projection.<Adapters
+    | Pipeline | Cli>` or cross-target `open
+    Projection.Targets.<Other>`. Targets are horizontal
+    siblings; cross-target coupling violates the hexagon's
+    structural commitment.
+
+  - **Rule 22 — `hex-adapter-coupling`**: Adapter files (under
+    `Projection.Adapters.*/`) cannot `open Projection.<Targets
+    | Pipeline | Cli>` or cross-adapter `open
+    Projection.Adapters.<Other>`. Same horizontal-sibling
+    discipline.
+
+**Refactor: 6 `xs @ [x]` Big-O sites in `CatalogReader.fs`
+retired.** Each fold-of-Result-list pattern (5 standard plus 1
+`Option`-filtering variant) collapses to `Result.aggregate
+<input>` (or `Result.aggregate <input> |> Result.map (List.choose
+id)` for the Option case). Same Big-O profile (O(N)) without the
+per-step append. The chapter-3.1 audit's Result.aggregate cash-
+out is now structurally the only path through; the lint enforces.
+
+**Pre-commit hook + CI workflow:**
+
+  - `sidecar/projection/scripts/git-hooks/pre-commit` — bash
+    hook that runs `lint-discipline.sh --ci` whenever staged
+    files include any F# under `sidecar/projection/`. Skips
+    cleanly when no V2 files are staged (V1-only commits pay
+    zero cost). Exit non-zero blocks the commit.
+  - `sidecar/projection/scripts/install-hooks.sh` — installer
+    that symlinks (or copies) the source hook into
+    `.git/hooks/pre-commit`. Idempotent; safe to re-run.
+  - `.github/workflows/lint-projection.yml` — GitHub Actions
+    workflow triggered on `pull_request` and `push to main`
+    paths-filtered to `sidecar/projection/**`. Defense-in-depth
+    against bypassed local hooks.
+
+**Bypass discipline.** `git commit --no-verify` is the explicit-
+acknowledgement-of-deviance escape hatch. Per the discipline,
+bypass should be paired with a follow-on slice that retires the
+violation. CI catches bypasses on PR.
+
+**Operational consequence.** The lint script now enforces 22
+rules over `src/`. Per the audit-driven 2026-05-09 work,
+today's empirical baseline is clean; the rules prevent
+regression. Pre-commit + CI run the same script for defense-in-
+depth.
+
+
+## 2026-05-09 — Operating discipline: ongoing compliance to Big-O + hexagonal architecture (lint-enforced)
+
+The chapter-3.1 audit catalogued ~27 Big-O findings; the high-
+leverage subset shipped as substantive refactors (countUserTables
+elimination, ResizeArray accumulators, HashSet diff,
+SHA256.HashData, parallel hashing, lifted FK Maps). The audit's
+remaining Big-O concerns are now lint-enforced:
+
+  - **`xs @ [x]` ban (Rule 19)** — the canonical fold-of-Result
+    anti-pattern (O(N²) per call site) is structurally unreachable
+    in new code; existing sites refactored to `Result.aggregate`.
+  - **Bench-driven optimization protocol** (per `DECISIONS
+    2026-05-24`) is the operational discipline for any new
+    perf concern: three-candidate / 2-refuted / 1-confirmed.
+    Refuted swaps documented with bench data so the same swap
+    doesn't recur.
+
+The hexagonal-coupling lint rules (20 / 21 / 22) structurally
+enforce the dependency direction `Core <- Adapters / Targets <-
+Pipeline <- CLI` at the file level (the project-reference level
+is enforced by F# itself; the lint catches `open`-statement
+drift). Per `VISION.md` / `CLAUDE.md` "Load-bearing commitments,"
+F#-pure-core / no-I/O-in-Core is the structural answer; the lint
+makes the commitment grep-checkable in CI / pre-commit.
+
+**Forward signals:**
+
+  - **F# Analyzers SDK custom analyzer** (deferred; chapter
+    3.7+ candidate) — would catch syntax-tree patterns the
+    grep heuristic misses (`member val X with get, set`
+    properties, reflection-via-attribute scanning, `obj`
+    parameters with implicit type inference). Re-open trigger:
+    a real false-negative surfacing in CI — i.e., a new
+    discipline-violation shipping unflagged.
+  - **`Outcome.toDiagnosticString` per DU** (deferred per
+    chapter-3.1 audit Tier-2 #14) — would retire the `%A`
+    pretty-print sites in pass drivers, removing several
+    `LINT-ALLOW-FILE` markers. Substantive ~1-day chapter
+    touching every Outcome / KeepReason / Origin DU.
+  - **ScriptDom adoption for SQL emission** (per `DECISIONS
+    2026-05-09 — Built-in obligation`; chapter 3.7+ candidate)
+    — retires `Render.fs` / `Deploy.fs` SQL string-build paths
+    via typed `TSqlFragment` AST + `Sql150ScriptGenerator`.
+    Removes several `LINT-ALLOW` per-line markers.
+
+Each candidate compounds the discipline at the next chapter
+close.

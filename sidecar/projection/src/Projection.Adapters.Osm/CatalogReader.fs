@@ -516,15 +516,12 @@ module CatalogReader =
                         | Failure es -> Failure es
                         | Success an -> attributeSsKey moduleName entityName an)
                 | _ -> []
-            let foldedKeyCols =
-                keyColResults
-                |> List.fold
-                    (fun acc next ->
-                        match acc, next with
-                        | Success xs, Success x -> Result.success (xs @ [x])
-                        | Failure es, _         -> Failure es
-                        | _, Failure es         -> Failure es)
-                    (Result.success [])
+            // Per `Result.aggregate` (chapter-3.1 close audit): the
+            // canonical accumulator for `Result<'a> seq` collapses to
+            // `Result<'a list>` with errors aggregated (not short-
+            // circuited). Retires the O(N²) `xs @ [x]` fold pattern
+            // per `DECISIONS 2026-05-09` Big-O discipline.
+            let foldedKeyCols = Result.aggregate keyColResults
             match indexKey, indexNm, foldedKeyCols with
             | Success k, Success n, Success cols ->
                 Result.success
@@ -580,28 +577,18 @@ module CatalogReader =
             let refResults =
                 attrJsonList
                 |> List.map (parseReference moduleName entityName)
-            // Collect attribute results — first failure wins.
-            let foldedAttrs =
-                attrsResults
-                |> List.fold
-                    (fun acc next ->
-                        match acc, next with
-                        | Success xs, Success x  -> Result.success (xs @ [x])
-                        | Failure es, _          -> Failure es
-                        | _, Failure es          -> Failure es)
-                    (Result.success [])
-            // Collect reference results — first failure wins. None
-            // entries are dropped; Some entries flatten into a list.
+            // Collect attribute results — `Result.aggregate` collapses
+            // `Result<'a> seq` to `Result<'a list>` with errors
+            // aggregated. Retires the O(N²) `xs @ [x]` fold pattern.
+            let foldedAttrs = Result.aggregate attrsResults
+            // Collect reference results — `Result.aggregate` then drop
+            // `None` entries via `List.choose id`. Same Big-O profile
+            // as the legacy fold (O(N) overall) without the per-step
+            // append.
             let foldedRefs =
                 refResults
-                |> List.fold
-                    (fun acc next ->
-                        match acc, next with
-                        | Success xs, Success None     -> Result.success xs
-                        | Success xs, Success (Some r) -> Result.success (xs @ [r])
-                        | Failure es, _                -> Failure es
-                        | _, Failure es                -> Failure es)
-                    (Result.success [])
+                |> Result.aggregate
+                |> Result.map (List.choose id)
             // Collect index results — session 22; iterate the
             // entity's `indexes[]` array. The inactive-records
             // filter (session 21) does NOT extend to indexes today;
@@ -614,15 +601,7 @@ module CatalogReader =
                     |> Seq.toList
                     |> List.map (parseIndex moduleName entityName)
                 | _ -> []
-            let foldedIdx =
-                indexResults
-                |> List.fold
-                    (fun acc next ->
-                        match acc, next with
-                        | Success xs, Success x -> Result.success (xs @ [x])
-                        | Failure es, _         -> Failure es
-                        | _, Failure es         -> Failure es)
-                    (Result.success [])
+            let foldedIdx = Result.aggregate indexResults
             match kindKey, kindName, foldedAttrs, foldedRefs, foldedIdx with
             | Success k, Success n, Success attrs, Success refs, Success idxs ->
                 let modality =
@@ -671,15 +650,7 @@ module CatalogReader =
                     |> List.map (parseKind rawName)
                 | _ ->
                     []
-            let foldedKinds =
-                entitiesArr
-                |> List.fold
-                    (fun acc next ->
-                        match acc, next with
-                        | Success xs, Success x  -> Result.success (xs @ [x])
-                        | Failure es, _          -> Failure es
-                        | _, Failure es          -> Failure es)
-                    (Result.success [])
+            let foldedKinds = Result.aggregate entitiesArr
             match modKey, modName, foldedKinds with
             | Success k, Success n, Success kinds ->
                 Result.success
@@ -706,15 +677,7 @@ module CatalogReader =
                 arr.EnumerateArray()
                 |> Seq.toList
                 |> List.map parseModule
-            let folded =
-                modulesList
-                |> List.fold
-                    (fun acc next ->
-                        match acc, next with
-                        | Success xs, Success x  -> Result.success (xs @ [x])
-                        | Failure es, _          -> Failure es
-                        | _, Failure es          -> Failure es)
-                    (Result.success [])
+            let folded = Result.aggregate modulesList
             match folded with
             | Success modules -> Result.success { Modules = modules }
             | Failure errors  -> Failure errors
