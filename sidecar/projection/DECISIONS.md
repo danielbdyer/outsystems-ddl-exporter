@@ -7840,3 +7840,161 @@ slice arc realized.
 Inherits the realized seam; T11 trivializes for the diff-typed
 sibling via the `EmitterOverDiff<'element>` shape already
 declared at `Types.fs:62-63`.
+
+
+## 2026-05-09 — Chapter 3.5 slices ζ / η / θ / ι — substantive deliverable shipped
+
+The chapter 3.5 substantive deliverable lands per
+`CHAPTER_3_PRESCOPE_REFACTORLOG_AND_CATALOG_DIFF.md`. Four slices
+on the runway opened by the Π port realization (slices α–δ):
+
+- **Slice ζ — `CatalogDiff.between`**. Stage 0's `CatalogDiff = |
+  Pending` placeholder retired; the real exhaustive type and
+  smart constructor live in `Projection.Core/CatalogDiff.fs`.
+  `Renamed | Added | Removed | Unchanged` partitions
+  `Catalog.allKinds source ∪ Catalog.allKinds target` exhaustively
+  by construction. Cashes A38 (CatalogDiff exhaustiveness, see
+  `AXIOMS.md`).
+
+- **Slice η — `UuidV5.create`**. RFC 4122 §4.3 name-based UUID
+  derivation lands at `Projection.Core/UuidV5.fs`. Pure byte-
+  twiddling: namespace + name → SHA-1 → 16-byte truncation →
+  version/variant bit-set → endian-roundtrip back to .NET Guid.
+  Verified against three canonical vectors. The deterministic-
+  Guid primitive enables `RefactorLogEmitter`'s `OperationKey`
+  derivation.
+
+- **Slice θ — `RefactorLogEmitter`**. The fourth sibling Π —
+  `EmitterOverDiff<RefactorLogEntry list>`. First substantive
+  consumer of `EmitterOverDiff<'element>` (declared at
+  `Types.fs:62-63`); first realization of `CatalogDiff`'s
+  consumer side. T11 amended again (diff-typed inputs) cashes
+  here — `ArtifactByKind` smart constructor binds the artifact
+  keyset to the diff's *target* Catalog. First-slice scope:
+  kind-level renames produce one `SqlTable` entry per renamed
+  kind (column-level renames defer under closed-DU expansion
+  empirical-test discipline). `OperationKey` derivation via
+  `String.concat ":"` over a typed component list rather than
+  `sprintf` per the no-string-concatenation discipline.
+
+- **Slice ι — `RefactorLogRender.toRefactorLogXml`**. Pure XML
+  rendering through the BCL's `XmlWriter` typed API. No string
+  concatenation, no `sprintf` on XML fragments. Determinism axes
+  pinned: operations sorted by `OperationKey`, `ChangeDateTime`
+  pinned to `2000-01-01T00:00:00Z` (DacFx ignores it for refactor
+  application; chapter 3.5 prescope §6 option 1), UTF-8 without
+  BOM, `\n` newlines, two-space indent, namespace pinned per the
+  SSDT 2012/02 schema URI.
+
+**T1 byte-determinism on the rendered .refactorlog**: every byte-
+affecting variable is pinned. Verified by 10× repeat invocation
+in `RefactorLogRenderTests.fs:T1`. Tests use `XDocument` (built-in
+BCL DOM) for structural assertions — the no-string-concatenation
+discipline applies to test verification too.
+
+**AXIOMS amendments cashed at chapter 3.5 close (slice κ)**:
+T11 amended again (diff-typed inputs); A1 amended (four-variant
+SsKey — Stage 0 + chapter 3.5); A38 promoted from candidate (the
+exhaustiveness invariant of CatalogDiff).
+
+**Test count**: 743 fast-suite passing. New tests: 9
+(CatalogDiff) + 8 (UuidV5) + 8 (RefactorLogEmitter) + 9
+(RefactorLogRender) = 34 added across slices ζ / η / θ / ι.
+
+**Big-O at chapter close**:
+- `CatalogDiff.between`: O(N log N) where N = |source ∪ target|.
+- `RefactorLogEmitter.emit`: O(N log N) where N = |target kinds|;
+  per-kind `Map.tryFind` over renames is O(log R).
+- `RefactorLogRender.toRefactorLogXml`: O(R log R) where R =
+  |renames|; sort dominates; XML writer is O(R) on the sorted
+  stream.
+
+**Forward signals.**
+- **Chapter 3.4 — `renameSurvives` predicate library.** Now
+  unblocked: the diff + emitter + renderer cash the property's
+  evidence side. Pre-scope at
+  `CHAPTER_3_PRESCOPE_CANARY_PROPERTY_SURFACE.md`.
+- **Chapter 3.2 — `SnapshotRowsets` + `OssysOriginal` SsKeys at
+  scale.** Lifts A1's bound from `Synthesized` to `OssysOriginal`
+  for kinds with V1 SSKey Guids. Pairs naturally with
+  `RefactorLogEmitter` — once rowsets arrive, renames over
+  `OssysOriginal` keys flow through the diff cleanly; renames
+  over `Synthesized` keys remain bounded (renames produce different
+  `Synthesized` SsKeys; diff classifies as Removed + Added).
+- **Chapter 4.2 — User FK reflow + `V1Mapped` reach.** The diff-
+  side cross-version threading uses `SsKey.identityKey` (UUIDv5
+  derivation through `UuidV5.create`); chapter 4.2 makes the
+  variant reachable from production input.
+- **Chapter 4.4 — drift detection via `ArtifactByKind.compareWith`**.
+  The pointwise per-key diff over `ArtifactByKind` returning
+  `Map<SsKey, DriftKind>` replaces today's byte-string-diff
+  (Appendix H §H.8). The seam is open via the typed Π port +
+  exhaustive diff.
+
+
+## 2026-05-09 — No-string-concatenation / no-regex discipline (codifying)
+
+V2 commits: avoid string concatenation (`+`, `sprintf` building
+structured values, `String.Format`) and regex
+(`System.Text.RegularExpressions`); prefer built-in writers and
+parsers (`String.concat`, `String.Split`, `XmlWriter`,
+`Utf8JsonWriter`, `JsonNode`, `StringBuilder` where the algorithm
+genuinely needs incremental construction).
+
+**Rationale.**
+
+- Structured values built via format strings drift from their
+  parsers — the codebase's own `Identity.fs:122` round-trip
+  (`SsKey.synthesized "OS_KIND" basis` builds via `sprintf
+  "%s_%s"`; `SsKey.original "OS_KIND_..."` parses via
+  `StartsWith(src + "_", …)`) is the canonical example. Typed
+  builders + typed parsers eliminate the round-trip drift.
+- Regex makes intent opaque and is hard to reason about for
+  determinism. The codebase's only regex (singleton at
+  `Deploy.fs:216-220` for `^\s*GO\s*$` batch-splitting) is
+  retiring at the next slice (`String.Split('\n')` + `Trim` +
+  literal compare).
+- Built-in BCL writers (`XmlWriter`, `Utf8JsonWriter`,
+  `JsonNode`) handle escaping, encoding, and namespace concerns
+  by construction; T1 byte-determinism is preserved by pinning
+  the writer's settings rather than reasoning about every escape
+  branch.
+
+**Operational consequences.**
+
+- Pre-existing `sprintf` sites stay (back-compat); new code
+  defaults to `String.concat` over typed component lists. Worked
+  example: `RefactorLogEmitter.renameOperationKey` composes via
+  `["rename"; rootOriginal; oldName; newName] |> String.concat
+  ":"` rather than `sprintf "rename:%s:%s:%s" ...`.
+- New XML, JSON, SQL emission routes through typed BCL writers
+  exclusively. `RefactorLogRender.toRefactorLogXml` is the
+  worked example for XML.
+- `System.Text.RegularExpressions` is banned in new code; the
+  Deploy.fs:216 violation is the audit-Tier-1 carry-forward.
+- Lint guardrail: `scripts/lint-discipline.sh` (chapter-3.5
+  follow-on slice) runs in CI / pre-commit and greps for
+  `sprintf` / `RegularExpressions` / string-`+` in production
+  code paths under `Projection.Core/`. The audit (`Codebase
+  determinism + non-built-in audit`, 2026-05-09) named the
+  Tier-1 follow-on backlog; the script catches regressions
+  going forward.
+
+**Audit-deferred (Tier-1) sites carried into this discipline:**
+- `Deploy.fs:216-220` regex — retire to `String.Split` +
+  literal compare.
+- `Deploy.fs:344-346` string `+` SQL fragment build — replace
+  with `String.concat`.
+- `Deploy.fs:203` `sprintf "CREATE DATABASE [%s];"` — typed
+  helper.
+- `Render.fs:16,30,34,38,39,62,64,67` — quote/type/literal
+  `sprintf`s and `"0x" + raw` plain `+`. Render's hot path is
+  the discipline's worked example; either retire to typed
+  builders or `String.concat`.
+- `Deploy.fs:176` `Guid.NewGuid()` — non-determinism leak; pin
+  via injected name-generator parameter.
+
+The audit findings route to follow-on slices in chapter 3.5 close
+or chapter 3.6 hygiene; tracking via `DECISIONS` so the deferral
+doesn't recur silently (per the "Active deferrals re-checked at
+chapter close" discipline).

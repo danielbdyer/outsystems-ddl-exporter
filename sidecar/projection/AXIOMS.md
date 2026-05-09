@@ -788,65 +788,120 @@ chapter 3.5's substantive deliverable (`RefactorLogEmitter` over
 `CatalogDiff`) lands. Same discipline; the keyset is bound to
 the diff's SsKey set rather than the source Catalog's.
 
-## T11 amended again (diff-typed inputs) — TBD chapter 3.5 close
+## T11 amended again (diff-typed inputs) — chapter 3.5 slices θ–ι (2026-05-09)
 
-**Scheduled at chapter 3.5 close** (RefactorLogEmitter + CatalogDiff;
-per `DECISIONS 2026-05-22 — Chapter 3 sequencing`).
+**Cashed at chapter 3.5 substantive deliverable** (slices θ
+[`RefactorLogEmitter : EmitterOverDiff<RefactorLogEntry list>`], ι
+[`RefactorLogRender.toRefactorLogXml`]; per
+`CHAPTER_3_PRESCOPE_REFACTORLOG_AND_CATALOG_DIFF.md`).
 
-[Body to be written at chapter 3.5 close.]
+**Statement.** Chapter 3.5 introduces `EmitterOverDiff<'element> =
+CatalogDiff -> Result<ArtifactByKind<'element>, EmitError>` —
+emitters whose input is a Catalog-typed diff rather than a Catalog.
+T11's sibling-Π commutativity extends: the diff-typed emitter's
+output `ArtifactByKind` keys are typed over the diff's *target*
+Catalog. **`RefactorLogEmitter.emit` flows
+`Catalog.allKinds (CatalogDiff.target diff)` through
+`ArtifactByKind.create`'s strict-equality smart constructor**;
+every key in the target Catalog appears in the artifact, with
+possibly empty per-key payload (`Unchanged`/`Added`/`Removed` kinds
+carry empty `RefactorLogEntry list`; `Renamed` kinds carry exactly
+one entry).
 
-**Anticipated content.** Chapter 3.5 introduces `EmitterOverDiff
-<'element> = CatalogDiff -> Result<ArtifactByKind<'element>,
-EmitError>` — emitters whose input is a Catalog-typed diff rather
-than a Catalog. T11's sibling-Π commutativity must extend: the
-diff-typed emitter's output `ArtifactByKind` keys must be a subset
-of `Diff.allKinds` (SsKeys mentioned in either source or target
-of the diff), not the full Catalog. The amendment names the
-extension: **T11 holds over diff-typed inputs by typing
-`ArtifactByKind` over the diff's SsKey set rather than the
-Catalog's.**
+The pattern is monotonic. Every new emitter type variable
+(`Emitter`, `EmitterWithProfile`, `EmitterOverDiff`, future
+variants) is a specialization of the same `ArtifactByKind` shape;
+T11 holds for each by the same `Catalog`-vs-target-Catalog binding
+through the smart constructor. The amendment names the structural
+extension: **T11 commutativity is inherited by every Π-shape that
+parameterizes a `Catalog` through `ArtifactByKind.create`.**
 
-The smart constructor on `ArtifactByKind` enforces the property at
-construction — same discipline as the cross-cutting amendment,
-extended to diff-typed inputs. The pattern is monotonic: every new
-emitter type variable (Catalog, CatalogDiff, future variants) is a
-specialization of the same `ArtifactByKind` shape.
+**Verification surface.** `RefactorLogEmitterTests.fs:T11 (diff-
+typed inputs)` confirms `ArtifactByKind.keys artifact = Set
+(Catalog.allKinds target |> List.map _.SsKey)`. The smart
+constructor's rejection direction is at `ArtifactByKindTests.fs`
+(unchanged from chapter-3.5 cross-cutting close). T11 holds
+across four Π's now: RawText / Json / Distributions /
+RefactorLog.
 
-## A1 amended (four-variant SsKey) — TBD chapter 3 cross-cutting close
+**Companion amendment.** `A38 — CatalogDiff exhaustiveness` cashes
+in the same chapter close (the diff-side of the same structural
+commitment). The chapter 3.5 close ships both amendments together
+because the operational shape is one — diff-typed Π over
+exhaustively-partitioned diff inputs.
 
-**Scheduled at chapter-3 cross-cutting close** (the `SsKey`
-four-variant DU split; per `CHAPTER_3_PRESCOPE_ARTIFACTBYKIND_REFACTOR.md`
-slice 5 and Stage 0 item S0.B).
+## A1 amended (four-variant SsKey) — Stage 0 + chapter 3.5 (2026-05-09)
 
-[Body to be written at the cross-cutting close.]
+**Cashed at Stage 0 (S0.B slice 5.5) and chapter 3.5 substantive
+deliverable.** The four-variant `SsKey` DU shipped at Stage 0
+(`Identity.fs`); chapter 3.5's `RefactorLogEmitter` is the first
+substantive consumer that pattern-matches on the variants for
+identity-survives-rename. Per `CHAPTER_3_PRESCOPE_ARTIFACTBYKIND_REFACTOR.md`
+slice 5 and Stage 0 item S0.B.
 
-**Anticipated content.** A1's bound on identity-survives-rename
-through the JSON path (added at session 23; documented at the bottom
-of A1) names the JSON-projection-lossiness class — V1's
-`osm_model.json` strips SSKey columns, so V2's IR synthesizes SsKeys
-from name fields rather than carrying V1's actual SSKey values.
-The four-variant DU split codifies the bound **type-stratifically**:
+**Statement.** A1's bound on identity-survives-rename through the
+JSON path (added session 23; documented at the bottom of A1) names
+the JSON-projection-lossiness class — V1's `osm_model.json` strips
+SSKey columns, so V2's IR synthesizes SsKeys from name fields rather
+than carrying V1's actual SSKey values. The four-variant DU split
+codifies the bound **type-stratifically**:
 
 ```fsharp
 type SsKey =
-    | OssysOriginal of string             // V1's SSKey, carried verbatim
-    | Synthesized of source: string       // V2-synthesized from name fields
-    | DerivedFrom of parent: SsKey * reason: string  // existing Derived
-    | V1Mapped of original: SsKey * v1: string  // remap envelope
+    | OssysOriginal of System.Guid                       // V1's SSKey, carried as Guid
+    | Synthesized of source: string * basis: string      // V2-synthesized from name fields
+    | DerivedFrom of parent: SsKey * reason: string      // pass-introduced
+    | V1Mapped of v1Sskey: System.Guid * v2Namespace: System.Guid  // cross-version
 ```
 
 A1's identity-survives-rename guarantee splits along the variants:
-`OssysOriginal` honors A1 unconditionally; `Synthesized` honors A1
-only over name preservation (renames produce new `Synthesized`
-keys); `DerivedFrom` honors A1 transitively through the parent;
-`V1Mapped` honors A1 over both the V1 envelope and the original.
-The amendment codifies the per-variant guarantees and names the
-input-path-by-variant correspondence (`SnapshotJson` produces
-`Synthesized`; `SnapshotRowsets` produces `OssysOriginal`).
 
-The `SnapshotRowsets` chapter (3.2) is the chapter that produces
-`OssysOriginal` SsKeys at scale; the cross-cutting close prepares
-the type-system surface, and chapter 3.2 fills the consumer side.
+- `OssysOriginal g` — honors A1 unconditionally. The V1 SSKey Guid
+  is the stable identity; rename changes `Name`, never `SsKey`.
+- `Synthesized (source, basis)` — honors A1 **only over name
+  preservation**. The synthesis basis IS the name; a rename
+  produces a new `Synthesized` key. This is the JSON-projection-
+  lossiness bound made structural — pattern-matching code can
+  refuse to claim A1 holds for `Synthesized` inputs without further
+  evidence.
+- `DerivedFrom (parent, reason)` — honors A1 *transitively* through
+  the parent. `SsKey.rootOriginal` walks the chain; the leaf's
+  variant determines whether A1 is conditional or unconditional.
+- `V1Mapped (v1Sskey, v2Namespace)` — honors A1 *within V2*: the
+  `v1Sskey` Guid was stamped onto a deployed schema by V1 and read
+  back; the `v2Namespace` makes the cross-version origin pattern-
+  matchable. UUIDv5 derivation (`UuidV5.create`) is the canonical
+  cross-version threading — chapter 4.2 User FK reflow makes the
+  variant reachable from production.
+
+**Operational consequences.**
+
+- `SsKey.rootOriginal` is the legacy diagnostic-string accessor;
+  preserves emitter-comment text at the V1-prefix form
+  (`OS_KIND_<basis>` for `Synthesized "OS_KIND" basis`). Chapter
+  3.5 audit Tier-3 considered renaming this surface; deferred per
+  `HANDOFF.md`'s "needs DECISIONS amendment first" entry.
+- `SsKey.identityKey` (chapter 3.5 candidate; not yet shipped — the
+  deterministic Guid projection for diff-time cross-version
+  comparison) earns its place when a real consumer (cross-version
+  identity threading) demands it; chapter 4.2 territory.
+- Adapters use `SsKey.synthesized` directly; `SsKey.original` is
+  the back-compat shim for pre-stratification call sites.
+
+**Verification surface.** `SsKeyTests.fs` carries variant-equality
+worked examples; the Stage 0 inhabitation tests at `TypesTests.fs`
+witness the seam shape. Cross-variant equality is always false
+(provenance-preserving); within-variant equality is structural
+(records / guid / strings).
+
+**Companion amendment scheduled.** Cross-version identity threading
+via `V1Mapped` cashes operationally when chapter 3.2 (`SnapshotRowsets`)
+produces `OssysOriginal` Guids at scale and chapter 4.2 (User FK
+reflow) reads V1-stamped extended properties. Chapter 3.5's
+`RefactorLogEmitter` is bound: its diff-comparison rests on
+`SsKey` structural equality, which honors variant tags; the
+cross-version reach (V1-deployed kind ↔ V2-emitted kind via
+`identityKey`) opens at chapter 4.2.
 
 ## A35 — Π's output is a deterministic statement stream (chapter-3.1 close, 2026-05-30)
 
@@ -938,23 +993,72 @@ only if every Π whose output is binary requires the same erasure
 declaration** (i.e., the axiom is invariant across Π's, not specific
 to DACPAC).
 
-## A38 candidate (CatalogDiff exhaustiveness) — TBD chapter 3.5 close
+## A38 — CatalogDiff exhaustiveness (chapter 3.5 substantive deliverable, 2026-05-09)
 
-**Scheduled at chapter 3.5 close** (RefactorLogEmitter + CatalogDiff).
-Renumbered from A36 candidate at chapter-3.1 close; the original
-A36 slot was claimed by session-34's realization-layer-policy axiom.
+**Promoted from candidate to A38 at chapter 3.5 close.** Renumbered
+from A36 candidate at chapter-3.1 close; the original A36 slot was
+claimed by session-34's realization-layer-policy axiom. The
+`CatalogDiff` smart constructor (slice ζ) is the load-bearing
+surface; `RefactorLogEmitter` (slice θ) is its first consumer.
 
-[Body to be written at chapter 3.5 close; promoted from candidate to
-A38 if it earns commitment.]
+**Statement.** `CatalogDiff` is a private DU produced by `DiffOf
+<Catalog> = Catalog -> Catalog -> Result<CatalogDiff, EmitError>`.
+Its smart constructor `CatalogDiff.between` enforces an
+**exhaustiveness invariant**: every `SsKey` in `Catalog.allKinds
+source ∪ Catalog.allKinds target` is in **exactly one** of four
+pairwise-disjoint partitions — `Renamed`, `Added`, `Removed`,
+`Unchanged`. Coverage and disjointness hold by construction
+(`Set.difference` / `Set.intersect` produce disjoint partitions;
+`Set.fold` over the intersection partitions further into renamed-
+vs-unchanged by `Name` equality).
 
-**Anticipated content.** `CatalogDiff` is a value type produced by
-`DiffOf<Catalog> = Catalog -> Catalog -> Result<CatalogDiff, EmitError>`.
-Its smart constructor enforces an exhaustiveness invariant: every
-SsKey in `source ∪ target` is in **exactly one** of four
-disposition variants — `Renamed | Added | Removed | Unchanged`.
-The candidate names the invariant as A38 — a structural-commitment
-axiom in the same family as A4 (identity equality is structural)
-and A34 (Profile independence).
+```fsharp
+type CatalogDiff = private CatalogDiff of CatalogDiffData
+and CatalogDiffData = {
+    Source    : Catalog
+    Target    : Catalog
+    Renamed   : Map<SsKey, RenameRecord>
+    Added     : Set<SsKey>
+    Removed   : Set<SsKey>
+    Unchanged : Set<SsKey>
+}
+```
+
+The wrapping `private CatalogDiff of CatalogDiffData` mirrors
+`ArtifactByKind`'s smart-constructor discipline: callers cannot
+construct it without going through `CatalogDiff.between`; the
+type cannot inhabit an inconsistent state.
+
+**Operational consequences.**
+
+- A diff-typed Π consumes `CatalogDiff` (per `EmitterOverDiff
+  <'element>`) and produces an `ArtifactByKind` keyed on the
+  diff's *target* Catalog. T11 amended again (diff-typed inputs)
+  is the structural sibling — the diff's exhaustiveness invariant
+  is the input-side guarantee; T11 is the output-side guarantee.
+  Together they encode "the algebra holds end-to-end" through
+  the diff-typed pipeline.
+- A1 amended's per-variant rename semantics extends naturally:
+  `Renamed` keys carry both `OldName` and `NewName`; the variant
+  tag of the SsKey is preserved so cross-version semantics
+  (chapter 4.2 territory via `V1Mapped`) inherit honestly.
+- The first-slice scope is kind-level (`Catalog.allKinds`'s SsKey
+  set). Attribute-level diffing extends the helper `allKindKeys`
+  to `allFlatKeys` walking the kind tree (kinds + attributes +
+  references + indexes), without changing the smart constructor's
+  partition shape — the closed-DU expansion empirical-test
+  discipline applies.
+
+**Verification surface.** `CatalogDiffTests.fs` carries 9 worked
+examples + properties: identity diff, empty-source, empty-target,
+scope = disjoint-union, pairwise disjointness, determinism,
+module-permutation invariance, the four `partitions are pairwise
+disjoint` cross-check.
+
+**Big-O.** O(N log N) where N = |source ∪ target|.
+`Catalog.allKinds` O(N), `Set.ofList` O(N log N), `Set.difference`
+/ `Set.intersect` O(N log N), `Set.fold` over intersection
+O(N log N) with O(log N) `Catalog.tryFindKind` lookups.
 
 ## A39 — Aggregate-root smart-constructor invariants (chapter-3.1 close, 2026-05-30)
 
