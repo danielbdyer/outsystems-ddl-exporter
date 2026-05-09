@@ -4,6 +4,7 @@ open Xunit
 open Projection.Core
 open Projection.Core.Passes
 open Projection.Adapters.Sql
+open Projection.Tests.Fixtures
 
 // ---------------------------------------------------------------------------
 // Differential test for the EntitySeedDeterminizer migration.
@@ -44,13 +45,12 @@ let private v1FixtureContent : string =
 // data.
 // ---------------------------------------------------------------------------
 
-let private mkKey s = SsKey.original s |> Result.value
 let private mkName s = Name.create s |> Result.value
 
-let private cityKey       = mkKey "OS_KIND_City"
-let private cityIdKey     = mkKey "OS_ATTR_City_Id"
-let private cityNameKey   = mkKey "OS_ATTR_City_Name"
-let private cityActiveKey = mkKey "OS_ATTR_City_IsActive"
+let private cityKey       = kindKey ["City"]
+let private cityIdKey     = attrKey ["City"; "Id"]
+let private cityNameKey   = attrKey ["City"; "Name"]
+let private cityActiveKey = attrKey ["City"; "IsActive"]
 
 let private cityKind : Kind =
     { SsKey    = cityKey
@@ -79,7 +79,7 @@ let private cityKind : Kind =
 
 let private cityCatalog : Catalog =
     { Modules = [
-        { SsKey = mkKey "OS_MOD_Cities"
+        { SsKey = modKey "Cities"
           Name  = mkName "Cities"
           Kinds = [ cityKind ] } ] }
 

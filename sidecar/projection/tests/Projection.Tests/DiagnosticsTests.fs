@@ -2,12 +2,13 @@ module Projection.Tests.DiagnosticsTests
 
 open Xunit
 open Projection.Core
+open Projection.Tests.Fixtures
 
 // ---------------------------------------------------------------------------
 // Helpers — small named constructors for test entries.
 // ---------------------------------------------------------------------------
 
-let private mkKey s = SsKey.original s |> Result.value
+let private mkKey s = testKey s
 
 let private entry source severity code message =
     { Source   = source

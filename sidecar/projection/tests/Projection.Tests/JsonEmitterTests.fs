@@ -154,7 +154,7 @@ let ``string escaping handles double quotes and backslashes`` () =
     // be escaped. The emitter must produce parseable JSON.
     let troubleName = Name.create "with\"quote\\backslash" |> Result.value
     let troubleKind : Kind = {
-        SsKey = SsKey.original "OS_KIND_Trouble" |> Result.value
+        SsKey = kindKey ["Trouble"]
         Name  = troubleName
         Origin = OsNative
         Modality = []
@@ -164,7 +164,7 @@ let ``string escaping handles double quotes and backslashes`` () =
         Indexes    = []
     }
     let troubleModule : Module = {
-        SsKey = SsKey.original "OS_MOD_Trouble" |> Result.value
+        SsKey = modKey "Trouble"
         Name  = Name.create "M" |> Result.value
         Kinds = [ troubleKind ]
     }

@@ -3,6 +3,7 @@ module Projection.Tests.ProfileSnapshotAdapterTests
 open Xunit
 open Projection.Core
 open Projection.Adapters.Sql
+open Projection.Tests.Fixtures
 
 // ---------------------------------------------------------------------------
 // V1 fixture content embedded as a string constant. Sourced from
@@ -96,7 +97,7 @@ let private microFkProtectJson = """{
 // V2 catalog matching V1's micro-fk-protect fixture.
 // ---------------------------------------------------------------------------
 
-let private mkKey s = SsKey.original s |> Result.value
+let private mkKey s = testKey s
 let private mkName s = Name.create s |> Result.value
 
 let private parentKindKey  = mkKey "OS_KIND_Parent"

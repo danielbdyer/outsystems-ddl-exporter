@@ -4,6 +4,7 @@ open Xunit
 open Projection.Core
 open Projection.Pipeline
 open Projection.Targets.SSDT
+open Projection.Tests.Fixtures
 
 /// M3 (per the chapter-3.1 milestone sequence chosen at session 27):
 /// the round-trip canary tests. Two complementary surfaces:
@@ -52,10 +53,7 @@ let private skipIfNoDocker (label: string) : bool =
 // Catalog under PhysicalSchema).
 // ---------------------------------------------------------------------
 
-let private ssKeySafe (s: string) : SsKey =
-    match SsKey.original s with
-    | Success k -> k
-    | Failure errors -> failwithf "fixture: SsKey.original failed: %A" errors
+let private ssKeySafe (s: string) : SsKey = testKey s
 
 let private nameSafe (s: string) : Name =
     match Name.create s with

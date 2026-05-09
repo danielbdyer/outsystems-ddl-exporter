@@ -4,6 +4,7 @@ open System
 open Xunit
 open Projection.Core
 open Projection.Core.Passes
+open Projection.Tests.Fixtures
 
 // ---------------------------------------------------------------------------
 // Full V1 parity test for NullabilityEvaluator's eight test scenarios
@@ -35,7 +36,7 @@ open Projection.Core.Passes
 //     evidence").
 // ---------------------------------------------------------------------------
 
-let private mkKey s = SsKey.original s |> Result.value
+let private mkKey s = testKey s
 let private mkName s = Name.create s |> Result.value
 
 /// Build a synthetic catalog with a single attribute matching the V1

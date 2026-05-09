@@ -3,6 +3,7 @@ module Projection.Tests.TypesTests
 open System.Threading.Tasks
 open Xunit
 open Projection.Core
+open Projection.Tests.Fixtures
 
 /// FSharp.Core's two-arity `Result<'a, 'b>` case constructors collide
 /// with `Projection.Core.DiagnosticSeverity.Error` once `Projection.Core`
@@ -35,7 +36,7 @@ type private FsResult<'a, 'b> = Microsoft.FSharp.Core.Result<'a, 'b>
 /// matches the aliased contract by typing.
 
 let private stubKey () =
-    SsKey.original "stub" |> Result.value
+    testKey "stub"
 
 [<Fact>]
 let ``S0.A: Emitter<'element> is inhabited by Catalog -> Result<ArtifactByKind<'element>, EmitError>`` () =

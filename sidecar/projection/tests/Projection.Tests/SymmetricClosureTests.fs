@@ -12,7 +12,7 @@ open Projection.Tests.Fixtures
 // ---------------------------------------------------------------------------
 
 let private inverseSsKey (originalRefKey: SsKey) : SsKey =
-    SsKey.derived originalRefKey SymmetricClosure.inverseReason |> Result.value
+    SsKey.derivedFrom originalRefKey SymmetricClosure.inverseReason |> Result.value
 
 let private allReferences (c: Catalog) : Reference list =
     Catalog.allKinds c

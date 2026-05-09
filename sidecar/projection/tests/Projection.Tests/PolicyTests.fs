@@ -228,7 +228,7 @@ let ``SelectionPolicy.ExcludeOnly selects every kind except the named ones`` () 
 let ``SelectionPolicy.IncludeAll is selectAll under any key`` (s: NonEmptyString) =
     if System.String.IsNullOrWhiteSpace s.Get then true
     else
-        let key = SsKey.original s.Get |> Result.value
+        let key = SsKey.synthesized "TEST" s.Get |> Result.value
         SelectionPolicy.isSelected key IncludeAll
 
 // ---------------------------------------------------------------------------

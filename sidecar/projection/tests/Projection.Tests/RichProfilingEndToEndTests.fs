@@ -8,6 +8,7 @@ open Projection.Adapters.Sql
 open Projection.Targets.Distributions
 open Projection.Targets.Json
 open Projection.Targets.SSDT
+open Projection.Tests.Fixtures
 
 // ---------------------------------------------------------------------------
 // Session 9 milestone — end-to-end rich-profiling validation.
@@ -33,7 +34,7 @@ open Projection.Targets.SSDT
 // without a V1 component (ADMIRE.md 2026-05-12) is operational.
 // ---------------------------------------------------------------------------
 
-let private mkKey (s: string) : SsKey = SsKey.original s |> Result.value
+let private mkKey (s: string) : SsKey = testKey s
 let private mkName (s: string) : Name = Name.create s |> Result.value
 
 // ---------------------------------------------------------------------------

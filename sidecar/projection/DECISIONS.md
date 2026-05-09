@@ -61,6 +61,23 @@ against these before adopting any pattern.
      permutation-invariance), structured lineage trails, structured
      diagnostic emission, bench-driven optimization with three-
      candidate / 2-refuted / 1-confirmed shape.
+6. **No V2-internal back-compat paths — refactor fully at time of
+   insight, no exceptions** (codified 2026-05-09 chapter 3.6 sidebar).
+   V2 is pre-production; nothing in V2 needs to preserve a prior V2
+   surface. Back-compat shims, "legacy" markers, "pre-stratification"
+   parsers, and aliasing forwarders within V2 are tech debt and must
+   be eliminated at the moment they are discovered. **The exception
+   is V1↔V2 bridging:** when a path is genuinely about reading V1's
+   output / preserving V1's identity / integrating with V1's
+   admire-spectrum surface (per `ADMIRE.md`), it is not back-compat
+   — it is the V1-bridge contract, and lives explicitly under the
+   `V1*` / `Ossys*` / `LiveOssysConnection` named surfaces. Anything
+   else: refactor it out now, including all test-fixture callers.
+   Per the supreme operating discipline pillars 1–5: typed builders
+   beat parser shims; closed-DU exhaustiveness beats string-prefix
+   detection; the type system is the contract. The cost of the
+   refactor at insight is paid once; the cost of carrying the shim
+   compounds across every reader.
 
 The lint guardrail (`scripts/lint-discipline.sh`) is the structural
 enforcement of these disciplines: **default to explicit

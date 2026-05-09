@@ -3,6 +3,7 @@ module Projection.Tests.OsmCatalogReaderDifferentialTests
 open Xunit
 open Projection.Core
 open Projection.Adapters.Osm
+open Projection.Tests.Fixtures
 
 // ---------------------------------------------------------------------------
 // Differential test for the OSSYS catalog adapter (session 18 — first
@@ -112,13 +113,12 @@ let private v1MinimalFixture : string =
 // rationale and re-open trigger.
 // ---------------------------------------------------------------------------
 
-let private mkKey s = SsKey.original s |> Result.value
 let private mkName s = Name.create s |> Result.value
 
-let private appCoreModuleKey = mkKey "OS_MOD_AppCore"
-let private userKindKey      = mkKey "OS_KIND_AppCore_User"
-let private userIdAttrKey    = mkKey "OS_ATTR_AppCore_User_Id"
-let private userEmailAttrKey = mkKey "OS_ATTR_AppCore_User_Email"
+let private appCoreModuleKey = modKey "AppCore"
+let private userKindKey      = kindKey ["AppCore"; "User"]
+let private userIdAttrKey    = attrKey ["AppCore"; "User"; "Id"]
+let private userEmailAttrKey = attrKey ["AppCore"; "User"; "Email"]
 
 let private expectedCatalog : Catalog =
     let userKind : Kind =
@@ -329,10 +329,10 @@ let private v1ReferenceFixture : string =
 // in the JSON; preserves order); User has a Reference pointing at
 // Account via AccountId, OnDelete = NoAction (V1 "Protect" maps
 // to NoAction per V1's SmoEntityEmitter convention).
-let private accountKindKey  = mkKey "OS_KIND_AppCore_Account"
-let private accountIdAttrKey = mkKey "OS_ATTR_AppCore_Account_Id"
-let private userAccountIdAttrKey = mkKey "OS_ATTR_AppCore_User_AccountId"
-let private userAccountReferenceKey = mkKey "OS_REF_AppCore_User_AccountId"
+let private accountKindKey  = kindKey ["AppCore"; "Account"]
+let private accountIdAttrKey = attrKey ["AppCore"; "Account"; "Id"]
+let private userAccountIdAttrKey = attrKey ["AppCore"; "User"; "AccountId"]
+let private userAccountReferenceKey = refKey ["AppCore"; "User"; "AccountId"]
 
 let private expectedReferenceCatalog : Catalog =
     let accountKind : Kind =
@@ -488,9 +488,9 @@ let private v1ExternalFixture : string =
   ]
 }"""
 
-let private extBillingModuleKey = mkKey "OS_MOD_ExtBilling"
-let private billingAccountKindKey = mkKey "OS_KIND_ExtBilling_BillingAccount"
-let private billingAccountIdAttrKey = mkKey "OS_ATTR_ExtBilling_BillingAccount_Id"
+let private extBillingModuleKey = modKey "ExtBilling"
+let private billingAccountKindKey = kindKey ["ExtBilling"; "BillingAccount"]
+let private billingAccountIdAttrKey = attrKey ["ExtBilling"; "BillingAccount"; "Id"]
 
 let private expectedExternalCatalog : Catalog =
     let billingAccount : Kind =
@@ -679,8 +679,8 @@ let private v1MixedActiveFixture : string =
   ]
 }"""
 
-let private activeEntityKindKey = mkKey "OS_KIND_AppCore_ActiveEntity"
-let private activeEntityIdAttrKey = mkKey "OS_ATTR_AppCore_ActiveEntity_Id"
+let private activeEntityKindKey = kindKey ["AppCore"; "ActiveEntity"]
+let private activeEntityIdAttrKey = attrKey ["AppCore"; "ActiveEntity"; "Id"]
 
 let private expectedMixedActiveCatalog : Catalog =
     let activeEntity : Kind =
@@ -897,13 +897,13 @@ let private v1IndexFixture : string =
   ]
 }"""
 
-let private userIndexLastNameAttrKey  = mkKey "OS_ATTR_AppCore_User_LastName"
-let private userIndexFirstNameAttrKey = mkKey "OS_ATTR_AppCore_User_FirstName"
-let private userIndexEmailLowerAttrKey = mkKey "OS_ATTR_AppCore_User_EmailLower"
+let private userIndexLastNameAttrKey  = attrKey ["AppCore"; "User"; "LastName"]
+let private userIndexFirstNameAttrKey = attrKey ["AppCore"; "User"; "FirstName"]
+let private userIndexEmailLowerAttrKey = attrKey ["AppCore"; "User"; "EmailLower"]
 
-let private pkUserIndexKey      = mkKey "OS_IDX_AppCore_User_PK_USER"
-let private uxUserEmailIndexKey = mkKey "OS_IDX_AppCore_User_UX_USER_EMAIL"
-let private ixUserNameIndexKey  = mkKey "OS_IDX_AppCore_User_IX_USER_NAME"
+let private pkUserIndexKey      = idxKey ["AppCore"; "User"; "PK_USER"]
+let private uxUserEmailIndexKey = idxKey ["AppCore"; "User"; "UX_USER_EMAIL"]
+let private ixUserNameIndexKey  = idxKey ["AppCore"; "User"; "IX_USER_NAME"]
 
 let private expectedIndexCatalog : Catalog =
     let userKind : Kind =
@@ -1066,9 +1066,9 @@ let private v1StaticEntityFixture : string =
   ]
 }"""
 
-let private countryKindKey     = mkKey "OS_KIND_AppCore_Country"
-let private countryIdAttrKey   = mkKey "OS_ATTR_AppCore_Country_Id"
-let private countryCodeAttrKey = mkKey "OS_ATTR_AppCore_Country_Code"
+let private countryKindKey     = kindKey ["AppCore"; "Country"]
+let private countryIdAttrKey   = attrKey ["AppCore"; "Country"; "Id"]
+let private countryCodeAttrKey = attrKey ["AppCore"; "Country"; "Code"]
 
 let private expectedStaticEntityCatalog : Catalog =
     let countryKind : Kind =

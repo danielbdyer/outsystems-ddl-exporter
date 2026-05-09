@@ -2,6 +2,7 @@ module Projection.Tests.ArtifactByKindTests
 
 open Xunit
 open Projection.Core
+open Projection.Tests.Fixtures
 
 /// FSharp.Core's two-arity `Result<'a, 'b>` case constructors collide
 /// with `Projection.Core.DiagnosticSeverity.Error` once `Projection.Core`
@@ -24,11 +25,7 @@ type private FsResult<'a, 'b> = Microsoft.FSharp.Core.Result<'a, 'b>
 /// `T11: emitSlices key-set equals Catalog.allKinds` lands per emitter
 /// at slices 5.2–5.4.
 
-let private ssKey (s: string) : SsKey =
-    match SsKey.original s with
-    | Success k -> k
-    | Failure errors ->
-        failwithf "fixture: SsKey.original failed: %A" errors
+let private ssKey (s: string) : SsKey = testKey s
 
 let private nm (s: string) : Name =
     match Name.create s with
