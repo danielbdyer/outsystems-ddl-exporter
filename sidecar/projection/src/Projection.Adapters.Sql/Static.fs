@@ -56,11 +56,14 @@ module Static =
 
     /// Derive a row's `SsKey` from its parent kind's SsKey plus the
     /// row's PK value(s). Deterministic per A5: same PK values yield
-    /// the same identifier.
+    /// the same identifier. Per slice 5.5 / `CHAPTER_3_PRESCOPE_
+    /// ARTIFACTBYKIND_REFACTOR.md` §7, the row identifier uses the
+    /// `OS_ROW` synthesis source so A1's bound is type-visible at the
+    /// variant tag.
     let private deriveRowIdentifier (kindKey: SsKey) (pkValues: string list) : Result<SsKey> =
         let suffix = String.concat ":" pkValues
-        let raw = sprintf "OS_ROW_%s_%s" (SsKey.rootOriginal kindKey) suffix
-        SsKey.original raw
+        let basis = sprintf "%s_%s" (SsKey.rootOriginal kindKey) suffix
+        SsKey.synthesized "OS_ROW" basis
 
     /// Build a `(Name * string)` value pair for every attribute on the
     /// kind whose JSON cell is present in the row. Attributes whose

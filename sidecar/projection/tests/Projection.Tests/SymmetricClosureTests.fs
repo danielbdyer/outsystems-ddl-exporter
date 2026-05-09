@@ -43,8 +43,8 @@ let ``inverse SsKey is Derived with reason "inverse"`` () =
         |> fun k -> k.References
         |> List.exactlyOne
     match inverse.SsKey with
-    | Derived (_, reason) -> Assert.Equal("inverse", reason)
-    | other -> Assert.Fail(sprintf "Expected Derived inverse, got %A" other)
+    | DerivedFrom (_, reason) -> Assert.Equal("inverse", reason)
+    | other -> Assert.Fail(sprintf "Expected DerivedFrom inverse, got %A" other)
 
 [<Fact>]
 let ``A5: inverse SsKey traces back to the original reference's root`` () =
