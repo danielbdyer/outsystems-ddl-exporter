@@ -53,6 +53,7 @@
     <Compile Include="RichProfilingEndToEndTests.fs" />
     <Compile Include="DiagnosticsEndToEndTests.fs" />
     <Compile Include="EndToEndPipelineTests.fs" />
+    <Compile Include="CanaryDeployTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
