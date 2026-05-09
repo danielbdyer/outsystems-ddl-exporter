@@ -272,21 +272,18 @@ let ``T1: end-to-end pipeline is byte-deterministic`` () =
     Assert.All(outputs, fun s -> Assert.Equal(head, s))
 
 // ---------------------------------------------------------------------------
-// T11 sibling-Π commutativity extended to three Π — every catalog kind's
-// SsKey root appears in the SSDT, JSON, and Distributions outputs.
+// T11 sibling-Π commutativity — substring discipline retired in
+// chapter 3.5 slice δ. Per the `Emitter<'element>` port realization,
+// each Π returns `Result<ArtifactByKind<'element>, EmitError>`, and
+// `ArtifactByKind`'s smart constructor enforces strict-equality between
+// the slice's keyset and `Catalog.allKinds`'s SsKey set. T11 is now a
+// structural type theorem, exercised at `T11TypeTheoremTests.fs`. The
+// `endToEndCatalog`-flavoured worked example survives implicitly via
+// the type-theorem tests' coverage of `sampleCatalog`; the cross-emitter
+// keyset agreement is in `T11TypeTheoremTests.``T11 (sibling
+// commutativity): RawText, Json, Distributions key-sets are pairwise
+// equal```.
 // ---------------------------------------------------------------------------
-
-[<Fact>]
-let ``T11 extended: every catalog kind's SsKey root appears in all three sibling Pi outputs`` () =
-    let profile = enrichedProfile ()
-    let ssdt   = RawTextEmitter.emit endToEndCatalog
-    let json   = JsonEmitter.emit endToEndCatalog
-    let distrs = DistributionsEmitter.emit endToEndCatalog profile
-    for k in Catalog.allKinds endToEndCatalog do
-        let root = SsKey.rootOriginal k.SsKey
-        Assert.Contains(root, ssdt)
-        Assert.Contains(root, json)
-        Assert.Contains(root, distrs)
 
 // ---------------------------------------------------------------------------
 // Structural commitment — empty distributions JSON does not change the

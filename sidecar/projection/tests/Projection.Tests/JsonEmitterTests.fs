@@ -92,17 +92,12 @@ let ``T4: every catalog SsKey root appears in both SSDT and JSON outputs`` () =
         Assert.True(occursIn ssdt root, sprintf "SSDT output missing SsKey root: %s" root)
         Assert.True(occursIn json root, sprintf "JSON output missing SsKey root: %s" root)
 
-[<Fact>]
-let ``T11: sibling Pi's surface the same kind set when running on the same enriched catalog`` () =
-    // Each Π expresses the catalog differently, but the *set* of kinds
-    // surfaced must be the same: same enrichment ⇒ same identity content.
-    let enriched = enrich sampleCatalog
-    let ssdt = RawTextEmitter.emit enriched
-    let json = JsonEmitter.emit enriched
-    for k in Catalog.allKinds enriched do
-        let root = SsKey.rootOriginal k.SsKey
-        Assert.Contains(root, ssdt)
-        Assert.Contains(root, json)
+// `T11: sibling Pi's surface the same kind set when running on the same
+// enriched catalog` retired in chapter 3.5 slice δ — the substring
+// `Assert.Contains` discipline is now structural by virtue of the
+// `Emitter<'element>` port and `ArtifactByKind`'s strict-equality
+// smart constructor. Replaced by the type-theorem property tests at
+// `T11TypeTheoremTests.fs`.
 
 [<Fact>]
 let ``T11: sibling Pi's agree on physical realization for every kind`` () =

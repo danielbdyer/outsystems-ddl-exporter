@@ -51,6 +51,7 @@
     <Compile Include="RawTextEmitterTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />
+    <Compile Include="T11TypeTheoremTests.fs" />
     <Compile Include="RichProfilingEndToEndTests.fs" />
     <Compile Include="DiagnosticsEndToEndTests.fs" />
     <Compile Include="EndToEndPipelineTests.fs" />
