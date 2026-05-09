@@ -175,3 +175,40 @@ module ResultOperators =
 
     /// Map: `f <!> m` applies `f` inside a successful result.
     let inline (<!>) (f: 'a -> 'b) (r: Result<'a>) : Result<'b> = Result.map f r
+
+
+/// Computation-expression builder for `Result<'a>` — chapter-3.6
+/// adoption-trigger cash-out per CLAUDE.md F# feature surface
+/// (computation-expression entry: "When consumer chains grow long
+/// enough that the operator-style noise outweighs the explicit
+/// operations.") Worked example: `Projection.Adapters.Sql.ReadSide`
+/// `buildKind` / `buildReference` chains 3–4 deep; `result {}` reads
+/// like the algebraic spec.
+///
+/// Usage:
+///
+///     result {
+///         let! attributes = Result.aggregate attrResults
+///         let! kKey = kindSsKey schema table
+///         let! kName = Name.create table
+///         return { ... }
+///     }
+///
+/// Equivalent to `Result.aggregate attrResults |> Result.bind (fun
+/// attributes -> kindSsKey schema table |> Result.bind (fun kKey ->
+/// Name.create table |> Result.map (fun kName -> { ... })))`.
+/// Short-circuits on first `Failure`; preserves error list intact.
+type ResultBuilder () =
+    member inline _.Bind (r: Result<'a>, f: 'a -> Result<'b>) : Result<'b> =
+        Result.bind f r
+    member inline _.Return (value: 'a) : Result<'a> =
+        Result.success value
+    member inline _.ReturnFrom (r: Result<'a>) : Result<'a> = r
+
+/// Auto-opened builder instance so `result { ... }` is in scope
+/// alongside `Result.bind` / `Result.success`. The CE composes with
+/// the existing point-free pipeline operators (`|>`, `>>=`); choose
+/// per call site.
+[<AutoOpen>]
+module ResultBuilderInstance =
+    let result : ResultBuilder = ResultBuilder ()

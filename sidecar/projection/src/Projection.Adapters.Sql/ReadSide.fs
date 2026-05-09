@@ -538,31 +538,29 @@ module ReadSide =
         (identitySet: Set<string * string * string>)
         : Result<Kind> =
         use _ = Bench.scope "readside.buildKind"
-        // collect all attributes for this (schema, table)
+        // Chapter-3.6 adoption-trigger cash-out: `result { }` CE
+        // replaces the prior 4-deep nested-match chain. Reads as
+        // the algebraic spec; short-circuits on first failure.
         let attrResults =
             columnRows
             |> Bench.iterMap "readside.buildAttribute" (fun row ->
                 buildAttribute row primaryKeySet identitySet)
-        match Result.aggregate attrResults with
-        | Failure errors -> Result.failure errors
-        | Success attributes ->
-            match kindSsKey schema table with
-            | Failure errors -> Result.failure errors
-            | Success kKey ->
-                match Name.create table with
-                | Failure errors -> Result.failure errors
-                | Success kName ->
-                    Result.success
-                        {
-                            SsKey = kKey
-                            Name = kName
-                            Origin = OsNative
-                            Modality = []
-                            Physical = { Schema = schema; Table = table }
-                            Attributes = attributes
-                            References = []
-                            Indexes = []
-                        }
+        result {
+            let! attributes = Result.aggregate attrResults
+            let! kKey = kindSsKey schema table
+            let! kName = Name.create table
+            return
+                {
+                    SsKey = kKey
+                    Name = kName
+                    Origin = OsNative
+                    Modality = []
+                    Physical = { Schema = schema; Table = table }
+                    Attributes = attributes
+                    References = []
+                    Indexes = []
+                }
+        }
 
     /// Read all user tables + columns from a deployed database and
     /// reconstruct a V2 `Catalog`. Returns the reconstructed Catalog
@@ -587,36 +585,32 @@ module ReadSide =
         (srcSchema: string, srcTable: string, srcColumn: string,
          tgtSchema: string, tgtTable: string, _tgtColumn: string)
         : Result<Reference> =
-        match attributeSsKey srcSchema srcTable srcColumn with
-        | Failure errors -> Result.failure errors
-        | Success srcAttrKey ->
-            match kindSsKey tgtSchema tgtTable with
-            | Failure errors -> Result.failure errors
-            | Success tgtKindKey ->
-                match
-                    SsKey.synthesized
-                        "READSIDE_REF"
-                        (sprintf "%s.%s.%s" srcSchema srcTable srcColumn)
-                with
-                | Failure errors -> Result.failure errors
-                | Success refKey ->
-                    match Name.create (sprintf "FK_%s_%s" srcTable srcColumn) with
-                    | Failure errors -> Result.failure errors
-                    | Success refName ->
-                        Result.success
-                            {
-                                SsKey = refKey
-                                Name = refName
-                                SourceAttribute = srcAttrKey
-                                TargetKind = tgtKindKey
-                                // Delete-rule recovery requires
-                                // joining sys.foreign_keys.delete_referential_action_desc;
-                                // defer to a follow-up slice.
-                                // NoAction is the SQL Server default
-                                // and matches the OutSystems-shape
-                                // fixtures we currently target.
-                                OnDelete = NoAction
-                            }
+        // Chapter-3.6: `result { }` CE replaces the prior 4-deep
+        // nested-match chain. Same short-circuit semantics; reads
+        // as the algebraic spec.
+        result {
+            let! srcAttrKey = attributeSsKey srcSchema srcTable srcColumn
+            let! tgtKindKey = kindSsKey tgtSchema tgtTable
+            let! refKey =
+                SsKey.synthesized
+                    "READSIDE_REF"
+                    (sprintf "%s.%s.%s" srcSchema srcTable srcColumn)
+            let! refName = Name.create (sprintf "FK_%s_%s" srcTable srcColumn)
+            return
+                {
+                    SsKey = refKey
+                    Name = refName
+                    SourceAttribute = srcAttrKey
+                    TargetKind = tgtKindKey
+                    // Delete-rule recovery requires
+                    // joining sys.foreign_keys.delete_referential_action_desc;
+                    // defer to a follow-up slice.
+                    // NoAction is the SQL Server default
+                    // and matches the OutSystems-shape
+                    // fixtures we currently target.
+                    OnDelete = NoAction
+                }
+        }
 
     /// Attach references to a Kind based on the FKs grouped by
     /// (schema, table) coordinates. Per session-31 Session B.
@@ -627,9 +621,10 @@ module ReadSide =
         match fkGroups.TryFind(k.Physical.Schema, k.Physical.Table) with
         | None -> Result.success k
         | Some fks ->
-            match fks |> List.map buildReference |> Result.aggregate with
-            | Failure errors -> Result.failure errors
-            | Success refs -> Result.success { k with References = refs }
+            result {
+                let! refs = fks |> List.map buildReference |> Result.aggregate
+                return { k with References = refs }
+            }
 
     let read (cnn: SqlConnection) : Task<Result<Catalog>> =
         task {
