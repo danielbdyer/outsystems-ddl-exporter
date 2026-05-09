@@ -8206,3 +8206,104 @@ chapter compounds the discipline.
     are correct. Per-type adoption when an invariant breaks
     "structural equality = semantic equality" (audit Lens-2
     trigger).
+
+
+## 2026-05-09 — Reified-primitive pattern: dry up LINT-ALLOWs by extracting typed-opaque mutation surfaces
+
+The audit-justified mutation files were discovered to share two
+recurring shapes: pass-driver event accumulation (3 files used
+`ResizeArray<LineageEvent>` directly) and BCL writer-options
+construction (3 files mutated `JsonWriterOptions` /
+`XmlWriterSettings` builders). Each shape is reified into a single
+typed primitive whose mutation lives EXCLUSIVELY in that primitive's
+module — the consumers become marker-free.
+
+**`Projection.Core/LineageBuffer.fs`** — `LineageBuffer.Buffer` is
+a `private` DU wrapping `System.Collections.Generic.List<
+LineageEvent>`. Module API: `create` / `add` / `addMany` / `toList`
+/ `isEmpty` / `count`. The opaque `private` constructor enforces
+that consumers cannot inspect or mutate the underlying List;
+mutation is type-invisible from the consumer's perspective. Three
+pass drivers (`NamingMorphism`, `NormalizeStaticPopulations`,
+`SymmetricClosure`) consume this primitive and lose their
+`LINT-ALLOW-FILE-MUTATION` markers (no direct mutation in their
+files).
+
+**`Projection.Core/PinnedWriting.fs`** — `JsonOptions.indented` /
+`JsonOptions.compact` / `XmlSettings.indentedUtf8NoBom` are
+factory functions returning fresh BCL option-builder instances
+with V2's pinned-deterministic settings (UTF-8 no-BOM, LF newlines,
+two-space indent). Each call yields an independent instance; the
+mutable struct/class surface is fully encapsulated. Three emitters
+(`JsonEmitter`, `DistributionsEmitter`, `RefactorLogRender`)
+consume this primitive and lose their `LINT-ALLOW-FILE-MUTATION`
+markers.
+
+**SymmetricClosure pure F# fold refactor** — the `let mutable
+inversesByTarget : Map<…>` retired. The symmetric-closure
+construction is reified as a `Step` DU (`NoOp | Skip ev | Created
+(ev, targetKey, inverse)`) classifier function plus a `Seq.fold`
+over `(sourceKind, reference)` pairs accumulating
+`(events, inversesByTarget)` immutably. No mutation in the file.
+
+**Net effect on the LINT-ALLOW landscape:** five
+`LINT-ALLOW-FILE-MUTATION` markers retired (3 pass drivers + 3
+emitters minus the 2 new shared modules' markers); the consumer
+surfaces stop carrying the discipline-relaxation. The FP discipline
+strengthens at the *type level* — mutation is reified into named
+typed-opaque primitives rather than excused per-consumer.
+
+**Pattern.** When N≥3 consumer files share the same mutation
+shape and the mutation has a clean typed-opaque interface, extract
+to a single named module under `Projection.Core/`. The module
+carries one `LINT-ALLOW-FILE-MUTATION` marker; the N consumers
+become marker-free. Per the two-consumer threshold + N=3 trigger,
+extraction earned at audit close. Future repetitions of the
+recurring-pattern audit drive further drying.
+
+
+## 2026-05-09 — FP strict mode regression preventatives: 5 new lint rules
+
+The audit confirmed Core is already clean of these patterns; the
+rules are regression-preventative (catch new violations before
+they ship). Each rule names the discipline it enforces:
+
+  - **Rule 11 — `core-failwith`**: bans `failwith` / `failwithf`
+    in `Projection.Core/`. Core uses `Result<'a>` for typed error
+    paths; only `invalidOp` / `invalidArg` / `nullArg` (BCL-
+    convention preconditions) are allowed for unreachable /
+    invariant-breach branches. Untyped `failwith` raises bare
+    `Exception` (no semantic routing for callers); the Result
+    discipline rejects it.
+
+  - **Rule 12 — `core-async-block`**: bans `async {` / `task {`
+    blocks in `Projection.Core/`. Core is synchronous by design
+    (T1 byte-determinism requires deterministic execution; async
+    introduces scheduler nondeterminism). Adapters at the
+    boundary may use these freely.
+
+  - **Rule 13 — `core-concurrency-primitive`**: bans `Task.Run`
+    / `Task.Delay` / `Thread.Sleep` / `Task.WaitAll` /
+    `Task.WaitAny` / `Task.Wait` in `Projection.Core/`.
+    Concurrency primitives belong in adapters; Core's purity
+    discipline forbids them.
+
+  - **Rule 14 — `type-erasure`**: bans `box` / `unbox` in
+    production code (Core + adapters). Explicit type erasure /
+    recovery is incompatible with F#'s closed-DU + generic
+    dispatch discipline. Today: zero occurrences; rule prevents
+    future regression.
+
+  - **Rule 15 — `mutable-record-field`**: bans
+    `mutable Foo : T` field declarations in record types
+    anywhere in production. F# records are immutable by default;
+    mutable record fields break structural-equality + T1 byte-
+    determinism (two records with the same field values can
+    drift if one's field is later mutated). Function-local
+    `let mutable` is the allowed mutation surface; mutable
+    record fields aren't.
+
+**Operational consequence.** The `scripts/lint-discipline.sh`
+script now enforces 15 rules over `src/`. Today's clean state
+sets the baseline; any new violation requires either
+refactoring or a paired DECISIONS amendment with rationale.

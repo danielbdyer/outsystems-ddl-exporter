@@ -1,8 +1,5 @@
 namespace Projection.Core.Passes
 
-// LINT-ALLOW-FILE-MUTATION: Pass-driver event accumulation + inversesByTarget map for symmetric-
-//   closure construction. Reified through Lineage.ofValueAndEvents.
-
 open Projection.Core
 
 /// The symmetric-closure pass — A10's commitment in code. References in
@@ -94,6 +91,51 @@ module SymmetricClosure =
     /// Emits one `Created` lineage event per inverse added; one
     /// `Annotated` event per skip (target absent or no PK), so the trail
     /// is auditable.
+    /// One step of the symmetric-closure fold: classify a single
+    /// (source, reference) pair into either a skip event, a no-op,
+    /// or a `(createdEvent, inverse)` pair to fold into the
+    /// inverses-by-target map.
+    type private Step =
+        /// No event, no map update (idempotence cases).
+        | NoOp
+        /// Add a skip-annotated event; no map update.
+        | Skip of LineageEvent
+        /// Add a created event; add the inverse to the target's
+        /// inverse list in the accumulator map.
+        | Created of LineageEvent * targetKey: SsKey * inverse: Reference
+
+    let private classifyStep
+        (kindByKey: Map<SsKey, Kind>)
+        (sourceKind: Kind)
+        (r: Reference)
+        : Step =
+        if isInverseRef r then NoOp
+        else
+            let inverseKey = deriveInverseKey r
+            match Map.tryFind r.TargetKind kindByKey with
+            | None ->
+                Skip (skippedEvent r.SsKey "skipped: target kind absent")
+            | Some target ->
+                if hasInverseAlready target.References inverseKey then NoOp
+                else
+                    match buildInverse sourceKind r target with
+                    | None ->
+                        Skip (skippedEvent r.SsKey "skipped: target has no primary key")
+                    | Some inverse ->
+                        Created (createdEvent inverse.SsKey, target.SsKey, inverse)
+
+    /// Run the pass. For every directional reference whose target is
+    /// resolvable in the catalog and has at least one primary-key
+    /// attribute, attach an inverse reference on the target kind.
+    /// Emits one `Created` lineage event per inverse added; one
+    /// `Annotated` event per skip (target absent or no PK), so the trail
+    /// is auditable.
+    ///
+    /// Pure F# fold — no `let mutable`. The classifier `classifyStep`
+    /// reduces each `(sourceKind, reference)` pair to a `Step` DU
+    /// variant; the fold accumulator `(events: LineageEvent list,
+    /// inversesByTarget: Map<SsKey, Reference list>)` carries the
+    /// closure-construction state immutably.
     let run (c: Catalog) : Lineage<Catalog> =
         let allKinds = Catalog.allKinds c
         let kindByKey =
@@ -101,36 +143,36 @@ module SymmetricClosure =
             |> List.map (fun k -> k.SsKey, k)
             |> Map.ofList
 
-        let events = ResizeArray<LineageEvent>()
-        let mutable inversesByTarget : Map<SsKey, Reference list> = Map.empty
+        // Flatten `(sourceKind, reference)` pairs as the fold's input
+        // sequence. Order preserved: all references from the first
+        // kind, then all from the second, etc.
+        let pairs =
+            seq {
+                for sourceKind in allKinds do
+                    for r in sourceKind.References do
+                        yield sourceKind, r
+            }
 
-        for sourceKind in allKinds do
-            for r in sourceKind.References do
-                if isInverseRef r then
-                    // Idempotence: don't compute the inverse-of-an-inverse.
-                    ()
-                else
-                    let inverseKey = deriveInverseKey r
-                    match Map.tryFind r.TargetKind kindByKey with
-                    | None ->
-                        events.Add(skippedEvent r.SsKey "skipped: target kind absent")
-                    | Some target ->
-                        if hasInverseAlready target.References inverseKey then
-                            // Idempotence at the second-run level: an
-                            // inverse with this SsKey already lives on
-                            // the target.
-                            ()
-                        else
-                            match buildInverse sourceKind r target with
-                            | None ->
-                                events.Add(skippedEvent r.SsKey "skipped: target has no primary key")
-                            | Some inverse ->
-                                events.Add(createdEvent inverse.SsKey)
-                                let current =
-                                    Map.tryFind target.SsKey inversesByTarget
-                                    |> Option.defaultValue []
-                                inversesByTarget <-
-                                    Map.add target.SsKey (inverse :: current) inversesByTarget
+        // Fold into `(eventsRev, inversesByTarget)`. Events accumulate
+        // reversed (cons-and-reverse pattern); reversed once at the end.
+        let initial : LineageEvent list * Map<SsKey, Reference list> =
+            [], Map.empty
+        let eventsRev, inversesByTarget =
+            pairs
+            |> Seq.fold
+                (fun (eventsAcc, mapAcc) (sourceKind, r) ->
+                    match classifyStep kindByKey sourceKind r with
+                    | NoOp -> eventsAcc, mapAcc
+                    | Skip ev -> ev :: eventsAcc, mapAcc
+                    | Created (ev, targetKey, inverse) ->
+                        let current =
+                            Map.tryFind targetKey mapAcc
+                            |> Option.defaultValue []
+                        let mapAcc' =
+                            Map.add targetKey (inverse :: current) mapAcc
+                        ev :: eventsAcc, mapAcc')
+                initial
+        let events = List.rev eventsRev
 
         let withInverses =
             { Modules =
@@ -145,8 +187,8 @@ module SymmetricClosure =
                                 | Some toAdd ->
                                     // Reverse so inverses appear in the
                                     // order they were discovered (the
-                                    // mutable map accumulates in reverse
+                                    // accumulator builds in reverse
                                     // because of `inverse :: current`).
                                     { k with References = k.References @ List.rev toAdd }) }) }
 
-        Lineage.ofValueAndEvents (List.ofSeq events) withInverses
+        Lineage.ofValueAndEvents events withInverses

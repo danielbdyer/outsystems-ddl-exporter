@@ -21,6 +21,7 @@
   <ItemGroup>
     <Compile Include="Result.fs" />
     <Compile Include="Bench.fs" />
+    <Compile Include="PinnedWriting.fs" />
     <Compile Include="Identity.fs" />
     <Compile Include="UuidV5.fs" />
     <Compile Include="Coordinates.fs" />
@@ -37,6 +38,7 @@
     <Compile Include="Strategies/ForeignKeyRules.fs" />
     <Compile Include="Strategies/CategoricalUniquenessRules.fs" />
     <Compile Include="Lineage.fs" />
+    <Compile Include="LineageBuffer.fs" />
     <Compile Include="Diagnostics.fs" />
     <Compile Include="Types.fs" />
     <Compile Include="Strategies/Composition.fs" />

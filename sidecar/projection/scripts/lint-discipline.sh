@@ -278,6 +278,52 @@ scan_mutation "mutable-collection" '\b(ResizeArray|Dictionary|HashSet|Stack|Queu
 scan_mutation "set-assign" '<-'
 
 # ---------------------------------------------------------------------------
+# Rule 11 — `failwith` / `failwithf` in Core. Core uses `Result<'a>` for
+# typed error paths; only `invalidOp` / `invalidArg` / `nullArg` (BCL-
+# convention preconditions) are allowed for unreachable / invariant-
+# breach branches. Untyped `failwith` raises `Exception` (no semantic
+# routing for callers); the Result discipline rejects it. Per the FP
+# strict-mode discipline (`DECISIONS 2026-05-09`).
+# ---------------------------------------------------------------------------
+
+scan "core-failwith" "$CORE" '\bfailwith[f]?\b'
+
+# ---------------------------------------------------------------------------
+# Rule 12 — `async {` / `task {` blocks in Core. Core is synchronous by
+# design (T1 byte-determinism requires deterministic execution; async /
+# task introduces scheduler nondeterminism). Adapters at the boundary
+# may use these freely; Core may not.
+# ---------------------------------------------------------------------------
+
+scan "core-async-block" "$CORE" 'async \{|task \{'
+
+# ---------------------------------------------------------------------------
+# Rule 13 — `Task.Run` / `Task.Delay` / `Thread.Sleep` / `Task.WaitAll` /
+# `Task.WaitAny` in Core. Concurrency primitives belong in adapters.
+# ---------------------------------------------------------------------------
+
+scan "core-concurrency-primitive" "$CORE" 'Task\.(Run|Delay|WaitAll|WaitAny|Wait)|Thread\.Sleep'
+
+# ---------------------------------------------------------------------------
+# Rule 14 — `box` / `unbox` in production code. Explicit type erasure /
+# recovery; F# closed-DU + generic dispatch is the structural alternative.
+# Allowed sites would be extreme interop — none today.
+# ---------------------------------------------------------------------------
+
+scan "type-erasure" "$SRC" '\b(box|unbox)\b'
+
+# ---------------------------------------------------------------------------
+# Rule 15 — Mutable record fields (`mutable Foo : T`) anywhere in
+# production. F# records are immutable by default; mutable record fields
+# break structural-equality + T1 byte-determinism (two records with the
+# same field values can drift if one's field is later mutated). Function-
+# local `let mutable` is the allowed mutation surface; mutable record
+# fields aren't.
+# ---------------------------------------------------------------------------
+
+scan "mutable-record-field" "$SRC" '\bmutable [A-Z][a-zA-Z]+\s*:'
+
+# ---------------------------------------------------------------------------
 # Reporting.
 # ---------------------------------------------------------------------------
 

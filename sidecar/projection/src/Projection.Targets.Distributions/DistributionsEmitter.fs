@@ -1,7 +1,5 @@
 namespace Projection.Targets.Distributions
 
-// LINT-ALLOW-FILE-MUTATION: Same BCL JsonWriterOptions pattern as JsonEmitter.fs.
-
 open System.IO
 open System.Text.Json
 open System.Text.Json.Nodes
@@ -167,26 +165,10 @@ module DistributionsEmitter =
         w.WriteEndArray()
         w.WriteEndObject()
 
-    /// Indented options for the whole-document writer. Pinned at the
-    /// emit-site so per-document determinism (T1) is independent of
-    /// caller-supplied options.
-    let private indentedOptions : JsonWriterOptions =
-        JsonWriterOptions(
-            Indented = true,
-            NewLine = "\n",
-            SkipValidation = false)
-
-    /// Compact options for per-kind slice rendering. `emitSlices`
-    /// produces per-kind JSON without indentation; the composer in
-    /// `emit` re-parses through `JsonNode.Parse` and writes through
-    /// the indented document writer so depth-tracking matches the
-    /// surrounding catalog document. Property insertion order is
-    /// preserved by `JsonObject` so the round trip is byte-deterministic.
-    let private compactOptions : JsonWriterOptions =
-        JsonWriterOptions(
-            Indented = false,
-            NewLine = "\n",
-            SkipValidation = false)
+    // Pinned-deterministic JSON writer options come from
+    // `Projection.Core.JsonOptions` — the single sanctioned home
+    // for the BCL's mutable `JsonWriterOptions` struct (per the FP
+    // strict-mode discipline). Same shape as `JsonEmitter`.
 
     /// Render one kind's distribution-payload JSON object as compact
     /// UTF-8 text. Used by `emitSlices` to produce the per-kind value
@@ -196,7 +178,7 @@ module DistributionsEmitter =
     let private kindJsonText (profile: Profile) (k: Kind) : string =
         use stream = new MemoryStream()
         do
-            use writer = new Utf8JsonWriter(stream, compactOptions)
+            use writer = new Utf8JsonWriter(stream, (JsonOptions.compact ()))
             writeKind writer profile k
             writer.Flush()
         System.Text.Encoding.UTF8.GetString(stream.ToArray())
@@ -271,7 +253,7 @@ module DistributionsEmitter =
             let slices = ArtifactByKind.toMap artifact
             use stream = new MemoryStream()
             do
-                use w = new Utf8JsonWriter(stream, indentedOptions)
+                use w = new Utf8JsonWriter(stream, (JsonOptions.indented ()))
                 w.WriteStartObject()
                 w.WriteString("emitter", emitterName)
                 w.WriteNumber("version", version)

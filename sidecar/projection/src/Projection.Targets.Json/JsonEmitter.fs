@@ -1,11 +1,5 @@
 namespace Projection.Targets.Json
 
-// LINT-ALLOW-FILE-MUTATION: BCL JsonWriterOptions is a mutable
-//   struct exposing fields by mutation (BCL surface). The mutation
-//   is local to the option-builder; pure output is emitted to
-//   Utf8JsonWriter. Per audit Lens-2 Tier-2 (justified — BCL forces
-//   the shape).
-
 open System.IO
 open System.Text
 open System.Text.Json
@@ -135,31 +129,13 @@ module JsonEmitter =
     // Public surface.
     // -----------------------------------------------------------------------
 
-    let private writerOptions : JsonWriterOptions =
-        // Indented + pinned LF newline so output is deterministic across
-        // platforms (T1). IndentCharacter / IndentSize default to two
-        // spaces, which matches the rest of the V2 documentation style.
-        let mutable opts = JsonWriterOptions()
-        opts.Indented <- true
-        opts.NewLine <- "\n"
-        opts
-
-    /// Compact (un-indented) writer options for per-kind slice
-    /// rendering. Per-kind values land in the `Map<SsKey, string>`
-    /// keyed by `ArtifactByKind`'s smart constructor; the composer
-    /// (`emit`) parses each compact kind and writes it through the
-    /// indented document writer, so the BCL's `Utf8JsonWriter` handles
-    /// indentation depth-tracking by construction. T1 byte-determinism
-    /// of the whole document is preserved because (a) per-kind JSON
-    /// is byte-deterministic in compact form by virtue of `JsonObject`
-    /// preserving property insertion order, and (b) the indented
-    /// writer's emitted text is a function of (input nodes, pinned
-    /// options) — not of arrival path.
-    let private compactOptions : JsonWriterOptions =
-        let mutable opts = JsonWriterOptions()
-        opts.Indented <- false
-        opts.NewLine <- "\n"
-        opts
+    /// Pinned-deterministic JSON writer options. Both forms come
+    /// from `Projection.Core.JsonOptions` — the single sanctioned
+    /// home for the BCL's mutable `JsonWriterOptions` struct (per
+    /// the FP strict-mode discipline). `indented` is the document-
+    /// writer form; `compact` is the per-kind slice form whose
+    /// composer re-parses through `JsonNode.Parse`. Indentation
+    /// depth-tracking is handled by the BCL at composition time.
 
     /// Render one kind's JSON object into a compact UTF-8 string.
     /// Used by `emitSlices` to produce the per-kind value indexed in
@@ -170,7 +146,7 @@ module JsonEmitter =
     let private kindJsonText (k: Kind) : string =
         use stream = new MemoryStream()
         do
-            use writer = new Utf8JsonWriter(stream, compactOptions)
+            use writer = new Utf8JsonWriter(stream, (JsonOptions.compact ()))
             writeKind writer k
             writer.Flush()
         Encoding.UTF8.GetString(stream.ToArray())
@@ -213,7 +189,7 @@ module JsonEmitter =
             let slices = ArtifactByKind.toMap artifact
             use stream = new MemoryStream()
             do
-                use writer = new Utf8JsonWriter(stream, writerOptions)
+                use writer = new Utf8JsonWriter(stream, (JsonOptions.indented ()))
                 writer.WriteStartObject()
                 writer.WriteString("emitter", "Projection.Targets.Json")
                 writer.WriteNumber("version", version)
