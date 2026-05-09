@@ -304,10 +304,12 @@ module RawTextEmitter =
                         err)
         }
 
-    /// Back-compat .sql-text realization — `statements >> Render.toText`,
-    /// stream-probed for throughput observability. T1 byte-determinism
-    /// holds because `statements` is deterministic and `Render.toText`
-    /// is deterministic in its input.
+    /// Text realization — `statements >> Render.toText`, stream-probed
+    /// for throughput observability. The Π port produces the typed
+    /// `Statement list` slices via `emitSlices`; this helper composes
+    /// the typed stream with the text renderer in one call. T1 byte-
+    /// determinism holds because `statements` is deterministic and
+    /// `Render.toText` is deterministic in its input.
     let emit (catalog: Catalog) : string =
         use _ = Bench.scope "emit.rawText.emit"
         statements catalog

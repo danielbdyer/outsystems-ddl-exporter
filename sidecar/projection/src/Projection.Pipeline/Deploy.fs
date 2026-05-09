@@ -218,9 +218,9 @@ module Deploy =
     /// Per the no-string-concatenation discipline, integer fields go
     /// through invariant-culture `Int32.ToString`; segments compose
     /// via `String.concat " "` over a typed `string list`. The
-    /// surface form preserves the legacy "[severity=X error=Y
-    /// line=Z] message" shape so downstream consumers parsing this
-    /// text don't break.
+    /// canonical surface form is "[severity=X error=Y line=Z]
+    /// message" — downstream consumers parse this text-form via the
+    /// matching parser; both endpoints are V2-internal.
     let private formatSqlError (e: Microsoft.Data.SqlClient.SqlError) : string =
         let inv = System.Globalization.CultureInfo.InvariantCulture
         let header =
@@ -649,8 +649,8 @@ module Deploy =
     /// Format a `ValidationError` as a structured diagnostic string.
     /// Per the no-string-concatenation discipline, segments compose
     /// via `String.Concat` over typed components rather than
-    /// `sprintf "[%s] %s"`. The legacy "[code] message" form is
-    /// preserved so downstream parsers don't break.
+    /// `sprintf "[%s] %s"`. The canonical "[code] message" surface
+    /// form is the V2-internal contract for diagnostic display.
     let private formatValidationError (e: ValidationError) : string =
         String.Concat("[", e.Code, "] ", e.Message)
 

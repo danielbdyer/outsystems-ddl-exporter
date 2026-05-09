@@ -215,12 +215,6 @@ let main argv =
         runDeploy inputPath
     | [| "canary"; sourceDdlPath |] ->
         runCanary sourceDdlPath
-    // Back-compat: bare `projection <input> <output-dir>` keeps the M1 surface
-    // working until consumers migrate to the explicit `emit` subcommand.
-    | [| inputPath; outputDir |] when
-        not (inputPath = "deploy" || inputPath = "emit" || inputPath = "canary")
-        ->
-        runEmit inputPath outputDir
     | [||]
     | [| "--help" |]
     | [| "-h" |] ->

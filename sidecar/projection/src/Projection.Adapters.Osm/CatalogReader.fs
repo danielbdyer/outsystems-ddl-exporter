@@ -98,11 +98,12 @@ module CatalogReader =
     // identifier coordinate.
 
     // Per the no-string-concatenation discipline (`DECISIONS
-    // 2026-05-09`), synthesis-basis composition flows through
-    // `SsKey.synthesizedComposite` over typed component lists rather
-    // than `sprintf "%s_%s"` / `sprintf "%s_%s_%s"`. The constructor
-    // joins via `String.concat "_"` and pairs structurally with the
-    // legacy `SsKey.original` parser's prefix-match.
+    // 2026-05-09`) + chapter-3.6 slice-δ: synthesis-basis composition
+    // flows through `SsKey.synthesizedComposite` over typed component
+    // lists; the typed `string list` IS the structure inside the
+    // `Synthesized` DU, no `String.concat "_"` at the build path.
+    // Strings emerge only at the terminal `SsKey.rootOriginal`
+    // display projection.
 
     let private moduleSsKey (moduleName: string) : Result<SsKey> =
         SsKey.synthesized "OS_MOD" moduleName
@@ -653,8 +654,12 @@ module CatalogReader =
             let foldedKinds = Result.aggregate entitiesArr
             match modKey, modName, foldedKinds with
             | Success k, Success n, Success kinds ->
-                Result.success
-                    { SsKey = k; Name = n; Kinds = kinds }
+                // Per DECISIONS pillar 6 (chapter-3.6 sidebar):
+                // boundary adapters flow through the aggregate-root
+                // smart constructor, not record-literal — invariants
+                // (kind-SsKey-disjoint within module) are checked
+                // structurally at the boundary, not deferred.
+                Module.create k n kinds
             | _ ->
                 Result.failureOf (
                     adapterError
@@ -679,7 +684,11 @@ module CatalogReader =
                 |> List.map parseModule
             let folded = Result.aggregate modulesList
             match folded with
-            | Success modules -> Result.success { Modules = modules }
+            | Success modules ->
+                // Per DECISIONS pillar 6: boundary adapter flows
+                // through `Catalog.create` (aggregate-root invariant
+                // check) rather than record-literal construction.
+                Catalog.create modules
             | Failure errors  -> Failure errors
         | _ ->
             Result.failureOf (

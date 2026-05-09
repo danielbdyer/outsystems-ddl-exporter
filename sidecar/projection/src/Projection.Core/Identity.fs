@@ -87,11 +87,8 @@ module SsKey =
     /// `string list` flows through the `Synthesized` DU directly; no
     /// `String.concat "_"` at the build path. The list IS the
     /// structure; the separator (`"_"`) is parameterized only at the
-    /// terminal `rootOriginal` display projection. Pairs structurally
-    /// with the legacy `original` parser's prefix-match: build with
-    /// typed segments here; parse a flat string back into a single-
-    /// element segment list via `original`. Each component must be
-    /// non-blank; rejects on first blank.
+    /// terminal `rootOriginal` display projection. Each component must
+    /// be non-blank; rejects on first blank.
     let synthesizedComposite
         (source: string)
         (basisParts: string list)
