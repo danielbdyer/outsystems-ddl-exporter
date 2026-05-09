@@ -221,3 +221,53 @@ let ``M3 wide canary: realistic OutSystems-shaped source DDL surfaces emitter / 
             sprintf
                 "wide canary realistic structural-fidelity failed:\n%s"
                 (PhysicalSchema.renderDiff report.Diff))
+
+[<Fact>]
+let ``M3 wide canary: enterprise OutSystems-shaped source (3 modules / 10 tables / FK chains) round-trips with empty PhysicalSchema diff`` () =
+    if skipIfNoDocker "wide-canary-enterprise" then
+        let task =
+            Deploy.runWideCanary
+                SourceFixtures.SourceSchema.enterprise
+                RawTextEmitter.emit
+        let outcome = task.GetAwaiter().GetResult()
+
+        let report =
+            match outcome with
+            | Success r -> r
+            | Failure errors ->
+                let codes = errors |> List.map (fun e -> e.Code) |> String.concat ", "
+                Assert.Fail(sprintf "wide canary failed: %s" codes)
+                Unchecked.defaultof<_>
+
+        // Both deploys succeed; both Catalogs reconstructed. The
+        // enterprise fixture is the canary's primary wide
+        // integration surface per `DECISIONS 2026-05-23 — Source
+        // SQL Server with OutSystems semantics is the canary's
+        // primary wide integration surface`. Ten tables across
+        // three modules (IDM / CAT / SLS) with audit FKs, static
+        // entities, junction tables, multi-tenant markers, and
+        // mixed PrimitiveType coverage.
+        Assert.True(
+            report.SourceReport.Success,
+            sprintf "source deploy: %A" report.SourceReport.Errors)
+        Assert.True(
+            report.TargetReport.Success,
+            sprintf "target deploy: %A" report.TargetReport.Errors)
+        Assert.Equal(10, report.SourceReport.TablesCreated)
+        Assert.Equal(10, report.TargetReport.TablesCreated)
+
+        // Structural-fidelity assertion on the PhysicalSchema axis.
+        // FK constraints are present in source (V2's IR doesn't
+        // round-trip them yet — ReadSide is schema-only) but absent
+        // in target; PhysicalSchema is invariant under FK absence
+        // so the diff is still empty.
+        //
+        // Per the fixture docstring: when M4 Tolerance flags land,
+        // this test grows opt-in flags for IgnoreColumnLength /
+        // IgnoreDecimalPrecision / IgnoreIdentityProperty so the
+        // assertion can sharpen as V2's IR refines.
+        Assert.True(
+            PhysicalSchema.isEqual report.Diff,
+            sprintf
+                "wide canary enterprise structural-fidelity failed:\n%s"
+                (PhysicalSchema.renderDiff report.Diff))

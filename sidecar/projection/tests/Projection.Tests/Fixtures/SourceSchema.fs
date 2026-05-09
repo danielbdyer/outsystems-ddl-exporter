@@ -107,3 +107,264 @@ let realistic : string =
             "    CONSTRAINT [PK_dbo_OSUSR_M3_CUSTOMER] PRIMARY KEY ([ID])"
             ");"
         ]
+
+/// **Enterprise source.** Multi-module OutSystems shape mirroring
+/// the conventions of an actual OutSystems platform deployment.
+/// Three modules (`IDM` Identity Management, `CAT` Catalog, `SLS`
+/// Sales) hosting ten interrelated tables with realistic shapes:
+///
+///   IDM:
+///     OSUSR_IDM_USER         — auth users; audit-FK target across modules
+///     OSUSR_IDM_ROLE         — Static-entity-shaped role lookup
+///     OSUSR_IDM_USERROLE     — junction (USER × ROLE)
+///
+///   CAT:
+///     OSUSR_CAT_CATEGORY     — Static-entity-shaped product categories
+///     OSUSR_CAT_PRODUCT      — products with category FK + audit FKs
+///
+///   SLS:
+///     OSUSR_SLS_CUSTOMER     — customers with audit FKs
+///     OSUSR_SLS_ORDERSTATUS  — Static-entity-shaped order statuses
+///     OSUSR_SLS_ORDER        — orders with multi-FK to CUSTOMER /
+///                              ORDERSTATUS / USER (audit)
+///     OSUSR_SLS_ORDERLINE    — order-line junction (ORDER × PRODUCT)
+///     OSUSR_SLS_PROMOTION    — promotions with date ranges
+///
+/// **Shapes exercised** (beyond what `realistic` covers):
+///   - **Three modules** with cross-module FK references
+///     (PRODUCT in CAT references CATEGORY in CAT; ORDER in SLS
+///     references CUSTOMER in SLS; CUSTOMER and PRODUCT both have
+///     audit FKs to USER in IDM — cross-module).
+///   - **Junction tables** (USERROLE, ORDERLINE) — composite
+///     associations with surrogate IDs per OutSystems convention.
+///   - **Static entities** (ROLE, CATEGORY, ORDERSTATUS) — lookup
+///     tables with `[LABEL]` and `[ORDER]` columns. Static-entity
+///     populations are NOT included as INSERT statements here
+///     (data round-trip is chapter 4.1.B territory; the canary's
+///     PhysicalSchema axis is schema-only).
+///   - **Domain FK chains** (ORDERLINE → ORDER → CUSTOMER;
+///     ORDERLINE → PRODUCT → CATEGORY).
+///   - **Multi-tenant marker** on regular entities; absent on
+///     static / junction entities (mirrors OutSystems platform
+///     defaults).
+///   - **NVARCHAR length variety**: 50 (codes), 100 (names), 250
+///     (descriptions), 500 (long names), 1000 (free text).
+///   - **DECIMAL precision variety**: (18, 4) currency, (8, 2)
+///     percentages, (38, 8) high-precision.
+///   - **Date / Time / DateTime variety** (CREATEDON / UPDATEDON
+///     / SIGNED_ON / VALID_FROM / VALID_UNTIL).
+///   - **Soft-delete** via `[ISACTIVE] BIT NOT NULL` on most
+///     entities.
+///
+/// **Round-trip findings** (each catalogued under M4 Tolerance
+/// taxonomy work; see DECISIONS 2026-05-23 fixture-growth model):
+///
+///   - Schema-only round-trip (PhysicalSchema axis) holds: source
+///     and target both deploy 10 tables; column-set / type-set /
+///     nullability / PK columns match.
+///   - FK constraints surface in source but ReadSide does not
+///     reconstruct References (M3 deferred); V2 emit produces
+///     no FKs; PhysicalSchema invariant under FK absence.
+///   - NVARCHAR(N) → NVARCHAR(MAX), DECIMAL(P,S) → DECIMAL(18,4),
+///     IDENTITY property — all dropped by V2's IR shape; surfaced
+///     when M4 introduces `Tolerance.IgnoreColumnLength` /
+///     `IgnoreDecimalPrecision` / `IgnoreIdentityProperty`.
+let enterprise : string =
+    String.concat
+        "\n"
+        [
+            // -- IDM module --------------------------------------------
+            "CREATE TABLE [dbo].[OSUSR_IDM_USER] ("
+            "    [ID] INT NOT NULL IDENTITY(1,1),"
+            "    [SS_KEY] UNIQUEIDENTIFIER NOT NULL,"
+            "    [USERNAME] NVARCHAR(100) NOT NULL,"
+            "    [EMAIL] NVARCHAR(250) NOT NULL,"
+            "    [DISPLAY_NAME] NVARCHAR(250) NOT NULL,"
+            "    [TENANT_ID] INT NULL,"
+            "    [ISACTIVE] BIT NOT NULL,"
+            "    [CREATEDBY] INT NULL,"
+            "    [CREATEDON] DATETIME2 NOT NULL,"
+            "    [UPDATEDBY] INT NULL,"
+            "    [UPDATEDON] DATETIME2 NOT NULL,"
+            "    CONSTRAINT [PK_dbo_OSUSR_IDM_USER] PRIMARY KEY ([ID])"
+            ");"
+            ""
+            "CREATE TABLE [dbo].[OSUSR_IDM_ROLE] ("
+            "    [ID] INT NOT NULL,"
+            "    [SS_KEY] UNIQUEIDENTIFIER NOT NULL,"
+            "    [LABEL] NVARCHAR(100) NOT NULL,"
+            "    [CODE] NVARCHAR(50) NOT NULL,"
+            "    [ORDER] INT NOT NULL,"
+            "    [ISACTIVE] BIT NOT NULL,"
+            "    [CREATEDON] DATETIME2 NOT NULL,"
+            "    [UPDATEDON] DATETIME2 NOT NULL,"
+            "    CONSTRAINT [PK_dbo_OSUSR_IDM_ROLE] PRIMARY KEY ([ID])"
+            ");"
+            ""
+            "CREATE TABLE [dbo].[OSUSR_IDM_USERROLE] ("
+            "    [ID] INT NOT NULL IDENTITY(1,1),"
+            "    [SS_KEY] UNIQUEIDENTIFIER NOT NULL,"
+            "    [USERID] INT NOT NULL,"
+            "    [ROLEID] INT NOT NULL,"
+            "    [ISACTIVE] BIT NOT NULL,"
+            "    [CREATEDBY] INT NULL,"
+            "    [CREATEDON] DATETIME2 NOT NULL,"
+            "    [UPDATEDBY] INT NULL,"
+            "    [UPDATEDON] DATETIME2 NOT NULL,"
+            "    CONSTRAINT [PK_dbo_OSUSR_IDM_USERROLE] PRIMARY KEY ([ID])"
+            ");"
+            ""
+            // -- CAT module --------------------------------------------
+            "CREATE TABLE [dbo].[OSUSR_CAT_CATEGORY] ("
+            "    [ID] INT NOT NULL,"
+            "    [SS_KEY] UNIQUEIDENTIFIER NOT NULL,"
+            "    [LABEL] NVARCHAR(100) NOT NULL,"
+            "    [CODE] NVARCHAR(50) NOT NULL,"
+            "    [DESCRIPTION] NVARCHAR(500) NULL,"
+            "    [ORDER] INT NOT NULL,"
+            "    [ISACTIVE] BIT NOT NULL,"
+            "    [CREATEDON] DATETIME2 NOT NULL,"
+            "    [UPDATEDON] DATETIME2 NOT NULL,"
+            "    CONSTRAINT [PK_dbo_OSUSR_CAT_CATEGORY] PRIMARY KEY ([ID])"
+            ");"
+            ""
+            "CREATE TABLE [dbo].[OSUSR_CAT_PRODUCT] ("
+            "    [ID] INT NOT NULL IDENTITY(1,1),"
+            "    [SS_KEY] UNIQUEIDENTIFIER NOT NULL,"
+            "    [NAME] NVARCHAR(250) NOT NULL,"
+            "    [SKU] NVARCHAR(50) NOT NULL,"
+            "    [DESCRIPTION] NVARCHAR(1000) NULL,"
+            "    [CATEGORYID] INT NOT NULL,"
+            "    [PRICE] DECIMAL(18, 4) NOT NULL,"
+            "    [WEIGHT_GRAMS] DECIMAL(38, 8) NULL,"
+            "    [IS_DIGITAL] BIT NOT NULL,"
+            "    [TENANT_ID] INT NULL,"
+            "    [ISACTIVE] BIT NOT NULL,"
+            "    [CREATEDBY] INT NULL,"
+            "    [CREATEDON] DATETIME2 NOT NULL,"
+            "    [UPDATEDBY] INT NULL,"
+            "    [UPDATEDON] DATETIME2 NOT NULL,"
+            "    CONSTRAINT [PK_dbo_OSUSR_CAT_PRODUCT] PRIMARY KEY ([ID])"
+            ");"
+            ""
+            // -- SLS module --------------------------------------------
+            "CREATE TABLE [dbo].[OSUSR_SLS_CUSTOMER] ("
+            "    [ID] INT NOT NULL IDENTITY(1,1),"
+            "    [SS_KEY] UNIQUEIDENTIFIER NOT NULL,"
+            "    [DISPLAY_NAME] NVARCHAR(250) NOT NULL,"
+            "    [EMAIL] NVARCHAR(250) NULL,"
+            "    [PHONE] NVARCHAR(50) NULL,"
+            "    [LIFETIME_VALUE] DECIMAL(18, 4) NULL,"
+            "    [LOYALTY_RATE] DECIMAL(8, 2) NULL,"
+            "    [TENANT_ID] INT NULL,"
+            "    [ISACTIVE] BIT NOT NULL,"
+            "    [CREATEDBY] INT NULL,"
+            "    [CREATEDON] DATETIME2 NOT NULL,"
+            "    [UPDATEDBY] INT NULL,"
+            "    [UPDATEDON] DATETIME2 NOT NULL,"
+            "    CONSTRAINT [PK_dbo_OSUSR_SLS_CUSTOMER] PRIMARY KEY ([ID])"
+            ");"
+            ""
+            "CREATE TABLE [dbo].[OSUSR_SLS_ORDERSTATUS] ("
+            "    [ID] INT NOT NULL,"
+            "    [SS_KEY] UNIQUEIDENTIFIER NOT NULL,"
+            "    [LABEL] NVARCHAR(100) NOT NULL,"
+            "    [CODE] NVARCHAR(50) NOT NULL,"
+            "    [ORDER] INT NOT NULL,"
+            "    [IS_TERMINAL] BIT NOT NULL,"
+            "    [ISACTIVE] BIT NOT NULL,"
+            "    [CREATEDON] DATETIME2 NOT NULL,"
+            "    [UPDATEDON] DATETIME2 NOT NULL,"
+            "    CONSTRAINT [PK_dbo_OSUSR_SLS_ORDERSTATUS] PRIMARY KEY ([ID])"
+            ");"
+            ""
+            "CREATE TABLE [dbo].[OSUSR_SLS_ORDER] ("
+            "    [ID] INT NOT NULL IDENTITY(1,1),"
+            "    [SS_KEY] UNIQUEIDENTIFIER NOT NULL,"
+            "    [ORDER_NUMBER] NVARCHAR(50) NOT NULL,"
+            "    [CUSTOMERID] INT NOT NULL,"
+            "    [STATUSID] INT NOT NULL,"
+            "    [ORDER_DATE] DATETIME2 NOT NULL,"
+            "    [SHIPPED_ON] DATE NULL,"
+            "    [DELIVERED_ON] DATETIME2 NULL,"
+            "    [TOTAL] DECIMAL(18, 4) NOT NULL,"
+            "    [DISCOUNT_RATE] DECIMAL(8, 2) NOT NULL,"
+            "    [TENANT_ID] INT NULL,"
+            "    [ISACTIVE] BIT NOT NULL,"
+            "    [CREATEDBY] INT NULL,"
+            "    [CREATEDON] DATETIME2 NOT NULL,"
+            "    [UPDATEDBY] INT NULL,"
+            "    [UPDATEDON] DATETIME2 NOT NULL,"
+            "    CONSTRAINT [PK_dbo_OSUSR_SLS_ORDER] PRIMARY KEY ([ID])"
+            ");"
+            ""
+            "CREATE TABLE [dbo].[OSUSR_SLS_ORDERLINE] ("
+            "    [ID] INT NOT NULL IDENTITY(1,1),"
+            "    [SS_KEY] UNIQUEIDENTIFIER NOT NULL,"
+            "    [ORDERID] INT NOT NULL,"
+            "    [PRODUCTID] INT NOT NULL,"
+            "    [QUANTITY] INT NOT NULL,"
+            "    [UNIT_PRICE] DECIMAL(18, 4) NOT NULL,"
+            "    [LINE_TOTAL] DECIMAL(18, 4) NOT NULL,"
+            "    [ISACTIVE] BIT NOT NULL,"
+            "    [CREATEDBY] INT NULL,"
+            "    [CREATEDON] DATETIME2 NOT NULL,"
+            "    [UPDATEDBY] INT NULL,"
+            "    [UPDATEDON] DATETIME2 NOT NULL,"
+            "    CONSTRAINT [PK_dbo_OSUSR_SLS_ORDERLINE] PRIMARY KEY ([ID])"
+            ");"
+            ""
+            "CREATE TABLE [dbo].[OSUSR_SLS_PROMOTION] ("
+            "    [ID] INT NOT NULL IDENTITY(1,1),"
+            "    [SS_KEY] UNIQUEIDENTIFIER NOT NULL,"
+            "    [LABEL] NVARCHAR(250) NOT NULL,"
+            "    [CODE] NVARCHAR(50) NOT NULL,"
+            "    [DESCRIPTION] NVARCHAR(1000) NULL,"
+            "    [DISCOUNT_RATE] DECIMAL(8, 2) NOT NULL,"
+            "    [VALID_FROM] DATETIME2 NOT NULL,"
+            "    [VALID_UNTIL] DATETIME2 NULL,"
+            "    [TENANT_ID] INT NULL,"
+            "    [ISACTIVE] BIT NOT NULL,"
+            "    [CREATEDBY] INT NULL,"
+            "    [CREATEDON] DATETIME2 NOT NULL,"
+            "    [UPDATEDBY] INT NULL,"
+            "    [UPDATEDON] DATETIME2 NOT NULL,"
+            "    CONSTRAINT [PK_dbo_OSUSR_SLS_PROMOTION] PRIMARY KEY ([ID])"
+            ");"
+            ""
+            // -- Foreign-key constraints (separate ALTER TABLE batch) --
+            // The source enforces referential integrity at deploy time;
+            // V2's emitter does not yet round-trip these (ReadSide is
+            // schema-only), so the target deploys without FKs. The
+            // PhysicalSchema axis is invariant under FK absence.
+            "ALTER TABLE [dbo].[OSUSR_IDM_USERROLE] ADD CONSTRAINT [FK_USERROLE_USER] "
+            + "FOREIGN KEY ([USERID]) REFERENCES [dbo].[OSUSR_IDM_USER]([ID]);"
+            "ALTER TABLE [dbo].[OSUSR_IDM_USERROLE] ADD CONSTRAINT [FK_USERROLE_ROLE] "
+            + "FOREIGN KEY ([ROLEID]) REFERENCES [dbo].[OSUSR_IDM_ROLE]([ID]);"
+            "ALTER TABLE [dbo].[OSUSR_CAT_PRODUCT] ADD CONSTRAINT [FK_PRODUCT_CATEGORY] "
+            + "FOREIGN KEY ([CATEGORYID]) REFERENCES [dbo].[OSUSR_CAT_CATEGORY]([ID]);"
+            "ALTER TABLE [dbo].[OSUSR_SLS_ORDER] ADD CONSTRAINT [FK_ORDER_CUSTOMER] "
+            + "FOREIGN KEY ([CUSTOMERID]) REFERENCES [dbo].[OSUSR_SLS_CUSTOMER]([ID]);"
+            "ALTER TABLE [dbo].[OSUSR_SLS_ORDER] ADD CONSTRAINT [FK_ORDER_STATUS] "
+            + "FOREIGN KEY ([STATUSID]) REFERENCES [dbo].[OSUSR_SLS_ORDERSTATUS]([ID]);"
+            "ALTER TABLE [dbo].[OSUSR_SLS_ORDERLINE] ADD CONSTRAINT [FK_ORDERLINE_ORDER] "
+            + "FOREIGN KEY ([ORDERID]) REFERENCES [dbo].[OSUSR_SLS_ORDER]([ID]);"
+            "ALTER TABLE [dbo].[OSUSR_SLS_ORDERLINE] ADD CONSTRAINT [FK_ORDERLINE_PRODUCT] "
+            + "FOREIGN KEY ([PRODUCTID]) REFERENCES [dbo].[OSUSR_CAT_PRODUCT]([ID]);"
+            ""
+            // -- Audit FKs to IDM.USER (cross-module references) -------
+            "ALTER TABLE [dbo].[OSUSR_IDM_USER] ADD CONSTRAINT [FK_USER_CREATEDBY] "
+            + "FOREIGN KEY ([CREATEDBY]) REFERENCES [dbo].[OSUSR_IDM_USER]([ID]);"
+            "ALTER TABLE [dbo].[OSUSR_IDM_USERROLE] ADD CONSTRAINT [FK_USERROLE_CREATEDBY] "
+            + "FOREIGN KEY ([CREATEDBY]) REFERENCES [dbo].[OSUSR_IDM_USER]([ID]);"
+            "ALTER TABLE [dbo].[OSUSR_CAT_PRODUCT] ADD CONSTRAINT [FK_PRODUCT_CREATEDBY] "
+            + "FOREIGN KEY ([CREATEDBY]) REFERENCES [dbo].[OSUSR_IDM_USER]([ID]);"
+            "ALTER TABLE [dbo].[OSUSR_SLS_CUSTOMER] ADD CONSTRAINT [FK_CUSTOMER_CREATEDBY] "
+            + "FOREIGN KEY ([CREATEDBY]) REFERENCES [dbo].[OSUSR_IDM_USER]([ID]);"
+            "ALTER TABLE [dbo].[OSUSR_SLS_ORDER] ADD CONSTRAINT [FK_ORDER_CREATEDBY] "
+            + "FOREIGN KEY ([CREATEDBY]) REFERENCES [dbo].[OSUSR_IDM_USER]([ID]);"
+            "ALTER TABLE [dbo].[OSUSR_SLS_ORDERLINE] ADD CONSTRAINT [FK_ORDERLINE_CREATEDBY] "
+            + "FOREIGN KEY ([CREATEDBY]) REFERENCES [dbo].[OSUSR_IDM_USER]([ID]);"
+            "ALTER TABLE [dbo].[OSUSR_SLS_PROMOTION] ADD CONSTRAINT [FK_PROMOTION_CREATEDBY] "
+            + "FOREIGN KEY ([CREATEDBY]) REFERENCES [dbo].[OSUSR_IDM_USER]([ID]);"
+        ]
