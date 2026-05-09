@@ -1,5 +1,10 @@
 namespace Projection.Targets.SSDT
 
+// LINT-ALLOW-FILE-MUTATION: Function-local currentModuleKey for
+//   module-header transition detection inside the per-kind composer.
+//   seq-local; pure output yielded. Per audit Lens-2 Tier-3
+//   (justified).
+
 open Projection.Core
 open Projection.Core.Passes
 

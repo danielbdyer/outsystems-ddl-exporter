@@ -222,6 +222,62 @@ done < <(grep -rEn --include='*.fs' 'DateTime\.(Now|UtcNow)' "$SRC" 2>/dev/null 
 scan "random-banned" "$SRC" '\bSystem\.Random\b|\bnew Random\(\)|\bRandom\(\)'
 
 # ---------------------------------------------------------------------------
+# Rule 8 — `let mutable` outside files marked `LINT-ALLOW-FILE-MUTATION`.
+# F#'s default is immutable; mutation requires explicit annotation. The
+# rule enforces that mutation is reified at the file level (via the
+# top-of-file marker) so mutation-justified files are explicit, not
+# accidental. Per `DECISIONS 2026-05-09 — FP strict mode discipline`.
+# ---------------------------------------------------------------------------
+
+scan_mutation() {
+    local rule="$1"
+    local pattern="$2"
+    while IFS= read -r hit; do
+        local file_part line_part rest
+        file_part="${hit%%:*}"
+        rest="${hit#*:}"
+        line_part="${rest%%:*}"
+        content="${rest#*:}"
+        # File-level mutation allowlist: `LINT-ALLOW-FILE-MUTATION`.
+        # Files whose top-of-file declares this marker are exempt
+        # (audit-justified mutation sites).
+        if head -n 30 "$file_part" 2>/dev/null \
+                | grep -q 'LINT-ALLOW-FILE-MUTATION\|LINT-ALLOW-FILE'; then
+            continue
+        fi
+        if printf '%s' "$content" | grep -q 'LINT-ALLOW'; then
+            continue
+        fi
+        if is_comment_line "$content"; then
+            continue
+        fi
+        report_violation "$rule" "$file_part" "$line_part" "$content"
+    done < <(grep -rEn --include='*.fs' "$pattern" "$SRC" 2>/dev/null || true)
+}
+
+scan_mutation "let-mutable" '\blet mutable\b'
+
+# ---------------------------------------------------------------------------
+# Rule 9 — Mutable BCL collections (`ResizeArray<`, `Dictionary<`,
+# `HashSet<`, `Stack<`, `Queue<`, `ConcurrentDictionary<`, etc.) outside
+# `LINT-ALLOW-FILE-MUTATION` files. These are legitimate inside tight,
+# function-local algorithm bodies (Tarjan SCC, Kahn's, hot bench
+# accumulators); the file-level marker reifies that allowance.
+# ---------------------------------------------------------------------------
+
+scan_mutation "mutable-collection" '\b(ResizeArray|Dictionary|HashSet|Stack|Queue|ConcurrentDictionary|ConcurrentQueue|ConcurrentBag)\s*<'
+
+# ---------------------------------------------------------------------------
+# Rule 10 — `<-` assignment outside `LINT-ALLOW-FILE-MUTATION` files.
+# Mutating an existing binding requires explicit allowance. `<-` is the
+# `member val ... with get, set` setter and the `let mutable` reassignment
+# — both are mutation operations that should be visible at the file
+# level.
+# ---------------------------------------------------------------------------
+
+scan_mutation "set-assign" '<-'
+
+# ---------------------------------------------------------------------------
 # Reporting.
 # ---------------------------------------------------------------------------
 

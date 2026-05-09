@@ -7,6 +7,15 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <RootNamespace>Projection.Core</RootNamespace>
     <AssemblyName>Projection.Core</AssemblyName>
+    <!--
+      FP strict mode: overflow / underflow checks elevate arithmetic
+      wraparound to runtime exception. Per `DECISIONS 2026-05-09 — FP
+      strict mode discipline`, T1 byte-determinism requires that
+      arithmetic wraparound is observable (a programmer error), not
+      silent. Pairs with the no-string-concatenation discipline at the
+      determinism layer.
+    -->
+    <CheckForOverflowUnderflow>true</CheckForOverflowUnderflow>
   </PropertyGroup>
 
   <ItemGroup>

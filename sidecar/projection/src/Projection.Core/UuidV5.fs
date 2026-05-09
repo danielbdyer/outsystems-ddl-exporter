@@ -1,5 +1,9 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE-MUTATION: RFC 4122 §4.3 byte-level hash → bit-set → endian-roundtrip on a fresh
+//   local Array (the input Guid's ToByteArray() returns a copy). Mutation
+//   observation-free outside the function.
+
 open System
 open System.Security.Cryptography
 open System.Text

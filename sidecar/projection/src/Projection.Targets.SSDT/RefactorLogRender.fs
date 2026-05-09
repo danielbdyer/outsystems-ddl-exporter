@@ -1,5 +1,14 @@
 namespace Projection.Targets.SSDT
 
+// LINT-ALLOW-FILE-MUTATION: BCL `XmlWriterSettings` is a mutable
+// class exposing properties via setters; the option-builder block
+// in `xmlSettings` populates a fresh instance via `<-` setters per
+// the BCL surface. Mutation is local to the option-construction;
+// the resulting settings flow into `XmlWriter.Create` immutably
+// thereafter. Per audit Lens-2 Tier-2 (justified — BCL forces the
+// shape); same allowed-exception class as `JsonEmitter.fs`'s
+// `JsonWriterOptions` setters.
+
 open System.IO
 open System.Text
 open System.Xml

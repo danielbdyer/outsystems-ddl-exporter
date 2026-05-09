@@ -131,8 +131,8 @@ module Result =
     /// (ReadSide attribute aggregation, FK reference aggregation, kind
     /// aggregation, `kindsWithRefs` aggregation).
     let aggregate (results: Result<'a> seq) : Result<'a list> =
-        let successes = ResizeArray<'a>()
-        let errors = ResizeArray<ValidationError>()
+        let successes = ResizeArray<'a>()  // LINT-ALLOW: O(N) accumulator inside a pure aggregator; output is immutable list
+        let errors = ResizeArray<ValidationError>()  // LINT-ALLOW: same — paired error accumulator
         for r in results do
             match r with
             | Success v -> successes.Add v

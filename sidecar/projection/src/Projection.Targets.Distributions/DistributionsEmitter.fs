@@ -1,5 +1,7 @@
 namespace Projection.Targets.Distributions
 
+// LINT-ALLOW-FILE-MUTATION: Same BCL JsonWriterOptions pattern as JsonEmitter.fs.
+
 open System.IO
 open System.Text.Json
 open System.Text.Json.Nodes

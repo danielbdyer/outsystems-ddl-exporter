@@ -1,5 +1,9 @@
 namespace Projection.Pipeline
 
+// LINT-ALLOW-FILE-MUTATION: Docker JIT bring-up poll loop + bulk-grouping mutables for the typed-
+//   Statement-stream realization. Per audit Lens-2 Tier-1+2; see commit-log
+//   slice λ.2 for the runWideCanaryWithLoader phase-functional refactor.
+
 open System
 open System.IO
 open System.Threading.Tasks

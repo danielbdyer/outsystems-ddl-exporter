@@ -1,5 +1,9 @@
 namespace Projection.Core.Passes
 
+// LINT-ALLOW-FILE-MUTATION: Pass-driver event accumulation via ResizeArray<LineageEvent>. Reified
+//   through Lineage.ofValueAndEvents; per audit Lens-2 Tier-2 (justified +
+//   reified).
+
 open Projection.Core
 
 /// The naming-morphism pass — A15. Applies a `Name -> Name` morphism

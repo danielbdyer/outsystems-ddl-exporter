@@ -8107,3 +8107,102 @@ on the offending line.
 amendment naming why the discipline is being relaxed for the
 specific site. The script is the load-bearing guard against
 discipline drift.
+
+
+## 2026-05-09 — FP strict mode discipline (mutation reified, overflow checked, immutable-by-default)
+
+V2 commits a hardline FP discipline beyond the no-string-
+concatenation rule: **immutable-by-default with first-class
+escalation and reification of any mutative method use**.
+Mutation is allowed where justified (algorithm-internal
+accumulators, BCL-mandated mutable struct option-builders,
+streaming-reader lifetime state machines), but every mutation
+site is *reified at the file level* via a top-of-file
+`LINT-ALLOW-FILE-MUTATION` marker that names the specific
+audited rationale. New mutation sites without the marker fail
+the lint guardrail.
+
+**Three lint rules enforce mutation discipline (per
+`scripts/lint-discipline.sh`):**
+
+  - `let-mutable` — `let mutable` outside files marked
+    `LINT-ALLOW-FILE-MUTATION` or `LINT-ALLOW-FILE`.
+  - `mutable-collection` — `ResizeArray<` / `Dictionary<` /
+    `HashSet<` / `Stack<` / `Queue<` /
+    `ConcurrentDictionary<` / `ConcurrentQueue<` /
+    `ConcurrentBag<` outside the same allowlist.
+  - `set-assign` — `<-` assignment outside the same allowlist
+    (catches both `let mutable` reassignment and BCL property
+    setters).
+
+**Audit-justified mutation files** (top-of-file marker; rationale
+named per-file): `AsyncStream.fs` (pull-based streaming primitive),
+`ReadSide.fs` (streaming reader lifetime), `Static.fs` /
+`ProfileSnapshot.fs` / `ProfileStatistics.fs` (function-local
+placeholders), `RawTextEmitter.fs` (currentModuleKey),
+`JsonEmitter.fs` / `DistributionsEmitter.fs` (BCL JsonWriterOptions
+struct), `RefactorLogRender.fs` (BCL XmlWriterSettings class),
+`NamingMorphism.fs` / `NormalizeStaticPopulations.fs` /
+`SymmetricClosure.fs` (pass-driver event accumulation), `UuidV5.fs`
+(RFC 4122 byte-twiddling on local copy), `Deploy.fs` (Docker JIT
+poll + bulk grouping), `Bulk.fs` (BCL SqlBulkCopy mutable surface),
+`Bench.fs` / `PhysicalSchema.fs` / `Catalog.fs` / pass drivers /
+`CycleResolution.fs` (already exempt via `LINT-ALLOW-FILE` for
+the sprintf rule, which also covers mutation).
+
+**Per-line allowlist** for surgical mutations in otherwise pure
+files: `Result.fs:134-135` (the two ResizeArray accumulators
+inside `Result.aggregate`'s pure aggregator) carry per-line
+markers.
+
+**Compiler strict mode (Projection.Core.fsproj):**
+
+  - `<Nullable>enable</Nullable>` — null escapes fail compilation
+    (already on).
+  - `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` — every
+    warning is a compile error (already on).
+  - `<CheckForOverflowUnderflow>true</CheckForOverflowUnderflow>`
+    — arithmetic overflow / underflow elevates to runtime
+    exception rather than silent wraparound. T1 byte-determinism
+    requires that wraparound is observable (a programmer error);
+    `<checked>` flag at MSBuild level pairs with
+    `Projection.Core/UuidV5.fs`'s byte arithmetic and the
+    `RowDigester` / `PhysicalSchema` aggregators. Adapters /
+    Pipeline don't carry the flag — Pipeline-side counts fit
+    `int64` and BCL surface invokes can be unchecked by design.
+
+**Reification rule:** every mutation site must be answerable to:
+"why is mutation correct here (not observable from outside the
+function); why is it justified (algorithmic necessity, BCL
+constraint, performance evidence); and is it reified (encapsulated
+behind a pure interface so callers can't observe it)?" The
+top-of-file marker is the structural answer.
+
+**Empirical baseline:** the audit (`Codebase determinism +
+non-built-in audit`, 2026-05-09) found ~130 mutation sites in V2;
+all mapped to one of the justified categories above. Adding a new
+mutation site requires either (a) extending an existing category's
+file marker, (b) adding a new file marker with audited rationale,
+or (c) opening a paired DECISIONS amendment. Lint guardrail
+catches drift in CI / pre-commit.
+
+**Forward chapter.** Chapter 3.7 candidate (ScriptDom adoption
+for SQL emission) retires `Render.fs`'s `StringBuilder` mutation
+by routing through ScriptDom's typed AST + `Sql150ScriptGenerator`.
+Chapter 4 candidate (typed `Outcome.toDiagnosticString` per DU)
+retires the pass-driver `%A` formatters. Each substantive
+chapter compounds the discipline.
+
+**Out of scope (re-open triggers explicit):**
+
+  - F# Analyzers SDK custom analyzer — would catch syntax-tree
+    patterns the grep heuristic misses (e.g., `member val X = …
+    with get, set` mutable properties; reflection-based
+    mutation). Re-open trigger: lint-script false-negative
+    surfacing in CI (a real mutation site shipping without
+    catching). Estimated cost: a separable chapter.
+  - `[<Sealed>]` / `[<NoComparison>]` / `[<NoEquality>]` blanket
+    application — over-tightens types where structural defaults
+    are correct. Per-type adoption when an invariant breaks
+    "structural equality = semantic equality" (audit Lens-2
+    trigger).

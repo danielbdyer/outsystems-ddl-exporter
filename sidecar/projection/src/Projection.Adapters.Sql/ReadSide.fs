@@ -1,5 +1,11 @@
 namespace Projection.Adapters.Sql
 
+// LINT-ALLOW-FILE-MUTATION: SQL streaming reader lifetime —
+//   cmdOpt / readerOpt / rowIdx / disposed and per-batch hasMore
+//   mutables encapsulated behind the AsyncStream<StaticRow> pull
+//   abstraction. BCL's SqlDataReader is itself a mutable cursor;
+//   the lifetime state machine is reified per audit Lens-2 Tier-2.
+
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient
 open Projection.Core

@@ -1,5 +1,11 @@
 namespace Projection.Targets.Json
 
+// LINT-ALLOW-FILE-MUTATION: BCL JsonWriterOptions is a mutable
+//   struct exposing fields by mutation (BCL surface). The mutation
+//   is local to the option-builder; pure output is emitted to
+//   Utf8JsonWriter. Per audit Lens-2 Tier-2 (justified — BCL forces
+//   the shape).
+
 open System.IO
 open System.Text
 open System.Text.Json

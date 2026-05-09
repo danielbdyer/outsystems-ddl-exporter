@@ -1,5 +1,8 @@
 namespace Projection.Pipeline
 
+// LINT-ALLOW-FILE-MUTATION: BCL SqlBulkCopy and SqlCommand mutable surfaces (DestinationTableName,
+//   CommandText etc.). BCL forces the shape; mutation contained per-call.
+
 open System
 open System.Data
 open System.Globalization

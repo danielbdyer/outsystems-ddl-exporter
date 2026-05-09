@@ -1,5 +1,7 @@
 namespace Projection.Core.Passes
 
+// LINT-ALLOW-FILE-MUTATION: Same pass-driver event-accumulation pattern as NamingMorphism.fs.
+
 open Projection.Core
 
 /// The pure F# extraction of `EntitySeedDeterminizer`'s sort half (see

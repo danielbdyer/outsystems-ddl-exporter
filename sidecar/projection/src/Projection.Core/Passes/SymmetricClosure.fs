@@ -1,5 +1,8 @@
 namespace Projection.Core.Passes
 
+// LINT-ALLOW-FILE-MUTATION: Pass-driver event accumulation + inversesByTarget map for symmetric-
+//   closure construction. Reified through Lineage.ofValueAndEvents.
+
 open Projection.Core
 
 /// The symmetric-closure pass — A10's commitment in code. References in
