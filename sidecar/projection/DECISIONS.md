@@ -7235,3 +7235,132 @@ round-trip is green on full-scale fixtures. That is when V2
 earns the V2-driver row of the cutover fallback ladder per
 `DECISIONS 2026-05-22 — T-30 / T-15 cutover fallback ladder gates`.
 
+## 2026-05-24 — Bench surface caught two wrong-direction canary optimizations (sys.* readside queries; MARS-enabled parallel readside)
+
+**Status:** decided (Phase 3 of session-30 canary optimization
+push; documented as a worked example of the bench-surface-as-
+optimization-signal discipline)
+**Context:** Per session-30 operator framing — "increase
+observability and agent monitoring/alerting in a recurrent way
+that promotes attention and optimization over time" — the Bench
+observability layer (`Projection.Core.Bench`, commit 7bb0ca0)
+plus iterator-level coverage (commit fb12761) were specifically
+intended to make the canary's perf surface visible enough that
+optimization candidates could be evaluated empirically rather
+than by intuition.
+
+Phase 3 of the optimization sequence tried three changes against
+the canary's bench surface:
+
+  1. **Switch readside queries from INFORMATION_SCHEMA to sys.***
+     for `readColumnRows` and `readPrimaryKeys`. Hypothesis: sys.*
+     catalog tables are direct system tables; INFORMATION_SCHEMA
+     is a view layer over them; sys.* should be faster.
+
+  2. **Enable MARS + parallelize readside queries.** Hypothesis:
+     the column-rows query and the primary-keys query are
+     independent; with `MultipleActiveResultSets=true` on the
+     connection string they can run concurrently on one
+     connection; total readside.read time becomes
+     `max(columns, pks)` instead of `columns + pks`.
+
+  3. **Eliminate `countUserTables`** by deriving table count from
+     the readside Catalog (`Catalog.allKinds c |> List.length`)
+     in `runWithReadback` / `runWideCanary`. The query is
+     redundant once readside reconstruction succeeds.
+
+Bench data on the canary-gate fixture (warm container; 2
+OUSR_*-shaped tables, 18 attributes) before / after each change:
+
+  | Optimization                  | Per-canary total | Per-readside | PK query | Columns query | Verdict |
+  |-------------------------------|-----------------:|-------------:|---------:|--------------:|---------|
+  | (baseline; pre-Phase-3)       |          1270 ms |       418 ms |   140 ms |          56 ms | n/a     |
+  | + sys.* readside (alone)      |          ~1320 ms|       ~480 ms|   174 ms |         130 ms | **REVERTED** |
+  | + MARS + parallel readside    |          ~1340 ms|       ~470 ms|   295 ms |         130 ms | **REVERTED** |
+  | + drop countUserTables        |          1198 ms |       418 ms |   140 ms |          56 ms | **KEPT** |
+
+Each cell is median across 3-5 runs.
+
+**Decision:** **Keep** the `countUserTables` elimination
+(~70 ms savings, ~5.5% of canary total). **Revert** sys.* readside
+queries — INFORMATION_SCHEMA is faster at canary scale. **Revert**
+MARS + parallel readside — MARS adds ~150 ms per query when
+enabled even when queries don't actually interleave; the
+parallelism savings (~100 ms) don't compensate for the per-query
+regression.
+
+**Reasoning / consequences.**
+
+This entry is the worked example of why the bench surface was
+worth building. Without per-query timings, all three changes
+would have looked plausible by intuition:
+
+  - "sys.* is the underlying table; INFORMATION_SCHEMA is a view.
+    The view layer must add overhead." → Wrong. SQL Server's
+    optimizer specializes INFORMATION_SCHEMA's `CONSTRAINT_TYPE`
+    filter more efficiently than `is_primary_key = 1` against
+    sys.indexes; the view is faster in our access pattern.
+  - "MARS lets parallel queries share a connection." → Right
+    technically, but MARS adds per-command overhead (~150 ms in
+    our measurements) that dominates the parallelism savings at
+    small-DB scale. Larger DBs may flip this trade-off; not
+    relitigating without re-measurement.
+  - "countUserTables is just one query; how slow could it be?"
+    → ~70 ms of pure overhead per readback-style call. Eliminating
+    it was strictly free.
+
+The bench data made each verdict visible within a single
+canary run.
+
+**Three forward implications** for future optimization passes:
+
+1. **Measure first, intuit second.** Each candidate optimization
+   gets a per-canary run before / after; the bench surface
+   confirms or refutes the hypothesis empirically. Future agents
+   touching the canary's hot path follow the same protocol.
+
+2. **Document dead ends in code.** The reverted sys.* and MARS
+   approaches are recorded as docstring "Bench note" sections on
+   `readside.readColumnRows` and `readside.readPrimaryKeys`. The
+   note names what was tried, the measured result, and the
+   reverted state. Future agents who consider the same swap see
+   the prior data first.
+
+3. **Optimization candidates should be tagged with their bench
+   leverage.** Items in the Active deferrals index for perf
+   improvements should cite the per-label total they propose to
+   reduce. E.g., "CREATE SCHEMA-instead-of-DATABASE optimization
+   targets the `deploy.createDatabase` label currently averaging
+   ~360 ms per call; bench delta to verify on the canary-gate
+   fixture; revert if no improvement." This format gives the
+   reviewer a structural check against the "but did it actually
+   help?" question.
+
+**Active perf candidates (deferred pending bench-driven
+investigation):**
+
+  - **CREATE SCHEMA-instead-of-DATABASE** for canary isolation.
+    Targets `deploy.createDatabase` (~360 ms × 2 = 720 ms / canary
+    = 60% of total). Requires DDL string substitution to retarget
+    `[dbo]` to `[Source_<guid>]` / `[Target_<guid>]`; readside
+    queries to filter by schema; PhysicalSchema comparison
+    invariant under schema-name. Substantial change; defer to a
+    bench-leverage-justified slice.
+  - **Connection-pool warm-up.** First SqlConnection in a process
+    pays TLS + auth setup (~150 ms observed). Pre-warm at
+    SessionStart by opening + immediately closing a connection.
+    Easy win; defer to a follow-up.
+  - **Single-readside-call wide canary.** Currently the wide
+    canary calls `ReadSide.read` twice (once per phase). For
+    fixtures where the source and target schemas are identical,
+    one call suffices via a comparison-aware readside. Tightly
+    coupled to the schema-vs-database refactor above.
+
+**This entry IS the discipline.** Optimization conversations
+that don't surface a bench delta should be redirected to "run
+the canary, capture the snapshot, then we'll talk." Per the
+session-29 framing extended in session-30: the bench surface is
+how V2 earns its perf claims, the same way the canary's
+PhysicalSchema diff earns its fidelity claims. Both rest on
+making the relevant evidence cheap to produce.
+

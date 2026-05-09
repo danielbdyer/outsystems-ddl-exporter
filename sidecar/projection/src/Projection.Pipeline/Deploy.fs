@@ -254,8 +254,15 @@ module Deploy =
                             use cnn = new SqlConnection(perDbConn)
                             do! cnn.OpenAsync()
                             do! executeBatch cnn sql
-                            let! tables = countUserTables cnn
+                            // Per session-30 Phase 3: TablesCreated is
+                            // derived from the readside Catalog instead
+                            // of a separate `countUserTables` query.
+                            // Saves ~70ms per readback-style call.
                             let! readResult = ReadSide.read cnn
+                            let tables =
+                                match readResult with
+                                | Success c -> Catalog.allKinds c |> List.length
+                                | Failure _ -> 0
                             let report =
                                 {
                                     Success = true
@@ -334,11 +341,14 @@ module Deploy =
                             use cnn = new SqlConnection(sourceConn)
                             do! cnn.OpenAsync()
                             do! executeBatch cnn sourceDdl
-                            let! tables = countUserTables cnn
-                            sourceTables <- tables
+                            // Phase 3: derive TablesCreated from the
+                            // readside Catalog instead of running a
+                            // separate countUserTables query.
                             let! readResult = ReadSide.read cnn
                             match readResult with
-                            | Success c -> sourceCatalog <- Some c
+                            | Success c ->
+                                sourceCatalog <- Some c
+                                sourceTables <- Catalog.allKinds c |> List.length
                             | Failure errors ->
                                 sourceErrors <-
                                     errors
@@ -383,11 +393,14 @@ module Deploy =
                                 use cnn = new SqlConnection(targetConn)
                                 do! cnn.OpenAsync()
                                 do! executeBatch cnn emittedSql
-                                let! tables = countUserTables cnn
-                                targetTables <- tables
+                                // Phase 3: derive TablesCreated from the
+                                // readside Catalog (same optimization as
+                                // the source phase).
                                 let! readResult = ReadSide.read cnn
                                 match readResult with
-                                | Success c -> targetCatalog <- Some c
+                                | Success c ->
+                                    targetCatalog <- Some c
+                                    targetTables <- Catalog.allKinds c |> List.length
                                 | Failure errors ->
                                     targetErrors <-
                                         errors

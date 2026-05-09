@@ -98,6 +98,14 @@ module ReadSide =
     /// Read the basic per-column metadata for every user table in
     /// the database. Excludes `sys` and `INFORMATION_SCHEMA` rows.
     /// Single round-trip; group client-side by `(schema, table)`.
+    ///
+    /// **Bench note (session-30 Phase 3 lesson).** A direct sys.*
+    /// catalog-table join was tried and reverted — empirically
+    /// ~2x slower than INFORMATION_SCHEMA.COLUMNS at canary scale.
+    /// The bench surface (commits fb12761 + 64eec02) was the
+    /// signal: per-query timings made the wrong-direction
+    /// optimization visible immediately. Documented here so future
+    /// agents don't re-attempt the same swap without measuring.
     let private readColumnRows (cnn: SqlConnection)
         : Task<list<string * string * string * string * bool>> =
         task {
@@ -128,6 +136,14 @@ module ReadSide =
     /// Read the set of `(schema, table, column)` tuples that are
     /// part of a PRIMARY KEY constraint. Used to set
     /// `Attribute.IsPrimaryKey`.
+    ///
+    /// **Bench note (session-30 Phase 3 lesson).** A sys.indexes +
+    /// sys.index_columns join was tried — slower than the
+    /// INFORMATION_SCHEMA path at canary scale (~25%). The
+    /// optimizer handles the INFORMATION_SCHEMA view's
+    /// CONSTRAINT_TYPE filter more efficiently than the
+    /// `is_primary_key = 1` predicate against all indexes. Reverted
+    /// per bench data. See companion docstring on `readColumnRows`.
     let private readPrimaryKeys (cnn: SqlConnection)
         : Task<Set<string * string * string>> =
         task {
