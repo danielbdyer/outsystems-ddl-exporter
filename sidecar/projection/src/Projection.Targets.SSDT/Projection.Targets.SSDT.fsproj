@@ -14,6 +14,7 @@
     <Compile Include="Render.fs" />
     <Compile Include="RawTextEmitter.fs" />
     <Compile Include="RefactorLogEmitter.fs" />
+    <Compile Include="RefactorLogRender.fs" />
   </ItemGroup>
 
   <ItemGroup>
