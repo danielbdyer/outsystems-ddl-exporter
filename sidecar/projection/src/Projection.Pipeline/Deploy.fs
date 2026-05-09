@@ -252,10 +252,49 @@ module Deploy =
             [ for e in sql.Errors -> formatSqlError e ]
         | _ -> [ ex.Message ]
 
+    /// Typed connection-string handling — chapter-3.6 cash-out of
+    /// audit Top-10 #1 (centralize connection-string validation
+    /// behind `SqlConnectionStringBuilder`). Wraps the BCL builder
+    /// in a `Result<_>` so malformed strings surface as
+    /// `ValidationError` at the validation boundary, not as an
+    /// opaque `SqlException` at connect time.
+    [<RequireQualifiedAccess>]
+    module ConnectionString =
+
+        let private invalidConnectionString (message: string) : ValidationError =
+            ValidationError.create "deploy.connectionString.invalid" message
+
+        /// Parse a connection string into a validated typed builder.
+        /// `SqlConnectionStringBuilder` throws on malformed input;
+        /// we catch and lift to `ValidationError` so the boundary
+        /// surfaces structured errors.
+        let parse (connStr: string) : Result<SqlConnectionStringBuilder> =
+            if System.String.IsNullOrWhiteSpace connStr then
+                Result.failureOf
+                    (invalidConnectionString
+                        "Connection string is null, empty, or whitespace.")
+            else
+                try
+                    Result.success (SqlConnectionStringBuilder(connStr))
+                with
+                | :? System.ArgumentException as ex ->
+                    Result.failureOf (invalidConnectionString ex.Message)
+                | :? System.FormatException as ex ->
+                    Result.failureOf (invalidConnectionString ex.Message)
+
+        /// Build a per-database connection string from a master
+        /// connection string. Trusts the `master` argument (callers
+        /// flow through `parse` first if validation is needed); the
+        /// `dbName` is set as `InitialCatalog`. Identifier escaping
+        /// (handling `]` inside dbName) is `SqlConnectionStringBuilder`'s
+        /// responsibility — its setter handles SQL-quoting per spec.
+        let buildPerDb (master: string) (dbName: string) : string =
+            let b = SqlConnectionStringBuilder(master)
+            b.InitialCatalog <- dbName
+            b.ConnectionString
+
     let private buildPerDbConnectionString (master: string) (dbName: string) : string =
-        let b = SqlConnectionStringBuilder(master)
-        b.InitialCatalog <- dbName
-        b.ConnectionString
+        ConnectionString.buildPerDb master dbName
 
     /// `CREATE DATABASE [<dbName>];` text. Bracket-quoting flows
     /// through `Render.quote` (which delegates to ScriptDom's
@@ -488,12 +527,30 @@ module Deploy =
     [<Literal>]
     let WarmConnStringEnvVar : string = "PROJECTION_MSSQL_CONN_STR"
 
+    /// Read the warm-container connection string from the environment.
+    /// Returns `None` when the env var is unset / blank; returns
+    /// `Some connStr` when set AND `SqlConnectionStringBuilder` accepts
+    /// it (per `ConnectionString.parse`). Malformed env vars surface
+    /// at this validation boundary as a stderr warning + `None`
+    /// (canary falls back to ephemeral container) rather than as an
+    /// opaque `SqlException` at the first connect call.
     let private warmConnectionString () : string option =
         match Environment.GetEnvironmentVariable WarmConnStringEnvVar with
         | null -> None
-        | "" -> None
-        | s when System.String.IsNullOrWhiteSpace s -> None
-        | s -> Some s
+        | raw when System.String.IsNullOrWhiteSpace raw -> None
+        | raw ->
+            match ConnectionString.parse raw with
+            | Success _ -> Some raw
+            | Failure errors ->
+                let codes =
+                    errors
+                    |> List.map (fun e -> e.Code)
+                    |> String.concat ", "  // LINT-ALLOW: terminal stderr-emission boundary; typed code list joined for human-readable warning
+                eprintfn
+                    "  WARNING: %s is set but malformed (%s); falling back to ephemeral container."
+                    WarmConnStringEnvVar
+                    codes
+                None
 
     /// Run the body against a master connection string. Honors the
     /// `PROJECTION_MSSQL_CONN_STR` env var if set (warm container,
