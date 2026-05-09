@@ -30,15 +30,18 @@ let ``hideOrigin removes every kind with that origin`` () =
 
 [<Fact>]
 let ``hideOrigin emits one Removed event per removed kind`` () =
+    // Chapter-3.6 slice-α: typed `RemovalReason.OriginPredicate Origin`
+    // payload replaces the prior `"origin=OsNative"` built-name string.
+    // Audit readers / tests pattern-match the typed payload directly.
     let mask = { VisibilityMask.Hide = [ VisibilityMask.hideOrigin OsNative ] }
     let result = VisibilityMask.run mask sampleCatalog
     Assert.Equal(3, result.Trail.Length)
     Assert.All(result.Trail, fun e ->
         match e.TransformKind with
-        | Removed reason ->
-            Assert.Equal("origin=OsNative", reason)
+        | Removed (OriginPredicate origin) ->
+            Assert.Equal(OsNative, origin)
         | other ->
-            Assert.Fail(sprintf "Expected Removed, got %A" other))
+            Assert.Fail(sprintf "Expected Removed (OriginPredicate _), got %A" other))
 
 // ---------------------------------------------------------------------------
 // Hide by explicit SsKey list. Lineage events name the rule that fired.
@@ -56,13 +59,16 @@ let ``hideKeys removes only the named kinds`` () =
 
 [<Fact>]
 let ``hideKeys: lineage event names the explicit-key-list rule`` () =
+    // Chapter-3.6 slice-α: marker variant `RemovalReason.ExplicitKeyList`
+    // — the full key set is intentionally NOT carried in the trail
+    // (per-event payload O(1) vs O(N), keeping trail O(N) not O(N²)).
     let mask = { VisibilityMask.Hide = [ VisibilityMask.hideKeys [ countryKey ] ] }
     let result = VisibilityMask.run mask sampleCatalog
     let event = result.Trail |> List.exactlyOne
     Assert.Equal(countryKey, event.SsKey)
     match event.TransformKind with
-    | Removed reason -> Assert.Equal("explicit-key-list", reason)
-    | other -> Assert.Fail(sprintf "Expected Removed, got %A" other)
+    | Removed ExplicitKeyList -> ()
+    | other -> Assert.Fail(sprintf "Expected Removed ExplicitKeyList, got %A" other)
 
 // ---------------------------------------------------------------------------
 // Hide by modality — drop the static kind; surviving kinds keep their
@@ -98,8 +104,8 @@ let ``first matching predicate wins for lineage attribution`` () =
         result.Trail
         |> List.find (fun e -> e.SsKey = countryKey)
     match countryEvent.TransformKind with
-    | Removed reason -> Assert.Equal("explicit-key-list", reason)
-    | other -> Assert.Fail(sprintf "Expected Removed, got %A" other)
+    | Removed ExplicitKeyList -> ()
+    | other -> Assert.Fail(sprintf "Expected Removed ExplicitKeyList, got %A" other)
 
 [<Fact>]
 let ``reordering predicates changes which predicate is named`` () =
@@ -113,8 +119,8 @@ let ``reordering predicates changes which predicate is named`` () =
         result.Trail
         |> List.find (fun e -> e.SsKey = countryKey)
     match countryEvent.TransformKind with
-    | Removed reason -> Assert.StartsWith("modality=", reason)
-    | other -> Assert.Fail(sprintf "Expected Removed, got %A" other)
+    | Removed (ModalityPredicate _) -> ()
+    | other -> Assert.Fail(sprintf "Expected Removed (ModalityPredicate _), got %A" other)
 
 // ---------------------------------------------------------------------------
 // Identity preservation (A3, A4): the pass never invents or rekeys.

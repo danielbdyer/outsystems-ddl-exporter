@@ -1,5 +1,64 @@
 namespace Projection.Core
 
+/// Typed payload for `TransformKind.Removed` — chapter-3.6 slice-α
+/// (`CHAPTER_3_6_OPEN.md`). The convention any filtering pass follows:
+/// when a node is masked, the removal reason structurally names the
+/// rule that fired. Each variant carries the typed payload that the
+/// predicate was parameterized on, so audit readers, future dashboards,
+/// and tests pattern-match exhaustively rather than substring-parse a
+/// pre-rendered name string.
+///
+/// Variants:
+///   - `OriginPredicate of Origin` — `VisibilityMask.hideOrigin`
+///     removed the kind because its `Origin` matched.
+///   - `ExplicitKeyList` — `VisibilityMask.hideKeys` removed the kind
+///     because its SsKey was in the predicate's key list. **Marker
+///     variant**; the full key set is intentionally NOT carried —
+///     per-event payload would otherwise be O(N), making the trail
+///     O(N²) (Big-O Tier-1 discipline; chapter-3.1 audit).
+///   - `ModalityPredicate of ModalityMark` — `VisibilityMask.hideModality`
+///     removed the kind because its modality contained the mark.
+///
+/// Adding a new filtering pass that introduces a new predicate shape
+/// extends this DU; the closed-DU expansion empirical-test discipline
+/// (`DECISIONS 2026-05-13`) applies — exhaustiveness errors should
+/// light up only at consumer match sites within Core.
+type RemovalReason =
+    | OriginPredicate of origin: Origin
+    | ExplicitKeyList
+    | ModalityPredicate of mark: ModalityMark
+
+/// Companion module for `RemovalReason`. Provides the rendering-
+/// boundary projection: typed payload → diagnostic string. Strings
+/// emerge ONLY here (and at any future writer-boundary consumer), per
+/// the supreme operating discipline at the top of `DECISIONS.md`
+/// (chapter 3.5; pillar 1: data-structure-oriented over string-parsing).
+[<RequireQualifiedAccess>]
+module RemovalReason =
+
+    /// Render the typed reason as a stable diagnostic string. Used by
+    /// boundary consumers (RawTextEmitter comments, future audit
+    /// readers) that need a flat presentation form. Returns the same
+    /// strings the prior `Removed of string` payload carried, so this
+    /// is a structural seam, not a behavior change:
+    ///   - `OriginPredicate Origin.OsNative` → `"origin=OsNative"`
+    ///   - `ExplicitKeyList`                  → `"explicit-key-list"`
+    ///   - `ModalityPredicate (Static [...])` → `"modality=[Static(N)]"`
+    let toDiagnosticString (reason: RemovalReason) : string =
+        match reason with
+        | OriginPredicate origin ->
+            // Origin's typed renderer already exists; the "origin="
+            // prefix is the convention named at VisibilityMask.fs's
+            // module docstring (filtering passes name the predicate
+            // that fired). Two-element typed list joined at the
+            // terminal-text-emission boundary.
+            String.concat "" [ "origin="; Origin.toDiagnosticString origin ]  // LINT-ALLOW: terminal diagnostic projection; typed `RemovalReason` DU IS the structure
+        | ExplicitKeyList ->
+            "explicit-key-list"
+        | ModalityPredicate mark ->
+            String.concat "" [ "modality="; ModalityMark.toDiagnosticString mark ]  // LINT-ALLOW: terminal diagnostic projection; typed `RemovalReason` DU IS the structure
+
+
 /// The kind of transformation a lineage event records. The set is small
 /// and additive — extend rather than reshape when new pass categories
 /// appear, so historical lineage trails stay readable.
@@ -14,15 +73,21 @@ type TransformKind =
     /// derivation reason lives in the SsKey itself; this tag merely
     /// flags the transform's category.
     | Created
-    /// The pass masked (withheld) a node from the surface. The `reason`
-    /// names the predicate (or rule) that fired. This is the convention
-    /// for filtering passes: when a node is removed, the lineage event
-    /// records *which* rule fired, so a downstream reader can answer
-    /// "why is this kind missing?" by reading the trail.
-    | Removed of reason: string
+    /// The pass masked (withheld) a node from the surface. The typed
+    /// `RemovalReason` payload names the predicate (or rule) that
+    /// fired. This is the convention for filtering passes: when a node
+    /// is removed, the lineage event records *which* rule fired, so a
+    /// downstream reader can answer "why is this kind missing?" by
+    /// pattern-matching the typed payload directly. Chapter-3.6 slice-α
+    /// (`CHAPTER_3_6_OPEN.md`) widened this from `string` to
+    /// `RemovalReason` — closed-DU exhaustiveness replaces ad-hoc string
+    /// parsing.
+    | Removed of reason: RemovalReason
     /// The pass attached or rewrote metadata (modality marks, type
     /// correspondences). The detail string carries human-readable context;
-    /// it is not consumed structurally.
+    /// it is not consumed structurally. **Chapter 3.6 slice β/γ** widens
+    /// this to a typed payload too; deliberately deferred to a later
+    /// slice for blast-radius control.
     | Annotated of detail: string
 
 
