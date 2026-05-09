@@ -66,3 +66,37 @@ if ! "$LINT_SCRIPT" --ci; then
     echo ""
     exit 1
 fi
+
+# ---------------------------------------------------------------------------
+# Run the perf-regression gate (chapter-3.6 cash-out). Soft-skips when
+# Docker / dotnet are unavailable so commits to docs-only branches and
+# dev hosts without the canary stack don't hard-block. When active,
+# warm budget is ~2s against the canary-gate.sql schema canary.
+#
+# Gate compares against `sidecar/projection/bench/baseline-canary.json`
+# (committed). Set BENCH_TOLERANCE=2.0 to loosen the regression
+# threshold; set PERF_GATE_RECORD=1 to update the baseline (when the
+# perf floor changes legitimately — pair with a DECISIONS amendment).
+# ---------------------------------------------------------------------------
+
+PERF_GATE="$SIDECAR/scripts/perf-gate.sh"
+
+if [[ -x "$PERF_GATE" ]]; then
+    if ! "$PERF_GATE"; then
+        echo ""
+        echo "=== Pre-commit blocked: perf-gate detected regression ==="
+        echo ""
+        echo "The canary's bench output exceeded the committed baseline."
+        echo "Options:"
+        echo "  1. Profile and fix the regression (preferred — the bench"
+        echo "     surface tells you which label exceeded its budget)."
+        echo "  2. If the regression is intentional, re-record the baseline:"
+        echo "       PERF_GATE_RECORD=1 sidecar/projection/scripts/perf-gate.sh"
+        echo "     and commit the updated bench/baseline-canary.json."
+        echo "  3. Loosen tolerance for one commit:"
+        echo "       BENCH_TOLERANCE=2.0 git commit"
+        echo "  4. Bypass with  git commit --no-verify  (explicit deviance)."
+        echo ""
+        exit 1
+    fi
+fi

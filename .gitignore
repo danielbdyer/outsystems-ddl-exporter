@@ -18,3 +18,10 @@ TestResults/
 # Per session-29 framing, these accumulate locally per session for
 # cross-run perf comparison; not checked in (timings drift by host).
 bench/
+
+# EXCEPT the perf-gate baselines, which ARE checked in. These are the
+# committed high-water-mark thresholds for `scripts/perf-gate.sh` to
+# compare per-commit canary runs against (chapter-3.6 cash-out).
+!sidecar/projection/bench/
+sidecar/projection/bench/*
+!sidecar/projection/bench/baseline-*.json
