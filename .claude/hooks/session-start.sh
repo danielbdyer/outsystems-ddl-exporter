@@ -98,8 +98,8 @@ if command -v docker >/dev/null 2>&1; then
     # ---------------------------------------------------------------------
     # 3. Pre-pull SQL Server image (only if Docker is up)
     # ---------------------------------------------------------------------
+    SQL_IMAGE="mcr.microsoft.com/mssql/server:2022-latest"
     if docker info >/dev/null 2>&1; then
-        SQL_IMAGE="mcr.microsoft.com/mssql/server:2022-latest"
         if docker image inspect "$SQL_IMAGE" >/dev/null 2>&1; then
             log "$SQL_IMAGE already cached locally"
         else
@@ -123,6 +123,77 @@ if command -v docker >/dev/null 2>&1; then
                 log "         see /tmp/docker-pull.log for details"
                 log "         first canary test will retry the pull on demand"
             fi
+        fi
+    fi
+
+    # ---------------------------------------------------------------------
+    # 4. Warm SQL Server container — paid once, reused all session
+    # ---------------------------------------------------------------------
+    # Per session-29 bench data, container start is ~75% of every
+    # canary's wall time. Starting a single warm container at session
+    # start and reusing it across all canaries collapses the per-call
+    # cost from ~10s to ~1.5s (6x speedup empirically). The session-end
+    # hook tears it down.
+    #
+    # Database-level isolation is preserved: every canary still
+    # creates a fresh `Source_<guid>` / `Target_<guid>` /
+    # `Projection_<guid>` database in the warm container, so the
+    # run-level idempotency contract from M2 still holds.
+    WARM_NAME="projection-mssql-warm"
+    WARM_PORT=14333
+    SA_PASSWORD='yourStrong(!)Password'
+    WARM_CONN_STR="Server=localhost,${WARM_PORT};User Id=SA;Password=${SA_PASSWORD};TrustServerCertificate=true;Encrypt=False"
+
+    if docker info >/dev/null 2>&1 && docker image inspect "$SQL_IMAGE" >/dev/null 2>&1; then
+        if docker ps --filter "name=^${WARM_NAME}$" --format "{{.Names}}" 2>/dev/null \
+            | grep -qx "$WARM_NAME"; then
+            log "warm SQL Server container already running"
+        else
+            # Defensive: prune any stopped container with the same name
+            # so `docker run` doesn't conflict.
+            docker rm -f "$WARM_NAME" >/dev/null 2>&1 || true
+            log "starting warm SQL Server container ($WARM_NAME on port $WARM_PORT)..."
+            if docker run -d \
+                --name "$WARM_NAME" \
+                --rm \
+                -e ACCEPT_EULA=Y \
+                -e MSSQL_SA_PASSWORD="$SA_PASSWORD" \
+                -p "${WARM_PORT}:1433" \
+                "$SQL_IMAGE" >/dev/null 2>&1; then
+                # Wait up to 60s for SQL Server to accept connections.
+                WARM_READY=0
+                for _ in $(seq 1 60); do
+                    if docker exec "$WARM_NAME" \
+                        /opt/mssql-tools18/bin/sqlcmd -C \
+                        -U SA -P "$SA_PASSWORD" \
+                        -Q 'SELECT 1' >/dev/null 2>&1; then
+                        WARM_READY=1
+                        break
+                    fi
+                    sleep 1
+                done
+                if [ "$WARM_READY" -eq 1 ]; then
+                    log "warm SQL Server container ready"
+                else
+                    log "WARNING: warm SQL Server container did not become ready within 60s"
+                    log "         canaries will fall back to ephemeral container per call"
+                fi
+            else
+                log "WARNING: failed to start warm SQL Server container"
+                log "         canaries will fall back to ephemeral container per call"
+            fi
+        fi
+
+        # Set the env var if the warm container is up. F# canary code
+        # reads PROJECTION_MSSQL_CONN_STR; if set, all deploys reuse
+        # this container instead of spinning a fresh ephemeral.
+        if docker ps --filter "name=^${WARM_NAME}$" --format "{{.Names}}" 2>/dev/null \
+            | grep -qx "$WARM_NAME"; then
+            if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+                echo "export PROJECTION_MSSQL_CONN_STR=\"$WARM_CONN_STR\"" >> "$CLAUDE_ENV_FILE"
+            fi
+            export PROJECTION_MSSQL_CONN_STR="$WARM_CONN_STR"
+            log "PROJECTION_MSSQL_CONN_STR exported (canaries will reuse warm container)"
         fi
     fi
 else

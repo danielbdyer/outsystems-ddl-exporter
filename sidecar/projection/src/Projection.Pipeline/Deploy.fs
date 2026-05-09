@@ -139,30 +139,62 @@ module Deploy =
             return Convert.ToInt32 tablesObj
         }
 
-    /// Spin up an ephemeral SQL Server container and run the body
-    /// against the master connection string. Container is disposed
-    /// on completion (even on exception). One container can host
-    /// many databases — callers create per-purpose databases via
-    /// `createDatabase` + `buildPerDbConnectionString`.
+    /// Environment variable that, when set, points all canary
+    /// deploys at a pre-warmed SQL Server container instead of
+    /// spinning a fresh ephemeral one each call. Per session-29
+    /// operator framing, the bench data showed containerStart
+    /// dominates ~75% of every canary's wall time; reusing a single
+    /// container across the session collapses that to a one-time
+    /// cost paid by the SessionStart hook.
+    ///
+    /// The connection string must point at the container's `master`
+    /// database; the deploy logic still creates per-run
+    /// `Source_<guid>` / `Target_<guid>` / `Projection_<guid>`
+    /// databases for isolation, so warm-container reuse preserves
+    /// the run-level idempotency contract from M2.
+    [<Literal>]
+    let WarmConnStringEnvVar : string = "PROJECTION_MSSQL_CONN_STR"
+
+    let private warmConnectionString () : string option =
+        match Environment.GetEnvironmentVariable WarmConnStringEnvVar with
+        | null -> None
+        | "" -> None
+        | s when System.String.IsNullOrWhiteSpace s -> None
+        | s -> Some s
+
+    /// Run the body against a master connection string. Honors the
+    /// `PROJECTION_MSSQL_CONN_STR` env var if set (warm container,
+    /// no startup cost); otherwise spins an ephemeral container and
+    /// disposes it on completion.
+    ///
+    /// Database isolation is preserved either way — callers create
+    /// per-purpose `<prefix>_<guid>` databases via `createDatabase`,
+    /// so the warm-container case still gives every canary its own
+    /// fresh DB.
     let private useContainer (body: string -> Task<'a>) : Task<'a> =
         task {
             use _ = Bench.scope "deploy.useContainer"
-            let container =
-                MsSqlBuilder()
-                    .WithImage(DefaultImage)
-                    .WithCleanUp(true)
-                    .Build()
-            try
-                do!
-                    task {
-                        use _ = Bench.scope "deploy.containerStart"
-                        return! container.StartAsync()
-                    }
-                let masterConn = container.GetConnectionString()
-                return! body masterConn
-            finally
-                use _ = Bench.scope "deploy.containerDispose"
-                container.DisposeAsync().AsTask().GetAwaiter().GetResult()
+            match warmConnectionString () with
+            | Some warmConn ->
+                use _ = Bench.scope "deploy.useContainer.warm"
+                return! body warmConn
+            | None ->
+                let container =
+                    MsSqlBuilder()
+                        .WithImage(DefaultImage)
+                        .WithCleanUp(true)
+                        .Build()
+                try
+                    do!
+                        task {
+                            use _ = Bench.scope "deploy.containerStart"
+                            return! container.StartAsync()
+                        }
+                    let masterConn = container.GetConnectionString()
+                    return! body masterConn
+                finally
+                    use _ = Bench.scope "deploy.containerDispose"
+                    container.DisposeAsync().AsTask().GetAwaiter().GetResult()
         }
 
     /// Deploy `sql` to a fresh per-run database in an ephemeral
