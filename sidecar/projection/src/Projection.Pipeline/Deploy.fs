@@ -319,71 +319,26 @@ module Deploy =
             return ()
         }
 
-    /// Sqlcmd-style `GO` batch separator. Lines whose trimmed value
-    /// equals `GO` (case-insensitive) split a script into independent
-    /// batches; SqlClient's `ExecuteNonQueryAsync` runs one segment
-    /// at a time. Per session-34 — large fixture loads (≥ 50k
-    /// INSERTs) routinely blow past sensible per-batch sizes; chunk
-    /// emission + splitting keeps each round-trip bounded without
-    /// changing SQL semantics. Scripts without `GO` markers run as
-    /// a single segment, identical to the v1 behaviour.
+    /// Public realization of a SQL text batch. Splits via
+    /// `BatchSplitter.splitWithLoudFallback` — gold-standard
+    /// `TSql160Parser`-based batch detection with `splitOnGo`
+    /// line-fold as a permissive fallback. ScriptDom failures
+    /// emit a stderr announcement (operators see WHY the
+    /// fallback fired); the run continues so canaries don't
+    /// hard-fail on grammatical idiosyncrasies (chapter-3.6
+    /// cash-out per the user's "implement behind an adapter
+    /// or strategy with loud announcement" directive).
     ///
-    /// Per the no-regex / no-string-concatenation discipline
-    /// (`DECISIONS 2026-05-09 — No-string-concatenation / no-regex
-    /// discipline`), the splitter uses built-in `String.Split('\n')`
-    /// + `Trim` + literal compare via
-    /// `System.String.Equals(_, "GO", OrdinalIgnoreCase)` instead of
-    /// `System.Text.RegularExpressions.Regex`. Lines are accumulated
-    /// per-segment via `String.concat "\n"` (built-in joiner). The
-    /// fold preserves segment order without mutation; segments with
-    /// only whitespace are filtered.
-    /// T-SQL batch separator. Each `^GO$` line (case-insensitive,
-    /// with surrounding whitespace allowed) terminates a batch.
-    /// Per SQL Server documentation, `GO` is a tooling convention
-    /// recognized by sqlcmd / SSMS — not a T-SQL statement, so it
-    /// must be stripped before sending to `SqlCommand`.
-    [<Literal>]
-    let private GoBatchSeparator : string = "GO"
-
-    let private isGoLine (line: string) : bool =
-        System.String.Equals(
-            line.Trim(),
-            GoBatchSeparator,
-            System.StringComparison.OrdinalIgnoreCase)
-
-    let private splitOnGo (sql: string) : string[] =
-        let lines = sql.Split('\n')
-        // Walk lines via fold; each GO-line closes a segment. The
-        // accumulator carries `current` (lines of the in-flight
-        // segment, reverse-ordered) and `segs` (closed segments,
-        // reverse-ordered). At end, the final `current` is the
-        // tail segment.
-        let initial : string list * string list list = [], []
-        let lastSegRev, segsRev =
-            lines
-            |> Array.fold
-                (fun (current, segs) line ->
-                    if isGoLine line then [], current :: segs
-                    else line :: current, segs)
-                initial
-        let allSegsRev = lastSegRev :: segsRev
-        allSegsRev
-        |> List.rev
-        |> List.map (fun lineListRev ->
-            lineListRev |> List.rev |> String.concat "\n")
-        |> List.filter (fun s -> not (System.String.IsNullOrWhiteSpace s))
-        |> List.toArray
-
-    /// Public realization of a SQL text batch. Splits on `^GO$`
-    /// markers (sqlcmd-style); each segment runs in its own
-    /// round-trip with no client-side timeout. Test fixtures (and
-    /// arbitrary external SQL scripts) consume this directly to
-    /// load source data; V2's own emit path goes through
-    /// `executeStream` with the typed statement seq.
+    /// **Perf citation (pillar 7):** ScriptDom Parse adds ~5-10ms
+    /// per `executeBatch` call (vs ~1ms for line-fold). At
+    /// `executeBatch`-per-deploy cardinality (one per phase),
+    /// the absolute cost stays sub-100ms even on huge fixtures.
+    /// Per-segment `ExecuteNonQueryAsync` round-trips remain the
+    /// dominant cost.
     let executeBatch (cnn: SqlConnection) (sql: string) : Task<unit> =
         task {
             use _ = Bench.scope "deploy.executeBatch"
-            let segments = splitOnGo sql
+            let segments = BatchSplitter.splitWithLoudFallback "deploy.executeBatch" sql
             Bench.recordSample "deploy.executeBatch.segments" (int64 segments.Length)
             for segment in segments do
                 use _ = Bench.scope "deploy.executeBatch.segment"

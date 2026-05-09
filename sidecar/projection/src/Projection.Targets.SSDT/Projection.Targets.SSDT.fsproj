@@ -17,6 +17,7 @@
     <Compile Include="RawTextEmitter.fs" />
     <Compile Include="RefactorLogEmitter.fs" />
     <Compile Include="RefactorLogRender.fs" />
+    <Compile Include="BatchSplitter.fs" />
   </ItemGroup>
 
   <ItemGroup>
