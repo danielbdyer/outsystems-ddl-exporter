@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <Compile Include="Result.fs" />
+    <Compile Include="Bench.fs" />
     <Compile Include="Identity.fs" />
     <Compile Include="Catalog.fs" />
     <Compile Include="ArtifactByKind.fs" />

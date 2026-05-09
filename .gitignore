@@ -13,3 +13,8 @@ TestResults/
 [Bb]uild/
 .nuget/packages/
 *.DS_Store
+
+# Sidecar canary bench snapshots — Bench.persistJson writes here.
+# Per session-29 framing, these accumulate locally per session for
+# cross-run perf comparison; not checked in (timings drift by host).
+bench/

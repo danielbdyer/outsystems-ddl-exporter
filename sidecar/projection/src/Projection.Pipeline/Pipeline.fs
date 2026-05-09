@@ -57,28 +57,45 @@ module Compose =
     /// for the dogfood frame; M2 onward will thread real profile
     /// evidence.
     let project (catalog: Catalog) : Outputs =
+        use _ = Bench.scope "compose.project"
+        let sql =
+            (use _ = Bench.scope "emit.rawText"
+             RawTextEmitter.emit catalog)
+        let json =
+            (use _ = Bench.scope "emit.json"
+             JsonEmitter.emit catalog)
+        let distributions =
+            (use _ = Bench.scope "emit.distributions"
+             DistributionsEmitter.emit catalog Profile.empty)
         {
-            Sql = RawTextEmitter.emit catalog
-            Json = JsonEmitter.emit catalog
-            Distributions = DistributionsEmitter.emit catalog Profile.empty
+            Sql = sql
+            Json = json
+            Distributions = distributions
         }
 
     /// Read a V1 `osm_model.json` from disk and parse it into a V2
     /// Catalog. Errors are surfaced via the codebase's single-arity
     /// `Result<'a>` (see `Result.fs` arity-coexistence note).
     let read (jsonPath: string) : Task<Result<Catalog>> =
-        CatalogReader.parse (CatalogReader.SnapshotFile jsonPath)
+        task {
+            use _ = Bench.scope "compose.read"
+            return! CatalogReader.parse (CatalogReader.SnapshotFile jsonPath)
+        }
 
     /// Read a V1 `osm_model.json` from an in-memory string and parse
     /// it into a V2 Catalog. Used by the golden-file test to keep the
     /// regression surface hermetic.
     let readJson (json: string) : Task<Result<Catalog>> =
-        CatalogReader.parse (CatalogReader.SnapshotJson json)
+        task {
+            use _ = Bench.scope "compose.readJson"
+            return! CatalogReader.parse (CatalogReader.SnapshotJson json)
+        }
 
     /// Write the three artifacts to a directory. Creates the directory
     /// if it does not exist. Returns the absolute paths of the written
     /// files for operator-side validation.
     let write (outputDir: string) (outputs: Outputs) : string list =
+        use _ = Bench.scope "compose.write"
         Directory.CreateDirectory outputDir |> ignore
         let sqlPath = Path.Combine(outputDir, ArtifactPath.sql)
         let jsonPath = Path.Combine(outputDir, ArtifactPath.json)

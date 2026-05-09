@@ -101,6 +101,7 @@ module ReadSide =
     let private readColumnRows (cnn: SqlConnection)
         : Task<list<string * string * string * string * bool>> =
         task {
+            use _ = Bench.scope "readside.readColumnRows"
             use cmd = cnn.CreateCommand()
             cmd.CommandText <-
                 "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE \
@@ -130,6 +131,7 @@ module ReadSide =
     let private readPrimaryKeys (cnn: SqlConnection)
         : Task<Set<string * string * string>> =
         task {
+            use _ = Bench.scope "readside.readPrimaryKeys"
             use cmd = cnn.CreateCommand()
             cmd.CommandText <-
                 "SELECT kcu.TABLE_SCHEMA, kcu.TABLE_NAME, kcu.COLUMN_NAME \
@@ -241,6 +243,7 @@ module ReadSide =
     /// under the SsKey-source difference).
     let read (cnn: SqlConnection) : Task<Result<Catalog>> =
         task {
+            use _ = Bench.scope "readside.read"
             try
                 let! columnRows = readColumnRows cnn
                 let! primaryKeySet = readPrimaryKeys cnn

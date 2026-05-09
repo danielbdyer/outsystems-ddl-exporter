@@ -108,6 +108,7 @@ module Deploy =
 
     let private createDatabase (masterConn: string) (dbName: string) : Task<unit> =
         task {
+            use _ = Bench.scope "deploy.createDatabase"
             use cnn = new SqlConnection(masterConn)
             do! cnn.OpenAsync()
             use cmd = cnn.CreateCommand()
@@ -118,6 +119,7 @@ module Deploy =
 
     let private executeBatch (cnn: SqlConnection) (sql: string) : Task<unit> =
         task {
+            use _ = Bench.scope "deploy.executeBatch"
             use cmd = cnn.CreateCommand()
             cmd.CommandText <- sql
             cmd.CommandTimeout <- 60
@@ -127,6 +129,7 @@ module Deploy =
 
     let private countUserTables (cnn: SqlConnection) : Task<int> =
         task {
+            use _ = Bench.scope "deploy.countUserTables"
             use cmd = cnn.CreateCommand()
             cmd.CommandText <-
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
@@ -143,49 +146,59 @@ module Deploy =
     /// `createDatabase` + `buildPerDbConnectionString`.
     let private useContainer (body: string -> Task<'a>) : Task<'a> =
         task {
+            use _ = Bench.scope "deploy.useContainer"
             let container =
                 MsSqlBuilder()
                     .WithImage(DefaultImage)
                     .WithCleanUp(true)
                     .Build()
             try
-                do! container.StartAsync()
+                do!
+                    task {
+                        use _ = Bench.scope "deploy.containerStart"
+                        return! container.StartAsync()
+                    }
                 let masterConn = container.GetConnectionString()
                 return! body masterConn
             finally
+                use _ = Bench.scope "deploy.containerDispose"
                 container.DisposeAsync().AsTask().GetAwaiter().GetResult()
         }
 
     /// Deploy `sql` to a fresh per-run database in an ephemeral
     /// container; report success / failure. Each call is independent.
     let runEphemeral (sql: string) : Task<Report> =
-        useContainer (fun masterConn ->
-            task {
-                let dbName = uniqueDatabaseName "Projection"
-                do! createDatabase masterConn dbName
-                let perDbConn = buildPerDbConnectionString masterConn dbName
-                try
-                    use cnn = new SqlConnection(perDbConn)
-                    do! cnn.OpenAsync()
-                    do! executeBatch cnn sql
-                    let! tables = countUserTables cnn
-                    return
-                        {
-                            Success = true
-                            Database = dbName
-                            TablesCreated = tables
-                            Errors = []
-                        }
-                with
-                | ex ->
-                    return
-                        {
-                            Success = false
-                            Database = dbName
-                            TablesCreated = 0
-                            Errors = collectErrors ex
-                        }
-            })
+        task {
+            use _ = Bench.scope "deploy.runEphemeral"
+            return!
+                useContainer (fun masterConn ->
+                    task {
+                        let dbName = uniqueDatabaseName "Projection"
+                        do! createDatabase masterConn dbName
+                        let perDbConn = buildPerDbConnectionString masterConn dbName
+                        try
+                            use cnn = new SqlConnection(perDbConn)
+                            do! cnn.OpenAsync()
+                            do! executeBatch cnn sql
+                            let! tables = countUserTables cnn
+                            return
+                                {
+                                    Success = true
+                                    Database = dbName
+                                    TablesCreated = tables
+                                    Errors = []
+                                }
+                        with
+                        | ex ->
+                            return
+                                {
+                                    Success = false
+                                    Database = dbName
+                                    TablesCreated = 0
+                                    Errors = collectErrors ex
+                                }
+                    })
+        }
 
     /// Deploy `sql` to a fresh per-run database AND read the deployed
     /// schema back via `Projection.Adapters.Sql.ReadSide.read`.
@@ -197,47 +210,51 @@ module Deploy =
     /// `PhysicalSchema.ofCatalog` to confirm the emitter preserved
     /// structural intent under deploy.
     let runWithReadback (sql: string) : Task<DeployedResult> =
-        useContainer (fun masterConn ->
-            task {
-                let dbName = uniqueDatabaseName "Projection"
-                do! createDatabase masterConn dbName
-                let perDbConn = buildPerDbConnectionString masterConn dbName
-                try
-                    use cnn = new SqlConnection(perDbConn)
-                    do! cnn.OpenAsync()
-                    do! executeBatch cnn sql
-                    let! tables = countUserTables cnn
-                    let! readResult = ReadSide.read cnn
-                    let report =
-                        {
-                            Success = true
-                            Database = dbName
-                            TablesCreated = tables
-                            Errors = []
-                        }
-                    let catalog =
-                        match readResult with
-                        | Success c -> Some c
-                        | Failure _ -> None
-                    return
-                        {
-                            Report = report
-                            Reconstructed = catalog
-                        }
-                with
-                | ex ->
-                    return
-                        {
-                            Report =
+        task {
+            use _ = Bench.scope "deploy.runWithReadback"
+            return!
+                useContainer (fun masterConn ->
+                    task {
+                        let dbName = uniqueDatabaseName "Projection"
+                        do! createDatabase masterConn dbName
+                        let perDbConn = buildPerDbConnectionString masterConn dbName
+                        try
+                            use cnn = new SqlConnection(perDbConn)
+                            do! cnn.OpenAsync()
+                            do! executeBatch cnn sql
+                            let! tables = countUserTables cnn
+                            let! readResult = ReadSide.read cnn
+                            let report =
                                 {
-                                    Success = false
+                                    Success = true
                                     Database = dbName
-                                    TablesCreated = 0
-                                    Errors = collectErrors ex
+                                    TablesCreated = tables
+                                    Errors = []
                                 }
-                            Reconstructed = None
-                        }
-            })
+                            let catalog =
+                                match readResult with
+                                | Success c -> Some c
+                                | Failure _ -> None
+                            return
+                                {
+                                    Report = report
+                                    Reconstructed = catalog
+                                }
+                        with
+                        | ex ->
+                            return
+                                {
+                                    Report =
+                                        {
+                                            Success = false
+                                            Database = dbName
+                                            TablesCreated = 0
+                                            Errors = collectErrors ex
+                                        }
+                                    Reconstructed = None
+                                }
+                    })
+        }
 
     /// Wide canary: deploy `sourceDdl` to a fresh `Source_*`
     /// database, read it back as `sourceCatalog`, run V2's emitter
@@ -261,106 +278,123 @@ module Deploy =
         (sourceDdl: string)
         (emit: Catalog -> string)
         : Task<Result<WideCanaryReport>> =
-        useContainer (fun masterConn ->
-            task {
-                let sourceDbName = uniqueDatabaseName "Source"
-                let targetDbName = uniqueDatabaseName "Target"
+        task {
+            use _ = Bench.scope "deploy.runWideCanary"
+            return!
+                useContainer (fun masterConn ->
+                    task {
+                        let sourceDbName = uniqueDatabaseName "Source"
+                        let targetDbName = uniqueDatabaseName "Target"
 
-                // Phase 1: deploy source DDL, read it back.
-                do! createDatabase masterConn sourceDbName
-                let sourceConn = buildPerDbConnectionString masterConn sourceDbName
-
-                let mutable sourceCatalog : Catalog option = None
-                let mutable sourceErrors : string list = []
-                let mutable sourceTables = 0
-
-                try
-                    use cnn = new SqlConnection(sourceConn)
-                    do! cnn.OpenAsync()
-                    do! executeBatch cnn sourceDdl
-                    let! tables = countUserTables cnn
-                    sourceTables <- tables
-                    let! readResult = ReadSide.read cnn
-                    match readResult with
-                    | Success c -> sourceCatalog <- Some c
-                    | Failure errors ->
-                        sourceErrors <-
-                            errors |> List.map (fun e -> sprintf "[%s] %s" e.Code e.Message)
-                with
-                | ex ->
-                    sourceErrors <- collectErrors ex
-
-                match sourceCatalog with
-                | None ->
-                    let aggregated =
-                        sourceErrors
-                        |> List.map (fun s ->
-                            ValidationError.create "wideCanary.source.failed" s)
-                    return Result.failure aggregated
-                | Some src ->
-                    let sourceReport =
-                        {
-                            Success = true
-                            Database = sourceDbName
-                            TablesCreated = sourceTables
-                            Errors = sourceErrors
-                        }
-
-                    // Phase 2: emit V2's SSDT, deploy to target DB,
-                    // read it back.
-                    let emittedSql = emit src
-                    do! createDatabase masterConn targetDbName
-                    let targetConn = buildPerDbConnectionString masterConn targetDbName
-
-                    let mutable targetCatalog : Catalog option = None
-                    let mutable targetErrors : string list = []
-                    let mutable targetTables = 0
-
-                    try
-                        use cnn = new SqlConnection(targetConn)
-                        do! cnn.OpenAsync()
-                        do! executeBatch cnn emittedSql
-                        let! tables = countUserTables cnn
-                        targetTables <- tables
-                        let! readResult = ReadSide.read cnn
-                        match readResult with
-                        | Success c -> targetCatalog <- Some c
-                        | Failure errors ->
-                            targetErrors <-
-                                errors
-                                |> List.map (fun e -> sprintf "[%s] %s" e.Code e.Message)
-                    with
-                    | ex ->
-                        targetErrors <- collectErrors ex
-
-                    match targetCatalog with
-                    | None ->
-                        let aggregated =
-                            targetErrors
-                            |> List.map (fun s ->
-                                ValidationError.create "wideCanary.target.failed" s)
-                        return Result.failure aggregated
-                    | Some tgt ->
-                        let targetReport =
-                            {
-                                Success = true
-                                Database = targetDbName
-                                TablesCreated = targetTables
-                                Errors = targetErrors
+                        // Phase 1: deploy source DDL, read it back.
+                        do!
+                            task {
+                                use _ = Bench.scope "deploy.runWideCanary.sourcePhase"
+                                do! createDatabase masterConn sourceDbName
                             }
-                        let sourceSchema = PhysicalSchema.ofCatalog src
-                        let targetSchema = PhysicalSchema.ofCatalog tgt
-                        let diff = PhysicalSchema.diff sourceSchema targetSchema
-                        return
-                            Result.success
+                        let sourceConn = buildPerDbConnectionString masterConn sourceDbName
+
+                        let mutable sourceCatalog : Catalog option = None
+                        let mutable sourceErrors : string list = []
+                        let mutable sourceTables = 0
+
+                        try
+                            use cnn = new SqlConnection(sourceConn)
+                            do! cnn.OpenAsync()
+                            do! executeBatch cnn sourceDdl
+                            let! tables = countUserTables cnn
+                            sourceTables <- tables
+                            let! readResult = ReadSide.read cnn
+                            match readResult with
+                            | Success c -> sourceCatalog <- Some c
+                            | Failure errors ->
+                                sourceErrors <-
+                                    errors
+                                    |> List.map (fun e -> sprintf "[%s] %s" e.Code e.Message)
+                        with
+                        | ex ->
+                            sourceErrors <- collectErrors ex
+
+                        match sourceCatalog with
+                        | None ->
+                            let aggregated =
+                                sourceErrors
+                                |> List.map (fun s ->
+                                    ValidationError.create "wideCanary.source.failed" s)
+                            return Result.failure aggregated
+                        | Some src ->
+                            let sourceReport =
                                 {
-                                    Source = src
-                                    Target = tgt
-                                    Diff = diff
-                                    SourceReport = sourceReport
-                                    TargetReport = targetReport
+                                    Success = true
+                                    Database = sourceDbName
+                                    TablesCreated = sourceTables
+                                    Errors = sourceErrors
                                 }
-            })
+
+                            // Phase 2: emit V2's SSDT, deploy to target,
+                            // read it back.
+                            let emittedSql =
+                                use _ = Bench.scope "deploy.runWideCanary.emit"
+                                emit src
+                            do!
+                                task {
+                                    use _ = Bench.scope "deploy.runWideCanary.targetPhase"
+                                    do! createDatabase masterConn targetDbName
+                                }
+                            let targetConn = buildPerDbConnectionString masterConn targetDbName
+
+                            let mutable targetCatalog : Catalog option = None
+                            let mutable targetErrors : string list = []
+                            let mutable targetTables = 0
+
+                            try
+                                use cnn = new SqlConnection(targetConn)
+                                do! cnn.OpenAsync()
+                                do! executeBatch cnn emittedSql
+                                let! tables = countUserTables cnn
+                                targetTables <- tables
+                                let! readResult = ReadSide.read cnn
+                                match readResult with
+                                | Success c -> targetCatalog <- Some c
+                                | Failure errors ->
+                                    targetErrors <-
+                                        errors
+                                        |> List.map (fun e -> sprintf "[%s] %s" e.Code e.Message)
+                            with
+                            | ex ->
+                                targetErrors <- collectErrors ex
+
+                            match targetCatalog with
+                            | None ->
+                                let aggregated =
+                                    targetErrors
+                                    |> List.map (fun s ->
+                                        ValidationError.create "wideCanary.target.failed" s)
+                                return Result.failure aggregated
+                            | Some tgt ->
+                                let targetReport =
+                                    {
+                                        Success = true
+                                        Database = targetDbName
+                                        TablesCreated = targetTables
+                                        Errors = targetErrors
+                                    }
+                                let diff =
+                                    use _ = Bench.scope "deploy.runWideCanary.diff"
+                                    let sourceSchema = PhysicalSchema.ofCatalog src
+                                    let targetSchema = PhysicalSchema.ofCatalog tgt
+                                    PhysicalSchema.diff sourceSchema targetSchema
+                                return
+                                    Result.success
+                                        {
+                                            Source = src
+                                            Target = tgt
+                                            Diff = diff
+                                            SourceReport = sourceReport
+                                            TargetReport = targetReport
+                                        }
+                    })
+        }
 
     /// End-to-end: parse a V1 `osm_model.json` from disk, project
     /// through the three sibling Π's, and deploy the SSDT. Returns

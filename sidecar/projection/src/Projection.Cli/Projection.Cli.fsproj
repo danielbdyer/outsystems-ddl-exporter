@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Projection.Core\Projection.Core.fsproj" />
     <ProjectReference Include="..\Projection.Pipeline\Projection.Pipeline.fsproj" />
+    <ProjectReference Include="..\Projection.Targets.SSDT\Projection.Targets.SSDT.fsproj" />
   </ItemGroup>
 
 </Project>
