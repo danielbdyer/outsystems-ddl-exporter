@@ -303,16 +303,41 @@ unbuilt-feature stubs), 638 total (session 22).
   surfaces as a `Skip` test stub at the test-file level, not as
   ADMIRE-prose commentary.
 
-## Status at chapter-3.1 close (sessions 27–36)
+## Status at chapter-3.6 substantive close (2026-05-09; ritual deferred)
 
-- **713 tests passing** (697 non-canary + 16 canary).
+- **757 tests passing**, 0 skipped, 0 build warnings under
+  `TreatWarningsAsErrors=true`. Lint clean across 26 rules.
+- **DECISIONS.md supreme operating discipline carries 7 pillars**:
+  (1) data-structure-oriented; (2) no string-concat aggressively;
+  (3) built-in obligation; (4) FP promised land (≥95% pure);
+  (5) coding-style commitments (DDD / point-free / hexagonal /
+  hardcore FP); (6) **no V2-internal back-compat paths** —
+  refactor fully at time of insight (chapter 3.6 codification);
+  (7) **gold-standard library precedence + perf-clause** —
+  use-case-specific lib → typed DU → StructuredString → documented
+  LINT-ALLOW; every refactor cites perf implications; every
+  hot-path function has `Bench.scope`; every loop flows through
+  `Bench` iterators; every counter via `Bench.recordSample`
+  (chapter 3.6 codification).
+- **Result<'a> aliased to FSharp.Core**: `type Result<'a> =
+  Microsoft.FSharp.Core.Result<'a, ValidationError list>`.
+  FsToolkit.ErrorHandling 4.18.0 + .TaskResult adopted; `result {}` /
+  `taskResult {}` / `validation {}` CEs natively available.
+  `DiagnosticSeverity` qualified.
 - **Canary scale ceiling**: 500k rows in 27s warm (5 tables × 100k rows
-  per table; 22.6× speedup vs pre-session-35).
-- **Forcing-function fixture**: 300 tables / 200 entities / 100 static /
-  2,000 seed rows / FK chains across 8 modules.
-- **Bench surface**: ~170 instrumented call sites across Core / Adapters
-  / Targets / Pipeline; stream observability via `Bench.streamProbe` /
-  `AsyncStream.probe`.
+  per table; chapter-3.1 baseline holds).
+- **Bench surface**: instrumented across Core / Adapters / Targets /
+  Pipeline. Iterator-logging primitives: `Bench.scope` (RAII timing),
+  `Bench.iterDo` / `iterMap` / `iteriDo` (per-element samples),
+  `Bench.streamProbe` / `streamTransit` (lazy-sequence throughput),
+  `Bench.recordSample` (external counters). Pass-entry scopes added
+  at every pass `run`.
+- **Statistical perf-gate** at `scripts/perf-gate.sh`: per-label
+  `μ + Kσ` outlier detection across rolling history (N=20 runs);
+  warm-up flat-tolerance fallback. Pre-commit hook runs in ~2s
+  warm; soft-skip on missing Docker/dotnet. Stop hook surfaces
+  per-message perf summary via `hookSpecificOutput.additionalContext`.
+  Baseline at `bench/baseline-canary.json`.
 - **AXIOMS** at A40 (chapter-3.1 cashed A35, A36, A39, A40; partial
   advance on A32; T1 strengthened to statement-stream determinism).
 

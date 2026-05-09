@@ -1,8 +1,39 @@
-# Handoff letter — Chapter 3.1 → Chapter 3.2 / 3.5 / 4.x
+# Handoff letter — Chapter 3.1 → Chapter 3.2 / 3.5 / 3.6 / 4.x
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## Chapter 3.6 prologue (added 2026-05-09; substantive close, ritual deferred)
+
+**Branch:** `claude/review-ddl-exporter-EH1lh`. **Test baseline:** 757 passing, 0 skipped, 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 26 rules. **Perf-gate:** clean against `bench/baseline-canary.json` baseline.
+
+Chapter 3.6 closed five of the six chapter-3.5-close-deferred items (KICKOFF.md table) plus a comprehensive brittleness audit + library-API audit + Result migration. **Substantive deliverables shipped (load-bearing):**
+- **Pillar 6 codified** (no V2-internal back-compat paths). Cashed out `SsKey.original` parser-shim, `SsKey.derived` aliasing forwarder, `LEGACY` source marker, CLI bare-positional-args back-compat. OSSYS adapter flows through `Module.create` / `Catalog.create`.
+- **Pillar 7 codified** (gold-standard library precedence + perf-clause). Every refactor SHALL cite perf implications; every hot-path function has `Bench.scope`; every loop flows through `Bench` iterators; every counter via `Bench.recordSample`.
+- **`LineageEvent.Removed of RemovalReason` + `Annotated of AnnotationDetail`**: typed-payload widening across 5 producer pass drivers + SymmetricClosure.
+- **`SsKey.Synthesized of basisParts: string list`**: typed segments through the DU; `String.concat "_"` survives only at terminal `rootOriginal`.
+- **`RawValueCodec`**: V2's canonical raw-value format contract; consolidates Render + Bulk + ReadSide.
+- **`ConnectionString.parse`**: typed `SqlConnectionStringBuilder` validation.
+- **`BatchSplitter` strategy**: `TSql160Parser` gold-standard with line-fold loud-fallback for `Deploy.executeBatch`.
+- **`EmissionPolicy.create`**: A39 invariant.
+- **`CatalogTraversal.mapKinds` primitive**: extracted from VisibilityMask + NormalizeStaticPopulations.
+- **`BenchSink` port**: `Bench.persistJson` extracted from Core (audit Tier-1 #1).
+- **Statistical perf-gate** (`scripts/perf-gate.sh`) + **pre-commit hook** + **Stop hook** (`hookSpecificOutput.additionalContext`): per-label `μ + Kσ` outlier detection across rolling history (N=20); soft-skip on missing Docker/dotnet.
+- **`Result<'a>` aliased to `Microsoft.FSharp.Core.Result<'a, ValidationError list>`**: custom DU + `result {}` builder retired. **FsToolkit.ErrorHandling 4.18.0** adopted; `result {}` / `taskResult {}` / `validation {}` CEs now native. `DiagnosticSeverity` qualified.
+- **ScriptDom expansion** at boundary sites (`createDatabaseSql`, `readRowsStream`, `readRows.SELECT COUNT`): single source of truth for SQL identifier quoting via `Identifier.EncodeIdentifier`.
+- **Bench coverage at every pass entry** (10 passes; iterator-logging-as-first-class-outcome discipline).
+
+**Sole 3.6-deferral remaining:**
+- **Slice χ — F# Analyzers SDK custom analyzer** (KICKOFF deferral #1; standalone). Independent of chapter-3.5 deferrals; re-open trigger: false-negative surfaces in CI.
+
+**3.6 chapter-close ritual still pending** (eight items per CLAUDE.md operating disciplines table): pick this up before opening Chapter 3.7 / 4.x if appropriate.
+
+**Forward signals into 3.7+ / 4.x** (recorded for future agents at `DECISIONS.md` 2026-05-09 chapter-3.6 audit-findings entry): DacFx adoption (chapter 3.x DacpacEmitter — primitives named: `TSqlModel`, `DacPackage`, `DacServices.GenerateDeployScript`, `SchemaComparison`, `DacDeployOptions`), SqlBatch (when SqlClient ≥ 5.5 + canary bottleneck), `SqlConnection.RetryLogicProvider` (canary CI flake), `AsyncSeq` (when streaming readside needs `bufferByCountAndTime`), `JsonObject` typed per-kind (when 2nd `ArtifactByKind<string>` consumer fires), Argu CLI (when CLI grows beyond 3 commands), Verify.XUnit (DacpacEmitter golden-rotation pressure), `Microsoft.Extensions.Logging` (CI structured-logs consumer demand), `Utf8JsonReader` (bench surfaces JSON parse time at scale), incremental `validation {}` adoption at `CatalogReader.parseAttribute / parseKind` for ~80 LoC reduction + better error aggregation, incremental `taskResult {}` adoption at `Deploy.runWideCanaryWithLoader` for ~40 LoC reduction.
+
+**Pillar 7 perf-clause practice**: agents SHALL cite perf implications in every commit message and SHALL identify the perf class before committing (zero / O(1) / O(N) / O(N log N) / O(N²) — with the scaling axis).
+
+---
 
 ## Where you are
 
