@@ -2,18 +2,6 @@ namespace Projection.Core
 
 open System.Threading.Tasks
 
-/// Per-kind output indexed by SsKey. Stage 0 (S0.A per `STAGING.md`)
-/// lands the type definition as a single-case DU wrapping
-/// `Map<SsKey, 'a>`; the chapter-3 cross-cutting close (S0.B) adds the
-/// smart constructor enforcing T11's "every SsKey in the source Catalog
-/// appears as a key" invariant. Until then, ArtifactByKind is a
-/// transparent wrapper with no invariants beyond what Map gives.
-///
-/// See `AXIOMS.md` "T11 amended (structural type encoding)" placeholder
-/// for the chapter-3 cross-cutting amendment that turns T11 from a
-/// substring-search property test into a type theorem.
-type ArtifactByKind<'a> = ArtifactByKind of Map<SsKey, 'a>
-
 /// Two-Catalog diff value. Stage 0 reserves the type name; chapter 3.5
 /// (RefactorLogEmitter + CatalogDiff) extends to the four-variant
 /// exhaustive DU `Renamed | Added | Removed | Unchanged` per the A36
@@ -37,35 +25,42 @@ type Diff =
 // the moment the algebra becomes types: chapter pre-scopes are concrete
 // morphism constructions whose signatures match these aliases verbatim.
 //
-// Errors flow through the codebase's single-arity `Result<'a>` (per
-// `Projection.Core/Result.fs`); STAGING.md's draft two-arity
-// `Result<_, EmitError>` has been aligned to the existing convention to
-// keep adapter / pass / emitter return shapes uniform across Core.
+// Two Result types coexist by arity (per `Result.fs` docstring):
+//   * `Result<'a>` — Projection.Core's single-arity success/failure with
+//     `ValidationError list`. Used by adapters (`Adapter<...>`) and
+//     boundary code aligned with the chapter-2-close convention.
+//   * `Result<'a, 'b>` — FSharp.Core's two-arity Ok/Error. Used by
+//     emitter aliases (`Emitter<...>`) so the typed `EmitError`
+//     surface is visible at every Π's signature, per
+//     `CHAPTER_3_PRESCOPE_ARTIFACTBYKIND_REFACTOR.md` §2 strict-equal
+//     decision. The arity disambiguates without ambiguity.
 
 /// Pattern Π — Emitter. Catalog → ArtifactByKind, no Profile dependency.
 /// Per A18 amended (`AXIOMS.md` 2026-05-12): Π consumes whichever subset
 /// of `Catalog × Profile` it needs, never `Policy`.
 type Emitter<'element> =
-    Catalog -> Result<ArtifactByKind<'element>>
+    Catalog -> Result<ArtifactByKind<'element>, EmitError>
 
 /// Pattern Π — Profile-consuming Emitter. The third sibling Π
 /// (DistributionsEmitter) shape; chapter 4.1.B's CDC-aware
 /// data triumvirate inherits.
 type EmitterWithProfile<'element> =
-    Catalog -> Profile -> Result<ArtifactByKind<'element>>
+    Catalog -> Profile -> Result<ArtifactByKind<'element>, EmitError>
 
 /// Pattern Π — Diff-consuming Emitter (chapter 3.5 RefactorLogEmitter
 /// shape). Per the T11-amended-again placeholder
 /// (`AXIOMS.md` amendment scaffolding): ArtifactByKind keys are typed
 /// over the diff's SsKey set, not the source Catalog's.
 type EmitterOverDiff<'element> =
-    CatalogDiff -> Result<ArtifactByKind<'element>>
+    CatalogDiff -> Result<ArtifactByKind<'element>, EmitError>
 
 /// Pattern Adapter — boundary contract (sources to internal IR via Task).
 /// Per CLAUDE.md F# feature surface: `Task<'a>` is in scope at the
 /// boundary, not in Core. Adapters use this signature; the synchronous
 /// Core consumes the Result. Worked example:
-/// `Projection.Adapters.Osm.CatalogReader.parse` (session 18).
+/// `Projection.Adapters.Osm.CatalogReader.parse` (session 18). Adapters
+/// use the single-arity `Projection.Core.Result<'a>` per the
+/// chapter-2-close convention.
 type Adapter<'source, 'inner> =
     'source -> Task<Result<'inner>>
 
@@ -109,6 +104,6 @@ type RelationalProperty = Catalog -> Catalog -> bool
 
 /// Pattern Diff — evolution as value. Stage 0 reserves the alias;
 /// chapter 3.5 fills the implementation of
-/// `CatalogDiff.between : Catalog -> Catalog -> Result<CatalogDiff>`
-/// per the A36 candidate exhaustiveness invariant.
-type DiffOf<'value> = 'value -> 'value -> Result<CatalogDiff>
+/// `CatalogDiff.between : Catalog -> Catalog -> Result<CatalogDiff,
+/// EmitError>` per the A36 candidate exhaustiveness invariant.
+type DiffOf<'value> = 'value -> 'value -> Result<CatalogDiff, EmitError>

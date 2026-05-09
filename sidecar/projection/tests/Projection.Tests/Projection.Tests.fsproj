@@ -17,6 +17,7 @@
     <Compile Include="CatalogTests.fs" />
     <Compile Include="LineageTests.fs" />
     <Compile Include="DiagnosticsTests.fs" />
+    <Compile Include="ArtifactByKindTests.fs" />
     <Compile Include="TypesTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
     <Compile Include="ProfileFixtures.fs" />
