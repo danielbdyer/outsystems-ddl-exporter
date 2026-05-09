@@ -1,6 +1,8 @@
 # V2 — Staging (Foundation Phase / Stage 0)
 
-**Date:** 2026-05-08
+**Date:** 2026-05-08; **chapter-3.1-close update:** 2026-05-30
+**Status:** **Stage 0 shipped before chapter 3.1 opened (sessions 26 prework). Chapter 3.1 closed at session 36.** This document is preserved for the foundation-phase rationale + sequencing record. The Stage-0 deliverable status is in the "Stage 0 inventory" section; chapter-3.1 added a note per item where the chapter advanced or cashed the Stage-0 commitment.
+
 **Purpose:** Stage 0 — the foundation phase before chapter 3.1 opens. Per `SPINE.md` (six structural inferences + seven primitives + seven tessellating patterns), a small set of foundation work landed *before* the first emitter chapter compounds across every subsequent chapter. This document names that work, sequences it, and quantifies the payoff.
 
 **Companion documents:** `VISION.md`, `SPINE.md`, `PLAYBOOK.md`, `BACKLOG.md`.
@@ -455,7 +457,48 @@ Per S0.G: the five DECISIONS entries (R6 split-brain, chapter sequencing, CLAUDE
 
 ---
 
-## What follows — the path to chapter 3.1
+## Chapter-3.1-close status update (2026-05-30)
+
+Chapter 3.1 closed at session 36. The chapter's substantive work
+advanced or cashed several Stage-0 commitments:
+
+- **S0.A type primitives (`Types.fs`)** — chapter-3.1 retired the
+  `Adapter<'source, 'inner>` alias (no consumers; dragged
+  `System.Threading.Tasks` into Core). Other aliases remain
+  Stage-0 reservations awaiting their cash-out chapters.
+- **S0.B structural commitment refactor (`ArtifactByKind` + `SsKey`
+  four-variant + `CatalogDiff`)** — `ArtifactByKind` and `SsKey`
+  four-variant shipped at Stage 0; `CatalogDiff` remains
+  reserved for chapter 3.5 (RefactorLog). Chapter 3.1 audit Agent 2
+  flagged that `Emitter<'element>` shape is declared but unrealized
+  (three Π's return `string`); chapter 3.5's Π port realization
+  closes that gap.
+- **S0.E Tolerance taxonomy** — still pending; `PhysicalSchema.diff`
+  has eight axes (chapter-3.1 added Rows + RowDigests); the
+  Tolerance taxonomy lands at chapter 3.4 (canary property surface).
+- **S0.F AXIOMS scaffolding** — chapter 3.1 close cashed A35 (Π's
+  output is a deterministic statement stream), A36 (bulk-vs-
+  incremental is realization-layer policy), A39 (aggregate-root
+  smart constructors), A40 (harmonization-via-parameterization).
+  Renumbered A37/A38 (Π-erased axes; CatalogDiff exhaustiveness)
+  for chapters 3.4 / 3.5.
+- **S0.G five `DECISIONS.md` governance entries** — landed at Stage 0
+  as scheduled. Chapter 3.1 added 13 substantive resolutions; the
+  audit-driven refactor protocol (five-agent epistemic-tier shape)
+  is the chapter-3.1 governance contribution.
+- **S0.J currency checks** — chapter 3.1 close walked
+  ADMIRE / AXIOMS / CLAUDE / HANDOFF / KICKOFF / README; all
+  currents updated.
+- **Other Stage-0 items (S0.C-S0.K-S0.L)** — covered through the
+  chapter-3.1 work or remain reserved per Stage-0 sequencing.
+
+The Stage-0 commitment held: **the foundation phase shipped before
+chapter 3.1 opened, and the chapter compounded on it.** The
+remaining Stage-0 reservations (Tolerance taxonomy; CatalogDiff
+exhaustiveness; full Π port realization) route to their named
+sub-chapters.
+
+## What follows — the path beyond chapter 3.1
 
 After Stage 0 closes, chapter 3.1 opens with:
 

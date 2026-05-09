@@ -37,20 +37,20 @@ module SymmetricClosure =
     /// a previous run of the pass? Used to keep the pass idempotent.
     let private isInverseRef (r: Reference) : bool =
         match r.SsKey with
-        | Derived (_, reason) when reason = inverseReason -> true
+        | DerivedFrom (_, reason) when reason = inverseReason -> true
         | _ -> false
 
     let private deriveInverseKey (r: Reference) : SsKey =
-        // A5 enforced by SsKey.derived; the deterministic formula is
+        // A5 enforced by SsKey.derivedFrom; the deterministic formula is
         // (original-key, "inverse").
-        match SsKey.derived r.SsKey inverseReason with
+        match SsKey.derivedFrom r.SsKey inverseReason with
         | Success k  -> k
         | Failure es ->
-            // SsKey.derived only fails on blank reason; "inverse" is a
-            // compile-time literal, so this branch is unreachable. Fail
+            // SsKey.derivedFrom only fails on blank reason; "inverse" is
+            // a compile-time literal, so this branch is unreachable. Fail
             // loudly if the invariant is ever violated.
             let codes = es |> List.map (fun e -> e.Code) |> String.concat ", "
-            invalidOp $"symmetricClosure: SsKey.derived rejected reserved reason ({codes})"
+            invalidOp $"symmetricClosure: SsKey.derivedFrom rejected reserved reason ({codes})"
 
     /// Build the inverse reference if the target kind has a primary key.
     /// Returns `None` (with a documented skip-reason) when the target
@@ -146,4 +146,4 @@ module SymmetricClosure =
                                     // because of `inverse :: current`).
                                     { k with References = k.References @ List.rev toAdd }) }) }
 
-        Lineage.tellMany (List.ofSeq events) (Lineage.ofValue withInverses)
+        Lineage.ofValueAndEvents (List.ofSeq events) withInverses

@@ -10,9 +10,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="AsyncStream.fs" />
     <Compile Include="Static.fs" />
     <Compile Include="ProfileSnapshot.fs" />
     <Compile Include="ProfileStatistics.fs" />
+    <Compile Include="ReadSide.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
   </ItemGroup>
 
   <ItemGroup>

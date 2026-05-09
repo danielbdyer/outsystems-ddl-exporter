@@ -69,6 +69,47 @@ type ColumnProfile = {
 [<RequireQualifiedAccess>]
 module ColumnProfile =
 
+    /// Smart constructor with the empirical-probe invariants:
+    ///   * `RowCount ≥ 0`
+    ///   * `NullCount ≥ 0`
+    ///   * `NullCount ≤ RowCount`
+    /// Per session-36 audit (Agent 3 #20) — `NullabilityRules`
+    /// computes `NullCount / RowCount` without checking these
+    /// invariants; constructing through `create` makes the
+    /// strategy's preconditions structural.
+    let create
+        (attributeKey: SsKey)
+        (rowCount: int64)
+        (nullCount: int64)
+        (probeStatus: ProbeStatus)
+        : Result<ColumnProfile> =
+        if rowCount < 0L then
+            Result.failureOf
+                (ValidationError.create
+                    "columnProfile.rowCount.negative"
+                    (sprintf "RowCount must be ≥ 0; got %d." rowCount))
+        elif nullCount < 0L then
+            Result.failureOf
+                (ValidationError.create
+                    "columnProfile.nullCount.negative"
+                    (sprintf "NullCount must be ≥ 0; got %d." nullCount))
+        elif nullCount > rowCount then
+            Result.failureOf
+                (ValidationError.create
+                    "columnProfile.nullCount.exceedsRows"
+                    (sprintf
+                        "NullCount (%d) cannot exceed RowCount (%d)."
+                        nullCount
+                        rowCount))
+        else
+            Result.success
+                {
+                    AttributeKey         = attributeKey
+                    RowCount             = rowCount
+                    NullCount            = nullCount
+                    NullCountProbeStatus = probeStatus
+                }
+
     /// Fraction of observed rows that were NULL. `None` when no rows were
     /// observed (degenerate case; consumers default to conservative
     /// behavior).

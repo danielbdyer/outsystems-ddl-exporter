@@ -47,17 +47,17 @@ let customer : Kind = {
           Name         = name "Id"
           Type         = Integer
           Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true; IsMandatory = false }
+          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
         { SsKey        = customerNameKey
           Name         = name "Name"
           Type         = Text
           Column       = { ColumnName = "NAME"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
         { SsKey        = customerTenantKey
           Name         = name "TenantId"
           Type         = Integer
           Column       = { ColumnName = "TENANT_ID"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
     ]
     References = []
     Indexes    = []
@@ -83,12 +83,12 @@ let order : Kind = {
           Name         = name "Id"
           Type         = Integer
           Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true; IsMandatory = false }
+          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
         { SsKey        = orderCustomerFkKey
           Name         = name "CustomerId"
           Type         = Integer
           Column       = { ColumnName = "CUSTOMER_ID"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
     ]
     References = [
         { SsKey           = orderRefToCustomer
@@ -138,17 +138,17 @@ let country : Kind = {
           Name         = name "Id"
           Type         = Integer
           Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true; IsMandatory = false }
+          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
         { SsKey        = countryCodeKey
           Name         = name "Code"
           Type         = Text
           Column       = { ColumnName = "CODE"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
         { SsKey        = countryLabelKey
           Name         = name "Label"
           Type         = Text
           Column       = { ColumnName = "LABEL"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
     ]
     References = []
     Indexes    = []

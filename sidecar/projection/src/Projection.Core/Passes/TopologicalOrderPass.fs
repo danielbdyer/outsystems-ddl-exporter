@@ -75,7 +75,7 @@ module TopologicalOrderPass =
             // is plugged in.
     }
 
-    let private buildGraph (c: Catalog) : Graph =
+    let private buildGraph (selfLoops: SelfLoopPolicy) (c: Catalog) : Graph =
         let allKinds = Catalog.allKinds c
         let presentKeys = allKinds |> List.map (fun k -> k.SsKey) |> Set.ofList
 
@@ -98,7 +98,15 @@ module TopologicalOrderPass =
             |> List.fold (fun (st: Graph) r ->
                 let edge = (k.SsKey, r.TargetKind)
                 let strength = CycleResolution.classify k r
-                if Set.contains r.TargetKind presentKeys then
+                let isSelfEdge = (r.TargetKind = k.SsKey)
+                let skipSelfEdge = isSelfEdge && selfLoops = SkipSelfEdges
+                if skipSelfEdge then
+                    // Self-edge dropped under SkipSelfEdges policy;
+                    // no graph mutation, no MissingEdge entry (the
+                    // target IS present — we just don't track the
+                    // dependency).
+                    st
+                elif Set.contains r.TargetKind presentKeys then
                     let children =
                         Map.tryFind r.TargetKind st.Adjacency
                         |> Option.defaultValue []
@@ -335,11 +343,16 @@ module TopologicalOrderPass =
           SsKey         = key
           TransformKind = Touched }
 
-    /// Run the topological-order pass. Returns a `Lineage<TopologicalOrder>`;
-    /// the catalog itself is not modified. One `Touched` event per kind
-    /// scanned (per A25).
-    let run (c: Catalog) : Lineage<TopologicalOrder> =
-        let graph = buildGraph c
+    /// Parameterized form. Per session-36 — `selfLoops` selects how a
+    /// kind's reference to itself is handled during graph construction.
+    /// `TreatAsCycle` (default) preserves pre-session-36 semantics;
+    /// `SkipSelfEdges` drops self-references during construction so
+    /// emitters whose target syntax allows inline self-FK constraints
+    /// see the kind in topological position. Same algorithm, two
+    /// projections — replaces the `RawTextEmitter.emissionOrder`
+    /// duplicate (Agent 4 #6).
+    let runWith (selfLoops: SelfLoopPolicy) (c: Catalog) : Lineage<TopologicalOrder> =
+        let graph = buildGraph selfLoops c
         let sorted, unprocessed = kahnSort graph
 
         let result =
@@ -418,4 +431,11 @@ module TopologicalOrderPass =
                       ] }
 
         let events = graph.Nodes |> List.map touchedEvent
-        Lineage.tellMany events (Lineage.ofValue result)
+        Lineage.ofValueAndEvents events result
+
+    /// Run the topological-order pass with the default self-loop
+    /// policy. Returns a `Lineage<TopologicalOrder>`; the catalog
+    /// itself is not modified. One `Touched` event per kind scanned
+    /// (per A25). Equivalent to `runWith TreatAsCycle`.
+    let run (c: Catalog) : Lineage<TopologicalOrder> =
+        runWith TreatAsCycle c

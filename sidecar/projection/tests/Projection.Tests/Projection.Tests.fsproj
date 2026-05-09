@@ -13,10 +13,14 @@
   <ItemGroup>
     <Compile Include="ScaffoldingTests.fs" />
     <Compile Include="ResultTests.fs" />
+    <Compile Include="BenchTests.fs" />
+    <Compile Include="SsKeyTests.fs" />
     <Compile Include="Fixtures.fs" />
     <Compile Include="CatalogTests.fs" />
     <Compile Include="LineageTests.fs" />
     <Compile Include="DiagnosticsTests.fs" />
+    <Compile Include="ArtifactByKindTests.fs" />
+    <Compile Include="TypesTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
     <Compile Include="ProfileFixtures.fs" />
     <Compile Include="ProfileTests.fs" />
@@ -49,6 +53,12 @@
     <Compile Include="DistributionsEmitterTests.fs" />
     <Compile Include="RichProfilingEndToEndTests.fs" />
     <Compile Include="DiagnosticsEndToEndTests.fs" />
+    <Compile Include="EndToEndPipelineTests.fs" />
+    <Compile Include="CanaryDeployTests.fs" />
+    <Compile Include="Fixtures/SourceSchema.fs" />
+    <Compile Include="Fixtures/FixtureGenerator.fs" />
+    <Compile Include="CanaryRoundTripTests.fs" />
+    <Compile Include="GeneratorScaleTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -66,6 +76,7 @@
     <ProjectReference Include="..\..\src\Projection.Targets.Distributions\Projection.Targets.Distributions.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.Sql\Projection.Adapters.Sql.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.Osm\Projection.Adapters.Osm.fsproj" />
+    <ProjectReference Include="..\..\src\Projection.Pipeline\Projection.Pipeline.fsproj" />
   </ItemGroup>
 
 </Project>

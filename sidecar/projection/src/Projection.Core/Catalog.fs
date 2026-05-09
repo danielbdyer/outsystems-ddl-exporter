@@ -73,12 +73,14 @@ type PrimitiveType =
     | Guid
 
 
-/// Per-kind physical realization. Starts narrow; widen when evidence forces
-/// (e.g., view-backed kinds, cross-server external kinds).
-type PhysicalRealization = {
-    Schema : string
-    Table  : string
-}
+/// Per-kind physical realization. Per session-36 audit (Agents 1, 2,
+/// 3 multi-axis): unified with the schema-coordinate value object
+/// `TableId` (Coordinates.fs). Same shape (`{ Schema: string; Table:
+/// string }`); existing `kind.Physical.Schema` / `.Table` field
+/// access unchanged. Construction now flows through `TableId.create`
+/// for non-blank invariants. Future: typed `SchemaName` / `TableName`
+/// VOs once a consumer pays for the explicit projection.
+type PhysicalRealization = TableId
 
 
 /// Per-attribute (column-level) physical realization. Decoupled from
@@ -123,6 +125,28 @@ type Attribute = {
     Column       : ColumnRealization
     IsPrimaryKey : bool
     IsMandatory  : bool
+    /// NVARCHAR / VARCHAR / CHAR / NCHAR / VARBINARY / BINARY:
+    /// the declared length. `None` for MAX (open-ended) or for
+    /// types where length is not applicable (Integer / Boolean
+    /// / DateTime / etc.). Per session-32 — ReadSide populates
+    /// from `INFORMATION_SCHEMA.COLUMNS.CHARACTER_MAXIMUM_LENGTH`;
+    /// `-1` from SQL Server (the MAX marker) maps to `None`.
+    Length       : int option
+    /// DECIMAL / NUMERIC: the declared precision. `None` for
+    /// non-decimal types. ReadSide populates from
+    /// `INFORMATION_SCHEMA.COLUMNS.NUMERIC_PRECISION`.
+    Precision    : int option
+    /// DECIMAL / NUMERIC: the declared scale. `None` for non-
+    /// decimal types. ReadSide populates from
+    /// `INFORMATION_SCHEMA.COLUMNS.NUMERIC_SCALE`.
+    Scale        : int option
+    /// IDENTITY column property (`INT NOT NULL IDENTITY(1,1)` →
+    /// `IsIdentity = true`). Per session-32 — V2 IR carries the
+    /// boolean; seed and increment values are deferred (always
+    /// emit `IDENTITY(1,1)` when set, which matches the
+    /// OutSystems convention). ReadSide reads from
+    /// `sys.columns.is_identity` (1 → true).
+    IsIdentity   : bool
 }
 
 
@@ -223,6 +247,36 @@ module Module =
     let tryFindKind (ssKey: SsKey) (m: Module) : Kind option =
         m.Kinds |> List.tryFind (fun k -> k.SsKey = ssKey)
 
+    /// Smart constructor enforcing the per-module aggregate invariants.
+    /// Per session-36 audit (Agent 3 #10/#11): `Module` is an
+    /// aggregate boundary; the per-module invariant is "Kind SsKeys
+    /// disjoint within the module." Existing record-literal
+    /// construction continues to work for back-compat — `create` is
+    /// the gated entry that consumers can flow through to make the
+    /// invariant structural rather than implicit.
+    let create
+        (ssKey: SsKey)
+        (name: Name)
+        (kinds: Kind list)
+        : Result<Module> =
+        let duplicates =
+            kinds
+            |> List.groupBy (fun k -> k.SsKey)
+            |> List.filter (fun (_, ks) -> List.length ks > 1)
+            |> List.map fst
+        if not (List.isEmpty duplicates) then
+            duplicates
+            |> List.map (fun k ->
+                ValidationError.create
+                    "module.kinds.duplicateKey"
+                    (sprintf
+                        "Module %A has duplicate Kind SsKey %A; A11 (coproduct cell) requires disjoint kinds."
+                        ssKey
+                        k))
+            |> Result.failure
+        else
+            Result.success { SsKey = ssKey; Name = name; Kinds = kinds }
+
 
 [<RequireQualifiedAccess>]
 module Catalog =
@@ -240,3 +294,100 @@ module Catalog =
     /// Enumerate all kinds across all modules.
     let allKinds (c: Catalog) : Kind list =
         c.Modules |> List.collect (fun m -> m.Kinds)
+
+    /// Smart constructor enforcing the catalog-wide aggregate
+    /// invariants. Per session-36 audit (Agent 3 #10/#12, Agent 1 #19):
+    ///   1. Module SsKeys are disjoint (A11).
+    ///   2. Kind SsKeys are disjoint across all modules.
+    ///   3. Every `Reference.SourceAttribute` exists on its owning
+    ///      `Kind.Attributes`.
+    ///   4. Every `Reference.TargetKind` exists somewhere in the
+    ///      catalog (no dangling FKs).
+    ///   5. Every `Index.Columns` entry exists on its owning
+    ///      `Kind.Attributes`.
+    ///
+    /// `tryFindKind`, `RawTextEmitter.fkDef`, and
+    /// `PhysicalSchema.toPhysicalForeignKeys` previously each
+    /// re-validated #3/#4 by silently dropping bad references. Per
+    /// the discipline "invariants live with the type, not in the
+    /// consumer" — flowing through `create` makes #1–#5 impossible
+    /// to violate. Aggregates errors so a consumer sees every
+    /// violation in one Result.
+    let create (modules: Module list) : Result<Catalog> =
+        let moduleDupes =
+            modules
+            |> List.groupBy (fun m -> m.SsKey)
+            |> List.filter (fun (_, ms) -> List.length ms > 1)
+            |> List.map fst
+            |> List.map (fun k ->
+                ValidationError.create
+                    "catalog.modules.duplicateKey"
+                    (sprintf
+                        "Catalog has duplicate Module SsKey %A; A11 requires disjoint modules."
+                        k))
+
+        let allKindList = modules |> List.collect (fun m -> m.Kinds)
+        let kindDupes =
+            allKindList
+            |> List.groupBy (fun k -> k.SsKey)
+            |> List.filter (fun (_, ks) -> List.length ks > 1)
+            |> List.map fst
+            |> List.map (fun k ->
+                ValidationError.create
+                    "catalog.kinds.duplicateKey"
+                    (sprintf
+                        "Catalog has Kind SsKey %A duplicated across modules; A4 requires Kind identity to be globally unique."
+                        k))
+
+        let kindKeySet =
+            allKindList |> List.map (fun k -> k.SsKey) |> Set.ofList
+
+        let referenceErrors =
+            allKindList
+            |> List.collect (fun k ->
+                let attrKeys =
+                    k.Attributes |> List.map (fun a -> a.SsKey) |> Set.ofList
+                k.References
+                |> List.collect (fun r ->
+                    let danglingSource =
+                        if Set.contains r.SourceAttribute attrKeys then []
+                        else
+                            [ ValidationError.create
+                                "catalog.reference.danglingSource"
+                                (sprintf
+                                    "Reference %A on Kind %A has SourceAttribute %A absent from the kind's Attributes."
+                                    r.SsKey k.SsKey r.SourceAttribute) ]
+                    let danglingTarget =
+                        if Set.contains r.TargetKind kindKeySet then []
+                        else
+                            [ ValidationError.create
+                                "catalog.reference.danglingTarget"
+                                (sprintf
+                                    "Reference %A on Kind %A has TargetKind %A absent from the catalog."
+                                    r.SsKey k.SsKey r.TargetKind) ]
+                    danglingSource @ danglingTarget))
+
+        let indexErrors =
+            allKindList
+            |> List.collect (fun k ->
+                let attrKeys =
+                    k.Attributes |> List.map (fun a -> a.SsKey) |> Set.ofList
+                k.Indexes
+                |> List.collect (fun idx ->
+                    idx.Columns
+                    |> List.choose (fun col ->
+                        if Set.contains col attrKeys then None
+                        else
+                            Some (ValidationError.create
+                                "catalog.index.danglingColumn"
+                                (sprintf
+                                    "Index %A on Kind %A references column SsKey %A absent from the kind's Attributes."
+                                    idx.SsKey k.SsKey col)))))
+
+        let allErrors =
+            moduleDupes @ kindDupes @ referenceErrors @ indexErrors
+
+        if List.isEmpty allErrors then
+            Result.success { Modules = modules }
+        else
+            Result.failure allErrors

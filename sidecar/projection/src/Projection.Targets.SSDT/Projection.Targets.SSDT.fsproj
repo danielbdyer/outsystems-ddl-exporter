@@ -10,6 +10,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Statement.fs" />
+    <Compile Include="Render.fs" />
     <Compile Include="RawTextEmitter.fs" />
   </ItemGroup>
 

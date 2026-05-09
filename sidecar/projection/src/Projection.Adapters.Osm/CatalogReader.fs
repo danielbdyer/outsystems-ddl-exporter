@@ -89,16 +89,24 @@ module CatalogReader =
     // carries them.
     // -----------------------------------------------------------------------
 
+    // The synthesis source / basis split (slice 5.5 / `CHAPTER_3_PRESCOPE_
+    // ARTIFACTBYKIND_REFACTOR.md` §7) makes A1's JSON-projection-lossiness
+    // bound type-visible: `Synthesized (source, basis)` carries the
+    // bounded variant tag, which downstream consumers can pattern-match
+    // on. Each call site below names the source convention (`OS_MOD`,
+    // `OS_KIND`, etc.) explicitly; the basis is the dot-separated
+    // identifier coordinate.
+
     let private moduleSsKey (moduleName: string) : Result<SsKey> =
-        SsKey.original (sprintf "OS_MOD_%s" moduleName)
+        SsKey.synthesized "OS_MOD" moduleName
 
     let private kindSsKey (moduleName: string) (entityName: string) : Result<SsKey> =
-        SsKey.original (sprintf "OS_KIND_%s_%s" moduleName entityName)
+        SsKey.synthesized "OS_KIND" (sprintf "%s_%s" moduleName entityName)
 
     let private attributeSsKey
         (moduleName: string) (entityName: string) (attrName: string)
         : Result<SsKey> =
-        SsKey.original (sprintf "OS_ATTR_%s_%s_%s" moduleName entityName attrName)
+        SsKey.synthesized "OS_ATTR" (sprintf "%s_%s_%s" moduleName entityName attrName)
 
     /// Reference SsKey synthesis (session 19). The reference identifies
     /// by its source coordinate — `<srcModule>_<srcEntity>_<viaAttr>`
@@ -107,7 +115,7 @@ module CatalogReader =
     let private referenceSsKey
         (sourceModuleName: string) (sourceEntityName: string) (viaAttrName: string)
         : Result<SsKey> =
-        SsKey.original (sprintf "OS_REF_%s_%s_%s" sourceModuleName sourceEntityName viaAttrName)
+        SsKey.synthesized "OS_REF" (sprintf "%s_%s_%s" sourceModuleName sourceEntityName viaAttrName)
 
     /// Index SsKey synthesis (session 22). Indexes identify by their
     /// V1 IndexName, scoped to the entity. V1's `IndexName` is unique
@@ -116,7 +124,7 @@ module CatalogReader =
     let private indexSsKey
         (moduleName: string) (entityName: string) (indexName: string)
         : Result<SsKey> =
-        SsKey.original (sprintf "OS_IDX_%s_%s_%s" moduleName entityName indexName)
+        SsKey.synthesized "OS_IDX" (sprintf "%s_%s_%s" moduleName entityName indexName)
 
     // -----------------------------------------------------------------------
     // JSON helpers — light wrappers over System.Text.Json.JsonElement.
@@ -269,6 +277,21 @@ module CatalogReader =
     // Translation — V1 attribute → V2 Attribute.
     // -----------------------------------------------------------------------
 
+    /// Optional non-negative-integer property reader. Returns
+    /// `None` when the property is missing OR explicitly null;
+    /// `Some n` when the property is present and parseable.
+    /// Per session-32: V1's `osm_model.json` carries length /
+    /// precision / scale as nullable JSON numbers (or omitted
+    /// when not applicable to the type), so the adapter must
+    /// gracefully absorb absence.
+    let private getOptionalInt (element: JsonElement) (name: string) : int option =
+        match element.TryGetProperty(name) with
+        | true, value when value.ValueKind = JsonValueKind.Number ->
+            match value.TryGetInt32() with
+            | true, n -> Some n
+            | _ -> None
+        | _ -> None
+
     let private parseAttribute
         (moduleName: string) (entityName: string) (attrJson: JsonElement)
         : Result<Attribute> =
@@ -277,12 +300,29 @@ module CatalogReader =
         let dataTypeStr    = getString  attrJson "dataType"
         let isMandatory    = getBool    attrJson "isMandatory"
         let isIdentifier   = getBool    attrJson "isIdentifier"
+        let isAutoNumber   = getBool    attrJson "isAutoNumber"
         match nameResult, physicalResult, dataTypeStr, isMandatory, isIdentifier with
         | Success rawName, Success physicalName, Success rawDataType,
           Success mandatory, Success identifier ->
             let nameDU       = Name.create rawName
             let key          = attributeSsKey moduleName entityName rawName
             let primitive    = parsePrimitiveType rawDataType
+            // Per session-32 — V1 surfaces length / precision /
+            // scale on attribute records when applicable. The
+            // adapter pulls them through to the V2 IR so the
+            // canary's round-trip sees byte-faithful column
+            // declarations (NVARCHAR(N) instead of NVARCHAR(MAX),
+            // DECIMAL(P, S) instead of DECIMAL(18, 4) default).
+            let lengthOpt    = getOptionalInt attrJson "length"
+            let precisionOpt = getOptionalInt attrJson "precision"
+            let scaleOpt     = getOptionalInt attrJson "scale"
+            // Identity = isAutoNumber per V1 convention (only
+            // primary-key columns marked isAutoNumber=true map to
+            // SQL Server IDENTITY).
+            let isIdentity =
+                match isAutoNumber with
+                | Success true -> true
+                | _ -> false
             match nameDU, key, primitive with
             | Success n, Success k, Success p ->
                 Result.success
@@ -291,7 +331,11 @@ module CatalogReader =
                       Type         = p
                       Column       = { ColumnName = physicalName; IsNullable = not mandatory }
                       IsPrimaryKey = identifier
-                      IsMandatory  = mandatory }
+                      IsMandatory  = mandatory
+                      Length       = lengthOpt
+                      Precision    = precisionOpt
+                      Scale        = scaleOpt
+                      IsIdentity   = isIdentity }
             | _ ->
                 Result.failureOf (
                     adapterError

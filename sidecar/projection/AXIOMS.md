@@ -654,3 +654,385 @@ should follow the same discipline:
 
 The axioms have a history. The history is part of how the system tells its
 truth across time.
+
+---
+
+# Amendments scheduled (chapter close)
+
+The following amendments are scheduled for commitment at chapter close.
+Each chapter agent writes the amendment text at chapter-close ritual
+step 6 ("CHAPTER_N_CLOSE.md scope includes AXIOMS amendments"; per
+`DECISIONS 2026-05-14`). The scaffolding here is the **placeholder
+list** — chapter agents fill the body when the chapter that earns the
+amendment closes.
+
+The scaffolding is itself a discipline: pending amendments live as
+named placeholders rather than as memory. A chapter agent reading
+this section at chapter close knows immediately which amendments
+their chapter is responsible for — the alternative (silent obligation
+carried in handoff letters) has produced trigger-fire-without-cash-out
+at least once (the transform-registry deferral; `DECISIONS 2026-05-13
+— Transform registry cash-out`). The placeholder list is a structural
+forcing function: chapter close cannot complete without resolving the
+placeholders for the chapter it closes.
+
+The scaffolding entries below are appended in the Stage 0 governance
+burst (per `DECISIONS 2026-05-22 — Stage 0 foundation phase ships as
+one coherent unit`); the bodies fill at the chapters named in each
+heading.
+
+## T1 amended (binary normal-form composition) — TBD chapter 3.3 close
+
+**Scheduled at chapter 3.3 close** (DacpacEmitter + DacFx wrapper;
+per `DECISIONS 2026-05-22 — Chapter 3 sequencing`).
+
+[Body to be written at chapter 3.3 close.]
+
+**Anticipated content.** The original T1 (and its 2026-05-06 amendment
+to the triple) names byte-determinism: same `(catalog, policy, profile)`
+triple → bit-identical surface. The DacpacEmitter chapter introduces
+binary artifacts — DACPAC files — whose byte-equality is **not**
+deterministic under vanilla DacFx `BuildPackage`. Subagent #4's
+pre-scope flags this risk explicitly. The chapter-3.3 amendment
+extends T1 to a **binary-normal-form** composition: byte-determinism
+holds for text artifacts (SSDT DDL .sql files; JSON; Distributions);
+**model-equivalence** (DacFx round-trip equality on the in-memory
+`TSqlModel`) is the form determinism takes for binary artifacts. The
+two forms compose: the canary's tier-1 property tests assert byte-
+determinism on text emissions and model-equivalence on binary
+emissions, with the property `t1ByteEqualOrModelEquivalent` as the
+unifying canary predicate.
+
+The CDC-safety property (revision 1's `idempotentRedeploy`) becomes
+**T1 × DacFx idempotent-redeploy**, not T1 alone. The composition
+is the cutover-blocking property; the chapter closes when the
+composition is structurally enforced and tested.
+
+## T11 amended (structural type encoding) — TBD chapter 3 cross-cutting close
+
+**Scheduled at chapter-3 cross-cutting close** (the `ArtifactByKind`
++ `SsKey` four-variant + `CatalogDiff` foundation refactor; per
+`CHAPTER_3_PRESCOPE_ARTIFACTBYKIND_REFACTOR.md` and Stage 0 item
+S0.B).
+
+[Body to be written at the cross-cutting close.]
+
+**Anticipated content.** The original T11 (sibling-Π commutativity;
+"every Π's output should mention every catalog kind by SsKey root")
+is a property test today — substring-search across emitted text
+enforces the law at the test layer. The cross-cutting refactor
+encodes T11 **structurally**: `ArtifactByKind<'element>` is an
+SsKey-keyed Map whose smart constructor enforces "every SsKey in
+the source Catalog appears as a key." The emitter signature
+`Emitter<'element> = Catalog -> Result<ArtifactByKind<'element>,
+EmitError>` carries the law in its type — T11 stops being substring
+discipline and becomes type discipline. The amendment names the
+shift: T11 is a **type theorem**, not a property test.
+
+The retirement of substring T11 enforcement tests (S0.B slice 6;
+per `STAGING.md`) is the operational consequence; the amendment is
+the codification of *why* the retirement is correct.
+
+## T11 amended again (diff-typed inputs) — TBD chapter 3.5 close
+
+**Scheduled at chapter 3.5 close** (RefactorLogEmitter + CatalogDiff;
+per `DECISIONS 2026-05-22 — Chapter 3 sequencing`).
+
+[Body to be written at chapter 3.5 close.]
+
+**Anticipated content.** Chapter 3.5 introduces `EmitterOverDiff
+<'element> = CatalogDiff -> Result<ArtifactByKind<'element>,
+EmitError>` — emitters whose input is a Catalog-typed diff rather
+than a Catalog. T11's sibling-Π commutativity must extend: the
+diff-typed emitter's output `ArtifactByKind` keys must be a subset
+of `Diff.allKinds` (SsKeys mentioned in either source or target
+of the diff), not the full Catalog. The amendment names the
+extension: **T11 holds over diff-typed inputs by typing
+`ArtifactByKind` over the diff's SsKey set rather than the
+Catalog's.**
+
+The smart constructor on `ArtifactByKind` enforces the property at
+construction — same discipline as the cross-cutting amendment,
+extended to diff-typed inputs. The pattern is monotonic: every new
+emitter type variable (Catalog, CatalogDiff, future variants) is a
+specialization of the same `ArtifactByKind` shape.
+
+## A1 amended (four-variant SsKey) — TBD chapter 3 cross-cutting close
+
+**Scheduled at chapter-3 cross-cutting close** (the `SsKey`
+four-variant DU split; per `CHAPTER_3_PRESCOPE_ARTIFACTBYKIND_REFACTOR.md`
+slice 5 and Stage 0 item S0.B).
+
+[Body to be written at the cross-cutting close.]
+
+**Anticipated content.** A1's bound on identity-survives-rename
+through the JSON path (added at session 23; documented at the bottom
+of A1) names the JSON-projection-lossiness class — V1's
+`osm_model.json` strips SSKey columns, so V2's IR synthesizes SsKeys
+from name fields rather than carrying V1's actual SSKey values.
+The four-variant DU split codifies the bound **type-stratifically**:
+
+```fsharp
+type SsKey =
+    | OssysOriginal of string             // V1's SSKey, carried verbatim
+    | Synthesized of source: string       // V2-synthesized from name fields
+    | DerivedFrom of parent: SsKey * reason: string  // existing Derived
+    | V1Mapped of original: SsKey * v1: string  // remap envelope
+```
+
+A1's identity-survives-rename guarantee splits along the variants:
+`OssysOriginal` honors A1 unconditionally; `Synthesized` honors A1
+only over name preservation (renames produce new `Synthesized`
+keys); `DerivedFrom` honors A1 transitively through the parent;
+`V1Mapped` honors A1 over both the V1 envelope and the original.
+The amendment codifies the per-variant guarantees and names the
+input-path-by-variant correspondence (`SnapshotJson` produces
+`Synthesized`; `SnapshotRowsets` produces `OssysOriginal`).
+
+The `SnapshotRowsets` chapter (3.2) is the chapter that produces
+`OssysOriginal` SsKeys at scale; the cross-cutting close prepares
+the type-system surface, and chapter 3.2 fills the consumer side.
+
+## A35 — Π's output is a deterministic statement stream (chapter-3.1 close, 2026-05-30)
+
+**Cashed at chapter 3.1 close** (per `DECISIONS 2026-05-28 — Session
+34 / A35 cash-out: Π's output is a deterministic statement stream`).
+
+**A35.** Π's canonical output is a typed deterministic stream
+(`seq<Statement>` for SSDT). Realization layers (`Render.toText`,
+`Deploy.executeStream`) consume the stream and choose their
+emission form. Bulk-vs-per-row deploy is realization-layer policy
+invisible to Π.
+
+**Statement of the axiom.** For any sibling Π producing structured
+output, Π's canonical form is a typed stream `seq<'element>` (or
+analogous typed iterator). Realizations are functions from the
+stream to a target representation: `fold : seq<'element> ->
+'output`. Two realizations of the same stream produce the same
+observable post-state up to the realization's tolerance. T1
+strengthens to *statement-stream determinism* — identical Catalog
+produces identical Statement sequence; `Render.toText` produces
+identical bytes from identical streams.
+
+**Worked example.** `RawTextEmitter.statements : Catalog ->
+seq<Statement>` is the canonical form. `Render.toText : seq<Statement>
+-> string` produces .sql text. `Deploy.executeStream : SqlConnection
+-> seq<Statement> -> Task<unit>` produces the deployed target
+database. Both consume the same stream; both witness the same
+algebra; T1 holds at the stream level.
+
+**Implications.** A18 (Π consumes Catalog × Profile, never Policy)
+holds at the stream level — the realization layer chooses bulk-vs-
+per-row but cannot reach for Policy. T11 (sibling-Π commutativity)
+strengthens via `ArtifactByKind<'element>` for emitters that adopt
+the typed structured form (chapter 3.5 Π port realization completes
+T11 structurally). Future Π's inherit the stream-output pattern as
+their typed canonical form.
+
+## A36 — Bulk-vs-incremental is realization-layer policy (chapter-3.1 close, 2026-05-30)
+
+**Cashed at chapter 3.1 close** (per `DECISIONS 2026-05-28 — Session
+34 / A36 cash-out: bulk-vs-incremental is realization-layer policy`).
+
+**A36.** How a realization layer deploys a statement stream — bulk
+via `SqlBulkCopy`, per-row via `INSERT INTO … VALUES (…)`, file-
+artifact write, network protocol — is *realization-layer policy*
+invisible to Π. The algebra at the stream level is invariant under
+realization choice.
+
+**Statement of the axiom.** Given a typed stream `seq<'element>`
+produced by Π, two realizations `f, g : seq<'element> -> 'output`
+that share the same observable post-state contract for `'output`
+are equivalent at the algebra level. Π does not know which
+realization will consume its output; consumers do not need to know
+how Π produced its stream. The stream is the contract.
+
+**Worked example.** `Deploy.executeStream` folds consecutive
+`InsertRow` runs (matching `(TableId, columnShape)`) into
+`SqlBulkCopy` batches. The bulk path produces the same observable
+post-state (rows-in-database) as a per-row INSERT realization
+would. Π is invariant under the choice.
+
+**Implications.** Realization-layer optimization is decoupled from
+algebra correctness. Bulk-path tuning (`DefaultBulkBatchSize`,
+batch-fold heuristics) lives in `Deploy.executeStream` and
+`Bulk.copyRows`; T1 byte-determinism rests on stream determinism,
+not realization-byte determinism. Future realizations (chapter
+4.1's BCP/TVP, chapter 3.x DacpacEmitter's binary form) inherit the
+A36 framing — choose your realization; the algebra holds.
+
+## A37 candidate (Π-erased axes named) — TBD chapter 3.4 close
+
+**Scheduled at chapter 3.4 close** (Canary as property-test surface).
+Renumbered from A35 candidate at chapter-3.1 close; the original
+A35 slot was claimed by session-34's stream-output axiom.
+
+[Body to be written at chapter 3.4 close; promoted from candidate to
+A37 if it earns commitment.]
+
+**Anticipated content.** The DACPAC round-trip cannot preserve every
+axis of the Catalog — index names, check constraint names, default
+constraint names, extended properties, header comments, and several
+other axes are erased or normalized by DacFx's model layer. The
+canary's `equalModuloDacpacErasure` predicate declares the erasure
+set explicitly; A37 candidate names the declaration **the function
+IS the axiom**.
+
+The candidate's promotion criterion: **A37 lands as an axiom if and
+only if every Π whose output is binary requires the same erasure
+declaration** (i.e., the axiom is invariant across Π's, not specific
+to DACPAC).
+
+## A38 candidate (CatalogDiff exhaustiveness) — TBD chapter 3.5 close
+
+**Scheduled at chapter 3.5 close** (RefactorLogEmitter + CatalogDiff).
+Renumbered from A36 candidate at chapter-3.1 close; the original
+A36 slot was claimed by session-34's realization-layer-policy axiom.
+
+[Body to be written at chapter 3.5 close; promoted from candidate to
+A38 if it earns commitment.]
+
+**Anticipated content.** `CatalogDiff` is a value type produced by
+`DiffOf<Catalog> = Catalog -> Catalog -> Result<CatalogDiff, EmitError>`.
+Its smart constructor enforces an exhaustiveness invariant: every
+SsKey in `source ∪ target` is in **exactly one** of four
+disposition variants — `Renamed | Added | Removed | Unchanged`.
+The candidate names the invariant as A38 — a structural-commitment
+axiom in the same family as A4 (identity equality is structural)
+and A34 (Profile independence).
+
+## A39 — Aggregate-root smart-constructor invariants (chapter-3.1 close, 2026-05-30)
+
+**Promoted from candidate to A39 at chapter-3.1 close** (per
+`DECISIONS 2026-05-30 — Session 36 / Aggregate smart constructors`).
+
+**A39.** Aggregate roots in the IR — `Catalog`, `Module`,
+`ColumnProfile` — carry their referential-integrity and empirical-
+probe invariants at the smart-constructor surface. Consumers that
+flow through `create` trust the value; consumers that re-validate
+are pattern-matching on a violation that should have been
+impossible to construct.
+
+**Statement of the axiom.** Each aggregate-root type `T` exposes a
+smart constructor `T.create : … -> Result<T>` enforcing the type's
+invariants in one pass with errors aggregated. Direct record-literal
+construction continues to work for back-compat, but the invariant
+holds only when consumers flow through `create`.
+
+**Worked example.** `Catalog.create : Module list ->
+Result<Catalog>` enforces five invariants (Module SsKeys disjoint;
+Kind SsKeys disjoint; `Reference.SourceAttribute` ∈ Kind.Attributes;
+`Reference.TargetKind` ∈ Catalog; `Index.Columns` ⊆ Kind.Attributes).
+`Module.create` enforces within-module disjointness.
+`ColumnProfile.create` enforces `0 ≤ NullCount ≤ RowCount`.
+
+**Implications.** `RawTextEmitter.fkDef` /
+`PhysicalSchema.toPhysicalForeignKeys` previously each silently
+dropped on dangling references; the invariant now lives with the
+type, not in the consumer. Future aggregate-root introductions
+inherit the smart-constructor discipline.
+
+## A40 — Harmonization-via-parameterization (chapter-3.1 close, 2026-05-30)
+
+**Promoted from candidate to A40 at chapter-3.1 close** (per
+`DECISIONS 2026-05-30 — Session 36 / Topological-sort harmonization
+via SelfLoopPolicy`).
+
+**A40.** When two implementations of an algorithm diverge on a
+single semantic axis, the resolution is to *parameterize the
+algorithm on that axis*, produce both projections from a single
+implementation, and let consumers choose. Same algorithm; multiple
+projections; consumers choose.
+
+**Statement of the axiom.** Given two implementations `f₁, f₂ : T
+-> U` that produce the same `U` for inputs where their divergence
+axis doesn't apply, the harmonized form is `f : Policy -> T -> U`
+with `f Policy₁ ≡ f₁` and `f Policy₂ ≡ f₂`. The two implementations
+collapse to one parameterized algorithm; the divergence axis is
+named structurally as a `Policy` DU.
+
+**Worked example.** `TopologicalOrderPass.runWith :
+SelfLoopPolicy -> Catalog -> Lineage<TopologicalOrder>` where
+`SelfLoopPolicy = TreatAsCycle | SkipSelfEdges`. The pass had
+the cycle-handling implementation; `RawTextEmitter.emissionOrder`
+had the skip-self-edges implementation. Both became one
+parameterized pass; emitter consumes `runWith SkipSelfEdges`;
+existing cycle-detecting tests consume `run` =
+`runWith TreatAsCycle`.
+
+**Implications.** A33 (deterministic-ordered schema emission) is
+satisfied structurally — same algorithm, two projections.
+Future single-axis-divergent implementations earn one
+parameterized algorithm before duplicating. Promotion criterion:
+A40 lands when the harmonized form replaces N≥2 duplicate
+algorithms (chapter-3.1 satisfies N=2; chapter-4 may surface
+another instance).
+
+## A32 cash-out — TBD chapter 4.2 close (chapter-3.1 partial advance)
+
+**Scheduled at chapter 4.2 close** (User FK reflow as Policy).
+**Chapter 3.1 partial advance**: `TopologicalOrderPass.runWith` now
+produces an emitter-consumable `TopologicalOrder` value; the
+`RawTextEmitter` consumes it (per A40). This is the first
+*structurally-realized* instance of A32 in the codebase — passes
+producing values consumed by emitters as a wired pattern, not
+just a scheduled axiom.
+
+[Full body — including the chapter-4.2 worked example for
+`UserFkReflowPass` and `UserRemapContext` — to be written at
+chapter 4.2 close.]
+
+**Anticipated content.** A32 (passes may produce values consumed by
+emitters; 2026-05-06) named the algebraic shape but had limited
+concrete instances. Chapter 4.2 lands the canonical instance:
+`UserFkReflowPass` discovers user-mapping context
+(`UserRemapContext`) from a `UserMatchingStrategy` DU; sibling Π's
+consume the context. The cash-out names the worked example —
+"discovery is one E-pass producing a `UserRemapContext` value;
+application is two sibling Π's: an INSERT-mode Π consuming
+`(catalog, context)` and an UPDATE-mode Π consuming `(context)`
+alone." Chapter 3.1's `TopologicalOrderPass.runWith` is the
+*minimal* instance (single-pass, single-emitter); chapter 4.2's
+will be the *full-shape* instance.
+
+The cash-out also closes the structural property test:
+`A32: discovered value visible to emitter` becomes a concrete
+xUnit test asserting that both Π's see the same `UserRemapContext`
+and that identity correspondences hold across both surfaces (a
+special case of T4 sibling-functor commutativity).
+
+---
+
+## On the scaffolding discipline
+
+The scheduled amendments span chapters 3.3, 3.4, 3.5, 4.2, and the
+chapter-3 cross-cutting close. The scaffolding section above is the
+single-source list; each chapter close writes the amendment text
+in the placeholder block above and updates the heading from "TBD"
+to the close date.
+
+**Chapter 3.1 close (sessions 27–36, 2026-05-30) cashed:**
+- A35 — Π's output is a deterministic statement stream.
+- A36 — bulk-vs-incremental is realization-layer policy.
+- A39 — aggregate-root smart-constructor invariants.
+- A40 — harmonization-via-parameterization.
+- A32 partial advance via `TopologicalOrderPass.runWith` consumed by `RawTextEmitter`.
+
+**Renumbered at chapter 3.1 close:**
+- A35 candidate (Π-erased axes) → **A37 candidate** (chapter 3.4).
+- A36 candidate (CatalogDiff exhaustiveness) → **A38 candidate** (chapter 3.5).
+
+**Still scheduled** (TBD):
+- T1 amended (binary normal-form composition) — chapter 3.3 close.
+- T11 amended (structural-type encoding) — chapter 3.5 close (Π port realization makes T11 structural via `ArtifactByKind<'element>`).
+- T11 amended again (diff-typed inputs) — chapter 3.5 close.
+- A1 amended (four-variant SsKey) — chapter 3 cross-cutting close (already partially documented at A1 footer; full amendment text pending).
+- A37 candidate (Π-erased axes) — chapter 3.4 close.
+- A38 candidate (CatalogDiff exhaustiveness) — chapter 3.5 close.
+- A32 cash-out — chapter 4.2 close.
+
+**Per `DECISIONS 2026-05-22 — Stage 0 foundation phase`, the
+scaffolding lands at Stage 0 Tier 1 (S0.F) before chapter 3.1
+opens.** Future chapters that surface new amendment candidates
+append to this section at chapter open with TBD bodies; the
+scaffolding grows monotonically with the chapter pre-scopes.

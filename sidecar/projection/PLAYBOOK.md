@@ -1,7 +1,16 @@
 # V2 — Playbook (Technical Guidance for Implementation)
 
-**Date:** 2026-05-08
+**Date:** 2026-05-08; **chapter-3.1-close update:** 2026-05-30
 **Purpose:** Bridge `VISION.md` (the *why*) to `BACKLOG.md` (the *what*) with the concrete patterns, decision trees, and anti-patterns that make every chapter work compound rather than re-derive. This is the document the maintainer reads before opening a slice and consults when stuck.
+
+> **Chapter-3.1-close patterns to consult (per `CHAPTER_3_1_CLOSE.md` meta-codifications):**
+>
+> - **Bench-driven optimization protocol** — three candidates, two refuted with bench data, one confirmed; refuted swaps documented in code so the same swap doesn't recur. Worked example: chapter 3.1 sessions 30 and 35 (sys.* readside, MARS, parallel hashing, `HashSet.ExceptWith`).
+> - **Stream-realization pattern** — Π's output is a typed deterministic stream; realization layers (text, deploy, file artifact) are sibling consumers. Worked example: `RawTextEmitter.statements` + `Render.toText` + `Deploy.executeStream` (A35 / A36).
+> - **Five-agent epistemic-tier audit at chapter close** — multi-agent parallel audit covering UL / Hex / VO / FP / ACL; convergence-map as primary surface; Tier 1/2/3/4 backlog by epistemic level + leverage. Worked example: `AUDIT_2026_05_DDD_HEXAGONAL_FP.md`.
+> - **Harmonization-via-parameterization** — single-axis-divergent implementations earn one parameterized algorithm. Worked example: `SelfLoopPolicy` in `TopologicalOrderPass` (A40).
+> - **Aggregate-root smart-constructor invariants** — `Catalog.create` / `Module.create` / `ColumnProfile.create` enforce referential-integrity invariants in one pass with errors aggregated; consumers flow through `create` to make invariants structural (A39).
+> - **Writer-fidelity discipline** — pass drivers MUST use `LineageDiagnostics.tellDiagnostics` / `Lineage.ofValueAndEvents` (canonical primitives); manual record-building forbidden.
 
 **Companion documents:**
 - `VISION.md` — strategic frame; cutover forcing function; acceptance criteria.

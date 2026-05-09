@@ -107,4 +107,4 @@ module VisibilityMask =
         // discipline applies within bind composition; within a single
         // pass the convention is "events in the order the pass observed
         // its targets."
-        Lineage.tellMany (List.rev events) (Lineage.ofValue masked)
+        Lineage.ofValueAndEvents (List.rev events) masked

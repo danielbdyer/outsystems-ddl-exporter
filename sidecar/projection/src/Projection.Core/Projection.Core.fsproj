@@ -11,8 +11,12 @@
 
   <ItemGroup>
     <Compile Include="Result.fs" />
+    <Compile Include="Bench.fs" />
     <Compile Include="Identity.fs" />
+    <Compile Include="Coordinates.fs" />
     <Compile Include="Catalog.fs" />
+    <Compile Include="ArtifactByKind.fs" />
+    <Compile Include="PhysicalSchema.fs" />
     <Compile Include="Profile.fs" />
     <Compile Include="Policy.fs" />
     <Compile Include="TopologicalOrder.fs" />
@@ -23,6 +27,7 @@
     <Compile Include="Strategies/CategoricalUniquenessRules.fs" />
     <Compile Include="Lineage.fs" />
     <Compile Include="Diagnostics.fs" />
+    <Compile Include="Types.fs" />
     <Compile Include="Strategies/Composition.fs" />
     <Compile Include="Passes/CanonicalizeIdentity.fs" />
     <Compile Include="Passes/VisibilityMask.fs" />

@@ -13,11 +13,35 @@ substantive surfaces are unchanged.
 
 ## Reading order for a fresh agent
 
+`KICKOFF.md` is the fresh-agent first-message brief — read it first as a
+5-minute orientation that points at the canonical surfaces in the order
+below. Per `DECISIONS 2026-05-22 — CLAUDE.md reading-order update`,
+`VISION.md` is item 2 (the strategic frame for the cutover); the
+companion strategic surfaces (`SPINE.md`, `PLAYBOOK.md`, `STAGING.md`,
+`BACKLOG.md`) are **on-demand** references — read when the relevant
+work surfaces them, not as part of the canonical first-read pass.
+
 1. **`HANDOFF.md`** — bridge letter from the most-recent-closed
    chapter. Short on purpose. Names what is load-bearing and what
    is deferred. Older chapters' handoff letters preserved at
    `HANDOFF_CHAPTER_<N>.md` (currently `HANDOFF_CHAPTER_1.md`).
-2. **`CHAPTER_2_CLOSE.md`** — chapter-2 close synthesis (sessions
+2. **`VISION.md`** — strategic frame for V2: cutover as forcing
+   function; sibling chorus + verification posture; acceptance
+   criteria; cutover fallback ladder. Read for the *why*. Companion
+   strategic surfaces (`SPINE.md` for the categorical structure;
+   `PLAYBOOK.md` for technical guidance; `STAGING.md` for the Stage
+   0 foundation phase; `BACKLOG.md` for the full ~375-item
+   inventory) are referenced on demand.
+3. **`CHAPTER_3_1_CLOSE.md`** — chapter-3.1 close synthesis (sessions
+   27–36). The canary chapter. Read for the M1–M3 milestone sequence;
+   the four meta-codifications (bench-driven optimization, stream-
+   realization pattern, five-agent epistemic-tier audit, harmonization-
+   via-parameterization); forward signals into chapter 3.2 / 3.5 /
+   4.1 / 4.2. **Companion file:** `AUDIT_2026_05_DDD_HEXAGONAL_FP.md`
+   carries the chapter-close five-agent DDD/Hexagonal/FP audit with
+   Tier 1/2/3/4 backlog by epistemic level + leverage. The next-
+   chapter agent reads both at chapter open.
+4. **`CHAPTER_2_CLOSE.md`** — chapter-2 close synthesis (sessions
    13–25). Read for the OSSYS adapter chapter's accumulated
    state (25 translation rules), the three-class typology, the
    meta-codifications (chapter-mid-audit; trace-before-fixture;
@@ -27,33 +51,41 @@ substantive surfaces are unchanged.
    full audit report); `CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md`
    (subagent #4's chapter-open input); and
    `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md` (subagent #5's
-   chapter-open input). The chapter-3 agent reads the pre-scope
-   documents at chapter-open.
-3. **`CHAPTER_1_CLOSE.md`** — chapter-1 close synthesis (sessions
+   chapter-open input).
+5. **`CHAPTER_1_CLOSE.md`** — chapter-1 close synthesis (sessions
    1–12). Read for historical context. Some priorities listed
-   there have been resolved by chapter 2 (Diagnostics writer
-   cashed out; OSSYS adapter shipped); the disciplines and
-   load-bearing commitments persist.
-4. **`AXIOMS.md`** — the formal system. A1–A34 / T1–T11 with
-   amended originals. A18's amendment at the bottom is the
+   there have been resolved by chapters 2 / 3.1; the disciplines
+   and load-bearing commitments persist.
+5. **`AXIOMS.md`** — the formal system. A1–A34 / T1–T11 with
+   amended originals. A18's amendment near the bottom is the
    load-bearing form for sibling Π's; the original A18 carries a
    forwarding pointer. A1's bound on identity-survives-rename
    through the JSON path is documented at the bottom (added
-   session 23).
-5. **`DECISIONS.md`** — append-only resolved-questions log. Read the
+   session 23). The "Amendments scheduled (chapter close)"
+   section at the very bottom carries the placeholder list for
+   pending amendments (T1 binary-normal-form; T11 structural-type
+   encoding; T11 diff-typed inputs; A1 four-variant SsKey; A35
+   candidate; A36 candidate; A32 cash-out) — chapter agents fill
+   the bodies at chapter close per `DECISIONS 2026-05-22 — Stage
+   0 foundation phase`.
+6. **`DECISIONS.md`** — append-only resolved-questions log. Read the
    most recent ten entries first; older entries remain in force
    unless explicitly superseded. Two indexes at the top:
    *Active deferrals* (catches silent-trigger fires across chapters)
    and *Operating disciplines* (cross-cutting practices, pointing
-   at the substantive entries).
-6. **`ADMIRE.md`** — V1↔V2 bridge. One entry per V1 component
+   at the substantive entries). The Stage 0 governance burst
+   (2026-05-22) cluster at the bottom carries the five
+   pre-chapter-3 entries: Stage 0 commitment, R6 split-brain rule,
+   chapter 3 sequencing, CLAUDE.md reading-order, T-30 / T-15
+   fallback ladder gates.
+7. **`ADMIRE.md`** — V1↔V2 bridge. One entry per V1 component
    admired and placed in V2. Three modes: V1-migration / V2-growth
    / hybrid (`DECISIONS 2026-05-13` — admire spectrum). Multi-
    session chapters use `extracting (in flight, N slices)` while
    in flight (session 23 amendment).
-7. **`README.md`** — surface-level orientation; updated at chapter
+8. **`README.md`** — surface-level orientation; updated at chapter
    closes. Not the source of truth for any specific question.
-8. **The code.** `Projection.sln`. Strategies in
+9. **The code.** `Projection.sln`. Strategies in
    `src/Projection.Core/Strategies/`; passes in
    `src/Projection.Core/Passes/`; sibling Π emitters in
    `src/Projection.Targets.{SSDT,Json,Distributions}/`; F# adapters
@@ -91,6 +123,15 @@ of them, write the amendment first.
 | **Trace-before-fixture** — when writing a new slice in a V1↔V2 translation chapter, trace V1's actual handling first (SQL extraction + JSON projection). Classify the finding into one of three classes (see "Three-class typology" below) before writing the failing test. The classification informs the resolution shape. Slice-level admire-mode; pairs with chapter-level admire from chapter open. | `DECISIONS 2026-05-19` — Trace-before-fixture pattern at slice level (session 23; codified at N=3) |
 | **Three-class typology for V1↔V2 translation findings** — JSON-projection-lossiness (V2 can't see X; resolved by input-path expansion); V2-boundary-discipline (V2 sees X but has no axis; resolved by filter / carry-through / IR-refinement); alternative-IR-surface (V2 sees X; primary IR has no axis; parallel V2 surface is the natural home — route there, possibly making V1 input redundant). Each class has different composability and coupling characteristics. The trace-before-fixture pattern operates the classification. | `DECISIONS 2026-05-21` — Chapter 2 close: alternative-IR-surface class (session 25; completes the typology at N=2 per class) |
 | **DECISIONS is for resolved questions, not session narrative** — substantive entries (disciplines, refinements, cash-outs, codifications) stay; session-narrative content (commit lists, test baselines, forward signals, rent-paying checks, recaps) lives in commit messages, PR descriptions, HANDOFF.md, CHAPTER_1_CLOSE.md, or the conversation. The substance test: would this entry still be useful in six months? Append-only protects against revisionism; prune-when-wrong protects against narrative drift. | `DECISIONS 2026-05-14` — DECISIONS is for resolved questions (session 15) |
+| **Stage 0 foundation phase ships as one coherent unit before chapter 3.1 opens** — the twelve foundation items (S0.A–S0.L per `STAGING.md`) are codified in F# types (Tier 2), structural commitment (Tier 3), and primitive support (Tier 4) before any chapter-3 slice opens. Tier 1 is documentation hygiene + governance burst (S0.F AXIOMS scaffolding; S0.G five DECISIONS entries; S0.J currency checks; S0.L cross-references). The Stage 0 commitment is the structural answer to "should we just start chapter 3.1 and refactor as we go?" Per SPINE inference I6, the contract precedes its instances. | `DECISIONS 2026-05-22` — Stage 0 foundation phase ships as one coherent unit |
+| **R6 split-brain governance during dual-track** — V2 emits-but-doesn't-ship while V1 owns the production write path; the canary asserts V1 ≈ V2 modulo named tolerances; disagreement blocks the PR; per-environment-per-artifact-type V2-driver transition is gated on N=10 consecutive green canary runs plus operator sign-off. The four-environment cutover stays per-pair; the gate flips when its evidence supports the flip. The Tolerance taxonomy (S0.E) is the governance surface — every divergence either matches a named tolerance or fails the canary. | `DECISIONS 2026-05-22` — R6: Split-brain governance rule for the dual-track cutover window |
+| **T-30 / T-15 cutover fallback ladder gates** — V2-driver mode requires four conditions met by T-30: (a) chapter 3 closed with green canary on full 300-table Catalog; (b) chapter 4.1 (data triumvirate) shipping; (c) chapter 4.2 (User FK reflow) shipping; (d) ≥1 full UAT dry-run. T-30 yellow → V2-augmented (V1 drives, V2 verifies). T-15 unstable (canary CI flake >10%; tolerance churn) → V1-only retreat. Hard rule: V1 stays warm through cutover+30 regardless. The gates determine the ladder rung; R6 governs per-pair progression along the rung. | `DECISIONS 2026-05-22` — T-30 / T-15 cutover fallback ladder gates |
+| **AXIOMS amendments scaffolded at chapter open; bodies filled at chapter close** — the "Amendments scheduled (chapter close)" section at the bottom of `AXIOMS.md` is the placeholder list for pending amendments. Chapter 3.1 close cashed A35 (Π's output is a deterministic statement stream), A36 (bulk-vs-incremental is realization-layer policy), A39 (aggregate-root smart-constructor invariants), A40 (harmonization-via-parameterization). Renumbered the prior A35/A36 candidates (Π-erased axes; CatalogDiff exhaustiveness) to A37/A38. Chapter agents fill the body when the chapter that earns the amendment closes. The scaffolding is a structural forcing function: chapter close cannot complete without resolving its placeholders. | `DECISIONS 2026-05-22` — Stage 0 foundation phase (S0.F scaffolding); chapter-3.1 close (sessions 27–36) for A35/A36/A39/A40 |
+| **Bench-driven optimization protocol** — performance optimizations at hot paths require three-candidate / 2-refuted / 1-confirmed shape with bench data. Refuted swaps are documented with bench data so the same swap doesn't recur. The bench surface is how V2 earns its perf claims, the same way the canary's PhysicalSchema diff earns its fidelity claims. | `DECISIONS 2026-05-24 — Bench surface caught two wrong-direction canary optimizations` |
+| **Stream-realization pattern (chapter-3.1 contribution)** — Π's canonical output is a typed deterministic stream (`seq<Statement>` for SSDT). Realization layers (`Render.toText`, `Deploy.executeStream`) consume the stream and choose their emission form. The algebra (A18 / T1 / T11) holds at the stream level; bulk-vs-incremental deploy is realization-layer policy invisible to Π (A35 / A36). | `DECISIONS 2026-05-28 — Session 34 / A35 cash-out` and `Session 34 / A36 cash-out` |
+| **Writer-fidelity discipline (chapter-3.1 contribution)** — pass drivers MUST use `LineageDiagnostics.tellDiagnostics` / `Lineage.ofValueAndEvents` (the canonical primitives); manual record-building is forbidden. The dual-writer's algebraic surface is activated across pass drivers; future pass drivers inherit the discipline. | `DECISIONS 2026-05-30 — Session 36 / Writer-fidelity codification` |
+| **Harmonization-via-parameterization (chapter-3.1 contribution)** — when two implementations of an algorithm diverge on a single semantic axis, parameterize the algorithm on that axis, produce both projections from one implementation, and let consumers choose. Worked example: `SelfLoopPolicy` in `TopologicalOrderPass` (chapter-3.1 collapsed `RawTextEmitter.emissionOrder`'s duplicate Kahn into the pass). Codified as A40. | `DECISIONS 2026-05-30 — Session 36 / Topological-sort harmonization via SelfLoopPolicy` |
+| **Five-agent epistemic-tier audit at chapter close (chapter-3.1 contribution)** — multi-agent parallel audit dispatched at chapter close covering tightly orthogonal concerns (UL / Hex / VO / FP / ACL). Each agent classifies findings B&W vs SUBJ + H/M/L; convergence-map is the synthesis primary surface; Tier 1/2/3/4 backlog organizes findings by epistemic level + leverage. Audits are routed (named items in named chapters with named pre-scopes), not piled. Worked example: `AUDIT_2026_05_DDD_HEXAGONAL_FP.md`. | `DECISIONS 2026-05-30 — Session 36 / Five-agent DDD/Hexagonal/FP audit protocol` |
 
 ## Load-bearing commitments — do not break without writing the amendment first
 
@@ -114,7 +155,50 @@ wanting to break one, write the amendment first.
   All registered-intervention pass drivers delegate to it.
 - **Decimal as default for continuous statistical evidence.**
 - **Sibling-Π commutativity (T11).** Every Π's output should mention
-  every catalog kind by SsKey root.
+  every catalog kind by SsKey root. **Note:** T11 is currently
+  *aspirational* not structural — three Π's return `string`. Chapter
+  3.5's Π port realization makes T11 structural via the typed
+  `ArtifactByKind<'element>` surface.
+- **A35 (chapter-3.1).** Π's canonical output is a typed
+  deterministic *statement stream* (`seq<Statement>` for SSDT).
+  Realization layers consume the stream and choose their emission
+  form; the algebra holds at the stream level.
+- **A36 (chapter-3.1).** Bulk-vs-incremental is realization-layer
+  policy. How a realization deploys (`SqlBulkCopy`, per-row INSERT,
+  file write, network protocol) is invisible to Π.
+- **A39 (chapter-3.1).** Aggregate-root smart-constructor
+  invariants. `Catalog.create` / `Module.create` / `ColumnProfile.create`
+  enforce referential-integrity / empirical-probe invariants in one
+  pass; consumers that flow through `create` trust the value.
+- **A40 (chapter-3.1).** Harmonization-via-parameterization.
+  Single-axis-divergent implementations earn one parameterized
+  algorithm; same algorithm, multiple projections.
+- **Writer-fidelity (chapter-3.1).** `LineageDiagnostics.tellDiagnostics`
+  and `Lineage.ofValueAndEvents` are the canonical pass-driver
+  primitives. Manual record-building is forbidden.
+- **V2 owns no production write path during dual-track (R6).** Per
+  `DECISIONS 2026-05-22 — R6`, V2 emits-but-doesn't-ship while V1
+  owns the production write path. The canary asserts V1 ≈ V2 modulo
+  named tolerances; disagreement blocks the PR. This eliminates
+  split-brain by construction. Per-environment-per-artifact-type
+  V2-driver transition is gated on N=10 consecutive green canary
+  runs plus operator sign-off; the four-environment cutover stays
+  per-pair, never global.
+- **V1 stays warm through cutover+30.** Per `DECISIONS 2026-05-22 —
+  T-30 / T-15 cutover fallback ladder gates`, V1's emission path
+  is preserved as a fallback for thirty days post-cutover regardless
+  of which mode the cutover entered. V1 sunset deferred to chapter
+  5+ when all four environments have run V2 emissions for one full
+  schema-evolution cycle.
+- **Stage 0 ships before chapter 3.1 opens.** Per `DECISIONS
+  2026-05-22 — Stage 0 foundation phase ships as one coherent unit`,
+  the twelve foundation items per `STAGING.md` ship as one unit
+  before any chapter-3 slice. Tier 1 (S0.F / S0.G / S0.J / S0.L)
+  is the documentation-only governance burst; Tier 2 (S0.A) is the
+  type-primitives keystone; Tier 3 (S0.B) is the structural-
+  commitment refactor; Tier 4 (S0.C–S0.K) is primitive support
+  modules in parallel. The chapter-1 baseline (631 passing tests)
+  holds at every Stage 0 step.
 
 ## Programming style — the center target
 
@@ -321,6 +405,12 @@ re-open the question. The general meta-rule:
 | **List / sequence comprehensions with `yield`** | `Composition.fanOut`, `TopologicalOrderPass`, list-of-conditional-keys patterns in tests | Idiomatic for building lists with conditional inclusion; clearer than `List.collect`. |
 | **FsCheck.Xunit property tests** | Permutation invariance, idempotence, structural-commitment validation | Sweeps combinatorial spaces example-based tests can't reach. |
 | **Backtick-quoted test names** | Every test | Tests are prose: `` ``A24: trail is chronological under bind`` ``. |
+| **Typed statement-stream Π output** (`seq<Statement>`) | `Projection.Targets.SSDT.RawTextEmitter.statements`; `Render.toText` and `Deploy.executeStream` are realizations. | A35 cash-out (chapter-3.1). Π's canonical form is a typed deterministic stream; realizations are sibling consumers. |
+| **`AsyncStream<'a> = unit -> Task<'a option>`** | `Projection.Adapters.Sql.AsyncStream` (pull-based streaming primitive); `ReadSide.readRowsStream`. | Async-side streaming (Core stays sync). Combinators: `map`, `mapAsync`, `iter`, `fold`, `bufferUpTo`, `probe`, `batchesOf`. Bench observability via `AsyncStream.probe`. |
+| **`Bench.streamProbe` / `AsyncStream.probe`** | `Render.toText`, `Deploy.executeStream`, `RawTextEmitter.emit`, `ReadSide.readRowsStream`. | First-class stream observability. Records `<label>` (total ms) and `<label>.elements` (count) on enumeration completion. |
+| **`Array.Parallel.map` for CPU-bound parallelism** | `PhysicalSchema.toPhysicalRows` (per-row SHA256). | Independent per-row work; deterministic output ordering preserved (Set-membership downstream). |
+| **`SHA256.HashData` (allocation-free)** | `PhysicalSchema.hashStaticRowBytes`; `RowDigester.hashRowBytes`. | Replaces `SHA256.Create() + ComputeHash` to drop instance allocations on the per-row hashing hot path. |
+| **`SqlBulkCopy` realization** (`Bulk.copyRows` + `Deploy.executeStream`) | `Projection.Pipeline.Bulk` + `Deploy.executeStream` folds consecutive `InsertRow` runs. | A36 realization. Bulk-vs-incremental is realization-layer policy; same algebra. |
 
 ### Aligned but underused (candidates whose trigger has not fired)
 

@@ -6,7 +6,7 @@ You're picking up V2 work mid-stream. This brief gets you oriented in 5 minutes;
 
 ## What this is
 
-You're working on the **F# sidecar (V2) of an OutSystems DDL exporter** at `/home/user/outsystems-ddl-exporter`. V1 is the C# trunk (~78K LOC at `src/`, fully shipping). V2 lives at `sidecar/projection/` — pure F# core plus C# adapters at the boundary, ~7K LOC and 631 passing tests.
+You're working on the **F# sidecar (V2) of an OutSystems DDL exporter** at `/home/user/outsystems-ddl-exporter`. V1 is the C# trunk (~78K LOC at `src/`, fully shipping). V2 lives at `sidecar/projection/` — pure F# core plus C# adapters at the boundary, ~9K LOC and **713 passing tests** (697 non-canary + 16 canary).
 
 V2's purpose: make a high-stakes database cutover **verifiable, reversible, and repeatable** through a sibling chorus of synchronized projections (SSDT DDL, CDC-aware data inserts, DACPAC, refactor log, distributions, diagnostics) emitted from a single algebraic core. **V1 ships the cutover; V2 makes it trustworthy.**
 
@@ -31,11 +31,13 @@ Don't skip. The first reading pass takes ~1 hour and gives you the full picture.
 | 3 | **`sidecar/projection/PLAYBOOK.md`** | Technical guidance bridging vision to implementation. Recurring patterns with code skeletons. F#/C# boundary contract. Five decision trees. Twelve anti-patterns. Per-chapter strategic notes. | ~740 |
 | 4 | **`sidecar/projection/STAGING.md`** | Stage 0 foundation phase. Twelve dependencies to ship before chapter 3.1 opens; ~3,000 LOC budget; ~12-15 sessions. **This is what you're doing first.** | ~580 |
 | 5 | **`sidecar/projection/BACKLOG.md`** | ~375 items inventoried by chapter / status / disposition. Includes Stage 0 + free corollaries. | ~900 |
-| 6 | **`sidecar/projection/CLAUDE.md`** | Fresh-agent navigation; operating disciplines table; F# feature surface; programming style; load-bearing commitments. | ~450 |
-| 7 | **`sidecar/projection/AXIOMS.md`** | Formal system: A1–A35, T1–T12 with amendments. **Read on demand** when working on a specific axiom. | ~600 |
-| 8 | **`sidecar/projection/DECISIONS.md`** | Append-only resolved-questions log. Read most-recent ten entries first. Older entries remain in force unless superseded. | ~4500 |
-| 9 | **`sidecar/projection/ADMIRE.md`** | V1↔V2 component bridge. Per-component status (admiring → extracting → extracted). | ~300 |
-| 10 | **`sidecar/projection/HANDOFF.md`** | Chapter-bridge tactical letter from chapter-2 close; what's load-bearing; what's deferred. | ~150 |
+| 6 | **`sidecar/projection/CLAUDE.md`** | Fresh-agent navigation; operating disciplines table; F# feature surface; programming style; load-bearing commitments. | ~470 |
+| 7 | **`sidecar/projection/AXIOMS.md`** | Formal system: A1–A40, T1–T12 with amendments. **Read on demand** when working on a specific axiom. | ~900 |
+| 8 | **`sidecar/projection/DECISIONS.md`** | Append-only resolved-questions log. Read most-recent ten entries first. Older entries remain in force unless superseded. | ~7500 |
+| 9 | **`sidecar/projection/ADMIRE.md`** | V1↔V2 component bridge. Per-component status (admiring → extracting → advanced). | ~2700 |
+| 10 | **`sidecar/projection/HANDOFF.md`** | Chapter-bridge tactical letter from chapter-3.1 close; what's load-bearing; what's deferred. | ~190 |
+| 11 | **`sidecar/projection/CHAPTER_3_1_CLOSE.md`** | Chapter-3.1 close synthesis (sessions 27–36): canary milestone sequence, four meta-codifications, forward signals. | ~180 |
+| 12 | **`sidecar/projection/AUDIT_2026_05_DDD_HEXAGONAL_FP.md`** | Five-agent DDD/Hexagonal/FP audit at chapter 3.1 close. Tier 1/2/3/4 backlog by epistemic level + leverage. | ~150 |
 
 Plus **chapter pre-scopes** (`CHAPTER_3_PRESCOPE_*.md` and `CHAPTER_4_PRESCOPE_*.md`) — read the relevant one when you open a chapter. Each is the first-draft slice plan.
 
@@ -47,8 +49,9 @@ Plus **`VISION_REVIEW.md`** for review evidence and the eight subagent reports t
 
 - **Chapter 1** (sessions 1–12) **closed**. Algebraic foundation; IR; strategy layer codification; three sibling Π emitters (`RawTextEmitter`, `JsonEmitter`, `DistributionsEmitter`). Per `CHAPTER_1_CLOSE.md`.
 - **Chapter 2** (sessions 13–25) **closed**. OSSYS adapter (25 translation rules); Diagnostics writer; `Lineage<Diagnostics<'a>>` dual composition; strategy-layer codification at stability mark. Per `CHAPTER_2_CLOSE.md`.
-- **Stage 0** (you are here) — foundation phase before chapter 3.1. Twelve items per `STAGING.md`; **not yet shipped**.
-- **Chapter 3.1+** — chapter pre-scopes exist for 3.1, 3.2, 3.3, 3.4, 3.5, 4.1.A, 4.1.B, 4.2, 4.3, 4.4. Each is a first-draft slice plan refined under empirical pressure once the chapter opens.
+- **Stage 0** (sessions 26 prework) **shipped**. Twelve foundation items landed before chapter 3.1 opened.
+- **Chapter 3.1** (sessions 27–36) **closed**. Canary milestone sequence M1–M3; bench-driven optimization protocol; typed statement-stream Π output; bulk realization layer; streaming readside; 300-table forcing-function fixture (500k rows in 27s warm); five-agent DDD/Hexagonal/FP audit; first refactor batch. Per `CHAPTER_3_1_CLOSE.md` and `AUDIT_2026_05_DDD_HEXAGONAL_FP.md`.
+- **Chapter 3.2 / 3.5 / 4.1+** (you are here) — chapter pre-scopes exist for 3.2 (SnapshotRowsets), 3.3 (DacpacEmitter), 3.4 (canary property surface), 3.5 (RefactorLog + CatalogDiff), 4.1.A/B (data triumvirate), 4.2 (User FK reflow), 4.3 (diagnostics + remediation), 4.4 (SSDT DDL emitter). The audit-deferred Tier-1 items (Π port realization, Identity DU refactor, port-extraction trio) route to specific sub-chapters per `CHAPTER_3_1_CLOSE.md`'s forward signals. **Decide chapter sequencing first.**
 
 **The four-environment cutover is the fixed point.** V2 must reach the V2-augmented mode of the fallback ladder by T-30 days from cutover; V2-driver mode is the aspiration. V1 stays warm through cutover+30 days regardless.
 
@@ -56,47 +59,49 @@ Plus **`VISION_REVIEW.md`** for review evidence and the eight subagent reports t
 
 ## What you'll do first
 
-Stage 0 ships in four tiers (per `STAGING.md`). Start with **Tier 1 — documentation hygiene + governance burst**:
+Stage 0 + chapter 3.1 are **closed**. Your first move is to **decide the next chapter** from chapter 3.1's forward signals (per `CHAPTER_3_1_CLOSE.md`).
 
-### S0.G — Five `DECISIONS.md` governance entries
+### Step 1 — Orient (~45 minutes)
 
-1. **R6 cutover-window split-brain governance rule.** During dual-track, V2 emits-but-doesn't-ship; canary verifies V1 ≈ V2; disagreement blocks PR; transition gated on N=10 consecutive green canary runs.
-2. **Chapter 3 sequencing decision.** Read-side adapter promoted to chapter 3.1 (was 3.2). The dogfood reframing (V2 verifies V1 starting now) earns it.
-3. **CLAUDE.md reading-order update.** `VISION.md` added to the canonical surface list for fresh agents.
-4. **T-30 / T-15 fallback ladder gates.** V2-driver requires (a) chapter 3 closed with green canary; (b) chapter 4.1 shipping; (c) chapter 4.2 shipping; (d) ≥1 full UAT dry-run. T-30 yellow → V2-augmented; T-15 unstable → V1-only. V1 stays warm through cutover+30.
-5. **Stage 0 commitment.** The foundation phase ships as one unit before chapter 3.1 opens. Names the twelve Stage 0 items.
+Read in this order:
+1. `HANDOFF.md` (this letter's outgoing form for chapter 3.1) — what's load-bearing, what's deferred.
+2. `CHAPTER_3_1_CLOSE.md` — chapter-3.1 arc summary, four meta-codifications, forward signals.
+3. `AUDIT_2026_05_DDD_HEXAGONAL_FP.md` — Tier 1/2/3/4 backlog from the chapter-close audit; ~20 items routed to named sub-chapters.
+4. The most recent ten `DECISIONS.md` entries — sessions 32–36 substantive resolutions cluster at the bottom.
 
-### S0.F — `AXIOMS.md` amendment scaffolding
+### Step 2 — Pick the next chapter
 
-Append placeholder headers (with TBD bodies) for each pending amendment:
-- T1 amended (binary normal-form composition) — TBD chapter 3.3 close
-- T11 amended (structural type encoding) — TBD chapter 3 cross-cutting close
-- T11 amended again (diff-typed inputs) — TBD chapter 3.5 close
-- A1 amended (four-variant `SsKey`) — TBD chapter 3 cross-cutting close
-- A35 candidate (Π-erased axes) — TBD chapter 3.4 close
-- A36 candidate (`CatalogDiff` exhaustiveness) — TBD chapter 3.5 close
-- A32 cash-out — TBD chapter 4.2 close
+Four plausible next chapters, each with a current pre-scope:
 
-### S0.J — Currency checks
+- **Chapter 3.2 — `SnapshotRowsets` adapter.** Closes the JSON-projection-lossiness class. Smaller scope. Lifts `ICatalogReader` port (Position B trigger has fired). Pre-scope at `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md`.
+- **Chapter 3.5 — Π port realization + RefactorLog / CatalogDiff.** Largest leverage. Realizes the declared `Emitter<'element>` shape; unblocks T11 structural-type encoding. Pre-scope at `CHAPTER_3_PRESCOPE_REFACTORLOG_AND_CATALOG_DIFF.md`. Pairs naturally with the audit-deferred Π-port-realization.
+- **Chapter 3.x — DacpacEmitter.** Re-deferred at chapter-2 close. Inherits chapter-3.5's structured-output pattern. Pre-scope at `CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md`.
+- **Chapter 4.1 — Data triumvirate (StaticSeedsEmitter / MigrationDependenciesEmitter / BootstrapEmitter).** Inherits chapter 3.1's `Bulk` / `RowDigester` / `AsyncStream`. Pre-scope at `CHAPTER_4_PRESCOPE_DATA_TRIUMVIRATE.md`.
 
-Walk `ADMIRE.md` / `AXIOMS.md` / `CLAUDE.md` / `HANDOFF.md`; confirm:
-- ADMIRE entries reflect actual V2 state (no drift).
-- AXIOMS has A32, A34, T1-amended current.
-- CLAUDE operating-disciplines links current; F# feature surface table reflects new candidates from SPINE.
-- HANDOFF active-deferrals list has no silent-trigger fires.
+### Step 3 — Open the chapter
 
-### S0.L — Verify cross-references
+Open with a chapter-open document naming the strategic-frame axes (`DECISIONS 2026-05-15` shape; the OSSYS chapter is the worked example). Multi-session chapters earn this discipline at chapter open. Operate the chapter-mid-audit at every 3–5 substantive sessions; operate the chapter-close ritual at chapter close (eight items + the new five-agent audit for architectural-frame chapters).
 
-Confirm `VISION.md` and `BACKLOG.md` reference SPINE / PLAYBOOK / STAGING in their documentation maps. (They do, as of `630e32c`.)
+### How chapter 3.1 ended
 
-**First-session goal:** complete S0.G + S0.F + S0.J + S0.L. All documentation-only. ~700 lines of new documentation across DECISIONS / AXIOMS / ADMIRE / CLAUDE. If you do this cleanly, you've unblocked Stage 0's Tier 2.
+**Test count at close:** 713 passing (697 non-canary + 16 canary). Bench surface live across 170 call sites. Canary scale ceiling: 500k rows in 27s warm.
 
-**Subsequent sessions** (in order):
-- **Tier 2 (keystone):** S0.A — type primitives in `Projection.Core/Types.fs` (~50 LOC).
-- **Tier 3 (structural commitment):** S0.B — `ArtifactByKind` + `SsKey` four-variant + `CatalogDiff`. Per `CHAPTER_3_PRESCOPE_ARTIFACTBYKIND_REFACTOR.md`. Six slices, ~700 LOC source + ~520 LOC test.
-- **Tier 4 (parallel support):** S0.C–S0.K. Render skeletons; property combinators; Tolerance taxonomy; configuration port; test support consolidation; multi-environment generator skeleton.
+**Substantive deliverables shipped:**
+- Typed `Statement` DU as Π's canonical output form.
+- Bulk realization layer (`Bulk.copyRows` + `Deploy.executeStream`) — 43k rows/sec on V2's deploy path.
+- Streaming readside (`AsyncStream` + `readRowsStream` + `Bench.streamProbe`).
+- `PhysicalSchema` projection with four axes (Columns, ForeignKeys, Rows, RowDigests).
+- `Coordinates.TableId` value object (Stage 1; typed `SchemaName`/`TableName`/`ColumnName` deferred to Stage 2).
+- Aggregate-root smart constructors (`Catalog.create` / `Module.create` enforce 5 referential-integrity invariants).
+- Writer-fidelity codification (`LineageDiagnostics.tellDiagnostics` adopted at three pass drivers; `Lineage.ofValueAndEvents` extracted at 6 sites).
 
-**After Stage 0:** chapter 3.1 opens.
+**Meta-codifications shipped:**
+1. Bench-driven optimization protocol.
+2. Stream-realization pattern.
+3. Five-agent epistemic-tier audit at chapter close.
+4. Harmonization-via-parameterization pattern.
+
+**AXIOMS amended:** A35 (Π's output is a deterministic statement stream), A36 (bulk-vs-incremental is realization-layer policy), A32 cash-out, T1 strengthened to statement-level determinism. New A37–A40 candidates scaffolded; chapter agents fill at close.
 
 ---
 
@@ -113,8 +118,13 @@ Codified in `CLAUDE.md` operating-disciplines table. Short list with what makes 
 - **IR grows under evidence, not speculation.** Wait for the second consumer.
 - **Decimal as default for continuous statistical evidence.** T1 byte-determinism requires it.
 - **Pass return-type codification.** `Lineage<'output>` for decisions only; `Lineage<Diagnostics<'output>>` when decisions plus observer-relevant findings.
+- **Writer-fidelity (chapter-3.1 contribution).** `LineageDiagnostics.tellDiagnostics` / `Lineage.ofValueAndEvents` are the canonical pass-driver primitives. Manual record-building is forbidden.
+- **Stream-realization pattern (chapter-3.1 contribution).** Π's output is a typed deterministic stream (`seq<Statement>` for SSDT). Realization layers (text, deploy, file artifacts) are sibling consumers. The algebra holds at the stream level.
+- **Harmonization-via-parameterization (chapter-3.1 contribution).** Two implementations diverging on a single axis collapse to one parameterized algorithm. Worked example: `SelfLoopPolicy` in `TopologicalOrderPass`.
+- **Bench-driven optimization (chapter-3.1 contribution).** Three-candidate / 2-refuted / 1-confirmed shape; refuted swaps documented with bench data so the same swap doesn't recur.
 - **Trace-before-fixture.** When implementing a V1 capability, trace V1's actual handling first; classify into the three-class typology (JSON-projection-lossiness / V2-boundary-discipline / alternative-IR-surface); then write the failing test.
 - **Audit during validation.** When something second-order surfaces, act on it before shipping the slice.
+- **Five-agent epistemic-tier audit at chapter close (chapter-3.1 contribution).** Multi-agent parallel; convergence-map as primary surface; Tier 1/2/3/4 backlog by epistemic level + leverage. Worked example: `AUDIT_2026_05_DDD_HEXAGONAL_FP.md`.
 - **Active deferrals re-checked at chapter close.** Silent-trigger fires get caught by table-scan, not chronological re-read.
 
 ---
@@ -167,13 +177,19 @@ When tempted to shortcut: trace V1 before writing tests; wait for the second con
 
 ## What success looks like
 
-**End of first session (documentation-only Tier 1):** S0.G + S0.F + S0.J + S0.L done. ~700 lines of new docs across DECISIONS / AXIOMS / ADMIRE / CLAUDE. All existing tests green. Chapter-2-close artifacts current.
+**End of first session (chapter-decision):** chapter-open document for the picked sub-chapter (3.2 / 3.5 / 3.x / 4.1) with strategic-frame axes named. Existing 713 tests green. The audit-deferred items routed to the picked sub-chapter sketched as concrete first-slice plans.
 
-**End of Stage 0 (~12-15 sessions):** all twelve items shipped. `Projection.Core/Types.fs` carries the seven pattern signatures. `ArtifactByKind` + `SsKey` four-variant + `CatalogDiff` are types, not disciplines. Existing emitters migrated; substring T11 tests retired. Render skeletons reserved. Property combinators ready. Tolerance taxonomy named. Configuration ported. Test support consolidated. Multi-environment generator stubbed. **All AXIOMS amendments scheduled with TBD bodies; chapter agents fill at close.**
+**End of next sub-chapter (~5-10 sessions):** the picked sub-chapter's substantive deliverable shipped. AXIOMS amendments filled at close. Chapter-close ritual operated (eight items + five-agent audit if architectural-frame chapter). Forward signals cluster identified for the chapter after that.
 
-**Chapter 3.1 opens** with the foundation in place. The dogfood frame ships immediately (V2 verifies V1's `osm_model.json` round-trip via existing `JsonEmitter`). The read-side adapter ships across slices 2-3. The comparator + Projection.Pipeline ship at slices 4-6.
+**Cutover-quarter trajectory:** chapters 3.2 / 3.5 / 3.x close (V2-augmented mode operational). Chapter 4.1 → 4.4 close (V2-driver mode possible per T-30 gate). Cutover proceeds environment-by-environment. V1 sunset deferred until all four environments run V2 emissions for one full schema-evolution cycle.
 
-**Cutover-quarter trajectory:** chapters 3.1 → 3.5 close (V2-augmented mode operational). Chapter 4.1.A → 4.4 close (V2-driver mode possible per T-30 gate). Cutover proceeds environment-by-environment. V1 sunset deferred until all four environments run V2 emissions for one full schema-evolution cycle.
+**Chapter-3.1's structural inheritance to the chapters ahead:**
+- Π output as typed stream → chapter 3.5 / 4.1 / 3.x inherit the seam.
+- `Bulk` / `RowDigester` / `AsyncStream` substrate → chapter 4.1 fills the data triumvirate emitters.
+- `Coordinates.TableId` value object → chapter 4 / 5 extend with `SchemaName` / `TableName` / `ColumnName` Stage-2.
+- Aggregate-root smart constructors → chapter 4.2 User FK reflow consumes the integrity invariants.
+- Writer-fidelity discipline → all future passes operate the dual-writer's API.
+- Five-agent audit protocol → repeat at every chapter close that warrants architectural review.
 
 ---
 
