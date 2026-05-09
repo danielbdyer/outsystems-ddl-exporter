@@ -29,6 +29,12 @@ let private skipIfNoDocker (label: string) : bool =
             label
         false
 
+/// Per session-33 — the canary runs against `fixture.Combined`
+/// (DDL + seed-data INSERTs) instead of `fixture.Ddl` alone, so the
+/// source DB carries variegated rows in static tables. ReadSide
+/// projects those rows into V2 IR via `Kind.Modality = [Static …]`,
+/// the emitter re-emits them as INSERTs, the target DB receives them,
+/// and `PhysicalSchema.Rows` (SHA256-hashed) flags any drift.
 let private runCanaryAgainst
     (label: string)
     (spec: GenerateSpec)
@@ -38,12 +44,13 @@ let private runCanaryAgainst
     else
         let fixture = FixtureGenerator.generate spec
         printfn
-            "Generated fixture: %d tables, %d bytes of DDL, %d bytes of seed data"
+            "Generated fixture: %d tables, %d bytes of DDL, %d bytes of seed data, %d seed rows"
             fixture.TableCount
             fixture.Ddl.Length
             fixture.SeedData.Length
+            fixture.SeedRowCount
         let task =
-            Deploy.runWideCanary fixture.Ddl RawTextEmitter.emit
+            Deploy.runWideCanary fixture.Combined RawTextEmitter.emit
         let result = task.GetAwaiter().GetResult()
         match result with
         | Success report -> Some report
@@ -54,7 +61,7 @@ let private runCanaryAgainst
 
 let private summarizeDiff (label: string) (report: Deploy.WideCanaryReport) : unit =
     printfn
-        "%s canary: source=%d tables, target=%d tables; diff missing-cols=%d, extra-cols=%d, missing-fks=%d, extra-fks=%d"
+        "%s canary: source=%d tables, target=%d tables; diff missing-cols=%d, extra-cols=%d, missing-fks=%d, extra-fks=%d, missing-rows=%d, extra-rows=%d"
         label
         report.SourceReport.TablesCreated
         report.TargetReport.TablesCreated
@@ -62,6 +69,8 @@ let private summarizeDiff (label: string) (report: Deploy.WideCanaryReport) : un
         (List.length report.Diff.ExtraColumns)
         (List.length report.Diff.MissingForeignKeys)
         (List.length report.Diff.ExtraForeignKeys)
+        (List.length report.Diff.MissingRows)
+        (List.length report.Diff.ExtraRows)
 
 [<Fact>]
 let ``Generator scale: SMALL fixture (~12 tables) round-trips green with FK round-trip enabled`` () =
@@ -97,6 +106,36 @@ let ``Generator scale: MEDIUM fixture (~75 tables) round-trips green with FK rou
             sprintf
                 "medium fixture round-trip failed:\n%s"
                 (PhysicalSchema.renderDiff report.Diff))
+
+/// Per session-33 — the 300-table forcing-function canary, gated
+/// behind `PROJECTION_RUN_REALISTIC_CANARY` so the unit-test loop
+/// stays fast. CI / SessionEnd may set the env var to exercise the
+/// full surface; the dev loop runs it on demand. The test asserts
+/// the same six-axis empty diff property as the smaller sizes —
+/// the forcing function's value is wall-time bench data, not new
+/// failure surfaces.
+[<Fact>]
+let ``Generator scale: REALISTIC fixture (300 tables) round-trips green when PROJECTION_RUN_REALISTIC_CANARY=1`` () =
+    let envVar =
+        match System.Environment.GetEnvironmentVariable "PROJECTION_RUN_REALISTIC_CANARY" with
+        | null -> ""
+        | v -> v
+    if envVar <> "1" then
+        printfn "SKIP realistic canary: set PROJECTION_RUN_REALISTIC_CANARY=1 to run."
+    else
+        match runCanaryAgainst "realistic" GenerateSpec.realistic with
+        | None -> ()
+        | Some report ->
+            summarizeDiff "realistic" report
+            Assert.Equal(300, report.SourceReport.TablesCreated)
+            Assert.Equal(
+                report.SourceReport.TablesCreated,
+                report.TargetReport.TablesCreated)
+            Assert.True(
+                PhysicalSchema.isEqual report.Diff,
+                sprintf
+                    "realistic fixture round-trip failed:\n%s"
+                    (PhysicalSchema.renderDiff report.Diff))
 
 [<Fact>]
 let ``Generator: deterministic output — same seed produces byte-identical DDL`` () =

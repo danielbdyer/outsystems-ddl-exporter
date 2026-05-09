@@ -103,12 +103,19 @@ let ``output emits inline FK CONSTRAINT for the Order -> Customer reference`` ()
 
 [<Fact>]
 let ``output records the Static populations on Country`` () =
+    // Per session-33 — Π emits INSERT statements (not just header
+    // comments) for Static populations so the canary's data-plane
+    // round-trip lands. The boundary adapter (ReadSide / Static)
+    // stores raw invariant-culture strings in `StaticRow.Values`;
+    // the emitter's `formatSqlLiteral` quotes them per PrimitiveType
+    // (Text → `N'…'` with single-quote doubling).
     let enriched = enrich sampleCatalog
     let output = RawTextEmitter.emit enriched
     Assert.Contains("-- Static populations: 3 rows", output)
-    Assert.Contains("Code=US", output)
-    Assert.Contains("Code=CA", output)
-    Assert.Contains("Code=MX", output)
+    Assert.Contains("INSERT INTO [dbo].[OSUSR_S1S_COUNTRY]", output)
+    Assert.Contains("N'US'", output)
+    Assert.Contains("N'CA'", output)
+    Assert.Contains("N'MX'", output)
 
 [<Fact>]
 let ``output records each kind's modality marks`` () =

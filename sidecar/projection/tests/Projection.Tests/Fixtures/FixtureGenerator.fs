@@ -47,8 +47,15 @@ type GeneratedFixture =
         Ddl : string
         /// INSERT statements for static entities.
         SeedData : string
+        /// `Ddl` + `SeedData` concatenated. Per session-33 — the
+        /// canary deploys this single string so the source SQL
+        /// Server has both schema and rows. The round-trip
+        /// property verifies both halves survive V2's emit cycle.
+        Combined : string
         /// Total tables in the generated fixture.
         TableCount : int
+        /// Total static-seed rows (sum across all static entities).
+        SeedRowCount : int
     }
 
 [<RequireQualifiedAccess>]
@@ -261,7 +268,49 @@ module FixtureGenerator =
         sb.AppendLine() |> ignore
         tableName
 
-    /// Generate INSERT statements for a static entity's seed data.
+    // -----------------------------------------------------------------
+    // Variegated production-like value generators. Per session-33
+    // operator framing — "variegated randomly to simulate production
+    // data." Each generator is RNG-seeded for run-to-run determinism;
+    // same seed → same data byte-for-byte.
+    //
+    // The value pools mirror shapes operators see in real OutSystems
+    // datasets: human-name strings, locale codes, ISO-style timestamps,
+    // currency-precision decimals, deterministic GUIDs.
+    // -----------------------------------------------------------------
+
+    let private statusLabels =
+        [|
+            "Active"; "Inactive"; "Pending Review"; "In Progress"
+            "Submitted"; "Approved"; "Rejected"; "Archived"
+            "Draft"; "Published"; "Suspended"; "Terminated"
+            "Awaiting Verification"; "Verified"; "Onboarding"; "Onboarded"
+            "Trial"; "Subscribed"; "Lapsed"; "Renewed"
+            "Open"; "Closed"; "Reopened"; "Escalated"
+            "Confirmed"; "Cancelled"; "Refunded"; "Disputed"
+        |]
+
+    let private statusCodes =
+        [|
+            "ACT"; "INA"; "PRV"; "PRG"; "SUB"; "APR"; "REJ"; "ARC"
+            "DRF"; "PUB"; "SUS"; "TRM"; "AWV"; "VER"; "ONB"; "OND"
+            "TRI"; "SBD"; "LPS"; "RNW"; "OPN"; "CLS"; "ROP"; "ESC"
+            "CFM"; "CXL"; "RFD"; "DIS"
+        |]
+
+    /// Deterministic GUID derived from the RNG. Same seed →
+    /// same GUID sequence, so the canary's row-set hash is stable
+    /// across runs.
+    let private nextGuid (rng: Random) : Guid =
+        let bytes = Array.zeroCreate 16
+        rng.NextBytes bytes
+        Guid bytes
+
+    /// Generate a variegated INSERT row for the static-entity shape
+    /// (ID, LABEL, CODE, IS_ACTIVE, SS_KEY). The label / code pools
+    /// give realistic-looking variety so the canary's row-data
+    /// round-trip exercises a meaningful sample of string content,
+    /// boolean distribution, GUID coverage.
     let private generateStaticSeed
         (rng: Random)
         (rowsPerEntity: int)
@@ -269,16 +318,20 @@ module FixtureGenerator =
         (sb: StringBuilder)
         : unit =
         for i in 1 .. rowsPerEntity do
-            let label = sprintf "%s_LABEL_%d" tableName i
-            let code = sprintf "C%05d" i
-            let active = if i % 7 = 0 then 0 else 1
-            let guid = Guid.NewGuid().ToString "D"
+            let labelIdx = rng.Next statusLabels.Length
+            let label = sprintf "%s %d" statusLabels[labelIdx] i
+            let codeIdx = rng.Next statusCodes.Length
+            let code = sprintf "%s%03d" statusCodes[codeIdx] i
+            // Active distribution: ~85% active, mirrors typical
+            // lookup tables' deactivation patterns.
+            let active = if rng.NextDouble() < 0.85 then 1 else 0
+            let guid = (nextGuid rng).ToString "D"
             sb.AppendLine(
                 sprintf
-                    "INSERT INTO [dbo].[%s] ([ID], [LABEL], [CODE], [IS_ACTIVE], [SS_KEY]) VALUES (%d, '%s', '%s', %d, '%s');"
+                    "INSERT INTO [dbo].[%s] ([ID], [LABEL], [CODE], [IS_ACTIVE], [SS_KEY]) VALUES (%d, N'%s', N'%s', %d, '%s');"
                     tableName
                     i
-                    label
+                    (label.Replace("'", "''"))
                     code
                     active
                     guid)
@@ -330,8 +383,22 @@ module FixtureGenerator =
             generateStaticSeed rng spec.StaticRowsPerEntity tableName dataSb
             totalTables <- totalTables + 1
 
+        let ddl = ddlSb.ToString()
+        let seedData = dataSb.ToString()
+        let combined =
+            if seedData.Length = 0 then ddl
+            else
+                let combinedSb = StringBuilder(ddl.Length + seedData.Length + 64)
+                combinedSb.Append(ddl) |> ignore
+                combinedSb.AppendLine() |> ignore
+                combinedSb.AppendLine("-- Seed data --") |> ignore
+                combinedSb.Append(seedData) |> ignore
+                combinedSb.ToString()
+        let seedRowCount = spec.StaticEntities * spec.StaticRowsPerEntity
         {
-            Ddl = ddlSb.ToString()
-            SeedData = dataSb.ToString()
+            Ddl = ddl
+            SeedData = seedData
+            Combined = combined
             TableCount = totalTables
+            SeedRowCount = seedRowCount
         }

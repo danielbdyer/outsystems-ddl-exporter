@@ -77,24 +77,43 @@ type PhysicalForeignKey =
         TargetColumn : string
     }
 
-/// Structural-fidelity view of a Catalog: column tuples + FK
-/// tuples. Equality on this surface is the round-trip property.
+/// A row's content fingerprint in physical-schema coordinates.
+/// Per session-33 — adds the data-plane axis to the canary's
+/// round-trip surface. ReadSide produces one `PhysicalRow` per
+/// (schema, table, row) tuple; PhysicalSchema's `Rows` set
+/// compares by hash so the round-trip catches missing / extra /
+/// mutated rows without retaining full row content in memory.
+///
+/// `Hash` is a deterministic SHA256 over the row's column values
+/// in column-name order. Same rows → same hash; different rows →
+/// different hash with overwhelming probability.
+type PhysicalRow =
+    {
+        Schema : string
+        Table : string
+        Hash : string
+    }
+
+/// Structural-fidelity view of a Catalog: columns + FKs + rows.
+/// Equality across all three axes is the round-trip property.
 type PhysicalSchema =
     {
         Columns : Set<PhysicalColumn>
         ForeignKeys : Set<PhysicalForeignKey>
+        Rows : Set<PhysicalRow>
     }
 
-/// The diff between two `PhysicalSchema` values. Both `Missing*`
-/// and `Extra*` empty across both axes means structural intent
-/// matches; anything populated is a canary-blocking divergence
-/// under R6.
+/// The diff between two `PhysicalSchema` values. All six fields
+/// empty means structural-and-data intent matches; anything
+/// populated is a canary-blocking divergence under R6.
 type PhysicalSchemaDiff =
     {
         MissingColumns : PhysicalColumn list
         ExtraColumns : PhysicalColumn list
         MissingForeignKeys : PhysicalForeignKey list
         ExtraForeignKeys : PhysicalForeignKey list
+        MissingRows : PhysicalRow list
+        ExtraRows : PhysicalRow list
     }
 
 [<RequireQualifiedAccess>]
@@ -115,6 +134,35 @@ module PhysicalSchema =
                 Scale = a.Scale
                 IsIdentity = a.IsIdentity
             })
+
+    /// Hash a static row deterministically. Concatenates
+    /// `<column-name>=<value>` pairs sorted by column name and
+    /// SHA256s the result. Stable across runs given stable inputs.
+    let private hashStaticRow (row: StaticRow) : string =
+        let parts =
+            row.Values
+            |> Map.toList
+            |> List.sortBy (fun (n, _) -> Name.value n)
+            |> List.map (fun (n, v) -> sprintf "%s=%s" (Name.value n) v)
+            |> String.concat ""
+        let bytes = System.Text.Encoding.UTF8.GetBytes parts
+        use sha = System.Security.Cryptography.SHA256.Create()
+        let hash = sha.ComputeHash bytes
+        System.Convert.ToHexString hash
+
+    let private toPhysicalRows (k: Kind) : PhysicalRow list =
+        k.Modality
+        |> List.collect (fun m ->
+            match m with
+            | Static rows ->
+                rows
+                |> Bench.iterMap "physicalSchema.row" (fun r ->
+                    {
+                        Schema = k.Physical.Schema
+                        Table = k.Physical.Table
+                        Hash = hashStaticRow r
+                    })
+            | _ -> [])
 
     let private toPhysicalForeignKeys (catalog: Catalog) (k: Kind) : PhysicalForeignKey list =
         k.References
@@ -164,13 +212,19 @@ module PhysicalSchema =
             kinds
             |> List.collect (toPhysicalForeignKeys c)
             |> Set.ofList
+        let rows =
+            kinds
+            |> List.collect toPhysicalRows
+            |> Set.ofList
         {
             Columns = columns
             ForeignKeys = foreignKeys
+            Rows = rows
         }
 
-    /// Diff two `PhysicalSchema` values. Both axes (Columns + FKs)
-    /// surface their `(missing-in-target, extra-in-target)` deltas.
+    /// Diff two `PhysicalSchema` values. All three axes (Columns +
+    /// FKs + Rows) surface their `(missing-in-target,
+    /// extra-in-target)` deltas.
     let diff (source: PhysicalSchema) (target: PhysicalSchema) : PhysicalSchemaDiff =
         {
             MissingColumns =
@@ -181,13 +235,19 @@ module PhysicalSchema =
                 Set.difference source.ForeignKeys target.ForeignKeys |> Set.toList
             ExtraForeignKeys =
                 Set.difference target.ForeignKeys source.ForeignKeys |> Set.toList
+            MissingRows =
+                Set.difference source.Rows target.Rows |> Set.toList
+            ExtraRows =
+                Set.difference target.Rows source.Rows |> Set.toList
         }
 
-    /// True iff the diff is empty across all four axes.
+    /// True iff the diff is empty across all six axes.
     let isEqual (d: PhysicalSchemaDiff) : bool =
         List.isEmpty d.MissingColumns
         && List.isEmpty d.ExtraColumns
         && List.isEmpty d.MissingForeignKeys
+        && List.isEmpty d.MissingRows
+        && List.isEmpty d.ExtraRows
         && List.isEmpty d.ExtraForeignKeys
 
     /// Render a diff as a human-readable multi-line string. Used by
@@ -224,10 +284,34 @@ module PhysicalSchema =
                 f.TargetSchema
                 f.TargetTable
                 f.TargetColumn
+        let renderRow (r: PhysicalRow) : string =
+            sprintf
+                "  [%s].[%s] row hash=%s"
+                r.Schema
+                r.Table
+                (r.Hash.Substring(0, min 16 r.Hash.Length))
         let block (label: string) (renderer: 'a -> string) (xs: 'a list) : string =
             if List.isEmpty xs then sprintf "%s:\n  (none)" label
             else
                 sprintf "%s:\n%s" label (xs |> List.map renderer |> String.concat "\n")
+        // Truncate row diffs to the first 5 entries — at scale a
+        // missing-row count of thousands isn't actionable as a
+        // human-readable diff; show enough to triangulate.
+        let truncateRows (xs: PhysicalRow list) : PhysicalRow list =
+            if List.length xs <= 5 then xs
+            else List.take 5 xs
+        let rowsLine (label: string) (xs: PhysicalRow list) : string =
+            let total = List.length xs
+            let shown = truncateRows xs
+            if total = 0 then sprintf "%s:\n  (none)" label
+            elif total <= 5 then
+                sprintf "%s:\n%s" label (shown |> List.map renderRow |> String.concat "\n")
+            else
+                sprintf
+                    "%s (%d total; showing first 5):\n%s"
+                    label
+                    total
+                    (shown |> List.map renderRow |> String.concat "\n")
         String.concat
             "\n"
             [
@@ -236,4 +320,6 @@ module PhysicalSchema =
                 block "Extra columns in target (target has, source did not)" renderColumn d.ExtraColumns
                 block "Missing FKs in target (source had, target lost)" renderFk d.MissingForeignKeys
                 block "Extra FKs in target (target has, source did not)" renderFk d.ExtraForeignKeys
+                rowsLine "Missing rows in target (source had, target lost)" d.MissingRows
+                rowsLine "Extra rows in target (target has, source did not)" d.ExtraRows
             ]

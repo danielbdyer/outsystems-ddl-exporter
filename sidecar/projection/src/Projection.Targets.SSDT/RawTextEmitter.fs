@@ -85,6 +85,36 @@ module RawTextEmitter =
 
     let private rootKey (k: SsKey) : string = SsKey.rootOriginal k
 
+    /// Per session-33 — Π's row-emission formatter. Takes the raw
+    /// invariant-culture string V2's IR stores in `StaticRow.Values`
+    /// and produces a SQL Server literal expression suitable for
+    /// embedding in an INSERT VALUES clause. The IR contract (raw
+    /// values, no SQL quoting) is established by the boundary
+    /// adapters (`Projection.Adapters.Sql.ReadSide.formatRawValue`
+    /// for live readback; `Projection.Adapters.Sql.Static` for V1
+    /// JSON ingestion). Π consumes the canonical raw form here.
+    ///
+    /// Empty string ⇒ NULL — matches both adapters' null
+    /// conventions. Single quotes inside Text values are escaped by
+    /// doubling per T-SQL.
+    let private formatSqlLiteral (typ: PrimitiveType) (raw: string) : string =
+        if raw = "" then "NULL"
+        else
+            match typ with
+            | Integer -> raw
+            | Decimal -> raw
+            | Boolean ->
+                match raw.ToLowerInvariant() with
+                | "true" | "1" -> "1"
+                | _ -> "0"
+            | DateTime | Date | Time | Guid ->
+                sprintf "'%s'" raw
+            | Text ->
+                sprintf "N'%s'" (raw.Replace("'", "''"))
+            | Binary ->
+                if raw.StartsWith("0x", System.StringComparison.OrdinalIgnoreCase) then raw
+                else "0x" + raw
+
     // -----------------------------------------------------------------------
     // Per-element rendering. Each function takes a StringBuilder so the
     // emitter is allocation-friendly without sacrificing purity.
@@ -192,23 +222,58 @@ module RawTextEmitter =
                 sb.Append(clause).AppendLine(sep) |> ignore)
         sb.AppendLine(");") |> ignore
 
+    /// Per session-33 — emit one INSERT per row in `Kind.Modality`'s
+    /// `Static` populations. The data plane joins the canary's
+    /// round-trip surface: source DB → ReadSide(Static rows) →
+    /// Π_SSDT(INSERT statements) → deploy → ReadSide → byte-identical
+    /// row hashes. Without the INSERTs the target DB is structurally
+    /// correct but row-empty, and PhysicalSchema's `Rows` axis would
+    /// flag every source row as missing.
+    ///
+    /// Columns absent from a row's `Values` map are omitted from
+    /// that row's INSERT (rather than emitted as NULL) so partial
+    /// fixtures (e.g., the synthetic `Country` whose Values lacks
+    /// the IDENTITY `Id`) still produce valid INSERTs. SQL Server
+    /// fills omitted columns with their default / NULL.
+    ///
+    /// IDENTITY columns: when any attribute is IDENTITY, the row
+    /// block is bracketed with `SET IDENTITY_INSERT ... ON/OFF` so
+    /// the round-trip preserves the source's PK values byte-for-byte.
     let private renderStaticPopulations (sb: StringBuilder) (k: Kind) : unit =
         k.Modality
         |> Bench.iterDo "emit.rawText.modality" (fun m ->
             match m with
             | Static rows ->
                 sb.Append("-- Static populations: ").Append(rows.Length).AppendLine(" rows") |> ignore
-                rows
-                |> Bench.iterDo "emit.rawText.staticRow" (fun row ->
-                    sb.Append("--   ").Append(rootKey row.Identifier) |> ignore
-                    let pairs =
-                        row.Values
-                        |> Map.toList
-                        |> List.map (fun (n, v) -> sprintf "%s=%s" (Name.value n) v)
-                        |> String.concat ", "
-                    if pairs <> "" then
-                        sb.Append(" { ").Append(pairs).Append(" }") |> ignore
-                    sb.AppendLine() |> ignore)
+                if not (List.isEmpty rows) then
+                    let qualified =
+                        sprintf "%s.%s" (quote k.Physical.Schema) (quote k.Physical.Table)
+                    let hasIdentity =
+                        k.Attributes |> List.exists (fun a -> a.IsIdentity)
+                    if hasIdentity then
+                        sb.Append("SET IDENTITY_INSERT ").Append(qualified).AppendLine(" ON;") |> ignore
+                    rows
+                    |> Bench.iterDo "emit.rawText.staticRow" (fun row ->
+                        let presentAttrs =
+                            k.Attributes
+                            |> List.choose (fun a ->
+                                match Map.tryFind a.Name row.Values with
+                                | Some v -> Some (a, v)
+                                | None -> None)
+                        if not (List.isEmpty presentAttrs) then
+                            let cols =
+                                presentAttrs
+                                |> List.map (fun (a, _) -> quote a.Column.ColumnName)
+                                |> String.concat ", "
+                            let vals =
+                                presentAttrs
+                                |> List.map (fun (a, v) -> formatSqlLiteral a.Type v)
+                                |> String.concat ", "
+                            sb.Append("INSERT INTO ").Append(qualified)
+                                .Append(" (").Append(cols).Append(") VALUES (")
+                                .Append(vals).AppendLine(");") |> ignore)
+                    if hasIdentity then
+                        sb.Append("SET IDENTITY_INSERT ").Append(qualified).AppendLine(" OFF;") |> ignore
             | _ -> ())
 
     let private renderModule (sb: StringBuilder) (catalog: Catalog) (m: Module) : unit =

@@ -344,6 +344,152 @@ module ReadSide =
                             IsIdentity = identitySet.Contains coord
                         }
 
+    /// Format a SQL Server scalar value as the canonical raw
+    /// invariant-culture string that V2's IR stores in
+    /// `StaticRow.Values`. Per session-33 — the canary's row-data
+    /// round-trip relies on this formatter producing the same
+    /// string for source and target reads, so the row hashes match.
+    /// The IR contract is: raw values, no SQL quoting; the emitter
+    /// (Projection.Targets.SSDT.RawTextEmitter) is responsible for
+    /// SQL literal formatting at INSERT-emission time.
+    ///
+    /// This convention aligns with `Projection.Adapters.Sql.Static`
+    /// (the V1 JSON adapter), which already produces invariant-culture
+    /// strings via `JsonElement.GetRawText`. Both producers feed the
+    /// same emitter formatter, keeping the IR canonical.
+    ///
+    /// `null` / `DBNull` is encoded as the empty string — the same
+    /// sentinel `Static.fs` uses for `JsonValueKind.Null`. The
+    /// emitter renders empty for nullable columns as `NULL`; columns
+    /// not present in the row's Values map are also `NULL` by
+    /// omission.
+    let private formatRawValue (typ: PrimitiveType) (value: obj | null) : string =
+        let isNullish =
+            match value with
+            | null -> true
+            | v -> v :? System.DBNull
+        if isNullish then ""
+        else
+            let v = nonNull value
+            match typ with
+            | Integer ->
+                System.Convert.ToInt64(v).ToString(System.Globalization.CultureInfo.InvariantCulture)
+            | Boolean ->
+                if System.Convert.ToBoolean v then "true" else "false"
+            | DateTime ->
+                let dt = System.Convert.ToDateTime v
+                dt.ToString("yyyy-MM-dd HH:mm:ss.fffffff", System.Globalization.CultureInfo.InvariantCulture)
+            | Date ->
+                let dt = System.Convert.ToDateTime v
+                dt.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+            | Time ->
+                let ts = v :?> System.TimeSpan
+                ts.ToString("c", System.Globalization.CultureInfo.InvariantCulture)
+            | Guid ->
+                (v :?> System.Guid).ToString("D")
+            | Decimal ->
+                System.Convert.ToDecimal(v).ToString(System.Globalization.CultureInfo.InvariantCulture)
+            | Text ->
+                match v.ToString() with
+                | null -> ""
+                | s -> s
+            | Binary ->
+                let bytes = v :?> byte[]
+                System.Convert.ToHexString bytes
+
+    /// Read all rows of a table for round-trip comparison. Returns
+    /// `None` if the table's row count exceeds `maxRows` (skip
+    /// large tables to keep the canary's wall time bounded —
+    /// transactional tables typically have many rows; static
+    /// lookup tables have few).
+    let private readRows
+        (cnn: SqlConnection)
+        (kind: Kind)
+        (maxRows: int)
+        : Task<StaticRow list option> =
+        task {
+            use _ = Bench.scope "readside.readRows"
+            // Probe row count first; skip if over threshold.
+            use countCmd = cnn.CreateCommand()
+            countCmd.CommandText <-
+                sprintf
+                    "SELECT COUNT(*) FROM [%s].[%s]"
+                    kind.Physical.Schema
+                    kind.Physical.Table
+            let! countObj = countCmd.ExecuteScalarAsync()
+            let count = System.Convert.ToInt32 countObj
+            if count > maxRows then
+                return None
+            elif count = 0 then
+                return Some []
+            else
+                let columns =
+                    kind.Attributes
+                    |> List.map (fun a -> sprintf "[%s]" a.Column.ColumnName)
+                    |> String.concat ", "
+                // ORDER BY PK for stable iteration. Fall back to
+                // first column if no PK (shouldn't happen on
+                // OutSystems shapes but defends against operator
+                // schemas without PK).
+                let pkCol =
+                    kind.Attributes
+                    |> List.tryFind (fun a -> a.IsPrimaryKey)
+                    |> Option.map (fun a -> a.Column.ColumnName)
+                    |> Option.defaultValue (
+                        kind.Attributes
+                        |> List.head
+                        |> fun a -> a.Column.ColumnName)
+                use cmd = cnn.CreateCommand()
+                cmd.CommandText <-
+                    sprintf
+                        "SELECT %s FROM [%s].[%s] ORDER BY [%s]"
+                        columns
+                        kind.Physical.Schema
+                        kind.Physical.Table
+                        pkCol
+                use! reader = cmd.ExecuteReaderAsync()
+                let rows = ResizeArray<StaticRow>()
+                let mutable hasMore = true
+                let mutable rowIdx = 0
+                while hasMore do
+                    let! more = reader.ReadAsync()
+                    if more then
+                        let values =
+                            kind.Attributes
+                            |> List.mapi (fun i a ->
+                                let raw : obj | null =
+                                    if reader.IsDBNull i then null
+                                    else reader.GetValue i
+                                a.Name, formatRawValue a.Type raw)
+                            |> Map.ofList
+                        // Synthesize a row identifier from the
+                        // (schema, table, row-index) coordinate.
+                        // The canary's row-set comparison hashes
+                        // by content so the identifier doesn't
+                        // need to match across runs.
+                        match
+                            SsKey.synthesized
+                                "READSIDE_ROW"
+                                (sprintf
+                                    "%s.%s.%d"
+                                    kind.Physical.Schema
+                                    kind.Physical.Table
+                                    rowIdx)
+                        with
+                        | Success rowKey ->
+                            rows.Add({ Identifier = rowKey; Values = values })
+                            rowIdx <- rowIdx + 1
+                        | Failure _ ->
+                            // SsKey.synthesized only fails on blank
+                            // inputs; the basis here is non-blank
+                            // by construction, so this branch is
+                            // unreachable.
+                            ()
+                    else
+                        hasMore <- false
+                return Some (List.ofSeq rows)
+        }
+
     let private buildKind
         (schema: string)
         (table: string)
@@ -512,6 +658,23 @@ module ReadSide =
                     match kindsWithRefsAggregated with
                     | Failure errors -> return Result.failure errors
                     | Success kindsWithRefs ->
+                        // Per session-33 — pull row data for tables
+                        // small enough to round-trip through V2 IR
+                        // (default threshold: 1000 rows). Static
+                        // OutSystems lookup tables fit comfortably;
+                        // transactional tables typically exceed and
+                        // get skipped (their data plane is chapter
+                        // 4.1 territory).
+                        let maxRows = 1000
+                        let mutable kindsWithRows = []
+                        for k in kindsWithRefs do
+                            let! rowsOpt = readRows cnn k maxRows
+                            let kindWithRows =
+                                match rowsOpt with
+                                | Some rows when not (List.isEmpty rows) ->
+                                    { k with Modality = [ Static rows ] }
+                                | _ -> k
+                            kindsWithRows <- kindsWithRows @ [ kindWithRows ]
                         match moduleSsKey () with
                         | Failure errors -> return Result.failure errors
                         | Success mKey ->
@@ -526,7 +689,7 @@ module ReadSide =
                                                     {
                                                         SsKey = mKey
                                                         Name = mName
-                                                        Kinds = kindsWithRefs
+                                                        Kinds = kindsWithRows
                                                     }
                                                 ]
                                         }
