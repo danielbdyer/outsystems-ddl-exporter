@@ -20,15 +20,37 @@ module ValidationError =
 
     let private requireNonBlank (paramName: string) (value: string) : unit =
         if System.String.IsNullOrWhiteSpace value then
-            invalidArg
-                paramName
-                (System.String.Concat(paramName, " must be provided."))  // LINT-ALLOW: terminal text-emission boundary
+            // Per-site analysis (chapter 3.5 deep audit): F#'s
+            // `invalidArg` raises `ArgumentException` whose `Message`
+            // already includes the parameter name in BCL-canonical
+            // form (`"<msg> (Parameter '<paramName>')"`). The prior
+            // `String.Concat(paramName, " must be provided.")` was
+            // redundant — the BCL exception formatter handles the
+            // paramName-injection. Defensive: bare phrase; let the
+            // BCL primitive handle the format.
+            invalidArg paramName "must be provided."
 
     /// Build a `ValidationError` with no metadata.
     let create (code: string) (message: string) : ValidationError =
         requireNonBlank "code" code
         requireNonBlank "message" message
         { Code = code; Message = message; Metadata = Map.empty }
+
+    /// Build a `ValidationError` with structured metadata. Per chapter
+    /// 3.5 deep audit (2026-05-09): the data-structure-oriented form —
+    /// the message is a *static phrase* (no interpolation); the
+    /// dynamic values flow into `Metadata` as typed key-value pairs.
+    /// Eliminates the need to concatenate values into the message
+    /// text. Programmatic consumers route by `Code` + `Metadata`;
+    /// human readers see the static phrase.
+    let createWithMetadata
+        (code: string)
+        (message: string)
+        (metadata: Map<string, string option>)
+        : ValidationError =
+        requireNonBlank "code" code
+        requireNonBlank "message" message
+        { Code = code; Message = message; Metadata = metadata }
 
     /// Attach (or replace) a single metadata entry. A blank key is a no-op,
     /// matching the trunk's behavior.

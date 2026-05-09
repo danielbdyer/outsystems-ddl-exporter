@@ -81,10 +81,11 @@ module UniqueIndexPass =
           SsKey         = decision.IndexKey
           TransformKind =
               Annotated
-                  (System.String.Concat(
-                      decision.InterventionId,
-                      " -> ",
-                      outcomeLabel decision.Outcome)) }
+                  (String.concat "" [
+                      decision.InterventionId
+                      " -> "
+                      outcomeLabel decision.Outcome
+                  ]) }
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// indexes by `SsKey` within each kind. Interventions are taken

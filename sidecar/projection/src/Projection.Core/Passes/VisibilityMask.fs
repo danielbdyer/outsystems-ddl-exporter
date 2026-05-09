@@ -46,12 +46,39 @@ module VisibilityMask =
     // names so lineage is human-readable.
     // -----------------------------------------------------------------------
 
-    /// Hide every kind whose origin equals `origin`. Per the FP
-    /// strict-mode discipline, the predicate name composes via
-    /// typed `Origin.toDiagnosticString` rather than `sprintf "%A"`.
+    /// Hide every kind whose origin equals `origin`. **Per-site
+    /// analysis (chapter 3.5 deep audit, hard line)**:
+    /// `Predicate.Name : string` is the typed lineage-trail label
+    /// (consumed by audit readers via
+    /// `LineageEvent.Removed of string`). Alternatives considered:
+    ///   - **Refactor `Predicate` to carry typed payload**
+    ///     (`Reason : ReasonOrigin of Origin | ReasonModality of
+    ///     ModalityMark`): would require changing
+    ///     `LineageEvent.Removed` to carry typed payload too,
+    ///     touching every lineage consumer (audit readers, JSON
+    ///     emission, tests). Architectural; deferred to chapter
+    ///     4+ when typed `LineageEvent` payload propagates.
+    ///   - **`String.Join("", segments)`**: same family as
+    ///     `String.concat`; renamed primitive only.
+    ///   - **`Console.Write` per segment**: not applicable;
+    ///     `Predicate.Name` is a *value*, not a stream-write side-
+    ///     effect.
+    ///   - **F# 9 interpolated strings**: respect current culture;
+    ///     would introduce determinism risk.
+    ///   - **Adopted: `String.concat ""` over typed 2-element list**.
+    ///     The list IS the structure; `Origin.toDiagnosticString`
+    ///     is the typed terminal projection of the typed `Origin`.
+    ///     The boundary is unavoidable until `LineageEvent.Removed`
+    ///     accepts typed payload (chapter 4+).
     let hideOrigin (origin: Origin) : Predicate =
-        { Name = System.String.Concat("origin=", Origin.toDiagnosticString origin)  // LINT-ALLOW: terminal text-emission boundary
-          Test = (fun k -> k.Origin = origin) }
+        {
+            Name =
+                String.concat "" [  // LINT-ALLOW: terminal lineage-trail boundary; typed payload propagation deferred to chapter 4
+                    "origin="
+                    Origin.toDiagnosticString origin
+                ]
+            Test = (fun k -> k.Origin = origin)
+        }
 
     /// Hide every kind whose SsKey is in `keys`.
     let hideKeys (keys: SsKey seq) : Predicate =
@@ -59,11 +86,18 @@ module VisibilityMask =
         { Name = "explicit-key-list"
           Test = (fun k -> Set.contains k.SsKey keySet) }
 
-    /// Hide every kind whose modality includes the given mark. Same
-    /// typed-display discipline as `hideOrigin`.
+    /// Hide every kind whose modality includes the given mark.
+    /// Same per-site analysis as `hideOrigin` — typed payload
+    /// propagation through `LineageEvent` deferred to chapter 4+.
     let hideModality (mark: ModalityMark) : Predicate =
-        { Name = System.String.Concat("modality=", ModalityMark.toDiagnosticString mark)  // LINT-ALLOW: terminal text-emission boundary
-          Test = (fun k -> List.contains mark k.Modality) }
+        {
+            Name =
+                String.concat "" [  // LINT-ALLOW: terminal lineage-trail boundary; typed payload propagation deferred to chapter 4
+                    "modality="
+                    ModalityMark.toDiagnosticString mark
+                ]
+            Test = (fun k -> List.contains mark k.Modality)
+        }
 
     // -----------------------------------------------------------------------
     // Internals.

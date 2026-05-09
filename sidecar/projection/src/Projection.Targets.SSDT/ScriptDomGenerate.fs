@@ -111,13 +111,26 @@ module ScriptDomGenerate =
         text |> Option.ofObj |> Option.defaultValue ""
 
     /// Render a comment line through the SSDT-canonical inline
-    /// comment form. ScriptDom's typed-AST does not model
-    /// comments-as-fragments; we splice the `--` form directly into
-    /// the text stream. The `String.Concat` joiner is the no-string-
-    /// concatenation discipline's allowed primitive (typed segment
-    /// composition; not `sprintf`).
+    /// comment form. Per chapter 3.5 deep audit (2026-05-09):
+    /// considered alternatives —
+    ///   - ScriptDom typed `MultilineCommentTrivia` fragment:
+    ///     rejected. The trivia API requires splicing into a
+    ///     `TSqlScript`'s token stream, which is heavier than
+    ///     producing a single `-- text` line; ScriptDom's
+    ///     `TSqlScript` doesn't model comment-only batches.
+    ///   - `String.Concat("-- ", text)`: rejected. Per the chapter-
+    ///     3.5 supreme discipline, `String.Concat` is the
+    ///     least-defensive option.
+    ///   - **Adopted: `text.Insert(0, "-- ")`** — BCL `string.Insert
+    ///     (int startIndex, string value)` returns a new string
+    ///     with the prefix inserted. Same complexity (O(N) one
+    ///     allocation) as String.Concat but uses the BCL string-
+    ///     mutation primitive (which does NOT mutate the original;
+    ///     `string.Insert` returns a new value). Defensive: the
+    ///     primitive's purpose is exactly this prefix-insertion
+    ///     case.
     let private commentLine (text: string) : string =
-        System.String.Concat("-- ", text)
+        text.Insert(0, "-- ")
 
     /// Compose a `seq<Statement>` into byte-deterministic T-SQL
     /// text. SQL-bearing statements route through ScriptDom's

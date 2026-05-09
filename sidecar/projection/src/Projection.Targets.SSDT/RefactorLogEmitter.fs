@@ -115,25 +115,33 @@ module RefactorLogEmitter =
     /// Same diff → same `(rootOriginal, OldName, NewName)` triple →
     /// same UUIDv5 → same `OperationKey` (T1).
     ///
-    /// The basis-string is composed via `String.concat` rather than
-    /// `sprintf` per the codebase's no-string-concatenation discipline:
-    /// structured composition over format strings, built-in collection
-    /// joiners over manual interpolation. The component list `[ "rename";
-    /// rootOriginal; oldName; newName ]` is the typed quadruple; the
-    /// `":"` separator is the field delimiter.
+    /// **Per-site analysis (chapter 3.5 deep audit, hard line)**:
+    /// the prior implementation joined the four-component list via
+    /// `String.concat ":"` to build the UUIDv5 input string. The
+    /// data-structure-oriented refactor uses `UuidV5.createFromSegments`
+    /// which feeds typed UTF-8 byte segments to BCL
+    /// `SHA1.TransformBlock` *incrementally* — no intermediate
+    /// concatenated string is allocated; the typed quadruple
+    /// `[ "rename"; rootOriginal; oldName; newName ]` flows
+    /// directly through the BCL incremental-hash surface. The
+    /// separator byte `':'` (0x3A) is the field delimiter; per
+    /// RFC 4122 §4.3 the byte-equivalent input produces a
+    /// byte-identical UUIDv5 to the legacy string-then-hash form.
     let private renameOperationKey
         (kindKey: SsKey)
         (record: RenameRecord)
         : System.Guid =
-        let basis =
+        let utf8 (s: string) : byte[] =
+            System.Text.Encoding.UTF8.GetBytes s
+        UuidV5.createFromSegments
+            namespaceGuid
+            (byte ':')
             [
-                "rename"
-                SsKey.rootOriginal kindKey
-                Name.value record.OldName
-                Name.value record.NewName
+                utf8 "rename"
+                utf8 (SsKey.rootOriginal kindKey)
+                utf8 (Name.value record.OldName)
+                utf8 (Name.value record.NewName)
             ]
-            |> String.concat ":"
-        UuidV5.create namespaceGuid basis
 
     /// Build the per-kind refactor-entry slice for one kind. Returns
     /// the empty list when the kind is not renamed in the diff
@@ -158,7 +166,7 @@ module RefactorLogEmitter =
                 {
                     OperationKey = renameOperationKey k.SsKey record
                     OperationKind = RenameRefactor
-                    ElementName = TableId.qualified target
+                    ElementName = Render.tableQualified target
                     ElementType = SqlTable
                     ParentElementName = schemaQualified target
                     ParentElementType = SqlSchema

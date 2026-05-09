@@ -303,6 +303,21 @@ scan "obj-typed" "$SRC" ':[[:space:]]*obj[[:space:]]*[)\->]|:[[:space:]]*obj[[:s
 scan "string-concat" "$SRC" 'System\.String\.Concat\s*\(|^[[:space:]]+String\.Concat\s*\('
 
 # ---------------------------------------------------------------------------
+# Rule 18c — F#'s `String.concat` (lowercase) banned anywhere in
+# production without explicit `LINT-ALLOW`. Per the chapter-3.5
+# user-hard-line-refinement (2026-05-09): `String.concat` is *also*
+# string-concatenation by another spelling. Even though it's the BCL
+# collection joiner with explicit separator and typed segment list,
+# the discipline says to prefer NON-concatenation alternatives
+# whenever a use-case-specific library, BCL primitive, or
+# data-structure-oriented refactor exists. New uses must justify per
+# per-site analysis (alternatives considered + why concat was
+# adopted).
+# ---------------------------------------------------------------------------
+
+scan "fsharp-string-concat" "$SRC" '\bString\.concat\b'
+
+# ---------------------------------------------------------------------------
 # Rule 19 — `xs @ [x]` Big-O anti-pattern banned in production.
 # `List.append xs [x]` is O(N) per call; iterated O(N²). Idiom is
 # `x :: xs` then `List.rev` at the end, OR `Result.aggregate` (V2's

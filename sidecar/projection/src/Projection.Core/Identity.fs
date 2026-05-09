@@ -95,7 +95,28 @@ module SsKey =
         elif basisParts |> List.exists System.String.IsNullOrWhiteSpace then
             Result.failureOf synthBasisEmpty
         else
-            let basis = basisParts |> String.concat "_"
+            // **Per-site analysis (chapter 3.5 deep audit, hard
+            // line)**: `Synthesized of source * basis` carries
+            // `basis : string` — V2's chosen DU shape. The build
+            // path (here) and parse path (`SsKey.original`'s
+            // prefix-match at line ~119) form a structural pair;
+            // both use `_` as the canonical separator.
+            // Alternatives considered:
+            //   - **Refactor `Synthesized` to `of source * basis-
+            //     parts: string list`**: would carry typed list
+            //     through the SsKey DU; eliminates the joiner.
+            //     Breaking change — affects A4 structural equality,
+            //     A1 rename-survival semantics, ~50+ test fixtures
+            //     using `Synthesized (s, b)` patterns. Deferred to
+            //     chapter 4+ as a structural-commitment refactor.
+            //   - **`String.Join("_", basisParts)`** (BCL): same
+            //     family as `String.concat`; renamed primitive.
+            //   - **Adopted: `String.concat "_"`** — F#'s typed
+            //     collection joiner; the typed `string list` IS
+            //     the structure; the separator is parameterized.
+            //     The boundary IS the SsKey DU's `basis` field;
+            //     the joiner is the build half of the round-trip.
+            let basis = basisParts |> String.concat "_"  // LINT-ALLOW: round-trip pair with `SsKey.original` parser; SsKey-DU shape refactor deferred to chapter 4
             Result.success (Synthesized (source, basis))
 
     /// Build a `DerivedFrom` SsKey from a parent identity and a
@@ -139,17 +160,25 @@ module SsKey =
         if System.String.IsNullOrWhiteSpace value then
             Result.failureOf legacyValueEmpty
         else
-            // Build the prefix sentinel for each known source via
-            // `String.Concat` rather than `+` (no-string-concat
-            // discipline). The sentinel `"<src>_"` is the structural
-            // marker the synthesizer wrote out via
-            // `synthesizedComposite`; matching it here is the parser
-            // half of the round-trip.
+            // Per-site analysis (chapter 3.5 deep audit): the legacy
+            // implementation built `<src>_` via `String.Concat` to
+            // pass to `value.StartsWith`. The defensive / paradigmatic
+            // alternative — structural multi-check via BCL primitives
+            // alone — eliminates the string allocation entirely:
+            //   1. `value.StartsWith(src, OrdinalIgnoreCase)` — BCL
+            //      string-prefix match, no allocation.
+            //   2. `value.Length > src.Length` — BCL length check.
+            //   3. `value.[src.Length] = '_'` — BCL char indexer.
+            // The three checks compose without producing any
+            // intermediate string. Same observable behavior as the
+            // sentinel form; data-structure-oriented (no string-
+            // concatenation primitive used).
             let prefixMatch =
                 knownSynthSources
                 |> List.tryFind (fun src ->
-                    let sentinel = System.String.Concat(src, "_")  // LINT-ALLOW: terminal text-emission boundary
-                    value.StartsWith(sentinel, System.StringComparison.Ordinal))
+                    value.StartsWith(src, System.StringComparison.Ordinal)
+                    && value.Length > src.Length
+                    && value.[src.Length] = '_')
             match prefixMatch with
             | Some src ->
                 let basis = value.Substring(src.Length + 1)
@@ -183,12 +212,38 @@ module SsKey =
         match key with
         | OssysOriginal g -> g.ToString "N"
         | Synthesized (source, basis) ->
-            // Round-trip with the `original` parser at line ~119:
-            // `original` reads `<src>_<basis>` and recovers the
-            // pair; `rootOriginal` projects `Synthesized (src, basis)`
-            // back to the same surface form. Composes via
-            // `String.Concat` (no `sprintf`).
-            System.String.Concat(source, "_", basis)  // LINT-ALLOW: terminal text-emission boundary
+            // **Per-site analysis (chapter 3.5 deep audit, hard
+            // line)**: `rootOriginal` is the *terminal diagnostic
+            // projection* of `SsKey` to a single human-readable
+            // string. Alternatives considered for the `Synthesized`
+            // case:
+            //   - **Typed JSON emission via `Utf8JsonWriter`**:
+            //     would change the wire format
+            //     (`{kind:"synthesized", source, basis}` vs
+            //     `<source>_<basis>`); breaks 4+ emitter consumers
+            //     (`JsonEmitter`, `DistributionsEmitter`,
+            //     `RawTextEmitter` comments, `RefactorLogEmitter`
+            //     UUIDv5 input). Architectural; deferred to
+            //     chapter 4+ when typed `SsKey` payload propagates
+            //     through `LineageEvent` and `DiagnosticEntry`.
+            //   - **Pattern-match at each consumer**: each consumer
+            //     would build its own typed string form for SsKey;
+            //     duplicates the projection logic at four sites.
+            //     Worse than centralizing here.
+            //   - **`StringBuilder.Append` chain**: concatenation
+            //     under the hood; same Big-O; less readable.
+            //   - **Typed `SsKey` carried through to the terminal
+            //     UI / JSON serializer**: the right architectural
+            //     answer; deferred (see Chapter 4+).
+            //   - **Adopted: `String.concat "_"` over typed list**.
+            //     Terminal-text-emission boundary; the typed
+            //     2-element list IS the structure; the separator
+            //     `_` is parameterized; the consumers ALREADY have
+            //     typed access via pattern-matching on `Synthesized
+            //     (source, basis)` directly when they need
+            //     structural data. `rootOriginal` is the *display
+            //     projection* alone.
+            String.concat "_" [ source; basis ]  // LINT-ALLOW: terminal diagnostic projection; typed `Synthesized (s, b)` available via pattern-match for structural consumers
         | DerivedFrom (parent, _) -> rootOriginal parent
         | V1Mapped (v1, _) -> v1.ToString "N"
 

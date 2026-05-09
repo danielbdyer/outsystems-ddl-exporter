@@ -60,15 +60,17 @@ module TableId =
         | [] -> Result.success { Schema = schema; Table = table }
         | errs -> Result.failure errs
 
-    /// `[schema].[table]` — SQL Server qualified-identifier form.
-    /// The single canonical rendering; emitters and adapters consume
-    /// this so the `[…]`/`.` bracketing doesn't recur at multiple
-    /// sites. Per the no-string-concatenation discipline (`DECISIONS
-    /// 2026-05-09`), composes via `String.Concat`'s 5-arg overload
-    /// over typed segments rather than `sprintf "[%s].[%s]"`. The
-    /// ScriptDom-adoption chapter (3.7 candidate) makes this surface
-    /// unnecessary by pushing identifier-bracketing into
-    /// `MultiPartIdentifier` typed AST; this helper retires when
-    /// ScriptDom lands.
-    let qualified (t: TableId) : string =
-        System.String.Concat("[", t.Schema, "].[", t.Table, "]")  // LINT-ALLOW: terminal text-emission boundary
+    // Per chapter 3.5 deep audit (2026-05-09): the bracket-quoted
+    // SQL identifier form `[schema].[table]` is a SQL-rendering
+    // concern, not a Core concern. The canonical bracket-quoting
+    // implementation is `Microsoft.SqlServer.TransactSql.ScriptDom`'s
+    // `Identifier.EncodeIdentifier(string)` static method (the
+    // use-case-specific library for SQL identifier handling). Per
+    // hexagonal architecture, ScriptDom belongs in SSDT, not Core.
+    //
+    // The `qualified` helper retired from Core — `TableId` itself
+    // remains as the structural value object; SQL rendering moves
+    // to `Projection.Targets.SSDT/Render.tableQualified`, which
+    // delegates to ScriptDom. Consumers (`RefactorLogEmitter`,
+    // `Render`, `Bulk.copyRows`) call `Render.tableQualified`
+    // directly.

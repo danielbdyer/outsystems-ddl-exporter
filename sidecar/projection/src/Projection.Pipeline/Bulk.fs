@@ -105,7 +105,7 @@ module Bulk =
                     SqlBulkCopyOptions.KeepIdentity
                     ||| SqlBulkCopyOptions.KeepNulls
                 use bulk = new SqlBulkCopy(cnn, opts, null)
-                bulk.DestinationTableName <- TableId.qualified table
+                bulk.DestinationTableName <- Render.tableQualified table
                 for c in shape do
                     bulk.ColumnMappings.Add(c.Column, c.Column) |> ignore
                 bulk.BulkCopyTimeout <- 0

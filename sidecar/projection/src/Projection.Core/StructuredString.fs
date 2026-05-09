@@ -53,11 +53,14 @@ module StructuredField =
     let create (name: string) (value: string) : StructuredField =
         { Name = name; Value = value }
 
-    /// Render one field as `name=value`. Punctuation lives here
-    /// (and only here); changing the separator or the equals sign
-    /// is a one-line edit.
+    /// Render one field as `name=value`. Per chapter 3.5 deep
+    /// audit (2026-05-09): `String.concat ""` over a typed
+    /// 3-element list is F#'s canonical "join all of these
+    /// strings" primitive — the empty separator names "no
+    /// separator" structurally. Punctuation (`=`) is structurally
+    /// present as a list element, not embedded in a format string.
     let render (f: StructuredField) : string =
-        System.String.Concat(f.Name, "=", f.Value)
+        String.concat "" [ f.Name; "="; f.Value ]
 
 [<RequireQualifiedAccess>]
 module StructuredString =
@@ -95,7 +98,11 @@ module StructuredString =
                 s.Fields
                 |> List.map StructuredField.render
                 |> String.concat ", "
-            System.String.Concat(s.Tag, "(", inner, ")")
+            // Per chapter 3.5 deep audit (2026-05-09): `String.concat
+            // ""` over a typed 4-element list — the empty separator
+            // names "no separator"; the punctuation (`(` and `)`) is
+            // structurally present as list elements, not embedded.
+            String.concat "" [ s.Tag; "("; inner; ")" ]
 
 /// Invariant-culture integer formatters. Diagnostic strings carry
 /// numeric values; rendering through invariant culture keeps T1

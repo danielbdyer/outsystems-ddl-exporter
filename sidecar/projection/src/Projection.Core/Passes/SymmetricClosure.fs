@@ -45,12 +45,23 @@ module SymmetricClosure =
         // (original-key, "inverse").
         match SsKey.derivedFrom r.SsKey inverseReason with
         | Success k  -> k
-        | Failure es ->
-            // SsKey.derivedFrom only fails on blank reason; "inverse" is
-            // a compile-time literal, so this branch is unreachable. Fail
-            // loudly if the invariant is ever violated.
-            let codes = es |> List.map (fun e -> e.Code) |> String.concat ", "
-            invalidOp $"symmetricClosure: SsKey.derivedFrom rejected reserved reason ({codes})"
+        | Failure _ ->
+            // Per chapter 3.5 deep audit (2026-05-09):
+            // `SsKey.derivedFrom` only fails on blank `reason`;
+            // `inverseReason` is the `[<Literal>]` constant
+            // `"inverse"`, so this branch is unreachable by F#
+            // type-system construction. The legacy
+            // implementation built a debug string from the
+            // (unreachable-by-construction) error codes via
+            // `String.concat ", "` + interpolated string —
+            // both string-concatenation primitives. Defensive:
+            // bare static phrase to `invalidOp`; the BCL
+            // `InvalidOperationException` carries enough context
+            // (call stack + the static phrase) for postmortem
+            // diagnosis. The unreachable error-codes detail
+            // gains nothing at the cost of two concatenation
+            // primitives.
+            invalidOp "symmetricClosure: SsKey.derivedFrom rejected the reserved 'inverse' reason; this branch is structurally unreachable."
 
     /// Build the inverse reference if the target kind has a primary key.
     /// Returns `None` (with a documented skip-reason) when the target

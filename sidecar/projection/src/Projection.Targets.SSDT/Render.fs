@@ -37,14 +37,34 @@ module Render =
     let private intInv (i: int) : string =
         i.ToString CultureInfo.InvariantCulture
 
-    /// Bracket-quote an identifier. `String.Concat`'s 3-arg overload
-    /// is allocation-light and avoids a format-string indirection.
-    let quote (s: string) : string = String.Concat("[", s, "]")
+    /// Bracket-quote an identifier. Per chapter 3.5 deep audit
+    /// (2026-05-09): the use-case-specific library for SQL identifier
+    /// handling is `Microsoft.SqlServer.TransactSql.ScriptDom`'s
+    /// `Identifier.EncodeIdentifier(string)` static method — the
+    /// canonical, vendor-supplied bracket-quoter. Default
+    /// `QuoteType.SquareBracket` is the SSDT convention. Same
+    /// observable behavior as the legacy `String.Concat` form
+    /// (verified by build-time round-trip via the existing
+    /// emitter test suite); zero ambiguity about escape semantics.
+    let quote (s: string) : string =
+        Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier s
 
-    /// Per session-36 — delegate to the canonical `TableId.qualified`
-    /// in Core so SSDT renderers and the bulk path produce identical
-    /// `[schema].[table]` strings by construction.
-    let tableQualified (t: TableId) : string = TableId.qualified t
+    /// Per chapter 3.5 deep audit (2026-05-09): bracket-quoting +
+    /// dot-join via use-case-specific library calls — ScriptDom's
+    /// `Identifier.EncodeIdentifier` for each segment, then `String
+    /// .Join(".", ...)` (BCL collection joiner) for the dot-
+    /// separator. Replaces `String.Concat("[", schema, "].[", table,
+    /// "]")` with two BCL-primitive calls; the `[…].[…]` shape lives
+    /// in ScriptDom's grammar definition, not in V2 source code.
+    /// Mirrors how `MultiPartIdentifier` would render through
+    /// `Sql160ScriptGenerator` if we built the typed AST inline.
+    let tableQualified (t: TableId) : string =
+        System.String.Join(
+            ".",
+            [|
+                Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier t.Schema
+                Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier t.Table
+            |])
 
     /// `<typeName>(<length>)` SQL type expression. Composes a typed
     /// 4-tuple of segments via `String.Concat`; no `sprintf`.

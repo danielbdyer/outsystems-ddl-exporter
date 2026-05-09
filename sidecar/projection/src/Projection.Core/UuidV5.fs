@@ -55,16 +55,58 @@ module UuidV5 =
         Array.Reverse(b, 6, 2)
         Guid(b)
 
-    /// Total. RFC 4122 §4.3 name-based UUID (version 5). Pure;
-    /// deterministic across runs and platforms.
-    let create (namespaceGuid: Guid) (name: string) : Guid =
-        let nsBytes = toBigEndian namespaceGuid
-        let nameBytes = Encoding.UTF8.GetBytes(name)
-        let combined = Array.append nsBytes nameBytes
-        let hash = SHA1.HashData(combined)
-        let bytes = Array.sub hash 0 16
+    /// Apply the RFC 4122 §4.3 version-5 + variant bit-set to a
+    /// fresh 16-byte buffer derived from a SHA-1 digest. Mutation
+    /// is local to the function (the buffer is a private copy);
+    /// the returned `Guid` is immutable.
+    let private finalizeUuidV5 (sha1Hash: byte[]) : Guid =
+        let bytes = Array.sub sha1Hash 0 16
         // Version 5: high 4 bits of byte[6] = 0101.
         bytes.[6] <- (bytes.[6] &&& 0x0Fuy) ||| 0x50uy
         // RFC 4122 variant: high 2 bits of byte[8] = 10.
         bytes.[8] <- (bytes.[8] &&& 0x3Fuy) ||| 0x80uy
         fromBigEndian bytes
+
+    /// Total. RFC 4122 §4.3 name-based UUID (version 5). Pure;
+    /// deterministic across runs and platforms. The string `name`
+    /// is encoded as UTF-8 bytes; for typed component-list inputs
+    /// (chapter 3.5 deep audit), prefer `createFromSegments` to
+    /// avoid the intermediate concatenated string.
+    let create (namespaceGuid: Guid) (name: string) : Guid =
+        let nsBytes = toBigEndian namespaceGuid
+        let nameBytes = Encoding.UTF8.GetBytes(name)
+        let combined = Array.append nsBytes nameBytes
+        finalizeUuidV5 (SHA1.HashData(combined))
+
+    /// Total. RFC 4122 §4.3 UUIDv5 over a *typed byte-segment list*
+    /// joined by a single separator byte. Per chapter 3.5 deep audit
+    /// (2026-05-09) — the data-structure-oriented form: typed list
+    /// of UTF-8-byte segments flows in via BCL `SHA1.TransformBlock`
+    /// incremental hashing; no intermediate concatenated string is
+    /// allocated. Byte-equivalent to `create namespaceGuid (String
+    /// .concat <sep> segments)` (UTF-8 of `"a:b"` is identical to
+    /// UTF-8(`"a"`) + 0x3A + UTF-8(`"b"`)), so consumers migrating
+    /// from string-form get the same output Guid.
+    ///
+    /// LINT-ALLOW-FILE-MUTATION already covers the
+    /// `SHA1.TransformBlock` mutation surface.
+    let createFromSegments
+        (namespaceGuid: Guid)
+        (separator: byte)
+        (segments: byte[] list)
+        : Guid =
+        let nsBytes = toBigEndian namespaceGuid
+        use sha1 = SHA1.Create()
+        sha1.TransformBlock(nsBytes, 0, nsBytes.Length, null, 0) |> ignore
+        let sepBuffer = [| separator |]
+        let mutable first = true
+        for seg in segments do
+            if not first then
+                sha1.TransformBlock(sepBuffer, 0, 1, null, 0) |> ignore
+            first <- false
+            sha1.TransformBlock(seg, 0, seg.Length, null, 0) |> ignore
+        sha1.TransformFinalBlock([||], 0, 0) |> ignore
+        // BCL `SHA1.Hash` returns `byte[] | null` per the F# 9
+        // nullness annotation, but it's non-null after a
+        // `TransformFinalBlock` call. Coerce via `nonNull`.
+        finalizeUuidV5 (nonNull sha1.Hash)
