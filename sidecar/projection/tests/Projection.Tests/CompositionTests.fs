@@ -68,10 +68,16 @@ let private syntheticEvaluate
     { AttributeKey = attr.SsKey; InterventionId = id }
 
 let private syntheticBuildEvent (decision: SyntheticDecision) : LineageEvent =
+    // Chapter-3.6 slice-β: the synthetic decision used by
+    // `Composition.fanOut` tests carries a `SyntheticDecision`
+    // shape with no real outcome DU; the `AnnotationDetail.Label`
+    // free-form variant is the right surface here. Production
+    // pass drivers (Nullability/UniqueIndex/ForeignKey/
+    // CategoricalUniqueness) use their typed variants.
     { PassName      = "synthetic"
       PassVersion   = 1
       SsKey         = decision.AttributeKey
-      TransformKind = Annotated decision.InterventionId }
+      TransformKind = Annotated (Label decision.InterventionId) }
 
 let private syntheticConfig : Composition.FanOutConfig<Kind * Attribute, SyntheticConfig, SyntheticDecision, SyntheticDecisionSet> = {
     InterventionFilter = syntheticInterventionFilter

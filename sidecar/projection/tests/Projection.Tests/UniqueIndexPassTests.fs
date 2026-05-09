@@ -14,7 +14,7 @@ open Projection.Tests.Fixtures
 // indexes synthesize a catalog with them attached.
 // ---------------------------------------------------------------------------
 
-let private ssKey (s: string) : SsKey = SsKey.original s |> Result.value
+let private ssKey (s: string) : SsKey = testKey s
 let private name  (s: string) : Name  = Name.create s   |> Result.value
 
 let private mkIndex
@@ -136,20 +136,20 @@ let ``one intervention: emits one Annotated lineage event per decision`` () =
 
 [<Fact>]
 let ``one intervention: lineage event detail names the intervention id and an outcome category`` () =
+    // Chapter-3.6 slice-β: typed `AnnotationDetail.UniqueIndexDecision`
+    // payload — outcome flows through structurally.
     let policy = policyWithIntervention "v1-style-2026" (mkConfig true true)
     let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
-    let categories = [ "EnforceUnique"; "DoNotEnforce" ]
     Assert.All(lineage.Trail, fun e ->
         match e.TransformKind with
-        | Annotated detail ->
-            Assert.Contains("v1-style-2026", detail)
-            let mentionsOne =
-                categories |> List.exists (fun cat -> detail.Contains(cat))
-            Assert.True(
-                mentionsOne,
-                sprintf "Detail '%s' should mention an outcome category" detail)
+        | Annotated (UniqueIndexDecision (id, outcome)) ->
+            Assert.Equal("v1-style-2026", id)
+            // Outcome is one of the two UniqueIndexOutcome variants.
+            match outcome with
+            | UniqueIndexOutcome.EnforceUnique _
+            | UniqueIndexOutcome.DoNotEnforce _ -> ()
         | other ->
-            Assert.Fail(sprintf "Expected Annotated, got %A" other))
+            Assert.Fail(sprintf "Expected Annotated (UniqueIndexDecision _), got %A" other))
 
 [<Fact>]
 let ``one intervention: AlreadyUnique decisions surface for catalog-declared unique indexes`` () =
@@ -359,7 +359,7 @@ let ``catalog passes through unchanged: structural by signature`` () =
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``V1 UniqueIndex: opportunity-stream emits a Warning entry for every DoNotEnforce decision`` () =
+let ``V1 UniqueIndex: opportunity-stream emits a DiagnosticSeverity.Warning entry for every DoNotEnforce decision`` () =
     // single-column off, composite on — produces PolicyDisabled
     // decisions for the two non-unique single-column indexes in the
     // fixture (orderSingle, countrySingle).
@@ -386,11 +386,11 @@ let ``V1 UniqueIndex: opportunity-stream emits a Warning entry for every DoNotEn
         Assert.True(e.SsKey.IsSome)
         Assert.Contains(e.SsKey.Value, decisionKeys))
 
-    // Every entry is Warning severity, sourced from the pass, with a
+    // Every entry is DiagnosticSeverity.Warning severity, sourced from the pass, with a
     // tightening.uniqueIndex.* code prefix and the intervention id in
     // metadata.
     Assert.All(entries, fun e ->
-        Assert.Equal(Warning, e.Severity)
+        Assert.Equal(DiagnosticSeverity.Warning, e.Severity)
         Assert.Equal("uniqueIndex", e.Source)
         Assert.StartsWith("tightening.uniqueIndex.", e.Code)
         Assert.True(e.Metadata.ContainsKey "interventionId")

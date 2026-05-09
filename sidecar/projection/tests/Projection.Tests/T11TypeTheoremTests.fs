@@ -53,9 +53,9 @@ let ``T11 (type theorem): RawTextEmitter.emitSlices key-set equals Catalog.allKi
     let enriched = enrich sampleCatalog
     let expected = expectedKeyset enriched
     match RawTextEmitter.emitSlices enriched with
-    | Result.Ok artifact ->
+    | Ok artifact ->
         Assert.Equal<Set<SsKey>>(expected, ArtifactByKind.keys artifact)
-    | Result.Error err ->
+    | Error err ->
         Assert.Fail(sprintf "RawTextEmitter.emitSlices returned %A" err)
 
 [<Fact>]
@@ -63,9 +63,9 @@ let ``T11 (type theorem): JsonEmitter.emitSlices key-set equals Catalog.allKinds
     let enriched = enrich sampleCatalog
     let expected = expectedKeyset enriched
     match JsonEmitter.emitSlices enriched with
-    | Result.Ok artifact ->
+    | Ok artifact ->
         Assert.Equal<Set<SsKey>>(expected, ArtifactByKind.keys artifact)
-    | Result.Error err ->
+    | Error err ->
         Assert.Fail(sprintf "JsonEmitter.emitSlices returned %A" err)
 
 [<Fact>]
@@ -73,9 +73,9 @@ let ``T11 (type theorem): DistributionsEmitter.emitSlices key-set equals Catalog
     let enriched = enrich sampleCatalog
     let expected = expectedKeyset enriched
     match DistributionsEmitter.emitSlices enriched sampleProfile with
-    | Result.Ok artifact ->
+    | Ok artifact ->
         Assert.Equal<Set<SsKey>>(expected, ArtifactByKind.keys artifact)
-    | Result.Error err ->
+    | Error err ->
         Assert.Fail(sprintf "DistributionsEmitter.emitSlices returned %A" err)
 
 // ---------------------------------------------------------------------------
@@ -90,15 +90,15 @@ let ``T11 (sibling commutativity): RawText, Json, Distributions key-sets are pai
     let enriched = enrich sampleCatalog
     let rawTextKeys =
         match RawTextEmitter.emitSlices enriched with
-        | Result.Ok a -> ArtifactByKind.keys a
-        | Result.Error err -> Assert.Fail(sprintf "RawText: %A" err); Set.empty
+        | Ok a -> ArtifactByKind.keys a
+        | Error err -> Assert.Fail(sprintf "RawText: %A" err); Set.empty
     let jsonKeys =
         match JsonEmitter.emitSlices enriched with
-        | Result.Ok a -> ArtifactByKind.keys a
-        | Result.Error err -> Assert.Fail(sprintf "Json: %A" err); Set.empty
+        | Ok a -> ArtifactByKind.keys a
+        | Error err -> Assert.Fail(sprintf "Json: %A" err); Set.empty
     let distKeys =
         match DistributionsEmitter.emitSlices enriched sampleProfile with
-        | Result.Ok a -> ArtifactByKind.keys a
-        | Result.Error err -> Assert.Fail(sprintf "Distributions: %A" err); Set.empty
+        | Ok a -> ArtifactByKind.keys a
+        | Error err -> Assert.Fail(sprintf "Distributions: %A" err); Set.empty
     Assert.Equal<Set<SsKey>>(rawTextKeys, jsonKeys)
     Assert.Equal<Set<SsKey>>(jsonKeys, distKeys)

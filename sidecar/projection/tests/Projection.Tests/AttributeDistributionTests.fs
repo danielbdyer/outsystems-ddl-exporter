@@ -28,11 +28,11 @@ let ``create: valid full distribution succeeds`` () =
             false
             probe
     match result with
-    | Success cat ->
+    | Ok cat ->
         Assert.Equal(countryCodeKey, cat.AttributeKey)
         Assert.Equal(3L, cat.DistinctCount)
         Assert.False(cat.IsTruncated)
-    | Failure errs ->
+    | Error errs ->
         Assert.Fail(sprintf "Expected success, got %A" errs)
 
 [<Fact>]
@@ -46,8 +46,8 @@ let ``create: rejects negative DistinctCount`` () =
             true
             probe
     match result with
-    | Success _ -> Assert.Fail "Expected failure for negative DistinctCount"
-    | Failure errs ->
+    | Ok _ -> Assert.Fail "Expected failure for negative DistinctCount"
+    | Error errs ->
         Assert.Contains(errs, fun e -> e.Code = "categoricalDistribution.distinctCount.negative")
 
 [<Fact>]
@@ -61,8 +61,8 @@ let ``create: rejects negative per-value count`` () =
             false
             probe
     match result with
-    | Success _ -> Assert.Fail "Expected failure for negative per-value count"
-    | Failure errs ->
+    | Ok _ -> Assert.Fail "Expected failure for negative per-value count"
+    | Error errs ->
         Assert.Contains(errs, fun e -> e.Code = "categoricalDistribution.frequencyCount.negative")
 
 [<Fact>]
@@ -76,8 +76,8 @@ let ``create: rejects truncation contradiction (not truncated but DistinctCount 
             false                      // but not truncated → contradiction
             probe
     match result with
-    | Success _ -> Assert.Fail "Expected truncation contradiction failure"
-    | Failure errs ->
+    | Ok _ -> Assert.Fail "Expected truncation contradiction failure"
+    | Error errs ->
         Assert.Contains(errs, fun e -> e.Code = "categoricalDistribution.truncation.contradiction")
 
 [<Fact>]
@@ -91,11 +91,11 @@ let ``create: accepts truncated distribution where DistinctCount > Frequencies.L
             true
             probe
     match result with
-    | Success cat ->
+    | Ok cat ->
         Assert.Equal(195L, cat.DistinctCount)
         Assert.True(cat.IsTruncated)
         Assert.Equal(3, List.length cat.Frequencies)
-    | Failure errs ->
+    | Error errs ->
         Assert.Fail(sprintf "Expected success, got %A" errs)
 
 [<Fact>]
@@ -111,10 +111,10 @@ let ``create: sorts Frequencies alphabetically by value for determinism`` () =
             false
             probe
     match result with
-    | Success cat ->
+    | Ok cat ->
         let values = cat.Frequencies |> List.map fst
         Assert.Equal<string list>([ "CA"; "MX"; "US" ], values)
-    | Failure errs ->
+    | Error errs ->
         Assert.Fail(sprintf "Expected success, got %A" errs)
 
 // ---------------------------------------------------------------------------
@@ -241,13 +241,13 @@ let ``numeric create: monotonic percentiles + adequate sample size succeeds`` ()
             100L // SampleSize
             probe
     match result with
-    | Success dist ->
+    | Ok dist ->
         Assert.Equal(countryCodeKey, dist.AttributeKey)
         Assert.Equal(0m, dist.Min)
         Assert.Equal(50m, dist.P75)
         Assert.Equal(100m, dist.Max)
         Assert.Equal(100L, dist.SampleSize)
-    | Failure errs ->
+    | Error errs ->
         Assert.Fail(sprintf "Expected success, got %A" errs)
 
 [<Fact>]
@@ -262,9 +262,9 @@ let ``numeric create: degenerate Min=Max=all-percentiles succeeds`` () =
             50L
             probe
     match result with
-    | Success dist ->
+    | Ok dist ->
         Assert.True(NumericDistribution.isDegenerate dist)
-    | Failure errs ->
+    | Error errs ->
         Assert.Fail(sprintf "Expected success, got %A" errs)
 
 [<Fact>]
@@ -277,8 +277,8 @@ let ``numeric create: rejects sample size below floor of 5`` () =
             4L
             probe
     match result with
-    | Success _ -> Assert.Fail "Expected failure for SampleSize < 5"
-    | Failure errs ->
+    | Ok _ -> Assert.Fail "Expected failure for SampleSize < 5"
+    | Error errs ->
         Assert.Contains(errs, fun e -> e.Code = "numericDistribution.sampleSize.belowFloor")
 
 [<Fact>]
@@ -291,8 +291,8 @@ let ``numeric create: rejects negative sample size`` () =
             -1L
             probe
     match result with
-    | Success _ -> Assert.Fail "Expected failure for negative SampleSize"
-    | Failure errs ->
+    | Ok _ -> Assert.Fail "Expected failure for negative SampleSize"
+    | Error errs ->
         Assert.Contains(errs, fun e -> e.Code = "numericDistribution.sampleSize.negative")
 
 [<Fact>]
@@ -305,8 +305,8 @@ let ``numeric create: rejects out-of-order percentiles (P50 > P75)`` () =
             100L
             probe
     match result with
-    | Success _ -> Assert.Fail "Expected failure for non-monotonic percentiles"
-    | Failure errs ->
+    | Ok _ -> Assert.Fail "Expected failure for non-monotonic percentiles"
+    | Error errs ->
         Assert.Contains(errs, fun e -> e.Code = "numericDistribution.percentiles.nonMonotonic")
 
 [<Fact>]
@@ -319,8 +319,8 @@ let ``numeric create: rejects Min greater than P25`` () =
             100L
             probe
     match result with
-    | Success _ -> Assert.Fail "Expected failure: Min > P25"
-    | Failure errs ->
+    | Ok _ -> Assert.Fail "Expected failure: Min > P25"
+    | Error errs ->
         Assert.Contains(errs, fun e -> e.Code = "numericDistribution.percentiles.nonMonotonic")
 
 [<Fact>]
@@ -333,8 +333,8 @@ let ``numeric create: rejects P99 greater than Max`` () =
             100L
             probe
     match result with
-    | Success _ -> Assert.Fail "Expected failure: P99 > Max"
-    | Failure errs ->
+    | Ok _ -> Assert.Fail "Expected failure: P99 > Max"
+    | Error errs ->
         Assert.Contains(errs, fun e -> e.Code = "numericDistribution.percentiles.nonMonotonic")
 
 // ---------------------------------------------------------------------------

@@ -280,10 +280,36 @@ module SelectionPolicy =
 [<RequireQualifiedAccess>]
 module EmissionPolicy =
 
+    let private allFalse =
+        ValidationError.create
+            "emissionPolicy.allFalse"
+            "EmissionPolicy must enable at least one of EmitSchema / EmitData / EmitDiagnostics — a no-op policy is a programmer error."
+
+    /// Smart constructor enforcing the per-A39 invariant: at least
+    /// one artifact family is enabled. A no-op `EmissionPolicy` is
+    /// a programmer error (the catalog-emit pipeline produces zero
+    /// output, which is silently wrong rather than loudly missing).
+    /// Chapter-3.6 cash-out of audit Top-10 #8: future-proofs
+    /// against invariant insertion.
+    let create
+        (emitSchema: bool)
+        (emitData: bool)
+        (emitDiagnostics: bool)
+        : Result<EmissionPolicy> =
+        if not emitSchema && not emitData && not emitDiagnostics then
+            Result.failureOf allFalse
+        else
+            Result.success
+                { EmitSchema      = emitSchema
+                  EmitData        = emitData
+                  EmitDiagnostics = emitDiagnostics }
+
     /// Default emission: schema only. The most common configuration and
     /// the one where the algebra's structural claims are sharpest.
+    /// Constructed via the smart constructor; `Result.value` is safe
+    /// because the constants satisfy the invariant by construction.
     let empty : EmissionPolicy =
-        { EmitSchema = true; EmitData = false; EmitDiagnostics = false }
+        create true false false |> Result.value
 
     /// Schema artifacts only.
     let schemaOnly : EmissionPolicy = empty
@@ -291,11 +317,11 @@ module EmissionPolicy =
     /// Data artifacts only — for full-export pipelines that keep schema
     /// emission elsewhere.
     let dataOnly : EmissionPolicy =
-        { EmitSchema = false; EmitData = true; EmitDiagnostics = false }
+        create false true false |> Result.value
 
     /// All three artifact families together.
     let combined : EmissionPolicy =
-        { EmitSchema = true; EmitData = true; EmitDiagnostics = true }
+        create true true true |> Result.value
 
 
 [<RequireQualifiedAccess>]

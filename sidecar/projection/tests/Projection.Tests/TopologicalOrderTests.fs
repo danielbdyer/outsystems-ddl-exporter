@@ -50,7 +50,7 @@ let ``containsKind returns true for present keys, false for absent`` () =
     Assert.True (TopologicalOrder.containsKind customerKey threeKindOrder)
     Assert.True (TopologicalOrder.containsKind orderKey    threeKindOrder)
     Assert.True (TopologicalOrder.containsKind countryKey  threeKindOrder)
-    let unknown = SsKey.original "OS_KIND_Unknown" |> Result.value
+    let unknown = kindKey ["Unknown"]
     Assert.False(TopologicalOrder.containsKind unknown threeKindOrder)
 
 [<Fact>]
@@ -61,7 +61,7 @@ let ``positionOf returns 0-based index for present keys`` () =
 
 [<Fact>]
 let ``positionOf returns None for absent keys`` () =
-    let unknown = SsKey.original "OS_KIND_Unknown" |> Result.value
+    let unknown = kindKey ["Unknown"]
     Assert.Equal(None, TopologicalOrder.positionOf unknown threeKindOrder)
 
 // ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ let ``precedes is false when parent index >= child index`` () =
 
 [<Fact>]
 let ``precedes is false when either kind is absent`` () =
-    let unknown = SsKey.original "OS_KIND_Unknown" |> Result.value
+    let unknown = kindKey ["Unknown"]
     Assert.False(TopologicalOrder.precedes unknown    customerKey threeKindOrder)
     Assert.False(TopologicalOrder.precedes customerKey unknown    threeKindOrder)
 

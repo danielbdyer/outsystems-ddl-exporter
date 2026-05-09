@@ -88,9 +88,9 @@ let private dumpBench (tag: string) : unit =
         printfn ""
         printfn "Bench (sorted by total time):"
         printfn "%s" (Bench.renderTable stats)
-        let path = Bench.defaultPath (Directory.GetCurrentDirectory()) tag
+        let path = BenchSink.defaultPath (Directory.GetCurrentDirectory()) tag
         try
-            Bench.persistJson path tag stats
+            BenchSink.persistJson path tag stats
             printfn ""
             printfn "  bench snapshot: %s" path
         with ex ->
@@ -104,14 +104,14 @@ let private runEmit (inputPath: string) (outputDir: string) : int =
         let result = task.GetAwaiter().GetResult()
         let exitCode =
             match result with
-            | Success paths ->
+            | Ok paths ->
                 printfn "projection: wrote %d artifact(s) to %s" paths.Length outputDir
                 paths
                 |> List.iter (fun p ->
                     let info = FileInfo p
                     printfn "  %s (%d bytes)" p info.Length)
                 0
-            | Failure errors ->
+            | Error errors ->
                 (
                     Console.Error.WriteLine "projection: parse failed:"
                     printErrors Console.Error errors
@@ -133,13 +133,13 @@ let private runDeploy (inputPath: string) : int =
         let result = task.GetAwaiter().GetResult()
         let exitCode =
             match result with
-            | Success (outputs, report) ->
+            | Ok (outputs, report) ->
                 printfn
                     "projection: emitted %d bytes of SSDT, %d bytes of JSON, %d bytes of distributions"
                     outputs.Sql.Length
                     outputs.Json.Length
                     outputs.Distributions.Length
-                if report.Success then
+                if report.Ok then
                     printfn
                         "projection: deploy succeeded — database `%s`, %d table(s) landed"
                         report.Database
@@ -160,7 +160,7 @@ let private runDeploy (inputPath: string) : int =
                         Console.Error.Write "  "
                         Console.Error.WriteLine line
                     3
-            | Failure errors ->
+            | Error errors ->
                 (
                     Console.Error.WriteLine "projection: parse failed:"
                     printErrors Console.Error errors
@@ -183,7 +183,7 @@ let private runCanary (sourceDdlPath: string) : int =
         let result = task.GetAwaiter().GetResult()
         let exitCode =
             match result with
-            | Success report ->
+            | Ok report ->
                 printfn
                     "projection: source deployed %d table(s); target deployed %d table(s)"
                     report.SourceReport.TablesCreated
@@ -197,7 +197,7 @@ let private runCanary (sourceDdlPath: string) : int =
                         "projection: canary RED — PhysicalSchema diff non-empty:\n%s"
                         (PhysicalSchema.renderDiff report.Diff)
                     5
-            | Failure errors ->
+            | Error errors ->
                 (
                     Console.Error.WriteLine "projection: canary failed:"
                     printErrors Console.Error errors
@@ -215,12 +215,6 @@ let main argv =
         runDeploy inputPath
     | [| "canary"; sourceDdlPath |] ->
         runCanary sourceDdlPath
-    // Back-compat: bare `projection <input> <output-dir>` keeps the M1 surface
-    // working until consumers migrate to the explicit `emit` subcommand.
-    | [| inputPath; outputDir |] when
-        not (inputPath = "deploy" || inputPath = "emit" || inputPath = "canary")
-        ->
-        runEmit inputPath outputDir
     | [||]
     | [| "--help" |]
     | [| "-h" |] ->

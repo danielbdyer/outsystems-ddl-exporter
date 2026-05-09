@@ -170,7 +170,7 @@ let private addReference (sourceKey: SsKey) (targetKey: SsKey) (refKey: SsKey) (
 [<Fact>]
 let ``cycle: Mode is Alphabetical when input contains a cycle`` () =
     // Add a reverse reference Customer → Order so we have a 2-cycle.
-    let backRefKey = SsKey.original "OS_REF_Customer_Order_back" |> Result.value
+    let backRefKey = refKey ["Customer"; "Order"; "back"]
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
@@ -179,7 +179,7 @@ let ``cycle: Mode is Alphabetical when input contains a cycle`` () =
 
 [<Fact>]
 let ``cycle: every kind still appears in Order under alphabetical fallback`` () =
-    let backRefKey = SsKey.original "OS_REF_Customer_Order_back" |> Result.value
+    let backRefKey = refKey ["Customer"; "Order"; "back"]
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
@@ -192,7 +192,7 @@ let ``cycle: every kind still appears in Order under alphabetical fallback`` () 
 
 [<Fact>]
 let ``cycle: at least one CycleDiagnostic is emitted`` () =
-    let backRefKey = SsKey.original "OS_REF_Customer_Order_back" |> Result.value
+    let backRefKey = refKey ["Customer"; "Order"; "back"]
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
@@ -209,7 +209,7 @@ let ``cycle: at least one CycleDiagnostic is emitted`` () =
 
 [<Fact>]
 let ``Tarjan: 2-cycle produces one SCC with both members`` () =
-    let backRefKey = SsKey.original "OS_REF_Customer_Order_back" |> Result.value
+    let backRefKey = refKey ["Customer"; "Order"; "back"]
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
@@ -222,7 +222,7 @@ let ``Tarjan: 2-cycle produces one SCC with both members`` () =
 
 [<Fact>]
 let ``Tarjan: SCC members are sorted by SsKey within the diagnostic`` () =
-    let backRefKey = SsKey.original "OS_REF_Customer_Order_back" |> Result.value
+    let backRefKey = refKey ["Customer"; "Order"; "back"]
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
@@ -233,7 +233,7 @@ let ``Tarjan: SCC members are sorted by SsKey within the diagnostic`` () =
 [<Fact>]
 let ``Tarjan: Country (no cycle) is not in any SCC`` () =
     // The 2-cycle is Customer↔Order; Country has no FK at all.
-    let backRefKey = SsKey.original "OS_REF_Customer_Order_back" |> Result.value
+    let backRefKey = refKey ["Customer"; "Order"; "back"]
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
@@ -246,7 +246,7 @@ let ``Tarjan: Country (no cycle) is not in any SCC`` () =
 
 [<Fact>]
 let ``Tarjan: deterministic — same cyclic input produces same SCC list`` () =
-    let backRefKey = SsKey.original "OS_REF_Customer_Order_back" |> Result.value
+    let backRefKey = refKey ["Customer"; "Order"; "back"]
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
@@ -256,7 +256,7 @@ let ``Tarjan: deterministic — same cyclic input produces same SCC list`` () =
 
 [<Fact>]
 let ``Tarjan: BreakableEdges is empty in v2 (resolver pending v3)`` () =
-    let backRefKey = SsKey.original "OS_REF_Customer_Order_back" |> Result.value
+    let backRefKey = refKey ["Customer"; "Order"; "back"]
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
@@ -270,7 +270,7 @@ let ``Tarjan: SCC reason explains why the cycle stayed unresolved`` () =
     // of the back-reference, so the resolver classifies both edges as
     // Other and refuses to break either one. The Reason field records
     // the class of failure.
-    let backRefKey = SsKey.original "OS_REF_Customer_Order_back" |> Result.value
+    let backRefKey = refKey ["Customer"; "Order"; "back"]
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
@@ -304,7 +304,7 @@ let ``contract: SCC enumeration is invariant under input permutation`` () =
 // closure runs.)
 // ---------------------------------------------------------------------------
 
-let private mkKey s = SsKey.original s |> Result.value
+let private mkKey s = testKey s
 let private mkName s = Name.create s |> Result.value
 
 let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Kind =

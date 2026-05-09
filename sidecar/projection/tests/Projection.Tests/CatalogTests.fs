@@ -53,9 +53,11 @@ let ``fixture: every kind has exactly one PK attribute (Id)`` () =
 
 [<Fact>]
 let ``A2: SsKey and Name are independently constructed and validated`` () =
-    Assert.True(Result.isFailure (SsKey.original ""))
+    // Chapter-3.6 slice-δ: typed-builder smart constructors directly
+    // (replaces the retired `SsKey.original` parser-shim).
+    Assert.True(Result.isFailure (SsKey.synthesized "OS_KIND" ""))
     Assert.True(Result.isFailure (Name.create ""))
-    Assert.True(Result.isSuccess (SsKey.original "OS_X"))
+    Assert.True(Result.isSuccess (SsKey.synthesized "OS_KIND" "X"))
     Assert.True(Result.isSuccess (Name.create "X"))
 
 // ---------------------------------------------------------------------------
@@ -86,7 +88,7 @@ let ``A4: kinds with same SsKey are identity-equal regardless of modality marks`
 let ``A4: kinds with different SsKey are NOT identity-equal even if all other fields match`` () =
     let imposter =
         { customer with
-            SsKey = SsKey.original "OS_KIND_Imposter" |> Result.value }
+            SsKey = kindKey ["Imposter"] }
     Assert.False(Kind.byIdentity customer imposter)
 
 // ---------------------------------------------------------------------------
@@ -117,7 +119,7 @@ let ``A4: Catalog.tryFindKind survives a rename (identity is not name)`` () =
 
 [<Fact>]
 let ``A4: Catalog.tryFindKind returns None for an unknown SsKey`` () =
-    let unknown = SsKey.original "OS_KIND_Unknown" |> Result.value
+    let unknown = kindKey ["Unknown"]
     Assert.Equal(None, Catalog.tryFindKind unknown sampleCatalog)
 
 // ---------------------------------------------------------------------------
@@ -127,19 +129,20 @@ let ``A4: Catalog.tryFindKind returns None for an unknown SsKey`` () =
 [<Property>]
 let ``A5: derived(parent, reason) is deterministic`` (s: NonEmptyString) =
     // FsCheck's NonEmptyString allows whitespace-only strings, which
-    // SsKey.original rightly rejects. Skip those samples; the property
-    // holds on the meaningful domain of non-blank identifiers.
+    // the typed `synthesized` smart constructor rightly rejects. Skip
+    // those samples; the property holds on the meaningful domain of
+    // non-blank identifiers.
     if System.String.IsNullOrWhiteSpace s.Get then true
     else
-        let parent = SsKey.original s.Get |> Result.value
-        let d1 = SsKey.derived parent "inverse" |> Result.value
-        let d2 = SsKey.derived parent "inverse" |> Result.value
+        let parent = SsKey.synthesized "TEST" s.Get |> Result.value
+        let d1 = SsKey.derivedFrom parent "inverse" |> Result.value
+        let d2 = SsKey.derivedFrom parent "inverse" |> Result.value
         d1 = d2
 
 [<Fact>]
 let ``A5: derived keys preserve traceability to the root original`` () =
-    let parent  = SsKey.original "OS_REF_Order_Customer" |> Result.value
-    let derived = SsKey.derived parent "inverse" |> Result.value
+    let parent  = refKey ["Order"; "Customer"]
+    let derived = SsKey.derivedFrom parent "inverse" |> Result.value
     Assert.Equal("OS_REF_Order_Customer", SsKey.rootOriginal derived)
     Assert.True(SsKey.isDerived derived)
     Assert.False(SsKey.isDerived parent)
@@ -147,16 +150,16 @@ let ``A5: derived keys preserve traceability to the root original`` () =
 
 [<Fact>]
 let ``A5: chained derivation reasons read root-to-leaf, oldest first`` () =
-    let parent = SsKey.original "OS_X" |> Result.value
-    let d1 = SsKey.derived parent "inverse" |> Result.value
-    let d2 = SsKey.derived d1 "shadow"      |> Result.value
+    let parent = testKey "OS_X"
+    let d1 = SsKey.derivedFrom parent "inverse" |> Result.value
+    let d2 = SsKey.derivedFrom d1 "shadow"      |> Result.value
     Assert.Equal<string list>([ "inverse"; "shadow" ], SsKey.derivationReasons d2)
 
 [<Fact>]
 let ``A5: derivation reasons cannot be blank`` () =
-    let parent = SsKey.original "OS_X" |> Result.value
-    Assert.True(Result.isFailure (SsKey.derived parent ""))
-    Assert.True(Result.isFailure (SsKey.derived parent "   "))
+    let parent = testKey "OS_X"
+    Assert.True(Result.isFailure (SsKey.derivedFrom parent ""))
+    Assert.True(Result.isFailure (SsKey.derivedFrom parent "   "))
 
 // ---------------------------------------------------------------------------
 // Fixture sanity — confirms the synthetic catalog is well-formed and

@@ -72,29 +72,18 @@ module ForeignKeyPass =
     [<Literal>]
     let private passName : string = "foreignKey"
 
-    /// Format the outcome for the lineage event's `Annotated` detail.
-    /// The full structured `ForeignKeyOutcome` lives in
-    /// `ForeignKeyDecisionSet.Decisions`; the trail carries a
-    /// human-readable summary so audit consumers can grep for outcome
-    /// categories without parsing decisions.
-    let private outcomeLabel (outcome: ForeignKeyOutcome) : string =
-        ForeignKeyOutcome.toDiagnosticString outcome
-
     /// One lineage event per decision. `Annotated` because the pass
     /// produces a decision (a real transformation in the audit sense)
     /// rather than observing without changing — same convention as
-    /// `NullabilityPass` and `UniqueIndexPass`.
+    /// `NullabilityPass` and `UniqueIndexPass`. Chapter-3.6 slice-β
+    /// widened the payload to the typed `AnnotationDetail.
+    /// ForeignKeyDecision` variant.
     let private decisionEvent (decision: ForeignKeyDecision) : LineageEvent =
         { PassName      = passName
           PassVersion   = version
           SsKey         = decision.ReferenceKey
           TransformKind =
-              Annotated
-                  (String.concat "" [
-                      decision.InterventionId
-                      " -> "
-                      outcomeLabel decision.Outcome
-                  ]) }
+              Annotated (ForeignKeyDecision (decision.InterventionId, decision.Outcome)) }
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// references by `SsKey` within each kind. Interventions are taken
@@ -157,32 +146,32 @@ module ForeignKeyPass =
         | ForeignKeyOutcome.EnforceConstraint (NoEvidenceObstacle _) ->
             None
         | ForeignKeyOutcome.EnforceConstraint (ScriptWithNoCheck orphanCount) ->
-            // Success-with-caveat: V2's NoCheck-mode workaround.
+            // Ok-with-caveat: V2's NoCheck-mode workaround.
             // V1's `(CreateConstraint=true, ScriptWithNoCheck=true)`
             // collapses to this evidence variant; the audit-trail
             // concern V1 surfaced via rationale strings is V2's
             // diagnostic emission.
             Some (mkEntry
-                    Warning
+                    DiagnosticSeverity.Warning
                     "tightening.foreignKey.scriptWithNoCheck"
                     (sprintf
                         "Foreign-key constraint scripted with NOCHECK because %d orphan row(s) were observed and operator policy allows it. Row-validation is deferred; remediate orphan rows before re-enabling enforcement."
                         orphanCount))
         | ForeignKeyOutcome.DoNotEnforce PolicyDisabled ->
             Some (mkEntry
-                    Warning
+                    DiagnosticSeverity.Warning
                     "tightening.foreignKey.policyDisabled"
                     "Foreign-key constraint was not created. Enable policy support before enforcement can proceed.")
         | ForeignKeyOutcome.DoNotEnforce (DataHasOrphans orphanCount) ->
             Some (mkEntry
-                    Warning
+                    DiagnosticSeverity.Warning
                     "tightening.foreignKey.dataHasOrphans"
                     (sprintf
                         "Foreign-key constraint was not created. Profile observed %d orphan row(s); remediate the data or enable AllowNoCheckCreation before enforcement can proceed."
                         orphanCount))
         | ForeignKeyOutcome.DoNotEnforce CrossSchemaBlocked ->
             Some (mkEntry
-                    Warning
+                    DiagnosticSeverity.Warning
                     "tightening.foreignKey.crossSchemaBlocked"
                     "Foreign-key constraint was not created. The reference crosses schema boundaries and AllowCrossSchema is disabled.")
         | ForeignKeyOutcome.DoNotEnforce CrossCatalogBlocked ->
@@ -191,7 +180,7 @@ module ForeignKeyPass =
             // Pattern-match completeness keeps the shape ready for
             // the IR refinement (ADMIRE.md 2026-05-11).
             Some (mkEntry
-                    Warning
+                    DiagnosticSeverity.Warning
                     "tightening.foreignKey.crossCatalogBlocked"
                     "Foreign-key constraint was not created. The reference crosses catalog boundaries and AllowCrossCatalog is disabled.")
         | ForeignKeyOutcome.DoNotEnforce DeleteRuleIgnored ->
@@ -203,12 +192,12 @@ module ForeignKeyPass =
             // V1-equivalent representation. See session 13's Skip
             // stub on this contract for the V1↔V2 mapping note.
             Some (mkEntry
-                    Warning
+                    DiagnosticSeverity.Warning
                     "tightening.foreignKey.deleteRuleIgnored"
                     "Foreign-key constraint was not created. The reference's delete rule resolved to Ignore.")
         | ForeignKeyOutcome.DoNotEnforce EvidenceMissing ->
             Some (mkEntry
-                    Warning
+                    DiagnosticSeverity.Warning
                     "tightening.foreignKey.evidenceMissing"
                     "Foreign-key constraint was not created. Profile probe did not succeed reliably; collect evidence before enforcement can proceed.")
         | ForeignKeyOutcome.DoNotEnforce MissingTarget ->
@@ -216,7 +205,7 @@ module ForeignKeyPass =
             // silently skipped references to missing targets; V2
             // surfaces the absence explicitly.
             Some (mkEntry
-                    Warning
+                    DiagnosticSeverity.Warning
                     "tightening.foreignKey.missingTarget"
                     "Foreign-key constraint was not created. The reference's target kind is absent from the catalog.")
 
@@ -249,6 +238,7 @@ module ForeignKeyPass =
     /// as `UniqueIndexPass.run` and `NullabilityPass.run`; this is
     /// the codification's third real test.
     let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<ForeignKeyDecisionSet>> =
+        use _ = Bench.scope "passes.foreignKey"
         // ForeignKey's evaluate takes the catalog as an additional
         // input (cross-attribute reach for target-kind lookup, schema
         // comparison). The closure captures it from the enclosing

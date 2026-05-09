@@ -12,7 +12,7 @@ open Projection.Tests.Fixtures
 // ---------------------------------------------------------------------------
 
 let private inverseSsKey (originalRefKey: SsKey) : SsKey =
-    SsKey.derived originalRefKey SymmetricClosure.inverseReason |> Result.value
+    SsKey.derivedFrom originalRefKey SymmetricClosure.inverseReason |> Result.value
 
 let private allReferences (c: Catalog) : Reference list =
     Catalog.allKinds c
@@ -190,12 +190,14 @@ let ``skip when target has no primary key`` () =
     // No inverse added.
     let outCustomer = Catalog.tryFindKind customerKey result.Value |> Option.get
     Assert.Empty(outCustomer.References)
-    // Skip event recorded.
+    // Skip event recorded — chapter-3.6 slice-γ: typed
+    // `SymmetricClosureSkipReason.TargetHasNoPrimaryKey` payload
+    // replaces the prior "skipped: target has no primary key" prose.
     let skipEvents =
         result.Trail
         |> List.filter (fun e ->
             match e.TransformKind with
-            | Annotated detail when detail.Contains("no primary key") -> true
+            | Annotated (ClosureSkipped TargetHasNoPrimaryKey) -> true
             | _ -> false)
     Assert.Equal(1, skipEvents.Length)
 

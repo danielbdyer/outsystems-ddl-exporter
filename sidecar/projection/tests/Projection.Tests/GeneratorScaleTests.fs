@@ -54,8 +54,8 @@ let private runCanaryAgainst
             Deploy.runWideCanary fixture.Combined RawTextEmitter.statements
         let result = task.GetAwaiter().GetResult()
         match result with
-        | Success report -> Some report
-        | Failure errors ->
+        | Ok report -> Some report
+        | Error errors ->
             let codes = errors |> List.map (fun e -> e.Code) |> String.concat ", "
             Assert.Fail(sprintf "%s: canary failed: %s" label codes)
             None
@@ -90,8 +90,8 @@ let private runBulkLoaderCanaryAgainst
             Deploy.runWideCanaryWithLoader loadSource RawTextEmitter.statements
         let result = task.GetAwaiter().GetResult()
         match result with
-        | Success report -> Some report
-        | Failure errors ->
+        | Ok report -> Some report
+        | Error errors ->
             let codes = errors |> List.map (fun e -> e.Code) |> String.concat ", "
             Assert.Fail(sprintf "%s: canary failed: %s" label codes)
             None

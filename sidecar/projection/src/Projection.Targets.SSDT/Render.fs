@@ -116,24 +116,23 @@ module Render =
     /// Raw IR string → SQL literal. `""` is NULL; Text gets `N'…'`
     /// with single-quote doubling; temporal / Guid get `'…'`; Binary
     /// gets `0x…`. Mirrors the canonical adapter convention
-    /// (`ReadSide.formatRawValue` produces the inverse).
+    /// (`ReadSide.formatRawValue` produces the inverse). All format
+    /// rules (Boolean canonical, Hex prefix) flow through
+    /// `RawValueCodec` so the V2 raw-form contract has a single
+    /// source of truth across emit / parse / readback.
     let formatSqlLiteral (typ: PrimitiveType) (raw: string) : string =
         if raw = "" then "NULL"
         else
             match typ with
             | Integer | Decimal -> raw
             | Boolean ->
-                match raw.ToLowerInvariant() with
-                | "true" | "1" -> "1"
-                | _ -> "0"
+                if RawValueCodec.parseBoolean raw then "1" else "0"
             | DateTime | Date | Time | Guid ->
                 quoteSingle raw
             | Text ->
                 String.Concat("N", quoteSingle (raw.Replace("'", "''")))
             | Binary ->
-                if raw.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                then raw
-                else String.Concat("0x", raw)
+                RawValueCodec.withHexPrefix raw
 
     let private actionSql (a: ReferenceActionSql) : string =
         match a with

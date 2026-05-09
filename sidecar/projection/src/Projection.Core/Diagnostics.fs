@@ -21,6 +21,7 @@ namespace Projection.Core
 /// declared structure contradicting its observed values) deserve a
 /// structural place in the severity DU rather than living as a
 /// Warning that consumers must re-classify.
+[<RequireQualifiedAccess>]
 type DiagnosticSeverity =
     | Info
     | Warning

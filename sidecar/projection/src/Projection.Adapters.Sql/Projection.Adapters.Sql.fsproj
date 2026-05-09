@@ -19,6 +19,14 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <!--
+      ScriptDom for canonical identifier encoding (`Identifier.EncodeIdentifier`)
+      and future typed AST emission. Per chapter-3.6 audit: every SQL
+      identifier construction in Adapters.Sql / Targets.SSDT flows
+      through the same use-case-specific library (gold standard per
+      DECISIONS supreme operating discipline pillar 3).
+    -->
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="170.23.0" />
   </ItemGroup>
 
   <ItemGroup>

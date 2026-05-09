@@ -180,12 +180,12 @@ module JsonEmitter =
     let emit (catalog: Catalog) : string =
         use _ = Bench.scope "emit.json.emit"
         match emitSlices catalog with
-        | Result.Error err ->
+        | Error err ->
             invalidOp
                 (sprintf
                     "JsonEmitter.emit: ArtifactByKind invariant breach: %A"
                     err)
-        | Result.Ok artifact ->
+        | Ok artifact ->
             let slices = ArtifactByKind.toMap artifact
             use stream = new MemoryStream()
             do

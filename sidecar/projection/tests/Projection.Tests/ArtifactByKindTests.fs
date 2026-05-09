@@ -2,12 +2,13 @@ module Projection.Tests.ArtifactByKindTests
 
 open Xunit
 open Projection.Core
+open Projection.Tests.Fixtures
 
 /// FSharp.Core's two-arity `Result<'a, 'b>` case constructors collide
 /// with `Projection.Core.DiagnosticSeverity.Error` once `Projection.Core`
 /// is opened; qualifying via a private type alias forces case access
 /// to resolve to FSharp.Core's Result.Ok / Result.Error without
-/// shadowing the single-arity `Result<'a>.Failure` case.
+/// shadowing the single-arity `Result<'a>.Error` case.
 type private FsResult<'a, 'b> = Microsoft.FSharp.Core.Result<'a, 'b>
 
 /// Stage 0 (S0.B slice 5.1 per
@@ -24,16 +25,12 @@ type private FsResult<'a, 'b> = Microsoft.FSharp.Core.Result<'a, 'b>
 /// `T11: emitSlices key-set equals Catalog.allKinds` lands per emitter
 /// at slices 5.2–5.4.
 
-let private ssKey (s: string) : SsKey =
-    match SsKey.original s with
-    | Success k -> k
-    | Failure errors ->
-        failwithf "fixture: SsKey.original failed: %A" errors
+let private ssKey (s: string) : SsKey = testKey s
 
 let private nm (s: string) : Name =
     match Name.create s with
-    | Success n -> n
-    | Failure errors ->
+    | Ok n -> n
+    | Error errors ->
         failwithf "fixture: Name.create failed: %A" errors
 
 let private mustOk (r: Result<'a, EmitError>) : 'a =
@@ -80,7 +77,7 @@ let ``S0.B.1: create succeeds when slice keys exactly match Catalog.allKinds`` (
         let recovered = ArtifactByKind.toMap artifact
         Assert.Equal<Map<SsKey, string>>(slices, recovered)
     | FsResult.Error e ->
-        Assert.Fail(sprintf "expected Ok, got Error %A" e)
+        Assert.Fail(sprintf "expected Ok, got DiagnosticSeverity.Error %A" e)
 
 [<Fact>]
 let ``S0.B.1: create succeeds on the empty Catalog with the empty slice map`` () =
@@ -90,7 +87,7 @@ let ``S0.B.1: create succeeds on the empty Catalog with the empty slice map`` ()
     | FsResult.Ok artifact ->
         Assert.True(Map.isEmpty (ArtifactByKind.toMap artifact))
     | FsResult.Error e ->
-        Assert.Fail(sprintf "expected Ok, got Error %A" e)
+        Assert.Fail(sprintf "expected Ok, got DiagnosticSeverity.Error %A" e)
 
 [<Fact>]
 let ``S0.B.1: create rejects missing kinds with KindNotProduced`` () =
@@ -100,7 +97,7 @@ let ``S0.B.1: create rejects missing kinds with KindNotProduced`` () =
     | FsResult.Error (KindNotProduced k) ->
         Assert.Equal(ssKey "OS_KIND_Customer", k)
     | other ->
-        Assert.Fail(sprintf "expected Error (KindNotProduced ...), got %A" other)
+        Assert.Fail(sprintf "expected DiagnosticSeverity.Error (KindNotProduced ...), got %A" other)
 
 [<Fact>]
 let ``S0.B.1: create rejects extra keys with UnexpectedKind`` () =
@@ -111,7 +108,7 @@ let ``S0.B.1: create rejects extra keys with UnexpectedKind`` () =
     | FsResult.Error (UnexpectedKind k) ->
         Assert.Equal(stale, k)
     | other ->
-        Assert.Fail(sprintf "expected Error (UnexpectedKind ...), got %A" other)
+        Assert.Fail(sprintf "expected DiagnosticSeverity.Error (UnexpectedKind ...), got %A" other)
 
 [<Fact>]
 let ``S0.B.1: create reports KindNotProduced first when both missing and extra are present`` () =
@@ -122,7 +119,7 @@ let ``S0.B.1: create reports KindNotProduced first when both missing and extra a
     | FsResult.Error (KindNotProduced _) -> ()
     | other ->
         Assert.Fail(
-            sprintf "expected Error (KindNotProduced _) on overlapping miss+extra, got %A" other
+            sprintf "expected DiagnosticSeverity.Error (KindNotProduced _) on overlapping miss+extra, got %A" other
         )
 
 [<Fact>]

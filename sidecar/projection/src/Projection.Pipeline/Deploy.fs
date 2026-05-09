@@ -36,7 +36,7 @@ module Deploy =
     /// Outcome of executing emitted SQL against an ephemeral database.
     type Report =
         {
-            Success : bool
+            Ok : bool
             Database : string
             TablesCreated : int
             Errors : string list
@@ -74,13 +74,18 @@ module Deploy =
     /// tests that actually need Docker should call `ensureRunning`.
     [<RequireQualifiedAccess>]
     module Docker =
+        // Canonical Docker Unix socket locations. Two candidates:
+        //   1. system-wide socket at /var/run/docker.sock (Linux default)
+        //   2. user-scoped rootless socket under ~/.docker/run/docker.sock
+        // Path composition flows through `Path.Combine` (audit Top-10
+        // #6: filesystem boundary uses BCL primitive, not `sprintf`).
+        [<Literal>]
+        let private SystemSocketPath : string = "/var/run/docker.sock"
+
         let private socketCandidates : string list =
-            [
-                "/var/run/docker.sock"
-                sprintf
-                    "%s/.docker/run/docker.sock"
-                    (Environment.GetFolderPath Environment.SpecialFolder.UserProfile)
-            ]
+            let home = Environment.GetFolderPath Environment.SpecialFolder.UserProfile
+            let userSocket = Path.Combine(home, ".docker", "run", "docker.sock")
+            [ SystemSocketPath; userSocket ]
 
         // Why these specific values (not arbitrary):
         // - `ProbeTimeoutMs = 2000`: `docker version` against a healthy
@@ -198,6 +203,15 @@ module Deploy =
         /// per-database scoping is non-deterministic, and that's a
         /// Pipeline concern). Per-segment formatting goes through
         /// `String.Concat` rather than `sprintf`.
+        /// Length of the GUID suffix used in ephemeral database
+        /// names. 12 chars of N-format GUID is ~48 bits of entropy
+        /// — sufficient for per-run uniqueness across concurrent
+        /// canary processes; short enough to fit `Source_<suffix>`
+        /// under SQL Server's 128-char identifier limit with
+        /// generous prefix headroom.
+        [<Literal>]
+        let private GuidSuffixLength : int = 12
+
         let guidBased : DatabaseNameGenerator =
             // The `guidBased` binding IS the sanctioned `Guid.NewGuid`
             // site — the reified non-determinism boundary. Audit
@@ -205,7 +219,7 @@ module Deploy =
             // visible through the seam, not hidden inside a private
             // function.
             fun () ->
-                let suffix = Guid.NewGuid().ToString("N").Substring(0, 12)  // LINT-ALLOW: reified non-determinism boundary
+                let suffix = Guid.NewGuid().ToString("N").Substring(0, GuidSuffixLength)  // LINT-ALLOW: reified non-determinism boundary
                 suffix
 
     let private uniqueDatabaseName
@@ -218,9 +232,9 @@ module Deploy =
     /// Per the no-string-concatenation discipline, integer fields go
     /// through invariant-culture `Int32.ToString`; segments compose
     /// via `String.concat " "` over a typed `string list`. The
-    /// surface form preserves the legacy "[severity=X error=Y
-    /// line=Z] message" shape so downstream consumers parsing this
-    /// text don't break.
+    /// canonical surface form is "[severity=X error=Y line=Z]
+    /// message" — downstream consumers parse this text-form via the
+    /// matching parser; both endpoints are V2-internal.
     let private formatSqlError (e: Microsoft.Data.SqlClient.SqlError) : string =
         let inv = System.Globalization.CultureInfo.InvariantCulture
         let header =
@@ -238,20 +252,61 @@ module Deploy =
             [ for e in sql.Errors -> formatSqlError e ]
         | _ -> [ ex.Message ]
 
-    let private buildPerDbConnectionString (master: string) (dbName: string) : string =
-        let b = SqlConnectionStringBuilder(master)
-        b.InitialCatalog <- dbName
-        b.ConnectionString
+    /// Typed connection-string handling — chapter-3.6 cash-out of
+    /// audit Top-10 #1 (centralize connection-string validation
+    /// behind `SqlConnectionStringBuilder`). Wraps the BCL builder
+    /// in a `Result<_>` so malformed strings surface as
+    /// `ValidationError` at the validation boundary, not as an
+    /// opaque `SqlException` at connect time.
+    [<RequireQualifiedAccess>]
+    module ConnectionString =
 
-    /// `CREATE DATABASE [<dbName>];` text, composed via `String.Concat`
-    /// rather than `sprintf` per the no-string-concatenation
-    /// discipline. The `[` / `]` brackets are bracket-quoting
-    /// (mirrors `Render.quote`); the trailing `;` matches T-SQL
-    /// statement convention. Caller-supplied `dbName` is trusted
-    /// (test fixtures only); SQL injection is not a concern at
-    /// this boundary.
+        let private invalidConnectionString (message: string) : ValidationError =
+            ValidationError.create "deploy.connectionString.invalid" message
+
+        /// Parse a connection string into a validated typed builder.
+        /// `SqlConnectionStringBuilder` throws on malformed input;
+        /// we catch and lift to `ValidationError` so the boundary
+        /// surfaces structured errors.
+        let parse (connStr: string) : Result<SqlConnectionStringBuilder> =
+            if System.String.IsNullOrWhiteSpace connStr then
+                Result.failureOf
+                    (invalidConnectionString
+                        "Connection string is null, empty, or whitespace.")
+            else
+                try
+                    Result.success (SqlConnectionStringBuilder(connStr))
+                with
+                | :? System.ArgumentException as ex ->
+                    Result.failureOf (invalidConnectionString ex.Message)
+                | :? System.FormatException as ex ->
+                    Result.failureOf (invalidConnectionString ex.Message)
+
+        /// Build a per-database connection string from a master
+        /// connection string. Trusts the `master` argument (callers
+        /// flow through `parse` first if validation is needed); the
+        /// `dbName` is set as `InitialCatalog`. Identifier escaping
+        /// (handling `]` inside dbName) is `SqlConnectionStringBuilder`'s
+        /// responsibility — its setter handles SQL-quoting per spec.
+        let buildPerDb (master: string) (dbName: string) : string =
+            let b = SqlConnectionStringBuilder(master)
+            b.InitialCatalog <- dbName
+            b.ConnectionString
+
+    let private buildPerDbConnectionString (master: string) (dbName: string) : string =
+        ConnectionString.buildPerDb master dbName
+
+    /// `CREATE DATABASE [<dbName>];` text. Bracket-quoting flows
+    /// through `Render.quote` (which delegates to ScriptDom's
+    /// `Identifier.EncodeIdentifier`) — eliminates the manual
+    /// `[` / `]` literals (audit Top-10 #10: single source of truth
+    /// for SQL identifier quoting). The trailing `;` is T-SQL
+    /// statement convention. Caller-supplied `dbName` flows through
+    /// the canonical SQL identifier encoder, so values containing
+    /// `]` (which would close the bracket prematurely) are
+    /// structurally escaped at the boundary.
     let private createDatabaseSql (dbName: string) : string =
-        String.Concat("CREATE DATABASE [", dbName, "];")
+        String.Concat("CREATE DATABASE ", Render.quote dbName, ";")
 
     let private createDatabase (masterConn: string) (dbName: string) : Task<unit> =
         task {
@@ -264,63 +319,26 @@ module Deploy =
             return ()
         }
 
-    /// Sqlcmd-style `GO` batch separator. Lines whose trimmed value
-    /// equals `GO` (case-insensitive) split a script into independent
-    /// batches; SqlClient's `ExecuteNonQueryAsync` runs one segment
-    /// at a time. Per session-34 — large fixture loads (≥ 50k
-    /// INSERTs) routinely blow past sensible per-batch sizes; chunk
-    /// emission + splitting keeps each round-trip bounded without
-    /// changing SQL semantics. Scripts without `GO` markers run as
-    /// a single segment, identical to the v1 behaviour.
+    /// Public realization of a SQL text batch. Splits via
+    /// `BatchSplitter.splitWithLoudFallback` — gold-standard
+    /// `TSql160Parser`-based batch detection with `splitOnGo`
+    /// line-fold as a permissive fallback. ScriptDom failures
+    /// emit a stderr announcement (operators see WHY the
+    /// fallback fired); the run continues so canaries don't
+    /// hard-fail on grammatical idiosyncrasies (chapter-3.6
+    /// cash-out per the user's "implement behind an adapter
+    /// or strategy with loud announcement" directive).
     ///
-    /// Per the no-regex / no-string-concatenation discipline
-    /// (`DECISIONS 2026-05-09 — No-string-concatenation / no-regex
-    /// discipline`), the splitter uses built-in `String.Split('\n')`
-    /// + `Trim` + literal compare via
-    /// `System.String.Equals(_, "GO", OrdinalIgnoreCase)` instead of
-    /// `System.Text.RegularExpressions.Regex`. Lines are accumulated
-    /// per-segment via `String.concat "\n"` (built-in joiner). The
-    /// fold preserves segment order without mutation; segments with
-    /// only whitespace are filtered.
-    let private isGoLine (line: string) : bool =
-        System.String.Equals(
-            line.Trim(),
-            "GO",
-            System.StringComparison.OrdinalIgnoreCase)
-
-    let private splitOnGo (sql: string) : string[] =
-        let lines = sql.Split('\n')
-        // Walk lines via fold; each GO-line closes a segment. The
-        // accumulator carries `current` (lines of the in-flight
-        // segment, reverse-ordered) and `segs` (closed segments,
-        // reverse-ordered). At end, the final `current` is the
-        // tail segment.
-        let initial : string list * string list list = [], []
-        let lastSegRev, segsRev =
-            lines
-            |> Array.fold
-                (fun (current, segs) line ->
-                    if isGoLine line then [], current :: segs
-                    else line :: current, segs)
-                initial
-        let allSegsRev = lastSegRev :: segsRev
-        allSegsRev
-        |> List.rev
-        |> List.map (fun lineListRev ->
-            lineListRev |> List.rev |> String.concat "\n")
-        |> List.filter (fun s -> not (System.String.IsNullOrWhiteSpace s))
-        |> List.toArray
-
-    /// Public realization of a SQL text batch. Splits on `^GO$`
-    /// markers (sqlcmd-style); each segment runs in its own
-    /// round-trip with no client-side timeout. Test fixtures (and
-    /// arbitrary external SQL scripts) consume this directly to
-    /// load source data; V2's own emit path goes through
-    /// `executeStream` with the typed statement seq.
+    /// **Perf citation (pillar 7):** ScriptDom Parse adds ~5-10ms
+    /// per `executeBatch` call (vs ~1ms for line-fold). At
+    /// `executeBatch`-per-deploy cardinality (one per phase),
+    /// the absolute cost stays sub-100ms even on huge fixtures.
+    /// Per-segment `ExecuteNonQueryAsync` round-trips remain the
+    /// dominant cost.
     let executeBatch (cnn: SqlConnection) (sql: string) : Task<unit> =
         task {
             use _ = Bench.scope "deploy.executeBatch"
-            let segments = splitOnGo sql
+            let segments = BatchSplitter.splitWithLoudFallback "deploy.executeBatch" sql
             Bench.recordSample "deploy.executeBatch.segments" (int64 segments.Length)
             for segment in segments do
                 use _ = Bench.scope "deploy.executeBatch.segment"
@@ -464,12 +482,30 @@ module Deploy =
     [<Literal>]
     let WarmConnStringEnvVar : string = "PROJECTION_MSSQL_CONN_STR"
 
+    /// Read the warm-container connection string from the environment.
+    /// Returns `None` when the env var is unset / blank; returns
+    /// `Some connStr` when set AND `SqlConnectionStringBuilder` accepts
+    /// it (per `ConnectionString.parse`). Malformed env vars surface
+    /// at this validation boundary as a stderr warning + `None`
+    /// (canary falls back to ephemeral container) rather than as an
+    /// opaque `SqlException` at the first connect call.
     let private warmConnectionString () : string option =
         match Environment.GetEnvironmentVariable WarmConnStringEnvVar with
         | null -> None
-        | "" -> None
-        | s when System.String.IsNullOrWhiteSpace s -> None
-        | s -> Some s
+        | raw when System.String.IsNullOrWhiteSpace raw -> None
+        | raw ->
+            match ConnectionString.parse raw with
+            | Ok _ -> Some raw
+            | Error errors ->
+                let codes =
+                    errors
+                    |> List.map (fun e -> e.Code)
+                    |> String.concat ", "  // LINT-ALLOW: terminal stderr-emission boundary; typed code list joined for human-readable warning
+                eprintfn
+                    "  WARNING: %s is set but malformed (%s); falling back to ephemeral container."
+                    WarmConnStringEnvVar
+                    codes
+                None
 
     /// Run the body against a master connection string. Honors the
     /// `PROJECTION_MSSQL_CONN_STR` env var if set (warm container,
@@ -524,7 +560,7 @@ module Deploy =
                             let! tables = countUserTables cnn
                             return
                                 {
-                                    Success = true
+                                    Ok = true
                                     Database = dbName
                                     TablesCreated = tables
                                     Errors = []
@@ -533,7 +569,7 @@ module Deploy =
                         | ex ->
                             return
                                 {
-                                    Success = false
+                                    Ok = false
                                     Database = dbName
                                     TablesCreated = 0
                                     Errors = collectErrors ex
@@ -570,19 +606,19 @@ module Deploy =
                             let! readResult = ReadSide.read cnn
                             let tables =
                                 match readResult with
-                                | Success c -> Catalog.allKinds c |> List.length
-                                | Failure _ -> 0
+                                | Ok c -> Catalog.allKinds c |> List.length
+                                | Error _ -> 0
                             let report =
                                 {
-                                    Success = true
+                                    Ok = true
                                     Database = dbName
                                     TablesCreated = tables
                                     Errors = []
                                 }
                             let catalog =
                                 match readResult with
-                                | Success c -> Some c
-                                | Failure _ -> None
+                                | Ok c -> Some c
+                                | Error _ -> None
                             return
                                 {
                                     Report = report
@@ -594,7 +630,7 @@ module Deploy =
                                 {
                                     Report =
                                         {
-                                            Success = false
+                                            Ok = false
                                             Database = dbName
                                             TablesCreated = 0
                                             Errors = collectErrors ex
@@ -649,8 +685,8 @@ module Deploy =
     /// Format a `ValidationError` as a structured diagnostic string.
     /// Per the no-string-concatenation discipline, segments compose
     /// via `String.Concat` over typed components rather than
-    /// `sprintf "[%s] %s"`. The legacy "[code] message" form is
-    /// preserved so downstream parsers don't break.
+    /// `sprintf "[%s] %s"`. The canonical "[code] message" surface
+    /// form is the V2-internal contract for diagnostic display.
     let private formatValidationError (e: ValidationError) : string =
         String.Concat("[", e.Code, "] ", e.Message)
 
@@ -672,13 +708,13 @@ module Deploy =
                 let! readResult = ReadSide.read cnn
                 return
                     match readResult with
-                    | Success c ->
+                    | Ok c ->
                         {
                             Catalog = Some c
                             Errors = []
                             Tables = Catalog.allKinds c |> List.length
                         }
-                    | Failure errors ->
+                    | Error errors ->
                         {
                             Catalog = None
                             Errors = errors |> List.map formatValidationError
@@ -709,13 +745,13 @@ module Deploy =
                 let! readResult = ReadSide.read cnn
                 return
                     match readResult with
-                    | Success c ->
+                    | Ok c ->
                         {
                             Catalog = Some c
                             Errors = []
                             Tables = Catalog.allKinds c |> List.length
                         }
-                    | Failure errors ->
+                    | Error errors ->
                         {
                             Catalog = None
                             Errors = errors |> List.map formatValidationError
@@ -766,7 +802,7 @@ module Deploy =
                         | Some src ->
                             let sourceReport =
                                 {
-                                    Success = true
+                                    Ok = true
                                     Database = sourceDbName
                                     TablesCreated = sourceOutcome.Tables
                                     Errors = sourceOutcome.Errors
@@ -790,7 +826,7 @@ module Deploy =
                             | Some tgt ->
                                 let targetReport =
                                     {
-                                        Success = true
+                                        Ok = true
                                         Database = targetDbName
                                         TablesCreated = targetOutcome.Tables
                                         Errors = targetOutcome.Errors
@@ -830,10 +866,10 @@ module Deploy =
         task {
             let! parsed = Compose.read jsonPath
             match parsed with
-            | Success catalog ->
+            | Ok catalog ->
                 let outputs = Compose.project catalog
                 let! report = runEphemeral outputs.Sql
                 return Result.success (outputs, report)
-            | Failure errors ->
+            | Error errors ->
                 return Result.failure errors
         }

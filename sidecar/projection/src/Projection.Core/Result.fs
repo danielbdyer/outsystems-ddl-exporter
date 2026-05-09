@@ -20,14 +20,6 @@ module ValidationError =
 
     let private requireNonBlank (paramName: string) (value: string) : unit =
         if System.String.IsNullOrWhiteSpace value then
-            // Per-site analysis (chapter 3.5 deep audit): F#'s
-            // `invalidArg` raises `ArgumentException` whose `Message`
-            // already includes the parameter name in BCL-canonical
-            // form (`"<msg> (Parameter '<paramName>')"`). The prior
-            // `String.Concat(paramName, " must be provided.")` was
-            // redundant — the BCL exception formatter handles the
-            // paramName-injection. Defensive: bare phrase; let the
-            // BCL primitive handle the format.
             invalidArg paramName "must be provided."
 
     /// Build a `ValidationError` with no metadata.
@@ -40,9 +32,6 @@ module ValidationError =
     /// 3.5 deep audit (2026-05-09): the data-structure-oriented form —
     /// the message is a *static phrase* (no interpolation); the
     /// dynamic values flow into `Metadata` as typed key-value pairs.
-    /// Eliminates the need to concatenate values into the message
-    /// text. Programmatic consumers route by `Code` + `Metadata`;
-    /// human readers see the static phrase.
     let createWithMetadata
         (code: string)
         (message: string)
@@ -52,8 +41,7 @@ module ValidationError =
         requireNonBlank "message" message
         { Code = code; Message = message; Metadata = metadata }
 
-    /// Attach (or replace) a single metadata entry. A blank key is a no-op,
-    /// matching the trunk's behavior.
+    /// Attach (or replace) a single metadata entry.
     let withMetadata (key: string) (value: string option) (e: ValidationError) : ValidationError =
         if System.String.IsNullOrWhiteSpace key then e
         else { e with Metadata = e.Metadata |> Map.add key value }
@@ -64,105 +52,118 @@ module ValidationError =
         { e with Message = message }
 
 
-/// `Result<'a>` is either `Success` carrying a value or `Failure` carrying a
-/// non-empty list of validation errors. Mirrors
-/// `src/Osm.Domain/Abstractions/Result.cs::Result<T>`. The list is ordered
-/// (oldest error first); error aggregation across applicative composition is
-/// not part of this type's contract — see the trunk's `Collect` for the
-/// short-circuiting variant.
+/// `Result<'a>` is a type alias for `FSharp.Core.Result<'a, ValidationError list>`.
+/// Chapter-3.6 cash-out of the user's "be bold" directive (2026-05-09):
+/// the prior custom DU (`Success of 'a | Failure of ValidationError list`) is
+/// replaced by the FSharp.Core canonical type so:
+///   - `FsToolkit.ErrorHandling`'s `result {}` / `taskResult {}` /
+///     `validation {}` CEs work natively
+///   - F# convention alignment (Ok / Error are the canonical case names)
+///   - Future devs immediately recognize the shape
+///   - Coexists with `Result<'a, EmitError>` (also FSharp.Core's two-arity)
+///     used by `ArtifactByKind` / `Emitter<'element>` / `DiffOf<'value>`;
+///     F# resolves by arity (one type arg = ours; two = explicit error type).
 ///
-/// Coexists with the FSharp.Core built-in `Result<'T,'TError>` because the
-/// arity differs.
-type Result<'a> =
-    | Success of 'a
-    | Failure of ValidationError list
+/// The error list is ordered (oldest first); aggregating composition uses
+/// `Result.aggregate` (own helper) or `validation { }` (FsToolkit).
+///
+/// Convention: `Result.success` / `Result.failure` / `Result.failureOf`
+/// helpers below remain the V2 construction surface for parity with the
+/// trunk's `Result.cs::Result<T>` API. Direct `Ok v` / `Error es`
+/// construction also works; both forms are equivalent.
+type Result<'a> = Microsoft.FSharp.Core.Result<'a, ValidationError list>
 
-/// Monadic and applicative helpers for `Result<'a>`. `bind` short-circuits
-/// on first failure; this matches the trunk's `Bind`/`Map`/`Ensure`/`Collect`.
+/// V2 helpers for `Result<'a>`. The FSharp.Core `Result` module provides
+/// `bind` / `map` / `mapError` / `defaultValue` natively; this module
+/// extends with V2-specific convenience (`success` / `failure` / `value`
+/// / `errors` / `aggregate` / `collect` / `ensure` / `isSuccess` /
+/// `isFailure`) that mirror the trunk's `Result<T>` API.
 [<RequireQualifiedAccess>]
 module Result =
 
-    let success (value: 'a) : Result<'a> = Success value
+    let success (value: 'a) : Result<'a> = Ok value
 
     /// Build a failure from a non-empty error list. Empty input is a
-    /// programmer error (the trunk throws `ArgumentException`).
+    /// programmer error.
     let failure (errors: ValidationError list) : Result<'a> =
         match errors with
         | [] -> invalidArg "errors" "At least one validation error must be provided."
-        | _  -> Failure errors
+        | _  -> Error errors
 
-    /// Build a failure from a single error. Convenience wrapper.
-    let failureOf (error: ValidationError) : Result<'a> = Failure [error]
+    /// Build a failure from a single error.
+    let failureOf (error: ValidationError) : Result<'a> = Error [error]
 
     let isSuccess (r: Result<'a>) : bool =
         match r with
-        | Success _ -> true
-        | Failure _ -> false
+        | Ok _    -> true
+        | Error _ -> false
 
     let isFailure (r: Result<'a>) : bool = not (isSuccess r)
 
-    /// Project the success value or throw. Matches the trunk's `Value`
-    /// property; intended for tests and call sites that have already proven
-    /// success.
+    /// Project the success value or throw. Intended for tests and call
+    /// sites that have already proven success.
     let value (r: Result<'a>) : 'a =
         match r with
-        | Success v -> v
-        | Failure _ -> invalidOp "Cannot access value on a failed Result."
+        | Ok v    -> v
+        | Error _ -> invalidOp "Cannot access value on a failed Result."
 
     let errors (r: Result<'a>) : ValidationError list =
         match r with
-        | Success _  -> []
-        | Failure es -> es
+        | Ok _     -> []
+        | Error es -> es
 
-    /// Monadic bind — `m >>= f` short-circuits on `Failure`.
-    let bind (f: 'a -> Result<'b>) (r: Result<'a>) : Result<'b> =
-        match r with
-        | Success v   -> f v
-        | Failure es  -> Failure es
+    /// Monadic bind. Delegates to FSharp.Core's `Result.bind`. Provided
+    /// here for argument-order parity with V2's prior surface (`f` first,
+    /// then `r` via pipeline). **Perf note (pillar 7):** `inline` so the
+    /// F# compiler specializes at call sites; zero call overhead vs the
+    /// inline FSharp.Core form.
+    let inline bind (f: 'a -> Result<'b>) (r: Result<'a>) : Result<'b> =
+        Microsoft.FSharp.Core.Result.bind f r
 
-    /// Functor map — preserves failures untouched.
-    let map (f: 'a -> 'b) (r: Result<'a>) : Result<'b> =
-        match r with
-        | Success v   -> Success (f v)
-        | Failure es  -> Failure es
+    /// Functor map. Delegates to FSharp.Core's `Result.map`. **Perf note:**
+    /// `inline` per `bind`.
+    let inline map (f: 'a -> 'b) (r: Result<'a>) : Result<'b> =
+        Microsoft.FSharp.Core.Result.map f r
 
     /// If the result is a success and the predicate holds, pass through;
     /// otherwise fail with `error`. If already a failure, pass through.
     let ensure (predicate: 'a -> bool) (error: ValidationError) (r: Result<'a>) : Result<'a> =
         match r with
-        | Failure _              -> r
-        | Success v when predicate v -> r
-        | Success _              -> Failure [error]
+        | Error _              -> r
+        | Ok v when predicate v -> r
+        | Ok _                 -> Error [error]
 
     /// Collapse a sequence of results into a single result holding the list
-    /// of values. Short-circuits on the first failure (matches trunk
-    /// `Collect`); does not aggregate errors across multiple failures.
+    /// of values. Short-circuits on the first failure.
     let collect (results: Result<'a> seq) : Result<'a list> =
         let rec loop acc remaining =
             match remaining with
-            | []                      -> Success (List.rev acc)
-            | Success v   :: rest     -> loop (v :: acc) rest
-            | Failure es  :: _        -> Failure es
+            | []                     -> Ok (List.rev acc)
+            | Ok v        :: rest    -> loop (v :: acc) rest
+            | Error es    :: _       -> Error es
         loop [] (List.ofSeq results)
 
     /// Aggregating sequence collapse. Unlike `collect`, accumulates errors
     /// across the whole sequence rather than short-circuiting on the first
     /// failure — boundary adapters surface diagnostics for every malformed
-    /// input, not just the first. Per session-35 — replaces the
-    /// `List.fold (xs @ [x])` pattern that grew O(N²) at every call site
-    /// (ReadSide attribute aggregation, FK reference aggregation, kind
-    /// aggregation, `kindsWithRefs` aggregation).
+    /// input. (FsToolkit's `validation { }` is the applicative-style
+    /// alternative when composing field-by-field.)
+    ///
+    /// **Perf note (pillar 7):** O(N) over input; pre-sized accumulators
+    /// (ResizeArray) avoid the prior O(N²) `xs @ [x]` pattern that the
+    /// audit Big-O Tier-1 finding flagged at chapter-3.1 close. Output
+    /// is an immutable list; mutation is encapsulated.
     let aggregate (results: Result<'a> seq) : Result<'a list> =
         let successes = ResizeArray<'a>()  // LINT-ALLOW: O(N) accumulator inside a pure aggregator; output is immutable list
         let errors = ResizeArray<ValidationError>()  // LINT-ALLOW: same — paired error accumulator
         for r in results do
             match r with
-            | Success v -> successes.Add v
-            | Failure es -> for e in es do errors.Add e
+            | Ok v     -> successes.Add v
+            | Error es -> for e in es do errors.Add e
         if errors.Count > 0 then
-            Failure (List.ofSeq errors)
+            Error (List.ofSeq errors)
         else
-            Success (List.ofSeq successes)
+            Ok (List.ofSeq successes)
 
 
 /// Monadic infix operators for `Result<'a>`. Open this module at call sites

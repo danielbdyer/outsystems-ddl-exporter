@@ -39,6 +39,9 @@ module Bulk =
     /// Inverse of `Render.formatSqlLiteral` and the dual of
     /// `ReadSide.formatRawValue`: parse the IR raw form back into
     /// the CLR object SqlBulkCopy expects. `""` → `DBNull`.
+    /// All format rules (DateTime / Date / Boolean canonical, Hex
+    /// prefix) flow through `RawValueCodec` so the V2 raw-form
+    /// contract has a single source of truth.
     let parseRaw (t: PrimitiveType) (raw: string) : obj | null =
         if raw = "" then box DBNull.Value
         else
@@ -49,13 +52,11 @@ module Bulk =
             | Decimal ->
                 box (Decimal.Parse(raw, inv))
             | Boolean ->
-                match raw.ToLowerInvariant() with
-                | "true" | "1" -> box true
-                | _ -> box false
+                box (RawValueCodec.parseBoolean raw)
             | DateTime ->
-                box (DateTime.ParseExact(raw, "yyyy-MM-dd HH:mm:ss.fffffff", inv))
+                box (DateTime.ParseExact(raw, RawValueCodec.DateTimeFormat, inv))
             | Date ->
-                box (DateTime.ParseExact(raw, "yyyy-MM-dd", inv))
+                box (DateTime.ParseExact(raw, RawValueCodec.DateFormat, inv))
             | Time ->
                 box (TimeSpan.Parse(raw, inv))
             | Guid ->
@@ -63,8 +64,7 @@ module Bulk =
             | Text ->
                 box raw
             | Binary ->
-                let hex = if raw.StartsWith("0x", StringComparison.OrdinalIgnoreCase) then raw.Substring 2 else raw
-                box (Convert.FromHexString hex)
+                box (Convert.FromHexString (RawValueCodec.stripHexPrefix raw))
 
     /// Build a `DataTable` matching the column shape of the first
     /// row in a batch. Subsequent rows must share the shape; the

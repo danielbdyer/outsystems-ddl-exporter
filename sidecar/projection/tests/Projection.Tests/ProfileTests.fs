@@ -103,7 +103,7 @@ let ``A4: Profile.tryFindColumn locates a column by AttributeKey`` () =
 
 [<Fact>]
 let ``A4: Profile.tryFindColumn returns None for an unknown key`` () =
-    let unknown = SsKey.original "OS_ATTR_Unknown" |> Result.value
+    let unknown = attrKey ["Unknown"]
     Assert.Equal(None, Profile.tryFindColumn unknown sampleProfile)
 
 [<Fact>]
@@ -114,7 +114,7 @@ let ``A4: Profile.tryFindForeignKey locates an FK by ReferenceKey`` () =
 
 [<Fact>]
 let ``A4: Profile.tryFindForeignKey returns None for an unknown key`` () =
-    let unknown = SsKey.original "OS_REF_Unknown" |> Result.value
+    let unknown = refKey ["Unknown"]
     Assert.Equal(None, Profile.tryFindForeignKey unknown sampleProfile)
 
 [<Fact>]

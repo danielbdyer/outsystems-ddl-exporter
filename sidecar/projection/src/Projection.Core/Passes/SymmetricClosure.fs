@@ -44,8 +44,8 @@ module SymmetricClosure =
         // A5 enforced by SsKey.derivedFrom; the deterministic formula is
         // (original-key, "inverse").
         match SsKey.derivedFrom r.SsKey inverseReason with
-        | Success k  -> k
-        | Failure _ ->
+        | Ok k  -> k
+        | Error _ ->
             // Per chapter 3.5 deep audit (2026-05-09):
             // `SsKey.derivedFrom` only fails on blank `reason`;
             // `inverseReason` is the `[<Literal>]` constant
@@ -90,11 +90,16 @@ module SymmetricClosure =
           SsKey         = key
           TransformKind = Created }
 
-    let private skippedEvent (key: SsKey) (detail: string) : LineageEvent =
+    let private skippedEvent (key: SsKey) (reason: SymmetricClosureSkipReason) : LineageEvent =
+        // Chapter-3.6 slice-γ: typed `SymmetricClosureSkipReason`
+        // payload replaces the prior "skipped: ..." prose strings.
+        // The two skip cases (`TargetKindAbsent`,
+        // `TargetHasNoPrimaryKey`) classified in `classifyStep` flow
+        // through structurally to audit consumers.
         { PassName      = passName
           PassVersion   = version
           SsKey         = key
-          TransformKind = Annotated detail }
+          TransformKind = Annotated (ClosureSkipped reason) }
 
     /// Run the pass. For every directional reference whose target is
     /// resolvable in the catalog and has at least one primary-key
@@ -125,13 +130,13 @@ module SymmetricClosure =
             let inverseKey = deriveInverseKey r
             match Map.tryFind r.TargetKind kindByKey with
             | None ->
-                Skip (skippedEvent r.SsKey "skipped: target kind absent")
+                Skip (skippedEvent r.SsKey TargetKindAbsent)
             | Some target ->
                 if hasInverseAlready target.References inverseKey then NoOp
                 else
                     match buildInverse sourceKind r target with
                     | None ->
-                        Skip (skippedEvent r.SsKey "skipped: target has no primary key")
+                        Skip (skippedEvent r.SsKey TargetHasNoPrimaryKey)
                     | Some inverse ->
                         Created (createdEvent inverse.SsKey, target.SsKey, inverse)
 
@@ -148,6 +153,7 @@ module SymmetricClosure =
     /// inversesByTarget: Map<SsKey, Reference list>)` carries the
     /// closure-construction state immutably.
     let run (c: Catalog) : Lineage<Catalog> =
+        use _ = Bench.scope "passes.symmetricClosure"
         let allKinds = Catalog.allKinds c
         let kindByKey =
             allKinds

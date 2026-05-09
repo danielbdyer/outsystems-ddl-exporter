@@ -12,10 +12,7 @@ namespace Projection.Core
 open System
 open System.Collections.Generic
 open System.Diagnostics
-open System.IO
 open System.Text
-open System.Text.Json
-open System.Text.Json.Serialization
 
 /// Lightweight performance instrumentation for the V2 pipeline.
 /// Per the session-29 operator framing — the canary's flywheel only
@@ -33,10 +30,10 @@ open System.Text.Json.Serialization
 ///      / P50 / P95 / P99 / Max).
 ///
 ///   3. **Visibility.** The CLI's `emit` / `deploy` / `canary`
-///      commands print `Bench.renderTable` at command end. Tests
-///      can `Bench.persistJson` to a known path so cross-run
-///      comparison is mechanical (a future bench-tracker script
-///      diffs adjacent runs and alerts on regression).
+///      commands print `Bench.renderTable` at command end. The
+///      cross-run JSON persistence lives at
+///      `Projection.Pipeline.BenchSink.persistJson` (file-system
+///      boundary; outside Core).
 ///
 ///   4. **Composability.** Scopes nest naturally — a `runWideCanary`
 ///      scope encloses two `runEphemeral` scopes which each enclose
@@ -323,48 +320,12 @@ module Bench =
     /// JSON-persistable snapshot envelope. Adds a wall-clock
     /// timestamp + tag so cross-run analysis can sequence them and
     /// segregate by scenario (e.g., `tag = "wide-canary-enterprise"`).
+    /// Pure value type; no I/O. The file-write boundary lives at
+    /// `Projection.Pipeline.BenchSink.persistJson` (chapter-3.6
+    /// extraction per audit Tier-1 #1).
     type Run =
         {
             CapturedAtUtc : DateTime
             Tag : string
             Stats : Stats list
         }
-
-    let private jsonOptions : JsonSerializerOptions =
-        let o = JsonSerializerOptions(WriteIndented = true)
-        o.Converters.Add(JsonStringEnumConverter())
-        o
-
-    /// Persist the current snapshot as JSON at `path`. Creates the
-    /// containing directory if needed. Used by the CLI to drop a
-    /// per-run JSON into a known path so a future bench-tracker
-    /// script can diff adjacent runs and alert on regression.
-    ///
-    /// Path convention (per session-29 operator framing):
-    ///
-    ///     bench/<tag>/<utc-iso>.json
-    ///
-    /// Example: `bench/wide-canary-enterprise/20260509T040305Z.json`.
-    /// The bench/ directory at the repo root accumulates runs; the
-    /// flywheel reviewer compares the most recent N runs.
-    let persistJson (path: string) (tag: string) (stats: Stats list) : unit =
-        let run =
-            {
-                CapturedAtUtc = DateTime.UtcNow
-                Tag = tag
-                Stats = stats
-            }
-        match Path.GetDirectoryName path with
-        | null -> ()
-        | dir when System.String.IsNullOrEmpty dir -> ()
-        | dir -> Directory.CreateDirectory dir |> ignore
-        let json = JsonSerializer.Serialize(run, jsonOptions)
-        File.WriteAllText(path, json)
-
-    /// Compose a default `bench/<tag>/<utc-iso>.json` path under
-    /// `rootDir`. The UTC timestamp in `yyyyMMddTHHmmssZ` form keeps
-    /// filenames sortable. Used by the CLI to choose where to drop
-    /// each run's JSON.
-    let defaultPath (rootDir: string) (tag: string) : string =
-        let timestamp = DateTime.UtcNow.ToString("yyyyMMddTHHmmssZ")
-        Path.Combine(rootDir, "bench", tag, sprintf "%s.json" timestamp)

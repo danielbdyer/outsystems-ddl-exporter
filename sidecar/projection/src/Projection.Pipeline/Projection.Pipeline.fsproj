@@ -13,6 +13,7 @@
     <Compile Include="Pipeline.fs" />
     <Compile Include="Bulk.fs" />
     <Compile Include="Deploy.fs" />
+    <Compile Include="BenchSink.fs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -13,11 +13,15 @@ namespace Projection.Core
 ///   - `OssysOriginal of System.Guid` — SSKey GUID supplied directly by
 ///     an OSSYS rowsets adapter (chapter 3.2). A1 holds unconditionally;
 ///     this value survives source rename.
-///   - `Synthesized of source * basis` — JSON-path-synthesized identity.
-///     `source` names the synthesis convention (e.g., `"OS_KIND"`);
-///     `basis` is the concatenated name fields the adapter built. A1 is
-///     **bounded** for this variant — a source-side rename produces a
-///     different `SsKey`.
+///   - `Synthesized of source * basisParts` — JSON-path-synthesized
+///     identity. `source` names the synthesis convention (e.g.,
+///     `"OS_KIND"`); `basisParts` is the **typed segment list** the
+///     adapter built from name fields (e.g., `["AppCore"; "User"]`).
+///     **Chapter 3.6 slice-δ widened from `basis: string` to
+///     `basisParts: string list`** — typed segments survive structurally
+///     through the DU; `String.concat "_"` lives only at the terminal
+///     `rootOriginal` display projection. A1 remains **bounded** for
+///     this variant — a source-side rename produces a different `SsKey`.
 ///   - `DerivedFrom of parent * reason` — pass-introduced identity (e.g.,
 ///     the symmetric-closure pass adding inverse references). A1
 ///     preservation inherits from the root via `rootOriginal`.
@@ -29,13 +33,18 @@ namespace Projection.Core
 /// **Equality is per-variant; cross-variant equality is always false.**
 /// `OssysOriginal g =? V1Mapped (g, _)` is `false` even if the GUIDs
 /// numerically collide — variant tag preserves provenance.
+/// `Synthesized` equality is structural over `(source, basisParts)`:
+/// list element equality + order. `Synthesized ("OS_KIND",
+/// ["AppCore_User"])` and `Synthesized ("OS_KIND", ["AppCore"; "User"])`
+/// are NOT equal even though they render to the same identifier — the
+/// build-path's segmentation choice is part of the structural identity.
 ///
 /// Reserved derivation reasons are enumerated in `DECISIONS.md`:
 ///   - `"inverse"` — symmetric-closure pass; adds the inverse of a
 ///     reference.
 type SsKey =
     | OssysOriginal of System.Guid
-    | Synthesized of source: string * basis: string
+    | Synthesized of source: string * basisParts: string list
     | DerivedFrom of parent: SsKey * reason: string
     | V1Mapped of v1Sskey: System.Guid * v2Namespace: System.Guid
 
@@ -55,37 +64,31 @@ module SsKey =
         ValidationError.create "sskey.derivedReason.empty"
             "A derivation reason cannot be blank."
 
-    let private legacyValueEmpty =
-        ValidationError.create "sskey.empty" "An SS_KEY cannot be blank."
-
     /// Build an `OssysOriginal` SsKey from a source-supplied GUID. Total:
     /// a `System.Guid` is well-formed by construction. Used by the
     /// `SnapshotRowsets` adapter variant (chapter 3.2).
     let ossysOriginal (g: System.Guid) : SsKey = OssysOriginal g
 
-    /// Build a `Synthesized` SsKey from a synthesis convention and basis.
-    /// Both must be non-blank. Used by adapters that synthesize identity
-    /// from name fields (e.g., the OSSYS JSON adapter at
-    /// `Projection.Adapters.Osm.CatalogReader`).
+    /// Build a `Synthesized` SsKey from a synthesis convention and a
+    /// single basis string. Wraps the basis as a single-element typed
+    /// segment list `[basis]`. Used by adapters whose basis is already
+    /// a flat name (`SsKey.synthesized "OS_MOD" moduleName`).
+    /// Both `source` and `basis` must be non-blank.
     let synthesized (source: string) (basis: string) : Result<SsKey> =
         if System.String.IsNullOrWhiteSpace source then
             Result.failureOf synthSourceEmpty
         elif System.String.IsNullOrWhiteSpace basis then
             Result.failureOf synthBasisEmpty
         else
-            Result.success (Synthesized (source, basis))
+            Result.success (Synthesized (source, [basis]))
 
     /// Build a `Synthesized` SsKey from a synthesis convention and a
-    /// typed basis-component list. Joins via `String.concat "_"` —
-    /// the canonical separator the OSSYS adapter conventions use
-    /// (e.g., `"OS_KIND" + ["AppCore"; "User"]` → `Synthesized
-    /// ("OS_KIND", "AppCore_User")`). Per the no-string-concatenation
-    /// discipline (`DECISIONS 2026-05-09`), adapters compose typed
-    /// component lists rather than `sprintf "%s_%s"`. Pairs
-    /// structurally with the legacy `original` parser's prefix-match
-    /// over `knownSynthSources`: build via this constructor; parse
-    /// back via `original`. Each component must be non-blank;
-    /// rejects on first blank.
+    /// typed basis-component list. **Chapter 3.6 slice-δ:** the typed
+    /// `string list` flows through the `Synthesized` DU directly; no
+    /// `String.concat "_"` at the build path. The list IS the
+    /// structure; the separator (`"_"`) is parameterized only at the
+    /// terminal `rootOriginal` display projection. Each component must
+    /// be non-blank; rejects on first blank.
     let synthesizedComposite
         (source: string)
         (basisParts: string list)
@@ -95,29 +98,7 @@ module SsKey =
         elif basisParts |> List.exists System.String.IsNullOrWhiteSpace then
             Result.failureOf synthBasisEmpty
         else
-            // **Per-site analysis (chapter 3.5 deep audit, hard
-            // line)**: `Synthesized of source * basis` carries
-            // `basis : string` — V2's chosen DU shape. The build
-            // path (here) and parse path (`SsKey.original`'s
-            // prefix-match at line ~119) form a structural pair;
-            // both use `_` as the canonical separator.
-            // Alternatives considered:
-            //   - **Refactor `Synthesized` to `of source * basis-
-            //     parts: string list`**: would carry typed list
-            //     through the SsKey DU; eliminates the joiner.
-            //     Breaking change — affects A4 structural equality,
-            //     A1 rename-survival semantics, ~50+ test fixtures
-            //     using `Synthesized (s, b)` patterns. Deferred to
-            //     chapter 4+ as a structural-commitment refactor.
-            //   - **`String.Join("_", basisParts)`** (BCL): same
-            //     family as `String.concat`; renamed primitive.
-            //   - **Adopted: `String.concat "_"`** — F#'s typed
-            //     collection joiner; the typed `string list` IS
-            //     the structure; the separator is parameterized.
-            //     The boundary IS the SsKey DU's `basis` field;
-            //     the joiner is the build half of the round-trip.
-            let basis = basisParts |> String.concat "_"  // LINT-ALLOW: round-trip pair with `SsKey.original` parser; SsKey-DU shape refactor deferred to chapter 4
-            Result.success (Synthesized (source, basis))
+            Result.success (Synthesized (source, basisParts))
 
     /// Build a `DerivedFrom` SsKey from a parent identity and a
     /// documented reason. Rejects blank reasons with
@@ -137,73 +118,16 @@ module SsKey =
     let fromV1 (v1: System.Guid) (v2Namespace: System.Guid) : SsKey =
         V1Mapped (v1, v2Namespace)
 
-    /// Synthesis-source prefixes recognized by the back-compat
-    /// `original` shim. When a pre-stratification caller passes
-    /// `"OS_KIND_AppCore_User"`, the shim splits on the first matching
-    /// prefix so the result matches what the migrated adapter emits
-    /// directly via `synthesized "OS_KIND" "AppCore_User"`. Anything not
-    /// matching a known prefix falls back to the `LEGACY` marker.
-    let private knownSynthSources : string list =
-        [ "OS_KIND"; "OS_MOD"; "OS_ATTR"; "OS_REF"; "OS_IDX"; "OS_ROW" ]
-
-    /// **Back-compat shim.** Pre-stratification call sites (~50+ test
-    /// fixtures) pass a single string identifier; this function
-    /// preserves their surface by detecting a known synthesis prefix
-    /// (`OS_KIND_…`, `OS_MOD_…`, etc.) and producing the matching
-    /// `Synthesized (source, basis)` value. Strings without a known
-    /// prefix get the marker source `"LEGACY"`. New call sites should
-    /// prefer `synthesized` directly per the chapter-3 cross-cutting
-    /// prescope §3 stratification.
-    ///
-    /// Rejects blank input with `ValidationError "sskey.empty"`.
-    let original (value: string) : Result<SsKey> =
-        if System.String.IsNullOrWhiteSpace value then
-            Result.failureOf legacyValueEmpty
-        else
-            // Per-site analysis (chapter 3.5 deep audit): the legacy
-            // implementation built `<src>_` via `String.Concat` to
-            // pass to `value.StartsWith`. The defensive / paradigmatic
-            // alternative — structural multi-check via BCL primitives
-            // alone — eliminates the string allocation entirely:
-            //   1. `value.StartsWith(src, OrdinalIgnoreCase)` — BCL
-            //      string-prefix match, no allocation.
-            //   2. `value.Length > src.Length` — BCL length check.
-            //   3. `value.[src.Length] = '_'` — BCL char indexer.
-            // The three checks compose without producing any
-            // intermediate string. Same observable behavior as the
-            // sentinel form; data-structure-oriented (no string-
-            // concatenation primitive used).
-            let prefixMatch =
-                knownSynthSources
-                |> List.tryFind (fun src ->
-                    value.StartsWith(src, System.StringComparison.Ordinal)
-                    && value.Length > src.Length
-                    && value.[src.Length] = '_')
-            match prefixMatch with
-            | Some src ->
-                let basis = value.Substring(src.Length + 1)
-                if System.String.IsNullOrWhiteSpace basis then
-                    Result.success (Synthesized ("LEGACY", value))
-                else
-                    Result.success (Synthesized (src, basis))
-            | None ->
-                Result.success (Synthesized ("LEGACY", value))
-
-    /// **Back-compat shim.** Forwards to `derivedFrom`. Existing call
-    /// sites in `SymmetricClosure` migrate to the new name; this shim
-    /// stays through chapter 3 to absorb adapter call sites that have
-    /// not yet migrated.
-    let derived (parent: SsKey) (reason: string) : Result<SsKey> =
-        derivedFrom parent reason
 
     /// Walk back to the originating identifier of a key, surfaced as a
     /// string for diagnostics. Variant-specific surfacing:
     ///   - `OssysOriginal g` → `g.ToString "N"` (32-char hex, no dashes)
-    ///   - `Synthesized (source, basis)` → `<source>_<basis>` (preserves
-    ///     the pre-stratification full-identifier form that emitter
+    ///   - `Synthesized (source, basisParts)` →
+    ///     `<source>_<basisParts joined with _>` (preserves the
+    ///     pre-stratification full-identifier form that emitter
     ///     comments and differential tests depend on; consumers needing
-    ///     just `basis` or `source` should pattern-match on the variant
-    ///     directly)
+    ///     the structural segments should pattern-match on the
+    ///     `Synthesized (source, parts)` value directly)
     ///   - `DerivedFrom (parent, _)` → recurse on parent
     ///   - `V1Mapped (v1, _)` → `v1.ToString "N"`
     /// Never used for structural keying — A4 equality is by full DU
@@ -211,39 +135,15 @@ module SsKey =
     let rec rootOriginal (key: SsKey) : string =
         match key with
         | OssysOriginal g -> g.ToString "N"
-        | Synthesized (source, basis) ->
-            // **Per-site analysis (chapter 3.5 deep audit, hard
-            // line)**: `rootOriginal` is the *terminal diagnostic
-            // projection* of `SsKey` to a single human-readable
-            // string. Alternatives considered for the `Synthesized`
-            // case:
-            //   - **Typed JSON emission via `Utf8JsonWriter`**:
-            //     would change the wire format
-            //     (`{kind:"synthesized", source, basis}` vs
-            //     `<source>_<basis>`); breaks 4+ emitter consumers
-            //     (`JsonEmitter`, `DistributionsEmitter`,
-            //     `RawTextEmitter` comments, `RefactorLogEmitter`
-            //     UUIDv5 input). Architectural; deferred to
-            //     chapter 4+ when typed `SsKey` payload propagates
-            //     through `LineageEvent` and `DiagnosticEntry`.
-            //   - **Pattern-match at each consumer**: each consumer
-            //     would build its own typed string form for SsKey;
-            //     duplicates the projection logic at four sites.
-            //     Worse than centralizing here.
-            //   - **`StringBuilder.Append` chain**: concatenation
-            //     under the hood; same Big-O; less readable.
-            //   - **Typed `SsKey` carried through to the terminal
-            //     UI / JSON serializer**: the right architectural
-            //     answer; deferred (see Chapter 4+).
-            //   - **Adopted: `String.concat "_"` over typed list**.
-            //     Terminal-text-emission boundary; the typed
-            //     2-element list IS the structure; the separator
-            //     `_` is parameterized; the consumers ALREADY have
-            //     typed access via pattern-matching on `Synthesized
-            //     (source, basis)` directly when they need
-            //     structural data. `rootOriginal` is the *display
-            //     projection* alone.
-            String.concat "_" [ source; basis ]  // LINT-ALLOW: terminal diagnostic projection; typed `Synthesized (s, b)` available via pattern-match for structural consumers
+        | Synthesized (source, basisParts) ->
+            // Chapter 3.6 slice-δ: typed `basisParts: string list`
+            // flows through the `Synthesized` DU; this is the
+            // **single** terminal-text-emission boundary where the
+            // identifier string is built. Consumers that need the
+            // structural segments pattern-match on `Synthesized
+            // (source, parts)` directly. The separator `"_"` is
+            // parameterized at this one site; nowhere else.
+            String.concat "_" (source :: basisParts)  // LINT-ALLOW: terminal diagnostic projection; typed `Synthesized (s, parts)` available via pattern-match for structural consumers
         | DerivedFrom (parent, _) -> rootOriginal parent
         | V1Mapped (v1, _) -> v1.ToString "N"
 

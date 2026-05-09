@@ -292,10 +292,12 @@ module Module =
     /// Smart constructor enforcing the per-module aggregate invariants.
     /// Per session-36 audit (Agent 3 #10/#11): `Module` is an
     /// aggregate boundary; the per-module invariant is "Kind SsKeys
-    /// disjoint within the module." Existing record-literal
-    /// construction continues to work for back-compat — `create` is
-    /// the gated entry that consumers can flow through to make the
-    /// invariant structural rather than implicit.
+    /// disjoint within the module." Production-side construction
+    /// (adapters, passes producing transformed catalogs) flows
+    /// through `create`; passes that map over an existing catalog's
+    /// modules and preserve invariants by construction can use
+    /// record-literal updates (`{ m with Kinds = ... }`) since the
+    /// invariant cannot be violated by a non-introducing transform.
     let create
         (ssKey: SsKey)
         (name: Name)

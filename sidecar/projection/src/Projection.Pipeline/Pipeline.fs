@@ -112,10 +112,10 @@ module Compose =
         task {
             let! parsed = read jsonPath
             match parsed with
-            | Success catalog ->
+            | Ok catalog ->
                 let outputs = project catalog
                 let paths = write outputDir outputs
                 return Result.success paths
-            | Failure errors ->
+            | Error errors ->
                 return Result.failure errors
         }

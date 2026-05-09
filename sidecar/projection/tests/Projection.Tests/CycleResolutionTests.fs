@@ -17,21 +17,21 @@ let ``classify: non-nullable + NoAction = Other`` () =
     Assert.Equal<EdgeStrength>(EdgeStrength.Other, result)
 
 let private mkAttr (key: string) (nullable: bool) : Attribute =
-    { SsKey        = SsKey.original key |> Result.value
+    { SsKey        = testKey key
       Name         = Name.create "Fk" |> Result.value
       Type         = Integer
       Column       = { ColumnName = "FK"; IsNullable = nullable }
       IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
 
 let private mkRef (sourceAttrKey: string) (action: ReferenceAction) : Reference =
-    { SsKey           = SsKey.original "OS_REF_x" |> Result.value
+    { SsKey           = refKey ["x"]
       Name            = Name.create "x" |> Result.value
-      SourceAttribute = SsKey.original sourceAttrKey |> Result.value
-      TargetKind      = SsKey.original "OS_KIND_target" |> Result.value
+      SourceAttribute = testKey sourceAttrKey
+      TargetKind      = kindKey ["target"]
       OnDelete        = action }
 
 let private kindWith (a: Attribute) : Kind =
-    { SsKey      = SsKey.original "OS_KIND_owner" |> Result.value
+    { SsKey      = kindKey ["owner"]
       Name       = Name.create "owner" |> Result.value
       Origin     = OsNative
       Modality   = []
@@ -95,9 +95,9 @@ let ``classify: nullable + Restrict = Other (Restrict not breakable)`` () =
 // SCC members + classified internal edges.
 // ---------------------------------------------------------------------------
 
-let private aKey = SsKey.original "A" |> Result.value
-let private bKey = SsKey.original "B" |> Result.value
-let private cKey = SsKey.original "C" |> Result.value
+let private aKey = testKey "A"
+let private bKey = testKey "B"
+let private cKey = testKey "C"
 
 [<Fact>]
 let ``resolver: 2-cycle with exactly one Weak edge returns that edge`` () =

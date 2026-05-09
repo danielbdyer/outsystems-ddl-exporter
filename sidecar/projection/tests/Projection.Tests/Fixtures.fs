@@ -12,29 +12,65 @@ open Projection.Core
 //
 // One module ("Sales") wraps all three kinds. No SQL involved.
 //
-// All identifiers are constructed via the SsKey/Name modules so the
-// fixture itself exercises the validation surface. Runtime panics here
-// would indicate a bug in `original` or `Name.create`.
+// All identifiers are constructed via the SsKey/Name typed builders so
+// the fixture itself exercises the validation surface. Runtime panics
+// here indicate a bug in `synthesized` / `synthesizedComposite` /
+// `Name.create`.
+//
+// Chapter 3.6 slice-δ + DECISIONS pillar 6 (no V2-internal back-compat
+// paths): `SsKey.original` parser-shim was retired; fixtures construct
+// typed-segment SsKeys directly. The helpers below mirror the OSSYS /
+// Sql adapter conventions one-for-one.
 // ---------------------------------------------------------------------------
 
 let private mustOk r =
     match r with
-    | Success v -> v
-    | Failure es ->
+    | Ok v -> v
+    | Error es ->
         let codes = es |> List.map (fun e -> e.Code) |> String.concat ", "
         invalidOp $"Fixture construction failed: {codes}"
 
-let private ssKey (s: string) : SsKey = SsKey.original s |> mustOk
 let private name (s: string)  : Name  = Name.create s   |> mustOk
+
+/// Typed SsKey builders mirroring the adapter conventions
+/// (`Projection.Adapters.Osm.CatalogReader`,
+/// `Projection.Adapters.Sql.Static`). Tests build expected catalogs
+/// via the same typed shape that the adapters produce, so structural
+/// equality holds end-to-end. Public so other test files can reuse
+/// (eliminates ~25 per-file `SsKey.original` parser-shim consumers).
+let kindKey (parts: string list) : SsKey =
+    SsKey.synthesizedComposite "OS_KIND" parts |> mustOk
+
+let attrKey (parts: string list) : SsKey =
+    SsKey.synthesizedComposite "OS_ATTR" parts |> mustOk
+
+let modKey (m: string) : SsKey =
+    SsKey.synthesized "OS_MOD" m |> mustOk
+
+let refKey (parts: string list) : SsKey =
+    SsKey.synthesizedComposite "OS_REF" parts |> mustOk
+
+let idxKey (parts: string list) : SsKey =
+    SsKey.synthesizedComposite "OS_IDX" parts |> mustOk
+
+let rowKey (basis: string) : SsKey =
+    SsKey.synthesized "OS_ROW" basis |> mustOk
+
+/// Test-only label key. Used by tests whose nodes are pure labels
+/// ("A", "B", "C" graph-shape fixtures) rather than OSSYS-shaped
+/// identities. Carries the explicit `"TEST"` source convention so
+/// the typed payload is honest about its provenance.
+let testKey (label: string) : SsKey =
+    SsKey.synthesized "TEST" label |> mustOk
 
 // ---------------------------------------------------------------------------
 // Customer
 // ---------------------------------------------------------------------------
 
-let customerKey       = ssKey "OS_KIND_Customer"
-let customerIdAttrKey = ssKey "OS_ATTR_Customer_Id"
-let customerNameKey   = ssKey "OS_ATTR_Customer_Name"
-let customerTenantKey = ssKey "OS_ATTR_Customer_TenantId"
+let customerKey       = kindKey ["Customer"]
+let customerIdAttrKey = attrKey ["Customer"; "Id"]
+let customerNameKey   = attrKey ["Customer"; "Name"]
+let customerTenantKey = attrKey ["Customer"; "TenantId"]
 
 let customer : Kind = {
     SsKey    = customerKey
@@ -67,10 +103,10 @@ let customer : Kind = {
 // Order — has a directional reference to Customer (the FK in the spec).
 // ---------------------------------------------------------------------------
 
-let orderKey            = ssKey "OS_KIND_Order"
-let orderIdAttrKey      = ssKey "OS_ATTR_Order_Id"
-let orderCustomerFkKey  = ssKey "OS_ATTR_Order_CustomerId"
-let orderRefToCustomer  = ssKey "OS_REF_Order_Customer"
+let orderKey            = kindKey ["Order"]
+let orderIdAttrKey      = attrKey ["Order"; "Id"]
+let orderCustomerFkKey  = attrKey ["Order"; "CustomerId"]
+let orderRefToCustomer  = refKey  ["Order"; "Customer"]
 
 let order : Kind = {
     SsKey    = orderKey
@@ -104,24 +140,24 @@ let order : Kind = {
 // Country — Static, with a small populated row set.
 // ---------------------------------------------------------------------------
 
-let countryKey       = ssKey "OS_KIND_Country"
-let countryIdAttrKey = ssKey "OS_ATTR_Country_Id"
-let countryCodeKey   = ssKey "OS_ATTR_Country_Code"
-let countryLabelKey  = ssKey "OS_ATTR_Country_Label"
+let countryKey       = kindKey ["Country"]
+let countryIdAttrKey = attrKey ["Country"; "Id"]
+let countryCodeKey   = attrKey ["Country"; "Code"]
+let countryLabelKey  = attrKey ["Country"; "Label"]
 
-let private rowKey (code: string) : SsKey =
-    ssKey $"OS_ROW_Country_{code}"
+let private countryRowKey (code: string) : SsKey =
+    rowKey ($"Country_{code}")
 
 let countryPopulations : StaticRow list = [
-    { Identifier = rowKey "US"
+    { Identifier = countryRowKey "US"
       Values = Map.ofList [
           name "Code",  "US"
           name "Label", "United States" ] }
-    { Identifier = rowKey "CA"
+    { Identifier = countryRowKey "CA"
       Values = Map.ofList [
           name "Code",  "CA"
           name "Label", "Canada" ] }
-    { Identifier = rowKey "MX"
+    { Identifier = countryRowKey "MX"
       Values = Map.ofList [
           name "Code",  "MX"
           name "Label", "Mexico" ] }
@@ -158,7 +194,7 @@ let country : Kind = {
 // Catalog: one module ("Sales") containing all three kinds.
 // ---------------------------------------------------------------------------
 
-let salesModuleKey = ssKey "OS_MOD_Sales"
+let salesModuleKey = modKey "Sales"
 
 let salesModule : Module = {
     SsKey = salesModuleKey

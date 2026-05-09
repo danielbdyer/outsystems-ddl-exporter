@@ -19,8 +19,8 @@ let private utcNow : DateTimeOffset =
 
 let private mustOk r =
     match r with
-    | Success v -> v
-    | Failure es ->
+    | Ok v -> v
+    | Error es ->
         let codes = es |> List.map (fun e -> e.Code) |> String.concat ", "
         invalidOp $"Profile fixture construction failed: {codes}"
 

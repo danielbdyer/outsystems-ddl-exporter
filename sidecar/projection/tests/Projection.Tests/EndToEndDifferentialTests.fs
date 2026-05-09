@@ -4,6 +4,7 @@ open Xunit
 open Projection.Core
 open Projection.Core.Passes
 open Projection.Adapters.Sql
+open Projection.Tests.Fixtures
 
 // ---------------------------------------------------------------------------
 // The session-6 milestone — end-to-end differential test.
@@ -31,7 +32,7 @@ open Projection.Adapters.Sql
 // without compromise.
 // ---------------------------------------------------------------------------
 
-let private mkKey s = SsKey.original s |> Result.value
+let private mkKey s = testKey s
 let private mkName s = Name.create s |> Result.value
 
 // ---------------------------------------------------------------------------

@@ -58,7 +58,7 @@ let ``override: a KeepNullable override on a physically-NOT-NULL column still ke
 [<Fact>]
 let ``override: an unrelated override does NOT bypass other signals`` () =
     let pkAttr = customer.Attributes |> List.find (fun a -> a.IsPrimaryKey)
-    let unrelated = SsKey.original "OS_ATTR_Unrelated" |> Result.value
+    let unrelated = attrKey ["Unrelated"]
     let cfg =
         mkConfig 0.0m false
             [ { AttributeKey = unrelated; Action = OverrideAction.KeepNullable } ]
@@ -91,7 +91,7 @@ let ``structural: a non-PK physically-NOT-NULL attribute is EnforceNotNull(Physi
 let ``structural: a physically-nullable non-PK attribute without overrides yields KeepNullable(NoTighteningSignal)`` () =
     // Synthesize a nullable, non-PK attribute.
     let nullable : Attribute =
-        { SsKey        = SsKey.original "OS_ATTR_Test_NullableNonPk" |> Result.value
+        { SsKey        = attrKey ["Test"; "NullableNonPk"]
           Name         = Name.create "Optional" |> Result.value
           Type         = Text
           Column       = { ColumnName = "OPTIONAL"; IsNullable = true }
@@ -129,7 +129,7 @@ let ``decision: InterventionId is the id passed to evaluate`` () =
 let ``enforces: true for EnforceNotNull, false for KeepNullable`` () =
     let pkAttr = customer.Attributes |> List.find (fun a -> a.IsPrimaryKey)
     let nullable : Attribute =
-        { SsKey        = SsKey.original "OS_ATTR_T" |> Result.value
+        { SsKey        = attrKey ["T"]
           Name         = Name.create "T" |> Result.value
           Type         = Text
           Column       = { ColumnName = "T"; IsNullable = true }
@@ -226,7 +226,7 @@ let ``outcome: NullabilityOutcome variants round-trip`` () =
 // ---------------------------------------------------------------------------
 
 let private mkMandatoryAttr (key: string) (isNullable: bool) : Attribute =
-    { SsKey        = SsKey.original key |> Result.value
+    { SsKey        = testKey key
       Name         = Name.create "M" |> Result.value
       Type         = Text
       Column       = { ColumnName = "M"; IsNullable = isNullable }

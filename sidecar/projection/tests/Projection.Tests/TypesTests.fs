@@ -3,12 +3,13 @@ module Projection.Tests.TypesTests
 open System.Threading.Tasks
 open Xunit
 open Projection.Core
+open Projection.Tests.Fixtures
 
 /// FSharp.Core's two-arity `Result<'a, 'b>` case constructors collide
 /// with `Projection.Core.DiagnosticSeverity.Error` once `Projection.Core`
 /// is opened; qualifying via a private type alias forces case access
 /// to resolve to FSharp.Core's Result.Ok / Result.Error without
-/// shadowing the single-arity `Result<'a>.Failure` case.
+/// shadowing the single-arity `Result<'a>.Error` case.
 type private FsResult<'a, 'b> = Microsoft.FSharp.Core.Result<'a, 'b>
 
 /// Stage 0 (S0.A per `STAGING.md`) lands the seven tessellating-pattern
@@ -24,7 +25,7 @@ type private FsResult<'a, 'b> = Microsoft.FSharp.Core.Result<'a, 'b>
 /// inhabitation succeeded.
 ///
 /// Stage 0 (S0.B slice 5.1) makes `ArtifactByKind` constructor private
-/// — emitter stubs return `Error` variants rather than constructing
+/// — emitter stubs return `DiagnosticSeverity.Error` variants rather than constructing
 /// directly. `ArtifactByKindTests` covers the smart constructor's
 /// `Ok` path with a real Catalog.
 ///
@@ -35,7 +36,7 @@ type private FsResult<'a, 'b> = Microsoft.FSharp.Core.Result<'a, 'b>
 /// matches the aliased contract by typing.
 
 let private stubKey () =
-    SsKey.original "stub" |> Result.value
+    testKey "stub"
 
 [<Fact>]
 let ``S0.A: Emitter<'element> is inhabited by Catalog -> Result<ArtifactByKind<'element>, EmitError>`` () =
@@ -107,7 +108,7 @@ let ``S0.A: DiffOf<'value> is inhabited by 'value -> 'value -> Result<CatalogDif
     // Inhabitation witness only — `CatalogDiff` is now a `private` DU
     // (chapter 3.5 substantive deliverable); construction goes through
     // `CatalogDiff.between` against `Catalog` inputs. This stub returns
-    // an `Error` to demonstrate the type alias compiles; semantic-
+    // an `DiagnosticSeverity.Error` to demonstrate the type alias compiles; semantic-
     // shape correctness is exercised by `CatalogDiff.between` directly
     // in `CatalogDiffTests.fs`.
     let stub : DiffOf<int> =

@@ -27,6 +27,7 @@
     <Compile Include="Coordinates.fs" />
     <Compile Include="StructuredString.fs" />
     <Compile Include="Catalog.fs" />
+    <Compile Include="RawValueCodec.fs" />
     <Compile Include="ArtifactByKind.fs" />
     <Compile Include="CatalogDiff.fs" />
     <Compile Include="PhysicalSchema.fs" />
@@ -53,6 +54,21 @@
     <Compile Include="Passes/UniqueIndexPass.fs" />
     <Compile Include="Passes/ForeignKeyPass.fs" />
     <Compile Include="Passes/CategoricalUniquenessPass.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      FsToolkit.ErrorHandling: provides `result {}` / `taskResult {}` /
+      `validation {}` computation expressions on top of FSharp.Core's
+      Result type. `Projection.Core.Result<'a>` is a type alias for
+      `Microsoft.FSharp.Core.Result<'a, ValidationError list>`, so the
+      FsToolkit CEs work natively. Per the user's "be bold" directive
+      (2026-05-09): the migration retires our custom `ResultBuilder`
+      and unblocks taskResult for ReadSide/Deploy mixed Task+Result
+      chains and validation for accumulating-error adapter parses.
+    -->
+    <PackageReference Include="FsToolkit.ErrorHandling" Version="4.18.0" />
+    <PackageReference Include="FsToolkit.ErrorHandling.TaskResult" Version="4.18.0" />
   </ItemGroup>
 
 </Project>

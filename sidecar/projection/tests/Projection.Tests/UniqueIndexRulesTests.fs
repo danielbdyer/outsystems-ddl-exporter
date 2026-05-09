@@ -14,7 +14,7 @@ open Projection.Tests.Fixtures
 // Helpers — small named constructors for the per-index decider.
 // ---------------------------------------------------------------------------
 
-let private ssKey (s: string) : SsKey = SsKey.original s |> Result.value
+let private ssKey (s: string) : SsKey = testKey s
 let private name  (s: string) : Name  = Name.create s   |> Result.value
 
 let private mkConfig (single: bool) (composite: bool) : UniqueIndexTighteningConfig =

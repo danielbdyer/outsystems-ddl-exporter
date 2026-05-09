@@ -98,11 +98,12 @@ module CatalogReader =
     // identifier coordinate.
 
     // Per the no-string-concatenation discipline (`DECISIONS
-    // 2026-05-09`), synthesis-basis composition flows through
-    // `SsKey.synthesizedComposite` over typed component lists rather
-    // than `sprintf "%s_%s"` / `sprintf "%s_%s_%s"`. The constructor
-    // joins via `String.concat "_"` and pairs structurally with the
-    // legacy `SsKey.original` parser's prefix-match.
+    // 2026-05-09`) + chapter-3.6 slice-δ: synthesis-basis composition
+    // flows through `SsKey.synthesizedComposite` over typed component
+    // lists; the typed `string list` IS the structure inside the
+    // `Synthesized` DU, no `String.concat "_"` at the build path.
+    // Strings emerge only at the terminal `SsKey.rootOriginal`
+    // display projection.
 
     let private moduleSsKey (moduleName: string) : Result<SsKey> =
         SsKey.synthesized "OS_MOD" moduleName
@@ -150,8 +151,8 @@ module CatalogReader =
 
     let private getString (element: JsonElement) (name: string) : Result<string> =
         match getProperty element name with
-        | Failure errors -> Failure errors
-        | Success value ->
+        | Error errors -> Error errors
+        | Ok value ->
             if value.ValueKind = JsonValueKind.String then
                 match value.GetString() with
                 | null ->
@@ -186,8 +187,8 @@ module CatalogReader =
 
     let private getBool (element: JsonElement) (name: string) : Result<bool> =
         match getProperty element name with
-        | Failure errors -> Failure errors
-        | Success value ->
+        | Error errors -> Error errors
+        | Ok value ->
             match value.ValueKind with
             | JsonValueKind.True  -> Result.success true
             | JsonValueKind.False -> Result.success false
@@ -203,8 +204,8 @@ module CatalogReader =
     /// shape; non-zero is true.
     let private getIntFlag (element: JsonElement) (name: string) : Result<bool> =
         match getProperty element name with
-        | Failure errors -> Failure errors
-        | Success value ->
+        | Error errors -> Error errors
+        | Ok value ->
             match value.ValueKind with
             | JsonValueKind.Number ->
                 match value.TryGetInt32() with
@@ -223,7 +224,7 @@ module CatalogReader =
                         (sprintf "Property '%s' is not a numeric flag or boolean." name))
 
     /// Optional string property. Returns `None` for missing or
-    /// JSON-null values, `Some s` for non-null strings, `Failure`
+    /// JSON-null values, `Some s` for non-null strings, `Error`
     /// when the property exists but is not a string.
     let private getOptionalString (element: JsonElement) (name: string) : Result<string option> =
         match element.TryGetProperty(name) with
@@ -309,8 +310,8 @@ module CatalogReader =
         let isIdentifier   = getBool    attrJson "isIdentifier"
         let isAutoNumber   = getBool    attrJson "isAutoNumber"
         match nameResult, physicalResult, dataTypeStr, isMandatory, isIdentifier with
-        | Success rawName, Success physicalName, Success rawDataType,
-          Success mandatory, Success identifier ->
+        | Ok rawName, Ok physicalName, Ok rawDataType,
+          Ok mandatory, Ok identifier ->
             let nameDU       = Name.create rawName
             let key          = attributeSsKey moduleName entityName rawName
             let primitive    = parsePrimitiveType rawDataType
@@ -328,10 +329,10 @@ module CatalogReader =
             // SQL Server IDENTITY).
             let isIdentity =
                 match isAutoNumber with
-                | Success true -> true
+                | Ok true -> true
                 | _ -> false
             match nameDU, key, primitive with
-            | Success n, Success k, Success p ->
+            | Ok n, Ok k, Ok p ->
                 Result.success
                     { SsKey        = k
                       Name         = n
@@ -392,7 +393,7 @@ module CatalogReader =
     /// `isReference: 1` plus its `refEntity_*` and
     /// `reference_deleteRuleCode` fields. Returns `None` for
     /// non-reference attributes; `Some Reference` for FK-bearing
-    /// ones; `Failure` when the attribute claims isReference=1 but
+    /// ones; `Error` when the attribute claims isReference=1 but
     /// the required fields are missing or malformed.
     ///
     /// V1's relationships[] array carries the same information in an
@@ -410,28 +411,28 @@ module CatalogReader =
         (sourceModuleName: string) (sourceEntityName: string) (attrJson: JsonElement)
         : Result<Reference option> =
         match getIntFlag attrJson "isReference" with
-        | Failure errors -> Failure errors
-        | Success false  -> Result.success None
-        | Success true ->
+        | Error errors -> Error errors
+        | Ok false  -> Result.success None
+        | Ok true ->
             let attrNameResult     = getString          attrJson "name"
             let refEntityNameResult = getOptionalString attrJson "refEntity_name"
             let deleteRuleResult   = getOptionalString attrJson "reference_deleteRuleCode"
             match attrNameResult, refEntityNameResult, deleteRuleResult with
-            | Success attrName, Success (Some refEntityName), Success deleteRuleCode ->
+            | Ok attrName, Ok (Some refEntityName), Ok deleteRuleCode ->
                 let refKey      = referenceSsKey sourceModuleName sourceEntityName attrName
                 let refName     = Name.create attrName
                 let srcAttrKey  = attributeSsKey sourceModuleName sourceEntityName attrName
                 let tgtKindKey  = kindSsKey sourceModuleName refEntityName
                 let onDelete    = parseDeleteRule deleteRuleCode
                 match refKey, refName, srcAttrKey, tgtKindKey, onDelete with
-                | Success rKey, Success rName, Success srcKey, Success tgtKey, Success rule ->
+                | Ok rKey, Ok rName, Ok srcKey, Ok tgtKey, Ok rule ->
                     Result.success (Some
                         { SsKey           = rKey
                           Name            = rName
                           SourceAttribute = srcKey
                           TargetKind      = tgtKey
                           OnDelete        = rule })
-                | _, _, _, _, Failure es -> Failure es
+                | _, _, _, _, Error es -> Error es
                 | _ ->
                     Result.failureOf (
                         adapterError
@@ -439,7 +440,7 @@ module CatalogReader =
                             (sprintf
                                 "Failed to build reference for attribute '%s' on '%s.%s'."
                                 attrName sourceModuleName sourceEntityName))
-            | Success attrName, Success None, _ ->
+            | Ok attrName, Ok None, _ ->
                 Result.failureOf (
                     adapterError
                         "referenceFields"
@@ -481,7 +482,7 @@ module CatalogReader =
         let isPrimaryResult = getBool   indexJson "isPrimary"
         let isUniqueResult  = getBool   indexJson "isUnique"
         match nameResult, isPrimaryResult, isUniqueResult with
-        | Success indexName, Success isPrimary, Success isUnique ->
+        | Ok indexName, Ok isPrimary, Ok isUnique ->
             let indexKey  = indexSsKey moduleName entityName indexName
             let indexNm   = Name.create indexName
             // Walk columns[]; filter isIncluded=true; sort by ordinal;
@@ -513,8 +514,8 @@ module CatalogReader =
                     |> List.map snd
                     |> List.map (fun attrNameRes ->
                         match attrNameRes with
-                        | Failure es -> Failure es
-                        | Success an -> attributeSsKey moduleName entityName an)
+                        | Error es -> Error es
+                        | Ok an -> attributeSsKey moduleName entityName an)
                 | _ -> []
             // Per `Result.aggregate` (chapter-3.1 close audit): the
             // canonical accumulator for `Result<'a> seq` collapses to
@@ -523,7 +524,7 @@ module CatalogReader =
             // per `DECISIONS 2026-05-09` Big-O discipline.
             let foldedKeyCols = Result.aggregate keyColResults
             match indexKey, indexNm, foldedKeyCols with
-            | Success k, Success n, Success cols ->
+            | Ok k, Ok n, Ok cols ->
                 Result.success
                     { SsKey        = k
                       Name         = n
@@ -554,8 +555,8 @@ module CatalogReader =
         let isStaticResult   = getBool   entityJson "isStatic"
         let isExternalResult = getBool   entityJson "isExternal"
         match nameResult, physicalResult, schemaResult, isStaticResult, isExternalResult with
-        | Success entityName, Success physicalName, Success schema,
-          Success isStatic, Success isExternal ->
+        | Ok entityName, Ok physicalName, Ok schema,
+          Ok isStatic, Ok isExternal ->
             let kindKey   = kindSsKey moduleName entityName
             let kindName  = Name.create entityName
             // Inactive-records filter (session 21): attributes with
@@ -603,7 +604,7 @@ module CatalogReader =
                 | _ -> []
             let foldedIdx = Result.aggregate indexResults
             match kindKey, kindName, foldedAttrs, foldedRefs, foldedIdx with
-            | Success k, Success n, Success attrs, Success refs, Success idxs ->
+            | Ok k, Ok n, Ok attrs, Ok refs, Ok idxs ->
                 let modality =
                     if isStatic then [ Static [] ] else []
                 Result.success
@@ -633,7 +634,7 @@ module CatalogReader =
     let private parseModule (moduleJson: JsonElement) : Result<Module> =
         let nameResult = getString moduleJson "name"
         match nameResult with
-        | Success rawName ->
+        | Ok rawName ->
             let modKey  = moduleSsKey rawName
             let modName = Name.create rawName
             // Inactive-records filter (session 21): entities with
@@ -652,9 +653,13 @@ module CatalogReader =
                     []
             let foldedKinds = Result.aggregate entitiesArr
             match modKey, modName, foldedKinds with
-            | Success k, Success n, Success kinds ->
-                Result.success
-                    { SsKey = k; Name = n; Kinds = kinds }
+            | Ok k, Ok n, Ok kinds ->
+                // Per DECISIONS pillar 6 (chapter-3.6 sidebar):
+                // boundary adapters flow through the aggregate-root
+                // smart constructor, not record-literal — invariants
+                // (kind-SsKey-disjoint within module) are checked
+                // structurally at the boundary, not deferred.
+                Module.create k n kinds
             | _ ->
                 Result.failureOf (
                     adapterError
@@ -679,8 +684,12 @@ module CatalogReader =
                 |> List.map parseModule
             let folded = Result.aggregate modulesList
             match folded with
-            | Success modules -> Result.success { Modules = modules }
-            | Failure errors  -> Failure errors
+            | Ok modules ->
+                // Per DECISIONS pillar 6: boundary adapter flows
+                // through `Catalog.create` (aggregate-root invariant
+                // check) rather than record-literal construction.
+                Catalog.create modules
+            | Error errors  -> Error errors
         | _ ->
             Result.failureOf (
                 adapterError

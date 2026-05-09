@@ -35,8 +35,8 @@ let private mustOk (r: FsResult<'a, 'b>) : 'a =
 
 let private mustResultOk (r: Result<'a>) : 'a =
     match r with
-    | Success v -> v
-    | Failure es ->
+    | Ok v -> v
+    | Error es ->
         Assert.Fail(sprintf "%A" es)
         Unchecked.defaultof<'a>
 

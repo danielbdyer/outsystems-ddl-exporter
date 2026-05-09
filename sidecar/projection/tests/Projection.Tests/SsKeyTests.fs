@@ -38,39 +38,41 @@ let ``S0.B.5: ossysOriginal accepts any GUID; constructor is total`` () =
 let ``S0.B.5: synthesized rejects blank source`` () =
     let result = SsKey.synthesized "  " "Customer"
     match result with
-    | Failure errors ->
+    | Error errors ->
         let codes = errors |> List.map (fun e -> e.Code)
         Assert.Contains("sskey.synth.source.empty", codes)
-    | Success _ ->
-        Assert.Fail "expected Failure on blank source, got Success"
+    | Ok _ ->
+        Assert.Fail "expected Error on blank source, got Ok"
 
 [<Fact>]
 let ``S0.B.5: synthesized rejects blank basis`` () =
     let result = SsKey.synthesized "OS_KIND" ""
     match result with
-    | Failure errors ->
+    | Error errors ->
         let codes = errors |> List.map (fun e -> e.Code)
         Assert.Contains("sskey.synth.basis.empty", codes)
-    | Success _ ->
-        Assert.Fail "expected Failure on blank basis, got Success"
+    | Ok _ ->
+        Assert.Fail "expected Error on blank basis, got Ok"
 
 [<Fact>]
 let ``S0.B.5: synthesized accepts non-blank source and basis`` () =
+    // Chapter-3.6 slice-δ: `synthesized` wraps the basis as a
+    // single-element typed segment list `[basis]`.
     let result = SsKey.synthesized "OS_KIND" "Customer"
     match result with
-    | Success (Synthesized ("OS_KIND", "Customer")) -> ()
-    | other -> Assert.Fail(sprintf "expected Synthesized (OS_KIND, Customer), got %A" other)
+    | Ok (Synthesized ("OS_KIND", ["Customer"])) -> ()
+    | other -> Assert.Fail(sprintf "expected Synthesized (OS_KIND, [\"Customer\"]), got %A" other)
 
 [<Fact>]
 let ``S0.B.5: derivedFrom rejects blank reason`` () =
     let parent = SsKey.ossysOriginal (sampleGuid ())
     let result = SsKey.derivedFrom parent ""
     match result with
-    | Failure errors ->
+    | Error errors ->
         let codes = errors |> List.map (fun e -> e.Code)
         Assert.Contains("sskey.derivedReason.empty", codes)
-    | Success _ ->
-        Assert.Fail "expected Failure on blank reason, got Success"
+    | Ok _ ->
+        Assert.Fail "expected Error on blank reason, got Ok"
 
 [<Fact>]
 let ``S0.B.5: fromV1 is total; constructs V1Mapped with both GUIDs`` () =
@@ -176,47 +178,11 @@ let ``S0.B.5: derivationReasons reads root-to-leaf, oldest first across DerivedF
     let d2 = SsKey.derivedFrom d1 "shadow" |> Result.value
     Assert.Equal<string list>([ "inverse"; "shadow" ], SsKey.derivationReasons d2)
 
-// ---------------------------------------------------------------------
-// Back-compat shim: SsKey.original parses known synthesis prefixes
-// ---------------------------------------------------------------------
-
-[<Fact>]
-let ``S0.B.5: SsKey.original parses OS_KIND prefix into Synthesized OS_KIND basis`` () =
-    let key = SsKey.original "OS_KIND_AppCore_User" |> Result.value
-    match key with
-    | Synthesized ("OS_KIND", "AppCore_User") -> ()
-    | other -> Assert.Fail(sprintf "expected Synthesized (OS_KIND, AppCore_User), got %A" other)
-
-[<Fact>]
-let ``S0.B.5: SsKey.original parses OS_REF prefix into Synthesized OS_REF basis`` () =
-    let key = SsKey.original "OS_REF_Order_Customer" |> Result.value
-    match key with
-    | Synthesized ("OS_REF", "Order_Customer") -> ()
-    | other -> Assert.Fail(sprintf "expected Synthesized (OS_REF, Order_Customer), got %A" other)
-
-[<Fact>]
-let ``S0.B.5: SsKey.original falls back to LEGACY source for unknown prefixes`` () =
-    let key = SsKey.original "Customer" |> Result.value
-    match key with
-    | Synthesized ("LEGACY", "Customer") -> ()
-    | other -> Assert.Fail(sprintf "expected Synthesized (LEGACY, Customer), got %A" other)
-
-[<Fact>]
-let ``S0.B.5: SsKey.original rejects blank input`` () =
-    let result = SsKey.original "   "
-    match result with
-    | Failure errors ->
-        let codes = errors |> List.map (fun e -> e.Code)
-        Assert.Contains("sskey.empty", codes)
-    | Success _ ->
-        Assert.Fail "expected Failure on blank input, got Success"
-
-[<Fact>]
-let ``S0.B.5: SsKey.derived shim forwards to derivedFrom`` () =
-    let parent = SsKey.synthesized "OS_KIND" "C" |> Result.value
-    let viaShim = SsKey.derived parent "inverse" |> Result.value
-    let direct = SsKey.derivedFrom parent "inverse" |> Result.value
-    Assert.Equal<SsKey>(direct, viaShim)
+// Chapter-3.6 slice-δ + DECISIONS pillar 6 (no V2-internal back-compat
+// paths): the `SsKey.original` parser-shim and `SsKey.derived` alias
+// were retired. Their unit tests are deleted with them — `synthesized`
+// / `synthesizedComposite` / `derivedFrom` are the sole typed entry
+// points and have their own tests above.
 
 // ---------------------------------------------------------------------
 // A1: identity stratification — pattern-matchable variant carries the

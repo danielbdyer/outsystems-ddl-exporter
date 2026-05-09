@@ -59,18 +59,15 @@ module NormalizeStaticPopulations =
     /// Identity-preserving: the pass never invents, drops, or re-keys an
     /// `SsKey`. The cardinality of every population is preserved; only
     /// list order changes.
+    ///
+    /// Chapter-3.6 cross-cutting cleanup: delegates the
+    /// catalog-traversal-with-event-collection pattern to the
+    /// reified `CatalogTraversal.mapKinds` primitive.
     let run (c: Catalog) : Lineage<Catalog> =
-        let events = LineageBuffer.create ()
-        let normalized =
-            { Modules =
-                c.Modules
-                |> List.map (fun m ->
-                    { m with
-                        Kinds =
-                            m.Kinds
-                            |> List.map (fun k ->
-                                if hasStaticModality k then
-                                    LineageBuffer.add (touchedEvent k.SsKey) events
-                                    { k with Modality = k.Modality |> List.map normalizeModality }
-                                else k) }) }
-        Lineage.ofValueAndEvents (LineageBuffer.toList events) normalized
+        use _ = Bench.scope "passes.normalizeStaticPopulations"
+        c |> CatalogTraversal.mapKinds (fun events k ->
+            if hasStaticModality k then
+                LineageBuffer.add (touchedEvent k.SsKey) events
+                Some { k with Modality = k.Modality |> List.map normalizeModality }
+            else
+                Some k)

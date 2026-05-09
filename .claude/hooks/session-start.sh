@@ -25,38 +25,109 @@ fi
 log() { printf '[session-start] %s\n' "$*" >&2; }
 
 # ---------------------------------------------------------------------
-# 1. dotnet SDK 9.0.305
+# 1. dotnet SDK — version pinned by sidecar/projection/global.json
 # ---------------------------------------------------------------------
+# Required dependency. If the install fails after retries, the hook
+# exits non-zero so the agent sees a hard failure at session start
+# rather than discovering it later via "dotnet: command not found".
+# Earlier versions of this hook soft-failed on curl/installer errors
+# and unconditionally exported PATH, which masked broken state — see
+# DECISIONS / hook-discipline rationale at the bottom of this file.
 DOTNET_DIR="$HOME/.dotnet"
-DOTNET_VERSION="9.0.305"
+REPO="${CLAUDE_PROJECT_DIR:-/home/user/outsystems-ddl-exporter}"
+GLOBAL_JSON="$REPO/sidecar/projection/global.json"
+HOOK_STATUS="$HOME/.claude-projection-hook-status"
 
-if [ -x "$DOTNET_DIR/dotnet" ] && \
-   "$DOTNET_DIR/dotnet" --list-sdks 2>/dev/null | grep -q "^$DOTNET_VERSION "; then
+if [ ! -f "$GLOBAL_JSON" ]; then
+    log "FATAL: cannot locate global.json at $GLOBAL_JSON"
+    printf 'session-start FAIL %s — global.json missing\n' "$(date -u +%FT%TZ)" \
+        >> "$HOOK_STATUS"
+    exit 1
+fi
+
+# Parse SDK version out of global.json without a JSON dependency.
+# global.json shape: { "sdk": { "version": "9.0.305", ... } }
+DOTNET_VERSION="$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]+"' "$GLOBAL_JSON" \
+    | head -n1 \
+    | sed -E 's/.*"([^"]+)"$/\1/')"
+if [ -z "$DOTNET_VERSION" ]; then
+    log "FATAL: could not parse dotnet version out of $GLOBAL_JSON"
+    printf 'session-start FAIL %s — version-parse failed\n' "$(date -u +%FT%TZ)" \
+        >> "$HOOK_STATUS"
+    exit 1
+fi
+
+verify_dotnet() {
+    # Returns 0 iff dotnet at $DOTNET_DIR/dotnet exists, runs, and
+    # lists the required SDK version. The list-sdks check is what
+    # `--version` alone misses on partial installs.
+    [ -x "$DOTNET_DIR/dotnet" ] || return 1
+    "$DOTNET_DIR/dotnet" --list-sdks 2>/dev/null \
+        | grep -q "^$DOTNET_VERSION " || return 1
+}
+
+install_dotnet() {
+    # Retries the installer download + execution up to 3 times with
+    # exponential backoff (2s, 4s, 8s). Logs to /tmp/dotnet-install.log
+    # cumulatively across attempts. Returns 0 on success, 1 on
+    # exhausted retries.
+    local installer="/tmp/dotnet-install.sh"
+    local installer_url="https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.sh"
+    local attempt=1
+    local backoff=2
+    while [ "$attempt" -le 3 ]; do
+        log "install attempt $attempt/3 (backoff ${backoff}s on retry)..."
+        if ! curl -fsSL "$installer_url" -o "$installer" \
+            >>/tmp/dotnet-install.log 2>&1; then
+            log "  curl failed (attempt $attempt)"
+        else
+            chmod +x "$installer"
+            if "$installer" --version "$DOTNET_VERSION" --install-dir "$DOTNET_DIR" \
+                >>/tmp/dotnet-install.log 2>&1; then
+                if verify_dotnet; then
+                    return 0
+                fi
+                log "  installer ran but verification failed (attempt $attempt)"
+            else
+                log "  installer exited non-zero (attempt $attempt)"
+            fi
+        fi
+        attempt=$((attempt + 1))
+        if [ "$attempt" -le 3 ]; then
+            sleep "$backoff"
+            backoff=$((backoff * 2))
+        fi
+    done
+    return 1
+}
+
+if verify_dotnet; then
     log "dotnet $DOTNET_VERSION already installed"
 else
-    log "installing dotnet $DOTNET_VERSION..."
-    INSTALLER="/tmp/dotnet-install.sh"
-    if curl -fsSL \
-        "https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.sh" \
-        -o "$INSTALLER"; then
-        chmod +x "$INSTALLER"
-        if "$INSTALLER" --version "$DOTNET_VERSION" --install-dir "$DOTNET_DIR" \
-            >/tmp/dotnet-install.log 2>&1; then
-            log "dotnet $DOTNET_VERSION installed"
-        else
-            log "WARNING: dotnet install failed; see /tmp/dotnet-install.log"
-            log "         F# builds will fail until resolved manually"
-        fi
+    log "installing dotnet $DOTNET_VERSION (per $GLOBAL_JSON)..."
+    : > /tmp/dotnet-install.log
+    if install_dotnet; then
+        log "dotnet $DOTNET_VERSION installed and verified"
     else
-        log "WARNING: failed to download dotnet installer (network?)"
+        log "FATAL: dotnet $DOTNET_VERSION install failed after 3 attempts"
+        log "       see /tmp/dotnet-install.log for full installer output"
+        log "       F# builds + tests cannot run until resolved"
+        printf 'session-start FAIL %s — dotnet install exhausted retries\n' \
+            "$(date -u +%FT%TZ)" >> "$HOOK_STATUS"
+        exit 1
     fi
 fi
 
-# Persist dotnet on PATH for the agent's subsequent shell calls.
+# Persist dotnet on PATH only after verification succeeded. Earlier
+# versions exported this unconditionally, leaving a non-existent
+# directory on PATH when the install silently failed.
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
     echo "export PATH=\"$DOTNET_DIR:\$PATH\"" >> "$CLAUDE_ENV_FILE"
 fi
 export PATH="$DOTNET_DIR:$PATH"
+
+printf 'session-start OK   %s — dotnet %s\n' \
+    "$(date -u +%FT%TZ)" "$DOTNET_VERSION" >> "$HOOK_STATUS"
 
 # ---------------------------------------------------------------------
 # 2. Docker daemon — start if installed but not running
@@ -201,3 +272,21 @@ else
 fi
 
 log "session-start hook complete"
+
+# ---------------------------------------------------------------------
+# Hook discipline (do not remove without writing the rationale)
+# ---------------------------------------------------------------------
+#  - dotnet is REQUIRED — install failures fail the hook (exit 1).
+#  - Docker / SQL Server warm container are SOFT — they have a
+#    fallback in F# (canary tests skip via Deploy.Docker.isAvailable()
+#    or fall back to ephemeral containers per call). Keep them as
+#    `log "WARNING"` — failing the hook on Docker hiccups would block
+#    pure-F# work that doesn't need the canary.
+#  - PATH is exported only after `verify_dotnet` succeeds. Do NOT
+#    pre-export it; an empty / nonexistent $HOME/.dotnet on PATH
+#    makes `which dotnet` resolve to nothing while masking the
+#    broken state.
+#  - Status log at $HOOK_STATUS gives the agent a structural surface
+#    to detect prior failures without spelunking /tmp logs.
+#  - Version is read from sidecar/projection/global.json — the single
+#    source of truth. Do NOT hard-code a version here that can drift.
