@@ -1,15 +1,5 @@
 namespace Projection.Core.Passes
 
-// LINT-ALLOW-FILE: pass-driver `%A` Outcome / KeepReason pretty-
-// print is the F# closed-DU stringification surface for typed
-// diagnostic strings. The audit (`Codebase determinism +
-// non-built-in audit`, 2026-05-09 Lens-1 Tier-4 / Lens-2 acceptance)
-// recommended typed `Outcome.toDiagnosticString` per DU as the
-// follow-on; until that lands, `%A` is the F#-native pretty-
-// printer (no typed alternative built into BCL or this codebase).
-// Tracked at `HANDOFF.md` deferred-but-might-fire as "typed
-// Outcome.toDiagnosticString".
-
 open Projection.Core
 
 /// The visibility-mask pass is the first filtering pass. Given a `Mask`
@@ -56,9 +46,11 @@ module VisibilityMask =
     // names so lineage is human-readable.
     // -----------------------------------------------------------------------
 
-    /// Hide every kind whose origin equals `origin`.
+    /// Hide every kind whose origin equals `origin`. Per the FP
+    /// strict-mode discipline, the predicate name composes via
+    /// typed `Origin.toDiagnosticString` rather than `sprintf "%A"`.
     let hideOrigin (origin: Origin) : Predicate =
-        { Name = sprintf "origin=%A" origin
+        { Name = System.String.Concat("origin=", Origin.toDiagnosticString origin)
           Test = (fun k -> k.Origin = origin) }
 
     /// Hide every kind whose SsKey is in `keys`.
@@ -67,9 +59,10 @@ module VisibilityMask =
         { Name = "explicit-key-list"
           Test = (fun k -> Set.contains k.SsKey keySet) }
 
-    /// Hide every kind whose modality includes the given mark.
+    /// Hide every kind whose modality includes the given mark. Same
+    /// typed-display discipline as `hideOrigin`.
     let hideModality (mark: ModalityMark) : Predicate =
-        { Name = sprintf "modality=%A" mark
+        { Name = System.String.Concat("modality=", ModalityMark.toDiagnosticString mark)
           Test = (fun k -> List.contains mark k.Modality) }
 
     // -----------------------------------------------------------------------
@@ -98,7 +91,13 @@ module VisibilityMask =
     /// truth); a downstream pass or emitter that cares about dangling
     /// references handles them.
     let run (mask: Mask) (c: Catalog) : Lineage<Catalog> =
-        let mutable events : LineageEvent list = []
+        // Per the FP strict-mode discipline: typed `LineageBuffer`
+        // is the reified pass-driver event accumulator. Replaces
+        // the `let mutable events : LineageEvent list = []` +
+        // cons-and-reverse pattern with the typed-opaque buffer.
+        // Mutation lives ONLY inside `LineageBuffer`'s
+        // implementation; this driver sees only the typed surface.
+        let events = LineageBuffer.create ()
         let canonModules =
             c.Modules
             |> List.map (fun m ->
@@ -108,13 +107,14 @@ module VisibilityMask =
                         match firstMatch mask k with
                         | None -> Some k
                         | Some pred ->
-                            events <- removedEvent pred k.SsKey :: events
+                            LineageBuffer.add (removedEvent pred k.SsKey) events
                             None)
                 { m with Kinds = kept })
         let masked = { Modules = canonModules }
-        // Reverse so events appear in catalog-traversal order rather
-        // than reverse-traversal order. A24's chronological-trail
-        // discipline applies within bind composition; within a single
-        // pass the convention is "events in the order the pass observed
-        // its targets."
-        Lineage.ofValueAndEvents (List.rev events) masked
+        // `LineageBuffer.toList` preserves insertion order — events
+        // surface in catalog-traversal order without manual
+        // `List.rev`. A24's chronological-trail discipline applies
+        // within bind composition; within a single pass the
+        // convention is "events in the order the pass observed its
+        // targets."
+        Lineage.ofValueAndEvents (LineageBuffer.toList events) masked

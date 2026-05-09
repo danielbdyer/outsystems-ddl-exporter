@@ -25,6 +25,7 @@
     <Compile Include="Identity.fs" />
     <Compile Include="UuidV5.fs" />
     <Compile Include="Coordinates.fs" />
+    <Compile Include="StructuredString.fs" />
     <Compile Include="Catalog.fs" />
     <Compile Include="ArtifactByKind.fs" />
     <Compile Include="CatalogDiff.fs" />

@@ -1,14 +1,15 @@
 namespace Projection.Core.Passes
 
-// LINT-ALLOW-FILE: pass-driver `%A` Outcome / KeepReason pretty-
-// print is the F# closed-DU stringification surface for typed
-// diagnostic strings. The audit (`Codebase determinism +
-// non-built-in audit`, 2026-05-09 Lens-1 Tier-4 / Lens-2 acceptance)
-// recommended typed `Outcome.toDiagnosticString` per DU as the
-// follow-on; until that lands, `%A` is the F#-native pretty-
-// printer (no typed alternative built into BCL or this codebase).
-// Tracked at `HANDOFF.md` deferred-but-might-fire as "typed
-// Outcome.toDiagnosticString".
+// LINT-ALLOW-FILE: pass-driver `opportunityEntry` builds
+// operator-facing diagnostic message text via `sprintf`
+// (multi-line prose with numeric / decimal interpolation —
+// e.g., "Mandatory column has %d/%d nulls observed (budget %s)").
+// Per audit Tier-3 SUBJ leave-and-document: human-readable
+// diagnostic prose is the discipline's allowed exception (no
+// typed BCL alternative produces equivalent message text).
+// Outcome / KeepReason / Conflict / Evidence rendering retired
+// to typed `StructuredString` via `Outcome.toDiagnosticString`
+// (chapter 3.5 slice φ); only the prose remains here.
 
 open Projection.Core
 
@@ -63,11 +64,7 @@ module CategoricalUniquenessPass =
     /// the decision set; the trail carries a human-readable summary
     /// so audit consumers can grep for outcome categories.
     let private outcomeLabel (outcome: CategoricalUniquenessOutcome) : string =
-        match outcome with
-        | CategoricalUniquenessOutcome.SuggestUnique evidence ->
-            sprintf "SuggestUnique(%A)" evidence
-        | CategoricalUniquenessOutcome.DoNotSuggest reason ->
-            sprintf "DoNotSuggest(%A)" reason
+        CategoricalUniquenessOutcome.toDiagnosticString outcome
 
     /// One lineage event per decision. `Annotated` because the pass
     /// produces a decision (a real transformation in the audit sense)
@@ -79,9 +76,10 @@ module CategoricalUniquenessPass =
           SsKey         = decision.AttributeKey
           TransformKind =
               Annotated
-                  (sprintf "%s -> %s"
-                      decision.InterventionId
-                      (outcomeLabel decision.Outcome)) }
+                  (System.String.Concat(
+                      decision.InterventionId,
+                      " -> ",
+                      outcomeLabel decision.Outcome)) }
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// attributes by `SsKey` within each kind. Interventions are taken

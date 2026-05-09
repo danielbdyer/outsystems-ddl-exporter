@@ -90,6 +90,50 @@ type UniqueIndexDecisionSet = {
 ///
 /// **Algebra/domain separation (per the session-7 reminder).** The
 /// signal hierarchy below is **policy logic** — every decision in
+/// Typed structural display per UniqueIndex DUs. Each variant
+/// returns a typed `StructuredString`; punctuation lives in
+/// `StructuredString.render`. Per the data-structure-oriented
+/// discipline.
+[<RequireQualifiedAccess>]
+module UniqueIndexEvidence =
+    let toStructured (e: UniqueIndexEvidence) : StructuredString =
+        match e with
+        | AlreadyUnique -> StructuredString.tag "AlreadyUnique"
+        | SingleColumnNoDuplicates probeRowCount ->
+            StructuredString.create "SingleColumnNoDuplicates"
+                [ "probeRowCount", Inv.int64 probeRowCount ]
+        | CompositeNoDuplicates -> StructuredString.tag "CompositeNoDuplicates"
+
+    let toDiagnosticString (e: UniqueIndexEvidence) : string =
+        toStructured e |> StructuredString.render
+
+[<RequireQualifiedAccess>]
+module UniqueIndexKeepReason =
+    let toStructured (r: UniqueIndexKeepReason) : StructuredString =
+        match r with
+        | PolicyDisabled -> StructuredString.tag "PolicyDisabled"
+        | DataHasDuplicates -> StructuredString.tag "DataHasDuplicates"
+        | EvidenceMissing -> StructuredString.tag "EvidenceMissing"
+        | NoCandidateProfiled -> StructuredString.tag "NoCandidateProfiled"
+
+    let toDiagnosticString (r: UniqueIndexKeepReason) : string =
+        toStructured r |> StructuredString.render
+
+[<RequireQualifiedAccess>]
+module UniqueIndexOutcome =
+    let toStructured (o: UniqueIndexOutcome) : StructuredString =
+        match o with
+        | UniqueIndexOutcome.EnforceUnique e ->
+            StructuredString.create "EnforceUnique"
+                [ "evidence", UniqueIndexEvidence.toDiagnosticString e ]
+        | UniqueIndexOutcome.DoNotEnforce r ->
+            StructuredString.create "DoNotEnforce"
+                [ "reason", UniqueIndexKeepReason.toDiagnosticString r ]
+
+    let toDiagnosticString (o: UniqueIndexOutcome) : string =
+        toStructured o |> StructuredString.render
+
+
 /// `evaluate` is a domain rule that V2 inherits from V1 (or refines
 /// from V1). The rules ARE the intervention; they live here, named
 /// explicitly, so the algebra layer (the pass driver) can iterate

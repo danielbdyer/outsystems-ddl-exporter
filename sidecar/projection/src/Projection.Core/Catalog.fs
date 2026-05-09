@@ -44,6 +44,19 @@ type Origin =
     /// External kind exposed by direct reader, no IS step.
     | ExternalDirect
 
+/// Typed structural display for `Origin`. Tag-only variants;
+/// renders to the variant name.
+[<RequireQualifiedAccess>]
+module Origin =
+    let toStructured (o: Origin) : StructuredString =
+        match o with
+        | OsNative -> StructuredString.tag "OsNative"
+        | ExternalViaIntegrationStudio -> StructuredString.tag "ExternalViaIntegrationStudio"
+        | ExternalDirect -> StructuredString.tag "ExternalDirect"
+
+    let toDiagnosticString (o: Origin) : string =
+        toStructured o |> StructuredString.render
+
 
 /// One row of a Static kind's population. Populations live in the catalog
 /// per A7; the unfold pass lifts them into type-level metadata for Pi.
@@ -69,6 +82,23 @@ type ModalityMark =
     | TenantScoped
     /// Logical deletes are represented in-row, not by physical removal.
     | SoftDeletable
+
+/// Typed structural display for `ModalityMark`. The `Static`
+/// variant carries the population count (not the rows themselves)
+/// — the count is the operator-relevant signal; the rows are
+/// queried separately.
+[<RequireQualifiedAccess>]
+module ModalityMark =
+    let toStructured (m: ModalityMark) : StructuredString =
+        match m with
+        | Static populations ->
+            StructuredString.create "Static"
+                [ "populations", Inv.int32 (List.length populations) ]
+        | TenantScoped -> StructuredString.tag "TenantScoped"
+        | SoftDeletable -> StructuredString.tag "SoftDeletable"
+
+    let toDiagnosticString (m: ModalityMark) : string =
+        toStructured m |> StructuredString.render
 
 
 /// Primitive scalar types. Concrete mapping to a target surface scalar is
