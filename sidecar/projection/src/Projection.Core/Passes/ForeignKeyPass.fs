@@ -238,6 +238,7 @@ module ForeignKeyPass =
     /// as `UniqueIndexPass.run` and `NullabilityPass.run`; this is
     /// the codification's third real test.
     let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<ForeignKeyDecisionSet>> =
+        use _ = Bench.scope "passes.foreignKey"
         // ForeignKey's evaluate takes the catalog as an additional
         // input (cross-attribute reach for target-kind lookup, schema
         // comparison). The closure captures it from the enclosing

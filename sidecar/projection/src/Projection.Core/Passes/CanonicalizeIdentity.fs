@@ -61,6 +61,7 @@ module CanonicalizeIdentity =
     /// Run the pass over a catalog. Returns the canonicalized catalog
     /// wrapped in a lineage with one `Touched` event per kind.
     let run (c: Catalog) : Lineage<Catalog> =
+        use _ = Bench.scope "passes.canonicalizeIdentity"
         let canon =
             { Modules =
                 c.Modules

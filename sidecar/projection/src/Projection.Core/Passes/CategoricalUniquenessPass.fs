@@ -103,6 +103,7 @@ module CategoricalUniquenessPass =
     /// by `SsKey`, attributes by `SsKey`, interventions by
     /// registration order.
     let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<CategoricalUniquenessDecisionSet> =
+        use _ = Bench.scope "passes.categoricalUniqueness"
         let fanOutConfig : Composition.FanOutConfig<Kind * Attribute, _, _, _> = {
             InterventionFilter = TighteningPolicy.categoricalUniquenessInterventions
             SortedContexts     = sortedAttributes

@@ -192,6 +192,7 @@ module NullabilityPass =
     /// (session 14 commit 5); session 15 commit 2 applies the
     /// codification to its second pass.
     let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<NullabilityDecisionSet>> =
+        use _ = Bench.scope "passes.nullability"
         let fanOutConfig : Composition.FanOutConfig<Kind * Attribute, _, _, _> = {
             InterventionFilter = TighteningPolicy.nullabilityInterventions
             SortedContexts     = sortedAttributes

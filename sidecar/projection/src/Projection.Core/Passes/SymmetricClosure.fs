@@ -153,6 +153,7 @@ module SymmetricClosure =
     /// inversesByTarget: Map<SsKey, Reference list>)` carries the
     /// closure-construction state immutably.
     let run (c: Catalog) : Lineage<Catalog> =
+        use _ = Bench.scope "passes.symmetricClosure"
         let allKinds = Catalog.allKinds c
         let kindByKey =
             allKinds

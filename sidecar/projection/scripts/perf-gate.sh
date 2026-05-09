@@ -1,27 +1,33 @@
 #!/usr/bin/env bash
 #
 # V2 sidecar perf-regression gate — runs the canary, captures the
-# resulting bench JSON, and compares against the committed baseline.
-# Fails (exit 1) if any per-label `TotalMs` exceeds the baseline value
-# by more than `BENCH_TOLERANCE` (default `1.5` ×). Soft-skips (exit 0)
-# when Docker is unreachable so CI / pre-commit on Docker-less hosts
-# don't hard-block.
+# resulting bench JSON, persists into a rolling history, and gates
+# on per-label statistical outliers (mean + K × std-dev across the
+# last N runs).
+#
+# Soft-skips (exit 0) when Docker / dotnet are unreachable so docs-
+# only commits and dev hosts without the canary stack don't hard-
+# block.
 #
 # Usage:
-#   sidecar/projection/scripts/perf-gate.sh                     # default canary-gate.sql, default tolerance
-#   BENCH_TOLERANCE=2.0 sidecar/projection/scripts/perf-gate.sh # looser
-#   PERF_GATE_RECORD=1 sidecar/projection/scripts/perf-gate.sh  # record new baseline (don't gate)
-#
-# The baseline lives at sidecar/projection/bench/baseline-canary.json
-# and is committed to the repo. Update via PERF_GATE_RECORD=1 + commit
-# the resulting JSON when the codebase legitimately changes the perf
-# floor (e.g., a new pass adds work; a new emitter expands per-kind
-# emission).
+#   sidecar/projection/scripts/perf-gate.sh                       # default: gate
+#   BENCH_K_SIGMA=2.0 sidecar/projection/scripts/perf-gate.sh     # tighter
+#   BENCH_TOLERANCE=2.0 sidecar/projection/scripts/perf-gate.sh   # loosen flat-tolerance fallback
+#   PERF_GATE_RECORD=1 sidecar/projection/scripts/perf-gate.sh    # record new baseline + clear history
 #
 # Per the iterator-logging-as-first-class-outcome discipline
-# (DECISIONS / CLAUDE.md): the canary's bench surface IS the perf
-# evidence; this gate makes regression detection structural rather
-# than aspirational.
+# (DECISIONS pillar-7-perf-clause): the canary's bench surface IS the
+# perf evidence; this gate makes regression detection structural.
+#
+# Statistical model:
+#   - Each run appends a JSON snapshot to bench/history-canary.jsonl
+#   - History trimmed to the last MAX_HISTORY=20 runs
+#   - Per-label threshold = mean + K_SIGMA × std-dev (default K=3.0,
+#     a 99.7% one-tailed bound under normal-ish iid samples)
+#   - When history < MIN_SAMPLES (default 5), falls back to flat
+#     `mean × BENCH_TOLERANCE` (default 1.5×) — the chapter-3.6
+#     simple gate, retained as the warm-up phase
+#   - Per-label minimum filter: labels with mean < 5 ms skipped (noise)
 
 set -euo pipefail
 
@@ -29,10 +35,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BENCH_DIR="$ROOT/bench"
 BASELINE_PATH="$BENCH_DIR/baseline-canary.json"
+HISTORY_PATH="$BENCH_DIR/history-canary.jsonl"
 FIXTURE="$ROOT/fixtures/canary-gate.sql"
 CLI_DLL="$ROOT/src/Projection.Cli/bin/Release/net9.0/projection.dll"
 TOLERANCE="${BENCH_TOLERANCE:-1.5}"
+K_SIGMA="${BENCH_K_SIGMA:-3.0}"
 RECORD="${PERF_GATE_RECORD:-0}"
+MAX_HISTORY="${BENCH_MAX_HISTORY:-20}"
+MIN_SAMPLES="${BENCH_MIN_SAMPLES:-5}"
+MIN_MS="${BENCH_MIN_MS:-5}"
 
 log() { printf '[perf-gate] %s\n' "$*" >&2; }
 
@@ -116,79 +127,150 @@ fi
 log "snapshot: $LATEST_SNAPSHOT"
 
 # ---------------------------------------------------------------------
-# Record-mode: write baseline and exit
+# Record-mode: write baseline, clear history, exit
 # ---------------------------------------------------------------------
 
 if [[ "$RECORD" == "1" ]]; then
     mkdir -p "$BENCH_DIR"
     cp "$LATEST_SNAPSHOT" "$BASELINE_PATH"
+    : > "$HISTORY_PATH"
     log "RECORDED baseline → $BASELINE_PATH"
-    log "Commit it to the repo when satisfied with the perf floor."
+    log "RESET history    → $HISTORY_PATH (cleared)"
+    log "Commit baseline-canary.json + (optional) history-canary.jsonl"
+    log "when satisfied with the perf floor."
     exit 0
 fi
 
 # ---------------------------------------------------------------------
-# Compare against baseline
+# Append to history + statistical gate
 # ---------------------------------------------------------------------
 
-if [[ ! -f "$BASELINE_PATH" ]]; then
-    log "no baseline at $BASELINE_PATH — recording first run"
-    log "(re-run with PERF_GATE_RECORD=1 to seed; commit the file)"
-    log "skipping comparison; exit 0"
-    exit 0
-fi
+mkdir -p "$BENCH_DIR"
 
-# Compare per-label TotalMs via Python (jq might not be installed everywhere).
-python3 - "$BASELINE_PATH" "$LATEST_SNAPSHOT" "$TOLERANCE" <<'PYEOF'
+python3 - "$LATEST_SNAPSHOT" "$HISTORY_PATH" "$BASELINE_PATH" \
+        "$MAX_HISTORY" "$MIN_SAMPLES" "$MIN_MS" "$K_SIGMA" "$TOLERANCE" <<'PYEOF'
 import json
+import math
 import sys
 
-baseline_path, latest_path, tolerance = sys.argv[1], sys.argv[2], float(sys.argv[3])
+(latest_path, history_path, baseline_path,
+ max_history, min_samples, min_ms, k_sigma, tolerance) = sys.argv[1:]
+max_history = int(max_history)
+min_samples = int(min_samples)
+min_ms = float(min_ms)
+k_sigma = float(k_sigma)
+tolerance = float(tolerance)
 
-def load(path):
+
+def load_run(path):
     with open(path) as f:
         run = json.load(f)
     return {s["Label"]: s["TotalMs"] for s in run["Stats"]}
 
-baseline = load(baseline_path)
-latest   = load(latest_path)
+
+def load_history(path):
+    runs = []
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                runs.append(json.loads(line))
+    except FileNotFoundError:
+        pass
+    return runs
+
+
+def append_history(path, snapshot, max_history):
+    history = load_history(path)
+    history.append(snapshot)
+    history = history[-max_history:]
+    with open(path, "w") as f:
+        for snap in history:
+            f.write(json.dumps(snap, separators=(",", ":")))
+            f.write("\n")
+    return history
+
+
+def per_label_stats(history):
+    """Return {label: (mean, std_dev, n)} across history."""
+    samples = {}
+    for snap in history:
+        for label, ms in snap.items():
+            samples.setdefault(label, []).append(ms)
+    stats = {}
+    for label, values in samples.items():
+        n = len(values)
+        mean = sum(values) / n
+        if n > 1:
+            variance = sum((v - mean) ** 2 for v in values) / (n - 1)
+            std = math.sqrt(variance)
+        else:
+            std = 0.0
+        stats[label] = (mean, std, n)
+    return stats
+
+
+# Load latest + append to history.
+latest = load_run(latest_path)
+history = append_history(history_path, latest, max_history)
+
+print(f"perf-gate: history depth = {len(history)} (max {max_history})")
+
+stats = per_label_stats(history[:-1])  # baseline = history before this run
+
+# Two modes:
+#   warm-up (n < min_samples): flat-tolerance vs running mean
+#   statistical (n >= min_samples): mean + k_sigma * std
+def threshold_flat(mean):
+    return mean * tolerance
+
+
+def threshold_sigma(mean, std):
+    return mean + k_sigma * std
+
 
 regressions = []
-new_labels  = []
-removed     = []
+warmup_label_count = 0
+gated_label_count = 0
+new_labels = []
+
 for label, latest_ms in sorted(latest.items()):
-    if label not in baseline:
+    if label not in stats:
         new_labels.append((label, latest_ms))
         continue
-    base_ms = baseline[label]
-    # Skip labels with negligible base time (under 5ms) — noise dominates.
-    if base_ms < 5:
-        continue
-    ratio = latest_ms / max(1, base_ms)
-    if ratio > tolerance:
-        regressions.append((label, base_ms, latest_ms, ratio))
-
-for label in sorted(set(baseline) - set(latest)):
-    removed.append((label, baseline[label]))
+    mean, std, n = stats[label]
+    if mean < min_ms:
+        continue  # noise filter
+    if n < min_samples:
+        warmup_label_count += 1
+        thresh = threshold_flat(mean)
+        mode = f"warmup×{tolerance}"
+    else:
+        gated_label_count += 1
+        thresh = threshold_sigma(mean, std)
+        mode = f"μ+{k_sigma}σ"
+    if latest_ms > thresh:
+        regressions.append((label, mean, std, latest_ms, thresh, mode))
 
 if regressions:
-    print(f"REGRESSION beyond {tolerance}x in {len(regressions)} label(s):")
-    print(f"  {'Label':50s} {'Baseline':>10s} {'Latest':>10s} {'Ratio':>8s}")
-    for label, b, l, r in regressions:
-        print(f"  {label:50s} {b:10d} {l:10d} {r:7.2f}x")
+    print()
+    print(f"REGRESSION in {len(regressions)} label(s):")
+    print(f"  {'Label':50s} {'Mean':>8s} {'StdDev':>8s} {'Thresh':>8s} {'Latest':>8s} {'Mode':>14s}")
+    for label, mean, std, latest_ms, thresh, mode in regressions:
+        print(f"  {label:50s} {mean:8.0f} {std:8.0f} {thresh:8.0f} {latest_ms:8d} {mode:>14s}")
     sys.exit(1)
 
+print(f"perf-gate: clean — {gated_label_count} sigma-gated labels, "
+      f"{warmup_label_count} warm-up labels (need {min_samples} samples), "
+      f"{len(new_labels)} new labels (will join history next run)")
+
 if new_labels:
-    print(f"NEW labels (not in baseline) — re-run with PERF_GATE_RECORD=1 if intentional:")
-    for label, ms in new_labels[:10]:
-        print(f"  + {label} ({ms} ms)")
+    print(f"  new this run: {len(new_labels)} label(s)")
+    for label, ms in new_labels[:5]:
+        print(f"    + {label}  ({ms} ms)")
 
-if removed:
-    print(f"REMOVED labels (in baseline, not in latest) — likely a refactor:")
-    for label, ms in removed[:10]:
-        print(f"  - {label} (was {ms} ms)")
-
-print(f"perf-gate: clean ({len(latest)} labels checked; tolerance={tolerance}x)")
 sys.exit(0)
 PYEOF
 PYTHON_EXIT=$?

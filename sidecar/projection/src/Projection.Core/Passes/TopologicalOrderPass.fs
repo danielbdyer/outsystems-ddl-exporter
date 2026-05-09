@@ -446,4 +446,5 @@ module TopologicalOrderPass =
     /// itself is not modified. One `Touched` event per kind scanned
     /// (per A25). Equivalent to `runWith TreatAsCycle`.
     let run (c: Catalog) : Lineage<TopologicalOrder> =
+        use _ = Bench.scope "passes.topologicalOrder"
         runWith TreatAsCycle c

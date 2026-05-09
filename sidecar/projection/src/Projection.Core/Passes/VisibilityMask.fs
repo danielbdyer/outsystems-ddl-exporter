@@ -113,6 +113,7 @@ module VisibilityMask =
     /// .fs`). This driver expresses what the pass DECIDES per kind;
     /// the primitive owns HOW the catalog is walked.
     let run (mask: Mask) (c: Catalog) : Lineage<Catalog> =
+        use _ = Bench.scope "passes.visibilityMask"
         c |> CatalogTraversal.mapKinds (fun events k ->
             match firstMatch mask k with
             | None -> Some k

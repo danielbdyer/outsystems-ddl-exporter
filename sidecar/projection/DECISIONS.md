@@ -104,6 +104,24 @@ against these before adopting any pattern.
    "be bold" directive (2026-05-09): expensive-now-for-cheaper-later
    beats compounding tech debt.
 
+   **Pillar-7 perf-clause** (added 2026-05-09 chapter 3.6 sidebar
+   reminder; iterator-logging-as-first-class-outcome): every
+   refactor SHALL cite its perf implications in the commit message.
+   Every new hot-path function SHALL have a `Bench.scope` at entry.
+   Every loop / iteration / lazy-stream pull over scaling data
+   SHALL flow through `Bench.iterDo` / `iterMap` / `iteriDo` /
+   `streamProbe` / `streamTransit`. Every external counter (bytes
+   emitted, rows bulk-copied, events accumulated, cache hit/miss,
+   etc.) SHALL surface via `Bench.recordSample`. The bench rollup
+   table is V2's structural perf-evidence surface; it is the
+   canary-scale early-warning system for the cutover. Agents
+   adopting a new pattern SHALL identify the perf class before
+   committing (zero / O(1) / O(N) / O(N log N) / O(N²) — including
+   the scaling axis). The perf-gate (`scripts/perf-gate.sh`) runs
+   on every pre-commit; per-label regressions vs
+   `bench/baseline-canary.json` block the commit. Audit `Bench`
+   coverage at every chapter close.
+
 The lint guardrail (`scripts/lint-discipline.sh`) is the structural
 enforcement of these disciplines: **default to explicit
 acknowledgement of deviance**. Every legitimate exception carries a

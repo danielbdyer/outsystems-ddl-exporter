@@ -64,6 +64,7 @@ module NormalizeStaticPopulations =
     /// catalog-traversal-with-event-collection pattern to the
     /// reified `CatalogTraversal.mapKinds` primitive.
     let run (c: Catalog) : Lineage<Catalog> =
+        use _ = Bench.scope "passes.normalizeStaticPopulations"
         c |> CatalogTraversal.mapKinds (fun events k ->
             if hasStaticModality k then
                 LineageBuffer.add (touchedEvent k.SsKey) events

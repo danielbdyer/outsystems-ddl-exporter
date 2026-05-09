@@ -169,6 +169,7 @@ module UniqueIndexPass =
     /// observer-relevant diagnostics, and the type signature names
     /// what the pass produces.
     let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<UniqueIndexDecisionSet>> =
+        use _ = Bench.scope "passes.uniqueIndex"
         let fanOutConfig : Composition.FanOutConfig<Kind * Index, _, _, _> = {
             InterventionFilter = TighteningPolicy.uniqueIndexInterventions
             SortedContexts     = sortedIndexes
