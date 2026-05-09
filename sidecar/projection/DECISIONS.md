@@ -7982,19 +7982,128 @@ genuinely needs incremental construction).
 
 **Audit-deferred (Tier-1) sites carried into this discipline:**
 - `Deploy.fs:216-220` regex — retire to `String.Split` +
-  literal compare.
+  literal compare. ✅ slice λ.1
 - `Deploy.fs:344-346` string `+` SQL fragment build — replace
-  with `String.concat`.
+  with `String.concat`. ✅ slice λ.1
 - `Deploy.fs:203` `sprintf "CREATE DATABASE [%s];"` — typed
-  helper.
+  helper. ✅ slice λ.2
 - `Render.fs:16,30,34,38,39,62,64,67` — quote/type/literal
-  `sprintf`s and `"0x" + raw` plain `+`. Render's hot path is
-  the discipline's worked example; either retire to typed
-  builders or `String.concat`.
-- `Deploy.fs:176` `Guid.NewGuid()` — non-determinism leak; pin
-  via injected name-generator parameter.
+  `sprintf`s and `"0x" + raw` plain `+`. ✅ slice λ.1
+- `Deploy.fs:176` `Guid.NewGuid()` — non-determinism leak;
+  reified as `DatabaseNameGenerator` typed seam. ✅ slice λ.2
+- `Deploy.fs:555-630` six `let mutable` accumulators — refactored
+  to `runSourcePhase` / `runTargetPhase` pure-async phase
+  functions with typed `PhaseOutcome` return. ✅ slice λ.2
+- `CatalogReader.fs:104-127` synthesis-basis `sprintf "%s_%s_%s"`
+  + `Identity.fs:122,155` round-trip — retired via
+  `SsKey.synthesizedComposite` typed-component constructor. ✅
+  slice λ.3
 
 The audit findings route to follow-on slices in chapter 3.5 close
 or chapter 3.6 hygiene; tracking via `DECISIONS` so the deferral
 doesn't recur silently (per the "Active deferrals re-checked at
 chapter close" discipline).
+
+
+## 2026-05-09 — Built-in obligation: when a BCL or vendor SDK emits the structure, use it (TSQL150Parser / ScriptDom / DacFx)
+
+V2 commits a stronger form of the no-string-concatenation
+discipline: **if there is a method (BCL, vendor SDK, or
+established library) that emits the string we are trying to
+emit, we are obliged to use it.** Hand-rolled string composition
+of structured emission targets is forbidden when a typed
+domain-aware emitter exists for the same target.
+
+**Worked obligations (already adopted).**
+
+- **JSON emission** — `System.Text.Json.Utf8JsonWriter` and
+  `System.Text.Json.Nodes.JsonNode`. `JsonEmitter` /
+  `DistributionsEmitter` (chapter 3.5 slices β / γ) rebuild from
+  these BCL primitives; no manual `{ ... }` interpolation.
+- **XML emission** — `System.Xml.XmlWriter`.
+  `RefactorLogRender.toRefactorLogXml` (chapter 3.5 slice ι)
+  uses `XmlWriter` exclusively; no manual `<Operation Name="…">`
+  interpolation.
+- **UUIDv5 (RFC 4122 §4.3)** — derived deterministically from
+  `(namespace, name)` via `SHA1.HashData` + RFC bit-set, not via
+  ad-hoc Guid construction.
+- **Bracket-quoted SSDT identifiers** — `Render.quote` /
+  `TableId.qualified` (`Coordinates.fs`) is the canonical
+  joiner; consumers delegate.
+
+**Worked obligations (deferred, chapter 3.7+ candidate).**
+
+- **T-SQL emission** — `Microsoft.SqlServer.TransactSql.ScriptDom`
+  (`TSql150Parser` for parsing; `Sql150ScriptGenerator` /
+  `Sql160ScriptGenerator` for emission) provides the typed AST
+  + script generator that V2's `Render.toSql` currently
+  hand-rolls. Chapter 3.5's `Statement` DU is V2's algebraic
+  pre-text form; ScriptDom's `TSqlFragment` hierarchy is the
+  vendor-canonical pre-text form. The two ought to converge:
+  V2's `Render` step would build `TSqlFragment` instances and
+  delegate to `Sql150ScriptGenerator.GenerateScript`, with
+  pinned `SqlScriptGeneratorOptions` for T1 byte-determinism.
+  Adopting ScriptDom retires every remaining `sprintf` /
+  `String.Concat` / `StringBuilder` use in `Render.fs`,
+  `Deploy.fs:countUserTablesSql` / `createDatabaseSql`, and
+  `ReadSide.fs`'s SELECT-builder. Estimated chapter scope:
+  ~6-8 sessions, comparable to chapter 3.5.
+
+- **DACPAC emission** — `Microsoft.SqlServer.DacFx`'s
+  `TSqlModel` + `DacPackage` would become the typed
+  pre-bytes form when DacpacEmitter (chapter 3.x deferred)
+  ships. Same discipline.
+
+**Operational rule.**
+
+Before introducing string-composition for any structured emission
+target (SQL, XML, JSON, YAML, refactor.log, .dacpac, etc.), the
+author MUST ascertain whether a typed builder exists. If it does,
+adopt it; if it doesn't, document the absence and the search
+rationale before falling back to `String.Concat` /
+`StringBuilder`.
+
+**Cross-reference.** The audit (`Codebase determinism +
+non-built-in audit`, 2026-05-09) named the SQL-emission paths
+that the ScriptDom adoption would cleanest. Tracked at
+`HANDOFF.md` "deferred-but-might-fire" list.
+
+**Forward chapter.** Chapter 3.7 candidate — "ScriptDom adoption
+for the SQL emission layer". Pre-scope to write at runway.
+Inherits chapter 3.5's typed-Π port; the realization step
+becomes a `TSqlFragment` build + `GenerateScript` call.
+Substantive deliverable: every `Render.fs` / `Deploy.fs` SQL
+text path replaced by ScriptDom-typed flow; T1 byte-determinism
+verified at the script generator's pinned-options surface.
+
+
+## 2026-05-09 — Lint guardrail: scripts/lint-discipline.sh
+
+Per the audit's Lens 3 #2 recommendation, codifies a grep-based
+guardrail at `sidecar/projection/scripts/lint-discipline.sh`
+that fails CI / pre-commit on disallowed patterns in production
+code paths under `src/`:
+
+  - `System\.Text\.RegularExpressions` — banned namespace.
+  - `\bsprintf\b` / `\bprintfn\b` / `\bprintf\b` in `Projection.Core/`
+    (Core's purity discipline; sprintf is allowed in adapters
+    where boundary code emits diagnostic strings).
+  - String-`+` heuristic — `\b"\s*\+\s*` and `\s*\+\s*"`
+    (catches `"x" + y` and `x + "y"` patterns).
+  - `String\.Format\(` — banned alternative path.
+  - `Guid\.NewGuid\(\)` outside the reified `DatabaseNameGenerator`
+    seam in `Deploy.fs`.
+  - `DateTime\.Now` / `DateTime\.UtcNow` outside `Bench.fs`
+    (Core's no-time discipline).
+  - `Random\.` outside test fixtures.
+
+The script runs in <100ms over the V2 source tree; wired via
+`.git/hooks/pre-commit` (local) and `.github/workflows/lint.yml`
+(CI). Allowlisted via comment marker `// LINT-ALLOW: <reason>`
+on the offending line.
+
+**Escalation tier**: any new violation requires either (a) a
+`LINT-ALLOW` marker with rationale or (b) a paired DECISIONS
+amendment naming why the discipline is being relaxed for the
+specific site. The script is the load-bearing guard against
+discipline drift.
