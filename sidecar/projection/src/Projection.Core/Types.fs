@@ -1,7 +1,5 @@
 namespace Projection.Core
 
-open System.Threading.Tasks
-
 /// Two-Catalog diff value. Stage 0 reserves the type name; chapter 3.5
 /// (RefactorLogEmitter + CatalogDiff) extends to the four-variant
 /// exhaustive DU `Renamed | Added | Removed | Unchanged` per the A36
@@ -27,13 +25,23 @@ type Diff =
 //
 // Two Result types coexist by arity (per `Result.fs` docstring):
 //   * `Result<'a>` — Projection.Core's single-arity success/failure with
-//     `ValidationError list`. Used by adapters (`Adapter<...>`) and
-//     boundary code aligned with the chapter-2-close convention.
+//     `ValidationError list`. Used by Core / boundary-translation code
+//     aligned with the chapter-2-close convention.
 //   * `Result<'a, 'b>` — FSharp.Core's two-arity Ok/Error. Used by
 //     emitter aliases (`Emitter<...>`) so the typed `EmitError`
 //     surface is visible at every Π's signature, per
 //     `CHAPTER_3_PRESCOPE_ARTIFACTBYKIND_REFACTOR.md` §2 strict-equal
 //     decision. The arity disambiguates without ambiguity.
+//
+// Per session-36 architecture audit (Agent 2 #2): the Stage-0
+// `Adapter<'source, 'inner> = 'source -> Task<Result<'inner>>` alias
+// previously lived here, dragging `System.Threading.Tasks` into
+// `Projection.Core` and contradicting the load-bearing F#-pure-core
+// commitment. Adapters at the boundary now declare their own
+// task-shaped signature inline; the alias retired since no Core
+// consumer depended on it (the only reference was a Stage-0
+// reservation test in `TypesTests.fs`, kept as an inlined shape
+// witness instead of a named alias).
 
 /// Pattern Π — Emitter. Catalog → ArtifactByKind, no Profile dependency.
 /// Per A18 amended (`AXIOMS.md` 2026-05-12): Π consumes whichever subset
@@ -53,16 +61,6 @@ type EmitterWithProfile<'element> =
 /// over the diff's SsKey set, not the source Catalog's.
 type EmitterOverDiff<'element> =
     CatalogDiff -> Result<ArtifactByKind<'element>, EmitError>
-
-/// Pattern Adapter — boundary contract (sources to internal IR via Task).
-/// Per CLAUDE.md F# feature surface: `Task<'a>` is in scope at the
-/// boundary, not in Core. Adapters use this signature; the synchronous
-/// Core consumes the Result. Worked example:
-/// `Projection.Adapters.Osm.CatalogReader.parse` (session 18). Adapters
-/// use the single-arity `Projection.Core.Result<'a>` per the
-/// chapter-2-close convention.
-type Adapter<'source, 'inner> =
-    'source -> Task<Result<'inner>>
 
 /// Pattern Pass — analysis or enrichment.
 /// Per A19 (each pass is a structure-preserving endofunctor) and A25

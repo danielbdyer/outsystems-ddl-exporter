@@ -56,8 +56,13 @@ let ``S0.A: EmitterOverDiff<'element> is inhabited by CatalogDiff -> Result<Arti
     Assert.NotNull(stub :> obj)
 
 [<Fact>]
-let ``S0.A: Adapter<'source, 'inner> is inhabited by 'source -> Task<Result<'inner>>`` () =
-    let stub : Adapter<string, int> =
+let ``S0.A: adapter shape 'source -> Task<Result<'inner>> is inhabited (Stage-0 reservation; alias retired session-36)`` () =
+    // Per session-36 architecture audit (Agent 2 #2): the Stage-0
+    // `Adapter<'source,'inner>` alias was retired from Core to keep
+    // `System.Threading.Tasks` out of `Projection.Core`. The shape
+    // is preserved here as an inlined-signature witness; adapters at
+    // the boundary declare the task-shaped signature directly.
+    let stub : string -> Task<Result<int>> =
         fun _source -> Task.FromResult(Result.success 0)
     Assert.NotNull(stub :> obj)
 

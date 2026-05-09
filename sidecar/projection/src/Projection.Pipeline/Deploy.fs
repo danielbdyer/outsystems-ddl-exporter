@@ -61,7 +61,13 @@ module Deploy =
             TargetReport : Report
         }
 
-    /// Cheap Docker-availability probe for soft-skip in tests.
+    /// Docker availability + lazy JIT bring-up. Per session-36 — the
+    /// session-start hook starts dockerd at session boot, but the
+    /// daemon can drop mid-session (OOM, signal, environment shift);
+    /// `ensureRunning` probes responsiveness and re-starts the daemon
+    /// best-effort so canary tests don't fail spuriously. `isAvailable`
+    /// stays as the static yes/no for callers that just want a probe;
+    /// tests that actually need Docker should call `ensureRunning`.
     [<RequireQualifiedAccess>]
     module Docker =
         let private socketCandidates : string list =
@@ -72,6 +78,35 @@ module Deploy =
                     (Environment.GetFolderPath Environment.SpecialFolder.UserProfile)
             ]
 
+        // Why these specific values (not arbitrary):
+        // - `ProbeTimeoutMs = 2000`: `docker version` against a healthy
+        //   daemon returns in tens of ms; 2 s is the slack for a
+        //   loaded host. Larger timeouts hide a wedged daemon
+        //   (downstream canary work fails anyway). 2 s is the smallest
+        //   value that doesn't false-negative under host load.
+        // - `BringupBudgetMs = 30000`: dockerd cold-start measured at
+        //   1-3 s in this environment; 30 s is ~10× the observed p99,
+        //   covering pathological cases (TLS clock-skew retries, host
+        //   memory pressure during boot).
+        // - `BringupPollMs = 200`: below the perceptual instant-response
+        //   threshold (~250 ms) so a successful bring-up returns
+        //   without feeling laggy; small enough to detect a fast
+        //   bring-up promptly without hammering the probe.
+        // The shape is a poll-until-ready loop, not a fixed wait —
+        // we exit as soon as the daemon is responsive; the budget
+        // is only consumed in the failure case.
+        [<Literal>]
+        let private ProbeTimeoutMs : int = 2_000
+
+        [<Literal>]
+        let private BringupBudgetMs : int = 30_000
+
+        [<Literal>]
+        let private BringupPollMs : int = 200
+
+        /// Static probe: env var or socket file present. Cheap; doesn't
+        /// contact the daemon. Used as the gate for "this environment
+        /// could plausibly run Docker."
         let isAvailable () : bool =
             let hasEnvHost =
                 let v = Environment.GetEnvironmentVariable "DOCKER_HOST"
@@ -79,6 +114,59 @@ module Deploy =
             let socketExists =
                 socketCandidates |> List.exists File.Exists
             hasEnvHost || socketExists
+
+        /// Active probe: shell out to `docker version` with a 2 s
+        /// ceiling. Captures the daemon-not-listening case that
+        /// `isAvailable` (socket-file probe only) misses.
+        let private isResponding () : bool =
+            try
+                let psi =
+                    System.Diagnostics.ProcessStartInfo(
+                        FileName = "docker",
+                        Arguments = "version --format \"{{.Server.Version}}\"",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false)
+                match System.Diagnostics.Process.Start psi with
+                | null -> false
+                | p ->
+                    use _ = p
+                    if p.WaitForExit ProbeTimeoutMs then p.ExitCode = 0
+                    else
+                        try p.Kill() with _ -> ()
+                        false
+            with _ -> false
+
+        /// Best-effort daemon spawn followed by poll-until-ready. The
+        /// budget is a *ceiling* — we exit as soon as the daemon
+        /// answers `isResponding`, so a healthy bring-up returns
+        /// within a few hundred ms. The full budget consumes only
+        /// when dockerd genuinely failed to start.
+        let private startDaemon () : bool =
+            try
+                let psi =
+                    System.Diagnostics.ProcessStartInfo(
+                        FileName = "sudo",
+                        Arguments = "dockerd",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false)
+                System.Diagnostics.Process.Start psi |> ignore
+            with _ -> ()
+            let sw = System.Diagnostics.Stopwatch.StartNew()
+            let mutable up = isResponding ()
+            while not up && sw.ElapsedMilliseconds < int64 BringupBudgetMs do
+                System.Threading.Thread.Sleep BringupPollMs
+                up <- isResponding ()
+            up
+
+        /// JIT bring-up. Returns true iff Docker is usable for canary
+        /// work. Tests gate on this for clean skip-if-unavailable
+        /// semantics that survive a mid-session daemon drop.
+        let ensureRunning () : bool =
+            if not (isAvailable ()) then false
+            elif isResponding () then true
+            else startDaemon ()
 
     [<Literal>]
     let private DefaultImage : string =

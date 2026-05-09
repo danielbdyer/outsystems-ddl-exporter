@@ -65,6 +65,16 @@ module Lineage =
     let ofValueWith (event: LineageEvent) (value: 'a) : Lineage<'a> =
         { Value = value; Trail = [event] }
 
+    /// Wrap a value with a list of events in one shot. Per session-36
+    /// audit (Agent 4 #4) — the `tellMany events (ofValue x)` shape
+    /// recurred at 7 sites across the terminal-event passes
+    /// (CanonicalizeIdentity, NamingMorphism, NormalizeStaticPopulations,
+    /// SymmetricClosure, TopologicalOrderPass, VisibilityMask). Two-
+    /// consumer threshold long crossed; the primitive names the
+    /// canonical "build a value plus its trail" pattern.
+    let ofValueAndEvents (events: LineageEvent list) (value: 'a) : Lineage<'a> =
+        { Value = value; Trail = events }
+
     /// Append a single event without changing the value. Useful when a
     /// pass needs to record an observation about a node it returns
     /// unchanged (e.g., `Touched`).

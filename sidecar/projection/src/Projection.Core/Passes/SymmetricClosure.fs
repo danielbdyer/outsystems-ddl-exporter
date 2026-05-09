@@ -146,4 +146,4 @@ module SymmetricClosure =
                                     // because of `inverse :: current`).
                                     { k with References = k.References @ List.rev toAdd }) }) }
 
-        Lineage.tellMany (List.ofSeq events) (Lineage.ofValue withInverses)
+        Lineage.ofValueAndEvents (List.ofSeq events) withInverses

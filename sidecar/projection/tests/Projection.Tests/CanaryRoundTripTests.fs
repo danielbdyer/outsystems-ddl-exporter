@@ -28,7 +28,7 @@ open Projection.Targets.SSDT
 ///      projection of operator intent, and an empty diff means
 ///      structural fidelity holds.
 ///
-/// **Soft-skip pattern.** Tests check `Deploy.Docker.isAvailable ()`
+/// **Soft-skip pattern.** Tests check `Deploy.Docker.ensureRunning ()`
 /// at start; if false, log SKIP and pass vacuously. M4+ can promote
 /// to `Xunit.SkippableFact` for proper skip semantics.
 ///
@@ -38,7 +38,7 @@ open Projection.Targets.SSDT
 /// in parallel.
 
 let private skipIfNoDocker (label: string) : bool =
-    if Deploy.Docker.isAvailable () then
+    if Deploy.Docker.ensureRunning () then
         true
     else
         printfn

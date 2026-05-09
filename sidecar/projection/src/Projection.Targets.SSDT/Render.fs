@@ -15,8 +15,10 @@ module Render =
 
     let quote (s: string) : string = sprintf "[%s]" s
 
-    let tableQualified (t: TableId) : string =
-        sprintf "%s.%s" (quote t.Schema) (quote t.Table)
+    /// Per session-36 — delegate to the canonical `TableId.qualified`
+    /// in Core so SSDT renderers and the bulk path produce identical
+    /// `[schema].[table]` strings by construction.
+    let tableQualified (t: TableId) : string = TableId.qualified t
 
     /// IR `(Type, Length, Precision, Scale)` → SQL type expression.
     /// Shared by emit (`toText`) and deploy paths so the two never

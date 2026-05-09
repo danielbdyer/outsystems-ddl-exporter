@@ -73,4 +73,4 @@ module NormalizeStaticPopulations =
                                     events.Add(touchedEvent k.SsKey)
                                     { k with Modality = k.Modality |> List.map normalizeModality }
                                 else k) }) }
-        Lineage.tellMany (List.ofSeq events) (Lineage.ofValue normalized)
+        Lineage.ofValueAndEvents (List.ofSeq events) normalized

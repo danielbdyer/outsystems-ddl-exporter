@@ -22,7 +22,7 @@ open Projection.Tests.SourceFixtures
 /// gated to the canary CLI rather than the unit-test suite).
 
 let private skipIfNoDocker (label: string) : bool =
-    if Deploy.Docker.isAvailable () then
+    if Deploy.Docker.ensureRunning () then
         true
     else
         printfn

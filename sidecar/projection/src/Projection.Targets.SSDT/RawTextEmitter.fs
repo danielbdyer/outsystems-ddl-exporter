@@ -1,6 +1,7 @@
 namespace Projection.Targets.SSDT
 
 open Projection.Core
+open Projection.Core.Passes
 
 /// Π_SSDT — the first sibling Π for V2. Per session-34, Π's
 /// canonical output is a `seq<Statement>` (typed, deterministic,
@@ -167,69 +168,24 @@ module RawTextEmitter =
             yield! rowStatements k
         }
 
-    /// Emitter-local topological sort. Returns kinds in an order
-    /// such that each kind's FK targets appear earlier (or in the
-    /// same kind, for self-references which are SQL-Server-legal
-    /// inline). Self-edges skipped; inter-table cycles emit at the
-    /// tail in alphabetical SsKey order. Per session-31 / A33 —
-    /// SsKey-stable tiebreaking keeps the order itself deterministic.
+    /// Emitter's view of topological order: returns kinds with FK
+    /// targets earlier (cycles resolved or alphabetical-fallback per
+    /// `TopologicalOrderPass`). Per session-36 audit (Agent 4 #6) —
+    /// the duplicate Kahn implementation that previously lived here
+    /// retired in favor of consuming the pass with `SkipSelfEdges`.
+    /// Self-FKs are SQL-Server-legal inline; passing `SkipSelfEdges`
+    /// keeps a self-FK kind in its natural topological position.
+    /// A33 (deterministic-ordered schema emission) is satisfied
+    /// structurally — same algorithm, two projections.
     let private emissionOrder (catalog: Catalog) : Kind list =
         use _ = Bench.scope "emit.rawText.topologicalSort"
-        let allKinds = Catalog.allKinds catalog
-        let kindByKey = allKinds |> List.map (fun k -> k.SsKey, k) |> Map.ofList
-        let presentKeys = allKinds |> List.map (fun k -> k.SsKey) |> Set.ofList
-        let adjacency, indegree =
-            allKinds
-            |> List.fold
-                (fun (adj: Map<SsKey, SsKey list>, ind: Map<SsKey, int>) k ->
-                    k.References
-                    |> List.fold
-                        (fun (a: Map<SsKey, SsKey list>, i: Map<SsKey, int>) r ->
-                            if
-                                r.TargetKind = k.SsKey
-                                || not (Set.contains r.TargetKind presentKeys)
-                            then
-                                a, i
-                            else
-                                let children =
-                                    Map.tryFind r.TargetKind a |> Option.defaultValue []
-                                let updatedAdj =
-                                    a |> Map.add r.TargetKind (k.SsKey :: children)
-                                let currentInd =
-                                    Map.tryFind k.SsKey i |> Option.defaultValue 0
-                                let updatedInd =
-                                    i |> Map.add k.SsKey (currentInd + 1)
-                                updatedAdj, updatedInd)
-                        (adj, ind))
-                (Map.empty, allKinds |> List.map (fun k -> k.SsKey, 0) |> Map.ofList)
-        let mutable currentIndegree = indegree
-        let mutable ready =
-            allKinds
-            |> List.map (fun k -> k.SsKey)
-            |> List.filter (fun n ->
-                Map.tryFind n currentIndegree |> Option.defaultValue 0 = 0)
-            |> List.sort
-        let result = ResizeArray<SsKey>()
-        while not (List.isEmpty ready) do
-            let head = List.head ready
-            ready <- List.tail ready
-            result.Add head
-            let children = Map.tryFind head adjacency |> Option.defaultValue []
-            for child in children do
-                let childInd =
-                    (Map.tryFind child currentIndegree |> Option.defaultValue 0) - 1
-                currentIndegree <- Map.add child childInd currentIndegree
-                if childInd = 0 then
-                    ready <- (child :: ready) |> List.sort
-        let emitted = Set.ofSeq result
-        let remainder =
-            allKinds
-            |> List.map (fun k -> k.SsKey)
-            |> List.filter (fun k -> not (Set.contains k emitted))
-            |> List.sort
-        let allOrdered = (List.ofSeq result) @ remainder
-        allOrdered
-        |> List.choose (fun key -> Map.tryFind key kindByKey)
+        let order =
+            (TopologicalOrderPass.runWith SkipSelfEdges catalog).Value.Order
+        let kindByKey =
+            Catalog.allKinds catalog
+            |> List.map (fun k -> k.SsKey, k)
+            |> Map.ofList
+        order |> List.choose (fun key -> Map.tryFind key kindByKey)
 
     let private moduleByKindKey (catalog: Catalog) : Map<SsKey, Module> =
         catalog.Modules

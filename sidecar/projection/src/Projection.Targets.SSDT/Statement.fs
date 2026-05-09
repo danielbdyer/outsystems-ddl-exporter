@@ -14,8 +14,12 @@ open Projection.Core
 /// AXIOM scaffold (filed for chapter-3 close):
 ///   A35 — Π's output is a deterministic statement stream.
 ///   A36 — Bulk-vs-incremental is realization-layer policy.
-
-type TableId = { Schema : string; Table : string }
+///
+/// Per session-36 audit: the SSDT-local `TableId` retired in favor
+/// of the Core-resident `TableId` value object (`Coordinates.fs`).
+/// The shape is identical; consumers that referenced
+/// `Projection.Targets.SSDT.TableId` now resolve to the Core type
+/// transparently via `open Projection.Core`.
 
 /// IR-typed column declaration. The realization layer (`Render`)
 /// converts `(Type, Length, Precision, Scale)` to its SQL type

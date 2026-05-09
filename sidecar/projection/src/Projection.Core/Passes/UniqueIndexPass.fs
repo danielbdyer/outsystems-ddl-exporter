@@ -180,8 +180,9 @@ module UniqueIndexPass =
         }
         let lineage = Composition.fanOut fanOutConfig catalog policy profile
         let entries = lineage.Value.Decisions |> List.choose opportunityEntry
-        { Value = { Value = lineage.Value; Entries = entries }
-          Trail = lineage.Trail }
+        lineage
+        |> LineageDiagnostics.ofLineage
+        |> LineageDiagnostics.tellDiagnostics entries
 
     /// Convenience accessor for tests and consumers that only care
     /// about the decision set (not the diagnostic stream). Domain-named

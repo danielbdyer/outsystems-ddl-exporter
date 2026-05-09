@@ -87,7 +87,7 @@ module NamingMorphism =
         let events = ResizeArray<LineageEvent>()
         let renamed =
             { Modules = c.Modules |> List.map (renameModule morphism events) }
-        Lineage.tellMany (List.ofSeq events) (Lineage.ofValue renamed)
+        Lineage.ofValueAndEvents (List.ofSeq events) renamed
 
     /// Convenience constructors for common morphisms. Each is a pure
     /// `Name -> Name` and composable via `>>`.

@@ -70,4 +70,4 @@ module CanonicalizeIdentity =
             canon
             |> Catalog.allKinds
             |> List.map (fun k -> touchedEvent k.SsKey)
-        Lineage.tellMany events (Lineage.ofValue canon)
+        Lineage.ofValueAndEvents events canon

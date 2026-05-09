@@ -29,6 +29,29 @@ type OrderingMode =
 // visible at the file level.
 
 
+/// How `TopologicalOrderPass` treats a kind's reference to itself
+/// during dependency-graph construction. Per session-36 audit
+/// (Agent 4 #6 — "RawTextEmitter re-implements topological sort"):
+/// the emitter and the pass diverged on this axis (the pass treated
+/// self-edges as 1-node SCCs; the emitter skipped them since SQL
+/// Server allows inline self-FK constraints in CREATE TABLE).
+/// Parameterizing the policy harmonizes the two — the pass now
+/// produces both views from a single algorithm.
+type SelfLoopPolicy =
+    /// Self-edges are dependency edges. The kind appears unprocessed
+    /// after Kahn's algorithm (its indegree is ≥ 1 from itself);
+    /// downstream resolution either breaks the loop or falls back
+    /// to alphabetical. Default — preserves the pre-session-36 pass
+    /// semantics for existing callers.
+    | TreatAsCycle
+    /// Self-edges are dropped during graph construction. Used by
+    /// emitters whose target syntax (e.g., SQL Server's CREATE
+    /// TABLE with inline FK clauses) supports a kind referencing
+    /// itself without an out-of-line dependency, so the self-loop
+    /// is vacuous for ordering.
+    | SkipSelfEdges
+
+
 /// Diagnostic for a strongly-connected component the resolver could not
 /// break. Members and breakable-edges are keyed by `SsKey` (strongly
 /// typed; no name lookup required). The `Reason` field is human-readable

@@ -10,7 +10,7 @@ open Projection.Pipeline
 /// same outcome (run-level idempotency).
 ///
 /// **Soft-skip pattern.** If the Docker daemon is unreachable
-/// (`Deploy.Docker.isAvailable () = false`), tests log a SKIP message
+/// (`Deploy.Docker.ensureRunning () = false`), tests log a SKIP message
 /// and pass vacuously. M3+ can promote to `Xunit.SkippableFact` for
 /// proper skip semantics; for now the soft-skip keeps the test runner
 /// honest without adding a dependency. The CLI's `deploy` subcommand
@@ -34,7 +34,7 @@ let private sampleSsdt : string =
         ]
 
 let private skipIfNoDocker (label: string) : bool =
-    if Deploy.Docker.isAvailable () then
+    if Deploy.Docker.ensureRunning () then
         true
     else
         printfn
@@ -48,7 +48,7 @@ let ``M2: Docker availability probe is consistent with the daemon's actual state
     // a stable bool without throwing. The probe is the basis for
     // soft-skip decisions in the rest of the canary tests; if it
     // breaks, every downstream test is mis-skipped.
-    let result = Deploy.Docker.isAvailable ()
+    let result = Deploy.Docker.ensureRunning ()
     Assert.IsType<bool>(result) |> ignore
 
 [<Fact>]

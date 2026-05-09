@@ -102,7 +102,7 @@ module Bulk =
                     SqlBulkCopyOptions.KeepIdentity
                     ||| SqlBulkCopyOptions.KeepNulls
                 use bulk = new SqlBulkCopy(cnn, opts, null)
-                bulk.DestinationTableName <- sprintf "[%s].[%s]" table.Schema table.Table
+                bulk.DestinationTableName <- TableId.qualified table
                 for c in shape do
                     bulk.ColumnMappings.Add(c.Column, c.Column) |> ignore
                 bulk.BulkCopyTimeout <- 0
