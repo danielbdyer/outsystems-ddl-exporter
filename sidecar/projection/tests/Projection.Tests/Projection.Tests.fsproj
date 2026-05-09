@@ -52,6 +52,7 @@
     <Compile Include="DistributionsEmitterTests.fs" />
     <Compile Include="RichProfilingEndToEndTests.fs" />
     <Compile Include="DiagnosticsEndToEndTests.fs" />
+    <Compile Include="EndToEndPipelineTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -69,6 +70,7 @@
     <ProjectReference Include="..\..\src\Projection.Targets.Distributions\Projection.Targets.Distributions.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.Sql\Projection.Adapters.Sql.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.Osm\Projection.Adapters.Osm.fsproj" />
+    <ProjectReference Include="..\..\src\Projection.Pipeline\Projection.Pipeline.fsproj" />
   </ItemGroup>
 
 </Project>
