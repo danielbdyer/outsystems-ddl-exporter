@@ -73,24 +73,34 @@ module RawTextEmitter =
     let private moduleHeaderText (m: Module) : string =
         sprintf "Module: %s (%s)" (Name.value m.Name) (rootKey m.SsKey)
 
-    let private fkDef (catalog: Catalog) (k: Kind) (r: Reference) : ForeignKeyDef option =
+    /// Per session-35 — `targetByKey` and `pkAttrByKey` lifted to
+    /// `Map` once at `statements` entry rather than scanning the
+    /// catalog linearly per reference. At 300 kinds × ~5 refs each
+    /// the savings dwarf the per-row emit cost; FK projection drops
+    /// from O(K · R) catalog scans to O(R) hash lookups.
+    let private fkDef
+        (targetByKey: Map<SsKey, Kind>)
+        (pkAttrByKey: Map<SsKey, Attribute>)
+        (k: Kind)
+        (r: Reference)
+        : ForeignKeyDef option =
         use _ = Bench.scope "emit.rawText.reference"
         let sourceColumnOpt =
             k.Attributes
             |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
             |> Option.map (fun a -> a.Column.ColumnName)
-        match sourceColumnOpt, Catalog.tryFindKind r.TargetKind catalog with
-        | Some sourceColumn, Some target ->
-            target.Attributes
-            |> List.tryFind (fun a -> a.IsPrimaryKey)
-            |> Option.map (fun pkAttr ->
+        match sourceColumnOpt,
+              Map.tryFind r.TargetKind targetByKey,
+              Map.tryFind r.TargetKind pkAttrByKey with
+        | Some sourceColumn, Some target, Some pkAttr ->
+            Some
                 {
                     Name = sprintf "FK_%s" (rootKey r.SsKey)
                     SourceColumn = sourceColumn
                     Target = toTableId target
                     TargetColumn = pkAttr.Column.ColumnName
                     OnDelete = toReferenceActionSql r.OnDelete
-                })
+                }
         | _ -> None
 
     let private pkDef (k: Kind) : PrimaryKeyDef option =
@@ -141,14 +151,18 @@ module RawTextEmitter =
                 | _ -> ()
         }
 
-    let private kindStatements (catalog: Catalog) (k: Kind) : seq<Statement> =
+    let private kindStatements
+        (targetByKey: Map<SsKey, Kind>)
+        (pkAttrByKey: Map<SsKey, Attribute>)
+        (k: Kind)
+        : seq<Statement> =
         seq {
             use _ = Bench.scope "emit.rawText.kind"
             yield Blank
             yield Comment (kindHeaderText k)
             let columns = k.Attributes |> List.map columnDef
             let pk = pkDef k
-            let fks = k.References |> List.choose (fkDef catalog k)
+            let fks = k.References |> List.choose (fkDef targetByKey pkAttrByKey k)
             yield CreateTable (toTableId k, columns, pk, fks)
             yield! rowStatements k
         }
@@ -239,6 +253,21 @@ module RawTextEmitter =
                     version)
             yield Comment "Project = Π_SSDT ∘ E"
             yield Comment "(synthetic-milestone form: typed statement stream)"
+            // Per session-35 — lift `(targetByKey, pkAttrByKey)`
+            // once for the whole emission so FK resolution is
+            // O(1) hash lookup per reference instead of O(K)
+            // catalog scan. At 300 kinds × 1500 refs the saving
+            // is ~450k ops per emit.
+            let allKinds = Catalog.allKinds catalog
+            let targetByKey =
+                allKinds |> List.map (fun k -> k.SsKey, k) |> Map.ofList
+            let pkAttrByKey =
+                allKinds
+                |> List.choose (fun k ->
+                    k.Attributes
+                    |> List.tryFind (fun a -> a.IsPrimaryKey)
+                    |> Option.map (fun pk -> k.SsKey, pk))
+                |> Map.ofList
             let modByKey = moduleByKindKey catalog
             let mutable currentModuleKey : SsKey option = None
             for k in emissionOrder catalog do
@@ -253,7 +282,7 @@ module RawTextEmitter =
                     yield Comment (moduleHeaderText m)
                     currentModuleKey <- Some mk
                 | _ -> ()
-                yield! kindStatements catalog k
+                yield! kindStatements targetByKey pkAttrByKey k
         }
 
     /// Back-compat .sql-text realization — `statements >> Render.toText`,

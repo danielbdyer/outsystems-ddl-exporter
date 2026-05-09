@@ -1,6 +1,7 @@
 module Projection.Tests.GeneratorScaleTests
 
 open Xunit
+open Microsoft.Data.SqlClient
 open Projection.Core
 open Projection.Pipeline
 open Projection.Targets.SSDT
@@ -51,6 +52,42 @@ let private runCanaryAgainst
             fixture.SeedRowCount
         let task =
             Deploy.runWideCanary fixture.Combined RawTextEmitter.statements
+        let result = task.GetAwaiter().GetResult()
+        match result with
+        | Success report -> Some report
+        | Failure errors ->
+            let codes = errors |> List.map (fun e -> e.Code) |> String.concat ", "
+            Assert.Fail(sprintf "%s: canary failed: %s" label codes)
+            None
+
+/// Per session-35 — bulk-source variant. Schema deploys via
+/// `executeBatch` (small text); each static table's seed rows
+/// flow through `Bulk.copyRows` (SqlBulkCopy with KeepIdentity).
+/// Same canary contract; ~10x faster source loading at 100k+ row
+/// scale because we skip the text-INSERT round-trips entirely.
+let private runBulkLoaderCanaryAgainst
+    (label: string)
+    (spec: GenerateSpec)
+    : Deploy.WideCanaryReport option =
+    if not (skipIfNoDocker label) then
+        None
+    else
+        let fixture = FixtureGenerator.generate spec
+        printfn
+            "Generated fixture (bulk): %d tables, %d bytes of DDL, %d bulk seeds, %d seed rows"
+            fixture.TableCount
+            fixture.Ddl.Length
+            fixture.BulkSeeds.Length
+            fixture.SeedRowCount
+        let loadSource (cnn: SqlConnection) =
+            task {
+                use _ = Bench.scope "fixture.bulkLoader"
+                do! Deploy.executeBatch cnn fixture.Ddl
+                for seed in fixture.BulkSeeds do
+                    do! Bulk.copyRows cnn seed.Table seed.Rows
+            }
+        let task =
+            Deploy.runWideCanaryWithLoader loadSource RawTextEmitter.statements
         let result = task.GetAwaiter().GetResult()
         match result with
         | Success report -> Some report
@@ -123,7 +160,7 @@ let private runBulkCanary (label: string) (spec: GenerateSpec) : unit =
         printfn "SKIP bulk canary [%s]: set PROJECTION_RUN_BULK_CANARY=1 to run." label
     else
         Bench.reset ()
-        match runCanaryAgainst label spec with
+        match runBulkLoaderCanaryAgainst label spec with
         | None -> ()
         | Some report ->
             summarizeDiff label report

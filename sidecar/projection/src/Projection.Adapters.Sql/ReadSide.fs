@@ -537,17 +537,7 @@ module ReadSide =
             columnRows
             |> Bench.iterMap "readside.buildAttribute" (fun row ->
                 buildAttribute row primaryKeySet identitySet)
-        let aggregated =
-            attrResults
-            |> List.fold
-                (fun acc r ->
-                    match acc, r with
-                    | Failure es, Failure es' -> Result.failure (es @ es')
-                    | Failure _, _ -> acc
-                    | _, Failure es -> Result.failure es
-                    | Success xs, Success x -> Result.success (xs @ [ x ]))
-                (Result.success [])
-        match aggregated with
+        match Result.aggregate attrResults with
         | Failure errors -> Result.failure errors
         | Success attributes ->
             match kindSsKey schema table with
@@ -631,18 +621,7 @@ module ReadSide =
         match fkGroups.TryFind(k.Physical.Schema, k.Physical.Table) with
         | None -> Result.success k
         | Some fks ->
-            let refResults = fks |> List.map buildReference
-            let aggregated =
-                refResults
-                |> List.fold
-                    (fun acc r ->
-                        match acc, r with
-                        | Failure es, Failure es' -> Result.failure (es @ es')
-                        | Failure _, _ -> acc
-                        | _, Failure es -> Result.failure es
-                        | Success xs, Success x -> Result.success (xs @ [ x ]))
-                    (Result.success [])
-            match aggregated with
+            match fks |> List.map buildReference |> Result.aggregate with
             | Failure errors -> Result.failure errors
             | Success refs -> Result.success { k with References = refs }
 
@@ -659,17 +638,7 @@ module ReadSide =
                     |> List.groupBy (fun row -> row.Schema, row.Table)
                     |> Bench.iterMap "readside.kindGroup" (fun ((schema, table), rows) ->
                         buildKind schema table rows primaryKeySet identitySet)
-                let kindsAggregated =
-                    kindResults
-                    |> List.fold
-                        (fun acc r ->
-                            match acc, r with
-                            | Failure es, Failure es' -> Result.failure (es @ es')
-                            | Failure _, _ -> acc
-                            | _, Failure es -> Result.failure es
-                            | Success xs, Success x -> Result.success (xs @ [ x ]))
-                        (Result.success [])
-                match kindsAggregated with
+                match Result.aggregate kindResults with
                 | Failure errors -> return Result.failure errors
                 | Success kinds ->
                     let fkGroups =
@@ -679,17 +648,7 @@ module ReadSide =
                     let kindsWithRefsResults =
                         kinds
                         |> Bench.iterMap "readside.attachReferences" (attachReferences fkGroups)
-                    let kindsWithRefsAggregated =
-                        kindsWithRefsResults
-                        |> List.fold
-                            (fun acc r ->
-                                match acc, r with
-                                | Failure es, Failure es' -> Result.failure (es @ es')
-                                | Failure _, _ -> acc
-                                | _, Failure es -> Result.failure es
-                                | Success xs, Success x -> Result.success (xs @ [ x ]))
-                            (Result.success [])
-                    match kindsWithRefsAggregated with
+                    match Result.aggregate kindsWithRefsResults with
                     | Failure errors -> return Result.failure errors
                     | Success kindsWithRefs ->
                         // Per session-34 — threshold lifted to 100k.
@@ -701,7 +660,7 @@ module ReadSide =
                         // threshold and feed digesters directly without
                         // IR materialization — chapter-4.1 territory.
                         let maxRows = 100_000
-                        let mutable kindsWithRows = []
+                        let kindsWithRows = ResizeArray<Kind>(List.length kindsWithRefs)
                         for k in kindsWithRefs do
                             let! rowsOpt = readRows cnn k maxRows
                             let kindWithRows =
@@ -709,7 +668,8 @@ module ReadSide =
                                 | Some rows when not (List.isEmpty rows) ->
                                     { k with Modality = [ Static rows ] }
                                 | _ -> k
-                            kindsWithRows <- kindsWithRows @ [ kindWithRows ]
+                            kindsWithRows.Add kindWithRows
+                        let kindsWithRows = List.ofSeq kindsWithRows
                         match moduleSsKey () with
                         | Failure errors -> return Result.failure errors
                         | Success mKey ->

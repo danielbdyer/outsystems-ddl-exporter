@@ -138,9 +138,26 @@ module Render =
     /// canonical text realization of Π's output. Stream-aware bench
     /// at the boundary (`render.toText`) records throughput across
     /// the full sequence.
+    ///
+    /// The StringBuilder grows by power-of-two doubling. Pre-sizing
+    /// to the rendered output's actual length matters most for the
+    /// `RawTextEmitter.emit` path on enterprise catalogs (≥100k
+    /// statements), where un-sized accumulation pays repeated copy
+    /// costs. Per session-35 — `IList`-backed `seq` short-circuits
+    /// to a count probe; otherwise the default seed remains 64 KB
+    /// (handles the 300-table fixture without resize).
     let toText (statements: seq<Statement>) : string =
         use _ = Bench.scope "render.toText"
-        let sb = StringBuilder(2048)
+        let initialCapacity =
+            match statements with
+            | :? System.Collections.Generic.IReadOnlyCollection<Statement> as coll ->
+                // Heuristic: ~120 chars per statement (DDL averages
+                // higher, comments lower). Rounding up to nearest KB
+                // avoids fine-grained over-tuning while preventing
+                // resize-doubling on large catalogs.
+                max 65_536 (coll.Count * 120)
+            | _ -> 65_536
+        let sb = StringBuilder(initialCapacity)
         statements
         |> Bench.streamProbe "render.toText.stream"
         |> Seq.iter (toSql sb)

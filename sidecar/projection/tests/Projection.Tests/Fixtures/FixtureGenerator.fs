@@ -2,6 +2,8 @@ namespace Projection.Tests.SourceFixtures
 
 open System
 open System.Text
+open Projection.Core
+open Projection.Targets.SSDT
 
 /// Procedural OutSystems-shaped fixture generator. Per session-31
 /// operator framing — "what about with 200 entities and 100 static
@@ -40,18 +42,33 @@ type GenerateSpec =
         Seed : int
     }
 
-/// Generated artifact: schema DDL + static-seed data SQL.
+/// One static table's bulk-loadable seed rows. Per session-35 —
+/// the bulk fixture loader path uses `Bulk.copyRows` directly
+/// (SqlBulkCopy) instead of executing N INSERT statements as text;
+/// at 500k-row scale this drops source-load time from ~10 minutes
+/// to a handful of seconds. Each row is a `CellValue list`
+/// matching the table's schema in column order.
+type StaticTableSeed =
+    {
+        Table : TableId
+        Rows : CellValue list list
+    }
+
+/// Generated artifact: schema DDL + static-seed data, both as text
+/// (for the historical executeBatch path) and as typed bulk seeds
+/// (for the SqlBulkCopy path).
 type GeneratedFixture =
     {
         /// CREATE TABLE statements with FK constraints.
         Ddl : string
-        /// INSERT statements for static entities.
+        /// INSERT statements for static entities (text form, GO-chunked).
         SeedData : string
-        /// `Ddl` + `SeedData` concatenated. Per session-33 — the
-        /// canary deploys this single string so the source SQL
-        /// Server has both schema and rows. The round-trip
-        /// property verifies both halves survive V2's emit cycle.
+        /// `Ddl` + `SeedData` concatenated.
         Combined : string
+        /// Per session-35 — typed bulk seeds for SqlBulkCopy. One
+        /// entry per static table; rows are `CellValue` lists in
+        /// column order. Empty when `StaticEntities = 0`.
+        BulkSeeds : StaticTableSeed list
         /// Total tables in the generated fixture.
         TableCount : int
         /// Total static-seed rows (sum across all static entities).
@@ -322,10 +339,10 @@ module FixtureGenerator =
     /// Deterministic GUID derived from the RNG. Same seed →
     /// same GUID sequence, so the canary's row-set hash is stable
     /// across runs.
-    let private nextGuid (rng: Random) : Guid =
+    let private nextGuid (rng: Random) : System.Guid =
         let bytes = Array.zeroCreate 16
         rng.NextBytes bytes
-        Guid bytes
+        System.Guid bytes
 
     /// Generate a variegated INSERT row for the static-entity shape
     /// (ID, LABEL, CODE, IS_ACTIVE, SS_KEY). The label / code pools
@@ -340,12 +357,19 @@ module FixtureGenerator =
     [<Literal>]
     let private SeedBatchSize : int = 1_000
 
+    /// Per session-35 — emits the static-seed rows in two parallel
+    /// forms: GO-chunked INSERT text (for executeBatch consumers)
+    /// and typed `CellValue list list` (for `Bulk.copyRows`
+    /// consumers). Same RNG sequence drives both, so seed-byte
+    /// determinism holds: text and bulk forms describe the same
+    /// rows.
     let private generateStaticSeed
         (rng: Random)
         (rowsPerEntity: int)
         (tableName: string)
         (sb: StringBuilder)
-        : unit =
+        : CellValue list list =
+        let bulkRows = ResizeArray<CellValue list>(rowsPerEntity)
         for i in 1 .. rowsPerEntity do
             if i > 1 && (i - 1) % SeedBatchSize = 0 then
                 sb.AppendLine "GO" |> ignore
@@ -367,8 +391,17 @@ module FixtureGenerator =
                     active
                     guid)
             |> ignore
+            bulkRows.Add
+                [
+                    { Column = "ID";        Type = Integer; Raw = string i }
+                    { Column = "LABEL";     Type = Text;    Raw = label }
+                    { Column = "CODE";      Type = Text;    Raw = code }
+                    { Column = "IS_ACTIVE"; Type = Boolean; Raw = if active = 1 then "true" else "false" }
+                    { Column = "SS_KEY";    Type = Guid;    Raw = guid }
+                ]
         if rowsPerEntity > 0 then
             sb.AppendLine "GO" |> ignore
+        List.ofSeq bulkRows
 
     /// Generate a fixture matching the spec. Deterministic per
     /// `spec.Seed`: same spec → same DDL byte-for-byte.
@@ -407,13 +440,23 @@ module FixtureGenerator =
             totalTables <- totalTables + 1
 
         // Static entities — independent of regular entities; emitted
-        // after for clarity.
+        // after for clarity. Each table's seed rows are captured in
+        // both text form (text-INSERT batches in `dataSb`) and bulk
+        // form (typed `CellValue` lists in `bulkSeeds`) so callers
+        // can choose a loader path.
+        let bulkSeeds = ResizeArray<StaticTableSeed>(spec.StaticEntities)
         for i in 0 .. spec.StaticEntities - 1 do
             let modIdx = i % spec.Modules
             let modCode = moduleCode modIdx
             let sname = staticEntityName i
             let tableName = generateStaticTable modCode sname ddlSb
-            generateStaticSeed rng spec.StaticRowsPerEntity tableName dataSb
+            let rows = generateStaticSeed rng spec.StaticRowsPerEntity tableName dataSb
+            if not (List.isEmpty rows) then
+                bulkSeeds.Add
+                    {
+                        Table = { Schema = "dbo"; Table = tableName }
+                        Rows = rows
+                    }
             totalTables <- totalTables + 1
 
         let ddl = ddlSb.ToString()
@@ -432,6 +475,7 @@ module FixtureGenerator =
             Ddl = ddl
             SeedData = seedData
             Combined = combined
+            BulkSeeds = List.ofSeq bulkSeeds
             TableCount = totalTables
             SeedRowCount = seedRowCount
         }

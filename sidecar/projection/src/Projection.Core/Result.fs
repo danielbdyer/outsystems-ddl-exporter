@@ -121,6 +121,25 @@ module Result =
             | Failure es  :: _        -> Failure es
         loop [] (List.ofSeq results)
 
+    /// Aggregating sequence collapse. Unlike `collect`, accumulates errors
+    /// across the whole sequence rather than short-circuiting on the first
+    /// failure — boundary adapters surface diagnostics for every malformed
+    /// input, not just the first. Per session-35 — replaces the
+    /// `List.fold (xs @ [x])` pattern that grew O(N²) at every call site
+    /// (ReadSide attribute aggregation, FK reference aggregation, kind
+    /// aggregation, `kindsWithRefs` aggregation).
+    let aggregate (results: Result<'a> seq) : Result<'a list> =
+        let successes = ResizeArray<'a>()
+        let errors = ResizeArray<ValidationError>()
+        for r in results do
+            match r with
+            | Success v -> successes.Add v
+            | Failure es -> for e in es do errors.Add e
+        if errors.Count > 0 then
+            Failure (List.ofSeq errors)
+        else
+            Success (List.ofSeq successes)
+
 
 /// Monadic infix operators for `Result<'a>`. Open this module at call sites
 /// that benefit from `>>=` / `<!>` (the algebra reads more like the formal

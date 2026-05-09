@@ -131,7 +131,13 @@ module Deploy =
             System.Text.RegularExpressions.RegexOptions.Multiline
             ||| System.Text.RegularExpressions.RegexOptions.Compiled)
 
-    let private executeBatch (cnn: SqlConnection) (sql: string) : Task<unit> =
+    /// Public realization of a SQL text batch. Splits on `^GO$`
+    /// markers (sqlcmd-style); each segment runs in its own
+    /// round-trip with no client-side timeout. Test fixtures (and
+    /// arbitrary external SQL scripts) consume this directly to
+    /// load source data; V2's own emit path goes through
+    /// `executeStream` with the typed statement seq.
+    let executeBatch (cnn: SqlConnection) (sql: string) : Task<unit> =
         task {
             use _ = Bench.scope "deploy.executeBatch"
             let segments =
@@ -149,13 +155,15 @@ module Deploy =
                 ()
         }
 
-    /// Default bulk batch size — empirically tuned for SqlBulkCopy
-    /// throughput. Larger batches amortize round-trip cost; too-large
-    /// batches inflate memory. 1000 lands in the throughput plateau
-    /// for transactional row sizes (≈100–500 bytes / row) without
-    /// committing more than ~1 MB per batch.
+    /// Default bulk batch size — per session-35 bench, 1000 was
+    /// network-round-trip dominant (~12 ms per 1000-row batch on a
+    /// warm container). Bumping to 5000 amortizes the round-trip
+    /// across 5× the rows; per-row sizes (≈100–500 bytes) keep
+    /// batches under ~2.5 MB, well within `SqlBulkCopy` and
+    /// transaction-log comfort. Larger batches saturate; smaller
+    /// batches pay round-trip overhead linearly.
     [<Literal>]
-    let private DefaultBulkBatchSize : int = 1000
+    let private DefaultBulkBatchSize : int = 5000
 
     /// Bulk-aware realization of Π's statement stream. Per session-34
     /// — folds consecutive `InsertRow`s for the same `(TableId,
@@ -426,8 +434,17 @@ module Deploy =
     /// **Single container, two databases.** ~10x faster than two
     /// containers; databases are isolated by SQL Server. The
     /// container disposes on completion; both databases go with it.
-    let runWideCanary
-        (sourceDdl: string)
+    /// Wide canary, source loader form. Per session-35 — the source
+    /// half accepts an arbitrary loader function instead of a fixed
+    /// SQL string, so test fixtures can choose between text-batch
+    /// (default, for arbitrary external SQL) and bulk realization
+    /// (`Bulk.copyRows` for tabular seed data). The string-based
+    /// `runWideCanary` is a thin wrapper. Bulk-loading 500k rows
+    /// drops from ~10 minutes to a handful of seconds at the cost
+    /// of moving from text-INSERT to typed-row form on the source
+    /// side — same observable post-state.
+    let runWideCanaryWithLoader
+        (loadSource: SqlConnection -> Task<unit>)
         (emit: Catalog -> seq<Statement>)
         : Task<Result<WideCanaryReport>> =
         task {
@@ -438,7 +455,8 @@ module Deploy =
                         let sourceDbName = uniqueDatabaseName "Source"
                         let targetDbName = uniqueDatabaseName "Target"
 
-                        // Phase 1: deploy source DDL, read it back.
+                        // Phase 1: load source via caller-supplied loader,
+                        // read it back.
                         do!
                             task {
                                 use _ = Bench.scope "deploy.runWideCanary.sourcePhase"
@@ -453,7 +471,7 @@ module Deploy =
                         try
                             use cnn = new SqlConnection(sourceConn)
                             do! cnn.OpenAsync()
-                            do! executeBatch cnn sourceDdl
+                            do! loadSource cnn
                             // Phase 3: derive TablesCreated from the
                             // readside Catalog instead of running a
                             // separate countUserTables query.
@@ -554,6 +572,16 @@ module Deploy =
                                         }
                     })
         }
+
+    /// String-form wrapper around `runWideCanaryWithLoader`.
+    /// Equivalent to `runWideCanaryWithLoader (fun cnn -> executeBatch
+    /// cnn sourceDdl)`; preserved for callers passing arbitrary SQL
+    /// scripts (the historical canary surface).
+    let runWideCanary
+        (sourceDdl: string)
+        (emit: Catalog -> seq<Statement>)
+        : Task<Result<WideCanaryReport>> =
+        runWideCanaryWithLoader (fun cnn -> executeBatch cnn sourceDdl) emit
 
     /// End-to-end: parse a V1 `osm_model.json` from disk, project
     /// through the three sibling Π's, and deploy the SSDT. Returns

@@ -16,7 +16,7 @@ open Projection.Targets.SSDT
 /// the three round-trip a value through SQL → IR raw → SQL without
 /// loss for V2's PrimitiveType vocabulary.
 [<RequireQualifiedAccess>]
-module internal Bulk =
+module Bulk =
 
     /// Map V2 `PrimitiveType` to the CLR type SqlBulkCopy uses when
     /// the source DataTable column carries that type. Aligns with
