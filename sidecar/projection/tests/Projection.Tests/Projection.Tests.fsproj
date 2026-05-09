@@ -24,6 +24,7 @@
     <Compile Include="CatalogDiffTests.fs" />
     <Compile Include="RefactorLogEmitterTests.fs" />
     <Compile Include="RefactorLogRenderTests.fs" />
+    <Compile Include="ScriptDomRoundTripTests.fs" />
     <Compile Include="TypesTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
     <Compile Include="ProfileFixtures.fs" />
