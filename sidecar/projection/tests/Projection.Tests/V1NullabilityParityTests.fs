@@ -197,9 +197,12 @@ let ``V1 #4: relaxation allowed yields KeepNullable (same outcome as V1 #2 in V2
 //   under evidence."
 // ---------------------------------------------------------------------------
 
-[<Fact(Skip = "V2 collapsed Aggressive mode (DECISIONS 2026-05-09); a future intervention variant or config field arrives when demand is real.")>]
-let ``V1 #5: Aggressive mode unique-signal-with-remediation — SKIPPED (V2 divergence)`` () =
-    ()
+// V1 #5 (Aggressive-mode unique-signal-with-remediation) Skip
+// stub retired per the user's chapter-3.5 directive (2026-05-09:
+// "we don't need them"). V2 collapsed Aggressive mode per
+// `DECISIONS 2026-05-09`; if a future intervention variant or
+// config field re-introduces the concept, a fresh test lands
+// structurally with the implementation.
 
 // ---------------------------------------------------------------------------
 // V1 #6, #7 — Opportunity-creation tests (activated session 15)

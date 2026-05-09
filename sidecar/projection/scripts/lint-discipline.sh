@@ -169,11 +169,13 @@ scan "regex-banned" "$SRC" 'System\.Text\.RegularExpressions'
 scan "core-sprintf" "$CORE" '\b(sprintf|printfn|printf)\b'
 
 # ---------------------------------------------------------------------------
-# Rule 3 — string-+ heuristic. Catches `"x" + y` and `x + "y"` shapes.
-# Scoped to Core (boundary code has legacy patterns).
+# Rule 3 — string-+ heuristic. Catches `"x" + y` and `x + "y"` shapes
+# anywhere in production. Per chapter 3.5 deep audit (2026-05-09 hard
+# line) — broadened from Core-only to all `src/`. The `+` operator on
+# strings is the most-brittle concatenation form.
 # ---------------------------------------------------------------------------
 
-scan "string-plus" "$CORE" '"\s*\+|\+\s*"'
+scan "string-plus" "$SRC" '"\s*\+|\+\s*"'
 
 # ---------------------------------------------------------------------------
 # Rule 4 — banned alternative: String.Format(. Whole src/.
@@ -316,6 +318,28 @@ scan "string-concat" "$SRC" 'System\.String\.Concat\s*\(|^[[:space:]]+String\.Co
 # ---------------------------------------------------------------------------
 
 scan "fsharp-string-concat" "$SRC" '\bString\.concat\b'
+
+# ---------------------------------------------------------------------------
+# Rule 18d — F# 9 interpolated strings (`$"..."`) banned in production.
+# Per chapter 3.5 deep audit (2026-05-09 hard line) — interpolated
+# strings are *also* string-concatenation by another spelling.
+# Additionally they default to `CultureInfo.CurrentCulture` for typed
+# value rendering, which violates T1 byte-determinism on numeric
+# types. Use typed builders / BCL writers / `Inv.*` helpers instead.
+# ---------------------------------------------------------------------------
+
+scan "interpolated-string" "$SRC" '\$"'
+
+# ---------------------------------------------------------------------------
+# Rule 18e — `String.Join` (BCL collection joiner) banned anywhere in
+# production without explicit `LINT-ALLOW`. Per chapter 3.5 deep audit
+# (2026-05-09 hard line) — same family as `String.concat` / `String
+# .Concat`; the BCL spelling does not exempt the discipline. Each use
+# requires per-site analysis (alternatives considered + why join was
+# adopted).
+# ---------------------------------------------------------------------------
+
+scan "string-join" "$SRC" 'System\.String\.Join\s*\(|\bString\.Join\s*\('
 
 # ---------------------------------------------------------------------------
 # Rule 19 — `xs @ [x]` Big-O anti-pattern banned in production.

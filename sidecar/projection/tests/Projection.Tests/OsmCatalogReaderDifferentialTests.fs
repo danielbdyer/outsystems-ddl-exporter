@@ -181,9 +181,12 @@ let ``differential: V1 minimal-fixture JSON parses into the expected V2 Catalog`
 // implementation does.
 // ---------------------------------------------------------------------------
 
-[<Fact(Skip = "SnapshotFile variant pending. The chapter-open scoping (DECISIONS 2026-05-15 — OSSYS adapter parse signature) names file-path as a SnapshotSource variant; activation deferred until the implementation chapter decides whether file-path tests live in this unit-test project or in a separate integration-test surface.")>]
-let ``differential: SnapshotJson and SnapshotFile produce identical Catalog`` () =
-    ()
+// SnapshotFile differential test stub retired per the user's
+// chapter-3.5 directive (2026-05-09: "we don't need them"). The
+// SnapshotFile variant's activation lands with the file-path
+// implementation chapter; differential coverage will be authored
+// fresh against the live implementation rather than reserved as
+// a long-lived Skip stub.
 
 // ---------------------------------------------------------------------------
 // Reference-bearing fixture (session 19 — second slice in the OSSYS arc).

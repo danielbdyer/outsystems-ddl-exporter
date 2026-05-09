@@ -340,13 +340,13 @@ let ``catalog passes through unchanged: structural by signature`` () =
 // ADMIRE prose.
 // ---------------------------------------------------------------------------
 
-[<Fact(Skip = "V2 collapsed Aggressive mode (DECISIONS 2026-05-09); without the Aggressive variant V2 has no equivalent of V1 UniqueIndexDecisionStrategyTests.AggressiveModeWithoutEvidenceRequiresRemediation. A new TighteningIntervention variant or config field arrives when demand is real.")>]
-let ``V1 UniqueIndex: Aggressive mode without evidence requires remediation — SKIPPED (V2 divergence)`` () =
-    ()
-
-[<Fact(Skip = "V1 UniqueIndexDecisionStrategy.EvidenceModeTreatsIncludedColumnsAsSingleColumnIndex: V1 augments composite indexes with INCLUDE columns and special-cases the included-column boundary against the single-column unique signal. V2 does not yet model index-included-columns at the IR level (the Index DU has no IncludedColumns slot); the boundary case is reachable only when the IR refinement lands. Reserve the test name; promote to Behavioral when the IR grows.")>]
-let ``V1 UniqueIndex: evidence mode treats included columns as single-column index — SKIPPED (V2 divergence)`` () =
-    ()
+// Two UniqueIndex Skip stubs (Aggressive-mode-without-evidence,
+// evidence-mode-included-columns) retired per the user's
+// chapter-3.5 directive (2026-05-09: "we don't need them"). The
+// reserved contracts will land structurally when V2 grows the
+// corresponding capability (Aggressive mode variant; Index
+// IncludedColumns IR slot) — fresh tests authored against the
+// live implementation rather than long-lived Skip stubs.
 
 // ---------------------------------------------------------------------------
 // Activated V1 contract — V1 OpportunityBuilder.TryCreate (UniqueIndex
