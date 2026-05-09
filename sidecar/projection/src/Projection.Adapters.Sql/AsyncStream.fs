@@ -1,5 +1,11 @@
 namespace Projection.Adapters.Sql
 
+// LINT-ALLOW-FILE-MUTATION: Pull-based streaming primitive
+//   (AsyncStream<'a> = unit -> Task<'a option>); each combinator
+//   carries function-local mutables (state machines, accumulators)
+//   reified behind the abstract pull. Per audit Lens-2 Tier-2
+//   (justified + reified).
+
 open System.Threading.Tasks
 open Projection.Core
 

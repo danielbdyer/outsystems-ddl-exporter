@@ -3,6 +3,7 @@ namespace Projection.Targets.Json
 open System.IO
 open System.Text
 open System.Text.Json
+open System.Text.Json.Nodes
 open Projection.Core
 
 /// The second sibling Π for V2. Emits the catalog as JSON text.
@@ -128,29 +129,96 @@ module JsonEmitter =
     // Public surface.
     // -----------------------------------------------------------------------
 
-    let private writerOptions : JsonWriterOptions =
-        // Indented + pinned LF newline so output is deterministic across
-        // platforms (T1). IndentCharacter / IndentSize default to two
-        // spaces, which matches the rest of the V2 documentation style.
-        let mutable opts = JsonWriterOptions()
-        opts.Indented <- true
-        opts.NewLine <- "\n"
-        opts
+    /// Pinned-deterministic JSON writer options. Both forms come
+    /// from `Projection.Core.JsonOptions` — the single sanctioned
+    /// home for the BCL's mutable `JsonWriterOptions` struct (per
+    /// the FP strict-mode discipline). `indented` is the document-
+    /// writer form; `compact` is the per-kind slice form whose
+    /// composer re-parses through `JsonNode.Parse`. Indentation
+    /// depth-tracking is handled by the BCL at composition time.
 
-    /// Emit the catalog as JSON text. Output is deterministic: byte-
-    /// identical for byte-identical input (T1).
-    let emit (catalog: Catalog) : string =
+    /// Render one kind's JSON object into a compact UTF-8 string.
+    /// Used by `emitSlices` to produce the per-kind value indexed in
+    /// `ArtifactByKind`. The object's property order is fixed by
+    /// `writeKind`'s call sequence and matches what the indented
+    /// writer would emit at depth-3 in the catalog document, modulo
+    /// indentation.
+    let private kindJsonText (k: Kind) : string =
         use stream = new MemoryStream()
         do
-            use writer = new Utf8JsonWriter(stream, writerOptions)
-            writer.WriteStartObject()
-            writer.WriteString("emitter", "Projection.Targets.Json")
-            writer.WriteNumber("version", version)
-            writer.WritePropertyName("modules")
-            writer.WriteStartArray()
-            catalog.Modules
-            |> Bench.iterDo "emit.json.catalogModule" (writeModule writer)
-            writer.WriteEndArray()
-            writer.WriteEndObject()
+            use writer = new Utf8JsonWriter(stream, (JsonOptions.compact ()))
+            writeKind writer k
             writer.Flush()
         Encoding.UTF8.GetString(stream.ToArray())
+
+    /// Π port realization (chapter 3.5 slice β). Per A18, `Catalog`
+    /// only — no Profile, no Policy. Per T11 (structural by
+    /// construction), the smart-constructor's strict-equality check
+    /// guarantees the artifact's keyset equals `Catalog.allKinds`'s
+    /// SsKey set. Per the chapter-open §8 two-consumer threshold,
+    /// the per-kind value is `string` (the kind's JSON object as
+    /// compact text); a richer `JsonObject` per-kind type earns its
+    /// place when a second consumer (e.g., DacpacEmitter or chapter-
+    /// 4.4 drift detection) forces typed manipulation.
+    let emitSlices : Emitter<string> = fun catalog ->
+        use _ = Bench.scope "emit.json.emitSlices"
+        let allKinds = Catalog.allKinds catalog
+        let slices =
+            allKinds
+            |> List.map (fun k -> k.SsKey, kindJsonText k)
+            |> Map.ofList
+        ArtifactByKind.create catalog slices
+
+    /// Emit the catalog as JSON text. Output is deterministic: byte-
+    /// identical for byte-identical input (T1). Composes through the
+    /// typed `emitSlices` port so the seam is exercised by the canonical
+    /// text realization. Per-kind JSON fragments are re-parsed via
+    /// `JsonNode.Parse` and written through the indented writer so the
+    /// BCL handles indentation-depth tracking; the round trip preserves
+    /// byte-determinism because `JsonObject` preserves property
+    /// insertion order.
+    let emit (catalog: Catalog) : string =
+        use _ = Bench.scope "emit.json.emit"
+        match emitSlices catalog with
+        | Result.Error err ->
+            invalidOp
+                (sprintf
+                    "JsonEmitter.emit: ArtifactByKind invariant breach: %A"
+                    err)
+        | Result.Ok artifact ->
+            let slices = ArtifactByKind.toMap artifact
+            use stream = new MemoryStream()
+            do
+                use writer = new Utf8JsonWriter(stream, (JsonOptions.indented ()))
+                writer.WriteStartObject()
+                writer.WriteString("emitter", "Projection.Targets.Json")
+                writer.WriteNumber("version", version)
+                writer.WritePropertyName("modules")
+                writer.WriteStartArray()
+                for m in catalog.Modules do
+                    use _ = Bench.scope "emit.json.catalogModule"
+                    writer.WriteStartObject()
+                    writer.WriteString("ssKey", renderSsKey m.SsKey)
+                    writer.WriteString("name",  Name.value m.Name)
+                    writer.WritePropertyName("kinds")
+                    writer.WriteStartArray()
+                    for k in m.Kinds do
+                        use _ = Bench.scope "emit.json.moduleKind"
+                        match Map.tryFind k.SsKey slices with
+                        | Some kindText ->
+                            // Re-parse the compact per-kind JSON and
+                            // write through the indented writer so
+                            // depth-tracking matches the surrounding
+                            // catalog document. Unreachable `None`
+                            // case eliminated by the smart constructor's
+                            // strict-equality contract (T11 by type).
+                            match JsonNode.Parse(kindText) with
+                            | null -> ()  // unreachable: kindText is non-empty by construction
+                            | node -> node.WriteTo(writer)
+                        | None -> ()  // unreachable: T11 guarantees coverage
+                    writer.WriteEndArray()
+                    writer.WriteEndObject()
+                writer.WriteEndArray()
+                writer.WriteEndObject()
+                writer.Flush()
+            Encoding.UTF8.GetString(stream.ToArray())

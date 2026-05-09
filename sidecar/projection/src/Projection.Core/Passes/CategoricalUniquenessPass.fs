@@ -1,5 +1,16 @@
 namespace Projection.Core.Passes
 
+// LINT-ALLOW-FILE: pass-driver `opportunityEntry` builds
+// operator-facing diagnostic message text via `sprintf`
+// (multi-line prose with numeric / decimal interpolation —
+// e.g., "Mandatory column has %d/%d nulls observed (budget %s)").
+// Per audit Tier-3 SUBJ leave-and-document: human-readable
+// diagnostic prose is the discipline's allowed exception (no
+// typed BCL alternative produces equivalent message text).
+// Outcome / KeepReason / Conflict / Evidence rendering retired
+// to typed `StructuredString` via `Outcome.toDiagnosticString`
+// (chapter 3.5 slice φ); only the prose remains here.
+
 open Projection.Core
 
 /// The CategoricalUniquenessPass — V2's first **distribution-aware**
@@ -53,11 +64,7 @@ module CategoricalUniquenessPass =
     /// the decision set; the trail carries a human-readable summary
     /// so audit consumers can grep for outcome categories.
     let private outcomeLabel (outcome: CategoricalUniquenessOutcome) : string =
-        match outcome with
-        | CategoricalUniquenessOutcome.SuggestUnique evidence ->
-            sprintf "SuggestUnique(%A)" evidence
-        | CategoricalUniquenessOutcome.DoNotSuggest reason ->
-            sprintf "DoNotSuggest(%A)" reason
+        CategoricalUniquenessOutcome.toDiagnosticString outcome
 
     /// One lineage event per decision. `Annotated` because the pass
     /// produces a decision (a real transformation in the audit sense)
@@ -69,9 +76,11 @@ module CategoricalUniquenessPass =
           SsKey         = decision.AttributeKey
           TransformKind =
               Annotated
-                  (sprintf "%s -> %s"
+                  (String.concat "" [
                       decision.InterventionId
-                      (outcomeLabel decision.Outcome)) }
+                      " -> "
+                      outcomeLabel decision.Outcome
+                  ]) }
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// attributes by `SsKey` within each kind. Interventions are taken

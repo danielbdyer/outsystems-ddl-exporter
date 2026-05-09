@@ -6,6 +6,77 @@ theorem it serves. Future readers — including future agents and Danny —
 should be able to reconstruct context from this log without spelunking
 commit history.
 
+---
+
+## ⭐ Supreme operating discipline (read first; supersedes all other intents per session)
+
+**Per the user's chapter-3.5 sidebar (2026-05-09)** — the following
+disciplines are the *ultimate goal* and **supersede most other intents
+for each and every session that follows**. Every agent confirms intent
+against these before adopting any pattern.
+
+1. **Data-structure-oriented over string-parsing.** Carry typed values
+   through the pipeline. Strings emerge ONLY at the absolute terminal
+   boundary (BCL writers — `Utf8JsonWriter`, `XmlWriter`,
+   `Sql160ScriptGenerator` — or final text output). No intermediate
+   string-construction; no string-parsing-back-into-data.
+2. **Avoid string concatenation aggressively.** `sprintf`, `+`,
+   `String.Format`, AND `System.String.Concat` are all flagged by the
+   lint guardrail. Even the V2-internal `StructuredString` builder is
+   itself a stopgap; agents must confirm that their intent is NOT
+   better served by a built-in BCL method or typed data structure
+   before reaching for it.
+3. **Built-in obligation.** When a BCL or vendor SDK emits the
+   structure being emitted, agents are *obliged* to use it
+   (`Sql160ScriptGenerator` for T-SQL, `XmlWriter` for XML,
+   `Utf8JsonWriter` / `JsonNode` for JSON, `UuidV5` for RFC 4122
+   GUIDs, `DataContractSerializer` / `JsonSerializer` for typed
+   round-trips, etc.).
+4. **Promised land of FP.** ≥95% of functions are pure; the remaining
+   ≤5% (mutation-justified algorithms, BCL-mandated mutable surfaces,
+   reified non-determinism boundaries) is *isolated and tested
+   exhaustively*. Mutation reified at the file level via
+   `LINT-ALLOW-FILE-MUTATION`; "really test the heck out of" applies
+   structurally — property tests + parse-roundtrip + byte-determinism.
+5. **Coding-style commitments (preserved across all sessions):**
+   - **Deep DDD** — bounded contexts, value objects with smart
+     constructors, aggregates with referential-integrity invariants,
+     ubiquitous language reified in types.
+   - **Point-free composition** — pipeline-style (`|>`, `>>`) over
+     parameter-named where the shape reads as well or better.
+   - **Hexagonal architecture** — Core ⟵ Adapters/Targets ⟵
+     Pipeline ⟵ CLI; one-way dependency direction; lint-enforced
+     per Rules 20/21/22.
+   - **Hardcore FP** — closed DUs, smart constructors with
+     `Result<'a>`, pattern-match exhaustiveness, no `null`,
+     immutability by default, monadic composition over imperative
+     accumulation.
+   - **OOP where appropriate** — at adapters/boundary code where BCL
+     surfaces force it (e.g., `SqlBulkCopy`, `Utf8JsonWriter`'s mutable
+     options); reified as `LINT-ALLOW-FILE-MUTATION`.
+   - **Deep separation of concerns** — Core has no I/O / no time /
+     no Policy in Π / no concurrency primitives.
+   - **Verifiable + observable to the nth degree** — property tests
+     (parse-roundtrip, determinism, exhaustiveness, idempotence,
+     permutation-invariance), structured lineage trails, structured
+     diagnostic emission, bench-driven optimization with three-
+     candidate / 2-refuted / 1-confirmed shape.
+
+The lint guardrail (`scripts/lint-discipline.sh`) is the structural
+enforcement of these disciplines: **default to explicit
+acknowledgement of deviance**. Every legitimate exception carries a
+`LINT-ALLOW` marker (per-line) or `LINT-ALLOW-FILE` /
+`LINT-ALLOW-FILE-MUTATION` marker (top-of-file) with rationale.
+Bypassing via `git commit --no-verify` is the explicit-deviance
+escape hatch; CI catches bypasses on PR.
+
+Agents starting a new session: read this section first. Confirm intent
+against each pillar before adopting any new pattern. Where in doubt,
+defer to the discipline; where the discipline forbids what's
+ergonomically tempting, write the DECISIONS amendment first.
+
+---
+
 Format:
 
     ## YYYY-MM-DD — short title
@@ -7728,3 +7799,754 @@ Production code Deploy.Docker module owns the bring-up.
 Test-side `skipIfNoDocker` consumes it. The session-start hook
 remains the primary bring-up path; `ensureRunning` is the
 mid-session safety net.
+
+
+## 2026-05-09 — Chapter 3.5 open / strategic frame for the Π port realization runway
+
+Chapter 3.5 opens. Per `DECISIONS 2026-05-15 — Strategic frame
+for the OSSYS implementation chapter`, multi-session chapters
+earn a chapter-open document at chapter open; chapter 3.5
+inherits the discipline. The chapter-open document at
+`CHAPTER_3_5_OPEN.md` names eight strategic-frame axes:
+(1) hexagonal port realization vs declaration; (2) DDD T11 as
+type theorem; (3) FP composition over the port; (4) streaming /
+A35 at the per-kind boundary; (5) Big-O O(N log N) per-key
+composition; (6) `Emitter<'element>` as canonical primitive;
+(7) ACL unaffected (V2-internal architectural realization);
+(8) two-consumer threshold for richer per-element types.
+
+The chapter's substantive deliverable is `RefactorLogEmitter`
+over `CatalogDiff` (per `CHAPTER_3_PRESCOPE_REFACTORLOG_AND_CATALOG_DIFF.md`).
+The chapter-3.5 pre-scope §1 named the pre-condition: the typed
+`Emitter<'element>` port realized for the existing three sibling
+Π's *before* the diff-typed fourth sibling lands. Otherwise
+`RefactorLogEmitter` ships into a port whose shape was only
+declared, never inhabited; the asymmetry the chapter is meant
+to eliminate (T11 prose vs T11 type) survives the chapter that
+was supposed to retire it.
+
+Chapter 3.5 therefore opens with the Π port realization as its
+first slice arc — chapter-3.1 audit Tier-1 #7's deferred item
+becomes chapter 3.5's runway.
+
+
+## 2026-05-09 — Chapter 3.5 slices α / β / γ / δ — Π port realization shipped
+
+Three sibling Π's converge on the typed `Emitter<'element>`
+port shape. The realization arc:
+
+- **Slice α — `RawTextEmitter.emitSlices : Emitter<Statement
+  list>`**. Per-kind value is `Statement list` per A35 (Π's
+  canonical output is a typed deterministic statement stream).
+  The legacy `statements` and `emit` realizations route through
+  the typed seam; the `composeFromArtifact` private weaver
+  reconstitutes the whole-catalog stream by adding preamble +
+  module-header transitions + per-kind slices in topological
+  order via `TopologicalOrderPass.runWith SkipSelfEdges`.
+
+- **Slice β — `JsonEmitter.emitSlices : Emitter<string>`**.
+  Per-kind value is the kind's JSON object as compact UTF-8
+  text (`writeKind` rendered through a depth-0 `Utf8JsonWriter`
+  with `Indented = false`). Composer in `emit` re-parses each
+  per-kind fragment via `JsonNode.Parse` and writes through the
+  indented document writer so depth-tracking matches the
+  surrounding catalog document. Property insertion order is
+  preserved by `JsonObject` so the round trip is
+  byte-deterministic.
+
+- **Slice γ — `DistributionsEmitter.emitSlices :
+  EmitterWithProfile<string>`**. First realization of
+  `EmitterWithProfile<'element>` (`Types.fs:55`); same
+  compact-then-indent compositional pattern as JsonEmitter.
+  The diff-typed sibling `EmitterOverDiff` realizes when
+  chapter 3.5's substantive deliverable (`RefactorLogEmitter`)
+  lands on the runway after this slice arc.
+
+- **Slice δ — T11 type-theorem worked examples; substring
+  discipline retired**. New `T11TypeTheoremTests.fs` carries
+  three per-emitter `emitSlices key-set equals Catalog.allKinds`
+  tests + one cross-emitter sibling-commutativity test.
+  Substring enforcement at `JsonEmitterTests.fs:96-105` and
+  `RichProfilingEndToEndTests.fs:280-289` retired with
+  pointer-comments naming the structural successor. Surviving
+  T11 tests at `JsonEmitterTests.fs` (physical realization) and
+  T4 tests stay — they test rendering invariants, not kind
+  coverage.
+
+**T11 amended (cashed, 2026-05-09).** AXIOMS.md amendment
+filled — T11 stops being substring discipline and becomes a
+type theorem. The smart constructor on `ArtifactByKind` is the
+load-bearing surface; any two `ArtifactByKind` values built
+from the same Catalog have equal keysets by construction.
+
+**Two-consumer threshold honored on per-element types.**
+Per-kind values stay simple (`Statement list`, `string`,
+`string`) for first slice; richer types (`JsonObject` for Json,
+typed `DistributionSlice` for Distributions, `seq<Statement>`
+for the bulk-aware realization in chapter 4.1) earn their place
+under second-consumer pressure (DacpacEmitter, drift detection,
+data triumvirate).
+
+**Big-O.** `ArtifactByKind` is `Map<SsKey, _>` — O(log N)
+lookup; smart-constructor's set-difference is O(N log N) where
+N = catalog kinds. Per-key composition through
+`composeFromArtifact` walks the topological order O(N) times
+with O(log N) Map lookups → O(N log N). Same shape as legacy
+implementation; structurally right for chapter-4.4 drift
+detection where `Map<SsKey, DriftKind>` replaces today's
+byte-string-diff (Appendix H §H.8).
+
+**Test count at slice δ close**: 707 fast-suite + 8 T11-specific
++ 4 canary round-trip = 719 tests green at byte-identity.
+
+**Chapter-3.1 audit Tier-1 #7 closed**: declared `Emitter
+<'element>` port realized at three concrete consumers; closed-
+DU expansion empirical-test discipline applies to ports too —
+the audit's prescription was either *realize* or *retire*; this
+slice arc realized.
+
+**Forward signal.** Chapter 3.5's substantive deliverable
+(`CatalogDiff.between` + `RefactorLogEmitter` +
+`Render.toRefactorLogXml`) opens after this slice arc lands.
+Inherits the realized seam; T11 trivializes for the diff-typed
+sibling via the `EmitterOverDiff<'element>` shape already
+declared at `Types.fs:62-63`.
+
+
+## 2026-05-09 — Chapter 3.5 slices ζ / η / θ / ι — substantive deliverable shipped
+
+The chapter 3.5 substantive deliverable lands per
+`CHAPTER_3_PRESCOPE_REFACTORLOG_AND_CATALOG_DIFF.md`. Four slices
+on the runway opened by the Π port realization (slices α–δ):
+
+- **Slice ζ — `CatalogDiff.between`**. Stage 0's `CatalogDiff = |
+  Pending` placeholder retired; the real exhaustive type and
+  smart constructor live in `Projection.Core/CatalogDiff.fs`.
+  `Renamed | Added | Removed | Unchanged` partitions
+  `Catalog.allKinds source ∪ Catalog.allKinds target` exhaustively
+  by construction. Cashes A38 (CatalogDiff exhaustiveness, see
+  `AXIOMS.md`).
+
+- **Slice η — `UuidV5.create`**. RFC 4122 §4.3 name-based UUID
+  derivation lands at `Projection.Core/UuidV5.fs`. Pure byte-
+  twiddling: namespace + name → SHA-1 → 16-byte truncation →
+  version/variant bit-set → endian-roundtrip back to .NET Guid.
+  Verified against three canonical vectors. The deterministic-
+  Guid primitive enables `RefactorLogEmitter`'s `OperationKey`
+  derivation.
+
+- **Slice θ — `RefactorLogEmitter`**. The fourth sibling Π —
+  `EmitterOverDiff<RefactorLogEntry list>`. First substantive
+  consumer of `EmitterOverDiff<'element>` (declared at
+  `Types.fs:62-63`); first realization of `CatalogDiff`'s
+  consumer side. T11 amended again (diff-typed inputs) cashes
+  here — `ArtifactByKind` smart constructor binds the artifact
+  keyset to the diff's *target* Catalog. First-slice scope:
+  kind-level renames produce one `SqlTable` entry per renamed
+  kind (column-level renames defer under closed-DU expansion
+  empirical-test discipline). `OperationKey` derivation via
+  `String.concat ":"` over a typed component list rather than
+  `sprintf` per the no-string-concatenation discipline.
+
+- **Slice ι — `RefactorLogRender.toRefactorLogXml`**. Pure XML
+  rendering through the BCL's `XmlWriter` typed API. No string
+  concatenation, no `sprintf` on XML fragments. Determinism axes
+  pinned: operations sorted by `OperationKey`, `ChangeDateTime`
+  pinned to `2000-01-01T00:00:00Z` (DacFx ignores it for refactor
+  application; chapter 3.5 prescope §6 option 1), UTF-8 without
+  BOM, `\n` newlines, two-space indent, namespace pinned per the
+  SSDT 2012/02 schema URI.
+
+**T1 byte-determinism on the rendered .refactorlog**: every byte-
+affecting variable is pinned. Verified by 10× repeat invocation
+in `RefactorLogRenderTests.fs:T1`. Tests use `XDocument` (built-in
+BCL DOM) for structural assertions — the no-string-concatenation
+discipline applies to test verification too.
+
+**AXIOMS amendments cashed at chapter 3.5 close (slice κ)**:
+T11 amended again (diff-typed inputs); A1 amended (four-variant
+SsKey — Stage 0 + chapter 3.5); A38 promoted from candidate (the
+exhaustiveness invariant of CatalogDiff).
+
+**Test count**: 743 fast-suite passing. New tests: 9
+(CatalogDiff) + 8 (UuidV5) + 8 (RefactorLogEmitter) + 9
+(RefactorLogRender) = 34 added across slices ζ / η / θ / ι.
+
+**Big-O at chapter close**:
+- `CatalogDiff.between`: O(N log N) where N = |source ∪ target|.
+- `RefactorLogEmitter.emit`: O(N log N) where N = |target kinds|;
+  per-kind `Map.tryFind` over renames is O(log R).
+- `RefactorLogRender.toRefactorLogXml`: O(R log R) where R =
+  |renames|; sort dominates; XML writer is O(R) on the sorted
+  stream.
+
+**Forward signals.**
+- **Chapter 3.4 — `renameSurvives` predicate library.** Now
+  unblocked: the diff + emitter + renderer cash the property's
+  evidence side. Pre-scope at
+  `CHAPTER_3_PRESCOPE_CANARY_PROPERTY_SURFACE.md`.
+- **Chapter 3.2 — `SnapshotRowsets` + `OssysOriginal` SsKeys at
+  scale.** Lifts A1's bound from `Synthesized` to `OssysOriginal`
+  for kinds with V1 SSKey Guids. Pairs naturally with
+  `RefactorLogEmitter` — once rowsets arrive, renames over
+  `OssysOriginal` keys flow through the diff cleanly; renames
+  over `Synthesized` keys remain bounded (renames produce different
+  `Synthesized` SsKeys; diff classifies as Removed + Added).
+- **Chapter 4.2 — User FK reflow + `V1Mapped` reach.** The diff-
+  side cross-version threading uses `SsKey.identityKey` (UUIDv5
+  derivation through `UuidV5.create`); chapter 4.2 makes the
+  variant reachable from production input.
+- **Chapter 4.4 — drift detection via `ArtifactByKind.compareWith`**.
+  The pointwise per-key diff over `ArtifactByKind` returning
+  `Map<SsKey, DriftKind>` replaces today's byte-string-diff
+  (Appendix H §H.8). The seam is open via the typed Π port +
+  exhaustive diff.
+
+
+## 2026-05-09 — No-string-concatenation / no-regex discipline (codifying)
+
+V2 commits: avoid string concatenation (`+`, `sprintf` building
+structured values, `String.Format`) and regex
+(`System.Text.RegularExpressions`); prefer built-in writers and
+parsers (`String.concat`, `String.Split`, `XmlWriter`,
+`Utf8JsonWriter`, `JsonNode`, `StringBuilder` where the algorithm
+genuinely needs incremental construction).
+
+**Rationale.**
+
+- Structured values built via format strings drift from their
+  parsers — the codebase's own `Identity.fs:122` round-trip
+  (`SsKey.synthesized "OS_KIND" basis` builds via `sprintf
+  "%s_%s"`; `SsKey.original "OS_KIND_..."` parses via
+  `StartsWith(src + "_", …)`) is the canonical example. Typed
+  builders + typed parsers eliminate the round-trip drift.
+- Regex makes intent opaque and is hard to reason about for
+  determinism. The codebase's only regex (singleton at
+  `Deploy.fs:216-220` for `^\s*GO\s*$` batch-splitting) is
+  retiring at the next slice (`String.Split('\n')` + `Trim` +
+  literal compare).
+- Built-in BCL writers (`XmlWriter`, `Utf8JsonWriter`,
+  `JsonNode`) handle escaping, encoding, and namespace concerns
+  by construction; T1 byte-determinism is preserved by pinning
+  the writer's settings rather than reasoning about every escape
+  branch.
+
+**Operational consequences.**
+
+- Pre-existing `sprintf` sites stay (back-compat); new code
+  defaults to `String.concat` over typed component lists. Worked
+  example: `RefactorLogEmitter.renameOperationKey` composes via
+  `["rename"; rootOriginal; oldName; newName] |> String.concat
+  ":"` rather than `sprintf "rename:%s:%s:%s" ...`.
+- New XML, JSON, SQL emission routes through typed BCL writers
+  exclusively. `RefactorLogRender.toRefactorLogXml` is the
+  worked example for XML.
+- `System.Text.RegularExpressions` is banned in new code; the
+  Deploy.fs:216 violation is the audit-Tier-1 carry-forward.
+- Lint guardrail: `scripts/lint-discipline.sh` (chapter-3.5
+  follow-on slice) runs in CI / pre-commit and greps for
+  `sprintf` / `RegularExpressions` / string-`+` in production
+  code paths under `Projection.Core/`. The audit (`Codebase
+  determinism + non-built-in audit`, 2026-05-09) named the
+  Tier-1 follow-on backlog; the script catches regressions
+  going forward.
+
+**Audit-deferred (Tier-1) sites carried into this discipline:**
+- `Deploy.fs:216-220` regex — retire to `String.Split` +
+  literal compare. ✅ slice λ.1
+- `Deploy.fs:344-346` string `+` SQL fragment build — replace
+  with `String.concat`. ✅ slice λ.1
+- `Deploy.fs:203` `sprintf "CREATE DATABASE [%s];"` — typed
+  helper. ✅ slice λ.2
+- `Render.fs:16,30,34,38,39,62,64,67` — quote/type/literal
+  `sprintf`s and `"0x" + raw` plain `+`. ✅ slice λ.1
+- `Deploy.fs:176` `Guid.NewGuid()` — non-determinism leak;
+  reified as `DatabaseNameGenerator` typed seam. ✅ slice λ.2
+- `Deploy.fs:555-630` six `let mutable` accumulators — refactored
+  to `runSourcePhase` / `runTargetPhase` pure-async phase
+  functions with typed `PhaseOutcome` return. ✅ slice λ.2
+- `CatalogReader.fs:104-127` synthesis-basis `sprintf "%s_%s_%s"`
+  + `Identity.fs:122,155` round-trip — retired via
+  `SsKey.synthesizedComposite` typed-component constructor. ✅
+  slice λ.3
+
+The audit findings route to follow-on slices in chapter 3.5 close
+or chapter 3.6 hygiene; tracking via `DECISIONS` so the deferral
+doesn't recur silently (per the "Active deferrals re-checked at
+chapter close" discipline).
+
+
+## 2026-05-09 — Built-in obligation: when a BCL or vendor SDK emits the structure, use it (TSQL150Parser / ScriptDom / DacFx)
+
+V2 commits a stronger form of the no-string-concatenation
+discipline: **if there is a method (BCL, vendor SDK, or
+established library) that emits the string we are trying to
+emit, we are obliged to use it.** Hand-rolled string composition
+of structured emission targets is forbidden when a typed
+domain-aware emitter exists for the same target.
+
+**Worked obligations (already adopted).**
+
+- **JSON emission** — `System.Text.Json.Utf8JsonWriter` and
+  `System.Text.Json.Nodes.JsonNode`. `JsonEmitter` /
+  `DistributionsEmitter` (chapter 3.5 slices β / γ) rebuild from
+  these BCL primitives; no manual `{ ... }` interpolation.
+- **XML emission** — `System.Xml.XmlWriter`.
+  `RefactorLogRender.toRefactorLogXml` (chapter 3.5 slice ι)
+  uses `XmlWriter` exclusively; no manual `<Operation Name="…">`
+  interpolation.
+- **UUIDv5 (RFC 4122 §4.3)** — derived deterministically from
+  `(namespace, name)` via `SHA1.HashData` + RFC bit-set, not via
+  ad-hoc Guid construction.
+- **Bracket-quoted SSDT identifiers** — `Render.quote` /
+  `TableId.qualified` (`Coordinates.fs`) is the canonical
+  joiner; consumers delegate.
+
+**Worked obligations (deferred, chapter 3.7+ candidate).**
+
+- **T-SQL emission** — `Microsoft.SqlServer.TransactSql.ScriptDom`
+  (`TSql150Parser` for parsing; `Sql150ScriptGenerator` /
+  `Sql160ScriptGenerator` for emission) provides the typed AST
+  + script generator that V2's `Render.toSql` currently
+  hand-rolls. Chapter 3.5's `Statement` DU is V2's algebraic
+  pre-text form; ScriptDom's `TSqlFragment` hierarchy is the
+  vendor-canonical pre-text form. The two ought to converge:
+  V2's `Render` step would build `TSqlFragment` instances and
+  delegate to `Sql150ScriptGenerator.GenerateScript`, with
+  pinned `SqlScriptGeneratorOptions` for T1 byte-determinism.
+  Adopting ScriptDom retires every remaining `sprintf` /
+  `String.Concat` / `StringBuilder` use in `Render.fs`,
+  `Deploy.fs:countUserTablesSql` / `createDatabaseSql`, and
+  `ReadSide.fs`'s SELECT-builder. Estimated chapter scope:
+  ~6-8 sessions, comparable to chapter 3.5.
+
+- **DACPAC emission** — `Microsoft.SqlServer.DacFx`'s
+  `TSqlModel` + `DacPackage` would become the typed
+  pre-bytes form when DacpacEmitter (chapter 3.x deferred)
+  ships. Same discipline.
+
+**Operational rule.**
+
+Before introducing string-composition for any structured emission
+target (SQL, XML, JSON, YAML, refactor.log, .dacpac, etc.), the
+author MUST ascertain whether a typed builder exists. If it does,
+adopt it; if it doesn't, document the absence and the search
+rationale before falling back to `String.Concat` /
+`StringBuilder`.
+
+**Cross-reference.** The audit (`Codebase determinism +
+non-built-in audit`, 2026-05-09) named the SQL-emission paths
+that the ScriptDom adoption would cleanest. Tracked at
+`HANDOFF.md` "deferred-but-might-fire" list.
+
+**Forward chapter.** Chapter 3.7 candidate — "ScriptDom adoption
+for the SQL emission layer". Pre-scope to write at runway.
+Inherits chapter 3.5's typed-Π port; the realization step
+becomes a `TSqlFragment` build + `GenerateScript` call.
+Substantive deliverable: every `Render.fs` / `Deploy.fs` SQL
+text path replaced by ScriptDom-typed flow; T1 byte-determinism
+verified at the script generator's pinned-options surface.
+
+
+## 2026-05-09 — Lint guardrail: scripts/lint-discipline.sh
+
+Per the audit's Lens 3 #2 recommendation, codifies a grep-based
+guardrail at `sidecar/projection/scripts/lint-discipline.sh`
+that fails CI / pre-commit on disallowed patterns in production
+code paths under `src/`:
+
+  - `System\.Text\.RegularExpressions` — banned namespace.
+  - `\bsprintf\b` / `\bprintfn\b` / `\bprintf\b` in `Projection.Core/`
+    (Core's purity discipline; sprintf is allowed in adapters
+    where boundary code emits diagnostic strings).
+  - String-`+` heuristic — `\b"\s*\+\s*` and `\s*\+\s*"`
+    (catches `"x" + y` and `x + "y"` patterns).
+  - `String\.Format\(` — banned alternative path.
+  - `Guid\.NewGuid\(\)` outside the reified `DatabaseNameGenerator`
+    seam in `Deploy.fs`.
+  - `DateTime\.Now` / `DateTime\.UtcNow` outside `Bench.fs`
+    (Core's no-time discipline).
+  - `Random\.` outside test fixtures.
+
+The script runs in <100ms over the V2 source tree; wired via
+`.git/hooks/pre-commit` (local) and `.github/workflows/lint.yml`
+(CI). Allowlisted via comment marker `// LINT-ALLOW: <reason>`
+on the offending line.
+
+**Escalation tier**: any new violation requires either (a) a
+`LINT-ALLOW` marker with rationale or (b) a paired DECISIONS
+amendment naming why the discipline is being relaxed for the
+specific site. The script is the load-bearing guard against
+discipline drift.
+
+
+## 2026-05-09 — FP strict mode discipline (mutation reified, overflow checked, immutable-by-default)
+
+V2 commits a hardline FP discipline beyond the no-string-
+concatenation rule: **immutable-by-default with first-class
+escalation and reification of any mutative method use**.
+Mutation is allowed where justified (algorithm-internal
+accumulators, BCL-mandated mutable struct option-builders,
+streaming-reader lifetime state machines), but every mutation
+site is *reified at the file level* via a top-of-file
+`LINT-ALLOW-FILE-MUTATION` marker that names the specific
+audited rationale. New mutation sites without the marker fail
+the lint guardrail.
+
+**Three lint rules enforce mutation discipline (per
+`scripts/lint-discipline.sh`):**
+
+  - `let-mutable` — `let mutable` outside files marked
+    `LINT-ALLOW-FILE-MUTATION` or `LINT-ALLOW-FILE`.
+  - `mutable-collection` — `ResizeArray<` / `Dictionary<` /
+    `HashSet<` / `Stack<` / `Queue<` /
+    `ConcurrentDictionary<` / `ConcurrentQueue<` /
+    `ConcurrentBag<` outside the same allowlist.
+  - `set-assign` — `<-` assignment outside the same allowlist
+    (catches both `let mutable` reassignment and BCL property
+    setters).
+
+**Audit-justified mutation files** (top-of-file marker; rationale
+named per-file): `AsyncStream.fs` (pull-based streaming primitive),
+`ReadSide.fs` (streaming reader lifetime), `Static.fs` /
+`ProfileSnapshot.fs` / `ProfileStatistics.fs` (function-local
+placeholders), `RawTextEmitter.fs` (currentModuleKey),
+`JsonEmitter.fs` / `DistributionsEmitter.fs` (BCL JsonWriterOptions
+struct), `RefactorLogRender.fs` (BCL XmlWriterSettings class),
+`NamingMorphism.fs` / `NormalizeStaticPopulations.fs` /
+`SymmetricClosure.fs` (pass-driver event accumulation), `UuidV5.fs`
+(RFC 4122 byte-twiddling on local copy), `Deploy.fs` (Docker JIT
+poll + bulk grouping), `Bulk.fs` (BCL SqlBulkCopy mutable surface),
+`Bench.fs` / `PhysicalSchema.fs` / `Catalog.fs` / pass drivers /
+`CycleResolution.fs` (already exempt via `LINT-ALLOW-FILE` for
+the sprintf rule, which also covers mutation).
+
+**Per-line allowlist** for surgical mutations in otherwise pure
+files: `Result.fs:134-135` (the two ResizeArray accumulators
+inside `Result.aggregate`'s pure aggregator) carry per-line
+markers.
+
+**Compiler strict mode (Projection.Core.fsproj):**
+
+  - `<Nullable>enable</Nullable>` — null escapes fail compilation
+    (already on).
+  - `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` — every
+    warning is a compile error (already on).
+  - `<CheckForOverflowUnderflow>true</CheckForOverflowUnderflow>`
+    — arithmetic overflow / underflow elevates to runtime
+    exception rather than silent wraparound. T1 byte-determinism
+    requires that wraparound is observable (a programmer error);
+    `<checked>` flag at MSBuild level pairs with
+    `Projection.Core/UuidV5.fs`'s byte arithmetic and the
+    `RowDigester` / `PhysicalSchema` aggregators. Adapters /
+    Pipeline don't carry the flag — Pipeline-side counts fit
+    `int64` and BCL surface invokes can be unchecked by design.
+
+**Reification rule:** every mutation site must be answerable to:
+"why is mutation correct here (not observable from outside the
+function); why is it justified (algorithmic necessity, BCL
+constraint, performance evidence); and is it reified (encapsulated
+behind a pure interface so callers can't observe it)?" The
+top-of-file marker is the structural answer.
+
+**Empirical baseline:** the audit (`Codebase determinism +
+non-built-in audit`, 2026-05-09) found ~130 mutation sites in V2;
+all mapped to one of the justified categories above. Adding a new
+mutation site requires either (a) extending an existing category's
+file marker, (b) adding a new file marker with audited rationale,
+or (c) opening a paired DECISIONS amendment. Lint guardrail
+catches drift in CI / pre-commit.
+
+**Forward chapter.** Chapter 3.7 candidate (ScriptDom adoption
+for SQL emission) retires `Render.fs`'s `StringBuilder` mutation
+by routing through ScriptDom's typed AST + `Sql150ScriptGenerator`.
+Chapter 4 candidate (typed `Outcome.toDiagnosticString` per DU)
+retires the pass-driver `%A` formatters. Each substantive
+chapter compounds the discipline.
+
+**Out of scope (re-open triggers explicit):**
+
+  - F# Analyzers SDK custom analyzer — would catch syntax-tree
+    patterns the grep heuristic misses (e.g., `member val X = …
+    with get, set` mutable properties; reflection-based
+    mutation). Re-open trigger: lint-script false-negative
+    surfacing in CI (a real mutation site shipping without
+    catching). Estimated cost: a separable chapter.
+  - `[<Sealed>]` / `[<NoComparison>]` / `[<NoEquality>]` blanket
+    application — over-tightens types where structural defaults
+    are correct. Per-type adoption when an invariant breaks
+    "structural equality = semantic equality" (audit Lens-2
+    trigger).
+
+
+## 2026-05-09 — Reified-primitive pattern: dry up LINT-ALLOWs by extracting typed-opaque mutation surfaces
+
+The audit-justified mutation files were discovered to share two
+recurring shapes: pass-driver event accumulation (3 files used
+`ResizeArray<LineageEvent>` directly) and BCL writer-options
+construction (3 files mutated `JsonWriterOptions` /
+`XmlWriterSettings` builders). Each shape is reified into a single
+typed primitive whose mutation lives EXCLUSIVELY in that primitive's
+module — the consumers become marker-free.
+
+**`Projection.Core/LineageBuffer.fs`** — `LineageBuffer.Buffer` is
+a `private` DU wrapping `System.Collections.Generic.List<
+LineageEvent>`. Module API: `create` / `add` / `addMany` / `toList`
+/ `isEmpty` / `count`. The opaque `private` constructor enforces
+that consumers cannot inspect or mutate the underlying List;
+mutation is type-invisible from the consumer's perspective. Three
+pass drivers (`NamingMorphism`, `NormalizeStaticPopulations`,
+`SymmetricClosure`) consume this primitive and lose their
+`LINT-ALLOW-FILE-MUTATION` markers (no direct mutation in their
+files).
+
+**`Projection.Core/PinnedWriting.fs`** — `JsonOptions.indented` /
+`JsonOptions.compact` / `XmlSettings.indentedUtf8NoBom` are
+factory functions returning fresh BCL option-builder instances
+with V2's pinned-deterministic settings (UTF-8 no-BOM, LF newlines,
+two-space indent). Each call yields an independent instance; the
+mutable struct/class surface is fully encapsulated. Three emitters
+(`JsonEmitter`, `DistributionsEmitter`, `RefactorLogRender`)
+consume this primitive and lose their `LINT-ALLOW-FILE-MUTATION`
+markers.
+
+**SymmetricClosure pure F# fold refactor** — the `let mutable
+inversesByTarget : Map<…>` retired. The symmetric-closure
+construction is reified as a `Step` DU (`NoOp | Skip ev | Created
+(ev, targetKey, inverse)`) classifier function plus a `Seq.fold`
+over `(sourceKind, reference)` pairs accumulating
+`(events, inversesByTarget)` immutably. No mutation in the file.
+
+**Net effect on the LINT-ALLOW landscape:** five
+`LINT-ALLOW-FILE-MUTATION` markers retired (3 pass drivers + 3
+emitters minus the 2 new shared modules' markers); the consumer
+surfaces stop carrying the discipline-relaxation. The FP discipline
+strengthens at the *type level* — mutation is reified into named
+typed-opaque primitives rather than excused per-consumer.
+
+**Pattern.** When N≥3 consumer files share the same mutation
+shape and the mutation has a clean typed-opaque interface, extract
+to a single named module under `Projection.Core/`. The module
+carries one `LINT-ALLOW-FILE-MUTATION` marker; the N consumers
+become marker-free. Per the two-consumer threshold + N=3 trigger,
+extraction earned at audit close. Future repetitions of the
+recurring-pattern audit drive further drying.
+
+
+## 2026-05-09 — FP strict mode regression preventatives: 5 new lint rules
+
+The audit confirmed Core is already clean of these patterns; the
+rules are regression-preventative (catch new violations before
+they ship). Each rule names the discipline it enforces:
+
+  - **Rule 11 — `core-failwith`**: bans `failwith` / `failwithf`
+    in `Projection.Core/`. Core uses `Result<'a>` for typed error
+    paths; only `invalidOp` / `invalidArg` / `nullArg` (BCL-
+    convention preconditions) are allowed for unreachable /
+    invariant-breach branches. Untyped `failwith` raises bare
+    `Exception` (no semantic routing for callers); the Result
+    discipline rejects it.
+
+  - **Rule 12 — `core-async-block`**: bans `async {` / `task {`
+    blocks in `Projection.Core/`. Core is synchronous by design
+    (T1 byte-determinism requires deterministic execution; async
+    introduces scheduler nondeterminism). Adapters at the
+    boundary may use these freely.
+
+  - **Rule 13 — `core-concurrency-primitive`**: bans `Task.Run`
+    / `Task.Delay` / `Thread.Sleep` / `Task.WaitAll` /
+    `Task.WaitAny` / `Task.Wait` in `Projection.Core/`.
+    Concurrency primitives belong in adapters; Core's purity
+    discipline forbids them.
+
+  - **Rule 14 — `type-erasure`**: bans `box` / `unbox` in
+    production code (Core + adapters). Explicit type erasure /
+    recovery is incompatible with F#'s closed-DU + generic
+    dispatch discipline. Today: zero occurrences; rule prevents
+    future regression.
+
+  - **Rule 15 — `mutable-record-field`**: bans
+    `mutable Foo : T` field declarations in record types
+    anywhere in production. F# records are immutable by default;
+    mutable record fields break structural-equality + T1 byte-
+    determinism (two records with the same field values can
+    drift if one's field is later mutated). Function-local
+    `let mutable` is the allowed mutation surface; mutable
+    record fields aren't.
+
+**Operational consequence.** The `scripts/lint-discipline.sh`
+script now enforces 15 rules over `src/`. Today's clean state
+sets the baseline; any new violation requires either
+refactoring or a paired DECISIONS amendment with rationale.
+
+
+## 2026-05-09 — Extended lint discipline: hexagonal coupling, Big-O anti-patterns, regression-preventatives, pre-commit hook
+
+V2's lint guardrail extends from 15 rules to 22, broadens scope
+beyond Core where the discipline applies broadly, fixes a build-
+output false-positive in scan paths, and ships a pre-commit hook
++ CI workflow so the guardrail runs at *every* commit and PR.
+Per the user's principle: **"default to explicit acknowledgement
+of deviance"** — every legitimate exception carries an explicit
+`LINT-ALLOW` marker (per-line) or `LINT-ALLOW-FILE` /
+`LINT-ALLOW-FILE-MUTATION` marker (top-of-file) with rationale.
+
+**Lint script fixes:**
+
+  - **Build-output exclusion.** All scans now use
+    `--exclude-dir=obj --exclude-dir=bin --exclude-dir=.git`,
+    eliminating false positives on generated `*.AssemblyInfo.fs`
+    files (had reported 8 spurious `System.Reflection`
+    occurrences).
+
+**Extended scope:**
+
+  - The `string-format` / `random-banned` / `datetime-now` /
+    `guid-newguid` / `type-erasure` / `mutable-record-field`
+    rules continue to apply broadly across `src/`. The
+    `core-sprintf` / `string-plus` / `core-failwith` /
+    `core-async-block` / `core-concurrency-primitive` rules
+    remain Core-scoped (boundary code legitimately uses
+    `sprintf` / `task {`-blocks for SQL emission, etc.; the
+    discipline holds at Core).
+
+**Three new opinionated rules (regression-preventative + audit-
+backed):**
+
+  - **Rule 16 — `nowarn-banned`**: bans `#nowarn` directive
+    anywhere in production. Silencing a compiler warning is
+    explicit-deviance bypass; the discipline is to fix the
+    underlying issue or open a paired DECISIONS amendment, not
+    to selectively silence per-file. Today: zero occurrences.
+
+  - **Rule 17 — `reflection-banned`**: bans `open
+    System.Reflection` in production. Reflection is consciously
+    deferred per `CLAUDE.md` F# feature surface; the closed-DU +
+    typed-seam codification means dispatch is type-checked at
+    compile time, not discovered at runtime.
+
+  - **Rule 18 — `obj-typed`**: bans `obj`-typed parameters /
+    returns (`: obj )`, `: obj ->`, `: obj` at line-end). F#
+    closed-DU + generic dispatch is the structural alternative;
+    `obj` is type erasure dressed as a parameter.
+
+**One new opinionated rule (Big-O):**
+
+  - **Rule 19 — `big-o-list-append-singleton`**: bans `xs @ [x]`
+    list-append-singleton anywhere in production. `List.append`
+    is O(N); inside a fold it grows O(N²). Idioms: `x :: xs`
+    + `List.rev` at consumption time, OR `Result.aggregate`
+    (V2's reified accumulator), OR `LineageBuffer` (typed
+    opaque accumulator). The audit's chapter-3.1 close cashed
+    `Result.aggregate` as the Big-O fix for Result-fold
+    aggregation; this rule structurally enforces the migration.
+    Writer-monad `tell` (Lineage / Diagnostics) carries a
+    per-line `LINT-ALLOW` because `tell` is the algebraic
+    primitive (terminal annotation), not a fold accumulator.
+    `LineageBuffer` is the high-rate path.
+
+**Three new opinionated rules (hexagonal architecture):**
+
+  - **Rule 20 — `hex-core-coupling`**: Core files (under
+    `Projection.Core/`) cannot `open Projection.<Adapters |
+    Targets | Pipeline | Cli>`. Core has no V2 dependencies;
+    the dependency direction Core <- Adapters / Targets <-
+    Pipeline <- CLI is one-way. The compiler enforces this at
+    the project-reference level; the lint catches accidental
+    cross-namespace `open`s at the file level.
+
+  - **Rule 21 — `hex-target-coupling`**: Target files (under
+    `Projection.Targets.*/`) cannot `open Projection.<Adapters
+    | Pipeline | Cli>` or cross-target `open
+    Projection.Targets.<Other>`. Targets are horizontal
+    siblings; cross-target coupling violates the hexagon's
+    structural commitment.
+
+  - **Rule 22 — `hex-adapter-coupling`**: Adapter files (under
+    `Projection.Adapters.*/`) cannot `open Projection.<Targets
+    | Pipeline | Cli>` or cross-adapter `open
+    Projection.Adapters.<Other>`. Same horizontal-sibling
+    discipline.
+
+**Refactor: 6 `xs @ [x]` Big-O sites in `CatalogReader.fs`
+retired.** Each fold-of-Result-list pattern (5 standard plus 1
+`Option`-filtering variant) collapses to `Result.aggregate
+<input>` (or `Result.aggregate <input> |> Result.map (List.choose
+id)` for the Option case). Same Big-O profile (O(N)) without the
+per-step append. The chapter-3.1 audit's Result.aggregate cash-
+out is now structurally the only path through; the lint enforces.
+
+**Pre-commit hook + CI workflow:**
+
+  - `sidecar/projection/scripts/git-hooks/pre-commit` — bash
+    hook that runs `lint-discipline.sh --ci` whenever staged
+    files include any F# under `sidecar/projection/`. Skips
+    cleanly when no V2 files are staged (V1-only commits pay
+    zero cost). Exit non-zero blocks the commit.
+  - `sidecar/projection/scripts/install-hooks.sh` — installer
+    that symlinks (or copies) the source hook into
+    `.git/hooks/pre-commit`. Idempotent; safe to re-run.
+  - `.github/workflows/lint-projection.yml` — GitHub Actions
+    workflow triggered on `pull_request` and `push to main`
+    paths-filtered to `sidecar/projection/**`. Defense-in-depth
+    against bypassed local hooks.
+
+**Bypass discipline.** `git commit --no-verify` is the explicit-
+acknowledgement-of-deviance escape hatch. Per the discipline,
+bypass should be paired with a follow-on slice that retires the
+violation. CI catches bypasses on PR.
+
+**Operational consequence.** The lint script now enforces 22
+rules over `src/`. Per the audit-driven 2026-05-09 work,
+today's empirical baseline is clean; the rules prevent
+regression. Pre-commit + CI run the same script for defense-in-
+depth.
+
+
+## 2026-05-09 — Operating discipline: ongoing compliance to Big-O + hexagonal architecture (lint-enforced)
+
+The chapter-3.1 audit catalogued ~27 Big-O findings; the high-
+leverage subset shipped as substantive refactors (countUserTables
+elimination, ResizeArray accumulators, HashSet diff,
+SHA256.HashData, parallel hashing, lifted FK Maps). The audit's
+remaining Big-O concerns are now lint-enforced:
+
+  - **`xs @ [x]` ban (Rule 19)** — the canonical fold-of-Result
+    anti-pattern (O(N²) per call site) is structurally unreachable
+    in new code; existing sites refactored to `Result.aggregate`.
+  - **Bench-driven optimization protocol** (per `DECISIONS
+    2026-05-24`) is the operational discipline for any new
+    perf concern: three-candidate / 2-refuted / 1-confirmed.
+    Refuted swaps documented with bench data so the same swap
+    doesn't recur.
+
+The hexagonal-coupling lint rules (20 / 21 / 22) structurally
+enforce the dependency direction `Core <- Adapters / Targets <-
+Pipeline <- CLI` at the file level (the project-reference level
+is enforced by F# itself; the lint catches `open`-statement
+drift). Per `VISION.md` / `CLAUDE.md` "Load-bearing commitments,"
+F#-pure-core / no-I/O-in-Core is the structural answer; the lint
+makes the commitment grep-checkable in CI / pre-commit.
+
+**Forward signals:**
+
+  - **F# Analyzers SDK custom analyzer** (deferred; chapter
+    3.7+ candidate) — would catch syntax-tree patterns the
+    grep heuristic misses (`member val X with get, set`
+    properties, reflection-via-attribute scanning, `obj`
+    parameters with implicit type inference). Re-open trigger:
+    a real false-negative surfacing in CI — i.e., a new
+    discipline-violation shipping unflagged.
+  - **`Outcome.toDiagnosticString` per DU** (deferred per
+    chapter-3.1 audit Tier-2 #14) — would retire the `%A`
+    pretty-print sites in pass drivers, removing several
+    `LINT-ALLOW-FILE` markers. Substantive ~1-day chapter
+    touching every Outcome / KeepReason / Origin DU.
+  - **ScriptDom adoption for SQL emission** (per `DECISIONS
+    2026-05-09 — Built-in obligation`; chapter 3.7+ candidate)
+    — retires `Render.fs` / `Deploy.fs` SQL string-build paths
+    via typed `TSqlFragment` AST + `Sql150ScriptGenerator`.
+    Removes several `LINT-ALLOW` per-line markers.
+
+Each candidate compounds the discipline at the next chapter
+close.

@@ -77,6 +77,32 @@ module ColumnProfile =
     /// computes `NullCount / RowCount` without checking these
     /// invariants; constructing through `create` makes the
     /// strategy's preconditions structural.
+    /// Invariant-culture `int64` projection. Per chapter 3.5 deep
+    /// audit (2026-05-09): metadata values are typed `string`
+    /// (`Map<string, string option>`); the projection from `int64`
+    /// to its invariant-culture string form is the BCL `int64
+    /// .ToString CultureInfo.InvariantCulture` primitive — the
+    /// canonical numeric→string conversion. No concatenation.
+    let private intInv (i: int64) : string =
+        i.ToString System.Globalization.CultureInfo.InvariantCulture
+
+    // Per-site analysis (chapter 3.5 deep audit, user's "hard line"
+    // refinement): the prior implementation built the validation-
+    // error message via `String.concat ""` — still string
+    // concatenation by another name. The data-structure-oriented
+    // alternative: the `ValidationError.Metadata` field
+    // (`Map<string, string option>`) carries structured key-value
+    // pairs; the `Message` text becomes a *static phrase* with no
+    // value-interpolation. Operators reading the message see a
+    // fixed sentence; programmatic consumers route by `Code` and
+    // read structured values from `Metadata`. Zero concatenation.
+    //
+    // Trade-off: the message no longer inlines the offending value
+    // ("RowCount must be ≥ 0; got -1." → "RowCount must be ≥ 0.").
+    // Pattern-match consumers gain typed access; human readers can
+    // still see the value via the metadata projection (e.g., a CLI
+    // formatter that knows to display `Metadata["rowCount"]`
+    // alongside the message).
     let create
         (attributeKey: SsKey)
         (rowCount: int64)
@@ -85,22 +111,29 @@ module ColumnProfile =
         : Result<ColumnProfile> =
         if rowCount < 0L then
             Result.failureOf
-                (ValidationError.create
+                (ValidationError.createWithMetadata
                     "columnProfile.rowCount.negative"
-                    (sprintf "RowCount must be ≥ 0; got %d." rowCount))
+                    "RowCount must be ≥ 0."
+                    (Map.ofList [
+                        "rowCount", Some (intInv rowCount)
+                    ]))
         elif nullCount < 0L then
             Result.failureOf
-                (ValidationError.create
+                (ValidationError.createWithMetadata
                     "columnProfile.nullCount.negative"
-                    (sprintf "NullCount must be ≥ 0; got %d." nullCount))
+                    "NullCount must be ≥ 0."
+                    (Map.ofList [
+                        "nullCount", Some (intInv nullCount)
+                    ]))
         elif nullCount > rowCount then
             Result.failureOf
-                (ValidationError.create
+                (ValidationError.createWithMetadata
                     "columnProfile.nullCount.exceedsRows"
-                    (sprintf
-                        "NullCount (%d) cannot exceed RowCount (%d)."
-                        nullCount
-                        rowCount))
+                    "NullCount cannot exceed RowCount."
+                    (Map.ofList [
+                        "nullCount", Some (intInv nullCount)
+                        "rowCount",  Some (intInv rowCount)
+                    ]))
         else
             Result.success
                 {

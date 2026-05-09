@@ -1,5 +1,12 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE: cycle-resolver diagnostic prose. The strategy
+// emits human-readable status strings via `sprintf` for operator-
+// facing lineage entries (e.g., "SCC of size %d; current resolver
+// handles 2-cycles only"). Same allowed-exception class as
+// `TopologicalOrderPass.fs` and `Bench.fs` per `DECISIONS
+// 2026-05-09 — Built-in obligation`.
+
 /// Domain rules for cycle resolution in topological-sort passes.
 ///
 /// The pure graph algebra (Kahn's algorithm + Tarjan's SCC) lives in

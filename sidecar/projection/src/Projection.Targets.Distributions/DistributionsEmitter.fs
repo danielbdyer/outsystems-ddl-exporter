@@ -2,6 +2,7 @@ namespace Projection.Targets.Distributions
 
 open System.IO
 open System.Text.Json
+open System.Text.Json.Nodes
 open Projection.Core
 
 /// The third sibling Π. Consumes the **enriched IR** (Catalog × Profile)
@@ -164,10 +165,47 @@ module DistributionsEmitter =
         w.WriteEndArray()
         w.WriteEndObject()
 
+    // Pinned-deterministic JSON writer options come from
+    // `Projection.Core.JsonOptions` — the single sanctioned home
+    // for the BCL's mutable `JsonWriterOptions` struct (per the FP
+    // strict-mode discipline). Same shape as `JsonEmitter`.
+
+    /// Render one kind's distribution-payload JSON object as compact
+    /// UTF-8 text. Used by `emitSlices` to produce the per-kind value
+    /// indexed in `ArtifactByKind`. Property order is fixed by
+    /// `writeKind`'s call sequence and matches what the indented
+    /// document writer would emit at depth-3, modulo indentation.
+    let private kindJsonText (profile: Profile) (k: Kind) : string =
+        use stream = new MemoryStream()
+        do
+            use writer = new Utf8JsonWriter(stream, (JsonOptions.compact ()))
+            writeKind writer profile k
+            writer.Flush()
+        System.Text.Encoding.UTF8.GetString(stream.ToArray())
+
+    /// Π port realization (chapter 3.5 slice γ). Profile-consuming Π;
+    /// per `EmitterWithProfile<'element>`. T11 is structural by
+    /// construction — `ArtifactByKind.create`'s strict-equality
+    /// contract guarantees the artifact's keyset equals
+    /// `Catalog.allKinds`'s SsKey set. Per the chapter-open §8
+    /// two-consumer threshold, the per-kind value is `string` for
+    /// first slice; richer per-element types (`JsonObject`, or a typed
+    /// `DistributionSlice` record) earn their place when a second
+    /// consumer demands typed manipulation.
+    let emitSlices : EmitterWithProfile<string> = fun catalog profile ->
+        use _ = Bench.scope "emit.distributions.emitSlices"
+        let allKinds = Catalog.allKinds catalog
+        let slices =
+            allKinds
+            |> List.map (fun k -> k.SsKey, kindJsonText profile k)
+            |> Map.ofList
+        ArtifactByKind.create catalog slices
+
     /// Emit the distribution report as JSON text. Takes the enriched
     /// IR (`Catalog × Profile`) and produces a deterministic string —
     /// byte-identical across repeat invocations on the same input
-    /// (T1).
+    /// (T1). Composes through the typed `emitSlices` port so the seam
+    /// is exercised by the canonical text realization.
     ///
     /// Output shape (pinned at version 2):
     ///
@@ -195,34 +233,61 @@ module DistributionsEmitter =
     ///   ```
     ///
     /// Determinism: indented; cross-platform `\n` newline; sibling
-    /// elements sorted by SsKey at every level. Profile lookups go
-    /// through `Profile.tryFindDistribution` (variant-agnostic);
-    /// attributes without distribution evidence emit
+    /// elements sorted by SsKey at every level (modules + kinds in
+    /// the composer; attributes inside per-kind rendering). Profile
+    /// lookups go through `Profile.tryFindDistribution` (variant-
+    /// agnostic); attributes without distribution evidence emit
     /// `"distribution": null`. Per-variant rendering is dispatched
     /// from `writeDistribution` over the closed DU — adding a new
     /// variant requires extending that dispatch and the smart
     /// constructor for the variant's structural commitments.
     let emit (catalog: Catalog) (profile: Profile) : string =
-        use stream = new MemoryStream()
-        let options =
-            JsonWriterOptions(
-                Indented = true,
-                NewLine = "\n",
-                SkipValidation = false)
-        do
-            use w = new Utf8JsonWriter(stream, options)
-            w.WriteStartObject()
-            w.WriteString("emitter", emitterName)
-            w.WriteNumber("version", version)
-            w.WritePropertyName("modules")
-            w.WriteStartArray()
-            catalog.Modules
-            |> List.sortBy (fun m -> m.SsKey)
-            |> Bench.iterDo "emit.distributions.catalogModule" (writeModule w profile)
-            w.WriteEndArray()
-            w.WriteEndObject()
-            w.Flush()
-        System.Text.Encoding.UTF8.GetString(stream.ToArray())
+        use _ = Bench.scope "emit.distributions.emit"
+        match emitSlices catalog profile with
+        | Result.Error err ->
+            invalidOp
+                (sprintf
+                    "DistributionsEmitter.emit: ArtifactByKind invariant breach: %A"
+                    err)
+        | Result.Ok artifact ->
+            let slices = ArtifactByKind.toMap artifact
+            use stream = new MemoryStream()
+            do
+                use w = new Utf8JsonWriter(stream, (JsonOptions.indented ()))
+                w.WriteStartObject()
+                w.WriteString("emitter", emitterName)
+                w.WriteNumber("version", version)
+                w.WritePropertyName("modules")
+                w.WriteStartArray()
+                let sortedModules =
+                    catalog.Modules |> List.sortBy (fun m -> m.SsKey)
+                for m in sortedModules do
+                    use _ = Bench.scope "emit.distributions.catalogModule"
+                    w.WriteStartObject()
+                    w.WriteString("ssKey", renderSsKey m.SsKey)
+                    w.WriteString("name", Name.value m.Name)
+                    w.WritePropertyName("kinds")
+                    w.WriteStartArray()
+                    let sortedKinds =
+                        m.Kinds |> List.sortBy (fun k -> k.SsKey)
+                    for k in sortedKinds do
+                        use _ = Bench.scope "emit.distributions.moduleKind"
+                        match Map.tryFind k.SsKey slices with
+                        | Some kindText ->
+                            // Re-parse compact per-kind JSON; write
+                            // through the indented document writer so
+                            // depth-tracking matches the surrounding
+                            // structure.
+                            match JsonNode.Parse(kindText) with
+                            | null -> ()  // unreachable: kindText non-empty
+                            | node -> node.WriteTo(w)
+                        | None -> ()  // unreachable: T11 guarantees coverage
+                    w.WriteEndArray()
+                    w.WriteEndObject()
+                w.WriteEndArray()
+                w.WriteEndObject()
+                w.Flush()
+            System.Text.Encoding.UTF8.GetString(stream.ToArray())
 
     /// The "wide" alias mentioned in the codification refinement: an
     /// emitter that consumes the enriched IR. Provided for symmetry

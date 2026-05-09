@@ -118,6 +118,62 @@ type CategoricalUniquenessDecisionSet = {
 ///     refinement absorbed as fourth core prediction). Every
 ///     attribute receives a decision; "no evidence" surfaces as
 ///     `DoNotSuggest(NoCategoricalEvidence)`, not silent skip.
+/// Typed structural display per CategoricalUniqueness DUs.
+[<RequireQualifiedAccess>]
+module CategoricalUniquenessEvidence =
+    let toStructured (e: CategoricalUniquenessEvidence) : StructuredString =
+        match e with
+        | EveryValueDistinct (distinctCount, totalObservations) ->
+            StructuredString.create "EveryValueDistinct"
+                [
+                    "distinctCount",     Inv.int64 distinctCount
+                    "totalObservations", Inv.int64 totalObservations
+                ]
+
+    let toDiagnosticString (e: CategoricalUniquenessEvidence) : string =
+        toStructured e |> StructuredString.render
+
+[<RequireQualifiedAccess>]
+module CategoricalUniquenessKeepReason =
+    let toStructured (r: CategoricalUniquenessKeepReason) : StructuredString =
+        match r with
+        | CategoricalUniquenessKeepReason.NoCategoricalEvidence ->
+            StructuredString.tag "NoCategoricalEvidence"
+        | CategoricalUniquenessKeepReason.EvidenceMissing ->
+            StructuredString.tag "EvidenceMissing"
+        | CategoricalUniquenessKeepReason.VocabularyTruncated ->
+            StructuredString.tag "VocabularyTruncated"
+        | CategoricalUniquenessKeepReason.DistinctCountBelowThreshold (distinctCount, threshold) ->
+            StructuredString.create "DistinctCountBelowThreshold"
+                [
+                    "distinctCount", Inv.int64 distinctCount
+                    "threshold",     Inv.int64 threshold
+                ]
+        | CategoricalUniquenessKeepReason.DuplicatesObserved (distinctCount, totalObservations) ->
+            StructuredString.create "DuplicatesObserved"
+                [
+                    "distinctCount",     Inv.int64 distinctCount
+                    "totalObservations", Inv.int64 totalObservations
+                ]
+
+    let toDiagnosticString (r: CategoricalUniquenessKeepReason) : string =
+        toStructured r |> StructuredString.render
+
+[<RequireQualifiedAccess>]
+module CategoricalUniquenessOutcome =
+    let toStructured (o: CategoricalUniquenessOutcome) : StructuredString =
+        match o with
+        | CategoricalUniquenessOutcome.SuggestUnique e ->
+            StructuredString.create "SuggestUnique"
+                [ "evidence", CategoricalUniquenessEvidence.toDiagnosticString e ]
+        | CategoricalUniquenessOutcome.DoNotSuggest r ->
+            StructuredString.create "DoNotSuggest"
+                [ "reason", CategoricalUniquenessKeepReason.toDiagnosticString r ]
+
+    let toDiagnosticString (o: CategoricalUniquenessOutcome) : string =
+        toStructured o |> StructuredString.render
+
+
 [<RequireQualifiedAccess>]
 module CategoricalUniquenessRules =
 

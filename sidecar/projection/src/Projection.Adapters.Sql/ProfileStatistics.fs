@@ -1,5 +1,8 @@
 namespace Projection.Adapters.Sql
 
+// LINT-ALLOW-FILE-MUTATION: Function-local capturedDate
+//   placeholder (same pattern as ProfileSnapshot.fs).
+
 open System
 open System.Text.Json
 open Projection.Core

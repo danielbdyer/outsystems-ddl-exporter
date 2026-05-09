@@ -60,8 +60,17 @@ module TableId =
         | [] -> Result.success { Schema = schema; Table = table }
         | errs -> Result.failure errs
 
-    /// `[schema].[table]` — SQL Server qualified-identifier form.
-    /// The single canonical rendering; emitters and adapters consume
-    /// this to avoid the `sprintf "[%s].[%s]"` recurring at 5+ sites.
-    let qualified (t: TableId) : string =
-        sprintf "[%s].[%s]" t.Schema t.Table
+    // Per chapter 3.5 deep audit (2026-05-09): the bracket-quoted
+    // SQL identifier form `[schema].[table]` is a SQL-rendering
+    // concern, not a Core concern. The canonical bracket-quoting
+    // implementation is `Microsoft.SqlServer.TransactSql.ScriptDom`'s
+    // `Identifier.EncodeIdentifier(string)` static method (the
+    // use-case-specific library for SQL identifier handling). Per
+    // hexagonal architecture, ScriptDom belongs in SSDT, not Core.
+    //
+    // The `qualified` helper retired from Core — `TableId` itself
+    // remains as the structural value object; SQL rendering moves
+    // to `Projection.Targets.SSDT/Render.tableQualified`, which
+    // delegates to ScriptDom. Consumers (`RefactorLogEmitter`,
+    // `Render`, `Bulk.copyRows`) call `Render.tableQualified`
+    // directly.

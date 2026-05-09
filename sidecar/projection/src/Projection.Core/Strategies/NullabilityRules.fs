@@ -91,6 +91,96 @@ type NullabilityDecisionSet = {
 }
 
 
+/// Typed structural display for `NullabilityEvidence`. Per the
+/// chapter-3.5 audit Tier-2 #14 + the FP strict-mode discipline +
+/// the data-structure-oriented discipline (chapter 3.5 sidebar):
+/// per-variant `toStructured` returns a typed `StructuredString`
+/// AST, NOT a hand-built string. The renderer
+/// (`StructuredString.render`) is the *single* place where
+/// punctuation lives — no per-variant string concatenation. Adding
+/// a new field, changing the format, or reformatting requires one
+/// edit at the renderer. Diagnostic-string consumers receive the
+/// typed value by default (`toStructured`); the string projection
+/// (`toDiagnosticString`) is the convenience wrapper for the
+/// terminal text-output boundary.
+[<RequireQualifiedAccess>]
+module NullabilityEvidence =
+    let toStructured (e: NullabilityEvidence) : StructuredString =
+        match e with
+        | PrimaryKey -> StructuredString.tag "PrimaryKey"
+        | PhysicallyNotNull -> StructuredString.tag "PhysicallyNotNull"
+        | LogicalMandatoryNoProfile -> StructuredString.tag "LogicalMandatoryNoProfile"
+        | LogicalMandatoryNoNulls rowCount ->
+            StructuredString.create "LogicalMandatoryNoNulls"
+                [ "rowCount", Inv.int64 rowCount ]
+        | LogicalMandatoryWithinBudget (nullCount, rowCount, budget) ->
+            StructuredString.create "LogicalMandatoryWithinBudget"
+                [
+                    "nullCount", Inv.int64 nullCount
+                    "rowCount",  Inv.int64 rowCount
+                    "budget",    Inv.dec   budget
+                ]
+
+    let toDiagnosticString (e: NullabilityEvidence) : string =
+        toStructured e |> StructuredString.render
+
+/// Typed structural display for `KeepNullableReason`.
+[<RequireQualifiedAccess>]
+module KeepNullableReason =
+    let toStructured (r: KeepNullableReason) : StructuredString =
+        match r with
+        | OperatorOverride -> StructuredString.tag "OperatorOverride"
+        | NoTighteningSignal -> StructuredString.tag "NoTighteningSignal"
+        | RelaxedUnderEvidence (nullCount, rowCount, budget) ->
+            StructuredString.create "RelaxedUnderEvidence"
+                [
+                    "nullCount", Inv.int64 nullCount
+                    "rowCount",  Inv.int64 rowCount
+                    "budget",    Inv.dec   budget
+                ]
+
+    let toDiagnosticString (r: KeepNullableReason) : string =
+        toStructured r |> StructuredString.render
+
+/// Typed structural display for `NullabilityConflict`.
+[<RequireQualifiedAccess>]
+module NullabilityConflict =
+    let toStructured (c: NullabilityConflict) : StructuredString =
+        match c with
+        | MandatoryButHasNullsBeyondBudget (nullCount, rowCount, budget) ->
+            StructuredString.create "MandatoryButHasNullsBeyondBudget"
+                [
+                    "nullCount", Inv.int64 nullCount
+                    "rowCount",  Inv.int64 rowCount
+                    "budget",    Inv.dec   budget
+                ]
+
+    let toDiagnosticString (c: NullabilityConflict) : string =
+        toStructured c |> StructuredString.render
+
+/// Typed structural display for `NullabilityOutcome`. Each
+/// variant carries its inner DU as a *single field* whose value
+/// is the inner DU's own structured rendering. Composition is
+/// type-safe: changing an inner DU's format propagates without
+/// edit at this layer.
+[<RequireQualifiedAccess>]
+module NullabilityOutcome =
+    let toStructured (o: NullabilityOutcome) : StructuredString =
+        match o with
+        | NullabilityOutcome.EnforceNotNull e ->
+            StructuredString.create "EnforceNotNull"
+                [ "evidence", NullabilityEvidence.toDiagnosticString e ]
+        | NullabilityOutcome.KeepNullable r ->
+            StructuredString.create "KeepNullable"
+                [ "reason", KeepNullableReason.toDiagnosticString r ]
+        | NullabilityOutcome.RequireOperatorApproval c ->
+            StructuredString.create "RequireOperatorApproval"
+                [ "conflict", NullabilityConflict.toDiagnosticString c ]
+
+    let toDiagnosticString (o: NullabilityOutcome) : string =
+        toStructured o |> StructuredString.render
+
+
 /// Domain rules for nullability tightening — the V1
 /// `NullabilityEvaluator` migration's domain layer per the
 /// algebra/domain split (DECISIONS 2026-05-09 — Algebra/domain split

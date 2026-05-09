@@ -60,7 +60,7 @@ module NormalizeStaticPopulations =
     /// `SsKey`. The cardinality of every population is preserved; only
     /// list order changes.
     let run (c: Catalog) : Lineage<Catalog> =
-        let events = ResizeArray<LineageEvent>()
+        let events = LineageBuffer.create ()
         let normalized =
             { Modules =
                 c.Modules
@@ -70,7 +70,7 @@ module NormalizeStaticPopulations =
                             m.Kinds
                             |> List.map (fun k ->
                                 if hasStaticModality k then
-                                    events.Add(touchedEvent k.SsKey)
+                                    LineageBuffer.add (touchedEvent k.SsKey) events
                                     { k with Modality = k.Modality |> List.map normalizeModality }
                                 else k) }) }
-        Lineage.ofValueAndEvents (List.ofSeq events) normalized
+        Lineage.ofValueAndEvents (LineageBuffer.toList events) normalized

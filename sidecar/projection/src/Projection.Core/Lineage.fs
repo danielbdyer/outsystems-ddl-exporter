@@ -79,7 +79,7 @@ module Lineage =
     /// pass needs to record an observation about a node it returns
     /// unchanged (e.g., `Touched`).
     let tell (event: LineageEvent) (m: Lineage<'a>) : Lineage<'a> =
-        { m with Trail = m.Trail @ [event] }
+        { m with Trail = m.Trail @ [event] }  // LINT-ALLOW: writer-monad `tell` algebraic primitive; pass drivers use `LineageBuffer` for high-rate accumulation, `tell` is terminal annotation only
 
     /// Append several events without changing the value.
     let tellMany (events: LineageEvent list) (m: Lineage<'a>) : Lineage<'a> =

@@ -11,8 +11,25 @@
 
   <ItemGroup>
     <Compile Include="Statement.fs" />
+    <Compile Include="ScriptDomBuild.fs" />
+    <Compile Include="ScriptDomGenerate.fs" />
     <Compile Include="Render.fs" />
     <Compile Include="RawTextEmitter.fs" />
+    <Compile Include="RefactorLogEmitter.fs" />
+    <Compile Include="RefactorLogRender.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      ScriptDom is the canonical Microsoft typed-AST library for
+      T-SQL parsing and emission. Version-pinned to match the V1
+      trunk (`Osm.Emission.csproj` / `Osm.Smo.csproj` /
+      `Osm.Dmm.csproj`) so the emission grammar agrees end-to-end
+      across V1↔V2; per `DECISIONS 2026-05-09 — Built-in obligation`,
+      adopting ScriptDom retires the hand-rolled SQL-text builders
+      in `Render.fs`.
+    -->
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="170.23.0" />
   </ItemGroup>
 
   <ItemGroup>

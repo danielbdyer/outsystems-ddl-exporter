@@ -38,15 +38,15 @@ module NamingMorphism =
     /// Apply the morphism to a single name. If the name is unchanged the
     /// caller emits no event (lineage records actual renames, not
     /// no-ops).
-    let private rename (m: Morphism) (key: SsKey) (name: Name) (events: ResizeArray<LineageEvent>) : Name =
+    let private rename (m: Morphism) (key: SsKey) (name: Name) (events: LineageBuffer.Buffer) : Name =
         let after = m name
-        if after <> name then events.Add(renamedEvent key)
+        if after <> name then LineageBuffer.add (renamedEvent key) events
         after
 
-    let private renameAttribute (m: Morphism) (events: ResizeArray<LineageEvent>) (a: Attribute) : Attribute =
+    let private renameAttribute (m: Morphism) (events: LineageBuffer.Buffer) (a: Attribute) : Attribute =
         { a with Name = rename m a.SsKey a.Name events }
 
-    let private renameReference (m: Morphism) (events: ResizeArray<LineageEvent>) (r: Reference) : Reference =
+    let private renameReference (m: Morphism) (events: LineageBuffer.Buffer) (r: Reference) : Reference =
         { r with Name = rename m r.SsKey r.Name events }
 
     let private renameStaticRow (row: StaticRow) : StaticRow =
@@ -65,14 +65,14 @@ module NamingMorphism =
         | TenantScoped  -> TenantScoped
         | SoftDeletable -> SoftDeletable
 
-    let private renameKind (m: Morphism) (events: ResizeArray<LineageEvent>) (k: Kind) : Kind =
+    let private renameKind (m: Morphism) (events: LineageBuffer.Buffer) (k: Kind) : Kind =
         { k with
             Name       = rename m k.SsKey k.Name events
             Attributes = k.Attributes |> List.map (renameAttribute m events)
             References = k.References |> List.map (renameReference m events)
             Modality   = k.Modality   |> List.map renameModality }
 
-    let private renameModule (m: Morphism) (events: ResizeArray<LineageEvent>) (mdl: Module) : Module =
+    let private renameModule (m: Morphism) (events: LineageBuffer.Buffer) (mdl: Module) : Module =
         { mdl with
             Name  = rename m mdl.SsKey mdl.Name events
             Kinds = mdl.Kinds |> List.map (renameKind m events) }
@@ -84,10 +84,10 @@ module NamingMorphism =
     /// the entire pass (A3, A4, A15) — `SsKey` fields are byte-
     /// identical between input and output.
     let run (morphism: Morphism) (c: Catalog) : Lineage<Catalog> =
-        let events = ResizeArray<LineageEvent>()
+        let events = LineageBuffer.create ()
         let renamed =
             { Modules = c.Modules |> List.map (renameModule morphism events) }
-        Lineage.ofValueAndEvents (List.ofSeq events) renamed
+        Lineage.ofValueAndEvents (LineageBuffer.toList events) renamed
 
     /// Convenience constructors for common morphisms. Each is a pure
     /// `Name -> Name` and composable via `>>`.

@@ -6,56 +6,78 @@ open Projection.Core
 open Projection.Pipeline
 open Projection.Targets.SSDT
 
-let private usage () : string =
-    String.concat
-        "\n"
-        [
-            "projection — V2 sidecar end-to-end pipeline."
-            ""
-            "USAGE:"
-            "    projection emit   <input-osm-model.json> <output-dir>"
-            "    projection deploy <input-osm-model.json>"
-            "    projection canary <source-ddl-file>"
-            ""
-            "SUBCOMMANDS:"
-            "    emit    Parse V1 JSON, project through three sibling Π's,"
-            "            and write SSDT / JSON / Distributions artifacts to"
-            "            <output-dir>."
-            ""
-            "    deploy  Parse V1 JSON, project SSDT, spin up an ephemeral"
-            "            SQL Server container, deploy the SSDT, count tables,"
-            "            and tear down. Run-level idempotent."
-            ""
-            "    canary  Run the wide canary against a SQL DDL file. Deploy"
-            "            source to one ephemeral DB, read it back, run V2's"
-            "            emitter on the reconstruction, deploy that to a"
-            "            second DB, read back, compare on the PhysicalSchema"
-            "            axis. Per DECISIONS 2026-05-23, this is V2's primary"
-            "            wide integration surface."
-            ""
-            "All commands print a Bench table at exit and persist a JSON"
-            "snapshot to bench/<command>/<utc-iso>.json under the current"
-            "working directory. Per session-29 framing, this puts the perf"
-            "surface in the operator's daily attention so regressions"
-            "surface naturally."
-            ""
-            "Exit codes:"
-            "    0  command succeeded"
-            "    1  argv error (wrong arg count, missing input)"
-            "    2  parse error (V1 JSON did not satisfy V2's adapter contract)"
-            "    3  deploy error (SQL Server rejected the SSDT)"
-            "    4  Docker unavailable (deploy/canary requires a running daemon)"
-            "    5  canary divergence (PhysicalSchema diff non-empty)"
-        ]
+/// Usage lines. Per chapter 3.5 deep audit (2026-05-09): the lines
+/// are a typed `string list` carrying the structured help-page
+/// content. Emission to the terminal is via per-line BCL
+/// `TextWriter.WriteLine` rather than concatenation into a
+/// multi-line string. The typed list IS the data; each line is
+/// emitted independently; no intermediate concatenation.
+let private usageLines : string list =
+    [
+        "projection — V2 sidecar end-to-end pipeline."
+        ""
+        "USAGE:"
+        "    projection emit   <input-osm-model.json> <output-dir>"
+        "    projection deploy <input-osm-model.json>"
+        "    projection canary <source-ddl-file>"
+        ""
+        "SUBCOMMANDS:"
+        "    emit    Parse V1 JSON, project through three sibling Π's,"
+        "            and write SSDT / JSON / Distributions artifacts to"
+        "            <output-dir>."
+        ""
+        "    deploy  Parse V1 JSON, project SSDT, spin up an ephemeral"
+        "            SQL Server container, deploy the SSDT, count tables,"
+        "            and tear down. Run-level idempotent."
+        ""
+        "    canary  Run the wide canary against a SQL DDL file. Deploy"
+        "            source to one ephemeral DB, read it back, run V2's"
+        "            emitter on the reconstruction, deploy that to a"
+        "            second DB, read back, compare on the PhysicalSchema"
+        "            axis. Per DECISIONS 2026-05-23, this is V2's primary"
+        "            wide integration surface."
+        ""
+        "All commands print a Bench table at exit and persist a JSON"
+        "snapshot to bench/<command>/<utc-iso>.json under the current"
+        "working directory. Per session-29 framing, this puts the perf"
+        "surface in the operator's daily attention so regressions"
+        "surface naturally."
+        ""
+        "Exit codes:"
+        "    0  command succeeded"
+        "    1  argv error (wrong arg count, missing input)"
+        "    2  parse error (V1 JSON did not satisfy V2's adapter contract)"
+        "    3  deploy error (SQL Server rejected the SSDT)"
+        "    4  Docker unavailable (deploy/canary requires a running daemon)"
+        "    5  canary divergence (PhysicalSchema diff non-empty)"
+    ]
+
+/// Print each usage line directly to the writer via the BCL
+/// `WriteLine` primitive. Per the data-structure-oriented
+/// discipline: typed list flows in; per-line writes flow out; no
+/// intermediate concatenation.
+let private printLines (writer: TextWriter) (lines: string list) : unit =
+    for line in lines do writer.WriteLine line
 
 let private die (code: int) (message: string) : int =
-    eprintfn "%s" message
+    Console.Error.WriteLine message
     code
 
-let private renderErrors (errors: ValidationError list) : string =
-    errors
-    |> List.map (fun e -> sprintf "  [%s] %s" e.Code e.Message)
-    |> String.concat "\n"
+/// Print one validation-error line directly via per-segment BCL
+/// `Write` / `WriteLine` calls. Per chapter 3.5 deep audit
+/// (2026-05-09): the prior implementation joined `"  [<code>]
+/// <message>"` via `sprintf` + `String.concat "\n"`. Defensive:
+/// `Console.Write` writes each typed segment independently;
+/// `WriteLine` appends the line terminator. No intermediate
+/// concatenated string.
+let private printErrorLine (writer: TextWriter) (e: ValidationError) : unit =
+    writer.Write "  ["
+    writer.Write e.Code
+    writer.Write "] "
+    writer.WriteLine e.Message
+
+let private printErrors (writer: TextWriter) (errors: ValidationError list) : unit =
+    for e in errors do printErrorLine writer e
 
 /// Print the bench table to stdout AND persist a JSON snapshot.
 /// Called at the tail of every successful subcommand so the perf
@@ -90,7 +112,11 @@ let private runEmit (inputPath: string) (outputDir: string) : int =
                     printfn "  %s (%d bytes)" p info.Length)
                 0
             | Failure errors ->
-                die 2 (sprintf "projection: parse failed:\n%s" (renderErrors errors))
+                (
+                    Console.Error.WriteLine "projection: parse failed:"
+                    printErrors Console.Error errors
+                    2
+                )
         dumpBench "emit"
         exitCode
 
@@ -120,15 +146,26 @@ let private runDeploy (inputPath: string) : int =
                         report.TablesCreated
                     0
                 else
-                    let errors = report.Errors |> List.map (sprintf "  %s") |> String.concat "\n"
-                    die
-                        3
-                        (sprintf
-                            "projection: SQL Server rejected the SSDT in database `%s`:\n%s"
-                            report.Database
-                            errors)
+                    // Per chapter 3.5 deep audit (2026-05-09): CLI
+                    // error emission via per-line `Console.Error
+                    // .WriteLine`. Typed list flows in; per-segment
+                    // writes flow out; no concatenation. Header line
+                    // composes via `Console.Error.Write` segments —
+                    // each typed value (`report.Database`) emitted
+                    // independently.
+                    Console.Error.Write "projection: SQL Server rejected the SSDT in database `"
+                    Console.Error.Write report.Database
+                    Console.Error.WriteLine "`:"
+                    for line in report.Errors do
+                        Console.Error.Write "  "
+                        Console.Error.WriteLine line
+                    3
             | Failure errors ->
-                die 2 (sprintf "projection: parse failed:\n%s" (renderErrors errors))
+                (
+                    Console.Error.WriteLine "projection: parse failed:"
+                    printErrors Console.Error errors
+                    2
+                )
         dumpBench "deploy"
         exitCode
 
@@ -161,7 +198,11 @@ let private runCanary (sourceDdlPath: string) : int =
                         (PhysicalSchema.renderDiff report.Diff)
                     5
             | Failure errors ->
-                die 2 (sprintf "projection: canary failed:\n%s" (renderErrors errors))
+                (
+                    Console.Error.WriteLine "projection: canary failed:"
+                    printErrors Console.Error errors
+                    2
+                )
         dumpBench "canary"
         exitCode
 
@@ -183,7 +224,14 @@ let main argv =
     | [||]
     | [| "--help" |]
     | [| "-h" |] ->
-        printfn "%s" (usage ())
+        // Per chapter 3.5 deep audit (2026-05-09): help-page emission
+        // via per-line `Console.Out.WriteLine`. Typed list flows in;
+        // per-line writes flow out; no intermediate concatenated
+        // multi-line string.
+        printLines Console.Out usageLines
         0
     | _ ->
-        die 1 (sprintf "projection: invalid arguments\n\n%s" (usage ()))
+        Console.Error.WriteLine "projection: invalid arguments"
+        Console.Error.WriteLine ""
+        printLines Console.Error usageLines
+        1

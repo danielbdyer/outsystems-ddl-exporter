@@ -4,9 +4,25 @@ You're picking up V2 work mid-stream. This brief gets you oriented in 5 minutes;
 
 ---
 
+## ⭐ Read this before you do anything
+
+**The user codified a supreme operating discipline at chapter 3.5 (2026-05-09)** that **supersedes most other intents for each and every session that follows.** It lives at the top of `DECISIONS.md` as five pillars:
+
+1. **Data-structure-oriented over string-parsing** — typed values flow through; strings emerge ONLY at the absolute terminal BCL writer boundary (`Sql160ScriptGenerator`, `XmlWriter`, `Utf8JsonWriter`).
+2. **Avoid string concatenation aggressively** — `sprintf`, `+`, `String.Format`, `String.Concat`, `String.Join`, interpolated strings, and even the V2-internal `StructuredString` builder are all flagged. Every site requires deep per-site analysis: built-in BCL method first, vendor SDK second, typed data structure third, `StructuredString` last (and only with rationale).
+3. **Built-in obligation** — when a BCL or vendor SDK emits the structure, agents are *obliged* to use it. `Sql160ScriptGenerator` for T-SQL (production target SQL Server 2022 = compat 160; **not** Sql170ScriptGenerator, which is vNext preview). `XmlWriter` for XML. `Utf8JsonWriter` for JSON. `UuidV5` for RFC 4122 §4.3 GUIDs.
+4. **Promised land of FP** — ≥95% pure functions; ≤5% isolated and tested exhaustively (property tests + parse-roundtrip + byte-determinism). Mutation reified at file level via `LINT-ALLOW-FILE-MUTATION`.
+5. **Coding-style commitments preserved across sessions** — deep DDD, point-free composition, hexagonal architecture, hardcore FP (closed DUs, smart constructors, no `null`, monadic composition), OOP only at boundary code where BCL forces it, deep separation of concerns, verifiable + observable to the nth degree.
+
+**Default to explicit acknowledgement of deviance.** The lint guardrail (`scripts/lint-discipline.sh`, 26 rules) is the structural enforcement. Every legitimate exception carries a `LINT-ALLOW: <rationale>` (per-line) or `LINT-ALLOW-FILE` / `LINT-ALLOW-FILE-MUTATION` (top-of-file) marker. Pre-commit hook + CI workflow are defense-in-depth.
+
+**Read `DECISIONS.md`'s top section in full before adopting any pattern.**
+
+---
+
 ## What this is
 
-You're working on the **F# sidecar (V2) of an OutSystems DDL exporter** at `/home/user/outsystems-ddl-exporter`. V1 is the C# trunk (~78K LOC at `src/`, fully shipping). V2 lives at `sidecar/projection/` — pure F# core plus C# adapters at the boundary, ~9K LOC and **713 passing tests** (697 non-canary + 16 canary).
+You're working on the **F# sidecar (V2) of an OutSystems DDL exporter** at `/home/user/outsystems-ddl-exporter`. V1 is the C# trunk (~78K LOC at `src/`, fully shipping). V2 lives at `sidecar/projection/` — pure F# core plus C# adapters at the boundary, **758 passing tests, 0 skipped**, lint clean across 26 rules.
 
 V2's purpose: make a high-stakes database cutover **verifiable, reversible, and repeatable** through a sibling chorus of synchronized projections (SSDT DDL, CDC-aware data inserts, DACPAC, refactor log, distributions, diagnostics) emitted from a single algebraic core. **V1 ships the cutover; V2 makes it trustworthy.**
 
@@ -33,7 +49,7 @@ Don't skip. The first reading pass takes ~1 hour and gives you the full picture.
 | 5 | **`sidecar/projection/BACKLOG.md`** | ~375 items inventoried by chapter / status / disposition. Includes Stage 0 + free corollaries. | ~900 |
 | 6 | **`sidecar/projection/CLAUDE.md`** | Fresh-agent navigation; operating disciplines table; F# feature surface; programming style; load-bearing commitments. | ~470 |
 | 7 | **`sidecar/projection/AXIOMS.md`** | Formal system: A1–A40, T1–T12 with amendments. **Read on demand** when working on a specific axiom. | ~900 |
-| 8 | **`sidecar/projection/DECISIONS.md`** | Append-only resolved-questions log. Read most-recent ten entries first. Older entries remain in force unless superseded. | ~7500 |
+| 8 | **`sidecar/projection/DECISIONS.md`** | Append-only resolved-questions log. **Read the supreme operating discipline at the top FIRST** (codified 2026-05-09; supersedes most other intents). Then read most-recent ten entries. Older entries remain in force unless superseded. | ~7500 |
 | 9 | **`sidecar/projection/ADMIRE.md`** | V1↔V2 component bridge. Per-component status (admiring → extracting → advanced). | ~2700 |
 | 10 | **`sidecar/projection/HANDOFF.md`** | Chapter-bridge tactical letter from chapter-3.1 close; what's load-bearing; what's deferred. | ~190 |
 | 11 | **`sidecar/projection/CHAPTER_3_1_CLOSE.md`** | Chapter-3.1 close synthesis (sessions 27–36): canary milestone sequence, four meta-codifications, forward signals. | ~180 |
@@ -51,36 +67,86 @@ Plus **`VISION_REVIEW.md`** for review evidence and the eight subagent reports t
 - **Chapter 2** (sessions 13–25) **closed**. OSSYS adapter (25 translation rules); Diagnostics writer; `Lineage<Diagnostics<'a>>` dual composition; strategy-layer codification at stability mark. Per `CHAPTER_2_CLOSE.md`.
 - **Stage 0** (sessions 26 prework) **shipped**. Twelve foundation items landed before chapter 3.1 opened.
 - **Chapter 3.1** (sessions 27–36) **closed**. Canary milestone sequence M1–M3; bench-driven optimization protocol; typed statement-stream Π output; bulk realization layer; streaming readside; 300-table forcing-function fixture (500k rows in 27s warm); five-agent DDD/Hexagonal/FP audit; first refactor batch. Per `CHAPTER_3_1_CLOSE.md` and `AUDIT_2026_05_DDD_HEXAGONAL_FP.md`.
-- **Chapter 3.2 / 3.5 / 4.1+** (you are here) — chapter pre-scopes exist for 3.2 (SnapshotRowsets), 3.3 (DacpacEmitter), 3.4 (canary property surface), 3.5 (RefactorLog + CatalogDiff), 4.1.A/B (data triumvirate), 4.2 (User FK reflow), 4.3 (diagnostics + remediation), 4.4 (SSDT DDL emitter). The audit-deferred Tier-1 items (Π port realization, Identity DU refactor, port-extraction trio) route to specific sub-chapters per `CHAPTER_3_1_CLOSE.md`'s forward signals. **Decide chapter sequencing first.**
+- **Chapter 3.5** (slices α–ω, branch `claude/kickoff-architecture-improvements-Hf6Uw`) **substantively shipped; chapter-close ritual deferred**. RefactorLog + CatalogDiff Π port; UuidV5 (RFC 4122 §4.3 + segment-incremental SHA-1); ScriptDom Sql160 typed-AST emission for SQL bread-and-butter; per-DU `toStructured` / `toDiagnosticString` typed renderers (`StructuredString`); supreme operating discipline codification at top of `DECISIONS.md`; lint discipline expanded to 26 rules; pre-commit hook + CI workflow live; F# 9 nullness-strict tests; ScriptDom parse-roundtrip + determinism property tests. **758 passing tests, 0 skipped, 0 build warnings under `TreatWarningsAsErrors=true`.**
+- **Chapter 3.6+ / 3.2 / 4.1+** (you are here) — chapter pre-scopes exist for 3.2 (SnapshotRowsets), 3.3 (DacpacEmitter), 3.4 (canary property surface), 4.1.A/B (data triumvirate), 4.2 (User FK reflow), 4.3 (diagnostics + remediation), 4.4 (SSDT DDL emitter). **Decide chapter sequencing first**, AND/OR pick up the named deferred items below before opening a fresh chapter.
 
 **The four-environment cutover is the fixed point.** V2 must reach the V2-augmented mode of the fallback ladder by T-30 days from cutover; V2-driver mode is the aspiration. V1 stays warm through cutover+30 days regardless.
 
 ---
 
+## Where you are picking up — named deferred backlog (chapter 3.5 close)
+
+Chapter 3.5 shipped its substantive Π port + lint discipline + bread-and-butter ScriptDom. The user named the following deferrals at slice ω close (2026-05-09); pick these up first OR open the next chapter, your call after orienting.
+
+| # | Deferral | Site | What's needed | Why deferred |
+|---|---|---|---|---|
+| 1 | **Slice χ — F# Analyzers SDK custom analyzer** | `sidecar/projection/Projection.Analyzers/` (new project) | AST-level detection of patterns grep misses: `member val X with get, set` mutable record property, attribute-based reflection, `obj` parameters with implicit type inference, etc. Complements `lint-discipline.sh`'s 26 grep-based rules with structural type-checking. | Standalone project; clean separation from production code. |
+| 2 | **`Identity.fs:98` — `SsKey.synthesizedComposite` build path** | `src/Projection.Core/Identity.fs:98` | Eliminate `String.concat "_"` by refactoring `Synthesized of source: string * basis: string` DU shape. Carry typed segments through the `SsKey.Synthesized` payload; render at terminal boundary only. Affects A1 / A4 axioms + ~50 test fixtures. | Chapter 4+; structural DU refactor crosses too many surfaces for a single slice. Deep per-site analysis comment + `// LINT-ALLOW: round-trip pair` in place. |
+| 3 | **`Identity.fs:225` — `rootOriginal` Synthesized projection** | `src/Projection.Core/Identity.fs:225` | Same DU-shape refactor as #2; same axioms; same fixture impact. | Pairs with #2 — must land together. |
+| 4 | **`VisibilityMask.fs:58, 76` — predicate names** | `src/Projection.Core/Passes/VisibilityMask.fs:58,76` | Predicate-name composition (`hideOrigin`, `hideModality`) currently uses `String.concat ""` over typed list with deep per-site analysis comment. Refactor requires propagating typed payload through `LineageEvent.Removed` (currently `LineageEvent.Annotated of string`). | Chapter 4+; coupled to the `LineageEvent.Annotated of string` → typed-payload DU widening. |
+| 5 | **`StructuredString.fs:51, 89` — typed renderer's residual `String.concat ""`** | `src/Projection.Core/StructuredString.fs:51,89` | `StructuredString` IS itself the terminal text-emission boundary for typed diagnostic display. File carries `LINT-ALLOW-FILE`. The user considers `StructuredString` a stopgap — the ultimate aspiration is for *every* diagnostic projection to terminate in a BCL writer (`XmlWriter`, `Utf8JsonWriter`) carrying a typed payload, not a string. | Stopgap acknowledged; eliminating requires a structured-diagnostic-projection surface that doesn't exist yet. |
+| 6 | **Pass-driver `interventionId -> outcomeLabel`** | `src/Projection.Core/Passes/{Nullability,UniqueIndex,ForeignKey,CategoricalUniqueness}Pass.fs` | Each pass driver builds a `LineageEvent.Annotated of string` whose payload is `interventionId + outcomeLabel`. Same `LineageEvent.Annotated of string` deferral as #4 — refactor blocked on widening `LineageEvent` to carry typed payloads. | Chapter 4+; couples to #4 (the LineageEvent typed-payload widening). |
+
+**Disposition:** items 2, 3, 4, 6 are coupled (all gated on widening `LineageEvent.Annotated of string` → typed payload + `Synthesized` DU shape refactor). They earn one chapter together — call it Chapter 3.6 (LineageEvent typed-payload widening + Identity.Synthesized typed-segments refactor). Items 1 and 5 are independent and can land standalone.
+
+**The lint guardrail's `LINT-ALLOW: <rationale>` markers** at each of these sites carry structural acknowledgement. Grep `rg "LINT-ALLOW" sidecar/projection/src/` to find every reified deviation; the rationale strings are deliberately uniform (`round-trip pair`, `terminal diagnostic projection`) so the deferred-backlog scan is structural, not narrative.
+
+---
+
 ## What you'll do first
 
-Stage 0 + chapter 3.1 are **closed**. Your first move is to **decide the next chapter** from chapter 3.1's forward signals (per `CHAPTER_3_1_CLOSE.md`).
+Stage 0 + chapters 3.1 and 3.5 (substantive) are **closed**. Your first move is to **either pick up the named deferrals above** (Chapter 3.6 — LineageEvent typed-payload widening + Identity.Synthesized typed-segments refactor) **or decide the next forward chapter**.
 
 ### Step 1 — Orient (~45 minutes)
 
 Read in this order:
-1. `HANDOFF.md` (this letter's outgoing form for chapter 3.1) — what's load-bearing, what's deferred.
-2. `CHAPTER_3_1_CLOSE.md` — chapter-3.1 arc summary, four meta-codifications, forward signals.
-3. `AUDIT_2026_05_DDD_HEXAGONAL_FP.md` — Tier 1/2/3/4 backlog from the chapter-close audit; ~20 items routed to named sub-chapters.
-4. The most recent ten `DECISIONS.md` entries — sessions 32–36 substantive resolutions cluster at the bottom.
+1. **`DECISIONS.md` — supreme operating discipline at the top** (codified 2026-05-09; five pillars; supersedes most other intents). This is non-negotiable groundwork.
+2. `HANDOFF.md` — what's load-bearing, what's deferred.
+3. `CHAPTER_3_1_CLOSE.md` — chapter-3.1 arc summary, four meta-codifications, forward signals.
+4. `AUDIT_2026_05_DDD_HEXAGONAL_FP.md` — Tier 1/2/3/4 backlog from the chapter-close audit; ~20 items routed to named sub-chapters.
+5. The most recent ~20 `DECISIONS.md` entries — chapter 3.5's slices α–ω cluster at the bottom (codified the supreme operating discipline; reified-primitive pattern; built-in obligation; extended lint discipline).
+6. `scripts/lint-discipline.sh` — 26 grep-based rules; pre-commit hook runs `--ci` on staged V2 files; CI workflow at `.github/workflows/lint-projection.yml`. Run `bash sidecar/projection/scripts/install-hooks.sh` to install the pre-commit symlink.
 
-### Step 2 — Pick the next chapter
+### Step 2 — Pick the next chapter (or pick up the deferred backlog)
 
-Four plausible next chapters, each with a current pre-scope:
+**Strongly recommended first slice: Chapter 3.6 — LineageEvent typed-payload widening + Identity.Synthesized typed-segments refactor.** This unblocks deferrals 2, 3, 4, 6 from the named backlog above; converts every `LineageEvent.Annotated of string` site to typed payload; eliminates the three remaining `String.concat "_"` Identity-rendering sites; touches A1/A4 axioms and ~50 test fixtures. Largest leverage on string-aversion alignment.
+
+Other plausible next chapters, each with a current pre-scope:
 
 - **Chapter 3.2 — `SnapshotRowsets` adapter.** Closes the JSON-projection-lossiness class. Smaller scope. Lifts `ICatalogReader` port (Position B trigger has fired). Pre-scope at `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md`.
-- **Chapter 3.5 — Π port realization + RefactorLog / CatalogDiff.** Largest leverage. Realizes the declared `Emitter<'element>` shape; unblocks T11 structural-type encoding. Pre-scope at `CHAPTER_3_PRESCOPE_REFACTORLOG_AND_CATALOG_DIFF.md`. Pairs naturally with the audit-deferred Π-port-realization.
-- **Chapter 3.x — DacpacEmitter.** Re-deferred at chapter-2 close. Inherits chapter-3.5's structured-output pattern. Pre-scope at `CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md`.
-- **Chapter 4.1 — Data triumvirate (StaticSeedsEmitter / MigrationDependenciesEmitter / BootstrapEmitter).** Inherits chapter 3.1's `Bulk` / `RowDigester` / `AsyncStream`. Pre-scope at `CHAPTER_4_PRESCOPE_DATA_TRIUMVIRATE.md`.
+- **Chapter 3.x — DacpacEmitter.** Re-deferred at chapter-2 close. Inherits chapter-3.5's typed `ArtifactByKind<'element>` pattern. Pre-scope at `CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md`.
+- **Chapter 4.1 — Data triumvirate (StaticSeedsEmitter / MigrationDependenciesEmitter / BootstrapEmitter).** Inherits chapter 3.1's `Bulk` / `RowDigester` / `AsyncStream` and chapter 3.5's typed-statement-stream emission via `Sql160ScriptGenerator`. Pre-scope at `CHAPTER_4_PRESCOPE_DATA_TRIUMVIRATE.md`.
+- **Slice χ — F# Analyzers SDK custom analyzer** (independent; deferral #1). Standalone project; complements the 26 grep-based lint rules with AST-level structural detection.
 
 ### Step 3 — Open the chapter
 
 Open with a chapter-open document naming the strategic-frame axes (`DECISIONS 2026-05-15` shape; the OSSYS chapter is the worked example). Multi-session chapters earn this discipline at chapter open. Operate the chapter-mid-audit at every 3–5 substantive sessions; operate the chapter-close ritual at chapter close (eight items + the new five-agent audit for architectural-frame chapters).
+
+### How chapter 3.5 ended (substantive close; ritual deferred)
+
+**Test count:** 758 passing, 0 skipped, 0 build warnings under `TreatWarningsAsErrors=true` everywhere (production AND tests). Lint clean across 26 rules.
+
+**Substantive deliverables shipped (slices α–ω):**
+- `CatalogDiff` exhaustive partition (Renamed/Added/Removed/Unchanged) with smart constructor (A38 cash-out).
+- `UuidV5.create` (RFC 4122 §4.3) + `UuidV5.createFromSegments` (typed byte-segment incremental SHA-1).
+- `RefactorLogEmitter` over `EmitterOverDiff<RefactorLogEntry list>` Π port.
+- `RefactorLogRender` via `XmlWriter` with pinned `XmlSettings.indentedUtf8NoBom()` (built-in obligation).
+- `Sql160ScriptGenerator` typed-AST emission (`ScriptDomBuild` + `ScriptDomGenerate`) for SQL bread-and-butter; production target SQL Server 2022 = compat 160.
+- `ArtifactByKind<'element>` smart constructor with strict-equality keyset enforcement (T11 structural-type-encoding cash-out).
+- Per-DU `toStructured` / `toDiagnosticString` typed renderers across every Outcome / KeepReason / Evidence / Conflict in `NullabilityRules` / `UniqueIndexRules` / `ForeignKeyRules` / `CategoricalUniquenessRules`.
+- `LineageBuffer` reified opaque accumulator (typed-private DU wrapping `List<LineageEvent>`).
+- `PinnedWriting.JsonOptions` / `XmlSettings` reified BCL option-builders.
+- `DatabaseNameGenerator` reified non-determinism boundary (eliminates `Guid.NewGuid()` leaks).
+- 7 Skip-stub tests retired across 5 test files; 9 + 8 + 8 + 9 + 15 + 4 new property/example tests added (CatalogDiff / UuidV5 / RefactorLogEmitter / RefactorLogRender XDocument structural / ScriptDomRoundTrip / T11TypeTheorem).
+
+**Disciplines codified at chapter 3.5:**
+1. **Supreme operating discipline (5 pillars)** at top of `DECISIONS.md` — supersedes most other intents per session.
+2. **Built-in obligation** — when a BCL/vendor SDK emits the structure, agents are obliged to use it.
+3. **Reified-primitive pattern** — opaque accumulators (`LineageBuffer`), reified BCL option-builders (`PinnedWriting`), reified non-determinism boundaries (`DatabaseNameGenerator`).
+4. **Extended lint discipline** — 26 rules across string-aversion (6) / mutation (4) / determinism (4) / core purity (4) / FP strict (4) / Big-O (1) / hexagonal (3); `LINT-ALLOW: <rationale>` per-line and `LINT-ALLOW-FILE` / `LINT-ALLOW-FILE-MUTATION` top-of-file allowlists; pre-commit hook + CI workflow defense-in-depth.
+5. **Deep per-site analysis** — every concatenation site requires explicit consideration of (a) BCL built-in, (b) vendor SDK, (c) typed data structure, BEFORE falling back to `String.concat` with `LINT-ALLOW`.
+
+**AXIOMS cash-outs:** A38 (CatalogDiff exhaustiveness); T11 (structural-type encoding via `ArtifactByKind<'element>`).
 
 ### How chapter 3.1 ended
 
@@ -149,11 +215,12 @@ Codified in `CLAUDE.md` operating-disciplines table. Short list with what makes 
 
 ## Git / workflow
 
-- **Branch:** `claude/evaluate-fsharp-sidecar-6QTrt` (verify with `git status`; check `git log --oneline -5` for context).
+- **Branch:** `claude/kickoff-architecture-improvements-Hf6Uw` (verify with `git status`; check `git log --oneline -10` for context — last commit `4ea171a` retired 7 Skip-stubs and added 3 string-aversion lint rules).
 - **Commit individual slices.** Never batch unrelated changes.
-- **Follow the chapter-close ritual** at every chapter close (eight items per `CLAUDE.md` operating-disciplines table; `DECISIONS 2026-05-14`).
-- **Before pushing:** `dotnet test` should be green. Existing 631 tests stay green at every Stage 0 step.
-- **Commit message format:** follow the existing pattern in `git log --oneline`. Multi-paragraph body explaining the *why*, not just the *what*. Sign with the Claude Code session URL.
+- **Follow the chapter-close ritual** at every chapter close (eight items per `CLAUDE.md` operating-disciplines table; `DECISIONS 2026-05-14`). **Chapter 3.5's chapter-close ritual is deferred** — pick it up before opening Chapter 3.6 if appropriate.
+- **Before pushing:** `dotnet test` should be green (758 tests, 0 skipped). `bash sidecar/projection/scripts/lint-discipline.sh --ci` must exit 0 (26 rules; the pre-commit hook also runs this on staged V2 files).
+- **Bypassing the lint guardrail** via `git commit --no-verify` is the explicit-deviance escape hatch; CI catches bypasses on PR. Don't bypass without writing the DECISIONS amendment first.
+- **Commit message format:** follow the existing pattern in `git log --oneline` (each commit is `sidecar/projection: chapter <N> <slice tag> — <action>`). Multi-paragraph body explaining the *why*, not just the *what*. Sign with the Claude Code session URL.
 
 ---
 
@@ -177,19 +244,27 @@ When tempted to shortcut: trace V1 before writing tests; wait for the second con
 
 ## What success looks like
 
-**End of first session (chapter-decision):** chapter-open document for the picked sub-chapter (3.2 / 3.5 / 3.x / 4.1) with strategic-frame axes named. Existing 713 tests green. The audit-deferred items routed to the picked sub-chapter sketched as concrete first-slice plans.
+**End of first session (chapter-decision):** chapter-open document for the picked sub-chapter (3.2 / 3.6 / 3.x / 4.1 / slice χ) with strategic-frame axes named. Existing 758 tests green; 0 skipped; lint clean across 26 rules. The audit-deferred items routed to the picked sub-chapter sketched as concrete first-slice plans.
 
 **End of next sub-chapter (~5-10 sessions):** the picked sub-chapter's substantive deliverable shipped. AXIOMS amendments filled at close. Chapter-close ritual operated (eight items + five-agent audit if architectural-frame chapter). Forward signals cluster identified for the chapter after that.
 
-**Cutover-quarter trajectory:** chapters 3.2 / 3.5 / 3.x close (V2-augmented mode operational). Chapter 4.1 → 4.4 close (V2-driver mode possible per T-30 gate). Cutover proceeds environment-by-environment. V1 sunset deferred until all four environments run V2 emissions for one full schema-evolution cycle.
+**Cutover-quarter trajectory:** chapters 3.2 / 3.6 / 3.x close (V2-augmented mode operational). Chapter 4.1 → 4.4 close (V2-driver mode possible per T-30 gate). Cutover proceeds environment-by-environment. V1 sunset deferred until all four environments run V2 emissions for one full schema-evolution cycle.
 
 **Chapter-3.1's structural inheritance to the chapters ahead:**
-- Π output as typed stream → chapter 3.5 / 4.1 / 3.x inherit the seam.
+- Π output as typed stream → chapters 3.5 (shipped) / 4.1 / 3.x inherit the seam.
 - `Bulk` / `RowDigester` / `AsyncStream` substrate → chapter 4.1 fills the data triumvirate emitters.
 - `Coordinates.TableId` value object → chapter 4 / 5 extend with `SchemaName` / `TableName` / `ColumnName` Stage-2.
 - Aggregate-root smart constructors → chapter 4.2 User FK reflow consumes the integrity invariants.
 - Writer-fidelity discipline → all future passes operate the dual-writer's API.
 - Five-agent audit protocol → repeat at every chapter close that warrants architectural review.
+
+**Chapter-3.5's structural inheritance to the chapters ahead:**
+- Supreme operating discipline (5 pillars) → all sessions confirm intent against each pillar before adopting any pattern.
+- `ArtifactByKind<'element>` smart constructor → all sibling Π's land their typed output through it (T11 structural).
+- `Sql160ScriptGenerator` typed-AST emission → chapters 4.1 / 4.4 inherit the SQL-emission seam (built-in obligation).
+- `XmlWriter` / `Utf8JsonWriter` pinned-settings reified primitives → all future XML/JSON emission paths inherit `PinnedWriting`.
+- Lint discipline (26 rules + pre-commit + CI) → all future code lands lint-clean by default; deviations carry `LINT-ALLOW` markers.
+- Per-DU `toStructured` / `toDiagnosticString` typed renderers → all future Outcome / KeepReason / Evidence DUs ship with the same surface.
 
 ---
 

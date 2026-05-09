@@ -1,5 +1,17 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE: validation-error message construction in
+// `Module.create` / `Catalog.create` / `Reference.attach` smart
+// constructors uses `sprintf "...%A..."` to interpolate typed
+// `SsKey` values. The `%A` formatter is F#'s closed-DU structural
+// pretty-printer — the canonical "stringify a typed value" surface.
+// Per `DECISIONS 2026-05-09 — Built-in obligation`, this is the
+// allowed exception (no BCL alternative emits closed-DU
+// pretty-printed text). Audit-deferred Tier-2 #14 names typed
+// `Outcome.toDiagnosticString` per DU as the eventual home; the
+// same shape would absorb these. Until then, `sprintf "%A"` IS
+// the typed pretty-print.
+
 /// Presentation name for a catalog node. Names are policy-transformed (A15)
 /// and never participate in identity (A2). The DU prevents accidental
 /// confusion with `SsKey`.
@@ -32,6 +44,19 @@ type Origin =
     /// External kind exposed by direct reader, no IS step.
     | ExternalDirect
 
+/// Typed structural display for `Origin`. Tag-only variants;
+/// renders to the variant name.
+[<RequireQualifiedAccess>]
+module Origin =
+    let toStructured (o: Origin) : StructuredString =
+        match o with
+        | OsNative -> StructuredString.tag "OsNative"
+        | ExternalViaIntegrationStudio -> StructuredString.tag "ExternalViaIntegrationStudio"
+        | ExternalDirect -> StructuredString.tag "ExternalDirect"
+
+    let toDiagnosticString (o: Origin) : string =
+        toStructured o |> StructuredString.render
+
 
 /// One row of a Static kind's population. Populations live in the catalog
 /// per A7; the unfold pass lifts them into type-level metadata for Pi.
@@ -57,6 +82,23 @@ type ModalityMark =
     | TenantScoped
     /// Logical deletes are represented in-row, not by physical removal.
     | SoftDeletable
+
+/// Typed structural display for `ModalityMark`. The `Static`
+/// variant carries the population count (not the rows themselves)
+/// — the count is the operator-relevant signal; the rows are
+/// queried separately.
+[<RequireQualifiedAccess>]
+module ModalityMark =
+    let toStructured (m: ModalityMark) : StructuredString =
+        match m with
+        | Static populations ->
+            StructuredString.create "Static"
+                [ "populations", Inv.int32 (List.length populations) ]
+        | TenantScoped -> StructuredString.tag "TenantScoped"
+        | SoftDeletable -> StructuredString.tag "SoftDeletable"
+
+    let toDiagnosticString (m: ModalityMark) : string =
+        toStructured m |> StructuredString.render
 
 
 /// Primitive scalar types. Concrete mapping to a target surface scalar is

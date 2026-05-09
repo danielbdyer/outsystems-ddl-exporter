@@ -1,5 +1,9 @@
 namespace Projection.Adapters.Sql
 
+// LINT-ALLOW-FILE-MUTATION: Function-local capturedDate
+//   placeholder before assignment from JSON snapshot header.
+//   Tight scope; output is immutable record.
+
 open System
 open System.Text.Json
 open Projection.Core

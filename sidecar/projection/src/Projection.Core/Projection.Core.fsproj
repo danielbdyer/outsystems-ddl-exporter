@@ -7,15 +7,28 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <RootNamespace>Projection.Core</RootNamespace>
     <AssemblyName>Projection.Core</AssemblyName>
+    <!--
+      FP strict mode: overflow / underflow checks elevate arithmetic
+      wraparound to runtime exception. Per `DECISIONS 2026-05-09 — FP
+      strict mode discipline`, T1 byte-determinism requires that
+      arithmetic wraparound is observable (a programmer error), not
+      silent. Pairs with the no-string-concatenation discipline at the
+      determinism layer.
+    -->
+    <CheckForOverflowUnderflow>true</CheckForOverflowUnderflow>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="Result.fs" />
     <Compile Include="Bench.fs" />
+    <Compile Include="PinnedWriting.fs" />
     <Compile Include="Identity.fs" />
+    <Compile Include="UuidV5.fs" />
     <Compile Include="Coordinates.fs" />
+    <Compile Include="StructuredString.fs" />
     <Compile Include="Catalog.fs" />
     <Compile Include="ArtifactByKind.fs" />
+    <Compile Include="CatalogDiff.fs" />
     <Compile Include="PhysicalSchema.fs" />
     <Compile Include="Profile.fs" />
     <Compile Include="Policy.fs" />
@@ -26,6 +39,7 @@
     <Compile Include="Strategies/ForeignKeyRules.fs" />
     <Compile Include="Strategies/CategoricalUniquenessRules.fs" />
     <Compile Include="Lineage.fs" />
+    <Compile Include="LineageBuffer.fs" />
     <Compile Include="Diagnostics.fs" />
     <Compile Include="Types.fs" />
     <Compile Include="Strategies/Composition.fs" />

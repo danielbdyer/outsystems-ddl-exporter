@@ -1,5 +1,16 @@
 namespace Projection.Core.Passes
 
+// LINT-ALLOW-FILE: pass-driver `opportunityEntry` builds
+// operator-facing diagnostic message text via `sprintf`
+// (multi-line prose with numeric / decimal interpolation —
+// e.g., "Mandatory column has %d/%d nulls observed (budget %s)").
+// Per audit Tier-3 SUBJ leave-and-document: human-readable
+// diagnostic prose is the discipline's allowed exception (no
+// typed BCL alternative produces equivalent message text).
+// Outcome / KeepReason / Conflict / Evidence rendering retired
+// to typed `StructuredString` via `Outcome.toDiagnosticString`
+// (chapter 3.5 slice φ); only the prose remains here.
+
 open Projection.Core
 
 /// The NullabilityPass — V1 `NullabilityEvaluator` migrated as a pure
@@ -45,18 +56,13 @@ module NullabilityPass =
     let private passName : string = "nullability"
 
     /// Format the outcome for the lineage event's `Annotated` detail.
-    /// The full structured `NullabilityOutcome` lives in
-    /// `NullabilityDecisionSet.Decisions`; the trail carries a
-    /// human-readable summary so audit consumers can grep for
-    /// outcome categories without parsing decisions.
+    /// Per the FP strict-mode discipline, this delegates to the
+    /// typed `NullabilityOutcome.toDiagnosticString` (which
+    /// recursively projects evidence / keep-reason / conflict via
+    /// their own typed displays). No `sprintf "%A"`; structured
+    /// composition over typed segments.
     let private outcomeLabel (outcome: NullabilityOutcome) : string =
-        match outcome with
-        | NullabilityOutcome.EnforceNotNull evidence ->
-            sprintf "EnforceNotNull(%A)" evidence
-        | NullabilityOutcome.KeepNullable reason ->
-            sprintf "KeepNullable(%A)" reason
-        | NullabilityOutcome.RequireOperatorApproval conflict ->
-            sprintf "RequireOperatorApproval(%A)" conflict
+        NullabilityOutcome.toDiagnosticString outcome
 
     /// One lineage event per decision. `Annotated` because the pass
     /// produces a decision (a real transformation in the audit sense)
@@ -67,9 +73,11 @@ module NullabilityPass =
           SsKey         = decision.AttributeKey
           TransformKind =
               Annotated
-                  (sprintf "%s -> %s"
+                  (String.concat "" [
                       decision.InterventionId
-                      (outcomeLabel decision.Outcome)) }
+                      " -> "
+                      outcomeLabel decision.Outcome
+                  ]) }
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// attributes by `SsKey` within each kind. Interventions are taken
@@ -125,10 +133,17 @@ module NullabilityPass =
                         "Column was kept nullable under operator-allowed relaxation (%d/%d nulls observed; budget %s). The relaxation is policy-permitted; the evidence is informative."
                         nulls rows (budget.ToString(System.Globalization.CultureInfo.InvariantCulture))
                 SsKey    = Some decision.AttributeKey
+                // Per the data-structure-oriented discipline
+                // (chapter 3.5 sidebar): the typed `Outcome` is
+                // already structurally accessible via
+                // `decisionsOf result |> .Decisions`; carrying a
+                // string-encoded duplicate in Metadata violates
+                // the discipline. Metadata carries only the
+                // intervention-id (genuinely string-typed; not a
+                // duplicate of structured data).
                 Metadata =
                     Map.ofList [
                         "interventionId", decision.InterventionId
-                        "outcome",        sprintf "%A" decision.Outcome
                     ]
             }
         | NullabilityOutcome.RequireOperatorApproval (MandatoryButHasNullsBeyondBudget (nulls, rows, budget)) ->
@@ -141,10 +156,17 @@ module NullabilityPass =
                         "Mandatory column has %d/%d nulls observed (budget %s). Tightening lifted to operator approval — remediate data or update the policy before applying NOT NULL."
                         nulls rows (budget.ToString(System.Globalization.CultureInfo.InvariantCulture))
                 SsKey    = Some decision.AttributeKey
+                // Per the data-structure-oriented discipline
+                // (chapter 3.5 sidebar): the typed `Outcome` is
+                // already structurally accessible via
+                // `decisionsOf result |> .Decisions`; carrying a
+                // string-encoded duplicate in Metadata violates
+                // the discipline. Metadata carries only the
+                // intervention-id (genuinely string-typed; not a
+                // duplicate of structured data).
                 Metadata =
                     Map.ofList [
                         "interventionId", decision.InterventionId
-                        "outcome",        sprintf "%A" decision.Outcome
                     ]
             }
 

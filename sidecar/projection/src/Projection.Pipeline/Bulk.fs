@@ -1,5 +1,8 @@
 namespace Projection.Pipeline
 
+// LINT-ALLOW-FILE-MUTATION: BCL SqlBulkCopy and SqlCommand mutable surfaces (DestinationTableName,
+//   CommandText etc.). BCL forces the shape; mutation contained per-call.
+
 open System
 open System.Data
 open System.Globalization
@@ -102,7 +105,7 @@ module Bulk =
                     SqlBulkCopyOptions.KeepIdentity
                     ||| SqlBulkCopyOptions.KeepNulls
                 use bulk = new SqlBulkCopy(cnn, opts, null)
-                bulk.DestinationTableName <- TableId.qualified table
+                bulk.DestinationTableName <- Render.tableQualified table
                 for c in shape do
                     bulk.ColumnMappings.Add(c.Column, c.Column) |> ignore
                 bulk.BulkCopyTimeout <- 0

@@ -108,7 +108,7 @@ module Diagnostics =
 
     /// Append a single entry without changing the value.
     let tell (entry: DiagnosticEntry) (m: Diagnostics<'a>) : Diagnostics<'a> =
-        { m with Entries = m.Entries @ [entry] }
+        { m with Entries = m.Entries @ [entry] }  // LINT-ALLOW: writer-monad `tell` algebraic primitive; same pattern as `Lineage.tell`
 
     /// Append several entries without changing the value.
     let tellMany (entries: DiagnosticEntry list) (m: Diagnostics<'a>) : Diagnostics<'a> =

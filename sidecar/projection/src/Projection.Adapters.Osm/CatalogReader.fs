@@ -97,16 +97,23 @@ module CatalogReader =
     // `OS_KIND`, etc.) explicitly; the basis is the dot-separated
     // identifier coordinate.
 
+    // Per the no-string-concatenation discipline (`DECISIONS
+    // 2026-05-09`), synthesis-basis composition flows through
+    // `SsKey.synthesizedComposite` over typed component lists rather
+    // than `sprintf "%s_%s"` / `sprintf "%s_%s_%s"`. The constructor
+    // joins via `String.concat "_"` and pairs structurally with the
+    // legacy `SsKey.original` parser's prefix-match.
+
     let private moduleSsKey (moduleName: string) : Result<SsKey> =
         SsKey.synthesized "OS_MOD" moduleName
 
     let private kindSsKey (moduleName: string) (entityName: string) : Result<SsKey> =
-        SsKey.synthesized "OS_KIND" (sprintf "%s_%s" moduleName entityName)
+        SsKey.synthesizedComposite "OS_KIND" [ moduleName; entityName ]
 
     let private attributeSsKey
         (moduleName: string) (entityName: string) (attrName: string)
         : Result<SsKey> =
-        SsKey.synthesized "OS_ATTR" (sprintf "%s_%s_%s" moduleName entityName attrName)
+        SsKey.synthesizedComposite "OS_ATTR" [ moduleName; entityName; attrName ]
 
     /// Reference SsKey synthesis (session 19). The reference identifies
     /// by its source coordinate — `<srcModule>_<srcEntity>_<viaAttr>`
@@ -115,7 +122,7 @@ module CatalogReader =
     let private referenceSsKey
         (sourceModuleName: string) (sourceEntityName: string) (viaAttrName: string)
         : Result<SsKey> =
-        SsKey.synthesized "OS_REF" (sprintf "%s_%s_%s" sourceModuleName sourceEntityName viaAttrName)
+        SsKey.synthesizedComposite "OS_REF" [ sourceModuleName; sourceEntityName; viaAttrName ]
 
     /// Index SsKey synthesis (session 22). Indexes identify by their
     /// V1 IndexName, scoped to the entity. V1's `IndexName` is unique
@@ -124,7 +131,7 @@ module CatalogReader =
     let private indexSsKey
         (moduleName: string) (entityName: string) (indexName: string)
         : Result<SsKey> =
-        SsKey.synthesized "OS_IDX" (sprintf "%s_%s_%s" moduleName entityName indexName)
+        SsKey.synthesizedComposite "OS_IDX" [ moduleName; entityName; indexName ]
 
     // -----------------------------------------------------------------------
     // JSON helpers — light wrappers over System.Text.Json.JsonElement.
@@ -509,15 +516,12 @@ module CatalogReader =
                         | Failure es -> Failure es
                         | Success an -> attributeSsKey moduleName entityName an)
                 | _ -> []
-            let foldedKeyCols =
-                keyColResults
-                |> List.fold
-                    (fun acc next ->
-                        match acc, next with
-                        | Success xs, Success x -> Result.success (xs @ [x])
-                        | Failure es, _         -> Failure es
-                        | _, Failure es         -> Failure es)
-                    (Result.success [])
+            // Per `Result.aggregate` (chapter-3.1 close audit): the
+            // canonical accumulator for `Result<'a> seq` collapses to
+            // `Result<'a list>` with errors aggregated (not short-
+            // circuited). Retires the O(N²) `xs @ [x]` fold pattern
+            // per `DECISIONS 2026-05-09` Big-O discipline.
+            let foldedKeyCols = Result.aggregate keyColResults
             match indexKey, indexNm, foldedKeyCols with
             | Success k, Success n, Success cols ->
                 Result.success
@@ -573,28 +577,18 @@ module CatalogReader =
             let refResults =
                 attrJsonList
                 |> List.map (parseReference moduleName entityName)
-            // Collect attribute results — first failure wins.
-            let foldedAttrs =
-                attrsResults
-                |> List.fold
-                    (fun acc next ->
-                        match acc, next with
-                        | Success xs, Success x  -> Result.success (xs @ [x])
-                        | Failure es, _          -> Failure es
-                        | _, Failure es          -> Failure es)
-                    (Result.success [])
-            // Collect reference results — first failure wins. None
-            // entries are dropped; Some entries flatten into a list.
+            // Collect attribute results — `Result.aggregate` collapses
+            // `Result<'a> seq` to `Result<'a list>` with errors
+            // aggregated. Retires the O(N²) `xs @ [x]` fold pattern.
+            let foldedAttrs = Result.aggregate attrsResults
+            // Collect reference results — `Result.aggregate` then drop
+            // `None` entries via `List.choose id`. Same Big-O profile
+            // as the legacy fold (O(N) overall) without the per-step
+            // append.
             let foldedRefs =
                 refResults
-                |> List.fold
-                    (fun acc next ->
-                        match acc, next with
-                        | Success xs, Success None     -> Result.success xs
-                        | Success xs, Success (Some r) -> Result.success (xs @ [r])
-                        | Failure es, _                -> Failure es
-                        | _, Failure es                -> Failure es)
-                    (Result.success [])
+                |> Result.aggregate
+                |> Result.map (List.choose id)
             // Collect index results — session 22; iterate the
             // entity's `indexes[]` array. The inactive-records
             // filter (session 21) does NOT extend to indexes today;
@@ -607,15 +601,7 @@ module CatalogReader =
                     |> Seq.toList
                     |> List.map (parseIndex moduleName entityName)
                 | _ -> []
-            let foldedIdx =
-                indexResults
-                |> List.fold
-                    (fun acc next ->
-                        match acc, next with
-                        | Success xs, Success x -> Result.success (xs @ [x])
-                        | Failure es, _         -> Failure es
-                        | _, Failure es         -> Failure es)
-                    (Result.success [])
+            let foldedIdx = Result.aggregate indexResults
             match kindKey, kindName, foldedAttrs, foldedRefs, foldedIdx with
             | Success k, Success n, Success attrs, Success refs, Success idxs ->
                 let modality =
@@ -664,15 +650,7 @@ module CatalogReader =
                     |> List.map (parseKind rawName)
                 | _ ->
                     []
-            let foldedKinds =
-                entitiesArr
-                |> List.fold
-                    (fun acc next ->
-                        match acc, next with
-                        | Success xs, Success x  -> Result.success (xs @ [x])
-                        | Failure es, _          -> Failure es
-                        | _, Failure es          -> Failure es)
-                    (Result.success [])
+            let foldedKinds = Result.aggregate entitiesArr
             match modKey, modName, foldedKinds with
             | Success k, Success n, Success kinds ->
                 Result.success
@@ -699,15 +677,7 @@ module CatalogReader =
                 arr.EnumerateArray()
                 |> Seq.toList
                 |> List.map parseModule
-            let folded =
-                modulesList
-                |> List.fold
-                    (fun acc next ->
-                        match acc, next with
-                        | Success xs, Success x  -> Result.success (xs @ [x])
-                        | Failure es, _          -> Failure es
-                        | _, Failure es          -> Failure es)
-                    (Result.success [])
+            let folded = Result.aggregate modulesList
             match folded with
             | Success modules -> Result.success { Modules = modules }
             | Failure errors  -> Failure errors

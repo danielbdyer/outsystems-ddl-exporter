@@ -46,10 +46,39 @@ module VisibilityMask =
     // names so lineage is human-readable.
     // -----------------------------------------------------------------------
 
-    /// Hide every kind whose origin equals `origin`.
+    /// Hide every kind whose origin equals `origin`. **Per-site
+    /// analysis (chapter 3.5 deep audit, hard line)**:
+    /// `Predicate.Name : string` is the typed lineage-trail label
+    /// (consumed by audit readers via
+    /// `LineageEvent.Removed of string`). Alternatives considered:
+    ///   - **Refactor `Predicate` to carry typed payload**
+    ///     (`Reason : ReasonOrigin of Origin | ReasonModality of
+    ///     ModalityMark`): would require changing
+    ///     `LineageEvent.Removed` to carry typed payload too,
+    ///     touching every lineage consumer (audit readers, JSON
+    ///     emission, tests). Architectural; deferred to chapter
+    ///     4+ when typed `LineageEvent` payload propagates.
+    ///   - **`String.Join("", segments)`**: same family as
+    ///     `String.concat`; renamed primitive only.
+    ///   - **`Console.Write` per segment**: not applicable;
+    ///     `Predicate.Name` is a *value*, not a stream-write side-
+    ///     effect.
+    ///   - **F# 9 interpolated strings**: respect current culture;
+    ///     would introduce determinism risk.
+    ///   - **Adopted: `String.concat ""` over typed 2-element list**.
+    ///     The list IS the structure; `Origin.toDiagnosticString`
+    ///     is the typed terminal projection of the typed `Origin`.
+    ///     The boundary is unavoidable until `LineageEvent.Removed`
+    ///     accepts typed payload (chapter 4+).
     let hideOrigin (origin: Origin) : Predicate =
-        { Name = sprintf "origin=%A" origin
-          Test = (fun k -> k.Origin = origin) }
+        {
+            Name =
+                String.concat "" [  // LINT-ALLOW: terminal lineage-trail boundary; typed payload propagation deferred to chapter 4
+                    "origin="
+                    Origin.toDiagnosticString origin
+                ]
+            Test = (fun k -> k.Origin = origin)
+        }
 
     /// Hide every kind whose SsKey is in `keys`.
     let hideKeys (keys: SsKey seq) : Predicate =
@@ -58,9 +87,17 @@ module VisibilityMask =
           Test = (fun k -> Set.contains k.SsKey keySet) }
 
     /// Hide every kind whose modality includes the given mark.
+    /// Same per-site analysis as `hideOrigin` — typed payload
+    /// propagation through `LineageEvent` deferred to chapter 4+.
     let hideModality (mark: ModalityMark) : Predicate =
-        { Name = sprintf "modality=%A" mark
-          Test = (fun k -> List.contains mark k.Modality) }
+        {
+            Name =
+                String.concat "" [  // LINT-ALLOW: terminal lineage-trail boundary; typed payload propagation deferred to chapter 4
+                    "modality="
+                    ModalityMark.toDiagnosticString mark
+                ]
+            Test = (fun k -> List.contains mark k.Modality)
+        }
 
     // -----------------------------------------------------------------------
     // Internals.
@@ -88,7 +125,13 @@ module VisibilityMask =
     /// truth); a downstream pass or emitter that cares about dangling
     /// references handles them.
     let run (mask: Mask) (c: Catalog) : Lineage<Catalog> =
-        let mutable events : LineageEvent list = []
+        // Per the FP strict-mode discipline: typed `LineageBuffer`
+        // is the reified pass-driver event accumulator. Replaces
+        // the `let mutable events : LineageEvent list = []` +
+        // cons-and-reverse pattern with the typed-opaque buffer.
+        // Mutation lives ONLY inside `LineageBuffer`'s
+        // implementation; this driver sees only the typed surface.
+        let events = LineageBuffer.create ()
         let canonModules =
             c.Modules
             |> List.map (fun m ->
@@ -98,13 +141,14 @@ module VisibilityMask =
                         match firstMatch mask k with
                         | None -> Some k
                         | Some pred ->
-                            events <- removedEvent pred k.SsKey :: events
+                            LineageBuffer.add (removedEvent pred k.SsKey) events
                             None)
                 { m with Kinds = kept })
         let masked = { Modules = canonModules }
-        // Reverse so events appear in catalog-traversal order rather
-        // than reverse-traversal order. A24's chronological-trail
-        // discipline applies within bind composition; within a single
-        // pass the convention is "events in the order the pass observed
-        // its targets."
-        Lineage.ofValueAndEvents (List.rev events) masked
+        // `LineageBuffer.toList` preserves insertion order — events
+        // surface in catalog-traversal order without manual
+        // `List.rev`. A24's chronological-trail discipline applies
+        // within bind composition; within a single pass the
+        // convention is "events in the order the pass observed its
+        // targets."
+        Lineage.ofValueAndEvents (LineageBuffer.toList events) masked

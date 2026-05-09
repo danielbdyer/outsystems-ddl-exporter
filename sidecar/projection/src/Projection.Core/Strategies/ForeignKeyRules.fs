@@ -122,6 +122,54 @@ type ForeignKeyDecisionSet = {
 ///     Outcome).
 ///   - **Module name advertises domain** — `ForeignKeyRules`,
 ///     same `<Domain>Rules` suffix as the two predecessors.
+/// Typed structural display per ForeignKey DUs.
+[<RequireQualifiedAccess>]
+module ForeignKeyEvidence =
+    let toStructured (e: ForeignKeyEvidence) : StructuredString =
+        match e with
+        | DatabaseConstraintPresent -> StructuredString.tag "DatabaseConstraintPresent"
+        | NoEvidenceObstacle probeRowCount ->
+            StructuredString.create "NoEvidenceObstacle"
+                [ "probeRowCount", Inv.int64 probeRowCount ]
+        | ScriptWithNoCheck orphanCount ->
+            StructuredString.create "ScriptWithNoCheck"
+                [ "orphanCount", Inv.int64 orphanCount ]
+
+    let toDiagnosticString (e: ForeignKeyEvidence) : string =
+        toStructured e |> StructuredString.render
+
+[<RequireQualifiedAccess>]
+module ForeignKeyKeepReason =
+    let toStructured (r: ForeignKeyKeepReason) : StructuredString =
+        match r with
+        | ForeignKeyKeepReason.PolicyDisabled -> StructuredString.tag "PolicyDisabled"
+        | ForeignKeyKeepReason.DataHasOrphans orphanCount ->
+            StructuredString.create "DataHasOrphans"
+                [ "orphanCount", Inv.int64 orphanCount ]
+        | ForeignKeyKeepReason.CrossSchemaBlocked -> StructuredString.tag "CrossSchemaBlocked"
+        | ForeignKeyKeepReason.CrossCatalogBlocked -> StructuredString.tag "CrossCatalogBlocked"
+        | ForeignKeyKeepReason.DeleteRuleIgnored -> StructuredString.tag "DeleteRuleIgnored"
+        | ForeignKeyKeepReason.EvidenceMissing -> StructuredString.tag "EvidenceMissing"
+        | ForeignKeyKeepReason.MissingTarget -> StructuredString.tag "MissingTarget"
+
+    let toDiagnosticString (r: ForeignKeyKeepReason) : string =
+        toStructured r |> StructuredString.render
+
+[<RequireQualifiedAccess>]
+module ForeignKeyOutcome =
+    let toStructured (o: ForeignKeyOutcome) : StructuredString =
+        match o with
+        | ForeignKeyOutcome.EnforceConstraint e ->
+            StructuredString.create "EnforceConstraint"
+                [ "evidence", ForeignKeyEvidence.toDiagnosticString e ]
+        | ForeignKeyOutcome.DoNotEnforce r ->
+            StructuredString.create "DoNotEnforce"
+                [ "reason", ForeignKeyKeepReason.toDiagnosticString r ]
+
+    let toDiagnosticString (o: ForeignKeyOutcome) : string =
+        toStructured o |> StructuredString.render
+
+
 [<RequireQualifiedAccess>]
 module ForeignKeyRules =
 

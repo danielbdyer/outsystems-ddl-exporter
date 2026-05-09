@@ -1,5 +1,9 @@
 namespace Projection.Adapters.Sql
 
+// LINT-ALLOW-FILE-MUTATION: Function-local mutable row-index
+//   (Map<string * string, JsonElement list>) for indexed JSON-
+//   rowset lookup. Per audit Lens-2 Tier-3 (justified).
+
 open System.Text.Json
 open Projection.Core
 
