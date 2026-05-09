@@ -244,12 +244,12 @@ module DistributionsEmitter =
     let emit (catalog: Catalog) (profile: Profile) : string =
         use _ = Bench.scope "emit.distributions.emit"
         match emitSlices catalog profile with
-        | Result.Error err ->
+        | Error err ->
             invalidOp
                 (sprintf
                     "DistributionsEmitter.emit: ArtifactByKind invariant breach: %A"
                     err)
-        | Result.Ok artifact ->
+        | Ok artifact ->
             let slices = ArtifactByKind.toMap artifact
             use stream = new MemoryStream()
             do

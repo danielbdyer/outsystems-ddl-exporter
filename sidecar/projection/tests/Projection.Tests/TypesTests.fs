@@ -9,7 +9,7 @@ open Projection.Tests.Fixtures
 /// with `Projection.Core.DiagnosticSeverity.Error` once `Projection.Core`
 /// is opened; qualifying via a private type alias forces case access
 /// to resolve to FSharp.Core's Result.Ok / Result.Error without
-/// shadowing the single-arity `Result<'a>.Failure` case.
+/// shadowing the single-arity `Result<'a>.Error` case.
 type private FsResult<'a, 'b> = Microsoft.FSharp.Core.Result<'a, 'b>
 
 /// Stage 0 (S0.A per `STAGING.md`) lands the seven tessellating-pattern

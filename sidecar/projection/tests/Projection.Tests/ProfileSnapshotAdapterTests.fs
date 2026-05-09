@@ -241,16 +241,16 @@ let ``unresolvable coordinates are silently skipped`` () =
     Assert.Empty(p.Columns)
 
 // ---------------------------------------------------------------------------
-// Malformed input — returns Result.Failure rather than throwing.
+// Malformed input — returns Result.Error rather than throwing.
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``malformed JSON returns Result.Failure`` () =
+let ``malformed JSON returns Result.Error`` () =
     let r = ProfileSnapshot.attach microFkCatalog "{ not json"
     Assert.True(Result.isFailure r)
 
 [<Fact>]
-let ``unknown ProbeOutcome returns Result.Failure with documented code`` () =
+let ``unknown ProbeOutcome returns Result.Error with documented code`` () =
     let json = """{ "columns": [
         { "Schema": "dbo", "Table": "OSUSR_P_PARENT", "Column": "ID",
           "IsNullablePhysical": false, "IsComputed": false,
@@ -265,10 +265,10 @@ let ``unknown ProbeOutcome returns Result.Failure with documented code`` () =
         "fkReality": [] }"""
     let r = ProfileSnapshot.attach microFkCatalog json
     match r with
-    | Failure errors ->
+    | Error errors ->
         Assert.True(
             errors |> List.exists (fun e -> e.Code = "profileAdapter.probeOutcome.unknown"))
-    | Success _ -> Assert.Fail("Expected Failure for unknown ProbeOutcome.")
+    | Ok _ -> Assert.Fail("Expected Error for unknown ProbeOutcome.")
 
 // ---------------------------------------------------------------------------
 // T1 determinism on the adapter — same JSON + same catalog ⇒ same Profile.

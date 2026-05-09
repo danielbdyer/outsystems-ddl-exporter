@@ -45,8 +45,8 @@ let ``attach: parses categorical distribution and resolves to AttributeKey`` () 
     let result =
         ProfileStatistics.attach sampleCatalog validCategoricalJson Profile.empty
     match result with
-    | Failure errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
-    | Success profile ->
+    | Error errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
+    | Ok profile ->
         match profile.Distributions with
         | [ AttributeDistribution.Categorical cat ] ->
             Assert.Equal(countryCodeKey, cat.AttributeKey)
@@ -71,8 +71,8 @@ let ``attach: appends distributions rather than replacing`` () =
     let result =
         ProfileStatistics.attach sampleCatalog validCategoricalJson preExisting
     match result with
-    | Failure errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
-    | Success profile ->
+    | Error errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
+    | Ok profile ->
         Assert.Equal(2, profile.Distributions.Length)
 
 [<Fact>]
@@ -99,8 +99,8 @@ let ``attach: frequencies are sorted alphabetically by value (determinism)`` () 
     """
     let result = ProfileStatistics.attach sampleCatalog unsortedJson Profile.empty
     match result with
-    | Failure errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
-    | Success profile ->
+    | Error errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
+    | Ok profile ->
         match profile.Distributions with
         | [ AttributeDistribution.Categorical cat ] ->
             let values = cat.Frequencies |> List.map fst
@@ -130,8 +130,8 @@ let ``attach: silently skips coordinates absent from the catalog`` () =
     """
     let result = ProfileStatistics.attach sampleCatalog unknownColumnJson Profile.empty
     match result with
-    | Failure errs -> Assert.Fail(sprintf "Expected success (silent skip), got %A" errs)
-    | Success profile ->
+    | Error errs -> Assert.Fail(sprintf "Expected success (silent skip), got %A" errs)
+    | Ok profile ->
         Assert.Empty(profile.Distributions)
 
 // ---------------------------------------------------------------------------
@@ -142,16 +142,16 @@ let ``attach: silently skips coordinates absent from the catalog`` () =
 let ``attach: rejects non-object root`` () =
     let result = ProfileStatistics.attach sampleCatalog "[]" Profile.empty
     match result with
-    | Success _ -> Assert.Fail "Expected failure on array root"
-    | Failure errs ->
+    | Ok _ -> Assert.Fail "Expected failure on array root"
+    | Error errs ->
         Assert.Contains(errs, fun e -> e.Code = "profileStatisticsAdapter.json.shape")
 
 [<Fact>]
 let ``attach: rejects unparseable JSON`` () =
     let result = ProfileStatistics.attach sampleCatalog "{not json" Profile.empty
     match result with
-    | Success _ -> Assert.Fail "Expected failure on bad JSON"
-    | Failure errs ->
+    | Ok _ -> Assert.Fail "Expected failure on bad JSON"
+    | Error errs ->
         Assert.Contains(errs, fun e -> e.Code = "profileStatisticsAdapter.json.parse")
 
 [<Fact>]
@@ -175,8 +175,8 @@ let ``attach: rejects unknown distribution Kind`` () =
     """
     let result = ProfileStatistics.attach sampleCatalog unknownKindJson Profile.empty
     match result with
-    | Success _ -> Assert.Fail "Expected failure on unknown Kind"
-    | Failure errs ->
+    | Ok _ -> Assert.Fail "Expected failure on unknown Kind"
+    | Error errs ->
         Assert.Contains(errs, fun e -> e.Code = "profileStatisticsAdapter.distribution.kind.unknown")
 
 // ---------------------------------------------------------------------------
@@ -213,8 +213,8 @@ let private validNumericJson = """
 let ``attach numeric: parses numeric distribution and resolves to AttributeKey`` () =
     let result = ProfileStatistics.attach sampleCatalog validNumericJson Profile.empty
     match result with
-    | Failure errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
-    | Success profile ->
+    | Error errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
+    | Ok profile ->
         match profile.Distributions with
         | [ AttributeDistribution.Numeric num ] ->
             Assert.Equal(countryCodeKey, num.AttributeKey)
@@ -247,8 +247,8 @@ let ``attach numeric: monotonicity violation surfaces as construction error`` ()
     """
     let result = ProfileStatistics.attach sampleCatalog nonMonotonicJson Profile.empty
     match result with
-    | Success _ -> Assert.Fail "Expected failure on non-monotonic percentiles"
-    | Failure errs ->
+    | Ok _ -> Assert.Fail "Expected failure on non-monotonic percentiles"
+    | Error errs ->
         Assert.Contains(errs, fun e -> e.Code = "numericDistribution.percentiles.nonMonotonic")
 
 [<Fact>]
@@ -270,8 +270,8 @@ let ``attach numeric: sample size below floor surfaces as construction error`` (
     """
     let result = ProfileStatistics.attach sampleCatalog belowFloorJson Profile.empty
     match result with
-    | Success _ -> Assert.Fail "Expected failure on SampleSize < floor"
-    | Failure errs ->
+    | Ok _ -> Assert.Fail "Expected failure on SampleSize < floor"
+    | Error errs ->
         Assert.Contains(errs, fun e -> e.Code = "numericDistribution.sampleSize.belowFloor")
 
 [<Fact>]
@@ -295,8 +295,8 @@ let ``attach numeric: silently skips coordinates absent from the catalog`` () =
     """
     let result = ProfileStatistics.attach sampleCatalog unknownCoordJson Profile.empty
     match result with
-    | Failure errs -> Assert.Fail(sprintf "Expected silent skip, got %A" errs)
-    | Success profile ->
+    | Error errs -> Assert.Fail(sprintf "Expected silent skip, got %A" errs)
+    | Ok profile ->
         Assert.Empty(profile.Distributions)
 
 [<Fact>]
@@ -327,8 +327,8 @@ let ``attach numeric: coexists with categorical in a single attach call`` () =
     """
     let result = ProfileStatistics.attach sampleCatalog mixedJson Profile.empty
     match result with
-    | Failure errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
-    | Success profile ->
+    | Error errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
+    | Ok profile ->
         Assert.Equal(2, profile.Distributions.Length)
         // Both lookups succeed, on their respective attributes.
         Assert.True (Profile.tryFindCategorical countryCodeKey profile |> Option.isSome)
@@ -353,8 +353,8 @@ let ``attach: rejects probe outcome the V2 DU doesn't support`` () =
     """
     let result = ProfileStatistics.attach sampleCatalog badOutcomeJson Profile.empty
     match result with
-    | Success _ -> Assert.Fail "Expected failure on unknown ProbeOutcome"
-    | Failure errs ->
+    | Ok _ -> Assert.Fail "Expected failure on unknown ProbeOutcome"
+    | Error errs ->
         Assert.Contains(errs, fun e -> e.Code = "profileStatisticsAdapter.probeOutcome.unknown")
 
 // ---------------------------------------------------------------------------
@@ -365,8 +365,8 @@ let ``attach: rejects probe outcome the V2 DU doesn't support`` () =
 let ``attach: missing distributions array is treated as empty`` () =
     let result = ProfileStatistics.attach sampleCatalog "{}" Profile.empty
     match result with
-    | Failure errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
-    | Success profile ->
+    | Error errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
+    | Ok profile ->
         Assert.Empty(profile.Distributions)
 
 // ---------------------------------------------------------------------------
@@ -396,7 +396,7 @@ let ``attach composes with ProfileSnapshot.attach: distribution + snapshot evide
         ProfileSnapshot.attach sampleCatalog snapshotJson
         |> Result.bind (ProfileStatistics.attach sampleCatalog validCategoricalJson)
     match r with
-    | Failure errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
-    | Success profile ->
+    | Error errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
+    | Ok profile ->
         Assert.Equal(1, profile.Columns.Length)
         Assert.Equal(1, profile.Distributions.Length)

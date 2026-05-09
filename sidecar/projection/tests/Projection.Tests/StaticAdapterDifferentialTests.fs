@@ -100,9 +100,9 @@ let private extractCityRows (c: Catalog) : StaticRow list =
 let ``V1 contract: V1 fixture round-trips through adapter and normalizer`` () =
     // 1. Adapter ingests V1 JSON, attaches populations to the catalog template.
     match Static.attachStaticPopulations cityCatalog v1FixtureContent with
-    | Failure errors ->
+    | Error errors ->
         Assert.Fail(sprintf "Adapter failed: %A" errors)
-    | Success populated ->
+    | Ok populated ->
         // 2. Normalize the populated catalog.
         let normalized = (NormalizeStaticPopulations.run populated).Value
         // 3. Verify rows are present in PK order — the V1 contract.
@@ -175,32 +175,32 @@ let ``differential: shuffled-input output matches sorted-input output`` () =
 
 // ---------------------------------------------------------------------------
 // Adapter validation — the boundary catches malformed inputs and
-// surfaces them as Result.Failure, never as exceptions across the seam.
+// surfaces them as Result.Error, never as exceptions across the seam.
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``adapter: malformed JSON returns Failure`` () =
+let ``adapter: malformed JSON returns Error`` () =
     let result = Static.attachStaticPopulations cityCatalog "not json{"
     Assert.True(Result.isFailure result)
     let codes = Result.errors result |> List.map (fun e -> e.Code)
     Assert.Contains("staticAdapter.json.parse", codes)
 
 [<Fact>]
-let ``adapter: missing 'tables' returns Failure`` () =
+let ``adapter: missing 'tables' returns Error`` () =
     let result = Static.attachStaticPopulations cityCatalog """{ "other": [] }"""
     Assert.True(Result.isFailure result)
     let codes = Result.errors result |> List.map (fun e -> e.Code)
     Assert.Contains("staticAdapter.json.tables.missing", codes)
 
 [<Fact>]
-let ``adapter: 'tables' not an array returns Failure`` () =
+let ``adapter: 'tables' not an array returns Error`` () =
     let result = Static.attachStaticPopulations cityCatalog """{ "tables": {} }"""
     Assert.True(Result.isFailure result)
     let codes = Result.errors result |> List.map (fun e -> e.Code)
     Assert.Contains("staticAdapter.json.tables.notArray", codes)
 
 [<Fact>]
-let ``adapter: row missing PK column returns Failure`` () =
+let ``adapter: row missing PK column returns Error`` () =
     let badRow =
         """{ "tables": [
             { "schema": "dbo", "table": "OSUSR_DEF_CITY",
@@ -211,7 +211,7 @@ let ``adapter: row missing PK column returns Failure`` () =
     Assert.Contains("staticAdapter.pk.missing", codes)
 
 [<Fact>]
-let ``adapter: kind without IsPrimaryKey returns Failure when populated`` () =
+let ``adapter: kind without IsPrimaryKey returns Error when populated`` () =
     let pkLessKind =
         { cityKind with
             Attributes =

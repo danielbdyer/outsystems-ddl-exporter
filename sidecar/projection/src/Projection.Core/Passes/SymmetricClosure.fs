@@ -44,8 +44,8 @@ module SymmetricClosure =
         // A5 enforced by SsKey.derivedFrom; the deterministic formula is
         // (original-key, "inverse").
         match SsKey.derivedFrom r.SsKey inverseReason with
-        | Success k  -> k
-        | Failure _ ->
+        | Ok k  -> k
+        | Error _ ->
             // Per chapter 3.5 deep audit (2026-05-09):
             // `SsKey.derivedFrom` only fails on blank `reason`;
             // `inverseReason` is the `[<Literal>]` constant

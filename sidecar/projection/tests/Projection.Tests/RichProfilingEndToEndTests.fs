@@ -462,8 +462,8 @@ let ``MILESTONE 10: monotonicity violation in fixture surfaces as adapter error`
         ProfileSnapshot.attach endToEndCatalog snapshotJson
         |> Result.bind (ProfileStatistics.attach endToEndCatalog badJson)
     match result with
-    | Success _ -> Assert.Fail "Expected failure on monotonicity violation"
-    | Failure errs ->
+    | Ok _ -> Assert.Fail "Expected failure on monotonicity violation"
+    | Error errs ->
         Assert.Contains(errs, fun e -> e.Code = "numericDistribution.percentiles.nonMonotonic")
 
 // ---------------------------------------------------------------------------

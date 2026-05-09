@@ -36,7 +36,7 @@ module Deploy =
     /// Outcome of executing emitted SQL against an ephemeral database.
     type Report =
         {
-            Success : bool
+            Ok : bool
             Database : string
             TablesCreated : int
             Errors : string list
@@ -495,8 +495,8 @@ module Deploy =
         | raw when System.String.IsNullOrWhiteSpace raw -> None
         | raw ->
             match ConnectionString.parse raw with
-            | Success _ -> Some raw
-            | Failure errors ->
+            | Ok _ -> Some raw
+            | Error errors ->
                 let codes =
                     errors
                     |> List.map (fun e -> e.Code)
@@ -560,7 +560,7 @@ module Deploy =
                             let! tables = countUserTables cnn
                             return
                                 {
-                                    Success = true
+                                    Ok = true
                                     Database = dbName
                                     TablesCreated = tables
                                     Errors = []
@@ -569,7 +569,7 @@ module Deploy =
                         | ex ->
                             return
                                 {
-                                    Success = false
+                                    Ok = false
                                     Database = dbName
                                     TablesCreated = 0
                                     Errors = collectErrors ex
@@ -606,19 +606,19 @@ module Deploy =
                             let! readResult = ReadSide.read cnn
                             let tables =
                                 match readResult with
-                                | Success c -> Catalog.allKinds c |> List.length
-                                | Failure _ -> 0
+                                | Ok c -> Catalog.allKinds c |> List.length
+                                | Error _ -> 0
                             let report =
                                 {
-                                    Success = true
+                                    Ok = true
                                     Database = dbName
                                     TablesCreated = tables
                                     Errors = []
                                 }
                             let catalog =
                                 match readResult with
-                                | Success c -> Some c
-                                | Failure _ -> None
+                                | Ok c -> Some c
+                                | Error _ -> None
                             return
                                 {
                                     Report = report
@@ -630,7 +630,7 @@ module Deploy =
                                 {
                                     Report =
                                         {
-                                            Success = false
+                                            Ok = false
                                             Database = dbName
                                             TablesCreated = 0
                                             Errors = collectErrors ex
@@ -708,13 +708,13 @@ module Deploy =
                 let! readResult = ReadSide.read cnn
                 return
                     match readResult with
-                    | Success c ->
+                    | Ok c ->
                         {
                             Catalog = Some c
                             Errors = []
                             Tables = Catalog.allKinds c |> List.length
                         }
-                    | Failure errors ->
+                    | Error errors ->
                         {
                             Catalog = None
                             Errors = errors |> List.map formatValidationError
@@ -745,13 +745,13 @@ module Deploy =
                 let! readResult = ReadSide.read cnn
                 return
                     match readResult with
-                    | Success c ->
+                    | Ok c ->
                         {
                             Catalog = Some c
                             Errors = []
                             Tables = Catalog.allKinds c |> List.length
                         }
-                    | Failure errors ->
+                    | Error errors ->
                         {
                             Catalog = None
                             Errors = errors |> List.map formatValidationError
@@ -802,7 +802,7 @@ module Deploy =
                         | Some src ->
                             let sourceReport =
                                 {
-                                    Success = true
+                                    Ok = true
                                     Database = sourceDbName
                                     TablesCreated = sourceOutcome.Tables
                                     Errors = sourceOutcome.Errors
@@ -826,7 +826,7 @@ module Deploy =
                             | Some tgt ->
                                 let targetReport =
                                     {
-                                        Success = true
+                                        Ok = true
                                         Database = targetDbName
                                         TablesCreated = targetOutcome.Tables
                                         Errors = targetOutcome.Errors
@@ -866,10 +866,10 @@ module Deploy =
         task {
             let! parsed = Compose.read jsonPath
             match parsed with
-            | Success catalog ->
+            | Ok catalog ->
                 let outputs = Compose.project catalog
                 let! report = runEphemeral outputs.Sql
                 return Result.success (outputs, report)
-            | Failure errors ->
+            | Error errors ->
                 return Result.failure errors
         }

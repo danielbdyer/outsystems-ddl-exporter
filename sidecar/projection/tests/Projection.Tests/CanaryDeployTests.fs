@@ -57,8 +57,8 @@ let ``M2: deploy of single-table SSDT lands one user table on a fresh ephemeral 
         let task = Deploy.runEphemeral sampleSsdt
         let report = task.GetAwaiter().GetResult()
         Assert.True(
-            report.Success,
-            sprintf "expected Success on minimal SSDT; errors: %A" report.Errors)
+            report.Ok,
+            sprintf "expected Ok on minimal SSDT; errors: %A" report.Errors)
         Assert.Equal(1, report.TablesCreated)
         Assert.NotEmpty(report.Database)
         Assert.StartsWith("Projection_", report.Database)
@@ -72,8 +72,8 @@ let ``M2: deploy is run-level idempotent: two invocations on the same SSDT produ
         let r2 = task2.GetAwaiter().GetResult()
 
         // Both succeed.
-        Assert.True(r1.Success, sprintf "first run failed: %A" r1.Errors)
-        Assert.True(r2.Success, sprintf "second run failed: %A" r2.Errors)
+        Assert.True(r1.Ok, sprintf "first run failed: %A" r1.Errors)
+        Assert.True(r2.Ok, sprintf "second run failed: %A" r2.Errors)
 
         // Same input → same outcome (idempotency).
         Assert.Equal(r1.TablesCreated, r2.TablesCreated)
@@ -89,6 +89,6 @@ let ``M2: deploy of malformed SSDT surfaces SqlException diagnostics on the Repo
         let badSql = "CREATE TABLE [dbo].[NoColumns]; -- syntax error: empty column list"
         let task = Deploy.runEphemeral badSql
         let report = task.GetAwaiter().GetResult()
-        Assert.False(report.Success)
+        Assert.False(report.Ok)
         Assert.NotEmpty(report.Errors)
         Assert.Equal(0, report.TablesCreated)

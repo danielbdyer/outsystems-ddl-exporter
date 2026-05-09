@@ -9,6 +9,7 @@ namespace Projection.Adapters.Sql
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient
 open Projection.Core
+open FsToolkit.ErrorHandling
 
 /// M3 (per the chapter-3.1 milestone sequence chosen at session 27):
 /// the read-side adapter. Reads a deployed SQL Server schema via
@@ -50,7 +51,7 @@ module ReadSide =
     /// forward mapping inverted across the supported PrimitiveType
     /// vocabulary.
     ///
-    /// Returns `Failure` on unknown SQL types — surfaces an
+    /// Returns `Error` on unknown SQL types — surfaces an
     /// emitter-IR mismatch that the canary's blocking semantic
     /// catches. M4's Tolerance taxonomy can name accepted-but-
     /// unmapped types as a tolerance flag.
@@ -312,14 +313,14 @@ module ReadSide =
         : Result<Attribute> =
         let result = mapSqlType row.DataType
         match result with
-        | Failure errors -> Result.failure errors
-        | Success ptype ->
+        | Error errors -> Result.failure errors
+        | Ok ptype ->
             match attributeSsKey row.Schema row.Table row.Column with
-            | Failure errors -> Result.failure errors
-            | Success attrKey ->
+            | Error errors -> Result.failure errors
+            | Ok attrKey ->
                 match Name.create row.Column with
-                | Failure errors -> Result.failure errors
-                | Success attrName ->
+                | Error errors -> Result.failure errors
+                | Ok attrName ->
                     let coord = (row.Schema, row.Table, row.Column)
                     Result.success
                         {
@@ -495,9 +496,9 @@ module ReadSide =
                                     rowIdx
                             rowIdx <- rowIdx + 1
                             match SsKey.synthesized "READSIDE_ROW" basis with
-                            | Success rowKey ->
+                            | Ok rowKey ->
                                 return Some { Identifier = rowKey; Values = values }
-                            | Failure _ ->
+                            | Error _ ->
                                 // SsKey.synthesized only fails on blank input;
                                 // basis is non-blank by construction.
                                 dispose ()
@@ -656,8 +657,8 @@ module ReadSide =
                     |> Bench.iterMap "readside.kindGroup" (fun ((schema, table), rows) ->
                         buildKind schema table rows primaryKeySet identitySet)
                 match Result.aggregate kindResults with
-                | Failure errors -> return Result.failure errors
-                | Success kinds ->
+                | Error errors -> return Result.failure errors
+                | Ok kinds ->
                     let fkGroups =
                         fkRows
                         |> List.groupBy (fun (s, t, _, _, _, _) -> s, t)
@@ -666,8 +667,8 @@ module ReadSide =
                         kinds
                         |> Bench.iterMap "readside.attachReferences" (attachReferences fkGroups)
                     match Result.aggregate kindsWithRefsResults with
-                    | Failure errors -> return Result.failure errors
-                    | Success kindsWithRefs ->
+                    | Error errors -> return Result.failure errors
+                    | Ok kindsWithRefs ->
                         // Per session-34 — threshold lifted to 100k.
                         // Below that, rows materialize into V2 IR
                         // (`Modality.Static`) for the per-row PhysicalSchema
@@ -688,11 +689,11 @@ module ReadSide =
                             kindsWithRows.Add kindWithRows
                         let kindsWithRows = List.ofSeq kindsWithRows
                         match moduleSsKey () with
-                        | Failure errors -> return Result.failure errors
-                        | Success mKey ->
+                        | Error errors -> return Result.failure errors
+                        | Ok mKey ->
                             match Name.create reconstructedModuleName with
-                            | Failure errors -> return Result.failure errors
-                            | Success mName ->
+                            | Error errors -> return Result.failure errors
+                            | Ok mName ->
                                 return
                                     Result.success
                                         {

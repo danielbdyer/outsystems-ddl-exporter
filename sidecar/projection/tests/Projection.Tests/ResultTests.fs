@@ -54,8 +54,8 @@ let ``Result.success and Result.failureOf are inverses of isSuccess`` () =
 // Monad laws
 //
 // For any (presumed-pure) function f and value x:
-//   left identity   : bind f (Success x)  =  f x
-//   right identity  : bind Success r      =  r
+//   left identity   : bind f (Ok x)  =  f x
+//   right identity  : bind Ok r      =  r
 //   associativity   : bind g (bind f r)   =  bind (fun x -> bind g (f x)) r
 //
 // FsCheck samples ints; the laws hold for any type because Result is the
@@ -71,11 +71,11 @@ let ``Result monad: left identity`` (x: int) =
     Result.bind f (Result.success x) = f x
 
 [<Property>]
-let ``Result monad: right identity (Success path)`` (x: int) =
+let ``Result monad: right identity (Ok path)`` (x: int) =
     Result.bind Result.success (Result.success x) = Result.success x
 
 [<Property>]
-let ``Result monad: right identity (Failure path)`` () =
+let ``Result monad: right identity (Error path)`` () =
     let r : Result<int> = Result.failureOf sampleErr
     Result.bind Result.success r = r
 
@@ -97,13 +97,13 @@ let ``Result functor: identity`` (x: int) =
     Result.map id (Result.success x) = Result.success x
 
 [<Property>]
-let ``Result functor: composition (Success)`` (x: int) =
+let ``Result functor: composition (Ok)`` (x: int) =
     let f (y: int) = y + 3
     let g (y: int) = y * 5
     Result.map (g << f) (Result.success x) = Result.map g (Result.map f (Result.success x))
 
 [<Property>]
-let ``Result functor: composition (Failure)`` () =
+let ``Result functor: composition (Error)`` () =
     let r : Result<int> = Result.failureOf sampleErr
     let f (y: int) = y + 3
     let g (y: int) = y * 5
@@ -114,7 +114,7 @@ let ``Result functor: composition (Failure)`` () =
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``bind on Failure does not invoke the continuation`` () =
+let ``bind on Error does not invoke the continuation`` () =
     let mutable invoked = false
     let f x =
         invoked <- true
@@ -124,7 +124,7 @@ let ``bind on Failure does not invoke the continuation`` () =
     Assert.False(invoked)
 
 [<Fact>]
-let ``map on Failure does not invoke the function`` () =
+let ``map on Error does not invoke the function`` () =
     let mutable invoked = false
     let f x =
         invoked <- true
@@ -139,27 +139,27 @@ let ``bind preserves the original error list`` () =
     let e2 = ValidationError.create "c.d" "second"
     let r : Result<int> = Result.failure [e1; e2]
     match Result.bind (fun x -> Result.success (x + 1)) r with
-    | Failure es -> Assert.Equal<ValidationError list>([e1; e2], es)
-    | Success _  -> Assert.Fail("Expected Failure to pass through")
+    | Error es -> Assert.Equal<ValidationError list>([e1; e2], es)
+    | Ok _  -> Assert.Fail("Expected Error to pass through")
 
 // ---------------------------------------------------------------------------
 // Ensure
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``ensure on Success+true is a passthrough`` () =
+let ``ensure on Ok+true is a passthrough`` () =
     let r = Result.success 5
     let result = r |> Result.ensure (fun x -> x > 0) sampleErr
     Assert.Equal(Result.success 5, result)
 
 [<Fact>]
-let ``ensure on Success+false converts to Failure`` () =
+let ``ensure on Ok+false converts to Error`` () =
     let r = Result.success 5
     let result = r |> Result.ensure (fun x -> x < 0) sampleErr
     Assert.Equal<Result<int>>(Result.failureOf sampleErr, result)
 
 [<Fact>]
-let ``ensure on Failure is a passthrough`` () =
+let ``ensure on Error is a passthrough`` () =
     let original : Result<int> = Result.failureOf sampleErr
     let result = original |> Result.ensure (fun x -> x > 0) sampleErr
     Assert.Equal<Result<int>>(original, result)
@@ -169,7 +169,7 @@ let ``ensure on Failure is a passthrough`` () =
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``collect of all-Success returns Success of list in order`` () =
+let ``collect of all-Ok returns Ok of list in order`` () =
     let inputs = [ Result.success 1; Result.success 2; Result.success 3 ]
     Assert.Equal<Result<int list>>(Result.success [1; 2; 3], Result.collect inputs)
 
@@ -183,7 +183,7 @@ let ``collect short-circuits on first failure`` () =
     Assert.Equal<Result<int list>>(Result.failureOf e, Result.collect inputs)
 
 [<Fact>]
-let ``collect of empty input is Success of empty list`` () =
+let ``collect of empty input is Ok of empty list`` () =
     Assert.Equal<Result<int list>>(Result.success [], Result.collect Seq.empty)
 
 // ---------------------------------------------------------------------------

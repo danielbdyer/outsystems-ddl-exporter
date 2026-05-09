@@ -163,13 +163,13 @@ let private parseSync (source: CatalogReader.SnapshotSource) : Result<Catalog> =
 let ``differential: V1 minimal-fixture JSON parses into the expected V2 Catalog`` () =
     let result = parseSync (CatalogReader.SnapshotJson v1MinimalFixture)
     match result with
-    | Failure errors ->
+    | Error errors ->
         Assert.Fail(
             sprintf
-                "Expected Result.Success; got Result.Failure with %d error(s): %A"
+                "Expected Result.Ok; got Result.Error with %d error(s): %A"
                 errors.Length
                 errors)
-    | Success actual ->
+    | Ok actual ->
         Assert.Equal<Catalog>(expectedCatalog, actual)
 
 // ---------------------------------------------------------------------------
@@ -388,13 +388,13 @@ let private expectedReferenceCatalog : Catalog =
 let ``differential: V1 reference-bearing fixture parses into a Catalog with the expected V2 Reference`` () =
     let result = parseSync (CatalogReader.SnapshotJson v1ReferenceFixture)
     match result with
-    | Failure errors ->
+    | Error errors ->
         Assert.Fail(
             sprintf
-                "Expected Result.Success; got Result.Failure with %d error(s): %A"
+                "Expected Result.Ok; got Result.Error with %d error(s): %A"
                 errors.Length
                 errors)
-    | Success actual ->
+    | Ok actual ->
         Assert.Equal<Catalog>(expectedReferenceCatalog, actual)
 
 // ---------------------------------------------------------------------------
@@ -518,13 +518,13 @@ let private expectedExternalCatalog : Catalog =
 let ``differential: V1 external-entity fixture parses with Origin = ExternalViaIntegrationStudio`` () =
     let result = parseSync (CatalogReader.SnapshotJson v1ExternalFixture)
     match result with
-    | Failure errors ->
+    | Error errors ->
         Assert.Fail(
             sprintf
-                "Expected Result.Success; got Result.Failure with %d error(s): %A"
+                "Expected Result.Ok; got Result.Error with %d error(s): %A"
                 errors.Length
                 errors)
-    | Success actual ->
+    | Ok actual ->
         Assert.Equal<Catalog>(expectedExternalCatalog, actual)
 
 // ---------------------------------------------------------------------------
@@ -710,13 +710,13 @@ let private expectedMixedActiveCatalog : Catalog =
 let ``differential: V1 mixed-active fixture filters inactive records at the boundary`` () =
     let result = parseSync (CatalogReader.SnapshotJson v1MixedActiveFixture)
     match result with
-    | Failure errors ->
+    | Error errors ->
         Assert.Fail(
             sprintf
-                "Expected Result.Success; got Result.Failure with %d error(s): %A"
+                "Expected Result.Ok; got Result.Error with %d error(s): %A"
                 errors.Length
                 errors)
-    | Success actual ->
+    | Ok actual ->
         Assert.Equal<Catalog>(expectedMixedActiveCatalog, actual)
 
 // ---------------------------------------------------------------------------
@@ -975,13 +975,13 @@ let private expectedIndexCatalog : Catalog =
 let ``differential: V1 index-bearing fixture parses with PK + unique + non-unique-with-include indexes`` () =
     let result = parseSync (CatalogReader.SnapshotJson v1IndexFixture)
     match result with
-    | Failure errors ->
+    | Error errors ->
         Assert.Fail(
             sprintf
-                "Expected Result.Success; got Result.Failure with %d error(s): %A"
+                "Expected Result.Ok; got Result.Error with %d error(s): %A"
                 errors.Length
                 errors)
-    | Success actual ->
+    | Ok actual ->
         Assert.Equal<Catalog>(expectedIndexCatalog, actual)
 
 // ---------------------------------------------------------------------------
@@ -1108,11 +1108,11 @@ let private expectedStaticEntityCatalog : Catalog =
 let ``differential: V1 static-entity fixture parses with Modality = [Static []]`` () =
     let result = parseSync (CatalogReader.SnapshotJson v1StaticEntityFixture)
     match result with
-    | Failure errors ->
+    | Error errors ->
         Assert.Fail(
             sprintf
-                "Expected Result.Success; got Result.Failure with %d error(s): %A"
+                "Expected Result.Ok; got Result.Error with %d error(s): %A"
                 errors.Length
                 errors)
-    | Success actual ->
+    | Ok actual ->
         Assert.Equal<Catalog>(expectedStaticEntityCatalog, actual)

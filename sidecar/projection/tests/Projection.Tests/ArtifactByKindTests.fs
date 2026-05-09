@@ -8,7 +8,7 @@ open Projection.Tests.Fixtures
 /// with `Projection.Core.DiagnosticSeverity.Error` once `Projection.Core`
 /// is opened; qualifying via a private type alias forces case access
 /// to resolve to FSharp.Core's Result.Ok / Result.Error without
-/// shadowing the single-arity `Result<'a>.Failure` case.
+/// shadowing the single-arity `Result<'a>.Error` case.
 type private FsResult<'a, 'b> = Microsoft.FSharp.Core.Result<'a, 'b>
 
 /// Stage 0 (S0.B slice 5.1 per
@@ -29,8 +29,8 @@ let private ssKey (s: string) : SsKey = testKey s
 
 let private nm (s: string) : Name =
     match Name.create s with
-    | Success n -> n
-    | Failure errors ->
+    | Ok n -> n
+    | Error errors ->
         failwithf "fixture: Name.create failed: %A" errors
 
 let private mustOk (r: Result<'a, EmitError>) : 'a =

@@ -295,9 +295,9 @@ module RawTextEmitter =
         seq {
             use _ = Bench.scope "emit.rawText.statements"
             match emitSlices catalog with
-            | Result.Ok artifact ->
+            | Ok artifact ->
                 yield! composeFromArtifact catalog artifact
-            | Result.Error err ->
+            | Error err ->
                 invalidOp
                     (sprintf
                         "RawTextEmitter.statements: ArtifactByKind invariant breach: %A"

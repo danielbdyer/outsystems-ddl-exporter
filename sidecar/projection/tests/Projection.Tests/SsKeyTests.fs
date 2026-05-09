@@ -38,21 +38,21 @@ let ``S0.B.5: ossysOriginal accepts any GUID; constructor is total`` () =
 let ``S0.B.5: synthesized rejects blank source`` () =
     let result = SsKey.synthesized "  " "Customer"
     match result with
-    | Failure errors ->
+    | Error errors ->
         let codes = errors |> List.map (fun e -> e.Code)
         Assert.Contains("sskey.synth.source.empty", codes)
-    | Success _ ->
-        Assert.Fail "expected Failure on blank source, got Success"
+    | Ok _ ->
+        Assert.Fail "expected Error on blank source, got Ok"
 
 [<Fact>]
 let ``S0.B.5: synthesized rejects blank basis`` () =
     let result = SsKey.synthesized "OS_KIND" ""
     match result with
-    | Failure errors ->
+    | Error errors ->
         let codes = errors |> List.map (fun e -> e.Code)
         Assert.Contains("sskey.synth.basis.empty", codes)
-    | Success _ ->
-        Assert.Fail "expected Failure on blank basis, got Success"
+    | Ok _ ->
+        Assert.Fail "expected Error on blank basis, got Ok"
 
 [<Fact>]
 let ``S0.B.5: synthesized accepts non-blank source and basis`` () =
@@ -60,7 +60,7 @@ let ``S0.B.5: synthesized accepts non-blank source and basis`` () =
     // single-element typed segment list `[basis]`.
     let result = SsKey.synthesized "OS_KIND" "Customer"
     match result with
-    | Success (Synthesized ("OS_KIND", ["Customer"])) -> ()
+    | Ok (Synthesized ("OS_KIND", ["Customer"])) -> ()
     | other -> Assert.Fail(sprintf "expected Synthesized (OS_KIND, [\"Customer\"]), got %A" other)
 
 [<Fact>]
@@ -68,11 +68,11 @@ let ``S0.B.5: derivedFrom rejects blank reason`` () =
     let parent = SsKey.ossysOriginal (sampleGuid ())
     let result = SsKey.derivedFrom parent ""
     match result with
-    | Failure errors ->
+    | Error errors ->
         let codes = errors |> List.map (fun e -> e.Code)
         Assert.Contains("sskey.derivedReason.empty", codes)
-    | Success _ ->
-        Assert.Fail "expected Failure on blank reason, got Success"
+    | Ok _ ->
+        Assert.Fail "expected Error on blank reason, got Ok"
 
 [<Fact>]
 let ``S0.B.5: fromV1 is total; constructs V1Mapped with both GUIDs`` () =

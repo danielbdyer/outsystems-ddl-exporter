@@ -291,8 +291,8 @@ let ``outcome: CategoricalUniquenessOutcome variants round-trip`` () =
 let ``CategoricalUniquenessConfig.create: rejects negative floor`` () =
     let result = CategoricalUniquenessConfig.create -1L
     match result with
-    | Success _ -> Assert.Fail "Expected failure on negative floor"
-    | Failure errs ->
+    | Ok _ -> Assert.Fail "Expected failure on negative floor"
+    | Error errs ->
         Assert.Contains(errs, fun e ->
             e.Code = "categoricalUniquenessConfig.minDistinctCountForUniqueness.negative")
 
@@ -300,5 +300,5 @@ let ``CategoricalUniquenessConfig.create: rejects negative floor`` () =
 let ``CategoricalUniquenessConfig.create: accepts zero (no floor)`` () =
     let result = CategoricalUniquenessConfig.create 0L
     match result with
-    | Success cfg -> Assert.Equal(0L, cfg.MinDistinctCountForUniqueness)
-    | Failure errs -> Assert.Fail(sprintf "Expected success, got %A" errs)
+    | Ok cfg -> Assert.Equal(0L, cfg.MinDistinctCountForUniqueness)
+    | Error errs -> Assert.Fail(sprintf "Expected success, got %A" errs)

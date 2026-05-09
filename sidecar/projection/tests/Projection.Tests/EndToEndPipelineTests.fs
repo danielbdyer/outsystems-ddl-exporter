@@ -97,8 +97,8 @@ let private parseAndProject () : Compose.Outputs =
     let parsed = task.GetAwaiter().GetResult()
     let catalog =
         match parsed with
-        | Success c -> c
-        | Failure errors ->
+        | Ok c -> c
+        | Error errors ->
             let codes = errors |> List.map (fun e -> e.Code) |> String.concat ", "
             failwithf "fixture: parse failed with codes: %s" codes
     Compose.project catalog
@@ -180,18 +180,18 @@ let ``M1: Compose.write writes the same bytes Compose.project produced`` () =
             Directory.Delete(outputDir, recursive = true)
 
 // ---------------------------------------------------------------------
-// E2E: parse failure surfaces as Failure with adapter-side validation
+// E2E: parse failure surfaces as Error with adapter-side validation
 // errors, not silent success. Confirms the unhappy-path contract.
 // ---------------------------------------------------------------------
 
 [<Fact>]
-let ``M1: malformed V1 JSON surfaces as Failure with adapter validation errors`` () =
+let ``M1: malformed V1 JSON surfaces as Error with adapter validation errors`` () =
     let task = Compose.readJson "{ this is not valid JSON"
     let parsed = task.GetAwaiter().GetResult()
     match parsed with
-    | Failure errors ->
+    | Error errors ->
         Assert.NotEmpty(errors)
         let codes = errors |> List.map (fun e -> e.Code)
         Assert.Contains("adapter.osm.jsonInvalid", codes)
-    | Success _ ->
-        Assert.Fail "expected Failure on malformed JSON, got Success"
+    | Ok _ ->
+        Assert.Fail "expected Error on malformed JSON, got Ok"

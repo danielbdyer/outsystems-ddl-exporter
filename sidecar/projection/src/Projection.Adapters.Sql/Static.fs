@@ -82,7 +82,7 @@ module Static =
             | false, _   -> None)
         |> Map.ofList
 
-    /// Convert a JSON row to a V2 `StaticRow`, returning `Failure` if
+    /// Convert a JSON row to a V2 `StaticRow`, returning `Error` if
     /// the row is malformed (not an object) or any PK column is missing.
     let private convertRow (kind: Kind) (pkAttrs: Attribute list) (row: JsonElement) : Result<StaticRow> =
         if row.ValueKind <> JsonValueKind.Object then

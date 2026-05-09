@@ -146,7 +146,7 @@ module ForeignKeyPass =
         | ForeignKeyOutcome.EnforceConstraint (NoEvidenceObstacle _) ->
             None
         | ForeignKeyOutcome.EnforceConstraint (ScriptWithNoCheck orphanCount) ->
-            // Success-with-caveat: V2's NoCheck-mode workaround.
+            // Ok-with-caveat: V2's NoCheck-mode workaround.
             // V1's `(CreateConstraint=true, ScriptWithNoCheck=true)`
             // collapses to this evidence variant; the audit-trail
             // concern V1 surfaced via rationale strings is V2's

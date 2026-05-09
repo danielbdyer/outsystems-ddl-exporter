@@ -57,8 +57,8 @@ let private ssKeySafe (s: string) : SsKey = testKey s
 
 let private nameSafe (s: string) : Name =
     match Name.create s with
-    | Success n -> n
-    | Failure errors -> failwithf "fixture: Name.create failed: %A" errors
+    | Ok n -> n
+    | Error errors -> failwithf "fixture: Name.create failed: %A" errors
 
 /// Programmatic V2 Catalog matching `SourceSchema.minimal`'s shape.
 /// Used by the V2-internal closure test: emit this Catalog → deploy
@@ -114,7 +114,7 @@ let ``M3: V2-internal closure — programmatic Catalog round-trips through emit 
         let result = task.GetAwaiter().GetResult()
 
         Assert.True(
-            result.Report.Success,
+            result.Report.Ok,
             sprintf
                 "deploy failed: %s"
                 (String.concat "\n" result.Report.Errors))
@@ -152,18 +152,18 @@ let ``M3 wide canary: minimal OutSystems-shaped source DDL round-trips through V
 
         let report =
             match outcome with
-            | Success r -> r
-            | Failure errors ->
+            | Ok r -> r
+            | Error errors ->
                 let codes = errors |> List.map (fun e -> e.Code) |> String.concat ", "
                 Assert.Fail(sprintf "wide canary failed: %s" codes)
                 Unchecked.defaultof<_>
 
         // Both deploys succeeded; both Catalogs reconstructed.
         Assert.True(
-            report.SourceReport.Success,
+            report.SourceReport.Ok,
             sprintf "source deploy: %A" report.SourceReport.Errors)
         Assert.True(
-            report.TargetReport.Success,
+            report.TargetReport.Ok,
             sprintf "target deploy: %A" report.TargetReport.Errors)
 
         // Source has the OSUSR_M3_USER table; target should too.
@@ -190,18 +190,18 @@ let ``M3 wide canary: realistic OutSystems-shaped source DDL surfaces emitter / 
 
         let report =
             match outcome with
-            | Success r -> r
-            | Failure errors ->
+            | Ok r -> r
+            | Error errors ->
                 let codes = errors |> List.map (fun e -> e.Code) |> String.concat ", "
                 Assert.Fail(sprintf "wide canary failed: %s" codes)
                 Unchecked.defaultof<_>
 
         // Both deploys succeed; both Catalogs reconstructed.
         Assert.True(
-            report.SourceReport.Success,
+            report.SourceReport.Ok,
             sprintf "source deploy: %A" report.SourceReport.Errors)
         Assert.True(
-            report.TargetReport.Success,
+            report.TargetReport.Ok,
             sprintf "target deploy: %A" report.TargetReport.Errors)
         Assert.Equal(2, report.SourceReport.TablesCreated)
         Assert.Equal(2, report.TargetReport.TablesCreated)
@@ -235,8 +235,8 @@ let ``M3 wide canary: enterprise OutSystems-shaped source (3 modules / 10 tables
 
         let report =
             match outcome with
-            | Success r -> r
-            | Failure errors ->
+            | Ok r -> r
+            | Error errors ->
                 let codes = errors |> List.map (fun e -> e.Code) |> String.concat ", "
                 Assert.Fail(sprintf "wide canary failed: %s" codes)
                 Unchecked.defaultof<_>
@@ -250,10 +250,10 @@ let ``M3 wide canary: enterprise OutSystems-shaped source (3 modules / 10 tables
         // entities, junction tables, multi-tenant markers, and
         // mixed PrimitiveType coverage.
         Assert.True(
-            report.SourceReport.Success,
+            report.SourceReport.Ok,
             sprintf "source deploy: %A" report.SourceReport.Errors)
         Assert.True(
-            report.TargetReport.Success,
+            report.TargetReport.Ok,
             sprintf "target deploy: %A" report.TargetReport.Errors)
         Assert.Equal(10, report.SourceReport.TablesCreated)
         Assert.Equal(10, report.TargetReport.TablesCreated)

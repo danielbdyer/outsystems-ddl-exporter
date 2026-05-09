@@ -128,7 +128,7 @@ module BatchSplitter =
             let fallback = splitOnGoLineFold sql
             ScriptDomFailed (List.ofSeq errors, fallback)
         else
-            // Success: extract each batch's text by substring on the
+            // Ok: extract each batch's text by substring on the
             // original input using `StartOffset` + `FragmentLength`.
             // Byte-accurate split; preserves whitespace + comments
             // exactly as the operator wrote them. Avoids round-
