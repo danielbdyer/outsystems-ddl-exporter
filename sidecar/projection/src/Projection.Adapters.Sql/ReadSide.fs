@@ -172,6 +172,59 @@ module ReadSide =
             return Set.ofSeq result
         }
 
+    /// Read the set of FK relationships across every user table.
+    /// Returns rows of `(srcSchema, srcTable, srcCol, tgtSchema,
+    /// tgtTable, tgtCol)`. Composite FKs surface as multiple rows
+    /// with the same constraint object_id but different column
+    /// pairs — `read` aggregates them per-table for `Kind.References`.
+    ///
+    /// Per session-31 Session B — adds FK round-trip to the
+    /// canary's structural fidelity surface. Without this query,
+    /// FK CONSTRAINTs (the actual referential constraints) would
+    /// silently be dropped through the round-trip while the
+    /// underlying columns survive.
+    ///
+    /// Uses sys.* directly for FK metadata since INFORMATION_SCHEMA's
+    /// REFERENTIAL_CONSTRAINTS / KEY_COLUMN_USAGE shape is awkward
+    /// for the source/target column-pair join we need.
+    let private readForeignKeys (cnn: SqlConnection)
+        : Task<list<string * string * string * string * string * string>> =
+        task {
+            use _ = Bench.scope "readside.readForeignKeys"
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT \
+                    SCHEMA_NAME(t.schema_id), t.name, c.name, \
+                    SCHEMA_NAME(rt.schema_id), rt.name, rc.name \
+                 FROM sys.foreign_keys fk \
+                 JOIN sys.foreign_key_columns fkc \
+                   ON fkc.constraint_object_id = fk.object_id \
+                 JOIN sys.tables t ON t.object_id = fk.parent_object_id \
+                 JOIN sys.columns c \
+                   ON c.object_id = t.object_id AND c.column_id = fkc.parent_column_id \
+                 JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id \
+                 JOIN sys.columns rc \
+                   ON rc.object_id = rt.object_id AND rc.column_id = fkc.referenced_column_id \
+                 WHERE t.is_ms_shipped = 0 \
+                 ORDER BY SCHEMA_NAME(t.schema_id), t.name, c.column_id"
+            use! reader = cmd.ExecuteReaderAsync()
+            let rows = ResizeArray<string * string * string * string * string * string>()
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then
+                    rows.Add(
+                        reader.GetString 0,
+                        reader.GetString 1,
+                        reader.GetString 2,
+                        reader.GetString 3,
+                        reader.GetString 4,
+                        reader.GetString 5)
+                else
+                    hasMore <- false
+            return List.ofSeq rows
+        }
+
     let private buildAttribute
         (schema: string)
         (table: string)
@@ -258,12 +311,76 @@ module ReadSide =
     /// requires the `PhysicalSchema` projection (which compares by
     /// `(schema, table, column, type, nullable)` and is invariant
     /// under the SsKey-source difference).
+    /// Build a Reference value from one FK row tuple. The
+    /// `SourceAttribute` and `TargetKind` SsKeys mirror the
+    /// `kindSsKey` / `attributeSsKey` synthesis convention so the
+    /// reconstructed Catalog's References resolve internally.
+    let private buildReference
+        (srcSchema: string, srcTable: string, srcColumn: string,
+         tgtSchema: string, tgtTable: string, _tgtColumn: string)
+        : Result<Reference> =
+        match attributeSsKey srcSchema srcTable srcColumn with
+        | Failure errors -> Result.failure errors
+        | Success srcAttrKey ->
+            match kindSsKey tgtSchema tgtTable with
+            | Failure errors -> Result.failure errors
+            | Success tgtKindKey ->
+                match
+                    SsKey.synthesized
+                        "READSIDE_REF"
+                        (sprintf "%s.%s.%s" srcSchema srcTable srcColumn)
+                with
+                | Failure errors -> Result.failure errors
+                | Success refKey ->
+                    match Name.create (sprintf "FK_%s_%s" srcTable srcColumn) with
+                    | Failure errors -> Result.failure errors
+                    | Success refName ->
+                        Result.success
+                            {
+                                SsKey = refKey
+                                Name = refName
+                                SourceAttribute = srcAttrKey
+                                TargetKind = tgtKindKey
+                                // Delete-rule recovery requires
+                                // joining sys.foreign_keys.delete_referential_action_desc;
+                                // defer to a follow-up slice.
+                                // NoAction is the SQL Server default
+                                // and matches the OutSystems-shape
+                                // fixtures we currently target.
+                                OnDelete = NoAction
+                            }
+
+    /// Attach references to a Kind based on the FKs grouped by
+    /// (schema, table) coordinates. Per session-31 Session B.
+    let private attachReferences
+        (fkGroups: Map<string * string, list<string * string * string * string * string * string>>)
+        (k: Kind)
+        : Result<Kind> =
+        match fkGroups.TryFind(k.Physical.Schema, k.Physical.Table) with
+        | None -> Result.success k
+        | Some fks ->
+            let refResults = fks |> List.map buildReference
+            let aggregated =
+                refResults
+                |> List.fold
+                    (fun acc r ->
+                        match acc, r with
+                        | Failure es, Failure es' -> Result.failure (es @ es')
+                        | Failure _, _ -> acc
+                        | _, Failure es -> Result.failure es
+                        | Success xs, Success x -> Result.success (xs @ [ x ]))
+                    (Result.success [])
+            match aggregated with
+            | Failure errors -> Result.failure errors
+            | Success refs -> Result.success { k with References = refs }
+
     let read (cnn: SqlConnection) : Task<Result<Catalog>> =
         task {
             use _ = Bench.scope "readside.read"
             try
                 let! columnRows = readColumnRows cnn
                 let! primaryKeySet = readPrimaryKeys cnn
+                let! fkRows = readForeignKeys cnn
                 let kindResults =
                     columnRows
                     |> List.groupBy (fun (s, t, _, _, _) -> s, t)
@@ -282,24 +399,44 @@ module ReadSide =
                 match kindsAggregated with
                 | Failure errors -> return Result.failure errors
                 | Success kinds ->
-                    match moduleSsKey () with
+                    let fkGroups =
+                        fkRows
+                        |> List.groupBy (fun (s, t, _, _, _, _) -> s, t)
+                        |> Map.ofList
+                    let kindsWithRefsResults =
+                        kinds
+                        |> Bench.iterMap "readside.attachReferences" (attachReferences fkGroups)
+                    let kindsWithRefsAggregated =
+                        kindsWithRefsResults
+                        |> List.fold
+                            (fun acc r ->
+                                match acc, r with
+                                | Failure es, Failure es' -> Result.failure (es @ es')
+                                | Failure _, _ -> acc
+                                | _, Failure es -> Result.failure es
+                                | Success xs, Success x -> Result.success (xs @ [ x ]))
+                            (Result.success [])
+                    match kindsWithRefsAggregated with
                     | Failure errors -> return Result.failure errors
-                    | Success mKey ->
-                        match Name.create reconstructedModuleName with
+                    | Success kindsWithRefs ->
+                        match moduleSsKey () with
                         | Failure errors -> return Result.failure errors
-                        | Success mName ->
-                            return
-                                Result.success
-                                    {
-                                        Modules =
-                                            [
-                                                {
-                                                    SsKey = mKey
-                                                    Name = mName
-                                                    Kinds = kinds
-                                                }
-                                            ]
-                                    }
+                        | Success mKey ->
+                            match Name.create reconstructedModuleName with
+                            | Failure errors -> return Result.failure errors
+                            | Success mName ->
+                                return
+                                    Result.success
+                                        {
+                                            Modules =
+                                                [
+                                                    {
+                                                        SsKey = mKey
+                                                        Name = mName
+                                                        Kinds = kindsWithRefs
+                                                    }
+                                                ]
+                                        }
             with
             | ex ->
                 return

@@ -90,11 +90,16 @@ let ``output emits one CREATE TABLE per kind`` () =
     Assert.Equal((Catalog.allKinds enriched).Length, createTableCount)
 
 [<Fact>]
-let ``output emits ALTER TABLE FK for the Order -> Customer reference`` () =
+let ``output emits inline FK CONSTRAINT for the Order -> Customer reference`` () =
+    // Per the V2 backlog (session-31): FKs are emitted inline within
+    // CREATE TABLE as `CONSTRAINT [FK_…] FOREIGN KEY (…) REFERENCES …`,
+    // not as trailing ALTER TABLE statements. The emitter sorts kinds
+    // topologically so target tables appear before source tables.
     let enriched = enrich sampleCatalog
     let output = RawTextEmitter.emit enriched
-    Assert.Contains("ALTER TABLE [dbo].[OSUSR_S1S_ORDER]", output)
-    Assert.Contains("REFERENCES [dbo].[OSUSR_S1S_CUSTOMER]", output)
+    Assert.Contains("CONSTRAINT [FK_", output)
+    Assert.Contains("FOREIGN KEY ([CUSTOMER_ID])", output)
+    Assert.Contains("REFERENCES [dbo].[OSUSR_S1S_CUSTOMER] ([ID])", output)
 
 [<Fact>]
 let ``output records the Static populations on Country`` () =
@@ -145,14 +150,22 @@ let ``emit on a visibility-masked catalog drops removed kinds`` () =
     Assert.Contains("OSUSR_S1S_ORDER", output)
 
 [<Fact>]
-let ``emit warns when a reference points at a removed kind`` () =
-    // Hide Customer; Order's reference now dangles. The emitter should
-    // emit a warning comment rather than silently drop the FK.
+let ``emit silently drops a reference when its target kind is absent`` () =
+    // Hide Customer; Order's reference now dangles. Per the V2
+    // backlog's inline-FK decision (session-31), the emitter
+    // silently drops the dangling FK rather than emitting an
+    // inline CONSTRAINT clause to a non-existent table — an inline
+    // ALTER TABLE WARN comment isn't a valid SQL construct, so the
+    // diagnostic surfaces via the canary's PhysicalSchema.diff
+    // (which catches missing FKs structurally) rather than as
+    // emitter-level prose.
     let mask = { VisibilityMask.Hide = [ VisibilityMask.hideKeys [ customerKey ] ] }
     let masked = (VisibilityMask.run mask sampleCatalog).Value
     let enriched = enrich masked
     let output = RawTextEmitter.emit enriched
-    Assert.Contains("WARNING: target kind not present in catalog", output)
+    // The Order table still emits, but without the FK clause.
+    Assert.Contains("OSUSR_S1S_ORDER", output)
+    Assert.DoesNotContain("REFERENCES [dbo].[OSUSR_S1S_CUSTOMER]", output)
 
 // ---------------------------------------------------------------------------
 // A18: Π is mechanical. There is no policy parameter to RawTextEmitter.emit.

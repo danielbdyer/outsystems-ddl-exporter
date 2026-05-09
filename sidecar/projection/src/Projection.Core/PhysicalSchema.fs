@@ -18,19 +18,22 @@ namespace Projection.Core
 ///   - **Target half.** V2 emit → deploy → read → `targetCatalog`.
 ///     Project to `PhysicalSchema` via the same function.
 ///   - **Assertion.** `PhysicalSchema.diff source target` returns
-///     `(missingInTarget, extraInTarget)` — both empty means the
-///     emitter preserved the source's structural intent.
+///     `(missingInTarget, extraInTarget)` for both columns AND FKs;
+///     all four empty means the emitter preserved the source's
+///     structural intent.
 ///
-/// **What's compared.** The set of `(schema, table, column, type,
-/// nullable, isPrimaryKey)` tuples across both Catalogs.
+/// **What's compared.**
+///   - `Columns`: set of `(schema, table, column, type, nullable,
+///     isPrimaryKey)` tuples.
+///   - `ForeignKeys`: set of `(srcSchema, srcTable, srcCol,
+///     tgtSchema, tgtTable, tgtCol)` tuples (Session B addition).
 ///
 /// **What's NOT compared.** SsKey identity, Module structure,
-/// Origin / Modality marks, References, Indexes, static
-/// populations, comment metadata. These are V2-IR-only axes that
-/// SQL Server's catalog cannot recover. M4's Tolerance taxonomy
-/// will name additional comparison flags (e.g., column length /
-/// precision; FK structure when emitter gains PK emission;
-/// indexes).
+/// Origin / Modality marks, Indexes (non-PK), static populations,
+/// comment metadata. These are V2-IR-only axes that SQL Server's
+/// catalog cannot recover. M4's Tolerance taxonomy will name
+/// additional comparison flags (e.g., column length / precision;
+/// indexes; FK delete-rule semantics).
 type PhysicalColumn =
     {
         Schema : string
@@ -41,19 +44,44 @@ type PhysicalColumn =
         IsPrimaryKey : bool
     }
 
-/// The set of all `PhysicalColumn` tuples in a Catalog. Equality
-/// on this surface is the structural-fidelity round-trip property.
-type PhysicalSchema = Set<PhysicalColumn>
+/// A foreign-key relationship in physical-schema coordinates. Per
+/// session-31 Session B, the canary's round-trip property covers
+/// FK structural fidelity: the source's FKs should appear in the
+/// target after V2's emit + deploy + readback.
+///
+/// Composite FKs (multi-column references) appear as multiple
+/// `PhysicalForeignKey` entries with the same source / target
+/// table coordinates and different column pairs. Comparing as a
+/// set of column-level entries handles composite cases by
+/// construction.
+type PhysicalForeignKey =
+    {
+        SourceSchema : string
+        SourceTable : string
+        SourceColumn : string
+        TargetSchema : string
+        TargetTable : string
+        TargetColumn : string
+    }
 
-/// The diff between two `PhysicalSchema` values. Both empty means
-/// the structural intent matches; populated `MissingInTarget`
-/// means the emitter dropped columns the source had; populated
-/// `ExtraInTarget` means the emitter added columns the source did
-/// not. Either is a canary-blocking divergence under R6.
+/// Structural-fidelity view of a Catalog: column tuples + FK
+/// tuples. Equality on this surface is the round-trip property.
+type PhysicalSchema =
+    {
+        Columns : Set<PhysicalColumn>
+        ForeignKeys : Set<PhysicalForeignKey>
+    }
+
+/// The diff between two `PhysicalSchema` values. Both `Missing*`
+/// and `Extra*` empty across both axes means structural intent
+/// matches; anything populated is a canary-blocking divergence
+/// under R6.
 type PhysicalSchemaDiff =
     {
-        MissingInTarget : PhysicalColumn list
-        ExtraInTarget : PhysicalColumn list
+        MissingColumns : PhysicalColumn list
+        ExtraColumns : PhysicalColumn list
+        MissingForeignKeys : PhysicalForeignKey list
+        ExtraForeignKeys : PhysicalForeignKey list
     }
 
 [<RequireQualifiedAccess>]
@@ -71,42 +99,83 @@ module PhysicalSchema =
                 IsPrimaryKey = a.IsPrimaryKey
             })
 
+    let private toPhysicalForeignKeys (catalog: Catalog) (k: Kind) : PhysicalForeignKey list =
+        k.References
+        |> List.choose (fun r ->
+            // Resolve the source attribute's column name and the
+            // target kind's first PK column. If either is missing,
+            // skip the FK — it indicates an incomplete IR (caller
+            // problem) rather than a comparison failure.
+            let sourceColumn =
+                k.Attributes
+                |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
+                |> Option.map (fun a -> a.Column.ColumnName)
+            let targetKind = Catalog.tryFindKind r.TargetKind catalog
+            let targetColumn =
+                targetKind
+                |> Option.bind (fun tk ->
+                    tk.Attributes
+                    |> List.tryFind (fun a -> a.IsPrimaryKey)
+                    |> Option.map (fun a -> a.Column.ColumnName))
+            match sourceColumn, targetKind, targetColumn with
+            | Some srcCol, Some tk, Some tgtCol ->
+                Some
+                    {
+                        SourceSchema = k.Physical.Schema
+                        SourceTable = k.Physical.Table
+                        SourceColumn = srcCol
+                        TargetSchema = tk.Physical.Schema
+                        TargetTable = tk.Physical.Table
+                        TargetColumn = tgtCol
+                    }
+            | _ -> None)
+
     /// Project a Catalog to its `PhysicalSchema` view — the set of
     /// `(schema, table, column, type, nullable, isPrimaryKey)`
-    /// tuples reachable through every Module's Kinds. Modules,
-    /// Origin, Modality, References, and Indexes are projected
-    /// out by construction.
+    /// tuples PLUS the set of `(src, tgt)` FK tuples reachable
+    /// through every Module's Kinds. Modules, Origin, Modality,
+    /// non-PK Indexes are projected out by construction.
     let ofCatalog (c: Catalog) : PhysicalSchema =
         use _ = Bench.scope "physicalSchema.ofCatalog"
-        c.Modules
-        |> List.collect (fun m ->
-            m.Kinds |> Bench.iterMap "physicalSchema.kind" toPhysicalColumns |> List.concat)
-        |> Set.ofList
-
-    /// Diff two `PhysicalSchema` values. The first is the source
-    /// (operator's reality); the second is the target (V2's
-    /// projection after emit + deploy + readback).
-    ///
-    /// `MissingInTarget` are columns the source has that the target
-    /// does not — the emitter dropped them.
-    /// `ExtraInTarget` are columns the target has that the source
-    /// does not — the emitter added them.
-    /// Both empty means structural fidelity holds.
-    let diff (source: PhysicalSchema) (target: PhysicalSchema) : PhysicalSchemaDiff =
+        let kinds = c.Modules |> List.collect (fun m -> m.Kinds)
+        let columns =
+            kinds
+            |> Bench.iterMap "physicalSchema.kind" toPhysicalColumns
+            |> List.concat
+            |> Set.ofList
+        let foreignKeys =
+            kinds
+            |> List.collect (toPhysicalForeignKeys c)
+            |> Set.ofList
         {
-            MissingInTarget = Set.difference source target |> Set.toList
-            ExtraInTarget = Set.difference target source |> Set.toList
+            Columns = columns
+            ForeignKeys = foreignKeys
         }
 
-    /// True iff the diff is empty in both directions — source and
-    /// target are structurally equivalent on the
-    /// `PhysicalSchema` axis.
+    /// Diff two `PhysicalSchema` values. Both axes (Columns + FKs)
+    /// surface their `(missing-in-target, extra-in-target)` deltas.
+    let diff (source: PhysicalSchema) (target: PhysicalSchema) : PhysicalSchemaDiff =
+        {
+            MissingColumns =
+                Set.difference source.Columns target.Columns |> Set.toList
+            ExtraColumns =
+                Set.difference target.Columns source.Columns |> Set.toList
+            MissingForeignKeys =
+                Set.difference source.ForeignKeys target.ForeignKeys |> Set.toList
+            ExtraForeignKeys =
+                Set.difference target.ForeignKeys source.ForeignKeys |> Set.toList
+        }
+
+    /// True iff the diff is empty across all four axes.
     let isEqual (d: PhysicalSchemaDiff) : bool =
-        List.isEmpty d.MissingInTarget && List.isEmpty d.ExtraInTarget
+        List.isEmpty d.MissingColumns
+        && List.isEmpty d.ExtraColumns
+        && List.isEmpty d.MissingForeignKeys
+        && List.isEmpty d.ExtraForeignKeys
 
     /// Render a diff as a human-readable multi-line string. Used by
     /// canary failure messages so the operator sees exactly which
-    /// columns mismatched, not just "they differ."
+    /// columns / FKs mismatched, not just "they differ."
     let renderDiff (d: PhysicalSchemaDiff) : string =
         let renderColumn (c: PhysicalColumn) : string =
             sprintf
@@ -117,17 +186,25 @@ module PhysicalSchema =
                 c.Type
                 c.Nullable
                 c.IsPrimaryKey
-        let missing =
-            if List.isEmpty d.MissingInTarget then
-                "  (none)"
+        let renderFk (f: PhysicalForeignKey) : string =
+            sprintf
+                "  [%s].[%s].[%s] -> [%s].[%s].[%s]"
+                f.SourceSchema
+                f.SourceTable
+                f.SourceColumn
+                f.TargetSchema
+                f.TargetTable
+                f.TargetColumn
+        let block (label: string) (renderer: 'a -> string) (xs: 'a list) : string =
+            if List.isEmpty xs then sprintf "%s:\n  (none)" label
             else
-                d.MissingInTarget |> List.map renderColumn |> String.concat "\n"
-        let extra =
-            if List.isEmpty d.ExtraInTarget then
-                "  (none)"
-            else
-                d.ExtraInTarget |> List.map renderColumn |> String.concat "\n"
-        sprintf
-            "PhysicalSchema diff:\nMissing in target (source had, target lost):\n%s\nExtra in target (target has, source did not):\n%s"
-            missing
-            extra
+                sprintf "%s:\n%s" label (xs |> List.map renderer |> String.concat "\n")
+        String.concat
+            "\n"
+            [
+                "PhysicalSchema diff:"
+                block "Missing columns in target (source had, target lost)" renderColumn d.MissingColumns
+                block "Extra columns in target (target has, source did not)" renderColumn d.ExtraColumns
+                block "Missing FKs in target (source had, target lost)" renderFk d.MissingForeignKeys
+                block "Extra FKs in target (target has, source did not)" renderFk d.ExtraForeignKeys
+            ]
