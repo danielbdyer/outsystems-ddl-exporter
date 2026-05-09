@@ -522,12 +522,18 @@ module ReadSide =
         : Task<StaticRow list option> =
         task {
             use _ = Bench.scope "readside.readRows"
+            // Bracket-quoting flows through ScriptDom's
+            // `Identifier.EncodeIdentifier` to match `readRowsStream`
+            // (single source of truth for SQL identifier encoding;
+            // audit Section 4 consistency fix).
+            let encode = Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier
+            let qualified =
+                System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; segments are typed (each via Identifier.EncodeIdentifier)
+                    ".",
+                    [| encode kind.Physical.Schema; encode kind.Physical.Table |])
             use countCmd = cnn.CreateCommand()
             countCmd.CommandText <-
-                sprintf
-                    "SELECT COUNT(*) FROM [%s].[%s]"
-                    kind.Physical.Schema
-                    kind.Physical.Table
+                System.String.Concat("SELECT COUNT(*) FROM ", qualified)  // LINT-ALLOW: terminal SQL-text-emission boundary; qualified is pre-encoded
             let! countObj = countCmd.ExecuteScalarAsync()
             let count = System.Convert.ToInt32 countObj
             if count > maxRows then
