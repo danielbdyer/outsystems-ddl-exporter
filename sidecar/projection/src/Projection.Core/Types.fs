@@ -1,12 +1,13 @@
 namespace Projection.Core
 
-/// Two-Catalog diff value. Stage 0 reserves the type name; chapter 3.5
-/// (RefactorLogEmitter + CatalogDiff) extends to the four-variant
-/// exhaustive DU `Renamed | Added | Removed | Unchanged` per the A36
-/// candidate (`AXIOMS.md` amendment scaffolding). The `Pending` variant
-/// is a placeholder that compiles but carries no semantic content.
-type CatalogDiff =
-    | Pending  // chapter 3.5 fills
+/// Two-Catalog diff value. Now defined in `CatalogDiff.fs`
+/// (chapter 3.5 substantive deliverable). Removed from `Types.fs` —
+/// `EmitterOverDiff` and `DiffOf` below reference the real type.
+//
+// Stage 0's `type CatalogDiff = | Pending` placeholder retired here:
+// the actual exhaustive type with smart constructor lives in
+// `CatalogDiff.fs`, compiled before `Types.fs` so the references
+// below resolve to the real type.
 
 /// Comparator output. Stage 0 reserves the type alias; chapter 3.1
 /// (read-side adapter + comparator) fills with the per-SsKey diff

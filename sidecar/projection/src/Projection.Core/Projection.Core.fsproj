@@ -16,6 +16,7 @@
     <Compile Include="Coordinates.fs" />
     <Compile Include="Catalog.fs" />
     <Compile Include="ArtifactByKind.fs" />
+    <Compile Include="CatalogDiff.fs" />
     <Compile Include="PhysicalSchema.fs" />
     <Compile Include="Profile.fs" />
     <Compile Include="Policy.fs" />

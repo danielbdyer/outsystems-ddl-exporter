@@ -104,6 +104,12 @@ let ``S0.A: RelationalProperty is inhabited by Catalog -> Catalog -> bool`` () =
 
 [<Fact>]
 let ``S0.A: DiffOf<'value> is inhabited by 'value -> 'value -> Result<CatalogDiff, EmitError>`` () =
+    // Inhabitation witness only — `CatalogDiff` is now a `private` DU
+    // (chapter 3.5 substantive deliverable); construction goes through
+    // `CatalogDiff.between` against `Catalog` inputs. This stub returns
+    // an `Error` to demonstrate the type alias compiles; semantic-
+    // shape correctness is exercised by `CatalogDiff.between` directly
+    // in `CatalogDiffTests.fs`.
     let stub : DiffOf<int> =
-        fun _left _right -> FsResult.Ok CatalogDiff.Pending
+        fun _left _right -> FsResult.Error (KindNotProduced (stubKey ()))
     Assert.NotNull(stub :> obj)
