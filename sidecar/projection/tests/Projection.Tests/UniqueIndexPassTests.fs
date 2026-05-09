@@ -136,20 +136,20 @@ let ``one intervention: emits one Annotated lineage event per decision`` () =
 
 [<Fact>]
 let ``one intervention: lineage event detail names the intervention id and an outcome category`` () =
+    // Chapter-3.6 slice-β: typed `AnnotationDetail.UniqueIndexDecision`
+    // payload — outcome flows through structurally.
     let policy = policyWithIntervention "v1-style-2026" (mkConfig true true)
     let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
-    let categories = [ "EnforceUnique"; "DoNotEnforce" ]
     Assert.All(lineage.Trail, fun e ->
         match e.TransformKind with
-        | Annotated detail ->
-            Assert.Contains("v1-style-2026", detail)
-            let mentionsOne =
-                categories |> List.exists (fun cat -> detail.Contains(cat))
-            Assert.True(
-                mentionsOne,
-                sprintf "Detail '%s' should mention an outcome category" detail)
+        | Annotated (UniqueIndexDecision (id, outcome)) ->
+            Assert.Equal("v1-style-2026", id)
+            // Outcome is one of the two UniqueIndexOutcome variants.
+            match outcome with
+            | UniqueIndexOutcome.EnforceUnique _
+            | UniqueIndexOutcome.DoNotEnforce _ -> ()
         | other ->
-            Assert.Fail(sprintf "Expected Annotated, got %A" other))
+            Assert.Fail(sprintf "Expected Annotated (UniqueIndexDecision _), got %A" other))
 
 [<Fact>]
 let ``one intervention: AlreadyUnique decisions surface for catalog-declared unique indexes`` () =

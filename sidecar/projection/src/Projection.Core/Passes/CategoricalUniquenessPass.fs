@@ -59,28 +59,18 @@ module CategoricalUniquenessPass =
     [<Literal>]
     let private passName : string = "categoricalUniqueness"
 
-    /// Format the outcome for the lineage event's `Annotated` detail.
-    /// The full structured `CategoricalUniquenessOutcome` lives in
-    /// the decision set; the trail carries a human-readable summary
-    /// so audit consumers can grep for outcome categories.
-    let private outcomeLabel (outcome: CategoricalUniquenessOutcome) : string =
-        CategoricalUniquenessOutcome.toDiagnosticString outcome
-
     /// One lineage event per decision. `Annotated` because the pass
     /// produces a decision (a real transformation in the audit sense)
     /// rather than observing without changing — same convention as
-    /// the three predecessors.
+    /// the three predecessors. Chapter-3.6 slice-β widened the
+    /// payload to the typed
+    /// `AnnotationDetail.CategoricalUniquenessDecision` variant.
     let private decisionEvent (decision: CategoricalUniquenessDecision) : LineageEvent =
         { PassName      = passName
           PassVersion   = version
           SsKey         = decision.AttributeKey
           TransformKind =
-              Annotated
-                  (String.concat "" [
-                      decision.InterventionId
-                      " -> "
-                      outcomeLabel decision.Outcome
-                  ]) }
+              Annotated (CategoricalUniquenessDecision (decision.InterventionId, decision.Outcome)) }
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// attributes by `SsKey` within each kind. Interventions are taken

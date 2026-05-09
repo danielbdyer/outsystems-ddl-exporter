@@ -18,10 +18,15 @@ let private touched (passName: string) (passVersion: int) (key: SsKey) : Lineage
       TransformKind = Touched }
 
 let private annotated (passName: string) (passVersion: int) (key: SsKey) (detail: string) : LineageEvent =
+    // Chapter-3.6 slice-β: writer-monad-laws tests use the
+    // `AnnotationDetail.Label` free-form variant — the algebraic
+    // laws (left identity, right identity, associativity) hold for
+    // any payload type, so the detail's typed shape is incidental
+    // to what the tests prove.
     { PassName      = passName
       PassVersion   = passVersion
       SsKey         = key
-      TransformKind = Annotated detail }
+      TransformKind = Annotated (Label detail) }
 
 // ---------------------------------------------------------------------------
 // Monad laws. Lineage is the writer monad over the (List, ++, []) monoid;

@@ -90,11 +90,16 @@ module SymmetricClosure =
           SsKey         = key
           TransformKind = Created }
 
-    let private skippedEvent (key: SsKey) (detail: string) : LineageEvent =
+    let private skippedEvent (key: SsKey) (reason: SymmetricClosureSkipReason) : LineageEvent =
+        // Chapter-3.6 slice-γ: typed `SymmetricClosureSkipReason`
+        // payload replaces the prior "skipped: ..." prose strings.
+        // The two skip cases (`TargetKindAbsent`,
+        // `TargetHasNoPrimaryKey`) classified in `classifyStep` flow
+        // through structurally to audit consumers.
         { PassName      = passName
           PassVersion   = version
           SsKey         = key
-          TransformKind = Annotated detail }
+          TransformKind = Annotated (ClosureSkipped reason) }
 
     /// Run the pass. For every directional reference whose target is
     /// resolvable in the catalog and has at least one primary-key
@@ -125,13 +130,13 @@ module SymmetricClosure =
             let inverseKey = deriveInverseKey r
             match Map.tryFind r.TargetKind kindByKey with
             | None ->
-                Skip (skippedEvent r.SsKey "skipped: target kind absent")
+                Skip (skippedEvent r.SsKey TargetKindAbsent)
             | Some target ->
                 if hasInverseAlready target.References inverseKey then NoOp
                 else
                     match buildInverse sourceKind r target with
                     | None ->
-                        Skip (skippedEvent r.SsKey "skipped: target has no primary key")
+                        Skip (skippedEvent r.SsKey TargetHasNoPrimaryKey)
                     | Some inverse ->
                         Created (createdEvent inverse.SsKey, target.SsKey, inverse)
 

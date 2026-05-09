@@ -72,29 +72,18 @@ module ForeignKeyPass =
     [<Literal>]
     let private passName : string = "foreignKey"
 
-    /// Format the outcome for the lineage event's `Annotated` detail.
-    /// The full structured `ForeignKeyOutcome` lives in
-    /// `ForeignKeyDecisionSet.Decisions`; the trail carries a
-    /// human-readable summary so audit consumers can grep for outcome
-    /// categories without parsing decisions.
-    let private outcomeLabel (outcome: ForeignKeyOutcome) : string =
-        ForeignKeyOutcome.toDiagnosticString outcome
-
     /// One lineage event per decision. `Annotated` because the pass
     /// produces a decision (a real transformation in the audit sense)
     /// rather than observing without changing — same convention as
-    /// `NullabilityPass` and `UniqueIndexPass`.
+    /// `NullabilityPass` and `UniqueIndexPass`. Chapter-3.6 slice-β
+    /// widened the payload to the typed `AnnotationDetail.
+    /// ForeignKeyDecision` variant.
     let private decisionEvent (decision: ForeignKeyDecision) : LineageEvent =
         { PassName      = passName
           PassVersion   = version
           SsKey         = decision.ReferenceKey
           TransformKind =
-              Annotated
-                  (String.concat "" [
-                      decision.InterventionId
-                      " -> "
-                      outcomeLabel decision.Outcome
-                  ]) }
+              Annotated (ForeignKeyDecision (decision.InterventionId, decision.Outcome)) }
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// references by `SsKey` within each kind. Interventions are taken

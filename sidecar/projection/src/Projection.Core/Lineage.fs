@@ -59,6 +59,104 @@ module RemovalReason =
             String.concat "" [ "modality="; ModalityMark.toDiagnosticString mark ]  // LINT-ALLOW: terminal diagnostic projection; typed `RemovalReason` DU IS the structure
 
 
+/// Reason a `SymmetricClosure` pass step skipped attaching an inverse
+/// reference. Closed DU; matches the two skip cases the pass classifies
+/// in `classifyStep`. Pattern-matched structurally by audit consumers
+/// rather than parsed out of a "skipped: …" string. Chapter-3.6 slice-γ
+/// (`CHAPTER_3_6_OPEN.md`).
+type SymmetricClosureSkipReason =
+    /// Target kind referenced by the directional reference is not
+    /// present in the catalog (orphan reference). The closure pass
+    /// cannot synthesize an inverse without a target.
+    | TargetKindAbsent
+    /// Target kind is present but exposes no primary key. The closure
+    /// pass requires a PK attribute to anchor the inverse reference's
+    /// `SourceAttribute`.
+    | TargetHasNoPrimaryKey
+
+/// Companion module for `SymmetricClosureSkipReason`. Provides the
+/// rendering-boundary projection from the typed reason to the
+/// preserved-historical-prose diagnostic string. Strings emerge ONLY
+/// here.
+[<RequireQualifiedAccess>]
+module SymmetricClosureSkipReason =
+
+    /// Render the typed skip-reason as the diagnostic string the prior
+    /// `string`-payload `Annotated` event carried. Audit-readable;
+    /// stable for diff against historical trails.
+    let toDiagnosticString (reason: SymmetricClosureSkipReason) : string =
+        match reason with
+        | TargetKindAbsent       -> "skipped: target kind absent"
+        | TargetHasNoPrimaryKey  -> "skipped: target has no primary key"
+
+
+/// Typed payload for `TransformKind.Annotated` — chapter-3.6 slice-β/γ
+/// (`CHAPTER_3_6_OPEN.md`). Each variant carries the typed pass-
+/// decision payload structurally; consumers pattern-match exhaustively
+/// rather than substring-parse a built name string. The intervention
+/// passes (Nullability / UniqueIndex / ForeignKey / CategoricalUniqueness)
+/// share a common shape (`interventionId × outcome`); the closure pass
+/// has its own `ClosureSkipped` shape; the `Label` variant is a
+/// documented free-form fallback for tests + future passes whose typed
+/// shape hasn't yet been earned (production passes use the typed
+/// variants).
+///
+/// **Big-O note:** each variant carries a small typed payload (the
+/// outcome DU is bounded per-decision; the skip-reason is a tag). Trail
+/// size O(N) events × O(1) per-event payload — same asymptotic shape
+/// as the prior string-detail form, with no per-event string
+/// allocation.
+type AnnotationDetail =
+    /// One Nullability pass decision: `interventionId` names the
+    /// registered intervention; `outcome` is the typed decision.
+    | NullabilityDecision of interventionId: string * outcome: NullabilityOutcome
+    /// One UniqueIndex pass decision.
+    | UniqueIndexDecision of interventionId: string * outcome: UniqueIndexOutcome
+    /// One ForeignKey pass decision.
+    | ForeignKeyDecision of interventionId: string * outcome: ForeignKeyOutcome
+    /// One CategoricalUniqueness pass decision.
+    | CategoricalUniquenessDecision of interventionId: string * outcome: CategoricalUniquenessOutcome
+    /// SymmetricClosure pass skipped attaching an inverse for the
+    /// reason given. Pairs with `Created` events (one per inverse
+    /// successfully attached).
+    | ClosureSkipped of reason: SymmetricClosureSkipReason
+    /// **Free-form label.** Used by writer-monad-laws tests, the
+    /// `Composition.fanOut` synthetic-decision test, and any future
+    /// pass whose typed annotation shape hasn't yet been earned.
+    /// Production pass drivers MUST use one of the typed variants
+    /// above; the typed-payload discipline (chapter 3.6) holds for
+    /// production code. Tests and migration-bridges read this variant
+    /// as opaque.
+    | Label of label: string
+
+/// Companion module for `AnnotationDetail`. Provides the rendering-
+/// boundary projection from the typed payload to a stable diagnostic
+/// string — preserves the historical `<interventionId> -> <outcome>`
+/// shape the prior `Annotated of string` payload carried, so audit
+/// consumers and downstream tools that read the trail diff cleanly.
+[<RequireQualifiedAccess>]
+module AnnotationDetail =
+
+    /// Render the typed annotation payload as the diagnostic string
+    /// the prior `string`-payload form carried. Strings emerge ONLY
+    /// here (and at any future writer-boundary consumer), per the
+    /// supreme operating discipline at the top of `DECISIONS.md`.
+    let toDiagnosticString (detail: AnnotationDetail) : string =
+        match detail with
+        | NullabilityDecision (id, outcome) ->
+            String.concat "" [ id; " -> "; NullabilityOutcome.toDiagnosticString outcome ]  // LINT-ALLOW: terminal diagnostic projection; typed `AnnotationDetail` DU IS the structure
+        | UniqueIndexDecision (id, outcome) ->
+            String.concat "" [ id; " -> "; UniqueIndexOutcome.toDiagnosticString outcome ]  // LINT-ALLOW: terminal diagnostic projection
+        | ForeignKeyDecision (id, outcome) ->
+            String.concat "" [ id; " -> "; ForeignKeyOutcome.toDiagnosticString outcome ]  // LINT-ALLOW: terminal diagnostic projection
+        | CategoricalUniquenessDecision (id, outcome) ->
+            String.concat "" [ id; " -> "; CategoricalUniquenessOutcome.toDiagnosticString outcome ]  // LINT-ALLOW: terminal diagnostic projection
+        | ClosureSkipped reason ->
+            SymmetricClosureSkipReason.toDiagnosticString reason
+        | Label label ->
+            label
+
+
 /// The kind of transformation a lineage event records. The set is small
 /// and additive — extend rather than reshape when new pass categories
 /// appear, so historical lineage trails stay readable.
@@ -75,20 +173,18 @@ type TransformKind =
     | Created
     /// The pass masked (withheld) a node from the surface. The typed
     /// `RemovalReason` payload names the predicate (or rule) that
-    /// fired. This is the convention for filtering passes: when a node
-    /// is removed, the lineage event records *which* rule fired, so a
-    /// downstream reader can answer "why is this kind missing?" by
-    /// pattern-matching the typed payload directly. Chapter-3.6 slice-α
-    /// (`CHAPTER_3_6_OPEN.md`) widened this from `string` to
-    /// `RemovalReason` — closed-DU exhaustiveness replaces ad-hoc string
-    /// parsing.
+    /// fired. Chapter-3.6 slice-α widened this from `string` to
+    /// `RemovalReason` — closed-DU exhaustiveness replaces ad-hoc
+    /// string parsing.
     | Removed of reason: RemovalReason
-    /// The pass attached or rewrote metadata (modality marks, type
-    /// correspondences). The detail string carries human-readable context;
-    /// it is not consumed structurally. **Chapter 3.6 slice β/γ** widens
-    /// this to a typed payload too; deliberately deferred to a later
-    /// slice for blast-radius control.
-    | Annotated of detail: string
+    /// The pass attached metadata (intervention decision, closure
+    /// skip, free-form label). The typed `AnnotationDetail` payload
+    /// names the annotation structurally. Chapter-3.6 slice-β/γ
+    /// widened this from `string` to `AnnotationDetail` — production
+    /// passes carry typed pass-decision payloads; tests + migration
+    /// use the `Label of string` variant. Strings emerge only at the
+    /// rendering boundary via `AnnotationDetail.toDiagnosticString`.
+    | Annotated of detail: AnnotationDetail
 
 
 /// One step in the provenance chain. Per A23, every event carries a

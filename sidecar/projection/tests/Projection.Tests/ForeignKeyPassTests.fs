@@ -123,20 +123,20 @@ let ``one intervention: emits one Annotated lineage event per decision`` () =
 
 [<Fact>]
 let ``one intervention: lineage event detail names the intervention id and an outcome category`` () =
+    // Chapter-3.6 slice-β: typed `AnnotationDetail.ForeignKeyDecision`
+    // payload — outcome flows through structurally.
     let policy = policyWithIntervention "v1-style-2026" (mkConfig true true true)
     let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
-    let categories = [ "EnforceConstraint"; "DoNotEnforce" ]
     Assert.All(lineage.Trail, fun e ->
         match e.TransformKind with
-        | Annotated detail ->
-            Assert.Contains("v1-style-2026", detail)
-            let mentionsOne =
-                categories |> List.exists (fun cat -> detail.Contains(cat))
-            Assert.True(
-                mentionsOne,
-                sprintf "Detail '%s' should mention an outcome category" detail)
+        | Annotated (ForeignKeyDecision (id, outcome)) ->
+            Assert.Equal("v1-style-2026", id)
+            // Outcome is one of the two ForeignKeyOutcome variants.
+            match outcome with
+            | ForeignKeyOutcome.EnforceConstraint _
+            | ForeignKeyOutcome.DoNotEnforce _ -> ()
         | other ->
-            Assert.Fail(sprintf "Expected Annotated, got %A" other))
+            Assert.Fail(sprintf "Expected Annotated (ForeignKeyDecision _), got %A" other))
 
 // ---------------------------------------------------------------------------
 // Two ForeignKey interventions — fan-out per (reference × intervention).

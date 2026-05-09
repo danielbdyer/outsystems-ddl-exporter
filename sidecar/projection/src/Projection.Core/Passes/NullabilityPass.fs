@@ -55,29 +55,20 @@ module NullabilityPass =
     [<Literal>]
     let private passName : string = "nullability"
 
-    /// Format the outcome for the lineage event's `Annotated` detail.
-    /// Per the FP strict-mode discipline, this delegates to the
-    /// typed `NullabilityOutcome.toDiagnosticString` (which
-    /// recursively projects evidence / keep-reason / conflict via
-    /// their own typed displays). No `sprintf "%A"`; structured
-    /// composition over typed segments.
-    let private outcomeLabel (outcome: NullabilityOutcome) : string =
-        NullabilityOutcome.toDiagnosticString outcome
-
     /// One lineage event per decision. `Annotated` because the pass
     /// produces a decision (a real transformation in the audit sense)
-    /// rather than observing without changing.
+    /// rather than observing without changing. Chapter-3.6 slice-β
+    /// widened the payload from `Annotated (interventionId + " -> " +
+    /// outcomeLabel)` (string) to `Annotated (NullabilityDecision
+    /// (interventionId, outcome))` (typed) — audit consumers
+    /// pattern-match the structurally-preserved outcome directly,
+    /// rather than substring-parsing a built name.
     let private decisionEvent (decision: NullabilityDecision) : LineageEvent =
         { PassName      = passName
           PassVersion   = version
           SsKey         = decision.AttributeKey
           TransformKind =
-              Annotated
-                  (String.concat "" [
-                      decision.InterventionId
-                      " -> "
-                      outcomeLabel decision.Outcome
-                  ]) }
+              Annotated (NullabilityDecision (decision.InterventionId, decision.Outcome)) }
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// attributes by `SsKey` within each kind. Interventions are taken

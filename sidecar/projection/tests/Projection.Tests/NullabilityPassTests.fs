@@ -88,23 +88,25 @@ let ``one intervention: emits one Annotated lineage event per decision`` () =
 
 [<Fact>]
 let ``one intervention: lineage event detail names the intervention id and outcome`` () =
+    // Chapter-3.6 slice-β: typed `AnnotationDetail.NullabilityDecision`
+    // payload replaces the prior `<id> -> <outcome>` built-name string.
+    // The test now asserts the typed payload structurally — intervention
+    // id is the first tuple element; outcome is structurally one of the
+    // three `NullabilityOutcome` variants (compiler-checked
+    // exhaustiveness).
     let policy = policyWithIntervention "v1-style-2026" (mkConfig 0.0m false [])
     let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
-    let categories =
-        [ "EnforceNotNull"; "KeepNullable"; "RequireOperatorApproval" ]
     Assert.All(lineage.Trail, fun e ->
         match e.TransformKind with
-        | Annotated detail ->
-            Assert.Contains("v1-style-2026", detail)
-            // Detail names one of the three NullabilityOutcome
-            // categories.
-            let mentionsOne =
-                categories |> List.exists (fun cat -> detail.Contains(cat))
-            Assert.True(
-                mentionsOne,
-                sprintf "Detail '%s' should mention an outcome category" detail)
+        | Annotated (NullabilityDecision (id, outcome)) ->
+            Assert.Equal("v1-style-2026", id)
+            // Outcome is one of the three NullabilityOutcome variants.
+            match outcome with
+            | NullabilityOutcome.EnforceNotNull _
+            | NullabilityOutcome.KeepNullable _
+            | NullabilityOutcome.RequireOperatorApproval _ -> ()
         | other ->
-            Assert.Fail(sprintf "Expected Annotated, got %A" other))
+            Assert.Fail(sprintf "Expected Annotated (NullabilityDecision _), got %A" other))
 
 // ---------------------------------------------------------------------------
 // Two Nullability interventions — the pass emits one decision per

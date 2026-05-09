@@ -63,29 +63,18 @@ module UniqueIndexPass =
     [<Literal>]
     let private passName : string = "uniqueIndex"
 
-    /// Format the outcome for the lineage event's `Annotated` detail.
-    /// The full structured `UniqueIndexOutcome` lives in
-    /// `UniqueIndexDecisionSet.Decisions`; the trail carries a
-    /// human-readable summary so audit consumers can grep for outcome
-    /// categories without parsing decisions.
-    let private outcomeLabel (outcome: UniqueIndexOutcome) : string =
-        UniqueIndexOutcome.toDiagnosticString outcome
-
     /// One lineage event per decision. `Annotated` because the pass
     /// produces a decision (a real transformation in the audit sense)
     /// rather than observing without changing — same convention as
-    /// `NullabilityPass`.
+    /// `NullabilityPass`. Chapter-3.6 slice-β widened the payload to
+    /// the typed `AnnotationDetail.UniqueIndexDecision` variant; the
+    /// outcome flows through structurally for audit consumers.
     let private decisionEvent (decision: UniqueIndexDecision) : LineageEvent =
         { PassName      = passName
           PassVersion   = version
           SsKey         = decision.IndexKey
           TransformKind =
-              Annotated
-                  (String.concat "" [
-                      decision.InterventionId
-                      " -> "
-                      outcomeLabel decision.Outcome
-                  ]) }
+              Annotated (UniqueIndexDecision (decision.InterventionId, decision.Outcome)) }
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// indexes by `SsKey` within each kind. Interventions are taken
