@@ -205,19 +205,52 @@ module Deploy =
             return ()
         }
 
-    /// Sqlcmd-style `GO` batch separator. Lines matching `^\s*GO\s*$`
-    /// split a script into independent batches; SqlClient's
-    /// `ExecuteNonQueryAsync` runs one segment at a time. Per
-    /// session-34 — large fixture loads (≥ 50k INSERTs) routinely
-    /// blow past sensible per-batch sizes; chunk emission +
-    /// splitting keeps each round-trip bounded without changing
-    /// SQL semantics. Scripts without `GO` markers run as a single
-    /// segment, identical to the v1 behaviour.
-    let private goSplitter : System.Text.RegularExpressions.Regex =
-        System.Text.RegularExpressions.Regex(
-            @"^\s*GO\s*$",
-            System.Text.RegularExpressions.RegexOptions.Multiline
-            ||| System.Text.RegularExpressions.RegexOptions.Compiled)
+    /// Sqlcmd-style `GO` batch separator. Lines whose trimmed value
+    /// equals `GO` (case-insensitive) split a script into independent
+    /// batches; SqlClient's `ExecuteNonQueryAsync` runs one segment
+    /// at a time. Per session-34 — large fixture loads (≥ 50k
+    /// INSERTs) routinely blow past sensible per-batch sizes; chunk
+    /// emission + splitting keeps each round-trip bounded without
+    /// changing SQL semantics. Scripts without `GO` markers run as
+    /// a single segment, identical to the v1 behaviour.
+    ///
+    /// Per the no-regex / no-string-concatenation discipline
+    /// (`DECISIONS 2026-05-09 — No-string-concatenation / no-regex
+    /// discipline`), the splitter uses built-in `String.Split('\n')`
+    /// + `Trim` + literal compare via
+    /// `System.String.Equals(_, "GO", OrdinalIgnoreCase)` instead of
+    /// `System.Text.RegularExpressions.Regex`. Lines are accumulated
+    /// per-segment via `String.concat "\n"` (built-in joiner). The
+    /// fold preserves segment order without mutation; segments with
+    /// only whitespace are filtered.
+    let private isGoLine (line: string) : bool =
+        System.String.Equals(
+            line.Trim(),
+            "GO",
+            System.StringComparison.OrdinalIgnoreCase)
+
+    let private splitOnGo (sql: string) : string[] =
+        let lines = sql.Split('\n')
+        // Walk lines via fold; each GO-line closes a segment. The
+        // accumulator carries `current` (lines of the in-flight
+        // segment, reverse-ordered) and `segs` (closed segments,
+        // reverse-ordered). At end, the final `current` is the
+        // tail segment.
+        let initial : string list * string list list = [], []
+        let lastSegRev, segsRev =
+            lines
+            |> Array.fold
+                (fun (current, segs) line ->
+                    if isGoLine line then [], current :: segs
+                    else line :: current, segs)
+                initial
+        let allSegsRev = lastSegRev :: segsRev
+        allSegsRev
+        |> List.rev
+        |> List.map (fun lineListRev ->
+            lineListRev |> List.rev |> String.concat "\n")
+        |> List.filter (fun s -> not (System.String.IsNullOrWhiteSpace s))
+        |> List.toArray
 
     /// Public realization of a SQL text batch. Splits on `^GO$`
     /// markers (sqlcmd-style); each segment runs in its own
@@ -228,9 +261,7 @@ module Deploy =
     let executeBatch (cnn: SqlConnection) (sql: string) : Task<unit> =
         task {
             use _ = Bench.scope "deploy.executeBatch"
-            let segments =
-                goSplitter.Split sql
-                |> Array.filter (fun s -> not (System.String.IsNullOrWhiteSpace s))
+            let segments = splitOnGo sql
             Bench.recordSample "deploy.executeBatch.segments" (int64 segments.Length)
             for segment in segments do
                 use _ = Bench.scope "deploy.executeBatch.segment"
@@ -336,14 +367,24 @@ module Deploy =
             do! flushDdl ()
         }
 
+    /// `countUserTables` SQL — typed component list joined by
+    /// `String.concat " "` per the no-string-concatenation discipline
+    /// (`DECISIONS 2026-05-09`). Each clause is a literal at its own
+    /// list element; no `+` operators. Pinned per-version constant
+    /// so the wire bytes are stable across emits.
+    let private countUserTablesSql : string =
+        [
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES"
+            "WHERE TABLE_TYPE = 'BASE TABLE'"
+            "AND TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA')"
+        ]
+        |> String.concat " "
+
     let private countUserTables (cnn: SqlConnection) : Task<int> =
         task {
             use _ = Bench.scope "deploy.countUserTables"
             use cmd = cnn.CreateCommand()
-            cmd.CommandText <-
-                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
-                + "WHERE TABLE_TYPE = 'BASE TABLE' "
-                + "AND TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA')"
+            cmd.CommandText <- countUserTablesSql
             let! tablesObj = cmd.ExecuteScalarAsync()
             return Convert.ToInt32 tablesObj
         }

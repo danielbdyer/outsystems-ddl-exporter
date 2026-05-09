@@ -1,6 +1,7 @@
 namespace Projection.Targets.SSDT
 
 open System
+open System.Globalization
 open System.Text
 open Projection.Core
 
@@ -10,15 +11,47 @@ open Projection.Core
 /// emit-time text and deploy-time SQL are byte-identical wherever
 /// they overlap. Per A18, no policy parameter enters here; per T1,
 /// rendering is deterministic in its input.
+///
+/// Per the no-string-concatenation discipline (`DECISIONS 2026-05-09`),
+/// SQL fragments compose via `String.Concat` (BCL multi-arg overload,
+/// no array allocation) and `String.concat` (BCL collection joiner)
+/// rather than `sprintf` or `+`. Integer formatting goes through
+/// `Int32.ToString CultureInfo.InvariantCulture` to keep T1
+/// byte-determinism culture-invariant by construction.
 [<RequireQualifiedAccess>]
 module Render =
 
-    let quote (s: string) : string = sprintf "[%s]" s
+    /// Invariant-culture integer formatting. `int.ToString` without
+    /// arguments respects current culture for some derivations; the
+    /// invariant-culture form is byte-deterministic across runs and
+    /// platforms.
+    let private intInv (i: int) : string =
+        i.ToString CultureInfo.InvariantCulture
+
+    /// Bracket-quote an identifier. `String.Concat`'s 3-arg overload
+    /// is allocation-light and avoids a format-string indirection.
+    let quote (s: string) : string = String.Concat("[", s, "]")
 
     /// Per session-36 — delegate to the canonical `TableId.qualified`
     /// in Core so SSDT renderers and the bulk path produce identical
     /// `[schema].[table]` strings by construction.
     let tableQualified (t: TableId) : string = TableId.qualified t
+
+    /// `<typeName>(<length>)` SQL type expression. Composes a typed
+    /// 4-tuple of segments via `String.Concat`; no `sprintf`.
+    let private sqlTypeWithLength (typeName: string) (length: int) : string =
+        String.Concat(typeName, "(", intInv length, ")")
+
+    /// `DECIMAL(<precision>, <scale>)` SQL type expression.
+    let private sqlDecimal (precision: int) (scale: int) : string =
+        // `String.Concat`'s params overload covers 5 parts; allocates
+        // a small array but stays O(1) on input shape.
+        String.Concat(
+            "DECIMAL(",
+            intInv precision,
+            ", ",
+            intInv scale,
+            ")")
 
     /// IR `(Type, Length, Precision, Scale)` → SQL type expression.
     /// Shared by emit (`toText`) and deploy paths so the two never
@@ -27,16 +60,16 @@ module Render =
         match c.Type with
         | Text ->
             match c.Length with
-            | Some n when n > 0 -> sprintf "NVARCHAR(%d)" n
+            | Some n when n > 0 -> sqlTypeWithLength "NVARCHAR" n
             | _ -> "NVARCHAR(MAX)"
         | Binary ->
             match c.Length with
-            | Some n when n > 0 -> sprintf "VARBINARY(%d)" n
+            | Some n when n > 0 -> sqlTypeWithLength "VARBINARY" n
             | _ -> "VARBINARY(MAX)"
         | Decimal ->
             match c.Precision, c.Scale with
-            | Some p, Some s -> sprintf "DECIMAL(%d, %d)" p s
-            | Some p, None -> sprintf "DECIMAL(%d, 0)" p
+            | Some p, Some s -> sqlDecimal p s
+            | Some p, None -> sqlDecimal p 0
             | _ -> "DECIMAL(18, 4)"
         | Integer  -> "INT"
         | Boolean  -> "BIT"
@@ -44,6 +77,12 @@ module Render =
         | Date     -> "DATE"
         | Time     -> "TIME"
         | Guid     -> "UNIQUEIDENTIFIER"
+
+    /// Quote a string literal as `'<raw>'`. SQL injection isn't a
+    /// concern for emitter output (the IR is the input contract);
+    /// callers responsible for escape-doubling apostrophes pre-call.
+    let private quoteSingle (raw: string) : string =
+        String.Concat("'", raw, "'")
 
     /// Raw IR string → SQL literal. `""` is NULL; Text gets `N'…'`
     /// with single-quote doubling; temporal / Guid get `'…'`; Binary
@@ -59,12 +98,13 @@ module Render =
                 | "true" | "1" -> "1"
                 | _ -> "0"
             | DateTime | Date | Time | Guid ->
-                sprintf "'%s'" raw
+                quoteSingle raw
             | Text ->
-                sprintf "N'%s'" (raw.Replace("'", "''"))
+                String.Concat("N", quoteSingle (raw.Replace("'", "''")))
             | Binary ->
-                if raw.StartsWith("0x", StringComparison.OrdinalIgnoreCase) then raw
-                else "0x" + raw
+                if raw.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                then raw
+                else String.Concat("0x", raw)
 
     let private actionSql (a: ReferenceActionSql) : string =
         match a with
