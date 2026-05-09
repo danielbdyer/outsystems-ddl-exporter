@@ -20,6 +20,14 @@ open Projection.Core
 [<RequireQualifiedAccess>]
 module BenchSink =
 
+    /// Filename timestamp format: `yyyyMMddTHHmmssZ` keeps lexically
+    /// sortable, fixed-width filenames so a future bench-tracker
+    /// script can `ls bench/<tag>/` and walk runs in chronological
+    /// order without parsing dates. The trailing `Z` advertises UTC
+    /// (the timestamp itself is `DateTime.UtcNow`).
+    [<Literal>]
+    let private TimestampFormat : string = "yyyyMMddTHHmmssZ"
+
     let private jsonOptions : JsonSerializerOptions =
         let o = JsonSerializerOptions(WriteIndented = true)
         o.Converters.Add(JsonStringEnumConverter())
@@ -58,6 +66,15 @@ module BenchSink =
     /// `rootDir`. The UTC timestamp in `yyyyMMddTHHmmssZ` form keeps
     /// filenames sortable. Used by the CLI to choose where to drop
     /// each run's JSON.
+    /// Subdirectory under `rootDir` collecting bench snapshots.
+    [<Literal>]
+    let private BenchSubdirectory : string = "bench"
+
+    /// File extension for bench snapshots.
+    [<Literal>]
+    let private SnapshotExtension : string = ".json"
+
     let defaultPath (rootDir: string) (tag: string) : string =
-        let timestamp = DateTime.UtcNow.ToString("yyyyMMddTHHmmssZ")  // LINT-ALLOW: reified non-determinism boundary at file-sink layer
-        Path.Combine(rootDir, "bench", tag, sprintf "%s.json" timestamp)
+        let timestamp = DateTime.UtcNow.ToString(TimestampFormat)  // LINT-ALLOW: reified non-determinism boundary at file-sink layer
+        Path.Combine(rootDir, BenchSubdirectory, tag, timestamp + SnapshotExtension)  // LINT-ALLOW: terminal filesystem path; timestamp is already vetted typed format
+

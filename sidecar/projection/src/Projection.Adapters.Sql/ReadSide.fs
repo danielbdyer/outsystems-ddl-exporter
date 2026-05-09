@@ -87,6 +87,7 @@ module ReadSide =
     /// readback produces a single Module named "Reconstructed"
     /// because SQL Server's catalog has no concept of OutSystems
     /// modules — the module structure is V2-IR-only metadata.
+    [<Literal>]
     let private reconstructedModuleName : string = "Reconstructed"
 
     let private moduleSsKey () : Result<SsKey> =
@@ -370,6 +371,9 @@ module ReadSide =
     /// not present in the row's Values map are also `NULL` by
     /// omission.
     let private formatRawValue (typ: PrimitiveType) (value: obj | null) : string =
+        // Format rules flow through `RawValueCodec` so the V2 raw-
+        // form contract is single-sourced across emit / parse /
+        // readback.
         let isNullish =
             match value with
             | null -> true
@@ -377,31 +381,28 @@ module ReadSide =
         if isNullish then ""
         else
             let v = nonNull value
+            let inv = System.Globalization.CultureInfo.InvariantCulture
             match typ with
             | Integer ->
-                System.Convert.ToInt64(v).ToString(System.Globalization.CultureInfo.InvariantCulture)
+                System.Convert.ToInt64(v).ToString(inv)
             | Boolean ->
-                if System.Convert.ToBoolean v then "true" else "false"
+                RawValueCodec.formatBoolean (System.Convert.ToBoolean v)
             | DateTime ->
-                let dt = System.Convert.ToDateTime v
-                dt.ToString("yyyy-MM-dd HH:mm:ss.fffffff", System.Globalization.CultureInfo.InvariantCulture)
+                RawValueCodec.formatDateTime (System.Convert.ToDateTime v)
             | Date ->
-                let dt = System.Convert.ToDateTime v
-                dt.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+                RawValueCodec.formatDate (System.Convert.ToDateTime v)
             | Time ->
-                let ts = v :?> System.TimeSpan
-                ts.ToString("c", System.Globalization.CultureInfo.InvariantCulture)
+                RawValueCodec.formatTime (v :?> System.TimeSpan)
             | Guid ->
-                (v :?> System.Guid).ToString("D")
+                RawValueCodec.formatGuid (v :?> System.Guid)
             | Decimal ->
-                System.Convert.ToDecimal(v).ToString(System.Globalization.CultureInfo.InvariantCulture)
+                System.Convert.ToDecimal(v).ToString(inv)
             | Text ->
                 match v.ToString() with
                 | null -> ""
                 | s -> s
             | Binary ->
-                let bytes = v :?> byte[]
-                System.Convert.ToHexString bytes
+                System.Convert.ToHexString (v :?> byte[])
 
     /// Stream a table's rows as an `AsyncStream<StaticRow>` — pull-
     /// based, bench-instrumented, no row materialization. Per

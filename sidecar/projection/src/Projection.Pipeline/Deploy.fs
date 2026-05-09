@@ -74,13 +74,18 @@ module Deploy =
     /// tests that actually need Docker should call `ensureRunning`.
     [<RequireQualifiedAccess>]
     module Docker =
+        // Canonical Docker Unix socket locations. Two candidates:
+        //   1. system-wide socket at /var/run/docker.sock (Linux default)
+        //   2. user-scoped rootless socket under ~/.docker/run/docker.sock
+        // Path composition flows through `Path.Combine` (audit Top-10
+        // #6: filesystem boundary uses BCL primitive, not `sprintf`).
+        [<Literal>]
+        let private SystemSocketPath : string = "/var/run/docker.sock"
+
         let private socketCandidates : string list =
-            [
-                "/var/run/docker.sock"
-                sprintf
-                    "%s/.docker/run/docker.sock"
-                    (Environment.GetFolderPath Environment.SpecialFolder.UserProfile)
-            ]
+            let home = Environment.GetFolderPath Environment.SpecialFolder.UserProfile
+            let userSocket = Path.Combine(home, ".docker", "run", "docker.sock")
+            [ SystemSocketPath; userSocket ]
 
         // Why these specific values (not arbitrary):
         // - `ProbeTimeoutMs = 2000`: `docker version` against a healthy
@@ -198,6 +203,15 @@ module Deploy =
         /// per-database scoping is non-deterministic, and that's a
         /// Pipeline concern). Per-segment formatting goes through
         /// `String.Concat` rather than `sprintf`.
+        /// Length of the GUID suffix used in ephemeral database
+        /// names. 12 chars of N-format GUID is ~48 bits of entropy
+        /// — sufficient for per-run uniqueness across concurrent
+        /// canary processes; short enough to fit `Source_<suffix>`
+        /// under SQL Server's 128-char identifier limit with
+        /// generous prefix headroom.
+        [<Literal>]
+        let private GuidSuffixLength : int = 12
+
         let guidBased : DatabaseNameGenerator =
             // The `guidBased` binding IS the sanctioned `Guid.NewGuid`
             // site — the reified non-determinism boundary. Audit
@@ -205,7 +219,7 @@ module Deploy =
             // visible through the seam, not hidden inside a private
             // function.
             fun () ->
-                let suffix = Guid.NewGuid().ToString("N").Substring(0, 12)  // LINT-ALLOW: reified non-determinism boundary
+                let suffix = Guid.NewGuid().ToString("N").Substring(0, GuidSuffixLength)  // LINT-ALLOW: reified non-determinism boundary
                 suffix
 
     let private uniqueDatabaseName
@@ -282,10 +296,18 @@ module Deploy =
     /// per-segment via `String.concat "\n"` (built-in joiner). The
     /// fold preserves segment order without mutation; segments with
     /// only whitespace are filtered.
+    /// T-SQL batch separator. Each `^GO$` line (case-insensitive,
+    /// with surrounding whitespace allowed) terminates a batch.
+    /// Per SQL Server documentation, `GO` is a tooling convention
+    /// recognized by sqlcmd / SSMS — not a T-SQL statement, so it
+    /// must be stripped before sending to `SqlCommand`.
+    [<Literal>]
+    let private GoBatchSeparator : string = "GO"
+
     let private isGoLine (line: string) : bool =
         System.String.Equals(
             line.Trim(),
-            "GO",
+            GoBatchSeparator,
             System.StringComparison.OrdinalIgnoreCase)
 
     let private splitOnGo (sql: string) : string[] =
