@@ -38,7 +38,7 @@ let ``Diagnostics.ofValue produces empty entries`` () =
 
 [<Fact>]
 let ``Diagnostics.ofValueWith carries one entry`` () =
-    let e = entry "TestPass" Info "test.code" "hello"
+    let e = entry "TestPass" DiagnosticSeverity.Info "test.code" "hello"
     let m = Diagnostics.ofValueWith e 42
     Assert.Equal(42, m.Value)
     Assert.Single(m.Entries) |> ignore
@@ -50,8 +50,8 @@ let ``Diagnostics.ofValueWith carries one entry`` () =
 
 [<Fact>]
 let ``Diagnostics.tell appends a single entry chronologically`` () =
-    let e1 = entry "TestPass" Info "first" "hello"
-    let e2 = entry "TestPass" Warning "second" "world"
+    let e1 = entry "TestPass" DiagnosticSeverity.Info "first" "hello"
+    let e2 = entry "TestPass" DiagnosticSeverity.Warning "second" "world"
     let m =
         Diagnostics.ofValue 1
         |> Diagnostics.tell e1
@@ -60,9 +60,9 @@ let ``Diagnostics.tell appends a single entry chronologically`` () =
 
 [<Fact>]
 let ``Diagnostics.tellMany preserves entry order`` () =
-    let e1 = entry "P" Info "a" "1"
-    let e2 = entry "P" Info "b" "2"
-    let e3 = entry "P" Info "c" "3"
+    let e1 = entry "P" DiagnosticSeverity.Info "a" "1"
+    let e2 = entry "P" DiagnosticSeverity.Info "b" "2"
+    let e3 = entry "P" DiagnosticSeverity.Info "c" "3"
     let m = Diagnostics.ofValue () |> Diagnostics.tellMany [e1; e2; e3]
     Assert.Equal<DiagnosticEntry list>([e1; e2; e3], m.Entries)
 
@@ -72,7 +72,7 @@ let ``Diagnostics.tellMany preserves entry order`` () =
 
 [<Fact>]
 let ``Diagnostics.map preserves entries`` () =
-    let e = entry "P" Warning "c" "m"
+    let e = entry "P" DiagnosticSeverity.Warning "c" "m"
     let m =
         Diagnostics.ofValueWith e 1
         |> Diagnostics.map (fun n -> n * 2)
@@ -81,7 +81,7 @@ let ``Diagnostics.map preserves entries`` () =
 
 [<Fact>]
 let ``Diagnostics.map identity = id`` () =
-    let e = entry "P" Info "x" "y"
+    let e = entry "P" DiagnosticSeverity.Info "x" "y"
     let m = Diagnostics.ofValueWith e 7
     let after = Diagnostics.map id m
     Assert.Equal(m, after)
@@ -92,8 +92,8 @@ let ``Diagnostics.map identity = id`` () =
 
 [<Fact>]
 let ``Diagnostics.bind concatenates entries chronologically`` () =
-    let e1 = entry "P1" Info "first" "a"
-    let e2 = entry "P2" Warning "second" "b"
+    let e1 = entry "P1" DiagnosticSeverity.Info "first" "a"
+    let e2 = entry "P2" DiagnosticSeverity.Warning "second" "b"
     let m =
         Diagnostics.ofValueWith e1 10
         |> Diagnostics.bind (fun n -> Diagnostics.ofValueWith e2 (n + 1))
@@ -102,7 +102,7 @@ let ``Diagnostics.bind concatenates entries chronologically`` () =
 
 [<Fact>]
 let ``Diagnostics.bind with empty f produces same trail`` () =
-    let e = entry "P" Info "c" "m"
+    let e = entry "P" DiagnosticSeverity.Info "c" "m"
     let m =
         Diagnostics.ofValueWith e 1
         |> Diagnostics.bind (fun n -> Diagnostics.ofValue (n + 1))
@@ -119,19 +119,19 @@ let ``Diagnostics.isClean true for empty entries`` () =
 
 [<Fact>]
 let ``Diagnostics.isClean false when an entry exists`` () =
-    let e = entry "P" Info "c" "m"
+    let e = entry "P" DiagnosticSeverity.Info "c" "m"
     Assert.False(Diagnostics.isClean (Diagnostics.ofValueWith e 0))
 
 [<Fact>]
 let ``Diagnostics.entriesAt filters by severity`` () =
-    let e1 = entry "P" Info "i1" "info one"
-    let e2 = entry "P" Warning "w1" "warn one"
-    let e3 = entry "P" Warning "w2" "warn two"
-    let e4 = entry "P" Error "x1" "error one"
+    let e1 = entry "P" DiagnosticSeverity.Info "i1" "info one"
+    let e2 = entry "P" DiagnosticSeverity.Warning "w1" "warn one"
+    let e3 = entry "P" DiagnosticSeverity.Warning "w2" "warn two"
+    let e4 = entry "P" DiagnosticSeverity.Error "x1" "error one"
     let m = Diagnostics.ofValue () |> Diagnostics.tellMany [e1; e2; e3; e4]
-    Assert.Equal<DiagnosticEntry list>([e1], Diagnostics.entriesAt Info m)
-    Assert.Equal<DiagnosticEntry list>([e2; e3], Diagnostics.entriesAt Warning m)
-    Assert.Equal<DiagnosticEntry list>([e4], Diagnostics.entriesAt Error m)
+    Assert.Equal<DiagnosticEntry list>([e1], Diagnostics.entriesAt DiagnosticSeverity.Info m)
+    Assert.Equal<DiagnosticEntry list>([e2; e3], Diagnostics.entriesAt DiagnosticSeverity.Warning m)
+    Assert.Equal<DiagnosticEntry list>([e4], Diagnostics.entriesAt DiagnosticSeverity.Error m)
 
 // ---------------------------------------------------------------------------
 // LineageDiagnostics: dual writer composition.
@@ -161,7 +161,7 @@ let ``LineageDiagnostics.ofLineage preserves the lineage trail`` () =
 
 [<Fact>]
 let ``LineageDiagnostics.ofDiagnostics preserves the diagnostics entries`` () =
-    let e = entry "P" Info "c" "m"
+    let e = entry "P" DiagnosticSeverity.Info "c" "m"
     let inner = Diagnostics.ofValueWith e 1
     let dual = LineageDiagnostics.ofDiagnostics inner
     Assert.Equal(1, LineageDiagnostics.payload dual)
@@ -182,8 +182,8 @@ let ``LineageDiagnostics.payload returns the deep value (raw structural assertio
 
 [<Fact>]
 let ``LineageDiagnostics.entries returns the diagnostic entries (raw structural assertion)`` () =
-    let e1 = entry "P" Info "c1" "m1"
-    let e2 = entry "P" Warning "c2" "m2"
+    let e1 = entry "P" DiagnosticSeverity.Info "c1" "m1"
+    let e2 = entry "P" DiagnosticSeverity.Warning "c2" "m2"
     let dual =
         LineageDiagnostics.ofValue 0
         |> LineageDiagnostics.tellDiagnostic e1
@@ -193,7 +193,7 @@ let ``LineageDiagnostics.entries returns the diagnostic entries (raw structural 
 
 [<Fact>]
 let ``LineageDiagnostics.diagnostics returns the inner Diagnostics (raw structural assertion)`` () =
-    let e = entry "P" Info "c" "m"
+    let e = entry "P" DiagnosticSeverity.Info "c" "m"
     let dual =
         LineageDiagnostics.ofValue 7
         |> LineageDiagnostics.tellDiagnostic e
@@ -214,7 +214,7 @@ let ``LineageDiagnostics.tellLineage appends a lineage event without touching di
 
 [<Fact>]
 let ``LineageDiagnostics.tellDiagnostic appends a diagnostic without touching lineage`` () =
-    let e = entry "P" Warning "c" "m"
+    let e = entry "P" DiagnosticSeverity.Warning "c" "m"
     let dual =
         LineageDiagnostics.ofValue 1
         |> LineageDiagnostics.tellDiagnostic e
@@ -232,8 +232,8 @@ let ``A24-equivalent: LineageDiagnostics.bind concatenates both trails chronolog
     let key2 = mkKey "k2"
     let evt1 = lineageEvent key1 Touched
     let evt2 = lineageEvent key2 Touched
-    let e1 = entry "P1" Info "first" "a"
-    let e2 = entry "P2" Warning "second" "b"
+    let e1 = entry "P1" DiagnosticSeverity.Info "first" "a"
+    let e2 = entry "P2" DiagnosticSeverity.Warning "second" "b"
 
     let m1 =
         LineageDiagnostics.ofValue 10
@@ -255,7 +255,7 @@ let ``A24-equivalent: LineageDiagnostics.bind concatenates both trails chronolog
 let ``LineageDiagnostics.map preserves both trails`` () =
     let key = mkKey "k"
     let evt = lineageEvent key Touched
-    let e = entry "P" Info "c" "m"
+    let e = entry "P" DiagnosticSeverity.Info "c" "m"
 
     let m =
         LineageDiagnostics.ofValue 5
@@ -275,11 +275,11 @@ let ``LineageDiagnostics.map preserves both trails`` () =
 
 [<Fact>]
 let ``DiagnosticEntry.SsKey can be None for adapter-level diagnostics`` () =
-    let e = entry "adapter:OSSYS" Error "adapter.ossys.unparseable" "JSON document failed to parse"
+    let e = entry "adapter:OSSYS" DiagnosticSeverity.Error "adapter.ossys.unparseable" "JSON document failed to parse"
     Assert.Equal(None, e.SsKey)
 
 [<Fact>]
 let ``DiagnosticEntry.SsKey carries the IR node for pass-level diagnostics`` () =
     let key = mkKey "AppCore.User.Email"
-    let e = entryFor key "UniqueIndexPass" Warning "tightening.uniqueIndex.opportunity" "Unique index not enforced"
+    let e = entryFor key "UniqueIndexPass" DiagnosticSeverity.Warning "tightening.uniqueIndex.opportunity" "Unique index not enforced"
     Assert.Equal(Some key, e.SsKey)

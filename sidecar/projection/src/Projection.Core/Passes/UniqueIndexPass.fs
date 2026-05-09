@@ -130,7 +130,7 @@ module UniqueIndexPass =
                     "Unique index was not enforced. No profile candidate exists; collect profiling evidence before enforcement can proceed."
             Some {
                 Source   = passName
-                Severity = Warning
+                Severity = DiagnosticSeverity.Warning
                 Code     = code
                 Message  = message
                 SsKey    = Some decision.IndexKey

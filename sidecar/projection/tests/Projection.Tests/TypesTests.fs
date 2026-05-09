@@ -25,7 +25,7 @@ type private FsResult<'a, 'b> = Microsoft.FSharp.Core.Result<'a, 'b>
 /// inhabitation succeeded.
 ///
 /// Stage 0 (S0.B slice 5.1) makes `ArtifactByKind` constructor private
-/// — emitter stubs return `Error` variants rather than constructing
+/// — emitter stubs return `DiagnosticSeverity.Error` variants rather than constructing
 /// directly. `ArtifactByKindTests` covers the smart constructor's
 /// `Ok` path with a real Catalog.
 ///
@@ -108,7 +108,7 @@ let ``S0.A: DiffOf<'value> is inhabited by 'value -> 'value -> Result<CatalogDif
     // Inhabitation witness only — `CatalogDiff` is now a `private` DU
     // (chapter 3.5 substantive deliverable); construction goes through
     // `CatalogDiff.between` against `Catalog` inputs. This stub returns
-    // an `Error` to demonstrate the type alias compiles; semantic-
+    // an `DiagnosticSeverity.Error` to demonstrate the type alias compiles; semantic-
     // shape correctness is exercised by `CatalogDiff.between` directly
     // in `CatalogDiffTests.fs`.
     let stub : DiffOf<int> =

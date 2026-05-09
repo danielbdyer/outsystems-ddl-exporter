@@ -152,26 +152,26 @@ module ForeignKeyPass =
             // concern V1 surfaced via rationale strings is V2's
             // diagnostic emission.
             Some (mkEntry
-                    Warning
+                    DiagnosticSeverity.Warning
                     "tightening.foreignKey.scriptWithNoCheck"
                     (sprintf
                         "Foreign-key constraint scripted with NOCHECK because %d orphan row(s) were observed and operator policy allows it. Row-validation is deferred; remediate orphan rows before re-enabling enforcement."
                         orphanCount))
         | ForeignKeyOutcome.DoNotEnforce PolicyDisabled ->
             Some (mkEntry
-                    Warning
+                    DiagnosticSeverity.Warning
                     "tightening.foreignKey.policyDisabled"
                     "Foreign-key constraint was not created. Enable policy support before enforcement can proceed.")
         | ForeignKeyOutcome.DoNotEnforce (DataHasOrphans orphanCount) ->
             Some (mkEntry
-                    Warning
+                    DiagnosticSeverity.Warning
                     "tightening.foreignKey.dataHasOrphans"
                     (sprintf
                         "Foreign-key constraint was not created. Profile observed %d orphan row(s); remediate the data or enable AllowNoCheckCreation before enforcement can proceed."
                         orphanCount))
         | ForeignKeyOutcome.DoNotEnforce CrossSchemaBlocked ->
             Some (mkEntry
-                    Warning
+                    DiagnosticSeverity.Warning
                     "tightening.foreignKey.crossSchemaBlocked"
                     "Foreign-key constraint was not created. The reference crosses schema boundaries and AllowCrossSchema is disabled.")
         | ForeignKeyOutcome.DoNotEnforce CrossCatalogBlocked ->
@@ -180,7 +180,7 @@ module ForeignKeyPass =
             // Pattern-match completeness keeps the shape ready for
             // the IR refinement (ADMIRE.md 2026-05-11).
             Some (mkEntry
-                    Warning
+                    DiagnosticSeverity.Warning
                     "tightening.foreignKey.crossCatalogBlocked"
                     "Foreign-key constraint was not created. The reference crosses catalog boundaries and AllowCrossCatalog is disabled.")
         | ForeignKeyOutcome.DoNotEnforce DeleteRuleIgnored ->
@@ -192,12 +192,12 @@ module ForeignKeyPass =
             // V1-equivalent representation. See session 13's Skip
             // stub on this contract for the V1↔V2 mapping note.
             Some (mkEntry
-                    Warning
+                    DiagnosticSeverity.Warning
                     "tightening.foreignKey.deleteRuleIgnored"
                     "Foreign-key constraint was not created. The reference's delete rule resolved to Ignore.")
         | ForeignKeyOutcome.DoNotEnforce EvidenceMissing ->
             Some (mkEntry
-                    Warning
+                    DiagnosticSeverity.Warning
                     "tightening.foreignKey.evidenceMissing"
                     "Foreign-key constraint was not created. Profile probe did not succeed reliably; collect evidence before enforcement can proceed.")
         | ForeignKeyOutcome.DoNotEnforce MissingTarget ->
@@ -205,7 +205,7 @@ module ForeignKeyPass =
             // silently skipped references to missing targets; V2
             // surfaces the absence explicitly.
             Some (mkEntry
-                    Warning
+                    DiagnosticSeverity.Warning
                     "tightening.foreignKey.missingTarget"
                     "Foreign-key constraint was not created. The reference's target kind is absent from the catalog.")
 

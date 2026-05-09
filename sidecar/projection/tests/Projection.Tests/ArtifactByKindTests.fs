@@ -77,7 +77,7 @@ let ``S0.B.1: create succeeds when slice keys exactly match Catalog.allKinds`` (
         let recovered = ArtifactByKind.toMap artifact
         Assert.Equal<Map<SsKey, string>>(slices, recovered)
     | FsResult.Error e ->
-        Assert.Fail(sprintf "expected Ok, got Error %A" e)
+        Assert.Fail(sprintf "expected Ok, got DiagnosticSeverity.Error %A" e)
 
 [<Fact>]
 let ``S0.B.1: create succeeds on the empty Catalog with the empty slice map`` () =
@@ -87,7 +87,7 @@ let ``S0.B.1: create succeeds on the empty Catalog with the empty slice map`` ()
     | FsResult.Ok artifact ->
         Assert.True(Map.isEmpty (ArtifactByKind.toMap artifact))
     | FsResult.Error e ->
-        Assert.Fail(sprintf "expected Ok, got Error %A" e)
+        Assert.Fail(sprintf "expected Ok, got DiagnosticSeverity.Error %A" e)
 
 [<Fact>]
 let ``S0.B.1: create rejects missing kinds with KindNotProduced`` () =
@@ -97,7 +97,7 @@ let ``S0.B.1: create rejects missing kinds with KindNotProduced`` () =
     | FsResult.Error (KindNotProduced k) ->
         Assert.Equal(ssKey "OS_KIND_Customer", k)
     | other ->
-        Assert.Fail(sprintf "expected Error (KindNotProduced ...), got %A" other)
+        Assert.Fail(sprintf "expected DiagnosticSeverity.Error (KindNotProduced ...), got %A" other)
 
 [<Fact>]
 let ``S0.B.1: create rejects extra keys with UnexpectedKind`` () =
@@ -108,7 +108,7 @@ let ``S0.B.1: create rejects extra keys with UnexpectedKind`` () =
     | FsResult.Error (UnexpectedKind k) ->
         Assert.Equal(stale, k)
     | other ->
-        Assert.Fail(sprintf "expected Error (UnexpectedKind ...), got %A" other)
+        Assert.Fail(sprintf "expected DiagnosticSeverity.Error (UnexpectedKind ...), got %A" other)
 
 [<Fact>]
 let ``S0.B.1: create reports KindNotProduced first when both missing and extra are present`` () =
@@ -119,7 +119,7 @@ let ``S0.B.1: create reports KindNotProduced first when both missing and extra a
     | FsResult.Error (KindNotProduced _) -> ()
     | other ->
         Assert.Fail(
-            sprintf "expected Error (KindNotProduced _) on overlapping miss+extra, got %A" other
+            sprintf "expected DiagnosticSeverity.Error (KindNotProduced _) on overlapping miss+extra, got %A" other
         )
 
 [<Fact>]

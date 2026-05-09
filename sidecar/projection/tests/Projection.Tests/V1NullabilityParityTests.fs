@@ -212,7 +212,7 @@ let ``V1 #4: relaxation allowed yields KeepNullable (same outcome as V1 #2 in V2
 //   V1 #6 output: builder.Opportunities is populated (one
 //                 remediation opportunity for the mandatory column).
 //   V2 #6 form:   RequireOperatorApproval(MandatoryButHasNullsBeyondBudget)
-//                 produces a Warning DiagnosticEntry on the
+//                 produces a DiagnosticSeverity.Warning DiagnosticEntry on the
 //                 NullabilityPass.run output's diagnostic stream.
 //                 V1's opportunity record's structural payload
 //                 maps to the entry's Source / Severity / Code /
@@ -234,7 +234,7 @@ let ``V1 #4: relaxation allowed yields KeepNullable (same outcome as V1 #2 in V2
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``V1 #6: Analyze creates remediation opportunity — Diagnostics stream emits one Warning entry`` () =
+let ``V1 #6: Analyze creates remediation opportunity — Diagnostics stream emits one DiagnosticSeverity.Warning entry`` () =
     let catalog = buildCatalog true true            // mandatory column
     let profile = buildProfile 100L 12L             // 12 nulls in 100 rows
     let cfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
@@ -249,12 +249,12 @@ let ``V1 #6: Analyze creates remediation opportunity — Diagnostics stream emit
     | NullabilityOutcome.RequireOperatorApproval _ -> ()
     | other -> Assert.Fail(sprintf "Expected RequireOperatorApproval, got %A" other)
 
-    // Diagnostic side: exactly one Warning entry, tagged with the
+    // Diagnostic side: exactly one DiagnosticSeverity.Warning entry, tagged with the
     // mandatory column's SsKey and a tightening.nullability.* code.
     let entries = LineageDiagnostics.entries lineage
     Assert.Single(entries) |> ignore
     let entry = entries.[0]
-    Assert.Equal(Warning, entry.Severity)
+    Assert.Equal(DiagnosticSeverity.Warning, entry.Severity)
     Assert.Equal("nullability", entry.Source)
     Assert.Equal("tightening.nullability.requireOperatorApproval", entry.Code)
     Assert.Equal(Some mandatoryAttributeKey, entry.SsKey)

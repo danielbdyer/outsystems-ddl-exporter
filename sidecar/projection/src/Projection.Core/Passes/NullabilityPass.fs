@@ -117,7 +117,7 @@ module NullabilityPass =
         | NullabilityOutcome.KeepNullable (RelaxedUnderEvidence (nulls, rows, budget)) ->
             Some {
                 Source   = passName
-                Severity = Warning
+                Severity = DiagnosticSeverity.Warning
                 Code     = "tightening.nullability.relaxedUnderEvidence"
                 Message  =
                     sprintf
@@ -140,7 +140,7 @@ module NullabilityPass =
         | NullabilityOutcome.RequireOperatorApproval (MandatoryButHasNullsBeyondBudget (nulls, rows, budget)) ->
             Some {
                 Source   = passName
-                Severity = Warning
+                Severity = DiagnosticSeverity.Warning
                 Code     = "tightening.nullability.requireOperatorApproval"
                 Message  =
                     sprintf

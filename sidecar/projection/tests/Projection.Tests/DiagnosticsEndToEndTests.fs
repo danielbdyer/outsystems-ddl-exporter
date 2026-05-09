@@ -77,7 +77,7 @@ let ``end-to-end: lineage trail and diagnostic stream populate together`` () =
         | Annotated _ -> ()
         | other -> Assert.Fail(sprintf "Expected Annotated, got %A" other))
 
-    // Diagnostic stream: one Warning entry per DoNotEnforce decision.
+    // Diagnostic stream: one DiagnosticSeverity.Warning entry per DoNotEnforce decision.
     let doNotEnforceCount =
         decisions
         |> List.filter (fun d ->
@@ -88,7 +88,7 @@ let ``end-to-end: lineage trail and diagnostic stream populate together`` () =
     let entries = LineageDiagnostics.entries result
     Assert.Equal(doNotEnforceCount, entries.Length)
     Assert.All(entries, fun e ->
-        Assert.Equal(Warning, e.Severity)
+        Assert.Equal(DiagnosticSeverity.Warning, e.Severity)
         Assert.Equal("uniqueIndex", e.Source))
 
 [<Fact>]
@@ -218,7 +218,7 @@ let private nullabilityPolicyForOpportunity : Policy =
         Tightening = { Interventions = [ Nullability ("v1-parity", cfg) ] } }
 
 [<Fact>]
-let ``end-to-end: Nullability opportunity stream emits one Warning entry on RequireOperatorApproval`` () =
+let ``end-to-end: Nullability opportunity stream emits one DiagnosticSeverity.Warning entry on RequireOperatorApproval`` () =
     let result =
         NullabilityPass.run
             nullabilityCatalog
@@ -235,13 +235,13 @@ let ``end-to-end: Nullability opportunity stream emits one Warning entry on Requ
     | NullabilityOutcome.RequireOperatorApproval _ -> ()
     | other -> Assert.Fail(sprintf "Expected RequireOperatorApproval, got %A" other)
 
-    // Diagnostic side: exactly one Warning entry referencing the
+    // Diagnostic side: exactly one DiagnosticSeverity.Warning entry referencing the
     // mandatory column. The PK column produces an EnforceNotNull
     // outcome → no diagnostic.
     let entries = LineageDiagnostics.entries result
     Assert.Single(entries) |> ignore
     let entry = entries.[0]
-    Assert.Equal(Warning, entry.Severity)
+    Assert.Equal(DiagnosticSeverity.Warning, entry.Severity)
     Assert.Equal("nullability", entry.Source)
     Assert.Equal(Some mandatoryAttributeKey, entry.SsKey)
 
@@ -395,7 +395,7 @@ let private fkPolicyAllowingNoCheck : Policy =
         Tightening = { Interventions = [ ForeignKey ("v1-style", cfg) ] } }
 
 [<Fact>]
-let ``end-to-end: ForeignKey opportunity stream emits one Warning entry on success-with-caveat (ScriptWithNoCheck)`` () =
+let ``end-to-end: ForeignKey opportunity stream emits one DiagnosticSeverity.Warning entry on success-with-caveat (ScriptWithNoCheck)`` () =
     let result =
         ForeignKeyPass.run fkCatalog fkPolicyAllowingNoCheck fkProfileWithOrphans
 
@@ -409,12 +409,12 @@ let ``end-to-end: ForeignKey opportunity stream emits one Warning entry on succe
     | ForeignKeyOutcome.EnforceConstraint (ScriptWithNoCheck _) -> ()
     | other -> Assert.Fail(sprintf "Expected EnforceConstraint(ScriptWithNoCheck _), got %A" other)
 
-    // Diagnostic side: exactly one Warning entry referencing the
+    // Diagnostic side: exactly one DiagnosticSeverity.Warning entry referencing the
     // reference's SsKey, with the success-with-caveat code prefix.
     let entries = LineageDiagnostics.entries result
     Assert.Single(entries) |> ignore
     let entry = entries.[0]
-    Assert.Equal(Warning, entry.Severity)
+    Assert.Equal(DiagnosticSeverity.Warning, entry.Severity)
     Assert.Equal("foreignKey", entry.Source)
     Assert.Equal("tightening.foreignKey.scriptWithNoCheck", entry.Code)
     Assert.Equal(Some fkRefKey, entry.SsKey)
@@ -574,7 +574,7 @@ let ``end-to-end: ForeignKey emits keep-reason and success-with-caveat entries s
     // empirical evidence the codification holds under heterogeneous
     // emission.
     Assert.All(permissiveEntries @ strictEntries, fun e ->
-        Assert.Equal(Warning, e.Severity)
+        Assert.Equal(DiagnosticSeverity.Warning, e.Severity)
         Assert.Equal("foreignKey", e.Source))
 
 [<Fact>]

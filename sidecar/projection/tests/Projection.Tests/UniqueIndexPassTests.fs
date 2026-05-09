@@ -359,7 +359,7 @@ let ``catalog passes through unchanged: structural by signature`` () =
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``V1 UniqueIndex: opportunity-stream emits a Warning entry for every DoNotEnforce decision`` () =
+let ``V1 UniqueIndex: opportunity-stream emits a DiagnosticSeverity.Warning entry for every DoNotEnforce decision`` () =
     // single-column off, composite on — produces PolicyDisabled
     // decisions for the two non-unique single-column indexes in the
     // fixture (orderSingle, countrySingle).
@@ -386,11 +386,11 @@ let ``V1 UniqueIndex: opportunity-stream emits a Warning entry for every DoNotEn
         Assert.True(e.SsKey.IsSome)
         Assert.Contains(e.SsKey.Value, decisionKeys))
 
-    // Every entry is Warning severity, sourced from the pass, with a
+    // Every entry is DiagnosticSeverity.Warning severity, sourced from the pass, with a
     // tightening.uniqueIndex.* code prefix and the intervention id in
     // metadata.
     Assert.All(entries, fun e ->
-        Assert.Equal(Warning, e.Severity)
+        Assert.Equal(DiagnosticSeverity.Warning, e.Severity)
         Assert.Equal("uniqueIndex", e.Source)
         Assert.StartsWith("tightening.uniqueIndex.", e.Code)
         Assert.True(e.Metadata.ContainsKey "interventionId")

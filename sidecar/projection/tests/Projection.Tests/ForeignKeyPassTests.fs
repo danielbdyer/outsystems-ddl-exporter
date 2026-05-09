@@ -337,7 +337,7 @@ let ``catalog passes through unchanged: structural by signature`` () =
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``V1 ForeignKey: success-with-caveat decision (ScriptWithNoCheck) emits a Warning DiagnosticEntry`` () =
+let ``V1 ForeignKey: success-with-caveat decision (ScriptWithNoCheck) emits a DiagnosticSeverity.Warning DiagnosticEntry`` () =
     // Profile shows orphans + AllowNoCheckCreation=true ⇒ V2's
     // success-with-caveat case: the constraint IS created (with the
     // NoCheck flag) and the diagnostic notes the toleration.
@@ -356,12 +356,12 @@ let ``V1 ForeignKey: success-with-caveat decision (ScriptWithNoCheck) emits a Wa
     | ForeignKeyOutcome.EnforceConstraint (ScriptWithNoCheck _) -> ()
     | other -> Assert.Fail(sprintf "Expected EnforceConstraint(ScriptWithNoCheck _), got %A" other)
 
-    // Diagnostic side: the orderRef decision produced one Warning
+    // Diagnostic side: the orderRef decision produced one DiagnosticSeverity.Warning
     // entry with the success-with-caveat code prefix.
     let entries = LineageDiagnostics.entries lineage
     let orderEntry =
         entries |> List.find (fun e -> e.SsKey = Some orderRef.SsKey)
-    Assert.Equal(Warning, orderEntry.Severity)
+    Assert.Equal(DiagnosticSeverity.Warning, orderEntry.Severity)
     Assert.Equal("foreignKey", orderEntry.Source)
     Assert.Equal("tightening.foreignKey.scriptWithNoCheck", orderEntry.Code)
     Assert.True(orderEntry.Metadata.ContainsKey "interventionId")
