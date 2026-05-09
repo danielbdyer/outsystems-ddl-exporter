@@ -22,7 +22,7 @@ module ValidationError =
         if System.String.IsNullOrWhiteSpace value then
             invalidArg
                 paramName
-                (System.String.Concat(paramName, " must be provided."))
+                (System.String.Concat(paramName, " must be provided."))  // LINT-ALLOW: terminal text-emission boundary
 
     /// Build a `ValidationError` with no metadata.
     let create (code: string) (message: string) : ValidationError =

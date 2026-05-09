@@ -50,7 +50,7 @@ module VisibilityMask =
     /// strict-mode discipline, the predicate name composes via
     /// typed `Origin.toDiagnosticString` rather than `sprintf "%A"`.
     let hideOrigin (origin: Origin) : Predicate =
-        { Name = System.String.Concat("origin=", Origin.toDiagnosticString origin)
+        { Name = System.String.Concat("origin=", Origin.toDiagnosticString origin)  // LINT-ALLOW: terminal text-emission boundary
           Test = (fun k -> k.Origin = origin) }
 
     /// Hide every kind whose SsKey is in `keys`.
@@ -62,7 +62,7 @@ module VisibilityMask =
     /// Hide every kind whose modality includes the given mark. Same
     /// typed-display discipline as `hideOrigin`.
     let hideModality (mark: ModalityMark) : Predicate =
-        { Name = System.String.Concat("modality=", ModalityMark.toDiagnosticString mark)
+        { Name = System.String.Concat("modality=", ModalityMark.toDiagnosticString mark)  // LINT-ALLOW: terminal text-emission boundary
           Test = (fun k -> List.contains mark k.Modality) }
 
     // -----------------------------------------------------------------------

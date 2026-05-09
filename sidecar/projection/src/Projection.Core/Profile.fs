@@ -94,17 +94,17 @@ module ColumnProfile =
             Result.failureOf
                 (ValidationError.create
                     "columnProfile.rowCount.negative"
-                    (System.String.Concat("RowCount must be ≥ 0; got ", intInv rowCount, ".")))
+                    (System.String.Concat("RowCount must be ≥ 0; got ", intInv rowCount, ".")))  // LINT-ALLOW: terminal text-emission boundary
         elif nullCount < 0L then
             Result.failureOf
                 (ValidationError.create
                     "columnProfile.nullCount.negative"
-                    (System.String.Concat("NullCount must be ≥ 0; got ", intInv nullCount, ".")))
+                    (System.String.Concat("NullCount must be ≥ 0; got ", intInv nullCount, ".")))  // LINT-ALLOW: terminal text-emission boundary
         elif nullCount > rowCount then
             Result.failureOf
                 (ValidationError.create
                     "columnProfile.nullCount.exceedsRows"
-                    (System.String.Concat(
+                    (System.String.Concat(  // LINT-ALLOW: terminal text-emission boundary
                         "NullCount (",
                         intInv nullCount,
                         ") cannot exceed RowCount (",

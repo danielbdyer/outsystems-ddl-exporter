@@ -6,6 +6,77 @@ theorem it serves. Future readers — including future agents and Danny —
 should be able to reconstruct context from this log without spelunking
 commit history.
 
+---
+
+## ⭐ Supreme operating discipline (read first; supersedes all other intents per session)
+
+**Per the user's chapter-3.5 sidebar (2026-05-09)** — the following
+disciplines are the *ultimate goal* and **supersede most other intents
+for each and every session that follows**. Every agent confirms intent
+against these before adopting any pattern.
+
+1. **Data-structure-oriented over string-parsing.** Carry typed values
+   through the pipeline. Strings emerge ONLY at the absolute terminal
+   boundary (BCL writers — `Utf8JsonWriter`, `XmlWriter`,
+   `Sql160ScriptGenerator` — or final text output). No intermediate
+   string-construction; no string-parsing-back-into-data.
+2. **Avoid string concatenation aggressively.** `sprintf`, `+`,
+   `String.Format`, AND `System.String.Concat` are all flagged by the
+   lint guardrail. Even the V2-internal `StructuredString` builder is
+   itself a stopgap; agents must confirm that their intent is NOT
+   better served by a built-in BCL method or typed data structure
+   before reaching for it.
+3. **Built-in obligation.** When a BCL or vendor SDK emits the
+   structure being emitted, agents are *obliged* to use it
+   (`Sql160ScriptGenerator` for T-SQL, `XmlWriter` for XML,
+   `Utf8JsonWriter` / `JsonNode` for JSON, `UuidV5` for RFC 4122
+   GUIDs, `DataContractSerializer` / `JsonSerializer` for typed
+   round-trips, etc.).
+4. **Promised land of FP.** ≥95% of functions are pure; the remaining
+   ≤5% (mutation-justified algorithms, BCL-mandated mutable surfaces,
+   reified non-determinism boundaries) is *isolated and tested
+   exhaustively*. Mutation reified at the file level via
+   `LINT-ALLOW-FILE-MUTATION`; "really test the heck out of" applies
+   structurally — property tests + parse-roundtrip + byte-determinism.
+5. **Coding-style commitments (preserved across all sessions):**
+   - **Deep DDD** — bounded contexts, value objects with smart
+     constructors, aggregates with referential-integrity invariants,
+     ubiquitous language reified in types.
+   - **Point-free composition** — pipeline-style (`|>`, `>>`) over
+     parameter-named where the shape reads as well or better.
+   - **Hexagonal architecture** — Core ⟵ Adapters/Targets ⟵
+     Pipeline ⟵ CLI; one-way dependency direction; lint-enforced
+     per Rules 20/21/22.
+   - **Hardcore FP** — closed DUs, smart constructors with
+     `Result<'a>`, pattern-match exhaustiveness, no `null`,
+     immutability by default, monadic composition over imperative
+     accumulation.
+   - **OOP where appropriate** — at adapters/boundary code where BCL
+     surfaces force it (e.g., `SqlBulkCopy`, `Utf8JsonWriter`'s mutable
+     options); reified as `LINT-ALLOW-FILE-MUTATION`.
+   - **Deep separation of concerns** — Core has no I/O / no time /
+     no Policy in Π / no concurrency primitives.
+   - **Verifiable + observable to the nth degree** — property tests
+     (parse-roundtrip, determinism, exhaustiveness, idempotence,
+     permutation-invariance), structured lineage trails, structured
+     diagnostic emission, bench-driven optimization with three-
+     candidate / 2-refuted / 1-confirmed shape.
+
+The lint guardrail (`scripts/lint-discipline.sh`) is the structural
+enforcement of these disciplines: **default to explicit
+acknowledgement of deviance**. Every legitimate exception carries a
+`LINT-ALLOW` marker (per-line) or `LINT-ALLOW-FILE` /
+`LINT-ALLOW-FILE-MUTATION` marker (top-of-file) with rationale.
+Bypassing via `git commit --no-verify` is the explicit-deviance
+escape hatch; CI catches bypasses on PR.
+
+Agents starting a new session: read this section first. Confirm intent
+against each pillar before adopting any new pattern. Where in doubt,
+defer to the discipline; where the discipline forbids what's
+ergonomically tempting, write the DECISIONS amendment first.
+
+---
+
 Format:
 
     ## YYYY-MM-DD — short title

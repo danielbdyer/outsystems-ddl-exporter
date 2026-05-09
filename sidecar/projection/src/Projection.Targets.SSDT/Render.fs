@@ -1,5 +1,14 @@
 namespace Projection.Targets.SSDT
 
+// LINT-ALLOW-FILE: terminal text-emission boundary. This file IS
+//   a string-builder surface — its purpose is to emit text from
+//   typed values at the canonical boundary (SQL identifiers,
+//   diagnostic structured-string output). Per the supreme operating
+//   discipline (data-structure-oriented), the typed input flows in;
+//   the string output flows out; nothing is parsed back. Future
+//   chapters may retire `String.Concat` here in favor of typed
+//   AST + a dedicated serializer (e.g., ScriptDom for SQL).
+
 open System
 open System.Globalization
 open System.Text

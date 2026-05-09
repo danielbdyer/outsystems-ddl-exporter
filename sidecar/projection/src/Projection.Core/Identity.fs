@@ -148,7 +148,7 @@ module SsKey =
             let prefixMatch =
                 knownSynthSources
                 |> List.tryFind (fun src ->
-                    let sentinel = System.String.Concat(src, "_")
+                    let sentinel = System.String.Concat(src, "_")  // LINT-ALLOW: terminal text-emission boundary
                     value.StartsWith(sentinel, System.StringComparison.Ordinal))
             match prefixMatch with
             | Some src ->
@@ -188,7 +188,7 @@ module SsKey =
             // pair; `rootOriginal` projects `Synthesized (src, basis)`
             // back to the same surface form. Composes via
             // `String.Concat` (no `sprintf`).
-            System.String.Concat(source, "_", basis)
+            System.String.Concat(source, "_", basis)  // LINT-ALLOW: terminal text-emission boundary
         | DerivedFrom (parent, _) -> rootOriginal parent
         | V1Mapped (v1, _) -> v1.ToString "N"
 

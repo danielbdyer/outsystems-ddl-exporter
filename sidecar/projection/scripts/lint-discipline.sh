@@ -284,6 +284,25 @@ scan "reflection-banned" "$SRC" 'open System\.Reflection'
 scan "obj-typed" "$SRC" ':[[:space:]]*obj[[:space:]]*[)\->]|:[[:space:]]*obj[[:space:]]*$'
 
 # ---------------------------------------------------------------------------
+# Rule 18b — `System.String.Concat` banned anywhere in production
+# without explicit `LINT-ALLOW`. Per the supreme operating discipline
+# (`DECISIONS 2026-05-09 — Operating discipline supremacy`):
+# `System.String.Concat` (any overload) is a string-concatenation
+# primitive. Even though it's a BCL function with no format-string
+# semantics, its purpose is *string concatenation* — which is
+# brittle and at odds with the data-structure-oriented epistemic
+# stance. New code must use a typed structured carrier (typed DU
+# field, typed record, typed AST + canonical renderer) and let the
+# string emerge ONLY at the absolute terminal boundary (e.g.,
+# `XmlWriter` / `Utf8JsonWriter` / `Sql160ScriptGenerator` /
+# `XmlWriter.WriteString` etc.). Existing `String.Concat` sites
+# carry `// LINT-ALLOW: terminal text-emission boundary` markers
+# documenting the boundary that justifies the use.
+# ---------------------------------------------------------------------------
+
+scan "string-concat" "$SRC" 'System\.String\.Concat\s*\(|^[[:space:]]+String\.Concat\s*\('
+
+# ---------------------------------------------------------------------------
 # Rule 19 — `xs @ [x]` Big-O anti-pattern banned in production.
 # `List.append xs [x]` is O(N) per call; iterated O(N²). Idiom is
 # `x :: xs` then `List.rev` at the end, OR `Result.aggregate` (V2's

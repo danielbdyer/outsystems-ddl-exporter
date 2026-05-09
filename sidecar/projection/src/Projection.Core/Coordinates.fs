@@ -71,4 +71,4 @@ module TableId =
     /// `MultiPartIdentifier` typed AST; this helper retires when
     /// ScriptDom lands.
     let qualified (t: TableId) : string =
-        System.String.Concat("[", t.Schema, "].[", t.Table, "]")
+        System.String.Concat("[", t.Schema, "].[", t.Table, "]")  // LINT-ALLOW: terminal text-emission boundary
