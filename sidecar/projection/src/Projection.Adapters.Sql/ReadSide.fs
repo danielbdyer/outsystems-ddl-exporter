@@ -95,6 +95,24 @@ module ReadSide =
             "READSIDE_ATTR"
             (sprintf "%s.%s.%s" schema table column)
 
+    /// Per-column metadata row read from INFORMATION_SCHEMA.COLUMNS.
+    /// Carries every axis V2's IR cares about (post-session-32):
+    /// type name, nullability, length, precision, scale.
+    type private ColumnRow =
+        {
+            Schema : string
+            Table : string
+            Column : string
+            DataType : string
+            Nullable : bool
+            /// CHARACTER_MAXIMUM_LENGTH; -1 maps to None (MAX).
+            Length : int option
+            /// NUMERIC_PRECISION; only meaningful for decimal types.
+            Precision : int option
+            /// NUMERIC_SCALE; only meaningful for decimal types.
+            Scale : int option
+        }
+
     /// Read the basic per-column metadata for every user table in
     /// the database. Excludes `sys` and `INFORMATION_SCHEMA` rows.
     /// Single round-trip; group client-side by `(schema, table)`.
@@ -106,31 +124,86 @@ module ReadSide =
     /// signal: per-query timings made the wrong-direction
     /// optimization visible immediately. Documented here so future
     /// agents don't re-attempt the same swap without measuring.
+    ///
+    /// Per session-32 — extended to read CHARACTER_MAXIMUM_LENGTH,
+    /// NUMERIC_PRECISION, NUMERIC_SCALE so the V2 IR carries
+    /// byte-faithful type declarations through the round-trip.
     let private readColumnRows (cnn: SqlConnection)
-        : Task<list<string * string * string * string * bool>> =
+        : Task<list<ColumnRow>> =
         task {
             use _ = Bench.scope "readside.readColumnRows"
             use cmd = cnn.CreateCommand()
             cmd.CommandText <-
-                "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE \
+                "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE, \
+                        CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE \
                  FROM INFORMATION_SCHEMA.COLUMNS \
                  WHERE TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA') \
                  ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION"
             use! reader = cmd.ExecuteReaderAsync()
-            let rows = ResizeArray<string * string * string * string * bool>()
+            let rows = ResizeArray<ColumnRow>()
+            let optInt (idx: int) : int option =
+                if reader.IsDBNull idx then
+                    None
+                else
+                    let raw = reader.GetValue idx
+                    match raw with
+                    | :? int32 as i32 -> Some (int i32)
+                    | :? int16 as i16 -> Some (int i16)
+                    | :? int64 as i64 -> Some (int i64)
+                    | :? byte as b -> Some (int b)
+                    | _ -> None
             let mutable hasMore = true
             while hasMore do
                 let! more = reader.ReadAsync()
                 if more then
-                    let schema = reader.GetString 0
-                    let table = reader.GetString 1
-                    let column = reader.GetString 2
-                    let dataType = reader.GetString 3
-                    let nullable = (reader.GetString 4) = "YES"
-                    rows.Add(schema, table, column, dataType, nullable)
+                    let lengthRaw = optInt 5
+                    let length =
+                        match lengthRaw with
+                        | Some -1 -> None  // SQL Server's MAX marker
+                        | other -> other
+                    rows.Add(
+                        {
+                            Schema = reader.GetString 0
+                            Table = reader.GetString 1
+                            Column = reader.GetString 2
+                            DataType = reader.GetString 3
+                            Nullable = (reader.GetString 4) = "YES"
+                            Length = length
+                            Precision = optInt 6
+                            Scale = optInt 7
+                        })
                 else
                     hasMore <- false
             return List.ofSeq rows
+        }
+
+    /// Read the set of `(schema, table, column)` identifying IDENTITY
+    /// columns. Single round-trip; small result set (typically one
+    /// row per table). Per session-32.
+    let private readIdentityColumns (cnn: SqlConnection)
+        : Task<Set<string * string * string>> =
+        task {
+            use _ = Bench.scope "readside.readIdentityColumns"
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT SCHEMA_NAME(t.schema_id), t.name, c.name \
+                 FROM sys.columns c \
+                 JOIN sys.tables t ON t.object_id = c.object_id \
+                 WHERE c.is_identity = 1 \
+                   AND t.is_ms_shipped = 0"
+            use! reader = cmd.ExecuteReaderAsync()
+            let result = System.Collections.Generic.HashSet<string * string * string>()
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then
+                    result.Add(
+                        reader.GetString 0,
+                        reader.GetString 1,
+                        reader.GetString 2) |> ignore
+                else
+                    hasMore <- false
+            return Set.ofSeq result
         }
 
     /// Read the set of `(schema, table, column)` tuples that are
@@ -226,45 +299,64 @@ module ReadSide =
         }
 
     let private buildAttribute
-        (schema: string)
-        (table: string)
-        (column: string)
-        (dataType: string)
-        (nullable: bool)
+        (row: ColumnRow)
         (primaryKeySet: Set<string * string * string>)
+        (identitySet: Set<string * string * string>)
         : Result<Attribute> =
-        let result = mapSqlType dataType
+        let result = mapSqlType row.DataType
         match result with
         | Failure errors -> Result.failure errors
         | Success ptype ->
-            match attributeSsKey schema table column with
+            match attributeSsKey row.Schema row.Table row.Column with
             | Failure errors -> Result.failure errors
             | Success attrKey ->
-                match Name.create column with
+                match Name.create row.Column with
                 | Failure errors -> Result.failure errors
                 | Success attrName ->
+                    let coord = (row.Schema, row.Table, row.Column)
                     Result.success
                         {
                             SsKey = attrKey
                             Name = attrName
                             Type = ptype
-                            Column = { ColumnName = column; IsNullable = nullable }
-                            IsPrimaryKey = primaryKeySet.Contains(schema, table, column)
-                            IsMandatory = not nullable
+                            Column =
+                                {
+                                    ColumnName = row.Column
+                                    IsNullable = row.Nullable
+                                }
+                            IsPrimaryKey = primaryKeySet.Contains coord
+                            IsMandatory = not row.Nullable
+                            // Length applies only to text / binary
+                            // types; for non-applicable types
+                            // INFORMATION_SCHEMA returns NULL, which
+                            // we already mapped to None.
+                            Length = row.Length
+                            // Precision / Scale apply only to
+                            // decimal types; same treatment.
+                            Precision =
+                                match ptype with
+                                | Decimal -> row.Precision
+                                | _ -> None
+                            Scale =
+                                match ptype with
+                                | Decimal -> row.Scale
+                                | _ -> None
+                            IsIdentity = identitySet.Contains coord
                         }
 
     let private buildKind
         (schema: string)
         (table: string)
-        (columnRows: list<string * string * string * string * bool>)
+        (columnRows: list<ColumnRow>)
         (primaryKeySet: Set<string * string * string>)
+        (identitySet: Set<string * string * string>)
         : Result<Kind> =
         use _ = Bench.scope "readside.buildKind"
         // collect all attributes for this (schema, table)
         let attrResults =
             columnRows
-            |> Bench.iterMap "readside.buildAttribute" (fun (_, _, col, dt, nl) ->
-                buildAttribute schema table col dt nl primaryKeySet)
+            |> Bench.iterMap "readside.buildAttribute" (fun row ->
+                buildAttribute row primaryKeySet identitySet)
         let aggregated =
             attrResults
             |> List.fold
@@ -380,12 +472,13 @@ module ReadSide =
             try
                 let! columnRows = readColumnRows cnn
                 let! primaryKeySet = readPrimaryKeys cnn
+                let! identitySet = readIdentityColumns cnn
                 let! fkRows = readForeignKeys cnn
                 let kindResults =
                     columnRows
-                    |> List.groupBy (fun (s, t, _, _, _) -> s, t)
+                    |> List.groupBy (fun row -> row.Schema, row.Table)
                     |> Bench.iterMap "readside.kindGroup" (fun ((schema, table), rows) ->
-                        buildKind schema table rows primaryKeySet)
+                        buildKind schema table rows primaryKeySet identitySet)
                 let kindsAggregated =
                     kindResults
                     |> List.fold

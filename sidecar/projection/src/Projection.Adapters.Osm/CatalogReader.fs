@@ -277,6 +277,21 @@ module CatalogReader =
     // Translation — V1 attribute → V2 Attribute.
     // -----------------------------------------------------------------------
 
+    /// Optional non-negative-integer property reader. Returns
+    /// `None` when the property is missing OR explicitly null;
+    /// `Some n` when the property is present and parseable.
+    /// Per session-32: V1's `osm_model.json` carries length /
+    /// precision / scale as nullable JSON numbers (or omitted
+    /// when not applicable to the type), so the adapter must
+    /// gracefully absorb absence.
+    let private getOptionalInt (element: JsonElement) (name: string) : int option =
+        match element.TryGetProperty(name) with
+        | true, value when value.ValueKind = JsonValueKind.Number ->
+            match value.TryGetInt32() with
+            | true, n -> Some n
+            | _ -> None
+        | _ -> None
+
     let private parseAttribute
         (moduleName: string) (entityName: string) (attrJson: JsonElement)
         : Result<Attribute> =
@@ -285,12 +300,29 @@ module CatalogReader =
         let dataTypeStr    = getString  attrJson "dataType"
         let isMandatory    = getBool    attrJson "isMandatory"
         let isIdentifier   = getBool    attrJson "isIdentifier"
+        let isAutoNumber   = getBool    attrJson "isAutoNumber"
         match nameResult, physicalResult, dataTypeStr, isMandatory, isIdentifier with
         | Success rawName, Success physicalName, Success rawDataType,
           Success mandatory, Success identifier ->
             let nameDU       = Name.create rawName
             let key          = attributeSsKey moduleName entityName rawName
             let primitive    = parsePrimitiveType rawDataType
+            // Per session-32 — V1 surfaces length / precision /
+            // scale on attribute records when applicable. The
+            // adapter pulls them through to the V2 IR so the
+            // canary's round-trip sees byte-faithful column
+            // declarations (NVARCHAR(N) instead of NVARCHAR(MAX),
+            // DECIMAL(P, S) instead of DECIMAL(18, 4) default).
+            let lengthOpt    = getOptionalInt attrJson "length"
+            let precisionOpt = getOptionalInt attrJson "precision"
+            let scaleOpt     = getOptionalInt attrJson "scale"
+            // Identity = isAutoNumber per V1 convention (only
+            // primary-key columns marked isAutoNumber=true map to
+            // SQL Server IDENTITY).
+            let isIdentity =
+                match isAutoNumber with
+                | Success true -> true
+                | _ -> false
             match nameDU, key, primitive with
             | Success n, Success k, Success p ->
                 Result.success
@@ -299,7 +331,11 @@ module CatalogReader =
                       Type         = p
                       Column       = { ColumnName = physicalName; IsNullable = not mandatory }
                       IsPrimaryKey = identifier
-                      IsMandatory  = mandatory }
+                      IsMandatory  = mandatory
+                      Length       = lengthOpt
+                      Precision    = precisionOpt
+                      Scale        = scaleOpt
+                      IsIdentity   = isIdentity }
             | _ ->
                 Result.failureOf (
                     adapterError

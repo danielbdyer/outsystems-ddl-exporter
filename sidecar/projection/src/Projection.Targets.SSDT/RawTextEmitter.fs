@@ -41,6 +41,27 @@ module RawTextEmitter =
         | Binary   -> "VARBINARY(MAX)"
         | Guid     -> "UNIQUEIDENTIFIER"
 
+    /// Per session-32 — render a column's SQL type with length /
+    /// precision / scale honored when the IR carries them. Falls
+    /// back to `defaultSqlType` for types where length / precision
+    /// don't apply, or when the IR fields are `None`.
+    let private columnSqlType (a: Attribute) : string =
+        match a.Type with
+        | Text ->
+            match a.Length with
+            | Some n when n > 0 -> sprintf "NVARCHAR(%d)" n
+            | _ -> "NVARCHAR(MAX)"
+        | Binary ->
+            match a.Length with
+            | Some n when n > 0 -> sprintf "VARBINARY(%d)" n
+            | _ -> "VARBINARY(MAX)"
+        | Decimal ->
+            match a.Precision, a.Scale with
+            | Some p, Some s -> sprintf "DECIMAL(%d, %d)" p s
+            | Some p, None -> sprintf "DECIMAL(%d, 0)" p
+            | _ -> "DECIMAL(18, 4)"
+        | other -> defaultSqlType other
+
     let private renderAction (a: ReferenceAction) : string =
         match a with
         | NoAction -> "NO ACTION"
@@ -143,12 +164,14 @@ module RawTextEmitter =
         k.Attributes
         |> Bench.iteriDo "emit.rawText.attribute" (fun i a ->
             let name = quote a.Column.ColumnName
-            let typ = defaultSqlType a.Type
+            let typ = columnSqlType a
+            let identityClause = if a.IsIdentity then " IDENTITY(1,1)" else ""
             let nullness = if a.Column.IsNullable then "NULL" else "NOT NULL"
             let needsComma = i < lastColumnIdx || hasPkConstraint || hasFkClauses
             let sep = if needsComma then "," else ""
             let pkTag = if a.IsPrimaryKey then " PK" else ""
-            sb.Append("    ").Append(name).Append(' ').Append(typ).Append(' ').Append(nullness)
+            sb.Append("    ").Append(name).Append(' ').Append(typ)
+                .Append(identityClause).Append(' ').Append(nullness)
                 .Append(sep).Append("  -- ").Append(Name.value a.Name).Append(" (").Append(rootKey a.SsKey).Append(')')
                 .Append(pkTag).AppendLine() |> ignore)
         if hasPkConstraint then

@@ -42,6 +42,19 @@ type PhysicalColumn =
         Type : PrimitiveType
         Nullable : bool
         IsPrimaryKey : bool
+        /// NVARCHAR / VARCHAR / VARBINARY length. None for MAX or
+        /// non-applicable types. Per session-32 — the canary's
+        /// round-trip property catches NVARCHAR(N) → NVARCHAR(M)
+        /// drift when N ≠ M.
+        Length : int option
+        /// DECIMAL precision. None for non-decimal types. Catches
+        /// DECIMAL(P, S) → DECIMAL(P', S') drift.
+        Precision : int option
+        /// DECIMAL scale. Same.
+        Scale : int option
+        /// IDENTITY column property. Catches drift in identity-ness
+        /// (source had IDENTITY, target dropped it, or vice versa).
+        IsIdentity : bool
     }
 
 /// A foreign-key relationship in physical-schema coordinates. Per
@@ -97,6 +110,10 @@ module PhysicalSchema =
                 Type = a.Type
                 Nullable = a.Column.IsNullable
                 IsPrimaryKey = a.IsPrimaryKey
+                Length = a.Length
+                Precision = a.Precision
+                Scale = a.Scale
+                IsIdentity = a.IsIdentity
             })
 
     let private toPhysicalForeignKeys (catalog: Catalog) (k: Kind) : PhysicalForeignKey list =
@@ -178,14 +195,26 @@ module PhysicalSchema =
     /// columns / FKs mismatched, not just "they differ."
     let renderDiff (d: PhysicalSchemaDiff) : string =
         let renderColumn (c: PhysicalColumn) : string =
+            let len =
+                match c.Length with
+                | Some n -> sprintf "(%d)" n
+                | None -> ""
+            let prec =
+                match c.Precision, c.Scale with
+                | Some p, Some s -> sprintf "(%d,%d)" p s
+                | Some p, None -> sprintf "(%d)" p
+                | _ -> ""
             sprintf
-                "  [%s].[%s].[%s] %A nullable=%b pk=%b"
+                "  [%s].[%s].[%s] %A%s%s nullable=%b pk=%b identity=%b"
                 c.Schema
                 c.Table
                 c.Column
                 c.Type
+                len
+                prec
                 c.Nullable
                 c.IsPrimaryKey
+                c.IsIdentity
         let renderFk (f: PhysicalForeignKey) : string =
             sprintf
                 "  [%s].[%s].[%s] -> [%s].[%s].[%s]"

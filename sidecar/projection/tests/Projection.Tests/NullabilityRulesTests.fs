@@ -95,7 +95,7 @@ let ``structural: a physically-nullable non-PK attribute without overrides yield
           Name         = Name.create "Optional" |> Result.value
           Type         = Text
           Column       = { ColumnName = "OPTIONAL"; IsNullable = true }
-          IsPrimaryKey = false; IsMandatory = false }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
     let decision = decideOnFixture nullable (mkConfig 0.0m false [])
     Assert.Equal(NullabilityOutcome.KeepNullable NoTighteningSignal, decision.Outcome)
 
@@ -133,7 +133,7 @@ let ``enforces: true for EnforceNotNull, false for KeepNullable`` () =
           Name         = Name.create "T" |> Result.value
           Type         = Text
           Column       = { ColumnName = "T"; IsNullable = true }
-          IsPrimaryKey = false; IsMandatory = false }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
     let cfg = mkConfig 0.0m false []
     Assert.True (NullabilityRules.enforces (decideOnFixture pkAttr cfg))
     Assert.False(NullabilityRules.enforces (decideOnFixture nullable cfg))
@@ -231,7 +231,7 @@ let private mkMandatoryAttr (key: string) (isNullable: bool) : Attribute =
       Type         = Text
       Column       = { ColumnName = "M"; IsNullable = isNullable }
       IsPrimaryKey = false
-      IsMandatory  = true }
+      IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
 
 let private mkColProfile (attrKey: SsKey) (rowCount: int64) (nullCount: int64) : ColumnProfile =
     let probe =

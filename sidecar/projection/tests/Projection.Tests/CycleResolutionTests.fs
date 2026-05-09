@@ -21,7 +21,7 @@ let private mkAttr (key: string) (nullable: bool) : Attribute =
       Name         = Name.create "Fk" |> Result.value
       Type         = Integer
       Column       = { ColumnName = "FK"; IsNullable = nullable }
-      IsPrimaryKey = false; IsMandatory = false }
+      IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
 
 let private mkRef (sourceAttrKey: string) (action: ReferenceAction) : Reference =
     { SsKey           = SsKey.original "OS_REF_x" |> Result.value

@@ -123,6 +123,28 @@ type Attribute = {
     Column       : ColumnRealization
     IsPrimaryKey : bool
     IsMandatory  : bool
+    /// NVARCHAR / VARCHAR / CHAR / NCHAR / VARBINARY / BINARY:
+    /// the declared length. `None` for MAX (open-ended) or for
+    /// types where length is not applicable (Integer / Boolean
+    /// / DateTime / etc.). Per session-32 — ReadSide populates
+    /// from `INFORMATION_SCHEMA.COLUMNS.CHARACTER_MAXIMUM_LENGTH`;
+    /// `-1` from SQL Server (the MAX marker) maps to `None`.
+    Length       : int option
+    /// DECIMAL / NUMERIC: the declared precision. `None` for
+    /// non-decimal types. ReadSide populates from
+    /// `INFORMATION_SCHEMA.COLUMNS.NUMERIC_PRECISION`.
+    Precision    : int option
+    /// DECIMAL / NUMERIC: the declared scale. `None` for non-
+    /// decimal types. ReadSide populates from
+    /// `INFORMATION_SCHEMA.COLUMNS.NUMERIC_SCALE`.
+    Scale        : int option
+    /// IDENTITY column property (`INT NOT NULL IDENTITY(1,1)` →
+    /// `IsIdentity = true`). Per session-32 — V2 IR carries the
+    /// boolean; seed and increment values are deferred (always
+    /// emit `IDENTITY(1,1)` when set, which matches the
+    /// OutSystems convention). ReadSide reads from
+    /// `sys.columns.is_identity` (1 → true).
+    IsIdentity   : bool
 }
 
 

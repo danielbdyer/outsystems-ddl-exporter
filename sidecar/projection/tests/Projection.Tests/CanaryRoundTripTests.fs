@@ -77,6 +77,10 @@ let private programmaticUserCatalog : Catalog =
             Column = { ColumnName = column.ToUpperInvariant(); IsNullable = nullable }
             IsPrimaryKey = isPk
             IsMandatory = not nullable
+            Length = None
+            Precision = None
+            Scale = None
+            IsIdentity = false
         }
     let userKind : Kind =
         {

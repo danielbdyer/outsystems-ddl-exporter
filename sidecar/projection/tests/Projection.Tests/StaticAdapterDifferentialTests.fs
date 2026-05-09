@@ -63,17 +63,17 @@ let private cityKind : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
           { SsKey        = cityNameKey
             Name         = mkName "Name"
             Type         = Text
             Column       = { ColumnName = "NAME"; IsNullable = false }
-            IsPrimaryKey = false; IsMandatory = false }
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
           { SsKey        = cityActiveKey
             Name         = mkName "IsActive"
             Type         = Boolean
             Column       = { ColumnName = "ISACTIVE"; IsNullable = false }
-            IsPrimaryKey = false; IsMandatory = false }
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
       ]
       References = []; Indexes = [] }
 
@@ -216,7 +216,7 @@ let ``adapter: kind without IsPrimaryKey returns Failure when populated`` () =
         { cityKind with
             Attributes =
                 cityKind.Attributes
-                |> List.map (fun a -> { a with IsPrimaryKey = false; IsMandatory = false }) }
+                |> List.map (fun a -> { a with IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }) }
     let pkLessCatalog =
         { cityCatalog with
             Modules =
