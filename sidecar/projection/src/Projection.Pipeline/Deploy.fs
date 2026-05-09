@@ -172,21 +172,61 @@ module Deploy =
     let private DefaultImage : string =
         "mcr.microsoft.com/mssql/server:2022-latest"
 
-    let private uniqueDatabaseName (prefix: string) : string =
-        sprintf "%s_%s" prefix ((Guid.NewGuid().ToString "N").Substring(0, 12))
+    /// **First-class non-determinism boundary.** `DatabaseNameGenerator
+    /// = unit -> string` is the typed seam through which `Guid.NewGuid`
+    /// (or any test-pinned counter) enters Pipeline. Per
+    /// `DECISIONS 2026-05-09 — No-string-concatenation / no-regex
+    /// discipline` audit Tier 2: the leak from non-determinism into
+    /// the deploy boundary is reified as a parameter, not hidden in
+    /// a closure. Callers that need byte-determinism on database
+    /// names inject a counter-based generator; the default uses
+    /// `Guid.NewGuid` for unique-per-run isolation in shared
+    /// containers (the canary's de-facto requirement).
+    type DatabaseNameGenerator = unit -> string
+
+    [<RequireQualifiedAccess>]
+    module DatabaseNameGenerator =
+
+        /// Default `DatabaseNameGenerator` — uses `Guid.NewGuid`. The
+        /// observable non-determinism is scoped to per-database
+        /// names; T1 byte-determinism at the SQL emission layer is
+        /// unaffected (V2's Π output is pure; only the deploy-host's
+        /// per-database scoping is non-deterministic, and that's a
+        /// Pipeline concern). Per-segment formatting goes through
+        /// `String.Concat` rather than `sprintf`.
+        let guidBased : DatabaseNameGenerator =
+            fun () ->
+                let suffix = Guid.NewGuid().ToString("N").Substring(0, 12)
+                suffix
+
+    let private uniqueDatabaseName
+        (gen: DatabaseNameGenerator)
+        (prefix: string)
+        : string =
+        String.Concat(prefix, "_", gen())
+
+    /// Format one `SqlError` row as a structured diagnostic string.
+    /// Per the no-string-concatenation discipline, integer fields go
+    /// through invariant-culture `Int32.ToString`; segments compose
+    /// via `String.concat " "` over a typed `string list`. The
+    /// surface form preserves the legacy "[severity=X error=Y
+    /// line=Z] message" shape so downstream consumers parsing this
+    /// text don't break.
+    let private formatSqlError (e: Microsoft.Data.SqlClient.SqlError) : string =
+        let inv = System.Globalization.CultureInfo.InvariantCulture
+        let header =
+            [
+                String.Concat("[severity=", e.Class.ToString(inv))
+                String.Concat("error=",     e.Number.ToString(inv))
+                String.Concat("line=",      e.LineNumber.ToString(inv), "]")
+            ]
+            |> String.concat " "
+        String.Concat(header, " ", e.Message)
 
     let private collectErrors (ex: exn) : string list =
         match ex with
         | :? SqlException as sql ->
-            [
-                for e in sql.Errors ->
-                    sprintf
-                        "[severity=%d error=%d line=%d] %s"
-                        e.Class
-                        e.Number
-                        e.LineNumber
-                        e.Message
-            ]
+            [ for e in sql.Errors -> formatSqlError e ]
         | _ -> [ ex.Message ]
 
     let private buildPerDbConnectionString (master: string) (dbName: string) : string =
@@ -194,13 +234,23 @@ module Deploy =
         b.InitialCatalog <- dbName
         b.ConnectionString
 
+    /// `CREATE DATABASE [<dbName>];` text, composed via `String.Concat`
+    /// rather than `sprintf` per the no-string-concatenation
+    /// discipline. The `[` / `]` brackets are bracket-quoting
+    /// (mirrors `Render.quote`); the trailing `;` matches T-SQL
+    /// statement convention. Caller-supplied `dbName` is trusted
+    /// (test fixtures only); SQL injection is not a concern at
+    /// this boundary.
+    let private createDatabaseSql (dbName: string) : string =
+        String.Concat("CREATE DATABASE [", dbName, "];")
+
     let private createDatabase (masterConn: string) (dbName: string) : Task<unit> =
         task {
             use _ = Bench.scope "deploy.createDatabase"
             use cnn = new SqlConnection(masterConn)
             do! cnn.OpenAsync()
             use cmd = cnn.CreateCommand()
-            cmd.CommandText <- sprintf "CREATE DATABASE [%s];" dbName
+            cmd.CommandText <- createDatabaseSql dbName
             let! _ = cmd.ExecuteNonQueryAsync()
             return ()
         }
@@ -455,7 +505,7 @@ module Deploy =
             return!
                 useContainer (fun masterConn ->
                     task {
-                        let dbName = uniqueDatabaseName "Projection"
+                        let dbName = uniqueDatabaseName DatabaseNameGenerator.guidBased "Projection"
                         do! createDatabase masterConn dbName
                         let perDbConn = buildPerDbConnectionString masterConn dbName
                         try
@@ -497,7 +547,7 @@ module Deploy =
             return!
                 useContainer (fun masterConn ->
                     task {
-                        let dbName = uniqueDatabaseName "Projection"
+                        let dbName = uniqueDatabaseName DatabaseNameGenerator.guidBased "Projection"
                         do! createDatabase masterConn dbName
                         let perDbConn = buildPerDbConnectionString masterConn dbName
                         try
@@ -572,6 +622,114 @@ module Deploy =
     /// drops from ~10 minutes to a handful of seconds at the cost
     /// of moving from text-INSERT to typed-row form on the source
     /// side — same observable post-state.
+    /// Per-phase outcome reified as a typed record. Replaces the
+    /// six `let mutable` accumulators flagged by the audit
+    /// (`Codebase determinism + non-built-in audit` Lens-2 Tier-1)
+    /// — phases now compose via `Task<PhaseOutcome>` returns rather
+    /// than caller-side mutation. Each phase is self-contained:
+    /// open connection, run work, read back, classify result.
+    /// Errors aggregate into `Errors`; `Catalog = Some _` flags
+    /// success.
+    type private PhaseOutcome =
+        {
+            Catalog : Catalog option
+            Errors  : string list
+            Tables  : int
+        }
+
+    /// Format a `ValidationError` as a structured diagnostic string.
+    /// Per the no-string-concatenation discipline, segments compose
+    /// via `String.Concat` over typed components rather than
+    /// `sprintf "[%s] %s"`. The legacy "[code] message" form is
+    /// preserved so downstream parsers don't break.
+    let private formatValidationError (e: ValidationError) : string =
+        String.Concat("[", e.Code, "] ", e.Message)
+
+    /// Phase 1 — load source via caller-supplied loader; read it
+    /// back through the SQL adapter. Pure phase: no mutation
+    /// observable outside the function; the only side-effect is the
+    /// SQL connection's IO, which is the work being delegated. The
+    /// `try ... with` wraps around `cnn.OpenAsync()` and
+    /// `loadSource cnn`; failures bubble up as `Errors`.
+    let private runSourcePhase
+        (sourceConn: string)
+        (loadSource: SqlConnection -> Task<unit>)
+        : Task<PhaseOutcome> =
+        task {
+            try
+                use cnn = new SqlConnection(sourceConn)
+                do! cnn.OpenAsync()
+                do! loadSource cnn
+                let! readResult = ReadSide.read cnn
+                return
+                    match readResult with
+                    | Success c ->
+                        {
+                            Catalog = Some c
+                            Errors = []
+                            Tables = Catalog.allKinds c |> List.length
+                        }
+                    | Failure errors ->
+                        {
+                            Catalog = None
+                            Errors = errors |> List.map formatValidationError
+                            Tables = 0
+                        }
+            with
+            | ex ->
+                return
+                    {
+                        Catalog = None
+                        Errors = collectErrors ex
+                        Tables = 0
+                    }
+        }
+
+    /// Phase 2 — execute V2's emitted statement stream via the
+    /// bulk-aware realization, then read the target back. Same
+    /// shape as `runSourcePhase`; same purity discipline.
+    let private runTargetPhase
+        (targetConn: string)
+        (stmts: seq<Statement>)
+        : Task<PhaseOutcome> =
+        task {
+            try
+                use cnn = new SqlConnection(targetConn)
+                do! cnn.OpenAsync()
+                do! executeStream cnn stmts
+                let! readResult = ReadSide.read cnn
+                return
+                    match readResult with
+                    | Success c ->
+                        {
+                            Catalog = Some c
+                            Errors = []
+                            Tables = Catalog.allKinds c |> List.length
+                        }
+                    | Failure errors ->
+                        {
+                            Catalog = None
+                            Errors = errors |> List.map formatValidationError
+                            Tables = 0
+                        }
+            with
+            | ex ->
+                return
+                    {
+                        Catalog = None
+                        Errors = collectErrors ex
+                        Tables = 0
+                    }
+        }
+
+    let private aggregateFailure
+        (code: string)
+        (errors: string list)
+        : Result<'a> =
+        errors
+        |> List.map (fun s -> ValidationError.create code s)
+        |> Result.failure
+
     let runWideCanaryWithLoader
         (loadSource: SqlConnection -> Task<unit>)
         (emit: Catalog -> seq<Statement>)
@@ -581,61 +739,31 @@ module Deploy =
             return!
                 useContainer (fun masterConn ->
                     task {
-                        let sourceDbName = uniqueDatabaseName "Source"
-                        let targetDbName = uniqueDatabaseName "Target"
+                        let sourceDbName = uniqueDatabaseName DatabaseNameGenerator.guidBased "Source"
+                        let targetDbName = uniqueDatabaseName DatabaseNameGenerator.guidBased "Target"
 
-                        // Phase 1: load source via caller-supplied loader,
-                        // read it back.
+                        // Phase 1: load source, read it back.
                         do!
                             task {
                                 use _ = Bench.scope "deploy.runWideCanary.sourcePhase"
                                 do! createDatabase masterConn sourceDbName
                             }
                         let sourceConn = buildPerDbConnectionString masterConn sourceDbName
+                        let! sourceOutcome = runSourcePhase sourceConn loadSource
 
-                        let mutable sourceCatalog : Catalog option = None
-                        let mutable sourceErrors : string list = []
-                        let mutable sourceTables = 0
-
-                        try
-                            use cnn = new SqlConnection(sourceConn)
-                            do! cnn.OpenAsync()
-                            do! loadSource cnn
-                            // Phase 3: derive TablesCreated from the
-                            // readside Catalog instead of running a
-                            // separate countUserTables query.
-                            let! readResult = ReadSide.read cnn
-                            match readResult with
-                            | Success c ->
-                                sourceCatalog <- Some c
-                                sourceTables <- Catalog.allKinds c |> List.length
-                            | Failure errors ->
-                                sourceErrors <-
-                                    errors
-                                    |> List.map (fun e -> sprintf "[%s] %s" e.Code e.Message)
-                        with
-                        | ex ->
-                            sourceErrors <- collectErrors ex
-
-                        match sourceCatalog with
+                        match sourceOutcome.Catalog with
                         | None ->
-                            let aggregated =
-                                sourceErrors
-                                |> List.map (fun s ->
-                                    ValidationError.create "wideCanary.source.failed" s)
-                            return Result.failure aggregated
+                            return aggregateFailure "wideCanary.source.failed" sourceOutcome.Errors
                         | Some src ->
                             let sourceReport =
                                 {
                                     Success = true
                                     Database = sourceDbName
-                                    TablesCreated = sourceTables
-                                    Errors = sourceErrors
+                                    TablesCreated = sourceOutcome.Tables
+                                    Errors = sourceOutcome.Errors
                                 }
 
-                            // Phase 2: emit V2's SSDT statement stream,
-                            // execute via the bulk-aware realization,
-                            // read the target back.
+                            // Phase 2: emit Π output, deploy, read back.
                             let stmts =
                                 use _ = Bench.scope "deploy.runWideCanary.emit"
                                 emit src
@@ -645,45 +773,18 @@ module Deploy =
                                     do! createDatabase masterConn targetDbName
                                 }
                             let targetConn = buildPerDbConnectionString masterConn targetDbName
+                            let! targetOutcome = runTargetPhase targetConn stmts
 
-                            let mutable targetCatalog : Catalog option = None
-                            let mutable targetErrors : string list = []
-                            let mutable targetTables = 0
-
-                            try
-                                use cnn = new SqlConnection(targetConn)
-                                do! cnn.OpenAsync()
-                                do! executeStream cnn stmts
-                                // Phase 3: derive TablesCreated from the
-                                // readside Catalog (same optimization as
-                                // the source phase).
-                                let! readResult = ReadSide.read cnn
-                                match readResult with
-                                | Success c ->
-                                    targetCatalog <- Some c
-                                    targetTables <- Catalog.allKinds c |> List.length
-                                | Failure errors ->
-                                    targetErrors <-
-                                        errors
-                                        |> List.map (fun e -> sprintf "[%s] %s" e.Code e.Message)
-                            with
-                            | ex ->
-                                targetErrors <- collectErrors ex
-
-                            match targetCatalog with
+                            match targetOutcome.Catalog with
                             | None ->
-                                let aggregated =
-                                    targetErrors
-                                    |> List.map (fun s ->
-                                        ValidationError.create "wideCanary.target.failed" s)
-                                return Result.failure aggregated
+                                return aggregateFailure "wideCanary.target.failed" targetOutcome.Errors
                             | Some tgt ->
                                 let targetReport =
                                     {
                                         Success = true
                                         Database = targetDbName
-                                        TablesCreated = targetTables
-                                        Errors = targetErrors
+                                        TablesCreated = targetOutcome.Tables
+                                        Errors = targetOutcome.Errors
                                     }
                                 let diff =
                                     use _ = Bench.scope "deploy.runWideCanary.diff"
