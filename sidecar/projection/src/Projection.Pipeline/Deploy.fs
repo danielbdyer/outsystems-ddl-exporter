@@ -937,7 +937,13 @@ module Deploy =
             match parsed with
             | Ok catalog ->
                 let outputs = Compose.project catalog
-                let! report = runEphemeral outputs.Sql
+                // Per Tier-1 #2 (Outputs.Sql → SsdtBundle): aggregate
+                // the bundle's per-table SQL files into one batch
+                // for the ephemeral-deploy single-string contract.
+                // Production deploys iterate the bundle (one file per
+                // SSDT artifact); this dogfood path keeps the legacy
+                // single-batch deploy via `aggregateSsdt`.
+                let! report = runEphemeral (Compose.aggregateSsdt outputs.SsdtBundle)
                 return Result.success (outputs, report)
             | Error errors ->
                 return Result.failure errors

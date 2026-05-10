@@ -110,7 +110,10 @@ let private parseAndProject () : Compose.Outputs =
 [<Fact>]
 let ``M1: V1 minimal fixture parses end-to-end into non-empty SSDT, JSON, and Distributions artifacts`` () =
     let outputs = parseAndProject ()
-    Assert.NotEmpty(outputs.Sql)
+    // Per Tier-1 #2: SsdtBundle is per-table file map (chapter 4.1.A
+    // production shape). Non-empty means at least the manifest.json +
+    // one .sql file are present.
+    Assert.NotEmpty(outputs.SsdtBundle)
     Assert.NotEmpty(outputs.Json)
     Assert.NotEmpty(outputs.Distributions)
 
@@ -133,7 +136,11 @@ let ``M1: SSDT artifact carries CREATE TABLE for the V1-named entity`` () =
     // is now enforced by `ArtifactByKind.create`'s smart constructor +
     // `SiblingEmitterContractTests.fs` worked examples.
     let outputs = parseAndProject ()
-    Assert.Contains("CREATE TABLE [dbo].[OSUSR_APPCORE_USER]", outputs.Sql)
+    // Aggregate the SsdtBundle's per-table SQL files for the substring
+    // assertion; the production shape is per-table but the structural
+    // property (CREATE TABLE for the V1-named entity exists somewhere
+    // in the SSDT artifact set) holds against the aggregate.
+    Assert.Contains("CREATE TABLE [dbo].[OSUSR_APPCORE_USER]", Compose.aggregateSsdt outputs.SsdtBundle)
 
 [<Fact>]
 let ``M1: JSON artifact carries module SsKey and emitter version`` () =
@@ -158,7 +165,7 @@ let ``M1: Distributions artifact carries the per-attribute structure on Profile.
 let ``T1: Compose.project is byte-deterministic on a fixed Catalog`` () =
     let outputs1 = parseAndProject ()
     let outputs2 = parseAndProject ()
-    Assert.Equal(outputs1.Sql, outputs2.Sql)
+    Assert.Equal<Map<string, string>>(outputs1.SsdtBundle, outputs2.SsdtBundle)
     Assert.Equal(outputs1.Json, outputs2.Json)
     Assert.Equal(outputs1.Distributions, outputs2.Distributions)
 
@@ -176,11 +183,17 @@ let ``M1: Compose.write writes the same bytes Compose.project produced`` () =
         Path.Combine(Path.GetTempPath(), sprintf "projection-tests-%s" (System.Guid.NewGuid().ToString "N"))
     try
         let paths = Compose.write outputDir outputs
-        Assert.Equal(3, List.length paths)
-        let sqlOnDisk = File.ReadAllText(Path.Combine(outputDir, Compose.ArtifactPath.sql))
+        // Per Tier-1 #2: the bundle path count + the two top-level
+        // artifacts (json + distributions). Bundle has 1 .sql per
+        // catalog kind + 1 manifest.json.
+        let expectedCount = Map.count outputs.SsdtBundle + 2
+        Assert.Equal(expectedCount, List.length paths)
+        // Each bundle entry round-trips byte-for-byte.
+        for KeyValue(relPath, body) in outputs.SsdtBundle do
+            let onDisk = File.ReadAllText(Path.Combine(outputDir, relPath))
+            Assert.Equal<string>(body, onDisk)
         let jsonOnDisk = File.ReadAllText(Path.Combine(outputDir, Compose.ArtifactPath.json))
         let distOnDisk = File.ReadAllText(Path.Combine(outputDir, Compose.ArtifactPath.distributions))
-        Assert.Equal(outputs.Sql, sqlOnDisk)
         Assert.Equal(outputs.Json, jsonOnDisk)
         Assert.Equal(outputs.Distributions, distOnDisk)
     finally
