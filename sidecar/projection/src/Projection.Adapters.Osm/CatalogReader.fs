@@ -66,6 +66,83 @@ module CatalogReader =
     /// zero exist). The variant is named here so future readers of
     /// the code see the architectural commitment without having to
     /// read DECISIONS to discover it.
+    /// V1 rowset 1 — `#E` modules; chapter 3.2 slice 1. Hand-written
+    /// F# transcription of V1's `OutsystemsModuleRow` DTO at
+    /// `IOutsystemsMetadataReader.cs:71-87`, mapped to V2 algebraic
+    /// vocabulary (`Module` / `Espace` aliasing per V1 OSSYS
+    /// convention; the `Espace*` field names mirror V1's SQL surface).
+    /// `EspaceSsKey` is the load-bearing addition over the JSON path
+    /// (which drops it via `SnapshotJsonBuilder`'s field selection).
+    type ModuleRow =
+        {
+            EspaceId       : int
+            EspaceName     : string
+            IsSystemModule : bool
+            IsActive       : bool
+            EspaceSsKey    : System.Guid option
+        }
+
+    /// V1 rowset 2 — `#Ent` entities; chapter 3.2 slice 1. Mapped to
+    /// V2's `Kind` algebraic vocabulary (V2 uses `Kind` where V1 uses
+    /// `Entity`). FK to `ModuleRow.EspaceId` (linkage flat across
+    /// `RowsetBundle.Modules`/`RowsetBundle.Kinds`/`RowsetBundle.Attributes`,
+    /// matching V1 SQL's normalized rowset shape; `parseRowsetBundle`
+    /// joins on load). `EntitySsKey` + `PrimaryKeySsKey` are the
+    /// load-bearing additions; `IsSystemEntity` arrives at slice 4.
+    /// `EspaceKind` arrives at slice 3 (Origin three-way distinction).
+    type KindRow =
+        {
+            EntityId          : int
+            EspaceId          : int
+            EntityName        : string
+            PhysicalTableName : string
+            DbSchema          : string
+            IsStatic          : bool
+            IsExternal        : bool
+            IsActive          : bool
+            EntitySsKey       : System.Guid option
+            PrimaryKeySsKey   : System.Guid option
+        }
+
+    /// V1 rowset 3 — `#Attr` attributes; chapter 3.2 slice 1. FK to
+    /// `KindRow.EntityId`. `AttrSsKey` is the load-bearing addition
+    /// over the JSON path. Per session-21 inactive-records filter:
+    /// `IsActive=false` rows are dropped at the boundary (parity with
+    /// the JSON path at `parseKind`'s attribute filter).
+    type AttributeRow =
+        {
+            AttrId       : int
+            EntityId     : int
+            AttrName     : string
+            PhysicalCol  : string
+            DataType     : string
+            IsMandatory  : bool
+            IsIdentifier : bool
+            IsAutoNumber : bool
+            Length       : int option
+            Precision    : int option
+            Scale        : int option
+            AttrSsKey    : System.Guid option
+            IsActive     : bool
+        }
+
+    /// V1 rowset bundle — the in-memory carrier the future C# SqlClient
+    /// loader produces; in-memory test fixtures construct directly. Per
+    /// `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md` §2-§3: hand-written F#
+    /// records mirroring V1's first three rowsets (modules / entities /
+    /// attributes); extends under empirical pressure as future
+    /// lossiness members surface (`EspaceKind` at slice 3;
+    /// `IsSystemEntity` at slice 4; per-table column structure / check
+    /// constraints from rowsets 6+ at deferred slices). Flat-list shape
+    /// matches V1's normalized rowset SQL output; `parseRowsetBundle`
+    /// joins by FK ID columns at load time.
+    type RowsetBundle =
+        {
+            Modules    : ModuleRow list
+            Kinds      : KindRow list
+            Attributes : AttributeRow list
+        }
+
     type SnapshotSource =
         /// Path to a V1-produced `osm_model.json` file on disk.
         | SnapshotFile of path: string
@@ -73,6 +150,15 @@ module CatalogReader =
         /// pipelines that produce the snapshot in memory rather than
         /// via disk.
         | SnapshotJson of json: string
+        /// V1 pre-aggregation rowset bundle. Chapter 3.2 — closes the
+        /// JSON-projection-lossiness class (`DECISIONS 2026-05-19 —
+        /// naming the two classes`). The rowsets carry SsKey natively
+        /// (via `OssysOriginal guid` per `Identity.fs:70`); A1's
+        /// "identity survives rename" bound resolves through this
+        /// path. Coexists permanently with `SnapshotJson` per
+        /// `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md` §6 — no
+        /// deprecation trigger named.
+        | SnapshotRowsets of bundle: RowsetBundle
 
     let private adapterError (code: string) (message: string) : ValidationError =
         ValidationError.create (sprintf "adapter.osm.%s" code) message
@@ -707,6 +793,182 @@ module CatalogReader =
                     "jsonInvalid"
                     (sprintf "Failed to parse JSON: %s" ex.Message))
 
+    // -----------------------------------------------------------------------
+    // Translation — V1 RowsetBundle → V2 Catalog.
+    //
+    // Chapter 3.2 slice 1. Sibling translation path to parseDocument.
+    // SsKey carriage flips from `Synthesized ("OS_KIND", [...])` (JSON
+    // path) to `OssysOriginal guid` (rowset path) when the rowset DTO
+    // carries the Guid; falls back to synthesized form when absent
+    // (test convenience for partial fixtures). Per A1's chapter-3.2
+    // bound resolution: this is the path where SsKey is no longer
+    // JSON-projection-bounded.
+    //
+    // Per `DECISIONS 2026-05-22 — Stage 0 foundation phase` aggregate-
+    // root smart constructor commitment + chapter-3.6 pillar 6
+    // amendment: boundary translation flows through
+    // `Catalog.create` / `Module.create` (referential-integrity
+    // invariants) rather than record-literal construction.
+    // -----------------------------------------------------------------------
+
+    let private moduleSsKeyFromRow (row: ModuleRow) : Result<SsKey> =
+        match row.EspaceSsKey with
+        | Some g -> Result.success (SsKey.ossysOriginal g)
+        | None   -> moduleSsKey row.EspaceName
+
+    let private kindSsKeyFromRow
+        (moduleName: string)
+        (row: KindRow)
+        : Result<SsKey> =
+        match row.EntitySsKey with
+        | Some g -> Result.success (SsKey.ossysOriginal g)
+        | None   -> kindSsKey moduleName row.EntityName
+
+    let private attributeSsKeyFromRow
+        (moduleName: string)
+        (entityName: string)
+        (row: AttributeRow)
+        : Result<SsKey> =
+        match row.AttrSsKey with
+        | Some g -> Result.success (SsKey.ossysOriginal g)
+        | None   -> attributeSsKey moduleName entityName row.AttrName
+
+    let private parseAttributeRow
+        (moduleName: string)
+        (entityName: string)
+        (row: AttributeRow)
+        : Result<Attribute> =
+        let nameDU    = Name.create row.AttrName
+        let key       = attributeSsKeyFromRow moduleName entityName row
+        let primitive = parsePrimitiveType row.DataType
+        match nameDU, key, primitive with
+        | Ok n, Ok k, Ok p ->
+            Result.success
+                { SsKey        = k
+                  Name         = n
+                  Type         = p
+                  Column       = { ColumnName = row.PhysicalCol
+                                   IsNullable = not row.IsMandatory }
+                  IsPrimaryKey = row.IsIdentifier
+                  IsMandatory  = row.IsMandatory
+                  Length       = row.Length
+                  Precision    = row.Precision
+                  Scale        = row.Scale
+                  IsIdentity   = row.IsAutoNumber }
+        | _ ->
+            Result.failureOf (
+                adapterError
+                    "attributeRowBuild"
+                    (sprintf
+                        "Failed to build attribute '%s' on '%s.%s' from rowset bundle."
+                        row.AttrName moduleName entityName))
+
+    let private parseKindRow
+        (moduleName: string)
+        (attributesByEntity: Map<int, AttributeRow list>)
+        (kindRow: KindRow)
+        : Result<Kind> =
+        let kindKey  = kindSsKeyFromRow moduleName kindRow
+        let kindName = Name.create kindRow.EntityName
+        // Inactive-records filter (session 21 carryover): drop
+        // attributes with `IsActive=false` at the boundary, parity
+        // with the JSON path.
+        let attrRows =
+            Map.tryFind kindRow.EntityId attributesByEntity
+            |> Option.defaultValue []
+            |> List.filter (fun a -> a.IsActive)
+        let attrResults =
+            attrRows
+            |> List.map (parseAttributeRow moduleName kindRow.EntityName)
+        let foldedAttrs = Result.aggregate attrResults
+        match kindKey, kindName, foldedAttrs with
+        | Ok k, Ok n, Ok attrs ->
+            // Modality parity with parseKind (line 608-609): `[Static []]`
+            // when isStatic, empty otherwise. Static populations are NOT
+            // carried by rowsets 1-3; defer to a later slice that
+            // surfaces V1 rowset 19+ (the static-data aggregation
+            // rowsets) if/when the rowset path needs to round-trip
+            // populations.
+            let modality =
+                if kindRow.IsStatic then [ Static [] ] else []
+            Result.success
+                { SsKey      = k
+                  Name       = n
+                  // Origin matches parseOrigin (line 389): isExternal=true
+                  // → ExternalViaIntegrationStudio placeholder. The
+                  // EspaceKind-driven three-way refinement lands at
+                  // slice 3 when the rowset surfaces it.
+                  Origin     = parseOrigin kindRow.IsExternal
+                  Modality   = modality
+                  Physical   = { Schema = kindRow.DbSchema
+                                 Table  = kindRow.PhysicalTableName }
+                  Attributes = attrs
+                  // References + Indexes deferred to slice 2 (FK
+                  // rowsets 12-17) and slice 2's index extension
+                  // (rowsets 10-11). Empty at slice 1 — parity with a
+                  // minimal-fixture JSON path.
+                  References = []
+                  Indexes    = [] }
+        | _ ->
+            Result.failureOf (
+                adapterError
+                    "kindRowBuild"
+                    (sprintf
+                        "Failed to build kind '%s' in module '%s' from rowset bundle."
+                        kindRow.EntityName moduleName))
+
+    let private parseModuleRow
+        (kindsByEspace: Map<int, KindRow list>)
+        (attributesByEntity: Map<int, AttributeRow list>)
+        (moduleRow: ModuleRow)
+        : Result<Module> =
+        let modKey  = moduleSsKeyFromRow moduleRow
+        let modName = Name.create moduleRow.EspaceName
+        // Inactive-records filter (session 21 carryover): drop
+        // entities with `IsActive=false` at the boundary, parity
+        // with parseModule's JSON-path entity filter.
+        let kindRows =
+            Map.tryFind moduleRow.EspaceId kindsByEspace
+            |> Option.defaultValue []
+            |> List.filter (fun k -> k.IsActive)
+        let kindResults =
+            kindRows
+            |> List.map (parseKindRow moduleRow.EspaceName attributesByEntity)
+        let foldedKinds = Result.aggregate kindResults
+        match modKey, modName, foldedKinds with
+        | Ok k, Ok n, Ok kinds ->
+            Module.create k n kinds
+        | _ ->
+            Result.failureOf (
+                adapterError
+                    "moduleRowBuild"
+                    (sprintf
+                        "Failed to build module '%s' from rowset bundle."
+                        moduleRow.EspaceName))
+
+    /// V1 rowset bundle → V2 Catalog. Sibling to `parseDocument` (JSON
+    /// path). The flat-list bundle joins by FK ID columns at load time
+    /// (`AttributeRow.EntityId` ↔ `KindRow.EntityId`; `KindRow.EspaceId`
+    /// ↔ `ModuleRow.EspaceId`); the resulting structure feeds the
+    /// existing `Module.create` / `Catalog.create` aggregate-root
+    /// smart constructors, so referential-integrity invariants are
+    /// checked at the boundary identically to the JSON path.
+    let private parseRowsetBundle (bundle: RowsetBundle) : Result<Catalog> =
+        let attributesByEntity =
+            bundle.Attributes |> List.groupBy (fun a -> a.EntityId) |> Map.ofList
+        let kindsByEspace =
+            bundle.Kinds |> List.groupBy (fun k -> k.EspaceId) |> Map.ofList
+        // Inactive-records filter at module level — parity with
+        // parseModule's session-21 isActive filter.
+        let activeModules =
+            bundle.Modules |> List.filter (fun m -> m.IsActive)
+        let moduleResults =
+            activeModules
+            |> List.map (parseModuleRow kindsByEspace attributesByEntity)
+        match Result.aggregate moduleResults with
+        | Ok modules -> Catalog.create modules
+        | Error errors -> Error errors
+
     /// Parse a V1 `osm_model.json` snapshot into a V2 `Catalog`.
     ///
     /// Async at the boundary even though the JSON-path implementation
@@ -718,6 +980,14 @@ module CatalogReader =
         match source with
         | SnapshotJson json ->
             Task.FromResult(parseJsonString json)
+        | SnapshotRowsets bundle ->
+            // Chapter 3.2 slice 1. Pure translation; no I/O. The
+            // rowset-shaped V1 metadata flows through
+            // `parseRowsetBundle` for FK-by-ID join + Module/Kind/
+            // Attribute construction. Closed-DU expansion empirical-
+            // test discipline (`DECISIONS 2026-05-13`): exhaustiveness
+            // errors should light up only at this match site.
+            Task.FromResult(parseRowsetBundle bundle)
         | SnapshotFile path ->
             // Read-then-parse is the natural shape; async file I/O
             // would benefit primarily for very large snapshots, which
