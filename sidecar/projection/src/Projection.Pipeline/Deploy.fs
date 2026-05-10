@@ -573,16 +573,19 @@ module Deploy =
                     codes
                 None
 
-    /// Run the body against a master connection string. Honors the
-    /// `PROJECTION_MSSQL_CONN_STR` env var if set (warm container,
-    /// no startup cost); otherwise spins an ephemeral container and
-    /// disposes it on completion.
+    /// Run `body` with a master connection string sourced from either
+    /// the warm container (`PROJECTION_MSSQL_CONN_STR` env var) or a
+    /// fresh ephemeral Testcontainers SQL Server. Public so canary
+    /// tests beyond the runEphemeral / runWithReadback shapes (e.g.,
+    /// the chapter 4.1.B CDC-silence canary) can orchestrate multi-
+    /// statement deploy + probe + verify cycles without rebuilding
+    /// container plumbing per test.
     ///
-    /// Database isolation is preserved either way — callers create
+    /// **Database isolation is preserved either way** — callers create
     /// per-purpose `<prefix>_<guid>` databases via `createDatabase`,
     /// so the warm-container case still gives every canary its own
     /// fresh DB.
-    let private useContainer (body: string -> Task<'a>) : Task<'a> =
+    let useContainer (body: string -> Task<'a>) : Task<'a> =
         task {
             use _ = Bench.scope "deploy.useContainer"
             match warmConnectionString () with
