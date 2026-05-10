@@ -9712,4 +9712,237 @@ naming) ✓ — `text-builder-as-first-instinct` IS the failure-mode
 name (concept-shaped, not action-shaped).
 
 
+## 2026-05-10 — Perf-gate μ+σ statistical baseline (drops rolling history)
+
+**Status:** decided
+
+**Context:** the chapter-3.6 `scripts/perf-gate.sh` design (codified
+at `2026-05-09 — Operator-reality canary as the production-baseline
+perf gate`) used a **rolling history** model: each gate-fire
+appended a snapshot to `bench/history-canary.jsonl` (max N=20),
+and the per-label threshold computed as `μ + Kσ` over the
+history with a flat-tolerance warm-up phase (`mean × 1.5`) until
+N≥5 history accumulated. The committed `bench/baseline-canary.json`
+served the warm-up phase and as a reference floor.
+
+The chapter 4.1.A static-population regression (`commit 651d6a4`)
+surfaced two structural problems with this design:
+
+1. **The committed baseline was synthetic.** `bench/baseline-canary.json`
+   was recorded once with placeholder 500ms-each entries (every
+   `Count`, `MinMs`, `MaxMs`, `MeanMs`, `P50Ms`, `P95Ms`, `P99Ms`
+   identical at 500). No real measurement set was ever committed.
+   The warm-up gate (`current < 1.5 × baseline`) was therefore
+   gating against fiction — every label below 333ms passed
+   irrespective of regression; every label above 500ms failed
+   irrespective of fidelity.
+
+2. **History is per-machine, gitignored, ephemeral.** `bench/history-canary.jsonl`
+   is gitignored (`.gitignore:25-27` keeps `bench/baseline-*.json`
+   tracked, ignores everything else under `sidecar/projection/bench/`).
+   Every fresh checkout starts at N=0; CI doesn't accumulate
+   history across runs without artifact storage; cross-machine
+   regression detection isn't structural — it's per-machine.
+   When the static-population regression shipped against this
+   baseline-and-history pair, neither layer engaged: warm-up
+   compared against synthetic 500s, and the previous machine's
+   history didn't exist on the next agent's clone.
+
+The compounding effect: the perf-gate was effectively a placebo
+across the chapters that shipped against it (3.5 / 3.6 / 3.7 /
+4.1.A / 4.1.B-α/β/γ / RawTextEmitter retirement / Tier 1/2/3
+transitions). The static-population regression slipped past
+every gate-fire because the gate had no real floor to compare
+against.
+
+**Decision:** replace the rolling-history model with a **tracked
+μ+σ statistical baseline**. The committed `bench/baseline-canary.json`
+IS the statistical model; there is no rolling history accumulator.
+
+**New baseline format:**
+
+```json
+{
+  "RecordedAtUtc": "2026-05-10T17:42:00Z",
+  "Tag": "operatorReality",
+  "Runs": 5,
+  "Stats": [
+    { "Label": "deploy.bulk.copyRows", "SampleCount": 5,
+      "MeanMs": 3048, "StdevMs": 250 },
+    ...
+  ]
+}
+```
+
+Each `Stats[i]` entry carries per-label `MeanMs` + `StdevMs`
+computed from N≥5 warm captures (the `Runs` field). Per-label
+threshold = `MeanMs + K × σ_effective` where:
+
+  - `K = 5.0` (default; widened from the prior K=3.0 to absorb
+    cross-machine timing variance — CI ↔ dev laptop can drift
+    2-3σ even on the same workload).
+  - `σ_effective = max(StdevMs, MeanMs × MIN_RELATIVE_STDEV)`
+    (default `MIN_RELATIVE_STDEV=0.20`, a 20% relative σ floor).
+    The floor is a Bayesian prior on σ: at N=5, `StdevMs` often
+    underestimates the true population σ — particularly for I/O-
+    bound labels (Docker container creation, SqlBulkCopy network
+    round-trips, ScriptDom parser warmup) whose run-to-run
+    variance is dominated by external jitter rather than algorithm
+    timing. Without the floor, a baseline that happened to record
+    five tightly-clustered samples produces a brittle gate
+    (`σ_observed = 0.4ms` on a 7ms label gives a 9ms threshold;
+    legitimate jitter to 14ms trips the gate). Tightening
+    `MIN_RELATIVE_STDEV` is appropriate when the baseline came
+    from a representative-spread run set; loosening (e.g., 0.30)
+    is appropriate during initial calibration on a new machine
+    class.
+
+**Recorder mechanism:**
+
+  - `PERF_GATE_RECORD=1 scripts/perf-gate.sh` runs the operator-
+    reality canary `BENCH_RECORD_RUNS` times (default 5),
+    aggregates per-label `TotalMs` across runs into μ + σ, writes
+    the new baseline file. The per-label noise filter (drop labels
+    with `MeanMs < BENCH_MIN_MS=5`) applies symmetrically at
+    record + gate time so the baseline carries only signal-
+    bearing labels.
+  - When the perf floor legitimately changes (algorithmic
+    improvement; new workload axis; intentional accommodation of
+    a new label-emitting hot path), the recorder is run and the
+    new baseline is committed. The commit pairs with a DECISIONS
+    amendment naming the new floor's rationale.
+
+**Gate mechanism:**
+
+  - `scripts/perf-gate.sh` runs the canary once, compares each
+    label's `TotalMs` against the baseline's threshold, fails on
+    any regression. New labels (not in the baseline; e.g., a
+    feature added new bench scopes) pass with a soft warning —
+    they join the baseline at the next record cycle.
+  - Soft-skip on Docker / dotnet unavailable preserved.
+
+**What this supersedes:**
+
+  - The rolling-history accumulator (`bench/history-canary.jsonl`)
+    retires structurally. The .gitignore rule that ignored it
+    stays (the file may exist locally as orphan; it's not
+    consulted). Removing the rule isn't necessary because the
+    file is no longer written to.
+  - The warm-up phase retires — the baseline is always the
+    statistical model, no fallback to flat-tolerance.
+  - `BENCH_TOLERANCE` env var retires (no flat-tolerance
+    fallback). `BENCH_MAX_HISTORY` and `BENCH_MIN_SAMPLES`
+    retire (no rolling history).
+  - The 2026-05-09 entry's "Mechanism" section's per-label
+    `μ + Kσ` description over rolling history is superseded by
+    this entry; the rest of the 2026-05-09 entry (operator-
+    reality as the gate workload; soft-skip semantics; pillar
+    7 alignment) stays in force.
+
+**What stays:**
+
+  - Operator-reality as the gate workload (50k rows × 300 tables
+    × variegated; `GenerateSpec.operatorReality`).
+  - The bench JSON snapshot path convention (`bench/canary/<utc>.json`
+    written by `BenchSink.persistJson` from the test process,
+    with `PROJECTION_BENCH_DIR` for path resolution).
+  - The `.gitignore` carveout (`!sidecar/projection/bench/baseline-*.json`)
+    — the new baseline file is the same path; tracked.
+  - The Stop-hook + pre-commit hook integration. The gate
+    runtime is unchanged (one canary run; ~12s warm).
+
+**Reasoning:**
+
+  - **Cross-machine reproducibility.** Every contributor + CI
+    gates against the same baseline. A regression on a dev
+    laptop surfaces as the same regression on CI (modulo K).
+    The previous design had cross-machine convergence only as
+    a side effect of warm-up + N runs of accumulated history;
+    the new design gives it as a structural invariant.
+  - **PR-visible floor bumps.** Re-recording the baseline
+    produces a tracked-file diff in the PR. Operators reviewing
+    the PR see exactly which labels changed and by how much —
+    the perf-floor evolution is in the git history, alongside
+    the DECISIONS amendment naming why the floor moved.
+  - **No warm-up phase confusion.** The synthetic baseline
+    + warm-up failure-mode is structurally impossible: the
+    baseline is computed from real measurements at record
+    time; if the recorder hasn't run, the gate emits a clear
+    "no baseline; run `PERF_GATE_RECORD=1` to seed" warning
+    rather than gating against fiction.
+  - **Cross-machine variance absorbed by K.** The default
+    K=5.0 is calibrated for ~3σ of legitimate machine-to-
+    machine timing variance plus ~2σ of run-to-run variance.
+    Dev laptops with thermal throttling or shared-CI runners
+    with noisy neighbors will land within K=5σ of the recorded
+    mean for any label that's intrinsically deterministic
+    (no I/O contention). Tightening K (e.g., to K=3.0) is
+    appropriate when the recorded baseline came from runs on
+    the same machine class as the gate fires; loosening
+    (K=7.0) is appropriate during initial calibration.
+  - **Two operative env vars** (vs four under the prior design):
+    `BENCH_K_SIGMA` (gate width), `BENCH_RECORD_RUNS`
+    (sample count for record mode). Plus the legacy
+    `BENCH_MIN_MS` (noise floor). Reduced surface area; less
+    operator confusion at gate-fire.
+
+**Tradeoff:** the prior design's per-machine adaptation is lost.
+A dev laptop with consistently slower bulk-copy throughput than
+CI will trip the gate unless K is widened to absorb the
+machine-class shift. Mitigations: (a) run the recorder on the
+machine class the gate will fire on (CI + every contributor's
+laptop, when calibrating); (b) widen K when cross-machine
+variance is the dominant signal; (c) accept the variance as
+a structural feature — the gate fires when *any* machine sees a
+regression, which is more conservative than fires-when-this-
+machine sees a regression.
+
+**Implementation.** `scripts/perf-gate.sh` rewritten:
+
+  - Default mode: one canary run + Python-3 gate logic that
+    loads `bench/baseline-canary.json` + per-label `latest_ms
+    > MeanMs + K × StdevMs` check.
+  - Record mode (`PERF_GATE_RECORD=1`): N canary runs + Python-3
+    aggregator that computes per-label μ + σ and writes the
+    new baseline file. Default `BENCH_RECORD_RUNS=5`.
+  - Header documentation rewritten; usage examples updated.
+
+**Pillar alignment:**
+
+  - **Pillar 1** (data-structure-oriented over string-parsing) ✓
+    — the baseline is typed JSON with explicit per-label
+    `MeanMs` / `StdevMs` / `SampleCount`; the gate logic reads
+    them directly without parsing aggregate strings.
+  - **Pillar 5** (deep separation of concerns) ✓ — the
+    statistical model is a separate file from the runtime
+    snapshot; record-time + gate-time concerns are explicit
+    code paths.
+  - **Pillar 6** (no V2-internal back-compat paths) ✓ — the
+    legacy rolling-history file path retires structurally;
+    no shim, no migration, no "still read history if present"
+    branch.
+  - **Pillar 7** (gold-standard library precedence;
+    substantive-rationale + perf-clause) ✓ — pure-Python
+    aggregation (BCL standard library); the perf-clause
+    discipline is what this gate enforces; the gate IS the
+    perf evidence per the iterator-logging discipline.
+  - **Pillar 8** (domain-first naming) ✓ — `MeanMs` /
+    `StdevMs` / `SampleCount` are concept-shaped; "μ+σ
+    statistical baseline" is the load-bearing concept the
+    domain operates on.
+
+**Surprise worth flagging.** The synthetic baseline existed
+across `2026-05-09` (the perf-gate codification entry) →
+`2026-05-10` (this entry) without a real measurement set ever
+being committed. The `chapter-close ritual` (eight items per
+CLAUDE.md operating-disciplines table) does NOT explicitly
+walk the perf-gate baseline's currency. Future amendment to
+the chapter-close ritual: add a 9th item — "perf-gate
+baseline currency check (recorded at most one chapter ago;
+threshold within K=3σ of last actual run)." Defer the
+amendment to the next chapter close that operates the ritual
+in full.
+
+
+
 
