@@ -1,8 +1,46 @@
-# Handoff letter — Chapter 3.1 → Chapter 3.2 / 3.5 / 3.6 / 3.7 / 4.1.A / 4.1.B / 4.x
+# Handoff letter — Chapter 3.2 → next chapter
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## Chapter 3.2 close (added 2026-05-10; substantive close + JSON-projection-lossiness class structurally resolved)
+
+**Branch:** `claude/review-ddl-exporter-zB3LF`. **Test baseline:** 882 passing non-canary tests + ~16 Docker-dependent canary tests, 0 skipped, 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules. **Perf-gate:** clean (adapter-only changes; no canary-affecting work).
+
+Chapter 3.2 closes the **JSON-projection-lossiness class** structurally by adding the `SnapshotRowsets` variant of `SnapshotSource` end-to-end. Five substantive slices + post-close bug-fix arc:
+
+- **Slice 1** (`6dab9cd`) — `SnapshotRowsets` DU variant + `RowsetBundle` carrier + `ModuleRow` / `KindRow` / `AttributeRow` records + `parseRowsetBundle` minimum. SsKey at all three levels.
+- **Slice 2** (`0354727`) — Reference rowsets (`#RefResolved` ⊕ `#FkReality`). FK SsKey carriage; rule 16 same-module assumption tested under rowset path.
+- **Slice 3** (`d5d1812`) — `EspaceKind` activation; `parseOriginFromRowset` three-way real refines rule 17 from JSON-path placeholder.
+- **Slice 4** (`6eae21f`) — `IsSystemEntity` activation; new `ModalityMark.SystemOwned` variant. Third lossiness-class member resolved.
+- **Slice 5** (`a74b904`) — Cross-source parity tests (JSON ↔ Rowset). Total-equality (no-Guids) + shape-equality (Guid-carrying). Closes the chapter.
+- **Post-close bug fix** (`0336795`) — `propagateOrFallback` codification at two-consumer threshold; seven build-failure sites refactored uniformly across both translation paths. Underlying error codes (e.g., `adapter.osm.unmappedDeleteRule`) survive the build-level wrap instead of being swallowed under generic umbrellas.
+
+**A1's JSON-projection-lossiness bound — operationally resolved.** Chapter 3.2 makes A1's `OssysOriginal` variant operationally reachable at the OSSYS-adapter boundary for the first time. AXIOMS.md A1 footer + four-variant amendment updated. See `CHAPTER_3_2_CLOSE.md` for the full substantive synthesis.
+
+**`SnapshotRowsets` Active deferral cashed out** at `DECISIONS 2026-05-10 — Chapter 3.2 close`. One silent-trigger fire scanned + cashed; 16 other active deferrals untriggered.
+
+### Outstanding queue (post-chapter-3.2)
+
+**Critical-path under V2-driver KPI** (per `V2_DRIVER.md`):
+- **Chapter 4.1.B slice δ** (two-phase insertion / cycle-breaking). CDC-silence-on-idempotent-redeploy property test is the V2-driver KPI's highest-leverage single deliverable.
+- **Chapter 4.1.B slices ε/ζ** (MigrationDependencies + Bootstrap). `ScriptDomBuild.buildMergeStatement` adoption mandatory per Active deferrals row.
+- **Chapter 3.x DacpacEmitter**. DacFx adoption mandatory per Active deferrals row.
+- **Chapter 4.2 User FK reflow**. Inherits chapter 3.2's `OssysOriginal` operational reachability; cross-version `V1Mapped` UUIDv5 derivation lands here.
+
+**Highest-priority deferred slice (cross-cutting):**
+- **Cross-module FK IR refinement** (Active deferrals row). Trigger: fixture exercising cross-module FK. Chapter 3.2 fixtures were all same-module; rowset path is structurally ready for the extension.
+
+**Independent forward-progress** (carried from prior outstanding queue; not chapter-3.2-affected):
+- R4 multi-environment promotion property test (uses M4 Tolerance taxonomy).
+- Chapter 3.7 audit-cleanup slice queue (γ / ζ / η / θ / ι / κ / λ / μ / ν / ξ / ο / π) — `ξ` (`ICatalogReader` port lift) can now use chapter 3.2's `SnapshotRowsets` as second-source-of-truth precedent.
+
+**Chapter close ritual joint pass** still beneficial across 3.1 / 3.5 / 3.6 / 3.7 / 4.1.A / 4.1.B-in-flight if the next chapter wants to discharge documentation drift before opening new substantive work. Chapter 3.2's own close ritual executed (see `CHAPTER_3_2_CLOSE.md` "Chapter-close ritual execution" section).
+
+---
+
+## Chapter 4.1.A close arc + 4.1.B in-flight prologue (added 2026-05-10; substantive close + V2-driver KPI Phase 2 + Phase 3 highest-stakes deliverable shipped)
 
 ## Chapter 4.1.A close arc + 4.1.B in-flight prologue (added 2026-05-10; substantive close + V2-driver KPI Phase 2 + Phase 3 highest-stakes deliverable shipped)
 

@@ -92,7 +92,8 @@ chapter 4.1.A close arc + 4.1.B in-flight prologue):
                                               ProfileSnapshot; ProfileStatistics)
       src/Projection.Adapters.Osm/          - F#: OutSystems metadata boundary
                                               (CatalogReader; SnapshotSource closed DU
-                                              with planned SnapshotRowsets variant)
+                                              with SnapshotJson + SnapshotRowsets
+                                              variants — both shipped at chapter 3.2)
 
       tests/Projection.Tests/               - F#: property, unit, differential, end-to-end
 
@@ -109,11 +110,14 @@ Slots reserved for future sessions (not yet built):
       src/Projection.Targets.SSDT.DacpacEmitter/ - F#: real CREATE TABLE / DacFx
       src/Projection.Targets.Faker/         - F#: synthetic-data Π consuming Profile
 
-Plus the planned **`SnapshotRowsets` variant** of `SnapshotSource` in
-`Projection.Adapters.Osm.CatalogReader` — operator-decided canonical
-resolution to V1's JSON-projection lossiness class
-(`DECISIONS 2026-05-15 — OSSYS adapter translation rules`, session-20
-amendment). Lands when chapter 2's organic flow brings it.
+The **`SnapshotRowsets` variant** of `SnapshotSource` shipped at
+**chapter 3.2 close (2026-05-10)**, resolving V1's JSON-projection-
+lossiness class structurally. Five slices delivered SsKey carriage
+at every level, reference rowsets, `EspaceKind` activation (Origin
+three-way), `IsSystemEntity` activation (`ModalityMark.SystemOwned`
+lift), and cross-source parity tests. See `CHAPTER_3_2_CLOSE.md` for
+the substantive synthesis. A1's identity-survives-rename bound is
+now operationally unblocked at the OSSYS-adapter boundary.
 
 ## What's already shipped (built primitives)
 
@@ -137,12 +141,11 @@ to date have built:
   `ProfileStatistics.fs` under `Projection.Adapters.Sql`; the OSSYS
   catalog reader under `Projection.Adapters.Osm` (in flight).
 
-The two un-built primitives now gating substantive forward work:
+The remaining un-built primitive now gating substantive forward work:
 
-  - **The OSSYS adapter's `SnapshotRowsets` variant** — operator-
-    decided; lands when sequencing brings it. Resolves the
-    JSON-projection-lossiness class (SsKey, EspaceKind,
-    isSystemEntity).
+  - **`SnapshotRowsets`** — SHIPPED at chapter 3.2 (commits
+    `6dab9cd` → `a74b904`; bug fix `0336795`). JSON-projection-
+    lossiness class structurally closed; A1 boundary-unblocked.
   - **The pipeline canary** (`Projection.Pipeline` C# project) —
     strategic-frame axis. Self-validates artifacts against
     ephemeral docker SQL Server before publication.

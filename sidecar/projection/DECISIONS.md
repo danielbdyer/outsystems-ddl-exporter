@@ -218,7 +218,7 @@ table before continuing.
 | **Object expressions** (`{ new IInterface with ... }`) for adapter-side abstractions | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | V2 grows interface-based polymorphism (e.g., `IDiagnosticSink` for streaming consumers; `ICatalogReader` after a second catalog source materializes) | Codebase has zero interface boundaries today; all polymorphism via DU pattern matching (session 25) |
 | **Type providers** (`JsonProvider` for `osm_model.json`) | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | OSSYS adapter ships and JSON-shape evolution becomes a maintenance burden | OSSYS adapter ships at session 18 with hand-written DTOs; JSON-shape evolution has not yet surfaced as a burden (session 25) |
 | **`ICatalogReader` interface** (Position B → A) | 2026-05-13 (Anticipation vs. speculation in abstraction extraction) | A second catalog source materializes (DACPAC, OData, in-memory test reader unifying with OSSYS) | OSSYS adapter implementation chapter starts in Position B (`parse : SnapshotSource -> Task<Result<Catalog>>` shape; session 18); interface defers until second source (session 25) |
-| **`SnapshotRowsets` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature, session-20 amendment) | The JSON-projection-lossiness class needs unblocking — A1 SsKey bound resolution; `EspaceKind` distinction; `isSystemEntity` evidence; future class members (per `DECISIONS 2026-05-19 — naming the two classes of resolution patterns explicitly`) | Operator-decided canonical resolution; not subject to relitigation. Variant reserved in `SnapshotSource` DU (`CatalogReader.fs:36-56`). Pre-scoped at session 25 commit 11 (subagent #5); chapter 3+ implements (session 25) |
+| **`SnapshotRowsets` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature, session-20 amendment) | The JSON-projection-lossiness class needs unblocking — A1 SsKey bound resolution; `EspaceKind` distinction; `isSystemEntity` evidence; future class members (per `DECISIONS 2026-05-19 — naming the two classes of resolution patterns explicitly`) | **Cashed out — chapter 3.2 (commits 6dab9cd / 0354727 / d5d1812 / 6eae21f / a74b904). Variant implemented end-to-end across five slices: (1) SnapshotRowsets variant + RowsetBundle DTO + SsKey at all three levels; (2) reference rowsets (`#RefResolved + #FkReality`); (3) `EspaceKind` activation (Origin three-way real); (4) `IsSystemEntity` → `ModalityMark.SystemOwned`; (5) cross-source parity tests. A1's JSON-projection-lossiness bound resolved structurally (`OssysOriginal` Guid carriage). Three class members landed: SsKey at every level; EspaceKind; IsSystemEntity. Future class members (per-table column structure rowset 6; check constraints rowset 7; triggers rowset 18 — documented not-carried-forward) surface under fixture pressure as further deferred slices. See cash-out entry `2026-05-10 — SnapshotRowsets variant chapter 3.2 close` below.** |
 | **`LiveOssysConnection` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature) | V2 needs to operate without V1's chain in the loop entirely (real DB-touching variant) | Reserved in `SnapshotSource` DU (`CatalogReader.fs:58-62`); chapter-3+ when canary's deployment-validation arc materializes (session 25) |
 | **`Microsoft.SqlServer.Dac` (DacFx) adoption in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 3.x DacpacEmitter opens. **Hard requirement, not preference**: the .dacpac file format is a Microsoft-proprietary ZIP-with-manifest-XML structure — hand-rolling it via `System.IO.Compression.ZipArchive` + manual XML composition is the prototypical "text-builder-as-first-instinct" failure mode. DacFx (`Microsoft.SqlServer.Dac` NuGet) IS the canonical use-case-specific library; per pillar 7, no LINT-ALLOW will excuse a hand-rolled .dacpac. The chapter-3.x agent reads this entry at chapter open and writes the cash-out below the Active deferrals table on adoption. | Pre-DacpacEmitter; trigger condition not yet met (DacpacEmitter chapter not open) |
 | **MigrationDependenciesEmitter + BootstrapEmitter typed-AST adoption from slice α** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 4.1.B slices ε (MigrationDependenciesEmitter) / ζ (BootstrapEmitter) open. **Hard requirement**: both emitters are MERGE / INSERT producers; per the Tier-1 #1 cash-out (`bface9a` — chapter 4.1.B StaticSeedsEmitter MERGE → ScriptDom MergeStatement), every new SQL-emitting consumer starts on the typed-AST library, not StringBuilder. `ScriptDomBuild.buildMergeStatement` + `ScriptDomBuild.buildInsertRow` + `SqlLiteral.ofRaw` are the precedent surface; cross-target dep on Projection.Targets.SSDT acceptable per the StaticSeedsEmitter precedent (single-line LINT-ALLOW with rationale). The chapter 4.1.B slice agent reads this entry at slice open. | Pre-MigrationDependenciesEmitter / BootstrapEmitter; chapter 4.1.B slices ε/ζ not yet open |
@@ -9946,3 +9946,178 @@ in full.
 
 
 
+
+---
+
+## 2026-05-10 — Chapter 3.2 close: `SnapshotRowsets` variant cash-out + JSON-projection-lossiness class structurally resolved
+
+**Cashed out** the **SnapshotRowsets variant** trigger from the
+Active deferrals index. The deferral was first logged at 2026-05-17
+(OSSYS adapter parse signature; session-20 amendment) and pre-scoped
+at chapter-2 close (subagent #5 → `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md`).
+Chapter 3.2 implements end-to-end across five substantive slices.
+
+**Slices shipped.**
+
+| Slice | Commit | Scope | Lossiness members resolved |
+|---|---|---|---|
+| **1** | `6dab9cd` | `SnapshotRowsets` DU variant + `RowsetBundle` DTO carrier + `ModuleRow`/`KindRow`/`AttributeRow` records + `parseRowsetBundle` minimum + first fixture mirroring session-18 minimal | SsKey at all three levels (module / kind / attribute) |
+| **2** | `0354727` | Reference rowsets (`#RefResolved` ⊕ `#FkReality`); FK SsKey carriage + rule 16 same-module assumption tested under rowset path | Reference SsKey synthesis empirically validated |
+| **3** | `d5d1812` | `EspaceKind` activation; `parseOriginFromRowset` three-way real | Rule 17 refined from JSON-path placeholder to OsNative / ExternalViaIntegrationStudio / ExternalDirect |
+| **4** | `6eae21f` | `IsSystemEntity` activation; new `ModalityMark.SystemOwned` variant | Third known JSON-projection-lossiness class member resolved |
+| **5** | `a74b904` | Cross-source parity tests (JSON ↔ Rowset) — total-equality (no-Guids) + shape-equality (Guid-carrying) | No new lossiness; validates structural equivalence modulo documented SsKey divergence |
+| **post** | `0336795` | `propagateOrFallback` codification — error-propagation bug surfaced during slice 2 audit, backported to JSON path; seven build-failure sites refactored uniformly | (Bug fix; not new lossiness — surfaced under chapter-3.2 audit pressure) |
+
+**JSON-projection-lossiness class — structural disposition.**
+
+Per `DECISIONS 2026-05-19 — naming the two classes of resolution
+patterns explicitly`, the class has three known members. All three
+landed in chapter 3.2:
+
+  - **SsKey at every level** (slice 1). `EspaceSSKey` / `EntitySSKey` /
+    `PrimaryKeySSKey` / `AttrSSKey` carry through the rowset bundle
+    as `Guid option`; translation emits `SsKey.OssysOriginal guid`
+    when present, falls back to `SsKey.Synthesized` when absent
+    (per A1's four-variant amendment shipped at Stage 0 S0.B).
+  - **`EspaceKind`** (slice 3). String column on V1's `ossys_Espace`
+    carries via `ModuleRow.EspaceKind : string option`;
+    `parseOriginFromRowset` consumes it to discriminate Origin
+    three-way (case-insensitive `"Extension"` marker per
+    chapter-3.2 empirical evidence; documented in the
+    `parseOriginFromRowset` docstring).
+  - **`IsSystemEntity`** (slice 4). Bool column on V1's
+    `ossys_Entity.Is_System` carries via `KindRow.IsSystemEntity`;
+    lifts into V2's IR as `ModalityMark.SystemOwned` (payload-free
+    variant in the existing orthogonal-axes list pattern; rejected
+    flat `Kind.IsSystem: bool` per V2 IR boolean-avoidance
+    convention; rejected `Origin` axis split per orthogonality;
+    rejected new `Kind.Stewardship` DU per two-consumer threshold).
+
+Future class members (per-table column structure that
+`FOR JSON PATH` collapses; check-constraint definitions; triggers)
+surface under fixture pressure as further deferred slices — the
+structural foundation (RowsetBundle as a flat-list carrier joinable
+on FK ID columns; `propagateOrFallback` for boundary error
+propagation; closed-DU expansion empirical-test discipline) is
+established.
+
+**A1's JSON-projection-lossiness bound — operational disposition.**
+
+Chapter 3.2 makes A1's `OssysOriginal` variant **operationally
+reachable** for the first time at the OSSYS-adapter boundary. The
+four-variant amendment shipped at Stage 0 S0.B encoded the bound
+type-stratifically; chapter 3.5's `RefactorLogEmitter` was the
+first downstream consumer that pattern-matched on the variants;
+chapter 3.2 is the first **boundary** that *emits* `OssysOriginal`
+SsKeys directly from V1's actual `SS_Key` columns. A1's bound is
+no longer "operational placeholder" — it is one fixture away from
+production identity stability.
+
+**Cross-source SsKey-shape divergence — operational disposition.**
+
+Per `CHAPTER_3_2_OPEN.md` axis 5 (option 1 from pre-scope §4): the
+JSON path emits `Synthesized` SsKeys; the rowset path emits
+`OssysOriginal` SsKeys when Guids are present, `Synthesized`
+otherwise. Both paths produce structurally-equivalent Catalogs
+modulo this identity-shape divergence (slice 5 cross-source parity
+tests establish this empirically across all three fixture classes:
+minimal, reference-bearing, external-aligned-at-Extension).
+
+The deeper canonicalization (option 2: a `V1Mapped` SsKey carrying
+both forms via UUIDv5 derivation per `UuidV5.create`) is reserved
+for **chapter 4.2 User FK reflow's `SourceTag` refactor**, where
+cross-version identity stability becomes the load-bearing
+discipline. Chapter 3.2 establishes the source variants;
+chapter 4.2 will harmonize them under V1Mapped.
+
+**Rule 16 (same-module FK assumption) — disposition unchanged.**
+
+Slice 2 tests rule 16's same-module assumption against the rowset
+path's flat-list reference shape. Same-module FK round-trips
+cleanly; cross-module FK case remains the **Cross-module FK IR
+refinement** Active deferral (highest-priority deferred slice per
+the index; trigger condition: a fixture exercising cross-module
+FK). The rowset path is structurally ready for cross-module FK
+extension when the fixture surfaces; the deferral does not impede
+chapter 3.2 close.
+
+**`propagateOrFallback` codification — audit-during-validation worked precedent.**
+
+The chapter 3.2 close-prep audit surfaced an error-propagation bug
+across SEVEN build-failure sites in CatalogReader.fs. The pattern:
+build functions assembled a target from N intermediate `Result<_>`
+values; the failure branch swallowed underlying error codes under
+generic umbrella codes (`kindBuild` / `moduleBuild` /
+`attributeBuild` / `referenceBuild` / `indexBuild` plus rowset
+siblings). The fix: codify `propagateOrFallback` at the two-
+consumer threshold; refactor seven sites uniformly. Test surface:
+two new JSON-path regression tests (`unmapped DeleteRuleCode
+propagates`; `unmapped DataType propagates`) assert positively
+(substantive cause appears) AND negatively (umbrella codes do NOT
+appear). The audit-during-validation discipline (`DECISIONS
+2026-05-09 — Audits surface things not on the agenda`) operated as
+designed — the bug surfaced during slice 2 work, expanded under
+chapter close-prep audit pressure, and shipped end-to-end in
+commit `0336795` BEFORE chapter close ritual ran.
+
+**Chapter close arc lessons.**
+
+Three patterns held cleanly across chapter 3.2:
+
+  - **Closed-DU expansion empirical-test discipline** (`DECISIONS
+    2026-05-13`). Two record-style extensions
+    (`RowsetBundle.References` at slice 2; `RowsetBundle` field
+    additions at slices 3/4) and one DU variant extension
+    (`ModalityMark.SystemOwned` at slice 4). F# exhaustiveness
+    errors lit up only at predicted interpretation sites; no
+    caller reshaping outside the variant's module. Four
+    interpretation sites for `ModalityMark.SystemOwned`
+    (CanonicalizeIdentity / NamingMorphism /
+    NormalizeStaticPopulations / JsonEmitter.modalityString); each
+    got an identity-shape branch. The discipline survives the
+    record-extension generalization.
+
+  - **Two-consumer threshold for emergent primitives** (`DECISIONS
+    2026-05-13`). `propagateOrFallback` extracted at consumers 2 + 3
+    + 4 (rowset path's two sites + JSON path's parseKind + parseModule);
+    the broader audit surfaced the helper now serves 7 consumers
+    uniformly. The threshold's predictive power held —
+    the helper's shape was concrete by consumer 2; consumer 3's
+    demand crystallized the extraction.
+
+  - **Trace-before-fixture pattern** (`DECISIONS 2026-05-19`). Each
+    of slices 2-4 re-did an already-traced V1↔V2 fixture under the
+    rowset path. The three-class typology (`DECISIONS 2026-05-21`)
+    operated: all chapter 3.2 findings classified as **JSON-
+    projection-lossiness** (V2 can't see X through JSON; resolved
+    by input-path expansion). The structural foundation for V1↔V2
+    translation work is now the chapter-3.2 surface; future
+    fixtures that surface alternative-IR-surface or
+    V2-boundary-discipline class members route to other chapters.
+
+**Test baseline at chapter 3.2 close.** 882 non-canary tests
+passing; 0 skipped; lint clean across 27 rules. Chapter 3.2 added
+30 new rowset tests + 2 JSON-path regression tests + 7 IR-
+refinement coverage tests across `ModalityMark.SystemOwned`'s four
+interpretation sites. Build clean under `TreatWarningsAsErrors=true`.
+
+**Forward signal.**
+
+Chapter 3.2 closes the SnapshotRowsets variant deferral structurally.
+The remaining V2-driver KPI critical path (per `V2_DRIVER.md`):
+
+  - **Chapter 4.1.B slice δ** (two-phase insertion / cycle-breaking;
+    CDC-silence-on-idempotent-redeploy property test is the V2-
+    driver KPI's highest-leverage single deliverable).
+  - **Chapter 4.1.B slices ε/ζ** (MigrationDependencies + Bootstrap;
+    `ScriptDomBuild.buildMergeStatement` adoption mandatory per
+    Active deferrals row).
+  - **Chapter 3.x DacpacEmitter** (DacFx adoption mandatory per
+    Active deferrals row).
+  - **Cross-module FK IR refinement** (highest-priority deferred
+    slice in the index; trigger: fixture exercising cross-module
+    FK).
+
+Chapter 3.2's JSON-projection-lossiness class resolution unblocks
+A1 for renames at the boundary, which downstream-unblocks chapter
+4.2 User FK reflow's `SourceTag` / `V1Mapped` UUIDv5 work.
