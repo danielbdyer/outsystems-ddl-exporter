@@ -35,13 +35,11 @@
       Provisional Data → SSDT dependency at chapter 4.1.B slice α:
       `Render.formatSqlLiteral` (typed `PrimitiveType -> raw -> string`)
       is the SQL-emission counterpart of `RawValueCodec.parseRaw`
-      (the IR→CLR side). Per `DECISIONS 2026-05-13 — Emergent
-      primitives earn their place through multi-consumer demand`,
-      slice α has two consumers (SSDT.RawTextEmitter + StaticSeeds
-      Emitter). Promotion to a concept-shaped `Projection.Core
-      .SqlLiteral` module lands at slice ε (when MigrationDependencies
-      Emitter joins as the third consumer); the cross-target edge is
-      provisional until then.
+      (the IR→CLR side). Promotion to a concept-shaped
+      `Projection.Core.SqlLiteral` module is the Tier-1 #4 transition
+      (post-RawTextEmitter-retirement arc) — that retires this
+      cross-target edge AND unblocks the MERGE → ScriptDom
+      MergeStatement migration that needs typed VALUES literals.
     -->
     <ProjectReference Include="..\Projection.Targets.SSDT\Projection.Targets.SSDT.fsproj" />
   </ItemGroup>
