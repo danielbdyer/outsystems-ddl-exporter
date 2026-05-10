@@ -93,10 +93,17 @@ module Deploy =
         //   loaded host. Larger timeouts hide a wedged daemon
         //   (downstream canary work fails anyway). 2 s is the smallest
         //   value that doesn't false-negative under host load.
-        // - `BringupBudgetMs = 30000`: dockerd cold-start measured at
-        //   1-3 s in this environment; 30 s is ~10× the observed p99,
-        //   covering pathological cases (TLS clock-skew retries, host
-        //   memory pressure during boot).
+        // - `BringupBudgetMs = 5000`: dockerd cold-start measured at
+        //   1-3 s on hosts where bring-up is permitted; 5 s is the
+        //   smallest budget that survives a sandbox-loaded p99 cold
+        //   boot. Per `DECISIONS 2026-05-10 — Docker probe efficiency`,
+        //   higher budgets ARE NOT a help on a host where the daemon
+        //   genuinely cannot start (web sandbox without dockerd
+        //   privileges) — the budget is paid once per call (×N tests
+        //   absent memoization), and then the daemon still won't be
+        //   up. Memoization (below) collapses the test-suite-level
+        //   cost; the lower per-call ceiling makes even un-memoized
+        //   first-call paths reasonable.
         // - `BringupPollMs = 200`: below the perceptual instant-response
         //   threshold (~250 ms) so a successful bring-up returns
         //   without feeling laggy; small enough to detect a fast
@@ -108,7 +115,7 @@ module Deploy =
         let private ProbeTimeoutMs : int = 2_000
 
         [<Literal>]
-        let private BringupBudgetMs : int = 30_000
+        let private BringupBudgetMs : int = 5_000
 
         [<Literal>]
         let private BringupPollMs : int = 200
@@ -169,13 +176,64 @@ module Deploy =
                 up <- isResponding ()
             up
 
-        /// JIT bring-up. Returns true iff Docker is usable for canary
-        /// work. Tests gate on this for clean skip-if-unavailable
-        /// semantics that survive a mid-session daemon drop.
-        let ensureRunning () : bool =
+        // Memoization for `ensureRunning`. Per `DECISIONS 2026-05-10 —
+        // Docker probe efficiency`: a test suite invokes `ensureRunning`
+        // per-test through `skipIfNoDocker`; absent memoization, every
+        // canary test pays the full bring-up budget when Docker is
+        // unavailable (~14 minutes for a 15-test suite at the prior
+        // 30 s budget). Memoization collapses the suite-level cost to
+        // a single probe-and-bring-up cycle; the result is cached for
+        // the life of the process.
+        //
+        // Thread-safety: the lock guards both read and write. Re-entry
+        // is impossible (the inner work is `isAvailable` /
+        // `isResponding` / `startDaemon`, none of which call
+        // `ensureRunning`).
+        //
+        // Reset semantics: `resetMemo ()` clears the cache for callers
+        // that need to re-probe (e.g., a long-running CLI that wants
+        // to retry after a daemon recovery). Tests do not use it; the
+        // canary-test pattern is one probe per process.
+        let private memoLock : obj = obj ()
+        let mutable private memoResult : bool option = None
+
+        let private probeOnce () : bool =
+            // Per the chapter-3.1 sandbox finding (codified
+            // 2026-05-10 — Docker probe efficiency): the dominant
+            // worst case in the web sandbox is `isAvailable` true
+            // (socket file present from a prior bring-up attempt)
+            // but the daemon not responding AND `sudo dockerd`
+            // unavailable to us. `BringupBudgetMs` is the ceiling
+            // for that loop; memoization (above) keeps the cost
+            // suite-wide constant.
             if not (isAvailable ()) then false
             elif isResponding () then true
             else startDaemon ()
+
+        /// JIT bring-up. Returns true iff Docker is usable for canary
+        /// work. Tests gate on this for clean skip-if-unavailable
+        /// semantics that survive a mid-session daemon drop.
+        ///
+        /// **Memoized** per `DECISIONS 2026-05-10 — Docker probe
+        /// efficiency`. The bring-up budget is paid at most once per
+        /// process. Use `resetMemo ()` if you need to retry after a
+        /// known recovery event (rare; tests don't).
+        let ensureRunning () : bool =
+            lock memoLock (fun () ->
+                match memoResult with
+                | Some cached -> cached
+                | None ->
+                    let result = probeOnce ()
+                    memoResult <- Some result
+                    result)
+
+        /// Clear the memoized `ensureRunning` result. The next call
+        /// re-probes from scratch. Per the discipline above: only
+        /// callers that have *evidence* of daemon recovery should
+        /// invoke this (e.g., a test runner with a between-suite
+        /// hook that re-armed Docker).
+        let resetMemo () : unit =
+            lock memoLock (fun () -> memoResult <- None)
 
     [<Literal>]
     let private DefaultImage : string =
