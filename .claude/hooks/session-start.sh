@@ -126,8 +126,24 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
 fi
 export PATH="$DOTNET_DIR:$PATH"
 
-printf 'session-start OK   %s — dotnet %s\n' \
-    "$(date -u +%FT%TZ)" "$DOTNET_VERSION" >> "$HOOK_STATUS"
+# ---------------------------------------------------------------------
+# Subsystem state tracker. Each subsystem records one of a small,
+# stable vocabulary so the comprehensive status line at end-of-hook
+# is greppable. State words: ready / running / cached / missing /
+# failed / not-ready / skipped. The final status-file entry is the
+# session's full readiness picture — see AGENTS.md "Session-start
+# status" section for the agent-side consumption pattern.
+#
+# The dotnet-only `session-start OK ... — dotnet <v>` line previously
+# written here retired in favor of the unified end-of-hook line.
+# Rationale: tail-and-grep usage on $HOOK_STATUS expects ONE entry
+# per session-start, not two; a fresh agent reading "session-start OK"
+# without seeing the comprehensive verdict mistakes the dotnet OK
+# for full canary readiness.
+DOTNET_STATE="$DOTNET_VERSION"
+DOCKER_STATE="missing"
+IMAGE_STATE="skipped"
+WARM_STATE="skipped"
 
 # ---------------------------------------------------------------------
 # 2. Docker daemon — start if installed but not running
@@ -135,6 +151,7 @@ printf 'session-start OK   %s — dotnet %s\n' \
 if command -v docker >/dev/null 2>&1; then
     if docker info >/dev/null 2>&1; then
         log "Docker daemon already running"
+        DOCKER_STATE="running"
     else
         log "starting Docker daemon..."
         SUDO=""
@@ -159,10 +176,12 @@ if command -v docker >/dev/null 2>&1; then
 
         if [ "$READY" -eq 1 ]; then
             log "Docker daemon ready"
+            DOCKER_STATE="running"
         else
             log "WARNING: Docker daemon failed to start within 20s"
             log "         see /tmp/dockerd.log for details"
             log "         canary tests will soft-skip via Deploy.Docker.isAvailable()"
+            DOCKER_STATE="failed"
         fi
     fi
 
@@ -173,6 +192,7 @@ if command -v docker >/dev/null 2>&1; then
     if docker info >/dev/null 2>&1; then
         if docker image inspect "$SQL_IMAGE" >/dev/null 2>&1; then
             log "$SQL_IMAGE already cached locally"
+            IMAGE_STATE="cached"
         else
             log "pulling $SQL_IMAGE (~2GB; one-time)..."
             # Retry up to 3x for transient TLS / network hiccups.
@@ -189,10 +209,13 @@ if command -v docker >/dev/null 2>&1; then
                 sleep 2
                 ATTEMPT=$((ATTEMPT + 1))
             done
-            if ! docker image inspect "$SQL_IMAGE" >/dev/null 2>&1; then
+            if docker image inspect "$SQL_IMAGE" >/dev/null 2>&1; then
+                IMAGE_STATE="cached"
+            else
                 log "WARNING: SQL Server image pull failed after 3 attempts"
                 log "         see /tmp/docker-pull.log for details"
                 log "         first canary test will retry the pull on demand"
+                IMAGE_STATE="failed"
             fi
         fi
     fi
@@ -219,6 +242,7 @@ if command -v docker >/dev/null 2>&1; then
         if docker ps --filter "name=^${WARM_NAME}$" --format "{{.Names}}" 2>/dev/null \
             | grep -qx "$WARM_NAME"; then
             log "warm SQL Server container already running"
+            WARM_STATE="ready"
         else
             # Defensive: prune any stopped container with the same name
             # so `docker run` doesn't conflict.
@@ -245,13 +269,16 @@ if command -v docker >/dev/null 2>&1; then
                 done
                 if [ "$WARM_READY" -eq 1 ]; then
                     log "warm SQL Server container ready"
+                    WARM_STATE="ready"
                 else
                     log "WARNING: warm SQL Server container did not become ready within 60s"
                     log "         canaries will fall back to ephemeral container per call"
+                    WARM_STATE="not-ready"
                 fi
             else
                 log "WARNING: failed to start warm SQL Server container"
                 log "         canaries will fall back to ephemeral container per call"
+                WARM_STATE="failed"
             fi
         fi
 
@@ -271,7 +298,32 @@ else
     log "Docker not installed; canary tests will soft-skip"
 fi
 
-log "session-start hook complete"
+# ---------------------------------------------------------------------
+# Comprehensive subsystem status — single tail-friendly line for the
+# agent. Verdict vocabulary:
+#   READY     — every required subsystem is up; canary tests will run
+#   DEGRADED  — dotnet ready, but Docker / image / warm container
+#               degraded; pure-F# work fine, canary tests will soft-
+#               skip via Deploy.Docker.ensureRunning()
+#   FAIL      — dotnet missing (already exited above with FAIL)
+# Subsystems use stable vocabulary (running / cached / ready /
+# missing / failed / not-ready / skipped) so `tail $HOOK_STATUS |
+# grep -oE 'docker=[a-z-]+'` is a one-liner.
+if [ "$DOCKER_STATE" = "running" ] && [ "$IMAGE_STATE" = "cached" ] && [ "$WARM_STATE" = "ready" ]; then
+    HOOK_VERDICT="READY"
+else
+    HOOK_VERDICT="DEGRADED"
+fi
+printf 'session-start %s %s | dotnet=%s | docker=%s | image=%s | warm=%s\n' \
+    "$HOOK_VERDICT" \
+    "$(date -u +%FT%TZ)" \
+    "$DOTNET_STATE" \
+    "$DOCKER_STATE" \
+    "$IMAGE_STATE" \
+    "$WARM_STATE" \
+    >> "$HOOK_STATUS"
+
+log "session-start hook complete (verdict: $HOOK_VERDICT; dotnet=$DOTNET_STATE docker=$DOCKER_STATE image=$IMAGE_STATE warm=$WARM_STATE)"
 
 # ---------------------------------------------------------------------
 # Hook discipline (do not remove without writing the rationale)
