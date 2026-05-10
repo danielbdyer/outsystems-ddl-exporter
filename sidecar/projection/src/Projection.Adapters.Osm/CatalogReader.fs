@@ -229,6 +229,32 @@ module CatalogReader =
     let private adapterError (code: string) (message: string) : ValidationError =
         ValidationError.create (sprintf "adapter.osm.%s" code) message
 
+    /// Aggregate underlying errors from a list of `Result.errors`
+    /// projections; fall back to a single `adapterError` if no
+    /// underlying errors decompose out of the failure (theoretical
+    /// case — the outer `match _ -> ...` arm fires on a combination
+    /// the explicit branches didn't enumerate).
+    ///
+    /// Codified at the two-consumer threshold (CLAUDE.md operating-
+    /// disciplines table — emergent primitives earn their place
+    /// through multi-consumer demand). Four V1↔V2 build-failure
+    /// collection sites share this exact shape: `parseKindRow` /
+    /// `parseModuleRow` (rowset path; chapter 3.2 slices 1 + 2);
+    /// `parseKind` / `parseModule` (JSON path; chapter 2 sessions
+    /// 18–25, now corrected). Before extraction the rowset path
+    /// carried the inline form and the JSON path swallowed the
+    /// underlying error with a generic `kindBuild` / `moduleBuild`
+    /// umbrella — losing the substantive cause (e.g.,
+    /// `adapter.osm.unmappedDeleteRule` from `parseDeleteRule`).
+    /// The helper makes the diagnostic surface honest across both
+    /// translation paths uniformly.
+    let private propagateOrFallback
+        (errorLists: ValidationError list list)
+        (fallback: unit -> ValidationError) : Result<'a> =
+        let combined = List.concat errorLists
+        if List.isEmpty combined then Result.failureOf (fallback ())
+        else Error combined
+
     // -----------------------------------------------------------------------
     // SsKey synthesis — V1's `osm_model.json` does NOT carry SSKey
     // values. SnapshotJsonBuilder writes names and physical-names; the
@@ -497,10 +523,20 @@ module CatalogReader =
                       Scale        = scaleOpt
                       IsIdentity   = isIdentity }
             | _ ->
-                Result.failureOf (
-                    adapterError
-                        "attributeBuild"
-                        (sprintf "Failed to build attribute '%s' on '%s.%s'." rawName moduleName entityName))
+                // Propagate underlying errors via `propagateOrFallback`.
+                // Substantive causes (e.g., `adapter.osm.unmappedDataType`
+                // from `parsePrimitiveType`) survive the attribute-level
+                // wrap.
+                propagateOrFallback
+                    [ Result.errors nameDU
+                      Result.errors key
+                      Result.errors primitive ]
+                    (fun () ->
+                        adapterError
+                            "attributeBuild"
+                            (sprintf
+                                "Failed to build attribute '%s' on '%s.%s'."
+                                rawName moduleName entityName))
         | _ ->
             Result.failureOf (
                 adapterError
@@ -623,14 +659,26 @@ module CatalogReader =
                           SourceAttribute = srcKey
                           TargetKind      = tgtKey
                           OnDelete        = rule })
-                | _, _, _, _, Error es -> Error es
                 | _ ->
-                    Result.failureOf (
-                        adapterError
-                            "referenceBuild"
-                            (sprintf
-                                "Failed to build reference for attribute '%s' on '%s.%s'."
-                                attrName sourceModuleName sourceEntityName))
+                    // Propagate underlying errors via
+                    // `propagateOrFallback` — uniform with the four
+                    // build sites in parseKind / parseModule /
+                    // parseAttribute / parseIndex. Retires the
+                    // partial-decompose `Error es` branch (which
+                    // caught only the onDelete-error shape and dropped
+                    // the other four error sources on the floor).
+                    propagateOrFallback
+                        [ Result.errors refKey
+                          Result.errors refName
+                          Result.errors srcAttrKey
+                          Result.errors tgtKindKey
+                          Result.errors onDelete ]
+                        (fun () ->
+                            adapterError
+                                "referenceBuild"
+                                (sprintf
+                                    "Failed to build reference for attribute '%s' on '%s.%s'."
+                                    attrName sourceModuleName sourceEntityName))
             | Ok attrName, Ok None, _ ->
                 Result.failureOf (
                     adapterError
@@ -723,12 +771,17 @@ module CatalogReader =
                       IsUnique     = isUnique
                       IsPrimaryKey = isPrimary }
             | _ ->
-                Result.failureOf (
-                    adapterError
-                        "indexBuild"
-                        (sprintf
-                            "Failed to build index '%s' on '%s.%s'."
-                            indexName moduleName entityName))
+                // Propagate underlying errors via `propagateOrFallback`.
+                propagateOrFallback
+                    [ Result.errors indexKey
+                      Result.errors indexNm
+                      Result.errors foldedKeyCols ]
+                    (fun () ->
+                        adapterError
+                            "indexBuild"
+                            (sprintf
+                                "Failed to build index '%s' on '%s.%s'."
+                                indexName moduleName entityName))
         | _ ->
             Result.failureOf (
                 adapterError
@@ -808,10 +861,26 @@ module CatalogReader =
                       References = refs
                       Indexes    = idxs }
             | _ ->
-                Result.failureOf (
-                    adapterError
-                        "kindBuild"
-                        (sprintf "Failed to build kind '%s' in module '%s'." entityName moduleName))
+                // Propagate underlying errors via `propagateOrFallback`
+                // (codified at two-consumer threshold; same surface as
+                // parseKindRow on the rowset path). Substantive causes
+                // — e.g., `adapter.osm.unmappedDeleteRule` from
+                // `parseDeleteRule`, `adapter.osm.unmappedDataType`
+                // from `parsePrimitiveType` — survive the kind-level
+                // wrap. Prior shape swallowed them under a generic
+                // `kindBuild` umbrella.
+                propagateOrFallback
+                    [ Result.errors kindKey
+                      Result.errors kindName
+                      Result.errors foldedAttrs
+                      Result.errors foldedRefs
+                      Result.errors foldedIdx ]
+                    (fun () ->
+                        adapterError
+                            "kindBuild"
+                            (sprintf
+                                "Failed to build kind '%s' in module '%s'."
+                                entityName moduleName))
         | _ ->
             Result.failureOf (
                 adapterError
@@ -852,10 +921,16 @@ module CatalogReader =
                 // structurally at the boundary, not deferred.
                 Module.create k n kinds
             | _ ->
-                Result.failureOf (
-                    adapterError
-                        "moduleBuild"
-                        (sprintf "Failed to build module '%s'." rawName))
+                // Propagate underlying errors via `propagateOrFallback`.
+                // Substantive causes survive the module-level wrap.
+                propagateOrFallback
+                    [ Result.errors modKey
+                      Result.errors modName
+                      Result.errors foldedKinds ]
+                    (fun () ->
+                        adapterError
+                            "moduleBuild"
+                            (sprintf "Failed to build module '%s'." rawName))
         | _ ->
             Result.failureOf (
                 adapterError
@@ -961,12 +1036,17 @@ module CatalogReader =
                   Scale        = row.Scale
                   IsIdentity   = row.IsAutoNumber }
         | _ ->
-            Result.failureOf (
-                adapterError
-                    "attributeRowBuild"
-                    (sprintf
-                        "Failed to build attribute '%s' on '%s.%s' from rowset bundle."
-                        row.AttrName moduleName entityName))
+            // Propagate underlying errors via `propagateOrFallback`.
+            propagateOrFallback
+                [ Result.errors nameDU
+                  Result.errors key
+                  Result.errors primitive ]
+                (fun () ->
+                    adapterError
+                        "attributeRowBuild"
+                        (sprintf
+                            "Failed to build attribute '%s' on '%s.%s' from rowset bundle."
+                            row.AttrName moduleName entityName))
 
     /// Build one V2 `Reference` from a paired `(AttributeRow, ReferenceRow)`.
     /// Same structural shape as `parseReference` (JSON path,
@@ -994,14 +1074,21 @@ module CatalogReader =
                   SourceAttribute = srcKey
                   TargetKind      = tgtKey
                   OnDelete        = rule }
-        | _, _, _, _, Error es -> Error es
         | _ ->
-            Result.failureOf (
-                adapterError
-                    "referenceRowBuild"
-                    (sprintf
-                        "Failed to build reference for attribute '%s' on '%s.%s' from rowset bundle."
-                        attrRow.AttrName moduleName entityName))
+            // Propagate underlying errors via `propagateOrFallback` —
+            // uniform with parseReference on the JSON path.
+            propagateOrFallback
+                [ Result.errors refKey
+                  Result.errors refName
+                  Result.errors srcAttrKey
+                  Result.errors tgtKindKey
+                  Result.errors onDelete ]
+                (fun () ->
+                    adapterError
+                        "referenceRowBuild"
+                        (sprintf
+                            "Failed to build reference for attribute '%s' on '%s.%s' from rowset bundle."
+                            attrRow.AttrName moduleName entityName))
 
     let private parseKindRow
         (moduleName: string)
@@ -1068,25 +1155,22 @@ module CatalogReader =
                   // #AllIdx / #IdxColsMapped). Empty at slice 2.
                   Indexes    = [] }
         | _ ->
-            // Propagate underlying errors (e.g.,
-            // `adapter.osm.unmappedDeleteRule` from `parseDeleteRule`)
-            // rather than swallowing them under a generic
-            // `kindRowBuild` umbrella. Keeps the diagnostic surface
-            // honest — the substantive cause is what callers act on.
-            let underlying =
-                [ (match kindKey with Error es -> es | _ -> [])
-                  (match kindName with Error es -> es | _ -> [])
-                  (match foldedAttrs with Error es -> es | _ -> [])
-                  (match foldedRefs with Error es -> es | _ -> []) ]
-                |> List.concat
-            if List.isEmpty underlying then
-                Result.failureOf (
+            // Propagate underlying errors via `propagateOrFallback`
+            // (codified at two-consumer threshold; same surface as
+            // parseKind on the JSON path). Substantive causes — e.g.,
+            // `adapter.osm.unmappedDeleteRule` from `parseDeleteRule`
+            // — survive the kind-level wrap.
+            propagateOrFallback
+                [ Result.errors kindKey
+                  Result.errors kindName
+                  Result.errors foldedAttrs
+                  Result.errors foldedRefs ]
+                (fun () ->
                     adapterError
                         "kindRowBuild"
                         (sprintf
                             "Failed to build kind '%s' in module '%s' from rowset bundle."
                             kindRow.EntityName moduleName))
-            else Error underlying
 
     let private parseModuleRow
         (kindsByEspace: Map<int, KindRow list>)
@@ -1116,23 +1200,18 @@ module CatalogReader =
         | Ok k, Ok n, Ok kinds ->
             Module.create k n kinds
         | _ ->
-            // Propagate underlying errors — same discipline as
-            // parseKindRow's failure path. The substantive cause
-            // (e.g., `adapter.osm.unmappedDeleteRule`) survives the
-            // module-level wrap.
-            let underlying =
-                [ (match modKey with Error es -> es | _ -> [])
-                  (match modName with Error es -> es | _ -> [])
-                  (match foldedKinds with Error es -> es | _ -> []) ]
-                |> List.concat
-            if List.isEmpty underlying then
-                Result.failureOf (
+            // Propagate underlying errors via `propagateOrFallback`.
+            // Substantive causes survive the module-level wrap.
+            propagateOrFallback
+                [ Result.errors modKey
+                  Result.errors modName
+                  Result.errors foldedKinds ]
+                (fun () ->
                     adapterError
                         "moduleRowBuild"
                         (sprintf
                             "Failed to build module '%s' from rowset bundle."
                             moduleRow.EspaceName))
-            else Error underlying
 
     /// V1 rowset bundle → V2 Catalog. Sibling to `parseDocument` (JSON
     /// path). The flat-list bundle joins by FK ID columns at load time

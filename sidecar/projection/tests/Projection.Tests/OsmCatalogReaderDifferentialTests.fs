@@ -1116,3 +1116,122 @@ let ``differential: V1 static-entity fixture parses with Modality = [Static []]`
                 errors)
     | Ok actual ->
         Assert.Equal<Catalog>(expectedStaticEntityCatalog, actual)
+
+
+// ===========================================================================
+// JSON-path error-propagation regression tests.
+//
+// Backports the rowset-path discipline (chapter 3.2 slice 2 surfaced;
+// `propagateOrFallback` codified at two-consumer threshold) to the
+// JSON path's `parseKind` / `parseModule`. The prior shape swallowed
+// underlying errors (e.g., `adapter.osm.unmappedDeleteRule` from
+// `parseDeleteRule`) under generic `kindBuild` / `moduleBuild`
+// umbrellas; the fix propagates substantive causes through both
+// translation paths uniformly.
+//
+// Tests cover:
+//   - Unmapped delete-rule code propagates as
+//     `adapter.osm.unmappedDeleteRule` (the rowset-side test's JSON
+//     analog).
+//   - Unmapped data-type propagates as `adapter.osm.unmappedDataType`
+//     (independent error-source proving the propagation isn't tied
+//     to one particular leaf cause).
+// ===========================================================================
+
+let private fixtureWithBadDeleteRule : string =
+    """{
+  "exportedAtUtc": "2026-05-10T00:00:00Z",
+  "modules": [
+    { "name": "AppCore", "isSystem": false, "isActive": true,
+      "entities": [
+        { "name": "Account", "physicalName": "OSUSR_APPCORE_ACCOUNT",
+          "isStatic": false, "isExternal": false, "isActive": true,
+          "db_catalog": null, "db_schema": "dbo",
+          "attributes": [
+            { "name": "Id", "physicalName": "ID", "originalName": null,
+              "dataType": "Identifier", "length": null, "precision": null,
+              "scale": null, "default": null, "isMandatory": true,
+              "isIdentifier": true, "isAutoNumber": true, "isActive": true,
+              "isReference": 0, "refEntityId": null, "refEntity_name": null,
+              "refEntity_physicalName": null, "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0, "external_dbType": null,
+              "physical_isPresentButInactive": 0 }
+          ], "relationships": [], "indexes": [], "triggers": [] },
+        { "name": "User", "physicalName": "OSUSR_APPCORE_USER",
+          "isStatic": false, "isExternal": false, "isActive": true,
+          "db_catalog": null, "db_schema": "dbo",
+          "attributes": [
+            { "name": "Id", "physicalName": "ID", "originalName": null,
+              "dataType": "Identifier", "length": null, "precision": null,
+              "scale": null, "default": null, "isMandatory": true,
+              "isIdentifier": true, "isAutoNumber": true, "isActive": true,
+              "isReference": 0, "refEntityId": null, "refEntity_name": null,
+              "refEntity_physicalName": null, "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0, "external_dbType": null,
+              "physical_isPresentButInactive": 0 },
+            { "name": "AccountId", "physicalName": "ACCOUNTID", "originalName": null,
+              "dataType": "Identifier", "length": null, "precision": null,
+              "scale": null, "default": null, "isMandatory": true,
+              "isIdentifier": false, "isAutoNumber": false, "isActive": true,
+              "isReference": 1, "refEntityId": 1, "refEntity_name": "Account",
+              "refEntity_physicalName": "OSUSR_APPCORE_ACCOUNT",
+              "reference_deleteRuleCode": "TotallyMadeUpRule",
+              "reference_hasDbConstraint": 1, "external_dbType": null,
+              "physical_isPresentButInactive": 0 }
+          ], "relationships": [], "indexes": [], "triggers": [] }
+      ]
+    }
+  ]
+}"""
+
+let private fixtureWithBadDataType : string =
+    """{
+  "exportedAtUtc": "2026-05-10T00:00:00Z",
+  "modules": [
+    { "name": "AppCore", "isSystem": false, "isActive": true,
+      "entities": [
+        { "name": "User", "physicalName": "OSUSR_APPCORE_USER",
+          "isStatic": false, "isExternal": false, "isActive": true,
+          "db_catalog": null, "db_schema": "dbo",
+          "attributes": [
+            { "name": "WeirdField", "physicalName": "WEIRD", "originalName": null,
+              "dataType": "BogusDataType", "length": null, "precision": null,
+              "scale": null, "default": null, "isMandatory": true,
+              "isIdentifier": false, "isAutoNumber": false, "isActive": true,
+              "isReference": 0, "refEntityId": null, "refEntity_name": null,
+              "refEntity_physicalName": null, "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0, "external_dbType": null,
+              "physical_isPresentButInactive": 0 }
+          ], "relationships": [], "indexes": [], "triggers": [] }
+      ]
+    }
+  ]
+}"""
+
+[<Fact>]
+let ``JSON path: unmapped DeleteRuleCode propagates as adapter.osm.unmappedDeleteRule (not swallowed under kindBuild)`` () =
+    match parseSync (CatalogReader.SnapshotJson fixtureWithBadDeleteRule) with
+    | Ok _ ->
+        Assert.Fail "Expected Error for unmapped delete-rule code; got Ok"
+    | Error errors ->
+        let codes = errors |> List.map (fun e -> e.Code)
+        Assert.Contains("adapter.osm.unmappedDeleteRule", codes)
+        // The fix's claim is *propagation*, not replacement — the
+        // substantive cause must appear; a generic kindBuild /
+        // moduleBuild error MAY also appear depending on the failure
+        // shape, but the substantive code is what callers act on.
+        Assert.DoesNotContain("adapter.osm.kindBuild",   codes)
+        Assert.DoesNotContain("adapter.osm.moduleBuild", codes)
+
+[<Fact>]
+let ``JSON path: unmapped DataType propagates as adapter.osm.unmappedDataType (not swallowed under kindBuild)`` () =
+    // Independent leaf-error source (parsePrimitiveType vs parseDeleteRule).
+    // Proves the propagation isn't tied to one particular cause.
+    match parseSync (CatalogReader.SnapshotJson fixtureWithBadDataType) with
+    | Ok _ ->
+        Assert.Fail "Expected Error for unmapped data type; got Ok"
+    | Error errors ->
+        let codes = errors |> List.map (fun e -> e.Code)
+        Assert.Contains("adapter.osm.unmappedDataType", codes)
+        Assert.DoesNotContain("adapter.osm.kindBuild",   codes)
+        Assert.DoesNotContain("adapter.osm.moduleBuild", codes)
