@@ -359,3 +359,234 @@ let ``Slice β: T1 byte-determinism holds under CDC dispatch`` () =
     let s1 = ArtifactByKind.toMap r1 |> Map.find country.SsKey
     let s2 = ArtifactByKind.toMap r2 |> Map.find country.SsKey
     Assert.Equal<string> (s1.Rendered, s2.Rendered)
+
+// ---------------------------------------------------------------------------
+// Chapter 4.1.B slice δ — DataInsertScript.Phase2Updates + DeferredFkSet
+// (two-phase insertion / cycle-breaking).
+//
+// V1 reference: `Osm.Emission/PhasedDynamicEntityInsertGenerator.cs:88-148`
+// (the empirical foundation V2 inherits) + `IdentifyNullableFKColumns:150`
+// (the deferral predicate). V2 algebra: cycle-membership comes from
+// `TopologicalOrderPass.Cycles`; nullable cycle-FK columns are NULLed
+// in Phase-1 MERGE VALUES and populated in Phase-2 per-row UPDATEs;
+// non-cycle / non-nullable FKs are not deferred.
+// ---------------------------------------------------------------------------
+
+/// Self-referencing kind: Tree (Id INT PK, Label TEXT, ParentId INT FK
+/// nullable → Tree.Id). One Modality.Static row. The self-FK forms a
+/// 1-node SCC; per `TopologicalOrderPass.SelfLoopPolicy = TreatAsCycle`
+/// the kind appears in `Cycles`. Phase-1 MERGE NULLs ParentId; Phase-2
+/// UPDATE re-populates it.
+let private mkTreeKind () : Kind =
+    let kindKey   = mkKey ["TestModule"; "Tree"]
+    let idKey     = mkKey ["TestModule"; "Tree"; "Id"]
+    let labelKey  = mkKey ["TestModule"; "Tree"; "Label"]
+    let parentKey = mkKey ["TestModule"; "Tree"; "ParentId"]
+    let refKey    = mkKey ["TestModule"; "Tree"; "RefParent"]
+    let row =
+        { Identifier = mkKey ["TestModule"; "Tree"; "Row"; "ROOT"]
+          Values =
+              Map.ofList
+                  [ mkName "Id",       "1"
+                    mkName "Label",    "root"
+                    mkName "ParentId", "1" ] }
+    {
+        SsKey    = kindKey
+        Name     = mkName "Tree"
+        Origin   = OsNative
+        Modality = [ Static [ row ] ]
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_TREE" }
+        Attributes =
+            [
+                { SsKey = idKey;     Name = mkName "Id";       Type = Integer
+                  Column = { ColumnName = "ID";       IsNullable = false }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                { SsKey = labelKey;  Name = mkName "Label";    Type = Text
+                  Column = { ColumnName = "LABEL";    IsNullable = false }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                { SsKey = parentKey; Name = mkName "ParentId"; Type = Integer
+                  Column = { ColumnName = "PARENTID"; IsNullable = true }     // nullable → deferrable
+                  IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+            ]
+        References =
+            [
+                { SsKey = refKey; Name = mkName "RefParent"
+                  SourceAttribute = parentKey; TargetKind = kindKey
+                  OnDelete = NoAction }
+            ]
+        Indexes    = []
+    }
+
+/// Self-referencing kind whose FK column is NOT NULL. Same shape as
+/// `mkTreeKind` but `ParentId` is non-nullable. The cycle still
+/// surfaces via `TopologicalOrderPass.Cycles`, but slice δ MUST NOT
+/// defer the column (NULLing would violate the constraint; V1's
+/// `IdentifyNullableFKColumns:184` skips these too).
+let private mkRigidTreeKind () : Kind =
+    let tree = mkTreeKind ()
+    let attrs =
+        tree.Attributes
+        |> List.map (fun a ->
+            if a.Name = mkName "ParentId" then
+                { a with Column = { a.Column with IsNullable = false }
+                         IsMandatory = true }
+            else a)
+    { tree with Attributes = attrs }
+
+[<Fact>]
+let ``Slice δ: acyclic catalog produces empty DeferredFkSet on every Phase1 row`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    for row in script.Phase1Merges do
+        Assert.True (Set.isEmpty row.DeferredFkSet)
+    Assert.Empty script.Phase2Updates
+
+[<Fact>]
+let ``Slice δ: self-referencing nullable FK populates DeferredFkSet`` () =
+    let tree = mkTreeKind ()
+    let catalog = mkCatalog [ tree ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find tree.SsKey
+    Assert.Equal (1, List.length script.Phase1Merges)
+    let phase1 = List.head script.Phase1Merges
+    // The nullable self-FK attribute (ParentId) is the deferred column.
+    Assert.True (Set.contains (mkName "ParentId") phase1.DeferredFkSet)
+    // Other columns NOT deferred (Id PK; Label non-FK).
+    Assert.False (Set.contains (mkName "Id") phase1.DeferredFkSet)
+    Assert.False (Set.contains (mkName "Label") phase1.DeferredFkSet)
+
+[<Fact>]
+let ``Slice δ: self-FK kind produces one Phase2Updates row per Phase1 row`` () =
+    let tree = mkTreeKind ()
+    let catalog = mkCatalog [ tree ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find tree.SsKey
+    Assert.Equal (List.length script.Phase1Merges, List.length script.Phase2Updates)
+    // Phase2 rows carry the same (KindKey, Identifier, DeferredFkSet)
+    // as their Phase1 counterparts — same logical row, two phases.
+    let p1Identities = script.Phase1Merges |> List.map (fun r -> r.KindKey, r.Identifier, r.DeferredFkSet)
+    let p2Identities = script.Phase2Updates |> List.map (fun r -> r.KindKey, r.Identifier, r.DeferredFkSet)
+    Assert.Equal<(SsKey * SsKey * Set<Name>) list> (p1Identities, p2Identities)
+
+[<Fact>]
+let ``Slice δ: NOT NULL FK in cycle is NOT deferred`` () =
+    let rigid = mkRigidTreeKind ()
+    let catalog = mkCatalog [ rigid ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find rigid.SsKey
+    // Cycle membership holds (TopologicalOrderPass sees the self-edge
+    // under TreatAsCycle), but the FK column is non-nullable so V1's
+    // deferral predicate (and V2's mirror) refuses to defer.
+    let phase1 = List.head script.Phase1Merges
+    Assert.True (Set.isEmpty phase1.DeferredFkSet)
+    Assert.Empty script.Phase2Updates
+
+[<Fact>]
+let ``Slice δ: Phase1 MERGE renders deferred column as NULL in VALUES`` () =
+    let tree = mkTreeKind ()
+    let catalog = mkCatalog [ tree ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find tree.SsKey
+    let r = normWs script.Rendered
+    // The MERGE's USING (VALUES (...)) row should carry NULL in the
+    // PARENTID slot rather than the row's raw value (1). The Source
+    // column list still names PARENTID — only the literal in VALUES
+    // changes. Per ScriptDom's Sql160ScriptGenerator NullLiteral output
+    // = `NULL`. Look for the row tuple: (1, N'root', NULL).
+    Assert.Contains ("(1, N'root', NULL)", r)
+    // And the Source column list still names PARENTID structurally.
+    Assert.Contains ("AS [Source]([ID], [LABEL], [PARENTID])", r)
+
+[<Fact>]
+let ``Slice δ: Phase2 UPDATE references PK in WHERE + deferred column in SET`` () =
+    let tree = mkTreeKind ()
+    let catalog = mkCatalog [ tree ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find tree.SsKey
+    let r = normWs script.Rendered
+    Assert.Contains ("UPDATE [dbo].[OSUSR_TEST_TREE]", r)
+    // SET clause carries the original (deferred) value — 1.
+    Assert.Contains ("SET [PARENTID] = 1", r)
+    // WHERE-clause scopes to the row's PK (Id = 1).
+    Assert.Contains ("WHERE [ID] = 1", r)
+
+[<Fact>]
+let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` () =
+    // Two Static kinds A ↔ B both nullable FK forms a 2-member SCC.
+    // Both kinds should receive Phase-2 deferral for their cross-FK.
+    let aKey  = mkKey ["TestModule"; "A"]
+    let bKey  = mkKey ["TestModule"; "B"]
+    let aIdK  = mkKey ["TestModule"; "A"; "Id"]
+    let aFkK  = mkKey ["TestModule"; "A"; "BId"]
+    let bIdK  = mkKey ["TestModule"; "B"; "Id"]
+    let bFkK  = mkKey ["TestModule"; "B"; "AId"]
+    let aRefK = mkKey ["TestModule"; "A"; "ToB"]
+    let bRefK = mkKey ["TestModule"; "B"; "ToA"]
+    let aRow =
+        { Identifier = mkKey ["TestModule"; "A"; "Row"; "1"]
+          Values = Map.ofList [ mkName "Id", "1"; mkName "BId", "1" ] }
+    let bRow =
+        { Identifier = mkKey ["TestModule"; "B"; "Row"; "1"]
+          Values = Map.ofList [ mkName "Id", "1"; mkName "AId", "1" ] }
+    let mkAttr ssk name typ col isPk isNull =
+        { SsKey = ssk; Name = mkName name; Type = typ
+          Column = { ColumnName = col; IsNullable = isNull }
+          IsPrimaryKey = isPk; IsMandatory = not isNull
+          Length = None; Precision = None; Scale = None; IsIdentity = false }
+    let mkRef ssk name srcAttr tgt =
+        { SsKey = ssk; Name = mkName name
+          SourceAttribute = srcAttr; TargetKind = tgt; OnDelete = NoAction }
+    let aKind : Kind =
+        { SsKey = aKey; Name = mkName "A"; Origin = OsNative
+          Modality = [ Static [ aRow ] ]
+          Physical = { Schema = "dbo"; Table = "OSUSR_A" }
+          Attributes = [ mkAttr aIdK "Id"  Integer "ID"  true false
+                         mkAttr aFkK "BId" Integer "BID" false true ]
+          References = [ mkRef aRefK "ToB" aFkK bKey ]
+          Indexes    = [] }
+    let bKind : Kind =
+        { SsKey = bKey; Name = mkName "B"; Origin = OsNative
+          Modality = [ Static [ bRow ] ]
+          Physical = { Schema = "dbo"; Table = "OSUSR_B" }
+          Attributes = [ mkAttr bIdK "Id"  Integer "ID"  true false
+                         mkAttr bFkK "AId" Integer "AID" false true ]
+          References = [ mkRef bRefK "ToA" bFkK aKey ]
+          Indexes    = [] }
+    let catalog = mkCatalog [ aKind; bKind ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let m = ArtifactByKind.toMap artifact
+    let aScript = Map.find aKey m
+    let bScript = Map.find bKey m
+    // Each kind defers its own FK to the other.
+    Assert.True (Set.contains (mkName "BId") (List.head aScript.Phase1Merges).DeferredFkSet)
+    Assert.True (Set.contains (mkName "AId") (List.head bScript.Phase1Merges).DeferredFkSet)
+    // And each kind has Phase2Updates populated.
+    Assert.NotEmpty aScript.Phase2Updates
+    Assert.NotEmpty bScript.Phase2Updates
+
+[<Fact>]
+let ``T1 (slice δ): byte-determinism holds across repeat invocations under cycle-breaking`` () =
+    let tree = mkTreeKind ()
+    let catalog = mkCatalog [ tree ]
+    let r1 = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let r2 = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let s1 = ArtifactByKind.toMap r1 |> Map.find tree.SsKey
+    let s2 = ArtifactByKind.toMap r2 |> Map.find tree.SsKey
+    Assert.Equal<string> (s1.Rendered, s2.Rendered)
+    Assert.Equal<DataInsertRow list> (s1.Phase1Merges, s2.Phase1Merges)
+    Assert.Equal<DataInsertRow list> (s1.Phase2Updates, s2.Phase2Updates)
+
+[<Fact>]
+let ``Slice δ: slice α/β rows pre-existing carry empty DeferredFkSet (acyclic invariant)`` () =
+    // Country (slice α/β fixture; no FKs at all) MUST have empty
+    // DeferredFkSet on every Phase1 row + empty Phase2Updates. Catches
+    // the case where slice δ accidentally populates the field on
+    // non-cycle kinds.
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    Assert.All (script.Phase1Merges, fun row -> Assert.Empty row.DeferredFkSet)
+    Assert.Empty script.Phase2Updates

@@ -11,8 +11,14 @@ open Projection.Core
 /// **Slice α scope (chapter 4.1.B).** `Values` carries the raw IR-form
 /// strings from `StaticRow.Values : Map<Name, string>`; type-aware SQL
 /// literal rendering happens at render time via `Projection.Targets.SSDT
-/// .Render.formatSqlLiteral`. The `DeferredFkSet : Set<Name>` field
-/// (cycle-breaking metadata) lands at slice δ when FK cycles surface.
+/// .Render.formatSqlLiteral`.
+///
+/// **Slice δ scope.** `DeferredFkSet : Set<Name>` names the (attribute-name)
+/// columns that cycle-break the row across the two-phase pattern: in a
+/// `Phase1Merges` row the deferred columns are emitted as `NULL` in the
+/// MERGE's VALUES; in a `Phase2Updates` row the same name set scopes the
+/// `SET` clause that populates them once Phase-1 INSERTs have completed.
+/// `Set.empty` for non-cycle rows.
 type DataInsertRow =
     {
         /// The owning kind's stable identity (per A4). The composer
@@ -30,6 +36,17 @@ type DataInsertRow =
         /// kind's `Attribute` list and applies `Render.formatSqlLiteral`
         /// to produce the SQL literal at emission time.
         Values : Map<Name, string>
+
+        /// Attribute-names of columns deferred across the two-phase
+        /// pattern (slice δ; chapter 4.1.B). For `Phase1Merges` rows
+        /// these columns are emitted as `NULL` so the row inserts
+        /// before its same-SCC FK target exists; the matching
+        /// `Phase2Updates` row carries the same `DeferredFkSet` and
+        /// renders the `UPDATE … SET <deferred> = <orig>` once every
+        /// Phase-1 row across the cycle is in place. Identity of a
+        /// deferral is the (`KindKey`, `Identifier`, column-name)
+        /// triple — the same set drives both phases.
+        DeferredFkSet : Set<Name>
     }
 
 /// Per-kind data-insertion artifact. Per pre-scope §2.4: `Phase1Merges`

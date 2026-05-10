@@ -47,8 +47,19 @@ module TopologicalOrderPass =
     ///       `CycleDiagnostic.BreakableEdges`. 2-member SCCs with 0 or
     ///       multiple Weak edges, and SCCs of size >= 3, remain
     ///       unresolved — Mode falls back to Alphabetical.
+    /// v4 — Self-loop detection: 1-member SCCs whose sole member has a
+    ///       self-edge in the adjacency are reported as cycles (per
+    ///       chapter 4.1.B slice δ — the data-emission path needs the
+    ///       full cycle inventory to determine deferred-FK columns).
+    ///       Pre-v4 single-node SCCs were dropped by the post-filter
+    ///       per "Self-loops would require explicit detection — adds
+    ///       when a real fixture surfaces them"; slice δ is that
+    ///       fixture. The asymmetric-2-cycle resolver continues to
+    ///       refuse 1-cycles (its name names the shape it handles);
+    ///       the diagnostic surfaces for emitters that consume cycle
+    ///       membership directly.
     [<Literal>]
-    let version : int = 3
+    let version : int = 4
 
     [<Literal>]
     let private passName : string = "topologicalOrder"
@@ -251,12 +262,20 @@ module TopologicalOrderPass =
             if not (Map.containsKey v indices) then
                 strongConnect v
 
-        // Filter to non-trivial SCCs (size >= 2). Single-node SCCs
-        // without self-loops are not cycles. Self-loops would require
-        // explicit detection — not present in the synthetic milestone;
-        // adds when a real fixture surfaces them.
+        // Filter to cycle-bearing SCCs:
+        //   - size ≥ 2 (the multi-node SCC case; pre-v4 behavior), OR
+        //   - size = 1 AND the sole member has a self-edge in the
+        //     restricted-children adjacency (the v4 self-loop case;
+        //     surfaced by chapter 4.1.B slice δ — the data emission
+        //     path needs cycle membership for self-referencing kinds
+        //     like `employee.manager_id → employee` to populate
+        //     `DeferredFkSet` and emit two-phase MERGE/UPDATE).
+        let hasSelfEdge (members: SsKey list) : bool =
+            match members with
+            | [ v ] -> childrenOf v |> List.contains v
+            | _     -> false
         components
-        |> Seq.filter (fun c -> List.length c >= 2)
+        |> Seq.filter (fun c -> List.length c >= 2 || hasSelfEdge c)
         |> Seq.toList
         |> List.sortBy (fun c -> c |> List.head)
 
