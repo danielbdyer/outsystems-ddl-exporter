@@ -58,6 +58,7 @@ module JsonEmitter =
         | Static rows   -> sprintf "Static(%d)" rows.Length
         | TenantScoped  -> "TenantScoped"
         | SoftDeletable -> "SoftDeletable"
+        | SystemOwned   -> "SystemOwned"
 
     // -----------------------------------------------------------------------
     // Per-element writers. Each takes the writer and an IR node and emits

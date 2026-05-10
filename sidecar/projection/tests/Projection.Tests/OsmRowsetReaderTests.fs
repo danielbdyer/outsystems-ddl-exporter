@@ -59,6 +59,7 @@ let private userKindRow (sskey: System.Guid option) : CatalogReader.KindRow =
         DbSchema          = "dbo"
         IsStatic          = false
         IsExternal        = false
+        IsSystemEntity    = false
         IsActive          = true
         EntitySsKey       = sskey
         PrimaryKeySsKey   = None
@@ -346,6 +347,7 @@ let private accountKindRow (sskey: System.Guid option) : CatalogReader.KindRow =
         DbSchema          = "dbo"
         IsStatic          = false
         IsExternal        = false
+        IsSystemEntity    = false
         IsActive          = true
         EntitySsKey       = sskey
         PrimaryKeySsKey   = None
@@ -588,6 +590,7 @@ let private billingAccountKindRow : CatalogReader.KindRow =
         DbSchema          = "billing"
         IsStatic          = false
         IsExternal        = true
+        IsSystemEntity    = false
         IsActive          = true
         EntitySsKey       = None
         PrimaryKeySsKey   = None
@@ -713,3 +716,167 @@ let ``slice 3: refinement evidence — rowset path diverges from JSON path on Es
     Assert.Equal<Origin>(ExternalDirect,                 rowsetOrigin)
     Assert.Equal<Origin>(ExternalViaIntegrationStudio,   jsonOrigin)
     Assert.NotEqual<Origin>(jsonOrigin, rowsetOrigin)
+
+
+// ===========================================================================
+// Chapter 3.2 slice 4 — IsSystemEntity activation (ModalityMark.SystemOwned).
+//
+// New system-entity fixture (no V1↔V2 differential precedent; chapter
+// 3.2 slice 4 surfaces the carriage path under empirical pressure).
+// V1's `ossys_Entity.Is_System` lifts into V2's `ModalityMark.SystemOwned`
+// payload-free mark — chosen over flat `Kind.IsSystem: bool`, an
+// `Origin` axis split, or a new `Stewardship` DU per the IR-refinement
+// decision recorded in CatalogReader.fs KindRow docstring.
+//
+// Tests cover:
+//   - IsSystemEntity=true lifts into Kind.Modality with SystemOwned mark
+//   - IsSystemEntity=false omits the SystemOwned mark (parity with V1 default)
+//   - SystemOwned coexists with Static (composite-modality case)
+//   - SystemOwned coexists with isExternal+EspaceKind (orthogonality)
+//   - Catalog with mixed system/non-system entities (filter-by-Modality
+//     pattern future consumers will use)
+// ===========================================================================
+
+/// Sibling-Π helper: does a Kind carry the SystemOwned mark?
+let private hasSystemOwnedMark (k: Kind) : bool =
+    k.Modality |> List.contains SystemOwned
+
+let private systemKindRow : CatalogReader.KindRow =
+    {
+        EntityId          = 41
+        EspaceId          = 1
+        EntityName        = "SystemAudit"
+        PhysicalTableName = "OSSYS_AUDIT"
+        DbSchema          = "ossys"
+        IsStatic          = false
+        IsExternal        = false
+        IsSystemEntity    = true
+        IsActive          = true
+        EntitySsKey       = None
+        PrimaryKeySsKey   = None
+    }
+
+let private systemAuditIdRow : CatalogReader.AttributeRow =
+    {
+        AttrId       = 411
+        EntityId     = 41
+        AttrName     = "Id"
+        PhysicalCol  = "ID"
+        DataType     = "Identifier"
+        IsMandatory  = true
+        IsIdentifier = true
+        IsAutoNumber = true
+        Length       = None
+        Precision    = None
+        Scale        = None
+        AttrSsKey    = None
+        IsActive     = true
+    }
+
+let private systemBundle : CatalogReader.RowsetBundle =
+    {
+        Modules    = [ moduleRow None ]
+        Kinds      = [ systemKindRow ]
+        Attributes = [ systemAuditIdRow ]
+        References = []
+    }
+
+[<Fact>]
+let ``slice 4: IsSystemEntity=true → Kind.Modality contains SystemOwned`` () =
+    match parseSync (CatalogReader.SnapshotRowsets systemBundle) with
+    | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
+    | Ok actual ->
+        let k = actual.Modules.[0].Kinds.[0]
+        Assert.True (hasSystemOwnedMark k, "Expected Modality to contain SystemOwned")
+        Assert.Equal<ModalityMark list>([ SystemOwned ], k.Modality)
+
+[<Fact>]
+let ``slice 4: IsSystemEntity=false → Modality omits SystemOwned (matches V1 default)`` () =
+    // The slice-1 minimal-fixture bundle has IsSystemEntity=false on
+    // the User kind (per the moduleRow helper default). Its Modality
+    // must NOT contain SystemOwned.
+    let bundle : CatalogReader.RowsetBundle =
+        {
+            Modules    = [ moduleRow None ]
+            Kinds      = [ userKindRow None ]
+            Attributes = [ idAttrRow None ]
+            References = []
+        }
+    match parseSync (CatalogReader.SnapshotRowsets bundle) with
+    | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
+    | Ok actual ->
+        let k = actual.Modules.[0].Kinds.[0]
+        Assert.False (hasSystemOwnedMark k, "User kind should not have SystemOwned")
+        Assert.Equal<ModalityMark list>([], k.Modality)
+
+[<Fact>]
+let ``slice 4: SystemOwned coexists with Static (composite-modality case)`` () =
+    // A static + system entity (rare but possible — V1 system enums
+    // exist; they're both static-populated and platform-owned).
+    // ModalityMark list shape carries both marks; declaration order
+    // is Static-first, SystemOwned-second per parseKindRow's list
+    // construction order.
+    let staticSystemKindRow : CatalogReader.KindRow =
+        { systemKindRow with IsStatic = true; EntityName = "SystemEnum" }
+    let bundle : CatalogReader.RowsetBundle =
+        {
+            Modules    = [ moduleRow None ]
+            Kinds      = [ staticSystemKindRow ]
+            Attributes = [ systemAuditIdRow ]
+            References = []
+        }
+    match parseSync (CatalogReader.SnapshotRowsets bundle) with
+    | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
+    | Ok actual ->
+        let k = actual.Modules.[0].Kinds.[0]
+        Assert.Equal<ModalityMark list>([ Static []; SystemOwned ], k.Modality)
+
+[<Fact>]
+let ``slice 4: SystemOwned is orthogonal to Origin axis`` () =
+    // System-owned + external is rare but representable. The IR
+    // refinement choice (SystemOwned in Modality, NOT in Origin)
+    // means Origin and SystemOwned compose freely. This test asserts
+    // the orthogonality empirically — a system entity that is also
+    // marked isExternal carries BOTH Origin=ExternalViaIntegrationStudio
+    // AND Modality=[SystemOwned], without conflict.
+    let externalSystemKind : CatalogReader.KindRow =
+        { systemKindRow with IsExternal = true }
+    let bundle : CatalogReader.RowsetBundle =
+        {
+            Modules    = [ { externalModuleRow (Some "Extension") with EspaceId = 1 } ]
+            Kinds      = [ externalSystemKind ]
+            Attributes = [ systemAuditIdRow ]
+            References = []
+        }
+    match parseSync (CatalogReader.SnapshotRowsets bundle) with
+    | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
+    | Ok actual ->
+        let k = actual.Modules.[0].Kinds.[0]
+        Assert.Equal<Origin>(ExternalViaIntegrationStudio, k.Origin)
+        Assert.True (hasSystemOwnedMark k, "Expected SystemOwned mark on external+system kind")
+
+[<Fact>]
+let ``slice 4: mixed catalog — system and non-system kinds coexist`` () =
+    // Future-consumer pattern: a Pass that filters out system entities
+    // walks `kinds |> List.filter (not << hasSystemOwnedMark)`. This
+    // test exercises that shape directly — mixed catalog with two
+    // kinds (User non-system; SystemAudit system); the filter
+    // discriminates exactly the two.
+    let bundle : CatalogReader.RowsetBundle =
+        {
+            Modules    = [ moduleRow None ]
+            Kinds      = [ userKindRow None; systemKindRow ]
+            Attributes = [ idAttrRow None; systemAuditIdRow ]
+            References = []
+        }
+    match parseSync (CatalogReader.SnapshotRowsets bundle) with
+    | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
+    | Ok actual ->
+        let kinds = actual.Modules.[0].Kinds
+        Assert.Equal (2, List.length kinds)
+        let systemKinds    = kinds |> List.filter hasSystemOwnedMark
+        let userKinds      = kinds |> List.filter (not << hasSystemOwnedMark)
+        Assert.Equal (1, List.length systemKinds)
+        Assert.Equal (1, List.length userKinds)
+        Assert.Equal<Name>(mkName "SystemAudit", systemKinds.[0].Name)
+        Assert.Equal<Name>(mkName "User",        userKinds.[0].Name)

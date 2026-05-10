@@ -82,6 +82,16 @@ type ModalityMark =
     | TenantScoped
     /// Logical deletes are represented in-row, not by physical removal.
     | SoftDeletable
+    /// Stewardship marker (chapter 3.2 slice 4): the kind is owned by
+    /// the V1 OutSystems platform rather than developer-authored.
+    /// Sourced from V1's `ossys_Entity.Is_System` column (visible
+    /// only through the rowset path; the JSON path drops the bit).
+    /// Future consumers — emitters that exclude system tables from
+    /// CREATE TABLE, passes that elide system-owned entities from
+    /// FK reflow — walk `kind.Modality |> List.contains SystemOwned`.
+    /// Payload-free per the codified ModalityMark pattern; mirrors
+    /// `TenantScoped` / `SoftDeletable`.
+    | SystemOwned
 
 /// Typed structural display for `ModalityMark`. The `Static`
 /// variant carries the population count (not the rows themselves)
@@ -96,6 +106,7 @@ module ModalityMark =
                 [ "populations", Inv.int32 (List.length populations) ]
         | TenantScoped -> StructuredString.tag "TenantScoped"
         | SoftDeletable -> StructuredString.tag "SoftDeletable"
+        | SystemOwned -> StructuredString.tag "SystemOwned"
 
     let toDiagnosticString (m: ModalityMark) : string =
         toStructured m |> StructuredString.render

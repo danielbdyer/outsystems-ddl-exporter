@@ -40,6 +40,7 @@ module CanonicalizeIdentity =
         | Static rows   -> Static (canonicalizeStaticRows rows)
         | TenantScoped  -> TenantScoped
         | SoftDeletable -> SoftDeletable
+        | SystemOwned   -> SystemOwned
 
     let private canonicalizeKind (k: Kind) : Kind =
         { k with

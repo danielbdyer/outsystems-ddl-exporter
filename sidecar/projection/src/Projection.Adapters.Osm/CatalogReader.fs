@@ -103,8 +103,27 @@ module CatalogReader =
     /// `RowsetBundle.Modules`/`RowsetBundle.Kinds`/`RowsetBundle.Attributes`,
     /// matching V1 SQL's normalized rowset shape; `parseRowsetBundle`
     /// joins on load). `EntitySsKey` + `PrimaryKeySsKey` are the
-    /// load-bearing additions; `IsSystemEntity` arrives at slice 4.
-    /// `EspaceKind` arrives at slice 3 (Origin three-way distinction).
+    /// load-bearing additions; `EspaceKind` (slice 3) on `ModuleRow`
+    /// distinguishes Origin three-way.
+    ///
+    /// **Slice 4 extension:** `IsSystemEntity` lifts V1's
+    /// `ossys_Entity.Is_System` column (rowset 2; previously dropped
+    /// at the JSON projection layer). Lifts into a new V2 IR refinement
+    /// — `ModalityMark.SystemOwned` — payload-free mark sibling to
+    /// `TenantScoped` / `SoftDeletable`. Rationale for the IR
+    /// refinement choice (boundary-discipline question per chapter
+    /// 3.2 open):
+    ///   - Flat `Kind.IsSystem: bool` rejected — V2 convention avoids
+    ///     `Is*` booleans in the IR.
+    ///   - `Origin` expansion (`OsNativeSystem`) rejected — system-
+    ///     entity is orthogonal to native-vs-external; conflating
+    ///     axes loses information.
+    ///   - New `Kind.Stewardship: Stewardship` DU rejected — heavier
+    ///     surface than evidence demands; defer until a second
+    ///     stewardship axis surfaces (e.g., third-party-managed).
+    ///   - `ModalityMark.SystemOwned` selected — matches existing
+    ///     orthogonal-axes-list pattern; payload-free; consumers
+    ///     walk `kind.Modality |> List.contains SystemOwned`.
     type KindRow =
         {
             EntityId          : int
@@ -114,6 +133,7 @@ module CatalogReader =
             DbSchema          : string
             IsStatic          : bool
             IsExternal        : bool
+            IsSystemEntity    : bool
             IsActive          : bool
             EntitySsKey       : System.Guid option
             PrimaryKeySsKey   : System.Guid option
@@ -1021,14 +1041,17 @@ module CatalogReader =
         let foldedRefs = Result.aggregate refResults
         match kindKey, kindName, foldedAttrs, foldedRefs with
         | Ok k, Ok n, Ok attrs, Ok refs ->
-            // Modality parity with parseKind (line 608-609): `[Static []]`
-            // when isStatic, empty otherwise. Static populations are NOT
-            // carried by rowsets 1-3; defer to a later slice that
-            // surfaces V1 rowset 19+ (the static-data aggregation
-            // rowsets) if/when the rowset path needs to round-trip
-            // populations.
+            // Modality marks list. `Static []` (parity with parseKind:
+            // populations NOT carried by rowsets 1-3; defer to a later
+            // slice surfacing V1 rowset 19+); `SystemOwned` (slice 4:
+            // lifts V1's IsSystemEntity into the V2 IR). Order is
+            // declaration order — Static first if present, SystemOwned
+            // second if present. Future ModalityMark variants append.
             let modality =
-                if kindRow.IsStatic then [ Static [] ] else []
+                [
+                    if kindRow.IsStatic       then yield Static []
+                    if kindRow.IsSystemEntity then yield SystemOwned
+                ]
             Result.success
                 { SsKey      = k
                   Name       = n

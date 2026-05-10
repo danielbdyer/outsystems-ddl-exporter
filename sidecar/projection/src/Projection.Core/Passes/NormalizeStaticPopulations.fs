@@ -40,6 +40,7 @@ module NormalizeStaticPopulations =
         | Static rows   -> Static (rows |> List.sortBy rowSortKey)
         | TenantScoped  -> TenantScoped
         | SoftDeletable -> SoftDeletable
+        | SystemOwned   -> SystemOwned
 
     let private hasStaticModality (k: Kind) : bool =
         k.Modality |> List.exists (function Static _ -> true | _ -> false)

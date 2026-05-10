@@ -64,6 +64,7 @@ module NamingMorphism =
         | Static rows   -> Static (rows |> List.map renameStaticRow)
         | TenantScoped  -> TenantScoped
         | SoftDeletable -> SoftDeletable
+        | SystemOwned   -> SystemOwned
 
     let private renameKind (m: Morphism) (events: LineageBuffer.Buffer) (k: Kind) : Kind =
         { k with
