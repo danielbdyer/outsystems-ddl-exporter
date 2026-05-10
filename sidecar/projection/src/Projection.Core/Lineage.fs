@@ -203,10 +203,33 @@ type LineageEvent = {
 /// transformation in the pipeline runs inside `Lineage<_>`; lineage is
 /// constitutive, not opt-in. Per A26, lineage is metadata travelling
 /// alongside structure — it does not participate in structural equality.
-type Lineage<'a> = {
-    Value : 'a
-    Trail : LineageEvent list
-}
+///
+/// **A26 cash-out (chapter-3.7 slice α; audit Tier-2 #12).** `Lineage<'a>`
+/// uses `[<CustomEquality; NoComparison>]` to project equality through
+/// `Value` only; the `Trail` is provenance metadata and does not
+/// distinguish two carriers semantically. Two passes producing the same
+/// `Value` with re-ordered or re-shaped `Trail` events are equal as
+/// `Lineage<'a>` carriers; the catalog-level identity claim of A26
+/// (`Kind.byIdentity` ignores trails) extends symmetrically to the
+/// writer carrier itself. Consumers that need to compare trails use
+/// `Lineage.byValueAndTrail` (full structural) or project to `.Trail`
+/// directly.
+[<CustomEquality; NoComparison>]
+type Lineage<'a when 'a : equality> =
+    {
+        Value : 'a
+        Trail : LineageEvent list
+    }
+    override this.Equals(other: obj) : bool =
+        match other with
+        | :? Lineage<'a> as o -> this.Value = o.Value
+        | _                   -> false
+    override this.GetHashCode() : int = hash this.Value
+    interface System.IEquatable<Lineage<'a>> with
+        member this.Equals(other: Lineage<'a> | null) : bool =
+            match other with
+            | null -> false
+            | o    -> this.Value = o.Value
 
 
 /// Construction and composition for `Lineage<_>`. The `bind` operator
@@ -217,6 +240,23 @@ type Lineage<'a> = {
 /// in the test suite.
 [<RequireQualifiedAccess>]
 module Lineage =
+
+    /// Equality on `Lineage<'a>` projects through `Value` only (A26;
+    /// chapter-3.7 slice α). This helper names the projection at call
+    /// sites so the intent reads structurally — `Lineage.byValue m1 m2`
+    /// is the same as `m1 = m2` but advertises that trails are
+    /// deliberately ignored.
+    let byValue (m1: Lineage<'a>) (m2: Lineage<'a>) : bool =
+        m1.Value = m2.Value
+
+    /// Full structural equality on `Lineage<'a>` — both `Value` and
+    /// `Trail` must match. Used by writer-monad-laws property tests
+    /// to assert that `bind` / `map` / `tell` compose trails as
+    /// specified (A24 / A25). Production consumers should not need
+    /// this; if they do, they are reaching for provenance equality
+    /// which is a different question from structural equality.
+    let byValueAndTrail (m1: Lineage<'a>) (m2: Lineage<'a>) : bool =
+        m1.Value = m2.Value && m1.Trail = m2.Trail
 
     /// Wrap a value with an empty trail. The unit of the writer monad.
     let ofValue (value: 'a) : Lineage<'a> = { Value = value; Trail = [] }
