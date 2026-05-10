@@ -334,13 +334,14 @@ module SsdtDdlEmitter =
     /// `Statement list`, Json `JsonNode`, Distributions `JsonNode`,
     /// SSDT-DDL `SsdtFile`); T11 sibling-Π commutativity is structural
     /// across all four, asserted by `SiblingEmitterContractTests.fs`.
-    let emitSlices : Emitter<SsdtFile> = fun catalog ->
-        use _ = Bench.scope "emit.ssdt.emitSlices"
-        let modules = moduleByKindKey catalog
+    /// Lifted FK-resolution lookups. Per session-35 (chapter 3.1) — O(1)
+    /// hash lookup per reference instead of O(K) catalog scan, shared
+    /// between the per-kind `emitSlices` realization and the catalog-
+    /// wide `statements` realization.
+    let private buildLookups
+        (catalog: Catalog)
+        : Kind list * Map<SsKey, Kind> * Map<SsKey, Attribute> =
         let allKinds = Catalog.allKinds catalog
-        // Per session-35 (chapter 3.1) — lift `(targetByKey, pkAttrByKey)`
-        // once so FK resolution is O(1) hash lookup per reference instead
-        // of O(K) catalog scan. Same pattern as RawTextEmitter.emitSlices.
         let targetByKey =
             allKinds |> List.map (fun k -> k.SsKey, k) |> Map.ofList
         let pkAttrByKey =
@@ -350,6 +351,38 @@ module SsdtDdlEmitter =
                 |> List.tryFind (fun a -> a.IsPrimaryKey)
                 |> Option.map (fun pk -> k.SsKey, pk))
             |> Map.ofList
+        allKinds, targetByKey, pkAttrByKey
+
+    /// Catalog-wide typed statement stream. Per A35 (Π's canonical
+    /// output is a typed deterministic statement stream): the same
+    /// CREATE TABLE + CREATE INDEX statements that `emitSlices`
+    /// per-kind-bundles into `SsdtFile` bodies, here flattened across
+    /// kinds in `Catalog.allKinds` order. Realization layers (Render
+    /// .toText for one-string output; Deploy.executeStream for
+    /// statement-by-statement deploy; canary tests for round-trip
+    /// verification) consume the stream and choose their emission form.
+    ///
+    /// **Per `DECISIONS 2026-05-10 — RawTextEmitter retirement` (chapter
+    /// 4.1.A close arc):** this function is the typed-stream
+    /// equivalent of the legacy `RawTextEmitter.statements`, MINUS the
+    /// raw `InsertRow` static populations (which are chapter 4.1.B's
+    /// `StaticSeedsEmitter` territory with the CDC-aware MERGE shape,
+    /// not raw INSERTs). Schema-only emission is what V2's production
+    /// canary surface needs; data goes through the chapter-4.1.B
+    /// triumvirate.
+    let statements (catalog: Catalog) : seq<Statement> =
+        use _ = Bench.scope "emit.ssdt.statements"
+        let allKinds, targetByKey, pkAttrByKey = buildLookups catalog
+        seq {
+            for k in allKinds do
+                yield createTableStatement targetByKey pkAttrByKey k
+                yield! indexStatements k
+        }
+
+    let emitSlices : Emitter<SsdtFile> = fun catalog ->
+        use _ = Bench.scope "emit.ssdt.emitSlices"
+        let modules = moduleByKindKey catalog
+        let allKinds, targetByKey, pkAttrByKey = buildLookups catalog
         let slices =
             allKinds
             |> List.map (fun k ->

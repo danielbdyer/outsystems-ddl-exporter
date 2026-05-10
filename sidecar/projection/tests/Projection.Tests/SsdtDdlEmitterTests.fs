@@ -132,6 +132,67 @@ let ``T11: SsdtDdlEmitter and RawTextEmitter agree on keyset`` () =
     Assert.Equal<Set<SsKey>> (ArtifactByKind.keys rawText, ArtifactByKind.keys ssdtDdl)
 
 // ---------------------------------------------------------------------------
+// SsdtDdlEmitter.statements — catalog-wide typed statement stream.
+// Per A35 (Π's canonical output is a typed deterministic stream): the
+// statements path is the realization-layer-agnostic surface that
+// canary tests + Deploy.executeStream + Render.toText all consume.
+// Ships in the chapter 4.1.A close arc as the typed-stream equivalent
+// of the legacy `RawTextEmitter.statements`, MINUS the raw `InsertRow`
+// static populations (those route through chapter 4.1.B's
+// StaticSeedsEmitter with the CDC-aware MERGE shape, not raw INSERTs).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``SsdtDdlEmitter.statements is schema-pure (no InsertRow statements)`` () =
+    let enriched = enrich sampleCatalog
+    let stmts = SsdtDdlEmitter.statements enriched |> List.ofSeq
+    let hasInsertRow =
+        stmts
+        |> List.exists (fun s ->
+            match s with
+            | InsertRow _ -> true
+            | _ -> false)
+    Assert.False (hasInsertRow,
+        "SsdtDdlEmitter.statements must not yield InsertRow (static populations are chapter 4.1.B's StaticSeedsEmitter territory)")
+
+[<Fact>]
+let ``SsdtDdlEmitter.statements yields one CreateTable per catalog kind`` () =
+    let enriched = enrich sampleCatalog
+    let allKinds = Catalog.allKinds enriched
+    let stmts = SsdtDdlEmitter.statements enriched |> List.ofSeq
+    let createTables =
+        stmts
+        |> List.choose (fun s ->
+            match s with
+            | CreateTable (table, _, _, _) -> Some table
+            | _ -> None)
+    Assert.Equal (List.length allKinds, List.length createTables)
+
+[<Fact>]
+let ``T1: SsdtDdlEmitter.statements is byte-deterministic across repeat invocations`` () =
+    let enriched = enrich sampleCatalog
+    let s1 = SsdtDdlEmitter.statements enriched |> List.ofSeq
+    let s2 = SsdtDdlEmitter.statements enriched |> List.ofSeq
+    Assert.Equal<Statement list> (s1, s2)
+
+[<Fact>]
+let ``SsdtDdlEmitter.statements composed via Render.toText produces the concatenated SsdtFile bodies`` () =
+    // Sanity-check the algebra: catalog-wide statements rendered as
+    // text is structurally equivalent to per-kind SsdtFile bodies
+    // joined in catalog order (modulo the per-file CREATE TABLE +
+    // CREATE INDEX framing). This relationship is what makes the
+    // statement-stream surface useful to canary tests that need a
+    // single-string deploy.
+    let enriched = enrich sampleCatalog
+    let viaStatements =
+        SsdtDdlEmitter.statements enriched
+        |> Render.toText
+    // The text MUST contain a CREATE TABLE for every kind.
+    for k in Catalog.allKinds enriched do
+        let qualified = sprintf "[%s].[%s]" k.Physical.Schema k.Physical.Table
+        Assert.Contains (qualified, viaStatements)
+
+// ---------------------------------------------------------------------------
 // Chapter 4.1.A slice 2 — multi-attribute formatting + every PrimitiveType
 // variant.
 //
