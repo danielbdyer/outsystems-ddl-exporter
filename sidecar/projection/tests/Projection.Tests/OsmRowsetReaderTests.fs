@@ -44,6 +44,9 @@ let private moduleRow (sskey: System.Guid option) : CatalogReader.ModuleRow =
         EspaceName     = "AppCore"
         IsSystemModule = false
         IsActive       = true
+        // V1 normal-module marker; observed in
+        // tests/Fixtures/sql/model.edge-case.seed.sql:97-99.
+        EspaceKind     = Some "eSpace"
         EspaceSsKey    = sskey
     }
 
@@ -544,3 +547,169 @@ let ``slice 2: cross-source parity — rowset path mirrors JSON path's expectedR
         Assert.Equal<SsKey>(accountKindKey,          r.TargetKind)
         Assert.Equal<SsKey>(userAccountIdAttrKey,    r.SourceAttribute)
         Assert.Equal<ReferenceAction>(NoAction,      r.OnDelete)
+
+
+// ===========================================================================
+// Chapter 3.2 slice 3 — EspaceKind activation (Origin three-way real).
+//
+// Mirrors session-20's v1ExternalFixture: external entity, this time
+// with EspaceKind carried on the ModuleRow. The translation refines
+// from the JSON-path placeholder (collapsing to ExternalViaIntegrationStudio
+// for all external entities) to the three-way real driven by the
+// EspaceKind marker.
+//
+// Tests cover:
+//   - EspaceKind = "Extension" + isExternal=true → ExternalViaIntegrationStudio
+//   - EspaceKind ≠ "Extension" (e.g., "eSpace") + isExternal=true → ExternalDirect
+//   - EspaceKind = None + isExternal=true → ExternalDirect
+//   - isExternal=false (any EspaceKind) → OsNative
+//   - Case-insensitive matching on the marker
+//   - Refinement vs JSON path: same fixture under both paths emits
+//     a divergent Origin when EspaceKind ≠ "Extension" — this is
+//     the empirical evidence that the rowset path refines rule 17.
+// ===========================================================================
+
+let private externalModuleRow (espaceKind: string option) : CatalogReader.ModuleRow =
+    {
+        EspaceId       = 2
+        EspaceName     = "ExtBilling"
+        IsSystemModule = false
+        IsActive       = true
+        EspaceKind     = espaceKind
+        EspaceSsKey    = None
+    }
+
+let private billingAccountKindRow : CatalogReader.KindRow =
+    {
+        EntityId          = 31
+        EspaceId          = 2
+        EntityName        = "BillingAccount"
+        PhysicalTableName = "BILLING_ACCOUNT"
+        DbSchema          = "billing"
+        IsStatic          = false
+        IsExternal        = true
+        IsActive          = true
+        EntitySsKey       = None
+        PrimaryKeySsKey   = None
+    }
+
+let private billingAccountIdRow : CatalogReader.AttributeRow =
+    {
+        AttrId       = 311
+        EntityId     = 31
+        AttrName     = "Id"
+        PhysicalCol  = "ID"
+        DataType     = "Identifier"
+        IsMandatory  = true
+        IsIdentifier = true
+        IsAutoNumber = true
+        Length       = None
+        Precision    = None
+        Scale        = None
+        AttrSsKey    = None
+        IsActive     = true
+    }
+
+let private externalBundle (espaceKind: string option) : CatalogReader.RowsetBundle =
+    {
+        Modules    = [ externalModuleRow espaceKind ]
+        Kinds      = [ billingAccountKindRow ]
+        Attributes = [ billingAccountIdRow ]
+        References = []
+    }
+
+let private originOf (bundle: CatalogReader.RowsetBundle) : Origin =
+    match parseSync (CatalogReader.SnapshotRowsets bundle) with
+    | Error es -> Assert.Fail (sprintf "%A" es); OsNative
+    | Ok c     ->
+        let kind = c.Modules.[0].Kinds.[0]
+        kind.Origin
+
+[<Fact>]
+let ``slice 3: EspaceKind="Extension" + isExternal=true → ExternalViaIntegrationStudio`` () =
+    Assert.Equal<Origin>(ExternalViaIntegrationStudio, originOf (externalBundle (Some "Extension")))
+
+[<Fact>]
+let ``slice 3: EspaceKind="eSpace" + isExternal=true → ExternalDirect`` () =
+    // Normal-module marker on an isExternal=true entity. V1's data
+    // model permits this combination (a Direct external entity in a
+    // normal eSpace, bypassing the IS step). The rowset path's
+    // three-way real surfaces it as ExternalDirect — the JSON path
+    // collapses it to ExternalViaIntegrationStudio (the load-bearing
+    // empirical-evidence refinement).
+    Assert.Equal<Origin>(ExternalDirect, originOf (externalBundle (Some "eSpace")))
+
+[<Fact>]
+let ``slice 3: EspaceKind=None + isExternal=true → ExternalDirect`` () =
+    // Absent marker witnesses absent IS step. Same disposition as
+    // the eSpace case — neither carries an IS signal.
+    Assert.Equal<Origin>(ExternalDirect, originOf (externalBundle None))
+
+[<Fact>]
+let ``slice 3: isExternal=false → OsNative regardless of EspaceKind`` () =
+    // The OsNative branch is independent of EspaceKind. The
+    // moduleRow helper sets EspaceKind = Some "eSpace"; the slice-1
+    // fixture's User entity has isExternal = false; Origin must
+    // remain OsNative. Belt-and-suspenders check on the matrix.
+    let bundle : CatalogReader.RowsetBundle =
+        {
+            Modules    = [ { externalModuleRow (Some "Extension") with EspaceName = "AppCore" } ]
+            Kinds      = [ { billingAccountKindRow with EntityName = "User"
+                                                        PhysicalTableName = "OSUSR_APPCORE_USER"
+                                                        DbSchema = "dbo"
+                                                        IsExternal = false } ]
+            Attributes = [ billingAccountIdRow ]
+            References = []
+        }
+    Assert.Equal<Origin>(OsNative, originOf bundle)
+
+[<Fact>]
+let ``slice 3: EspaceKind marker matches case-insensitively`` () =
+    // V1's column is nvarchar(50); historical samples have varied
+    // in capitalization across V1 versions. Both "Extension" and
+    // "EXTENSION" should resolve to ExternalViaIntegrationStudio.
+    Assert.Equal<Origin>(ExternalViaIntegrationStudio, originOf (externalBundle (Some "Extension")))
+    Assert.Equal<Origin>(ExternalViaIntegrationStudio, originOf (externalBundle (Some "EXTENSION")))
+    Assert.Equal<Origin>(ExternalViaIntegrationStudio, originOf (externalBundle (Some "extension")))
+
+[<Fact>]
+let ``slice 3: refinement evidence — rowset path diverges from JSON path on EspaceKind="eSpace"+isExternal=true`` () =
+    // Empirical evidence that the rowset path refines rule 17.
+    // Same conceptual fixture (an external entity with no IS marker)
+    // resolves to ExternalDirect under the rowset path but to
+    // ExternalViaIntegrationStudio under the JSON path. The
+    // divergence is by design — it's the difference the chapter
+    // closes.
+    let rowsetOrigin = originOf (externalBundle (Some "eSpace"))
+    // JSON-path equivalent: same shape, no EspaceKind.
+    let jsonFixture = """{
+      "exportedAtUtc": "2026-05-17T00:00:00Z",
+      "modules": [
+        { "name": "ExtBilling", "isSystem": false, "isActive": true,
+          "entities": [
+            { "name": "BillingAccount", "physicalName": "BILLING_ACCOUNT",
+              "isStatic": false, "isExternal": true, "isActive": true,
+              "db_catalog": null, "db_schema": "billing",
+              "attributes": [
+                { "name": "Id", "physicalName": "ID", "originalName": null,
+                  "dataType": "Identifier", "length": null, "precision": null,
+                  "scale": null, "default": null, "isMandatory": true,
+                  "isIdentifier": true, "isAutoNumber": true, "isActive": true,
+                  "isReference": 0, "refEntityId": null, "refEntity_name": null,
+                  "refEntity_physicalName": null, "reference_deleteRuleCode": null,
+                  "reference_hasDbConstraint": 0, "external_dbType": "int",
+                  "physical_isPresentButInactive": 0 }
+              ],
+              "relationships": [], "indexes": [], "triggers": []
+            }
+          ]
+        }
+      ]
+    }"""
+    let jsonOrigin =
+        match parseSync (CatalogReader.SnapshotJson jsonFixture) with
+        | Error es -> Assert.Fail (sprintf "%A" es); OsNative
+        | Ok c     -> c.Modules.[0].Kinds.[0].Origin
+    Assert.Equal<Origin>(ExternalDirect,                 rowsetOrigin)
+    Assert.Equal<Origin>(ExternalViaIntegrationStudio,   jsonOrigin)
+    Assert.NotEqual<Origin>(jsonOrigin, rowsetOrigin)

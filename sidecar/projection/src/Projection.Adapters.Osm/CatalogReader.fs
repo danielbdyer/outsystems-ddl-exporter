@@ -73,12 +73,27 @@ module CatalogReader =
     /// convention; the `Espace*` field names mirror V1's SQL surface).
     /// `EspaceSsKey` is the load-bearing addition over the JSON path
     /// (which drops it via `SnapshotJsonBuilder`'s field selection).
+    ///
+    /// **Slice 3 extension:** `EspaceKind` lifts V1's `ossys_Espace.EspaceKind`
+    /// string (rowset 1; `OutsystemsModuleRow.EspaceKind`). Refines
+    /// rule 17's `Origin` translation from the JSON-path two-way
+    /// placeholder (`isExternal → ExternalViaIntegrationStudio`) to
+    /// the three-way real (OsNative / ExternalViaIntegrationStudio /
+    /// ExternalDirect). Empirical V1 values observed in fixtures:
+    /// `"eSpace"` for normal modules (V1 test seed at
+    /// tests/Fixtures/sql/model.edge-case.seed.sql:97-99). The IS-
+    /// extension marker is conventionally `"Extension"` per
+    /// `DECISIONS 2026-05-19 — rule 17` ("Extension" — or whatever
+    /// the IS-marker turns out to be); this slice adopts `"Extension"`
+    /// as the operative marker until a real V1 production sample
+    /// surfaces a different string. Nullable (V1 column is nullable).
     type ModuleRow =
         {
             EspaceId       : int
             EspaceName     : string
             IsSystemModule : bool
             IsActive       : bool
+            EspaceKind     : string option
             EspaceSsKey    : System.Guid option
         }
 
@@ -506,6 +521,45 @@ module CatalogReader =
     let private parseOrigin (isExternal: bool) : Origin =
         if isExternal then ExternalViaIntegrationStudio else OsNative
 
+    /// Three-way `Origin` translation for the rowset path (chapter
+    /// 3.2 slice 3). Refines `parseOrigin`'s two-way placeholder
+    /// using V1's `EspaceKind` string (rowset 1; previously dropped
+    /// at the JSON projection layer). Empirical evidence:
+    ///   - `"eSpace"` (normal module; seen in V1 test seed
+    ///     `tests/Fixtures/sql/model.edge-case.seed.sql:97-99`)
+    ///   - `"Extension"` (conventional IS-extension marker per
+    ///     `DECISIONS 2026-05-19 — rule 17`; not yet observed in
+    ///     the V1 test corpus but documented as the operative
+    ///     marker until a production sample surfaces otherwise)
+    ///
+    /// The translation:
+    ///   - `isExternal: false`                          → OsNative
+    ///   - `isExternal: true` AND EspaceKind = "Extension" → ExternalViaIntegrationStudio
+    ///   - `isExternal: true` otherwise                  → ExternalDirect
+    ///
+    /// Case-insensitive comparison on the marker (V1's column is
+    /// nvarchar(50); historical samples have varied in capitalization
+    /// across V1 versions). Null EspaceKind on an external entity
+    /// resolves to ExternalDirect — the absence of an IS marker
+    /// witnesses the absence of an IS step.
+    ///
+    /// Rule 17 now refines from the session-20 placeholder
+    /// (collapsing to ExternalViaIntegrationStudio for all external
+    /// entities) to the empirically-rooted three-way real. The JSON
+    /// path's `parseOrigin` is the still-bounded sibling — same
+    /// signature, same JSON-projection-lossiness disposition.
+    let private parseOriginFromRowset
+        (isExternal: bool) (espaceKind: string option) : Origin =
+        if not isExternal then OsNative
+        else
+            let isIsExtension =
+                match espaceKind with
+                | Some kind ->
+                    System.String.Equals(kind, "Extension", System.StringComparison.OrdinalIgnoreCase)
+                | None -> false
+            if isIsExtension then ExternalViaIntegrationStudio
+            else ExternalDirect
+
     /// Extract a Reference from a V1 attribute that carries
     /// `isReference: 1` plus its `refEntity_*` and
     /// `reference_deleteRuleCode` fields. Returns `None` for
@@ -931,6 +985,7 @@ module CatalogReader =
 
     let private parseKindRow
         (moduleName: string)
+        (moduleEspaceKind: string option)
         (attributesByEntity: Map<int, AttributeRow list>)
         (referencesByAttr: Map<int, ReferenceRow list>)
         (kindRow: KindRow)
@@ -977,11 +1032,10 @@ module CatalogReader =
             Result.success
                 { SsKey      = k
                   Name       = n
-                  // Origin matches parseOrigin (line 389): isExternal=true
-                  // → ExternalViaIntegrationStudio placeholder. The
-                  // EspaceKind-driven three-way refinement lands at
-                  // slice 3 when the rowset surfaces it.
-                  Origin     = parseOrigin kindRow.IsExternal
+                  // Origin via parseOriginFromRowset (slice 3): three-way
+                  // real driven by ModuleRow.EspaceKind. Refines the
+                  // JSON-path's parseOrigin two-way placeholder.
+                  Origin     = parseOriginFromRowset kindRow.IsExternal moduleEspaceKind
                   Modality   = modality
                   Physical   = { Schema = kindRow.DbSchema
                                  Table  = kindRow.PhysicalTableName }
@@ -1028,7 +1082,12 @@ module CatalogReader =
             |> List.filter (fun k -> k.IsActive)
         let kindResults =
             kindRows
-            |> List.map (parseKindRow moduleRow.EspaceName attributesByEntity referencesByAttr)
+            |> List.map (
+                parseKindRow
+                    moduleRow.EspaceName
+                    moduleRow.EspaceKind
+                    attributesByEntity
+                    referencesByAttr)
         let foldedKinds = Result.aggregate kindResults
         match modKey, modName, foldedKinds with
         | Ok k, Ok n, Ok kinds ->
