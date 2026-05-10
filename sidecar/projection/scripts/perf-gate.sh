@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 #
-# V2 sidecar perf-regression gate — runs the canary, captures the
-# resulting bench JSON, persists into a rolling history, and gates
-# on per-label statistical outliers (mean + K × std-dev across the
-# last N runs).
+# V2 sidecar perf-regression gate — runs the operator-reality canary
+# (50k rows × 300 tables × variegated, the production-shape baseline),
+# captures the resulting bench JSON, persists into a rolling history,
+# and gates on per-label statistical outliers (mean + K × std-dev
+# across the last N runs).
+#
+# Operator decision (2026-05-09): schema-only canary-gate.sql is
+# inappropriate for the production-use-case baseline. The Stop hook +
+# pre-commit gate must exercise the production envelope (300 tables,
+# 50k rows, variegated FK density) so feature additions can't silently
+# regress under operator-reality conditions.
 #
 # Soft-skips (exit 0) when Docker / dotnet are unreachable so docs-
 # only commits and dev hosts without the canary stack don't hard-
@@ -36,8 +43,8 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BENCH_DIR="$ROOT/bench"
 BASELINE_PATH="$BENCH_DIR/baseline-canary.json"
 HISTORY_PATH="$BENCH_DIR/history-canary.jsonl"
-FIXTURE="$ROOT/fixtures/canary-gate.sql"
-CLI_DLL="$ROOT/src/Projection.Cli/bin/Release/net9.0/projection.dll"
+TEST_FILTER="${PERF_GATE_TEST_FILTER:-FullyQualifiedName~Operator-reality}"
+TEST_PROJECT="$ROOT/tests/Projection.Tests/Projection.Tests.fsproj"
 TOLERANCE="${BENCH_TOLERANCE:-1.5}"
 K_SIGMA="${BENCH_K_SIGMA:-3.0}"
 RECORD="${PERF_GATE_RECORD:-0}"
@@ -67,50 +74,46 @@ if ! command -v dotnet >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------
-# Build the CLI if needed
+# Build the test project if needed
 # ---------------------------------------------------------------------
 
-if [[ ! -f "$CLI_DLL" ]]; then
-    log "building Projection.Cli (Release)..."
-    if ! dotnet build "$ROOT/src/Projection.Cli" -c Release --nologo >/tmp/perf-gate-build.log 2>&1; then
+TEST_DLL="$ROOT/tests/Projection.Tests/bin/Release/net9.0/Projection.Tests.dll"
+if [[ ! -f "$TEST_DLL" ]]; then
+    log "building Projection.Tests (Release)..."
+    if ! dotnet build "$TEST_PROJECT" -c Release --nologo >/tmp/perf-gate-build.log 2>&1; then
         log "FATAL: dotnet build failed; see /tmp/perf-gate-build.log"
         exit 1
     fi
 fi
 
 # ---------------------------------------------------------------------
-# Run the canary
+# Run the operator-reality canary
 # ---------------------------------------------------------------------
 
-if [[ ! -f "$FIXTURE" ]]; then
-    log "FATAL: canary fixture missing at $FIXTURE"
-    exit 1
-fi
-
-log "running canary against $(basename "$FIXTURE")..."
+log "running operator-reality canary (50k rows × 300 tables, variegated)..."
 cd "$ROOT"
 set +e
-dotnet "$CLI_DLL" canary "$FIXTURE" >/tmp/perf-gate-canary.log 2>&1
+PROJECTION_BENCH_DIR="$ROOT" dotnet test "$TEST_PROJECT" \
+    -c Release --no-build \
+    --filter "$TEST_FILTER" \
+    --logger "console;verbosity=normal" \
+    >/tmp/perf-gate-canary.log 2>&1
 CANARY_EXIT=$?
 set -e
 
-case "$CANARY_EXIT" in
-    0)
-        log "canary GREEN"
-        ;;
-    5)
-        log "FATAL: canary RED — PhysicalSchema diff non-empty"
-        log "       see /tmp/perf-gate-canary.log"
-        tail -25 /tmp/perf-gate-canary.log >&2
-        exit 1
-        ;;
-    *)
-        log "FATAL: canary failed with exit $CANARY_EXIT"
-        log "       see /tmp/perf-gate-canary.log"
-        tail -10 /tmp/perf-gate-canary.log >&2
-        exit 1
-        ;;
-esac
+if [[ "$CANARY_EXIT" -ne 0 ]]; then
+    log "FATAL: operator-reality canary failed with exit $CANARY_EXIT"
+    log "       see /tmp/perf-gate-canary.log"
+    tail -25 /tmp/perf-gate-canary.log >&2
+    exit 1
+fi
+
+if grep -q "SKIP operator-reality canary" /tmp/perf-gate-canary.log; then
+    log "SKIP: Docker daemon not reachable inside test process"
+    exit 0
+fi
+
+log "operator-reality canary GREEN"
 
 # ---------------------------------------------------------------------
 # Locate the most recent canary bench snapshot

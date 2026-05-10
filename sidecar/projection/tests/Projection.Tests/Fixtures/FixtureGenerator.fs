@@ -138,6 +138,42 @@ module GenerateSpec =
     let bulk10k : GenerateSpec = bulkSpec 10_000
     let bulk100k : GenerateSpec = bulkSpec 100_000
 
+    /// **Operator-reality fixture** — 300 tables (200 regular + 100
+    /// static) × 50k total rows (500 rows × 100 static tables), with
+    /// variegated entity / attribute / FK shapes via the deterministic
+    /// RNG. This is the chapter-3.6 perf-gate baseline per the
+    /// 2026-05-09 operator directive: "canary-gate.sql is
+    /// inappropriate for stop hooks ... 50k records, variegated, 300
+    /// tables. Full stop."
+    ///
+    /// Why this shape:
+    ///   - **300 tables** — the VISION.md forcing function (300-table
+    ///     OutSystems 11 system facing External Entities cutover);
+    ///     same scale as `realistic` so per-table emit / readside /
+    ///     deploy paths are exercised at production cardinality.
+    ///   - **50k rows** — enough to exercise the SqlBulkCopy path
+    ///     across many tables (vs `bulk1k`/`10k`/`100k` which
+    ///     concentrate rows in 5 tables); spreads bulk-load over
+    ///     100 static tables (500 rows each) so the per-table-bulk
+    ///     overhead amortizes realistically.
+    ///   - **Variegated** — RNG-driven attribute counts + FK density
+    ///     so per-iteration distribution surfaces in the bench
+    ///     rollup (P50 vs P95 vs P99 per pass / per emit kind);
+    ///     fixed shape would hide tail-latency regressions.
+    ///   - **Deterministic seed** (42; same as other specs) — bench
+    ///     measurements are comparable across runs; perf-gate
+    ///     `μ + Kσ` outlier detection requires stable mean.
+    let operatorReality : GenerateSpec =
+        {
+            Modules = 8
+            Entities = 200
+            StaticEntities = 100
+            AvgAttrsPerEntity = 10
+            FkDensity = 0.2
+            StaticRowsPerEntity = 500
+            Seed = 42
+        }
+
 [<RequireQualifiedAccess>]
 module FixtureGenerator =
 
