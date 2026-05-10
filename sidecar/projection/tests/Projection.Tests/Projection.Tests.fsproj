@@ -29,6 +29,7 @@
     <Compile Include="UuidV5Tests.fs" />
     <Compile Include="Fixtures.fs" />
     <Compile Include="CatalogTests.fs" />
+    <Compile Include="SqlTypeCorrespondenceTests.fs" />
     <Compile Include="LineageTests.fs" />
     <Compile Include="DiagnosticsTests.fs" />
     <Compile Include="ArtifactByKindTests.fs" />

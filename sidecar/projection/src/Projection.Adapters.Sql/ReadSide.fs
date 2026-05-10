@@ -46,43 +46,14 @@ open FsToolkit.ErrorHandling
 module ReadSide =
 
     /// Reverse type mapping: SQL Server's INFORMATION_SCHEMA
-    /// `DATA_TYPE` value → V2 `PrimitiveType`. Mirrors
-    /// `Projection.Targets.SSDT.RawTextEmitter.defaultSqlType`'s
-    /// forward mapping inverted across the supported PrimitiveType
-    /// vocabulary.
-    ///
-    /// Returns `Error` on unknown SQL types — surfaces an
-    /// emitter-IR mismatch that the canary's blocking semantic
-    /// catches. M4's Tolerance taxonomy can name accepted-but-
-    /// unmapped types as a tolerance flag.
+    /// `DATA_TYPE` value → V2 `PrimitiveType`. Delegates to the
+    /// type-correspondence bounded context's inverse classification
+    /// (`SqlTypeCorrespondence.ofSqlDataType`), which is the single
+    /// source of truth shared with `Projection.Targets.SSDT.Render
+    /// .columnSqlType` (the forward direction). Chapter-3.7 slice β;
+    /// audit Tier-1 #8.
     let private mapSqlType (dataType: string) : Result<PrimitiveType> =
-        match dataType.ToUpperInvariant() with
-        | "INT" | "BIGINT" | "SMALLINT" | "TINYINT" ->
-            Result.success Integer
-        | "DECIMAL" | "NUMERIC" | "MONEY" | "SMALLMONEY" ->
-            Result.success Decimal
-        | "NVARCHAR" | "VARCHAR" | "CHAR" | "NCHAR" | "TEXT" | "NTEXT" ->
-            Result.success Text
-        | "BIT" ->
-            Result.success Boolean
-        | "DATETIME" | "DATETIME2" | "SMALLDATETIME" | "DATETIMEOFFSET" ->
-            Result.success DateTime
-        | "DATE" ->
-            Result.success Date
-        | "TIME" ->
-            Result.success Time
-        | "VARBINARY" | "BINARY" | "IMAGE" ->
-            Result.success Binary
-        | "UNIQUEIDENTIFIER" ->
-            Result.success Guid
-        | unknown ->
-            Result.failureOf (
-                ValidationError.create
-                    "readside.column.unknownType"
-                    (sprintf
-                        "INFORMATION_SCHEMA.DATA_TYPE = '%s' has no V2 PrimitiveType mapping. \
-                         Either extend ReadSide.mapSqlType or add a Tolerance flag (M4)."
-                        unknown))
+        SqlTypeCorrespondence.ofSqlDataType dataType
 
     /// Synthesis convention for reconstructed Module SsKeys. Each
     /// readback produces a single Module named "Reconstructed"

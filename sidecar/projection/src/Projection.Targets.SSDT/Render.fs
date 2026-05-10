@@ -71,12 +71,17 @@ module Render =
     let private sqlTypeWithLength (typeName: string) (length: int) : string =
         String.Concat(typeName, "(", intInv length, ")")
 
-    /// `DECIMAL(<precision>, <scale>)` SQL type expression.
+    /// `DECIMAL(<precision>, <scale>)` SQL type expression. The base
+    /// name flows through `SqlTypeCorrespondence.baseName Decimal`
+    /// (chapter-3.7 slice β) so the forward direction here can never
+    /// drift from the inverse classification in
+    /// `SqlTypeCorrespondence.ofSqlDataType`.
     let private sqlDecimal (precision: int) (scale: int) : string =
-        // `String.Concat`'s params overload covers 5 parts; allocates
+        // `String.Concat`'s params overload covers 6 parts; allocates
         // a small array but stays O(1) on input shape.
         String.Concat(
-            "DECIMAL(",
+            SqlTypeCorrespondence.baseName Decimal,
+            "(",
             intInv precision,
             ", ",
             intInv scale,
@@ -85,27 +90,31 @@ module Render =
     /// IR `(Type, Length, Precision, Scale)` → SQL type expression.
     /// Shared by emit (`toText`) and deploy paths so the two never
     /// drift.
+    ///
+    /// The base type name (`INT`, `NVARCHAR`, `DECIMAL`, ...) flows
+    /// through `SqlTypeCorrespondence.baseName` so the forward and
+    /// inverse halves of the type-correspondence bounded context
+    /// share a single source of truth (chapter-3.7 slice β; audit
+    /// Tier-1 #8). The parameterization (`(N)` for Text/Binary,
+    /// `(P, S)` for Decimal, `(MAX)` fallback) is SSDT-emission
+    /// concern and stays in this module.
     let columnSqlType (c: ColumnDef) : string =
         match c.Type with
         | Text ->
             match c.Length with
-            | Some n when n > 0 -> sqlTypeWithLength "NVARCHAR" n
-            | _ -> "NVARCHAR(MAX)"
+            | Some n when n > 0 -> sqlTypeWithLength (SqlTypeCorrespondence.baseName Text) n
+            | _ -> System.String.Concat(SqlTypeCorrespondence.baseName Text, "(MAX)")  // LINT-ALLOW: terminal SQL DDL emission boundary; both segments are typed (closed-DU dispatch + literal)
         | Binary ->
             match c.Length with
-            | Some n when n > 0 -> sqlTypeWithLength "VARBINARY" n
-            | _ -> "VARBINARY(MAX)"
+            | Some n when n > 0 -> sqlTypeWithLength (SqlTypeCorrespondence.baseName Binary) n
+            | _ -> System.String.Concat(SqlTypeCorrespondence.baseName Binary, "(MAX)")  // LINT-ALLOW: terminal SQL DDL emission boundary; both segments are typed (closed-DU dispatch + literal)
         | Decimal ->
             match c.Precision, c.Scale with
             | Some p, Some s -> sqlDecimal p s
             | Some p, None -> sqlDecimal p 0
-            | _ -> "DECIMAL(18, 4)"
-        | Integer  -> "INT"
-        | Boolean  -> "BIT"
-        | DateTime -> "DATETIME2"
-        | Date     -> "DATE"
-        | Time     -> "TIME"
-        | Guid     -> "UNIQUEIDENTIFIER"
+            | _ -> System.String.Concat(SqlTypeCorrespondence.baseName Decimal, "(18, 4)")  // LINT-ALLOW: terminal SQL DDL emission boundary; default-decimal preserved
+        | (Integer | Boolean | DateTime | Date | Time | Guid) as fixedType ->
+            SqlTypeCorrespondence.baseName fixedType
 
     /// Quote a string literal as `'<raw>'`. SQL injection isn't a
     /// concern for emitter output (the IR is the input contract);
