@@ -2,7 +2,7 @@ namespace Projection.Targets.Data
 
 open System.Text
 open Projection.Core
-open Projection.Targets.SSDT  // LINT-ALLOW: provisional cross-target dependency for `Render.formatSqlLiteral` SQL-literal formatter (the IR→SQL boundary primitive); two-consumer N=2 promotion to a concept-shaped `Projection.Core.SqlLiteral` module lands at slice ε when MigrationDependenciesEmitter joins as the third consumer; rationale documented in `Projection.Targets.Data.fsproj` ProjectReference comment
+open Projection.Targets.SSDT  // LINT-ALLOW: provisional cross-target dependency for `Render.quote` (ScriptDom-encoded SQL identifier) + `Render.tableQualified` ([schema].[table] composition); the `formatSqlLiteral` consumer-shape retired at Tier-1 #4 in favor of Core-resident `SqlLiteral.formatRaw`; the remaining `Render.quote` / `tableQualified` consumers earn promotion to a concept-shaped `Projection.Core.SqlIdentifier` module when the third emitter joins (MigrationDependenciesEmitter or DacpacEmitter); rationale documented in `Projection.Targets.Data.fsproj` ProjectReference comment
 
 /// Π_StaticSeeds — chapter 4.1.B slice α emitter for static-modality
 /// kinds. Consumes the `Catalog`'s `Modality.Static` populations and
@@ -69,10 +69,13 @@ module StaticSeedsEmitter =
         |> List.map (fun a -> a.Column.ColumnName)
 
     /// Format one row's column values into a comma-joined VALUES tuple
-    /// like `(1, 'US', 'United States')`. Type resolution flows through
-    /// `Render.formatSqlLiteral` (provisional Data → SSDT dependency at
-    /// slice α; promotes to `Projection.Core.SqlLiteral` at slice ε per
-    /// the project-file rationale).
+    /// like `(1, N'US', N'United States')`. Type resolution flows through
+    /// `Projection.Core.SqlLiteral.formatRaw` per Tier-1 #4 (the typed
+    /// SQL-literal projection lives in Core; consumers go through the
+    /// concept-shaped middle layer, not a direct text helper). Future
+    /// Tier-1 #1 (MERGE → ScriptDom MergeStatement) will retire this
+    /// per-row text concat in favor of `RowValue` typed-AST nodes
+    /// composed into the MergeStatement's source-table-reference.
     let private formatValuesTuple
         (typeLookup: Map<Name, PrimitiveType>)
         (attributes: Attribute list)
@@ -87,8 +90,8 @@ module StaticSeedsEmitter =
                 let typ =
                     Map.tryFind a.Name typeLookup
                     |> Option.defaultValue PrimitiveType.Text
-                Render.formatSqlLiteral typ raw)
-        System.String.Concat("(", System.String.Join(", ", formatted), ")")  // LINT-ALLOW: VALUES-tuple terminal text formatting; segments are typed (each `formatted` element is the result of typed `Render.formatSqlLiteral`); BCL `String.Join` is the use-case-specific library
+                SqlLiteral.formatRaw typ raw)
+        System.String.Concat("(", System.String.Join(", ", formatted), ")")  // LINT-ALLOW: VALUES-tuple terminal text formatting; segments are typed (each `formatted` element is the result of typed `SqlLiteral.formatRaw`); BCL `String.Join` is the use-case-specific library; Tier-1 #1 transition replaces this entire concat with a typed ScriptDom RowValue node
 
     /// Render a single MERGE statement for a kind with its static
     /// populations. Mirrors V1's `StaticSeedSqlBuilder.AppendMerge

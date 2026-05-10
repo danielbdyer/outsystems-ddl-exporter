@@ -29,6 +29,7 @@
     <Compile Include="Catalog.fs" />
     <Compile Include="RawValueCodec.fs" />
     <Compile Include="SqlTypeCorrespondence.fs" />
+    <Compile Include="SqlLiteral.fs" />
     <Compile Include="ArtifactByKind.fs" />
     <Compile Include="CatalogDiff.fs" />
     <Compile Include="PhysicalSchema.fs" />

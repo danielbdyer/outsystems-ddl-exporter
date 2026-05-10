@@ -87,32 +87,16 @@ module Render =
         ScriptDomBuild.dataTypeReference c.Type c.Length c.Precision c.Scale
         |> ScriptDomGenerate.generateDataType
 
-    /// Quote a string literal as `'<raw>'`. SQL injection isn't a
-    /// concern for emitter output (the IR is the input contract);
-    /// callers responsible for escape-doubling apostrophes pre-call.
-    let private quoteSingle (raw: string) : string =
-        String.Concat("'", raw, "'")
-
-    /// Raw IR string → SQL literal. `""` is NULL; Text gets `N'…'`
-    /// with single-quote doubling; temporal / Guid get `'…'`; Binary
-    /// gets `0x…`. Mirrors the canonical adapter convention
-    /// (`ReadSide.formatRawValue` produces the inverse). All format
-    /// rules (Boolean canonical, Hex prefix) flow through
-    /// `RawValueCodec` so the V2 raw-form contract has a single
-    /// source of truth across emit / parse / readback.
+    /// Raw IR string → SQL literal. Delegates to `SqlLiteral.formatRaw`
+    /// per the Tier-1 #4 transition (RawTextEmitter retirement arc):
+    /// the typed `SqlLiteral` value lives in Core; this is the SSDT-
+    /// resident shim that preserves the legacy call-site shape. Same
+    /// semantics by construction (the test suite's golden-output
+    /// equivalence is preserved); the typed middle layer enables
+    /// MERGE → ScriptDom MergeStatement migration (Tier-1 #1) which
+    /// needs typed VALUES literals.
     let formatSqlLiteral (typ: PrimitiveType) (raw: string) : string =
-        if raw = "" then "NULL"
-        else
-            match typ with
-            | Integer | Decimal -> raw
-            | Boolean ->
-                if RawValueCodec.parseBoolean raw then "1" else "0"
-            | DateTime | Date | Time | Guid ->
-                quoteSingle raw
-            | Text ->
-                String.Concat("N", quoteSingle (raw.Replace("'", "''")))
-            | Binary ->
-                RawValueCodec.withHexPrefix raw
+        SqlLiteral.formatRaw typ raw
 
     let private actionSql (a: ReferenceActionSql) : string =
         match a with
