@@ -1,8 +1,7 @@
 namespace Projection.Targets.Data
 
-open System.Text
 open Projection.Core
-open Projection.Targets.SSDT  // LINT-ALLOW: provisional cross-target dependency for `Render.quote` (ScriptDom-encoded SQL identifier) + `Render.tableQualified` ([schema].[table] composition); the `formatSqlLiteral` consumer-shape retired at Tier-1 #4 in favor of Core-resident `SqlLiteral.formatRaw`; the remaining `Render.quote` / `tableQualified` consumers earn promotion to a concept-shaped `Projection.Core.SqlIdentifier` module when the third emitter joins (MigrationDependenciesEmitter or DacpacEmitter); rationale documented in `Projection.Targets.Data.fsproj` ProjectReference comment
+open Projection.Targets.SSDT  // LINT-ALLOW: cross-target dependency for ScriptDom MERGE typed-AST construction (`ScriptDomBuild.buildMergeStatement` + `buildSqlLiteral`) per the Tier-1 #1 transition (RawTextEmitter retirement arc cash-out); the typed AST flows through `ScriptDomGenerate.generateOne` for canonical SQL-text rendering; same architectural shape that SsdtDdlEmitter uses (chapter 4.1.A)
 
 /// Π_StaticSeeds — chapter 4.1.B slice α emitter for static-modality
 /// kinds. Consumes the `Catalog`'s `Modality.Static` populations and
@@ -68,153 +67,71 @@ module StaticSeedsEmitter =
         |> List.filter (fun a -> not a.IsPrimaryKey)
         |> List.map (fun a -> a.Column.ColumnName)
 
-    /// Format one row's column values into a comma-joined VALUES tuple
-    /// like `(1, N'US', N'United States')`. Type resolution flows through
-    /// `Projection.Core.SqlLiteral.formatRaw` per Tier-1 #4 (the typed
-    /// SQL-literal projection lives in Core; consumers go through the
-    /// concept-shaped middle layer, not a direct text helper). Future
-    /// Tier-1 #1 (MERGE → ScriptDom MergeStatement) will retire this
-    /// per-row text concat in favor of `RowValue` typed-AST nodes
-    /// composed into the MergeStatement's source-table-reference.
-    let private formatValuesTuple
+    /// Project one StaticRow into the typed `SqlLiteral list` form
+    /// that `MergeBuildArgs.Rows` expects. Iterates the kind's
+    /// attributes in declared order; missing values default to NULL
+    /// (V2 IR's empty-raw sentinel per `RawValueCodec`).
+    let private rowToSqlLiterals
         (typeLookup: Map<Name, PrimitiveType>)
         (attributes: Attribute list)
         (row: StaticRow)
-        : string =
-        let formatted =
-            attributes
-            |> List.map (fun a ->
-                let raw =
-                    Map.tryFind a.Name row.Values
-                    |> Option.defaultValue ""
-                let typ =
-                    Map.tryFind a.Name typeLookup
-                    |> Option.defaultValue PrimitiveType.Text
-                SqlLiteral.formatRaw typ raw)
-        System.String.Concat("(", System.String.Join(", ", formatted), ")")  // LINT-ALLOW: VALUES-tuple terminal text formatting; segments are typed (each `formatted` element is the result of typed `SqlLiteral.formatRaw`); BCL `String.Join` is the use-case-specific library; Tier-1 #1 transition replaces this entire concat with a typed ScriptDom RowValue node
+        : SqlLiteral list =
+        attributes
+        |> List.map (fun a ->
+            let raw =
+                Map.tryFind a.Name row.Values
+                |> Option.defaultValue ""
+            let typ =
+                Map.tryFind a.Name typeLookup
+                |> Option.defaultValue PrimitiveType.Text
+            SqlLiteral.ofRaw typ raw)
 
-    /// Render a single MERGE statement for a kind with its static
-    /// populations. Mirrors V1's `StaticSeedSqlBuilder.AppendMerge
-    /// Statement` (`StaticSeedSqlBuilder.cs:211-260`):
+    /// Render the MERGE statement for a kind with its static populations
+    /// via ScriptDom's typed-AST + `Sql160ScriptGenerator` pipeline.
+    /// Per Tier-1 #1 (RawTextEmitter retirement arc cash-out): the
+    /// hand-rolled StringBuilder MERGE construction (with 6 LINT-ALLOWs)
+    /// retires in favor of `ScriptDomBuild.buildMergeStatement` —
+    /// every node typed, every literal flowing through `SqlLiteral`,
+    /// no terminal text composition until the writer boundary.
     ///
-    /// ```sql
-    /// MERGE INTO [dbo].[OSUSR_S1S_COUNTRY] AS Target
-    /// USING
-    /// (
-    ///     VALUES
-    ///         (1, 'US', 'United States'),
-    ///         (2, 'CA', 'Canada')
-    /// ) AS Source ([Id], [Code], [Label])
-    ///     ON Target.[Id] = Source.[Id]
-    /// WHEN MATCHED THEN UPDATE SET
-    ///     Target.[Code] = Source.[Code],
-    ///     Target.[Label] = Source.[Label]
-    /// WHEN NOT MATCHED THEN INSERT ([Id], [Code], [Label])
-    ///     VALUES (Source.[Id], Source.[Code], Source.[Label])
-    /// ;
-    /// ```
-    /// Build the change-detection predicate per pre-scope §6 + chapter
-    /// 4.1.B slice β. The predicate fires WHEN MATCHED to update only
-    /// when at least one non-key column differs between source and
-    /// target. Nullable-aware comparator (NULL ≠ NULL in SQL):
-    ///
-    /// ```sql
-    /// WHEN MATCHED AND (
-    ///     Target.[col1] <> Source.[col1] OR
-    ///     (Target.[col1] IS NULL AND Source.[col1] IS NOT NULL) OR
-    ///     (Target.[col1] IS NOT NULL AND Source.[col1] IS NULL) OR
-    ///     ...  -- repeat per non-key column
-    /// ) THEN UPDATE SET ...
-    /// ```
-    ///
-    /// This predicate IS the structural commitment that closes CDC-
-    /// noise on idempotent redeploys: identical content fires no
-    /// UPDATE → CDC capture-process emits no row → consuming features
-    /// see no spurious change. The slice-γ canary verifies this under
-    /// real SQL Server CDC semantics.
-    let private buildChangeDetectionPredicate (updCols: string list) : string =
-        let perColumn (col: string) : string =
-            let q = Render.quote col
-            // Three OR-conditions per column: value-mismatch + NULL-asymmetry-each-way.
-            System.String.Concat(  // LINT-ALLOW: change-detection predicate fragment composition for one non-key column; segments are typed (Render.quote returns ScriptDom-encoded identifier); future ScriptDom MergeStatement adoption deferred to slice ζ
-                "Target.", q, " <> Source.", q, " OR ",
-                "(Target.", q, " IS NULL AND Source.", q, " IS NOT NULL) OR ",
-                "(Target.", q, " IS NOT NULL AND Source.", q, " IS NULL)")
-        updCols
-        |> List.map perColumn
-        |> String.concat " OR\n        "  // LINT-ALLOW: terminal OR-joiner across per-column change-detection fragments; BCL `String.concat` IS the use-case-specific library (collection-joiner gold-standard); segments are typed
-
+    /// Mirrors V1's `StaticSeedSqlBuilder.AppendMergeStatement`
+    /// (`StaticSeedSqlBuilder.cs:211-260`) modulo ScriptDom's canonical
+    /// formatting (newlines / wrapping). The change-detection predicate
+    /// per chapter 4.1.B slice β + pre-scope §6 lands as typed
+    /// `BooleanBinaryExpression` / `BooleanIsNullExpression` /
+    /// `BooleanComparisonExpression` AST nodes.
     let private renderMerge
         (cdcAware: bool)
         (k: Kind)
         (rows: StaticRow list)
         : string =
         use _ = Bench.scope "emit.staticSeeds.renderMerge"
-        let sb = StringBuilder()
         let table : TableId =
             { Schema = k.Physical.Schema
               Table  = k.Physical.Table }
-        let allCols = orderedColumnNames k
-        let pkCols = pkColumnNames k
-        let updCols = updatableColumnNames k
         let typeLookup = columnTypeLookup k
-        let columnList = allCols |> List.map Render.quote |> String.concat ", "  // LINT-ALLOW: terminal SQL-DDL column-list joiner; BCL `String.concat` IS the use-case-specific library (collection-joiner gold-standard); segments are typed (each `Render.quote` returns ScriptDom-encoded identifier text)
-
-        sb.Append("MERGE INTO ").Append(Render.tableQualified table).AppendLine(" AS Target")
-            .AppendLine("USING")
-            .AppendLine("(")
-            .AppendLine("    VALUES")
-        |> ignore
-
-        let lastIdx = rows.Length - 1
-        rows
-        |> List.iteri (fun i row ->
-            let tuple = formatValuesTuple typeLookup k.Attributes row
-            let sep = if i < lastIdx then "," else ""
-            sb.Append("        ").Append(tuple).AppendLine(sep) |> ignore)
-
-        sb.Append(") AS Source (").Append(columnList).AppendLine(")") |> ignore
-
-        let onClause =
-            pkCols
-            |> List.map (fun c -> System.String.Concat("Target.", Render.quote c, " = Source.", Render.quote c))  // LINT-ALLOW: ON-clause column-equality fragment; segments are typed (Render.quote returns ScriptDom-encoded identifier)
-            |> String.concat " AND "  // LINT-ALLOW: terminal AND-joiner across PK column-equality fragments; BCL `String.concat` IS the use-case-specific library (collection joiner gold-standard); segments are typed
-        sb.Append("    ON ").AppendLine(onClause) |> ignore
-
-        if not (List.isEmpty updCols) then
-            // CDC-aware dispatch per pre-scope §6 + slice β: the change-
-            // detection predicate suppresses no-op UPDATEs on identical
-            // content, closing the CDC-noise hole. CDC-disabled kinds
-            // keep V1's predicate-free WHEN MATCHED (V1 already proven
-            // correct in trunk; the CDC-noise path is irrelevant for
-            // non-tracked tables).
-            if cdcAware then
-                let predicate = buildChangeDetectionPredicate updCols
-                sb.AppendLine("WHEN MATCHED AND (")
-                    .Append("        ").AppendLine(predicate)
-                    .AppendLine("    ) THEN UPDATE SET")
-                |> ignore
-            else
-                sb.AppendLine("WHEN MATCHED THEN UPDATE SET") |> ignore
-            let lastUpdIdx = updCols.Length - 1
-            updCols
-            |> List.iteri (fun i c ->
-                let sep = if i < lastUpdIdx then "," else ""
-                sb.Append("    Target.").Append(Render.quote c)
-                    .Append(" = Source.").Append(Render.quote c).AppendLine(sep)
-                |> ignore)
-
-        sb.Append("WHEN NOT MATCHED THEN INSERT (").Append(columnList).AppendLine(")") |> ignore
-        let valuesTuple =
-            allCols
-            |> List.map (fun c -> System.String.Concat("Source.", Render.quote c))  // LINT-ALLOW: VALUES Source.<col> reference; segments are typed (Render.quote returns ScriptDom-encoded identifier)
-            |> String.concat ", "  // LINT-ALLOW: terminal comma-joiner across VALUES Source.<col> references; BCL `String.concat` IS the use-case-specific library (collection-joiner gold-standard); segments are typed
-        sb.Append("    VALUES (").Append(valuesTuple).AppendLine(")")
-            .AppendLine(";")
-            .AppendLine("GO")
-        |> ignore
-
-        sb.ToString()
+        let args : ScriptDomBuild.MergeBuildArgs =
+            {
+                Target     = table
+                AllColumns = orderedColumnNames k
+                PkColumns  = pkColumnNames k
+                UpdColumns = updatableColumnNames k
+                Rows       = rows |> List.map (rowToSqlLiterals typeLookup k.Attributes)
+                CdcAware   = cdcAware
+            }
+        let mergeStmt = ScriptDomBuild.buildMergeStatement args
+        // ScriptDomGenerate.generateOne emits the canonical
+        // Sql160ScriptGenerator output; trailing GO batches the
+        // statement per V1 deploy convention.
+        // ScriptDomGenerate.generateOne emits the MERGE without a
+        // trailing `;` (semicolons appear between statements in a
+        // batch, not after a single-statement render). SQL Server
+        // REQUIRES MERGE to terminate with `;` (SqlException: "A
+        // MERGE statement must be terminated by a semi-colon (;)").
+        // The terminal-text boundary appends `;` + `GO`.
+        System.String.Concat(  // LINT-ALLOW: terminal MERGE statement-terminator + GO-batch suffix on the rendered MERGE; segments are typed (output of `ScriptDomGenerate.generateOne` from typed AST + SQL Server's required MERGE statement-terminator + V1 batch-separator literal); BCL `String.Concat` is the right primitive at this terminal-text boundary
+            ScriptDomGenerate.generateOne (mergeStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement),
+            ";\nGO\n")
 
     /// Build one `DataInsertScript` for a kind. Empty-population kinds
     /// produce a no-op script (empty Phase1Merges, empty Rendered);

@@ -97,6 +97,15 @@ let private mkCatalog (kinds: Kind list) : Catalog =
           Kinds = kinds }
     { Modules = [ m ] }
 
+/// Whitespace-normalize a rendered SQL string so substring assertions
+/// match across formatter variations. ScriptDom's `Sql160ScriptGenerator`
+/// emits canonical formatting (line breaks before `AS`, `SET`, etc.) that
+/// differs from V1's hand-rolled spacing; the structural-content
+/// property (every load-bearing token in expected order) is what these
+/// tests check, not byte-exact whitespace.
+let private normWs (s: string) : string =
+    System.Text.RegularExpressions.Regex.Replace(s, @"\s+", " ").Trim()
+
 let private mustOkEmit (r: Result<'a, EmitError>) : 'a =
     match r with
     | Ok v -> v
@@ -149,15 +158,21 @@ let ``StaticSeedsEmitter.emit Rendered MERGE shape contains V1-required clauses`
     let catalog = mkCatalog [ country ]
     let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
-    // V1's six load-bearing MERGE clauses (per `StaticSeedSqlBuilder.cs:211-260`):
-    Assert.Contains ("MERGE INTO [dbo].[OSUSR_TEST_COUNTRY] AS Target", script.Rendered)
-    Assert.Contains ("USING", script.Rendered)
-    Assert.Contains ("VALUES", script.Rendered)
-    Assert.Contains ("AS Source ([ID], [CODE], [LABEL])", script.Rendered)
-    Assert.Contains ("ON Target.[ID] = Source.[ID]", script.Rendered)
-    Assert.Contains ("WHEN MATCHED THEN UPDATE SET", script.Rendered)
-    Assert.Contains ("WHEN NOT MATCHED THEN INSERT", script.Rendered)
-    Assert.EndsWith ("GO\n", script.Rendered.Replace("\r\n", "\n"))
+    // V1's six load-bearing MERGE clauses (per `StaticSeedSqlBuilder.cs:211-260`).
+    // Per Tier-1 #1 (typed-AST MERGE via ScriptDom): formatting is the
+    // canonical Sql160ScriptGenerator output (different whitespace
+    // wrapping than V1's hand-rolled). Assertions normalize whitespace
+    // so the structural-content property is what's checked, not exact
+    // formatting.
+    let r = normWs script.Rendered
+    Assert.Contains ("MERGE INTO [dbo].[OSUSR_TEST_COUNTRY] AS [Target]", r)
+    Assert.Contains ("USING", r)
+    Assert.Contains ("VALUES", r)
+    Assert.Contains ("AS [Source]([ID], [CODE], [LABEL])", r)
+    Assert.Contains ("ON [Target].[ID] = [Source].[ID]", r)
+    Assert.Contains ("WHEN MATCHED THEN UPDATE SET", r)
+    Assert.Contains ("WHEN NOT MATCHED THEN INSERT", r)
+    Assert.EndsWith ("GO", r)
 
 [<Fact>]
 let ``StaticSeedsEmitter.emit Rendered does NOT carry change-detection predicate (slice α; CDC awareness lands at slice β)`` () =
@@ -168,8 +183,9 @@ let ``StaticSeedsEmitter.emit Rendered does NOT carry change-detection predicate
     // Slice α emits V1's WHEN MATCHED THEN UPDATE SET unconditional; the
     // change-detection-predicate (Target.col <> Source.col + null-aware
     // OR conditions) is the slice-β contribution that closes CDC-noise.
-    Assert.DoesNotContain ("WHEN MATCHED AND", script.Rendered)
-    Assert.Contains ("WHEN MATCHED THEN UPDATE SET", script.Rendered)
+    let r = normWs script.Rendered
+    Assert.DoesNotContain ("WHEN MATCHED AND", r)
+    Assert.Contains ("WHEN MATCHED THEN UPDATE SET", r)
 
 [<Fact>]
 let ``T1: StaticSeedsEmitter.emit is byte-deterministic across repeat invocations`` () =
@@ -252,8 +268,9 @@ let ``Slice β: StaticSeedsEmitter without CDC keeps V1 unconditional WHEN MATCH
     let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     // CdcAwareness.empty (no kinds enabled) → V1-shape MERGE.
-    Assert.Contains ("WHEN MATCHED THEN UPDATE SET", script.Rendered)
-    Assert.DoesNotContain ("WHEN MATCHED AND", script.Rendered)
+    let r = normWs script.Rendered
+    Assert.Contains ("WHEN MATCHED THEN UPDATE SET", r)
+    Assert.DoesNotContain ("WHEN MATCHED AND", r)
 
 [<Fact>]
 let ``Slice β: StaticSeedsEmitter with CDC enabled emits change-detection predicate`` () =
@@ -264,9 +281,10 @@ let ``Slice β: StaticSeedsEmitter with CDC enabled emits change-detection predi
     let artifact = StaticSeedsEmitter.emit catalog profile |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     // CDC-enabled → WHEN MATCHED AND ( ... ) THEN UPDATE SET.
-    Assert.Contains ("WHEN MATCHED AND (", script.Rendered)
-    Assert.Contains (") THEN UPDATE SET", script.Rendered)
-    Assert.DoesNotContain ("WHEN MATCHED THEN UPDATE SET", script.Rendered)
+    let r = normWs script.Rendered
+    Assert.Contains ("WHEN MATCHED AND (", r)
+    Assert.Contains (") THEN UPDATE SET", r)
+    Assert.DoesNotContain ("WHEN MATCHED THEN UPDATE SET", r)
 
 [<Fact>]
 let ``Slice β: change-detection predicate is nullable-aware (NULL-asymmetry both ways)`` () =
@@ -280,9 +298,11 @@ let ``Slice β: change-detection predicate is nullable-aware (NULL-asymmetry bot
     // null-asymmetry directions (target NULL vs source NOT NULL, and
     // target NOT NULL vs source NULL). Verify on at least one non-key
     // column.
-    Assert.Contains ("Target.[CODE] <> Source.[CODE]", script.Rendered)
-    Assert.Contains ("Target.[CODE] IS NULL AND Source.[CODE] IS NOT NULL", script.Rendered)
-    Assert.Contains ("Target.[CODE] IS NOT NULL AND Source.[CODE] IS NULL", script.Rendered)
+    let r = normWs script.Rendered
+    // ScriptDom emits aliases bracketed (`[Target]` / `[Source]`).
+    Assert.Contains ("[Target].[CODE] <> [Source].[CODE]", r)
+    Assert.Contains ("[Target].[CODE] IS NULL AND [Source].[CODE] IS NOT NULL", r)
+    Assert.Contains ("[Target].[CODE] IS NOT NULL AND [Source].[CODE] IS NULL", r)
 
 [<Fact>]
 let ``Slice β: change-detection predicate covers every non-key column`` () =
@@ -292,12 +312,15 @@ let ``Slice β: change-detection predicate covers every non-key column`` () =
     let profile = { Profile.empty with CdcAwareness = cdc }
     let artifact = StaticSeedsEmitter.emit catalog profile |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    let r = normWs script.Rendered
     // Both non-key columns (CODE + LABEL) appear in the predicate.
-    Assert.Contains ("Target.[CODE] <> Source.[CODE]", script.Rendered)
-    Assert.Contains ("Target.[LABEL] <> Source.[LABEL]", script.Rendered)
+    // ScriptDom emits aliases bracketed (`[Target]` / `[Source]`)
+    // because they round-trip through `Identifier.EncodeIdentifier`.
+    Assert.Contains ("[Target].[CODE] <> [Source].[CODE]", r)
+    Assert.Contains ("[Target].[LABEL] <> [Source].[LABEL]", r)
     // ID is the PK; it should NOT appear in the change-detection
     // predicate (the predicate gates UPDATEs of NON-KEY columns).
-    Assert.DoesNotContain ("Target.[ID] <> Source.[ID]", script.Rendered)
+    Assert.DoesNotContain ("[Target].[ID] <> [Source].[ID]", r)
 
 [<Fact>]
 let ``Slice β: per-kind dispatch — only CDC-enabled kinds get the predicate`` () =
@@ -317,11 +340,13 @@ let ``Slice β: per-kind dispatch — only CDC-enabled kinds get the predicate``
     let map = ArtifactByKind.toMap artifact
     let countryScript = Map.find country.SsKey map
     let regionScript = Map.find region.SsKey map
+    let cR = normWs countryScript.Rendered
+    let rR = normWs regionScript.Rendered
     // Country: CDC-enabled → predicate.
-    Assert.Contains ("WHEN MATCHED AND (", countryScript.Rendered)
+    Assert.Contains ("WHEN MATCHED AND (", cR)
     // Region: not CDC-enabled → V1-shape MERGE.
-    Assert.DoesNotContain ("WHEN MATCHED AND (", regionScript.Rendered)
-    Assert.Contains ("WHEN MATCHED THEN UPDATE SET", regionScript.Rendered)
+    Assert.DoesNotContain ("WHEN MATCHED AND (", rR)
+    Assert.Contains ("WHEN MATCHED THEN UPDATE SET", rR)
 
 [<Fact>]
 let ``Slice β: T1 byte-determinism holds under CDC dispatch`` () =
