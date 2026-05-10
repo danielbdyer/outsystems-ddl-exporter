@@ -132,13 +132,89 @@ module SsdtDdlEmitter =
                     Columns = pkColumns
                 }
 
+    let private toReferenceActionSql (a: ReferenceAction) : ReferenceActionSql =
+        match a with
+        | NoAction -> NoActionSql
+        | Cascade  -> CascadeSql
+        | SetNull  -> SetNullSql
+        | Restrict -> NoActionSql
+
+    /// Resolve a `Reference` to a `ForeignKeyDef` for inline FK
+    /// emission. Same shape as `RawTextEmitter.fkDef`; per the
+    /// chapter-3.6 N=3-of-distinct-shapes refinement, two identical-
+    /// shape consumers don't yet pressure extraction (the third
+    /// distinct-shape consumer — chapter 3.x DacpacEmitter or chapter
+    /// 4.4 RemediationEmitter — would justify a shared
+    /// `CatalogResolution` module). Returns `None` when the FK target
+    /// kind isn't in the catalog (cross-catalog FKs; chapter 3.2
+    /// territory) — the FK is silently dropped, with a future
+    /// Diagnostics scaffolding (slice μ deferral) naming the drop.
+    ///
+    /// **Naming convention (chapter 4.1.A pre-scope §3 + V1
+    /// `ForeignKeyNameFactory.cs:17-60`):**
+    /// `FK_<OwnerTable>_<TargetTable>_<SourceColumn>`. Length-cap at
+    /// 128 with `_<sha256-12-hex>` suffix when over is V1's
+    /// `ConstraintNameNormalizer` discipline; deferred-with-trigger
+    /// to slice 6 when cross-module FKs make the length cap
+    /// observable on real OSSYS-shaped fixtures.
+    let private fkDef
+        (targetByKey: Map<SsKey, Kind>)
+        (pkAttrByKey: Map<SsKey, Attribute>)
+        (k: Kind)
+        (r: Reference)
+        : ForeignKeyDef option =
+        let sourceColumnOpt =
+            k.Attributes
+            |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
+            |> Option.map (fun a -> a.Column.ColumnName)
+        match sourceColumnOpt,
+              Map.tryFind r.TargetKind targetByKey,
+              Map.tryFind r.TargetKind pkAttrByKey with
+        | Some sourceColumn, Some target, Some pkAttr ->
+            // V1 FK naming: `FK_<OwnerTable>_<TargetTable>_<SourceColumn>`.
+            // Per pillar 7 four-question analysis: the use-case-specific
+            // library is V1's `ForeignKeyNameFactory.CreateEvidenceName`,
+            // which is C# trunk code V2 cannot reference (cherry-pick
+            // discipline per `DECISIONS 2026-05-06`). The naming convention
+            // is documented; mirroring it here is the V1↔V2 ubiquitous-
+            // language commitment per pillar 8. String.Concat with
+            // explicit underscore separator; segments are typed
+            // (k.Physical.Table from Coordinates.TableId; target.Physical
+            // .Table likewise; sourceColumn from k.Attributes).
+            let fkName =
+                System.String.Concat(  // LINT-ALLOW: V1 FK naming-convention mirror; V1 ForeignKeyNameFactory considered + cannot be referenced (cherry-pick discipline); segments are typed (Coordinates.TableId fields + Attribute.Column.ColumnName)
+                    "FK_",
+                    k.Physical.Table,
+                    "_",
+                    target.Physical.Table,
+                    "_",
+                    sourceColumn)
+            Some
+                {
+                    Name         = fkName
+                    SourceColumn = sourceColumn
+                    Target       = toTableId target
+                    TargetColumn = pkAttr.Column.ColumnName
+                    OnDelete     = toReferenceActionSql r.OnDelete
+                }
+        | _ -> None
+
     /// Build the CREATE TABLE statement for a single Kind. Columns +
-    /// PK; no FKs (slice 5), no modality (data triumvirate — chapter
-    /// 4.1.B).
-    let private createTableStatement (k: Kind) : Statement =
+    /// PK + intra-module + cross-module FKs (slice 5; per chapter
+    /// pre-scope §3 V2 follows V1's pattern of inline FKs for both
+    /// same-module and cross-module references). The FK list is
+    /// resolved against pre-built lookup tables (see emitSlices); FKs
+    /// whose target kind isn't in the catalog drop silently
+    /// (cross-catalog territory; chapter 3.2).
+    let private createTableStatement
+        (targetByKey: Map<SsKey, Kind>)
+        (pkAttrByKey: Map<SsKey, Attribute>)
+        (k: Kind)
+        : Statement =
         let columns = k.Attributes |> List.map columnDef
         let pk = pkDef k
-        Statement.CreateTable (toTableId k, columns, pk, [])
+        let fks = k.References |> List.choose (fkDef targetByKey pkAttrByKey k)
+        Statement.CreateTable (toTableId k, columns, pk, fks)
 
     /// Resolve a column-SsKey to its physical column name within a
     /// kind. The IR's `Index.Columns` carries SsKey list (per
@@ -208,21 +284,26 @@ module SsdtDdlEmitter =
             ".sql")
 
     /// Render one Kind to a typed `SsdtFile`. The CREATE TABLE
-    /// statement (slice 1) plus zero-or-more CREATE INDEX statements
-    /// (slice 3) flow through ScriptDom's typed AST and emerge as
-    /// SQL text only at the absolute terminal `Sql160ScriptGenerator`
-    /// boundary (per pillar 1 + pillar 7).
+    /// statement (slice 1; with FKs inline per slice 5) plus zero-or-
+    /// more CREATE INDEX statements (slice 3) flow through ScriptDom's
+    /// typed AST and emerge as SQL text only at the absolute terminal
+    /// `Sql160ScriptGenerator` boundary (per pillar 1 + pillar 7).
     ///
     /// `ScriptDomGenerate.toText` (chapter 3.5) is the typed-statement-
     /// stream consumer that handles multi-statement bodies: each
     /// statement gets emitted via the pinned-options writer, with
     /// blank-line framing between statements per A33 (deterministic-
     /// ordered schema emission).
-    let private kindToSsdtFile (m: Module) (k: Kind) : SsdtFile =
+    let private kindToSsdtFile
+        (targetByKey: Map<SsKey, Kind>)
+        (pkAttrByKey: Map<SsKey, Attribute>)
+        (m: Module)
+        (k: Kind)
+        : SsdtFile =
         use _ = Bench.scope "emit.ssdt.kindToSsdtFile"
         let statements =
             seq {
-                yield createTableStatement k
+                yield createTableStatement targetByKey pkAttrByKey k
                 yield! indexStatements k
             }
         let body = ScriptDomGenerate.toText statements
@@ -257,12 +338,24 @@ module SsdtDdlEmitter =
         use _ = Bench.scope "emit.ssdt.emitSlices"
         let modules = moduleByKindKey catalog
         let allKinds = Catalog.allKinds catalog
+        // Per session-35 (chapter 3.1) — lift `(targetByKey, pkAttrByKey)`
+        // once so FK resolution is O(1) hash lookup per reference instead
+        // of O(K) catalog scan. Same pattern as RawTextEmitter.emitSlices.
+        let targetByKey =
+            allKinds |> List.map (fun k -> k.SsKey, k) |> Map.ofList
+        let pkAttrByKey =
+            allKinds
+            |> List.choose (fun k ->
+                k.Attributes
+                |> List.tryFind (fun a -> a.IsPrimaryKey)
+                |> Option.map (fun pk -> k.SsKey, pk))
+            |> Map.ofList
         let slices =
             allKinds
             |> List.map (fun k ->
                 match Map.tryFind k.SsKey modules with
                 | Some m ->
-                    k.SsKey, kindToSsdtFile m k
+                    k.SsKey, kindToSsdtFile targetByKey pkAttrByKey m k
                 | None ->
                     // Unreachable: `Catalog.allKinds` walks
                     // `c.Modules |> List.collect (fun m -> m.Kinds)`;

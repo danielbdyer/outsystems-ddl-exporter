@@ -464,3 +464,139 @@ let ``Slice 3: T1 byte-determinism holds for indexed fixture`` () =
     let body1 : SsdtDdlEmitter.SsdtFile = Map.find indexedKindKey r1
     let body2 : SsdtDdlEmitter.SsdtFile = Map.find indexedKindKey r2
     Assert.Equal<string> (body1.Body, body2.Body)
+
+// ---------------------------------------------------------------------------
+// Chapter 4.1.A slice 5 — intra-module foreign keys (inline).
+//
+// Per chapter pre-scope §8 slice 5: "same-module FK constraints inline in
+// the CREATE TABLE body. Fixture: two kinds in one module, one with an FK
+// to the other. Acceptance: inline FK appears in the owning kind's file;
+// target kind's file is unchanged."
+//
+// SsdtDdlEmitter.fkDef (slice 5) resolves a Reference to a ForeignKeyDef
+// with V1 naming convention (`FK_<OwnerTable>_<TargetTable>_<SourceColumn>`
+// per V1 ForeignKeyNameFactory.cs:17-60). The chapter-3.5 ScriptDomBuild
+// .buildCreateTable already handles the inline FK constraint emission;
+// slice 5 wires V2's References through to that path.
+// ---------------------------------------------------------------------------
+
+let private parentKindKey = kindKey ["Parent"]
+let private childKindKey = kindKey ["Child"]
+let private childParentFkKey = refKey ["Child"; "Parent"]
+let private childParentIdAttrKey = attrKey ["Child"; "ParentId"]
+
+let private parentKind : Kind =
+    {
+        SsKey = parentKindKey
+        Name = mkName "Parent"
+        Origin = OsNative
+        Modality = []
+        Physical = { Schema = "dbo"; Table = "OSUSR_X_PARENT" }
+        Attributes = [
+            {
+                SsKey = attrKey ["Parent"; "Id"]
+                Name = mkName "Id"
+                Type = Integer
+                Column = { ColumnName = "ID"; IsNullable = false }
+                IsPrimaryKey = true
+                IsMandatory  = true
+                Length = None; Precision = None; Scale = None; IsIdentity = false
+            }
+        ]
+        References = []
+        Indexes = []
+    }
+
+let private childKind : Kind =
+    {
+        SsKey = childKindKey
+        Name = mkName "Child"
+        Origin = OsNative
+        Modality = []
+        Physical = { Schema = "dbo"; Table = "OSUSR_X_CHILD" }
+        Attributes = [
+            {
+                SsKey = attrKey ["Child"; "Id"]
+                Name = mkName "Id"
+                Type = Integer
+                Column = { ColumnName = "ID"; IsNullable = false }
+                IsPrimaryKey = true
+                IsMandatory  = true
+                Length = None; Precision = None; Scale = None; IsIdentity = false
+            }
+            {
+                SsKey = childParentIdAttrKey
+                Name = mkName "ParentId"
+                Type = Integer
+                Column = { ColumnName = "PARENT_ID"; IsNullable = false }
+                IsPrimaryKey = false
+                IsMandatory  = true
+                Length = None; Precision = None; Scale = None; IsIdentity = false
+            }
+        ]
+        References = [
+            {
+                SsKey = childParentFkKey
+                Name = mkName "ParentFk"
+                SourceAttribute = childParentIdAttrKey
+                TargetKind = parentKindKey
+                OnDelete = NoAction
+            }
+        ]
+        Indexes = []
+    }
+
+let private fkCatalog : Catalog =
+    {
+        Modules = [
+            {
+                SsKey = modKey "FkModule"
+                Name = mkName "FkModule"
+                Kinds = [ parentKind; childKind ]
+            }
+        ]
+    }
+
+[<Fact>]
+let ``Slice 5: SsdtDdlEmitter emits inline FK constraint in owning kind's file`` () =
+    let enriched = enrich fkCatalog
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let slices = ArtifactByKind.toMap artifact
+    // Child kind's body contains the FK constraint (inline in CREATE TABLE
+    // per V1 convention + chapter pre-scope §3 / §4).
+    let childBody =
+        match Map.tryFind childKindKey slices with
+        | Some f -> f.Body
+        | None -> Assert.Fail "expected slice for childKind"; ""
+    Assert.Contains ("FOREIGN KEY", childBody)
+    // V1 FK naming convention: `FK_<OwnerTable>_<TargetTable>_<SourceColumn>`.
+    Assert.Contains ("FK_OSUSR_X_CHILD_OSUSR_X_PARENT_PARENT_ID", childBody)
+    // Target column name (Parent.ID) appears in the REFERENCES clause.
+    Assert.Contains ("REFERENCES", childBody)
+    Assert.Contains ("[OSUSR_X_PARENT]", childBody)
+
+[<Fact>]
+let ``Slice 5: SsdtDdlEmitter — target kind's file is unchanged by the FK`` () =
+    // Per chapter pre-scope §8 slice 5 acceptance: "target kind's file
+    // is unchanged." The Parent kind has no References, so its body
+    // contains a CREATE TABLE without FK clauses.
+    let enriched = enrich fkCatalog
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let parentBody =
+        match Map.tryFind parentKindKey (ArtifactByKind.toMap artifact) with
+        | Some f -> f.Body
+        | None -> Assert.Fail "expected slice for parentKind"; ""
+    Assert.DoesNotContain ("FOREIGN KEY", parentBody)
+    Assert.DoesNotContain ("REFERENCES", parentBody)
+    // Parent kind still has its CREATE TABLE.
+    Assert.Contains ("CREATE TABLE", parentBody)
+    Assert.Contains ("[OSUSR_X_PARENT]", parentBody)
+
+[<Fact>]
+let ``Slice 5: T1 byte-determinism holds for FK fixture`` () =
+    let enriched = enrich fkCatalog
+    let r1 = SsdtDdlEmitter.emitSlices enriched |> mustOk |> ArtifactByKind.toMap
+    let r2 = SsdtDdlEmitter.emitSlices enriched |> mustOk |> ArtifactByKind.toMap
+    let childBody1 : SsdtDdlEmitter.SsdtFile = Map.find childKindKey r1
+    let childBody2 : SsdtDdlEmitter.SsdtFile = Map.find childKindKey r2
+    Assert.Equal<string> (childBody1.Body, childBody2.Body)
