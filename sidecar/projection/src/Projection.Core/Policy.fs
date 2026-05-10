@@ -14,14 +14,54 @@ type SelectionPolicy =
     | ExcludeOnly of SsKey Set
 
 
+/// Within-`EmitData` composition axis (chapter 4.1.B slice η —
+/// `DataEmissionComposer` dispatch). Selects WHICH composition of
+/// data emitters fires when `EmissionPolicy.EmitData = true`. Per
+/// `CHAPTER_4_PRESCOPE_DATA_TRIUMVIRATE.md` §3.1 option (b): the new
+/// DU lands as a sibling field on the existing `EmissionPolicy`
+/// record, not as a rename — preserving the four-axis A12 amendment
+/// while landing the meaningful inflection point of the dispatch.
+///
+/// Variants (per pre-scope §3.2):
+///   - `AllRemaining` — Static + MigrationDependencies + Bootstrap
+///     all fire; Bootstrap covers everything not covered by the
+///     prior two. The promoted-lane default.
+///   - `AllExceptStatic` — Static skipped (already populated upstream
+///     by the cutover team's static seed pass); Migration + Bootstrap
+///     fire.
+///   - `AllData` — Bootstrap covers everything (Static included);
+///     useful for full data-only refresh against a populated schema.
+///
+/// Emitters cannot consume `Policy` per A18 amended; the
+/// `DataEmissionComposer` (slice η) reads
+/// `Policy.Emission.DataComposition` and chooses which emitters
+/// fire — emitters do not.
+type DataComposition =
+    /// Default (promoted-lane). Bootstrap covers what Static +
+    /// MigrationDependencies don't.
+    | AllRemaining
+    /// Static skipped (cutover-time pre-population). Migration +
+    /// Bootstrap fire.
+    | AllExceptStatic
+    /// Bootstrap fires for every kind including static; Static +
+    /// MigrationDependencies skipped (data-only full refresh).
+    | AllData
+
+
 /// Emission axis. Which artifact families a projection emits. The booleans
 /// are deliberate; orthogonality of schema / data / diagnostics is the
 /// algebra's commitment (decomposition Vector 2). When emission shapes
 /// multiply, this record grows fields rather than packing flags into a DU.
+///
+/// **Slice η (chapter 4.1.B) extension**: `DataComposition` field
+/// (closed DU) controls which combination of data emitters fires
+/// when `EmitData = true`. Default `AllRemaining` matches V1's
+/// promoted-lane behavior (Static + Migration + Bootstrap together).
 type EmissionPolicy = {
     EmitSchema      : bool
     EmitData        : bool
     EmitDiagnostics : bool
+    DataComposition : DataComposition
 }
 
 
@@ -291,10 +331,16 @@ module EmissionPolicy =
     /// output, which is silently wrong rather than loudly missing).
     /// Chapter-3.6 cash-out of audit Top-10 #8: future-proofs
     /// against invariant insertion.
+    ///
+    /// **Slice η (chapter 4.1.B)**: `dataComposition` field added.
+    /// Defaults at the `empty` / `schemaOnly` / `dataOnly` /
+    /// `combined` convenience constructors to `AllRemaining` (the
+    /// promoted-lane default per pre-scope §3.2).
     let create
         (emitSchema: bool)
         (emitData: bool)
         (emitDiagnostics: bool)
+        (dataComposition: DataComposition)
         : Result<EmissionPolicy> =
         if not emitSchema && not emitData && not emitDiagnostics then
             Result.failureOf allFalse
@@ -302,14 +348,15 @@ module EmissionPolicy =
             Result.success
                 { EmitSchema      = emitSchema
                   EmitData        = emitData
-                  EmitDiagnostics = emitDiagnostics }
+                  EmitDiagnostics = emitDiagnostics
+                  DataComposition = dataComposition }
 
     /// Default emission: schema only. The most common configuration and
     /// the one where the algebra's structural claims are sharpest.
     /// Constructed via the smart constructor; `Result.value` is safe
     /// because the constants satisfy the invariant by construction.
     let empty : EmissionPolicy =
-        create true false false |> Result.value
+        create true false false AllRemaining |> Result.value
 
     /// Schema artifacts only.
     let schemaOnly : EmissionPolicy = empty
@@ -317,11 +364,19 @@ module EmissionPolicy =
     /// Data artifacts only — for full-export pipelines that keep schema
     /// emission elsewhere.
     let dataOnly : EmissionPolicy =
-        create false true false |> Result.value
+        create false true false AllRemaining |> Result.value
 
     /// All three artifact families together.
     let combined : EmissionPolicy =
-        create true true true |> Result.value
+        create true true true AllRemaining |> Result.value
+
+    /// Replace the `DataComposition` field while preserving the three
+    /// emit-axis booleans. Useful for callers who want the existing
+    /// emission profile (schema-only / data-only / combined) but a
+    /// non-default composition (e.g., data-only refresh under
+    /// `AllExceptStatic` because static seeds were applied upstream).
+    let withDataComposition (composition: DataComposition) (policy: EmissionPolicy) : EmissionPolicy =
+        { policy with DataComposition = composition }
 
 
 [<RequireQualifiedAccess>]

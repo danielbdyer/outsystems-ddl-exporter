@@ -42,6 +42,7 @@
     <Compile Include="TypesTests.fs" />
     <Compile Include="ToleranceTests.fs" />
     <Compile Include="StaticSeedsEmitterTests.fs" />
+    <Compile Include="DataEmissionComposerTests.fs" />
     <Compile Include="StaticPopulationEmitterTests.fs" />
     <Compile Include="CdcSilenceTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />

@@ -284,24 +284,28 @@ module StaticSeedsEmitter =
               Phase2Updates = phase2Rows
               Rendered      = rendered }
 
-    /// Π_StaticSeeds emit. Per A18 amended (Catalog × Profile, never
-    /// Policy) and T11 (every kind in the keyset). Slice β consumes
-    /// `Profile.CdcAwareness` for per-kind change-detection-predicate
-    /// dispatch (the load-bearing semantic addition that closes
-    /// CDC-noise on idempotent redeploys per `V2_DRIVER.md`). Slice δ
-    /// consumes `TopologicalOrderPass` output (in-process, lineage
-    /// silently discarded — future composer at slice η hoists the
-    /// pass invocation and threads its `Lineage<TopologicalOrder>`
-    /// through the dispatch tree) for cycle-membership detection;
-    /// kinds in cycles defer their nullable same-SCC FK columns
-    /// across the two-phase MERGE/UPDATE pattern.
-    let emit
+    /// Π_StaticSeeds emit (composer-facing). Per A18 amended
+    /// (`Catalog × Profile`, never `Policy`) and T11 (every kind in
+    /// the keyset). Per the chapter-4.1.B slice-η composer
+    /// integration, the `topo : TopologicalOrder` argument is
+    /// **hoisted** — the composer (`DataEmissionComposer.compose`)
+    /// runs `TopologicalOrderPass` once per pipeline and threads
+    /// the result to every emitter, so the O(N+E) Tarjan + Kahn cost
+    /// is amortized across the data triumvirate rather than paid
+    /// per-emitter.
+    ///
+    /// Slice β (CDC dispatch): the kind's `Profile.CdcAwareness.
+    /// CdcEnabled` membership selects the change-detection-predicate
+    /// MERGE variant. Slice δ (cycle-breaking): kinds in
+    /// `topo.Cycles` defer their nullable same-SCC FK columns across
+    /// the two-phase MERGE/UPDATE pattern.
+    let emitWithTopo
+        (topo: TopologicalOrder)
         (catalog: Catalog)
         (profile: Profile)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        use _ = Bench.scope "emit.staticSeeds.emit"
+        use _ = Bench.scope "emit.staticSeeds.emitWithTopo"
         let cdc = profile.CdcAwareness
-        let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
         let cycleMembers = cycleMembersOf topo
         let allKinds = Catalog.allKinds catalog
         let slices =
@@ -309,3 +313,19 @@ module StaticSeedsEmitter =
             |> List.map (fun k -> k.SsKey, kindToScript cdc cycleMembers k)
             |> Map.ofList
         ArtifactByKind.create catalog slices
+
+    /// Π_StaticSeeds emit (standalone). Convenience for callers that
+    /// don't go through the `DataEmissionComposer` (canary tests,
+    /// direct-Π integration tests). Computes the topological order
+    /// internally and delegates to `emitWithTopo` — same algebra, one
+    /// extra `TopologicalOrderPass` invocation per call. The lineage
+    /// trail of the topo pass is silently discarded; pipeline-level
+    /// callers SHOULD route through the composer to preserve trail
+    /// fidelity.
+    let emit
+        (catalog: Catalog)
+        (profile: Profile)
+        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
+        use _ = Bench.scope "emit.staticSeeds.emit"
+        let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+        emitWithTopo topo catalog profile
