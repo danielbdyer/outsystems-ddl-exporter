@@ -245,9 +245,73 @@ let ``composeWithLineage: trail carries one event per kind in catalog`` () =
     let policy = policyWith AllRemaining
     let lineageOfResult =
         DataEmissionComposer.composeWithLineage
-            policy catalog Profile.empty MigrationDependencyContext.empty
+            policy catalog Profile.empty
+            MigrationDependencyContext.empty
+            UserRemapContext.empty
     // TopologicalOrderPass emits one Touched event per kind scanned.
     Assert.Equal (2, List.length lineageOfResult.Trail)
+
+// ---------------------------------------------------------------------------
+// Slice θ — partition assertion.
+//
+// Per pre-scope §5.3: every kind's populated coverage comes from at most
+// one sibling emitter under a given DataComposition. Two emitters both
+// claiming the same kind under the same composition surfaces as
+// `EmitError.OverlappingEmitterCoverage`. Tests cover:
+//   - The happy path (Static-only / Migration-only) returns Ok.
+//   - The conflict path (kind has Static modality AND a Migration row
+//     under AllRemaining) returns Error with both emitter names.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Slice θ: partition holds when a kind is populated by exactly one emitter (Static only)`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let result = DataEmissionComposer.compose (policyWith AllRemaining) catalog Profile.empty
+    match result with
+    | Ok _ -> ()
+    | Error e -> Assert.Fail (sprintf "expected partition success, got %A" e)
+
+[<Fact>]
+let ``Slice θ: partition fails (OverlappingEmitterCoverage) when a kind is populated by two sibling emitters`` () =
+    let country = mkCountryKind ()  // has Static.Modality with rows
+    let catalog = mkCatalog [ country ]
+    // Migration also publishes a row for the same Static kind under
+    // AllRemaining → overlap.
+    let migration =
+        { Rows =
+            [ { KindKey = country.SsKey
+                Identifier = mkKey ["TestModule"; "Country"; "Mig"; "Other"]
+                Values = Map.ofList [ mkName "Id", "9"; mkName "Code", "ZZ"; mkName "Label", "Other" ] } ] }
+    let result =
+        DataEmissionComposer.composeWithMigration
+            (policyWith AllRemaining) catalog Profile.empty migration
+    match result with
+    | Ok _ -> Assert.Fail "expected OverlappingEmitterCoverage error, got Ok"
+    | Error (OverlappingEmitterCoverage (k, names)) ->
+        Assert.Equal<SsKey> (country.SsKey, k)
+        Assert.Contains ("StaticSeeds", names)
+        Assert.Contains ("MigrationDependencies", names)
+    | Error e -> Assert.Fail (sprintf "expected OverlappingEmitterCoverage, got %A" e)
+
+[<Fact>]
+let ``Slice θ: partition holds under AllExceptStatic (Static skipped, Migration populated)`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let migration =
+        { Rows =
+            [ { KindKey = country.SsKey
+                Identifier = mkKey ["TestModule"; "Country"; "Mig"; "1"]
+                Values = Map.ofList [ mkName "Id", "1"; mkName "Code", "US"; mkName "Label", "United States" ] } ] }
+    // AllExceptStatic skips Static, so Migration alone owns the kind.
+    let result =
+        DataEmissionComposer.composeWithMigration
+            (policyWith AllExceptStatic) catalog Profile.empty migration
+    match result with
+    | Ok artifact ->
+        let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+        Assert.Equal (1, List.length script.Phase1Merges)
+    | Error e -> Assert.Fail (sprintf "expected partition success, got %A" e)
 
 [<Fact>]
 let ``composeWithLineage: payload Result matches compose's Result for the same inputs`` () =
@@ -256,7 +320,9 @@ let ``composeWithLineage: payload Result matches compose's Result for the same i
     let policy = policyWith AllRemaining
     let viaLineage =
         (DataEmissionComposer.composeWithLineage
-            policy catalog Profile.empty MigrationDependencyContext.empty).Value
+            policy catalog Profile.empty
+            MigrationDependencyContext.empty
+            UserRemapContext.empty).Value
         |> mustOkEmit
     let viaCompose = DataEmissionComposer.compose policy catalog Profile.empty |> mustOkEmit
     let s1 = ArtifactByKind.toMap viaLineage |> Map.find country.SsKey

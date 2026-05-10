@@ -12,11 +12,15 @@ open Projection.Core.Passes
 /// consume the `Catalog × Profile (× boundary-supplied evidence)`
 /// shape.
 ///
-/// **Slice η + ε scope.** The composer dispatches through
-/// `StaticSeedsEmitter` (slice α/β/δ) and `MigrationDependenciesEmitter`
-/// (slice ε). `BootstrapEmitter` (slice ζ) ships next; the composer
-/// treats it as a no-op stub today. When ζ lands, the composer adds
-/// its dispatch branch without changing the signature.
+/// **Slice η + ε + ζ + θ scope.** The composer dispatches through
+/// the three sibling-Π data emitters: `StaticSeedsEmitter` (slice
+/// α/β/δ), `MigrationDependenciesEmitter` (slice ε), and
+/// `BootstrapEmitter` (slice ζ; structural stub pending chapters
+/// 4.2 / 4.3 row-source consumers). Slice θ adds the partition
+/// assertion: every kind's populated coverage comes from at most one
+/// emitter under a given `DataComposition`; overlap surfaces as
+/// `EmitError.OverlappingEmitterCoverage` rather than the prior
+/// left-biased silent precedence.
 ///
 /// **Hoisted `TopologicalOrderPass`.** Per the slice-δ improvement
 /// surface (post-commit summary), the composer is the natural home
@@ -98,6 +102,7 @@ module DataEmissionComposer =
         (catalog: Catalog)
         (profile: Profile)
         (migration: MigrationDependencyContext)
+        (userRemap: UserRemapContext)
         : Result<SiblingArtifacts, EmitError> =
         use _ = Bench.scope "compose.data.dispatchSiblings"
         let staticSeeds =
@@ -110,7 +115,8 @@ module DataEmissionComposer =
             | AllRemaining
             | AllExceptStatic -> MigrationDependenciesEmitter.emitWithTopo topo catalog profile migration
             | AllData         -> emptyArtifact catalog
-        let bootstrap = emptyArtifact catalog              // slice ζ pending
+        let bootstrap =
+            BootstrapEmitter.emitWithTopo topo catalog profile userRemap
         match staticSeeds, migrationDependencies, bootstrap with
         | Ok s, Ok m, Ok b ->
             Ok { StaticSeeds = s; MigrationDependencies = m; Bootstrap = b }
@@ -118,15 +124,17 @@ module DataEmissionComposer =
         | _, Error e, _
         | _, _, Error e -> Error e
 
-    /// Union the three sibling artifacts into one
-    /// `ArtifactByKind<DataInsertScript>` keyed by every catalog
-    /// kind. **Slice η scope:** since Migration and Bootstrap are
-    /// no-op stubs today, the union reduces to "use Static's value
-    /// if non-empty, else neutral." When ε/ζ land, this becomes the
-    /// per-kind partition assertion (per pre-scope §5.3 +
-    /// `EmitError.OverlappingEmitterCoverage`); slice θ ships that.
-    /// For now the union is a left-biased fold favoring
-    /// `StaticSeeds`.
+    /// Slice θ partition assertion (chapter 4.1.B). Per pre-scope
+    /// §5.3: every kind's populated coverage must come from at most
+    /// one sibling emitter under a given `DataComposition`. Two
+    /// emitters both claiming the same kind under the same
+    /// composition is a configuration-level mismatch (e.g., a kind
+    /// appearing both in `Modality.Static` AND in the migration
+    /// team's pickup channel under `AllRemaining`); the operator
+    /// needs the diagnostic to surface, not silent left-biased
+    /// precedence. Returns `EmitError.OverlappingEmitterCoverage
+    /// (SsKey, [emitter names])` on the first overlap encountered;
+    /// returns the union artifact on partition success.
     let private unionSiblings
         (catalog: Catalog)
         (siblings: SiblingArtifacts)
@@ -135,28 +143,44 @@ module DataEmissionComposer =
         let staticMap = ArtifactByKind.toMap siblings.StaticSeeds
         let migrationMap = ArtifactByKind.toMap siblings.MigrationDependencies
         let bootstrapMap = ArtifactByKind.toMap siblings.Bootstrap
-        let pickFirstNonEmpty (k: SsKey) : DataInsertScript =
-            // Left-biased: Static → Migration → Bootstrap → empty.
-            // Slice θ replaces this with overlap-detection + a
-            // partition assertion (`EmitError.OverlappingEmitter
-            // Coverage of (SsKey * EmitterName list)`).
-            let isPopulated (s: DataInsertScript) : bool =
-                not (List.isEmpty s.Phase1Merges)
-            match Map.tryFind k staticMap with
-            | Some s when isPopulated s -> s
-            | _ ->
-                match Map.tryFind k migrationMap with
-                | Some s when isPopulated s -> s
-                | _ ->
-                    match Map.tryFind k bootstrapMap with
-                    | Some s -> s
-                    | None   -> emptyScript
+        let isPopulated (s: DataInsertScript) : bool =
+            not (List.isEmpty s.Phase1Merges)
+        // Per-kind coverage assertion. Each sibling either populated
+        // the kind (script with non-empty `Phase1Merges`) or didn't.
+        // The partition holds when at most one sibling populated it.
+        let coverageOf (k: SsKey) : (string * DataInsertScript) list =
+            [ "StaticSeeds",          Map.tryFind k staticMap
+              "MigrationDependencies", Map.tryFind k migrationMap
+              "Bootstrap",            Map.tryFind k bootstrapMap ]
+            |> List.choose (fun (name, opt) ->
+                match opt with
+                | Some s when isPopulated s -> Some (name, s)
+                | _                         -> None)
         let allKinds = Catalog.allKinds catalog
-        let slices =
-            allKinds
-            |> List.map (fun k -> k.SsKey, pickFirstNonEmpty k.SsKey)
-            |> Map.ofList
-        ArtifactByKind.create catalog slices
+        // Walk kinds in catalog order; first overlap wins (deterministic
+        // diagnostic: same input → same kind reported).
+        let resolveKind (k: SsKey) : Result<SsKey * DataInsertScript, EmitError> =
+            match coverageOf k with
+            | []          -> Ok (k, emptyScript)
+            | [ (_, s) ]  -> Ok (k, s)
+            | overlaps    ->
+                let names = overlaps |> List.map fst
+                Error (OverlappingEmitterCoverage (k, names))
+        let folder
+            (acc: Result<(SsKey * DataInsertScript) list, EmitError>)
+            (k: Kind)
+            : Result<(SsKey * DataInsertScript) list, EmitError> =
+            match acc with
+            | Error _ as err -> err
+            | Ok rows ->
+                match resolveKind k.SsKey with
+                | Ok row    -> Ok (row :: rows)
+                | Error err -> Error err
+        match List.fold folder (Ok []) allKinds with
+        | Error err -> Error err
+        | Ok rows ->
+            let slices = rows |> List.rev |> Map.ofList
+            ArtifactByKind.create catalog slices
 
     /// Π_Data compose with explicit lineage propagation. Hoists the
     /// `TopologicalOrderPass` invocation; threads the resulting
@@ -171,6 +195,7 @@ module DataEmissionComposer =
         (catalog: Catalog)
         (profile: Profile)
         (migration: MigrationDependencyContext)
+        (userRemap: UserRemapContext)
         : Lineage<Result<ArtifactByKind<DataInsertScript>, EmitError>> =
         use _ = Bench.scope "compose.data.composeWithLineage"
         let topoLineage = TopologicalOrderPass.runWith TreatAsCycle catalog
@@ -181,7 +206,7 @@ module DataEmissionComposer =
         // Result), distinct from V2's `Result<'a> = Result<'a,
         // ValidationError list>` alias whose bind is in scope.
         let result =
-            match dispatchSiblings composition topo catalog profile migration with
+            match dispatchSiblings composition topo catalog profile migration userRemap with
             | Ok siblings -> unionSiblings catalog siblings
             | Error e     -> Error e
         topoLineage |> Lineage.map (fun _ -> result)
@@ -192,25 +217,41 @@ module DataEmissionComposer =
     /// discarded — pipeline-level callers SHOULD route through
     /// `composeWithLineage` to preserve trail fidelity.
     ///
-    /// Default `migration = MigrationDependencyContext.empty` —
-    /// callers that don't have a migration channel configured
-    /// (the dominant case at chapter 4.1.B slice ε since the
-    /// ingestion adapter is deferred) get an empty Migration
-    /// contribution.
+    /// Defaults `migration = MigrationDependencyContext.empty` and
+    /// `userRemap = UserRemapContext.empty` for callers in the
+    /// dominant slice η + ε + ζ MVP shape (no migration channel
+    /// configured; chapter 4.2 ships the populated remap).
     let compose
         (policy: Policy)
         (catalog: Catalog)
         (profile: Profile)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        (composeWithLineage policy catalog profile MigrationDependencyContext.empty).Value
+        (composeWithLineage
+            policy catalog profile
+            MigrationDependencyContext.empty
+            UserRemapContext.empty).Value
 
     /// `compose` variant accepting an explicit `MigrationDependency
     /// Context`. For callers (canary tests, future pipeline
     /// integration) that supply migration rows programmatically.
+    /// `userRemap` defaults to `UserRemapContext.empty`.
     let composeWithMigration
         (policy: Policy)
         (catalog: Catalog)
         (profile: Profile)
         (migration: MigrationDependencyContext)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        (composeWithLineage policy catalog profile migration).Value
+        (composeWithLineage
+            policy catalog profile migration UserRemapContext.empty).Value
+
+    /// Full-arity compose accepting both Migration and UserRemap
+    /// contexts explicitly. The pipeline-integration entry point
+    /// chapter 4.2 (UserFkReflowPass) wires up.
+    let composeFull
+        (policy: Policy)
+        (catalog: Catalog)
+        (profile: Profile)
+        (migration: MigrationDependencyContext)
+        (userRemap: UserRemapContext)
+        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
+        (composeWithLineage policy catalog profile migration userRemap).Value
