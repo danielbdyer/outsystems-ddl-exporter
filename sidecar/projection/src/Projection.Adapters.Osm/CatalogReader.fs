@@ -126,6 +126,29 @@ module CatalogReader =
             IsActive     : bool
         }
 
+    /// V1 rowset 4 — `#RefResolved` resolved-reference rows; chapter
+    /// 3.2 slice 2. One row per attribute that bears a foreign-key
+    /// reference. FK to `AttributeRow.AttrId`. `RefEntityName`
+    /// resolves the target kind by name (V1's `#RefResolved`
+    /// aggregates the cross-module name resolution).
+    /// `DeleteRuleCode` + `HasDbConstraint` come from V1's `#FkReality`
+    /// (rowset 12); denormalized here so the V2 adapter sees
+    /// per-reference completeness without joining a third rowset.
+    /// The future C# loader pre-joins V1's `#RefResolved` ⊕ `#FkReality`
+    /// → flat `ReferenceRow` records; in-memory test fixtures
+    /// construct these literals directly. Same-module assumption
+    /// (rule 16): `RefEntityName` is resolved within the source
+    /// attribute's module. Cross-module FK references are a
+    /// documented deferral (DECISIONS Active deferrals index —
+    /// "Cross-module FK IR refinement").
+    type ReferenceRow =
+        {
+            AttrId          : int
+            RefEntityName   : string
+            DeleteRuleCode  : string option
+            HasDbConstraint : bool
+        }
+
     /// V1 rowset bundle — the in-memory carrier the future C# SqlClient
     /// loader produces; in-memory test fixtures construct directly. Per
     /// `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md` §2-§3: hand-written F#
@@ -136,11 +159,19 @@ module CatalogReader =
     /// constraints from rowsets 6+ at deferred slices). Flat-list shape
     /// matches V1's normalized rowset SQL output; `parseRowsetBundle`
     /// joins by FK ID columns at load time.
+    ///
+    /// **Slice 2 extension:** `References` lifts V1's `#RefResolved`
+    /// (rowset 4) ⊕ `#FkReality` (rowset 12) into a flat-list join
+    /// surface. Adding the field is a closed-DU-style extension on
+    /// the record (existing literal sites must add `References = []`
+    /// explicitly; the empirical-test discipline applies — the
+    /// changed-callers walk catches surprises at compile time).
     type RowsetBundle =
         {
             Modules    : ModuleRow list
             Kinds      : KindRow list
             Attributes : AttributeRow list
+            References : ReferenceRow list
         }
 
     type SnapshotSource =
@@ -863,16 +894,54 @@ module CatalogReader =
                         "Failed to build attribute '%s' on '%s.%s' from rowset bundle."
                         row.AttrName moduleName entityName))
 
+    /// Build one V2 `Reference` from a paired `(AttributeRow, ReferenceRow)`.
+    /// Same structural shape as `parseReference` (JSON path,
+    /// CatalogReader.fs:496) — both delegate to the shared
+    /// `referenceSsKey` / `attributeSsKey` / `kindSsKey` synthesis
+    /// helpers; both apply rule 16's same-module assumption (target
+    /// kind name resolves within the source attribute's module).
+    /// Cross-module FK lifts the same deferral.
+    let private parseReferenceRowFor
+        (moduleName: string)
+        (entityName: string)
+        (attrRow: AttributeRow)
+        (refRow: ReferenceRow)
+        : Result<Reference> =
+        let refKey     = referenceSsKey moduleName entityName attrRow.AttrName
+        let refName    = Name.create attrRow.AttrName
+        let srcAttrKey = attributeSsKeyFromRow moduleName entityName attrRow
+        let tgtKindKey = kindSsKey moduleName refRow.RefEntityName
+        let onDelete   = parseDeleteRule refRow.DeleteRuleCode
+        match refKey, refName, srcAttrKey, tgtKindKey, onDelete with
+        | Ok rKey, Ok rName, Ok srcKey, Ok tgtKey, Ok rule ->
+            Result.success
+                { SsKey           = rKey
+                  Name            = rName
+                  SourceAttribute = srcKey
+                  TargetKind      = tgtKey
+                  OnDelete        = rule }
+        | _, _, _, _, Error es -> Error es
+        | _ ->
+            Result.failureOf (
+                adapterError
+                    "referenceRowBuild"
+                    (sprintf
+                        "Failed to build reference for attribute '%s' on '%s.%s' from rowset bundle."
+                        attrRow.AttrName moduleName entityName))
+
     let private parseKindRow
         (moduleName: string)
         (attributesByEntity: Map<int, AttributeRow list>)
+        (referencesByAttr: Map<int, ReferenceRow list>)
         (kindRow: KindRow)
         : Result<Kind> =
         let kindKey  = kindSsKeyFromRow moduleName kindRow
         let kindName = Name.create kindRow.EntityName
         // Inactive-records filter (session 21 carryover): drop
         // attributes with `IsActive=false` at the boundary, parity
-        // with the JSON path.
+        // with the JSON path. References on dropped attributes are
+        // implicitly dropped — the join below sees no surviving
+        // attribute paired with the reference row.
         let attrRows =
             Map.tryFind kindRow.EntityId attributesByEntity
             |> Option.defaultValue []
@@ -881,8 +950,22 @@ module CatalogReader =
             attrRows
             |> List.map (parseAttributeRow moduleName kindRow.EntityName)
         let foldedAttrs = Result.aggregate attrResults
-        match kindKey, kindName, foldedAttrs with
-        | Ok k, Ok n, Ok attrs ->
+        // Slice 2: per-attribute reference build. For each surviving
+        // attribute, look up its reference rows by AttrId; multi-row
+        // collations (composite FKs) are not carried at slice 2 — V2's
+        // `Reference` is single-attribute today; cross-FK composite
+        // case is a documented deferral. Reference order is
+        // declared-attribute order (matches the JSON path's
+        // attribute-walk shape).
+        let refResults =
+            attrRows
+            |> List.collect (fun a ->
+                Map.tryFind a.AttrId referencesByAttr
+                |> Option.defaultValue []
+                |> List.map (parseReferenceRowFor moduleName kindRow.EntityName a))
+        let foldedRefs = Result.aggregate refResults
+        match kindKey, kindName, foldedAttrs, foldedRefs with
+        | Ok k, Ok n, Ok attrs, Ok refs ->
             // Modality parity with parseKind (line 608-609): `[Static []]`
             // when isStatic, empty otherwise. Static populations are NOT
             // carried by rowsets 1-3; defer to a later slice that
@@ -903,23 +986,35 @@ module CatalogReader =
                   Physical   = { Schema = kindRow.DbSchema
                                  Table  = kindRow.PhysicalTableName }
                   Attributes = attrs
-                  // References + Indexes deferred to slice 2 (FK
-                  // rowsets 12-17) and slice 2's index extension
-                  // (rowsets 10-11). Empty at slice 1 — parity with a
-                  // minimal-fixture JSON path.
-                  References = []
+                  References = refs
+                  // Indexes deferred to a future slice (rowsets 10-11
+                  // #AllIdx / #IdxColsMapped). Empty at slice 2.
                   Indexes    = [] }
         | _ ->
-            Result.failureOf (
-                adapterError
-                    "kindRowBuild"
-                    (sprintf
-                        "Failed to build kind '%s' in module '%s' from rowset bundle."
-                        kindRow.EntityName moduleName))
+            // Propagate underlying errors (e.g.,
+            // `adapter.osm.unmappedDeleteRule` from `parseDeleteRule`)
+            // rather than swallowing them under a generic
+            // `kindRowBuild` umbrella. Keeps the diagnostic surface
+            // honest — the substantive cause is what callers act on.
+            let underlying =
+                [ (match kindKey with Error es -> es | _ -> [])
+                  (match kindName with Error es -> es | _ -> [])
+                  (match foldedAttrs with Error es -> es | _ -> [])
+                  (match foldedRefs with Error es -> es | _ -> []) ]
+                |> List.concat
+            if List.isEmpty underlying then
+                Result.failureOf (
+                    adapterError
+                        "kindRowBuild"
+                        (sprintf
+                            "Failed to build kind '%s' in module '%s' from rowset bundle."
+                            kindRow.EntityName moduleName))
+            else Error underlying
 
     let private parseModuleRow
         (kindsByEspace: Map<int, KindRow list>)
         (attributesByEntity: Map<int, AttributeRow list>)
+        (referencesByAttr: Map<int, ReferenceRow list>)
         (moduleRow: ModuleRow)
         : Result<Module> =
         let modKey  = moduleSsKeyFromRow moduleRow
@@ -933,38 +1028,59 @@ module CatalogReader =
             |> List.filter (fun k -> k.IsActive)
         let kindResults =
             kindRows
-            |> List.map (parseKindRow moduleRow.EspaceName attributesByEntity)
+            |> List.map (parseKindRow moduleRow.EspaceName attributesByEntity referencesByAttr)
         let foldedKinds = Result.aggregate kindResults
         match modKey, modName, foldedKinds with
         | Ok k, Ok n, Ok kinds ->
             Module.create k n kinds
         | _ ->
-            Result.failureOf (
-                adapterError
-                    "moduleRowBuild"
-                    (sprintf
-                        "Failed to build module '%s' from rowset bundle."
-                        moduleRow.EspaceName))
+            // Propagate underlying errors — same discipline as
+            // parseKindRow's failure path. The substantive cause
+            // (e.g., `adapter.osm.unmappedDeleteRule`) survives the
+            // module-level wrap.
+            let underlying =
+                [ (match modKey with Error es -> es | _ -> [])
+                  (match modName with Error es -> es | _ -> [])
+                  (match foldedKinds with Error es -> es | _ -> []) ]
+                |> List.concat
+            if List.isEmpty underlying then
+                Result.failureOf (
+                    adapterError
+                        "moduleRowBuild"
+                        (sprintf
+                            "Failed to build module '%s' from rowset bundle."
+                            moduleRow.EspaceName))
+            else Error underlying
 
     /// V1 rowset bundle → V2 Catalog. Sibling to `parseDocument` (JSON
     /// path). The flat-list bundle joins by FK ID columns at load time
     /// (`AttributeRow.EntityId` ↔ `KindRow.EntityId`; `KindRow.EspaceId`
-    /// ↔ `ModuleRow.EspaceId`); the resulting structure feeds the
+    /// ↔ `ModuleRow.EspaceId`; `ReferenceRow.AttrId` ↔
+    /// `AttributeRow.AttrId`); the resulting structure feeds the
     /// existing `Module.create` / `Catalog.create` aggregate-root
     /// smart constructors, so referential-integrity invariants are
     /// checked at the boundary identically to the JSON path.
+    ///
+    /// Big-O / pillar 7 perf clause: O(N + E + A + R) for the input
+    /// bundle plus O(E + A) for the three Map.ofList constructions
+    /// (one per ID-keyed projection). Per-module dispatch is O(E_m × A_e)
+    /// with O(1) Map lookups; per-kind reference assembly is O(R_e)
+    /// with O(1) Map lookups. Linear in the bundle's total size;
+    /// matches `parseDocument`'s complexity class.
     let private parseRowsetBundle (bundle: RowsetBundle) : Result<Catalog> =
         let attributesByEntity =
             bundle.Attributes |> List.groupBy (fun a -> a.EntityId) |> Map.ofList
         let kindsByEspace =
             bundle.Kinds |> List.groupBy (fun k -> k.EspaceId) |> Map.ofList
+        let referencesByAttr =
+            bundle.References |> List.groupBy (fun r -> r.AttrId) |> Map.ofList
         // Inactive-records filter at module level — parity with
         // parseModule's session-21 isActive filter.
         let activeModules =
             bundle.Modules |> List.filter (fun m -> m.IsActive)
         let moduleResults =
             activeModules
-            |> List.map (parseModuleRow kindsByEspace attributesByEntity)
+            |> List.map (parseModuleRow kindsByEspace attributesByEntity referencesByAttr)
         match Result.aggregate moduleResults with
         | Ok modules -> Catalog.create modules
         | Error errors -> Error errors

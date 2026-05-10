@@ -142,6 +142,7 @@ let ``SnapshotRowsets: bundle without SsKey Guids parses with synthesized-form S
             Modules    = [ moduleRow None ]
             Kinds      = [ userKindRow None ]
             Attributes = [ idAttrRow None; emailAttrRow None ]
+            References = []
         }
     let result = parseSync (CatalogReader.SnapshotRowsets bundle)
     match result with
@@ -171,6 +172,7 @@ let ``SnapshotRowsets: bundle WITH SsKey Guids produces OssysOriginal SsKeys (A1
             Modules    = [ moduleRow (Some appCoreGuid) ]
             Kinds      = [ userKindRow (Some userGuid) ]
             Attributes = [ idAttrRow (Some idGuid); emailAttrRow (Some emailGuid) ]
+            References = []
         }
     let result = parseSync (CatalogReader.SnapshotRowsets bundle)
     match result with
@@ -208,6 +210,7 @@ let ``A1 unbounded: rowset Catalog with Guid SsKeys mirrors JSON Catalog on ever
             Modules    = [ moduleRow (Some appCoreGuid) ]
             Kinds      = [ userKindRow (Some userGuid) ]
             Attributes = [ idAttrRow (Some idGuid); emailAttrRow (Some emailGuid) ]
+            References = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors ->
@@ -242,6 +245,7 @@ let ``SnapshotRowsets: inactive modules drop at the boundary (session 21 parity)
             Modules    = [ moduleRow None; inactive ]
             Kinds      = [ userKindRow None; inactiveKind ]
             Attributes = [ idAttrRow None; emailAttrRow None ]
+            References = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
@@ -259,6 +263,7 @@ let ``SnapshotRowsets: inactive kinds drop at the boundary`` () =
             Modules    = [ moduleRow None ]
             Kinds      = [ userKindRow None; inactiveKind ]
             Attributes = [ idAttrRow None; emailAttrRow None ]
+            References = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
@@ -275,6 +280,7 @@ let ``SnapshotRowsets: inactive attributes drop at the boundary`` () =
             Modules    = [ moduleRow None ]
             Kinds      = [ userKindRow None ]
             Attributes = [ idAttrRow None; emailAttrRow None; inactiveAttr ]
+            References = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
@@ -296,7 +302,7 @@ let ``Closed-DU expansion: SnapshotJson + SnapshotRowsets coexist; both paths us
              "modules": [ { "name": "AppCore", "isSystem": false, "isActive": true,
                             "entities": [] } ] }"""
     let bundle : CatalogReader.RowsetBundle =
-        { Modules = [ moduleRow None ]; Kinds = []; Attributes = [] }
+        { Modules = [ moduleRow None ]; Kinds = []; Attributes = []; References = [] }
     let resJson = parseSync (CatalogReader.SnapshotJson json)
     let resRow  = parseSync (CatalogReader.SnapshotRowsets bundle)
     match resJson, resRow with
@@ -307,3 +313,234 @@ let ``Closed-DU expansion: SnapshotJson + SnapshotRowsets coexist; both paths us
         Assert.Equal<Name>(mkName "AppCore", cRow.Modules.[0].Name)
     | _ ->
         Assert.Fail (sprintf "Expected Ok from both; got JSON=%A, Rowset=%A" resJson resRow)
+
+
+// ===========================================================================
+// Chapter 3.2 slice 2 — reference rowsets (V1 #RefResolved + #FkReality).
+//
+// Fixture mirrors session-19's v1ReferenceFixture: AppCore module;
+// Account entity (Id PK); User entity (Id PK + AccountId FK to Account);
+// OnDelete = NoAction (V1 "Protect" → NoAction per parseDeleteRule).
+//
+// Tests cover:
+//   - Reference appears in target Kind, with synthesized OS_REF SsKey.
+//   - Same-module assumption (rule 16): TargetKind resolves within the
+//     source attribute's module.
+//   - OnDelete mapping parity with parseDeleteRule.
+//   - Inactive source attribute drops the reference (chained filter).
+//   - Reference SsKey is always synthesized (V1 rowsets don't carry a
+//     reference-level Guid; only attribute / kind / module Guids).
+//   - Cross-source parity: rowset path with no Guids reproduces the
+//     JSON path's expectedReferenceCatalog structurally.
+// ===========================================================================
+
+let private accountKindRow (sskey: System.Guid option) : CatalogReader.KindRow =
+    {
+        EntityId          = 21
+        EspaceId          = 1
+        EntityName        = "Account"
+        PhysicalTableName = "OSUSR_APPCORE_ACCOUNT"
+        DbSchema          = "dbo"
+        IsStatic          = false
+        IsExternal        = false
+        IsActive          = true
+        EntitySsKey       = sskey
+        PrimaryKeySsKey   = None
+    }
+
+let private accountIdRow (sskey: System.Guid option) : CatalogReader.AttributeRow =
+    {
+        AttrId       = 211
+        EntityId     = 21
+        AttrName     = "Id"
+        PhysicalCol  = "ID"
+        DataType     = "Identifier"
+        IsMandatory  = true
+        IsIdentifier = true
+        IsAutoNumber = true
+        Length       = None
+        Precision    = None
+        Scale        = None
+        AttrSsKey    = sskey
+        IsActive     = true
+    }
+
+/// User has Id (PK + IDENTITY) and AccountId (FK to Account); the
+/// AccountId attribute is the source of the reference.
+let private userKindRowForRef : CatalogReader.KindRow = userKindRow None
+
+let private userIdRow : CatalogReader.AttributeRow = idAttrRow None
+
+let private userAccountIdRow : CatalogReader.AttributeRow =
+    {
+        AttrId       = 113
+        EntityId     = 11
+        AttrName     = "AccountId"
+        PhysicalCol  = "ACCOUNTID"
+        DataType     = "Identifier"
+        IsMandatory  = true
+        IsIdentifier = false
+        IsAutoNumber = false
+        Length       = None
+        Precision    = None
+        Scale        = None
+        AttrSsKey    = None
+        IsActive     = true
+    }
+
+let private userAccountRefRow : CatalogReader.ReferenceRow =
+    {
+        AttrId          = 113
+        RefEntityName   = "Account"
+        DeleteRuleCode  = Some "Protect"
+        HasDbConstraint = true
+    }
+
+let private accountKindKey            = kindKey ["AppCore"; "Account"]
+let private accountIdAttrKey          = attrKey ["AppCore"; "Account"; "Id"]
+let private userAccountIdAttrKey      = attrKey ["AppCore"; "User"; "AccountId"]
+let private userAccountReferenceKey   = refKey  ["AppCore"; "User"; "AccountId"]
+
+let private referenceBundle : CatalogReader.RowsetBundle =
+    {
+        Modules    = [ moduleRow None ]
+        Kinds      = [ accountKindRow None; userKindRowForRef ]
+        Attributes = [ accountIdRow None; userIdRow; userAccountIdRow ]
+        References = [ userAccountRefRow ]
+    }
+
+[<Fact>]
+let ``slice 2: reference rowset surfaces a Reference on the source kind`` () =
+    match parseSync (CatalogReader.SnapshotRowsets referenceBundle) with
+    | Error errors ->
+        Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
+    | Ok actual ->
+        let m = actual.Modules.[0]
+        let user = m.Kinds |> List.find (fun k -> k.Name = mkName "User")
+        Assert.Equal (1, List.length user.References)
+        let r = user.References.[0]
+        Assert.Equal<Name>(mkName "AccountId", r.Name)
+        Assert.Equal<SsKey>(userAccountIdAttrKey, r.SourceAttribute)
+        Assert.Equal<SsKey>(accountKindKey, r.TargetKind)
+        Assert.Equal<ReferenceAction>(NoAction, r.OnDelete)
+        Assert.Equal<SsKey>(userAccountReferenceKey, r.SsKey)
+
+[<Fact>]
+let ``slice 2: rule 16 same-module assumption — TargetKind synthesized within source module`` () =
+    // The fixture's AccountId reference carries `RefEntityName = "Account"`
+    // (no module prefix). The translation must scope the target-kind
+    // SsKey synthesis to the source attribute's module (`AppCore`),
+    // producing OS_KIND_AppCore_Account — not OS_KIND_<other>_Account.
+    match parseSync (CatalogReader.SnapshotRowsets referenceBundle) with
+    | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
+    | Ok actual ->
+        let user = actual.Modules.[0].Kinds |> List.find (fun k -> k.Name = mkName "User")
+        let r = user.References.[0]
+        // Constructed via kindKey ["AppCore"; "Account"] — same-module
+        Assert.Equal<SsKey>(kindKey ["AppCore"; "Account"], r.TargetKind)
+
+[<Fact>]
+let ``slice 2: OnDelete mapping — Protect → NoAction; Delete → Cascade; SetNull → SetNull`` () =
+    let mkRefBundle (code: string option) : CatalogReader.RowsetBundle =
+        { referenceBundle with
+            References = [ { userAccountRefRow with DeleteRuleCode = code } ] }
+    let parseAndPickRule (b: CatalogReader.RowsetBundle) : ReferenceAction =
+        match parseSync (CatalogReader.SnapshotRowsets b) with
+        | Error es -> Assert.Fail (sprintf "%A" es); NoAction
+        | Ok c     ->
+            let user = c.Modules.[0].Kinds |> List.find (fun k -> k.Name = mkName "User")
+            user.References.[0].OnDelete
+    Assert.Equal<ReferenceAction>(NoAction, parseAndPickRule (mkRefBundle (Some "Protect")))
+    Assert.Equal<ReferenceAction>(Cascade,  parseAndPickRule (mkRefBundle (Some "Delete")))
+    Assert.Equal<ReferenceAction>(SetNull,  parseAndPickRule (mkRefBundle (Some "SetNull")))
+    Assert.Equal<ReferenceAction>(NoAction, parseAndPickRule (mkRefBundle None))
+    Assert.Equal<ReferenceAction>(NoAction, parseAndPickRule (mkRefBundle (Some "Ignore")))
+
+[<Fact>]
+let ``slice 2: unmapped DeleteRuleCode surfaces as a translation error`` () =
+    let bundle =
+        { referenceBundle with
+            References =
+                [ { userAccountRefRow with DeleteRuleCode = Some "TotallyMadeUpRule" } ] }
+    match parseSync (CatalogReader.SnapshotRowsets bundle) with
+    | Ok _ ->
+        Assert.Fail "Expected Error for unmapped delete-rule code; got Ok"
+    | Error errors ->
+        let codes = errors |> List.map (fun e -> e.Code)
+        Assert.Contains("adapter.osm.unmappedDeleteRule", codes)
+
+[<Fact>]
+let ``slice 2: inactive source attribute drops its reference at the boundary`` () =
+    let bundle =
+        { referenceBundle with
+            Attributes =
+                [ accountIdRow None
+                  userIdRow
+                  { userAccountIdRow with IsActive = false } ] }
+    match parseSync (CatalogReader.SnapshotRowsets bundle) with
+    | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
+    | Ok actual ->
+        let user = actual.Modules.[0].Kinds |> List.find (fun k -> k.Name = mkName "User")
+        Assert.Empty user.References
+        // AccountId attribute itself is also dropped — parity with the
+        // session-21 inactive-attribute filter.
+        Assert.Equal (1, List.length user.Attributes)
+
+[<Fact>]
+let ``slice 2: Reference SsKey is always synthesized (rowsets carry no per-reference Guid)`` () =
+    // Even when the source attribute carries an OssysOriginal Guid,
+    // the Reference SsKey is synthesized via OS_REF_<mod>_<entity>_<attr>.
+    // V1's #RefResolved rowset does not carry a per-reference Guid;
+    // the Reference is a derived entity in V2's algebra.
+    let guidUserAccountId =
+        System.Guid.Parse("55555555-5555-4555-8555-555555555555")
+    let bundle : CatalogReader.RowsetBundle =
+        {
+            Modules    = [ moduleRow None ]
+            Kinds      = [ accountKindRow None; userKindRowForRef ]
+            Attributes = [
+                accountIdRow None
+                userIdRow
+                { userAccountIdRow with AttrSsKey = Some guidUserAccountId }
+            ]
+            References = [ userAccountRefRow ]
+        }
+    match parseSync (CatalogReader.SnapshotRowsets bundle) with
+    | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
+    | Ok actual ->
+        let user = actual.Modules.[0].Kinds |> List.find (fun k -> k.Name = mkName "User")
+        let acctIdAttr = user.Attributes |> List.find (fun a -> a.Name = mkName "AccountId")
+        // Source attribute has the Guid SsKey
+        Assert.Equal<SsKey>(OssysOriginal guidUserAccountId, acctIdAttr.SsKey)
+        // Reference itself is OS_REF synthesized
+        let r = user.References.[0]
+        Assert.Equal<SsKey>(userAccountReferenceKey, r.SsKey)
+        // Reference's SourceAttribute points at the actual attribute
+        // SsKey (the OssysOriginal Guid).
+        Assert.Equal<SsKey>(OssysOriginal guidUserAccountId, r.SourceAttribute)
+
+[<Fact>]
+let ``slice 2: cross-source parity — rowset path mirrors JSON path's expectedReferenceCatalog`` () =
+    // The reference fixture without Guids must round-trip into the
+    // same Catalog the JSON path's v1ReferenceFixture produces (modulo
+    // synthesized SsKeys, which both paths share when no Guids are
+    // present). This is the structural-shape parity assertion the
+    // chapter-3.2 slice-5 cross-source test will generalize.
+    match parseSync (CatalogReader.SnapshotRowsets referenceBundle) with
+    | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
+    | Ok actual ->
+        let m = actual.Modules.[0]
+        Assert.Equal (2, List.length m.Kinds)
+        let account = m.Kinds |> List.find (fun k -> k.Name = mkName "Account")
+        let user    = m.Kinds |> List.find (fun k -> k.Name = mkName "User")
+        Assert.Equal<SsKey>(accountKindKey,        account.SsKey)
+        Assert.Equal<SsKey>(accountIdAttrKey,      account.Attributes.[0].SsKey)
+        Assert.Equal<SsKey>(userKindKey,           user.SsKey)
+        Assert.Equal<SsKey>(userAccountIdAttrKey,  user.Attributes.[1].SsKey)
+        // The Reference itself: structural identity matches the JSON
+        // path exactly (synthesized SsKey, name, target, OnDelete).
+        let r = user.References.[0]
+        Assert.Equal<SsKey>(userAccountReferenceKey, r.SsKey)
+        Assert.Equal<SsKey>(accountKindKey,          r.TargetKind)
+        Assert.Equal<SsKey>(userAccountIdAttrKey,    r.SourceAttribute)
+        Assert.Equal<ReferenceAction>(NoAction,      r.OnDelete)
