@@ -8724,3 +8724,96 @@ duplicate-format-string sites at producers). The boundary moved
 from many producers to one canonical renderer — that's the
 architectural improvement, not the marker count.
 
+---
+
+## 2026-05-09 — Operator-reality canary as the production-baseline perf gate
+
+**Decision:** the chapter-3.6 perf-regression gate
+(`scripts/perf-gate.sh`, fired by the pre-commit hook AND the Stop
+hook on every agent message) runs the **operator-reality canary**
+(`Operator-reality canary: 50k rows × 300 tables, variegated,
+round-trips via bulk path` in `tests/Projection.Tests/GeneratorScaleTests.fs`,
+spec at `FixtureGenerator.GenerateSpec.operatorReality`), NOT the
+schema-only `fixtures/canary-gate.sql`. The schema canary stays in
+service for the SessionEnd smoke (`.claude/hooks/session-end.sh`)
+but is explicitly **inappropriate** as the perf baseline.
+
+**Operator directive (verbatim):** "operator disagrees. canary-gate.sql
+is inappropriate for stop hooks. I would like to compromise — 50k
+records, variegated, 300 tables. Full stop. How else do we know the
+production use case is baselined as we add on features?"
+
+**Reasoning:** the schema canary exercises ~7 tables and ~0 rows;
+its bench surface is dominated by Docker-warmup constants and
+ScriptDom parse overhead. Per-pass / per-emit / per-readside /
+per-deploy-batch distributions don't surface at meaningful tail
+latency. A perf gate that doesn't exercise the production envelope
+is a gate that approves regressions *because they don't appear in
+the gated workload*. The operator-reality fixture (8 modules, 200
+regular entities + 100 static entities × 500 rows each, ~10 attrs/
+entity, FK density 0.2, deterministic seed 42) matches the
+`VISION.md` 300-table forcing function on cardinality and exercises
+the bulk realization path (`SqlBulkCopy` over many tables vs few
+tables in `bulk1k`/`10k`/`100k`). At ~10-12s warm, it fits the
+Stop-hook budget (timeout bumped from 30s to 60s for cold-start
+margin) while exercising every production hot path.
+
+**Mechanism:**
+
+  - Test invocation: `dotnet test --filter "FullyQualifiedName~Operator-reality"`
+    with `PROJECTION_BENCH_DIR=$ROOT` (so the test process writes
+    bench JSON to `bench/canary/<utc>.json` adjacent to
+    `Projection.sln`, not to its own bin dir). The test resolves
+    `PROJECTION_BENCH_DIR` first; falls back to walking up from
+    `Directory.GetCurrentDirectory()` to find `Projection.sln`.
+  - Statistical gate: per-label `μ + Kσ` (default K=3.0; ~99.7%
+    one-tailed bound) against rolling `bench/history-canary.jsonl`
+    (max 20 runs). Warm-up phase (N < 5 history entries) falls
+    back to flat `BENCH_TOLERANCE` 1.5×. Per-label noise filter:
+    labels with mean < `BENCH_MIN_MS` (default 5ms) skipped.
+  - Soft-skip preserved: Docker / dotnet unavailable → exit 0
+    (docs-only commits + dev hosts without canary stack don't
+    hard-block).
+  - Re-record: `PERF_GATE_RECORD=1 scripts/perf-gate.sh` overwrites
+    `bench/baseline-canary.json` AND clears `bench/history-canary.jsonl`;
+    pair with this DECISIONS amendment naming the new floor's
+    rationale.
+
+**What this supersedes:** the chapter-3.6 cash-out at `scripts/perf-gate.sh`
+originally invoked the CLI canary against `fixtures/canary-gate.sql`
+(~1.5s warm). The CLAUDE.md operating-disciplines table's "Canary
+as load-bearing forcing function" entry described "Per-commit gate
+is bulk10k" — also superseded; bulk10k stays in `GeneratorScaleTests`
+as a sub-second smoke but is no longer the perf gate. The
+KICKOFF.md "Perf-regression gate" bullet, CLAUDE.md canary-discipline
+entry, and `scripts/perf-gate.sh` header comment all updated to
+reflect operator-reality as the production-baseline shape.
+
+**What stays:**
+
+  - `fixtures/canary-gate.sql` + `.claude/hooks/session-end.sh` —
+    schema-only smoke at session end. Different surface (parser /
+    schema discovery / DDL diff) at fast cadence.
+  - `bulk1k`/`10k`/`100k` in `GeneratorScaleTests` — fidelity
+    tests for the bulk realization path; not perf-gated, but
+    pre-commit `dotnet test` runs them.
+  - `realistic` (300 tables, env-var gated) — nightly forcing
+    function for full operator-shape stress.
+
+**Consequences:** pre-commit budget grows from ~1.5s to ~12s warm
+(~22s cold including build). The Stop hook fires at every agent
+message stop; on a clean checkout with Docker warm, expect
+~12-15s tail to each session-message. The bench JSON history
+accumulates per gate-fire so feature additions trigger statistical
+outlier detection within ~5 commits (warm-up phase). The first 5
+commits after this DECISIONS entry land are warm-up; commit #6
+onward gets the `μ + Kσ` discipline.
+
+**Pillar 7 alignment:** the bench surface at production cardinality
+IS the perf evidence; this gate makes regression detection
+structural under operator-reality conditions. Iterator-logging
+discipline (CLAUDE.md operating-disciplines table) plus this gate
+together close the "feature added; perf regressed; we noticed
+months later" failure mode by construction.
+
+

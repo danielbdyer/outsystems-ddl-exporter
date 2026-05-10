@@ -182,6 +182,65 @@ let private runBulkCanary (label: string) (spec: GenerateSpec) : unit =
                 |> List.truncate 25
             printfn "\nBench (top 25, label=%s):\n%s\n" label (Bench.renderTable top)
 
+/// **Operator-reality canary** — the chapter-3.6 perf-gate baseline
+/// (per the 2026-05-09 operator directive: "canary-gate.sql is
+/// inappropriate for stop hooks ... 50k records, variegated, 300
+/// tables. Full stop."). Always runs (no env-var gating) so the
+/// pre-commit hook + Stop hook gate every commit / agent stop on
+/// production-shape fidelity AND production-shape perf. **Persists
+/// bench JSON** to `bench/canary/<utc>.json` via `BenchSink.persistJson`
+/// so the perf-gate's statistical comparator can pick up the latest
+/// snapshot under the "canary" tag and compare against the rolling
+/// history. Bench history at `bench/history-canary.jsonl`.
+[<Fact>]
+let ``Operator-reality canary: 50k rows × 300 tables, variegated, round-trips via bulk path`` () =
+    if not (Deploy.Docker.ensureRunning ()) then
+        printfn
+            "SKIP operator-reality canary: Docker daemon not reachable. Set DOCKER_HOST or start the daemon."
+    else
+        Bench.reset ()
+        match runBulkLoaderCanaryAgainst "operatorReality" GenerateSpec.operatorReality with
+        | None -> ()
+        | Some report ->
+            summarizeDiff "operatorReality" report
+            Assert.Equal(
+                report.SourceReport.TablesCreated,
+                report.TargetReport.TablesCreated)
+            Assert.True(
+                PhysicalSchema.isEqual report.Diff,
+                sprintf
+                    "operator-reality canary failed:\n%s"
+                    (PhysicalSchema.renderDiff report.Diff))
+            // Persist bench snapshot to the same path convention the CLI
+            // canary uses, so `scripts/perf-gate.sh` picks it up and
+            // gates against `bench/baseline-canary.json` per the
+            // statistical `μ + Kσ` model.
+            //
+            // Path resolution: the test process's `Directory
+            // .GetCurrentDirectory()` is the test bin dir
+            // (`tests/Projection.Tests/bin/Release/net9.0/`), NOT the
+            // projection root. Use the env var `PROJECTION_BENCH_DIR`
+            // (set by `scripts/perf-gate.sh`) when present; fallback
+            // to walking up from the test assembly to find the
+            // `bench/` directory adjacent to `Projection.sln`.
+            let stats = Bench.snapshot ()
+            let benchRoot =
+                match System.Environment.GetEnvironmentVariable "PROJECTION_BENCH_DIR" with
+                | null | "" ->
+                    // Walk up from the test bin dir to find the
+                    // projection root (where `Projection.sln` lives).
+                    let rec findRoot (dir: System.IO.DirectoryInfo | null) : string =
+                        match dir with
+                        | null -> System.IO.Directory.GetCurrentDirectory()
+                        | d when System.IO.File.Exists(System.IO.Path.Combine(d.FullName, "Projection.sln")) ->
+                            d.FullName
+                        | d -> findRoot d.Parent
+                    findRoot (System.IO.DirectoryInfo(System.IO.Directory.GetCurrentDirectory()))
+                | v -> v
+            let path = BenchSink.defaultPath benchRoot "canary"
+            BenchSink.persistJson path "operatorReality" stats
+            printfn "operatorReality bench snapshot: %s" path
+
 [<Fact>]
 let ``Generator bulk: 1k rows/table (5 tables = 5k rows) round-trips via bulk path`` () =
     runBulkCanary "bulk1k" GenerateSpec.bulk1k
