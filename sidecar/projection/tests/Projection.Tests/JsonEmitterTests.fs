@@ -84,12 +84,19 @@ let private occursIn (text: string) (root: string) : bool =
     text.Contains(root)
 
 [<Fact>]
-let ``T4: every catalog SsKey root appears in both SSDT and JSON outputs`` () =
+let ``T4: every catalog SsKey root appears in JSON output`` () =
+    // Pre-RawTextEmitter-retirement (chapter 4.1.A close arc): this
+    // test also asserted the SsKey roots appear in SSDT output via the
+    // RawTextEmitter's `Provenance` trailing comments. SsdtDdlEmitter
+    // (the production schema emitter, ScriptDom-rendered) does not
+    // emit those comments — SsKey roots are V2-IR-internal identifiers
+    // with no SSDT-DDL surface. The structural T11 keyset property
+    // (every kind in every Π's keyset) lives at
+    // `SiblingEmitterContractTests.fs`; this test now narrows to JSON's
+    // self-describing surface, where SsKey roots ARE structural.
     let enriched = enrich sampleCatalog
-    let ssdt = RawTextEmitter.emit enriched
     let json = JsonEmitter.emit enriched
     for root in extractSsKeyRoots enriched do
-        Assert.True(occursIn ssdt root, sprintf "SSDT output missing SsKey root: %s" root)
         Assert.True(occursIn json root, sprintf "JSON output missing SsKey root: %s" root)
 
 // `T11: sibling Pi's surface the same kind set when running on the same
@@ -104,7 +111,7 @@ let ``T4: every catalog SsKey root appears in both SSDT and JSON outputs`` () =
 [<Fact>]
 let ``T11: sibling Pi's agree on physical realization for every kind`` () =
     let enriched = enrich sampleCatalog
-    let ssdt = RawTextEmitter.emit enriched
+    let ssdt = SsdtDdlEmitter.statements enriched |> Render.toText
     let json = JsonEmitter.emit enriched
     for k in Catalog.allKinds enriched do
         // Physical schema and table appear in both surfaces, though

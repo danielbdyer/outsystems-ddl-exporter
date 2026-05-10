@@ -29,9 +29,14 @@ module Compose =
     /// through the file system.
     type Outputs =
         {
-            /// Raw .sql text from `RawTextEmitter` — the synthetic-
-            /// milestone SSDT shape per `DECISIONS 2026-05-06 — Π_SSDT
-            /// first emission target is raw .sql-style text`.
+            /// SSDT DDL .sql text from `SsdtDdlEmitter.statements` →
+            /// `Render.toText`. Per the chapter 4.1.A close arc
+            /// (RawTextEmitter retirement, slice 2): retired the
+            /// chapter-3 `RawTextEmitter.emit` pre-cursor in favor of
+            /// the typed-stream surface. Schema-pure (no raw INSERT
+            /// rows for static populations — those route through
+            /// chapter 4.1.B's `StaticSeedsEmitter` with the CDC-aware
+            /// MERGE shape).
             Sql : string
             /// V2 IR JSON from `JsonEmitter`.
             Json : string
@@ -59,8 +64,9 @@ module Compose =
     let project (catalog: Catalog) : Outputs =
         use _ = Bench.scope "compose.project"
         let sql =
-            (use _ = Bench.scope "emit.rawText"
-             RawTextEmitter.emit catalog)
+            (use _ = Bench.scope "emit.ssdtDdl.statements"
+             SsdtDdlEmitter.statements catalog
+             |> Render.toText)
         let json =
             (use _ = Bench.scope "emit.json"
              JsonEmitter.emit catalog)

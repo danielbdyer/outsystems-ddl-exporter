@@ -429,14 +429,22 @@ let ``MILESTONE 10: T1 byte-determinism holds across the now-larger Profile shap
     Assert.All(outputs, fun s -> Assert.Equal(List.head outputs, s))
 
 [<Fact>]
-let ``MILESTONE 10: T11 sibling commutativity preserved across all three Pi with both variants`` () =
+let ``MILESTONE 10: T11 sibling commutativity preserved across self-describing Pi (Json + Distributions)`` () =
+    // Pre-RawTextEmitter-retirement: this test also checked SsKey
+    // roots in the SSDT output via RawTextEmitter's `Provenance`
+    // trailing comments. The production SsdtDdlEmitter (ScriptDom-
+    // rendered) does not emit those comments — SsKey roots are V2-IR-
+    // internal identifiers with no SSDT-DDL surface. The structural
+    // T11 keyset property (every kind appears in every Π's keyset)
+    // lives at `SiblingEmitterContractTests.fs` and is enforced by
+    // `ArtifactByKind.create`'s smart constructor; here we narrow to
+    // the self-describing surfaces (Json, Distributions) where SsKey
+    // roots ARE structural.
     let profile = enrichedProfileBothVariants ()
-    let ssdt   = RawTextEmitter.emit endToEndCatalog
     let json   = JsonEmitter.emit endToEndCatalog
     let distrs = DistributionsEmitter.emit endToEndCatalog profile
     for k in Catalog.allKinds endToEndCatalog do
         let root = SsKey.rootOriginal k.SsKey
-        Assert.Contains(root, ssdt)
         Assert.Contains(root, json)
         Assert.Contains(root, distrs)
 

@@ -51,7 +51,7 @@ let private runCanaryAgainst
             fixture.SeedData.Length
             fixture.SeedRowCount
         let task =
-            Deploy.runWideCanary fixture.Combined RawTextEmitter.statements
+            Deploy.runWideCanary fixture.Combined SsdtDdlEmitter.statements
         let result = task.GetAwaiter().GetResult()
         match result with
         | Ok report -> Some report
@@ -87,7 +87,7 @@ let private runBulkLoaderCanaryAgainst
                     do! Bulk.copyRows cnn seed.Table seed.Rows
             }
         let task =
-            Deploy.runWideCanaryWithLoader loadSource RawTextEmitter.statements
+            Deploy.runWideCanaryWithLoader loadSource SsdtDdlEmitter.statements
         let result = task.GetAwaiter().GetResult()
         match result with
         | Ok report -> Some report

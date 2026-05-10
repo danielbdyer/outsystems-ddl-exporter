@@ -50,14 +50,14 @@ let private expectedKeyset (c: Catalog) : Set<SsKey> =
     Catalog.allKinds c |> List.map (fun k -> k.SsKey) |> Set.ofList
 
 [<Fact>]
-let ``T11 (type theorem): RawTextEmitter.emitSlices key-set equals Catalog.allKinds`` () =
+let ``T11 (type theorem): SsdtDdlEmitter.emitSlices key-set equals Catalog.allKinds`` () =
     let enriched = enrich sampleCatalog
     let expected = expectedKeyset enriched
-    match RawTextEmitter.emitSlices enriched with
+    match SsdtDdlEmitter.emitSlices enriched with
     | Ok artifact ->
         Assert.Equal<Set<SsKey>>(expected, ArtifactByKind.keys artifact)
     | Error err ->
-        Assert.Fail(sprintf "RawTextEmitter.emitSlices returned %A" err)
+        Assert.Fail(sprintf "SsdtDdlEmitter.emitSlices returned %A" err)
 
 [<Fact>]
 let ``T11 (type theorem): JsonEmitter.emitSlices key-set equals Catalog.allKinds`` () =
@@ -87,12 +87,12 @@ let ``T11 (type theorem): DistributionsEmitter.emitSlices key-set equals Catalog
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``T11 (sibling commutativity): RawText, Json, Distributions key-sets are pairwise equal`` () =
+let ``T11 (sibling commutativity): SsdtDdl, Json, Distributions key-sets are pairwise equal`` () =
     let enriched = enrich sampleCatalog
-    let rawTextKeys =
-        match RawTextEmitter.emitSlices enriched with
+    let ssdtDdlKeys =
+        match SsdtDdlEmitter.emitSlices enriched with
         | Ok a -> ArtifactByKind.keys a
-        | Error err -> Assert.Fail(sprintf "RawText: %A" err); Set.empty
+        | Error err -> Assert.Fail(sprintf "SsdtDdl: %A" err); Set.empty
     let jsonKeys =
         match JsonEmitter.emitSlices enriched with
         | Ok a -> ArtifactByKind.keys a
@@ -101,7 +101,7 @@ let ``T11 (sibling commutativity): RawText, Json, Distributions key-sets are pai
         match DistributionsEmitter.emitSlices enriched sampleProfile with
         | Ok a -> ArtifactByKind.keys a
         | Error err -> Assert.Fail(sprintf "Distributions: %A" err); Set.empty
-    Assert.Equal<Set<SsKey>>(rawTextKeys, jsonKeys)
+    Assert.Equal<Set<SsKey>>(ssdtDdlKeys, jsonKeys)
     Assert.Equal<Set<SsKey>>(jsonKeys, distKeys)
 
 // ---------------------------------------------------------------------------

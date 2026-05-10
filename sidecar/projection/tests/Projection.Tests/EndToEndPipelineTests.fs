@@ -123,9 +123,17 @@ let ``M1: V1 minimal fixture parses end-to-end into non-empty SSDT, JSON, and Di
 
 [<Fact>]
 let ``M1: SSDT artifact carries CREATE TABLE for the V1-named entity`` () =
+    // Pre-RawTextEmitter-retirement: this test also asserted the
+    // SsKey root "OS_KIND_AppCore_User" appeared in `outputs.Sql` via
+    // RawTextEmitter's `Provenance` trailing comments. The production
+    // SsdtDdlEmitter (ScriptDom-rendered, the new backing) does not
+    // emit those comments — SsKey roots are V2-IR-internal identifiers
+    // with no SSDT-DDL surface. The structural property the assertion
+    // approximated (every catalog kind appears in every Π's keyset)
+    // is now enforced by `ArtifactByKind.create`'s smart constructor +
+    // `SiblingEmitterContractTests.fs` worked examples.
     let outputs = parseAndProject ()
     Assert.Contains("CREATE TABLE [dbo].[OSUSR_APPCORE_USER]", outputs.Sql)
-    Assert.Contains("OS_KIND_AppCore_User", outputs.Sql)
 
 [<Fact>]
 let ``M1: JSON artifact carries module SsKey and emitter version`` () =

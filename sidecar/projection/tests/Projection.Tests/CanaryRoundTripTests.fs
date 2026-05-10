@@ -109,7 +109,7 @@ let private programmaticUserCatalog : Catalog =
 let ``M3: V2-internal closure — programmatic Catalog round-trips through emit / deploy / read with empty PhysicalSchema diff`` () =
     if skipIfNoDocker "v2-closure" then
         let source = programmaticUserCatalog
-        let emitted = RawTextEmitter.emit source
+        let emitted = SsdtDdlEmitter.statements source |> Render.toText
         let task = Deploy.runWithReadback emitted
         let result = task.GetAwaiter().GetResult()
 
@@ -147,7 +147,7 @@ let ``M3: V2-internal closure — programmatic Catalog round-trips through emit 
 let ``M3 wide canary: minimal OutSystems-shaped source DDL round-trips through V2's emitter with empty PhysicalSchema diff`` () =
     if skipIfNoDocker "wide-canary-minimal" then
         let task =
-            Deploy.runWideCanary SourceFixtures.SourceSchema.minimal RawTextEmitter.statements
+            Deploy.runWideCanary SourceFixtures.SourceSchema.minimal SsdtDdlEmitter.statements
         let outcome = task.GetAwaiter().GetResult()
 
         let report =
@@ -185,7 +185,7 @@ let ``M3 wide canary: realistic OutSystems-shaped source DDL surfaces emitter / 
         let task =
             Deploy.runWideCanary
                 SourceFixtures.SourceSchema.realistic
-                RawTextEmitter.statements
+                SsdtDdlEmitter.statements
         let outcome = task.GetAwaiter().GetResult()
 
         let report =
@@ -230,7 +230,7 @@ let ``M3 wide canary: enterprise OutSystems-shaped source (3 modules / 10 tables
         let task =
             Deploy.runWideCanary
                 SourceFixtures.SourceSchema.enterprise
-                RawTextEmitter.statements
+                SsdtDdlEmitter.statements
         let outcome = task.GetAwaiter().GetResult()
 
         let report =

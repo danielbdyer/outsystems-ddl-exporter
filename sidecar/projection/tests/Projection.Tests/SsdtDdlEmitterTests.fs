@@ -124,12 +124,14 @@ let ``T11: SsdtDdlEmitter.emitSlices keyset equals Catalog.allKinds`` () =
     let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
     Assert.Equal<Set<SsKey>> (expected, ArtifactByKind.keys artifact)
 
-[<Fact>]
-let ``T11: SsdtDdlEmitter and RawTextEmitter agree on keyset`` () =
-    let enriched = enrich sampleCatalog
-    let rawText = RawTextEmitter.emitSlices enriched |> mustOk
-    let ssdtDdl = SsdtDdlEmitter.emitSlices enriched |> mustOk
-    Assert.Equal<Set<SsKey>> (ArtifactByKind.keys rawText, ArtifactByKind.keys ssdtDdl)
+// `T11: SsdtDdlEmitter and RawTextEmitter agree on keyset` — retired
+// at the chapter 4.1.A close arc (RawTextEmitter retirement, slice 2).
+// SsdtDdlEmitter is the production schema emitter; RawTextEmitter was
+// the chapter-3 pre-cursor and has been retired. Sibling-Π
+// commutativity across the THREE production emitters (SsdtDdl + Json
+// + Distributions) is enforced at `SiblingEmitterContractTests.fs` —
+// that's the structural T11 surface; the per-emitter keyset property
+// is structural via `ArtifactByKind.create`'s smart constructor.
 
 // ---------------------------------------------------------------------------
 // SsdtDdlEmitter.statements — catalog-wide typed statement stream.
@@ -285,19 +287,16 @@ let ``Slice 2: SsdtDdlEmitter emits every PrimitiveType variant via SqlTypeCorre
             sprintf "expected SQL token %s (for PrimitiveType.%A) in body, got: %s" token pt body)
 
 [<Fact>]
-let ``Slice 2: T11 cross-validation — RawTextEmitter and SsdtDdlEmitter both emit the all-types fixture`` () =
-    // T11 sibling-Π commutativity for the all-types catalog: both emitters
-    // must successfully produce a slice for the all-types kind. The shared
-    // SqlTypeCorrespondence ensures the SQL type tokens agree per variant
-    // (verified by the prior slice-2 test). This test is the cross-
-    // emitter structural witness.
+let ``Slice 2: SsdtDdlEmitter emits a slice for the all-types fixture (T11 keyset coverage)`` () =
+    // Pre-RawTextEmitter-retirement: this test cross-validated that
+    // BOTH RawTextEmitter and SsdtDdlEmitter produced a slice for the
+    // all-types kind. RawTextEmitter is retired; the SsdtDdlEmitter-
+    // alone keyset coverage is the structural property at this site.
+    // Cross-emitter sibling commutativity (SsdtDdl + Json +
+    // Distributions) lives at `SiblingEmitterContractTests.fs`.
     let enriched = enrich allPrimitiveTypesCatalog
-    let rawText = RawTextEmitter.emitSlices enriched |> mustOk
     let ssdtDdl = SsdtDdlEmitter.emitSlices enriched |> mustOk
-    Assert.Equal<Set<SsKey>> (ArtifactByKind.keys rawText, ArtifactByKind.keys ssdtDdl)
-    let rawTextSlices = ArtifactByKind.toMap rawText
     let ssdtDdlSlices = ArtifactByKind.toMap ssdtDdl
-    Assert.True (Map.containsKey allPrimitiveTypesKind.SsKey rawTextSlices)
     Assert.True (Map.containsKey allPrimitiveTypesKind.SsKey ssdtDdlSlices)
 
 // ---------------------------------------------------------------------------

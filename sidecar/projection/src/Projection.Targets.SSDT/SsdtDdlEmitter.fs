@@ -1,6 +1,7 @@
 namespace Projection.Targets.SSDT
 
 open Projection.Core
+open Projection.Core.Passes
 
 /// Π_SSDT-DDL — chapter 4.1.A substantive deliverable. The production-
 /// deployment SSDT DDL emitter (sibling Π) that complements the DACPAC
@@ -372,9 +373,27 @@ module SsdtDdlEmitter =
     /// triumvirate.
     let statements (catalog: Catalog) : seq<Statement> =
         use _ = Bench.scope "emit.ssdt.statements"
-        let allKinds, targetByKey, pkAttrByKey = buildLookups catalog
+        let _, targetByKey, pkAttrByKey = buildLookups catalog
+        // Topological order via `TopologicalOrderPass.runWith
+        // SkipSelfEdges` (per A40 / chapter-3.1 SelfLoopPolicy
+        // codification): FK targets emit before their referencers,
+        // so deploy-time the inline `FOREIGN KEY ... REFERENCES`
+        // constraint resolves against an already-created target
+        // table. Self-FKs are SQL-Server-legal inline; SkipSelfEdges
+        // keeps a self-FK kind in its natural topological position.
+        // Same algorithm RawTextEmitter used (mirrors session-36
+        // audit Agent 4 #6: harmonization-via-parameterization;
+        // single TopologicalOrderPass with two emitters).
+        let order =
+            (TopologicalOrderPass.runWith SkipSelfEdges catalog).Value.Order
+        let kindByKey =
+            Catalog.allKinds catalog
+            |> List.map (fun k -> k.SsKey, k)
+            |> Map.ofList
+        let orderedKinds =
+            order |> List.choose (fun key -> Map.tryFind key kindByKey)
         seq {
-            for k in allKinds do
+            for k in orderedKinds do
                 yield createTableStatement targetByKey pkAttrByKey k
                 yield! indexStatements k
         }
