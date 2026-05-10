@@ -41,6 +41,7 @@
     <Compile Include="TypesTests.fs" />
     <Compile Include="ToleranceTests.fs" />
     <Compile Include="StaticSeedsEmitterTests.fs" />
+    <Compile Include="StaticPopulationEmitterTests.fs" />
     <Compile Include="CdcSilenceTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
     <Compile Include="ProfileFixtures.fs" />
@@ -56,6 +57,7 @@
     <Compile Include="CycleResolutionTests.fs" />
     <Compile Include="StaticAdapterDifferentialTests.fs" />
     <Compile Include="OsmCatalogReaderDifferentialTests.fs" />
+    <Compile Include="OsmRowsetReaderTests.fs" />
     <Compile Include="NullabilityRulesTests.fs" />
     <Compile Include="NullabilityPassTests.fs" />
     <Compile Include="UniqueIndexRulesTests.fs" />

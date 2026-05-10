@@ -1,8 +1,46 @@
-# Handoff letter — Chapter 3.1 → Chapter 3.2 / 3.5 / 3.6 / 3.7 / 4.1.A / 4.1.B / 4.x
+# Handoff letter — Chapter 3.2 → next chapter
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## Chapter 3.2 close (added 2026-05-10; substantive close + JSON-projection-lossiness class structurally resolved)
+
+**Branch:** `claude/review-ddl-exporter-zB3LF`. **Test baseline:** 882 passing non-canary tests + ~16 Docker-dependent canary tests, 0 skipped, 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules. **Perf-gate:** clean (adapter-only changes; no canary-affecting work).
+
+Chapter 3.2 closes the **JSON-projection-lossiness class** structurally by adding the `SnapshotRowsets` variant of `SnapshotSource` end-to-end. Five substantive slices + post-close bug-fix arc:
+
+- **Slice 1** (`6dab9cd`) — `SnapshotRowsets` DU variant + `RowsetBundle` carrier + `ModuleRow` / `KindRow` / `AttributeRow` records + `parseRowsetBundle` minimum. SsKey at all three levels.
+- **Slice 2** (`0354727`) — Reference rowsets (`#RefResolved` ⊕ `#FkReality`). FK SsKey carriage; rule 16 same-module assumption tested under rowset path.
+- **Slice 3** (`d5d1812`) — `EspaceKind` activation; `parseOriginFromRowset` three-way real refines rule 17 from JSON-path placeholder.
+- **Slice 4** (`6eae21f`) — `IsSystemEntity` activation; new `ModalityMark.SystemOwned` variant. Third lossiness-class member resolved.
+- **Slice 5** (`a74b904`) — Cross-source parity tests (JSON ↔ Rowset). Total-equality (no-Guids) + shape-equality (Guid-carrying). Closes the chapter.
+- **Post-close bug fix** (`0336795`) — `propagateOrFallback` codification at two-consumer threshold; seven build-failure sites refactored uniformly across both translation paths. Underlying error codes (e.g., `adapter.osm.unmappedDeleteRule`) survive the build-level wrap instead of being swallowed under generic umbrellas.
+
+**A1's JSON-projection-lossiness bound — operationally resolved.** Chapter 3.2 makes A1's `OssysOriginal` variant operationally reachable at the OSSYS-adapter boundary for the first time. AXIOMS.md A1 footer + four-variant amendment updated. See `CHAPTER_3_2_CLOSE.md` for the full substantive synthesis.
+
+**`SnapshotRowsets` Active deferral cashed out** at `DECISIONS 2026-05-10 — Chapter 3.2 close`. One silent-trigger fire scanned + cashed; 16 other active deferrals untriggered.
+
+### Outstanding queue (post-chapter-3.2)
+
+**Critical-path under V2-driver KPI** (per `V2_DRIVER.md`):
+- **Chapter 4.1.B slice δ** (two-phase insertion / cycle-breaking). CDC-silence-on-idempotent-redeploy property test is the V2-driver KPI's highest-leverage single deliverable.
+- **Chapter 4.1.B slices ε/ζ** (MigrationDependencies + Bootstrap). `ScriptDomBuild.buildMergeStatement` adoption mandatory per Active deferrals row.
+- **Chapter 3.x DacpacEmitter**. DacFx adoption mandatory per Active deferrals row.
+- **Chapter 4.2 User FK reflow**. Inherits chapter 3.2's `OssysOriginal` operational reachability; cross-version `V1Mapped` UUIDv5 derivation lands here.
+
+**Highest-priority deferred slice (cross-cutting):**
+- **Cross-module FK IR refinement** (Active deferrals row). Trigger: fixture exercising cross-module FK. Chapter 3.2 fixtures were all same-module; rowset path is structurally ready for the extension.
+
+**Independent forward-progress** (carried from prior outstanding queue; not chapter-3.2-affected):
+- R4 multi-environment promotion property test (uses M4 Tolerance taxonomy).
+- Chapter 3.7 audit-cleanup slice queue (γ / ζ / η / θ / ι / κ / λ / μ / ν / ξ / ο / π) — `ξ` (`ICatalogReader` port lift) can now use chapter 3.2's `SnapshotRowsets` as second-source-of-truth precedent.
+
+**Chapter close ritual joint pass** still beneficial across 3.1 / 3.5 / 3.6 / 3.7 / 4.1.A / 4.1.B-in-flight if the next chapter wants to discharge documentation drift before opening new substantive work. Chapter 3.2's own close ritual executed (see `CHAPTER_3_2_CLOSE.md` "Chapter-close ritual execution" section).
+
+---
+
+## Chapter 4.1.A close arc + 4.1.B in-flight prologue (added 2026-05-10; substantive close + V2-driver KPI Phase 2 + Phase 3 highest-stakes deliverable shipped)
 
 ## Chapter 4.1.A close arc + 4.1.B in-flight prologue (added 2026-05-10; substantive close + V2-driver KPI Phase 2 + Phase 3 highest-stakes deliverable shipped)
 
@@ -107,9 +145,16 @@ Chapter 3.7 is a **B&W audit-cleanup hygiene chapter** picking up Tier-1 / Tier-
 - **Docker hook canary-readiness fix**. `session-start.sh` now writes a comprehensive subsystem-status line at end-of-hook (`session-start <READY|DEGRADED|FAIL> <utc> | dotnet=<v> | docker=<state> | image=<state> | warm=<state>`) so agents reading `$HOME/.claude-projection-hook-status` see the FULL canary-readiness picture, not just dotnet. The dotnet-only intermediate status line retired (a fresh agent reading "session-start OK" without seeing the comprehensive verdict mistook the dotnet OK for full canary readiness). Stable subsystem vocabulary (running / cached / ready / missing / failed / not-ready / skipped) makes the file greppable. AGENTS.md "Pre-flight & Alignment" documents the new format + recovery path (re-run `bash .claude/hooks/session-start.sh`; idempotent).
 - **V2-driver as destination KPI codification (principal-PO sidebar)**. `V2_DRIVER.md` (new standalone canonical surface) codifies V2-driver as the project's north star, supersedes the implicit "V2-augmented as floor; V2-driver as aspirational" framing in `DECISIONS 2026-05-22 — R6`, AND absorbs the operative backlog (supersedes `BACKLOG.md` which is now a forwarding pointer). The KPI in one sentence: V2 reaches V2-driver mode for the cutover by being provably correct on every axis V2 owns (schema, data, identity, diagnostics, and any future sibling), with provable correctness defined as structural-type-level enforcement plus per-axis property tests. **CDC silence on idempotent redeploy (chapter 4.1.B) is the highest-leverage single deliverable.** Chapters 4.1.B / 4.2 / 4.3 / 3.x / 3.2 are critical-path under V2-driver KPI, not optional. Updates: new top-row in CLAUDE.md operating-disciplines table; new V2-driver paragraph in KICKOFF.md supreme-discipline section; KICKOFF.md strategic-surfaces table now points at `V2_DRIVER.md` (was `BACKLOG.md`); CLAUDE.md reading-order section + VISION.md companion-strategic-surfaces both updated to reference `V2_DRIVER.md`; new DECISIONS entry `2026-05-10 — V2-driver as destination KPI`. The `V2_DRIVER.md` "Executive backlog summary" table is the chapter-by-chapter sequencing under this KPI; per-chapter operational detail continues to live in `CHAPTER_*_PRESCOPE_*.md`.
 
-**Outstanding chapter-3.7 slice queue** (committed in todo list; in user-preferred order):
+**Chapter-3.7 slice queue** (in user-preferred order; ε now shipped per the chapter-4.1.A close arc):
+- ✅ **α** — `Lineage.Trail [<CustomEquality>]` (A26 cash-out). Shipped at `1f8a617`.
+- ✅ **β** — `Projection.Core.SqlTypeCorrespondence` bounded context (Tier-1 #8 cash-out). Shipped.
+- ✅ **β'** — `Render.columnSqlType` through ScriptDom typed AST. Shipped.
+- ✅ **β''** — LINT-ALLOW substantive-rationale discipline codification. Shipped.
+- ✅ **ε** — Json + Distributions Π typed per-kind `JsonNode` (audit Tier-1 #7; T11 fully structural; pillar 1). **Shipped** at chapter-4.1.A close arc (per HANDOFF prologue line 105). T11 is now structural at both axes (keyset + per-kind value type).
+- ✅ **β'''** — Domain-first naming discipline codification (pillar 8). Shipped.
+
+**Outstanding chapter-3.7 slice queue:**
 - **γ** — `traverseCatalog` natural-transformation primitive (audit Tier-3 #23; FP composition).
-- **ε** — Json + Distributions Π typed per-kind value (audit Tier-1 #7; T11 fully structural; pillar 1).
 - **ζ** — Three `attach` adapters take string JSON → SnapshotSource-shaped (audit Tier-1 #6).
 - **η** — `result {}` CE adoption at `ReadSide.fs:540-690` (audit Tier-3 #24).
 - **θ** — Coordinates Stage 2 typed `SchemaName` / `TableName` / `ColumnName` VOs (audit Tier-3 #20a).
@@ -117,10 +162,10 @@ Chapter 3.7 is a **B&W audit-cleanup hygiene chapter** picking up Tier-1 / Tier-
 - **κ** — `Lineage.tell` `m.Trail @ [event]` O(N²) audit (perf-class question).
 - **λ** — `SsKey.rootOriginal` V1 prefix in emitter output (audit Tier-1 #11; needs DECISIONS amendment first).
 - **μ** — `Restrict→NoActionSql` Diagnostics scaffolding (audit Tier-1 #10 + Tier-2 #15).
-- **ν** — F# Analyzers SDK custom analyzer (KICKOFF deferral #1; complements 27 grep rules with AST detection).
-- **ξ / ο / π** — Port lifts (`ICatalogReader` / `IArtifactSink` / `IDeployHost`); ξ likely lands as part of forward chapter 3.2.
+- **ν** — F# Analyzers SDK custom analyzer (KICKOFF deferral #1; complements 27 grep rules with AST detection). **Note:** consolidates the historical chapter-3.6 slice χ "F# Analyzers SDK" deferral — same item, single queue location going forward.
+- **ξ / ο / π** — Port lifts (`ICatalogReader` / `IArtifactSink` / `IDeployHost`); ξ stayed deferred at chapter 3.2 close per the variant-vs-source distinction (`CHAPTER_3_2_OPEN.md` axis 6); will fire when a true second catalog source (DACPAC / OData / in-memory) materializes — likely chapter 3.x DacpacEmitter open.
 
-Chapter close ritual still deferred.
+**Chapter close ritual: substantively discharged at chapter-4.1.A close arc + chapter-3 cross-cutting close (2026-05-10);** see `CHAPTER_4_1_A_CLOSE.md` (joint coverage of 3.6/3.7/4.1.A/4.1.B-α/β/γ) + `CHAPTER_3_2_CLOSE.md` (chapter 3.2 specific) + `CHAPTER_3_5_CLOSE.md` (chapter 3.5 retroactive close).
 
 ---
 
@@ -145,9 +190,9 @@ Chapter 3.6 closed five of the six chapter-3.5-close-deferred items (KICKOFF.md 
 - **Bench coverage at every pass entry** (10 passes; iterator-logging-as-first-class-outcome discipline).
 
 **Sole 3.6-deferral remaining:**
-- **Slice χ — F# Analyzers SDK custom analyzer** (KICKOFF deferral #1; standalone). Independent of chapter-3.5 deferrals; re-open trigger: false-negative surfaces in CI.
+- **Slice χ — F# Analyzers SDK custom analyzer** (KICKOFF deferral #1; standalone). **Consolidated with chapter-3.7 slice ν** at the chapter-3 cross-cutting close (2026-05-10) — same item, single queue location going forward (chapter-3.7 slice ν is the canonical reference). Re-open trigger: false-negative surfaces in CI.
 
-**3.6 chapter-close ritual still pending** (eight items per CLAUDE.md operating disciplines table): pick this up before opening Chapter 3.7 / 4.x if appropriate.
+**3.6 chapter-close ritual** discharged jointly at chapter-4.1.A close arc + chapter-3 cross-cutting close (2026-05-10). See `CHAPTER_4_1_A_CLOSE.md` "Chapter close ritual — eight items walked".
 
 **Forward signals into 3.7+ / 4.x** (recorded for future agents at `DECISIONS.md` 2026-05-09 chapter-3.6 audit-findings entry): DacFx adoption (chapter 3.x DacpacEmitter — primitives named: `TSqlModel`, `DacPackage`, `DacServices.GenerateDeployScript`, `SchemaComparison`, `DacDeployOptions`), SqlBatch (when SqlClient ≥ 5.5 + canary bottleneck), `SqlConnection.RetryLogicProvider` (canary CI flake), `AsyncSeq` (when streaming readside needs `bufferByCountAndTime`), `JsonObject` typed per-kind (when 2nd `ArtifactByKind<string>` consumer fires), Argu CLI (when CLI grows beyond 3 commands), Verify.XUnit (DacpacEmitter golden-rotation pressure), `Microsoft.Extensions.Logging` (CI structured-logs consumer demand), `Utf8JsonReader` (bench surfaces JSON parse time at scale), incremental `validation {}` adoption at `CatalogReader.parseAttribute / parseKind` for ~80 LoC reduction + better error aggregation, incremental `taskResult {}` adoption at `Deploy.runWideCanaryWithLoader` for ~40 LoC reduction.
 

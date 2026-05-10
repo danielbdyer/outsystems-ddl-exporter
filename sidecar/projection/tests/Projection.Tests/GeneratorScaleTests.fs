@@ -5,7 +5,25 @@ open Microsoft.Data.SqlClient
 open Projection.Core
 open Projection.Pipeline
 open Projection.Targets.SSDT
+open Projection.Targets.Data
 open Projection.Tests.SourceFixtures
+
+/// Composed schema-then-data emit for the round-trip canary. Per
+/// chapter 4.1.A close arc / RawTextEmitter retirement, the canonical
+/// typed Π output is split across two siblings:
+///   - `SsdtDdlEmitter.statements` (DDL — schema axis)
+///   - `StaticPopulationEmitter.statements` (DML — static-population
+///     axis, typed-`Statement.InsertRow` realization)
+/// The composed stream is the deploy-correct schema-then-data form
+/// the canary asserts the round-trip property against. Topological
+/// order matches across both emitters (FK targets before referencers,
+/// schema then rows) so `Deploy.executeStream` folds consecutive
+/// `InsertRow`s into `SqlBulkCopy` batches without crossing DDL.
+let private composedSchemaAndData (catalog: Catalog) : seq<Statement> =
+    seq {
+        yield! SsdtDdlEmitter.statements catalog
+        yield! StaticPopulationEmitter.statements catalog
+    }
 
 /// Per session-31 operator framing — "what about with 200 entities
 /// and 100 static entities" — these tests exercise the canary's
@@ -51,7 +69,7 @@ let private runCanaryAgainst
             fixture.SeedData.Length
             fixture.SeedRowCount
         let task =
-            Deploy.runWideCanary fixture.Combined SsdtDdlEmitter.statements
+            Deploy.runWideCanary fixture.Combined composedSchemaAndData
         let result = task.GetAwaiter().GetResult()
         match result with
         | Ok report -> Some report
@@ -87,7 +105,7 @@ let private runBulkLoaderCanaryAgainst
                     do! Bulk.copyRows cnn seed.Table seed.Rows
             }
         let task =
-            Deploy.runWideCanaryWithLoader loadSource SsdtDdlEmitter.statements
+            Deploy.runWideCanaryWithLoader loadSource composedSchemaAndData
         let result = task.GetAwaiter().GetResult()
         match result with
         | Ok report -> Some report

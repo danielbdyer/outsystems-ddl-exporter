@@ -209,7 +209,7 @@ table before continuing.
 | **`RequireQualifiedAccess` retrofit** on `UniqueIndexKeepReason` / `ForeignKeyKeepReason` / similar | 2026-05-11 refinement 1 (Strategy-layer codification empirical verdict) | A DU's variants change shape (added/removed/renamed) — substantive structural modification, not interpretive resolution | `ForeignKeyKeepReason` got `MissingTarget` (session 19) and the unreachable-`DeleteRuleIgnored` interpretive resolution (session 19; `DECISIONS.md:5048` rule 13). Neither rose to "structural modification" warranting retrofit; trigger sharpened at session 25 to clarify the threshold. Today neither `UniqueIndexKeepReason` nor `ForeignKeyKeepReason` carry the attribute (session 25) |
 | **`CycleResolution.ResolutionStep.Reason` migration to structured DU** | 2026-05-11 (Strategy layer: a named architectural vector — caveat) | A second resolver strategy lands per the 2026-05-08 pluggability deferral | No second resolver; reason field still free-form string (session 25) |
 | **Cross-catalog FK detection IR refinement** (`Catalog : string option` on `Reference` and `ForeignKeyKeepReason.CrossCatalogBlocked` made reachable) | 2026-05-13 (Closed-DU expansion: empirical confirmation) | A fixture exercising cross-catalog FKs surfaces the gap | Reserved DU variant exists but is unreachable; do not delete (session 25) |
-| **Cross-module FK IR refinement** | 2026-05-19 (rule 16's same-module assumption — session 19 reference-bearing slice) | A fixture exercising cross-module FK surfaces the gap | Same-module assumption operational across all six chapter-2 fixtures; the cross-module case is the highest-priority deferred slice for chapter 3 (session 25 — added per subagent #2 / subagent #3 audit) |
+| **Cross-module FK IR refinement** | 2026-05-19 (rule 16's same-module assumption — session 19 reference-bearing slice) | A fixture exercising cross-module FK surfaces a gap **at the emit layer that topological ordering cannot satisfy** (refined trigger condition; see status). | **Trigger fired and partially satisfied (chapter 4.1.A close arc, 2026-05-10).** Chapter 4.1.A's enterprise canary fixture exercises cross-module FKs (PRODUCT.CATEGORYID, ORDER.CUSTOMERID, ORDERLINE.PRODUCTID, audit FKs to IDM.USER). The fixture deploys clean: `SsdtDdlEmitter.statements` uses `TopologicalOrderPass.runWith SkipSelfEdges` so FK targets emit before referencers regardless of module membership. **The IR refinement (adding cross-module distinction at the `Reference` type) remains deferred** pending a use case where topological ordering at the emit layer is insufficient — e.g., a DacpacEmitter `SqlSchemaModel` cross-database reference that needs schema-disambiguation metadata, or an OssysOriginal catalog spanning multiple V1 SS instances. Cross-module FK same-module assumption (rule 16) at the OSSYS adapter rowset path also remains the operational shape (chapter 3.2 same-module fixtures all round-trip); the gap is at the IR, not the adapter (session 41 reframe; first noted at `CHAPTER_4_1_A_CLOSE.md:80-85`). |
 | **Faker emitter (synthetic-data Π)** | 2026-05-13 (Session 11 reflection) | Either a third evidence type lands, or a use case forces proceeding with two evidence types and accepting the limitations | Two evidence types operational (Categorical, Numeric); no third in scope (session 25) |
 | **DacFx integration in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-06 (DacFx integration deferred to first real-fixture milestone) | A real Catalog (from any adapter) flows end-to-end through a pipeline exercising sibling-Π commutativity (T11) on real metadata; canary chapter (`Projection.Pipeline`) is the natural locus | **Re-deferred at session 24 with tighter trigger condition** (original trigger fired silently sessions 18–22; sequenced for chapter 3 canary chapter; see `2026-05-06` entry's session-24 amendment) |
 | **Multi-spine state pattern** | 2026-05-06 (Multi-spine state pattern is endorsed but not yet built) | A real use case surfaces in the algebra | None yet (session 25) |
@@ -217,8 +217,8 @@ table before continuing.
 | **Reflection** (`typeof<>`, attribute scanning for plugin discovery) | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | A real consumer demands name-keyed strategy dispatch (paired with the strategy registry mechanism deferral above) | Closed-DU + typed-seam dispatches at compile time today; no reflective discovery needed (session 25) |
 | **Object expressions** (`{ new IInterface with ... }`) for adapter-side abstractions | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | V2 grows interface-based polymorphism (e.g., `IDiagnosticSink` for streaming consumers; `ICatalogReader` after a second catalog source materializes) | Codebase has zero interface boundaries today; all polymorphism via DU pattern matching (session 25) |
 | **Type providers** (`JsonProvider` for `osm_model.json`) | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | OSSYS adapter ships and JSON-shape evolution becomes a maintenance burden | OSSYS adapter ships at session 18 with hand-written DTOs; JSON-shape evolution has not yet surfaced as a burden (session 25) |
-| **`ICatalogReader` interface** (Position B → A) | 2026-05-13 (Anticipation vs. speculation in abstraction extraction) | A second catalog source materializes (DACPAC, OData, in-memory test reader unifying with OSSYS) | OSSYS adapter implementation chapter starts in Position B (`parse : SnapshotSource -> Task<Result<Catalog>>` shape; session 18); interface defers until second source (session 25) |
-| **`SnapshotRowsets` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature, session-20 amendment) | The JSON-projection-lossiness class needs unblocking — A1 SsKey bound resolution; `EspaceKind` distinction; `isSystemEntity` evidence; future class members (per `DECISIONS 2026-05-19 — naming the two classes of resolution patterns explicitly`) | Operator-decided canonical resolution; not subject to relitigation. Variant reserved in `SnapshotSource` DU (`CatalogReader.fs:36-56`). Pre-scoped at session 25 commit 11 (subagent #5); chapter 3+ implements (session 25) |
+| **`ICatalogReader` interface** (Position B → A) | 2026-05-13 (Anticipation vs. speculation in abstraction extraction) | A second *catalog* source materializes (DACPAC, OData, in-memory test reader; distinct from a second *variant* of an existing OSSYS source) | **Reaffirmed at chapter 3.2 open (axis 6) / close (2026-05-10).** `SnapshotRowsets` is a second *variant* of the OSSYS source, not a second source — per `CHAPTER_3_2_OPEN.md` axis 6, the Position B → A trigger does NOT fire. `ReadSide.read` is a profile/data reader, not a catalog reader (out of scope). The trigger condition was sharpened at chapter 3.2 close to make the variant-vs-source distinction explicit. OSSYS adapter still uses `parse : SnapshotSource -> Task<Result<Catalog>>` (Position B); interface lift remains deferred until DACPAC / OData / in-memory test reader materializes (chapter 3.7 slice ξ candidate; chapter-3.x DacpacEmitter may surface the second source). |
+| **`SnapshotRowsets` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature, session-20 amendment) | The JSON-projection-lossiness class needs unblocking — A1 SsKey bound resolution; `EspaceKind` distinction; `isSystemEntity` evidence; future class members (per `DECISIONS 2026-05-19 — naming the two classes of resolution patterns explicitly`) | **Cashed out — chapter 3.2 (commits 6dab9cd / 0354727 / d5d1812 / 6eae21f / a74b904). Variant implemented end-to-end across five slices: (1) SnapshotRowsets variant + RowsetBundle DTO + SsKey at all three levels; (2) reference rowsets (`#RefResolved + #FkReality`); (3) `EspaceKind` activation (Origin three-way real); (4) `IsSystemEntity` → `ModalityMark.SystemOwned`; (5) cross-source parity tests. A1's JSON-projection-lossiness bound resolved structurally (`OssysOriginal` Guid carriage). Three class members landed: SsKey at every level; EspaceKind; IsSystemEntity. Future class members (per-table column structure rowset 6; check constraints rowset 7; triggers rowset 18 — documented not-carried-forward) surface under fixture pressure as further deferred slices. See cash-out entry `2026-05-10 — SnapshotRowsets variant chapter 3.2 close` below.** |
 | **`LiveOssysConnection` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature) | V2 needs to operate without V1's chain in the loop entirely (real DB-touching variant) | Reserved in `SnapshotSource` DU (`CatalogReader.fs:58-62`); chapter-3+ when canary's deployment-validation arc materializes (session 25) |
 | **`Microsoft.SqlServer.Dac` (DacFx) adoption in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 3.x DacpacEmitter opens. **Hard requirement, not preference**: the .dacpac file format is a Microsoft-proprietary ZIP-with-manifest-XML structure — hand-rolling it via `System.IO.Compression.ZipArchive` + manual XML composition is the prototypical "text-builder-as-first-instinct" failure mode. DacFx (`Microsoft.SqlServer.Dac` NuGet) IS the canonical use-case-specific library; per pillar 7, no LINT-ALLOW will excuse a hand-rolled .dacpac. The chapter-3.x agent reads this entry at chapter open and writes the cash-out below the Active deferrals table on adoption. | Pre-DacpacEmitter; trigger condition not yet met (DacpacEmitter chapter not open) |
 | **MigrationDependenciesEmitter + BootstrapEmitter typed-AST adoption from slice α** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 4.1.B slices ε (MigrationDependenciesEmitter) / ζ (BootstrapEmitter) open. **Hard requirement**: both emitters are MERGE / INSERT producers; per the Tier-1 #1 cash-out (`bface9a` — chapter 4.1.B StaticSeedsEmitter MERGE → ScriptDom MergeStatement), every new SQL-emitting consumer starts on the typed-AST library, not StringBuilder. `ScriptDomBuild.buildMergeStatement` + `ScriptDomBuild.buildInsertRow` + `SqlLiteral.ofRaw` are the precedent surface; cross-target dep on Projection.Targets.SSDT acceptable per the StaticSeedsEmitter precedent (single-line LINT-ALLOW with rationale). The chapter 4.1.B slice agent reads this entry at slice open. | Pre-MigrationDependenciesEmitter / BootstrapEmitter; chapter 4.1.B slices ε/ζ not yet open |
@@ -9712,4 +9712,412 @@ naming) ✓ — `text-builder-as-first-instinct` IS the failure-mode
 name (concept-shaped, not action-shaped).
 
 
+## 2026-05-10 — Perf-gate μ+σ statistical baseline (drops rolling history)
 
+**Status:** decided
+
+**Context:** the chapter-3.6 `scripts/perf-gate.sh` design (codified
+at `2026-05-09 — Operator-reality canary as the production-baseline
+perf gate`) used a **rolling history** model: each gate-fire
+appended a snapshot to `bench/history-canary.jsonl` (max N=20),
+and the per-label threshold computed as `μ + Kσ` over the
+history with a flat-tolerance warm-up phase (`mean × 1.5`) until
+N≥5 history accumulated. The committed `bench/baseline-canary.json`
+served the warm-up phase and as a reference floor.
+
+The chapter 4.1.A static-population regression (`commit 651d6a4`)
+surfaced two structural problems with this design:
+
+1. **The committed baseline was synthetic.** `bench/baseline-canary.json`
+   was recorded once with placeholder 500ms-each entries (every
+   `Count`, `MinMs`, `MaxMs`, `MeanMs`, `P50Ms`, `P95Ms`, `P99Ms`
+   identical at 500). No real measurement set was ever committed.
+   The warm-up gate (`current < 1.5 × baseline`) was therefore
+   gating against fiction — every label below 333ms passed
+   irrespective of regression; every label above 500ms failed
+   irrespective of fidelity.
+
+2. **History is per-machine, gitignored, ephemeral.** `bench/history-canary.jsonl`
+   is gitignored (`.gitignore:25-27` keeps `bench/baseline-*.json`
+   tracked, ignores everything else under `sidecar/projection/bench/`).
+   Every fresh checkout starts at N=0; CI doesn't accumulate
+   history across runs without artifact storage; cross-machine
+   regression detection isn't structural — it's per-machine.
+   When the static-population regression shipped against this
+   baseline-and-history pair, neither layer engaged: warm-up
+   compared against synthetic 500s, and the previous machine's
+   history didn't exist on the next agent's clone.
+
+The compounding effect: the perf-gate was effectively a placebo
+across the chapters that shipped against it (3.5 / 3.6 / 3.7 /
+4.1.A / 4.1.B-α/β/γ / RawTextEmitter retirement / Tier 1/2/3
+transitions). The static-population regression slipped past
+every gate-fire because the gate had no real floor to compare
+against.
+
+**Decision:** replace the rolling-history model with a **tracked
+μ+σ statistical baseline**. The committed `bench/baseline-canary.json`
+IS the statistical model; there is no rolling history accumulator.
+
+**New baseline format:**
+
+```json
+{
+  "RecordedAtUtc": "2026-05-10T17:42:00Z",
+  "Tag": "operatorReality",
+  "Runs": 5,
+  "Stats": [
+    { "Label": "deploy.bulk.copyRows", "SampleCount": 5,
+      "MeanMs": 3048, "StdevMs": 250 },
+    ...
+  ]
+}
+```
+
+Each `Stats[i]` entry carries per-label `MeanMs` + `StdevMs`
+computed from N≥5 warm captures (the `Runs` field). Per-label
+threshold = `MeanMs + K × σ_effective` where:
+
+  - `K = 5.0` (default; widened from the prior K=3.0 to absorb
+    cross-machine timing variance — CI ↔ dev laptop can drift
+    2-3σ even on the same workload).
+  - `σ_effective = max(StdevMs, MeanMs × MIN_RELATIVE_STDEV)`
+    (default `MIN_RELATIVE_STDEV=0.20`, a 20% relative σ floor).
+    The floor is a Bayesian prior on σ: at N=5, `StdevMs` often
+    underestimates the true population σ — particularly for I/O-
+    bound labels (Docker container creation, SqlBulkCopy network
+    round-trips, ScriptDom parser warmup) whose run-to-run
+    variance is dominated by external jitter rather than algorithm
+    timing. Without the floor, a baseline that happened to record
+    five tightly-clustered samples produces a brittle gate
+    (`σ_observed = 0.4ms` on a 7ms label gives a 9ms threshold;
+    legitimate jitter to 14ms trips the gate). Tightening
+    `MIN_RELATIVE_STDEV` is appropriate when the baseline came
+    from a representative-spread run set; loosening (e.g., 0.30)
+    is appropriate during initial calibration on a new machine
+    class.
+
+**Recorder mechanism:**
+
+  - `PERF_GATE_RECORD=1 scripts/perf-gate.sh` runs the operator-
+    reality canary `BENCH_RECORD_RUNS` times (default 5),
+    aggregates per-label `TotalMs` across runs into μ + σ, writes
+    the new baseline file. The per-label noise filter (drop labels
+    with `MeanMs < BENCH_MIN_MS=5`) applies symmetrically at
+    record + gate time so the baseline carries only signal-
+    bearing labels.
+  - When the perf floor legitimately changes (algorithmic
+    improvement; new workload axis; intentional accommodation of
+    a new label-emitting hot path), the recorder is run and the
+    new baseline is committed. The commit pairs with a DECISIONS
+    amendment naming the new floor's rationale.
+
+**Gate mechanism:**
+
+  - `scripts/perf-gate.sh` runs the canary once, compares each
+    label's `TotalMs` against the baseline's threshold, fails on
+    any regression. New labels (not in the baseline; e.g., a
+    feature added new bench scopes) pass with a soft warning —
+    they join the baseline at the next record cycle.
+  - Soft-skip on Docker / dotnet unavailable preserved.
+
+**What this supersedes:**
+
+  - The rolling-history accumulator (`bench/history-canary.jsonl`)
+    retires structurally. The .gitignore rule that ignored it
+    stays (the file may exist locally as orphan; it's not
+    consulted). Removing the rule isn't necessary because the
+    file is no longer written to.
+  - The warm-up phase retires — the baseline is always the
+    statistical model, no fallback to flat-tolerance.
+  - `BENCH_TOLERANCE` env var retires (no flat-tolerance
+    fallback). `BENCH_MAX_HISTORY` and `BENCH_MIN_SAMPLES`
+    retire (no rolling history).
+  - The 2026-05-09 entry's "Mechanism" section's per-label
+    `μ + Kσ` description over rolling history is superseded by
+    this entry; the rest of the 2026-05-09 entry (operator-
+    reality as the gate workload; soft-skip semantics; pillar
+    7 alignment) stays in force.
+
+**What stays:**
+
+  - Operator-reality as the gate workload (50k rows × 300 tables
+    × variegated; `GenerateSpec.operatorReality`).
+  - The bench JSON snapshot path convention (`bench/canary/<utc>.json`
+    written by `BenchSink.persistJson` from the test process,
+    with `PROJECTION_BENCH_DIR` for path resolution).
+  - The `.gitignore` carveout (`!sidecar/projection/bench/baseline-*.json`)
+    — the new baseline file is the same path; tracked.
+  - The Stop-hook + pre-commit hook integration. The gate
+    runtime is unchanged (one canary run; ~12s warm).
+
+**Reasoning:**
+
+  - **Cross-machine reproducibility.** Every contributor + CI
+    gates against the same baseline. A regression on a dev
+    laptop surfaces as the same regression on CI (modulo K).
+    The previous design had cross-machine convergence only as
+    a side effect of warm-up + N runs of accumulated history;
+    the new design gives it as a structural invariant.
+  - **PR-visible floor bumps.** Re-recording the baseline
+    produces a tracked-file diff in the PR. Operators reviewing
+    the PR see exactly which labels changed and by how much —
+    the perf-floor evolution is in the git history, alongside
+    the DECISIONS amendment naming why the floor moved.
+  - **No warm-up phase confusion.** The synthetic baseline
+    + warm-up failure-mode is structurally impossible: the
+    baseline is computed from real measurements at record
+    time; if the recorder hasn't run, the gate emits a clear
+    "no baseline; run `PERF_GATE_RECORD=1` to seed" warning
+    rather than gating against fiction.
+  - **Cross-machine variance absorbed by K.** The default
+    K=5.0 is calibrated for ~3σ of legitimate machine-to-
+    machine timing variance plus ~2σ of run-to-run variance.
+    Dev laptops with thermal throttling or shared-CI runners
+    with noisy neighbors will land within K=5σ of the recorded
+    mean for any label that's intrinsically deterministic
+    (no I/O contention). Tightening K (e.g., to K=3.0) is
+    appropriate when the recorded baseline came from runs on
+    the same machine class as the gate fires; loosening
+    (K=7.0) is appropriate during initial calibration.
+  - **Two operative env vars** (vs four under the prior design):
+    `BENCH_K_SIGMA` (gate width), `BENCH_RECORD_RUNS`
+    (sample count for record mode). Plus the legacy
+    `BENCH_MIN_MS` (noise floor). Reduced surface area; less
+    operator confusion at gate-fire.
+
+**Tradeoff:** the prior design's per-machine adaptation is lost.
+A dev laptop with consistently slower bulk-copy throughput than
+CI will trip the gate unless K is widened to absorb the
+machine-class shift. Mitigations: (a) run the recorder on the
+machine class the gate will fire on (CI + every contributor's
+laptop, when calibrating); (b) widen K when cross-machine
+variance is the dominant signal; (c) accept the variance as
+a structural feature — the gate fires when *any* machine sees a
+regression, which is more conservative than fires-when-this-
+machine sees a regression.
+
+**Implementation.** `scripts/perf-gate.sh` rewritten:
+
+  - Default mode: one canary run + Python-3 gate logic that
+    loads `bench/baseline-canary.json` + per-label `latest_ms
+    > MeanMs + K × StdevMs` check.
+  - Record mode (`PERF_GATE_RECORD=1`): N canary runs + Python-3
+    aggregator that computes per-label μ + σ and writes the
+    new baseline file. Default `BENCH_RECORD_RUNS=5`.
+  - Header documentation rewritten; usage examples updated.
+
+**Pillar alignment:**
+
+  - **Pillar 1** (data-structure-oriented over string-parsing) ✓
+    — the baseline is typed JSON with explicit per-label
+    `MeanMs` / `StdevMs` / `SampleCount`; the gate logic reads
+    them directly without parsing aggregate strings.
+  - **Pillar 5** (deep separation of concerns) ✓ — the
+    statistical model is a separate file from the runtime
+    snapshot; record-time + gate-time concerns are explicit
+    code paths.
+  - **Pillar 6** (no V2-internal back-compat paths) ✓ — the
+    legacy rolling-history file path retires structurally;
+    no shim, no migration, no "still read history if present"
+    branch.
+  - **Pillar 7** (gold-standard library precedence;
+    substantive-rationale + perf-clause) ✓ — pure-Python
+    aggregation (BCL standard library); the perf-clause
+    discipline is what this gate enforces; the gate IS the
+    perf evidence per the iterator-logging discipline.
+  - **Pillar 8** (domain-first naming) ✓ — `MeanMs` /
+    `StdevMs` / `SampleCount` are concept-shaped; "μ+σ
+    statistical baseline" is the load-bearing concept the
+    domain operates on.
+
+**Surprise worth flagging.** The synthetic baseline existed
+across `2026-05-09` (the perf-gate codification entry) →
+`2026-05-10` (this entry) without a real measurement set ever
+being committed. The `chapter-close ritual` (eight items per
+CLAUDE.md operating-disciplines table) does NOT explicitly
+walk the perf-gate baseline's currency. Future amendment to
+the chapter-close ritual: add a 9th item — "perf-gate
+baseline currency check (recorded at most one chapter ago;
+threshold within K=3σ of last actual run)." Defer the
+amendment to the next chapter close that operates the ritual
+in full.
+
+
+
+
+
+---
+
+## 2026-05-10 — Chapter 3.2 close: `SnapshotRowsets` variant cash-out + JSON-projection-lossiness class structurally resolved
+
+**Cashed out** the **SnapshotRowsets variant** trigger from the
+Active deferrals index. The deferral was first logged at 2026-05-17
+(OSSYS adapter parse signature; session-20 amendment) and pre-scoped
+at chapter-2 close (subagent #5 → `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md`).
+Chapter 3.2 implements end-to-end across five substantive slices.
+
+**Slices shipped.**
+
+| Slice | Commit | Scope | Lossiness members resolved |
+|---|---|---|---|
+| **1** | `6dab9cd` | `SnapshotRowsets` DU variant + `RowsetBundle` DTO carrier + `ModuleRow`/`KindRow`/`AttributeRow` records + `parseRowsetBundle` minimum + first fixture mirroring session-18 minimal | SsKey at all three levels (module / kind / attribute) |
+| **2** | `0354727` | Reference rowsets (`#RefResolved` ⊕ `#FkReality`); FK SsKey carriage + rule 16 same-module assumption tested under rowset path | Reference SsKey synthesis empirically validated |
+| **3** | `d5d1812` | `EspaceKind` activation; `parseOriginFromRowset` three-way real | Rule 17 refined from JSON-path placeholder to OsNative / ExternalViaIntegrationStudio / ExternalDirect |
+| **4** | `6eae21f` | `IsSystemEntity` activation; new `ModalityMark.SystemOwned` variant | Third known JSON-projection-lossiness class member resolved |
+| **5** | `a74b904` | Cross-source parity tests (JSON ↔ Rowset) — total-equality (no-Guids) + shape-equality (Guid-carrying) | No new lossiness; validates structural equivalence modulo documented SsKey divergence |
+| **post** | `0336795` | `propagateOrFallback` codification — error-propagation bug surfaced during slice 2 audit, backported to JSON path; seven build-failure sites refactored uniformly | (Bug fix; not new lossiness — surfaced under chapter-3.2 audit pressure) |
+
+**JSON-projection-lossiness class — structural disposition.**
+
+Per `DECISIONS 2026-05-19 — naming the two classes of resolution
+patterns explicitly`, the class has three known members. All three
+landed in chapter 3.2:
+
+  - **SsKey at every level** (slice 1). `EspaceSSKey` / `EntitySSKey` /
+    `PrimaryKeySSKey` / `AttrSSKey` carry through the rowset bundle
+    as `Guid option`; translation emits `SsKey.OssysOriginal guid`
+    when present, falls back to `SsKey.Synthesized` when absent
+    (per A1's four-variant amendment shipped at Stage 0 S0.B).
+  - **`EspaceKind`** (slice 3). String column on V1's `ossys_Espace`
+    carries via `ModuleRow.EspaceKind : string option`;
+    `parseOriginFromRowset` consumes it to discriminate Origin
+    three-way (case-insensitive `"Extension"` marker per
+    chapter-3.2 empirical evidence; documented in the
+    `parseOriginFromRowset` docstring).
+  - **`IsSystemEntity`** (slice 4). Bool column on V1's
+    `ossys_Entity.Is_System` carries via `KindRow.IsSystemEntity`;
+    lifts into V2's IR as `ModalityMark.SystemOwned` (payload-free
+    variant in the existing orthogonal-axes list pattern; rejected
+    flat `Kind.IsSystem: bool` per V2 IR boolean-avoidance
+    convention; rejected `Origin` axis split per orthogonality;
+    rejected new `Kind.Stewardship` DU per two-consumer threshold).
+
+Future class members (per-table column structure that
+`FOR JSON PATH` collapses; check-constraint definitions; triggers)
+surface under fixture pressure as further deferred slices — the
+structural foundation (RowsetBundle as a flat-list carrier joinable
+on FK ID columns; `propagateOrFallback` for boundary error
+propagation; closed-DU expansion empirical-test discipline) is
+established.
+
+**A1's JSON-projection-lossiness bound — operational disposition.**
+
+Chapter 3.2 makes A1's `OssysOriginal` variant **operationally
+reachable** for the first time at the OSSYS-adapter boundary. The
+four-variant amendment shipped at Stage 0 S0.B encoded the bound
+type-stratifically; chapter 3.5's `RefactorLogEmitter` was the
+first downstream consumer that pattern-matched on the variants;
+chapter 3.2 is the first **boundary** that *emits* `OssysOriginal`
+SsKeys directly from V1's actual `SS_Key` columns. A1's bound is
+no longer "operational placeholder" — it is one fixture away from
+production identity stability.
+
+**Cross-source SsKey-shape divergence — operational disposition.**
+
+Per `CHAPTER_3_2_OPEN.md` axis 5 (option 1 from pre-scope §4): the
+JSON path emits `Synthesized` SsKeys; the rowset path emits
+`OssysOriginal` SsKeys when Guids are present, `Synthesized`
+otherwise. Both paths produce structurally-equivalent Catalogs
+modulo this identity-shape divergence (slice 5 cross-source parity
+tests establish this empirically across all three fixture classes:
+minimal, reference-bearing, external-aligned-at-Extension).
+
+The deeper canonicalization (option 2: a `V1Mapped` SsKey carrying
+both forms via UUIDv5 derivation per `UuidV5.create`) is reserved
+for **chapter 4.2 User FK reflow's `SourceTag` refactor**, where
+cross-version identity stability becomes the load-bearing
+discipline. Chapter 3.2 establishes the source variants;
+chapter 4.2 will harmonize them under V1Mapped.
+
+**Rule 16 (same-module FK assumption) — disposition unchanged.**
+
+Slice 2 tests rule 16's same-module assumption against the rowset
+path's flat-list reference shape. Same-module FK round-trips
+cleanly; cross-module FK case remains the **Cross-module FK IR
+refinement** Active deferral (highest-priority deferred slice per
+the index; trigger condition: a fixture exercising cross-module
+FK). The rowset path is structurally ready for cross-module FK
+extension when the fixture surfaces; the deferral does not impede
+chapter 3.2 close.
+
+**`propagateOrFallback` codification — audit-during-validation worked precedent.**
+
+The chapter 3.2 close-prep audit surfaced an error-propagation bug
+across SEVEN build-failure sites in CatalogReader.fs. The pattern:
+build functions assembled a target from N intermediate `Result<_>`
+values; the failure branch swallowed underlying error codes under
+generic umbrella codes (`kindBuild` / `moduleBuild` /
+`attributeBuild` / `referenceBuild` / `indexBuild` plus rowset
+siblings). The fix: codify `propagateOrFallback` at the two-
+consumer threshold; refactor seven sites uniformly. Test surface:
+two new JSON-path regression tests (`unmapped DeleteRuleCode
+propagates`; `unmapped DataType propagates`) assert positively
+(substantive cause appears) AND negatively (umbrella codes do NOT
+appear). The audit-during-validation discipline (`DECISIONS
+2026-05-09 — Audits surface things not on the agenda`) operated as
+designed — the bug surfaced during slice 2 work, expanded under
+chapter close-prep audit pressure, and shipped end-to-end in
+commit `0336795` BEFORE chapter close ritual ran.
+
+**Chapter close arc lessons.**
+
+Three patterns held cleanly across chapter 3.2:
+
+  - **Closed-DU expansion empirical-test discipline** (`DECISIONS
+    2026-05-13`). Two record-style extensions
+    (`RowsetBundle.References` at slice 2; `RowsetBundle` field
+    additions at slices 3/4) and one DU variant extension
+    (`ModalityMark.SystemOwned` at slice 4). F# exhaustiveness
+    errors lit up only at predicted interpretation sites; no
+    caller reshaping outside the variant's module. Four
+    interpretation sites for `ModalityMark.SystemOwned`
+    (CanonicalizeIdentity / NamingMorphism /
+    NormalizeStaticPopulations / JsonEmitter.modalityString); each
+    got an identity-shape branch. The discipline survives the
+    record-extension generalization.
+
+  - **Two-consumer threshold for emergent primitives** (`DECISIONS
+    2026-05-13`). `propagateOrFallback` extracted at consumers 2 + 3
+    + 4 (rowset path's two sites + JSON path's parseKind + parseModule);
+    the broader audit surfaced the helper now serves 7 consumers
+    uniformly. The threshold's predictive power held —
+    the helper's shape was concrete by consumer 2; consumer 3's
+    demand crystallized the extraction.
+
+  - **Trace-before-fixture pattern** (`DECISIONS 2026-05-19`). Each
+    of slices 2-4 re-did an already-traced V1↔V2 fixture under the
+    rowset path. The three-class typology (`DECISIONS 2026-05-21`)
+    operated: all chapter 3.2 findings classified as **JSON-
+    projection-lossiness** (V2 can't see X through JSON; resolved
+    by input-path expansion). The structural foundation for V1↔V2
+    translation work is now the chapter-3.2 surface; future
+    fixtures that surface alternative-IR-surface or
+    V2-boundary-discipline class members route to other chapters.
+
+**Test baseline at chapter 3.2 close.** 882 non-canary tests
+passing; 0 skipped; lint clean across 27 rules. Chapter 3.2 added
+30 new rowset tests + 2 JSON-path regression tests + 7 IR-
+refinement coverage tests across `ModalityMark.SystemOwned`'s four
+interpretation sites. Build clean under `TreatWarningsAsErrors=true`.
+
+**Forward signal.**
+
+Chapter 3.2 closes the SnapshotRowsets variant deferral structurally.
+The remaining V2-driver KPI critical path (per `V2_DRIVER.md`):
+
+  - **Chapter 4.1.B slice δ** (two-phase insertion / cycle-breaking;
+    CDC-silence-on-idempotent-redeploy property test is the V2-
+    driver KPI's highest-leverage single deliverable).
+  - **Chapter 4.1.B slices ε/ζ** (MigrationDependencies + Bootstrap;
+    `ScriptDomBuild.buildMergeStatement` adoption mandatory per
+    Active deferrals row).
+  - **Chapter 3.x DacpacEmitter** (DacFx adoption mandatory per
+    Active deferrals row).
+  - **Cross-module FK IR refinement** (highest-priority deferred
+    slice in the index; trigger: fixture exercising cross-module
+    FK).
+
+Chapter 3.2's JSON-projection-lossiness class resolution unblocks
+A1 for renames at the boundary, which downstream-unblocks chapter
+4.2 User FK reflow's `SourceTag` / `V1Mapped` UUIDv5 work.

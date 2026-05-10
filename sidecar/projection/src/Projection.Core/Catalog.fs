@@ -82,6 +82,16 @@ type ModalityMark =
     | TenantScoped
     /// Logical deletes are represented in-row, not by physical removal.
     | SoftDeletable
+    /// Stewardship marker (chapter 3.2 slice 4): the kind is owned by
+    /// the V1 OutSystems platform rather than developer-authored.
+    /// Sourced from V1's `ossys_Entity.Is_System` column (visible
+    /// only through the rowset path; the JSON path drops the bit).
+    /// Future consumers — emitters that exclude system tables from
+    /// CREATE TABLE, passes that elide system-owned entities from
+    /// FK reflow — walk `kind.Modality |> List.contains SystemOwned`.
+    /// Payload-free per the codified ModalityMark pattern; mirrors
+    /// `TenantScoped` / `SoftDeletable`.
+    | SystemOwned
 
 /// Typed structural display for `ModalityMark`. The `Static`
 /// variant carries the population count (not the rows themselves)
@@ -96,6 +106,7 @@ module ModalityMark =
                 [ "populations", Inv.int32 (List.length populations) ]
         | TenantScoped -> StructuredString.tag "TenantScoped"
         | SoftDeletable -> StructuredString.tag "SoftDeletable"
+        | SystemOwned -> StructuredString.tag "SystemOwned"
 
     let toDiagnosticString (m: ModalityMark) : string =
         toStructured m |> StructuredString.render
@@ -279,6 +290,21 @@ module Kind =
     /// contain multiple entries for composite-key kinds.
     let primaryKey (k: Kind) : Attribute list =
         k.Attributes |> List.filter (fun a -> a.IsPrimaryKey)
+
+    /// The static-population rows attached to this kind via
+    /// `Modality.Static`, or `[]` if the kind carries no static
+    /// modality. Per A7 (static populations live in the catalog) +
+    /// the modality projection in `ModalityMark`. Two-consumer
+    /// extraction (StaticSeedsEmitter MERGE realization +
+    /// StaticPopulationEmitter typed-stream realization); the
+    /// projection lives in Core so both data-emission realizations
+    /// share one source-of-truth.
+    let staticPopulations (k: Kind) : StaticRow list =
+        k.Modality
+        |> List.tryPick (function
+            | Static rows -> Some rows
+            | _           -> None)
+        |> Option.defaultValue []
 
 
 [<RequireQualifiedAccess>]

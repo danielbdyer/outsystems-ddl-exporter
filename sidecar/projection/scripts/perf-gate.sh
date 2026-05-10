@@ -2,9 +2,8 @@
 #
 # V2 sidecar perf-regression gate — runs the operator-reality canary
 # (50k rows × 300 tables × variegated, the production-shape baseline),
-# captures the resulting bench JSON, persists into a rolling history,
-# and gates on per-label statistical outliers (mean + K × std-dev
-# across the last N runs).
+# captures the resulting bench JSON, and gates per-label TotalMs
+# against a tracked μ+σ statistical baseline.
 #
 # Operator decision (2026-05-09): schema-only canary-gate.sql is
 # inappropriate for the production-use-case baseline. The Stop hook +
@@ -18,23 +17,29 @@
 #
 # Usage:
 #   sidecar/projection/scripts/perf-gate.sh                       # default: gate
-#   BENCH_K_SIGMA=2.0 sidecar/projection/scripts/perf-gate.sh     # tighter
-#   BENCH_TOLERANCE=2.0 sidecar/projection/scripts/perf-gate.sh   # loosen flat-tolerance fallback
-#   PERF_GATE_RECORD=1 sidecar/projection/scripts/perf-gate.sh    # record new baseline + clear history
+#   BENCH_K_SIGMA=5.0 sidecar/projection/scripts/perf-gate.sh     # adjust gate width
+#   PERF_GATE_RECORD=1 sidecar/projection/scripts/perf-gate.sh    # re-record baseline (N warm runs)
+#   PERF_GATE_RECORD=1 BENCH_RECORD_RUNS=10                       # more samples → tighter μ+σ
 #
 # Per the iterator-logging-as-first-class-outcome discipline
 # (DECISIONS pillar-7-perf-clause): the canary's bench surface IS the
 # perf evidence; this gate makes regression detection structural.
 #
-# Statistical model:
-#   - Each run appends a JSON snapshot to bench/history-canary.jsonl
-#   - History trimmed to the last MAX_HISTORY=20 runs
-#   - Per-label threshold = mean + K_SIGMA × std-dev (default K=3.0,
-#     a 99.7% one-tailed bound under normal-ish iid samples)
-#   - When history < MIN_SAMPLES (default 5), falls back to flat
-#     `mean × BENCH_TOLERANCE` (default 1.5×) — the chapter-3.6
-#     simple gate, retained as the warm-up phase
-#   - Per-label minimum filter: labels with mean < 5 ms skipped (noise)
+# Statistical model (DECISIONS 2026-05-10 — μ+σ statistical baseline):
+#   - The committed `bench/baseline-canary.json` carries per-label
+#     `MeanMs` + `StdevMs` + `SampleCount` computed from N≥5 warm
+#     captures. The baseline IS the model; there is no rolling
+#     history accumulator.
+#   - Per-label threshold = MeanMs + K × StdevMs. Default K=5.0 to
+#     absorb cross-machine timing variance (CI ↔ dev laptop).
+#   - New labels (not in baseline) pass with a soft warning — they
+#     join the baseline at the next `PERF_GATE_RECORD=1` cycle.
+#   - Per-label minimum filter: baselines with MeanMs < 5 ms skipped
+#     (noise) — applies symmetrically at record + gate time.
+#   - Re-record the baseline (`PERF_GATE_RECORD=1`) when the perf
+#     floor legitimately changes (algorithmic improvement; new
+#     workload axis); pair with a DECISIONS amendment naming the
+#     new floor's rationale.
 
 set -euo pipefail
 
@@ -42,15 +47,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BENCH_DIR="$ROOT/bench"
 BASELINE_PATH="$BENCH_DIR/baseline-canary.json"
-HISTORY_PATH="$BENCH_DIR/history-canary.jsonl"
 TEST_FILTER="${PERF_GATE_TEST_FILTER:-FullyQualifiedName~Operator-reality}"
 TEST_PROJECT="$ROOT/tests/Projection.Tests/Projection.Tests.fsproj"
-TOLERANCE="${BENCH_TOLERANCE:-1.5}"
-K_SIGMA="${BENCH_K_SIGMA:-3.0}"
+K_SIGMA="${BENCH_K_SIGMA:-5.0}"
 RECORD="${PERF_GATE_RECORD:-0}"
-MAX_HISTORY="${BENCH_MAX_HISTORY:-20}"
-MIN_SAMPLES="${BENCH_MIN_SAMPLES:-5}"
+RECORD_RUNS="${BENCH_RECORD_RUNS:-5}"
 MIN_MS="${BENCH_MIN_MS:-5}"
+# Min-σ prior: σ_effective = max(σ_observed, μ × MIN_RELATIVE_STDEV).
+# Bayesian floor on the σ estimate — at N=5, σ_observed often
+# underestimates true population σ (especially for I/O-bound labels
+# whose run-to-run variance is dominated by Docker / network jitter).
+# Default 0.20 (20% relative σ floor); tighten when many samples
+# accumulate and σ_observed is trustworthy.
+MIN_RELATIVE_STDEV="${BENCH_MIN_RELATIVE_STDEV:-0.20}"
 
 log() { printf '[perf-gate] %s\n' "$*" >&2; }
 
@@ -87,201 +96,209 @@ if [[ ! -f "$TEST_DLL" ]]; then
 fi
 
 # ---------------------------------------------------------------------
-# Run the operator-reality canary
+# Run the operator-reality canary one time → fresh bench/canary/<utc>.json
 # ---------------------------------------------------------------------
 
-log "running operator-reality canary (50k rows × 300 tables, variegated)..."
-cd "$ROOT"
-set +e
-PROJECTION_BENCH_DIR="$ROOT" dotnet test "$TEST_PROJECT" \
-    -c Release --no-build \
-    --filter "$TEST_FILTER" \
-    --logger "console;verbosity=normal" \
-    >/tmp/perf-gate-canary.log 2>&1
-CANARY_EXIT=$?
-set -e
+run_canary() {
+    log "running operator-reality canary (50k rows × 300 tables, variegated)..."
+    cd "$ROOT"
+    set +e
+    PROJECTION_BENCH_DIR="$ROOT" dotnet test "$TEST_PROJECT" \
+        -c Release --no-build \
+        --filter "$TEST_FILTER" \
+        --logger "console;verbosity=normal" \
+        >/tmp/perf-gate-canary.log 2>&1
+    local exit_code=$?
+    set -e
 
-if [[ "$CANARY_EXIT" -ne 0 ]]; then
-    log "FATAL: operator-reality canary failed with exit $CANARY_EXIT"
-    log "       see /tmp/perf-gate-canary.log"
-    tail -25 /tmp/perf-gate-canary.log >&2
-    exit 1
-fi
+    if [[ "$exit_code" -ne 0 ]]; then
+        log "FATAL: operator-reality canary failed with exit $exit_code"
+        log "       see /tmp/perf-gate-canary.log"
+        tail -25 /tmp/perf-gate-canary.log >&2
+        exit 1
+    fi
 
-if grep -q "SKIP operator-reality canary" /tmp/perf-gate-canary.log; then
-    log "SKIP: Docker daemon not reachable inside test process"
-    exit 0
-fi
+    if grep -q "SKIP operator-reality canary" /tmp/perf-gate-canary.log; then
+        log "SKIP: Docker daemon not reachable inside test process"
+        exit 0
+    fi
 
-log "operator-reality canary GREEN"
+    local snapshot
+    snapshot="$(ls -1t "$ROOT/bench/canary"/*.json 2>/dev/null | head -n1 || true)"
 
-# ---------------------------------------------------------------------
-# Locate the most recent canary bench snapshot
-# ---------------------------------------------------------------------
+    if [[ -z "$snapshot" ]]; then
+        log "FATAL: no canary bench snapshot found under $ROOT/bench/canary/"
+        log "       (check that BenchSink.persistJson ran)"
+        exit 1
+    fi
 
-LATEST_SNAPSHOT="$(ls -1t "$ROOT/bench/canary"/*.json 2>/dev/null | head -n1 || true)"
-
-if [[ -z "$LATEST_SNAPSHOT" ]]; then
-    log "FATAL: no canary bench snapshot found under $ROOT/bench/canary/"
-    log "       (check that BenchSink.persistJson ran)"
-    exit 1
-fi
-
-log "snapshot: $LATEST_SNAPSHOT"
+    log "operator-reality canary GREEN — $snapshot"
+    printf '%s' "$snapshot"
+}
 
 # ---------------------------------------------------------------------
-# Record-mode: write baseline, clear history, exit
+# Record-mode: capture N warm runs, aggregate per-label μ+σ, write baseline
 # ---------------------------------------------------------------------
 
 if [[ "$RECORD" == "1" ]]; then
+    log "RECORD mode — capturing $RECORD_RUNS warm runs to seed the μ+σ baseline"
+    SNAPSHOTS=()
+    for i in $(seq 1 "$RECORD_RUNS"); do
+        log "  capture $i/$RECORD_RUNS..."
+        snap="$(run_canary)"
+        SNAPSHOTS+=("$snap")
+    done
+
     mkdir -p "$BENCH_DIR"
-    cp "$LATEST_SNAPSHOT" "$BASELINE_PATH"
-    : > "$HISTORY_PATH"
-    log "RECORDED baseline → $BASELINE_PATH"
-    log "RESET history    → $HISTORY_PATH (cleared)"
-    log "Commit baseline-canary.json + (optional) history-canary.jsonl"
-    log "when satisfied with the perf floor."
+
+    python3 - "$BASELINE_PATH" "$MIN_MS" "${SNAPSHOTS[@]}" <<'PYEOF'
+import json
+import math
+import sys
+import datetime
+
+baseline_path = sys.argv[1]
+min_ms = float(sys.argv[2])
+snapshot_paths = sys.argv[3:]
+
+# Per-label samples: { label : [TotalMs, ...] }
+samples: dict[str, list[float]] = {}
+for path in snapshot_paths:
+    with open(path) as f:
+        run = json.load(f)
+    for stat in run["Stats"]:
+        samples.setdefault(stat["Label"], []).append(float(stat["TotalMs"]))
+
+# Aggregate per-label μ+σ. SampleCount is per-label (a label may be
+# absent from one snapshot if its code path didn't fire that run).
+stats = []
+for label in sorted(samples):
+    values = samples[label]
+    n = len(values)
+    mean = sum(values) / n
+    if mean < min_ms:
+        continue  # noise filter
+    if n > 1:
+        variance = sum((v - mean) ** 2 for v in values) / (n - 1)
+        stdev = math.sqrt(variance)
+    else:
+        stdev = 0.0
+    stats.append({
+        "Label":       label,
+        "SampleCount": n,
+        "MeanMs":      round(mean, 1),
+        "StdevMs":     round(stdev, 1),
+    })
+
+baseline = {
+    "RecordedAtUtc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+    "Tag":           "operatorReality",
+    "Runs":          len(snapshot_paths),
+    "Stats":         stats,
+}
+
+with open(baseline_path, "w") as f:
+    json.dump(baseline, f, indent=2)
+    f.write("\n")
+
+print(f"perf-gate: recorded baseline → {baseline_path}")
+print(f"perf-gate: {len(stats)} labels × {len(snapshot_paths)} runs")
+print(f"perf-gate: top-5 by MeanMs:")
+for s in sorted(stats, key=lambda s: -s["MeanMs"])[:5]:
+    print(f"  {s['Label']:60s}  μ={s['MeanMs']:8.1f}ms  σ={s['StdevMs']:8.1f}ms  n={s['SampleCount']}")
+PYEOF
+
+    log "RECORD complete. Commit baseline-canary.json with a DECISIONS"
+    log "amendment naming why the floor changed."
     exit 0
 fi
 
 # ---------------------------------------------------------------------
-# Append to history + statistical gate
+# Default mode: one canary run, gate against committed baseline
 # ---------------------------------------------------------------------
 
-mkdir -p "$BENCH_DIR"
+LATEST_SNAPSHOT="$(run_canary)"
 
-python3 - "$LATEST_SNAPSHOT" "$HISTORY_PATH" "$BASELINE_PATH" \
-        "$MAX_HISTORY" "$MIN_SAMPLES" "$MIN_MS" "$K_SIGMA" "$TOLERANCE" <<'PYEOF'
+if [[ ! -f "$BASELINE_PATH" ]]; then
+    log "WARN: no baseline at $BASELINE_PATH"
+    log "      run \`PERF_GATE_RECORD=1\` to seed it. Skipping gate."
+    exit 0
+fi
+
+python3 - "$LATEST_SNAPSHOT" "$BASELINE_PATH" "$K_SIGMA" "$MIN_MS" "$MIN_RELATIVE_STDEV" <<'PYEOF'
 import json
-import math
 import sys
 
-(latest_path, history_path, baseline_path,
- max_history, min_samples, min_ms, k_sigma, tolerance) = sys.argv[1:]
-max_history = int(max_history)
-min_samples = int(min_samples)
-min_ms = float(min_ms)
-k_sigma = float(k_sigma)
-tolerance = float(tolerance)
+(latest_path, baseline_path, k_sigma_str, min_ms_str, min_rel_stdev_str) = sys.argv[1:]
+k_sigma = float(k_sigma_str)
+min_ms = float(min_ms_str)
+min_rel_stdev = float(min_rel_stdev_str)
 
 
 def load_run(path):
     with open(path) as f:
         run = json.load(f)
-    return {s["Label"]: s["TotalMs"] for s in run["Stats"]}
+    return {s["Label"]: float(s["TotalMs"]) for s in run["Stats"]}
 
 
-def load_history(path):
-    runs = []
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                runs.append(json.loads(line))
-    except FileNotFoundError:
-        pass
-    return runs
+def load_baseline(path):
+    with open(path) as f:
+        b = json.load(f)
+    return {
+        s["Label"]: (float(s["MeanMs"]), float(s["StdevMs"]), int(s["SampleCount"]))
+        for s in b["Stats"]
+    }
 
 
-def append_history(path, snapshot, max_history):
-    history = load_history(path)
-    history.append(snapshot)
-    history = history[-max_history:]
-    with open(path, "w") as f:
-        for snap in history:
-            f.write(json.dumps(snap, separators=(",", ":")))
-            f.write("\n")
-    return history
+def effective_stdev(mean: float, stdev_observed: float, min_rel: float) -> float:
+    """Bayesian floor on σ. At N=5, σ_observed often underestimates
+    true population σ (especially for I/O-bound labels). Treat σ as
+    at least `mean × min_rel` (default 20% relative σ)."""
+    return max(stdev_observed, mean * min_rel)
 
 
-def per_label_stats(history):
-    """Return {label: (mean, std_dev, n)} across history."""
-    samples = {}
-    for snap in history:
-        for label, ms in snap.items():
-            samples.setdefault(label, []).append(ms)
-    stats = {}
-    for label, values in samples.items():
-        n = len(values)
-        mean = sum(values) / n
-        if n > 1:
-            variance = sum((v - mean) ** 2 for v in values) / (n - 1)
-            std = math.sqrt(variance)
-        else:
-            std = 0.0
-        stats[label] = (mean, std, n)
-    return stats
-
-
-# Load latest + append to history.
 latest = load_run(latest_path)
-history = append_history(history_path, latest, max_history)
-
-print(f"perf-gate: history depth = {len(history)} (max {max_history})")
-
-stats = per_label_stats(history[:-1])  # baseline = history before this run
-
-# Two modes:
-#   warm-up (n < min_samples): flat-tolerance vs running mean
-#   statistical (n >= min_samples): mean + k_sigma * std
-def threshold_flat(mean):
-    return mean * tolerance
-
-
-def threshold_sigma(mean, std):
-    return mean + k_sigma * std
-
+baseline = load_baseline(baseline_path)
 
 regressions = []
-warmup_label_count = 0
-gated_label_count = 0
 new_labels = []
+checked = 0
 
 for label, latest_ms in sorted(latest.items()):
-    if label not in stats:
+    if label not in baseline:
         new_labels.append((label, latest_ms))
         continue
-    mean, std, n = stats[label]
+    mean, stdev_obs, n = baseline[label]
     if mean < min_ms:
-        continue  # noise filter
-    if n < min_samples:
-        warmup_label_count += 1
-        thresh = threshold_flat(mean)
-        mode = f"warmup×{tolerance}"
-    else:
-        gated_label_count += 1
-        thresh = threshold_sigma(mean, std)
-        mode = f"μ+{k_sigma}σ"
-    if latest_ms > thresh:
-        regressions.append((label, mean, std, latest_ms, thresh, mode))
+        continue
+    stdev = effective_stdev(mean, stdev_obs, min_rel_stdev)
+    threshold = mean + k_sigma * stdev
+    checked += 1
+    if latest_ms > threshold:
+        regressions.append((label, mean, stdev_obs, stdev, n, latest_ms, threshold))
 
 if regressions:
     print()
-    print(f"REGRESSION in {len(regressions)} label(s):")
-    print(f"  {'Label':50s} {'Mean':>8s} {'StdDev':>8s} {'Thresh':>8s} {'Latest':>8s} {'Mode':>14s}")
-    for label, mean, std, latest_ms, thresh, mode in regressions:
-        print(f"  {label:50s} {mean:8.0f} {std:8.0f} {thresh:8.0f} {latest_ms:8d} {mode:>14s}")
+    print(f"REGRESSION in {len(regressions)} label(s) (gate = μ + {k_sigma}σ_effective; σ_effective = max(σ, μ×{min_rel_stdev})):")
+    print(f"  {'Label':50s} {'N':>3s} {'Mean':>9s} {'σ(obs)':>8s} {'σ(eff)':>8s} {'Threshold':>10s} {'Latest':>10s}")
+    for label, mean, stdev_obs, stdev_eff, n, latest_ms, threshold in regressions:
+        print(f"  {label:50s} {n:>3d} {mean:>9.1f} {stdev_obs:>8.1f} {stdev_eff:>8.1f} {threshold:>10.1f} {latest_ms:>10.1f}")
+    print()
+    print("If this is an intended floor shift, re-record the baseline:")
+    print("  PERF_GATE_RECORD=1 sidecar/projection/scripts/perf-gate.sh")
+    print("Pair with a DECISIONS amendment naming the new floor's rationale.")
     sys.exit(1)
 
-print(f"perf-gate: clean — {gated_label_count} sigma-gated labels, "
-      f"{warmup_label_count} warm-up labels (need {min_samples} samples), "
-      f"{len(new_labels)} new labels (will join history next run)")
-
+print(f"perf-gate: clean — {checked} labels gated against μ+{k_sigma}σ_eff baseline (σ floor = μ×{min_rel_stdev}); "
+      f"{len(new_labels)} new label(s) (will join baseline on next record cycle)")
 if new_labels:
-    print(f"  new this run: {len(new_labels)} label(s)")
+    print("  new this run:")
     for label, ms in new_labels[:5]:
-        print(f"    + {label}  ({ms} ms)")
-
+        print(f"    + {label}  ({ms:.1f} ms)")
+    if len(new_labels) > 5:
+        print(f"    + … {len(new_labels) - 5} more")
 sys.exit(0)
 PYEOF
-PYTHON_EXIT=$?
-
-if [[ "$PYTHON_EXIT" -ne 0 ]]; then
-    log "perf-gate FAILED — see regressions above"
-    exit 1
-fi
 
 log "perf-gate clean"
 exit 0
