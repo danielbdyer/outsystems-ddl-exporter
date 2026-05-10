@@ -585,6 +585,57 @@ module Deploy =
     /// per-purpose `<prefix>_<guid>` databases via `createDatabase`,
     /// so the warm-container case still gives every canary its own
     /// fresh DB.
+    /// Run `body` against a freshly-spun **ephemeral** Testcontainers
+    /// SQL Server that is disposed at scope exit — bypasses the warm-
+    /// container shortcut even when `PROJECTION_MSSQL_CONN_STR` is
+    /// set. Public for tests whose semantic footprint pollutes
+    /// instance-wide state (CDC infrastructure, server-level configs,
+    /// `master.sys.databases.is_cdc_enabled` flips) and would
+    /// therefore contend with concurrent canary tests sharing the
+    /// warm container's master.
+    ///
+    /// **Why CDC needs this** (chapter 4.1.B slice δ observability
+    /// cash-out — audit-during-validation discipline). `sys.sp_cdc_
+    /// enable_db` + `sp_cdc_enable_table` set up per-DB capture
+    /// infrastructure AND flip `master.sys.databases.is_cdc_enabled`
+    /// on the parent instance; concurrent CREATE / DROP DATABASE
+    /// calls from sibling canaries hold `master`-database locks
+    /// that serialize against the CDC scan / capture path. The
+    /// resulting livelock is reproducible: running `CdcSilenceTests`
+    /// in parallel with `CanaryDeployTests` / `GeneratorScaleTests`
+    /// against the same warm container hangs indefinitely. The
+    /// `Docker-SqlServer` xUnit collection (see `tests/Projection.
+    /// Tests/TestCollections.fs`) serializes the test classes as
+    /// the broad fix; this dedicated container is the structural
+    /// fix — CDC infrastructure stays in its own SQL Server instance
+    /// and never touches the warm container's `master`.
+    ///
+    /// **Cost.** ~10-20s testcontainers cold-start per call. Callers
+    /// that invoke `useEphemeralContainer` per-test pay this cost
+    /// per-test; per-test-class amortization belongs in xUnit
+    /// `IClassFixture` / `IAsyncLifetime` machinery the caller
+    /// arranges.
+    let useEphemeralContainer (body: string -> Task<'a>) : Task<'a> =
+        task {
+            use _ = Bench.scope "deploy.useEphemeralContainer"
+            let container =
+                MsSqlBuilder()
+                    .WithImage(DefaultImage)
+                    .WithCleanUp(true)
+                    .Build()
+            try
+                do!
+                    task {
+                        use _ = Bench.scope "deploy.containerStart"
+                        return! container.StartAsync()
+                    }
+                let masterConn = container.GetConnectionString()
+                return! body masterConn
+            finally
+                use _ = Bench.scope "deploy.containerDispose"
+                container.DisposeAsync().AsTask().GetAwaiter().GetResult()
+        }
+
     let useContainer (body: string -> Task<'a>) : Task<'a> =
         task {
             use _ = Bench.scope "deploy.useContainer"
@@ -593,22 +644,7 @@ module Deploy =
                 use _ = Bench.scope "deploy.useContainer.warm"
                 return! body warmConn
             | None ->
-                let container =
-                    MsSqlBuilder()
-                        .WithImage(DefaultImage)
-                        .WithCleanUp(true)
-                        .Build()
-                try
-                    do!
-                        task {
-                            use _ = Bench.scope "deploy.containerStart"
-                            return! container.StartAsync()
-                        }
-                    let masterConn = container.GetConnectionString()
-                    return! body masterConn
-                finally
-                    use _ = Bench.scope "deploy.containerDispose"
-                    container.DisposeAsync().AsTask().GetAwaiter().GetResult()
+                return! useEphemeralContainer body
         }
 
     /// Deploy `sql` to a fresh per-run database in an ephemeral
