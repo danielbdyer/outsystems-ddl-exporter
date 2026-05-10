@@ -429,11 +429,108 @@ for adapterDir in "$SRC"/Projection.Adapters.*; do
 done
 
 # ---------------------------------------------------------------------------
+# Rule 27 — LINT-ALLOW substantive-rationale audit (chapter-3.7 codification).
+#
+# Per `DECISIONS 2026-05-10 — LINT-ALLOW substantive-rationale discipline`:
+# every per-line `LINT-ALLOW` marker on a string-composition / built-in-
+# substitute site MUST embody the four-question analysis (use-case-
+# specific library / availability / cost / structural reason). The named
+# failure mode is **performance-of-compliance** — a marker shaped like
+# an audit trail without the substance.
+#
+# Heuristics can't reliably distinguish performance-of-compliance from
+# real substance; the discipline document does. This rule does two
+# best-effort things:
+#
+#   A. **Inventory.** At the end of every clean run, print every
+#      per-line concat-aversion LINT-ALLOW grouped by file. Makes the
+#      markers visible at the discipline-review surface (chapter close,
+#      PR review, fresh-agent orientation).
+#
+#   B. **Soft floor.** Per-line concat-aversion markers must satisfy
+#      BOTH:
+#        - At least 30 chars after the colon (catches one-word
+#          shortcuts like "// LINT-ALLOW: ok" or "// LINT-ALLOW: typed").
+#        - Contain at least one substantive-vocabulary token from the
+#          established discipline lexicon (terminal / boundary /
+#          primitive / round-trip / considered / alternative /
+#          gold-standard / escape / irreducible / no [BCL/vendor/
+#          use-case-specific]).
+#      Both conditions must fail for the marker to be flagged. The
+#      27-marker baseline at chapter-3.7 codification all pass.
+# ---------------------------------------------------------------------------
+
+# Concat-aversion patterns (matches Rules 18b/c/d/e + sprintf/Format).
+CONCAT_PATTERN='String\.Concat|String\.concat|String\.Format|String\.Join|sprintf|\$"'
+
+# Substantive-vocabulary tokens (case-insensitive) — the discipline lexicon.
+SUBSTANTIVE_TOKENS='terminal|boundary|primitive|round-trip|considered|alternative|gold-standard|escape|irreducible|no [Bb]CL|no vendor|no use-case-specific'
+
+# Inventory accumulator (newline-delimited "file:line  rationale").
+inventory=""
+floor_violations=0
+
+while IFS= read -r hit; do
+    file_part="${hit%%:*}"
+    rest="${hit#*:}"
+    line_part="${rest%%:*}"
+    content="${rest#*:}"
+
+    # Skip lines that aren't actually concat-aversion sites (the broader
+    # grep matched `LINT-ALLOW` anywhere, not just on concat sites).
+    if ! printf '%s' "$content" | grep -qE "$CONCAT_PATTERN"; then continue; fi
+
+    # File-level LINT-ALLOW-FILE markers carry the analysis at the
+    # top-of-file boundary — per-line markers in those files don't
+    # need the substantive-rationale floor (the file allow is the
+    # discipline's audit surface for the whole file).
+    if file_has_allowlist_marker "$file_part"; then continue; fi
+
+    # Extract the rationale text after `LINT-ALLOW:`.
+    rationale="$(printf '%s' "$content" | sed -nE 's/.*LINT-ALLOW:[[:space:]]*(.*)$/\1/p')"
+    rationale_len=${#rationale}
+
+    # Inventory entry (always — substance lives in the discipline doc;
+    # the inventory is the audit-review surface).
+    inventory+="${file_part}:${line_part}  ${rationale}"$'\n'
+
+    # Soft floor: short marker AND no substantive token → flag.
+    if [[ "$rationale_len" -lt 30 ]] \
+        && ! printf '%s' "$rationale" | grep -qiE "$SUBSTANTIVE_TOKENS"; then
+        report_violation "lint-allow-substantive-rationale" "$file_part" "$line_part" \
+            "$content"
+        floor_violations=$((floor_violations + 1))
+    fi
+done < <(grep "${GREP_FLAGS[@]}" 'LINT-ALLOW:' "$SRC" 2>/dev/null || true)
+
+# ---------------------------------------------------------------------------
 # Reporting.
 # ---------------------------------------------------------------------------
 
+print_lint_allow_inventory() {
+    if [[ -z "$inventory" ]]; then return; fi
+    echo ""
+    echo "${YELLOW}LINT-ALLOW audit-trail inventory${RESET} (concat-aversion sites; per DECISIONS 2026-05-10):"
+    printf '%s' "$inventory" | sed 's/^/  /'
+    echo ""
+    echo "  Per the LINT-ALLOW substantive-rationale discipline:"
+    echo "  every marker MUST embody the four-question analysis ─"
+    echo "    1. What is the use-case-specific library?"
+    echo "    2. Is it already in the codebase?"
+    echo "    3. What is the cost of using it?"
+    echo "    4. Is there a structural reason it doesn't apply?"
+    echo "  If #4 is \"no\", there is no shortcut — there is the work."
+    echo "  Performance-of-compliance is the named failure mode (a marker"
+    echo "  shaped like an audit trail without substance)."
+    echo ""
+    echo "  See:   sidecar/projection/PLAYBOOK.md → \"When you reach for a"
+    echo "         string-composition primitive\" decision tree."
+    echo "  Why:   sidecar/projection/DECISIONS.md → 2026-05-10 entry."
+}
+
 if [[ "$violations" -eq 0 ]]; then
     echo "${GREEN}lint-discipline: clean ($SRC).${RESET}"
+    print_lint_allow_inventory
     exit 0
 else
     echo ""
@@ -449,8 +546,18 @@ else
     echo "  4. Open a paired DECISIONS amendment naming why the discipline is"
     echo "     being relaxed at this site."
     echo ""
+    echo "Per-line concat-aversion markers (Rule 27 substantive-rationale):"
+    echo "  Must be ≥30 chars after the colon AND contain at least one"
+    echo "  substantive-vocabulary token (terminal / boundary / primitive /"
+    echo "  round-trip / considered / alternative / gold-standard / escape /"
+    echo "  irreducible / no [BCL/vendor/use-case-specific])."
+    echo "  Substance is in the DECISIONS 2026-05-10 entry; the four-question"
+    echo "  analysis is the structural prerequisite."
+    echo ""
     echo "Reference: DECISIONS 2026-05-09 — No-string-concatenation /"
     echo "no-regex discipline; Built-in obligation; FP strict mode;"
     echo "Reified-primitive pattern; Hexagonal-coupling rules."
+    echo "Reference: DECISIONS 2026-05-10 — LINT-ALLOW substantive-rationale."
+    print_lint_allow_inventory
     exit 1
 fi

@@ -14,7 +14,18 @@ You're picking up V2 work mid-stream. This brief gets you oriented in 5 minutes;
 4. **Promised land of FP** — ≥95% pure functions; ≤5% isolated and tested exhaustively (property tests + parse-roundtrip + byte-determinism). Mutation reified at file level via `LINT-ALLOW-FILE-MUTATION`.
 5. **Coding-style commitments preserved across sessions** — deep DDD, point-free composition, hexagonal architecture, hardcore FP (closed DUs, smart constructors, no `null`, monadic composition), OOP only at boundary code where BCL forces it, deep separation of concerns, verifiable + observable to the nth degree.
 
-**Default to explicit acknowledgement of deviance.** The lint guardrail (`scripts/lint-discipline.sh`, 26 rules) is the structural enforcement. Every legitimate exception carries a `LINT-ALLOW: <rationale>` (per-line) or `LINT-ALLOW-FILE` / `LINT-ALLOW-FILE-MUTATION` (top-of-file) marker. Pre-commit hook + CI workflow are defense-in-depth.
+**Default to explicit acknowledgement of deviance.** The lint guardrail (`scripts/lint-discipline.sh`, 27 rules) is the structural enforcement. Every legitimate exception carries a `LINT-ALLOW: <rationale>` (per-line) or `LINT-ALLOW-FILE` / `LINT-ALLOW-FILE-MUTATION` (top-of-file) marker. Pre-commit hook + CI workflow are defense-in-depth.
+
+**Pillar 7's substantive-rationale amendment** (codified 2026-05-10 chapter 3.7 sidebar; named after the slice-β failure mode). Every per-line `LINT-ALLOW` marker on a string-composition / built-in-substitute site MUST embody the four-question analysis BEFORE the marker is committed:
+
+1. **What is the use-case-specific library** for THIS output structure? Name it explicitly (module + type + function).
+2. **Is it already in the codebase** (or available as a non-V2-back-compat dep)? If yes, name the existing consumer site; if no, name the package + version.
+3. **What is the cost of using it here?** Visibility lift (LOC), perf class (zero / O(1) / O(N) / ...), dep weight. The cost analysis IS the perf-clause cash-out at this site.
+4. **Is there a structural reason it doesn't apply?**
+   - **NO** → there is no shortcut; do the work (lift visibility, add helper, refactor call site).
+   - **YES** → marker text MUST name the SPECIFIC reason — NOT generic vocabulary alone.
+
+**Performance-of-compliance is the named failure mode**: a marker shaped like an audit trail without the substance. The lint passes, the vocabulary fits, the tests are green — and the structural commitment is unmet. Worked counterfactual: slice-β `Render.columnSqlType` ("terminal SQL DDL emission boundary; both segments are typed (closed-DU dispatch + literal)") → operator caught it → slice-β' delegated to ScriptDom's typed AST + `Sql160ScriptGenerator` for 87 LOC. See `DECISIONS 2026-05-10 — LINT-ALLOW substantive-rationale discipline` for the full counterfactual + the four-question analysis. See `PLAYBOOK.md` decision tree "When you reach for a string-composition primitive" for the executable form. Lint Rule 27 maintains an audit-trail inventory; the discipline document does the catching the heuristic can't.
 
 **Read `DECISIONS.md`'s top section in full before adopting any pattern.**
 

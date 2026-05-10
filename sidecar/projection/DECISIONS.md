@@ -104,6 +104,42 @@ against these before adopting any pattern.
    "be bold" directive (2026-05-09): expensive-now-for-cheaper-later
    beats compounding tech debt.
 
+   **Pillar-7 substantive-rationale amendment** (codified 2026-05-10
+   chapter 3.7 sidebar; named after the slice-β failure mode). Every
+   `LINT-ALLOW` marker on a string-composition / built-in-substitute
+   site MUST embody the four-question analysis BEFORE the marker is
+   committed:
+   1. **Use-case-specific library** for THIS output structure?
+      Name it explicitly (module + type + function).
+   2. **Already in codebase** (or available as non-V2-back-compat
+      dep)? If yes, name the existing consumer site; if no, name
+      the package + version.
+   3. **Cost** of using it here? Visibility lift (LOC) + perf class
+      (zero / O(1) / O(N) / ...) + dep weight.
+   4. **Structural reason it doesn't apply?**
+      - **NO** → there is no shortcut; do the work (lift visibility,
+        add helper, refactor call site).
+      - **YES** → the marker text MUST name the specific reason —
+        NOT generic vocabulary alone ("typed segments", "boundary"
+        without naming WHICH boundary, etc.).
+
+   The named failure mode is **performance-of-compliance**: a marker
+   with the SHAPE of an audit trail without the substance. The lint
+   passes, the vocabulary fits, the tests are green — and the
+   structural commitment is unmet. See `DECISIONS 2026-05-10 —
+   LINT-ALLOW substantive-rationale discipline` for the worked
+   counterfactual (slice-β `Render.columnSqlType` shortcut → slice-β'
+   ScriptDom delegation; cost of doing it right was 87 LOC).
+   See `PLAYBOOK.md` decision tree "When you reach for a
+   string-composition primitive" for the executable form.
+
+   Lint Rule 27 maintains a per-line concat-aversion `LINT-ALLOW`
+   inventory printed at the end of every clean run AND enforces a
+   soft floor (≥30 chars after the colon, at least one substantive-
+   vocabulary token). Heuristics can't catch performance-of-
+   compliance reliably; the discipline document does. The inventory
+   is the audit surface for chapter-close ritual + PR review.
+
    **Pillar-7 perf-clause** (added 2026-05-09 chapter 3.6 sidebar
    reminder; iterator-logging-as-first-class-outcome): every
    refactor SHALL cite its perf implications in the commit message.
@@ -8723,6 +8759,191 @@ terminal-text emission boundary (which itself eliminated 6
 duplicate-format-string sites at producers). The boundary moved
 from many producers to one canonical renderer — that's the
 architectural improvement, not the marker count.
+
+---
+
+## 2026-05-10 — LINT-ALLOW substantive-rationale discipline (chapter 3.7 sidebar; pillar 7 amendment)
+
+**Status:** decided
+**Resolves:** the slice-β pickup at chapter 3.7 — `Render.columnSqlType`
+landed with four `String.Concat` sites carrying `LINT-ALLOW` markers
+shaped like an audit trail ("terminal SQL DDL emission boundary; both
+segments are typed (closed-DU dispatch + literal)") without the
+substance: the markers did not name the use-case-specific library
+(ScriptDom's `SqlDataTypeReference` + `Sql160ScriptGenerator`, both
+already loaded, both already used by the sibling `ScriptDomBuild`
+module), did not compute the cost of the alternative (~30 LOC: lift
+visibility + add a one-call generator helper), and did not conclude.
+Operator caught the shortcut on review. Slice β' immediately followed:
+lifted `dataTypeReference` from `private` to public, added
+`generateDataType : DataTypeReference -> string`, made
+`Render.columnSqlType` delegate. All four LINT-ALLOWs retired; output
+byte-identical (790 tests still green); perf-gate clean. The "cost of
+doing it right" was trivial compared to the structural drift the
+shortcut would have introduced over time.
+
+**Context.** Pillar 7 (`DECISIONS 2026-05-09 — Gold-standard library
+precedence`) already names the precedence: use-case-specific library →
+typed data structure → `StructuredString` → documented LINT-ALLOW.
+Pillar 7's "deep per-site analysis" clause is the load-bearing demand:
+every adoption of `String.concat` / `String.Concat` / `String.Join` /
+`String.Format` / `sprintf` / `+` / interpolated string outside the
+gold standard requires an analysis the marker text records as the
+audit trail. The slice-β failure surfaced that "deep per-site analysis"
+is too easily satisfied by a *justification-shaped marker* that uses
+discipline vocabulary ("terminal", "boundary", "typed") without
+performing the analysis the vocabulary is supposed to summarize.
+
+The named failure mode is **performance-of-compliance**: a marker with
+the SHAPE of an audit trail but without the substance. Distinct from
+explicit non-compliance (which is recoverable because it's visible at
+the lint surface); distinct from genuine compliance (which is the
+work). Performance-of-compliance is the failure mode where the agent
+*feels* compliant, the lint passes, the tests are green — and the
+structural commitment is unmet. The marker's audit-trail shape masks
+the absence of the audit. Future agents reading the marker (including
+future me) treat the formula as decided fact.
+
+The asymmetry is structural: V2 is the trust anchor for the high-stakes
+cutover; every shortcut introduces a runtime-only invariant ("our
+composition matches the vendor's emission today") that future drift
+forces are waiting to surface. The cost of the shortcut compounds
+across every reader. The cost of doing the work is paid once, at the
+moment of insight. Pillar 6 (`DECISIONS 2026-05-09 — No V2-internal
+back-compat`) already names the structural pressure: shortcuts are
+back-compat-debt invitations.
+
+**Decision.** Codify the four-question analysis as the structural
+prerequisite for any `LINT-ALLOW` marker on a string-composition or
+built-in-substitute site. The analysis MUST be performed (and the
+marker text MUST embody it) before the marker is committed:
+
+  1. **What is the use-case-specific library** for this output
+     structure? Name it explicitly (module + type + function).
+     Examples: `Microsoft.SqlServer.TransactSql.ScriptDom
+     .SqlDataTypeReference` + `Sql160ScriptGenerator.GenerateScript`
+     for SQL DDL type expressions; `System.Xml.XmlWriter` for XML;
+     `System.Text.Json.Utf8JsonWriter` / `JsonNode` for JSON;
+     `Microsoft.SqlServer.Server.SqlMetaData` for SqlClient parameter
+     metadata; `RFC4122 UuidV5` for namespaced GUIDs; `BCL parsers/
+     formatters with CultureInfo.InvariantCulture` for typed
+     parse/format round-trips.
+  2. **Is it already in the codebase** (or available as a non-V2-back-
+     compat dependency)? If yes, name the existing consumer site so
+     the precedent is structurally visible. If no, name the package
+     name + version that would land it.
+  3. **What is the cost of using it here?** Be concrete: visibility
+     lift (`private` → public; ~N LOC); perf class (zero / O(1) /
+     O(N) / O(N log N) / O(N²) per-call delta; bench label that
+     would surface it); dep weight (transitive package size). The
+     cost analysis IS the perf-clause cash-out at this site.
+  4. **Is there a structural reason it doesn't apply?** Examples of
+     legitimate "no": the BCL writer's grammar can't express the
+     structure (e.g., escape-sequence formatting for which no
+     formatter exists); the data is V2-internal-only and the BCL
+     writer would lose the typed information; the BCL writer
+     introduces non-determinism (e.g., `JsonSerializer` with default
+     options yields culture-dependent output) that violates T1.
+
+If the answer to #4 is **"no"**, there is no shortcut — there is the
+work. The LINT-ALLOW marker is wrong; the right move is to lift the
+visibility, add the helper, refactor the call site. Slice β' is the
+worked example: the answer to #4 was "no, ScriptDom applies fully";
+the cost was trivial; the marker came down.
+
+If the answer to #4 is **"yes"**, the marker text MUST name the
+specific structural reason (not generic vocabulary). Examples:
+
+  - **GOOD** (substantive): `LINT-ALLOW: writer-monad tell algebraic
+    primitive; pass drivers use LineageBuffer for high-rate
+    accumulation, tell is terminal annotation only` — names the
+    algebraic role + the alternative for the hot path.
+  - **GOOD** (substantive): `LINT-ALLOW: terminal diagnostic
+    projection; typed Synthesized (s, parts) available via
+    pattern-match for structural consumers` — names the boundary +
+    the structural alternative for non-terminal consumers.
+  - **GOOD** (substantive): `LINT-ALLOW: terminal text-emission
+    boundary; HexLiteralPrefix is the canonical typed segment, raw
+    is already vetted hex` — names the boundary + the typed source
+    of each segment.
+  - **BAD** (performance-of-compliance): `LINT-ALLOW: terminal SQL
+    DDL emission boundary; both segments are typed (closed-DU
+    dispatch + literal)` — uses pillar vocabulary ("terminal",
+    "boundary", "typed") without naming the considered alternative
+    (`Sql160ScriptGenerator`) or the structural reason it doesn't
+    apply. The marker IS the slice-β failure mode.
+
+**Lint guardrail.** Rule 27 (added in this slice) maintains an
+inventory of every per-line concat-aversion `LINT-ALLOW` and emits
+the inventory at the end of every clean run. The inventory is the
+audit surface — making the markers visible at the discipline-review
+moment, not just at the rule-violation moment. The inventory does
+not gate compliance (a heuristic can't reliably distinguish
+performance-of-compliance from substance); the discipline document
+does. Rule 27 also enforces a soft floor: per-line concat-aversion
+markers must be at least 30 chars after the colon AND contain at
+least one substantive-vocabulary token from the established
+discipline lexicon (terminal / boundary / primitive / round-trip /
+considered / alternative / gold-standard / escape / irreducible).
+
+**The four-question analysis when reaching for `String.Concat`,
+`String.concat`, `String.Format`, `sprintf`, `String.Join`, or
+interpolated strings:**
+
+```
+1. Use-case-specific library for THIS output structure?
+   ├─ ScriptDom (SQL DDL/DML)
+   ├─ XmlWriter / XDocument (XML)
+   ├─ Utf8JsonWriter / JsonNode (JSON)
+   ├─ SqlConnectionStringBuilder (connection strings)
+   ├─ Path.Combine (filesystem paths)
+   ├─ Identifier.EncodeIdentifier (SQL identifiers)
+   ├─ UuidV5 (RFC 4122 namespaced GUIDs)
+   ├─ DacFx (DACPAC; pending chapter 3.x adoption)
+   ├─ Verify.XUnit (golden-file diff)
+   └─ ... (extend as new use cases land)
+2. Already in codebase?  YES ─→ name the existing consumer site.
+                         NO  ─→ name the package + version.
+3. Cost?  visibility lift (LOC) + perf class (zero/O(1)/O(N)/...)
+          + dep weight (MB transitive).
+4. Structural reason it doesn't apply?
+   ├─ NO  → there is no shortcut; do the work.
+   └─ YES → marker text MUST name the specific reason
+            (NOT generic vocabulary alone).
+```
+
+**Reasoning / consequences.** This entry refines pillar 7 with the
+named failure mode and the four-question structural prerequisite.
+Pillar 7's "deep per-site analysis" was descriptive of the desired
+discipline; this entry makes the SHAPE of the analysis structural.
+Future agents (and future me) reading the discipline encounter the
+four questions before drafting the marker, not after. Performance-
+of-compliance is named so the failure mode is reified as a
+recognizable pattern rather than an unnamed slip. The lint inventory
+keeps the per-line markers visible at the audit surface so the
+discipline check is structural at PR review and chapter close.
+
+**Worked precedent of doing it right (slice β'):** the cost of the
+"do the work" path was 87 lines of diff across 3 files; the perf-
+gate stayed clean; the tests stayed green; four LINT-ALLOWs
+retired; two private helpers retired (`sqlTypeWithLength`,
+`sqlDecimal`); one unused import retired (`open
+System.Globalization`); the SQL DDL type expression flows through
+ScriptDom's typed AST end-to-end. The slice's commit message
+records the perf-class analysis (per-column generator instantiation
+surfaced via bench label `scriptDom.generateDataType`) so the
+next-touch agent inherits the perf footprint as structural fact.
+
+**Why this matters in V2.** The cutover stakes (300-table OutSystems
+external-entity migration, four environments, active CDC dependencies,
+R6 split-brain governance, T-30 / T-15 fallback ladder) are the
+forcing function. V2 is the verification surface. Every drift class V2
+introduces is a probability-mass increase on "we caught a thing we'd
+never expected; per R6 we revert to V1; the cutover delays N days."
+The discipline isn't ascetic — it's protective. Each disciplined
+choice forecloses a future debugging session, and the cost of those
+sessions compounds during the highest-stakes window: the actual
+cutover.
 
 ---
 

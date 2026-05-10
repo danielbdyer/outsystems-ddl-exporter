@@ -423,6 +423,76 @@ V2's emission diverges from V1 in a way the comparator catches?
 
 Already covered in [the F#/C# boundary contract](#the-fc-boundary-contract). Default F#; use C# only when foreign-API mutation-heavy.
 
+### When you reach for a string-composition primitive
+
+Per `DECISIONS 2026-05-10 — LINT-ALLOW substantive-rationale discipline` (chapter 3.7 sidebar; pillar 7 amendment). The trigger: you're about to write `String.Concat`, `String.concat`, `String.Format`, `sprintf`, `String.Join`, an interpolated string `$"…"`, or a `+` between strings — the lint will fire and you're considering whether to refactor or to add a `LINT-ALLOW` marker.
+
+**Stop.** Do not draft the `LINT-ALLOW` text yet. Walk the four questions:
+
+```
+1. Use-case-specific library for THIS output structure?
+   ├─ SQL DDL / DML?      → ScriptDom (SqlDataTypeReference / TSqlStatement)
+   │                        + Sql160ScriptGenerator
+   ├─ XML?                → XmlWriter / XDocument
+   ├─ JSON?               → Utf8JsonWriter / JsonNode
+   ├─ Connection string?  → SqlConnectionStringBuilder
+   ├─ Filesystem path?    → Path.Combine
+   ├─ SQL identifier?     → Identifier.EncodeIdentifier (ScriptDom)
+   ├─ Namespaced GUID?    → UuidV5 (RFC 4122)
+   ├─ DACPAC artifact?    → DacFx (TSqlModel / DacPackage / DacServices)
+   ├─ Golden-file diff?   → Verify.XUnit
+   ├─ T-SQL batch split?  → BatchSplitter (TSql160Parser line-fold fallback)
+   └─ ... (extend; if you don't see your case, ask "what library would
+            Microsoft / SQL Server vendor / OutSystems vendor use here?")
+
+2. Already in the codebase?
+   ├─ YES → name the existing consumer site:
+   │        e.g., "ScriptDomBuild.dataTypeReference at line 90 already
+   │              builds the typed AST; Sql160ScriptGenerator is loaded
+   │              and used by ScriptDomGenerate.generateOne".
+   └─ NO  → name the package + version that would land it.
+            e.g., "Microsoft.SqlServer.DacFx 170.x; ~30 MB transitive
+                   per chapter 3.x DacpacEmitter pre-scope".
+
+3. Cost?
+   ├─ Visibility lift   → "private → public" (~N LOC)
+   ├─ Helper to add     → "generateDataType : DataTypeReference -> string"
+   │                       (~10 LOC mirroring generateOne)
+   ├─ Perf class        → "O(1) per-call generator instantiation; ~5000
+   │                       calls per canary; bench label
+   │                       scriptDom.generateDataType surfaces it"
+   └─ Dep weight        → "no new package dep" / "+30 MB transitive"
+
+4. Structural reason it doesn't apply?
+   ├─ NO  → THERE IS NO SHORTCUT. Do the work:
+   │        a. Lift visibility.
+   │        b. Add the helper.
+   │        c. Refactor the call site.
+   │        d. The LINT-ALLOW does not get drafted; the marker comes down.
+   │
+   └─ YES → marker text MUST name the SPECIFIC reason — NOT generic
+            vocabulary alone.
+            ├─ GOOD: "writer-monad tell algebraic primitive; pass drivers
+            │         use LineageBuffer for high-rate accumulation, tell
+            │         is terminal annotation only"
+            │   (names role + alternative for hot path)
+            ├─ GOOD: "terminal text-emission boundary; HexLiteralPrefix is
+            │         the canonical typed segment, raw is already vetted hex"
+            │   (names boundary + typed segment source)
+            └─ BAD:  "terminal SQL DDL emission boundary; both segments are
+                      typed (closed-DU dispatch + literal)"
+                ↳ uses pillar vocabulary without naming the considered
+                  alternative (Sql160ScriptGenerator) or the structural
+                  reason it doesn't apply. THE MARKER IS THE FAILURE
+                  MODE — performance-of-compliance.
+```
+
+**The named failure mode is performance-of-compliance**: a marker shaped like an audit trail without the substance. The lint passes, the vocabulary fits, the tests are green — and the structural commitment is unmet. The marker's audit-trail shape masks the absence of the audit. If you find yourself drafting language that *sounds* substantive without performing the analysis, stop — the answer to question #4 is almost certainly "no" and the right move is the work.
+
+**Worked counterfactual** (`DECISIONS 2026-05-10`): slice-β added four `String.Concat` LINT-ALLOWs in `Render.columnSqlType` reading "terminal SQL DDL emission boundary; both segments are typed (closed-DU dispatch + literal)" — discipline vocabulary, no substance. Operator caught it on review. Slice-β' lifted `ScriptDomBuild.dataTypeReference` from `private` to public, added `generateDataType : DataTypeReference -> string`, made Render delegate. Cost: 87 LOC across 3 files; output byte-identical (790 tests still green); perf-gate clean; four LINT-ALLOWs retired; two private helpers retired (`sqlTypeWithLength`, `sqlDecimal`); one unused import retired. The "do the work" path was trivial compared to the structural drift the shortcut would have introduced over time.
+
+**Lint Rule 27 maintains an inventory** of every per-line concat-aversion `LINT-ALLOW` (printed at the end of every clean run) AND enforces a soft floor (≥30 chars after the colon, at least one substantive-vocabulary token). Heuristics can't catch performance-of-compliance reliably; the discipline document does. The inventory is the audit surface for chapter-close ritual + PR review.
+
 ---
 
 ## The discipline operating cycle
