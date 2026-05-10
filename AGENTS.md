@@ -119,6 +119,52 @@ See `sidecar/projection/PLAYBOOK.md` decision tree
 "When you reach for a string-composition primitive" for the executable
 form.
 
+### Verify-before-diagnose for infrastructure (the failure mode named "infrastructure-blame jumping")
+
+Worked counterfactual (session-15 internal, codified 2026-05-10):
+the agent saw a `dotnet test` invocation hang for 14 minutes,
+diagnosed it as "Docker is unavailable in this environment," and
+moved on. Truth: Docker WAS down at that moment (the session-start
+hook had already logged `DEGRADED docker=failed` to
+`$HOME/.claude-projection-hook-status`), but the agent never read
+the log. And separately, **once Docker is up in this environment
+it stays up reliably** — every previous session where the agent
+"couldn't use Docker" was either (a) a session-start race where
+re-running the hook would have fixed it, or (b) the agent paying
+`30s × N tests` for the soft-skip soft-fail loop without verifying
+state first.
+
+**The failure mode is "infrastructure-blame jumping":** the agent
+jumps to "X infrastructure is unavailable" as the explanation for
+slowness/hangs/failures, without running the cheap verification
+commands first. Looks productive (an explanation exists; work
+moves on); silently wrong (real fixes are an exit-loop away).
+
+**The discipline.** Before claiming any infrastructure component
+is unavailable, RUN THE PROBE. Cheap. Always. The probes:
+
+| Component | One-line probe | Auto-recovery |
+|---|---|---|
+| Docker | `docker ps && tail -3 $HOME/.claude-projection-hook-status` | `bash .claude/hooks/session-start.sh` (idempotent re-run) |
+| dotnet | `which dotnet && dotnet --version` | `bash .claude/hooks/session-start.sh` |
+| SQL warm container | `docker ps --filter name=projection-mssql-warm --format '{{.Status}}'` | `bash .claude/hooks/session-start.sh` |
+
+**Automatic enforcement.** `.claude/settings.json` registers a
+`PreToolUse` hook on `Bash` (`.claude/hooks/docker-probe.sh`) that
+fires before every Bash tool call. Commands matching `dotnet test`
+/ `docker *` / `*canary*` / `*Canary*` / `*Testcontainers*` /
+`*sqlcmd*` / `*mssql*` trigger an automatic Docker probe + best-
+effort auto-repair (`sudo dockerd`) with a 5 s ceiling; the result
+arrives in the agent's view as `additionalContext`. Non-infra
+commands fast-path to silent exit (sub-millisecond `case` match).
+The hook NEVER blocks; it ONLY informs.
+
+**Why this isn't paranoid:** in this environment, bringing Docker
+up takes seconds even cold; once warm it's instant. The cost of
+probing is much lower than the cost of one wrong diagnosis. Every
+infra-relevant Bash invocation now arrives with fresh state in the
+context — there is no excuse for "I assumed."
+
 ## Pre-flight & Alignment
 - Begin every working session by executing the `notes/run-checklist.md` steps (install/verify .NET 9 SDK, restore, build, test, optional CLI smoke) so the environment is proven green before coding; document any deviations.
 - **If a tool appears missing (e.g., `which dotnet` empty, `docker` unreachable), check `.claude/hooks/session-start.sh` and `$HOME/.claude-projection-hook-status` BEFORE reaching for `apt install` / curl-based installs.** The session-start hook is the canonical setup routine for web sessions; re-running it is the supported recovery path. The status log records prior runs so agents can detect silent failures across sessions.
