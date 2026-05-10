@@ -47,7 +47,7 @@ These violate the project's own load-bearing commitments. No design judgment req
 
 3. **`RawTextEmitter` topological-sort harmonization** — re-implemented Kahn at `RawTextEmitter.fs:176–232`; `TopologicalOrderPass` already does this. A33 declares schema emission deterministic-ordered; A32 names passes-produce-values-for-emitters as the canonical channel. The duplication structurally erases both axioms. ✅ session 36 via `SelfLoopPolicy` parameterization.
 
-4. **`Bench.persistJson` writes to disk from Core** — `System.IO`, `Directory.CreateDirectory`, `File.WriteAllText`, `JsonSerializer.Serialize` at `Projection.Core/Bench.fs:341–353`. Core's no-I/O claim is breached. ⏸ deferred (rolls to chapter 4 as `BenchSink` port extraction).
+4. **`Bench.persistJson` writes to disk from Core** — `System.IO`, `Directory.CreateDirectory`, `File.WriteAllText`, `JsonSerializer.Serialize` at `Projection.Core/Bench.fs:341–353`. Core's no-I/O claim is breached. ✅ **Cashed at chapter 3.6** — `BenchSink` port extracted; `Bench.persistJson` moved to `src/Projection.Pipeline/BenchSink.fs`. Core's no-I/O claim restored.
 
 5. **`Adapter<'source, 'inner>` alias drags `Task` into Core** — `Types.fs:3,65` opens `System.Threading.Tasks` for the alias. Stage-0 reservation; only the `TypesTests.fs` reservation test referenced it. ✅ session 36 retired; bare task-shaped signature inlined at the test reservation site; Core no longer opens `System.Threading.Tasks`.
 
@@ -55,7 +55,7 @@ These violate the project's own load-bearing commitments. No design judgment req
 
 7. **Three Π emitters return `string` despite `Emitter<'element>` declared in Core** — `Types.fs:41–48` advertises `Emitter<'element> = Catalog -> Result<ArtifactByKind<'element>, EmitError>`; all three concrete emitters return `string`. The advertised shape is unimplemented. T11 is aspirational not structural. ⏸ deferred (rolls to chapter 3.5 as Π-port-realization slice; also unblocks T11-amended structural-type-encoding).
 
-8. **Type-correspondence bounded context** — 5+ inverse functions: `mapSqlType` (`ReadSide.fs:51`) ↔ `columnSqlType` (`Render.fs:24`); `formatRawValue` (`ReadSide.fs:366`) ↔ `formatSqlLiteral` (`Render.fs:50`) ↔ `parseRaw` + `clrType` (`Bulk.fs:24,39`). Splits across 3 projects with no owning module — T1 byte-determinism rests on conventional inversion. ⏸ deferred. Plus: `Bulk` lives in `Pipeline` but is structurally `Adapters.Sql` concern.
+8. **Type-correspondence bounded context** — 5+ inverse functions: `mapSqlType` (`ReadSide.fs:51`) ↔ `columnSqlType` (`Render.fs:24`); `formatRawValue` (`ReadSide.fs:366`) ↔ `formatSqlLiteral` (`Render.fs:50`) ↔ `parseRaw` + `clrType` (`Bulk.fs:24,39`). Splits across 3 projects with no owning module — T1 byte-determinism rests on conventional inversion. ✅ **Cashed at chapter 3.7 slice β** — `Projection.Core.SqlTypeCorrespondence` bounded context consolidates the forward/inverse PrimitiveType ↔ SQL DDL vocabulary pair; round-trip property + 25 InlineData theory + Fact + property sweep covers the recognized vocabulary. `ReadSide.mapSqlType` becomes a 1-line alias. Plus: `Bulk` lives in `Pipeline` but is structurally `Adapters.Sql` concern — that sub-finding remains ⏸ open.
 
 9. **`Catalog.create` / `Module.create` / `Reference.attach` smart constructors absent** — invariants live in passes; `Reference.SourceAttribute` may not exist on owning `Kind`; `RawTextEmitter.fkDef` silently drops on missing target. ✅ session 36 (`Catalog.create` enforces 5 invariants in one pass; back-compat record-literal preserved).
 
@@ -85,7 +85,7 @@ These violate the project's own load-bearing commitments. No design judgment req
 
 20. **Strongest candidate bounded contexts to name explicitly** (Agent 1 closing summary):
     - `Projection.Coordinates` — `SchemaName` / `TableName` / `ColumnName` / `TableId` / `ColumnId` / `FkCoord`. ✅ Stage 1 (`TableId`) shipped session 36; Stage 2 (typed `SchemaName` / `TableName` / `ColumnName`) deferred.
-    - `Projection.TypeCorrespondence` — owns the 5 inverse functions (item 8). ⏸ deferred.
+    - `Projection.TypeCorrespondence` — owns the 5 inverse functions (item 8). ✅ Cashed at chapter 3.7 slice β as `Projection.Core.SqlTypeCorrespondence`.
     - `Projection.Identity` (rename `Identity.fs`) with adapter-namespaces as data — `SourceTag` value object, registry of known tags per-adapter. ⏸ deferred (paired with items 11, 13, 14).
     - `Projection.Π` — sibling-emission shared contract (header, Origin label, modality label). ⏸ deferred.
     - `Projection.Fidelity` — `PhysicalSchema` + `RowDigester` + diff move out of `Core` (today they're Core-resident but never used by passes/strategies). ⏸ deferred.
@@ -95,7 +95,7 @@ These violate the project's own load-bearing commitments. No design judgment req
     - **Real Π port** — three emitters satisfy the same shape (item 7). ⏸ deferred.
     - **`IArtifactSink`** — closes item 4 + cleans up the test harness's temp-dir dance. ⏸ deferred.
     - **`IDeployHost`** — wraps Testcontainers + warm-conn + executeStream behind one swappable interface. ⏸ deferred.
-    - **`BenchSink`** — closes item 4 (paired). ⏸ deferred.
+    - **`BenchSink`** — closes item 4 (paired). ✅ Cashed at chapter 3.6 — `Bench.persistJson` extracted to `src/Projection.Pipeline/BenchSink.fs`.
 
 22. **Extract `Lineage.ofValueAndEvents`** (Agent 4 #4) — 7 consumers; threshold long crossed. ✅ session 36; 6 sites migrated.
 

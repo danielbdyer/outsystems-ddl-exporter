@@ -99,16 +99,19 @@ chapter 4.1.A close arc + 4.1.B in-flight prologue):
 
 Slots reserved for future sessions (not yet built):
 
-      src/Projection.Pipeline/              - C#: canary orchestration (DacFx, testcontainers,
-                                              ephemeral SQL Server). Strategic-frame axis per
-                                              `DECISIONS 2026-05-15 — Strategic frame`.
-      src/Projection.Adapters.Sql.ReadSide/ - F#: SQL-Server-back read-side adapter (canary
-                                              read-back + optional production observation).
-                                              Strategic-frame axis.
       src/Projection.Adapters.Files/        - C#: file system; snapshot store
       src/Projection.Host.Cli/              - C#: imperative shell; orchestrator
-      src/Projection.Targets.SSDT.DacpacEmitter/ - F#: real CREATE TABLE / DacFx
+      src/Projection.Targets.SSDT.DacpacEmitter/ - F#: DacpacEmitter via DacFx (`Microsoft.SqlServer.Dac`).
+                                              **DacFx adoption mandatory** at chapter open per the
+                                              Tier-3 text-builder-as-first-instinct discipline
+                                              (`DECISIONS 2026-05-10`); chapter not yet open.
       src/Projection.Targets.Faker/         - F#: synthetic-data Π consuming Profile
+
+(Note: `src/Projection.Pipeline/` shipped at chapter 3.1 as **F#** —
+not C# as originally scaffolded; corrects line 85 below; `Projection.Pipeline`
+is the canary orchestrator. `src/Projection.Adapters.Sql.ReadSide/`
+shipped under `Projection.Adapters.Sql/` per the chapter-3.1 / 3.6
+ReadSide work.)
 
 The **`SnapshotRowsets` variant** of `SnapshotSource` shipped at
 **chapter 3.2 close (2026-05-10)**, resolving V1's JSON-projection-
@@ -146,9 +149,12 @@ The remaining un-built primitive now gating substantive forward work:
   - **`SnapshotRowsets`** — SHIPPED at chapter 3.2 (commits
     `6dab9cd` → `a74b904`; bug fix `0336795`). JSON-projection-
     lossiness class structurally closed; A1 boundary-unblocked.
-  - **The pipeline canary** (`Projection.Pipeline` C# project) —
-    strategic-frame axis. Self-validates artifacts against
-    ephemeral docker SQL Server before publication.
+  - **The pipeline canary** — SHIPPED at chapter 3.1
+    (`Projection.Pipeline` F# project; not C# as originally
+    scaffolded). Self-validates artifacts against ephemeral docker
+    SQL Server before publication. The operator-reality canary
+    (50k rows × 300 tables, variegated) is the per-commit + per-
+    Stop-hook perf-gate target.
 
 ## Three substantive inputs and one temporal dimension
 
@@ -275,8 +281,10 @@ From inside `sidecar/projection/`:
 V2's solution is independent of the trunk's `OutSystemsModelToSql.sln`.
 Either solution builds standalone.
 
-Current baseline: 631 passed, 7 skipped (V2-divergence + reserved-but-
-unbuilt-feature stubs), 638 total (session 22).
+Current baseline: **882 passed, 0 skipped non-canary tests** + ~16
+Docker-dependent canary tests (chapter-3.2 close, 2026-05-10).
+Build clean under `TreatWarningsAsErrors=true`; lint clean across
+27 rules; perf-gate clean against the operator-reality baseline.
 
 ## Conventions inherited from the trunk
 

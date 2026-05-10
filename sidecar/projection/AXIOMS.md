@@ -1186,16 +1186,21 @@ to the close date.
 - A35 candidate (Π-erased axes) → **A37 candidate** (chapter 3.4).
 - A36 candidate (CatalogDiff exhaustiveness) → **A38 candidate** (chapter 3.5).
 
+**Cashed at chapter 3.5 close (2026-05-09):**
+- T11 amended (structural-type encoding) — body at line 716. Π port realization makes T11 structural via `ArtifactByKind<'element>`. Chapter 3.5 slices α–δ delivered.
+- T11 amended again (diff-typed inputs) — body at line 796. Chapter 3.5 slices θ–ι delivered the diff-typed sibling.
+- A38 — CatalogDiff exhaustiveness — body at line 1001. Promoted from candidate to A38 at chapter 3.5 close.
+
 **Cashed at chapter 3.2 close (2026-05-10):**
 - A1 amended (four-variant SsKey) — body shipped at Stage 0 S0.B + chapter 3.5 RefactorLogEmitter (line 833+); chapter 3.2 makes the `OssysOriginal` variant **operationally reachable at the OSSYS-adapter boundary** for the first time, via the `SnapshotRowsets` source variant + `RowsetBundle.ModuleRow.EspaceSsKey` / `KindRow.EntitySsKey` / `AttributeRow.AttrSsKey` Guid-carrying fields. The "JSON-projection-lossiness bound" documented at the bottom of A1 is structurally unblocked. Cross-version `V1Mapped` derivation reserves to chapter 4.2 User FK reflow. See `DECISIONS 2026-05-10 — Chapter 3.2 close` for the slice-by-slice account.
 
-**Still scheduled** (TBD):
-- T1 amended (binary normal-form composition) — chapter 3.3 close.
-- T11 amended (structural-type encoding) — chapter 3.5 close (Π port realization makes T11 structural via `ArtifactByKind<'element>`).
-- T11 amended again (diff-typed inputs) — chapter 3.5 close.
-- A37 candidate (Π-erased axes) — chapter 3.4 close.
-- A38 candidate (CatalogDiff exhaustiveness) — chapter 3.5 close.
-- A32 cash-out — chapter 4.2 close.
+**Cashed at chapter 3 cross-cutting close (2026-05-10):**
+- A39 record-extension generalization confirmation — the aggregate-root smart-constructor invariants amendment (line 1176) holds for record extensions too. Chapter 3.2 confirmed empirically: 4 record-extension events + 1 DU-variant event across the chapter; closed-DU expansion empirical-test discipline survives generalization. See `CHAPTER_3_2_CLOSE.md` §"Three chapter-close meta-codifications" #1.
+
+**Still scheduled** (TBD; trigger pre-fire):
+- T1 amended (binary normal-form composition) — chapter 3.3 close (chapter not yet open).
+- A37 candidate (Π-erased axes) — chapter 3.4 close (chapter not yet open).
+- A32 cash-out — chapter 4.2 close (User FK reflow chapter).
 
 **Per `DECISIONS 2026-05-22 — Stage 0 foundation phase`, the
 scaffolding lands at Stage 0 Tier 1 (S0.F) before chapter 3.1
