@@ -96,8 +96,10 @@ let ``T4: every catalog SsKey root appears in both SSDT and JSON outputs`` () =
 // enriched catalog` retired in chapter 3.5 slice δ — the substring
 // `Assert.Contains` discipline is now structural by virtue of the
 // `Emitter<'element>` port and `ArtifactByKind`'s strict-equality
-// smart constructor. Replaced by the type-theorem property tests at
-// `T11TypeTheoremTests.fs`.
+// smart constructor. Replaced by the contract property tests at
+// `SiblingEmitterContractTests.fs` (renamed from `T11TypeTheoremTests.fs`
+// at chapter 3.7 slice ε per the pillar-8 domain-first naming
+// codification).
 
 [<Fact>]
 let ``T11: sibling Pi's agree on physical realization for every kind`` () =

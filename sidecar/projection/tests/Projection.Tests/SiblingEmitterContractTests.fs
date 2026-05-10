@@ -1,4 +1,4 @@
-module Projection.Tests.T11TypeTheoremTests
+module Projection.Tests.SiblingEmitterContractTests
 
 open System.Text.Json.Nodes
 open Xunit

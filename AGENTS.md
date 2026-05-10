@@ -16,6 +16,60 @@ The pillars in shortest form:
 5. **Coding-style commitments** — deep DDD, point-free composition, hexagonal architecture, hardcore FP (closed DUs, smart constructors, no `null`, monadic composition), OOP only at boundary code where BCL forces it, deep separation of concerns, verifiable + observable to the nth degree.
 6. **No V2-internal back-compat paths** — refactor fully at time of insight, no exceptions.
 7. **Gold-standard library precedence** — use-case-specific library FIRST; typed data structures SECOND; `StructuredString` THIRD; documented `LINT-ALLOW` LAST. Plus the perf-clause: every refactor cites perf implications; every hot-path function has `Bench.scope`; every loop flows through `Bench` iterators; every counter via `Bench.recordSample`.
+8. **Domain-first naming and ubiquitous-language consistency** — every name in V2 names a domain concept (cutover-business vocabulary); generic CS suffixes (Helper / Util / Manager / Service / Handler / Processor / Wrapper / Builder / Factory / Provider, when not BCL-mandated) are placeholders for "I haven't identified the concept yet." Same concept = same name across Core / Adapters / Targets / Pipeline / CLI. The named failure mode is **domain-blind naming**: when a name answers "what this DOES" rather than "what this REPRESENTS in the domain."
+
+### Domain-first naming (the failure mode named "domain-blind naming")
+
+Pillar 8, codified 2026-05-10 chapter 3.7 sidebar. **Every named type
+/ function / file / module / test in V2 MUST embody the four-question
+domain-naming analysis BEFORE the name is committed:**
+
+1. **What domain concept does this represent?** Articulate it in
+   cutover-business terms (Entity, Espace, External Entity, RefactorLog,
+   DACPAC, SsKey provenance, lineage event, schema-fidelity diff…). If
+   you cannot articulate what the concept IS, you do not have a name
+   yet. STOP.
+2. **Does V2 already name this concept somewhere?** If yes — use the
+   same name (ubiquitous-language consistency: same concept = same
+   name across Core / Adapters / Targets / Pipeline / CLI). If no —
+   pick a name that aligns with how domain experts (operators, DBAs,
+   OutSystems platform docs, CDC documentation, SQL Server admin
+   guides) name the concept.
+3. **Is the proposed name concept-shaped or action-shaped?** Concept-
+   shaped names ("what this IS") default for types, modules, files.
+   Action-shaped names ("what this DOES") only when the verb names a
+   *domain* operation (canonicalize, normalize, mask) — NOT when the
+   verb is a generic CS operation (process, handle, manage, run, do).
+4. **Generic-suffix smell test.** Helper / Util / Manager / Service /
+   Handler / Processor / Wrapper / Builder / Factory / Provider stop
+   the agent. Either find the concept (rename) or restructure (the
+   concept is being squashed into something else). The lint guardrail
+   does NOT enforce this syntactically — heuristics misfire on
+   legitimate uses (`LineageBuffer` is concept-shaped despite the
+   "Buffer" suffix). The discipline document does the catching the
+   heuristic can't.
+
+**Domain-blind naming is the named failure mode**: a name shaped
+like a placeholder for the absent domain concept. The agent feels
+productive (a name exists; the code compiles; tests pass) without
+doing the domain-modeling work that makes the name structurally
+accountable. The cutover stakes (300-table OutSystems → SQL Server
+external-entity migration; four environments; active CDC dependencies;
+R6 split-brain governance; T-30 / T-15 fallback ladder) are the
+forcing function. **Verifiability rests on the V2 vocabulary
+mirroring the cutover vocabulary.** Operators and DBAs reading V2
+source must be able to recognize their concepts; engineers reviewing
+V2 changes must be able to recognize when the concept being changed
+has business implications.
+
+**Worked rename (chapter 3.7 slice ε):** `T11TypeTheoremTests.fs` →
+`SiblingEmitterContractTests.fs`. The original name pinned the file
+to a theorem ID (T11) — meta-narrative about a framework reference.
+The new name names the concept (the contract every sibling Π emitter
+satisfies) — concept-shaped, domain-aligned, self-descriptive.
+
+See `sidecar/projection/PLAYBOOK.md` decision tree "When you reach
+for a name" for the executable form.
 
 ### LINT-ALLOW substantive-rationale (the failure mode named "performance-of-compliance")
 

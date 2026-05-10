@@ -16,6 +16,15 @@ You're picking up V2 work mid-stream. This brief gets you oriented in 5 minutes;
 
 **Default to explicit acknowledgement of deviance.** The lint guardrail (`scripts/lint-discipline.sh`, 27 rules) is the structural enforcement. Every legitimate exception carries a `LINT-ALLOW: <rationale>` (per-line) or `LINT-ALLOW-FILE` / `LINT-ALLOW-FILE-MUTATION` (top-of-file) marker. Pre-commit hook + CI workflow are defense-in-depth.
 
+**Pillar 8 — Domain-first naming and ubiquitous-language consistency** (codified 2026-05-10 chapter 3.7 sidebar). Every named type / function / file / module / test in V2 MUST embody the four-question domain-naming analysis BEFORE the name is committed:
+
+1. **What domain concept does this represent?** Articulate it in cutover-business terms (Entity, Espace, External Entity, RefactorLog, DACPAC, SsKey provenance, lineage event, schema-fidelity diff…). If you cannot articulate what the concept IS, you do not have a name yet.
+2. **Does V2 already name this concept somewhere?** If yes — use the same name (ubiquitous-language consistency: same concept = same name across Core / Adapters / Targets / Pipeline / CLI). If no — pick a name that aligns with how domain experts (operators, DBAs, OutSystems platform docs, CDC documentation, SQL Server admin guides) name the concept.
+3. **Is the proposed name concept-shaped or action-shaped?** Concept-shaped names ("what this IS") default for types, modules, files. Action-shaped names ("what this DOES") only when the verb names a *domain* operation — NOT a generic CS operation (process, handle, manage, run).
+4. **Generic-suffix smell test.** Helper / Util / Manager / Service / Handler / Processor / Wrapper / Builder / Factory / Provider (when not BCL-mandated) stop the agent. Either find the concept (rename) or restructure.
+
+**Domain-blind naming is the named failure mode**: a name shaped like a placeholder for the absent domain concept. The agent feels productive (a name exists; the code compiles; tests pass) without doing the domain-modeling work. The cutover stakes (300-table migration; four environments; active CDC dependencies; R6 governance; T-30 / T-15 fallback ladder) are the forcing function. **Verifiability rests on the V2 vocabulary mirroring the cutover vocabulary.** Operators reading V2 source must recognize their concepts. **No lint enforcement** — heuristic syntactic checks misfire on legitimate uses (`LineageBuffer` is concept-shaped despite the "Buffer" suffix). The discipline-document path catches what the heuristic can't. See `DECISIONS 2026-05-10 — Domain-first naming and ubiquitous-language consistency` for the full counterfactual + worked precedents (`Catalog`, `SsKey`, `SqlTypeCorrespondence`, `BatchSplitter`, `RemovalReason`, `AnnotationDetail`, `SiblingEmitterContractTests`). See `PLAYBOOK.md` decision tree "When you reach for a name" for the executable form.
+
 **Pillar 7's substantive-rationale amendment** (codified 2026-05-10 chapter 3.7 sidebar; named after the slice-β failure mode). Every per-line `LINT-ALLOW` marker on a string-composition / built-in-substitute site MUST embody the four-question analysis BEFORE the marker is committed:
 
 1. **What is the use-case-specific library** for THIS output structure? Name it explicitly (module + type + function).
@@ -170,7 +179,7 @@ Open with a chapter-open document naming the strategic-frame axes (`DECISIONS 20
 - `LineageBuffer` reified opaque accumulator (typed-private DU wrapping `List<LineageEvent>`).
 - `PinnedWriting.JsonOptions` / `XmlSettings` reified BCL option-builders.
 - `DatabaseNameGenerator` reified non-determinism boundary (eliminates `Guid.NewGuid()` leaks).
-- 7 Skip-stub tests retired across 5 test files; 9 + 8 + 8 + 9 + 15 + 4 new property/example tests added (CatalogDiff / UuidV5 / RefactorLogEmitter / RefactorLogRender XDocument structural / ScriptDomRoundTrip / T11TypeTheorem).
+- 7 Skip-stub tests retired across 5 test files; 9 + 8 + 8 + 9 + 15 + 4 new property/example tests added (CatalogDiff / UuidV5 / RefactorLogEmitter / RefactorLogRender XDocument structural / ScriptDomRoundTrip / SiblingEmitterContract — renamed at chapter 3.7 slice ε; was T11TypeTheorem).
 
 **Disciplines codified at chapter 3.5:**
 1. **Supreme operating discipline (5 pillars)** at top of `DECISIONS.md` — supersedes most other intents per session.

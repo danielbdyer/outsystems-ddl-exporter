@@ -7959,7 +7959,9 @@ port shape. The realization arc:
   lands on the runway after this slice arc.
 
 - **Slice δ — T11 type-theorem worked examples; substring
-  discipline retired**. New `T11TypeTheoremTests.fs` carries
+  discipline retired**. New `T11TypeTheoremTests.fs` (renamed
+  `SiblingEmitterContractTests.fs` at chapter 3.7 slice ε per
+  `DECISIONS 2026-05-10 — Domain-first naming`) carries
   three per-emitter `emitSlices key-set equals Catalog.allKinds`
   tests + one cross-emitter sibling-commutativity test.
   Substring enforcement at `JsonEmitterTests.fs:96-105` and
@@ -8759,6 +8761,213 @@ terminal-text emission boundary (which itself eliminated 6
 duplicate-format-string sites at producers). The boundary moved
 from many producers to one canonical renderer — that's the
 architectural improvement, not the marker count.
+
+---
+
+## 2026-05-10 — Domain-first naming and ubiquitous-language consistency (pillar 8; chapter 3.7 sidebar)
+
+**Status:** decided
+**Context:** The V2 sidecar already operates DDD bounded contexts
+(Coordinates, Identity, RawValueCodec, SqlTypeCorrespondence) and
+generic algebraic naming (Catalog / Module / Kind / Reference at
+Core; domain-prescriptive vocabulary at adapter boundaries). The
+"Programming style — Naming" section in `CLAUDE.md` documents the
+intent. But intent is descriptive; structurally there is no
+named-failure-mode forcing function preventing drift. As V2 grows
+(chapters 4.1 / 4.2 / 4.4 introduce dozens of new types), the most
+likely failure mode is *not* an explicit anti-pattern (V2 will not
+suddenly grow `KindManager.fs`). It is **the slow accretion of
+generic CS vocabulary** in places where a domain term should sit —
+"Helper", "Util", "Service", "Handler", "Processor", "Builder"
+(when not BCL-mandated), "Factory" (likewise), "Provider", "Wrapper".
+Each generic suffix is a placeholder for "I haven't identified the
+domain concept yet." Each gets ratified across reviews because the
+code works; the cost compounds across every reader.
+
+The user's directive (chapter-3.7 sidebar): make domain naming +
+domain alignment + domain critical thinking a **first-class and
+protected focus** for V2 agent operation. Codified at the same
+structural level as pillars 1–7 (data-structure-oriented; no string
+concat; built-in obligation; FP promised land; coding-style; no
+back-compat; gold-standard library precedence + LINT-ALLOW
+substantive-rationale).
+
+**Decision: Pillar 8 — Domain-first naming and ubiquitous-language
+consistency.**
+
+The named failure mode is **domain-blind naming**: when a name
+answers "what does this DO" (action-shaped: `process`, `handle`,
+`manage`, `run`, `execute`) rather than "what does this REPRESENT
+in the domain" (concept-shaped). Fails to put the domain concept in
+the type system. The agent feels productive (a name exists; the code
+compiles; tests pass) without doing the domain-modeling work that
+makes the name structurally accountable.
+
+The cutover stakes (300-table OutSystems → SQL Server external-
+entity migration; four environments; active CDC dependencies; R6
+split-brain governance; T-30 / T-15 fallback ladder) are the
+forcing function. The cutover is a **business event** — operators
+and DBAs talk about it in domain vocabulary (Entity, Espace,
+Application, Module, Static Entity, External Entity, RefactorLog,
+DACPAC, Catalog, Schema). V2's job is to make the cutover
+verifiable, reversible, and repeatable. **Verifiability rests on
+the V2 vocabulary mirroring the cutover vocabulary.** When V2
+introduces CS-vocabulary terms ("KindManager", "EmissionService",
+"Helpers") in places where the domain has a sharper term, the
+mirror cracks — operators and DBAs reading V2 source can no
+longer recognize their concepts; engineers reviewing V2 changes
+no longer recognize when the concept being changed has business
+implications.
+
+The four-question domain-naming analysis (the structural prerequisite
+before introducing any named type / function / file / module / test):
+
+```
+1. What domain concept does this represent?
+   Articulate it in cutover-business terms. Examples:
+     - "This is the V2 IR's identity for an external entity post-cutover."
+     - "This is the round-trip pair PrimitiveType ↔ SQL Server DDL base name."
+     - "This is the lineage event for a removal predicate firing."
+     - "This is the schema-fidelity comparison between source and target."
+   If you cannot articulate what the concept IS in the cutover business,
+   you do not have a name yet. STOP.
+
+2. Does V2 already name this concept somewhere?
+   YES → use the same name. Ubiquitous-language consistency: the same
+         concept appears under the same name across Core / Adapters /
+         Targets / Pipeline / CLI. Cross-surface name drift is itself
+         a structural failure (an operator reading two surfaces
+         encounters two names for one concept).
+   NO  → pick a name that aligns with how domain experts (operators,
+         DBAs, OutSystems platform docs, CDC documentation, SQL Server
+         admin guides) name the concept. The reference vocabularies
+         are the cutover stakeholder's vocabularies — V2 lives within
+         them, not above them.
+
+3. Is the proposed name concept-shaped or action-shaped?
+   CONCEPT-SHAPED → "what this IS in the domain" (Catalog, Module,
+                    Kind, Reference, RemovalReason, AnnotationDetail,
+                    SqlTypeCorrespondence, RefactorLog). Default for
+                    types, modules, files.
+   ACTION-SHAPED  → "what this DOES" (canonicalize, normalize, render,
+                    emit, project). Acceptable for function names
+                    when the verb names a *domain* operation. NOT
+                    acceptable when the verb is a generic CS
+                    operation (process, handle, manage, run, do).
+
+4. Generic-suffix smell test.
+   If the name ends in any of:
+     - Helper / Util / Utils / Utility / Utilities
+     - Manager / Service / Handler / Processor / Wrapper
+     - Builder / Factory / Provider / Strategy (when not BCL-mandated)
+   STOP. The generic suffix is a placeholder for "I haven't identified
+   the domain concept yet." Either:
+     a. Find the concept (rename to the domain term), OR
+     b. Restructure (the concept is being squashed into something else
+        — it doesn't deserve a wrapper around an unnamed thing).
+
+   Note: the lint guardrail does NOT enforce this syntactically.
+   Heuristics misfire on legitimate uses (e.g., `LineageBuffer` is
+   concept-shaped despite the "Buffer" suffix — the buffer IS the
+   reified mutation surface). The discipline document does the
+   catching the heuristic can't.
+```
+
+**Ubiquitous-language consistency** is a separate axis from
+domain-shaped naming. Two surfaces independently picking concept-
+shaped names can still drift if they pick *different* names for the
+same concept. V2 already has worked examples of consistent naming:
+`SsKey` is the identity term across Core / Adapters / Targets /
+Pipeline / CLI — never `EntityKey`, never `Identifier`, never
+`Hash`. When the term is consistent, an operator reading any V2
+surface encounters the same concept. When the term drifts (one
+surface uses `SsKey`, another uses `Identifier`), readers must
+mentally translate; the translation cost compounds.
+
+**Domain critical thinking at every decision point.** The
+disciplined posture: when reaching for a new type / function / file
+name, ask `"What does this represent in the cutover business?"`
+*before* drafting the name. The answer is the documentation of
+the agent's domain understanding at this site. If the answer is
+generic ("it's a helper for emit") — the domain understanding hasn't
+landed; the name is wrong; the work is to identify the concept.
+
+**Worked precedents in V2 (concept-shaped, ubiquitous):**
+  - `Catalog` / `Module` / `Kind` / `Reference` — generic algebraic
+    names at Core; mirror the domain-prescriptive `Application` /
+    `Espace` / `Entity` / `ForeignKey` at adapter boundaries.
+  - `SsKey` (`OssysOriginal` / `Synthesized` / `V1Mapped`) — identity
+    DU; every variant names a provenance class.
+  - `RemovalReason` / `AnnotationDetail` — typed lineage payload DUs;
+    each variant names the predicate / decision class.
+  - `Coordinates.TableId` — schema-coordinate value object; consistent
+    across PhysicalSchema / Statement / ReadSide / ProfileSnapshot.
+  - `RawValueCodec` — V2's canonical raw-value format contract;
+    consolidates 3 producer/consumer sites.
+  - `SqlTypeCorrespondence` — round-trip pair `PrimitiveType ↔ SQL
+    DDL base name`; bounded context name reified.
+  - `RefactorLog` / `CatalogDiff` — domain terms (RefactorLog from
+    SSDT vocabulary; CatalogDiff from V2's diff algebra).
+  - `BatchSplitter` — concept; what splits is the cutover's deploy
+    batches.
+  - `DatabaseNameGenerator` — concept; reified non-determinism
+    boundary for ephemeral DB names.
+  - `EmissionPolicy` — concept; per A39 the policy is structurally
+    named (NOT `EmissionConfig` or `EmitterSettings`).
+  - `LineageBuffer` — concept; the buffer IS the reified mutation
+    surface. The "Buffer" suffix is concept-shaped (a buffer of
+    lineage events) — the smell test is heuristic, not absolute.
+
+**Worked anti-patterns (what V2 does NOT do):**
+  - V2 has no `*Helper.fs` / `*Util*.fs` / `*Manager.fs` / `*Service.fs`
+    files. Generic suffixes are absent by construction.
+  - Strategies are named `<Domain>Rules` (`NullabilityRules`,
+    `UniqueIndexRules`, `ForeignKeyRules`, `CategoricalUniquenessRules`)
+    — the suffix names the algebraic role; the prefix names the
+    domain.
+  - Passes are named after the verb-noun shape but the verbs ARE
+    domain operations (`canonicalize`, `normalize`, `mask` —
+    each names a structural commitment in the cutover algebra).
+
+**Reasoning / consequences.**
+
+This entry refines the "Programming style — Naming" section of
+`CLAUDE.md` (which describes the intended pattern) with structural
+prerequisites that name the failure mode and the four-question
+analysis. The discipline lives in the documents — `DECISIONS` (this
+entry, the substance), `CLAUDE.md` operating-disciplines table (the
+navigation pointer), `AGENTS.md` (root agent surface), `KICKOFF.md`
+(supreme operating discipline), `PLAYBOOK.md` (decision tree
+"When you reach for a name" with the four questions executable-form),
+`HANDOFF.md` (chapter-3.7 prologue addition).
+
+**No lint enforcement.** Heuristic syntactic checks misfire on
+legitimate uses (`LineageBuffer`, `BatchSplitter`); the discipline is
+inherently semantic — it requires understanding the domain to apply.
+The discipline-document path catches what the heuristic can't.
+Future agents (and future me) encounter the four questions at every
+naming decision; the named failure mode (domain-blind naming) is
+recognizable as a pattern.
+
+**Why this matters now.** Chapters 4.1 / 4.2 / 4.4 will introduce
+dozens of new domain types (StaticSeedsEmitter / MigrationDependencies
+/ BootstrapEmitter / UserFkReflowPass / SourceTag VO / DacpacEmitter
++ subordinate types). Each is a domain-modeling moment. The codified
+discipline is the structural answer to the question "how do we
+preserve V2's domain-first naming under chapter-by-chapter pressure
+without re-deriving the discipline at every decision?" Codifying it
+now means chapter 4.x agents inherit the discipline as named-and-
+recognized rather than rediscovered.
+
+**Why this is named at the supreme-discipline level.** Pillar 8
+joins pillars 1–7 (data-structure-oriented; no string concat; built-
+in obligation; FP promised land; coding-style; no back-compat;
+gold-standard library precedence) because **domain alignment is the
+load-bearing structural commitment that makes V2's verification
+claim trustworthy**. V2 is the trust anchor for the cutover; a trust
+anchor whose vocabulary doesn't mirror the business is a trust
+anchor whose claim must be re-translated to be checked. The
+translation cost compounds across every operator interaction.
 
 ---
 

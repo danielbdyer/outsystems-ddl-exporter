@@ -278,12 +278,13 @@ let ``T1: end-to-end pipeline is byte-deterministic`` () =
 // each Π returns `Result<ArtifactByKind<'element>, EmitError>`, and
 // `ArtifactByKind`'s smart constructor enforces strict-equality between
 // the slice's keyset and `Catalog.allKinds`'s SsKey set. T11 is now a
-// structural type theorem, exercised at `T11TypeTheoremTests.fs`. The
-// `endToEndCatalog`-flavoured worked example survives implicitly via
-// the type-theorem tests' coverage of `sampleCatalog`; the cross-emitter
-// keyset agreement is in `T11TypeTheoremTests.``T11 (sibling
-// commutativity): RawText, Json, Distributions key-sets are pairwise
-// equal```.
+// structural type theorem, exercised at `SiblingEmitterContractTests.fs`
+// (renamed from `T11TypeTheoremTests.fs` at chapter 3.7 slice ε per the
+// pillar-8 domain-first naming codification). The `endToEndCatalog`-
+// flavoured worked example survives implicitly via the contract tests'
+// coverage of `sampleCatalog`; the cross-emitter keyset agreement is
+// in `SiblingEmitterContractTests.``T11 (sibling commutativity):
+// RawText, Json, Distributions key-sets are pairwise equal```.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
