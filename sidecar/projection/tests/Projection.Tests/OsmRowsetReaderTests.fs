@@ -880,3 +880,341 @@ let ``slice 4: mixed catalog — system and non-system kinds coexist`` () =
         Assert.Equal (1, List.length userKinds)
         Assert.Equal<Name>(mkName "SystemAudit", systemKinds.[0].Name)
         Assert.Equal<Name>(mkName "User",        userKinds.[0].Name)
+
+
+// ===========================================================================
+// Chapter 3.2 slice 5 — cross-source parity tests (closes chapter 3.2).
+//
+// Validates the load-bearing claim of the chapter: SnapshotJson and
+// SnapshotRowsets produce structurally-equivalent Catalogs for the
+// same conceptual fixture, modulo the documented SsKey-shape
+// divergence (CHAPTER_3_2_OPEN.md axis 5).
+//
+// Two granularities:
+//
+//   (1) **Total parity** — when the rowset bundle carries no Guids,
+//       both paths emit `Synthesized` SsKeys via the same OS_MOD_*
+//       / OS_KIND_* / OS_ATTR_* / OS_REF_* conventions. The two
+//       Catalogs are byte-identical; `Assert.Equal<Catalog>` works.
+//
+//   (2) **Shape parity** — when the rowset bundle carries Guids, its
+//       SsKeys are `OssysOriginal` while the JSON path's stay
+//       `Synthesized`. The shape projection (`catalogShape`) strips
+//       SsKey identity and compares Names + structural fields only.
+//
+// Coverage axes (parity tests run across all three slice-1/2/3
+// fixture classes that round-trip cleanly between both paths):
+//
+//   - Minimal (slice 1): one module, one kind, two attributes.
+//   - Reference (slice 2): two kinds, one Reference, same-module FK.
+//   - External (slice 3): external entity with EspaceKind="Extension"
+//     so Origin aligns (ExternalViaIntegrationStudio both sides).
+//
+// **Out of parity scope** (documented):
+//   - EspaceKind="eSpace" + isExternal=true — rowset emits ExternalDirect,
+//     JSON emits ExternalViaIntegrationStudio (slice 3's refinement
+//     evidence test asserts this divergence directly).
+//   - IsSystemEntity=true — rowset emits Modality=[SystemOwned]; JSON
+//     drops the bit (no corresponding JSON field). Tested via slice 4.
+//
+// These divergences are CHAPTER 3.2's load-bearing additions; the
+// parity tests assert what doesn't diverge.
+// ===========================================================================
+
+// --- Structural-shape projection helpers ----------------------------------
+
+type private AttributeShape =
+    {
+        Name         : Name
+        Type         : PrimitiveType
+        Column       : ColumnRealization
+        IsPrimaryKey : bool
+        IsMandatory  : bool
+        Length       : int option
+        Precision    : int option
+        Scale        : int option
+        IsIdentity   : bool
+    }
+
+type private ReferenceShape =
+    {
+        Name                : Name
+        SourceAttributeName : Name option
+        TargetKindName      : Name option
+        OnDelete            : ReferenceAction
+    }
+
+type private KindShape =
+    {
+        Name       : Name
+        Origin     : Origin
+        Modality   : ModalityMark list
+        Physical   : PhysicalRealization
+        Attributes : AttributeShape list
+        References : ReferenceShape list
+    }
+
+type private ModuleShape =
+    {
+        Name  : Name
+        Kinds : KindShape list
+    }
+
+type private CatalogShape = { Modules : ModuleShape list }
+
+let private attributeShape (a: Attribute) : AttributeShape =
+    {
+        Name         = a.Name
+        Type         = a.Type
+        Column       = a.Column
+        IsPrimaryKey = a.IsPrimaryKey
+        IsMandatory  = a.IsMandatory
+        Length       = a.Length
+        Precision    = a.Precision
+        Scale        = a.Scale
+        IsIdentity   = a.IsIdentity
+    }
+
+let private referenceShape (nameBySsKey: Map<SsKey, Name>) (r: Reference) : ReferenceShape =
+    {
+        Name                = r.Name
+        SourceAttributeName = Map.tryFind r.SourceAttribute nameBySsKey
+        TargetKindName      = Map.tryFind r.TargetKind nameBySsKey
+        OnDelete            = r.OnDelete
+    }
+
+let private kindShape (nameBySsKey: Map<SsKey, Name>) (k: Kind) : KindShape =
+    {
+        Name       = k.Name
+        Origin     = k.Origin
+        Modality   = k.Modality
+        Physical   = k.Physical
+        Attributes = k.Attributes |> List.map attributeShape
+        References = k.References |> List.map (referenceShape nameBySsKey)
+    }
+
+let private moduleShape (nameBySsKey: Map<SsKey, Name>) (m: Module) : ModuleShape =
+    { Name = m.Name; Kinds = m.Kinds |> List.map (kindShape nameBySsKey) }
+
+let private catalogShape (c: Catalog) : CatalogShape =
+    // Build a name lookup across all attribute and kind SsKeys; references
+    // resolve their SourceAttribute/TargetKind to names, which gives us
+    // SsKey-shape-independent comparison.
+    let nameBySsKey : Map<SsKey, Name> =
+        c.Modules
+        |> List.collect (fun m ->
+            m.Kinds
+            |> List.collect (fun k ->
+                (k.SsKey, k.Name)
+                :: (k.Attributes |> List.map (fun a -> a.SsKey, a.Name))))
+        |> Map.ofList
+    { Modules = c.Modules |> List.map (moduleShape nameBySsKey) }
+
+// --- Parity test fixtures (small JSON strings + matching bundles) ---------
+
+let private minimalJsonFixture =
+    """{
+  "exportedAtUtc": "2026-05-10T00:00:00Z",
+  "modules": [
+    { "name": "AppCore", "isSystem": false, "isActive": true,
+      "entities": [
+        { "name": "User", "physicalName": "OSUSR_APPCORE_USER",
+          "isStatic": false, "isExternal": false, "isActive": true,
+          "db_catalog": null, "db_schema": "dbo",
+          "attributes": [
+            { "name": "Id", "physicalName": "ID", "originalName": null,
+              "dataType": "Identifier", "length": null, "precision": null,
+              "scale": null, "default": null, "isMandatory": true,
+              "isIdentifier": true, "isAutoNumber": true, "isActive": true,
+              "isReference": 0, "refEntityId": null, "refEntity_name": null,
+              "refEntity_physicalName": null, "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0, "external_dbType": null,
+              "physical_isPresentButInactive": 0 },
+            { "name": "Email", "physicalName": "EMAIL", "originalName": null,
+              "dataType": "Text", "length": 250, "precision": null,
+              "scale": null, "default": null, "isMandatory": true,
+              "isIdentifier": false, "isAutoNumber": false, "isActive": true,
+              "isReference": 0, "refEntityId": null, "refEntity_name": null,
+              "refEntity_physicalName": null, "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0, "external_dbType": null,
+              "physical_isPresentButInactive": 0 }
+          ],
+          "relationships": [], "indexes": [], "triggers": []
+        }
+      ]
+    }
+  ]
+}"""
+
+let private minimalRowsetBundleNoGuids : CatalogReader.RowsetBundle =
+    {
+        Modules    = [ moduleRow None ]
+        Kinds      = [ userKindRow None ]
+        Attributes = [ idAttrRow None; emailAttrRow None ]
+        References = []
+    }
+
+let private referenceJsonFixture =
+    """{
+  "exportedAtUtc": "2026-05-16T00:00:00Z",
+  "modules": [
+    { "name": "AppCore", "isSystem": false, "isActive": true,
+      "entities": [
+        { "name": "Account", "physicalName": "OSUSR_APPCORE_ACCOUNT",
+          "isStatic": false, "isExternal": false, "isActive": true,
+          "db_catalog": null, "db_schema": "dbo",
+          "attributes": [
+            { "name": "Id", "physicalName": "ID", "originalName": null,
+              "dataType": "Identifier", "length": null, "precision": null,
+              "scale": null, "default": null, "isMandatory": true,
+              "isIdentifier": true, "isAutoNumber": true, "isActive": true,
+              "isReference": 0, "refEntityId": null, "refEntity_name": null,
+              "refEntity_physicalName": null, "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0, "external_dbType": null,
+              "physical_isPresentButInactive": 0 }
+          ], "relationships": [], "indexes": [], "triggers": [] },
+        { "name": "User", "physicalName": "OSUSR_APPCORE_USER",
+          "isStatic": false, "isExternal": false, "isActive": true,
+          "db_catalog": null, "db_schema": "dbo",
+          "attributes": [
+            { "name": "Id", "physicalName": "ID", "originalName": null,
+              "dataType": "Identifier", "length": null, "precision": null,
+              "scale": null, "default": null, "isMandatory": true,
+              "isIdentifier": true, "isAutoNumber": true, "isActive": true,
+              "isReference": 0, "refEntityId": null, "refEntity_name": null,
+              "refEntity_physicalName": null, "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0, "external_dbType": null,
+              "physical_isPresentButInactive": 0 },
+            { "name": "AccountId", "physicalName": "ACCOUNTID", "originalName": null,
+              "dataType": "Identifier", "length": null, "precision": null,
+              "scale": null, "default": null, "isMandatory": true,
+              "isIdentifier": false, "isAutoNumber": false, "isActive": true,
+              "isReference": 1, "refEntityId": 1, "refEntity_name": "Account",
+              "refEntity_physicalName": "OSUSR_APPCORE_ACCOUNT",
+              "reference_deleteRuleCode": "Protect",
+              "reference_hasDbConstraint": 1, "external_dbType": null,
+              "physical_isPresentButInactive": 0 }
+          ], "relationships": [], "indexes": [], "triggers": [] }
+      ]
+    }
+  ]
+}"""
+
+let private externalParityJsonFixture =
+    """{
+  "exportedAtUtc": "2026-05-17T00:00:00Z",
+  "modules": [
+    { "name": "ExtBilling", "isSystem": false, "isActive": true,
+      "entities": [
+        { "name": "BillingAccount", "physicalName": "BILLING_ACCOUNT",
+          "isStatic": false, "isExternal": true, "isActive": true,
+          "db_catalog": null, "db_schema": "billing",
+          "attributes": [
+            { "name": "Id", "physicalName": "ID", "originalName": null,
+              "dataType": "Identifier", "length": null, "precision": null,
+              "scale": null, "default": null, "isMandatory": true,
+              "isIdentifier": true, "isAutoNumber": true, "isActive": true,
+              "isReference": 0, "refEntityId": null, "refEntity_name": null,
+              "refEntity_physicalName": null, "reference_deleteRuleCode": null,
+              "reference_hasDbConstraint": 0, "external_dbType": "int",
+              "physical_isPresentButInactive": 0 }
+          ], "relationships": [], "indexes": [], "triggers": [] }
+      ]
+    }
+  ]
+}"""
+
+// External bundle aligned to JSON's Origin: EspaceKind="Extension"
+// produces ExternalViaIntegrationStudio under the rowset path,
+// matching the JSON path's two-way collapse for isExternal=true.
+let private externalParityRowsetBundle : CatalogReader.RowsetBundle =
+    externalBundle (Some "Extension")
+
+// --- Parity assertion helper ----------------------------------------------
+
+let private assertCatalogsTotallyEqual (jsonSource: string) (bundle: CatalogReader.RowsetBundle) =
+    let jsonResult   = parseSync (CatalogReader.SnapshotJson jsonSource)
+    let rowsetResult = parseSync (CatalogReader.SnapshotRowsets bundle)
+    match jsonResult, rowsetResult with
+    | Ok jsonCatalog, Ok rowsetCatalog ->
+        Assert.Equal<Catalog>(jsonCatalog, rowsetCatalog)
+    | _ ->
+        Assert.Fail (
+            sprintf "Expected Ok from both paths; JSON=%A, Rowset=%A"
+                jsonResult rowsetResult)
+
+let private assertCatalogsShapeEqual (jsonSource: string) (bundle: CatalogReader.RowsetBundle) =
+    let jsonResult   = parseSync (CatalogReader.SnapshotJson jsonSource)
+    let rowsetResult = parseSync (CatalogReader.SnapshotRowsets bundle)
+    match jsonResult, rowsetResult with
+    | Ok jsonCatalog, Ok rowsetCatalog ->
+        Assert.Equal<CatalogShape>(
+            catalogShape jsonCatalog,
+            catalogShape rowsetCatalog)
+    | _ ->
+        Assert.Fail (
+            sprintf "Expected Ok from both paths; JSON=%A, Rowset=%A"
+                jsonResult rowsetResult)
+
+// --- Parity tests ---------------------------------------------------------
+
+[<Fact>]
+let ``slice 5 parity: minimal fixture — JSON ≡ Rowset (no Guids; total equality)`` () =
+    assertCatalogsTotallyEqual minimalJsonFixture minimalRowsetBundleNoGuids
+
+[<Fact>]
+let ``slice 5 parity: reference-bearing fixture — JSON ≡ Rowset (no Guids; total equality)`` () =
+    let bundle : CatalogReader.RowsetBundle =
+        {
+            Modules    = [ moduleRow None ]
+            Kinds      = [ accountKindRow None; userKindRowForRef ]
+            Attributes = [ accountIdRow None; userIdRow; userAccountIdRow ]
+            References = [ userAccountRefRow ]
+        }
+    assertCatalogsTotallyEqual referenceJsonFixture bundle
+
+[<Fact>]
+let ``slice 5 parity: external fixture aligned at Extension — JSON ≡ Rowset (no Guids; total equality)`` () =
+    assertCatalogsTotallyEqual externalParityJsonFixture externalParityRowsetBundle
+
+[<Fact>]
+let ``slice 5 parity: minimal fixture WITH Guids — shape parity holds modulo SsKey divergence`` () =
+    let bundle : CatalogReader.RowsetBundle =
+        {
+            Modules    = [ moduleRow (Some appCoreGuid) ]
+            Kinds      = [ userKindRow (Some userGuid) ]
+            Attributes = [ idAttrRow (Some idGuid); emailAttrRow (Some emailGuid) ]
+            References = []
+        }
+    // SsKey identity diverges (rowset = OssysOriginal Guid; JSON =
+    // Synthesized); structural shape (names, types, columns,
+    // physical, Origin, Modality, references) must match.
+    assertCatalogsShapeEqual minimalJsonFixture bundle
+
+[<Fact>]
+let ``slice 5 parity: SsKey divergence axis — Guids change identity but not shape`` () =
+    // Direct evidence that the SsKey divergence is the ONLY axis on
+    // which the two parses differ for a Guid-carrying bundle. Total
+    // equality FAILS (Catalog SsKeys differ); shape equality PASSES.
+    let bundle : CatalogReader.RowsetBundle =
+        {
+            Modules    = [ moduleRow (Some appCoreGuid) ]
+            Kinds      = [ userKindRow (Some userGuid) ]
+            Attributes = [ idAttrRow (Some idGuid); emailAttrRow (Some emailGuid) ]
+            References = []
+        }
+    let jsonCat   =
+        match parseSync (CatalogReader.SnapshotJson minimalJsonFixture) with
+        | Ok c -> c | Error es -> failwithf "%A" es
+    let rowsetCat =
+        match parseSync (CatalogReader.SnapshotRowsets bundle) with
+        | Ok c -> c | Error es -> failwithf "%A" es
+    // Catalogs are NOT byte-identical (SsKey divergence proven).
+    Assert.NotEqual<Catalog>(jsonCat, rowsetCat)
+    // But their shapes ARE identical (the load-bearing claim).
+    Assert.Equal<CatalogShape>(catalogShape jsonCat, catalogShape rowsetCat)
+    // And the rowset path's identity is OssysOriginal (the chapter's
+    // load-bearing addition that makes A1's rename-survival
+    // unbounded).
+    let rowsetUserSsKey = rowsetCat.Modules.[0].Kinds.[0].SsKey
+    Assert.Equal<SsKey>(OssysOriginal userGuid, rowsetUserSsKey)
