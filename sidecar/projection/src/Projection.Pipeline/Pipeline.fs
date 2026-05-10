@@ -1,6 +1,7 @@
 namespace Projection.Pipeline
 
 open System.IO
+open System.Text.Json.Nodes
 open System.Threading.Tasks
 open Projection.Core
 open Projection.Adapters.Osm
@@ -25,20 +26,40 @@ open Projection.Targets.Distributions
 module Compose =
 
     /// Per-emitter output captured into memory before being written to
-    /// disk. Tests assert against these strings without round-tripping
+    /// disk. Tests assert against these values without round-tripping
     /// through the file system.
+    ///
+    /// Per the chapter 4.1.A close arc + Tier-1 #2 RawTextEmitter
+    /// retirement transition: `SsdtBundle` is the production-shape
+    /// per-table file map (per `SsdtBundle.compose`) — `Map<RelativePath
+    /// , string>` containing one `.sql` per kind plus `manifest.json`.
+    /// This retires the chapter-3-era `Sql : string` single-blob
+    /// dogfood output in favor of the per-table file shape the
+    /// operator's Azure DevOps pipeline consumes.
     type Outputs =
         {
-            /// Raw .sql text from `RawTextEmitter` — the synthetic-
-            /// milestone SSDT shape per `DECISIONS 2026-05-06 — Π_SSDT
-            /// first emission target is raw .sql-style text`.
-            Sql : string
-            /// V2 IR JSON from `JsonEmitter`.
-            Json : string
+            /// Production-shape SSDT bundle: per-kind `.sql` files
+            /// (under `Modules/<Module>/<Schema>.<Table>.sql` per V1
+            /// convention) + `manifest.json` (per V1 SsdtManifest
+            /// schema). Keyed by relative path; values are file
+            /// contents. Iterate to write to disk; consumers needing
+            /// a single concatenated SQL string call `aggregateSsdt`.
+            SsdtBundle : Map<string, string>
+            /// V2 IR JSON from `JsonEmitter`, typed as `JsonNode` so
+            /// consumers (drift detection, structural diff, post-write
+            /// enrichment) query the doc tree without a `JsonNode
+            /// .Parse` re-parse step. Per Tier-1 #3 (RawTextEmitter
+            /// retirement arc): the chapter 3.7 slice ε already typed
+            /// the per-kind value at the Π port; Tier-1 #3 lifts the
+            /// composition output to JsonNode at the Outputs seam.
+            /// Distinct from `manifest.json` (the V1-mirror SSDT
+            /// manifest in `SsdtBundle`).
+            Json : JsonNode
             /// Distributions JSON from `DistributionsEmitter`,
             /// consuming `Profile.empty` since the dogfood frame does
-            /// not yet thread profile evidence end-to-end.
-            Distributions : string
+            /// not yet thread profile evidence end-to-end. Same
+            /// JsonNode-at-the-seam treatment as `Json` above.
+            Distributions : JsonNode
         }
 
     /// Per-artifact relative path. Centralized so tests and the CLI
@@ -46,11 +67,23 @@ module Compose =
     [<RequireQualifiedAccess>]
     module ArtifactPath =
         [<Literal>]
-        let sql = "projection.sql"
-        [<Literal>]
         let json = "projection.json"
         [<Literal>]
         let distributions = "distributions.json"
+
+    /// Aggregate the SSDT bundle's per-table SQL files into one
+    /// concatenated SQL string (manifest.json excluded; iterates the
+    /// bundle in deterministic SsKey-derived order via Map's natural
+    /// ordering). Used by Deploy.runEphemeral and any consumer that
+    /// needs the single-string deploy form (e.g., the V1↔V2
+    /// differential dogfood tests). The per-file shape stays canonical
+    /// for production deploys.
+    let aggregateSsdt (bundle: Map<string, string>) : string =
+        bundle
+        |> Map.toSeq
+        |> Seq.filter (fun (path, _) -> path.EndsWith(".sql"))
+        |> Seq.map snd
+        |> String.concat "\nGO\n"  // LINT-ALLOW: terminal SQL-batch joiner across per-table SsdtBundle entries; segments are typed (each `Body` is the rendered ScriptDom output from SsdtDdlEmitter); BCL `String.concat` IS the use-case-specific library at the SQL-batch concatenation boundary
 
     /// Run the three sibling Π's against a Catalog. Pure: same Catalog
     /// → same Outputs (T1 byte-determinism). Profile is `Profile.empty`
@@ -58,18 +91,35 @@ module Compose =
     /// evidence.
     let project (catalog: Catalog) : Outputs =
         use _ = Bench.scope "compose.project"
-        let sql =
-            (use _ = Bench.scope "emit.rawText"
-             RawTextEmitter.emit catalog)
+        let bundle =
+            (use _ = Bench.scope "emit.ssdtBundle.compose"
+             match SsdtDdlEmitter.emitSlices catalog with
+             | Ok ssdtFiles ->
+                 let manifest = ManifestEmitter.emit catalog
+                 SsdtBundle.compose ssdtFiles manifest
+             | Error err ->
+                 // Unreachable in production paths: Catalog.allKinds is
+                 // the keyset by construction; SsdtDdlEmitter.emitSlices
+                 // produces one slice per kind (smart-constructor
+                 // strict-equality); error states surface only on
+                 // pathological catalogs that bypass smart constructors.
+                 invalidOp (sprintf "Compose.project: SsdtDdlEmitter.emitSlices: %A" err))
         let json =
             (use _ = Bench.scope "emit.json"
-             JsonEmitter.emit catalog)
+             // Per Tier-1 #3: parse once at project time so the
+             // Outputs seam is JsonNode-typed. Downstream consumers
+             // query the tree without re-parse.
+             match JsonNode.Parse(JsonEmitter.emit catalog) with
+             | null -> invalidOp "Compose.project: JsonEmitter.emit produced unparseable text (unreachable)"
+             | n    -> n)
         let distributions =
             (use _ = Bench.scope "emit.distributions"
-             DistributionsEmitter.emit catalog Profile.empty)
+             match JsonNode.Parse(DistributionsEmitter.emit catalog Profile.empty) with
+             | null -> invalidOp "Compose.project: DistributionsEmitter.emit produced unparseable text (unreachable)"
+             | n    -> n)
         {
-            Sql = sql
-            Json = json
+            SsdtBundle    = bundle
+            Json          = json
             Distributions = distributions
         }
 
@@ -91,19 +141,34 @@ module Compose =
             return! CatalogReader.parse (CatalogReader.SnapshotJson json)
         }
 
-    /// Write the three artifacts to a directory. Creates the directory
-    /// if it does not exist. Returns the absolute paths of the written
-    /// files for operator-side validation.
+    /// Write the SSDT bundle (per-kind .sql + manifest.json) plus the
+    /// V2 IR JSON + Distributions artifacts to a directory. Creates
+    /// the directory + bundle subdirectories as needed. Returns the
+    /// absolute paths of every written file for operator-side
+    /// validation.
     let write (outputDir: string) (outputs: Outputs) : string list =
         use _ = Bench.scope "compose.write"
         Directory.CreateDirectory outputDir |> ignore
-        let sqlPath = Path.Combine(outputDir, ArtifactPath.sql)
+        let bundlePaths =
+            outputs.SsdtBundle
+            |> Map.toList
+            |> List.map (fun (relPath, body) ->
+                let absPath = Path.Combine(outputDir, relPath)
+                match Path.GetDirectoryName absPath with
+                | null -> ()
+                | parent when System.String.IsNullOrEmpty parent -> ()
+                | parent -> Directory.CreateDirectory parent |> ignore
+                File.WriteAllText(absPath, body)
+                absPath)
         let jsonPath = Path.Combine(outputDir, ArtifactPath.json)
         let distributionsPath = Path.Combine(outputDir, ArtifactPath.distributions)
-        File.WriteAllText(sqlPath, outputs.Sql)
-        File.WriteAllText(jsonPath, outputs.Json)
-        File.WriteAllText(distributionsPath, outputs.Distributions)
-        [ sqlPath; jsonPath; distributionsPath ]
+        // Per Tier-1 #3: serialize JsonNode at the file-system boundary.
+        // The Outputs seam is typed; the disk artifact is canonical
+        // JSON text per `JsonNode.ToJsonString`.
+        let jsonOpts = System.Text.Json.JsonSerializerOptions(WriteIndented = true)
+        File.WriteAllText(jsonPath, outputs.Json.ToJsonString(jsonOpts))
+        File.WriteAllText(distributionsPath, outputs.Distributions.ToJsonString(jsonOpts))
+        bundlePaths @ [ jsonPath; distributionsPath ]
 
     /// Full end-to-end: read V1 JSON from disk, project, write
     /// artifacts to the output directory. Returns the artifact paths

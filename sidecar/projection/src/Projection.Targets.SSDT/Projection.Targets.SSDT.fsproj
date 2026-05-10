@@ -14,7 +14,9 @@
     <Compile Include="ScriptDomBuild.fs" />
     <Compile Include="ScriptDomGenerate.fs" />
     <Compile Include="Render.fs" />
-    <Compile Include="RawTextEmitter.fs" />
+    <Compile Include="SsdtDdlEmitter.fs" />
+    <Compile Include="ManifestEmitter.fs" />
+    <Compile Include="SsdtBundle.fs" />
     <Compile Include="RefactorLogEmitter.fs" />
     <Compile Include="RefactorLogRender.fs" />
     <Compile Include="BatchSplitter.fs" />

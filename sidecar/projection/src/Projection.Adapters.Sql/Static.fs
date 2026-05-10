@@ -37,6 +37,27 @@ open Projection.Core
 [<RequireQualifiedAccess>]
 module Static =
 
+    /// Typed source surface for V1's static-population JSON. Per the
+    /// chapter-3.7 slice ζ cash-out (audit Tier-1 #6), the boundary
+    /// adapter's input is structurally a *port* (an external
+    /// dependency-injection point); typing it through a closed DU
+    /// names the port concept-shape rather than hiding it behind a
+    /// raw `string`. Mirrors the `Projection.Adapters.Osm.CatalogReader
+    /// .SnapshotSource` shape (chapter 2's precedent).
+    ///
+    /// **Single variant today.** `StaticPopulationsJson` covers every
+    /// current consumer (tests; the canary's pipeline assembles the
+    /// JSON in memory from rowsets / fixtures). Per
+    /// `DECISIONS 2026-05-07 — IR grows under evidence`, the future
+    /// `StaticPopulationsFile of path: string` variant lands when a
+    /// CLI / pipeline consumer materializes that reads from disk
+    /// directly (closed-DU expansion; no signature change for
+    /// existing JSON consumers).
+    type StaticPopulationsSource =
+        /// In-memory snapshot of V1's static-population JSON. The
+        /// shape is documented at the top of this module's docstring.
+        | StaticPopulationsJson of json: string
+
     let private adapterError (code: string) (message: string) : ValidationError =
         ValidationError.create code message
 
@@ -175,7 +196,17 @@ module Static =
     /// pairs across kinds, missing kinds for JSON tables, or other
     /// shape concerns are the catalog reader's responsibility, not
     /// this adapter's.
-    let attachStaticPopulations (catalog: Catalog) (staticDataJson: string) : Result<Catalog> =
+    ///
+    /// **Source surface (chapter-3.7 slice ζ).** The input flows
+    /// through a typed `StaticPopulationsSource` DU — concept-shaped
+    /// port surface mirroring `CatalogReader.SnapshotSource`. Adding
+    /// new source variants (e.g., `StaticPopulationsFile of path`)
+    /// happens via closed-DU expansion in the type definition above;
+    /// no signature change at this consumer.
+    let attachStaticPopulations (catalog: Catalog) (source: StaticPopulationsSource) : Result<Catalog> =
+        let staticDataJson =
+            match source with
+            | StaticPopulationsJson json -> json
         try
             use doc = JsonDocument.Parse(staticDataJson)
             indexTables doc.RootElement

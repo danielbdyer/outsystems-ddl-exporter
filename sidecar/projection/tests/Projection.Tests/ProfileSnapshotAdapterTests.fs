@@ -158,17 +158,17 @@ let private microFkCatalog : Catalog =
 
 [<Fact>]
 let ``V1 contract: fixture parses successfully`` () =
-    let r = ProfileSnapshot.attach microFkCatalog microFkProtectJson
+    let r = ProfileSnapshot.attach microFkCatalog (ProfileSnapshot.ProfileSnapshotJson microFkProtectJson)
     Assert.True(Result.isSuccess r)
 
 [<Fact>]
 let ``V1 contract: fixture produces three ColumnProfile records`` () =
-    let p = ProfileSnapshot.attach microFkCatalog microFkProtectJson |> Result.value
+    let p = ProfileSnapshot.attach microFkCatalog (ProfileSnapshot.ProfileSnapshotJson microFkProtectJson) |> Result.value
     Assert.Equal(3, p.Columns.Length)
 
 [<Fact>]
 let ``V1 contract: column profiles are keyed by V2 attribute SsKey`` () =
-    let p = ProfileSnapshot.attach microFkCatalog microFkProtectJson |> Result.value
+    let p = ProfileSnapshot.attach microFkCatalog (ProfileSnapshot.ProfileSnapshotJson microFkProtectJson) |> Result.value
     let keys = p.Columns |> List.map (fun c -> c.AttributeKey) |> Set.ofList
     Assert.Equal<Set<SsKey>>(
         Set.ofList [ parentIdKey; childIdKey; childParentFkKey ],
@@ -176,7 +176,7 @@ let ``V1 contract: column profiles are keyed by V2 attribute SsKey`` () =
 
 [<Fact>]
 let ``V1 contract: row counts and null counts are preserved`` () =
-    let p = ProfileSnapshot.attach microFkCatalog microFkProtectJson |> Result.value
+    let p = ProfileSnapshot.attach microFkCatalog (ProfileSnapshot.ProfileSnapshotJson microFkProtectJson) |> Result.value
     let parentIdProfile =
         Profile.tryFindColumn parentIdKey p |> Option.get
     Assert.Equal(500L, parentIdProfile.RowCount)
@@ -188,13 +188,13 @@ let ``V1 contract: row counts and null counts are preserved`` () =
 
 [<Fact>]
 let ``V1 contract: probe outcomes are preserved`` () =
-    let p = ProfileSnapshot.attach microFkCatalog microFkProtectJson |> Result.value
+    let p = ProfileSnapshot.attach microFkCatalog (ProfileSnapshot.ProfileSnapshotJson microFkProtectJson) |> Result.value
     Assert.All(p.Columns, fun c ->
         Assert.Equal<ProbeOutcome>(Succeeded, c.NullCountProbeStatus.Outcome))
 
 [<Fact>]
 let ``V1 contract: fixture produces one ForeignKeyReality keyed by V2 reference`` () =
-    let p = ProfileSnapshot.attach microFkCatalog microFkProtectJson |> Result.value
+    let p = ProfileSnapshot.attach microFkCatalog (ProfileSnapshot.ProfileSnapshotJson microFkProtectJson) |> Result.value
     Assert.Equal(1, p.ForeignKeys.Length)
     let fk = p.ForeignKeys |> List.head
     Assert.Equal(childToParentRefKey, fk.ReferenceKey)
@@ -203,7 +203,7 @@ let ``V1 contract: fixture produces one ForeignKeyReality keyed by V2 reference`
 
 [<Fact>]
 let ``V1 contract: fixture has no unique or composite candidates`` () =
-    let p = ProfileSnapshot.attach microFkCatalog microFkProtectJson |> Result.value
+    let p = ProfileSnapshot.attach microFkCatalog (ProfileSnapshot.ProfileSnapshotJson microFkProtectJson) |> Result.value
     Assert.Empty(p.UniqueCandidates)
     Assert.Empty(p.CompositeUniqueCandidates)
 
@@ -215,7 +215,7 @@ let ``V1 contract: fixture has no unique or composite candidates`` () =
 let ``empty profile (V1 profile.empty.json shape) yields Profile.empty`` () =
     let json = """{ "columns": [], "uniqueCandidates": [],
                     "compositeUniqueCandidates": [], "fkReality": [] }"""
-    let p = ProfileSnapshot.attach microFkCatalog json |> Result.value
+    let p = ProfileSnapshot.attach microFkCatalog (ProfileSnapshot.ProfileSnapshotJson json) |> Result.value
     Assert.True(Profile.isEmpty p)
 
 // ---------------------------------------------------------------------------
@@ -237,7 +237,7 @@ let ``unresolvable coordinates are silently skipped`` () =
         "uniqueCandidates": [],
         "compositeUniqueCandidates": [],
         "fkReality": [] }"""
-    let p = ProfileSnapshot.attach microFkCatalog json |> Result.value
+    let p = ProfileSnapshot.attach microFkCatalog (ProfileSnapshot.ProfileSnapshotJson json) |> Result.value
     Assert.Empty(p.Columns)
 
 // ---------------------------------------------------------------------------
@@ -246,7 +246,7 @@ let ``unresolvable coordinates are silently skipped`` () =
 
 [<Fact>]
 let ``malformed JSON returns Result.Error`` () =
-    let r = ProfileSnapshot.attach microFkCatalog "{ not json"
+    let r = ProfileSnapshot.attach microFkCatalog (ProfileSnapshot.ProfileSnapshotJson "{ not json")
     Assert.True(Result.isFailure r)
 
 [<Fact>]
@@ -263,7 +263,7 @@ let ``unknown ProbeOutcome returns Result.Error with documented code`` () =
         "uniqueCandidates": [],
         "compositeUniqueCandidates": [],
         "fkReality": [] }"""
-    let r = ProfileSnapshot.attach microFkCatalog json
+    let r = ProfileSnapshot.attach microFkCatalog (ProfileSnapshot.ProfileSnapshotJson json)
     match r with
     | Error errors ->
         Assert.True(
@@ -276,8 +276,8 @@ let ``unknown ProbeOutcome returns Result.Error with documented code`` () =
 
 [<Fact>]
 let ``T1: ProfileSnapshot.attach is deterministic`` () =
-    let p1 = ProfileSnapshot.attach microFkCatalog microFkProtectJson |> Result.value
-    let p2 = ProfileSnapshot.attach microFkCatalog microFkProtectJson |> Result.value
+    let p1 = ProfileSnapshot.attach microFkCatalog (ProfileSnapshot.ProfileSnapshotJson microFkProtectJson) |> Result.value
+    let p2 = ProfileSnapshot.attach microFkCatalog (ProfileSnapshot.ProfileSnapshotJson microFkProtectJson) |> Result.value
     Assert.Equal<Profile>(p1, p2)
 
 // ---------------------------------------------------------------------------
@@ -288,7 +288,7 @@ let ``T1: ProfileSnapshot.attach is deterministic`` () =
 
 [<Fact>]
 let ``composition: profile-adapter output feeds NullabilityPass under empty Tightening`` () =
-    let profile = ProfileSnapshot.attach microFkCatalog microFkProtectJson |> Result.value
+    let profile = ProfileSnapshot.attach microFkCatalog (ProfileSnapshot.ProfileSnapshotJson microFkProtectJson) |> Result.value
     let lineage =
         Projection.Core.Passes.NullabilityPass.run
             microFkCatalog Policy.empty profile

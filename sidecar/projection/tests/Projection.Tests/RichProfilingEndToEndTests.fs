@@ -172,8 +172,8 @@ let private distributionsJson = """
 // ---------------------------------------------------------------------------
 
 let private enrichedProfile () : Profile =
-    ProfileSnapshot.attach endToEndCatalog snapshotJson
-    |> Result.bind (ProfileStatistics.attach endToEndCatalog distributionsJson)
+    ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
+    |> Result.bind (ProfileStatistics.attach endToEndCatalog (ProfileStatistics.DistributionsJson distributionsJson))
     |> Result.value
 
 // ---------------------------------------------------------------------------
@@ -193,10 +193,10 @@ let ``MILESTONE: V1 column profiles and V2 distributions coexist in the enriched
 [<Fact>]
 let ``MILESTONE: layering distributions does not lose V1 evidence`` () =
     let snapshotOnly =
-        ProfileSnapshot.attach endToEndCatalog snapshotJson
+        ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
         |> Result.value
     let layered =
-        ProfileStatistics.attach endToEndCatalog distributionsJson snapshotOnly
+        ProfileStatistics.attach endToEndCatalog (ProfileStatistics.DistributionsJson distributionsJson) snapshotOnly
         |> Result.value
     Assert.Equal(snapshotOnly.Columns.Length,          layered.Columns.Length)
     Assert.Equal(snapshotOnly.UniqueCandidates.Length, layered.UniqueCandidates.Length)
@@ -211,17 +211,17 @@ let ``MILESTONE: adapter composition order does not matter`` () =
     // have the same content (modulo distributions-list ordering, which
     // is empty in one path so the equivalence is exact here).
     let aThenB =
-        ProfileSnapshot.attach endToEndCatalog snapshotJson
-        |> Result.bind (ProfileStatistics.attach endToEndCatalog distributionsJson)
+        ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
+        |> Result.bind (ProfileStatistics.attach endToEndCatalog (ProfileStatistics.DistributionsJson distributionsJson))
         |> Result.value
     // Reverse-order: distributions first onto Profile.empty, then
     // re-add snapshot data manually since ProfileStatistics doesn't
     // produce columns / unique / fk fields.
     let bThenA =
-        ProfileStatistics.attach endToEndCatalog distributionsJson Profile.empty
+        ProfileStatistics.attach endToEndCatalog (ProfileStatistics.DistributionsJson distributionsJson) Profile.empty
         |> Result.value
     let bThenAEnriched =
-        ProfileSnapshot.attach endToEndCatalog snapshotJson
+        ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
         |> Result.value
     // Combine bThenA's distributions with bThenAEnriched's other fields
     // — the resulting Profile must equal aThenB's.
@@ -278,12 +278,13 @@ let ``T1: end-to-end pipeline is byte-deterministic`` () =
 // each Π returns `Result<ArtifactByKind<'element>, EmitError>`, and
 // `ArtifactByKind`'s smart constructor enforces strict-equality between
 // the slice's keyset and `Catalog.allKinds`'s SsKey set. T11 is now a
-// structural type theorem, exercised at `T11TypeTheoremTests.fs`. The
-// `endToEndCatalog`-flavoured worked example survives implicitly via
-// the type-theorem tests' coverage of `sampleCatalog`; the cross-emitter
-// keyset agreement is in `T11TypeTheoremTests.``T11 (sibling
-// commutativity): RawText, Json, Distributions key-sets are pairwise
-// equal```.
+// structural type theorem, exercised at `SiblingEmitterContractTests.fs`
+// (renamed from `T11TypeTheoremTests.fs` at chapter 3.7 slice ε per the
+// pillar-8 domain-first naming codification). The `endToEndCatalog`-
+// flavoured worked example survives implicitly via the contract tests'
+// coverage of `sampleCatalog`; the cross-emitter keyset agreement is
+// in `SiblingEmitterContractTests.``T11 (sibling commutativity):
+// RawText, Json, Distributions key-sets are pairwise equal```.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -295,7 +296,7 @@ let ``T1: end-to-end pipeline is byte-deterministic`` () =
 [<Fact>]
 let ``structural commitment: empty distributions yields all-null distribution fields, full catalog structure preserved`` () =
     let snapshotOnly =
-        ProfileSnapshot.attach endToEndCatalog snapshotJson
+        ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
         |> Result.value
     let output = DistributionsEmitter.emit endToEndCatalog snapshotOnly
     use doc = JsonDocument.Parse(output)
@@ -320,7 +321,7 @@ let ``structural commitment: empty distributions yields all-null distribution fi
 [<Fact>]
 let ``invariant: V1 ProfileSnapshot.attach does not populate Distributions`` () =
     let snapshotOnly =
-        ProfileSnapshot.attach endToEndCatalog snapshotJson
+        ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
         |> Result.value
     Assert.Empty(snapshotOnly.Distributions)
 
@@ -367,8 +368,8 @@ let private mixedDistributionsJson = """
 """
 
 let private enrichedProfileBothVariants () : Profile =
-    ProfileSnapshot.attach endToEndCatalog snapshotJson
-    |> Result.bind (ProfileStatistics.attach endToEndCatalog mixedDistributionsJson)
+    ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
+    |> Result.bind (ProfileStatistics.attach endToEndCatalog (ProfileStatistics.DistributionsJson mixedDistributionsJson))
     |> Result.value
 
 [<Fact>]
@@ -428,14 +429,22 @@ let ``MILESTONE 10: T1 byte-determinism holds across the now-larger Profile shap
     Assert.All(outputs, fun s -> Assert.Equal(List.head outputs, s))
 
 [<Fact>]
-let ``MILESTONE 10: T11 sibling commutativity preserved across all three Pi with both variants`` () =
+let ``MILESTONE 10: T11 sibling commutativity preserved across self-describing Pi (Json + Distributions)`` () =
+    // Pre-RawTextEmitter-retirement: this test also checked SsKey
+    // roots in the SSDT output via RawTextEmitter's `Provenance`
+    // trailing comments. The production SsdtDdlEmitter (ScriptDom-
+    // rendered) does not emit those comments — SsKey roots are V2-IR-
+    // internal identifiers with no SSDT-DDL surface. The structural
+    // T11 keyset property (every kind appears in every Π's keyset)
+    // lives at `SiblingEmitterContractTests.fs` and is enforced by
+    // `ArtifactByKind.create`'s smart constructor; here we narrow to
+    // the self-describing surfaces (Json, Distributions) where SsKey
+    // roots ARE structural.
     let profile = enrichedProfileBothVariants ()
-    let ssdt   = RawTextEmitter.emit endToEndCatalog
     let json   = JsonEmitter.emit endToEndCatalog
     let distrs = DistributionsEmitter.emit endToEndCatalog profile
     for k in Catalog.allKinds endToEndCatalog do
         let root = SsKey.rootOriginal k.SsKey
-        Assert.Contains(root, ssdt)
         Assert.Contains(root, json)
         Assert.Contains(root, distrs)
 
@@ -459,8 +468,8 @@ let ``MILESTONE 10: monotonicity violation in fixture surfaces as adapter error`
     }
     """
     let result =
-        ProfileSnapshot.attach endToEndCatalog snapshotJson
-        |> Result.bind (ProfileStatistics.attach endToEndCatalog badJson)
+        ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
+        |> Result.bind (ProfileStatistics.attach endToEndCatalog (ProfileStatistics.DistributionsJson badJson))
     match result with
     | Ok _ -> Assert.Fail "Expected failure on monotonicity violation"
     | Error errs ->
@@ -507,8 +516,8 @@ let private uniquenessProfileJson = """
 """
 
 let private profileForCategoricalUniqueness () : Profile =
-    ProfileSnapshot.attach endToEndCatalog snapshotJson
-    |> Result.bind (ProfileStatistics.attach endToEndCatalog uniquenessProfileJson)
+    ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
+    |> Result.bind (ProfileStatistics.attach endToEndCatalog (ProfileStatistics.DistributionsJson uniquenessProfileJson))
     |> Result.value
 
 let private categoricalUniquenessConfig =

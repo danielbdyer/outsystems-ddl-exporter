@@ -67,14 +67,19 @@ type EmitterOverDiff<'element> =
 /// Per A19 (each pass is a structure-preserving endofunctor) and A25
 /// (lineage is constitutive). The pass return-type codification
 /// (`DECISIONS 2026-05-13`) names this as the decisions-only shape.
-type Pass<'output> =
+///
+/// The `'output : equality` constraint propagates from `Lineage<'a>`'s
+/// A26 cash-out (chapter-3.7 slice α): the writer carrier projects
+/// equality through `Value` only, which requires the value type to
+/// support equality. Every IR / decision type in V2 already does.
+type Pass<'output when 'output : equality> =
     Catalog -> Policy -> Profile -> Lineage<'output>
 
 /// Pattern Pass — decisions plus observer-relevant findings.
 /// Per the dual-writer codification stability mark
 /// (`DECISIONS 2026-05-14 — Writer codification reaches its stability
 /// mark`); the two-shape distinction names what the pass produces.
-type PassWithDiagnostics<'output> =
+type PassWithDiagnostics<'output when 'output : equality> =
     Catalog -> Policy -> Profile -> Lineage<Diagnostics<'output>>
 
 /// Pattern Render — concrete syntax (per-target composition layer).

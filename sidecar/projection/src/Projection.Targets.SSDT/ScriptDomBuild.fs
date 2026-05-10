@@ -83,11 +83,21 @@ module ScriptDomBuild =
 
     /// Build a `SqlDataTypeReference` carrying the type expression
     /// (length / precision / scale parameters per V2's defaults).
-    /// Mirrors `Render.columnSqlType` semantics: `NVARCHAR(N)` /
-    /// `NVARCHAR(MAX)`; `VARBINARY(N)` / `VARBINARY(MAX)`;
+    /// `NVARCHAR(N)` / `NVARCHAR(MAX)`; `VARBINARY(N)` / `VARBINARY(MAX)`;
     /// `DECIMAL(P, S)` / `DECIMAL(P, 0)` / `DECIMAL(18, 4)`; fixed
     /// types pass through.
-    let private dataTypeReference
+    ///
+    /// Public surface (chapter-3.7 slice β'): `Render.columnSqlType`
+    /// delegates here + through `ScriptDomGenerate.generateDataType`
+    /// so the SQL DDL type expression has exactly one source of
+    /// truth — the typed AST built here, rendered by ScriptDom's
+    /// `Sql160ScriptGenerator`. Per pillar 7 (gold-standard library
+    /// precedence), the use-case-specific library IS the emission
+    /// path; previously `Render.columnSqlType` composed type strings
+    /// via `String.Concat` (`sqlTypeWithLength`, `sqlDecimal`),
+    /// which the chapter-3.7 audit found in violation of pillar 1
+    /// (data-structure-oriented).
+    let dataTypeReference
         (typ: PrimitiveType)
         (length: int option)
         (precision: int option)
@@ -227,52 +237,60 @@ module ScriptDomBuild =
 
     /// Build the V-typed `Literal` expression for one cell. `""` is
     /// NULL; numeric / text / binary / guid / boolean dispatch per
-    /// `Render.formatSqlLiteral` semantics. Returned as
-    /// `ScalarExpression` for use in `RowValue` lists.
-    let private cellExpression (cell: CellValue) : ScalarExpression =
-        if System.String.IsNullOrEmpty cell.Raw then
+    /// Map a typed `SqlLiteral` value to a ScriptDom `ScalarExpression`
+    /// (specifically a `Literal` subclass projected to its supertype
+    /// for use in `RowValue.ColumnValues`). Per the Tier-1 #4 transition
+    /// (RawTextEmitter retirement arc): the IR→typed-literal projection
+    /// lives in `Projection.Core.SqlLiteral`; this is the SSDT-resident
+    /// `SqlLiteral` → ScriptDom-`Literal` mapping. Used by both
+    /// `cellExpression` (single-row `InsertStatement` VALUES) and
+    /// `buildMergeStatement` (multi-row VALUES inside MERGE's
+    /// InlineDerivedTable).
+    let buildSqlLiteral (lit: SqlLiteral) : ScalarExpression =
+        match lit with
+        | NullLit ->
             NullLiteral() :> ScalarExpression
-        else
-            match cell.Type with
-            | Integer ->
-                let lit = IntegerLiteral()
-                lit.Value <- cell.Raw
-                lit :> ScalarExpression
-            | Decimal ->
-                let lit = NumericLiteral()
-                lit.Value <- cell.Raw
-                lit :> ScalarExpression
-            | Boolean ->
-                let lit = IntegerLiteral()
-                lit.Value <-
-                    match cell.Raw.ToLowerInvariant() with
-                    | "true" | "1" -> "1"
-                    | _ -> "0"
-                lit :> ScalarExpression
-            | DateTime | Date | Time | Guid ->
-                // Quoted string literal; ScriptDom emits with single quotes.
-                let lit = StringLiteral()
-                lit.Value <- cell.Raw
-                lit.IsNational <- false
-                lit :> ScalarExpression
-            | Text ->
-                // National string (`N'…'`); ScriptDom doubles single
-                // quotes inside `Value` automatically.
-                let lit = StringLiteral()
-                lit.Value <- cell.Raw
-                lit.IsNational <- true
-                lit :> ScalarExpression
-            | Binary ->
-                // Hex literal `0x…`. ScriptDom carries
-                // `BinaryLiteral.Value` already prefixed; we strip an
-                // existing `0x` prefix so the writer adds it once.
-                let lit = BinaryLiteral()
-                let trimmed =
-                    if cell.Raw.StartsWith("0x", System.StringComparison.OrdinalIgnoreCase)
-                    then cell.Raw.Substring 2
-                    else cell.Raw
-                lit.Value <- System.String.Concat("0x", trimmed)
-                lit :> ScalarExpression
+        | IntegerLit s ->
+            let l = IntegerLiteral()
+            l.Value <- s
+            l :> ScalarExpression
+        | DecimalLit s ->
+            let l = NumericLiteral()
+            l.Value <- s
+            l :> ScalarExpression
+        | BooleanLit b ->
+            let l = IntegerLiteral()
+            l.Value <- if b then "1" else "0"
+            l :> ScalarExpression
+        | TemporalLit raw ->
+            let l = StringLiteral()
+            l.Value <- raw
+            l.IsNational <- false
+            l :> ScalarExpression
+        | GuidLit raw ->
+            let l = StringLiteral()
+            l.Value <- raw
+            l.IsNational <- false
+            l :> ScalarExpression
+        | TextLit raw ->
+            let l = StringLiteral()
+            l.Value <- raw
+            l.IsNational <- true
+            l :> ScalarExpression
+        | BinaryLit prefixed ->
+            let l = BinaryLiteral()
+            // ScriptDom's `BinaryLiteral.Value` carries the value
+            // pre-prefixed; `SqlLiteral.BinaryLit` already has the
+            // `0x` prefix per `RawValueCodec.withHexPrefix`. The
+            // writer emits the value verbatim.
+            l.Value <- prefixed
+            l :> ScalarExpression
+
+    /// Cell-value → ScalarExpression. Routes through the typed
+    /// `SqlLiteral.ofRaw` projection (Core) and the SSDT-resident
+    /// `buildSqlLiteral` mapping above.
+    let private cellExpression (cell: CellValue) : ScalarExpression =
+        SqlLiteral.ofRaw cell.Type cell.Raw |> buildSqlLiteral
 
     /// Build an `InsertStatement` for an `InsertRow` statement.
     /// Emits `INSERT INTO [schema].[table] ([col]…) VALUES (…)`.
@@ -308,6 +326,202 @@ module ScriptDomBuild =
         stmt
 
     // -----------------------------------------------------------------------
+    // MERGE statement (chapter 4.1.B; Tier-1 #1 RawTextEmitter retirement
+    // arc cash-out). The typed-AST replacement for StaticSeedsEmitter's
+    // hand-rolled StringBuilder MERGE construction.
+    // -----------------------------------------------------------------------
+
+    /// MERGE construction args. Decoupled from `Catalog`/`Kind`/
+    /// `Attribute` so the builder is testable in isolation and reusable
+    /// across MERGE-emitting consumers (StaticSeedsEmitter today; future
+    /// MigrationDependenciesEmitter).
+    ///
+    /// Conventions:
+    ///   - `target`: `[schema].[table]` of the merge target
+    ///   - `allColumns`: column names in declaration order (the
+    ///     INSERT column list + Source-table column list)
+    ///   - `pkColumns`: ON-clause join columns (typically the PK
+    ///     column subset of `allColumns`)
+    ///   - `updColumns`: WHEN MATCHED UPDATE-SET columns (typically
+    ///     `allColumns` minus `pkColumns`)
+    ///   - `rows`: each row = one `SqlLiteral` per column in
+    ///     `allColumns` order (per-cell typed via
+    ///     `Projection.Core.SqlLiteral`)
+    ///   - `cdcAware`: when true, emit the WHEN MATCHED AND
+    ///     <change-detection-predicate> form per chapter 4.1.B slice β;
+    ///     when false, the unconditional V1-shape WHEN MATCHED.
+    type MergeBuildArgs =
+        {
+            Target     : TableId
+            AllColumns : string list
+            PkColumns  : string list
+            UpdColumns : string list
+            Rows       : SqlLiteral list list
+            CdcAware   : bool
+        }
+
+    /// Build a `[Target|Source].[col]` qualified column reference.
+    let private qualifiedColumnRef (alias: string) (col: string) : ColumnReferenceExpression =
+        let refExpr = ColumnReferenceExpression()
+        let mid = MultiPartIdentifier()
+        mid.Identifiers.Add(bracketed alias)
+        mid.Identifiers.Add(bracketed col)
+        refExpr.MultiPartIdentifier <- mid
+        refExpr
+
+    /// Build a single `Target.[col] = Source.[col]` boolean expression
+    /// for the ON-clause join condition or the change-detection
+    /// equality test.
+    let private columnEquality (col: string) : BooleanComparisonExpression =
+        let cmp = BooleanComparisonExpression()
+        cmp.ComparisonType <- BooleanComparisonType.Equals
+        cmp.FirstExpression <- qualifiedColumnRef "Target" col :> ScalarExpression
+        cmp.SecondExpression <- qualifiedColumnRef "Source" col :> ScalarExpression
+        cmp
+
+    /// Build a single `Target.[col] <> Source.[col]` boolean expression
+    /// for the change-detection predicate's value-mismatch arm.
+    let private columnInequality (col: string) : BooleanComparisonExpression =
+        let cmp = BooleanComparisonExpression()
+        cmp.ComparisonType <- BooleanComparisonType.NotEqualToBrackets
+        cmp.FirstExpression <- qualifiedColumnRef "Target" col :> ScalarExpression
+        cmp.SecondExpression <- qualifiedColumnRef "Source" col :> ScalarExpression
+        cmp
+
+    /// Build a `<expr> IS [NOT] NULL` boolean expression.
+    let private isNullCheck (alias: string) (col: string) (negate: bool) : BooleanIsNullExpression =
+        let n = BooleanIsNullExpression()
+        n.Expression <- qualifiedColumnRef alias col :> ScalarExpression
+        n.IsNot <- negate
+        n
+
+    /// Combine two boolean expressions via `AND` / `OR`.
+    let private boolBinary (op: BooleanBinaryExpressionType) (left: BooleanExpression) (right: BooleanExpression) : BooleanExpression =
+        let bin = BooleanBinaryExpression()
+        bin.BinaryExpressionType <- op
+        bin.FirstExpression <- left
+        bin.SecondExpression <- right
+        bin :> BooleanExpression
+
+    /// Wrap a boolean expression in parentheses (`(<expr>)`).
+    let private boolParen (inner: BooleanExpression) : BooleanExpression =
+        let p = BooleanParenthesisExpression()
+        p.Expression <- inner
+        p :> BooleanExpression
+
+    /// Fold a non-empty list of boolean expressions left-to-right via
+    /// the given operator. `[a; b; c]` with `AND` → `a AND b AND c`.
+    let private foldBool (op: BooleanBinaryExpressionType) (terms: BooleanExpression list) : BooleanExpression =
+        match terms with
+        | [] -> invalidOp "foldBool: empty term list"
+        | first :: rest ->
+            rest |> List.fold (fun acc t -> boolBinary op acc t) first
+
+    /// Build the change-detection predicate for one non-key column:
+    ///   Target.[c] <> Source.[c]
+    ///   OR (Target.[c] IS NULL AND Source.[c] IS NOT NULL)
+    ///   OR (Target.[c] IS NOT NULL AND Source.[c] IS NULL)
+    ///
+    /// Per chapter 4.1.B slice β + pre-scope §6: nullable-aware, since
+    /// `NULL <> NULL` is `UNKNOWN` in SQL. The three OR-branches cover
+    /// value-mismatch + null-asymmetry both ways.
+    let private perColumnChangeDetection (col: string) : BooleanExpression =
+        let valueDiff = columnInequality col :> BooleanExpression
+        let targetNullSourceNot =
+            boolBinary
+                BooleanBinaryExpressionType.And
+                (isNullCheck "Target" col false :> BooleanExpression)
+                (isNullCheck "Source" col true :> BooleanExpression)
+            |> boolParen
+        let targetNotSourceNull =
+            boolBinary
+                BooleanBinaryExpressionType.And
+                (isNullCheck "Target" col true :> BooleanExpression)
+                (isNullCheck "Source" col false :> BooleanExpression)
+            |> boolParen
+        foldBool
+            BooleanBinaryExpressionType.Or
+            [ valueDiff; targetNullSourceNot; targetNotSourceNull ]
+
+    /// The full change-detection predicate across all updatable
+    /// columns: per-column predicates joined with OR. Wrapped in
+    /// parentheses so the surrounding `WHEN MATCHED AND (...)` is
+    /// well-grouped under ScriptDom's emission rules.
+    let private changeDetectionPredicate (updColumns: string list) : BooleanExpression =
+        updColumns
+        |> List.map perColumnChangeDetection
+        |> foldBool BooleanBinaryExpressionType.Or
+        |> boolParen
+
+    /// Build the `MergeStatement` for the supplied args. Per Tier-1 #1:
+    /// the entire MERGE flows through ScriptDom's typed AST; rendering
+    /// happens at `Sql160ScriptGenerator.GenerateScript` (no
+    /// StringBuilder, no per-fragment LINT-ALLOWs).
+    let buildMergeStatement (args: MergeBuildArgs) : MergeStatement =
+        let stmt = MergeStatement()
+        let spec = MergeSpecification()
+        // Target [schema].[table] AS Target
+        let targetRef = NamedTableReference()
+        targetRef.SchemaObject <- schemaObjectFromTableId args.Target
+        spec.Target <- targetRef
+        spec.TableAlias <- bracketed "Target"
+
+        // Source: USING (VALUES (...), (...)) AS Source(c1, c2, ...)
+        let inline_ = InlineDerivedTable()
+        for row in args.Rows do
+            let rv = RowValue()
+            for cell in row do
+                rv.ColumnValues.Add(buildSqlLiteral cell)
+            inline_.RowValues.Add(rv)
+        inline_.Alias <- bracketed "Source"
+        for c in args.AllColumns do
+            inline_.Columns.Add(bracketed c)
+        spec.TableReference <- inline_ :> TableReference
+
+        // ON-clause: Target.[pk1] = Source.[pk1] [AND ...]
+        let onTerms =
+            args.PkColumns
+            |> List.map (fun c -> columnEquality c :> BooleanExpression)
+        spec.SearchCondition <- foldBool BooleanBinaryExpressionType.And onTerms
+
+        // WHEN MATCHED [AND <predicate>] THEN UPDATE SET
+        if not (List.isEmpty args.UpdColumns) then
+            let updateAction = UpdateMergeAction()
+            for c in args.UpdColumns do
+                let setClause = AssignmentSetClause()
+                setClause.Column <- qualifiedColumnRef "Target" c
+                setClause.NewValue <- qualifiedColumnRef "Source" c :> ScalarExpression
+                updateAction.SetClauses.Add(setClause :> SetClause)
+            let matchedClause = MergeActionClause()
+            matchedClause.Condition <- MergeCondition.Matched
+            if args.CdcAware then
+                matchedClause.SearchCondition <- changeDetectionPredicate args.UpdColumns
+            matchedClause.Action <- updateAction
+            spec.ActionClauses.Add(matchedClause)
+
+        // WHEN NOT MATCHED THEN INSERT (...) VALUES (Source.[c1], ...)
+        let insertAction = InsertMergeAction()
+        let insertSrc = ValuesInsertSource()
+        let insertRow = RowValue()
+        for c in args.AllColumns do
+            insertRow.ColumnValues.Add(qualifiedColumnRef "Source" c :> ScalarExpression)
+        insertSrc.RowValues.Add(insertRow)
+        insertAction.Source <- insertSrc
+        for c in args.AllColumns do
+            let colRef = ColumnReferenceExpression()
+            let mid = MultiPartIdentifier()
+            mid.Identifiers.Add(bracketed c)
+            colRef.MultiPartIdentifier <- mid
+            insertAction.Columns.Add(colRef)
+        let notMatchedClause = MergeActionClause()
+        notMatchedClause.Condition <- MergeCondition.NotMatched
+        notMatchedClause.Action <- insertAction
+        spec.ActionClauses.Add(notMatchedClause)
+
+        stmt.MergeSpecification <- spec
+        stmt
+
+    // -----------------------------------------------------------------------
     // SET IDENTITY_INSERT statement.
     // -----------------------------------------------------------------------
 
@@ -327,6 +541,34 @@ module ScriptDomBuild =
         stmt
 
     // -----------------------------------------------------------------------
+    // CREATE INDEX statement (chapter 4.1.A slice 3).
+    // -----------------------------------------------------------------------
+
+    /// Build a `CreateIndexStatement` for an `IndexDef`. Emits
+    /// `CREATE [UNIQUE] [NONCLUSTERED] INDEX [name] ON [schema].[table]
+    /// ([col1], [col2], ...);`. ScriptDom's `CreateIndexStatement`
+    /// carries the `Unique` flag, the `Name` identifier, the
+    /// `OnName` schema-object-name (the table), and a `Columns`
+    /// list of `ColumnWithSortOrder` (column reference + ASC/DESC).
+    /// V2 emits ASC by default per V1 convention; non-clustered is
+    /// implicit (ScriptDom emits NONCLUSTERED for non-PK indexes
+    /// per SQL Server defaults).
+    let buildCreateIndex (idx: IndexDef) : CreateIndexStatement =
+        let stmt = CreateIndexStatement()
+        stmt.Unique <- idx.IsUnique
+        stmt.Name <- bracketed idx.Name
+        stmt.OnName <- schemaObjectFromTableId idx.Table
+        for colName in idx.Columns do
+            let col = ColumnWithSortOrder()
+            let colRef = ColumnReferenceExpression()
+            let mid = MultiPartIdentifier()
+            mid.Identifiers.Add(bracketed colName)
+            colRef.MultiPartIdentifier <- mid
+            col.Column <- colRef
+            stmt.Columns.Add(col)
+        stmt
+
+    // -----------------------------------------------------------------------
     // Statement-level dispatch.
     // -----------------------------------------------------------------------
 
@@ -341,6 +583,8 @@ module ScriptDomBuild =
         | Comment _ -> None
         | CreateTable (table, cols, pk, fks) ->
             Some (buildCreateTable table cols pk fks :> TSqlStatement)
+        | CreateIndex idx ->
+            Some (buildCreateIndex idx :> TSqlStatement)
         | InsertRow (table, cells) ->
             Some (buildInsertRow table cells :> TSqlStatement)
         | SetIdentityInsert (table, enabled) ->

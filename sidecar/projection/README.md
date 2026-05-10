@@ -26,25 +26,31 @@ the seam is structural — `Projection.Core` has zero I/O, adapters do.
 
 ## Layout
 
-The current layout (chapter 3.1 closed at session 36; canary milestone
-sequence + audit + first refactor batch shipped — see
-`CHAPTER_3_1_CLOSE.md` and `AUDIT_2026_05_DDD_HEXAGONAL_FP.md`):
+The current layout (chapters 3.1, 3.5/3.6/3.7 substantive, 4.1.A
+in-flight surface, 4.1.B α/β/γ shipped — CDC-silence canary green;
+RawTextEmitter retirement complete; Tier-1 typed-AST transitions
+complete — see `KICKOFF.md` for the full timeline + `HANDOFF.md`'s
+chapter 4.1.A close arc + 4.1.B in-flight prologue):
 
     sidecar/projection/
-      README.md              - this file
-      KICKOFF.md             - 5-minute fresh-agent orientation
-      CLAUDE.md              - navigation surface; operating disciplines
-      HANDOFF.md             - bridge letter from chapter-3.1 close
-      HANDOFF_CHAPTER_1.md   - preserved chapter-1 close letter
-      HANDOFF_CHAPTER_2.md   - preserved chapter-2 close letter
-      CHAPTER_1_CLOSE.md     - chapter-1 close synthesis (sessions 1-12)
-      CHAPTER_2_CLOSE.md     - chapter-2 close synthesis (sessions 13-25)
-      CHAPTER_3_1_CLOSE.md   - chapter-3.1 close synthesis (sessions 27-36)
+      README.md                 - this file
+      KICKOFF.md                - 5-minute fresh-agent orientation; canonical re-entry surface
+      CLAUDE.md                 - navigation surface; operating disciplines (8 pillars)
+      HANDOFF.md                - bridge letter; most recent prologue is chapter 4.1.A close arc + 4.1.B in-flight
+      HANDOFF_CHAPTER_1.md      - preserved chapter-1 close letter
+      HANDOFF_CHAPTER_2.md      - preserved chapter-2 close letter
+      CHAPTER_1_CLOSE.md        - chapter-1 close synthesis (sessions 1-12)
+      CHAPTER_2_CLOSE.md        - chapter-2 close synthesis (sessions 13-25)
+      CHAPTER_3_1_CLOSE.md      - chapter-3.1 close synthesis (sessions 27-36)
+      CHAPTER_4_1_A_CLOSE.md    - chapter-4.1.A close synthesis (in-flight surface) + RawTextEmitter retirement + Tier-1/2/3 transitions
+      CHAPTER_4_1_A_OPEN.md     - chapter-4.1.A open document (strategic-frame eight-axis)
+      CHAPTER_4_1_B_OPEN.md     - chapter-4.1.B open document (strategic-frame eight-axis; CDC-silence highest-stakes)
       AUDIT_2026_05_DDD_HEXAGONAL_FP.md - five-agent audit at chapter-3.1 close
-      AXIOMS.md              - formal system; A1-A40 with amendments
-      DECISIONS.md           - append-only log of resolved questions (~95 entries)
-      ADMIRE.md              - append-only log of V1 admirations and V2 placements
-      VISION.md / SPINE.md / PLAYBOOK.md / STAGING.md / BACKLOG.md - strategic surfaces
+      AXIOMS.md                 - formal system; A1-A40 with amendments
+      DECISIONS.md              - append-only log of resolved questions (Active deferrals index at top)
+      ADMIRE.md                 - append-only log of V1 admirations and V2 placements
+      V2_DRIVER.md              - destination KPI + operative backlog (supersedes BACKLOG.md, now a forwarding pointer)
+      VISION.md / SPINE.md / PLAYBOOK.md / STAGING.md - strategic surfaces
       CHAPTER_3_PRESCOPE_*.md / CHAPTER_4_PRESCOPE_*.md - per-chapter pre-scope docs
       global.json            - SDK pin (9.0.305, rollForward: disable)
       .editorconfig          - F#-aware formatting scoped to this folder
@@ -303,11 +309,12 @@ unbuilt-feature stubs), 638 total (session 22).
   surfaces as a `Skip` test stub at the test-file level, not as
   ADMIRE-prose commentary.
 
-## Status at chapter-3.6 substantive close (2026-05-09; ritual deferred)
+## Status at chapter-4.1.A close arc + 4.1.B in-flight (2026-05-10; joint chapter close ritual ran)
 
-- **757 tests passing**, 0 skipped, 0 build warnings under
-  `TreatWarningsAsErrors=true`. Lint clean across 26 rules.
-- **DECISIONS.md supreme operating discipline carries 7 pillars**:
+- **840 non-canary tests passing** + ~16 Docker-dependent canary
+  tests (skip-if-no-Docker), 0 skipped, 0 build warnings under
+  `TreatWarningsAsErrors=true`. Lint clean across **27 rules**.
+- **DECISIONS.md supreme operating discipline carries 8 pillars**:
   (1) data-structure-oriented; (2) no string-concat aggressively;
   (3) built-in obligation; (4) FP promised land (≥95% pure);
   (5) coding-style commitments (DDD / point-free / hexagonal /
@@ -316,9 +323,24 @@ unbuilt-feature stubs), 638 total (session 22).
   (7) **gold-standard library precedence + perf-clause** —
   use-case-specific lib → typed DU → StructuredString → documented
   LINT-ALLOW; every refactor cites perf implications; every
-  hot-path function has `Bench.scope`; every loop flows through
-  `Bench` iterators; every counter via `Bench.recordSample`
-  (chapter 3.6 codification).
+  hot-path function has `Bench.scope` (chapter 3.6 codification);
+  (8) **domain-first naming and ubiquitous-language consistency**
+  — every named type / function / file embodies the four-question
+  domain-naming analysis BEFORE the name is committed (chapter 3.7
+  codification).
+- **Three named failure modes codified** (chapters 3.7 + 4.1.A close
+  arcs): **performance-of-compliance** (LINT-ALLOW shaped like an
+  audit trail without substance; pillar 7 amendment),
+  **domain-blind naming** (name shaped like a placeholder for an
+  absent domain concept; pillar 8), **text-builder-as-first-instinct**
+  (StringBuilder reach as default for new emitters; pillar 1 + pillar
+  7 amendment; Tier-3 codification this session). Plus
+  **infrastructure-blame jumping** (jumps to "X infrastructure is
+  unavailable" without verification probe; this session).
+- **V2-driver KPI Phase 3 highest-stakes deliverable shipped**:
+  CDC-silence-on-idempotent-redeploy canary GREEN under real SQL
+  Server 2022 CDC (positive + sensitivity tests; chapter 4.1.B slice
+  γ, commit `cdcd953`).
 - **Result<'a> aliased to FSharp.Core**: `type Result<'a> =
   Microsoft.FSharp.Core.Result<'a, ValidationError list>`.
   FsToolkit.ErrorHandling 4.18.0 + .TaskResult adopted; `result {}` /

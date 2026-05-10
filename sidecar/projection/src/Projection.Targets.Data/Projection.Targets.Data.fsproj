@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>Projection.Targets.Data</RootNamespace>
+    <AssemblyName>Projection.Targets.Data</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="DataInsertScript.fs" />
+    <Compile Include="StaticSeedsEmitter.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      ScriptDom: chapter 4.1.B's MERGE shape flows through the same
+      typed-AST + Sql160ScriptGenerator pipeline that chapter 4.1.A
+      uses for CREATE TABLE per `DECISIONS 2026-05-09 — Built-in
+      obligation`. Slice α renders MERGE via direct StringBuilder
+      composition (the change-detection predicate is what slice β
+      adds and is where the typed-AST pillar-7 forcing function
+      most pays off); this dependency is reserved here so the
+      transition to ScriptDom is a per-file change, not a project-
+      level edit.
+    -->
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="170.23.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Projection.Core\Projection.Core.fsproj" />
+    <!--
+      Provisional Data → SSDT dependency at chapter 4.1.B slice α:
+      `Render.formatSqlLiteral` (typed `PrimitiveType -> raw -> string`)
+      is the SQL-emission counterpart of `RawValueCodec.parseRaw`
+      (the IR→CLR side). Promotion to a concept-shaped
+      `Projection.Core.SqlLiteral` module is the Tier-1 #4 transition
+      (post-RawTextEmitter-retirement arc) — that retires this
+      cross-target edge AND unblocks the MERGE → ScriptDom
+      MergeStatement migration that needs typed VALUES literals.
+    -->
+    <ProjectReference Include="..\Projection.Targets.SSDT\Projection.Targets.SSDT.fsproj" />
+  </ItemGroup>
+
+</Project>

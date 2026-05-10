@@ -57,6 +57,28 @@ open Projection.Core
 [<RequireQualifiedAccess>]
 module ProfileSnapshot =
 
+    /// Typed source surface for V1's `ProfileSnapshot` JSON. Per the
+    /// chapter-3.7 slice ζ cash-out (audit Tier-1 #6), the boundary
+    /// adapter's input is structurally a *port* (an external
+    /// dependency-injection point); typing it through a closed DU
+    /// names the port concept-shape rather than hiding it behind a
+    /// raw `string`. Mirrors the `Projection.Adapters.Osm.CatalogReader
+    /// .SnapshotSource` shape (chapter 2's precedent) and the sibling
+    /// `Static.StaticPopulationsSource`.
+    ///
+    /// **Single variant today.** `ProfileSnapshotJson` covers every
+    /// current consumer (tests; the canary's pipeline assembles the
+    /// JSON in memory from probes). Per
+    /// `DECISIONS 2026-05-07 — IR grows under evidence`, the future
+    /// `ProfileSnapshotFile of path: string` variant lands when a CLI
+    /// / pipeline consumer materializes that reads from disk directly
+    /// (closed-DU expansion; no signature change for existing JSON
+    /// consumers).
+    type ProfileSnapshotSource =
+        /// In-memory snapshot of V1's `ProfileSnapshot` JSON. The
+        /// shape is documented at the top of this module's docstring.
+        | ProfileSnapshotJson of json: string
+
     // -----------------------------------------------------------------------
     // Probe-outcome string ↔ ProbeOutcome mapping. V1 serializes the
     // enum as JSON strings; V2's DU constructors are the parsing target.
@@ -348,7 +370,16 @@ module ProfileSnapshot =
     /// identities. Unresolvable rows (coordinates absent from the
     /// catalog) are silently skipped — the catalog's selection is
     /// the contract, not the JSON's.
-    let attach (catalog: Catalog) (profileJson: string) : Result<Profile> =
+    ///
+    /// **Source surface (chapter-3.7 slice ζ).** The input flows
+    /// through a typed `ProfileSnapshotSource` DU — concept-shaped
+    /// port surface mirroring `CatalogReader.SnapshotSource`. New
+    /// variants land via closed-DU expansion in the type definition
+    /// above; no signature change at this consumer.
+    let attach (catalog: Catalog) (source: ProfileSnapshotSource) : Result<Profile> =
+        let profileJson =
+            match source with
+            | ProfileSnapshotJson json -> json
         try
             use doc = JsonDocument.Parse(profileJson)
             let root = doc.RootElement
@@ -383,7 +414,14 @@ module ProfileSnapshot =
                                   // because V1 collects no
                                   // distribution evidence (ADMIRE.md
                                   // 2026-05-12).
-                                  Distributions             = [] }))))
+                                  Distributions             = []
+                                  // CdcAwareness populated by the
+                                  // chapter-3.1 read-side adapter
+                                  // extension (slice γ); the V1
+                                  // snapshot adapter has no CDC
+                                  // discovery surface (per chapter
+                                  // 4.1.B slice β).
+                                  CdcAwareness              = CdcAwareness.empty }))))
         with
         | :? JsonException as ex ->
             Result.failureOf

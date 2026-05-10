@@ -184,12 +184,12 @@ let ``MILESTONE: three-input projection passes end-to-end through both adapters 
     // 1. Static adapter: ingest V1 city fixture into Country's Static
     //    populations.
     let catalogWithPopulations =
-        Static.attachStaticPopulations endToEndCatalog staticEntitiesJson
+        Static.attachStaticPopulations endToEndCatalog (Static.StaticPopulationsJson staticEntitiesJson)
         |> Result.value
 
     // 2. Profile adapter: ingest V1 profile fixture into V2 Profile.
     let profile =
-        ProfileSnapshot.attach catalogWithPopulations profileMicroFkProtectJson
+        ProfileSnapshot.attach catalogWithPopulations (ProfileSnapshot.ProfileSnapshotJson profileMicroFkProtectJson)
         |> Result.value
 
     // 3. Policy: register a Nullability intervention with conservative
@@ -245,7 +245,7 @@ let ``MILESTONE: three-input projection passes end-to-end through both adapters 
 [<Fact>]
 let ``MILESTONE: static populations were attached by the static adapter`` () =
     let catalogWithPopulations =
-        Static.attachStaticPopulations endToEndCatalog staticEntitiesJson
+        Static.attachStaticPopulations endToEndCatalog (Static.StaticPopulationsJson staticEntitiesJson)
         |> Result.value
     let country =
         Catalog.tryFindKind countryKindKey catalogWithPopulations
@@ -259,7 +259,7 @@ let ``MILESTONE: static populations were attached by the static adapter`` () =
 [<Fact>]
 let ``MILESTONE: profile evidence was attached by the profile adapter`` () =
     let profile =
-        ProfileSnapshot.attach endToEndCatalog profileMicroFkProtectJson
+        ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson profileMicroFkProtectJson)
         |> Result.value
     Assert.Equal(3, profile.Columns.Length)
     Assert.Equal(1, profile.ForeignKeys.Length)
@@ -288,10 +288,10 @@ let ``DIFFERENTIAL: V1 Cautious-mode equivalent produces same outcomes for V2-ex
     // non-PK without an override. Run NullabilityPass with the
     // Cautious-equivalent intervention. Verify outcomes.
     let catalogWithPopulations =
-        Static.attachStaticPopulations endToEndCatalog staticEntitiesJson
+        Static.attachStaticPopulations endToEndCatalog (Static.StaticPopulationsJson staticEntitiesJson)
         |> Result.value
     let profile =
-        ProfileSnapshot.attach catalogWithPopulations profileMicroFkProtectJson
+        ProfileSnapshot.attach catalogWithPopulations (ProfileSnapshot.ProfileSnapshotJson profileMicroFkProtectJson)
         |> Result.value
     let interventionConfig =
         NullabilityTighteningConfig.create 0.05m false []
@@ -331,10 +331,10 @@ let ``DIFFERENTIAL: V1 Cautious-mode equivalent produces same outcomes for V2-ex
 let ``T1 extended: end-to-end pipeline is deterministic on the triple`` () =
     let runOnce () =
         let cat =
-            Static.attachStaticPopulations endToEndCatalog staticEntitiesJson
+            Static.attachStaticPopulations endToEndCatalog (Static.StaticPopulationsJson staticEntitiesJson)
             |> Result.value
         let profile =
-            ProfileSnapshot.attach cat profileMicroFkProtectJson
+            ProfileSnapshot.attach cat (ProfileSnapshot.ProfileSnapshotJson profileMicroFkProtectJson)
             |> Result.value
         let cfg =
             NullabilityTighteningConfig.create 0.0m false []
@@ -360,10 +360,10 @@ let ``T1 extended: end-to-end pipeline is deterministic on the triple`` () =
 [<Fact>]
 let ``structural commitment end-to-end: rich Catalog + Profile + empty Tightening yields no decisions`` () =
     let cat =
-        Static.attachStaticPopulations endToEndCatalog staticEntitiesJson
+        Static.attachStaticPopulations endToEndCatalog (Static.StaticPopulationsJson staticEntitiesJson)
         |> Result.value
     let profile =
-        ProfileSnapshot.attach cat profileMicroFkProtectJson
+        ProfileSnapshot.attach cat (ProfileSnapshot.ProfileSnapshotJson profileMicroFkProtectJson)
         |> Result.value
     let lineage = NullabilityPass.run cat Policy.empty profile
     Assert.Empty((LineageDiagnostics.payload lineage).Decisions)

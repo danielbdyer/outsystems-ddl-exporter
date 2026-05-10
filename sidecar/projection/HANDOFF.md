@@ -1,8 +1,128 @@
-# Handoff letter — Chapter 3.1 → Chapter 3.2 / 3.5 / 3.6 / 4.x
+# Handoff letter — Chapter 3.1 → Chapter 3.2 / 3.5 / 3.6 / 3.7 / 4.1.A / 4.1.B / 4.x
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## Chapter 4.1.A close arc + 4.1.B in-flight prologue (added 2026-05-10; substantive close + V2-driver KPI Phase 2 + Phase 3 highest-stakes deliverable shipped)
+
+**Branch:** `claude/review-ddl-exporter-ilV0k`. **Test baseline:** 840 passing non-canary tests + ~16 Docker-dependent canary tests (skip-if-no-Docker), 0 skipped, 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules. **Perf-gate:** clean.
+
+This prologue covers a **bundled close arc**: chapter 4.1.A (V2-driver KPI Phase 2; SSDT DDL emitter; in-flight surface closed), chapter 4.1.B (V2-driver KPI Phase 3; CDC-aware data triumvirate; opened + slices α/β/γ shipped — γ is the V2_DRIVER.md highest-stakes deliverable), the **RawTextEmitter retirement arc** (the chapter-3-era one-big-string + raw-INSERT pre-cursor fully retired; -520 LOC), and the **Tier-1/2/3 typed-AST transitions** (six retired LINT-ALLOWs at the StaticSeedsEmitter MERGE site + four canonical typed surfaces shipped + new failure mode codified). Substantive deliverables shipped (load-bearing):
+
+### Chapter 4.1.A — production SSDT DDL emitter (V2-driver KPI Phase 2)
+
+In-flight surface closed; slices 6/7/8 gated on chapter 3.2 SnapshotRowsets.
+
+- **`SsdtDdlEmitter.emitSlices : Emitter<SsdtFile>`** (`Projection.Targets.SSDT/SsdtDdlEmitter.fs`) — per-kind `.sql` files via ScriptDom typed AST + `Sql160ScriptGenerator`. Slices 1+2+3+4+5 cover CREATE TABLE + composite PKs + non-PK indexes + intra-module FKs. RelativePath via cross-platform-deterministic forward slashes (`Modules/<Module>/<Schema>.<Table>.sql`).
+- **`SsdtDdlEmitter.statements : Catalog -> seq<Statement>`** — typed-stream surface for canary tests + `Render.toText` consumers. Topologically ordered via `TopologicalOrderPass.runWith SkipSelfEdges` (FK targets emit before referencers). Same algorithm RawTextEmitter used.
+- **`ManifestEmitter.emit`** (slice 9) — `manifest.json` per V1 SsdtManifest schema; `Utf8JsonWriter` gold-standard library.
+- **`SsdtBundle.compose`** (slice 10) — composition of `(ArtifactByKind<SsdtFile>, Manifest)` into `Map<RelativePath, string>`. F# core never touches the file system; downstream hosts (Pipeline / CLI) consume the map.
+- **Slices 6 (cross-module FKs), 7 (identity + defaults), 8 (extended properties) gated** on chapter 3.2 SnapshotRowsets surfacing IR widening.
+
+### Chapter 4.1.B — CDC-aware data triumvirate (V2-driver KPI Phase 3)
+
+Opened with strategic-frame eight-axis discipline; slices α/β/γ shipped; δ-θ pending.
+
+- **Chapter open** (`CHAPTER_4_1_B_OPEN.md`) — strategic-frame axes named per `DECISIONS 2026-05-15`. CDC-silence-on-idempotent-redeploy property test is the highest-leverage single deliverable per `V2_DRIVER.md` per-axis correctness stakes table.
+- **Slice α — `StaticSeedsEmitter v0`** (`fd38908`). New `Projection.Targets.Data` project (sibling to Targets.SSDT / Json / Distributions). `DataInsertScript` + `DataInsertRow` typed value foundation. V1-shape MERGE per `StaticSeedSqlBuilder.cs:211-260`. T11 sibling-Π keyset coverage; T1 byte-determinism; A18 amended (Catalog × Profile, never Policy).
+- **Slice β — `Profile.CdcAwareness` field + change-detection MERGE predicate** (`2d8210e`). The load-bearing semantic addition. Per-kind dispatch on `CdcAwareness.isEnabled`: CDC-enabled kinds emit the change-detection predicate (`Target.[c] <> Source.[c] OR (Target.[c] IS NULL AND Source.[c] IS NOT NULL) OR (Target.[c] IS NOT NULL AND Source.[c] IS NULL)` per non-key column, all OR-joined); CDC-disabled kinds keep V1's predicate-free WHEN MATCHED. CdcAwareness lives on Profile (A34 alignment), not Policy.
+- **Slice γ — CDC-silence canary GREEN** (`cdcd953`). Operationally proves under real SQL Server 2022 CDC that V2's redeploy pipeline does not fire spurious CDC capture entries on identical-content redeploys. Two `[<Fact>]` tests in `CdcSilenceTests.fs` (skip-if-no-Docker gated): positive (post == baseline; 0 new CDC entries) + sensitivity (changed-content redeploy DOES fire CDC; proves the canary mechanism is real). `sys.sp_cdc_scan` Agent-less synchronous capture; `cdc.<schema>_<table>_CT` row count assertion. Empirical finding: SQL Server 2022's MERGE→CDC pipeline doesn't capture no-op UPDATEs even from V1-shape unconditional WHEN MATCHED — V2's predicate is defense-in-depth (correct under any SQL Server version), not the load-bearing fix in 2022 specifically.
+- **Slice δ (two-phase insertion / cycle-breaking), ε (MigrationDependenciesEmitter), ζ (BootstrapEmitter), η (DataEmissionComposer + EmissionPolicy.DataComposition DU), θ (partition assertion) pending.** Slices ε/ζ have a **hard-requirement Active deferral** (Tier-3 codification): MUST adopt `ScriptDomBuild.buildMergeStatement` from slice α precedent.
+
+### M4 Tolerance taxonomy slice α — typed equivalence-class definition
+
+`af7b96c`. The R6 split-brain governance + cutover fallback ladder + R4 multi-environment promotion test all depend on this typed surface.
+
+- **`Projection.Core.ToleratedDivergence`** — closed DU enumerating five empirically-grounded divergences (HeaderCommentsOmitted / PostDeployForeignKeysSplit / IndexesUnreflected / StaticPopulationsUnreflected / CommentMetadataUnreflected). Each variant has concrete canary or emitter evidence today.
+- **`Tolerance = Set<ToleratedDivergence>`** — value object with smart-constructor encapsulation (`strict` / `permissive` / `withDivergence` / `tolerates` / `divergences` / `isStrict` / `ofSet`). `Set` encoding (over a flat-bool record) per pillar 1 + pillar 8: the `Tolerance` IS the equivalence-class definition; membership says "this divergence is accepted."
+- **Closed-DU expansion empirical-test discipline applied**: `coverage` function + `allKnown` cardinality test catch incomplete extensions at compile time + runtime.
+- **Slice β** (quotient operator on PhysicalSchemaDiff) **reframed as no-op-until-consumer-pressure**: the slice α variants are all about axes that PhysicalSchemaDiff doesn't compare anyway. Reopen if a new variant lands that requires diff-filtering.
+- **R4 multi-environment promotion property test** — uses the `Set<ToleratedDivergence>` encoding; pending; concrete next slice.
+
+### RawTextEmitter retirement arc — chapter-3-era pre-cursor fully retired
+
+`e4936d5` + `d91067a` + `197b9e7`. Net: -520 LOC.
+
+- **Slice 1** — `SsdtDdlEmitter.statements : Catalog -> seq<Statement>` typed-stream surface (the missing piece that unblocked migration).
+- **Slice 2** — Migrate all 9 call sites: Pipeline.fs, Cli/Program.fs (runWideCanary), CanaryRoundTripTests (×4), GeneratorScaleTests (×2), ScriptDomRoundTripTests, JsonEmitterTests (×2), RichProfilingEndToEndTests, SiblingEmitterContractTests (×2), SsdtDdlEmitterTests (×2). Topological order preserved via `TopologicalOrderPass.runWith SkipSelfEdges`. Re-baseline of substring assertions that depended on RawTextEmitter's `Provenance` trailing-comment SsKey roots (V2-IR-internal; SsdtDdlEmitter doesn't emit them).
+- **Slice 3** — Delete `RawTextEmitter.fs` + `RawTextEmitterTests.fs`. Pillar 8 win: action-shaped name retires; concept-shaped `SsdtDdlEmitter` (chapter 4.1.A) + `StaticSeedsEmitter` (chapter 4.1.B) remain.
+
+### Tier-1 typed-AST transitions — pillar-1 / pillar-7 alignment across the Outputs seam
+
+Four transitions shipped this session (chapter 4.1.A close arc).
+
+- **#4 — `Projection.Core.SqlLiteral` typed expression module** (`08ca554`). The IR→SQL-literal projection lives in Core; closed DU with eight variants (NullLit / IntegerLit / DecimalLit / BooleanLit / TextLit / TemporalLit / GuidLit / BinaryLit) one per PrimitiveType + NULL sentinel. `ofRaw` + `toString` + `formatRaw` convenience. Both consumers (SSDT.Render + Data.StaticSeedsEmitter) flow through the typed middle layer.
+- **#1 — MERGE → ScriptDom MergeStatement typed AST** (`bface9a`). `ScriptDomBuild.buildMergeStatement` (~150 LOC of typed-AST construction with `MergeBuildArgs` record + per-column predicate builders); `StaticSeedsEmitter.renderMerge` retired the StringBuilder construction. **6 LINT-ALLOWs retired** at the MERGE site (chapter 4.1.B slice α/β shipped with them; Tier-1 #1 is the cash-out). The change-detection predicate is now a typed `BooleanBinaryExpression(Or)` of `BooleanComparisonExpression(NotEqualToBrackets)` + `BooleanIsNullExpression` AST wrapped in `BooleanParenthesisExpression`.
+- **#2 — `Compose.Outputs.Sql : string` → `SsdtBundle : Map<RelativePath, string>`** (`705e31d`). Production-shape per-table file map. Pipeline.write iterates the bundle; Deploy.runEphemeral consumes `Compose.aggregateSsdt` (the `\nGO\n`-joined per-.sql convenience). Chapter-3 single-blob retires.
+- **#3 — `Compose.Outputs.Json + .Distributions : string` → `JsonNode`** (`22ecc59`). Typed at the Outputs seam; consumers query the typed tree. Chapter 3.7 slice ε's per-kind typed JsonNode lifted to the Outputs seam. Pillar 1 holds end-to-end across Pipeline composition.
+
+### Tier-3 codification — text-builder-as-first-instinct discipline (third named failure mode)
+
+`23d9d5d`. Substantive DECISIONS entry (~120 lines) + Active deferrals index entries + AGENTS.md + CLAUDE.md operating-disciplines table.
+
+- **Named failure mode**: **text-builder-as-first-instinct** — the agent reaches for StringBuilder as the default for new emitters, then attaches LINT-ALLOWs once the lint surfaces. Each LINT-ALLOW is individually defensible per the substantive-rationale discipline; the AGGREGATE is the bug. Six LINT-ALLOWs at one MERGE site means the typed-AST migration was skipped at construction time. Sibling failure mode to **performance-of-compliance** (chapter 3.7 slice β'' — the LINT-ALLOW shaped like an audit trail without substance) and **domain-blind naming** (chapter 3.7 slice β''' — the name shaped like a placeholder for an absent domain concept).
+- **4-step protocol**: (1) articulate the typed-AST library BEFORE the first StringBuilder; (2) cross-check the precedent emitters; (3) first draft uses the typed AST; (4) LINT-ALLOWs at terminal text boundaries only.
+- **Two hard-requirement Active deferrals** added to the index for chapter open:
+  - **Microsoft.SqlServer.Dac (DacFx) adoption in `Projection.Targets.SSDT.DacpacEmitter`** — chapter 3.x. Hard requirement: the .dacpac ZIP+XML format MUST flow through DacFx.
+  - **MigrationDependenciesEmitter + BootstrapEmitter typed-AST adoption from slice α** — chapter 4.1.B slices ε/ζ. Hard requirement: `ScriptDomBuild.buildMergeStatement` precedent. The chapter-close ritual scans the Active deferrals table; future agents at chapter open MUST read these entries.
+
+### Docker probe + verify-before-diagnose discipline (fourth named failure mode)
+
+`6ec4a64` + `b56f558`.
+
+- **`Deploy.Docker.ensureRunning` memoized**; `BringupBudgetMs` lowered 30s→5s. Worst-case suite cost when Docker is down: collapsed `N×30s` (~7.5 min for N=15 canary tests) → 5s (one probe, cached).
+- **PreToolUse hook** `.claude/hooks/docker-probe.sh` auto-fires before infra-relevant Bash commands (matches `dotnet test` / `docker *` / `*canary*` / `*Canary*` / `*Testcontainers*` / `*sqlcmd*` / `*mssql*`); reports current Docker state + last session-start hook line via `additionalContext`. NEVER blocks; only informs.
+- **Named failure mode**: **infrastructure-blame jumping** — the agent jumps to "X infrastructure is unavailable" without running the cheap verification probe. Codified in AGENTS.md (root) "Verify-before-diagnose for infrastructure" subsection.
+
+### Outstanding queue (post-this-session)
+
+**Highest-leverage:** chapter close ritual for 3.6 + 3.7 + 4.1.A + 4.1.B-in-flight + RawTextEmitter retirement + Tier 1/2/3 (eight items per CLAUDE.md operating-disciplines table; catches cross-cutting drift).
+
+**Independent forward-progress:**
+- R4 multi-environment promotion property test (uses M4 Tolerance taxonomy; ~150 LOC; no new chapter open).
+- Chapter 3.2 SnapshotRowsets pre-scope review (unblocks 4.1.A slices 6/7/8 + 4.1.B downstream).
+- Chapter 4.1.B slice δ (two-phase insertion / cycle-breaking).
+
+**Hard-requirement Active deferrals (read at chapter open):**
+- Chapter 3.x DacpacEmitter — DacFx adoption mandatory.
+- Chapter 4.1.B slices ε/ζ (MigrationDeps + Bootstrap) — `ScriptDomBuild.buildMergeStatement` adoption mandatory.
+
+**Chapter close ritual deferred for all of:** 3.6, 3.7, 4.1.A, 4.1.B-in-flight, RawTextEmitter retirement, Tier 1/2/3 transitions. Joint pass is the natural next move.
+
+---
+
+## Chapter 3.7 prologue (added 2026-05-10; in flight, audit-cleanup hygiene)
+
+**Branch:** `claude/review-ddl-exporter-ilV0k`. **Test baseline:** 790 passing, 0 skipped, 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules (Rule 27 added this chapter; see below). **Perf-gate:** clean.
+
+Chapter 3.7 is a **B&W audit-cleanup hygiene chapter** picking up Tier-1 / Tier-2 / Tier-3 audit findings still open at chapter-3.6 close. Substantive deliverables shipped (load-bearing):
+
+- **Slice α — `Lineage.Trail [<CustomEquality>]` (A26 cash-out)**. Audit Tier-2 #12. `Lineage<'a>` projects equality through `Value` only; trails are metadata not in equality. `Lineage.byValue` / `Lineage.byValueAndTrail` helpers expose the explicit projections. Monad-laws property tests + operator tests strengthened to `byValueAndTrail`. Two new property/Fact tests cash out A26 directly. Pass / PassWithDiagnostics aliases inherit the `'output : equality` constraint. +30 LOC.
+- **Slice β — `Projection.Core.SqlTypeCorrespondence` bounded context (Tier-1 #8 cash-out)**. The forward / inverse PrimitiveType ↔ SQL DDL vocabulary pair previously split across `Projection.Targets.SSDT.Render.columnSqlType` (forward) and `Projection.Adapters.Sql.ReadSide.mapSqlType` (inverse) is consolidated into one closed-DU dispatch surface in Core. Round-trip property + 25 InlineData theory + Fact + property test sweep the recognized SQL Server alias vocabulary. ReadSide.mapSqlType becomes a 1-line alias.
+- **Slice β' — `Render.columnSqlType` through ScriptDom typed AST (pillar 7 cash-out)**. Slice-β shipped with four `String.Concat` LINT-ALLOWs in Render that named the boundary without naming the considered alternative — *performance-of-compliance* (the named failure mode; see below). Slice-β' lifted `ScriptDomBuild.dataTypeReference` from `private` to public, added `ScriptDomGenerate.generateDataType : DataTypeReference -> string`, made `Render.columnSqlType` delegate. Output byte-identical (790 tests still green); four LINT-ALLOWs retired; two private helpers retired (`sqlTypeWithLength`, `sqlDecimal`); one unused import retired (`open System.Globalization`). Per-column generator instantiation surfaces via bench label `scriptDom.generateDataType` (perf-gate clean).
+- **Slice β'' — LINT-ALLOW substantive-rationale discipline codification**. `DECISIONS 2026-05-10` codifies the four-question analysis as the structural prerequisite for any per-line `LINT-ALLOW` marker on a string-composition / built-in-substitute site. Names the failure mode **performance-of-compliance** (a marker shaped like an audit trail without the substance). Updates: pillar 7 amendment in DECISIONS.md supreme operating discipline section; new operating-disciplines table row in CLAUDE.md; expanded LINT-ALLOW guidance in root AGENTS.md; new sub-bullet in KICKOFF.md supreme-discipline section; new decision tree "When you reach for a string-composition primitive" in PLAYBOOK.md; lint Rule 27 added (per-line concat-aversion LINT-ALLOW inventory + soft floor).
+- **Slice ε — Json + Distributions Π typed per-kind JsonNode (audit Tier-1 #7; pillar 1 cash-out)**. `JsonEmitter.emitSlices : Emitter<JsonNode>` (was `Emitter<string>`); `DistributionsEmitter.emitSlices : EmitterWithProfile<JsonNode>` (was `EmitterWithProfile<string>`). Internal serialization path is BCL-typed end-to-end (`Utf8JsonWriter` → `MemoryStream` → `byte[]` → `JsonNode.Parse(ReadOnlySpan<byte>)`); no managed `string` materializes at the per-kind seam. The doc composer's prior `JsonNode.Parse(kindText)` re-parse retires; typed `JsonNode` writes through the indented document writer via `node.WriteTo(writer)`. Added 4 new contract tests in `SiblingEmitterContractTests.fs` (renamed from `T11TypeTheoremTests.fs` — see slice β''' below). T11 fully structural at BOTH axes (keyset + per-kind value type). 794 passing tests.
+- **Slice β''' — Domain-first naming discipline codification (pillar 8)**. `DECISIONS 2026-05-10 — Domain-first naming and ubiquitous-language consistency` codifies the four-question domain-naming analysis as the structural prerequisite for any named type / function / file / module / test in V2. Names the failure mode **domain-blind naming** (a name shaped like a placeholder for the absent domain concept). No lint enforcement (heuristic syntactic checks misfire on legitimate uses; the discipline-document path catches what the heuristic can't). Updates: pillar 8 added to DECISIONS.md supreme operating discipline; new top-row in CLAUDE.md operating-disciplines table; pillar 8 added to root AGENTS.md supreme-discipline summary; new pillar 8 paragraph in KICKOFF.md supreme-discipline section; new decision tree "When you reach for a name" in PLAYBOOK.md (with worked-precedents table + worked-anti-patterns table). Worked rename: `T11TypeTheoremTests.fs` → `SiblingEmitterContractTests.fs` (concept-shaped name names what the file IS, not which theorem ID it cites).
+- **Docker hook canary-readiness fix**. `session-start.sh` now writes a comprehensive subsystem-status line at end-of-hook (`session-start <READY|DEGRADED|FAIL> <utc> | dotnet=<v> | docker=<state> | image=<state> | warm=<state>`) so agents reading `$HOME/.claude-projection-hook-status` see the FULL canary-readiness picture, not just dotnet. The dotnet-only intermediate status line retired (a fresh agent reading "session-start OK" without seeing the comprehensive verdict mistook the dotnet OK for full canary readiness). Stable subsystem vocabulary (running / cached / ready / missing / failed / not-ready / skipped) makes the file greppable. AGENTS.md "Pre-flight & Alignment" documents the new format + recovery path (re-run `bash .claude/hooks/session-start.sh`; idempotent).
+- **V2-driver as destination KPI codification (principal-PO sidebar)**. `V2_DRIVER.md` (new standalone canonical surface) codifies V2-driver as the project's north star, supersedes the implicit "V2-augmented as floor; V2-driver as aspirational" framing in `DECISIONS 2026-05-22 — R6`, AND absorbs the operative backlog (supersedes `BACKLOG.md` which is now a forwarding pointer). The KPI in one sentence: V2 reaches V2-driver mode for the cutover by being provably correct on every axis V2 owns (schema, data, identity, diagnostics, and any future sibling), with provable correctness defined as structural-type-level enforcement plus per-axis property tests. **CDC silence on idempotent redeploy (chapter 4.1.B) is the highest-leverage single deliverable.** Chapters 4.1.B / 4.2 / 4.3 / 3.x / 3.2 are critical-path under V2-driver KPI, not optional. Updates: new top-row in CLAUDE.md operating-disciplines table; new V2-driver paragraph in KICKOFF.md supreme-discipline section; KICKOFF.md strategic-surfaces table now points at `V2_DRIVER.md` (was `BACKLOG.md`); CLAUDE.md reading-order section + VISION.md companion-strategic-surfaces both updated to reference `V2_DRIVER.md`; new DECISIONS entry `2026-05-10 — V2-driver as destination KPI`. The `V2_DRIVER.md` "Executive backlog summary" table is the chapter-by-chapter sequencing under this KPI; per-chapter operational detail continues to live in `CHAPTER_*_PRESCOPE_*.md`.
+
+**Outstanding chapter-3.7 slice queue** (committed in todo list; in user-preferred order):
+- **γ** — `traverseCatalog` natural-transformation primitive (audit Tier-3 #23; FP composition).
+- **ε** — Json + Distributions Π typed per-kind value (audit Tier-1 #7; T11 fully structural; pillar 1).
+- **ζ** — Three `attach` adapters take string JSON → SnapshotSource-shaped (audit Tier-1 #6).
+- **η** — `result {}` CE adoption at `ReadSide.fs:540-690` (audit Tier-3 #24).
+- **θ** — Coordinates Stage 2 typed `SchemaName` / `TableName` / `ColumnName` VOs (audit Tier-3 #20a).
+- **ι** — Lineage / Diagnostics writer-monad codification refresh (audit Tier-2 #18 + #19).
+- **κ** — `Lineage.tell` `m.Trail @ [event]` O(N²) audit (perf-class question).
+- **λ** — `SsKey.rootOriginal` V1 prefix in emitter output (audit Tier-1 #11; needs DECISIONS amendment first).
+- **μ** — `Restrict→NoActionSql` Diagnostics scaffolding (audit Tier-1 #10 + Tier-2 #15).
+- **ν** — F# Analyzers SDK custom analyzer (KICKOFF deferral #1; complements 27 grep rules with AST detection).
+- **ξ / ο / π** — Port lifts (`ICatalogReader` / `IArtifactSink` / `IDeployHost`); ξ likely lands as part of forward chapter 3.2.
+
+Chapter close ritual still deferred.
+
+---
 
 ## Chapter 3.6 prologue (added 2026-05-09; substantive close, ritual deferred)
 

@@ -315,7 +315,7 @@ let ``ScriptDomGenerate.toText emits all SQL statements through ScriptDom`` () =
 [<Fact>]
 let ``Parse-roundtrip: full sampleCatalog emits parseable SQL`` () =
     let enriched = (CanonicalizeIdentity.run sampleCatalog).Value
-    let stmts = RawTextEmitter.statements enriched
+    let stmts = SsdtDdlEmitter.statements enriched
     let emitted = ScriptDomGenerate.toText stmts
     let reparsed, errors = parseSql emitted
     Assert.Empty(errors)

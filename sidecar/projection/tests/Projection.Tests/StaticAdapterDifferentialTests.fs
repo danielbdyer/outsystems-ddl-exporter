@@ -99,7 +99,7 @@ let private extractCityRows (c: Catalog) : StaticRow list =
 [<Fact>]
 let ``V1 contract: V1 fixture round-trips through adapter and normalizer`` () =
     // 1. Adapter ingests V1 JSON, attaches populations to the catalog template.
-    match Static.attachStaticPopulations cityCatalog v1FixtureContent with
+    match Static.attachStaticPopulations cityCatalog (Static.StaticPopulationsJson v1FixtureContent) with
     | Error errors ->
         Assert.Fail(sprintf "Adapter failed: %A" errors)
     | Ok populated ->
@@ -115,7 +115,7 @@ let ``V1 contract: V1 fixture round-trips through adapter and normalizer`` () =
 
 [<Fact>]
 let ``V1 contract: row identifiers derive deterministically from PK values`` () =
-    let populated = Static.attachStaticPopulations cityCatalog v1FixtureContent |> Result.value
+    let populated = Static.attachStaticPopulations cityCatalog (Static.StaticPopulationsJson v1FixtureContent) |> Result.value
     let normalized = (NormalizeStaticPopulations.run populated).Value
     let rows = extractCityRows normalized
     // Identifier root-traces back to the parent kind's SsKey + the
@@ -126,7 +126,7 @@ let ``V1 contract: row identifiers derive deterministically from PK values`` () 
 
 [<Fact>]
 let ``V1 contract: non-PK column values cross the boundary as canonical strings`` () =
-    let populated = Static.attachStaticPopulations cityCatalog v1FixtureContent |> Result.value
+    let populated = Static.attachStaticPopulations cityCatalog (Static.StaticPopulationsJson v1FixtureContent) |> Result.value
     let rows = extractCityRows populated
     // Booleans coerce to "true"/"false" (V1's invariant-culture form).
     Assert.Equal("true",  Map.find (mkName "IsActive") rows.[0].Values)
@@ -162,12 +162,12 @@ let private shuffledFixture : string =
 [<Fact>]
 let ``differential: shuffled-input output matches sorted-input output`` () =
     let direct =
-        Static.attachStaticPopulations cityCatalog v1FixtureContent
+        Static.attachStaticPopulations cityCatalog (Static.StaticPopulationsJson v1FixtureContent)
         |> Result.value
         |> NormalizeStaticPopulations.run
         |> fun lineage -> lineage.Value
     let viaShuffled =
-        Static.attachStaticPopulations cityCatalog shuffledFixture
+        Static.attachStaticPopulations cityCatalog (Static.StaticPopulationsJson shuffledFixture)
         |> Result.value
         |> NormalizeStaticPopulations.run
         |> fun lineage -> lineage.Value
@@ -180,21 +180,21 @@ let ``differential: shuffled-input output matches sorted-input output`` () =
 
 [<Fact>]
 let ``adapter: malformed JSON returns Error`` () =
-    let result = Static.attachStaticPopulations cityCatalog "not json{"
+    let result = Static.attachStaticPopulations cityCatalog (Static.StaticPopulationsJson "not json{")
     Assert.True(Result.isFailure result)
     let codes = Result.errors result |> List.map (fun e -> e.Code)
     Assert.Contains("staticAdapter.json.parse", codes)
 
 [<Fact>]
 let ``adapter: missing 'tables' returns Error`` () =
-    let result = Static.attachStaticPopulations cityCatalog """{ "other": [] }"""
+    let result = Static.attachStaticPopulations cityCatalog (Static.StaticPopulationsJson """{ "other": [] }""")
     Assert.True(Result.isFailure result)
     let codes = Result.errors result |> List.map (fun e -> e.Code)
     Assert.Contains("staticAdapter.json.tables.missing", codes)
 
 [<Fact>]
 let ``adapter: 'tables' not an array returns Error`` () =
-    let result = Static.attachStaticPopulations cityCatalog """{ "tables": {} }"""
+    let result = Static.attachStaticPopulations cityCatalog (Static.StaticPopulationsJson """{ "tables": {} }""")
     Assert.True(Result.isFailure result)
     let codes = Result.errors result |> List.map (fun e -> e.Code)
     Assert.Contains("staticAdapter.json.tables.notArray", codes)
@@ -205,7 +205,7 @@ let ``adapter: row missing PK column returns Error`` () =
         """{ "tables": [
             { "schema": "dbo", "table": "OSUSR_DEF_CITY",
               "rows": [ { "NAME": "Lisbon", "ISACTIVE": true } ] } ] }"""
-    let result = Static.attachStaticPopulations cityCatalog badRow
+    let result = Static.attachStaticPopulations cityCatalog (Static.StaticPopulationsJson badRow)
     Assert.True(Result.isFailure result)
     let codes = Result.errors result |> List.map (fun e -> e.Code)
     Assert.Contains("staticAdapter.pk.missing", codes)
@@ -222,7 +222,7 @@ let ``adapter: kind without IsPrimaryKey returns Error when populated`` () =
             Modules =
                 cityCatalog.Modules
                 |> List.map (fun m -> { m with Kinds = [ pkLessKind ] }) }
-    let result = Static.attachStaticPopulations pkLessCatalog v1FixtureContent
+    let result = Static.attachStaticPopulations pkLessCatalog (Static.StaticPopulationsJson v1FixtureContent)
     Assert.True(Result.isFailure result)
     let codes = Result.errors result |> List.map (fun e -> e.Code)
     Assert.Contains("staticAdapter.kind.noPk", codes)
@@ -239,7 +239,7 @@ let ``A4: adapter neither invents nor drops kind SsKeys`` () =
         |> List.map (fun k -> k.SsKey)
         |> Set.ofList
     let outputKeys =
-        Static.attachStaticPopulations cityCatalog v1FixtureContent
+        Static.attachStaticPopulations cityCatalog (Static.StaticPopulationsJson v1FixtureContent)
         |> Result.value
         |> Catalog.allKinds
         |> List.map (fun k -> k.SsKey)
@@ -260,7 +260,7 @@ let ``adapter: unrelated tables in JSON pass through silently`` () =
                 { "ID": 3, "NAME": "Madrid", "ISACTIVE": false } ] },
             { "schema": "dbo", "table": "OSUSR_DEF_OTHER",
               "rows": [ { "ID": 99, "NAME": "Ignored" } ] } ] }"""
-    let result = Static.attachStaticPopulations cityCatalog extraRows
+    let result = Static.attachStaticPopulations cityCatalog (Static.StaticPopulationsJson extraRows)
     Assert.True(Result.isSuccess result)
     let rows = extractCityRows (Result.value result)
     Assert.Equal(3, rows.Length)
@@ -271,6 +271,6 @@ let ``adapter: unrelated tables in JSON pass through silently`` () =
 
 [<Fact>]
 let ``T1: adapter is deterministic`` () =
-    let r1 = Static.attachStaticPopulations cityCatalog v1FixtureContent |> Result.value
-    let r2 = Static.attachStaticPopulations cityCatalog v1FixtureContent |> Result.value
+    let r1 = Static.attachStaticPopulations cityCatalog (Static.StaticPopulationsJson v1FixtureContent) |> Result.value
+    let r2 = Static.attachStaticPopulations cityCatalog (Static.StaticPopulationsJson v1FixtureContent) |> Result.value
     Assert.Equal(r1, r2)

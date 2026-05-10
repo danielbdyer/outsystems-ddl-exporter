@@ -135,10 +135,8 @@ let private runDeploy (inputPath: string) : int =
             match result with
             | Ok (outputs, report) ->
                 printfn
-                    "projection: emitted %d bytes of SSDT, %d bytes of JSON, %d bytes of distributions"
-                    outputs.Sql.Length
-                    outputs.Json.Length
-                    outputs.Distributions.Length
+                    "projection: emitted %d SSDT bundle entries (JSON + distributions: typed JsonNode)"
+                    (Map.count outputs.SsdtBundle)
                 if report.Ok then
                     printfn
                         "projection: deploy succeeded — database `%s`, %d table(s) landed"
@@ -179,7 +177,7 @@ let private runCanary (sourceDdlPath: string) : int =
     else
         let sourceDdl = File.ReadAllText sourceDdlPath
         printfn "projection: spinning up ephemeral SQL Server for the wide canary..."
-        let task = Deploy.runWideCanary sourceDdl RawTextEmitter.statements
+        let task = Deploy.runWideCanary sourceDdl SsdtDdlEmitter.statements
         let result = task.GetAwaiter().GetResult()
         let exitCode =
             match result with

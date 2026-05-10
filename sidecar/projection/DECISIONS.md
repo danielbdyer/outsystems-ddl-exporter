@@ -104,6 +104,42 @@ against these before adopting any pattern.
    "be bold" directive (2026-05-09): expensive-now-for-cheaper-later
    beats compounding tech debt.
 
+   **Pillar-7 substantive-rationale amendment** (codified 2026-05-10
+   chapter 3.7 sidebar; named after the slice-β failure mode). Every
+   `LINT-ALLOW` marker on a string-composition / built-in-substitute
+   site MUST embody the four-question analysis BEFORE the marker is
+   committed:
+   1. **Use-case-specific library** for THIS output structure?
+      Name it explicitly (module + type + function).
+   2. **Already in codebase** (or available as non-V2-back-compat
+      dep)? If yes, name the existing consumer site; if no, name
+      the package + version.
+   3. **Cost** of using it here? Visibility lift (LOC) + perf class
+      (zero / O(1) / O(N) / ...) + dep weight.
+   4. **Structural reason it doesn't apply?**
+      - **NO** → there is no shortcut; do the work (lift visibility,
+        add helper, refactor call site).
+      - **YES** → the marker text MUST name the specific reason —
+        NOT generic vocabulary alone ("typed segments", "boundary"
+        without naming WHICH boundary, etc.).
+
+   The named failure mode is **performance-of-compliance**: a marker
+   with the SHAPE of an audit trail without the substance. The lint
+   passes, the vocabulary fits, the tests are green — and the
+   structural commitment is unmet. See `DECISIONS 2026-05-10 —
+   LINT-ALLOW substantive-rationale discipline` for the worked
+   counterfactual (slice-β `Render.columnSqlType` shortcut → slice-β'
+   ScriptDom delegation; cost of doing it right was 87 LOC).
+   See `PLAYBOOK.md` decision tree "When you reach for a
+   string-composition primitive" for the executable form.
+
+   Lint Rule 27 maintains a per-line concat-aversion `LINT-ALLOW`
+   inventory printed at the end of every clean run AND enforces a
+   soft floor (≥30 chars after the colon, at least one substantive-
+   vocabulary token). Heuristics can't catch performance-of-
+   compliance reliably; the discipline document does. The inventory
+   is the audit surface for chapter-close ritual + PR review.
+
    **Pillar-7 perf-clause** (added 2026-05-09 chapter 3.6 sidebar
    reminder; iterator-logging-as-first-class-outcome): every
    refactor SHALL cite its perf implications in the commit message.
@@ -184,6 +220,8 @@ table before continuing.
 | **`ICatalogReader` interface** (Position B → A) | 2026-05-13 (Anticipation vs. speculation in abstraction extraction) | A second catalog source materializes (DACPAC, OData, in-memory test reader unifying with OSSYS) | OSSYS adapter implementation chapter starts in Position B (`parse : SnapshotSource -> Task<Result<Catalog>>` shape; session 18); interface defers until second source (session 25) |
 | **`SnapshotRowsets` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature, session-20 amendment) | The JSON-projection-lossiness class needs unblocking — A1 SsKey bound resolution; `EspaceKind` distinction; `isSystemEntity` evidence; future class members (per `DECISIONS 2026-05-19 — naming the two classes of resolution patterns explicitly`) | Operator-decided canonical resolution; not subject to relitigation. Variant reserved in `SnapshotSource` DU (`CatalogReader.fs:36-56`). Pre-scoped at session 25 commit 11 (subagent #5); chapter 3+ implements (session 25) |
 | **`LiveOssysConnection` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature) | V2 needs to operate without V1's chain in the loop entirely (real DB-touching variant) | Reserved in `SnapshotSource` DU (`CatalogReader.fs:58-62`); chapter-3+ when canary's deployment-validation arc materializes (session 25) |
+| **`Microsoft.SqlServer.Dac` (DacFx) adoption in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 3.x DacpacEmitter opens. **Hard requirement, not preference**: the .dacpac file format is a Microsoft-proprietary ZIP-with-manifest-XML structure — hand-rolling it via `System.IO.Compression.ZipArchive` + manual XML composition is the prototypical "text-builder-as-first-instinct" failure mode. DacFx (`Microsoft.SqlServer.Dac` NuGet) IS the canonical use-case-specific library; per pillar 7, no LINT-ALLOW will excuse a hand-rolled .dacpac. The chapter-3.x agent reads this entry at chapter open and writes the cash-out below the Active deferrals table on adoption. | Pre-DacpacEmitter; trigger condition not yet met (DacpacEmitter chapter not open) |
+| **MigrationDependenciesEmitter + BootstrapEmitter typed-AST adoption from slice α** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 4.1.B slices ε (MigrationDependenciesEmitter) / ζ (BootstrapEmitter) open. **Hard requirement**: both emitters are MERGE / INSERT producers; per the Tier-1 #1 cash-out (`bface9a` — chapter 4.1.B StaticSeedsEmitter MERGE → ScriptDom MergeStatement), every new SQL-emitting consumer starts on the typed-AST library, not StringBuilder. `ScriptDomBuild.buildMergeStatement` + `ScriptDomBuild.buildInsertRow` + `SqlLiteral.ofRaw` are the precedent surface; cross-target dep on Projection.Targets.SSDT acceptable per the StaticSeedsEmitter precedent (single-line LINT-ALLOW with rationale). The chapter 4.1.B slice agent reads this entry at slice open. | Pre-MigrationDependenciesEmitter / BootstrapEmitter; chapter 4.1.B slices ε/ζ not yet open |
 
 **Discipline.** Each deferral here was logged as the right call **at the
 time it was made** under "IR grows under evidence." A deferral is not a
@@ -7923,7 +7961,9 @@ port shape. The realization arc:
   lands on the runway after this slice arc.
 
 - **Slice δ — T11 type-theorem worked examples; substring
-  discipline retired**. New `T11TypeTheoremTests.fs` carries
+  discipline retired**. New `T11TypeTheoremTests.fs` (renamed
+  `SiblingEmitterContractTests.fs` at chapter 3.7 slice ε per
+  `DECISIONS 2026-05-10 — Domain-first naming`) carries
   three per-emitter `emitSlices key-set equals Catalog.allKinds`
   tests + one cross-emitter sibling-commutativity test.
   Substring enforcement at `JsonEmitterTests.fs:96-105` and
@@ -8726,6 +8766,462 @@ architectural improvement, not the marker count.
 
 ---
 
+## 2026-05-10 — V2-driver as destination KPI (chapter 3.7 sidebar; principal-PO discussion)
+
+**Status:** decided
+**Codified at:** `V2_DRIVER.md` (standalone canonical surface; supersedes `BACKLOG.md` which is now a forwarding pointer).
+**Resolves:** the implicit ambiguity in `DECISIONS 2026-05-22 — R6: Split-brain governance rule for the dual-track cutover window` about whether V2-driver was the destination or the stretch goal. R6's transition mechanism (per-environment-per-artifact-type V2-driver transition gated on N=10 consecutive green canary runs plus operator sign-off) is preserved unchanged; what shifts is the *direction* of the gate.
+
+**Context.** The principal-PO discussion at chapter 3.7 sidebar (this date) clarified the project's primary KPI: **provable correctness across every axis V2 owns** is the primary motivation, not just verification of V1's outputs. The cutover (~late July 2026 per operator estimate; ~80 days from this codification) is V1-functional already; V2's job is to make every axis it owns provably correct so the cutover is verifiable end-to-end and so V1 sunset becomes a real plan post-cutover.
+
+The R6 entry as written framed three rungs of a fallback ladder: V1-only / V2-augmented (V1 drives, V2 verifies) / V2-driver (V2 emits production artifacts; V1 stays warm through cutover+30 as fallback). It was operationally precise about *how* the transition happens but ambiguous about *whether* V2-driver was the destination. The ambiguity led to a legitimate "save LOC; V2-augmented as destination" framing that, under examination, conflicted with the operator's primary motivation. This entry resolves the ambiguity.
+
+**Decision.** **V2-driver is the destination.** V2-augmented is the gate to V2-driver, not the floor; V1-only is the cutover-window safety net, not the sustained operating mode. The fallback ladder operates as before; the gate direction shifts to "we progress per-environment-per-artifact-type as fast as the per-axis property tests support." V1 stays warm through cutover+30 (per existing T-30 / T-15 ladder rule, unchanged); V1 sunset begins after the cutover-survival window AND all four environments have run V2 emissions for one full schema-evolution cycle without canary divergence.
+
+**The KPI in one sentence.** V2 reaches V2-driver mode for the cutover by being provably correct on every axis V2 owns — schema, data, identity, diagnostics, and any future sibling — with provable correctness defined as structural-type-level enforcement plus per-axis property tests, not aspirational discipline plus selective coverage.
+
+**Operationally.** Every chapter, every slice, every architectural decision in V2 from this date forward biases toward V2-driver. When two paths offer the same correctness with different LOC, prefer fewer LOC. When two paths offer different correctness depth, prefer the deeper correctness — even if the LOC investment is larger.
+
+**The CDC-silence-on-idempotent-redeploy property test (chapter 4.1.B) is the highest-leverage single deliverable in the entire chapter sequence** (per the per-axis stakes table in `V2_DRIVER.md`). Build it first inside chapter 4.1.B; gate the chapter close on it; run a dry-run on at least one CDC-enabled table at production shape before chapter close.
+
+**Per-axis correctness depth (excerpted; full table in `V2_DRIVER.md`):**
+
+| Axis | Failure mode if wrong | Verification depth |
+|---|---|---|
+| CDC silence on idempotent redeploy | Spurious change records corrupt CDC-dependent features silently | **Highest.** Per-CDC-table coverage; multi-redeploy property; CI gate red on any non-zero. |
+| Schema (SSDT DDL) | Production deploy fails or deploys wrong shape | High. Mostly shipped (chapter 3.1). |
+| Data (static populations + seeds + bootstrap) | Seed data missing/duplicated/topologically out-of-order | High. Substrate ready; emitters chapter 4.1.B. |
+| User FK reflow | Production reports break or data loss | High. Chapter 4.2. |
+| RefactorLog round-trip | Cross-version identity tracking breaks | High. Chapter 3.5 θ/ι. |
+| Multi-environment promotion | Per-env policy divergence not caught until second env deploys | Medium-high. Tolerance taxonomy (M4) is the decision surface. |
+| DACPAC round-trip | DACPAC erases axes silently; SSDT and DACPAC diverge | Medium-high. Chapter 3.x; conditional on deploy path. |
+| Operational diagnostics | Operator can't diagnose post-cutover issues | Lower. Chapter 4.3. |
+
+**Chapter sequencing under V2-driver KPI** (full sequence in `V2_DRIVER.md`):
+
+| Phase | Chapter | Status | Critical-path? |
+|---|---|---|---|
+| Phase 1 | Chapter 3.5 (Π port + RefactorLog + CatalogDiff) | In-flight | YES |
+| Phase 2 | Chapter 4.1.A + Tolerance + multi-env | Not-started | YES |
+| Phase 3 | Chapter 4.1.B (CDC-critical) | Not-started | YES |
+| Phase 4 | Chapter 4.2 (User FK reflow) | Not-started | YES |
+| Phase 5 | Chapter 4.3 (operational diagnostics) | Not-started | YES |
+| Phase 6 | Chapter 3.x DacpacEmitter | Not-started | Conditional on deploy path |
+| Phase 7 | Chapter 3.2 SnapshotRowsets | Not-started | YES (cross-version identity stability) |
+| Phase 8 | Chapter 5+ pragmatic close | Deferred-with-trigger | Consumer-pressure-driven |
+
+**What V1 retains under V2-driver mode.** V2 does not duplicate V1 surfaces that don't add provability. V1 retains: live SQL extraction (V2 consumes V1's evidence cache); the V1 manifest as evidence source (not as deploy artifact); the V1 documentation surfaces V2 doesn't duplicate (`handbook/` operator teaching material, `ssdt-playbook/` per-change-tier mechanics); operator-facing CLI surfaces during transition (per-env per-artifact-type R6 governance); V1 stays warm through cutover+30 as fallback. V1's role under V2-driver is **upstream evidence + safety net**, not co-driver.
+
+**The disciplines that compound under this KPI.** The eight pillars in the supreme operating discipline (top of this file) and the two named failure modes (performance-of-compliance; domain-blind naming) are exactly the substrate provable correctness needs. Each pillar protects against a class of runtime-only invariant. Pillar 1 (data-structure-oriented), pillar 3 (built-in obligation), pillar 7 (gold-standard library precedence + LINT-ALLOW substantive-rationale amendment), pillar 8 (domain-first naming) all serve the V2-driver KPI directly. The two-consumer threshold + IR-grows-under-evidence prevent speculative LOC; provable correctness requires the right code with provable properties, not more code. Closed-DU expansion empirical-test discipline + bench-driven optimization protocol + iterator-logging-as-first-class-outcome compound across chapters.
+
+**What this KPI is NOT.** Not "ship faster" (the constraint is rigor, not date); not "more code at any cost" (smart-product-choices framing applies); not "less rigor in some places" (per-axis stakes vary, but discipline floor is uniform); not "skip V2-augmented" (V2-augmented IS the gate); not "V1 must sunset on a deadline" (sunset is conditional on cutover+30 + one full schema-evolution cycle + operator confirmation); not a deadline-driven framing (the cutover is V1-functional already; V2's job is provable correctness, not delivery speed).
+
+**Operating implications for chapter agents.** When opening a chapter: name the axes the chapter advances per the per-axis stakes table; state explicitly which property tests the chapter will make hold; state explicitly what V1 capability the chapter is making V2 own. When choosing the next slice: prefer slices that advance an axis V2 is committing to own under V2-driver; defer slices that are quality-of-life without advancing a V2-driver axis. When considering primitive extraction: the two-consumer threshold still applies; do NOT extract speculatively. When considering whether to defer a chapter: chapters 4.1.B / 4.2 / 4.3 / 3.x / 3.2 are NOT optional under V2-driver KPI; sequence them, don't skip them.
+
+**Reasoning / consequences.**
+
+This entry codifies what was previously implicit. R6 governance was framed in terms of "we'll progress along the ladder per-environment-per-artifact-type" — meaning V2-augmented is the floor, V2-driver is aspirational. Under examination at the principal-PO sidebar, that framing was incomplete: V2-driver is the operative target, not the stretch goal. V2-augmented is the *gate* by which the operator earns confidence in V2-driver per environment per artifact type; once the gate clears, V2-driver is the operating mode.
+
+The codification has structural impact on chapter sequencing: chapters 4.1.B (data triumvirate; CDC-critical), 4.2 (User FK reflow), 4.3 (operational diagnostics), 3.x (DacpacEmitter conditionally), 3.2 (SnapshotRowsets) become critical-path under V2-driver KPI. Pre-V2-driver-KPI codification, these chapters were "on the backlog" with implicit "if cutover deadline allows" framing. The KPI clarifies they ARE the deliverable.
+
+The codification has structural impact on every chapter agent's decision-making: bias toward V2-driver. The disciplines codified in the supreme operating discipline ARE the substrate for the KPI; the chapter-close ritual + per-axis property tests + AXIOMS amendments are the verification surface.
+
+The standalone document `V2_DRIVER.md` is the canonical surface; this DECISIONS entry is the formal codification reference. The two surfaces share substance; `V2_DRIVER.md` is the operative read for chapter agents (extends to cover the operative backlog supersedes `BACKLOG.md`); this DECISIONS entry is the chronological codification record.
+
+---
+
+## 2026-05-10 — Domain-first naming and ubiquitous-language consistency (pillar 8; chapter 3.7 sidebar)
+
+**Status:** decided
+**Context:** The V2 sidecar already operates DDD bounded contexts
+(Coordinates, Identity, RawValueCodec, SqlTypeCorrespondence) and
+generic algebraic naming (Catalog / Module / Kind / Reference at
+Core; domain-prescriptive vocabulary at adapter boundaries). The
+"Programming style — Naming" section in `CLAUDE.md` documents the
+intent. But intent is descriptive; structurally there is no
+named-failure-mode forcing function preventing drift. As V2 grows
+(chapters 4.1 / 4.2 / 4.4 introduce dozens of new types), the most
+likely failure mode is *not* an explicit anti-pattern (V2 will not
+suddenly grow `KindManager.fs`). It is **the slow accretion of
+generic CS vocabulary** in places where a domain term should sit —
+"Helper", "Util", "Service", "Handler", "Processor", "Builder"
+(when not BCL-mandated), "Factory" (likewise), "Provider", "Wrapper".
+Each generic suffix is a placeholder for "I haven't identified the
+domain concept yet." Each gets ratified across reviews because the
+code works; the cost compounds across every reader.
+
+The user's directive (chapter-3.7 sidebar): make domain naming +
+domain alignment + domain critical thinking a **first-class and
+protected focus** for V2 agent operation. Codified at the same
+structural level as pillars 1–7 (data-structure-oriented; no string
+concat; built-in obligation; FP promised land; coding-style; no
+back-compat; gold-standard library precedence + LINT-ALLOW
+substantive-rationale).
+
+**Decision: Pillar 8 — Domain-first naming and ubiquitous-language
+consistency.**
+
+The named failure mode is **domain-blind naming**: when a name
+answers "what does this DO" (action-shaped: `process`, `handle`,
+`manage`, `run`, `execute`) rather than "what does this REPRESENT
+in the domain" (concept-shaped). Fails to put the domain concept in
+the type system. The agent feels productive (a name exists; the code
+compiles; tests pass) without doing the domain-modeling work that
+makes the name structurally accountable.
+
+The cutover stakes (300-table OutSystems → SQL Server external-
+entity migration; four environments; active CDC dependencies; R6
+split-brain governance; T-30 / T-15 fallback ladder) are the
+forcing function. The cutover is a **business event** — operators
+and DBAs talk about it in domain vocabulary (Entity, Espace,
+Application, Module, Static Entity, External Entity, RefactorLog,
+DACPAC, Catalog, Schema). V2's job is to make the cutover
+verifiable, reversible, and repeatable. **Verifiability rests on
+the V2 vocabulary mirroring the cutover vocabulary.** When V2
+introduces CS-vocabulary terms ("KindManager", "EmissionService",
+"Helpers") in places where the domain has a sharper term, the
+mirror cracks — operators and DBAs reading V2 source can no
+longer recognize their concepts; engineers reviewing V2 changes
+no longer recognize when the concept being changed has business
+implications.
+
+The four-question domain-naming analysis (the structural prerequisite
+before introducing any named type / function / file / module / test):
+
+```
+1. What domain concept does this represent?
+   Articulate it in cutover-business terms. Examples:
+     - "This is the V2 IR's identity for an external entity post-cutover."
+     - "This is the round-trip pair PrimitiveType ↔ SQL Server DDL base name."
+     - "This is the lineage event for a removal predicate firing."
+     - "This is the schema-fidelity comparison between source and target."
+   If you cannot articulate what the concept IS in the cutover business,
+   you do not have a name yet. STOP.
+
+2. Does V2 already name this concept somewhere?
+   YES → use the same name. Ubiquitous-language consistency: the same
+         concept appears under the same name across Core / Adapters /
+         Targets / Pipeline / CLI. Cross-surface name drift is itself
+         a structural failure (an operator reading two surfaces
+         encounters two names for one concept).
+   NO  → pick a name that aligns with how domain experts (operators,
+         DBAs, OutSystems platform docs, CDC documentation, SQL Server
+         admin guides) name the concept. The reference vocabularies
+         are the cutover stakeholder's vocabularies — V2 lives within
+         them, not above them.
+
+3. Is the proposed name concept-shaped or action-shaped?
+   CONCEPT-SHAPED → "what this IS in the domain" (Catalog, Module,
+                    Kind, Reference, RemovalReason, AnnotationDetail,
+                    SqlTypeCorrespondence, RefactorLog). Default for
+                    types, modules, files.
+   ACTION-SHAPED  → "what this DOES" (canonicalize, normalize, render,
+                    emit, project). Acceptable for function names
+                    when the verb names a *domain* operation. NOT
+                    acceptable when the verb is a generic CS
+                    operation (process, handle, manage, run, do).
+
+4. Generic-suffix smell test.
+   If the name ends in any of:
+     - Helper / Util / Utils / Utility / Utilities
+     - Manager / Service / Handler / Processor / Wrapper
+     - Builder / Factory / Provider / Strategy (when not BCL-mandated)
+   STOP. The generic suffix is a placeholder for "I haven't identified
+   the domain concept yet." Either:
+     a. Find the concept (rename to the domain term), OR
+     b. Restructure (the concept is being squashed into something else
+        — it doesn't deserve a wrapper around an unnamed thing).
+
+   Note: the lint guardrail does NOT enforce this syntactically.
+   Heuristics misfire on legitimate uses (e.g., `LineageBuffer` is
+   concept-shaped despite the "Buffer" suffix — the buffer IS the
+   reified mutation surface). The discipline document does the
+   catching the heuristic can't.
+```
+
+**Ubiquitous-language consistency** is a separate axis from
+domain-shaped naming. Two surfaces independently picking concept-
+shaped names can still drift if they pick *different* names for the
+same concept. V2 already has worked examples of consistent naming:
+`SsKey` is the identity term across Core / Adapters / Targets /
+Pipeline / CLI — never `EntityKey`, never `Identifier`, never
+`Hash`. When the term is consistent, an operator reading any V2
+surface encounters the same concept. When the term drifts (one
+surface uses `SsKey`, another uses `Identifier`), readers must
+mentally translate; the translation cost compounds.
+
+**Domain critical thinking at every decision point.** The
+disciplined posture: when reaching for a new type / function / file
+name, ask `"What does this represent in the cutover business?"`
+*before* drafting the name. The answer is the documentation of
+the agent's domain understanding at this site. If the answer is
+generic ("it's a helper for emit") — the domain understanding hasn't
+landed; the name is wrong; the work is to identify the concept.
+
+**Worked precedents in V2 (concept-shaped, ubiquitous):**
+  - `Catalog` / `Module` / `Kind` / `Reference` — generic algebraic
+    names at Core; mirror the domain-prescriptive `Application` /
+    `Espace` / `Entity` / `ForeignKey` at adapter boundaries.
+  - `SsKey` (`OssysOriginal` / `Synthesized` / `V1Mapped`) — identity
+    DU; every variant names a provenance class.
+  - `RemovalReason` / `AnnotationDetail` — typed lineage payload DUs;
+    each variant names the predicate / decision class.
+  - `Coordinates.TableId` — schema-coordinate value object; consistent
+    across PhysicalSchema / Statement / ReadSide / ProfileSnapshot.
+  - `RawValueCodec` — V2's canonical raw-value format contract;
+    consolidates 3 producer/consumer sites.
+  - `SqlTypeCorrespondence` — round-trip pair `PrimitiveType ↔ SQL
+    DDL base name`; bounded context name reified.
+  - `RefactorLog` / `CatalogDiff` — domain terms (RefactorLog from
+    SSDT vocabulary; CatalogDiff from V2's diff algebra).
+  - `BatchSplitter` — concept; what splits is the cutover's deploy
+    batches.
+  - `DatabaseNameGenerator` — concept; reified non-determinism
+    boundary for ephemeral DB names.
+  - `EmissionPolicy` — concept; per A39 the policy is structurally
+    named (NOT `EmissionConfig` or `EmitterSettings`).
+  - `LineageBuffer` — concept; the buffer IS the reified mutation
+    surface. The "Buffer" suffix is concept-shaped (a buffer of
+    lineage events) — the smell test is heuristic, not absolute.
+
+**Worked anti-patterns (what V2 does NOT do):**
+  - V2 has no `*Helper.fs` / `*Util*.fs` / `*Manager.fs` / `*Service.fs`
+    files. Generic suffixes are absent by construction.
+  - Strategies are named `<Domain>Rules` (`NullabilityRules`,
+    `UniqueIndexRules`, `ForeignKeyRules`, `CategoricalUniquenessRules`)
+    — the suffix names the algebraic role; the prefix names the
+    domain.
+  - Passes are named after the verb-noun shape but the verbs ARE
+    domain operations (`canonicalize`, `normalize`, `mask` —
+    each names a structural commitment in the cutover algebra).
+
+**Reasoning / consequences.**
+
+This entry refines the "Programming style — Naming" section of
+`CLAUDE.md` (which describes the intended pattern) with structural
+prerequisites that name the failure mode and the four-question
+analysis. The discipline lives in the documents — `DECISIONS` (this
+entry, the substance), `CLAUDE.md` operating-disciplines table (the
+navigation pointer), `AGENTS.md` (root agent surface), `KICKOFF.md`
+(supreme operating discipline), `PLAYBOOK.md` (decision tree
+"When you reach for a name" with the four questions executable-form),
+`HANDOFF.md` (chapter-3.7 prologue addition).
+
+**No lint enforcement.** Heuristic syntactic checks misfire on
+legitimate uses (`LineageBuffer`, `BatchSplitter`); the discipline is
+inherently semantic — it requires understanding the domain to apply.
+The discipline-document path catches what the heuristic can't.
+Future agents (and future me) encounter the four questions at every
+naming decision; the named failure mode (domain-blind naming) is
+recognizable as a pattern.
+
+**Why this matters now.** Chapters 4.1 / 4.2 / 4.4 will introduce
+dozens of new domain types (StaticSeedsEmitter / MigrationDependencies
+/ BootstrapEmitter / UserFkReflowPass / SourceTag VO / DacpacEmitter
++ subordinate types). Each is a domain-modeling moment. The codified
+discipline is the structural answer to the question "how do we
+preserve V2's domain-first naming under chapter-by-chapter pressure
+without re-deriving the discipline at every decision?" Codifying it
+now means chapter 4.x agents inherit the discipline as named-and-
+recognized rather than rediscovered.
+
+**Why this is named at the supreme-discipline level.** Pillar 8
+joins pillars 1–7 (data-structure-oriented; no string concat; built-
+in obligation; FP promised land; coding-style; no back-compat;
+gold-standard library precedence) because **domain alignment is the
+load-bearing structural commitment that makes V2's verification
+claim trustworthy**. V2 is the trust anchor for the cutover; a trust
+anchor whose vocabulary doesn't mirror the business is a trust
+anchor whose claim must be re-translated to be checked. The
+translation cost compounds across every operator interaction.
+
+---
+
+## 2026-05-10 — LINT-ALLOW substantive-rationale discipline (chapter 3.7 sidebar; pillar 7 amendment)
+
+**Status:** decided
+**Resolves:** the slice-β pickup at chapter 3.7 — `Render.columnSqlType`
+landed with four `String.Concat` sites carrying `LINT-ALLOW` markers
+shaped like an audit trail ("terminal SQL DDL emission boundary; both
+segments are typed (closed-DU dispatch + literal)") without the
+substance: the markers did not name the use-case-specific library
+(ScriptDom's `SqlDataTypeReference` + `Sql160ScriptGenerator`, both
+already loaded, both already used by the sibling `ScriptDomBuild`
+module), did not compute the cost of the alternative (~30 LOC: lift
+visibility + add a one-call generator helper), and did not conclude.
+Operator caught the shortcut on review. Slice β' immediately followed:
+lifted `dataTypeReference` from `private` to public, added
+`generateDataType : DataTypeReference -> string`, made
+`Render.columnSqlType` delegate. All four LINT-ALLOWs retired; output
+byte-identical (790 tests still green); perf-gate clean. The "cost of
+doing it right" was trivial compared to the structural drift the
+shortcut would have introduced over time.
+
+**Context.** Pillar 7 (`DECISIONS 2026-05-09 — Gold-standard library
+precedence`) already names the precedence: use-case-specific library →
+typed data structure → `StructuredString` → documented LINT-ALLOW.
+Pillar 7's "deep per-site analysis" clause is the load-bearing demand:
+every adoption of `String.concat` / `String.Concat` / `String.Join` /
+`String.Format` / `sprintf` / `+` / interpolated string outside the
+gold standard requires an analysis the marker text records as the
+audit trail. The slice-β failure surfaced that "deep per-site analysis"
+is too easily satisfied by a *justification-shaped marker* that uses
+discipline vocabulary ("terminal", "boundary", "typed") without
+performing the analysis the vocabulary is supposed to summarize.
+
+The named failure mode is **performance-of-compliance**: a marker with
+the SHAPE of an audit trail but without the substance. Distinct from
+explicit non-compliance (which is recoverable because it's visible at
+the lint surface); distinct from genuine compliance (which is the
+work). Performance-of-compliance is the failure mode where the agent
+*feels* compliant, the lint passes, the tests are green — and the
+structural commitment is unmet. The marker's audit-trail shape masks
+the absence of the audit. Future agents reading the marker (including
+future me) treat the formula as decided fact.
+
+The asymmetry is structural: V2 is the trust anchor for the high-stakes
+cutover; every shortcut introduces a runtime-only invariant ("our
+composition matches the vendor's emission today") that future drift
+forces are waiting to surface. The cost of the shortcut compounds
+across every reader. The cost of doing the work is paid once, at the
+moment of insight. Pillar 6 (`DECISIONS 2026-05-09 — No V2-internal
+back-compat`) already names the structural pressure: shortcuts are
+back-compat-debt invitations.
+
+**Decision.** Codify the four-question analysis as the structural
+prerequisite for any `LINT-ALLOW` marker on a string-composition or
+built-in-substitute site. The analysis MUST be performed (and the
+marker text MUST embody it) before the marker is committed:
+
+  1. **What is the use-case-specific library** for this output
+     structure? Name it explicitly (module + type + function).
+     Examples: `Microsoft.SqlServer.TransactSql.ScriptDom
+     .SqlDataTypeReference` + `Sql160ScriptGenerator.GenerateScript`
+     for SQL DDL type expressions; `System.Xml.XmlWriter` for XML;
+     `System.Text.Json.Utf8JsonWriter` / `JsonNode` for JSON;
+     `Microsoft.SqlServer.Server.SqlMetaData` for SqlClient parameter
+     metadata; `RFC4122 UuidV5` for namespaced GUIDs; `BCL parsers/
+     formatters with CultureInfo.InvariantCulture` for typed
+     parse/format round-trips.
+  2. **Is it already in the codebase** (or available as a non-V2-back-
+     compat dependency)? If yes, name the existing consumer site so
+     the precedent is structurally visible. If no, name the package
+     name + version that would land it.
+  3. **What is the cost of using it here?** Be concrete: visibility
+     lift (`private` → public; ~N LOC); perf class (zero / O(1) /
+     O(N) / O(N log N) / O(N²) per-call delta; bench label that
+     would surface it); dep weight (transitive package size). The
+     cost analysis IS the perf-clause cash-out at this site.
+  4. **Is there a structural reason it doesn't apply?** Examples of
+     legitimate "no": the BCL writer's grammar can't express the
+     structure (e.g., escape-sequence formatting for which no
+     formatter exists); the data is V2-internal-only and the BCL
+     writer would lose the typed information; the BCL writer
+     introduces non-determinism (e.g., `JsonSerializer` with default
+     options yields culture-dependent output) that violates T1.
+
+If the answer to #4 is **"no"**, there is no shortcut — there is the
+work. The LINT-ALLOW marker is wrong; the right move is to lift the
+visibility, add the helper, refactor the call site. Slice β' is the
+worked example: the answer to #4 was "no, ScriptDom applies fully";
+the cost was trivial; the marker came down.
+
+If the answer to #4 is **"yes"**, the marker text MUST name the
+specific structural reason (not generic vocabulary). Examples:
+
+  - **GOOD** (substantive): `LINT-ALLOW: writer-monad tell algebraic
+    primitive; pass drivers use LineageBuffer for high-rate
+    accumulation, tell is terminal annotation only` — names the
+    algebraic role + the alternative for the hot path.
+  - **GOOD** (substantive): `LINT-ALLOW: terminal diagnostic
+    projection; typed Synthesized (s, parts) available via
+    pattern-match for structural consumers` — names the boundary +
+    the structural alternative for non-terminal consumers.
+  - **GOOD** (substantive): `LINT-ALLOW: terminal text-emission
+    boundary; HexLiteralPrefix is the canonical typed segment, raw
+    is already vetted hex` — names the boundary + the typed source
+    of each segment.
+  - **BAD** (performance-of-compliance): `LINT-ALLOW: terminal SQL
+    DDL emission boundary; both segments are typed (closed-DU
+    dispatch + literal)` — uses pillar vocabulary ("terminal",
+    "boundary", "typed") without naming the considered alternative
+    (`Sql160ScriptGenerator`) or the structural reason it doesn't
+    apply. The marker IS the slice-β failure mode.
+
+**Lint guardrail.** Rule 27 (added in this slice) maintains an
+inventory of every per-line concat-aversion `LINT-ALLOW` and emits
+the inventory at the end of every clean run. The inventory is the
+audit surface — making the markers visible at the discipline-review
+moment, not just at the rule-violation moment. The inventory does
+not gate compliance (a heuristic can't reliably distinguish
+performance-of-compliance from substance); the discipline document
+does. Rule 27 also enforces a soft floor: per-line concat-aversion
+markers must be at least 30 chars after the colon AND contain at
+least one substantive-vocabulary token from the established
+discipline lexicon (terminal / boundary / primitive / round-trip /
+considered / alternative / gold-standard / escape / irreducible).
+
+**The four-question analysis when reaching for `String.Concat`,
+`String.concat`, `String.Format`, `sprintf`, `String.Join`, or
+interpolated strings:**
+
+```
+1. Use-case-specific library for THIS output structure?
+   ├─ ScriptDom (SQL DDL/DML)
+   ├─ XmlWriter / XDocument (XML)
+   ├─ Utf8JsonWriter / JsonNode (JSON)
+   ├─ SqlConnectionStringBuilder (connection strings)
+   ├─ Path.Combine (filesystem paths)
+   ├─ Identifier.EncodeIdentifier (SQL identifiers)
+   ├─ UuidV5 (RFC 4122 namespaced GUIDs)
+   ├─ DacFx (DACPAC; pending chapter 3.x adoption)
+   ├─ Verify.XUnit (golden-file diff)
+   └─ ... (extend as new use cases land)
+2. Already in codebase?  YES ─→ name the existing consumer site.
+                         NO  ─→ name the package + version.
+3. Cost?  visibility lift (LOC) + perf class (zero/O(1)/O(N)/...)
+          + dep weight (MB transitive).
+4. Structural reason it doesn't apply?
+   ├─ NO  → there is no shortcut; do the work.
+   └─ YES → marker text MUST name the specific reason
+            (NOT generic vocabulary alone).
+```
+
+**Reasoning / consequences.** This entry refines pillar 7 with the
+named failure mode and the four-question structural prerequisite.
+Pillar 7's "deep per-site analysis" was descriptive of the desired
+discipline; this entry makes the SHAPE of the analysis structural.
+Future agents (and future me) reading the discipline encounter the
+four questions before drafting the marker, not after. Performance-
+of-compliance is named so the failure mode is reified as a
+recognizable pattern rather than an unnamed slip. The lint inventory
+keeps the per-line markers visible at the audit surface so the
+discipline check is structural at PR review and chapter close.
+
+**Worked precedent of doing it right (slice β'):** the cost of the
+"do the work" path was 87 lines of diff across 3 files; the perf-
+gate stayed clean; the tests stayed green; four LINT-ALLOWs
+retired; two private helpers retired (`sqlTypeWithLength`,
+`sqlDecimal`); one unused import retired (`open
+System.Globalization`); the SQL DDL type expression flows through
+ScriptDom's typed AST end-to-end. The slice's commit message
+records the perf-class analysis (per-column generator instantiation
+surfaced via bench label `scriptDom.generateDataType`) so the
+next-touch agent inherits the perf footprint as structural fact.
+
+**Why this matters in V2.** The cutover stakes (300-table OutSystems
+external-entity migration, four environments, active CDC dependencies,
+R6 split-brain governance, T-30 / T-15 fallback ladder) are the
+forcing function. V2 is the verification surface. Every drift class V2
+introduces is a probability-mass increase on "we caught a thing we'd
+never expected; per R6 we revert to V1; the cutover delays N days."
+The discipline isn't ascetic — it's protective. Each disciplined
+choice forecloses a future debugging session, and the cost of those
+sessions compounds during the highest-stakes window: the actual
+cutover.
+
+---
+
 ## 2026-05-09 — Operator-reality canary as the production-baseline perf gate
 
 **Decision:** the chapter-3.6 perf-regression gate
@@ -8815,5 +9311,405 @@ structural under operator-reality conditions. Iterator-logging
 discipline (CLAUDE.md operating-disciplines table) plus this gate
 together close the "feature added; perf regressed; we noticed
 months later" failure mode by construction.
+
+## 2026-05-10 — Tolerance taxonomy (M4 slice α): typed `ToleratedDivergence` DU + `Set`-encoded `Tolerance` value object
+
+**Context.** R6 split-brain governance (`DECISIONS 2026-05-22`) and
+the cutover fallback ladder (`DECISIONS 2026-05-22 — T-30 / T-15`)
+both depend on a typed equivalence-class definition for "V1≈V2
+modulo named tolerances" and "source-deploy ≈ target-deploy modulo
+named tolerances." Until this slice landed, "tolerance" was a string
+vibe in canary-test comments and STAGING.md sketches; consumers
+could not enforce the discipline at the type level. R4 (multi-
+environment promotion property test) and the per-environment
+quotient flip both fan out from this primitive.
+
+**Resolution.** Slice α ships `Projection.Core.Tolerance` as a
+private-constructor value object wrapping `Set<ToleratedDivergence>`,
+where `ToleratedDivergence` is a closed DU enumerating
+empirically-grounded variants. Five variants land at slice α; the
+STAGING.md S0.E proposal sketched ~13 candidate flag names but the
+empirical cut at chapter 4.1.A retains only those with concrete
+canary or emitter evidence today:
+
+  - `HeaderCommentsOmitted` — `SsdtDdlEmitter.fs:94` ("V2 omits");
+  - `PostDeployForeignKeysSplit` — `CHAPTER_4_PRESCOPE_SSDT_DDL
+    _EMITTER.md:104` (cross-module FKs as PostDeploy script);
+  - `IndexesUnreflected` — `PhysicalSchema.fs:44` ("What's NOT
+    compared. ... Indexes (non-PK) ...");
+  - `StaticPopulationsUnreflected` — same docstring;
+  - `CommentMetadataUnreflected` — same docstring.
+
+The remaining STAGING.md candidates (`AttributeOrderInsensitive`,
+`NewlineNormalization`, `IgnoreNoCheckClause`, `IgnoreTriggers`,
+`IgnoreFingerprintHash`, `IgnoreV1OnlyKinds` etc.) are not yet
+empirically active; they remain available for closed-DU expansion
+when canary evidence demands them.
+
+**Encoding rationale.** STAGING.md's proposal used a flat `bool`
+record ("`IgnoreColumnLength : bool`, `IgnoreCheckConstraints :
+bool`, ..."). V2 ships `Set<ToleratedDivergence>` instead because:
+
+  1. **Pillar 1 (data-structure-oriented, no string parsing).**
+     A flat-bool record is "many parallel scalars without a
+     domain story." The `Set<ToleratedDivergence>` IS the
+     equivalence-class definition; membership says "this
+     divergence is accepted." The Set encoding makes the
+     concept explicit: a `Tolerance` is a *set of accepted
+     divergences*, not a row of flags.
+  2. **Pillar 8 (concept-shaped naming).** Each variant names
+     *what* the divergence IS, not *what to ignore*. Per the
+     pillar-8 four-question domain-naming analysis: variant
+     names answer "what does this represent in the cutover-
+     business domain" (e.g., "the V2 emitter omits source-
+     comment headers per `SsdtDdlEmitter.fs:94`"), not "what
+     does the comparator do" (which is action-shaped).
+  3. **Closed-DU expansion empirical-test discipline (`DECISIONS
+     2026-05-13`).** Adding a flag in a `bool` record is silent;
+     adding a `ToleratedDivergence` variant fires F#
+     exhaustiveness errors at every match site under
+     `TreatWarningsAsErrors=true`, including the in-module
+     `coverage` function that `allKnown` round-trips through.
+     The compile-time forcing function catches at-the-source
+     omissions; the runtime cardinality test (`Closed-DU
+     coverage: ToleratedDivergence.allKnown contains five
+     variants`) is the second-line guard.
+  4. **Smart-constructor encapsulation.** `Tolerance = private
+     Tolerance of Set<ToleratedDivergence>` ensures consumers
+     go through named operations (`withDivergence`,
+     `tolerates`, `divergences`, `isStrict`); accidental
+     construction with a wrong-shape set is impossible. Per
+     the AXIOMS.md operational principle of
+     structural-commitment-via-construction-validation.
+  5. **Algebraic shape.** `Set` membership composes naturally
+     with `Compare<Tolerance>` (S0.A): `t -> Catalog ->
+     Catalog -> Diff` quotients its inputs by the accepted-
+     divergence set. The bool-record shape would force every
+     comparator to remember field names; the Set shape lets
+     consumers iterate / fold / intersect generically.
+
+**Smart-constructor surface.**
+
+```fsharp
+val strict          : Tolerance                      // empty set
+val permissive      : Tolerance                      // all known variants
+val ofSet           : Set<ToleratedDivergence> -> Tolerance
+val withDivergence  : ToleratedDivergence -> Tolerance -> Tolerance
+val tolerates       : ToleratedDivergence -> Tolerance -> bool
+val divergences     : Tolerance -> Set<ToleratedDivergence>
+val isStrict        : Tolerance -> bool
+```
+
+The `strict` ↔ `permissive` named bracket is the cutover-ladder
+operational vocabulary: PROD targets `strict` per `DECISIONS
+2026-05-22 — T-30 / T-15`; DEV may run `permissive` while V2's IR
+matures; per-environment configuration carries its own
+`Tolerance` via `ofSet`.
+
+**What this slice does NOT include (gated on consumer demand).**
+
+  - **Quotient operator on `PhysicalSchemaDiff`** (slice β).
+    `applyTolerance : Tolerance -> PhysicalSchemaDiff ->
+    PhysicalSchemaDiff` — filters the diff per accepted
+    variants. Lands when the canary needs to absorb
+    `HeaderCommentsOmitted` differences in the file-set
+    comparator (R4 multi-env promotion).
+  - **YAML / TOML deserialization for per-environment config**
+    (slice γ). Lands when the cutover host shell needs to
+    read environment-keyed Tolerance configurations from disk.
+  - **R4 multi-environment promotion property test** — pairs
+    with slice β + γ; deferred to its own slice when DEV /
+    STAGING / PRE-PROD / PROD configurations have shipped.
+
+**Test surface added.** `tests/Projection.Tests/ToleranceTests.fs`
+(12 tests; `[<Fact>]` plus FsCheck `[<Property>]`) — covers
+smart-constructor invariants, `allKnown` cardinality, monotonicity
+of `withDivergence`, set-membership agreement of `tolerates`,
+strict / permissive bracket invariants, `Compare<Tolerance>`
+inhabitance.
+
+**Pillar alignment.** Pillar 1 (typed value, no string) ✓ — every
+divergence is a typed DU variant. Pillar 7 (gold-standard library
+precedence) ✓ — F#'s `Set` is the canonical use-case-specific
+library for the equivalence-class semantics. Pillar 8 (concept-
+shaped naming) ✓ — `Tolerance` (the equivalence-class), `Tolerated
+Divergence` (the named accepted divergence), variant names
+(`HeaderCommentsOmitted` etc.) are concept-shaped.
+
+**What this supersedes.** STAGING.md S0.E's bool-record sketch.
+The `Tolerance` smart-constructor + `Set<ToleratedDivergence>`
+encoding is the canonical shape; the STAGING.md proposal carried
+a forwarding pointer (its substance was "name the flags upfront";
+the substance survives, the encoding refines).
+
+## 2026-05-10 — Chapter 4.1.B opens (CDC-aware data triumvirate; Phase 3 of V2-driver KPI critical path)
+
+**Context.** Per `V2_DRIVER.md` per-axis correctness stakes table,
+the highest-leverage single deliverable in the V2-driver KPI sequence
+is the **CDC-silence-on-idempotent-redeploy property test**: V1's
+MERGE applies UPDATE on every match (`StaticSeedSqlBuilder.cs:237`
+unconditional), which fires CDC capture rows on identical-content
+redeploys; consuming production features see "changes" that didn't
+happen. This is the property the cutover team most needs proven.
+
+**Resolution.** Chapter 4.1.B opens with `CHAPTER_4_1_B_OPEN.md`
+(strategic-frame eight-axis discipline per `DECISIONS 2026-05-15`)
+and ships its first two slices in this session:
+
+  - **Slice α (commit `fd38908`).** New `Projection.Targets.Data`
+    project (sibling to `Targets.SSDT` / `Targets.Json` /
+    `Targets.Distributions`). `DataInsertScript` + `DataInsertRow`
+    typed value foundation. `StaticSeedsEmitter v0` emits V1's
+    MERGE shape parity for `Modality.Static` kinds. T11 sibling-Π
+    keyset coverage; T1 byte-determinism; A18 amended (Catalog ×
+    Profile, never Policy). Slice α scope: NO change-detection
+    predicate yet (the CDC-noise closure lands at slice β).
+
+  - **Slice β (commit `2d8210e`).** The load-bearing semantic
+    addition. `Profile.CdcAwareness` field + `CdcAwareness` value
+    type (`CdcEnabled : Set<SsKey>`, `CdcInstance : Map<SsKey,
+    string>`). `StaticSeedsEmitter` now dispatches per-kind on
+    `CdcAwareness.isEnabled`: CDC-enabled kinds emit the change-
+    detection predicate per pre-scope §6:
+
+    ```sql
+    WHEN MATCHED AND (
+        Target.[col1] <> Source.[col1] OR
+        (Target.[col1] IS NULL AND Source.[col1] IS NOT NULL) OR
+        (Target.[col1] IS NOT NULL AND Source.[col1] IS NULL) OR
+        ...  -- repeat per non-key column
+    ) THEN UPDATE SET ...
+    ```
+
+    The predicate is nullable-aware (NULL ≠ NULL in SQL) and covers
+    every non-key column. Identical content → no condition fires →
+    no UPDATE → CDC capture-process emits no row. CDC-disabled
+    kinds keep V1's predicate-free WHEN MATCHED (V1 already proven
+    correct; CDC-noise irrelevant for non-tracked tables).
+
+**Why CdcAwareness lives on Profile, not Policy (A34 alignment).**
+CDC-enabled status is *evidence the deployed schema carries*, not
+intent the operator supplies. Two reasons it is Profile-shaped:
+
+  1. **A34 (Profile is independent of Catalog and Policy).** CDC
+     discovery does not reference Policy; CDC discovery is an
+     empirical observation made against the deployed schema.
+     Emitters that consume `CdcAwareness` are emitters that
+     consume Profile evidence — `Catalog × Profile`, A18 amended.
+  2. **The two-environment failure mode argues evidence over
+     intent.** If `CdcEnabled` were on Policy, the operator would
+     declare "this table is CDC-enabled" — but the operator does
+     not own that fact in production; the cutover team enabled
+     CDC and V2 must respect what *is*. Intent-shaped CDC
+     declaration would let an out-of-date Policy generate a
+     CDC-noise event by claiming a table is not tracked when it
+     actually is.
+
+**What this DOES NOT yet ship (gated on consumer demand).**
+
+  - **Slice γ — CDC-silence canary** (Docker-dependent property
+    test): `deploy → enable CDC → redeploy same artifact →
+    cdc.fn_cdc_get_all_changes returns ∅`. The structural
+    commitment IS in slice β; γ proves it operationally under
+    real SQL Server CDC. Deferred until the Docker substrate is
+    reliably available in the test environment.
+  - **Slice δ — Two-phase insertion (DeferredFkSet).** Cycle-
+    breaking for kinds in FK cycles. Lands when fixture surfaces
+    a real cycle (the chapter-3.1 enterprise canary's domain FK
+    chains do not cycle).
+  - **Slice ε — MigrationDependenciesEmitter.** Needs a
+    `MigrationDependencyContext` adapter (operator-published
+    rows pickup); separate slice when the chapter-team supplies
+    a fixture format.
+  - **Slice ζ — BootstrapEmitter.** Pass-through `UserRemap
+    Context = Map.empty` until chapter 4.2 ships.
+  - **Slice η — DataEmissionComposer + EmissionPolicy.Data
+    Composition DU.** Composer-level dispatch; lands at the
+    second emitter (slice ε is the trigger).
+
+**Provisional Data → SSDT dependency.** `Projection.Targets.Data`
+references `Projection.Targets.SSDT` for `Render.formatSqlLiteral`
+(the IR→SQL boundary primitive). Per `DECISIONS 2026-05-13 —
+Emergent primitives earn their place through multi-consumer
+demand`, two-consumer threshold (SSDT.RawTextEmitter +
+StaticSeedsEmitter) is met but the cross-target edge is awkward;
+promotion to a concept-shaped `Projection.Core.SqlLiteral` module
+lands at slice ε when MigrationDependenciesEmitter joins as the
+third consumer (N=3 distinct-shape pressure). Rationale documented
+in `Projection.Targets.Data.fsproj` ProjectReference comment.
+
+**Test surface.** 20 StaticSeedsEmitterTests (11 slice α + 9 slice
+β): T1 byte-determinism, T11 keyset, V1 MERGE clause shape,
+nullable-aware change-detection predicate (NULL-asymmetry both
+ways), every-non-key-column coverage, PK exclusion, per-kind
+dispatch, CdcAwareness invariants. 835 non-canary tests pass in 1s.
+
+**Pillar alignment.** Pillar 1 (typed values; `DataInsertRow` /
+`DataInsertScript` / `CdcAwareness` are concept-shaped records) ✓.
+Pillar 7 (gold-standard library precedence; `Render.formatSqlLiteral`
++ ScriptDom `Render.tableQualified` / `Render.quote` reused; future
+ScriptDom `MergeStatement` typed AST adoption deferred) — partial
+✓ with explicit deferral. Pillar 8 (concept-shaped naming;
+`StaticSeedsEmitter` / `CdcAwareness` / `change-detection predicate`
+all answer "what does this represent in the cutover-business
+domain") ✓.
+
+**Phase progress.** V2-driver KPI Phase 3 (chapter 4.1.B) is now
+actively in flight. Phases 1 (foundations), 2 (chapter 4.1.A
+schema), and the in-flight Phase 3 substantive surface together
+represent the bulk of the V2-driver structural commitment. Phase
+3 close depends on slice γ canary green; slice γ defers until
+Docker is reliably available.
+
+## 2026-05-10 — Text-builder-as-first-instinct discipline (chapter 4.1.A close arc; pillar 1 + pillar 7 amendment; Tier-3 codification)
+
+**Context.** During the chapter 4.1.A close arc + Tier-1 transitions
+(this session: RawTextEmitter retirement; SqlLiteral typed module;
+MERGE → ScriptDom MergeStatement; Outputs → SsdtBundle + JsonNode), a
+recurring pattern surfaced: **the agent's first instinct on a new
+SQL- or text-emitting consumer is to build via StringBuilder + concat,
+not via the typed-AST library**. StaticSeedsEmitter slices α + β
+shipped with 6 LINT-ALLOWs at exactly this site; the Tier-1 #1 cash-
+out (`bface9a`) retired all 6 by routing through `ScriptDomBuild
+.buildMergeStatement`. Same shape: the substance of the work was
+typed AST construction, not text composition; the agent's first draft
+went the other way.
+
+**Failure mode named: "text-builder-as-first-instinct."** The agent
+reaches for `StringBuilder` / `String.Concat` / `String.concat` /
+`sprintf` as the default for new emitters, then attaches LINT-ALLOWs
+once the lint surfaces. The LINT-ALLOWs are individually defensible
+(per the substantive-rationale discipline; `DECISIONS 2026-05-10 —
+LINT-ALLOW substantive-rationale`); the *aggregate* is the bug. Six
+LINT-ALLOWs at one MERGE site means the typed-AST migration was
+never attempted in the first place — the discipline failed at the
+first-draft stage. Mirror of the chapter 3.7 slice β shortcut
+(`Render.columnSqlType` String.Concat → ScriptDom typed AST cost 87
+LOC); same pattern, different consumer.
+
+**The discipline.** **Every new SQL- or text-emitting consumer
+starts on the typed-AST library, not StringBuilder. LINT-ALLOWs are
+exit-not-entry — the LINT-ALLOW marker is the audit trail for an
+EXIT from the typed-AST path that the four-question analysis
+*forced*, not the audit trail for skipping the typed-AST path
+entirely.** The protocol at consumer-construction time:
+
+  1. **First instinct check**: BEFORE writing the first
+     `StringBuilder()` or `String.Concat`, the agent must articulate
+     the typed-AST library that produces the structure being
+     emitted (ScriptDom `MergeStatement` / `CreateTableStatement`
+     / `InsertStatement`; `Utf8JsonWriter` / `JsonNode`; `XmlWriter`
+     / `XDocument`; `Microsoft.SqlServer.Dac` for .dacpac; etc.).
+     If no such library exists, document the absence.
+  2. **Cross-check the precedent emitters**: how does
+     `SsdtDdlEmitter.emitSlices` build CREATE TABLE? How does
+     `StaticSeedsEmitter.renderMerge` build MERGE? How does
+     `JsonEmitter.emit` build doc trees? The precedent IS the
+     pattern; new consumers inherit it.
+  3. **First draft uses the typed AST.** Period. The
+     StringBuilder reflex is suppressed at construction time, not
+     at lint time.
+  4. **LINT-ALLOWs at terminal text boundaries only.** The
+     remaining sites — `SqlLiteral.toString`'s `'<raw>'` quoting,
+     the GO-batch suffix on a rendered MERGE, the cross-platform-
+     deterministic relative-path concatenation — are the exit
+     points where the typed AST has already discharged its work
+     and the absolute terminal text emerges. Each LINT-ALLOW
+     embodies the four-question analysis (per the substantive-
+     rationale discipline); the aggregate count per file is the
+     soft floor (per Lint Rule 27).
+
+**Worked counterfactuals (from this session):**
+
+  - **StaticSeedsEmitter slice α + β (`fd38908` + `2d8210e`)**:
+    shipped with 6 LINT-ALLOW StringBuilder MERGE construction.
+    Tier-1 #1 (`bface9a`) retired all 6 via ScriptDom
+    MergeStatement typed AST. Cost: 150 LOC of typed-AST
+    construction, replacing 80 LOC of StringBuilder. Net: more
+    code, but pillar-1 + pillar-7 alignment, future-emitter
+    precedent, change-detection predicate is a typed boolean-
+    expression AST (instead of string concat).
+  - **`Render.columnSqlType` chapter 3.7 slice β shortcut**: 4
+    LINT-ALLOWs added; user caught it; slice β' delegated to
+    ScriptDom typed AST. Same failure mode, prior chapter.
+
+**Tier-1 discipline cash-outs (this session):**
+
+  - **#4 — SqlLiteral typed expression module (`08ca554`)**: Core-
+    resident typed `SqlLiteral` DU; `Render.formatSqlLiteral`
+    delegates; consumers (SSDT.Render + Data.StaticSeedsEmitter)
+    flow through the typed middle layer. Unblocked #1.
+  - **#1 — MERGE → ScriptDom MergeStatement (`bface9a`)**: 150
+    LOC of typed-AST construction in `ScriptDomBuild
+    .buildMergeStatement` (record-shaped MergeBuildArgs + per-
+    column predicate builders). 6 LINT-ALLOWs retired. The
+    change-detection predicate is now `BooleanBinaryExpression
+    (Or)` of `BooleanComparisonExpression(NotEqualToBrackets)` +
+    `BooleanIsNullExpression` AST nodes wrapped in
+    `BooleanParenthesisExpression`.
+  - **#2 — Compose.Outputs.Sql → SsdtBundle (`705e31d`)**: chapter-
+    3-era single-blob `Sql : string` retired in favor of `Map<
+    RelativePath, string>` per `SsdtBundle.compose` (the
+    production shape from chapter 4.1.A slice 10). The Pipeline
+    `write` iterates the bundle; `Deploy.runEphemeral` consumes
+    `Compose.aggregateSsdt` for the legacy single-string deploy
+    contract.
+  - **#3 — Compose.Outputs.Json + .Distributions → JsonNode
+    (`22ecc59`)**: chapter 3.7 slice ε's per-kind typed JsonNode
+    surface lifted to the Outputs seam. Consumers query the typed
+    tree (no `JsonNode.Parse` re-parse). Pillar 1 holds end-to-end
+    across the Pipeline composition surface.
+
+**Tier-2 audit conclusions (this session):**
+
+  - **Connection-string composition tightening**: zero raw-concat
+    sites outside `Deploy.ConnectionString.parse` (the smart
+    constructor over `SqlConnectionStringBuilder`). Already tight.
+    No retirement.
+  - **`BatchSplitter` line-fold fallback**: structurally defended
+    via the loud-fallback pattern. Per pillar 7 four-question:
+    ScriptDom is the gold standard; line-fold is the explicit
+    operator-facing escape hatch with stderr announcement (per
+    chapter-3.6 cash-out). The discipline is satisfied; the
+    fallback is not retire-able without losing the operator-
+    rationale-defended escape hatch.
+  - **Path composition audit**: every `String.Concat` for paths
+    has a substantive cross-platform-deterministic LINT-ALLOW per
+    the four-question analysis. The `BenchSink.fs` site uses
+    `Path.Combine` correctly (timestamp pre-vetted). No drift.
+
+**Tier-3 codification (this entry).** The DECISIONS entry IS the
+codification; the Active deferrals index entries (above this entry
+in the table) name the chapter-specific incarnations:
+
+  - "Microsoft.SqlServer.Dac (DacFx) adoption in Projection.Targets
+    .SSDT.DacpacEmitter" — chapter 3.x. Hard requirement.
+  - "MigrationDependenciesEmitter + BootstrapEmitter typed-AST
+    adoption from slice α" — chapter 4.1.B slices ε/ζ. Hard
+    requirement; precedent is StaticSeedsEmitter (`bface9a`).
+
+The chapter-close ritual scans the Active deferrals table at every
+chapter close (per `DECISIONS 2026-05-13 — Transform registry cash-
+out + Active deferrals index`); these new rows surface to the
+agent as triggers when the relevant chapter opens.
+
+**Operating disciplines table update (CLAUDE.md + AGENTS.md).** A
+follow-on commit adds this discipline to the operating-disciplines
+table — sibling to "Domain-first naming and ubiquitous-language
+consistency" (pillar 8) and "LINT-ALLOW substantive-rationale
+discipline" (pillar 7 amendment). Together the three disciplines
+form the codified failure-mode set: **performance-of-compliance**
+(LINT-ALLOW shaped like an audit trail without substance) +
+**domain-blind naming** (name shaped like a placeholder for an
+absent domain concept) + **text-builder-as-first-instinct**
+(typed-AST library is the first instinct, not the lint-time
+fallback).
+
+**Pillar alignment.** Pillar 1 (data-structure-oriented over
+string-parsing) ✓. Pillar 7 (gold-standard library precedence;
+substantive-rationale amendment) ✓. Pillar 8 (concept-shaped
+naming) ✓ — `text-builder-as-first-instinct` IS the failure-mode
+name (concept-shaped, not action-shaped).
+
 
 

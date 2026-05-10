@@ -423,6 +423,186 @@ V2's emission diverges from V1 in a way the comparator catches?
 
 Already covered in [the F#/C# boundary contract](#the-fc-boundary-contract). Default F#; use C# only when foreign-API mutation-heavy.
 
+### When you reach for a name
+
+Per `DECISIONS 2026-05-10 — Domain-first naming and ubiquitous-language consistency` (pillar 8; chapter 3.7 sidebar). The trigger: you're about to introduce a new type, function, file, module, or test. Before drafting the name, walk the four questions. The discipline lives entirely in the document — no lint enforcement (heuristic syntactic checks misfire on legitimate uses; the discipline is inherently semantic).
+
+```
+1. What domain concept does this represent?
+   Articulate it in cutover-business terms. The cutover vocabulary
+   is sourced from:
+     - operators / DBAs    — "schema-fidelity", "rollback window",
+                             "split-brain risk", "tolerance flag"
+     - OutSystems platform — "Espace", "Entity", "External Entity",
+                             "Static Entity", "Application", "Module"
+     - CDC + SQL Server    — "RefactorLog", "DACPAC", "INFORMATION_SCHEMA",
+                             "DATA_TYPE", "OUTPUT INTO"
+     - V2 algebra          — "Catalog", "Π", "Pass", "Lineage",
+                             "Diagnostics", "ArtifactByKind"
+   If the concept doesn't fall in one of these vocabularies,
+   ask: "Is this concept domain-meaningful at all?"
+   If no → the abstraction is itself wrong; restructure.
+   If yes but not yet named → propose a name aligned with the
+                              nearest vocabulary above.
+
+2. Does V2 already name this concept somewhere?
+   ├─ Search the codebase: `grep -rn "ConceptCandidate" src/ tests/`
+   ├─ YES → use the same name. Cross-surface drift (Core uses
+   │        `SsKey`, Adapter uses `Identifier`) is a structural
+   │        failure; readers must mentally translate, and the
+   │        translation cost compounds.
+   └─ NO  → pick a name that mirrors a stakeholder vocabulary
+            (see #1).
+
+3. Concept-shaped or action-shaped?
+   ├─ CONCEPT-SHAPED ("what this IS in the domain") — default for
+   │  types, modules, files.
+   │  Examples: `Catalog`, `Module`, `Kind`, `Reference`,
+   │            `RemovalReason`, `AnnotationDetail`,
+   │            `SqlTypeCorrespondence`, `RefactorLog`,
+   │            `BatchSplitter`, `SiblingEmitterContract`.
+   └─ ACTION-SHAPED ("what this DOES") — acceptable for function
+      names when the verb names a *domain* operation.
+      Domain verbs: canonicalize, normalize, mask, render, emit,
+                    project, attach, traverse, classify, partition.
+      NOT-domain verbs (CS-shaped): process, handle, manage, run,
+                                    execute, do, perform.
+      The function name `processItem` answers nothing about the
+      domain; the function name `canonicalizeKind` answers
+      "this is the canonicalize-identity pass operating on a kind."
+
+4. Generic-suffix smell test.
+   If the proposed name ends in:
+     - Helper / Util / Utils / Utility / Utilities
+     - Manager / Service / Handler / Processor / Wrapper
+     - Builder / Factory / Provider / Strategy
+       (when not BCL-mandated; e.g., StringBuilder is BCL,
+        FluentValidationBuilder is fine, but a custom MyBuilder
+        is suspicious)
+   STOP. The generic suffix is a placeholder for "I haven't
+   identified the domain concept yet." Two corrections:
+     a. The concept exists but isn't named domainally.
+        Find the concept (rename to the domain term).
+     b. The concept is being squashed into something else.
+        It doesn't deserve a wrapper around an unnamed thing —
+        restructure.
+
+   Note: legitimate uses exist. `LineageBuffer` is concept-shaped
+   despite "Buffer" — the buffer IS the reified mutation surface
+   (a domain primitive in the FP-strict-mode discipline). The
+   heuristic misfires; the discipline document catches what the
+   heuristic can't. The structural test: does the suffix name
+   the *role* (Buffer = accumulator), or does it launder the
+   absence of a domain term (Manager = ???)?
+```
+
+**Domain-blind naming is the named failure mode**: a name shaped like a placeholder for the absent domain concept. The agent feels productive (a name exists; the code compiles; tests pass) without doing the domain-modeling work that makes the name structurally accountable. The cutover stakes are the forcing function — **verifiability rests on the V2 vocabulary mirroring the cutover vocabulary**.
+
+**Worked precedents in V2 (concept-shaped, ubiquitous-language-consistent):**
+
+| Name | What it represents (cutover-business) | Why this is concept-shaped |
+|---|---|---|
+| `Catalog` | The V2 IR for a fully-projected, V2-internal model of an OutSystems schema | Generic algebraic name at Core; mirrors the domain-prescriptive `Application` at the boundary |
+| `Kind` | A typed entity class within a Catalog (Entity, Static Entity, View, etc.) | Generic algebraic name; the concrete kinds are domain-named at the boundary |
+| `SsKey` | The V2 identity for a kind, attribute, reference, or module across adapter / pass / emitter surfaces | Concept-shaped (it IS the identity); the variants (`OssysOriginal`, `Synthesized`, `V1Mapped`) name provenance classes |
+| `RemovalReason` | The typed predicate that fired when a filtering pass dropped a kind | Concept-shaped; the variants (`OriginPredicate`, `ExplicitKeyList`, `ModalityPredicate`) name the rule classes |
+| `AnnotationDetail` | The typed payload an intervention pass attaches to a kind / attribute | Concept-shaped; the variants name the decision classes (`NullabilityDecision`, `UniqueIndexDecision`, `ForeignKeyDecision`, `CategoricalUniquenessDecision`, `ClosureSkipped`) |
+| `Coordinates.TableId` | The schema-coordinate value object for a kind's physical realization | Concept-shaped (it IS the coordinate) |
+| `RawValueCodec` | V2's canonical raw-value format contract; consolidates Render / Bulk / ReadSide | Concept-shaped (it IS the codec — encode + decode pair) |
+| `SqlTypeCorrespondence` | The round-trip pair `PrimitiveType ↔ SQL DDL base name` | Concept-shaped (it IS the correspondence) |
+| `RefactorLog` | The SSDT refactor-log artifact carrying schema-evolution semantics | Concept-shaped, sourced from SSDT vocabulary |
+| `CatalogDiff` | The exhaustive partition (`Renamed` / `Added` / `Removed` / `Unchanged`) between two Catalogs | Concept-shaped, V2-algebraic |
+| `BatchSplitter` | The strategy for splitting deploy SQL batches at GO boundaries | Concept-shaped (it IS the splitter; the role IS the structural commitment) |
+| `DatabaseNameGenerator` | Reified non-determinism boundary for ephemeral DB names | Concept-shaped (it IS the generator; the boundary IS reified per FP strict-mode discipline) |
+| `EmissionPolicy` | The A39 invariant — at least one artifact family enabled | Concept-shaped (it IS the policy; A39 names the invariant structurally) |
+| `LineageBuffer` | The reified pass-driver event accumulator | Concept-shaped despite the "Buffer" suffix — the buffer IS the reified mutation surface; the suffix names the algebraic role |
+| `SiblingEmitterContractTests` | The contract every sibling Π emitter satisfies (chapter 3.7 slice ε rename) | Concept-shaped; was `T11TypeTheoremTests` (theorem-ID-shaped) — the rename illustrates the domain-first naming discipline at work |
+
+**Worked anti-patterns** (what V2 does NOT do — these names would fire pillar 8 and would be rejected):
+
+| Anti-pattern | Why it fails |
+|---|---|
+| `JsonHelper.fs` | "Helper" launders the absent concept; what does it actually represent? Probably `JsonNodeBuilder` or `JsonRender` or part of `JsonEmitter` |
+| `Utils.fs` | Generic; no domain content. If the helpers are about identity, name them `Identity.fs`; about JSON, name them `JsonRender.fs` |
+| `KindManager` | Manages what? "Manager" is a placeholder for the unknown domain operation; if it transforms kinds, it's a `Pass`; if it queries them, it's a query function on `Catalog` |
+| `EmitterService` | "Service of what?" Emitters ARE the service surface; the suffix is redundant (and pillar-8-flagged) |
+| `ConfigHandler` | "Handles" config — but what's the operation? `Policy`-decoder? `Tolerance`-evaluator? Name the operation |
+| `SqlBuilder` (when not BCL-mandated) | If it builds SQL, name what it builds (`Sql160ScriptGenerator` from BCL is fine; a custom V2 `MyBuilder` would need to name what it builds) |
+
+If you find yourself drafting a name that ends in a generic suffix, the right move is *not* to add a `LINT-ALLOW` (pillar 8 has no syntactic enforcement) — the right move is to walk back to question #1 and identify the domain concept. The name comes from the concept; the concept comes from the cutover vocabulary; the cutover vocabulary is documented at every stakeholder surface.
+
+---
+
+### When you reach for a string-composition primitive
+
+Per `DECISIONS 2026-05-10 — LINT-ALLOW substantive-rationale discipline` (chapter 3.7 sidebar; pillar 7 amendment). The trigger: you're about to write `String.Concat`, `String.concat`, `String.Format`, `sprintf`, `String.Join`, an interpolated string `$"…"`, or a `+` between strings — the lint will fire and you're considering whether to refactor or to add a `LINT-ALLOW` marker.
+
+**Stop.** Do not draft the `LINT-ALLOW` text yet. Walk the four questions:
+
+```
+1. Use-case-specific library for THIS output structure?
+   ├─ SQL DDL / DML?      → ScriptDom (SqlDataTypeReference / TSqlStatement)
+   │                        + Sql160ScriptGenerator
+   ├─ XML?                → XmlWriter / XDocument
+   ├─ JSON?               → Utf8JsonWriter / JsonNode
+   ├─ Connection string?  → SqlConnectionStringBuilder
+   ├─ Filesystem path?    → Path.Combine
+   ├─ SQL identifier?     → Identifier.EncodeIdentifier (ScriptDom)
+   ├─ Namespaced GUID?    → UuidV5 (RFC 4122)
+   ├─ DACPAC artifact?    → DacFx (TSqlModel / DacPackage / DacServices)
+   ├─ Golden-file diff?   → Verify.XUnit
+   ├─ T-SQL batch split?  → BatchSplitter (TSql160Parser line-fold fallback)
+   └─ ... (extend; if you don't see your case, ask "what library would
+            Microsoft / SQL Server vendor / OutSystems vendor use here?")
+
+2. Already in the codebase?
+   ├─ YES → name the existing consumer site:
+   │        e.g., "ScriptDomBuild.dataTypeReference at line 90 already
+   │              builds the typed AST; Sql160ScriptGenerator is loaded
+   │              and used by ScriptDomGenerate.generateOne".
+   └─ NO  → name the package + version that would land it.
+            e.g., "Microsoft.SqlServer.DacFx 170.x; ~30 MB transitive
+                   per chapter 3.x DacpacEmitter pre-scope".
+
+3. Cost?
+   ├─ Visibility lift   → "private → public" (~N LOC)
+   ├─ Helper to add     → "generateDataType : DataTypeReference -> string"
+   │                       (~10 LOC mirroring generateOne)
+   ├─ Perf class        → "O(1) per-call generator instantiation; ~5000
+   │                       calls per canary; bench label
+   │                       scriptDom.generateDataType surfaces it"
+   └─ Dep weight        → "no new package dep" / "+30 MB transitive"
+
+4. Structural reason it doesn't apply?
+   ├─ NO  → THERE IS NO SHORTCUT. Do the work:
+   │        a. Lift visibility.
+   │        b. Add the helper.
+   │        c. Refactor the call site.
+   │        d. The LINT-ALLOW does not get drafted; the marker comes down.
+   │
+   └─ YES → marker text MUST name the SPECIFIC reason — NOT generic
+            vocabulary alone.
+            ├─ GOOD: "writer-monad tell algebraic primitive; pass drivers
+            │         use LineageBuffer for high-rate accumulation, tell
+            │         is terminal annotation only"
+            │   (names role + alternative for hot path)
+            ├─ GOOD: "terminal text-emission boundary; HexLiteralPrefix is
+            │         the canonical typed segment, raw is already vetted hex"
+            │   (names boundary + typed segment source)
+            └─ BAD:  "terminal SQL DDL emission boundary; both segments are
+                      typed (closed-DU dispatch + literal)"
+                ↳ uses pillar vocabulary without naming the considered
+                  alternative (Sql160ScriptGenerator) or the structural
+                  reason it doesn't apply. THE MARKER IS THE FAILURE
+                  MODE — performance-of-compliance.
+```
+
+**The named failure mode is performance-of-compliance**: a marker shaped like an audit trail without the substance. The lint passes, the vocabulary fits, the tests are green — and the structural commitment is unmet. The marker's audit-trail shape masks the absence of the audit. If you find yourself drafting language that *sounds* substantive without performing the analysis, stop — the answer to question #4 is almost certainly "no" and the right move is the work.
+
+**Worked counterfactual** (`DECISIONS 2026-05-10`): slice-β added four `String.Concat` LINT-ALLOWs in `Render.columnSqlType` reading "terminal SQL DDL emission boundary; both segments are typed (closed-DU dispatch + literal)" — discipline vocabulary, no substance. Operator caught it on review. Slice-β' lifted `ScriptDomBuild.dataTypeReference` from `private` to public, added `generateDataType : DataTypeReference -> string`, made Render delegate. Cost: 87 LOC across 3 files; output byte-identical (790 tests still green); perf-gate clean; four LINT-ALLOWs retired; two private helpers retired (`sqlTypeWithLength`, `sqlDecimal`); one unused import retired. The "do the work" path was trivial compared to the structural drift the shortcut would have introduced over time.
+
+**Lint Rule 27 maintains an inventory** of every per-line concat-aversion `LINT-ALLOW` (printed at the end of every clean run) AND enforces a soft floor (≥30 chars after the colon, at least one substantive-vocabulary token). Heuristics can't catch performance-of-compliance reliably; the discipline document does. The inventory is the audit surface for chapter-close ritual + PR review.
+
 ---
 
 ## The discipline operating cycle

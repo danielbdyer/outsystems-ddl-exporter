@@ -37,23 +37,30 @@ let private annotated (passName: string) (passVersion: int) (key: SsKey) (detail
 //   associativity   : bind g (bind f m)   =  bind (fun x -> bind g (f x)) m
 // ---------------------------------------------------------------------------
 
+// `Lineage.byValueAndTrail` is the full-structural equivalence used by
+// the monad-laws tests since chapter-3.7 slice α made `=` project to
+// `Value` only (A26 cash-out). The laws hold over the writer monad's
+// (List, ++, []) monoid AND over the underlying value type, so both
+// projections are asserted explicitly.
+
 [<Property>]
 let ``Lineage monad: left identity`` (x: int) =
     let f y = Lineage.ofValueWith (touched "f" 1 customerKey) (y + 1)
-    Lineage.bind f (Lineage.ofValue x) = f x
+    Lineage.byValueAndTrail (Lineage.bind f (Lineage.ofValue x)) (f x)
 
 [<Property>]
 let ``Lineage monad: right identity`` (x: int) =
     let m = Lineage.ofValueWith (touched "obs" 3 customerKey) x
-    Lineage.bind Lineage.ofValue m = m
+    Lineage.byValueAndTrail (Lineage.bind Lineage.ofValue m) m
 
 [<Property>]
 let ``Lineage monad: associativity`` (x: int) =
     let f y = Lineage.ofValueWith (touched "f" 1 customerKey) (y + 1)
     let g y = Lineage.ofValueWith (touched "g" 2 orderKey)    (y * 3)
     let m = Lineage.ofValue x
-    Lineage.bind g (Lineage.bind f m)
-        = Lineage.bind (fun y -> Lineage.bind g (f y)) m
+    Lineage.byValueAndTrail
+        (Lineage.bind g (Lineage.bind f m))
+        (Lineage.bind (fun y -> Lineage.bind g (f y)) m)
 
 // ---------------------------------------------------------------------------
 // A23: lineage events carry transformation_version.
@@ -162,14 +169,14 @@ let ``A26: different lineage trails do not affect kind identity equality`` () =
 [<Property>]
 let ``Lineage functor: identity`` (x: int) =
     let m = Lineage.ofValueWith (touched "p" 1 customerKey) x
-    Lineage.map id m = m
+    Lineage.byValueAndTrail (Lineage.map id m) m
 
 [<Property>]
 let ``Lineage functor: composition`` (x: int) =
     let m = Lineage.ofValueWith (touched "p" 1 customerKey) x
     let f (y: int) = y + 7
     let g (y: int) = y * 11
-    Lineage.map (g << f) m = Lineage.map g (Lineage.map f m)
+    Lineage.byValueAndTrail (Lineage.map (g << f) m) (Lineage.map g (Lineage.map f m))
 
 [<Fact>]
 let ``Lineage map preserves the trail untouched`` () =
@@ -186,10 +193,42 @@ let ``Lineage map preserves the trail untouched`` () =
 let ``operator >>= equals Lineage.bind`` (x: int) =
     let f y = Lineage.ofValueWith (touched "f" 1 customerKey) (y + 1)
     let m = Lineage.ofValue x
-    (m >>= f) = Lineage.bind f m
+    Lineage.byValueAndTrail (m >>= f) (Lineage.bind f m)
 
 [<Property>]
 let ``operator <!> equals Lineage.map`` (x: int) =
     let f (y: int) = y + 1
     let m = Lineage.ofValueWith (touched "p" 1 customerKey) x
-    (f <!> m) = Lineage.map f m
+    Lineage.byValueAndTrail (f <!> m) (Lineage.map f m)
+
+// ---------------------------------------------------------------------------
+// A26 cash-out (chapter-3.7 slice α): `Lineage<'a>` equality projects
+// through `Value` only. Two carriers with identical Value but different
+// Trail are equal as `Lineage<'a>`. The catalog-level claim of A26 (Kind
+// equality is by SsKey, lineage is metadata) extends symmetrically to
+// the writer carrier itself.
+// ---------------------------------------------------------------------------
+
+[<Property>]
+let ``A26: Lineage equality projects through Value (Trail is metadata)`` (x: int) =
+    let e1 = touched "passA" 1 customerKey
+    let e2 = annotated "passB" 5 orderKey "tenant scoped"
+    let m1 = Lineage.ofValueWith e1 x
+    let m2 = Lineage.ofValueWith e2 x
+    // Trails differ.
+    m1.Trail <> m2.Trail
+    // Lineage<'a> equality projects through Value only.
+    && m1 = m2
+    && Lineage.byValue m1 m2
+    // Full structural equality is available and rejects the trail divergence.
+    && not (Lineage.byValueAndTrail m1 m2)
+
+[<Fact>]
+let ``A26: Lineage equality and hash are consistent under Trail divergence`` () =
+    let e1 = touched "passA" 1 customerKey
+    let e2 = annotated "passB" 5 orderKey "tenant scoped"
+    let m1 = Lineage.ofValueWith e1 42
+    let m2 = Lineage.ofValueWith e2 42
+    Assert.True (Lineage.byValue m1 m2)
+    Assert.Equal (hash m1, hash m2)
+    Assert.False (Lineage.byValueAndTrail m1 m2)

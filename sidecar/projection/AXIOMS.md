@@ -714,7 +714,7 @@ composition is structurally enforced and tested.
 [`RawTextEmitter.emitSlices`], β [`JsonEmitter.emitSlices`], γ
 [`DistributionsEmitter.emitSlices`], δ [substring-discipline
 retirement; type-theorem worked examples at
-`tests/Projection.Tests/T11TypeTheoremTests.fs`]).
+`tests/Projection.Tests/SiblingEmitterContractTests.fs`]).
 
 **Statement.** The original T11 (sibling-Π commutativity; "every
 Π's output should mention every catalog kind by SsKey root") was
@@ -767,12 +767,12 @@ because the type proves what the substring tested.
   `Catalog.allKinds`'s own keys).
 - Substring T11 enforcement at `JsonEmitterTests.fs:96-105` and
   `RichProfilingEndToEndTests.fs:280-289` retires; the
-  type-theorem worked examples at `T11TypeTheoremTests.fs`
+  type-theorem worked examples at `SiblingEmitterContractTests.fs`
   replace them. The surviving `T4` and `T11: physical
   realization` tests test rendering invariants, not kind
   coverage — they stay.
 
-**Verification surface.** `T11TypeTheoremTests.fs` carries four
+**Verification surface.** `SiblingEmitterContractTests.fs` carries four
 worked examples — three per-emitter `emitSlices key-set equals
 Catalog.allKinds` tests + one cross-emitter sibling-commutativity
 test (`RawText`, `Json`, `Distributions` keysets pairwise equal).

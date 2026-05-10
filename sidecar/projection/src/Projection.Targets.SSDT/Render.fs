@@ -10,7 +10,6 @@ namespace Projection.Targets.SSDT
 //   AST + a dedicated serializer (e.g., ScriptDom for SQL).
 
 open System
-open System.Globalization
 open System.Text
 open Projection.Core
 
@@ -24,18 +23,17 @@ open Projection.Core
 /// Per the no-string-concatenation discipline (`DECISIONS 2026-05-09`),
 /// SQL fragments compose via `String.Concat` (BCL multi-arg overload,
 /// no array allocation) and `String.concat` (BCL collection joiner)
-/// rather than `sprintf` or `+`. Integer formatting goes through
-/// `Int32.ToString CultureInfo.InvariantCulture` to keep T1
-/// byte-determinism culture-invariant by construction.
+/// rather than `sprintf` or `+`. As of chapter-3.7 slice β', the SQL
+/// DDL type expression (`columnSqlType`) flows through ScriptDom's
+/// typed `SqlDataTypeReference` AST emitted by `Sql160ScriptGenerator`
+/// — pillar 7 (gold-standard library) supersedes the per-call
+/// composition for that surface. Identifier quoting goes through
+/// `ScriptDom.Identifier.EncodeIdentifier`. The remaining
+/// `String.Concat` sites (string-literal quoting, `N'…'` Text prefix)
+/// stay because they're terminal text-formatting (escape sequences)
+/// for which no use-case-specific BCL primitive exists.
 [<RequireQualifiedAccess>]
 module Render =
-
-    /// Invariant-culture integer formatting. `int.ToString` without
-    /// arguments respects current culture for some derivations; the
-    /// invariant-culture form is byte-deterministic across runs and
-    /// platforms.
-    let private intInv (i: int) : string =
-        i.ToString CultureInfo.InvariantCulture
 
     /// Bracket-quote an identifier. Per chapter 3.5 deep audit
     /// (2026-05-09): the use-case-specific library for SQL identifier
@@ -66,73 +64,39 @@ module Render =
                 Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier t.Table
             |])
 
-    /// `<typeName>(<length>)` SQL type expression. Composes a typed
-    /// 4-tuple of segments via `String.Concat`; no `sprintf`.
-    let private sqlTypeWithLength (typeName: string) (length: int) : string =
-        String.Concat(typeName, "(", intInv length, ")")
-
-    /// `DECIMAL(<precision>, <scale>)` SQL type expression.
-    let private sqlDecimal (precision: int) (scale: int) : string =
-        // `String.Concat`'s params overload covers 5 parts; allocates
-        // a small array but stays O(1) on input shape.
-        String.Concat(
-            "DECIMAL(",
-            intInv precision,
-            ", ",
-            intInv scale,
-            ")")
-
-    /// IR `(Type, Length, Precision, Scale)` → SQL type expression.
-    /// Shared by emit (`toText`) and deploy paths so the two never
-    /// drift.
+    /// IR `(Type, Length, Precision, Scale)` → SQL DDL type
+    /// expression. Shared by emit (`toText`) and deploy paths so
+    /// the two never drift.
+    ///
+    /// **Pillar 7 cash-out (chapter-3.7 slice β').** The use-case-
+    /// specific library for SQL DDL type expression is ScriptDom's
+    /// `SqlDataTypeReference` typed AST + `Sql160ScriptGenerator`
+    /// emitter. `ScriptDomBuild.dataTypeReference` builds the typed
+    /// fragment; `ScriptDomGenerate.generateDataType` renders it
+    /// through the pinned-options generator. The forward direction
+    /// here goes *exclusively* through that path; no `String.Concat`
+    /// segments at the call site.
+    ///
+    /// The earlier per-call composition (`sqlTypeWithLength`,
+    /// `sqlDecimal`) and its `String.Concat` dispatch retired with
+    /// this slice — gold-standard library replaces the hand-rolled
+    /// composition. Pillar 1 (data-structure-oriented over string-
+    /// parsing) holds: typed `DataTypeReference` flows through; the
+    /// string emerges only at ScriptDom's BCL writer boundary.
     let columnSqlType (c: ColumnDef) : string =
-        match c.Type with
-        | Text ->
-            match c.Length with
-            | Some n when n > 0 -> sqlTypeWithLength "NVARCHAR" n
-            | _ -> "NVARCHAR(MAX)"
-        | Binary ->
-            match c.Length with
-            | Some n when n > 0 -> sqlTypeWithLength "VARBINARY" n
-            | _ -> "VARBINARY(MAX)"
-        | Decimal ->
-            match c.Precision, c.Scale with
-            | Some p, Some s -> sqlDecimal p s
-            | Some p, None -> sqlDecimal p 0
-            | _ -> "DECIMAL(18, 4)"
-        | Integer  -> "INT"
-        | Boolean  -> "BIT"
-        | DateTime -> "DATETIME2"
-        | Date     -> "DATE"
-        | Time     -> "TIME"
-        | Guid     -> "UNIQUEIDENTIFIER"
+        ScriptDomBuild.dataTypeReference c.Type c.Length c.Precision c.Scale
+        |> ScriptDomGenerate.generateDataType
 
-    /// Quote a string literal as `'<raw>'`. SQL injection isn't a
-    /// concern for emitter output (the IR is the input contract);
-    /// callers responsible for escape-doubling apostrophes pre-call.
-    let private quoteSingle (raw: string) : string =
-        String.Concat("'", raw, "'")
-
-    /// Raw IR string → SQL literal. `""` is NULL; Text gets `N'…'`
-    /// with single-quote doubling; temporal / Guid get `'…'`; Binary
-    /// gets `0x…`. Mirrors the canonical adapter convention
-    /// (`ReadSide.formatRawValue` produces the inverse). All format
-    /// rules (Boolean canonical, Hex prefix) flow through
-    /// `RawValueCodec` so the V2 raw-form contract has a single
-    /// source of truth across emit / parse / readback.
+    /// Raw IR string → SQL literal. Delegates to `SqlLiteral.formatRaw`
+    /// per the Tier-1 #4 transition (RawTextEmitter retirement arc):
+    /// the typed `SqlLiteral` value lives in Core; this is the SSDT-
+    /// resident shim that preserves the legacy call-site shape. Same
+    /// semantics by construction (the test suite's golden-output
+    /// equivalence is preserved); the typed middle layer enables
+    /// MERGE → ScriptDom MergeStatement migration (Tier-1 #1) which
+    /// needs typed VALUES literals.
     let formatSqlLiteral (typ: PrimitiveType) (raw: string) : string =
-        if raw = "" then "NULL"
-        else
-            match typ with
-            | Integer | Decimal -> raw
-            | Boolean ->
-                if RawValueCodec.parseBoolean raw then "1" else "0"
-            | DateTime | Date | Time | Guid ->
-                quoteSingle raw
-            | Text ->
-                String.Concat("N", quoteSingle (raw.Replace("'", "''")))
-            | Binary ->
-                RawValueCodec.withHexPrefix raw
+        SqlLiteral.formatRaw typ raw
 
     let private actionSql (a: ReferenceActionSql) : string =
         match a with
@@ -203,6 +167,28 @@ module Render =
             sb.Append("SET IDENTITY_INSERT ").Append(tableQualified table)
                 .AppendLine(if enabled then " ON;" else " OFF;")
             |> ignore
+        | CreateIndex _ ->
+            // Per pillar 7 four-question analysis at this site:
+            //   1. Use-case-specific library: ScriptDom's
+            //      `Sql160ScriptGenerator` via `ScriptDomGenerate
+            //      .generateOne`.
+            //   2. Already in codebase: yes (chapter 3.5).
+            //   3. Cost: trivial (one delegate call).
+            //   4. Structural reason it doesn't apply: NO — ScriptDom
+            //      emits CREATE INDEX correctly per Sql160 grammar.
+            // Conclusion: delegate to ScriptDomGenerate (pillar-7 right
+            // move). This keeps the Render.toSql legacy text-renderer
+            // partially ScriptDom-driven (consistent with chapter-3.7
+            // slice β' Render.columnSqlType-through-ScriptDom precedent).
+            // The full Render→ScriptDomGenerate migration is a separate
+            // slice when the second consumer pressures it.
+            match ScriptDomBuild.buildStatement s with
+            | Some fragment ->
+                sb.Append(ScriptDomGenerate.generateOne fragment).AppendLine() |> ignore
+            | None ->
+                // Unreachable: CreateIndex always builds a typed fragment
+                // (per ScriptDomBuild.buildStatement's exhaustive match).
+                ()
 
     /// Fold a statement stream into a single SQL-text artifact. The
     /// canonical text realization of Π's output. Stream-aware bench

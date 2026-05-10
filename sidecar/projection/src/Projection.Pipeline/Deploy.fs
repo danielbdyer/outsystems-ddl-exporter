@@ -93,10 +93,17 @@ module Deploy =
         //   loaded host. Larger timeouts hide a wedged daemon
         //   (downstream canary work fails anyway). 2 s is the smallest
         //   value that doesn't false-negative under host load.
-        // - `BringupBudgetMs = 30000`: dockerd cold-start measured at
-        //   1-3 s in this environment; 30 s is ~10× the observed p99,
-        //   covering pathological cases (TLS clock-skew retries, host
-        //   memory pressure during boot).
+        // - `BringupBudgetMs = 5000`: dockerd cold-start measured at
+        //   1-3 s on hosts where bring-up is permitted; 5 s is the
+        //   smallest budget that survives a sandbox-loaded p99 cold
+        //   boot. Per `DECISIONS 2026-05-10 — Docker probe efficiency`,
+        //   higher budgets ARE NOT a help on a host where the daemon
+        //   genuinely cannot start (web sandbox without dockerd
+        //   privileges) — the budget is paid once per call (×N tests
+        //   absent memoization), and then the daemon still won't be
+        //   up. Memoization (below) collapses the test-suite-level
+        //   cost; the lower per-call ceiling makes even un-memoized
+        //   first-call paths reasonable.
         // - `BringupPollMs = 200`: below the perceptual instant-response
         //   threshold (~250 ms) so a successful bring-up returns
         //   without feeling laggy; small enough to detect a fast
@@ -108,7 +115,7 @@ module Deploy =
         let private ProbeTimeoutMs : int = 2_000
 
         [<Literal>]
-        let private BringupBudgetMs : int = 30_000
+        let private BringupBudgetMs : int = 5_000
 
         [<Literal>]
         let private BringupPollMs : int = 200
@@ -169,13 +176,64 @@ module Deploy =
                 up <- isResponding ()
             up
 
-        /// JIT bring-up. Returns true iff Docker is usable for canary
-        /// work. Tests gate on this for clean skip-if-unavailable
-        /// semantics that survive a mid-session daemon drop.
-        let ensureRunning () : bool =
+        // Memoization for `ensureRunning`. Per `DECISIONS 2026-05-10 —
+        // Docker probe efficiency`: a test suite invokes `ensureRunning`
+        // per-test through `skipIfNoDocker`; absent memoization, every
+        // canary test pays the full bring-up budget when Docker is
+        // unavailable (~14 minutes for a 15-test suite at the prior
+        // 30 s budget). Memoization collapses the suite-level cost to
+        // a single probe-and-bring-up cycle; the result is cached for
+        // the life of the process.
+        //
+        // Thread-safety: the lock guards both read and write. Re-entry
+        // is impossible (the inner work is `isAvailable` /
+        // `isResponding` / `startDaemon`, none of which call
+        // `ensureRunning`).
+        //
+        // Reset semantics: `resetMemo ()` clears the cache for callers
+        // that need to re-probe (e.g., a long-running CLI that wants
+        // to retry after a daemon recovery). Tests do not use it; the
+        // canary-test pattern is one probe per process.
+        let private memoLock : obj = obj ()
+        let mutable private memoResult : bool option = None
+
+        let private probeOnce () : bool =
+            // Per the chapter-3.1 sandbox finding (codified
+            // 2026-05-10 — Docker probe efficiency): the dominant
+            // worst case in the web sandbox is `isAvailable` true
+            // (socket file present from a prior bring-up attempt)
+            // but the daemon not responding AND `sudo dockerd`
+            // unavailable to us. `BringupBudgetMs` is the ceiling
+            // for that loop; memoization (above) keeps the cost
+            // suite-wide constant.
             if not (isAvailable ()) then false
             elif isResponding () then true
             else startDaemon ()
+
+        /// JIT bring-up. Returns true iff Docker is usable for canary
+        /// work. Tests gate on this for clean skip-if-unavailable
+        /// semantics that survive a mid-session daemon drop.
+        ///
+        /// **Memoized** per `DECISIONS 2026-05-10 — Docker probe
+        /// efficiency`. The bring-up budget is paid at most once per
+        /// process. Use `resetMemo ()` if you need to retry after a
+        /// known recovery event (rare; tests don't).
+        let ensureRunning () : bool =
+            lock memoLock (fun () ->
+                match memoResult with
+                | Some cached -> cached
+                | None ->
+                    let result = probeOnce ()
+                    memoResult <- Some result
+                    result)
+
+        /// Clear the memoized `ensureRunning` result. The next call
+        /// re-probes from scratch. Per the discipline above: only
+        /// callers that have *evidence* of daemon recovery should
+        /// invoke this (e.g., a test runner with a between-suite
+        /// hook that re-armed Docker).
+        let resetMemo () : unit =
+            lock memoLock (fun () -> memoResult <- None)
 
     [<Literal>]
     let private DefaultImage : string =
@@ -420,6 +478,14 @@ module Deploy =
                 | CreateTable _ ->
                     do! flushBulk ()
                     appendDdl s
+                | CreateIndex _ ->
+                    // Chapter 4.1.A slice 3: CREATE INDEX is a DDL
+                    // statement, same realization shape as CREATE TABLE
+                    // (flush bulk inserts before issuing DDL; route
+                    // through Render.toSql which delegates to
+                    // ScriptDomGenerate per pillar 7).
+                    do! flushBulk ()
+                    appendDdl s
                 | SetIdentityInsert _ ->
                     do! flushBulk ()
                     appendDdl s
@@ -507,16 +573,19 @@ module Deploy =
                     codes
                 None
 
-    /// Run the body against a master connection string. Honors the
-    /// `PROJECTION_MSSQL_CONN_STR` env var if set (warm container,
-    /// no startup cost); otherwise spins an ephemeral container and
-    /// disposes it on completion.
+    /// Run `body` with a master connection string sourced from either
+    /// the warm container (`PROJECTION_MSSQL_CONN_STR` env var) or a
+    /// fresh ephemeral Testcontainers SQL Server. Public so canary
+    /// tests beyond the runEphemeral / runWithReadback shapes (e.g.,
+    /// the chapter 4.1.B CDC-silence canary) can orchestrate multi-
+    /// statement deploy + probe + verify cycles without rebuilding
+    /// container plumbing per test.
     ///
-    /// Database isolation is preserved either way — callers create
+    /// **Database isolation is preserved either way** — callers create
     /// per-purpose `<prefix>_<guid>` databases via `createDatabase`,
     /// so the warm-container case still gives every canary its own
     /// fresh DB.
-    let private useContainer (body: string -> Task<'a>) : Task<'a> =
+    let useContainer (body: string -> Task<'a>) : Task<'a> =
         task {
             use _ = Bench.scope "deploy.useContainer"
             match warmConnectionString () with
@@ -868,7 +937,13 @@ module Deploy =
             match parsed with
             | Ok catalog ->
                 let outputs = Compose.project catalog
-                let! report = runEphemeral outputs.Sql
+                // Per Tier-1 #2 (Outputs.Sql → SsdtBundle): aggregate
+                // the bundle's per-table SQL files into one batch
+                // for the ephemeral-deploy single-string contract.
+                // Production deploys iterate the bundle (one file per
+                // SSDT artifact); this dogfood path keeps the legacy
+                // single-batch deploy via `aggregateSsdt`.
+                let! report = runEphemeral (Compose.aggregateSsdt outputs.SsdtBundle)
                 return Result.success (outputs, report)
             | Error errors ->
                 return Result.failure errors

@@ -475,12 +475,62 @@ module NumericDistribution =
 /// **Distributions field added session 9** (ADMIRE.md 2026-05-12) —
 /// rich-profiling evidence V1 does not collect. Empty by default;
 /// populated by the V2-only `ProfileStatistics` sibling adapter.
+///
+/// **CdcAwareness field added at chapter 4.1.B slice β** — per
+/// `CHAPTER_4_PRESCOPE_DATA_TRIUMVIRATE.md` §4.2: CDC-enabled status
+/// is *evidence the deployed schema carries*, not intent (operator
+/// did not pick CDC; they enabled it on production via a separate
+/// system). A34 holds: CdcAwareness lives on Profile, not Policy.
+
+/// Per-table CDC discovery evidence consumed by data-emission
+/// triumvirate emitters. `CdcEnabled` is the set of kinds whose
+/// physical realization carries CDC capture; `CdcInstance` carries
+/// the capture-instance name when an emitter needs to emit it
+/// (e.g., for the integration-test `cdc.fn_cdc_get_all_changes_<
+/// instance>` query in the slice-γ canary).
+type CdcAwareness =
+    {
+        CdcEnabled  : Set<SsKey>
+        CdcInstance : Map<SsKey, string>
+    }
+
+/// Operations on `CdcAwareness`. Per A34 (Profile-shape orthogonality):
+/// `empty` is the no-evidence value; passes that don't read CDC
+/// produce identical output for `empty` and any populated value.
+[<RequireQualifiedAccess>]
+module CdcAwareness =
+
+    /// No CDC evidence. Equivalent to "the deployed schema has CDC
+    /// enabled on zero kinds" — V2 emit takes the V1-shape MERGE on
+    /// every kind (no change-detection predicate).
+    let empty : CdcAwareness =
+        { CdcEnabled = Set.empty; CdcInstance = Map.empty }
+
+    /// True iff the kind's physical realization carries CDC capture.
+    let isEnabled (key: SsKey) (c: CdcAwareness) : bool =
+        Set.contains key c.CdcEnabled
+
+    /// The capture-instance name for the kind, if any. Used by the
+    /// chapter 4.1.B canary's `cdc.fn_cdc_get_all_changes_<instance>`
+    /// query to verify the change-detection predicate's silence.
+    let captureInstance (key: SsKey) (c: CdcAwareness) : string option =
+        Map.tryFind key c.CdcInstance
+
+    /// Construct from an enabled-key set and an instance map. The
+    /// invariant — every key in `instances` should also be in
+    /// `enabled` — is not enforced structurally; it is the adapter's
+    /// responsibility (per the chapter-3.1 read-side adapter
+    /// extension at slice γ).
+    let create (enabled: Set<SsKey>) (instances: Map<SsKey, string>) : CdcAwareness =
+        { CdcEnabled = enabled; CdcInstance = instances }
+
 type Profile = {
     Columns                   : ColumnProfile list
     UniqueCandidates          : UniqueCandidateProfile list
     CompositeUniqueCandidates : CompositeUniqueCandidateProfile list
     ForeignKeys               : ForeignKeyReality list
     Distributions             : AttributeDistribution list
+    CdcAwareness              : CdcAwareness
 }
 
 [<RequireQualifiedAccess>]
@@ -494,6 +544,7 @@ module Profile =
         CompositeUniqueCandidates = []
         ForeignKeys               = []
         Distributions             = []
+        CdcAwareness              = CdcAwareness.empty
     }
 
     /// True iff the profile contains no observations of any kind.
@@ -503,6 +554,8 @@ module Profile =
         && List.isEmpty p.CompositeUniqueCandidates
         && List.isEmpty p.ForeignKeys
         && List.isEmpty p.Distributions
+        && Set.isEmpty p.CdcAwareness.CdcEnabled
+        && Map.isEmpty p.CdcAwareness.CdcInstance
 
     /// Look up a column profile by attribute identity. `None` if absent.
     let tryFindColumn (attributeKey: SsKey) (p: Profile) : ColumnProfile option =

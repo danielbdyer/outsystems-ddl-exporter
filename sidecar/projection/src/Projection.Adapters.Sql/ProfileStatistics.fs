@@ -55,6 +55,31 @@ open Projection.Core
 [<RequireQualifiedAccess>]
 module ProfileStatistics =
 
+    /// Typed source surface for the V2 distributions JSON. Per the
+    /// chapter-3.7 slice ζ cash-out (audit Tier-1 #6), the boundary
+    /// adapter's input is structurally a *port* (an external
+    /// dependency-injection point); typing it through a closed DU
+    /// names the port concept-shape rather than hiding it behind a
+    /// raw `string`. Mirrors the `Projection.Adapters.Osm.CatalogReader
+    /// .SnapshotSource` shape (chapter 2's precedent) and the sibling
+    /// `Static.StaticPopulationsSource` /
+    /// `ProfileSnapshot.ProfileSnapshotSource`.
+    ///
+    /// **Single variant today.** `DistributionsJson` covers every
+    /// current consumer (tests; the canary's pipeline assembles the
+    /// JSON in memory from probes). Per
+    /// `DECISIONS 2026-05-07 — IR grows under evidence`, the future
+    /// `DistributionsFile of path: string` variant lands when a CLI /
+    /// pipeline consumer materializes that reads from disk directly
+    /// (closed-DU expansion; no signature change for existing JSON
+    /// consumers).
+    type DistributionsSource =
+        /// In-memory snapshot of the V2 distributions JSON. The shape
+        /// is the V2-internal distributions surface (sibling to V1's
+        /// ProfileSnapshot but carrying empirical-distribution
+        /// payloads).
+        | DistributionsJson of json: string
+
     // -----------------------------------------------------------------------
     // Probe-outcome string ↔ ProbeOutcome mapping. Matches the V1 shape
     // exactly (the JSON convention is shared even though no V1 source
@@ -288,7 +313,16 @@ module ProfileStatistics =
     /// Unresolvable rows (coordinates absent from the catalog) are
     /// silently skipped — same contract as `ProfileSnapshot.attach`.
     /// The catalog's selection is the contract, not the JSON's.
-    let attach (catalog: Catalog) (distributionsJson: string) (profile: Profile) : Result<Profile> =
+    ///
+    /// **Source surface (chapter-3.7 slice ζ).** The input flows
+    /// through a typed `DistributionsSource` DU — concept-shaped
+    /// port surface mirroring `CatalogReader.SnapshotSource`. New
+    /// variants land via closed-DU expansion in the type definition
+    /// above; no signature change at this consumer.
+    let attach (catalog: Catalog) (source: DistributionsSource) (profile: Profile) : Result<Profile> =
+        let distributionsJson =
+            match source with
+            | DistributionsJson json -> json
         try
             use doc = JsonDocument.Parse(distributionsJson)
             let root = doc.RootElement

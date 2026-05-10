@@ -28,9 +28,12 @@
     <Compile Include="StructuredString.fs" />
     <Compile Include="Catalog.fs" />
     <Compile Include="RawValueCodec.fs" />
+    <Compile Include="SqlTypeCorrespondence.fs" />
+    <Compile Include="SqlLiteral.fs" />
     <Compile Include="ArtifactByKind.fs" />
     <Compile Include="CatalogDiff.fs" />
     <Compile Include="PhysicalSchema.fs" />
+    <Compile Include="Tolerance.fs" />
     <Compile Include="Profile.fs" />
     <Compile Include="Policy.fs" />
     <Compile Include="TopologicalOrder.fs" />
