@@ -12,13 +12,11 @@ open Projection.Core.Passes
 /// consume the `Catalog × Profile (× boundary-supplied evidence)`
 /// shape.
 ///
-/// **Slice η scope.** The composer ships with `StaticSeedsEmitter`
-/// as its sole real consumer. `MigrationDependenciesEmitter` (slice
-/// ε) and `BootstrapEmitter` (slice ζ) are not yet built; the
-/// composer treats them as no-op stubs (empty `ArtifactByKind`
-/// slices keyed by every catalog kind to preserve T11). When ε / ζ
-/// land, the composer adds their dispatch branches without changing
-/// its signature.
+/// **Slice η + ε scope.** The composer dispatches through
+/// `StaticSeedsEmitter` (slice α/β/δ) and `MigrationDependenciesEmitter`
+/// (slice ε). `BootstrapEmitter` (slice ζ) ships next; the composer
+/// treats it as a no-op stub today. When ζ lands, the composer adds
+/// its dispatch branch without changing the signature.
 ///
 /// **Hoisted `TopologicalOrderPass`.** Per the slice-δ improvement
 /// surface (post-commit summary), the composer is the natural home
@@ -83,12 +81,13 @@ module DataEmissionComposer =
 
     /// Run the three sibling emitters per the policy's data-
     /// composition variant. Per pre-scope §3.4 + §3.2:
-    ///   - `AllRemaining`     → Static fires; Migration fires (stub
-    ///                          today); Bootstrap fires (stub today).
-    ///   - `AllExceptStatic`  → Static skipped; Migration + Bootstrap
-    ///                          fire.
+    ///   - `AllRemaining`     → Static fires; Migration fires;
+    ///                          Bootstrap fires (stub today).
+    ///   - `AllExceptStatic`  → Static skipped; Migration fires;
+    ///                          Bootstrap fires (stub today).
     ///   - `AllData`          → Static fires; Migration skipped;
-    ///                          Bootstrap fires for everything.
+    ///                          Bootstrap fires for everything (stub
+    ///                          today).
     ///
     /// `EmitData = false` short-circuits before this function — the
     /// caller emits nothing on the data axis and never invokes
@@ -98,6 +97,7 @@ module DataEmissionComposer =
         (topo: TopologicalOrder)
         (catalog: Catalog)
         (profile: Profile)
+        (migration: MigrationDependencyContext)
         : Result<SiblingArtifacts, EmitError> =
         use _ = Bench.scope "compose.data.dispatchSiblings"
         let staticSeeds =
@@ -105,7 +105,11 @@ module DataEmissionComposer =
             | AllRemaining
             | AllData         -> StaticSeedsEmitter.emitWithTopo topo catalog profile
             | AllExceptStatic -> emptyArtifact catalog
-        let migrationDependencies = emptyArtifact catalog  // slice ε pending
+        let migrationDependencies =
+            match composition with
+            | AllRemaining
+            | AllExceptStatic -> MigrationDependenciesEmitter.emitWithTopo topo catalog profile migration
+            | AllData         -> emptyArtifact catalog
         let bootstrap = emptyArtifact catalog              // slice ζ pending
         match staticSeeds, migrationDependencies, bootstrap with
         | Ok s, Ok m, Ok b ->
@@ -166,6 +170,7 @@ module DataEmissionComposer =
         (policy: Policy)
         (catalog: Catalog)
         (profile: Profile)
+        (migration: MigrationDependencyContext)
         : Lineage<Result<ArtifactByKind<DataInsertScript>, EmitError>> =
         use _ = Bench.scope "compose.data.composeWithLineage"
         let topoLineage = TopologicalOrderPass.runWith TreatAsCycle catalog
@@ -176,7 +181,7 @@ module DataEmissionComposer =
         // Result), distinct from V2's `Result<'a> = Result<'a,
         // ValidationError list>` alias whose bind is in scope.
         let result =
-            match dispatchSiblings composition topo catalog profile with
+            match dispatchSiblings composition topo catalog profile migration with
             | Ok siblings -> unionSiblings catalog siblings
             | Error e     -> Error e
         topoLineage |> Lineage.map (fun _ -> result)
@@ -186,9 +191,26 @@ module DataEmissionComposer =
     /// (canary tests, direct-Π verification). The trail is silently
     /// discarded — pipeline-level callers SHOULD route through
     /// `composeWithLineage` to preserve trail fidelity.
+    ///
+    /// Default `migration = MigrationDependencyContext.empty` —
+    /// callers that don't have a migration channel configured
+    /// (the dominant case at chapter 4.1.B slice ε since the
+    /// ingestion adapter is deferred) get an empty Migration
+    /// contribution.
     let compose
         (policy: Policy)
         (catalog: Catalog)
         (profile: Profile)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        (composeWithLineage policy catalog profile).Value
+        (composeWithLineage policy catalog profile MigrationDependencyContext.empty).Value
+
+    /// `compose` variant accepting an explicit `MigrationDependency
+    /// Context`. For callers (canary tests, future pipeline
+    /// integration) that supply migration rows programmatically.
+    let composeWithMigration
+        (policy: Policy)
+        (catalog: Catalog)
+        (profile: Profile)
+        (migration: MigrationDependencyContext)
+        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
+        (composeWithLineage policy catalog profile migration).Value

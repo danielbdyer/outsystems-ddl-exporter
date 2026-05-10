@@ -13,6 +13,7 @@
     <Compile Include="DataInsertScript.fs" />
     <Compile Include="StaticPopulationEmitter.fs" />
     <Compile Include="StaticSeedsEmitter.fs" />
+    <Compile Include="MigrationDependenciesEmitter.fs" />
     <Compile Include="DataEmissionComposer.fs" />
   </ItemGroup>
 

@@ -306,6 +306,17 @@ module Kind =
             | _           -> None)
         |> Option.defaultValue []
 
+    /// Find an attribute on the kind by SsKey (per A4 — identity-keyed
+    /// lookup, never by name). Returns `None` if absent. Lifted to
+    /// Core at chapter 4.1.B slice ε per the slice-δ improvement
+    /// surface (#5): `StaticSeedsEmitter.deferredColumns` and
+    /// `MigrationDependenciesEmitter`'s reference-resolution path
+    /// both look up source attributes by SsKey through this lens; a
+    /// third consumer at chapter 4.2's `UserFkReflowPass` is on the
+    /// horizon. Two-consumer threshold met.
+    let tryFindAttribute (ssKey: SsKey) (k: Kind) : Attribute option =
+        k.Attributes |> List.tryFind (fun a -> a.SsKey = ssKey)
+
 
 [<RequireQualifiedAccess>]
 module Module =

@@ -243,7 +243,9 @@ let ``composeWithLineage: trail carries one event per kind in catalog`` () =
             Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER" } }
     let catalog = mkCatalog [ country; regular ]
     let policy = policyWith AllRemaining
-    let lineageOfResult = DataEmissionComposer.composeWithLineage policy catalog Profile.empty
+    let lineageOfResult =
+        DataEmissionComposer.composeWithLineage
+            policy catalog Profile.empty MigrationDependencyContext.empty
     // TopologicalOrderPass emits one Touched event per kind scanned.
     Assert.Equal (2, List.length lineageOfResult.Trail)
 
@@ -252,7 +254,10 @@ let ``composeWithLineage: payload Result matches compose's Result for the same i
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
     let policy = policyWith AllRemaining
-    let viaLineage = (DataEmissionComposer.composeWithLineage policy catalog Profile.empty).Value |> mustOkEmit
+    let viaLineage =
+        (DataEmissionComposer.composeWithLineage
+            policy catalog Profile.empty MigrationDependencyContext.empty).Value
+        |> mustOkEmit
     let viaCompose = DataEmissionComposer.compose policy catalog Profile.empty |> mustOkEmit
     let s1 = ArtifactByKind.toMap viaLineage |> Map.find country.SsKey
     let s2 = ArtifactByKind.toMap viaCompose |> Map.find country.SsKey

@@ -105,8 +105,7 @@ module StaticSeedsEmitter =
             k.References
             |> List.choose (fun r ->
                 if Set.contains r.TargetKind cycleMembers then
-                    k.Attributes
-                    |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
+                    Kind.tryFindAttribute r.SourceAttribute k
                     |> Option.bind (fun a ->
                         if a.Column.IsNullable then Some a.Name else None)
                 else None)
