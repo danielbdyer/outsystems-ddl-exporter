@@ -134,49 +134,66 @@ module JsonEmitter =
     /// home for the BCL's mutable `JsonWriterOptions` struct (per
     /// the FP strict-mode discipline). `indented` is the document-
     /// writer form; `compact` is the per-kind slice form whose
-    /// composer re-parses through `JsonNode.Parse`. Indentation
-    /// depth-tracking is handled by the BCL at composition time.
+    /// composer flows through `JsonNode.Parse(stream)` so the
+    /// typed JsonNode lives at the Π port surface (pillar 1
+    /// data-structure-oriented).
 
-    /// Render one kind's JSON object into a compact UTF-8 string.
-    /// Used by `emitSlices` to produce the per-kind value indexed in
-    /// `ArtifactByKind`. The object's property order is fixed by
-    /// `writeKind`'s call sequence and matches what the indented
-    /// writer would emit at depth-3 in the catalog document, modulo
-    /// indentation.
-    let private kindJsonText (k: Kind) : string =
+    /// Render one kind's JSON object as a typed `JsonNode`. Used by
+    /// `emitSlices` to produce the per-kind value indexed in
+    /// `ArtifactByKind`. Property order is fixed by `writeKind`'s
+    /// call sequence and matches what the indented writer would
+    /// emit at depth-3 in the catalog document, modulo indentation.
+    ///
+    /// **Pillar-1 cash-out (chapter-3.7 slice ε; audit Tier-1 #7).**
+    /// The per-kind value flows through `JsonNode` rather than
+    /// `string` so the typed structure survives at the Π port
+    /// boundary — strings emerge ONLY at the absolute terminal
+    /// `Utf8JsonWriter` step in `emit`. The internal serialization
+    /// path (`Utf8JsonWriter` → `MemoryStream` → `byte[]` →
+    /// `JsonNode.Parse(ReadOnlySpan<byte>)`) is BCL-typed
+    /// end-to-end; no managed `string` is materialized and no
+    /// stream-position mutation is needed (the byte-buffer is
+    /// passed directly via the span overload).
+    let private kindJsonNode (k: Kind) : JsonNode =
         use stream = new MemoryStream()
         do
             use writer = new Utf8JsonWriter(stream, (JsonOptions.compact ()))
             writeKind writer k
             writer.Flush()
-        Encoding.UTF8.GetString(stream.ToArray())
+        let bytes = stream.ToArray()
+        match JsonNode.Parse(System.ReadOnlySpan<byte>(bytes)) with
+        | null  -> invalidOp "JsonEmitter.kindJsonNode: writer produced empty stream (unreachable; writeKind always emits an object)"
+        | node  -> node
 
-    /// Π port realization (chapter 3.5 slice β). Per A18, `Catalog`
-    /// only — no Profile, no Policy. Per T11 (structural by
-    /// construction), the smart-constructor's strict-equality check
-    /// guarantees the artifact's keyset equals `Catalog.allKinds`'s
-    /// SsKey set. Per the chapter-open §8 two-consumer threshold,
-    /// the per-kind value is `string` (the kind's JSON object as
-    /// compact text); a richer `JsonObject` per-kind type earns its
-    /// place when a second consumer (e.g., DacpacEmitter or chapter-
-    /// 4.4 drift detection) forces typed manipulation.
-    let emitSlices : Emitter<string> = fun catalog ->
+    /// Π port realization (chapter 3.5 slice β; chapter-3.7 slice ε
+    /// pillar-1 cash-out). Per A18, `Catalog` only — no Profile, no
+    /// Policy. Per T11 (structural by construction), the smart-
+    /// constructor's strict-equality check guarantees the artifact's
+    /// keyset equals `Catalog.allKinds`'s SsKey set. Per pillar 1
+    /// (data-structure-oriented over string-parsing), the per-kind
+    /// value is a typed `JsonNode` carrying the kind's structure;
+    /// strings emerge only at the terminal `Utf8JsonWriter` boundary
+    /// in `emit`. T11 is now structural at BOTH the keyset axis AND
+    /// the per-kind value-type axis — sibling-Π consumers can mutate
+    /// the typed tree (drift detection, post-write enrichment) without
+    /// re-parsing.
+    let emitSlices : Emitter<JsonNode> = fun catalog ->
         use _ = Bench.scope "emit.json.emitSlices"
         let allKinds = Catalog.allKinds catalog
         let slices =
             allKinds
-            |> List.map (fun k -> k.SsKey, kindJsonText k)
+            |> List.map (fun k -> k.SsKey, kindJsonNode k)
             |> Map.ofList
         ArtifactByKind.create catalog slices
 
     /// Emit the catalog as JSON text. Output is deterministic: byte-
     /// identical for byte-identical input (T1). Composes through the
     /// typed `emitSlices` port so the seam is exercised by the canonical
-    /// text realization. Per-kind JSON fragments are re-parsed via
-    /// `JsonNode.Parse` and written through the indented writer so the
-    /// BCL handles indentation-depth tracking; the round trip preserves
-    /// byte-determinism because `JsonObject` preserves property
-    /// insertion order.
+    /// text realization. Per-kind `JsonNode` values write directly
+    /// through the indented document writer via `node.WriteTo(writer)`
+    /// — no `JsonNode.Parse(string)` round-trip (chapter-3.7 slice ε
+    /// retired the prior re-parse path; the typed JsonNode is the
+    /// canonical seam).
     let emit (catalog: Catalog) : string =
         use _ = Bench.scope "emit.json.emit"
         match emitSlices catalog with
@@ -205,16 +222,11 @@ module JsonEmitter =
                     for k in m.Kinds do
                         use _ = Bench.scope "emit.json.moduleKind"
                         match Map.tryFind k.SsKey slices with
-                        | Some kindText ->
-                            // Re-parse the compact per-kind JSON and
-                            // write through the indented writer so
-                            // depth-tracking matches the surrounding
-                            // catalog document. Unreachable `None`
-                            // case eliminated by the smart constructor's
-                            // strict-equality contract (T11 by type).
-                            match JsonNode.Parse(kindText) with
-                            | null -> ()  // unreachable: kindText is non-empty by construction
-                            | node -> node.WriteTo(writer)
+                        | Some node ->
+                            // Typed JsonNode → writer directly; no
+                            // intermediate string. The BCL handles
+                            // depth-tracking internally.
+                            node.WriteTo(writer)
                         | None -> ()  // unreachable: T11 guarantees coverage
                     writer.WriteEndArray()
                     writer.WriteEndObject()

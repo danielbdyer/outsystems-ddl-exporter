@@ -1,5 +1,6 @@
 module Projection.Tests.T11TypeTheoremTests
 
+open System.Text.Json.Nodes
 open Xunit
 open Projection.Core
 open Projection.Core.Passes
@@ -102,3 +103,118 @@ let ``T11 (sibling commutativity): RawText, Json, Distributions key-sets are pai
         | Error err -> Assert.Fail(sprintf "Distributions: %A" err); Set.empty
     Assert.Equal<Set<SsKey>>(rawTextKeys, jsonKeys)
     Assert.Equal<Set<SsKey>>(jsonKeys, distKeys)
+
+// ---------------------------------------------------------------------------
+// Typed per-kind value at the Π port surface (chapter-3.7 slice ε;
+// audit Tier-1 #7). Chapter 3.5 made T11 structural at the *keyset*
+// axis. Slice ε lifts the per-kind value type to `JsonNode` so consumers
+// (drift detection, post-write enrichment, structural diff) can query
+// the slice without a `JsonNode.Parse(string)` re-parse step. The
+// pillar-1 promise — typed values flow through; strings emerge only at
+// the absolute terminal BCL writer boundary — is the structural claim
+// these tests enforce at runtime.
+// ---------------------------------------------------------------------------
+
+/// Project a nullable JsonNode through `Option.ofObj` so test
+/// assertions can pattern-match without F# 9 nullness flags. The
+/// `Option<JsonNode>` form pairs naturally with the `Some node ->`
+/// arms below.
+let private optNode (n: JsonNode | null) : JsonNode option = Option.ofObj n
+
+let private requireNode (label: string) (n: JsonNode | null) : JsonNode =
+    match Option.ofObj n with
+    | Some node -> node
+    | None      -> Assert.Fail(sprintf "%s: required JsonNode child was null" label); Unchecked.defaultof<JsonNode>
+
+[<Fact>]
+let ``JsonEmitter.emitSlices per-kind value is a JsonObject (typed at the seam)`` () =
+    let enriched = enrich sampleCatalog
+    match JsonEmitter.emitSlices enriched with
+    | Ok artifact ->
+        let slices = ArtifactByKind.toMap artifact
+        for KeyValue(_, node) in slices do
+            // Compile-time: `node : JsonNode` (the seam type).
+            // Runtime: each kind's writer produces a JsonObject (per
+            // `writeKind`'s `WriteStartObject` opener). The structural
+            // claim: every per-kind value IS a typed JsonObject.
+            Assert.IsAssignableFrom<JsonObject>(node) |> ignore
+    | Error err ->
+        Assert.Fail(sprintf "JsonEmitter.emitSlices returned %A" err)
+
+[<Fact>]
+let ``DistributionsEmitter.emitSlices per-kind value is a JsonObject (typed at the seam)`` () =
+    let enriched = enrich sampleCatalog
+    match DistributionsEmitter.emitSlices enriched sampleProfile with
+    | Ok artifact ->
+        let slices = ArtifactByKind.toMap artifact
+        for KeyValue(_, node) in slices do
+            Assert.IsAssignableFrom<JsonObject>(node) |> ignore
+    | Error err ->
+        Assert.Fail(sprintf "DistributionsEmitter.emitSlices returned %A" err)
+
+[<Fact>]
+let ``JsonEmitter.emitSlices per-kind value carries the SsKey root via the ssKey field (no re-parse)`` () =
+    // Pillar 1 promise — typed manipulation works at the seam without
+    // a `JsonNode.Parse(string)` step. This test is the structural
+    // witness: query the `ssKey` field via JsonNode indexer access and
+    // confirm the field's value matches `SsKey.rootOriginal` for the
+    // sample kind. If the slice were `string`, indexer access wouldn't
+    // compile and the test would have to re-parse.
+    let enriched = enrich sampleCatalog
+    let allKinds = Catalog.allKinds enriched
+    Assert.NotEmpty(allKinds)
+    let firstKind = List.head allKinds
+    match JsonEmitter.emitSlices enriched with
+    | Ok artifact ->
+        let slices = ArtifactByKind.toMap artifact
+        match Map.tryFind firstKind.SsKey slices with
+        | Some node ->
+            let ssKeyField = requireNode "slice.ssKey" node.["ssKey"]
+            let recovered = ssKeyField.GetValue<string>()
+            // `renderSsKey` adds " [derived]" suffix for derived keys;
+            // `firstKind.SsKey` is OssysOriginal in `sampleCatalog`, so
+            // the suffix doesn't appear.
+            Assert.Equal(SsKey.rootOriginal firstKind.SsKey, recovered)
+        | None ->
+            Assert.Fail "expected slice for first kind"
+    | Error err ->
+        Assert.Fail(sprintf "JsonEmitter.emitSlices returned %A" err)
+
+[<Fact>]
+let ``JsonEmitter.emit doc tree contains every emitSlices kind by ssKey root`` () =
+    // The composer (`emit`) writes the doc-level wrapper plus each
+    // per-kind JsonNode via `node.WriteTo(writer)` — no re-parse step.
+    // This test demonstrates the round-trip: parse the emitted text
+    // back to a JsonNode tree, walk to `modules[*].kinds[*].ssKey`,
+    // and confirm the slice keys are present at the expected positions.
+    let enriched = enrich sampleCatalog
+    let docText = JsonEmitter.emit enriched
+    let docNode = requireNode "JsonEmitter.emit" (JsonNode.Parse(docText))
+    let versionNode = requireNode "doc.version" docNode.["version"]
+    Assert.Equal(JsonEmitter.version, versionNode.GetValue<int>())
+    let modules = (requireNode "doc.modules" docNode.["modules"]).AsArray()
+    Assert.NotEmpty(modules)
+    match JsonEmitter.emitSlices enriched with
+    | Ok artifact ->
+        let sliceKeys = ArtifactByKind.keys artifact
+        let docKeys =
+            seq {
+                for m in modules do
+                    match optNode m with
+                    | Some moduleNode ->
+                        let kinds =
+                            (requireNode "module.kinds" moduleNode.["kinds"]).AsArray()
+                        for k in kinds do
+                            match optNode k with
+                            | Some kindNode ->
+                                let ssKeyField = requireNode "kind.ssKey" kindNode.["ssKey"]
+                                yield ssKeyField.GetValue<string>()
+                            | None -> ()
+                    | None -> ()
+            }
+            |> Set.ofSeq
+        let expectedKeyStrings =
+            sliceKeys |> Set.map SsKey.rootOriginal
+        Assert.Equal<Set<string>>(expectedKeyStrings, docKeys)
+    | Error err ->
+        Assert.Fail(sprintf "JsonEmitter.emitSlices: %A" err)

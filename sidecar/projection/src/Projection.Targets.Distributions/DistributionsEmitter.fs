@@ -170,34 +170,52 @@ module DistributionsEmitter =
     // for the BCL's mutable `JsonWriterOptions` struct (per the FP
     // strict-mode discipline). Same shape as `JsonEmitter`.
 
-    /// Render one kind's distribution-payload JSON object as compact
-    /// UTF-8 text. Used by `emitSlices` to produce the per-kind value
+    /// Render one kind's distribution-payload JSON object as a typed
+    /// `JsonNode`. Used by `emitSlices` to produce the per-kind value
     /// indexed in `ArtifactByKind`. Property order is fixed by
     /// `writeKind`'s call sequence and matches what the indented
     /// document writer would emit at depth-3, modulo indentation.
-    let private kindJsonText (profile: Profile) (k: Kind) : string =
+    ///
+    /// **Pillar-1 cash-out (chapter-3.7 slice ε; audit Tier-1 #7).**
+    /// The per-kind value flows through `JsonNode` rather than
+    /// `string` so the typed structure survives at the Π port
+    /// boundary — strings emerge ONLY at the absolute terminal
+    /// `Utf8JsonWriter` step in `emit`. The internal serialization
+    /// path (`Utf8JsonWriter` → `MemoryStream` → `byte[]` →
+    /// `JsonNode.Parse(ReadOnlySpan<byte>)`) is BCL-typed
+    /// end-to-end; no managed `string` is materialized and no
+    /// stream-position mutation is needed (the byte-buffer is
+    /// passed directly via the span overload).
+    let private kindJsonNode (profile: Profile) (k: Kind) : JsonNode =
         use stream = new MemoryStream()
         do
             use writer = new Utf8JsonWriter(stream, (JsonOptions.compact ()))
             writeKind writer profile k
             writer.Flush()
-        System.Text.Encoding.UTF8.GetString(stream.ToArray())
+        let bytes = stream.ToArray()
+        match JsonNode.Parse(System.ReadOnlySpan<byte>(bytes)) with
+        | null  -> invalidOp "DistributionsEmitter.kindJsonNode: writer produced empty stream (unreachable; writeKind always emits an object)"
+        | node  -> node
 
-    /// Π port realization (chapter 3.5 slice γ). Profile-consuming Π;
-    /// per `EmitterWithProfile<'element>`. T11 is structural by
+    /// Π port realization (chapter 3.5 slice γ; chapter-3.7 slice ε
+    /// pillar-1 cash-out). Profile-consuming Π; per
+    /// `EmitterWithProfile<'element>`. T11 is structural by
     /// construction — `ArtifactByKind.create`'s strict-equality
     /// contract guarantees the artifact's keyset equals
-    /// `Catalog.allKinds`'s SsKey set. Per the chapter-open §8
-    /// two-consumer threshold, the per-kind value is `string` for
-    /// first slice; richer per-element types (`JsonObject`, or a typed
-    /// `DistributionSlice` record) earn their place when a second
-    /// consumer demands typed manipulation.
-    let emitSlices : EmitterWithProfile<string> = fun catalog profile ->
+    /// `Catalog.allKinds`'s SsKey set. Per pillar 1 (data-structure-
+    /// oriented over string-parsing), the per-kind value is a typed
+    /// `JsonNode` carrying the kind's distribution-payload structure;
+    /// strings emerge only at the terminal `Utf8JsonWriter` boundary
+    /// in `emit`. T11 is structural at BOTH the keyset axis AND the
+    /// per-kind value-type axis — sibling-Π consumers can mutate the
+    /// typed tree (drift detection, post-write enrichment) without
+    /// re-parsing.
+    let emitSlices : EmitterWithProfile<JsonNode> = fun catalog profile ->
         use _ = Bench.scope "emit.distributions.emitSlices"
         let allKinds = Catalog.allKinds catalog
         let slices =
             allKinds
-            |> List.map (fun k -> k.SsKey, kindJsonText profile k)
+            |> List.map (fun k -> k.SsKey, kindJsonNode profile k)
             |> Map.ofList
         ArtifactByKind.create catalog slices
 
@@ -273,14 +291,12 @@ module DistributionsEmitter =
                     for k in sortedKinds do
                         use _ = Bench.scope "emit.distributions.moduleKind"
                         match Map.tryFind k.SsKey slices with
-                        | Some kindText ->
-                            // Re-parse compact per-kind JSON; write
-                            // through the indented document writer so
-                            // depth-tracking matches the surrounding
-                            // structure.
-                            match JsonNode.Parse(kindText) with
-                            | null -> ()  // unreachable: kindText non-empty
-                            | node -> node.WriteTo(w)
+                        | Some node ->
+                            // Typed JsonNode → writer directly; no
+                            // intermediate string. Chapter-3.7 slice ε
+                            // retired the prior re-parse path; the
+                            // typed JsonNode is the canonical seam.
+                            node.WriteTo(w)
                         | None -> ()  // unreachable: T11 guarantees coverage
                     w.WriteEndArray()
                     w.WriteEndObject()
