@@ -214,3 +214,123 @@ let ``T11: StaticSeedsEmitter.emit covers every catalog kind`` () =
     let map = ArtifactByKind.toMap artifact
     Assert.True (Map.containsKey country.SsKey map)
     Assert.True (Map.containsKey regular.SsKey map)
+
+// ---------------------------------------------------------------------------
+// Chapter 4.1.B slice β — CdcAwareness dispatch + change-detection MERGE
+// predicate. The load-bearing semantic addition that closes CDC-silence
+// on idempotent redeploys (per V2_DRIVER.md highest-stakes claim).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Slice β: CdcAwareness.empty has no CDC-enabled kinds`` () =
+    Assert.True (Set.isEmpty CdcAwareness.empty.CdcEnabled)
+    Assert.True (Map.isEmpty CdcAwareness.empty.CdcInstance)
+
+[<Fact>]
+let ``Slice β: CdcAwareness.isEnabled true iff key in enabled set`` () =
+    let country = mkCountryKind ()
+    let regular = mkRegularKind ()
+    let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
+    Assert.True  (CdcAwareness.isEnabled country.SsKey cdc)
+    Assert.False (CdcAwareness.isEnabled regular.SsKey cdc)
+
+[<Fact>]
+let ``Slice β: CdcAwareness.captureInstance returns Some when registered`` () =
+    let country = mkCountryKind ()
+    let cdc =
+        CdcAwareness.create
+            (Set.ofList [ country.SsKey ])
+            (Map.ofList [ country.SsKey, "dbo_OSUSR_TEST_COUNTRY" ])
+    Assert.Equal<string option>
+        (Some "dbo_OSUSR_TEST_COUNTRY",
+         CdcAwareness.captureInstance country.SsKey cdc)
+
+[<Fact>]
+let ``Slice β: StaticSeedsEmitter without CDC keeps V1 unconditional WHEN MATCHED`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    // CdcAwareness.empty (no kinds enabled) → V1-shape MERGE.
+    Assert.Contains ("WHEN MATCHED THEN UPDATE SET", script.Rendered)
+    Assert.DoesNotContain ("WHEN MATCHED AND", script.Rendered)
+
+[<Fact>]
+let ``Slice β: StaticSeedsEmitter with CDC enabled emits change-detection predicate`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
+    let profile = { Profile.empty with CdcAwareness = cdc }
+    let artifact = StaticSeedsEmitter.emit catalog profile |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    // CDC-enabled → WHEN MATCHED AND ( ... ) THEN UPDATE SET.
+    Assert.Contains ("WHEN MATCHED AND (", script.Rendered)
+    Assert.Contains (") THEN UPDATE SET", script.Rendered)
+    Assert.DoesNotContain ("WHEN MATCHED THEN UPDATE SET", script.Rendered)
+
+[<Fact>]
+let ``Slice β: change-detection predicate is nullable-aware (NULL-asymmetry both ways)`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
+    let profile = { Profile.empty with CdcAwareness = cdc }
+    let artifact = StaticSeedsEmitter.emit catalog profile |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    // Per pre-scope §6: NULL ≠ NULL in SQL; the predicate covers both
+    // null-asymmetry directions (target NULL vs source NOT NULL, and
+    // target NOT NULL vs source NULL). Verify on at least one non-key
+    // column.
+    Assert.Contains ("Target.[CODE] <> Source.[CODE]", script.Rendered)
+    Assert.Contains ("Target.[CODE] IS NULL AND Source.[CODE] IS NOT NULL", script.Rendered)
+    Assert.Contains ("Target.[CODE] IS NOT NULL AND Source.[CODE] IS NULL", script.Rendered)
+
+[<Fact>]
+let ``Slice β: change-detection predicate covers every non-key column`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
+    let profile = { Profile.empty with CdcAwareness = cdc }
+    let artifact = StaticSeedsEmitter.emit catalog profile |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    // Both non-key columns (CODE + LABEL) appear in the predicate.
+    Assert.Contains ("Target.[CODE] <> Source.[CODE]", script.Rendered)
+    Assert.Contains ("Target.[LABEL] <> Source.[LABEL]", script.Rendered)
+    // ID is the PK; it should NOT appear in the change-detection
+    // predicate (the predicate gates UPDATEs of NON-KEY columns).
+    Assert.DoesNotContain ("Target.[ID] <> Source.[ID]", script.Rendered)
+
+[<Fact>]
+let ``Slice β: per-kind dispatch — only CDC-enabled kinds get the predicate`` () =
+    // Two static kinds in one catalog; only one is CDC-enabled.
+    let country = mkCountryKind ()
+    // Build a second static kind (Region) with same shape.
+    let regionKey = mkKey ["TestModule"; "Region"]
+    let region : Kind =
+        { country with
+            SsKey    = regionKey
+            Name     = mkName "Region"
+            Physical = { Schema = "dbo"; Table = "OSUSR_TEST_REGION" } }
+    let catalog = mkCatalog [ country; region ]
+    let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
+    let profile = { Profile.empty with CdcAwareness = cdc }
+    let artifact = StaticSeedsEmitter.emit catalog profile |> mustOkEmit
+    let map = ArtifactByKind.toMap artifact
+    let countryScript = Map.find country.SsKey map
+    let regionScript = Map.find region.SsKey map
+    // Country: CDC-enabled → predicate.
+    Assert.Contains ("WHEN MATCHED AND (", countryScript.Rendered)
+    // Region: not CDC-enabled → V1-shape MERGE.
+    Assert.DoesNotContain ("WHEN MATCHED AND (", regionScript.Rendered)
+    Assert.Contains ("WHEN MATCHED THEN UPDATE SET", regionScript.Rendered)
+
+[<Fact>]
+let ``Slice β: T1 byte-determinism holds under CDC dispatch`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
+    let profile = { Profile.empty with CdcAwareness = cdc }
+    let r1 = StaticSeedsEmitter.emit catalog profile |> mustOkEmit
+    let r2 = StaticSeedsEmitter.emit catalog profile |> mustOkEmit
+    let s1 = ArtifactByKind.toMap r1 |> Map.find country.SsKey
+    let s2 = ArtifactByKind.toMap r2 |> Map.find country.SsKey
+    Assert.Equal<string> (s1.Rendered, s2.Rendered)

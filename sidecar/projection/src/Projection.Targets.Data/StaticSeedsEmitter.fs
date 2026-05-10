@@ -110,7 +110,42 @@ module StaticSeedsEmitter =
     ///     VALUES (Source.[Id], Source.[Code], Source.[Label])
     /// ;
     /// ```
-    let private renderMerge (k: Kind) (rows: StaticRow list) : string =
+    /// Build the change-detection predicate per pre-scope §6 + chapter
+    /// 4.1.B slice β. The predicate fires WHEN MATCHED to update only
+    /// when at least one non-key column differs between source and
+    /// target. Nullable-aware comparator (NULL ≠ NULL in SQL):
+    ///
+    /// ```sql
+    /// WHEN MATCHED AND (
+    ///     Target.[col1] <> Source.[col1] OR
+    ///     (Target.[col1] IS NULL AND Source.[col1] IS NOT NULL) OR
+    ///     (Target.[col1] IS NOT NULL AND Source.[col1] IS NULL) OR
+    ///     ...  -- repeat per non-key column
+    /// ) THEN UPDATE SET ...
+    /// ```
+    ///
+    /// This predicate IS the structural commitment that closes CDC-
+    /// noise on idempotent redeploys: identical content fires no
+    /// UPDATE → CDC capture-process emits no row → consuming features
+    /// see no spurious change. The slice-γ canary verifies this under
+    /// real SQL Server CDC semantics.
+    let private buildChangeDetectionPredicate (updCols: string list) : string =
+        let perColumn (col: string) : string =
+            let q = Render.quote col
+            // Three OR-conditions per column: value-mismatch + NULL-asymmetry-each-way.
+            System.String.Concat(  // LINT-ALLOW: change-detection predicate fragment composition for one non-key column; segments are typed (Render.quote returns ScriptDom-encoded identifier); future ScriptDom MergeStatement adoption deferred to slice ζ
+                "Target.", q, " <> Source.", q, " OR ",
+                "(Target.", q, " IS NULL AND Source.", q, " IS NOT NULL) OR ",
+                "(Target.", q, " IS NOT NULL AND Source.", q, " IS NULL)")
+        updCols
+        |> List.map perColumn
+        |> String.concat " OR\n        "  // LINT-ALLOW: terminal OR-joiner across per-column change-detection fragments; BCL `String.concat` IS the use-case-specific library (collection-joiner gold-standard); segments are typed
+
+    let private renderMerge
+        (cdcAware: bool)
+        (k: Kind)
+        (rows: StaticRow list)
+        : string =
         use _ = Bench.scope "emit.staticSeeds.renderMerge"
         let sb = StringBuilder()
         let table : TableId =
@@ -144,7 +179,20 @@ module StaticSeedsEmitter =
         sb.Append("    ON ").AppendLine(onClause) |> ignore
 
         if not (List.isEmpty updCols) then
-            sb.AppendLine("WHEN MATCHED THEN UPDATE SET") |> ignore
+            // CDC-aware dispatch per pre-scope §6 + slice β: the change-
+            // detection predicate suppresses no-op UPDATEs on identical
+            // content, closing the CDC-noise hole. CDC-disabled kinds
+            // keep V1's predicate-free WHEN MATCHED (V1 already proven
+            // correct in trunk; the CDC-noise path is irrelevant for
+            // non-tracked tables).
+            if cdcAware then
+                let predicate = buildChangeDetectionPredicate updCols
+                sb.AppendLine("WHEN MATCHED AND (")
+                    .Append("        ").AppendLine(predicate)
+                    .AppendLine("    ) THEN UPDATE SET")
+                |> ignore
+            else
+                sb.AppendLine("WHEN MATCHED THEN UPDATE SET") |> ignore
             let lastUpdIdx = updCols.Length - 1
             updCols
             |> List.iteri (fun i c ->
@@ -168,13 +216,16 @@ module StaticSeedsEmitter =
     /// Build one `DataInsertScript` for a kind. Empty-population kinds
     /// produce a no-op script (empty Phase1Merges, empty Rendered);
     /// per T11 strict-equality keyset, the script is still keyed in
-    /// the artifact map.
-    let private kindToScript (k: Kind) : DataInsertScript =
+    /// the artifact map. CDC-aware dispatch per slice β: the kind's
+    /// `Profile.CdcAwareness.CdcEnabled` membership selects the
+    /// change-detection-predicate variant.
+    let private kindToScript (cdc: CdcAwareness) (k: Kind) : DataInsertScript =
         let populations = staticPopulations k
         if List.isEmpty populations then
             { Phase1Merges = []; Phase2Updates = []; Rendered = "" }
         else
-            let rendered = renderMerge k populations
+            let cdcAware = CdcAwareness.isEnabled k.SsKey cdc
+            let rendered = renderMerge cdcAware k populations
             let rows =
                 populations
                 |> List.map (fun row ->
@@ -186,16 +237,19 @@ module StaticSeedsEmitter =
               Rendered     = rendered }
 
     /// Π_StaticSeeds emit. Per A18 amended (Catalog × Profile, never
-    /// Policy) and T11 (every kind in the keyset). Slice α: Profile is
-    /// reserved for slice β's CdcAwareness consumption.
+    /// Policy) and T11 (every kind in the keyset). Slice β consumes
+    /// `Profile.CdcAwareness` for per-kind change-detection-predicate
+    /// dispatch (the load-bearing semantic addition that closes
+    /// CDC-noise on idempotent redeploys per `V2_DRIVER.md`).
     let emit
         (catalog: Catalog)
-        (_profile: Profile)
+        (profile: Profile)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         use _ = Bench.scope "emit.staticSeeds.emit"
+        let cdc = profile.CdcAwareness
         let allKinds = Catalog.allKinds catalog
         let slices =
             allKinds
-            |> List.map (fun k -> k.SsKey, kindToScript k)
+            |> List.map (fun k -> k.SsKey, kindToScript cdc k)
             |> Map.ofList
         ArtifactByKind.create catalog slices

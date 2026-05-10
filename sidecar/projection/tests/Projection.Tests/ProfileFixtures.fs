@@ -129,4 +129,5 @@ let sampleProfile : Profile = {
     CompositeUniqueCandidates = []
     ForeignKeys               = [ orderCustomerFkReality ]
     Distributions             = []
+    CdcAwareness              = CdcAwareness.empty
 }

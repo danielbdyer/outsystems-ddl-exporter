@@ -414,7 +414,14 @@ module ProfileSnapshot =
                                   // because V1 collects no
                                   // distribution evidence (ADMIRE.md
                                   // 2026-05-12).
-                                  Distributions             = [] }))))
+                                  Distributions             = []
+                                  // CdcAwareness populated by the
+                                  // chapter-3.1 read-side adapter
+                                  // extension (slice γ); the V1
+                                  // snapshot adapter has no CDC
+                                  // discovery surface (per chapter
+                                  // 4.1.B slice β).
+                                  CdcAwareness              = CdcAwareness.empty }))))
         with
         | :? JsonException as ex ->
             Result.failureOf
