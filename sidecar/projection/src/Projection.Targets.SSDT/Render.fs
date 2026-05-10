@@ -183,6 +183,28 @@ module Render =
             sb.Append("SET IDENTITY_INSERT ").Append(tableQualified table)
                 .AppendLine(if enabled then " ON;" else " OFF;")
             |> ignore
+        | CreateIndex _ ->
+            // Per pillar 7 four-question analysis at this site:
+            //   1. Use-case-specific library: ScriptDom's
+            //      `Sql160ScriptGenerator` via `ScriptDomGenerate
+            //      .generateOne`.
+            //   2. Already in codebase: yes (chapter 3.5).
+            //   3. Cost: trivial (one delegate call).
+            //   4. Structural reason it doesn't apply: NO — ScriptDom
+            //      emits CREATE INDEX correctly per Sql160 grammar.
+            // Conclusion: delegate to ScriptDomGenerate (pillar-7 right
+            // move). This keeps the Render.toSql legacy text-renderer
+            // partially ScriptDom-driven (consistent with chapter-3.7
+            // slice β' Render.columnSqlType-through-ScriptDom precedent).
+            // The full Render→ScriptDomGenerate migration is a separate
+            // slice when the second consumer pressures it.
+            match ScriptDomBuild.buildStatement s with
+            | Some fragment ->
+                sb.Append(ScriptDomGenerate.generateOne fragment).AppendLine() |> ignore
+            | None ->
+                // Unreachable: CreateIndex always builds a typed fragment
+                // (per ScriptDomBuild.buildStatement's exhaustive match).
+                ()
 
     /// Fold a statement stream into a single SQL-text artifact. The
     /// canonical text realization of Π's output. Stream-aware bench

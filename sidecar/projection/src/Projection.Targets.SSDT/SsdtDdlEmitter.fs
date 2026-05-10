@@ -132,14 +132,50 @@ module SsdtDdlEmitter =
                     Columns = pkColumns
                 }
 
-    /// Build the CREATE TABLE statement for a single Kind. **Slice 1
-    /// scope:** columns + PK only; no FKs (slice 5), no indexes
-    /// (slice 3), no modality (data triumvirate — chapter 4.1.B).
-    /// The empty `[]` for FKs is the slice-1 acceptance contract.
+    /// Build the CREATE TABLE statement for a single Kind. Columns +
+    /// PK; no FKs (slice 5), no modality (data triumvirate — chapter
+    /// 4.1.B).
     let private createTableStatement (k: Kind) : Statement =
         let columns = k.Attributes |> List.map columnDef
         let pk = pkDef k
         Statement.CreateTable (toTableId k, columns, pk, [])
+
+    /// Resolve a column-SsKey to its physical column name within a
+    /// kind. The IR's `Index.Columns` carries SsKey list (per
+    /// `Catalog.fs:228`); the SSDT emission needs physical column
+    /// names. Per A1 (identity-survives-rename), each column SsKey
+    /// resolves to exactly one Attribute; the resolved column name
+    /// is the Attribute's physical `ColumnName`.
+    let private resolveColumnName (k: Kind) (columnSsKey: SsKey) : string =
+        match k.Attributes |> List.tryFind (fun a -> a.SsKey = columnSsKey) with
+        | Some a -> a.Column.ColumnName
+        | None ->
+            // Unreachable when Catalog.create has run (chapter 3.1
+            // aggregate-root smart constructor enforces the
+            // referential-integrity invariant: every Index.Column
+            // resolves within its owning Kind). Defensive invalidOp
+            // so the unreachability is structural.
+            invalidOp (sprintf "SsdtDdlEmitter.resolveColumnName: column SsKey %A not found in kind %A (unreachable; Catalog.create invariant)" columnSsKey k.SsKey)
+
+    /// Build the CREATE INDEX statements for a Kind's non-PK indexes.
+    /// Per chapter pre-scope §8 slice 3: PK-marked indexes are
+    /// skipped (PK is inlined in CREATE TABLE per V1 convention);
+    /// remaining indexes are sorted by SsKey for deterministic
+    /// emission ordering (A33).
+    let private indexStatements (k: Kind) : Statement list =
+        k.Indexes
+        |> List.filter (fun idx -> not idx.IsPrimaryKey)
+        |> List.sortBy (fun idx -> idx.SsKey)
+        |> List.map (fun idx ->
+            let columnNames = idx.Columns |> List.map (resolveColumnName k)
+            let indexDef : IndexDef =
+                {
+                    Name     = Name.value idx.Name
+                    Table    = toTableId k
+                    Columns  = columnNames
+                    IsUnique = idx.IsUnique
+                }
+            Statement.CreateIndex indexDef)
 
     /// Build the cross-platform-deterministic relative path for a
     /// kind's SSDT DDL file. V1 convention: `Modules/<ModuleName>/
@@ -172,23 +208,24 @@ module SsdtDdlEmitter =
             ".sql")
 
     /// Render one Kind to a typed `SsdtFile`. The CREATE TABLE
-    /// statement flows through ScriptDom's typed AST and emerges as
+    /// statement (slice 1) plus zero-or-more CREATE INDEX statements
+    /// (slice 3) flow through ScriptDom's typed AST and emerge as
     /// SQL text only at the absolute terminal `Sql160ScriptGenerator`
     /// boundary (per pillar 1 + pillar 7).
+    ///
+    /// `ScriptDomGenerate.toText` (chapter 3.5) is the typed-statement-
+    /// stream consumer that handles multi-statement bodies: each
+    /// statement gets emitted via the pinned-options writer, with
+    /// blank-line framing between statements per A33 (deterministic-
+    /// ordered schema emission).
     let private kindToSsdtFile (m: Module) (k: Kind) : SsdtFile =
         use _ = Bench.scope "emit.ssdt.kindToSsdtFile"
-        let stmt = createTableStatement k
-        let body =
-            match ScriptDomBuild.buildStatement stmt with
-            | Some fragment ->
-                ScriptDomGenerate.generateOne fragment
-            | None ->
-                // Unreachable: `Statement.CreateTable` always builds a
-                // typed `TSqlStatement` (per `ScriptDomBuild.buildStatement`'s
-                // exhaustive match on the `Statement` DU). The defensive
-                // `invalidOp` makes the unreachability structural rather
-                // than implicit.
-                invalidOp "SsdtDdlEmitter.kindToSsdtFile: ScriptDomBuild.buildStatement returned None for CreateTable (unreachable)"
+        let statements =
+            seq {
+                yield createTableStatement k
+                yield! indexStatements k
+            }
+        let body = ScriptDomGenerate.toText statements
         { RelativePath = relativePath m k; Body = body }
 
     /// Lookup table from kind SsKey to owning Module. Same shape as

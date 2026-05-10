@@ -57,6 +57,22 @@ type PrimaryKeyDef =
         Columns : string list
     }
 
+/// IR-typed CREATE INDEX declaration. Mirrors V2's `Index` in
+/// `Catalog.fs` but with column NAMES (not SsKeys) at the realization
+/// layer — the emitter resolves SsKey → ColumnName before building
+/// the typed AST. Per chapter 4.1.A pre-scope §3 + slice 3:
+/// `CREATE [UNIQUE] [NONCLUSTERED] INDEX [name] ON [Schema].[Table]
+/// ([col1], [col2], ...)`. Composite indexes carry multiple columns;
+/// PK-marked indexes are skipped at the emitter (PK is inlined in
+/// CREATE TABLE per V1 convention).
+type IndexDef =
+    {
+        Name : string
+        Table : TableId
+        Columns : string list
+        IsUnique : bool
+    }
+
 /// One column's value within an `InsertRow`. `Raw` is the V2 IR
 /// contract: invariant-culture string, `""` denotes NULL. The
 /// realization layer formats per `Type`.
@@ -71,5 +87,10 @@ type Statement =
     | Blank
     | Comment of text: string
     | CreateTable of TableId * ColumnDef list * PrimaryKeyDef option * ForeignKeyDef list
+    /// Chapter 4.1.A slice 3: CREATE INDEX statement for non-PK
+    /// indexes. PK-marked indexes are inlined in CREATE TABLE per
+    /// V1 convention; the SsdtDdlEmitter filters them before
+    /// emission.
+    | CreateIndex of IndexDef
     | InsertRow of TableId * CellValue list
     | SetIdentityInsert of TableId * enabled: bool

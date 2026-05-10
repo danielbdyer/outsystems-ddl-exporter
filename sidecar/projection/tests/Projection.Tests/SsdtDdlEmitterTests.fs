@@ -323,3 +323,144 @@ let ``Slice 4: T1 byte-determinism holds for composite PK fixture`` () =
     let body1 : SsdtDdlEmitter.SsdtFile = Map.find compositePkKind.SsKey r1
     let body2 : SsdtDdlEmitter.SsdtFile = Map.find compositePkKind.SsKey r2
     Assert.Equal<string> (body1.Body, body2.Body)
+
+// ---------------------------------------------------------------------------
+// Chapter 4.1.A slice 3 — indexes (single-column non-unique + unique).
+//
+// Per chapter pre-scope §8 slice 3: "CREATE INDEX [name] ON [Schema].[Table]
+// ([col]) per non-PK index, sorted by SsKey. Fixture: one kind with two
+// indexes (one unique, one not). Acceptance: indexes appear in alphabetical-
+// by-SsKey order; PK-marked indexes are skipped."
+//
+// Statement DU extended with `CreateIndex of IndexDef`; ScriptDomBuild
+// gains `buildCreateIndex`; SsdtDdlEmitter gains `indexStatements` helper.
+// Per V2-driver KPI: schema axis verification depth high; the CREATE INDEX
+// statements share the same byte-determinism contract as CREATE TABLE
+// (ScriptDom pinned-options writer).
+// ---------------------------------------------------------------------------
+
+let private indexedKindKey = kindKey ["Indexed"]
+let private indexedNonUniqueIdxKey = idxKey ["Indexed"; "NonUnique"]
+let private indexedUniqueIdxKey = idxKey ["Indexed"; "Unique"]
+let private indexedPkIdxKey = idxKey ["Indexed"; "PK"]
+
+let private indexedKind : Kind =
+    let attr (label: string) (typ: PrimitiveType) (isPk: bool) : Attribute =
+        {
+            SsKey = attrKey ["Indexed"; label]
+            Name = mkName label
+            Type = typ
+            Column = { ColumnName = label.ToUpperInvariant(); IsNullable = not isPk }
+            IsPrimaryKey = isPk
+            IsMandatory  = isPk
+            Length = None; Precision = None; Scale = None; IsIdentity = false
+        }
+    {
+        SsKey = indexedKindKey
+        Name = mkName "Indexed"
+        Origin = OsNative
+        Modality = []
+        Physical = { Schema = "dbo"; Table = "OSUSR_X_INDEXED" }
+        Attributes = [
+            attr "Id" Integer true
+            attr "Lookup" Text false
+            attr "Code" Text false
+        ]
+        References = []
+        Indexes = [
+            // Non-unique index on Lookup column.
+            {
+                SsKey = indexedNonUniqueIdxKey
+                Name = mkName "IX_OSUSR_X_INDEXED_LOOKUP"
+                Columns = [ attrKey ["Indexed"; "Lookup"] ]
+                IsUnique = false
+                IsPrimaryKey = false
+            }
+            // Unique index on Code column.
+            {
+                SsKey = indexedUniqueIdxKey
+                Name = mkName "UIX_OSUSR_X_INDEXED_CODE"
+                Columns = [ attrKey ["Indexed"; "Code"] ]
+                IsUnique = true
+                IsPrimaryKey = false
+            }
+            // PK index — should be SKIPPED by the emitter (PK is inlined
+            // in CREATE TABLE per V1 convention).
+            {
+                SsKey = indexedPkIdxKey
+                Name = mkName "PK_OSUSR_X_INDEXED"
+                Columns = [ attrKey ["Indexed"; "Id"] ]
+                IsUnique = true
+                IsPrimaryKey = true
+            }
+        ]
+    }
+
+let private indexedCatalog : Catalog =
+    {
+        Modules = [
+            {
+                SsKey = modKey "IndexedModule"
+                Name = mkName "IndexedModule"
+                Kinds = [ indexedKind ]
+            }
+        ]
+    }
+
+[<Fact>]
+let ``Slice 3: SsdtDdlEmitter emits CREATE INDEX for non-PK indexes`` () =
+    // Per chapter pre-scope §8 slice 3: non-PK indexes emit as
+    // CREATE INDEX statements after the CREATE TABLE; PK-marked
+    // indexes are skipped (PK is inlined in CREATE TABLE).
+    let enriched = enrich indexedCatalog
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let body =
+        match Map.tryFind indexedKindKey (ArtifactByKind.toMap artifact) with
+        | Some f -> f.Body
+        | None ->
+            Assert.Fail "expected slice for indexedKind"
+            ""
+    // Non-unique index name appears in body.
+    Assert.Contains ("IX_OSUSR_X_INDEXED_LOOKUP", body)
+    // Unique index name appears in body; UNIQUE keyword is present.
+    Assert.Contains ("UIX_OSUSR_X_INDEXED_CODE", body)
+    Assert.Contains ("UNIQUE", body)
+    // PK-marked index is skipped — its name does NOT appear as a
+    // CREATE INDEX statement (it's inlined in CREATE TABLE; the
+    // V1 convention keeps PK inlined when single-column).
+    Assert.False (body.Contains "CREATE.*INDEX.*PK_OSUSR_X_INDEXED",
+                  sprintf "PK index should be skipped (not emitted as CREATE INDEX); got body: %s" body)
+
+[<Fact>]
+let ``Slice 3: SsdtDdlEmitter index emission is sorted by SsKey for determinism`` () =
+    // A33 (deterministic-ordered schema emission). Per chapter pre-scope
+    // §8 slice 3 acceptance: "indexes appear in alphabetical-by-SsKey
+    // order." The non-unique IX_*_LOOKUP and unique UIX_*_CODE indexes
+    // emit in SsKey order: idxKey ["Indexed";"NonUnique"] vs
+    // idxKey ["Indexed";"Unique"] — by string SsKey root, NonUnique
+    // sorts before Unique alphabetically.
+    let enriched = enrich indexedCatalog
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let body =
+        match Map.tryFind indexedKindKey (ArtifactByKind.toMap artifact) with
+        | Some f -> f.Body
+        | None ->
+            Assert.Fail "expected slice for indexedKind"
+            ""
+    let nonUniqueIdx = body.IndexOf "IX_OSUSR_X_INDEXED_LOOKUP"
+    let uniqueIdx = body.IndexOf "UIX_OSUSR_X_INDEXED_CODE"
+    Assert.True (nonUniqueIdx > 0, "expected IX_*_LOOKUP in body")
+    Assert.True (uniqueIdx > 0, "expected UIX_*_CODE in body")
+    // Non-unique (idxKey ["Indexed";"NonUnique"]) sorts before
+    // unique (idxKey ["Indexed";"Unique"]) by SsKey string-ordering.
+    Assert.True (nonUniqueIdx < uniqueIdx,
+                 sprintf "expected NonUnique idx before Unique idx; NonUnique@%d, Unique@%d" nonUniqueIdx uniqueIdx)
+
+[<Fact>]
+let ``Slice 3: T1 byte-determinism holds for indexed fixture`` () =
+    let enriched = enrich indexedCatalog
+    let r1 = SsdtDdlEmitter.emitSlices enriched |> mustOk |> ArtifactByKind.toMap
+    let r2 = SsdtDdlEmitter.emitSlices enriched |> mustOk |> ArtifactByKind.toMap
+    let body1 : SsdtDdlEmitter.SsdtFile = Map.find indexedKindKey r1
+    let body2 : SsdtDdlEmitter.SsdtFile = Map.find indexedKindKey r2
+    Assert.Equal<string> (body1.Body, body2.Body)

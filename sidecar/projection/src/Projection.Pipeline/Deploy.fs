@@ -420,6 +420,14 @@ module Deploy =
                 | CreateTable _ ->
                     do! flushBulk ()
                     appendDdl s
+                | CreateIndex _ ->
+                    // Chapter 4.1.A slice 3: CREATE INDEX is a DDL
+                    // statement, same realization shape as CREATE TABLE
+                    // (flush bulk inserts before issuing DDL; route
+                    // through Render.toSql which delegates to
+                    // ScriptDomGenerate per pillar 7).
+                    do! flushBulk ()
+                    appendDdl s
                 | SetIdentityInsert _ ->
                     do! flushBulk ()
                     appendDdl s

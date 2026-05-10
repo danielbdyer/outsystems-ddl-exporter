@@ -337,6 +337,34 @@ module ScriptDomBuild =
         stmt
 
     // -----------------------------------------------------------------------
+    // CREATE INDEX statement (chapter 4.1.A slice 3).
+    // -----------------------------------------------------------------------
+
+    /// Build a `CreateIndexStatement` for an `IndexDef`. Emits
+    /// `CREATE [UNIQUE] [NONCLUSTERED] INDEX [name] ON [schema].[table]
+    /// ([col1], [col2], ...);`. ScriptDom's `CreateIndexStatement`
+    /// carries the `Unique` flag, the `Name` identifier, the
+    /// `OnName` schema-object-name (the table), and a `Columns`
+    /// list of `ColumnWithSortOrder` (column reference + ASC/DESC).
+    /// V2 emits ASC by default per V1 convention; non-clustered is
+    /// implicit (ScriptDom emits NONCLUSTERED for non-PK indexes
+    /// per SQL Server defaults).
+    let buildCreateIndex (idx: IndexDef) : CreateIndexStatement =
+        let stmt = CreateIndexStatement()
+        stmt.Unique <- idx.IsUnique
+        stmt.Name <- bracketed idx.Name
+        stmt.OnName <- schemaObjectFromTableId idx.Table
+        for colName in idx.Columns do
+            let col = ColumnWithSortOrder()
+            let colRef = ColumnReferenceExpression()
+            let mid = MultiPartIdentifier()
+            mid.Identifiers.Add(bracketed colName)
+            colRef.MultiPartIdentifier <- mid
+            col.Column <- colRef
+            stmt.Columns.Add(col)
+        stmt
+
+    // -----------------------------------------------------------------------
     // Statement-level dispatch.
     // -----------------------------------------------------------------------
 
@@ -351,6 +379,8 @@ module ScriptDomBuild =
         | Comment _ -> None
         | CreateTable (table, cols, pk, fks) ->
             Some (buildCreateTable table cols pk fks :> TSqlStatement)
+        | CreateIndex idx ->
+            Some (buildCreateIndex idx :> TSqlStatement)
         | InsertRow (table, cells) ->
             Some (buildInsertRow table cells :> TSqlStatement)
         | SetIdentityInsert (table, enabled) ->
