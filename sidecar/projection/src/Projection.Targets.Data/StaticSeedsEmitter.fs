@@ -25,18 +25,6 @@ module StaticSeedsEmitter =
     [<Literal>]
     let version : int = 1
 
-    /// Collect the `StaticRow list` from a kind's `Modality` marks.
-    /// A kind may carry multiple `ModalityMark` variants; only `Static`
-    /// is consumed here. Returns `[]` for kinds without static
-    /// populations.
-    let private staticPopulations (k: Kind) : StaticRow list =
-        k.Modality
-        |> List.tryPick (fun m ->
-            match m with
-            | Static populations -> Some populations
-            | _                  -> None)
-        |> Option.defaultValue []
-
     /// Type-resolution lookup for a kind's columns. Returns the
     /// (column-name, primitive-type) pair for each attribute, so the
     /// renderer can format raw IR values as SQL literals.
@@ -140,7 +128,7 @@ module StaticSeedsEmitter =
     /// `Profile.CdcAwareness.CdcEnabled` membership selects the
     /// change-detection-predicate variant.
     let private kindToScript (cdc: CdcAwareness) (k: Kind) : DataInsertScript =
-        let populations = staticPopulations k
+        let populations = Kind.staticPopulations k
         if List.isEmpty populations then
             { Phase1Merges = []; Phase2Updates = []; Rendered = "" }
         else

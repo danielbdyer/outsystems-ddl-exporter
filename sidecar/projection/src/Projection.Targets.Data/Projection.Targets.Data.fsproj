@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <Compile Include="DataInsertScript.fs" />
+    <Compile Include="StaticPopulationEmitter.fs" />
     <Compile Include="StaticSeedsEmitter.fs" />
   </ItemGroup>
 

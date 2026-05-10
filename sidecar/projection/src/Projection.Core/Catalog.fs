@@ -280,6 +280,21 @@ module Kind =
     let primaryKey (k: Kind) : Attribute list =
         k.Attributes |> List.filter (fun a -> a.IsPrimaryKey)
 
+    /// The static-population rows attached to this kind via
+    /// `Modality.Static`, or `[]` if the kind carries no static
+    /// modality. Per A7 (static populations live in the catalog) +
+    /// the modality projection in `ModalityMark`. Two-consumer
+    /// extraction (StaticSeedsEmitter MERGE realization +
+    /// StaticPopulationEmitter typed-stream realization); the
+    /// projection lives in Core so both data-emission realizations
+    /// share one source-of-truth.
+    let staticPopulations (k: Kind) : StaticRow list =
+        k.Modality
+        |> List.tryPick (function
+            | Static rows -> Some rows
+            | _           -> None)
+        |> Option.defaultValue []
+
 
 [<RequireQualifiedAccess>]
 module Module =
