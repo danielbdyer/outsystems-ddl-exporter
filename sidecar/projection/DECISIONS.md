@@ -9440,4 +9440,124 @@ encoding is the canonical shape; the STAGING.md proposal carried
 a forwarding pointer (its substance was "name the flags upfront";
 the substance survives, the encoding refines).
 
+## 2026-05-10 — Chapter 4.1.B opens (CDC-aware data triumvirate; Phase 3 of V2-driver KPI critical path)
+
+**Context.** Per `V2_DRIVER.md` per-axis correctness stakes table,
+the highest-leverage single deliverable in the V2-driver KPI sequence
+is the **CDC-silence-on-idempotent-redeploy property test**: V1's
+MERGE applies UPDATE on every match (`StaticSeedSqlBuilder.cs:237`
+unconditional), which fires CDC capture rows on identical-content
+redeploys; consuming production features see "changes" that didn't
+happen. This is the property the cutover team most needs proven.
+
+**Resolution.** Chapter 4.1.B opens with `CHAPTER_4_1_B_OPEN.md`
+(strategic-frame eight-axis discipline per `DECISIONS 2026-05-15`)
+and ships its first two slices in this session:
+
+  - **Slice α (commit `fd38908`).** New `Projection.Targets.Data`
+    project (sibling to `Targets.SSDT` / `Targets.Json` /
+    `Targets.Distributions`). `DataInsertScript` + `DataInsertRow`
+    typed value foundation. `StaticSeedsEmitter v0` emits V1's
+    MERGE shape parity for `Modality.Static` kinds. T11 sibling-Π
+    keyset coverage; T1 byte-determinism; A18 amended (Catalog ×
+    Profile, never Policy). Slice α scope: NO change-detection
+    predicate yet (the CDC-noise closure lands at slice β).
+
+  - **Slice β (commit `2d8210e`).** The load-bearing semantic
+    addition. `Profile.CdcAwareness` field + `CdcAwareness` value
+    type (`CdcEnabled : Set<SsKey>`, `CdcInstance : Map<SsKey,
+    string>`). `StaticSeedsEmitter` now dispatches per-kind on
+    `CdcAwareness.isEnabled`: CDC-enabled kinds emit the change-
+    detection predicate per pre-scope §6:
+
+    ```sql
+    WHEN MATCHED AND (
+        Target.[col1] <> Source.[col1] OR
+        (Target.[col1] IS NULL AND Source.[col1] IS NOT NULL) OR
+        (Target.[col1] IS NOT NULL AND Source.[col1] IS NULL) OR
+        ...  -- repeat per non-key column
+    ) THEN UPDATE SET ...
+    ```
+
+    The predicate is nullable-aware (NULL ≠ NULL in SQL) and covers
+    every non-key column. Identical content → no condition fires →
+    no UPDATE → CDC capture-process emits no row. CDC-disabled
+    kinds keep V1's predicate-free WHEN MATCHED (V1 already proven
+    correct; CDC-noise irrelevant for non-tracked tables).
+
+**Why CdcAwareness lives on Profile, not Policy (A34 alignment).**
+CDC-enabled status is *evidence the deployed schema carries*, not
+intent the operator supplies. Two reasons it is Profile-shaped:
+
+  1. **A34 (Profile is independent of Catalog and Policy).** CDC
+     discovery does not reference Policy; CDC discovery is an
+     empirical observation made against the deployed schema.
+     Emitters that consume `CdcAwareness` are emitters that
+     consume Profile evidence — `Catalog × Profile`, A18 amended.
+  2. **The two-environment failure mode argues evidence over
+     intent.** If `CdcEnabled` were on Policy, the operator would
+     declare "this table is CDC-enabled" — but the operator does
+     not own that fact in production; the cutover team enabled
+     CDC and V2 must respect what *is*. Intent-shaped CDC
+     declaration would let an out-of-date Policy generate a
+     CDC-noise event by claiming a table is not tracked when it
+     actually is.
+
+**What this DOES NOT yet ship (gated on consumer demand).**
+
+  - **Slice γ — CDC-silence canary** (Docker-dependent property
+    test): `deploy → enable CDC → redeploy same artifact →
+    cdc.fn_cdc_get_all_changes returns ∅`. The structural
+    commitment IS in slice β; γ proves it operationally under
+    real SQL Server CDC. Deferred until the Docker substrate is
+    reliably available in the test environment.
+  - **Slice δ — Two-phase insertion (DeferredFkSet).** Cycle-
+    breaking for kinds in FK cycles. Lands when fixture surfaces
+    a real cycle (the chapter-3.1 enterprise canary's domain FK
+    chains do not cycle).
+  - **Slice ε — MigrationDependenciesEmitter.** Needs a
+    `MigrationDependencyContext` adapter (operator-published
+    rows pickup); separate slice when the chapter-team supplies
+    a fixture format.
+  - **Slice ζ — BootstrapEmitter.** Pass-through `UserRemap
+    Context = Map.empty` until chapter 4.2 ships.
+  - **Slice η — DataEmissionComposer + EmissionPolicy.Data
+    Composition DU.** Composer-level dispatch; lands at the
+    second emitter (slice ε is the trigger).
+
+**Provisional Data → SSDT dependency.** `Projection.Targets.Data`
+references `Projection.Targets.SSDT` for `Render.formatSqlLiteral`
+(the IR→SQL boundary primitive). Per `DECISIONS 2026-05-13 —
+Emergent primitives earn their place through multi-consumer
+demand`, two-consumer threshold (SSDT.RawTextEmitter +
+StaticSeedsEmitter) is met but the cross-target edge is awkward;
+promotion to a concept-shaped `Projection.Core.SqlLiteral` module
+lands at slice ε when MigrationDependenciesEmitter joins as the
+third consumer (N=3 distinct-shape pressure). Rationale documented
+in `Projection.Targets.Data.fsproj` ProjectReference comment.
+
+**Test surface.** 20 StaticSeedsEmitterTests (11 slice α + 9 slice
+β): T1 byte-determinism, T11 keyset, V1 MERGE clause shape,
+nullable-aware change-detection predicate (NULL-asymmetry both
+ways), every-non-key-column coverage, PK exclusion, per-kind
+dispatch, CdcAwareness invariants. 835 non-canary tests pass in 1s.
+
+**Pillar alignment.** Pillar 1 (typed values; `DataInsertRow` /
+`DataInsertScript` / `CdcAwareness` are concept-shaped records) ✓.
+Pillar 7 (gold-standard library precedence; `Render.formatSqlLiteral`
++ ScriptDom `Render.tableQualified` / `Render.quote` reused; future
+ScriptDom `MergeStatement` typed AST adoption deferred) — partial
+✓ with explicit deferral. Pillar 8 (concept-shaped naming;
+`StaticSeedsEmitter` / `CdcAwareness` / `change-detection predicate`
+all answer "what does this represent in the cutover-business
+domain") ✓.
+
+**Phase progress.** V2-driver KPI Phase 3 (chapter 4.1.B) is now
+actively in flight. Phases 1 (foundations), 2 (chapter 4.1.A
+schema), and the in-flight Phase 3 substantive surface together
+represent the bulk of the V2-driver structural commitment. Phase
+3 close depends on slice γ canary green; slice γ defers until
+Docker is reliably available.
+
+
 
