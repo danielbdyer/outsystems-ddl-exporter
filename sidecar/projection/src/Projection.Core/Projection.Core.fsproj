@@ -32,6 +32,7 @@
     <Compile Include="ArtifactByKind.fs" />
     <Compile Include="CatalogDiff.fs" />
     <Compile Include="PhysicalSchema.fs" />
+    <Compile Include="Tolerance.fs" />
     <Compile Include="Profile.fs" />
     <Compile Include="Policy.fs" />
     <Compile Include="TopologicalOrder.fs" />

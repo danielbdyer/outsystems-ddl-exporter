@@ -9310,4 +9310,134 @@ discipline (CLAUDE.md operating-disciplines table) plus this gate
 together close the "feature added; perf regressed; we noticed
 months later" failure mode by construction.
 
+## 2026-05-10 — Tolerance taxonomy (M4 slice α): typed `ToleratedDivergence` DU + `Set`-encoded `Tolerance` value object
+
+**Context.** R6 split-brain governance (`DECISIONS 2026-05-22`) and
+the cutover fallback ladder (`DECISIONS 2026-05-22 — T-30 / T-15`)
+both depend on a typed equivalence-class definition for "V1≈V2
+modulo named tolerances" and "source-deploy ≈ target-deploy modulo
+named tolerances." Until this slice landed, "tolerance" was a string
+vibe in canary-test comments and STAGING.md sketches; consumers
+could not enforce the discipline at the type level. R4 (multi-
+environment promotion property test) and the per-environment
+quotient flip both fan out from this primitive.
+
+**Resolution.** Slice α ships `Projection.Core.Tolerance` as a
+private-constructor value object wrapping `Set<ToleratedDivergence>`,
+where `ToleratedDivergence` is a closed DU enumerating
+empirically-grounded variants. Five variants land at slice α; the
+STAGING.md S0.E proposal sketched ~13 candidate flag names but the
+empirical cut at chapter 4.1.A retains only those with concrete
+canary or emitter evidence today:
+
+  - `HeaderCommentsOmitted` — `SsdtDdlEmitter.fs:94` ("V2 omits");
+  - `PostDeployForeignKeysSplit` — `CHAPTER_4_PRESCOPE_SSDT_DDL
+    _EMITTER.md:104` (cross-module FKs as PostDeploy script);
+  - `IndexesUnreflected` — `PhysicalSchema.fs:44` ("What's NOT
+    compared. ... Indexes (non-PK) ...");
+  - `StaticPopulationsUnreflected` — same docstring;
+  - `CommentMetadataUnreflected` — same docstring.
+
+The remaining STAGING.md candidates (`AttributeOrderInsensitive`,
+`NewlineNormalization`, `IgnoreNoCheckClause`, `IgnoreTriggers`,
+`IgnoreFingerprintHash`, `IgnoreV1OnlyKinds` etc.) are not yet
+empirically active; they remain available for closed-DU expansion
+when canary evidence demands them.
+
+**Encoding rationale.** STAGING.md's proposal used a flat `bool`
+record ("`IgnoreColumnLength : bool`, `IgnoreCheckConstraints :
+bool`, ..."). V2 ships `Set<ToleratedDivergence>` instead because:
+
+  1. **Pillar 1 (data-structure-oriented, no string parsing).**
+     A flat-bool record is "many parallel scalars without a
+     domain story." The `Set<ToleratedDivergence>` IS the
+     equivalence-class definition; membership says "this
+     divergence is accepted." The Set encoding makes the
+     concept explicit: a `Tolerance` is a *set of accepted
+     divergences*, not a row of flags.
+  2. **Pillar 8 (concept-shaped naming).** Each variant names
+     *what* the divergence IS, not *what to ignore*. Per the
+     pillar-8 four-question domain-naming analysis: variant
+     names answer "what does this represent in the cutover-
+     business domain" (e.g., "the V2 emitter omits source-
+     comment headers per `SsdtDdlEmitter.fs:94`"), not "what
+     does the comparator do" (which is action-shaped).
+  3. **Closed-DU expansion empirical-test discipline (`DECISIONS
+     2026-05-13`).** Adding a flag in a `bool` record is silent;
+     adding a `ToleratedDivergence` variant fires F#
+     exhaustiveness errors at every match site under
+     `TreatWarningsAsErrors=true`, including the in-module
+     `coverage` function that `allKnown` round-trips through.
+     The compile-time forcing function catches at-the-source
+     omissions; the runtime cardinality test (`Closed-DU
+     coverage: ToleratedDivergence.allKnown contains five
+     variants`) is the second-line guard.
+  4. **Smart-constructor encapsulation.** `Tolerance = private
+     Tolerance of Set<ToleratedDivergence>` ensures consumers
+     go through named operations (`withDivergence`,
+     `tolerates`, `divergences`, `isStrict`); accidental
+     construction with a wrong-shape set is impossible. Per
+     the AXIOMS.md operational principle of
+     structural-commitment-via-construction-validation.
+  5. **Algebraic shape.** `Set` membership composes naturally
+     with `Compare<Tolerance>` (S0.A): `t -> Catalog ->
+     Catalog -> Diff` quotients its inputs by the accepted-
+     divergence set. The bool-record shape would force every
+     comparator to remember field names; the Set shape lets
+     consumers iterate / fold / intersect generically.
+
+**Smart-constructor surface.**
+
+```fsharp
+val strict          : Tolerance                      // empty set
+val permissive      : Tolerance                      // all known variants
+val ofSet           : Set<ToleratedDivergence> -> Tolerance
+val withDivergence  : ToleratedDivergence -> Tolerance -> Tolerance
+val tolerates       : ToleratedDivergence -> Tolerance -> bool
+val divergences     : Tolerance -> Set<ToleratedDivergence>
+val isStrict        : Tolerance -> bool
+```
+
+The `strict` ↔ `permissive` named bracket is the cutover-ladder
+operational vocabulary: PROD targets `strict` per `DECISIONS
+2026-05-22 — T-30 / T-15`; DEV may run `permissive` while V2's IR
+matures; per-environment configuration carries its own
+`Tolerance` via `ofSet`.
+
+**What this slice does NOT include (gated on consumer demand).**
+
+  - **Quotient operator on `PhysicalSchemaDiff`** (slice β).
+    `applyTolerance : Tolerance -> PhysicalSchemaDiff ->
+    PhysicalSchemaDiff` — filters the diff per accepted
+    variants. Lands when the canary needs to absorb
+    `HeaderCommentsOmitted` differences in the file-set
+    comparator (R4 multi-env promotion).
+  - **YAML / TOML deserialization for per-environment config**
+    (slice γ). Lands when the cutover host shell needs to
+    read environment-keyed Tolerance configurations from disk.
+  - **R4 multi-environment promotion property test** — pairs
+    with slice β + γ; deferred to its own slice when DEV /
+    STAGING / PRE-PROD / PROD configurations have shipped.
+
+**Test surface added.** `tests/Projection.Tests/ToleranceTests.fs`
+(12 tests; `[<Fact>]` plus FsCheck `[<Property>]`) — covers
+smart-constructor invariants, `allKnown` cardinality, monotonicity
+of `withDivergence`, set-membership agreement of `tolerates`,
+strict / permissive bracket invariants, `Compare<Tolerance>`
+inhabitance.
+
+**Pillar alignment.** Pillar 1 (typed value, no string) ✓ — every
+divergence is a typed DU variant. Pillar 7 (gold-standard library
+precedence) ✓ — F#'s `Set` is the canonical use-case-specific
+library for the equivalence-class semantics. Pillar 8 (concept-
+shaped naming) ✓ — `Tolerance` (the equivalence-class), `Tolerated
+Divergence` (the named accepted divergence), variant names
+(`HeaderCommentsOmitted` etc.) are concept-shaped.
+
+**What this supersedes.** STAGING.md S0.E's bool-record sketch.
+The `Tolerance` smart-constructor + `Set<ToleratedDivergence>`
+encoding is the canonical shape; the STAGING.md proposal carried
+a forwarding pointer (its substance was "name the flags upfront";
+the substance survives, the encoding refines).
+
 

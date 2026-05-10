@@ -38,6 +38,7 @@
     <Compile Include="RefactorLogRenderTests.fs" />
     <Compile Include="ScriptDomRoundTripTests.fs" />
     <Compile Include="TypesTests.fs" />
+    <Compile Include="ToleranceTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
     <Compile Include="ProfileFixtures.fs" />
     <Compile Include="ProfileTests.fs" />
