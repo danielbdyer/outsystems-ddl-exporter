@@ -600,3 +600,62 @@ let ``Slice 5: T1 byte-determinism holds for FK fixture`` () =
     let childBody1 : SsdtDdlEmitter.SsdtFile = Map.find childKindKey r1
     let childBody2 : SsdtDdlEmitter.SsdtFile = Map.find childKindKey r2
     Assert.Equal<string> (childBody1.Body, childBody2.Body)
+
+// ---------------------------------------------------------------------------
+// Chapter 4.1.A slice 10 — SsdtBundle.compose composition.
+//
+// V0 composition (per chapter pre-scope §8 slice 10 + V2-driver KPI smart-
+// product-choices): SsdtFile per-kind .sql files + manifest.json into one
+// Map<RelativePath, string>. RefactorLog conditional integration + post-
+// deploy split defer to follow-on slices when chapter 3.5 cross-version
+// diff threading + Tolerance taxonomy (M4) land.
+//
+// Chapter 4.1.A close substantively follows this slice — slices 1+2+3+4+5+9
+// + 10 cover the in-flight surface; slices 6+7+8 reopen when chapter 3.2
+// SnapshotRowsets surfaces the IR widening they gate on.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Slice 10: SsdtBundle.compose produces N+1 entries (N SsdtFile per kind + 1 manifest)`` () =
+    let enriched = enrich sampleCatalog
+    let ssdtFiles = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let manifest = ManifestEmitter.emit enriched
+    let bundle = SsdtBundle.compose ssdtFiles manifest
+    let allKinds = Catalog.allKinds enriched
+    // N SsdtFile entries + 1 manifest.json entry.
+    Assert.Equal (List.length allKinds + 1, Map.count bundle)
+
+[<Fact>]
+let ``Slice 10: SsdtBundle.compose bundle contains manifest.json at directory root`` () =
+    let enriched = enrich sampleCatalog
+    let ssdtFiles = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let manifest = ManifestEmitter.emit enriched
+    let bundle = SsdtBundle.compose ssdtFiles manifest
+    Assert.True (Map.containsKey "manifest.json" bundle)
+    let manifestBody = Map.find "manifest.json" bundle
+    Assert.Contains ("Projection.Targets.SSDT.ManifestEmitter", manifestBody)
+
+[<Fact>]
+let ``Slice 10: SsdtBundle.compose bundle entries match SsdtFile per-kind RelativePath`` () =
+    let enriched = enrich sampleCatalog
+    let ssdtFiles = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let manifest = ManifestEmitter.emit enriched
+    let bundle = SsdtBundle.compose ssdtFiles manifest
+    for KeyValue(_, file) in ArtifactByKind.toMap ssdtFiles do
+        Assert.True (Map.containsKey file.RelativePath bundle, sprintf "expected %s in bundle" file.RelativePath)
+        let bundleBody = Map.find file.RelativePath bundle
+        Assert.Equal<string> (file.Body, bundleBody)
+
+[<Fact>]
+let ``Slice 10: T1 byte-determinism holds for the composed bundle`` () =
+    let enriched = enrich sampleCatalog
+    let ssdtFiles1 = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let manifest1 = ManifestEmitter.emit enriched
+    let bundle1 = SsdtBundle.compose ssdtFiles1 manifest1
+    let ssdtFiles2 = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let manifest2 = ManifestEmitter.emit enriched
+    let bundle2 = SsdtBundle.compose ssdtFiles2 manifest2
+    Assert.Equal (Map.count bundle1, Map.count bundle2)
+    for KeyValue(path, body1) in bundle1 do
+        let body2 = Map.find path bundle2
+        Assert.Equal<string> (body1, body2)
