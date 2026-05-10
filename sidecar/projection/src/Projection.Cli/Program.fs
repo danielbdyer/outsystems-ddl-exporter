@@ -135,10 +135,8 @@ let private runDeploy (inputPath: string) : int =
             match result with
             | Ok (outputs, report) ->
                 printfn
-                    "projection: emitted %d SSDT bundle entries, %d bytes of JSON, %d bytes of distributions"
+                    "projection: emitted %d SSDT bundle entries (JSON + distributions: typed JsonNode)"
                     (Map.count outputs.SsdtBundle)
-                    outputs.Json.Length
-                    outputs.Distributions.Length
                 if report.Ok then
                     printfn
                         "projection: deploy succeeded — database `%s`, %d table(s) landed"

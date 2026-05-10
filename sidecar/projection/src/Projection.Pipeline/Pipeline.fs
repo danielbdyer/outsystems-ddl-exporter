@@ -1,6 +1,7 @@
 namespace Projection.Pipeline
 
 open System.IO
+open System.Text.Json.Nodes
 open System.Threading.Tasks
 open Projection.Core
 open Projection.Adapters.Osm
@@ -44,13 +45,21 @@ module Compose =
             /// contents. Iterate to write to disk; consumers needing
             /// a single concatenated SQL string call `aggregateSsdt`.
             SsdtBundle : Map<string, string>
-            /// V2 IR JSON from `JsonEmitter`. Distinct from
-            /// `manifest.json` (the V1-mirror SSDT manifest).
-            Json : string
+            /// V2 IR JSON from `JsonEmitter`, typed as `JsonNode` so
+            /// consumers (drift detection, structural diff, post-write
+            /// enrichment) query the doc tree without a `JsonNode
+            /// .Parse` re-parse step. Per Tier-1 #3 (RawTextEmitter
+            /// retirement arc): the chapter 3.7 slice ε already typed
+            /// the per-kind value at the Π port; Tier-1 #3 lifts the
+            /// composition output to JsonNode at the Outputs seam.
+            /// Distinct from `manifest.json` (the V1-mirror SSDT
+            /// manifest in `SsdtBundle`).
+            Json : JsonNode
             /// Distributions JSON from `DistributionsEmitter`,
             /// consuming `Profile.empty` since the dogfood frame does
-            /// not yet thread profile evidence end-to-end.
-            Distributions : string
+            /// not yet thread profile evidence end-to-end. Same
+            /// JsonNode-at-the-seam treatment as `Json` above.
+            Distributions : JsonNode
         }
 
     /// Per-artifact relative path. Centralized so tests and the CLI
@@ -97,10 +106,17 @@ module Compose =
                  invalidOp (sprintf "Compose.project: SsdtDdlEmitter.emitSlices: %A" err))
         let json =
             (use _ = Bench.scope "emit.json"
-             JsonEmitter.emit catalog)
+             // Per Tier-1 #3: parse once at project time so the
+             // Outputs seam is JsonNode-typed. Downstream consumers
+             // query the tree without re-parse.
+             match JsonNode.Parse(JsonEmitter.emit catalog) with
+             | null -> invalidOp "Compose.project: JsonEmitter.emit produced unparseable text (unreachable)"
+             | n    -> n)
         let distributions =
             (use _ = Bench.scope "emit.distributions"
-             DistributionsEmitter.emit catalog Profile.empty)
+             match JsonNode.Parse(DistributionsEmitter.emit catalog Profile.empty) with
+             | null -> invalidOp "Compose.project: DistributionsEmitter.emit produced unparseable text (unreachable)"
+             | n    -> n)
         {
             SsdtBundle    = bundle
             Json          = json
@@ -146,8 +162,12 @@ module Compose =
                 absPath)
         let jsonPath = Path.Combine(outputDir, ArtifactPath.json)
         let distributionsPath = Path.Combine(outputDir, ArtifactPath.distributions)
-        File.WriteAllText(jsonPath, outputs.Json)
-        File.WriteAllText(distributionsPath, outputs.Distributions)
+        // Per Tier-1 #3: serialize JsonNode at the file-system boundary.
+        // The Outputs seam is typed; the disk artifact is canonical
+        // JSON text per `JsonNode.ToJsonString`.
+        let jsonOpts = System.Text.Json.JsonSerializerOptions(WriteIndented = true)
+        File.WriteAllText(jsonPath, outputs.Json.ToJsonString(jsonOpts))
+        File.WriteAllText(distributionsPath, outputs.Distributions.ToJsonString(jsonOpts))
         bundlePaths @ [ jsonPath; distributionsPath ]
 
     /// Full end-to-end: read V1 JSON from disk, project, write
