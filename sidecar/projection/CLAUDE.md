@@ -17,9 +17,15 @@ substantive surfaces are unchanged.
 5-minute orientation that points at the canonical surfaces in the order
 below. Per `DECISIONS 2026-05-22 — CLAUDE.md reading-order update`,
 `VISION.md` is item 2 (the strategic frame for the cutover); the
-companion strategic surfaces (`SPINE.md`, `PLAYBOOK.md`, `STAGING.md`,
-`BACKLOG.md`) are **on-demand** references — read when the relevant
-work surfaces them, not as part of the canonical first-read pass.
+companion strategic surfaces (`SPINE.md`, `PLAYBOOK.md`, `STAGING.md`)
+are **on-demand** references — read when the relevant work surfaces
+them, not as part of the canonical first-read pass.
+
+**`V2_DRIVER.md`** (codified 2026-05-10 chapter 3.7 sidebar; principal-PO
+discussion) is the destination-KPI document AND the operative backlog
+(supersedes the prior `BACKLOG.md` which is now a forwarding pointer).
+Read it before any chapter open; it codifies V2-driver as the project's
+north star and orders the remaining chapters under the V2-driver KPI.
 
 1. **`HANDOFF.md`** — bridge letter from the most-recent-closed
    chapter. Short on purpose. Names what is load-bearing and what
@@ -30,7 +36,7 @@ work surfaces them, not as part of the canonical first-read pass.
    criteria; cutover fallback ladder. Read for the *why*. Companion
    strategic surfaces (`SPINE.md` for the categorical structure;
    `PLAYBOOK.md` for technical guidance; `STAGING.md` for the Stage
-   0 foundation phase; `BACKLOG.md` for the full ~375-item
+   0 foundation phase; `V2_DRIVER.md` for the full ~375-item
    inventory) are referenced on demand.
 3. **`CHAPTER_3_1_CLOSE.md`** — chapter-3.1 close synthesis (sessions
    27–36). The canary chapter. Read for the M1–M3 milestone sequence;
@@ -101,6 +107,7 @@ of them, write the amendment first.
 
 | Discipline | Where to find the rationale |
 |---|---|
+| **V2-driver as destination KPI (the project's north star)** — V2 reaches V2-driver mode for the cutover by being provably correct on every axis V2 owns (schema, data, identity, diagnostics, and any future sibling), with provable correctness defined as structural-type-level enforcement plus per-axis property tests. Every chapter, every slice, every primitive design biases toward V2-driver. V2-augmented is the gate; V2-driver is the destination. V1 stays warm through cutover+30 as fallback; V1 sunset begins after one full schema-evolution cycle on V2 emissions. The CDC-silence-on-idempotent-redeploy property test (chapter 4.1.B) is the highest-leverage single deliverable in the entire chapter sequence. | `V2_DRIVER.md` (the standalone codification document; supersedes the implicit "V2-augmented as floor; V2-driver as aspirational" framing in `DECISIONS 2026-05-22 — R6: Split-brain governance rule`); `DECISIONS 2026-05-10 — V2-driver as destination KPI` (the formal codification entry) |
 | **Domain-first naming and ubiquitous-language consistency (pillar 8; chapter 3.7 sidebar)** — every named type / function / file / module / test in V2 MUST embody the four-question domain-naming analysis BEFORE the name is committed: (1) what domain concept does this represent (articulate it in cutover-business terms); (2) does V2 already name this concept somewhere (use the same name; ubiquitous-language consistency across Core / Adapters / Targets / Pipeline / CLI); (3) is the proposed name concept-shaped (what it IS) or action-shaped (what it DOES); (4) generic-suffix smell test — Helper / Util / Manager / Service / Handler / Processor / Wrapper / Builder / Factory / Provider stop the agent. If #4 fires, find the concept (rename) or restructure (the concept is being squashed). The named failure mode is **domain-blind naming**: when a name answers "what does this DO" rather than "what does this REPRESENT in the domain." Fails to put the domain concept in the type system; the agent feels productive (a name exists; the code compiles) without doing the domain-modeling work. **No lint enforcement** — heuristic syntactic checks misfire on legitimate uses (e.g., `LineageBuffer` is concept-shaped despite the "Buffer" suffix). The discipline-document path catches what the heuristic can't. See `PLAYBOOK.md` decision tree "When you reach for a name" for the executable form. Worked precedents (concept-shaped, ubiquitous): `Catalog` / `Module` / `Kind` / `Reference` / `SsKey` / `RemovalReason` / `AnnotationDetail` / `Coordinates.TableId` / `RawValueCodec` / `SqlTypeCorrespondence` / `BatchSplitter` / `DatabaseNameGenerator` / `EmissionPolicy` / `LineageBuffer`. Worked rename: `T11TypeTheoremTests.fs` → `SiblingEmitterContractTests.fs` (chapter 3.7 slice ε; concept-shaped name names what the file IS, not which theorem ID it cites). | `DECISIONS 2026-05-10` — Domain-first naming and ubiquitous-language consistency (pillar 8) |
 | **LINT-ALLOW substantive-rationale discipline** (chapter 3.7 sidebar; pillar 7 amendment) — every per-line `LINT-ALLOW` marker on a string-composition / built-in-substitute site MUST embody the four-question analysis BEFORE the marker is committed: (1) what is the use-case-specific library; (2) is it already in the codebase; (3) what is the cost of using it (visibility lift + perf class + dep weight); (4) is there a structural reason it doesn't apply. If #4 is "no," there is no shortcut — there is the work (lift visibility, add helper, refactor call site). The named failure mode is **performance-of-compliance**: a marker shaped like an audit trail without the substance. The lint passes, the vocabulary fits, the tests are green — and the structural commitment is unmet. The discipline document does the catching the heuristic can't. See `PLAYBOOK.md` decision tree "When you reach for a string-composition primitive" for the executable form. Lint Rule 27 maintains an inventory + soft floor; substance lives in the discipline. | `DECISIONS 2026-05-10` — LINT-ALLOW substantive-rationale discipline (worked counterfactual: slice-β `Render.columnSqlType` shortcut → slice-β' ScriptDom delegation; cost was 87 LOC) |
 | **Audit during validation** — when something second-order surfaces during the work, act on it before shipping. Five paydowns across sessions 4, 5, 7, 8, 11; three more during session 14. | `DECISIONS 2026-05-09 — Audits surface things not on the agenda` (line 764) |

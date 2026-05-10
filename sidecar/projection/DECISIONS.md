@@ -8764,6 +8764,70 @@ architectural improvement, not the marker count.
 
 ---
 
+## 2026-05-10 — V2-driver as destination KPI (chapter 3.7 sidebar; principal-PO discussion)
+
+**Status:** decided
+**Codified at:** `V2_DRIVER.md` (standalone canonical surface; supersedes `BACKLOG.md` which is now a forwarding pointer).
+**Resolves:** the implicit ambiguity in `DECISIONS 2026-05-22 — R6: Split-brain governance rule for the dual-track cutover window` about whether V2-driver was the destination or the stretch goal. R6's transition mechanism (per-environment-per-artifact-type V2-driver transition gated on N=10 consecutive green canary runs plus operator sign-off) is preserved unchanged; what shifts is the *direction* of the gate.
+
+**Context.** The principal-PO discussion at chapter 3.7 sidebar (this date) clarified the project's primary KPI: **provable correctness across every axis V2 owns** is the primary motivation, not just verification of V1's outputs. The cutover (~late July 2026 per operator estimate; ~80 days from this codification) is V1-functional already; V2's job is to make every axis it owns provably correct so the cutover is verifiable end-to-end and so V1 sunset becomes a real plan post-cutover.
+
+The R6 entry as written framed three rungs of a fallback ladder: V1-only / V2-augmented (V1 drives, V2 verifies) / V2-driver (V2 emits production artifacts; V1 stays warm through cutover+30 as fallback). It was operationally precise about *how* the transition happens but ambiguous about *whether* V2-driver was the destination. The ambiguity led to a legitimate "save LOC; V2-augmented as destination" framing that, under examination, conflicted with the operator's primary motivation. This entry resolves the ambiguity.
+
+**Decision.** **V2-driver is the destination.** V2-augmented is the gate to V2-driver, not the floor; V1-only is the cutover-window safety net, not the sustained operating mode. The fallback ladder operates as before; the gate direction shifts to "we progress per-environment-per-artifact-type as fast as the per-axis property tests support." V1 stays warm through cutover+30 (per existing T-30 / T-15 ladder rule, unchanged); V1 sunset begins after the cutover-survival window AND all four environments have run V2 emissions for one full schema-evolution cycle without canary divergence.
+
+**The KPI in one sentence.** V2 reaches V2-driver mode for the cutover by being provably correct on every axis V2 owns — schema, data, identity, diagnostics, and any future sibling — with provable correctness defined as structural-type-level enforcement plus per-axis property tests, not aspirational discipline plus selective coverage.
+
+**Operationally.** Every chapter, every slice, every architectural decision in V2 from this date forward biases toward V2-driver. When two paths offer the same correctness with different LOC, prefer fewer LOC. When two paths offer different correctness depth, prefer the deeper correctness — even if the LOC investment is larger.
+
+**The CDC-silence-on-idempotent-redeploy property test (chapter 4.1.B) is the highest-leverage single deliverable in the entire chapter sequence** (per the per-axis stakes table in `V2_DRIVER.md`). Build it first inside chapter 4.1.B; gate the chapter close on it; run a dry-run on at least one CDC-enabled table at production shape before chapter close.
+
+**Per-axis correctness depth (excerpted; full table in `V2_DRIVER.md`):**
+
+| Axis | Failure mode if wrong | Verification depth |
+|---|---|---|
+| CDC silence on idempotent redeploy | Spurious change records corrupt CDC-dependent features silently | **Highest.** Per-CDC-table coverage; multi-redeploy property; CI gate red on any non-zero. |
+| Schema (SSDT DDL) | Production deploy fails or deploys wrong shape | High. Mostly shipped (chapter 3.1). |
+| Data (static populations + seeds + bootstrap) | Seed data missing/duplicated/topologically out-of-order | High. Substrate ready; emitters chapter 4.1.B. |
+| User FK reflow | Production reports break or data loss | High. Chapter 4.2. |
+| RefactorLog round-trip | Cross-version identity tracking breaks | High. Chapter 3.5 θ/ι. |
+| Multi-environment promotion | Per-env policy divergence not caught until second env deploys | Medium-high. Tolerance taxonomy (M4) is the decision surface. |
+| DACPAC round-trip | DACPAC erases axes silently; SSDT and DACPAC diverge | Medium-high. Chapter 3.x; conditional on deploy path. |
+| Operational diagnostics | Operator can't diagnose post-cutover issues | Lower. Chapter 4.3. |
+
+**Chapter sequencing under V2-driver KPI** (full sequence in `V2_DRIVER.md`):
+
+| Phase | Chapter | Status | Critical-path? |
+|---|---|---|---|
+| Phase 1 | Chapter 3.5 (Π port + RefactorLog + CatalogDiff) | In-flight | YES |
+| Phase 2 | Chapter 4.1.A + Tolerance + multi-env | Not-started | YES |
+| Phase 3 | Chapter 4.1.B (CDC-critical) | Not-started | YES |
+| Phase 4 | Chapter 4.2 (User FK reflow) | Not-started | YES |
+| Phase 5 | Chapter 4.3 (operational diagnostics) | Not-started | YES |
+| Phase 6 | Chapter 3.x DacpacEmitter | Not-started | Conditional on deploy path |
+| Phase 7 | Chapter 3.2 SnapshotRowsets | Not-started | YES (cross-version identity stability) |
+| Phase 8 | Chapter 5+ pragmatic close | Deferred-with-trigger | Consumer-pressure-driven |
+
+**What V1 retains under V2-driver mode.** V2 does not duplicate V1 surfaces that don't add provability. V1 retains: live SQL extraction (V2 consumes V1's evidence cache); the V1 manifest as evidence source (not as deploy artifact); the V1 documentation surfaces V2 doesn't duplicate (`handbook/` operator teaching material, `ssdt-playbook/` per-change-tier mechanics); operator-facing CLI surfaces during transition (per-env per-artifact-type R6 governance); V1 stays warm through cutover+30 as fallback. V1's role under V2-driver is **upstream evidence + safety net**, not co-driver.
+
+**The disciplines that compound under this KPI.** The eight pillars in the supreme operating discipline (top of this file) and the two named failure modes (performance-of-compliance; domain-blind naming) are exactly the substrate provable correctness needs. Each pillar protects against a class of runtime-only invariant. Pillar 1 (data-structure-oriented), pillar 3 (built-in obligation), pillar 7 (gold-standard library precedence + LINT-ALLOW substantive-rationale amendment), pillar 8 (domain-first naming) all serve the V2-driver KPI directly. The two-consumer threshold + IR-grows-under-evidence prevent speculative LOC; provable correctness requires the right code with provable properties, not more code. Closed-DU expansion empirical-test discipline + bench-driven optimization protocol + iterator-logging-as-first-class-outcome compound across chapters.
+
+**What this KPI is NOT.** Not "ship faster" (the constraint is rigor, not date); not "more code at any cost" (smart-product-choices framing applies); not "less rigor in some places" (per-axis stakes vary, but discipline floor is uniform); not "skip V2-augmented" (V2-augmented IS the gate); not "V1 must sunset on a deadline" (sunset is conditional on cutover+30 + one full schema-evolution cycle + operator confirmation); not a deadline-driven framing (the cutover is V1-functional already; V2's job is provable correctness, not delivery speed).
+
+**Operating implications for chapter agents.** When opening a chapter: name the axes the chapter advances per the per-axis stakes table; state explicitly which property tests the chapter will make hold; state explicitly what V1 capability the chapter is making V2 own. When choosing the next slice: prefer slices that advance an axis V2 is committing to own under V2-driver; defer slices that are quality-of-life without advancing a V2-driver axis. When considering primitive extraction: the two-consumer threshold still applies; do NOT extract speculatively. When considering whether to defer a chapter: chapters 4.1.B / 4.2 / 4.3 / 3.x / 3.2 are NOT optional under V2-driver KPI; sequence them, don't skip them.
+
+**Reasoning / consequences.**
+
+This entry codifies what was previously implicit. R6 governance was framed in terms of "we'll progress along the ladder per-environment-per-artifact-type" — meaning V2-augmented is the floor, V2-driver is aspirational. Under examination at the principal-PO sidebar, that framing was incomplete: V2-driver is the operative target, not the stretch goal. V2-augmented is the *gate* by which the operator earns confidence in V2-driver per environment per artifact type; once the gate clears, V2-driver is the operating mode.
+
+The codification has structural impact on chapter sequencing: chapters 4.1.B (data triumvirate; CDC-critical), 4.2 (User FK reflow), 4.3 (operational diagnostics), 3.x (DacpacEmitter conditionally), 3.2 (SnapshotRowsets) become critical-path under V2-driver KPI. Pre-V2-driver-KPI codification, these chapters were "on the backlog" with implicit "if cutover deadline allows" framing. The KPI clarifies they ARE the deliverable.
+
+The codification has structural impact on every chapter agent's decision-making: bias toward V2-driver. The disciplines codified in the supreme operating discipline ARE the substrate for the KPI; the chapter-close ritual + per-axis property tests + AXIOMS amendments are the verification surface.
+
+The standalone document `V2_DRIVER.md` is the canonical surface; this DECISIONS entry is the formal codification reference. The two surfaces share substance; `V2_DRIVER.md` is the operative read for chapter agents (extends to cover the operative backlog supersedes `BACKLOG.md`); this DECISIONS entry is the chronological codification record.
+
+---
+
 ## 2026-05-10 — Domain-first naming and ubiquitous-language consistency (pillar 8; chapter 3.7 sidebar)
 
 **Status:** decided

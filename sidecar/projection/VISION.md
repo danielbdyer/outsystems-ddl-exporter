@@ -3,7 +3,7 @@
 > **Documentation map.** This is the canonical vision document for V2 (the F# sidecar of the OutSystems DDL exporter). The current vision is the body of this file; the original revision-1 vision is preserved verbatim at the end as historical context. The four-subagent review that produced revision 2 — synthesis, reasoning resolutions R1–R8, and eight verbatim subagent reports (Appendices A–H) — lives in `VISION_REVIEW.md`. Tactical decisions live in `DECISIONS.md`; algebraic claims in `AXIOMS.md`; chapter-bridge context in `HANDOFF.md`; V1↔V2 placement in `ADMIRE.md`.
 >
 > **Companion strategic surfaces** (added 2026-05-08):
-> - `BACKLOG.md` — ~375 inventoried items by chapter, status, disposition.
+> - `V2_DRIVER.md` — destination KPI (V2-driver mode for the cutover) + operative backlog (chapter-by-chapter sequencing; ~375 items by chapter, status, disposition). **Codified 2026-05-10 chapter 3.7 sidebar; supersedes the prior `BACKLOG.md` which is now a forwarding pointer.** Read this before opening any chapter.
 > - `PLAYBOOK.md` — technical guidance bridging vision to implementation; recurring patterns; decision trees; anti-patterns; per-chapter strategic notes.
 > - `SPINE.md` — the deeper structural rendering: the system as a category; seven primitives; seven tessellating patterns; six structural inferences (sheaf, adjunction, Hom-set, quotient, continuation, tessellation instance); ten concrete leverage points.
 > - `STAGING.md` — Stage 0 foundation phase: the work to ship *before* chapter 3.1 opens; twelve dependencies that compound across every subsequent chapter.
