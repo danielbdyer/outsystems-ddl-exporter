@@ -83,11 +83,21 @@ module ScriptDomBuild =
 
     /// Build a `SqlDataTypeReference` carrying the type expression
     /// (length / precision / scale parameters per V2's defaults).
-    /// Mirrors `Render.columnSqlType` semantics: `NVARCHAR(N)` /
-    /// `NVARCHAR(MAX)`; `VARBINARY(N)` / `VARBINARY(MAX)`;
+    /// `NVARCHAR(N)` / `NVARCHAR(MAX)`; `VARBINARY(N)` / `VARBINARY(MAX)`;
     /// `DECIMAL(P, S)` / `DECIMAL(P, 0)` / `DECIMAL(18, 4)`; fixed
     /// types pass through.
-    let private dataTypeReference
+    ///
+    /// Public surface (chapter-3.7 slice β'): `Render.columnSqlType`
+    /// delegates here + through `ScriptDomGenerate.generateDataType`
+    /// so the SQL DDL type expression has exactly one source of
+    /// truth — the typed AST built here, rendered by ScriptDom's
+    /// `Sql160ScriptGenerator`. Per pillar 7 (gold-standard library
+    /// precedence), the use-case-specific library IS the emission
+    /// path; previously `Render.columnSqlType` composed type strings
+    /// via `String.Concat` (`sqlTypeWithLength`, `sqlDecimal`),
+    /// which the chapter-3.7 audit found in violation of pillar 1
+    /// (data-structure-oriented).
+    let dataTypeReference
         (typ: PrimitiveType)
         (length: int option)
         (precision: int option)

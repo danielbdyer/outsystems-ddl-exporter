@@ -10,7 +10,6 @@ namespace Projection.Targets.SSDT
 //   AST + a dedicated serializer (e.g., ScriptDom for SQL).
 
 open System
-open System.Globalization
 open System.Text
 open Projection.Core
 
@@ -24,18 +23,17 @@ open Projection.Core
 /// Per the no-string-concatenation discipline (`DECISIONS 2026-05-09`),
 /// SQL fragments compose via `String.Concat` (BCL multi-arg overload,
 /// no array allocation) and `String.concat` (BCL collection joiner)
-/// rather than `sprintf` or `+`. Integer formatting goes through
-/// `Int32.ToString CultureInfo.InvariantCulture` to keep T1
-/// byte-determinism culture-invariant by construction.
+/// rather than `sprintf` or `+`. As of chapter-3.7 slice β', the SQL
+/// DDL type expression (`columnSqlType`) flows through ScriptDom's
+/// typed `SqlDataTypeReference` AST emitted by `Sql160ScriptGenerator`
+/// — pillar 7 (gold-standard library) supersedes the per-call
+/// composition for that surface. Identifier quoting goes through
+/// `ScriptDom.Identifier.EncodeIdentifier`. The remaining
+/// `String.Concat` sites (string-literal quoting, `N'…'` Text prefix)
+/// stay because they're terminal text-formatting (escape sequences)
+/// for which no use-case-specific BCL primitive exists.
 [<RequireQualifiedAccess>]
 module Render =
-
-    /// Invariant-culture integer formatting. `int.ToString` without
-    /// arguments respects current culture for some derivations; the
-    /// invariant-culture form is byte-deterministic across runs and
-    /// platforms.
-    let private intInv (i: int) : string =
-        i.ToString CultureInfo.InvariantCulture
 
     /// Bracket-quote an identifier. Per chapter 3.5 deep audit
     /// (2026-05-09): the use-case-specific library for SQL identifier
@@ -66,55 +64,28 @@ module Render =
                 Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier t.Table
             |])
 
-    /// `<typeName>(<length>)` SQL type expression. Composes a typed
-    /// 4-tuple of segments via `String.Concat`; no `sprintf`.
-    let private sqlTypeWithLength (typeName: string) (length: int) : string =
-        String.Concat(typeName, "(", intInv length, ")")
-
-    /// `DECIMAL(<precision>, <scale>)` SQL type expression. The base
-    /// name flows through `SqlTypeCorrespondence.baseName Decimal`
-    /// (chapter-3.7 slice β) so the forward direction here can never
-    /// drift from the inverse classification in
-    /// `SqlTypeCorrespondence.ofSqlDataType`.
-    let private sqlDecimal (precision: int) (scale: int) : string =
-        // `String.Concat`'s params overload covers 6 parts; allocates
-        // a small array but stays O(1) on input shape.
-        String.Concat(
-            SqlTypeCorrespondence.baseName Decimal,
-            "(",
-            intInv precision,
-            ", ",
-            intInv scale,
-            ")")
-
-    /// IR `(Type, Length, Precision, Scale)` → SQL type expression.
-    /// Shared by emit (`toText`) and deploy paths so the two never
-    /// drift.
+    /// IR `(Type, Length, Precision, Scale)` → SQL DDL type
+    /// expression. Shared by emit (`toText`) and deploy paths so
+    /// the two never drift.
     ///
-    /// The base type name (`INT`, `NVARCHAR`, `DECIMAL`, ...) flows
-    /// through `SqlTypeCorrespondence.baseName` so the forward and
-    /// inverse halves of the type-correspondence bounded context
-    /// share a single source of truth (chapter-3.7 slice β; audit
-    /// Tier-1 #8). The parameterization (`(N)` for Text/Binary,
-    /// `(P, S)` for Decimal, `(MAX)` fallback) is SSDT-emission
-    /// concern and stays in this module.
+    /// **Pillar 7 cash-out (chapter-3.7 slice β').** The use-case-
+    /// specific library for SQL DDL type expression is ScriptDom's
+    /// `SqlDataTypeReference` typed AST + `Sql160ScriptGenerator`
+    /// emitter. `ScriptDomBuild.dataTypeReference` builds the typed
+    /// fragment; `ScriptDomGenerate.generateDataType` renders it
+    /// through the pinned-options generator. The forward direction
+    /// here goes *exclusively* through that path; no `String.Concat`
+    /// segments at the call site.
+    ///
+    /// The earlier per-call composition (`sqlTypeWithLength`,
+    /// `sqlDecimal`) and its `String.Concat` dispatch retired with
+    /// this slice — gold-standard library replaces the hand-rolled
+    /// composition. Pillar 1 (data-structure-oriented over string-
+    /// parsing) holds: typed `DataTypeReference` flows through; the
+    /// string emerges only at ScriptDom's BCL writer boundary.
     let columnSqlType (c: ColumnDef) : string =
-        match c.Type with
-        | Text ->
-            match c.Length with
-            | Some n when n > 0 -> sqlTypeWithLength (SqlTypeCorrespondence.baseName Text) n
-            | _ -> System.String.Concat(SqlTypeCorrespondence.baseName Text, "(MAX)")  // LINT-ALLOW: terminal SQL DDL emission boundary; both segments are typed (closed-DU dispatch + literal)
-        | Binary ->
-            match c.Length with
-            | Some n when n > 0 -> sqlTypeWithLength (SqlTypeCorrespondence.baseName Binary) n
-            | _ -> System.String.Concat(SqlTypeCorrespondence.baseName Binary, "(MAX)")  // LINT-ALLOW: terminal SQL DDL emission boundary; both segments are typed (closed-DU dispatch + literal)
-        | Decimal ->
-            match c.Precision, c.Scale with
-            | Some p, Some s -> sqlDecimal p s
-            | Some p, None -> sqlDecimal p 0
-            | _ -> System.String.Concat(SqlTypeCorrespondence.baseName Decimal, "(18, 4)")  // LINT-ALLOW: terminal SQL DDL emission boundary; default-decimal preserved
-        | (Integer | Boolean | DateTime | Date | Time | Guid) as fixedType ->
-            SqlTypeCorrespondence.baseName fixedType
+        ScriptDomBuild.dataTypeReference c.Type c.Length c.Precision c.Scale
+        |> ScriptDomGenerate.generateDataType
 
     /// Quote a string literal as `'<raw>'`. SQL injection isn't a
     /// concern for emitter output (the IR is the input contract);

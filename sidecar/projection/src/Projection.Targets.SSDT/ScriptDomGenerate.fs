@@ -110,6 +110,28 @@ module ScriptDomGenerate =
         generator.GenerateScript(stmt :> TSqlFragment, &text)
         text |> Option.ofObj |> Option.defaultValue ""
 
+    /// Generate T-SQL text for any `TSqlFragment` sub-tree (data type
+    /// references, identifiers, expressions) that doesn't constitute a
+    /// full statement. Used by `Render.columnSqlType` (chapter-3.7
+    /// slice β') so the SQL DDL type expression flows through
+    /// ScriptDom's typed AST rather than being composed via
+    /// `String.Concat` at the call site. Pillar 7 cash-out: the
+    /// gold-standard library emits the structure; V2 delegates.
+    ///
+    /// **Perf:** instantiates a fresh `Sql160ScriptGenerator` per call.
+    /// Per the chapter-3.5 ScriptDom adoption pattern (`generateOne`
+    /// also instantiates per call), the pinned-options object is
+    /// allocated per call as well; ScriptDom's generator state is
+    /// stateful so sharing across calls would alias options. Bench
+    /// label `scriptDom.generateDataType` surfaces the per-call cost
+    /// in the rollup table.
+    let generateDataType (fragment: DataTypeReference) : string =
+        use _ = Bench.scope "scriptDom.generateDataType"
+        let generator = Sql160ScriptGenerator(pinnedOptions ())
+        let mutable text : string | null = null
+        generator.GenerateScript(fragment :> TSqlFragment, &text)
+        text |> Option.ofObj |> Option.defaultValue ""
+
     /// Render a comment line through the SSDT-canonical inline
     /// comment form. Per chapter 3.5 deep audit (2026-05-09):
     /// considered alternatives —
