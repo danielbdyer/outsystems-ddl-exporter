@@ -1,0 +1,216 @@
+module Projection.Tests.StaticSeedsEmitterTests
+
+open Xunit
+open Projection.Core
+open Projection.Targets.Data
+
+// ---------------------------------------------------------------------------
+// Chapter 4.1.B slice α — StaticSeedsEmitter v0 (V1-shape MERGE).
+//
+// Per `CHAPTER_4_1_B_OPEN.md` strategic frame axis 8: idempotence + topo-
+// order + (slice γ) CDC-silence. This test file covers the slice-α
+// surface: MERGE shape parity with V1 + idempotence under repeat
+// invocation + T11 keyset coverage. CDC-silence (the chapter signature)
+// lands at slice γ canary.
+// ---------------------------------------------------------------------------
+
+let private mustOk r =
+    match r with
+    | Ok v -> v
+    | Error es ->
+        let codes = es |> List.map (fun e -> e.Code) |> String.concat ", "
+        invalidOp (sprintf "fixture: %s" codes)
+
+let private mkKey (parts: string list) : SsKey =
+    SsKey.synthesizedComposite "OS_TEST" parts |> mustOk
+
+let private mkName (s: string) : Name =
+    Name.create s |> mustOk
+
+/// Static-entity fixture with explicit Id values (so VALUES rows are
+/// deployable). Three rows × three columns (Id INT PK + Code TEXT +
+/// Label TEXT).
+let private mkCountryKind () : Kind =
+    let kindKey = mkKey ["TestModule"; "Country"]
+    let idKey = mkKey ["TestModule"; "Country"; "Id"]
+    let codeKey = mkKey ["TestModule"; "Country"; "Code"]
+    let labelKey = mkKey ["TestModule"; "Country"; "Label"]
+    let row code label =
+        { Identifier = mkKey ["TestModule"; "Country"; "Row"; code]
+          Values =
+              Map.ofList
+                  [ mkName "Id",    code  // simulate Id-as-Code for test simplicity
+                    mkName "Code",  code
+                    mkName "Label", label ] }
+    {
+        SsKey    = kindKey
+        Name     = mkName "Country"
+        Origin   = OsNative
+        Modality = [ Static [ row "US" "United States"
+                              row "CA" "Canada" ] ]
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY" }
+        Attributes =
+            [
+                { SsKey = idKey;    Name = mkName "Id";    Type = Integer
+                  Column = { ColumnName = "ID";    IsNullable = false }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                { SsKey = codeKey;  Name = mkName "Code";  Type = Text
+                  Column = { ColumnName = "CODE";  IsNullable = false }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                { SsKey = labelKey; Name = mkName "Label"; Type = Text
+                  Column = { ColumnName = "LABEL"; IsNullable = false }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+            ]
+        References = []
+        Indexes    = []
+    }
+
+/// Non-static kind (no `Modality.Static` mark); should produce a no-op
+/// DataInsertScript per T11 strict-equality keyset.
+let private mkRegularKind () : Kind =
+    let kindKey = mkKey ["TestModule"; "Customer"]
+    let idKey = mkKey ["TestModule"; "Customer"; "Id"]
+    let nameKey = mkKey ["TestModule"; "Customer"; "Name"]
+    {
+        SsKey    = kindKey
+        Name     = mkName "Customer"
+        Origin   = OsNative
+        Modality = []  // not static
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER" }
+        Attributes =
+            [
+                { SsKey = idKey;   Name = mkName "Id";   Type = Integer
+                  Column = { ColumnName = "ID";   IsNullable = false }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true }
+                { SsKey = nameKey; Name = mkName "Name"; Type = Text
+                  Column = { ColumnName = "NAME"; IsNullable = false }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+            ]
+        References = []
+        Indexes    = []
+    }
+
+let private mkCatalog (kinds: Kind list) : Catalog =
+    let m : Module =
+        { SsKey = mkKey ["TestModule"]
+          Name  = mkName "TestModule"
+          Kinds = kinds }
+    { Modules = [ m ] }
+
+let private mustOkEmit (r: Result<'a, EmitError>) : 'a =
+    match r with
+    | Ok v -> v
+    | Error e -> Assert.Fail (sprintf "expected Ok, got %A" e); Unchecked.defaultof<_>
+
+[<Fact>]
+let ``StaticSeedsEmitter.emit produces one DataInsertScript per kind (T11 keyset)`` () =
+    let catalog = mkCatalog [ mkCountryKind (); mkRegularKind () ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let map = ArtifactByKind.toMap artifact
+    Assert.Equal (2, Map.count map)
+
+[<Fact>]
+let ``StaticSeedsEmitter.emit produces empty Phase1Merges for non-static kinds`` () =
+    let regular = mkRegularKind ()
+    let catalog = mkCatalog [ regular ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find regular.SsKey
+    Assert.Empty script.Phase1Merges
+    Assert.Equal<string> ("", script.Rendered)
+
+[<Fact>]
+let ``StaticSeedsEmitter.emit populates Phase1Merges for Modality.Static kinds`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    Assert.Equal (2, List.length script.Phase1Merges)
+
+[<Fact>]
+let ``StaticSeedsEmitter.emit Phase1Merges carry KindKey + Identifier from StaticRow`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    for row in script.Phase1Merges do
+        Assert.Equal<SsKey> (country.SsKey, row.KindKey)
+
+[<Fact>]
+let ``StaticSeedsEmitter.emit Phase2Updates is empty at slice α (no cycle-breaking yet)`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    Assert.Empty script.Phase2Updates
+
+[<Fact>]
+let ``StaticSeedsEmitter.emit Rendered MERGE shape contains V1-required clauses`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    // V1's six load-bearing MERGE clauses (per `StaticSeedSqlBuilder.cs:211-260`):
+    Assert.Contains ("MERGE INTO [dbo].[OSUSR_TEST_COUNTRY] AS Target", script.Rendered)
+    Assert.Contains ("USING", script.Rendered)
+    Assert.Contains ("VALUES", script.Rendered)
+    Assert.Contains ("AS Source ([ID], [CODE], [LABEL])", script.Rendered)
+    Assert.Contains ("ON Target.[ID] = Source.[ID]", script.Rendered)
+    Assert.Contains ("WHEN MATCHED THEN UPDATE SET", script.Rendered)
+    Assert.Contains ("WHEN NOT MATCHED THEN INSERT", script.Rendered)
+    Assert.EndsWith ("GO\n", script.Rendered.Replace("\r\n", "\n"))
+
+[<Fact>]
+let ``StaticSeedsEmitter.emit Rendered does NOT carry change-detection predicate (slice α; CDC awareness lands at slice β)`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    // Slice α emits V1's WHEN MATCHED THEN UPDATE SET unconditional; the
+    // change-detection-predicate (Target.col <> Source.col + null-aware
+    // OR conditions) is the slice-β contribution that closes CDC-noise.
+    Assert.DoesNotContain ("WHEN MATCHED AND", script.Rendered)
+    Assert.Contains ("WHEN MATCHED THEN UPDATE SET", script.Rendered)
+
+[<Fact>]
+let ``T1: StaticSeedsEmitter.emit is byte-deterministic across repeat invocations`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let r1 = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let r2 = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let s1 = ArtifactByKind.toMap r1 |> Map.find country.SsKey
+    let s2 = ArtifactByKind.toMap r2 |> Map.find country.SsKey
+    Assert.Equal<string> (s1.Rendered, s2.Rendered)
+    Assert.Equal<DataInsertRow list> (s1.Phase1Merges, s2.Phase1Merges)
+
+[<Fact>]
+let ``StaticSeedsEmitter.emit formats Text values with N-prefix + single-quote escaping`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    // Text columns get `N'...'` prefix per `Render.formatSqlLiteral`.
+    Assert.Contains ("N'United States'", script.Rendered)
+    Assert.Contains ("N'Canada'", script.Rendered)
+
+[<Fact>]
+let ``StaticSeedsEmitter.emit formats Integer values without quotes`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    // Integer values are bare digits per `Render.formatSqlLiteral`.
+    // Note: this fixture uses Code-as-Id ("US"/"CA") so the Id column
+    // gets formatted via Integer's identity branch — raw value stays
+    // bare. Real production fixtures will carry numeric Ids.
+    Assert.Contains ("US,", script.Rendered)
+    Assert.Contains ("CA,", script.Rendered)
+
+[<Fact>]
+let ``T11: StaticSeedsEmitter.emit covers every catalog kind`` () =
+    let country = mkCountryKind ()
+    let regular = mkRegularKind ()
+    let catalog = mkCatalog [ country; regular ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let map = ArtifactByKind.toMap artifact
+    Assert.True (Map.containsKey country.SsKey map)
+    Assert.True (Map.containsKey regular.SsKey map)

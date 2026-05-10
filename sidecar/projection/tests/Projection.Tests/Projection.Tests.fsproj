@@ -39,6 +39,7 @@
     <Compile Include="ScriptDomRoundTripTests.fs" />
     <Compile Include="TypesTests.fs" />
     <Compile Include="ToleranceTests.fs" />
+    <Compile Include="StaticSeedsEmitterTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
     <Compile Include="ProfileFixtures.fs" />
     <Compile Include="ProfileTests.fs" />
@@ -93,6 +94,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Projection.Core\Projection.Core.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Targets.SSDT\Projection.Targets.SSDT.fsproj" />
+    <ProjectReference Include="..\..\src\Projection.Targets.Data\Projection.Targets.Data.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Targets.Json\Projection.Targets.Json.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Targets.Distributions\Projection.Targets.Distributions.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.Sql\Projection.Adapters.Sql.fsproj" />
