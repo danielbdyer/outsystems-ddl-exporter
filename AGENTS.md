@@ -119,6 +119,76 @@ See `sidecar/projection/PLAYBOOK.md` decision tree
 "When you reach for a string-composition primitive" for the executable
 form.
 
+### Text-builder-as-first-instinct (the failure mode named "text-builder-as-first-instinct"; pillar 1 + pillar 7 amendment)
+
+Worked counterfactual (chapter 4.1.A close arc, codified 2026-05-10):
+StaticSeedsEmitter slices α + β shipped with 6 LINT-ALLOW StringBuilder
+MERGE construction. Each LINT-ALLOW was individually defensible per
+the substantive-rationale discipline (the four-question analysis
+held); the AGGREGATE was the failure. Six LINT-ALLOWs at one MERGE
+site means the typed-AST migration was never attempted in the first
+place — the discipline failed at the first-draft stage. Tier-1 #1
+cash-out (`bface9a`) retired all 6 by routing through `ScriptDom
+Build.buildMergeStatement`; cost was 150 LOC of typed-AST
+construction replacing 80 LOC of StringBuilder, with the change-
+detection predicate now a typed boolean-expression AST.
+
+**The failure mode is "text-builder-as-first-instinct":** the agent
+reaches for `StringBuilder` / `String.Concat` / `String.concat` /
+`sprintf` as the default for new emitters, then attaches LINT-ALLOWs
+once the lint surfaces. LINT-ALLOWs are individually defensible
+(per pillar 7 substantive-rationale) but aggregate count is the
+soft floor — if a new emitter needs 6 LINT-ALLOWs, the typed-AST
+migration was skipped at construction time. The LINT-ALLOW marker
+is the audit trail for an EXIT from the typed-AST path that the
+four-question analysis FORCED, not the audit trail for skipping the
+typed-AST path entirely.
+
+**The discipline.** **Every new SQL- or text-emitting consumer
+starts on the typed-AST library, not StringBuilder.** Protocol at
+consumer-construction time:
+
+  1. **First instinct check**: BEFORE writing the first
+     `StringBuilder()` or `String.Concat`, articulate the typed-AST
+     library that produces the structure being emitted (ScriptDom
+     `MergeStatement` / `CreateTableStatement` / `InsertStatement`;
+     `Utf8JsonWriter` / `JsonNode`; `XmlWriter` / `XDocument`;
+     `Microsoft.SqlServer.Dac` for .dacpac). If no such library
+     exists, document the absence (it should be very rare).
+  2. **Cross-check the precedent emitters**: how does
+     `SsdtDdlEmitter.emitSlices` build CREATE TABLE? How does
+     `StaticSeedsEmitter.renderMerge` build MERGE? How does
+     `JsonEmitter.emit` build doc trees? The precedent IS the
+     pattern; new consumers inherit it.
+  3. **First draft uses the typed AST.** Period. The StringBuilder
+     reflex is suppressed at construction time, not at lint time.
+  4. **LINT-ALLOWs at terminal text boundaries only.** The
+     remaining sites — `SqlLiteral.toString`'s `'<raw>'` quoting,
+     the GO-batch suffix on a rendered MERGE, the cross-platform-
+     deterministic relative-path concatenation — are the exit
+     points where the typed AST has already discharged its work
+     and the absolute terminal text emerges.
+
+**Hard requirements (Tier-3 codified deferrals, per `DECISIONS
+2026-05-10` + Active deferrals index):**
+
+  - **Chapter 3.x DacpacEmitter MUST adopt `Microsoft.SqlServer.Dac`
+    (DacFx)** — never hand-roll the .dacpac ZIP+XML format. The
+    chapter agent reads the deferral index entry at chapter open.
+  - **Chapter 4.1.B slices ε / ζ (MigrationDependenciesEmitter +
+    BootstrapEmitter) MUST adopt `ScriptDomBuild.buildMergeStatement`
+    + `buildInsertRow` from slice α** — precedent is the
+    StaticSeedsEmitter `bface9a` cash-out. The slice agent reads
+    the deferral index entry at slice open.
+
+The named failure mode pairs with **performance-of-compliance** (the
+LINT-ALLOW shaped like an audit trail without substance) and
+**domain-blind naming** (the name shaped like a placeholder for
+an absent domain concept). Together they form the codified failure-
+mode set: substance-of-discipline at the lint marker, substance-of-
+domain at the type system, substance-of-library at the construction
+surface.
+
 ### Verify-before-diagnose for infrastructure (the failure mode named "infrastructure-blame jumping")
 
 Worked counterfactual (session-15 internal, codified 2026-05-10):

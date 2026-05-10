@@ -220,6 +220,8 @@ table before continuing.
 | **`ICatalogReader` interface** (Position B → A) | 2026-05-13 (Anticipation vs. speculation in abstraction extraction) | A second catalog source materializes (DACPAC, OData, in-memory test reader unifying with OSSYS) | OSSYS adapter implementation chapter starts in Position B (`parse : SnapshotSource -> Task<Result<Catalog>>` shape; session 18); interface defers until second source (session 25) |
 | **`SnapshotRowsets` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature, session-20 amendment) | The JSON-projection-lossiness class needs unblocking — A1 SsKey bound resolution; `EspaceKind` distinction; `isSystemEntity` evidence; future class members (per `DECISIONS 2026-05-19 — naming the two classes of resolution patterns explicitly`) | Operator-decided canonical resolution; not subject to relitigation. Variant reserved in `SnapshotSource` DU (`CatalogReader.fs:36-56`). Pre-scoped at session 25 commit 11 (subagent #5); chapter 3+ implements (session 25) |
 | **`LiveOssysConnection` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature) | V2 needs to operate without V1's chain in the loop entirely (real DB-touching variant) | Reserved in `SnapshotSource` DU (`CatalogReader.fs:58-62`); chapter-3+ when canary's deployment-validation arc materializes (session 25) |
+| **`Microsoft.SqlServer.Dac` (DacFx) adoption in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 3.x DacpacEmitter opens. **Hard requirement, not preference**: the .dacpac file format is a Microsoft-proprietary ZIP-with-manifest-XML structure — hand-rolling it via `System.IO.Compression.ZipArchive` + manual XML composition is the prototypical "text-builder-as-first-instinct" failure mode. DacFx (`Microsoft.SqlServer.Dac` NuGet) IS the canonical use-case-specific library; per pillar 7, no LINT-ALLOW will excuse a hand-rolled .dacpac. The chapter-3.x agent reads this entry at chapter open and writes the cash-out below the Active deferrals table on adoption. | Pre-DacpacEmitter; trigger condition not yet met (DacpacEmitter chapter not open) |
+| **MigrationDependenciesEmitter + BootstrapEmitter typed-AST adoption from slice α** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 4.1.B slices ε (MigrationDependenciesEmitter) / ζ (BootstrapEmitter) open. **Hard requirement**: both emitters are MERGE / INSERT producers; per the Tier-1 #1 cash-out (`bface9a` — chapter 4.1.B StaticSeedsEmitter MERGE → ScriptDom MergeStatement), every new SQL-emitting consumer starts on the typed-AST library, not StringBuilder. `ScriptDomBuild.buildMergeStatement` + `ScriptDomBuild.buildInsertRow` + `SqlLiteral.ofRaw` are the precedent surface; cross-target dep on Projection.Targets.SSDT acceptable per the StaticSeedsEmitter precedent (single-line LINT-ALLOW with rationale). The chapter 4.1.B slice agent reads this entry at slice open. | Pre-MigrationDependenciesEmitter / BootstrapEmitter; chapter 4.1.B slices ε/ζ not yet open |
 
 **Discipline.** Each deferral here was logged as the right call **at the
 time it was made** under "IR grows under evidence." A deferral is not a
@@ -9558,6 +9560,156 @@ schema), and the in-flight Phase 3 substantive surface together
 represent the bulk of the V2-driver structural commitment. Phase
 3 close depends on slice γ canary green; slice γ defers until
 Docker is reliably available.
+
+## 2026-05-10 — Text-builder-as-first-instinct discipline (chapter 4.1.A close arc; pillar 1 + pillar 7 amendment; Tier-3 codification)
+
+**Context.** During the chapter 4.1.A close arc + Tier-1 transitions
+(this session: RawTextEmitter retirement; SqlLiteral typed module;
+MERGE → ScriptDom MergeStatement; Outputs → SsdtBundle + JsonNode), a
+recurring pattern surfaced: **the agent's first instinct on a new
+SQL- or text-emitting consumer is to build via StringBuilder + concat,
+not via the typed-AST library**. StaticSeedsEmitter slices α + β
+shipped with 6 LINT-ALLOWs at exactly this site; the Tier-1 #1 cash-
+out (`bface9a`) retired all 6 by routing through `ScriptDomBuild
+.buildMergeStatement`. Same shape: the substance of the work was
+typed AST construction, not text composition; the agent's first draft
+went the other way.
+
+**Failure mode named: "text-builder-as-first-instinct."** The agent
+reaches for `StringBuilder` / `String.Concat` / `String.concat` /
+`sprintf` as the default for new emitters, then attaches LINT-ALLOWs
+once the lint surfaces. The LINT-ALLOWs are individually defensible
+(per the substantive-rationale discipline; `DECISIONS 2026-05-10 —
+LINT-ALLOW substantive-rationale`); the *aggregate* is the bug. Six
+LINT-ALLOWs at one MERGE site means the typed-AST migration was
+never attempted in the first place — the discipline failed at the
+first-draft stage. Mirror of the chapter 3.7 slice β shortcut
+(`Render.columnSqlType` String.Concat → ScriptDom typed AST cost 87
+LOC); same pattern, different consumer.
+
+**The discipline.** **Every new SQL- or text-emitting consumer
+starts on the typed-AST library, not StringBuilder. LINT-ALLOWs are
+exit-not-entry — the LINT-ALLOW marker is the audit trail for an
+EXIT from the typed-AST path that the four-question analysis
+*forced*, not the audit trail for skipping the typed-AST path
+entirely.** The protocol at consumer-construction time:
+
+  1. **First instinct check**: BEFORE writing the first
+     `StringBuilder()` or `String.Concat`, the agent must articulate
+     the typed-AST library that produces the structure being
+     emitted (ScriptDom `MergeStatement` / `CreateTableStatement`
+     / `InsertStatement`; `Utf8JsonWriter` / `JsonNode`; `XmlWriter`
+     / `XDocument`; `Microsoft.SqlServer.Dac` for .dacpac; etc.).
+     If no such library exists, document the absence.
+  2. **Cross-check the precedent emitters**: how does
+     `SsdtDdlEmitter.emitSlices` build CREATE TABLE? How does
+     `StaticSeedsEmitter.renderMerge` build MERGE? How does
+     `JsonEmitter.emit` build doc trees? The precedent IS the
+     pattern; new consumers inherit it.
+  3. **First draft uses the typed AST.** Period. The
+     StringBuilder reflex is suppressed at construction time, not
+     at lint time.
+  4. **LINT-ALLOWs at terminal text boundaries only.** The
+     remaining sites — `SqlLiteral.toString`'s `'<raw>'` quoting,
+     the GO-batch suffix on a rendered MERGE, the cross-platform-
+     deterministic relative-path concatenation — are the exit
+     points where the typed AST has already discharged its work
+     and the absolute terminal text emerges. Each LINT-ALLOW
+     embodies the four-question analysis (per the substantive-
+     rationale discipline); the aggregate count per file is the
+     soft floor (per Lint Rule 27).
+
+**Worked counterfactuals (from this session):**
+
+  - **StaticSeedsEmitter slice α + β (`fd38908` + `2d8210e`)**:
+    shipped with 6 LINT-ALLOW StringBuilder MERGE construction.
+    Tier-1 #1 (`bface9a`) retired all 6 via ScriptDom
+    MergeStatement typed AST. Cost: 150 LOC of typed-AST
+    construction, replacing 80 LOC of StringBuilder. Net: more
+    code, but pillar-1 + pillar-7 alignment, future-emitter
+    precedent, change-detection predicate is a typed boolean-
+    expression AST (instead of string concat).
+  - **`Render.columnSqlType` chapter 3.7 slice β shortcut**: 4
+    LINT-ALLOWs added; user caught it; slice β' delegated to
+    ScriptDom typed AST. Same failure mode, prior chapter.
+
+**Tier-1 discipline cash-outs (this session):**
+
+  - **#4 — SqlLiteral typed expression module (`08ca554`)**: Core-
+    resident typed `SqlLiteral` DU; `Render.formatSqlLiteral`
+    delegates; consumers (SSDT.Render + Data.StaticSeedsEmitter)
+    flow through the typed middle layer. Unblocked #1.
+  - **#1 — MERGE → ScriptDom MergeStatement (`bface9a`)**: 150
+    LOC of typed-AST construction in `ScriptDomBuild
+    .buildMergeStatement` (record-shaped MergeBuildArgs + per-
+    column predicate builders). 6 LINT-ALLOWs retired. The
+    change-detection predicate is now `BooleanBinaryExpression
+    (Or)` of `BooleanComparisonExpression(NotEqualToBrackets)` +
+    `BooleanIsNullExpression` AST nodes wrapped in
+    `BooleanParenthesisExpression`.
+  - **#2 — Compose.Outputs.Sql → SsdtBundle (`705e31d`)**: chapter-
+    3-era single-blob `Sql : string` retired in favor of `Map<
+    RelativePath, string>` per `SsdtBundle.compose` (the
+    production shape from chapter 4.1.A slice 10). The Pipeline
+    `write` iterates the bundle; `Deploy.runEphemeral` consumes
+    `Compose.aggregateSsdt` for the legacy single-string deploy
+    contract.
+  - **#3 — Compose.Outputs.Json + .Distributions → JsonNode
+    (`22ecc59`)**: chapter 3.7 slice ε's per-kind typed JsonNode
+    surface lifted to the Outputs seam. Consumers query the typed
+    tree (no `JsonNode.Parse` re-parse). Pillar 1 holds end-to-end
+    across the Pipeline composition surface.
+
+**Tier-2 audit conclusions (this session):**
+
+  - **Connection-string composition tightening**: zero raw-concat
+    sites outside `Deploy.ConnectionString.parse` (the smart
+    constructor over `SqlConnectionStringBuilder`). Already tight.
+    No retirement.
+  - **`BatchSplitter` line-fold fallback**: structurally defended
+    via the loud-fallback pattern. Per pillar 7 four-question:
+    ScriptDom is the gold standard; line-fold is the explicit
+    operator-facing escape hatch with stderr announcement (per
+    chapter-3.6 cash-out). The discipline is satisfied; the
+    fallback is not retire-able without losing the operator-
+    rationale-defended escape hatch.
+  - **Path composition audit**: every `String.Concat` for paths
+    has a substantive cross-platform-deterministic LINT-ALLOW per
+    the four-question analysis. The `BenchSink.fs` site uses
+    `Path.Combine` correctly (timestamp pre-vetted). No drift.
+
+**Tier-3 codification (this entry).** The DECISIONS entry IS the
+codification; the Active deferrals index entries (above this entry
+in the table) name the chapter-specific incarnations:
+
+  - "Microsoft.SqlServer.Dac (DacFx) adoption in Projection.Targets
+    .SSDT.DacpacEmitter" — chapter 3.x. Hard requirement.
+  - "MigrationDependenciesEmitter + BootstrapEmitter typed-AST
+    adoption from slice α" — chapter 4.1.B slices ε/ζ. Hard
+    requirement; precedent is StaticSeedsEmitter (`bface9a`).
+
+The chapter-close ritual scans the Active deferrals table at every
+chapter close (per `DECISIONS 2026-05-13 — Transform registry cash-
+out + Active deferrals index`); these new rows surface to the
+agent as triggers when the relevant chapter opens.
+
+**Operating disciplines table update (CLAUDE.md + AGENTS.md).** A
+follow-on commit adds this discipline to the operating-disciplines
+table — sibling to "Domain-first naming and ubiquitous-language
+consistency" (pillar 8) and "LINT-ALLOW substantive-rationale
+discipline" (pillar 7 amendment). Together the three disciplines
+form the codified failure-mode set: **performance-of-compliance**
+(LINT-ALLOW shaped like an audit trail without substance) +
+**domain-blind naming** (name shaped like a placeholder for an
+absent domain concept) + **text-builder-as-first-instinct**
+(typed-AST library is the first instinct, not the lint-time
+fallback).
+
+**Pillar alignment.** Pillar 1 (data-structure-oriented over
+string-parsing) ✓. Pillar 7 (gold-standard library precedence;
+substantive-rationale amendment) ✓. Pillar 8 (concept-shaped
+naming) ✓ — `text-builder-as-first-instinct` IS the failure-mode
+name (concept-shaped, not action-shaped).
 
 
 
