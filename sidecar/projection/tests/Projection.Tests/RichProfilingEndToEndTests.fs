@@ -172,8 +172,8 @@ let private distributionsJson = """
 // ---------------------------------------------------------------------------
 
 let private enrichedProfile () : Profile =
-    ProfileSnapshot.attach endToEndCatalog snapshotJson
-    |> Result.bind (ProfileStatistics.attach endToEndCatalog distributionsJson)
+    ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
+    |> Result.bind (ProfileStatistics.attach endToEndCatalog (ProfileStatistics.DistributionsJson distributionsJson))
     |> Result.value
 
 // ---------------------------------------------------------------------------
@@ -193,10 +193,10 @@ let ``MILESTONE: V1 column profiles and V2 distributions coexist in the enriched
 [<Fact>]
 let ``MILESTONE: layering distributions does not lose V1 evidence`` () =
     let snapshotOnly =
-        ProfileSnapshot.attach endToEndCatalog snapshotJson
+        ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
         |> Result.value
     let layered =
-        ProfileStatistics.attach endToEndCatalog distributionsJson snapshotOnly
+        ProfileStatistics.attach endToEndCatalog (ProfileStatistics.DistributionsJson distributionsJson) snapshotOnly
         |> Result.value
     Assert.Equal(snapshotOnly.Columns.Length,          layered.Columns.Length)
     Assert.Equal(snapshotOnly.UniqueCandidates.Length, layered.UniqueCandidates.Length)
@@ -211,17 +211,17 @@ let ``MILESTONE: adapter composition order does not matter`` () =
     // have the same content (modulo distributions-list ordering, which
     // is empty in one path so the equivalence is exact here).
     let aThenB =
-        ProfileSnapshot.attach endToEndCatalog snapshotJson
-        |> Result.bind (ProfileStatistics.attach endToEndCatalog distributionsJson)
+        ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
+        |> Result.bind (ProfileStatistics.attach endToEndCatalog (ProfileStatistics.DistributionsJson distributionsJson))
         |> Result.value
     // Reverse-order: distributions first onto Profile.empty, then
     // re-add snapshot data manually since ProfileStatistics doesn't
     // produce columns / unique / fk fields.
     let bThenA =
-        ProfileStatistics.attach endToEndCatalog distributionsJson Profile.empty
+        ProfileStatistics.attach endToEndCatalog (ProfileStatistics.DistributionsJson distributionsJson) Profile.empty
         |> Result.value
     let bThenAEnriched =
-        ProfileSnapshot.attach endToEndCatalog snapshotJson
+        ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
         |> Result.value
     // Combine bThenA's distributions with bThenAEnriched's other fields
     // — the resulting Profile must equal aThenB's.
@@ -296,7 +296,7 @@ let ``T1: end-to-end pipeline is byte-deterministic`` () =
 [<Fact>]
 let ``structural commitment: empty distributions yields all-null distribution fields, full catalog structure preserved`` () =
     let snapshotOnly =
-        ProfileSnapshot.attach endToEndCatalog snapshotJson
+        ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
         |> Result.value
     let output = DistributionsEmitter.emit endToEndCatalog snapshotOnly
     use doc = JsonDocument.Parse(output)
@@ -321,7 +321,7 @@ let ``structural commitment: empty distributions yields all-null distribution fi
 [<Fact>]
 let ``invariant: V1 ProfileSnapshot.attach does not populate Distributions`` () =
     let snapshotOnly =
-        ProfileSnapshot.attach endToEndCatalog snapshotJson
+        ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
         |> Result.value
     Assert.Empty(snapshotOnly.Distributions)
 
@@ -368,8 +368,8 @@ let private mixedDistributionsJson = """
 """
 
 let private enrichedProfileBothVariants () : Profile =
-    ProfileSnapshot.attach endToEndCatalog snapshotJson
-    |> Result.bind (ProfileStatistics.attach endToEndCatalog mixedDistributionsJson)
+    ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
+    |> Result.bind (ProfileStatistics.attach endToEndCatalog (ProfileStatistics.DistributionsJson mixedDistributionsJson))
     |> Result.value
 
 [<Fact>]
@@ -460,8 +460,8 @@ let ``MILESTONE 10: monotonicity violation in fixture surfaces as adapter error`
     }
     """
     let result =
-        ProfileSnapshot.attach endToEndCatalog snapshotJson
-        |> Result.bind (ProfileStatistics.attach endToEndCatalog badJson)
+        ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
+        |> Result.bind (ProfileStatistics.attach endToEndCatalog (ProfileStatistics.DistributionsJson badJson))
     match result with
     | Ok _ -> Assert.Fail "Expected failure on monotonicity violation"
     | Error errs ->
@@ -508,8 +508,8 @@ let private uniquenessProfileJson = """
 """
 
 let private profileForCategoricalUniqueness () : Profile =
-    ProfileSnapshot.attach endToEndCatalog snapshotJson
-    |> Result.bind (ProfileStatistics.attach endToEndCatalog uniquenessProfileJson)
+    ProfileSnapshot.attach endToEndCatalog (ProfileSnapshot.ProfileSnapshotJson snapshotJson)
+    |> Result.bind (ProfileStatistics.attach endToEndCatalog (ProfileStatistics.DistributionsJson uniquenessProfileJson))
     |> Result.value
 
 let private categoricalUniquenessConfig =
