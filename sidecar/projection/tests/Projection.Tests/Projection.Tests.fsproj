@@ -66,6 +66,7 @@
     <Compile Include="EndToEndDifferentialTests.fs" />
     <Compile Include="V1NullabilityParityTests.fs" />
     <Compile Include="RawTextEmitterTests.fs" />
+    <Compile Include="SsdtDdlEmitterTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />
     <Compile Include="SiblingEmitterContractTests.fs" />
