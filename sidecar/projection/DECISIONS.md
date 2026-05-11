@@ -213,7 +213,7 @@ table before continuing.
 | **Faker emitter (synthetic-data Π)** | 2026-05-13 (Session 11 reflection) | Either a third evidence type lands, or a use case forces proceeding with two evidence types and accepting the limitations | Two evidence types operational (Categorical, Numeric); no third in scope (session 25) |
 | **DacFx integration in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-06 (DacFx integration deferred to first real-fixture milestone) | A real Catalog (from any adapter) flows end-to-end through a pipeline exercising sibling-Π commutativity (T11) on real metadata; canary chapter (`Projection.Pipeline`) is the natural locus | **Re-deferred at session 24 with tighter trigger condition** (original trigger fired silently sessions 18–22; sequenced for chapter 3 canary chapter; see `2026-05-06` entry's session-24 amendment) |
 | **Multi-spine state pattern** | 2026-05-06 (Multi-spine state pattern is endorsed but not yet built) | A real use case surfaces in the algebra | None yet (session 25) |
-| **Three-channel Diagnostics split** (operator / auditor / developer) | 2026-05-06 (Diagnostics live in a writer parallel to Lineage) | A real downstream consumer demands per-channel routing | Single channel sufficient at first consumer (UniqueIndex opportunity stream); deferred until host shell or telemetry consumer surfaces (session 25) |
+| **Three-channel Diagnostics split** (operator / auditor / developer) | 2026-05-06 (Diagnostics live in a writer parallel to Lineage) | A real downstream consumer demands per-channel routing | **Retired at chapter 4.3 open (2026-05-11).** Decision: refuse the split. The three V1 artifacts (`decision-log.json` / `opportunities.json` / `validations.json`) ARE the three channels — descriptive of *what is being emitted*, not of *who consumes it*. The existing `Diagnostics<'a>` writer remains single-channel; routing happens at emit time via the `Code`-prefix table consumed by `DecisionLogEmitter` (chapter 4.3 slice α) + `OpportunitiesEmitter` (slice β) + `ValidationsEmitter` (slice γ). No `DiagnosticChannel` DU; no parallel writer. Three artifacts route from one stream. See `CHAPTER_4_3_OPEN.md` §"Retiring the three-channel Diagnostics split deferral" + `2026-05-11 — Chapter 4.3 open` entry below. |
 | **Reflection** (`typeof<>`, attribute scanning for plugin discovery) | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | A real consumer demands name-keyed strategy dispatch (paired with the strategy registry mechanism deferral above) | Closed-DU + typed-seam dispatches at compile time today; no reflective discovery needed (session 25) |
 | **Object expressions** (`{ new IInterface with ... }`) for adapter-side abstractions | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | V2 grows interface-based polymorphism (e.g., `IDiagnosticSink` for streaming consumers; `ICatalogReader` after a second catalog source materializes) | Codebase has zero interface boundaries today; all polymorphism via DU pattern matching (session 25) |
 | **Type providers** (`JsonProvider` for `osm_model.json`) | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | OSSYS adapter ships and JSON-shape evolution becomes a maintenance burden | OSSYS adapter ships at session 18 with hand-written DTOs; JSON-shape evolution has not yet surfaced as a burden (session 25) |
@@ -10361,5 +10361,57 @@ divergence today; the canary doesn't flag missing defaults or
 descriptions. When SnapshotRowsets gains the surfaces, both slices
 cash out cleanly: the IR widening lands first, the emitter wires in
 behind, the Tolerance flags flip from `true` to `false`.
+
+---
+
+## 2026-05-11 — Chapter 4.3 open: three-channel Diagnostics deferral retired (refuse the split)
+
+**Status:** decided
+
+**Context:** Per `CHAPTER_4_3_OPEN.md` §"Retiring the three-channel
+Diagnostics split deferral" + pre-scope §1.4. The chapter-2 "three-
+channel Diagnostics split" Active deferral has sat in the index
+since 2026-05-06 ("operator / auditor / developer" channels;
+trigger: "real downstream consumer demands per-channel routing").
+Chapter 4.3 is the natural site to re-examine — the operator-
+facing artifacts (`decision-log.json` / `opportunities.json` /
+`validations.json`) are the first V2 surfaces humans consult.
+
+**Decision:** **Refuse the split.** The three V1 artifacts ARE the
+three channels — descriptive of *what is being emitted*, not of
+*who consumes it*:
+
+- `decision-log.json` → audit channel (every decision the system made)
+- `opportunities.json` → operator channel (actionable suggestions)
+- `validations.json` → developer channel (pass-witnessed invariants)
+
+Adopting this framing means **the existing `Diagnostics<'a>` writer
+remains single-channel**; routing happens at emit time via the
+`Code`-prefix table:
+
+```
+tightening.*.opportunity.*       → opportunities.json
+tightening.*.validation.*        → validations.json
+tightening.*  (everything else)  → decision-log.json
+adapter.*    (boundary errors)   → decision-log.json
+emitter.*    (Π-time errors)     → decision-log.json
+```
+
+No `DiagnosticChannel` DU. No parallel writer. Three artifacts
+route from one stream via a pure function of `DiagnosticEntry`.
+
+**Reasoning / consequences.** Pillar 8 (domain-first naming): the
+three-artifact split is operator vocabulary; ubiquitous-language
+consistency means V2 inherits V1's names. The Active deferral
+index moves the entry to **retired** status; the chapter-2 framing
+("the split is a structural extension of the writer") is the
+abandoned-alternative, codified as a documented false-start per
+the discipline ("Document the false starts" — `DECISIONS 2026-05-13
+— Pass return-type codification (session 14)`).
+
+**Future trigger** (if a fourth axis surfaces): a streaming
+operator surface (e.g., real-time dashboard) demanding only
+`Error`-severity entries would prompt re-examination. Today's
+three artifacts saturate the operator/auditor/developer cut.
 
 ---
