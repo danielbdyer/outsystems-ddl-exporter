@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Routing.fs" />
     <Compile Include="DecisionLogEmitter.fs" />
   </ItemGroup>
 

@@ -58,6 +58,8 @@
     <Compile Include="UserFkReflowPassTests.fs" />
     <Compile Include="UserFkReflowIntegrationTests.fs" />
     <Compile Include="DecisionLogEmitterTests.fs" />
+    <Compile Include="OperationalDiagnosticsRoutingTests.fs" />
+    <Compile Include="MultiEnvironmentPromotionTests.fs" />
     <Compile Include="TopologicalOrderTests.fs" />
     <Compile Include="VisibilityMaskTests.fs" />
     <Compile Include="NamingMorphismTests.fs" />
