@@ -89,7 +89,8 @@ let ``missingTarget: target kind absent from catalog ⇒ DoNotEnforce(MissingTar
           Name            = name "Dangling"
           SourceAttribute = orderCustomerFkKey
           TargetKind      = danglingTargetKey
-          OnDelete        = NoAction }
+          OnDelete        = NoAction
+          IsUserFk        = false }
     let cfg = mkConfig true true true
     let decision = decide cfg sampleCatalog order danglingRef Profile.empty
     Assert.Equal(

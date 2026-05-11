@@ -211,17 +211,23 @@ table before continuing.
 | **Cross-catalog FK detection IR refinement** (`Catalog : string option` on `Reference` and `ForeignKeyKeepReason.CrossCatalogBlocked` made reachable) | 2026-05-13 (Closed-DU expansion: empirical confirmation) | A fixture exercising cross-catalog FKs surfaces the gap | Reserved DU variant exists but is unreachable; do not delete (session 25) |
 | **Cross-module FK IR refinement** | 2026-05-19 (rule 16's same-module assumption — session 19 reference-bearing slice) | A fixture exercising cross-module FK surfaces a gap **at the emit layer that topological ordering cannot satisfy** (refined trigger condition; see status). | **Trigger fired and partially satisfied (chapter 4.1.A close arc, 2026-05-10).** Chapter 4.1.A's enterprise canary fixture exercises cross-module FKs (PRODUCT.CATEGORYID, ORDER.CUSTOMERID, ORDERLINE.PRODUCTID, audit FKs to IDM.USER). The fixture deploys clean: `SsdtDdlEmitter.statements` uses `TopologicalOrderPass.runWith SkipSelfEdges` so FK targets emit before referencers regardless of module membership. **The IR refinement (adding cross-module distinction at the `Reference` type) remains deferred** pending a use case where topological ordering at the emit layer is insufficient — e.g., a DacpacEmitter `SqlSchemaModel` cross-database reference that needs schema-disambiguation metadata, or an OssysOriginal catalog spanning multiple V1 SS instances. Cross-module FK same-module assumption (rule 16) at the OSSYS adapter rowset path also remains the operational shape (chapter 3.2 same-module fixtures all round-trip); the gap is at the IR, not the adapter (session 41 reframe; first noted at `CHAPTER_4_1_A_CLOSE.md:80-85`). |
 | **Faker emitter (synthetic-data Π)** | 2026-05-13 (Session 11 reflection) | Either a third evidence type lands, or a use case forces proceeding with two evidence types and accepting the limitations | Two evidence types operational (Categorical, Numeric); no third in scope (session 25) |
-| **DacFx integration in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-06 (DacFx integration deferred to first real-fixture milestone) | A real Catalog (from any adapter) flows end-to-end through a pipeline exercising sibling-Π commutativity (T11) on real metadata; canary chapter (`Projection.Pipeline`) is the natural locus | **Re-deferred at session 24 with tighter trigger condition** (original trigger fired silently sessions 18–22; sequenced for chapter 3 canary chapter; see `2026-05-06` entry's session-24 amendment) |
+| **DacFx integration in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-06 (DacFx integration deferred to first real-fixture milestone) | A real Catalog (from any adapter) flows end-to-end through a pipeline exercising sibling-Π commutativity (T11) on real metadata; canary chapter (`Projection.Pipeline`) is the natural locus | **Cashed out — chapter 3.x open (2026-05-11) reframes the trigger condition.** Production deploy path stays SSDT-style file deploy (`SsdtDdlEmitter.emitSlices`); DacpacEmitter ships as the **dev-tooling sibling-Π emitter** for local one-click stand-up per operator directive. See `2026-05-11 — Chapter 3.x DacpacEmitter open` entry below. |
 | **Multi-spine state pattern** | 2026-05-06 (Multi-spine state pattern is endorsed but not yet built) | A real use case surfaces in the algebra | None yet (session 25) |
-| **Three-channel Diagnostics split** (operator / auditor / developer) | 2026-05-06 (Diagnostics live in a writer parallel to Lineage) | A real downstream consumer demands per-channel routing | Single channel sufficient at first consumer (UniqueIndex opportunity stream); deferred until host shell or telemetry consumer surfaces (session 25) |
+| **Three-channel Diagnostics split** (operator / auditor / developer) | 2026-05-06 (Diagnostics live in a writer parallel to Lineage) | A real downstream consumer demands per-channel routing | **Retired at chapter 4.3 open (2026-05-11).** Decision: refuse the split. The three V1 artifacts (`decision-log.json` / `opportunities.json` / `validations.json`) ARE the three channels — descriptive of *what is being emitted*, not of *who consumes it*. The existing `Diagnostics<'a>` writer remains single-channel; routing happens at emit time via the `Code`-prefix table consumed by `DecisionLogEmitter` (chapter 4.3 slice α) + `OpportunitiesEmitter` (slice β) + `ValidationsEmitter` (slice γ). No `DiagnosticChannel` DU; no parallel writer. Three artifacts route from one stream. See `CHAPTER_4_3_OPEN.md` §"Retiring the three-channel Diagnostics split deferral" + `2026-05-11 — Chapter 4.3 open` entry below. |
 | **Reflection** (`typeof<>`, attribute scanning for plugin discovery) | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | A real consumer demands name-keyed strategy dispatch (paired with the strategy registry mechanism deferral above) | Closed-DU + typed-seam dispatches at compile time today; no reflective discovery needed (session 25) |
 | **Object expressions** (`{ new IInterface with ... }`) for adapter-side abstractions | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | V2 grows interface-based polymorphism (e.g., `IDiagnosticSink` for streaming consumers; `ICatalogReader` after a second catalog source materializes) | Codebase has zero interface boundaries today; all polymorphism via DU pattern matching (session 25) |
 | **Type providers** (`JsonProvider` for `osm_model.json`) | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | OSSYS adapter ships and JSON-shape evolution becomes a maintenance burden | OSSYS adapter ships at session 18 with hand-written DTOs; JSON-shape evolution has not yet surfaced as a burden (session 25) |
 | **`ICatalogReader` interface** (Position B → A) | 2026-05-13 (Anticipation vs. speculation in abstraction extraction) | A second *catalog* source materializes (DACPAC, OData, in-memory test reader; distinct from a second *variant* of an existing OSSYS source) | **Reaffirmed at chapter 3.2 open (axis 6) / close (2026-05-10).** `SnapshotRowsets` is a second *variant* of the OSSYS source, not a second source — per `CHAPTER_3_2_OPEN.md` axis 6, the Position B → A trigger does NOT fire. `ReadSide.read` is a profile/data reader, not a catalog reader (out of scope). The trigger condition was sharpened at chapter 3.2 close to make the variant-vs-source distinction explicit. OSSYS adapter still uses `parse : SnapshotSource -> Task<Result<Catalog>>` (Position B); interface lift remains deferred until DACPAC / OData / in-memory test reader materializes (chapter 3.7 slice ξ candidate; chapter-3.x DacpacEmitter may surface the second source). |
 | **`SnapshotRowsets` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature, session-20 amendment) | The JSON-projection-lossiness class needs unblocking — A1 SsKey bound resolution; `EspaceKind` distinction; `isSystemEntity` evidence; future class members (per `DECISIONS 2026-05-19 — naming the two classes of resolution patterns explicitly`) | **Cashed out — chapter 3.2 (commits 6dab9cd / 0354727 / d5d1812 / 6eae21f / a74b904). Variant implemented end-to-end across five slices: (1) SnapshotRowsets variant + RowsetBundle DTO + SsKey at all three levels; (2) reference rowsets (`#RefResolved + #FkReality`); (3) `EspaceKind` activation (Origin three-way real); (4) `IsSystemEntity` → `ModalityMark.SystemOwned`; (5) cross-source parity tests. A1's JSON-projection-lossiness bound resolved structurally (`OssysOriginal` Guid carriage). Three class members landed: SsKey at every level; EspaceKind; IsSystemEntity. Future class members (per-table column structure rowset 6; check constraints rowset 7; triggers rowset 18 — documented not-carried-forward) surface under fixture pressure as further deferred slices. See cash-out entry `2026-05-10 — SnapshotRowsets variant chapter 3.2 close` below.** |
 | **`LiveOssysConnection` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature) | V2 needs to operate without V1's chain in the loop entirely (real DB-touching variant) | Reserved in `SnapshotSource` DU (`CatalogReader.fs:58-62`); chapter-3+ when canary's deployment-validation arc materializes (session 25) |
-| **`Microsoft.SqlServer.Dac` (DacFx) adoption in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 3.x DacpacEmitter opens. **Hard requirement, not preference**: the .dacpac file format is a Microsoft-proprietary ZIP-with-manifest-XML structure — hand-rolling it via `System.IO.Compression.ZipArchive` + manual XML composition is the prototypical "text-builder-as-first-instinct" failure mode. DacFx (`Microsoft.SqlServer.Dac` NuGet) IS the canonical use-case-specific library; per pillar 7, no LINT-ALLOW will excuse a hand-rolled .dacpac. The chapter-3.x agent reads this entry at chapter open and writes the cash-out below the Active deferrals table on adoption. | Pre-DacpacEmitter; trigger condition not yet met (DacpacEmitter chapter not open) |
-| **MigrationDependenciesEmitter + BootstrapEmitter typed-AST adoption from slice α** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 4.1.B slices ε (MigrationDependenciesEmitter) / ζ (BootstrapEmitter) open. **Hard requirement**: both emitters are MERGE / INSERT producers; per the Tier-1 #1 cash-out (`bface9a` — chapter 4.1.B StaticSeedsEmitter MERGE → ScriptDom MergeStatement), every new SQL-emitting consumer starts on the typed-AST library, not StringBuilder. `ScriptDomBuild.buildMergeStatement` + `ScriptDomBuild.buildInsertRow` + `SqlLiteral.ofRaw` are the precedent surface; cross-target dep on Projection.Targets.SSDT acceptable per the StaticSeedsEmitter precedent (single-line LINT-ALLOW with rationale). The chapter 4.1.B slice agent reads this entry at slice open. | Pre-MigrationDependenciesEmitter / BootstrapEmitter; chapter 4.1.B slices ε/ζ not yet open |
+| **`Microsoft.SqlServer.Dac` (DacFx) adoption in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 3.x DacpacEmitter opens. **Hard requirement, not preference**: the .dacpac file format is a Microsoft-proprietary ZIP-with-manifest-XML structure — hand-rolling it via `System.IO.Compression.ZipArchive` + manual XML composition is the prototypical "text-builder-as-first-instinct" failure mode. DacFx (`Microsoft.SqlServer.Dac` NuGet) IS the canonical use-case-specific library; per pillar 7, no LINT-ALLOW will excuse a hand-rolled .dacpac. The chapter-3.x agent reads this entry at chapter open and writes the cash-out below the Active deferrals table on adoption. | **Cashed out — chapter 3.x slice α (2026-05-11) adopts `Microsoft.SqlServer.DacFx` v162.x in `Projection.Targets.SSDT`.** Pure F# wrapper (empirical condition: `use TSqlModel`, `model.AddObjects`, `DacPackageExtensions.BuildPackage` — four `IDisposable`-aware calls F# handles natively). No C# subproject; pre-scope §6.2 bias yielded under empirical pressure. See `2026-05-11 — Chapter 3.x DacpacEmitter open` entry below. |
+| **MigrationDependenciesEmitter + BootstrapEmitter typed-AST adoption from slice α** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 4.1.B slices ε (MigrationDependenciesEmitter) / ζ (BootstrapEmitter) open. **Hard requirement**: both emitters are MERGE / INSERT producers; per the Tier-1 #1 cash-out (`bface9a` — chapter 4.1.B StaticSeedsEmitter MERGE → ScriptDom MergeStatement), every new SQL-emitting consumer starts on the typed-AST library, not StringBuilder. `ScriptDomBuild.buildMergeStatement` + `ScriptDomBuild.buildInsertRow` + `SqlLiteral.ofRaw` are the precedent surface; cross-target dep on Projection.Targets.SSDT acceptable per the StaticSeedsEmitter precedent (single-line LINT-ALLOW with rationale). The chapter 4.1.B slice agent reads this entry at slice open. | **Cashed out — chapter 4.1.B slice ε (commit `0aa3761`) + slice ζ (commit `9544006`).** MigrationDependenciesEmitter ships the typed-AST MERGE + UPDATE shape mirroring StaticSeedsEmitter; BootstrapEmitter ships as structural stub (no SQL emission today; UserRemapContext slot pending chapter 4.2). See `CHAPTER_4_1_B_CLOSE.md` and `2026-05-11 — Chapter 4.1.B close` entry below. |
+| **Statement DU MERGE/UPDATE promotion** | 2026-05-11 (Chapter 4.1.B close) | A third MERGE/UPDATE consumer lands (e.g., chapter 3.x DacpacEmitter Phase-2 path; future Faker-style data emitter; future Profile-attached row source in chapter 4.3). Today `Projection.Core.Statement` carries SSDT DDL variants only (CreateTable / CreateIndex / InsertRow / SetIdentityInsert / Comment / Blank); MERGE + UPDATE are emitted directly via `ScriptDomBuild.buildMergeStatement` / `buildUpdateStatement` + `ScriptDomGenerate.generateOne` + LINT-ALLOW'd `;\nGO\n` text suffix. 6 LINT-ALLOWs total across StaticSeedsEmitter + MigrationDependenciesEmitter at terminal text concatenation boundaries. Promoting `Statement` to include `Merge of MergeBuildArgs \| Update of UpdateBuildArgs` lets `ScriptDomGenerate.toText` handle per-kind concat structurally + retire all 6. Cross-target lift required (MergeBuildArgs / UpdateBuildArgs from Projection.Targets.SSDT to Projection.Core). | Two consumers today (StaticSeeds + MigrationDeps); deferred per two-consumer threshold. See `2026-05-11 — Chapter 4.1.B close` entry. |
+| **Sort-vs-data deferral predicate distinction** | 2026-05-11 (Chapter 4.1.B close) | A third cycle-metadata consumer surfaces with a sibling-but-distinct semantic question (beyond sort-edge breakability + data-emission deferral). The two predicates diverge on Cascade-nullable FKs: `CycleResolution.classify` returns `Cascade` (NOT `Weak`) so sort-edge-breaker refuses to break; `<Emitter>.deferredColumns` DOES defer (Cascade is about DELETE; column is nullable). The two-predicate split is codified explicitly so future emitter agents choose the predicate that fits their semantic question. | Two predicates today (CycleResolution.classify + StaticSeedsEmitter.deferredColumns / MigrationDependenciesEmitter.deferredColumns); discipline codified. See `2026-05-11 — Chapter 4.1.B close` entry. |
+| **OSSYS adapter User-kind identification surface** | 2026-05-11 (Chapter 4.2 close) | A real OSSYS-source-V2-target reflow workflow surfaces with User-FK columns operators need rewritten. At cash-out time the OSSYS adapter gains a `userKindIdentity : Catalog -> SsKey option` resolution surface (per V1 reference `ModelUserSchemaGraphFactory.GetSyntheticUserForeignKeys`); references whose `TargetKind` matches the identified user kind get `IsUserFk = true`. Slice η emitter integration (MigrationDependenciesEmitter rewrite path) is structurally complete today; the gap is at the adapter boundary only. | OSSYS adapter currently sets `IsUserFk = false` for every Reference; slice η rewrite is operationally a no-op until the adapter resolves real User-FKs. See `2026-05-11 — Chapter 4.2 close` entry. |
+| **CSV adapter for `ManualOverride` (UserMapLoader)** | 2026-05-11 (Chapter 4.2 close) | A real operator workflow demands the file-format pickup path. Pre-scope §3 names `Projection.Adapters.UserMap.UserMapLoader` (CSV: `SourceUserId,TargetUserId,Rationale`). Slice ε ships `ManualOverride` consuming a programmatic `Map<SourceUserId, TargetUserId>`; I/O adapter at the boundary is deferred. Mirrors the chapter 4.1.B slice ε NDJSON-adapter deferral — sibling chapter, same shape. | No I/O adapter today; ManualOverride works via programmatic construction. See `2026-05-11 — Chapter 4.2 close` entry. |
+| **`Attribute.Default` field + DEFAULT constraint emission (chapter 4.1.A slice 7-default)** | 2026-05-11 (Chapter 4.1.A slices 6/7/8 disposition) | The SnapshotRowsets adapter (chapter 3.2) surfaces default-constraint columns from `sys.default_constraints` (the rowset variant materializes default expressions per column). Pre-scope §8 slice 7 names the IR widening (`Attribute.Default : string option`) + emission of `CONSTRAINT [DF_<Table>_<Col>] DEFAULT (<expr>)`. **107+ Attribute literal-construction sites** would need updating with `Default = None` under the record-extension empirical-test discipline; deferred per IR-grows-under-evidence until the rowset adapter surfaces real defaults. | `Tolerance.IgnoreDefaultNames = false` per pre-scope §4 line 214 documents the comparator's current acceptance posture; no consumer demands the field today. Slice 7's identity portion (`Attribute.IsIdentity`) shipped at chapter 3.1/3.2; only the default-constraint portion is deferred. |
+| **`Kind.Description` + `Attribute.Description` fields + extended-properties emission (chapter 4.1.A slice 8)** | 2026-05-11 (Chapter 4.1.A slices 6/7/8 disposition) | The SnapshotRowsets adapter surfaces description columns (`MS_Description` extended properties) from `sys.extended_properties`. Pre-scope §8 slice 8 names the IR widening (`Kind.Description : string option` + `Attribute.Description : string option`) + emission of `EXEC sys.sp_addextendedproperty @name=N'MS_Description', ...` statements per V1's `ExtendedPropertyScriptBuilder.cs:91-95`. **107+ Attribute literal-construction sites** + Kind literal-construction sites would need updating with `Description = None`; deferred per IR-grows-under-evidence until the rowset adapter surfaces real descriptions. | `Tolerance.IgnoreExtendedProperties = true` per pre-scope §4 line 213 documents the comparator's current acceptance posture; no consumer demands the field today. The V1↔V2 differential test treats extended-property absence as a deliberate divergence. |
 
 **Discipline.** Each deferral here was logged as the right call **at the
 time it was made** under "IR grows under evidence." A deferral is not a
@@ -10121,3 +10127,777 @@ The remaining V2-driver KPI critical path (per `V2_DRIVER.md`):
 Chapter 3.2's JSON-projection-lossiness class resolution unblocks
 A1 for renames at the boundary, which downstream-unblocks chapter
 4.2 User FK reflow's `SourceTag` / `V1Mapped` UUIDv5 work.
+
+---
+
+## 2026-05-11 — Chapter 4.1.B close + two deferred-item codifications
+
+**Status:** decided
+
+**Context:** Chapter 4.1.B (CDC-aware data triumvirate; V2-driver KPI
+Phase 3 — the highest-leverage chapter in the entire critical path)
+closes end-to-end. Per `CHAPTER_4_1_B_CLOSE.md`: slice α (StaticSeeds)
++ β (CDC-aware MERGE) + γ (CDC-silence canary GREEN) + δ (two-phase
+insertion) + ε (MigrationDeps; Tier-3 cash-out) + ζ (Bootstrap stub)
++ η (DataEmissionComposer + DataComposition DU) + θ (partition
+assertion + OverlappingEmitterCoverage) + ι (composeRendered global
+ordering) + κ (typed DataInsertRow.Values pillar 1 lift) all shipped.
+Test baseline 893 non-canary green; lint clean; canary suite hang
+fix shipped (Docker-SqlServer xUnit collection + dedicated CdcSilence
+container).
+
+**Decision:** Two new deferrals codified for the Active deferrals
+index. Both surfaced organically during the slice arc but were
+deferred per IR-grows-under-evidence + two-consumer-threshold; the
+codification records the structural trigger so future agents catch
+the cash-out moment.
+
+**Deferral A — Statement DU MERGE/UPDATE promotion.**
+
+`Projection.Core.Statement` DU today carries SSDT DDL variants
+(`CreateTable / CreateIndex / InsertRow / SetIdentityInsert /
+Comment / Blank`). MERGE and UPDATE statements (chapter 4.1.B's
+data emission shapes) are NOT modeled by `Statement`; instead, the
+data emitters call `ScriptDomBuild.buildMergeStatement` /
+`buildUpdateStatement` directly + render the typed AST via
+`ScriptDomGenerate.generateOne` + terminate with `;\nGO\n` at a
+LINT-ALLOW'd text boundary. This produces 3 LINT-ALLOWs per data
+emitter (MERGE statement-terminator; UPDATE statement-terminator;
+per-kind concat) — 6 total across `StaticSeedsEmitter` +
+`MigrationDependenciesEmitter`.
+
+Promoting `Statement` to include `Merge of MergeBuildArgs | Update
+of UpdateBuildArgs` would let `ScriptDomGenerate.toText` handle
+per-kind concat structurally and retire all 6 LINT-ALLOWs. Cost:
+- Extend `Statement` DU + `ScriptDomBuild.buildStatement`
+  exhaustive match (lights up at one site).
+- Cross-target dep: `Statement` lives in `Projection.Core`, so the
+  MergeBuildArgs / UpdateBuildArgs records must lift to Core too
+  (today they're in `Projection.Targets.SSDT.ScriptDomBuild`).
+- Risk: every existing `Statement` pattern-match site outside the
+  emit pipeline (today: zero — `Statement` is only consumed by
+  `ScriptDomBuild.buildStatement` + `ScriptDomGenerate.toText`).
+
+**Trigger to cash out:** a third MERGE/UPDATE consumer lands (e.g.,
+chapter 3.x DacpacEmitter Phase-2 path, future Faker-style data
+emitter, future Profile-attached row source in chapter 4.3). At
+that point the per-site LINT-ALLOW count justifies the typed-
+Statement promotion; today the two-consumer threshold (StaticSeeds
++ MigrationDeps) doesn't.
+
+**Reasoning / consequences:** The deferral is the right call today
+per the two-consumer threshold; the cost of the cross-target lift
+is substantial relative to the LINT-ALLOW count. The codification
+ensures future agents at the third-consumer surface know exactly
+which structural commitment to inspect first.
+
+**Deferral B — Sort-vs-data deferral predicate distinction.**
+
+V2 has TWO distinct predicates that consume cycle metadata:
+
+1. **Sort-edge breakability** (chapter 2; `Strategies/CycleResolution.fs:
+   classify`): an FK edge is `Weak` IFF `OnDelete ∈ (NoAction |
+   SetNull) ∧ source.IsNullable = true`. Used by
+   `TopologicalOrderPass.applyResolver` to decide which precedence-
+   graph edges the resolver may break to produce a topological
+   ordering.
+
+2. **Data-emission deferral** (chapter 4.1.B slice δ;
+   `StaticSeedsEmitter.deferredColumns`): an FK column is deferred
+   IFF `target ∈ cycleMembers ∧ source.Column.IsNullable = true`.
+   Used by the two-phase Phase-1 NULL substitution / Phase-2
+   UPDATE pattern. V1 reference: `IdentifyNullableFKColumns:184`.
+
+**The predicates diverge** on Cascade-nullable FKs: V2's
+`CycleResolution.classify` returns `Cascade` (NOT `Weak`), so the
+sort-edge-breaker refuses to break it for sort purposes. But V2's
+data-emission `deferredColumns` DOES defer it (Cascade behavior is
+about DELETE; the column is nullable so we can NULL it in Phase-1
+and restore in Phase-2). This matches V1's empirical behavior:
+`IdentifyNullableFKColumns:184` checks only nullability, ignoring
+`OnDelete`.
+
+**The two questions are sibling-but-distinct:**
+
+| Question | Predicate | Locus |
+|---|---|---|
+| Can the resolver break this precedence edge for SORT purposes? | `(NoAction \| SetNull) ∧ nullable` | `CycleResolution.classify` |
+| Can the emitter DEFER this FK column across two-phase INSERT/UPDATE? | `in-cycle ∧ nullable` | `<Emitter>.deferredColumns` |
+
+**Codified discipline:** future emitters that consume cycle
+metadata SHALL choose the predicate that fits their semantic
+question explicitly. Don't import `CycleResolution.classify` if the
+intent is data deferral; don't reimplement nullability checks if
+the intent is sort breakability.
+
+**Trigger to escalate** (i.e., promote one predicate to be derived
+from the other, or otherwise codify their relationship at the type
+level): a third predicate consumer surfaces (e.g., a third axis
+that asks a sibling-but-distinct cycle question), at which point
+the closed-DU + multi-predicate abstraction earns its place.
+Today's two-predicate split is the minimum that names the
+distinction; expansion follows consumer evidence.
+
+**Reasoning / consequences:** Naming the distinction prevents the
+performance-of-compliance failure mode (a future emitter agent
+might import `CycleResolution.classify` thinking it's "the cycle
+predicate," producing subtle Cascade-nullable data-emission bugs).
+The pillar-7 substantive-rationale discipline applies: when a
+generic name (`classify`, `deferred`) hides a load-bearing
+distinction, NAME the distinction.
+
+---
+
+## 2026-05-11 — Chapter 4.2 close + A32 cash-out + two new deferrals
+
+**Status:** decided
+
+**Context:** Chapter 4.2 (User FK reflow; V2-driver KPI Phase 4)
+closes end-to-end. Slice arc α → η shipped on branch
+`claude/chapter-4-ddd-improvements-XVCAM` (commits `17930c2` →
+`08a75cf`). The chapter signature deliverable — the multi-
+environment commutativity property test — is green. Test baseline
+963 non-canary passing; lint clean.
+
+**Decision A — A32 cashed out.** Per `CHAPTER_4_2_CLOSE.md` §8 +
+the AXIOMS.md A32 cash-out body. The scheduled "passes may produce
+values consumed by emitters" axiom (originally codified 2026-05-06)
+becomes a wired template with chapter 4.2's `UserFkReflowPass.
+discover` → `UserRemapContext` → `MigrationDependenciesEmitter.
+emitWithUserRemap` chain. The property test specializes T4
+(sibling functor commutativity) to A32's worked example via the
+multi-environment commutativity property (slice η).
+
+**Decision B — OSSYS adapter User-kind identification surface
+deferral.** Chapter 4.2 ships the IR refinement (`Reference.
+IsUserFk`) + the emitter integration (slice η rewrite at
+MigrationDependenciesEmitter). The OSSYS adapter currently sets
+`IsUserFk = false` for every Reference because resolving the
+platform-user-kind identity requires V1's `extension_id` lookup
+pattern (per `ModelUserSchemaGraphFactory.GetSyntheticUserForeignKeys`).
+**Trigger to cash out**: a real OSSYS-source-V2-target reflow
+workflow surfaces with User-FK columns operators need rewritten.
+At that point the OSSYS adapter gains a
+`userKindIdentity : Catalog -> SsKey option` resolution surface;
+references whose `TargetKind` matches the identified user kind
+get `IsUserFk = true`. Slice η emitter integration is
+structurally complete; the deferral is at the adapter boundary
+only.
+
+**Decision C — CSV adapter for `ManualOverride` deferral.**
+Pre-scope §3 names `Projection.Adapters.UserMap.UserMapLoader`
+(CSV: `SourceUserId,TargetUserId,Rationale`). Slice ε ships
+`ManualOverride` consuming a programmatic `Map<SourceUserId,
+TargetUserId>`; the I/O adapter at the boundary is deferred.
+**Trigger to cash out**: a real operator workflow demands the
+file-format pickup path. Mirrors the chapter 4.1.B slice ε
+NDJSON-adapter deferral — same shape, sibling chapter.
+
+**Reasoning / consequences.** Both deferrals are at I/O / boundary
+layers that don't gate the pure-F#-core algebraic claim. Chapter
+4.2's structural commitments hold at the type level today;
+real-cutover-workflow consumer pressure will trigger the
+boundary-adapter cash-outs when operationally needed.
+
+---
+
+## 2026-05-11 — Chapter 4.1.A slices 6/7/8 disposition
+
+**Status:** decided (slice 6 shipped; slices 7-default + 8 deferred)
+
+**Context:** Per `CHAPTER_4_PRESCOPE_SSDT_DDL_EMITTER.md` §8 + chapter-
+4.1.A close-arc (2026-05-10): slices 6, 7, 8 were gated on chapter 3.2
+SnapshotRowsets landing the IR widening triggers. SnapshotRowsets
+shipped at chapter 3.2 close. Auditing what's actually shippable:
+
+**Slice 6 — Cross-module FKs (SHIPPED).** Verification slice; the
+SsdtDdlEmitter already orders kinds across module boundaries via
+`TopologicalOrderPass.runWith SkipSelfEdges`. Three new tests in
+`SsdtDdlEmitterTests.fs` assert: (1) cross-module FK target's CREATE
+TABLE precedes its source in the statement stream; (2) `REFERENCES
+[dbo].[<target_table>]` clause resolves the target's physical name
+correctly via `Catalog.tryFindKind`; (3) T11 keyset spans modules
+(every kind keyed; cross-module FKs don't perturb the keyset).
+
+**Slice 7-identity (ALREADY SHIPPED).** `Attribute.IsIdentity : bool`
+was added in chapter 3.1 / 3.2 (V2 IR carries it; SnapshotRowsets
+populates from `sys.columns.is_identity`); `ScriptDomBuild.build
+CreateTable` emits `IDENTITY(1, 1)` when the flag is true (lines
+158-162). No additional work needed at this disposition.
+
+**Slice 7-default (DEFERRED).** Adding `Attribute.Default : string
+option` + DEFAULT-constraint emission requires updating 107+ Attribute
+literal-construction sites with `Default = None` under the record-
+extension empirical-test discipline. No consumer demands the field
+today: the SnapshotRowsets adapter does not currently surface
+`sys.default_constraints` (the rowset variant would need a sibling
+rowset query), and `Tolerance.IgnoreDefaultNames = false` documents
+the comparator's current acceptance posture. **Trigger to cash out**:
+the SnapshotRowsets adapter surfaces default-constraint columns
+(adds a rowset variant joining `sys.columns.default_object_id` to
+`sys.default_constraints.definition`).
+
+**Slice 8 (DEFERRED).** Adding `Kind.Description + Attribute.Description
+: string option` + extended-properties emission requires 107+ Attribute
++ N Kind literal-construction sites updated with `Description = None`.
+No consumer demands the field today: SnapshotRowsets does not surface
+`sys.extended_properties` (the rowset variant would need a sibling
+query), and `Tolerance.IgnoreExtendedProperties = true` documents the
+comparator's current acceptance posture. **Trigger to cash out**: the
+SnapshotRowsets adapter surfaces description columns.
+
+**Decision.** Slice 6 ships; slices 7-default and 8 stay deferred at
+the chapter 4.1.A close-arc disposition. Both new Active deferrals
+entries codify the rowset-adapter-surfaces-the-evidence trigger. Per
+IR-grows-under-evidence: the IR widens when the adapter surfaces real
+evidence, not speculatively.
+
+**Reasoning / consequences.** The 107+ Attribute construction-site
+mechanical edits (per `Reference.IsUserFk` precedent at chapter 4.2
+slice ζ where the cost-benefit favored shipping) don't pay off here
+because no consumer demands the fields. The Tolerance taxonomy
+(`IgnoreDefaultNames`, `IgnoreExtendedProperties`) absorbs the
+divergence today; the canary doesn't flag missing defaults or
+descriptions. When SnapshotRowsets gains the surfaces, both slices
+cash out cleanly: the IR widening lands first, the emitter wires in
+behind, the Tolerance flags flip from `true` to `false`.
+
+---
+
+## 2026-05-11 — Chapter 4.3 open: three-channel Diagnostics deferral retired (refuse the split)
+
+**Status:** decided
+
+**Context:** Per `CHAPTER_4_3_OPEN.md` §"Retiring the three-channel
+Diagnostics split deferral" + pre-scope §1.4. The chapter-2 "three-
+channel Diagnostics split" Active deferral has sat in the index
+since 2026-05-06 ("operator / auditor / developer" channels;
+trigger: "real downstream consumer demands per-channel routing").
+Chapter 4.3 is the natural site to re-examine — the operator-
+facing artifacts (`decision-log.json` / `opportunities.json` /
+`validations.json`) are the first V2 surfaces humans consult.
+
+**Decision:** **Refuse the split.** The three V1 artifacts ARE the
+three channels — descriptive of *what is being emitted*, not of
+*who consumes it*:
+
+- `decision-log.json` → audit channel (every decision the system made)
+- `opportunities.json` → operator channel (actionable suggestions)
+- `validations.json` → developer channel (pass-witnessed invariants)
+
+Adopting this framing means **the existing `Diagnostics<'a>` writer
+remains single-channel**; routing happens at emit time via the
+`Code`-prefix table:
+
+```
+tightening.*.opportunity.*       → opportunities.json
+tightening.*.validation.*        → validations.json
+tightening.*  (everything else)  → decision-log.json
+adapter.*    (boundary errors)   → decision-log.json
+emitter.*    (Π-time errors)     → decision-log.json
+```
+
+No `DiagnosticChannel` DU. No parallel writer. Three artifacts
+route from one stream via a pure function of `DiagnosticEntry`.
+
+**Reasoning / consequences.** Pillar 8 (domain-first naming): the
+three-artifact split is operator vocabulary; ubiquitous-language
+consistency means V2 inherits V1's names. The Active deferral
+index moves the entry to **retired** status; the chapter-2 framing
+("the split is a structural extension of the writer") is the
+abandoned-alternative, codified as a documented false-start per
+the discipline ("Document the false starts" — `DECISIONS 2026-05-13
+— Pass return-type codification (session 14)`).
+
+**Future trigger** (if a fourth axis surfaces): a streaming
+operator surface (e.g., real-time dashboard) demanding only
+`Error`-severity entries would prompt re-examination. Today's
+three artifacts saturate the operator/auditor/developer cut.
+
+---
+
+## 2026-05-11 — Chapter 4.3 close + slices δ + ε deferred-with-trigger
+
+**Status:** decided
+
+**Context:** Chapter 4.3 (Operational Diagnostics V2; V2-driver KPI
+Phase 5) closes structurally. Slice arc α + β + γ shipped on branch
+`claude/chapter-4-ddd-improvements-XVCAM` (commits `bf3770b` →
+`abe0040`). Three operator-facing JSON artifacts route from one
+stream via the Code-prefix table; partition property green.
+Test baseline 1012 non-canary passing; lint clean.
+
+Per pre-scope §1.5: slices δ (CLI wire-up in `Projection.Pipeline`)
+and ε (V1 differential test) are sequenced after the structural
+commitment ships. Per the V2-driver KPI per-axis correctness
+stakes table, operational-diagnostics is "Lower" stakes; the
+structural three-emitter projection IS the V2-driver commitment.
+
+**Decision A — Slice δ (CLI wire-up) deferred-with-trigger.**
+Per pre-scope §1.5 slice 5: the canary's CLI verb invokes the
+three emitters and writes the three files alongside the SSDT/
+DACPAC artifacts (C# in `Projection.Pipeline/OperationalDiagnostics
+.cs` per `DECISIONS 2026-05-15`). **Trigger to cash out**: a real
+cutover-day operator workflow that consumes the three artifacts
+(e.g., a CI pipeline step that publishes them as build artifacts;
+a jq-based dashboard). The structural commitment ships at chapter
+4.3 close; the wire-up is operator-UX integration not algebraic
+content.
+
+**Decision B — Slice ε (V1 differential test) deferred-with-trigger.**
+Per pre-scope §1.5 slice 6: the V1 envelope walk runs both V1
+(existing trunk) and V2 (new emitters) against the same fixture
+Catalog and diffs the three artifacts. **Trigger to cash out**:
+V1's `OpportunityLogWriter` + `PolicyDecisionLogWriter` +
+`ValidationReport` writers stabilize as the canonical V1 reference
+shape. Today the divergences are documented in
+`CHAPTER_4_3_CLOSE.md` §V1-input-envelope walk:
+- V2 ships **one** `decision-log.json` (V1 ships two: `policy-
+  decisions.json` + `policy-decision-report.json`).
+- V2 collapses V1's "EnforceUnique + RequiresRemediation" cases
+  per `UniqueIndexPass.fs:96-113`.
+- V2 sorts findings by SsKey root (V1 sorts by Schema/Table/
+  ConstraintName/Type/Title via `ValidationFindingComparer.
+  Instance`).
+
+**Reasoning / consequences.** Both deferrals are at the operator-
+UX integration / V1-fixture-stabilization layer; neither gates
+the V2-driver KPI structural commitment that chapter 4.3 ships.
+The chapter close discharges the structural arc; the trigger
+conditions for both slices are non-algebraic (operator-workflow
+demand + V1 reference-shape stabilization).
+
+**Chapter 4.4 RemediationEmitter sequencing.** Per V2_DRIVER.md
+Phase 6 + chapter 4.4 pre-scope: RemediationEmitter is sequenced
+AFTER chapter 3.x DacpacEmitter (composes over DacpacEmitter's
+typed-DACPAC output). DacpacEmitter is conditional on the deploy
+path; chapter 4.4 inherits the conditionality. **Codified at
+this close**: chapter 4.4 stays not-started until chapter 3.x
+DacpacEmitter ships.
+
+---
+
+## 2026-05-11 — Chapter 3.x DacpacEmitter open: dev-tooling reframe + F# wrapper + content-equality T1 for binary emitters
+
+**Status:** decided
+**Context:** Chapter 3.x DacpacEmitter was pre-scoped at session 25
+(`CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md`) as a **deploy-path-conditional**
+V2-driver KPI critical-path emitter — the second production-write Π
+covering the DACPAC + SqlPackage deploy lane parallel to
+`SsdtDdlEmitter`'s SSDT-style file deploy. At chapter 4.3 close
+(2026-05-11) the operator reframed the chapter's scope:
+
+> "I think the DacpacEmitter is okay to decline in favor of SSDT in
+> terms of deploy path, however I would like to go for it. Let's
+> bring it on in terms of having an emission target so that I can
+> stand up a local copy of the database in no time flat — almost a
+> one-click deploy strategy for my development team to be able to
+> query the database locally or develop on it locally. This would
+> not be used for the production path until we identify a reason
+> why it should."
+
+Production deploy path stays SSDT-style (the V1-compatible file
+bundle the operator's Azure DevOps pipeline already consumes).
+DacpacEmitter ships as a **dev-tooling sibling-Π emitter** — the
+artifact format that `sqlpackage.exe`, Visual Studio's "Publish DAC
+Package," and `DacServices.Deploy` already speak, so the dev team
+can one-click stand up a local copy of the projected schema for
+local query / development.
+
+**Decision (three coupled commitments):**
+
+1. **DacpacEmitter is scoped as dev-tooling, NOT on the production
+   deploy path.** Production deploy stays via `SsdtDdlEmitter
+   .emitSlices` directory bundle; DacpacEmitter is the local-stand-
+   up artifact format. R6 split-brain governance is unaffected —
+   V2 still emits-but-doesn't-ship-to-production during dual-track;
+   the DACPAC artifact is dev-environment-only consumption. The
+   production-deploy scope can re-open if a future operator decision
+   names a reason (the operator's framing: "until we identify a
+   reason why it should").
+2. **Pure F# wrapper inside `Projection.Targets.SSDT`; no C#
+   subproject.** Per `DECISIONS 2026-05-09 — Adapter language
+   choice`, C# was reserved for foreign APIs whose surface was
+   "unfriendly from F#." The pre-scope's session-25 bias toward a
+   new C# project (`Projection.Targets.SSDT.Dacpac`) yields under
+   empirical pressure: (a) `Projection.Pipeline` ended up F# (not
+   C# as the pre-scope assumed); (b) DacFx's V2-relevant surface
+   is small — `new TSqlModel(SqlServerVersion.Sql160) |> use`,
+   `model.AddObjects(scriptText)`, `use stream = ...`,
+   `DacPackageExtensions.BuildPackage(stream, model, metadata)` —
+   four `IDisposable`-aware calls F# handles natively via `use`;
+   (c) ScriptDom is already used directly from F# at
+   `ScriptDomBuild.fs` — the precedent for OO-shaped Microsoft SQL
+   libraries inside F# is established. The 2026-05-09 decision's
+   conditional clause ("DacFx — *if* its API turns out to be
+   unfriendly from F#") fell on the F#-friendly side empirically.
+   `Microsoft.SqlServer.DacFx` v162.x PackageReference lives on
+   `Projection.Targets.SSDT.fsproj`.
+3. **T1 for binary emitters: content-equality via DacFx round-trip
+   (not byte-equality).** DacFx's `BuildPackage` embeds wall-clock
+   timestamps in `Origin.xml` and zip-entry headers; two emit calls
+   on the same Catalog produce non-byte-identical streams. Per the
+   pre-scope §6.1 option (b): T1 for `DacpacEmitter.emit` is
+   **`Catalog → emit → DacPackage.Load → TSqlModel.GetObjects →
+   re-derive table count` equals source kind count** — content
+   identity at the DacFx model level rather than byte identity at
+   the stream level. Post-hoc zip canonicalization (option a) stays
+   deferred-with-trigger: re-open if a snapshot consumer demands
+   byte-stable dacpac artifacts. The dev-tooling consumer
+   (one-click stand-up) does not need byte stability; content
+   identity is sufficient.
+
+**Reasoning / consequences:**
+
+The dev-tooling reframe preserves the Tier-3 hard-required
+`text-builder-as-first-instinct` deferral (DacFx adoption is
+non-negotiable; hand-rolling .dacpac via `System.IO.Packaging`
+remains forbidden) while loosening the scope's coupling to the
+production-deploy promotion ladder. The chapter ships independently
+of the cutover team's production deploy-path choice and does not
+gate on R6 promotion criteria.
+
+Pure-F# wrapper consequences: one new NuGet PackageReference
+(`Microsoft.SqlServer.DacFx` v162.x) on `Projection.Targets.SSDT`,
+matched against the `Microsoft.SqlServer.TransactSql.ScriptDom`
+v170.x already pinned. Cross-target dependency weight increases by
+the DacFx assembly set (~10 MB; pre-scope §6.1's documented Origin
+.xml machinery sits in `Microsoft.SqlServer.Dac.Extensions.dll`).
+Re-open the C#-subproject decision at chapter close if dependency
+weight + project-cohesion arguments justify the subproject lift.
+
+Content-equality T1 consequences: T1's "same input ⇒ byte-identical
+output" formal statement is unchanged for text emitters
+(`SsdtDdlEmitter` / `RawTextEmitter` / `JsonEmitter`); the **binary
+emitter amendment** says T1 for `DacpacEmitter` reads as "same
+input ⇒ content-identical DacFx model under round-trip" — the
+algebraic claim holds at the model level, not the stream level. The
+AXIOMS amendment scaffolding (per `DECISIONS 2026-05-22 — AXIOMS
+amendments scaffolded at chapter open`) records this at chapter
+close when slice α's worked example confirms the discipline.
+
+**Chapter 4.4 RemediationEmitter sequencing is preserved** —
+chapter 4.4 still sequenced after chapter 3.x DacpacEmitter (the
+RemediationEmitter composes over DacpacEmitter's typed model
+output). The dev-tooling reframe does not change the sequencing;
+chapter 4.4 inherits the dev-tooling framing rather than the
+production framing (operator-side remediation for dev-environment
+partial-state recovery).
+
+**Slice arc** at chapter open: α (single-Kind round-trip), β
+(multi-Kind + FK), γ (indexes), δ (CLI `dac deploy` verb), ε
+(modality marks → comments / extended properties), ζ
+(byte-determinism cash-out — deferred-with-trigger; no snapshot
+consumer today).
+
+---
+
+## 2026-05-11 — Chapter 3.x slice δ_dock: DockerImageEmitter replaces CLI `dac deploy` per operator directive
+
+**Status:** decided
+**Context:** Pre-scope §5 sequenced slice δ as a Pipeline + CLI
+wire-up: `Projection.Cli dac deploy <jsonPath> <connStr>` would
+build the dacpac in-process and invoke `DacServices.Deploy` against
+a caller-supplied SQL Server connection. After slice α shipped the
+operator named the next axis explicitly:
+
+> "Even better is if we don't have a CLI command but can somehow
+> create a custom Docker package that stands itself up with the
+> loaded SQL server inside of it? That way it's a single command
+> up and my team doesn't have to have the repository to pull the
+> data fresh each time."
+
+The operator's two coupled requirements:
+1. **Single-command stand-up.** The dev consumer's runtime path is
+   `docker run <image>` — no CLI invocation, no source checkout,
+   no `DacServices.Deploy` orchestration on the dev's machine. The
+   image IS the deployment.
+2. **No repository dependency for the dev consumer.** Whoever runs
+   the image needs only Docker + a registry reference; pulling a
+   fresh schema does not require cloning, building, or running the
+   sidecar's CLI.
+
+**Decision:** Slice δ_dock ships **`Projection.Targets.SSDT.DockerImageEmitter`**
+as a sibling-Π emitter producing a typed `DockerImageContext`
+record (Dockerfile + DacpacBytes + EntrypointScript + Readme).
+The emitter's signature is `Catalog -> Result<DockerImageContext>`;
+the four fields are pure constants for slice δ_dock (per-Catalog
+parameterization deferred per IR-grows-under-evidence). The CLI
+verb originally scoped for slice δ is **retired without replacement**
+— the deployment surface is the Docker image, not a Pipeline
+helper. CI/CD pipelines consume the build context (`docker build .`)
+and publish the resulting image to a registry; dev teams pull
+from the registry.
+
+**The two pillar-7-canonical libraries this slice adopts:**
+
+1. **`mcr.microsoft.com/mssql/server:2022-latest`** as the base
+   image. Microsoft's canonical SQL Server-on-Linux image; same
+   pin as `Projection.Pipeline.Deploy.DefaultImage` so the dev
+   container shares the canary's exact-match-production surface
+   area (per `DECISIONS 2026-05-15`).
+2. **`sqlpackage`** (downloaded from `https://aka.ms/sqlpackage-linux`
+   at image build time) as the DACPAC deploy tool. Microsoft's
+   canonical SSDT-side DACPAC publisher; mirrors what Visual
+   Studio's "Publish DAC Package" uses under the hood.
+
+The entrypoint script's deploy path is `sqlpackage /Action:Publish
+/SourceFile:catalog.dacpac /TargetServerName:localhost ...` —
+identical surface to what a dev would invoke locally if running
+sqlpackage by hand. Idempotency is sqlpackage's contract: on
+container restart against a persisted volume, sqlpackage validates
+the existing schema matches rather than re-creating.
+
+**Reasoning / consequences:**
+
+The Docker image is operationally a **distribution channel** the
+CLI verb is not. A CLI verb requires the dev to have the sidecar
+repository, .NET SDK, and a running SQL Server to point at; the
+Docker image bundles all three (SQL Server inside the image, dacpac
+embedded, deploy tool installed at build time). The bytes that
+travel to the dev's machine are exactly one artifact — the image.
+
+The image is a **build-time-vs-runtime split**: CI/CD owns image
+build (downloads `sqlpackage`, bakes the dacpac, pushes to
+registry — paid once per schema-evolution event); the dev's
+container start paid the much-cheaper "publish dacpac to fresh
+SQL Server instance" cost (~5–30 seconds). The split fits the
+cutover team's existing release pipeline: the same schema
+artifact that CI builds and publishes for production also
+builds + publishes the dev image; one source-of-truth.
+
+**Pillar 7 + pillar 8 hold structurally.** No string composition in
+the build context (Dockerfile / entrypoint / README are pure
+constants for slice δ_dock; lint clean with zero new LINT-ALLOWs).
+The name `DockerImageEmitter` is concept-shaped (names what it
+emits — the build context for a Docker image); `DockerImageContext`
+names the bundled artifact (the context for `docker build`).
+
+**Per-Catalog parameterization deferred-with-trigger** — the
+slice ships pinned constants for `PROJECTION_DB_NAME` (default
+`ProjectionCatalog`) and `BaseImage` (`mcr.microsoft.com/mssql/
+server:2022-latest`). Per-Catalog overrides (multi-database
+images; alternative SQL Server versions; custom env-var name
+schemes) surface when an operator workflow demands them. The
+empirical condition: a second consumer with conflicting defaults.
+
+**Chapter 4.4 RemediationEmitter sequencing preserved** — chapter
+4.4 still sequenced after chapter 3.x; the dev-tooling Docker
+context becomes the natural delivery vehicle for chapter 4.4's
+remediation scripts (operator deploys a fresh Docker image
+incorporating remediation, vs. mutating an existing dev
+database via remediation scripts).
+
+---
+
+## 2026-05-11 — Chapter 3.x close: T1 binary-emitter amendment cashed + three slices deferred-with-trigger
+
+**Status:** decided
+**Context:** Chapter 3.x (DacpacEmitter dev-tooling) closes per the
+eight-item chapter-close ritual (`CHAPTER_3_X_CLOSE.md`). Slice arc
+α + β + γ + δ_dock shipped end-to-end (`090f2d7` + `5985b40`); the
+Tier-3 `text-builder-as-first-instinct` hard-required deferral
+cashed out at slice α; the dev-tooling reframe is structurally
+green (Catalog → DacFx → `.dacpac` → Docker image → registry →
+`docker pull` + `docker run`).
+
+**Decision (four coupled commitments at chapter close):**
+
+1. **AXIOMS T1 binary-emitter amendment is cashed.** The 2026-05-22
+   "Scheduled chapter 3.3 close" placeholder at `AXIOMS.md:689`
+   now carries the worked body: text emitters preserve byte-
+   equality; binary emitters (`DacpacEmitter` today; future
+   `RemediationEmitter` per V2_DRIVER §147) preserve **content-
+   equality via DacFx model round-trip** because DacFx embeds
+   wall-clock timestamps in `Origin.xml` + zip-entry headers. The
+   unifying predicate `t1ByteEqualOrModelEquivalent` chooses per
+   emitter kind. Slice α's `T1 (binary): DacpacEmitter.emit is
+   content-deterministic under DacFx round-trip` is the worked
+   example test.
+2. **Slice ε (modality marks → comments / extended properties)
+   deferred-with-trigger.** Per pre-scope §2: modality marks
+   (`TenantScoped`, `SoftDeletable`, `Static populations`) are
+   informational at Π time; surfacing them as `EXTENDED PROPERTY`
+   or as inline DDL comments has no current consumer (dev-tooling
+   `docker run` + SSMS connect doesn't read modality metadata).
+   **Trigger**: a downstream consumer (cutover audit, remediation
+   flow, dev-tooling sub-feature) demands structured access to
+   modality marks from the .dacpac model.
+3. **Slice ζ (byte-determinism cash-out via post-hoc Origin.xml
+   canonicalization) deferred-with-trigger.** Per chapter-open
+   strategic frame: rewrite `Origin.xml` timestamps; recompute
+   model.xml checksum; re-pack with pinned zip-entry timestamps.
+   Content-equality T1 (commitment 1) is sufficient for dev-
+   tooling. **Trigger**: a snapshot consumer demands byte-stable
+   `.dacpac` artifacts (e.g., a content-addressable artifact
+   store keyed on dacpac SHA256; a CI cache keyed on dacpac hash).
+4. **Per-Catalog Dockerfile / entrypoint parameterization
+   deferred-with-trigger.** Slice δ_dock ships pinned constants
+   for `PROJECTION_DB_NAME` (`ProjectionCatalog`) and `BaseImage`
+   (`mcr.microsoft.com/mssql/server:2022-latest`). Per-Catalog
+   overrides (multi-database images; alternative SQL Server
+   versions; custom env-var name schemes) stay deferred-with-
+   trigger per IR-grows-under-evidence. **Trigger**: a second
+   consumer with conflicting defaults (e.g., a dev team needing
+   an alternative SQL Server version; a per-environment override
+   pattern).
+
+**Reasoning / consequences:**
+
+The binary-emitter T1 amendment is the highest-leverage cash-out
+at chapter 3.x close. It names the structural reason byte-equality
+fails for `DacpacEmitter` (DacFx's `BuildPackage` is non-
+deterministic by design) AND the algebraic form that holds in
+exchange (model-content-equality under round-trip). Future binary
+emitters inherit the predicate; the canary's tier-1 properties
+choose the right form per emitter kind without re-deriving the
+amendment at each new binary emitter's slice α.
+
+The three deferred-with-trigger slices ε / ζ / parameterization
+share a common shape: **no current consumer, no urgency**. Per
+IR-grows-under-evidence, none earn their place until a consumer
+demands them. The dev-tooling reframe means the dev team's
+`docker pull` + `docker run` loop IS the primary feedback channel
+— per-Catalog parameterization will surface naturally when a
+second team adopts the image with conflicting defaults.
+
+**V2_DRIVER.md Phase 6 status flips** from "not-started
+(conditional)" to **substantively shipped (under dev-tooling
+reframe)**. The original Phase 6 framing (DACPAC + SqlPackage as
+production deploy path) defers indefinitely per the dev-tooling
+reframe; the production-deploy condition would need to re-fire to
+reopen the production-scope. Chapter 3.x's dev-tooling output is
+operationally green — no R6 promotion ladder applies (R6 governs
+production-write paths; dev-tooling lives outside the ladder).
+
+**Chapter 4.4 RemediationEmitter framing inherits the reframe**:
+when it ships (if it ships), it ships under dev-tooling framing
+(operator-side partial-state recovery for dev environments) per
+V2_DRIVER §147 free-corollary table. The Docker image's "regenerate
+fresh dacpac + restart container" loop already provides one
+remediation pattern; RemediationEmitter earns its place when an
+operator workflow demands programmatic partial-state recovery
+distinct from the regenerate-and-redeploy pattern.
+
+**Chapter 5 (Phase 8 pragmatic close) opens next.** Consumer-
+pressure-driven items per V2_DRIVER §252: F# Analyzers SDK custom
+analyzer (slice ν from chapter 3.7); Coordinates Stage 2 typed
+VOs (`SchemaName` / `TableName` / `ColumnName`; slice θ from
+chapter 3.7); Hex port lifts (`IArtifactSink` / `IDeployHost`)
+under genuine consumer demand; cutover-day operator runbook
+(joint with solution architect); V1 sunset planning.
+
+---
+
+## 2026-05-11 — Chapter 5 open + slices ν + θ: FSharp.Analyzers.SDK infrastructure + Coordinates Stage 2 VOs (partial cash-out)
+
+**Status:** decided
+**Context:** Per chapter 3.x close (above) + `V2_DRIVER.md` §252:
+the V2-driver KPI critical path closed at chapter 4.3 + chapter
+3.x; remaining work is **Phase 8 pragmatic close** — consumer-
+pressure-driven hygiene + governance. Chapter 5 opens as the
+formal chapter name for that queue. Slices land as separate
+commits; the chapter open accumulates a slice list; no single-
+chapter close fires until the queue empties or stabilizes per
+V1-sunset milestones.
+
+**Two slices ship at chapter open:**
+
+### Slice ν — F# Analyzers SDK custom analyzer
+
+`Projection.Analyzers` F# class library ships under
+`src/Projection.Analyzers/`. Targets net8.0 (the SDK's TFM);
+consuming projects' net9.0 targeting is independent (analyzer
+assemblies are loaded by the `fsharp-analyzers` runner, not
+linked into consumers). Pinned to `FSharp.Analyzers.SDK` 0.30.0
+— last release whose FSharp.Core dependency (9.0.201) is
+compatible with the .NET 9 SDK 9.0.305 we run; 0.36.0+ requires
+FSharp.Core 10.0.101 (.NET 10).
+
+One analyzer ships: **`Projection001NoUnsafeTimeInCore`** —
+detects `System.DateTime.Now` / `DateTime.UtcNow` /
+`DateTime.Today` / `Guid.NewGuid` / `Random.Shared` calls inside
+files under `src/Projection.Core/`. Walks the untyped AST
+(`SynExpr.LongIdent` references with matching long-id suffix
+pairs); cross-platform path discrimination on the file name's
+`/Projection.Core/` segment. Surfaces violations at error
+severity per the CLAUDE.md load-bearing commitment "F#-pure-
+core / no-I/O-in-Core" + the operating-disciplines table entry
+"Determinism is constructed, not validated."
+
+Tool integration: `.config/dotnet-tools.json` registers
+`fsharp-analyzers` 0.30.0; `scripts/run-analyzers.sh` is the
+opt-in runner (build → restore tool → invoke against
+Projection.Core with `--analyzers-path` pointing at the built
+DLL). **CI integration deferred** — the runner is invoked
+manually for now; CI wire-up earns its place when the analyzer
+set grows beyond one rule.
+
+End-to-end verified: runner picks up the analyzer, walks all
+28 files in `Projection.Core`, reports zero violations (Core is
+clean of the forbidden primitives by discipline). The
+infrastructure is proven; the analyzer set is intentionally
+narrow.
+
+### Slice θ — Coordinates Stage 2 typed VOs (smart constructors only)
+
+Per `Coordinates.fs:19-23` Stage 1 docstring's "Stage 2
+(deferred)" placeholder + chapter 5 open strategic frame:
+typed `SchemaName` / `TableName` / `ColumnName` value objects
+land as single-case DUs wrapping validated strings.
+
+Smart constructor invariants:
+- Reject null / empty / whitespace (codes:
+  `schemaName.empty` / `tableName.empty` / `columnName.empty`).
+- Reject identifiers longer than 128 characters (SQL Server
+  identifier limit per
+  `https://learn.microsoft.com/en-us/sql/relational-databases/
+  databases/database-identifiers`; codes:
+  `schemaName.tooLong` / `tableName.tooLong` /
+  `columnName.tooLong`).
+- Accept any otherwise-valid identifier string. Bracket-quoted
+  identifiers may carry SQL-reserved characters; that's a
+  render-time concern (ScriptDom's `Identifier.EncodeIdentifier`
+  handles it), not a construction concern.
+
+The three VOs are **structurally distinct types** — the compiler
+refuses to confuse a `SchemaName` with a `TableName` (or with
+a raw `string`). Per the codebase's "Identity is a type, not a
+string" principle.
+
+**The `PhysicalRealization.Schema/Table` and `Column.ColumnName`
+record-field migration stays deferred-with-trigger.** Stage 1's
+trigger condition is preserved: "Triggers when a real bug would
+have been caught (or when the cost of the explicit `value`
+projections is exceeded by the safety win at the next adapter)."
+The typed surface is **opt-in for new code**; existing `string`-
+field readers keep compiling. **Trigger for the full migration**:
+a real bug caught (schema-vs-table confusion at a boundary) OR
+adapter-ripple cost dominated by safety win at the next adapter.
+
+**Reasoning / consequences:**
+
+Both slices share the **infrastructure-now / migration-later**
+pattern. The analyzer infrastructure ships (one analyzer + the
+runner + tool manifest); the broader analyzer suite earns its
+place when false-negatives surface on the grep rules. The
+Coordinates Stage 2 types ship (three smart constructors +
+distinctness witnesses); the record-field migration earns its
+place when a real bug forces the boundary.
+
+This is honest to the consumer-pressure-driven Phase 8 framing.
+Chapter 5 is **not** a "ship the entire pragmatic-close queue"
+chapter — it's the open-ended queue itself, with slices landing
+as the queue's items earn their place under consumer pressure.
+
+**Test baseline:** 1060 → 1072 non-canary tests (+12 across
+slices ν + θ; the analyzer infrastructure's runtime verification
+is the end-to-end runner against `Projection.Core` reporting
+zero false positives; the typed-VO smart constructors carry 12
+direct tests covering accept / reject / boundary cases). Lint
+clean across 27 grep rules (slices ν + θ introduce zero new
+LINT-ALLOWs — the typed-VO smart constructors use BCL primitives
+at the validation boundary; the analyzer assembly is outside the
+27-rule scope by analyzer-not-application convention).
+
+---

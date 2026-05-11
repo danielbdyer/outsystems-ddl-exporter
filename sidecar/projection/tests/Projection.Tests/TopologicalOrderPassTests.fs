@@ -163,7 +163,8 @@ let private addReference (sourceKey: SsKey) (targetKey: SsKey) (refKey: SsKey) (
                                   Name            = Name.create refName |> Result.value
                                   SourceAttribute = sourceAttrKey
                                   TargetKind      = targetKey
-                                  OnDelete        = NoAction }
+                                  OnDelete        = NoAction
+                                  IsUserFk        = false }
                             { k with References = newRef :: k.References }
                         else k) }) }
 
@@ -279,6 +280,59 @@ let ``Tarjan: SCC reason explains why the cycle stayed unresolved`` () =
     Assert.Contains("Weak edge", scc.Reason)
 
 // ---------------------------------------------------------------------------
+// Self-loop detection (v4) — surfaced by chapter 4.1.B slice δ.
+//
+// Pre-v4: `tarjanScc`'s post-filter dropped 1-node SCCs unconditionally
+// (per the comment "Self-loops would require explicit detection — adds
+// when a real fixture surfaces them"). The data-emission path (slice δ
+// `StaticSeedsEmitter`) needs cycle membership for self-referencing
+// kinds (`employee.manager_id → employee` and similar) to populate
+// `DeferredFkSet` and emit the two-phase MERGE/UPDATE pattern. v4
+// retains 1-node SCCs whose sole member has a self-edge.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``v4 self-loop: kind referencing itself produces a 1-member SCC`` () =
+    let selfRefKey = refKey ["Customer"; "self"]
+    let selfCyclic =
+        sampleCatalog
+        |> addReference customerKey customerKey selfRefKey "self" customerNameKey
+    let result = TopologicalOrderPass.run selfCyclic
+    Assert.NotEmpty(result.Value.Cycles)
+    let scc =
+        result.Value.Cycles
+        |> List.find (fun c -> c.Members = [ customerKey ])
+    Assert.Equal<SsKey list>([ customerKey ], scc.Members)
+
+[<Fact>]
+let ``v4 self-loop: non-self-loop 1-node SCCs are still NOT cycles (filter retained)`` () =
+    // Country is an isolated kind (no FKs); after Tarjan it would form a
+    // singleton {Country} component but with no self-edge — the v4
+    // filter keeps the pre-v4 behavior of dropping it.
+    let result = TopologicalOrderPass.run sampleCatalog
+    let allSccMembers =
+        result.Value.Cycles
+        |> List.collect (fun c -> c.Members)
+        |> Set.ofList
+    Assert.DoesNotContain(countryKey, allSccMembers)
+    Assert.DoesNotContain(customerKey, allSccMembers)
+    Assert.DoesNotContain(orderKey, allSccMembers)
+
+[<Fact>]
+let ``v4 self-loop: SkipSelfEdges policy still drops the self-edge before SCC`` () =
+    // The v4 filter preserves SelfLoopPolicy.SkipSelfEdges semantics:
+    // self-edges are dropped during graph construction, so Tarjan sees
+    // no edge at all, the kind has indegree 0, Kahn processes it, and
+    // no SCC is produced.
+    let selfRefKey = refKey ["Customer"; "self"]
+    let selfCyclic =
+        sampleCatalog
+        |> addReference customerKey customerKey selfRefKey "self" customerNameKey
+    let result = TopologicalOrderPass.runWith SkipSelfEdges selfCyclic
+    Assert.Equal(Topological, result.Value.Mode)
+    Assert.Empty(result.Value.Cycles)
+
+// ---------------------------------------------------------------------------
 // Property: post-symmetric-closure SCC enumeration is permutation-invariant
 // (the V2 contract under cyclic input as well as acyclic).
 // ---------------------------------------------------------------------------
@@ -327,7 +381,8 @@ let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Ki
             Name = mkName "ToOther"
             SourceAttribute = attrFk
             TargetKind = targetKey
-            OnDelete = NoAction } ]
+            OnDelete = NoAction
+            IsUserFk = false } ]
       Indexes = [] }
 
 [<Fact>]
@@ -381,7 +436,8 @@ let private kindWithRef
             Name = mkName "ToOther"
             SourceAttribute = attrFk
             TargetKind = targetKey
-            OnDelete = onDelete } ]
+            OnDelete = onDelete
+            IsUserFk = false } ]
       Indexes = [] }
 
 let private noRefKind (kindKey: string) : Kind =

@@ -376,7 +376,8 @@ let private expectedReferenceCatalog : Catalog =
                 Name            = mkName "AccountId"
                 SourceAttribute = userAccountIdAttrKey
                 TargetKind      = accountKindKey
-                OnDelete        = NoAction }
+                OnDelete        = NoAction
+                IsUserFk        = false }
           ]
           Indexes    = [] }
     { Modules = [

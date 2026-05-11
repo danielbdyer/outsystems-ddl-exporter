@@ -597,6 +597,14 @@ module ReadSide =
                     // and matches the OutSystems-shape
                     // fixtures we currently target.
                     OnDelete = NoAction
+                    // Slice ζ: User-FK detection is not part of
+                    // the schema-only ReadSide surface (the read-
+                    // side reconstructs Catalog from `sys.foreign_keys`;
+                    // it has no User-population evidence to
+                    // identify the user kind). Defaults to false;
+                    // chapter 4.2's adapter-integration boundary
+                    // resolves the flag at the OSSYS-source seam.
+                    IsUserFk = false
                 }
         }
 

@@ -1,3 +1,4 @@
+[<Xunit.Collection("Docker-SqlServer")>]
 module Projection.Tests.CanaryDeployTests
 
 open Xunit

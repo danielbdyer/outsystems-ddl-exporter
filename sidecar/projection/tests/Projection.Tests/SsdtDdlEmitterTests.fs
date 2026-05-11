@@ -601,6 +601,7 @@ let private childKind : Kind =
                 SourceAttribute = childParentIdAttrKey
                 TargetKind = parentKindKey
                 OnDelete = NoAction
+                IsUserFk = false
             }
         ]
         Indexes = []
@@ -719,3 +720,193 @@ let ``Slice 10: T1 byte-determinism holds for the composed bundle`` () =
     for KeyValue(path, body1) in bundle1 do
         let body2 = Map.find path bundle2
         Assert.Equal<string> (body1, body2)
+
+// ---------------------------------------------------------------------------
+// Chapter 4.1.A slice 6 — Cross-module FK verification.
+//
+// Per `CHAPTER_4_PRESCOPE_SSDT_DDL_EMITTER.md` §8 slice 6: cross-module
+// FKs (FK whose target lives in a different module) deploy correctly
+// because SsdtDdlEmitter.statements uses TopologicalOrderPass.runWith
+// SkipSelfEdges to order kinds across module boundaries. The pre-scope
+// gated this slice on chapter 3.2 SnapshotRowsets landing; SnapshotRowsets
+// shipped at chapter 3.2 close (2026-05-10), so this slice ships as a
+// verification test now.
+//
+// The slice 6 implementation is structurally complete already (the
+// topological pass operates over `Catalog.allKinds` which spans every
+// module); this test asserts the cross-module property survives.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Slice 6: cross-module FK target kind precedes its source in statement order`` () =
+    // Build a catalog with two modules: A.AKind (referenced) and
+    // B.BKind (referencer with FK to A.AKind). Topological order
+    // must place A.AKind's CREATE TABLE before B.BKind's.
+    let aModuleKey = modKey "A"
+    let bModuleKey = modKey "B"
+    let aKindKey   = kindKey ["A"; "AKind"]
+    let bKindKey   = kindKey ["B"; "BKind"]
+    let aIdAttr    = attrKey ["A"; "AKind"; "Id"]
+    let bIdAttr    = attrKey ["B"; "BKind"; "Id"]
+    let bFkAttr    = attrKey ["B"; "BKind"; "AId"]
+    let crossRefKey = refKey ["B"; "BKind"; "AId"]
+    let aKind : Kind =
+        { SsKey = aKindKey
+          Name  = mkName "AKind"
+          Origin = OsNative
+          Modality = []
+          Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND" }
+          Attributes =
+              [ { SsKey = aIdAttr; Name = mkName "Id"; Type = Integer
+                  Column = { ColumnName = "ID"; IsNullable = false }
+                  IsPrimaryKey = true; IsMandatory = true
+                  Length = None; Precision = None; Scale = None; IsIdentity = false } ]
+          References = []
+          Indexes = [] }
+    let bKind : Kind =
+        { SsKey = bKindKey
+          Name  = mkName "BKind"
+          Origin = OsNative
+          Modality = []
+          Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND" }
+          Attributes =
+              [ { SsKey = bIdAttr; Name = mkName "Id"; Type = Integer
+                  Column = { ColumnName = "ID"; IsNullable = false }
+                  IsPrimaryKey = true; IsMandatory = true
+                  Length = None; Precision = None; Scale = None; IsIdentity = false }
+                { SsKey = bFkAttr; Name = mkName "AId"; Type = Integer
+                  Column = { ColumnName = "A_ID"; IsNullable = false }
+                  IsPrimaryKey = false; IsMandatory = true
+                  Length = None; Precision = None; Scale = None; IsIdentity = false } ]
+          References =
+              [ { SsKey = crossRefKey
+                  Name = mkName "FkToA"
+                  SourceAttribute = bFkAttr
+                  TargetKind = aKindKey
+                  OnDelete = NoAction
+                  IsUserFk = false } ]
+          Indexes = [] }
+    let catalog : Catalog =
+        { Modules =
+            [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ] }
+              { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ] } ] }
+    let enriched = enrich catalog
+    let statements =
+        SsdtDdlEmitter.statements enriched
+        |> Seq.toList
+    // Find the index of each kind's CREATE TABLE in the statement stream.
+    let findCreateTableIndex (kindKey: SsKey) : int =
+        statements
+        |> List.findIndex (fun stmt ->
+            match stmt with
+            | Statement.CreateTable (table, _, _, _) ->
+                table.Schema + "." + table.Table =
+                    (Catalog.tryFindKind kindKey enriched
+                     |> Option.map (fun k -> k.Physical.Schema + "." + k.Physical.Table)
+                     |> Option.defaultValue "")
+            | _ -> false)
+    let aIdx = findCreateTableIndex aKindKey
+    let bIdx = findCreateTableIndex bKindKey
+    Assert.True (aIdx < bIdx,
+                 sprintf "expected A.AKind (idx %d) before B.BKind (idx %d)" aIdx bIdx)
+
+[<Fact>]
+let ``Slice 6: cross-module FK emits inline FOREIGN KEY constraint`` () =
+    // Build the same two-module catalog and verify B.BKind's CREATE TABLE
+    // emits `CONSTRAINT [FK_...] FOREIGN KEY` referencing A.AKind by its
+    // physical name (resolved via Catalog.tryFindKind).
+    let aModuleKey = modKey "A"
+    let bModuleKey = modKey "B"
+    let aKindKey   = kindKey ["A"; "AKind"]
+    let bKindKey   = kindKey ["B"; "BKind"]
+    let aIdAttr    = attrKey ["A"; "AKind"; "Id"]
+    let bIdAttr    = attrKey ["B"; "BKind"; "Id"]
+    let bFkAttr    = attrKey ["B"; "BKind"; "AId"]
+    let crossRefKey = refKey ["B"; "BKind"; "AId"]
+    let aKind : Kind =
+        { SsKey = aKindKey; Name = mkName "AKind"; Origin = OsNative
+          Modality = []
+          Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND" }
+          Attributes =
+              [ { SsKey = aIdAttr; Name = mkName "Id"; Type = Integer
+                  Column = { ColumnName = "ID"; IsNullable = false }
+                  IsPrimaryKey = true; IsMandatory = true
+                  Length = None; Precision = None; Scale = None; IsIdentity = false } ]
+          References = []; Indexes = [] }
+    let bKind : Kind =
+        { SsKey = bKindKey; Name = mkName "BKind"; Origin = OsNative
+          Modality = []
+          Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND" }
+          Attributes =
+              [ { SsKey = bIdAttr; Name = mkName "Id"; Type = Integer
+                  Column = { ColumnName = "ID"; IsNullable = false }
+                  IsPrimaryKey = true; IsMandatory = true
+                  Length = None; Precision = None; Scale = None; IsIdentity = false }
+                { SsKey = bFkAttr; Name = mkName "AId"; Type = Integer
+                  Column = { ColumnName = "A_ID"; IsNullable = false }
+                  IsPrimaryKey = false; IsMandatory = true
+                  Length = None; Precision = None; Scale = None; IsIdentity = false } ]
+          References =
+              [ { SsKey = crossRefKey; Name = mkName "FkToA"
+                  SourceAttribute = bFkAttr; TargetKind = aKindKey
+                  OnDelete = NoAction; IsUserFk = false } ]
+          Indexes = [] }
+    let catalog : Catalog =
+        { Modules =
+            [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ] }
+              { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ] } ] }
+    let enriched = enrich catalog
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let bFile = ArtifactByKind.toMap artifact |> Map.find bKindKey
+    // Cross-module FK to A.AKind emits inline; the physical name comes
+    // from Catalog.tryFindKind resolving the TargetKind.
+    Assert.Contains ("REFERENCES [dbo].[OSUSR_A_AKIND]", bFile.Body)
+
+[<Fact>]
+let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module FKs don't perturb keyset)`` () =
+    let aModuleKey = modKey "A"
+    let bModuleKey = modKey "B"
+    let aKindKey   = kindKey ["A"; "AKind"]
+    let bKindKey   = kindKey ["B"; "BKind"]
+    let aIdAttr    = attrKey ["A"; "AKind"; "Id"]
+    let bIdAttr    = attrKey ["B"; "BKind"; "Id"]
+    let bFkAttr    = attrKey ["B"; "BKind"; "AId"]
+    let crossRefKey = refKey ["B"; "BKind"; "AId"]
+    let aKind : Kind =
+        { SsKey = aKindKey; Name = mkName "AKind"; Origin = OsNative
+          Modality = []
+          Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND" }
+          Attributes =
+              [ { SsKey = aIdAttr; Name = mkName "Id"; Type = Integer
+                  Column = { ColumnName = "ID"; IsNullable = false }
+                  IsPrimaryKey = true; IsMandatory = true
+                  Length = None; Precision = None; Scale = None; IsIdentity = false } ]
+          References = []; Indexes = [] }
+    let bKind : Kind =
+        { SsKey = bKindKey; Name = mkName "BKind"; Origin = OsNative
+          Modality = []
+          Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND" }
+          Attributes =
+              [ { SsKey = bIdAttr; Name = mkName "Id"; Type = Integer
+                  Column = { ColumnName = "ID"; IsNullable = false }
+                  IsPrimaryKey = true; IsMandatory = true
+                  Length = None; Precision = None; Scale = None; IsIdentity = false }
+                { SsKey = bFkAttr; Name = mkName "AId"; Type = Integer
+                  Column = { ColumnName = "A_ID"; IsNullable = false }
+                  IsPrimaryKey = false; IsMandatory = true
+                  Length = None; Precision = None; Scale = None; IsIdentity = false } ]
+          References =
+              [ { SsKey = crossRefKey; Name = mkName "FkToA"
+                  SourceAttribute = bFkAttr; TargetKind = aKindKey
+                  OnDelete = NoAction; IsUserFk = false } ]
+          Indexes = [] }
+    let catalog : Catalog =
+        { Modules =
+            [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ] }
+              { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ] } ] }
+    let enriched = enrich catalog
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let keys = ArtifactByKind.toMap artifact |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+    Assert.Equal<Set<SsKey>>
+        (Set.ofList [ aKindKey; bKindKey ],
+         keys)

@@ -15,6 +15,8 @@
     <Compile Include="ScriptDomGenerate.fs" />
     <Compile Include="Render.fs" />
     <Compile Include="SsdtDdlEmitter.fs" />
+    <Compile Include="DacpacEmitter.fs" />
+    <Compile Include="DockerImageEmitter.fs" />
     <Compile Include="ManifestEmitter.fs" />
     <Compile Include="SsdtBundle.fs" />
     <Compile Include="RefactorLogEmitter.fs" />
@@ -33,6 +35,17 @@
       in `Render.fs`.
     -->
     <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="170.23.0" />
+    <!--
+      DacFx is the canonical Microsoft .dacpac serialization library.
+      Per `DECISIONS 2026-05-11 — Chapter 3.x DacpacEmitter open`:
+      adopted as a pure F# wrapper inside this project (no C#
+      subproject) per the empirical condition (small surface, all
+      IDisposable-aware calls F# handles natively via `use`).
+      Hard-required by the Tier-3 `text-builder-as-first-instinct`
+      discipline — hand-rolling .dacpac via System.IO.Packaging is
+      forbidden regardless of LINT-ALLOW availability.
+    -->
+    <PackageReference Include="Microsoft.SqlServer.DacFx" Version="162.5.57" />
   </ItemGroup>
 
   <ItemGroup>

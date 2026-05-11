@@ -1,8 +1,278 @@
-# Handoff letter — Chapter 3.2 → next chapter
+# Handoff letter — Chapter 5 open (Phase 8 pragmatic close) + slices ν + θ
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## Chapter 5 open + slices ν + θ (added 2026-05-11; FSharp.Analyzers.SDK + Coordinates Stage 2 VOs)
+
+**Branch:** `claude/chapter-4-ddd-improvements-XVCAM`. **Test baseline:** 1072 non-canary tests passing (+12 across slices ν + θ); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules (one LINT-ALLOW added on the analyzer's diagnostic message at a terminal text-emission boundary; rationale per `DECISIONS 2026-05-10 — LINT-ALLOW substantive-rationale discipline`).
+
+Chapter 5 (Phase 8 pragmatic close per V2_DRIVER §252) opens as the formal chapter name for the consumer-pressure-driven hygiene + governance queue. **Open-ended**: slices land as separate commits; no single-chapter close fires until the queue empties or stabilizes per V1-sunset milestones.
+
+### Slices ν + θ (chapter open)
+
+| # | Slice | What |
+|---|---|---|
+| ν | F# Analyzers SDK custom analyzer | New `Projection.Analyzers` project (net8.0; `FSharp.Analyzers.SDK` 0.30.0 pinned for F#-9-SDK compat); one analyzer `Projection001NoUnsafeTimeInCore` (untyped-AST walk; detects `DateTime.Now`/`UtcNow`/`Today`/`Guid.NewGuid`/`Random.Shared` calls under `src/Projection.Core/`); `.config/dotnet-tools.json` registers `fsharp-analyzers`; `scripts/run-analyzers.sh` is the opt-in runner. End-to-end verified: runner walks all 28 Core files, reports zero violations (Core is clean by discipline). |
+| θ | Coordinates Stage 2 typed VOs | `SchemaName` / `TableName` / `ColumnName` single-case-DU smart constructors land in `Coordinates.fs`. Reject null / empty / whitespace; reject >128 chars (SQL Server identifier limit). **Record-field migration deferred-with-trigger** (Stage 1 docstring's "real bug" trigger preserved; typed surface is opt-in for new code; existing `string`-field readers compile unchanged). 12 acceptance / rejection / boundary tests. |
+
+### Outstanding queue (post-chapter-5-open)
+
+**Within chapter 5 (deferred-with-trigger; consumer-pressure-driven):**
+
+- **PhysicalRealization / Column.ColumnName record-field migration to Stage 2 typed VOs** — `Coordinates.fs:19-23` Stage 1 trigger preserved.
+- **Additional FSharp.Analyzers.SDK analyzers** — false-negative on the grep rules drives new analyzer adoption.
+- **CI integration for the analyzers runner** — earns its place when the analyzer set grows beyond one rule.
+- **Hex port lifts** (`IArtifactSink`, `IDeployHost`) — under genuine consumer demand.
+- **Cutover-day operator runbook** — joint deliverable with solution architect.
+- **V1 sunset planning** — after cutover+30 + one full schema-evolution cycle.
+
+**Deferred-with-trigger from chapter 3.x close:**
+
+- Slice ε — Modality marks → comments / extended properties.
+- Slice ζ — Byte-determinism cash-out via post-hoc Origin.xml canonicalization.
+- Per-Catalog parameterization of DockerImageEmitter Dockerfile + entrypoint.
+- Chapter 4.4 RemediationEmitter (V2_DRIVER §147 free-corollary).
+
+**Quietly-deferred queue** — preserved at the chapter 3.x close prologue below.
+
+---
+
+## Chapter 3.x close (added 2026-05-11; DacpacEmitter dev-tooling + DockerImageEmitter; V2-driver KPI Phase 6 substantively shipped under reframe)
+
+**Branch:** `claude/chapter-4-ddd-improvements-XVCAM`. **Test baseline:** 1060 non-canary tests passing (+48 net since chapter 4.3 close; +13 across chapter 3.x); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules (zero new LINT-ALLOWs in chapter 3.x).
+
+Chapter 3.x closes the **dev-tooling DACPAC artifact path** end-to-end: V2 Catalog → typed-AST stream → DacFx model → `.dacpac` bytes → Docker image → registry → `docker pull` + `docker run`. The operator's one-command stand-up requirement is structurally green; production deploy stays untouched on the SSDT-style file path. The Tier-3 `text-builder-as-first-instinct` Active deferral is cashed out — DacFx (`Microsoft.SqlServer.DacFx` v162.x) is in the codebase and active inside `Projection.Targets.SSDT`. **AXIOMS T1 binary-emitter amendment cashed** at chapter close: text emitters preserve byte-equality; binary emitters preserve content-equality via DacFx model round-trip; the unifying predicate `t1ByteEqualOrModelEquivalent` chooses per emitter kind.
+
+### Slice arc α + β + γ + δ_dock (this chapter)
+
+| # | Commit | Slice | What |
+|---|---|---|---|
+| 1 | `090f2d7` | α | DacpacEmitter v0 + chapter open + `Microsoft.SqlServer.DacFx` NuGet + 4 tests; Tier-3 hard-requirement deferral cashed out; DacFx integration deferral cashed out |
+| 2 | `5985b40` | β + γ + δ_dock | FK round-trip; Indexes round-trip; **DockerImageEmitter** producing a typed `DockerImageContext { Dockerfile; DacpacBytes; EntrypointScript; Readme }` for one-command dev stand-up |
+| 3 | (this commit) | close | CHAPTER_3_X_CLOSE.md (8-item ritual); AXIOMS T1 binary-emitter amendment cashed; three slices deferred-with-trigger (ε modality marks; ζ byte-determinism; per-Catalog parameterization) |
+
+### Outstanding queue (post-chapter-3.x close → Chapter 5)
+
+**Chapter 5 (Phase 8 pragmatic close) opens next.** Consumer-pressure-driven items per V2_DRIVER §252:
+
+- **Slice ν — F# Analyzers SDK custom analyzer** (originally scoped at chapter 3.7). Complements 27 grep lint rules with AST detection.
+- **Slice θ — Coordinates Stage 2 typed VOs** (`SchemaName` / `TableName` / `ColumnName`; originally scoped at chapter 3.7). DDD VO win when adapter ripple is acceptable.
+- **Hex port lifts** (`IArtifactSink`, `IDeployHost`) — under genuine consumer demand.
+- **Cutover-day operator runbook** — joint deliverable with solution architect.
+- **V1 sunset planning** — after cutover+30 + one full schema-evolution cycle.
+
+**Deferred-with-trigger at chapter 3.x close:**
+
+- Slice ε — Modality marks → comments / extended properties (trigger: downstream consumer demands structured access to modality marks from the .dacpac model).
+- Slice ζ — Byte-determinism cash-out via post-hoc Origin.xml canonicalization (trigger: snapshot consumer demands byte-stable dacpac artifacts).
+- Per-Catalog parameterization of Dockerfile / entrypoint (trigger: second consumer with conflicting defaults).
+
+**Quietly-deferred queue (no current consumer; surface at next chapter audit):**
+
+- OSSYS adapter User-kind identification surface (chapter 4.2 close-deferred).
+- CSV adapter for `ManualOverride` (UserMapLoader) (chapter 4.2 close-deferred).
+- `Attribute.Default` field + DEFAULT constraint emission (chapter 4.1.A close-deferred).
+- `Kind.Description` + `Attribute.Description` fields + extended-properties emission (chapter 4.1.A close-deferred).
+- Statement DU MERGE/UPDATE promotion (chapter 4.1.B close-deferred; third-consumer trigger).
+- Sort-vs-data deferral predicate distinction (chapter 4.1.B close codified discipline).
+- Chapter 4.4 RemediationEmitter — V2_DRIVER §147 free-corollary table: "deferred under V2-driver KPI; revisit at chapter 5+ if remediation is operator-needed."
+- Chapter 4.3 slices δ (CLI wire-up) + ε (V1 differential test).
+
+---
+
+## Chapter 3.x open + slices α + β + γ + δ_dock (preserved for reference)
+
+**Branch:** `claude/chapter-4-ddd-improvements-XVCAM`. **Test baseline:** 1060 non-canary tests passing (+4 slice α; +2 slice β; +1 slice γ; +6 slice δ_dock = +13 in chapter 3.x; net +48 since chapter 4.3 close baseline); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules (DacFx adoption + Docker context emission both pillar-7 right moves; zero new LINT-ALLOWs in the chapter).
+
+Chapter 3.x opens the **DacpacEmitter dev-tooling chapter** — reframing the pre-scope's deploy-path-conditional V2-driver KPI critical-path framing to a dev-tooling sibling-Π emitter per operator directive ("stand up a local copy of the database in no time flat — almost a one-click deploy strategy for my development team"). Production deploy path stays SSDT-style file deploy via `SsdtDdlEmitter.emitSlices`; DacpacEmitter ships the `.dacpac` artifact format the dev team consumes via `sqlpackage`, Visual Studio, or `DacServices.Deploy` to a local SQL Server.
+
+**Slice δ_dock reframes pre-scope slice δ** (CLI `dac deploy` verb) → **DockerImageEmitter** per the operator's follow-up directive: "create a custom Docker package that stands itself up with the loaded SQL server inside of it ... single command up and my team doesn't have to have the repository to pull the data fresh each time." The emitter produces a Docker build context (Dockerfile + dacpac + entrypoint + README) that CI/CD builds into a registry-published image. Dev consumption is `docker pull` + `docker run` — no source checkout required.
+
+**Three Active deferrals retired at chapter open + slice α:**
+
+1. **DacFx integration in `Projection.Targets.SSDT.DacpacEmitter`** (Active deferrals row 214): cashed out — chapter ships under dev-tooling framing.
+2. **`Microsoft.SqlServer.Dac` (DacFx) adoption Tier-3 hard-requirement** (Active deferrals row 223): cashed out — `Microsoft.SqlServer.DacFx` v162.x NuGet adopted in `Projection.Targets.SSDT.fsproj`. Pure F# wrapper (no C# subproject; pre-scope §6.2 bias yielded under empirical pressure — DacFx's V2-relevant surface is small, all `IDisposable`-aware calls F# handles via `use`).
+3. **T1 amendment for binary emitters** — content-equality via DacFx round-trip (`Catalog → emit → DacPackage.Load → TSqlModel.GetObjects` enumeration matches across invocations), NOT byte-equality. DacFx embeds wall-clock timestamps in Origin.xml; the algebraic claim holds at the DacFx model level.
+
+### Slice arc α + β + γ + δ_dock (this chapter to date)
+
+| # | Slice | What |
+|---|---|---|
+| α | DacpacEmitter v0 + chapter open + `Microsoft.SqlServer.DacFx` NuGet + 4 tests (non-empty bytes; DacFx round-trip yields one Table per Kind; T1 content-determinism; T11 commutativity vs SsdtDdlEmitter on physical (Schema, Table) pair) |
+| β | FK round-trip test — `sampleCatalog`'s Order→Customer FK ingests via DacFx + re-enumerates through `ForeignKeyConstraint.TypeClass` |
+| γ | Indexes round-trip — `indexedCatalog` fixture (single-column unique + composite non-unique + single-column non-unique) ingests via DacFx + re-enumerates through `Index.TypeClass`; `Index.Unique` property preserved across the round-trip |
+| δ_dock | **DockerImageEmitter** (reframes pre-scope slice δ per operator directive): emits a Docker build context `{ Dockerfile; DacpacBytes; EntrypointScript; Readme }` that CI builds into a self-contained `mcr.microsoft.com/mssql/server:2022-latest`-based image. Image bakes in the dacpac + installs `sqlpackage` at build; entrypoint starts SQL Server, polls until ready, publishes the dacpac. Dev team `docker pull` + `docker run` with no source checkout — "single command up." 6 tests (Dockerfile shape; entrypoint shape; README shape; embedded dacpac round-trips through DacFx; T1 byte-determinism on the static-template fields) |
+
+**A18 amended preserved structurally** — both `DacpacEmitter.emit` and `DockerImageEmitter.emit` take `Catalog -> Result<...>` (Catalog only; no Policy parameter; Profile widening lands when a slice forces it). **T11 keyset coverage** holds across siblings (SsdtDdlEmitter directory bundle and DacpacEmitter model agree on the per-Kind (Schema, Table) set; DockerImageEmitter wraps the dacpac unchanged). **Pillar 7** holds end-to-end (Statement generation via SsdtDdlEmitter typed-AST stream; per-statement script via `ScriptDomGenerate.generateOne`; `.dacpac` serialization via DacFx `DacPackageExtensions.BuildPackage`; SQL Server image via Microsoft's canonical `mcr.microsoft.com/mssql/server`; DACPAC deploy via Microsoft's canonical `sqlpackage`).
+
+### Outstanding queue (post-chapter-3.x slice δ_dock)
+
+**Within chapter 3.x:**
+
+- **Slice ε** — Modality marks → comments / extended properties.
+- **Slice ζ** — Byte-determinism cash-out (post-hoc canonicalization). **Deferred-with-trigger** at chapter open: surface only when a snapshot consumer demands byte-stable dacpac artifacts.
+- **Per-Catalog parameterization of the Dockerfile / entrypoint** — slice δ_dock ships pinned constants (database name = `ProjectionCatalog`; base image = `mcr.microsoft.com/mssql/server:2022-latest`). Per-Catalog overrides land when an operator workflow demands them (IR-grows-under-evidence).
+
+**Now-unblocked (per V2-driver KPI sequencing + DacpacEmitter dev-tooling reframe):**
+
+- **Chapter 4.4 RemediationEmitter** — schema-level partial-state recovery; composes over `CatalogDiff` + DacpacEmitter's typed model output. Inherits the dev-tooling framing per the chapter 4.3 close `2026-05-11 — Chapter 4.3 close + slices δ + ε deferred-with-trigger` entry.
+
+---
+
+## Chapter 4.3 close (added 2026-05-11; Operational Diagnostics V2 structural arc shipped; V2-driver KPI Phase 5 closed)
+
+**Branch:** `claude/chapter-4-ddd-improvements-XVCAM`. **Test baseline:** 1012 non-canary tests passing + ~16 Docker-dependent canary tests; 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules.
+
+Chapter 4.3 closes the **operational-diagnostics axis** — the operator-facing surface of V2's diagnostic pipeline. Three sibling-Π emitters under `Projection.Targets.OperationalDiagnostics` route the existing `Diagnostics<'a>` writer's entries into three operator-vocabulary artifacts via a Code-prefix routing table. The work is **projection over substrate, not new algebra** — no new IR, no new pass shape, no parallel writer.
+
+**The chapter-2 "three-channel Diagnostics split" Active deferral was retired at chapter 4.3 open** with the **refuse the split** decision: the three V1 artifacts ARE the three channels (decision-log = audit; opportunities = operator; validations = developer); routing happens at emit time via the Code-prefix table, not via a structural split of `Diagnostics<'a>`.
+
+### Slice arc α + β + γ (this chapter)
+
+| # | Commit | Slice | What |
+|---|---|---|---|
+| 1 | `bf3770b` | α | DecisionLogEmitter v0 + chapter-2 three-channel-split deferral retired + new `Projection.Targets.OperationalDiagnostics` project |
+| 2 | `abe0040` | β + γ | `Routing` primitive + `OpportunitiesEmitter` + `ValidationsEmitter` + chapter-signature **Routing partition property** + R4 multi-environment promotion property test (independent forward-progress per V2_DRIVER.md) |
+
+**A18 amended preserved structurally** — every emitter's signature is `Catalog × DiagnosticEntry list`; never Policy. **T11 keyset coverage** holds across all three siblings (every catalog kind keyed; empty `entries: []` when no diagnostics match). **Pillar 1** holds end-to-end (JsonNode typed seam at the Π port; strings emerge only at terminal `Utf8JsonWriter`).
+
+### Outstanding queue (post-chapter-4.3)
+
+**V2-driver KPI critical-path under V2_DRIVER.md sequencing — closed front-to-back for the unconditional path:**
+
+- ✅ Chapter 4.1.A (production SSDT DDL emitter)
+- ✅ Chapter 4.1.B (CDC-aware data triumvirate; KPI's highest-leverage chapter)
+- ✅ Chapter 4.2 (User FK reflow; A32 cashed out)
+- ✅ Chapter 4.3 (Operational Diagnostics V2; three-channel deferral retired)
+- ✅ R4 multi-environment promotion property test (independent forward-progress)
+
+**Remaining critical-path (deploy-path-conditional):**
+
+- **Chapter 3.x DacpacEmitter** — DacFx adoption mandatory per Tier-3 codification. **Conditional on the cutover team's deploy-path choice**: SSDT-style file deploy (already covered by `SsdtDdlEmitter`) vs DACPAC + SqlPackage deploy (requires this chapter). Pre-scope: `CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md`. Active deferral entry at top of `DECISIONS.md`.
+- **Chapter 4.4 RemediationEmitter** — schema-level partial-state recovery; composes over `CatalogDiff` + `DacpacEmitter`. **Sequenced after chapter 3.x DacpacEmitter** (inherits the deploy-path conditionality). Pre-scope: `CHAPTER_4_PRESCOPE_DIAGNOSTICS_AND_REMEDIATION.md` Part 2.
+
+**Deferred-with-trigger at chapter 4.3 close (per the close-ritual discipline):**
+
+- **Chapter 4.3 slice δ — CLI wire-up in `Projection.Pipeline`** — operator-UX integration; trigger: real cutover-day operator workflow consuming the three artifacts.
+- **Chapter 4.3 slice ε — V1 differential test** — V1 envelope walk; trigger: V1's `OpportunityLogWriter` + `PolicyDecisionLogWriter` + `ValidationReport` writers stabilize as canonical reference shape.
+
+**Independent forward-progress alternatives (no chapter open required):**
+
+- (None substantive — R4 shipped this session; the cutover-ladder structural commitment is structurally encoded.)
+
+**Quietly deferred (no current consumer; reframe at next chapter audit):**
+
+- OSSYS adapter User-kind identification surface (chapter 4.2 close-deferred).
+- CSV adapter for `ManualOverride` (UserMapLoader) (chapter 4.2 close-deferred).
+- `Attribute.Default` field + DEFAULT constraint emission (chapter 4.1.A close-deferred; rowset-adapter trigger).
+- `Kind.Description` + `Attribute.Description` fields + extended-properties emission (chapter 4.1.A close-deferred; rowset-adapter trigger).
+- Statement DU MERGE/UPDATE promotion (chapter 4.1.B close-deferred; third-consumer trigger).
+- Sort-vs-data deferral predicate distinction (chapter 4.1.B close codified discipline).
+- Chapter-3.7 audit-cleanup slice queue (γ traverseCatalog / ζ attach-adapters / η Result-CE adoption / θ Coordinates Stage 2 / ι writer-monad codification / κ Lineage.tell perf audit / λ SsKey.rootOriginal V1 prefix / μ Restrict→NoActionSql Diagnostics / ν F# Analyzers SDK / ξ-π port lifts).
+
+---
+
+## Chapter 4.2 close (added 2026-05-11; User FK reflow shipped end-to-end; V2-driver KPI Phase 4 closed)
+
+**Branch:** `claude/chapter-4-ddd-improvements-XVCAM`. **Test baseline:** 963 non-canary tests passing + ~16 Docker-dependent canary tests; 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules.
+
+Chapter 4.2 closes the **User FK reflow axis** — the V2-driver KPI's per-axis correctness depth for user-identity reflow across the four-environment cutover. Slice arc α → η shipped end-to-end on the branch:
+
+| # | Commit | Slice | What |
+|---|---|---|---|
+| 1 | `17930c2` | α | UserMatchingStrategy DU + identity types (UserId/SourceUserId/TargetUserId/Email) + Policy 5th axis |
+| 2 | `4678a76` | β + γ | UserPopulation in Profile + UserRemap.fs (UserRemapContext + RemapDiagnostic + smart constructor) |
+| 3 | `d2a091d` | δ | UserFkReflowPass.discover (ByEmail real; others deferred-stub) |
+| 4 | `a0e9807` | ε | Full strategy DU coverage (BySsKey / ManualOverride / FallbackToSystemUser; recursive composition; lazy indexes) |
+| 5 | `693eb13` | ζ | Reference.IsUserFk : bool IR refinement (23 sites updated; closed-DU empirical-test held) |
+| 6 | `08a75cf` | η | UserRemapContext wiring into MigrationDependenciesEmitter + multi-environment commutativity property |
+
+**A32 cashed out at chapter 4.2 close** (per AXIOMS.md A32 cash-out body). The pass-produces-emitter-consumable-value pattern is now a wired template — `UserFkReflowPass.discover : ... -> Lineage<Diagnostics<UserRemapContext>>` produces; `MigrationDependenciesEmitter.emitWithUserRemap` consumes; the multi-environment commutativity property test specializes T4.
+
+**Two new Active deferrals codified at this close:**
+
+- **OSSYS adapter User-kind identification surface** — OSSYS adapter currently sets `IsUserFk = false` for every Reference; trigger: real OSSYS-source-V2-target reflow workflow with User-FK columns. Slice η emitter integration is structurally complete; gap is at adapter boundary only.
+- **CSV adapter for `ManualOverride` (UserMapLoader)** — ManualOverride works via programmatic construction today; trigger: real operator workflow demands file-format pickup path. Mirrors chapter 4.1.B slice ε NDJSON-adapter deferral.
+
+### Outstanding queue (post-chapter-4.2)
+
+**Critical-path under V2-driver KPI** (per `V2_DRIVER.md`):
+
+- **Chapter 4.3 — three-channel Diagnostics split** (DecisionLogEmitter / OpportunitiesEmitter / ValidationsEmitter). Pre-scope: `CHAPTER_4_PRESCOPE_DIAGNOSTICS_AND_REMEDIATION.md`. The substrate is already shipped (`Diagnostics<'a>` writer); this chapter is projection, not new algebra. **Natural next move** per V2_DRIVER.md sequencing.
+- **Chapter 4.1.A slices 6 / 7 / 8** — cross-module FKs / identity + defaults / extended properties. Now-unblocked per chapter 3.2 SnapshotRowsets. Pre-scope: `CHAPTER_4_PRESCOPE_SSDT_DDL_EMITTER.md` §8.
+
+**Hard-requirement Active deferrals (read at chapter open):**
+
+- **Chapter 3.x DacpacEmitter** — MUST adopt `Microsoft.SqlServer.Dac` (DacFx). **Conditional on whether the cutover deploy path requires DACPAC** (product question).
+
+**Independent forward-progress:**
+
+- **R4 multi-environment promotion property test** — uses M4 Tolerance taxonomy `Set<ToleratedDivergence>`; ~150 LOC; chapter 4.2's multi-environment commutativity property is the worked precedent.
+
+**Quietly deferred (no current consumer; reframe at next chapter audit):**
+
+- **OSSYS adapter User-kind identification surface** (chapter 4.2 close-deferred; see DECISIONS entry).
+- **CSV adapter for `ManualOverride` (UserMapLoader)** (chapter 4.2 close-deferred; see DECISIONS entry).
+- **V1↔V2 differential test for UserFkReflowPass** (pre-scope §9; deferred pending V1 fixture canonicalization).
+- **`SourceTag` value-object refactor of SsKey** (chapter 4.2 close-deferred per pre-scope's "what this chapter does NOT do" list).
+
+---
+
+## Chapter 4.1.B close (added 2026-05-11; CDC-aware data triumvirate fully closed end-to-end; V2-driver KPI Phase 3 highest-stakes deliverable shipped)
+
+**Branch:** `claude/chapter-4-ddd-improvements-XVCAM`. **Test baseline:** 893 passing non-canary tests + ~16 Docker-dependent canary tests, 0 skipped, 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules. **Canary suite hang fix:** shipped (Docker-SqlServer xUnit collection + dedicated CdcSilence container).
+
+Chapter 4.1.B closes the **CDC-aware data triumvirate** — the V2-driver KPI's highest-leverage chapter per `V2_DRIVER.md` per-axis correctness stakes table. Slice arc α → κ shipped end-to-end across two close arcs:
+
+- **Slices α/β/γ** shipped at the joint chapter-4.1.A close arc (`CHAPTER_4_1_A_CLOSE.md`). Slice γ — CDC-silence canary GREEN under real SQL Server 2022 CDC — was the chapter signature deliverable.
+- **Slices δ → κ** shipped this session arc on branch `claude/chapter-4-ddd-improvements-XVCAM`. See `CHAPTER_4_1_B_CLOSE.md` for the full slice-by-slice synthesis.
+
+**The eight-item chapter-close ritual was operated** at this close (per `CHAPTER_4_1_B_CLOSE.md`); two new deferrals codified at the Active deferrals index (Statement DU MERGE/UPDATE promotion; sort-vs-data deferral predicate distinction).
+
+### Slice arc δ → κ (this session)
+
+| # | Commit | Slice | What |
+|---|---|---|---|
+| 1 | `23c9d76` | δ + topo v4 | Two-phase insertion / cycle-breaking + `TopologicalOrderPass` v3→v4 self-loop SCC detection + `Kind.tryFindAttribute` lift |
+| 2 | `fafa8fd` | (canary fix) | `Docker-SqlServer` xUnit collection + dedicated CdcSilence ephemeral container — closes a canary-suite-hang bug |
+| 3 | `44c4871` | η | DataEmissionComposer + EmissionPolicy.DataComposition DU + `StaticSeedsEmitter.emitWithTopo` (hoisted-topo) |
+| 4 | `0aa3761` | ε | MigrationDependenciesEmitter (typed AST per Tier-3 hard-requirement Active deferral cash-out) |
+| 5 | `9544006` | ζ + θ | BootstrapEmitter (structural stub) + `EmitError.OverlappingEmitterCoverage` + composer partition assertion |
+| 6 | `340eb15` | ι + κ | `composeRendered` global Phase-1-then-Phase-2 ordering + `RenderedPhase1`/`RenderedPhase2` split + typed `DataInsertRow.Values : Map<Name, SqlLiteral>` (pillar 1 lift) |
+
+**A18 amended holds structurally** for all three sibling-Π emitters (Static / Migration / Bootstrap) — none can type-check with a Policy parameter; only `DataEmissionComposer` reads `Policy.Emission.DataComposition`. **T11 keyset coverage** holds across all three siblings. **Pillar 1** strengthened at the row level (typed `SqlLiteral` flows through `DataInsertRow.Values`; raw strings emerge only at the absolute terminal `Sql160ScriptGenerator` boundary). **Pillar 7 Tier-3 hard-requirement Active deferrals** for chapter 4.1.B all cashed out.
+
+### Outstanding queue (post-chapter-4.1.B)
+
+**Critical-path under V2-driver KPI** (per `V2_DRIVER.md`):
+
+- **Chapter 4.2 — `UserFkReflowPass` + `UserMatchingStrategy` + `SourceTag` refactor of SsKey.** Pre-scope: `CHAPTER_4_PRESCOPE_USERFK_REFLOW.md`. Plugs into `UserRemapContext` shape that slice ζ established + composer's `composeRenderedFull` pipeline-integration entry. **Natural next move.** Inherits chapter 3.2's `OssysOriginal` operational reachability for cross-version `V1Mapped` UUIDv5 derivation.
+- **Chapter 4.3 — three-channel Diagnostics split** (DecisionLogEmitter / OpportunitiesEmitter / ValidationsEmitter). Pre-scope: `CHAPTER_4_PRESCOPE_DIAGNOSTICS_AND_REMEDIATION.md`. Activates Diagnostics writer's deferred channel-routing under real consumer pressure.
+- **Chapter 4.1.A slices 6/7/8** (cross-module FKs / identity + defaults / extended properties). **Unblocked by chapter 3.2** (SnapshotRowsets) — IR widening surfaces via the rowset path's SsKey carriage + EspaceKind / IsSystemEntity activation.
+
+**Hard-requirement Active deferrals (read at chapter open per Tier-3 codification):**
+
+- **Chapter 3.x DacpacEmitter** — MUST adopt `Microsoft.SqlServer.Dac` (DacFx). Pre-scope at `CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md`. Active deferral entry at top of `DECISIONS.md`. **Conditional on whether the cutover deploy path requires DACPAC** (product question).
+
+**Two new deferrals codified at chapter 4.1.B close** (read at chapter open):
+
+- **Statement DU MERGE/UPDATE promotion** — third MERGE/UPDATE consumer triggers the cross-target lift (DacpacEmitter Phase-2 path / Faker / Profile-attached rows in chapter 4.3 are candidates).
+- **Sort-vs-data deferral predicate distinction** — sibling-but-distinct cycle-question discipline; future emitter agents choose the predicate that fits their semantic question explicitly.
+
+**Independent forward-progress** (no chapter open required):
+
+- **R4 multi-environment promotion property test** — uses M4 Tolerance taxonomy `Set<ToleratedDivergence>`; ~150 LOC; concrete next slice.
+
+**Quietly deferred** (no current consumer; reframe at next chapter audit):
+
+- **Migration adapter (NDJSON / CSV pickup directory)** — chapter 4.1.B slice ε; deferred until real ingestion path consumer surfaces.
+- **Bootstrap row sources** (system users / default policies / profile-attached rows) — chapter 4.1.B slice ζ; deferred until chapters 4.2/4.3 supply consumers.
+- **Tolerance slice β** (quotient operator on PhysicalSchemaDiff). Slice α variants are about axes PhysicalSchemaDiff doesn't compare; reopen if a new variant lands that requires diff-filtering.
+- **Outstanding chapter-3.7 audit-cleanup slice queue** (γ traverseCatalog / ζ attach-adapters / η Result-CE adoption / θ Coordinates Stage 2 / ι writer-monad codification / κ Lineage.tell perf audit / λ SsKey.rootOriginal V1 prefix / μ Restrict→NoActionSql Diagnostics / ν F# Analyzers SDK / ξ-π port lifts) — see chapter-3.7 prologue below for triggers.
+
+---
 
 ## Chapter 3.2 close (added 2026-05-10; substantive close + JSON-projection-lossiness class structurally resolved)
 

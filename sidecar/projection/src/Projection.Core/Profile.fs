@@ -524,6 +524,17 @@ module CdcAwareness =
     let create (enabled: Set<SsKey>) (instances: Map<SsKey, string>) : CdcAwareness =
         { CdcEnabled = enabled; CdcInstance = instances }
 
+/// **SourceUsers / TargetUsers fields added at chapter 4.2 slice β** —
+/// per `CHAPTER_4_PRESCOPE_USERFK_REFLOW.md` §4: per-environment user
+/// populations are *empirical* evidence (what users actually exist in
+/// each environment), not structural (the user kind exists once in
+/// Catalog) and not intent (Policy.UserMatching carries the matching
+/// strategy). A34 holds: passes that don't read user populations
+/// produce identical output for `UserPopulation.empty` and any
+/// populated value. Typed parameterization
+/// (`UserPopulation<SourceUserId>` vs `UserPopulation<TargetUserId>`)
+/// extends slice α's identity-orientation safety to the population
+/// level.
 type Profile = {
     Columns                   : ColumnProfile list
     UniqueCandidates          : UniqueCandidateProfile list
@@ -531,6 +542,8 @@ type Profile = {
     ForeignKeys               : ForeignKeyReality list
     Distributions             : AttributeDistribution list
     CdcAwareness              : CdcAwareness
+    SourceUsers               : UserPopulation<SourceUserId>
+    TargetUsers               : UserPopulation<TargetUserId>
 }
 
 [<RequireQualifiedAccess>]
@@ -545,6 +558,8 @@ module Profile =
         ForeignKeys               = []
         Distributions             = []
         CdcAwareness              = CdcAwareness.empty
+        SourceUsers               = UserPopulation.empty
+        TargetUsers               = UserPopulation.empty
     }
 
     /// True iff the profile contains no observations of any kind.
@@ -556,6 +571,8 @@ module Profile =
         && List.isEmpty p.Distributions
         && Set.isEmpty p.CdcAwareness.CdcEnabled
         && Map.isEmpty p.CdcAwareness.CdcInstance
+        && UserPopulation.isEmpty p.SourceUsers
+        && UserPopulation.isEmpty p.TargetUsers
 
     /// Look up a column profile by attribute identity. `None` if absent.
     let tryFindColumn (attributeKey: SsKey) (p: Profile) : ColumnProfile option =

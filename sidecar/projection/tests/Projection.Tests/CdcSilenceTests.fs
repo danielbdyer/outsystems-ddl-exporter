@@ -1,3 +1,4 @@
+[<Xunit.Collection("Docker-SqlServer")>]
 module Projection.Tests.CdcSilenceTests
 
 open System.Threading.Tasks
@@ -141,10 +142,21 @@ let private dropDatabaseBestEffort (masterConn: string) (dbName: string) : Task<
 /// `secondSeedSql` (the property under test). Returns `(baselineCount,
 /// postCount, firstSeedSql)` so the caller can sanity-check the
 /// emitted SQL shape and assert on the CDC-row delta.
+///
+/// **Container isolation** (chapter 4.1.B slice δ observability cash-
+/// out): `Deploy.useEphemeralContainer` rather than `Deploy.useContainer`
+/// so CDC infrastructure (`sys.sp_cdc_enable_db` + capture-instance
+/// state + `master.sys.databases.is_cdc_enabled` flips) lives in a
+/// dedicated SQL Server instance that never touches the warm
+/// container's `master`. The `Docker-SqlServer` xUnit collection
+/// already serializes Docker-touching test classes; this dedicated
+/// container is the structural fix that makes the isolation absolute
+/// (broad-stroke serialization is the safety net; container-per-CDC
+/// is the load-bearing isolation).
 let private runScenario (firstSeedSql: string) (secondSeedSql: string) (kind: Kind) (schemaSql: string) : Task<int * int> =
     task {
         return!
-            Deploy.useContainer (fun masterConn ->
+            Deploy.useEphemeralContainer (fun masterConn ->
                 task {
                     let dbName =
                         System.String.Concat("CdcSilence_", System.Guid.NewGuid().ToString("N").Substring(0, 8))

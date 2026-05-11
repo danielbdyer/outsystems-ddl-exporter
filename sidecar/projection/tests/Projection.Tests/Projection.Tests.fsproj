@@ -22,6 +22,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="TestCollections.fs" />
     <Compile Include="ScaffoldingTests.fs" />
     <Compile Include="ResultTests.fs" />
     <Compile Include="BenchTests.fs" />
@@ -41,6 +42,9 @@
     <Compile Include="TypesTests.fs" />
     <Compile Include="ToleranceTests.fs" />
     <Compile Include="StaticSeedsEmitterTests.fs" />
+    <Compile Include="MigrationDependenciesEmitterTests.fs" />
+    <Compile Include="BootstrapEmitterTests.fs" />
+    <Compile Include="DataEmissionComposerTests.fs" />
     <Compile Include="StaticPopulationEmitterTests.fs" />
     <Compile Include="CdcSilenceTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
@@ -48,6 +52,14 @@
     <Compile Include="ProfileTests.fs" />
     <Compile Include="AttributeDistributionTests.fs" />
     <Compile Include="PolicyTests.fs" />
+    <Compile Include="UserMatchingStrategyTests.fs" />
+    <Compile Include="UserPopulationTests.fs" />
+    <Compile Include="UserRemapContextTests.fs" />
+    <Compile Include="UserFkReflowPassTests.fs" />
+    <Compile Include="UserFkReflowIntegrationTests.fs" />
+    <Compile Include="DecisionLogEmitterTests.fs" />
+    <Compile Include="OperationalDiagnosticsRoutingTests.fs" />
+    <Compile Include="MultiEnvironmentPromotionTests.fs" />
     <Compile Include="TopologicalOrderTests.fs" />
     <Compile Include="VisibilityMaskTests.fs" />
     <Compile Include="NamingMorphismTests.fs" />
@@ -72,6 +84,9 @@
     <Compile Include="EndToEndDifferentialTests.fs" />
     <Compile Include="V1NullabilityParityTests.fs" />
     <Compile Include="SsdtDdlEmitterTests.fs" />
+    <Compile Include="DacpacEmitterTests.fs" />
+    <Compile Include="DockerImageEmitterTests.fs" />
+    <Compile Include="CoordinatesStage2Tests.fs" />
     <Compile Include="ManifestEmitterTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />
@@ -99,6 +114,7 @@
     <ProjectReference Include="..\..\src\Projection.Targets.SSDT\Projection.Targets.SSDT.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Targets.Data\Projection.Targets.Data.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Targets.Json\Projection.Targets.Json.fsproj" />
+    <ProjectReference Include="..\..\src\Projection.Targets.OperationalDiagnostics\Projection.Targets.OperationalDiagnostics.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Targets.Distributions\Projection.Targets.Distributions.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.Sql\Projection.Adapters.Sql.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.Osm\Projection.Adapters.Osm.fsproj" />

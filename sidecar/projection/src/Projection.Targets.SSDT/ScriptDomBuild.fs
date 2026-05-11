@@ -522,6 +522,95 @@ module ScriptDomBuild =
         stmt
 
     // -----------------------------------------------------------------------
+    // UPDATE statement (chapter 4.1.B slice δ; two-phase insertion /
+    // cycle-breaking).
+    //
+    // Phase-2 of the cycle-breaking pattern (`PhasedDynamicEntityInsert
+    // Generator.cs:88-148` is V1's empirical reference): once Phase-1
+    // MERGEs have inserted every cycle-participating row with deferred
+    // FK columns NULLed, Phase-2 UPDATEs populate those FK columns now
+    // that their target rows exist. Per the Tier-3 hard-requirement
+    // deferral (`DECISIONS 2026-05-10 — text-builder-as-first-instinct`):
+    // every new SQL-emitting consumer starts on the typed-AST library.
+    // The `MergeBuildArgs` record + per-cell `SqlLiteral` projection is
+    // the immediate precedent.
+    // -----------------------------------------------------------------------
+
+    /// UPDATE construction args. Decoupled from `Catalog`/`Kind`/
+    /// `Attribute` (mirrors `MergeBuildArgs`'s `TableId` + name-list
+    /// shape) so the builder is testable in isolation and reusable
+    /// across UPDATE-emitting consumers (StaticSeedsEmitter Phase-2
+    /// today; future MigrationDependenciesEmitter / BootstrapEmitter
+    /// Phase-2 paths).
+    ///
+    /// `SetCells`: column-name → typed-literal pairs the UPDATE
+    /// assigns. Order preserved in the emitted SET clause for T1
+    /// byte-determinism.
+    ///
+    /// `WhereCells`: column-name → typed-literal pairs joined with
+    /// AND in the WHERE clause (typically the row's PK columns —
+    /// composite PKs supported via the cell list). Order preserved
+    /// for T1 byte-determinism.
+    type UpdateBuildArgs =
+        {
+            Target     : TableId
+            SetCells   : (string * SqlLiteral) list
+            WhereCells : (string * SqlLiteral) list
+        }
+
+    /// Build a single-part `[col]` column reference (no Target/Source
+    /// alias, unlike MERGE's two-part `qualifiedColumnRef`).
+    let private barColumnRef (col: string) : ColumnReferenceExpression =
+        let refExpr = ColumnReferenceExpression()
+        let mid = MultiPartIdentifier()
+        mid.Identifiers.Add(bracketed col)
+        refExpr.MultiPartIdentifier <- mid
+        refExpr
+
+    /// Build `[col] = <literal>` for one WHERE-clause equality term.
+    let private whereEquality (col: string) (lit: SqlLiteral) : BooleanComparisonExpression =
+        let cmp = BooleanComparisonExpression()
+        cmp.ComparisonType <- BooleanComparisonType.Equals
+        cmp.FirstExpression <- barColumnRef col :> ScalarExpression
+        cmp.SecondExpression <- buildSqlLiteral lit
+        cmp
+
+    /// Build the `UpdateStatement` for the supplied args. Per Tier-3
+    /// (text-builder-as-first-instinct discipline): every node typed,
+    /// every literal flowing through `SqlLiteral`, no terminal text
+    /// composition until `Sql160ScriptGenerator.GenerateScript`.
+    let buildUpdateStatement (args: UpdateBuildArgs) : UpdateStatement =
+        let stmt = UpdateStatement()
+        let spec = UpdateSpecification()
+        let target = NamedTableReference()
+        target.SchemaObject <- schemaObjectFromTableId args.Target
+        spec.Target <- target
+
+        // SET-clause: [col] = <literal>, [col] = <literal>, ...
+        for (col, lit) in args.SetCells do
+            let setClause = AssignmentSetClause()
+            setClause.Column <- barColumnRef col
+            setClause.NewValue <- buildSqlLiteral lit
+            spec.SetClauses.Add(setClause :> SetClause)
+
+        // WHERE-clause: [pk1] = <litpk1> [AND [pk2] = <litpk2> ...].
+        // Empty WhereCells list emits no WHERE clause (full-table
+        // UPDATE — caller's responsibility to avoid that shape).
+        match args.WhereCells with
+        | [] -> ()
+        | cells ->
+            let terms =
+                cells
+                |> List.map (fun (col, lit) ->
+                    whereEquality col lit :> BooleanExpression)
+            let where = WhereClause()
+            where.SearchCondition <- foldBool BooleanBinaryExpressionType.And terms
+            spec.WhereClause <- where
+
+        stmt.UpdateSpecification <- spec
+        stmt
+
+    // -----------------------------------------------------------------------
     // SET IDENTITY_INSERT statement.
     // -----------------------------------------------------------------------
 

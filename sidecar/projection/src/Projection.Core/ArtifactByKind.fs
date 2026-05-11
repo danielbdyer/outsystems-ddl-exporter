@@ -26,6 +26,16 @@ type EmitError =
     /// Per-key rendering failed; reason is human-readable. Surfaces a
     /// structural failure on a present, expected SsKey.
     | RenderFailed of SsKey * reason: string
+    /// Two or more sibling emitters under the same composition both
+    /// produced populated output for the same SsKey — violates the
+    /// composer's partition contract (chapter 4.1.B slice θ; per
+    /// `CHAPTER_4_PRESCOPE_DATA_TRIUMVIRATE.md` §5.3). Carries the
+    /// kind whose coverage overlapped + the names of the overlapping
+    /// emitters (Static / MigrationDependencies / Bootstrap) so the
+    /// operator diagnostic surfaces the configuration-level mismatch
+    /// (e.g., a kind appearing both in `Modality.Static` AND in the
+    /// migration team's pickup channel under `AllRemaining`).
+    | OverlappingEmitterCoverage of SsKey * emitters: string list
 
 
 /// Per-kind output indexed by SsKey root. The smart constructor
