@@ -77,8 +77,15 @@ module BootstrapEmitter =
     let version : int = 1
 
     /// Empty-script projection — the slice ζ MVP shape per kind.
+    /// Carries the slice ι split (`RenderedPhase1` + `RenderedPhase2`)
+    /// at empty defaults; per-kind `Rendered` is the empty
+    /// concatenation.
     let private emptyScript : DataInsertScript =
-        { Phase1Merges = []; Phase2Updates = []; Rendered = "" }
+        { Phase1Merges   = []
+          Phase2Updates  = []
+          RenderedPhase1 = ""
+          RenderedPhase2 = ""
+          Rendered       = "" }
 
     /// Π_Bootstrap emit (composer-facing; hoisted-topo + UserRemap
     /// context). Slice ζ MVP returns the empty no-op artifact for

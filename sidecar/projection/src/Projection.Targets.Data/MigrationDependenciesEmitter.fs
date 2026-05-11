@@ -148,31 +148,41 @@ module MigrationDependenciesEmitter =
                 else None)
             |> Set.ofList
 
-    /// Project a `MigrationDependencyRow` into the typed
-    /// `SqlLiteral list` form `ScriptDomBuild.MergeBuildArgs.Rows`
-    /// expects. Iterates the kind's attributes in declared order;
-    /// missing values default to NULL (V2 IR's empty-raw sentinel
-    /// per `RawValueCodec`); deferred-FK columns get `SqlLiteral.
-    /// NullLit` regardless of the row's raw value (Phase-1 cycle-
-    /// break — same shape as `StaticSeedsEmitter.rowToSqlLiterals`).
-    let private rowToSqlLiterals
+    /// Project a `MigrationDependencyRow`'s raw `Map<Name, string>`
+    /// into the typed `Map<Name, SqlLiteral>` shape
+    /// `DataInsertRow.Values` expects (slice κ pillar 1 lift).
+    /// Mirror of `StaticSeedsEmitter.staticRowToTypedValues`.
+    let private migrationRowToTypedValues
         (typeLookup: Map<Name, PrimitiveType>)
-        (deferred: Set<Name>)
         (attributes: Attribute list)
         (row: MigrationDependencyRow)
+        : Map<Name, SqlLiteral> =
+        attributes
+        |> List.map (fun a ->
+            let raw =
+                Map.tryFind a.Name row.Values
+                |> Option.defaultValue ""
+            let typ =
+                Map.tryFind a.Name typeLookup
+                |> Option.defaultValue PrimitiveType.Text
+            a.Name, SqlLiteral.ofRaw typ raw)
+        |> Map.ofList
+
+    /// Project the typed-Values row into the `SqlLiteral list` form
+    /// `MergeBuildArgs.Rows` expects. Slice δ deferred handling
+    /// (NULLed columns) mirrors `StaticSeedsEmitter`.
+    let private typedValuesToSqlLiterals
+        (deferred: Set<Name>)
+        (attributes: Attribute list)
+        (values: Map<Name, SqlLiteral>)
         : SqlLiteral list =
         attributes
         |> List.map (fun a ->
             if Set.contains a.Name deferred then
                 SqlLiteral.NullLit
             else
-                let raw =
-                    Map.tryFind a.Name row.Values
-                    |> Option.defaultValue ""
-                let typ =
-                    Map.tryFind a.Name typeLookup
-                    |> Option.defaultValue PrimitiveType.Text
-                SqlLiteral.ofRaw typ raw)
+                Map.tryFind a.Name values
+                |> Option.defaultValue SqlLiteral.NullLit)
 
     /// Render the MERGE statement for a kind with its migration
     /// rows via ScriptDom's typed-AST + `Sql160ScriptGenerator`
@@ -185,20 +195,19 @@ module MigrationDependenciesEmitter =
         (cdcAware: bool)
         (deferred: Set<Name>)
         (k: Kind)
-        (rows: MigrationDependencyRow list)
+        (typedRows: Map<Name, SqlLiteral> list)
         : string =
         use _ = Bench.scope "emit.migrationDeps.renderMerge"
         let table : TableId =
             { Schema = k.Physical.Schema
               Table  = k.Physical.Table }
-        let typeLookup = columnTypeLookup k
         let args : ScriptDomBuild.MergeBuildArgs =
             {
                 Target     = table
                 AllColumns = orderedColumnNames k
                 PkColumns  = pkColumnNames k
                 UpdColumns = updatableColumnNames k
-                Rows       = rows |> List.map (rowToSqlLiterals typeLookup deferred k.Attributes)
+                Rows       = typedRows |> List.map (typedValuesToSqlLiterals deferred k.Attributes)
                 CdcAware   = cdcAware
             }
         let mergeStmt = ScriptDomBuild.buildMergeStatement args
@@ -213,21 +222,17 @@ module MigrationDependenciesEmitter =
     let private renderUpdate
         (k: Kind)
         (deferred: Set<Name>)
-        (row: MigrationDependencyRow)
+        (typedValues: Map<Name, SqlLiteral>)
         : string =
         use _ = Bench.scope "emit.migrationDeps.renderUpdate"
         let table : TableId =
             { Schema = k.Physical.Schema
               Table  = k.Physical.Table }
-        let typeLookup = columnTypeLookup k
         let cellOf (a: Attribute) : string * SqlLiteral =
-            let raw =
-                Map.tryFind a.Name row.Values
-                |> Option.defaultValue ""
-            let typ =
-                Map.tryFind a.Name typeLookup
-                |> Option.defaultValue PrimitiveType.Text
-            a.Column.ColumnName, SqlLiteral.ofRaw typ raw
+            let lit =
+                Map.tryFind a.Name typedValues
+                |> Option.defaultValue SqlLiteral.NullLit
+            a.Column.ColumnName, lit
         let setCells =
             k.Attributes
             |> List.filter (fun a -> Set.contains a.Name deferred)
@@ -257,29 +262,46 @@ module MigrationDependenciesEmitter =
         : DataInsertScript =
         let rows = Map.tryFind k.SsKey rowsByKind |> Option.defaultValue []
         if List.isEmpty rows then
-            { Phase1Merges = []; Phase2Updates = []; Rendered = "" }
+            { Phase1Merges  = []
+              Phase2Updates = []
+              RenderedPhase1 = ""
+              RenderedPhase2 = ""
+              Rendered      = "" }
         else
             let cdcAware = CdcAwareness.isEnabled k.SsKey cdc
             let deferred = deferredColumns cycleMembers k
-            let mergeText = renderMerge cdcAware deferred k rows
-            let updateTexts =
-                if Set.isEmpty deferred then []
-                else rows |> List.map (renderUpdate k deferred)
+            let typeLookup = columnTypeLookup k
+            // Slice κ pillar 1 lift: project raw rows into typed
+            // SqlLiteral form once at construction.
+            let typedRows =
+                rows
+                |> List.map (fun row ->
+                    row.Identifier,
+                    migrationRowToTypedValues typeLookup k.Attributes row)
+            let renderedPhase1 =
+                renderMerge cdcAware deferred k (typedRows |> List.map snd)
+            let renderedPhase2 =
+                if Set.isEmpty deferred then ""
+                else
+                    typedRows
+                    |> List.map (fun (_, vs) -> renderUpdate k deferred vs)
+                    |> System.String.Concat  // LINT-ALLOW: terminal Phase-2 cross-row UPDATE concatenation (chapter 4.1.B slice ι; mirror of StaticSeedsEmitter); each segment is the ScriptDom-rendered + GO-batched UPDATE for one row; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary
             let rendered =
-                mergeText :: updateTexts
-                |> System.String.Concat  // LINT-ALLOW: terminal per-kind text concatenation of ScriptDom-rendered + GO-batched MERGE/UPDATE statement strings (chapter 4.1.B slice ε); each segment is the typed-AST output of `ScriptDomGenerate.generateOne` already terminated by `;\nGO\n`; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary; the typed `Statement` DU does not yet model MERGE/UPDATE so `ScriptDomGenerate.toText` is not applicable here
-            let mkRow (row: MigrationDependencyRow) : DataInsertRow =
+                System.String.Concat(renderedPhase1, renderedPhase2)  // LINT-ALLOW: terminal per-kind concatenation of ScriptDom-rendered Phase-1 + Phase-2 strings (chapter 4.1.B slice κ; mirror of StaticSeedsEmitter); both segments are typed-AST outputs already terminated by `;\nGO\n`
+            let mkRow (identifier: SsKey) (values: Map<Name, SqlLiteral>) : DataInsertRow =
                 { KindKey       = k.SsKey
-                  Identifier    = row.Identifier
-                  Values        = row.Values
+                  Identifier    = identifier
+                  Values        = values
                   DeferredFkSet = deferred }
-            let phase1Rows = rows |> List.map mkRow
+            let phase1Rows = typedRows |> List.map (fun (id, vs) -> mkRow id vs)
             let phase2Rows =
                 if Set.isEmpty deferred then []
-                else rows |> List.map mkRow
-            { Phase1Merges  = phase1Rows
-              Phase2Updates = phase2Rows
-              Rendered      = rendered }
+                else typedRows |> List.map (fun (id, vs) -> mkRow id vs)
+            { Phase1Merges   = phase1Rows
+              Phase2Updates  = phase2Rows
+              RenderedPhase1 = renderedPhase1
+              RenderedPhase2 = renderedPhase2
+              Rendered       = rendered }
 
     /// Π_MigrationDependencies emit (composer-facing; hoisted topo).
     /// Per A18 amended (`Catalog × Profile` × sibling-evidence input,

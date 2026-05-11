@@ -313,6 +313,131 @@ let ``Slice θ: partition holds under AllExceptStatic (Static skipped, Migration
         Assert.Equal (1, List.length script.Phase1Merges)
     | Error e -> Assert.Fail (sprintf "expected partition success, got %A" e)
 
+// ---------------------------------------------------------------------------
+// Slice ι — composeRendered + multi-kind cycle global-phase reification.
+//
+// Per the slice-δ improvement surface item #2: per-kind `Rendered` is
+// only deploy-correct for self-FK cycles (1-node SCCs); multi-kind
+// cycles need ALL Phase-1 MERGEs (across all kinds in topo order)
+// before ANY Phase-2 UPDATE. `composeRendered` produces the global
+// cycle-correct deploy text by walking the artifact under the
+// hoisted topological order.
+// ---------------------------------------------------------------------------
+
+let private normWsCmp (s: string) : string =
+    System.Text.RegularExpressions.Regex.Replace(s, @"\s+", " ").Trim()
+
+[<Fact>]
+let ``Slice ι: composeRendered produces non-empty text for static-only catalog`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let result = DataEmissionComposer.composeRendered (policyWith AllRemaining) catalog Profile.empty
+    match result with
+    | Ok text ->
+        Assert.Contains ("MERGE INTO [dbo].[OSUSR_TEST_COUNTRY] AS [Target]", normWsCmp text)
+    | Error e -> Assert.Fail (sprintf "expected Ok, got %A" e)
+
+[<Fact>]
+let ``Slice ι: composeRendered emits Phase-1 (MERGE) of every kind before Phase-2 (UPDATE) of any kind`` () =
+    // Build a 2-kind catalog where each kind has populated Static
+    // rows AND a self-FK cycle (so Phase-2 UPDATEs surface for both).
+    // The global ordering invariant: NO `UPDATE` text appears before
+    // ALL `MERGE INTO` texts have been emitted.
+    let mkSelfCycleKind (name: string) (table: string) (rowId: string) : Kind =
+        let kindKey = mkKey ["TestModule"; name]
+        let idKey = mkKey ["TestModule"; name; "Id"]
+        let parentKey = mkKey ["TestModule"; name; "ParentId"]
+        let refKey = mkKey ["TestModule"; name; "RefSelf"]
+        let row =
+            { Identifier = mkKey ["TestModule"; name; "Row"; rowId]
+              Values =
+                  Map.ofList
+                      [ mkName "Id",       rowId
+                        mkName "ParentId", rowId ] }
+        {
+            SsKey    = kindKey
+            Name     = mkName name
+            Origin   = OsNative
+            Modality = [ Static [ row ] ]
+            Physical = { Schema = "dbo"; Table = table }
+            Attributes =
+                [
+                    { SsKey = idKey;     Name = mkName "Id";       Type = Integer
+                      Column = { ColumnName = "ID";       IsNullable = false }
+                      IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                    { SsKey = parentKey; Name = mkName "ParentId"; Type = Integer
+                      Column = { ColumnName = "PARENTID"; IsNullable = true }
+                      IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                ]
+            References =
+                [ { SsKey = refKey; Name = mkName "RefSelf"
+                    SourceAttribute = parentKey; TargetKind = kindKey
+                    OnDelete = NoAction } ]
+            Indexes    = []
+        }
+    let alpha = mkSelfCycleKind "Alpha" "OSUSR_ALPHA" "1"
+    let beta = mkSelfCycleKind "Beta" "OSUSR_BETA" "1"
+    let catalog = mkCatalog [ alpha; beta ]
+    let text =
+        DataEmissionComposer.composeRendered (policyWith AllRemaining) catalog Profile.empty
+        |> mustOkEmit
+    let n = normWsCmp text
+    // Both kinds should produce a MERGE and an UPDATE (each has a
+    // self-FK cycle on a nullable column → deferred → Phase-2 UPDATE).
+    Assert.Contains ("MERGE INTO [dbo].[OSUSR_ALPHA]", n)
+    Assert.Contains ("MERGE INTO [dbo].[OSUSR_BETA]", n)
+    Assert.Contains ("UPDATE [dbo].[OSUSR_ALPHA]", n)
+    Assert.Contains ("UPDATE [dbo].[OSUSR_BETA]", n)
+    // The load-bearing global-ordering invariant: every MERGE-INTO
+    // index sits before every UPDATE index.
+    let mergeIdx1 = n.IndexOf "MERGE INTO [dbo].[OSUSR_ALPHA]"
+    let mergeIdx2 = n.IndexOf "MERGE INTO [dbo].[OSUSR_BETA]"
+    let updateIdx1 = n.IndexOf "UPDATE [dbo].[OSUSR_ALPHA]"
+    let updateIdx2 = n.IndexOf "UPDATE [dbo].[OSUSR_BETA]"
+    let lastMerge = max mergeIdx1 mergeIdx2
+    let firstUpdate = min updateIdx1 updateIdx2
+    Assert.True (lastMerge < firstUpdate,
+                 sprintf "expected all MERGEs before any UPDATE, but lastMerge=%d firstUpdate=%d" lastMerge firstUpdate)
+
+[<Fact>]
+let ``Slice ι: composeRendered for acyclic catalog has no Phase-2 UPDATE text`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let text =
+        DataEmissionComposer.composeRendered (policyWith AllRemaining) catalog Profile.empty
+        |> mustOkEmit
+    let n = normWsCmp text
+    // Country has no FKs → no cycle → no deferred FKs → no Phase-2.
+    Assert.Contains ("MERGE INTO", n)
+    Assert.DoesNotContain ("UPDATE [dbo].[OSUSR_TEST_COUNTRY]", n)
+
+[<Fact>]
+let ``Slice ι: T1 byte-determinism holds for composeRendered`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let policy = policyWith AllRemaining
+    let r1 = DataEmissionComposer.composeRendered policy catalog Profile.empty |> mustOkEmit
+    let r2 = DataEmissionComposer.composeRendered policy catalog Profile.empty |> mustOkEmit
+    Assert.Equal<string> (r1, r2)
+
+// ---------------------------------------------------------------------------
+// Slice κ — typed DataInsertRow.Values (pillar 1 strengthening).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Slice κ: DataInsertRow.Values is typed Map<Name, SqlLiteral>`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    let row = List.head script.Phase1Merges
+    // Static-IR string "US" became typed `TextLit "US"` per
+    // SqlLiteral.ofRaw(Text, "US").
+    let codeValue = Map.find (mkName "Code") row.Values
+    match codeValue with
+    | TextLit raw -> Assert.Equal<string> ("US", raw)
+    | other       -> Assert.Fail (sprintf "expected TextLit, got %A" other)
+
 [<Fact>]
 let ``composeWithLineage: payload Result matches compose's Result for the same inputs`` () =
     let country = mkCountryKind ()

@@ -68,7 +68,11 @@ module DataEmissionComposer =
     /// emits for kinds it doesn't own. Centralized so future
     /// emitters that ship slice ε / ζ get the same neutral form.
     let private emptyScript : DataInsertScript =
-        { Phase1Merges = []; Phase2Updates = []; Rendered = "" }
+        { Phase1Merges   = []
+          Phase2Updates  = []
+          RenderedPhase1 = ""
+          RenderedPhase2 = ""
+          Rendered       = "" }
 
     /// Build a no-op `ArtifactByKind<DataInsertScript>` keyed by
     /// every catalog kind — every kind maps to `emptyScript`. Used
@@ -255,3 +259,84 @@ module DataEmissionComposer =
         (userRemap: UserRemapContext)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         (composeWithLineage policy catalog profile migration userRemap).Value
+
+    /// Π_Data compose-rendered (chapter 4.1.B slice ι; multi-kind
+    /// cycle global-phase reification). Produces a single
+    /// globally-ordered GO-batched T-SQL string where ALL Phase-1
+    /// MERGEs across ALL kinds (in topological order) precede ANY
+    /// Phase-2 UPDATE — the structural cash-out of the slice-δ
+    /// improvement surface item #2.
+    ///
+    /// **Why per-kind `Rendered` is insufficient for multi-kind
+    /// cycles.** A 2-cycle (kind A ↔ kind B with nullable FKs) has
+    /// per-kind `Rendered = MERGE_A; UPDATE_A` (Phase-1 + Phase-2
+    /// concatenated kind-locally). Deploying the per-kind output
+    /// in isolation fails: `UPDATE_A`'s WHERE references B's row
+    /// that doesn't exist yet. The cycle-correct deploy order is
+    /// `MERGE_A; MERGE_B; UPDATE_A; UPDATE_B` — ALL Phase-1
+    /// across both kinds, THEN ALL Phase-2.
+    ///
+    /// **How `composeRendered` reifies it.** Slice ι's
+    /// `RenderedPhase1` / `RenderedPhase2` split at the per-kind
+    /// level lets the composer concatenate Phase-1 across all
+    /// kinds (in topological order from the hoisted topo pass)
+    /// then Phase-2 across all kinds (same order). Self-FK kinds
+    /// continue to deploy correctly under per-kind `Rendered`
+    /// (the kind-local Phase-1 + Phase-2 IS the deploy order for
+    /// a 1-node SCC); multi-kind cycles require this global view.
+    ///
+    /// Full-arity form. The `composeRendered` convenience defaults
+    /// both contexts to empty.
+    let composeRenderedFull
+        (policy: Policy)
+        (catalog: Catalog)
+        (profile: Profile)
+        (migration: MigrationDependencyContext)
+        (userRemap: UserRemapContext)
+        : Result<string, EmitError> =
+        use _ = Bench.scope "compose.data.composeRendered"
+        // Hoist the topo pass once; both the composer and the
+        // global-phase rendering consume the same ordering.
+        let topoLineage = TopologicalOrderPass.runWith TreatAsCycle catalog
+        let topo = topoLineage.Value
+        let composition = policy.Emission.DataComposition
+        match dispatchSiblings composition topo catalog profile migration userRemap with
+        | Error e -> Error e
+        | Ok siblings ->
+            match unionSiblings catalog siblings with
+            | Error e   -> Error e
+            | Ok artifact ->
+                let map = ArtifactByKind.toMap artifact
+                // Walk kinds in topological order so Phase-1 MERGEs
+                // honor FK precedence at the global level
+                // (cycle-broken kinds appear in topo.Order via
+                // `applyResolver`'s reduced-graph re-Kahn). Same
+                // order applies to Phase-2 UPDATEs (target rows
+                // exist by then; ordering is for diagnostic
+                // determinism rather than correctness).
+                let phase1Texts =
+                    topo.Order
+                    |> List.choose (fun k ->
+                        Map.tryFind k map
+                        |> Option.map (fun s -> s.RenderedPhase1))
+                let phase2Texts =
+                    topo.Order
+                    |> List.choose (fun k ->
+                        Map.tryFind k map
+                        |> Option.map (fun s -> s.RenderedPhase2))
+                let allText =
+                    Seq.append phase1Texts phase2Texts
+                    |> System.String.Concat  // LINT-ALLOW: terminal global Phase-1-then-Phase-2 concatenation across all kinds in topological order (chapter 4.1.B slice ι); each segment is the per-kind ScriptDom-rendered RenderedPhase1 / RenderedPhase2 string already terminated by `;\nGO\n`; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary; preserves the global cycle-correct deploy order that per-kind Rendered cannot express
+                Ok allText
+
+    /// Π_Data compose-rendered (canary-test convenience). Defaults
+    /// migration + userRemap to empty.
+    let composeRendered
+        (policy: Policy)
+        (catalog: Catalog)
+        (profile: Profile)
+        : Result<string, EmitError> =
+        composeRenderedFull
+            policy catalog profile
+            MigrationDependencyContext.empty
+            UserRemapContext.empty

@@ -111,30 +111,46 @@ module StaticSeedsEmitter =
                 else None)
             |> Set.ofList
 
-    /// Project one StaticRow into the typed `SqlLiteral list` form
-    /// that `MergeBuildArgs.Rows` expects. Iterates the kind's
-    /// attributes in declared order; missing values default to NULL
-    /// (V2 IR's empty-raw sentinel per `RawValueCodec`). Slice δ:
-    /// columns named in `deferred` are emitted as `SqlLiteral.NullLit`
-    /// regardless of the row's raw value (Phase-1 cycle-break).
-    let private rowToSqlLiterals
+    /// Project a StaticRow's `Map<Name, string>` raw values into the
+    /// typed `Map<Name, SqlLiteral>` form `DataInsertRow.Values`
+    /// expects (slice κ pillar 1 lift). Resolves each attribute's
+    /// `PrimitiveType` once at construction; missing values default
+    /// to empty-raw (V2 IR's empty-raw sentinel per `RawValueCodec`,
+    /// which `SqlLiteral.ofRaw` maps to `NullLit` for non-text
+    /// types).
+    let private staticRowToTypedValues
         (typeLookup: Map<Name, PrimitiveType>)
-        (deferred: Set<Name>)
         (attributes: Attribute list)
         (row: StaticRow)
+        : Map<Name, SqlLiteral> =
+        attributes
+        |> List.map (fun a ->
+            let raw =
+                Map.tryFind a.Name row.Values
+                |> Option.defaultValue ""
+            let typ =
+                Map.tryFind a.Name typeLookup
+                |> Option.defaultValue PrimitiveType.Text
+            a.Name, SqlLiteral.ofRaw typ raw)
+        |> Map.ofList
+
+    /// Project the typed-Values row into the `SqlLiteral list` form
+    /// `MergeBuildArgs.Rows` expects. Iterates the kind's attributes
+    /// in declared order. Slice δ: columns named in `deferred` are
+    /// emitted as `SqlLiteral.NullLit` regardless of the row's
+    /// typed value (Phase-1 cycle-break).
+    let private typedValuesToSqlLiterals
+        (deferred: Set<Name>)
+        (attributes: Attribute list)
+        (values: Map<Name, SqlLiteral>)
         : SqlLiteral list =
         attributes
         |> List.map (fun a ->
             if Set.contains a.Name deferred then
                 SqlLiteral.NullLit
             else
-                let raw =
-                    Map.tryFind a.Name row.Values
-                    |> Option.defaultValue ""
-                let typ =
-                    Map.tryFind a.Name typeLookup
-                    |> Option.defaultValue PrimitiveType.Text
-                SqlLiteral.ofRaw typ raw)
+                Map.tryFind a.Name values
+                |> Option.defaultValue SqlLiteral.NullLit)
 
     /// Render the MERGE statement for a kind with its static populations
     /// via ScriptDom's typed-AST + `Sql160ScriptGenerator` pipeline.
@@ -157,20 +173,19 @@ module StaticSeedsEmitter =
         (cdcAware: bool)
         (deferred: Set<Name>)
         (k: Kind)
-        (rows: StaticRow list)
+        (typedRows: Map<Name, SqlLiteral> list)
         : string =
         use _ = Bench.scope "emit.staticSeeds.renderMerge"
         let table : TableId =
             { Schema = k.Physical.Schema
               Table  = k.Physical.Table }
-        let typeLookup = columnTypeLookup k
         let args : ScriptDomBuild.MergeBuildArgs =
             {
                 Target     = table
                 AllColumns = orderedColumnNames k
                 PkColumns  = pkColumnNames k
                 UpdColumns = updatableColumnNames k
-                Rows       = rows |> List.map (rowToSqlLiterals typeLookup deferred k.Attributes)
+                Rows       = typedRows |> List.map (typedValuesToSqlLiterals deferred k.Attributes)
                 CdcAware   = cdcAware
             }
         let mergeStmt = ScriptDomBuild.buildMergeStatement args
@@ -196,21 +211,17 @@ module StaticSeedsEmitter =
     let private renderUpdate
         (k: Kind)
         (deferred: Set<Name>)
-        (row: StaticRow)
+        (typedValues: Map<Name, SqlLiteral>)
         : string =
         use _ = Bench.scope "emit.staticSeeds.renderUpdate"
         let table : TableId =
             { Schema = k.Physical.Schema
               Table  = k.Physical.Table }
-        let typeLookup = columnTypeLookup k
         let cellOf (a: Attribute) : string * SqlLiteral =
-            let raw =
-                Map.tryFind a.Name row.Values
-                |> Option.defaultValue ""
-            let typ =
-                Map.tryFind a.Name typeLookup
-                |> Option.defaultValue PrimitiveType.Text
-            a.Column.ColumnName, SqlLiteral.ofRaw typ raw
+            let lit =
+                Map.tryFind a.Name typedValues
+                |> Option.defaultValue SqlLiteral.NullLit
+            a.Column.ColumnName, lit
         let setCells =
             k.Attributes
             |> List.filter (fun a -> Set.contains a.Name deferred)
@@ -256,32 +267,52 @@ module StaticSeedsEmitter =
         : DataInsertScript =
         let populations = Kind.staticPopulations k
         if List.isEmpty populations then
-            { Phase1Merges = []; Phase2Updates = []; Rendered = "" }
+            { Phase1Merges  = []
+              Phase2Updates = []
+              RenderedPhase1 = ""
+              RenderedPhase2 = ""
+              Rendered      = "" }
         else
             let cdcAware = CdcAwareness.isEnabled k.SsKey cdc
             let deferred = deferredColumns cycleMembers k
-            let mergeText = renderMerge cdcAware deferred k populations
-            let updateTexts =
-                if Set.isEmpty deferred then []
-                else populations |> List.map (renderUpdate k deferred)
-            // Phase-1 MERGE then per-row Phase-2 UPDATEs concatenated
-            // (one terminal-text boundary; segments are each already
-            // ScriptDom-rendered + GO-batched).
+            let typeLookup = columnTypeLookup k
+            // Slice κ pillar 1 lift: project raw `Map<Name, string>`
+            // populations into typed `Map<Name, SqlLiteral>` once at
+            // construction time. Both Phase-1 MERGE rendering and
+            // Phase-2 UPDATE rendering consume the typed shape.
+            let typedRows =
+                populations
+                |> List.map (fun row ->
+                    row.Identifier,
+                    staticRowToTypedValues typeLookup k.Attributes row)
+            let renderedPhase1 =
+                renderMerge cdcAware deferred k (typedRows |> List.map snd)
+            let renderedPhase2 =
+                if Set.isEmpty deferred then ""
+                else
+                    typedRows
+                    |> List.map (fun (_, vs) -> renderUpdate k deferred vs)
+                    |> System.String.Concat  // LINT-ALLOW: terminal Phase-2 cross-row UPDATE concatenation (chapter 4.1.B slice ι); each segment is the ScriptDom-rendered + GO-batched UPDATE for one row; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary; the typed `Statement` DU does not yet model UPDATE so `ScriptDomGenerate.toText` is not applicable
+            // Per-kind self-complete view: Phase-1 + Phase-2 in
+            // textual order. Slice ι splits these for the composer's
+            // global cross-kind ordering; per-kind `Rendered`
+            // remains correct for self-FK cycles.
             let rendered =
-                mergeText :: updateTexts
-                |> System.String.Concat  // LINT-ALLOW: terminal per-kind text concatenation of ScriptDom-rendered + GO-batched MERGE/UPDATE statement strings (chapter 4.1.B slice δ); each segment is the typed-AST output of `ScriptDomGenerate.generateOne` already terminated by `;\nGO\n`; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary (no intermediate parsing / re-stringification); the typed `Statement` DU does not yet model MERGE/UPDATE so `ScriptDomGenerate.toText` is not applicable here
-            let mkRow (row: StaticRow) : DataInsertRow =
+                System.String.Concat(renderedPhase1, renderedPhase2)  // LINT-ALLOW: terminal per-kind concatenation of ScriptDom-rendered Phase-1 + Phase-2 strings (chapter 4.1.B slice κ; same architectural shape as slice δ's per-kind rendering); both segments are typed-AST outputs already terminated by `;\nGO\n`
+            let mkRow (identifier: SsKey) (values: Map<Name, SqlLiteral>) : DataInsertRow =
                 { KindKey       = k.SsKey
-                  Identifier    = row.Identifier
-                  Values        = row.Values
+                  Identifier    = identifier
+                  Values        = values
                   DeferredFkSet = deferred }
-            let phase1Rows = populations |> List.map mkRow
+            let phase1Rows = typedRows |> List.map (fun (id, vs) -> mkRow id vs)
             let phase2Rows =
                 if Set.isEmpty deferred then []
-                else populations |> List.map mkRow
-            { Phase1Merges  = phase1Rows
-              Phase2Updates = phase2Rows
-              Rendered      = rendered }
+                else typedRows |> List.map (fun (id, vs) -> mkRow id vs)
+            { Phase1Merges   = phase1Rows
+              Phase2Updates  = phase2Rows
+              RenderedPhase1 = renderedPhase1
+              RenderedPhase2 = renderedPhase2
+              Rendered       = rendered }
 
     /// Π_StaticSeeds emit (composer-facing). Per A18 amended
     /// (`Catalog × Profile`, never `Policy`) and T11 (every kind in
