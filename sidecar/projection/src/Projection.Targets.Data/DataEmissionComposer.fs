@@ -117,7 +117,7 @@ module DataEmissionComposer =
         let migrationDependencies =
             match composition with
             | AllRemaining
-            | AllExceptStatic -> MigrationDependenciesEmitter.emitWithTopo topo catalog profile migration
+            | AllExceptStatic -> MigrationDependenciesEmitter.emitWithTopo topo catalog profile migration userRemap
             | AllData         -> emptyArtifact catalog
         let bootstrap =
             BootstrapEmitter.emitWithTopo topo catalog profile userRemap

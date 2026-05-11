@@ -56,6 +56,7 @@
     <Compile Include="UserPopulationTests.fs" />
     <Compile Include="UserRemapContextTests.fs" />
     <Compile Include="UserFkReflowPassTests.fs" />
+    <Compile Include="UserFkReflowIntegrationTests.fs" />
     <Compile Include="TopologicalOrderTests.fs" />
     <Compile Include="VisibilityMaskTests.fs" />
     <Compile Include="NamingMorphismTests.fs" />

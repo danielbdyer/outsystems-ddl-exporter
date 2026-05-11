@@ -250,17 +250,104 @@ module MigrationDependenciesEmitter =
             ScriptDomGenerate.generateOne (updateStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement),
             ";\nGO\n")
 
+    // -------------------------------------------------------------------
+    // User-FK rewrite (chapter 4.2 slice η).
+    //
+    // Per pre-scope §5: at emit time, when emitting a row for a kind
+    // with one or more User-FK columns (Reference.IsUserFk = true),
+    // the emitter looks up each `CreatedBy` / `UpdatedBy` value in
+    // `UserRemapContext.Mapping` and rewrites the value. If the lookup
+    // fails (the source user is in `Unmatched`), the emitter SKIPS
+    // the row entirely (V1 reference `UserMatchingResult.cs` +
+    // `EmitArtifactsStep.cs`: "diagnostic + skip"; the diagnostic was
+    // already emitted by `UserFkReflowPass.discover`, so the emitter
+    // silently drops the row).
+    // -------------------------------------------------------------------
+
+    /// Set of (attribute-name) columns on `k` that resolve to User-
+    /// FK references — i.e., references with `IsUserFk = true`. Each
+    /// reference's `SourceAttribute` SsKey is resolved to its
+    /// `Attribute.Name` via `Kind.tryFindAttribute` (slice δ
+    /// improvement #5 cash-out; second consumer after slice δ's
+    /// deferredColumns). Empty set for kinds with no User-FKs.
+    let private userFkColumnNames (k: Kind) : Set<Name> =
+        k.References
+        |> List.choose (fun r ->
+            if r.IsUserFk then
+                Kind.tryFindAttribute r.SourceAttribute k
+                |> Option.map (fun a -> a.Name)
+            else None)
+        |> Set.ofList
+
+    /// Apply the User-FK remap to one migration row's raw values.
+    /// Returns `Some` row with target-side values substituted for
+    /// each User-FK column whose source value matched in
+    /// `UserRemapContext.Mapping`; returns `None` if any User-FK
+    /// column's source value is unmatched (V1 "diagnostic + skip"
+    /// parity). Non-integer User-FK values (NULL sentinel; raw
+    /// empty string per `RawValueCodec`) pass through unrewritten.
+    let private rewriteUserFkColumns
+        (userRemap: UserRemapContext)
+        (userFks: Set<Name>)
+        (row: MigrationDependencyRow)
+        : MigrationDependencyRow option =
+        if Set.isEmpty userFks then Some row
+        else
+            let folder
+                (acc: Map<Name, string> option)
+                (colName: Name)
+                : Map<Name, string> option =
+                match acc with
+                | None -> None
+                | Some values ->
+                    match Map.tryFind colName values with
+                    | None -> Some values  // column absent from row
+                    | Some raw ->
+                        // Empty raw = NULL sentinel (per
+                        // RawValueCodec); pass through.
+                        if System.String.IsNullOrWhiteSpace raw then
+                            Some values
+                        else
+                            match System.Int32.TryParse raw with
+                            | true, n ->
+                                let source = SourceUserId.ofInt n
+                                match UserRemapContext.tryFindTarget source userRemap with
+                                | Some target ->
+                                    let targetRaw = sprintf "%d" (TargetUserId.value target)  // LINT-ALLOW: terminal integer-to-raw projection at the row-Values boundary; `sprintf "%d"` formats the typed `TargetUserId` integer into the raw IR-string slot that `migrationRowToTypedValues` consumes downstream; same architectural shape as `Render.formatSqlLiteral`'s typed-value-to-raw projection
+                                    Some (Map.add colName targetRaw values)
+                                | None ->
+                                    // Source user unmatched →
+                                    // skip the entire row. The
+                                    // diagnostic was already
+                                    // emitted by UserFkReflowPass.
+                                    None
+                            | false, _ ->
+                                // Non-integer User-FK value
+                                // (unexpected but defensive).
+                                Some values
+            userFks
+            |> Set.fold folder (Some row.Values)
+            |> Option.map (fun vs -> { row with Values = vs })
+
     /// Build one `DataInsertScript` for a kind's migration rows.
     /// Empty per-kind context produces a no-op script (T11
     /// preserved). Cycle-aware Phase-1/Phase-2 dispatch identical
     /// to `StaticSeedsEmitter.kindToScript` (the slice δ shape).
+    /// Slice η: User-FK columns rewritten via `UserRemapContext`;
+    /// rows with unmatched source users are filtered out (V1
+    /// "diagnostic + skip" parity).
     let private kindToScript
         (cdc: CdcAwareness)
         (cycleMembers: Set<SsKey>)
+        (userRemap: UserRemapContext)
         (rowsByKind: Map<SsKey, MigrationDependencyRow list>)
         (k: Kind)
         : DataInsertScript =
-        let rows = Map.tryFind k.SsKey rowsByKind |> Option.defaultValue []
+        let rawRows = Map.tryFind k.SsKey rowsByKind |> Option.defaultValue []
+        let userFks = userFkColumnNames k
+        // Slice η: apply User-FK rewrite per row; rows with
+        // unmatched source users drop out.
+        let rows = rawRows |> List.choose (rewriteUserFkColumns userRemap userFks)
         if List.isEmpty rows then
             { Phase1Merges  = []
               Phase2Updates = []
@@ -311,6 +398,7 @@ module MigrationDependenciesEmitter =
         (catalog: Catalog)
         (profile: Profile)
         (context: MigrationDependencyContext)
+        (userRemap: UserRemapContext)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         use _ = Bench.scope "emit.migrationDeps.emitWithTopo"
         let cdc = profile.CdcAwareness
@@ -322,7 +410,7 @@ module MigrationDependenciesEmitter =
         let allKinds = Catalog.allKinds catalog
         let slices =
             allKinds
-            |> List.map (fun k -> k.SsKey, kindToScript cdc cycleMembers rowsByKind k)
+            |> List.map (fun k -> k.SsKey, kindToScript cdc cycleMembers userRemap rowsByKind k)
             |> Map.ofList
         ArtifactByKind.create catalog slices
 
@@ -330,7 +418,9 @@ module MigrationDependenciesEmitter =
     /// callers that don't go through the `DataEmissionComposer`.
     /// Computes the topological order internally and delegates to
     /// `emitWithTopo` — same algebra, one extra `TopologicalOrderPass`
-    /// invocation per call.
+    /// invocation per call. `userRemap` defaults to empty (slice η:
+    /// emitter integration is structurally complete but most callers
+    /// don't yet supply a populated remap context).
     let emit
         (catalog: Catalog)
         (profile: Profile)
@@ -338,4 +428,18 @@ module MigrationDependenciesEmitter =
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         use _ = Bench.scope "emit.migrationDeps.emit"
         let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
-        emitWithTopo topo catalog profile context
+        emitWithTopo topo catalog profile context UserRemapContext.empty
+
+    /// Π_MigrationDependencies emit with explicit UserRemapContext.
+    /// The slice η pipeline-integration entry point — callers that
+    /// have run `UserFkReflowPass.discover` supply the resulting
+    /// `UserRemapContext` to drive User-FK column rewriting.
+    let emitWithUserRemap
+        (catalog: Catalog)
+        (profile: Profile)
+        (context: MigrationDependencyContext)
+        (userRemap: UserRemapContext)
+        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
+        use _ = Bench.scope "emit.migrationDeps.emitWithUserRemap"
+        let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+        emitWithTopo topo catalog profile context userRemap
