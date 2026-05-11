@@ -1,8 +1,43 @@
-# Handoff letter — Chapter 3.x close → Chapter 5 (Phase 8 pragmatic close)
+# Handoff letter — Chapter 5 open (Phase 8 pragmatic close) + slices ν + θ
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## Chapter 5 open + slices ν + θ (added 2026-05-11; FSharp.Analyzers.SDK + Coordinates Stage 2 VOs)
+
+**Branch:** `claude/chapter-4-ddd-improvements-XVCAM`. **Test baseline:** 1072 non-canary tests passing (+12 across slices ν + θ); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules (one LINT-ALLOW added on the analyzer's diagnostic message at a terminal text-emission boundary; rationale per `DECISIONS 2026-05-10 — LINT-ALLOW substantive-rationale discipline`).
+
+Chapter 5 (Phase 8 pragmatic close per V2_DRIVER §252) opens as the formal chapter name for the consumer-pressure-driven hygiene + governance queue. **Open-ended**: slices land as separate commits; no single-chapter close fires until the queue empties or stabilizes per V1-sunset milestones.
+
+### Slices ν + θ (chapter open)
+
+| # | Slice | What |
+|---|---|---|
+| ν | F# Analyzers SDK custom analyzer | New `Projection.Analyzers` project (net8.0; `FSharp.Analyzers.SDK` 0.30.0 pinned for F#-9-SDK compat); one analyzer `Projection001NoUnsafeTimeInCore` (untyped-AST walk; detects `DateTime.Now`/`UtcNow`/`Today`/`Guid.NewGuid`/`Random.Shared` calls under `src/Projection.Core/`); `.config/dotnet-tools.json` registers `fsharp-analyzers`; `scripts/run-analyzers.sh` is the opt-in runner. End-to-end verified: runner walks all 28 Core files, reports zero violations (Core is clean by discipline). |
+| θ | Coordinates Stage 2 typed VOs | `SchemaName` / `TableName` / `ColumnName` single-case-DU smart constructors land in `Coordinates.fs`. Reject null / empty / whitespace; reject >128 chars (SQL Server identifier limit). **Record-field migration deferred-with-trigger** (Stage 1 docstring's "real bug" trigger preserved; typed surface is opt-in for new code; existing `string`-field readers compile unchanged). 12 acceptance / rejection / boundary tests. |
+
+### Outstanding queue (post-chapter-5-open)
+
+**Within chapter 5 (deferred-with-trigger; consumer-pressure-driven):**
+
+- **PhysicalRealization / Column.ColumnName record-field migration to Stage 2 typed VOs** — `Coordinates.fs:19-23` Stage 1 trigger preserved.
+- **Additional FSharp.Analyzers.SDK analyzers** — false-negative on the grep rules drives new analyzer adoption.
+- **CI integration for the analyzers runner** — earns its place when the analyzer set grows beyond one rule.
+- **Hex port lifts** (`IArtifactSink`, `IDeployHost`) — under genuine consumer demand.
+- **Cutover-day operator runbook** — joint deliverable with solution architect.
+- **V1 sunset planning** — after cutover+30 + one full schema-evolution cycle.
+
+**Deferred-with-trigger from chapter 3.x close:**
+
+- Slice ε — Modality marks → comments / extended properties.
+- Slice ζ — Byte-determinism cash-out via post-hoc Origin.xml canonicalization.
+- Per-Catalog parameterization of DockerImageEmitter Dockerfile + entrypoint.
+- Chapter 4.4 RemediationEmitter (V2_DRIVER §147 free-corollary).
+
+**Quietly-deferred queue** — preserved at the chapter 3.x close prologue below.
+
+---
 
 ## Chapter 3.x close (added 2026-05-11; DacpacEmitter dev-tooling + DockerImageEmitter; V2-driver KPI Phase 6 substantively shipped under reframe)
 

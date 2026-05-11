@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Analyzer assemblies are loaded by the `fsharp-analyzers` dotnet
+      tool, which itself runs on .NET 8. The analyzer assembly's TFM
+      must match the tool's runtime. Consuming projects (Projection.Core
+      / Targets / Adapters) target net9.0 — that's independent of the
+      analyzer's TFM.
+    -->
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>Projection.Analyzers</RootNamespace>
+    <AssemblyName>Projection.Analyzers</AssemblyName>
+    <!--
+      Per FSharp.Analyzers.SDK convention: the assembly name must
+      include "Analyzer" so the runner's `LoadAnalyzers` glob pattern
+      (`*Analyzer*.dll`) picks it up. `Projection.Analyzers` matches.
+    -->
+    <IsPackable>false</IsPackable>
+    <!--
+      The .NET F# SDK injects an implicit FSharp.Core PackageReference
+      whose version follows the SDK's bundled F# compiler (9.0.303 with
+      SDK 9.0.305). FSharp.Analyzers.SDK 0.30.0 requires an exact
+      FSharp.Core 9.0.201 (NU1608). Disable the implicit reference so
+      our explicit FSharp.Core 9.0.201 PackageReference (matching the
+      SDK constraint) is the sole copy.
+    -->
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="NoUnsafeTimeInCoreAnalyzer.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Pinned to 0.30.0 — last release whose FSharp.Core dependency
+      (9.0.201) is compatible with the .NET 9 SDK 9.0.305 we run; the
+      0.36.0 line requires FSharp.Core 10.0.101 (.NET 10).
+      FSharp.Core 9.0.201 + FSharp.Compiler.Service 43.9.201 are pinned
+      to match the SDK's exact-version constraint (NU1608).
+    -->
+    <PackageReference Include="FSharp.Core" Version="9.0.201" />
+    <PackageReference Include="FSharp.Compiler.Service" Version="43.9.201" />
+    <PackageReference Include="FSharp.Analyzers.SDK" Version="0.30.0" />
+  </ItemGroup>
+
+</Project>

@@ -10788,3 +10788,116 @@ under genuine consumer demand; cutover-day operator runbook
 (joint with solution architect); V1 sunset planning.
 
 ---
+
+## 2026-05-11 — Chapter 5 open + slices ν + θ: FSharp.Analyzers.SDK infrastructure + Coordinates Stage 2 VOs (partial cash-out)
+
+**Status:** decided
+**Context:** Per chapter 3.x close (above) + `V2_DRIVER.md` §252:
+the V2-driver KPI critical path closed at chapter 4.3 + chapter
+3.x; remaining work is **Phase 8 pragmatic close** — consumer-
+pressure-driven hygiene + governance. Chapter 5 opens as the
+formal chapter name for that queue. Slices land as separate
+commits; the chapter open accumulates a slice list; no single-
+chapter close fires until the queue empties or stabilizes per
+V1-sunset milestones.
+
+**Two slices ship at chapter open:**
+
+### Slice ν — F# Analyzers SDK custom analyzer
+
+`Projection.Analyzers` F# class library ships under
+`src/Projection.Analyzers/`. Targets net8.0 (the SDK's TFM);
+consuming projects' net9.0 targeting is independent (analyzer
+assemblies are loaded by the `fsharp-analyzers` runner, not
+linked into consumers). Pinned to `FSharp.Analyzers.SDK` 0.30.0
+— last release whose FSharp.Core dependency (9.0.201) is
+compatible with the .NET 9 SDK 9.0.305 we run; 0.36.0+ requires
+FSharp.Core 10.0.101 (.NET 10).
+
+One analyzer ships: **`Projection001NoUnsafeTimeInCore`** —
+detects `System.DateTime.Now` / `DateTime.UtcNow` /
+`DateTime.Today` / `Guid.NewGuid` / `Random.Shared` calls inside
+files under `src/Projection.Core/`. Walks the untyped AST
+(`SynExpr.LongIdent` references with matching long-id suffix
+pairs); cross-platform path discrimination on the file name's
+`/Projection.Core/` segment. Surfaces violations at error
+severity per the CLAUDE.md load-bearing commitment "F#-pure-
+core / no-I/O-in-Core" + the operating-disciplines table entry
+"Determinism is constructed, not validated."
+
+Tool integration: `.config/dotnet-tools.json` registers
+`fsharp-analyzers` 0.30.0; `scripts/run-analyzers.sh` is the
+opt-in runner (build → restore tool → invoke against
+Projection.Core with `--analyzers-path` pointing at the built
+DLL). **CI integration deferred** — the runner is invoked
+manually for now; CI wire-up earns its place when the analyzer
+set grows beyond one rule.
+
+End-to-end verified: runner picks up the analyzer, walks all
+28 files in `Projection.Core`, reports zero violations (Core is
+clean of the forbidden primitives by discipline). The
+infrastructure is proven; the analyzer set is intentionally
+narrow.
+
+### Slice θ — Coordinates Stage 2 typed VOs (smart constructors only)
+
+Per `Coordinates.fs:19-23` Stage 1 docstring's "Stage 2
+(deferred)" placeholder + chapter 5 open strategic frame:
+typed `SchemaName` / `TableName` / `ColumnName` value objects
+land as single-case DUs wrapping validated strings.
+
+Smart constructor invariants:
+- Reject null / empty / whitespace (codes:
+  `schemaName.empty` / `tableName.empty` / `columnName.empty`).
+- Reject identifiers longer than 128 characters (SQL Server
+  identifier limit per
+  `https://learn.microsoft.com/en-us/sql/relational-databases/
+  databases/database-identifiers`; codes:
+  `schemaName.tooLong` / `tableName.tooLong` /
+  `columnName.tooLong`).
+- Accept any otherwise-valid identifier string. Bracket-quoted
+  identifiers may carry SQL-reserved characters; that's a
+  render-time concern (ScriptDom's `Identifier.EncodeIdentifier`
+  handles it), not a construction concern.
+
+The three VOs are **structurally distinct types** — the compiler
+refuses to confuse a `SchemaName` with a `TableName` (or with
+a raw `string`). Per the codebase's "Identity is a type, not a
+string" principle.
+
+**The `PhysicalRealization.Schema/Table` and `Column.ColumnName`
+record-field migration stays deferred-with-trigger.** Stage 1's
+trigger condition is preserved: "Triggers when a real bug would
+have been caught (or when the cost of the explicit `value`
+projections is exceeded by the safety win at the next adapter)."
+The typed surface is **opt-in for new code**; existing `string`-
+field readers keep compiling. **Trigger for the full migration**:
+a real bug caught (schema-vs-table confusion at a boundary) OR
+adapter-ripple cost dominated by safety win at the next adapter.
+
+**Reasoning / consequences:**
+
+Both slices share the **infrastructure-now / migration-later**
+pattern. The analyzer infrastructure ships (one analyzer + the
+runner + tool manifest); the broader analyzer suite earns its
+place when false-negatives surface on the grep rules. The
+Coordinates Stage 2 types ship (three smart constructors +
+distinctness witnesses); the record-field migration earns its
+place when a real bug forces the boundary.
+
+This is honest to the consumer-pressure-driven Phase 8 framing.
+Chapter 5 is **not** a "ship the entire pragmatic-close queue"
+chapter — it's the open-ended queue itself, with slices landing
+as the queue's items earn their place under consumer pressure.
+
+**Test baseline:** 1060 → 1072 non-canary tests (+12 across
+slices ν + θ; the analyzer infrastructure's runtime verification
+is the end-to-end runner against `Projection.Core` reporting
+zero false positives; the typed-VO smart constructors carry 12
+direct tests covering accept / reject / boundary cases). Lint
+clean across 27 grep rules (slices ν + θ introduce zero new
+LINT-ALLOWs — the typed-VO smart constructors use BCL primitives
+at the validation boundary; the analyzer assembly is outside the
+27-rule scope by analyzer-not-application convention).
+
+---
