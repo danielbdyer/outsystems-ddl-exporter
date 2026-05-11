@@ -1,0 +1,184 @@
+module Projection.Tests.DacpacEmitterTests
+
+open System.IO
+open Xunit
+open Microsoft.SqlServer.Dac
+open Microsoft.SqlServer.Dac.Model
+open Projection.Core
+open Projection.Core.Passes
+open Projection.Targets.SSDT
+open Projection.Tests.Fixtures
+
+// ---------------------------------------------------------------------------
+// Chapter 3.x slice α — dev-tooling DACPAC emission.
+//
+// Per `CHAPTER_3_X_OPEN.md` strategic frame + `DECISIONS 2026-05-11 —
+// Chapter 3.x DacpacEmitter open`: this emitter ships as the dev-tooling
+// sibling Π for one-click local stand-up. Production deploy stays via
+// `SsdtDdlEmitter.emitSlices`; `DacpacEmitter.emit` produces a `.dacpac`
+// byte stream the dev team consumes via `sqlpackage`, Visual Studio, or
+// `DacServices.Deploy`.
+//
+// T1 amendment (binary emitters): content-equality via DacFx round-trip,
+// not byte-equality. DacFx embeds wall-clock timestamps in Origin.xml so
+// two emit calls on the same Catalog produce non-byte-identical streams;
+// the algebraic claim holds at the DacFx model level.
+// ---------------------------------------------------------------------------
+
+let private enrich (c: Catalog) : Catalog =
+    (CanonicalizeIdentity.run c).Value
+
+let private mustOkBytes (r: Result<byte[]>) : byte[] =
+    match r with
+    | Ok v -> v
+    | Error errs ->
+        Assert.Fail (sprintf "expected Ok; got %A" errs)
+        Unchecked.defaultof<byte[]>
+
+let private mkName (s: string) : Name =
+    match Name.create s with
+    | Ok n -> n
+    | Error es ->
+        let codes = es |> List.map (fun e -> e.Code) |> String.concat ", "
+        invalidOp (sprintf "DacpacEmitterTests.mkName failed: %s" codes)
+
+/// Single-Kind catalog mirroring the pre-scope §5 minimum slice: one
+/// Module, one Kind, two attributes including a PK, no FKs, no
+/// indexes, no modality marks. Built inline to keep this test
+/// independent of `sampleCatalog`'s fixture evolution.
+let private singleKindCatalog : Catalog =
+    let widgetKey = kindKey ["Widget"]
+    let widgetIdKey = attrKey ["Widget"; "Id"]
+    let widgetNameKey = attrKey ["Widget"; "Name"]
+    let widget : Kind = {
+        SsKey    = widgetKey
+        Name     = mkName "Widget"
+        Origin   = OsNative
+        Modality = []
+        Physical = { Schema = "dbo"; Table = "WIDGET" }
+        Attributes = [
+            { SsKey        = widgetIdKey
+              Name         = mkName "Id"
+              Type         = Integer
+              Column       = { ColumnName = "ID"; IsNullable = false }
+              IsPrimaryKey = true; IsMandatory = false
+              Length = None; Precision = None; Scale = None; IsIdentity = false }
+            { SsKey        = widgetNameKey
+              Name         = mkName "Name"
+              Type         = Text
+              Column       = { ColumnName = "NAME"; IsNullable = false }
+              IsPrimaryKey = false; IsMandatory = false
+              Length = None; Precision = None; Scale = None; IsIdentity = false }
+        ]
+        References = []
+        Indexes    = []
+    }
+    let m : Module = {
+        SsKey = modKey "Inventory"
+        Name  = mkName "Inventory"
+        Kinds = [ widget ]
+    }
+    { Modules = [ m ] }
+
+// ---------------------------------------------------------------------------
+// Slice α acceptance — single-Kind Catalog produces non-empty bytes.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``DacpacEmitter.emit on single-Kind Catalog returns non-empty bytes`` () =
+    let enriched = enrich singleKindCatalog
+    let bytes = DacpacEmitter.emit enriched |> mustOkBytes
+    Assert.NotEmpty bytes
+    // DACPAC is a ZIP archive — first two bytes are 'PK' (0x50 0x4B).
+    // Structural witness that DacFx serialized a real package rather
+    // than an empty stream.
+    Assert.Equal (byte 0x50, bytes.[0])
+    Assert.Equal (byte 0x4B, bytes.[1])
+
+// ---------------------------------------------------------------------------
+// Content-equality via DacFx round-trip — slice α T1 amendment for binary
+// emitters. Per `DECISIONS 2026-05-11 — Chapter 3.x DacpacEmitter open`
+// commitment 3: same Catalog → DacFx model contains same Table objects
+// under round-trip. Byte streams differ (Origin.xml timestamps); the
+// algebraic claim holds at the model level.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``DacpacEmitter.emit round-trip yields one Table per Catalog Kind`` () =
+    let enriched = enrich singleKindCatalog
+    let bytes = DacpacEmitter.emit enriched |> mustOkBytes
+    use stream = new MemoryStream(bytes)
+    use package = DacPackage.Load(stream)
+    use model = TSqlModel.LoadFromDacpac(stream, ModelLoadOptions())
+    let tables =
+        model.GetObjects(DacQueryScopes.UserDefined, Table.TypeClass)
+        |> Seq.toList
+    let expectedKindCount = Catalog.allKinds enriched |> List.length
+    Assert.Equal (expectedKindCount, List.length tables)
+
+// ---------------------------------------------------------------------------
+// T1 (binary-emitter amendment): two emits on the same Catalog produce
+// content-identical models (table enumeration matches). Byte equality
+// does NOT hold — DacFx embeds wall-clock timestamps in Origin.xml — so
+// the algebraic claim flows through DacFx's model API, not the stream.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``T1 (binary): DacpacEmitter.emit is content-deterministic under DacFx round-trip`` () =
+    let enriched = enrich singleKindCatalog
+    let bytes1 = DacpacEmitter.emit enriched |> mustOkBytes
+    let bytes2 = DacpacEmitter.emit enriched |> mustOkBytes
+    let tableNames (bs: byte[]) : Set<string> =
+        use stream = new MemoryStream(bs)
+        use model = TSqlModel.LoadFromDacpac(stream, ModelLoadOptions())
+        model.GetObjects(DacQueryScopes.UserDefined, Table.TypeClass)
+        |> Seq.map (fun obj -> obj.Name.ToString())
+        |> Set.ofSeq
+    Assert.Equal<Set<string>> (tableNames bytes1, tableNames bytes2)
+
+// ---------------------------------------------------------------------------
+// T11 sibling-Π commutativity (chapter 3.x slice α): SsdtDdlEmitter (the
+// production directory bundle) and DacpacEmitter (this chapter's dev-
+// tooling binary) agree on the SsKey-root kind-mention set. Same Catalog
+// ⇒ same set of Kind names visible at the artifact surface, modulo the
+// projection language. Per pre-scope §3 — "the existence of the round-
+// trip IS the strongest commutativity guarantee" for binary emitters.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``T11: DacpacEmitter and SsdtDdlEmitter agree on kind-mention set`` () =
+    // Use sampleCatalog (Customer + Order + Country) so the property
+    // exercises multiple kinds + FK across siblings.
+    let enriched = enrich sampleCatalog
+    // SsdtDdlEmitter side: ArtifactByKind keyset is the SsKey set.
+    let ssdtKeys : Set<SsKey> =
+        SsdtDdlEmitter.emitSlices enriched
+        |> function
+            | Ok artifact -> ArtifactByKind.keys artifact
+            | Error err ->
+                Assert.Fail (sprintf "SsdtDdlEmitter.emitSlices failed: %A" err)
+                Set.empty
+    // DacpacEmitter side: load the dacpac, enumerate Tables, derive
+    // physical names. The kind-mention property is "every Kind's
+    // (Schema, Table) physical pair appears as one Table object in
+    // the dacpac model."
+    let bytes = DacpacEmitter.emit enriched |> mustOkBytes
+    use stream = new MemoryStream(bytes)
+    use model = TSqlModel.LoadFromDacpac(stream, ModelLoadOptions())
+    let dacpacPhysicals : Set<string * string> =
+        model.GetObjects(DacQueryScopes.UserDefined, Table.TypeClass)
+        |> Seq.map (fun obj ->
+            let parts = obj.Name.Parts
+            // ObjectIdentifier.Parts: [schema; table] for two-part names.
+            // DacFx returns [dbo; TABLE] for our fixtures.
+            let schema = if parts.Count >= 2 then parts.[0] else "dbo"
+            let table  = if parts.Count >= 2 then parts.[1] else parts.[0]
+            schema, table)
+        |> Set.ofSeq
+    let catalogPhysicals : Set<string * string> =
+        Catalog.allKinds enriched
+        |> List.map (fun k -> k.Physical.Schema, k.Physical.Table)
+        |> Set.ofList
+    Assert.Equal<Set<string * string>> (catalogPhysicals, dacpacPhysicals)
+    // Sanity: keyset cardinality matches across siblings.
+    Assert.Equal (Set.count ssdtKeys, Set.count dacpacPhysicals)

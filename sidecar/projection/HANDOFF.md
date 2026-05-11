@@ -1,8 +1,44 @@
-# Handoff letter — Chapter 4.3 → next chapter
+# Handoff letter — Chapter 3.x slice α → next slice / chapter
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## Chapter 3.x open + slice α (added 2026-05-11; DacpacEmitter dev-tooling sibling Π over DacFx)
+
+**Branch:** `claude/chapter-4-ddd-improvements-XVCAM`. **Test baseline:** 1045+ non-canary tests passing (+4 DacpacEmitter slice α tests); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules (DacFx adoption is the pillar-7 right move; slice α introduces no new LINT-ALLOWs).
+
+Chapter 3.x opens the **DacpacEmitter dev-tooling chapter** — reframing the pre-scope's deploy-path-conditional V2-driver KPI critical-path framing to a dev-tooling sibling-Π emitter per operator directive ("stand up a local copy of the database in no time flat — almost a one-click deploy strategy for my development team"). Production deploy path stays SSDT-style file deploy via `SsdtDdlEmitter.emitSlices`; DacpacEmitter ships the `.dacpac` artifact format the dev team consumes via `sqlpackage`, Visual Studio, or `DacServices.Deploy` to a local SQL Server.
+
+**Three Active deferrals retired at chapter open + slice α:**
+
+1. **DacFx integration in `Projection.Targets.SSDT.DacpacEmitter`** (Active deferrals row 214): cashed out — chapter ships under dev-tooling framing.
+2. **`Microsoft.SqlServer.Dac` (DacFx) adoption Tier-3 hard-requirement** (Active deferrals row 223): cashed out — `Microsoft.SqlServer.DacFx` v162.x NuGet adopted in `Projection.Targets.SSDT.fsproj`. Pure F# wrapper (no C# subproject; pre-scope §6.2 bias yielded under empirical pressure — DacFx's V2-relevant surface is small, all `IDisposable`-aware calls F# handles via `use`).
+3. **T1 amendment for binary emitters** — content-equality via DacFx round-trip (`Catalog → emit → DacPackage.Load → TSqlModel.GetObjects` enumeration matches across invocations), NOT byte-equality. DacFx embeds wall-clock timestamps in Origin.xml; the algebraic claim holds at the DacFx model level.
+
+### Slice α (this slice)
+
+| # | Slice | What |
+|---|---|---|
+| α | DacpacEmitter v0 + chapter open + `Microsoft.SqlServer.DacFx` NuGet + 4 tests (non-empty bytes; DacFx round-trip yields one Table per Kind; T1 content-determinism; T11 commutativity vs SsdtDdlEmitter on physical (Schema, Table) pair) |
+
+**A18 amended preserved structurally** — `DacpacEmitter.emit : Catalog -> Result<byte[]>` (Catalog only; no Policy parameter; Profile widening lands when a slice forces it). **T11 keyset coverage** holds across siblings (SsdtDdlEmitter directory bundle and DacpacEmitter model agree on the per-Kind (Schema, Table) set). **Pillar 7** holds end-to-end (Statement generation via SsdtDdlEmitter typed-AST stream; per-statement script via `ScriptDomGenerate.generateOne`; `.dacpac` serialization via DacFx `DacPackageExtensions.BuildPackage`).
+
+### Outstanding queue (post-chapter-3.x slice α)
+
+**Within chapter 3.x:**
+
+- **Slice β** — Multi-Kind + FK Catalog (inline `FOREIGN KEY ... REFERENCES`; DacFx FK validation succeeds because target PK is declared per pre-scope §2).
+- **Slice γ** — Indexes (single-column unique; composite; non-unique CREATE INDEX).
+- **Slice δ** — CLI `dac deploy` verb wiring: `Projection.Cli dac deploy <jsonPath> <connStr>` builds the dacpac, calls `DacServices.Deploy`, reports table count.
+- **Slice ε** — Modality marks → comments / extended properties.
+- **Slice ζ** — Byte-determinism cash-out (post-hoc canonicalization). **Deferred-with-trigger** at chapter open: surface only when a snapshot consumer demands byte-stable dacpac artifacts.
+
+**Now-unblocked (per V2-driver KPI sequencing + DacpacEmitter dev-tooling reframe):**
+
+- **Chapter 4.4 RemediationEmitter** — schema-level partial-state recovery; composes over `CatalogDiff` + DacpacEmitter's typed model output. Inherits the dev-tooling framing per the chapter 4.3 close `2026-05-11 — Chapter 4.3 close + slices δ + ε deferred-with-trigger` entry.
+
+---
 
 ## Chapter 4.3 close (added 2026-05-11; Operational Diagnostics V2 structural arc shipped; V2-driver KPI Phase 5 closed)
 
