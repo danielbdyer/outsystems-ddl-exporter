@@ -1,40 +1,48 @@
 # V2 Production Cutover Plan
 
-**Status:** Draft 1 — initial plan established 2026-05-11 via collaborative audit with the product owner. Stable basis for iteration; further audits append below as sections under "Addenda". This document supersedes ad-hoc cutover speculation in `HANDOFF.md` and the various `CHAPTER_*_OPEN.md` files; those remain authoritative for their slice scope, this document is authoritative for *production readiness as a deliverable*.
+**Status:** Draft 2 — 2026-05-11. Revised after 6-agent adversarial audit (5 read-only Explore agents + 1 cross-cutting risk audit, run in parallel). Draft 1 commit reference: `2ab3a8a`. Draft 2 adds the IR-fidelity workstream (Phase A precondition), four new locked-in decisions (D9–D12), four new cross-cutting plan sections (§3.4–§3.7), five new risks (R8–R12), explicit deferral catalog (§10), and a substantially revised unified-config schema sketch (§5.1).
 
 **Companion documents:** `V2_DRIVER.md` (KPI / phase ladder), `VISION.md` (architectural north star), `STAGING.md` (chapter staging), `HANDOFF.md` (current-session pointer), `DECISIONS.md` (dated decision log).
+
+**Outstanding:** Operator's "document of key evolutions" (referenced 2026-05-11 by the product owner). Draft 3 will absorb it.
 
 ---
 
 ## 1. Executive Summary
 
-V2 is structurally green on the schema/DDL axis (1,072 tests passing, three Π's wired through `Compose.run`) but functionally constrained: its CLI accepts only positional args and threads `Policy.empty` / `Profile.empty` / `UserRemapContext.empty` into emission. Eleven emitters are built and tested, three fire from the CLI. The OSSYS metadata extractor — V1's ~2,115 LOC of T-SQL plus ~6,565 LOC of C# pipeline — does not exist in V2 at all; V2 today consumes V1's published `osm_model.json` as its left-hand boundary.
+V2 is structurally green on the schema/DDL axis (1,072 tests passing, three Π's wired through `Compose.run`) but functionally constrained in three independent dimensions: (a) its CLI accepts only positional args and threads `Policy.empty` / `Profile.empty` / `UserRemapContext.empty` into emission; (b) **its IR (`Catalog`) cannot yet represent multiple V1 schema concepts** — trigger definitions, sequences, temporal tables, DEFAULT values, computed columns, CHECK constraints, the catalog coordinate of `TableId`, extended properties at four levels, and entity/attribute descriptions; (c) it has no OSSYS metadata extractor or profile probe surface.
 
-The operator's two production use cases — `extract-model` and `full-export` with table-rename and migration-dependency overrides — require V2 to (a) own OSSYS extraction and profiling end-to-end, (b) accept a unified config file that drives renames, migration-dependency rows, module selection, and policy axes, and (c) light up the data emitters and diagnostic emitters currently asleep behind the CLI's hardcoded defaults.
+The operator's two production use cases — `extract-model` and `full-export` with table-rename and migration-dependency overrides — require V2 to (a) own OSSYS extraction and profiling end-to-end, (b) accept a unified config that drives renames, migration-dependency rows, module selection, and policy axes (with credentials sourced externally), and (c) light up the data emitters and diagnostic emitters currently asleep behind the CLI's hardcoded defaults — and crucially (d) **lift V1's schema-semantic concepts into V2's IR as a Phase A precondition** so that wired emitters can render complete DDL.
 
-Sequence: **Phase A** ships V2's emit half (config + override surface + emitter wiring + migration-dependency JSON loader + auto-PK pass + profile-JSON ingestion) running against V1-produced extraction and profile JSON. This is the *soak path* — V2 emit + V1 extract/profile in parallel, with differential testing against V1's full output set. **Phase B** ports OSSYS extraction and profiling into V2 (`projection extract`, `projection profile`, `projection full-export` subcommands), enabling V2 full independence and V1 sunset.
+Sequence: **Phase A** ships V2's emit half (config + override surface + IR lifts + emitter wiring + static-data and migration-dependency JSON loaders + auto-PK pass + canonical rename order + profile-JSON ingestion) running against V1-produced extraction and profile JSON. This is the *soak path* — V2 emit + V1 extract/profile in parallel, gated on **functional equivalence** (set-equivalence + semantic diff) rather than byte-identity. **Phase B** ports OSSYS extraction and profiling into V2 (`projection extract`, `projection profile`, `projection full-export` subcommands), enabling V2 full independence and V1 sunset.
 
 ---
 
 ## 2. Use Cases In Scope
 
 ### 2.1 `extract-model`
-Connect to live OSSYS SQL Server, run the OutSystems metadata queries, write a deterministic snapshot of modules/entities/attributes/references/indexes/triggers to disk. V2's `CatalogReader` already parses this snapshot; V2 must learn to *produce* it.
+Connect to live OSSYS SQL Server, run the OutSystems metadata queries, write a deterministic snapshot of modules/entities/attributes/references/indexes/triggers/sequences/extended-properties to disk. V2's `CatalogReader` already parses this snapshot's existing fields; V2 must learn to *produce* it and to also carry the fields V2 currently drops at the adapter boundary (see §3.3).
 
 ### 2.2 `full-export` with overrides
 Chain extract → profile → emit, accepting:
 - **Table-rename overrides**: rename source table to target table (both logical `Module::Entity` and physical `schema.table` forms).
 - **Migration-dependency overrides**: append specific rows into specific tables, with PKs auto-assigned at emit time as `MAX(SourceOSSYS.Id) + ROW_NUMBER()` baked as literals into the emitted INSERT/MERGE statements.
+- **Static-data overrides**: seed-row fixtures (parallel-but-distinct from migration dependencies; see §5.4 vs §5.5).
 
-Outputs needed: SSDT project on disk (per-table .sql + manifest), .dacpac binary, migration-INSERT scripts for the dependency rows, decision/opportunity/validation logs.
+Outputs needed: SSDT project on disk (per-table .sql + manifest), `.dacpac` binary, static-seed INSERTs, migration-INSERT scripts, decision/opportunity/validation logs.
 
-### 2.3 Explicitly out of scope
-- **Apply / load-harness phases.** The operator runs the emitted artifacts against the real target DB via external tooling (DacFx publish or sqlcmd). V2 does not need an `--apply` surface. The `deploy` and `canary` subcommands stay as dev tooling.
-- **UAT-users transformation as a top-level v2 feature.** The User-FK reflow exists internally and fires when `UserRemapContext` is supplied; CSV / inventory ingestion for that context is deferred-with-trigger.
+### 2.3 Explicitly out of scope (see §10 for the full deferral catalog with rationale)
+- **Apply / load-harness phases.**
+- **UAT-users transformation as a top-level feature.**
+- **V1 verbs not in operator's named two use cases.** (dmm-compare, analyze, inspect, policy-explain — operator confirmed no production usage.)
+- **`.sqlproj` generation** — operator handles via external SSDT tooling.
+- **`SafeScript.sql` / `RemediationScript.sql` emission.**
+- **V1-compatible `osm_model.json` re-emission** — V2's `JsonEmitter` emits V2 IR.
+- **Telemetry package, evidence-cache directory.**
 
 ---
 
-## 3. Current State Audit (synthesized from 2026-05-11 audit subagents)
+## 3. Current State Audit (synthesized 2026-05-11)
 
 ### 3.1 V1 surface (src/)
 
@@ -42,8 +50,10 @@ Outputs needed: SSDT project on disk (per-table .sql + manifest), .dacpac binary
 |---|---|---|
 | CLI verbs | `src/Osm.Cli/` | 8 verbs: extract-model, full-export, build-ssdt, profile, dmm-compare, inspect, analyze, policy explain (+ uat-users behind env flag) |
 | OSSYS metadata SQL | `src/AdvancedSql/outsystems_metadata_rowsets.sql` (1,184 LOC) + `outsystems_model_export.sql` (931 LOC) | Parameterized: `@ModuleNamesCsv`, `@IncludeSystem`, `@IncludeInactive`, `@OnlyActiveAttributes`, `@EntityFilterJson` |
-| Extraction orchestration | `src/Osm.Pipeline/SqlExtraction/` | `MetadataSnapshotRunner.cs` (407 LOC) + 25 result-set processors (988 LOC total) + `MetadataAccumulator.cs` (104 LOC) |
+| Result-set processors | `src/Osm.Pipeline/SqlExtraction/` | 25 concrete processors; `MetadataSnapshotRunner.cs` (407 LOC) async-stream orchestrator; `MetadataAccumulator.cs` (104 LOC); core extraction ~2,000 C# LOC; full pipeline w/ wiring & error handling ~6,565 LOC |
 | Snapshot writer | `src/Osm.Pipeline/SqlExtraction/SnapshotJsonBuilder.cs` (288 LOC) | Writes `osm_model.json` via `Utf8JsonWriter` |
+| Profile probes | `src/Osm.Pipeline/Profile/` (~6,000 C# LOC) | **5 query builders**: NullCount, NullRowSample (10-row context), UniqueCandidate, ForeignKeyProbe (orphan counts), ForeignKeyOrphanSample (10-row context). Sampling uniform across probes via `TableSamplingPolicy`. **No MAX(Id) probe** (gap; see Q1). **No distribution/percentile probes.** |
+| `MetadataContractOverrides` | `src/Osm.Pipeline/SqlExtraction/` (141 LOC) | **Not** SQL-Server-version-dependent (the audit's prior framing was wrong); handles OSSYS-schema flexibility for optional metadata columns (e.g., `AttributeJson` vs `AttributesJson`). T-SQL itself uses stable 2016+ features. |
 | Connector | `src/Osm.Pipeline/Sql/SqlConnectionFactory.cs` (53 LOC) | Microsoft.Data.SqlClient; auth modes, cert trust, access token, app name |
 | Module filtering | `src/Osm.Pipeline/ModelIngestion/ModuleFilter.cs` (140 LOC) | Both SQL-side (preemptive) and C#-side (defensive) |
 | Override binders | `src/Osm.Pipeline/Application/NamingOverridesBinder.cs:32-119`; `src/Osm.Pipeline/StaticData/StaticEntityDataProviders.cs:11-119`; `src/Osm.Pipeline/Configuration/CliConfigurationLoader.cs:49-171` | Seven scattered input mechanisms (rename-table flag, static-data fixture, --config JSON, circular-deps JSON, dynamic-insert-mode/static-seed-parent-mode/defer-junction-tables flags, UAT user CSV, module filter flags) |
@@ -60,43 +70,105 @@ Outputs needed: SSDT project on disk (per-table .sql + manifest), .dacpac binary
 | Profile probes | — | **Absent.** `Profile.empty` is used in CLI; type structure (`src/Projection.Core/Profile.fs:538-547`) is rich and ready, but no adapter populates it |
 | Detection passes | `src/Projection.Core/Passes/NullabilityPass.fs:194`, `ForeignKeyPass.fs:240`, `UniqueIndexPass.fs:171` | Mature; route to Opportunities via `Code` prefix; **only meaningful with real Profile data** |
 | MigrationDependenciesEmitter | `src/Projection.Targets.Data/MigrationDependenciesEmitter.fs:32-56` | Built; emits MERGE; consumes `MigrationDependencyContext`; **no JSON loader, no auto-PK assignment, no per-table file routing** |
+| StaticSeedsEmitter | `src/Projection.Targets.Data/StaticSeedsEmitter.fs` | Built; emits MERGE for static-entity rows; **no JSON loader for V1-style static-data fixture** |
 | User-FK reflow | `src/Projection.Targets.Data/MigrationDependenciesEmitter.fs:253-330` + `UserFkReflowPass` | Built; consumes `UserRemapContext`; programmatic construction only |
 
-### 3.3 The four-axis gap
+### 3.3 IR-fidelity gap (new in Draft 2)
 
-1. **OSSYS extraction**: ~6,565 C# LOC + 2,115 SQL LOC. SQL copies verbatim. C# port estimated ~4,155 F# LOC.
-2. **Profile probes**: V1's `profile` verb captures NULL counts, FK orphan counts, unique-index dup counts, MAX(Id) per identity column. Must be ported to V2.
-3. **CLI / config surface**: V2 needs a unified typed config file (single JSON) replacing V1's seven scattered input mechanisms. CLI must accept `--config <path>` plus a small set of common overrides.
-4. **Emitter wiring + override plumbing**: data emitters, dacpac emitter, diagnostic emitters need to be threaded through `Compose.project` under config-driven `EmissionPolicy` gates. Table-rename overrides need a pre-emit Catalog rewrite pass. Migration-dependency JSON needs a loader + an auto-PK pass.
+V2's `Catalog` does not yet carry several schema concepts that V1's `OsmModel` preserves. These are not Phase B concerns — they are correctness bugs that surface as soon as V2 emit is run against a real workload. Each row below is a Phase A.0' deliverable (see §5.2).
+
+| V1 concept | V1 carrier | V2 today | Cutover impact |
+|---|---|---|---|
+| **Trigger definitions** | `TriggerModel.Definition` (T-SQL text) | `Kind.Modality` may acknowledge trigger existence; Definition text dropped at adapter | Cutover emits incomplete schema; triggers silently disappear from target DB |
+| **Sequences** | `OsmModel.Sequences: SequenceModel[]` (StartValue, Increment, Min, Max, Cycle, Cache) | No `Catalog.Sequences` field at all | Apps depending on sequence-generated IDs fail at cutover |
+| **Temporal tables** | `EntityModel.Metadata.Temporal: TemporalTableMetadata` | No `Temporal` variant in `ModalityMark` | History-table configuration lost; audit trail broken |
+| **DEFAULT values** | `AttributeModel.DefaultValue` | No `DefaultValue` on `Attribute` | Column defaults vanish; subsequent INSERTs miss defaulted data |
+| **Computed columns** | `AttributeOnDiskMetadata.isComputed` + `computedDefinition` | No `IsComputed` / `ComputedDefinition` on `Attribute` | Computed-column definitions lost; DDL emission incomplete |
+| **CHECK constraints** | `AttributeOnDiskCheckConstraint` (CHECK text) | No `ColumnChecks` carrier on `Kind` | Data validation rules disappear |
+| **Catalog (database) coordinate** | `EntityModel.Catalog: string?` | `TableId` is `(Schema, Table)` only | Cross-database FKs silently degrade to same-catalog |
+| **ExtendedProperties (4 levels)** | `Module / Entity / Attribute / Index .ExtendedProperties[]` | No carrier at any level | OSSYS-defined metadata, audit fields, custom tags all lost |
+| **Description fields** | `Entity / Attribute .Metadata.Description` | No carrier | Operator-visible docstrings vanish; SQL Server extended-property descriptions cannot be emitted |
+| **IsExternal / Origin mapping** | `EntityModel.IsExternal: bool` | `Kind.Origin` exists with three cases but mapping from V1's `IsExternal` is unclear in OSSYS adapter | External entities may be emitted as native or vice versa |
+| **IsActive flags** | `Module / Entity / Attribute .IsActive` | Module/Attribute IsActive lost; Entity active partially preserved | Inactive schema elements may leak into cutover DDL |
+
+### 3.4 Credentials & Secrets (cross-cutting; new in Draft 2)
+
+V1 supports several auth modes (`SqlAuthenticationMethod` enum: Integrated, SqlPassword, ActiveDirectoryDefault, ActiveDirectoryMSI, AccessToken) per `src/Osm.Cli/Commands/Binders/SqlOptionBinder.cs:14-46`. V2 must preserve all of them at cutover.
+
+**Policy (locked-in per D9):** Connection strings and credentials **do not live in the unified config JSON.** They are sourced from:
+- Environment variables (e.g., `OSM_CONNECTION_STRING`, `OSM_ACCESS_TOKEN`).
+- A separate non-checked-in connection-config file (e.g., `connection.local.json`) referenced via CLI flag.
+- Connection-string keywords for tokenless auth (`Authentication=Integrated`, `Authentication=ActiveDirectoryDefault`).
+
+The unified config JSON is **secret-free by construction.** Config parser does not have a `sql.connectionString` field. If a future evolution needs to bind connection info into a Compose pipeline, it does so by reading the env var or separate file at parser time, not by accepting a JSON property.
+
+**Acceptance criterion** (Phase A.0 exit): config parser has no path to accept a plaintext password or access token. Static analyzer rule (`Projection.Analyzers`) flags any code that reads a `connectionString` property from `Config`.
+
+### 3.5 Observability & Logging (cross-cutting; new in Draft 2)
+
+V1 uses `Microsoft.Extensions.Logging` with structured EventIds and source identifiers. V2 does not have an equivalent contract wired today.
+
+**Policy (locked-in per D10):** V2 ships **its own log format**, not a V1-compat one. The operator updates downstream log-aggregation tooling (CloudWatch Insights / ELK / Splunk queries) as part of the cutover. The plan does not gate on log-format equivalence.
+
+**Implications:**
+- V1's `--extract-sql-metadata-out` / `--build-sql-metadata-out` / `--profile-sql-metadata-out` diagnostic JSON outputs are not preserved as a V2 contract. If operator tooling consumes them, it migrates to consuming V2's emitted Decision/Opportunity/Validation JSONs instead.
+- V2's logging format will be defined during Phase B.4. Stable structured properties will be documented; the operator's downstream tooling rewrite happens at cutover.
+
+### 3.6 Determinism & Idempotency under user config (cross-cutting; new in Draft 2)
+
+V2 claims byte-determinism (AXIOMS T1). User-supplied overrides (renames, migration-dep rows, module filters) can perturb execution order if not handled canonically.
+
+**Policy (locked-in per D12):** Canonical sort applied to user-supplied collections at config-validation time, before they reach pipeline passes. Specifically:
+- `overrides.tableRenames` sorted by canonical source-key form before being threaded into `TableRenamePass` (§5.6).
+- `overrides.migrationDependencies` rows iterated in declaration order *within each table*; tables themselves sorted by canonical kind-key.
+
+**Out of scope** (deliberately, per operator decision):
+- Idempotency test in Phase A.6 soak (not a gate).
+- Graceful concurrent-extraction failure handling in V2 (operator coordinates externally).
+- Single-writer documentation as a required deliverable.
+
+### 3.7 CI/CD migration (cross-cutting; new in Draft 2)
+
+V1 is likely invoked in operator's CI/CD workflows, scripts, and IDE integrations. V2 cutover at T+30 (per §7.3) breaks any V1-invocation site that hasn't been migrated.
+
+**Policy (locked-in per D11):** CI/CD inventory and migration is **operator-owned, not a plan deliverable.** The plan documents this as a known risk (R9) and a cutover-day responsibility. The plan does not insert a Phase A.7 audit step.
+
+**Implications:**
+- Operator-owned: enumerate V1 invocation sites; map each to a V2 config-file equivalent; cut over before T+30.
+- The plan provides the V2 CLI surface specification (§5.3, §6.5) and the unified config schema (§5.1) as the artifacts the operator needs to do the mapping. No additional automation.
 
 ---
 
 ## 4. Locked-in Design Decisions
 
-These are decisions made during the 2026-05-11 audit collaboration. Each is revisable, but moving them requires explicit reopening in §9 with a new dated entry.
+These are decisions made during the 2026-05-11 audit collaboration. Each is revisable, but moving any requires explicit reopening in §11 with a new dated entry.
 
 | # | Decision | Rationale |
 |---|---|---|
 | D1 | **V2 owns OSSYS extraction** (port from V1), not subprocess-shell-out, not permanent V1 dependency. | Required for V1 sunset; clean cutover; F# parity. |
-| D2 | **Full V2 independence before cutover**, not partial / coexistence. | Operator workflow expects one tool. Coexistence is a fallback, not a delivery target. |
-| D3 | **Single typed config file** (one JSON document) for all overrides, replacing V1's seven scattered input mechanisms. CLI accepts `--config <path>` + a small set of common flag overrides. | Reduces operator cognitive load; one schema to learn; supports future evolution. |
-| D4 | **Phase A first as a soak**, then Phase B. V2 emit runs against V1-extracted JSON during Phase B port for differential testing. | Surfaces emit-side gaps early; validates emit-half against real workloads before extraction-side rewrite lands; reduces risk of finding emit bugs late in cutover. |
-| D5 | **MigrationDependencies PK assignment**: pre-compute at emit time as `MAX(SourceOSSYS.Id) + ROW_NUMBER()`; bake literal IDs into emitted SQL. | Deterministic; readable diffs; no deploy-time uncertainty; aligns with V1's literal-ID INSERT convention. *Caveat: requires MAX(Id) per table to be captured by extraction or profile — see §9 Q1.* |
-| D6 | **V2 owns profile probes** against OSSYS DB, not "V1 profiles, V2 ingests profile JSON." | Required for full independence (D2); detection passes (orphaned FKs, mandatory-null) need profile data to fire; V1's profile verb is portable. |
-| D7 | **Apply phase is external.** V2 emits artifacts; operator runs them via DacFx publish / sqlcmd. No `--apply` flag, no in-V2 deploy-to-real-target. | Operator confirmed external tooling owns the apply step; reduces V2 scope; existing `deploy` subcommand stays as ephemeral dev tooling. |
+| D2 | **Full V2 independence before cutover**, not partial / coexistence. | Operator workflow expects one tool. |
+| D3 | **Single typed config file** for all overrides, replacing V1's seven scattered input mechanisms. CLI accepts `--config <path>` + a small set of common flag overrides. | Reduces operator cognitive load; one schema to learn. |
+| D4 | **Phase A first as a soak**, then Phase B. V2 emit runs against V1-extracted JSON during Phase B port for differential testing. | Surfaces emit-side gaps early; validates emit-half against real workloads before extraction-side rewrite lands. |
+| D5 | **MigrationDependencies PK assignment**: pre-compute at emit time as `MAX(SourceOSSYS.Id) + ROW_NUMBER()`; bake literal IDs into emitted SQL. | Deterministic; readable diffs; no deploy-time uncertainty. *Caveat: requires MAX(Id) per table — see §9 Q1.* |
+| D6 | **V2 owns profile probes** against OSSYS DB. | Required for full independence (D2); detection passes need profile data; V1's probe set is portable. |
+| D7 | **Apply phase is external.** V2 emits artifacts; operator runs them via DacFx publish / sqlcmd. | Reduces V2 scope; ephemeral `deploy` subcommand stays as dev tooling. |
 | D8 | **Tightening as detection, not intervention.** Operator does not configure tightening rules in production; V2's role is to *catch* SQL Server semantic breakers (orphaned FKs, IsMandatory=true + nulls, unique-index dups) and emit them as Opportunities for operator review. | Detection passes already exist; profile data is the missing input; intervention-axis tuning is out of scope. |
+| **D9** | **Connection strings + credentials live outside the unified config JSON.** Sourced from env vars or a separate non-checked-in file. Config parser has no path to accept plaintext passwords. | Eliminates accidental-secret-in-git failure mode by construction. See §3.4. |
+| **D10** | **V2 ships its own log format.** Operator updates downstream log-aggregation tooling at cutover. V1's `Microsoft.Extensions.Logging` EventId contract is not preserved. | Smallest V2 scope; operator already plans downstream tooling rework. See §3.5. |
+| **D11** | **CI/CD inventory and migration is operator-owned.** Plan does not gate on CI cutover. R9 stays as a documented known risk. | Operator already has internal context for invocation sites; plan provides V2 CLI surface as the migration target. See §3.7. |
+| **D12** | **Canonical sort on user-supplied collections** (renames, migration-dep rows) at config-validation time. No idempotency test gate; no concurrent-extraction handling. | Sufficient determinism guardrail; avoids over-engineering. See §3.6. |
 
 ---
 
 ## 5. Phase A — Soak Path (V1 extracts/profiles, V2 emits)
 
-**Goal:** V2 emit produces the full artifact set from V1-extracted `osm_model.json` and V1-captured profile JSON, with config-driven overrides. Validate against operator's real workload via differential testing before Phase B begins.
+**Goal:** V2 emit produces the full artifact set from V1-extracted `osm_model.json` and V1-captured profile JSON, with config-driven overrides and an IR that carries every V1 schema concept the operator's workload uses. Validate against operator's real workload via differential testing (functional equivalence) before Phase B begins.
 
 ### 5.1 A.0 — Unified config schema
 
-**Deliverable:** A typed F# discriminated-union model in `Projection.Pipeline` representing the unified config, plus a JSON parser/validator. Documented schema with concrete examples.
+**Deliverable:** A typed F# model in `Projection.Pipeline` representing the unified config, plus a JSON parser/validator. Schema documented at `sidecar/projection/docs/config-schema.md`. Note: connection-string and credential fields **deliberately absent** per D9.
 
-**Schema sketch** (preliminary; finalize during A.0 work):
+**Schema sketch** (Draft 2 revision):
 
 ```json
 {
@@ -105,19 +177,50 @@ These are decisions made during the 2026-05-11 audit collaboration. Each is revi
     "modules": ["AppCore", { "name": "ServiceCenter", "entities": ["User"] }],
     "includeSystemModules": false,
     "includeInactiveModules": false,
-    "onlyActiveAttributes": true
+    "onlyActiveAttributes": true,
+    "validationOverrides": {
+      "allowMissingPrimaryKey": ["Module1::Entity1", "Module2::*"],
+      "allowMissingSchema": ["Module3::*"]
+    }
   },
   "profile": {
     "path": "extracted/profile.json"
+  },
+  "cache": {
+    "root": ".artifacts/cache",
+    "refresh": false,
+    "ttlSeconds": 7200
+  },
+  "profiler": {
+    "provider": "fixture",
+    "mockFolder": null
+  },
+  "typeMapping": {
+    "path": "config/type-mapping.default.json",
+    "default": null,
+    "overrides": {}
   },
   "overrides": {
     "tableRenames": [
       { "from": { "module": "OldModule", "entity": "OldEntity" }, "to": { "schema": "dbo", "table": "NEW_TABLE" } },
       { "from": { "schema": "dbo", "table": "OSUSR_X_Y" }, "to": { "schema": "dbo", "table": "RENAMED" } }
     ],
-    "migrationDependencies": {
-      "path": "overrides/migration-rows.json"
+    "migrationDependencies": { "path": "overrides/migration-rows.json" },
+    "staticData": { "path": "overrides/static-entities.json" },
+    "circularDependencies": {
+      "allowedCycles": [
+        { "tableOrdering": [
+          { "tableName": "OSUSR_ORGANIZATION", "position": 100 },
+          { "tableName": "OSUSR_USER", "position": 200 }
+        ] }
+      ],
+      "strictMode": false
     }
+  },
+  "dynamicData": {
+    "insertMode": "PerEntity",
+    "staticSeedParentMode": "Include",
+    "deferJunctionTables": false
   },
   "emission": {
     "ssdt": true,
@@ -142,128 +245,172 @@ These are decisions made during the 2026-05-11 audit collaboration. Each is revi
 }
 ```
 
-**Tasks:**
-- Define F# record types in `Projection.Pipeline/Config.fs`
-- Implement `Config.parse : JsonNode → Result<Config, ConfigError>` with structured errors (path + reason)
-- Implement `Config.validate : Config → Result<ValidatedConfig, ValidationError>` (file existence checks, schema consistency)
-- Write the schema reference doc at `sidecar/projection/docs/config-schema.md` with each section explained
-- Property tests: round-trip parse → serialize → parse; structured-error coverage
-
-**Exit:** Operator can read the schema doc, hand-write a config file, parse it, get a typed `ValidatedConfig` back or a structured error.
-
-### 5.2 A.1 — CLI surface upgrade
-
-**Deliverable:** `Projection.Cli` accepts `--config <path>` for `emit`; new `projection emit --config <path>` is the canonical entry. Legacy positional-arg form may stay as deprecated shorthand or be removed.
+**Notes on schema:**
+- **No `sql` block.** Connection sources are outside (D9). CLI accepts `--connection-string-env <VAR>` or `--connection-file <path>`.
+- **No `tightening` block.** D8 fixes V2 as detection-only; intervention axis stays at engine defaults.
+- **Emission block is 10 toggles** (one per emitter). Granularity preserved deliberately during A.0; collapse to semantic groups (`schema` / `data` / `diagnostics`) deferred until operator UX feedback at A.6.
+- **`supplementalModels`** intentionally absent — deferred-with-trigger per `HANDOFF.md:74`; document in §10.
 
 **Tasks:**
-- Replace hand-rolled `match argv` parser with `Argu` (F#-idiomatic) or extend the hand-rolled approach if Argu's overhead is judged unacceptable.
+- Define F# record types in `Projection.Pipeline/Config.fs`.
+- `Config.parse : JsonNode → Result<Config, ConfigError>` with structured errors (path + reason).
+- `Config.validate : Config → Result<ValidatedConfig, ValidationError>` with file-existence + cross-field consistency checks.
+- Static analyzer (`Projection.Analyzers`) rule: forbid `connectionString` properties anywhere in `Config` type tree.
+- Schema reference doc at `sidecar/projection/docs/config-schema.md`.
+- Property tests: round-trip; structured-error coverage.
+
+**Exit:** Operator can read the schema doc, hand-write a config file, parse it, get a typed `ValidatedConfig` back or a structured error. Static analyzer confirms zero credential paths.
+
+### 5.2 A.0' — IR fidelity lifts (Phase A precondition)
+
+**Deliverable:** V2's `Catalog` carries every schema concept enumerated in §3.3 (or explicitly opts out per documented rationale). This work runs in parallel with A.0; both gate A.1.
+
+**Tasks** (one slice each, each closable via sidecar's chapter-close convention):
+- **Trigger lifts**: add `Catalog.Triggers : Trigger list` (or per-Kind list) with `Definition: string`, `IsDisabled: bool`, lineage to source attribute. Adapter `CatalogReader` populates from V1's `TriggerModel`.
+- **Sequence lifts**: add `Catalog.Sequences : Sequence list` with StartValue, Increment, Min, Max, IsCycleEnabled, CacheMode. Adapter populates from V1's `OsmModel.Sequences`.
+- **Temporal lifts**: extend `ModalityMark` with `Temporal of TemporalConfig` carrying history-schema, history-table, period columns, retention policy.
+- **DEFAULT lifts**: add `Attribute.DefaultValue : SqlLiteral option`.
+- **Computed-column lifts**: add `Attribute.Computed : ComputedColumnConfig option` with definition text and persistedness.
+- **CHECK lifts**: add `Kind.ColumnChecks : ColumnCheck list` with name + CHECK clause text.
+- **Catalog-coordinate lift**: extend `TableId` to `{ Catalog: string option; Schema; Table }`; default Catalog to None for current single-DB case.
+- **ExtendedProperties lifts**: add to `Module / Kind / Attribute / Index` as `ExtendedProperties: ExtendedProperty list`.
+- **Description lifts**: add `Description: string option` to Entity (Kind metadata) and Attribute metadata.
+- **IsExternal / Origin mapping audit**: clarify in CatalogReader adapter; add adapter property test ensuring V1 `IsExternal=true → V2 Origin = ExternalViaIntegrationStudio | ExternalDirect`.
+- **IsActive lifts**: add `IsActive: bool` to Module / Kind / Attribute (with sensible default `true`).
+- For each lift: differential property test against a fixture catalog asserting round-trip preservation.
+
+**Tasks NOT in scope for A.0'** (deferred-with-rationale; surface in §10):
+- `OriginalName` (prior attribute names) — renames handled at cutover, not embedded in model.
+- `ExternalDatabaseType` — V2's `PrimitiveType` abstraction is intentional per AXIOMS A13.
+- `IndexColumnDirection` per-column include vs. key direction — acceptable loss per 2026-05-10 vestigial-fields convention.
+- `IsPlatformAuto` index flag — presentation-only.
+
+**Exit:** V2 IR can round-trip every V1 schema concept the operator's workload uses. Adapter property tests cover the lift surface. Emit-side correctness assumption (Phase A.6 diff is meaningful) is now well-founded.
+
+**Estimated effort:** 3-4 weeks (5-7 slices, sidecar's standard chapter cadence).
+
+### 5.3 A.1 — CLI surface upgrade
+
+**Deliverable:** `Projection.Cli` accepts `--config <path>` for `emit`; connection sources via `--connection-string-env <VAR>` or `--connection-file <path>` (the latter unused in Phase A — V2 doesn't connect to OSSYS during Phase A).
+
+**Tasks:**
+- Replace hand-rolled `match argv` parser with Argu or extended hand-rolled approach (decide during work; see Q2).
 - Wire `--config` to `Config.parse → Config.validate → Compose.runWithConfig`.
-- Update help output. New exit codes: `6` for config-parse-error, `7` for config-validation-error.
-- Backward-compat: legacy positional form maps to a `Config` with mostly-empty overrides + EmissionPolicy.empty (today's behavior).
+- New exit codes: `6` config-parse-error, `7` config-validation-error, `8` connection-source-error, `9` SQL-execution-error (B), `10` profile-probe-failure (B).
+- Backward-compat: legacy positional form retained as deprecated shorthand; emits a deprecation warning to stderr.
 
-**Exit:** `projection emit --config example.json` runs end-to-end with today's emitter set.
+**Exit:** `projection emit --config example.json` runs end-to-end with the full Phase A emitter set.
 
-### 5.3 A.2 — Emitter wiring under EmissionPolicy gates
+### 5.4 A.2 — Emitter wiring under EmissionPolicy gates
 
-**Deliverable:** All built-but-hidden emitters fire from `Compose.project` when their corresponding `EmissionPolicy` gate is open.
+**Deliverable:** All built-but-hidden emitters fire from `Compose.project` when their gate is open per config.
 
 **Tasks:**
-- Refactor `Compose.project` in `src/Projection.Pipeline/Pipeline.fs:181` to accept the validated config (not hardcoded empties).
-- Add gates:
-  - `EmissionPolicy.EmitData = true` → DataEmissionComposer wired (Static + MigrationDeps + Bootstrap)
-  - `EmissionPolicy.EmitDiagnostics = true` → DecisionLog + Opportunities + Validations wired
-  - Config `emission.dacpac = true` → DacpacEmitter wired into the SSDT bundle path
-- Verify `DataComposition` mode flows through (AllRemaining / AllExceptStatic / AllData) per config.
-- Update integration tests to exercise each gate.
+- Refactor `Compose.project` to accept `ValidatedConfig` rather than hardcoded empties.
+- Wire StaticSeeds / MigrationDependencies / Bootstrap (under `emission.staticSeeds` / `migrationDependencies` / `bootstrap`).
+- Wire DecisionLog / Opportunities / Validations (under `emission.decisionLog` / `opportunities` / `validations`).
+- Wire DacpacEmitter (under `emission.dacpac`).
+- Honor `dynamicData.insertMode` (PerEntity vs SingleFile output layout).
+- Honor `dynamicData.deferJunctionTables` and `dynamicData.staticSeedParentMode` in DataEmissionComposer.
+- Integration tests for each gate (on, off, all-on, all-off).
 
 **Exit:** With config-driven gates, V2 emit can produce: SSDT + dacpac + Static seeds + Migration deps + Bootstrap + DecisionLog + Opportunities + Validations. All from one run.
 
-### 5.4 A.3 — MigrationDependencies JSON loader + auto-PK pass
+### 5.5 A.3 — StaticData and MigrationDependencies JSON loaders
 
-**Deliverable:** Operator-facing JSON file format + loader + pre-emit pass that assigns PKs.
+**Deliverable:** Two operator-facing JSON formats with corresponding loaders. Static-data fixtures populate static-entity seed rows; migration-dependency rows are appended with auto-assigned PKs.
 
-**JSON shape** (preliminary):
+**StaticData JSON shape** (V1-compat for soak-friendliness):
 ```json
 {
   "tables": [
-    {
-      "kindKey": { "module": "AppCore", "entity": "Country" },
-      "rows": [
-        { "Code": "US", "Label": "United States" },
-        { "Code": "CA", "Label": "Canada" }
-      ]
-    }
+    { "schema": "dbo", "table": "OSUSR_DEF_CITY", "rows": [
+      { "ID": 1, "NAME": "Lisbon", "ISACTIVE": true },
+      { "ID": 2, "NAME": "Porto", "ISACTIVE": true }
+    ] }
   ]
 }
 ```
 
-Rows omit the PK column. Loader looks up MAX(Id) per kind, assigns Id = MAX+1, MAX+2, ... in declaration order. The assigned PKs are baked into the resulting `MigrationDependencyContext` `Values` map.
+**MigrationDependencies JSON shape** (rows omit PK column):
+```json
+{
+  "tables": [
+    { "kindKey": { "module": "AppCore", "entity": "Country" }, "rows": [
+      { "Code": "US", "Label": "United States" },
+      { "Code": "CA", "Label": "Canada" }
+    ] }
+  ]
+}
+```
 
 **Tasks:**
-- `Projection.Pipeline/MigrationDependencyLoader.fs` — parse JSON, resolve kind keys against `Catalog`, validate column names against attribute set, surface structured errors.
-- New pre-emit pass `MigrationDependencyPkAssignmentPass` in `Projection.Core/Passes/` — given `Profile.MaxIdentityValues` (new field, see §9 Q1) and a parsed migration document, produce a fully-PK'd `MigrationDependencyContext`.
-- Wire into `DataEmissionComposer.composeFull` via the new pass.
-- Tests:
-  - Loader: malformed JSON, unknown kind, unknown attribute, type mismatches (string vs int column)
-  - PK assignment: deterministic ordering, MAX-collision diagnostic
-  - End-to-end: JSON in → MERGE SQL out with literal IDs
+- `Projection.Pipeline/StaticDataLoader.fs` — parse + resolve to (schema, table) tuples; validate column existence against Catalog.
+- `Projection.Pipeline/MigrationDependencyLoader.fs` — parse + resolve kind keys; validate column existence.
+- New pre-emit pass `MigrationDependencyPkAssignmentPass` — given `Profile.MaxIdentityValues` (new field; see Q1) + parsed migration document, produce fully-PK'd `MigrationDependencyContext`. PK assignment edge cases per Q13: identity-overflow detection, deterministic ordering, missing-MAX diagnostic.
+- Wire StaticData → StaticSeedsEmitter input.
+- Wire MigrationDependencyContext → MigrationDependenciesEmitter.
+- Tests: malformed JSON, unknown table/kind, unknown column, type mismatches, identity overflow, deterministic PK ordering.
 
-**Exit:** Operator-provided JSON config produces correctly-PK'd MERGE statements emitted to `out/` as part of the standard emit flow.
+**Exit:** Operator-provided JSON for both static-data and migration-dependencies produces correctly-emitted MERGE statements in `out/`.
 
-### 5.5 A.4 — Table-rename plumbing
+### 5.6 A.4 — Table-rename plumbing with canonical ordering
 
-**Deliverable:** Config-declared table renames apply to `Catalog` before emitters run.
-
-**Tasks:**
-- New pre-emit pass `TableRenamePass` in `Projection.Core/Passes/` — takes a rename map + `Catalog`, returns a renamed `Catalog`. Validates: each rename source exists; no collision in targets; lineage trail records the rewrite.
-- Support both logical (`Module::Entity`) and physical (`schema.table`) source forms, matching V1's `NamingOverridesBinder` behavior at `src/Osm.Pipeline/Application/NamingOverridesBinder.cs:32-119`.
-- Apply renames *before* topological-order pass so dependency edges follow renamed names.
-- Tests: round-trip rename, collision detection, missing-source error, both source forms.
-
-**Exit:** A config with `tableRenames` produces SSDT DDL referencing the renamed names everywhere (table defs, FK references, indexes, triggers, manifest).
-
-### 5.6 A.5 — Profile-JSON ingestion
-
-**Deliverable:** Adapter that reads V1's `profile` verb output JSON and hydrates V2's `Profile` type. With profile data threaded, the existing detection passes (Nullability, ForeignKey, UniqueIndex) light up.
+**Deliverable:** Config-declared table renames apply to `Catalog` before emitters run. Rename entries canonical-sorted at config-validation time (per D12).
 
 **Tasks:**
-- Inspect V1's profile JSON shape (`src/Osm.Pipeline/Profile/` and the `profile` verb output).
+- Pre-emit pass `TableRenamePass` in `Projection.Core/Passes/` — takes a rename map + `Catalog`, returns a renamed `Catalog`. Validates: each rename source exists; no collision in targets; SCC membership unchanged (per R11).
+- Canonical sort applied to `overrides.tableRenames` list at `Config.validate` time before reaching the pass — guarantees re-running with reordered config produces identical output.
+- Support both logical (`Module::Entity`) and physical (`schema.table`) source forms.
+- Apply renames *before* topological-order pass.
+- Tests: round-trip rename, collision detection, missing-source error, both source forms, **rename-order-invariance property** (random permutations of rename list produce identical output).
+
+**Exit:** A config with `tableRenames` produces SSDT DDL referencing the renamed names everywhere (table defs, FK references, indexes, triggers, manifest). Property test confirms canonical-order invariance.
+
+### 5.7 A.5 — Profile-JSON ingestion + completeness audit
+
+**Deliverable:** Adapter that reads V1's `profile` verb output JSON and hydrates V2's `Profile` type. Required-vs-optional field enumeration with partial-failure semantics (per R12).
+
+**Tasks:**
+- Audit V1's profile JSON schema. Enumerate every field. Mark each: required-for-Phase-A-emit, optional-with-fallback, advisory-only.
 - New `Projection.Adapters.Osm/ProfileReader.fs` mirroring `CatalogReader.fs` in style.
-- Validate that V1's profile JSON contains all fields V2's `Profile` type expects (`Columns`, `UniqueCandidates`, `ForeignKeys`, optionally `Distributions`, `CdcAwareness`). Identify any field-level gaps.
+- Required-field validation at parse time. Optional fields produce structured warnings, not errors.
+- Special case: V1 today does not capture `MaxIdentityValue`. Confirm Q1 resolution (V1 amendment or Phase A.3 deferral path).
 - Wire into `Compose.run` when config supplies `profile.path`.
-- Tests: round-trip parse, schema-shift handling, missing-field diagnostics.
+- Tests: round-trip, schema-shift handling, partial-failure (probe timed out, one column missing), full-failure (file absent or unparseable).
 
-**Exit:** With V1-captured profile JSON supplied via config, V2 emit produces decision logs containing orphan-FK warnings and mandatory-null warnings.
+**Exit:** With V1-captured profile JSON supplied via config, V2 emit produces decision logs containing orphan-FK warnings and mandatory-null warnings. Required-field contract is documented.
 
-### 5.7 A.6 — Soak: differential testing against V1's outputs
+### 5.8 A.6 — Soak: differential testing on functional equivalence (per D-shape decision)
 
-**Deliverable:** A reproducible test rig that runs V2 emit against operator's real workload (or a representative production-sized fixture) and compares outputs byte-for-byte (or semantic-diff) against V1's outputs.
+**Deliverable:** A reproducible test rig that runs V2 emit against operator's real workload and compares outputs against V1's outputs on **functional equivalence**, not byte-identity (per operator decision). Agreed differences recorded in §11.2.
 
 **Tasks:**
 - Pick a representative fixture (real production model + profile, or the largest existing test fixture).
 - Run V1 full-export → capture outputs.
 - Run V2 emit on V1's extracted JSON + profile JSON → capture outputs.
 - Build a diff harness:
-  - SSDT .sql files: byte diff, with allowlist for whitespace / formatting differences (if any are agreed)
-  - Manifest JSON: semantic diff (key-order-agnostic)
-  - .dacpac: deserialize and compare schema model (DacFx provides this)
-  - Migration-INSERT SQL: byte diff
-  - Decision logs: semantic diff (entries may be in different order; compare set-equivalence)
-- Triage every divergence: bug in V2, bug in V1 (acknowledged), or agreed-different (record in this doc §11).
+  - SSDT .sql files: byte diff with allowlist for whitespace/formatting; semantic diff (parse + compare AST) on failure.
+  - Manifest JSON: semantic diff (key-order-agnostic, structure-aware). V1 `SsdtManifest` shape vs V2 `ArtifactByKind` shape will differ; record the structural divergence as agreed-different.
+  - .dacpac: deserialize and compare schema model via DacFx.
+  - Static-seed + Migration SQL: byte diff after canonical whitespace.
+  - Decision logs / Opportunities / Validations: semantic set-equivalence (V1 staged structure vs V2 per-kind structure; record divergence).
+- Triage every divergence: V2 bug, V1 bug (acknowledged), or agreed-different (record in §11.2).
 - Fix V2 bugs; document agreed differences.
 
-**Exit:** Differential diff is clean (no unexplained divergence) on operator's representative workload. V2 emit is functionally equivalent to V1 build/SSDT/diagnostic emission, modulo the recorded agreed differences.
+**Exit:** Functional-equivalence diff is clean (no unexplained divergence; only entries in §11.2). V2 emit is functionally equivalent to V1 build/SSDT/diagnostic emission.
 
-### 5.8 Phase A milestones (estimated, single-developer focus)
+### 5.9 Phase A milestones (Draft 2 revised estimates)
 
 - **A.0 + A.1**: 1-1.5 weeks (config schema + CLI plumbing)
-- **A.2**: 1 week (emitter wiring; the emitters exist, this is plumbing)
-- **A.3**: 1-1.5 weeks (loader + auto-PK pass + tests)
-- **A.4**: 0.5-1 week (rename pass + tests)
-- **A.5**: 1 week (profile reader; depends on V1's profile JSON stability)
-- **A.6**: 1-2 weeks (soak; duration depends on divergence triage workload)
+- **A.0'**: **3-4 weeks** (IR fidelity lifts; new in Draft 2 — runs in parallel with A.0/A.1)
+- **A.2**: 1 week (emitter wiring; depends on A.0' for emitter inputs)
+- **A.3**: 1.5 weeks (two loaders + auto-PK pass + edge-case tests)
+- **A.4**: 0.5-1 week (rename pass + canonical-sort + tests)
+- **A.5**: 1-1.5 weeks (profile reader + completeness audit)
+- **A.6**: 1-2 weeks (soak; +50% buffer per R5)
 
-**Phase A total: 6-9 weeks** for one focused developer.
+**Phase A total: 9-12 weeks** for one focused developer. Parallelization (A.0' alongside A.0/A.1, A.5 alongside A.4) trims to **7-9 weeks elapsed**.
 
 ---
 
@@ -275,19 +422,19 @@ Rows omit the PK column. Loader looks up MAX(Id) per kind, assigns Id = MAX+1, M
 
 **Tasks:**
 - Copy `src/AdvancedSql/outsystems_metadata_rowsets.sql` (1,184 LOC) and `outsystems_model_export.sql` (931 LOC) verbatim into `sidecar/projection/sql/`.
-- Port `SqlConnectionFactory` to F# in `Projection.Adapters.Sql/Connection.fs` (~50 F# LOC). Auth modes: Integrated, SqlPassword, ActiveDirectoryDefault, AccessToken. Cert trust + application name.
-- Port `SqlConnectionOptions`, `DbCommandExecutor`, `IAdvancedSqlExecutor` interfaces as F# records/functions (no interfaces; pattern-match dispatch where polymorphism is needed).
+- Port `SqlConnectionFactory` to F# in `Projection.Adapters.Sql/Connection.fs` (~50 F# LOC). Auth modes: Integrated, SqlPassword, ActiveDirectoryDefault, AccessToken. Cert trust + application name. Connection-source bound from env-var or separate file per D9.
+- Port `SqlConnectionOptions`, `DbCommandExecutor`, `IAdvancedSqlExecutor` interfaces as F# records/functions.
 
-**Exit:** V2 can open a connection to OSSYS SQL Server and execute the metadata SQL script, returning a `SqlDataReader`-equivalent F# stream.
+**Exit:** V2 can open a connection to OSSYS SQL Server and execute the metadata SQL script, returning a streaming reader.
 
 ### 6.2 B.1 — Result-set binding
 
 **Tasks:**
 - Port 25 result-set processors. C# uses inheritance + factory; F# uses a single DU `MetadataResultSet` with one case per result + pattern-match dispatch.
-- Port `MetadataAccumulator` to an F# record of lists (`ResizeArray<T>` during accumulation; immutable `IReadOnlyList<T>` at finalization).
+- Port `MetadataAccumulator` to an F# record of lists.
 - Port `ResultSetReader` and `ResultSetDescriptorFactory`. Total ~1,500 C# LOC → ~900 F# LOC.
 
-**Risk:** highest in Phase B. The async-stream lifetime management in `MetadataSnapshotRunner.cs:407` is non-trivial. F#'s `task` workflow handles this, but the `CommandBehavior.SequentialAccess` semantics must be preserved exactly to avoid memory exhaustion on large catalogs.
+**Risk:** highest in Phase B. The async-stream lifetime management in `MetadataSnapshotRunner.cs:407` is non-trivial. F#'s `task` workflow handles this, but `CommandBehavior.SequentialAccess` semantics must be preserved exactly to avoid memory exhaustion on large catalogs (>1000 entities).
 
 **Exit:** V2 runs `outsystems_metadata_rowsets.sql` against OSSYS and produces a populated `OutsystemsMetadataSnapshot` F# record.
 
@@ -295,62 +442,70 @@ Rows omit the PK column. Loader looks up MAX(Id) per kind, assigns Id = MAX+1, M
 
 **Tasks:**
 - Port `SnapshotJsonBuilder` to F# in `Projection.Adapters.Osm/SnapshotWriter.fs` (~300 F# LOC). Direct `Utf8JsonWriter` calls, no reflection.
-- Port `SnapshotValidator`. Validates accumulator completeness (no orphan attribute references, no missing parent modules, etc.).
-- Verify output is byte-equivalent to V1's `osm_model.json` for at least one large fixture. This is critical: V2's `CatalogReader` already parses this format; any field-order or escaping divergence breaks the chain.
+- Port `SnapshotValidator`.
+- Verify output is byte-equivalent (or semantic-equivalent with a documented diff) to V1's `osm_model.json` for at least one large fixture.
 
-**Exit:** V2 produces a byte-equivalent `osm_model.json` from a live OSSYS DB. V2's existing `CatalogReader` consumes it without modification.
+**Note:** `MetadataContractOverrides` (141 LOC) handles **OSSYS-schema-flexibility for optional columns**, NOT SQL-Server-version-dependence (Draft 1 mis-framed this). T-SQL queries themselves use stable 2016+ features.
 
-### 6.4 B.3 — Profile probes
+**Exit:** V2 produces a functionally-equivalent `osm_model.json` from a live OSSYS DB.
+
+### 6.4 B.3 — Profile probes (Draft 2 revised estimate)
 
 **Tasks:**
-- Inventory V1's `profile` verb probes: per-column NULL count, FK orphan count, unique-index dup count, MAX(Id) per identity column, optionally distribution probes (categorical / numeric percentiles).
-- Port the probe runners. Each probe is a parameterized SQL query; results hydrate a `Profile` record directly (skipping the V1 JSON middleman).
-- Sampling: respect `--sampling-threshold` / `--sampling-size` for large tables.
-- Add `MaxIdentityValue` field to `ColumnProfile` (this is needed by Phase A's auto-PK pass; can be backfilled in V1 sooner and used by V2 in Phase A.3, then re-implemented native in Phase B.3).
-- Tests: each probe in isolation against a fixture DB; end-to-end profile generation against the canary's ephemeral SQL Server.
+- Port V1's **5 query builders** (Draft 1 said 4; actual count is 5): `NullCountQueryBuilder`, `NullRowSampleQueryBuilder`, `UniqueCandidateQueryBuilder`, `ForeignKeyProbeQueryBuilder`, `ForeignKeyOrphanSampleQueryBuilder`.
+- Add `MaxIdentityValueQueryBuilder` (new in V2; not present in V1; needed for Phase A.3 auto-PK; resolves Q1).
+- Port `ProfilingQueryExecutor` (672 C# LOC) orchestration.
+- Sampling: respect `--sampling-threshold` / `--sampling-size` semantics (uniform across probes per V1).
+- Hydrate `Profile` directly; skip JSON middleman in Phase B path.
+- Tests: each probe in isolation; full-population end-to-end; partial-failure (one probe timed out, profile still emits with structured warning per R12).
 
 **Exit:** V2 connects to OSSYS, runs the probe set, returns a populated `Profile` record. Detection passes fire with real data.
+
+**Draft 2 estimate:** **3-4 weeks** (was 2-3 in Draft 1). Profiling surface (~6,000 C# LOC) is larger than extraction surface (~2,000 C# LOC core).
 
 ### 6.5 B.4 — Orchestration + new CLI subcommands
 
 **Tasks:**
-- Add `projection extract --config <path>` subcommand. Reads `sql.connectionString` from config; runs metadata extraction; writes `osm_model.json` to configured output path.
-- Add `projection profile --config <path>` subcommand. Reads connection; runs probes; writes profile JSON (matching V1's shape for soak-compatibility) or hydrates `Profile` in-memory for direct consumption.
-- Add `projection full-export --config <path>` subcommand. Chains extract → profile → emit. All three steps drive off the same unified config from §5.1.
-- Port `ModuleFilter` (defensive post-extraction filter) and `MetadataContractOverrides` (version-dependent SQL field handling).
-- New exit codes: `8` for SQL connection failure, `9` for SQL-script execution error, `10` for profile probe failure.
+- Add `projection extract --config <path>` subcommand. Connection source resolved per D9 (env var or `--connection-file`).
+- Add `projection profile --config <path>` subcommand.
+- Add `projection full-export --config <path>` subcommand. Chains extract → profile → emit.
+- Define V2's logging format (per D10) — structured properties, event categories. Documented in `sidecar/projection/docs/logging-format.md`. Operator updates downstream tooling.
+- Port `ModuleFilter` (defensive post-extraction filter) and `MetadataContractOverrides`.
 
 **Exit:** Operator runs `projection full-export --config production.json` against OSSYS. V2 produces the full artifact set without V1.
 
-### 6.6 Phase B milestones (estimated)
+### 6.6 Phase B milestones (Draft 2 revised estimates)
 
 - **B.0**: 1 week (foundation)
 - **B.1**: 2-3 weeks (result-set binding; highest-risk phase)
 - **B.2**: 1 week (serialization + validator)
-- **B.3**: 2-3 weeks (profile probes)
-- **B.4**: 1-2 weeks (orchestration + CLI)
+- **B.3**: **3-4 weeks** (profile probes; revised up from 2-3)
+- **B.4**: 1-2 weeks (orchestration + CLI + logging format)
 
-**Phase B total: 7-10 weeks** for one focused developer. Parallel two-developer split: ~4-6 weeks elapsed.
+**Phase B total: 8-11 weeks** for one focused developer.
 
 ---
 
 ## 7. Cutover Criteria
 
 ### 7.1 Phase A exit
-- All A.0–A.6 deliverables met.
-- Differential diff vs V1 outputs is clean on operator's representative workload.
+- All A.0–A.6 deliverables met, including A.0' IR fidelity lifts.
+- Functional-equivalence diff vs V1 outputs is clean (only agreed differences in §11.2) on operator's representative workload.
 - Config schema doc reviewed and approved by operator.
+- Canonical-rename-order property test passing.
+- Static analyzer confirms no credential paths in `Config` type tree.
 - No known V2-side defects in emit half.
 
 ### 7.2 Phase B exit (= full cutover gate)
-- V2 `full-export` runs against OSSYS SQL Server and produces byte-equivalent `osm_model.json` to V1's `extract-model` output.
-- V2 profile probes produce the same `Profile` data as V1's `profile` verb (modulo agreed differences).
-- V2 emit outputs are functionally equivalent to V1's outputs (per Phase A criterion).
+- V2 `full-export` runs against OSSYS SQL Server and produces functionally-equivalent `osm_model.json` to V1's `extract-model` output.
+- V2 profile probes produce functionally-equivalent `Profile` data to V1's `profile` verb output (modulo Q1's MaxIdentityValue, which V2 adds).
+- V2 emit outputs functionally-equivalent artifacts (per Phase A criterion).
+- V2 logging format documented; operator has updated downstream tooling.
 - ≥1 full end-to-end production dry-run completed by operator.
-- Cutover-day runbook written (separate document).
+- Cutover-day runbook written (separate document; operator-owned per D11).
 
 ### 7.3 V1 sunset
-- T+30 days after Phase B exit: V1 enters maintenance mode (no new features, only critical bug fixes if V2 cannot serve).
+- T+30 days after Phase B exit: V1 enters maintenance mode.
 - T+90 days: V1 archived. `src/` becomes read-only reference.
 
 ---
@@ -359,53 +514,91 @@ Rows omit the PK column. Loader looks up MAX(Id) per kind, assigns Id = MAX+1, M
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| R1 | Operator's "document of key evolutions" diverges meaningfully from current `origin/main` — plan may need revision. | High (operator-flagged) | Medium | Pause Phase A.0 until operator shares the evolutions doc; revise this plan as Draft 2 before coding starts. |
-| R2 | V1's profile JSON schema lacks `MaxIdentityValue` per column → Phase A.3 auto-PK pass blocked until V1 is amended or Phase B.3 lands. | Medium | Medium | Audit V1 profile JSON first thing in A.5; if missing, either (a) amend V1's profile verb to emit MAX(Id) as a small additional probe, or (b) defer A.3 to Phase B. Decision: A.5 audit feeds A.3 sequencing. |
-| R3 | Async stream lifetime in `MetadataSnapshotRunner` port (B.1) hits non-obvious memory or correctness issues. | Medium | High | Port with `task` workflow + explicit `IAsyncDisposable` handling; integration test against a fixture catalog ≥1000 entities to validate streaming behavior under load. |
-| R4 | Byte-equivalence of `osm_model.json` (B.2) cannot be achieved due to System.Text.Json output ordering differences between C# and F# usage. | Low | High | Use the exact same `JsonWriterOptions`; for any unavoidable diff (e.g., property order), fall back to semantic equivalence + update `CatalogReader` if needed. |
-| R5 | Differential diff (A.6) surfaces a deep emit-side divergence that requires substantial V2 rework. | Medium | High | Phase A.6 is intentionally placed before Phase B starts; surfacing divergence early is the point. Budget +50% time for A.6 to absorb surprises. |
-| R6 | Operator's workflow uses V1 capabilities not yet inventoried (e.g., uat-users, dmm-compare, analyze). | Medium | Medium | Confirm with operator that the two named use cases (`extract-model`, `full-export`) are exhaustive for cutover; if not, scope additional verbs. |
-| R7 | OSSYS-side SQL incompatibility surfaces in production tenant (different SQL Server version than dev/test). | Low | High | `MetadataContractOverrides` (port in B.4) handles version-dependent fields; test against each target SQL Server version operator runs. |
+| R1 | Operator's "document of key evolutions" diverges from current `origin/main`. | High | Medium | Pause Phase A.0 until operator shares the evolutions doc; revise to Draft 3 before coding starts. |
+| R2 | V1's profile JSON lacks `MaxIdentityValue` → Phase A.3 auto-PK pass blocked. | Medium | Medium | Resolve Q1: amend V1's profile verb to emit MAX(Id), OR defer A.3 auto-PK to Phase B. |
+| R3 | Async stream lifetime in `MetadataSnapshotRunner` port (B.1) hits memory/correctness issues. | Medium | High | Port with `task` workflow + explicit `IAsyncDisposable` handling; integration test against ≥1000-entity catalog. |
+| R4 | Byte-equivalence of `osm_model.json` (B.2) cannot be achieved due to JSON output ordering. | Low | Medium | Fall back to functional equivalence per A.6 pattern. |
+| R5 | Differential diff (A.6) surfaces deep emit-side divergence requiring substantial V2 rework. | Medium | High | A.6 budget includes +50% buffer for surprises. |
+| R6 | Operator's workflow uses V1 capabilities not yet inventoried. | Low (post-Draft-2 audit, operator confirmed two use cases exhaustive) | Medium | Continue to verify during soak; §10 catalog is comprehensive. |
+| R7 | OSSYS-side SQL incompatibility in production tenant. | Low | High | `MetadataContractOverrides` handles OSSYS-schema-flexibility; test against operator's actual OSSYS version. |
+| **R8** | **IR lifts (A.0') discover unanticipated semantic complexity in V1's domain model.** | Medium | High | Slice per concept; each closable independently per sidecar chapter cadence; if one lift exceeds 1 week, escalate to design review before continuing. |
+| **R9** | **CI/CD silent break at T+30** (operator-owned per D11). | High | High (if operator's pipelines depend on V1) | Operator inventories invocation sites during soak; maps each to V2 config-file equivalent; cuts over before T+30. Plan provides V2 CLI spec as migration target; no automation. |
+| **R10** | **Logging format divergence** (V2 ships own format per D10). | High | Medium | Operator's downstream tooling rewrite happens at cutover; V2 logging format documented at Phase B.4. |
+| **R11** | **Determinism breaks under config-driven rename ordering.** | Low (mitigated by D12) | High (when triggered) | Canonical rename sort at config-validation time (A.4); rename-order-invariance property test. |
+| **R12** | **Profile completeness boundary unclear** — partial probe failure produces incomplete profile. | Medium | Medium | A.5 enumerates required-vs-optional fields with structured-warning semantics; partial-failure tests in A.5 + B.3. |
 
 ---
 
 ## 9. Open Questions
 
-Numbered for stable reference; revisions go in §11 addenda.
+Numbered for stable reference; resolved questions retained for traceability.
 
-**Q1.** **MAX(Id) source for the auto-PK pass (A.3).** D5 commits to "MAX(SourceOSSYS.Id) at emit time, literal IDs in SQL." This implies V2 needs OSSYS access during emit, which contradicts Phase A's "V1 extracts, V2 emits" separation. Options:
-  - (a) Extend V1's profile verb to emit `MaxIdentityValue` per identity column; V2 reads from profile JSON. Smallest scope; keeps Phase A self-contained.
-  - (b) V2 opens a side-channel SQL connection during emit to query MAX. Adds OSSYS dependency to Phase A.
-  - (c) Defer A.3 to Phase B, where V2 has OSSYS access natively. Phase A emits Migration deps with operator-supplied PKs (today's `MigrationDependenciesEmitter` behavior); auto-PK lands with extraction.
+**Q1.** **MAX(Id) source for the auto-PK pass (A.3).** Options: (a) amend V1's profile verb to emit MAX(Id); V2 reads from profile JSON. (b) V2 opens side-channel SQL during Phase A emit (breaks separation). (c) Defer A.3 auto-PK to Phase B. Recommendation: (a). **Outstanding.**
 
-  Recommendation: (a). Cleanest. Requires a small V1 patch but avoids breaking Phase A's separation.
+**Q2.** **Argu vs hand-rolled CLI parser (A.1).** Decide during A.1 work. **Outstanding.**
 
-**Q2.** **Argu vs hand-rolled CLI parser (A.1).** Hand-rolled stays simple if argv grows linearly; Argu pays off when subcommand × flag matrix gets large. Phase B adds 3 subcommands × ~5 common flags. Argu likely earns its keep but adds a dependency. Decide during A.1.
+**Q3.** **Backward-compat for V2's existing positional CLI.** Draft 2 default: keep as deprecated shorthand with stderr warning. **Outstanding (revisable during A.1).**
 
-**Q3.** **Backward-compat for V2's existing positional CLI.** Drop it or keep it as deprecated shorthand? Current usage in tests / dev tooling matters here.
+**Q4.** **Profile JSON shape coupling in Phase B.3.** Draft 2: V2-native primary, V1-compat secondary via `--compatibility-mode` flag if operator needs it. **Outstanding (revisable during B.3).**
 
-**Q4.** **Profile JSON shape coupling.** Should V2's Phase B.3 profile output match V1's JSON shape byte-equivalent (for symmetric soak), or define a V2-native shape and emit a V1-compat shape as a separate output? Recommendation: V2-native primary, V1-compat secondary, with a "compatibility-mode" config flag.
+**Q5.** **Dacpac as primary vs SSDT-folder as primary.** Both required per §2.2. Draft 2: emit both side-by-side in `out/`. **Resolved.**
 
-**Q5.** **Dacpac as primary vs SSDT-folder as primary.** Operator implied both are needed; clarify whether one is the canonical artifact and the other is supplementary, or whether they're peers in the output bundle.
+**Q6.** **Operator's "document of key evolutions."** Outstanding; triggers Draft 3.
 
-**Q6.** **Operator's "document of key evolutions"** (referenced 2026-05-11 by the product owner). Outstanding. Plan revision required after delivery.
+**Q7.** **Sampling thresholds in Phase B.3.** Operator's production catalog characteristics determine `--sampling-threshold` and `--sampling-size` defaults. **Outstanding.**
 
-**Q7.** **Sampling and large-catalog behavior in Phase B.** V1's `--sampling-threshold` / `--sampling-size` apply primarily to profile probes. Confirm whether operator's production catalogs need sampling and what thresholds make sense.
+**~~Q8.~~ Credentials handling.** **Resolved per D9** (connection string outside config).
+
+**~~Q9.~~ Logging format contract.** **Resolved per D10** (V2 own format, operator updates downstream).
+
+**~~Q10.~~ Idempotency test for cutover.** **Resolved (declined)** — operator did not require an idempotency-test gate.
+
+**~~Q11.~~ Concurrent extraction safety.** **Resolved (operator-owned coordination per D11).**
+
+**Q12.** **Rename test coverage scope (A.4).** Options: (a) unit tests covering collision/missing-source/topo-preservation only; (b) unit + integration soak test with renames enabled; (c) unit + property test (random rename permutations). Draft 2 default: (c). **Outstanding (revisable during A.4).**
+
+**Q13.** **MigrationDependencies PK edge cases (A.3).** What happens when: (i) MAX(Id) unknown (profile missing field), (ii) MAX(Id) at identity max value (e.g., `2^31 - 1`), (iii) rows reordered between config versions. Each must produce a structured error or deterministic behavior. Draft 2 commits to: (i) structured error pointing to Q1, (ii) structured error with operator-facing message, (iii) deterministic per canonical sort (D12). **Outstanding (revisable during A.3).**
 
 ---
 
-## 10. Deferred / Out-of-Scope
+## 10. Deferred / Out-of-Scope (operator-confirmed)
 
-These are *deliberately* not in scope for cutover. If operator decides they need any of these later, reopen as a separate plan.
+These are deliberately not in scope. Operator confirmed during 2026-05-11 audit. If any becomes needed, reopen as a separate plan.
 
-- **`--apply` phase** (D7).
-- **`--load-harness` phase** (wait stats, locks, fragmentation profiling).
-- **`uat-users` transformation as a CLI feature** (`UserRemapContext` exists internally; CSV ingestion deferred-with-trigger per `HANDOFF.md:75`).
-- **`dmm-compare` verb** — V1 capability not in operator's named use cases.
-- **`analyze` verb** — same.
-- **`policy explain` verb** — same.
-- **Per-Catalog Docker parameterization** — deferred-with-trigger per `HANDOFF.md:70`.
-- **OSSYS User-kind identification** in OSSYS adapter — deferred-with-trigger per `HANDOFF.md:74`.
+### 10.1 V1 verbs the operator does not use in production
+- `dmm-compare` — DMM baseline comparison.
+- `analyze` — standalone tightening analyzer.
+- `inspect` — model-JSON inspection.
+- `policy explain` — policy-decision introspection.
+- `uat-users` (CLI verb form) — UAT user inventory transformation.
+
+### 10.2 V1 outputs V2 will not produce
+- **`.sqlproj`** (SQL Server Database Project file). Operator handles via external SSDT tooling.
+- **`SafeScript.sql` / `RemediationScript.sql`**. V2 emits diagnostic JSON only; operator generates remediation SQL externally if needed.
+- **V1-compatible `osm_model.json` re-emitter.** V2's `JsonEmitter` emits V2 IR; Phase A.6 diff handles V1's osm_model.json by reading it as the input (Phase A) or producing V2's snapshot (Phase B).
+- **`evidence-cache/` directory and manifest.**
+- **`telemetry-package.zip`.**
+- **UAT-Users artifacts** (user-map CSVs, template, preview, apply script, catalog).
+
+### 10.3 V1 capabilities deferred-with-trigger
+- **`--apply` / `--apply-static-seed-mode` phase.** Operator runs SSDT/dacpac externally via DacFx publish or sqlcmd.
+- **`--run-load-harness` + `--load-harness-connection-string` + `--load-harness-report-out`**. Performance probing phase.
+- **Per-Catalog Docker parameterization** (deferred-with-trigger per `HANDOFF.md:70`).
+- **OSSYS User-kind identification in OSSYS adapter** (deferred-with-trigger per `HANDOFF.md:74`).
+- **CSV adapter for ManualOverride / UserMapLoader** (deferred-with-trigger per `HANDOFF.md:75`).
+- **`supplementalModels` config block.** Operator does not currently use; deferred-with-trigger.
+
+### 10.4 V2 plan capabilities deferred
+- **CI/CD invocation-site inventory and migration.** Operator-owned per D11 (not a plan deliverable).
+- **Idempotency-test gate in Phase A.6.** Operator declined.
+- **Concurrent-extraction safety** (single-writer assumption, retry handling). Operator coordinates externally.
+- **V1 logging-format compatibility.** V2 ships own format per D10.
+
+### 10.5 IR concepts deliberately not lifted in A.0'
+- **`OriginalName`** (prior attribute names). Renames are operator-applied at cutover, not embedded in model.
+- **`ExternalDatabaseType`** (raw DBMS type string). V2's `PrimitiveType` abstraction is intentional per AXIOMS A13.
+- **Per-column `IndexColumnDirection`** (asc/desc, key vs. include). Acceptable loss per 2026-05-10 vestigial-fields convention.
+- **`IsPlatformAuto`** index flag (OutSystems-synthesized vs. user-defined). Presentation-only.
 
 ---
 
@@ -415,12 +608,23 @@ Subsequent audits, decisions, and plan revisions append below. Each entry dated 
 
 ### 11.1 (placeholder) Audit slot for operator's "document of key evolutions"
 
-When operator delivers the evolutions document, append a synthesis subsection here, revise §3 (Current State Audit) as needed, and bump the plan to Draft 2 in the header.
+When operator delivers the evolutions document, append a synthesis subsection here, revise §3 (Current State Audit) as needed, and bump the plan to Draft 3 in the header.
 
 ### 11.2 (placeholder) Agreed differences between V1 and V2 outputs
 
 During Phase A.6 soak, any divergences classified as "agreed-different" (rather than "V2 bug") get recorded here with rationale.
 
+Initial entries expected (from cross-cutting audit):
+- `manifest.json` shape: V1's `SsdtManifest` (342-field record) vs V2's `ArtifactByKind` structure.
+- `decision-log.json` / `opportunities.json` / `validations.json` shape: V1's staged structure (`Stages[].DecisionLog`) vs V2's per-kind structure.
+- V1's `osm_model.json` (input to Phase A) vs V2's `JsonEmitter` output (V2 IR shape) — these are intentionally different files, not a diff target.
+
 ### 11.3 (placeholder) Per-milestone close notes
 
-As Phase A.0, A.1, …, B.4 close, append a 5-10 line close note: what shipped, what deferred, what surprised.
+As Phase A.0, A.0', A.1, …, B.4 close, append a 5-10 line close note: what shipped, what deferred, what surprised.
+
+### 11.4 (placeholder) Audit log
+
+Track adversarial audits and their findings.
+
+- **2026-05-11 audit (Draft 1 → Draft 2):** Six parallel agents (Explore × 5 + cross-cutting × 1). Findings drove §3.3 IR-fidelity inventory, §3.4–§3.7 cross-cutting sections, D9–D12 decisions, R8–R12 risks, Q8–Q13 questions, §5.2 (A.0') new workstream, §5.5 (A.3 split into static-data + migration-deps loaders), §6.4 (Phase B.3 estimate revision 2-3 → 3-4 weeks; probe count 4 → 5), §10 expanded deferral catalog.
