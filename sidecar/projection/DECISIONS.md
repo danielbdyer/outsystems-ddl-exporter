@@ -226,6 +226,8 @@ table before continuing.
 | **Sort-vs-data deferral predicate distinction** | 2026-05-11 (Chapter 4.1.B close) | A third cycle-metadata consumer surfaces with a sibling-but-distinct semantic question (beyond sort-edge breakability + data-emission deferral). The two predicates diverge on Cascade-nullable FKs: `CycleResolution.classify` returns `Cascade` (NOT `Weak`) so sort-edge-breaker refuses to break; `<Emitter>.deferredColumns` DOES defer (Cascade is about DELETE; column is nullable). The two-predicate split is codified explicitly so future emitter agents choose the predicate that fits their semantic question. | Two predicates today (CycleResolution.classify + StaticSeedsEmitter.deferredColumns / MigrationDependenciesEmitter.deferredColumns); discipline codified. See `2026-05-11 — Chapter 4.1.B close` entry. |
 | **OSSYS adapter User-kind identification surface** | 2026-05-11 (Chapter 4.2 close) | A real OSSYS-source-V2-target reflow workflow surfaces with User-FK columns operators need rewritten. At cash-out time the OSSYS adapter gains a `userKindIdentity : Catalog -> SsKey option` resolution surface (per V1 reference `ModelUserSchemaGraphFactory.GetSyntheticUserForeignKeys`); references whose `TargetKind` matches the identified user kind get `IsUserFk = true`. Slice η emitter integration (MigrationDependenciesEmitter rewrite path) is structurally complete today; the gap is at the adapter boundary only. | OSSYS adapter currently sets `IsUserFk = false` for every Reference; slice η rewrite is operationally a no-op until the adapter resolves real User-FKs. See `2026-05-11 — Chapter 4.2 close` entry. |
 | **CSV adapter for `ManualOverride` (UserMapLoader)** | 2026-05-11 (Chapter 4.2 close) | A real operator workflow demands the file-format pickup path. Pre-scope §3 names `Projection.Adapters.UserMap.UserMapLoader` (CSV: `SourceUserId,TargetUserId,Rationale`). Slice ε ships `ManualOverride` consuming a programmatic `Map<SourceUserId, TargetUserId>`; I/O adapter at the boundary is deferred. Mirrors the chapter 4.1.B slice ε NDJSON-adapter deferral — sibling chapter, same shape. | No I/O adapter today; ManualOverride works via programmatic construction. See `2026-05-11 — Chapter 4.2 close` entry. |
+| **`Attribute.Default` field + DEFAULT constraint emission (chapter 4.1.A slice 7-default)** | 2026-05-11 (Chapter 4.1.A slices 6/7/8 disposition) | The SnapshotRowsets adapter (chapter 3.2) surfaces default-constraint columns from `sys.default_constraints` (the rowset variant materializes default expressions per column). Pre-scope §8 slice 7 names the IR widening (`Attribute.Default : string option`) + emission of `CONSTRAINT [DF_<Table>_<Col>] DEFAULT (<expr>)`. **107+ Attribute literal-construction sites** would need updating with `Default = None` under the record-extension empirical-test discipline; deferred per IR-grows-under-evidence until the rowset adapter surfaces real defaults. | `Tolerance.IgnoreDefaultNames = false` per pre-scope §4 line 214 documents the comparator's current acceptance posture; no consumer demands the field today. Slice 7's identity portion (`Attribute.IsIdentity`) shipped at chapter 3.1/3.2; only the default-constraint portion is deferred. |
+| **`Kind.Description` + `Attribute.Description` fields + extended-properties emission (chapter 4.1.A slice 8)** | 2026-05-11 (Chapter 4.1.A slices 6/7/8 disposition) | The SnapshotRowsets adapter surfaces description columns (`MS_Description` extended properties) from `sys.extended_properties`. Pre-scope §8 slice 8 names the IR widening (`Kind.Description : string option` + `Attribute.Description : string option`) + emission of `EXEC sys.sp_addextendedproperty @name=N'MS_Description', ...` statements per V1's `ExtendedPropertyScriptBuilder.cs:91-95`. **107+ Attribute literal-construction sites** + Kind literal-construction sites would need updating with `Description = None`; deferred per IR-grows-under-evidence until the rowset adapter surfaces real descriptions. | `Tolerance.IgnoreExtendedProperties = true` per pre-scope §4 line 213 documents the comparator's current acceptance posture; no consumer demands the field today. The V1↔V2 differential test treats extended-property absence as a deliberate divergence. |
 
 **Discipline.** Each deferral here was logged as the right call **at the
 time it was made** under "IR grows under evidence." A deferral is not a
@@ -10296,5 +10298,68 @@ layers that don't gate the pure-F#-core algebraic claim. Chapter
 4.2's structural commitments hold at the type level today;
 real-cutover-workflow consumer pressure will trigger the
 boundary-adapter cash-outs when operationally needed.
+
+---
+
+## 2026-05-11 — Chapter 4.1.A slices 6/7/8 disposition
+
+**Status:** decided (slice 6 shipped; slices 7-default + 8 deferred)
+
+**Context:** Per `CHAPTER_4_PRESCOPE_SSDT_DDL_EMITTER.md` §8 + chapter-
+4.1.A close-arc (2026-05-10): slices 6, 7, 8 were gated on chapter 3.2
+SnapshotRowsets landing the IR widening triggers. SnapshotRowsets
+shipped at chapter 3.2 close. Auditing what's actually shippable:
+
+**Slice 6 — Cross-module FKs (SHIPPED).** Verification slice; the
+SsdtDdlEmitter already orders kinds across module boundaries via
+`TopologicalOrderPass.runWith SkipSelfEdges`. Three new tests in
+`SsdtDdlEmitterTests.fs` assert: (1) cross-module FK target's CREATE
+TABLE precedes its source in the statement stream; (2) `REFERENCES
+[dbo].[<target_table>]` clause resolves the target's physical name
+correctly via `Catalog.tryFindKind`; (3) T11 keyset spans modules
+(every kind keyed; cross-module FKs don't perturb the keyset).
+
+**Slice 7-identity (ALREADY SHIPPED).** `Attribute.IsIdentity : bool`
+was added in chapter 3.1 / 3.2 (V2 IR carries it; SnapshotRowsets
+populates from `sys.columns.is_identity`); `ScriptDomBuild.build
+CreateTable` emits `IDENTITY(1, 1)` when the flag is true (lines
+158-162). No additional work needed at this disposition.
+
+**Slice 7-default (DEFERRED).** Adding `Attribute.Default : string
+option` + DEFAULT-constraint emission requires updating 107+ Attribute
+literal-construction sites with `Default = None` under the record-
+extension empirical-test discipline. No consumer demands the field
+today: the SnapshotRowsets adapter does not currently surface
+`sys.default_constraints` (the rowset variant would need a sibling
+rowset query), and `Tolerance.IgnoreDefaultNames = false` documents
+the comparator's current acceptance posture. **Trigger to cash out**:
+the SnapshotRowsets adapter surfaces default-constraint columns
+(adds a rowset variant joining `sys.columns.default_object_id` to
+`sys.default_constraints.definition`).
+
+**Slice 8 (DEFERRED).** Adding `Kind.Description + Attribute.Description
+: string option` + extended-properties emission requires 107+ Attribute
++ N Kind literal-construction sites updated with `Description = None`.
+No consumer demands the field today: SnapshotRowsets does not surface
+`sys.extended_properties` (the rowset variant would need a sibling
+query), and `Tolerance.IgnoreExtendedProperties = true` documents the
+comparator's current acceptance posture. **Trigger to cash out**: the
+SnapshotRowsets adapter surfaces description columns.
+
+**Decision.** Slice 6 ships; slices 7-default and 8 stay deferred at
+the chapter 4.1.A close-arc disposition. Both new Active deferrals
+entries codify the rowset-adapter-surfaces-the-evidence trigger. Per
+IR-grows-under-evidence: the IR widens when the adapter surfaces real
+evidence, not speculatively.
+
+**Reasoning / consequences.** The 107+ Attribute construction-site
+mechanical edits (per `Reference.IsUserFk` precedent at chapter 4.2
+slice ζ where the cost-benefit favored shipping) don't pay off here
+because no consumer demands the fields. The Tolerance taxonomy
+(`IgnoreDefaultNames`, `IgnoreExtendedProperties`) absorbs the
+divergence today; the canary doesn't flag missing defaults or
+descriptions. When SnapshotRowsets gains the surfaces, both slices
+cash out cleanly: the IR widening lands first, the emitter wires in
+behind, the Tolerance flags flip from `true` to `false`.
 
 ---
