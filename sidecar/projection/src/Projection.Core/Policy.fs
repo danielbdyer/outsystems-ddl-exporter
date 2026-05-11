@@ -265,17 +265,130 @@ type TighteningPolicy = {
 }
 
 
-/// The four-axis policy aggregate (A12 amended 2026-05-09). Each axis is
-/// its own structured value; the four are composed in a single record.
-/// Changing one axis does not constrain the others. `Policy.empty` is
-/// the no-policy default — schema-only emission, every kind selected,
-/// no insertion semantics, Cautious tightening with zero null budget —
-/// and is a first-class input for use cases that need none of the axes.
+// ---------------------------------------------------------------------------
+// User-FK reflow axis (chapter 4.2 slice α; Policy axis #5).
+//
+// Per `CHAPTER_4_PRESCOPE_USERFK_REFLOW.md` §3: `UserMatchingStrategy`
+// is operator intent — the per-environment decision *how to bridge*
+// cross-environment user identity. Lives on `Policy` alongside the
+// other four axes (Selection / Emission / Insertion / Tightening) per
+// pre-scope §2's "the new Policy shape" framing. Value-object newtypes
+// (`UserId` / `SourceUserId` / `TargetUserId` / `Email`) provide
+// type-system safety against id-orientation confusion (passing a
+// SourceUserId where TargetUserId is expected becomes a compile-time
+// failure). `Email.create` validates non-blank + normalizes via
+// `Trim()` (V1 parity per `UserMatchingEngine.cs:84-86, 97`).
+// ---------------------------------------------------------------------------
+
+/// Underlying user identifier (per pre-scope §3 — V1's `UserId` shape
+/// is `int`; V2 wraps for newtype safety). Boundary adapters parse
+/// from V1's `osm_model.json` user-population evidence into this
+/// shape; Core sees only the typed value.
+type UserId = UserId of int
+
+/// Source-environment user identifier. The orientation marker
+/// prevents passing a SourceUserId where TargetUserId is expected
+/// (or vice versa) — a class of cutover-time bug ruled out by the
+/// type system.
+type SourceUserId = SourceUserId of UserId
+
+/// Target-environment user identifier. Sibling to SourceUserId.
+type TargetUserId = TargetUserId of UserId
+
+/// User email — per pre-scope §3, the value carries V1's
+/// `OrdinalIgnoreCase + Trim` normalization at construction.
+/// Smart constructor on `Email.create` enforces non-blank.
+type Email = Email of string
+
+
+/// Per-environment user-matching strategy. Closed DU; per pre-scope
+/// §3 + V1's empirical experience (`UserMatchingEngine.cs:33-67` +
+/// `UserMatchingOptions.cs:7-19`):
+///
+///   - V1's three primary strategies (`CaseInsensitiveEmail`,
+///     `ExactAttribute`, `Regex`) collapse to V2's two (`ByEmail`,
+///     `BySsKey`) plus `ManualOverride` (V1's `Regex` is
+///     structurally indistinguishable from operator-supplied
+///     transformation for V2's algebraic purposes; V1's
+///     `ExactAttribute` folds into `BySsKey` only when V1's
+///     configured attribute IS SsKey — the V1 differential test
+///     codifies this Skip-stub).
+///   - V1's orthogonal `Ignore | SingleTarget | RoundRobin`
+///     fallback dimension collapses to one strategy variant
+///     (`FallbackToSystemUser`) — chosen over an
+///     orthogonal-axis representation because V1's empirical
+///     pipeline uses fallback as a *post-hoc* layer on top of
+///     one primary strategy.
+///
+/// The recursive `FallbackToSystemUser of fallback × primary`
+/// shape encodes "try the primary; on miss, attribute to the
+/// system user" structurally. The list-of-rules alternative
+/// invites composability the operator workflow does not actually
+/// need, and `BySsKey | ByEmail` ordering would be a third
+/// variant (`OrTried of strategy × strategy`) the IR-grows-under-
+/// evidence discipline says should not exist until a real
+/// consumer demands it.
+///
+/// Smart-constructor invariants (slice γ; not yet shipped at
+/// slice α): `Email.create` rejects blank input. `UserMatchingStrategy`
+/// itself has no construction validation; `ManualOverride
+/// Map.empty` is structurally valid (a degenerate override map
+/// is a no-op).
+type UserMatchingStrategy =
+    /// V1's `CaseInsensitiveEmail`. Match source user by email to
+    /// target user with same email (case-insensitive, trimmed).
+    /// Failure mode: identical email in two environments belonging
+    /// to logically different humans; or environment-divergent
+    /// email format. Surfaces as `Warning` `userFkReflow.email
+    /// DidNotMatch` per pre-scope §6.
+    | ByEmail
+    /// Match by V1 SSKey GUID (`OssysOriginal` SsKey). The most
+    /// identity-stable strategy when both environments inherit
+    /// from a shared OSSYS origin. V1 has no exact-SsKey strategy;
+    /// this is the V2-native cleanup since V2 already carries SsKey
+    /// as identity (A4).
+    | BySsKey
+    /// Operator-supplied per-user mapping. Always works for
+    /// every source user IN the override map; sources NOT in the
+    /// map fall through to `Unmatched`. V1 reference: `UserMapLoader.
+    /// Load` + CSV (`SourceUserId,TargetUserId,Rationale`).
+    /// `Map.empty` is a degenerate no-op (every source user is
+    /// unmatched).
+    | ManualOverride of Map<SourceUserId, TargetUserId>
+    /// Recursive composition: try `primary`; on miss, attribute
+    /// to `fallback`. Structurally guarantees `Set.isEmpty
+    /// Unmatched` (the safety net catches every miss). Lineage
+    /// distinguishes primary-matched vs. fallback-matched via
+    /// `Annotated "matched-by-FallbackToSystemUser.fallback"`
+    /// vs. `"matched-by-FallbackToSystemUser.primary"`.
+    | FallbackToSystemUser of fallback: TargetUserId * primary: UserMatchingStrategy
+
+
+/// The five-axis policy aggregate (A12 amended 2026-05-09 four-axis;
+/// extended at chapter 4.2 slice α to add `UserMatching` per pre-scope
+/// §2). Each axis is its own structured value; the five are composed
+/// in a single record. Changing one axis does not constrain the
+/// others. `Policy.empty` is the no-policy default — schema-only
+/// emission, every kind selected, no insertion semantics, no
+/// tightening interventions, default `ByEmail` user matching — and is
+/// a first-class input for use cases that need none of the axes.
+///
+/// **Why `UserMatching` is a Policy axis** (per pre-scope §2): it is
+/// per-environment operator decision, supplied at promotion time,
+/// describing how cross-environment user identity should be
+/// reconciled. Not evidence (Profile carries the empirical user
+/// populations); not structure (Catalog carries the FK shape); the
+/// operator's choice of *how to bridge* evidence between environments.
+/// Adding a record field doesn't trigger DU exhaustiveness — record-
+/// construction sites must add `UserMatching = ...` (one site:
+/// `Policy.empty`); pattern-match sites destructuring `Policy` (zero
+/// today; consumers read fields by name) are unaffected.
 type Policy = {
-    Selection  : SelectionPolicy
-    Emission   : EmissionPolicy
-    Insertion  : InsertionPolicy
-    Tightening : TighteningPolicy
+    Selection    : SelectionPolicy
+    Emission     : EmissionPolicy
+    Insertion    : InsertionPolicy
+    Tightening   : TighteningPolicy
+    UserMatching : UserMatchingStrategy
 }
 
 
@@ -587,16 +700,87 @@ module TighteningPolicy =
 
 
 [<RequireQualifiedAccess>]
+module UserId =
+
+    /// Project the underlying integer. The newtype prevents
+    /// accidental orientation confusion at type-check time;
+    /// projection happens only at the boundary (CSV adapters,
+    /// V1 differential).
+    let value (UserId v) : int = v
+
+
+[<RequireQualifiedAccess>]
+module SourceUserId =
+
+    /// Construct a SourceUserId from a raw integer. Boundary-side
+    /// projection; trusted callers (adapters parsing V1's
+    /// `osm_model.json` user-population evidence) wrap here.
+    let ofInt (i: int) : SourceUserId = SourceUserId (UserId i)
+
+    /// Project to the underlying integer. Used at the SQL-emission
+    /// boundary when rendering FK column values.
+    let value (SourceUserId (UserId v)) : int = v
+
+
+[<RequireQualifiedAccess>]
+module TargetUserId =
+
+    /// Construct a TargetUserId from a raw integer. Sibling to
+    /// SourceUserId.ofInt.
+    let ofInt (i: int) : TargetUserId = TargetUserId (UserId i)
+
+    /// Project to the underlying integer.
+    let value (TargetUserId (UserId v)) : int = v
+
+
+[<RequireQualifiedAccess>]
+module Email =
+
+    let private emailEmpty =
+        ValidationError.create
+            "email.empty"
+            "An email cannot be blank."
+
+    /// Construct an Email value. Validates non-blank input and
+    /// normalizes via `Trim()` (V1 parity per `UserMatchingEngine.cs:
+    /// 84-86, 97`). Case sensitivity is NOT normalized at construction
+    /// — preserved for downstream display + audit trail; the matching
+    /// strategy applies `OrdinalIgnoreCase` comparison at lookup time.
+    let create (raw: string) : Result<Email> =
+        if System.String.IsNullOrWhiteSpace raw then
+            Result.failureOf emailEmpty
+        else
+            Result.success (Email (raw.Trim()))
+
+    /// Project the underlying string. Used at the SQL-emission
+    /// boundary when rendering or for ordinal-ignore-case
+    /// comparison at the matching seam.
+    let value (Email v) : string = v
+
+
+[<RequireQualifiedAccess>]
+module UserMatchingStrategy =
+
+    /// V2's default strategy — `ByEmail`. Mirrors V1's
+    /// `CaseInsensitiveEmail = 0` enum default
+    /// (`UserMatchingOptions.cs:9`). The chapter-4.2 discovery
+    /// pass against this default produces V1-equivalent matching
+    /// for source users with non-blank emails.
+    let empty : UserMatchingStrategy = ByEmail
+
+
+[<RequireQualifiedAccess>]
 module Policy =
 
     /// The empty policy: every axis at its empty default. A valid input
     /// for any pass; passes that consume Policy must produce sensible
     /// behavior on `Policy.empty`.
     let empty : Policy =
-        { Selection  = SelectionPolicy.empty
-          Emission   = EmissionPolicy.empty
-          Insertion  = InsertionPolicy.empty
-          Tightening = TighteningPolicy.empty }
+        { Selection    = SelectionPolicy.empty
+          Emission     = EmissionPolicy.empty
+          Insertion    = InsertionPolicy.empty
+          Tightening   = TighteningPolicy.empty
+          UserMatching = UserMatchingStrategy.empty }
 
 
 [<RequireQualifiedAccess>]
