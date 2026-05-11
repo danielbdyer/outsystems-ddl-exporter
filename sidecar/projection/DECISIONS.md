@@ -10415,3 +10415,64 @@ operator surface (e.g., real-time dashboard) demanding only
 three artifacts saturate the operator/auditor/developer cut.
 
 ---
+
+## 2026-05-11 — Chapter 4.3 close + slices δ + ε deferred-with-trigger
+
+**Status:** decided
+
+**Context:** Chapter 4.3 (Operational Diagnostics V2; V2-driver KPI
+Phase 5) closes structurally. Slice arc α + β + γ shipped on branch
+`claude/chapter-4-ddd-improvements-XVCAM` (commits `bf3770b` →
+`abe0040`). Three operator-facing JSON artifacts route from one
+stream via the Code-prefix table; partition property green.
+Test baseline 1012 non-canary passing; lint clean.
+
+Per pre-scope §1.5: slices δ (CLI wire-up in `Projection.Pipeline`)
+and ε (V1 differential test) are sequenced after the structural
+commitment ships. Per the V2-driver KPI per-axis correctness
+stakes table, operational-diagnostics is "Lower" stakes; the
+structural three-emitter projection IS the V2-driver commitment.
+
+**Decision A — Slice δ (CLI wire-up) deferred-with-trigger.**
+Per pre-scope §1.5 slice 5: the canary's CLI verb invokes the
+three emitters and writes the three files alongside the SSDT/
+DACPAC artifacts (C# in `Projection.Pipeline/OperationalDiagnostics
+.cs` per `DECISIONS 2026-05-15`). **Trigger to cash out**: a real
+cutover-day operator workflow that consumes the three artifacts
+(e.g., a CI pipeline step that publishes them as build artifacts;
+a jq-based dashboard). The structural commitment ships at chapter
+4.3 close; the wire-up is operator-UX integration not algebraic
+content.
+
+**Decision B — Slice ε (V1 differential test) deferred-with-trigger.**
+Per pre-scope §1.5 slice 6: the V1 envelope walk runs both V1
+(existing trunk) and V2 (new emitters) against the same fixture
+Catalog and diffs the three artifacts. **Trigger to cash out**:
+V1's `OpportunityLogWriter` + `PolicyDecisionLogWriter` +
+`ValidationReport` writers stabilize as the canonical V1 reference
+shape. Today the divergences are documented in
+`CHAPTER_4_3_CLOSE.md` §V1-input-envelope walk:
+- V2 ships **one** `decision-log.json` (V1 ships two: `policy-
+  decisions.json` + `policy-decision-report.json`).
+- V2 collapses V1's "EnforceUnique + RequiresRemediation" cases
+  per `UniqueIndexPass.fs:96-113`.
+- V2 sorts findings by SsKey root (V1 sorts by Schema/Table/
+  ConstraintName/Type/Title via `ValidationFindingComparer.
+  Instance`).
+
+**Reasoning / consequences.** Both deferrals are at the operator-
+UX integration / V1-fixture-stabilization layer; neither gates
+the V2-driver KPI structural commitment that chapter 4.3 ships.
+The chapter close discharges the structural arc; the trigger
+conditions for both slices are non-algebraic (operator-workflow
+demand + V1 reference-shape stabilization).
+
+**Chapter 4.4 RemediationEmitter sequencing.** Per V2_DRIVER.md
+Phase 6 + chapter 4.4 pre-scope: RemediationEmitter is sequenced
+AFTER chapter 3.x DacpacEmitter (composes over DacpacEmitter's
+typed-DACPAC output). DacpacEmitter is conditional on the deploy
+path; chapter 4.4 inherits the conditionality. **Codified at
+this close**: chapter 4.4 stays not-started until chapter 3.x
+DacpacEmitter ships.
+
+---

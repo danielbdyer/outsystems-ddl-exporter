@@ -1,8 +1,61 @@
-# Handoff letter — Chapter 4.2 → next chapter
+# Handoff letter — Chapter 4.3 → next chapter
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## Chapter 4.3 close (added 2026-05-11; Operational Diagnostics V2 structural arc shipped; V2-driver KPI Phase 5 closed)
+
+**Branch:** `claude/chapter-4-ddd-improvements-XVCAM`. **Test baseline:** 1012 non-canary tests passing + ~16 Docker-dependent canary tests; 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules.
+
+Chapter 4.3 closes the **operational-diagnostics axis** — the operator-facing surface of V2's diagnostic pipeline. Three sibling-Π emitters under `Projection.Targets.OperationalDiagnostics` route the existing `Diagnostics<'a>` writer's entries into three operator-vocabulary artifacts via a Code-prefix routing table. The work is **projection over substrate, not new algebra** — no new IR, no new pass shape, no parallel writer.
+
+**The chapter-2 "three-channel Diagnostics split" Active deferral was retired at chapter 4.3 open** with the **refuse the split** decision: the three V1 artifacts ARE the three channels (decision-log = audit; opportunities = operator; validations = developer); routing happens at emit time via the Code-prefix table, not via a structural split of `Diagnostics<'a>`.
+
+### Slice arc α + β + γ (this chapter)
+
+| # | Commit | Slice | What |
+|---|---|---|---|
+| 1 | `bf3770b` | α | DecisionLogEmitter v0 + chapter-2 three-channel-split deferral retired + new `Projection.Targets.OperationalDiagnostics` project |
+| 2 | `abe0040` | β + γ | `Routing` primitive + `OpportunitiesEmitter` + `ValidationsEmitter` + chapter-signature **Routing partition property** + R4 multi-environment promotion property test (independent forward-progress per V2_DRIVER.md) |
+
+**A18 amended preserved structurally** — every emitter's signature is `Catalog × DiagnosticEntry list`; never Policy. **T11 keyset coverage** holds across all three siblings (every catalog kind keyed; empty `entries: []` when no diagnostics match). **Pillar 1** holds end-to-end (JsonNode typed seam at the Π port; strings emerge only at terminal `Utf8JsonWriter`).
+
+### Outstanding queue (post-chapter-4.3)
+
+**V2-driver KPI critical-path under V2_DRIVER.md sequencing — closed front-to-back for the unconditional path:**
+
+- ✅ Chapter 4.1.A (production SSDT DDL emitter)
+- ✅ Chapter 4.1.B (CDC-aware data triumvirate; KPI's highest-leverage chapter)
+- ✅ Chapter 4.2 (User FK reflow; A32 cashed out)
+- ✅ Chapter 4.3 (Operational Diagnostics V2; three-channel deferral retired)
+- ✅ R4 multi-environment promotion property test (independent forward-progress)
+
+**Remaining critical-path (deploy-path-conditional):**
+
+- **Chapter 3.x DacpacEmitter** — DacFx adoption mandatory per Tier-3 codification. **Conditional on the cutover team's deploy-path choice**: SSDT-style file deploy (already covered by `SsdtDdlEmitter`) vs DACPAC + SqlPackage deploy (requires this chapter). Pre-scope: `CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md`. Active deferral entry at top of `DECISIONS.md`.
+- **Chapter 4.4 RemediationEmitter** — schema-level partial-state recovery; composes over `CatalogDiff` + `DacpacEmitter`. **Sequenced after chapter 3.x DacpacEmitter** (inherits the deploy-path conditionality). Pre-scope: `CHAPTER_4_PRESCOPE_DIAGNOSTICS_AND_REMEDIATION.md` Part 2.
+
+**Deferred-with-trigger at chapter 4.3 close (per the close-ritual discipline):**
+
+- **Chapter 4.3 slice δ — CLI wire-up in `Projection.Pipeline`** — operator-UX integration; trigger: real cutover-day operator workflow consuming the three artifacts.
+- **Chapter 4.3 slice ε — V1 differential test** — V1 envelope walk; trigger: V1's `OpportunityLogWriter` + `PolicyDecisionLogWriter` + `ValidationReport` writers stabilize as canonical reference shape.
+
+**Independent forward-progress alternatives (no chapter open required):**
+
+- (None substantive — R4 shipped this session; the cutover-ladder structural commitment is structurally encoded.)
+
+**Quietly deferred (no current consumer; reframe at next chapter audit):**
+
+- OSSYS adapter User-kind identification surface (chapter 4.2 close-deferred).
+- CSV adapter for `ManualOverride` (UserMapLoader) (chapter 4.2 close-deferred).
+- `Attribute.Default` field + DEFAULT constraint emission (chapter 4.1.A close-deferred; rowset-adapter trigger).
+- `Kind.Description` + `Attribute.Description` fields + extended-properties emission (chapter 4.1.A close-deferred; rowset-adapter trigger).
+- Statement DU MERGE/UPDATE promotion (chapter 4.1.B close-deferred; third-consumer trigger).
+- Sort-vs-data deferral predicate distinction (chapter 4.1.B close codified discipline).
+- Chapter-3.7 audit-cleanup slice queue (γ traverseCatalog / ζ attach-adapters / η Result-CE adoption / θ Coordinates Stage 2 / ι writer-monad codification / κ Lineage.tell perf audit / λ SsKey.rootOriginal V1 prefix / μ Restrict→NoActionSql Diagnostics / ν F# Analyzers SDK / ξ-π port lifts).
+
+---
 
 ## Chapter 4.2 close (added 2026-05-11; User FK reflow shipped end-to-end; V2-driver KPI Phase 4 closed)
 
