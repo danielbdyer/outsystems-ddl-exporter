@@ -686,32 +686,66 @@ burst (per `DECISIONS 2026-05-22 — Stage 0 foundation phase ships as
 one coherent unit`); the bodies fill at the chapters named in each
 heading.
 
-## T1 amended (binary normal-form composition) — TBD chapter 3.3 close
+## T1 amended (binary normal-form composition) — chapter 3.x close (2026-05-11)
 
-**Scheduled at chapter 3.3 close** (DacpacEmitter + DacFx wrapper;
-per `DECISIONS 2026-05-22 — Chapter 3 sequencing`).
+**Cashed at chapter 3.x close** (DacpacEmitter + DockerImageEmitter
+under dev-tooling reframe; `CHAPTER_3_X_CLOSE.md` item 8).
 
-[Body to be written at chapter 3.3 close.]
+Same `(catalog, policy, profile)` triple produces:
 
-**Anticipated content.** The original T1 (and its 2026-05-06 amendment
-to the triple) names byte-determinism: same `(catalog, policy, profile)`
-triple → bit-identical surface. The DacpacEmitter chapter introduces
-binary artifacts — DACPAC files — whose byte-equality is **not**
-deterministic under vanilla DacFx `BuildPackage`. Subagent #4's
-pre-scope flags this risk explicitly. The chapter-3.3 amendment
-extends T1 to a **binary-normal-form** composition: byte-determinism
-holds for text artifacts (SSDT DDL .sql files; JSON; Distributions);
-**model-equivalence** (DacFx round-trip equality on the in-memory
-`TSqlModel`) is the form determinism takes for binary artifacts. The
-two forms compose: the canary's tier-1 property tests assert byte-
-determinism on text emissions and model-equivalence on binary
-emissions, with the property `t1ByteEqualOrModelEquivalent` as the
-unifying canary predicate.
+- **Byte-identical text-emission output.** Text emitters —
+  `SsdtDdlEmitter`, `JsonEmitter`, `DistributionsEmitter`,
+  `DecisionLogEmitter`, `OpportunitiesEmitter`,
+  `ValidationsEmitter`, `StaticSeedsEmitter`,
+  `MigrationDependenciesEmitter`, `BootstrapEmitter`,
+  `RefactorLogEmitter`, `ManifestEmitter` — all consume the
+  typed-AST stream (or `Utf8JsonWriter` + sorted-key `JsonNode`,
+  or `XmlWriter` typed AST) via pinned-options writers. T1 holds
+  byte-for-byte. Property tests carry the `T1: ... byte-
+  deterministic` form.
+- **Content-identical DacFx-model binary-emission output.** Binary
+  emitter — `DacpacEmitter` — produces `.dacpac` zip bytes that
+  embed wall-clock timestamps in `Origin.xml` + zip-entry headers
+  via DacFx's `BuildPackage`. Two emit calls on the same Catalog
+  produce **non-byte-identical streams** but **content-identical
+  DacFx models**: `DacPackage.Load(stream)` →
+  `TSqlModel.LoadFromDacpac` → `model.GetObjects(Table.TypeClass)`
+  / `(ForeignKeyConstraint.TypeClass)` / `(Index.TypeClass)`
+  enumerations match across emit calls. The algebraic claim
+  flows through DacFx's model API, not the stream bytes. Property
+  tests carry the `T1 (binary): ... content-deterministic under
+  DacFx round-trip` form.
 
-The CDC-safety property (revision 1's `idempotentRedeploy`) becomes
-**T1 × DacFx idempotent-redeploy**, not T1 alone. The composition
-is the cutover-blocking property; the chapter closes when the
-composition is structurally enforced and tested.
+The two forms compose. The unifying predicate
+`t1ByteEqualOrModelEquivalent` chooses per emitter kind:
+byte-equality for text; DacFx-model-content-equality for binary.
+The canary's tier-1 property tests assert the right form for each
+emitter; the chapter-3.x slice α `T1 (binary): DacpacEmitter.emit
+is content-deterministic under DacFx round-trip` is the worked
+example.
+
+**Slice ζ (post-hoc `Origin.xml` canonicalization)** can lift
+binary emitters to byte-equality if a snapshot consumer demands
+byte-stable artifacts (rewrite Origin.xml timestamps to a pinned
+value; recompute the embedded model.xml checksum; re-pack with
+pinned zip-entry timestamps). The slice stays deferred-with-
+trigger at chapter 3.x close — under the dev-tooling reframe, no
+consumer demands byte-stable dacpac artifacts. **Trigger to cash
+out**: a snapshot consumer demands byte-stable dacpac artifacts
+(e.g., a content-addressable artifact store keyed on dacpac SHA256).
+
+Future binary emitters (`RemediationEmitter` per V2_DRIVER §147
+free-corollary table; alternative `.dacpac` variants for future
+deploy paths) inherit the same shape — DacFx wrapper + content-
+equality T1 + slice ζ deferred-with-trigger.
+
+The CDC-safety property (chapter 4.1.B's `idempotentRedeploy`
+green at slice γ) operates independently — `T1 × CDC idempotent-
+redeploy` is the composition; chapter 4.1.B's MERGE-based shape
+holds byte-determinism on text emissions. The chapter-3.x close
+doesn't change CDC's algebraic claim; it adds the binary-emitter
+amendment that future binary CDC consumers (none exist today)
+would inherit.
 
 ## T11 amended (structural type encoding) — chapter 3.5 slices α–δ (2026-05-09)
 

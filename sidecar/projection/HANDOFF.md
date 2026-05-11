@@ -1,10 +1,53 @@
-# Handoff letter — Chapter 3.x slice α → next slice / chapter
+# Handoff letter — Chapter 3.x close → Chapter 5 (Phase 8 pragmatic close)
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
 
-## Chapter 3.x open + slices α + β + γ + δ_dock (added 2026-05-11; DacpacEmitter dev-tooling sibling Π over DacFx + DockerImageEmitter for one-command stand-up)
+## Chapter 3.x close (added 2026-05-11; DacpacEmitter dev-tooling + DockerImageEmitter; V2-driver KPI Phase 6 substantively shipped under reframe)
+
+**Branch:** `claude/chapter-4-ddd-improvements-XVCAM`. **Test baseline:** 1060 non-canary tests passing (+48 net since chapter 4.3 close; +13 across chapter 3.x); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules (zero new LINT-ALLOWs in chapter 3.x).
+
+Chapter 3.x closes the **dev-tooling DACPAC artifact path** end-to-end: V2 Catalog → typed-AST stream → DacFx model → `.dacpac` bytes → Docker image → registry → `docker pull` + `docker run`. The operator's one-command stand-up requirement is structurally green; production deploy stays untouched on the SSDT-style file path. The Tier-3 `text-builder-as-first-instinct` Active deferral is cashed out — DacFx (`Microsoft.SqlServer.DacFx` v162.x) is in the codebase and active inside `Projection.Targets.SSDT`. **AXIOMS T1 binary-emitter amendment cashed** at chapter close: text emitters preserve byte-equality; binary emitters preserve content-equality via DacFx model round-trip; the unifying predicate `t1ByteEqualOrModelEquivalent` chooses per emitter kind.
+
+### Slice arc α + β + γ + δ_dock (this chapter)
+
+| # | Commit | Slice | What |
+|---|---|---|---|
+| 1 | `090f2d7` | α | DacpacEmitter v0 + chapter open + `Microsoft.SqlServer.DacFx` NuGet + 4 tests; Tier-3 hard-requirement deferral cashed out; DacFx integration deferral cashed out |
+| 2 | `5985b40` | β + γ + δ_dock | FK round-trip; Indexes round-trip; **DockerImageEmitter** producing a typed `DockerImageContext { Dockerfile; DacpacBytes; EntrypointScript; Readme }` for one-command dev stand-up |
+| 3 | (this commit) | close | CHAPTER_3_X_CLOSE.md (8-item ritual); AXIOMS T1 binary-emitter amendment cashed; three slices deferred-with-trigger (ε modality marks; ζ byte-determinism; per-Catalog parameterization) |
+
+### Outstanding queue (post-chapter-3.x close → Chapter 5)
+
+**Chapter 5 (Phase 8 pragmatic close) opens next.** Consumer-pressure-driven items per V2_DRIVER §252:
+
+- **Slice ν — F# Analyzers SDK custom analyzer** (originally scoped at chapter 3.7). Complements 27 grep lint rules with AST detection.
+- **Slice θ — Coordinates Stage 2 typed VOs** (`SchemaName` / `TableName` / `ColumnName`; originally scoped at chapter 3.7). DDD VO win when adapter ripple is acceptable.
+- **Hex port lifts** (`IArtifactSink`, `IDeployHost`) — under genuine consumer demand.
+- **Cutover-day operator runbook** — joint deliverable with solution architect.
+- **V1 sunset planning** — after cutover+30 + one full schema-evolution cycle.
+
+**Deferred-with-trigger at chapter 3.x close:**
+
+- Slice ε — Modality marks → comments / extended properties (trigger: downstream consumer demands structured access to modality marks from the .dacpac model).
+- Slice ζ — Byte-determinism cash-out via post-hoc Origin.xml canonicalization (trigger: snapshot consumer demands byte-stable dacpac artifacts).
+- Per-Catalog parameterization of Dockerfile / entrypoint (trigger: second consumer with conflicting defaults).
+
+**Quietly-deferred queue (no current consumer; surface at next chapter audit):**
+
+- OSSYS adapter User-kind identification surface (chapter 4.2 close-deferred).
+- CSV adapter for `ManualOverride` (UserMapLoader) (chapter 4.2 close-deferred).
+- `Attribute.Default` field + DEFAULT constraint emission (chapter 4.1.A close-deferred).
+- `Kind.Description` + `Attribute.Description` fields + extended-properties emission (chapter 4.1.A close-deferred).
+- Statement DU MERGE/UPDATE promotion (chapter 4.1.B close-deferred; third-consumer trigger).
+- Sort-vs-data deferral predicate distinction (chapter 4.1.B close codified discipline).
+- Chapter 4.4 RemediationEmitter — V2_DRIVER §147 free-corollary table: "deferred under V2-driver KPI; revisit at chapter 5+ if remediation is operator-needed."
+- Chapter 4.3 slices δ (CLI wire-up) + ε (V1 differential test).
+
+---
+
+## Chapter 3.x open + slices α + β + γ + δ_dock (preserved for reference)
 
 **Branch:** `claude/chapter-4-ddd-improvements-XVCAM`. **Test baseline:** 1060 non-canary tests passing (+4 slice α; +2 slice β; +1 slice γ; +6 slice δ_dock = +13 in chapter 3.x; net +48 since chapter 4.3 close baseline); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules (DacFx adoption + Docker context emission both pillar-7 right moves; zero new LINT-ALLOWs in the chapter).
 

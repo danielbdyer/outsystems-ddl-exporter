@@ -10689,3 +10689,102 @@ incorporating remediation, vs. mutating an existing dev
 database via remediation scripts).
 
 ---
+
+## 2026-05-11 — Chapter 3.x close: T1 binary-emitter amendment cashed + three slices deferred-with-trigger
+
+**Status:** decided
+**Context:** Chapter 3.x (DacpacEmitter dev-tooling) closes per the
+eight-item chapter-close ritual (`CHAPTER_3_X_CLOSE.md`). Slice arc
+α + β + γ + δ_dock shipped end-to-end (`090f2d7` + `5985b40`); the
+Tier-3 `text-builder-as-first-instinct` hard-required deferral
+cashed out at slice α; the dev-tooling reframe is structurally
+green (Catalog → DacFx → `.dacpac` → Docker image → registry →
+`docker pull` + `docker run`).
+
+**Decision (four coupled commitments at chapter close):**
+
+1. **AXIOMS T1 binary-emitter amendment is cashed.** The 2026-05-22
+   "Scheduled chapter 3.3 close" placeholder at `AXIOMS.md:689`
+   now carries the worked body: text emitters preserve byte-
+   equality; binary emitters (`DacpacEmitter` today; future
+   `RemediationEmitter` per V2_DRIVER §147) preserve **content-
+   equality via DacFx model round-trip** because DacFx embeds
+   wall-clock timestamps in `Origin.xml` + zip-entry headers. The
+   unifying predicate `t1ByteEqualOrModelEquivalent` chooses per
+   emitter kind. Slice α's `T1 (binary): DacpacEmitter.emit is
+   content-deterministic under DacFx round-trip` is the worked
+   example test.
+2. **Slice ε (modality marks → comments / extended properties)
+   deferred-with-trigger.** Per pre-scope §2: modality marks
+   (`TenantScoped`, `SoftDeletable`, `Static populations`) are
+   informational at Π time; surfacing them as `EXTENDED PROPERTY`
+   or as inline DDL comments has no current consumer (dev-tooling
+   `docker run` + SSMS connect doesn't read modality metadata).
+   **Trigger**: a downstream consumer (cutover audit, remediation
+   flow, dev-tooling sub-feature) demands structured access to
+   modality marks from the .dacpac model.
+3. **Slice ζ (byte-determinism cash-out via post-hoc Origin.xml
+   canonicalization) deferred-with-trigger.** Per chapter-open
+   strategic frame: rewrite `Origin.xml` timestamps; recompute
+   model.xml checksum; re-pack with pinned zip-entry timestamps.
+   Content-equality T1 (commitment 1) is sufficient for dev-
+   tooling. **Trigger**: a snapshot consumer demands byte-stable
+   `.dacpac` artifacts (e.g., a content-addressable artifact
+   store keyed on dacpac SHA256; a CI cache keyed on dacpac hash).
+4. **Per-Catalog Dockerfile / entrypoint parameterization
+   deferred-with-trigger.** Slice δ_dock ships pinned constants
+   for `PROJECTION_DB_NAME` (`ProjectionCatalog`) and `BaseImage`
+   (`mcr.microsoft.com/mssql/server:2022-latest`). Per-Catalog
+   overrides (multi-database images; alternative SQL Server
+   versions; custom env-var name schemes) stay deferred-with-
+   trigger per IR-grows-under-evidence. **Trigger**: a second
+   consumer with conflicting defaults (e.g., a dev team needing
+   an alternative SQL Server version; a per-environment override
+   pattern).
+
+**Reasoning / consequences:**
+
+The binary-emitter T1 amendment is the highest-leverage cash-out
+at chapter 3.x close. It names the structural reason byte-equality
+fails for `DacpacEmitter` (DacFx's `BuildPackage` is non-
+deterministic by design) AND the algebraic form that holds in
+exchange (model-content-equality under round-trip). Future binary
+emitters inherit the predicate; the canary's tier-1 properties
+choose the right form per emitter kind without re-deriving the
+amendment at each new binary emitter's slice α.
+
+The three deferred-with-trigger slices ε / ζ / parameterization
+share a common shape: **no current consumer, no urgency**. Per
+IR-grows-under-evidence, none earn their place until a consumer
+demands them. The dev-tooling reframe means the dev team's
+`docker pull` + `docker run` loop IS the primary feedback channel
+— per-Catalog parameterization will surface naturally when a
+second team adopts the image with conflicting defaults.
+
+**V2_DRIVER.md Phase 6 status flips** from "not-started
+(conditional)" to **substantively shipped (under dev-tooling
+reframe)**. The original Phase 6 framing (DACPAC + SqlPackage as
+production deploy path) defers indefinitely per the dev-tooling
+reframe; the production-deploy condition would need to re-fire to
+reopen the production-scope. Chapter 3.x's dev-tooling output is
+operationally green — no R6 promotion ladder applies (R6 governs
+production-write paths; dev-tooling lives outside the ladder).
+
+**Chapter 4.4 RemediationEmitter framing inherits the reframe**:
+when it ships (if it ships), it ships under dev-tooling framing
+(operator-side partial-state recovery for dev environments) per
+V2_DRIVER §147 free-corollary table. The Docker image's "regenerate
+fresh dacpac + restart container" loop already provides one
+remediation pattern; RemediationEmitter earns its place when an
+operator workflow demands programmatic partial-state recovery
+distinct from the regenerate-and-redeploy pattern.
+
+**Chapter 5 (Phase 8 pragmatic close) opens next.** Consumer-
+pressure-driven items per V2_DRIVER §252: F# Analyzers SDK custom
+analyzer (slice ν from chapter 3.7); Coordinates Stage 2 typed
+VOs (`SchemaName` / `TableName` / `ColumnName`; slice θ from
+chapter 3.7); Hex port lifts (`IArtifactSink` / `IDeployHost`)
+under genuine consumer demand; cutover-day operator runbook
+(joint with solution architect); V1 sunset planning.
+
+---
