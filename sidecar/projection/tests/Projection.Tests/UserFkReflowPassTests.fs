@@ -242,38 +242,195 @@ let ``A32: discover output flows through UserRemapContext smart-constructor inva
     Assert.True (Set.isEmpty (Set.intersect mappingKeys ctx.Unmatched))
 
 // ---------------------------------------------------------------------------
-// Deferred-strategy emissions (slice δ scope; slice ε retires these).
+// Slice ε — BySsKey strategy.
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``Slice δ deferral: BySsKey strategy emits strategyNotYetImplemented Error and treats every source as unmatched`` () =
-    let source = mkSourceUser 1 ["U"; "S1"] (Some "alice@example.com")
+let ``BySsKey: one source + matching SsKey target yields one mapping`` () =
+    let sharedKey = mkSsKey ["U"; "GUID-1"]
+    let source =
+        UserAttributes.create (SourceUserId.ofInt 1) sharedKey (Some (mkEmail "alice@source.com"))
+    let target =
+        UserAttributes.create (TargetUserId.ofInt 100) sharedKey (Some (mkEmail "alice@target.com"))
     let result =
-        UserFkReflowPass.discover (srcs [ source ]) UserPopulation.empty BySsKey
-    // Every source user unmatched.
+        UserFkReflowPass.discover (srcs [ source ]) (tgts [ target ]) BySsKey
+    let ctx = result.Value.Value
+    Assert.Equal<TargetUserId option> (Some (TargetUserId.ofInt 100), Map.tryFind (SourceUserId.ofInt 1) ctx.Mapping)
+    Assert.True (Set.isEmpty ctx.Unmatched)
+
+[<Fact>]
+let ``BySsKey: emits matched-by-BySsKey lineage label`` () =
+    let sharedKey = mkSsKey ["U"; "GUID-1"]
+    let source =
+        UserAttributes.create (SourceUserId.ofInt 1) sharedKey None
+    let target =
+        UserAttributes.create (TargetUserId.ofInt 100) sharedKey None
+    let result =
+        UserFkReflowPass.discover (srcs [ source ]) (tgts [ target ]) BySsKey
+    let event = List.head result.Trail
+    match event.TransformKind with
+    | Annotated (Label label) -> Assert.Equal<string> ("userFkReflow.matched-by-BySsKey", label)
+    | other                   -> Assert.Fail (sprintf "expected Annotated (Label _), got %A" other)
+
+[<Fact>]
+let ``BySsKey: source SsKey absent from target yields SsKeyDidNotMatch diagnostic`` () =
+    let source =
+        UserAttributes.create
+            (SourceUserId.ofInt 1) (mkSsKey ["U"; "GUID-source"]) None
+    let target =
+        UserAttributes.create
+            (TargetUserId.ofInt 100) (mkSsKey ["U"; "GUID-target"]) None
+    let result =
+        UserFkReflowPass.discover (srcs [ source ]) (tgts [ target ]) BySsKey
     Assert.True (Set.contains (SourceUserId.ofInt 1) result.Value.Value.Unmatched)
-    // First Diagnostic Entry is the deferred-strategy Error.
-    let entries = result.Value.Entries
-    Assert.NotEmpty entries
-    Assert.Equal<string> ("userFkReflow.strategyNotYetImplemented", (List.head entries).Code)
-    Assert.Equal (DiagnosticSeverity.Error, (List.head entries).Severity)
+    match List.head result.Value.Value.Diagnostics with
+    | SsKeyDidNotMatch (src, _) -> Assert.Equal (SourceUserId.ofInt 1, src)
+    | other                     -> Assert.Fail (sprintf "expected SsKeyDidNotMatch, got %A" other)
+
+// ---------------------------------------------------------------------------
+// Slice ε — ManualOverride strategy.
+// ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``Slice δ deferral: ManualOverride emits strategyNotYetImplemented Error`` () =
-    let source = mkSourceUser 1 ["U"; "S1"] (Some "alice@example.com")
-    let result =
-        UserFkReflowPass.discover (srcs [ source ]) UserPopulation.empty (ManualOverride Map.empty)
-    Assert.Equal<string>
-        ("userFkReflow.strategyNotYetImplemented",
-         (List.head result.Value.Entries).Code)
-
-[<Fact>]
-let ``Slice δ deferral: FallbackToSystemUser emits strategyNotYetImplemented Error`` () =
-    let source = mkSourceUser 1 ["U"; "S1"] (Some "alice@example.com")
+let ``ManualOverride: source in override map yields one mapping`` () =
+    let source = mkSourceUser 1 ["U"; "S1"] None
+    let overrideMap =
+        Map.ofList [ SourceUserId.ofInt 1, TargetUserId.ofInt 100 ]
     let result =
         UserFkReflowPass.discover
             (srcs [ source ]) UserPopulation.empty
-            (FallbackToSystemUser (TargetUserId.ofInt 999, ByEmail))
-    Assert.Equal<string>
-        ("userFkReflow.strategyNotYetImplemented",
-         (List.head result.Value.Entries).Code)
+            (ManualOverride overrideMap)
+    let ctx = result.Value.Value
+    Assert.Equal<TargetUserId option> (Some (TargetUserId.ofInt 100), Map.tryFind (SourceUserId.ofInt 1) ctx.Mapping)
+    Assert.True (Set.isEmpty ctx.Unmatched)
+
+[<Fact>]
+let ``ManualOverride: emits matched-by-ManualOverride lineage label`` () =
+    let source = mkSourceUser 1 ["U"; "S1"] None
+    let overrideMap =
+        Map.ofList [ SourceUserId.ofInt 1, TargetUserId.ofInt 100 ]
+    let result =
+        UserFkReflowPass.discover
+            (srcs [ source ]) UserPopulation.empty
+            (ManualOverride overrideMap)
+    match (List.head result.Trail).TransformKind with
+    | Annotated (Label label) -> Assert.Equal<string> ("userFkReflow.matched-by-ManualOverride", label)
+    | other                   -> Assert.Fail (sprintf "expected Annotated (Label _), got %A" other)
+
+[<Fact>]
+let ``ManualOverride: source absent from map yields OverrideMissing diagnostic`` () =
+    let source = mkSourceUser 1 ["U"; "S1"] None
+    let result =
+        UserFkReflowPass.discover
+            (srcs [ source ]) UserPopulation.empty
+            (ManualOverride Map.empty)
+    Assert.True (Set.contains (SourceUserId.ofInt 1) result.Value.Value.Unmatched)
+    match List.head result.Value.Value.Diagnostics with
+    | OverrideMissing src -> Assert.Equal (SourceUserId.ofInt 1, src)
+    | other               -> Assert.Fail (sprintf "expected OverrideMissing, got %A" other)
+
+// ---------------------------------------------------------------------------
+// Slice ε — FallbackToSystemUser strategy (composition + safety-net guarantee).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``FallbackToSystemUser: primary match yields matched-by-FallbackToSystemUser.primary label`` () =
+    let source = mkSourceUser 1 ["U"; "S1"] (Some "alice@example.com")
+    let target = mkTargetUser 100 ["U"; "T100"] (Some "alice@example.com")
+    let fallback = TargetUserId.ofInt 999
+    let result =
+        UserFkReflowPass.discover
+            (srcs [ source ]) (tgts [ target ])
+            (FallbackToSystemUser (fallback, ByEmail))
+    let ctx = result.Value.Value
+    // Primary matched → target = 100 (not the fallback).
+    Assert.Equal<TargetUserId option> (Some (TargetUserId.ofInt 100), Map.tryFind (SourceUserId.ofInt 1) ctx.Mapping)
+    match (List.head result.Trail).TransformKind with
+    | Annotated (Label label) -> Assert.Equal<string> ("userFkReflow.matched-by-FallbackToSystemUser.primary", label)
+    | other                   -> Assert.Fail (sprintf "expected primary label, got %A" other)
+
+[<Fact>]
+let ``FallbackToSystemUser: primary miss yields fallback match + matched-by-FallbackToSystemUser.fallback label`` () =
+    // Source has no email match in target population → primary
+    // ByEmail fails → fallback target is applied.
+    let source = mkSourceUser 1 ["U"; "S1"] (Some "alice@example.com")
+    let fallback = TargetUserId.ofInt 999
+    let result =
+        UserFkReflowPass.discover
+            (srcs [ source ]) UserPopulation.empty
+            (FallbackToSystemUser (fallback, ByEmail))
+    let ctx = result.Value.Value
+    // Fallback applied → target = 999.
+    Assert.Equal<TargetUserId option> (Some (TargetUserId.ofInt 999), Map.tryFind (SourceUserId.ofInt 1) ctx.Mapping)
+    match (List.head result.Trail).TransformKind with
+    | Annotated (Label label) -> Assert.Equal<string> ("userFkReflow.matched-by-FallbackToSystemUser.fallback", label)
+    | other                   -> Assert.Fail (sprintf "expected fallback label, got %A" other)
+
+[<Fact>]
+let ``FallbackToSystemUser: structurally guarantees Set.isEmpty Unmatched (safety net)`` () =
+    // Pre-scope §3 promise: FallbackToSystemUser produces
+    // Set.isEmpty Unmatched. Mixed source population — some have
+    // emails matching, some don't — but the fallback catches
+    // every miss.
+    let sources =
+        [ mkSourceUser 1 ["U"; "S1"] (Some "alice@example.com")
+          mkSourceUser 2 ["U"; "S2"] None
+          mkSourceUser 3 ["U"; "S3"] (Some "absent@example.com") ]
+    let targets =
+        [ mkTargetUser 100 ["U"; "T100"] (Some "alice@example.com") ]
+    let fallback = TargetUserId.ofInt 999
+    let result =
+        UserFkReflowPass.discover
+            (srcs sources) (tgts targets)
+            (FallbackToSystemUser (fallback, ByEmail))
+    Assert.True (UserRemapContext.isFullyMapped result.Value.Value)
+    // Every source mapped: alice → 100; bob → 999; carol → 999.
+    Assert.Equal (3, Map.count result.Value.Value.Mapping)
+
+[<Fact>]
+let ``FallbackToSystemUser: nested fallback chain composes (outer fallback catches inner miss)`` () =
+    // Outer = Fallback (999, Inner)
+    // Inner = Fallback (888, ByEmail)
+    // Source has no email match → Inner.ByEmail misses → Inner.fallback
+    // applies → outer sees a Match → outer reports primary-matched
+    // (carrying the inner-fallback target 888).
+    let source = mkSourceUser 1 ["U"; "S1"] (Some "alice@example.com")
+    let outerFallback = TargetUserId.ofInt 999
+    let innerFallback = TargetUserId.ofInt 888
+    let strategy =
+        FallbackToSystemUser (outerFallback, FallbackToSystemUser (innerFallback, ByEmail))
+    let result =
+        UserFkReflowPass.discover (srcs [ source ]) UserPopulation.empty strategy
+    let ctx = result.Value.Value
+    // Inner fallback (888) wins (outer never fires because inner
+    // returns Matched).
+    Assert.Equal<TargetUserId option> (Some (TargetUserId.ofInt 888), Map.tryFind (SourceUserId.ofInt 1) ctx.Mapping)
+    Assert.True (UserRemapContext.isFullyMapped ctx)
+
+// ---------------------------------------------------------------------------
+// Slice ε — heterogeneous emission across strategies (closed-DU coverage).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Slice ε: all four strategy variants produce decisions (closed-DU coverage)`` () =
+    // Closed-DU expansion empirical-test: every variant of
+    // UserMatchingStrategy is handled by the pass without a
+    // deferred-strategy diagnostic. Verify by sweeping every
+    // variant with a one-source population and checking the
+    // result contains either a Mapping entry or an Unmatched
+    // entry (not a strategyNotYetImplemented diagnostic).
+    let source = mkSourceUser 1 ["U"; "S1"] (Some "alice@example.com")
+    let strategies =
+        [ ByEmail
+          BySsKey
+          ManualOverride Map.empty
+          FallbackToSystemUser (TargetUserId.ofInt 999, ByEmail) ]
+    for strategy in strategies do
+        let result =
+            UserFkReflowPass.discover (srcs [ source ]) UserPopulation.empty strategy
+        // The pass produces a decision (Matched or Unmatched) for
+        // every variant; no strategyNotYetImplemented diagnostic.
+        let hasDeferredStrategy =
+            result.Value.Entries
+            |> List.exists (fun e -> e.Code = "userFkReflow.strategyNotYetImplemented")
+        Assert.False (hasDeferredStrategy, sprintf "strategy %A produced deferred diagnostic" strategy)

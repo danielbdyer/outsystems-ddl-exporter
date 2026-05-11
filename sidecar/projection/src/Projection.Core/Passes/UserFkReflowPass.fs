@@ -99,26 +99,8 @@ module UserFkReflowPass =
               Map.ofList
                   [ "sourceUserId", sprintf "%d" sourceUserValue ] }
 
-    /// Deferred-strategy diagnostic — emitted at slice δ for the
-    /// three strategy variants whose implementation lands at slice
-    /// ε. Per total-decisions discipline + the strategy-layer
-    /// codification: "no decision" is a named entry rather than
-    /// silence. The diagnostic surfaces explicitly so callers can
-    /// route the deferred case to operator review.
-    let private deferredStrategyEntry (label: string) : DiagnosticEntry =
-        { Source   = passName
-          Severity = DiagnosticSeverity.Error
-          Code     = "userFkReflow.strategyNotYetImplemented"
-          Message  =
-              System.String.Concat (  // LINT-ALLOW: terminal Diagnostic.Message composition at the operator-narration boundary; `String.Concat` joins the strategy-label segment to the static narration; same architectural shape as the matchedEvent label composition above
-                  "UserMatchingStrategy variant '", label,
-                  "' is not implemented at slice δ; routing every source user as unmatched. ",
-                  "Slice ε (CHAPTER_4_PRESCOPE_USERFK_REFLOW §7) lands the implementation.")
-          SsKey    = None
-          Metadata = Map.ofList [ "strategyLabel", label ] }
-
     // -----------------------------------------------------------------------
-    // ByEmail strategy.
+    // Per-strategy matching (slices δ + ε).
     // -----------------------------------------------------------------------
 
     /// Case-insensitive email matching key. Per pre-scope §3 +
@@ -152,21 +134,79 @@ module UserFkReflowPass =
         |> List.rev
         |> Map.ofList
 
-    /// Apply `ByEmail` matching to one source user. Per pre-scope
-    /// §4 algorithm step 1: look up in the target population's
-    /// email index; produce `Ok target` or fail with
-    /// `EmailDidNotMatch` (or `NoEmail` if source has no email).
-    let private matchByEmail
-        (emailIndex: Map<string, TargetUserId>)
+    /// Build an SsKey-keyed index from the target population (slice
+    /// ε). Mirrors `buildEmailIndex` — duplicate-SsKey collisions
+    /// (defensive case; SsKey identity is structurally unique per
+    /// A4 but adapter-side bugs could produce duplicates) resolve
+    /// first-occurrence-wins via reverse-fold.
+    let private buildSsKeyIndex
+        (targets: UserPopulation<TargetUserId>)
+        : Map<SsKey, TargetUserId> =
+        targets.Users
+        |> List.map (fun u -> u.SsKey, u.Id)
+        |> List.rev
+        |> Map.ofList
+
+    /// Outcome of applying a strategy to one source user. Used by
+    /// the recursive `applyStrategy` walker so `FallbackToSystemUser`
+    /// can compose primary-then-fallback decisions structurally.
+    type private MatchOutcome =
+        | Matched of target: TargetUserId * strategyLabel: string
+        | UnmatchedWith of diagnostic: RemapDiagnostic
+
+    /// Apply one matching strategy to one source user. Per pre-
+    /// scope §4 algorithm:
+    ///   1. `ByEmail` — look up in target email index;
+    ///       produce `Matched (target, "ByEmail")` or
+    ///       `UnmatchedWith` (`NoEmail` or `EmailDidNotMatch`).
+    ///   2. `BySsKey` — look up in target SsKey index;
+    ///       produce `Matched (target, "BySsKey")` or
+    ///       `UnmatchedWith (SsKeyDidNotMatch ...)`.
+    ///   3. `ManualOverride map` — `Map.tryFind sourceId map`;
+    ///       produce `Matched (target, "ManualOverride")` or
+    ///       `UnmatchedWith (OverrideMissing source.Id)`.
+    ///   4. `FallbackToSystemUser (fallback, primary)` — recurse
+    ///       into `primary`; on `Matched` return with
+    ///       `"FallbackToSystemUser.primary"` label; on
+    ///       `UnmatchedWith _` return `Matched (fallback,
+    ///       "FallbackToSystemUser.fallback")` (the safety-net
+    ///       catches every miss, structurally guaranteeing
+    ///       `Set.isEmpty Unmatched` per pre-scope §3).
+    ///
+    /// Recursive on `FallbackToSystemUser`'s `primary` arm, so
+    /// nested fallback chains compose. Inner-strategy-specific
+    /// labels are discarded at the FallbackToSystemUser layer per
+    /// the pre-scope's narration shape (`matched-by-
+    /// FallbackToSystemUser.primary` / `.fallback`); deeper trail
+    /// query lives in slice η emitter integration if a consumer
+    /// demands the nested-strategy detail.
+    let rec private applyStrategy
+        (emailIndex: Lazy<Map<string, TargetUserId>>)
+        (ssKeyIndex: Lazy<Map<SsKey, TargetUserId>>)
+        (strategy: UserMatchingStrategy)
         (source: UserAttributes<SourceUserId>)
-        : Result<TargetUserId, RemapDiagnostic> =
-        match source.Email with
-        | None -> Error (NoEmail source.Id)
-        | Some e ->
-            let key = emailKey e
-            match Map.tryFind key emailIndex with
-            | Some target -> Ok target
-            | None        -> Error (EmailDidNotMatch (source.Id, e))
+        : MatchOutcome =
+        match strategy with
+        | ByEmail ->
+            match source.Email with
+            | None -> UnmatchedWith (NoEmail source.Id)
+            | Some e ->
+                let key = emailKey e
+                match Map.tryFind key emailIndex.Value with
+                | Some target -> Matched (target, "ByEmail")
+                | None        -> UnmatchedWith (EmailDidNotMatch (source.Id, e))
+        | BySsKey ->
+            match Map.tryFind source.SsKey ssKeyIndex.Value with
+            | Some target -> Matched (target, "BySsKey")
+            | None        -> UnmatchedWith (SsKeyDidNotMatch (source.Id, source.SsKey))
+        | ManualOverride overrideMap ->
+            match Map.tryFind source.Id overrideMap with
+            | Some target -> Matched (target, "ManualOverride")
+            | None        -> UnmatchedWith (OverrideMissing source.Id)
+        | FallbackToSystemUser (fallback, primary) ->
+            match applyStrategy emailIndex ssKeyIndex primary source with
+            | Matched (target, _)  -> Matched (target, "FallbackToSystemUser.primary")
+            | UnmatchedWith _      -> Matched (fallback, "FallbackToSystemUser.fallback")
 
     // -----------------------------------------------------------------------
     // Pass entry points.
@@ -229,53 +269,40 @@ module UserFkReflowPass =
                   Entries = List.rev (bugEntry :: state.Entries) }
               Trail = List.rev state.Events }
 
-    /// Walk source users sequentially under a per-source matching
-    /// function. The matcher returns `Ok target` for a match (with
-    /// the strategy label for the lineage annotation) or `Error
-    /// diagnostic` for a miss. Used by slice δ's ByEmail and (slice
-    /// ε) by the other strategy implementations.
+    /// Walk source users sequentially under the strategy walker.
+    /// One pass over sources; index builds are `lazy` so a strategy
+    /// that doesn't need an index (e.g., pure `ManualOverride`)
+    /// pays zero index-construction cost. Each source user produces
+    /// either a `Matched` event (lineage Annotated + Mapping entry)
+    /// or an `UnmatchedWith` outcome (Unmatched set entry + Warning
+    /// diagnostic + RemapDiagnostic).
     let private walkSources
+        (emailIndex: Lazy<Map<string, TargetUserId>>)
+        (ssKeyIndex: Lazy<Map<SsKey, TargetUserId>>)
+        (strategy: UserMatchingStrategy)
         (sources: UserAttributes<SourceUserId> list)
-        (strategyLabel: string)
-        (matchOne: UserAttributes<SourceUserId> -> Result<TargetUserId, RemapDiagnostic>)
-        (initialState: State)
         : State =
         sources
         |> List.fold (fun (state: State) source ->
-            match matchOne source with
-            | Ok target ->
+            match applyStrategy emailIndex ssKeyIndex strategy source with
+            | Matched (target, label) ->
                 { state with
                     Mapping = Map.add source.Id target state.Mapping
-                    Events  = matchedEvent source.SsKey strategyLabel :: state.Events }
-            | Error diagnostic ->
+                    Events  = matchedEvent source.SsKey label :: state.Events }
+            | UnmatchedWith diagnostic ->
                 { state with
                     Unmatched        = Set.add source.Id state.Unmatched
                     RemapDiagnostics = diagnostic :: state.RemapDiagnostics
                     Entries          = unmatchedEntry diagnostic :: state.Entries })
-            initialState
-
-    /// Treat every source user as unmatched + emit one shared
-    /// deferred-strategy diagnostic. Used by slice δ for the three
-    /// strategy variants whose implementation lands at slice ε
-    /// (`BySsKey` / `ManualOverride` / `FallbackToSystemUser`).
-    let private allUnmatched
-        (sources: UserAttributes<SourceUserId> list)
-        (strategyLabel: string)
-        : State =
-        let deferredEntry = deferredStrategyEntry strategyLabel
-        sources
-        |> List.fold (fun (state: State) source ->
-            { state with
-                Unmatched        = Set.add source.Id state.Unmatched
-                RemapDiagnostics = NoFallbackConfigured source.Id :: state.RemapDiagnostics
-                Entries          = unmatchedEntry (NoFallbackConfigured source.Id) :: state.Entries })
-            { emptyState with Entries = [ deferredEntry ] }
+            emptyState
 
     /// Discover user-FK remap evidence from per-environment user
     /// populations under the supplied matching strategy. Per pre-
     /// scope §4: pure function (no I/O — population shaping
     /// happens in the boundary adapter). Source users iterated in
-    /// `SsKey`-sorted order for T1 byte-determinism.
+    /// `SsKey`-sorted order for T1 byte-determinism. Full strategy
+    /// DU coverage (slice ε): `ByEmail` / `BySsKey` /
+    /// `ManualOverride` / `FallbackToSystemUser` all implemented.
     let discover
         (sourceUsers: UserPopulation<SourceUserId>)
         (targetUsers: UserPopulation<TargetUserId>)
@@ -283,15 +310,13 @@ module UserFkReflowPass =
         : Lineage<Diagnostics<UserRemapContext>> =
         use _ = Bench.scope "passes.userFkReflow.discover"
         let sources = orderedSources sourceUsers
-        let state =
-            match strategy with
-            | ByEmail ->
-                use _ = Bench.scope "userFkReflow.byEmail"
-                let emailIndex = buildEmailIndex targetUsers
-                walkSources sources "ByEmail" (matchByEmail emailIndex) emptyState
-            | BySsKey                  -> allUnmatched sources "BySsKey"
-            | ManualOverride _         -> allUnmatched sources "ManualOverride"
-            | FallbackToSystemUser _   -> allUnmatched sources "FallbackToSystemUser"
+        // Indexes are lazy: a pure-`ManualOverride` strategy pays
+        // zero cost to build the email/SsKey indexes; a
+        // `FallbackToSystemUser (ByEmail, ManualOverride)`
+        // strategy builds only the indexes its branches reach.
+        let emailIndex = lazy (buildEmailIndex targetUsers)
+        let ssKeyIndex = lazy (buildSsKeyIndex targetUsers)
+        let state = walkSources emailIndex ssKeyIndex strategy sources
         projectState state
 
     /// Pass entry point per the canonical signature (`Catalog ×
