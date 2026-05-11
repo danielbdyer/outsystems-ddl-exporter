@@ -64,24 +64,31 @@ let private mkCatalog (kinds: Kind list) : Catalog =
     { Modules = [ m ] }
 
 // ---------------------------------------------------------------------------
-// UserRemapContext — slice ζ MVP shape.
+// UserRemapContext — chapter 4.2 slice γ shape.
+//
+// The slice ζ placeholder (`Map<SsKey, Map<int64, int64>>`) was refined
+// at chapter 4.2 slice γ to a typed record (`{ Mapping; Unmatched;
+// Diagnostics }`) living in `Projection.Core/UserRemap.fs`. The Bootstrap
+// emitter still consumes the type at the same composer integration
+// point; the slice ζ MVP behavior (every kind a no-op artifact under
+// `UserRemapContext.empty`) is preserved.
+//
+// Slice-γ smart-constructor invariants are tested in
+// `UserRemapContextTests.fs`; this file covers the BootstrapEmitter's
+// consumption of the new shape.
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``UserRemapContext.empty has no per-kind entries`` () =
-    Assert.True (Map.isEmpty UserRemapContext.empty)
+let ``UserRemapContext.empty (slice γ shape) has empty Mapping + Unmatched + Diagnostics`` () =
+    let ctx = UserRemapContext.empty
+    Assert.True (Map.isEmpty ctx.Mapping)
+    Assert.True (Set.isEmpty ctx.Unmatched)
+    Assert.Empty ctx.Diagnostics
 
 [<Fact>]
-let ``UserRemapContext.tryFindKindRemap returns None for unmapped kind`` () =
-    let kindKey = mkKey ["TestModule"; "User"]
-    Assert.Equal<Map<int64, int64> option> (None, UserRemapContext.tryFindKindRemap kindKey UserRemapContext.empty)
-
-[<Fact>]
-let ``UserRemapContext.tryFindKindRemap returns Some for mapped kind`` () =
-    let kindKey = mkKey ["TestModule"; "User"]
-    let ctx : UserRemapContext = Map.ofList [ kindKey, Map.ofList [ 1L, 100L ] ]
-    let found = UserRemapContext.tryFindKindRemap kindKey ctx
-    Assert.NotEqual<Map<int64, int64> option> (None, found)
+let ``UserRemapContext.empty is fully-mapped (no unmatched users) and unmatchedCount = 0`` () =
+    Assert.True (UserRemapContext.isFullyMapped UserRemapContext.empty)
+    Assert.Equal (0, UserRemapContext.unmatchedCount UserRemapContext.empty)
 
 // ---------------------------------------------------------------------------
 // BootstrapEmitter — T11 keyset + slice ζ MVP shape.

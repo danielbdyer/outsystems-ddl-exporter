@@ -4,44 +4,21 @@ open Projection.Core
 open Projection.Core.Passes
 
 // ---------------------------------------------------------------------------
-// UserRemapContext — placeholder shape for chapter 4.2's UserFkReflowPass
-// (per pre-scope §2.3). The Bootstrap emitter consumes it at row-emission
-// time to rewrite `CreatedBy` / `UpdatedBy` columns environment-by-
-// environment.
+// UserRemapContext (chapter 4.2 slice γ refinement of chapter 4.1.B
+// slice ζ placeholder).
 //
-// Per pre-scope §2.3: "Until chapter 4.2 lands, the BootstrapEmitter slice
-// ships with `UserRemapContext = Map.empty` as a pass-through (no
-// rewrites)." This minimal shape lets the composer flow `Catalog × Profile
-// × UserRemapContext` through to the emitter without a Bootstrap-specific
-// hole; chapter 4.2 supplies the real `Map<SsKey, Map<int64, int64>>` that
-// drives per-environment User identity remapping.
+// At chapter 4.1.B slice ζ this file defined a placeholder `Map<SsKey,
+// Map<int64, int64>>` shape for `UserRemapContext`; chapter 4.2 slice γ
+// refines it to a typed record (`{ Mapping; Unmatched; Diagnostics }`)
+// living in `Projection.Core/UserRemap.fs`. This emitter now imports
+// the Core type; the slice ζ MVP behavior (every kind a no-op artifact;
+// `UserRemapContext.empty` pass-through) is preserved.
 //
-// `SourceUserId` and `TargetUserId` are intentionally `int64` aliases for
-// the slice ζ MVP — chapter 4.2's `UserMatchingStrategy` may refine them
-// to typed value objects (per the chapter open's strategic frame) when
-// the matching strategies surface real type-safety pressure.
+// The discovery pass that POPULATES `UserRemapContext` lands at
+// chapter 4.2 slice δ (`UserFkReflowPass.discover`); the emitter
+// integration that CONSUMES the populated context at row-emission
+// time lands at chapter 4.2 slice η.
 // ---------------------------------------------------------------------------
-
-/// Per-kind User-FK remap. Keyed by the kind's SsKey; inner map keyed
-/// by source-environment User id → target-environment User id. Empty
-/// outer map = no remap (the slice ζ MVP default; chapter 4.2 ships
-/// the populated form).
-type UserRemapContext = Map<SsKey, Map<int64, int64>>
-
-[<RequireQualifiedAccess>]
-module UserRemapContext =
-
-    /// The empty remap context — every kind unaltered. Per pre-scope
-    /// §2.3: this is the slice ζ MVP default (chapter 4.2 lands the
-    /// real per-environment remap).
-    let empty : UserRemapContext = Map.empty
-
-    /// Look up the remap for a given kind. Returns `None` if no
-    /// per-kind entry exists; `Some Map.empty` for an explicitly
-    /// empty entry (different from absence per chapter 4.2's
-    /// distinction-pending semantics).
-    let tryFindKindRemap (kindKey: SsKey) (ctx: UserRemapContext) : Map<int64, int64> option =
-        Map.tryFind kindKey ctx
 
 /// Π_Bootstrap — chapter 4.1.B slice ζ emitter. Per pre-scope §2.3:
 /// "Bootstrap emits inserts for system users, default policies, and

@@ -53,6 +53,8 @@
     <Compile Include="AttributeDistributionTests.fs" />
     <Compile Include="PolicyTests.fs" />
     <Compile Include="UserMatchingStrategyTests.fs" />
+    <Compile Include="UserPopulationTests.fs" />
+    <Compile Include="UserRemapContextTests.fs" />
     <Compile Include="TopologicalOrderTests.fs" />
     <Compile Include="VisibilityMaskTests.fs" />
     <Compile Include="NamingMorphismTests.fs" />

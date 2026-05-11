@@ -421,7 +421,19 @@ module ProfileSnapshot =
                                   // snapshot adapter has no CDC
                                   // discovery surface (per chapter
                                   // 4.1.B slice β).
-                                  CdcAwareness              = CdcAwareness.empty }))))
+                                  CdcAwareness              = CdcAwareness.empty
+                                  // SourceUsers / TargetUsers populated
+                                  // by the chapter 4.2 boundary adapter
+                                  // (slice β placeholder fields; per-
+                                  // environment user populations are
+                                  // empirical evidence the OSSYS adapter
+                                  // surfaces from `osm_model.json`).
+                                  // V1 ProfileSnapshot has no User-
+                                  // population surface; A34 holds —
+                                  // empty-default produces identical
+                                  // output as no User-FK reflow.
+                                  SourceUsers               = UserPopulation.empty
+                                  TargetUsers               = UserPopulation.empty }))))
         with
         | :? JsonException as ex ->
             Result.failureOf

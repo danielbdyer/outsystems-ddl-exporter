@@ -34,8 +34,10 @@
     <Compile Include="CatalogDiff.fs" />
     <Compile Include="PhysicalSchema.fs" />
     <Compile Include="Tolerance.fs" />
+    <Compile Include="UserIdentity.fs" />
     <Compile Include="Profile.fs" />
     <Compile Include="Policy.fs" />
+    <Compile Include="UserRemap.fs" />
     <Compile Include="TopologicalOrder.fs" />
     <Compile Include="Strategies/CycleResolution.fs" />
     <Compile Include="Strategies/NullabilityRules.fs" />

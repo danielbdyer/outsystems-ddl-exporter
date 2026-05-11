@@ -272,34 +272,14 @@ type TighteningPolicy = {
 // is operator intent — the per-environment decision *how to bridge*
 // cross-environment user identity. Lives on `Policy` alongside the
 // other four axes (Selection / Emission / Insertion / Tightening) per
-// pre-scope §2's "the new Policy shape" framing. Value-object newtypes
-// (`UserId` / `SourceUserId` / `TargetUserId` / `Email`) provide
-// type-system safety against id-orientation confusion (passing a
-// SourceUserId where TargetUserId is expected becomes a compile-time
-// failure). `Email.create` validates non-blank + normalizes via
-// `Trim()` (V1 parity per `UserMatchingEngine.cs:84-86, 97`).
+// pre-scope §2's "the new Policy shape" framing.
+//
+// Identity value objects (`UserId` / `SourceUserId` / `TargetUserId`
+// / `Email`) live in `UserIdentity.fs` (compiles before Profile.fs)
+// so Profile can carry `UserPopulation<SourceUserId>` /
+// `UserPopulation<TargetUserId>` typed fields (slice β). The strategy
+// DU below references those types from `UserIdentity.fs` directly.
 // ---------------------------------------------------------------------------
-
-/// Underlying user identifier (per pre-scope §3 — V1's `UserId` shape
-/// is `int`; V2 wraps for newtype safety). Boundary adapters parse
-/// from V1's `osm_model.json` user-population evidence into this
-/// shape; Core sees only the typed value.
-type UserId = UserId of int
-
-/// Source-environment user identifier. The orientation marker
-/// prevents passing a SourceUserId where TargetUserId is expected
-/// (or vice versa) — a class of cutover-time bug ruled out by the
-/// type system.
-type SourceUserId = SourceUserId of UserId
-
-/// Target-environment user identifier. Sibling to SourceUserId.
-type TargetUserId = TargetUserId of UserId
-
-/// User email — per pre-scope §3, the value carries V1's
-/// `OrdinalIgnoreCase + Trim` normalization at construction.
-/// Smart constructor on `Email.create` enforces non-blank.
-type Email = Email of string
-
 
 /// Per-environment user-matching strategy. Closed DU; per pre-scope
 /// §3 + V1's empirical experience (`UserMatchingEngine.cs:33-67` +
@@ -697,65 +677,6 @@ module TighteningPolicy =
             match intervention with
             | CategoricalUniqueness (id, cfg) -> Some (id, cfg)
             | _                               -> None)
-
-
-[<RequireQualifiedAccess>]
-module UserId =
-
-    /// Project the underlying integer. The newtype prevents
-    /// accidental orientation confusion at type-check time;
-    /// projection happens only at the boundary (CSV adapters,
-    /// V1 differential).
-    let value (UserId v) : int = v
-
-
-[<RequireQualifiedAccess>]
-module SourceUserId =
-
-    /// Construct a SourceUserId from a raw integer. Boundary-side
-    /// projection; trusted callers (adapters parsing V1's
-    /// `osm_model.json` user-population evidence) wrap here.
-    let ofInt (i: int) : SourceUserId = SourceUserId (UserId i)
-
-    /// Project to the underlying integer. Used at the SQL-emission
-    /// boundary when rendering FK column values.
-    let value (SourceUserId (UserId v)) : int = v
-
-
-[<RequireQualifiedAccess>]
-module TargetUserId =
-
-    /// Construct a TargetUserId from a raw integer. Sibling to
-    /// SourceUserId.ofInt.
-    let ofInt (i: int) : TargetUserId = TargetUserId (UserId i)
-
-    /// Project to the underlying integer.
-    let value (TargetUserId (UserId v)) : int = v
-
-
-[<RequireQualifiedAccess>]
-module Email =
-
-    let private emailEmpty =
-        ValidationError.create
-            "email.empty"
-            "An email cannot be blank."
-
-    /// Construct an Email value. Validates non-blank input and
-    /// normalizes via `Trim()` (V1 parity per `UserMatchingEngine.cs:
-    /// 84-86, 97`). Case sensitivity is NOT normalized at construction
-    /// — preserved for downstream display + audit trail; the matching
-    /// strategy applies `OrdinalIgnoreCase` comparison at lookup time.
-    let create (raw: string) : Result<Email> =
-        if System.String.IsNullOrWhiteSpace raw then
-            Result.failureOf emailEmpty
-        else
-            Result.success (Email (raw.Trim()))
-
-    /// Project the underlying string. Used at the SQL-emission
-    /// boundary when rendering or for ordinal-ignore-case
-    /// comparison at the matching seam.
-    let value (Email v) : string = v
 
 
 [<RequireQualifiedAccess>]

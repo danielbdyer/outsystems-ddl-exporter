@@ -130,4 +130,6 @@ let sampleProfile : Profile = {
     ForeignKeys               = [ orderCustomerFkReality ]
     Distributions             = []
     CdcAwareness              = CdcAwareness.empty
+    SourceUsers               = UserPopulation.empty
+    TargetUsers               = UserPopulation.empty
 }
