@@ -412,7 +412,7 @@ let private mkTreeKind () : Kind =
             [
                 { SsKey = refKey; Name = mkName "RefParent"
                   SourceAttribute = parentKey; TargetKind = kindKey
-                  OnDelete = NoAction }
+                  OnDelete = NoAction; IsUserFk = false }
             ]
         Indexes    = []
     }
@@ -537,7 +537,7 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
           Length = None; Precision = None; Scale = None; IsIdentity = false }
     let mkRef ssk name srcAttr tgt =
         { SsKey = ssk; Name = mkName name
-          SourceAttribute = srcAttr; TargetKind = tgt; OnDelete = NoAction }
+          SourceAttribute = srcAttr; TargetKind = tgt; OnDelete = NoAction; IsUserFk = false }
     let aKind : Kind =
         { SsKey = aKey; Name = mkName "A"; Origin = OsNative
           Modality = [ Static [ aRow ] ]

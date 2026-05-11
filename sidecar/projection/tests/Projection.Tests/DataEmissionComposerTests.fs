@@ -372,7 +372,7 @@ let ``Slice ι: composeRendered emits Phase-1 (MERGE) of every kind before Phase
             References =
                 [ { SsKey = refKey; Name = mkName "RefSelf"
                     SourceAttribute = parentKey; TargetKind = kindKey
-                    OnDelete = NoAction } ]
+                    OnDelete = NoAction; IsUserFk = false } ]
             Indexes    = []
         }
     let alpha = mkSelfCycleKind "Alpha" "OSUSR_ALPHA" "1"

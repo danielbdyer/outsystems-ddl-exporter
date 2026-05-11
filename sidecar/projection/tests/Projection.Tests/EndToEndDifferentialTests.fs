@@ -89,7 +89,8 @@ let private childKind : Kind =
             Name            = mkName "Parent"
             SourceAttribute = childParentFkKey
             TargetKind      = parentKindKey
-            OnDelete        = NoAction } ]
+            OnDelete        = NoAction
+            IsUserFk        = false } ]
       Indexes = [] }
 
 let private countryKind : Kind =

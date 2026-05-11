@@ -658,7 +658,16 @@ module CatalogReader =
                           Name            = rName
                           SourceAttribute = srcKey
                           TargetKind      = tgtKey
-                          OnDelete        = rule })
+                          OnDelete        = rule
+                          // Slice ζ: User-FK detection deferred to a
+                          // sibling pass at chapter 4.2's adapter-
+                          // integration boundary. Defaults to false
+                          // until the OSSYS-platform user-kind
+                          // identification surface materializes (per
+                          // V1 reference ModelUserSchemaGraphFactory.
+                          // GetSyntheticUserForeignKeys); the chapter
+                          // 4.2 close ritual codifies the trigger.
+                          IsUserFk        = false })
                 | _ ->
                     // Propagate underlying errors via
                     // `propagateOrFallback` — uniform with the four
@@ -1073,7 +1082,13 @@ module CatalogReader =
                   Name            = rName
                   SourceAttribute = srcKey
                   TargetKind      = tgtKey
-                  OnDelete        = rule }
+                  OnDelete        = rule
+                  // Slice ζ: User-FK detection deferred at the
+                  // rowset adapter (same as the JSON adapter; both
+                  // depend on the OSSYS-platform user-kind
+                  // identification surface that lands at the
+                  // chapter 4.2 adapter-integration boundary).
+                  IsUserFk        = false }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback` —
             // uniform with parseReference on the JSON path.

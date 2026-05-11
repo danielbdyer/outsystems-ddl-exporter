@@ -79,7 +79,13 @@ module SymmetricClosure =
                   Name            = sourceKind.Name
                   SourceAttribute = pkAttr.SsKey
                   TargetKind      = sourceKind.SsKey
-                  OnDelete        = NoAction }
+                  OnDelete        = NoAction
+                  // Inverse references inherit the original's User-FK
+                  // status — if the original is a User-FK (CreatedBy
+                  // → users), its inverse (users → entity that
+                  // created it) carries the same flag for consumer
+                  // gating at emission time.
+                  IsUserFk        = r.IsUserFk }
 
     let private hasInverseAlready (refs: Reference list) (key: SsKey) : bool =
         refs |> List.exists (fun r -> r.SsKey = key)

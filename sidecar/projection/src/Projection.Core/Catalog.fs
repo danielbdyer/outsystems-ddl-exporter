@@ -206,12 +206,29 @@ type Attribute = {
 /// A directional reference (A10). Symmetry, if needed by a target surface,
 /// is introduced by the symmetric-closure pass and the resulting reference
 /// carries a `Derived` SsKey with reason `"inverse"`.
+///
+/// **`IsUserFk` field added at chapter 4.2 slice ζ** — per
+/// `CHAPTER_4_PRESCOPE_USERFK_REFLOW.md` §5: identifies references
+/// whose target is the platform user kind, so data-emission siblings
+/// (chapter 4.1.B MigrationDependenciesEmitter + BootstrapEmitter)
+/// can rewrite `CreatedBy` / `UpdatedBy` column values via the
+/// chapter 4.2 `UserRemapContext`. The OSSYS adapter resolves the
+/// flag at construction (per the V1 reference
+/// `ModelUserSchemaGraphFactory.GetSyntheticUserForeignKeys`); test
+/// fixtures and non-user-FK adapter sites default to `false`.
 type Reference = {
     SsKey           : SsKey
     Name            : Name
     SourceAttribute : SsKey
     TargetKind      : SsKey
     OnDelete        : ReferenceAction
+    /// True iff this reference's `TargetKind` resolves to the
+    /// platform user kind (the OSSYS-native users entity in V1's
+    /// model). Set by the OSSYS adapter when it can identify the
+    /// user kind via the platform's `extension_id` lookup; false
+    /// otherwise. Slice η emitters consume this flag to gate User-
+    /// FK column rewriting at row-emission time.
+    IsUserFk        : bool
 }
 
 

@@ -163,7 +163,8 @@ let private addReference (sourceKey: SsKey) (targetKey: SsKey) (refKey: SsKey) (
                                   Name            = Name.create refName |> Result.value
                                   SourceAttribute = sourceAttrKey
                                   TargetKind      = targetKey
-                                  OnDelete        = NoAction }
+                                  OnDelete        = NoAction
+                                  IsUserFk        = false }
                             { k with References = newRef :: k.References }
                         else k) }) }
 
@@ -380,7 +381,8 @@ let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Ki
             Name = mkName "ToOther"
             SourceAttribute = attrFk
             TargetKind = targetKey
-            OnDelete = NoAction } ]
+            OnDelete = NoAction
+            IsUserFk = false } ]
       Indexes = [] }
 
 [<Fact>]
@@ -434,7 +436,8 @@ let private kindWithRef
             Name = mkName "ToOther"
             SourceAttribute = attrFk
             TargetKind = targetKey
-            OnDelete = onDelete } ]
+            OnDelete = onDelete
+            IsUserFk = false } ]
       Indexes = [] }
 
 let private noRefKind (kindKey: string) : Kind =

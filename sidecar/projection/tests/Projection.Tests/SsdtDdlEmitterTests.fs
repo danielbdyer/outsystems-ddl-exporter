@@ -601,6 +601,7 @@ let private childKind : Kind =
                 SourceAttribute = childParentIdAttrKey
                 TargetKind = parentKindKey
                 OnDelete = NoAction
+                IsUserFk = false
             }
         ]
         Indexes = []

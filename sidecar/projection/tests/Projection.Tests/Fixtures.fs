@@ -131,7 +131,8 @@ let order : Kind = {
           Name            = name "Customer"
           SourceAttribute = orderCustomerFkKey
           TargetKind      = customerKey
-          OnDelete        = NoAction }
+          OnDelete        = NoAction
+          IsUserFk        = false }
     ]
     Indexes = []
 }

@@ -28,7 +28,8 @@ let private mkRef (sourceAttrKey: string) (action: ReferenceAction) : Reference 
       Name            = Name.create "x" |> Result.value
       SourceAttribute = testKey sourceAttrKey
       TargetKind      = kindKey ["target"]
-      OnDelete        = action }
+      OnDelete        = action
+      IsUserFk        = false }
 
 let private kindWith (a: Attribute) : Kind =
     { SsKey      = kindKey ["owner"]

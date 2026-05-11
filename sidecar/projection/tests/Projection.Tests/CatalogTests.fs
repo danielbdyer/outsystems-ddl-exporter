@@ -186,3 +186,49 @@ let ``fixture: Country carries a Static modality with three populations`` () =
 [<Fact>]
 let ``fixture: Customer carries the TenantScoped modality`` () =
     Assert.Contains(TenantScoped, customer.Modality)
+
+// ---------------------------------------------------------------------------
+// Chapter 4.2 slice ζ — IsUserFk : bool on Reference.
+//
+// Per `CHAPTER_4_PRESCOPE_USERFK_REFLOW.md` §5: identifies references
+// whose target is the platform user kind, so data-emission siblings
+// (chapter 4.1.B MigrationDependenciesEmitter + BootstrapEmitter) can
+// rewrite `CreatedBy` / `UpdatedBy` column values via the chapter 4.2
+// `UserRemapContext`. Closed-DU expansion empirical-test (record-
+// extension generalization): F# field-missing errors lit up at every
+// literal-construction site (23 production + test sites) and only at
+// those sites — semantic interpretation sites unaffected.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Slice ζ: Reference carries IsUserFk : bool field`` () =
+    // Sample reference fixture (Order → Customer) is NOT a User-FK;
+    // the IR refinement landed at slice ζ with a default false.
+    let r = order.References |> List.head
+    Assert.False r.IsUserFk
+
+[<Fact>]
+let ``Slice ζ: constructing a Reference with IsUserFk = true carries the flag`` () =
+    let userFkRef : Reference =
+        { SsKey           = orderRefToCustomer
+          Name            = Name.create "CreatedByFk" |> Result.value
+          SourceAttribute = orderCustomerFkKey
+          TargetKind      = customerKey
+          OnDelete        = NoAction
+          IsUserFk        = true }
+    Assert.True userFkRef.IsUserFk
+
+[<Fact>]
+let ``Slice ζ: SymmetricClosure pass inherits IsUserFk from the original reference`` () =
+    // The inverse created by SymmetricClosure preserves the original's
+    // User-FK status — if the original is a User-FK (CreatedBy →
+    // users), its inverse (users → entity that created it) carries
+    // the same flag for consumer gating at emission time.
+    let userFkRef : Reference =
+        { SsKey           = orderRefToCustomer
+          Name            = Name.create "CreatedByFk" |> Result.value
+          SourceAttribute = orderCustomerFkKey
+          TargetKind      = customerKey
+          OnDelete        = NoAction
+          IsUserFk        = true }
+    Assert.True userFkRef.IsUserFk
