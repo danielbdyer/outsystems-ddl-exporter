@@ -224,6 +224,8 @@ table before continuing.
 | **MigrationDependenciesEmitter + BootstrapEmitter typed-AST adoption from slice α** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 4.1.B slices ε (MigrationDependenciesEmitter) / ζ (BootstrapEmitter) open. **Hard requirement**: both emitters are MERGE / INSERT producers; per the Tier-1 #1 cash-out (`bface9a` — chapter 4.1.B StaticSeedsEmitter MERGE → ScriptDom MergeStatement), every new SQL-emitting consumer starts on the typed-AST library, not StringBuilder. `ScriptDomBuild.buildMergeStatement` + `ScriptDomBuild.buildInsertRow` + `SqlLiteral.ofRaw` are the precedent surface; cross-target dep on Projection.Targets.SSDT acceptable per the StaticSeedsEmitter precedent (single-line LINT-ALLOW with rationale). The chapter 4.1.B slice agent reads this entry at slice open. | **Cashed out — chapter 4.1.B slice ε (commit `0aa3761`) + slice ζ (commit `9544006`).** MigrationDependenciesEmitter ships the typed-AST MERGE + UPDATE shape mirroring StaticSeedsEmitter; BootstrapEmitter ships as structural stub (no SQL emission today; UserRemapContext slot pending chapter 4.2). See `CHAPTER_4_1_B_CLOSE.md` and `2026-05-11 — Chapter 4.1.B close` entry below. |
 | **Statement DU MERGE/UPDATE promotion** | 2026-05-11 (Chapter 4.1.B close) | A third MERGE/UPDATE consumer lands (e.g., chapter 3.x DacpacEmitter Phase-2 path; future Faker-style data emitter; future Profile-attached row source in chapter 4.3). Today `Projection.Core.Statement` carries SSDT DDL variants only (CreateTable / CreateIndex / InsertRow / SetIdentityInsert / Comment / Blank); MERGE + UPDATE are emitted directly via `ScriptDomBuild.buildMergeStatement` / `buildUpdateStatement` + `ScriptDomGenerate.generateOne` + LINT-ALLOW'd `;\nGO\n` text suffix. 6 LINT-ALLOWs total across StaticSeedsEmitter + MigrationDependenciesEmitter at terminal text concatenation boundaries. Promoting `Statement` to include `Merge of MergeBuildArgs \| Update of UpdateBuildArgs` lets `ScriptDomGenerate.toText` handle per-kind concat structurally + retire all 6. Cross-target lift required (MergeBuildArgs / UpdateBuildArgs from Projection.Targets.SSDT to Projection.Core). | Two consumers today (StaticSeeds + MigrationDeps); deferred per two-consumer threshold. See `2026-05-11 — Chapter 4.1.B close` entry. |
 | **Sort-vs-data deferral predicate distinction** | 2026-05-11 (Chapter 4.1.B close) | A third cycle-metadata consumer surfaces with a sibling-but-distinct semantic question (beyond sort-edge breakability + data-emission deferral). The two predicates diverge on Cascade-nullable FKs: `CycleResolution.classify` returns `Cascade` (NOT `Weak`) so sort-edge-breaker refuses to break; `<Emitter>.deferredColumns` DOES defer (Cascade is about DELETE; column is nullable). The two-predicate split is codified explicitly so future emitter agents choose the predicate that fits their semantic question. | Two predicates today (CycleResolution.classify + StaticSeedsEmitter.deferredColumns / MigrationDependenciesEmitter.deferredColumns); discipline codified. See `2026-05-11 — Chapter 4.1.B close` entry. |
+| **OSSYS adapter User-kind identification surface** | 2026-05-11 (Chapter 4.2 close) | A real OSSYS-source-V2-target reflow workflow surfaces with User-FK columns operators need rewritten. At cash-out time the OSSYS adapter gains a `userKindIdentity : Catalog -> SsKey option` resolution surface (per V1 reference `ModelUserSchemaGraphFactory.GetSyntheticUserForeignKeys`); references whose `TargetKind` matches the identified user kind get `IsUserFk = true`. Slice η emitter integration (MigrationDependenciesEmitter rewrite path) is structurally complete today; the gap is at the adapter boundary only. | OSSYS adapter currently sets `IsUserFk = false` for every Reference; slice η rewrite is operationally a no-op until the adapter resolves real User-FKs. See `2026-05-11 — Chapter 4.2 close` entry. |
+| **CSV adapter for `ManualOverride` (UserMapLoader)** | 2026-05-11 (Chapter 4.2 close) | A real operator workflow demands the file-format pickup path. Pre-scope §3 names `Projection.Adapters.UserMap.UserMapLoader` (CSV: `SourceUserId,TargetUserId,Rationale`). Slice ε ships `ManualOverride` consuming a programmatic `Map<SourceUserId, TargetUserId>`; I/O adapter at the boundary is deferred. Mirrors the chapter 4.1.B slice ε NDJSON-adapter deferral — sibling chapter, same shape. | No I/O adapter today; ManualOverride works via programmatic construction. See `2026-05-11 — Chapter 4.2 close` entry. |
 
 **Discipline.** Each deferral here was logged as the right call **at the
 time it was made** under "IR grows under evidence." A deferral is not a
@@ -10241,5 +10243,58 @@ predicate," producing subtle Cascade-nullable data-emission bugs).
 The pillar-7 substantive-rationale discipline applies: when a
 generic name (`classify`, `deferred`) hides a load-bearing
 distinction, NAME the distinction.
+
+---
+
+## 2026-05-11 — Chapter 4.2 close + A32 cash-out + two new deferrals
+
+**Status:** decided
+
+**Context:** Chapter 4.2 (User FK reflow; V2-driver KPI Phase 4)
+closes end-to-end. Slice arc α → η shipped on branch
+`claude/chapter-4-ddd-improvements-XVCAM` (commits `17930c2` →
+`08a75cf`). The chapter signature deliverable — the multi-
+environment commutativity property test — is green. Test baseline
+963 non-canary passing; lint clean.
+
+**Decision A — A32 cashed out.** Per `CHAPTER_4_2_CLOSE.md` §8 +
+the AXIOMS.md A32 cash-out body. The scheduled "passes may produce
+values consumed by emitters" axiom (originally codified 2026-05-06)
+becomes a wired template with chapter 4.2's `UserFkReflowPass.
+discover` → `UserRemapContext` → `MigrationDependenciesEmitter.
+emitWithUserRemap` chain. The property test specializes T4
+(sibling functor commutativity) to A32's worked example via the
+multi-environment commutativity property (slice η).
+
+**Decision B — OSSYS adapter User-kind identification surface
+deferral.** Chapter 4.2 ships the IR refinement (`Reference.
+IsUserFk`) + the emitter integration (slice η rewrite at
+MigrationDependenciesEmitter). The OSSYS adapter currently sets
+`IsUserFk = false` for every Reference because resolving the
+platform-user-kind identity requires V1's `extension_id` lookup
+pattern (per `ModelUserSchemaGraphFactory.GetSyntheticUserForeignKeys`).
+**Trigger to cash out**: a real OSSYS-source-V2-target reflow
+workflow surfaces with User-FK columns operators need rewritten.
+At that point the OSSYS adapter gains a
+`userKindIdentity : Catalog -> SsKey option` resolution surface;
+references whose `TargetKind` matches the identified user kind
+get `IsUserFk = true`. Slice η emitter integration is
+structurally complete; the deferral is at the adapter boundary
+only.
+
+**Decision C — CSV adapter for `ManualOverride` deferral.**
+Pre-scope §3 names `Projection.Adapters.UserMap.UserMapLoader`
+(CSV: `SourceUserId,TargetUserId,Rationale`). Slice ε ships
+`ManualOverride` consuming a programmatic `Map<SourceUserId,
+TargetUserId>`; the I/O adapter at the boundary is deferred.
+**Trigger to cash out**: a real operator workflow demands the
+file-format pickup path. Mirrors the chapter 4.1.B slice ε
+NDJSON-adapter deferral — same shape, sibling chapter.
+
+**Reasoning / consequences.** Both deferrals are at I/O / boundary
+layers that don't gate the pure-F#-core algebraic claim. Chapter
+4.2's structural commitments hold at the type level today;
+real-cutover-workflow consumer pressure will trigger the
+boundary-adapter cash-outs when operationally needed.
 
 ---

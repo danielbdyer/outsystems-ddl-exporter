@@ -1,8 +1,54 @@
-# Handoff letter — Chapter 4.1.B → next chapter
+# Handoff letter — Chapter 4.2 → next chapter
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## Chapter 4.2 close (added 2026-05-11; User FK reflow shipped end-to-end; V2-driver KPI Phase 4 closed)
+
+**Branch:** `claude/chapter-4-ddd-improvements-XVCAM`. **Test baseline:** 963 non-canary tests passing + ~16 Docker-dependent canary tests; 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules.
+
+Chapter 4.2 closes the **User FK reflow axis** — the V2-driver KPI's per-axis correctness depth for user-identity reflow across the four-environment cutover. Slice arc α → η shipped end-to-end on the branch:
+
+| # | Commit | Slice | What |
+|---|---|---|---|
+| 1 | `17930c2` | α | UserMatchingStrategy DU + identity types (UserId/SourceUserId/TargetUserId/Email) + Policy 5th axis |
+| 2 | `4678a76` | β + γ | UserPopulation in Profile + UserRemap.fs (UserRemapContext + RemapDiagnostic + smart constructor) |
+| 3 | `d2a091d` | δ | UserFkReflowPass.discover (ByEmail real; others deferred-stub) |
+| 4 | `a0e9807` | ε | Full strategy DU coverage (BySsKey / ManualOverride / FallbackToSystemUser; recursive composition; lazy indexes) |
+| 5 | `693eb13` | ζ | Reference.IsUserFk : bool IR refinement (23 sites updated; closed-DU empirical-test held) |
+| 6 | `08a75cf` | η | UserRemapContext wiring into MigrationDependenciesEmitter + multi-environment commutativity property |
+
+**A32 cashed out at chapter 4.2 close** (per AXIOMS.md A32 cash-out body). The pass-produces-emitter-consumable-value pattern is now a wired template — `UserFkReflowPass.discover : ... -> Lineage<Diagnostics<UserRemapContext>>` produces; `MigrationDependenciesEmitter.emitWithUserRemap` consumes; the multi-environment commutativity property test specializes T4.
+
+**Two new Active deferrals codified at this close:**
+
+- **OSSYS adapter User-kind identification surface** — OSSYS adapter currently sets `IsUserFk = false` for every Reference; trigger: real OSSYS-source-V2-target reflow workflow with User-FK columns. Slice η emitter integration is structurally complete; gap is at adapter boundary only.
+- **CSV adapter for `ManualOverride` (UserMapLoader)** — ManualOverride works via programmatic construction today; trigger: real operator workflow demands file-format pickup path. Mirrors chapter 4.1.B slice ε NDJSON-adapter deferral.
+
+### Outstanding queue (post-chapter-4.2)
+
+**Critical-path under V2-driver KPI** (per `V2_DRIVER.md`):
+
+- **Chapter 4.3 — three-channel Diagnostics split** (DecisionLogEmitter / OpportunitiesEmitter / ValidationsEmitter). Pre-scope: `CHAPTER_4_PRESCOPE_DIAGNOSTICS_AND_REMEDIATION.md`. The substrate is already shipped (`Diagnostics<'a>` writer); this chapter is projection, not new algebra. **Natural next move** per V2_DRIVER.md sequencing.
+- **Chapter 4.1.A slices 6 / 7 / 8** — cross-module FKs / identity + defaults / extended properties. Now-unblocked per chapter 3.2 SnapshotRowsets. Pre-scope: `CHAPTER_4_PRESCOPE_SSDT_DDL_EMITTER.md` §8.
+
+**Hard-requirement Active deferrals (read at chapter open):**
+
+- **Chapter 3.x DacpacEmitter** — MUST adopt `Microsoft.SqlServer.Dac` (DacFx). **Conditional on whether the cutover deploy path requires DACPAC** (product question).
+
+**Independent forward-progress:**
+
+- **R4 multi-environment promotion property test** — uses M4 Tolerance taxonomy `Set<ToleratedDivergence>`; ~150 LOC; chapter 4.2's multi-environment commutativity property is the worked precedent.
+
+**Quietly deferred (no current consumer; reframe at next chapter audit):**
+
+- **OSSYS adapter User-kind identification surface** (chapter 4.2 close-deferred; see DECISIONS entry).
+- **CSV adapter for `ManualOverride` (UserMapLoader)** (chapter 4.2 close-deferred; see DECISIONS entry).
+- **V1↔V2 differential test for UserFkReflowPass** (pre-scope §9; deferred pending V1 fixture canonicalization).
+- **`SourceTag` value-object refactor of SsKey** (chapter 4.2 close-deferred per pre-scope's "what this chapter does NOT do" list).
+
+---
 
 ## Chapter 4.1.B close (added 2026-05-11; CDC-aware data triumvirate fully closed end-to-end; V2-driver KPI Phase 3 highest-stakes deliverable shipped)
 

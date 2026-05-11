@@ -1132,38 +1132,54 @@ A40 lands when the harmonized form replaces N≥2 duplicate
 algorithms (chapter-3.1 satisfies N=2; chapter-4 may surface
 another instance).
 
-## A32 cash-out — TBD chapter 4.2 close (chapter-3.1 partial advance)
+## A32 cash-out — chapter 4.2 close (2026-05-11)
 
-**Scheduled at chapter 4.2 close** (User FK reflow as Policy).
-**Chapter 3.1 partial advance**: `TopologicalOrderPass.runWith` now
-produces an emitter-consumable `TopologicalOrder` value; the
-`RawTextEmitter` consumes it (per A40). This is the first
-*structurally-realized* instance of A32 in the codebase — passes
-producing values consumed by emitters as a wired pattern, not
-just a scheduled axiom.
+**Cashed out** at chapter 4.2 close (per `CHAPTER_4_2_CLOSE.md` §8).
 
-[Full body — including the chapter-4.2 worked example for
-`UserFkReflowPass` and `UserRemapContext` — to be written at
-chapter 4.2 close.]
+**Chapter 3.1 partial advance** (preserved): `TopologicalOrderPass.runWith`
+produced an emitter-consumable `TopologicalOrder` value; the
+`RawTextEmitter` (retired in chapter 4.1.A close arc) consumed it. The
+minimal pattern — single pass, single emitter — became the first
+structurally-realized instance of A32 in the codebase.
 
-**Anticipated content.** A32 (passes may produce values consumed by
-emitters; 2026-05-06) named the algebraic shape but had limited
-concrete instances. Chapter 4.2 lands the canonical instance:
-`UserFkReflowPass` discovers user-mapping context
-(`UserRemapContext`) from a `UserMatchingStrategy` DU; sibling Π's
-consume the context. The cash-out names the worked example —
-"discovery is one E-pass producing a `UserRemapContext` value;
-application is two sibling Π's: an INSERT-mode Π consuming
-`(catalog, context)` and an UPDATE-mode Π consuming `(context)`
-alone." Chapter 3.1's `TopologicalOrderPass.runWith` is the
-*minimal* instance (single-pass, single-emitter); chapter 4.2's
-will be the *full-shape* instance.
+**Chapter 4.2 worked example** (the full-shape instance). `UserFkReflowPass.
+discover : UserPopulation<SourceUserId> -> UserPopulation<TargetUserId> ->
+UserMatchingStrategy -> Lineage<Diagnostics<UserRemapContext>>` is the
+canonical pass shape. `UserRemapContext = { Mapping; Unmatched;
+Diagnostics }` is the emitter-consumable value (smart-constructor invariant
+`Mapping.Keys ∩ Unmatched = ∅`). Sibling Π's consume the context to
+rewrite User-FK column values at row-emission time:
 
-The cash-out also closes the structural property test:
-`A32: discovered value visible to emitter` becomes a concrete
-xUnit test asserting that both Π's see the same `UserRemapContext`
-and that identity correspondences hold across both surfaces (a
-special case of T4 sibling-functor commutativity).
+- `MigrationDependenciesEmitter.emitWithUserRemap` (chapter 4.2 slice η)
+  is the live consumer.
+- `BootstrapEmitter` (chapter 4.1.B slice ζ) has the signature plumbed
+  but emits no rows today; future chapters (4.3 Diagnostics +
+  chapter-5 cutover-day runbook) supply row sources that consume the
+  context.
+
+The discovery-pass / consumer-emitter split is the load-bearing shape:
+discovery is one E-pass producing a context value via the
+`Lineage<Diagnostics<'a>>` dual writer; application is one or more sibling
+Π's consuming `(catalog, profile, context)` evidence. A18 amended holds
+structurally — emitters cannot type-check with a `Policy` parameter; only
+the discovery pass and the composer touch Policy.
+
+**Property test cash-out.** The scheduled `A32: discovered value visible
+to emitter` property test cashes out as the multi-environment commutativity
+property at chapter 4.2 slice η (`UserFkReflowIntegrationTests.fs`): same
+source population + ByEmail strategy against four distinct target
+populations yields four `UserRemapContext` values whose source-keyset
+agrees across all four; smart-constructor invariant holds for each;
+per-environment differences live entirely in `TargetUserId` values. The
+test specializes T4 (sibling functor commutativity) to A32's worked
+example.
+
+**Closure of the discipline.** A32 stops being scheduled and becomes a
+wired template. Future passes producing emitter-consumable values inherit
+the `Lineage<Diagnostics<'a>>` return-shape (per the writer-fidelity
+discipline); future emitters consuming such values inherit the
+`Catalog × Profile × <context>` signature (A18 amended preserved
+structurally).
 
 ---
 
