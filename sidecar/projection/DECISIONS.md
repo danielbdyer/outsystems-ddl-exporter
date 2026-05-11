@@ -221,7 +221,9 @@ table before continuing.
 | **`SnapshotRowsets` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature, session-20 amendment) | The JSON-projection-lossiness class needs unblocking — A1 SsKey bound resolution; `EspaceKind` distinction; `isSystemEntity` evidence; future class members (per `DECISIONS 2026-05-19 — naming the two classes of resolution patterns explicitly`) | **Cashed out — chapter 3.2 (commits 6dab9cd / 0354727 / d5d1812 / 6eae21f / a74b904). Variant implemented end-to-end across five slices: (1) SnapshotRowsets variant + RowsetBundle DTO + SsKey at all three levels; (2) reference rowsets (`#RefResolved + #FkReality`); (3) `EspaceKind` activation (Origin three-way real); (4) `IsSystemEntity` → `ModalityMark.SystemOwned`; (5) cross-source parity tests. A1's JSON-projection-lossiness bound resolved structurally (`OssysOriginal` Guid carriage). Three class members landed: SsKey at every level; EspaceKind; IsSystemEntity. Future class members (per-table column structure rowset 6; check constraints rowset 7; triggers rowset 18 — documented not-carried-forward) surface under fixture pressure as further deferred slices. See cash-out entry `2026-05-10 — SnapshotRowsets variant chapter 3.2 close` below.** |
 | **`LiveOssysConnection` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature) | V2 needs to operate without V1's chain in the loop entirely (real DB-touching variant) | Reserved in `SnapshotSource` DU (`CatalogReader.fs:58-62`); chapter-3+ when canary's deployment-validation arc materializes (session 25) |
 | **`Microsoft.SqlServer.Dac` (DacFx) adoption in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 3.x DacpacEmitter opens. **Hard requirement, not preference**: the .dacpac file format is a Microsoft-proprietary ZIP-with-manifest-XML structure — hand-rolling it via `System.IO.Compression.ZipArchive` + manual XML composition is the prototypical "text-builder-as-first-instinct" failure mode. DacFx (`Microsoft.SqlServer.Dac` NuGet) IS the canonical use-case-specific library; per pillar 7, no LINT-ALLOW will excuse a hand-rolled .dacpac. The chapter-3.x agent reads this entry at chapter open and writes the cash-out below the Active deferrals table on adoption. | Pre-DacpacEmitter; trigger condition not yet met (DacpacEmitter chapter not open) |
-| **MigrationDependenciesEmitter + BootstrapEmitter typed-AST adoption from slice α** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 4.1.B slices ε (MigrationDependenciesEmitter) / ζ (BootstrapEmitter) open. **Hard requirement**: both emitters are MERGE / INSERT producers; per the Tier-1 #1 cash-out (`bface9a` — chapter 4.1.B StaticSeedsEmitter MERGE → ScriptDom MergeStatement), every new SQL-emitting consumer starts on the typed-AST library, not StringBuilder. `ScriptDomBuild.buildMergeStatement` + `ScriptDomBuild.buildInsertRow` + `SqlLiteral.ofRaw` are the precedent surface; cross-target dep on Projection.Targets.SSDT acceptable per the StaticSeedsEmitter precedent (single-line LINT-ALLOW with rationale). The chapter 4.1.B slice agent reads this entry at slice open. | Pre-MigrationDependenciesEmitter / BootstrapEmitter; chapter 4.1.B slices ε/ζ not yet open |
+| **MigrationDependenciesEmitter + BootstrapEmitter typed-AST adoption from slice α** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 4.1.B slices ε (MigrationDependenciesEmitter) / ζ (BootstrapEmitter) open. **Hard requirement**: both emitters are MERGE / INSERT producers; per the Tier-1 #1 cash-out (`bface9a` — chapter 4.1.B StaticSeedsEmitter MERGE → ScriptDom MergeStatement), every new SQL-emitting consumer starts on the typed-AST library, not StringBuilder. `ScriptDomBuild.buildMergeStatement` + `ScriptDomBuild.buildInsertRow` + `SqlLiteral.ofRaw` are the precedent surface; cross-target dep on Projection.Targets.SSDT acceptable per the StaticSeedsEmitter precedent (single-line LINT-ALLOW with rationale). The chapter 4.1.B slice agent reads this entry at slice open. | **Cashed out — chapter 4.1.B slice ε (commit `0aa3761`) + slice ζ (commit `9544006`).** MigrationDependenciesEmitter ships the typed-AST MERGE + UPDATE shape mirroring StaticSeedsEmitter; BootstrapEmitter ships as structural stub (no SQL emission today; UserRemapContext slot pending chapter 4.2). See `CHAPTER_4_1_B_CLOSE.md` and `2026-05-11 — Chapter 4.1.B close` entry below. |
+| **Statement DU MERGE/UPDATE promotion** | 2026-05-11 (Chapter 4.1.B close) | A third MERGE/UPDATE consumer lands (e.g., chapter 3.x DacpacEmitter Phase-2 path; future Faker-style data emitter; future Profile-attached row source in chapter 4.3). Today `Projection.Core.Statement` carries SSDT DDL variants only (CreateTable / CreateIndex / InsertRow / SetIdentityInsert / Comment / Blank); MERGE + UPDATE are emitted directly via `ScriptDomBuild.buildMergeStatement` / `buildUpdateStatement` + `ScriptDomGenerate.generateOne` + LINT-ALLOW'd `;\nGO\n` text suffix. 6 LINT-ALLOWs total across StaticSeedsEmitter + MigrationDependenciesEmitter at terminal text concatenation boundaries. Promoting `Statement` to include `Merge of MergeBuildArgs \| Update of UpdateBuildArgs` lets `ScriptDomGenerate.toText` handle per-kind concat structurally + retire all 6. Cross-target lift required (MergeBuildArgs / UpdateBuildArgs from Projection.Targets.SSDT to Projection.Core). | Two consumers today (StaticSeeds + MigrationDeps); deferred per two-consumer threshold. See `2026-05-11 — Chapter 4.1.B close` entry. |
+| **Sort-vs-data deferral predicate distinction** | 2026-05-11 (Chapter 4.1.B close) | A third cycle-metadata consumer surfaces with a sibling-but-distinct semantic question (beyond sort-edge breakability + data-emission deferral). The two predicates diverge on Cascade-nullable FKs: `CycleResolution.classify` returns `Cascade` (NOT `Weak`) so sort-edge-breaker refuses to break; `<Emitter>.deferredColumns` DOES defer (Cascade is about DELETE; column is nullable). The two-predicate split is codified explicitly so future emitter agents choose the predicate that fits their semantic question. | Two predicates today (CycleResolution.classify + StaticSeedsEmitter.deferredColumns / MigrationDependenciesEmitter.deferredColumns); discipline codified. See `2026-05-11 — Chapter 4.1.B close` entry. |
 
 **Discipline.** Each deferral here was logged as the right call **at the
 time it was made** under "IR grows under evidence." A deferral is not a
@@ -10121,3 +10123,123 @@ The remaining V2-driver KPI critical path (per `V2_DRIVER.md`):
 Chapter 3.2's JSON-projection-lossiness class resolution unblocks
 A1 for renames at the boundary, which downstream-unblocks chapter
 4.2 User FK reflow's `SourceTag` / `V1Mapped` UUIDv5 work.
+
+---
+
+## 2026-05-11 — Chapter 4.1.B close + two deferred-item codifications
+
+**Status:** decided
+
+**Context:** Chapter 4.1.B (CDC-aware data triumvirate; V2-driver KPI
+Phase 3 — the highest-leverage chapter in the entire critical path)
+closes end-to-end. Per `CHAPTER_4_1_B_CLOSE.md`: slice α (StaticSeeds)
++ β (CDC-aware MERGE) + γ (CDC-silence canary GREEN) + δ (two-phase
+insertion) + ε (MigrationDeps; Tier-3 cash-out) + ζ (Bootstrap stub)
++ η (DataEmissionComposer + DataComposition DU) + θ (partition
+assertion + OverlappingEmitterCoverage) + ι (composeRendered global
+ordering) + κ (typed DataInsertRow.Values pillar 1 lift) all shipped.
+Test baseline 893 non-canary green; lint clean; canary suite hang
+fix shipped (Docker-SqlServer xUnit collection + dedicated CdcSilence
+container).
+
+**Decision:** Two new deferrals codified for the Active deferrals
+index. Both surfaced organically during the slice arc but were
+deferred per IR-grows-under-evidence + two-consumer-threshold; the
+codification records the structural trigger so future agents catch
+the cash-out moment.
+
+**Deferral A — Statement DU MERGE/UPDATE promotion.**
+
+`Projection.Core.Statement` DU today carries SSDT DDL variants
+(`CreateTable / CreateIndex / InsertRow / SetIdentityInsert /
+Comment / Blank`). MERGE and UPDATE statements (chapter 4.1.B's
+data emission shapes) are NOT modeled by `Statement`; instead, the
+data emitters call `ScriptDomBuild.buildMergeStatement` /
+`buildUpdateStatement` directly + render the typed AST via
+`ScriptDomGenerate.generateOne` + terminate with `;\nGO\n` at a
+LINT-ALLOW'd text boundary. This produces 3 LINT-ALLOWs per data
+emitter (MERGE statement-terminator; UPDATE statement-terminator;
+per-kind concat) — 6 total across `StaticSeedsEmitter` +
+`MigrationDependenciesEmitter`.
+
+Promoting `Statement` to include `Merge of MergeBuildArgs | Update
+of UpdateBuildArgs` would let `ScriptDomGenerate.toText` handle
+per-kind concat structurally and retire all 6 LINT-ALLOWs. Cost:
+- Extend `Statement` DU + `ScriptDomBuild.buildStatement`
+  exhaustive match (lights up at one site).
+- Cross-target dep: `Statement` lives in `Projection.Core`, so the
+  MergeBuildArgs / UpdateBuildArgs records must lift to Core too
+  (today they're in `Projection.Targets.SSDT.ScriptDomBuild`).
+- Risk: every existing `Statement` pattern-match site outside the
+  emit pipeline (today: zero — `Statement` is only consumed by
+  `ScriptDomBuild.buildStatement` + `ScriptDomGenerate.toText`).
+
+**Trigger to cash out:** a third MERGE/UPDATE consumer lands (e.g.,
+chapter 3.x DacpacEmitter Phase-2 path, future Faker-style data
+emitter, future Profile-attached row source in chapter 4.3). At
+that point the per-site LINT-ALLOW count justifies the typed-
+Statement promotion; today the two-consumer threshold (StaticSeeds
++ MigrationDeps) doesn't.
+
+**Reasoning / consequences:** The deferral is the right call today
+per the two-consumer threshold; the cost of the cross-target lift
+is substantial relative to the LINT-ALLOW count. The codification
+ensures future agents at the third-consumer surface know exactly
+which structural commitment to inspect first.
+
+**Deferral B — Sort-vs-data deferral predicate distinction.**
+
+V2 has TWO distinct predicates that consume cycle metadata:
+
+1. **Sort-edge breakability** (chapter 2; `Strategies/CycleResolution.fs:
+   classify`): an FK edge is `Weak` IFF `OnDelete ∈ (NoAction |
+   SetNull) ∧ source.IsNullable = true`. Used by
+   `TopologicalOrderPass.applyResolver` to decide which precedence-
+   graph edges the resolver may break to produce a topological
+   ordering.
+
+2. **Data-emission deferral** (chapter 4.1.B slice δ;
+   `StaticSeedsEmitter.deferredColumns`): an FK column is deferred
+   IFF `target ∈ cycleMembers ∧ source.Column.IsNullable = true`.
+   Used by the two-phase Phase-1 NULL substitution / Phase-2
+   UPDATE pattern. V1 reference: `IdentifyNullableFKColumns:184`.
+
+**The predicates diverge** on Cascade-nullable FKs: V2's
+`CycleResolution.classify` returns `Cascade` (NOT `Weak`), so the
+sort-edge-breaker refuses to break it for sort purposes. But V2's
+data-emission `deferredColumns` DOES defer it (Cascade behavior is
+about DELETE; the column is nullable so we can NULL it in Phase-1
+and restore in Phase-2). This matches V1's empirical behavior:
+`IdentifyNullableFKColumns:184` checks only nullability, ignoring
+`OnDelete`.
+
+**The two questions are sibling-but-distinct:**
+
+| Question | Predicate | Locus |
+|---|---|---|
+| Can the resolver break this precedence edge for SORT purposes? | `(NoAction \| SetNull) ∧ nullable` | `CycleResolution.classify` |
+| Can the emitter DEFER this FK column across two-phase INSERT/UPDATE? | `in-cycle ∧ nullable` | `<Emitter>.deferredColumns` |
+
+**Codified discipline:** future emitters that consume cycle
+metadata SHALL choose the predicate that fits their semantic
+question explicitly. Don't import `CycleResolution.classify` if the
+intent is data deferral; don't reimplement nullability checks if
+the intent is sort breakability.
+
+**Trigger to escalate** (i.e., promote one predicate to be derived
+from the other, or otherwise codify their relationship at the type
+level): a third predicate consumer surfaces (e.g., a third axis
+that asks a sibling-but-distinct cycle question), at which point
+the closed-DU + multi-predicate abstraction earns its place.
+Today's two-predicate split is the minimum that names the
+distinction; expansion follows consumer evidence.
+
+**Reasoning / consequences:** Naming the distinction prevents the
+performance-of-compliance failure mode (a future emitter agent
+might import `CycleResolution.classify` thinking it's "the cycle
+predicate," producing subtle Cascade-nullable data-emission bugs).
+The pillar-7 substantive-rationale discipline applies: when a
+generic name (`classify`, `deferred`) hides a load-bearing
+distinction, NAME the distinction.
+
+---

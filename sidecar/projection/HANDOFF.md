@@ -1,8 +1,62 @@
-# Handoff letter — Chapter 3.2 → next chapter
+# Handoff letter — Chapter 4.1.B → next chapter
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## Chapter 4.1.B close (added 2026-05-11; CDC-aware data triumvirate fully closed end-to-end; V2-driver KPI Phase 3 highest-stakes deliverable shipped)
+
+**Branch:** `claude/chapter-4-ddd-improvements-XVCAM`. **Test baseline:** 893 passing non-canary tests + ~16 Docker-dependent canary tests, 0 skipped, 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules. **Canary suite hang fix:** shipped (Docker-SqlServer xUnit collection + dedicated CdcSilence container).
+
+Chapter 4.1.B closes the **CDC-aware data triumvirate** — the V2-driver KPI's highest-leverage chapter per `V2_DRIVER.md` per-axis correctness stakes table. Slice arc α → κ shipped end-to-end across two close arcs:
+
+- **Slices α/β/γ** shipped at the joint chapter-4.1.A close arc (`CHAPTER_4_1_A_CLOSE.md`). Slice γ — CDC-silence canary GREEN under real SQL Server 2022 CDC — was the chapter signature deliverable.
+- **Slices δ → κ** shipped this session arc on branch `claude/chapter-4-ddd-improvements-XVCAM`. See `CHAPTER_4_1_B_CLOSE.md` for the full slice-by-slice synthesis.
+
+**The eight-item chapter-close ritual was operated** at this close (per `CHAPTER_4_1_B_CLOSE.md`); two new deferrals codified at the Active deferrals index (Statement DU MERGE/UPDATE promotion; sort-vs-data deferral predicate distinction).
+
+### Slice arc δ → κ (this session)
+
+| # | Commit | Slice | What |
+|---|---|---|---|
+| 1 | `23c9d76` | δ + topo v4 | Two-phase insertion / cycle-breaking + `TopologicalOrderPass` v3→v4 self-loop SCC detection + `Kind.tryFindAttribute` lift |
+| 2 | `fafa8fd` | (canary fix) | `Docker-SqlServer` xUnit collection + dedicated CdcSilence ephemeral container — closes a canary-suite-hang bug |
+| 3 | `44c4871` | η | DataEmissionComposer + EmissionPolicy.DataComposition DU + `StaticSeedsEmitter.emitWithTopo` (hoisted-topo) |
+| 4 | `0aa3761` | ε | MigrationDependenciesEmitter (typed AST per Tier-3 hard-requirement Active deferral cash-out) |
+| 5 | `9544006` | ζ + θ | BootstrapEmitter (structural stub) + `EmitError.OverlappingEmitterCoverage` + composer partition assertion |
+| 6 | `340eb15` | ι + κ | `composeRendered` global Phase-1-then-Phase-2 ordering + `RenderedPhase1`/`RenderedPhase2` split + typed `DataInsertRow.Values : Map<Name, SqlLiteral>` (pillar 1 lift) |
+
+**A18 amended holds structurally** for all three sibling-Π emitters (Static / Migration / Bootstrap) — none can type-check with a Policy parameter; only `DataEmissionComposer` reads `Policy.Emission.DataComposition`. **T11 keyset coverage** holds across all three siblings. **Pillar 1** strengthened at the row level (typed `SqlLiteral` flows through `DataInsertRow.Values`; raw strings emerge only at the absolute terminal `Sql160ScriptGenerator` boundary). **Pillar 7 Tier-3 hard-requirement Active deferrals** for chapter 4.1.B all cashed out.
+
+### Outstanding queue (post-chapter-4.1.B)
+
+**Critical-path under V2-driver KPI** (per `V2_DRIVER.md`):
+
+- **Chapter 4.2 — `UserFkReflowPass` + `UserMatchingStrategy` + `SourceTag` refactor of SsKey.** Pre-scope: `CHAPTER_4_PRESCOPE_USERFK_REFLOW.md`. Plugs into `UserRemapContext` shape that slice ζ established + composer's `composeRenderedFull` pipeline-integration entry. **Natural next move.** Inherits chapter 3.2's `OssysOriginal` operational reachability for cross-version `V1Mapped` UUIDv5 derivation.
+- **Chapter 4.3 — three-channel Diagnostics split** (DecisionLogEmitter / OpportunitiesEmitter / ValidationsEmitter). Pre-scope: `CHAPTER_4_PRESCOPE_DIAGNOSTICS_AND_REMEDIATION.md`. Activates Diagnostics writer's deferred channel-routing under real consumer pressure.
+- **Chapter 4.1.A slices 6/7/8** (cross-module FKs / identity + defaults / extended properties). **Unblocked by chapter 3.2** (SnapshotRowsets) — IR widening surfaces via the rowset path's SsKey carriage + EspaceKind / IsSystemEntity activation.
+
+**Hard-requirement Active deferrals (read at chapter open per Tier-3 codification):**
+
+- **Chapter 3.x DacpacEmitter** — MUST adopt `Microsoft.SqlServer.Dac` (DacFx). Pre-scope at `CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md`. Active deferral entry at top of `DECISIONS.md`. **Conditional on whether the cutover deploy path requires DACPAC** (product question).
+
+**Two new deferrals codified at chapter 4.1.B close** (read at chapter open):
+
+- **Statement DU MERGE/UPDATE promotion** — third MERGE/UPDATE consumer triggers the cross-target lift (DacpacEmitter Phase-2 path / Faker / Profile-attached rows in chapter 4.3 are candidates).
+- **Sort-vs-data deferral predicate distinction** — sibling-but-distinct cycle-question discipline; future emitter agents choose the predicate that fits their semantic question explicitly.
+
+**Independent forward-progress** (no chapter open required):
+
+- **R4 multi-environment promotion property test** — uses M4 Tolerance taxonomy `Set<ToleratedDivergence>`; ~150 LOC; concrete next slice.
+
+**Quietly deferred** (no current consumer; reframe at next chapter audit):
+
+- **Migration adapter (NDJSON / CSV pickup directory)** — chapter 4.1.B slice ε; deferred until real ingestion path consumer surfaces.
+- **Bootstrap row sources** (system users / default policies / profile-attached rows) — chapter 4.1.B slice ζ; deferred until chapters 4.2/4.3 supply consumers.
+- **Tolerance slice β** (quotient operator on PhysicalSchemaDiff). Slice α variants are about axes PhysicalSchemaDiff doesn't compare; reopen if a new variant lands that requires diff-filtering.
+- **Outstanding chapter-3.7 audit-cleanup slice queue** (γ traverseCatalog / ζ attach-adapters / η Result-CE adoption / θ Coordinates Stage 2 / ι writer-monad codification / κ Lineage.tell perf audit / λ SsKey.rootOriginal V1 prefix / μ Restrict→NoActionSql Diagnostics / ν F# Analyzers SDK / ξ-π port lifts) — see chapter-3.7 prologue below for triggers.
+
+---
 
 ## Chapter 3.2 close (added 2026-05-10; substantive close + JSON-projection-lossiness class structurally resolved)
 
