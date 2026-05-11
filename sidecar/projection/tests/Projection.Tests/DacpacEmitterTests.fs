@@ -182,3 +182,116 @@ let ``T11: DacpacEmitter and SsdtDdlEmitter agree on kind-mention set`` () =
     Assert.Equal<Set<string * string>> (catalogPhysicals, dacpacPhysicals)
     // Sanity: keyset cardinality matches across siblings.
     Assert.Equal (Set.count ssdtKeys, Set.count dacpacPhysicals)
+
+// ---------------------------------------------------------------------------
+// Slice β — FK round-trip. `sampleCatalog`'s Order kind carries an inline
+// FOREIGN KEY to Customer; DacFx ingests the inline constraint via
+// `model.AddObjects(CREATE TABLE ...)` and re-exposes it through the
+// ForeignKeyConstraint TypeClass enumeration. The round-trip is the
+// structural proof: V2's Reference → SsdtDdlEmitter inline FK clause →
+// DacFx model → enumerable ForeignKeyConstraint.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Slice β: FK references round-trip through DacFx model`` () =
+    let enriched = enrich sampleCatalog
+    let bytes = DacpacEmitter.emit enriched |> mustOkBytes
+    use stream = new MemoryStream(bytes)
+    use model = TSqlModel.LoadFromDacpac(stream, ModelLoadOptions())
+    let fks =
+        model.GetObjects(DacQueryScopes.UserDefined, ForeignKeyConstraint.TypeClass)
+        |> Seq.toList
+    let catalogFkCount =
+        Catalog.allKinds enriched
+        |> List.sumBy (fun k -> List.length k.References)
+    Assert.Equal (catalogFkCount, List.length fks)
+
+// ---------------------------------------------------------------------------
+// Slice γ — Index round-trip. Indexes are emitted as standalone CREATE
+// INDEX statements by `SsdtDdlEmitter.statements`; DacFx ingests them via
+// per-statement `AddObjects` and re-exposes through the Index TypeClass
+// enumeration. The fixture below carries three index variants per pre-
+// scope §5 slice 3 (single-column unique; composite; non-unique).
+// ---------------------------------------------------------------------------
+
+let private indexedCatalog : Catalog =
+    let widgetKey = kindKey ["IndexedWidget"]
+    let idKey = attrKey ["IndexedWidget"; "Id"]
+    let codeKey = attrKey ["IndexedWidget"; "Code"]
+    let regionKey = attrKey ["IndexedWidget"; "Region"]
+    let labelKey = attrKey ["IndexedWidget"; "Label"]
+    let widget : Kind = {
+        SsKey    = widgetKey
+        Name     = mkName "IndexedWidget"
+        Origin   = OsNative
+        Modality = []
+        Physical = { Schema = "dbo"; Table = "INDEXED_WIDGET" }
+        Attributes = [
+            { SsKey = idKey; Name = mkName "Id"; Type = Integer
+              Column = { ColumnName = "ID"; IsNullable = false }
+              IsPrimaryKey = true; IsMandatory = false
+              Length = None; Precision = None; Scale = None; IsIdentity = false }
+            { SsKey = codeKey; Name = mkName "Code"; Type = Text
+              Column = { ColumnName = "CODE"; IsNullable = false }
+              IsPrimaryKey = false; IsMandatory = false
+              Length = None; Precision = None; Scale = None; IsIdentity = false }
+            { SsKey = regionKey; Name = mkName "Region"; Type = Text
+              Column = { ColumnName = "REGION"; IsNullable = false }
+              IsPrimaryKey = false; IsMandatory = false
+              Length = None; Precision = None; Scale = None; IsIdentity = false }
+            { SsKey = labelKey; Name = mkName "Label"; Type = Text
+              Column = { ColumnName = "LABEL"; IsNullable = true }
+              IsPrimaryKey = false; IsMandatory = false
+              Length = None; Precision = None; Scale = None; IsIdentity = false }
+        ]
+        References = []
+        Indexes = [
+            // Single-column unique index on Code.
+            { SsKey = idxKey ["IndexedWidget"; "UQ"; "Code"]
+              Name = mkName "UQ_IndexedWidget_Code"
+              Columns = [ codeKey ]
+              IsUnique = true; IsPrimaryKey = false }
+            // Composite (non-unique) index on Region + Label.
+            { SsKey = idxKey ["IndexedWidget"; "IX"; "RegionLabel"]
+              Name = mkName "IX_IndexedWidget_RegionLabel"
+              Columns = [ regionKey; labelKey ]
+              IsUnique = false; IsPrimaryKey = false }
+            // Non-unique single-column index on Region.
+            { SsKey = idxKey ["IndexedWidget"; "IX"; "Region"]
+              Name = mkName "IX_IndexedWidget_Region"
+              Columns = [ regionKey ]
+              IsUnique = false; IsPrimaryKey = false }
+        ]
+    }
+    let m : Module = {
+        SsKey = modKey "Inventory"
+        Name  = mkName "Inventory"
+        Kinds = [ widget ]
+    }
+    { Modules = [ m ] }
+
+[<Fact>]
+let ``Slice γ: Indexes round-trip through DacFx model`` () =
+    let enriched = enrich indexedCatalog
+    let bytes = DacpacEmitter.emit enriched |> mustOkBytes
+    use stream = new MemoryStream(bytes)
+    use model = TSqlModel.LoadFromDacpac(stream, ModelLoadOptions())
+    let dacpacIndexes =
+        model.GetObjects(DacQueryScopes.UserDefined, Index.TypeClass)
+        |> Seq.toList
+    let catalogIndexCount =
+        Catalog.allKinds enriched
+        |> List.sumBy (fun k -> List.length k.Indexes)
+    Assert.Equal (catalogIndexCount, List.length dacpacIndexes)
+    // Sanity: the unique-vs-non-unique distinction is preserved. DacFx
+    // exposes `Index.IsUnique` per `Microsoft.SqlServer.Dac.Model.Index`.
+    let uniqueDacpac =
+        dacpacIndexes
+        |> List.filter (fun obj -> obj.GetProperty<bool>(Index.Unique))
+        |> List.length
+    let uniqueCatalog =
+        Catalog.allKinds enriched
+        |> List.collect (fun k -> k.Indexes)
+        |> List.filter (fun i -> i.IsUnique)
+        |> List.length
+    Assert.Equal (uniqueCatalog, uniqueDacpac)

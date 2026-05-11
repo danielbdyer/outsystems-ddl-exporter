@@ -85,6 +85,7 @@
     <Compile Include="V1NullabilityParityTests.fs" />
     <Compile Include="SsdtDdlEmitterTests.fs" />
     <Compile Include="DacpacEmitterTests.fs" />
+    <Compile Include="DockerImageEmitterTests.fs" />
     <Compile Include="ManifestEmitterTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />

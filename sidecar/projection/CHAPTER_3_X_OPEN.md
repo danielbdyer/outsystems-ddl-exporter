@@ -49,12 +49,12 @@ Per the pre-scope §5 sequencing (refined for the dev-tooling framing):
 
 | # | Slice | What |
 |---|---|---|
-| α | DacpacEmitter v0 (this slice) | Single-Kind Catalog → `byte[]` round-trip via DacFx; T11 commutativity test vs `SsdtDdlEmitter` |
-| β | Multi-Kind + FK | Inline `FOREIGN KEY ... REFERENCES` across Kinds; DacFx FK validation succeeds (target PK declared per pre-scope §2) |
-| γ | Indexes | Single-column + composite + unique + non-unique CREATE INDEX |
-| δ | CLI `dac deploy` verb | Pipeline + CLI wire-up — `Projection.Cli dac deploy <jsonPath> <connStr>` builds the dacpac, calls `DacServices.Deploy`, reports table count |
+| α | DacpacEmitter v0 (shipped) | Single-Kind Catalog → `byte[]` round-trip via DacFx; T11 commutativity test vs `SsdtDdlEmitter` |
+| β | Multi-Kind + FK (shipped) | Inline `FOREIGN KEY ... REFERENCES` across Kinds; DacFx FK validation succeeds (target PK declared per pre-scope §2); ForeignKeyConstraint round-trip test |
+| γ | Indexes (shipped) | Single-column + composite + unique + non-unique CREATE INDEX; Index.Unique property preserved through DacFx round-trip |
+| δ_dock | DockerImageEmitter (shipped; reframes pre-scope §5 slice δ) | Emits Docker build context (Dockerfile + dacpac + entrypoint.sh + README.md). Builds a self-contained `mcr.microsoft.com/mssql/server:2022-latest`-based image that bakes in the dacpac + installs sqlpackage + entrypoint publishes on container start. **CI/CD-built + registry-published**: dev team `docker pull` + `docker run` with no source checkout. Replaces the original "CLI `dac deploy` verb" framing per operator directive ("single command up; my team doesn't have to have the repository to pull the data fresh each time"). |
 | ε | Modality marks → comments / extended properties | Surface `TenantScoped` / `SoftDeletable` annotations on the dacpac (decision: comments first; extended properties when a downstream consumer demands structured access) |
-| ζ | Byte-determinism cash-out (deferred) | Post-hoc canonicalization (rewrite `Origin.xml` timestamps; recompute model checksum; re-pack with pinned zip-entry timestamps). **Deferred-with-trigger**: surface when a snapshot consumer requires byte-stable artifacts. Slice α–ε ship without; content-equality T1 is sufficient for dev-tooling. |
+| ζ | Byte-determinism cash-out (deferred) | Post-hoc canonicalization (rewrite `Origin.xml` timestamps; recompute model checksum; re-pack with pinned zip-entry timestamps). **Deferred-with-trigger**: surface when a snapshot consumer requires byte-stable artifacts. Content-equality T1 is sufficient for dev-tooling. |
 
 **Deferred-with-trigger pre-named:**
 - Module → Schema mapping decision (pre-scope §6.3): for slice α the single-Module / single-Schema fixture sidesteps the question; surface at slice β when multi-Module catalogs land.

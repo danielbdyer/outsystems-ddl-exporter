@@ -16,6 +16,7 @@
     <Compile Include="Render.fs" />
     <Compile Include="SsdtDdlEmitter.fs" />
     <Compile Include="DacpacEmitter.fs" />
+    <Compile Include="DockerImageEmitter.fs" />
     <Compile Include="ManifestEmitter.fs" />
     <Compile Include="SsdtBundle.fs" />
     <Compile Include="RefactorLogEmitter.fs" />

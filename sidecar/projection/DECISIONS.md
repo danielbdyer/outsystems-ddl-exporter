@@ -10591,3 +10591,101 @@ partial-state recovery).
 consumer today).
 
 ---
+
+## 2026-05-11 — Chapter 3.x slice δ_dock: DockerImageEmitter replaces CLI `dac deploy` per operator directive
+
+**Status:** decided
+**Context:** Pre-scope §5 sequenced slice δ as a Pipeline + CLI
+wire-up: `Projection.Cli dac deploy <jsonPath> <connStr>` would
+build the dacpac in-process and invoke `DacServices.Deploy` against
+a caller-supplied SQL Server connection. After slice α shipped the
+operator named the next axis explicitly:
+
+> "Even better is if we don't have a CLI command but can somehow
+> create a custom Docker package that stands itself up with the
+> loaded SQL server inside of it? That way it's a single command
+> up and my team doesn't have to have the repository to pull the
+> data fresh each time."
+
+The operator's two coupled requirements:
+1. **Single-command stand-up.** The dev consumer's runtime path is
+   `docker run <image>` — no CLI invocation, no source checkout,
+   no `DacServices.Deploy` orchestration on the dev's machine. The
+   image IS the deployment.
+2. **No repository dependency for the dev consumer.** Whoever runs
+   the image needs only Docker + a registry reference; pulling a
+   fresh schema does not require cloning, building, or running the
+   sidecar's CLI.
+
+**Decision:** Slice δ_dock ships **`Projection.Targets.SSDT.DockerImageEmitter`**
+as a sibling-Π emitter producing a typed `DockerImageContext`
+record (Dockerfile + DacpacBytes + EntrypointScript + Readme).
+The emitter's signature is `Catalog -> Result<DockerImageContext>`;
+the four fields are pure constants for slice δ_dock (per-Catalog
+parameterization deferred per IR-grows-under-evidence). The CLI
+verb originally scoped for slice δ is **retired without replacement**
+— the deployment surface is the Docker image, not a Pipeline
+helper. CI/CD pipelines consume the build context (`docker build .`)
+and publish the resulting image to a registry; dev teams pull
+from the registry.
+
+**The two pillar-7-canonical libraries this slice adopts:**
+
+1. **`mcr.microsoft.com/mssql/server:2022-latest`** as the base
+   image. Microsoft's canonical SQL Server-on-Linux image; same
+   pin as `Projection.Pipeline.Deploy.DefaultImage` so the dev
+   container shares the canary's exact-match-production surface
+   area (per `DECISIONS 2026-05-15`).
+2. **`sqlpackage`** (downloaded from `https://aka.ms/sqlpackage-linux`
+   at image build time) as the DACPAC deploy tool. Microsoft's
+   canonical SSDT-side DACPAC publisher; mirrors what Visual
+   Studio's "Publish DAC Package" uses under the hood.
+
+The entrypoint script's deploy path is `sqlpackage /Action:Publish
+/SourceFile:catalog.dacpac /TargetServerName:localhost ...` —
+identical surface to what a dev would invoke locally if running
+sqlpackage by hand. Idempotency is sqlpackage's contract: on
+container restart against a persisted volume, sqlpackage validates
+the existing schema matches rather than re-creating.
+
+**Reasoning / consequences:**
+
+The Docker image is operationally a **distribution channel** the
+CLI verb is not. A CLI verb requires the dev to have the sidecar
+repository, .NET SDK, and a running SQL Server to point at; the
+Docker image bundles all three (SQL Server inside the image, dacpac
+embedded, deploy tool installed at build time). The bytes that
+travel to the dev's machine are exactly one artifact — the image.
+
+The image is a **build-time-vs-runtime split**: CI/CD owns image
+build (downloads `sqlpackage`, bakes the dacpac, pushes to
+registry — paid once per schema-evolution event); the dev's
+container start paid the much-cheaper "publish dacpac to fresh
+SQL Server instance" cost (~5–30 seconds). The split fits the
+cutover team's existing release pipeline: the same schema
+artifact that CI builds and publishes for production also
+builds + publishes the dev image; one source-of-truth.
+
+**Pillar 7 + pillar 8 hold structurally.** No string composition in
+the build context (Dockerfile / entrypoint / README are pure
+constants for slice δ_dock; lint clean with zero new LINT-ALLOWs).
+The name `DockerImageEmitter` is concept-shaped (names what it
+emits — the build context for a Docker image); `DockerImageContext`
+names the bundled artifact (the context for `docker build`).
+
+**Per-Catalog parameterization deferred-with-trigger** — the
+slice ships pinned constants for `PROJECTION_DB_NAME` (default
+`ProjectionCatalog`) and `BaseImage` (`mcr.microsoft.com/mssql/
+server:2022-latest`). Per-Catalog overrides (multi-database
+images; alternative SQL Server versions; custom env-var name
+schemes) surface when an operator workflow demands them. The
+empirical condition: a second consumer with conflicting defaults.
+
+**Chapter 4.4 RemediationEmitter sequencing preserved** — chapter
+4.4 still sequenced after chapter 3.x; the dev-tooling Docker
+context becomes the natural delivery vehicle for chapter 4.4's
+remediation scripts (operator deploys a fresh Docker image
+incorporating remediation, vs. mutating an existing dev
+database via remediation scripts).
+
+---

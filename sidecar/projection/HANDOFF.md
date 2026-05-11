@@ -4,11 +4,13 @@ To the next-chapter agent. Read this before anything else in the V2 sidecar. It 
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
 
-## Chapter 3.x open + slice α (added 2026-05-11; DacpacEmitter dev-tooling sibling Π over DacFx)
+## Chapter 3.x open + slices α + β + γ + δ_dock (added 2026-05-11; DacpacEmitter dev-tooling sibling Π over DacFx + DockerImageEmitter for one-command stand-up)
 
-**Branch:** `claude/chapter-4-ddd-improvements-XVCAM`. **Test baseline:** 1045+ non-canary tests passing (+4 DacpacEmitter slice α tests); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules (DacFx adoption is the pillar-7 right move; slice α introduces no new LINT-ALLOWs).
+**Branch:** `claude/chapter-4-ddd-improvements-XVCAM`. **Test baseline:** 1060 non-canary tests passing (+4 slice α; +2 slice β; +1 slice γ; +6 slice δ_dock = +13 in chapter 3.x; net +48 since chapter 4.3 close baseline); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules (DacFx adoption + Docker context emission both pillar-7 right moves; zero new LINT-ALLOWs in the chapter).
 
 Chapter 3.x opens the **DacpacEmitter dev-tooling chapter** — reframing the pre-scope's deploy-path-conditional V2-driver KPI critical-path framing to a dev-tooling sibling-Π emitter per operator directive ("stand up a local copy of the database in no time flat — almost a one-click deploy strategy for my development team"). Production deploy path stays SSDT-style file deploy via `SsdtDdlEmitter.emitSlices`; DacpacEmitter ships the `.dacpac` artifact format the dev team consumes via `sqlpackage`, Visual Studio, or `DacServices.Deploy` to a local SQL Server.
+
+**Slice δ_dock reframes pre-scope slice δ** (CLI `dac deploy` verb) → **DockerImageEmitter** per the operator's follow-up directive: "create a custom Docker package that stands itself up with the loaded SQL server inside of it ... single command up and my team doesn't have to have the repository to pull the data fresh each time." The emitter produces a Docker build context (Dockerfile + dacpac + entrypoint + README) that CI/CD builds into a registry-published image. Dev consumption is `docker pull` + `docker run` — no source checkout required.
 
 **Three Active deferrals retired at chapter open + slice α:**
 
@@ -16,23 +18,24 @@ Chapter 3.x opens the **DacpacEmitter dev-tooling chapter** — reframing the pr
 2. **`Microsoft.SqlServer.Dac` (DacFx) adoption Tier-3 hard-requirement** (Active deferrals row 223): cashed out — `Microsoft.SqlServer.DacFx` v162.x NuGet adopted in `Projection.Targets.SSDT.fsproj`. Pure F# wrapper (no C# subproject; pre-scope §6.2 bias yielded under empirical pressure — DacFx's V2-relevant surface is small, all `IDisposable`-aware calls F# handles via `use`).
 3. **T1 amendment for binary emitters** — content-equality via DacFx round-trip (`Catalog → emit → DacPackage.Load → TSqlModel.GetObjects` enumeration matches across invocations), NOT byte-equality. DacFx embeds wall-clock timestamps in Origin.xml; the algebraic claim holds at the DacFx model level.
 
-### Slice α (this slice)
+### Slice arc α + β + γ + δ_dock (this chapter to date)
 
 | # | Slice | What |
 |---|---|---|
 | α | DacpacEmitter v0 + chapter open + `Microsoft.SqlServer.DacFx` NuGet + 4 tests (non-empty bytes; DacFx round-trip yields one Table per Kind; T1 content-determinism; T11 commutativity vs SsdtDdlEmitter on physical (Schema, Table) pair) |
+| β | FK round-trip test — `sampleCatalog`'s Order→Customer FK ingests via DacFx + re-enumerates through `ForeignKeyConstraint.TypeClass` |
+| γ | Indexes round-trip — `indexedCatalog` fixture (single-column unique + composite non-unique + single-column non-unique) ingests via DacFx + re-enumerates through `Index.TypeClass`; `Index.Unique` property preserved across the round-trip |
+| δ_dock | **DockerImageEmitter** (reframes pre-scope slice δ per operator directive): emits a Docker build context `{ Dockerfile; DacpacBytes; EntrypointScript; Readme }` that CI builds into a self-contained `mcr.microsoft.com/mssql/server:2022-latest`-based image. Image bakes in the dacpac + installs `sqlpackage` at build; entrypoint starts SQL Server, polls until ready, publishes the dacpac. Dev team `docker pull` + `docker run` with no source checkout — "single command up." 6 tests (Dockerfile shape; entrypoint shape; README shape; embedded dacpac round-trips through DacFx; T1 byte-determinism on the static-template fields) |
 
-**A18 amended preserved structurally** — `DacpacEmitter.emit : Catalog -> Result<byte[]>` (Catalog only; no Policy parameter; Profile widening lands when a slice forces it). **T11 keyset coverage** holds across siblings (SsdtDdlEmitter directory bundle and DacpacEmitter model agree on the per-Kind (Schema, Table) set). **Pillar 7** holds end-to-end (Statement generation via SsdtDdlEmitter typed-AST stream; per-statement script via `ScriptDomGenerate.generateOne`; `.dacpac` serialization via DacFx `DacPackageExtensions.BuildPackage`).
+**A18 amended preserved structurally** — both `DacpacEmitter.emit` and `DockerImageEmitter.emit` take `Catalog -> Result<...>` (Catalog only; no Policy parameter; Profile widening lands when a slice forces it). **T11 keyset coverage** holds across siblings (SsdtDdlEmitter directory bundle and DacpacEmitter model agree on the per-Kind (Schema, Table) set; DockerImageEmitter wraps the dacpac unchanged). **Pillar 7** holds end-to-end (Statement generation via SsdtDdlEmitter typed-AST stream; per-statement script via `ScriptDomGenerate.generateOne`; `.dacpac` serialization via DacFx `DacPackageExtensions.BuildPackage`; SQL Server image via Microsoft's canonical `mcr.microsoft.com/mssql/server`; DACPAC deploy via Microsoft's canonical `sqlpackage`).
 
-### Outstanding queue (post-chapter-3.x slice α)
+### Outstanding queue (post-chapter-3.x slice δ_dock)
 
 **Within chapter 3.x:**
 
-- **Slice β** — Multi-Kind + FK Catalog (inline `FOREIGN KEY ... REFERENCES`; DacFx FK validation succeeds because target PK is declared per pre-scope §2).
-- **Slice γ** — Indexes (single-column unique; composite; non-unique CREATE INDEX).
-- **Slice δ** — CLI `dac deploy` verb wiring: `Projection.Cli dac deploy <jsonPath> <connStr>` builds the dacpac, calls `DacServices.Deploy`, reports table count.
 - **Slice ε** — Modality marks → comments / extended properties.
 - **Slice ζ** — Byte-determinism cash-out (post-hoc canonicalization). **Deferred-with-trigger** at chapter open: surface only when a snapshot consumer demands byte-stable dacpac artifacts.
+- **Per-Catalog parameterization of the Dockerfile / entrypoint** — slice δ_dock ships pinned constants (database name = `ProjectionCatalog`; base image = `mcr.microsoft.com/mssql/server:2022-latest`). Per-Catalog overrides land when an operator workflow demands them (IR-grows-under-evidence).
 
 **Now-unblocked (per V2-driver KPI sequencing + DacpacEmitter dev-tooling reframe):**
 
