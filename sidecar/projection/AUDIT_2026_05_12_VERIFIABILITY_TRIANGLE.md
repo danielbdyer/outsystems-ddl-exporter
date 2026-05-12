@@ -180,6 +180,8 @@ Some axioms cross all five concerns: byte-determinism (T1), sibling-Π commutati
 
 ## Part III — L3 Product Axiom Catalog
 
+**Canonical location for L3 axiom statements:** `PRODUCT_AXIOMS.md`. This audit doc retains the per-axiom analytical context (tier, currently-named, verifiability, failure mode if violated) because that's the audit metadata; the *statements themselves* moved into the constitutional sibling alongside `AXIOMS.md`. When refining an L3 axiom's wording, edit `PRODUCT_AXIOMS.md`; when refining its bucket assignment or coverage status, edit this audit doc.
+
 Each axiom carries a stable identifier (`L3-S#` for schema, `L3-D#` for data, `L3-I#` for identity, `L3-X#` for diagnostics, `L3-C#` for cutover safety, `L3-CC#` for cross-cutting). Tier is 1 (cutover blocker), 2 (strongly desired), 3 (nice-to-have). "Currently named" indicates whether the property is stated as a formal L2 axiom; "verifiability" indicates whether a property test or canary exists today.
 
 ### 3.1 Schema (L3-S)

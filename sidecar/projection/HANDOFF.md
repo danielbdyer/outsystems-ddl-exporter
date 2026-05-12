@@ -4,6 +4,31 @@ To the next-chapter agent. Read this before anything else in the V2 sidecar. It 
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
 
+## 2026-05-12 — V2 cutover plan + verifiability-triangle audit landed (read before resuming chapter work)
+
+**Branch:** `claude/audit-v1-v2-sidecar-7Ifij`. **Status:** session-driven, not chapter-driven; pivot from chapter-5 work into a product-readiness audit + structural-commitments campaign plan. Test baseline holds (1121 tests passing post-Slice-1 PhysicallyRenamed).
+
+What landed this session, in order:
+
+- **`V2_PRODUCTION_CUTOVER.md`** (Draft 2.2) — the cutover plan: phase ladder, IR-fidelity workstream (A.0'), config schema, locked-in decisions D1–D12, risks R1–R12, deferral catalog. Currently the canonical plan; campaigns from the audit below operationalize as Phase A workstreams.
+
+- **Slice 1: `PhysicallyRenamed` variant** (commit `9d578cc`) — first "airtight-by-design" slice. `TransformKind` extended with typed `PhysicallyRenamed of PhysicalRename` carrying `{ Before; After }` TableIds. `TableRename` emits the new variant; no-op renames suppressed. 1121 tests green.
+
+- **`AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md`** (1410 lines) — the integrator's view of V2's structural posture across three levels: L1 commitments / L2 axioms (`AXIOMS.md`) / L3 product axioms. Coverage map (Bucket A/B/C/D), 9-tier illegal-states catalog from a 4-agent bottom-up scan, gap-hunt 30 candidate axioms, three proposed campaigns (A: 4 cutover-blocker unnamed axioms; B: structural fortification subsuming the prior slice-2/slice-3 work; C: Tier-2 + boundary VOs + Config strengthening). **Read Part I (framing) + Part IX (campaigns) at minimum.**
+
+- **`PRODUCT_AXIOMS.md`** — the canonical L3 sibling to `AXIOMS.md`. 56 L3 product axioms grouped by core concern (schema/data/identity/diagnostics/cutover-safety + cross-cutting) plus four Tier-1 unnamed boundary candidates pending Campaign A.
+
+- **Cross-reference updates** across `CLAUDE.md` (reading order item 3.5 + operating-disciplines row), `AXIOMS.md` (header pointer), `V2_PRODUCTION_CUTOVER.md` (companion-docs line + §11.4 audit-log entry), `DECISIONS.md` (verifiability-triangle methodology entry), `README.md` (brief pointer).
+
+**Outstanding before next slice begins:**
+1. Operator decision on Campaign A ordering (atomic emission vs CDC silence first).
+2. Operator decision on axiom-naming convention (extend A41+ in `AXIOMS.md` vs separate `L3-Boundary-*` namespace).
+3. Operator's "document of key evolutions" (R1) — will likely reshape UAT-users scope and possibly add a sixth core concern.
+
+**Load-bearing:** the L1↔L2↔L3 verifiability triangle is the lens for all subsequent structural work. Per the new operating discipline in `CLAUDE.md`, every chapter close adds a one-paragraph audit check (which L3 axioms touched; new Bucket-D gaps introduced). Per-PR L3 review for PRs touching boundary code or adding config/CLI surface.
+
+**Deferred-with-trigger:** `LiveOssysConnection` (chapter 3.2 forward signal) remains reserved; Lifecycle temporal axis named in A6-amended but not operationalized (placeholder Group Lifecycle in `PRODUCT_AXIOMS.md`).
+
 ## Chapter 5 open + slices ν + θ (added 2026-05-11; FSharp.Analyzers.SDK + Coordinates Stage 2 VOs)
 
 **Branch:** `claude/chapter-4-ddd-improvements-XVCAM`. **Test baseline:** 1072 non-canary tests passing (+12 across slices ν + θ); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`. **Lint:** clean across 27 rules (one LINT-ALLOW added on the analyzer's diagnostic message at a terminal text-emission boundary; rationale per `DECISIONS 2026-05-10 — LINT-ALLOW substantive-rationale discipline`).
