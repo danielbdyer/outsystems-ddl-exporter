@@ -71,10 +71,11 @@ let ``A1: rename preserves Kind.SsKey while rewriting Kind.Physical`` () =
     Assert.NotEqual(originalCustomer.Physical, renamedCustomer.Physical)
 
 [<Fact>]
-let ``rename emits one Renamed lineage event per rewritten Kind`` () =
+let ``rename emits one PhysicallyRenamed event carrying typed before/after TableIds`` () =
+    let originalCustomer = findKindByKey customerKey sampleCatalog
+    let target = mkTableId "core" "CUSTOMER_NEW"
     let specs : TableRename.RenameSpec list = [
-        { Key = TableRename.Logical (mkName "Sales", mkName "Customer")
-          Target = mkTableId "core" "CUSTOMER_NEW" }
+        { Key = TableRename.Logical (mkName "Sales", mkName "Customer"); Target = target }
     ]
     let result = TableRename.run specs sampleCatalog |> mustOk
     Assert.Equal(1, result.Trail.Length)
@@ -82,7 +83,30 @@ let ``rename emits one Renamed lineage event per rewritten Kind`` () =
     Assert.Equal("tableRename", evt.PassName)
     Assert.Equal(TableRename.version, evt.PassVersion)
     Assert.Equal(customerKey, evt.SsKey)
-    Assert.Equal(Renamed, evt.TransformKind)
+    match evt.TransformKind with
+    | PhysicallyRenamed payload ->
+        Assert.Equal(originalCustomer.Physical, payload.Before)
+        Assert.Equal(target,                     payload.After)
+    | other -> failwithf "Expected PhysicallyRenamed, got %A" other
+
+[<Fact>]
+let ``PhysicalRename.toDiagnosticString renders schema.table -> schema.table`` () =
+    let payload : PhysicalRename = {
+        Before = mkTableId "dbo"  "OSUSR_X"
+        After  = mkTableId "core" "NEW_X"
+    }
+    let rendered = PhysicalRename.toDiagnosticString payload
+    Assert.Equal("dbo.OSUSR_X -> core.NEW_X", rendered)
+
+[<Fact>]
+let ``no-op rename (target equals current physical) emits no lineage event`` () =
+    let currentPhysical = (findKindByKey customerKey sampleCatalog).Physical
+    let specs : TableRename.RenameSpec list = [
+        { Key = TableRename.Logical (mkName "Sales", mkName "Customer"); Target = currentPhysical }
+    ]
+    let result = TableRename.run specs sampleCatalog |> mustOk
+    Assert.Empty(result.Trail)
+    Assert.Equal(currentPhysical, (findKindByKey customerKey result.Value).Physical)
 
 // -----------------------------------------------------------------------
 // References stay rename-safe (they carry SsKey, not TableId).

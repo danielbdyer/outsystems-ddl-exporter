@@ -147,25 +147,25 @@ module TableRename =
             | errs -> Error errs
 
     // -----------------------------------------------------------------------
-    // Lineage event per rewrite. Uses `TransformKind.Renamed` (no
-    // payload) for parity with the existing closed DU. Refactor
-    // opportunity flagged at the audit: a future `PhysicallyRenamed
-    // of from: TableId * to: TableId` variant would carry the rewrite
-    // content structurally; deferred until a second physical-rewrite
-    // consumer earns the variant.
+    // Lineage event per rewrite. Carries a typed `PhysicalRename`
+    // payload (`before` / `after` TableId pair). Audit readers and
+    // diff tools pattern-match on the typed value structurally rather
+    // than re-rendering a string. A no-op rename (Before = After) is
+    // suppressed at the visitor before the event is constructed.
     // -----------------------------------------------------------------------
 
-    let private renamedEvent (key: SsKey) : LineageEvent =
+    let private physicallyRenamedEvent (key: SsKey) (before: TableId) (after: TableId) : LineageEvent =
         { PassName      = passName
           PassVersion   = version
           SsKey         = key
-          TransformKind = Renamed }
+          TransformKind = PhysicallyRenamed { Before = before; After = after } }
 
     /// Run the pass. Empty spec list short-circuits to a pass-through
     /// with no lineage events. Otherwise validates every spec first
     /// (fail-fast via `Result`), then applies the rewrite through
-    /// `CatalogTraversal.mapKinds`, emitting one `Renamed` event per
-    /// rewritten kind.
+    /// `CatalogTraversal.mapKinds`, emitting one `PhysicallyRenamed`
+    /// event per rewritten kind. No-op renames (target equals the
+    /// current physical realization) emit no event.
     let run (specs: RenameSpec list) (c: Catalog) : Result<Lineage<Catalog>> =
         use _ = Bench.scope "passes.tableRename"
         match specs with
@@ -177,8 +177,8 @@ module TableRename =
                 c
                 |> CatalogTraversal.mapKinds (fun events k ->
                     match Map.tryFind k.SsKey renameMap with
-                    | Some target ->
-                        LineageBuffer.add (renamedEvent k.SsKey) events
+                    | Some target when target <> k.Physical ->
+                        LineageBuffer.add (physicallyRenamedEvent k.SsKey k.Physical target) events
                         Some { k with Physical = target }
-                    | None -> Some k)
+                    | _ -> Some k)
                 |> Result.success
