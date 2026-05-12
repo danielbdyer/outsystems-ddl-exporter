@@ -959,3 +959,25 @@ module Config =
         | :? JsonException as ex ->
             Result.failureOf (
                 configError "jsonInvalid" (sprintf "Failed to parse JSON: %s" ex.Message))
+
+    /// Read and parse a config file from disk. Layer thin on top of `parse`:
+    /// surfaces `pipeline.config.fileNotFound` when the path is missing and
+    /// `pipeline.config.fileReadError` when the file exists but cannot be
+    /// read. Successful read flows into `parse` which produces all
+    /// structural / D9 errors as `Result<Config>`.
+    let fromFile (path: string) : Result<Config> =
+        if not (System.IO.File.Exists path) then
+            Result.failureOf (
+                configError "fileNotFound" (sprintf "Config file not found: %s" path))
+        else
+            let readResult =
+                try Ok (System.IO.File.ReadAllText path)
+                with ex ->
+                    Error [
+                        configError
+                            "fileReadError"
+                            (sprintf "Failed to read config file '%s': %s" path ex.Message)
+                    ]
+            match readResult with
+            | Error es -> Error es
+            | Ok json -> parse json

@@ -330,3 +330,43 @@ let ``Config.parse: defaults applied when sections are absent`` () =
     Assert.Equal("SchemaOnly", cfg.Policy.Insertion)
     Assert.Equal("ByEmail",    cfg.Policy.UserMatching.Strategy)
     Assert.Equal("NoFallback", cfg.Policy.UserMatching.Fallback)
+
+// -----------------------------------------------------------------------
+// Config.fromFile — file I/O wrapper. A.1 CLI bridge ingests config via
+// this entry point; thin testable layer over `parse`.
+// -----------------------------------------------------------------------
+
+let private withTempFile (contents: string) (action: string -> 'a) : 'a =
+    let path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), System.IO.Path.GetRandomFileName() + ".json")
+    System.IO.File.WriteAllText(path, contents)
+    try action path
+    finally
+        if System.IO.File.Exists path then System.IO.File.Delete path
+
+[<Fact>]
+let ``Config.fromFile: valid file produces Ok with parsed Config`` () =
+    let json = """{ "model": { "path": "model.json" }, "output": { "dir": "elsewhere/" } }"""
+    let cfg =
+        withTempFile json (fun path -> Config.fromFile path |> mustOk)
+    Assert.Equal("model.json", cfg.Model.Path)
+    Assert.Equal("elsewhere/", cfg.Output.Dir)
+
+[<Fact>]
+let ``Config.fromFile: missing file produces fileNotFound`` () =
+    let bogus = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "does-not-exist-" + System.IO.Path.GetRandomFileName())
+    let errors = Config.fromFile bogus |> mustFail
+    Assert.True(hasCode "pipeline.config.fileNotFound" errors)
+
+[<Fact>]
+let ``Config.fromFile: malformed JSON in file surfaces jsonInvalid`` () =
+    let errors =
+        withTempFile """{ "model": { "path":""" (fun path ->
+            Config.fromFile path |> mustFail)
+    Assert.True(hasCode "pipeline.config.jsonInvalid" errors)
+
+[<Fact>]
+let ``Config.fromFile: D9 violation in file surfaces credentialPropertyForbidden`` () =
+    let json = """{ "model": { "path": "m.json" }, "sql": { "connectionString": "..." } }"""
+    let errors =
+        withTempFile json (fun path -> Config.fromFile path |> mustFail)
+    Assert.True(hasCode "pipeline.config.credentialPropertyForbidden" errors)

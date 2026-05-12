@@ -17,14 +17,17 @@ let private usageLines : string list =
         "projection — V2 sidecar end-to-end pipeline."
         ""
         "USAGE:"
+        "    projection emit --config <path>"
         "    projection emit   <input-osm-model.json> <output-dir>"
         "    projection deploy <input-osm-model.json>"
         "    projection canary <source-ddl-file>"
         ""
         "SUBCOMMANDS:"
         "    emit    Parse V1 JSON, project through three sibling Π's,"
-        "            and write SSDT / JSON / Distributions artifacts to"
-        "            <output-dir>."
+        "            and write SSDT / JSON / Distributions artifacts."
+        "            Two argument forms:"
+        "              --config <path>   read unified config JSON (V2_PRODUCTION_CUTOVER §5.1)."
+        "              <input> <out>     legacy positional form (kept during A.1 transition)."
         ""
         "    deploy  Parse V1 JSON, project SSDT, spin up an ephemeral"
         "            SQL Server container, deploy the SSDT, count tables,"
@@ -50,6 +53,7 @@ let private usageLines : string list =
         "    3  deploy error (SQL Server rejected the SSDT)"
         "    4  Docker unavailable (deploy/canary requires a running daemon)"
         "    5  canary divergence (PhysicalSchema diff non-empty)"
+        "    6  config error (config file missing / unparseable / D9 violation)"
     ]
 
 /// Print each usage line directly to the writer via the BCL
@@ -119,6 +123,24 @@ let private runEmit (inputPath: string) (outputDir: string) : int =
                 )
         dumpBench "emit"
         exitCode
+
+/// `emit --config <path>` entry. Reads the unified config JSON, surfaces
+/// structured errors (file-not-found / parse / D9) at exit code 6, then
+/// delegates to `runEmit` with `Model.Path` and `Output.Dir` extracted
+/// from the parsed config. Per V2_PRODUCTION_CUTOVER §5.3 (A.1), this is
+/// the minimum bridge: subsequent slices thread emission gates / policy /
+/// overrides through `Compose.runWithConfig`. Today the parsed config
+/// drives only `Model.Path` + `Output.Dir`; other sections are validated
+/// but unused, so operators can hand-write a full config without runtime
+/// surprises.
+let private runEmitFromConfig (configPath: string) : int =
+    match Config.fromFile configPath with
+    | Error errors ->
+        Console.Error.WriteLine "projection: config error:"
+        printErrors Console.Error errors
+        6
+    | Ok config ->
+        runEmit config.Model.Path config.Output.Dir
 
 let private runDeploy (inputPath: string) : int =
     if not (File.Exists inputPath) then
@@ -207,6 +229,8 @@ let private runCanary (sourceDdlPath: string) : int =
 [<EntryPoint>]
 let main argv =
     match argv with
+    | [| "emit"; "--config"; configPath |] ->
+        runEmitFromConfig configPath
     | [| "emit"; inputPath; outputDir |] ->
         runEmit inputPath outputDir
     | [| "deploy"; inputPath |] ->
