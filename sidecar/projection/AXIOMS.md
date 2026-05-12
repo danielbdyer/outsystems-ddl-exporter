@@ -4,6 +4,19 @@ The formal system the projection sidecar implements. Code refers to this
 document by axiom number in comments and test names. A failing test pointing
 at axiom A12 should send a reader directly to the section below.
 
+**Companion documents.** `PRODUCT_AXIOMS.md` carries the L3 product axioms —
+the operator-meaningful claims V2 must verifiably guarantee end-to-end. This
+file proves V2 is internally consistent (L2 axioms); `PRODUCT_AXIOMS.md`
+proves V2 satisfies the operator's contract (L3 axioms). The two are
+intentionally separate: L2 axioms are the algebra; L3 axioms are the
+operator's promise; they cite each other but evolve on different rhythms.
+`AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` carries the coverage analysis —
+which axioms in *both* documents are structurally enforced at L1, which are
+convention-enforced, which are weakly covered, and which are unnamed gaps —
+along with campaigns to address the gaps. The audit doc is refreshed on each
+annual re-audit; this file remains the canonical L2 surface, updated through
+chapter-close amendments.
+
 The original V1 algebraic spec stated thirty-one axioms (A1–A31)
 generating ten theorems (T1–T10). V2 has extended the system: A6, A12,
 A17, A18, and T1 carry amendments (recorded under "V2 Amendments"

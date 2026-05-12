@@ -54,6 +54,7 @@
     <Compile Include="Passes/NamingMorphism.fs" />
     <Compile Include="Passes/NormalizeStaticPopulations.fs" />
     <Compile Include="Passes/SymmetricClosure.fs" />
+    <Compile Include="Passes/TableRename.fs" />
     <Compile Include="Passes/TopologicalOrderPass.fs" />
     <Compile Include="Passes/NullabilityPass.fs" />
     <Compile Include="Passes/UniqueIndexPass.fs" />

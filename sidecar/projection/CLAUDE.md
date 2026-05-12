@@ -47,6 +47,20 @@ north star and orders the remaining chapters under the V2-driver KPI.
    carries the chapter-close five-agent DDD/Hexagonal/FP audit with
    Tier 1/2/3/4 backlog by epistemic level + leverage. The next-
    chapter agent reads both at chapter open.
+3.5. **`AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md`** + **`PRODUCT_AXIOMS.md`** —
+   the L1↔L2↔L3 verifiability triangle. The audit is the integrator's
+   view: every existing L2 axiom mapped to L1 structural underwriting
+   and L3 product behavior; every gap (unnamed axiom, convention-only
+   enforcement, untested formalism) classified by bucket (A/B/C/D); 56
+   L3 axioms catalogued; three campaigns proposed (A: cutover-blocker
+   unnamed axioms; B: structural fortification subsuming the prior
+   slice-2/slice-3 work; C: Tier-2 unnamed axioms + boundary VOs +
+   Config strengthening). `PRODUCT_AXIOMS.md` is the constitutional
+   sibling — terse L3 axiom statements grouped by core concern
+   (schema/data/identity/diagnostics/cutover-safety + cross-cutting).
+   Read the audit Part I (framing) + Part IX (campaigns) at chapter
+   open; consult Parts III/IV/V/VI/X as reference during slices that
+   touch the corresponding surfaces.
 4. **`CHAPTER_2_CLOSE.md`** — chapter-2 close synthesis (sessions
    13–25). Read for the OSSYS adapter chapter's accumulated
    state (25 translation rules), the three-class typology, the
@@ -144,6 +158,7 @@ of them, write the amendment first.
 | **Writer-fidelity discipline (chapter-3.1 contribution)** — pass drivers MUST use `LineageDiagnostics.tellDiagnostics` / `Lineage.ofValueAndEvents` (the canonical primitives); manual record-building is forbidden. The dual-writer's algebraic surface is activated across pass drivers; future pass drivers inherit the discipline. | `DECISIONS 2026-05-30 — Session 36 / Writer-fidelity codification` |
 | **Harmonization-via-parameterization (chapter-3.1 contribution)** — when two implementations of an algorithm diverge on a single semantic axis, parameterize the algorithm on that axis, produce both projections from one implementation, and let consumers choose. Worked example: `SelfLoopPolicy` in `TopologicalOrderPass` (chapter-3.1 collapsed `RawTextEmitter.emissionOrder`'s duplicate Kahn into the pass). Codified as A40. | `DECISIONS 2026-05-30 — Session 36 / Topological-sort harmonization via SelfLoopPolicy` |
 | **Five-agent epistemic-tier audit at chapter close (chapter-3.1 contribution)** — multi-agent parallel audit dispatched at chapter close covering tightly orthogonal concerns (UL / Hex / VO / FP / ACL). Each agent classifies findings B&W vs SUBJ + H/M/L; convergence-map is the synthesis primary surface; Tier 1/2/3/4 backlog organizes findings by epistemic level + leverage. Audits are routed (named items in named chapters with named pre-scopes), not piled. Worked example: `AUDIT_2026_05_DDD_HEXAGONAL_FP.md`. | `DECISIONS 2026-05-30 — Session 36 / Five-agent DDD/Hexagonal/FP audit protocol` |
+| **Verifiability-triangle audit cadence (2026-05-12 contribution)** — V2's structural-commitment posture is audited along three connected levels: L1 (structural commitments — smart constructors, closed DUs, VOs), L2 (formal axioms in `AXIOMS.md` — A1–A40 + T1–T11), L3 (product axioms in `PRODUCT_AXIOMS.md` — operator-meaningful claims). Each L3 axiom must trace down to L2 and L1; each L2 axiom must trace up to a product behavior; each L1 commitment must trace up to an axiom. Audit dispatch protocol: three parallel agents (top-down L3 articulation + L2↔L3 bridge + adversarial gap-hunt as operator) produce a coverage map classifying every axiom into Bucket A (full L1+L2+L3+test), Bucket B (convention-enforced L1), Bucket C (weakness — untested/aspirational/deferred), or Bucket D (unnamed L3 axiom with no L2 backing). Cadence: (a) annual re-audit refresh; (b) chapter-close L3 step — every chapter close adds a one-paragraph audit check naming the L3 axioms its work touched and any new Bucket-D gaps introduced; (c) per-PR L3 review for PRs touching boundary code or adding config/CLI surface. Bucket-D promotions land in `AXIOMS.md` or `PRODUCT_AXIOMS.md` once campaigns operationalize them. Worked example: `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md`. | `DECISIONS 2026-05-12 — Verifiability-triangle audit methodology` |
 
 ## Load-bearing commitments — do not break without writing the amendment first
 

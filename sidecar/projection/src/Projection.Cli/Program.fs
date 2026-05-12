@@ -17,14 +17,17 @@ let private usageLines : string list =
         "projection — V2 sidecar end-to-end pipeline."
         ""
         "USAGE:"
+        "    projection emit --config <path>"
         "    projection emit   <input-osm-model.json> <output-dir>"
         "    projection deploy <input-osm-model.json>"
         "    projection canary <source-ddl-file>"
         ""
         "SUBCOMMANDS:"
         "    emit    Parse V1 JSON, project through three sibling Π's,"
-        "            and write SSDT / JSON / Distributions artifacts to"
-        "            <output-dir>."
+        "            and write SSDT / JSON / Distributions artifacts."
+        "            Two argument forms:"
+        "              --config <path>   read unified config JSON (V2_PRODUCTION_CUTOVER §5.1)."
+        "              <input> <out>     legacy positional form (kept during A.1 transition)."
         ""
         "    deploy  Parse V1 JSON, project SSDT, spin up an ephemeral"
         "            SQL Server container, deploy the SSDT, count tables,"
@@ -50,6 +53,7 @@ let private usageLines : string list =
         "    3  deploy error (SQL Server rejected the SSDT)"
         "    4  Docker unavailable (deploy/canary requires a running daemon)"
         "    5  canary divergence (PhysicalSchema diff non-empty)"
+        "    6  config error (config file missing / unparseable / D9 violation)"
     ]
 
 /// Print each usage line directly to the writer via the BCL
@@ -117,6 +121,38 @@ let private runEmit (inputPath: string) (outputDir: string) : int =
                     printErrors Console.Error errors
                     2
                 )
+        dumpBench "emit"
+        exitCode
+
+/// `emit --config <path>` entry. Reads the unified config JSON, surfaces
+/// structured errors (file-not-found / parse / D9) at exit code 6, then
+/// delegates to `Compose.runWithConfig` which threads the parsed config
+/// through read → rename → project → write. Today the wired config
+/// sections drive `Model.Path`, `Overrides.TableRenames`, and `Output.Dir`;
+/// other sections are validated but unused, so operators can hand-write
+/// a full config without runtime surprises.
+let private runEmitFromConfig (configPath: string) : int =
+    match Config.fromFile configPath with
+    | Error errors ->
+        Console.Error.WriteLine "projection: config error:"
+        printErrors Console.Error errors
+        6
+    | Ok config ->
+        let task = Compose.runWithConfig config
+        let result = task.GetAwaiter().GetResult()
+        let exitCode =
+            match result with
+            | Ok paths ->
+                printfn "projection: wrote %d artifact(s) to %s" paths.Length config.Output.Dir
+                paths
+                |> List.iter (fun p ->
+                    let info = FileInfo p
+                    printfn "  %s (%d bytes)" p info.Length)
+                0
+            | Error errors ->
+                Console.Error.WriteLine "projection: emit failed:"
+                printErrors Console.Error errors
+                2
         dumpBench "emit"
         exitCode
 
@@ -207,6 +243,8 @@ let private runCanary (sourceDdlPath: string) : int =
 [<EntryPoint>]
 let main argv =
     match argv with
+    | [| "emit"; "--config"; configPath |] ->
+        runEmitFromConfig configPath
     | [| "emit"; inputPath; outputDir |] ->
         runEmit inputPath outputDir
     | [| "deploy"; inputPath |] ->

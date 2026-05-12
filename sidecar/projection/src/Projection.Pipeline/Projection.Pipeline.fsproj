@@ -10,6 +10,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Config.fs" />
+    <Compile Include="RenameBinding.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="Bulk.fs" />
     <Compile Include="Deploy.fs" />

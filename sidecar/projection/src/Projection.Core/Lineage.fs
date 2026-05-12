@@ -157,6 +157,39 @@ module AnnotationDetail =
             label
 
 
+/// Typed payload for `TransformKind.PhysicallyRenamed` — the
+/// physical-realization rewrite as a structural pair. Mirrors the
+/// `RemovalReason` / `AnnotationDetail` precedent: the typed pair IS
+/// the data, downstream consumers pattern-match on `Before` / `After`
+/// rather than re-parsing a pre-rendered string. Identity (SsKey)
+/// stays on the carrying `LineageEvent`; this payload carries the
+/// physical-coordinate axis only.
+///
+/// Invariant: `Before <> After` (a no-op rename emits no event). Not
+/// enforced by smart constructor because consumers (`TableRename`)
+/// short-circuit at the visitor before constructing the payload.
+type PhysicalRename = {
+    Before : TableId
+    After  : TableId
+}
+
+/// Companion module for `PhysicalRename`. Diagnostic-string projection
+/// matches the existing `<schema>.<table>` rendering convention used
+/// across other typed payloads (`SymmetricClosureSkipReason`, etc.).
+[<RequireQualifiedAccess>]
+module PhysicalRename =
+
+    /// Render as `"<beforeSchema>.<beforeTable> -> <afterSchema>.<afterTable>"`.
+    /// Strings emerge ONLY here (and at any future writer-boundary
+    /// consumer), per the supreme operating discipline at the top of
+    /// `DECISIONS.md`.
+    let toDiagnosticString (rename: PhysicalRename) : string =
+        String.concat "" [  // LINT-ALLOW: terminal diagnostic projection; typed `PhysicalRename` record IS the structure
+            rename.Before.Schema; "."; rename.Before.Table
+            " -> "
+            rename.After.Schema; "."; rename.After.Table
+        ]
+
 /// The kind of transformation a lineage event records. The set is small
 /// and additive — extend rather than reshape when new pass categories
 /// appear, so historical lineage trails stay readable.
@@ -165,7 +198,9 @@ type TransformKind =
     /// witness that a pass ran ("we looked at this and decided nothing").
     | Touched
     /// The pass changed the node's presentation name. Identity is
-    /// untouched (A3, A4, A15).
+    /// untouched (A3, A4, A15). Distinct from `PhysicallyRenamed`, which
+    /// records physical-realization rewrites; `Renamed` is the
+    /// presentation-name axis.
     | Renamed
     /// The pass introduced a new node with a Derived SsKey (A5). The
     /// derivation reason lives in the SsKey itself; this tag merely
@@ -185,6 +220,13 @@ type TransformKind =
     /// use the `Label of string` variant. Strings emerge only at the
     /// rendering boundary via `AnnotationDetail.toDiagnosticString`.
     | Annotated of detail: AnnotationDetail
+    /// The pass rewrote the node's physical realization (schema.table).
+    /// Identity (SsKey) is untouched (A1); only `Kind.Physical` changes.
+    /// The typed `PhysicalRename` payload carries the before/after
+    /// `TableId` pair structurally — audit readers and diff tools
+    /// pattern-match on the typed value rather than parsing a rendered
+    /// string.
+    | PhysicallyRenamed of detail: PhysicalRename
 
 
 /// One step in the provenance chain. Per A23, every event carries a

@@ -46,7 +46,9 @@ chapter 4.1.A close arc + 4.1.B in-flight prologue):
       CHAPTER_4_1_A_OPEN.md     - chapter-4.1.A open document (strategic-frame eight-axis)
       CHAPTER_4_1_B_OPEN.md     - chapter-4.1.B open document (strategic-frame eight-axis; CDC-silence highest-stakes)
       AUDIT_2026_05_DDD_HEXAGONAL_FP.md - five-agent audit at chapter-3.1 close
-      AXIOMS.md                 - formal system; A1-A40 with amendments
+      AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md - L1↔L2↔L3 coverage map + 3 proposed campaigns
+      AXIOMS.md                 - formal system; A1-A40 with amendments (L2 layer)
+      PRODUCT_AXIOMS.md         - operator-facing product axioms (L3 layer; sibling to AXIOMS.md)
       DECISIONS.md              - append-only log of resolved questions (Active deferrals index at top)
       ADMIRE.md                 - append-only log of V1 admirations and V2 placements
       V2_DRIVER.md              - destination KPI + operative backlog (supersedes BACKLOG.md, now a forwarding pointer)

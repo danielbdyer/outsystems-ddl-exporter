@@ -10901,3 +10901,92 @@ at the validation boundary; the analyzer assembly is outside the
 27-rule scope by analyzer-not-application convention).
 
 ---
+
+## 2026-05-12 — Verifiability-triangle audit methodology
+
+**Status:** decided
+**Context:** V2's structural-commitment posture had drifted to a place
+where the algebra's interior (identity, lineage, sibling-Π
+commutativity, aggregate-root invariants) was full-stack covered (L3
+product behavior ↔ L2 axiom ↔ L1 structural commitment ↔ test) but the
+boundary (V1→V2 parsing, V2→disk writing, V2→operator diagnostics,
+config surface) had silent dependencies — L3 properties the operator
+implicitly trusts that no L2 axiom names and no L1 commitment
+structurally guarantees. The chapter-3.1 close-audit (`AUDIT_2026_05_
+DDD_HEXAGONAL_FP.md`) had established the multi-agent epistemic-tier
+audit protocol for a single dimension (DDD / Hexagonal / FP); the
+question was how to extend that protocol to systematically surface
+structural gaps across *all* axes of operator-facing behavior, not
+just one.
+
+**Decision:** the **L1↔L2↔L3 verifiability triangle** becomes V2's
+audit lens, with a documented cadence:
+
+1. **Three connected levels.**
+   - **L1**: structural commitments — smart constructors, closed DUs,
+     value objects, type-system contracts. Enforced by construction.
+   - **L2**: formal axioms (`AXIOMS.md`) — A1–A40 + T1–T11 + amended
+     originals. The algebra's claims about itself.
+   - **L3**: product axioms (`PRODUCT_AXIOMS.md`, new in this
+     decision) — operator-meaningful claims V2 must verifiably
+     guarantee end-to-end. The promise the operator implicitly trusts.
+
+2. **Bidirectional tracing.** Every L3 axiom must trace down to L2
+   underwriting and L1 commitment; every L2 axiom must trace up to a
+   product behavior; every L1 commitment must trace up to an axiom.
+   Failures of the trace are the audit's primary findings.
+
+3. **Bucket classification.** Each axiom (L2 or L3) is classified
+   into one of four buckets:
+   - **Bucket A**: full coverage (L3 ✓ L2 ✓ L1 ✓ test). The model.
+   - **Bucket B**: L3 ✓ L2 ✓ test ✓, L1 by convention. One refactor
+     away from regression.
+   - **Bucket C**: weakness (untested, hidden, aspirational, deferred,
+     subsumed, scope boundary, partial structural).
+   - **Bucket D**: unnamed L3 axiom with no L2 backing — silent
+     operator dependency.
+
+4. **Audit dispatch protocol.** Three parallel agents in a single
+   dispatch:
+   - Agent A: top-down — articulate L3 product axioms from strategic
+     docs, grouped by core concern (schema/data/identity/diagnostics/
+     cutover-safety + cross-cutting).
+   - Agent B: middle-out — bridge L2 ↔ L3 for every existing axiom in
+     `AXIOMS.md`; assign bucket classification.
+   - Agent C: adversarial gap-hunt — act as the operator pre-cutover;
+     list questions whose answer is a candidate L3 axiom.
+   Plus optionally a parallel Round 1 bottom-up scan (L1 inventory +
+   illegal-states audit across multiple surfaces) when the audit
+   includes a structural-commitment refresh.
+
+5. **Cadence.** Three triggers operationalize the discipline:
+   - **Annual re-audit refresh** — full multi-agent dispatch every
+     ~12 months to refresh the coverage map.
+   - **Chapter-close L3 step** — every chapter close adds a
+     one-paragraph audit check naming the L3 axioms its work touched
+     and any new Bucket-D gaps introduced.
+   - **Per-PR L3 review** — PRs that touch boundary code or add
+     config/CLI surface get a checklist: which L3 axioms does this
+     touch? Are they Bucket A or below? Does this PR strengthen or
+     weaken the structural commitment?
+
+6. **Promotion path.** When a campaign operationalizes a Bucket-D
+   axiom, the promotion lands in `AXIOMS.md` (new L2 axiom) or
+   `PRODUCT_AXIOMS.md` (existing L3 axiom moves from candidate to
+   formal). The audit doc retains the campaign close-note in its
+   append-only Part XII.
+
+**Consequence:** the methodology codifies what the chapter-3.1 audit
+established (multi-agent epistemic-tier) and extends it from
+one-dimensional ad-hoc dispatches to a recurring, multi-level coverage
+map. The first audit under this methodology (2026-05-12) produced
+`AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` (the integrator's view),
+`PRODUCT_AXIOMS.md` (the L3 sibling to `AXIOMS.md`), and three
+proposed campaigns superseding the prior 3-slice airtight plan.
+
+**Companion artifacts:** `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md`
+(the audit's integrator view + campaigns); `PRODUCT_AXIOMS.md` (L3
+canonical surface); `CLAUDE.md` operating-disciplines table updated
+with a row pointing at this entry.
+
+---
