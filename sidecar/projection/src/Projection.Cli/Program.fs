@@ -126,13 +126,11 @@ let private runEmit (inputPath: string) (outputDir: string) : int =
 
 /// `emit --config <path>` entry. Reads the unified config JSON, surfaces
 /// structured errors (file-not-found / parse / D9) at exit code 6, then
-/// delegates to `runEmit` with `Model.Path` and `Output.Dir` extracted
-/// from the parsed config. Per V2_PRODUCTION_CUTOVER §5.3 (A.1), this is
-/// the minimum bridge: subsequent slices thread emission gates / policy /
-/// overrides through `Compose.runWithConfig`. Today the parsed config
-/// drives only `Model.Path` + `Output.Dir`; other sections are validated
-/// but unused, so operators can hand-write a full config without runtime
-/// surprises.
+/// delegates to `Compose.runWithConfig` which threads the parsed config
+/// through read → rename → project → write. Today the wired config
+/// sections drive `Model.Path`, `Overrides.TableRenames`, and `Output.Dir`;
+/// other sections are validated but unused, so operators can hand-write
+/// a full config without runtime surprises.
 let private runEmitFromConfig (configPath: string) : int =
     match Config.fromFile configPath with
     | Error errors ->
@@ -140,7 +138,23 @@ let private runEmitFromConfig (configPath: string) : int =
         printErrors Console.Error errors
         6
     | Ok config ->
-        runEmit config.Model.Path config.Output.Dir
+        let task = Compose.runWithConfig config
+        let result = task.GetAwaiter().GetResult()
+        let exitCode =
+            match result with
+            | Ok paths ->
+                printfn "projection: wrote %d artifact(s) to %s" paths.Length config.Output.Dir
+                paths
+                |> List.iter (fun p ->
+                    let info = FileInfo p
+                    printfn "  %s (%d bytes)" p info.Length)
+                0
+            | Error errors ->
+                Console.Error.WriteLine "projection: emit failed:"
+                printErrors Console.Error errors
+                2
+        dumpBench "emit"
+        exitCode
 
 let private runDeploy (inputPath: string) : int =
     if not (File.Exists inputPath) then

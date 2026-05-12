@@ -1,6 +1,6 @@
 # V2 Production Cutover Plan
 
-**Status:** Draft 2.1 — 2026-05-11. Revised after 6-agent adversarial audit (5 read-only Explore agents + 1 cross-cutting risk audit, run in parallel). Draft 1 commit reference: `2ab3a8a`; Draft 2 commit reference: `5da03c2`. Draft 2 adds the IR-fidelity workstream (Phase A precondition), four new locked-in decisions (D9–D12), four new cross-cutting plan sections (§3.4–§3.7), five new risks (R8–R12), explicit deferral catalog (§10), and a substantially revised unified-config schema sketch (§5.1). Draft 2.1 corrects Q1 framing (no V1 modification; V2 observes its own dataset) and repositions UAT-users from "deferred verb" to "pending evolution doc; expected as Phase A feature."
+**Status:** Draft 2.2 — 2026-05-12. Revised after 6-agent adversarial audit (5 read-only Explore agents + 1 cross-cutting risk audit, run in parallel). Draft 1 commit reference: `2ab3a8a`; Draft 2 commit reference: `5da03c2`. Draft 2 adds the IR-fidelity workstream (Phase A precondition), four new locked-in decisions (D9–D12), four new cross-cutting plan sections (§3.4–§3.7), five new risks (R8–R12), explicit deferral catalog (§10), and a substantially revised unified-config schema sketch (§5.1). Draft 2.1 corrects Q1 framing (no V1 modification; V2 observes its own dataset) and repositions UAT-users from "deferred verb" to "pending evolution doc; expected as Phase A feature." Draft 2.2 (post-A.4-rename-implementation audit) **dissolves R11** — the architecture audit on `TopologicalOrderPass` confirmed it reads SsKey only, never physical names, so rename is structurally orthogonal to topo order. D12 narrows accordingly: canonical sort stays as a general guardrail for future user-supplied collections that aren't SsKey-keyed, but rename specifically doesn't need it.
 
 **Companion documents:** `V2_DRIVER.md` (KPI / phase ladder), `VISION.md` (architectural north star), `STAGING.md` (chapter staging), `HANDOFF.md` (current-session pointer), `DECISIONS.md` (dated decision log).
 
@@ -119,8 +119,9 @@ V1 uses `Microsoft.Extensions.Logging` with structured EventIds and source ident
 V2 claims byte-determinism (AXIOMS T1). User-supplied overrides (renames, migration-dep rows, module filters) can perturb execution order if not handled canonically.
 
 **Policy (locked-in per D12):** Canonical sort applied to user-supplied collections at config-validation time, before they reach pipeline passes. Specifically:
-- `overrides.tableRenames` sorted by canonical source-key form before being threaded into `TableRenamePass` (§5.6).
 - `overrides.migrationDependencies` rows iterated in declaration order *within each table*; tables themselves sorted by canonical kind-key.
+
+**`overrides.tableRenames` exception (post-Draft-2.2 audit):** Rename order is structurally moot. `TopologicalOrderPass` reads SsKeys only, never physical names; `Reference.TargetKind` is a SsKey, never a TableId. Renames rewrite only `Kind.Physical`, never identity or graph edges. Two `TableRename.run` invocations with the same spec set in different orders produce structurally-equal output Catalogs (proven by `TableRenameTests.``D12: rename spec order does not affect the rewritten catalog```). D12 retains the general guardrail for any future user-supplied collection where ordering could matter; for rename it's confirmation, not constraint.
 
 **Out of scope** (deliberately, per operator decision):
 - Idempotency test in Phase A.6 soak (not a gate).
@@ -524,7 +525,7 @@ These are decisions made during the 2026-05-11 audit collaboration. Each is revi
 | **R8** | **IR lifts (A.0') discover unanticipated semantic complexity in V1's domain model.** | Medium | High | Slice per concept; each closable independently per sidecar chapter cadence; if one lift exceeds 1 week, escalate to design review before continuing. |
 | **R9** | **CI/CD silent break at T+30** (operator-owned per D11). | High | High (if operator's pipelines depend on V1) | Operator inventories invocation sites during soak; maps each to V2 config-file equivalent; cuts over before T+30. Plan provides V2 CLI spec as migration target; no automation. |
 | **R10** | **Logging format divergence** (V2 ships own format per D10). | High | Medium | Operator's downstream tooling rewrite happens at cutover; V2 logging format documented at Phase B.4. |
-| **R11** | **Determinism breaks under config-driven rename ordering.** | Low (mitigated by D12) | High (when triggered) | Canonical rename sort at config-validation time (A.4); rename-order-invariance property test. |
+| ~~R11~~ | **Dissolved 2026-05-12 (post-A.4 audit).** Original worry: rename order in spec list could perturb topological order. Audit confirmed `TopologicalOrderPass` reads only SsKeys and `Reference.TargetKind` is SsKey-keyed, so rename is structurally orthogonal to topo. Property test `TableRenameTests.``D12: rename spec order does not affect the rewritten catalog`` ` enforces invariance. Risk retired. | — | — | — |
 | **R12** | **Profile completeness boundary unclear** — partial probe failure produces incomplete profile. | Medium | Medium | A.5 enumerates required-vs-optional fields with structured-warning semantics; partial-failure tests in A.5 + B.3. |
 
 ---
@@ -638,3 +639,12 @@ As Phase A.0, A.0', A.1, …, B.4 close, append a 5-10 line close note: what shi
 Track adversarial audits and their findings.
 
 - **2026-05-11 audit (Draft 1 → Draft 2):** Six parallel agents (Explore × 5 + cross-cutting × 1). Findings drove §3.3 IR-fidelity inventory, §3.4–§3.7 cross-cutting sections, D9–D12 decisions, R8–R12 risks, Q8–Q13 questions, §5.2 (A.0') new workstream, §5.5 (A.3 split into static-data + migration-deps loaders), §6.4 (Phase B.3 estimate revision 2-3 → 3-4 weeks; probe count 4 → 5), §10 expanded deferral catalog.
+
+- **2026-05-12 audit (Draft 2.2 — pre-A.4 implementation):** One Explore agent scoped the Catalog/rename surface before TableRenamePass implementation. Findings:
+  - **R11 dissolved.** `TopologicalOrderPass` reads SsKey only; references carry SsKey; rename rewrites only `Kind.Physical`. Topo is structurally invariant under rename.
+  - **`CatalogTraversal.mapKinds` is the existing primitive** for Catalog→Catalog transforms with lineage events. TableRename uses it; no new helper needed at N=2 consumers.
+  - **A39 does NOT enforce physical-name uniqueness across the catalog.** Rename could in principle produce duplicate `(Schema, Table)` pairs. Within-batch collision is detected by `TableRename.collectRenames`; cross-catalog uniqueness check is **deferred** per "IR grows under evidence" — wait for evidence of operator scenarios that produce duplicates.
+  - **`TransformKind.Renamed` is no-payload today.** Lineage records the SsKey but not the before/after TableId. **Refactor opportunity** logged: when a second physical-rewrite consumer surfaces, widen to `PhysicallyRenamed of from: TableId * to: TableId` for richer audit trail. Defer.
+  - **`SchemaName` / `TableName` typed VOs in `Coordinates.fs:46-58` are unlifted into the `TableId` record.** Existing trigger ("a real bug caught from schema-vs-table confusion") hasn't fired. Defer.
+
+  Implementation slice closed: `Projection.Core.Passes.TableRename` (Core pass), `Projection.Pipeline.RenameBinding` (boundary mapper), `Compose.runWithConfig` (pipeline entry threading rename through `read → rename → project → write`), 16 tests, full suite green (1119/1119).

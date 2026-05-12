@@ -184,3 +184,41 @@ module Compose =
             | Error errors ->
                 return Result.failure errors
         }
+
+    /// Apply config-driven catalog rewrites (today: table renames).
+    /// Empty overrides short-circuit to the input catalog unchanged.
+    /// Errors aggregate from boundary-mapping (`RenameBinding.fromConfig`)
+    /// and from pass-level validation (`TableRename.run`).
+    let private applyRenames
+        (cfg: Config.Config)
+        (catalog: Projection.Core.Catalog)
+        : Result<Projection.Core.Catalog> =
+        match cfg.Overrides.TableRenames with
+        | [] -> Result.success catalog
+        | renames ->
+            renames
+            |> RenameBinding.fromConfig
+            |> Result.bind (fun specs ->
+                Projection.Core.Passes.TableRename.run specs catalog)
+            |> Result.map (fun lineage -> lineage.Value)
+
+    /// Full end-to-end driven by a parsed `Config`. Reads `Model.Path`,
+    /// applies config-driven catalog rewrites (rename), projects, writes
+    /// to `Output.Dir`. Threading additional config sections
+    /// (`Emission`, `Policy`, `Overrides.MigrationDependencies`, etc.)
+    /// into project/write is the work of subsequent slices.
+    let runWithConfig (cfg: Config.Config) : Task<Result<string list>> =
+        task {
+            let! parsed = read cfg.Model.Path
+            match parsed with
+            | Ok catalog ->
+                match applyRenames cfg catalog with
+                | Ok renamedCatalog ->
+                    let outputs = project renamedCatalog
+                    let paths = write cfg.Output.Dir outputs
+                    return Result.success paths
+                | Error errors ->
+                    return Result.failure errors
+            | Error errors ->
+                return Result.failure errors
+        }
