@@ -1,310 +1,381 @@
 # V2 Production Cutover Plan
 
-**Status:** Draft 2.2 — 2026-05-12. Revised after 6-agent adversarial audit (5 read-only Explore agents + 1 cross-cutting risk audit, run in parallel). Draft 1 commit reference: `2ab3a8a`; Draft 2 commit reference: `5da03c2`. Draft 2 adds the IR-fidelity workstream (Phase A precondition), four new locked-in decisions (D9–D12), four new cross-cutting plan sections (§3.4–§3.7), five new risks (R8–R12), explicit deferral catalog (§10), and a substantially revised unified-config schema sketch (§5.1). Draft 2.1 corrects Q1 framing (no V1 modification; V2 observes its own dataset) and repositions UAT-users from "deferred verb" to "pending evolution doc; expected as Phase A feature." Draft 2.2 (post-A.4-rename-implementation audit) **dissolves R11** — the architecture audit on `TopologicalOrderPass` confirmed it reads SsKey only, never physical names, so rename is structurally orthogonal to topo order. D12 narrows accordingly: canonical sort stays as a general guardrail for future user-supplied collections that aren't SsKey-keyed, but rename specifically doesn't need it.
+**Status:** Draft 3 — 2026-05-12. Integrates the verifiability-triangle audit (`AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md`) and `PRODUCT_AXIOMS.md` into the plan-of-record. Drafts 1 / 2 / 2.1 / 2.2 commit references: `2ab3a8a` / `5da03c2` / `090edab` / mid-doc-edit. Draft 3 is the first version where workstreams are tagged with the L3 axioms they operationalize and the bucket promotions they produce; cutover criteria are restated as axiom-bucket-witnessed claims; risks are restated where possible as axiom-violation scenarios; and Campaign A / B / C (from audit Part IX) are integrated as cross-cutting workstream tags rather than parallel work.
 
-**Companion documents:** `V2_DRIVER.md` (KPI / phase ladder), `VISION.md` (architectural north star), `STAGING.md` (chapter staging), `HANDOFF.md` (current-session pointer), `DECISIONS.md` (dated decision log), `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` (the L1↔L2↔L3 coverage map informing Phase A campaigns), `PRODUCT_AXIOMS.md` (the L3 product-axiom catalog this plan operationalizes).
+**Companion documents:** `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` (the L1↔L2↔L3 coverage map; the algebra's reference manual), `PRODUCT_AXIOMS.md` (L3 product axiom catalog; the operator's promise), `AXIOMS.md` (L2 formal axioms; the algebra's interior), `VISION.md` (strategic frame), `V2_DRIVER.md` (KPI ladder), `STAGING.md`, `HANDOFF.md`, `DECISIONS.md`.
 
-**Outstanding:** Operator's "document of key evolutions" (referenced 2026-05-11 by the product owner). Draft 3 will absorb it.
-
----
-
-## 1. Executive Summary
-
-V2 is structurally green on the schema/DDL axis (1,072 tests passing, three Π's wired through `Compose.run`) but functionally constrained in three independent dimensions: (a) its CLI accepts only positional args and threads `Policy.empty` / `Profile.empty` / `UserRemapContext.empty` into emission; (b) **its IR (`Catalog`) cannot yet represent multiple V1 schema concepts** — trigger definitions, sequences, temporal tables, DEFAULT values, computed columns, CHECK constraints, the catalog coordinate of `TableId`, extended properties at four levels, and entity/attribute descriptions; (c) it has no OSSYS metadata extractor or profile probe surface.
-
-The operator's two production use cases — `extract-model` and `full-export` with table-rename and migration-dependency overrides — require V2 to (a) own OSSYS extraction and profiling end-to-end, (b) accept a unified config that drives renames, migration-dependency rows, module selection, and policy axes (with credentials sourced externally), and (c) light up the data emitters and diagnostic emitters currently asleep behind the CLI's hardcoded defaults — and crucially (d) **lift V1's schema-semantic concepts into V2's IR as a Phase A precondition** so that wired emitters can render complete DDL.
-
-Sequence: **Phase A** ships V2's emit half (config + override surface + IR lifts + emitter wiring + static-data and migration-dependency JSON loaders + auto-PK pass + canonical rename order + profile-JSON ingestion) running against V1-produced extraction and profile JSON. This is the *soak path* — V2 emit + V1 extract/profile in parallel, gated on **functional equivalence** (set-equivalence + semantic diff) rather than byte-identity. **Phase B** ports OSSYS extraction and profiling into V2 (`projection extract`, `projection profile`, `projection full-export` subcommands), enabling V2 full independence and V1 sunset.
+**Outstanding:** Operator's "document of key evolutions" (referenced 2026-05-11 by the product owner) — likely reshapes UAT-users scope and may add a sixth core concern. Operator decision on (a) Campaign A sequencing within Phase A and (b) axiom-naming convention (A41+ in AXIOMS.md vs `L3-Boundary-*` namespace).
 
 ---
 
-## 2. Use Cases In Scope
+## Table of Contents
+
+1. [Executive summary + five Draft-3 insights](#1-executive-summary)
+2. [Use cases in scope](#2-use-cases-in-scope)
+3. [Current state audit](#3-current-state-audit)
+4. [Locked-in design decisions](#4-locked-in-design-decisions)
+5. [The composition algebra](#5-the-composition-algebra)
+6. [Phase A — Soak path (workstreams)](#6-phase-a--soak-path)
+7. [Phase B — Full independence (workstreams)](#7-phase-b--full-independence)
+8. [Cutover criteria (axiom-witnessed)](#8-cutover-criteria-axiom-witnessed)
+9. [Risk register](#9-risk-register)
+10. [Open questions](#10-open-questions)
+11. [Deferred / out-of-scope](#11-deferred--out-of-scope)
+12. [Per-axiom delivery matrix](#12-per-axiom-delivery-matrix)
+13. [Addenda (append-only)](#13-addenda-append-only)
+
+---
+
+## 1. Executive summary
+
+V2 is structurally green on the schema/DDL axis (1,121 tests post-Slice-1 PhysicallyRenamed; three Π's wired through `Compose.run` + a fourth, `Compose.runWithConfig`, threading rename through `read → applyRenames → project → write`). The cutover blockers are not in the algebra's interior — they're in three concentric rings around it: boundary contracts (V1 ↔ V2 ingestion; V2 → disk emission; V2 → operator diagnostics), operational evolution (versioning, config compatibility, CI/CD migration), and compositional reasoning (pass-order commutation, Lifecycle temporal axis). The verifiability-triangle audit (`AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md`) catalogued every gap and proposed three campaigns; this Draft 3 integrates those campaigns into the Phase A / Phase B sequence as cross-cutting workstream tags.
+
+### Five Draft-3 insights
+
+**(1) IR fidelity (A.0') *is* the largest unnamed-axiom operationalization.** The 11 IR concepts in Phase A.0' (triggers, sequences, temporal tables, DEFAULT values, computed columns, CHECK constraints, ExtendedProperties, descriptions, IsExternal/Origin mapping, IsActive flags, Catalog coordinate) map one-to-one onto L3-S4 through L3-S10, L3-I10, and L3-CC4. Once A.0' completes, eight Tier-1 unnamed axioms promote from Bucket D to Bucket A by construction. Campaign A.2 (no-silent-drop) is A.0''s completion criterion restated as an axiom.
+
+**(2) Only 2 cutover-blocker axioms are genuinely *new* work.** Of the four Bucket-D Tier-1 axioms surfaced by the audit:
+- L3-Idempotence-OnRedeploy (CDC silence) is in flight at chapter 4.1.B.
+- L3-Boundary-NoSilentDrop is A.0''s exit criterion.
+- L3-Boundary-AtomicEmission is net-new — but it's a small surgical change to `Compose.write`.
+- L3-Boundary-ManifestMatchesDisk is net-new — but it's a signature change in `Compose.write` + `ManifestEmitter`.
+
+Campaign A's *incremental* cost on top of the existing Phase A plan is **3-5 days**, not the 3-5 weeks the audit estimated when Campaign A was framed in isolation.
+
+**(3) The Catalog cross-field invariants expansion (1 → 8) is the deepest single change.** Original Slice 2 was about physical-name uniqueness — one invariant. The audit's Tier-1 catalog (Part VI.2) named seven more cross-field invariants in the same shape: `IsIdentity ⇒ ¬IsNullable`, `IsPrimaryKey index ⇒ IsUnique`, Length/Precision/Scale coherence with Type, Length bounded by SQL VARCHAR limit, PK ordering enforced, at most one Static modality per Kind, physical-name uniqueness. All eight extend `Catalog.create` in the same shape. One PR, mechanically simple, very high leverage — every Catalog instance downstream gains seven new structural guarantees on top of the existing five A39 invariants.
+
+**(4) "R11 dissolved" was the algebra at work.** Once the audit confirmed `TopologicalOrderPass` reads SsKey only, R11 (rename ordering perturbs topo) became impossible by construction, not by mitigation. Draft 3 expects more R-dissolutions as Campaign B lands: R11 dissolved post-audit; R2 likelihood/impact dropped to Low/Low post-Q1 resolution; future structural commitments will retire R4, R7, R10, R11 categories of concern.
+
+**(5) Cutover criteria become provable.** Before: "Phase A exit: all A.0–A.6 deliverables met" — judgment. After: "Phase A exit: every Tier-1 L3 axiom in the target set is Bucket A or B; no Tier-1 axiom remains in Bucket D" — mechanically verifiable from the audit doc's coverage map at any point in time. Cutover ladder rungs become axiom-bucket invariants rather than checklist completion.
+
+### Sequence at the highest level
+
+The two-phase frame holds. Phase A (V2 emits from V1-extracted JSON; soak against V1 outputs; ~6-9 weeks including Campaigns A's 3-5 incremental days + Campaigns B/C wherever they slot in). Phase B (V2 owns extraction + profiling; ~8-11 weeks). V1 sunset begins at cutover+30 + one full schema-evolution cycle per R6.
+
+---
+
+## 2. Use cases in scope
 
 ### 2.1 `extract-model`
-Connect to live OSSYS SQL Server, run the OutSystems metadata queries, write a deterministic snapshot of modules/entities/attributes/references/indexes/triggers/sequences/extended-properties to disk. V2's `CatalogReader` already parses this snapshot's existing fields; V2 must learn to *produce* it and to also carry the fields V2 currently drops at the adapter boundary (see §3.3).
+Connect to live OSSYS SQL Server, run the OutSystems metadata queries, write a deterministic snapshot of modules / entities / attributes / references / indexes / triggers / sequences / extended-properties to disk. V2's `CatalogReader` parses this snapshot's existing fields; V2 must learn to *produce* it and to also carry the fields V2 currently drops at the adapter boundary (per §3.3 and Phase A.0').
+
+**Axioms underwritten:** L3-S1 (byte-determinism), L3-I2 (OssysOriginal survives), L3-I3 (synthesis deterministic), L3-CC4 (IR fidelity for production), L3-Boundary-NoSilentDrop (post-Campaign A.2).
 
 ### 2.2 `full-export` with overrides
 Chain extract → profile → emit, accepting:
-- **Table-rename overrides**: rename source table to target table (both logical `Module::Entity` and physical `schema.table` forms).
-- **Migration-dependency overrides**: append specific rows into specific tables, with PKs auto-assigned at emit time as `MAX(SourceOSSYS.Id) + ROW_NUMBER()` baked as literals into the emitted INSERT/MERGE statements.
-- **Static-data overrides**: seed-row fixtures (parallel-but-distinct from migration dependencies; see §5.4 vs §5.5).
+- **Table-rename overrides**: rename source table to target table (both logical `Module::Entity` and physical `schema.table` forms). Shipped at Slice 1 (commit `9d578cc`); L3-I1 verified.
+- **Migration-dependency overrides**: append specific rows into specific tables, with PKs auto-assigned at emit time as `MAX(observedSet.Id) + ROW_NUMBER()` baked as literals into emitted INSERT/MERGE statements.
+- **Static-data overrides**: seed-row fixtures (parallel-but-distinct from migration dependencies; A.3 vs A.3').
 
 Outputs needed: SSDT project on disk (per-table .sql + manifest), `.dacpac` binary, static-seed INSERTs, migration-INSERT scripts, decision/opportunity/validation logs.
 
-### 2.3 Explicitly out of scope (see §10 for the full deferral catalog with rationale)
-- **Apply / load-harness phases.**
-- **UAT-users transformation as a top-level feature.**
-- **V1 verbs not in operator's named two use cases.** (dmm-compare, analyze, inspect, policy-explain — operator confirmed no production usage.)
-- **`.sqlproj` generation** — operator handles via external SSDT tooling.
-- **`SafeScript.sql` / `RemediationScript.sql` emission.**
-- **V1-compatible `osm_model.json` re-emission** — V2's `JsonEmitter` emits V2 IR.
+**Axioms underwritten:** L3-S1 through L3-S10 (schema fidelity), L3-D1 through L3-D10 (data correctness), L3-I1 (rename safety), L3-X1 through L3-X10 (diagnostics), L3-C1 (canary), L3-Idempotence-OnRedeploy (CDC silence), L3-Boundary-AtomicEmission, L3-Boundary-ManifestMatchesDisk.
+
+### 2.3 Explicitly out of scope
+(See §11 for the full deferral catalog with rationale.)
+
+- **Apply / load-harness phases** (operator runs SSDT/dacpac via external tooling; D7).
+- **UAT-users transformation as a top-level feature** until the operator's evolutions document arrives.
+- **V1 verbs not in operator's named two use cases** (dmm-compare, analyze, inspect, policy-explain).
+- **`.sqlproj` generation**, **`SafeScript.sql` / `RemediationScript.sql` emission**, **V1-compatible `osm_model.json` re-emission**.
 - **Telemetry package, evidence-cache directory.**
 
 ---
 
-## 3. Current State Audit (synthesized 2026-05-11)
+## 3. Current state audit
+
+(Synthesized from the 2026-05-11 six-agent audit + 2026-05-12 verifiability-triangle audit. Cross-references throughout to `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md`.)
 
 ### 3.1 V1 surface (src/)
 
 | Capability | Location | Notes |
 |---|---|---|
 | CLI verbs | `src/Osm.Cli/` | 8 verbs: extract-model, full-export, build-ssdt, profile, dmm-compare, inspect, analyze, policy explain (+ uat-users behind env flag) |
-| OSSYS metadata SQL | `src/AdvancedSql/outsystems_metadata_rowsets.sql` (1,184 LOC) + `outsystems_model_export.sql` (931 LOC) | Parameterized: `@ModuleNamesCsv`, `@IncludeSystem`, `@IncludeInactive`, `@OnlyActiveAttributes`, `@EntityFilterJson` |
-| Result-set processors | `src/Osm.Pipeline/SqlExtraction/` | 25 concrete processors; `MetadataSnapshotRunner.cs` (407 LOC) async-stream orchestrator; `MetadataAccumulator.cs` (104 LOC); core extraction ~2,000 C# LOC; full pipeline w/ wiring & error handling ~6,565 LOC |
-| Snapshot writer | `src/Osm.Pipeline/SqlExtraction/SnapshotJsonBuilder.cs` (288 LOC) | Writes `osm_model.json` via `Utf8JsonWriter` |
-| Profile probes | `src/Osm.Pipeline/Profile/` (~6,000 C# LOC) | **5 query builders**: NullCount, NullRowSample (10-row context), UniqueCandidate, ForeignKeyProbe (orphan counts), ForeignKeyOrphanSample (10-row context). Sampling uniform across probes via `TableSamplingPolicy`. **No MAX(Id) probe** (gap; see Q1). **No distribution/percentile probes.** |
-| `MetadataContractOverrides` | `src/Osm.Pipeline/SqlExtraction/` (141 LOC) | **Not** SQL-Server-version-dependent (the audit's prior framing was wrong); handles OSSYS-schema flexibility for optional metadata columns (e.g., `AttributeJson` vs `AttributesJson`). T-SQL itself uses stable 2016+ features. |
-| Connector | `src/Osm.Pipeline/Sql/SqlConnectionFactory.cs` (53 LOC) | Microsoft.Data.SqlClient; auth modes, cert trust, access token, app name |
-| Module filtering | `src/Osm.Pipeline/ModelIngestion/ModuleFilter.cs` (140 LOC) | Both SQL-side (preemptive) and C#-side (defensive) |
-| Override binders | `src/Osm.Pipeline/Application/NamingOverridesBinder.cs:32-119`; `src/Osm.Pipeline/StaticData/StaticEntityDataProviders.cs:11-119`; `src/Osm.Pipeline/Configuration/CliConfigurationLoader.cs:49-171` | Seven scattered input mechanisms (rename-table flag, static-data fixture, --config JSON, circular-deps JSON, dynamic-insert-mode/static-seed-parent-mode/defer-junction-tables flags, UAT user CSV, module filter flags) |
+| OSSYS metadata SQL | `src/AdvancedSql/outsystems_metadata_rowsets.sql` (1,184 LOC) + `outsystems_model_export.sql` (931 LOC) | Parameterized |
+| Result-set processors | `src/Osm.Pipeline/SqlExtraction/` | 25 concrete processors + `MetadataSnapshotRunner.cs` (407 LOC) + `MetadataAccumulator.cs` (104 LOC); core extraction ~2,000 C# LOC |
+| Profile probes | `src/Osm.Pipeline/Profile/` (~6,000 C# LOC) | 5 query builders: NullCount, NullRowSample, UniqueCandidate, ForeignKeyProbe, ForeignKeyOrphanSample. Uniform sampling via `TableSamplingPolicy`. No MAX(Id) probe today. No distribution/percentile probes. |
+| Connector | `src/Osm.Pipeline/Sql/SqlConnectionFactory.cs` | Microsoft.Data.SqlClient; auth modes (Integrated, SqlPassword, ActiveDirectoryDefault, AccessToken) |
+| Override binders | `src/Osm.Pipeline/Application/NamingOverridesBinder.cs`; `src/Osm.Pipeline/StaticData/StaticEntityDataProviders.cs`; `src/Osm.Pipeline/Configuration/CliConfigurationLoader.cs` | Seven scattered input mechanisms |
 
 ### 3.2 V2 surface (sidecar/projection/)
 
 | Capability | Location | State |
 |---|---|---|
-| CLI | `src/Projection.Cli/Program.fs:207-230` | Hand-rolled `match argv`; three subcommands `emit`/`deploy`/`canary`; positional args only; **no flags, no config file** |
-| Pipeline composition | `src/Projection.Pipeline/Pipeline.fs:176-234` (`Compose.run`) | Threads `Policy.empty` / `Profile.empty` / no-UserRemap to emitters; **hardcoded defaults; no CLI surface for overrides** |
+| CLI | `src/Projection.Cli/Program.fs` | Hand-rolled `match argv`; subcommands `emit` / `emit --config <path>` / `deploy` / `canary`; positional + flag forms coexist |
+| Pipeline composition | `src/Projection.Pipeline/Pipeline.fs` (`Compose.run` + `Compose.runWithConfig`) | `runWithConfig` threads rename through `read → applyRenames → project → write` |
+| Config + boundary | `src/Projection.Pipeline/Config.fs` (D9 secret-free) + `RenameBinding.fs` (Config → Core mapper) | Shipped at A.0 / A.1 / A.4 (commits `93468a3`, `df18bbf`, `502592f`, `9d578cc`) |
 | Emitters wired in CLI | SsdtDdlEmitter, JsonEmitter, DistributionsEmitter | 3 of 11 |
-| Emitters built but unwired | DacpacEmitter, DockerImageEmitter, StaticSeedsEmitter, MigrationDependenciesEmitter, BootstrapEmitter, DecisionLogEmitter, OpportunitiesEmitter, ValidationsEmitter, RefactorLogEmitter | All tested; need `Compose.project` wiring + EmissionPolicy gates |
-| OSSYS metadata extractor | — | **Absent.** V2's `ReadSide` reads `INFORMATION_SCHEMA` for canary verification, not OSSYS metadata |
-| Profile probes | — | **Absent.** `Profile.empty` is used in CLI; type structure (`src/Projection.Core/Profile.fs:538-547`) is rich and ready, but no adapter populates it |
-| Detection passes | `src/Projection.Core/Passes/NullabilityPass.fs:194`, `ForeignKeyPass.fs:240`, `UniqueIndexPass.fs:171` | Mature; route to Opportunities via `Code` prefix; **only meaningful with real Profile data** |
-| MigrationDependenciesEmitter | `src/Projection.Targets.Data/MigrationDependenciesEmitter.fs:32-56` | Built; emits MERGE; consumes `MigrationDependencyContext`; **no JSON loader, no auto-PK assignment, no per-table file routing** |
-| StaticSeedsEmitter | `src/Projection.Targets.Data/StaticSeedsEmitter.fs` | Built; emits MERGE for static-entity rows; **no JSON loader for V1-style static-data fixture** |
-| User-FK reflow | `src/Projection.Targets.Data/MigrationDependenciesEmitter.fs:253-330` + `UserFkReflowPass` | Built; consumes `UserRemapContext`; programmatic construction only |
+| Emitters built but unwired | DacpacEmitter, DockerImageEmitter, StaticSeedsEmitter, MigrationDependenciesEmitter, BootstrapEmitter, DecisionLogEmitter, OpportunitiesEmitter, ValidationsEmitter, RefactorLogEmitter | All tested; A.2 wires them under EmissionPolicy gates |
+| OSSYS metadata extractor | — | **Absent.** V2's `ReadSide` reads `INFORMATION_SCHEMA` for canary verification, not OSSYS metadata. Phase B.0–B.2. |
+| Profile probes | — | **Absent.** `Profile.empty` is used in CLI; type structure is rich and ready. Phase B.3. |
+| Detection passes | `src/Projection.Core/Passes/NullabilityPass.fs`, `ForeignKeyPass.fs`, `UniqueIndexPass.fs` | Mature; route to Opportunities via `Code` prefix; only meaningful with real Profile data |
+| TableRename | `src/Projection.Core/Passes/TableRename.fs` + `TransformKind.PhysicallyRenamed` payload | Shipped at Slice 1 (commit `9d578cc`); L3-I1 verified |
 
-### 3.3 IR-fidelity gap (new in Draft 2)
+### 3.3 IR-fidelity gaps → L3-S4–S10 + L3-I9–I10 + L3-CC4 underwriting
 
-V2's `Catalog` does not yet carry several schema concepts that V1's `OsmModel` preserves. These are not Phase B concerns — they are correctness bugs that surface as soon as V2 emit is run against a real workload. Each row below is a Phase A.0' deliverable (see §5.2).
+V2's `Catalog` does not yet carry several schema concepts V1's `OsmModel` preserves. **Each is a Tier-1 L3 axiom currently in Bucket D; A.0' is the workstream that promotes them to Bucket A.**
 
-| V1 concept | V1 carrier | V2 today | Cutover impact |
+| V1 concept | L3 axiom | Phase A.0' deliverable | Cutover impact |
 |---|---|---|---|
-| **Trigger definitions** | `TriggerModel.Definition` (T-SQL text) | `Kind.Modality` may acknowledge trigger existence; Definition text dropped at adapter | Cutover emits incomplete schema; triggers silently disappear from target DB |
-| **Sequences** | `OsmModel.Sequences: SequenceModel[]` (StartValue, Increment, Min, Max, Cycle, Cache) | No `Catalog.Sequences` field at all | Apps depending on sequence-generated IDs fail at cutover |
-| **Temporal tables** | `EntityModel.Metadata.Temporal: TemporalTableMetadata` | No `Temporal` variant in `ModalityMark` | History-table configuration lost; audit trail broken |
-| **DEFAULT values** | `AttributeModel.DefaultValue` | No `DefaultValue` on `Attribute` | Column defaults vanish; subsequent INSERTs miss defaulted data |
-| **Computed columns** | `AttributeOnDiskMetadata.isComputed` + `computedDefinition` | No `IsComputed` / `ComputedDefinition` on `Attribute` | Computed-column definitions lost; DDL emission incomplete |
-| **CHECK constraints** | `AttributeOnDiskCheckConstraint` (CHECK text) | No `ColumnChecks` carrier on `Kind` | Data validation rules disappear |
-| **Catalog (database) coordinate** | `EntityModel.Catalog: string?` | `TableId` is `(Schema, Table)` only | Cross-database FKs silently degrade to same-catalog |
-| **ExtendedProperties (4 levels)** | `Module / Entity / Attribute / Index .ExtendedProperties[]` | No carrier at any level | OSSYS-defined metadata, audit fields, custom tags all lost |
-| **Description fields** | `Entity / Attribute .Metadata.Description` | No carrier | Operator-visible docstrings vanish; SQL Server extended-property descriptions cannot be emitted |
-| **IsExternal / Origin mapping** | `EntityModel.IsExternal: bool` | `Kind.Origin` exists with three cases but mapping from V1's `IsExternal` is unclear in OSSYS adapter | External entities may be emitted as native or vice versa |
-| **IsActive flags** | `Module / Entity / Attribute .IsActive` | Module/Attribute IsActive lost; Entity active partially preserved | Inactive schema elements may leak into cutover DDL |
+| Trigger definitions (T-SQL text) | L3-S4 | Add `Catalog.Triggers : Trigger list` with `Definition : string`, `IsDisabled : bool` | Triggers silently disappear from target DB |
+| Sequences (StartValue, Increment, Min, Max, Cycle, Cache) | L3-S5 | Add `Catalog.Sequences : Sequence list` | Applications depending on sequence-generated IDs fail |
+| Temporal tables (TemporalTableMetadata) | (covered by L3-S4 family; new sub-axiom pending) | Extend `ModalityMark` with `Temporal of TemporalConfig` | History-table configuration lost; audit trail broken |
+| DEFAULT values | L3-S6 | Add `Attribute.DefaultValue : SqlLiteral option` | Column defaults vanish; subsequent INSERTs miss defaulted data |
+| Computed columns | L3-S7 | Add `Attribute.Computed : ComputedColumnConfig option` | Computed-column definitions lost |
+| CHECK constraints | L3-S8 | Add `Kind.ColumnChecks : ColumnCheck list` | Data validation rules disappear |
+| Catalog (database) coordinate | L3-S10 / L3-I10 | Extend `TableId` to `{ Catalog: string option; Schema; Table }` | Cross-DB FKs silently degrade |
+| ExtendedProperties at 4 levels | L3-S9 | Add `ExtendedProperties: ExtendedProperty list` to Module / Kind / Attribute / Index | OSSYS-defined metadata, audit fields lost |
+| Description fields (Entity, Attribute) | (covered by L3-S9; new sub-axiom pending) | Add `Description: string option` to Kind metadata + Attribute metadata | Operator-visible docstrings vanish |
+| IsExternal / Origin mapping | (Bucket-B today; A.0' upgrades) | Adapter property test: V1 `IsExternal=true → V2 Origin = ExternalViaIntegrationStudio \| ExternalDirect` | External entities emitted as native (or vice versa) |
+| IsActive flags (Module, Attribute) | (Bucket-B today; A.0' upgrades) | Add `IsActive: bool` to Module / Attribute | Inactive schema elements leak into cutover DDL |
 
-### 3.4 Credentials & Secrets (cross-cutting; new in Draft 2)
+**Campaign A.2 ("no silent V1 feature skip" / L3-Boundary-NoSilentDrop)** is A.0''s completion criterion: every concept in the table above ends with either (a) a typed Catalog field, OR (b) a `Diagnostic.Severity=Error` at the adapter boundary. No silent passthrough is the structural invariant; the axiom names it.
 
-V1 supports several auth modes (`SqlAuthenticationMethod` enum: Integrated, SqlPassword, ActiveDirectoryDefault, ActiveDirectoryMSI, AccessToken) per `src/Osm.Cli/Commands/Binders/SqlOptionBinder.cs:14-46`. V2 must preserve all of them at cutover.
+### 3.4 Credentials & secrets (cross-cutting; L3-C8)
 
-**Policy (locked-in per D9):** Connection strings and credentials **do not live in the unified config JSON.** They are sourced from:
-- Environment variables (e.g., `OSM_CONNECTION_STRING`, `OSM_ACCESS_TOKEN`).
-- A separate non-checked-in connection-config file (e.g., `connection.local.json`) referenced via CLI flag.
-- Connection-string keywords for tokenless auth (`Authentication=Integrated`, `Authentication=ActiveDirectoryDefault`).
+**Policy (D9):** Connection strings and credentials *do not live in the unified config JSON*. They are sourced from environment variables, a separate non-checked-in connection-config file referenced via CLI flag, or connection-string keywords for tokenless auth (`Authentication=Integrated`, `Authentication=ActiveDirectoryDefault`). The config JSON is **secret-free by construction**.
 
-The unified config JSON is **secret-free by construction.** Config parser does not have a `sql.connectionString` field. If a future evolution needs to bind connection info into a Compose pipeline, it does so by reading the env var or separate file at parser time, not by accepting a JSON property.
+**L3 axiom:** L3-C8 ("no credentials in unified config"). **Bucket:** A (parser-level enforcement at `Config.fs` + structural absence of credential field types).
 
-**Acceptance criterion** (Phase A.0 exit): config parser has no path to accept a plaintext password or access token. Static analyzer rule (`Projection.Analyzers`) flags any code that reads a `connectionString` property from `Config`.
+**Acceptance criterion:** `Config.parse` rejects any property whose name is a credential signature (Slice A.0's `D9 guardrail`; see `ConfigTests.``D9: credential property anywhere is rejected``). Campaign C.3 expands the credential-token list (`bearer`, `authorization`, `credentials`, `oauth`, `personal+access+token`, `private+token`).
 
-### 3.5 Observability & Logging (cross-cutting; new in Draft 2)
+### 3.5 Observability & logging (cross-cutting; L3-X9, L3-X10)
 
-V1 uses `Microsoft.Extensions.Logging` with structured EventIds and source identifiers. V2 does not have an equivalent contract wired today.
+V1 uses `Microsoft.Extensions.Logging` with structured EventIds. V2 ships its own log format (D10); operator updates downstream log-aggregation tooling (CloudWatch / ELK / Splunk queries) at cutover. The plan does not gate on log-format equivalence.
 
-**Policy (locked-in per D10):** V2 ships **its own log format**, not a V1-compat one. The operator updates downstream log-aggregation tooling (CloudWatch Insights / ELK / Splunk queries) as part of the cutover. The plan does not gate on log-format equivalence.
+**L3 axioms:** L3-X9 ("config validation errors are structured"; Bucket A), L3-X10 ("multi-environment policy diffs are signaled"; Bucket D pending chapter 4.1.A M4), plus L3-Operational-LoggingContract (candidate; Tier 2; informally Q9 from gap-hunt).
 
 **Implications:**
-- V1's `--extract-sql-metadata-out` / `--build-sql-metadata-out` / `--profile-sql-metadata-out` diagnostic JSON outputs are not preserved as a V2 contract. If operator tooling consumes them, it migrates to consuming V2's emitted Decision/Opportunity/Validation JSONs instead.
-- V2's logging format will be defined during Phase B.4. Stable structured properties will be documented; the operator's downstream tooling rewrite happens at cutover.
+- V1's `--extract-sql-metadata-out` / `--build-sql-metadata-out` / `--profile-sql-metadata-out` diagnostic JSON outputs are not preserved as a V2 contract. If operator tooling consumes them, it migrates to consuming V2's emitted Decision/Opportunity/Validation JSONs.
+- V2's logging format is defined during Phase B.4; stable structured properties documented at `sidecar/projection/docs/logging-format.md`.
 
-### 3.6 Determinism & Idempotency under user config (cross-cutting; new in Draft 2)
+### 3.6 Determinism & idempotency (cross-cutting; L3-C7, L3-S1, L3-D2, L3-Idempotence-OnRedeploy)
 
-V2 claims byte-determinism (AXIOMS T1). User-supplied overrides (renames, migration-dep rows, module filters) can perturb execution order if not handled canonically.
+V2 claims byte-determinism (T1 + L3-S1). User-supplied overrides (renames, migration-dep rows, module filters) can perturb execution order if not handled canonically.
 
-**Policy (locked-in per D12):** Canonical sort applied to user-supplied collections at config-validation time, before they reach pipeline passes. Specifically:
-- `overrides.migrationDependencies` rows iterated in declaration order *within each table*; tables themselves sorted by canonical kind-key.
+**Policy (D12):** Canonical sort applied to user-supplied collections at config-validation time, before they reach pipeline passes. Specifically:
+- `overrides.migrationDependencies` rows iterated in declaration order *within each table*; tables sorted by canonical kind-key.
 
-**`overrides.tableRenames` exception (post-Draft-2.2 audit):** Rename order is structurally moot. `TopologicalOrderPass` reads SsKeys only, never physical names; `Reference.TargetKind` is a SsKey, never a TableId. Renames rewrite only `Kind.Physical`, never identity or graph edges. Two `TableRename.run` invocations with the same spec set in different orders produce structurally-equal output Catalogs (proven by `TableRenameTests.``D12: rename spec order does not affect the rewritten catalog```). D12 retains the general guardrail for any future user-supplied collection where ordering could matter; for rename it's confirmation, not constraint.
+**`overrides.tableRenames` exception (post-Draft-2.2 audit):** Rename order is structurally moot. `TopologicalOrderPass` reads SsKeys only; `Reference.TargetKind` is a SsKey, not a TableId. Renames rewrite only `Kind.Physical`. Two `TableRename.run` invocations with the same spec set in different orders produce structurally-equal output Catalogs (property test `D12: rename spec order does not affect the rewritten catalog`). D12 retains the general guardrail for any future user-supplied collection where ordering could matter.
 
-**Out of scope** (deliberately, per operator decision):
-- Idempotency test in Phase A.6 soak (not a gate).
-- Graceful concurrent-extraction failure handling in V2 (operator coordinates externally).
+**L3 axioms:** L3-C7 ("canonical ordering prevents determinism regression"; Bucket A), L3-S1 ("byte-determinism"; Bucket A modulo cross-platform extension Q3/Q4), L3-D2 ("static-seed deterministic order"; Bucket A), L3-Idempotence-OnRedeploy ("CDC silence on redeploy"; Bucket D pending chapter 4.1.B).
+
+**Out of scope deliberately:**
+- Idempotency test as a Phase A.6 gate.
+- Graceful concurrent-extraction failure handling (operator coordinates externally).
 - Single-writer documentation as a required deliverable.
 
-### 3.7 CI/CD migration (cross-cutting; new in Draft 2)
+### 3.7 CI/CD migration (cross-cutting; operator-owned per D11)
 
-V1 is likely invoked in operator's CI/CD workflows, scripts, and IDE integrations. V2 cutover at T+30 (per §7.3) breaks any V1-invocation site that hasn't been migrated.
+V1 is invoked in operator's CI/CD workflows. V2 cutover at T+30 breaks any V1-invocation site not migrated. **Operator-owned, not a plan deliverable.** Risk R9 stays as documented known risk.
 
-**Policy (locked-in per D11):** CI/CD inventory and migration is **operator-owned, not a plan deliverable.** The plan documents this as a known risk (R9) and a cutover-day responsibility. The plan does not insert a Phase A.7 audit step.
+**L3 axiom:** L3-Operational-CIMigration (candidate; Tier 2; informally Q6/Q19 from gap-hunt). Not formalized in this Draft 3; promotion deferred until operator's evolutions document arrives and clarifies their CI surface.
 
-**Implications:**
-- Operator-owned: enumerate V1 invocation sites; map each to a V2 config-file equivalent; cut over before T+30.
-- The plan provides the V2 CLI surface specification (§5.3, §6.5) and the unified config schema (§5.1) as the artifacts the operator needs to do the mapping. No additional automation.
+### 3.8 Structural-commitment posture (new in Draft 3)
 
----
+The audit (`AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` Part IV) classifies every L2 axiom (A1–A40 + T1–T11) and every L3 axiom into four coverage buckets:
 
-## 4. Locked-in Design Decisions
-
-These are decisions made during the 2026-05-11 audit collaboration. Each is revisable, but moving any requires explicit reopening in §11 with a new dated entry.
-
-| # | Decision | Rationale |
+| Bucket | Definition | Count |
 |---|---|---|
-| D1 | **V2 owns OSSYS extraction** (port from V1), not subprocess-shell-out, not permanent V1 dependency. | Required for V1 sunset; clean cutover; F# parity. |
-| D2 | **Full V2 independence before cutover**, not partial / coexistence. | Operator workflow expects one tool. |
-| D3 | **Single typed config file** for all overrides, replacing V1's seven scattered input mechanisms. CLI accepts `--config <path>` + a small set of common flag overrides. | Reduces operator cognitive load; one schema to learn. |
-| D4 | **Phase A first as a soak**, then Phase B. V2 emit runs against V1-extracted JSON during Phase B port for differential testing. | Surfaces emit-side gaps early; validates emit-half against real workloads before extraction-side rewrite lands. |
-| D5 | **MigrationDependencies PK assignment**: pre-compute at emit time as `MAX(observedSet.Id) + ROW_NUMBER()`; bake literal IDs into emitted SQL. The "observed set" is whatever records V2 has in hand at PK-assignment time — static-data fixture rows, profile-supplied counts/max, or (Phase B) probe-captured MAX. V1 is not modified. | Deterministic; readable diffs; no deploy-time uncertainty; no V1 dependency. See §9 Q1 for per-phase resolution. |
-| D6 | **V2 owns profile probes** against OSSYS DB. | Required for full independence (D2); detection passes need profile data; V1's probe set is portable. |
-| D7 | **Apply phase is external.** V2 emits artifacts; operator runs them via DacFx publish / sqlcmd. | Reduces V2 scope; ephemeral `deploy` subcommand stays as dev tooling. |
-| D8 | **Tightening as detection, not intervention.** Operator does not configure tightening rules in production; V2's role is to *catch* SQL Server semantic breakers (orphaned FKs, IsMandatory=true + nulls, unique-index dups) and emit them as Opportunities for operator review. | Detection passes already exist; profile data is the missing input; intervention-axis tuning is out of scope. |
-| **D9** | **Connection strings + credentials live outside the unified config JSON.** Sourced from env vars or a separate non-checked-in file. Config parser has no path to accept plaintext passwords. | Eliminates accidental-secret-in-git failure mode by construction. See §3.4. |
-| **D10** | **V2 ships its own log format.** Operator updates downstream log-aggregation tooling at cutover. V1's `Microsoft.Extensions.Logging` EventId contract is not preserved. | Smallest V2 scope; operator already plans downstream tooling rework. See §3.5. |
-| **D11** | **CI/CD inventory and migration is operator-owned.** Plan does not gate on CI cutover. R9 stays as a documented known risk. | Operator already has internal context for invocation sites; plan provides V2 CLI surface as the migration target. See §3.7. |
-| **D12** | **Canonical sort on user-supplied collections** (renames, migration-dep rows) at config-validation time. No idempotency test gate; no concurrent-extraction handling. | Sufficient determinism guardrail; avoids over-engineering. See §3.6. |
+| **A** | Full coverage (L3 ✓ L2 ✓ L1 ✓ test). Type system structurally prevents violation. | 18 L2 axioms; ~28 L3 axioms |
+| **B** | L3 ✓ L2 ✓ test ✓; L1 by convention only. One refactor away from regression. | 12 L2 axioms; ~16 L3 axioms |
+| **C** | Weakness: untested, hidden, aspirational, deferred, subsumed, scope boundary, or partial structural. | 20 L2 axioms; 0 L3 axioms (Bucket C is L2-only) |
+| **D** | Unnamed L3 axiom; no L2 backing; silent operator dependency. | 0 L2 axioms; ~30 L3 candidates |
+
+**Three rings of weakness** (audit Part VII) identify where V2's structural commitment is weakest:
+1. **Boundary contracts** (V1→V2 ingestion; V2→disk writing; V2→operator diagnostics) — atomic emission, lossless parsing of carried fields, manifest matches disk, cross-platform encoding. Campaign A's primary target.
+2. **Operational evolution** (V2's promises over time) — diagnostic code stability, config schema backward-compat, decision-log replay completeness, refactor-log DacFx compat. Campaign C's primary target.
+3. **Compositional reasoning** (pass-order commutation, Lifecycle temporal axis). Mostly Bucket-C aspirational; surfaces when triggers fire.
+
+**Plan-of-record implication:** every Phase A workstream is now tagged with the L3 axioms it promotes (D → A/B) and the campaign membership (A / B / C / none).
 
 ---
 
-## 5. Phase A — Soak Path (V1 extracts/profiles, V2 emits)
+## 4. Locked-in design decisions
 
-**Goal:** V2 emit produces the full artifact set from V1-extracted `osm_model.json` and V1-captured profile JSON, with config-driven overrides and an IR that carries every V1 schema concept the operator's workload uses. Validate against operator's real workload via differential testing (functional equivalence) before Phase B begins.
+Decisions D1–D12 with axiom-underwriting tags. Revisable, but moving any requires explicit reopening in §13 with a dated entry.
 
-### 5.1 A.0 — Unified config schema
+| # | Decision | Rationale | Axioms underwritten |
+|---|---|---|---|
+| D1 | **V2 owns OSSYS extraction** (port from V1) | Required for V1 sunset; clean cutover; F# parity | L3-C10 (V1 sunset gating) |
+| D2 | **Full V2 independence before cutover**, not partial/coexistence | Operator workflow expects one tool | L3-C3 (V2 owns no write during dual-track), L3-C4 (per-pair transition) |
+| D3 | **Single typed config file** replacing V1's seven scattered input mechanisms | Reduces operator cognitive load | L3-X9 (config errors structured) |
+| D4 | **Phase A first as a soak**, then Phase B | Surfaces emit-side gaps early; validates emit-half before extraction-side rewrite | L3-C1 (canary asserts V1 ≈ V2) |
+| D5 | **MigrationDependencies PK assignment**: pre-compute at emit time as `MAX(observedSet.Id) + ROW_NUMBER()` | Deterministic; readable diffs; no deploy-time uncertainty | L3-D3 (migration PK determinism) |
+| D6 | **V2 owns profile probes** against OSSYS DB | Required for full independence (D2); detection passes need profile data | L3-D6 (User FK reflow totality), L3-C5 (canary green for ≥30+≥4) |
+| D7 | **Apply phase is external** | Operator runs DacFx publish / sqlcmd; reduces V2 scope | (scope-bounding, no axiom) |
+| D8 | **Tightening as detection, not intervention** | Detection passes exist; profile data is missing input; intervention-axis tuning is out of scope | L3-X1, L3-X2, L3-X6, L3-X7 (diagnostics) |
+| D9 | **Connection strings + credentials live outside the unified config JSON** | Eliminates accidental-secret-in-git failure mode by construction | L3-C8 (no credentials in config) |
+| D10 | **V2 ships its own log format** | Smallest V2 scope; operator updates downstream | L3-Operational-LoggingContract (candidate) |
+| D11 | **CI/CD inventory and migration is operator-owned** | Operator has internal context; plan provides V2 CLI surface as migration target | L3-Operational-CIMigration (candidate; R9 known risk) |
+| D12 | **Canonical sort on user-supplied collections** at config-validation time | Sufficient determinism guardrail; rename specifically moot per topo/SsKey orthogonality | L3-C7 (canonical ordering) |
 
-**Deliverable:** A typed F# model in `Projection.Pipeline` representing the unified config, plus a JSON parser/validator. Schema documented at `sidecar/projection/docs/config-schema.md`. Note: connection-string and credential fields **deliberately absent** per D9.
+---
 
-**Schema sketch** (Draft 2 revision):
+## 5. The composition algebra
 
-```json
-{
-  "model": {
-    "path": "extracted/osm_model.json",
-    "modules": ["AppCore", { "name": "ServiceCenter", "entities": ["User"] }],
-    "includeSystemModules": false,
-    "includeInactiveModules": false,
-    "onlyActiveAttributes": true,
-    "validationOverrides": {
-      "allowMissingPrimaryKey": ["Module1::Entity1", "Module2::*"],
-      "allowMissingSchema": ["Module3::*"]
-    }
-  },
-  "profile": {
-    "path": "extracted/profile.json"
-  },
-  "cache": {
-    "root": ".artifacts/cache",
-    "refresh": false,
-    "ttlSeconds": 7200
-  },
-  "profiler": {
-    "provider": "fixture",
-    "mockFolder": null
-  },
-  "typeMapping": {
-    "path": "config/type-mapping.default.json",
-    "default": null,
-    "overrides": {}
-  },
-  "overrides": {
-    "tableRenames": [
-      { "from": { "module": "OldModule", "entity": "OldEntity" }, "to": { "schema": "dbo", "table": "NEW_TABLE" } },
-      { "from": { "schema": "dbo", "table": "OSUSR_X_Y" }, "to": { "schema": "dbo", "table": "RENAMED" } }
-    ],
-    "migrationDependencies": { "path": "overrides/migration-rows.json" },
-    "staticData": { "path": "overrides/static-entities.json" },
-    "circularDependencies": {
-      "allowedCycles": [
-        { "tableOrdering": [
-          { "tableName": "OSUSR_ORGANIZATION", "position": 100 },
-          { "tableName": "OSUSR_USER", "position": 200 }
-        ] }
-      ],
-      "strictMode": false
-    }
-  },
-  "dynamicData": {
-    "insertMode": "PerEntity",
-    "staticSeedParentMode": "Include",
-    "deferJunctionTables": false
-  },
-  "emission": {
-    "ssdt": true,
-    "dacpac": true,
-    "json": true,
-    "distributions": true,
-    "staticSeeds": true,
-    "migrationDependencies": true,
-    "bootstrap": true,
-    "decisionLog": true,
-    "opportunities": true,
-    "validations": true
-  },
-  "policy": {
-    "selection": "IncludeAll",
-    "insertion": "SchemaOnly",
-    "userMatching": { "strategy": "ByEmail", "fallback": "NoFallback" }
-  },
-  "output": {
-    "dir": "out/"
-  }
-}
+(New in Draft 3.) The principle by which Phase A and Phase B workstreams compose, and the morphisms that connect operational work to structural commitment.
+
+### 5.1 The workstream signature
+
+Every workstream `W` carries five coordinates:
+
+```
+W : (phase, campaign, axiom_set, dependencies, exit_gate)
 ```
 
-**Notes on schema:**
-- **No `sql` block.** Connection sources are outside (D9). CLI accepts `--connection-string-env <VAR>` or `--connection-file <path>`.
-- **No `tightening` block.** D8 fixes V2 as detection-only; intervention axis stays at engine defaults.
-- **Emission block is 10 toggles** (one per emitter). Granularity preserved deliberately during A.0; collapse to semantic groups (`schema` / `data` / `diagnostics`) deferred until operator UX feedback at A.6.
-- **`supplementalModels`** intentionally absent — deferred-with-trigger per `HANDOFF.md:74`; document in §10.
+- **phase**: temporal coordinate. `A.x` or `B.x` with an ordinal.
+- **campaign**: structural-coordinate cross-cut. One of `A` (cutover-blocker unnamed axioms), `B` (structural fortification), `C` (Tier-2 + boundary VOs + Config strengthening), or `none` (purely operational; no campaign membership).
+- **axiom_set**: the L3 axioms `W` operationalizes. Each axiom moves from one bucket to another as a consequence of `W` completing.
+- **dependencies**: workstreams that must complete before `W` can begin.
+- **exit_gate**: the verifiable claim that signals `W` is done. Restated as: every axiom in `axiom_set` has reached its target bucket; named property tests pass.
 
-**Tasks:**
-- Define F# record types in `Projection.Pipeline/Config.fs`.
-- `Config.parse : JsonNode → Result<Config, ConfigError>` with structured errors (path + reason).
-- `Config.validate : Config → Result<ValidatedConfig, ValidationError>` with file-existence + cross-field consistency checks.
-- Static analyzer (`Projection.Analyzers`) rule: forbid `connectionString` properties anywhere in `Config` type tree.
-- Schema reference doc at `sidecar/projection/docs/config-schema.md`.
-- Property tests: round-trip; structured-error coverage.
+### 5.2 The bucket-promotion morphism
 
-**Exit:** Operator can read the schema doc, hand-write a config file, parse it, get a typed `ValidatedConfig` back or a structured error. Static analyzer confirms zero credential paths.
+Each workstream produces a **bucket-promotion delta** — a typed transition on the audit's coverage map. The transition shape:
 
-### 5.2 A.0' — IR fidelity lifts (Phase A precondition)
+```
+Δ : axiom_id × bucket_before → bucket_after
+```
 
-**Deliverable:** V2's `Catalog` carries every schema concept enumerated in §3.3 (or explicitly opts out per documented rationale). This work runs in parallel with A.0; both gate A.1.
+Phase A's exit invariant is: for every L3 axiom in the target set, `Δ(axiom)` ends at Bucket A or B; no Tier-1 axiom in Bucket D.
 
-**Tasks** (one slice each, each closable via sidecar's chapter-close convention):
-- **Trigger lifts**: add `Catalog.Triggers : Trigger list` (or per-Kind list) with `Definition: string`, `IsDisabled: bool`, lineage to source attribute. Adapter `CatalogReader` populates from V1's `TriggerModel`.
+Phase B's exit invariant is: the full L3 catalog is covered; canary green across the 4-env × 4-artifact matrix; cutover-ladder per-pair counter reaches N=10 + operator sign-off (R6).
+
+### 5.3 The five morphisms of concern
+
+Every piece of work in this plan can be traced through five morphisms:
+
+1. **Use case → L3 axiom.** The operator's needs (extract-model, full-export-with-overrides) decompose into testable L3 claims.
+2. **L3 axiom → L2 axiom.** Each L3 claim is underwritten by formal axioms in `AXIOMS.md` (or is a Bucket-D candidate awaiting L2 promotion).
+3. **L2 axiom → L1 commitment.** Each formal axiom is realized by smart constructors, closed DUs, or value objects in F# code.
+4. **L1 commitment → test.** Each commitment is property-tested or example-tested.
+5. **Test → cutover criterion.** Cutover ladder rungs flip on test-witnessed axiom-bucket invariants.
+
+These compose: a single piece of work traverses all five morphisms. The plan-of-record makes the chain visible per workstream.
+
+### 5.4 Campaign membership as cross-cutting tag
+
+The audit's three campaigns (A / B / C) are not separate phases. They are **cross-cutting workstream tags** that classify the structural-commitment work within Phase A / Phase B:
+
+- **Campaign A — cutover-blocker unnamed axioms.** Four Tier-1 Bucket-D axioms: atomic emission, no-silent-drop, redeploy-idempotence/CDC-silence, manifest-matches-disk. Three of four are *already in Phase A* (no-silent-drop = A.0''s completion criterion; CDC-silence = chapter 4.1.B in flight). Two genuinely new workstreams (atomic emission, manifest-matches-disk) slot into A.7.
+- **Campaign B — structural fortification.** Catalog cross-field invariants (1 → 8), name-uniqueness invariants, equality+ordering, A28-style smart constructors. Subsumes original Slice 2 and Slice 3. Distributes across A.2 (emitter wiring), A.4 (rename plumbing), and a new A.4.5 (cross-field-invariant batch).
+- **Campaign C — Tier-2 + boundary VOs + Config strengthening.** Typed Config DUs, RelativePath VO, SqlAuthMode DU, cross-platform encoding axioms, diagnostic-code stability, ColumnRealization typed lifts. Distributes across A.0 (Config schema), A.1 (CLI surface), A.5 (profile ingestion), and B.4 (orchestration + logging format).
+
+Within Phase A (or B), workstream order is determined by dependency + concern, not by campaign membership. The Campaign tag is a *property* of the workstream, not a sequencing constraint.
+
+### 5.5 The two parallel axes
+
+The plan is organized along two orthogonal axes:
+
+- **The temporal axis (Phase A → Phase B).** What the operator can do at each cutover ladder rung.
+- **The structural axis (Bucket D → Bucket B → Bucket A).** What V2 commits to by construction.
+
+A workstream's coordinate is `(phase, campaign)`. A workstream's effect is a Δ on the structural axis.
+
+After Phase A, the temporal axis flips: V2 emits from V1 inputs; soak gates the ladder rung. After all bucket-D Tier-1 axioms reach Bucket A in Phase A, the structural axis is sufficient for V2-augmented mode.
+
+After Phase B, the temporal axis flips again: V2 owns extraction; the canary verifies; cutover ladder per-pair counter accumulates. After the full L3 catalog reaches its target bucket, the structural axis is sufficient for V2-driver mode.
+
+---
+
+## 6. Phase A — Soak path
+
+**Goal:** V2 emit produces the full artifact set from V1-extracted `osm_model.json` and V1-captured profile JSON, with config-driven overrides and an IR that carries every V1 schema concept the operator's workload uses. Validate against the operator's real workload via differential testing (functional equivalence) before Phase B begins.
+
+**Phase A exit invariant:** for every L3 axiom in `{ L3-S1, L3-S2, L3-S4 through L3-S10, L3-D1 through L3-D6, L3-I1 through L3-I8, L3-X1, L3-X2, L3-X4, L3-X9, L3-C1, L3-C5, L3-C7, L3-C8, L3-CC1, L3-CC3, L3-CC4 }`, `Δ(axiom)` ends at Bucket A or Bucket B. Zero Tier-1 axioms remain in Bucket D. The diff against V1 outputs on operator's representative workload is functional-equivalence clean.
+
+### 6.0 A.0 — Unified config schema
+
+**Operational deliverable:** typed F# model in `Projection.Pipeline.Config` representing the unified config; JSON parser/validator; schema documented at `sidecar/projection/docs/config-schema.md`.
+
+**Campaign:** C.3 (parse-time strengthening — partial; full strengthening lands as C.3 completes).
+
+**Axioms operationalized:** L3-X9 (config errors structured), L3-C8 (no credentials in config), L3-C7 (canonical ordering).
+
+**Bucket promotion:**
+- L3-X9: D → A.
+- L3-C8: D → A.
+- L3-C7: foundational — D12 declared, sort applied at config-validation time once consumers exist.
+
+**Dependencies:** none.
+
+**Exit gate:** `ConfigTests` cover round-trip, missing required, malformed JSON, D9 credential rejection, full-schema round-trip, error aggregation. 19 ConfigTests + 4 fromFile tests passing.
+
+**Status:** **Shipped at A.0 (commit `93468a3`) + A.1 (`df18bbf`).**
+
+### 6.0' A.0' — IR fidelity lifts (Campaign A.2 + B prerequisite)
+
+**Operational deliverable:** V2's `Catalog` carries every schema concept enumerated in §3.3. Each lift is a typed Catalog field (or an explicit deferral with rationale).
+
+**Campaign:** A.2 (no-silent-drop) — A.0''s completion criterion *is* L3-Boundary-NoSilentDrop's structural enforcement. Also Campaign B (smart-constructor sweep) where the new fields gain smart constructors.
+
+**Axioms operationalized:** L3-S4 (Trigger), L3-S5 (Sequence), L3-S6 (DEFAULT), L3-S7 (Computed), L3-S8 (CHECK), L3-S9 (ExtendedProperties + Descriptions), L3-S10 / L3-I10 (Catalog coordinate), L3-CC4 (IR fidelity for production), L3-Boundary-NoSilentDrop.
+
+**Bucket promotion (post-A.0'):**
+- L3-S4 through L3-S10: D → A.
+- L3-I10: D → A.
+- L3-CC4: D → A.
+- L3-Boundary-NoSilentDrop: D → A (the axiom's structural enforcement is "every field listed has a typed home OR a Diagnostic.Severity=Error at the adapter").
+
+**Dependencies:** A.0 (typed config provides allowMissingPrimaryKey / allowMissingSchema overrides for partial-coverage edge cases).
+
+**Tasks (one slice each; each closable via sidecar's chapter-close convention):**
+
+- **Trigger lifts**: add `Catalog.Triggers : Trigger list` with `Definition: string`, `IsDisabled: bool`, lineage to source attribute. OSSYS `CatalogReader` populates from V1's `TriggerModel`.
 - **Sequence lifts**: add `Catalog.Sequences : Sequence list` with StartValue, Increment, Min, Max, IsCycleEnabled, CacheMode. Adapter populates from V1's `OsmModel.Sequences`.
 - **Temporal lifts**: extend `ModalityMark` with `Temporal of TemporalConfig` carrying history-schema, history-table, period columns, retention policy.
 - **DEFAULT lifts**: add `Attribute.DefaultValue : SqlLiteral option`.
-- **Computed-column lifts**: add `Attribute.Computed : ComputedColumnConfig option` with definition text and persistedness.
+- **Computed-column lifts**: add `Attribute.Computed : ComputedColumnConfig option`.
 - **CHECK lifts**: add `Kind.ColumnChecks : ColumnCheck list` with name + CHECK clause text.
 - **Catalog-coordinate lift**: extend `TableId` to `{ Catalog: string option; Schema; Table }`; default Catalog to None for current single-DB case.
 - **ExtendedProperties lifts**: add to `Module / Kind / Attribute / Index` as `ExtendedProperties: ExtendedProperty list`.
-- **Description lifts**: add `Description: string option` to Entity (Kind metadata) and Attribute metadata.
-- **IsExternal / Origin mapping audit**: clarify in CatalogReader adapter; add adapter property test ensuring V1 `IsExternal=true → V2 Origin = ExternalViaIntegrationStudio | ExternalDirect`.
-- **IsActive lifts**: add `IsActive: bool` to Module / Kind / Attribute (with sensible default `true`).
+- **Description lifts**: add `Description: string option` to Kind metadata + Attribute metadata.
+- **IsExternal / Origin mapping audit**: clarify in `CatalogReader` adapter; add adapter property test ensuring V1 `IsExternal=true → V2 Origin = ExternalViaIntegrationStudio | ExternalDirect`.
+- **IsActive lifts**: add `IsActive: bool` to Module / Attribute (Kind already has).
 - For each lift: differential property test against a fixture catalog asserting round-trip preservation.
 
-**Tasks NOT in scope for A.0'** (deferred-with-rationale; surface in §10):
+**Out of scope for A.0'** (deferred-with-rationale; see §11):
 - `OriginalName` (prior attribute names) — renames handled at cutover, not embedded in model.
 - `ExternalDatabaseType` — V2's `PrimitiveType` abstraction is intentional per AXIOMS A13.
-- `IndexColumnDirection` per-column include vs. key direction — acceptable loss per 2026-05-10 vestigial-fields convention.
+- `IndexColumnDirection` (per-column asc/desc) — acceptable loss per 2026-05-10 vestigial-fields convention.
 - `IsPlatformAuto` index flag — presentation-only.
 
-**Exit:** V2 IR can round-trip every V1 schema concept the operator's workload uses. Adapter property tests cover the lift surface. Emit-side correctness assumption (Phase A.6 diff is meaningful) is now well-founded.
+**Exit gate:** every concept in §3.3 has either a typed Catalog field (with smart constructor) or a structured-error path at the OSSYS adapter boundary. Differential property test confirms round-trip on operator's representative workload. L3-Boundary-NoSilentDrop verified by property test `NoSilentDropTests.``every-V1-concept-either-carried-or-errored``.
 
 **Estimated effort:** 3-4 weeks (5-7 slices, sidecar's standard chapter cadence).
 
-### 5.3 A.1 — CLI surface upgrade
+### 6.1 A.1 — CLI surface upgrade
 
-**Deliverable:** `Projection.Cli` accepts `--config <path>` for `emit`; connection sources via `--connection-string-env <VAR>` or `--connection-file <path>` (the latter unused in Phase A — V2 doesn't connect to OSSYS during Phase A).
+**Operational deliverable:** `Projection.Cli` accepts `--config <path>` for `emit`; connection sources via `--connection-string-env <VAR>` or `--connection-file <path>` (the latter unused in Phase A — V2 doesn't connect to OSSYS during Phase A).
 
-**Tasks:**
-- Replace hand-rolled `match argv` parser with Argu or extended hand-rolled approach (decide during work; see Q2).
-- Wire `--config` to `Config.parse → Config.validate → Compose.runWithConfig`.
-- New exit codes: `6` config-parse-error, `7` config-validation-error, `8` connection-source-error, `9` SQL-execution-error (B), `10` profile-probe-failure (B).
-- Backward-compat: legacy positional form retained as deprecated shorthand; emits a deprecation warning to stderr.
+**Campaign:** C.3 (CLI argv parser strengthening), partial.
 
-**Exit:** `projection emit --config example.json` runs end-to-end with the full Phase A emitter set.
+**Axioms operationalized:** L3-X9 (config errors structured) extended to CLI errors; L3-Boundary-CLIDisambiguation (candidate, ambiguous CLI forms rejected).
 
-### 5.4 A.2 — Emitter wiring under EmissionPolicy gates
+**Bucket promotion:** L3-X9 extends to cover CLI paths.
 
-**Deliverable:** All built-but-hidden emitters fire from `Compose.project` when their gate is open per config.
+**Dependencies:** A.0.
+
+**Exit gate:** `projection emit --config example.json` runs end-to-end with the full Phase A emitter set; legacy positional form retained as deprecated shorthand; CLI smoke tests pass.
+
+**Status:** **Shipped at A.1 (commit `df18bbf`).**
+
+### 6.2 A.2 — Emitter wiring under EmissionPolicy gates
+
+**Operational deliverable:** all built-but-hidden emitters fire from `Compose.project` when their gate is open per config (StaticSeeds, MigrationDependencies, Bootstrap, DecisionLog, Opportunities, Validations, Dacpac).
+
+**Campaign:** B (subsumes original Slice 2's invariant work — Catalog cross-field invariants extend `Catalog.create` while emitter wiring extends `Compose.project`).
+
+**Axioms operationalized:** L3-D7, L3-D8, L3-D9, L3-D10 (data emitters under EmissionPolicy); L3-X1, L3-X2 (DecisionLog / Opportunities / Validations).
+
+**Bucket promotion:**
+- L3-D7 / L3-D8: D → A.
+- L3-D9: D → A.
+- L3-D10: D → A.
+- L3-X1 / L3-X2: B → A (signature-enforced once wired).
+
+**Dependencies:** A.0', A.0 (Config gates feed EmissionPolicy).
 
 **Tasks:**
 - Refactor `Compose.project` to accept `ValidatedConfig` rather than hardcoded empties.
@@ -312,341 +383,612 @@ These are decisions made during the 2026-05-11 audit collaboration. Each is revi
 - Wire DecisionLog / Opportunities / Validations (under `emission.decisionLog` / `opportunities` / `validations`).
 - Wire DacpacEmitter (under `emission.dacpac`).
 - Honor `dynamicData.insertMode` (PerEntity vs SingleFile output layout).
-- Honor `dynamicData.deferJunctionTables` and `dynamicData.staticSeedParentMode` in DataEmissionComposer.
+- Honor `dynamicData.deferJunctionTables` and `dynamicData.staticSeedParentMode` in `DataEmissionComposer`.
 - Integration tests for each gate (on, off, all-on, all-off).
 
-**Exit:** With config-driven gates, V2 emit can produce: SSDT + dacpac + Static seeds + Migration deps + Bootstrap + DecisionLog + Opportunities + Validations. All from one run.
+**Exit gate:** with config-driven gates, V2 emit produces SSDT + dacpac + Static seeds + Migration deps + Bootstrap + DecisionLog + Opportunities + Validations from one run.
 
-### 5.5 A.3 — StaticData and MigrationDependencies JSON loaders
+### 6.3 A.3 — StaticData and MigrationDependencies JSON loaders
 
-**Deliverable:** Two operator-facing JSON formats with corresponding loaders. Static-data fixtures populate static-entity seed rows; migration-dependency rows are appended with auto-assigned PKs.
+**Operational deliverable:** two operator-facing JSON formats with corresponding loaders. Static-data fixtures populate static-entity seed rows; migration-dependency rows are appended with auto-assigned PKs.
 
-**StaticData JSON shape** (V1-compat for soak-friendliness):
-```json
-{
-  "tables": [
-    { "schema": "dbo", "table": "OSUSR_DEF_CITY", "rows": [
-      { "ID": 1, "NAME": "Lisbon", "ISACTIVE": true },
-      { "ID": 2, "NAME": "Porto", "ISACTIVE": true }
-    ] }
-  ]
-}
-```
+**Campaign:** none directly (operational); Campaign B picks up smart constructors for the loader output types.
 
-**MigrationDependencies JSON shape** (rows omit PK column):
-```json
-{
-  "tables": [
-    { "kindKey": { "module": "AppCore", "entity": "Country" }, "rows": [
-      { "Code": "US", "Label": "United States" },
-      { "Code": "CA", "Label": "Canada" }
-    ] }
-  ]
-}
-```
+**Axioms operationalized:** L3-D7 (StaticData schema-validated), L3-D8 (MigrationDeps schema-validated), L3-D3 (PK assignment deterministic; per Q1 resolution V2 observes its own dataset — no V1 modification).
+
+**Bucket promotion:**
+- L3-D7 / L3-D8: D → A (via loader smart constructors).
+- L3-D3: B → A (smart-constructed PK-assignment pass).
+
+**Dependencies:** A.0, A.0', A.2.
 
 **Tasks:**
 - `Projection.Pipeline/StaticDataLoader.fs` — parse + resolve to (schema, table) tuples; validate column existence against Catalog.
 - `Projection.Pipeline/MigrationDependencyLoader.fs` — parse + resolve kind keys; validate column existence.
-- New pre-emit pass `MigrationDependencyPkAssignmentPass` — given the observed-set MAX (per Q1: profile-supplied if present, else static-data-fixture MAX, else 0) + parsed migration document, produce fully-PK'd `MigrationDependencyContext`. PK assignment edge cases per Q13: identity-overflow detection, deterministic ordering, no-observed-max baseline.
+- New pre-emit pass `MigrationDependencyPkAssignmentPass` — given the observed-set MAX (per Q1: profile-supplied if present, else static-data fixture MAX, else 0) + parsed migration document, produce fully-PK'd `MigrationDependencyContext`. PK assignment edge cases per Q13: identity-overflow detection, deterministic ordering, no-observed-max baseline.
 - Wire StaticData → StaticSeedsEmitter input.
 - Wire MigrationDependencyContext → MigrationDependenciesEmitter.
 - Tests: malformed JSON, unknown table/kind, unknown column, type mismatches, identity overflow, deterministic PK ordering.
 
-**Exit:** Operator-provided JSON for both static-data and migration-dependencies produces correctly-emitted MERGE statements in `out/`.
+**Exit gate:** operator-provided JSON for both static-data and migration-dependencies produces correctly-emitted MERGE statements in `out/`.
 
-### 5.6 A.4 — Table-rename plumbing with canonical ordering
+### 6.4 A.4 — Table-rename plumbing with canonical ordering
 
-**Deliverable:** Config-declared table renames apply to `Catalog` before emitters run. Rename entries canonical-sorted at config-validation time (per D12).
+**Operational deliverable:** config-declared table renames apply to `Catalog` before emitters run. Rename entries canonical-sorted at config-validation time (per D12).
+
+**Campaign:** B (Catalog rewrite passes use established CatalogTraversal.mapKinds; smart-constructor discipline).
+
+**Axioms operationalized:** L3-I1 (SsKey stable under rename), L3-I7 (Name ⊥ SsKey), L3-C7 (canonical ordering).
+
+**Bucket promotion:**
+- L3-I1: D → A (Slice 1 PhysicallyRenamed shipped at commit `9d578cc`).
+- L3-I7: B → A.
+- L3-C7: A → A (already; property test extended).
+
+**Dependencies:** A.0 (rename overrides in config), A.0' (typed VOs in TableId via Campaign C.1).
+
+**Status:** **Shipped at A.4 (commit `502592f`) + Slice 1 PhysicallyRenamed (`9d578cc`).** Rename-order-invariance property test enforces L3-C7. Lineage emits typed `PhysicallyRenamed of PhysicalRename` payload structurally.
+
+### 6.4.5 A.4.5 — Catalog cross-field invariants batch (Campaign B core)
+
+**Operational deliverable:** extend `Catalog.create` with the 7 additional cross-field invariants from audit Part VI.2 (the original Slice 2 was 1 of 8).
+
+**Campaign:** B (the deepest single change in the merge).
+
+**Axioms operationalized:** L3-Catalog-IdentityNullCoherence (new candidate), L3-Catalog-MandatoryNullCoherence (new candidate), L3-Catalog-PrimaryKeyUniqueIndexCoherence (new candidate), L3-Catalog-TypeShapeCoherence (new candidate), L3-Catalog-LengthBoundedCoherence (new candidate), L3-Catalog-PKOrderingCoherence (new candidate), L3-Catalog-SingleStaticModality (new candidate), L3-Catalog-PhysicalNameUniqueness (new candidate; was original Slice 2).
+
+**Bucket promotion:** 8 new axioms enter at Bucket A immediately via smart-constructor enforcement.
+
+**Dependencies:** A.0' (typed fields must exist before invariants are checked).
 
 **Tasks:**
-- Pre-emit pass `TableRenamePass` in `Projection.Core/Passes/` — takes a rename map + `Catalog`, returns a renamed `Catalog`. Validates: each rename source exists; no collision in targets; SCC membership unchanged (per R11).
-- Canonical sort applied to `overrides.tableRenames` list at `Config.validate` time before reaching the pass — guarantees re-running with reordered config produces identical output.
-- Support both logical (`Module::Entity`) and physical (`schema.table`) source forms.
-- Apply renames *before* topological-order pass.
-- Tests: round-trip rename, collision detection, missing-source error, both source forms, **rename-order-invariance property** (random permutations of rename list produce identical output).
+- Extend `Catalog.create` (in `Projection.Core/Catalog.fs`) with 8 invariant checks; aggregate errors via the existing `Result.aggregate` pattern.
+- Confirm no existing test fixtures violate the new invariants (or update fixtures with rationale).
+- Add error codes: `catalog.attribute.identityNullableContradiction`, `catalog.attribute.mandatoryNullableContradiction`, `catalog.index.primaryKeyNotUnique`, `catalog.attribute.typeShapeMismatch`, `catalog.attribute.lengthBoundExceeded`, `catalog.attribute.pkOrderingDiscontinuous`, `catalog.kind.multipleStaticModalities`, `catalog.kind.duplicatePhysicalName`.
+- 8 dedicated property tests; round-trip property test on operator's representative workload.
 
-**Exit:** A config with `tableRenames` produces SSDT DDL referencing the renamed names everywhere (table defs, FK references, indexes, triggers, manifest). Property test confirms canonical-order invariance.
+**Exit gate:** 8 new invariants enforced at `Catalog.create`; existing tests green; new invariants tested.
 
-### 5.7 A.5 — Profile-JSON ingestion + completeness audit
+**Estimated effort:** 1-2 weeks. Mechanically simple; concentrated; very high leverage.
 
-**Deliverable:** Adapter that reads V1's `profile` verb output JSON and hydrates V2's `Profile` type. Required-vs-optional field enumeration with partial-failure semantics (per R12).
+### 6.4.6 A.4.6 — Name uniqueness invariants batch (Campaign B)
+
+**Operational deliverable:** extend `Catalog.create` and `Module.create` with the 7 name-uniqueness invariants from audit Part VI.3.
+
+**Campaign:** B.
+
+**Axioms operationalized:** L3-Catalog-ModuleNameUniqueness, L3-Module-KindNameUniqueness, L3-Kind-AttributeNameUniqueness, L3-Kind-ReferenceNameUniqueness, L3-Kind-IndexNameUniqueness, L3-Index-ColumnUniqueness, L3-Static-RowIdentityUniqueness (all new candidates).
+
+**Bucket promotion:** 7 new axioms enter at Bucket A.
+
+**Dependencies:** A.4.5 (the cross-field invariants batch establishes the smart-constructor expansion pattern).
+
+**Tasks:** as in §6.4.5 — invariant checks, error codes, property tests.
+
+**Estimated effort:** 1 week.
+
+### 6.5 A.5 — Profile-JSON ingestion + completeness audit
+
+**Operational deliverable:** adapter that reads V1's `profile` verb output JSON and hydrates V2's `Profile` type. Required-vs-optional field enumeration with partial-failure semantics.
+
+**Campaign:** B (Profile aggregate-root smart constructor lifts from convention to structural; CdcAwareness.create gains its documented contract enforcement; ForeignKeyReality.create gains empirical-probe invariants).
+
+**Axioms operationalized:** L3-X7 (silent V1 drops documented), L3-D6 partial (User FK reflow uses profile data); plus all Profile-related smart-constructor lifts (Campaign B core).
+
+**Bucket promotion:** several Profile-side smart-constructor types go B → A. Profile.create lands as the aggregate-root smart constructor.
+
+**Dependencies:** A.0, A.2 (detection passes consume profile data via wired emitters).
 
 **Tasks:**
 - Audit V1's profile JSON schema. Enumerate every field. Mark each: required-for-Phase-A-emit, optional-with-fallback, advisory-only.
 - New `Projection.Adapters.Osm/ProfileReader.fs` mirroring `CatalogReader.fs` in style.
 - Required-field validation at parse time. Optional fields produce structured warnings, not errors.
-- Special case: V1 today does not capture `MaxIdentityValue`. Per Q1, this is acceptable: V2's A.3 pass falls back to static-data MAX or 0. ProfileReader treats `MaxIdentityValue` as an optional field; absence produces no warning. Phase B.3 adds the field natively.
+- **Profile.create** smart constructor enforcing: no duplicate `AttributeKey` in `Columns` / `UniqueCandidates` / `CompositeUniqueCandidates`; at most one `AttributeDistribution` per attribute (Categorical XOR Numeric); CdcAwareness invariant; ForeignKeyReality bounds.
+- **CdcAwareness.create** smart constructor validating `Map.forall (fun k _ -> Set.contains k enabled) instances`.
+- **ForeignKeyReality.create** smart constructor enforcing `OrphanCount ≥ 0` and `HasOrphan ⇔ OrphanCount > 0`.
 - Wire into `Compose.run` when config supplies `profile.path`.
 - Tests: round-trip, schema-shift handling, partial-failure (probe timed out, one column missing), full-failure (file absent or unparseable).
 
-**Exit:** With V1-captured profile JSON supplied via config, V2 emit produces decision logs containing orphan-FK warnings and mandatory-null warnings. Required-field contract is documented.
+**Exit gate:** with V1-captured profile JSON supplied via config, V2 emit produces decision logs containing orphan-FK warnings and mandatory-null warnings. Required-field contract documented; Profile / CdcAwareness / ForeignKeyReality smart constructors enforce invariants at construction.
 
-### 5.8 A.6 — Soak: differential testing on functional equivalence (per D-shape decision)
+### 6.6 A.6 — Soak (differential testing on functional equivalence)
 
-**Deliverable:** A reproducible test rig that runs V2 emit against operator's real workload and compares outputs against V1's outputs on **functional equivalence**, not byte-identity (per operator decision). Agreed differences recorded in §11.2.
+**Operational deliverable:** reproducible test rig running V2 emit against operator's real workload and comparing outputs against V1's on **functional equivalence**, not byte-identity. Agreed differences recorded in §13.
+
+**Campaign:** none directly (operational gating).
+
+**Axioms operationalized:** L3-C1 (canary asserts V1 ≈ V2 modulo tolerances), L3-C5 (canary green for ≥30 + ≥4).
+
+**Bucket promotion:**
+- L3-C1: B → A (functional equivalence is the now-axiomatized form of "modulo tolerances").
+- L3-C5: B → A.
+
+**Dependencies:** A.0 through A.5 + A.7 (boundary axioms).
 
 **Tasks:**
 - Pick a representative fixture (real production model + profile, or the largest existing test fixture).
 - Run V1 full-export → capture outputs.
 - Run V2 emit on V1's extracted JSON + profile JSON → capture outputs.
-- Build a diff harness:
-  - SSDT .sql files: byte diff with allowlist for whitespace/formatting; semantic diff (parse + compare AST) on failure.
-  - Manifest JSON: semantic diff (key-order-agnostic, structure-aware). V1 `SsdtManifest` shape vs V2 `ArtifactByKind` shape will differ; record the structural divergence as agreed-different.
-  - .dacpac: deserialize and compare schema model via DacFx.
-  - Static-seed + Migration SQL: byte diff after canonical whitespace.
-  - Decision logs / Opportunities / Validations: semantic set-equivalence (V1 staged structure vs V2 per-kind structure; record divergence).
-- Triage every divergence: V2 bug, V1 bug (acknowledged), or agreed-different (record in §11.2).
+- Build a diff harness (per Draft 2.2's spec; semantic diff over byte diff where shapes diverge intentionally).
+- Triage every divergence: V2 bug, V1 bug, or agreed-different (record in §13.2).
 - Fix V2 bugs; document agreed differences.
 
-**Exit:** Functional-equivalence diff is clean (no unexplained divergence; only entries in §11.2). V2 emit is functionally equivalent to V1 build/SSDT/diagnostic emission.
+**Exit gate:** functional-equivalence diff is clean (no unexplained divergence). The 4-environment × 4-artifact canary matrix is set up; the per-pair N=10 green-run counter starts accumulating.
 
-### 5.9 Phase A milestones (Draft 2 revised estimates)
+### 6.7 A.7 — Boundary axioms (Campaign A net-new work)
 
-- **A.0 + A.1**: 1-1.5 weeks (config schema + CLI plumbing)
-- **A.0'**: **3-4 weeks** (IR fidelity lifts; new in Draft 2 — runs in parallel with A.0/A.1)
-- **A.2**: 1 week (emitter wiring; depends on A.0' for emitter inputs)
-- **A.3**: 1.5 weeks (two loaders + auto-PK pass + edge-case tests)
-- **A.4**: 0.5-1 week (rename pass + canonical-sort + tests)
-- **A.5**: 1-1.5 weeks (profile reader + completeness audit)
-- **A.6**: 1-2 weeks (soak; +50% buffer per R5)
+**Operational deliverable:** atomic emission + manifest-matches-disk implemented as structural commitments at the Pipeline boundary.
 
-**Phase A total: 9-12 weeks** for one focused developer. Parallelization (A.0' alongside A.0/A.1, A.5 alongside A.4) trims to **7-9 weeks elapsed**.
+**Campaign:** A (cutover-blocker unnamed axioms; the two net-new items in Campaign A after subtracting A.0' and chapter 4.1.B).
+
+**Axioms operationalized:** L3-Boundary-AtomicEmission, L3-Boundary-ManifestMatchesDisk.
+
+**Bucket promotion:**
+- L3-Boundary-AtomicEmission: D → A.
+- L3-Boundary-ManifestMatchesDisk: D → A.
+
+**Dependencies:** A.0 through A.6 (boundary axioms gate exit of Phase A; running in parallel with A.5 / A.6 is fine).
+
+**Tasks:**
+
+**A.7.1 — Atomic emission.**
+- Promote `Compose.write` to transactional: write each file to a temp path, fsync, atomic-rename to final. On any failure, clean up temp paths and leave the output directory unchanged.
+- Add property test inducing a failure midway through `Compose.write`; assert output directory is empty (or contains only files from before the failed run).
+- Add L2 axiom (or boundary axiom in PRODUCT_AXIOMS.md per axiom-naming-convention decision).
+
+**A.7.2 — Manifest matches disk.**
+- `Compose.write` returns its written paths; `ManifestEmitter` consumes that list, not the in-memory `Outputs` map.
+- Property test: post-write, every manifest entry exists on disk; every file on disk has a manifest entry.
+- Signature change: `Compose.write : OutputDir → Outputs → Result<{ ManifestEntries: RelativePath list; PathsWritten: AbsolutePath list }>`.
+
+**Exit gate:** induced-failure test passes (output dir untouched on midway failure); manifest-disk reconciliation property test passes.
+
+**Estimated effort:** 3-5 days.
+
+### 6.8 A.8 — CDC-silence canary (Campaign A; co-located with chapter 4.1.B)
+
+**Operational deliverable:** the CDC-silence-on-idempotent-redeploy property test on a production-shape canary.
+
+**Campaign:** A (cutover-blocker unnamed axiom — co-located here because the canary is operational gating).
+
+**Axioms operationalized:** L3-D1 / L3-Idempotence-OnRedeploy.
+
+**Bucket promotion:** D → A.
+
+**Dependencies:** A.2 (data emitters wired), A.5 (profile data for CDC-tracked tables).
+
+**Status:** **In flight at chapter 4.1.B.** Cross-references `CHAPTER_4_1_B_OPEN.md`.
+
+### 6.9 Phase A milestones (Draft 3 revised estimates)
+
+- **A.0 + A.1**: shipped.
+- **A.0'**: 3-4 weeks (IR fidelity lifts).
+- **A.2**: 1 week (emitter wiring; depends on A.0').
+- **A.3**: 1.5 weeks (loaders + auto-PK + edge-case tests).
+- **A.4 + A.4.5 + A.4.6**: A.4 shipped; A.4.5 + A.4.6 add 2-3 weeks (cross-field + name-uniqueness invariant batches; mechanically simple, very high leverage).
+- **A.5**: 1-1.5 weeks (profile reader + Profile / CdcAwareness / ForeignKeyReality smart constructors).
+- **A.6**: 1-2 weeks (soak; +50% buffer per R5).
+- **A.7**: 3-5 days (boundary axioms).
+- **A.8**: in flight at chapter 4.1.B.
+
+**Phase A total: 9-12 weeks** for one focused developer; ~6-8 weeks with two developers parallelizing (A.0' alongside A.0/A.1; A.4.5/A.4.6 alongside A.5; A.7 alongside A.6).
 
 ---
 
-## 6. Phase B — Full Independence (V2 owns extraction + profiling)
+## 7. Phase B — Full independence
 
-**Goal:** V2 connects to OSSYS SQL Server, extracts metadata, captures profile, and emits artifacts in a single command. V1 is unnecessary.
+**Goal:** V2 connects to OSSYS SQL Server, extracts metadata, captures profile, emits artifacts in a single command. V1 is unnecessary.
 
-### 6.1 B.0 — Foundation
+**Phase B exit invariant:** the full L3 axiom catalog reaches its target bucket. Canary green across the 4-env × 4-artifact matrix. Per-pair N=10 counter reaches threshold + operator sign-off. V1 sunset eligible at cutover+30 + one schema-evolution cycle (per R6).
+
+### 7.1 B.0 — Foundation
+
+**Operational deliverable:** SQL connection layer + verbatim copy of V1's metadata SQL scripts.
+
+**Campaign:** C (boundary VO: SqlAuthMode closed DU per audit Part VI.6.BB).
+
+**Axioms operationalized:** L3-Boundary-SqlAuth (candidate; replaces D9-related connection-mode docs with structural form).
 
 **Tasks:**
 - Copy `src/AdvancedSql/outsystems_metadata_rowsets.sql` (1,184 LOC) and `outsystems_model_export.sql` (931 LOC) verbatim into `sidecar/projection/sql/`.
-- Port `SqlConnectionFactory` to F# in `Projection.Adapters.Sql/Connection.fs` (~50 F# LOC). Auth modes: Integrated, SqlPassword, ActiveDirectoryDefault, AccessToken. Cert trust + application name. Connection-source bound from env-var or separate file per D9.
-- Port `SqlConnectionOptions`, `DbCommandExecutor`, `IAdvancedSqlExecutor` interfaces as F# records/functions.
+- Port `SqlConnectionFactory` to F# in `Projection.Adapters.Sql/Connection.fs`. Auth modes: Integrated, SqlPassword, ActiveDirectoryDefault, AccessToken. Cert trust + application name. Connection-source bound from env-var or separate file per D9.
+- Closed DU `SqlAuthMode = Integrated | SqlPassword of secretRef | ActiveDirectoryDefault | AccessToken of secretRef`.
 
-**Exit:** V2 can open a connection to OSSYS SQL Server and execute the metadata SQL script, returning a streaming reader.
+**Estimated effort:** 1 week.
 
-### 6.2 B.1 — Result-set binding
+### 7.2 B.1 — Result-set binding (highest-risk Phase B work)
+
+**Operational deliverable:** port 25 result-set processors from C# inheritance/factory pattern to F# DU + pattern-match dispatch. Port `MetadataAccumulator` and `ResultSetReader`.
+
+**Campaign:** none directly (operational).
+
+**Axioms operationalized:** L3-I2 (OssysOriginal survives extraction natively; bound resolved post-Phase-B).
+
+**Bucket promotion:** L3-I2 gains unconditional coverage (the JSON-projection-lossiness bound retires through the rowset path).
+
+**Risk:** highest in Phase B. The async-stream lifetime management in `MetadataSnapshotRunner.cs:407` is non-trivial. F#'s `task` workflow handles this, but `CommandBehavior.SequentialAccess` semantics must be preserved.
+
+**Estimated effort:** 2-3 weeks.
+
+### 7.3 B.2 — Snapshot serialization
+
+**Operational deliverable:** F# port of `SnapshotJsonBuilder` and `SnapshotValidator`.
+
+**Campaign:** none directly.
+
+**Axioms operationalized:** L3-S1 cross-platform extension (functional-equivalent osm_model.json across host OSes); L3-I2 unconditional.
+
+**Bucket promotion:** L3-S1's cross-platform Q3/Q4 axes are explicitly addressed (LF line endings; UTF-8 byte-order-mark policy; POSIX path separators in any path fields).
 
 **Tasks:**
-- Port 25 result-set processors. C# uses inheritance + factory; F# uses a single DU `MetadataResultSet` with one case per result + pattern-match dispatch.
-- Port `MetadataAccumulator` to an F# record of lists.
-- Port `ResultSetReader` and `ResultSetDescriptorFactory`. Total ~1,500 C# LOC → ~900 F# LOC.
-
-**Risk:** highest in Phase B. The async-stream lifetime management in `MetadataSnapshotRunner.cs:407` is non-trivial. F#'s `task` workflow handles this, but `CommandBehavior.SequentialAccess` semantics must be preserved exactly to avoid memory exhaustion on large catalogs (>1000 entities).
-
-**Exit:** V2 runs `outsystems_metadata_rowsets.sql` against OSSYS and produces a populated `OutsystemsMetadataSnapshot` F# record.
-
-### 6.3 B.2 — Snapshot serialization
-
-**Tasks:**
-- Port `SnapshotJsonBuilder` to F# in `Projection.Adapters.Osm/SnapshotWriter.fs` (~300 F# LOC). Direct `Utf8JsonWriter` calls, no reflection.
+- Port `SnapshotJsonBuilder` to F# in `Projection.Adapters.Osm/SnapshotWriter.fs`. Direct `Utf8JsonWriter` calls.
 - Port `SnapshotValidator`.
-- Verify output is byte-equivalent (or semantic-equivalent with a documented diff) to V1's `osm_model.json` for at least one large fixture.
+- Verify output is byte-equivalent (or semantic-equivalent with documented diff) to V1's `osm_model.json` for at least one large fixture.
 
-**Note:** `MetadataContractOverrides` (141 LOC) handles **OSSYS-schema-flexibility for optional columns**, NOT SQL-Server-version-dependence (Draft 1 mis-framed this). T-SQL queries themselves use stable 2016+ features.
+**Note:** `MetadataContractOverrides` (141 LOC) handles **OSSYS-schema-flexibility for optional columns**, NOT SQL-Server-version-dependence. T-SQL queries use stable 2016+ features.
 
-**Exit:** V2 produces a functionally-equivalent `osm_model.json` from a live OSSYS DB.
+**Estimated effort:** 1 week.
 
-### 6.4 B.3 — Profile probes (Draft 2 revised estimate)
+### 7.4 B.3 — Profile probes
+
+**Operational deliverable:** F# port of V1's 5 query builders + `ProfilingQueryExecutor` orchestration. Add `MaxIdentityValueQueryBuilder` for native MAX(Id) capture (resolves Q1 unconditionally for Phase B).
+
+**Campaign:** none directly (operational).
+
+**Axioms operationalized:** L3-D1 / L3-Idempotence-OnRedeploy (CDC silence now backed by V2-native profile probes); L3-D6 (User FK reflow full coverage).
+
+**Bucket promotion:** L3-D1 promoted via the chapter 4.1.B canary; L3-D6 promoted via full UserFkReflow coverage at scale.
 
 **Tasks:**
-- Port V1's **5 query builders** (Draft 1 said 4; actual count is 5): `NullCountQueryBuilder`, `NullRowSampleQueryBuilder`, `UniqueCandidateQueryBuilder`, `ForeignKeyProbeQueryBuilder`, `ForeignKeyOrphanSampleQueryBuilder`.
-- Add `MaxIdentityValueQueryBuilder` (new in V2; not present in V1; needed for Phase A.3 auto-PK; resolves Q1).
+- Port the 5 query builders.
+- Add `MaxIdentityValueQueryBuilder`.
 - Port `ProfilingQueryExecutor` (672 C# LOC) orchestration.
-- Sampling: respect `--sampling-threshold` / `--sampling-size` semantics (uniform across probes per V1).
-- Hydrate `Profile` directly; skip JSON middleman in Phase B path.
-- Tests: each probe in isolation; full-population end-to-end; partial-failure (one probe timed out, profile still emits with structured warning per R12).
+- Sampling: respect `--sampling-threshold` / `--sampling-size`.
+- Hydrate `Profile` directly via the smart constructor; skip JSON middleman in Phase B.
+- Tests: each probe in isolation; full-population end-to-end; partial-failure semantics.
 
-**Exit:** V2 connects to OSSYS, runs the probe set, returns a populated `Profile` record. Detection passes fire with real data.
+**Estimated effort:** 3-4 weeks.
 
-**Draft 2 estimate:** **3-4 weeks** (was 2-3 in Draft 1). Profiling surface (~6,000 C# LOC) is larger than extraction surface (~2,000 C# LOC core).
+### 7.5 B.4 — Orchestration + new CLI subcommands + logging-format contract
 
-### 6.5 B.4 — Orchestration + new CLI subcommands
+**Operational deliverable:** `projection extract`, `projection profile`, `projection full-export` subcommands; documented V2 logging format.
+
+**Campaign:** C (logging-format contract; cross-platform encoding axioms).
+
+**Axioms operationalized:** L3-Operational-LoggingContract (Tier-2 axiom, promotes from D to A via formal definition).
+
+**Bucket promotion:** L3-Operational-LoggingContract D → A.
 
 **Tasks:**
-- Add `projection extract --config <path>` subcommand. Connection source resolved per D9 (env var or `--connection-file`).
-- Add `projection profile --config <path>` subcommand.
-- Add `projection full-export --config <path>` subcommand. Chains extract → profile → emit.
-- Define V2's logging format (per D10) — structured properties, event categories. Documented in `sidecar/projection/docs/logging-format.md`. Operator updates downstream tooling.
-- Port `ModuleFilter` (defensive post-extraction filter) and `MetadataContractOverrides`.
+- Add `projection extract --config <path>` subcommand. Connection source resolved per D9.
+- Add `projection profile --config <path>`.
+- Add `projection full-export --config <path>`.
+- Define V2's logging format (per D10) — structured properties, event categories. Documented at `sidecar/projection/docs/logging-format.md`. Operator updates downstream tooling.
+- Port `ModuleFilter` and `MetadataContractOverrides`.
 
-**Exit:** Operator runs `projection full-export --config production.json` against OSSYS. V2 produces the full artifact set without V1.
+**Estimated effort:** 1-2 weeks.
 
-### 6.6 Phase B milestones (Draft 2 revised estimates)
+### 7.6 Phase B milestones (Draft 3 revised estimates)
 
-- **B.0**: 1 week (foundation)
-- **B.1**: 2-3 weeks (result-set binding; highest-risk phase)
-- **B.2**: 1 week (serialization + validator)
-- **B.3**: **3-4 weeks** (profile probes; revised up from 2-3)
-- **B.4**: 1-2 weeks (orchestration + CLI + logging format)
+- **B.0**: 1 week.
+- **B.1**: 2-3 weeks (highest-risk).
+- **B.2**: 1 week.
+- **B.3**: 3-4 weeks.
+- **B.4**: 1-2 weeks.
 
-**Phase B total: 8-11 weeks** for one focused developer.
+**Phase B total: 8-11 weeks** for one focused developer; ~5-7 weeks with two developers parallelizing B.1 / B.3.
 
 ---
 
-## 7. Cutover Criteria
+## 8. Cutover criteria (axiom-witnessed)
 
-### 7.1 Phase A exit
-- All A.0–A.6 deliverables met, including A.0' IR fidelity lifts.
-- Functional-equivalence diff vs V1 outputs is clean (only agreed differences in §11.2) on operator's representative workload.
+The criteria are restated from Draft 2.2 as axiom-bucket-witnessed claims. Each criterion is mechanically verifiable from the audit doc's coverage map at any point in time.
+
+### 8.1 Phase A exit (V2-augmented eligibility)
+
+**Structural axis (Bucket-D depletion):**
+- For every L3 axiom in `{ L3-S1 through L3-S10, L3-D1 through L3-D6, L3-I1 through L3-I8, L3-X1, L3-X2, L3-X4, L3-X9, L3-C1, L3-C5, L3-C7, L3-C8, L3-CC1, L3-CC3, L3-CC4, L3-Boundary-AtomicEmission, L3-Boundary-ManifestMatchesDisk, L3-Boundary-NoSilentDrop, L3-Idempotence-OnRedeploy }`, the audit's coverage map shows Bucket A or Bucket B.
+- Zero Tier-1 L3 axioms remain in Bucket D.
+
+**Operational axis (functional equivalence):**
+- Differential diff vs V1 outputs is clean (functional-equivalent on operator's representative workload).
 - Config schema doc reviewed and approved by operator.
-- Canonical-rename-order property test passing.
-- Static analyzer confirms no credential paths in `Config` type tree.
 - No known V2-side defects in emit half.
 
-### 7.2 Phase B exit (= full cutover gate)
-- V2 `full-export` runs against OSSYS SQL Server and produces functionally-equivalent `osm_model.json` to V1's `extract-model` output.
-- V2 profile probes produce functionally-equivalent `Profile` data to V1's `profile` verb output (modulo Q1's MaxIdentityValue, which V2 adds).
-- V2 emit outputs functionally-equivalent artifacts (per Phase A criterion).
-- V2 logging format documented; operator has updated downstream tooling.
+**Witness:** named property tests pass; the audit doc's coverage map is refreshed at Phase A close (chapter-close ritual).
+
+### 8.2 Phase B exit (V2-driver per-pair eligibility)
+
+**Structural axis (full coverage):**
+- The full L3 axiom catalog reaches its target bucket. Bucket-D is empty (modulo deliberately-deferred Tier-3 items, which are listed in §11 with rationale).
+
+**Operational axis:**
+- V2 `full-export` runs against OSSYS and produces functionally-equivalent `osm_model.json` to V1.
+- V2 profile probes produce functionally-equivalent `Profile` data to V1 (modulo Q1's MaxIdentityValue, which V2 adds natively).
+- V2 emit outputs functionally equivalent to V1 per Phase A criterion.
+- V2 logging format documented; operator's downstream tooling rewrite complete.
 - ≥1 full end-to-end production dry-run completed by operator.
 - Cutover-day runbook written (separate document; operator-owned per D11).
 
-### 7.3 V1 sunset
-- T+30 days after Phase B exit: V1 enters maintenance mode.
-- T+90 days: V1 archived. `src/` becomes read-only reference.
+### 8.3 V2-driver mode flip (per (environment, artifact type) pair)
+
+- The pair's canary has accumulated N=10 consecutive green runs.
+- Operator sign-off recorded.
+- R6 governance: V1 stays warm through cutover+30 regardless.
+
+### 8.4 V1 sunset
+
+- T+30 days after Phase B exit + one full schema-evolution cycle on V2 emissions in all four environments + canary green throughout that cycle + operator confirmation.
+- T+90 days: V1 archived; `src/` becomes read-only reference.
 
 ---
 
-## 8. Risk Register
+## 9. Risk register
 
-| # | Risk | Likelihood | Impact | Mitigation |
+Risks restated where possible as axiom-violation scenarios. Mitigations tied to campaign components.
+
+| # | Risk | Current state | Axiom-violation framing | Mitigation |
 |---|---|---|---|---|
-| R1 | Operator's "document of key evolutions" diverges from current `origin/main`. | High | Medium | Pause Phase A.0 until operator shares the evolutions doc; revise to Draft 3 before coding starts. |
-| R2 | V1's profile JSON lacks `MaxIdentityValue` → Phase A.3 auto-PK observes only static-data fixture rows (or starts at 0). | Low | Low | Closed by Q1 resolution: V2 observes its own set; profile-supplied MAX is best-effort, static-data fixture MAX is fallback, starting-at-0 is deterministic baseline. No V1 amendment. |
-| R3 | Async stream lifetime in `MetadataSnapshotRunner` port (B.1) hits memory/correctness issues. | Medium | High | Port with `task` workflow + explicit `IAsyncDisposable` handling; integration test against ≥1000-entity catalog. |
-| R4 | Byte-equivalence of `osm_model.json` (B.2) cannot be achieved due to JSON output ordering. | Low | Medium | Fall back to functional equivalence per A.6 pattern. |
-| R5 | Differential diff (A.6) surfaces deep emit-side divergence requiring substantial V2 rework. | Medium | High | A.6 budget includes +50% buffer for surprises. |
-| R6 | Operator's workflow uses V1 capabilities not yet inventoried. | Low (post-Draft-2 audit, operator confirmed two use cases exhaustive) | Medium | Continue to verify during soak; §10 catalog is comprehensive. |
-| R7 | OSSYS-side SQL incompatibility in production tenant. | Low | High | `MetadataContractOverrides` handles OSSYS-schema-flexibility; test against operator's actual OSSYS version. |
-| **R8** | **IR lifts (A.0') discover unanticipated semantic complexity in V1's domain model.** | Medium | High | Slice per concept; each closable independently per sidecar chapter cadence; if one lift exceeds 1 week, escalate to design review before continuing. |
-| **R9** | **CI/CD silent break at T+30** (operator-owned per D11). | High | High (if operator's pipelines depend on V1) | Operator inventories invocation sites during soak; maps each to V2 config-file equivalent; cuts over before T+30. Plan provides V2 CLI spec as migration target; no automation. |
-| **R10** | **Logging format divergence** (V2 ships own format per D10). | High | Medium | Operator's downstream tooling rewrite happens at cutover; V2 logging format documented at Phase B.4. |
-| ~~R11~~ | **Dissolved 2026-05-12 (post-A.4 audit).** Original worry: rename order in spec list could perturb topological order. Audit confirmed `TopologicalOrderPass` reads only SsKeys and `Reference.TargetKind` is SsKey-keyed, so rename is structurally orthogonal to topo. Property test `TableRenameTests.``D12: rename spec order does not affect the rewritten catalog`` ` enforces invariance. Risk retired. | — | — | — |
-| **R12** | **Profile completeness boundary unclear** — partial probe failure produces incomplete profile. | Medium | Medium | A.5 enumerates required-vs-optional fields with structured-warning semantics; partial-failure tests in A.5 + B.3. |
+| R1 | Operator's "document of key evolutions" diverges from `origin/main` | Outstanding; awaiting delivery | (not an axiom violation — operator-side scope change) | Pause Phase A.0' until operator shares the evolutions doc; revise to Draft 4 before coding starts |
+| R2 | V1's profile JSON lacks `MaxIdentityValue` → Phase A.3 auto-PK observes only static-data fixture rows | Low/Low post-Q1 resolution | (Q1 resolved; not a real risk) | V2 observes own dataset; profile-supplied MAX is best-effort, static-data fixture MAX is fallback, starting-at-0 deterministic baseline |
+| R3 | Async stream lifetime in `MetadataSnapshotRunner` port (B.1) hits memory/correctness issues | Medium/High | (B.1 implementation risk; not an axiom violation in V2 today) | Port with `task` workflow + explicit `IAsyncDisposable`; integration test against ≥1000-entity catalog |
+| R4 | Byte-equivalence of `osm_model.json` (B.2) cannot be achieved due to JSON output ordering | Low/Medium | L3-S1 cross-platform extension (Q3/Q4) — addressed at B.2 | Fall back to functional equivalence; the cross-platform axes (LF / UTF-8 / POSIX paths) explicitly committed at B.2 |
+| R5 | Differential diff (A.6) surfaces deep emit-side divergence requiring substantial V2 rework | Medium/High | (operational risk; not an axiom violation) | A.6 budget includes +50% buffer for surprises |
+| R6 | Operator's workflow uses V1 capabilities not yet inventoried | Low post-Draft-2 audit | (scope risk) | Continue to verify during soak; §11 catalog comprehensive |
+| R7 | OSSYS-side SQL incompatibility in production tenant | Low/High | (operational risk) | `MetadataContractOverrides` handles OSSYS-schema-flexibility; test against operator's actual OSSYS version |
+| R8 | IR lifts (A.0') discover unanticipated semantic complexity in V1's domain model | Medium/High | L3-CC4 (IR fidelity for production workloads) — exit gate not reached | Slice per concept; closable independently; if one lift exceeds 1 week, escalate to design review |
+| R9 | CI/CD silent break at T+30 (operator-owned per D11) | High/High | L3-Operational-CIMigration violation (axiom not yet formalized; operator-owned) | Operator inventories sites during soak; maps each to V2 config-file equivalent; cuts over before T+30 |
+| R10 | Logging format divergence (V2 ships own per D10) | High/Medium | L3-Operational-LoggingContract — operator's tooling rewrite required at cutover | Operator's downstream tooling rewrite happens at cutover; V2 logging format documented at B.4 |
+| ~~R11~~ | Determinism breaks under config-driven rename ordering | **Dissolved 2026-05-12 (post-A.4 audit + Slice 1).** | L3-C7 holds by construction: `TopologicalOrderPass` reads SsKey only; `Reference.TargetKind` is SsKey-keyed; rename rewrites only `Kind.Physical`. Property test `D12: rename spec order does not affect the rewritten catalog` enforces. | — |
+| R12 | Profile completeness boundary unclear — partial probe failure produces incomplete profile | Medium/Medium | L3-Profile-CompletenessContract (Tier-2 candidate; A.5 addresses) | A.5 enumerates required-vs-optional fields with structured-warning semantics; partial-failure tests in A.5 + B.3 |
+
+**Expected R-dissolutions during campaign execution:**
+- R10 dissolves into "operator-owned cutover-task" once L3-Operational-LoggingContract is formalized at B.4.
+- R12 dissolves once Profile.create's smart constructor lands at A.5.
+- R3 dissolves once B.1's integration tests pass at ≥1000-entity scale.
+
+The pattern of R-dissolution (R11 was the first) is itself a quality signal: as the verifiability triangle's structural commitments accumulate, the risk register shrinks because risks become impossibilities-by-construction rather than concerns-to-mitigate.
 
 ---
 
-## 9. Open Questions
+## 10. Open questions
 
 Numbered for stable reference; resolved questions retained for traceability.
 
-**Q1.** **MAX(Id) source for the auto-PK pass (A.3).** **Resolved 2026-05-11**: no V1 modification. V2 observes the highest record in its own set at PK-assignment time. Per phase:
-  - **Phase A**: V2's PK-assignment pass observes (in priority order) (i) MAX(Id) for the kind in the V1-supplied profile JSON, if that field is present; (ii) MAX(Id) across static-data fixture rows for the same kind in this run; (iii) starting value 0 if neither is available (PKs begin at 1). The profile-side hit is best-effort — Draft 2.1 does not depend on V1's profile carrying MAX(Id), but if it does, V2 uses it; if not, fallback (ii)/(iii) applies. Operator-supplied explicit PKs in the migration-deps JSON, if present, override auto-assignment for that row.
-  - **Phase B**: V2's own profile probe captures `MaxIdentityValue` per identity column natively. PK-assignment uses that authoritatively.
-  Implication: A.3 ships in Phase A without a hard dependency on profile field availability. Edge case "no observed max" is documented as deterministic behavior, not an error. **Closed.**
+**Q1.** **MAX(Id) source for the auto-PK pass (A.3).** **Resolved 2026-05-11**: no V1 modification. V2 observes its own dataset. Phase A: priority (profile-supplied MAX → static-data fixture MAX → 0). Phase B: V2's own profile probe captures `MaxIdentityValue` natively. **Closed.**
 
-**Q2.** **Argu vs hand-rolled CLI parser (A.1).** Decide during A.1 work. **Outstanding.**
+**Q2.** **Argu vs hand-rolled CLI parser (A.1).** Hand-rolled retained at A.1 shipping. Re-open when subcommand × flag matrix grows large enough that Argu pays for itself. **Outstanding (revisable).**
 
-**Q3.** **Backward-compat for V2's existing positional CLI.** Draft 2 default: keep as deprecated shorthand with stderr warning. **Outstanding (revisable during A.1).**
+**Q3.** **Backward-compat for V2's existing positional CLI.** Kept as deprecated shorthand with stderr warning. **Outstanding (revisable).**
 
-**Q4.** **Profile JSON shape coupling in Phase B.3.** Draft 2: V2-native primary, V1-compat secondary via `--compatibility-mode` flag if operator needs it. **Outstanding (revisable during B.3).**
+**Q4.** **Profile JSON shape coupling in Phase B.3.** Default: V2-native primary, V1-compat secondary via `--compatibility-mode` flag if operator needs it. **Outstanding.**
 
-**Q5.** **Dacpac as primary vs SSDT-folder as primary.** Both required per §2.2. Draft 2: emit both side-by-side in `out/`. **Resolved.**
+**Q5.** **Dacpac as primary vs SSDT-folder as primary.** Both required per §2.2; emit side-by-side in `out/`. **Resolved.**
 
-**Q6.** **Operator's "document of key evolutions."** Outstanding; triggers Draft 3.
+**Q6.** **Operator's "document of key evolutions."** Outstanding; triggers Draft 4.
 
-**Q7.** **Sampling thresholds in Phase B.3.** Operator's production catalog characteristics determine `--sampling-threshold` and `--sampling-size` defaults. **Outstanding.**
+**Q7.** **Sampling thresholds in Phase B.3.** Operator's production catalog characteristics determine defaults. **Outstanding.**
 
-**~~Q8.~~ Credentials handling.** **Resolved per D9** (connection string outside config).
+**~~Q8–Q11.~~** Resolved per D9 / D10 / D11 / D12.
 
-**~~Q9.~~ Logging format contract.** **Resolved per D10** (V2 own format, operator updates downstream).
+**Q12.** **Rename test coverage scope (A.4).** Resolved at Slice 1: unit tests + boundary tests + property test (random rename permutations). **Closed.**
 
-**~~Q10.~~ Idempotency test for cutover.** **Resolved (declined)** — operator did not require an idempotency-test gate.
+**Q13.** **MigrationDependencies PK edge cases (A.3).** Resolved at Draft 2.1: (i) structured error pointing to observed set; (ii) structured error on identity overflow; (iii) deterministic per canonical sort (D12). **Closed.**
 
-**~~Q11.~~ Concurrent extraction safety.** **Resolved (operator-owned coordination per D11).**
+**Q14 (new in Draft 3).** **Campaign A sequencing within Phase A.** Two options:
+- (a) Atomic emission (A.7.1) first — narrowly scoped (≤2 days), unblocks manifest-matches-disk (A.7.2 depends on the transactional `Compose.write` shape).
+- (b) CDC silence (A.8) first — V2_DRIVER.md's "highest-leverage single deliverable"; co-located with chapter 4.1.B already in flight.
 
-**Q12.** **Rename test coverage scope (A.4).** Options: (a) unit tests covering collision/missing-source/topo-preservation only; (b) unit + integration soak test with renames enabled; (c) unit + property test (random rename permutations). Draft 2 default: (c). **Outstanding (revisable during A.4).**
+**Recommendation:** (a). A.7.1 is small enough to ship in a single PR; the structural pattern (write-temp → fsync → atomic-rename) is generally useful and unblocks A.7.2. CDC silence at A.8 is *already* on the critical path through chapter 4.1.B; making A.7.1 the campaign-A starter doesn't slow it down.
 
-**Q13.** **MigrationDependencies PK edge cases (A.3).** What happens when: (i) MAX(Id) unknown (profile missing field), (ii) MAX(Id) at identity max value (e.g., `2^31 - 1`), (iii) rows reordered between config versions. Each must produce a structured error or deterministic behavior. Draft 2 commits to: (i) structured error pointing to Q1, (ii) structured error with operator-facing message, (iii) deterministic per canonical sort (D12). **Outstanding (revisable during A.3).**
+**Outstanding.**
 
----
+**Q15 (new in Draft 3).** **Axiom-naming convention.** When Campaign A's four blockers gain formal L2 names, do they:
+- (a) Extend `A41`/`A42`/... in `AXIOMS.md`? The codebase's existing numbering, but they're boundary axioms, not algebra-interior axioms.
+- (b) Open a separate `L3-Boundary-*` namespace in `PRODUCT_AXIOMS.md` and reference (not import) from `AXIOMS.md`? Cleaner separation but creates a heterogeneous axiom-ID landscape.
+- (c) Open new axiom numbering in `AXIOMS.md` reserved for boundary-class (e.g., `A100+` or `B1+`)? A nominal middle ground.
 
-## 10. Deferred / Out-of-Scope (operator-confirmed)
+**Recommendation:** (b). The boundary axioms are operator-facing, not algebra-interior; they belong in `PRODUCT_AXIOMS.md`. `AXIOMS.md`'s A41+ surface should stay reserved for genuine algebra extensions (Lifecycle when it lands; A37 erasure when promoted; etc.). Each L3-Boundary-* axiom cross-references the test that verifies it; this is the canonical path.
 
-These are deliberately not in scope. Operator confirmed during 2026-05-11 audit. If any becomes needed, reopen as a separate plan.
-
-### 10.1 V1 verbs the operator does not use in production
-- `dmm-compare` — DMM baseline comparison.
-- `analyze` — standalone tightening analyzer.
-- `inspect` — model-JSON inspection.
-- `policy explain` — policy-decision introspection.
-
-**Note on `uat-users`:** the CLI verb form is **not** deferred. Operator's pending "document of key evolutions" (R1) is expected to expand UAT-users into a more featureful V2 workstream. Until that doc lands, UAT-users scope is held open; see §11.1.
-
-### 10.2 V1 outputs V2 will not produce
-- **`.sqlproj`** (SQL Server Database Project file). Operator handles via external SSDT tooling.
-- **`SafeScript.sql` / `RemediationScript.sql`**. V2 emits diagnostic JSON only; operator generates remediation SQL externally if needed.
-- **V1-compatible `osm_model.json` re-emitter.** V2's `JsonEmitter` emits V2 IR; Phase A.6 diff handles V1's osm_model.json by reading it as the input (Phase A) or producing V2's snapshot (Phase B).
-- **`evidence-cache/` directory and manifest.**
-- **`telemetry-package.zip`.**
-- **UAT-Users artifacts** (user-map CSVs, template, preview, apply script, catalog). Held open pending §11.1.
-
-### 10.3 V1 capabilities deferred-with-trigger
-- **`--apply` / `--apply-static-seed-mode` phase.** Operator runs SSDT/dacpac externally via DacFx publish or sqlcmd.
-- **`--run-load-harness` + `--load-harness-connection-string` + `--load-harness-report-out`**. Performance probing phase.
-- **Per-Catalog Docker parameterization** (deferred-with-trigger per `HANDOFF.md:70`).
-- **OSSYS User-kind identification in OSSYS adapter** (deferred-with-trigger per `HANDOFF.md:74`).
-- **CSV adapter for ManualOverride / UserMapLoader** (deferred-with-trigger per `HANDOFF.md:75`).
-- **`supplementalModels` config block.** Operator does not currently use; deferred-with-trigger.
-
-### 10.4 V2 plan capabilities deferred
-- **CI/CD invocation-site inventory and migration.** Operator-owned per D11 (not a plan deliverable).
-- **Idempotency-test gate in Phase A.6.** Operator declined.
-- **Concurrent-extraction safety** (single-writer assumption, retry handling). Operator coordinates externally.
-- **V1 logging-format compatibility.** V2 ships own format per D10.
-
-### 10.5 IR concepts deliberately not lifted in A.0'
-- **`OriginalName`** (prior attribute names). Renames are operator-applied at cutover, not embedded in model.
-- **`ExternalDatabaseType`** (raw DBMS type string). V2's `PrimitiveType` abstraction is intentional per AXIOMS A13.
-- **Per-column `IndexColumnDirection`** (asc/desc, key vs. include). Acceptable loss per 2026-05-10 vestigial-fields convention.
-- **`IsPlatformAuto`** index flag (OutSystems-synthesized vs. user-defined). Presentation-only.
+**Outstanding.**
 
 ---
 
-## 11. Addenda (append-only)
+## 11. Deferred / out-of-scope
 
-Subsequent audits, decisions, and plan revisions append below. Each entry dated and tagged.
+(Operator-confirmed. If any becomes needed, reopen as a separate plan.)
 
-### 11.1 (placeholder) Audit slot for operator's "document of key evolutions"
+### 11.1 V1 verbs the operator does not use in production
+- `dmm-compare`, `analyze`, `inspect`, `policy explain`.
 
-When operator delivers the evolutions document, append a synthesis subsection here, revise §3 (Current State Audit) as needed, and bump the plan to Draft 3 in the header.
+**Note on `uat-users`:** the CLI verb form is **not** deferred. Operator's pending "document of key evolutions" (R1) is expected to expand UAT-users into a more featureful V2 workstream. Until that doc lands, UAT-users scope is held open; see §13.1.
 
-**Operator preview (2026-05-11):** evolution doc will focus primarily on a more effective and full-featured UAT-users command. Expected impact:
-- UAT-users moves from "deferred verb form" to a first-class Phase A feature workstream.
-- Likely additions to §5 (new Phase A workstream slot for UAT-users), §6 (Phase B may need UAT-related extraction extensions), §10.2 (UAT-Users artifacts no longer deferred), and §10.3 (CSV adapter / UserMapLoader deferred-with-trigger fires).
-- §3.3 IR fidelity inventory may grow if the UAT-users evolution requires new Catalog/Profile fields.
-Hold §5 reorg and §10 cleanup until evolution doc arrives; do not pre-scope speculatively.
+### 11.2 V1 outputs V2 will not produce
+- **`.sqlproj`** (SQL Server Database Project file).
+- **`SafeScript.sql` / `RemediationScript.sql`**.
+- **V1-compatible `osm_model.json` re-emitter.**
+- **`evidence-cache/`**, **`telemetry-package.zip`**.
+- **UAT-Users artifacts** (user-map CSVs, etc.) — held open pending §13.1.
 
-### 11.2 (placeholder) Agreed differences between V1 and V2 outputs
+### 11.3 V1 capabilities deferred-with-trigger
+- `--apply` / `--apply-static-seed-mode` phase.
+- `--run-load-harness` + variants.
+- Per-Catalog Docker parameterization.
+- OSSYS User-kind identification in OSSYS adapter.
+- CSV adapter for ManualOverride / UserMapLoader.
+- `supplementalModels` config block.
 
-During Phase A.6 soak, any divergences classified as "agreed-different" (rather than "V2 bug") get recorded here with rationale.
+### 11.4 V2 plan capabilities deferred
+- CI/CD invocation-site inventory and migration (operator-owned per D11).
+- Idempotency-test gate in Phase A.6 (operator declined).
+- Concurrent-extraction safety (operator coordinates externally).
+- V1 logging-format compatibility (D10).
 
-Initial entries expected (from cross-cutting audit):
+### 11.5 IR concepts deliberately not lifted in A.0'
+- `OriginalName` (prior attribute names).
+- `ExternalDatabaseType` (raw DBMS type string).
+- Per-column `IndexColumnDirection`.
+- `IsPlatformAuto` index flag.
+
+### 11.6 L3 axioms deliberately deferred to Tier 3
+- Performance promises beyond bench-driven gating.
+- Multi-version property stability beyond same-input determinism.
+- Semantic equivalence of generated SQL beyond DacFx model-equality (canary handles this).
+
+---
+
+## 12. Per-axiom delivery matrix
+
+Each L3 axiom in `PRODUCT_AXIOMS.md` mapped to the Phase + Workstream that delivers it and the final bucket after delivery. Bucket-A axioms already covered are summarized; Bucket-D entries are highlighted with workstream pointers.
+
+### 12.1 Schema (L3-S1 through L3-S10)
+
+| Axiom | Current bucket | Delivered by | Final bucket |
+|---|---|---|---|
+| L3-S1 (byte-determinism) | A modulo Q3/Q4 | A.0 (existing) + B.2 (cross-platform) | A |
+| L3-S2 (DACPAC round-trip) | A modulo A37 | A.2 + chapter 3.4 close | A |
+| L3-S3 (SSDT/DACPAC agreement) | A | (existing T11 + ArtifactByKind) | A |
+| L3-S4 (Trigger definitions) | D | A.0' Trigger lift | A |
+| L3-S5 (Sequence definitions) | D | A.0' Sequence lift | A |
+| L3-S6 (DEFAULT values) | D | A.0' DEFAULT lift | A |
+| L3-S7 (Computed columns) | D | A.0' Computed lift | A |
+| L3-S8 (CHECK constraints) | D | A.0' CHECK lift | A |
+| L3-S9 (ExtendedProperties) | D | A.0' ExtendedProperties lift | A |
+| L3-S10 (Catalog coordinates) | D | A.0' Catalog-coordinate lift | A |
+
+### 12.2 Data (L3-D1 through L3-D10)
+
+| Axiom | Current bucket | Delivered by | Final bucket |
+|---|---|---|---|
+| L3-D1 (CDC silence on redeploy) | D | A.8 / chapter 4.1.B | A |
+| L3-D2 (static-seed deterministic order) | A | (existing) | A |
+| L3-D3 (migration PK determinism) | B | A.3 (with PK-assignment pass) | A |
+| L3-D4 (topological order FK-safe) | A | (existing) | A |
+| L3-D5 (cycles via allowlist) | A | (existing SelfLoopPolicy) | A |
+| L3-D6 (User FK reflow totality) | B | A.5 + B.3 | A |
+| L3-D7 (StaticData schema-validated) | D | A.3 StaticData loader | A |
+| L3-D8 (MigrationDeps schema-validated) | D | A.3 MigrationDeps loader | A |
+| L3-D9 (Bootstrap covers remaining) | B | A.2 partition assertion | A |
+| L3-D10 (emission gates) | D | A.2 emitter wiring | A |
+
+### 12.3 Identity (L3-I1 through L3-I10)
+
+| Axiom | Current bucket | Delivered by | Final bucket |
+|---|---|---|---|
+| L3-I1 (SsKey stable under rename) | A | **Shipped at Slice 1 (`9d578cc`)** | A |
+| L3-I2 (OssysOriginal survives) | A modulo bound | B.1 + B.2 (unconditional) | A |
+| L3-I3 (synthesis deterministic) | A | (existing T1) | A |
+| L3-I4 (RefactorLog history) | B | A.4 + chapter 3.5 θ/ι | A |
+| L3-I5 (V1Mapped identity) | B | B.1 (rowset path) | A |
+| L3-I6 (identity stable across evolution) | B | A.4 + chapter 3.5 | A |
+| L3-I7 (Name ⊥ SsKey) | A | **Verified at Slice 1** | A |
+| L3-I8 (SsKey uniqueness in Catalog) | A | (existing A39) | A |
+| L3-I9 (Attribute identity under column rename) | D | chapter 3.2 SnapshotRowsets | A |
+| L3-I10 (cross-catalog reference identity) | D | A.0' Catalog-coordinate lift | A |
+
+### 12.4 Diagnostics (L3-X1 through L3-X10)
+
+| Axiom | Current bucket | Delivered by | Final bucket |
+|---|---|---|---|
+| L3-X1 (every decision → LineageEvent) | B | A.2 (signature-enforced + Campaign B LineageEvent.create) | A |
+| L3-X2 (Opportunity routing) | B | A.2 + chapter 4.3 | A |
+| L3-X3 (severity matches consequence) | D | chapter 4.3 | A or B |
+| L3-X4 (lineage earliest-first) | A | (existing A24) | A |
+| L3-X5 (remediation guidance) | D | chapter 4.3 | A or B |
+| L3-X6 (detection traceable) | B | A.2 + chapter 4.3 | A |
+| L3-X7 (silent V1 drops documented) | D | A.0' + Campaign A.2 | A |
+| L3-X8 (tolerance taxonomy logged) | B | chapter 4.1.A M4 | A |
+| L3-X9 (config errors structured) | A | (shipped at A.0) | A |
+| L3-X10 (multi-env policy diffs) | D | chapter 4.1.A M4 | A or B |
+
+### 12.5 Cutover safety (L3-C1 through L3-C10)
+
+| Axiom | Current bucket | Delivered by | Final bucket |
+|---|---|---|---|
+| L3-C1 (canary V1≈V2) | B | A.6 (functional equivalence) + R6 governance | A |
+| L3-C2 (T-30/T-15 fallback) | (governance) | governance | (governance) |
+| L3-C3 (V2 doesn't write during dual-track) | B | R6 + B.1 ReadSide tests | A |
+| L3-C4 (per-pair transition) | (governance) | governance | (governance) |
+| L3-C5 (canary ≥30+≥4) | B | A.6 + chapter 3.4 | A |
+| L3-C6 (CDC redeploy silence) | D | A.8 / chapter 4.1.B (co-located with L3-D1) | A |
+| L3-C7 (canonical ordering) | A | **Verified at Slice 1** | A |
+| L3-C8 (no credentials in config) | A | (shipped at A.0 D9 guardrail) | A |
+| L3-C9 (dry-run completeness) | (governance) | governance | (governance) |
+| L3-C10 (V1 sunset gating) | (governance) | governance | (governance) |
+
+### 12.6 Cross-cutting + boundary
+
+| Axiom | Current bucket | Delivered by | Final bucket |
+|---|---|---|---|
+| L3-CC1 (Π contract) | A | (existing T11 + ArtifactByKind) | A |
+| L3-CC2 (Pass contract) | B | Campaign B (`type Pass<'in, 'out>` alias) | A |
+| L3-CC3 (lineage monotonic) | A | (existing A24) | A |
+| L3-CC4 (IR fidelity for production) | D | A.0' (full) | A |
+| L3-CC5 (perf regression gates) | B | (existing perf-gate.sh) | B |
+| L3-CC6 (domain-first naming) | B (review-enforced) | (existing) | B |
+| L3-Boundary-AtomicEmission | D | A.7.1 | A |
+| L3-Boundary-NoSilentDrop | D | A.0' completion criterion | A |
+| L3-Boundary-ManifestMatchesDisk | D | A.7.2 | A |
+| L3-Idempotence-OnRedeploy | D | A.8 / chapter 4.1.B | A |
+
+### 12.7 Campaign B new axioms (introduced via A.4.5 + A.4.6)
+
+15 new L3 candidates enter at Bucket A immediately via Campaign B's smart-constructor expansion (audit Part VI.2 + VI.3). Full statements pending Campaign B implementation; placeholder IDs listed:
+- L3-Catalog-IdentityNullCoherence
+- L3-Catalog-MandatoryNullCoherence
+- L3-Catalog-PrimaryKeyUniqueIndexCoherence
+- L3-Catalog-TypeShapeCoherence
+- L3-Catalog-LengthBoundedCoherence
+- L3-Catalog-PKOrderingCoherence
+- L3-Catalog-SingleStaticModality
+- L3-Catalog-PhysicalNameUniqueness (was Slice 2)
+- L3-Catalog-ModuleNameUniqueness
+- L3-Module-KindNameUniqueness
+- L3-Kind-AttributeNameUniqueness
+- L3-Kind-ReferenceNameUniqueness
+- L3-Kind-IndexNameUniqueness
+- L3-Index-ColumnUniqueness
+- L3-Static-RowIdentityUniqueness
+
+---
+
+## 13. Addenda (append-only)
+
+### 13.1 (placeholder) Audit slot for operator's "document of key evolutions"
+
+When operator delivers the evolutions document, append a synthesis subsection here, revise §3 / §4 / §6 as needed, and bump the plan to Draft 4. Operator preview (2026-05-11): evolution doc focuses primarily on UAT-users; likely impact includes UAT-users as Phase A feature, possible sixth core concern, and IR-fidelity extensions if new Catalog/Profile fields required.
+
+### 13.2 (placeholder) Agreed differences between V1 and V2 outputs
+
+During Phase A.6 soak, divergences classified as "agreed-different" recorded here.
+
+Initial entries expected:
 - `manifest.json` shape: V1's `SsdtManifest` (342-field record) vs V2's `ArtifactByKind` structure.
-- `decision-log.json` / `opportunities.json` / `validations.json` shape: V1's staged structure (`Stages[].DecisionLog`) vs V2's per-kind structure.
-- V1's `osm_model.json` (input to Phase A) vs V2's `JsonEmitter` output (V2 IR shape) — these are intentionally different files, not a diff target.
+- `decision-log.json` / `opportunities.json` / `validations.json` shape: V1's staged structure vs V2's per-kind structure.
+- V1's `osm_model.json` vs V2's `JsonEmitter` output — intentionally different files.
 
-### 11.3 (placeholder) Per-milestone close notes
+### 13.3 (placeholder) Per-milestone close notes
 
-As Phase A.0, A.0', A.1, …, B.4 close, append a 5-10 line close note: what shipped, what deferred, what surprised.
+As Phase A.0 / A.0' / ... / B.4 close, append a 5-10 line close note: what shipped, what deferred, what surprised, which axioms promoted.
 
-### 11.4 (placeholder) Audit log
+Confirmed close notes so far:
+- **A.0** (commit `93468a3`): Config types + parser + D9 guardrail; L3-X9 / L3-C8 promoted to A; 23 ConfigTests passing.
+- **A.1** (commit `df18bbf`): `emit --config` CLI bridge; L3-X9 extends to CLI paths.
+- **A.4** (commit `502592f`): TableRename pass + RenameBinding + Compose.runWithConfig; L3-I1 / L3-I7 / L3-C7 promoted to A; R11 dissolved.
+- **Slice 1 PhysicallyRenamed** (commit `9d578cc`): `TransformKind.PhysicallyRenamed of PhysicalRename`; rename audit trail now typed.
 
-Track adversarial audits and their findings.
+### 13.4 (placeholder) Audit log
 
-- **2026-05-11 audit (Draft 1 → Draft 2):** Six parallel agents (Explore × 5 + cross-cutting × 1). Findings drove §3.3 IR-fidelity inventory, §3.4–§3.7 cross-cutting sections, D9–D12 decisions, R8–R12 risks, Q8–Q13 questions, §5.2 (A.0') new workstream, §5.5 (A.3 split into static-data + migration-deps loaders), §6.4 (Phase B.3 estimate revision 2-3 → 3-4 weeks; probe count 4 → 5), §10 expanded deferral catalog.
+- **2026-05-11 audit (Draft 1 → Draft 2):** Six parallel agents. Drove §3.3 IR-fidelity inventory, §3.4-§3.7 cross-cutting sections, D9-D12, R8-R12, Q8-Q13, §6.0' (A.0') new workstream, §6.3 (A.3 split), Phase B.3 estimate revision (2-3 → 3-4 weeks), §11 expanded deferral catalog.
 
-- **2026-05-12 audit (Draft 2.2 — pre-A.4 implementation):** One Explore agent scoped the Catalog/rename surface before TableRenamePass implementation. Findings:
-  - **R11 dissolved.** `TopologicalOrderPass` reads SsKey only; references carry SsKey; rename rewrites only `Kind.Physical`. Topo is structurally invariant under rename.
-  - **`CatalogTraversal.mapKinds` is the existing primitive** for Catalog→Catalog transforms with lineage events. TableRename uses it; no new helper needed at N=2 consumers.
-  - **A39 does NOT enforce physical-name uniqueness across the catalog.** Rename could in principle produce duplicate `(Schema, Table)` pairs. Within-batch collision is detected by `TableRename.collectRenames`; cross-catalog uniqueness check is **deferred** per "IR grows under evidence" — wait for evidence of operator scenarios that produce duplicates.
-  - **`TransformKind.Renamed` is no-payload today.** Lineage records the SsKey but not the before/after TableId. **Refactor opportunity** logged: when a second physical-rewrite consumer surfaces, widen to `PhysicallyRenamed of from: TableId * to: TableId` for richer audit trail. Defer.
-  - **`SchemaName` / `TableName` typed VOs in `Coordinates.fs:46-58` are unlifted into the `TableId` record.** Existing trigger ("a real bug caught from schema-vs-table confusion") hasn't fired. Defer.
+- **2026-05-12 audit (Draft 2.2 — pre-A.4 implementation):** One Explore agent scoped Catalog/rename surface. Findings: R11 dissolved; `CatalogTraversal.mapKinds` confirmed; A39 doesn't enforce physical-name uniqueness (Campaign B); `TransformKind.Renamed` no-payload (Slice 1 added `PhysicallyRenamed`); `SchemaName`/`TableName` VOs unlifted (Campaign C.1). Slice 1 shipped post-audit.
 
-  Implementation slice closed: `Projection.Core.Passes.TableRename` (Core pass), `Projection.Pipeline.RenameBinding` (boundary mapper), `Compose.runWithConfig` (pipeline entry threading rename through `read → rename → project → write`), 16 tests, full suite green (1119/1119).
+- **2026-05-12 verifiability-triangle audit:** Two rounds of parallel agents. Produced `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` (1410 lines), `PRODUCT_AXIOMS.md` (constitutional L3 sibling), and three campaigns (A / B / C) superseding the prior 3-slice airtight plan. Draft 3 (this revision) integrates the campaigns into Phase A / Phase B as cross-cutting workstream tags.
 
-- **2026-05-12 verifiability-triangle audit (post-Slice-1 PhysicallyRenamed):** Two rounds of parallel agents. Round 1 (illegal-states scan): 4 agents (L1 inventory + 3 illegal-state hunts on Catalog IR, Profile+Lineage+Passes, boundaries) surfaced ~40 representable-illegal-state opportunities across 9 tiers. Round 2 (L3 top-down + L2↔L3 bridge + adversarial gap-hunt): 3 agents produced 56 L3 product axioms grouped by core concern, coverage map for A1–A40 + T1–T11 (18 Bucket A / 12 Bucket B / 20 Bucket C / 30 Bucket D unnamed candidates), and 30 operator-question gap candidates. **Three campaigns proposed**, superseding the prior 3-slice airtight plan: **Campaign A** addresses 4 cutover-blocker unnamed axioms (atomic emission, no-silent-V1-feature-skip, redeploy-idempotence/CDC-silence, manifest-matches-disk); **Campaign B** subsumes slices 2+3 into a broader structural fortification (Catalog cross-field invariants, name uniqueness, equality+ordering, A28-style smart constructors); **Campaign C** addresses Tier-2 unnamed axioms + boundary VOs + Config parse-time strengthening. Full audit + campaigns at `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md`; L3 axioms canonicalized at `PRODUCT_AXIOMS.md`. Phase A workstream sequencing pending operator direction on Campaign A ordering and axiom-naming convention.
+### 13.5 (placeholder) R-dissolution log
+
+Track risks that dissolve through structural commitment.
+
+- **R11 (2026-05-12)**: rename order perturbing topo. Dissolved when audit confirmed `TopologicalOrderPass` reads SsKey only; `Reference.TargetKind` is SsKey-keyed; rename rewrites only `Kind.Physical`.
+
+Subsequent dissolutions append here.
