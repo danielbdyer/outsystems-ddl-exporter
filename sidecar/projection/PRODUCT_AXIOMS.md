@@ -383,29 +383,36 @@ The axioms are grouped by **core concern** (the operator's mental partition of V
 
 ---
 
-## Group Boundary — Unnamed candidates (pending formalization)
+## Group Boundary — V2 ↔ external surfaces
 
-The audit's gap-hunt surfaced four Tier-1 unnamed axioms that should be formalized as part of Campaign A (per `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` Part IX). Listed here as **candidates**; will become full L3 axioms when Campaign A lands. Each carries no L2 underwriting today; that's the work.
+The audit's gap-hunt surfaced four Tier-1 unnamed axioms (Campaign A in `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` Part IX). One has been formalized; three remain candidates pending operationalization. The `L3-Boundary-*` namespace is the canonical home for axioms governing V2's interaction with the external world (file system, V1 input, target SQL Server, operator tooling). Per the Q15 axiom-naming convention decision: boundary axioms live in this namespace rather than extending `AXIOMS.md`'s A41+ surface, which stays reserved for genuine algebra-interior extensions.
 
-**L3-Boundary-AtomicEmission (candidate).** When V2 emit fails partway through, the output directory is left untouched — no half-written files. `Compose.write` is transactional: write-to-temp, fsync, atomic-rename. On any failure, clean up temps and leave the output directory unchanged.
+**L3-Boundary-AtomicEmission.** A successful `Compose.write` produces an `outputDir` containing exactly the artifacts the in-memory `Outputs` named. A failed `Compose.write` leaves `outputDir` byte-identical to its pre-call state (or absent if it didn't exist before).
 
+  *Underwriting.* T1 (byte-determinism on success path); structural — `Compose.write` writes to a sibling staging directory under the same filesystem volume, then atomically replaces `outputDir` on success or deletes the staging directory on any failure. The non-atomic window is the rename itself (one POSIX `rename(2)` call, atomic on the same volume; .NET `Directory.Move` delegates).
   *Failure mode.* Operator hits midnight failure scenario; deletes output dir to retry; discovers the SSDT project they thought was clean was actually a mix of v1.0 and v1.1 files.
-  *Tier.* 1.
+  *Realization.* `Projection.Pipeline.Compose.write` — smart-constructor pattern at the I/O boundary: `writeWith : FileWriter → outputDir → Outputs → Result<string list>`; the `Result` outcome makes failure structural rather than exceptional. Default writer = `File.WriteAllText`; tests inject failure-after-N writers to verify the post-failure invariant.
+  *Property tests.* `ComposeAtomicWriteTests` (7 tests) — happy path; induced failure with pre-absent `outputDir`; induced failure with pre-existing sentinel content (byte-identical preservation); failure on very first write; no `*.staging-*` leaks under either outcome; replace-semantics-not-merge on success.
+  *Tier.* 1. **Promoted from candidate to formal 2026-05-12 (Campaign A.7.1).**
+  *Semantics note.* On successful write, `outputDir` is *replaced*, not merged. Pre-existing files in `outputDir` are gone. Operators should treat `outputDir` as V2-owned; place external state elsewhere. This is the structural consequence of atomicity: a partial-merge would compromise the "leave outputDir byte-identical on failure" invariant.
 
 **L3-Boundary-NoSilentDrop (candidate).** Every concept Phase A.0' enumerates as "lifted into IR" gets one of two outcomes: (a) a typed `Catalog` field, OR (b) a `Diagnostic.Severity = Error` at the adapter boundary. No silent passthrough.
 
+  *Underwriting.* Phase A.0' completion (the IR-fidelity workstream). Adapter-side property test: every known V1 concept maps to a Catalog field or to a structured-error path.
   *Failure mode.* V1 has a CHECK constraint V2 silently doesn't represent; production schema drifts from V1's; operator never knows.
-  *Tier.* 1.
+  *Tier.* 1. **Candidate; promotes on Phase A.0' close.**
 
 **L3-Boundary-ManifestMatchesDisk (candidate).** Post-`Compose.write`, every manifest entry corresponds to a file on disk; every file on disk has a manifest entry.
 
+  *Underwriting.* L3-Boundary-AtomicEmission (the staging-then-replace mechanism ensures the manifest is derivable from the staged file set); `ManifestEmitter` consumes the path list returned by `Compose.write` (signature change pending A.7.2).
   *Failure mode.* File-write failed partway; manifest lists files that don't exist; operator's reconciliation tool gives false confidence.
-  *Tier.* 1.
+  *Tier.* 1. **Candidate; promotes at A.7.2.**
 
 **L3-Idempotence-OnRedeploy (candidate).** Re-running V2 emit + re-running the deploy produces a target DB state byte-equivalent to running once. Subsumes L3-D1 (CDC silence) at the deploy boundary.
 
+  *Underwriting.* T1 (byte-determinism) + topological-sort idempotence + CDC-silence property test (chapter 4.1.B in flight).
   *Failure mode.* See L3-D1 — spurious CDC events corrupt downstream ETL.
-  *Tier.* 1.
+  *Tier.* 1. **Candidate; promotes when chapter 4.1.B closes.**
 
 Plus ~10 Tier-2 candidates from the audit's gap-hunt (Q1-Q30; see `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` Part VIII for full statements with failure modes). These will be formalized through Campaign C.
 

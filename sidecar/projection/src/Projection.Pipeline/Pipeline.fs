@@ -141,34 +141,122 @@ module Compose =
             return! CatalogReader.parse (CatalogReader.SnapshotJson json)
         }
 
-    /// Write the SSDT bundle (per-kind .sql + manifest.json) plus the
-    /// V2 IR JSON + Distributions artifacts to a directory. Creates
-    /// the directory + bundle subdirectories as needed. Returns the
-    /// absolute paths of every written file for operator-side
-    /// validation.
-    let write (outputDir: string) (outputs: Outputs) : string list =
-        use _ = Bench.scope "compose.write"
-        Directory.CreateDirectory outputDir |> ignore
-        let bundlePaths =
+    /// Write a single file at `absPath`, creating parent directories as needed.
+    /// The default `IO` implementation calls BCL `File.WriteAllText`; tests
+    /// inject alternatives to simulate failures mid-stream.
+    type FileWriter = string -> string -> unit
+
+    let private defaultFileWriter : FileWriter =
+        fun (absPath: string) (body: string) -> File.WriteAllText(absPath, body)
+
+    /// Build a unique staging-directory path in `outputDir`'s parent. The
+    /// dot-prefix hides the directory from casual `ls`; the short GUID
+    /// suffix prevents collision under concurrent writes against the same
+    /// `outputDir`. Same-parent placement keeps `Directory.Move(staging,
+    /// outputDir)` on the same filesystem volume — POSIX `rename(2)` is
+    /// atomic in that case, and .NET delegates to it.
+    let private buildStagingDir (outputDir: string) : string =
+        let parent =
+            match Path.GetDirectoryName outputDir with
+            | null -> "."
+            | "" -> "."
+            | p -> p
+        let baseName =
+            match Path.GetFileName outputDir with
+            | null -> "out"
+            | "" -> "out"
+            | n -> n
+        let suffix = System.Guid.NewGuid().ToString("N").Substring(0, 12)
+        Path.Combine(parent, sprintf ".%s.staging-%s" baseName suffix)
+
+    let private writeAllToStaging
+        (writeFile: FileWriter)
+        (stagingDir: string)
+        (outputDir: string)
+        (outputs: Outputs)
+        : string list =
+        // Bundle entries (per-kind .sql + manifest)
+        let bundleFinalPaths =
             outputs.SsdtBundle
             |> Map.toList
             |> List.map (fun (relPath, body) ->
-                let absPath = Path.Combine(outputDir, relPath)
-                match Path.GetDirectoryName absPath with
+                let stagingPath = Path.Combine(stagingDir, relPath)
+                match Path.GetDirectoryName stagingPath with
                 | null -> ()
                 | parent when System.String.IsNullOrEmpty parent -> ()
                 | parent -> Directory.CreateDirectory parent |> ignore
-                File.WriteAllText(absPath, body)
-                absPath)
-        let jsonPath = Path.Combine(outputDir, ArtifactPath.json)
-        let distributionsPath = Path.Combine(outputDir, ArtifactPath.distributions)
-        // Per Tier-1 #3: serialize JsonNode at the file-system boundary.
-        // The Outputs seam is typed; the disk artifact is canonical
-        // JSON text per `JsonNode.ToJsonString`.
+                writeFile stagingPath body
+                Path.Combine(outputDir, relPath))
+        // V2 IR JSON
         let jsonOpts = System.Text.Json.JsonSerializerOptions(WriteIndented = true)
-        File.WriteAllText(jsonPath, outputs.Json.ToJsonString(jsonOpts))
-        File.WriteAllText(distributionsPath, outputs.Distributions.ToJsonString(jsonOpts))
-        bundlePaths @ [ jsonPath; distributionsPath ]
+        let jsonStaging = Path.Combine(stagingDir, ArtifactPath.json)
+        writeFile jsonStaging (outputs.Json.ToJsonString(jsonOpts))
+        // Distributions
+        let distributionsStaging = Path.Combine(stagingDir, ArtifactPath.distributions)
+        writeFile distributionsStaging (outputs.Distributions.ToJsonString(jsonOpts))
+        // Final-path projection (under the eventual outputDir, post-swap)
+        let jsonFinal = Path.Combine(outputDir, ArtifactPath.json)
+        let distributionsFinal = Path.Combine(outputDir, ArtifactPath.distributions)
+        bundleFinalPaths @ [ jsonFinal; distributionsFinal ]
+
+    let private safeCleanupStaging (stagingDir: string) : unit =
+        if Directory.Exists stagingDir then
+            try Directory.Delete(stagingDir, recursive = true)
+            with _ -> ()  // best-effort; surface via the original error, not via cleanup secondary
+
+    /// Write `outputs` to `outputDir` atomically. **L3-Boundary-AtomicEmission**:
+    /// a successful call produces an `outputDir` containing exactly the
+    /// artifacts named in `outputs`. A failed call leaves `outputDir`
+    /// byte-identical to its pre-call state (or absent if it didn't exist
+    /// before). Failure modes: file-system errors during multi-file writes,
+    /// serialization failures, or any exception within the staging phase.
+    ///
+    /// Mechanism: write all artifacts to a sibling staging directory; on
+    /// success, atomically replace `outputDir` with the staging directory;
+    /// on any failure, delete the staging directory. The staging directory
+    /// is in the same parent as `outputDir` so the rename stays within one
+    /// filesystem volume (POSIX `rename(2)` is atomic there; .NET
+    /// `Directory.Move` delegates to it).
+    ///
+    /// **Semantics on success**: `outputDir` is *replaced*, not merged. Any
+    /// pre-existing files in `outputDir` are gone after a successful write.
+    /// Operators should treat `outputDir` as V2-owned; place external state
+    /// elsewhere.
+    let writeWith
+        (writeFile: FileWriter)
+        (outputDir: string)
+        (outputs: Outputs)
+        : Result<string list> =
+        use _ = Bench.scope "compose.write"
+        let stagingDir = buildStagingDir outputDir
+        try
+            Directory.CreateDirectory stagingDir |> ignore
+            let finalPaths = writeAllToStaging writeFile stagingDir outputDir outputs
+            // All staging writes succeeded. Commit:
+            //   (a) delete existing outputDir if present;
+            //   (b) Directory.Move(staging, outputDir).
+            // The window between (a) and (b) is the only non-atomic gap;
+            // a crash there leaves outputDir absent (operator can retry).
+            if Directory.Exists outputDir then
+                Directory.Delete(outputDir, recursive = true)
+            Directory.Move(stagingDir, outputDir)
+            Result.success finalPaths
+        with ex ->
+            safeCleanupStaging stagingDir
+            Result.failureOf (
+                ValidationError.create
+                    "pipeline.compose.write.atomicFailure"
+                    (sprintf
+                        "Compose.write failed; output directory '%s' left unchanged. Cause: %s"
+                        outputDir
+                        ex.Message))
+
+    /// Write the SSDT bundle (per-kind .sql + manifest.json) plus the
+    /// V2 IR JSON + Distributions artifacts to a directory. Atomic per
+    /// `writeWith`. Returns the absolute paths of every written file on
+    /// success, or a structured error on failure.
+    let write (outputDir: string) (outputs: Outputs) : Result<string list> =
+        writeWith defaultFileWriter outputDir outputs
 
     /// Full end-to-end: read V1 JSON from disk, project, write
     /// artifacts to the output directory. Returns the artifact paths
@@ -179,8 +267,7 @@ module Compose =
             match parsed with
             | Ok catalog ->
                 let outputs = project catalog
-                let paths = write outputDir outputs
-                return Result.success paths
+                return write outputDir outputs
             | Error errors ->
                 return Result.failure errors
         }
@@ -215,8 +302,7 @@ module Compose =
                 match applyRenames cfg catalog with
                 | Ok renamedCatalog ->
                     let outputs = project renamedCatalog
-                    let paths = write cfg.Output.Dir outputs
-                    return Result.success paths
+                    return write cfg.Output.Dir outputs
                 | Error errors ->
                     return Result.failure errors
             | Error errors ->

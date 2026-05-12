@@ -681,7 +681,7 @@ The audit triangulates the 40 axioms and 11 theorems in `AXIOMS.md` plus the ame
 ### 4.4 Bucket D — Unnamed axioms (the gap-hunt's contribution)
 
 (See Part VIII for the full 30-candidate list.) Summary count for the synthesis:
-- **Tier 1 (cutover blocker)**: 4 unnamed axioms — atomic emission, no silent V1 feature skip, SSDT redeploy idempotence + CDC silence, manifest matches disk.
+- **Tier 1 (cutover blocker)**: originally 4 unnamed axioms; now **3 candidates + 1 formalized**. Formalized 2026-05-12: `L3-Boundary-AtomicEmission` (Bucket D → A; see Part XII.1). Remaining candidates: no silent V1 feature skip (A.0' completion), SSDT redeploy idempotence + CDC silence (chapter 4.1.B), manifest matches disk (A.7.2).
 - **Tier 2 (strongly desired)**: 10 unnamed axioms.
 - **Tier 3 (nice-to-have)**: ~16 unnamed axioms.
 
@@ -1024,7 +1024,7 @@ The full operator-question catalog from the gap-hunt agent. Each is a candidate 
 
 ### Summary by tier
 
-- **Tier 1 (cutover blockers; no L2 backing): 4 axioms** — Q16 (atomic emission), Q21 (no silent V1 feature skip), Q7+L3-D1 (SSDT redeploy idempotence + CDC silence; co-located), Q13 (manifest matches disk).
+- **Tier 1 (cutover blockers; originally 4 axioms with no L2 backing): now 3 candidates + 1 formalized** — Q16 (atomic emission, **formalized 2026-05-12** as `L3-Boundary-AtomicEmission` per `PRODUCT_AXIOMS.md` Group Boundary; Bucket D → A), Q21 (no silent V1 feature skip; pending A.0' close), Q7+L3-D1 (SSDT redeploy idempotence + CDC silence; chapter 4.1.B in flight), Q13 (manifest matches disk; pending A.7.2). Q15 axiom-naming convention: boundary axioms live in `PRODUCT_AXIOMS.md` Group Boundary under the `L3-Boundary-*` namespace; `AXIOMS.md` A41+ stays reserved for algebra-interior extensions.
 - **Tier 2 (strongly desired; some have partial L2 backing): ~10 axioms** — Q2, Q3, Q4, Q5, Q10, Q12, Q14, Q15, Q17, Q18.
 - **Tier 3 (nice-to-have; cross-version safety): ~16 axioms** — the remainder.
 
@@ -1302,9 +1302,33 @@ Three disciplines that should attach to the triangle:
 
 This section accumulates references to subsequent work that builds on this audit. Each addition is a one-paragraph entry with a date and a link to the underlying commit / document.
 
-### 12.1 (placeholder) Campaign A close
+### 12.1 Campaign A close — partial (Slice A.7.1 shipped 2026-05-12)
 
-When Campaign A ships, append: scope delivered, L3 axioms newly named, test coverage added, blast radius observed vs. estimated, surprises encountered.
+**Scope delivered**: A.7.1 (Atomic emission) — the first net-new Campaign A workstream from Phase A's incremental cost surface.
+
+**L3 axiom promoted**: `L3-Boundary-AtomicEmission` from Bucket D (unnamed candidate) to Bucket A (full structural enforcement). The axiom now lives in `PRODUCT_AXIOMS.md` Group Boundary with formal `*Underwriting*` / `*Realization*` / `*Property tests*` metadata; no longer a candidate.
+
+**Realization**:
+- `Projection.Pipeline.Compose.write` refactored from `string list` return to `Result<string list>`. New mechanism: write all artifacts to a sibling staging directory (`<parent>/.<basename>.staging-<guid12>`); on success, delete pre-existing `outputDir` and `Directory.Move(staging, outputDir)`; on any failure, `safeCleanupStaging` removes the staging directory and `outputDir` is unchanged. The non-atomic window is the single rename call — POSIX-atomic on the same filesystem volume.
+- New testable seam: `Compose.FileWriter = string -> string -> unit` with `Compose.writeWith : FileWriter -> outputDir -> Outputs -> Result<string list>`. Default writer = `File.WriteAllText`; tests inject `failAfterNWrites` to verify the post-failure invariant without disk-level fault injection.
+- Test scaffolding: `ComposeAtomicWriteTests` (new file; 7 tests). Coverage: happy path artifact accounting, success-path no-staging-leak, induced-failure-from-absent-outputDir, induced-failure-with-sentinel-content (byte-identical preservation), failure-on-very-first-write, induced-failure no-staging-leak, replace-not-merge semantics.
+
+**Signature change ripple**: `Compose.run` and `Compose.runWithConfig` now bind `Compose.write`'s `Result` directly (no longer wrap a synchronous `string list` in `Result.success`). `EndToEndPipelineTests.``M1: Compose.write writes the same bytes Compose.project produced``` updated to destructure the new `Result`.
+
+**Test result**: 1128 passed / 0 failed (1121 baseline + 7 new atomic-write tests; zero regressions).
+
+**Blast radius observed vs. estimated**: estimated 3-5 days for A.7.1; observed under 1 day. Estimate accuracy explained by the refactor being mechanically simple (the staging pattern is well-known) and the test seam being already-clean F# idiom (function-injection rather than mock framework).
+
+**Surprises**: F# nullness-warnings-as-errors required explicit `null` arms in two pattern matches against `Path.GetDirectoryName` / `Path.GetFileName` (both return `string | null` under .NET 9 nullable-reference-types). Caught at compile time; trivial fix; reinforces the value of `TreatWarningsAsErrors=true` at the boundary.
+
+**Remaining Campaign A work** (still pending operator direction or in-flight):
+- **A.7.2 — L3-Boundary-ManifestMatchesDisk**: signature change to `ManifestEmitter` to consume the `Compose.write` path list rather than the in-memory `Outputs`. Blocked: needs A.7.1 (done); ready to start.
+- **A.0' — L3-Boundary-NoSilentDrop**: the IR-fidelity workstream; closes when every concept in `V2_PRODUCTION_CUTOVER.md` §3.3 has either a typed `Catalog` field or a structured-error path at the OSSYS adapter boundary.
+- **A.8 — L3-Idempotence-OnRedeploy**: co-located with chapter 4.1.B (CDC-silence canary), in flight.
+
+**R-dissolutions observed**: none net-new from A.7.1 itself; the slice didn't structurally eliminate any open risk in §9 of the cutover plan. (Atomic emission was an unnamed-axiom blocker, not a named-risk blocker — those classes are disjoint by definition.)
+
+**Commit**: pending (this addendum lands as part of the commit that ships the refactor + tests + doc updates).
 
 ### 12.2 (placeholder) Campaign B close
 

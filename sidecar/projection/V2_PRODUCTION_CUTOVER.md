@@ -976,6 +976,7 @@ Confirmed close notes so far:
 - **A.1** (commit `df18bbf`): `emit --config` CLI bridge; L3-X9 extends to CLI paths.
 - **A.4** (commit `502592f`): TableRename pass + RenameBinding + Compose.runWithConfig; L3-I1 / L3-I7 / L3-C7 promoted to A; R11 dissolved.
 - **Slice 1 PhysicallyRenamed** (commit `9d578cc`): `TransformKind.PhysicallyRenamed of PhysicalRename`; rename audit trail now typed.
+- **A.7.1 Atomic emission** (commit pending): `Compose.write` refactored to staging-then-replace pattern; `Compose.writeWith` testable seam with injectable `FileWriter`; `Result<string list>` return ripples cleanly through `Compose.run` and `Compose.runWithConfig`; **L3-Boundary-AtomicEmission promoted from Bucket-D candidate to Bucket-A formal** per `PRODUCT_AXIOMS.md` Group Boundary. Q15 axiom-naming convention locked in (`L3-Boundary-*` namespace; `AXIOMS.md` A41+ stays algebra-interior). 7 new property tests in `ComposeAtomicWriteTests` covering happy path, induced-failure with/without sentinel content, no staging leaks, replace-not-merge semantics. 1128 tests passing (1121 baseline + 7 new); zero regressions.
 
 ### 13.4 (placeholder) Audit log
 

@@ -237,7 +237,12 @@ let ``M1: Compose.write writes the same bytes Compose.project produced`` () =
     let outputDir =
         Path.Combine(Path.GetTempPath(), sprintf "projection-tests-%s" (System.Guid.NewGuid().ToString "N"))
     try
-        let paths = Compose.write outputDir outputs
+        let paths =
+            match Compose.write outputDir outputs with
+            | Ok p -> p
+            | Error errs ->
+                let codes = errs |> List.map (fun e -> e.Code) |> String.concat ", "
+                failwithf "Compose.write failed: %s" codes
         // Per Tier-1 #2: the bundle path count + the two top-level
         // artifacts (json + distributions). Bundle has 1 .sql per
         // catalog kind + 1 manifest.json.

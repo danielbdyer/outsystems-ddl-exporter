@@ -32,6 +32,7 @@
     <Compile Include="ConfigTests.fs" />
     <Compile Include="CatalogTests.fs" />
     <Compile Include="TableRenameTests.fs" />
+    <Compile Include="ComposeAtomicWriteTests.fs" />
     <Compile Include="SqlTypeCorrespondenceTests.fs" />
     <Compile Include="SqlLiteralTests.fs" />
     <Compile Include="LineageTests.fs" />
