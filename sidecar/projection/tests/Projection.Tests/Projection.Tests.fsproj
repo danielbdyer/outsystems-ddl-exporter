@@ -29,6 +29,7 @@
     <Compile Include="SsKeyTests.fs" />
     <Compile Include="UuidV5Tests.fs" />
     <Compile Include="Fixtures.fs" />
+    <Compile Include="ConfigTests.fs" />
     <Compile Include="CatalogTests.fs" />
     <Compile Include="SqlTypeCorrespondenceTests.fs" />
     <Compile Include="SqlLiteralTests.fs" />
