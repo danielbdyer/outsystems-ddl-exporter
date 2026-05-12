@@ -1,6 +1,6 @@
 # V2 Production Cutover Plan
 
-**Status:** Draft 2 — 2026-05-11. Revised after 6-agent adversarial audit (5 read-only Explore agents + 1 cross-cutting risk audit, run in parallel). Draft 1 commit reference: `2ab3a8a`. Draft 2 adds the IR-fidelity workstream (Phase A precondition), four new locked-in decisions (D9–D12), four new cross-cutting plan sections (§3.4–§3.7), five new risks (R8–R12), explicit deferral catalog (§10), and a substantially revised unified-config schema sketch (§5.1).
+**Status:** Draft 2.1 — 2026-05-11. Revised after 6-agent adversarial audit (5 read-only Explore agents + 1 cross-cutting risk audit, run in parallel). Draft 1 commit reference: `2ab3a8a`; Draft 2 commit reference: `5da03c2`. Draft 2 adds the IR-fidelity workstream (Phase A precondition), four new locked-in decisions (D9–D12), four new cross-cutting plan sections (§3.4–§3.7), five new risks (R8–R12), explicit deferral catalog (§10), and a substantially revised unified-config schema sketch (§5.1). Draft 2.1 corrects Q1 framing (no V1 modification; V2 observes its own dataset) and repositions UAT-users from "deferred verb" to "pending evolution doc; expected as Phase A feature."
 
 **Companion documents:** `V2_DRIVER.md` (KPI / phase ladder), `VISION.md` (architectural north star), `STAGING.md` (chapter staging), `HANDOFF.md` (current-session pointer), `DECISIONS.md` (dated decision log).
 
@@ -149,7 +149,7 @@ These are decisions made during the 2026-05-11 audit collaboration. Each is revi
 | D2 | **Full V2 independence before cutover**, not partial / coexistence. | Operator workflow expects one tool. |
 | D3 | **Single typed config file** for all overrides, replacing V1's seven scattered input mechanisms. CLI accepts `--config <path>` + a small set of common flag overrides. | Reduces operator cognitive load; one schema to learn. |
 | D4 | **Phase A first as a soak**, then Phase B. V2 emit runs against V1-extracted JSON during Phase B port for differential testing. | Surfaces emit-side gaps early; validates emit-half against real workloads before extraction-side rewrite lands. |
-| D5 | **MigrationDependencies PK assignment**: pre-compute at emit time as `MAX(SourceOSSYS.Id) + ROW_NUMBER()`; bake literal IDs into emitted SQL. | Deterministic; readable diffs; no deploy-time uncertainty. *Caveat: requires MAX(Id) per table — see §9 Q1.* |
+| D5 | **MigrationDependencies PK assignment**: pre-compute at emit time as `MAX(observedSet.Id) + ROW_NUMBER()`; bake literal IDs into emitted SQL. The "observed set" is whatever records V2 has in hand at PK-assignment time — static-data fixture rows, profile-supplied counts/max, or (Phase B) probe-captured MAX. V1 is not modified. | Deterministic; readable diffs; no deploy-time uncertainty; no V1 dependency. See §9 Q1 for per-phase resolution. |
 | D6 | **V2 owns profile probes** against OSSYS DB. | Required for full independence (D2); detection passes need profile data; V1's probe set is portable. |
 | D7 | **Apply phase is external.** V2 emits artifacts; operator runs them via DacFx publish / sqlcmd. | Reduces V2 scope; ephemeral `deploy` subcommand stays as dev tooling. |
 | D8 | **Tightening as detection, not intervention.** Operator does not configure tightening rules in production; V2's role is to *catch* SQL Server semantic breakers (orphaned FKs, IsMandatory=true + nulls, unique-index dups) and emit them as Opportunities for operator review. | Detection passes already exist; profile data is the missing input; intervention-axis tuning is out of scope. |
@@ -347,7 +347,7 @@ These are decisions made during the 2026-05-11 audit collaboration. Each is revi
 **Tasks:**
 - `Projection.Pipeline/StaticDataLoader.fs` — parse + resolve to (schema, table) tuples; validate column existence against Catalog.
 - `Projection.Pipeline/MigrationDependencyLoader.fs` — parse + resolve kind keys; validate column existence.
-- New pre-emit pass `MigrationDependencyPkAssignmentPass` — given `Profile.MaxIdentityValues` (new field; see Q1) + parsed migration document, produce fully-PK'd `MigrationDependencyContext`. PK assignment edge cases per Q13: identity-overflow detection, deterministic ordering, missing-MAX diagnostic.
+- New pre-emit pass `MigrationDependencyPkAssignmentPass` — given the observed-set MAX (per Q1: profile-supplied if present, else static-data-fixture MAX, else 0) + parsed migration document, produce fully-PK'd `MigrationDependencyContext`. PK assignment edge cases per Q13: identity-overflow detection, deterministic ordering, no-observed-max baseline.
 - Wire StaticData → StaticSeedsEmitter input.
 - Wire MigrationDependencyContext → MigrationDependenciesEmitter.
 - Tests: malformed JSON, unknown table/kind, unknown column, type mismatches, identity overflow, deterministic PK ordering.
@@ -375,7 +375,7 @@ These are decisions made during the 2026-05-11 audit collaboration. Each is revi
 - Audit V1's profile JSON schema. Enumerate every field. Mark each: required-for-Phase-A-emit, optional-with-fallback, advisory-only.
 - New `Projection.Adapters.Osm/ProfileReader.fs` mirroring `CatalogReader.fs` in style.
 - Required-field validation at parse time. Optional fields produce structured warnings, not errors.
-- Special case: V1 today does not capture `MaxIdentityValue`. Confirm Q1 resolution (V1 amendment or Phase A.3 deferral path).
+- Special case: V1 today does not capture `MaxIdentityValue`. Per Q1, this is acceptable: V2's A.3 pass falls back to static-data MAX or 0. ProfileReader treats `MaxIdentityValue` as an optional field; absence produces no warning. Phase B.3 adds the field natively.
 - Wire into `Compose.run` when config supplies `profile.path`.
 - Tests: round-trip, schema-shift handling, partial-failure (probe timed out, one column missing), full-failure (file absent or unparseable).
 
@@ -515,7 +515,7 @@ These are decisions made during the 2026-05-11 audit collaboration. Each is revi
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
 | R1 | Operator's "document of key evolutions" diverges from current `origin/main`. | High | Medium | Pause Phase A.0 until operator shares the evolutions doc; revise to Draft 3 before coding starts. |
-| R2 | V1's profile JSON lacks `MaxIdentityValue` → Phase A.3 auto-PK pass blocked. | Medium | Medium | Resolve Q1: amend V1's profile verb to emit MAX(Id), OR defer A.3 auto-PK to Phase B. |
+| R2 | V1's profile JSON lacks `MaxIdentityValue` → Phase A.3 auto-PK observes only static-data fixture rows (or starts at 0). | Low | Low | Closed by Q1 resolution: V2 observes its own set; profile-supplied MAX is best-effort, static-data fixture MAX is fallback, starting-at-0 is deterministic baseline. No V1 amendment. |
 | R3 | Async stream lifetime in `MetadataSnapshotRunner` port (B.1) hits memory/correctness issues. | Medium | High | Port with `task` workflow + explicit `IAsyncDisposable` handling; integration test against ≥1000-entity catalog. |
 | R4 | Byte-equivalence of `osm_model.json` (B.2) cannot be achieved due to JSON output ordering. | Low | Medium | Fall back to functional equivalence per A.6 pattern. |
 | R5 | Differential diff (A.6) surfaces deep emit-side divergence requiring substantial V2 rework. | Medium | High | A.6 budget includes +50% buffer for surprises. |
@@ -533,7 +533,10 @@ These are decisions made during the 2026-05-11 audit collaboration. Each is revi
 
 Numbered for stable reference; resolved questions retained for traceability.
 
-**Q1.** **MAX(Id) source for the auto-PK pass (A.3).** Options: (a) amend V1's profile verb to emit MAX(Id); V2 reads from profile JSON. (b) V2 opens side-channel SQL during Phase A emit (breaks separation). (c) Defer A.3 auto-PK to Phase B. Recommendation: (a). **Outstanding.**
+**Q1.** **MAX(Id) source for the auto-PK pass (A.3).** **Resolved 2026-05-11**: no V1 modification. V2 observes the highest record in its own set at PK-assignment time. Per phase:
+  - **Phase A**: V2's PK-assignment pass observes (in priority order) (i) MAX(Id) for the kind in the V1-supplied profile JSON, if that field is present; (ii) MAX(Id) across static-data fixture rows for the same kind in this run; (iii) starting value 0 if neither is available (PKs begin at 1). The profile-side hit is best-effort — Draft 2.1 does not depend on V1's profile carrying MAX(Id), but if it does, V2 uses it; if not, fallback (ii)/(iii) applies. Operator-supplied explicit PKs in the migration-deps JSON, if present, override auto-assignment for that row.
+  - **Phase B**: V2's own profile probe captures `MaxIdentityValue` per identity column natively. PK-assignment uses that authoritatively.
+  Implication: A.3 ships in Phase A without a hard dependency on profile field availability. Edge case "no observed max" is documented as deterministic behavior, not an error. **Closed.**
 
 **Q2.** **Argu vs hand-rolled CLI parser (A.1).** Decide during A.1 work. **Outstanding.**
 
@@ -570,7 +573,8 @@ These are deliberately not in scope. Operator confirmed during 2026-05-11 audit.
 - `analyze` — standalone tightening analyzer.
 - `inspect` — model-JSON inspection.
 - `policy explain` — policy-decision introspection.
-- `uat-users` (CLI verb form) — UAT user inventory transformation.
+
+**Note on `uat-users`:** the CLI verb form is **not** deferred. Operator's pending "document of key evolutions" (R1) is expected to expand UAT-users into a more featureful V2 workstream. Until that doc lands, UAT-users scope is held open; see §11.1.
 
 ### 10.2 V1 outputs V2 will not produce
 - **`.sqlproj`** (SQL Server Database Project file). Operator handles via external SSDT tooling.
@@ -578,7 +582,7 @@ These are deliberately not in scope. Operator confirmed during 2026-05-11 audit.
 - **V1-compatible `osm_model.json` re-emitter.** V2's `JsonEmitter` emits V2 IR; Phase A.6 diff handles V1's osm_model.json by reading it as the input (Phase A) or producing V2's snapshot (Phase B).
 - **`evidence-cache/` directory and manifest.**
 - **`telemetry-package.zip`.**
-- **UAT-Users artifacts** (user-map CSVs, template, preview, apply script, catalog).
+- **UAT-Users artifacts** (user-map CSVs, template, preview, apply script, catalog). Held open pending §11.1.
 
 ### 10.3 V1 capabilities deferred-with-trigger
 - **`--apply` / `--apply-static-seed-mode` phase.** Operator runs SSDT/dacpac externally via DacFx publish or sqlcmd.
@@ -609,6 +613,12 @@ Subsequent audits, decisions, and plan revisions append below. Each entry dated 
 ### 11.1 (placeholder) Audit slot for operator's "document of key evolutions"
 
 When operator delivers the evolutions document, append a synthesis subsection here, revise §3 (Current State Audit) as needed, and bump the plan to Draft 3 in the header.
+
+**Operator preview (2026-05-11):** evolution doc will focus primarily on a more effective and full-featured UAT-users command. Expected impact:
+- UAT-users moves from "deferred verb form" to a first-class Phase A feature workstream.
+- Likely additions to §5 (new Phase A workstream slot for UAT-users), §6 (Phase B may need UAT-related extraction extensions), §10.2 (UAT-Users artifacts no longer deferred), and §10.3 (CSV adapter / UserMapLoader deferred-with-trigger fires).
+- §3.3 IR fidelity inventory may grow if the UAT-users evolution requires new Catalog/Profile fields.
+Hold §5 reorg and §10 cleanup until evolution doc arrives; do not pre-scope speculatively.
 
 ### 11.2 (placeholder) Agreed differences between V1 and V2 outputs
 
