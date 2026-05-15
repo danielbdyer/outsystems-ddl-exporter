@@ -1,8 +1,38 @@
-# Handoff letter — Chapter A.0' open + slice α shipped (IR fidelity lifts, Campaign A.2)
+# Handoff letter — A.4.7 specced + L3-CC-Transform-Totality axiom landed (chapter A.0' still open, slice β next)
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## 2026-05-15 (late) — Transform registry re-opened as L3-CC-Transform-Totality (A.4.7 specced; chapter A.0' continues)
+
+**Branch / baseline.** Continues on `claude/research-v2-direction-zKg9g`. Documentation-only commit; no code changes; test baseline unchanged (1146/1146).
+
+**The principal-PO surfaced an axiomatic finding during a v1-doc review:** the skeleton/overlay separation is the structural seam V2 needs to stay clinical/laboratory-quality as it scales. *Factual/objective/skeletal* output = `Project(catalog, Policy.empty, profile)` (the deterministic baseline reachable without operator opinion). *Opinionated/override/subjective* overlay = the ordered, named, registered set of `Pass` invocations that compose the baseline into the full output. Both halves must be enumerable, recoverable, audit-traceable. A18 amended is the Π-side commitment; the transform registry is the *Pass-side* commitment. The two siblings together carry the decomposition as type-witnessed contract, not discipline.
+
+**What shipped (this session, documentation-only):**
+
+- **`PRODUCT_AXIOMS.md`** — new **L3-CC-Transform-Totality** axiom in Group CC. Tier 1 (cutover blocker); Bucket D pending A.4.7. Co-equal load-bearing with CDC silence per the new V2_DRIVER per-axis stakes row.
+- **`AXIOMS.md`** — new **A41 candidate (Transform registry totality)** placeholder in Amendments scheduled; body fills at A.4.7 close.
+- **`DECISIONS.md`** — new entry `2026-05-15 — Transform registry re-opened: skeleton-overlay separation as L3-CC-Transform-Totality`. Re-opens the 2026-05-13 cash-out under different consumer pressure (skeleton-overlay separation, not pipeline composition); preserves the prior reasoning while naming the different shape the registry takes under the new pressure. Active deferrals index updated to disambiguate the strategy-registry-mechanism (still deferred under its original framing) from the transform-registry (re-opened under the new framing).
+- **`V2_PRODUCTION_CUTOVER.md`** — new workstream **§6.4.7 A.4.7** (Campaign B core; load-bearing for laboratory-quality scale); §12.6 delivery matrix row added; new §13.6 V1-soak debt lane addendum carrying the three v1-side cleanup vectors (EntityFilters wiring; global topo for StaticSeeds; DatabaseSnapshot dedup).
+- **`V2_DRIVER.md`** — per-axis stakes table gains a "Skeleton/overlay separation" row at verification depth = Highest; new "V1-soak debt lane" section in the backlog (V1.1 / V1.2 / V1.3 v1-side PRs).
+- **`CLAUDE.md`** — operating-disciplines table gets a row pointing at the DECISIONS entry; load-bearing commitments list gains L3-CC-Transform-Totality.
+- **`docs/architecture/entity-pipeline-unification-v2.md`** — header banner added clarifying this is a v1-refactor doc (not v2 plan); names the three vectors promoted to V2_DRIVER's v1-soak debt lane.
+
+**Why this is load-bearing and not just a backlog item.** Per the new V2_DRIVER framing: the chapter-4.x scope expansion grows the number of policy-driven mutations monotonically (User FK reflow; operational diagnostics; multi-environment policy/profile parameterization). Without the registry seam, each new pass is one more convention to track in code review. The four-question naming analysis (pillar 8) catches naming drift; the LINT-ALLOW substantive-rationale discipline catches string-composition drift; **the transform registry catches skeleton/overlay drift.** Three sibling disciplines, each preventing a class of failure that scales linearly with codebase growth. CDC silence is the highest-leverage *property test*; transform registry is the highest-leverage *structural-enforcement seam*. Co-equal load-bearing.
+
+**What this re-opening does NOT do** (per the DECISIONS entry's preserved-reasoning protocol):
+- It does NOT introduce a single linear `pass1 >> pass2 >> pass3` pipeline. The per-use-case driver pattern stands; the registry is **enumerative**, not **compositional**.
+- It does NOT add reflection or name-keyed runtime dispatch. Compile-time `module TransformRegistry` referencing each `Pass` module by name. CLAUDE.md's "reflection is out of scope for Core" holds.
+- It does NOT replace `Composition.fanOut`. Strategies fan out *within* a pass; the registry enumerates *passes themselves*. Different granularities, both preserved.
+- It does NOT introduce per-pass policy axes the operator can toggle individually. `--skeleton-only` is binary (baseline vs. baseline+all-overlays). Granular toggling deferred-with-trigger.
+
+**Sequencing.** A.4.7 depends on **A.0' close** (chapter A.0' is still in flight; slice α shipped, slice β next per the section below). The registry enumerates against the post-IR-fidelity pass set; opening A.4.7 before A.0' closes would lock in a pass set A.0' is still extending. Concurrent with A.4.5 / A.4.6 acceptable once A.0' closes.
+
+**Continue on the in-flight A.0' chapter slice β next.** The new A.4.7 spec is the *next-chapter* target, not a redirect. The framing below (slice β: `Module.IsActive` + `Attribute.IsActive` + retire boundary filter, with DECISIONS amendment superseding session-21) is still the next slice to land. Operator-side check before slice β: alignment on retiring the inactive-records filter (carries semantic shift; DECISIONS amendment required).
+
+**The three v1-soak debt vectors are independently shippable** by v1 maintainers; they accelerate Phase A.6 soak by removing false-positive disagreement classes (V1 over-fetching; V1's broken StaticSeeds FK order; V1's triple-fetch variability). Each is small, surgical, reversible. Not load-bearing for V2-driver KPI directly; the KPI tracks V2-axis property tests. See `V2_PRODUCTION_CUTOVER.md` §13.6 for the per-vector rationale.
 
 ## 2026-05-15 — Chapter A.0' open + slice α shipped
 

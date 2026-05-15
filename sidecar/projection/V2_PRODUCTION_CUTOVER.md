@@ -467,6 +467,63 @@ After Phase B, the temporal axis flips again: V2 owns extraction; the canary ver
 
 **Estimated effort:** 1 week.
 
+### 6.4.7 A.4.7 — Transform registry / skeleton-overlay separation (Campaign B core; load-bearing for laboratory-quality scale)
+
+**Operational deliverable:** ship `Projection.Core.TransformRegistry` as the compile-time enumeration of every `Pass` module; lift `Project(catalog, Policy.empty, profile)` to a first-class callable baseline (`Compose.runWithSkeleton`); add `--skeleton-only` CLI flag; extend `ManifestEmitter` with `registry.digest` + per-artifact `applied-transforms : SsKey list`; ship `TransformRegistryCompletenessTests` as the structural-enforcement seam.
+
+**Campaign:** B (structural fortification; co-equal load-bearing with A.4.5 / A.4.6).
+
+**Axioms operationalized:** **L3-CC-Transform-Totality** (the load-bearing operator promise — every artifact decomposes into registered baseline + registered overlay; both halves recoverable, enumerable, audit-traceable). A41 candidate (`AXIOMS.md` Amendments scheduled) cashes here.
+
+**Bucket promotion:** L3-CC-Transform-Totality: **D → A** (registry totality + skeleton-callability promote from convention to smart-constructor-grade enforcement).
+
+**Dependencies:** **A.0' (chapter A.0') must close before A.4.7 begins.** The registry enumerates passes against the post-IR-fidelity pass set; opening A.4.7 before A.0' closes would lock in a pass set that A.0' is still extending (Triggers, Sequences, DEFAULT, Computed, CHECK constraints, ExtendedProperties IR lifts all introduce or touch passes downstream). Soft dependency on A.4.5 / A.4.6 (the smart-constructor expansion pattern is established there); concurrent execution acceptable once A.0' closes.
+
+**Why this is load-bearing for laboratory-quality outcomes at scale.** The chapter-4.x scope expansion (User FK reflow; operational diagnostics; multi-environment policy/profile parameterization) grows the number of policy-driven mutations monotonically. Without the registry seam, each new pass is one more convention to track in code review. A18 amended ("Π consumes Catalog × Profile, never Policy") is the structural commitment for the Π side; A.4.7 is the structural commitment for the Pass side. The two siblings together carry the skeleton/overlay separation as a *type-witnessed product promise*, not a discipline. Per `DECISIONS 2026-05-15 — Transform registry re-opened`: this re-opens the 2026-05-13 cash-out under different consumer pressure (skeleton-overlay decomposition, not pipeline composition); enumerative, not name-keyed; compile-time, not reflection.
+
+**Tasks:**
+
+1. **TransformRegistry module** (`src/Projection.Core/TransformRegistry.fs`).
+   - Compile-time `Map<PassName, RegisteredPass>` listing every `Pass` module.
+   - `RegisteredPass = { Name : PassName; Version : PassVersion; Domain : Domain; OverlayAxis : OverlayAxis }` where `OverlayAxis` names which Policy axis (or `Skeleton`) the pass operationalizes.
+   - Smart constructor `TransformRegistry.create` enforces invariants: every entry's `Name` matches its `Pass` module name; no duplicate `Name`s; every entry's `Domain` is one of the codified concerns (schema / data / identity / diagnostics / cutover-safety / cross-cutting per `PRODUCT_AXIOMS.md`).
+2. **Compose.runWithSkeleton** (`src/Projection.Pipeline/Pipeline.fs`).
+   - Signature: `runWithSkeleton : Catalog -> Profile -> outputDir -> Result<string list, ComposeError>`.
+   - Invokes the per-emitter Π chain on `(catalog, Profile, Policy.empty)`; emits the baseline; bypasses every overlay pass.
+   - Coexists with `Compose.run` and `Compose.runWithConfig`; the three entry points are explicit about which decomposition they emit.
+3. **CLI surface** (`src/Projection.Cli/Program.fs`).
+   - `osm emit --skeleton-only` invokes `Compose.runWithSkeleton`; `osm emit` and `osm emit --config <path>` continue unchanged.
+   - The flag is concept-shaped (per pillar 8: "skeleton-only" names what you GET, not what you AVOID). Alternative-considered: `--no-overrides` rejected as action-shaped.
+4. **ManifestEmitter extension** (`src/Projection.Targets.{Json,SSDT}/ManifestEmitter.fs` — wherever the manifest is realized).
+   - Add `registry : { digest : Sha256; passes : RegisteredPass list }` field.
+   - Add per-artifact `applied-transforms : SsKey list` field naming every `LineageEvent.PassName` whose event mentions that artifact's SsKey.
+   - Round-trip property: parsing the manifest yields a `RegisteredPass list` byte-equal to the registry at emit time.
+5. **TransformRegistryCompletenessTests** (`tests/Projection.Tests/TransformRegistryCompletenessTests.fs`).
+   - `` ``L3-CC-Transform-Totality: every Pass module is registered`` `` — the test scans `Projection.Core/Passes/*.fs` source files (filesystem-scan is acceptable in test code, which lives outside Core) for `module …Pass = …` declarations and asserts each appears in `TransformRegistry`. The registry itself is a hand-maintained F# `let registered : RegisteredPass list = [ … ]` in `TransformRegistry.fs`; the test catches drift between the file system and the registry. Per CLAUDE.md "reflection is out of scope for Core" — the test's filesystem scan is at the test boundary, not in Core.
+   - `` ``L3-CC-Transform-Totality: every registered pass is exercised`` `` — runs the operator-reality canary with `Bench.recordSample` instrumentation on each registered pass; asserts every registered pass fires at least once.
+   - `` ``L3-CC-Transform-Totality: skeleton baseline is callable and deterministic`` `` — invokes `Compose.runWithSkeleton` twice on the same `(catalog, profile)`; asserts byte-identical output.
+   - `` ``L3-CC-Transform-Totality: skeleton is a subset of full output`` `` — asserts every file in `runWithSkeleton`'s output is present in `runWithConfig`'s output (modulo overlay-introduced files, which the manifest's `applied-transforms` enumerates).
+   - `` ``L3-CC-Transform-Totality: manifest registry digest matches registry contents`` `` — round-trip property.
+6. **Error codes:** `registry.passUnregistered`, `registry.registeredPassNotExercised`, `registry.digestMismatch`, `registry.duplicatePassName`, `skeleton.policyLeakDetected` (catches A18 amended violations at the pass-driver boundary).
+
+**Tier-3 hard-requirement Active deferral:** per the text-builder-as-first-instinct discipline (`DECISIONS 2026-05-10`), the `ManifestEmitter` registry-field extension MUST use `Utf8JsonWriter` / sorted-key `JsonNode` (already the precedent for manifest emission); a fresh `StringBuilder()` at this site would be a counterfactual to the discipline.
+
+**Exit gate:**
+- `TransformRegistry.create` enforces totality at compile time + smart-constructor validation.
+- `Compose.runWithSkeleton` emits the baseline projection deterministically and is callable from `osm emit --skeleton-only`.
+- `ManifestEmitter` includes `registry.digest` + per-artifact `applied-transforms`.
+- All 5 `TransformRegistryCompletenessTests` green.
+- Coverage tests catch unregistered passes at build time (verified by intentional-fail probe: add a stub pass without registering it; build fails with structured error).
+- L3-CC-Transform-Totality moves from Bucket D to Bucket A in the §12 delivery matrix.
+
+**Estimated effort:** 1.5-2 weeks. The compile-time registry module is small (~200 LOC); the manifest extension touches 1-2 emitters; the property tests are the substantive deliverable.
+
+**Anti-scope (NOT this workstream):**
+- It is NOT a single linear `pass1 >> pass2 >> pass3` pipeline. The per-use-case driver pattern stands (per `DECISIONS 2026-05-13 — Transform registry cash-out`'s preserved reasoning); the registry is *enumerative*, not *compositional*.
+- It is NOT reflection-based runtime dispatch. Registry contents are compile-time; the F# `module TransformRegistry` references each `Pass` module by name (not by string lookup). The "out of scope for Core: reflection" CLAUDE.md commitment holds.
+- It is NOT a replacement for `Composition.fanOut` (the registered-intervention dispatch primitive for strategy fan-out). Strategies fan out *within* a pass; the registry enumerates *passes themselves*. The two primitives operate at different granularities and coexist unchanged.
+- It does NOT introduce per-pass policy axes the operator can toggle individually at the CLI. `--skeleton-only` is binary (baseline vs. baseline+all-overlays); per-overlay toggling waits for a real consumer demanding granular control (deferred-with-trigger).
+
 ### 6.5 A.5 — Profile-JSON ingestion + completeness audit
 
 **Operational deliverable:** adapter that reads V1's `profile` verb output JSON and hydrates V2's `Profile` type. Required-vs-optional field enumeration with partial-failure semantics.
@@ -913,6 +970,7 @@ Each L3 axiom in `PRODUCT_AXIOMS.md` mapped to the Phase + Workstream that deliv
 | L3-CC4 (IR fidelity for production) | D | A.0' (full) | A |
 | L3-CC5 (perf regression gates) | B | (existing perf-gate.sh) | B |
 | L3-CC6 (domain-first naming) | B (review-enforced) | (existing) | B |
+| **L3-CC-Transform-Totality** | **D** | **A.4.7 (Campaign B core; load-bearing for laboratory-quality scale)** | **A** |
 | L3-Boundary-AtomicEmission | D | A.7.1 | A |
 | L3-Boundary-NoSilentDrop | D | A.0' completion criterion | A |
 | L3-Boundary-ManifestMatchesDisk | D | A.7.2 | A |
@@ -980,3 +1038,21 @@ Track risks that dissolve through structural commitment.
 - **R11 (2026-05-12)**: rename order perturbing topo. Dissolved when audit confirmed `TopologicalOrderPass` reads SsKey only; `Reference.TargetKind` is SsKey-keyed; rename rewrites only `Kind.Physical`.
 
 Subsequent dissolutions append here.
+
+### 13.6 V1-soak debt lane
+
+Tracked alongside (not inside) the Phase A workstreams. Three v1-side fixes that reduce false-positive noise during Phase A.6 soak — each one removes a class of disagreement V2 would otherwise have to either tolerate (Tolerance entry) or attribute (V1 bug, not V2 disagreement). The lane lives here rather than in V1's roadmap because the *value* of fixing them is felt during V2 soak, not during V1 standalone operation. Sequenced as v1-side PRs against the v1 trunk; each one is small and surgical.
+
+See `V2_DRIVER.md` § "V1-soak debt lane" for the lane's full backlog format; this addendum carries the rationale connecting the three vectors to Phase A.6 (the soak workstream) and Phase B (V2 owning extraction + profiling).
+
+| # | Vector | Origin | Why it accelerates Phase A.6 |
+|---|---|---|---|
+| **V1.1** | Complete `EntityFilters` wiring through `SqlModelExtractionService` + `SqlDataProfiler` + validation scope | V1 (C# trunk). `ModuleEntityFilterOptions` is wired for `SqlDynamicEntityDataProvider` (lines 807-822) but NOT for the metadata extraction or profiling paths — V1 over-fetches and over-validates. | Phase A.6 differential testing compares V1 ≈ V2 on filtered fixtures. Over-fetching on V1 side produces "extra entities V2 didn't ask for" disagreements; either tolerance entries proliferate or V1 emits things V2's filter expects to suppress. Wiring `EntityFilters` end-to-end in V1 makes both halves consume the same selection. |
+| **V1.2** | Global topological sort across categories for StaticSeeds emission | V1 (C# trunk). `BuildSsdtStaticSeedStep.cs:82-86` sorts static entities only; cross-category FKs (static → regular, regular → static) violate FK constraints because the global graph isn't built. `BuildSsdtBootstrapSnapshotStep.cs:111-117` does it right (sorts all categories then filters). | Phase A.6 differential testing on workloads with cross-category FKs catches V1's broken StaticSeeds output as "disagreement" when it's actually a V1 bug. Fixing v1 to use the global-then-filter pattern means V2's emission and V1's emission converge on the same FK-correct order. |
+| **V1.3** | DatabaseSnapshot dedup — eliminate the 2-3x redundant OSSYS_* query passes across `SqlModelExtractionService` (lines 61-68) + `SqlDataProfiler` (lines 81-88) + `SqlDynamicEntityDataProvider` (lines 575-677) | V1 (C# trunk). Three independent fetch paths query OSSYS_* metadata; no shared snapshot. | Phase B.0–B.2 (V2 owns extraction) consumes V1's manifest as the soak baseline; if V1 keeps three fetch paths that can diverge subtly under concurrent extraction or schema drift between calls, V2's "consume V1 manifest" contract gets more variability than necessary. Single-snapshot V1 = a stable Phase B input. Also reduces operator-side extraction time (~30-40% by elimination of redundant queries). |
+
+**Provenance.** These three vectors originate from a v1 modernization document (`docs/architecture/entity-pipeline-unification-v2.md`) authored before v2's algebraic frame was established. The full document is a v1-refactor proposal, not a v2 plan; this lane surfaces the three highest-leverage items as v1-side debt whose payoff is felt during V2 soak.
+
+**Status:** un-started. Each vector is a v1-side PR (estimated 0.5-1 week each). No campaign tag (these are v1 hygiene, not v2 structural commitments). Owner: v1 maintainers under v1 governance.
+
+**Exit gate:** all three vectors landed in v1 before Phase A.6 soak begins (or, if Phase A.6 begins first, treated as tolerance entries to be retired as the v1-side PRs land).

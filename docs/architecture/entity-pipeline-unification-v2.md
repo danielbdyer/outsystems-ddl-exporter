@@ -1,8 +1,27 @@
 # Entity Data Pipeline Unification: Ontological Decomposition
 
-**Status**: DRAFT - Architectural Vision
+> **Scope clarification (2026-05-15).** This document targets **v1 (the C# trunk pipeline at `src/Osm.Pipeline/`)**. It is a **v1-refactor proposal**, not a v2 plan. The actual v2 architecture lives in the F# sidecar at `sidecar/projection/` and is governed by:
+>
+> - `sidecar/projection/VISION.md` — strategic frame (sibling-Π chorus, canary verification, L1↔L2↔L3 verifiability triangle, cutover fallback ladder)
+> - `sidecar/projection/V2_PRODUCTION_CUTOVER.md` — cutover plan-of-record (Phase A soak / Phase B independence)
+> - `sidecar/projection/V2_DRIVER.md` — destination KPI + backlog
+> - `sidecar/projection/PRODUCT_AXIOMS.md` + `sidecar/projection/AXIOMS.md` — L3 product axioms + L2 formal axioms
+>
+> v2's mental model — `Project = Π ∘ E` over `Catalog × Policy × Profile × Lifecycle`; sibling-Π emitters; the canary loop as load-bearing verification; A18 amended (Π consumes Catalog × Profile, never Policy) — is structurally different from this document's `EntityPipeline.ExecuteAsync(source, select, emit, apply, transforms, options)` framing. The two documents answer different questions; don't confuse them.
+>
+> **Three vectors from this document have been promoted to V2_DRIVER's "V1-soak debt lane"** (`sidecar/projection/V2_DRIVER.md` § "V1-soak debt lane") as v1-side PRs whose payoff is felt during V2's Phase A.6 differential-testing soak:
+>
+> - **V1.1 — EntityFilters wiring** (Vector 1 here): extend `ModuleEntityFilterOptions` to the metadata extraction + profiling paths. Reduces "V1 over-fetches" disagreements during canary.
+> - **V1.2 — Global topological sort for StaticSeeds** (Vector 3 here): match the global-then-filter pattern Bootstrap already uses. Removes "V1 emits FK-broken seed output" disagreements.
+> - **V1.3 — DatabaseSnapshot dedup** (Vector 7 here): consolidate the 2-3x redundant OSSYS_* fetch paths. Stabilizes V1 manifest output Phase B will consume.
+>
+> The remaining vectors in this document (EmissionStrategy / InsertionStrategy / extract-model-as-Stage-0 / transform-primitive-consolidation / UAT-Users integration / partial-participation type mechanics) do not map cleanly onto v2's architecture and are **not** part of the V2 plan. They remain v1-refactor work item candidates governed by v1's roadmap, not v2's. v2's transform-registry surface lives at `sidecar/projection/V2_PRODUCTION_CUTOVER.md` §6.4.7 (workstream A.4.7) under a different framing (compile-time enumerative; per-use-case driver pattern preserved; skeleton/overlay separation as L3-CC-Transform-Totality).
+>
+> Read this document for v1-context understanding or for the three v1-soak debt vectors. Do not treat it as the v2 plan.
+
+**Status**: DRAFT - Architectural Vision (v1-refactor; superseded for v2 by the sidecar/projection canonical surfaces named above)
 **Date**: 2025-01-XX
-**Purpose**: Decompose the unified pipeline ontology to enable systematic implementation
+**Purpose**: Decompose the unified pipeline ontology to enable systematic implementation (v1 trunk)
 
 ---
 

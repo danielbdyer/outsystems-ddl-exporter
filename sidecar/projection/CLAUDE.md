@@ -159,6 +159,7 @@ of them, write the amendment first.
 | **Harmonization-via-parameterization (chapter-3.1 contribution)** — when two implementations of an algorithm diverge on a single semantic axis, parameterize the algorithm on that axis, produce both projections from one implementation, and let consumers choose. Worked example: `SelfLoopPolicy` in `TopologicalOrderPass` (chapter-3.1 collapsed `RawTextEmitter.emissionOrder`'s duplicate Kahn into the pass). Codified as A40. | `DECISIONS 2026-05-30 — Session 36 / Topological-sort harmonization via SelfLoopPolicy` |
 | **Five-agent epistemic-tier audit at chapter close (chapter-3.1 contribution)** — multi-agent parallel audit dispatched at chapter close covering tightly orthogonal concerns (UL / Hex / VO / FP / ACL). Each agent classifies findings B&W vs SUBJ + H/M/L; convergence-map is the synthesis primary surface; Tier 1/2/3/4 backlog organizes findings by epistemic level + leverage. Audits are routed (named items in named chapters with named pre-scopes), not piled. Worked example: `AUDIT_2026_05_DDD_HEXAGONAL_FP.md`. | `DECISIONS 2026-05-30 — Session 36 / Five-agent DDD/Hexagonal/FP audit protocol` |
 | **Verifiability-triangle audit cadence (2026-05-12 contribution)** — V2's structural-commitment posture is audited along three connected levels: L1 (structural commitments — smart constructors, closed DUs, VOs), L2 (formal axioms in `AXIOMS.md` — A1–A40 + T1–T11), L3 (product axioms in `PRODUCT_AXIOMS.md` — operator-meaningful claims). Each L3 axiom must trace down to L2 and L1; each L2 axiom must trace up to a product behavior; each L1 commitment must trace up to an axiom. Audit dispatch protocol: three parallel agents (top-down L3 articulation + L2↔L3 bridge + adversarial gap-hunt as operator) produce a coverage map classifying every axiom into Bucket A (full L1+L2+L3+test), Bucket B (convention-enforced L1), Bucket C (weakness — untested/aspirational/deferred), or Bucket D (unnamed L3 axiom with no L2 backing). Cadence: (a) annual re-audit refresh; (b) chapter-close L3 step — every chapter close adds a one-paragraph audit check naming the L3 axioms its work touched and any new Bucket-D gaps introduced; (c) per-PR L3 review for PRs touching boundary code or adding config/CLI surface. Bucket-D promotions land in `AXIOMS.md` or `PRODUCT_AXIOMS.md` once campaigns operationalize them. Worked example: `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md`. | `DECISIONS 2026-05-12 — Verifiability-triangle audit methodology` |
+| **Skeleton/overlay separation as structural commitment (2026-05-15 contribution)** — every artifact V2 emits decomposes into (a) a *baseline* projection (`Project(catalog, Policy.empty, profile)`) reachable from inputs without any operator opinion applied, AND (b) a registered *overlay* sequence (`TransformRegistry`-enumerated `Pass` invocations whose `LineageEvent` trails are named, ordered, audit-traceable). The decomposition is the operator's promise: ask for the vanilla projection and get a deterministic factual baseline; every override applied is named and recorded. A18 amended ("Π consumes Catalog × Profile, never Policy") is the structural commitment for the Π side; **the transform registry is the structural commitment for the Pass side**. The two siblings together carry the decomposition as type-witnessed contract, not discipline. The chapter-4.x scope expansion (User FK reflow; operational diagnostics; multi-environment policy/profile parameterization) grows the number of policy-driven mutations monotonically; without the registry seam, each new pass is one more convention to track in code review. The named failure mode is **skeleton/overlay drift**: a policy-driven mutation leaks into the baseline (or a new pass goes unregistered) and audit-traceability silently degrades. Co-equal load-bearing with CDC silence per `V2_DRIVER.md` per-axis stakes table. The four-question naming analysis (pillar 8) catches naming drift; the LINT-ALLOW substantive-rationale discipline catches string-composition drift; **the transform registry catches skeleton/overlay drift**. Three sibling disciplines. | `DECISIONS 2026-05-15 — Transform registry re-opened: skeleton-overlay separation as L3-CC-Transform-Totality` (re-opens the 2026-05-13 cash-out under different consumer pressure; preserves the prior reasoning); `PRODUCT_AXIOMS.md` L3-CC-Transform-Totality; `V2_PRODUCTION_CUTOVER.md` §6.4.7 (A.4.7 workstream) |
 
 ## Load-bearing commitments — do not break without writing the amendment first
 
@@ -172,6 +173,25 @@ wanting to break one, write the amendment first.
   it needs, but never `Policy`. Catalog and Profile are *evidence*;
   Policy is *intent*. If you reach for Policy from inside an emitter,
   you are in the wrong layer — the work belongs in a pass.
+- **Skeleton/overlay separation (L3-CC-Transform-Totality).** Every
+  artifact V2 emits decomposes into a *baseline* projection
+  (`Project(catalog, Policy.empty, profile)`) reachable from inputs
+  without any operator opinion applied, plus a registered *overlay*
+  sequence (`TransformRegistry`-enumerated `Pass` invocations whose
+  `LineageEvent` trails compose the baseline into the full output).
+  A18 amended is the Π-side commitment; **the transform registry is
+  the Pass-side commitment** — both halves recoverable, enumerable,
+  audit-traceable; both required for laboratory-quality outcomes as
+  V2 scales. The baseline is reachable from the CLI via
+  `osm emit --skeleton-only`; the manifest names every applied
+  overlay per artifact via `applied-transforms : SsKey list`;
+  `TransformRegistryCompletenessTests` fail the build on any
+  inclusion gap (unregistered pass; registered pass not exercised in
+  canary). Tier 1 (cutover blocker); co-equal load-bearing with
+  CDC silence per `V2_DRIVER.md` per-axis stakes table. Lands
+  structurally at A.4.7 (`V2_PRODUCTION_CUTOVER.md` §6.4.7); the L3
+  axiom (`PRODUCT_AXIOMS.md` L3-CC-Transform-Totality) and A41
+  candidate (`AXIOMS.md` Amendments scheduled) land at A.4.7 close.
 - **Strategy-layer codification (`DECISIONS 2026-05-11`).** Pure
   functions of IR fields; typed function-type seam
   (`StrategyEvaluator<'context, 'config, 'decision>`); structured

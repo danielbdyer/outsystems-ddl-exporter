@@ -66,6 +66,7 @@ Not every axis V2 owns has the same failure-mode cost. Provable correctness appl
 | Axis | Failure mode if wrong | Primary property test | Verification depth |
 |---|---|---|---|
 | **CDC silence on idempotent redeploy** | Spurious `cdc.change_tables` records corrupt CDC-dependent features silently in production | "Deploying the same insert script twice produces zero records in `cdc.change_tables` for every CDC-tracked table" | **Highest.** Per-CDC-table coverage. Multi-redeploy property. CI gate: red on any non-zero. |
+| **Skeleton/overlay separation (Transform Totality)** | Operators can't tell which overlay touched what; A18 leaks at a new pass go unnoticed; CDC silence canary asserted against an unenumerated baseline; V1↔V2 differential disagreements become unattributable (skeleton drift or overlay omission?) | "Every `Pass` emitting a `LineageEvent` is in `TransformRegistry`; every registered pass is exercised in canary; `Compose.runWithSkeleton` produces a deterministic baseline; manifest names every applied overlay per artifact" | **Highest.** Co-equal with CDC silence as load-bearing structural enforcement. Coverage tests (`TransformRegistryCompletenessTests`) fail the build on any inclusion gap. The seam that catches skeleton/overlay drift at scale. See `V2_PRODUCTION_CUTOVER.md` §6.4.7 (A.4.7); L3-CC-Transform-Totality in `PRODUCT_AXIOMS.md`. |
 | **Schema (SSDT DDL)** | Production deploy fails or deploys wrong shape | T11 structural (every Π's keyset = `Catalog.allKinds.SsKey set`) + PhysicalSchema round-trip empty + parse-roundtrip + byte-determinism | High. Mostly shipped (chapter 3.1 substantive deliverable). |
 | **Data (static populations + seeds + bootstrap)** | Seed data missing, duplicated, or topologically out-of-order causing FK violations | Idempotent redeploy produces zero net changes; topological ordering preserves FK validity | High. Substrate ready (chapter 3.1 Bulk + RowDigester); emitters chapter 4.1.B. |
 | **User FK reflow** | Production reports break or data loss when User remapping is incomplete | Every CreatedBy/UpdatedBy FK in target environment resolves to a valid target User; per-strategy coverage (ByEmail, BySsKey, ManualOverride, FallbackToSystemUser) | High. Chapter 4.2. |
@@ -76,7 +77,7 @@ Not every axis V2 owns has the same failure-mode cost. Provable correctness appl
 | **Static populations** | Seed data missing or duplicated | Idempotent redeploy produces zero net changes; rows hash-equal to V1 emission modulo named tolerances | Medium. Chapter 4.1.B + PhysicalSchema.Rows axis (chapter 3.1 shipped). |
 | **Operational diagnostics** | Operator can't diagnose post-cutover issues | Per-channel routing property: each entry routes to correct channel per severity; Lineage trail audit completes | Lower. Chapter 4.3. |
 
-The CDC-silence property test is the **highest-leverage single deliverable** in the entire chapter sequence. It catches the most catastrophic silent-failure mode the project explicitly worries about. Build it first inside chapter 4.1.B; gate the chapter close on it.
+The CDC-silence property test is the **highest-leverage single deliverable for the catastrophic-silent-failure axis**. The transform-registry / skeleton-overlay separation is its **load-bearing structural sibling** — A18 amended is the Π-side commitment; the registry is the Pass-side commitment; together they carry the operator's promise ("ask for the vanilla projection and I get a deterministic factual baseline; every override I apply is named and recorded") as a type-witnessed contract, not a discipline. Without the registry, CDC silence is asserted against an unenumerated baseline; the canary stops being airtight. Build the registry under A.4.7 (post-A.0' close); gate the workstream close on the five `TransformRegistryCompletenessTests`.
 
 ---
 
@@ -158,6 +159,20 @@ Several backlog items are **free corollaries** of foundation work — they ship 
 | V1 sunset per environment | Fallback ladder DECISIONS entry + per-env quotient configuration (Tolerance taxonomy from chapter 4.1.A) | L9 — YAML edit per environment; sunset begins after cutover+30 + one full schema-evolution cycle |
 
 **Implication:** the backlog's ~375 items overstate the *implementation* surface. After Stage 0 + chapters 1–3.7, the actual remaining V2-driver implementation surface is ~250 items; the rest are inherited or free corollaries.
+
+### V1-soak debt lane (v1-side PRs that accelerate Phase A.6)
+
+Three v1-trunk fixes that reduce false-positive noise during Phase A.6 differential testing (V1 ≈ V2 on real workload). Each one removes a class of disagreement V2 would otherwise have to absorb as a Tolerance entry or attribute as a V1 bug at canary time. **Sequenced as v1-side PRs against the v1 trunk; not v2 work.** The lane sits in V2_DRIVER (not in V1's roadmap) because the value of fixing them is felt during V2 soak, not during V1 standalone operation. See `V2_PRODUCTION_CUTOVER.md` §13.6 for the full rationale connecting each vector to Phase A.6 / Phase B preconditions.
+
+| # | Vector | Estimated effort | Phase-A.6 leverage | Status |
+|---|---|---|---|---|
+| **V1.1** | **EntityFilters wiring** — extend `ModuleEntityFilterOptions` (currently wired only in `SqlDynamicEntityDataProvider`) to `SqlModelExtractionService` + `SqlDataProfiler` + validation scope, so V1's metadata fetch and profiling respect the same selection V2 does. | 0.5-1 week | High — eliminates "V1 over-fetches" tolerance class | un-started |
+| **V1.2** | **Global topological sort for StaticSeeds** — fix `BuildSsdtStaticSeedStep` to sort across all categories (static + regular) then filter, matching the pattern `BuildSsdtBootstrapSnapshotStep` already uses correctly. Cross-category FKs (static→regular, regular→static) currently violate constraints in V1's StaticSeeds output. | 0.5 week | High — removes "V1 emits FK-broken seed output" from the disagreement class | un-started |
+| **V1.3** | **DatabaseSnapshot dedup** — consolidate the three independent OSSYS_* fetch paths (`SqlModelExtractionService` / `SqlDataProfiler` / `SqlDynamicEntityDataProvider`) into a single snapshot; eliminates 2-3x redundant queries; stabilizes V1 manifest output under concurrent extraction or mid-call schema drift. | 1 week | Medium-high — reduces variability in V1 manifest output that Phase B (V2 owning extraction) would otherwise inherit | un-started |
+
+**Provenance.** These three vectors originate from a v1-refactor proposal (`docs/architecture/entity-pipeline-unification-v2.md`) authored before V2's algebraic frame was established. The full document is a v1-side modernization plan, not a V2 plan; this lane surfaces only the highest-leverage items whose payoff is felt during V2 soak.
+
+**Operating discipline.** Each vector is small, surgical, and reversible. Owner: V1 maintainers under V1 governance. Exit gate: all three landed before Phase A.6 begins, OR treated as named Tolerance entries until they land. **NOT load-bearing for V2-driver KPI directly** — the KPI tracks V2-axis property tests; V1-side fixes are accelerators, not deliverables. If a v1-side PR doesn't land, V2 continues; the cost is paid as tolerance churn during soak.
 
 ### Reading guide for this backlog
 

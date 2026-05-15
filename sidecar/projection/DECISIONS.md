@@ -204,7 +204,7 @@ table before continuing.
 | **Composition primitive `accumulate`** | 2026-05-13 (Composition vocabulary cash-out) | A second pass needs to consume multiple-strategy decisions at once | 0 consumers (session 25) |
 | **Composition primitive `wrap`** | 2026-05-13 (Composition vocabulary cash-out) | Per-strategy diagnostics emerge (likely tied to Diagnostics writer) | 0 consumers (session 25) |
 | **Composition primitive `lift`** | 2026-05-13 (Composition vocabulary cash-out) | A strategy reused across different IR granularities (e.g., Nullability rule on view columns) | 0 consumers (session 25) |
-| **Strategy registry mechanism** | 2026-05-11 (Strategy layer: a named architectural vector) | N≥4–6 strategies make name-keyed lookup useful | 5 strategy modules (UniqueIndexRules / NullabilityRules / ForeignKeyRules / CategoricalUniquenessRules / CycleResolution); Composition is the primitive module, not a strategy. No caller demands lookup by name (session 25) |
+| **Strategy registry mechanism** | 2026-05-11 (Strategy layer: a named architectural vector) | N≥4–6 strategies make name-keyed lookup useful | 5 strategy modules (UniqueIndexRules / NullabilityRules / ForeignKeyRules / CategoricalUniquenessRules / CycleResolution); Composition is the primitive module, not a strategy. No caller demands lookup by name (session 25). **Note (2026-05-15):** the sibling *transform-registry* deferral (`DECISIONS 2026-05-06 → cashed out 2026-05-13`) re-opened under different consumer pressure as `Projection.Core.TransformRegistry` for skeleton/overlay separation (L3-CC-Transform-Totality; workstream A.4.7). That re-opening is **enumerative** (compile-time `Pass` totality), not **name-keyed lookup**, so it does NOT fire the strategy-registry-mechanism trigger here. The strategy-registry-mechanism deferral remains open under its original framing; the transform-registry shape and the strategy-registry shape are now structurally distinct. See `DECISIONS 2026-05-15 — Transform registry re-opened: skeleton-overlay separation as L3-CC-Transform-Totality`. |
 | **Diagnostics writer** | 2026-05-06 (Diagnostics live in a writer parallel to Lineage) | First downstream artifact gates on operator-channel telemetry | **Cashed out — session 14 commit 3 landed `Projection.Core/Diagnostics.fs`. UniqueIndex opportunity stream activated as first consumer (session 14 commit 5). Three-channel split (operator/auditor/developer) remains deferred until a real consumer demands differentiation.** |
 | **`RequireQualifiedAccess` retrofit** on `UniqueIndexKeepReason` / `ForeignKeyKeepReason` / similar | 2026-05-11 refinement 1 (Strategy-layer codification empirical verdict) | A DU's variants change shape (added/removed/renamed) — substantive structural modification, not interpretive resolution | `ForeignKeyKeepReason` got `MissingTarget` (session 19) and the unreachable-`DeleteRuleIgnored` interpretive resolution (session 19; `DECISIONS.md:5048` rule 13). Neither rose to "structural modification" warranting retrofit; trigger sharpened at session 25 to clarify the threshold. Today neither `UniqueIndexKeepReason` nor `ForeignKeyKeepReason` carry the attribute (session 25) |
 | **`CycleResolution.ResolutionStep.Reason` migration to structured DU** | 2026-05-11 (Strategy layer: a named architectural vector — caveat) | A second resolver strategy lands per the 2026-05-08 pluggability deferral | No second resolver; reason field still free-form string (session 25) |
@@ -10988,5 +10988,49 @@ proposed campaigns superseding the prior 3-slice airtight plan.
 (the audit's integrator view + campaigns); `PRODUCT_AXIOMS.md` (L3
 canonical surface); `CLAUDE.md` operating-disciplines table updated
 with a row pointing at this entry.
+
+---
+
+## 2026-05-15 — Transform registry re-opened: skeleton-overlay separation as L3-CC-Transform-Totality
+
+**Status:** decided (re-opens `2026-05-13 — Transform registry cash-out` under new consumer pressure; supersedes the cash-out's "registry is not in V2's future" framing while preserving the cash-out's reasoning about the prior pipeline-composition framing).
+
+**Context.** The 2026-05-13 cash-out resolved the prior transform-registry deferral as overtaken-by-evidence: the registry's *original* value-proposition (one place to declare ordering; reflection-driven discovery; centralized startup validation for a single linear `pass1 >> pass2 >> pass3` pipeline) didn't fit V2's per-use-case driver pattern, and no caller demanded name-keyed lookup. That reasoning was right *for the question it was answering* — composing passes ad hoc — and remains preserved.
+
+The principal-PO surfaced a different consumer pressure (2026-05-15 sidebar): **the transform registry is the structural seam that proves the skeleton/overlay decomposition.** Reframed as an operator promise rather than a pipeline-composition mechanism:
+
+- *Factual/objective/skeletal* output = the baseline projection (`Project(catalog, Policy.empty, profile) = O_skeleton`) — the deterministic, evidence-only artifact reachable from inputs without any operator opinion applied.
+- *Opinionated/override/subjective* overlay = the ordered, named set of `Pass` invocations that compose `O_skeleton` into the full output — each one registered, each one emitting a `LineageEvent`, each one auditable in the manifest.
+
+The decomposition is the operator's contract. Without a registry that *enumerates every overlay*, the contract is convention: a policy-driven mutation could enter the baseline at any new pass; CDC silence (chapter 4.1.B's highest-leverage deliverable) gets asserted against a baseline the registry doesn't enumerate; V1↔V2 differential disagreements become unattributable — "skeleton drift or overlay omission?" has no structural answer.
+
+**Decision.** **The transform registry is re-opened as `Projection.Core.TransformRegistry` — load-bearing for L3-CC-Transform-Totality (Tier 1; cutover blocker), shipped as workstream A.4.7 under Campaign B (structural fortification).** The reframed value-proposition is:
+1. **Enumeration** — every `Pass` module is a registry entry; compile-time, not reflection-driven (per CLAUDE.md "out of scope for Core: reflection" — preserved).
+2. **Skeleton callability** — `Compose.runWithSkeleton` invokes `Project(catalog, Policy.empty, profile)` and emits the baseline. First-class CLI surface: `osm emit --skeleton-only`. Structurally distinct from `runWithConfig`.
+3. **Overlay enumeration in the manifest** — `ManifestEmitter` includes `registry.digest` (content hash of the registered pass set + versions) and per-artifact `applied-transforms : SsKey list`. Operators reading the manifest see every overlay that touched every artifact.
+4. **Coverage property** — `TransformRegistryCompletenessTests.``L3-CC-Transform-Totality: every applied transform is registered`` ` asserts `discovered ⊆ registered ∧ registered ⊆ exercised` against the canary; either inclusion gap fails the build. This is the structural enforcement seam — a pass that fires without being registered breaks the build; a pass that's registered without being exercised in canary fails the build.
+
+**What this re-opening does NOT do** (preserving the 2026-05-13 cash-out's intact reasoning):
+
+- It does NOT introduce a single linear `pass1 >> pass2 >> pass3` pipeline. The per-use-case driver pattern stands; each driver continues to compose its subset of passes explicitly. The registry is **enumerative**, not **compositional** — it records which passes exist and which fired, not which order they should run in.
+- It does NOT add reflection or name-keyed runtime dispatch. Registry contents are compile-time (an F# `module TransformRegistry` listing each `Pass` module by reference, not by string lookup). The "out of scope for Core: reflection" commitment in CLAUDE.md holds.
+- It does NOT supersede the per-use-case driver pattern as the composition substrate. Drivers continue to be the per-use-case orchestrators; the registry sits *alongside* them as a totality enumeration.
+
+**Why this is axiomatic rather than incremental.** The user (principal-PO) named this an "axiomatic finding for me and the product." The reasoning:
+
+- *Skeleton/overlay separation is the precondition for laboratory-quality outcomes at scale.* As V2 grows toward chapter 4.x (User FK reflow; operational diagnostics; multi-environment policy/profile parameterization), the number of policy-driven mutations grows monotonically. Without the registry seam, each new pass is one more convention to track in code review. The four-question naming analysis (pillar 8) catches naming drift; the LINT-ALLOW substantive-rationale discipline catches string-composition drift; **the transform registry catches skeleton/overlay drift**. The three disciplines are siblings — each prevents a class of failure that scales linearly with codebase growth.
+- *Convention alone won't carry the cutover.* A18 amended ("Π consumes Catalog × Profile, never Policy") is the structural commitment for the *Π side*; without a sibling structural commitment for the *Pass side*, the baseline projection remains reachable only by convention (the operator can in principle call `Project(catalog, Policy.empty, profile)`, but no CLI surface advertises it; no test enforces it; no manifest names it). The registry promotes the baseline from "reachable" to "load-bearing operator promise."
+- *The verifiability triangle demands it.* Per `DECISIONS 2026-05-12 — Verifiability-triangle audit methodology`, every L3 axiom must trace to L1 commitment. L3-CC-Transform-Totality with no registry has no L1 surface; it remains Bucket D candidate and can't promote to Bucket A. A.4.7's deliverable is the L1 surface — the registry module, the `--skeleton-only` CLI flag, the coverage property test, the manifest field.
+
+**Consequences.**
+
+- New L3 product axiom **L3-CC-Transform-Totality** lands in `PRODUCT_AXIOMS.md` Group CC (Tier 1; cutover blocker; Bucket D pending A.4.7).
+- New L2 axiom **A41 candidate (Transform registry totality)** scheduled in `AXIOMS.md` "Amendments scheduled" section; body fills at A.4.7 close.
+- New workstream **A.4.7 — Transform registry / skeleton-overlay separation** specced at `V2_PRODUCTION_CUTOVER.md` §6.4.7; Campaign B tag; sibling to A.4.5 / A.4.6; depends on A.0' so the registry enumerates the post-IR-fidelity pass set.
+- `V2_DRIVER.md` per-axis correctness stakes table gains a new axis (**Skeleton/overlay separation**, verification depth: Highest) — co-equal with CDC silence as the load-bearing structural enforcement.
+- `CLAUDE.md` operating-disciplines table gains a row pointing at this entry; load-bearing commitments list gains an entry for "Skeleton/overlay separation via L3-CC-Transform-Totality."
+- The 2026-05-13 cash-out's Active-deferrals-index row ("Strategy registry mechanism" / "transform-registry deferral") remains in the index as historical record; this entry adds a forward pointer to A.4.7 as the cash-out under the reframed pressure.
+
+**The lesson.** Deferrals cash out as "overtaken-by-evidence" when the consumer pressure that motivated them dissolves. They re-open under different consumer pressure even when the prior cash-out's reasoning was correct. Both 2026-05-13's "registry isn't a pipeline-composition substrate" AND 2026-05-15's "registry IS a skeleton-overlay enforcement seam" are true; the registry has different shape under each pressure. The structural answer is to preserve both entries: the original cash-out remains the answer to its question; this entry is the answer to a different question that asks different structure. Future agents reading either entry get the bracketed context.
 
 ---

@@ -1264,6 +1264,7 @@ to the close date.
 - T1 amended (binary normal-form composition) — chapter 3.3 close (chapter not yet open).
 - A37 candidate (Π-erased axes) — chapter 3.4 close (chapter not yet open).
 - A32 cash-out — chapter 4.2 close (User FK reflow chapter).
+- **A41 candidate (Transform registry totality)** — A.4.7 close (`V2_PRODUCTION_CUTOVER.md` §6.4.7; underwrites `PRODUCT_AXIOMS.md` L3-CC-Transform-Totality). Statement (placeholder, to be finalized at chapter close): *Every `Pass` whose execution emits a `LineageEvent` is enumerated in `Projection.Core.TransformRegistry`; conversely, every registered `Pass` is exercised by at least one canary scenario. The registry contents are a function of compile-time pass enumeration, not runtime reflection; coverage is asserted by property test (`TransformRegistryCompletenessTests`). The baseline projection (`Project(catalog, Policy.empty, profile)`) is a first-class, callable, type-witnessed value reachable from the CLI via `--skeleton-only`.* This amendment promotes the skeleton/overlay separation from convention (A18 amended forbids Policy in Π; the rest is by code review) to structural (registry totality + baseline-callability as smart-constructor-grade invariants). See `DECISIONS 2026-05-15 — Transform registry re-opened: skeleton-overlay separation as L3-CC-Transform-Totality` for the consumer pressure that re-opened the 2026-05-13 cash-out.
 
 **Per `DECISIONS 2026-05-22 — Stage 0 foundation phase`, the
 scaffolding lands at Stage 0 Tier 1 (S0.F) before chapter 3.1
