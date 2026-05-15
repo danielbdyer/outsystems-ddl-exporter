@@ -62,8 +62,8 @@ let private parentKind : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false } ]
-      References = []; Indexes = [] }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
+      References = []; Indexes = []; Description = None }
 
 let private childKind : Kind =
     { SsKey    = childKindKey
@@ -76,14 +76,14 @@ let private childKind : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
           { SsKey        = childParentFkKey
             Name         = mkName "ParentId"
             Type         = Integer
             // FK column is nullable in the V1 fixture — exercises the
             // KeepNullable(NoTighteningSignal) branch.
             Column       = { ColumnName = "PARENTID"; IsNullable = true }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false } ]
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
       References = [
           { SsKey           = childToParentRefKey
             Name            = mkName "Parent"
@@ -91,7 +91,8 @@ let private childKind : Kind =
             TargetKind      = parentKindKey
             OnDelete        = NoAction
             IsUserFk        = false } ]
-      Indexes = [] }
+      Indexes = []
+      Description = None }
 
 let private countryKind : Kind =
     { SsKey    = countryKindKey
@@ -106,13 +107,13 @@ let private countryKind : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
           { SsKey        = countryNameKey
             Name         = mkName "Name"
             Type         = Text
             Column       = { ColumnName = "NAME"; IsNullable = false }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false } ]
-      References = []; Indexes = [] }
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
+      References = []; Indexes = []; Description = None }
 
 let private endToEndCatalog : Catalog =
     { Modules = [

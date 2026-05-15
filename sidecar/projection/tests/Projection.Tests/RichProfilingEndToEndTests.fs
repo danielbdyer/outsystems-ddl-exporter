@@ -63,8 +63,8 @@ let private parent : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false } ]
-      References = []; Indexes = [] }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
+      References = []; Indexes = []; Description = None }
 
 let private child : Kind =
     { SsKey    = childKindKey
@@ -77,12 +77,12 @@ let private child : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
           { SsKey        = childParentFkKey
             Name         = mkName "ParentId"
             Type         = Integer
             Column       = { ColumnName = "PARENTID"; IsNullable = true }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false } ]
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
       References = [
           { SsKey           = childToParentRefKey
             Name            = mkName "Parent"
@@ -90,7 +90,8 @@ let private child : Kind =
             TargetKind      = parentKindKey
             OnDelete        = NoAction
             IsUserFk        = false } ]
-      Indexes = [] }
+      Indexes = []
+      Description = None }
 
 let private country : Kind =
     { SsKey    = countryKindKey
@@ -103,13 +104,13 @@ let private country : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
           { SsKey        = countryNameKey
             Name         = mkName "Name"
             Type         = Text
             Column       = { ColumnName = "NAME"; IsNullable = false }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false } ]
-      References = []; Indexes = [] }
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
+      References = []; Indexes = []; Description = None }
 
 let private endToEndCatalog : Catalog =
     { Modules = [

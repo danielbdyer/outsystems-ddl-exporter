@@ -229,7 +229,7 @@ let private allPrimitiveTypesKind : Kind =
             Column = { ColumnName = label.ToUpperInvariant(); IsNullable = not isPk }
             IsPrimaryKey = isPk
             IsMandatory  = isPk
-            Length = None; Precision = None; Scale = None; IsIdentity = false
+            Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
         }
     {
         SsKey = kindKey ["AllTypes"]
@@ -249,7 +249,7 @@ let private allPrimitiveTypesKind : Kind =
             attr "Token" Guid false
         ]
         References = []
-        Indexes = []
+        Indexes = []; Description = None
     }
 
 let private allPrimitiveTypesCatalog : Catalog =
@@ -323,7 +323,7 @@ let private compositePkKind : Kind =
             Column = { ColumnName = label.ToUpperInvariant(); IsNullable = false }
             IsPrimaryKey = isPk
             IsMandatory  = isPk
-            Length = None; Precision = None; Scale = None; IsIdentity = false
+            Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
         }
     {
         SsKey = kindKey ["Composite"]
@@ -337,7 +337,7 @@ let private compositePkKind : Kind =
             attr "Description" Text false
         ]
         References = []
-        Indexes = []
+        Indexes = []; Description = None
     }
 
 let private compositePkCatalog : Catalog =
@@ -413,7 +413,7 @@ let private indexedKind : Kind =
             Column = { ColumnName = label.ToUpperInvariant(); IsNullable = not isPk }
             IsPrimaryKey = isPk
             IsMandatory  = isPk
-            Length = None; Precision = None; Scale = None; IsIdentity = false
+            Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
         }
     {
         SsKey = indexedKindKey
@@ -454,6 +454,7 @@ let private indexedKind : Kind =
                 IsPrimaryKey = true
             }
         ]
+        Description = None
     }
 
 let private indexedCatalog : Catalog =
@@ -560,11 +561,11 @@ let private parentKind : Kind =
                 Column = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
                 IsMandatory  = true
-                Length = None; Precision = None; Scale = None; IsIdentity = false
+                Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
             }
         ]
         References = []
-        Indexes = []
+        Indexes = []; Description = None
     }
 
 let private childKind : Kind =
@@ -582,7 +583,7 @@ let private childKind : Kind =
                 Column = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
                 IsMandatory  = true
-                Length = None; Precision = None; Scale = None; IsIdentity = false
+                Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
             }
             {
                 SsKey = childParentIdAttrKey
@@ -591,7 +592,7 @@ let private childKind : Kind =
                 Column = { ColumnName = "PARENT_ID"; IsNullable = false }
                 IsPrimaryKey = false
                 IsMandatory  = true
-                Length = None; Precision = None; Scale = None; IsIdentity = false
+                Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
             }
         ]
         References = [
@@ -604,7 +605,7 @@ let private childKind : Kind =
                 IsUserFk = false
             }
         ]
-        Indexes = []
+        Indexes = []; Description = None
     }
 
 let private fkCatalog : Catalog =
@@ -760,9 +761,10 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
               [ { SsKey = aIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
                   IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false } ]
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
           References = []
-          Indexes = [] }
+          Indexes = []
+          Description = None }
     let bKind : Kind =
         { SsKey = bKindKey
           Name  = mkName "BKind"
@@ -773,11 +775,11 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
               [ { SsKey = bIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
                   IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
                 { SsKey = bFkAttr; Name = mkName "AId"; Type = Integer
                   Column = { ColumnName = "A_ID"; IsNullable = false }
                   IsPrimaryKey = false; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false } ]
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
           References =
               [ { SsKey = crossRefKey
                   Name = mkName "FkToA"
@@ -785,7 +787,8 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
                   TargetKind = aKindKey
                   OnDelete = NoAction
                   IsUserFk = false } ]
-          Indexes = [] }
+          Indexes = []
+          Description = None }
     let catalog : Catalog =
         { Modules =
             [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ] }
@@ -831,8 +834,8 @@ let ``Slice 6: cross-module FK emits inline FOREIGN KEY constraint`` () =
               [ { SsKey = aIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
                   IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false } ]
-          References = []; Indexes = [] }
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
+          References = []; Indexes = []; Description = None }
     let bKind : Kind =
         { SsKey = bKindKey; Name = mkName "BKind"; Origin = OsNative
           Modality = []
@@ -841,16 +844,17 @@ let ``Slice 6: cross-module FK emits inline FOREIGN KEY constraint`` () =
               [ { SsKey = bIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
                   IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
                 { SsKey = bFkAttr; Name = mkName "AId"; Type = Integer
                   Column = { ColumnName = "A_ID"; IsNullable = false }
                   IsPrimaryKey = false; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false } ]
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
           References =
               [ { SsKey = crossRefKey; Name = mkName "FkToA"
                   SourceAttribute = bFkAttr; TargetKind = aKindKey
                   OnDelete = NoAction; IsUserFk = false } ]
-          Indexes = [] }
+          Indexes = []
+          Description = None }
     let catalog : Catalog =
         { Modules =
             [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ] }
@@ -880,8 +884,8 @@ let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module F
               [ { SsKey = aIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
                   IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false } ]
-          References = []; Indexes = [] }
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
+          References = []; Indexes = []; Description = None }
     let bKind : Kind =
         { SsKey = bKindKey; Name = mkName "BKind"; Origin = OsNative
           Modality = []
@@ -890,16 +894,17 @@ let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module F
               [ { SsKey = bIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
                   IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
                 { SsKey = bFkAttr; Name = mkName "AId"; Type = Integer
                   Column = { ColumnName = "A_ID"; IsNullable = false }
                   IsPrimaryKey = false; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false } ]
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
           References =
               [ { SsKey = crossRefKey; Name = mkName "FkToA"
                   SourceAttribute = bFkAttr; TargetKind = aKindKey
                   OnDelete = NoAction; IsUserFk = false } ]
-          Indexes = [] }
+          Indexes = []
+          Description = None }
     let catalog : Catalog =
         { Modules =
             [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ] }

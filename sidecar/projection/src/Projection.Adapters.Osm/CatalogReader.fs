@@ -137,6 +137,10 @@ module CatalogReader =
             IsActive          : bool
             EntitySsKey       : System.Guid option
             PrimaryKeySsKey   : System.Guid option
+            /// Chapter A.0' slice α — Description lift. Carries V1's
+            /// `ossys_Entity.Description` column. `None` when V1's
+            /// source row is NULL.
+            Description       : string option
         }
 
     /// V1 rowset 3 — `#Attr` attributes; chapter 3.2 slice 1. FK to
@@ -159,6 +163,10 @@ module CatalogReader =
             Scale        : int option
             AttrSsKey    : System.Guid option
             IsActive     : bool
+            /// Chapter A.0' slice α — Description lift. Carries V1's
+            /// `ossys_EntityAttr.Description` column. `None` when V1's
+            /// source row is NULL.
+            Description  : string option
         }
 
     /// V1 rowset 4 — `#RefResolved` resolved-reference rows; chapter
@@ -487,12 +495,22 @@ module CatalogReader =
         let isMandatory    = getBool    attrJson "isMandatory"
         let isIdentifier   = getBool    attrJson "isIdentifier"
         let isAutoNumber   = getBool    attrJson "isAutoNumber"
+        // Chapter A.0' slice α — Description lift. Defensive read
+        // via `getOptionalString` returns Ok None when the source
+        // omits the field; the JSON path consumes V1's `description`
+        // JSON property which `SnapshotJsonBuilder.cs` writes when
+        // V1's `ossys_EntityAttr.Description` is non-null.
+        let descriptionResult = getOptionalString attrJson "description"
         match nameResult, physicalResult, dataTypeStr, isMandatory, isIdentifier with
         | Ok rawName, Ok physicalName, Ok rawDataType,
           Ok mandatory, Ok identifier ->
             let nameDU       = Name.create rawName
             let key          = attributeSsKey moduleName entityName rawName
             let primitive    = parsePrimitiveType rawDataType
+            let description  =
+                match descriptionResult with
+                | Ok d -> d
+                | Error _ -> None
             // Per session-32 — V1 surfaces length / precision /
             // scale on attribute records when applicable. The
             // adapter pulls them through to the V2 IR so the
@@ -521,7 +539,8 @@ module CatalogReader =
                       Length       = lengthOpt
                       Precision    = precisionOpt
                       Scale        = scaleOpt
-                      IsIdentity   = isIdentity }
+                      IsIdentity   = isIdentity
+                      Description  = description }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 // Substantive causes (e.g., `adapter.osm.unmappedDataType`
@@ -807,9 +826,16 @@ module CatalogReader =
         let schemaResult     = getString entityJson "db_schema"
         let isStaticResult   = getBool   entityJson "isStatic"
         let isExternalResult = getBool   entityJson "isExternal"
+        // Chapter A.0' slice α — Description lift. Same defensive
+        // read shape as parseAttribute.
+        let descriptionResult = getOptionalString entityJson "description"
         match nameResult, physicalResult, schemaResult, isStaticResult, isExternalResult with
         | Ok entityName, Ok physicalName, Ok schema,
           Ok isStatic, Ok isExternal ->
+            let description =
+                match descriptionResult with
+                | Ok d -> d
+                | Error _ -> None
             let kindKey   = kindSsKey moduleName entityName
             let kindName  = Name.create entityName
             // Inactive-records filter (session 21): attributes with
@@ -861,14 +887,15 @@ module CatalogReader =
                 let modality =
                     if isStatic then [ Static [] ] else []
                 Result.success
-                    { SsKey      = k
-                      Name       = n
-                      Origin     = parseOrigin isExternal
-                      Modality   = modality
-                      Physical   = { Schema = schema; Table = physicalName }
-                      Attributes = attrs
-                      References = refs
-                      Indexes    = idxs }
+                    { SsKey       = k
+                      Name        = n
+                      Origin      = parseOrigin isExternal
+                      Modality    = modality
+                      Physical    = { Schema = schema; Table = physicalName }
+                      Attributes  = attrs
+                      References  = refs
+                      Indexes     = idxs
+                      Description = description }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`
                 // (codified at two-consumer threshold; same surface as
@@ -1043,7 +1070,8 @@ module CatalogReader =
                   Length       = row.Length
                   Precision    = row.Precision
                   Scale        = row.Scale
-                  IsIdentity   = row.IsAutoNumber }
+                  IsIdentity   = row.IsAutoNumber
+                  Description  = row.Description }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`.
             propagateOrFallback
@@ -1155,20 +1183,21 @@ module CatalogReader =
                     if kindRow.IsSystemEntity then yield SystemOwned
                 ]
             Result.success
-                { SsKey      = k
-                  Name       = n
+                { SsKey       = k
+                  Name        = n
                   // Origin via parseOriginFromRowset (slice 3): three-way
                   // real driven by ModuleRow.EspaceKind. Refines the
                   // JSON-path's parseOrigin two-way placeholder.
-                  Origin     = parseOriginFromRowset kindRow.IsExternal moduleEspaceKind
-                  Modality   = modality
-                  Physical   = { Schema = kindRow.DbSchema
-                                 Table  = kindRow.PhysicalTableName }
-                  Attributes = attrs
-                  References = refs
+                  Origin      = parseOriginFromRowset kindRow.IsExternal moduleEspaceKind
+                  Modality    = modality
+                  Physical    = { Schema = kindRow.DbSchema
+                                  Table  = kindRow.PhysicalTableName }
+                  Attributes  = attrs
+                  References  = refs
                   // Indexes deferred to a future slice (rowsets 10-11
                   // #AllIdx / #IdxColsMapped). Empty at slice 2.
-                  Indexes    = [] }
+                  Indexes     = []
+                  Description = kindRow.Description }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`
             // (codified at two-consumer threshold; same surface as

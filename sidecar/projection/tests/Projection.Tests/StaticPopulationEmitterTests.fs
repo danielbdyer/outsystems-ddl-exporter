@@ -65,16 +65,17 @@ let private mkCountryKind () : Kind =
             [
                 { SsKey = idKey;    Name = mkName "Id";    Type = Integer
                   Column = { ColumnName = "ID";    IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
                 { SsKey = codeKey;  Name = mkName "Code";  Type = Text
                   Column = { ColumnName = "CODE";  IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
                 { SsKey = labelKey; Name = mkName "Label"; Type = Text
                   Column = { ColumnName = "LABEL"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
             ]
         References = []
         Indexes    = []
+        Description = None
     }
 
 /// Static-entity fixture WITHOUT IDENTITY (e.g., GUID PK, code PK).
@@ -99,13 +100,14 @@ let private mkLanguageKind () : Kind =
             [
                 { SsKey = codeKey; Name = mkName "Code"; Type = Text
                   Column = { ColumnName = "CODE"; IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
                 { SsKey = nameKey; Name = mkName "Name"; Type = Text
                   Column = { ColumnName = "NAME"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
             ]
         References = []
         Indexes    = []
+        Description = None
     }
 
 /// Non-static kind. Must contribute zero statements.
@@ -123,13 +125,14 @@ let private mkRegularKind () : Kind =
             [
                 { SsKey = idKey;   Name = mkName "Id";   Type = Integer
                   Column = { ColumnName = "ID";   IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
                 { SsKey = nameKey; Name = mkName "Name"; Type = Text
                   Column = { ColumnName = "NAME"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
             ]
         References = []
         Indexes    = []
+        Description = None
     }
 
 /// Kind carrying an empty `Static []` modality. Edge case: the
@@ -148,10 +151,11 @@ let private mkEmptyStaticKind () : Kind =
             [
                 { SsKey = idKey; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
             ]
         References = []
         Indexes    = []
+        Description = None
     }
 
 let private mkCatalog (kinds: Kind list) : Catalog =

@@ -63,16 +63,17 @@ let private mkCountryKind () : Kind =
             [
                 { SsKey = idKey;    Name = mkName "Id";    Type = Integer
                   Column = { ColumnName = "ID";    IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
                 { SsKey = codeKey;  Name = mkName "Code";  Type = Text
                   Column = { ColumnName = "CODE";  IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
                 { SsKey = labelKey; Name = mkName "Label"; Type = Text
                   Column = { ColumnName = "LABEL"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
             ]
         References = []
         Indexes    = []
+        Description = None
     }
 
 let private mkCatalog (kinds: Kind list) : Catalog =
@@ -364,16 +365,17 @@ let ``Slice ι: composeRendered emits Phase-1 (MERGE) of every kind before Phase
                 [
                     { SsKey = idKey;     Name = mkName "Id";       Type = Integer
                       Column = { ColumnName = "ID";       IsNullable = false }
-                      IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                      IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
                     { SsKey = parentKey; Name = mkName "ParentId"; Type = Integer
                       Column = { ColumnName = "PARENTID"; IsNullable = true }
-                      IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                      IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
                 ]
             References =
                 [ { SsKey = refKey; Name = mkName "RefSelf"
                     SourceAttribute = parentKey; TargetKind = kindKey
                     OnDelete = NoAction; IsUserFk = false } ]
             Indexes    = []
+            Description = None
         }
     let alpha = mkSelfCycleKind "Alpha" "OSUSR_ALPHA" "1"
     let beta = mkSelfCycleKind "Beta" "OSUSR_BETA" "1"

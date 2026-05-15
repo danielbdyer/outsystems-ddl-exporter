@@ -372,10 +372,10 @@ let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Ki
       Attributes = [
           { SsKey = attrId; Name = mkName "Id"; Type = Integer
             Column = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
           { SsKey = attrFk; Name = mkName "Fk"; Type = Integer
             Column = { ColumnName = "FK"; IsNullable = false }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false } ]
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
       References = [
           { SsKey = mkKey fkKey
             Name = mkName "ToOther"
@@ -383,7 +383,7 @@ let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Ki
             TargetKind = targetKey
             OnDelete = NoAction
             IsUserFk = false } ]
-      Indexes = [] }
+      Indexes = []; Description = None }
 
 [<Fact>]
 let ``Tarjan: two disjoint 2-cycles produce two SCCs`` () =
@@ -427,10 +427,10 @@ let private kindWithRef
       Attributes = [
           { SsKey = attrId; Name = mkName "Id"; Type = Integer
             Column = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
           { SsKey = attrFk; Name = mkName "Fk"; Type = Integer
             Column = { ColumnName = "FK"; IsNullable = sourceAttrNullable }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false } ]
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
       References = [
           { SsKey = mkKey refKey
             Name = mkName "ToOther"
@@ -438,7 +438,7 @@ let private kindWithRef
             TargetKind = targetKey
             OnDelete = onDelete
             IsUserFk = false } ]
-      Indexes = [] }
+      Indexes = []; Description = None }
 
 let private noRefKind (kindKey: string) : Kind =
     let attrId = mkKey (kindKey + "_Id")
@@ -450,8 +450,8 @@ let private noRefKind (kindKey: string) : Kind =
       Attributes = [
           { SsKey = attrId; Name = mkName "Id"; Type = Integer
             Column = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false } ]
-      References = []; Indexes = [] }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
+      References = []; Indexes = []; Description = None }
 
 // ---------------------------------------------------------------------------
 // V1 contract: SortByForeignKeys_AutoDetectsAsymmetricAuditCycle.

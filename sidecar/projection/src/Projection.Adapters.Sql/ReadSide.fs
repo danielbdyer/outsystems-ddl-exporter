@@ -321,6 +321,16 @@ module ReadSide =
                                 | Decimal -> row.Scale
                                 | _ -> None
                             IsIdentity = identitySet.Contains coord
+                            // Chapter A.0' slice α — SQL Server's
+                            // `INFORMATION_SCHEMA.COLUMNS` does not
+                            // surface the OutSystems-defined description;
+                            // descriptions live in extended properties
+                            // (sys.extended_properties / fn_listextended-
+                            // property). Carrying via the ReadSide path
+                            // gates on chapter 4.1.A slice 8's extended-
+                            // properties pickup. Slice-α scope is OSSYS-
+                            // adapter pickup only.
+                            Description = None
                         }
 
     /// Format a SQL Server scalar value as the canonical raw
@@ -547,6 +557,8 @@ module ReadSide =
                     Attributes = attributes
                     References = []
                     Indexes = []
+                    // Chapter A.0' slice α — see buildAttribute rationale.
+                    Description = None
                 }
         }
 
