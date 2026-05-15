@@ -80,6 +80,7 @@ let private programmaticUserCatalog : Catalog =
             Precision = None
             Scale = None
             IsIdentity = false
+            Description = None
         }
     let userKind : Kind =
         {
@@ -97,6 +98,7 @@ let private programmaticUserCatalog : Catalog =
                 ]
             References = []
             Indexes = []
+            Description = None
         }
     let userModule : Module =
         {

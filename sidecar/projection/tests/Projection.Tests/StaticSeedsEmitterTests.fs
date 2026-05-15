@@ -53,16 +53,17 @@ let private mkCountryKind () : Kind =
             [
                 { SsKey = idKey;    Name = mkName "Id";    Type = Integer
                   Column = { ColumnName = "ID";    IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
                 { SsKey = codeKey;  Name = mkName "Code";  Type = Text
                   Column = { ColumnName = "CODE";  IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
                 { SsKey = labelKey; Name = mkName "Label"; Type = Text
                   Column = { ColumnName = "LABEL"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
             ]
         References = []
         Indexes    = []
+        Description = None
     }
 
 /// Non-static kind (no `Modality.Static` mark); should produce a no-op
@@ -81,13 +82,14 @@ let private mkRegularKind () : Kind =
             [
                 { SsKey = idKey;   Name = mkName "Id";   Type = Integer
                   Column = { ColumnName = "ID";   IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
                 { SsKey = nameKey; Name = mkName "Name"; Type = Text
                   Column = { ColumnName = "NAME"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
             ]
         References = []
         Indexes    = []
+        Description = None
     }
 
 let private mkCatalog (kinds: Kind list) : Catalog =
@@ -400,13 +402,13 @@ let private mkTreeKind () : Kind =
             [
                 { SsKey = idKey;     Name = mkName "Id";       Type = Integer
                   Column = { ColumnName = "ID";       IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
                 { SsKey = labelKey;  Name = mkName "Label";    Type = Text
                   Column = { ColumnName = "LABEL";    IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
                 { SsKey = parentKey; Name = mkName "ParentId"; Type = Integer
                   Column = { ColumnName = "PARENTID"; IsNullable = true }     // nullable → deferrable
-                  IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
             ]
         References =
             [
@@ -415,6 +417,7 @@ let private mkTreeKind () : Kind =
                   OnDelete = NoAction; IsUserFk = false }
             ]
         Indexes    = []
+        Description = None
     }
 
 /// Self-referencing kind whose FK column is NOT NULL. Same shape as
@@ -534,7 +537,7 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
         { SsKey = ssk; Name = mkName name; Type = typ
           Column = { ColumnName = col; IsNullable = isNull }
           IsPrimaryKey = isPk; IsMandatory = not isNull
-          Length = None; Precision = None; Scale = None; IsIdentity = false }
+          Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
     let mkRef ssk name srcAttr tgt =
         { SsKey = ssk; Name = mkName name
           SourceAttribute = srcAttr; TargetKind = tgt; OnDelete = NoAction; IsUserFk = false }
@@ -545,7 +548,8 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
           Attributes = [ mkAttr aIdK "Id"  Integer "ID"  true false
                          mkAttr aFkK "BId" Integer "BID" false true ]
           References = [ mkRef aRefK "ToB" aFkK bKey ]
-          Indexes    = [] }
+          Indexes    = []
+          Description = None }
     let bKind : Kind =
         { SsKey = bKey; Name = mkName "B"; Origin = OsNative
           Modality = [ Static [ bRow ] ]
@@ -553,7 +557,8 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
           Attributes = [ mkAttr bIdK "Id"  Integer "ID"  true false
                          mkAttr bFkK "AId" Integer "AID" false true ]
           References = [ mkRef bRefK "ToA" bFkK aKey ]
-          Indexes    = [] }
+          Indexes    = []
+          Description = None }
     let catalog = mkCatalog [ aKind; bKind ]
     let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
     let m = ArtifactByKind.toMap artifact

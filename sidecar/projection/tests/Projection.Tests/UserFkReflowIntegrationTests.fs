@@ -69,10 +69,10 @@ let private mkOrderKind () : Kind =
             [
                 { SsKey = idKey;        Name = mkName "Id";        Type = Integer
                   Column = { ColumnName = "ID";        IsNullable = false }
-                  IsPrimaryKey = true;  IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = true;  IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
                 { SsKey = createdByKey; Name = mkName "CreatedBy"; Type = Integer
                   Column = { ColumnName = "CREATEDBY"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
             ]
         References =
             [ { SsKey           = createdByRefKey
@@ -82,6 +82,7 @@ let private mkOrderKind () : Kind =
                 OnDelete        = NoAction
                 IsUserFk        = true } ]  // slice ζ User-FK marker
         Indexes    = []
+        Description = None
     }
 
 let private mkCatalog (kinds: Kind list) : Catalog =
@@ -177,12 +178,13 @@ let ``Slice η: kind with no User-FK references passes through unrewritten`` () 
           Attributes =
               [ { SsKey = idKey;    Name = mkName "Id";    Type = Integer
                   Column = { ColumnName = "ID";    IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
                 { SsKey = labelKey; Name = mkName "Label"; Type = Text
                   Column = { ColumnName = "LABEL"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false } ]
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
           References = []  // no User-FK
-          Indexes    = [] }
+          Indexes    = []
+          Description = None }
     let catalog = mkCatalog [ country ]
     let migration =
         { Rows =

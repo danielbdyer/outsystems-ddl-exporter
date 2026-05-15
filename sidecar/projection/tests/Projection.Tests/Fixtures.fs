@@ -83,20 +83,21 @@ let customer : Kind = {
           Name         = name "Id"
           Type         = Integer
           Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
         { SsKey        = customerNameKey
           Name         = name "Name"
           Type         = Text
           Column       = { ColumnName = "NAME"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
         { SsKey        = customerTenantKey
           Name         = name "TenantId"
           Type         = Integer
           Column       = { ColumnName = "TENANT_ID"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
     ]
     References = []
     Indexes    = []
+    Description = None
 }
 
 // ---------------------------------------------------------------------------
@@ -119,12 +120,12 @@ let order : Kind = {
           Name         = name "Id"
           Type         = Integer
           Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
         { SsKey        = orderCustomerFkKey
           Name         = name "CustomerId"
           Type         = Integer
           Column       = { ColumnName = "CUSTOMER_ID"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
     ]
     References = [
         { SsKey           = orderRefToCustomer
@@ -135,6 +136,7 @@ let order : Kind = {
           IsUserFk        = false }
     ]
     Indexes = []
+    Description = None
 }
 
 // ---------------------------------------------------------------------------
@@ -175,20 +177,21 @@ let country : Kind = {
           Name         = name "Id"
           Type         = Integer
           Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
         { SsKey        = countryCodeKey
           Name         = name "Code"
           Type         = Text
           Column       = { ColumnName = "CODE"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
         { SsKey        = countryLabelKey
           Name         = name "Label"
           Type         = Text
           Column       = { ColumnName = "LABEL"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
     ]
     References = []
     Indexes    = []
+    Description = None
 }
 
 // ---------------------------------------------------------------------------

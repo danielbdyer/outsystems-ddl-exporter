@@ -170,7 +170,7 @@ let ``string escaping handles double quotes and backslashes`` () =
         Physical = { Schema = "dbo"; Table = "T" }
         Attributes = []
         References = []
-        Indexes    = []
+        Indexes    = []; Description = None
     }
     let troubleModule : Module = {
         SsKey = modKey "Trouble"

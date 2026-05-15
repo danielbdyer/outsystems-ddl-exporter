@@ -48,6 +48,7 @@ let private mkKind (n: string) : Kind =
         Attributes = []
         References = []
         Indexes = []
+        Description = None
     }
 
 let private mkModule (n: string) (kinds: Kind list) : Module =

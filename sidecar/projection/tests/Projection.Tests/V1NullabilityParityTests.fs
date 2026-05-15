@@ -60,14 +60,14 @@ let private buildCatalog (mandatoryColumnIsNullable: bool) (mandatoryColumnIsMan
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
               { SsKey        = mandatoryAttributeKey
                 Name         = mkName "Mandatory"
                 Type         = Text
                 Column       = { ColumnName = "MANDATORY"; IsNullable = mandatoryColumnIsNullable }
                 IsPrimaryKey = false
-                IsMandatory = mandatoryColumnIsMandatory; Length = None; Precision = None; Scale = None; IsIdentity = false } ]
-          References = []; Indexes = [] }
+                IsMandatory = mandatoryColumnIsMandatory; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
+          References = []; Indexes = []; Description = None }
     { Modules = [
         { SsKey = mkKey "OS_MOD_Sample"
           Name  = mkName "Sample"

@@ -21,7 +21,7 @@ let private mkAttr (key: string) (nullable: bool) : Attribute =
       Name         = Name.create "Fk" |> Result.value
       Type         = Integer
       Column       = { ColumnName = "FK"; IsNullable = nullable }
-      IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false }
+      IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
 
 let private mkRef (sourceAttrKey: string) (action: ReferenceAction) : Reference =
     { SsKey           = refKey ["x"]
@@ -38,7 +38,7 @@ let private kindWith (a: Attribute) : Kind =
       Modality   = []
       Physical   = { Schema = "dbo"; Table = "owner" }
       Attributes = [ a ]
-      References = []; Indexes = [] }
+      References = []; Indexes = []; Description = None }
 
 [<Fact>]
 let ``classify: nullable + NoAction = Weak`` () =

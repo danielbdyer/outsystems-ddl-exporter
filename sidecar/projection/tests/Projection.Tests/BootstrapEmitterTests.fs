@@ -50,10 +50,11 @@ let private mkKind (name: string) : Kind =
             [
                 { SsKey = idKey; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
             ]
         References = []
         Indexes    = []
+        Description = None
     }
 
 let private mkCatalog (kinds: Kind list) : Catalog =

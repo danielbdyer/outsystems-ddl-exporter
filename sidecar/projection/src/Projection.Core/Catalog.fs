@@ -200,6 +200,16 @@ type Attribute = {
     /// OutSystems convention). ReadSide reads from
     /// `sys.columns.is_identity` (1 → true).
     IsIdentity   : bool
+    /// Operator-visible docstring carried from the V1 source
+    /// `ossys_EntityAttr.Description` (rowset path) or the
+    /// `description` JSON property (JSON path). `None` when the
+    /// source omits the field. Chapter A.0' slice α — IR fidelity
+    /// lift (L3-S9 descriptions sub-axiom). Emission lands when a
+    /// consumer demands it (extended-properties DDL is chapter
+    /// 4.1.A slice 8 territory; the `CommentMetadataUnreflected`
+    /// Tolerance variant retires when both the IR carries AND the
+    /// emitter emits).
+    Description  : string option
 }
 
 
@@ -263,14 +273,21 @@ type Index = {
 /// modality marks, physical realization, attributes, references, and
 /// indexes (A8).
 type Kind = {
-    SsKey      : SsKey
-    Name       : Name
-    Origin     : Origin
-    Modality   : ModalityMark list
-    Physical   : PhysicalRealization
-    Attributes : Attribute list
-    References : Reference list
-    Indexes    : Index list
+    SsKey       : SsKey
+    Name        : Name
+    Origin      : Origin
+    Modality    : ModalityMark list
+    Physical    : PhysicalRealization
+    Attributes  : Attribute list
+    References  : Reference list
+    Indexes     : Index list
+    /// Operator-visible docstring carried from the V1 source
+    /// `ossys_Entity.Description` (rowset path) or the `description`
+    /// JSON property (JSON path). `None` when the source omits the
+    /// field. Chapter A.0' slice α — IR fidelity lift (L3-S9
+    /// descriptions sub-axiom). Sibling to `Attribute.Description`;
+    /// same operational semantics (carriage-only at this slice).
+    Description : string option
 }
 
 

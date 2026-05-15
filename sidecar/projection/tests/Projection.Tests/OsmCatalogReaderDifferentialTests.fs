@@ -133,16 +133,16 @@ let private expectedCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
               { SsKey        = userEmailAttrKey
                 Name         = mkName "Email"
                 Type         = Text
                 Column       = { ColumnName = "EMAIL"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false }
+                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None }
           ]
           References = []
-          Indexes    = [] }
+          Indexes    = []; Description = None }
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
@@ -347,10 +347,10 @@ let private expectedReferenceCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
           ]
           References = []
-          Indexes    = [] }
+          Indexes    = []; Description = None }
     let userKind : Kind =
         { SsKey    = userKindKey
           Name     = mkName "User"
@@ -363,13 +363,13 @@ let private expectedReferenceCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
               { SsKey        = userAccountIdAttrKey
                 Name         = mkName "AccountId"
                 Type         = Integer
                 Column       = { ColumnName = "ACCOUNTID"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
           ]
           References = [
               { SsKey           = userAccountReferenceKey
@@ -379,7 +379,7 @@ let private expectedReferenceCatalog : Catalog =
                 OnDelete        = NoAction
                 IsUserFk        = false }
           ]
-          Indexes    = [] }
+          Indexes    = []; Description = None }
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
@@ -506,10 +506,10 @@ let private expectedExternalCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
           ]
           References = []
-          Indexes    = [] }
+          Indexes    = []; Description = None }
     { Modules = [
         { SsKey = extBillingModuleKey
           Name  = mkName "ExtBilling"
@@ -696,11 +696,11 @@ let private expectedMixedActiveCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
               // DeprecatedField (isActive: false) is dropped at the boundary.
           ]
           References = []
-          Indexes    = [] }
+          Indexes    = []; Description = None }
     // RetiredEntity (isActive: false) is dropped at the boundary.
     { Modules = [
         { SsKey = appCoreModuleKey
@@ -919,31 +919,31 @@ let private expectedIndexCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
               { SsKey        = userEmailAttrKey
                 Name         = mkName "Email"
                 Type         = Text
                 Column       = { ColumnName = "EMAIL"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false }
+                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None }
               { SsKey        = userIndexLastNameAttrKey
                 Name         = mkName "LastName"
                 Type         = Text
                 Column       = { ColumnName = "LASTNAME"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 100; Precision = None; Scale = None; IsIdentity = false }
+                IsMandatory = true; Length = Some 100; Precision = None; Scale = None; IsIdentity = false; Description = None }
               { SsKey        = userIndexFirstNameAttrKey
                 Name         = mkName "FirstName"
                 Type         = Text
                 Column       = { ColumnName = "FIRSTNAME"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 100; Precision = None; Scale = None; IsIdentity = false }
+                IsMandatory = true; Length = Some 100; Precision = None; Scale = None; IsIdentity = false; Description = None }
               { SsKey        = userIndexEmailLowerAttrKey
                 Name         = mkName "EmailLower"
                 Type         = Text
                 Column       = { ColumnName = "EMAILLOWER"; IsNullable = true }
                 IsPrimaryKey = false
-                IsMandatory = false; Length = Some 250; Precision = None; Scale = None; IsIdentity = false }
+                IsMandatory = false; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None }
           ]
           References = []
           Indexes = [
@@ -966,7 +966,8 @@ let private expectedIndexCatalog : Catalog =
                 // forward" section.
                 IsUnique     = false
                 IsPrimaryKey = false }
-          ] }
+          ]
+          Description = None }
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
@@ -1090,16 +1091,16 @@ let private expectedStaticEntityCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
               { SsKey        = countryCodeAttrKey
                 Name         = mkName "Code"
                 Type         = Text
                 Column       = { ColumnName = "CODE"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 8; Precision = None; Scale = None; IsIdentity = false }
+                IsMandatory = true; Length = Some 8; Precision = None; Scale = None; IsIdentity = false; Description = None }
           ]
           References = []
-          Indexes    = [] }
+          Indexes    = []; Description = None }
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"

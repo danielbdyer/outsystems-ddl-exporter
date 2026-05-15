@@ -63,6 +63,7 @@ let private userKindRow (sskey: System.Guid option) : CatalogReader.KindRow =
         IsActive          = true
         EntitySsKey       = sskey
         PrimaryKeySsKey   = None
+        Description       = None
     }
 
 let private idAttrRow (sskey: System.Guid option) : CatalogReader.AttributeRow =
@@ -80,6 +81,7 @@ let private idAttrRow (sskey: System.Guid option) : CatalogReader.AttributeRow =
         Scale        = None
         AttrSsKey    = sskey
         IsActive     = true
+        Description  = None
     }
 
 let private emailAttrRow (sskey: System.Guid option) : CatalogReader.AttributeRow =
@@ -97,6 +99,7 @@ let private emailAttrRow (sskey: System.Guid option) : CatalogReader.AttributeRo
         Scale        = None
         AttrSsKey    = sskey
         IsActive     = true
+        Description  = None
     }
 
 // ---------------------------------------------------------------------------
@@ -124,16 +127,17 @@ let private expectedCatalogSynthesized : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
               { SsKey        = userEmailAttrKey
                 Name         = mkName "Email"
                 Type         = Text
                 Column       = { ColumnName = "EMAIL"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false }
+                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None }
           ]
           References = []
-          Indexes    = [] }
+          Indexes    = []
+          Description = None }
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
@@ -351,6 +355,7 @@ let private accountKindRow (sskey: System.Guid option) : CatalogReader.KindRow =
         IsActive          = true
         EntitySsKey       = sskey
         PrimaryKeySsKey   = None
+        Description       = None
     }
 
 let private accountIdRow (sskey: System.Guid option) : CatalogReader.AttributeRow =
@@ -368,6 +373,7 @@ let private accountIdRow (sskey: System.Guid option) : CatalogReader.AttributeRo
         Scale        = None
         AttrSsKey    = sskey
         IsActive     = true
+        Description  = None
     }
 
 /// User has Id (PK + IDENTITY) and AccountId (FK to Account); the
@@ -391,6 +397,7 @@ let private userAccountIdRow : CatalogReader.AttributeRow =
         Scale        = None
         AttrSsKey    = None
         IsActive     = true
+        Description  = None
     }
 
 let private userAccountRefRow : CatalogReader.ReferenceRow =
@@ -594,6 +601,7 @@ let private billingAccountKindRow : CatalogReader.KindRow =
         IsActive          = true
         EntitySsKey       = None
         PrimaryKeySsKey   = None
+        Description       = None
     }
 
 let private billingAccountIdRow : CatalogReader.AttributeRow =
@@ -611,6 +619,7 @@ let private billingAccountIdRow : CatalogReader.AttributeRow =
         Scale        = None
         AttrSsKey    = None
         IsActive     = true
+        Description  = None
     }
 
 let private externalBundle (espaceKind: string option) : CatalogReader.RowsetBundle =
@@ -754,6 +763,7 @@ let private systemKindRow : CatalogReader.KindRow =
         IsActive          = true
         EntitySsKey       = None
         PrimaryKeySsKey   = None
+        Description       = None
     }
 
 let private systemAuditIdRow : CatalogReader.AttributeRow =
@@ -771,6 +781,7 @@ let private systemAuditIdRow : CatalogReader.AttributeRow =
         Scale        = None
         AttrSsKey    = None
         IsActive     = true
+        Description  = None
     }
 
 let private systemBundle : CatalogReader.RowsetBundle =
