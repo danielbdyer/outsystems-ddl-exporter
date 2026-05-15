@@ -83,21 +83,22 @@ let customer : Kind = {
           Name         = name "Id"
           Type         = Integer
           Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
         { SsKey        = customerNameKey
           Name         = name "Name"
           Type         = Text
           Column       = { ColumnName = "NAME"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
         { SsKey        = customerTenantKey
           Name         = name "TenantId"
           Type         = Integer
           Column       = { ColumnName = "TENANT_ID"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
     ]
     References = []
     Indexes    = []
     Description = None
+    IsActive = true
 }
 
 // ---------------------------------------------------------------------------
@@ -120,12 +121,12 @@ let order : Kind = {
           Name         = name "Id"
           Type         = Integer
           Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
         { SsKey        = orderCustomerFkKey
           Name         = name "CustomerId"
           Type         = Integer
           Column       = { ColumnName = "CUSTOMER_ID"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
     ]
     References = [
         { SsKey           = orderRefToCustomer
@@ -137,6 +138,7 @@ let order : Kind = {
     ]
     Indexes = []
     Description = None
+    IsActive = true
 }
 
 // ---------------------------------------------------------------------------
@@ -177,21 +179,22 @@ let country : Kind = {
           Name         = name "Id"
           Type         = Integer
           Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
         { SsKey        = countryCodeKey
           Name         = name "Code"
           Type         = Text
           Column       = { ColumnName = "CODE"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
         { SsKey        = countryLabelKey
           Name         = name "Label"
           Type         = Text
           Column       = { ColumnName = "LABEL"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
     ]
     References = []
     Indexes    = []
     Description = None
+    IsActive = true
 }
 
 // ---------------------------------------------------------------------------
@@ -204,6 +207,7 @@ let salesModule : Module = {
     SsKey = salesModuleKey
     Name  = name "Sales"
     Kinds = [ customer; order; country ]
+    IsActive = true
 }
 
 let sampleCatalog : Catalog = {

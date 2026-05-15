@@ -74,6 +74,7 @@
     <Compile Include="OsmCatalogReaderDifferentialTests.fs" />
     <Compile Include="OsmRowsetReaderTests.fs" />
     <Compile Include="DescriptionLiftTests.fs" />
+    <Compile Include="IsActiveLiftTests.fs" />
     <Compile Include="NullabilityRulesTests.fs" />
     <Compile Include="NullabilityPassTests.fs" />
     <Compile Include="UniqueIndexRulesTests.fs" />

@@ -210,6 +210,15 @@ type Attribute = {
     /// Tolerance variant retires when both the IR carries AND the
     /// emitter emits).
     Description  : string option
+    /// V1 `ossys_EntityAttr.Is_Active` carried into V2's IR as
+    /// evidence. Default-true semantics per V1's SQL
+    /// `ISNULL(Is_Active, 1)`. Chapter A.0' slice β — IR fidelity
+    /// lift; supersedes session-21's silent-drop disposition (per
+    /// `DECISIONS 2026-05-15 — A.0' slice β` amendment). Carriage
+    /// is DataIntent per pillar 9; filtering on this flag is
+    /// OperatorIntent and lands at the emitter / pass / overlay
+    /// layer when consumers surface.
+    IsActive     : bool
 }
 
 
@@ -288,15 +297,31 @@ type Kind = {
     /// descriptions sub-axiom). Sibling to `Attribute.Description`;
     /// same operational semantics (carriage-only at this slice).
     Description : string option
+    /// V1 `ossys_Entity.Is_Active` carried into V2's IR as
+    /// evidence. Default-true semantics per V1's SQL
+    /// `ISNULL(Is_Active, 1)`. Chapter A.0' slice β — IR fidelity
+    /// lift; supersedes session-21's silent-drop disposition (per
+    /// `DECISIONS 2026-05-15 — A.0' slice β` amendment). Carriage
+    /// is DataIntent per pillar 9; downstream emitters decide
+    /// filtering policy at emission time.
+    IsActive    : bool
 }
 
 
 /// A coproduct cell of the catalog (A11). Modules are disjoint by SsKey;
 /// the projection respects the decomposition (T2).
 type Module = {
-    SsKey : SsKey
-    Name  : Name
-    Kinds : Kind list
+    SsKey    : SsKey
+    Name     : Name
+    Kinds    : Kind list
+    /// V1 `ossys_Espace.Is_Active` carried into V2's IR as evidence.
+    /// Default-true semantics per V1's SQL `ISNULL(Is_Active, 1)`.
+    /// Chapter A.0' slice β — IR fidelity lift; module-level
+    /// `isActive` is now exercised (was previously named in
+    /// session-21 as "not yet handled by the parser"). Carriage is
+    /// DataIntent per pillar 9; downstream emitters decide whether
+    /// to elide entire inactive modules from a particular emission.
+    IsActive : bool
 }
 
 
@@ -373,6 +398,7 @@ module Module =
         (ssKey: SsKey)
         (name: Name)
         (kinds: Kind list)
+        (isActive: bool)
         : Result<Module> =
         let duplicates =
             kinds
@@ -390,7 +416,7 @@ module Module =
                         k))
             |> Result.failure
         else
-            Result.success { SsKey = ssKey; Name = name; Kinds = kinds }
+            Result.success { SsKey = ssKey; Name = name; Kinds = kinds; IsActive = isActive }
 
 
 [<RequireQualifiedAccess>]

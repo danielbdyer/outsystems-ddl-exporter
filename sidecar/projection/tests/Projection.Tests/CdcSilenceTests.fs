@@ -90,21 +90,21 @@ let private buildFixture () : Catalog * Kind =
               [
                   { SsKey = idKey;    Name = mkName "Id";    Type = Integer
                     Column = { ColumnName = "ID";    IsNullable = false }
-                    IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                    IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
                   { SsKey = codeKey;  Name = mkName "Code";  Type = Text
                     Column = { ColumnName = "CODE";  IsNullable = false }
-                    IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                    IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
                   { SsKey = labelKey; Name = mkName "Label"; Type = Text
                     Column = { ColumnName = "LABEL"; IsNullable = false }
-                    IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                    IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
               ]
           References = []
           Indexes    = []
-          Description = None }
+          Description = None; IsActive = true  }
     let m : Module =
         { SsKey = mkKey ["Module"]
           Name  = mkName "TestModule"
-          Kinds = [ kind ] }
+          Kinds = [ kind ]; IsActive = true  }
     { Modules = [ m ] }, kind
 
 let private executeScalarInt (cnn: SqlConnection) (sql: string) : Task<int> =
@@ -268,21 +268,21 @@ let private buildChangedFixture () : Catalog * Kind =
               [
                   { SsKey = idKey;    Name = mkName "Id";    Type = Integer
                     Column = { ColumnName = "ID";    IsNullable = false }
-                    IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                    IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
                   { SsKey = codeKey;  Name = mkName "Code";  Type = Text
                     Column = { ColumnName = "CODE";  IsNullable = false }
-                    IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                    IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
                   { SsKey = labelKey; Name = mkName "Label"; Type = Text
                     Column = { ColumnName = "LABEL"; IsNullable = false }
-                    IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                    IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
               ]
           References = []
           Indexes    = []
-          Description = None }
+          Description = None; IsActive = true  }
     let m : Module =
         { SsKey = mkKey ["Module"]
           Name  = mkName "TestModule"
-          Kinds = [ kind ] }
+          Kinds = [ kind ]; IsActive = true  }
     { Modules = [ m ] }, kind
 
 [<Fact>]

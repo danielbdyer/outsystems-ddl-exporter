@@ -11176,3 +11176,86 @@ The `Sites` list (per Q11 answer) captures intra-pass classification fidelity. `
 - `2026-05-10 — Domain-first naming and ubiquitous-language consistency (pillar 8)` (sibling pillar; same discipline-tier; same structural-test-enforcement shape).
 
 ---
+
+## 2026-05-15 — A.0' slice β: IsActive carry-through retires session-21 silent-drop disposition; first worked example of pillar 9 at harvest time
+
+**Status:** decided
+
+**Context.** Chapter A.0' slice β extends `Module` / `Kind` / `Attribute` with `IsActive : bool`, retires the session-21 inactive-records filter at the OSSYS adapter (`parseModule` / `parseKind` / `parseModuleRow` / `parseKindRow` / `parseRowsetBundle`), and carries the flag through to the IR. The slice supersedes `DECISIONS 2026-05-18 (session 21 amendment) — mixed-active fixture surfaces inactive-records boundary`. Per the strategic-frame axis 4 framing in `CHAPTER_A_0_PRIME_OPEN.md`, this is the only slice in chapter A.0' that requires a DECISIONS amendment superseding a prior decision.
+
+Per `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification`, slice β is the **first worked example of pillar 9 at harvest time** — the discipline is operative on the very disposition the slice retires.
+
+### Harvest-dichotomy classification of session-21's silent-drop disposition
+
+Apply the 4-step harvest workflow to the disposition slice β supersedes:
+
+1. **Identify what changes.** Input X = V1 entity / attribute record with `isActive: false` (JSON path) or `IsActive=false` (rowset DTO). Output Y under session-21's disposition = record dropped from V2's IR at the adapter boundary (silent drop). The delta: filtering operation at adapter; the V1 record's presence does not propagate to V2.
+2. **Determine whose intent is expressed.** Filtering on "active/inactive" status is operator-meaningful — `IsActive` is the operator-visible flag in OutSystems' platform UI; the operator marks entities/attributes inactive when retiring them. Session-21's adapter-side drop encodes an operator preference ("inactive records should not flow downstream") without operator-supplied policy input. Per pillar 9: this is **`OperatorIntent`** — and crucially, with **no current `OverlayAxis` fit** (Selection / Emission / Insertion / Tightening don't carry an active-filter axis today). Per the Q9 expansion provision in `DECISIONS 2026-05-15 (late)`, this is one of the candidate axis-expansion triggers (Selection-as-Filter is the natural shape; reserved for future expansion when consumer pressure surfaces).
+3. **Register or document the harvest decision.** Session-21's disposition is **misclassified-as-DataIntent silent-inclusion** in the named-failure-mode taxonomy. The filter was implemented as if it were a DataIntent boundary observation (drop-at-parse-time), but its intent is OperatorIntent. The corrected disposition (slice β; see below) lifts `IsActive` to the IR as evidence; downstream emitters decide filtering policy when they consume the field.
+4. **Confirm intent against the pillar.** Re-examining the analysis: a record's `IsActive` status is V1-evidence (V1's source SQL surfaces the column; the JSON projection carries it; the rowset DTO already carries it). What V2 *does* with that evidence is operator intent. Conflating "evidence is present" with "evidence has operator-meaningful behavior" is the misclassification. Slice β separates the two: the IR carries the evidence (DataIntent — V2's IR reflects V1's catalog truthfully); the operator intent (drop / emit / annotate) lands at the emitter / pass / overlay layer when a consumer demands it.
+
+**Reclassification recorded:** Session-21's disposition was `OperatorIntent (no current OverlayAxis fit; candidate axis-expansion trigger for Selection-as-Filter)`. The disposition was structurally misplaced — operator-intent enacted at the adapter boundary, where DataIntent lives.
+
+### Harvest-dichotomy classification of slice β's corrected disposition
+
+Apply the 4-step harvest workflow to the slice β disposition replacing session-21:
+
+1. **Identify what changes.** Input X = V1 entity / attribute / module record carrying `isActive` (JSON path: read via new `getOptionalBool` defensive read; rowset path: read directly from the DTO `IsActive : bool` field which already exists). Output Y = V2 IR `Module.IsActive : bool` / `Kind.IsActive : bool` / `Attribute.IsActive : bool` field populated with the source's value (default true per V1's `ISNULL(Is_Active, 1)` semantics).
+2. **Determine whose intent is expressed.** The transformation is pure input evidence: `Catalog`-shaped data flows from `Catalog` (V1 source) to `Catalog` (V2 IR). No `Policy`, no operator-supplied rename specs, no config overrides. The transformation is reachable from `Project(catalog, Policy.empty, profile)` — the skeleton baseline. Per pillar 9: **`DataIntent`**.
+3. **Register or document the harvest decision.** Transformation lands in v2; per pillar 9's harvest workflow it would ship as a `RegisteredTransform<RawRow, CatalogFragment>` adapter entry at A.4.7 proper. For slice β (pre-A.4.7), the transformation is implemented as a direct field carriage in `parseAttribute` / `parseKind` / `parseModule` (JSON path) and `parseAttributeRow` / `parseKindRow` / `parseModuleRow` (rowset path). The A.4.7-prelude small slice (per the three-step rollout in the pillar-9 entry) will retroactively register adapter rules; slice β's harvest-dichotomy classification is recorded here so the registration lands cleanly.
+4. **Confirm intent against the pillar.** The transformation preserves V1's data; downstream consumers (emitters, passes) decide what to do with the flag. The Selection / Tightening operator-intent decisions (e.g., "emit only active tables", "skip DDL for inactive attributes") become future overlay registrations against the new `IsActive` field, not adapter-time filters. Pillar 9 confirmed: DataIntent.
+
+**Disposition recorded:** Slice β's corrected disposition is `DataIntent` (skeleton-reachable; baseline carriage). Future Selection-axis overlays consume the field; the IR is the operator's window onto V1's complete inventory.
+
+### Decision
+
+**Decided:**
+
+1. **Supersede session-21 rule 18.** The translation rule `inactive entities/attributes are dropped at the adapter` retires. The replacement rule:
+   - **Rule 18 (revised)** | `entity.isActive: false` / `attribute.isActive: false` / `module.isActive: false` (default missing → true per V1's SQL `ISNULL(Is_Active, 1)` semantics) | The flag is carried to V2's IR as `Module.IsActive` / `Kind.IsActive` / `Attribute.IsActive : bool`. The OSSYS adapter no longer filters at the boundary. Downstream emitters decide filtering policy at emission time, gated on operator-supplied overlays when those overlays exist. | Per `DECISIONS 2026-05-15 (late) — Pillar 9`: V1's evidence is DataIntent and lands in the IR; operator filtering decisions are OperatorIntent and land at emitter / pass / overlay layers when consumers surface.
+2. **IR widening.** `Module` / `Kind` / `Attribute` records gain `IsActive : bool`. The chapter-3.2-close record-extension empirical-test discipline applies (closed-DU expansion generalization); compiler-driven enumeration via FS0764 field-missing errors guides the mechanical edit pass.
+3. **`Module.create` extension.** The smart constructor accepts `isActive : bool` as a new parameter, preserving the per-module aggregate-invariant (Kind SsKeys disjoint within module). Two existing call sites updated (`CatalogReader.parseModule` / `parseModuleRow`); both read `isActive` from the source.
+4. **Adapter changes.**
+   - **JSON path:** `parseAttribute` reads `isActive` via a new `getOptionalBool` (default true on absence; preserves V1 SQL `ISNULL` semantics). `parseKind` and `parseModule` do the same. The `isActiveOrDefault` helper is no longer used for filtering; the `Seq.filter isActiveOrDefault` calls retire in `parseKind` / `parseModule`.
+   - **Rowset path:** `parseAttributeRow` / `parseKindRow` / `parseModuleRow` populate `IsActive` from the DTO. The `List.filter (fun X -> X.IsActive)` calls retire in `parseKindRow` / `parseModuleRow` / `parseRowsetBundle`.
+   - **ReadSide adapter:** Reconstructed catalog sets `IsActive = true` (deployed schema is intrinsically present; ReadSide reads from SQL Server's `INFORMATION_SCHEMA`, which has no logical activity flag — present tables are operationally active).
+5. **Existing inactive-filter tests invert.** Four tests in `OsmRowsetReaderTests` (`SnapshotRowsets: inactive modules drop at the boundary`, `SnapshotRowsets: inactive kinds drop at the boundary`, `SnapshotRowsets: inactive attributes drop at the boundary`, `slice 2: inactive source attribute drops its reference at the boundary`) update to assert **carry-through with `IsActive = false`**, not silent drop. The tests preserve their names per the false-start documentation discipline (per `DECISIONS 2026-05-13 — Pass return-type codification (session 14)`: the wrong rule is preserved alongside the right one; the test name's session-21 cite stays, marking the supersession).
+
+   The reference-drop test (`slice 2: inactive source attribute drops its reference at the boundary`) earns special treatment: a separated reference is structurally distinct from an inactive attribute. The attribute now carries through (`IsActive = false`); whether its reference also carries through is the next question. **Slice-β disposition:** the reference is still synthesized at parse time from the surviving attribute row, and carries through. The chained reference-drop behavior retires. Downstream emitters can elect to suppress FK-emission against inactive attributes via a future overlay; the IR carries the relationship.
+
+6. **New property tests in `IsActiveLiftTests.fs`.** Two-path coverage (JSON + rowset); both isActive=true and isActive=false carry through; defensive-read absence defaults to `IsActive = true`. Mirrors `DescriptionLiftTests.fs` precedent.
+
+7. **Pillar-9 classification recorded inline in this entry.** Per `DECISIONS 2026-05-15 (late) — Pillar 9`, the slice β DECISIONS amendment cites pillar 9, classifies both dispositions (the superseded and the corrected), and records itself as the first worked example.
+
+### Active deferrals index update
+
+Session-21 was not in the Active deferrals index — the disposition was decided as the resolution of the session-17 OSSYS chapter scope, not deferred. No index row retires. The session-21 entry remains in the DECISIONS log as historical record per the append-only discipline.
+
+The **future Diagnostics-attached audit** named in session-21's bound (`Severity = Info`, `Code = "adapter.osm.inactiveRecordDropped"`) retires unconditionally — the silent drop the audit was guarding becomes a no-op (no records are dropped; nothing to audit). The audit shape may resurface in a future overlay that filters at emit time, but it is no longer a documented adapter bound.
+
+The **physical_isPresentButInactive field** (V1 JSON line 769; named in session-21 as "read but discarded today") remains read but discarded. The flag's referent (logical attribute inactive but physical column present) is now redundant with the per-attribute `IsActive` carriage — `IsActive = false` IS the inactive marker; the physical-presence is encoded structurally by the attribute appearing in the IR at all. Re-open trigger sharpens: only an audit-trail consumer that wants the V1-asserted "physical presence anomaly" surface (rather than V2's "the IR reflects what's physically present") warrants reviving the read.
+
+### Reasoning / consequences
+
+- **Pillar-9 discipline operative in flight.** Slice β was the test case for whether pillar 9 ("the dichotomy is operative AT HARVEST TIME — every transformation site is classified") could be applied to a real harvest decision under the chapter A.0' open scope. The classification surfaced the misclassification cleanly. The session-21 silent drop was an `OperatorIntent` enacted at a `DataIntent` boundary; slice β separates the layers structurally.
+- **Skeleton-overlay separation holds at the IR seam.** With slice β, V2's IR carries V1's complete inventory (DataIntent baseline). Operator filtering decisions (drop inactive, emit only active, etc.) become future overlay registrations against the `IsActive` field, not adapter-time policy enacted as silent code. The skeleton-overlay separation that `L3-CC-Transform-Totality` codifies becomes operative on the IsActive axis specifically.
+- **Selection-as-Filter axis-expansion candidacy is named, not committed.** Per the Q9 expansion provision in `DECISIONS 2026-05-15 (late)`: today's four `OverlayAxis` values are Selection / Emission / Insertion / Tightening. A "filter on operator-meaningful evidence" intent (drop inactive records, drop system records, drop external records, drop records matching X) may warrant a fifth axis under consumer pressure. Slice β names the candidacy; the decision is deferred until N≥2 distinct intents accumulate (two-consumer threshold for primitive extraction).
+- **Test fixture extension via compiler-driven enumeration.** The record-extension empirical-test discipline (chapter 3.2 close generalization) governs the mechanical edit pass. ~200 test-fixture record-literal sites for `Module` / `Kind` / `Attribute` will require `IsActive = true` added; F# field-missing errors enumerate the worklist; no separate Python script needed (per the slice-α precedent in `HANDOFF.md`).
+- **The CDC-silence + L3-CC-Transform-Totality co-equal load-bearing framing strengthens.** Slice β operates the pillar-9 discipline on a real transformation; the discipline's structural enforcement (the bidirectional property tests landing at A.4.7) will retroactively cover slice β's IR widening + adapter retirement. Until A.4.7 lands, the slice-β DECISIONS amendment carries the harvest-dichotomy contract; the property tests' eventual coverage demotes the contract from prose to structural witness.
+- **Forward-signal Tolerance retirement:** `Tolerance.IgnoreModuleInactiveDrop` / `Tolerance.IgnoreEntityInactiveDrop` / `Tolerance.IgnoreAttributeInactiveDrop` were never introduced (session-21's silent drop was decided BEFORE the Tolerance taxonomy crystallized at chapter 4.1.A close arc). No Tolerance entries retire. **A new forward signal opens:** future canary runs may surface V1↔V2 divergence on inactive records (V1's pipeline filters them at SQL-script time per `@OnlyActiveAttributes` etc.; V2 now emits DDL for them). The Tolerance taxonomy may grow an `InactiveDdlIncluded` variant at chapter-4.1.A or chapter-3.1 canary re-baselining; tracked as a chapter-close-ritual follow-up, not part of slice β.
+
+### Cross-references
+
+- `DECISIONS 2026-05-18 (session 21 amendment) — mixed-active fixture surfaces inactive-records boundary` (the entry this amendment supersedes; preserved per append-only).
+- `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification` (the discipline operative on this amendment; this is the first worked example).
+- `DECISIONS 2026-05-15 — Transform registry re-opened: skeleton-overlay separation as L3-CC-Transform-Totality` (the predecessor framing; slice β is the operating disposition the framing anticipated).
+- `CHAPTER_A_0_PRIME_OPEN.md` axis 4 + slice β table entry (the chapter strategic frame this slice operates under).
+- `PRODUCT_AXIOMS.md` L3-S9 (descriptions/IsActive sub-axiom family — IsActive sub-axiom advances toward Bucket A).
+- `PRODUCT_AXIOMS.md` L3-Boundary-NoSilentDrop (completion-criterion sibling; slice β closes one drop-class permanently).
+- `PRODUCT_AXIOMS.md` L3-CC-Transform-Totality (the cross-cutting structural commitment; slice β is operative on the IsActive axis pending A.4.7 structural sweep).
+- `AXIOMS.md` A41 candidate (formal-system underwriting; classification recorded here lands as a registry entry at A.4.7 cash-out).
+- `V2_PRODUCTION_CUTOVER.md` §3.3 (IR-fidelity gap table; IsActive gap retires for entity / attribute levels; module-level adds new coverage previously unexercised).
+- `2026-05-13 — Closed-DU expansion: empirical confirmation` (record-extension empirical-test discipline operating on slice β's mechanical edits).
+- `2026-05-13 — Pass return-type codification (session 14)` (false-start documentation discipline; test names preserve session-21 cites as supersession markers).
+
+---

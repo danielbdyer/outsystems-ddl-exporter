@@ -331,6 +331,12 @@ module ReadSide =
                             // properties pickup. Slice-α scope is OSSYS-
                             // adapter pickup only.
                             Description = None
+                            // Chapter A.0' slice β — ReadSide reconstructs
+                            // from `INFORMATION_SCHEMA`; present columns
+                            // are intrinsically active (the SQL Server
+                            // catalog has no logical activity flag on
+                            // physical columns).
+                            IsActive = true
                         }
 
     /// Format a SQL Server scalar value as the canonical raw
@@ -559,6 +565,10 @@ module ReadSide =
                     Indexes = []
                     // Chapter A.0' slice α — see buildAttribute rationale.
                     Description = None
+                    // Chapter A.0' slice β — ReadSide reconstructs from
+                    // a deployed schema; reconstructed tables are
+                    // intrinsically active.
+                    IsActive = true
                 }
         }
 
@@ -835,6 +845,12 @@ module ReadSide =
                                                         SsKey = mKey
                                                         Name = mName
                                                         Kinds = kindsWithRows
+                                                        // Chapter A.0' slice β — ReadSide
+                                                        // reconstructs from a deployed
+                                                        // schema; the synthesized
+                                                        // "Reconstructed" module is
+                                                        // intrinsically active.
+                                                        IsActive = true
                                                     }
                                                 ]
                                         }

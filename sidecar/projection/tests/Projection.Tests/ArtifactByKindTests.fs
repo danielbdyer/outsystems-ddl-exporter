@@ -49,6 +49,7 @@ let private mkKind (n: string) : Kind =
         References = []
         Indexes = []
         Description = None
+        IsActive = true
     }
 
 let private mkModule (n: string) (kinds: Kind list) : Module =
@@ -56,6 +57,7 @@ let private mkModule (n: string) (kinds: Kind list) : Module =
         SsKey = ssKey (sprintf "OS_MOD_%s" n)
         Name = nm n
         Kinds = kinds
+        IsActive = true
     }
 
 let private mkCatalog (modules: Module list) : Catalog =

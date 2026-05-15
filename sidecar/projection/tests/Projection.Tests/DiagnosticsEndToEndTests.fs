@@ -187,18 +187,18 @@ let private nullabilityCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
               { SsKey        = mandatoryAttributeKey
                 Name         = name "Mandatory"
                 Type         = Text
                 Column       = { ColumnName = "MANDATORY"; IsNullable = true }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
-          References = []; Indexes = []; Description = None }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  } ]
+          References = []; Indexes = []; Description = None; IsActive = true  }
     { Modules = [
         { SsKey = ssKey "OS_MOD_DiagEnd"
           Name  = name "DiagEnd"
-          Kinds = [ sample ] } ] }
+          Kinds = [ sample ]; IsActive = true  } ] }
 
 let private nullabilityProfileWithNullsBeyondBudget : Profile =
     let mandatoryAttributeKey = ssKey "OS_ATTR_DiagEnd_Sample_Mandatory"
@@ -338,8 +338,8 @@ let private fkCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
-          References = []; Indexes = []; Description = None }
+                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  } ]
+          References = []; Indexes = []; Description = None; IsActive = true  }
     let source : Kind =
         { SsKey    = fkSourceEntityKey
           Name     = name "FkSource"
@@ -352,13 +352,13 @@ let private fkCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
               { SsKey        = fkSourceAttrKey
                 Name         = name "TargetId"
                 Type         = Integer
                 Column       = { ColumnName = "TARGET_ID"; IsNullable = true }
                 IsPrimaryKey = false
-                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
+                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  } ]
           References = [
               { SsKey           = fkRefKey
                 Name            = name "FkSource_Target"
@@ -367,11 +367,11 @@ let private fkCatalog : Catalog =
                 OnDelete        = NoAction
                 IsUserFk        = false } ]
           Indexes = []
-          Description = None }
+          Description = None; IsActive = true  }
     { Modules = [
         { SsKey = ssKey "OS_MOD_FkEnd"
           Name  = name "FkEnd"
-          Kinds = [ source; target ] } ] }
+          Kinds = [ source; target ]; IsActive = true  } ] }
 
 let private fkProfileWithOrphans : Profile =
     let probe =
@@ -498,7 +498,7 @@ let ``end-to-end: ForeignKey emits keep-reason and success-with-caveat entries s
           Type         = Integer
           Column       = { ColumnName = "STRICT_TARGET_ID"; IsNullable = true }
           IsPrimaryKey = false
-          IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+          IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
     let augmentedSource =
         match fkCatalog.Modules.[0].Kinds |> List.tryFind (fun k -> k.SsKey = fkSourceEntityKey) with
         | Some k ->

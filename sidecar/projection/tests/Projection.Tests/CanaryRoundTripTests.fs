@@ -81,6 +81,7 @@ let private programmaticUserCatalog : Catalog =
             Scale = None
             IsIdentity = false
             Description = None
+            IsActive = true
         }
     let userKind : Kind =
         {
@@ -99,12 +100,14 @@ let private programmaticUserCatalog : Catalog =
             References = []
             Indexes = []
             Description = None
+            IsActive = true
         }
     let userModule : Module =
         {
             SsKey = ssKeySafe "OS_MOD_M3"
             Name = nameSafe "M3"
             Kinds = [ userKind ]
+            IsActive = true
         }
     { Modules = [ userModule ] }
 

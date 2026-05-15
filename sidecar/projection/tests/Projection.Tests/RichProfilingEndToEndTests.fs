@@ -63,8 +63,8 @@ let private parent : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
-      References = []; Indexes = []; Description = None }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  } ]
+      References = []; Indexes = []; Description = None; IsActive = true  }
 
 let private child : Kind =
     { SsKey    = childKindKey
@@ -77,12 +77,12 @@ let private child : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
           { SsKey        = childParentFkKey
             Name         = mkName "ParentId"
             Type         = Integer
             Column       = { ColumnName = "PARENTID"; IsNullable = true }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  } ]
       References = [
           { SsKey           = childToParentRefKey
             Name            = mkName "Parent"
@@ -91,7 +91,7 @@ let private child : Kind =
             OnDelete        = NoAction
             IsUserFk        = false } ]
       Indexes = []
-      Description = None }
+      Description = None; IsActive = true  }
 
 let private country : Kind =
     { SsKey    = countryKindKey
@@ -104,19 +104,19 @@ let private country : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
           { SsKey        = countryNameKey
             Name         = mkName "Name"
             Type         = Text
             Column       = { ColumnName = "NAME"; IsNullable = false }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
-      References = []; Indexes = []; Description = None }
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  } ]
+      References = []; Indexes = []; Description = None; IsActive = true  }
 
 let private endToEndCatalog : Catalog =
     { Modules = [
         { SsKey = mkKey "OS_MOD_R9"
           Name  = mkName "RichProfiling"
-          Kinds = [ parent; child; country ] } ] }
+          Kinds = [ parent; child; country ]; IsActive = true  } ] }
 
 // ---------------------------------------------------------------------------
 // V1-shaped profile snapshot — null/duplicate/orphan evidence only,
