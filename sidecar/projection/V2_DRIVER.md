@@ -66,6 +66,7 @@ Not every axis V2 owns has the same failure-mode cost. Provable correctness appl
 | Axis | Failure mode if wrong | Primary property test | Verification depth |
 |---|---|---|---|
 | **CDC silence on idempotent redeploy** | Spurious `cdc.change_tables` records corrupt CDC-dependent features silently in production | "Deploying the same insert script twice produces zero records in `cdc.change_tables` for every CDC-tracked table" | **Highest.** Per-CDC-table coverage. Multi-redeploy property. CI gate: red on any non-zero. |
+| **Data-intent / operator-intent separation (Transform Totality; pillar 9)** | Skeleton-overlay drift in three sub-modes: (1) a transformation classified `DataIntent` when it's actually `OperatorIntent` (policy-driven mutation leaks into the skeleton); (2) a registered `OperatorIntent` never fires (dead overlay; mis-registration); (3) a v1 transformation harvested without classification (silent inclusion). Downstream: A18 leaks unnoticed; CDC silence canary asserted against unenumerated baseline (canary deliverable hollows); v1↔v2 disagreements become unattributable; the laboratory-quality scaling precondition fails. | **Bidirectional property tests:** (a) skeleton-purity — `Compose.runWithSkeleton` emits zero `OperatorIntent` LineageEvents; (b) overlay-exercise — every registered `OperatorIntent` transformation fires in canary; (c) totality coverage — every transformation site is registered; (d) harvest-classification — every Tolerance entry references a `NotImplementedInV2` registry entry. | **Highest.** Co-equal with CDC silence as load-bearing structural enforcement. The **fourth cross-cutting concern** alongside Lineage / Diagnostics / Bench — the structural-evidence layer that catches skeleton/overlay drift at scale. Five stage seams (Adapter / Pass / OrderingPolicy / Emitter / Pipeline); strongly-typed canonical surface (`RegisteredTransform<'In, 'Out>` carries metadata AND the transformation-function definition itself; no parallel enumeration). Sibling to pillar 8 (naming drift), pillar 7 amendment (string-composition drift), and text-builder-as-first-instinct (typed-AST-bypass drift): four meta-disciplines, four classes of failure that scale with codebase growth, each enforced bidirectionally by structural tests. See `V2_PRODUCTION_CUTOVER.md` §6.4.7 (A.4.7; ~3 weeks; full-sweep refactor); L3-CC-Transform-Totality in `PRODUCT_AXIOMS.md`; pillar 9 in `DECISIONS 2026-05-15 (late)`. |
 | **Schema (SSDT DDL)** | Production deploy fails or deploys wrong shape | T11 structural (every Π's keyset = `Catalog.allKinds.SsKey set`) + PhysicalSchema round-trip empty + parse-roundtrip + byte-determinism | High. Mostly shipped (chapter 3.1 substantive deliverable). |
 | **Data (static populations + seeds + bootstrap)** | Seed data missing, duplicated, or topologically out-of-order causing FK violations | Idempotent redeploy produces zero net changes; topological ordering preserves FK validity | High. Substrate ready (chapter 3.1 Bulk + RowDigester); emitters chapter 4.1.B. |
 | **User FK reflow** | Production reports break or data loss when User remapping is incomplete | Every CreatedBy/UpdatedBy FK in target environment resolves to a valid target User; per-strategy coverage (ByEmail, BySsKey, ManualOverride, FallbackToSystemUser) | High. Chapter 4.2. |
@@ -76,7 +77,18 @@ Not every axis V2 owns has the same failure-mode cost. Provable correctness appl
 | **Static populations** | Seed data missing or duplicated | Idempotent redeploy produces zero net changes; rows hash-equal to V1 emission modulo named tolerances | Medium. Chapter 4.1.B + PhysicalSchema.Rows axis (chapter 3.1 shipped). |
 | **Operational diagnostics** | Operator can't diagnose post-cutover issues | Per-channel routing property: each entry routes to correct channel per severity; Lineage trail audit completes | Lower. Chapter 4.3. |
 
-The CDC-silence property test is the **highest-leverage single deliverable** in the entire chapter sequence. It catches the most catastrophic silent-failure mode the project explicitly worries about. Build it first inside chapter 4.1.B; gate the chapter close on it.
+The CDC-silence property test is the **highest-leverage single deliverable for the catastrophic-silent-failure axis**. The transform-registry / data-intent-operator-intent separation is its **load-bearing structural sibling** — A18 amended is the Π-side commitment forbidding `Policy` in emitters (by structural type); A41 (TransformRegistry totality + bidirectional property tests) is the Pass-side commitment enumerating every `OperatorIntent` site (by structural type + property test). Together they carry the operator's promise ("ask for the vanilla projection and I get a deterministic factual baseline; every override I apply is named, classified, and recorded") as a *type-witnessed bidirectional contract*, not a one-sided discipline. Without the registry, CDC silence is asserted against an unenumerated baseline; the canary stops being airtight; the laboratory-quality scaling precondition fails.
+
+The registry is the **fourth structural-evidence-layer concern** — completing the cross-cutting set that V2's algebra makes load-bearing:
+
+| Concern | Where it fires | Primitive | Discipline enforcement |
+|---|---|---|---|
+| **Lineage** | Every decision | `Lineage<'a>` writer + `LineageEvent` | A24/A25 + writer-fidelity discipline |
+| **Diagnostics** | Every findable observation | `Diagnostics<'a>` writer + routing | Channel-routing convention |
+| **Bench** | Every loop / hot path | `Bench.scope` / `iterDo` / `streamProbe` | Perf-gate + iterator-logging discipline |
+| **TransformRegistry** | Every classified transformation site | `RegisteredTransform<'In, 'Out>` + 5-stage `StageBinding` | Bidirectional property tests + harvest-classification (pillar 9) |
+
+Build the registry under A.4.7 (post-A.0' close; ~3 weeks; full-sweep retroactive refactor of every existing pass module + adapter rules + emitter strategies); gate the workstream close on the bidirectional `TransformRegistryCompletenessTests`. The A.4.7-prelude small slice (during or just after A.0') lands `LineageEvent.Classification` field so events self-classify before the full traversal refactor.
 
 ---
 
@@ -158,6 +170,20 @@ Several backlog items are **free corollaries** of foundation work — they ship 
 | V1 sunset per environment | Fallback ladder DECISIONS entry + per-env quotient configuration (Tolerance taxonomy from chapter 4.1.A) | L9 — YAML edit per environment; sunset begins after cutover+30 + one full schema-evolution cycle |
 
 **Implication:** the backlog's ~375 items overstate the *implementation* surface. After Stage 0 + chapters 1–3.7, the actual remaining V2-driver implementation surface is ~250 items; the rest are inherited or free corollaries.
+
+### V1-soak debt lane (v1-side PRs that accelerate Phase A.6)
+
+Three v1-trunk fixes that reduce false-positive noise during Phase A.6 differential testing (V1 ≈ V2 on real workload). Each one removes a class of disagreement V2 would otherwise have to absorb as a Tolerance entry or attribute as a V1 bug at canary time. **Sequenced as v1-side PRs against the v1 trunk; not v2 work.** The lane sits in V2_DRIVER (not in V1's roadmap) because the value of fixing them is felt during V2 soak, not during V1 standalone operation. See `V2_PRODUCTION_CUTOVER.md` §13.6 for the full rationale connecting each vector to Phase A.6 / Phase B preconditions.
+
+| # | Vector | Estimated effort | Phase-A.6 leverage | Status |
+|---|---|---|---|---|
+| **V1.1** | **EntityFilters wiring** — extend `ModuleEntityFilterOptions` (currently wired only in `SqlDynamicEntityDataProvider`) to `SqlModelExtractionService` + `SqlDataProfiler` + validation scope, so V1's metadata fetch and profiling respect the same selection V2 does. | 0.5-1 week | High — eliminates "V1 over-fetches" tolerance class | un-started |
+| **V1.2** | **Global topological sort for StaticSeeds** — fix `BuildSsdtStaticSeedStep` to sort across all categories (static + regular) then filter, matching the pattern `BuildSsdtBootstrapSnapshotStep` already uses correctly. Cross-category FKs (static→regular, regular→static) currently violate constraints in V1's StaticSeeds output. | 0.5 week | High — removes "V1 emits FK-broken seed output" from the disagreement class | un-started |
+| **V1.3** | **DatabaseSnapshot dedup** — consolidate the three independent OSSYS_* fetch paths (`SqlModelExtractionService` / `SqlDataProfiler` / `SqlDynamicEntityDataProvider`) into a single snapshot; eliminates 2-3x redundant queries; stabilizes V1 manifest output under concurrent extraction or mid-call schema drift. | 1 week | Medium-high — reduces variability in V1 manifest output that Phase B (V2 owning extraction) would otherwise inherit | un-started |
+
+**Provenance.** These three vectors originate from a v1-refactor proposal (`docs/architecture/entity-pipeline-unification-v2.md`) authored before V2's algebraic frame was established. The full document is a v1-side modernization plan, not a V2 plan; this lane surfaces only the highest-leverage items whose payoff is felt during V2 soak.
+
+**Operating discipline.** Each vector is small, surgical, and reversible. Owner: V1 maintainers under V1 governance. Exit gate: all three landed before Phase A.6 begins, OR treated as named Tolerance entries until they land. **NOT load-bearing for V2-driver KPI directly** — the KPI tracks V2-axis property tests; V1-side fixes are accelerators, not deliverables. If a v1-side PR doesn't land, V2 continues; the cost is paid as tolerance churn during soak.
 
 ### Reading guide for this backlog
 
