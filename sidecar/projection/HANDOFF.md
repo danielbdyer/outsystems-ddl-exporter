@@ -4,7 +4,61 @@ To the next-chapter agent. Read this before anything else in the V2 sidecar. It 
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
 
-## 2026-05-12 — V2 cutover plan + verifiability-triangle audit landed (read before resuming chapter work)
+## 2026-05-12 — Final handoff (post-A.7.1; PR #538 active)
+
+**PR / branch / baseline.** Pull request: [#538](https://github.com/danielbdyer/outsystems-ddl-exporter/pull/538). Branch: `claude/audit-v1-v2-sidecar-7Ifij`. Subsequent commits to this branch update the PR. **Test baseline: 1128 / 1128 passing** (1121 + 7 new atomic-write property tests; zero regressions; canary excluded from this baseline as usual). All slices below ship clean under `TreatWarningsAsErrors=true`.
+
+**Reading order for an agent picking this up.** Read in this order, top-down:
+
+1. **`AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` Part I (framing) + Part IX (campaigns)** — the methodology and the implementation plan. ~150 lines total.
+2. **`V2_PRODUCTION_CUTOVER.md`** Draft 3 — the canonical plan-of-record with axiom-tagged workstreams. Skim §1 (five Draft-3 insights), §5 (composition algebra), §12 (per-axiom delivery matrix). ~994 lines.
+3. **`PRODUCT_AXIOMS.md`** — the L3 axiom catalog; constitutional sibling to `AXIOMS.md`. Reference material.
+4. The relevant audit-doc Part IV / Part VI section for the slice you're picking up.
+
+Then the relevant slice-specific files. Do not start coding without reading at least #1 + the §12 row for the axioms your slice operationalizes.
+
+**Two operator decisions locked in this session:**
+- **Q14 — Campaign A sequencing:** atomic emission first. **Done at A.7.1 (commit `4e3d944`).**
+- **Q15 — Axiom-naming convention:** `L3-Boundary-*` namespace in `PRODUCT_AXIOMS.md`; `AXIOMS.md` A41+ stays reserved for algebra-interior extensions. **Codified in `PRODUCT_AXIOMS.md` Group Boundary.**
+
+**What shipped this session, in commit order:**
+
+| Commit | Slice | Axioms promoted (D → A or B → A) |
+|---|---|---|
+| `2ab3a8a` → `143a885` | Cutover plan Drafts 1 → 3 (5 commits) | (planning; no code) |
+| `491fbb5` | Verifiability-triangle audit doc | (audit; no code) |
+| `72ff8a3` | `PRODUCT_AXIOMS.md` sibling + 6 cross-refs | (doc system; no code) |
+| `93468a3` | A.0 Config + D9 guardrail | L3-X9, L3-C8 |
+| `df18bbf` | A.1 `emit --config` bridge | L3-X9 (CLI) |
+| `502592f` | A.4 TableRename + RenameBinding + Compose.runWithConfig | L3-I1, L3-I7, L3-C7 (**R11 dissolved**) |
+| `9d578cc` | Slice 1 PhysicallyRenamed variant | (L3-I1 audit-trail typed) |
+| `4e3d944` | A.7.1 atomic emission | **L3-Boundary-AtomicEmission (first formalized boundary axiom)** |
+
+**The next-most-ready slice: A.7.2 — `L3-Boundary-ManifestMatchesDisk`.** Dependencies satisfied (A.7.1 just shipped). Scope: change `ManifestEmitter` to consume the path list returned by `Compose.write` rather than the in-memory `Outputs`; add a property test that every manifest entry exists on disk and every file on disk has a manifest entry post-write. Small surgical change; estimated under 1 day. See `V2_PRODUCTION_CUTOVER.md` §6.7 (workstream A.7.2 spec) + `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` Part IX Campaign A.
+
+**Alternative starts** if A.7.2 is too small or you prefer parallel work:
+- **A.4.5 — Catalog cross-field invariants batch (Campaign B).** Mechanically simple, very high leverage. Extends `Catalog.create` with 7 cross-field invariants (IsIdentity⇒¬IsNullable, IsPrimaryKey⇒IsUnique, Type/Length/Precision/Scale coherence, Length≤8000, PK ordering, single Static modality, physical-name uniqueness). One PR, ~2 weeks, promotes 8 new L3-Catalog-* axioms to Bucket A. See `V2_PRODUCTION_CUTOVER.md` §6.4.5 + audit Part VI.2.
+- **A.0' — IR fidelity workstream (Campaign A.2 prerequisite).** Largest single body of work (~3-4 weeks, 5-7 slices). Promotes 8 Tier-1 unnamed axioms (L3-S4 through L3-S10 + L3-I10 + L3-CC4) when complete. Read `V2_PRODUCTION_CUTOVER.md` §3.3 (gap table) + §6.0' (workstream spec).
+
+**Outstanding (unblocked but operator-side):**
+- **R1 — Operator's "document of key evolutions"** (focuses on UAT-users; reshapes scope). Until it lands, hold UAT-users decisions; don't pre-scope speculatively. See `V2_PRODUCTION_CUTOVER.md` §13.1.
+- Q2 (Argu vs hand-rolled CLI parser), Q3 (legacy positional backward-compat), Q4 (Profile JSON shape coupling), Q7 (sampling thresholds): all revisable during the slices that touch them; don't escalate.
+
+**Load-bearing methodology** (per `DECISIONS 2026-05-12 — Verifiability-triangle audit methodology` + `CLAUDE.md` operating-disciplines row):
+
+- The L1↔L2↔L3 verifiability triangle is the lens for all subsequent structural work. Every workstream carries an axiom-promotion delta (`Δ : axiom_id × bucket_before → bucket_after`); cutover criteria are axiom-bucket-witnessed; campaigns are cross-cutting tags, not parallel phases.
+- Per-PR L3 review for PRs touching boundary code or adding config/CLI surface: "which L3 axioms does this touch; are they Bucket A or below; does this strengthen or weaken the structural commitment?"
+- Chapter-close L3 step: every chapter close adds a one-paragraph audit check naming axioms touched and new Bucket-D gaps introduced.
+- Annual re-audit refresh.
+
+**Deferred-with-trigger** (unchanged):
+- `LiveOssysConnection` (chapter 3.2 forward signal) remains reserved.
+- Lifecycle temporal axis named in A6-amended but not operationalized (placeholder Group Lifecycle in `PRODUCT_AXIOMS.md`).
+- 4 IR concepts deliberately NOT lifted in A.0' (OriginalName / ExternalDatabaseType / per-column IndexColumnDirection / IsPlatformAuto) per `V2_PRODUCTION_CUTOVER.md` §11.5.
+
+**One thing to internalize before coding:** *campaign tags are cross-cutting, not sequential.* A.7.1 was Campaign A. A.4.5 is Campaign B. The next slice you pick up will likely carry a campaign tag too. The campaign isn't a phase to "finish before moving on" — it's a structural-commitment class that the slice belongs to. Read the §12 delivery matrix entry for whatever axioms your slice operationalizes; that tells you the campaign membership.
+
+## 2026-05-12 — V2 cutover plan + verifiability-triangle audit landed (preserved; some items now resolved in the section above)
 
 **Branch:** `claude/audit-v1-v2-sidecar-7Ifij`. **Status:** session-driven, not chapter-driven; pivot from chapter-5 work into a product-readiness audit + structural-commitments campaign plan. Test baseline holds (1121 tests passing post-Slice-1 PhysicallyRenamed).
 

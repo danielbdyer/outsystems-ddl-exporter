@@ -775,22 +775,9 @@ Numbered for stable reference; resolved questions retained for traceability.
 
 **Q13.** **MigrationDependencies PK edge cases (A.3).** Resolved at Draft 2.1: (i) structured error pointing to observed set; (ii) structured error on identity overflow; (iii) deterministic per canonical sort (D12). **Closed.**
 
-**Q14 (new in Draft 3).** **Campaign A sequencing within Phase A.** Two options:
-- (a) Atomic emission (A.7.1) first — narrowly scoped (≤2 days), unblocks manifest-matches-disk (A.7.2 depends on the transactional `Compose.write` shape).
-- (b) CDC silence (A.8) first — V2_DRIVER.md's "highest-leverage single deliverable"; co-located with chapter 4.1.B already in flight.
+**Q14 (new in Draft 3).** **Campaign A sequencing within Phase A.** **Resolved 2026-05-12**: option (a) — atomic emission first. Shipped at A.7.1 (commit `4e3d944`); `L3-Boundary-AtomicEmission` promoted from Bucket D to Bucket A. The structural pattern (staging-then-replace via `Compose.write` returning `Result<string list>`) is now established for A.7.2 (manifest-matches-disk) to consume. **Closed.**
 
-**Recommendation:** (a). A.7.1 is small enough to ship in a single PR; the structural pattern (write-temp → fsync → atomic-rename) is generally useful and unblocks A.7.2. CDC silence at A.8 is *already* on the critical path through chapter 4.1.B; making A.7.1 the campaign-A starter doesn't slow it down.
-
-**Outstanding.**
-
-**Q15 (new in Draft 3).** **Axiom-naming convention.** When Campaign A's four blockers gain formal L2 names, do they:
-- (a) Extend `A41`/`A42`/... in `AXIOMS.md`? The codebase's existing numbering, but they're boundary axioms, not algebra-interior axioms.
-- (b) Open a separate `L3-Boundary-*` namespace in `PRODUCT_AXIOMS.md` and reference (not import) from `AXIOMS.md`? Cleaner separation but creates a heterogeneous axiom-ID landscape.
-- (c) Open new axiom numbering in `AXIOMS.md` reserved for boundary-class (e.g., `A100+` or `B1+`)? A nominal middle ground.
-
-**Recommendation:** (b). The boundary axioms are operator-facing, not algebra-interior; they belong in `PRODUCT_AXIOMS.md`. `AXIOMS.md`'s A41+ surface should stay reserved for genuine algebra extensions (Lifecycle when it lands; A37 erasure when promoted; etc.). Each L3-Boundary-* axiom cross-references the test that verifies it; this is the canonical path.
-
-**Outstanding.**
+**Q15 (new in Draft 3).** **Axiom-naming convention.** **Resolved 2026-05-12**: option (b) — separate `L3-Boundary-*` namespace in `PRODUCT_AXIOMS.md`. `AXIOMS.md` A41+ surface stays reserved for algebra-interior extensions (Lifecycle when it lands; A37 erasure when promoted). Boundary axioms cite L2 axioms but do not extend the L2 surface. First instance: `L3-Boundary-AtomicEmission` in `PRODUCT_AXIOMS.md` Group Boundary. **Closed.**
 
 ---
 
