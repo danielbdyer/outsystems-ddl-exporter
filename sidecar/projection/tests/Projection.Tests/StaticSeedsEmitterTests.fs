@@ -99,7 +99,7 @@ let private mkCatalog (kinds: Kind list) : Catalog =
         { SsKey = mkKey ["TestModule"]
           Name  = mkName "TestModule"
           Kinds = kinds; IsActive = true  }
-    { Modules = [ m ]; Triggers = []  }
+    { Modules = [ m ]; Triggers = []; Sequences = []  }
 
 /// Whitespace-normalize a rendered SQL string so substring assertions
 /// match across formatter variations. ScriptDom's `Sql160ScriptGenerator`

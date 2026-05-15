@@ -116,7 +116,7 @@ let private endToEndCatalog : Catalog =
     { Modules = [
         { SsKey = mkKey "OS_MOD_R9"
           Name  = mkName "RichProfiling"
-          Kinds = [ parent; child; country ]; IsActive = true  } ]; Triggers = []  }
+          Kinds = [ parent; child; country ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
 
 // ---------------------------------------------------------------------------
 // V1-shaped profile snapshot — null/duplicate/orphan evidence only,

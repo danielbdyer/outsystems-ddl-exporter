@@ -152,7 +152,7 @@ let private microFkCatalog : Catalog =
     { Modules = [
         { SsKey = mkKey "OS_MOD_Test"
           Name  = mkName "Test"
-          Kinds = [ parentKind; childKind ]; IsActive = true  } ]; Triggers = []  }
+          Kinds = [ parentKind; childKind ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
 
 // ---------------------------------------------------------------------------
 // V1 contract — the fixture round-trips into V2's Profile shape.

@@ -53,7 +53,7 @@ let ``CatalogDiff.between (a, a) — every key in Unchanged`` () =
 [<Fact>]
 let ``CatalogDiff.between empty source vs target — every target key in Added`` () =
     let target = sampleCatalog
-    let empty = Catalog.create [] [] |> Result.value
+    let empty = Catalog.create [] [] [] |> Result.value
     let diff = CatalogDiff.between empty target |> mustOk
     Assert.Equal<Set<SsKey>>(kindKeys target, CatalogDiff.added diff)
     Assert.Empty(CatalogDiff.removed diff)
@@ -64,7 +64,7 @@ let ``CatalogDiff.between empty source vs target — every target key in Added``
 [<Fact>]
 let ``CatalogDiff.between source vs empty target — every source key in Removed`` () =
     let source = sampleCatalog
-    let empty = Catalog.create [] [] |> Result.value
+    let empty = Catalog.create [] [] [] |> Result.value
     let diff = CatalogDiff.between source empty |> mustOk
     Assert.Equal<Set<SsKey>>(kindKeys source, CatalogDiff.removed diff)
     Assert.Empty(CatalogDiff.added diff)
@@ -137,7 +137,7 @@ let ``CatalogDiff is invariant under module-list permutation``
     (modules: Module list) =
     let original = sampleCatalog
     let permuted =
-        Catalog.create (original.Modules |> List.rev) original.Triggers
+        Catalog.create (original.Modules |> List.rev) original.Triggers original.Sequences
         |> Result.value
     let diff = CatalogDiff.between original permuted |> mustOk
     // Permuting modules preserves the kind-set; every SsKey is in

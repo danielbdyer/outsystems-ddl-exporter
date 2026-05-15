@@ -295,7 +295,8 @@ let ``L3-S4 slice γ: rowset path carries a single trigger to Catalog.Triggers``
           Attributes = [ idAttrRow ]
           References = []
           Triggers   = [ triggerRow "TR_USER_AUDIT" false
-                                    "CREATE TRIGGER TR_USER_AUDIT ON dbo.OSUSR_APPCORE_USER AFTER UPDATE AS BEGIN END" ] }
+                                    "CREATE TRIGGER TR_USER_AUDIT ON dbo.OSUSR_APPCORE_USER AFTER UPDATE AS BEGIN END" ]
+          Sequences  = [] }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok catalog ->
@@ -313,7 +314,8 @@ let ``L3-S4 slice γ: rowset path preserves IsDisabled and Definition verbatim``
           Kinds      = [ userKindRow ]
           Attributes = [ idAttrRow ]
           References = []
-          Triggers   = [ triggerRow "TR_USER_VALIDATE" true definition ] }
+          Triggers   = [ triggerRow "TR_USER_VALIDATE" true definition ]
+          Sequences  = [] }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok catalog ->
@@ -328,7 +330,8 @@ let ``L3-S4 slice γ: rowset path links trigger to its owning Kind via KindSsKey
           Kinds      = [ userKindRow ]
           Attributes = [ idAttrRow ]
           References = []
-          Triggers   = [ triggerRow "TR_USER_AUDIT" false "..." ] }
+          Triggers   = [ triggerRow "TR_USER_AUDIT" false "..." ]
+          Sequences  = [] }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok catalog ->
@@ -345,7 +348,8 @@ let ``L3-S4 slice γ: rowset path carries multiple triggers per Kind preserving 
           References = []
           Triggers   =
             [ triggerRow "TR_USER_AUDIT"      false "AUDIT body"
-              triggerRow "TR_USER_VALIDATE"   true  "VALIDATE body" ] }
+              triggerRow "TR_USER_VALIDATE"   true  "VALIDATE body" ]
+          Sequences  = [] }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok catalog ->
@@ -364,7 +368,7 @@ let ``L3-S4 slice γ: rowset path with empty TriggerRow list yields empty Catalo
           Kinds      = [ userKindRow ]
           Attributes = [ idAttrRow ]
           References = []
-          Triggers   = [] }
+          Triggers   = []; Sequences = [] }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok catalog ->
@@ -388,7 +392,8 @@ let ``L3-S4 slice γ: JSON and rowset paths agree on the same trigger shape`` ()
             [ triggerRow
                 "TR_USER_AUDIT"
                 false
-                "CREATE TRIGGER [dbo].[TR_USER_AUDIT] ON [dbo].[OSUSR_APPCORE_USER] AFTER UPDATE AS BEGIN INSERT INTO AUDIT VALUES ('user updated') END" ] }
+                "CREATE TRIGGER [dbo].[TR_USER_AUDIT] ON [dbo].[OSUSR_APPCORE_USER] AFTER UPDATE AS BEGIN INSERT INTO AUDIT VALUES ('user updated') END" ]
+          Sequences  = [] }
     let rowsetResult = parseSync (CatalogReader.SnapshotRowsets rowsetBundle)
     match jsonResult, rowsetResult with
     | Ok jsonCatalog, Ok rowsetCatalog ->

@@ -860,6 +860,15 @@ module ReadSide =
                                             // OSSYS adapter populates Triggers; ReadSide
                                             // defaults to [] today.
                                             Triggers = []
+                                            // Chapter A.0' slice δ — ReadSide sequence
+                                            // reconstruction deferred (sys.sequences
+                                            // join not yet wired; cash-out gates on
+                                            // the same chapter 4.1.A slice 8 / §6.4.7
+                                            // territory as triggers). OSSYS adapter
+                                            // populates Sequences from V1's top-level
+                                            // `sequences` JSON array; ReadSide defaults
+                                            // to [] today.
+                                            Sequences = []
                                         }
             with
             | ex ->

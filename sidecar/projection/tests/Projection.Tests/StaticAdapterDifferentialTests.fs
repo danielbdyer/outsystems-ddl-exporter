@@ -81,7 +81,7 @@ let private cityCatalog : Catalog =
     { Modules = [
         { SsKey = modKey "Cities"
           Name  = mkName "Cities"
-          Kinds = [ cityKind ]; IsActive = true  } ]; Triggers = []  }
+          Kinds = [ cityKind ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
 
 let private extractCityRows (c: Catalog) : StaticRow list =
     Catalog.tryFindKind cityKey c

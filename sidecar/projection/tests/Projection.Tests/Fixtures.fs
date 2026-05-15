@@ -129,10 +129,11 @@ let module' (ssKey: SsKey) (n: Name) : Module =
       IsActive = true }
 
 /// Build a `Catalog` from a list of modules with sensible defaults.
-/// Defaults: Triggers = [].
+/// Defaults: Triggers = []; Sequences = [].
 let catalog (modules: Module list) : Catalog =
-    { Modules  = modules
-      Triggers = [] }
+    { Modules   = modules
+      Triggers  = []
+      Sequences = [] }
 
 // ---------------------------------------------------------------------------
 // Customer

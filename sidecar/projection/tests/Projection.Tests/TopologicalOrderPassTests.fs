@@ -397,7 +397,7 @@ let ``Tarjan: two disjoint 2-cycles produce two SCCs`` () =
     let d = kindWithFk "D" "RefD" (mkKey "C")
     let twoCycles : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c; d ]; IsActive = true  } ]; Triggers = []  }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c; d ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
     let result = TopologicalOrderPass.run twoCycles
     Assert.Equal(2, result.Value.Cycles.Length)
     // SCCs are sorted by smallest member; A-B comes before C-D.
@@ -487,7 +487,7 @@ let ``V1 contract: asymmetric-2-cycle auto-resolves via Weak edge`` () =
     let audit  = kindWithRef "Audit"  "AuditFkToParent" (mkKey "Parent") false NoAction // Other
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true  } ]; Triggers = []  }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
     let result = TopologicalOrderPass.run cyclic
     // Resolver succeeds — Mode is Topological, not Alphabetical.
     Assert.Equal(Topological, result.Value.Mode)
@@ -512,7 +512,7 @@ let ``resolver: 2-cycle with no Weak edges remains unresolved`` () =
     let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") false NoAction
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true  } ]; Triggers = []  }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
     let result = TopologicalOrderPass.run cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
@@ -527,7 +527,7 @@ let ``resolver: 2-cycle with two Weak edges remains unresolved`` () =
     let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") true NoAction
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true  } ]; Triggers = []  }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
     let result = TopologicalOrderPass.run cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
@@ -541,7 +541,7 @@ let ``resolver: 3-cycle remains unresolved (current resolver handles 2-cycles on
     let c = kindWithRef "C" "CtoA" (mkKey "A") true NoAction
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c ]; IsActive = true  } ]; Triggers = []  }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
     let result = TopologicalOrderPass.run cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
@@ -557,7 +557,7 @@ let ``resolver: Cascade edges are never broken`` () =
     let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") false NoAction
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true  } ]; Triggers = []  }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
     let result = TopologicalOrderPass.run cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
@@ -572,7 +572,7 @@ let ``resolver: resolved cycles still appear in Cycles for audit`` () =
     let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") true NoAction
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true  } ]; Triggers = []  }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
     let result = TopologicalOrderPass.run cyclic
     Assert.Equal(Topological, result.Value.Mode)
     Assert.NotEmpty(result.Value.Cycles)
@@ -603,7 +603,7 @@ let ``A23: events carry pass version and name`` () =
 
 [<Fact>]
 let ``empty catalog produces empty TopologicalOrder`` () =
-    let empty : Catalog = { Modules = []; Triggers = []  }
+    let empty : Catalog = { Modules = []; Triggers = []; Sequences = []  }
     let result = TopologicalOrderPass.run empty
     Assert.Equal(Topological, result.Value.Mode)
     Assert.Empty(result.Value.Order)

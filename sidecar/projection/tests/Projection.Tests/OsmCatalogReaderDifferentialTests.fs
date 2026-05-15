@@ -146,7 +146,7 @@ let private expectedCatalog : Catalog =
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ userKind ]; IsActive = true  } ]; Triggers = []  }
+          Kinds = [ userKind ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
 
 // ---------------------------------------------------------------------------
 // Parser invocation — async at the boundary, sync-await for tests.
@@ -383,7 +383,7 @@ let private expectedReferenceCatalog : Catalog =
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ accountKind; userKind ]; IsActive = true  } ]; Triggers = []  }
+          Kinds = [ accountKind; userKind ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
 
 [<Fact>]
 let ``differential: V1 reference-bearing fixture parses into a Catalog with the expected V2 Reference`` () =
@@ -513,7 +513,7 @@ let private expectedExternalCatalog : Catalog =
     { Modules = [
         { SsKey = extBillingModuleKey
           Name  = mkName "ExtBilling"
-          Kinds = [ billingAccount ]; IsActive = true  } ]; Triggers = []  }
+          Kinds = [ billingAccount ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
 
 [<Fact>]
 let ``differential: V1 external-entity fixture parses with Origin = ExternalViaIntegrationStudio`` () =
@@ -739,7 +739,7 @@ let private expectedMixedActiveCatalog : Catalog =
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ activeEntity; retiredEntity ]; IsActive = true  } ]; Triggers = []  }
+          Kinds = [ activeEntity; retiredEntity ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
 
 [<Fact>]
 let ``differential: V1 mixed-active fixture carries inactive records through to IR (slice β supersedes session 21 silent drop)`` () =
@@ -1005,7 +1005,7 @@ let private expectedIndexCatalog : Catalog =
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ userKind ]; IsActive = true  } ]; Triggers = []  }
+          Kinds = [ userKind ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
 
 [<Fact>]
 let ``differential: V1 index-bearing fixture parses with PK + unique + non-unique-with-include indexes`` () =
@@ -1138,7 +1138,7 @@ let private expectedStaticEntityCatalog : Catalog =
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ countryKind ]; IsActive = true  } ]; Triggers = []  }
+          Kinds = [ countryKind ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
 
 [<Fact>]
 let ``differential: V1 static-entity fixture parses with Modality = [Static []]`` () =

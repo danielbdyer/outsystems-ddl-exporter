@@ -206,6 +206,31 @@ module CatalogReader =
             TriggerDefinition : string
         }
 
+    /// V1 sequence row — schema-scoped, not entity-scoped. Mirrors
+    /// V1's `Osm.Domain.Model.SequenceModel` shape (per
+    /// `SequenceModel.cs`). Chapter A.0' slice δ extension; V1's
+    /// current SQL extraction does not surface sequences (V1's
+    /// `ModelDeserializerFacade.cs:72` emits `ImmutableArray
+    /// <SequenceModel>.Empty` on the SQL path) — the V1 sequence
+    /// surface today flows through the JSON path only. V2's rowset
+    /// bundle adds this DTO for symmetry with the JSON path: future
+    /// rowset extraction (an OSSYS deployment that joins `sys.sequences`
+    /// at extract time, or a DACPAC reader) populates it through this
+    /// shape rather than gaining a new surface.
+    type SequenceRow =
+        {
+            Schema          : string
+            SequenceName    : string
+            DataType        : string
+            StartValue      : decimal option
+            Increment       : decimal option
+            MinValue        : decimal option
+            MaxValue        : decimal option
+            IsCycleEnabled  : bool
+            CacheMode       : string option
+            CacheSize       : int option
+        }
+
     /// V1 rowset bundle — the in-memory carrier the future C# SqlClient
     /// loader produces; in-memory test fixtures construct directly. Per
     /// `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md` §2-§3: hand-written F#
@@ -230,6 +255,7 @@ module CatalogReader =
             Attributes : AttributeRow list
             References : ReferenceRow list
             Triggers   : TriggerRow list
+            Sequences  : SequenceRow list
         }
 
     type SnapshotSource =
@@ -343,6 +369,15 @@ module CatalogReader =
         (moduleName: string) (entityName: string) (triggerName: string)
         : Result<SsKey> =
         SsKey.synthesizedComposite "OS_TRIG" [ moduleName; entityName; triggerName ]
+
+    /// Sequence SsKey synthesis (chapter A.0' slice δ). Sequences
+    /// identify by their schema-qualified name (`<schema>.<name>`);
+    /// SQL Server enforces uniqueness per schema. Carriage source is
+    /// the V1 `osm_model.json` top-level `sequences[]` array — no
+    /// module / entity scoping (per
+    /// `Osm.Domain.Model.SequenceModel` and `OsmModel.Sequences`).
+    let private sequenceSsKey (schema: string) (sequenceName: string) : Result<SsKey> =
+        SsKey.synthesizedComposite "OS_SEQ" [ schema; sequenceName ]
 
     // -----------------------------------------------------------------------
     // JSON helpers — light wrappers over System.Text.Json.JsonElement.
@@ -510,6 +545,70 @@ module CatalogReader =
             | true, n -> Some n
             | _ -> None
         | _ -> None
+
+    /// Optional decimal property reader. Returns `None` when the
+    /// property is missing OR explicitly null; `Some d` when the
+    /// property is present and parseable. Chapter A.0' slice δ —
+    /// V1's `osm_model.json` carries sequence bounds
+    /// (`startValue` / `increment` / `minValue` / `maxValue`) as
+    /// nullable JSON numbers per V1's `SequenceDocument`
+    /// declarations (typed as `long?` there; widened to `decimal?`
+    /// in V2 per the "decimal as default for continuous statistical
+    /// evidence" discipline — sequence bounds in SQL Server are
+    /// `numeric(38, 0)` and may exceed `Int64` range).
+    let private getOptionalDecimal (element: JsonElement) (name: string) : decimal option =
+        match element.TryGetProperty(name) with
+        | true, value when value.ValueKind = JsonValueKind.Number ->
+            match value.TryGetDecimal() with
+            | true, d -> Some d
+            | _ -> None
+        | _ -> None
+
+    /// V1 `sequences[].cycle` reader. JSON-bool only; V1's
+    /// `SequenceDocument.Cycle` is typed `bool` (non-null), so
+    /// V2 defaults missing/null to `false` defensively. Mirrors the
+    /// shape of `isActiveOrDefault` but defaults the OPPOSITE way
+    /// (sequences don't cycle unless V1 says so).
+    let private isCycleOrDefault (element: JsonElement) : bool =
+        match element.TryGetProperty("cycle") with
+        | true, value when value.ValueKind = JsonValueKind.True  -> true
+        | _ -> false
+
+    /// V1 `sequences[].cacheMode` string → V2 `SequenceCacheMode`.
+    /// Mirrors V1's `SequenceDocumentMapper.ParseSequenceCacheMode`
+    /// (`src/Osm.Json/Deserialization/SequenceDocumentMapper.cs:86-99`)
+    /// case-by-case so cross-source parity holds against V1's
+    /// model deserializer.
+    ///
+    /// Per pillar 9: V2 mirrors V1's interpretation verbatim,
+    /// including the `UnsupportedYet` signal for unrecognised
+    /// strings. Adding a new variant here is a closed-DU widening
+    /// (DECISIONS 2026-05-13 — closed-DU expansion empirical-test
+    /// discipline); future cacheMode strings surface as
+    /// `UnsupportedYet` until V2 grows a variant for them.
+    let private parseSequenceCacheMode (code: string option) : SequenceCacheMode =
+        match code with
+        | None                   -> Unspecified
+        | Some raw ->
+            match raw.Trim().ToLowerInvariant() with
+            | ""                                  -> Unspecified
+            | "cache" | "cached"                  -> Cache
+            | "nocache" | "no-cache" | "no_cache" -> NoCache
+            | _                                   -> UnsupportedYet
+
+    /// Apply V1's domain-layer normalization: `Cache` with no /
+    /// negative `CacheSize` collapses to `UnsupportedYet`. Mirrors
+    /// `Osm.Domain.Model.SequenceModel.Create` (`SequenceModel.cs:47-50`)
+    /// so the IR's `(CacheMode, CacheSize)` pair stays internally
+    /// consistent at the adapter boundary — V2 carries the same
+    /// invariant V1 emits.
+    let private normalizeCacheMode
+        (mode: SequenceCacheMode) (cacheSize: int option)
+        : SequenceCacheMode =
+        match mode, cacheSize with
+        | Cache, None         -> UnsupportedYet
+        | Cache, Some n when n < 0 -> UnsupportedYet
+        | _                   -> mode
 
     let private parseAttribute
         (moduleName: string) (entityName: string) (attrJson: JsonElement)
@@ -848,6 +947,75 @@ module CatalogReader =
                         "Required index fields missing on an entity in '%s.%s'."
                         moduleName entityName))
 
+    /// Chapter A.0' slice δ — V1's top-level sequence JSON
+    /// (`{ "schema", "name", "dataType", "startValue", "increment",
+    /// "minValue", "maxValue", "cycle", "cacheMode", "cacheSize" }`)
+    /// → V2's `Sequence`. V1's `Osm.Json/SequenceDocument` declares
+    /// the shape (`src/Osm.Json/Deserialization/
+    /// ModelJsonDeserializer.SequenceDocument.cs`); mapping into V2
+    /// mirrors `SequenceDocumentMapper.Map` field-by-field.
+    let private parseSequence (sequenceJson: JsonElement) : Result<Sequence> =
+        let schemaResult   = getString sequenceJson "schema"
+        let nameResult     = getString sequenceJson "name"
+        let dataTypeResult = getString sequenceJson "dataType"
+        let startValue     = getOptionalDecimal sequenceJson "startValue"
+        let increment      = getOptionalDecimal sequenceJson "increment"
+        let minValue       = getOptionalDecimal sequenceJson "minValue"
+        let maxValue       = getOptionalDecimal sequenceJson "maxValue"
+        let isCycle        = isCycleOrDefault sequenceJson
+        // `cacheMode` is read as an optional string (missing or
+        // null → Unspecified). The parser maps the surface string
+        // into the closed DU; unrecognised strings collapse to
+        // `UnsupportedYet` per pillar 9 (mirror V1's signal).
+        let cacheModeStringResult = getOptionalString sequenceJson "cacheMode"
+        let cacheSize = getOptionalInt sequenceJson "cacheSize"
+        match schemaResult, nameResult, dataTypeResult with
+        | Ok schema, Ok rawName, Ok dataType ->
+            let cacheModeRaw =
+                match cacheModeStringResult with
+                | Ok value -> value
+                | Error _  -> None
+            let cacheMode = parseSequenceCacheMode cacheModeRaw
+            let normalized = normalizeCacheMode cacheMode cacheSize
+            let seqKey  = sequenceSsKey schema rawName
+            let seqName = Name.create rawName
+            match seqKey, seqName with
+            | Ok k, Ok n ->
+                Result.success
+                    { SsKey          = k
+                      Name           = n
+                      Schema         = schema
+                      DataType       = dataType
+                      StartValue     = startValue
+                      Increment      = increment
+                      MinValue       = minValue
+                      MaxValue       = maxValue
+                      IsCycleEnabled = isCycle
+                      CacheMode      = normalized
+                      CacheSize      = cacheSize }
+            | _ ->
+                propagateOrFallback
+                    [ Result.errors seqKey
+                      Result.errors seqName ]
+                    (fun () ->
+                        adapterError
+                            "sequenceBuild"
+                            (sprintf
+                                "Failed to build sequence '%s.%s'."
+                                schema rawName))
+        | _ ->
+            // Propagate the underlying field errors from getString
+            // (`missingProperty` / `nullProperty` / `typeMismatch`) so
+            // the substantive cause survives.
+            propagateOrFallback
+                [ Result.errors schemaResult
+                  Result.errors nameResult
+                  Result.errors dataTypeResult ]
+                (fun () ->
+                    adapterError
+                        "sequenceFields"
+                        "Required sequence fields missing.")
+
     /// Chapter A.0' slice γ — V1's per-entity trigger JSON
     /// (`{ "name", "isDisabled", "definition" }`) → V2's `Trigger`.
     /// V1's `outsystems_metadata_rowsets.sql:901-916` emits this shape
@@ -1086,8 +1254,25 @@ module CatalogReader =
                 |> Seq.toList
                 |> List.map parseModule
             let folded = Result.aggregate modulesList
-            match folded with
-            | Ok moduleTriggerPairs ->
+            // Chapter A.0' slice δ — top-level `sequences` JSON
+            // array. V1's `osm_model.json` carries sequences at the
+            // document root (not per-module / per-entity); the
+            // top-level shape mirrors V1's
+            // `OsmModel.Sequences : ImmutableArray<SequenceModel>`.
+            // Defensive on absence: V1 emits an empty array when no
+            // sequences are present, and may omit the property
+            // entirely from older snapshots — both forms land as
+            // `Catalog.Sequences = []`.
+            let sequencesList =
+                match root.TryGetProperty("sequences") with
+                | true, seqArr when seqArr.ValueKind = JsonValueKind.Array ->
+                    seqArr.EnumerateArray()
+                    |> Seq.toList
+                    |> List.map parseSequence
+                | _ -> []
+            let foldedSequences = Result.aggregate sequencesList
+            match folded, foldedSequences with
+            | Ok moduleTriggerPairs, Ok sequences ->
                 let modules  = moduleTriggerPairs |> List.map fst
                 let triggers = moduleTriggerPairs |> List.collect snd
                 // Per DECISIONS pillar 6: boundary adapter flows
@@ -1095,10 +1280,19 @@ module CatalogReader =
                 // check) rather than record-literal construction.
                 // Chapter A.0' slice γ — Catalog.create accepts the
                 // per-module aggregated triggers as its second arg;
-                // cross-field validation (Trigger.KindSsKey points at
-                // a real Kind) deferred to §6.4.5.
-                Catalog.create modules triggers
-            | Error errors  -> Error errors
+                // chapter A.0' slice δ — `sequences` joins as the
+                // third arg. Cross-field validation (Trigger.KindSsKey
+                // points at a real Kind; future sequence cross-checks)
+                // deferred to §6.4.5.
+                Catalog.create modules triggers sequences
+            | _ ->
+                propagateOrFallback
+                    [ Result.errors folded
+                      Result.errors foldedSequences ]
+                    (fun () ->
+                        adapterError
+                            "documentBuild"
+                            "Failed to build catalog from JSON document.")
         | _ ->
             Result.failureOf (
                 adapterError
@@ -1410,6 +1604,42 @@ module CatalogReader =
                             "Failed to build module '%s' from rowset bundle."
                             moduleRow.EspaceName))
 
+    /// Chapter A.0' slice δ — rowset-path sequence lift. Mirrors
+    /// `parseSequence` (JSON path) field-by-field; V1's domain-layer
+    /// normalization for `Cache` with no/negative `CacheSize` →
+    /// `UnsupportedYet` is applied uniformly across both paths so the
+    /// IR's `(CacheMode, CacheSize)` invariant holds regardless of
+    /// source.
+    let private parseSequenceRow (row: SequenceRow) : Result<Sequence> =
+        let seqKey  = sequenceSsKey row.Schema row.SequenceName
+        let seqName = Name.create row.SequenceName
+        let cacheMode = parseSequenceCacheMode row.CacheMode
+        let normalized = normalizeCacheMode cacheMode row.CacheSize
+        match seqKey, seqName with
+        | Ok k, Ok n ->
+            Result.success
+                { SsKey          = k
+                  Name           = n
+                  Schema         = row.Schema
+                  DataType       = row.DataType
+                  StartValue     = row.StartValue
+                  Increment      = row.Increment
+                  MinValue       = row.MinValue
+                  MaxValue       = row.MaxValue
+                  IsCycleEnabled = row.IsCycleEnabled
+                  CacheMode      = normalized
+                  CacheSize      = row.CacheSize }
+        | _ ->
+            propagateOrFallback
+                [ Result.errors seqKey
+                  Result.errors seqName ]
+                (fun () ->
+                    adapterError
+                        "sequenceRowBuild"
+                        (sprintf
+                            "Failed to build sequence '%s.%s' from rowset bundle."
+                            row.Schema row.SequenceName))
+
     /// V1 rowset bundle → V2 Catalog. Sibling to `parseDocument` (JSON
     /// path). The flat-list bundle joins by FK ID columns at load time
     /// (`AttributeRow.EntityId` ↔ `KindRow.EntityId`; `KindRow.EspaceId`
@@ -1419,11 +1649,12 @@ module CatalogReader =
     /// smart constructors, so referential-integrity invariants are
     /// checked at the boundary identically to the JSON path.
     ///
-    /// Big-O / pillar 7 perf clause: O(N + E + A + R) for the input
-    /// bundle plus O(E + A) for the three Map.ofList constructions
-    /// (one per ID-keyed projection). Per-module dispatch is O(E_m × A_e)
-    /// with O(1) Map lookups; per-kind reference assembly is O(R_e)
-    /// with O(1) Map lookups. Linear in the bundle's total size;
+    /// Big-O / pillar 7 perf clause: O(N + E + A + R + S) for the
+    /// input bundle plus O(E + A) for the ID-keyed projections.
+    /// Per-module dispatch is O(E_m × A_e) with O(1) Map lookups;
+    /// per-kind reference / trigger assembly is O(R_e + T_e) with
+    /// O(1) Map lookups; sequence assembly is O(S) (schema-scoped,
+    /// no per-module dispatch). Linear in the bundle's total size;
     /// matches `parseDocument`'s complexity class.
     let private parseRowsetBundle (bundle: RowsetBundle) : Result<Catalog> =
         let attributesByEntity =
@@ -1444,12 +1675,23 @@ module CatalogReader =
         let moduleResults =
             bundle.Modules
             |> List.map (parseModuleRow kindsByEspace attributesByEntity referencesByAttr triggersByEntity)
-        match Result.aggregate moduleResults with
-        | Ok moduleTriggerPairs ->
+        // Chapter A.0' slice δ — schema-scoped, top-level enumeration.
+        // No per-module dispatch needed (sequences belong to schemas,
+        // not modules / entities); per pillar 9 DataIntent carriage.
+        let sequenceResults = bundle.Sequences |> List.map parseSequenceRow
+        match Result.aggregate moduleResults, Result.aggregate sequenceResults with
+        | Ok moduleTriggerPairs, Ok sequences ->
             let modules  = moduleTriggerPairs |> List.map fst
             let triggers = moduleTriggerPairs |> List.collect snd
-            Catalog.create modules triggers
-        | Error errors -> Error errors
+            Catalog.create modules triggers sequences
+        | mods, seqs ->
+            propagateOrFallback
+                [ Result.errors mods
+                  Result.errors seqs ]
+                (fun () ->
+                    adapterError
+                        "rowsetBuild"
+                        "Failed to build catalog from rowset bundle.")
 
     /// Parse a V1 `osm_model.json` snapshot into a V2 `Catalog`.
     ///

@@ -265,6 +265,7 @@ let private allPrimitiveTypesCatalog : Catalog =
             }
         ]
         Triggers = []
+        Sequences = []
     }
 
 [<Fact>]
@@ -357,6 +358,7 @@ let private compositePkCatalog : Catalog =
             }
         ]
         Triggers = []
+        Sequences = []
     }
 
 [<Fact>]
@@ -478,6 +480,7 @@ let private indexedCatalog : Catalog =
             }
         ]
         Triggers = []
+        Sequences = []
     }
 
 [<Fact>]
@@ -636,6 +639,7 @@ let private fkCatalog : Catalog =
             }
         ]
         Triggers = []
+        Sequences = []
     }
 
 [<Fact>]
@@ -812,7 +816,7 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
         { Modules =
             [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ]; IsActive = true  }
               { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ]; IsActive = true  } ]
-          Triggers = [] }
+          Triggers = []; Sequences = [] }
     let enriched = enrich catalog
     let statements =
         SsdtDdlEmitter.statements enriched
@@ -879,7 +883,7 @@ let ``Slice 6: cross-module FK emits inline FOREIGN KEY constraint`` () =
         { Modules =
             [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ]; IsActive = true  }
               { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ]; IsActive = true  } ]
-          Triggers = [] }
+          Triggers = []; Sequences = [] }
     let enriched = enrich catalog
     let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
     let bFile = ArtifactByKind.toMap artifact |> Map.find bKindKey
@@ -930,7 +934,7 @@ let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module F
         { Modules =
             [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ]; IsActive = true  }
               { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ]; IsActive = true  } ]
-          Triggers = [] }
+          Triggers = []; Sequences = [] }
     let enriched = enrich catalog
     let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
     let keys = ArtifactByKind.toMap artifact |> Map.toSeq |> Seq.map fst |> Set.ofSeq

@@ -76,6 +76,7 @@
     <Compile Include="DescriptionLiftTests.fs" />
     <Compile Include="IsActiveLiftTests.fs" />
     <Compile Include="TriggerLiftTests.fs" />
+    <Compile Include="SequenceLiftTests.fs" />
     <Compile Include="NullabilityRulesTests.fs" />
     <Compile Include="NullabilityPassTests.fs" />
     <Compile Include="UniqueIndexRulesTests.fs" />

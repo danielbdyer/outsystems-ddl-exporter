@@ -167,7 +167,7 @@ let private mkCatalog (kinds: Kind list) : Catalog =
         { SsKey = mkKey ["TestModule"]
           Name  = mkName "TestModule"
           Kinds = kinds; IsActive = true  }
-    { Modules = [ m ]; Triggers = []  }
+    { Modules = [ m ]; Triggers = []; Sequences = []  }
 
 [<Fact>]
 let ``T1: StaticPopulationEmitter.statements is byte-deterministic across repeat invocations`` () =

@@ -63,7 +63,7 @@ let private mkCatalog (kinds: Kind list) : Catalog =
         { SsKey = mkKey ["TestModule"]
           Name  = mkName "TestModule"
           Kinds = kinds; IsActive = true  }
-    { Modules = [ m ]; Triggers = []  }
+    { Modules = [ m ]; Triggers = []; Sequences = []  }
 
 // ---------------------------------------------------------------------------
 // UserRemapContext — chapter 4.2 slice γ shape.

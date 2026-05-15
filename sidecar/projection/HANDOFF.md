@@ -1,4 +1,4 @@
-# HANDOFF — chapter A.0' in flight (slice γ shipped; slice δ next)
+# HANDOFF — chapter A.0' in flight (slice δ shipped; slice ε next)
 
 **Read this once, then go.** Everything you need to keep going is reachable from the cross-references below. Do not read the whole file front-to-back — pick the next slice, follow the cross-references to the active discipline + commit precedent, and code.
 
@@ -12,15 +12,15 @@
 
 ## Status (chapter A.0')
 
-Test baseline: **1169 / 1169 passing** at `16ab57d`.
+Test baseline: **1182 / 1182 passing** at slice δ (1169 prior + 13 new `SequenceLiftTests`).
 
 | Slice | Subject | Mode | Status | Commit |
 |---|---|---|---|---|
 | α | `Kind.Description` + `Attribute.Description` | additive | ✅ Shipped | `3c75d00` |
 | β | `Module / Kind / Attribute.IsActive` carry-through; retire session-21 silent drop | literal-site audit (semantic shift) | ✅ Shipped (pillar 9 first worked example) | `014d5d1` |
 | γ | `Catalog.Triggers : Trigger list` + `Fixtures` builders | builder-mediated | ✅ Shipped (discipline-refinement first worked example) | `16ab57d` |
-| δ | `Catalog.Sequences : Sequence list` + `Sequence` value type | builder-mediated (additive; mirror of γ) | 🟡 Next | — |
-| ε | `Attribute.DefaultValue` + `Attribute.Computed` + `Kind.ColumnChecks` | builder-mediated (additive; three related) | ⚪ Future | — |
+| δ | `Catalog.Sequences : Sequence list` + `Sequence` value type + `SequenceCacheMode` DU | builder-mediated (additive; mirror of γ) | ✅ Shipped (builder-mediated 2nd worked example; catalog-level extension via slice-γ builder) | (this slice) |
+| ε | `Attribute.DefaultValue` + `Attribute.Computed` + `Kind.ColumnChecks` | builder-mediated (additive; three related) | 🟡 Next | — |
 | ζ | `ExtendedProperties` on Module / Kind / Attribute / Index | builder-mediated (additive; widest blast radius) | ⚪ Future | — |
 | η | `ModalityMark.Temporal of TemporalConfig` | literal-site audit (DU widening) | ⚪ Future | — |
 | θ | `TableId.Catalog : string option` | literal-site audit (touches every TableId site) | ⚪ Future | — |

@@ -11388,3 +11388,91 @@ Apply the 4-step harvest workflow:
 - `src/Osm.Pipeline/SqlExtraction/SnapshotJsonBuilder.cs:241-242` (V1 JSON emission point for `triggers` property on entity).
 
 ---
+
+## 2026-05-15 — A.0' slice δ: Sequences IR lift (mirror of γ under builder-mediated mode)
+
+**Status:** decided
+
+**Context.** Chapter A.0' slice δ adds `Catalog.Sequences : Sequence list` + a `Sequence` value type + `SequenceCacheMode` closed DU + OSSYS adapter pickup (JSON path + rowset path). Per L3-S5 (`PRODUCT_AXIOMS.md`): every Sequence in `Catalog.Sequences` carries schema-qualified identity, the SQL data type, optional bounds (`StartValue` / `Increment` / `MinValue` / `MaxValue`), `IsCycleEnabled`, the `CacheMode` discriminant, and `CacheSize`. V1's source: top-level `sequences` JSON array per V1's `Osm.Domain.Model.SequenceModel` (the structural template) and `Osm.Json/Deserialization/ModelJsonDeserializer.SequenceDocument` (the JSON wire format).
+
+The slice is the **second worked example of the builder-mediated mode** (per `DECISIONS 2026-05-15 — Closed-DU empirical-test discipline refinement`); the `Catalog.Sequences = []` extension flows through the existing `Fixtures.catalog` builder added at slice γ, so future record extensions at the Catalog level continue to touch the builder seam rather than every literal site.
+
+### Harvest-dichotomy classification (per pillar 9)
+
+Apply the 4-step harvest workflow:
+
+1. **Identify what changes.** Input X = V1 top-level `sequences` JSON array (`OsmModel.Sequences` in V1's domain). Output Y = `Sequence` records in V2's `Catalog.Sequences : Sequence list`, schema-scoped (not Kind-scoped).
+2. **Determine whose intent is expressed.** The transformation is pure input evidence: V1's `sys.sequences` (via the operator's manual extraction into V1's JSON; V1's SQL extraction does not currently populate the array — see V1 `ModelDeserializerFacade.cs:72`) reflects the deployed schema's sequences; V2's IR mirrors that data. No `Policy`, no operator-supplied filter, no overlay. Per pillar 9: **`DataIntent`**.
+3. **Register or document.** Transformation lands in v2 at this slice. The A.4.7-prelude small slice will retroactively register the adapter rule; slice δ's harvest-dichotomy classification is recorded here so the registration lands cleanly. **One sub-rule lands as a normalization, not a drop**: V1's domain layer (`Osm.Domain.Model.SequenceModel.Create`) collapses `(CacheMode = Cache, CacheSize = null)` to `UnsupportedYet`. V2 mirrors that normalization in `normalizeCacheMode` — both paths (JSON + rowset) apply the same rule, so the IR's `(CacheMode, CacheSize)` pair stays internally consistent at the boundary regardless of source. Per pillar 9 the normalization is still DataIntent: V2 is mirroring V1's domain-layer interpretation of "what the input means," not adding operator opinion.
+4. **Confirm.** Sequence emission policy (`CREATE SEQUENCE` DDL; environment-promotion rewrites; suppression of unused sequences) is downstream `OperatorIntent` (the operator's choice to project sequences verbatim; future overlays may suppress or rewrite). Slice δ's carriage to IR is upstream `DataIntent`. Pillar 9 confirmed.
+
+### Decision
+
+1. **`SequenceCacheMode` closed DU.** New tag-only sum in `Catalog.fs`:
+   ```fsharp
+   type SequenceCacheMode =
+       | Unspecified
+       | Cache
+       | NoCache
+       | UnsupportedYet
+   ```
+   Mirrors V1's `Osm.Domain.Model.SequenceCacheMode` enum exactly. Payload-free; carries `toStructured` / `toDiagnosticString` modules per the `Origin` / `ModalityMark` precedent. Future variants (`Sequential`, etc.) land via the closed-DU expansion empirical-test discipline.
+
+2. **`Sequence` value type.** New record in `Catalog.fs`:
+   ```fsharp
+   type Sequence = {
+       SsKey          : SsKey       // OS_SEQ_<schema>_<name>
+       Name           : Name
+       Schema         : string      // schema namespace; sequence is schema-scoped, not Kind-scoped
+       DataType       : string      // free-form SQL Server type (e.g. "bigint")
+       StartValue     : decimal option
+       Increment      : decimal option
+       MinValue       : decimal option
+       MaxValue       : decimal option
+       IsCycleEnabled : bool
+       CacheMode      : SequenceCacheMode
+       CacheSize      : int option
+   }
+   ```
+   No bespoke smart constructor today (mirrors slice γ's `Trigger`): `Name.create` enforces the only field-level invariant the adapter can check at parse time; `Schema` and `DataType` are free-form strings the emitter (chapter 4.1.A slice 8 / §6.4.7) validates against the target dialect. `decimal` is the carriage type for the four bounds (V1 declares them as `long?` per `SequenceDocument`; widened to `decimal?` in V2 per "decimal as default for continuous statistical evidence" — sequence bounds in SQL Server are `numeric(38, 0)` and may exceed `Int64` range).
+
+3. **`Catalog.Sequences : Sequence list` field.** Top-level Catalog aggregation, sibling to `Triggers` (slice γ). Schema-scoped — no per-Module or per-Kind dispatch needed. Mirrors V1's top-level `OsmModel.Sequences` shape directly (V1 already places sequences at the document root; V2 preserves that placement).
+
+4. **OSSYS adapter pickup.**
+   - **JSON path:** `parseSequence : JsonElement -> Result<Sequence>` reads from the top-level `sequences` array in `parseDocument`. `parseSequenceCacheMode` maps V1's `cacheMode` string into the closed DU (mirroring `SequenceDocumentMapper.ParseSequenceCacheMode` case-by-case). `normalizeCacheMode` applies V1's domain-layer `(Cache, null) → UnsupportedYet` rule. Defensive on absence: missing top-level `sequences` property lands as `Catalog.Sequences = []` (older V1 snapshots may omit it; V1's current emitter writes an empty array).
+   - **Rowset path:** New DTO `SequenceRow = { Schema; SequenceName; DataType; StartValue; Increment; MinValue; MaxValue; IsCycleEnabled; CacheMode; CacheSize }` in `CatalogReader.fs`; new `Sequences : SequenceRow list` field on `RowsetBundle`. `parseSequenceRow` mirrors `parseSequence` field-by-field; the same `normalizeCacheMode` rule applies. V1's SQL extraction does NOT populate sequences today (per `Osm.Pipeline/SqlExtraction/ModelDeserializerFacade.cs:72` — emits `ImmutableArray<SequenceModel>.Empty` on the SQL path); the rowset DTO ships for symmetry with the JSON path so a future loader / DACPAC reader / `LiveOssysConnection` populates through this surface rather than gaining a new one.
+   - **Aggregation:** `parseDocument` and `parseRowsetBundle` collect the top-level sequences and pass them to `Catalog.create` as the third positional argument.
+
+5. **ReadSide adapter.** Reconstructed catalog defaults `Sequences = []`. Sequence reconstruction from `sys.sequences` is deferred to chapter 4.1.A slice 8 / §6.4.7 territory (the same cash-out point as `sys.triggers`); ReadSide's role today is schema-shape reconstruction, not full V1-fidelity recovery.
+
+6. **`Catalog.create` extension.** Signature grows by one positional argument: `(modules: Module list) (triggers: Trigger list) (sequences: Sequence list) -> Result<Catalog>`. No cross-field invariants on sequences today — sequences are schema-scoped, not Kind-scoped, so no dangling-reference class exists. Future cross-field batch (§6.4.5 / §6.4.6) may grow a `SequenceSsKey-disjoint-within-schema` invariant.
+
+7. **Builder-mediated test refactor.** The `Fixtures.catalog` builder added at slice γ now defaults `Sequences = []`; literal sites that already pass through the builder need no change. Direct-literal sites (76 catalog-literal sites across tests + 1 in ReadSide.fs) gain `Sequences = []` mechanically via the parameterized fixture-extension script (`/tmp/add_sequences.py`). New `SequenceLiftTests.fs` uses the builder pattern from the start.
+
+### Reasoning / consequences
+
+- **Slice δ is the second precedent for builder-mediated record extension at the Catalog level.** Slice γ added the builder; slice δ exercises it for the first time. Future Catalog-level slices (ζ ExtendedProperties carriage at Catalog level if it lands; future top-level slices yet to scope) inherit a working pattern: extend `Fixtures.catalog`'s defaults; mechanical-edit any literal sites not yet migrated.
+- **L3-S5 advances Bucket D → Bucket A** at slice δ close. Sequence IR carriage is the dependency; emission lands when the SsdtDdlEmitter / DacpacEmitter consumes the field (chapter 4.1.A slice 8 / §6.4.7 — outside slice δ scope).
+- **L3-Boundary-NoSilentDrop completion criterion advances.** Per the chapter A.0' success criteria: slice δ closes the sequence drop class — V1 sequence input is now either carried to V2's IR (`Catalog.Sequences`) or surfaces as a structured error (`adapter.osm.sequenceFields` / `adapter.osm.sequenceBuild`). The chapter-ι property test will verify the absence of silent drops across the full V1-input envelope.
+- **Pillar 9 holds.** Sequence carriage is DataIntent; the normalization rule (`(Cache, null) → UnsupportedYet`) mirrors V1's domain-layer interpretation rather than introducing operator opinion. Future emitter overlays (e.g., "skip sequences whose `CacheMode = UnsupportedYet`" or "rewrite sequences for cross-environment promotion") are OperatorIntent and land at the emitter / pass layer when consumers surface.
+- **Tolerance forward signal.** Sequences currently filter at the V1↔V2 differential test boundary on the SQL extraction path (V1's SQL emits empty; canary's source readback through ReadSide also emits empty). The asymmetry between V1's JSON path (populated) and V1's SQL path (empty) is V1's gap, not V2's; the differential test may surface it. Tracked as a chapter-close-ritual follow-up; eventual Tolerance variant candidate is `SequencesSqlPathEmptyByV1` (or the chapter 4.1.A cash-out retires the asymmetry by extending V1's SQL extraction).
+- **Cross-source parity holds.** JSON path and rowset path produce identical `Sequence` values for matching input; the SsKey synthesis is uniform (`OS_SEQ_<schema>_<name>`), the bounds carry through identically, and `normalizeCacheMode` applies once at each path. The slice-δ parity test asserts this.
+- **Closed-DU expansion holds.** Adding `SequenceCacheMode` as a new closed-DU type produces compiler errors at construction sites only (the `parseSequence` / `parseSequenceRow` site); no semantic-interpretation sites elsewhere are affected. The discipline's structural commitment is satisfied.
+
+### Cross-references
+
+- `DECISIONS 2026-05-15 — Closed-DU empirical-test discipline refinement: builders absorb default-shaped churn` (the operative discipline; slice δ exercises builder-mediated mode for the second time).
+- `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification` (the classification methodology).
+- `DECISIONS 2026-05-15 — A.0' slice γ: Triggers IR lift + Fixtures builders` (immediate predecessor slice; provides the `Fixtures.catalog` builder and the `Catalog.create` aggregate-root signature pattern this slice extends).
+- `PRODUCT_AXIOMS.md` L3-S5 (Sequence definitions are complete) — Bucket D → Bucket A at slice δ close.
+- `PRODUCT_AXIOMS.md` L3-Boundary-NoSilentDrop (chapter A.0' completion criterion; slice δ closes the sequence drop class).
+- `V2_PRODUCTION_CUTOVER.md` §3.3 (IR-fidelity gap table; sequence gap retires).
+- `V2_PRODUCTION_CUTOVER.md` §6.0' (chapter A.0' workstream spec; slice δ named).
+- `CHAPTER_A_0_PRIME_OPEN.md` slice δ table entry.
+- `src/Osm.Domain/Model/SequenceModel.cs` (V1 domain record; structural template — schema/name/dataType/bounds/cycle/cache; normalization rule at `SequenceModel.cs:47-50`).
+- `src/Osm.Domain/Model/SequenceModel.cs:8-14` (V1 `SequenceCacheMode` enum; mirrored by V2's closed DU).
+- `src/Osm.Json/Deserialization/ModelJsonDeserializer.SequenceDocument.cs` (V1 JSON wire format; field names mirrored at the adapter).
+- `src/Osm.Json/Deserialization/SequenceDocumentMapper.cs:86-99` (V1 `cacheMode` string → enum mapping; mirrored by `parseSequenceCacheMode`).
+- `src/Osm.Pipeline/SqlExtraction/ModelDeserializerFacade.cs:72` (V1's SQL extraction emits empty sequences today; the rowset DTO ships for future symmetry).
+
+---

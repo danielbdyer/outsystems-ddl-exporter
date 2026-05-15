@@ -61,7 +61,7 @@ let private mkModule (n: string) (kinds: Kind list) : Module =
     }
 
 let private mkCatalog (modules: Module list) : Catalog =
-    { Modules = modules; Triggers = []  }
+    { Modules = modules; Triggers = []; Sequences = []  }
 
 let private emptyCatalog () : Catalog =
     mkCatalog []

@@ -58,7 +58,7 @@ let private indexedCatalog : Catalog =
     let country'  = { country  with Indexes = [ countrySingle ] }
     let salesModule' =
         { salesModule with Kinds = [ customer'; order'; country' ] }
-    { Modules = [ salesModule' ]; Triggers = []  }
+    { Modules = [ salesModule' ]; Triggers = []; Sequences = []  }
 
 let private allIndexes (c: Catalog) : Index list =
     Catalog.allKinds c |> List.collect (fun k -> k.Indexes)

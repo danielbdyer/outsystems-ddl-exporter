@@ -141,7 +141,7 @@ let private expectedCatalogSynthesized : Catalog =
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ userKind ]; IsActive = true  } ]; Triggers = []  }
+          Kinds = [ userKind ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
 
 [<Fact>]
 let ``SnapshotRowsets: bundle without SsKey Guids parses with synthesized-form SsKeys (JSON-path parity)`` () =
@@ -152,6 +152,7 @@ let ``SnapshotRowsets: bundle without SsKey Guids parses with synthesized-form S
             Attributes = [ idAttrRow None; emailAttrRow None ]
             References = []
             Triggers = []
+            Sequences = []
         }
     let result = parseSync (CatalogReader.SnapshotRowsets bundle)
     match result with
@@ -183,6 +184,7 @@ let ``SnapshotRowsets: bundle WITH SsKey Guids produces OssysOriginal SsKeys (A1
             Attributes = [ idAttrRow (Some idGuid); emailAttrRow (Some emailGuid) ]
             References = []
             Triggers = []
+            Sequences = []
         }
     let result = parseSync (CatalogReader.SnapshotRowsets bundle)
     match result with
@@ -222,6 +224,7 @@ let ``A1 unbounded: rowset Catalog with Guid SsKeys mirrors JSON Catalog on ever
             Attributes = [ idAttrRow (Some idGuid); emailAttrRow (Some emailGuid) ]
             References = []
             Triggers = []
+            Sequences = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors ->
@@ -260,6 +263,7 @@ let ``SnapshotRowsets: inactive modules carry through (slice β supersedes sessi
             Attributes = [ idAttrRow None; emailAttrRow None ]
             References = []
             Triggers = []
+            Sequences = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
@@ -282,6 +286,7 @@ let ``SnapshotRowsets: inactive kinds carry through (slice β supersedes session
             Attributes = [ idAttrRow None; emailAttrRow None ]
             References = []
             Triggers = []
+            Sequences = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
@@ -304,6 +309,7 @@ let ``SnapshotRowsets: inactive attributes carry through (slice β supersedes se
             Attributes = [ idAttrRow None; emailAttrRow None; inactiveAttr ]
             References = []
             Triggers = []
+            Sequences = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
@@ -331,7 +337,7 @@ let ``Closed-DU expansion: SnapshotJson + SnapshotRowsets coexist; both paths us
              "modules": [ { "name": "AppCore", "isSystem": false, "isActive": true,
                             "entities": [] } ] }"""
     let bundle : CatalogReader.RowsetBundle =
-        { Modules = [ moduleRow None ]; Kinds = []; Attributes = []; References = []; Triggers = []  }
+        { Modules = [ moduleRow None ]; Kinds = []; Attributes = []; References = []; Triggers = []; Sequences = []  }
     let resJson = parseSync (CatalogReader.SnapshotJson json)
     let resRow  = parseSync (CatalogReader.SnapshotRowsets bundle)
     match resJson, resRow with
@@ -441,6 +447,7 @@ let private referenceBundle : CatalogReader.RowsetBundle =
         Attributes = [ accountIdRow None; userIdRow; userAccountIdRow ]
         References = [ userAccountRefRow ]
         Triggers = []
+        Sequences = []
     }
 
 [<Fact>]
@@ -545,6 +552,7 @@ let ``slice 2: Reference SsKey is always synthesized (rowsets carry no per-refer
             ]
             References = [ userAccountRefRow ]
             Triggers = []
+            Sequences = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
@@ -658,6 +666,7 @@ let private externalBundle (espaceKind: string option) : CatalogReader.RowsetBun
         Attributes = [ billingAccountIdRow ]
         References = []
         Triggers = []
+        Sequences = []
     }
 
 let private originOf (bundle: CatalogReader.RowsetBundle) : Origin =
@@ -703,6 +712,7 @@ let ``slice 3: isExternal=false → OsNative regardless of EspaceKind`` () =
             Attributes = [ billingAccountIdRow ]
             References = []
             Triggers = []
+            Sequences = []
         }
     Assert.Equal<Origin>(OsNative, originOf bundle)
 
@@ -822,6 +832,7 @@ let private systemBundle : CatalogReader.RowsetBundle =
         Attributes = [ systemAuditIdRow ]
         References = []
         Triggers = []
+        Sequences = []
     }
 
 [<Fact>]
@@ -845,6 +856,7 @@ let ``slice 4: IsSystemEntity=false → Modality omits SystemOwned (matches V1 d
             Attributes = [ idAttrRow None ]
             References = []
             Triggers = []
+            Sequences = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
@@ -869,6 +881,7 @@ let ``slice 4: SystemOwned coexists with Static (composite-modality case)`` () =
             Attributes = [ systemAuditIdRow ]
             References = []
             Triggers = []
+            Sequences = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
@@ -893,6 +906,7 @@ let ``slice 4: SystemOwned is orthogonal to Origin axis`` () =
             Attributes = [ systemAuditIdRow ]
             References = []
             Triggers = []
+            Sequences = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
@@ -915,6 +929,7 @@ let ``slice 4: mixed catalog — system and non-system kinds coexist`` () =
             Attributes = [ idAttrRow None; systemAuditIdRow ]
             References = []
             Triggers = []
+            Sequences = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
@@ -1100,6 +1115,7 @@ let private minimalRowsetBundleNoGuids : CatalogReader.RowsetBundle =
         Attributes = [ idAttrRow None; emailAttrRow None ]
         References = []
         Triggers = []
+        Sequences = []
     }
 
 let private referenceJsonFixture =
@@ -1219,6 +1235,7 @@ let ``slice 5 parity: reference-bearing fixture — JSON ≡ Rowset (no Guids; t
             Attributes = [ accountIdRow None; userIdRow; userAccountIdRow ]
             References = [ userAccountRefRow ]
             Triggers = []
+            Sequences = []
         }
     assertCatalogsTotallyEqual referenceJsonFixture bundle
 
@@ -1235,6 +1252,7 @@ let ``slice 5 parity: minimal fixture WITH Guids — shape parity holds modulo S
             Attributes = [ idAttrRow (Some idGuid); emailAttrRow (Some emailGuid) ]
             References = []
             Triggers = []
+            Sequences = []
         }
     // SsKey identity diverges (rowset = OssysOriginal Guid; JSON =
     // Synthesized); structural shape (names, types, columns,
@@ -1253,6 +1271,7 @@ let ``slice 5 parity: SsKey divergence axis — Guids change identity but not sh
             Attributes = [ idAttrRow (Some idGuid); emailAttrRow (Some emailGuid) ]
             References = []
             Triggers = []
+            Sequences = []
         }
     let jsonCat   =
         match parseSync (CatalogReader.SnapshotJson minimalJsonFixture) with

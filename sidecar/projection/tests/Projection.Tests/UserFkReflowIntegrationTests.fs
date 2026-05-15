@@ -91,7 +91,7 @@ let private mkCatalog (kinds: Kind list) : Catalog =
         { SsKey = mkKey ["TestModule"]
           Name  = mkName "TestModule"
           Kinds = kinds; IsActive = true  }
-    { Modules = [ m ]; Triggers = []  }
+    { Modules = [ m ]; Triggers = []; Sequences = []  }
 
 let private orderRowKey (id: int) : SsKey =
     mkKey ["TestModule"; "Order"; "Row"; sprintf "%d" id]

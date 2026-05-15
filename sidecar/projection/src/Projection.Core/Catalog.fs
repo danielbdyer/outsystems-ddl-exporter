@@ -358,17 +358,132 @@ type Trigger = {
 }
 
 
+/// Cache directive discriminant for a database sequence. Mirrors V1's
+/// `Osm.Domain.Model.SequenceCacheMode` four-way enum: V1's JSON
+/// `cacheMode` string is normalized into one of these closed-DU
+/// values at parse time. `UnsupportedYet` is V1's catch-all for
+/// strings the V1 mapper doesn't recognise (preserved as a value so
+/// V2 surfaces the "saw something unmodelled" signal explicitly
+/// rather than dropping the row). Payload-free per the codified
+/// ModalityMark-style closed-DU pattern.
+///
+/// Per pillar 9: V2 carriage reflects V1's interpretation verbatim.
+/// Downstream emitter overlays (chapter 4.1.A slice 8 / §6.4.7
+/// territory) own the choice of which mode produces which DDL clause
+/// (e.g., `CACHE n` vs `NO CACHE` vs default).
+type SequenceCacheMode =
+    /// V1's `Unspecified` — the JSON `cacheMode` property is absent
+    /// or null. SQL Server treats this as the engine default.
+    | Unspecified
+    /// V1's `Cache` — explicit `CACHE n` with a positive `CacheSize`.
+    | Cache
+    /// V1's `NoCache` — explicit `NO CACHE`.
+    | NoCache
+    /// V1's `UnsupportedYet` — the source carried a `cacheMode`
+    /// string V1 doesn't recognise. V2 mirrors V1's signal rather
+    /// than silently coalescing to `Unspecified`.
+    | UnsupportedYet
+
+/// Typed structural display for `SequenceCacheMode`. Tag-only
+/// variants; renders to the variant name.
+[<RequireQualifiedAccess>]
+module SequenceCacheMode =
+    let toStructured (m: SequenceCacheMode) : StructuredString =
+        match m with
+        | Unspecified    -> StructuredString.tag "Unspecified"
+        | Cache          -> StructuredString.tag "Cache"
+        | NoCache        -> StructuredString.tag "NoCache"
+        | UnsupportedYet -> StructuredString.tag "UnsupportedYet"
+
+    let toDiagnosticString (m: SequenceCacheMode) : string =
+        toStructured m |> StructuredString.render
+
+
+/// A database sequence lifted from V1's top-level `sequences` JSON
+/// array (`OsmModel.Sequences` in V1's domain model). Per chapter
+/// A.0' slice δ (L3-S5 IR-fidelity lift): sequences carry schema-
+/// qualified identity, the SQL data type, optional bounds (start /
+/// increment / min / max), cycle flag, and cache directive.
+///
+/// Unlike triggers (slice γ), sequences are not bound to a Kind —
+/// they belong to a schema. The IR therefore carries `Schema`
+/// directly rather than a `KindSsKey` linkage. Top-level
+/// `Catalog.Sequences` aggregation matches V1's top-level shape
+/// (`osm_model.json` carries `sequences` at the root); V2's rowset-
+/// bundle path adds a parallel `Sequences : SequenceRow list`
+/// surface for symmetry with the JSON path even though V1's current
+/// SQL extraction emits an empty array (per
+/// `ModelDeserializerFacade.cs:72` — V1 sources sequences from JSON
+/// only today).
+///
+/// Carriage is DataIntent per pillar 9 — the IR reflects V1's
+/// complete sequence inventory; emission policy (suppress unused
+/// sequences / rewrite for environment promotion / etc.) is
+/// downstream OperatorIntent owned by emitter overlays.
+type Sequence = {
+    SsKey          : SsKey
+    Name           : Name
+    /// Schema namespace for the sequence (V1
+    /// `sequences[].schema`). The IR carries whatever V1 provides;
+    /// the convention in V1's `osm_model.json` exports is `dbo`.
+    /// Carried as `string` rather than a typed `SchemaName` VO until
+    /// a consumer pays for the explicit projection (the same
+    /// posture as `PhysicalRealization.Schema`).
+    Schema         : string
+    /// SQL Server data type name (V1 `sequences[].dataType`); e.g.
+    /// `bigint`, `int`, `numeric(20,0)`. Free-form on V2's side;
+    /// the emitter (chapter 4.1.A slice 8 / §6.4.7 territory)
+    /// decides validation against the target dialect's allowed
+    /// types.
+    DataType       : string
+    /// V1 `sequences[].startValue`; SQL Server `START WITH` clause
+    /// payload. `None` when omitted in V1's projection.
+    StartValue     : decimal option
+    /// V1 `sequences[].increment`; SQL Server `INCREMENT BY` clause
+    /// payload. `None` when omitted in V1's projection.
+    Increment      : decimal option
+    /// V1 `sequences[].minValue`; SQL Server `MINVALUE` clause
+    /// payload. `None` when omitted in V1's projection.
+    MinValue       : decimal option
+    /// V1 `sequences[].maxValue`; SQL Server `MAXVALUE` clause
+    /// payload. `None` when omitted in V1's projection.
+    MaxValue       : decimal option
+    /// V1 `sequences[].cycle`; SQL Server `CYCLE` / `NO CYCLE`
+    /// directive. Default-false per V1's `bool Cycle` (non-null
+    /// boolean in V1's schema).
+    IsCycleEnabled : bool
+    /// V1 `sequences[].cacheMode`; the four-way closed DU above.
+    /// Per pillar 9: V2 mirrors V1's mapping verbatim, including
+    /// the `UnsupportedYet` signal for unrecognised strings.
+    CacheMode      : SequenceCacheMode
+    /// V1 `sequences[].cacheSize`; SQL Server `CACHE n` clause
+    /// payload. `None` when omitted. V1's domain layer normalizes
+    /// `CacheMode = Cache` with a null/negative `CacheSize` to
+    /// `UnsupportedYet`; V2's adapter mirrors that normalization at
+    /// parse time so the IR's `(CacheMode, CacheSize)` pair stays
+    /// internally consistent.
+    CacheSize      : int option
+}
+
+
 /// The whole catalog: a coproduct over modules, plus catalog-level
-/// aggregations (Triggers; future Sequences at slice δ; future
-/// ExtendedProperties at slice ζ) that V1 carries per-entity but V2
-/// hoists to top-level for emitter-side enumeration.
+/// aggregations (Triggers from slice γ; Sequences from slice δ;
+/// future ExtendedProperties at slice ζ) that V1 carries either
+/// per-entity (triggers) or top-level (sequences) but V2 hoists to
+/// a single top-level surface for emitter-side enumeration.
 type Catalog = {
-    Modules  : Module list
+    Modules   : Module list
     /// Per chapter A.0' slice γ: database triggers lifted from V1's
     /// per-entity `triggers` JSON array (or the `OutsystemsTriggerRow`
     /// rowset equivalent). Each trigger carries explicit `KindSsKey`
     /// linking back to the owning entity.
-    Triggers : Trigger list
+    Triggers  : Trigger list
+    /// Per chapter A.0' slice δ: database sequences lifted from V1's
+    /// top-level `sequences` JSON array (or, eventually, the
+    /// equivalent rowset bundle — V1's current SQL extraction emits
+    /// empty per `ModelDeserializerFacade.cs:72`). Schema-scoped, not
+    /// Kind-scoped; the `Schema` field carries the namespace.
+    Sequences : Sequence list
 }
 
 
@@ -495,7 +610,17 @@ module Catalog =
     /// consumer" — flowing through `create` makes #1–#5 impossible
     /// to violate. Aggregates errors so a consumer sees every
     /// violation in one Result.
-    let create (modules: Module list) (triggers: Trigger list) : Result<Catalog> =
+    ///
+    /// Chapter A.0' slice δ — `sequences` joins `triggers` as a
+    /// catalog-level aggregation; no cross-field invariants checked
+    /// today (sequences are schema-scoped, not Kind-scoped — no
+    /// dangling-reference class exists). Future cross-field batch
+    /// (§6.4.5 / §6.4.6) may validate `SequenceSsKey` disjointness.
+    let create
+        (modules: Module list)
+        (triggers: Trigger list)
+        (sequences: Sequence list)
+        : Result<Catalog> =
         let moduleDupes =
             modules
             |> List.groupBy (fun m -> m.SsKey)
@@ -570,6 +695,9 @@ module Catalog =
             moduleDupes @ kindDupes @ referenceErrors @ indexErrors
 
         if List.isEmpty allErrors then
-            Result.success { Modules = modules; Triggers = triggers }
+            Result.success
+                { Modules   = modules
+                  Triggers  = triggers
+                  Sequences = sequences }
         else
             Result.failure allErrors

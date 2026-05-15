@@ -119,7 +119,7 @@ let private endToEndCatalog : Catalog =
     { Modules = [
         { SsKey = mkKey "OS_MOD_E2E"
           Name  = mkName "EndToEnd"
-          Kinds = [ parentKind; childKind; countryKind ]; IsActive = true  } ]; Triggers = []  }
+          Kinds = [ parentKind; childKind; countryKind ]; IsActive = true  } ]; Triggers = []; Sequences = []  }
 
 // ---------------------------------------------------------------------------
 // V1 JSON fixtures embedded.
