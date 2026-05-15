@@ -11259,3 +11259,132 @@ The **physical_isPresentButInactive field** (V1 JSON line 769; named in session-
 - `2026-05-13 — Pass return-type codification (session 14)` (false-start documentation discipline; test names preserve session-21 cites as supersession markers).
 
 ---
+
+## 2026-05-15 — Closed-DU empirical-test discipline refinement: builders absorb default-shaped churn
+
+**Status:** decided
+
+**Context.** The closed-DU expansion empirical-test discipline (`DECISIONS 2026-05-13`; record-extension generalization at chapter 3.2 close) says that adding a record field produces F# field-missing errors at literal-construction sites only — semantic-interpretation sites unaffected. The discipline serves a dual purpose: (a) the type system enforces explicit handling at construction; (b) the agent physically visits every literal site, surfacing latent semantic shift if any field's intent diverges per site.
+
+Slice α (`Description`) and slice β (`IsActive`) operated the discipline on ~100-200 test-fixture record-literal sites each. Slice α was purely additive (Description = None everywhere; no semantic shift); slice β was a semantic shift (the IsActive carry-through retiring session-21's silent drop). The discipline paid its weight on slice β — the audit at every literal site let the agent verify nothing else was assuming filtered behavior. It paid nothing on slice α — every site got `None` mechanically, and the visit produced no surfaced surprise.
+
+Chapter A.0' has 7 more slices to ship (γ Triggers; δ Sequences; ε DefaultValue / Computed / ColumnChecks; ζ ExtendedProperties; η Temporal modality; θ TableId.Catalog; ι IsExternal/Origin audit). Most are additive-with-sensible-default — the slice-α shape, not the slice-β shape. The discipline's audit value at literal sites is low; the mechanical churn is high.
+
+### Decision
+
+**Refine the discipline with two operative modes.**
+
+1. **Literal-site audit mode** (preserved as-is for semantic-shift slices). When a new field has semantic ambiguity (its default value is not obvious from the IR's role; or the field retires a prior disposition; or the field interacts with existing fields in non-obvious ways), construction sites stay as **explicit literal records**. Every site forces the agent to visit and confirm the default. Slice β's `IsActive` is the canonical example: every literal site got `IsActive = true` mechanically, but the AGENT's walk surfaced the four inactive-records tests that needed inversion (silent-drop → carry-through) — those tests would have been missed if a builder had absorbed the default.
+
+2. **Builder-mediated mode** (new; for additive-default-shaped slices). When a new field is purely additive with a sensible default (`Description = None`, `Triggers = []`, `Sequences = []`, etc.), test construction sites go through a `Fixtures.<recordName>` builder that fills the default. Adding the field touches **only the builder definition**, not the call sites. Override-by-`with` at the call site stays the standard pattern for fields that vary per fixture.
+
+   Builders live in `tests/Projection.Tests/Fixtures.fs` (test-only surface; no production code touches them). The 4 high-field-count records earn builders today: `Fixtures.attribute`, `Fixtures.kind`, `Fixtures.module'`, `Fixtures.catalog`. The OSSYS rowset DTOs (`AttributeRow`, `KindRow`, `ModuleRow`) earn builders too — they're test-only by construction.
+
+### Test for which mode to use
+
+The agent's question at slice open is: **"Does the new field's default require an audit at every literal site?"**
+
+- **YES → literal-site audit mode.** The field has semantic ambiguity; the discipline's visit-every-site cost pays for itself in audit value. Slice β's IsActive falls here (retires a silent drop; surfaces consumer assumptions).
+- **NO → builder-mediated mode.** The field is purely additive with one sensible default. Literal sites that haven't migrated to the builder accept the default mechanically; literal sites that have migrated absorb the default through the builder. Future migrations happen opportunistically.
+
+The agent records the answer in the slice's DECISIONS amendment. Slice γ (Triggers) operates the builder-mediated mode for the first time; the slice-γ amendment cites this refinement as the operative discipline.
+
+### Discipline NOT changed
+
+- The **named failure mode** — "F# field-missing errors at semantic-interpretation sites" — remains a discipline violation in both modes. If a new field surfaces errors at consumer/interpretation sites (not just construction sites), the seam is wrong; the slice halts and writes the structural fix before continuing.
+- The **record-extension generalization** (chapter 3.2 close) holds. Both modes presume the closed-DU empirical-test discipline operates structurally: adding a field never breaks unrelated semantic consumers. The two modes differ only in WHERE the construction-site work happens (call sites vs builder).
+- **Builders are test-only.** Production code (adapters, passes, emitters) never goes through a fixture builder; it constructs records explicitly via smart constructors (`Module.create`, `Catalog.create`) or direct literals where smart constructors don't apply (within a pass's intermediate values). The fixture builder is a test-fixture-construction primitive, not a production primitive. The "IR grows under evidence" discipline (`DECISIONS 2026-05-07`) governs production primitives; this refinement governs the test surface only.
+
+### Consequences
+
+- Chapter A.0' slices γ / δ / ε / ζ ship with significantly less mechanical edit churn. The blast radius for an additive-default-shaped field is "extend the builder + any literal sites not yet migrated"; for slice γ's `Catalog.Triggers = []` addition, that's the 76 catalog-literal sites (mechanical) plus the new builder default — not the 200+ Module/Kind/Attribute literal-site touches that slice α/β required.
+- The slice-γ commit demonstrates the precedent: builders added; Fixtures.customer / order / country migrate to use them; new `TriggerLiftTests.fs` uses them from the start.
+- Future record-extension slices choose their mode at slice open. The DECISIONS amendment for each slice cites the chosen mode + rationale.
+- The chapter-close ritual gains a small audit step (per `DECISIONS 2026-05-14`): "for each record-extension slice in this chapter, was the mode-choice (literal-site audit vs builder-mediated) appropriate in retrospect? Did the audit surface anything (literal-site mode) or did the builder absorb cleanly (builder-mediated mode)?"
+
+### Cross-references
+
+- `DECISIONS 2026-05-13 — Closed-DU expansion: empirical confirmation` (the original discipline this refines; preserved per append-only).
+- `DECISIONS 2026-05-15 — A.0' slice β: IsActive carry-through` (literal-site audit mode worked example; the audit DID surface the four inactive-records tests).
+- `DECISIONS 2026-05-15 — A.0' slice γ: Triggers IR lift + Fixtures builders` (builder-mediated mode first worked example; appears in this commit).
+- `CHAPTER_A_0_PRIME_OPEN.md` slice plan (slice γ onward are mostly additive-default-shaped; the refinement applies).
+
+---
+
+## 2026-05-15 — A.0' slice γ: Triggers IR lift + Fixtures builders (builder-mediated mode first worked example)
+
+**Status:** decided
+
+**Context.** Chapter A.0' slice γ adds `Catalog.Triggers : Trigger list` + a `Trigger` value type + OSSYS adapter pickup (JSON path + rowset path). Per L3-S4 (`PRODUCT_AXIOMS.md`): every Trigger in `Catalog.Triggers` with `IsDisabled = false` appears in emitted DDL as a `CREATE TRIGGER` statement with identical `Definition` text; disabled triggers emit with disabled state preserved. V1's source: per-entity `triggers` JSON array carrying `{ name, isDisabled, definition }` (verified in `src/AdvancedSql/outsystems_metadata_rowsets.sql:901-916`); rowset path mirrors via `OutsystemsTriggerRow(EntityId, TriggerName, IsDisabled, TriggerDefinition)` (`IOutsystemsMetadataReader.cs:197`).
+
+The slice is also the **first worked example of the builder-mediated mode** (per `DECISIONS 2026-05-15 — Closed-DU empirical-test discipline refinement`). The Trigger field is purely additive with a sensible default (`Triggers = []`); the builder-mediated mode applies.
+
+### Harvest-dichotomy classification (per pillar 9)
+
+Apply the 4-step harvest workflow:
+
+1. **Identify what changes.** Input X = V1 entity `triggers` JSON array (per-entity) or `OutsystemsTriggerRow` (rowset). Output Y = `Trigger` records in V2's `Catalog.Triggers : Trigger list`, each carrying the source `KindSsKey`.
+2. **Determine whose intent is expressed.** The transformation is pure input evidence: V1's `sys.triggers` reflects the deployed schema's triggers; V2's IR mirrors that data. No `Policy`, no operator-supplied filter, no overlay. Per pillar 9: **`DataIntent`**.
+3. **Register or document.** Transformation lands in v2 at this slice. The A.4.7-prelude small slice (per `DECISIONS 2026-05-15 (late)`) will retroactively register adapter rules; slice γ's harvest-dichotomy classification is recorded here so the registration lands cleanly.
+4. **Confirm.** Trigger emission policy (CREATE TRIGGER statement; disabled-state preservation) is downstream `OperatorIntent` (the operator's choice to emit triggers verbatim; future overlays may rewrite or suppress); slice γ carriage to IR is upstream `DataIntent`. Pillar 9 confirmed.
+
+### Decision
+
+1. **`Trigger` value type.** New record in `Catalog.fs`:
+   ```fsharp
+   type Trigger = {
+       SsKey      : SsKey      // OS_TRIG_<Module>_<Kind>_<Name>
+       Name       : Name       // V1 sys.triggers.name
+       KindSsKey  : SsKey      // owning Kind (cross-Catalog reference)
+       Definition : string     // V1 OBJECT_DEFINITION(tr.object_id) — full T-SQL
+       IsDisabled : bool       // V1 sys.triggers.is_disabled
+   }
+   ```
+   No smart constructor today (additive; no field-level invariants beyond Name's). Cross-field invariants (every `Trigger.KindSsKey` exists in the catalog) deferred to the §6.4.5 / §6.4.6 cross-field invariants batch (Campaign B; sibling chapter).
+
+2. **`Catalog.Triggers : Trigger list` field.** Top-level Catalog aggregation, not per-Kind. Rationale: V1's data shape places triggers per-entity, but Catalog-level aggregation makes emitter enumeration straightforward (single list walk vs nested Kind walk), and triggers can reference multiple Kinds in their `Definition` (a trigger on Table A may write to Table B). Per-Kind binding preserved via `Trigger.KindSsKey`.
+
+3. **OSSYS adapter pickup.**
+   - **JSON path:** `parseTrigger : string -> string -> JsonElement -> Result<Trigger>` (mirrors `parseIndex`'s shape — takes moduleName, entityName, the trigger JSON; produces a `Trigger` with the parent Kind's SsKey). Called per-entity during `parseKind`; per-Kind triggers collected and threaded through to the top-level aggregation. Defensive read for `isDisabled` defaults to `false` per V1's `CAST(is_disabled AS bit)` semantics; `definition` is required (no default — missing definition is an `adapter.osm.triggerFields` error).
+   - **Rowset path:** New DTO `TriggerRow = { EntityId; TriggerName; IsDisabled; TriggerDefinition }` in `CatalogReader.fs`; new `Triggers : TriggerRow list` field on `RowsetBundle`. Per-entity grouping via `Map.ofList`, then `parseTriggerRow` per row produces `Trigger` records; same aggregation shape.
+   - **Aggregation:** `parseDocument` and `parseRowsetBundle` collect per-Kind triggers as parsing proceeds, then attach to `Catalog.Triggers` at the top.
+
+4. **ReadSide adapter.** Reconstructed catalog defaults `Triggers = []`. Triggers reconstruction from `sys.triggers` is deferred (chapter 4.1.A slice 8 / §6.4.7 territory); ReadSide's role is schema-shape reconstruction, not full V1-fidelity recovery.
+
+5. **`Catalog.create` unchanged.** The smart constructor's invariants do not extend to triggers in this slice (cross-Catalog invariant — `Trigger.KindSsKey` validity — deferred to §6.4.5 cross-field invariants batch). Triggers flow through `Catalog.create` as an unvalidated additive field; future strengthening lands when the cross-field batch ships.
+
+6. **Builder-mediated test refactor.** Per the discipline-refinement amendment above, slice γ's `Catalog.Triggers = []` extension uses builder-mediated mode. The 76 catalog-literal sites add the field mechanically; new `TriggerLiftTests.fs` test sites construct via builders from the start.
+
+   New builders in `Fixtures.fs`:
+   - `Fixtures.attribute (ssKey: SsKey) (name: Name) : Attribute` — defaults: `Type = Integer`, `Column = { ColumnName = Name.value name; IsNullable = false }`, `IsPrimaryKey = false`, `IsMandatory = false`, `Length = None`, `Precision = None`, `Scale = None`, `IsIdentity = false`, `Description = None`, `IsActive = true`.
+   - `Fixtures.kind (ssKey: SsKey) (name: Name) : Kind` — defaults: `Origin = OsNative`, `Modality = []`, `Physical = { Schema = "dbo"; Table = Name.value name }`, `Attributes = []`, `References = []`, `Indexes = []`, `Description = None`, `IsActive = true`.
+   - `Fixtures.module' (ssKey: SsKey) (name: Name) : Module` — defaults: `Kinds = []`, `IsActive = true`.
+   - `Fixtures.catalog (modules: Module list) : Catalog` — defaults: `Triggers = []`.
+
+   The 3 named fixtures (customer / order / country) in `Fixtures.fs` migrate to the builder pattern as the precedent demonstration. Other test-site migrations happen opportunistically (no big-bang migration of 200+ sites in this slice).
+
+### Reasoning / consequences
+
+- **Slice γ is the precedent for builder-mediated record extension.** Future slices δ (Sequences) / ε (DefaultValue) / ζ (ExtendedProperties) inherit the pattern; each chooses literal-site-audit vs builder-mediated mode per the test-for-which-mode-to-use criterion. Most chapter-A.0' additions are additive-default-shaped, so builder-mediated will dominate.
+- **L3-S4 advances Bucket D → Bucket A** at slice γ close. Trigger IR carriage is the dependency; emission lands when the SsdtDdlEmitter / DacpacEmitter consumes the field (chapter 4.1.A slice 8 / §6.4.7 — outside slice γ scope).
+- **L3-Boundary-NoSilentDrop completion criterion advances.** Per the chapter A.0' success criteria (CHAPTER_A_0_PRIME_OPEN.md), every V1 concept should either be carried to V2's IR or surface as a structured error. Slice γ closes the trigger drop class; the slice-ι property test (per the chapter close) will verify the absence of silent drops across the full V1-input envelope.
+- **Pillar 9 holds.** Trigger carriage is DataIntent; the IR reflects V1's complete trigger inventory. Future emitter overlays (e.g., "skip disabled triggers" or "rewrite triggers for cross-environment promotion") are OperatorIntent and land at the emitter / pass layer when consumers surface.
+- **Tolerance forward signal.** Triggers currently filter at the V1↔V2 differential test boundary (V2 silently drops them; canary sees empty Triggers from ReadSide). With slice γ, the OSSYS adapter populates Triggers but ReadSide does not. The differential test may surface this asymmetry; chapter 4.1.A slice 8 (extended-properties / dac emission) is the natural cash-out point. The Tolerance taxonomy may grow a `TriggersAdapterOnly` variant at chapter-4.1.A; tracked as a chapter-close-ritual follow-up.
+- **Cross-references between adapter paths.** JSON path and rowset path must produce identical Catalog values for matching inputs (cross-source parity discipline; chapter 3.2 slice 5 precedent). The slice-γ property tests include a cross-source parity assertion for triggers.
+
+### Cross-references
+
+- `DECISIONS 2026-05-15 — Closed-DU empirical-test discipline refinement: builders absorb default-shaped churn` (the discipline this slice operates).
+- `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification` (the classification methodology).
+- `DECISIONS 2026-05-15 — A.0' slice β: IsActive carry-through` (immediate predecessor slice; literal-site audit mode worked example).
+- `PRODUCT_AXIOMS.md` L3-S4 (Trigger definitions are complete) — Bucket D → Bucket A at slice γ close.
+- `PRODUCT_AXIOMS.md` L3-Boundary-NoSilentDrop (chapter A.0' completion criterion; slice γ closes the trigger drop class).
+- `V2_PRODUCTION_CUTOVER.md` §3.3 (IR-fidelity gap table; trigger gap retires).
+- `V2_PRODUCTION_CUTOVER.md` §6.0' (chapter A.0' workstream spec; slice γ named).
+- `CHAPTER_A_0_PRIME_OPEN.md` slice γ table entry.
+- `src/AdvancedSql/outsystems_metadata_rowsets.sql:361-373` (V1 `#Triggers` temp table; 3 columns).
+- `src/AdvancedSql/outsystems_metadata_rowsets.sql:901-916` (V1 `#TriggerJson` per-entity projection; `FOR JSON PATH` shape).
+- `src/Osm.Pipeline/SqlExtraction/IOutsystemsMetadataReader.cs:197` (V1 `OutsystemsTriggerRow` C# DTO).
+- `src/Osm.Pipeline/SqlExtraction/SnapshotJsonBuilder.cs:241-242` (V1 JSON emission point for `triggers` property on entity).
+
+---

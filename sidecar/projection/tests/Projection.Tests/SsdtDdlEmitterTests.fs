@@ -264,6 +264,7 @@ let private allPrimitiveTypesCatalog : Catalog =
                 IsActive = true
             }
         ]
+        Triggers = []
     }
 
 [<Fact>]
@@ -355,6 +356,7 @@ let private compositePkCatalog : Catalog =
                 IsActive = true
             }
         ]
+        Triggers = []
     }
 
 [<Fact>]
@@ -475,6 +477,7 @@ let private indexedCatalog : Catalog =
                 IsActive = true
             }
         ]
+        Triggers = []
     }
 
 [<Fact>]
@@ -632,6 +635,7 @@ let private fkCatalog : Catalog =
                 IsActive = true
             }
         ]
+        Triggers = []
     }
 
 [<Fact>]
@@ -807,7 +811,8 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
     let catalog : Catalog =
         { Modules =
             [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ]; IsActive = true  }
-              { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ]; IsActive = true  } ] }
+              { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ]; IsActive = true  } ]
+          Triggers = [] }
     let enriched = enrich catalog
     let statements =
         SsdtDdlEmitter.statements enriched
@@ -873,7 +878,8 @@ let ``Slice 6: cross-module FK emits inline FOREIGN KEY constraint`` () =
     let catalog : Catalog =
         { Modules =
             [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ]; IsActive = true  }
-              { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ]; IsActive = true  } ] }
+              { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ]; IsActive = true  } ]
+          Triggers = [] }
     let enriched = enrich catalog
     let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
     let bFile = ArtifactByKind.toMap artifact |> Map.find bKindKey
@@ -923,7 +929,8 @@ let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module F
     let catalog : Catalog =
         { Modules =
             [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ]; IsActive = true  }
-              { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ]; IsActive = true  } ] }
+              { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ]; IsActive = true  } ]
+          Triggers = [] }
     let enriched = enrich catalog
     let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
     let keys = ArtifactByKind.toMap artifact |> Map.toSeq |> Seq.map fst |> Set.ofSeq

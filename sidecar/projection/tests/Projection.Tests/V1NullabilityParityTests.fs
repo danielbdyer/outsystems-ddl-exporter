@@ -71,7 +71,7 @@ let private buildCatalog (mandatoryColumnIsNullable: bool) (mandatoryColumnIsMan
     { Modules = [
         { SsKey = mkKey "OS_MOD_Sample"
           Name  = mkName "Sample"
-          Kinds = [ kind ]; IsActive = true  } ] }
+          Kinds = [ kind ]; IsActive = true  } ]; Triggers = []  }
 
 let private buildProfile (rowCount: int64) (nullCount: int64) : Profile =
     let probe =

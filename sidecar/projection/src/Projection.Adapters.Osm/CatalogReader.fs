@@ -192,6 +192,20 @@ module CatalogReader =
             HasDbConstraint : bool
         }
 
+    /// V1 `sys.triggers` row scoped to its owning entity. Mirrors the
+    /// `#Triggers` temp-table shape in
+    /// `outsystems_metadata_rowsets.sql:361-373` and the C# DTO
+    /// `OutsystemsTriggerRow(EntityId, TriggerName, IsDisabled,
+    /// TriggerDefinition)`. Chapter A.0' slice γ extension; previously
+    /// dropped silently at the adapter boundary (no IR axis).
+    type TriggerRow =
+        {
+            EntityId   : int
+            TriggerName : string
+            IsDisabled : bool
+            TriggerDefinition : string
+        }
+
     /// V1 rowset bundle — the in-memory carrier the future C# SqlClient
     /// loader produces; in-memory test fixtures construct directly. Per
     /// `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md` §2-§3: hand-written F#
@@ -215,6 +229,7 @@ module CatalogReader =
             Kinds      : KindRow list
             Attributes : AttributeRow list
             References : ReferenceRow list
+            Triggers   : TriggerRow list
         }
 
     type SnapshotSource =
@@ -319,6 +334,15 @@ module CatalogReader =
         (moduleName: string) (entityName: string) (indexName: string)
         : Result<SsKey> =
         SsKey.synthesizedComposite "OS_IDX" [ moduleName; entityName; indexName ]
+
+    /// Trigger SsKey synthesis (chapter A.0' slice γ). Triggers
+    /// identify by V1's `sys.triggers.name`, scoped to the entity.
+    /// Unique per entity per V1's `#Triggers` clustered index on
+    /// `(EntityId, TriggerName)`.
+    let private triggerSsKey
+        (moduleName: string) (entityName: string) (triggerName: string)
+        : Result<SsKey> =
+        SsKey.synthesizedComposite "OS_TRIG" [ moduleName; entityName; triggerName ]
 
     // -----------------------------------------------------------------------
     // JSON helpers — light wrappers over System.Text.Json.JsonElement.
@@ -824,9 +848,58 @@ module CatalogReader =
                         "Required index fields missing on an entity in '%s.%s'."
                         moduleName entityName))
 
+    /// Chapter A.0' slice γ — V1's per-entity trigger JSON
+    /// (`{ "name", "isDisabled", "definition" }`) → V2's `Trigger`.
+    /// V1's `outsystems_metadata_rowsets.sql:901-916` emits this shape
+    /// per entity via `FOR JSON PATH`; `SnapshotJsonBuilder.cs:241`
+    /// writes it as the entity's `triggers` property.
+    let private parseTrigger
+        (moduleName: string) (entityName: string) (triggerJson: JsonElement)
+        : Result<Trigger> =
+        let nameResult       = getString triggerJson "name"
+        let definitionResult = getString triggerJson "definition"
+        // V1 `CAST(is_disabled AS bit)` emits `true`/`false`; default
+        // to `false` when the property is absent (V1's `sys.triggers`
+        // always provides it, but defensive on the boundary).
+        let isDisabled =
+            match triggerJson.TryGetProperty("isDisabled") with
+            | true, value when value.ValueKind = JsonValueKind.True -> true
+            | _ -> false
+        match nameResult, definitionResult with
+        | Ok triggerName, Ok definition ->
+            let trKey  = triggerSsKey moduleName entityName triggerName
+            let trName = Name.create triggerName
+            let kKey   = kindSsKey moduleName entityName
+            match trKey, trName, kKey with
+            | Ok k, Ok n, Ok knd ->
+                Result.success
+                    { SsKey      = k
+                      Name       = n
+                      KindSsKey  = knd
+                      Definition = definition
+                      IsDisabled = isDisabled }
+            | _ ->
+                propagateOrFallback
+                    [ Result.errors trKey
+                      Result.errors trName
+                      Result.errors kKey ]
+                    (fun () ->
+                        adapterError
+                            "triggerBuild"
+                            (sprintf
+                                "Failed to build trigger '%s' on '%s.%s'."
+                                triggerName moduleName entityName))
+        | _ ->
+            Result.failureOf (
+                adapterError
+                    "triggerFields"
+                    (sprintf
+                        "Required trigger fields missing on an entity in '%s.%s'."
+                        moduleName entityName))
+
     let private parseKind
         (moduleName: string) (entityJson: JsonElement)
-        : Result<Kind> =
+        : Result<Kind * Trigger list> =
         let nameResult       = getString entityJson "name"
         let physicalResult   = getString entityJson "physicalName"
         let schemaResult     = getString entityJson "db_schema"
@@ -889,11 +962,22 @@ module CatalogReader =
                     |> List.map (parseIndex moduleName entityName)
                 | _ -> []
             let foldedIdx = Result.aggregate indexResults
-            match kindKey, kindName, foldedAttrs, foldedRefs, foldedIdx with
-            | Ok k, Ok n, Ok attrs, Ok refs, Ok idxs ->
+            // Chapter A.0' slice γ — per-entity triggers JSON array.
+            // Aggregated up to Catalog.Triggers by parseModule /
+            // parseDocument; each trigger carries explicit KindSsKey.
+            let triggerResults =
+                match entityJson.TryGetProperty("triggers") with
+                | true, arr when arr.ValueKind = JsonValueKind.Array ->
+                    arr.EnumerateArray()
+                    |> Seq.toList
+                    |> List.map (parseTrigger moduleName entityName)
+                | _ -> []
+            let foldedTriggers = Result.aggregate triggerResults
+            match kindKey, kindName, foldedAttrs, foldedRefs, foldedIdx, foldedTriggers with
+            | Ok k, Ok n, Ok attrs, Ok refs, Ok idxs, Ok triggers ->
                 let modality =
                     if isStatic then [ Static [] ] else []
-                Result.success
+                let kind =
                     { SsKey       = k
                       Name        = n
                       Origin      = parseOrigin isExternal
@@ -904,6 +988,7 @@ module CatalogReader =
                       Indexes     = idxs
                       Description = description
                       IsActive    = isActive }
+                Result.success (kind, triggers)
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`
                 // (codified at two-consumer threshold; same surface as
@@ -918,7 +1003,8 @@ module CatalogReader =
                       Result.errors kindName
                       Result.errors foldedAttrs
                       Result.errors foldedRefs
-                      Result.errors foldedIdx ]
+                      Result.errors foldedIdx
+                      Result.errors foldedTriggers ]
                     (fun () ->
                         adapterError
                             "kindBuild"
@@ -935,7 +1021,7 @@ module CatalogReader =
     // Translation — V1 module → V2 Module.
     // -----------------------------------------------------------------------
 
-    let private parseModule (moduleJson: JsonElement) : Result<Module> =
+    let private parseModule (moduleJson: JsonElement) : Result<Module * Trigger list> =
         let nameResult = getString moduleJson "name"
         match nameResult with
         | Ok rawName ->
@@ -959,22 +1045,25 @@ module CatalogReader =
                     |> List.map (parseKind rawName)
                 | _ ->
                     []
-            let foldedKinds = Result.aggregate entitiesArr
-            match modKey, modName, foldedKinds with
-            | Ok k, Ok n, Ok kinds ->
+            let foldedEntries = Result.aggregate entitiesArr
+            match modKey, modName, foldedEntries with
+            | Ok k, Ok n, Ok kindTriggerPairs ->
+                let kinds    = kindTriggerPairs |> List.map fst
+                let triggers = kindTriggerPairs |> List.collect snd
                 // Per DECISIONS pillar 6 (chapter-3.6 sidebar):
                 // boundary adapters flow through the aggregate-root
                 // smart constructor, not record-literal — invariants
                 // (kind-SsKey-disjoint within module) are checked
                 // structurally at the boundary, not deferred.
                 Module.create k n kinds isActive
+                |> Result.map (fun m -> m, triggers)
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 // Substantive causes survive the module-level wrap.
                 propagateOrFallback
                     [ Result.errors modKey
                       Result.errors modName
-                      Result.errors foldedKinds ]
+                      Result.errors foldedEntries ]
                     (fun () ->
                         adapterError
                             "moduleBuild"
@@ -998,11 +1087,17 @@ module CatalogReader =
                 |> List.map parseModule
             let folded = Result.aggregate modulesList
             match folded with
-            | Ok modules ->
+            | Ok moduleTriggerPairs ->
+                let modules  = moduleTriggerPairs |> List.map fst
+                let triggers = moduleTriggerPairs |> List.collect snd
                 // Per DECISIONS pillar 6: boundary adapter flows
                 // through `Catalog.create` (aggregate-root invariant
                 // check) rather than record-literal construction.
-                Catalog.create modules
+                // Chapter A.0' slice γ — Catalog.create accepts the
+                // per-module aggregated triggers as its second arg;
+                // cross-field validation (Trigger.KindSsKey points at
+                // a real Kind) deferred to §6.4.5.
+                Catalog.create modules triggers
             | Error errors  -> Error errors
         | _ ->
             Result.failureOf (
@@ -1153,8 +1248,9 @@ module CatalogReader =
         (moduleEspaceKind: string option)
         (attributesByEntity: Map<int, AttributeRow list>)
         (referencesByAttr: Map<int, ReferenceRow list>)
+        (triggersByEntity: Map<int, TriggerRow list>)
         (kindRow: KindRow)
-        : Result<Kind> =
+        : Result<Kind * Trigger list> =
         let kindKey  = kindSsKeyFromRow moduleName kindRow
         let kindName = Name.create kindRow.EntityName
         // Chapter A.0' slice β — retires session-21's attribute
@@ -1185,8 +1281,41 @@ module CatalogReader =
                 |> Option.defaultValue []
                 |> List.map (parseReferenceRowFor moduleName kindRow.EntityName a))
         let foldedRefs = Result.aggregate refResults
-        match kindKey, kindName, foldedAttrs, foldedRefs with
-        | Ok k, Ok n, Ok attrs, Ok refs ->
+        // Chapter A.0' slice γ — rowset-path trigger lift. Triggers
+        // are pre-joined by EntityId via the `triggersByEntity` Map;
+        // each row produces a `Trigger` with explicit KindSsKey.
+        // Aggregated to Catalog.Triggers by parseRowsetBundle.
+        let triggerRows =
+            Map.tryFind kindRow.EntityId triggersByEntity
+            |> Option.defaultValue []
+        let triggerResults =
+            triggerRows
+            |> List.map (fun row ->
+                let trKey  = triggerSsKey moduleName kindRow.EntityName row.TriggerName
+                let trName = Name.create row.TriggerName
+                let kKey   = kindSsKeyFromRow moduleName kindRow
+                match trKey, trName, kKey with
+                | Ok k, Ok n, Ok knd ->
+                    Result.success
+                        { SsKey      = k
+                          Name       = n
+                          KindSsKey  = knd
+                          Definition = row.TriggerDefinition
+                          IsDisabled = row.IsDisabled }
+                | _ ->
+                    propagateOrFallback
+                        [ Result.errors trKey
+                          Result.errors trName
+                          Result.errors kKey ]
+                        (fun () ->
+                            adapterError
+                                "triggerRowBuild"
+                                (sprintf
+                                    "Failed to build trigger '%s' on '%s.%s' from rowset bundle."
+                                    row.TriggerName moduleName kindRow.EntityName)))
+        let foldedTriggers = Result.aggregate triggerResults
+        match kindKey, kindName, foldedAttrs, foldedRefs, foldedTriggers with
+        | Ok k, Ok n, Ok attrs, Ok refs, Ok triggers ->
             // Modality marks list. `Static []` (parity with parseKind:
             // populations NOT carried by rowsets 1-3; defer to a later
             // slice surfacing V1 rowset 19+); `SystemOwned` (slice 4:
@@ -1198,7 +1327,7 @@ module CatalogReader =
                     if kindRow.IsStatic       then yield Static []
                     if kindRow.IsSystemEntity then yield SystemOwned
                 ]
-            Result.success
+            let kind =
                 { SsKey       = k
                   Name        = n
                   // Origin via parseOriginFromRowset (slice 3): three-way
@@ -1216,6 +1345,7 @@ module CatalogReader =
                   Description = kindRow.Description
                   // Chapter A.0' slice β — IsActive carry-through.
                   IsActive    = kindRow.IsActive }
+            Result.success (kind, triggers)
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`
             // (codified at two-consumer threshold; same surface as
@@ -1226,7 +1356,8 @@ module CatalogReader =
                 [ Result.errors kindKey
                   Result.errors kindName
                   Result.errors foldedAttrs
-                  Result.errors foldedRefs ]
+                  Result.errors foldedRefs
+                  Result.errors foldedTriggers ]
                 (fun () ->
                     adapterError
                         "kindRowBuild"
@@ -1238,8 +1369,9 @@ module CatalogReader =
         (kindsByEspace: Map<int, KindRow list>)
         (attributesByEntity: Map<int, AttributeRow list>)
         (referencesByAttr: Map<int, ReferenceRow list>)
+        (triggersByEntity: Map<int, TriggerRow list>)
         (moduleRow: ModuleRow)
-        : Result<Module> =
+        : Result<Module * Trigger list> =
         let modKey  = moduleSsKeyFromRow moduleRow
         let modName = Name.create moduleRow.EspaceName
         // Chapter A.0' slice β — retires session-21's entity inactive-
@@ -1255,18 +1387,22 @@ module CatalogReader =
                     moduleRow.EspaceName
                     moduleRow.EspaceKind
                     attributesByEntity
-                    referencesByAttr)
-        let foldedKinds = Result.aggregate kindResults
-        match modKey, modName, foldedKinds with
-        | Ok k, Ok n, Ok kinds ->
+                    referencesByAttr
+                    triggersByEntity)
+        let foldedKindPairs = Result.aggregate kindResults
+        match modKey, modName, foldedKindPairs with
+        | Ok k, Ok n, Ok kindTriggerPairs ->
+            let kinds    = kindTriggerPairs |> List.map fst
+            let triggers = kindTriggerPairs |> List.collect snd
             Module.create k n kinds moduleRow.IsActive
+            |> Result.map (fun m -> m, triggers)
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`.
             // Substantive causes survive the module-level wrap.
             propagateOrFallback
                 [ Result.errors modKey
                   Result.errors modName
-                  Result.errors foldedKinds ]
+                  Result.errors foldedKindPairs ]
                 (fun () ->
                     adapterError
                         "moduleRowBuild"
@@ -1296,15 +1432,23 @@ module CatalogReader =
             bundle.Kinds |> List.groupBy (fun k -> k.EspaceId) |> Map.ofList
         let referencesByAttr =
             bundle.References |> List.groupBy (fun r -> r.AttrId) |> Map.ofList
+        // Chapter A.0' slice γ — group triggers by EntityId; pre-join
+        // shape matches the other ID-keyed projections so the per-
+        // module dispatch sees O(1) Map lookups.
+        let triggersByEntity =
+            bundle.Triggers |> List.groupBy (fun t -> t.EntityId) |> Map.ofList
         // Chapter A.0' slice β — retires session-21's module-level
         // inactive-records filter (rowset-path parity with JSON path).
         // All modules flow to parseModuleRow; each carries its own
         // `IsActive` flag to V2's IR.
         let moduleResults =
             bundle.Modules
-            |> List.map (parseModuleRow kindsByEspace attributesByEntity referencesByAttr)
+            |> List.map (parseModuleRow kindsByEspace attributesByEntity referencesByAttr triggersByEntity)
         match Result.aggregate moduleResults with
-        | Ok modules -> Catalog.create modules
+        | Ok moduleTriggerPairs ->
+            let modules  = moduleTriggerPairs |> List.map fst
+            let triggers = moduleTriggerPairs |> List.collect snd
+            Catalog.create modules triggers
         | Error errors -> Error errors
 
     /// Parse a V1 `osm_model.json` snapshot into a V2 `Catalog`.

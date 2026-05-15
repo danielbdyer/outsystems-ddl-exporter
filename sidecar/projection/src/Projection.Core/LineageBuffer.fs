@@ -90,4 +90,4 @@ module CatalogTraversal =
             c.Modules
             |> List.map (fun m ->
                 { m with Kinds = m.Kinds |> List.choose (visit events) })
-        Lineage.ofValueAndEvents (LineageBuffer.toList events) { Modules = modules' }
+        Lineage.ofValueAndEvents (LineageBuffer.toList events) { c with Modules = modules' }

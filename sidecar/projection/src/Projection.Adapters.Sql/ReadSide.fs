@@ -853,6 +853,13 @@ module ReadSide =
                                                         IsActive = true
                                                     }
                                                 ]
+                                            // Chapter A.0' slice γ — ReadSide trigger
+                                            // reconstruction deferred (sys.triggers
+                                            // join not yet wired; cash-out gates on
+                                            // chapter 4.1.A slice 8 / §6.4.7 territory).
+                                            // OSSYS adapter populates Triggers; ReadSide
+                                            // defaults to [] today.
+                                            Triggers = []
                                         }
             with
             | ex ->

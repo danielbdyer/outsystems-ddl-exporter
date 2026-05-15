@@ -109,7 +109,7 @@ let private programmaticUserCatalog : Catalog =
             Kinds = [ userKind ]
             IsActive = true
         }
-    { Modules = [ userModule ] }
+    { Modules = [ userModule ]; Triggers = []  }
 
 [<Fact>]
 let ``M3: V2-internal closure — programmatic Catalog round-trips through emit / deploy / read with empty PhysicalSchema diff`` () =

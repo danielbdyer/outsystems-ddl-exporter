@@ -198,20 +198,21 @@ module SymmetricClosure =
         let events = List.rev eventsRev
 
         let withInverses =
-            { Modules =
-                c.Modules
-                |> List.map (fun m ->
-                    { m with
-                        Kinds =
-                            m.Kinds
-                            |> List.map (fun k ->
-                                match Map.tryFind k.SsKey inversesByTarget with
-                                | None       -> k
-                                | Some toAdd ->
-                                    // Reverse so inverses appear in the
-                                    // order they were discovered (the
-                                    // accumulator builds in reverse
-                                    // because of `inverse :: current`).
-                                    { k with References = k.References @ List.rev toAdd }) }) }
+            { c with
+                Modules =
+                    c.Modules
+                    |> List.map (fun m ->
+                        { m with
+                            Kinds =
+                                m.Kinds
+                                |> List.map (fun k ->
+                                    match Map.tryFind k.SsKey inversesByTarget with
+                                    | None       -> k
+                                    | Some toAdd ->
+                                        // Reverse so inverses appear in the
+                                        // order they were discovered (the
+                                        // accumulator builds in reverse
+                                        // because of `inverse :: current`).
+                                        { k with References = k.References @ List.rev toAdd }) }) }
 
         Lineage.ofValueAndEvents events withInverses

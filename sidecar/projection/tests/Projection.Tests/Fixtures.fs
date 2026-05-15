@@ -64,6 +64,77 @@ let testKey (label: string) : SsKey =
     SsKey.synthesized "TEST" label |> mustOk
 
 // ---------------------------------------------------------------------------
+// Record builders (chapter A.0' slice γ).
+//
+// Per DECISIONS 2026-05-15 — Closed-DU empirical-test discipline
+// refinement: additive-default-shaped IR fields use builder-mediated
+// mode; the builders centralize sensible defaults so future record
+// extensions touch only the builder + literal sites that already
+// override the relevant field.
+//
+// Usage:
+//   { Fixtures.attribute key (name "Id") with Type = Integer; IsPrimaryKey = true }
+//   { Fixtures.kind key (name "User") with Attributes = [ ... ] }
+//   { Fixtures.module' key (name "AppCore") with Kinds = [ user ] }
+//   { Fixtures.catalog [ m ] with Triggers = [ trigger ] }
+//
+// Builders are test-only. Production code constructs via smart
+// constructors (`Module.create`, `Catalog.create`) or direct literals
+// inside passes; the builder surface is never imported into
+// `Projection.Core` / `Projection.Adapters.*` / `Projection.Targets.*`.
+// ---------------------------------------------------------------------------
+
+/// Build an `Attribute` with sensible defaults. Defaults:
+///   Type = Integer; Column = { ColumnName = Name.value n; IsNullable = false };
+///   IsPrimaryKey = false; IsMandatory = false; Length / Precision / Scale = None;
+///   IsIdentity = false; Description = None; IsActive = true.
+let attribute (ssKey: SsKey) (n: Name) : Attribute =
+    { SsKey        = ssKey
+      Name         = n
+      Type         = Integer
+      Column       = { ColumnName = Name.value n; IsNullable = false }
+      IsPrimaryKey = false
+      IsMandatory  = false
+      Length       = None
+      Precision    = None
+      Scale        = None
+      IsIdentity   = false
+      Description  = None
+      IsActive     = true }
+
+/// Build a `Kind` with sensible defaults. Defaults:
+///   Origin = OsNative; Modality = []; Physical = { Schema = "dbo"; Table = Name.value n };
+///   Attributes = []; References = []; Indexes = [];
+///   Description = None; IsActive = true.
+let kind (ssKey: SsKey) (n: Name) : Kind =
+    { SsKey       = ssKey
+      Name        = n
+      Origin      = OsNative
+      Modality    = []
+      Physical    = { Schema = "dbo"; Table = Name.value n }
+      Attributes  = []
+      References  = []
+      Indexes     = []
+      Description = None
+      IsActive    = true }
+
+/// Build a `Module` with sensible defaults. Defaults:
+///   Kinds = []; IsActive = true.
+///
+/// The trailing apostrophe avoids the F# `module` keyword collision.
+let module' (ssKey: SsKey) (n: Name) : Module =
+    { SsKey    = ssKey
+      Name     = n
+      Kinds    = []
+      IsActive = true }
+
+/// Build a `Catalog` from a list of modules with sensible defaults.
+/// Defaults: Triggers = [].
+let catalog (modules: Module list) : Catalog =
+    { Modules  = modules
+      Triggers = [] }
+
+// ---------------------------------------------------------------------------
 // Customer
 // ---------------------------------------------------------------------------
 
@@ -72,34 +143,19 @@ let customerIdAttrKey = attrKey ["Customer"; "Id"]
 let customerNameKey   = attrKey ["Customer"; "Name"]
 let customerTenantKey = attrKey ["Customer"; "TenantId"]
 
-let customer : Kind = {
-    SsKey    = customerKey
-    Name     = name "Customer"
-    Origin   = OsNative
-    Modality = [ TenantScoped ]
-    Physical = { Schema = "dbo"; Table = "OSUSR_S1S_CUSTOMER" }
-    Attributes = [
-        { SsKey        = customerIdAttrKey
-          Name         = name "Id"
-          Type         = Integer
-          Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
-        { SsKey        = customerNameKey
-          Name         = name "Name"
-          Type         = Text
-          Column       = { ColumnName = "NAME"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
-        { SsKey        = customerTenantKey
-          Name         = name "TenantId"
-          Type         = Integer
-          Column       = { ColumnName = "TENANT_ID"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
-    ]
-    References = []
-    Indexes    = []
-    Description = None
-    IsActive = true
-}
+let customer : Kind =
+    { kind customerKey (name "Customer") with
+        Modality = [ TenantScoped ]
+        Physical = { Schema = "dbo"; Table = "OSUSR_S1S_CUSTOMER" }
+        Attributes =
+            [ { attribute customerIdAttrKey (name "Id") with
+                  Column = { ColumnName = "ID"; IsNullable = false }
+                  IsPrimaryKey = true }
+              { attribute customerNameKey (name "Name") with
+                  Type = Text
+                  Column = { ColumnName = "NAME"; IsNullable = false } }
+              { attribute customerTenantKey (name "TenantId") with
+                  Column = { ColumnName = "TENANT_ID"; IsNullable = false } } ] }
 
 // ---------------------------------------------------------------------------
 // Order — has a directional reference to Customer (the FK in the spec).
@@ -110,36 +166,22 @@ let orderIdAttrKey      = attrKey ["Order"; "Id"]
 let orderCustomerFkKey  = attrKey ["Order"; "CustomerId"]
 let orderRefToCustomer  = refKey  ["Order"; "Customer"]
 
-let order : Kind = {
-    SsKey    = orderKey
-    Name     = name "Order"
-    Origin   = OsNative
-    Modality = []
-    Physical = { Schema = "dbo"; Table = "OSUSR_S1S_ORDER" }
-    Attributes = [
-        { SsKey        = orderIdAttrKey
-          Name         = name "Id"
-          Type         = Integer
-          Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
-        { SsKey        = orderCustomerFkKey
-          Name         = name "CustomerId"
-          Type         = Integer
-          Column       = { ColumnName = "CUSTOMER_ID"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
-    ]
-    References = [
-        { SsKey           = orderRefToCustomer
-          Name            = name "Customer"
-          SourceAttribute = orderCustomerFkKey
-          TargetKind      = customerKey
-          OnDelete        = NoAction
-          IsUserFk        = false }
-    ]
-    Indexes = []
-    Description = None
-    IsActive = true
-}
+let order : Kind =
+    { kind orderKey (name "Order") with
+        Physical = { Schema = "dbo"; Table = "OSUSR_S1S_ORDER" }
+        Attributes =
+            [ { attribute orderIdAttrKey (name "Id") with
+                  Column = { ColumnName = "ID"; IsNullable = false }
+                  IsPrimaryKey = true }
+              { attribute orderCustomerFkKey (name "CustomerId") with
+                  Column = { ColumnName = "CUSTOMER_ID"; IsNullable = false } } ]
+        References =
+            [ { SsKey           = orderRefToCustomer
+                Name            = name "Customer"
+                SourceAttribute = orderCustomerFkKey
+                TargetKind      = customerKey
+                OnDelete        = NoAction
+                IsUserFk        = false } ] }
 
 // ---------------------------------------------------------------------------
 // Country — Static, with a small populated row set.
@@ -168,34 +210,20 @@ let countryPopulations : StaticRow list = [
           name "Label", "Mexico" ] }
 ]
 
-let country : Kind = {
-    SsKey    = countryKey
-    Name     = name "Country"
-    Origin   = OsNative
-    Modality = [ Static countryPopulations ]
-    Physical = { Schema = "dbo"; Table = "OSUSR_S1S_COUNTRY" }
-    Attributes = [
-        { SsKey        = countryIdAttrKey
-          Name         = name "Id"
-          Type         = Integer
-          Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
-        { SsKey        = countryCodeKey
-          Name         = name "Code"
-          Type         = Text
-          Column       = { ColumnName = "CODE"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
-        { SsKey        = countryLabelKey
-          Name         = name "Label"
-          Type         = Text
-          Column       = { ColumnName = "LABEL"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true  }
-    ]
-    References = []
-    Indexes    = []
-    Description = None
-    IsActive = true
-}
+let country : Kind =
+    { kind countryKey (name "Country") with
+        Modality = [ Static countryPopulations ]
+        Physical = { Schema = "dbo"; Table = "OSUSR_S1S_COUNTRY" }
+        Attributes =
+            [ { attribute countryIdAttrKey (name "Id") with
+                  Column = { ColumnName = "ID"; IsNullable = false }
+                  IsPrimaryKey = true }
+              { attribute countryCodeKey (name "Code") with
+                  Type = Text
+                  Column = { ColumnName = "CODE"; IsNullable = false } }
+              { attribute countryLabelKey (name "Label") with
+                  Type = Text
+                  Column = { ColumnName = "LABEL"; IsNullable = false } } ] }
 
 // ---------------------------------------------------------------------------
 // Catalog: one module ("Sales") containing all three kinds.
@@ -203,13 +231,8 @@ let country : Kind = {
 
 let salesModuleKey = modKey "Sales"
 
-let salesModule : Module = {
-    SsKey = salesModuleKey
-    Name  = name "Sales"
-    Kinds = [ customer; order; country ]
-    IsActive = true
-}
+let salesModule : Module =
+    { module' salesModuleKey (name "Sales") with
+        Kinds = [ customer; order; country ] }
 
-let sampleCatalog : Catalog = {
-    Modules = [ salesModule ]
-}
+let sampleCatalog : Catalog = catalog [ salesModule ]

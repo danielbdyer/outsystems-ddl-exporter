@@ -88,7 +88,7 @@ module NamingMorphism =
         use _ = Bench.scope "passes.namingMorphism"
         let events = LineageBuffer.create ()
         let renamed =
-            { Modules = c.Modules |> List.map (renameModule morphism events) }
+            { c with Modules = c.Modules |> List.map (renameModule morphism events) }
         Lineage.ofValueAndEvents (LineageBuffer.toList events) renamed
 
     /// Convenience constructors for common morphisms. Each is a pure

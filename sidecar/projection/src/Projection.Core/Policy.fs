@@ -404,10 +404,11 @@ module SelectionPolicy =
     /// continue to operate on the full catalog (per A33: sort/order
     /// passes see all kinds, emission filters afterwards).
     let filterCatalog (policy: SelectionPolicy) (c: Catalog) : Catalog =
-        { Modules =
-            c.Modules
-            |> List.map (fun m ->
-                { m with Kinds = m.Kinds |> List.filter (fun k -> isSelected k.SsKey policy) }) }
+        { c with
+            Modules =
+                c.Modules
+                |> List.map (fun m ->
+                    { m with Kinds = m.Kinds |> List.filter (fun k -> isSelected k.SsKey policy) }) }
 
 
 [<RequireQualifiedAccess>]

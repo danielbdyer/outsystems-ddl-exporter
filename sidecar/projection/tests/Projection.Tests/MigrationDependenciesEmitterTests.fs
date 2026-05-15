@@ -74,7 +74,7 @@ let private mkCatalog (kinds: Kind list) : Catalog =
         { SsKey = mkKey ["TestModule"]
           Name  = mkName "TestModule"
           Kinds = kinds; IsActive = true  }
-    { Modules = [ m ] }
+    { Modules = [ m ]; Triggers = []  }
 
 let private mkMigrationRow (kindKey: SsKey) (idValue: string) (code: string) (label: string) : MigrationDependencyRow =
     {

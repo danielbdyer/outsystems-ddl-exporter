@@ -325,9 +325,50 @@ type Module = {
 }
 
 
-/// The whole catalog: a coproduct over modules.
+/// A database trigger lifted from V1's `sys.triggers` join on
+/// `ossys_Entity`. Per chapter A.0' slice γ (L3-S4 IR-fidelity lift):
+/// triggers carry the full T-SQL `OBJECT_DEFINITION` text and the
+/// disabled-state flag, with explicit `KindSsKey` linking back to the
+/// owning entity. Top-level `Catalog.Triggers` aggregation is chosen
+/// over per-Kind attachment so emitters enumerate via a single list
+/// walk, and so triggers whose `Definition` references multiple Kinds
+/// (cross-table writers) have a natural home.
+///
+/// Carriage is DataIntent per pillar 9 — the IR reflects V1's
+/// complete trigger inventory; emission policy (suppress disabled
+/// triggers / rewrite for environment promotion / etc.) is downstream
+/// OperatorIntent owned by emitter overlays.
+type Trigger = {
+    SsKey      : SsKey
+    Name       : Name
+    /// The owning Kind (entity). V1's `sys.triggers.parent_id`
+    /// joins `ossys_Entity.PhysicalTableName`; V2 resolves the entity
+    /// name to its `Kind.SsKey`. Future cross-field invariant batch
+    /// (§6.4.5 / §6.4.6) validates that this points at a real Kind.
+    KindSsKey  : SsKey
+    /// V1 `OBJECT_DEFINITION(tr.object_id)` — the full T-SQL CREATE
+    /// TRIGGER statement text. Per L3-S4: emitted verbatim into V2's
+    /// DDL when the emitter consumes the field (chapter 4.1.A slice 8
+    /// / §6.4.7 territory; slice γ is carriage only).
+    Definition : string
+    /// V1 `sys.triggers.is_disabled`. Per L3-S4: disabled triggers
+    /// emit with disabled state preserved (`DISABLE TRIGGER` clause
+    /// or equivalent in the emitter's typed AST).
+    IsDisabled : bool
+}
+
+
+/// The whole catalog: a coproduct over modules, plus catalog-level
+/// aggregations (Triggers; future Sequences at slice δ; future
+/// ExtendedProperties at slice ζ) that V1 carries per-entity but V2
+/// hoists to top-level for emitter-side enumeration.
 type Catalog = {
-    Modules : Module list
+    Modules  : Module list
+    /// Per chapter A.0' slice γ: database triggers lifted from V1's
+    /// per-entity `triggers` JSON array (or the `OutsystemsTriggerRow`
+    /// rowset equivalent). Each trigger carries explicit `KindSsKey`
+    /// linking back to the owning entity.
+    Triggers : Trigger list
 }
 
 
@@ -454,7 +495,7 @@ module Catalog =
     /// consumer" — flowing through `create` makes #1–#5 impossible
     /// to violate. Aggregates errors so a consumer sees every
     /// violation in one Result.
-    let create (modules: Module list) : Result<Catalog> =
+    let create (modules: Module list) (triggers: Trigger list) : Result<Catalog> =
         let moduleDupes =
             modules
             |> List.groupBy (fun m -> m.SsKey)
@@ -529,6 +570,6 @@ module Catalog =
             moduleDupes @ kindDupes @ referenceErrors @ indexErrors
 
         if List.isEmpty allErrors then
-            Result.success { Modules = modules }
+            Result.success { Modules = modules; Triggers = triggers }
         else
             Result.failure allErrors

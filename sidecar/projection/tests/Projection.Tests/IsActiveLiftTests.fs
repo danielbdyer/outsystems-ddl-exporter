@@ -377,7 +377,7 @@ let ``L3-S9 slice β: rowset path carries Module.IsActive`` () =
         { Modules    = [ moduleRow true ]
           Kinds      = [ kindRow 1 11 "User" true ]
           Attributes = [ attrRow 11 111 "Id" true ]
-          References = [] }
+          References = []; Triggers = []  }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok catalog ->
@@ -390,7 +390,7 @@ let ``L3-S9 slice β: rowset path carries Kind.IsActive`` () =
         { Modules    = [ moduleRow true ]
           Kinds      = [ kindRow 1 11 "User" true ]
           Attributes = [ attrRow 11 111 "Id" true ]
-          References = [] }
+          References = []; Triggers = []  }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok catalog ->
@@ -403,7 +403,7 @@ let ``L3-S9 slice β: rowset path carries Attribute.IsActive`` () =
         { Modules    = [ moduleRow true ]
           Kinds      = [ kindRow 1 11 "User" true ]
           Attributes = [ attrRow 11 111 "Id" true ]
-          References = [] }
+          References = []; Triggers = []  }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok catalog ->
@@ -423,7 +423,7 @@ let ``L3-S9 slice β: rowset path carries inactive flags at every level (no sile
           Attributes = [ attrRow 11 111 "Id" true
                          attrRow 12 121 "Id" true
                          attrRow 12 122 "Deleted" false ]
-          References = [] }
+          References = []; Triggers = []  }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok catalog ->
@@ -454,7 +454,7 @@ let ``L3-S9 slice β: rowset path carries inactive Module through to IR (not dro
                          kindRow 2 21 "InactiveUser" true ]
           Attributes = [ attrRow 11 111 "Id" true
                          attrRow 21 211 "Id" true ]
-          References = [] }
+          References = []; Triggers = []  }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok catalog ->

@@ -41,7 +41,7 @@ let private renamedSalesModule : Module =
     { salesModule with Kinds = [ renamedCustomerKind; order; country ] }
 
 let private targetCatalog : Catalog =
-    { Modules = [ renamedSalesModule ] }
+    { Modules = [ renamedSalesModule ]; Triggers = []  }
 
 // ---------------------------------------------------------------------------
 // Slice θ acceptance — RefactorLogEmitter realizes EmitterOverDiff
@@ -141,7 +141,7 @@ let ``RefactorLogEmitter: OperationKey is UUIDv5 (version digit 5)`` () =
 
 [<Fact>]
 let ``RefactorLogEmitter: Added kind produces empty entries (it's a CREATE not a rename)`` () =
-    let empty = Catalog.create [] |> mustResultOk
+    let empty = Catalog.create [] [] |> mustResultOk
     let diff = CatalogDiff.between empty sampleCatalog |> mustOk
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     let entries = ArtifactByKind.toMap artifact
@@ -151,7 +151,7 @@ let ``RefactorLogEmitter: Added kind produces empty entries (it's a CREATE not a
 
 [<Fact>]
 let ``RefactorLogEmitter: Removed kind produces no artifact entry (target is empty)`` () =
-    let empty = Catalog.create [] |> mustResultOk
+    let empty = Catalog.create [] [] |> mustResultOk
     let diff = CatalogDiff.between sampleCatalog empty |> mustOk
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     // Target catalog is empty; artifact's keyset is empty per T11.

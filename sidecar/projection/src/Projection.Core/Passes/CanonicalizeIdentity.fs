@@ -64,10 +64,11 @@ module CanonicalizeIdentity =
     let run (c: Catalog) : Lineage<Catalog> =
         use _ = Bench.scope "passes.canonicalizeIdentity"
         let canon =
-            { Modules =
-                c.Modules
-                |> List.map canonicalizeModule
-                |> List.sortBy (fun m -> m.SsKey) }
+            { c with
+                Modules =
+                    c.Modules
+                    |> List.map canonicalizeModule
+                    |> List.sortBy (fun m -> m.SsKey) }
         let events =
             canon
             |> Catalog.allKinds

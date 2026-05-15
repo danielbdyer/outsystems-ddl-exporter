@@ -13,21 +13,22 @@ open Projection.Tests.Fixtures
 // ---------------------------------------------------------------------------
 
 let private withReversedCountryRows (c: Catalog) : Catalog =
-    { Modules =
-        c.Modules
-        |> List.map (fun m ->
-            { m with
-                Kinds =
-                    m.Kinds
-                    |> List.map (fun k ->
-                        if k.SsKey = countryKey then
-                            { k with
-                                Modality =
-                                    k.Modality
-                                    |> List.map (function
-                                        | Static rows -> Static (List.rev rows)
-                                        | other       -> other) }
-                        else k) }) }
+    { c with
+        Modules =
+            c.Modules
+            |> List.map (fun m ->
+                { m with
+                    Kinds =
+                        m.Kinds
+                        |> List.map (fun k ->
+                            if k.SsKey = countryKey then
+                                { k with
+                                    Modality =
+                                        k.Modality
+                                        |> List.map (function
+                                            | Static rows -> Static (List.rev rows)
+                                            | other       -> other) }
+                            else k) }) }
 
 let private extractCountryRows (c: Catalog) : StaticRow list =
     let countryK = Catalog.tryFindKind countryKey c |> Option.get
@@ -147,16 +148,17 @@ let ``A23: events carry the pass version and name`` () =
 // ---------------------------------------------------------------------------
 
 let private withCountryRows (rows: StaticRow list) (c: Catalog) : Catalog =
-    { Modules =
-        c.Modules
-        |> List.map (fun m ->
-            { m with
-                Kinds =
-                    m.Kinds
-                    |> List.map (fun k ->
-                        if k.SsKey = countryKey then
-                            { k with Modality = [ Static rows ] }
-                        else k) }) }
+    { c with
+        Modules =
+            c.Modules
+            |> List.map (fun m ->
+                { m with
+                    Kinds =
+                        m.Kinds
+                        |> List.map (fun k ->
+                            if k.SsKey = countryKey then
+                                { k with Modality = [ Static rows ] }
+                            else k) }) }
 
 [<Fact>]
 let ``edge: empty population list normalizes to empty list`` () =

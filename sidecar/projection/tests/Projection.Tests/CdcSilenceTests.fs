@@ -105,7 +105,7 @@ let private buildFixture () : Catalog * Kind =
         { SsKey = mkKey ["Module"]
           Name  = mkName "TestModule"
           Kinds = [ kind ]; IsActive = true  }
-    { Modules = [ m ] }, kind
+    { Modules = [ m ]; Triggers = []  }, kind
 
 let private executeScalarInt (cnn: SqlConnection) (sql: string) : Task<int> =
     task {
@@ -283,7 +283,7 @@ let private buildChangedFixture () : Catalog * Kind =
         { SsKey = mkKey ["Module"]
           Name  = mkName "TestModule"
           Kinds = [ kind ]; IsActive = true  }
-    { Modules = [ m ] }, kind
+    { Modules = [ m ]; Triggers = []  }, kind
 
 [<Fact>]
 let ``Slice γ: CDC-silence — V2 change-detection predicate emits zero CDC capture rows on idempotent redeploy`` () =

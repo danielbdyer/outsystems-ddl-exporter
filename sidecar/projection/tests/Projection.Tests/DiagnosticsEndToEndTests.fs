@@ -52,7 +52,7 @@ let private endToEndCatalog : Catalog =
     let country'  = { country  with Indexes = [ countrySingle ] }
     let salesModule' =
         { salesModule with Kinds = [ customer'; order'; country' ] }
-    { Modules = [ salesModule' ] }
+    { Modules = [ salesModule' ]; Triggers = []  }
 
 let private singleOffCompositeOnPolicy : Policy =
     let cfg = UniqueIndexTighteningConfig.create false true
@@ -198,7 +198,7 @@ let private nullabilityCatalog : Catalog =
     { Modules = [
         { SsKey = ssKey "OS_MOD_DiagEnd"
           Name  = name "DiagEnd"
-          Kinds = [ sample ]; IsActive = true  } ] }
+          Kinds = [ sample ]; IsActive = true  } ]; Triggers = []  }
 
 let private nullabilityProfileWithNullsBeyondBudget : Profile =
     let mandatoryAttributeKey = ssKey "OS_ATTR_DiagEnd_Sample_Mandatory"
@@ -254,7 +254,7 @@ let ``end-to-end: Nullability and UniqueIndex opportunity streams remain indepen
     // variant per the closed-DU dispatch discipline; their
     // diagnostic streams do not cross-pollinate.
     let combinedCatalog : Catalog =
-        { Modules = nullabilityCatalog.Modules @ endToEndCatalog.Modules }
+        { Modules = nullabilityCatalog.Modules @ endToEndCatalog.Modules; Triggers = []  }
     let nullabilityCfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
     let uniqueCfg      = UniqueIndexTighteningConfig.create false true
     let combinedPolicy : Policy =
@@ -371,7 +371,7 @@ let private fkCatalog : Catalog =
     { Modules = [
         { SsKey = ssKey "OS_MOD_FkEnd"
           Name  = name "FkEnd"
-          Kinds = [ source; target ]; IsActive = true  } ] }
+          Kinds = [ source; target ]; IsActive = true  } ]; Triggers = []  }
 
 let private fkProfileWithOrphans : Profile =
     let probe =
@@ -427,8 +427,8 @@ let ``end-to-end: ForeignKey + Nullability + UniqueIndex opportunity streams rem
     // intervention. Each returns its own Lineage<Diagnostics<_>>; their
     // diagnostic streams do not cross-pollinate.
     let combinedCatalog : Catalog =
-        { Modules =
-            nullabilityCatalog.Modules @ endToEndCatalog.Modules @ fkCatalog.Modules }
+        { Modules = nullabilityCatalog.Modules @ endToEndCatalog.Modules @ fkCatalog.Modules
+          Triggers = [] }
     let nullCfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
     let uniqCfg = UniqueIndexTighteningConfig.create false true
     let fkCfg =
@@ -513,7 +513,7 @@ let ``end-to-end: ForeignKey emits keep-reason and success-with-caveat entries s
             if k.SsKey = fkSourceEntityKey then augmentedSource else k)
     let augmentedCatalog : Catalog =
         { Modules = [
-            { fkCatalog.Modules.[0] with Kinds = augmentedKinds } ] }
+            { fkCatalog.Modules.[0] with Kinds = augmentedKinds } ]; Triggers = []  }
 
     // Profile shows orphans on BOTH references; AllowNoCheckCreation
     // is true for the policy, but we want one ScriptWithNoCheck and

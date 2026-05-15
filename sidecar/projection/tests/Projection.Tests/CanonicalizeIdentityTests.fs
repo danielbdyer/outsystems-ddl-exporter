@@ -22,27 +22,29 @@ let private reverseKinds (m: Module) : Module =
     { m with Kinds = List.rev m.Kinds }
 
 let private reverseAllCollections (c: Catalog) : Catalog =
-    { Modules =
-        c.Modules
-        |> List.map (fun m ->
-            { m with
-                Kinds =
-                    m.Kinds
-                    |> List.map (reverseAttributes >> reverseReferences) })
-        |> List.map reverseKinds
-        |> List.rev }
+    { c with
+        Modules =
+            c.Modules
+            |> List.map (fun m ->
+                { m with
+                    Kinds =
+                        m.Kinds
+                        |> List.map (reverseAttributes >> reverseReferences) })
+            |> List.map reverseKinds
+            |> List.rev }
 
 let private renameKind (key: SsKey) (newName: string) (c: Catalog) : Catalog =
-    { Modules =
-        c.Modules
-        |> List.map (fun m ->
-            { m with
-                Kinds =
-                    m.Kinds
-                    |> List.map (fun k ->
-                        if k.SsKey = key then
-                            { k with Name = Name.create newName |> Result.value }
-                        else k) }) }
+    { c with
+        Modules =
+            c.Modules
+            |> List.map (fun m ->
+                { m with
+                    Kinds =
+                        m.Kinds
+                        |> List.map (fun k ->
+                            if k.SsKey = key then
+                                { k with Name = Name.create newName |> Result.value }
+                            else k) }) }
 
 // ---------------------------------------------------------------------------
 // Idempotence (A21 in the small): running the pass twice equals running it

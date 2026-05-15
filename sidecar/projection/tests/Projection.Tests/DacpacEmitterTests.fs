@@ -81,7 +81,7 @@ let private singleKindCatalog : Catalog =
         Kinds = [ widget ]
         IsActive = true
     }
-    { Modules = [ m ] }
+    { Modules = [ m ]; Triggers = []  }
 
 // ---------------------------------------------------------------------------
 // Slice α acceptance — single-Kind Catalog produces non-empty bytes.
@@ -274,7 +274,7 @@ let private indexedCatalog : Catalog =
         Kinds = [ widget ]
         IsActive = true
     }
-    { Modules = [ m ] }
+    { Modules = [ m ]; Triggers = []  }
 
 [<Fact>]
 let ``Slice γ: Indexes round-trip through DacFx model`` () =
