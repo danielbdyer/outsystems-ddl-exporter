@@ -1328,7 +1328,7 @@ This section accumulates references to subsequent work that builds on this audit
 
 **R-dissolutions observed**: none net-new from A.7.1 itself; the slice didn't structurally eliminate any open risk in §9 of the cutover plan. (Atomic emission was an unnamed-axiom blocker, not a named-risk blocker — those classes are disjoint by definition.)
 
-**Commit**: pending (this addendum lands as part of the commit that ships the refactor + tests + doc updates).
+**Commit**: `4e3d944` — `Pipeline.fs` refactor + `ComposeAtomicWriteTests.fs` (new) + `EndToEndPipelineTests.fs` (Result destructuring) + doc surface updates across `PRODUCT_AXIOMS.md`, this audit, and `V2_PRODUCTION_CUTOVER.md` §13.3. Subsequently the active PR is [#538](https://github.com/danielbdyer/outsystems-ddl-exporter/pull/538) on branch `claude/audit-v1-v2-sidecar-7Ifij`.
 
 ### 12.2 (placeholder) Campaign B close
 
