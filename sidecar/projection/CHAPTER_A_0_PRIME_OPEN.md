@@ -33,19 +33,24 @@ This chapter promotes the **Tier-1 unnamed L3 axioms in §3.3** from Bucket D �
 
 ## Slice plan (7-9 substantive slices)
 
-Order chosen by **risk × leverage × prerequisite chain**:
+Order chosen by **risk × leverage × prerequisite chain**.
 
-| Slice | Scope | L3 axioms promoted | Risk |
-|---|---|---|---|
-| **α** | `Kind.Description` + `Attribute.Description` (purely additive) | L3-S9 (descriptions sub-axiom) | Low — pattern-establishing |
-| **β** | `Module.IsActive` + `Attribute.IsActive` (carry-through; retire boundary filter) | L3-S9 (IsActive sub-axiom; supersedes session-21) | Medium — semantic shift; DECISIONS amendment required |
-| **γ** | `Catalog.Triggers : Trigger list` + `Trigger` value type + adapter pickup | L3-S4 | Medium — new top-level Catalog field |
-| **δ** | `Catalog.Sequences : Sequence list` + `Sequence` value type + adapter pickup | L3-S5 | Medium — sibling of γ |
-| **ε** | `Attribute.DefaultValue : SqlLiteral option` + `Attribute.Computed : ComputedColumnConfig option` + `Kind.ColumnChecks : ColumnCheck list` (Attribute / Kind body expansions) | L3-S6, L3-S7, L3-S8 | Medium — three related additions; share adapter machinery |
-| **ζ** | `ExtendedProperties: ExtendedProperty list` on Module / Kind / Attribute / Index | L3-S9 | High — four-level extension; widest blast radius |
-| **η** | `ModalityMark.Temporal of TemporalConfig` (DU widening for temporal tables) | (covered by L3-S4 family; sub-axiom pending) | High — only DU-widening slice in chapter; closed-DU discipline applies |
-| **θ** | `TableId.Catalog : string option` extension | L3-S10 / L3-I10 | High — invasive; touches every `TableId` literal site |
-| **ι** | IsExternal / Origin mapping audit + final L3-Boundary-NoSilentDrop property test | L3-CC4 + completion criterion | Low — property tests only; no IR change |
+**Status:** ✅ shipped | 🟡 next | ⚪ future | ⏸ deferred-with-trigger.
+**Mode** (per `DECISIONS 2026-05-15 — Closed-DU empirical-test discipline refinement`):
+  - *literal-site* — the new field carries semantic ambiguity; test fixtures stay explicit and the agent walks every site.
+  - *builder-mediated* — additive with a sensible default; test fixtures go through `Fixtures.attribute / kind / module' / catalog` builders and future fields touch only the builder.
+
+| Slice | Scope | L3 axioms promoted | Risk | Mode | Status | Commit |
+|---|---|---|---|---|---|---|
+| **α** | `Kind.Description` + `Attribute.Description` (purely additive) | L3-S9 (descriptions sub-axiom) | Low — pattern-establishing | additive (pre-refinement) | ✅ Shipped | `3c75d00` |
+| **β** | `Module.IsActive` + `Attribute.IsActive` (carry-through; retire boundary filter) | L3-S9 (IsActive sub-axiom; supersedes session-21) | Medium — semantic shift; DECISIONS amendment required | literal-site audit | ✅ Shipped (pillar 9 first worked example) | `014d5d1` |
+| **γ** | `Catalog.Triggers : Trigger list` + `Trigger` value type + `Fixtures` builders + adapter pickup | L3-S4 | Medium — new top-level Catalog field | builder-mediated (first worked example) | ✅ Shipped | `16ab57d` |
+| **δ** | `Catalog.Sequences : Sequence list` + `Sequence` value type + adapter pickup | L3-S5 | Medium — sibling of γ | builder-mediated (additive) | 🟡 Next | — |
+| **ε** | `Attribute.DefaultValue : SqlLiteral option` + `Attribute.Computed : ComputedColumnConfig option` + `Kind.ColumnChecks : ColumnCheck list` (Attribute / Kind body expansions) | L3-S6, L3-S7, L3-S8 | Medium — three related additions; share adapter machinery | builder-mediated (additive) | ⚪ Future | — |
+| **ζ** | `ExtendedProperties: ExtendedProperty list` on Module / Kind / Attribute / Index | L3-S9 | High — four-level extension; widest blast radius | builder-mediated (additive) | ⚪ Future | — |
+| **η** | `ModalityMark.Temporal of TemporalConfig` (DU widening for temporal tables) | (covered by L3-S4 family; sub-axiom pending) | High — only DU-widening slice in chapter; closed-DU discipline applies | literal-site audit (DU widening) | ⚪ Future | — |
+| **θ** | `TableId.Catalog : string option` extension | L3-S10 / L3-I10 | High — invasive; touches every `TableId` literal site | literal-site audit (every TableId site) | ⚪ Future | — |
+| **ι** | IsExternal / Origin mapping audit + final L3-Boundary-NoSilentDrop property test | L3-CC4 + completion criterion | Low — property tests only; no IR change | property tests only | ⚪ Future (chapter close) | — |
 
 **Deferred-out-of-A.0'** per `V2_PRODUCTION_CUTOVER.md` §11.5:
 - `OriginalName` (prior attribute names) — renames handled at cutover, not embedded.
