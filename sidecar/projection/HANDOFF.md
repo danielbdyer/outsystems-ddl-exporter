@@ -1,8 +1,34 @@
-# Handoff letter — Chapter 5 open (Phase 8 pragmatic close) + slices ν + θ
+# Handoff letter — Chapter A.0' open + slice α shipped (IR fidelity lifts, Campaign A.2)
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## 2026-05-15 — Chapter A.0' open + slice α shipped
+
+**Branch / baseline.** Branch: `claude/review-handoff-docs-CF2v5`. PR #538 (chapter pre-A.0') merged at `8733d0c`; PR #539 follow-up merged. Chapter A.0' opened at commit `3c75d00`. **Test baseline: 1146 / 1146 passing** (1128 prior + 11 canary tests now visible with Docker running + 7 new `DescriptionLiftTests`). Zero regressions; `TreatWarningsAsErrors=true` clean; lint clean.
+
+**What shipped this session.** The operator picked A.0' (IR fidelity lifts) over A.7.2 (ManifestMatchesDisk). The chapter opens the 7-9-slice arc that promotes L3-S4 through L3-S10 + L3-I10 + L3-CC4 + L3-Boundary-NoSilentDrop from Bucket D → Bucket A:
+
+- `CHAPTER_A_0_PRIME_OPEN.md` — strategic-frame axes (8 numbered), slice plan (α–ι), out-of-scope, success criteria. Use this as the chapter's reading-order item.
+- **Slice α — `Kind.Description` + `Attribute.Description`** (commit `3c75d00`). Purely additive. OSSYS adapter populates from JSON `description` field (defensive read via `getOptionalString`) and from extended `KindRow.Description` / `AttributeRow.Description` (rowset DTOs extended too). `Projection.Adapters.Sql.ReadSide` sets `None` — extended-property pickup gates on chapter 4.1.A slice 8. ~170 record-literal sites across 23 test files received `Description = None` per the closed-DU record-extension empirical-test discipline (chapter 3.2 close generalization). 7 new tests in `DescriptionLiftTests.fs` cover JSON-path + rowset-path roundtrip and `None`-default cases.
+
+**The next-most-ready slice: A.0' slice β — `Module.IsActive` + `Attribute.IsActive` (carry-through; retire boundary filter).** Dependencies satisfied (α just shipped). Scope: extend `Module` and `Attribute` with `IsActive : bool` fields; retire the session-21 inactive-records filter at `parseModule` / `parseKind` / `parseModuleRow` / `parseKindRow`; carry the flag through to the IR; downstream emitters decide. **DECISIONS amendment required** superseding session-21's silent-drop disposition. Consider adding `Kind.IsActive` too — §3.3's omission of Kind is likely an oversight (entity-level `Is_Active` exists in V1 OSSYS); without it the entity-level filter stays at the adapter and creates an asymmetry with the L3-Boundary-NoSilentDrop completion criterion. Read `CHAPTER_A_0_PRIME_OPEN.md` axis 4 + the §6.0' / §3.3 spec before deciding.
+
+**Alternative starts** if slice β is too disruptive (the IsActive semantic shift may want operator alignment first):
+
+- **Slice ε — `Attribute.DefaultValue : SqlLiteral option`** (additive; matches α's pattern). V1 JSON has `"default": null` already; needs a small JSON-to-SqlLiteral parser at the adapter boundary. No prior decisions to supersede. ~130 attribute literal sites need `DefaultValue = None` added (same blast radius as α; see `/tmp/fix_records.py` precedent if helpful).
+- **Slice ι — IsExternal / Origin mapping audit** (pure property test; no IR change). Lift the existing `parseOrigin` discipline into a property test asserting V1 `IsExternal=true → V2 Origin ∈ {ExternalViaIntegrationStudio; ExternalDirect}`. Small slice; useful chapter-mid hygiene. Pairs with the chapter-close L3-Boundary-NoSilentDrop property test scaffolding.
+
+**Outstanding (operator-side; same as post-A.7.1):**
+- R1 — operator's "document of key evolutions" still pending. Hold UAT-users decisions until it lands.
+- Q2 / Q3 / Q4 / Q7 unchanged; revisable during touching slices.
+
+**Mechanical-edits precedent** for record-extension slices: the slice-α experience produced a reusable workflow. Step 1: extend the IR record + the adapter DTOs (`Catalog.fs` + `CatalogReader.fs`). Step 2: build, capture FS0764 worklist. Step 3: sed-pass for inline-close-brace literals (`s/(IsIdentity = (true|false))(\s*)\}/\1; Description = None\3}/g` analog); python-pass for multi-line records (brace-counter walking from the opening `{` to find the matching `}`). Step 4: property test in a new `<SliceName>LiftTests.fs` file added to `Projection.Tests.fsproj`. Step 5: build + test + commit. Slice β / ε / γ / δ inherit. The closed-DU record-extension empirical-test discipline holds across all of them (chapter 3.2 close codified this).
+
+**Load-bearing methodology unchanged from the 2026-05-12 final handoff above.** L1↔L2↔L3 verifiability triangle is the lens for structural work; campaigns are cross-cutting tags; per-PR L3 review for PRs touching boundary code or CLI surface.
+
+**Per-axiom delivery matrix updates** at chapter-A.0' close: cash `L3-S9` descriptions sub-axiom (advances toward full L3-S9; full lands at slice ζ ExtendedProperties). Forward-signal Tolerance retirement: `CommentMetadataUnreflected` is one step closer (the IR now carries descriptions; emitter consumption is chapter 4.1.A slice 8 territory).
 
 ## 2026-05-12 — Final handoff (post-A.7.1; PR #538 active)
 
