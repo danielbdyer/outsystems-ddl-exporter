@@ -467,62 +467,156 @@ After Phase B, the temporal axis flips again: V2 owns extraction; the canary ver
 
 **Estimated effort:** 1 week.
 
-### 6.4.7 A.4.7 — Transform registry / skeleton-overlay separation (Campaign B core; load-bearing for laboratory-quality scale)
+### 6.4.7 A.4.7 — Transform registry: canonical strongly-typed cross-cutting surface (Campaign B core; load-bearing for laboratory-quality scale)
 
-**Operational deliverable:** ship `Projection.Core.TransformRegistry` as the compile-time enumeration of every `Pass` module; lift `Project(catalog, Policy.empty, profile)` to a first-class callable baseline (`Compose.runWithSkeleton`); add `--skeleton-only` CLI flag; extend `ManifestEmitter` with `registry.digest` + per-artifact `applied-transforms : SsKey list`; ship `TransformRegistryCompletenessTests` as the structural-enforcement seam.
+**Operational deliverable:** ship `Projection.Core/TransformRegistry.fs` as the canonical strongly-typed surface for every transformation site in V2 (sibling to Lineage / Diagnostics / Bench as a cross-cutting structural-evidence layer); full-sweep refactor of every existing pass module + the 25 OSSYS adapter rules + emitter strategies to expose `<PassName>.registered : RegisteredTransform<'In, 'Out>` as the primary public surface; `LineageEvent` gains `Classification : DataIntent | OperatorIntent of OverlayAxis` field; `Compose.run` refactored to traverse the registry as its execution loop; `Compose.runWithSkeleton` filters the traversal to `DataIntent`-only sites; `osm emit --skeleton-only` CLI flag; `ManifestEmitter` extension with `registry.digest` + per-artifact `applied-transforms : (SsKey × OverlayAxis option) list`; bidirectional property tests (skeleton-purity + overlay-exercise + totality coverage + Tolerance-cross-reference).
 
-**Campaign:** B (structural fortification; co-equal load-bearing with A.4.5 / A.4.6).
+**Campaign:** B (structural fortification; co-equal load-bearing with A.4.5 / A.4.6; co-equal-Tier-1 load-bearing with CDC silence per `V2_DRIVER.md` per-axis stakes table).
 
-**Axioms operationalized:** **L3-CC-Transform-Totality** (the load-bearing operator promise — every artifact decomposes into registered baseline + registered overlay; both halves recoverable, enumerable, audit-traceable). A41 candidate (`AXIOMS.md` Amendments scheduled) cashes here.
+**Axioms operationalized:** **L3-CC-Transform-Totality** (the load-bearing operator promise; the cross-cutting structural-evidence-layer commitment; the dichotomy enforced bidirectionally). **A41 candidate** (`AXIOMS.md` Amendments scheduled — Transform registry totality + canonical strongly-typed shape) cashes here. **Pillar 9** (`DECISIONS 2026-05-15 (late) — harvest-dichotomy classification`) gains its structural enforcement seam here.
 
-**Bucket promotion:** L3-CC-Transform-Totality: **D → A** (registry totality + skeleton-callability promote from convention to smart-constructor-grade enforcement).
+**Bucket promotion:** L3-CC-Transform-Totality: **D → A** (registry totality + dichotomy enforcement promote from convention to smart-constructor-grade structural enforcement).
 
-**Dependencies:** **A.0' (chapter A.0') must close before A.4.7 begins.** The registry enumerates passes against the post-IR-fidelity pass set; opening A.4.7 before A.0' closes would lock in a pass set that A.0' is still extending (Triggers, Sequences, DEFAULT, Computed, CHECK constraints, ExtendedProperties IR lifts all introduce or touch passes downstream). Soft dependency on A.4.5 / A.4.6 (the smart-constructor expansion pattern is established there); concurrent execution acceptable once A.0' closes.
+**Dependencies:**
+- **A.0' (chapter A.0') must close before A.4.7 begins.** The registry enumerates against the post-IR-fidelity pass set; opening A.4.7 before A.0' closes would lock in a pass set still being extended (Triggers, Sequences, DEFAULT, Computed, CHECK constraints, ExtendedProperties IR lifts all introduce or touch passes downstream).
+- **A.4.7-prelude small slice** (within or just after A.0', before A.4.7 proper): `LineageEvent` gains a `Classification : Classification` field. Existing pass drivers update via writer-fidelity discipline canonical primitives. No traversal yet; events self-classify. This is the *minimum structural commitment that lets pillar 9 manifest in code while A.0' is still in flight*.
+- Soft dependency on A.4.5 / A.4.6 (the smart-constructor expansion pattern is established there); concurrent execution acceptable once A.0' closes.
 
-**Why this is load-bearing for laboratory-quality outcomes at scale.** The chapter-4.x scope expansion (User FK reflow; operational diagnostics; multi-environment policy/profile parameterization) grows the number of policy-driven mutations monotonically. Without the registry seam, each new pass is one more convention to track in code review. A18 amended ("Π consumes Catalog × Profile, never Policy") is the structural commitment for the Π side; A.4.7 is the structural commitment for the Pass side. The two siblings together carry the skeleton/overlay separation as a *type-witnessed product promise*, not a discipline. Per `DECISIONS 2026-05-15 — Transform registry re-opened`: this re-opens the 2026-05-13 cash-out under different consumer pressure (skeleton-overlay decomposition, not pipeline composition); enumerative, not name-keyed; compile-time, not reflection.
+**Why this is load-bearing for laboratory-quality outcomes at scale.** Three layered reasons:
 
-**Tasks:**
+1. **Pillar 9 (harvest-dichotomy classification) needs a structural enforcement seam.** Without the registry, the discipline lives at code review only. Per the meta-discipline-with-structural-test pattern (pillar 8 + four-question naming + LINT-ALLOW substantive-rationale): each meta-discipline pairs with structural tests. A.4.7 is pillar 9's structural pair.
+2. **The chapter-4.x scope expansion grows policy-driven mutations monotonically.** User FK reflow, operational diagnostics, multi-environment policy/profile parameterization each add new transformation sites. Without the registry seam, each new pass is one more convention to track in code review; the named failure mode (*skeleton-overlay drift*) becomes structurally uncatchable as the codebase scales.
+3. **A18 amended needs its bidirectional sibling.** A18 forbids `Policy` in emitters (Π-side commitment by structural type). A41 (`OperatorIntent` enumeration; bidirectional property tests) is the Pass-side commitment. The two siblings together carry the dichotomy as a *type-witnessed bidirectional contract*, not a one-sided discipline. Without A.4.7, the structural posture stays asymmetric.
+
+Per `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification`: this re-opens the 2026-05-13 cash-out under different consumer pressure (skeleton-overlay decomposition + harvest-time classification, not pipeline composition); enumerative + canonical-function-definition, not just name-keyed; compile-time, not reflection.
+
+**The strongly-typed canonical registry shape (per Q3 + Q7 answers — single definition site; unified type parameters across all five stage seams):**
+
+```fsharp
+// In Projection.Core/TransformRegistry.fs:
+
+type StageBinding =
+    | Adapter           // raw rowset / JSON → Catalog-fragment translations (e.g., OSSYS adapter rules)
+    | Pass              // Catalog → Lineage<Diagnostics<Catalog>> (the existing 10 passes)
+    | OrderingPolicy    // ordering-policy parameter sites (e.g., SelfLoopPolicy on TopologicalOrderPass)
+    | Emitter           // Catalog → ArtifactByKind<'element> (sibling Π emitters)
+    | Pipeline          // Compose-level transformations (e.g., TableRename.applyRenames)
+
+type OverlayAxis =
+    | Selection
+    | Emission
+    | Insertion
+    | Tightening
+    // Per Q9: OverlayAxis = existing Policy DU axes exactly, with room to expand if a fifth axis warranted
+    // by real evidence. Today the four Policy axes are exactly the OverlayAxis values; Policy IS operator
+    // intent reified.
+
+type Classification =
+    | DataIntent                              // preserves data intention; lands in skeleton
+    | OperatorIntent of OverlayAxis           // operator-supplied; lands as registered overlay
+
+type TransformSite = {
+    SiteName : string                          // e.g., "SortKahn" inside TopologicalOrderPass
+    Classification : Classification             // intra-pass classification fidelity (per Q11)
+    Rationale : string                         // harvest-discipline analysis prose; cited at code review
+}
+
+type TransformStatus =
+    | Active
+    | NotImplementedInV2 of rationale : string  // v1 harvest classification with no v2 equivalent
+
+type RegisteredTransform<'In, 'Out> = {
+    Name : PassName
+    Domain : Domain                            // schema / data / identity / diagnostics / cutover-safety / cross-cutting
+    StageBinding : StageBinding
+    Sites : TransformSite list                 // each Site has its own classification (per Q11)
+    Run : 'In -> Lineage<Diagnostics<'Out>>    // typed transformation function itself (per Q3 — registry is canonical)
+    Status : TransformStatus
+}
+
+// Type-parameter examples per Q7 (unified shape across stage seams):
+//   adapter rules:    RegisteredTransform<RawRowSet, CatalogFragment>
+//   passes:           RegisteredTransform<Catalog, Catalog>
+//   emitters:         RegisteredTransform<Catalog, ArtifactByKind<'element>>
+
+module TransformRegistry =
+    let all : RegisteredTransform<obj, obj> list = [
+        // top-level evaluation order; each pass module's `<PassName>.registered` is referenced here.
+        // F# type erasure on 'In/'Out happens at the registry boundary; per-Run invocation uses the
+        // pass module's typed export directly.
+        unbox CanonicalizeIdentityPass.registered
+        unbox NullabilityPass.registered
+        unbox TopologicalOrderPass.registered
+        unbox TableRenamePass.registered
+        // ... ~10 passes + 25 OSSYS adapter rules + emitter strategies + ordering policy sites
+    ]
+
+    let allInStageOrder : RegisteredTransform<obj, obj> list =
+        all |> List.sortBy (fun rt -> stageOrdinal rt.StageBinding)
+```
+
+**Tasks (full-sweep scope per Q6 — ~3 weeks estimated; significantly larger than the original 1.5-2 week estimate):**
 
 1. **TransformRegistry module** (`src/Projection.Core/TransformRegistry.fs`).
-   - Compile-time `Map<PassName, RegisteredPass>` listing every `Pass` module.
-   - `RegisteredPass = { Name : PassName; Version : PassVersion; Domain : Domain; OverlayAxis : OverlayAxis }` where `OverlayAxis` names which Policy axis (or `Skeleton`) the pass operationalizes.
-   - Smart constructor `TransformRegistry.create` enforces invariants: every entry's `Name` matches its `Pass` module name; no duplicate `Name`s; every entry's `Domain` is one of the codified concerns (schema / data / identity / diagnostics / cutover-safety / cross-cutting per `PRODUCT_AXIOMS.md`).
-2. **Compose.runWithSkeleton** (`src/Projection.Pipeline/Pipeline.fs`).
-   - Signature: `runWithSkeleton : Catalog -> Profile -> outputDir -> Result<string list, ComposeError>`.
-   - Invokes the per-emitter Π chain on `(catalog, Profile, Policy.empty)`; emits the baseline; bypasses every overlay pass.
-   - Coexists with `Compose.run` and `Compose.runWithConfig`; the three entry points are explicit about which decomposition they emit.
-3. **CLI surface** (`src/Projection.Cli/Program.fs`).
-   - `osm emit --skeleton-only` invokes `Compose.runWithSkeleton`; `osm emit` and `osm emit --config <path>` continue unchanged.
-   - The flag is concept-shaped (per pillar 8: "skeleton-only" names what you GET, not what you AVOID). Alternative-considered: `--no-overrides` rejected as action-shaped.
-4. **ManifestEmitter extension** (`src/Projection.Targets.{Json,SSDT}/ManifestEmitter.fs` — wherever the manifest is realized).
-   - Add `registry : { digest : Sha256; passes : RegisteredPass list }` field.
-   - Add per-artifact `applied-transforms : SsKey list` field naming every `LineageEvent.PassName` whose event mentions that artifact's SsKey.
-   - Round-trip property: parsing the manifest yields a `RegisteredPass list` byte-equal to the registry at emit time.
-5. **TransformRegistryCompletenessTests** (`tests/Projection.Tests/TransformRegistryCompletenessTests.fs`).
-   - `` ``L3-CC-Transform-Totality: every Pass module is registered`` `` — the test scans `Projection.Core/Passes/*.fs` source files (filesystem-scan is acceptable in test code, which lives outside Core) for `module …Pass = …` declarations and asserts each appears in `TransformRegistry`. The registry itself is a hand-maintained F# `let registered : RegisteredPass list = [ … ]` in `TransformRegistry.fs`; the test catches drift between the file system and the registry. Per CLAUDE.md "reflection is out of scope for Core" — the test's filesystem scan is at the test boundary, not in Core.
-   - `` ``L3-CC-Transform-Totality: every registered pass is exercised`` `` — runs the operator-reality canary with `Bench.recordSample` instrumentation on each registered pass; asserts every registered pass fires at least once.
-   - `` ``L3-CC-Transform-Totality: skeleton baseline is callable and deterministic`` `` — invokes `Compose.runWithSkeleton` twice on the same `(catalog, profile)`; asserts byte-identical output.
-   - `` ``L3-CC-Transform-Totality: skeleton is a subset of full output`` `` — asserts every file in `runWithSkeleton`'s output is present in `runWithConfig`'s output (modulo overlay-introduced files, which the manifest's `applied-transforms` enumerates).
-   - `` ``L3-CC-Transform-Totality: manifest registry digest matches registry contents`` `` — round-trip property.
-6. **Error codes:** `registry.passUnregistered`, `registry.registeredPassNotExercised`, `registry.digestMismatch`, `registry.duplicatePassName`, `skeleton.policyLeakDetected` (catches A18 amended violations at the pass-driver boundary).
+   - Implement the type system above; smart constructor `TransformRegistry.create` enforces invariants (every `Name` unique within registry; every `Domain` is codified-concerns-set; every Site has non-empty Rationale; `Status = NotImplementedInV2 r` requires `r ≠ ""`).
+   - The `all` list is hand-maintained; each pass module's `.registered` is referenced explicitly. F# top-level evaluation order resolves dependencies.
 
-**Tier-3 hard-requirement Active deferral:** per the text-builder-as-first-instinct discipline (`DECISIONS 2026-05-10`), the `ManifestEmitter` registry-field extension MUST use `Utf8JsonWriter` / sorted-key `JsonNode` (already the precedent for manifest emission); a fresh `StringBuilder()` at this site would be a counterfactual to the discipline.
+2. **Full-sweep refactor: every existing pass module exposes `.registered` as primary surface.**
+   - **~10 pass modules** in `Projection.Core/Passes/`: `CanonicalizeIdentity`, `NamingMorphism`, `NormalizeStaticPopulations`, `SymmetricClosure`, `TopologicalOrderPass`, `VisibilityMask`, `NullabilityPass`, `UniqueIndexPass`, `ForeignKeyPass`, `CategoricalUniquenessPass`. Each pass module rewrites: `let run` becomes private; `let registered : RegisteredTransform<…> = { … ; Run = run }` is the new primary export.
+   - **~25 OSSYS adapter rules** in `Projection.Adapters.Osm/CatalogReader.fs` (the 25 translation rules from chapter 2). Each transformative rule (filters, remaps, derivations — per Q7 boundary, not pass-through mappings) gets a `RegisteredTransform<RawRow, CatalogFragment>` entry. Pass-through rules (field-A-maps-to-field-B) stay as before — they're translations, not transformations.
+   - **Emitter strategies** in `Projection.Targets.SSDT/*Rules.fs` (NullabilityRules, UniqueIndexRules, ForeignKeyRules, CategoricalUniquenessRules, CycleResolution): each strategy's outcome production gets a `RegisteredTransform` entry. (Note: `Composition.fanOut` is the strategy-dispatch primitive; registry classification is at the strategy-decision level, not at the fan-out level.)
+   - **Pipeline-level transformations**: `TableRename.applyRenames` in `Projection.Pipeline/Pipeline.fs`. Gets a `RegisteredTransform<Catalog, Catalog>` entry with `StageBinding = Pipeline`.
+   - Estimated subtask: ~1.5-2 weeks for the full sweep (each module is ~30-60 LOC of refactor; ~30 modules total).
+
+3. **`LineageEvent.Classification` field** (`src/Projection.Core/Lineage.fs`).
+   - Per Q3 (registry-authoritative; LineageEvent looks up classification): every `LineageEvent` is constructed with a `Classification` field that mirrors the `RegisteredTransform`'s classification at the firing pass. The mirror is established by writer-fidelity discipline primitives (`LineageDiagnostics.tellDiagnostics` etc.); the canonical lookup is `TransformRegistry.classificationOf : PassName -> Classification` (returns the SitesList aggregated up if all sites share a classification; returns `OperatorIntent`-aggregate otherwise).
+   - This is the A.4.7-prelude small slice (per Dependencies above). Lands before the full traversal refactor.
+
+4. **`Compose.run` traversal refactor** (`src/Projection.Pipeline/Pipeline.fs`).
+   - `Compose.run : Catalog -> Profile -> Policy -> outputDir -> Result<string list, ComposeError>` iterates `TransformRegistry.allInStageOrder`; for each registered transformation, invokes `registered.Run` at the appropriate stage seam.
+   - `Compose.runWithSkeleton : Catalog -> Profile -> outputDir -> Result<string list, ComposeError>` filters the traversal to `Classification = DataIntent` (Sites containing only `DataIntent` entries; mixed-classification passes contribute only their `DataIntent` Sites; `OperatorIntent` Sites are skipped).
+   - `Compose.runWithConfig` continues to exist; layers on top of `Compose.run` for config-driven invocations.
+
+5. **CLI surface** (`src/Projection.Cli/Program.fs`).
+   - `osm emit --skeleton-only` invokes `Compose.runWithSkeleton`; binary toggle per Q8. Per-OverlayAxis flags (`--no-tightening`, etc.) deferred-with-trigger per the consumer-pressure principle.
+   - The flag is concept-shaped (pillar 8: names what you GET); alternative-considered `--no-overrides` rejected as action-shaped.
+
+6. **ManifestEmitter extension** (`src/Projection.Targets.SSDT/ManifestEmitter.fs` + `Projection.Targets.Json/ManifestEmitter.fs`).
+   - Per Q3 / Q12: `registry : { digest : Sha256; transforms : RegisteredTransformMetadata list }` field where `RegisteredTransformMetadata` is the serializable subset of `RegisteredTransform` (drops the `Run` function).
+   - Per-artifact `applied-transforms : (SsKey × OverlayAxis option) list` field naming every `LineageEvent.PassName` whose event mentions that artifact's SsKey + the `OverlayAxis` (`None` for `DataIntent` sites; `Some axis` for `OperatorIntent axis` sites).
+   - Round-trip property: parsing the manifest yields a `RegisteredTransformMetadata list` byte-equal to the registry at emit time.
+   - Per the text-builder-as-first-instinct discipline (Tier-3 codification): manifest extension uses `Utf8JsonWriter` / sorted-key `JsonNode` (existing precedent); zero `StringBuilder()` at the registry-field site.
+
+7. **TransformRegistryCompletenessTests** (`tests/Projection.Tests/TransformRegistryCompletenessTests.fs`).
+   - Five bidirectional property tests (per Q12 — both-directions enforcement):
+   - `` ``L3-CC-Transform-Totality: Compose.runWithSkeleton emits zero OperatorIntent LineageEvents`` `` — **skeleton-purity property.** Runs `Compose.runWithSkeleton` on a representative canary catalog; asserts every `LineageEvent` produced has `Classification = DataIntent` (or, equivalently, the firing pass's `Sites` filtered to those that ran contain only `DataIntent`). Failure mode: an `OperatorIntent` leaked into the skeleton; pass bypassed the seam OR misclassified.
+   - `` ``L3-CC-Transform-Totality: every registered OperatorIntent transformation fires in canary`` `` — **overlay-exercise property.** Runs operator-reality canary with `Bench.recordSample` instrumentation on each registered transformation; asserts every entry with `Classification = OperatorIntent _` fires at least once. Failure mode: dead overlay; mis-registration; canary missing a scenario.
+   - `` ``L3-CC-Transform-Totality: every transformation site is in TransformRegistry`` `` — **totality coverage.** Test-time filesystem scan of `Projection.Core/Passes/*.fs` + `Projection.Adapters.Osm/CatalogReader.fs` adapter rules + `Projection.Targets.SSDT/*Rules.fs` strategies; asserts each scanned module's surface has a corresponding registry entry. Per CLAUDE.md "reflection is out of scope for Core" — filesystem scan is at test boundary, not in Core.
+   - `` ``L3-CC-Transform-Totality: every Tolerance entry naming a v1 transformation references a NotImplementedInV2 registry entry`` `` — **harvest-classification coverage.** For each `Tolerance` entry tagged as a v1↔v2 transformation divergence, asserts the registry has a `Status = NotImplementedInV2 of rationale` entry whose rationale matches. Catches the triple-deliverable harvest workflow (Skip stub + Tolerance + registry NotImplementedInV2) — if any of the three is missing, the property fails.
+   - `` ``L3-CC-Transform-Totality: manifest registry digest matches registry contents`` `` — round-trip property. ManifestEmitter writes `registry.digest`; parser reads; equality holds.
+
+8. **Error codes.** `registry.passUnregistered`, `registry.registeredPassNotExercised`, `registry.digestMismatch`, `registry.duplicatePassName`, `registry.classificationMissing`, `skeleton.policyLeakDetected` (the named failure-mode error for skeleton-purity property failure), `harvest.toleranceWithoutRegistryEntry`, `harvest.notImplementedV2WithoutToleranceOrSkipStub`.
+
+**Tier-3 hard-requirement Active deferral (preserved):** per the text-builder-as-first-instinct discipline (`DECISIONS 2026-05-10`), the `ManifestEmitter` registry-field extension MUST use `Utf8JsonWriter` / sorted-key `JsonNode` (the precedent); a fresh `StringBuilder()` at this site would be a counterfactual to the discipline.
 
 **Exit gate:**
-- `TransformRegistry.create` enforces totality at compile time + smart-constructor validation.
-- `Compose.runWithSkeleton` emits the baseline projection deterministically and is callable from `osm emit --skeleton-only`.
-- `ManifestEmitter` includes `registry.digest` + per-artifact `applied-transforms`.
-- All 5 `TransformRegistryCompletenessTests` green.
-- Coverage tests catch unregistered passes at build time (verified by intentional-fail probe: add a stub pass without registering it; build fails with structured error).
+- `TransformRegistry.create` enforces totality at smart-constructor invocation; no parallel enumeration anywhere in `Projection.Core`.
+- Every pass module exposes `<PassName>.registered : RegisteredTransform<'In, 'Out>` as its primary public surface; `let run` is private; consumers invoke `registered.Run`.
+- `LineageEvent` carries `Classification`; writer-fidelity discipline primitives propagate it; manifest emits the classification per artifact.
+- `Compose.run` traverses the registry as execution loop; `Compose.runWithSkeleton` filters to `DataIntent`; `osm emit --skeleton-only` invokes the latter.
+- All 5 bidirectional `TransformRegistryCompletenessTests` green.
+- Coverage tests fail the build on intentional-fail probes (add a stub pass without registering; add a registered pass with no canary scenario; add a `Tolerance` entry without a `NotImplementedInV2` registry entry — each must fail).
 - L3-CC-Transform-Totality moves from Bucket D to Bucket A in the §12 delivery matrix.
+- A41 cashes at A.4.7 close per the AXIOMS scaffolding discipline (chapter agent fills the body when A.4.7 closes).
 
-**Estimated effort:** 1.5-2 weeks. The compile-time registry module is small (~200 LOC); the manifest extension touches 1-2 emitters; the property tests are the substantive deliverable.
+**Estimated effort:** ~3 weeks (significantly larger than the original 1.5-2 week estimate due to full-sweep retroactive scope per Q6). Subtask breakdown: ~1.5 weeks for full-sweep pass / adapter / emitter refactor (~30 modules × ~30-60 LOC each); ~0.5 week for Compose.run traversal refactor; ~0.5 week for LineageEvent extension + writer-fidelity propagation; ~0.25 week for manifest extension; ~0.25 week for bidirectional property tests + intentional-fail probes.
 
 **Anti-scope (NOT this workstream):**
-- It is NOT a single linear `pass1 >> pass2 >> pass3` pipeline. The per-use-case driver pattern stands (per `DECISIONS 2026-05-13 — Transform registry cash-out`'s preserved reasoning); the registry is *enumerative*, not *compositional*.
-- It is NOT reflection-based runtime dispatch. Registry contents are compile-time; the F# `module TransformRegistry` references each `Pass` module by name (not by string lookup). The "out of scope for Core: reflection" CLAUDE.md commitment holds.
-- It is NOT a replacement for `Composition.fanOut` (the registered-intervention dispatch primitive for strategy fan-out). Strategies fan out *within* a pass; the registry enumerates *passes themselves*. The two primitives operate at different granularities and coexist unchanged.
-- It does NOT introduce per-pass policy axes the operator can toggle individually at the CLI. `--skeleton-only` is binary (baseline vs. baseline+all-overlays); per-overlay toggling waits for a real consumer demanding granular control (deferred-with-trigger).
+- It is NOT a single linear `pass1 >> pass2 >> pass3` pipeline. Per-use-case driver pattern stands (per `DECISIONS 2026-05-13 — Transform registry cash-out` preserved reasoning); the registry is *enumerative + canonical-function-definition*, not *compositional substrate*.
+- It is NOT reflection-based runtime dispatch. Registry contents are compile-time F# `let` bindings; the test-boundary filesystem scan is the only reflection-adjacent surface and lives at the test boundary, not in `Projection.Core`.
+- It is NOT a replacement for `Composition.fanOut`. Strategies fan out *within* a pass; the registry enumerates transformation sites *across* the pipeline. Different granularities; both preserved.
+- It does NOT introduce per-OverlayAxis CLI flags at A.4.7. `--skeleton-only` is binary per Q8; granular toggling deferred-with-trigger.
+- It does NOT refactor `Policy.fs` to hoist Policy axes into `OverlayAxis` as a structural simplification. That refactor is deferred-with-trigger (consumer pressure when real call-sites consult both Policy axes and OverlayAxis values). For A.4.7, `OverlayAxis` is the duplicate-by-design vocabulary (per Q9: "with an opportunity to expand in case we truly find a fifth axis is warranted") — the structural equivalence is acknowledged in DECISIONS but not collapsed at the type level until evidence forces it.
 
 ### 6.5 A.5 — Profile-JSON ingestion + completeness audit
 

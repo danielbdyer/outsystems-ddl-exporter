@@ -1,10 +1,46 @@
-# Handoff letter — A.4.7 specced + L3-CC-Transform-Totality axiom landed (chapter A.0' still open, slice β next)
+# Handoff letter — Pillar 9 codified + canonical-strongly-typed registry shape locked + A.4.7 specced (chapter A.0' still open, slice β next)
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
 
-## 2026-05-15 (late) — Transform registry re-opened as L3-CC-Transform-Totality (A.4.7 specced; chapter A.0' continues)
+## 2026-05-15 (late, second pass) — Pillar 9 + DataIntent/OperatorIntent reification + canonical-strongly-typed registry shape
+
+**Branch / baseline.** Continues on `claude/research-v2-direction-zKg9g`. Documentation-only commit (second pass of the same documentation surface as the entry below); no code changes; test baseline unchanged (1146/1146).
+
+**Twelve-question principal-PO design session sharpened the framing significantly.** The first 2026-05-15 entry (below) re-opened the transform registry under skeleton-overlay separation pressure but under-developed three load-bearing aspects. The late-2026-05-15 codification fills them in:
+
+1. **Pillar 9 — harvest-dichotomy classification — codified at supreme-operating-discipline level.** The dichotomy is a meta-discipline operative AT HARVEST TIME (when an agent reads v1 or any source for what to bring forward) — every transformation site is classified `DataIntent` (preserves data intention; lands in skeleton) or `OperatorIntent of OverlayAxis` (operator-supplied intent; lands as registered overlay). The classification is the *outcome of agent harvest analysis*, not a property the code wears. The harvest workflow is named (4 steps); the harvest-gap triple-deliverable is named (Skip stub + Tolerance entry + `NotImplementedInV2` registry entry); the named failure mode is *skeleton-overlay drift* (three sub-modes, each caught by a property test). Sibling to pillar 8 (domain-first naming), the LINT-ALLOW substantive-rationale discipline, and the text-builder-as-first-instinct discipline — four meta-disciplines, each applied at consideration time, each enforced bidirectionally by structural tests. See `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification`.
+
+2. **Policy IS operator intent, reified.** `OverlayAxis = Policy DU axes exactly` (Selection / Emission / Insertion / Tightening). `OperatorIntent (Overlay Tightening)` reads as "operator intent expressed via the Tightening axis." Ubiquitous-language consistency: Policy axes and OverlayAxis values are the same thing, structurally. Existing `Projection.Core.Policy.fs` becomes a use-site of `OverlayAxis`. Reserved for expansion if a fifth axis warranted; today four exactly.
+
+3. **The registry is canonical for both metadata AND the transformation-function definition itself; no parallel enumeration.** Each pass module's primary public surface becomes `<PassName>.registered : RegisteredTransform<'In, 'Out>`; the `let run` function becomes private; consumers invoke `registered.Run`. Five stage seams (`Adapter | Pass | OrderingPolicy | Emitter | Pipeline`). Single-definition-site discipline. `Compose.run` traverses the registry as its execution loop. The full-sweep retroactive scope (every pass + 25 OSSYS adapter rules + emitter strategies) bumps A.4.7 from ~1.5-2 weeks to **~3 weeks** estimated.
+
+4. **The registry is the FOURTH cross-cutting concern**, sibling to Lineage / Diagnostics / Bench — together they form V2's structural-evidence layer. Each plugs into every stage that has its kind of activity; each is enforced structurally; each has its own writer/observer primitive. The cross-cutting framing is now visible in `V2_DRIVER.md` per-axis stakes table and `PRODUCT_AXIOMS.md` L3-CC-Transform-Totality.
+
+5. **Three-step rollout (per Q4):** discipline + 9th pillar + L3 axiom land NOW (this session). `LineageEvent.Classification` field lands as a small slice during or just after A.0' (A.4.7-prelude). Full structural surface (registry refactor + Compose.run traversal + bidirectional property tests + CLI flag + manifest extension) lands at A.4.7 proper post-A.0' close.
+
+**What shipped (this session, documentation-only, second pass):**
+
+- **`DECISIONS.md`** — new entry `2026-05-15 (late) — Pillar 9: harvest-dichotomy classification (DataIntent vs OperatorIntent); registry as cross-cutting concern; canonical strongly-typed registry shape`. ~250 lines codifying pillar 9, the 4-step harvest workflow, the strongly-typed canonical registry shape (`RegisteredTransform<'In, 'Out>`), the 5-stage `StageBinding` DU, the `Sites : TransformSite list` for intra-pass classification fidelity, the bidirectional property tests, the four-cross-cutting-concerns frame, and the three-step rollout.
+- **`PRODUCT_AXIOMS.md`** — L3-CC-Transform-Totality restated with DataIntent/OperatorIntent vocabulary; bidirectional property tests; 5-stage cross-cutting framing; harvest discipline cross-reference.
+- **`AXIOMS.md`** — A41 candidate placeholder strengthened with the full type-system shape (`Classification`, `TransformSite`, `RegisteredTransform<'In, 'Out>`, `OverlayAxis = Policy axes`, `TransformStatus`); canonical-registry decision documented.
+- **`V2_PRODUCTION_CUTOVER.md`** — §6.4.7 substantially rewritten: full-sweep retroactive scope (~3 weeks); strongly-typed canonical registry shape with type definitions; 5-stage seam handling per Q7 unified type parameters; `Compose.run` traversal refactor per Q5; binary `--skeleton-only` CLI per Q8; harvest-workflow triple deliverable per Q10; intra-pass classification fidelity via `Sites` list per Q11; bidirectional property tests per Q12 (5 named tests covering skeleton-purity + overlay-exercise + totality coverage + harvest-classification cross-reference + manifest round-trip).
+- **`V2_DRIVER.md`** — per-axis stakes row reframed with cross-cutting sibling framing (Lineage / Diagnostics / Bench / TransformRegistry as four-concern structural-evidence layer); pillar 9 reference; A.4.7 effort estimate updated to ~3 weeks.
+- **`CLAUDE.md`** — operating-disciplines row updated for pillar 9 elevation; load-bearing commitments list updated with DataIntent/OperatorIntent vocabulary + canonical-registry shape + 5-stage seams.
+- **`docs/architecture/entity-pipeline-unification-v2.md`** — header banner strengthened to invoke pillar 9 as the operative classification any agent reading the doc must apply.
+
+**Immediate operative consequences:**
+
+- **In-flight A.0' slice β (IsActive disposition retirement) is the FIRST WORKED EXAMPLE of pillar 9 at harvest time.** Per the harvest analysis: session-21's silent-drop of inactive records filtered on operator-meaningful "active/inactive" status — that's `OperatorIntent` (no current `OverlayAxis` fit; one of the candidate axis-expansion triggers). Slice β retires that mis-placement and lifts `IsActive` to the IR as `DataIntent` evidence. The slice-β DECISIONS amendment (originally just "supersede session-21") now should ALSO cite pillar 9 + classify the original disposition + the corrected disposition.
+- **Every chapter-close ritual gains a pillar-9 check.** Per the chapter-close ritual discipline, every close adds a one-paragraph audit step. Future chapter closes now include: "Which transformations did this chapter introduce or modify? What's each transformation's classification? Does the registry / Tolerance / Skip-stub triple deliverable hold for any v1-harvest gaps?"
+- **Pillar 9 is operative for the v1-soak debt vectors too.** When V1.1 (EntityFilters wiring), V1.2 (global topo for StaticSeeds), V1.3 (DatabaseSnapshot dedup) land as v1-side PRs, the harvest discipline applies during V2's Phase A.6 differential testing: any v1 transformation that becomes visible during soak gets classified before tolerance decisions are made.
+
+**Continue on the in-flight A.0' chapter slice β next.** The new framing is *additive* to slice β; it doesn't redirect. Slice β remains the next-most-ready work. Pillar 9 is operative for the slice's harvest analysis; the slice-β DECISIONS amendment supersedes session-21 AND cites pillar 9 for the classification rationale.
+
+**A.4.7 is the next-chapter target after A.0' close.** ~3 weeks; full-sweep retroactive refactor; canonical strongly-typed registry; bidirectional property tests. The A.4.7-prelude small slice (`LineageEvent.Classification` field) lands during or just after A.0' to let events self-classify before the full traversal refactor.
+
+## 2026-05-15 — Transform registry re-opened as L3-CC-Transform-Totality (A.4.7 specced; chapter A.0' continues)
 
 **Branch / baseline.** Continues on `claude/research-v2-direction-zKg9g`. Documentation-only commit; no code changes; test baseline unchanged (1146/1146).
 

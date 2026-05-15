@@ -159,7 +159,7 @@ of them, write the amendment first.
 | **Harmonization-via-parameterization (chapter-3.1 contribution)** — when two implementations of an algorithm diverge on a single semantic axis, parameterize the algorithm on that axis, produce both projections from one implementation, and let consumers choose. Worked example: `SelfLoopPolicy` in `TopologicalOrderPass` (chapter-3.1 collapsed `RawTextEmitter.emissionOrder`'s duplicate Kahn into the pass). Codified as A40. | `DECISIONS 2026-05-30 — Session 36 / Topological-sort harmonization via SelfLoopPolicy` |
 | **Five-agent epistemic-tier audit at chapter close (chapter-3.1 contribution)** — multi-agent parallel audit dispatched at chapter close covering tightly orthogonal concerns (UL / Hex / VO / FP / ACL). Each agent classifies findings B&W vs SUBJ + H/M/L; convergence-map is the synthesis primary surface; Tier 1/2/3/4 backlog organizes findings by epistemic level + leverage. Audits are routed (named items in named chapters with named pre-scopes), not piled. Worked example: `AUDIT_2026_05_DDD_HEXAGONAL_FP.md`. | `DECISIONS 2026-05-30 — Session 36 / Five-agent DDD/Hexagonal/FP audit protocol` |
 | **Verifiability-triangle audit cadence (2026-05-12 contribution)** — V2's structural-commitment posture is audited along three connected levels: L1 (structural commitments — smart constructors, closed DUs, VOs), L2 (formal axioms in `AXIOMS.md` — A1–A40 + T1–T11), L3 (product axioms in `PRODUCT_AXIOMS.md` — operator-meaningful claims). Each L3 axiom must trace down to L2 and L1; each L2 axiom must trace up to a product behavior; each L1 commitment must trace up to an axiom. Audit dispatch protocol: three parallel agents (top-down L3 articulation + L2↔L3 bridge + adversarial gap-hunt as operator) produce a coverage map classifying every axiom into Bucket A (full L1+L2+L3+test), Bucket B (convention-enforced L1), Bucket C (weakness — untested/aspirational/deferred), or Bucket D (unnamed L3 axiom with no L2 backing). Cadence: (a) annual re-audit refresh; (b) chapter-close L3 step — every chapter close adds a one-paragraph audit check naming the L3 axioms its work touched and any new Bucket-D gaps introduced; (c) per-PR L3 review for PRs touching boundary code or adding config/CLI surface. Bucket-D promotions land in `AXIOMS.md` or `PRODUCT_AXIOMS.md` once campaigns operationalize them. Worked example: `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md`. | `DECISIONS 2026-05-12 — Verifiability-triangle audit methodology` |
-| **Skeleton/overlay separation as structural commitment (2026-05-15 contribution)** — every artifact V2 emits decomposes into (a) a *baseline* projection (`Project(catalog, Policy.empty, profile)`) reachable from inputs without any operator opinion applied, AND (b) a registered *overlay* sequence (`TransformRegistry`-enumerated `Pass` invocations whose `LineageEvent` trails are named, ordered, audit-traceable). The decomposition is the operator's promise: ask for the vanilla projection and get a deterministic factual baseline; every override applied is named and recorded. A18 amended ("Π consumes Catalog × Profile, never Policy") is the structural commitment for the Π side; **the transform registry is the structural commitment for the Pass side**. The two siblings together carry the decomposition as type-witnessed contract, not discipline. The chapter-4.x scope expansion (User FK reflow; operational diagnostics; multi-environment policy/profile parameterization) grows the number of policy-driven mutations monotonically; without the registry seam, each new pass is one more convention to track in code review. The named failure mode is **skeleton/overlay drift**: a policy-driven mutation leaks into the baseline (or a new pass goes unregistered) and audit-traceability silently degrades. Co-equal load-bearing with CDC silence per `V2_DRIVER.md` per-axis stakes table. The four-question naming analysis (pillar 8) catches naming drift; the LINT-ALLOW substantive-rationale discipline catches string-composition drift; **the transform registry catches skeleton/overlay drift**. Three sibling disciplines. | `DECISIONS 2026-05-15 — Transform registry re-opened: skeleton-overlay separation as L3-CC-Transform-Totality` (re-opens the 2026-05-13 cash-out under different consumer pressure; preserves the prior reasoning); `PRODUCT_AXIOMS.md` L3-CC-Transform-Totality; `V2_PRODUCTION_CUTOVER.md` §6.4.7 (A.4.7 workstream) |
+| **Pillar 9 — Harvest-dichotomy classification (data-intention vs operator-intention) (2026-05-15 late contribution; codified at supreme-operating-discipline level)** — every transformation site reads under one of two classifications: **`DataIntent`** (preserves data intention; reachable from `Project(catalog, Policy.empty, profile)` without operator opinion; lands in the skeleton — Profile-driven *observations* are DataIntent evidence) or **`OperatorIntent of OverlayAxis`** (expresses operator-supplied intent through `Selection \| Emission \| Insertion \| Tightening`; lands as registered overlay; emits `LineageEvent` carrying the classification). The dichotomy is operative AT HARVEST TIME — every transformation an agent considers (reading v1 for what to bring forward; designing a new pass; auditing an existing seam) gets classified before it lands in v2 thinking. **Policy IS operator intent reified**: OverlayAxis = Policy DU axes exactly (with reserved expansion if a fifth axis is warranted). Harvest workflow (4 steps): identify what changes → determine whose intent is expressed → register or document the harvest decision (transformation in v2 ships as `RegisteredTransform`; transformation NOT in v2 ships as triple deliverable Skip stub + Tolerance entry + `Status = NotImplementedInV2 of rationale` registry entry) → confirm intent against the pillar. **Named failure mode: skeleton-overlay drift** (three sub-modes: misclassification as DataIntent; dead overlay; silent inclusion at harvest) — caught bidirectionally by the skeleton-purity property + overlay-exercise property + harvest-classification coverage tests. Sibling to pillar 8 (catches naming drift), pillar 7 amendment (catches string-composition drift), text-builder-as-first-instinct (catches typed-AST-bypass drift). The four meta-disciplines form the discipline tier; each is applied at consideration time; each is enforced structurally; each protects a class of failure that scales with codebase growth. The `TransformRegistry` is the **fourth cross-cutting structural-evidence concern**, sibling to Lineage / Diagnostics / Bench — each plugs into every stage that has its kind of activity; each is enforced structurally; each has its own writer/observer primitive. Strongly-typed canonical surface: `RegisteredTransform<'In, 'Out>` carries metadata AND the transformation-function definition itself (single definition site; no parallel enumeration); 5-stage `StageBinding` (`Adapter \| Pass \| OrderingPolicy \| Emitter \| Pipeline`); `Sites : TransformSite list` for intra-pass classification fidelity. | `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification (DataIntent vs OperatorIntent); registry as cross-cutting concern; canonical strongly-typed registry shape` (refines the same-day re-opening entry with the full pillar-9 framing); `PRODUCT_AXIOMS.md` L3-CC-Transform-Totality (bidirectional axiom statement); `AXIOMS.md` A41 candidate (formal type-system shape); `V2_PRODUCTION_CUTOVER.md` §6.4.7 (A.4.7 workstream; full-sweep retroactive refactor; ∼3 weeks); `V2_DRIVER.md` per-axis stakes (data-intent / operator-intent separation — verification depth Highest, co-equal with CDC silence). |
 
 ## Load-bearing commitments — do not break without writing the amendment first
 
@@ -173,25 +173,44 @@ wanting to break one, write the amendment first.
   it needs, but never `Policy`. Catalog and Profile are *evidence*;
   Policy is *intent*. If you reach for Policy from inside an emitter,
   you are in the wrong layer — the work belongs in a pass.
-- **Skeleton/overlay separation (L3-CC-Transform-Totality).** Every
-  artifact V2 emits decomposes into a *baseline* projection
-  (`Project(catalog, Policy.empty, profile)`) reachable from inputs
-  without any operator opinion applied, plus a registered *overlay*
-  sequence (`TransformRegistry`-enumerated `Pass` invocations whose
-  `LineageEvent` trails compose the baseline into the full output).
-  A18 amended is the Π-side commitment; **the transform registry is
-  the Pass-side commitment** — both halves recoverable, enumerable,
-  audit-traceable; both required for laboratory-quality outcomes as
-  V2 scales. The baseline is reachable from the CLI via
-  `osm emit --skeleton-only`; the manifest names every applied
-  overlay per artifact via `applied-transforms : SsKey list`;
-  `TransformRegistryCompletenessTests` fail the build on any
-  inclusion gap (unregistered pass; registered pass not exercised in
-  canary). Tier 1 (cutover blocker); co-equal load-bearing with
-  CDC silence per `V2_DRIVER.md` per-axis stakes table. Lands
-  structurally at A.4.7 (`V2_PRODUCTION_CUTOVER.md` §6.4.7); the L3
-  axiom (`PRODUCT_AXIOMS.md` L3-CC-Transform-Totality) and A41
-  candidate (`AXIOMS.md` Amendments scheduled) land at A.4.7 close.
+- **Data-intent / operator-intent separation (pillar 9 +
+  L3-CC-Transform-Totality + A41 candidate).** Every transformation
+  site in V2 carries an explicit classification — `DataIntent`
+  (preserves data intention; reachable from
+  `Project(catalog, Policy.empty, profile)` without operator opinion;
+  lands in the skeleton) or `OperatorIntent of OverlayAxis`
+  (operator-supplied intent through Selection / Emission / Insertion /
+  Tightening; lands as registered overlay; emits classified
+  `LineageEvent`). **Policy IS operator intent, reified:** OverlayAxis
+  = Policy DU axes exactly (with reserved expansion). A18 amended is
+  the Π-side commitment forbidding `Policy` in emitters (structural
+  type); A41 (registry totality + bidirectional property tests) is
+  the Pass-side commitment enumerating every `OperatorIntent` site
+  (structural type + property test). Together they carry the
+  dichotomy as a **type-witnessed bidirectional contract**, not a
+  one-sided discipline. Strongly-typed canonical registry:
+  `RegisteredTransform<'In, 'Out>` carries metadata AND the
+  transformation-function definition itself (single definition site;
+  no parallel enumeration); 5-stage `StageBinding`
+  (Adapter / Pass / OrderingPolicy / Emitter / Pipeline);
+  `Sites : TransformSite list` for intra-pass classification fidelity.
+  The registry is the **fourth cross-cutting structural-evidence
+  concern**, sibling to Lineage / Diagnostics / Bench. Baseline
+  reachable from CLI via `osm emit --skeleton-only`; manifest names
+  every applied overlay per artifact via
+  `applied-transforms : (SsKey × OverlayAxis option) list`.
+  Bidirectional property tests: skeleton-purity
+  (`Compose.runWithSkeleton` emits zero `OperatorIntent` events) +
+  overlay-exercise (every registered `OperatorIntent` fires in canary)
+  + totality coverage + harvest-classification cross-reference. Tier
+  1 (cutover blocker); co-equal load-bearing with CDC silence per
+  `V2_DRIVER.md` per-axis stakes table. Lands structurally at A.4.7
+  (`V2_PRODUCTION_CUTOVER.md` §6.4.7; ~3 weeks full-sweep retroactive
+  refactor); the A.4.7-prelude small slice adds
+  `LineageEvent.Classification` field during/after A.0'; pillar 9 +
+  L3 axiom + A41 candidate land NOW (this commit) so the discipline
+  is operative for in-flight A.0' slice β (IsActive disposition
+  classification is the first worked example).
 - **Strategy-layer codification (`DECISIONS 2026-05-11`).** Pure
   functions of IR fields; typed function-type seam
   (`StrategyEvaluator<'context, 'config, 'decision>`); structured

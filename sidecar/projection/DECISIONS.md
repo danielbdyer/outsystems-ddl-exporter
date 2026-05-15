@@ -11034,3 +11034,145 @@ The decomposition is the operator's contract. Without a registry that *enumerate
 **The lesson.** Deferrals cash out as "overtaken-by-evidence" when the consumer pressure that motivated them dissolves. They re-open under different consumer pressure even when the prior cash-out's reasoning was correct. Both 2026-05-13's "registry isn't a pipeline-composition substrate" AND 2026-05-15's "registry IS a skeleton-overlay enforcement seam" are true; the registry has different shape under each pressure. The structural answer is to preserve both entries: the original cash-out remains the answer to its question; this entry is the answer to a different question that asks different structure. Future agents reading either entry get the bracketed context.
 
 ---
+
+## 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification (DataIntent vs OperatorIntent); registry as cross-cutting concern; canonical strongly-typed registry shape
+
+**Status:** decided (codification of the supreme-operating-discipline 9th pillar + structural shape of `Projection.Core.TransformRegistry`; refines the 2026-05-15 transform-registry re-opening entry above with the principal-PO's deeper articulation).
+
+**Context.** The 2026-05-15 entry above re-opened the transform registry under skeleton-overlay separation pressure. A principal-PO follow-up sharpened three load-bearing aspects that the earlier framing under-developed:
+
+1. **The dichotomy is a meta-discipline operative at HARVEST TIME**, not just a structural property of the registry. As an agent reads v1 (or v2, or anywhere) deciding what transformations to bring forward, every transformation site gets classified — `DataIntent` (preserves data intention; reachable from `Project(catalog, Policy.empty, profile)` without operator opinion) or `OperatorIntent of OverlayAxis` (operator-supplied intent expressed through a named overlay axis). The classification is the *outcome of agent analysis*, not a property the code already wears. The registry is just the structural enforcement seam; the discipline is how the work gets done.
+
+2. **The registry is a cross-cutting concern, sibling to Lineage / Diagnostics / Bench**, not stage-bound. Transformations fire at any of five stage seams (Adapter / Pass / OrderingPolicy / Emitter / Pipeline). The registry enumerates all of them, not just `module …Pass = …` declarations. The four cross-cutting concerns together form V2's structural-evidence layer — each plugged into every stage that has its kind of activity; each enforced structurally:
+
+   | Cross-cutting concern | Where it fires | Primitive | Structural enforcement |
+   |---|---|---|---|
+   | **Lineage** | Every decision | `Lineage<'a>` writer + `LineageEvent` | A24/A25 + writer-fidelity discipline |
+   | **Diagnostics** | Every findable observation | `Diagnostics<'a>` writer + routing | Channel-routing convention |
+   | **Bench** | Every loop / hot path | `Bench.scope` / `iterDo` / `streamProbe` | Perf-gate + iterator-logging discipline |
+   | **TransformRegistry** *(new sibling per this entry)* | Every classified transformation site | `RegisteredTransform<'In, 'Out>` + 5-stage `StageBinding` | Bidirectional property tests + harvest-classification discipline (pillar 9) |
+
+3. **The registry is strongly typed and canonical for both metadata AND the transformation-function definition itself.** No parallel enumeration. Each pass module exposes `<PassName>.registered : RegisteredTransform<'In, 'Out>` as its PRIMARY public surface; the `Run : 'In -> Lineage<Diagnostics<'Out>>` field carries the typed transformation function. The registry is therefore the *single definition site*; `Compose.run` traverses it; consumers (manifest emitter, audit traversal, CLI surface) read it.
+
+**Decision: Pillar 9 — Harvest-dichotomy classification.**
+
+Per the user's chapter-3.7 sidebar amendment (2026-05-15), the supreme-operating-discipline section at the top of this file is amended to include pillar 9, codified in this entry. Future agents read this entry alongside the pillar 8 entry (`2026-05-10 — Domain-first naming`) as part of the operating-discipline pillars.
+
+**Pillar 9 — Harvest-dichotomy classification (data-intention vs operator-intention).**
+
+Every transformation site reads under one of two classifications:
+
+- **`DataIntent`** — preserves data intention; reachable from `Project(catalog, Policy.empty, profile)` without operator opinion; lands in the **skeleton**. Profile-driven *observations* (`Profile.NullCount = 0` etc.) are `DataIntent` evidence; the skeleton consumes them.
+- **`OperatorIntent of OverlayAxis`** — expresses operator-supplied intent through one of the Policy DU's existing axes (`Selection | Emission | Insertion | Tightening`). Lands as **registered overlay** with explicit stage binding and `LineageEvent` emission carrying the classification.
+
+**Policy IS operator intent, reified.** The reframing — the user's load-bearing observation — is that Policy's existing axes ARE the OverlayAxis values. `OperatorIntent (Overlay Tightening)` reads as "operator intent expressed via the Tightening axis." Ubiquitous-language consistency: Policy axes and OverlayAxis values are the same thing, structurally. Reserved for expansion if a fifth axis warranted by real evidence; today, four axes exactly. Existing `Projection.Core.Policy.fs` becomes the use-site of `OverlayAxis`.
+
+**Profile-in-skeleton boundary.** A18 amended says Π consumes `Catalog × Profile`, never Policy. The harvest-dichotomy line sharpens this: Profile *evidence* (raw observations like null counts, FK orphan rows, distribution percentiles) is `DataIntent` and lands in the skeleton's input. Profile-*driven decisions* (NullabilityEvaluator concluding "tighten this column because no nulls observed and Tightening=Cautious") are `OperatorIntent` on the Tightening axis. The line is "what does Profile evidence say?" (DataIntent) vs. "what does the operator's policy decide to do with what Profile says?" (OperatorIntent).
+
+**Harvest workflow.** When an agent reads any transformation site — whether harvesting v1 for compliance, designing a new v2 pass, auditing an existing seam, or evaluating a cross-cutting refactor — the discipline operates BEFORE the transformation enters v2 thinking:
+
+1. **Identify what changes.** Name the input X and output Y; articulate the delta the transformation produces.
+2. **Determine whose intent is expressed.** Is the change derived purely from input evidence (`Catalog` or `Profile`) with no operator-supplied parameter? → `DataIntent`. Does the change consult operator-supplied Policy (or operator-supplied rename specs, config overrides, etc.)? → `OperatorIntent`; name the `OverlayAxis`.
+3. **Register or document the harvest decision.**
+   - *Transformation lands in v2:* it ships as a `RegisteredTransform<'In, 'Out>` entry with classification + 5-stage binding + typed function definition.
+   - *V2 chose not to bring it forward:* triple deliverable — `[<Fact(Skip = "...")>]` test stub citing classification rationale + `Tolerance.fs` entry naming the v1↔v2 divergence + `RegisteredTransform { Status = NotImplementedInV2 of rationale }` registry entry. Three surfaces; each catches a different review angle; redundancy IS the audit posture.
+4. **Confirm intent against the pillar.** If step 2's answer is ambiguous, the harvest analysis hasn't been done yet — articulate the DataIntent vs OperatorIntent question explicitly in a DECISIONS amendment before landing the transformation.
+
+**Named failure mode: skeleton-overlay drift.** Three sub-modes catchable by structural enforcement:
+
+- A transformation classified `DataIntent` when it's actually `OperatorIntent` (a policy-driven mutation leaks into the skeleton) — caught by the **skeleton-purity property test**: `Compose.runWithSkeleton` produces zero `LineageEvent` classified `OperatorIntent`. Failure ⇒ leak.
+- A transformation classified `OperatorIntent` that never fires in any canary scenario (dead overlay; mis-registration) — caught by the **overlay-exercise property test**: every registered `OperatorIntent` transformation fires in at least one canary scenario. Failure ⇒ dead overlay.
+- A v1 transformation harvested without classification (silent inclusion) — caught by the **harvest-classification coverage test**: every `RegisteredTransform` entry has a non-empty classification rationale; every v1↔v2 differential disagreement at canary time either matches a `Tolerance` entry (and that entry references a `RegisteredTransform.Status = NotImplementedInV2 of rationale`) or fails the canary.
+
+**Sibling to the meta-disciplines that scale with codebase growth.** Pillar 8 (domain-first naming, four-question naming analysis) catches *naming drift*; pillar 7 amendment (LINT-ALLOW substantive-rationale) catches *string-composition drift*; the text-builder-as-first-instinct discipline catches *typed-AST-bypass drift*; **pillar 9 (harvest-dichotomy classification) catches *skeleton-overlay drift*.** Each is a discipline applied at consideration time, structurally enforced by tests, codified at the pillar level so future agents inherit the bias without re-deriving it. The four together form the meta-discipline tier.
+
+**Canonical strongly-typed registry shape.**
+
+Each transformation site lives as a `RegisteredTransform` value in `Projection.Core/TransformRegistry.fs`. The type is parameterized over input and output to handle the five stage seams uniformly (adapter rules are `RawRow -> CatalogFragment`; passes are `Catalog -> Catalog`; emitters are `Catalog -> ArtifactByKind<'element>`; the type parameters carry the signature shape):
+
+```fsharp
+type StageBinding =
+    | Adapter
+    | Pass
+    | OrderingPolicy
+    | Emitter
+    | Pipeline
+
+type OverlayAxis =
+    | Selection
+    | Emission
+    | Insertion
+    | Tightening
+    // Reserved for expansion if a fifth axis is warranted by real evidence;
+    // today, the four Policy axes are exactly the OverlayAxis values.
+
+type Classification =
+    | DataIntent
+    | OperatorIntent of OverlayAxis
+
+type TransformSite = {
+    SiteName: string                          // e.g., "SortKahn" inside TopologicalOrderPass
+    Classification: Classification             // DataIntent | OperatorIntent axis
+    Rationale: string                         // harvest-discipline analysis prose
+}
+
+type RegisteredTransform<'In, 'Out> = {
+    Name: PassName
+    Domain: Domain                            // schema / data / identity / diagnostics / cutover-safety / cross-cutting
+    StageBinding: StageBinding
+    Sites: TransformSite list                 // each Site carries its own classification (per Q11)
+    Run: 'In -> Lineage<Diagnostics<'Out>>    // the typed transformation function itself
+    Status: TransformStatus                   // Active | NotImplementedInV2 of rationale
+}
+
+type TransformStatus =
+    | Active
+    | NotImplementedInV2 of rationale: string  // for v1 harvest classification with no v2 equivalent
+```
+
+The `Sites` list (per Q11 answer) captures intra-pass classification fidelity. `TopologicalOrderPass.registered.Sites = [{ SiteName = "SortKahn"; Classification = DataIntent; Rationale = "..." }; { SiteName = "SelfLoopHandling"; Classification = OperatorIntent OrderingPolicy; Rationale = "..." }]` — one registry entry; two classified sub-sites. The `Run` field is the typed transformation function; consumers (Compose.run, manifest emitter, audit traversal) invoke `registered.Run` rather than reaching into the pass module for `let run …`.
+
+**Single definition site.** Each pass module's primary public surface is `<PassName>.registered : RegisteredTransform<'In, 'Out>`. The `let run` function inside the pass module becomes private; `registered.Run` is the public callable. No parallel enumeration; no separate "register this pass" call elsewhere. The registry is built up at module load via F#'s top-level evaluation order — `TransformRegistry.all : RegisteredTransform<_, _> list` is a `let` over each pass module's `registered` field.
+
+**Compose.run traverses the registry.** Per Q5: `Compose.run` iterates `TransformRegistry.allInStageOrder` and invokes each `registered.Run` at the appropriate stage seam. Structurally airtight — transformations firing outside the registry-traversed flow become impossible. `Compose.runWithSkeleton` is the same traversal with a predicate that filters to `Classification = DataIntent` (and `Sites` containing only `DataIntent` entries); `OperatorIntent` transformations are skipped.
+
+**Full-sweep retroactive scope at A.4.7.** Per Q6: A.4.7 ships the registry surface + classifies + refactors every existing transformation site — the ~10 passes, the 25 OSSYS adapter rules, the emitter strategies. Each existing module rewrites to expose `.registered`. Estimated ~3 weeks (significantly larger than the original 1.5-2 estimate). Full Bucket-A coverage on the dichotomy axis at workstream close.
+
+**Adapter rules in scope (Q7).** The unified type-parameterized `RegisteredTransform<'In, 'Out>` handles adapter rules (`RawRow -> CatalogFragment`) and passes (`Catalog -> Catalog`) at the same registry surface; the `StageBinding` discriminates. The IsActive disposition slice-β retirement IS a transformation at the adapter (an `OperatorIntent` with no current OverlayAxis fit — see Q9 expansion provision); it gets a registry home rather than being silently absorbed.
+
+**Binary CLI at A.4.7 (Q8).** `osm emit --skeleton-only` is the only flag. Per-OverlayAxis toggling deferred-with-trigger (consumer-pressure principle).
+
+**Bidirectional property tests (Q12).**
+- **Skeleton-purity:** `` ``L3-CC-Transform-Totality: Compose.runWithSkeleton emits zero OperatorIntent LineageEvents`` ``.
+- **Overlay-exercise:** `` ``L3-CC-Transform-Totality: every registered OperatorIntent transformation fires in canary`` ``.
+- Plus the harvest-classification coverage tests already named (every entry has classification; every v1↔v2 divergence at canary references a registry entry).
+
+**Three-step rollout (Q4).**
+
+- **NOW (this entry):** Pillar 9 codified in supreme operating discipline; harvest discipline operative immediately for in-flight A.0' slice β (the IsActive disposition retirement is itself the first worked example — was session-21's silent-drop `DataIntent` or `OperatorIntent`? Per the harvest analysis: filtering on operator-meaningful "active/inactive" status is `OperatorIntent`; slice β retires that mis-placement and lifts `IsActive` to the IR as `DataIntent` evidence). PRODUCT_AXIOMS L3-CC-Transform-Totality + AXIOMS A41 candidate updated. V2_DRIVER per-axis stakes row + cross-cutting framing updated. CLAUDE operating-disciplines row + load-bearing commitment updated.
+- **A.4.7-prelude (small slice within or just after chapter A.0'):** `LineageEvent` gains a `Classification : Classification` field. Existing pass drivers update via the writer-fidelity discipline's canonical primitives. No traversal yet; events self-classify.
+- **A.4.7 proper (post-A.0' close):** Full structural surface — `TransformRegistry.fs` + full-sweep refactor of every pass module to expose `.registered` + `Compose.run` traversal refactor + bidirectional property tests + `--skeleton-only` CLI + manifest extension. ~3 weeks. L3-CC-Transform-Totality D → A.
+
+**Consequences.**
+
+- Pillar 9 joins pillars 1–8 as session-start operating discipline. Every agent confirms intent against pillar 9 before adopting any harvest pattern.
+- The four-cross-cutting-concerns frame (Lineage / Diagnostics / Bench / TransformRegistry) becomes structural-evidence-layer vocabulary. Future agents reading V2_DRIVER per-axis stakes table see this framing.
+- A41 candidate in AXIOMS gains specificity (DataIntent | OperatorIntent of OverlayAxis as the type signature; canonical-registry decision as the structural shape).
+- A.4.7 workstream spec in V2_PRODUCTION_CUTOVER §6.4.7 strengthens to ~3 weeks; full-sweep retroactive scope; Compose.run traversal; unified RegisteredTransform<'In, 'Out>; Sites list; bidirectional property tests; binary CLI; harvest-workflow triple deliverable codified.
+- HANDOFF announces the second-pass refinement; in-flight A.0' slice β becomes the first worked example of pillar 9 at harvest time.
+- CLAUDE operating-disciplines row strengthens to reflect pillar 9 as discipline-tier (sibling to pillar 8); load-bearing-commitments list strengthens to reference DataIntent/OperatorIntent vocabulary + canonical-registry shape.
+- Existing Policy DU surface is structurally equivalent to a slice of `OperatorIntent`. Future refactoring may hoist Policy axes directly into `OverlayAxis` as a structural simplification; deferred-with-trigger (consumer pressure when registry surfaces real call-sites consulting both).
+- v1-doc banner at `docs/architecture/entity-pipeline-unification-v2.md` strengthens to invoke the harvest dichotomy as the operative classification any agent reading it must apply.
+
+**Cross-references.**
+
+- `PRODUCT_AXIOMS.md` L3-CC-Transform-Totality (axiom statement; this entry's structural commitment).
+- `AXIOMS.md` A41 candidate (formal-system underwriting; cashes at A.4.7 close).
+- `V2_PRODUCTION_CUTOVER.md` §6.4.7 (workstream spec).
+- `V2_DRIVER.md` per-axis stakes (axis verification depth; cross-cutting sibling framing).
+- `CLAUDE.md` Operating disciplines table + Load-bearing commitments (pillar 9 + structural commitments).
+- `2026-05-15 — Transform registry re-opened` entry above (the predecessor entry this one refines; preserved as the re-opening rationale).
+- `2026-05-13 — Transform registry cash-out` entry (the original cash-out under different pressure; preserved as historical record).
+- `2026-05-10 — Domain-first naming and ubiquitous-language consistency (pillar 8)` (sibling pillar; same discipline-tier; same structural-test-enforcement shape).
+
+---
