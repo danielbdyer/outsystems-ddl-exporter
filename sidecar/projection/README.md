@@ -108,7 +108,13 @@ V2 under the gradient.
 See `CHAPTER_0_5_OPEN.md` for the seven-slice bring-up arc;
 `DECISIONS 2026-05-16 — Bridge wave: V2 inherits from V1` for the
 codifying entry; `AXIOMS.md` A41 candidate (Bridge clause) and A42
-candidate (inheritance citation discipline) for the formal commitments.
+candidate (inheritance citation discipline) for the formal commitments;
+and **`CSHARP_FSHARP_MANIFESTO.md`** for the canonical, full-length
+statement of the C#/F# architecture (the slowest-rhythm strategic
+surface; ~2,300 lines covering the shape of the seam, the four-state
+inheritance gradient, the eight wall rules, the audit attribute as
+manuscript history, the cutover+30 sunset, and the philosophical
+stakes).
 
 ## Layout
 

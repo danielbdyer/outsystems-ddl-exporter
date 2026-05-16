@@ -98,11 +98,28 @@ north star and orders the remaining chapters under the V2-driver KPI.
    pre-chapter-3 entries: Stage 0 commitment, R6 split-brain rule,
    chapter 3 sequencing, CLAUDE.md reading-order, T-30 / T-15
    fallback ladder gates.
-7. **`ADMIRE.md`** — V1↔V2 bridge. One entry per V1 component
+7. **`CSHARP_FSHARP_MANIFESTO.md`** — the canonical statement of the
+   C#/F# architecture. The slowest-rhythm strategic surface. Read
+   it once on first arrival to the codebase; cite it by section
+   number in DECISIONS amendments that touch the language partition
+   or the V1↔V2 seam. Covers: the shape of the seam (phylogeny vs
+   wall); pollination not extraction (V1 is not hobbled); the two-
+   language partition (F# core + F# adapters + C# Bridge); the
+   four-state inheritance gradient; the audit attribute as
+   manuscript history; the eight wall rules; lift verbs not nouns;
+   what V2 explicitly does not inherit; the equivalence witness;
+   axiomatic alignment; the R6 Stage-2 specification; the cherry-
+   pick discipline restated; the cutover+30 sunset; worked examples
+   and counter-examples; the philosophical stakes. Twenty-four
+   sections; ~2,300 lines.
+7.5. **`ADMIRE.md`** — V1↔V2 bridge. One entry per V1 component
    admired and placed in V2. Three modes: V1-migration / V2-growth
    / hybrid (`DECISIONS 2026-05-13` — admire spectrum). Multi-
    session chapters use `extracting (in flight, N slices)` while
-   in flight (session 23 amendment).
+   in flight (session 23 amendment). Bridge wave amendment
+   (2026-05-16) introduces Current/Target gradient pair on bridge-
+   inherited entries; see `CSHARP_FSHARP_MANIFESTO.md` § VIII for
+   the gradient definitions.
 8. **`README.md`** — surface-level orientation; updated at chapter
    closes. Not the source of truth for any specific question.
 9. **The code.** `Projection.sln`. Strategies in

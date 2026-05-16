@@ -11249,6 +11249,7 @@ The chapter sequencing under V2-driver KPI is preserved. Chapter 0.5 is the prer
 
 **Cross-references.**
 
+- `CSHARP_FSHARP_MANIFESTO.md` — the canonical, full-length statement of the C#/F# architecture and the V1→V2 inheritance surface. ~2,300 lines across twenty-four sections; the slowest-rhythm strategic surface. Articulates the shape of the seam (phylogeny vs wall); pollination not extraction (V1 is not hobbled; V1 stays alive in production through cutover+30); the two-language partition; the four-state inheritance gradient; the audit attribute as manuscript history; the eight wall rules; lift verbs not nouns; what V2 explicitly does not inherit; the equivalence witness; axiomatic alignment; the R6 Stage-2 specification; the cherry-pick discipline restated; the cutover+30 sunset; worked examples and counter-examples; and the philosophical stakes. Cite by section number in future DECISIONS amendments that touch the language partition or the V1↔V2 seam.
 - `CHAPTER_0_5_OPEN.md` (this chapter's open document — seven slices α–η).
 - `README.md` § "V2 inherits from V1" (the prose framing of the shape).
 - `CLAUDE.md` Operating disciplines table — new row for the Bridge inheritance discipline (sibling to pillar 9 + the four meta-disciplines).
