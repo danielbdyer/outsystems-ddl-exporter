@@ -60,18 +60,18 @@ let private buildCatalog (mandatoryColumnIsNullable: bool) (mandatoryColumnIsMan
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = mandatoryAttributeKey
                 Name         = mkName "Mandatory"
                 Type         = Text
                 Column       = { ColumnName = "MANDATORY"; IsNullable = mandatoryColumnIsNullable }
                 IsPrimaryKey = false
-                IsMandatory = mandatoryColumnIsMandatory; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
-          References = []; Indexes = []; Description = None; IsActive = true }
+                IsMandatory = mandatoryColumnIsMandatory; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+          References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = mkKey "OS_MOD_Sample"
           Name  = mkName "Sample"
-          Kinds = [ kind ]; IsActive = true } ] }
+          Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 let private buildProfile (rowCount: int64) (nullCount: int64) : Profile =
     let probe =

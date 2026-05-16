@@ -1,6 +1,7 @@
 module Projection.Tests.Fixtures
 
 open Projection.Core
+open Projection.Tests.IRBuilders
 
 // ---------------------------------------------------------------------------
 // Synthetic catalog used as the test bed for the entire pipeline.
@@ -12,15 +13,13 @@ open Projection.Core
 //
 // One module ("Sales") wraps all three kinds. No SQL involved.
 //
-// All identifiers are constructed via the SsKey/Name typed builders so
-// the fixture itself exercises the validation surface. Runtime panics
-// here indicate a bug in `synthesized` / `synthesizedComposite` /
-// `Name.create`.
-//
-// Chapter 3.6 slice-δ + DECISIONS pillar 6 (no V2-internal back-compat
-// paths): `SsKey.original` parser-shim was retired; fixtures construct
-// typed-segment SsKeys directly. The helpers below mirror the OSSYS /
-// Sql adapter conventions one-for-one.
+// **Chapter A.0' post-XXXXL refactor.** This file now uses
+// `IRBuilders.mk*` to construct records with minimum-evidence
+// defaults; per-fixture overrides via `{ mkAttribute ... with ... }`.
+// New IR fields added by subsequent slices land in `IRBuilders.fs`
+// alone, not here. Pre-refactor: ~150 record-literal sites carried
+// every field explicitly; ExpressLane refactor consolidates the
+// boilerplate.
 // ---------------------------------------------------------------------------
 
 let private mustOk r =
@@ -63,6 +62,14 @@ let rowKey (basis: string) : SsKey =
 let testKey (label: string) : SsKey =
     SsKey.synthesized "TEST" label |> mustOk
 
+/// Per-fixture helper: build an attribute with the column-name
+/// uppercased from the logical name. Override IsPrimaryKey via
+/// record-update at the call site.
+let private mkFixtureAttribute (key: SsKey) (logical: string) (ptype: PrimitiveType) (isPk: bool) : Attribute =
+    { mkAttribute key (name logical) ptype with
+        Column       = { ColumnName = logical.ToUpperInvariant(); IsNullable = false }
+        IsPrimaryKey = isPk }
+
 // ---------------------------------------------------------------------------
 // Customer
 // ---------------------------------------------------------------------------
@@ -72,33 +79,18 @@ let customerIdAttrKey = attrKey ["Customer"; "Id"]
 let customerNameKey   = attrKey ["Customer"; "Name"]
 let customerTenantKey = attrKey ["Customer"; "TenantId"]
 
-let customer : Kind = {
-    SsKey    = customerKey
-    Name     = name "Customer"
-    Origin   = OsNative
-    Modality = [ TenantScoped ]
-    Physical = { Schema = "dbo"; Table = "OSUSR_S1S_CUSTOMER" }
-    Attributes = [
-        { SsKey        = customerIdAttrKey
-          Name         = name "Id"
-          Type         = Integer
-          Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
-        { SsKey        = customerNameKey
-          Name         = name "Name"
-          Type         = Text
-          Column       = { ColumnName = "NAME"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
-        { SsKey        = customerTenantKey
-          Name         = name "TenantId"
-          Type         = Integer
-          Column       = { ColumnName = "TENANT_ID"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
-    ]
-    References = []
-    Indexes    = []
-    Description = None
-; IsActive = true }
+let customer : Kind =
+    { mkKind
+        customerKey
+        (name "Customer")
+        { Schema = "dbo"; Table = "OSUSR_S1S_CUSTOMER" }
+        [ { mkFixtureAttribute customerIdAttrKey "Id" Integer true with
+              Column = { ColumnName = "ID"; IsNullable = false } }
+          { mkFixtureAttribute customerNameKey "Name" Text false with
+              Column = { ColumnName = "NAME"; IsNullable = false } }
+          { mkFixtureAttribute customerTenantKey "TenantId" Integer false with
+              Column = { ColumnName = "TENANT_ID"; IsNullable = false } } ]
+        with Modality = [ TenantScoped ] }
 
 // ---------------------------------------------------------------------------
 // Order — has a directional reference to Customer (the FK in the spec).
@@ -109,35 +101,23 @@ let orderIdAttrKey      = attrKey ["Order"; "Id"]
 let orderCustomerFkKey  = attrKey ["Order"; "CustomerId"]
 let orderRefToCustomer  = refKey  ["Order"; "Customer"]
 
-let order : Kind = {
-    SsKey    = orderKey
-    Name     = name "Order"
-    Origin   = OsNative
-    Modality = []
-    Physical = { Schema = "dbo"; Table = "OSUSR_S1S_ORDER" }
-    Attributes = [
-        { SsKey        = orderIdAttrKey
-          Name         = name "Id"
-          Type         = Integer
-          Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
-        { SsKey        = orderCustomerFkKey
-          Name         = name "CustomerId"
-          Type         = Integer
-          Column       = { ColumnName = "CUSTOMER_ID"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
-    ]
-    References = [
-        { SsKey           = orderRefToCustomer
-          Name            = name "Customer"
-          SourceAttribute = orderCustomerFkKey
-          TargetKind      = customerKey
-          OnDelete        = NoAction
-          IsUserFk        = false }
-    ]
-    Indexes = []
-    Description = None
-; IsActive = true }
+let order : Kind =
+    { mkKind
+        orderKey
+        (name "Order")
+        { Schema = "dbo"; Table = "OSUSR_S1S_ORDER" }
+        [ { mkFixtureAttribute orderIdAttrKey "Id" Integer true with
+              Column = { ColumnName = "ID"; IsNullable = false } }
+          { mkFixtureAttribute orderCustomerFkKey "CustomerId" Integer false with
+              Column = { ColumnName = "CUSTOMER_ID"; IsNullable = false } } ]
+        with
+        References =
+            [ { SsKey           = orderRefToCustomer
+                Name            = name "Customer"
+                SourceAttribute = orderCustomerFkKey
+                TargetKind      = customerKey
+                OnDelete        = NoAction
+                IsUserFk        = false } ] }
 
 // ---------------------------------------------------------------------------
 // Country — Static, with a small populated row set.
@@ -166,33 +146,18 @@ let countryPopulations : StaticRow list = [
           name "Label", "Mexico" ] }
 ]
 
-let country : Kind = {
-    SsKey    = countryKey
-    Name     = name "Country"
-    Origin   = OsNative
-    Modality = [ Static countryPopulations ]
-    Physical = { Schema = "dbo"; Table = "OSUSR_S1S_COUNTRY" }
-    Attributes = [
-        { SsKey        = countryIdAttrKey
-          Name         = name "Id"
-          Type         = Integer
-          Column       = { ColumnName = "ID"; IsNullable = false }
-          IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
-        { SsKey        = countryCodeKey
-          Name         = name "Code"
-          Type         = Text
-          Column       = { ColumnName = "CODE"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
-        { SsKey        = countryLabelKey
-          Name         = name "Label"
-          Type         = Text
-          Column       = { ColumnName = "LABEL"; IsNullable = false }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
-    ]
-    References = []
-    Indexes    = []
-    Description = None
-; IsActive = true }
+let country : Kind =
+    { mkKind
+        countryKey
+        (name "Country")
+        { Schema = "dbo"; Table = "OSUSR_S1S_COUNTRY" }
+        [ { mkFixtureAttribute countryIdAttrKey "Id" Integer true with
+              Column = { ColumnName = "ID"; IsNullable = false } }
+          { mkFixtureAttribute countryCodeKey "Code" Text false with
+              Column = { ColumnName = "CODE"; IsNullable = false } }
+          { mkFixtureAttribute countryLabelKey "Label" Text false with
+              Column = { ColumnName = "LABEL"; IsNullable = false } } ]
+        with Modality = [ Static countryPopulations ] }
 
 // ---------------------------------------------------------------------------
 // Catalog: one module ("Sales") containing all three kinds.
@@ -200,12 +165,8 @@ let country : Kind = {
 
 let salesModuleKey = modKey "Sales"
 
-let salesModule : Module = {
-    SsKey = salesModuleKey
-    Name  = name "Sales"
-    Kinds = [ customer; order; country ]
-; IsActive = true }
+let salesModule : Module =
+    mkModule salesModuleKey (name "Sales") [ customer; order; country ]
 
-let sampleCatalog : Catalog = {
-    Modules = [ salesModule ]
-}
+let sampleCatalog : Catalog =
+    mkCatalog [ salesModule ]

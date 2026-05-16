@@ -62,8 +62,8 @@ let private parentKind : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
-      References = []; Indexes = []; Description = None; IsActive = true }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+      References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private childKind : Kind =
     { SsKey    = childKindKey
@@ -76,14 +76,14 @@ let private childKind : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           { SsKey        = childParentFkKey
             Name         = mkName "ParentId"
             Type         = Integer
             // FK column is nullable in the V1 fixture — exercises the
             // KeepNullable(NoTighteningSignal) branch.
             Column       = { ColumnName = "PARENTID"; IsNullable = true }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
       References = [
           { SsKey           = childToParentRefKey
             Name            = mkName "Parent"
@@ -92,7 +92,7 @@ let private childKind : Kind =
             OnDelete        = NoAction
             IsUserFk        = false } ]
       Indexes = []
-      Description = None; IsActive = true }
+      Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private countryKind : Kind =
     { SsKey    = countryKindKey
@@ -107,19 +107,19 @@ let private countryKind : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           { SsKey        = countryNameKey
             Name         = mkName "Name"
             Type         = Text
             Column       = { ColumnName = "NAME"; IsNullable = false }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
-      References = []; Indexes = []; Description = None; IsActive = true }
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+      References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private endToEndCatalog : Catalog =
     { Modules = [
         { SsKey = mkKey "OS_MOD_E2E"
           Name  = mkName "EndToEnd"
-          Kinds = [ parentKind; childKind; countryKind ]; IsActive = true } ] }
+          Kinds = [ parentKind; childKind; countryKind ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 // ---------------------------------------------------------------------------
 // V1 JSON fixtures embedded.

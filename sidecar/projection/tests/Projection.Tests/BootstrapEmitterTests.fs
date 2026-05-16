@@ -50,19 +50,23 @@ let private mkKind (name: string) : Kind =
             [
                 { SsKey = idKey; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
             ]
         References = []
         Indexes    = []
         Description = None
-; IsActive = true }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
 
 let private mkCatalog (kinds: Kind list) : Catalog =
     let m : Module =
         { SsKey = mkKey ["TestModule"]
           Name  = mkName "TestModule"
-          Kinds = kinds; IsActive = true }
-    { Modules = [ m ] }
+          Kinds = kinds; IsActive = true; ExtendedProperties = [] }
+    { Modules = [ m ]; Sequences = [] }
 
 // ---------------------------------------------------------------------------
 // UserRemapContext — chapter 4.2 slice γ shape.

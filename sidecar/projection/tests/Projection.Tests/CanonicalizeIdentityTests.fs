@@ -30,7 +30,8 @@ let private reverseAllCollections (c: Catalog) : Catalog =
                     m.Kinds
                     |> List.map (reverseAttributes >> reverseReferences) })
         |> List.map reverseKinds
-        |> List.rev }
+        |> List.rev
+      Sequences = c.Sequences }
 
 let private renameKind (key: SsKey) (newName: string) (c: Catalog) : Catalog =
     { Modules =
@@ -42,7 +43,8 @@ let private renameKind (key: SsKey) (newName: string) (c: Catalog) : Catalog =
                     |> List.map (fun k ->
                         if k.SsKey = key then
                             { k with Name = Name.create newName |> Result.value }
-                        else k) }) }
+                        else k) })
+      Sequences = c.Sequences }
 
 // ---------------------------------------------------------------------------
 // Idempotence (A21 in the small): running the pass twice equals running it

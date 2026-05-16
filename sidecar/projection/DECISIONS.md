@@ -11410,3 +11410,76 @@ Chapter A.0' opened with a strategic-frame axis (axis 4 of `CHAPTER_A_0_PRIME_OP
 - The L3 promotion: L3-S9's `IsActive` sub-axiom advances D → A under chapter A.0''s per-axiom delivery matrix. The full L3-S9 promotion lands with chapter ζ (ExtendedProperties).
 
 ---
+
+## 2026-05-16 (slices γ + δ + ε + ζ + η — XXXXL) — IR fidelity body lift: Triggers, Sequences, DefaultValue, Computed, ColumnChecks, ExtendedProperties, Temporal
+
+**Status:** decided. Five slices of chapter A.0' (IR fidelity lifts) shipped as one coherent commit. Promotes L3-S4, L3-S5, L3-S6, L3-S7, L3-S8, and L3-S9 from Bucket D → Bucket A under the chapter A.0' per-axiom delivery matrix. Sibling to the prior slice-β codification — same pillar-9 DataIntent discipline, same chapter axis 1 framing ("each lift is structural commitment, not a feature").
+
+**Context.** After slice β shipped (`Module/Kind/Attribute.IsActive`), the chapter A.0' open document named seven remaining slices: γ (Triggers), δ (Sequences), ε (DefaultValue + Computed + ColumnChecks), ζ (ExtendedProperties on four levels), η (ModalityMark.Temporal DU widening), θ (TableId.Catalog), and ι (chapter-close L3-Boundary-NoSilentDrop property test). The operator directed an XXXXL slice closing five of these seven (γ + δ + ε + ζ + η) in one commit; θ (TableId.Catalog; different infrastructure shape, touch-every-TableId-literal blast radius) and ι (chapter-close property test) remain pending.
+
+**Decision.** Lift the five slices as one body. Introduce six new value types in `Projection.Core.Catalog`:
+
+1. **`Trigger`** (γ) — `{ SsKey; Name; IsDisabled; Definition: string }` with `Trigger.create` smart constructor rejecting blank `Definition` (V1 parity: `TriggerModel.Create` requires non-null definition).
+2. **`Sequence` + `SequenceCacheMode`** (δ) — full V1-mirroring shape (`{ SsKey; Name; Schema; DataType; StartValue; Increment; Minimum; Maximum; IsCycleEnabled; CacheMode; CacheSize }`) with `Sequence.create` rejecting blank `Schema` / `DataType`.
+3. **`ComputedColumnConfig`** (ε) — `{ Expression; IsPersisted }` with `ComputedColumnConfig.create` rejecting blank `Expression`.
+4. **`ColumnCheck`** (ε) — `{ SsKey; Name: Name option; Definition; IsNotTrusted }` (table-scoped per SQL Server semantics; optional name per V1's `AttributeOnDiskCheckConstraint`) with `ColumnCheck.create` rejecting blank `Definition`.
+5. **`ExtendedProperty`** (ζ) — `{ Name; Value: string option }` with `ExtendedProperty.create` rejecting blank `Name` and normalising empty `Value` to `None` (V1 parity).
+6. **`TemporalConfig` + `TemporalRetention` + `TemporalRetentionUnit`** (η) — `{ HistorySchema; HistoryTable; PeriodStart; PeriodEnd; Retention }` where `Retention = Infinite | Limited of int * unit`.
+
+Plus the corresponding IR-record field additions:
+
+- `Kind.Triggers : Trigger list` (γ) — table-scoped per SQL Server semantics. **Pillar-8 deviation from the chapter open's "Catalog.Triggers"**: the chapter open's spec used Catalog-level scoping as planning shorthand; the implementation uses `Kind.Triggers` because a trigger IS a property of a kind (concept-shaped per pillar 8, four-question naming analysis) and V1's source projects them at entity level. The chapter open document is updated to record the corrected scope.
+- `Catalog.Sequences : Sequence list` (δ) — top-level schema-scoped objects per SQL Server semantics; `Catalog.create` gains a `sequences: Sequence list` parameter and validates per-sequence SsKey disjointness per A4.
+- `Attribute.DefaultValue : SqlLiteral option` (ε) — uses V2's existing `SqlLiteral` type at the IR boundary (pillar 1: data-structure-oriented). Adapter projects V1's JSON `default` field via `SqlLiteral.ofRaw` against the typed `PrimitiveType`.
+- `Attribute.Computed : ComputedColumnConfig option` (ε) — positioned for future DACPAC / rowset slice; V1's JSON projection does not currently surface computed columns.
+- `Kind.ColumnChecks : ColumnCheck list` (ε) — positioned for future rowset 7 (`#ColumnChecks`) pickup; V1's JSON projection does not currently surface table-level CHECK constraints.
+- `ExtendedProperties : ExtendedProperty list` on `Module`, `Kind`, `Attribute`, `Index` (ζ) — V1's JSON projects entity-level `extendedProperties[]`; other levels (module / attribute / index) are positioned for future expansion. Adapter pickup at the entity level lands now.
+- `ModalityMark.Temporal of TemporalConfig` (η) — closed-DU widening per the closed-DU empirical-test discipline. The pre-existing three pass modules (`CanonicalizeIdentity`, `NamingMorphism`, `NormalizeStaticPopulations`) and the `JsonEmitter`'s `modalityString` gained `Temporal _` match arms; the empirical test (F# field-missing errors light up only at match sites; semantic interpretation untouched) holds for the DU expansion same as record-extension.
+
+**File reorganization (PrimitiveType extraction).** `PrimitiveType` extracted from `Catalog.fs` to a new `PrimitiveType.fs` between `StructuredString.fs` and `RawValueCodec.fs`. The extraction lets `SqlLiteral.fs` (which references `PrimitiveType` in `ofRaw` / `formatRaw`) compile BEFORE `Catalog.fs`, so `Attribute.DefaultValue : SqlLiteral option` resolves cleanly. The reorganization is purely structural (no logic change) and confined to the compile-order seam.
+
+**Adapter pickup (OSSYS JSON path).** `parseTrigger` and `parseExtendedProperty` helpers added; `parseKind` collects both `entity.triggers[]` and `entity.extendedProperties[]` into the IR's `Kind.Triggers` / `Kind.ExtendedProperties` fields. `parseAttribute` projects V1's JSON `default` field via `SqlLiteral.ofRaw` when present (defensive: falls back to `None` on null / non-projectable kinds). Triggers / extended-properties / defaults that V1's JSON omits land as empty/None per the existing `getOptionalString` precedent.
+
+**Adapter pickup (OSSYS rowset path; defaults today).** `parseAttributeRow` / `parseKindRow` populate the new fields with empty/None defaults; V1's rowset bundle does not currently surface triggers, extended properties, defaults, computed columns, or column checks. Positioned for future rowset slices (e.g., rowset 7 #ColumnChecks per chapter 3.2 close's deferred surface).
+
+**ReadSide defaults.** `Projection.Adapters.Sql.ReadSide` populates all new fields with empty/None defaults on the deployed-schema readback path. The deployed schema has SQL Server-side analogues of these (sys.triggers, sys.default_constraints, sys.extended_properties, etc.) but the queries to surface them gate on future ReadSide slices.
+
+**`SmartConstructor` Module.create amendment.** `Module.create` signature gains an `extendedProperties: ExtendedProperty list` parameter. Every current adapter call passes `[]` because no source projects module-level extended properties today; the parameter is present for A39 discipline (smart constructor takes all fields), accepting the parameter-noise cost. A revisit-trigger is logged: if multiple consumers ship that always pass `[]`, the parameter can move to a record-level `with` after a DECISIONS amendment.
+
+**Fixture-builder pattern (refactor; user-requested at XXXXL close).** `tests/Projection.Tests/IRBuilders.fs` introduces `mkAttribute`, `mkKind`, `mkModule`, `mkIndex`, `mkCatalog` with minimum-evidence DataIntent defaults (empty collections, `None` options, `IsActive = true`). Tests opt into specific values via `{ mkAttribute key name ptype with IsPrimaryKey = true }`. `tests/Projection.Tests/Fixtures.fs` retrofitted to use the builders as a worked example; future slices that add IR fields update `IRBuilders.fs` in one place instead of touching every record-literal site across the test surface.
+
+**Pre-existing test sites NOT yet retrofitted to use IRBuilders.** The XXXXL slice's record-literal updates were applied via mechanical Python passes; the retrofit to use `mkAttribute` / `mkKind` is deferred-with-trigger (next chapter close or chapter-mid audit when the pattern earns the visibility lift). The pattern is in place and demonstrated; the retroactive sweep is volume work that doesn't change semantics.
+
+**Pillar 9 bookkeeping (all five slices).**
+
+- **DataIntent (skeleton-reachable):** every new field. Reachable from `Project(catalog, Policy.empty, profile)` without operator opinion. Lands in the skeleton. Carriage-only at this commit; emitter consumption per-slice when consumers surface.
+- **OperatorIntent of Selection (deferred-with-trigger):** any Selection-axis pass that suppresses inactive records / certain triggers / temporal-history coordinates from emission. No current consumer demands the suppression behavior.
+
+**Witnesses.** 22 new tests in `tests/Projection.Tests/IRFidelityLiftTests.fs` cover the smart-constructor invariants for each new value type, JSON-path adapter pickup for triggers + defaults + extended properties, ModalityMark.Temporal DU round-trip, and `IRBuilders` smoke tests. Plus the IRBuilders refactor of `Fixtures.fs` (preserves all 1155 prior tests; 1177 total now passing).
+
+**Test baseline (this commit).** **1177 / 1177 passing** (1155 prior + 22 new `IRFidelityLiftTests`); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint clean across 27 rules (no new LINT-ALLOWs introduced — Trigger.Definition carries V1's verbatim SQL string at the carriage boundary, accepted per pillar-1 nuance: strings at terminal boundaries; ScriptDom parsing is downstream).
+
+**A18 amended preserved.** No emitter consumes Policy. The new fields are part of `Catalog` (DataIntent evidence); Π consumes `Catalog × Profile` per A18 amended. Future Selection/Emission-axis passes that filter on the new fields run BEFORE Π, preserving the boundary.
+
+**V2 self-containment preserved.** Pure-F# IR-extension; no carbon-copy event, no V1 `ProjectReference`, no V1 assembly on the classpath. The `BACKLOG.md` V1 inheritance log stays empty (slice β + this XXXXL slice's IR refinements draw on V1's source shape for design inspiration but copy no source files).
+
+**Cross-references.**
+
+- The chapter open: `CHAPTER_A_0_PRIME_OPEN.md` slice plan rows for γ / δ / ε / ζ / η updated to `SHIPPED`; slice θ + ι remain pending.
+- The pillar-9 codification: `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification`.
+- The slice-β codification (prior worked example): `DECISIONS 2026-05-16 (slice β)`.
+- The V2 self-containment audible: `DECISIONS 2026-05-16 (later) — V2 self-containment + carbon-copy editorial inheritance`.
+- The IR home: `Projection.Core.Catalog` (value types + record fields); `Projection.Core.PrimitiveType` (extracted).
+- The adapter pickup sites: `Projection.Adapters.Osm.CatalogReader` — `parseTrigger`, `parseExtendedProperty`, `parseAttribute` default-value pickup, `parseKind` collector wiring.
+- The witnesses: `tests/Projection.Tests/IRFidelityLiftTests.fs` (22 tests); `tests/Projection.Tests/IRBuilders.fs` (the fixture-builder pattern); `tests/Projection.Tests/Fixtures.fs` (refactored worked example).
+- The L3 promotions: L3-S4 (triggers), L3-S5 (sequences), L3-S6 (DEFAULT), L3-S7 (computed), L3-S8 (CHECK), and L3-S9 (descriptions + IsActive + extended properties) advance D → A under chapter A.0''s per-axiom delivery matrix.
+
+**Forward signals (recorded for chapter close).**
+
+1. **Rowset slice for triggers / extended properties / defaults / column checks.** When V1's rowset bundle extends (or a DACPAC adapter lands) and surfaces these axes, the rowset-path adapter pickup migrates from empty defaults to source-driven values. The IR shape is ready.
+2. **Emitter consumption for triggers / extended properties / temporal tables.** Downstream emitters (`SsdtDdlEmitter`, `DacpacEmitter`) gain emission for the new IR fields per-consumer demand. The `CommentMetadataUnreflected` Tolerance variant retires once Description + ExtendedProperties EMITTERS catch up (the IR carriage is now complete).
+3. **`Module.create` parameter pollution revisit-trigger.** If a future chapter adds a third record-level field that adapters always pass empty, the smart-constructor's API surface warrants a DECISIONS amendment to revisit the A39 discipline boundary.
+4. **`IRBuilders` retroactive sweep.** When chapter A.0' closes (after slices θ + ι), the chapter-close ritual gains a step: refactor remaining `Kind = { ... }` / `Attribute = { ... }` literals across the test surface to use `mkKind` / `mkAttribute`. Reduces future field-addition blast radius from 150 sites to 1.
+5. **`ModalityMark.mapPayload` helper extraction-trigger.** Three pass modules now have near-identical `Temporal _ -> m` match arms; if a fourth ModalityMark variant lands (and a fourth pass-module touches it), the two-consumer-of-the-same-shape threshold fires for extraction.
+
+---

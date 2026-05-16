@@ -41,6 +41,11 @@ module CanonicalizeIdentity =
         | TenantScoped  -> TenantScoped
         | SoftDeletable -> SoftDeletable
         | SystemOwned   -> SystemOwned
+        // Chapter A.0' slice η — `Temporal` carries no order-sensitive
+        // payload (period column names and history-table coordinates
+        // are fixed identifiers, not orderable collections), so
+        // canonicalization is identity.
+        | Temporal _    -> m
 
     let private canonicalizeKind (k: Kind) : Kind =
         { k with
@@ -67,7 +72,8 @@ module CanonicalizeIdentity =
             { Modules =
                 c.Modules
                 |> List.map canonicalizeModule
-                |> List.sortBy (fun m -> m.SsKey) }
+                |> List.sortBy (fun m -> m.SsKey)
+              Sequences = c.Sequences }
         let events =
             canon
             |> Catalog.allKinds

@@ -1,8 +1,35 @@
-# Handoff letter — Chapter A.0' slice β shipped (IsActive lift; session-21 boundary filter retired)
+# Handoff letter — Chapter A.0' five-slice IR-fidelity body shipped (γ + δ + ε + ζ + η; XXXXL)
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## 2026-05-16 (XXXXL — slices γ + δ + ε + ζ + η) — IR-fidelity body shipped; chapter A.0' two slices from close
+
+**Branch / baseline.** Continues on `claude/retire-isactive-disposition-WD4Ez` (post-slice-β). **Test baseline: 1177 / 1177 passing** (1155 prior + 22 new `IRFidelityLiftTests`); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint clean across 27 rules. Five of chapter A.0''s remaining seven slices shipped as one coherent XXXXL slice; slice θ (`TableId.Catalog`) and ι (chapter-close L3-Boundary-NoSilentDrop property test) remain pending.
+
+**What shipped (one commit).** Six new value types in `Projection.Core.Catalog`: `Trigger`, `Sequence` + `SequenceCacheMode`, `ComputedColumnConfig`, `ColumnCheck`, `ExtendedProperty`, `TemporalConfig` + `TemporalRetention` + `TemporalRetentionUnit`. Nine new IR fields across `Attribute` / `Kind` / `Module` / `Index` / `Catalog`. One new `ModalityMark` variant (`Temporal of TemporalConfig`; closed-DU widening). One file extraction (`PrimitiveType.fs` split out so `SqlLiteral` can compile BEFORE `Catalog`; `Attribute.DefaultValue : SqlLiteral option` resolves cleanly). Two `*.create` signatures expanded (`Module.create` gained `extendedProperties`; `Catalog.create` gained `sequences`). OSSYS JSON adapter pickup wired for triggers + defaults + entity-level extended properties; rowset path + ReadSide default to empty/None.
+
+**The DECISIONS amendment is the load-bearing artifact.** `DECISIONS 2026-05-16 (slices γ + δ + ε + ζ + η — XXXXL)` codifies the five-slice body. Pillar-9 classification: all DataIntent; reachable from `Project(catalog, Policy.empty, profile)` without operator opinion. A18 amended preserved (no emitter consumes Policy). V2 self-containment preserved (no carbon-copy event; `BACKLOG.md` V1 inheritance log stays empty).
+
+**Refactor — `IRBuilders.fs` fixture-builder pattern (user-requested at XXXXL close).** Centralised `mkAttribute` / `mkKind` / `mkModule` / `mkIndex` / `mkCatalog` builders with minimum-evidence DataIntent defaults. `Fixtures.fs` retrofitted as the worked example. Next-chapter agents add new IR fields once in `IRBuilders.fs` instead of touching ~150 record-literal sites. The discipline is documented in `IRBuilders.fs` module-level docstring + the DECISIONS amendment's "Forward signals" section (item 4 — retroactive sweep at chapter close).
+
+**Pillar-8 deviation from the chapter open's "Catalog.Triggers" planning shorthand.** Slice γ ships `Kind.Triggers : Trigger list` (kind-scoped, not Catalog-scoped). Triggers are owned by tables per SQL Server semantics and V1's JSON projects them at entity level. The chapter open document records the corrected scope; the design rationale is in the DECISIONS amendment.
+
+**Closed-DU empirical-test discipline held (slice η).** `ModalityMark.Temporal` is the only DU-widening slice in the chapter. Match-site additions: 3 pass modules (`CanonicalizeIdentity`, `NamingMorphism`, `NormalizeStaticPopulations`) + `JsonEmitter.modalityString`. All three pass modules now have a `Temporal _ -> m` no-op match arm with a docstring naming the slice. No other ripple — the empirical test confirmed the discipline generalises to DU-widening identically to record-extension.
+
+**Next-most-ready slices (chapter A.0' is two slices from close):**
+
+- **Slice θ — `TableId.Catalog : string option`** — extends the `TableId` shape (currently `{ Schema; Table }`) with an optional 3-part catalog name. Touches every `TableId` literal site (potentially invasive; mechanical-edits precedent from prior slices applies but the touch-pattern differs from record extensions because `TableId` is a record-type, not an IR record like `Attribute` / `Kind`). L3-S10 / L3-I10 promotion.
+- **Slice ι — IsExternal / Origin mapping audit + L3-Boundary-NoSilentDrop property test** — pure property-test slice; no IR change. Per `CHAPTER_A_0_PRIME_OPEN.md` axis 7's chapter-close ritual, slice ι formalises the chapter's completion criterion: every V1 schema concept in `V2_PRODUCTION_CUTOVER.md` §3.3 either carries to the IR (slices α–η) or routes through `Diagnostic.Severity=Error` at the adapter boundary. Property test asserts the no-silent-drop predicate.
+
+Either ordering works. Recommendation: **slice ι first** — it's smaller, validates the lifts that already shipped, and gates chapter close. Slice θ can land at chapter close or as a subsequent slice depending on operator preference (the TableId extension's invasive blast radius makes it a clean candidate for its own chapter or a dedicated slice).
+
+**Forward signals (named in the DECISIONS amendment).** Rowset slice for triggers / extended properties / defaults / column checks (when V1's rowset bundle extends or DACPAC adapter lands); emitter consumption for the new IR fields per-consumer demand (CommentMetadataUnreflected Tolerance retires when emitters catch up); Module.create parameter-pollution revisit-trigger; IRBuilders retroactive sweep at chapter close; ModalityMark.mapPayload helper extraction at the four-pass-module threshold.
+
+**Outstanding (operator-side; unchanged):**
+- R1 — operator's "document of key evolutions" still pending. Hold UAT-users decisions until it lands.
+- Q2 / Q3 / Q4 / Q7 unchanged.
 
 ## 2026-05-16 (slice β) — Chapter A.0' slice β shipped: IsActive lifted to IR, session-21 boundary filter retired (first pillar-9 worked example)
 

@@ -230,7 +230,11 @@ let private allPrimitiveTypesKind : Kind =
             IsPrimaryKey = isPk
             IsMandatory  = isPk
             Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
-; IsActive = true }
+            IsActive = true
+            DefaultValue = None
+            Computed = None
+            ExtendedProperties = []
+            }
     {
         SsKey = kindKey ["AllTypes"]
         Name = mkName "AllTypes"
@@ -250,7 +254,11 @@ let private allPrimitiveTypesKind : Kind =
         ]
         References = []
         Indexes = []; Description = None
-; IsActive = true }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
 
 let private allPrimitiveTypesCatalog : Catalog =
     {
@@ -259,8 +267,11 @@ let private allPrimitiveTypesCatalog : Catalog =
                 SsKey = modKey "AllTypesModule"
                 Name = mkName "AllTypesModule"
                 Kinds = [ allPrimitiveTypesKind ]
-; IsActive = true }
+                IsActive = true
+                ExtendedProperties = []
+                }
         ]
+        Sequences = []
     }
 
 [<Fact>]
@@ -324,7 +335,11 @@ let private compositePkKind : Kind =
             IsPrimaryKey = isPk
             IsMandatory  = isPk
             Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
-; IsActive = true }
+            IsActive = true
+            DefaultValue = None
+            Computed = None
+            ExtendedProperties = []
+            }
     {
         SsKey = kindKey ["Composite"]
         Name = mkName "Composite"
@@ -338,7 +353,11 @@ let private compositePkKind : Kind =
         ]
         References = []
         Indexes = []; Description = None
-; IsActive = true }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
 
 let private compositePkCatalog : Catalog =
     {
@@ -347,8 +366,11 @@ let private compositePkCatalog : Catalog =
                 SsKey = modKey "CompositePkModule"
                 Name = mkName "CompositePkModule"
                 Kinds = [ compositePkKind ]
-; IsActive = true }
+                IsActive = true
+                ExtendedProperties = []
+                }
         ]
+        Sequences = []
     }
 
 [<Fact>]
@@ -414,7 +436,11 @@ let private indexedKind : Kind =
             IsPrimaryKey = isPk
             IsMandatory  = isPk
             Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
-; IsActive = true }
+            IsActive = true
+            DefaultValue = None
+            Computed = None
+            ExtendedProperties = []
+            }
     {
         SsKey = indexedKindKey
         Name = mkName "Indexed"
@@ -435,6 +461,7 @@ let private indexedKind : Kind =
                 Columns = [ attrKey ["Indexed"; "Lookup"] ]
                 IsUnique = false
                 IsPrimaryKey = false
+                ExtendedProperties = []
             }
             // Unique index on Code column.
             {
@@ -443,6 +470,7 @@ let private indexedKind : Kind =
                 Columns = [ attrKey ["Indexed"; "Code"] ]
                 IsUnique = true
                 IsPrimaryKey = false
+                ExtendedProperties = []
             }
             // PK index — should be SKIPPED by the emitter (PK is inlined
             // in CREATE TABLE per V1 convention).
@@ -452,10 +480,15 @@ let private indexedKind : Kind =
                 Columns = [ attrKey ["Indexed"; "Id"] ]
                 IsUnique = true
                 IsPrimaryKey = true
+                ExtendedProperties = []
             }
         ]
         Description = None
-; IsActive = true }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
 
 let private indexedCatalog : Catalog =
     {
@@ -464,8 +497,11 @@ let private indexedCatalog : Catalog =
                 SsKey = modKey "IndexedModule"
                 Name = mkName "IndexedModule"
                 Kinds = [ indexedKind ]
-; IsActive = true }
+                IsActive = true
+                ExtendedProperties = []
+                }
         ]
+        Sequences = []
     }
 
 [<Fact>]
@@ -562,11 +598,19 @@ let private parentKind : Kind =
                 IsPrimaryKey = true
                 IsMandatory  = true
                 Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
-; IsActive = true }
+                IsActive = true
+                DefaultValue = None
+                Computed = None
+                ExtendedProperties = []
+                }
         ]
         References = []
         Indexes = []; Description = None
-; IsActive = true }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
 
 let private childKind : Kind =
     {
@@ -584,7 +628,11 @@ let private childKind : Kind =
                 IsPrimaryKey = true
                 IsMandatory  = true
                 Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
-; IsActive = true }
+                IsActive = true
+                DefaultValue = None
+                Computed = None
+                ExtendedProperties = []
+                }
             {
                 SsKey = childParentIdAttrKey
                 Name = mkName "ParentId"
@@ -593,7 +641,11 @@ let private childKind : Kind =
                 IsPrimaryKey = false
                 IsMandatory  = true
                 Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
-; IsActive = true }
+                IsActive = true
+                DefaultValue = None
+                Computed = None
+                ExtendedProperties = []
+                }
         ]
         References = [
             {
@@ -606,7 +658,11 @@ let private childKind : Kind =
             }
         ]
         Indexes = []; Description = None
-; IsActive = true }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
 
 let private fkCatalog : Catalog =
     {
@@ -615,8 +671,11 @@ let private fkCatalog : Catalog =
                 SsKey = modKey "FkModule"
                 Name = mkName "FkModule"
                 Kinds = [ parentKind; childKind ]
-; IsActive = true }
+                IsActive = true
+                ExtendedProperties = []
+                }
         ]
+        Sequences = []
     }
 
 [<Fact>]
@@ -761,10 +820,10 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
               [ { SsKey = aIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
                   IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
           References = []
           Indexes = []
-          Description = None; IsActive = true }
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let bKind : Kind =
         { SsKey = bKindKey
           Name  = mkName "BKind"
@@ -775,11 +834,11 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
               [ { SsKey = bIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
                   IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = bFkAttr; Name = mkName "AId"; Type = Integer
                   Column = { ColumnName = "A_ID"; IsNullable = false }
                   IsPrimaryKey = false; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
           References =
               [ { SsKey = crossRefKey
                   Name = mkName "FkToA"
@@ -788,11 +847,12 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
                   OnDelete = NoAction
                   IsUserFk = false } ]
           Indexes = []
-          Description = None; IsActive = true }
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog : Catalog =
         { Modules =
-            [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ]; IsActive = true }
-              { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ]; IsActive = true } ] }
+            [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ]; IsActive = true; ExtendedProperties = [] }
+              { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ]; IsActive = true; ExtendedProperties = [] } ]
+          Sequences = [] }
     let enriched = enrich catalog
     let statements =
         SsdtDdlEmitter.statements enriched
@@ -834,8 +894,8 @@ let ``Slice 6: cross-module FK emits inline FOREIGN KEY constraint`` () =
               [ { SsKey = aIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
                   IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
-          References = []; Indexes = []; Description = None; IsActive = true }
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+          References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let bKind : Kind =
         { SsKey = bKindKey; Name = mkName "BKind"; Origin = OsNative
           Modality = []
@@ -844,21 +904,22 @@ let ``Slice 6: cross-module FK emits inline FOREIGN KEY constraint`` () =
               [ { SsKey = bIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
                   IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = bFkAttr; Name = mkName "AId"; Type = Integer
                   Column = { ColumnName = "A_ID"; IsNullable = false }
                   IsPrimaryKey = false; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
           References =
               [ { SsKey = crossRefKey; Name = mkName "FkToA"
                   SourceAttribute = bFkAttr; TargetKind = aKindKey
                   OnDelete = NoAction; IsUserFk = false } ]
           Indexes = []
-          Description = None; IsActive = true }
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog : Catalog =
         { Modules =
-            [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ]; IsActive = true }
-              { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ]; IsActive = true } ] }
+            [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ]; IsActive = true; ExtendedProperties = [] }
+              { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ]; IsActive = true; ExtendedProperties = [] } ]
+          Sequences = [] }
     let enriched = enrich catalog
     let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
     let bFile = ArtifactByKind.toMap artifact |> Map.find bKindKey
@@ -884,8 +945,8 @@ let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module F
               [ { SsKey = aIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
                   IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
-          References = []; Indexes = []; Description = None; IsActive = true }
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+          References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let bKind : Kind =
         { SsKey = bKindKey; Name = mkName "BKind"; Origin = OsNative
           Modality = []
@@ -894,21 +955,22 @@ let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module F
               [ { SsKey = bIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
                   IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = bFkAttr; Name = mkName "AId"; Type = Integer
                   Column = { ColumnName = "A_ID"; IsNullable = false }
                   IsPrimaryKey = false; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
+                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
           References =
               [ { SsKey = crossRefKey; Name = mkName "FkToA"
                   SourceAttribute = bFkAttr; TargetKind = aKindKey
                   OnDelete = NoAction; IsUserFk = false } ]
           Indexes = []
-          Description = None; IsActive = true }
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog : Catalog =
         { Modules =
-            [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ]; IsActive = true }
-              { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ]; IsActive = true } ] }
+            [ { SsKey = aModuleKey; Name = mkName "A"; Kinds = [ aKind ]; IsActive = true; ExtendedProperties = [] }
+              { SsKey = bModuleKey; Name = mkName "B"; Kinds = [ bKind ]; IsActive = true; ExtendedProperties = [] } ]
+          Sequences = [] }
     let enriched = enrich catalog
     let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
     let keys = ArtifactByKind.toMap artifact |> Map.toSeq |> Seq.map fst |> Set.ofSeq

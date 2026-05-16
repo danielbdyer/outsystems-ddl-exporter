@@ -133,20 +133,20 @@ let private expectedCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = userEmailAttrKey
                 Name         = mkName "Email"
                 Type         = Text
                 Column       = { ColumnName = "EMAIL"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           ]
           References = []
-          Indexes    = []; Description = None; IsActive = true }
+          Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ userKind ]; IsActive = true } ] }
+          Kinds = [ userKind ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 // ---------------------------------------------------------------------------
 // Parser invocation — async at the boundary, sync-await for tests.
@@ -347,10 +347,10 @@ let private expectedReferenceCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           ]
           References = []
-          Indexes    = []; Description = None; IsActive = true }
+          Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let userKind : Kind =
         { SsKey    = userKindKey
           Name     = mkName "User"
@@ -363,13 +363,13 @@ let private expectedReferenceCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = userAccountIdAttrKey
                 Name         = mkName "AccountId"
                 Type         = Integer
                 Column       = { ColumnName = "ACCOUNTID"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           ]
           References = [
               { SsKey           = userAccountReferenceKey
@@ -379,11 +379,11 @@ let private expectedReferenceCatalog : Catalog =
                 OnDelete        = NoAction
                 IsUserFk        = false }
           ]
-          Indexes    = []; Description = None; IsActive = true }
+          Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ accountKind; userKind ]; IsActive = true } ] }
+          Kinds = [ accountKind; userKind ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 [<Fact>]
 let ``differential: V1 reference-bearing fixture parses into a Catalog with the expected V2 Reference`` () =
@@ -506,14 +506,14 @@ let private expectedExternalCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           ]
           References = []
-          Indexes    = []; Description = None; IsActive = true }
+          Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = extBillingModuleKey
           Name  = mkName "ExtBilling"
-          Kinds = [ billingAccount ]; IsActive = true } ] }
+          Kinds = [ billingAccount ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 [<Fact>]
 let ``differential: V1 external-entity fixture parses with Origin = ExternalViaIntegrationStudio`` () =
@@ -689,16 +689,16 @@ let private expectedMixedActiveCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = activeEntityDeprecatedAttrKey
                 Name         = mkName "DeprecatedField"
                 Type         = Text
                 Column       = { ColumnName = "DEPRECATEDFIELD"; IsNullable = true }
                 IsPrimaryKey = false
-                IsMandatory = false; Length = Some 100; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = false }
+                IsMandatory = false; Length = Some 100; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = false; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           ]
           References = []
-          Indexes    = []; Description = None; IsActive = true }
+          Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let retiredEntity : Kind =
         { SsKey    = retiredEntityKindKey
           Name     = mkName "RetiredEntity"
@@ -711,14 +711,14 @@ let private expectedMixedActiveCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           ]
           References = []
-          Indexes    = []; Description = None; IsActive = false }
+          Indexes    = []; Description = None; IsActive = false; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ activeEntity; retiredEntity ]; IsActive = true } ] }
+          Kinds = [ activeEntity; retiredEntity ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 [<Fact>]
 let ``slice β: V1 mixed-active fixture carries IsActive through at all three levels`` () =
@@ -932,31 +932,31 @@ let private expectedIndexCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = userEmailAttrKey
                 Name         = mkName "Email"
                 Type         = Text
                 Column       = { ColumnName = "EMAIL"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = userIndexLastNameAttrKey
                 Name         = mkName "LastName"
                 Type         = Text
                 Column       = { ColumnName = "LASTNAME"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 100; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                IsMandatory = true; Length = Some 100; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = userIndexFirstNameAttrKey
                 Name         = mkName "FirstName"
                 Type         = Text
                 Column       = { ColumnName = "FIRSTNAME"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 100; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                IsMandatory = true; Length = Some 100; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = userIndexEmailLowerAttrKey
                 Name         = mkName "EmailLower"
                 Type         = Text
                 Column       = { ColumnName = "EMAILLOWER"; IsNullable = true }
                 IsPrimaryKey = false
-                IsMandatory = false; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                IsMandatory = false; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           ]
           References = []
           Indexes = [
@@ -964,12 +964,12 @@ let private expectedIndexCatalog : Catalog =
                 Name         = mkName "PK_USER"
                 Columns      = [ userIdAttrKey ]
                 IsUnique     = true
-                IsPrimaryKey = true }
+                IsPrimaryKey = true; ExtendedProperties = [] }
               { SsKey        = uxUserEmailIndexKey
                 Name         = mkName "UX_USER_EMAIL"
                 Columns      = [ userEmailAttrKey ]
                 IsUnique     = true
-                IsPrimaryKey = false }
+                IsPrimaryKey = false; ExtendedProperties = [] }
               { SsKey        = ixUserNameIndexKey
                 Name         = mkName "IX_USER_NAME"
                 Columns      = [ userIndexLastNameAttrKey; userIndexFirstNameAttrKey ]
@@ -978,13 +978,13 @@ let private expectedIndexCatalog : Catalog =
                 // ADMIRE entry's "what V2 will explicitly NOT carry
                 // forward" section.
                 IsUnique     = false
-                IsPrimaryKey = false }
+                IsPrimaryKey = false; ExtendedProperties = [] }
           ]
-          Description = None; IsActive = true }
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ userKind ]; IsActive = true } ] }
+          Kinds = [ userKind ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 [<Fact>]
 let ``differential: V1 index-bearing fixture parses with PK + unique + non-unique-with-include indexes`` () =
@@ -1104,20 +1104,20 @@ let private expectedStaticEntityCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = countryCodeAttrKey
                 Name         = mkName "Code"
                 Type         = Text
                 Column       = { ColumnName = "CODE"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 8; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                IsMandatory = true; Length = Some 8; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           ]
           References = []
-          Indexes    = []; Description = None; IsActive = true }
+          Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ countryKind ]; IsActive = true } ] }
+          Kinds = [ countryKind ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 [<Fact>]
 let ``differential: V1 static-entity fixture parses with Modality = [Static []]`` () =

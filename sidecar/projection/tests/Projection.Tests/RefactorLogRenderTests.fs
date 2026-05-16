@@ -50,7 +50,7 @@ let private renamedSalesModule : Module =
     { salesModule with Kinds = [ renamedCustomerKind; order; country ] }
 
 let private targetCatalog : Catalog =
-    { Modules = [ renamedSalesModule ] }
+    { Modules = [ renamedSalesModule ]; Sequences = [] }
 
 let private renderOnce () : string =
     let diff = CatalogDiff.between sampleCatalog targetCatalog |> mustOk

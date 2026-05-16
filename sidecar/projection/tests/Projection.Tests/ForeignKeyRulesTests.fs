@@ -184,7 +184,7 @@ let ``cross-schema: source and target in different schemas + AllowCrossSchema=fa
             Physical = { Schema = "alt"; Table = customer.Physical.Table } }
     let altModule =
         { salesModule with Kinds = [ altCustomer; order; country ] }
-    let altCatalog : Catalog = { Modules = [ altModule ] }
+    let altCatalog : Catalog = { Modules = [ altModule ]; Sequences = [] }
     let cfg = mkConfig true false false
     let profile =
         { Profile.empty with
@@ -214,7 +214,7 @@ let ``cross-schema: comparison is case-insensitive`` () =
             Physical = { Schema = "DBO"; Table = customer.Physical.Table } }
     let altModule =
         { salesModule with Kinds = [ altCustomer; order; country ] }
-    let altCatalog : Catalog = { Modules = [ altModule ] }
+    let altCatalog : Catalog = { Modules = [ altModule ]; Sequences = [] }
     let cfg = mkConfig true false false
     let profile =
         { Profile.empty with

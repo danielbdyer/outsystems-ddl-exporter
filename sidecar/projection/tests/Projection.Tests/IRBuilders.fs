@@ -1,0 +1,104 @@
+module Projection.Tests.IRBuilders
+
+open Projection.Core
+
+/// Fixture builders for V2 IR records. Centralises the "empty / sensible
+/// default" form so future slices that add fields to `Attribute` / `Kind` /
+/// `Module` / `Catalog` / `Index` update one site instead of ~150 record
+/// literals across the test surface.
+///
+/// **Why this exists.** Chapter A.0' slices α/β/γ+δ+ε+ζ+η each added new
+/// fields to the IR (Description, IsActive, Triggers, Sequences,
+/// DefaultValue, Computed, ColumnChecks, ExtendedProperties at four levels,
+/// ModalityMark.Temporal). Pre-existing tests construct records from
+/// scratch — every new field forces a mechanical edit across the entire
+/// test surface. The builders below absorb new fields with the slice that
+/// adds them; downstream tests use `{ mkAttribute ... with FieldOfInterest
+/// = ... }` and stay stable across IR growth.
+///
+/// **Discipline (pillar 8 — domain-first naming).** Builder names answer
+/// "what does this REPRESENT" (an `Attribute`, a `Kind`, etc.), not "what
+/// does this DO" (no `Helper` / `Util` / `Builder` suffix on the modules
+/// themselves; the module name `IRBuilders` is the file-level concept —
+/// the *family of builders*).
+///
+/// **Discipline (pillar 9 — DataIntent default).** All builder defaults
+/// represent DataIntent zero-evidence values: empty collections, `None`
+/// options, V1-default-true for IsActive. Tests opting into specific
+/// values (e.g., `IsActive = false`) override via record-update.
+
+/// Build an `Attribute` with minimum-evidence defaults. Override fields
+/// via record-update syntax (`{ mkAttribute key name ptype with ... }`).
+let mkAttribute (ssKey: SsKey) (name: Name) (ptype: PrimitiveType) : Attribute =
+    {
+        SsKey              = ssKey
+        Name               = name
+        Type               = ptype
+        Column             = { ColumnName = Name.value name; IsNullable = false }
+        IsPrimaryKey       = false
+        IsMandatory        = false
+        Length             = None
+        Precision          = None
+        Scale              = None
+        IsIdentity         = false
+        Description        = None
+        IsActive           = true
+        DefaultValue       = None
+        Computed           = None
+        ExtendedProperties = []
+    }
+
+/// Build a `Kind` with the given attributes and minimum-evidence defaults.
+let mkKind
+    (ssKey: SsKey)
+    (name: Name)
+    (physical: PhysicalRealization)
+    (attributes: Attribute list)
+    : Kind =
+    {
+        SsKey              = ssKey
+        Name               = name
+        Origin             = OsNative
+        Modality           = []
+        Physical           = physical
+        Attributes         = attributes
+        References         = []
+        Indexes            = []
+        Description        = None
+        IsActive           = true
+        Triggers           = []
+        ColumnChecks       = []
+        ExtendedProperties = []
+    }
+
+/// Build a `Module` with the given kinds and minimum-evidence defaults.
+let mkModule (ssKey: SsKey) (name: Name) (kinds: Kind list) : Module =
+    {
+        SsKey              = ssKey
+        Name               = name
+        Kinds              = kinds
+        IsActive           = true
+        ExtendedProperties = []
+    }
+
+/// Build an `Index` with minimum-evidence defaults.
+let mkIndex
+    (ssKey: SsKey)
+    (name: Name)
+    (columns: SsKey list)
+    : Index =
+    {
+        SsKey              = ssKey
+        Name               = name
+        Columns            = columns
+        IsUnique           = false
+        IsPrimaryKey       = false
+        ExtendedProperties = []
+    }
+
+/// Build a `Catalog` with the given modules and no sequences. For
+/// invariant-checking construction use `Catalog.create modules sequences`;
+/// `mkCatalog` is the no-invariant-check shorthand for test fixtures that
+/// have already validated structurally elsewhere.
+let mkCatalog (modules: Module list) : Catalog =
+    { Modules = modules; Sequences = [] }

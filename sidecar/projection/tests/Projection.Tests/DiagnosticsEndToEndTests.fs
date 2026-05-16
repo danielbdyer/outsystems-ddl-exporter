@@ -33,7 +33,7 @@ let private mkIndex
       Name         = name "IX"
       Columns      = columns
       IsUnique     = isUnique
-      IsPrimaryKey = false }
+      IsPrimaryKey = false; ExtendedProperties = [] }
 
 /// Catalog with one already-unique single-column index (Customer.Name)
 /// plus three non-unique single-column indexes that will produce
@@ -52,7 +52,7 @@ let private endToEndCatalog : Catalog =
     let country'  = { country  with Indexes = [ countrySingle ] }
     let salesModule' =
         { salesModule with Kinds = [ customer'; order'; country' ] }
-    { Modules = [ salesModule' ] }
+    { Modules = [ salesModule' ]; Sequences = [] }
 
 let private singleOffCompositeOnPolicy : Policy =
     let cfg = UniqueIndexTighteningConfig.create false true
@@ -187,18 +187,18 @@ let private nullabilityCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = mandatoryAttributeKey
                 Name         = name "Mandatory"
                 Type         = Text
                 Column       = { ColumnName = "MANDATORY"; IsNullable = true }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
-          References = []; Indexes = []; Description = None; IsActive = true }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+          References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = ssKey "OS_MOD_DiagEnd"
           Name  = name "DiagEnd"
-          Kinds = [ sample ]; IsActive = true } ] }
+          Kinds = [ sample ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 let private nullabilityProfileWithNullsBeyondBudget : Profile =
     let mandatoryAttributeKey = ssKey "OS_ATTR_DiagEnd_Sample_Mandatory"
@@ -254,7 +254,8 @@ let ``end-to-end: Nullability and UniqueIndex opportunity streams remain indepen
     // variant per the closed-DU dispatch discipline; their
     // diagnostic streams do not cross-pollinate.
     let combinedCatalog : Catalog =
-        { Modules = nullabilityCatalog.Modules @ endToEndCatalog.Modules }
+        { Modules = nullabilityCatalog.Modules @ endToEndCatalog.Modules
+          Sequences = [] }
     let nullabilityCfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
     let uniqueCfg      = UniqueIndexTighteningConfig.create false true
     let combinedPolicy : Policy =
@@ -338,8 +339,8 @@ let private fkCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
-          References = []; Indexes = []; Description = None; IsActive = true }
+                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+          References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let source : Kind =
         { SsKey    = fkSourceEntityKey
           Name     = name "FkSource"
@@ -352,13 +353,13 @@ let private fkCatalog : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = fkSourceAttrKey
                 Name         = name "TargetId"
                 Type         = Integer
                 Column       = { ColumnName = "TARGET_ID"; IsNullable = true }
                 IsPrimaryKey = false
-                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
+                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
           References = [
               { SsKey           = fkRefKey
                 Name            = name "FkSource_Target"
@@ -367,11 +368,11 @@ let private fkCatalog : Catalog =
                 OnDelete        = NoAction
                 IsUserFk        = false } ]
           Indexes = []
-          Description = None; IsActive = true }
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = ssKey "OS_MOD_FkEnd"
           Name  = name "FkEnd"
-          Kinds = [ source; target ]; IsActive = true } ] }
+          Kinds = [ source; target ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 let private fkProfileWithOrphans : Profile =
     let probe =
@@ -428,7 +429,8 @@ let ``end-to-end: ForeignKey + Nullability + UniqueIndex opportunity streams rem
     // diagnostic streams do not cross-pollinate.
     let combinedCatalog : Catalog =
         { Modules =
-            nullabilityCatalog.Modules @ endToEndCatalog.Modules @ fkCatalog.Modules }
+            nullabilityCatalog.Modules @ endToEndCatalog.Modules @ fkCatalog.Modules
+          Sequences = [] }
     let nullCfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
     let uniqCfg = UniqueIndexTighteningConfig.create false true
     let fkCfg =
@@ -498,7 +500,7 @@ let ``end-to-end: ForeignKey emits keep-reason and success-with-caveat entries s
           Type         = Integer
           Column       = { ColumnName = "STRICT_TARGET_ID"; IsNullable = true }
           IsPrimaryKey = false
-          IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+          IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
     let augmentedSource =
         match fkCatalog.Modules.[0].Kinds |> List.tryFind (fun k -> k.SsKey = fkSourceEntityKey) with
         | Some k ->
@@ -513,7 +515,7 @@ let ``end-to-end: ForeignKey emits keep-reason and success-with-caveat entries s
             if k.SsKey = fkSourceEntityKey then augmentedSource else k)
     let augmentedCatalog : Catalog =
         { Modules = [
-            { fkCatalog.Modules.[0] with Kinds = augmentedKinds } ] }
+            { fkCatalog.Modules.[0] with Kinds = augmentedKinds } ]; Sequences = [] }
 
     // Profile shows orphans on BOTH references; AllowNoCheckCreation
     // is true for the policy, but we want one ScriptWithNoCheck and

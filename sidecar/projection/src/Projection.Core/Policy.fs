@@ -407,7 +407,8 @@ module SelectionPolicy =
         { Modules =
             c.Modules
             |> List.map (fun m ->
-                { m with Kinds = m.Kinds |> List.filter (fun k -> isSelected k.SsKey policy) }) }
+                { m with Kinds = m.Kinds |> List.filter (fun k -> isSelected k.SsKey policy) })
+          Sequences = c.Sequences }
 
 
 [<RequireQualifiedAccess>]

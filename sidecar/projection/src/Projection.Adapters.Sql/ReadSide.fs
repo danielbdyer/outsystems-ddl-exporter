@@ -340,6 +340,18 @@ module ReadSide =
                             // OSSYS-adapter rowset path carries the
                             // V1-source value.
                             IsActive = true
+                            // Chapter A.0' slices ε + ζ — ReadSide
+                            // pickup of DEFAULT, Computed, and
+                            // attribute-level ExtendedProperties
+                            // gates on a future slice that queries
+                            // `sys.default_constraints`,
+                            // `sys.computed_columns`, and
+                            // `sys.extended_properties` over the
+                            // deployed schema. Empty / None defaults
+                            // until that slice lands.
+                            DefaultValue = None
+                            Computed = None
+                            ExtendedProperties = []
                         }
 
     /// Format a SQL Server scalar value as the canonical raw
@@ -570,6 +582,14 @@ module ReadSide =
                     Description = None
                     // Chapter A.0' slice β — see buildAttribute rationale.
                     IsActive = true
+                    // Chapter A.0' slices γ + ε + ζ — ReadSide does
+                    // not yet pick up triggers, table-level CHECK
+                    // constraints, or entity-level extended
+                    // properties from the deployed schema. Empty
+                    // defaults; future slices add the queries.
+                    Triggers = []
+                    ColumnChecks = []
+                    ExtendedProperties = []
                 }
         }
 
@@ -851,8 +871,16 @@ module ReadSide =
                                                         // the deployed-schema readback
                                                         // has no `Is_Active` axis.
                                                         IsActive = true
+                                                        // Chapter A.0' slice ζ —
+                                                        // see buildAttribute rationale.
+                                                        ExtendedProperties = []
                                                     }
                                                 ]
+                                            // Chapter A.0' slice δ —
+                                            // ReadSide does not yet pick up
+                                            // schema-level sequences from the
+                                            // deployed database. Empty default.
+                                            Sequences = []
                                         }
             with
             | ex ->

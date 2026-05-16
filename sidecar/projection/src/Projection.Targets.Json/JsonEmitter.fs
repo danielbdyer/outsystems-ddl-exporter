@@ -59,6 +59,7 @@ module JsonEmitter =
         | TenantScoped  -> "TenantScoped"
         | SoftDeletable -> "SoftDeletable"
         | SystemOwned   -> "SystemOwned"
+        | Temporal _    -> "Temporal"
 
     // -----------------------------------------------------------------------
     // Per-element writers. Each takes the writer and an IR node and emits

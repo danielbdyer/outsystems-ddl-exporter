@@ -63,25 +63,25 @@ let private cityKind : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           { SsKey        = cityNameKey
             Name         = mkName "Name"
             Type         = Text
             Column       = { ColumnName = "NAME"; IsNullable = false }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           { SsKey        = cityActiveKey
             Name         = mkName "IsActive"
             Type         = Boolean
             Column       = { ColumnName = "ISACTIVE"; IsNullable = false }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
       ]
-      References = []; Indexes = []; Description = None; IsActive = true }
+      References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private cityCatalog : Catalog =
     { Modules = [
         { SsKey = modKey "Cities"
           Name  = mkName "Cities"
-          Kinds = [ cityKind ]; IsActive = true } ] }
+          Kinds = [ cityKind ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 let private extractCityRows (c: Catalog) : StaticRow list =
     Catalog.tryFindKind cityKey c

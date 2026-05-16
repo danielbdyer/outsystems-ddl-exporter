@@ -41,6 +41,9 @@ module NormalizeStaticPopulations =
         | TenantScoped  -> TenantScoped
         | SoftDeletable -> SoftDeletable
         | SystemOwned   -> SystemOwned
+        // Chapter A.0' slice η — Static-population normalization is
+        // a no-op for non-Static marks; `Temporal` joins this set.
+        | Temporal _    -> m
 
     let private hasStaticModality (k: Kind) : bool =
         k.Modality |> List.exists (function Static _ -> true | _ -> false)

@@ -265,16 +265,12 @@ rowset both populate every new field).
 |---|---|---|---|
 | α | `Kind.Description` + `Attribute.Description` (purely additive) | `DescriptionLiftTests.fs` (7 tests) | shipped 2026-05-15 |
 | β | `Module.IsActive` + `Kind.IsActive` + `Attribute.IsActive` (carry-through; retire session-21 boundary filter); first pillar-9 worked example | `IsActiveCarryThroughTests.fs` (9 tests) + rework of 5 prior tests in `OsmRowsetReaderTests` / `OsmCatalogReaderDifferentialTests` | shipped 2026-05-16 |
+| γ + δ + ε + ζ + η (XXXXL) | Five-slice IR-fidelity body: `Kind.Triggers` + `Trigger`; `Catalog.Sequences` + `Sequence`; `Attribute.DefaultValue` + `Computed` + `Kind.ColumnChecks`; `ExtendedProperties` × 4 levels; `ModalityMark.Temporal` DU widening | `IRFidelityLiftTests.fs` (22 tests) + `IRBuilders.fs` fixture-builder pattern + `Fixtures.fs` retrofitted | shipped 2026-05-16 |
 
 **Pending slices:**
 
 | Slice | Scope | Witness | Status |
 |---|---|---|---|
-| γ | `Catalog.Triggers : Trigger list` + `Trigger` value type + adapter pickup | round-trip + per-trigger property test | scheduled |
-| δ | `Catalog.Sequences : Sequence list` + `Sequence` value type + adapter pickup | round-trip | scheduled |
-| ε | `Attribute.DefaultValue` + `Attribute.Computed` + `Kind.ColumnChecks` | three round-trip tests | scheduled |
-| ζ | `ExtendedProperties` on Module / Kind / Attribute / Index | four-level round-trip | scheduled |
-| η | `ModalityMark.Temporal of TemporalConfig` (DU widening) | DU-widening + temporal round-trip | scheduled |
 | θ | `TableId.Catalog : string option` | TableId-touch property | scheduled |
 | ι | IsExternal / Origin mapping audit + L3-Boundary-NoSilentDrop property | property test | scheduled |
 
@@ -286,7 +282,16 @@ already reads V1's projection. No carbon-copy event in this chapter.
 
 - The A.4.7-prelude small slice (`LineageEvent.Classification` field)
   per `DECISIONS 2026-05-15 (late)` lands during or just after chapter
-  close. Slice β did not need it; future slices may.
+  close. Slices β and γ-η did not need it; chapter close gates may.
+- **`IRBuilders.fs` fixture-builder pattern** (introduced 2026-05-16 at
+  XXXXL close) — `mkAttribute` / `mkKind` / `mkModule` / `mkIndex` /
+  `mkCatalog` with minimum-evidence DataIntent defaults. `Fixtures.fs`
+  retrofitted as the worked example; the rest of the test surface is
+  scheduled for retroactive sweep at chapter close (currently ~150
+  record-literal sites carry field assignments explicitly; the sweep
+  reduces blast radius for next-chapter field additions from 150 sites
+  to 1). Pillar-8 / pillar-9 disciplines documented in
+  `IRBuilders.fs` module-level docstring.
 
 **Per-phase risks:**
 

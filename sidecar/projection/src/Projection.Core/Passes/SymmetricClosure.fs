@@ -212,6 +212,7 @@ module SymmetricClosure =
                                     // order they were discovered (the
                                     // accumulator builds in reverse
                                     // because of `inverse :: current`).
-                                    { k with References = k.References @ List.rev toAdd }) }) }
+                                    { k with References = k.References @ List.rev toAdd }) })
+              Sequences = c.Sequences }
 
         Lineage.ofValueAndEvents events withInverses

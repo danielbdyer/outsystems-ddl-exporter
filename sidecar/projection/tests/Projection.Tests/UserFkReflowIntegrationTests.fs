@@ -69,10 +69,10 @@ let private mkOrderKind () : Kind =
             [
                 { SsKey = idKey;        Name = mkName "Id";        Type = Integer
                   Column = { ColumnName = "ID";        IsNullable = false }
-                  IsPrimaryKey = true;  IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                  IsPrimaryKey = true;  IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = createdByKey; Name = mkName "CreatedBy"; Type = Integer
                   Column = { ColumnName = "CREATEDBY"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
             ]
         References =
             [ { SsKey           = createdByRefKey
@@ -83,14 +83,18 @@ let private mkOrderKind () : Kind =
                 IsUserFk        = true } ]  // slice ζ User-FK marker
         Indexes    = []
         Description = None
-; IsActive = true }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
 
 let private mkCatalog (kinds: Kind list) : Catalog =
     let m : Module =
         { SsKey = mkKey ["TestModule"]
           Name  = mkName "TestModule"
-          Kinds = kinds; IsActive = true }
-    { Modules = [ m ] }
+          Kinds = kinds; IsActive = true; ExtendedProperties = [] }
+    { Modules = [ m ]; Sequences = [] }
 
 let private orderRowKey (id: int) : SsKey =
     mkKey ["TestModule"; "Order"; "Row"; sprintf "%d" id]
@@ -178,13 +182,13 @@ let ``Slice η: kind with no User-FK references passes through unrewritten`` () 
           Attributes =
               [ { SsKey = idKey;    Name = mkName "Id";    Type = Integer
                   Column = { ColumnName = "ID";    IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = labelKey; Name = mkName "Label"; Type = Text
                   Column = { ColumnName = "LABEL"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
           References = []  // no User-FK
           Indexes    = []
-          Description = None; IsActive = true }
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog = mkCatalog [ country ]
     let migration =
         { Rows =

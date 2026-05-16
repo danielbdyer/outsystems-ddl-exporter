@@ -321,6 +321,35 @@ module CatalogReader =
         : Result<SsKey> =
         SsKey.synthesizedComposite "OS_IDX" [ moduleName; entityName; indexName ]
 
+    /// Trigger SsKey synthesis (chapter A.0' slice γ). Triggers
+    /// identify by their V1 name scoped to the entity they fire on
+    /// (a trigger is owned by exactly one table per SQL Server
+    /// semantics).
+    let private triggerSsKey
+        (moduleName: string) (entityName: string) (triggerName: string)
+        : Result<SsKey> =
+        SsKey.synthesizedComposite "OS_TRG" [ moduleName; entityName; triggerName ]
+
+    /// Sequence SsKey synthesis (chapter A.0' slice δ). Sequences
+    /// identify by schema + name (a sequence is a top-level
+    /// schema-scoped object per SQL Server semantics; SsKey carries
+    /// the full coordinate to disambiguate across modules / schemas).
+    let private sequenceSsKey
+        (schemaName: string) (sequenceName: string)
+        : Result<SsKey> =
+        SsKey.synthesizedComposite "OS_SEQ" [ schemaName; sequenceName ]
+
+    /// ColumnCheck SsKey synthesis (chapter A.0' slice ε). CHECK
+    /// constraints identify by their declared name scoped to the
+    /// entity. V1's `AttributeOnDiskCheckConstraint` carries a
+    /// nullable name; when absent, the check is unnamed and the
+    /// SsKey is derived from the entity + a synthetic discriminator
+    /// at call time.
+    let private columnCheckSsKey
+        (moduleName: string) (entityName: string) (checkName: string)
+        : Result<SsKey> =
+        SsKey.synthesizedComposite "OS_CHK" [ moduleName; entityName; checkName ]
+
     // -----------------------------------------------------------------------
     // JSON helpers — light wrappers over System.Text.Json.JsonElement.
     // These are private; they exist to keep the translation code
@@ -533,6 +562,31 @@ module CatalogReader =
                 match isAutoNumber with
                 | Ok true -> true
                 | _ -> false
+            // Chapter A.0' slice ε — DefaultValue lift. V1's JSON
+            // `default` field is typically `null` in current
+            // projections; when present, the adapter projects via
+            // `SqlLiteral.ofRaw` against the typed `PrimitiveType`.
+            // Falls back to `None` if the type-resolution failed
+            // upstream (the parent record error path handles the
+            // primitive's Error case).
+            let defaultValue : SqlLiteral option =
+                match primitive with
+                | Error _ -> None
+                | Ok p ->
+                    match attrJson.TryGetProperty("default") with
+                    | true, value when value.ValueKind <> JsonValueKind.Null ->
+                        let rawOpt =
+                            match value.ValueKind with
+                            | JsonValueKind.String ->
+                                match value.GetString() with
+                                | null -> None
+                                | s    -> Some s
+                            | JsonValueKind.Number -> Some (value.GetRawText())
+                            | JsonValueKind.True  -> Some "true"
+                            | JsonValueKind.False -> Some "false"
+                            | _ -> None
+                        rawOpt |> Option.map (SqlLiteral.ofRaw p)
+                    | _ -> None
             match nameDU, key, primitive with
             | Ok n, Ok k, Ok p ->
                 Result.success
@@ -547,7 +601,17 @@ module CatalogReader =
                       Scale        = scaleOpt
                       IsIdentity   = isIdentity
                       Description  = description
-                      IsActive     = isActiveOrDefault attrJson }
+                      IsActive     = isActiveOrDefault attrJson
+                      DefaultValue = defaultValue
+                      // Chapter A.0' slice ε — Computed lift; V1's
+                      // JSON projection does not surface computed-
+                      // column metadata. Positioned for future use.
+                      Computed     = None
+                      // Chapter A.0' slice ζ — ExtendedProperties
+                      // attribute-level lift; V1's JSON projection
+                      // does not surface attribute-level extended
+                      // properties at the boundary today.
+                      ExtendedProperties = [] }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 // Substantive causes (e.g., `adapter.osm.unmappedDataType`
@@ -804,7 +868,12 @@ module CatalogReader =
                       Name         = n
                       Columns      = cols
                       IsUnique     = isUnique
-                      IsPrimaryKey = isPrimary }
+                      IsPrimaryKey = isPrimary
+                      // Chapter A.0' slice ζ — Index-level extended
+                      // properties; V1's JSON projection does not
+                      // surface index-level extended properties at
+                      // the boundary today. Empty default.
+                      ExtendedProperties = [] }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 propagateOrFallback
@@ -824,6 +893,75 @@ module CatalogReader =
                     (sprintf
                         "Required index fields missing on an entity in '%s.%s'."
                         moduleName entityName))
+
+    /// Parse one V1 entity-level `triggers[]` element into a V2
+    /// `Trigger`. Chapter A.0' slice γ — IR fidelity lift (L3-S4).
+    /// V1 JSON shape: `{ name, isDisabled, definition }`. V1's
+    /// `TriggerModel.Create` requires non-null definition; V2's
+    /// `Trigger.create` mirrors that invariant via the smart
+    /// constructor.
+    let private parseTrigger
+        (moduleName: string) (entityName: string) (triggerJson: JsonElement)
+        : Result<Trigger> =
+        let nameResult       = getString triggerJson "name"
+        let definitionResult = getString triggerJson "definition"
+        let isDisabled =
+            match triggerJson.TryGetProperty("isDisabled") with
+            | true, value when value.ValueKind = JsonValueKind.True -> true
+            | _ -> false
+        match nameResult, definitionResult with
+        | Ok triggerName, Ok definition ->
+            let key  = triggerSsKey moduleName entityName triggerName
+            let name = Name.create triggerName
+            match key, name with
+            | Ok k, Ok n -> Trigger.create k n isDisabled definition
+            | _ ->
+                propagateOrFallback
+                    [ Result.errors key
+                      Result.errors name ]
+                    (fun () ->
+                        adapterError
+                            "triggerBuild"
+                            (sprintf
+                                "Failed to build trigger '%s' on '%s.%s'."
+                                triggerName moduleName entityName))
+        | _ ->
+            propagateOrFallback
+                [ Result.errors nameResult
+                  Result.errors definitionResult ]
+                (fun () ->
+                    adapterError
+                        "triggerFields"
+                        (sprintf
+                            "Required trigger fields missing on '%s.%s'."
+                            moduleName entityName))
+
+    /// Parse one V1 entity-level `extendedProperties[]` element into a
+    /// V2 `ExtendedProperty`. Chapter A.0' slice ζ — IR fidelity lift
+    /// (L3-S9 extended-properties sub-axiom). V1 JSON shape:
+    /// `{ name, value }` (value may be null).
+    let private parseExtendedProperty
+        (moduleName: string) (entityName: string) (epJson: JsonElement)
+        : Result<ExtendedProperty> =
+        let nameResult = getString epJson "name"
+        let value =
+            match epJson.TryGetProperty("value") with
+            | true, v when v.ValueKind = JsonValueKind.String ->
+                match v.GetString() with
+                | null -> None
+                | s    -> Some s
+            | _ -> None
+        match nameResult with
+        | Ok epName -> ExtendedProperty.create epName value
+        | _ ->
+            propagateOrFallback
+                [ Result.errors nameResult ]
+                (fun () ->
+                    adapterError
+                        "extendedPropertyFields"
+                        (sprintf
+                            "Required extended-property fields missing on '%s.%s'."
+                            moduleName entityName))
 
     let private parseKind
         (moduleName: string) (entityJson: JsonElement)
@@ -888,8 +1026,30 @@ module CatalogReader =
                     |> List.map (parseIndex moduleName entityName)
                 | _ -> []
             let foldedIdx = Result.aggregate indexResults
-            match kindKey, kindName, foldedAttrs, foldedRefs, foldedIdx with
-            | Ok k, Ok n, Ok attrs, Ok refs, Ok idxs ->
+            // Chapter A.0' slice γ — Triggers lift. V1's JSON projects
+            // entity-level `triggers[]` (carrying name + isDisabled +
+            // definition). Empty array when none.
+            let triggerResults =
+                match entityJson.TryGetProperty("triggers") with
+                | true, arr when arr.ValueKind = JsonValueKind.Array ->
+                    arr.EnumerateArray()
+                    |> Seq.toList
+                    |> List.map (parseTrigger moduleName entityName)
+                | _ -> []
+            let foldedTriggers = Result.aggregate triggerResults
+            // Chapter A.0' slice ζ — ExtendedProperties lift (kind
+            // level). V1's JSON projects entity-level
+            // `extendedProperties[]`.
+            let epResults =
+                match entityJson.TryGetProperty("extendedProperties") with
+                | true, arr when arr.ValueKind = JsonValueKind.Array ->
+                    arr.EnumerateArray()
+                    |> Seq.toList
+                    |> List.map (parseExtendedProperty moduleName entityName)
+                | _ -> []
+            let foldedEps = Result.aggregate epResults
+            match kindKey, kindName, foldedAttrs, foldedRefs, foldedIdx, foldedTriggers, foldedEps with
+            | Ok k, Ok n, Ok attrs, Ok refs, Ok idxs, Ok triggers, Ok eps ->
                 let modality =
                     if isStatic then [ Static [] ] else []
                 Result.success
@@ -902,7 +1062,15 @@ module CatalogReader =
                       References  = refs
                       Indexes     = idxs
                       Description = description
-                      IsActive    = isActiveOrDefault entityJson }
+                      IsActive    = isActiveOrDefault entityJson
+                      Triggers    = triggers
+                      // Chapter A.0' slice ε — ColumnChecks lift; V1's
+                      // JSON projection does not surface table-level
+                      // CHECK constraints today (V1 carries them on
+                      // the on-disk metadata channel, not the JSON
+                      // boundary). Empty default.
+                      ColumnChecks = []
+                      ExtendedProperties = eps }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`
                 // (codified at two-consumer threshold; same surface as
@@ -917,7 +1085,9 @@ module CatalogReader =
                       Result.errors kindName
                       Result.errors foldedAttrs
                       Result.errors foldedRefs
-                      Result.errors foldedIdx ]
+                      Result.errors foldedIdx
+                      Result.errors foldedTriggers
+                      Result.errors foldedEps ]
                     (fun () ->
                         adapterError
                             "kindBuild"
@@ -966,7 +1136,11 @@ module CatalogReader =
                 // smart constructor, not record-literal — invariants
                 // (kind-SsKey-disjoint within module) are checked
                 // structurally at the boundary, not deferred.
-                Module.create k n kinds (isActiveOrDefault moduleJson)
+                //
+                // Chapter A.0' slice ζ — Module.ExtendedProperties
+                // populated empty; V1's JSON projection does not
+                // surface module-level extended properties.
+                Module.create k n kinds (isActiveOrDefault moduleJson) []
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 // Substantive causes survive the module-level wrap.
@@ -1001,7 +1175,11 @@ module CatalogReader =
                 // Per DECISIONS pillar 6: boundary adapter flows
                 // through `Catalog.create` (aggregate-root invariant
                 // check) rather than record-literal construction.
-                Catalog.create modules
+                //
+                // Chapter A.0' slice δ — Catalog.Sequences populated
+                // empty; V1's `osm_model.json` projection does not
+                // surface sequences at the catalog boundary today.
+                Catalog.create modules []
             | Error errors  -> Error errors
         | _ ->
             Result.failureOf (
@@ -1083,7 +1261,14 @@ module CatalogReader =
                   Scale        = row.Scale
                   IsIdentity   = row.IsAutoNumber
                   Description  = row.Description
-                  IsActive     = row.IsActive }
+                  IsActive     = row.IsActive
+                  // Chapter A.0' slices ε + ζ — rowset path does not
+                  // surface DEFAULT / Computed / attribute-level
+                  // ExtendedProperties today; positioned for future
+                  // rowset extension or DACPAC adapter.
+                  DefaultValue = None
+                  Computed     = None
+                  ExtendedProperties = [] }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`.
             propagateOrFallback
@@ -1212,7 +1397,15 @@ module CatalogReader =
                   // #AllIdx / #IdxColsMapped). Empty at slice 2.
                   Indexes     = []
                   Description = kindRow.Description
-                  IsActive    = kindRow.IsActive }
+                  IsActive    = kindRow.IsActive
+                  // Chapter A.0' slices γ + ε + ζ — rowset path does
+                  // not surface triggers, table-level CHECK
+                  // constraints, or entity-level extended properties
+                  // today; positioned for future rowset slices or
+                  // DACPAC-adapter integration.
+                  Triggers    = []
+                  ColumnChecks = []
+                  ExtendedProperties = [] }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`
             // (codified at two-consumer threshold; same surface as
@@ -1257,7 +1450,10 @@ module CatalogReader =
         let foldedKinds = Result.aggregate kindResults
         match modKey, modName, foldedKinds with
         | Ok k, Ok n, Ok kinds ->
-            Module.create k n kinds moduleRow.IsActive
+            // Chapter A.0' slice ζ — Module.ExtendedProperties empty
+            // on the rowset path; V1's rowsets do not surface
+            // module-level extended properties.
+            Module.create k n kinds moduleRow.IsActive []
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`.
             // Substantive causes survive the module-level wrap.
@@ -1300,7 +1496,10 @@ module CatalogReader =
             bundle.Modules
             |> List.map (parseModuleRow kindsByEspace attributesByEntity referencesByAttr)
         match Result.aggregate moduleResults with
-        | Ok modules -> Catalog.create modules
+        | Ok modules ->
+            // Chapter A.0' slice δ — Catalog.Sequences empty on the
+            // rowset path; V1's rowsets do not surface sequences.
+            Catalog.create modules []
         | Error errors -> Error errors
 
     /// Parse a V1 `osm_model.json` snapshot into a V2 `Catalog`.

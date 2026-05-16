@@ -37,13 +37,13 @@ Order chosen by **risk × leverage × prerequisite chain**:
 
 | Slice | Scope | L3 axioms promoted | Risk |
 |---|---|---|---|
-| **α** | `Kind.Description` + `Attribute.Description` (purely additive) | L3-S9 (descriptions sub-axiom) | Low — pattern-establishing |
+| **α** | `Kind.Description` + `Attribute.Description` (purely additive) — **SHIPPED 2026-05-15** | L3-S9 (descriptions sub-axiom) | Low — pattern-establishing |
 | **β** | `Module.IsActive` + `Kind.IsActive` + `Attribute.IsActive` (carry-through; retire boundary filter) — **SHIPPED 2026-05-16** | L3-S9 (IsActive sub-axiom; supersedes session-21) | Medium — semantic shift; DECISIONS amendment landed |
-| **γ** | `Catalog.Triggers : Trigger list` + `Trigger` value type + adapter pickup | L3-S4 | Medium — new top-level Catalog field |
-| **δ** | `Catalog.Sequences : Sequence list` + `Sequence` value type + adapter pickup | L3-S5 | Medium — sibling of γ |
-| **ε** | `Attribute.DefaultValue : SqlLiteral option` + `Attribute.Computed : ComputedColumnConfig option` + `Kind.ColumnChecks : ColumnCheck list` (Attribute / Kind body expansions) | L3-S6, L3-S7, L3-S8 | Medium — three related additions; share adapter machinery |
-| **ζ** | `ExtendedProperties: ExtendedProperty list` on Module / Kind / Attribute / Index | L3-S9 | High — four-level extension; widest blast radius |
-| **η** | `ModalityMark.Temporal of TemporalConfig` (DU widening for temporal tables) | (covered by L3-S4 family; sub-axiom pending) | High — only DU-widening slice in chapter; closed-DU discipline applies |
+| **γ** | `Kind.Triggers : Trigger list` + `Trigger` value type + JSON adapter pickup — **SHIPPED 2026-05-16 (XXXXL)**. _Pillar-8 deviation from open's "Catalog.Triggers" planning shorthand: triggers are kind-scoped per SQL Server semantic and V1's JSON projection at entity level._ | L3-S4 | Medium — kind-scoped, not top-level Catalog field |
+| **δ** | `Catalog.Sequences : Sequence list` + `Sequence` value type + adapter slot (empty defaults today; pickup deferred until V1 surfaces sequences or DACPAC adapter lands) — **SHIPPED 2026-05-16 (XXXXL)** | L3-S5 | Medium — sibling of γ |
+| **ε** | `Attribute.DefaultValue : SqlLiteral option` (JSON adapter pickup via `SqlLiteral.ofRaw`) + `Attribute.Computed : ComputedColumnConfig option` + `Kind.ColumnChecks : ColumnCheck list` — **SHIPPED 2026-05-16 (XXXXL)** | L3-S6, L3-S7, L3-S8 | Medium — three related additions; share adapter machinery |
+| **ζ** | `ExtendedProperties: ExtendedProperty list` on Module / Kind / Attribute / Index + JSON adapter pickup at entity level — **SHIPPED 2026-05-16 (XXXXL)** | L3-S9 | High — four-level extension; absorbed via mechanical edits + `IRBuilders` |
+| **η** | `ModalityMark.Temporal of TemporalConfig` (DU widening for temporal tables) — **SHIPPED 2026-05-16 (XXXXL)** | (covered by L3-S4 family; sub-axiom pending) | High — only DU-widening slice in chapter; closed-DU empirical test held (3 match-site additions across pass modules + JsonEmitter; no other ripple) |
 | **θ** | `TableId.Catalog : string option` extension | L3-S10 / L3-I10 | High — invasive; touches every `TableId` literal site |
 | **ι** | IsExternal / Origin mapping audit + final L3-Boundary-NoSilentDrop property test | L3-CC4 + completion criterion | Low — property tests only; no IR change |
 

@@ -53,18 +53,22 @@ let private mkCountryKind () : Kind =
             [
                 { SsKey = idKey;    Name = mkName "Id";    Type = Integer
                   Column = { ColumnName = "ID";    IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = codeKey;  Name = mkName "Code";  Type = Text
                   Column = { ColumnName = "CODE";  IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = labelKey; Name = mkName "Label"; Type = Text
                   Column = { ColumnName = "LABEL"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
             ]
         References = []
         Indexes    = []
         Description = None
-; IsActive = true }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
 
 /// Non-static kind (no `Modality.Static` mark); should produce a no-op
 /// DataInsertScript per T11 strict-equality keyset.
@@ -82,22 +86,26 @@ let private mkRegularKind () : Kind =
             [
                 { SsKey = idKey;   Name = mkName "Id";   Type = Integer
                   Column = { ColumnName = "ID";   IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = nameKey; Name = mkName "Name"; Type = Text
                   Column = { ColumnName = "NAME"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
             ]
         References = []
         Indexes    = []
         Description = None
-; IsActive = true }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
 
 let private mkCatalog (kinds: Kind list) : Catalog =
     let m : Module =
         { SsKey = mkKey ["TestModule"]
           Name  = mkName "TestModule"
-          Kinds = kinds; IsActive = true }
-    { Modules = [ m ] }
+          Kinds = kinds; IsActive = true; ExtendedProperties = [] }
+    { Modules = [ m ]; Sequences = [] }
 
 /// Whitespace-normalize a rendered SQL string so substring assertions
 /// match across formatter variations. ScriptDom's `Sql160ScriptGenerator`
@@ -402,13 +410,13 @@ let private mkTreeKind () : Kind =
             [
                 { SsKey = idKey;     Name = mkName "Id";       Type = Integer
                   Column = { ColumnName = "ID";       IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = labelKey;  Name = mkName "Label";    Type = Text
                   Column = { ColumnName = "LABEL";    IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = parentKey; Name = mkName "ParentId"; Type = Integer
                   Column = { ColumnName = "PARENTID"; IsNullable = true }     // nullable → deferrable
-                  IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+                  IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
             ]
         References =
             [
@@ -418,7 +426,11 @@ let private mkTreeKind () : Kind =
             ]
         Indexes    = []
         Description = None
-; IsActive = true }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
 
 /// Self-referencing kind whose FK column is NOT NULL. Same shape as
 /// `mkTreeKind` but `ParentId` is non-nullable. The cycle still
@@ -537,7 +549,7 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
         { SsKey = ssk; Name = mkName name; Type = typ
           Column = { ColumnName = col; IsNullable = isNull }
           IsPrimaryKey = isPk; IsMandatory = not isNull
-          Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+          Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
     let mkRef ssk name srcAttr tgt =
         { SsKey = ssk; Name = mkName name
           SourceAttribute = srcAttr; TargetKind = tgt; OnDelete = NoAction; IsUserFk = false }
@@ -549,7 +561,7 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
                          mkAttr aFkK "BId" Integer "BID" false true ]
           References = [ mkRef aRefK "ToB" aFkK bKey ]
           Indexes    = []
-          Description = None; IsActive = true }
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let bKind : Kind =
         { SsKey = bKey; Name = mkName "B"; Origin = OsNative
           Modality = [ Static [ bRow ] ]
@@ -558,7 +570,7 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
                          mkAttr bFkK "AId" Integer "AID" false true ]
           References = [ mkRef bRefK "ToA" bFkK aKey ]
           Indexes    = []
-          Description = None; IsActive = true }
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog = mkCatalog [ aKind; bKind ]
     let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
     let m = ArtifactByKind.toMap artifact

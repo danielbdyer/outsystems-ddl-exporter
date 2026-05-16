@@ -26,10 +26,11 @@
     <Compile Include="UuidV5.fs" />
     <Compile Include="Coordinates.fs" />
     <Compile Include="StructuredString.fs" />
-    <Compile Include="Catalog.fs" />
+    <Compile Include="PrimitiveType.fs" />
     <Compile Include="RawValueCodec.fs" />
     <Compile Include="SqlTypeCorrespondence.fs" />
     <Compile Include="SqlLiteral.fs" />
+    <Compile Include="Catalog.fs" />
     <Compile Include="ArtifactByKind.fs" />
     <Compile Include="CatalogDiff.fs" />
     <Compile Include="PhysicalSchema.fs" />

@@ -264,15 +264,16 @@ let ``contract: ForeignKeyPass is invariant under input permutation``
     let perturb (c: Catalog) : Catalog =
         let withModules =
             { Modules =
-                c.Modules
-                |> List.map (fun m ->
-                    let withKinds =
-                        m.Kinds
-                        |> List.map (fun k ->
-                            if reverseRefs then { k with References = List.rev k.References }
-                            else k)
-                    if reverseKinds then { m with Kinds = List.rev withKinds }
-                    else { m with Kinds = withKinds }) }
+                (c.Modules
+                 |> List.map (fun m ->
+                     let withKinds =
+                         m.Kinds
+                         |> List.map (fun k ->
+                             if reverseRefs then { k with References = List.rev k.References }
+                             else k)
+                     if reverseKinds then { m with Kinds = List.rev withKinds }
+                     else { m with Kinds = withKinds }))
+              Sequences = c.Sequences }
         if reverseModules then { withModules with Modules = List.rev withModules.Modules }
         else withModules
     let policy = policyWithIntervention "v1-style" (mkConfig true true true)

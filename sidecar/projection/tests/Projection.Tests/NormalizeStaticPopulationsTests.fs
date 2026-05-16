@@ -27,7 +27,8 @@ let private withReversedCountryRows (c: Catalog) : Catalog =
                                     |> List.map (function
                                         | Static rows -> Static (List.rev rows)
                                         | other       -> other) }
-                        else k) }) }
+                        else k) })
+      Sequences = c.Sequences }
 
 let private extractCountryRows (c: Catalog) : StaticRow list =
     let countryK = Catalog.tryFindKind countryKey c |> Option.get
@@ -156,7 +157,8 @@ let private withCountryRows (rows: StaticRow list) (c: Catalog) : Catalog =
                     |> List.map (fun k ->
                         if k.SsKey = countryKey then
                             { k with Modality = [ Static rows ] }
-                        else k) }) }
+                        else k) })
+      Sequences = c.Sequences }
 
 [<Fact>]
 let ``edge: empty population list normalizes to empty list`` () =

@@ -65,7 +65,7 @@ let private permuteKinds (m: Module) : Module =
     { m with Kinds = m.Kinds |> List.map permuteRefs |> List.rev }
 
 let private permuteModules (c: Catalog) : Catalog =
-    { Modules = c.Modules |> List.map permuteKinds |> List.rev }
+    { Modules = c.Modules |> List.map permuteKinds |> List.rev; Sequences = [] }
 
 [<Fact>]
 let ``contract: TopologicalOrder.run is invariant under input permutation`` () =
@@ -78,14 +78,15 @@ let ``property: output is identical across input permutations`` (reverseModules:
     let perturb (c: Catalog) : Catalog =
         let withModules =
             { Modules =
-                c.Modules
-                |> List.map (fun m ->
-                    let withKinds =
-                        m.Kinds
-                        |> List.map (fun k ->
-                            if reverseRefs then { k with References = List.rev k.References } else k)
-                    if reverseKinds then { m with Kinds = List.rev withKinds }
-                    else { m with Kinds = withKinds }) }
+                (c.Modules
+                 |> List.map (fun m ->
+                     let withKinds =
+                         m.Kinds
+                         |> List.map (fun k ->
+                             if reverseRefs then { k with References = List.rev k.References } else k)
+                     if reverseKinds then { m with Kinds = List.rev withKinds }
+                     else { m with Kinds = withKinds }))
+              Sequences = c.Sequences }
         if reverseModules then { withModules with Modules = List.rev withModules.Modules }
         else withModules
     let direct   = (TopologicalOrderPass.run sampleCatalog).Value
@@ -151,22 +152,23 @@ let ``MissingEdges are recorded when an FK target is absent`` () =
 
 let private addReference (sourceKey: SsKey) (targetKey: SsKey) (refKey: SsKey) (refName: string) (sourceAttrKey: SsKey) (c: Catalog) : Catalog =
     { Modules =
-        c.Modules
-        |> List.map (fun m ->
-            { m with
-                Kinds =
-                    m.Kinds
-                    |> List.map (fun k ->
-                        if k.SsKey = sourceKey then
-                            let newRef : Reference =
-                                { SsKey           = refKey
-                                  Name            = Name.create refName |> Result.value
-                                  SourceAttribute = sourceAttrKey
-                                  TargetKind      = targetKey
-                                  OnDelete        = NoAction
-                                  IsUserFk        = false }
-                            { k with References = newRef :: k.References }
-                        else k) }) }
+        (c.Modules
+         |> List.map (fun m ->
+             { m with
+                 Kinds =
+                     m.Kinds
+                     |> List.map (fun k ->
+                         if k.SsKey = sourceKey then
+                             let newRef : Reference =
+                                 { SsKey           = refKey
+                                   Name            = Name.create refName |> Result.value
+                                   SourceAttribute = sourceAttrKey
+                                   TargetKind      = targetKey
+                                   OnDelete        = NoAction
+                                   IsUserFk        = false }
+                             { k with References = newRef :: k.References }
+                         else k) }))
+      Sequences = c.Sequences }
 
 [<Fact>]
 let ``cycle: Mode is Alphabetical when input contains a cycle`` () =
@@ -345,9 +347,10 @@ let ``contract: SCC enumeration is invariant under input permutation`` () =
         |> fun lineage -> lineage.Value
     let permuted =
         { Modules =
-            withInverses.Modules
-            |> List.map (fun m -> { m with Kinds = List.rev m.Kinds })
-            |> List.rev }
+            (withInverses.Modules
+             |> List.map (fun m -> { m with Kinds = List.rev m.Kinds })
+             |> List.rev)
+          Sequences = withInverses.Sequences }
     let r1 = (TopologicalOrderPass.run withInverses).Value
     let r2 = (TopologicalOrderPass.run permuted).Value
     Assert.Equal<CycleDiagnostic list>(r1.Cycles, r2.Cycles)
@@ -372,10 +375,10 @@ let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Ki
       Attributes = [
           { SsKey = attrId; Name = mkName "Id"; Type = Integer
             Column = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           { SsKey = attrFk; Name = mkName "Fk"; Type = Integer
             Column = { ColumnName = "FK"; IsNullable = false }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
       References = [
           { SsKey = mkKey fkKey
             Name = mkName "ToOther"
@@ -383,7 +386,7 @@ let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Ki
             TargetKind = targetKey
             OnDelete = NoAction
             IsUserFk = false } ]
-      Indexes = []; Description = None; IsActive = true }
+      Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 [<Fact>]
 let ``Tarjan: two disjoint 2-cycles produce two SCCs`` () =
@@ -394,7 +397,7 @@ let ``Tarjan: two disjoint 2-cycles produce two SCCs`` () =
     let d = kindWithFk "D" "RefD" (mkKey "C")
     let twoCycles : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c; d ]; IsActive = true } ] }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c; d ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
     let result = TopologicalOrderPass.run twoCycles
     Assert.Equal(2, result.Value.Cycles.Length)
     // SCCs are sorted by smallest member; A-B comes before C-D.
@@ -427,10 +430,10 @@ let private kindWithRef
       Attributes = [
           { SsKey = attrId; Name = mkName "Id"; Type = Integer
             Column = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           { SsKey = attrFk; Name = mkName "Fk"; Type = Integer
             Column = { ColumnName = "FK"; IsNullable = sourceAttrNullable }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
       References = [
           { SsKey = mkKey refKey
             Name = mkName "ToOther"
@@ -438,7 +441,7 @@ let private kindWithRef
             TargetKind = targetKey
             OnDelete = onDelete
             IsUserFk = false } ]
-      Indexes = []; Description = None; IsActive = true }
+      Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private noRefKind (kindKey: string) : Kind =
     let attrId = mkKey (kindKey + "_Id")
@@ -450,8 +453,8 @@ let private noRefKind (kindKey: string) : Kind =
       Attributes = [
           { SsKey = attrId; Name = mkName "Id"; Type = Integer
             Column = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
-      References = []; Indexes = []; Description = None; IsActive = true }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+      References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 // ---------------------------------------------------------------------------
 // V1 contract: SortByForeignKeys_AutoDetectsAsymmetricAuditCycle.
@@ -484,7 +487,7 @@ let ``V1 contract: asymmetric-2-cycle auto-resolves via Weak edge`` () =
     let audit  = kindWithRef "Audit"  "AuditFkToParent" (mkKey "Parent") false NoAction // Other
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true } ] }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
     let result = TopologicalOrderPass.run cyclic
     // Resolver succeeds — Mode is Topological, not Alphabetical.
     Assert.Equal(Topological, result.Value.Mode)
@@ -509,7 +512,7 @@ let ``resolver: 2-cycle with no Weak edges remains unresolved`` () =
     let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") false NoAction
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true } ] }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
     let result = TopologicalOrderPass.run cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
@@ -524,7 +527,7 @@ let ``resolver: 2-cycle with two Weak edges remains unresolved`` () =
     let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") true NoAction
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true } ] }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
     let result = TopologicalOrderPass.run cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
@@ -538,7 +541,7 @@ let ``resolver: 3-cycle remains unresolved (current resolver handles 2-cycles on
     let c = kindWithRef "C" "CtoA" (mkKey "A") true NoAction
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c ]; IsActive = true } ] }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
     let result = TopologicalOrderPass.run cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
@@ -554,7 +557,7 @@ let ``resolver: Cascade edges are never broken`` () =
     let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") false NoAction
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true } ] }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
     let result = TopologicalOrderPass.run cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
@@ -569,7 +572,7 @@ let ``resolver: resolved cycles still appear in Cycles for audit`` () =
     let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") true NoAction
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true } ] }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
     let result = TopologicalOrderPass.run cyclic
     Assert.Equal(Topological, result.Value.Mode)
     Assert.NotEmpty(result.Value.Cycles)
@@ -600,7 +603,7 @@ let ``A23: events carry pass version and name`` () =
 
 [<Fact>]
 let ``empty catalog produces empty TopologicalOrder`` () =
-    let empty : Catalog = { Modules = [] }
+    let empty : Catalog = { Modules = []; Sequences = [] }
     let result = TopologicalOrderPass.run empty
     Assert.Equal(Topological, result.Value.Mode)
     Assert.Empty(result.Value.Order)
