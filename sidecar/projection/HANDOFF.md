@@ -1,8 +1,59 @@
-# Handoff letter — Pillar 9 codified + canonical-strongly-typed registry shape locked + A.4.7 specced (chapter A.0' still open, slice β next)
+# Handoff letter — Bridge wave opens (Chapter 0.5 in flight; V2 inherits from V1)
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## 2026-05-16 — Bridge wave opens: V2 inherits from V1 (Chapter 0.5 in flight)
+
+**Branch / baseline.** Continues on `claude/csharp-fsharp-projection-seams-y8MhJ`. Documentation + architectural-skeleton commit; three new C# projects scaffolded; existing test baseline holds. No F# behavior changes; no perf-gate impact (the new C# projects are not yet wired into any F# consumer).
+
+**What this is.** Under V2-driver KPI, with V1 sunset committed at cutover+30, V2's relationship with V1 transitions from data boundary to inheritance. V2 absorbs V1's working logic (~22K LOC of metadata extraction, profile query building, SMO emission, DMM compare, user matching) and refines it forward. The seam is no longer a wall between two peer systems; it is the one-way arrow of phylogeny — V1 contributes, V2 inherits, V2 publishes under its own imprint. The act of crossing the seam IS the act of inheritance and refinement.
+
+**Two C# projects make the inheritance machinery structural.** `Projection.Bridge.Core` (the V1→V2 lift surface; F# adapters consume it to inherit V1 capabilities) and `Projection.Bridge.Runtime` (the V2→V1 inheritance surface; V1 emitters consume it during dual-track). The split is the natural factoring of two distinct roles, not a workaround. F# adapters reference `Bridge.Core`; the cycle-discipline rule (no F# project may reference `Bridge.Runtime`) is a consequence.
+
+**Every public Bridge method declares its place on the inheritance gradient** via `[BridgeMethod(Chapter, AddedDate, V1Source, Current, Target, Determinism, Frequency)]`. Four states: `Delegated` → `Vendored` → `RefinedInPlace` → `TranslatedToFSharp`. New methods enter at `Delegated`; progression happens chapter-by-chapter. At cutover+30 the `BridgeManifestSunsetGateTest` asserts every method has reached its declared target — sunset is the moment the workshop is empty, not a deadline event. The reflection-scanned `BridgeManifest` is the auditable witness; `Projection.Bridge.Tests.BridgeManifestTests` asserts well-formedness at every test run.
+
+**The cherry-pick discipline is restated, not weakened.** The discipline was about "V1 mental model does not enter F# code." The Bridge wall enforces this with types where absence enforced it before. The `Projection000BridgeWallDiscipline` analyzer (slice β of Chapter 0.5, in flight) enforces eight wall rules structurally on every type in `Projection.Bridge.*` namespaces: BCL types only; capability-shaped names; V2 vocabulary in records; `CancellationToken` everywhere; never throws; one public method per file; frequency-shape contract; `[BridgeMethod]` required. Mistakes do not compile.
+
+**What shipped this session (documentation + architectural skeleton):**
+
+- **Three new csprojs**: `src/Projection.Bridge.Core/Projection.Bridge.Core.csproj`, `src/Projection.Bridge.Runtime/Projection.Bridge.Runtime.csproj`, `tests/Projection.Bridge.Tests/Projection.Bridge.Tests.csproj`. Added to `Projection.sln`. `Bridge.Core` ProjectReferences V1's six trunk assemblies + `Projection.Core`. `Bridge.Runtime` ProjectReferences `Bridge.Core` + `Projection.Core` + `Projection.Pipeline`. `Bridge.Tests` references both Bridge projects.
+- **Audit primitives** (`Projection.Bridge.Core/Audit/`): `BridgeMethodAttribute` (seven required fields); `SunsetDisposition` enum (four-position gradient); `Determinism` enum; `Frequency` enum; `BridgeManifest` reflection-scanned validator with `BridgeManifestEntry` record.
+- **Wire records** (`Projection.Bridge.Core/Wire/`): `BridgeResult<T>` (BCL-typed result envelope mirroring V2's `Result<'a>`); `BridgeError` (BCL-typed error record using V2's `category.subject.problem` code convention).
+- **`Projection.Bridge.Tests.BridgeManifestTests`** with three Facts: deterministic manifest ordering; well-formedness validation; reserved `[Fact(Skip = "Active at cutover+30 chapter close")]` for the sunset gate.
+- **`CHAPTER_0_5_OPEN.md`** — bring-up chapter open document; seven slices α through η; eight-axis strategic frame; out-of-scope clarifications; success criteria.
+- **`DECISIONS 2026-05-16 — Bridge wave: V2 inherits from V1`** — codifying entry. Captures the data-boundary-to-inheritance reframe, the two-project commitment, the inheritance gradient, the audit-attribute discipline, the wall-analyzer commitment, the ADMIRE re-classification corrections (NullabilityEvaluator and ForeignKeyEvaluator revert to PURE PASS; UniqueIndexEvidenceAggregator SPLIT confirmed; `ComputeTwoPhaseInsertOrder` harmonized via existing `TopologicalOrderPass`; OSSYS catalog producer Bridge-lifted at `Delegated → Vendored`), the three settled sub-decisions (split-vs-single Bridge → split; CDC/UserMatch shape → analyzer-enforced; V2-for-V1 scope → one method at bring-up), and the R6 Stage-2 specification.
+- **`CLAUDE.md` operating-disciplines row** for Bridge inheritance — sibling to pillar 9; the four meta-disciplines now five (pillar 8 catches naming drift; pillar 7 amendment catches string-composition drift; text-builder-as-first-instinct catches typed-AST bypass drift; pillar 9 catches harvest-classification drift; Bridge inheritance catches V1-mental-model-contamination drift).
+- **`CLAUDE.md` load-bearing commitments** — Bridge inheritance gradient + audit attribute + wall analyzer; lift-verbs-not-nouns corollary.
+- **`README.md`** — new section "V2 inherits from V1" between the "What this is" and "Layout" sections; codifies the prose framing of the shape (phylogeny; editorial; lift verbs not nouns; gradient with four states; audit metadata as manuscript history; cherry-pick discipline restated).
+- **`AXIOMS.md` A41 candidate body strengthened** with Bridge clause (Bridge methods are `DataIntent` by signature; cannot accept `Policy`); **A42 candidate added** codifying the inheritance citation discipline.
+- **`ADMIRE.md` format amendment** — every entry's V2 placement section now carries `Current state / Target state` pair; existing entries updated per the re-classification corrections (NullabilityEvaluator + ForeignKeyEvaluator revert to PURE PASS; UniqueIndexEvidenceAggregator SPLIT; OSSYS catalog producer gradient).
+
+**What's load-bearing in this session.**
+
+- The Bridge inheritance discipline is now operating-discipline tier (sibling to pillar 9). Every agent confirms intent against it before adopting any new pattern that crosses the V1↔V2 seam.
+- `Bridge.Core` is F#-consumable; `Bridge.Runtime` is not. No F# project may ProjectReference `Bridge.Runtime` (cycle prevention via `Projection.Pipeline`).
+- Every public Bridge method MUST have `[BridgeMethod]` with all seven fields populated; the analyzer (slice β) enforces; `BridgeManifestTests` validates structurally.
+- The V1 mental-model traps named in the harvest analysis (string-everywhere config, exception-driven control flow, scattered overrides, mutation-as-default) are explicitly NOT inherited; they die at the Bridge wall. V1's seven scattered override-binding mechanisms are not adopted; V2 inherits the *idea* (operator overrides exist) but the binding is rebuilt fresh in F# with a single structured builder.
+
+**The bring-up slices remaining for Chapter 0.5** (per `CHAPTER_0_5_OPEN.md`):
+
+- Slice α — audit primitives + `BridgeManifestTests` (SHIPPED this session as scaffold; will be reinforced as more methods land).
+- Slice β — wall discipline analyzer (`Projection000BridgeWallDiscipline` in `Projection.Analyzers`); eight rules; negative-test fixtures per rule. NOT YET SHIPPED.
+- Slice γ — first inheritance: `Capabilities/Catalog/ExtractMetadata.cs` lifts V1's metadata-extraction verb at `Delegated` state, target `RefinedInPlace`. Wire records cover the rowset shape (`OutsystemsMetadataSnapshot`), not the aggregate root (`OsmModel`). NOT YET SHIPPED.
+- Slice δ — F# consumption: `SnapshotSource.LiveOssysViaBridge` variant added to `CatalogReader.fs`; `bundleOfBridgeOutput` translation function (~30 lines); `parseRowsetBundle` reused unchanged. NOT YET SHIPPED.
+- Slice ε — vendoring: V1 source copied into `Bridge.Core/Adopted/Catalog/`; `[BridgeMethod].Current` transitions to `Vendored`. NOT YET SHIPPED.
+- Slice ζ — equivalence witness: `bridge-ossys-seed.sql` fixture + `CatalogEquivalence.normalizeForEquivalence` + property test `parse (SnapshotRowsets canonicalBundle) ≡ parse (LiveOssysViaBridge input)` modulo six named tolerances. THE LOAD-BEARING STRUCTURAL CLAIM OF THE BRIDGE WAVE. NOT YET SHIPPED.
+- Slice η — V2-for-V1 first method: `InvokeV2TopologicalOrderAsync` in `Bridge.Runtime/Capabilities/V2ForV1/`; paired test closing V1's static-seed FK-order bug at `BuildSsdtStaticSeedStep.cs:80-90`. NOT YET SHIPPED.
+
+**Continue on Chapter 0.5 slice β next** (the wall-discipline analyzer in `Projection.Analyzers`). The analyzer is the structural enforcement that makes every subsequent slice's audit metadata real; without it, slices γ–η rely on convention, not type-witness. The analyzer's eight rules are enumerated in `CHAPTER_0_5_OPEN.md` slice β; the F# Analyzers SDK precedent is the existing `NoUnsafeTimeInCoreAnalyzer.fs`.
+
+**A.0' chapter remains paused.** The Bridge wave is the prerequisite for chapters 4.1.B-δ / 4.2 / 4.3 to parallelize; A.0' slice β (the IsActive disposition retirement) re-opens after Chapter 0.5 closes. The pillar-9 worked-example framing for IsActive disposition is preserved (per the 2026-05-15 late entry below); it picks up unchanged when A.0' resumes.
+
+**Outstanding (operator-side):**
+- R1 — operator's "document of key evolutions" still pending. Hold UAT-users decisions until it lands.
+- Q2 / Q3 / Q4 / Q7 unchanged from the 2026-05-12 final handoff below; revisable during touching slices.
 
 ## 2026-05-15 (late, second pass) — Pillar 9 + DataIntent/OperatorIntent reification + canonical-strongly-typed registry shape
 

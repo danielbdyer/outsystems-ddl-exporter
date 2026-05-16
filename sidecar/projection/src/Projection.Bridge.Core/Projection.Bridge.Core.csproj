@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <LangVersion>latest</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>Projection.Bridge</RootNamespace>
+    <AssemblyName>Projection.Bridge.Core</AssemblyName>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    Projection.Bridge.Core is the V1↔V2 inheritance surface that F# adapters
+    may consume. It ProjectReferences V1's trunk assemblies AND V2's pure
+    core; F# adapters consume the BCL-typed surface exposed here.
+
+    NEVER add a ProjectReference to Projection.Pipeline or downstream F#
+    projects from this csproj — that would create a cycle once an F# adapter
+    references Bridge.Core. Cross-cutting / V2-for-V1 capabilities that need
+    Projection.Pipeline live in Projection.Bridge.Runtime instead. See the
+    architecture note in `CLAUDE.md` (Bridge inheritance operating discipline).
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Projection.Core\Projection.Core.fsproj" />
+    <ProjectReference Include="..\..\..\..\src\Osm.Domain\Osm.Domain.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Osm.Json\Osm.Json.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Osm.Validation\Osm.Validation.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Osm.Smo\Osm.Smo.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Osm.Dmm\Osm.Dmm.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Osm.Pipeline\Osm.Pipeline.csproj" />
+  </ItemGroup>
+
+</Project>
