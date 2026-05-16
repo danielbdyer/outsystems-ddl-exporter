@@ -1,8 +1,37 @@
-# Handoff letter — Bridge wave audibled; V2 self-containment codified
+# Handoff letter — Chapter A.0' slice β shipped (IsActive lift; session-21 boundary filter retired)
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## 2026-05-16 (slice β) — Chapter A.0' slice β shipped: IsActive lifted to IR, session-21 boundary filter retired (first pillar-9 worked example)
+
+**Branch / baseline.** New branch `claude/retire-isactive-disposition-WD4Ez` from main post-audible merge (PR #542 merged at `811f539`). Working tree clean before this commit. **Test baseline: 1155 / 1155 passing** (1146 prior + 9 new `IsActiveCarryThroughTests`); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint clean across 27 rules. The mechanical-edits precedent from slice α held (the closed-DU record-extension empirical-test discipline catches FS0764 errors at literal-construction sites only; semantic interpretation sites unaffected — 100+ literal sites across 23 test files received `IsActive = true` via a Python pass against the FS0764 worklist).
+
+**What shipped (one commit).** Chapter A.0' slice β: `Module.IsActive`, `Kind.IsActive`, `Attribute.IsActive` lifted into `Projection.Core.Catalog`; six OSSYS-adapter boundary filters retired (JSON: `parseModule`'s entity filter, `parseKind`'s attribute filter; rowset: `parseRowsetBundle`'s module filter, `parseModuleRow`'s entity filter, `parseKindRow`'s attribute filter; plus `parseAttribute*` populator changes). The `isActiveOrDefault` helper is preserved; its role flips from "gate inclusion" to "populate the IR field." `parseModule` (JSON path) gains a module-level `isActiveOrDefault` read (the JSON path did not previously filter at module level per Subagent #3's O2 finding; the read lands for parity with the rowset path's `ModuleRow.IsActive`). `Module.create` gains an `isActive: bool` parameter (the disjointness invariant on Kinds is field-orthogonal; no smart-constructor logic changes). `Projection.Adapters.Sql.ReadSide` defaults the new field to `true` on all three levels — the deployed-schema readback has no V1 `Is_Active` axis, so structural existence = active.
+
+**The DECISIONS amendment is the load-bearing artifact.** `DECISIONS 2026-05-16 (slice β) — Retire OSSYS-adapter IsActive boundary filter; lift IsActive to IR (supersedes session-21)` supersedes the session-21 silent-drop disposition (codified under `DECISIONS 2026-05-15 — OSSYS adapter translation rules`, rule 18). The amendment cites:
+- **Pillar 9 (harvest-dichotomy classification)** — slice β is the first worked example at slice level. Session 21's filter-at-the-adapter mis-placed an `OperatorIntent of Selection` at the adapter boundary, which is restricted to `DataIntent` carriage. The source value is `DataIntent` evidence; any filter is `OperatorIntent`, deferred-with-trigger.
+- **The 2026-05-16 (later) audible** — V2 self-containment posture: this slice carries no carbon-copy event, no V1 `ProjectReference`, no `ADMIRE.md` row, no `BACKLOG.md` V1-inheritance-log row. The lift is an internal IR refinement.
+- **Named failure mode (pillar 9 — skeleton-overlay drift, silent-inclusion-at-harvest sub-mode):** the session-21 rationale "IR grows under evidence — no consumer demands the records' presence" rationalized a *silent drop* of operator intent. The honest disposition (carry as evidence + defer the filter pass; or refuse the operation + document) was not taken at the time.
+
+**Why Kind.IsActive is in scope (not just Module + Attribute as §6.0' / §3.3 of `V2_PRODUCTION_CUTOVER.md` originally scoped).** The chapter-A.0' open's axis 4 amendment names Kind explicitly. Without `Kind.IsActive`, the rowset-path `parseKindRow` and JSON-path `parseKind` filters would have remained as residual silent drops, leaving an asymmetry against the chapter's L3-Boundary-NoSilentDrop completion criterion (slice ι property test). The HANDOFF 2026-05-15 entry flagged this and recommended inclusion; slice β honors it.
+
+**Witnesses.** 9 new tests in `tests/Projection.Tests/IsActiveCarryThroughTests.fs` cover JSON-path + rowset-path × Module / Kind / Attribute × explicit-true / explicit-false / default-true (JSON only), plus cross-source parity. Three rowset-path tests in `OsmRowsetReaderTests.fs` rewrite the prior `SnapshotRowsets: inactive ... drop at the boundary` tests as `SnapshotRowsets: inactive ... carry through with IsActive=false (slice β)`. The slice-2 reference-chain test rewrites as `slice 2 / slice β: inactive source attribute carries through with its reference`. The JSON-path `differential: V1 mixed-active fixture filters inactive records at the boundary` test rewrites as `slice β: V1 mixed-active fixture carries IsActive through at all three levels` (expected catalog now contains all five V1 records — three active, two inactive — with `IsActive` populated from source).
+
+**Pillar 9 bookkeeping — DataIntent vs OperatorIntent for this slice.**
+- **DataIntent (skeleton-reachable, no operator opinion):** the new `IsActive` field on `Module` / `Kind` / `Attribute`. Reachable from `Project(catalog, Policy.empty, profile)` without operator opinion. Lands in the skeleton.
+- **OperatorIntent of Selection (deferred-with-trigger):** any Selection-axis pass that re-applies an inactive-records drop policy. No current consumer demands it. When a consumer surfaces, the pass lands per chapter-4.x slice scope.
+
+**Next-most-ready slice: A.0' slice γ — `Catalog.Triggers : Trigger list` + `Trigger` value type + adapter pickup.** Per `CHAPTER_A_0_PRIME_OPEN.md` slice plan (L3-S4 promotion: D → A). Dependencies satisfied (β just shipped). Medium risk — new top-level `Catalog` field. Or pivot to slice ε (DefaultValue + Computed + ColumnChecks; L3-S6 / L3-S7 / L3-S8 promotions) if the operator prefers an Attribute / Kind body expansion before a top-level `Catalog` addition. Both inherit the mechanical-edits precedent (Python-pass against FS0764 worklist; `IsActive = true` shape for slice β maps to `Triggers = []` shape for slice γ, etc.).
+
+**Alternative starts (per the 2026-05-15 HANDOFF entry below).** Slice ι (IsExternal / Origin mapping audit; small property-test-only slice; pairs with the chapter-close L3-Boundary-NoSilentDrop scaffolding) is also unblocked. Useful chapter-mid hygiene.
+
+**The A.4.7-prelude small slice** (`LineageEvent.Classification` field) per the 2026-05-15 (late) entry below remains deferred-with-trigger: lands during or just after A.0' close. Slice β does not need it — the pillar-9 classification of slice β is documented in the DECISIONS amendment's text, not in a `LineageEvent.Classification` field.
+
+**Outstanding (operator-side; unchanged from the 2026-05-15 entry below):**
+- R1 — operator's "document of key evolutions" still pending. Hold UAT-users decisions until it lands.
+- Q2 / Q3 / Q4 / Q7 unchanged.
 
 ## 2026-05-16 (audible) — Bridge wave retired; V2 self-containment + carbon-copy editorial inheritance codified
 

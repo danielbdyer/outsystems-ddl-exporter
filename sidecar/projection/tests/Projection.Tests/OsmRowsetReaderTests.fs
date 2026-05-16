@@ -127,21 +127,21 @@ let private expectedCatalogSynthesized : Catalog =
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true }
               { SsKey        = userEmailAttrKey
                 Name         = mkName "Email"
                 Type         = Text
                 Column       = { ColumnName = "EMAIL"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
           ]
           References = []
           Indexes    = []
-          Description = None }
+          Description = None; IsActive = true }
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ userKind ] } ] }
+          Kinds = [ userKind ]; IsActive = true } ] }
 
 [<Fact>]
 let ``SnapshotRowsets: bundle without SsKey Guids parses with synthesized-form SsKeys (JSON-path parity)`` () =
@@ -239,13 +239,19 @@ let ``A1 unbounded: rowset Catalog with Guid SsKeys mirrors JSON Catalog on ever
         Assert.Equal<PrimitiveType list>([ Integer; Text ], attrTypes)
 
 // ---------------------------------------------------------------------------
-// Inactive-records filter parity with the JSON path (session 21).
-// Modules / kinds / attributes with `IsActive=false` drop at the
-// boundary identically across paths.
+// IsActive carries through; the boundary filter retires (slice β).
+//
+// Chapter A.0' slice β retires the session-21 inactive-records filter.
+// Modules / kinds / attributes with `IsActive=false` now survive into
+// the V2 IR carrying their lifecycle flag; downstream emitters decide
+// whether to suppress them. The earlier "drop at the boundary" tests
+// are reworked as carry-through tests. Pillar-9 harvest analysis: the
+// filter was `OperatorIntent`, mis-placed at the adapter; the lift
+// reclassifies the source value as `DataIntent` evidence.
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``SnapshotRowsets: inactive modules drop at the boundary (session 21 parity)`` () =
+let ``SnapshotRowsets: inactive modules carry through with IsActive=false (slice β)`` () =
     let inactive = { moduleRow None with EspaceId = 2; EspaceName = "Inactive"; IsActive = false }
     let inactiveKind = { userKindRow None with EntityId = 21; EspaceId = 2; EntityName = "InactiveUser" }
     let bundle : CatalogReader.RowsetBundle =
@@ -258,12 +264,13 @@ let ``SnapshotRowsets: inactive modules drop at the boundary (session 21 parity)
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
     | Ok actual ->
-        // Only the active module survives.
-        Assert.Equal (1, List.length actual.Modules)
-        Assert.Equal<Name>(mkName "AppCore", actual.Modules.[0].Name)
+        Assert.Equal (2, List.length actual.Modules)
+        let byName = actual.Modules |> List.map (fun m -> Name.value m.Name, m.IsActive)
+        Assert.Contains(("AppCore", true), byName)
+        Assert.Contains(("Inactive", false), byName)
 
 [<Fact>]
-let ``SnapshotRowsets: inactive kinds drop at the boundary`` () =
+let ``SnapshotRowsets: inactive kinds carry through with IsActive=false (slice β)`` () =
     let inactiveKind =
         { userKindRow None with EntityId = 12; EntityName = "Archived"; IsActive = false }
     let bundle : CatalogReader.RowsetBundle =
@@ -276,12 +283,14 @@ let ``SnapshotRowsets: inactive kinds drop at the boundary`` () =
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
     | Ok actual ->
-        // Only the active kind survives within the module.
-        Assert.Equal (1, List.length actual.Modules.[0].Kinds)
-        Assert.Equal<Name>(mkName "User", actual.Modules.[0].Kinds.[0].Name)
+        let kinds = actual.Modules.[0].Kinds
+        Assert.Equal (2, List.length kinds)
+        let byName = kinds |> List.map (fun k -> Name.value k.Name, k.IsActive)
+        Assert.Contains(("User", true), byName)
+        Assert.Contains(("Archived", false), byName)
 
 [<Fact>]
-let ``SnapshotRowsets: inactive attributes drop at the boundary`` () =
+let ``SnapshotRowsets: inactive attributes carry through with IsActive=false (slice β)`` () =
     let inactiveAttr = { emailAttrRow None with AttrId = 113; AttrName = "Deleted"; IsActive = false }
     let bundle : CatalogReader.RowsetBundle =
         {
@@ -293,7 +302,12 @@ let ``SnapshotRowsets: inactive attributes drop at the boundary`` () =
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
     | Ok actual ->
-        Assert.Equal (2, List.length actual.Modules.[0].Kinds.[0].Attributes)
+        let attrs = actual.Modules.[0].Kinds.[0].Attributes
+        Assert.Equal (3, List.length attrs)
+        let byName = attrs |> List.map (fun a -> Name.value a.Name, a.IsActive)
+        Assert.Contains(("Id", true), byName)
+        Assert.Contains(("Email", true), byName)
+        Assert.Contains(("Deleted", false), byName)
 
 // ---------------------------------------------------------------------------
 // Closed-DU expansion empirical-test (DECISIONS 2026-05-13).
@@ -482,7 +496,11 @@ let ``slice 2: unmapped DeleteRuleCode surfaces as a translation error`` () =
         Assert.Contains("adapter.osm.unmappedDeleteRule", codes)
 
 [<Fact>]
-let ``slice 2: inactive source attribute drops its reference at the boundary`` () =
+let ``slice 2 / slice β: inactive source attribute carries through with its reference`` () =
+    // Chapter A.0' slice β — the session-21 filter retires. The
+    // inactive `AccountId` attribute now survives into the IR with
+    // `IsActive=false`, and its reference is carried alongside.
+    // Downstream emitters decide whether to suppress emission.
     let bundle =
         { referenceBundle with
             Attributes =
@@ -493,10 +511,11 @@ let ``slice 2: inactive source attribute drops its reference at the boundary`` (
     | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
     | Ok actual ->
         let user = actual.Modules.[0].Kinds |> List.find (fun k -> k.Name = mkName "User")
-        Assert.Empty user.References
-        // AccountId attribute itself is also dropped — parity with the
-        // session-21 inactive-attribute filter.
-        Assert.Equal (1, List.length user.Attributes)
+        Assert.Equal (2, List.length user.Attributes)
+        let accountIdAttr =
+            user.Attributes |> List.find (fun a -> Name.value a.Name = "AccountId")
+        Assert.False accountIdAttr.IsActive
+        Assert.Equal (1, List.length user.References)
 
 [<Fact>]
 let ``slice 2: Reference SsKey is always synthesized (rowsets carry no per-reference Guid)`` () =

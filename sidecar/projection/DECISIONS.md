@@ -11357,3 +11357,56 @@ The audible is a corrective, not a regression. The Bridge wave produced ~3,800 l
 The audible is the corrective; the rest of V2's culture is preserved. V1 disappears from memory into V2 via carbon-copy + editorial inheritance; the C#/F# partition stays based on language idiom; V2 is self-contained; cherry-pick safety holds by construction.
 
 ---
+
+## 2026-05-16 (slice β) — Retire OSSYS-adapter IsActive boundary filter; lift IsActive to IR (supersedes session-21)
+
+**Status:** decided. Slice β of chapter A.0' (IR fidelity lifts). Supersedes the session-21 inactive-records boundary-filter disposition codified under `DECISIONS 2026-05-15 — OSSYS adapter translation rules` (rule 18). Pillar-9 worked example: the first slice operative under the harvest-dichotomy classification codified at `DECISIONS 2026-05-15 (late)`.
+
+**Context.** Session-21 disposed the V1 `isActive` flag at module / entity / attribute level via a **filter-at-the-adapter-boundary**: `module.isActive: false`, `entity.isActive: false`, and `attribute.isActive: false` were silently dropped at the JSON path and (later, slice 1 of chapter 3.2) at the rowset path. The disposition's stated rationale was "IR grows under evidence — no current consumer demands the inactive records' presence in V2's IR"; the bound named a future Diagnostics-attached audit when the adapter's return shape grew to support it.
+
+Chapter A.0' opened with a strategic-frame axis (axis 4 of `CHAPTER_A_0_PRIME_OPEN.md`) explicitly naming `IsActive` as a **semantic shift** requiring a DECISIONS amendment, gated on operator alignment. The 2026-05-15 (late) pillar-9 codification then identified slice β as the **first worked example** of harvest-dichotomy classification at slice level: filtering on a lifecycle flag is `OperatorIntent of Selection`, not `DataIntent` — the disposition mis-placed an operator-intent transformation at the adapter boundary, which is restricted to `DataIntent` carriage.
+
+**Decision.** Retire the inactive-records boundary filter on both translation paths. Lift `IsActive : bool` as a new field on `Module`, `Kind`, and `Attribute`. The V1 source value (or its default-true coercion via `isActiveOrDefault` for the JSON path; the `IsActive` rowset DTO column for the rowset path) is carried into the IR. Downstream emitters decide whether to suppress inactive records at emission time; no Selection-axis filter ships with slice β (deferred-with-trigger per IR-grows-under-evidence).
+
+**Operative changes.**
+
+1. **`Projection.Core.Catalog.Attribute`** — gains `IsActive : bool` (file-level docstring names the source provenance, the pillar-9 classification, the slice-β rationale).
+2. **`Projection.Core.Catalog.Kind`** — gains `IsActive : bool` (sibling to `Attribute.IsActive`; same operational semantics).
+3. **`Projection.Core.Catalog.Module`** — gains `IsActive : bool`. Note: §6.0' / §3.3 of `V2_PRODUCTION_CUTOVER.md` omitted Kind from the slice-β scope as written; the chapter A.0' open's strategic-frame axis 4 amendment names Kind explicitly per the HANDOFF (2026-05-15 entry) — without it the rowset-path `parseKindRow` and JSON-path `parseKind` filters would have remained as residual silent drops, leaving an asymmetry against the chapter's L3-Boundary-NoSilentDrop completion criterion.
+4. **`Projection.Core.Catalog.Module.create`** — gains an `isActive: bool` parameter. The disjointness invariant on `Kinds` is field-orthogonal to `IsActive`; no smart-constructor logic changes.
+5. **`Projection.Adapters.Osm.CatalogReader`** — six filter sites retire (JSON: `parseKind`'s attribute filter, `parseModule`'s entity filter; rowset: `parseKindRow`'s attribute filter, `parseModuleRow`'s entity filter, `parseRowsetBundle`'s module filter). The `isActiveOrDefault` helper is preserved; its role flips from "gate inclusion" to "populate IR field." `parseModule` (JSON path) gains a module-level `isActiveOrDefault` read (the JSON path did not previously filter at module level per Subagent #3's O2 finding; slice β adds the read for parity with the rowset path's `ModuleRow.IsActive`).
+6. **`Projection.Adapters.Sql.ReadSide`** — three `IsActive = true` defaults added to the deployed-schema readback path. ReadSide reads from `INFORMATION_SCHEMA` / `sys.*`; there is no V1 `Is_Active` axis at the SQL Server level. A column or table that exists in the deployed schema is structurally active.
+
+**Pillar-9 classification of the changes (for the discipline's bookkeeping):**
+
+- **DataIntent (skeleton-reachable, no operator opinion):** the `IsActive` field on `Module` / `Kind` / `Attribute`. The source value is empirical evidence about a record's lifecycle, carried through to the IR for downstream observation. Reachable from `Project(catalog, Policy.empty, profile)` without operator opinion. Lands in the skeleton.
+- **OperatorIntent of Selection (deferred-with-trigger):** any pass that re-applies an "active-records-only" emission policy. No current consumer demands the suppression behavior; the pre-slice-β implicit suppression at the adapter is reclassified as a *mis-placed* operator intent, not a load-bearing one. When (and if) a consumer surfaces it, the pass lands per chapter-4.x slice scope under the `Selection` OverlayAxis.
+
+**Named failure mode caught (pillar 9 — *skeleton-overlay drift, silent-inclusion-at-harvest sub-mode*).** Session 21's harvest decision treated the V1 source value (`isActive`) as a *filter signal* rather than as *evidence*. The filter was implemented as an adapter-internal disposition with no audit surface (the bound named a future Diagnostics-attached audit but no consumer existed). The harvest workflow's classification step (per pillar 9: "determine whose intent is expressed") would have caught the mis-placement — the operator's "drop inactive records from emission" is operator intent through the Selection axis, and at the time session 21 fired, V2 had no `Selection` OverlayAxis pass surface (Policy.Selection existed but no consumer). The honest disposition was either (a) carry the field as evidence and defer the filter pass, or (b) refuse the operation and document the gap. Session 21 silently chose neither; the IR-grows-under-evidence framing rationalized the silent drop.
+
+**Witnesses (slice β).**
+
+- **Carriage at all three levels, both paths:** `tests/Projection.Tests/IsActiveCarryThroughTests.fs` (9 tests) covers JSON-path and rowset-path × Module / Kind / Attribute × explicit-true / explicit-false / default-true (JSON only). One cross-source parity test confirms structural equivalence of the IR when both paths see structurally-equivalent V1 inputs.
+- **Mixed-active fixture carry-through:** `OsmCatalogReaderDifferentialTests.fs` rewrites the prior `differential: V1 mixed-active fixture filters inactive records at the boundary` test as `slice β: V1 mixed-active fixture carries IsActive through at all three levels`. The expected catalog grows from "active records only" to "all records with IsActive populated from source."
+- **Rowset-path carry-through:** `OsmRowsetReaderTests.fs` rewrites the three `SnapshotRowsets: inactive ... drop at the boundary` tests as `SnapshotRowsets: inactive ... carry through with IsActive=false (slice β)`, plus the slice-2 reference-chain test (`slice 2 / slice β: inactive source attribute carries through with its reference`).
+
+**Test baseline (this commit).** 1155 / 1155 passing (1146 prior + 9 new `IsActiveCarryThroughTests`); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint clean across 27 rules.
+
+**Tolerance retirements (forward signals; not load-bearing for slice β).** None this slice — `IsActive` was not a Tolerance entry. The carry-through is purely additive to the IR; emission behavior on `IsActive=false` records is each emitter's downstream concern (downstream emitters' current behavior is "emit regardless," which preserves the pre-slice-β observable behavior of the JSON path module level — which never filtered at that scope — and changes the entity / attribute level emission to include previously-dropped records).
+
+**A18 amended preserved.** No emitter consumes Policy in this slice. The IR's `IsActive` field is part of `Catalog` (DataIntent evidence); Π consumes `Catalog × Profile` per A18 amended. A Selection-axis pass that filters on `IsActive` would consume Policy and run BEFORE Π, preserving the A18-amended boundary.
+
+**V2 self-containment preserved.** Slice β is a pure-F# IR-extension + adapter retirement; no carbon-copy event, no V1 `ProjectReference`, no V1 assembly on the classpath. The `BACKLOG.md` V1 inheritance log stays empty.
+
+**Cross-references.**
+
+- The session-21 disposition: `DECISIONS 2026-05-15 — OSSYS adapter translation rules` (rule 18) — the silent-drop disposition this slice supersedes.
+- The pillar-9 codification: `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification (DataIntent vs OperatorIntent); registry as cross-cutting concern; canonical strongly-typed registry shape` — names slice β as the first worked example.
+- The V2 self-containment audible: `DECISIONS 2026-05-16 (later) — V2 self-containment + carbon-copy editorial inheritance (Bridge wave audible)` — confirms this slice carries no carbon-copy event.
+- The chapter open: `CHAPTER_A_0_PRIME_OPEN.md` strategic-frame axis 4 (semantic shift) + slice-β row.
+- The IR home: `Projection.Core.Catalog.Attribute.IsActive`, `Kind.IsActive`, `Module.IsActive`.
+- The adapter retirement sites: `Projection.Adapters.Osm.CatalogReader` — `parseAttribute`, `parseKind`, `parseModule` (JSON path); `parseAttributeRow`, `parseKindRow`, `parseModuleRow`, `parseRowsetBundle` (rowset path).
+- The witnesses: `tests/Projection.Tests/IsActiveCarryThroughTests.fs`; reworked tests in `OsmRowsetReaderTests.fs` and `OsmCatalogReaderDifferentialTests.fs`.
+- The L3 promotion: L3-S9's `IsActive` sub-axiom advances D → A under chapter A.0''s per-axiom delivery matrix. The full L3-S9 promotion lands with chapter ζ (ExtendedProperties).
+
+---

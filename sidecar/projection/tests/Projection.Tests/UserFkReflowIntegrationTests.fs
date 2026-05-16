@@ -69,10 +69,10 @@ let private mkOrderKind () : Kind =
             [
                 { SsKey = idKey;        Name = mkName "Id";        Type = Integer
                   Column = { ColumnName = "ID";        IsNullable = false }
-                  IsPrimaryKey = true;  IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = true;  IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
                 { SsKey = createdByKey; Name = mkName "CreatedBy"; Type = Integer
                   Column = { ColumnName = "CREATEDBY"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
             ]
         References =
             [ { SsKey           = createdByRefKey
@@ -83,13 +83,13 @@ let private mkOrderKind () : Kind =
                 IsUserFk        = true } ]  // slice ζ User-FK marker
         Indexes    = []
         Description = None
-    }
+; IsActive = true }
 
 let private mkCatalog (kinds: Kind list) : Catalog =
     let m : Module =
         { SsKey = mkKey ["TestModule"]
           Name  = mkName "TestModule"
-          Kinds = kinds }
+          Kinds = kinds; IsActive = true }
     { Modules = [ m ] }
 
 let private orderRowKey (id: int) : SsKey =
@@ -178,13 +178,13 @@ let ``Slice η: kind with no User-FK references passes through unrewritten`` () 
           Attributes =
               [ { SsKey = idKey;    Name = mkName "Id";    Type = Integer
                   Column = { ColumnName = "ID";    IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
                 { SsKey = labelKey; Name = mkName "Label"; Type = Text
                   Column = { ColumnName = "LABEL"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
           References = []  // no User-FK
           Indexes    = []
-          Description = None }
+          Description = None; IsActive = true }
     let catalog = mkCatalog [ country ]
     let migration =
         { Rows =

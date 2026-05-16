@@ -210,6 +210,20 @@ type Attribute = {
     /// Tolerance variant retires when both the IR carries AND the
     /// emitter emits).
     Description  : string option
+    /// V1 lifecycle flag carried from `ossys_EntityAttr.Is_Active`
+    /// (rowset path) or the `isActive` JSON property (JSON path).
+    /// V1's SQL coerces missing/null source values to `true` per
+    /// `outsystems_metadata_rowsets.sql:94, 116, 239`; the V2 adapter
+    /// mirrors that semantic (absent JSON → `true`). Chapter A.0'
+    /// slice β — IR fidelity lift (L3-S9 IsActive sub-axiom). The
+    /// pre-slice-β session-21 adapter-boundary filter dropped
+    /// `IsActive=false` attributes silently; slice β retires that
+    /// disposition per pillar-9 harvest-dichotomy (filtering is
+    /// `OperatorIntent`, mis-placed at the adapter which carries
+    /// only `DataIntent`). Carriage-only in this slice — any
+    /// Selection-axis filter pass that re-applies an inactive-records
+    /// drop policy lands when a consumer demands it.
+    IsActive     : bool
 }
 
 
@@ -288,15 +302,34 @@ type Kind = {
     /// descriptions sub-axiom). Sibling to `Attribute.Description`;
     /// same operational semantics (carriage-only at this slice).
     Description : string option
+    /// V1 lifecycle flag carried from `ossys_Entity.Is_Active`
+    /// (rowset path) or the entity-level `isActive` JSON property
+    /// (JSON path). Same default-true semantics as
+    /// `Attribute.IsActive`. Chapter A.0' slice β — IR fidelity
+    /// lift; retires the session-21 entity-level adapter-boundary
+    /// filter at `parseKind`. Sibling to `Module.IsActive` and
+    /// `Attribute.IsActive`; downstream emitters decide.
+    IsActive    : bool
 }
 
 
 /// A coproduct cell of the catalog (A11). Modules are disjoint by SsKey;
 /// the projection respects the decomposition (T2).
 type Module = {
-    SsKey : SsKey
-    Name  : Name
-    Kinds : Kind list
+    SsKey    : SsKey
+    Name     : Name
+    Kinds    : Kind list
+    /// V1 lifecycle flag carried from `ossys_Espace.Is_Active`
+    /// (rowset path; `ModuleRow.IsActive`) or the module-level
+    /// `isActive` JSON property (JSON path). Same default-true
+    /// semantics as `Kind.IsActive` / `Attribute.IsActive`.
+    /// Chapter A.0' slice β — IR fidelity lift; retires the
+    /// `parseRowsetBundle` module-level filter that previously
+    /// dropped `IsActive=false` modules silently. The JSON path's
+    /// `parseDocument` did not previously filter modules (Subagent
+    /// #3's O2 finding on `module.isActive: false`); slice β adds
+    /// JSON-path module-level read for parity.
+    IsActive : bool
 }
 
 
@@ -373,6 +406,7 @@ module Module =
         (ssKey: SsKey)
         (name: Name)
         (kinds: Kind list)
+        (isActive: bool)
         : Result<Module> =
         let duplicates =
             kinds
@@ -390,7 +424,11 @@ module Module =
                         k))
             |> Result.failure
         else
-            Result.success { SsKey = ssKey; Name = name; Kinds = kinds }
+            Result.success
+                { SsKey    = ssKey
+                  Name     = name
+                  Kinds    = kinds
+                  IsActive = isActive }
 
 
 [<RequireQualifiedAccess>]

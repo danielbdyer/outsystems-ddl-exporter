@@ -62,23 +62,23 @@ let private singleKindCatalog : Catalog =
               Type         = Integer
               Column       = { ColumnName = "ID"; IsNullable = false }
               IsPrimaryKey = true; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
             { SsKey        = widgetNameKey
               Name         = mkName "Name"
               Type         = Text
               Column       = { ColumnName = "NAME"; IsNullable = false }
               IsPrimaryKey = false; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
         ]
         References = []
         Indexes    = []
         Description = None
-    }
+; IsActive = true }
     let m : Module = {
         SsKey = modKey "Inventory"
         Name  = mkName "Inventory"
         Kinds = [ widget ]
-    }
+; IsActive = true }
     { Modules = [ m ] }
 
 // ---------------------------------------------------------------------------
@@ -231,19 +231,19 @@ let private indexedCatalog : Catalog =
             { SsKey = idKey; Name = mkName "Id"; Type = Integer
               Column = { ColumnName = "ID"; IsNullable = false }
               IsPrimaryKey = true; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
             { SsKey = codeKey; Name = mkName "Code"; Type = Text
               Column = { ColumnName = "CODE"; IsNullable = false }
               IsPrimaryKey = false; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
             { SsKey = regionKey; Name = mkName "Region"; Type = Text
               Column = { ColumnName = "REGION"; IsNullable = false }
               IsPrimaryKey = false; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
             { SsKey = labelKey; Name = mkName "Label"; Type = Text
               Column = { ColumnName = "LABEL"; IsNullable = true }
               IsPrimaryKey = false; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
         ]
         References = []
         Indexes = [
@@ -264,12 +264,12 @@ let private indexedCatalog : Catalog =
               IsUnique = false; IsPrimaryKey = false }
         ]
         Description = None
-    }
+; IsActive = true }
     let m : Module = {
         SsKey = modKey "Inventory"
         Name  = mkName "Inventory"
         Kinds = [ widget ]
-    }
+; IsActive = true }
     { Modules = [ m ] }
 
 [<Fact>]

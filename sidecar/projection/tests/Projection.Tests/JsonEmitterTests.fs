@@ -171,12 +171,12 @@ let ``string escaping handles double quotes and backslashes`` () =
         Attributes = []
         References = []
         Indexes    = []; Description = None
-    }
+; IsActive = true }
     let troubleModule : Module = {
         SsKey = modKey "Trouble"
         Name  = Name.create "M" |> Result.value
         Kinds = [ troubleKind ]
-    }
+; IsActive = true }
     let trouble : Catalog = { Modules = [ troubleModule ] }
     let output = JsonEmitter.emit trouble
     use _doc = System.Text.Json.JsonDocument.Parse output

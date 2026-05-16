@@ -372,10 +372,10 @@ let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Ki
       Attributes = [
           { SsKey = attrId; Name = mkName "Id"; Type = Integer
             Column = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
           { SsKey = attrFk; Name = mkName "Fk"; Type = Integer
             Column = { ColumnName = "FK"; IsNullable = false }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
       References = [
           { SsKey = mkKey fkKey
             Name = mkName "ToOther"
@@ -383,7 +383,7 @@ let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Ki
             TargetKind = targetKey
             OnDelete = NoAction
             IsUserFk = false } ]
-      Indexes = []; Description = None }
+      Indexes = []; Description = None; IsActive = true }
 
 [<Fact>]
 let ``Tarjan: two disjoint 2-cycles produce two SCCs`` () =
@@ -394,7 +394,7 @@ let ``Tarjan: two disjoint 2-cycles produce two SCCs`` () =
     let d = kindWithFk "D" "RefD" (mkKey "C")
     let twoCycles : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c; d ] } ] }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c; d ]; IsActive = true } ] }
     let result = TopologicalOrderPass.run twoCycles
     Assert.Equal(2, result.Value.Cycles.Length)
     // SCCs are sorted by smallest member; A-B comes before C-D.
@@ -427,10 +427,10 @@ let private kindWithRef
       Attributes = [
           { SsKey = attrId; Name = mkName "Id"; Type = Integer
             Column = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
           { SsKey = attrFk; Name = mkName "Fk"; Type = Integer
             Column = { ColumnName = "FK"; IsNullable = sourceAttrNullable }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
       References = [
           { SsKey = mkKey refKey
             Name = mkName "ToOther"
@@ -438,7 +438,7 @@ let private kindWithRef
             TargetKind = targetKey
             OnDelete = onDelete
             IsUserFk = false } ]
-      Indexes = []; Description = None }
+      Indexes = []; Description = None; IsActive = true }
 
 let private noRefKind (kindKey: string) : Kind =
     let attrId = mkKey (kindKey + "_Id")
@@ -450,8 +450,8 @@ let private noRefKind (kindKey: string) : Kind =
       Attributes = [
           { SsKey = attrId; Name = mkName "Id"; Type = Integer
             Column = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
-      References = []; Indexes = []; Description = None }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
+      References = []; Indexes = []; Description = None; IsActive = true }
 
 // ---------------------------------------------------------------------------
 // V1 contract: SortByForeignKeys_AutoDetectsAsymmetricAuditCycle.
@@ -484,7 +484,7 @@ let ``V1 contract: asymmetric-2-cycle auto-resolves via Weak edge`` () =
     let audit  = kindWithRef "Audit"  "AuditFkToParent" (mkKey "Parent") false NoAction // Other
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ] } ] }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true } ] }
     let result = TopologicalOrderPass.run cyclic
     // Resolver succeeds — Mode is Topological, not Alphabetical.
     Assert.Equal(Topological, result.Value.Mode)
@@ -509,7 +509,7 @@ let ``resolver: 2-cycle with no Weak edges remains unresolved`` () =
     let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") false NoAction
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ] } ] }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true } ] }
     let result = TopologicalOrderPass.run cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
@@ -524,7 +524,7 @@ let ``resolver: 2-cycle with two Weak edges remains unresolved`` () =
     let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") true NoAction
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ] } ] }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true } ] }
     let result = TopologicalOrderPass.run cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
@@ -538,7 +538,7 @@ let ``resolver: 3-cycle remains unresolved (current resolver handles 2-cycles on
     let c = kindWithRef "C" "CtoA" (mkKey "A") true NoAction
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c ] } ] }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c ]; IsActive = true } ] }
     let result = TopologicalOrderPass.run cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
@@ -554,7 +554,7 @@ let ``resolver: Cascade edges are never broken`` () =
     let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") false NoAction
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ] } ] }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true } ] }
     let result = TopologicalOrderPass.run cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
@@ -569,7 +569,7 @@ let ``resolver: resolved cycles still appear in Cycles for audit`` () =
     let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") true NoAction
     let cyclic : Catalog =
         { Modules = [
-            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ] } ] }
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true } ] }
     let result = TopologicalOrderPass.run cyclic
     Assert.Equal(Topological, result.Value.Mode)
     Assert.NotEmpty(result.Value.Cycles)

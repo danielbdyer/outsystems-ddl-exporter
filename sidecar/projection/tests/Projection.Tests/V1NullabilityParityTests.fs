@@ -60,18 +60,18 @@ let private buildCatalog (mandatoryColumnIsNullable: bool) (mandatoryColumnIsMan
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
               { SsKey        = mandatoryAttributeKey
                 Name         = mkName "Mandatory"
                 Type         = Text
                 Column       = { ColumnName = "MANDATORY"; IsNullable = mandatoryColumnIsNullable }
                 IsPrimaryKey = false
-                IsMandatory = mandatoryColumnIsMandatory; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
-          References = []; Indexes = []; Description = None }
+                IsMandatory = mandatoryColumnIsMandatory; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true } ]
+          References = []; Indexes = []; Description = None; IsActive = true }
     { Modules = [
         { SsKey = mkKey "OS_MOD_Sample"
           Name  = mkName "Sample"
-          Kinds = [ kind ] } ] }
+          Kinds = [ kind ]; IsActive = true } ] }
 
 let private buildProfile (rowCount: int64) (nullCount: int64) : Profile =
     let probe =

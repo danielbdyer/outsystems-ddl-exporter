@@ -145,9 +145,10 @@ module CatalogReader =
 
     /// V1 rowset 3 — `#Attr` attributes; chapter 3.2 slice 1. FK to
     /// `KindRow.EntityId`. `AttrSsKey` is the load-bearing addition
-    /// over the JSON path. Per session-21 inactive-records filter:
-    /// `IsActive=false` rows are dropped at the boundary (parity with
-    /// the JSON path at `parseKind`'s attribute filter).
+    /// over the JSON path. `IsActive` is carried into the V2 IR's
+    /// `Attribute.IsActive` field per chapter A.0' slice β (the
+    /// session-21 boundary filter was retired; this DTO field is now
+    /// the rowset-path provenance for the IR field).
     type AttributeRow =
         {
             AttrId       : int
@@ -361,11 +362,16 @@ module CatalogReader =
     /// property is treated as active=true; explicit `false` is
     /// inactive; explicit `true` is active.
     ///
-    /// Used by the inactive-records filter at the boundary
-    /// (`DECISIONS 2026-05-15 — OSSYS adapter translation rules`,
-    /// session-21 amendment): `entity.isActive: false` drops the
-    /// entity from the V2 Catalog; `attribute.isActive: false`
-    /// drops the attribute from its Kind's Attributes list.
+    /// Chapter A.0' slice β — the session-21 inactive-records
+    /// filter retired. This helper now populates the V2 IR's
+    /// `Module.IsActive` / `Kind.IsActive` / `Attribute.IsActive`
+    /// carriage fields instead of gating record inclusion. Per the
+    /// pillar-9 harvest-dichotomy classification: filtering on a
+    /// lifecycle flag is `OperatorIntent` (a Selection-axis choice),
+    /// mis-placed at the adapter boundary, which is restricted to
+    /// `DataIntent` carriage. Downstream emitters decide whether to
+    /// suppress inactive records; no Selection-axis pass ships with
+    /// slice β (deferred-with-trigger; IR-grows-under-evidence).
     let private isActiveOrDefault (element: JsonElement) : bool =
         match element.TryGetProperty("isActive") with
         | true, value when value.ValueKind = JsonValueKind.False -> false
@@ -540,7 +546,8 @@ module CatalogReader =
                       Precision    = precisionOpt
                       Scale        = scaleOpt
                       IsIdentity   = isIdentity
-                      Description  = description }
+                      Description  = description
+                      IsActive     = isActiveOrDefault attrJson }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 // Substantive causes (e.g., `adapter.osm.unmappedDataType`
@@ -838,17 +845,16 @@ module CatalogReader =
                 | Error _ -> None
             let kindKey   = kindSsKey moduleName entityName
             let kindName  = Name.create entityName
-            // Inactive-records filter (session 21): attributes with
-            // `isActive: false` are dropped at the boundary. The
-            // session-21 DECISIONS amendment captures the rule, the
-            // bound, and the silent-drop disposition pending the
-            // future adapter-return-shape extension to support
-            // Diagnostics-attached audit.
+            // Chapter A.0' slice β — the session-21 inactive-records
+            // filter retires. Inactive attributes are carried into
+            // `Kind.Attributes` with `Attribute.IsActive=false`; the
+            // adapter no longer drops them. Pillar-9 harvest analysis:
+            // a Selection-axis filter is `OperatorIntent`, not
+            // `DataIntent`; the adapter carries only `DataIntent`.
             let attrJsonList =
                 match entityJson.TryGetProperty("attributes") with
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
                     arr.EnumerateArray()
-                    |> Seq.filter isActiveOrDefault
                     |> Seq.toList
                 | _ -> []
             let attrsResults =
@@ -895,7 +901,8 @@ module CatalogReader =
                       Attributes  = attrs
                       References  = refs
                       Indexes     = idxs
-                      Description = description }
+                      Description = description
+                      IsActive    = isActiveOrDefault entityJson }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`
                 // (codified at two-consumer threshold; same surface as
@@ -933,16 +940,20 @@ module CatalogReader =
         | Ok rawName ->
             let modKey  = moduleSsKey rawName
             let modName = Name.create rawName
-            // Inactive-records filter (session 21): entities with
-            // `isActive: false` are dropped at the boundary. Same
-            // disposition as the attribute-level filter in
-            // parseKind. The DECISIONS amendment captures the
-            // rule.
+            // Chapter A.0' slice β — the session-21 entity-level
+            // filter retires. Inactive entities carry into
+            // `Module.Kinds` with `Kind.IsActive=false`; downstream
+            // emitters decide. Per Subagent #3's O2 finding the JSON
+            // path's `parseModule` did not previously filter on
+            // `module.isActive` (the filter only operated at entity
+            // and attribute levels); slice β adds module-level
+            // carriage via `isActiveOrDefault` so the IR's
+            // `Module.IsActive` field has authoritative provenance
+            // from both paths.
             let entitiesArr =
                 match moduleJson.TryGetProperty("entities") with
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
                     arr.EnumerateArray()
-                    |> Seq.filter isActiveOrDefault
                     |> Seq.toList
                     |> List.map (parseKind rawName)
                 | _ ->
@@ -955,7 +966,7 @@ module CatalogReader =
                 // smart constructor, not record-literal — invariants
                 // (kind-SsKey-disjoint within module) are checked
                 // structurally at the boundary, not deferred.
-                Module.create k n kinds
+                Module.create k n kinds (isActiveOrDefault moduleJson)
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 // Substantive causes survive the module-level wrap.
@@ -1071,7 +1082,8 @@ module CatalogReader =
                   Precision    = row.Precision
                   Scale        = row.Scale
                   IsIdentity   = row.IsAutoNumber
-                  Description  = row.Description }
+                  Description  = row.Description
+                  IsActive     = row.IsActive }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`.
             propagateOrFallback
@@ -1142,15 +1154,17 @@ module CatalogReader =
         : Result<Kind> =
         let kindKey  = kindSsKeyFromRow moduleName kindRow
         let kindName = Name.create kindRow.EntityName
-        // Inactive-records filter (session 21 carryover): drop
-        // attributes with `IsActive=false` at the boundary, parity
-        // with the JSON path. References on dropped attributes are
-        // implicitly dropped — the join below sees no surviving
-        // attribute paired with the reference row.
+        // Chapter A.0' slice β — the session-21 attribute-level
+        // filter retires on the rowset path (parity with the JSON
+        // path retirement). Inactive attributes are carried with
+        // `Attribute.IsActive=false`. References on inactive
+        // attributes are carried through the join below (an
+        // inactive attribute still has its reference rows; the
+        // adapter's adapter-boundary discipline restricts to
+        // `DataIntent` carriage).
         let attrRows =
             Map.tryFind kindRow.EntityId attributesByEntity
             |> Option.defaultValue []
-            |> List.filter (fun a -> a.IsActive)
         let attrResults =
             attrRows
             |> List.map (parseAttributeRow moduleName kindRow.EntityName)
@@ -1197,7 +1211,8 @@ module CatalogReader =
                   // Indexes deferred to a future slice (rowsets 10-11
                   // #AllIdx / #IdxColsMapped). Empty at slice 2.
                   Indexes     = []
-                  Description = kindRow.Description }
+                  Description = kindRow.Description
+                  IsActive    = kindRow.IsActive }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`
             // (codified at two-consumer threshold; same surface as
@@ -1224,13 +1239,13 @@ module CatalogReader =
         : Result<Module> =
         let modKey  = moduleSsKeyFromRow moduleRow
         let modName = Name.create moduleRow.EspaceName
-        // Inactive-records filter (session 21 carryover): drop
-        // entities with `IsActive=false` at the boundary, parity
-        // with parseModule's JSON-path entity filter.
+        // Chapter A.0' slice β — the session-21 entity-level filter
+        // retires on the rowset path (parity with the JSON path
+        // retirement). Inactive entities carry with
+        // `Kind.IsActive=false`.
         let kindRows =
             Map.tryFind moduleRow.EspaceId kindsByEspace
             |> Option.defaultValue []
-            |> List.filter (fun k -> k.IsActive)
         let kindResults =
             kindRows
             |> List.map (
@@ -1242,7 +1257,7 @@ module CatalogReader =
         let foldedKinds = Result.aggregate kindResults
         match modKey, modName, foldedKinds with
         | Ok k, Ok n, Ok kinds ->
-            Module.create k n kinds
+            Module.create k n kinds moduleRow.IsActive
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`.
             // Substantive causes survive the module-level wrap.
@@ -1279,12 +1294,10 @@ module CatalogReader =
             bundle.Kinds |> List.groupBy (fun k -> k.EspaceId) |> Map.ofList
         let referencesByAttr =
             bundle.References |> List.groupBy (fun r -> r.AttrId) |> Map.ofList
-        // Inactive-records filter at module level — parity with
-        // parseModule's session-21 isActive filter.
-        let activeModules =
-            bundle.Modules |> List.filter (fun m -> m.IsActive)
+        // Chapter A.0' slice β — the session-21 module-level filter
+        // retires. Inactive modules carry with `Module.IsActive=false`.
         let moduleResults =
-            activeModules
+            bundle.Modules
             |> List.map (parseModuleRow kindsByEspace attributesByEntity referencesByAttr)
         match Result.aggregate moduleResults with
         | Ok modules -> Catalog.create modules

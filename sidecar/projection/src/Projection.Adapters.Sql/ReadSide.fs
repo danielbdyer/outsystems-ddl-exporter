@@ -331,6 +331,15 @@ module ReadSide =
                             // properties pickup. Slice-α scope is OSSYS-
                             // adapter pickup only.
                             Description = None
+                            // Chapter A.0' slice β — ReadSide reads
+                            // deployed SQL Server schema; the source
+                            // has no V1 `Is_Active` axis (the column
+                            // exists in the deployed table, therefore
+                            // it is structurally active). `IsActive`
+                            // defaults to `true` on this path; the
+                            // OSSYS-adapter rowset path carries the
+                            // V1-source value.
+                            IsActive = true
                         }
 
     /// Format a SQL Server scalar value as the canonical raw
@@ -559,6 +568,8 @@ module ReadSide =
                     Indexes = []
                     // Chapter A.0' slice α — see buildAttribute rationale.
                     Description = None
+                    // Chapter A.0' slice β — see buildAttribute rationale.
+                    IsActive = true
                 }
         }
 
@@ -832,9 +843,14 @@ module ReadSide =
                                             Modules =
                                                 [
                                                     {
-                                                        SsKey = mKey
-                                                        Name = mName
-                                                        Kinds = kindsWithRows
+                                                        SsKey    = mKey
+                                                        Name     = mName
+                                                        Kinds    = kindsWithRows
+                                                        // Chapter A.0' slice β —
+                                                        // see buildAttribute rationale;
+                                                        // the deployed-schema readback
+                                                        // has no `Is_Active` axis.
+                                                        IsActive = true
                                                     }
                                                 ]
                                         }

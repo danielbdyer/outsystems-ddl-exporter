@@ -50,18 +50,18 @@ let private mkKind (name: string) : Kind =
             [
                 { SsKey = idKey; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
             ]
         References = []
         Indexes    = []
         Description = None
-    }
+; IsActive = true }
 
 let private mkCatalog (kinds: Kind list) : Catalog =
     let m : Module =
         { SsKey = mkKey ["TestModule"]
           Name  = mkName "TestModule"
-          Kinds = kinds }
+          Kinds = kinds; IsActive = true }
     { Modules = [ m ] }
 
 // ---------------------------------------------------------------------------

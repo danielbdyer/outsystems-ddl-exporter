@@ -63,25 +63,25 @@ let private cityKind : Kind =
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
           { SsKey        = cityNameKey
             Name         = mkName "Name"
             Type         = Text
             Column       = { ColumnName = "NAME"; IsNullable = false }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
           { SsKey        = cityActiveKey
             Name         = mkName "IsActive"
             Type         = Boolean
             Column       = { ColumnName = "ISACTIVE"; IsNullable = false }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
       ]
-      References = []; Indexes = []; Description = None }
+      References = []; Indexes = []; Description = None; IsActive = true }
 
 let private cityCatalog : Catalog =
     { Modules = [
         { SsKey = modKey "Cities"
           Name  = mkName "Cities"
-          Kinds = [ cityKind ] } ] }
+          Kinds = [ cityKind ]; IsActive = true } ] }
 
 let private extractCityRows (c: Catalog) : StaticRow list =
     Catalog.tryFindKind cityKey c

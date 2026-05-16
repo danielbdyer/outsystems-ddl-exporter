@@ -63,24 +63,24 @@ let private mkCountryKind () : Kind =
             [
                 { SsKey = idKey;    Name = mkName "Id";    Type = Integer
                   Column = { ColumnName = "ID";    IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
                 { SsKey = codeKey;  Name = mkName "Code";  Type = Text
                   Column = { ColumnName = "CODE";  IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
                 { SsKey = labelKey; Name = mkName "Label"; Type = Text
                   Column = { ColumnName = "LABEL"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
             ]
         References = []
         Indexes    = []
         Description = None
-    }
+; IsActive = true }
 
 let private mkCatalog (kinds: Kind list) : Catalog =
     let m : Module =
         { SsKey = mkKey ["TestModule"]
           Name  = mkName "TestModule"
-          Kinds = kinds }
+          Kinds = kinds; IsActive = true }
     { Modules = [ m ] }
 
 let private policyWith (composition: DataComposition) : Policy =
@@ -365,10 +365,10 @@ let ``Slice ι: composeRendered emits Phase-1 (MERGE) of every kind before Phase
                 [
                     { SsKey = idKey;     Name = mkName "Id";       Type = Integer
                       Column = { ColumnName = "ID";       IsNullable = false }
-                      IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                      IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
                     { SsKey = parentKey; Name = mkName "ParentId"; Type = Integer
                       Column = { ColumnName = "PARENTID"; IsNullable = true }
-                      IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                      IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true }
                 ]
             References =
                 [ { SsKey = refKey; Name = mkName "RefSelf"
@@ -376,7 +376,7 @@ let ``Slice ι: composeRendered emits Phase-1 (MERGE) of every kind before Phase
                     OnDelete = NoAction; IsUserFk = false } ]
             Indexes    = []
             Description = None
-        }
+; IsActive = true }
     let alpha = mkSelfCycleKind "Alpha" "OSUSR_ALPHA" "1"
     let beta = mkSelfCycleKind "Beta" "OSUSR_BETA" "1"
     let catalog = mkCatalog [ alpha; beta ]
