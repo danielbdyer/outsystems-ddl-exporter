@@ -1093,17 +1093,15 @@ Each L3 axiom in `PRODUCT_AXIOMS.md` mapped to the Phase + Workstream that deliv
 
 ## 13. Addenda (append-only)
 
-### 13.X — Bridge wave (2026-05-16; chapter 0.5)
+### 13.X — V2 self-containment + carbon-copy editorial inheritance (2026-05-16 audible)
 
-The V1↔V2 seam transitions from data boundary to inheritance phylogeny under V2-driver KPI pressure. Two new C# projects (`Projection.Bridge.Core` for V1→V2 lifts; `Projection.Bridge.Runtime` for V2→V1 capabilities during dual-track) make the inheritance machinery structural. Every public Bridge method carries `[BridgeMethod(Chapter, AddedDate, V1Source, Current, Target, Determinism, Frequency)]`; the four-position gradient (`Delegated` → `Vendored` → `RefinedInPlace` → `TranslatedToFSharp`) declares how the method has progressed from V1 antecedent toward V2 publication. The reflection-scanned `BridgeManifest` is the auditable witness; `Projection000BridgeWallDiscipline` analyzer enforces the eight wall rules structurally.
+V2 has zero runtime dependency on V1's trunk — no `ProjectReference`, no V1 assembly on V2's classpath, no Bridge wrapper layer. V1's role in V2 is editorial donor: V2 reads V1's source for inspiration, carbon-copies relevant files into V2's domain-structured locations, cites V1 via a file-header comment + an `ADMIRE.md` row, and refactors freely. The carbon-copy is a one-time editorial event recorded in `BACKLOG.md` § "V1 inheritance log"; subsequent V1 evolution is not automatically tracked.
 
-**R6 Stage 2 specification** (Bridge-enabled V2-augmented): V1 emits production; Bridge+V2 emit in parallel via the inheritance surface; disagreement blocks the PR via the Tolerance taxonomy. Stage 2 sits between Stage 1 (V2-augmented baseline; V1 emits, V2 verifies via canary) and Stage 3 (V2-driver; V2 emits, V1 stays warm for cutover+30). The Bridge wave is what makes Stage 2 operational.
+The F#/C# partition is by language idiom, not by V1/V2 lineage. Pure F# core; F# adapters wrap external libraries (`Microsoft.Data.SqlClient`, `ScriptDom`, etc.); a small, focused, museum-polish C# layer exists only where the gold-standard library is irreducibly C#-idiomatic (SMO, DacFx if pursued). New C# adapter projects (e.g., `Projection.Adapters.OssysSql`) land in `sidecar/projection/src/` per chapter as the consuming chapter opens.
 
-**Cutover+30 sunset gate.** The `BridgeManifestSunsetGateTest` is the structural witness that the workshop is empty: every Bridge method's `Current` equals its `Target`, the ProjectReference to `Osm.*` trunk assemblies is gone from `Projection.Bridge.Core.csproj`, and V1's trunk is empty of code V2 still depends on. Sunset is the moment V1 is empty because V2 has finished editing — a condition that holds when the work is done, not a deadline event.
+Cherry-pick discipline holds by construction. R6 governance is unchanged (V1 production write path during Stage 1 V2-augmented; gated transition to Stage 2 V2-driver via N=10 canary + operator sign-off). V1 stays warm through cutover+30. V1 sunset begins administratively when V2 has run V2 emissions in every environment for one full schema-evolution cycle and the operator authorizes.
 
-**ADMIRE re-classification corrections.** Per the chapter-0.5 close: `NullabilityEvaluator` and `ForeignKeyEvaluator` revert to PURE PASS in F#; `UniqueIndexEvidenceAggregator` SPLIT confirmed; `EntityDependencySorter` harmonized via `TopologicalOrderPass.SelfLoopPolicy`; OSSYS catalog producer Bridge-lifted at `Delegated → Vendored` (chapter 0.5 slice ε) → `RefinedInPlace` (later chapter).
-
-**Cross-references.** `DECISIONS 2026-05-16 — Bridge wave: V2 inherits from V1`; `CHAPTER_0_5_OPEN.md`; `README.md` § "V2 inherits from V1"; `CLAUDE.md` operating-disciplines table (Bridge inheritance row) + load-bearing commitments; `AXIOMS.md` A41 candidate (Bridge clause) + A42 candidate (inheritance citation discipline); `V2_DRIVER.md` chapter sequencing (Phase 0.5 added as prerequisite to Phases 3/4/5).
+**Cross-references.** `DECISIONS 2026-05-16 (later) — V2 self-containment + carbon-copy editorial inheritance`; `BACKLOG.md` § "V1 inheritance log"; `ADMIRE.md` (per-V1-component records); `CLAUDE.md` operating-disciplines table.
 
 ### 13.1 (placeholder) Audit slot for operator's "document of key evolutions"
 

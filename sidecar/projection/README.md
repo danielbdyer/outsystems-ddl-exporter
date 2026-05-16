@@ -24,97 +24,62 @@ framing has been superseded). Adapters return F# value types the core
 consumes. The two-language partition is no longer the algebra/I-O seam;
 the seam is structural — `Projection.Core` has zero I/O, adapters do.
 
-## V2 inherits from V1
+## V2 is self-contained; V1 is editorial donor
 
-The V1↔V2 seam is **phylogeny, not negotiation**. V2 descends from V1
-by adopting selected traits and refining them in its own genome. There
-is no wall between two peer systems; there is a one-way arrow from a
-sunsetting donor to a successor that absorbs what is worth keeping and
-publishes the result under its own imprint. The relationship is
-editorial.
+V2 has **zero runtime dependency on V1's trunk**. No `ProjectReference`,
+no V1 assembly on V2's classpath, no wrapper layer between V2 and V1.
+V2's source tree is self-consistent; every commit is cherry-pickable
+into a V1-only trunk by construction.
 
-Through chapters 1 through 4.1.A, V2's relationship with V1 was a *data
-boundary* — V1 emitted `osm_model.json`; V2 read. That was correct for
-a stage of work where decoupling was the load-bearing virtue. Under
-V2-driver KPI, with V1 sunset committed at cutover+30, the data
-boundary's job is done. The next stage is *inheritance*: V2 absorbs
-V1's working logic — ~22K LOC of metadata extraction, profile query
-building, SMO emission, DMM compare, user matching, etc. — and refines
-it forward. The data boundary loses BCL semantics (Guid round-trips
-through strings; ordering implicit; typed nulls flatten) and is
-asymmetric (V1 cannot consume V2 outputs without a wire format both
-sides understand). The inheritance seam preserves BCL semantics
-exactly, makes the audit trail structural, and is naturally
-bidirectional.
+V1's relationship to V2 is **editorial**, not structural. V2 reads V1's
+source for inspiration and reference, decides what's worth keeping, and
+**carbon-copies** the relevant source files into V2's domain-structured
+locations. Once a file lands in V2, it is V2's: refactor freely, rename
+to V2 vocabulary, restructure to fit V2's idioms. The carbon-copy is
+the absorption; from that moment on, V1's evolution and V2's evolution
+of the same code diverge at their owners' chosen rhythms.
 
-The machinery is two C# projects under `sidecar/projection/src/`:
+**Where carbon-copies land** is V2's domain partition, not V1's source
+area. If a V1 capability is algebraic, the carbon-copy lands in an
+existing F# project (`Projection.Adapters.Osm`, `Projection.Core`,
+etc.). If a V1 capability is irreducibly C#-idiomatic — built on
+top of `Microsoft.SqlServer.Management.Smo`, `Microsoft.SqlServer.Dac`,
+`Microsoft.SqlServer.TransactSql.ScriptDom`, etc. — V2 admits a new
+**focused C# adapter project** with **museum-polish** code quality
+(e.g., `Projection.Adapters.OssysSql` for SQL extraction if pursued).
+The pure F# core remains pure; the C# layer is small, deliberate, and
+named for the capability it adapts, not for V1.
 
-- **`Projection.Bridge.Core`** — ProjectReferences V1's six trunk
-  assemblies (`Osm.Domain`, `Osm.Json`, `Osm.Validation`, `Osm.Smo`,
-  `Osm.Dmm`, `Osm.Pipeline`) and V2's `Projection.Core`. Exposes V1
-  *operations* as BCL-typed, V2-vocabulary, capability-shaped methods
-  that F# adapters consume to inherit V1 capabilities. The V1→V2 lift
-  surface.
-- **`Projection.Bridge.Runtime`** — ProjectReferences `Bridge.Core`,
-  `Projection.Core`, and `Projection.Pipeline`. Exposes V2 capabilities
-  (typed `Statement` rendering, `TopologicalOrderPass`, flattened
-  `Lineage<T>` and `Diagnostics<T>`) as BCL-typed records that V1's
-  existing emitters can consume during dual-track. The V2→V1
-  inheritance surface; sunsets when V1 retires.
+**The carbon-copy may land verbatim** (V1 names initially preserved
+for review against V1's source; renamed to V2 vocabulary in a
+follow-up commit), **or refactored at copy-time** (the file lands
+already wearing V2 names and V2 idioms). The choice is pragmatic per
+file. Either way, the final state of the file is V2 code, indistinguishable
+from code V2 authored from scratch, except that a single **file-header
+comment** cites the V1 source for tethering and inspiration:
 
-**The discipline is lift verbs, not nouns.** V1's domain types stop at
-the wall. The Wire records crossing the wall use V2 vocabulary — `Kind`
-not `Entity`, `Module` not `Espace`, `Attribute` not `Attr`. V1's
-`OsmModel` aggregate root does not survive into V2 by name; F#
-reconstructs the V2 vocabulary from the verb outputs. A C# Roslyn
-analyzer (`Projection000BridgeWallDiscipline`) enforces the eight wall
-rules structurally; mistakes do not compile.
+```fsharp
+// Carbon-copied 2026-MM-DD from V1's `src/Osm.Pipeline/.../<File>.cs`
+// at the V1 head V2 inherited from. Refactored for V2 vocabulary
+// and idioms. See ADMIRE.md entry for the editorial trail.
+```
 
-**Adoption is a continuous gradient, not a phased calendar.** Every
-public Bridge method declares both its current state and its target
-state on the four-position gradient:
+The header comment is one-time and never maintained. It is a citation,
+not a synchronization mechanism. The corresponding entry in
+`ADMIRE.md` carries the audit trail.
 
-| State | What it means |
-|---|---|
-| `Delegated` | Bridge method calls V1's class via ProjectReference. V1's source remains in the trunk. Entry point for every newly-introduced lift. |
-| `Vendored` | V1's source has been copied into `Bridge.Core/Adopted/` and the Bridge method calls the local copy. V2 has taken custody. |
-| `RefinedInPlace` | The adopted source has been edited. V1's mental-model traps (string-everywhere config, exception-driven control flow, mutation-as-default) have been replaced with V2 idioms. Code remains C#. |
-| `TranslatedToFSharp` | The refined C# has been ported to F#; the Bridge method removed; V2's F# adapter calls the F# directly. Not every method targets this state — some are correct at `RefinedInPlace` indefinitely. |
+**V1 from V2's perspective is frozen in time** at the V1 head V2 saw
+when it inherited. V1's actual ongoing evolution in V1's trunk is V1's
+concern alone; V2 aims for parity with the V1 version V2 carbon-copied
+from. Subsequent V1 evolution is not automatically tracked; if a V1
+fix or feature surfaces that V2 wants, V2 may carbon-copy again (or
+edit the existing V2 file deliberately), recording the additional
+inheritance event in ADMIRE. The cadence is editorial, not mechanical.
 
-Progression happens chapter-by-chapter as capabilities benefit. A
-chapter does not close until its Bridge methods have reached the target
-state they declared. At cutover+30 the `BridgeManifestSunsetGateTest`
-asserts every method's `Current` equals its `Target` — sunset is the
-moment the workshop is empty, not a deadline event.
-
-**The audit metadata is the manuscript history.** Every public Bridge
-method carries `[BridgeMethod(Chapter, AddedDate, V1Source, Current,
-Target, Determinism, Frequency)]`. The seven fields are the citation
-apparatus: what V1 source the verb descends from, which V2 chapter
-demanded the lift, where the method sits on the gradient, whether its
-output is byte-deterministic, what marshaling-cost class it occupies.
-The reflection-scanned `BridgeManifest` aggregates these citations as
-an auditable artifact; the `Projection.Bridge.Tests.BridgeManifestTests`
-asserts the manifest is well-formed at every test run.
-
-**The cherry-pick discipline is restated, not weakened.** The discipline
-was about *"V1 mental model does not enter F# code."* The Bridge wall
-enforces this with types where before it was enforced with absence —
-the analyzer rejects any signature that would let a V1 domain type
-cross. Cherry-pick safety holds outside the `Projection.Bridge.*`
-namespaces; Bridge is the inheritance surface where V1 contributes to
-V2 under the gradient.
-
-See `CHAPTER_0_5_OPEN.md` for the seven-slice bring-up arc;
-`DECISIONS 2026-05-16 — Bridge wave: V2 inherits from V1` for the
-codifying entry; `AXIOMS.md` A41 candidate (Bridge clause) and A42
-candidate (inheritance citation discipline) for the formal commitments;
-and **`CSHARP_FSHARP_MANIFESTO.md`** for the canonical, full-length
-statement of the C#/F# architecture (the slowest-rhythm strategic
-surface; ~2,300 lines covering the shape of the seam, the four-state
-inheritance gradient, the eight wall rules, the audit attribute as
-manuscript history, the cutover+30 sunset, and the philosophical
-stakes).
+See `BACKLOG.md` § "V1 inheritance log" for the operational ledger of
+carbon-copy events; `ADMIRE.md` for the per-V1-component records;
+`DECISIONS 2026-05-16 (later) — V2 self-containment + carbon-copy
+editorial inheritance` for the codifying entry.
 
 ## Layout
 

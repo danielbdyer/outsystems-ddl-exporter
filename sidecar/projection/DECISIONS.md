@@ -11249,7 +11249,6 @@ The chapter sequencing under V2-driver KPI is preserved. Chapter 0.5 is the prer
 
 **Cross-references.**
 
-- `CSHARP_FSHARP_MANIFESTO.md` — the canonical, full-length statement of the C#/F# architecture and the V1→V2 inheritance surface. ~2,300 lines across twenty-four sections; the slowest-rhythm strategic surface. Articulates the shape of the seam (phylogeny vs wall); pollination not extraction (V1 is not hobbled; V1 stays alive in production through cutover+30); the two-language partition; the four-state inheritance gradient; the audit attribute as manuscript history; the eight wall rules; lift verbs not nouns; what V2 explicitly does not inherit; the equivalence witness; axiomatic alignment; the R6 Stage-2 specification; the cherry-pick discipline restated; the cutover+30 sunset; worked examples and counter-examples; and the philosophical stakes. Cite by section number in future DECISIONS amendments that touch the language partition or the V1↔V2 seam.
 - `CHAPTER_0_5_OPEN.md` (this chapter's open document — seven slices α–η).
 - `README.md` § "V2 inherits from V1" (the prose framing of the shape).
 - `CLAUDE.md` Operating disciplines table — new row for the Bridge inheritance discipline (sibling to pillar 9 + the four meta-disciplines).
@@ -11263,5 +11262,98 @@ The chapter sequencing under V2-driver KPI is preserved. Chapter 0.5 is the prer
 - `2026-05-13 — Anticipation vs. speculation in abstraction extraction` (the discipline that justifies Bridge's evidence-driven scope — only `InvokeV2TopologicalOrderAsync` ships with demonstrated consumer; the other three V2-for-V1 candidates defer).
 
 The Bridge wave is V2's culture taken seriously at the V1 seam. The seams are part of the garment.
+
+**SUPERSEDED 2026-05-16 (later) — see the audible entry below.** The Bridge wave's structural commitments (two C# Bridge projects, `[BridgeMethod]` audit attribute, four-state gradient, wall analyzer, V2-for-V1 surface) were withdrawn at operator direction. The same-day audible entry codifies the replacement framing: V2 self-containment + carbon-copy editorial inheritance. The Bridge wave entry is preserved as historical record of the rejected direction; the same-day audible is the operative codification.
+
+---
+
+## 2026-05-16 (later) — V2 self-containment + carbon-copy editorial inheritance (Bridge wave audible)
+
+**Status:** decided. Supersedes the earlier same-day Bridge wave entry. The Bridge wave's structural commitments (two C# Bridge projects, `[BridgeMethod]` audit attribute, four-state inheritance gradient, wall analyzer, V2-for-V1 surface, ~2,300-line manifesto) are withdrawn; the operative framing is V2 self-containment with V1 as editorial donor.
+
+**Context.** The same-day Bridge wave codification introduced `Projection.Bridge.Core` and `Projection.Bridge.Runtime` as structural elements of V2 that ProjectReferenced V1's trunk assemblies and exposed V1 operations as BCL-typed capability methods under a four-state inheritance gradient. The framing made V1 a load-bearing concept in V2's vocabulary (the `[BridgeMethod].V1Source` attribute, the gradient transitions, the cutover+30 sunset gate) and introduced compile-time machinery (the wall analyzer, the manifest reflection harness) to enforce the inheritance discipline.
+
+The operator directed an audible. The Bridge construct was rejected on three grounds:
+
+1. **V1 should disappear from memory into V2.** The Bridge framing made V1 a structural element of V2 — present in csproj references, in compile-time attributes, in directory names (`Bridge.Core`, `Adopted/`), in the runtime classpath. The operator's intent is for V1 to be a *reference point* for V2's functional inspiration, not a structural element of V2's runtime. V2 should be self-contained; V1 should be invisible at V2's runtime.
+
+2. **The F#/C# partition should be by language idiom, not by V1/V2 lineage.** The earlier F#/C# philosophical boundary — F# for the algebraic core, F# adapters at the boundary, a focused C# layer where the gold-standard library is irreducibly C#-idiomatic — is the durable principle. The Bridge framing introduced a third partition axis (V1 vs V2) that was not part of the original commitment.
+
+3. **The Bridge construct was not the user's goal.** The user's stated goal is *"a clear reference point to the functionality already created so we are tethered and inspired to even greater heights and refactors at the same time."* The Bridge wave optimized for expediting progress via delegation-to-V1; the audible optimizes for tethering via editorial inheritance. The two are different orientations toward V1, and the latter is what the user wants.
+
+**Decision.** Withdraw the Bridge wave's structural commitments. Codify the V2 self-containment + carbon-copy editorial inheritance discipline as the operative framing.
+
+**Operative discipline (the "audible philosophy"):**
+
+1. **V2 is fully self-contained.** V2 takes no `ProjectReference` to V1's trunk csprojs. V1's compiled assemblies are never on V2's classpath at any point. V2's source tree is self-consistent; every commit is cherry-pickable into a V1-only trunk by construction.
+
+2. **V1 is editorial donor, not structural element.** V1's role in V2 is to be a manuscript V2 reads for inspiration. When V2 wants a V1 capability, V2 reads V1's source, decides what's worth keeping, and **carbon-copies** the relevant V1 source files into V2's domain-structured locations.
+
+3. **Carbon-copies land in V2's domain partition, not in a Bridge namespace.** If a V1 capability is algebraic, the carbon-copy lands in an existing F# adapter project (e.g., `Projection.Adapters.Osm`). If a V1 capability is irreducibly C#-idiomatic — built on top of `Microsoft.SqlServer.Management.Smo`, `Microsoft.SqlServer.Dac`, `Microsoft.SqlServer.TransactSql.ScriptDom` — V2 admits a new **focused C# adapter project** with **museum-polish** code quality (e.g., `Projection.Adapters.OssysSql` for SQL extraction; `Projection.Adapters.Dac` for DacFx). The C# layer is small, deliberate, named for the capability it adapts, not for V1.
+
+4. **Carbon-copies may land verbatim or refactored.** Pragmatic per file. A small refactor at copy-time keeps the operation atomic; a large refactor may land as a verbatim copy first (for review against V1's source) and a follow-up commit that renames + restructures. Either way, the final state of the file is V2 code, indistinguishable from code V2 authored from scratch.
+
+5. **V2 vocabulary applies in the end-state.** Files copied verbatim are renamed to V2 vocabulary in a follow-up commit. Files refactored at copy-time arrive already wearing V2 names. No file in V2's tree retains V1 vocabulary as its final state.
+
+6. **The audit trail is a file-header citation comment + an ADMIRE row.** Each carbon-copied file carries a one-time file-header comment naming the V1 source path and the date inherited. The comment is never maintained — it is a citation, not a synchronization mechanism. The corresponding `ADMIRE.md` entry carries the editorial trail for cross-component context.
+
+7. **V1 from V2's perspective is frozen in time** at the V1 head V2 saw when it carbon-copied. V1's actual ongoing evolution in V1's trunk is V1's concern; V2 aims for parity with the version V2 inherited from. If a V1 fix or feature surfaces that V2 wants, V2 may carbon-copy again (or edit V2's existing file deliberately), recording the additional inheritance event in ADMIRE.
+
+8. **The C#/F# partition is by language idiom.** F# for the pure algebraic core (`Projection.Core`); F# for adapters wrapping external libraries at the boundary (`Projection.Adapters.Osm`, `Projection.Adapters.Sql`, `Projection.Targets.*`, `Projection.Pipeline`); a small, museum-polish C# layer for capabilities whose gold-standard library is irreducibly C#-idiomatic (SMO, DacFx). The C# layer is named for what it adapts — domain partition, not language partition.
+
+**Artifacts withdrawn at this audible:**
+
+- `Projection.Bridge.Core` C# project — deleted.
+- `Projection.Bridge.Runtime` C# project — deleted.
+- `Projection.Bridge.Tests` test project — deleted.
+- `BridgeMethodAttribute` + `BridgeManifest` + `SunsetDisposition` + `Determinism` + `Frequency` enums + `BridgeResult<T>` + `BridgeError` types — deleted.
+- The first worked-example capability (`Capabilities/Catalog/ExtractMetadata.cs`) — deleted.
+- `Projection.Bridge.Tests.BridgeManifestTests` — deleted.
+- `Projection000BridgeWallDiscipline` analyzer (was scheduled, never shipped) — canceled.
+- `CSHARP_FSHARP_MANIFESTO.md` (the ~2,300-line manifesto on the Bridge philosophy) — deleted.
+- `CHAPTER_0_5_OPEN.md` (the seven-slice Bridge bring-up arc) — deleted.
+- `Projection.sln` entries for the three Bridge projects — removed.
+- The Bridge clause on `AXIOMS.md` A41 candidate — removed.
+- The A42 candidate (inheritance citation discipline) — removed.
+- The Bridge inheritance row on `CLAUDE.md` operating disciplines table — removed.
+- The Bridge inheritance gradient + audit attribute + wall analyzer load-bearing commitment on `CLAUDE.md` — removed.
+- The "V2 inherits from V1" section on `README.md` (Bridge framing prose) — removed.
+- The Phase 0.5 Bridge wave addition on `V2_DRIVER.md` chapter sequencing — removed.
+- The Bridge wave addendum on `V2_PRODUCTION_CUTOVER.md` §13.X — removed.
+- The "Bridge wave update" paragraphs on the four ADMIRE entries (NullabilityEvaluator, UniqueIndexDecisionOrchestrator, ForeignKeyEvaluator, OSSYS catalog producer) — replaced with audible-update paragraphs naming the new posture.
+
+**Artifacts preserved at this audible:**
+
+- The ADMIRE re-classification corrections — preserved without Bridge nomenclature. NullabilityEvaluator and ForeignKeyEvaluator remain PURE PASS in F# (no carbon-copy candidate). UniqueIndexEvidenceAggregator is a carbon-copy candidate for evidence aggregation; rule application stays in F#. EntityDependencySorter is harmonized via existing `TopologicalOrderPass.SelfLoopPolicy`. OSSYS catalog producer is the highest-value carbon-copy candidate.
+- The integrated `BACKLOG.md` operational structure — rewritten under the new philosophy (per the next codification commit). The phase-by-phase, V1-inheritance-log, risk-register, sequencing-graph structure is durable; the Bridge-specific content is excised.
+- The `CLAUDE.md` operating-disciplines row codifying V2 self-containment — added in place of the Bridge inheritance row.
+- The `README.md` "V2 is self-contained; V1 is editorial donor" section — added in place of the Bridge framing prose.
+
+**Reasoning / consequences.**
+
+The audible is a corrective, not a regression. The Bridge wave produced ~3,800 lines of code and documentation around a structural commitment the operator did not want. The operative discipline is simpler, more aligned with the original F#/C# philosophy, and better suited to the editorial relationship the operator wants between V2 and V1.
+
+**Cherry-pick safety holds by construction.** V2 has no V1 references; every commit is cherry-pickable into a V1-only trunk. The earlier framing of cherry-pick discipline ("the boundary is data, not typed cross-references") is restored as the load-bearing form; the Bridge wave's restatement ("the wall enforces with types where absence enforced before") is retired.
+
+**R6 governance is unchanged.** V1 owns the production write path during Stage 1 (V2-augmented); the per-environment-per-artifact-type V2-driver transition is gated on N=10 consecutive green canary runs plus operator sign-off. The Bridge wave's "Stage 2 (Bridge-enabled V2-augmented)" is withdrawn — there is no Bridge to enable. V2-augmented and V2-driver remain the two operative modes per R6.
+
+**V1 stays warm through cutover+30** unchanged. V1's trunk continues to run in production. V1's csprojs continue to build. V1's maintainers retain full authority over V1's evolution. V2's carbon-copies are V2's responsibility from the moment they land.
+
+**Cutover+30 sunset condition simplifies.** Three conditions instead of four: (1) V2 has run V2 emissions in every environment for one full schema-evolution cycle without canary divergence; (2) V2's carbon-copies are V2's responsibility (no V1 trunk dependency at V2's runtime — verified by construction, not by gate test); (3) operator sign-off. The Bridge manifest sunset gate is canceled because there is no Bridge.
+
+**Operational ledger.** `BACKLOG.md` is rewritten in the next codification commit to reflect the new philosophy. The V1 inheritance log section becomes the canonical record of carbon-copy events; the master Bridge-methods table is removed (no Bridge methods to enumerate); the V2-for-V1 section is removed (no V2-for-V1 surface). The integrated phase-by-phase structure is preserved.
+
+**Cross-references.**
+
+- The superseded Bridge wave entry above (preserved as historical record of the rejected direction).
+- `BACKLOG.md` (rewritten operational ledger).
+- `ADMIRE.md` (per-V1-component records; audible-update paragraphs).
+- `CLAUDE.md` operating-disciplines table (V2 self-containment row).
+- `README.md` § "V2 is self-contained; V1 is editorial donor".
+- `HANDOFF.md` top entry (the audible announcement).
+- `V2_DRIVER.md` chapter sequencing (Phase 0.5 removed; V1-inheritance-posture paragraph added).
+- `V2_PRODUCTION_CUTOVER.md` §13.X (audible addendum replacing the Bridge wave addendum).
+
+The audible is the corrective; the rest of V2's culture is preserved. V1 disappears from memory into V2 via carbon-copy + editorial inheritance; the C#/F# partition stays based on language idiom; V2 is self-contained; cherry-pick safety holds by construction.
 
 ---
