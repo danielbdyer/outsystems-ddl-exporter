@@ -100,6 +100,62 @@ else
     LAST_HOOK_LINE="(no session-start status file)"
 fi
 
+# ----------------------------------------------------------------
+# Cooldown gate: suppress redundant "up" reports.
+#
+# The probe's value is correcting the agent's tendency to assume
+# Docker is down without verifying. Once the agent has been told
+# Docker is up within a session, repeating that on every
+# subsequent `dotnet test` call adds no signal — just tokens.
+#
+# Emit additionalContext when ANY of the following holds:
+#   1. First fire (no state file exists)
+#   2. State changed since last fire (e.g., up → down → up,
+#      OR auto-repair just happened)
+#   3. State is "down*" (always surface failures)
+#   4. Cooldown elapsed (>120 s since last emission)
+#
+# Otherwise suppress to silent exit 0 — probe still ran (so a
+# state change would have been caught), but the agent isn't
+# re-told something it already knows.
+# ----------------------------------------------------------------
+STATE_FILE="/tmp/.claude-docker-probe-state"
+NOW="$(date +%s)"
+COOLDOWN_SEC=120
+
+SHOULD_EMIT="yes"
+if [ -f "$STATE_FILE" ]; then
+    LAST_STATE="$(awk 'NR==1{print}' "$STATE_FILE" 2>/dev/null || true)"
+    LAST_TIME="$(awk 'NR==2{print}' "$STATE_FILE" 2>/dev/null || echo 0)"
+    case "$DOCKER_STATE" in
+        "down"*)
+            # Always surface failures.
+            SHOULD_EMIT="yes"
+            ;;
+        *)
+            if [ "$LAST_STATE" != "$DOCKER_STATE" ]; then
+                # State changed since last emission.
+                SHOULD_EMIT="yes"
+            elif [ $((NOW - LAST_TIME)) -ge "$COOLDOWN_SEC" ]; then
+                # Cooldown elapsed.
+                SHOULD_EMIT="yes"
+            else
+                # Stable "up" within cooldown — suppress.
+                SHOULD_EMIT="no"
+            fi
+            ;;
+    esac
+fi
+
+# Always update the state file so the next call has a baseline.
+if [ "$SHOULD_EMIT" = "yes" ]; then
+    printf '%s\n%s\n' "$DOCKER_STATE" "$NOW" > "$STATE_FILE" 2>/dev/null || true
+fi
+
+if [ "$SHOULD_EMIT" != "yes" ]; then
+    exit 0
+fi
+
 # Output additionalContext via Claude Code's PreToolUse JSON format.
 # Per the hook spec, `hookSpecificOutput.additionalContext` is
 # surfaced to the agent.
