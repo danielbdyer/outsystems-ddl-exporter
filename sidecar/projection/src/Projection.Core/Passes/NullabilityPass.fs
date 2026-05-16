@@ -225,3 +225,20 @@ module NullabilityPass =
     /// available. Mirrors `UniqueIndexPass.decisionsOf`.
     let decisionsOf (result: Lineage<Diagnostics<NullabilityDecisionSet>>) : NullabilityDecisionSet =
         LineageDiagnostics.payload result
+
+    /// Chapter A.4.7 slice γ — factory. Captures the operator-supplied
+    /// `Policy` + `Profile` in a closure; the Run signature reduces to
+    /// `Catalog -> Lineage<Diagnostics<NullabilityDecisionSet>>`. Single
+    /// `OperatorIntent Tightening` site — the Tightening policy
+    /// strengthens NOT NULL invariants beyond source evidence per
+    /// operator opinion.
+    let registered (policy: Policy) (profile: Profile) : RegisteredTransform<Catalog, NullabilityDecisionSet> =
+        { Name = passName
+          Domain = Data
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "tightenNullability"
+                Classification = classification
+                Rationale = "Strengthen attribute NOT NULL invariants beyond source evidence per operator-supplied Tightening policy (Cautious / Aggressive / Disabled). Operator-supplied policy + profile evidence drive the decisions; lands as Tightening-axis overlay." } ]
+          Run = fun c -> run c policy profile
+          Status = Active }

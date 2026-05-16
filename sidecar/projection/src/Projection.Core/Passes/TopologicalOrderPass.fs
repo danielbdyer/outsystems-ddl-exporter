@@ -479,3 +479,34 @@ module TopologicalOrderPass =
     let run (c: Catalog) : Lineage<TopologicalOrder> =
         use _ = Bench.scope "passes.topologicalOrder"
         runWith TreatAsCycle c
+
+    /// Chapter A.4.7 slice γ. **The chapter A.4.7 open Q9-trigger-
+    /// fires worked example**. Two sites — `sortKahn` (DataIntent;
+    /// Kahn ordering is topology-derived) and `selfLoopHandling`
+    /// (OperatorIntent Ordering; `SelfLoopPolicy` is the named
+    /// real-evidence trigger for the fifth `OverlayAxis` variant per
+    /// `DECISIONS 2026-05-16 (chapter A.4.7 slice β) — OverlayAxis
+    /// gains fifth variant Ordering`). The default `registered` uses
+    /// `TreatAsCycle`; `registeredWith` exposes the configurable
+    /// variant for slice ε consumers.
+    let registered : RegisteredTransform<Catalog, TopologicalOrder> =
+        { Name = passName
+          Domain = CrossCutting
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "sortKahn"
+                Classification = DataIntent
+                Rationale = "Kahn topological sort over kinds' SsKey-keyed reference graph. Deterministic; depends only on graph topology; no operator opinion." }
+              { SiteName = "selfLoopHandling"
+                Classification = OperatorIntent Ordering
+                Rationale = "SelfLoopPolicy (TreatAsCycle | SkipSelfEdges) controls how a kind's reference to itself is handled during graph construction. Operator-supplied (passed via `runWith`); the chapter A.4.7 open's Q9-trigger-fires fifth OverlayAxis worked example. The default `registered` captures TreatAsCycle; `registeredWith` exposes the configurable variant." } ]
+          Run = fun c -> run c |> Lineage.map Diagnostics.ofValue
+          Status = Active }
+
+    /// Chapter A.4.7 slice γ — configurable variant. Lets slice ε
+    /// (the OrderingPolicy-stage consumer) supply the `SelfLoopPolicy`
+    /// explicitly. The Sites list is the same as the default
+    /// `registered`; the Run closure differs.
+    let registeredWith (selfLoops: SelfLoopPolicy) : RegisteredTransform<Catalog, TopologicalOrder> =
+        { registered with
+            Run = fun c -> runWith selfLoops c |> Lineage.map Diagnostics.ofValue }

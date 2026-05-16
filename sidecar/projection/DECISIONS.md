@@ -11675,3 +11675,94 @@ Errors aggregate across entries (operator sees every violation at once) rather t
 - `tests/Projection.Tests/TransformRegistryTests.fs` (17 witnesses).
 
 ---
+
+## 2026-05-16 (chapter A.4.7 slice γ) — Pass `.registered` exports ship across 12 passes; spec deviation: heterogeneous output types + parallel-exposure pattern
+
+**Status:** decided (codifies two pillar-8 deviations from the chapter A.4.7 open + V2_PRODUCTION_CUTOVER §6.4.7 spec at slice γ implementation time).
+
+**Context.** The chapter A.4.7 open + V2_PRODUCTION_CUTOVER §6.4.7 + DECISIONS 2026-05-15 (late) commit to "every pass module rewrites: `let run` becomes private; `let registered : RegisteredTransform<Catalog, Catalog> = { …; Run = run }` is the new primary export." Implementation at slice γ surfaced two empirical realities incompatible with this canonical shape: (a) the 12 pass modules produce six distinct output types, not uniformly `Catalog`; (b) several passes take operator-supplied configuration arguments (Mask, Morphism, RenameSpec list, Policy×Profile) that can't be erased into the `Catalog → ...` signature without a factory-or-context construct. Per the pillar-8 deviation discipline (slice plan rows are design intent at chapter open, not constraints at implementation; chapter A.0' slice γ's `Kind.Triggers` correction is the worked precedent), slice γ ships per-pass actual types + a factory pattern for configurable passes + parallel-exposure of `let run` during the migration.
+
+**Decision 1: heterogeneous output types per pass.**
+
+The 12 pass modules' actual return types fall into six categories. Slice γ ships `.registered` typed to each pass's actual signature rather than forcing a unified `Catalog → Catalog` shape:
+
+| Category | Output type | Passes |
+|---|---|---|
+| A | `Catalog` (no config) | CanonicalizeIdentity, NormalizeStaticPopulations, SymmetricClosure |
+| B | `Catalog` (with config) | NamingMorphism (Morphism), VisibilityMask (Mask) |
+| C | `TopologicalOrder` | TopologicalOrderPass (default + `registeredWith SelfLoopPolicy`) |
+| D | `<Domain>DecisionSet` (with Policy×Profile config) | NullabilityPass, UniqueIndexPass, ForeignKeyPass, CategoricalUniquenessPass |
+| E | `Catalog` with Result wrapping (with config) | TableRename |
+| F | `UserRemapContext` (with Policy×Profile config) | UserFkReflowPass |
+
+The output heterogeneity reflects V2's actual pass taxonomy: some passes transform the catalog directly (A/B/E); some produce decision sets to be applied separately (D); some produce ordering plans (C) or remap contexts (F). The chapter-A.4.7-open's spec underestimated this — its "unified `Catalog → Catalog`" was a simplifying assumption, not a structural commitment. Slice γ ships the honest type-level reflection of pass shapes; the registry's enumeration (via `RegisteredTransformMetadata` type erasure) handles the heterogeneity uniformly.
+
+**Decision 2: factory pattern for configurable passes.**
+
+For passes taking operator-supplied configuration arguments (Mask, Morphism, RenameSpec list, Policy, Profile), `.registered` is a function returning `RegisteredTransform<...>` rather than a value:
+
+```fsharp
+// Category B example:
+let registered (mask: Mask) : RegisteredTransform<Catalog, Catalog> = ...
+
+// Category D example:
+let registered (policy: Policy) (profile: Profile) : RegisteredTransform<Catalog, NullabilityDecisionSet> = ...
+```
+
+The factory captures the config in the closure; the returned `RegisteredTransform`'s `Run : Catalog -> Lineage<Diagnostics<'Out>>` signature is uniform at the consumer call site. Different configs produce different registered values; each registration is per-invocation. The static metadata (Name/Domain/StageBinding/Sites/Status) doesn't vary with config — slice γ's tests witness this via `RegisteredTransform.toMetadata` projection.
+
+**Decision 3: parallel-exposure of `let run` during slice γ.**
+
+The chapter A.4.7 open's structural commitment is that `let run` becomes private; consumers invoke `<Pass>.registered.Run` instead. Slice γ keeps `let run` **public** as a transition affordance. Two layers of justification:
+
+1. **Consumer migration explosion is a separate concern.** ~50+ existing call sites (tests + Pipeline) invoke `<Pass>.run` directly with the pass-specific signature (e.g., `NullabilityPass.run catalog policy profile`). Migrating them to `<Pass>.registered.Run` (or `<Pass>.registered config1 config2 |> fun rt -> rt.Run catalog`) is mechanical but voluminous. Folding the migration into slice γ's structural-commitment work would double the slice's surface area without adding registry-side capability.
+2. **Skeleton-purity property test (slice θ) catches bypass.** Once `Compose.run` traverses the registry (slice ζ), any pass invocation that bypasses the registry — including direct `<Pass>.run` calls — is structurally detectable: `Compose.runWithSkeleton`'s skeleton-purity property asserts every emitted `LineageEvent` carries `Classification = DataIntent`; a bypassing call site doesn't get the classification mirror, surfaces as an unclassified leak, and fails the property. The structural enforcement gates land at slice θ; slice γ.2 (consumer migration; making `run` private) can land independently before or after slice θ depending on operator priority.
+
+The parallel-exposure pattern is named for forward agents: when slice γ.2 fires (consumer migration trigger), make `let run` private in all 12 pass modules and update consumers to `<Pass>.registered.Run`.
+
+**Decision 4: TableRename's Result→Diagnostics wrapping.**
+
+`TableRename.run` returns `Result<Lineage<Catalog>>` because spec resolution against the catalog can fail (sourceNotFound / sourceAmbiguous / sourceDuplicate / targetCollision). To fit the registry's canonical `Catalog -> Lineage<Diagnostics<Catalog>>` shape, `TableRename.registered (specs)`'s Run closure wraps the Result:
+
+- **On `Ok lineage`:** the lineage flows through with empty Diagnostics (`Lineage.map Diagnostics.ofValue`).
+- **On `Error errs`:** the input Catalog passes through unchanged; each ValidationError surfaces as a `DiagnosticEntry` with `Severity = DiagnosticSeverity.Error`, `Source = passName`, `Code = e.Code`, `Message = e.Message`.
+
+Downstream consumers gate on the Diagnostics' error entries via `Diagnostics.entriesAt DiagnosticSeverity.Error` rather than inspecting a Result. This preserves the error information at runtime while keeping the unified Run signature. Slice θ's overlay-exercise property test will witness this — TableRename's `OperatorIntent Emission` site fires on valid specs and produces error diagnostics on invalid specs; both paths count toward overlay exercise.
+
+**Decision 5: TopologicalOrderPass ships `registered` + `registeredWith`.**
+
+The Q9-trigger-fires worked example surfaces in code as two exports:
+
+- `let registered : RegisteredTransform<Catalog, TopologicalOrder>` — default registration using `TreatAsCycle` self-loop policy. Sites carries the two-site decomposition (SortKahn DataIntent + SelfLoopHandling OperatorIntent Ordering).
+- `let registeredWith (selfLoops: SelfLoopPolicy) : RegisteredTransform<Catalog, TopologicalOrder>` — configurable variant for slice ε consumers that need to inspect or override the SelfLoopPolicy. Sites list is identical to `registered`; only the Run closure differs.
+
+This is the first registry consumer of `OverlayAxis.Ordering`. Slice ε will use `registeredWith` if a consumer needs to pin `SkipSelfEdges` (the alternative self-loop disposition); otherwise `registered` is the default surface.
+
+**Slice γ does NOT yet ship (carved out to follow-on work):**
+
+- **Slice γ.2 — make `let run` private + migrate consumers.** When operator pressure surfaces (or slice θ's structural property tests demand it), `let run` becomes private in all 12 pass modules and consumers update to `<Pass>.registered.Run`. The pattern of factory-vs-value drives the migration:
+  - Config-free passes: `<Pass>.run c` → `<Pass>.registered.Run c` (mechanical).
+  - Config-bearing passes: `<Pass>.run config1 config2 c` → `(<Pass>.registered config1 config2).Run c` (paren wrapping at each call site).
+- **TransformRegistry.all population.** Slice β's empty `all` list stays empty. Slice ζ's `Compose.run` traversal will populate the list via top-level F# evaluation order; the `.registered` exports + factories shipped here are the inputs. Slice ε (emitter strategies + OrderingPolicy + Pipeline) registers the remaining transformation sites.
+
+**Witnesses (18 tests at `tests/Projection.Tests/PassRegistrationsTests.fs`):**
+
+- Category A (3): CanonicalizeIdentity / NormalizeStaticPopulations / SymmetricClosure carry Identity/Data/Schema domains + DataIntent sites + Pass stage + Active status.
+- Category B (2): NamingMorphism / VisibilityMask factories produce DataIntent / OperatorIntent Selection sites; Run produces non-empty lineage trails.
+- Category C (3): TopologicalOrderPass carries two-site decomposition (SortKahn DataIntent + SelfLoopHandling OperatorIntent Ordering); Run produces TopologicalOrder; `registeredWith` exposes SelfLoopPolicy configurability.
+- Category D (4): NullabilityPass / UniqueIndexPass / ForeignKeyPass / CategoricalUniquenessPass factories produce OperatorIntent Tightening sites.
+- Category E (3): TableRename factory carries OperatorIntent Emission site; Run on Ok produces empty Diagnostics; Run on Error produces error diagnostics with Severity = Error.
+- Category F (1): UserFkReflowPass factory carries OperatorIntent Selection site.
+- Metadata projection sanity (1): `RegisteredTransform.toMetadata` drops Run; Sites + Rationale non-empty.
+
+**Cross-references.**
+
+- `CHAPTER_A_4_7_OPEN.md` slice γ row (chapter-open scope; informs the per-category implementation map).
+- `V2_PRODUCTION_CUTOVER.md` §6.4.7 task 2 (full-sweep refactor spec; revised at this entry per the heterogeneity + parallel-exposure findings).
+- `DECISIONS 2026-05-15 (late) — Pillar 9` (the canonical strongly-typed registry shape; the `Run : 'In -> Lineage<Diagnostics<'Out>>` signature governs slice γ's Run closures).
+- `DECISIONS 2026-05-16 (chapter A.4.7 slice β) — OverlayAxis gains fifth variant Ordering` (slice β codification; slice γ's TopologicalOrderPass consumes the fifth variant).
+- `tests/Projection.Tests/PassRegistrationsTests.fs` (18 witnesses).
+
+**Forward signal — slice γ.2 trigger.** Make `let run` private + migrate consumers when (a) slice θ's skeleton-purity property test demands structural enforcement, OR (b) operator pressure for canonical-surface-only API surfaces.
+
+---

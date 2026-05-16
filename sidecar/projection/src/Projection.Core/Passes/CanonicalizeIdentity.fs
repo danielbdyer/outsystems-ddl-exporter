@@ -86,3 +86,23 @@ module CanonicalizeIdentity =
             |> Catalog.allKinds
             |> List.map (fun k -> touchedEvent k.SsKey)
         Lineage.ofValueAndEvents events canon
+
+    /// Chapter A.4.7 slice γ. The pass's canonical registry surface
+    /// per `DECISIONS 2026-05-15 (late) — Pillar 9`. Single
+    /// `DataIntent` site (deterministic re-sort + modality
+    /// normalization; reachable from `Project(catalog, Policy.empty,
+    /// profile)`). The `Run` closure wraps the pass's existing
+    /// `Lineage<Catalog>` output via `Lineage.map Diagnostics.ofValue`
+    /// to match the registry's canonical `Lineage<Diagnostics<'Out>>`
+    /// shape. Slice γ.2 (future) makes `let run` private; slice γ
+    /// keeps it public during the transition.
+    let registered : RegisteredTransform<Catalog, Catalog> =
+        { Name = passName
+          Domain = Identity
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "canonicalize"
+                Classification = classification
+                Rationale = "Catalog-wide deterministic re-sort by SsKey at every level (modules / kinds / attributes / references) plus modality-mark normalization. No operator opinion enters; reachable from Project(catalog, Policy.empty, profile)." } ]
+          Run = fun c -> run c |> Lineage.map Diagnostics.ofValue
+          Status = Active }

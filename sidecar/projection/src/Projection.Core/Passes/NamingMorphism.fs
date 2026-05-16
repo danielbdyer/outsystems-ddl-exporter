@@ -124,3 +124,19 @@ module NamingMorphism =
     /// The identity morphism — names pass through untouched. Useful for
     /// tests and for "no naming policy" pipelines.
     let identity : Morphism = id
+
+    /// Chapter A.4.7 slice γ — factory. The morphism is V1→V2
+    /// presentation-name translation (the morphism IS data, derived
+    /// from source-schema patterns); the pass applies it uniformly
+    /// across the catalog without operator opinion entering at the
+    /// per-kind level. Lineage events are `DataIntent`.
+    let registered (morphism: Morphism) : RegisteredTransform<Catalog, Catalog> =
+        { Name = passName
+          Domain = Identity
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "rename"
+                Classification = classification
+                Rationale = "Apply a Name → Name morphism across the catalog. The morphism itself is data (V1→V2 presentation-name translation derived from source-schema patterns); the pass invocation is mechanical." } ]
+          Run = fun c -> run morphism c |> Lineage.map Diagnostics.ofValue
+          Status = Active }

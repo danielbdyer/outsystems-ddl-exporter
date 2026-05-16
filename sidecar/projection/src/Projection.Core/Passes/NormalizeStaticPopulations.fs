@@ -82,3 +82,17 @@ module NormalizeStaticPopulations =
                 Some { k with Modality = k.Modality |> List.map normalizeModality }
             else
                 Some k)
+
+    /// Chapter A.4.7 slice γ. Single `DataIntent` site: deterministic
+    /// row-reordering inside `ModalityMark.Static` kinds. No operator
+    /// opinion enters; the row ordering is content-derived.
+    let registered : RegisteredTransform<Catalog, Catalog> =
+        { Name = passName
+          Domain = Data
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "normalize"
+                Classification = classification
+                Rationale = "Deterministic row-reordering inside Static-modality kinds. Row order is content-derived (per the modality normalizer); no operator opinion enters." } ]
+          Run = fun c -> run c |> Lineage.map Diagnostics.ofValue
+          Status = Active }

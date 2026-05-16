@@ -342,3 +342,22 @@ module UserFkReflowPass =
         : Lineage<Diagnostics<UserRemapContext>> =
         use _ = Bench.scope "passes.userFkReflow"
         discover profile.SourceUsers profile.TargetUsers policy.UserMatching
+
+    /// Chapter A.4.7 slice γ — factory. Captures operator-supplied
+    /// `Policy` (`UserMatching` axis) + `Profile`
+    /// (`SourceUsers` / `TargetUsers` evidence) in closure. Single
+    /// `OperatorIntent Selection` site — operator selects which
+    /// User-table references reroute via the matching strategies +
+    /// source/target user populations. Output is `UserRemapContext`
+    /// (not Catalog) — this is a decision-producing pass; downstream
+    /// consumers apply the remap.
+    let registered (policy: Policy) (profile: Profile) : RegisteredTransform<Catalog, UserRemapContext> =
+        { Name = passName
+          Domain = Identity
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "reflow"
+                Classification = classification
+                Rationale = "Reroute User-table references via operator-supplied matching strategies (Policy.UserMatching) + source/target user populations (Profile). Lands as Selection-axis overlay; Insertion was considered alternative classification, but re-direction reads more naturally as Selection (which references reroute)." } ]
+          Run = fun c -> run c policy profile
+          Status = Active }

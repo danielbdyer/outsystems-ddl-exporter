@@ -191,3 +191,39 @@ module TableRename =
                         Some { k with Physical = target }
                     | _ -> Some k)
                 |> Result.success
+
+    /// Chapter A.4.7 slice γ — factory. Captures operator-supplied
+    /// `RenameSpec list` in closure. Single `OperatorIntent Emission`
+    /// site — operator chooses what physical form a kind takes in
+    /// emitted output. The pass returns `Result<Lineage<Catalog>>`
+    /// (validation against the catalog can fail); the Run closure
+    /// wraps the Result so the canonical `Lineage<Diagnostics<Catalog>>`
+    /// shape holds: on Ok, the lineage flows through with empty
+    /// Diagnostics; on Error, the input Catalog passes through
+    /// unchanged and the ValidationErrors surface as Diagnostics
+    /// entries with `Severity = Error` for downstream observer
+    /// inspection.
+    let registered (specs: RenameSpec list) : RegisteredTransform<Catalog, Catalog> =
+        { Name = passName
+          Domain = Schema
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "rename"
+                Classification = classification
+                Rationale = "Apply operator-supplied rename specs to kinds' physical realization (Kind.Physical only; identity untouched per A1). Operator chose what physical form each kind takes; lands as Emission-axis overlay." } ]
+          Run =
+            fun c ->
+                match run specs c with
+                | Ok lineage -> lineage |> Lineage.map Diagnostics.ofValue
+                | Error errs ->
+                    let entries =
+                        errs
+                        |> List.map (fun e ->
+                            { Source = passName
+                              Severity = DiagnosticSeverity.Error
+                              Code = e.Code
+                              Message = e.Message
+                              SsKey = None
+                              Metadata = Map.empty })
+                    Lineage.ofValue (Diagnostics.tellMany entries (Diagnostics.ofValue c))
+          Status = Active }

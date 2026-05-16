@@ -224,3 +224,18 @@ module SymmetricClosure =
               Sequences = c.Sequences }
 
         Lineage.ofValueAndEvents events withInverses
+
+    /// Chapter A.4.7 slice γ. Single `DataIntent` site: derives
+    /// inverse references from existing graph topology + PK presence.
+    /// Skipped events carry topology-derived reasons (target absent /
+    /// no PK); no operator opinion enters.
+    let registered : RegisteredTransform<Catalog, Catalog> =
+        { Name = passName
+          Domain = Schema
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "synthesizeInverse"
+                Classification = classification
+                Rationale = "For each directional reference, synthesize the inverse on the target kind if the target is resolvable and has a primary key. Topology-derived; no operator opinion enters." } ]
+          Run = fun c -> run c |> Lineage.map Diagnostics.ofValue
+          Status = Active }

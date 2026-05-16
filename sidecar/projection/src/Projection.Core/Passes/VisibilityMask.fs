@@ -129,3 +129,18 @@ module VisibilityMask =
             | Some pred ->
                 LineageBuffer.add (removedEvent pred k.SsKey) events
                 None)
+
+    /// Chapter A.4.7 slice γ — factory. The Mask is operator-supplied
+    /// (which kinds to hide; via origin / explicit-key / modality
+    /// predicates). The pass's events are `OperatorIntent Selection`
+    /// per slice α — operator chose which kinds appear in the catalog.
+    let registered (mask: Mask) : RegisteredTransform<Catalog, Catalog> =
+        { Name = passName
+          Domain = Schema
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "filter"
+                Classification = classification
+                Rationale = "Hide kinds matching the operator-supplied Mask's predicates (origin / explicit-key / modality). The Mask is the operator-intent surface; the filter is uniformly applied. Lands as Selection-axis overlay (skeleton-purity property excludes it from Compose.runWithSkeleton at slice ζ)." } ]
+          Run = fun c -> run mask c |> Lineage.map Diagnostics.ofValue
+          Status = Active }

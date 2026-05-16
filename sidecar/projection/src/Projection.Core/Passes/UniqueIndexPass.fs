@@ -201,3 +201,18 @@ module UniqueIndexPass =
     /// available.
     let decisionsOf (result: Lineage<Diagnostics<UniqueIndexDecisionSet>>) : UniqueIndexDecisionSet =
         LineageDiagnostics.payload result
+
+    /// Chapter A.4.7 slice γ — factory. Captures the operator-supplied
+    /// `Policy` + `Profile` in closure. Single `OperatorIntent
+    /// Tightening` site — the Tightening policy strengthens UNIQUE
+    /// invariants beyond source evidence per operator opinion.
+    let registered (policy: Policy) (profile: Profile) : RegisteredTransform<Catalog, UniqueIndexDecisionSet> =
+        { Name = passName
+          Domain = Schema
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "tightenUniqueIndex"
+                Classification = classification
+                Rationale = "Promote index uniqueness per operator-supplied Tightening policy. Profile evidence drives the empirical decisions; lands as Tightening-axis overlay." } ]
+          Run = fun c -> run c policy profile
+          Status = Active }

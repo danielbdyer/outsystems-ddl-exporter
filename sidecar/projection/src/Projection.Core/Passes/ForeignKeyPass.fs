@@ -275,3 +275,18 @@ module ForeignKeyPass =
     /// `NullabilityPass.decisionsOf`.
     let decisionsOf (result: Lineage<Diagnostics<ForeignKeyDecisionSet>>) : ForeignKeyDecisionSet =
         LineageDiagnostics.payload result
+
+    /// Chapter A.4.7 slice γ — factory. Captures the operator-supplied
+    /// `Policy` + `Profile` in closure. Single `OperatorIntent
+    /// Tightening` site — the Tightening policy enforces FK
+    /// invariants beyond source evidence per operator opinion.
+    let registered (policy: Policy) (profile: Profile) : RegisteredTransform<Catalog, ForeignKeyDecisionSet> =
+        { Name = passName
+          Domain = Schema
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "tightenForeignKey"
+                Classification = classification
+                Rationale = "Enforce foreign-key invariants per operator-supplied Tightening policy. Profile evidence (orphan-row probes) drives the empirical decisions; lands as Tightening-axis overlay." } ]
+          Run = fun c -> run c policy profile
+          Status = Active }

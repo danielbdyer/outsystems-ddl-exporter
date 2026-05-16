@@ -122,3 +122,21 @@ module CategoricalUniquenessPass =
             BuildEvent         = decisionEvent
         }
         Composition.fanOut fanOutConfig catalog policy profile
+
+    /// Chapter A.4.7 slice γ — factory. Captures the operator-supplied
+    /// `Policy` + `Profile` in closure. Single `OperatorIntent
+    /// Tightening` site — the Tightening policy promotes categorical
+    /// uniqueness per operator opinion. The pass returns plain
+    /// `Lineage<DecisionSet>` (no Diagnostics); the Run closure wraps
+    /// via `Lineage.map Diagnostics.ofValue` to match the registry's
+    /// canonical shape.
+    let registered (policy: Policy) (profile: Profile) : RegisteredTransform<Catalog, CategoricalUniquenessDecisionSet> =
+        { Name = passName
+          Domain = Data
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "tightenCategoricalUniqueness"
+                Classification = classification
+                Rationale = "Promote categorical uniqueness per operator-supplied Tightening policy. Profile evidence drives the empirical decisions; lands as Tightening-axis overlay." } ]
+          Run = fun c -> run c policy profile |> Lineage.map Diagnostics.ofValue
+          Status = Active }
