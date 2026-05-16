@@ -11559,3 +11559,119 @@ Plus the corresponding IR-record field additions:
 - The Origin audit witness: `NoSilentDropTests.``Origin audit ...``` (5 tests across both adapter paths).
 
 ---
+
+## 2026-05-16 (chapter A.4.7 slice β) — OverlayAxis gains fifth variant Ordering (Q9 expansion provision fires; SelfLoopPolicy is the named real-evidence trigger)
+
+**Status:** decided (refines `DECISIONS 2026-05-15 (late)` Q9 answer by firing the reserved expansion provision; first worked example of the Q9 trigger-fires discipline).
+
+**Context.** `DECISIONS 2026-05-15 (late)` codified `OverlayAxis` as a closed DU with four variants (`Selection | Emission | Insertion | Tightening`), exactly matching `Projection.Core.Policy.fs`'s axis DU. The Q9 answer reserved expansion: "with an opportunity to expand in case we truly find a fifth axis is warranted by real evidence; today, the four Policy axes are exactly the OverlayAxis values." At chapter A.4.7 open (per `CHAPTER_A_4_7_OPEN.md` axis 9), the harvest-discipline classification of `TopologicalOrderPass.SelfLoopHandling` surfaced an operator-intent site that doesn't fit the four existing axes — `SelfLoopPolicy` is operator-supplied (it's an argument to `TopologicalOrderPass.runWith`, not topology-derived) but it controls ordering-policy semantics (how nodes are ordered when topology under-determines the choice), not selection / emission / insertion / tightening. Per the chapter-open operator decision, the Q9 expansion provision fires.
+
+**Decision: OverlayAxis gains a fifth variant `Ordering`.**
+
+```fsharp
+type OverlayAxis =
+    | Selection
+    | Emission
+    | Insertion
+    | Tightening
+    | Ordering    // chapter A.4.7 open Q9 expansion fired; SelfLoopPolicy real-evidence
+```
+
+**Naming rationale (pillar 8 four-question analysis).**
+
+1. **What domain concept does this represent?** Operator-supplied intent about ordering policy — how nodes are ordered when topology under-determines the choice. `SelfLoopPolicy` (TreatAsCycle vs SkipSelfEdges) is the canonical worked example.
+2. **Does V2 already name this concept?** `StageBinding.OrderingPolicy` names *where* the transformation fires (the stage seam). The proposed `OverlayAxis` variant names *whose intent it expresses* (the operator-intent axis). Distinct concerns; distinct names.
+3. **Is the proposed name concept-shaped?** `Ordering` is concept-shaped (the operator-intent dimension). `OrderingPolicy` was considered but rejected — it would collide with `StageBinding.OrderingPolicy` and conflate the stage-seam vocabulary with the operator-intent vocabulary.
+4. **Generic-suffix smell test?** `Ordering` passes (no Helper / Util / Manager / Service / Handler / Processor suffix).
+
+**Consequences.**
+
+- **The structural equivalence `OverlayAxis = Policy DU axes exactly` weakens to `OverlayAxis ⊃ Policy DU axes`.** `Policy.fs`'s four axes are now a strict subset of `OverlayAxis`'s five variants. The "Policy IS operator intent, reified" framing from `DECISIONS 2026-05-15 (late)` still holds — Policy axes ARE operator intent — but operator intent now has a fifth axis Policy doesn't carry.
+- **The `Policy.fs ↔ OverlayAxis` structural collapse refactor stays deferred-with-trigger** (per chapter A.4.7 open Out-of-scope clause). Two paths surface when consumer pressure forces resolution: (a) add `Policy.Ordering` axis to `Policy.fs` (the Policy DU expands; existing call sites add `Ordering = …` per pattern); (b) carve `OverlayAxis.Ordering` out of `Policy` (the OverlayAxis becomes the canonical home; Policy.fs becomes a structural subset projection). The decision deferred to whichever consumer first needs to consult both vocabularies at one call site; A.4.7 does not collapse.
+- **Future fifth-variant additions require the same trigger-fires discipline.** Q9's expansion provision is not a license to grow `OverlayAxis` speculatively. Each new variant must name its real-evidence trigger (the site / pass / consumer demand), articulate why the existing axes don't fit, and land via DECISIONS amendment at the implementation slice.
+- **`TopologicalOrderPass.SelfLoopHandling` is the canonical worked example.** At slice ε (per chapter A.4.7 open slice plan), the `TopologicalOrderPass.registered.Sites` list ships with two sub-sites: `SortKahn` classified `DataIntent` (Kahn ordering depends only on graph topology) and `SelfLoopHandling` classified `OperatorIntent Ordering` (SelfLoopPolicy is operator-supplied; this is the Q9-trigger-fires real-evidence).
+
+**Trigger-fires discipline (codified at this entry per the active-deferrals pattern).**
+
+When a future agent considers expanding `OverlayAxis` to a sixth (or further) variant, the discipline operates BEFORE the expansion lands:
+
+1. **Name the real-evidence trigger.** Identify the specific transformation site / pass / consumer surfacing the gap. Generic "this might be useful" rationale fails the discipline; the trigger must be concrete.
+2. **Articulate why the existing axes don't fit.** Run the candidate site's harvest analysis through Selection / Emission / Insertion / Tightening / Ordering. If a forced fit reads naturally (e.g., "this strengthens an existing invariant — Tightening"), use the existing axis. If every existing axis reads as a forced fit, the sixth variant is warranted.
+3. **Land the expansion via DECISIONS amendment** at the implementation slice (not anticipatorily). The amendment names the trigger, the harvest analysis, and the naming rationale per pillar-8 four-question analysis.
+4. **Document the consequences for `Policy.fs`.** Each new `OverlayAxis` variant widens the `OverlayAxis ⊃ Policy DU axes` gap; the deferred-with-trigger collapse refactor inherits the new variant's reconciliation cost.
+
+**Slice-ε classification map preview** (refinement candidates per pillar-8 deviation discipline; harvest analysis at registration time may refine):
+
+- `VisibilityMask` → `OperatorIntent Selection` (slice α; filters kinds by predicate).
+- `TableRename` → `OperatorIntent Emission` (slice α; operator-supplied rename specs change physical form).
+- `NullabilityPass` / `UniqueIndexPass` / `ForeignKeyPass` / `CategoricalUniquenessPass` → `OperatorIntent Tightening` (slice α; strengthen invariants beyond source evidence).
+- `UserFkReflowPass` → `OperatorIntent Selection` (slice α; refinement candidate at slice γ — operator-supplied User-table reflow specs select which references reroute; Insertion was considered as alternative classification but Selection reads more naturally for a re-direction operation).
+- `TopologicalOrderPass.SortKahn` site → `DataIntent` (slice α; topology-derived ordering).
+- `TopologicalOrderPass.SelfLoopHandling` site → `OperatorIntent Ordering` (slice ε; this entry's worked example).
+
+**Cross-references.**
+
+- `CHAPTER_A_4_7_OPEN.md` axis 9 (chapter-open codification of the Q9-trigger-fires decision).
+- `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification` (the predecessor entry codifying the reserved Q9 expansion).
+- `Projection.Core/Classification.fs` (shipped at slice α; the `Ordering` variant lands in code).
+- `Projection.Core/TransformRegistry.fs` (shipped at slice β; first registry surface to consume `OperatorIntent Ordering` via the slice-ε `TopologicalOrderPass` registration preview).
+- `CLAUDE.md` operating-disciplines table pillar 9 row (cross-reference updated to note the OverlayAxis ⊃ Policy weakening).
+
+---
+
+## 2026-05-16 (chapter A.4.7 slice β) — TransformRegistry.fs ships the canonical strongly-typed surface (empty `all` list; populated at slices γ / δ / ε)
+
+**Status:** decided (codification of the slice-β shipped artifact — type system + smart constructor + empty registry placeholder).
+
+**Context.** Chapter A.4.7's plan-of-record (per `V2_PRODUCTION_CUTOVER.md` §6.4.7 + `DECISIONS 2026-05-15 (late)`) commits to shipping `Projection.Core/TransformRegistry.fs` as the canonical strongly-typed surface for every transformation site in V2 — the fourth cross-cutting structural-evidence concern, sibling to Lineage / Diagnostics / Bench. Slice β ships the type-system establishment + smart-constructor invariants + empty `all` list as a structural placeholder; slices γ / δ / ε populate the list as pass modules / adapter rules / emitter strategies expose `.registered`.
+
+**Decision: ship the type system per the canonical shape (with two refinements).**
+
+The types shipped at `src/Projection.Core/TransformRegistry.fs`:
+
+- `StageBinding = Adapter | Pass | OrderingPolicy | Emitter | Pipeline` — the five stage seams.
+- `Domain = Schema | Data | Identity | Diagnostics | CutoverSafety | CrossCutting` — the codified concerns of V2's structural-evidence layer per `PRODUCT_AXIOMS.md`.
+- `TransformSite = { SiteName; Classification; Rationale }` — intra-pass classification fidelity per `DECISIONS 2026-05-15 (late)` Q11.
+- `TransformStatus = Active | NotImplementedInV2 of rationale` — harvest-workflow triple-deliverable enforcement.
+- `RegisteredTransform<'In, 'Out when 'Out : equality> = { Name; Domain; StageBinding; Sites; Run; Status }` — the typed canonical surface; each pass module's primary public export at slice γ onward.
+- `RegisteredTransformMetadata = { Name; Domain; StageBinding; Sites; Status }` — the type-erased projection for registry enumeration; drops `Run`.
+- `RegisteredTransform.toMetadata : RegisteredTransform<'In, 'Out> -> RegisteredTransformMetadata` — the projection helper.
+- `TransformRegistry.create : RegisteredTransformMetadata list -> Result<RegisteredTransformMetadata list>` — the smart constructor.
+- `TransformRegistry.all : RegisteredTransformMetadata list = []` — the empty registry (populated at slices γ / δ / ε).
+- `TransformRegistry.inStage : StageBinding -> RegisteredTransformMetadata list -> RegisteredTransformMetadata list` — per-stage filter.
+- `TransformRegistry.stageOrdinal : StageBinding -> int` — stage-execution ordering (Adapter < OrderingPolicy < Pass < Emitter < Pipeline).
+- `TransformRegistry.allInStageOrder : RegisteredTransformMetadata list -> RegisteredTransformMetadata list` — registry sorted by stage ordinal; consumed by `Compose.run` traversal at slice ζ.
+
+**Refinement 1: `RegisteredTransformMetadata` type-erased projection.** The spec (per `DECISIONS 2026-05-15 (late)`) sketched `TransformRegistry.all : RegisteredTransform<obj, obj> list` using `unbox` for type erasure. Slice β refines this to an explicit type-erased record (`RegisteredTransformMetadata`) that drops the `Run` field entirely. The justification: F# records aren't naturally covariant; `unbox`ing `RegisteredTransform<Catalog, Catalog>` to `RegisteredTransform<obj, obj>` is unsafe (the `Run` field's signature is incompatible). The explicit metadata record gives the same enumeration capability (totality scan, manifest emission, completeness property tests at slice θ) without unsafe boxing. Per-Run invocation uses the pass module's `.registered` export directly on the typed surface.
+
+**Refinement 2: `when 'Out : equality` constraint on `RegisteredTransform<'In, 'Out>`.** `Lineage<'a>` in `Projection.Core/Lineage.fs` carries a `when 'a : equality` constraint (chapter-3.7 slice α A26 cash-out). `Lineage<Diagnostics<'Out>>` propagates that constraint to `Diagnostics<'Out>`, which propagates to `'Out`. The constraint is structural — F# rejected the type definition without it. Pass-module `.registered` exports at slice γ will satisfy the constraint naturally (Catalog satisfies equality; TopologicalOrder satisfies equality; ArtifactByKind<'element> satisfies equality).
+
+**Smart-constructor invariants** (enforced at `TransformRegistry.create`):
+
+1. **Every Name unique within the registry.** Duplicate Names emit `registry.duplicatePassName` ValidationError naming every duplicated identifier (aggregated across the entry list).
+2. **Every Name non-empty.** Empty / whitespace-only Names emit `registry.nameEmpty` ValidationError.
+3. **Every Site.Rationale non-empty.** Per pillar 9's 4-step harvest workflow, every classified site requires substantive analysis prose. Empty rationales emit `registry.siteRationaleEmpty` ValidationError naming the pass + site.
+4. **NotImplementedInV2 rationale non-empty.** The triple-deliverable harvest workflow (Skip stub + Tolerance entry + NotImplementedInV2 registry entry) requires substantive rationale on the registry side. Empty rationales emit `registry.notImplementedRationaleEmpty` ValidationError.
+
+Errors aggregate across entries (operator sees every violation at once) rather than first-failure. The validation runs once at construction; the resulting metadata list is trusted thereafter.
+
+**Slice β ships empty `all`.** The list is hand-maintained at top-level evaluation order: each pass module's `.registered |> RegisteredTransform.toMetadata` reference is added explicitly at slice γ / δ / ε. F# top-level evaluation order resolves cross-module dependencies. The empty initial state is a structural placeholder; slice ζ's `Compose.run` traversal operates on whatever `TransformRegistry.all` contains at runtime.
+
+**Witnesses (17 tests at `tests/Projection.Tests/TransformRegistryTests.fs`):**
+
+- Type-system witnesses (4): StageBinding's five seams; Domain's six concerns; TransformStatus exhaustiveness; stageOrdinal ordering.
+- Smart-constructor tests (8): vacuous empty list; well-formed Active entry; well-formed NotImplementedInV2 entry; duplicate-Name rejection; empty-Name rejection; empty-Rationale rejection; empty-NotImplementedInV2-rationale rejection; multi-error aggregation.
+- Registry-shape tests (3): empty `all`; `inStage` filter; `allInStageOrder` sort.
+- Type-erased projection witness (1): `RegisteredTransform.toMetadata` drops Run.
+- OverlayAxis.Ordering reachability (1): TransformSite carries `Classification = OperatorIntent Ordering` per the chapter-A.4.7-open Q9-trigger-fires worked example; the slice-ε TopologicalOrderPass.SelfLoopHandling registration's site shape is reachable at slice β's type level.
+
+**Cross-references.**
+
+- `CHAPTER_A_4_7_OPEN.md` axes 1-3 + slice plan β row (chapter-open codification of the slice-β scope).
+- `V2_PRODUCTION_CUTOVER.md` §6.4.7 task 1 (the spec-of-record for the TransformRegistry module).
+- `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification` (the canonical strongly-typed registry shape this entry implements with two refinements).
+- `DECISIONS 2026-05-16 (chapter A.4.7 slice β) — OverlayAxis gains fifth variant Ordering` (sibling entry codifying the OverlayAxis expansion this slice depends on at slice ε).
+- `Projection.Core/TransformRegistry.fs` (the shipped artifact).
+- `tests/Projection.Tests/TransformRegistryTests.fs` (17 witnesses).
+
+---

@@ -79,6 +79,7 @@
     <Compile Include="IRFidelityLiftTests.fs" />
     <Compile Include="NoSilentDropTests.fs" />
     <Compile Include="ClassificationCarryThroughTests.fs" />
+    <Compile Include="TransformRegistryTests.fs" />
     <Compile Include="NullabilityRulesTests.fs" />
     <Compile Include="NullabilityPassTests.fs" />
     <Compile Include="UniqueIndexRulesTests.fs" />
