@@ -1093,6 +1093,16 @@ Each L3 axiom in `PRODUCT_AXIOMS.md` mapped to the Phase + Workstream that deliv
 
 ## 13. Addenda (append-only)
 
+### 13.X — V2 self-containment + carbon-copy editorial inheritance (2026-05-16 audible)
+
+V2 has zero runtime dependency on V1's trunk — no `ProjectReference`, no V1 assembly on V2's classpath, no Bridge wrapper layer. V1's role in V2 is editorial donor: V2 reads V1's source for inspiration, carbon-copies relevant files into V2's domain-structured locations, cites V1 via a file-header comment + an `ADMIRE.md` row, and refactors freely. The carbon-copy is a one-time editorial event recorded in `BACKLOG.md` § "V1 inheritance log"; subsequent V1 evolution is not automatically tracked.
+
+The F#/C# partition is by language idiom, not by V1/V2 lineage. Pure F# core; F# adapters wrap external libraries (`Microsoft.Data.SqlClient`, `ScriptDom`, etc.); a small, focused, museum-polish C# layer exists only where the gold-standard library is irreducibly C#-idiomatic (SMO, DacFx if pursued). New C# adapter projects (e.g., `Projection.Adapters.OssysSql`) land in `sidecar/projection/src/` per chapter as the consuming chapter opens.
+
+Cherry-pick discipline holds by construction. R6 governance is unchanged (V1 production write path during Stage 1 V2-augmented; gated transition to Stage 2 V2-driver via N=10 canary + operator sign-off). V1 stays warm through cutover+30. V1 sunset begins administratively when V2 has run V2 emissions in every environment for one full schema-evolution cycle and the operator authorizes.
+
+**Cross-references.** `DECISIONS 2026-05-16 (later) — V2 self-containment + carbon-copy editorial inheritance`; `BACKLOG.md` § "V1 inheritance log"; `ADMIRE.md` (per-V1-component records); `CLAUDE.md` operating-disciplines table.
+
 ### 13.1 (placeholder) Audit slot for operator's "document of key evolutions"
 
 When operator delivers the evolutions document, append a synthesis subsection here, revise §3 / §4 / §6 as needed, and bump the plan to Draft 4. Operator preview (2026-05-11): evolution doc focuses primarily on UAT-users; likely impact includes UAT-users as Phase A feature, possible sixth core concern, and IR-fidelity extensions if new Catalog/Profile fields required.

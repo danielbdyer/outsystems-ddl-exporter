@@ -36,7 +36,59 @@ over time. Read top-to-bottom for chronological order.
     one or two paragraphs.
 
     ### V2 placement
-    pure pass / adapter / split — with rationale.
+    pure pass / adapter / split / carbon-copied — with rationale.
+
+    ### V2 placement — carbon-copy log (entries 2026-05-16 onward)
+    For entries with placement "carbon-copied" (per the V2
+    self-containment + editorial-inheritance discipline), each
+    inheritance event records:
+
+    - **V1 source path** at the V1 head V2 inherited from.
+    - **V2 location** — the file path inside the sidecar where
+      the carbon-copy landed.
+    - **Date inherited** (ISO).
+    - **Refactor status** — verbatim / partially refactored /
+      fully refactored.
+    - **Citation comment** — the file-header note linking V2's
+      file back to the V1 source for tethering.
+
+    See `BACKLOG.md` § "V1 inheritance log" for the cross-component
+    operational ledger.
+
+## Format amendment (2026-05-16 — V2 self-containment discipline)
+
+Per `DECISIONS 2026-05-16 (later) — V2 self-containment + carbon-copy
+editorial inheritance`, V2 has zero runtime dependency on V1's trunk.
+V1 components V2 wants to inherit from are **carbon-copied** into V2's
+domain-structured locations; the original V1 trunk source is unchanged;
+V2's copy is V2's responsibility from the moment it lands. Each
+component's ADMIRE entry records the carbon-copy events as they happen,
+forming an editorial inheritance ledger sibling to `BACKLOG.md` § "V1
+inheritance log".
+
+**Re-classification corrections (codified at the 2026-05-16 audible):**
+
+- `NullabilityEvaluator`: PURE PASS in F#. V1 evaluator is mode-bound
+  policy front-to-back; the "signals" are policy-applying tree nodes
+  built per-mode. V2's `Projection.Core.Strategies.NullabilityRules.fs:223-277`
+  already covers the rule space in 55 lines. No carbon-copy candidate.
+- `ForeignKeyEvaluator`: PURE PASS in F#. Splittable in principle, but
+  post-split evidence set duplicates V2 IR fields. No carbon-copy
+  candidate.
+- `UniqueIndexDecisionOrchestrator`: SPLIT — V1's
+  `UniqueIndexEvidenceAggregator` (~150 LOC) is a carbon-copy candidate
+  for evidence aggregation; rule application stays in F#
+  `UniqueIndexRules.fs:144`. Carbon-copy lands at the chapter that
+  consumes the lifted evidence (not pre-emptively).
+- `EntityDependencySorter`: harmonized via existing
+  `TopologicalOrderPass.SelfLoopPolicy` (A40). No carbon-copy
+  candidate.
+- OSSYS catalog producer: CARBON-COPY CANDIDATE. V1's metadata
+  extraction chain (`MetadataSnapshotRunner.cs`, `SnapshotJsonBuilder.cs`,
+  the result-set processor chain; ~1,880 LOC) is the highest-value
+  inheritance target. Carbon-copies land in a dedicated C# adapter
+  project (`Projection.Adapters.OssysSql`, museum-polish) when the
+  chapter that consumes it opens.
 
     ### Inputs and outputs (V2 IR)
     one paragraph naming the V2 IR fields consumed and produced.
@@ -238,7 +290,17 @@ session 13 added it.)
 **Status:** **extracted (differential confirmed)** — V2's
 `Projection.Core.NullabilityRules` + `Projection.Core.Passes.NullabilityPass`
 + `Projection.Adapters.Sql.ProfileSnapshot` jointly carry V1's
-`NullabilityEvaluator` semantics into V2. Five of V1's eight test
+`NullabilityEvaluator` semantics into V2.
+
+**Audible update (2026-05-16; V2 self-containment).** V2 placement
+remains **PURE PASS in F#**. No carbon-copy candidate: V1's evaluator
+is mode-bound policy front-to-back; the "signals" (`NullEvidenceSignal`,
+`MandatorySignal`, `ForeignKeySupportSignal`) read `Policy.NullBudget`
+and the `ForeignKeys` axis directly, and the signal tree is built per-
+mode via `NullabilitySignalFactory.Create(_options.Policy.Mode)`. V2's
+55-line F# implementation at `NullabilityRules.fs:223-277` is the
+published form. V1's policy-tree-construction machinery is left behind
+as a mental-model artifact V2 does not inherit. Five of V1's eight test
 scenarios translate as Behavioral parity assertions in
 `V1NullabilityParityTests.fs` (session 7 commit 3); three are explicit
 Skip cases naming intentional V2 divergences (Aggressive mode collapsed
@@ -605,11 +667,33 @@ property + behavioral coverage carries the contract first.
 
 ## 2026-05-10 — `UniqueIndexDecisionOrchestrator` (`src/Osm.Validation/Tightening/UniqueIndexDecisionOrchestrator.cs`)
 
-**Status:** **extracted (differential confirmed)** — V1-migration mode
+**Status:** **extracted (differential confirmed)** + **carbon-copy
+candidate for the evidence aggregator (2026-05-16 audible)** — the
+orchestrator decision logic lives in F# (`Projection.Core.Strategies.UniqueIndexRules`
++ `Projection.Core.Passes.UniqueIndexPass`); V1's
+`UniqueIndexEvidenceAggregator` is a candidate carbon-copy when the
+chapter that consumes the lifted evidence opens. V1-migration mode
 (`DECISIONS 2026-05-13 — admire spectrum`). V2's `Projection.Core.
 Strategies.UniqueIndexRules` + `Projection.Core.Passes.UniqueIndexPass`
 jointly carry V1's binary-decision contract into V2 under the codified
 strategy layer (`DECISIONS 2026-05-11 — Strategy-layer codification`).
+
+**Audible update (2026-05-16; V2 self-containment).** Of V1's three
+Tightening evaluators, only `UniqueIndexEvidenceAggregator` is a
+carbon-copy candidate: it joins declared unique indexes with profile
+candidates to produce evidence sets (`SingleColumnClean`, `SingleColumnDuplicates`,
+`CompositeClean`, `CompositeDuplicates`, `CompositeProfilesByKey`)
+keyed by `ColumnCoordinate` / `UniqueIndexEvidenceKey`. The aggregator's
+~150 LOC of join-and-aggregate logic is real derived data that V2 does
+not separately carry in its IR. With a minor refactor at copy-time
+(drop the two `enforce*Unique` policy gates; always populate both
+clean and duplicate sets), the aggregator lands as a pre-Enrichment
+DataIntent source. The carbon-copy could land in F# (rewrite at
+copy-time) or in C# (preserved as the V1 source). Per `DECISIONS
+2026-05-16 (later)`, the chapter consuming the lifted evidence makes
+that call; the rule application stays in F# `UniqueIndexRules.fs:144`
+either way. The orchestrator's distribution-shape (per-index decision
+fanning out to constituent columns) stays in F# `UniqueIndexPass`.
 `UniqueIndexPassTests.fs` and `UniqueIndexRulesTests.fs` exercise the
 behavioral contract; the V1 `UniqueIndexDecisionStrategyTests`
 divergences (Aggressive-mode collapse; included-columns boundary)
@@ -847,6 +931,18 @@ jointly carry V1's evaluator contract into V2; the strategy layer's
 fourth instance and the empirical confirmation that the codification
 holds without revision (`DECISIONS 2026-05-11 — Strategy-layer
 codification: empirical verdict after the fourth instance`).
+
+**Audible update (2026-05-16; V2 self-containment).** V2 placement
+remains **PURE PASS in F#**. No carbon-copy candidate: the V1
+evaluator's "raw" reads (`HasOrphan`, `HasDatabaseConstraint`,
+`TargetEntity`, `DeleteRuleCode`) are already present in V2's IR via
+`Catalog` and `Profile`; a carbon-copy would duplicate IR fields, not
+contribute novel evidence. The V1 evaluator's policy-bound observations
+(`IsIgnoreRule`, `crossSchemaBlocked`, `crossCatalogBlocked` against
+`_options.AllowCrossSchema` / `_options.AllowCrossCatalog`) are the
+mental-model artifacts V2 explicitly does not inherit; V2's
+`ForeignKeyRules.fs` covers the rule space with structured
+evidence/keep-reason DUs without the policy interleaving.
 `ForeignKeyPassTests.fs` and `ForeignKeyRulesTests.fs` exercise the
 behavioral contract. The `DeleteRuleIgnore` rationale-on-success
 divergence (V1 emits a rationale string on a successful decision; V2
@@ -2066,9 +2162,41 @@ out together rather than in isolation.
 ## 2026-05-13 — OSSYS catalog producer (`src/AdvancedSql/outsystems_metadata_rowsets.sql` → `MetadataSnapshotRunner` → `SnapshotJsonBuilder` → `osm_model.json`)
 
 **Status:** **extracted (chapter 2 close — JSON path; hybrid mode
-operating)** — `DECISIONS 2026-05-13` — admire spectrum, session-23
-amendment for the in-flight status, session-25 chapter-2-close
-transition to extracted. Six substantive translation slices have
+operating)** + **carbon-copy candidate (2026-05-16 audible)** —
+`DECISIONS 2026-05-13` — admire spectrum; session-23 amendment for
+the in-flight status; session-25 chapter-2-close transition to
+extracted; 2026-05-16 audible marking the chain as a carbon-copy
+candidate for the chapter that consumes a live SQL-extraction
+capability.
+
+**Audible update (2026-05-16; V2 self-containment).** The highest-
+value V1 inheritance candidate for V2. V1's metadata-extraction chain
+(`outsystems_metadata_rowsets.sql` + `MetadataSnapshotRunner` +
+`SnapshotJsonBuilder` + the result-set processor chain; ~1,880 LOC) is
+the load-bearing donor for V2's live Catalog acquisition. Under V2
+self-containment, the carbon-copy lands in a dedicated C# adapter
+project — proposed: `Projection.Adapters.OssysSql` (a new C# project
+under `sidecar/projection/src/`, museum-polish, named for the
+capability it adapts, not for V1). The carbon-copy includes the SQL
+file (`outsystems_metadata_rowsets.sql`; copied verbatim — the SQL is
+the truth) plus the C# orchestration plumbing, refactored for V2
+vocabulary and idioms at copy-time (or in a follow-up commit if a
+large refactor is involved).
+
+V1's `OsmModel` aggregate-root reconstruction is **not inherited** —
+V2's adapters consume the rowset shape directly per the chapter 3.2
+close (`SnapshotRowsets` variant). The carbon-copy brings forward the
+SQL + SQL extraction plumbing; V2 reconstructs `Catalog` from rowsets
+fresh in its own adapter code, without going through V1's aggregate-
+root mental model.
+
+The carbon-copy preserves the JSON path (`SnapshotJson` variant of
+`SnapshotSource`) as the offline-development source variant; the
+canonical production source variant for cutover becomes the
+live-SQL-extraction variant fed by the carbon-copied SQL. The chapter
+that opens this carbon-copy decides at chapter open whether the C#
+plumbing is preserved (carbon-copy + museum polish) or rewritten in
+F# at copy-time. The SQL itself is preserved verbatim either way. Six substantive translation slices have
 landed across sessions 18–22 and 24 through the `SnapshotJson`
 input path; the chapter closes with the JSON path operationally
 complete and the canonical `SnapshotRowsets` variant pre-scoped at

@@ -22,10 +22,21 @@ are **on-demand** references — read when the relevant work surfaces
 them, not as part of the canonical first-read pass.
 
 **`V2_DRIVER.md`** (codified 2026-05-10 chapter 3.7 sidebar; principal-PO
-discussion) is the destination-KPI document AND the operative backlog
-(supersedes the prior `BACKLOG.md` which is now a forwarding pointer).
-Read it before any chapter open; it codifies V2-driver as the project's
-north star and orders the remaining chapters under the V2-driver KPI.
+discussion) is the destination-KPI document — the *why* the cutover
+ladder bends toward V2-driver mode, the per-axis correctness stakes,
+the chapter ownership map. Slowest-rhythm strategic surface after the
+manifesto.
+
+**`BACKLOG.md`** (re-canonicalized 2026-05-16 — Bridge wave) is the
+operational ledger — *what is in flight, what is scheduled, what is
+blocked, what is shipped, and what is sunset*. Interweaves V2_DRIVER's
+per-phase chapter sequence with the Bridge wave's gradient transitions,
+cross-cutting infrastructure work, V1-side adoption opportunities, and
+the wave-wide risk register. Refreshed at every chapter close and at
+every Bridge method gradient transition.
+
+Read V2_DRIVER for the destination; read BACKLOG for the path. Both
+before any chapter open; BACKLOG before any chapter-mid status review.
 
 1. **`HANDOFF.md`** — bridge letter from the most-recent-closed
    chapter. Short on purpose. Names what is load-bearing and what
@@ -98,11 +109,17 @@ north star and orders the remaining chapters under the V2-driver KPI.
    pre-chapter-3 entries: Stage 0 commitment, R6 split-brain rule,
    chapter 3 sequencing, CLAUDE.md reading-order, T-30 / T-15
    fallback ladder gates.
-7. **`ADMIRE.md`** — V1↔V2 bridge. One entry per V1 component
-   admired and placed in V2. Three modes: V1-migration / V2-growth
-   / hybrid (`DECISIONS 2026-05-13` — admire spectrum). Multi-
-   session chapters use `extracting (in flight, N slices)` while
-   in flight (session 23 amendment).
+7. **`ADMIRE.md`** — the canonical V1-reference register. One entry
+   per V1 component admired and placed in V2. Three modes:
+   V1-migration / V2-growth / hybrid (`DECISIONS 2026-05-13` —
+   admire spectrum). Multi-session chapters use `extracting (in
+   flight, N slices)` while in flight (session 23 amendment).
+   Under the V2 self-containment discipline (`DECISIONS 2026-05-16
+   (later)`), ADMIRE is the editorial inheritance ledger: each
+   carbon-copy event records the V1 source, the V2 location, the
+   refactor status, and the date inherited. File-header citation
+   comments in V2's source link back to the corresponding ADMIRE
+   entry.
 8. **`README.md`** — surface-level orientation; updated at chapter
    closes. Not the source of truth for any specific question.
 9. **The code.** `Projection.sln`. Strategies in
@@ -160,6 +177,7 @@ of them, write the amendment first.
 | **Five-agent epistemic-tier audit at chapter close (chapter-3.1 contribution)** — multi-agent parallel audit dispatched at chapter close covering tightly orthogonal concerns (UL / Hex / VO / FP / ACL). Each agent classifies findings B&W vs SUBJ + H/M/L; convergence-map is the synthesis primary surface; Tier 1/2/3/4 backlog organizes findings by epistemic level + leverage. Audits are routed (named items in named chapters with named pre-scopes), not piled. Worked example: `AUDIT_2026_05_DDD_HEXAGONAL_FP.md`. | `DECISIONS 2026-05-30 — Session 36 / Five-agent DDD/Hexagonal/FP audit protocol` |
 | **Verifiability-triangle audit cadence (2026-05-12 contribution)** — V2's structural-commitment posture is audited along three connected levels: L1 (structural commitments — smart constructors, closed DUs, VOs), L2 (formal axioms in `AXIOMS.md` — A1–A40 + T1–T11), L3 (product axioms in `PRODUCT_AXIOMS.md` — operator-meaningful claims). Each L3 axiom must trace down to L2 and L1; each L2 axiom must trace up to a product behavior; each L1 commitment must trace up to an axiom. Audit dispatch protocol: three parallel agents (top-down L3 articulation + L2↔L3 bridge + adversarial gap-hunt as operator) produce a coverage map classifying every axiom into Bucket A (full L1+L2+L3+test), Bucket B (convention-enforced L1), Bucket C (weakness — untested/aspirational/deferred), or Bucket D (unnamed L3 axiom with no L2 backing). Cadence: (a) annual re-audit refresh; (b) chapter-close L3 step — every chapter close adds a one-paragraph audit check naming the L3 axioms its work touched and any new Bucket-D gaps introduced; (c) per-PR L3 review for PRs touching boundary code or adding config/CLI surface. Bucket-D promotions land in `AXIOMS.md` or `PRODUCT_AXIOMS.md` once campaigns operationalize them. Worked example: `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md`. | `DECISIONS 2026-05-12 — Verifiability-triangle audit methodology` |
 | **Pillar 9 — Harvest-dichotomy classification (data-intention vs operator-intention) (2026-05-15 late contribution; codified at supreme-operating-discipline level)** — every transformation site reads under one of two classifications: **`DataIntent`** (preserves data intention; reachable from `Project(catalog, Policy.empty, profile)` without operator opinion; lands in the skeleton — Profile-driven *observations* are DataIntent evidence) or **`OperatorIntent of OverlayAxis`** (expresses operator-supplied intent through `Selection \| Emission \| Insertion \| Tightening`; lands as registered overlay; emits `LineageEvent` carrying the classification). The dichotomy is operative AT HARVEST TIME — every transformation an agent considers (reading v1 for what to bring forward; designing a new pass; auditing an existing seam) gets classified before it lands in v2 thinking. **Policy IS operator intent reified**: OverlayAxis = Policy DU axes exactly (with reserved expansion if a fifth axis is warranted). Harvest workflow (4 steps): identify what changes → determine whose intent is expressed → register or document the harvest decision (transformation in v2 ships as `RegisteredTransform`; transformation NOT in v2 ships as triple deliverable Skip stub + Tolerance entry + `Status = NotImplementedInV2 of rationale` registry entry) → confirm intent against the pillar. **Named failure mode: skeleton-overlay drift** (three sub-modes: misclassification as DataIntent; dead overlay; silent inclusion at harvest) — caught bidirectionally by the skeleton-purity property + overlay-exercise property + harvest-classification coverage tests. Sibling to pillar 8 (catches naming drift), pillar 7 amendment (catches string-composition drift), text-builder-as-first-instinct (catches typed-AST-bypass drift). The four meta-disciplines form the discipline tier; each is applied at consideration time; each is enforced structurally; each protects a class of failure that scales with codebase growth. The `TransformRegistry` is the **fourth cross-cutting structural-evidence concern**, sibling to Lineage / Diagnostics / Bench — each plugs into every stage that has its kind of activity; each is enforced structurally; each has its own writer/observer primitive. Strongly-typed canonical surface: `RegisteredTransform<'In, 'Out>` carries metadata AND the transformation-function definition itself (single definition site; no parallel enumeration); 5-stage `StageBinding` (`Adapter \| Pass \| OrderingPolicy \| Emitter \| Pipeline`); `Sites : TransformSite list` for intra-pass classification fidelity. | `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification (DataIntent vs OperatorIntent); registry as cross-cutting concern; canonical strongly-typed registry shape` (refines the same-day re-opening entry with the full pillar-9 framing); `PRODUCT_AXIOMS.md` L3-CC-Transform-Totality (bidirectional axiom statement); `AXIOMS.md` A41 candidate (formal type-system shape); `V2_PRODUCTION_CUTOVER.md` §6.4.7 (A.4.7 workstream; full-sweep retroactive refactor; ∼3 weeks); `V2_DRIVER.md` per-axis stakes (data-intent / operator-intent separation — verification depth Highest, co-equal with CDC silence). |
+| **F#/C# language-role partition + V1 as editorial donor (chapter 0.5 audible; supersedes the 2026-05-16 Bridge wave codification)** — V2 is **self-contained**. The pure algebraic core is F#; F# adapters wrap external libraries (`Microsoft.Data.SqlClient`, `Microsoft.SqlServer.TransactSql.ScriptDom`, etc.) at the boundary; a small, focused, **museum-polish** C# layer exists only where the gold-standard library is irreducibly C#-idiomatic (SMO, DacFx if pursued) and lives in dedicated adapter projects (e.g., `Projection.Adapters.OssysSql` as a C# project for SQL extraction if it's awkward to rewrite). V2 has **zero runtime dependency on V1's trunk** — no `ProjectReference`, no compiled-V1-assembly on V2's classpath, no Bridge wall. V1's role in V2 is **editorial donor**: V2 reads V1's source for inspiration, decides what to keep, **carbon-copies** the source files into V2's domain-structured locations, and refactors freely once they land. Refactor at copy-time or in follow-up commits — pragmatic, not doctrinaire. Naming: V2 vocabulary applies (eventually) on every file; large refactors land already-V2-shaped; minor edits can land with V1 names and rename in a follow-up. The audit trail for a carbon-copy is a **file-header citation comment** naming the V1 source and the date — one-time, never maintained — plus a row in `ADMIRE.md` under the entry for the V1 component. The cherry-pick discipline holds by **self-containment**: V2 has no V1 references; every commit is cherry-pickable into a V1-only trunk by construction. | `DECISIONS 2026-05-16 (later) — V2 self-containment + carbon-copy editorial inheritance; Bridge wave retired`; `BACKLOG.md` operational ledger (V1 inheritance log section); `ADMIRE.md` (the canonical V1-reference register). |
 
 ## Load-bearing commitments — do not break without writing the amendment first
 
@@ -265,6 +283,19 @@ wanting to break one, write the amendment first.
   commitment refactor; Tier 4 (S0.C–S0.K) is primitive support
   modules in parallel. The chapter-1 baseline (631 passing tests)
   holds at every Stage 0 step.
+- **V2 is self-contained; V1 is editorial donor only.** Per
+  `DECISIONS 2026-05-16 (later) — V2 self-containment + carbon-copy
+  editorial inheritance`, V2 has zero runtime dependency on V1's
+  trunk. No `ProjectReference`, no V1 assembly on V2's classpath, no
+  Bridge wall. When V2 wants a V1 capability, V2 carbon-copies the
+  V1 source files into V2's domain-structured locations (existing
+  F# adapter / new C# adapter project for C#-idiomatic libraries),
+  cites the V1 source in a file-header comment + an `ADMIRE.md`
+  row, and refactors freely from there. The pure F# core stays
+  pure; the C# layer is small, focused, and museum-polish — admitted
+  only where the underlying gold-standard library is irreducibly
+  C#-idiomatic (SMO, DacFx if pursued). Cherry-pick safety holds
+  by construction.
 
 ## Programming style — the center target
 

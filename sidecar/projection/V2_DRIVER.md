@@ -94,7 +94,11 @@ Build the registry under A.4.7 (post-A.0' close; ~3 weeks; full-sweep retroactiv
 
 ## Executive backlog summary
 
-This document IS the V2 backlog (supersedes the prior `BACKLOG.md` which is now a forwarding pointer here). The V2-driver KPI reorders the backlog by V2-destination axis rather than V1-source-area; per-chapter operational detail continues to live in `CHAPTER_*_PRESCOPE_*.md` documents, which this backlog cross-references.
+**Operational backlog: `BACKLOG.md`** (re-canonicalized 2026-05-16). This document carries the strategic destination — phase ownership, per-axis correctness stakes, chapter sequencing under the V2-driver KPI. The operational ledger — what is in flight, scheduled, blocked, shipped, sunset, with per-phase pending slices, V1 inheritance opportunities (carbon-copy candidates), and cross-cutting infrastructure work — lives in `BACKLOG.md`. The two documents are sibling surfaces: this one is the *why*; `BACKLOG.md` is the *what and when*.
+
+The phase summary below is preserved as the strategic counts; cite `BACKLOG.md` per-phase sections for the operational detail (pending slices, V1 inheritance opportunities, per-phase risks, cross-cutting work).
+
+Per-chapter operational detail continues to live in `CHAPTER_*_PRESCOPE_*.md` documents; this backlog cross-references them and `BACKLOG.md` indexes them by phase.
 
 ### Counts by phase (chapter ownership under V2-driver KPI)
 
@@ -232,6 +236,8 @@ These disciplines and the V2-driver KPI are not in tension. They are the same pr
 ## Chapter sequencing under V2-driver KPI
 
 The remaining chapters before V2-driver mode is reachable, in dependency order. Calendar estimates assume the operator's current ~3-day cadence; session-cadence estimates assume one session ≈ a few hours.
+
+**V1 inheritance posture (per `DECISIONS 2026-05-16 (later) — V2 self-containment + carbon-copy editorial inheritance`).** V2 is fully self-contained — no runtime `ProjectReference` to V1's trunk, no Bridge wrapper layer. When a chapter wants a V1 capability, the chapter carbon-copies the V1 source files into V2's domain-structured locations (existing F# adapter project, or a new museum-polish C# adapter project for C#-idiomatic libraries), cites the V1 source in a file-header comment + an `ADMIRE.md` row, and refactors freely. Carbon-copy events are tracked operationally in `BACKLOG.md` § "V1 inheritance log". The phases below cite V1 inheritance opportunities per chapter, but no Bridge prerequisite exists.
 
 **Phase 1 — Π port keystone (chapter 3.5).** ~2 weeks at session cadence; ~1.5 calendar days at observed cadence.
 - Slices α/β/γ — Π port realization for typed RawText / Json / Distributions emitters. Json + Distributions already shipped (chapter 3.7 slice ε); RawText is the remaining work.

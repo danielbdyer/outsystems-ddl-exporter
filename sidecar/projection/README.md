@@ -24,6 +24,63 @@ framing has been superseded). Adapters return F# value types the core
 consumes. The two-language partition is no longer the algebra/I-O seam;
 the seam is structural — `Projection.Core` has zero I/O, adapters do.
 
+## V2 is self-contained; V1 is editorial donor
+
+V2 has **zero runtime dependency on V1's trunk**. No `ProjectReference`,
+no V1 assembly on V2's classpath, no wrapper layer between V2 and V1.
+V2's source tree is self-consistent; every commit is cherry-pickable
+into a V1-only trunk by construction.
+
+V1's relationship to V2 is **editorial**, not structural. V2 reads V1's
+source for inspiration and reference, decides what's worth keeping, and
+**carbon-copies** the relevant source files into V2's domain-structured
+locations. Once a file lands in V2, it is V2's: refactor freely, rename
+to V2 vocabulary, restructure to fit V2's idioms. The carbon-copy is
+the absorption; from that moment on, V1's evolution and V2's evolution
+of the same code diverge at their owners' chosen rhythms.
+
+**Where carbon-copies land** is V2's domain partition, not V1's source
+area. If a V1 capability is algebraic, the carbon-copy lands in an
+existing F# project (`Projection.Adapters.Osm`, `Projection.Core`,
+etc.). If a V1 capability is irreducibly C#-idiomatic — built on
+top of `Microsoft.SqlServer.Management.Smo`, `Microsoft.SqlServer.Dac`,
+`Microsoft.SqlServer.TransactSql.ScriptDom`, etc. — V2 admits a new
+**focused C# adapter project** with **museum-polish** code quality
+(e.g., `Projection.Adapters.OssysSql` for SQL extraction if pursued).
+The pure F# core remains pure; the C# layer is small, deliberate, and
+named for the capability it adapts, not for V1.
+
+**The carbon-copy may land verbatim** (V1 names initially preserved
+for review against V1's source; renamed to V2 vocabulary in a
+follow-up commit), **or refactored at copy-time** (the file lands
+already wearing V2 names and V2 idioms). The choice is pragmatic per
+file. Either way, the final state of the file is V2 code, indistinguishable
+from code V2 authored from scratch, except that a single **file-header
+comment** cites the V1 source for tethering and inspiration:
+
+```fsharp
+// Carbon-copied 2026-MM-DD from V1's `src/Osm.Pipeline/.../<File>.cs`
+// at the V1 head V2 inherited from. Refactored for V2 vocabulary
+// and idioms. See ADMIRE.md entry for the editorial trail.
+```
+
+The header comment is one-time and never maintained. It is a citation,
+not a synchronization mechanism. The corresponding entry in
+`ADMIRE.md` carries the audit trail.
+
+**V1 from V2's perspective is frozen in time** at the V1 head V2 saw
+when it inherited. V1's actual ongoing evolution in V1's trunk is V1's
+concern alone; V2 aims for parity with the V1 version V2 carbon-copied
+from. Subsequent V1 evolution is not automatically tracked; if a V1
+fix or feature surfaces that V2 wants, V2 may carbon-copy again (or
+edit the existing V2 file deliberately), recording the additional
+inheritance event in ADMIRE. The cadence is editorial, not mechanical.
+
+See `BACKLOG.md` § "V1 inheritance log" for the operational ledger of
+carbon-copy events; `ADMIRE.md` for the per-V1-component records;
+`DECISIONS 2026-05-16 (later) — V2 self-containment + carbon-copy
+editorial inheritance` for the codifying entry.
+
 ## Layout
 
 The current layout (chapters 3.1, 3.5/3.6/3.7 substantive, 4.1.A
