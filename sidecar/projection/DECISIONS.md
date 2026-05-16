@@ -11476,3 +11476,71 @@ Apply the 4-step harvest workflow:
 - `src/Osm.Pipeline/SqlExtraction/ModelDeserializerFacade.cs:72` (V1's SQL extraction emits empty sequences today; the rowset DTO ships for future symmetry).
 
 ---
+
+## 2026-05-16 — Builder coverage extended + idempotent record-extension script (chapter A.0' velocity refactor)
+
+**Status:** decided
+
+**Context.** Slice δ surfaced three friction points that scale linearly with the remaining chapter A.0' slices (ε / ζ / η / θ):
+
+1. The `Fixtures.attribute / kind / module' / catalog` builders from slice γ cover the Core IR's top-shape records, but **`Reference`, `Index`, `RowsetBundle`, and the per-rowset DTOs (`ModuleRow` / `KindRow` / `AttributeRow` / `ReferenceRow` / `TriggerRow` / `SequenceRow`) carry no builder**. Every slice that adds a field to any of these (slice ζ adds `Index.ExtendedProperties`; future per-DTO field-adds at ε / ζ if rowsets carry the new fields) pays mechanical-edit churn across every literal site.
+
+2. The `/tmp/add_isactive.py` / `/tmp/add_sequences.py` parameterized scripts the slice β / γ / δ amendments named were **single-shot**: each slice carried its own copy in the PR description; the script reincarnated identically across slices. Slice δ hit two reproducible edge cases: (a) **non-idempotency** — the script double-applied on Fixtures.fs / ReadSide.fs sites the slice author had already edited manually, producing duplicate `Sequences = []` field assignments; (b) **multi-line-list blindness** — `Triggers = [ triggerRow ... ] }` patterns weren't matched by the inline regex, requiring 5 manual edits in `TriggerLiftTests.fs`.
+
+3. The discipline-refinement amendment (`DECISIONS 2026-05-15 — Closed-DU empirical-test discipline refinement`) named builder adoption as **opportunistic** ("Other test-site migrations happen opportunistically; no big-bang migration of 200+ sites in this slice"). This stayed correct for slice γ and δ, but the cost basis grows: slice ε adds 3 fields to `Attribute` and 1 to `Kind`; ζ adds `ExtendedProperties` to 4 types; without proactive migration on the high-churn types, ε pays ~470 attribute-touches and ζ pays ~190 index/kind/attribute/module touches.
+
+### Decision
+
+**Three coupled refinements**:
+
+**(1) Builder coverage extended to every test-construction surface.** New builders in `Fixtures.fs`:
+
+- `Fixtures.reference (ssKey: SsKey) (n: Name) (source: SsKey) (target: SsKey) : Reference` — defaults: `OnDelete = NoAction; IsUserFk = false`.
+- `Fixtures.index (ssKey: SsKey) (n: Name) (columns: SsKey list) : Index` — defaults: `IsUnique = false; IsPrimaryKey = false`.
+- `Fixtures.moduleRow (espaceId: int) (espaceName: string) : CatalogReader.ModuleRow` — defaults: `IsSystemModule = false; IsActive = true; EspaceKind = Some "eSpace"; EspaceSsKey = None`.
+- `Fixtures.kindRow (entityId: int) (espaceId: int) (entityName: string) : CatalogReader.KindRow` — defaults: `PhysicalTableName = "OSUSR_T_" + entityName.ToUpperInvariant()`; `DbSchema = "dbo"`; `IsStatic / IsExternal / IsSystemEntity = false`; `IsActive = true`; `EntitySsKey / PrimaryKeySsKey / Description = None`.
+- `Fixtures.attributeRow (attrId: int) (entityId: int) (attrName: string) : CatalogReader.AttributeRow` — defaults: `PhysicalCol = attrName.ToUpperInvariant()`; `DataType = "Identifier"`; `IsMandatory / IsIdentifier / IsAutoNumber = false`; `Length / Precision / Scale / AttrSsKey / Description = None`; `IsActive = true`.
+- `Fixtures.referenceRow (attrId: int) (refEntityName: string) : CatalogReader.ReferenceRow` — defaults: `DeleteRuleCode = None; HasDbConstraint = true`.
+- `Fixtures.triggerRow (entityId: int) (triggerName: string) (definition: string) : CatalogReader.TriggerRow` — defaults: `IsDisabled = false`.
+- `Fixtures.sequenceRow (schema: string) (sequenceName: string) : CatalogReader.SequenceRow` — defaults: `DataType = "bigint"`; all bounds / cache fields `None`; `IsCycleEnabled = false`.
+- `Fixtures.rowsetBundle (modules: CatalogReader.ModuleRow list) : CatalogReader.RowsetBundle` — defaults: `Kinds / Attributes / References / Triggers / Sequences = []`.
+
+`Fixtures.fs` now opens `Projection.Adapters.Osm` to reach `CatalogReader`'s DTOs (already a project reference). The builders are test-only by construction — production code constructs adapter DTOs from real V1 input, never through fixture defaults.
+
+**(2) Record-extension script promoted to `scripts/extend_record.py` (sidecar-local, idempotent, multi-line-aware).** The single-shot `/tmp/add_isactive.py` / `/tmp/add_sequences.py` precedent retires. The new script:
+- **Idempotency check.** Each candidate record body is scanned for the new field name before the addition; if present, the site is skipped and logged (`SKIP: N site(s) already had <field>`).
+- **Multi-line awareness.** Brace-depth walk from the opening `{` (string / comment-aware) finds the matching `}`; multi-line records get the new field inserted with indentation matching the record's last field, alignment-preserving.
+- **Anchor-driven typing.** Two anchor modes name the record type without a full F# type-grammar parser: `--anchor-field <name>` (e.g., `Modules` for `Catalog`) or `--anchor-type <name>` (e.g., `RowsetBundle` for the `: RowsetBundle =` annotation form).
+- **Default-expression as parameter.** `--field <name> --default <expr>` lets the script handle any closed-DU widening or record extension; default expressions can be lists (`[]`), `None`, `false`, qualified constructors, etc.
+
+Future slices invoke the script directly from the codebase: `python3 scripts/extend_record.py <files> --anchor-field <name> --field <newField> --default <expr>`. The slice's commit message names the invocation for reproducibility (replaces the prior "preserved in PR description" pattern).
+
+**(3) Mass-migration of `Attribute` / `Kind` / per-rowset-DTO literal sites stays opportunistic — but escalation trigger named.** The chapter 3.2 close generalization said "Other test-site migrations happen opportunistically." Slice γ + δ honored that. The migration's payoff scales with the **field-add velocity at the affected types** — once that velocity crosses a per-type threshold, opportunistic migration is no longer the right disposition.
+
+The named **escalation trigger** for proactive migration is: **a single slice adds ≥ 3 fields to one record type, or a single chapter adds ≥ 5 fields to one record type**. Slice ε at chapter A.0' adds 2 fields to `Attribute` (`DefaultValue` + `Computed`) and 1 to `Kind` (`ColumnChecks`) — below trigger. Chapter A.0' will have added 5 fields to `Attribute` (Description + IsActive + DefaultValue + Computed + ExtendedProperties from slice ζ) and 4-5 to `Kind` by chapter close — **at-trigger for `Attribute` and `Kind` at chapter close**. The chapter-close ritual gains a migration check: any record type that has crossed the trigger over the chapter's span gets a proactive-migration sub-slice landed during chapter close (or named as the next chapter's opening item).
+
+The trigger threshold (3-per-slice / 5-per-chapter) is empirical, not foundational — codified at this slice because slice δ's experience surfaced the gap, not because the discipline is axiomatic. Re-tune as chapter cadence settles.
+
+### Reasoning / consequences
+
+- **Slice ε pays the full literal-site cost basis at `Attribute` and `Kind`** — the trigger doesn't fire mid-slice. Builders absorb the new construction sites (the new `SequenceLiftTests.fs` already used `Fixtures.*` from the start; slice ε's new test files do the same), but pre-existing direct literals continue to receive script-applied edits.
+- **Slice ζ benefits directly from `Fixtures.index`** — the existing 12 Index literal sites receive script-applied `ExtendedProperties = []`, plus the new sites use the builder. Same shape as slice δ for Sequences.
+- **The chapter-close migration sub-slice is the natural cash-out point** for the empirical trigger. By the end of chapter A.0', `Attribute` and `Kind` will have absorbed 5 field-adds each via script; the migration consolidates 117 + 73 literal-site touches into one focused slice with its own test-baseline gate, isolating any regression risk from the substantive field-add slices.
+- **The script-in-sidecar-scripts pattern compounds with the perf-gate / lint-discipline / install-hooks precedent** — the `scripts/` directory now carries the chapter-A.0' velocity primitive alongside the canary / lint / hooks primitives. Future agents look there first.
+- **Builder coverage NOT extended** to: `Catalog` (slice γ already covered it); `Module` / `Kind` / `Attribute` (slice γ already covered them); `StaticRow` / `ColumnRealization` (lightweight enough that builder overhead exceeds payoff). The line is: a builder lands when the record has ≥ 4 fields OR when slice-pressure surfaces (rowset DTOs all qualify by having ≥ 6 fields each).
+
+### Discipline NOT changed
+
+- The **closed-DU empirical-test discipline** still operates with the two modes (literal-site audit + builder-mediated). Slice authors still answer the slice-open question and record the chosen mode. Builders are an additional surface available in builder-mediated mode, not a replacement for the discipline.
+- **Builders remain test-only.** Production code (adapters, passes, emitters) constructs records via smart constructors (`Module.create`, `Catalog.create`) or direct literals where smart constructors don't apply. The fixture builder surface is never imported into `Projection.Core` / `Projection.Adapters.*` / `Projection.Targets.*`.
+- **IR-grows-under-evidence** holds for production primitives. The new fixture-side builders are test infrastructure, not IR refinements — they earn their place under the closed-DU empirical-test discipline's builder-mediated mode, not under the two-consumer threshold.
+
+### Cross-references
+
+- `DECISIONS 2026-05-15 — Closed-DU empirical-test discipline refinement: builders absorb default-shaped churn` (the parent discipline; this entry extends the builder surface).
+- `DECISIONS 2026-05-15 — A.0' slice γ: Triggers IR lift + Fixtures builders` (the slice that introduced `Fixtures.attribute / kind / module' / catalog`; this entry extends to siblings).
+- `DECISIONS 2026-05-15 — A.0' slice δ: Sequences IR lift (mirror of γ under builder-mediated mode)` (the slice whose friction motivated this refactor).
+- `CHAPTER_A_0_PRIME_OPEN.md` slice plan (the remaining slices ε / ζ / η / θ are the consumer surface this refactor serves).
+- `scripts/extend_record.py` (the codified record-extension primitive).
+
+---

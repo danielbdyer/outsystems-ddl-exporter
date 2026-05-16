@@ -1,6 +1,7 @@
 module Projection.Tests.Fixtures
 
 open Projection.Core
+open Projection.Adapters.Osm
 
 // ---------------------------------------------------------------------------
 // Synthetic catalog used as the test bed for the entire pipeline.
@@ -128,12 +129,152 @@ let module' (ssKey: SsKey) (n: Name) : Module =
       Kinds    = []
       IsActive = true }
 
+/// Build a `Reference` with sensible defaults. Defaults:
+///   OnDelete = NoAction; IsUserFk = false.
+let reference (ssKey: SsKey) (n: Name) (source: SsKey) (target: SsKey) : Reference =
+    { SsKey           = ssKey
+      Name            = n
+      SourceAttribute = source
+      TargetKind      = target
+      OnDelete        = NoAction
+      IsUserFk        = false }
+
+/// Build an `Index` with sensible defaults. Defaults:
+///   IsUnique = false; IsPrimaryKey = false.
+let index (ssKey: SsKey) (n: Name) (columns: SsKey list) : Index =
+    { SsKey        = ssKey
+      Name         = n
+      Columns      = columns
+      IsUnique     = false
+      IsPrimaryKey = false }
+
 /// Build a `Catalog` from a list of modules with sensible defaults.
 /// Defaults: Triggers = []; Sequences = [].
 let catalog (modules: Module list) : Catalog =
     { Modules   = modules
       Triggers  = []
       Sequences = [] }
+
+// ---------------------------------------------------------------------------
+// Rowset-DTO builders (chapter A.0' slice ε prelude).
+//
+// V1's rowset bundle (`CatalogReader.RowsetBundle` + the per-row DTOs
+// `ModuleRow` / `KindRow` / `AttributeRow` / `ReferenceRow` /
+// `TriggerRow` / `SequenceRow`) accumulates fields slice-by-slice
+// (`Description` at slice α; `IsActive` at slice β; the trigger DTO
+// at slice γ; the sequence DTO at slice δ). Without builders, every
+// rowset literal site pays a field-addition touch per slice — and
+// these literals are concentrated in a few canonical files
+// (`OsmRowsetReaderTests`, the lift-tests, `DescriptionLiftTests`)
+// where the churn is mechanical but mass.
+//
+// Builders absorb the default-shaped churn the same way `Fixtures
+// .attribute` / `kind` / `module'` / `catalog` do for the Core IR.
+// The per-row DTOs are test-only carriers (production rowset rows
+// come from a C# SqlClient loader that isn't wired yet); the
+// `RowsetBundle` builder + per-row builders are the surfaces tests
+// actually need.
+// ---------------------------------------------------------------------------
+
+/// Build a `ModuleRow` with sensible defaults. Defaults:
+///   IsSystemModule = false; IsActive = true; EspaceKind = Some "eSpace";
+///   EspaceSsKey = None.
+let moduleRow (espaceId: int) (espaceName: string) : CatalogReader.ModuleRow =
+    { EspaceId       = espaceId
+      EspaceName     = espaceName
+      IsSystemModule = false
+      IsActive       = true
+      EspaceKind     = Some "eSpace"
+      EspaceSsKey    = None }
+
+/// Build a `KindRow` with sensible defaults. Defaults:
+///   PhysicalTableName = uppercase entityName prefixed with "OSUSR_T_";
+///   DbSchema = "dbo"; IsStatic / IsExternal / IsSystemEntity = false;
+///   IsActive = true; EntitySsKey / PrimaryKeySsKey / Description = None.
+let kindRow (entityId: int) (espaceId: int) (entityName: string) : CatalogReader.KindRow =
+    { EntityId          = entityId
+      EspaceId          = espaceId
+      EntityName        = entityName
+      PhysicalTableName = sprintf "OSUSR_T_%s" (entityName.ToUpperInvariant())
+      DbSchema          = "dbo"
+      IsStatic          = false
+      IsExternal        = false
+      IsSystemEntity    = false
+      IsActive          = true
+      EntitySsKey       = None
+      PrimaryKeySsKey   = None
+      Description       = None }
+
+/// Build an `AttributeRow` with sensible defaults. Defaults:
+///   PhysicalCol = attrName.ToUpperInvariant(); DataType = "Identifier";
+///   IsMandatory / IsIdentifier / IsAutoNumber = false;
+///   Length / Precision / Scale / AttrSsKey / Description = None;
+///   IsActive = true.
+let attributeRow
+    (attrId: int) (entityId: int) (attrName: string)
+    : CatalogReader.AttributeRow =
+    { AttrId       = attrId
+      EntityId     = entityId
+      AttrName     = attrName
+      PhysicalCol  = attrName.ToUpperInvariant()
+      DataType     = "Identifier"
+      IsMandatory  = false
+      IsIdentifier = false
+      IsAutoNumber = false
+      Length       = None
+      Precision    = None
+      Scale        = None
+      AttrSsKey    = None
+      IsActive     = true
+      Description  = None }
+
+/// Build a `ReferenceRow` with sensible defaults. Defaults:
+///   DeleteRuleCode = None (parses to NoAction);
+///   HasDbConstraint = true.
+let referenceRow (attrId: int) (refEntityName: string) : CatalogReader.ReferenceRow =
+    { AttrId          = attrId
+      RefEntityName   = refEntityName
+      DeleteRuleCode  = None
+      HasDbConstraint = true }
+
+/// Build a `TriggerRow` with sensible defaults. Defaults:
+///   IsDisabled = false.
+let triggerRow
+    (entityId: int) (triggerName: string) (definition: string)
+    : CatalogReader.TriggerRow =
+    { EntityId          = entityId
+      TriggerName       = triggerName
+      IsDisabled        = false
+      TriggerDefinition = definition }
+
+/// Build a `SequenceRow` with sensible defaults. Defaults:
+///   DataType = "bigint"; StartValue / Increment / MinValue / MaxValue = None;
+///   IsCycleEnabled = false; CacheMode / CacheSize = None.
+let sequenceRow (schema: string) (sequenceName: string) : CatalogReader.SequenceRow =
+    { Schema         = schema
+      SequenceName   = sequenceName
+      DataType       = "bigint"
+      StartValue     = None
+      Increment      = None
+      MinValue       = None
+      MaxValue       = None
+      IsCycleEnabled = false
+      CacheMode      = None
+      CacheSize      = None }
+
+/// Build a `RowsetBundle` from a list of module rows with sensible
+/// defaults. Defaults: Kinds / Attributes / References / Triggers /
+/// Sequences = []. Mirrors `Fixtures.catalog`'s shape for the rowset
+/// side; future bundle-level field additions (next: probably
+/// `ExtendedProperties` at slice ζ if it lifts via rowsets) touch the
+/// builder, not the literal sites.
+let rowsetBundle (modules: CatalogReader.ModuleRow list) : CatalogReader.RowsetBundle =
+    { Modules    = modules
+      Kinds      = []
+      Attributes = []
+      References = []
+      Triggers   = []
+      Sequences  = [] }
 
 // ---------------------------------------------------------------------------
 // Customer

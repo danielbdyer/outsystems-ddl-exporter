@@ -35,12 +35,14 @@ Test baseline: **1182 / 1182 passing** at slice δ (1169 prior + 13 new `Sequenc
 
 ## Mechanical-edits precedent
 
-Per slice α / β / γ: record-extension slices follow this workflow.
+Per slice α / β / γ / δ: record-extension slices follow this workflow.
 1. Extend the IR record(s) in `Catalog.fs` + smart constructors (`Module.create` / `Catalog.create` if signature changes).
 2. Adapter pickup on both JSON and rowset paths (`CatalogReader.fs`). Cross-source parity is the discipline.
-3. Property tests in a new `<Field>LiftTests.fs` file (mirror `DescriptionLiftTests.fs` / `IsActiveLiftTests.fs` / `TriggerLiftTests.fs`).
-4. Build, capture FS0764 worklist, run the parameterized fixture-extension script (`/tmp/add_isactive.py --field <Name> --value <Default>` — preserved in the slice-β PR description if needed).
-5. Manually fix any sites where the script's inline-close heuristic produces invalid F# (typically `|>` pipe-chains ending at `}`). Use `{ c with ... }` instead.
+3. Property tests in a new `<Field>LiftTests.fs` file (mirror `DescriptionLiftTests.fs` / `IsActiveLiftTests.fs` / `TriggerLiftTests.fs` / `SequenceLiftTests.fs`). Use the `Fixtures.*` builders from the start.
+4. Build, capture FS0764 worklist, run `scripts/extend_record.py <files> --anchor-field <field> --field <NewField> --default <expr>` (idempotent + multi-line-aware; codified at 2026-05-16 per the velocity refactor — supersedes the `/tmp/add_*.py` single-shot precedent). Idempotent: rerunning is a no-op on already-fixed sites.
+5. Build again; remaining FS0764 sites are typically multi-line-list patterns the script's brace-walk couldn't disambiguate at composition level. Fix manually.
+
+Fixture surface (slice γ + 2026-05-16 velocity refactor): `Fixtures.attribute / kind / module' / catalog / reference / index / moduleRow / kindRow / attributeRow / referenceRow / triggerRow / sequenceRow / rowsetBundle`. New test-construction sites use builders by default; mass-migration of pre-existing literal sites stays opportunistic until the **3-per-slice / 5-per-chapter** escalation trigger fires (per DECISIONS 2026-05-16). The trigger fires for `Attribute` + `Kind` at A.0' chapter close — chapter-close ritual will land a migration sub-slice.
 
 ## Operator-side checks (unchanged)
 
