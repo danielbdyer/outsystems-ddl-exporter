@@ -126,7 +126,7 @@ let private expectedCatalog : Catalog =
           Name     = mkName "User"
           Origin   = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
               { SsKey        = userIdAttrKey
                 Name         = mkName "Id"
@@ -340,7 +340,7 @@ let private expectedReferenceCatalog : Catalog =
           Name     = mkName "Account"
           Origin   = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_ACCOUNT" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_ACCOUNT"; Catalog = None }
           Attributes = [
               { SsKey        = accountIdAttrKey
                 Name         = mkName "Id"
@@ -356,7 +356,7 @@ let private expectedReferenceCatalog : Catalog =
           Name     = mkName "User"
           Origin   = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
               { SsKey        = userIdAttrKey
                 Name         = mkName "Id"
@@ -499,7 +499,7 @@ let private expectedExternalCatalog : Catalog =
           Name     = mkName "BillingAccount"
           Origin   = ExternalViaIntegrationStudio
           Modality = []
-          Physical = { Schema = "billing"; Table = "BILLING_ACCOUNT" }
+          Physical = { Schema = "billing"; Table = "BILLING_ACCOUNT"; Catalog = None }
           Attributes = [
               { SsKey        = billingAccountIdAttrKey
                 Name         = mkName "Id"
@@ -682,7 +682,7 @@ let private expectedMixedActiveCatalog : Catalog =
           Name     = mkName "ActiveEntity"
           Origin   = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_ACTIVE" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_ACTIVE"; Catalog = None }
           Attributes = [
               { SsKey        = activeEntityIdAttrKey
                 Name         = mkName "Id"
@@ -704,7 +704,7 @@ let private expectedMixedActiveCatalog : Catalog =
           Name     = mkName "RetiredEntity"
           Origin   = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_RETIRED" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_RETIRED"; Catalog = None }
           Attributes = [
               { SsKey        = retiredEntityIdAttrKey
                 Name         = mkName "Id"
@@ -925,7 +925,7 @@ let private expectedIndexCatalog : Catalog =
           Name     = mkName "User"
           Origin   = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
               { SsKey        = userIdAttrKey
                 Name         = mkName "Id"
@@ -1097,7 +1097,7 @@ let private expectedStaticEntityCatalog : Catalog =
           // flow through `Projection.Adapters.Sql/Static.fs`
           // separately.
           Modality = [ Static [] ]
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_COUNTRY" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_COUNTRY"; Catalog = None }
           Attributes = [
               { SsKey        = countryIdAttrKey
                 Name         = mkName "Id"

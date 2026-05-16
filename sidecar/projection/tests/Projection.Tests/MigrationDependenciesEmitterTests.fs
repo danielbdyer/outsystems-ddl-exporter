@@ -50,7 +50,7 @@ let private mkCountryKind () : Kind =
         Name     = mkName "Country"
         Origin   = OsNative
         Modality = []  // NOT static — populated via Migration channel
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
         Attributes =
             [
                 { SsKey = idKey;    Name = mkName "Id";    Type = Integer

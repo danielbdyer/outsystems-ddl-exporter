@@ -1,5 +1,9 @@
 # Chapter A.0' open — IR fidelity lifts (Campaign A.2 + B prerequisite)
 
+> **STATUS: CLOSED 2026-05-16.** All 9 slices shipped; ten L3 axioms advanced D → A. Chapter-close synthesis at `CHAPTER_A_0_PRIME_CLOSE.md`. This open document is preserved as the historical strategic-frame; subsequent agents should read the close doc first.
+
+
+
 **Branch:** `claude/review-handoff-docs-CF2v5`. **Predecessor:** PR #538 → merged at `8733d0c`; A.7.1 atomic emission promoted L3-Boundary-AtomicEmission D → A. **Plan-of-record spec:** `V2_PRODUCTION_CUTOVER.md` §6.0' + §3.3 (IR-fidelity gap table). **Audit reference:** `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` Part VI.
 
 This chapter promotes the **Tier-1 unnamed L3 axioms in §3.3** from Bucket D → Bucket A. Each lift carries a V1 schema concept that `Catalog` does not yet hold into a typed home — OR routes it through a `Diagnostic.Severity=Error` at the OSSYS-adapter boundary. The completion criterion is **L3-Boundary-NoSilentDrop**: no V1 concept in §3.3 leaves the adapter as silent passthrough. Campaign A.2 (no-silent-drop) is the chapter's structural target; Campaign B (smart-constructor sweep) lands incidentally on the new fields that gain invariants.
@@ -44,8 +48,8 @@ Order chosen by **risk × leverage × prerequisite chain**:
 | **ε** | `Attribute.DefaultValue : SqlLiteral option` (JSON adapter pickup via `SqlLiteral.ofRaw`) + `Attribute.Computed : ComputedColumnConfig option` + `Kind.ColumnChecks : ColumnCheck list` — **SHIPPED 2026-05-16 (XXXXL)** | L3-S6, L3-S7, L3-S8 | Medium — three related additions; share adapter machinery |
 | **ζ** | `ExtendedProperties: ExtendedProperty list` on Module / Kind / Attribute / Index + JSON adapter pickup at entity level — **SHIPPED 2026-05-16 (XXXXL)** | L3-S9 | High — four-level extension; absorbed via mechanical edits + `IRBuilders` |
 | **η** | `ModalityMark.Temporal of TemporalConfig` (DU widening for temporal tables) — **SHIPPED 2026-05-16 (XXXXL)** | (covered by L3-S4 family; sub-axiom pending) | High — only DU-widening slice in chapter; closed-DU empirical test held (3 match-site additions across pass modules + JsonEmitter; no other ripple) |
-| **θ** | `TableId.Catalog : string option` extension | L3-S10 / L3-I10 | High — invasive; touches every `TableId` literal site |
-| **ι** | IsExternal / Origin mapping audit + final L3-Boundary-NoSilentDrop property test | L3-CC4 + completion criterion | Low — property tests only; no IR change |
+| **θ** | `TableId.Catalog : string option` extension + JSON `db_catalog` pickup — **SHIPPED 2026-05-16** | L3-S10 / L3-I10 | High planned; actual blast radius was 9 src record-literal sites (smaller than expected — `TableId.create` signature unchanged via default-`None` discipline) |
+| **ι** | IsExternal / Origin mapping audit + final L3-Boundary-NoSilentDrop property test — **SHIPPED 2026-05-16** | L3-CC4 + completion criterion | Low — property tests only; no IR change |
 
 **Deferred-out-of-A.0'** per `V2_PRODUCTION_CUTOVER.md` §11.5:
 - `OriginalName` (prior attribute names) — renames handled at cutover, not embedded.

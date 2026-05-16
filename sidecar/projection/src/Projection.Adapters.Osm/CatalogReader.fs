@@ -969,6 +969,11 @@ module CatalogReader =
         let nameResult       = getString entityJson "name"
         let physicalResult   = getString entityJson "physicalName"
         let schemaResult     = getString entityJson "db_schema"
+        // Chapter A.0' slice θ — Catalog (database) coordinate lift
+        // (L3-S10 / L3-I10). V1's JSON projects `db_catalog` (typically
+        // `null`; explicit cross-database references land as a
+        // non-blank string). Defensive read via `getOptionalString`.
+        let catalogResult    = getOptionalString entityJson "db_catalog"
         let isStaticResult   = getBool   entityJson "isStatic"
         let isExternalResult = getBool   entityJson "isExternal"
         // Chapter A.0' slice α — Description lift. Same defensive
@@ -1057,7 +1062,16 @@ module CatalogReader =
                       Name        = n
                       Origin      = parseOrigin isExternal
                       Modality    = modality
-                      Physical    = { Schema = schema; Table = physicalName }
+                      Physical    =
+                        { Schema = schema
+                          Table = physicalName
+                          // Chapter A.0' slice θ — `db_catalog` carried
+                          // through; `None` when V1 projects `null`
+                          // (implicit-current-database scope).
+                          Catalog =
+                            match catalogResult with
+                            | Ok value -> value
+                            | Error _  -> None }
                       Attributes  = attrs
                       References  = refs
                       Indexes     = idxs
@@ -1390,7 +1404,7 @@ module CatalogReader =
                   Origin      = parseOriginFromRowset kindRow.IsExternal moduleEspaceKind
                   Modality    = modality
                   Physical    = { Schema = kindRow.DbSchema
-                                  Table  = kindRow.PhysicalTableName }
+                                  Table  = kindRow.PhysicalTableName; Catalog = None }
                   Attributes  = attrs
                   References  = refs
                   // Indexes deferred to a future slice (rowsets 10-11

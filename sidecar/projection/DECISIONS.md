@@ -11483,3 +11483,79 @@ Plus the corresponding IR-record field additions:
 5. **`ModalityMark.mapPayload` helper extraction-trigger.** Three pass modules now have near-identical `Temporal _ -> m` match arms; if a fourth ModalityMark variant lands (and a fourth pass-module touches it), the two-consumer-of-the-same-shape threshold fires for extraction.
 
 ---
+
+## 2026-05-16 (slice θ + slice ι — chapter A.0' close) — TableId.Catalog lifted; L3-Boundary-NoSilentDrop verified; chapter A.0' closes
+
+**Status:** decided. Chapter A.0' (IR fidelity lifts) closes. Slice θ lifts `TableId.Catalog : string option` per `V2_PRODUCTION_CUTOVER.md` §3.3 row "Catalog (database) coordinate" (L3-S10 / L3-I10). Slice ι ships the chapter-close completion criterion: a property-test surface (`NoSilentDropTests`) asserting every V1 schema concept in §3.3 has either a typed Catalog field or a structured-error path at the OSSYS-adapter boundary, plus the IsExternal / Origin mapping audit (Bucket-B → A) covering both JSON-path and rowset-path adapters.
+
+**Slice θ — TableId.Catalog (L3-S10 / L3-I10).** `TableId` extended from `{ Schema; Table }` to `{ Catalog : string option; Schema; Table }`. `TableId.create` retains the `(schema, table) -> Result<TableId>` signature and defaults `Catalog = None` (implicit-current-database scope; V1's `db_catalog: null` parity). A second smart constructor `TableId.createWithCatalog (catalog) (schema) (table)` carries explicit cross-database coordinates and rejects blank `catalog` per A39. OSSYS JSON adapter (`parseKind`) reads V1's `db_catalog` JSON field via `getOptionalString` and projects it into `Physical.Catalog`; rowset path defaults to `None` (V1 rowsets do not currently surface the catalog axis; positioned for future rowset extension or DACPAC adapter pickup). `ReadSide` defaults to `None` on the deployed-schema readback (an `INFORMATION_SCHEMA.TABLES.TABLE_CATALOG` query would surface it; gated on a future ReadSide slice).
+
+**Mechanical edits — 9 record literal sites.** The blast radius from §3.3's pre-scope characterization ("touches every `TableId` literal site") proved smaller than estimated. The `{ Schema = ...; Table = ... }` record-update / construction sites that needed `Catalog = None` were 9 across src (`CatalogReader` x 2, `ReadSide` x 1, `SsdtDdlEmitter`, `RefactorLogEmitter`, `MigrationDependenciesEmitter` x 2, `StaticSeedsEmitter` x 2) plus a handful in tests; the existing `TableId.create` call sites are unaffected (the signature is unchanged; `Catalog = None` default rides on every value). The closed-DU empirical-test discipline generalises to this 3-field record extension identically to the prior slices.
+
+**Slice ι — L3-Boundary-NoSilentDrop + Origin audit (Bucket-B → A).** `NoSilentDropTests.fs` ships:
+
+1. **Per-concept structural witnesses (12 tests).** For each V1 concept in §3.3 — Triggers, Sequences, DEFAULT, Computed, ColumnChecks, Description (Kind + Attribute), ExtendedProperties (Module + Kind + Attribute + Index), ModalityMark.Temporal, IsActive (Module + Kind + Attribute), TableId.Catalog — a test asserts the V2 IR carries the typed home. Compile-time guarantee via field-access; the runtime assertion serves as documentation + fail-fast canary for IR rollback.
+2. **End-to-end kitchen-sink JSON fixture (1 test).** Single fixture exercises every V1-projected axis simultaneously (Descriptions + IsActive + Triggers + DEFAULT + ExtendedProperties + IsExternal=true → ExternalViaIntegrationStudio). One Catalog result asserted against six axes; the chapter's complete forward boundary in one witness.
+3. **IsExternal / Origin mapping audit (5 tests).** JSON path's two-way placeholder (per session-20 amendment): `isExternal=false → OsNative` + `isExternal=true → ExternalViaIntegrationStudio`. Rowset path's three-way real (per session-22 amendment): `isExternal=false → OsNative` + `isExternal=true ∧ EspaceKind="Extension" → ExternalViaIntegrationStudio` + `isExternal=true ∧ EspaceKind=None → ExternalDirect`. Plus an invariant assertion: `isExternal=true` never produces `OsNative` (Bucket-B → A upgrade).
+
+**Promotion bookkeeping (chapter A.0' close).**
+
+| L3 axiom | Pre-chapter | At chapter close | Slice |
+|---|---|---|---|
+| L3-S4 (Triggers) | D | A | γ + ι |
+| L3-S5 (Sequences) | D | A | δ + ι |
+| L3-S6 (DEFAULT) | D | A | ε + ι |
+| L3-S7 (Computed) | D | A | ε + ι |
+| L3-S8 (CHECK) | D | A | ε + ι |
+| L3-S9 (Descriptions + IsActive + ExtendedProperties) | D | A | α + β + ζ + ι |
+| L3-S10 / L3-I10 (Catalog coordinate) | D | A | θ + ι |
+| L3-CC4 (IR fidelity for production) | D | A | all 9 slices + ι |
+| L3-Boundary-NoSilentDrop | D | A | ι (structural exit gate) |
+| IsExternal/Origin mapping | B | A | ι (audit) |
+
+**Pillar 9 bookkeeping.** All chapter-A.0' axes are DataIntent (reachable from `Project(catalog, Policy.empty, profile)` without operator opinion). Slice β retired the session-21 mis-placed OperatorIntent; no other axis carried an OperatorIntent mis-placement. The completion test surface itself is DataIntent — it asserts source-schema evidence presence at the IR boundary.
+
+**Witnesses (chapter A.0' total).**
+- 7 tests (`DescriptionLiftTests.fs`, slice α)
+- 9 tests (`IsActiveCarryThroughTests.fs`, slice β)
+- 22 tests (`IRFidelityLiftTests.fs`, slices γ + δ + ε + ζ + η + θ)
+- 21 tests (`NoSilentDropTests.fs`, slice ι)
+- 5 prior tests reworked at slice β to assert carry-through instead of silent-drop
+- Plus the cross-cutting `IRBuilders.fs` fixture-builder pattern + retrofitted `Fixtures.fs` as the worked example.
+
+**Test baseline (chapter A.0' close).** **1202 / 1202 passing** (1177 prior + 21 new `NoSilentDropTests` + 4 new TableId.Catalog tests in `IRFidelityLiftTests`); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged (13 pre-existing on main; zero new from chapter A.0').
+
+**A18 amended preserved.** No emitter consumes Policy. Every new IR field is part of `Catalog` (DataIntent evidence); Π consumes `Catalog × Profile` per A18 amended. Future Selection/Emission-axis passes that filter on the new fields run BEFORE Π.
+
+**V2 self-containment preserved.** Chapter A.0' shipped 9 IR-fidelity slices + 1 completion-criterion slice; zero carbon-copy events. The `BACKLOG.md` V1 inheritance log remains empty. V2 self-containment holds by construction across the chapter.
+
+**Tolerance retirements (forward signals from chapter A.0').** `CommentMetadataUnreflected` Tolerance variant (`Projection.Core.Tolerance`) is one structural step closer to retirement: the IR now carries Description (α) + ExtendedProperties (ζ) at four levels. The full retirement gates on emitters consuming the IR fields (chapter 4.1.A slice 8 ExtendedProperties DDL emission; chapter 3.x DacpacEmitter for `Microsoft.SqlServer.Dac` extended-property writes). Same with `TableId.Catalog` (slice θ) — the IR carriage is complete; emitter cross-database FK qualification + cross-DB DDL emission per consumer demand.
+
+**Chapter A.0' meta-codifications.**
+
+1. **Mechanical-edits precedent for record-extension slices.** Five slices (β, γ-η as XXXXL, θ) operated the same workflow: extend IR → build, capture FS0764 worklist → Python pass against literal sites with type-keyed DEFAULTS → iterate until convergence → manual fix on multi-line edge cases. Saved in `/tmp/fix_fields.py` + `/tmp/dedupe.py` + `/tmp/fix_indents.py`; preserved as documented technique for next-chapter slices that touch the IR.
+2. **IRBuilders fixture-builder pattern (chapter A.0' XXXXL contribution).** `tests/Projection.Tests/IRBuilders.fs` centralises `mkAttribute` / `mkKind` / `mkModule` / `mkIndex` / `mkCatalog` with minimum-evidence DataIntent defaults. The retroactive sweep across remaining test sites is logged as a chapter-close follow-up (volume work; not load-bearing for the next chapter's correctness).
+3. **Per-axis property test as completion criterion.** `NoSilentDropTests.fs` demonstrates the pattern: each V1 schema concept gets a structural-witness test asserting the IR carries the field. Compile-time enforcement via the type system; runtime assertion as documentation. Reusable for future structural-completeness audits (any chapter that lifts a feature surface from V1's source schema can adopt the same per-axis pattern).
+4. **Pillar-8 deviation discipline (slice γ).** Chapter open's "Catalog.Triggers" was planning shorthand; pillar-8 four-question naming analysis chose `Kind.Triggers` (table-scoped per SQL Server semantic). The chapter open + chapter close docs both record the corrected scope. Future chapter agents reading the chapter open should treat the slice plan rows as design intent, not constraints — pillar-8 analysis at implementation time can refine the scope when the planning shorthand misaligns with the domain concept.
+
+**Forward signals (chapter close).** Active deferrals re-checked per the chapter-close ritual:
+
+- **A.4.7-prelude small slice** (`LineageEvent.Classification` field per `DECISIONS 2026-05-15 (late)`): unblocked by chapter A.0' close. Recommended next chapter or follow-on slice — adds the `Classification : Classification` field to `LineageEvent` so events self-classify before the full A.4.7 traversal refactor.
+- **Rowset-path pickup for triggers / extended properties / defaults / column checks / db_catalog**: gated on V1 rowset extension or DACPAC-adapter slice. The IR shape is ready; the rowset DTOs need extension when the consumer demands.
+- **Emitter consumption for the new IR fields**: per-consumer, per-emitter (`SsdtDdlEmitter`, `DacpacEmitter`, the future `Projection.Targets.SSDT.Triggers` emitter). The `CommentMetadataUnreflected` Tolerance variant retires when Description + ExtendedProperties emission catches up.
+- **IRBuilders retroactive sweep**: chapter-close follow-up. Converts remaining `{ SsKey = ...; Name = ...; ... }` literals across the test surface to `{ mkAttribute key name ptype with ... }`. Reduces next-chapter field-addition blast radius from ~150 sites to ~1.
+- **`Module.create` parameter-pollution revisit-trigger**: if a future chapter adds a third Module-level field that adapters always pass empty, revisit the smart-constructor's API surface per A39's discipline boundary.
+- **`ModalityMark.mapPayload` helper extraction-trigger**: pending fourth pass-module touch.
+
+**AXIOMS amendments (placeholder list).** Chapter A.0' did not introduce new axioms; it operationalised L3-S4 through L3-S10 + L3-CC4 + L3-Boundary-NoSilentDrop. The `AXIOMS.md` "Amendments scheduled (chapter close)" list is unchanged at chapter A.0' close.
+
+**Cross-references.**
+
+- Chapter open: `CHAPTER_A_0_PRIME_OPEN.md` (now superseded by close; slice plan rows all marked SHIPPED).
+- Chapter close synthesis: `CHAPTER_A_0_PRIME_CLOSE.md` (the chapter-close document this entry sibling-codifies).
+- Per-slice DECISIONS entries: `2026-05-16 (slice β)`; `2026-05-16 (slices γ + δ + ε + ζ + η — XXXXL)`; `2026-05-16 (slice θ + slice ι — chapter A.0' close)` (this entry).
+- The completion-criterion witness surface: `tests/Projection.Tests/NoSilentDropTests.fs`.
+- The TableId.Catalog adapter pickup: `Projection.Adapters.Osm.CatalogReader.parseKind` (`db_catalog` JSON field).
+- The Origin audit witness: `NoSilentDropTests.``Origin audit ...``` (5 tests across both adapter paths).
+
+---

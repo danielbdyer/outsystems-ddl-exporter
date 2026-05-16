@@ -244,13 +244,12 @@ self-containment posture).
 
 ---
 
-### Phase 3.1 — IR fidelity lifts (chapter A.0'; in flight)
+### Phase 3.1 — IR fidelity lifts (chapter A.0'; CLOSED 2026-05-16)
 
-**Status:** in flight. Slices α + β shipped; γ–ι pending. Chapter open
-at `CHAPTER_A_0_PRIME_OPEN.md` (eight strategic-frame axes; 7-9 slice
-plan). The chapter promotes Tier-1 unnamed L3 axioms from Bucket D →
-Bucket A and operationalizes the L3-Boundary-NoSilentDrop completion
-criterion.
+**Status:** closed. All 9 slices (α + β + γ + δ + ε + ζ + η + θ + ι)
+shipped. Ten L3 axioms advanced from Bucket D → Bucket A. Chapter-close
+synthesis at `CHAPTER_A_0_PRIME_CLOSE.md`; chapter-open scope at
+`CHAPTER_A_0_PRIME_OPEN.md` (preserved for historical reference).
 
 **Strategic frame.** Each lift is structural commitment, not a feature
 — the IR carries the evidence; emitter consumption lands downstream
@@ -259,20 +258,17 @@ discipline holds — F# field-missing errors at literal sites only;
 semantic interpretation untouched). Twin-path discipline holds (JSON +
 rowset both populate every new field).
 
-**Shipped slices:**
+**All slices shipped:**
 
 | Slice | Scope | Witness | Status |
 |---|---|---|---|
 | α | `Kind.Description` + `Attribute.Description` (purely additive) | `DescriptionLiftTests.fs` (7 tests) | shipped 2026-05-15 |
 | β | `Module.IsActive` + `Kind.IsActive` + `Attribute.IsActive` (carry-through; retire session-21 boundary filter); first pillar-9 worked example | `IsActiveCarryThroughTests.fs` (9 tests) + rework of 5 prior tests in `OsmRowsetReaderTests` / `OsmCatalogReaderDifferentialTests` | shipped 2026-05-16 |
 | γ + δ + ε + ζ + η (XXXXL) | Five-slice IR-fidelity body: `Kind.Triggers` + `Trigger`; `Catalog.Sequences` + `Sequence`; `Attribute.DefaultValue` + `Computed` + `Kind.ColumnChecks`; `ExtendedProperties` × 4 levels; `ModalityMark.Temporal` DU widening | `IRFidelityLiftTests.fs` (22 tests) + `IRBuilders.fs` fixture-builder pattern + `Fixtures.fs` retrofitted | shipped 2026-05-16 |
+| θ | `TableId.Catalog : string option` + JSON-path `db_catalog` pickup | 4 new tests in `IRFidelityLiftTests` | shipped 2026-05-16 |
+| ι | IsExternal/Origin mapping audit + L3-Boundary-NoSilentDrop property test surface | `NoSilentDropTests.fs` (21 tests; 12 per-concept structural witnesses + 1 kitchen-sink JSON fixture + 8 Origin-audit tests) | shipped 2026-05-16 |
 
-**Pending slices:**
-
-| Slice | Scope | Witness | Status |
-|---|---|---|---|
-| θ | `TableId.Catalog : string option` | TableId-touch property | scheduled |
-| ι | IsExternal / Origin mapping audit + L3-Boundary-NoSilentDrop property | property test | scheduled |
+**Pending slices:** none. Chapter A.0' closes; see `CHAPTER_A_0_PRIME_CLOSE.md`.
 
 **V1 inheritance opportunities:** none. The lifts are V2 IR extensions
 under empirical pressure from V1's source shape; the V1 OSSYS adapter

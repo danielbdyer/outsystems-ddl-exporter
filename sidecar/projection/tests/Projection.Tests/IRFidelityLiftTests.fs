@@ -354,7 +354,7 @@ let ``L3-S4 temporal: Infinite retention round-trips through ModalityMark`` () =
         mkKind
             (mkSsKey "OS_KIND_M_K")
             (mkName' "K")
-            { Schema = "dbo"; Table = "T" }
+            { Schema = "dbo"; Table = "T"; Catalog = None }
             []
     let kindWithTemporal = { kind with Modality = [ Temporal cfg ] }
     let extracted =
@@ -381,7 +381,7 @@ let ``IRBuilders: mkKind defaults Triggers / ColumnChecks / ExtendedProperties t
         mkKind
             (mkSsKey "OS_KIND_M_K")
             (mkName' "K")
-            { Schema = "dbo"; Table = "T" }
+            { Schema = "dbo"; Table = "T"; Catalog = None }
             []
     Assert.Empty(kind.Triggers)
     Assert.Empty(kind.ColumnChecks)
@@ -391,3 +391,62 @@ let ``IRBuilders: mkKind defaults Triggers / ColumnChecks / ExtendedProperties t
 let ``IRBuilders: mkCatalog defaults Sequences to []`` () =
     let c = mkCatalog []
     Assert.Empty(c.Sequences)
+
+// ---------------------------------------------------------------------------
+// Slice θ — TableId.Catalog extension (L3-S10 / L3-I10).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``L3-S10 catalog coordinate: TableId.create defaults Catalog to None`` () =
+    match TableId.create "dbo" "T" with
+    | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
+    | Ok tid ->
+        Assert.Equal<string option>(None, tid.Catalog)
+        Assert.Equal("dbo", tid.Schema)
+        Assert.Equal("T", tid.Table)
+
+[<Fact>]
+let ``L3-S10 catalog coordinate: TableId.createWithCatalog carries explicit catalog`` () =
+    match TableId.createWithCatalog "AppDb" "dbo" "Orders" with
+    | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
+    | Ok tid -> Assert.Equal<string option>(Some "AppDb", tid.Catalog)
+
+[<Fact>]
+let ``L3-S10 catalog coordinate: TableId.createWithCatalog rejects blank catalog`` () =
+    match TableId.createWithCatalog "" "dbo" "Orders" with
+    | Ok _ -> Assert.Fail("Expected Error for blank catalog")
+    | Error errors ->
+        Assert.Contains(
+            "tableId.catalog.empty",
+            errors |> List.map (fun e -> e.Code))
+
+let private v1FixtureWithDbCatalog : string =
+    """{
+  "exportedAtUtc": "2026-05-16T00:00:00.0000000+00:00",
+  "modules": [
+    { "name": "M", "isSystem": false, "isActive": true,
+      "entities": [
+        { "name": "E", "physicalName": "OSUSR_M_E",
+          "isStatic": false, "isExternal": false, "isActive": true,
+          "db_catalog": "AnalyticsDb", "db_schema": "dbo",
+          "attributes": [
+            { "name": "Id", "physicalName": "ID", "originalName": null,
+              "dataType": "Identifier", "length": null, "precision": null,
+              "scale": null, "default": null,
+              "isMandatory": true, "isIdentifier": true, "isAutoNumber": true,
+              "isActive": true, "isReference": 0, "refEntityId": null,
+              "refEntity_name": null, "refEntity_physicalName": null,
+              "reference_deleteRuleCode": null, "reference_hasDbConstraint": 0,
+              "external_dbType": null, "physical_isPresentButInactive": 0 }
+          ],
+          "relationships": [], "indexes": [], "triggers": [] }
+      ] }
+  ]
+}"""
+
+[<Fact>]
+let ``L3-S10 catalog coordinate: JSON path lifts db_catalog into TableId.Catalog`` () =
+    match parseSync (CatalogReader.SnapshotJson v1FixtureWithDbCatalog) with
+    | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
+    | Ok catalog ->
+        Assert.Equal<string option>(Some "AnalyticsDb", (firstKind catalog).Physical.Catalog)

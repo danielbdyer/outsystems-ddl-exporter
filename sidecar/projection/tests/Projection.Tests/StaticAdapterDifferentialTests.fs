@@ -57,7 +57,7 @@ let private cityKind : Kind =
       Name     = mkName "City"
       Origin   = OsNative
       Modality = [ Static [] ]   // empty populations; adapter fills these in
-      Physical = { Schema = "dbo"; Table = "OSUSR_DEF_CITY" }
+      Physical = { Schema = "dbo"; Table = "OSUSR_DEF_CITY"; Catalog = None }
       Attributes = [
           { SsKey        = cityIdKey
             Name         = mkName "Id"

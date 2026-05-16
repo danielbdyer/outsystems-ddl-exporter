@@ -60,7 +60,7 @@ let private mkCountryKind () : Kind =
         Origin   = OsNative
         Modality = [ Static [ row "1" "United States"
                               row "2" "Canada" ] ]
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
         Attributes =
             [
                 { SsKey = idKey;    Name = mkName "Id";    Type = Integer
@@ -99,7 +99,7 @@ let private mkLanguageKind () : Kind =
         Name     = mkName "Language"
         Origin   = OsNative
         Modality = [ Static [ row "EN" "English"; row "FR" "French" ] ]
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_LANGUAGE" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_LANGUAGE"; Catalog = None }
         Attributes =
             [
                 { SsKey = codeKey; Name = mkName "Code"; Type = Text
@@ -128,7 +128,7 @@ let private mkRegularKind () : Kind =
         Name     = mkName "Customer"
         Origin   = OsNative
         Modality = []
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER"; Catalog = None }
         Attributes =
             [
                 { SsKey = idKey;   Name = mkName "Id";   Type = Integer
@@ -158,7 +158,7 @@ let private mkEmptyStaticKind () : Kind =
         Name     = mkName "Empty"
         Origin   = OsNative
         Modality = [ Static [] ]
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_EMPTY" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_EMPTY"; Catalog = None }
         Attributes =
             [
                 { SsKey = idKey; Name = mkName "Id"; Type = Integer

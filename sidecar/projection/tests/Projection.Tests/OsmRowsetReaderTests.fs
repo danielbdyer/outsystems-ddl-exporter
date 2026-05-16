@@ -120,7 +120,7 @@ let private expectedCatalogSynthesized : Catalog =
           Name     = mkName "User"
           Origin   = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
               { SsKey        = userIdAttrKey
                 Name         = mkName "Id"

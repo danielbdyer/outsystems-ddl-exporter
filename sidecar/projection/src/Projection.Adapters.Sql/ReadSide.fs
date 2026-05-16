@@ -574,7 +574,7 @@ module ReadSide =
                     Name = kName
                     Origin = OsNative
                     Modality = []
-                    Physical = { Schema = schema; Table = table }
+                    Physical = { Schema = schema; Table = table; Catalog = None }
                     Attributes = attributes
                     References = []
                     Indexes = []

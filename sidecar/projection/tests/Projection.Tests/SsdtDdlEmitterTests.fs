@@ -240,7 +240,7 @@ let private allPrimitiveTypesKind : Kind =
         Name = mkName "AllTypes"
         Origin = OsNative
         Modality = []
-        Physical = { Schema = "dbo"; Table = "OSUSR_X_ALLTYPES" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_X_ALLTYPES"; Catalog = None }
         Attributes = [
             attr "Id" Integer true
             attr "Amount" Decimal false
@@ -345,7 +345,7 @@ let private compositePkKind : Kind =
         Name = mkName "Composite"
         Origin = OsNative
         Modality = []
-        Physical = { Schema = "dbo"; Table = "OSUSR_X_COMPOSITE" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_X_COMPOSITE"; Catalog = None }
         Attributes = [
             attr "TenantId" Integer true   // first PK column
             attr "Code" Text true          // second PK column (composite)
@@ -446,7 +446,7 @@ let private indexedKind : Kind =
         Name = mkName "Indexed"
         Origin = OsNative
         Modality = []
-        Physical = { Schema = "dbo"; Table = "OSUSR_X_INDEXED" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_X_INDEXED"; Catalog = None }
         Attributes = [
             attr "Id" Integer true
             attr "Lookup" Text false
@@ -588,7 +588,7 @@ let private parentKind : Kind =
         Name = mkName "Parent"
         Origin = OsNative
         Modality = []
-        Physical = { Schema = "dbo"; Table = "OSUSR_X_PARENT" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_X_PARENT"; Catalog = None }
         Attributes = [
             {
                 SsKey = attrKey ["Parent"; "Id"]
@@ -618,7 +618,7 @@ let private childKind : Kind =
         Name = mkName "Child"
         Origin = OsNative
         Modality = []
-        Physical = { Schema = "dbo"; Table = "OSUSR_X_CHILD" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_X_CHILD"; Catalog = None }
         Attributes = [
             {
                 SsKey = attrKey ["Child"; "Id"]
@@ -815,7 +815,7 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
           Name  = mkName "AKind"
           Origin = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
           Attributes =
               [ { SsKey = aIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
@@ -829,7 +829,7 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
           Name  = mkName "BKind"
           Origin = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
           Attributes =
               [ { SsKey = bIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
@@ -889,7 +889,7 @@ let ``Slice 6: cross-module FK emits inline FOREIGN KEY constraint`` () =
     let aKind : Kind =
         { SsKey = aKindKey; Name = mkName "AKind"; Origin = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
           Attributes =
               [ { SsKey = aIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
@@ -899,7 +899,7 @@ let ``Slice 6: cross-module FK emits inline FOREIGN KEY constraint`` () =
     let bKind : Kind =
         { SsKey = bKindKey; Name = mkName "BKind"; Origin = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
           Attributes =
               [ { SsKey = bIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
@@ -940,7 +940,7 @@ let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module F
     let aKind : Kind =
         { SsKey = aKindKey; Name = mkName "AKind"; Origin = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
           Attributes =
               [ { SsKey = aIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }
@@ -950,7 +950,7 @@ let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module F
     let bKind : Kind =
         { SsKey = bKindKey; Name = mkName "BKind"; Origin = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
           Attributes =
               [ { SsKey = bIdAttr; Name = mkName "Id"; Type = Integer
                   Column = { ColumnName = "ID"; IsNullable = false }

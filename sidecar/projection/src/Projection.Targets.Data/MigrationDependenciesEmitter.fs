@@ -200,7 +200,7 @@ module MigrationDependenciesEmitter =
         use _ = Bench.scope "emit.migrationDeps.renderMerge"
         let table : TableId =
             { Schema = k.Physical.Schema
-              Table  = k.Physical.Table }
+              Table  = k.Physical.Table; Catalog = None }
         let args : ScriptDomBuild.MergeBuildArgs =
             {
                 Target     = table
@@ -227,7 +227,7 @@ module MigrationDependenciesEmitter =
         use _ = Bench.scope "emit.migrationDeps.renderUpdate"
         let table : TableId =
             { Schema = k.Physical.Schema
-              Table  = k.Physical.Table }
+              Table  = k.Physical.Table; Catalog = None }
         let cellOf (a: Attribute) : string * SqlLiteral =
             let lit =
                 Map.tryFind a.Name typedValues

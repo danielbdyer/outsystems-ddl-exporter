@@ -1,8 +1,56 @@
-# Handoff letter — Chapter A.0' five-slice IR-fidelity body shipped (γ + δ + ε + ζ + η; XXXXL)
+# Handoff letter — Chapter A.0' CLOSED (all 9 slices shipped; ten L3 axioms D → A)
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## 2026-05-16 (chapter A.0' close — slice θ + slice ι) — IR-fidelity body fully landed; L3-Boundary-NoSilentDrop verified
+
+**Branch / baseline.** Continues on `claude/retire-isactive-disposition-WD4Ez`. **Test baseline at chapter close: 1202 / 1202 passing** (1177 prior + 21 new `NoSilentDropTests` + 4 new TableId.Catalog tests in `IRFidelityLiftTests`); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged from main (13 pre-existing on main; zero new introduced across chapter A.0').
+
+**Chapter A.0' closes.** Read `CHAPTER_A_0_PRIME_CLOSE.md` for the chapter-close synthesis (per-slice ledger, L3 promotions, meta-codifications, forward signals, close ritual checklist). Ten L3 axioms advance D → A: L3-S4 (Triggers), L3-S5 (Sequences), L3-S6 (DEFAULT), L3-S7 (Computed), L3-S8 (CHECK), L3-S9 (Descriptions + IsActive + ExtendedProperties), L3-S10 / L3-I10 (Catalog coordinate), L3-CC4 (IR fidelity for production), L3-Boundary-NoSilentDrop, and IsExternal/Origin (Bucket-B → A upgrade).
+
+**What shipped in slice θ + slice ι (this commit).**
+
+- **Slice θ — `TableId.Catalog : string option` (L3-S10 / L3-I10).** `TableId` extended from `{ Schema; Table }` to `{ Catalog : string option; Schema; Table }`. `TableId.create` retains its `(schema, table)` signature and defaults `Catalog = None` (V1's `db_catalog: null` parity); `TableId.createWithCatalog catalog schema table` carries explicit cross-database coordinates with blank-catalog rejection per A39. OSSYS JSON adapter (`parseKind`) reads V1's `db_catalog` field; rowset path + ReadSide default to `None`. 9 record-literal sites in src touched mechanically; tests adjusted via the Python pass. Chapter's structural enforcement holds — cross-database FKs no longer silently degrade to implicit-current-database scope.
+- **Slice ι — L3-Boundary-NoSilentDrop + IsExternal/Origin audit.** `NoSilentDropTests.fs` ships 21 tests in three sections:
+  - **Per-concept structural witnesses (12 tests)** — for each V1 concept in `V2_PRODUCTION_CUTOVER.md` §3.3, a runtime assertion against the V2 IR's typed home.
+  - **Kitchen-sink JSON fixture witness (1 test)** — six axes asserted across one Catalog: Descriptions + IsActive + Triggers + DEFAULT + ExtendedProperties + IsExternal=true → ExternalViaIntegrationStudio.
+  - **IsExternal / Origin mapping audit (8 tests)** — JSON-path two-way placeholder + rowset-path three-way real + the `isExternal=true never → OsNative` invariant.
+
+**Chapter A.0' meta-codifications** (full detail in close doc):
+
+1. Mechanical-edits precedent for record-extension slices (`/tmp/fix_fields.py` + dedupe + indent-normaliser scripts).
+2. `IRBuilders.fs` fixture-builder pattern (chapter A.0' XXXXL contribution; `Fixtures.fs` retrofitted as worked example).
+3. Per-axis property test as completion criterion (`NoSilentDropTests.fs` demonstrates the trifecta: per-concept structural + kitchen-sink + invariant property).
+4. Pillar-8 deviation discipline (slice γ: chapter open's "Catalog.Triggers" planning shorthand → implementation chose `Kind.Triggers` per domain analysis).
+
+**A18 amended preserved.** No emitter consumes Policy. All new IR fields are `Catalog`-side DataIntent evidence; Π consumes `Catalog × Profile` per A18 amended.
+
+**V2 self-containment preserved.** Zero carbon-copy events across chapter A.0' (10 slices total). `BACKLOG.md` V1 inheritance log remains empty.
+
+**Tolerance retirement signals.** `CommentMetadataUnreflected` Tolerance variant is one structural step closer to retirement: IR carries Description + ExtendedProperties + TableId.Catalog at completion. Full retirement gates on emitter consumption (chapter 4.1.A slice 8 ExtendedProperties DDL emission + chapter 3.x DacpacEmitter cross-database FK qualification).
+
+**Recommended next chapter.** Three independent forward-progress paths:
+
+1. **`LineageEvent.Classification` field (A.4.7-prelude small slice)** — unblocked by chapter A.0' close. Adds the `Classification : Classification` field to `LineageEvent` so events self-classify before the full A.4.7 traversal refactor. Per `DECISIONS 2026-05-15 (late)`. ~1 session.
+2. **Chapter 4.1.A slice 8 (ExtendedProperties + Descriptions DDL emission)** — emitter consumption of the IR fields chapter A.0' lifted. Retires the `CommentMetadataUnreflected` Tolerance variant. Per `Active deferrals` in `DECISIONS.md`. ~1-2 sessions.
+3. **A.4.7 (Transform registry, full refactor)** — `RegisteredTransform<'In, 'Out>` + Compose.run traversal + bidirectional property tests. The chapter A.0' IR shape is the input. ~3 weeks. The substantive next-chapter target.
+
+**Operator-side choice** (which to ship next):
+- If the operator wants the cutover-blocker progress, **slice 4.1.A.8** is the highest-leverage emitter work (Tolerance retirement).
+- If the operator wants structural commitments to compound, **A.4.7-prelude** is the smallest unblocking step.
+- If the operator wants the load-bearing refactor, **A.4.7 full** is ~3 weeks of focused work.
+
+**Outstanding (operator-side; unchanged):**
+- R1 — operator's "document of key evolutions" still pending. Hold UAT-users decisions until it lands.
+- Q2 / Q3 / Q4 / Q7 unchanged.
+
+**Forward signals retained.**
+- Rowset-path pickup for triggers / extended properties / defaults / column checks / db_catalog (gated on V1 rowset extension or DACPAC-adapter slice).
+- IRBuilders retroactive sweep (volume refactor; reduces next-chapter field-addition blast radius from ~150 sites to ~1).
+- `Module.create` parameter-pollution revisit-trigger.
+- `ModalityMark.mapPayload` helper extraction-trigger (pending fourth pass-module touch).
 
 ## 2026-05-16 (XXXXL — slices γ + δ + ε + ζ + η) — IR-fidelity body shipped; chapter A.0' two slices from close
 

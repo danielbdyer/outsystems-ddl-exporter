@@ -53,7 +53,7 @@ let private buildCatalog (mandatoryColumnIsNullable: bool) (mandatoryColumnIsMan
           Name     = mkName "SampleEntity"
           Origin   = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_TEST_SAMPLE" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_TEST_SAMPLE"; Catalog = None }
           Attributes = [
               { SsKey        = idAttributeKey
                 Name         = mkName "Id"

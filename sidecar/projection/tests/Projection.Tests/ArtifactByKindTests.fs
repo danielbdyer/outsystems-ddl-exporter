@@ -44,7 +44,7 @@ let private mkKind (n: string) : Kind =
         Name = nm n
         Origin = OsNative
         Modality = []
-        Physical = { Schema = "dbo"; Table = sprintf "OSUSR_S1S_%s" (n.ToUpperInvariant()) }
+        Physical = { Schema = "dbo"; Table = sprintf "OSUSR_S1S_%s" (n.ToUpperInvariant()); Catalog = None }
         Attributes = []
         References = []
         Indexes = []

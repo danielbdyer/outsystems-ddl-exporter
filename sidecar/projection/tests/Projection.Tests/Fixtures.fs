@@ -83,7 +83,7 @@ let customer : Kind =
     { mkKind
         customerKey
         (name "Customer")
-        { Schema = "dbo"; Table = "OSUSR_S1S_CUSTOMER" }
+        { Schema = "dbo"; Table = "OSUSR_S1S_CUSTOMER"; Catalog = None }
         [ { mkFixtureAttribute customerIdAttrKey "Id" Integer true with
               Column = { ColumnName = "ID"; IsNullable = false } }
           { mkFixtureAttribute customerNameKey "Name" Text false with
@@ -105,7 +105,7 @@ let order : Kind =
     { mkKind
         orderKey
         (name "Order")
-        { Schema = "dbo"; Table = "OSUSR_S1S_ORDER" }
+        { Schema = "dbo"; Table = "OSUSR_S1S_ORDER"; Catalog = None }
         [ { mkFixtureAttribute orderIdAttrKey "Id" Integer true with
               Column = { ColumnName = "ID"; IsNullable = false } }
           { mkFixtureAttribute orderCustomerFkKey "CustomerId" Integer false with
@@ -150,7 +150,7 @@ let country : Kind =
     { mkKind
         countryKey
         (name "Country")
-        { Schema = "dbo"; Table = "OSUSR_S1S_COUNTRY" }
+        { Schema = "dbo"; Table = "OSUSR_S1S_COUNTRY"; Catalog = None }
         [ { mkFixtureAttribute countryIdAttrKey "Id" Integer true with
               Column = { ColumnName = "ID"; IsNullable = false } }
           { mkFixtureAttribute countryCodeKey "Code" Text false with

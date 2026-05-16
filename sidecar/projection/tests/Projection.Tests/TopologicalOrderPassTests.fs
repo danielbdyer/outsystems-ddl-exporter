@@ -371,7 +371,7 @@ let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Ki
       Name = mkName kindKey
       Origin = OsNative
       Modality = []
-      Physical = { Schema = "dbo"; Table = kindKey }
+      Physical = { Schema = "dbo"; Table = kindKey; Catalog = None }
       Attributes = [
           { SsKey = attrId; Name = mkName "Id"; Type = Integer
             Column = { ColumnName = "ID"; IsNullable = false }
@@ -426,7 +426,7 @@ let private kindWithRef
       Name = mkName kindKey
       Origin = OsNative
       Modality = []
-      Physical = { Schema = "dbo"; Table = kindKey }
+      Physical = { Schema = "dbo"; Table = kindKey; Catalog = None }
       Attributes = [
           { SsKey = attrId; Name = mkName "Id"; Type = Integer
             Column = { ColumnName = "ID"; IsNullable = false }
@@ -449,7 +449,7 @@ let private noRefKind (kindKey: string) : Kind =
       Name = mkName kindKey
       Origin = OsNative
       Modality = []
-      Physical = { Schema = "dbo"; Table = kindKey }
+      Physical = { Schema = "dbo"; Table = kindKey; Catalog = None }
       Attributes = [
           { SsKey = attrId; Name = mkName "Id"; Type = Integer
             Column = { ColumnName = "ID"; IsNullable = false }

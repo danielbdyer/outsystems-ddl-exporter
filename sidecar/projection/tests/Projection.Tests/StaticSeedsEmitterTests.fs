@@ -48,7 +48,7 @@ let private mkCountryKind () : Kind =
         Origin   = OsNative
         Modality = [ Static [ row "US" "United States"
                               row "CA" "Canada" ] ]
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
         Attributes =
             [
                 { SsKey = idKey;    Name = mkName "Id";    Type = Integer
@@ -81,7 +81,7 @@ let private mkRegularKind () : Kind =
         Name     = mkName "Customer"
         Origin   = OsNative
         Modality = []  // not static
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER"; Catalog = None }
         Attributes =
             [
                 { SsKey = idKey;   Name = mkName "Id";   Type = Integer
@@ -342,7 +342,7 @@ let ``Slice β: per-kind dispatch — only CDC-enabled kinds get the predicate``
         { country with
             SsKey    = regionKey
             Name     = mkName "Region"
-            Physical = { Schema = "dbo"; Table = "OSUSR_TEST_REGION" } }
+            Physical = { Schema = "dbo"; Table = "OSUSR_TEST_REGION"; Catalog = None } }
     let catalog = mkCatalog [ country; region ]
     let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
     let profile = { Profile.empty with CdcAwareness = cdc }
@@ -405,7 +405,7 @@ let private mkTreeKind () : Kind =
         Name     = mkName "Tree"
         Origin   = OsNative
         Modality = [ Static [ row ] ]
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_TREE" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_TREE"; Catalog = None }
         Attributes =
             [
                 { SsKey = idKey;     Name = mkName "Id";       Type = Integer
@@ -556,7 +556,7 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
     let aKind : Kind =
         { SsKey = aKey; Name = mkName "A"; Origin = OsNative
           Modality = [ Static [ aRow ] ]
-          Physical = { Schema = "dbo"; Table = "OSUSR_A" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_A"; Catalog = None }
           Attributes = [ mkAttr aIdK "Id"  Integer "ID"  true false
                          mkAttr aFkK "BId" Integer "BID" false true ]
           References = [ mkRef aRefK "ToB" aFkK bKey ]
@@ -565,7 +565,7 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
     let bKind : Kind =
         { SsKey = bKey; Name = mkName "B"; Origin = OsNative
           Modality = [ Static [ bRow ] ]
-          Physical = { Schema = "dbo"; Table = "OSUSR_B" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_B"; Catalog = None }
           Attributes = [ mkAttr bIdK "Id"  Integer "ID"  true false
                          mkAttr bFkK "AId" Integer "AID" false true ]
           References = [ mkRef bRefK "ToA" bFkK aKey ]

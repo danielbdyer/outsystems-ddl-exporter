@@ -36,7 +36,7 @@ let private kindWith (a: Attribute) : Kind =
       Name       = Name.create "owner" |> Result.value
       Origin     = OsNative
       Modality   = []
-      Physical   = { Schema = "dbo"; Table = "owner" }
+      Physical   = { Schema = "dbo"; Table = "owner"; Catalog = None }
       Attributes = [ a ]
       References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 

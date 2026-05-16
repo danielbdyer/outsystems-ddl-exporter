@@ -161,7 +161,7 @@ module RefactorLogEmitter =
         | None -> []
         | Some record ->
             let target : TableId =
-                { Schema = k.Physical.Schema; Table = k.Physical.Table }
+                { Schema = k.Physical.Schema; Table = k.Physical.Table; Catalog = None }
             [
                 {
                     OperationKey = renameOperationKey k.SsKey record

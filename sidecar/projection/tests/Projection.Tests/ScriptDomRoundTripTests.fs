@@ -76,7 +76,7 @@ let private samplePk : PrimaryKeyDef =
     { Name = "PK_dbo_Customer"; Columns = ["Id"] }
 
 let private sampleTable : TableId =
-    { Schema = "dbo"; Table = "Customer" }
+    { Schema = "dbo"; Table = "Customer"; Catalog = None }
 
 [<Fact>]
 let ``T1: ScriptDom CreateTable emit is byte-identical across repeat invocations`` () =

@@ -92,7 +92,7 @@ let private programmaticUserCatalog : Catalog =
             Name = nameSafe "User"
             Origin = OsNative
             Modality = []
-            Physical = { Schema = "dbo"; Table = "OSUSR_M3_USER" }
+            Physical = { Schema = "dbo"; Table = "OSUSR_M3_USER"; Catalog = None }
             Attributes =
                 [
                     mkAttr "Id" Integer false true

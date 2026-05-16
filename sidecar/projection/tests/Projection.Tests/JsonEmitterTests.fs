@@ -167,7 +167,7 @@ let ``string escaping handles double quotes and backslashes`` () =
         Name  = troubleName
         Origin = OsNative
         Modality = []
-        Physical = { Schema = "dbo"; Table = "T" }
+        Physical = { Schema = "dbo"; Table = "T"; Catalog = None }
         Attributes = []
         References = []
         Indexes    = []; Description = None

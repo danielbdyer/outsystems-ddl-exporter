@@ -85,7 +85,7 @@ let private buildFixture () : Catalog * Kind =
           Origin   = OsNative
           Modality = [ Static [ row "1" "United States"
                                 row "2" "Canada" ] ]
-          Physical = { Schema = "dbo"; Table = "OSUSR_CDC_COUNTRY" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_CDC_COUNTRY"; Catalog = None }
           Attributes =
               [
                   { SsKey = idKey;    Name = mkName "Id";    Type = Integer
@@ -263,7 +263,7 @@ let private buildChangedFixture () : Catalog * Kind =
           Origin   = OsNative
           Modality = [ Static [ row "1" "USA"          // <-- changed
                                 row "2" "Canada" ] ]
-          Physical = { Schema = "dbo"; Table = "OSUSR_CDC_COUNTRY" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_CDC_COUNTRY"; Catalog = None }
           Attributes =
               [
                   { SsKey = idKey;    Name = mkName "Id";    Type = Integer

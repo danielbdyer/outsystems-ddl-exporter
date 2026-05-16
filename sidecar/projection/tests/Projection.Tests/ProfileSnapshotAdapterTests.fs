@@ -112,7 +112,7 @@ let private parentKind : Kind =
       Name     = mkName "Parent"
       Origin   = OsNative
       Modality = []
-      Physical = { Schema = "dbo"; Table = "OSUSR_P_PARENT" }
+      Physical = { Schema = "dbo"; Table = "OSUSR_P_PARENT"; Catalog = None }
       Attributes = [
           { SsKey        = parentIdKey
             Name         = mkName "Id"
@@ -126,7 +126,7 @@ let private childKind : Kind =
       Name     = mkName "Child"
       Origin   = OsNative
       Modality = []
-      Physical = { Schema = "dbo"; Table = "OSUSR_C_CHILD" }
+      Physical = { Schema = "dbo"; Table = "OSUSR_C_CHILD"; Catalog = None }
       Attributes = [
           { SsKey        = childIdKey
             Name         = mkName "Id"

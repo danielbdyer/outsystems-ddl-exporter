@@ -58,7 +58,7 @@ let private mkCountryKind () : Kind =
         Name     = mkName "Country"
         Origin   = OsNative
         Modality = [ Static [ row "US" "United States"; row "CA" "Canada" ] ]
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
         Attributes =
             [
                 { SsKey = idKey;    Name = mkName "Id";    Type = Integer
@@ -176,7 +176,7 @@ let ``T11: composer keyset equals Catalog.allKinds keyset for every DataComposit
             SsKey    = mkKey ["TestModule"; "Customer"]
             Name     = mkName "Customer"
             Modality = []
-            Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER" } }
+            Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER"; Catalog = None } }
     let catalog = mkCatalog [ country; regular ]
     let expected =
         Catalog.allKinds catalog
@@ -245,7 +245,7 @@ let ``composeWithLineage: trail carries one event per kind in catalog`` () =
             SsKey    = mkKey ["TestModule"; "Customer"]
             Name     = mkName "Customer"
             Modality = []
-            Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER" } }
+            Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER"; Catalog = None } }
     let catalog = mkCatalog [ country; regular ]
     let policy = policyWith AllRemaining
     let lineageOfResult =
@@ -364,7 +364,7 @@ let ``Slice ι: composeRendered emits Phase-1 (MERGE) of every kind before Phase
             Name     = mkName name
             Origin   = OsNative
             Modality = [ Static [ row ] ]
-            Physical = { Schema = "dbo"; Table = table }
+            Physical = { Schema = "dbo"; Table = table; Catalog = None }
             Attributes =
                 [
                     { SsKey = idKey;     Name = mkName "Id";       Type = Integer
