@@ -1556,3 +1556,57 @@ module CatalogReader =
                         adapterError
                             "fileAccessDenied"
                             (sprintf "Access denied reading snapshot file '%s': %s" path ex.Message)))
+
+    /// Chapter A.4.7 slice δ. The OSSYS adapter's `RegisteredTransform`
+    /// surface — metadata-only, per the adapter's boundary-stage
+    /// nature. The adapter's `parse : SnapshotSource -> Task<Result<
+    /// Catalog>>` is not a pure `Catalog -> Lineage<Diagnostics<...>>`
+    /// transformation (it does I/O for `SnapshotFile`, returns
+    /// `Task<Result<...>>` for boundary-error reporting); the
+    /// `RegisteredTransform<'In, 'Out>` typed shell doesn't fit cleanly.
+    /// Slice δ ships `registeredMetadata : RegisteredTransformMetadata`
+    /// — the metadata view of the adapter's harvest-discipline
+    /// classification, suitable for the registry's totality-coverage
+    /// scan (slice θ) and manifest emission (slice η).
+    ///
+    /// Per the chapter A.4.7 open: "every transformative rule (filters,
+    /// remaps, derivations — not pass-through field-to-field mappings)
+    /// gets a RegisteredTransform entry." Slice δ packages the rules
+    /// as Sites within one registry entry (intra-adapter classification
+    /// fidelity per pillar 9 + Q11); per-rule separate registration
+    /// would require extracting each helper into a standalone
+    /// transformation, which is a larger refactor deferred-with-trigger
+    /// (real consumer pressure for per-rule audit granularity).
+    ///
+    /// All adapter rules classify as `DataIntent`. The adapter is a
+    /// translation layer carrying V1 source-schema evidence forward
+    /// into V2 typed evidence; no operator opinion enters at the
+    /// adapter boundary (the operator-intent passes — IsActive
+    /// filter retired at slice β, etc. — run downstream of the
+    /// adapter). The skeleton-purity property test (slice θ) will
+    /// witness that `Project(catalog, Policy.empty, profile)` traverses
+    /// the adapter without emitting any `OperatorIntent` lineage event.
+    let registeredMetadata : RegisteredTransformMetadata =
+        { Name = "ossysCatalogReader"
+          Domain = Schema
+          StageBinding = Adapter
+          Sites =
+            [ { SiteName = "identitySynthesis"
+                Classification = DataIntent
+                Rationale = "Synthesize V2 SsKeys from V1 names: moduleSsKey / kindSsKey / attributeSsKey / referenceSsKey / indexSsKey / triggerSsKey / sequenceSsKey / columnCheckSsKey. Derivation is deterministic from source identifiers; no operator opinion enters." }
+              { SiteName = "typeTranslation"
+                Classification = DataIntent
+                Rationale = "Map V1 type/code values to V2 typed DUs: parsePrimitiveType (V1 dataType string → V2 PrimitiveType per A13's typed surface); parseDeleteRule (V1 onDelete code → V2 ReferenceAction); parseOrigin / parseOriginFromRowset (isExternal flag → Origin DU). All translations are structural — V1's vocabulary maps deterministically into V2's typed system." }
+              { SiteName = "jsonAggregateParsing"
+                Classification = DataIntent
+                Rationale = "Assemble JSON-path IR records: parseAttribute / parseReference / parseIndex / parseTrigger / parseExtendedProperty / parseKind / parseModule / parseDocument / parseJsonString. Each parser threads V1 evidence into V2's typed records; the parsing is field-by-field translation with no operator overlay." }
+              { SiteName = "rowsetAggregateParsing"
+                Classification = DataIntent
+                Rationale = "Assemble rowset-path IR records: parseAttributeRow / parseReferenceRowFor / parseKindRow / parseModuleRow / parseRowsetBundle. Mirrors the JSON-path semantics for the rowset-source variant (chapter 3.2 slice 1 onward); same DataIntent translation discipline." }
+              { SiteName = "isActiveCarryThrough"
+                Classification = DataIntent
+                Rationale = "Chapter A.0' slice β retroactive site. IsActive is carried through at Module / Kind / Attribute levels (not filtered at the adapter boundary; the session-21 filter was retired as a mis-placed OperatorIntent of Selection per DECISIONS 2026-05-16 (slice β) — the first worked example of pillar 9). The carriage itself is DataIntent evidence; a downstream Selection-axis pass that re-applies an inactive-records drop is deferred-with-trigger per IR-grows-under-evidence." }
+              { SiteName = "tableIdCatalogRead"
+                Classification = DataIntent
+                Rationale = "Chapter A.0' slice θ retroactive site. V1's db_catalog field is read into TableId.Catalog (string option); cross-database FK qualification carries through without silent degradation to implicit-current-database scope. DataIntent — source-schema evidence carried forward." } ]
+          Status = Active }

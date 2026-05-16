@@ -11766,3 +11766,74 @@ This is the first registry consumer of `OverlayAxis.Ordering`. Slice ε will use
 **Forward signal — slice γ.2 trigger.** Make `let run` private + migrate consumers when (a) slice θ's skeleton-purity property test demands structural enforcement, OR (b) operator pressure for canonical-surface-only API surfaces.
 
 ---
+
+## 2026-05-16 (chapter A.4.7 slices δ + ε) — Adapter + strategy `RegisteredTransformMetadata` exports; per-rule-as-Sites pillar-8 deviation
+
+**Status:** decided (two-slice combined codification — adapter rules and emitter/strategy rules each ship metadata-only registrations via the same pattern; spec deviation rationale shared).
+
+**Context.** Chapter A.4.7's plan-of-record commits to registering "every transformative OSSYS adapter rule" + "emitter strategy registrations" + "OrderingPolicy sites" + "Pipeline-level transformations" as separate `RegisteredTransform<...>` entries (per `V2_PRODUCTION_CUTOVER.md` §6.4.7 tasks 2 + 5 + 7 + 8). Implementation at slices δ + ε surfaced three empirical realities incompatible with that canonical shape:
+
+1. **Adapter rules aren't independently callable.** The OSSYS adapter's transformative rules (identity synthesis, type translation, JSON/rowset aggregate parsing, IsActive carry-through, TableId.Catalog read) live as private helpers within `CatalogReader.fs`'s single `parse : SnapshotSource -> Task<Result<Catalog>>` entry. The whole adapter is one callable surface; per-rule extraction would mean refactoring ~26 helpers into standalone `RegisteredTransform<RawRow, CatalogFragment>` values — a larger refactor than slice δ's scope warrants.
+2. **Strategies aren't independently callable.** Pass strategies (NullabilityRules, UniqueIndexRules, ForeignKeyRules, CategoricalUniquenessRules, CycleResolution) are sub-modules of registered-intervention passes. They're dispatched via `Composition.fanOut` from inside the host pass module's `run` function; they have no `Catalog -> ...` callable signature. The `RegisteredTransform<'In, 'Out>` typed shell with `Run` field doesn't fit.
+3. **Compile-order constraint.** Strategy outcome types (NullabilityOutcome, etc.) are referenced by `Lineage.fs`'s `AnnotationDetail` DU. Strategies therefore compile *before* `Lineage.fs` + `TransformRegistry.fs`. Embedding `let registeredMetadata` directly inside each strategy module would require `RegisteredTransformMetadata` to be in scope at the strategy compile point, which is structurally impossible without a circular dependency.
+
+**Decision 1: per-rule classification via Sites within one metadata entry (slice δ).**
+
+`Projection.Adapters.Osm.CatalogReader.registeredMetadata : RegisteredTransformMetadata` ships at slice δ as a *single* registry entry at `StageBinding = Adapter` with `Domain = Schema` and a Sites list enumerating six grouped transformative-rule categories:
+
+- `identitySynthesis` (DataIntent) — SsKey derivation: moduleSsKey / kindSsKey / attributeSsKey / referenceSsKey / indexSsKey / triggerSsKey / sequenceSsKey / columnCheckSsKey.
+- `typeTranslation` (DataIntent) — parsePrimitiveType / parseDeleteRule / parseOrigin / parseOriginFromRowset.
+- `jsonAggregateParsing` (DataIntent) — parseAttribute / Reference / Index / Trigger / ExtendedProperty / Kind / Module / Document / JsonString.
+- `rowsetAggregateParsing` (DataIntent) — parseAttributeRow / ReferenceRowFor / KindRow / ModuleRow / RowsetBundle.
+- `isActiveCarryThrough` (DataIntent) — chapter A.0' slice β retroactive site (filter-at-adapter retired; carriage-only).
+- `tableIdCatalogRead` (DataIntent) — chapter A.0' slice θ retroactive site (V1 db_catalog → V2 TableId.Catalog).
+
+All sites classify as `DataIntent`. The adapter is purely a translation layer carrying V1 source-schema evidence forward; no operator opinion enters at the adapter boundary. The skeleton-purity property test (slice θ) will witness `Project(catalog, Policy.empty, profile)` traverses the adapter emitting zero `OperatorIntent` lineage events.
+
+The spec's "every transformative rule gets a separate `RegisteredTransform` entry" is honored at the *Sites granularity* (intra-adapter classification fidelity per `DECISIONS 2026-05-15 (late)` Q11), not at the *separate-callable-function* granularity. Per pillar-8 deviation discipline: slice plan rows are design intent, refined at implementation per harvest analysis.
+
+**Decision 2: dedicated `StrategyRegistrations` module solves the compile-order constraint (slice ε).**
+
+`src/Projection.Core/StrategyRegistrations.fs` ships at slice ε *after* `TransformRegistry.fs` and packages the strategy registrations as per-strategy values in one `[<RequireQualifiedAccess>] module StrategyRegistrations`:
+
+```fsharp
+module StrategyRegistrations =
+    let nullabilityRules           : RegisteredTransformMetadata = …  // Data, OperatorIntent Tightening
+    let uniqueIndexRules           : RegisteredTransformMetadata = …  // Schema, OperatorIntent Tightening
+    let foreignKeyRules            : RegisteredTransformMetadata = …  // Schema, OperatorIntent Tightening
+    let categoricalUniquenessRules : RegisteredTransformMetadata = …  // Data, OperatorIntent Tightening
+    let cycleResolution            : RegisteredTransformMetadata = …  // CrossCutting, DataIntent
+    let all : RegisteredTransformMetadata list = [ … ]
+```
+
+The four registered-intervention strategies classify as `OperatorIntent Tightening` (mirroring their host passes' classification from slice γ). The cycle-resolution strategy classifies as `DataIntent` — the asymmetric-2-cycle resolver chooses Weak-edge breakage algorithmically (no operator opinion at the per-cycle level); the broader `Ordering` operator-intent surface (SelfLoopPolicy) is captured separately at `TopologicalOrderPass.registered`'s `selfLoopHandling` site (from slice γ, the Q9-trigger-fires worked example).
+
+The dedicated-module approach preserves the strategy modules' own structure (they continue to compile before `Lineage.fs`) while making the registry surface available at the right compile point. Future strategies (e.g., a hypothetical `SelectionRules` strategy at chapter 4.x) follow the same pattern: define the outcome types in the strategy module; expose the registration in `StrategyRegistrations`.
+
+**Decision 3: slice ε does NOT refactor TopologicalOrderPass.StageBinding or Pipeline-level applyRenames (deferred).**
+
+Two chapter-open scope items deferred at slice ε implementation:
+
+- **TopologicalOrderPass.StageBinding refinement.** The chapter A.4.7 open mentions registering "OrderingPolicy sites at TopologicalOrderPass.SelfLoopPolicy" — suggesting either a refined `StageBinding = OrderingPolicy` for the whole pass, or a separate registry entry for the SelfLoopHandling concept. Slice γ shipped `TopologicalOrderPass.registered` at `StageBinding = Pass` with two Sites (sortKahn DataIntent + selfLoopHandling OperatorIntent Ordering). At slice ε, the Sites already capture the intra-pass classification fidelity; a separate OrderingPolicy-stage registration would be parallel enumeration, which violates `DECISIONS 2026-05-15 (late)` Q3 (single definition site, no parallel enumeration). Deferred-with-trigger: revisit at chapter close if the totality coverage property test (slice θ) demands a separate stage-level entry.
+- **Pipeline-level `applyRenames` registration.** `Projection.Pipeline.Pipeline.applyRenames` is a private wrapper in `Pipeline.fs` that delegates to `TableRename.run` after extracting `cfg.Overrides.TableRenames`. The chapter A.4.7 open frames this as a separate `StageBinding = Pipeline` registry entry. Slice γ shipped `TableRename.registered` at `StageBinding = Pass`; slice ε deferred the Pipeline-stage refinement because (a) the wrapper is `let private` and exposing it would require pipeline-API surgery, (b) `TableRename.registered` already classifies the rename concept at the operator-intent level (`OperatorIntent Emission`) — the StageBinding refinement is structural-organization, not classification. Forward signal: when slice ζ wires `Compose.run` to traverse the registry, the Pipeline-stage entry materializes naturally (the traversal needs to know where to invoke `applyRenames`).
+
+**Witnesses (13 tests across two files):**
+
+- `tests/Projection.Tests/AdapterRegistrationsTests.fs` (5): CatalogReader stage = Adapter; six-site enumeration; all DataIntent; non-empty Rationale; validates through `TransformRegistry.create`.
+- `tests/Projection.Tests/StrategyRegistrationsTests.fs` (8): four Tightening strategies + CycleResolution DataIntent; list of 5; aggregated `TransformRegistry.create` validation; non-empty Rationale audit.
+
+**Combined slice baseline.** 1264 / 1264 passing (1251 prior + 5 AdapterRegistrationsTests + 8 StrategyRegistrationsTests). Lint 13 — unchanged. Build 0 warnings under `TreatWarningsAsErrors=true`.
+
+**Forward signal — TransformRegistry.all aggregation.** Slice δ + ε add 1 (adapter) + 5 (strategies) entries reachable via their module-qualified names. `TransformRegistry.all` (currently `[]`) gets populated at slice ζ when `Compose.run` becomes a registry-traversal — the slice will aggregate via `[ CatalogReader.registeredMetadata; RegisteredTransform.toMetadata CanonicalizeIdentity.registered; …; yield! StrategyRegistrations.all; … ]`. Slice δ + ε do not write that aggregation themselves; the slices ship the metadata at module-qualified names so slice ζ has them to consume.
+
+**Cross-references.**
+
+- `CHAPTER_A_4_7_OPEN.md` slice δ + ε rows (chapter-open scope; informs the per-category implementation map).
+- `V2_PRODUCTION_CUTOVER.md` §6.4.7 tasks 2 + 5 + 7 + 8 (adapter / strategy / OrderingPolicy / Pipeline registration spec; revised at this entry per the heterogeneity findings).
+- `DECISIONS 2026-05-15 (late) — Pillar 9` (canonical registry shape; Q11 intra-pass classification fidelity via Sites).
+- `DECISIONS 2026-05-16 (chapter A.4.7 slice γ)` (predecessor entry codifying the pass `.registered` exports; slice δ + ε extend the same per-rule-as-Sites pattern to adapter + strategies).
+- `src/Projection.Adapters.Osm/CatalogReader.fs` (`registeredMetadata` shipped at slice δ).
+- `src/Projection.Core/StrategyRegistrations.fs` (5 strategy registrations shipped at slice ε).
+- `tests/Projection.Tests/AdapterRegistrationsTests.fs` + `StrategyRegistrationsTests.fs` (13 witnesses).
+
+---

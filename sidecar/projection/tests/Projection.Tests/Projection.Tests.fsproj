@@ -81,6 +81,8 @@
     <Compile Include="ClassificationCarryThroughTests.fs" />
     <Compile Include="TransformRegistryTests.fs" />
     <Compile Include="PassRegistrationsTests.fs" />
+    <Compile Include="AdapterRegistrationsTests.fs" />
+    <Compile Include="StrategyRegistrationsTests.fs" />
     <Compile Include="NullabilityRulesTests.fs" />
     <Compile Include="NullabilityPassTests.fs" />
     <Compile Include="UniqueIndexRulesTests.fs" />
