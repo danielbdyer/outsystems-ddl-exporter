@@ -112,32 +112,32 @@ let private parentKind : Kind =
       Name     = mkName "Parent"
       Origin   = OsNative
       Modality = []
-      Physical = { Schema = "dbo"; Table = "OSUSR_P_PARENT" }
+      Physical = { Schema = "dbo"; Table = "OSUSR_P_PARENT"; Catalog = None }
       Attributes = [
           { SsKey        = parentIdKey
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
-      References = []; Indexes = []; Description = None }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+      References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private childKind : Kind =
     { SsKey    = childKindKey
       Name     = mkName "Child"
       Origin   = OsNative
       Modality = []
-      Physical = { Schema = "dbo"; Table = "OSUSR_C_CHILD" }
+      Physical = { Schema = "dbo"; Table = "OSUSR_C_CHILD"; Catalog = None }
       Attributes = [
           { SsKey        = childIdKey
             Name         = mkName "Id"
             Type         = Integer
             Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           { SsKey        = childParentFkKey
             Name         = mkName "ParentId"
             Type         = Integer
             Column       = { ColumnName = "PARENTID"; IsNullable = true }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None } ]
+            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
       References = [
           { SsKey           = childToParentRefKey
             Name            = mkName "Parent"
@@ -146,13 +146,13 @@ let private childKind : Kind =
             OnDelete        = NoAction
             IsUserFk        = false } ]
       Indexes = []
-      Description = None }
+      Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private microFkCatalog : Catalog =
     { Modules = [
         { SsKey = mkKey "OS_MOD_Test"
           Name  = mkName "Test"
-          Kinds = [ parentKind; childKind ] } ] }
+          Kinds = [ parentKind; childKind ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 // ---------------------------------------------------------------------------
 // V1 contract — the fixture round-trips into V2's Profile shape.

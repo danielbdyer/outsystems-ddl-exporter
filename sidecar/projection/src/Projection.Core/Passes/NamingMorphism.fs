@@ -65,6 +65,12 @@ module NamingMorphism =
         | TenantScoped  -> TenantScoped
         | SoftDeletable -> SoftDeletable
         | SystemOwned   -> SystemOwned
+        // Chapter A.0' slice η — `Temporal`'s period-column names are
+        // ColumnName Names (not Kind / Attribute identities); naming-
+        // morphism passes today rewrite Kind / Attribute names, not
+        // ColumnNames. A future column-rename morphism would extend
+        // here; today the payload passes through unchanged.
+        | Temporal _    -> m
 
     let private renameKind (m: Morphism) (events: LineageBuffer.Buffer) (k: Kind) : Kind =
         { k with
@@ -88,7 +94,8 @@ module NamingMorphism =
         use _ = Bench.scope "passes.namingMorphism"
         let events = LineageBuffer.create ()
         let renamed =
-            { Modules = c.Modules |> List.map (renameModule morphism events) }
+            { Modules = c.Modules |> List.map (renameModule morphism events)
+              Sequences = c.Sequences }
         Lineage.ofValueAndEvents (LineageBuffer.toList events) renamed
 
     /// Convenience constructors for common morphisms. Each is a pure

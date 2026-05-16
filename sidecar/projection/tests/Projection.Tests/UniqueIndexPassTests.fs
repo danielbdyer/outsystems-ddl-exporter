@@ -26,7 +26,7 @@ let private mkIndex
       Name         = name "IX"
       Columns      = columns
       IsUnique     = isUnique
-      IsPrimaryKey = false }
+      IsPrimaryKey = false; ExtendedProperties = [] }
 
 let private mkConfig (single: bool) (composite: bool) : UniqueIndexTighteningConfig =
     UniqueIndexTighteningConfig.create single composite
@@ -58,7 +58,7 @@ let private indexedCatalog : Catalog =
     let country'  = { country  with Indexes = [ countrySingle ] }
     let salesModule' =
         { salesModule with Kinds = [ customer'; order'; country' ] }
-    { Modules = [ salesModule' ] }
+    { Modules = [ salesModule' ]; Sequences = [] }
 
 let private allIndexes (c: Catalog) : Index list =
     Catalog.allKinds c |> List.collect (fun k -> k.Indexes)
@@ -276,15 +276,16 @@ let ``contract: UniqueIndexPass is invariant under input permutation``
     let perturb (c: Catalog) : Catalog =
         let withModules =
             { Modules =
-                c.Modules
-                |> List.map (fun m ->
-                    let withKinds =
-                        m.Kinds
-                        |> List.map (fun k ->
-                            if reverseIndexes then { k with Indexes = List.rev k.Indexes }
-                            else k)
-                    if reverseKinds then { m with Kinds = List.rev withKinds }
-                    else { m with Kinds = withKinds }) }
+                (c.Modules
+                 |> List.map (fun m ->
+                     let withKinds =
+                         m.Kinds
+                         |> List.map (fun k ->
+                             if reverseIndexes then { k with Indexes = List.rev k.Indexes }
+                             else k)
+                     if reverseKinds then { m with Kinds = List.rev withKinds }
+                     else { m with Kinds = withKinds }))
+              Sequences = c.Sequences }
         if reverseModules then { withModules with Modules = List.rev withModules.Modules }
         else withModules
     let policy = policyWithIntervention "v1-style" (mkConfig true true)

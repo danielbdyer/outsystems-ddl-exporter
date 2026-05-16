@@ -70,6 +70,242 @@ type StaticRow = {
 }
 
 
+/// SQL Server "extended property" — a named string annotation attached to
+/// a schema object. V1 source: `sys.extended_properties` (carried as
+/// `ExtendedPropertyDocument` in V1's JSON projection). Chapter A.0' slice
+/// ζ — IR fidelity lift (L3-S9 extended-properties sub-axiom). Mirrors
+/// V1's `Osm.Domain.Model.ExtendedProperty` (Name + nullable Value).
+type ExtendedProperty = {
+    Name  : string
+    Value : string option
+}
+
+/// Construction helper for `ExtendedProperty`. Empty `Value` strings
+/// normalize to `None` per V1 parity (`ExtendedProperty.Create` collapses
+/// `{ Length: 0 }` to null).
+[<RequireQualifiedAccess>]
+module ExtendedProperty =
+
+    let private nameEmpty =
+        ValidationError.create
+            "extendedProperty.name.empty"
+            "Extended property name cannot be blank."
+
+    /// Smart constructor (A39). Rejects blank names; normalizes empty
+    /// values to `None`. Pillar-9 classification: DataIntent — the
+    /// value is observed source-schema metadata, no operator opinion.
+    let create (name: string) (value: string option) : Result<ExtendedProperty> =
+        if System.String.IsNullOrWhiteSpace name then Result.failureOf nameEmpty
+        else
+            let normalized =
+                match value with
+                | Some v when System.String.IsNullOrEmpty v -> None
+                | other -> other
+            Result.success { Name = name; Value = normalized }
+
+
+/// SQL Server CHECK constraint at the table level. V1 source:
+/// `AttributeOnDiskCheckConstraint` (Name + Definition + IsNotTrusted).
+/// Chapter A.0' slice ε — IR fidelity lift (L3-S8 CHECK sub-axiom).
+/// Lives at `Kind.ColumnChecks` (table-scoped; a CHECK may span multiple
+/// columns per the SQL Server semantic).
+type ColumnCheck = {
+    SsKey        : SsKey
+    Name         : Name option
+    Definition   : string
+    IsNotTrusted : bool
+}
+
+[<RequireQualifiedAccess>]
+module ColumnCheck =
+
+    let private definitionEmpty =
+        ValidationError.create
+            "columnCheck.definition.empty"
+            "CHECK constraint definition cannot be blank."
+
+    /// Smart constructor (A39). Rejects blank definitions; the name
+    /// is optional (V1 surfaces unnamed CHECK constraints).
+    let create
+        (ssKey: SsKey)
+        (name: Name option)
+        (definition: string)
+        (isNotTrusted: bool)
+        : Result<ColumnCheck> =
+        if System.String.IsNullOrWhiteSpace definition then
+            Result.failureOf definitionEmpty
+        else
+            Result.success
+                { SsKey        = ssKey
+                  Name         = name
+                  Definition   = definition.Trim()
+                  IsNotTrusted = isNotTrusted }
+
+
+/// SQL Server computed-column configuration. Carries the expression and
+/// whether the computation is persisted. Chapter A.0' slice ε — IR
+/// fidelity lift (L3-S7 computed-column sub-axiom). V1 source: V1's
+/// model does not currently carry computed-column metadata at the
+/// JSON-projection boundary; the V2 IR field is positioned for a
+/// future DACPAC or rowset slice. Until populated, attributes carry
+/// `Computed = None`.
+type ComputedColumnConfig = {
+    Expression  : string
+    IsPersisted : bool
+}
+
+[<RequireQualifiedAccess>]
+module ComputedColumnConfig =
+
+    let private expressionEmpty =
+        ValidationError.create
+            "computedColumn.expression.empty"
+            "Computed-column expression cannot be blank."
+
+    let create (expression: string) (isPersisted: bool) : Result<ComputedColumnConfig> =
+        if System.String.IsNullOrWhiteSpace expression then
+            Result.failureOf expressionEmpty
+        else
+            Result.success
+                { Expression  = expression.Trim()
+                  IsPersisted = isPersisted }
+
+
+/// SQL Server DML trigger. V1 source: V1's `TriggerModel` (Name +
+/// IsDisabled + Definition) plus V1's JSON entity-level `triggers[]`
+/// array. Chapter A.0' slice γ — IR fidelity lift (L3-S4 triggers
+/// sub-axiom). Lives at `Kind.Triggers` per the domain semantic — a
+/// trigger is owned by the table it fires on; the chapter open's
+/// "Catalog.Triggers" planning shorthand is corrected to Kind-scoped
+/// per pillar 8 (concept-shaped: a trigger IS a property of a kind).
+type Trigger = {
+    SsKey      : SsKey
+    Name       : Name
+    IsDisabled : bool
+    Definition : string
+}
+
+[<RequireQualifiedAccess>]
+module Trigger =
+
+    let private definitionEmpty =
+        ValidationError.create
+            "trigger.definition.empty"
+            "Trigger definition cannot be blank."
+
+    /// Smart constructor (A39). Rejects blank definitions; V1's
+    /// `TriggerModel.Create` enforces the same invariant.
+    let create
+        (ssKey: SsKey)
+        (name: Name)
+        (isDisabled: bool)
+        (definition: string)
+        : Result<Trigger> =
+        if System.String.IsNullOrWhiteSpace definition then
+            Result.failureOf definitionEmpty
+        else
+            Result.success
+                { SsKey      = ssKey
+                  Name       = name
+                  IsDisabled = isDisabled
+                  Definition = definition }
+
+
+/// SQL Server SEQUENCE schema object. V1 source: V1's `SequenceModel`
+/// (rich shape: schema/name/dataType/start/increment/min/max/cycle/cache).
+/// Chapter A.0' slice δ — IR fidelity lift (L3-S5 sequences sub-axiom).
+/// Top-level Catalog object (sequences are schema-scoped, not table-
+/// scoped); `Catalog.Sequences : Sequence list`.
+type SequenceCacheMode =
+    /// No cache directive — server-default behavior.
+    | Unspecified
+    /// `CACHE n` cache size set.
+    | Cache
+    /// `NO CACHE` — caching disabled.
+    | NoCache
+
+type Sequence = {
+    SsKey          : SsKey
+    Name           : Name
+    Schema         : string
+    DataType       : string
+    StartValue     : decimal option
+    Increment      : decimal option
+    Minimum        : decimal option
+    Maximum        : decimal option
+    IsCycleEnabled : bool
+    CacheMode      : SequenceCacheMode
+    CacheSize      : int option
+}
+
+[<RequireQualifiedAccess>]
+module Sequence =
+
+    let private schemaEmpty =
+        ValidationError.create "sequence.schema.empty"
+            "Sequence schema cannot be blank."
+    let private dataTypeEmpty =
+        ValidationError.create "sequence.dataType.empty"
+            "Sequence data type cannot be blank."
+
+    let create
+        (ssKey: SsKey)
+        (name: Name)
+        (schema: string)
+        (dataType: string)
+        (startValue: decimal option)
+        (increment: decimal option)
+        (minimum: decimal option)
+        (maximum: decimal option)
+        (isCycleEnabled: bool)
+        (cacheMode: SequenceCacheMode)
+        (cacheSize: int option)
+        : Result<Sequence> =
+        if System.String.IsNullOrWhiteSpace schema then Result.failureOf schemaEmpty
+        elif System.String.IsNullOrWhiteSpace dataType then Result.failureOf dataTypeEmpty
+        else
+            Result.success
+                { SsKey          = ssKey
+                  Name           = name
+                  Schema         = schema.Trim()
+                  DataType       = dataType.Trim()
+                  StartValue     = startValue
+                  Increment      = increment
+                  Minimum        = minimum
+                  Maximum        = maximum
+                  IsCycleEnabled = isCycleEnabled
+                  CacheMode      = cacheMode
+                  CacheSize      = cacheSize }
+
+
+/// SQL Server system-versioned temporal-table configuration. V1 source:
+/// `TemporalTableMetadata` (HistorySchema/HistoryTable/PeriodStart/
+/// PeriodEnd/Retention). Chapter A.0' slice η — IR fidelity lift,
+/// closed-DU expansion (`ModalityMark.Temporal of TemporalConfig`).
+/// The V1 model is rich; the V2 IR carries the operationally-relevant
+/// subset: the period columns + the history-table coordinates + the
+/// retention policy.
+type TemporalRetentionUnit =
+    | Days
+    | Weeks
+    | Months
+    | Years
+
+type TemporalRetention =
+    /// `HISTORY_RETENTION_PERIOD = INFINITE`.
+    | Infinite
+    /// `HISTORY_RETENTION_PERIOD = <n> <unit>`.
+    | Limited of value: int * unit: TemporalRetentionUnit
+
+type TemporalConfig = {
+    HistorySchema : string option
+    HistoryTable  : string option
+    PeriodStart   : Name option
+    PeriodEnd     : Name option
+    Retention     : TemporalRetention
+}
+
+
 /// Modality marks attached to a kind. A kind may carry multiple marks; the
 /// representation is a list rather than a flag set so that payloaded marks
 /// (Static) coexist cleanly with payload-free marks (TenantScoped,
@@ -92,6 +328,13 @@ type ModalityMark =
     /// Payload-free per the codified ModalityMark pattern; mirrors
     /// `TenantScoped` / `SoftDeletable`.
     | SystemOwned
+    /// SQL Server system-versioned temporal table. Chapter A.0' slice
+    /// η — closed-DU widening. The payload carries the history-table
+    /// coordinates + period columns + retention policy; emitters that
+    /// understand temporal tables walk `kind.Modality` looking for
+    /// the variant. Adheres to the closed-DU empirical-test
+    /// discipline: pattern-match sites surface at compile time only.
+    | Temporal of TemporalConfig
 
 /// Typed structural display for `ModalityMark`. The `Static`
 /// variant carries the population count (not the rows themselves)
@@ -107,23 +350,16 @@ module ModalityMark =
         | TenantScoped -> StructuredString.tag "TenantScoped"
         | SoftDeletable -> StructuredString.tag "SoftDeletable"
         | SystemOwned -> StructuredString.tag "SystemOwned"
+        | Temporal config ->
+            let retentionTag =
+                match config.Retention with
+                | Infinite -> "Infinite"
+                | Limited _ -> "Limited"
+            StructuredString.create "Temporal"
+                [ "retention", retentionTag ]
 
     let toDiagnosticString (m: ModalityMark) : string =
         toStructured m |> StructuredString.render
-
-
-/// Primitive scalar types. Concrete mapping to a target surface scalar is
-/// policy (A13); the IR holds the abstract type only.
-type PrimitiveType =
-    | Integer
-    | Decimal
-    | Text
-    | Boolean
-    | DateTime
-    | Date
-    | Time
-    | Binary
-    | Guid
 
 
 /// Per-kind physical realization. Per session-36 audit (Agents 1, 2,
@@ -210,6 +446,40 @@ type Attribute = {
     /// Tolerance variant retires when both the IR carries AND the
     /// emitter emits).
     Description  : string option
+    /// V1 lifecycle flag carried from `ossys_EntityAttr.Is_Active`
+    /// (rowset path) or the `isActive` JSON property (JSON path).
+    /// V1's SQL coerces missing/null source values to `true` per
+    /// `outsystems_metadata_rowsets.sql:94, 116, 239`; the V2 adapter
+    /// mirrors that semantic (absent JSON → `true`). Chapter A.0'
+    /// slice β — IR fidelity lift (L3-S9 IsActive sub-axiom). The
+    /// pre-slice-β session-21 adapter-boundary filter dropped
+    /// `IsActive=false` attributes silently; slice β retires that
+    /// disposition per pillar-9 harvest-dichotomy (filtering is
+    /// `OperatorIntent`, mis-placed at the adapter which carries
+    /// only `DataIntent`). Carriage-only in this slice — any
+    /// Selection-axis filter pass that re-applies an inactive-records
+    /// drop policy lands when a consumer demands it.
+    IsActive     : bool
+    /// SQL Server DEFAULT constraint expression for this column.
+    /// `None` when the source omits a default. Chapter A.0' slice ε
+    /// — IR fidelity lift (L3-S6 DEFAULT sub-axiom). Sourced from
+    /// V1's JSON `attribute.default` (currently always `null` in
+    /// V1 fixtures; the IR field is positioned for when V1 begins
+    /// projecting defaults or when DACPAC adoption surfaces them).
+    /// Carried as a typed `SqlLiteral` per pillar 1 (data-structure-
+    /// oriented; the IR consumes typed values, not raw strings).
+    DefaultValue : SqlLiteral option
+    /// SQL Server computed-column configuration. `None` for
+    /// non-computed columns. Chapter A.0' slice ε — IR fidelity lift
+    /// (L3-S7 computed-column sub-axiom). V1's source JSON does not
+    /// currently carry computed-column metadata; positioned for a
+    /// future DACPAC or rowset slice.
+    Computed     : ComputedColumnConfig option
+    /// SQL Server `sys.extended_properties` annotations attached to
+    /// this column. Empty when the source carries none. Chapter A.0'
+    /// slice ζ — IR fidelity lift (L3-S9 extended-properties
+    /// sub-axiom; attribute level).
+    ExtendedProperties : ExtendedProperty list
 }
 
 
@@ -266,6 +536,11 @@ type Index = {
     Columns      : SsKey list
     IsUnique     : bool
     IsPrimaryKey : bool
+    /// SQL Server `sys.extended_properties` annotations attached to
+    /// this index. Empty when the source carries none. Chapter A.0'
+    /// slice ζ — IR fidelity lift (L3-S9 extended-properties
+    /// sub-axiom; index level).
+    ExtendedProperties : ExtendedProperty list
 }
 
 
@@ -288,21 +563,76 @@ type Kind = {
     /// descriptions sub-axiom). Sibling to `Attribute.Description`;
     /// same operational semantics (carriage-only at this slice).
     Description : string option
+    /// V1 lifecycle flag carried from `ossys_Entity.Is_Active`
+    /// (rowset path) or the entity-level `isActive` JSON property
+    /// (JSON path). Same default-true semantics as
+    /// `Attribute.IsActive`. Chapter A.0' slice β — IR fidelity
+    /// lift; retires the session-21 entity-level adapter-boundary
+    /// filter at `parseKind`. Sibling to `Module.IsActive` and
+    /// `Attribute.IsActive`; downstream emitters decide.
+    IsActive    : bool
+    /// SQL Server DML triggers attached to this kind. V1 source:
+    /// JSON entity-level `triggers[]` array (carries name +
+    /// isDisabled + definition). Chapter A.0' slice γ — IR fidelity
+    /// lift (L3-S4 triggers sub-axiom). Empty when the source
+    /// projects no triggers.
+    Triggers    : Trigger list
+    /// SQL Server CHECK constraints at the table level. V1 source:
+    /// V1's `AttributeOnDiskCheckConstraint` (column-level CHECK
+    /// constraints are exposed via the on-disk metadata channel,
+    /// not the JSON-projection boundary today). Chapter A.0' slice ε
+    /// — IR fidelity lift (L3-S8 CHECK sub-axiom). Kind-scoped
+    /// because a CHECK can span multiple columns (SQL Server
+    /// semantic). Empty when the source projects no CHECK
+    /// constraints.
+    ColumnChecks : ColumnCheck list
+    /// SQL Server `sys.extended_properties` annotations attached to
+    /// this kind. V1 source: V1's JSON entity-level
+    /// `extendedProperties[]` array. Chapter A.0' slice ζ — IR
+    /// fidelity lift (L3-S9 extended-properties sub-axiom; entity
+    /// level).
+    ExtendedProperties : ExtendedProperty list
 }
 
 
 /// A coproduct cell of the catalog (A11). Modules are disjoint by SsKey;
 /// the projection respects the decomposition (T2).
 type Module = {
-    SsKey : SsKey
-    Name  : Name
-    Kinds : Kind list
+    SsKey    : SsKey
+    Name     : Name
+    Kinds    : Kind list
+    /// V1 lifecycle flag carried from `ossys_Espace.Is_Active`
+    /// (rowset path; `ModuleRow.IsActive`) or the module-level
+    /// `isActive` JSON property (JSON path). Same default-true
+    /// semantics as `Kind.IsActive` / `Attribute.IsActive`.
+    /// Chapter A.0' slice β — IR fidelity lift; retires the
+    /// `parseRowsetBundle` module-level filter that previously
+    /// dropped `IsActive=false` modules silently. The JSON path's
+    /// `parseDocument` did not previously filter modules (Subagent
+    /// #3's O2 finding on `module.isActive: false`); slice β adds
+    /// JSON-path module-level read for parity.
+    IsActive : bool
+    /// SQL Server `sys.extended_properties` annotations attached to
+    /// this module's schema. V1 does not currently project module-
+    /// level extended properties; positioned for future expansion.
+    /// Chapter A.0' slice ζ — IR fidelity lift (L3-S9 extended-
+    /// properties sub-axiom; module level).
+    ExtendedProperties : ExtendedProperty list
 }
 
 
 /// The whole catalog: a coproduct over modules.
 type Catalog = {
     Modules : Module list
+    /// SQL Server SEQUENCE schema objects. Top-level Catalog field
+    /// because sequences are schema-scoped, not table-scoped (they
+    /// can be referenced by multiple tables or by application code).
+    /// Chapter A.0' slice δ — IR fidelity lift (L3-S5 sequences
+    /// sub-axiom). V1's JSON projection does not currently surface
+    /// sequences at the catalog boundary; populated empty until a
+    /// future source (DACPAC adapter; expanded V1 rowsets) provides
+    /// the evidence.
+    Sequences : Sequence list
 }
 
 
@@ -373,6 +703,8 @@ module Module =
         (ssKey: SsKey)
         (name: Name)
         (kinds: Kind list)
+        (isActive: bool)
+        (extendedProperties: ExtendedProperty list)
         : Result<Module> =
         let duplicates =
             kinds
@@ -390,7 +722,12 @@ module Module =
                         k))
             |> Result.failure
         else
-            Result.success { SsKey = ssKey; Name = name; Kinds = kinds }
+            Result.success
+                { SsKey              = ssKey
+                  Name               = name
+                  Kinds              = kinds
+                  IsActive           = isActive
+                  ExtendedProperties = extendedProperties }
 
 
 [<RequireQualifiedAccess>]
@@ -428,7 +765,7 @@ module Catalog =
     /// consumer" — flowing through `create` makes #1–#5 impossible
     /// to violate. Aggregates errors so a consumer sees every
     /// violation in one Result.
-    let create (modules: Module list) : Result<Catalog> =
+    let create (modules: Module list) (sequences: Sequence list) : Result<Catalog> =
         let moduleDupes =
             modules
             |> List.groupBy (fun m -> m.SsKey)
@@ -499,10 +836,29 @@ module Catalog =
                                     "Index %A on Kind %A references column SsKey %A absent from the kind's Attributes."
                                     idx.SsKey k.SsKey col)))))
 
+        // Sequence SsKey disjointness (chapter A.0' slice δ). Sequences
+        // are top-level Catalog objects; their SsKeys must be unique
+        // across the catalog by A4. Disjointness from Kind SsKeys is
+        // not currently enforced — sequences and kinds are different
+        // schema-object kinds (SEQUENCE vs TABLE) and use disjoint
+        // SsKey-synthesis prefixes (`OS_SEQ_*` vs `OS_KIND_*`), so
+        // collisions are not structurally possible.
+        let sequenceDupes =
+            sequences
+            |> List.groupBy (fun s -> s.SsKey)
+            |> List.filter (fun (_, ss) -> List.length ss > 1)
+            |> List.map fst
+            |> List.map (fun k ->
+                ValidationError.create
+                    "catalog.sequences.duplicateKey"
+                    (sprintf
+                        "Catalog has duplicate Sequence SsKey %A; A4 requires unique sequence identity."
+                        k))
+
         let allErrors =
-            moduleDupes @ kindDupes @ referenceErrors @ indexErrors
+            moduleDupes @ kindDupes @ referenceErrors @ indexErrors @ sequenceDupes
 
         if List.isEmpty allErrors then
-            Result.success { Modules = modules }
+            Result.success { Modules = modules; Sequences = sequences }
         else
             Result.failure allErrors

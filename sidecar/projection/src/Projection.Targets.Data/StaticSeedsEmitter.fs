@@ -178,7 +178,7 @@ module StaticSeedsEmitter =
         use _ = Bench.scope "emit.staticSeeds.renderMerge"
         let table : TableId =
             { Schema = k.Physical.Schema
-              Table  = k.Physical.Table }
+              Table  = k.Physical.Table; Catalog = None }
         let args : ScriptDomBuild.MergeBuildArgs =
             {
                 Target     = table
@@ -216,7 +216,7 @@ module StaticSeedsEmitter =
         use _ = Bench.scope "emit.staticSeeds.renderUpdate"
         let table : TableId =
             { Schema = k.Physical.Schema
-              Table  = k.Physical.Table }
+              Table  = k.Physical.Table; Catalog = None }
         let cellOf (a: Attribute) : string * SqlLiteral =
             let lit =
                 Map.tryFind a.Name typedValues

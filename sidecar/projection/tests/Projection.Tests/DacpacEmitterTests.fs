@@ -55,31 +55,37 @@ let private singleKindCatalog : Catalog =
         Name     = mkName "Widget"
         Origin   = OsNative
         Modality = []
-        Physical = { Schema = "dbo"; Table = "WIDGET" }
+        Physical = { Schema = "dbo"; Table = "WIDGET"; Catalog = None }
         Attributes = [
             { SsKey        = widgetIdKey
               Name         = mkName "Id"
               Type         = Integer
               Column       = { ColumnName = "ID"; IsNullable = false }
               IsPrimaryKey = true; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
             { SsKey        = widgetNameKey
               Name         = mkName "Name"
               Type         = Text
               Column       = { ColumnName = "NAME"; IsNullable = false }
               IsPrimaryKey = false; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
         ]
         References = []
         Indexes    = []
         Description = None
-    }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
     let m : Module = {
         SsKey = modKey "Inventory"
         Name  = mkName "Inventory"
         Kinds = [ widget ]
-    }
-    { Modules = [ m ] }
+        IsActive = true
+        ExtendedProperties = []
+        }
+    { Modules = [ m ]; Sequences = [] }
 
 // ---------------------------------------------------------------------------
 // Slice α acceptance — single-Kind Catalog produces non-empty bytes.
@@ -226,24 +232,24 @@ let private indexedCatalog : Catalog =
         Name     = mkName "IndexedWidget"
         Origin   = OsNative
         Modality = []
-        Physical = { Schema = "dbo"; Table = "INDEXED_WIDGET" }
+        Physical = { Schema = "dbo"; Table = "INDEXED_WIDGET"; Catalog = None }
         Attributes = [
             { SsKey = idKey; Name = mkName "Id"; Type = Integer
               Column = { ColumnName = "ID"; IsNullable = false }
               IsPrimaryKey = true; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
             { SsKey = codeKey; Name = mkName "Code"; Type = Text
               Column = { ColumnName = "CODE"; IsNullable = false }
               IsPrimaryKey = false; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
             { SsKey = regionKey; Name = mkName "Region"; Type = Text
               Column = { ColumnName = "REGION"; IsNullable = false }
               IsPrimaryKey = false; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
             { SsKey = labelKey; Name = mkName "Label"; Type = Text
               Column = { ColumnName = "LABEL"; IsNullable = true }
               IsPrimaryKey = false; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
         ]
         References = []
         Indexes = [
@@ -251,26 +257,32 @@ let private indexedCatalog : Catalog =
             { SsKey = idxKey ["IndexedWidget"; "UQ"; "Code"]
               Name = mkName "UQ_IndexedWidget_Code"
               Columns = [ codeKey ]
-              IsUnique = true; IsPrimaryKey = false }
+              IsUnique = true; IsPrimaryKey = false; ExtendedProperties = [] }
             // Composite (non-unique) index on Region + Label.
             { SsKey = idxKey ["IndexedWidget"; "IX"; "RegionLabel"]
               Name = mkName "IX_IndexedWidget_RegionLabel"
               Columns = [ regionKey; labelKey ]
-              IsUnique = false; IsPrimaryKey = false }
+              IsUnique = false; IsPrimaryKey = false; ExtendedProperties = [] }
             // Non-unique single-column index on Region.
             { SsKey = idxKey ["IndexedWidget"; "IX"; "Region"]
               Name = mkName "IX_IndexedWidget_Region"
               Columns = [ regionKey ]
-              IsUnique = false; IsPrimaryKey = false }
+              IsUnique = false; IsPrimaryKey = false; ExtendedProperties = [] }
         ]
         Description = None
-    }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
     let m : Module = {
         SsKey = modKey "Inventory"
         Name  = mkName "Inventory"
         Kinds = [ widget ]
-    }
-    { Modules = [ m ] }
+        IsActive = true
+        ExtendedProperties = []
+        }
+    { Modules = [ m ]; Sequences = [] }
 
 [<Fact>]
 let ``Slice γ: Indexes round-trip through DacFx model`` () =

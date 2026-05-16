@@ -58,30 +58,34 @@ let private mkCountryKind () : Kind =
         Name     = mkName "Country"
         Origin   = OsNative
         Modality = [ Static [ row "US" "United States"; row "CA" "Canada" ] ]
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
         Attributes =
             [
                 { SsKey = idKey;    Name = mkName "Id";    Type = Integer
                   Column = { ColumnName = "ID";    IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = codeKey;  Name = mkName "Code";  Type = Text
                   Column = { ColumnName = "CODE";  IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = labelKey; Name = mkName "Label"; Type = Text
                   Column = { ColumnName = "LABEL"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
             ]
         References = []
         Indexes    = []
         Description = None
-    }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
 
 let private mkCatalog (kinds: Kind list) : Catalog =
     let m : Module =
         { SsKey = mkKey ["TestModule"]
           Name  = mkName "TestModule"
-          Kinds = kinds }
-    { Modules = [ m ] }
+          Kinds = kinds; IsActive = true; ExtendedProperties = [] }
+    { Modules = [ m ]; Sequences = [] }
 
 let private policyWith (composition: DataComposition) : Policy =
     { Policy.empty with
@@ -172,7 +176,7 @@ let ``T11: composer keyset equals Catalog.allKinds keyset for every DataComposit
             SsKey    = mkKey ["TestModule"; "Customer"]
             Name     = mkName "Customer"
             Modality = []
-            Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER" } }
+            Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER"; Catalog = None } }
     let catalog = mkCatalog [ country; regular ]
     let expected =
         Catalog.allKinds catalog
@@ -241,7 +245,7 @@ let ``composeWithLineage: trail carries one event per kind in catalog`` () =
             SsKey    = mkKey ["TestModule"; "Customer"]
             Name     = mkName "Customer"
             Modality = []
-            Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER" } }
+            Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER"; Catalog = None } }
     let catalog = mkCatalog [ country; regular ]
     let policy = policyWith AllRemaining
     let lineageOfResult =
@@ -360,15 +364,15 @@ let ``Slice ι: composeRendered emits Phase-1 (MERGE) of every kind before Phase
             Name     = mkName name
             Origin   = OsNative
             Modality = [ Static [ row ] ]
-            Physical = { Schema = "dbo"; Table = table }
+            Physical = { Schema = "dbo"; Table = table; Catalog = None }
             Attributes =
                 [
                     { SsKey = idKey;     Name = mkName "Id";       Type = Integer
                       Column = { ColumnName = "ID";       IsNullable = false }
-                      IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                      IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                     { SsKey = parentKey; Name = mkName "ParentId"; Type = Integer
                       Column = { ColumnName = "PARENTID"; IsNullable = true }
-                      IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                      IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 ]
             References =
                 [ { SsKey = refKey; Name = mkName "RefSelf"
@@ -376,7 +380,11 @@ let ``Slice ι: composeRendered emits Phase-1 (MERGE) of every kind before Phase
                     OnDelete = NoAction; IsUserFk = false } ]
             Indexes    = []
             Description = None
-        }
+            IsActive = true
+            Triggers = []
+            ColumnChecks = []
+            ExtendedProperties = []
+            }
     let alpha = mkSelfCycleKind "Alpha" "OSUSR_ALPHA" "1"
     let beta = mkSelfCycleKind "Beta" "OSUSR_BETA" "1"
     let catalog = mkCatalog [ alpha; beta ]

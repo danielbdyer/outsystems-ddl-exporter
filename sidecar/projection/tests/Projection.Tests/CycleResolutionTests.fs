@@ -21,7 +21,7 @@ let private mkAttr (key: string) (nullable: bool) : Attribute =
       Name         = Name.create "Fk" |> Result.value
       Type         = Integer
       Column       = { ColumnName = "FK"; IsNullable = nullable }
-      IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+      IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
 
 let private mkRef (sourceAttrKey: string) (action: ReferenceAction) : Reference =
     { SsKey           = refKey ["x"]
@@ -36,9 +36,9 @@ let private kindWith (a: Attribute) : Kind =
       Name       = Name.create "owner" |> Result.value
       Origin     = OsNative
       Modality   = []
-      Physical   = { Schema = "dbo"; Table = "owner" }
+      Physical   = { Schema = "dbo"; Table = "owner"; Catalog = None }
       Attributes = [ a ]
-      References = []; Indexes = []; Description = None }
+      References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 [<Fact>]
 let ``classify: nullable + NoAction = Weak`` () =

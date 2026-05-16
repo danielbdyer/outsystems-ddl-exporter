@@ -39,6 +39,7 @@ the operational *what and when* is here.
   - [Phase 1 — Π port keystone (chapter 3.5)](#phase-1--π-port-keystone-chapter-35)
   - [Phase 2 — Schema-as-driver (chapter 4.1.A)](#phase-2--schema-as-driver-chapter-41a)
   - [Phase 3 — Data-as-driver (chapter 4.1.B)](#phase-3--data-as-driver-chapter-41b)
+  - [Phase 3.1 — IR fidelity lifts (chapter A.0'; in flight)](#phase-31--ir-fidelity-lifts-chapter-a0-in-flight)
   - [Phase 4 — Identity-as-driver (chapter 4.2)](#phase-4--identity-as-driver-chapter-42)
   - [Phase 5 — Operational diagnostics (chapter 4.3)](#phase-5--operational-diagnostics-chapter-43)
   - [Phase 6 — DACPAC (chapter 3.x; conditional)](#phase-6--dacpac-chapter-3x-conditional)
@@ -240,6 +241,67 @@ See `CHAPTER_4_1_B_CLOSE.md` for shipped slices;
 **Sequencing.** Independent of other phases. Estimated ~2-3 weeks at
 session cadence (V2_DRIVER estimate; unchanged under the V2
 self-containment posture).
+
+---
+
+### Phase 3.1 — IR fidelity lifts (chapter A.0'; CLOSED 2026-05-16)
+
+**Status:** closed. All 9 slices (α + β + γ + δ + ε + ζ + η + θ + ι)
+shipped. Ten L3 axioms advanced from Bucket D → Bucket A. Chapter-close
+synthesis at `CHAPTER_A_0_PRIME_CLOSE.md`; chapter-open scope at
+`CHAPTER_A_0_PRIME_OPEN.md` (preserved for historical reference).
+
+**Strategic frame.** Each lift is structural commitment, not a feature
+— the IR carries the evidence; emitter consumption lands downstream
+per-consumer. Record-field extensions (closed-DU empirical-test
+discipline holds — F# field-missing errors at literal sites only;
+semantic interpretation untouched). Twin-path discipline holds (JSON +
+rowset both populate every new field).
+
+**All slices shipped:**
+
+| Slice | Scope | Witness | Status |
+|---|---|---|---|
+| α | `Kind.Description` + `Attribute.Description` (purely additive) | `DescriptionLiftTests.fs` (7 tests) | shipped 2026-05-15 |
+| β | `Module.IsActive` + `Kind.IsActive` + `Attribute.IsActive` (carry-through; retire session-21 boundary filter); first pillar-9 worked example | `IsActiveCarryThroughTests.fs` (9 tests) + rework of 5 prior tests in `OsmRowsetReaderTests` / `OsmCatalogReaderDifferentialTests` | shipped 2026-05-16 |
+| γ + δ + ε + ζ + η (XXXXL) | Five-slice IR-fidelity body: `Kind.Triggers` + `Trigger`; `Catalog.Sequences` + `Sequence`; `Attribute.DefaultValue` + `Computed` + `Kind.ColumnChecks`; `ExtendedProperties` × 4 levels; `ModalityMark.Temporal` DU widening | `IRFidelityLiftTests.fs` (22 tests) + `IRBuilders.fs` fixture-builder pattern + `Fixtures.fs` retrofitted | shipped 2026-05-16 |
+| θ | `TableId.Catalog : string option` + JSON-path `db_catalog` pickup | 4 new tests in `IRFidelityLiftTests` | shipped 2026-05-16 |
+| ι | IsExternal/Origin mapping audit + L3-Boundary-NoSilentDrop property test surface | `NoSilentDropTests.fs` (21 tests; 12 per-concept structural witnesses + 1 kitchen-sink JSON fixture + 8 Origin-audit tests) | shipped 2026-05-16 |
+
+**Pending slices:** none. Chapter A.0' closes; see `CHAPTER_A_0_PRIME_CLOSE.md`.
+
+**V1 inheritance opportunities:** none. The lifts are V2 IR extensions
+under empirical pressure from V1's source shape; the V1 OSSYS adapter
+already reads V1's projection. No carbon-copy event in this chapter.
+
+**Cross-cutting work:**
+
+- The A.4.7-prelude small slice (`LineageEvent.Classification` field)
+  per `DECISIONS 2026-05-15 (late)` lands during or just after chapter
+  close. Slices β and γ-η did not need it; chapter close gates may.
+- **`IRBuilders.fs` fixture-builder pattern** (introduced 2026-05-16 at
+  XXXXL close) — `mkAttribute` / `mkKind` / `mkModule` / `mkIndex` /
+  `mkCatalog` with minimum-evidence DataIntent defaults. `Fixtures.fs`
+  retrofitted as the worked example; the rest of the test surface is
+  scheduled for retroactive sweep at chapter close (currently ~150
+  record-literal sites carry field assignments explicitly; the sweep
+  reduces blast radius for next-chapter field additions from 150 sites
+  to 1). Pillar-8 / pillar-9 disciplines documented in
+  `IRBuilders.fs` module-level docstring.
+
+**Per-phase risks:**
+
+- *Slice ζ blast radius* — ExtendedProperties on four IR levels is the
+  widest record-extension in the chapter. Mitigation: mechanical-edits
+  precedent from slices α/β (Python pass against FS0764 worklist).
+- *Slice η DU widening* — `ModalityMark.Temporal` is the only DU-widening
+  slice in the chapter. Mitigation: closed-DU empirical-test discipline
+  (chapter 3.2 close generalization confirms record-extension and
+  DU-widening have the same propagation profile).
+
+**Sequencing.** Independent of Phases 3-5. Estimated 3-4 weeks total at
+session cadence (V2 production cutover plan estimate); two slices
+shipped at this baseline, 7 pending.
 
 ---
 

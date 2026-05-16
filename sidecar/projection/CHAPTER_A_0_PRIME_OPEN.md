@@ -1,5 +1,9 @@
 # Chapter A.0' open — IR fidelity lifts (Campaign A.2 + B prerequisite)
 
+> **STATUS: CLOSED 2026-05-16.** All 9 slices shipped; ten L3 axioms advanced D → A. Chapter-close synthesis at `CHAPTER_A_0_PRIME_CLOSE.md`. This open document is preserved as the historical strategic-frame; subsequent agents should read the close doc first.
+
+
+
 **Branch:** `claude/review-handoff-docs-CF2v5`. **Predecessor:** PR #538 → merged at `8733d0c`; A.7.1 atomic emission promoted L3-Boundary-AtomicEmission D → A. **Plan-of-record spec:** `V2_PRODUCTION_CUTOVER.md` §6.0' + §3.3 (IR-fidelity gap table). **Audit reference:** `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` Part VI.
 
 This chapter promotes the **Tier-1 unnamed L3 axioms in §3.3** from Bucket D → Bucket A. Each lift carries a V1 schema concept that `Catalog` does not yet hold into a typed home — OR routes it through a `Diagnostic.Severity=Error` at the OSSYS-adapter boundary. The completion criterion is **L3-Boundary-NoSilentDrop**: no V1 concept in §3.3 leaves the adapter as silent passthrough. Campaign A.2 (no-silent-drop) is the chapter's structural target; Campaign B (smart-constructor sweep) lands incidentally on the new fields that gain invariants.
@@ -12,7 +16,7 @@ This chapter promotes the **Tier-1 unnamed L3 axioms in §3.3** from Bucket D �
 
 3. **Twin-path discipline holds.** The OSSYS adapter parses two paths — JSON (`parseKind` / `parseAttribute`) and rowset (`parseKindRow` / `parseAttributeRow`); both must populate every new field. Slice 5's cross-source parity tests from chapter 3.2 are the precedent. Per-slice property tests verify roundtrip preservation across BOTH paths.
 
-4. **`IsActive` is a semantic shift, not additive.** Per session-21 amendment, the JSON path filters `isActive: false` records at the adapter boundary (silently drops them). The §6.0' lift retires that filter — carries the flag through to the IR; downstream emitters decide. This is the only slice in the chapter that requires a DECISIONS amendment superseding a prior decision (session-21 inactive-records filter). Sliced separately and gated on operator alignment.
+4. **`IsActive` is a semantic shift, not additive.** Per session-21 amendment, the JSON path filtered `isActive: false` records at the adapter boundary (silently dropped them); the rowset path inherited the same disposition at chapter 3.2 slice 1. The §6.0' lift retired that filter — carries the flag through to the IR; downstream emitters decide. This is the only slice in the chapter that required a DECISIONS amendment superseding a prior decision (session-21 inactive-records filter). **Slice β shipped 2026-05-16** under `DECISIONS 2026-05-16 (slice β) — Retire OSSYS-adapter IsActive boundary filter; lift IsActive to IR (supersedes session-21)`, citing pillar 9 (harvest-dichotomy: the filter was `OperatorIntent of Selection`, mis-placed at the adapter) + the 2026-05-16 (later) audible (V2 self-containment posture). **Scope expanded at session-open to include `Kind.IsActive`** alongside `Module.IsActive` and `Attribute.IsActive` per the HANDOFF 2026-05-15 recommendation — without lifting Kind the rowset / JSON entity filters would have remained as residual silent drops, leaving an asymmetry against the L3-Boundary-NoSilentDrop completion criterion. The first worked example of pillar 9 at slice level.
 
 5. **Tolerance retirements are forward signals, not slice scope.** `CommentMetadataUnreflected` (Tolerance.fs:58) names the operational deferral that Description + ExtendedProperties lifts EVENTUALLY retire — *but only once emitters consume the IR fields* (chapter 4.1.A slice 8 territory). The chapter-A.0' close-ritual L3 audit step names these signals; the actual retirement is deferred-with-trigger per slice.
 
@@ -37,15 +41,15 @@ Order chosen by **risk × leverage × prerequisite chain**:
 
 | Slice | Scope | L3 axioms promoted | Risk |
 |---|---|---|---|
-| **α** | `Kind.Description` + `Attribute.Description` (purely additive) | L3-S9 (descriptions sub-axiom) | Low — pattern-establishing |
-| **β** | `Module.IsActive` + `Attribute.IsActive` (carry-through; retire boundary filter) | L3-S9 (IsActive sub-axiom; supersedes session-21) | Medium — semantic shift; DECISIONS amendment required |
-| **γ** | `Catalog.Triggers : Trigger list` + `Trigger` value type + adapter pickup | L3-S4 | Medium — new top-level Catalog field |
-| **δ** | `Catalog.Sequences : Sequence list` + `Sequence` value type + adapter pickup | L3-S5 | Medium — sibling of γ |
-| **ε** | `Attribute.DefaultValue : SqlLiteral option` + `Attribute.Computed : ComputedColumnConfig option` + `Kind.ColumnChecks : ColumnCheck list` (Attribute / Kind body expansions) | L3-S6, L3-S7, L3-S8 | Medium — three related additions; share adapter machinery |
-| **ζ** | `ExtendedProperties: ExtendedProperty list` on Module / Kind / Attribute / Index | L3-S9 | High — four-level extension; widest blast radius |
-| **η** | `ModalityMark.Temporal of TemporalConfig` (DU widening for temporal tables) | (covered by L3-S4 family; sub-axiom pending) | High — only DU-widening slice in chapter; closed-DU discipline applies |
-| **θ** | `TableId.Catalog : string option` extension | L3-S10 / L3-I10 | High — invasive; touches every `TableId` literal site |
-| **ι** | IsExternal / Origin mapping audit + final L3-Boundary-NoSilentDrop property test | L3-CC4 + completion criterion | Low — property tests only; no IR change |
+| **α** | `Kind.Description` + `Attribute.Description` (purely additive) — **SHIPPED 2026-05-15** | L3-S9 (descriptions sub-axiom) | Low — pattern-establishing |
+| **β** | `Module.IsActive` + `Kind.IsActive` + `Attribute.IsActive` (carry-through; retire boundary filter) — **SHIPPED 2026-05-16** | L3-S9 (IsActive sub-axiom; supersedes session-21) | Medium — semantic shift; DECISIONS amendment landed |
+| **γ** | `Kind.Triggers : Trigger list` + `Trigger` value type + JSON adapter pickup — **SHIPPED 2026-05-16 (XXXXL)**. _Pillar-8 deviation from open's "Catalog.Triggers" planning shorthand: triggers are kind-scoped per SQL Server semantic and V1's JSON projection at entity level._ | L3-S4 | Medium — kind-scoped, not top-level Catalog field |
+| **δ** | `Catalog.Sequences : Sequence list` + `Sequence` value type + adapter slot (empty defaults today; pickup deferred until V1 surfaces sequences or DACPAC adapter lands) — **SHIPPED 2026-05-16 (XXXXL)** | L3-S5 | Medium — sibling of γ |
+| **ε** | `Attribute.DefaultValue : SqlLiteral option` (JSON adapter pickup via `SqlLiteral.ofRaw`) + `Attribute.Computed : ComputedColumnConfig option` + `Kind.ColumnChecks : ColumnCheck list` — **SHIPPED 2026-05-16 (XXXXL)** | L3-S6, L3-S7, L3-S8 | Medium — three related additions; share adapter machinery |
+| **ζ** | `ExtendedProperties: ExtendedProperty list` on Module / Kind / Attribute / Index + JSON adapter pickup at entity level — **SHIPPED 2026-05-16 (XXXXL)** | L3-S9 | High — four-level extension; absorbed via mechanical edits + `IRBuilders` |
+| **η** | `ModalityMark.Temporal of TemporalConfig` (DU widening for temporal tables) — **SHIPPED 2026-05-16 (XXXXL)** | (covered by L3-S4 family; sub-axiom pending) | High — only DU-widening slice in chapter; closed-DU empirical test held (3 match-site additions across pass modules + JsonEmitter; no other ripple) |
+| **θ** | `TableId.Catalog : string option` extension + JSON `db_catalog` pickup — **SHIPPED 2026-05-16** | L3-S10 / L3-I10 | High planned; actual blast radius was 9 src record-literal sites (smaller than expected — `TableId.create` signature unchanged via default-`None` discipline) |
+| **ι** | IsExternal / Origin mapping audit + final L3-Boundary-NoSilentDrop property test — **SHIPPED 2026-05-16** | L3-CC4 + completion criterion | Low — property tests only; no IR change |
 
 **Deferred-out-of-A.0'** per `V2_PRODUCTION_CUTOVER.md` §11.5:
 - `OriginalName` (prior attribute names) — renames handled at cutover, not embedded.

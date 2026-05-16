@@ -137,12 +137,22 @@ module ColumnName =
     let value (ColumnName c) : string = c
 
 /// Schema-table coordinate. The composite identity for a kind's
-/// physical realization. Two `TableId`s are equal iff their schema
-/// and table strings match exactly.
+/// physical realization. Two `TableId`s are equal iff their catalog,
+/// schema, and table strings match exactly.
+///
+/// **Chapter A.0' slice θ — Catalog extension (L3-S10 / L3-I10).**
+/// `Catalog : string option` carries the V1 `db_catalog` field (the
+/// 3-part SQL identifier prefix). `None` represents the
+/// implicit-current-catalog form V1 projects today (most V2 sources
+/// emit `db_catalog: null`); explicit cross-database references land
+/// as `Some catalog`. Cross-database FK detection now has typed
+/// support; pre-slice-θ the catalog axis silently degraded to the
+/// implicit-current-database scope.
 type TableId =
     {
-        Schema : string
-        Table : string
+        Catalog : string option
+        Schema  : string
+        Table   : string
     }
 
 /// Smart constructors and projections for `TableId`. Per the
@@ -163,15 +173,39 @@ module TableId =
             "tableId.table.empty"
             "TableId table cannot be blank."
 
+    let private catalogBlank =
+        ValidationError.create
+            "tableId.catalog.empty"
+            "TableId catalog, when present, cannot be blank or whitespace."
+
     /// Build a `TableId` from raw strings. Rejects blanks; aggregates
-    /// errors when both fields are blank.
+    /// errors when fields are blank. `Catalog` defaults to `None`
+    /// (implicit-current-database scope; V1's
+    /// `db_catalog: null` parity).
     let create (schema: string) (table: string) : Result<TableId> =
         let schemaErr =
             if System.String.IsNullOrWhiteSpace schema then [ schemaBlank ] else []
         let tableErr =
             if System.String.IsNullOrWhiteSpace table then [ tableBlank ] else []
         match schemaErr @ tableErr with
-        | [] -> Result.success { Schema = schema; Table = table }
+        | [] -> Result.success { Catalog = None; Schema = schema; Table = table }
+        | errs -> Result.failure errs
+
+    /// Build a `TableId` that carries an explicit catalog coordinate.
+    /// Chapter A.0' slice θ — used by future adapters that surface
+    /// cross-database FK targets (DACPAC, OData) or live-SQL paths
+    /// that read `INFORMATION_SCHEMA.TABLES.TABLE_CATALOG`. Empty /
+    /// whitespace `catalog` is rejected; pass `TableId.create` for
+    /// the implicit-current-database scope instead.
+    let createWithCatalog (catalog: string) (schema: string) (table: string) : Result<TableId> =
+        let catalogErr =
+            if System.String.IsNullOrWhiteSpace catalog then [ catalogBlank ] else []
+        let schemaErr =
+            if System.String.IsNullOrWhiteSpace schema then [ schemaBlank ] else []
+        let tableErr =
+            if System.String.IsNullOrWhiteSpace table then [ tableBlank ] else []
+        match catalogErr @ schemaErr @ tableErr with
+        | [] -> Result.success { Catalog = Some catalog; Schema = schema; Table = table }
         | errs -> Result.failure errs
 
     // Per chapter 3.5 deep audit (2026-05-09): the bracket-quoted

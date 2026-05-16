@@ -87,7 +87,7 @@ module SsdtDdlEmitter =
     // -------------------------------------------------------------------
 
     let private toTableId (k: Kind) : TableId =
-        { Schema = k.Physical.Schema; Table = k.Physical.Table }
+        { Schema = k.Physical.Schema; Table = k.Physical.Table; Catalog = None }
 
     /// Derive a `ColumnDef` (the Statement-DU column shape from
     /// chapter 3.5) from a V2 `Attribute`. The `Provenance` field is

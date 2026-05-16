@@ -126,27 +126,27 @@ let private expectedCatalog : Catalog =
           Name     = mkName "User"
           Origin   = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
               { SsKey        = userIdAttrKey
                 Name         = mkName "Id"
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = userEmailAttrKey
                 Name         = mkName "Email"
                 Type         = Text
                 Column       = { ColumnName = "EMAIL"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           ]
           References = []
-          Indexes    = []; Description = None }
+          Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ userKind ] } ] }
+          Kinds = [ userKind ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 // ---------------------------------------------------------------------------
 // Parser invocation — async at the boundary, sync-await for tests.
@@ -340,36 +340,36 @@ let private expectedReferenceCatalog : Catalog =
           Name     = mkName "Account"
           Origin   = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_ACCOUNT" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_ACCOUNT"; Catalog = None }
           Attributes = [
               { SsKey        = accountIdAttrKey
                 Name         = mkName "Id"
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           ]
           References = []
-          Indexes    = []; Description = None }
+          Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let userKind : Kind =
         { SsKey    = userKindKey
           Name     = mkName "User"
           Origin   = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
               { SsKey        = userIdAttrKey
                 Name         = mkName "Id"
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = userAccountIdAttrKey
                 Name         = mkName "AccountId"
                 Type         = Integer
                 Column       = { ColumnName = "ACCOUNTID"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           ]
           References = [
               { SsKey           = userAccountReferenceKey
@@ -379,11 +379,11 @@ let private expectedReferenceCatalog : Catalog =
                 OnDelete        = NoAction
                 IsUserFk        = false }
           ]
-          Indexes    = []; Description = None }
+          Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ accountKind; userKind ] } ] }
+          Kinds = [ accountKind; userKind ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 [<Fact>]
 let ``differential: V1 reference-bearing fixture parses into a Catalog with the expected V2 Reference`` () =
@@ -499,21 +499,21 @@ let private expectedExternalCatalog : Catalog =
           Name     = mkName "BillingAccount"
           Origin   = ExternalViaIntegrationStudio
           Modality = []
-          Physical = { Schema = "billing"; Table = "BILLING_ACCOUNT" }
+          Physical = { Schema = "billing"; Table = "BILLING_ACCOUNT"; Catalog = None }
           Attributes = [
               { SsKey        = billingAccountIdAttrKey
                 Name         = mkName "Id"
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           ]
           References = []
-          Indexes    = []; Description = None }
+          Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = extBillingModuleKey
           Name  = mkName "ExtBilling"
-          Kinds = [ billingAccount ] } ] }
+          Kinds = [ billingAccount ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 [<Fact>]
 let ``differential: V1 external-entity fixture parses with Origin = ExternalViaIntegrationStudio`` () =
@@ -529,47 +529,34 @@ let ``differential: V1 external-entity fixture parses with Origin = ExternalViaI
         Assert.Equal<Catalog>(expectedExternalCatalog, actual)
 
 // ---------------------------------------------------------------------------
-// Mixed-active fixture (session 21 — fourth slice in the OSSYS arc).
+// Mixed-active fixture (session 21 → chapter A.0' slice β).
 //
-// Surfaces the deferred inactive-records boundary choice from the
-// session 17 ADMIRE chapter scope. Three prior slices passed
-// without exercising this question; the empirical pressure for it
-// arrives only when a fixture forces it.
+// History: session 21 instituted the inactive-records boundary
+// filter; chapter A.0' slice β (2026-05-16) retires it. The fixture
+// stays — its V1-side shape (mixed isActive: true / false records at
+// three levels) is exactly the carry-through pressure the lift
+// requires. Only the expected V2 IR shape changes: previously the
+// inactive records were dropped at the boundary; now they survive
+// with `IsActive=false` carried into the IR.
 //
-// Trace performed before writing this fixture:
-//   - V1 SQL carries IsActive flags through to JSON at three levels:
-//     `module.isActive` (line 924), entity-level `isActive` (line
-//     931), attribute-level `isActive` (line 759).
-//   - V1 SQL also has SQL-layer pre-filtering parameters
-//     (`@IncludeInactive` line 127; `@OnlyActiveAttributes` line
-//     254) that reduce the rowsets before JSON aggregation.
-//   - **The flags ARE visible to V2 through the JSON path** —
-//     unlike SsKey (session 18) or EspaceKind (session 20), this
-//     is NOT a member of the JSON-projection-lossiness class. The
-//     boundary choice is genuine; V2 has the information.
+// Pillar 9 (harvest-dichotomy): the original session-21 disposition
+// mis-classified an `OperatorIntent` (filter on a Selection-axis
+// flag) as adapter-boundary `DataIntent` carriage. Slice β re-
+// classifies: the source value is `DataIntent` evidence; any filter
+// shipped later is `OperatorIntent of Selection`, deferred-with-
+// trigger until a consumer surfaces it. See `DECISIONS 2026-05-16
+// (slice β)`.
 //
-// Boundary disposition for this slice (filter at adapter):
-//   - V2 IR has no per-record IsActive axis today; carry-through
-//     would require IR refinement (substantive — adding an IsActive
-//     axis to Kind / Attribute, or a Modality.Inactive variant).
-//   - "IR grows under evidence" — no current consumer demands the
-//     inactive records' presence in V2's IR.
-//   - A18 amended (Π consumes Catalog × Profile, never Policy)
-//     argues for carry-through in principle (filtering is
-//     operator intent), but the smallest honest-now implementation
-//     is filter-at-adapter with the bound documented.
+// V1 SQL carries IsActive flags through to JSON at three levels:
+// `module.isActive`, entity-level `isActive`, attribute-level
+// `isActive`. The flags ARE visible to V2 through the JSON path —
+// this is NOT a JSON-projection-lossiness case; this is a V2-
+// boundary-discipline case (per session 22's two-classes amendment).
+// Slice β lifts the field to the IR; carriage is preserved.
 //
-// Filter rule:
-//   - `entity.isActive: false` → entity dropped from the V2 Catalog
-//   - `attribute.isActive: false` → attribute dropped from its Kind's
-//     Attributes list (entity remains)
-//   - `module.isActive: false` → not exercised by this fixture;
-//     defers until a fixture forces the question
-//
-// Auditability: Diagnostics-attached audit of dropped records is a
-// future extension when the adapter's return shape grows from
-// `Task<Result<Catalog>>` to a Diagnostics-bearing variant. Today's
-// drop is silent. The DECISIONS amendment captures this.
+// Auditability: the IR's `IsActive=false` carriage IS the audit
+// trail. No Diagnostics-attached drop event is required because
+// no drop happens.
 // ---------------------------------------------------------------------------
 
 let private v1MixedActiveFixture : string =
@@ -682,33 +669,59 @@ let private v1MixedActiveFixture : string =
 
 let private activeEntityKindKey = kindKey ["AppCore"; "ActiveEntity"]
 let private activeEntityIdAttrKey = attrKey ["AppCore"; "ActiveEntity"; "Id"]
+let private activeEntityDeprecatedAttrKey =
+    attrKey ["AppCore"; "ActiveEntity"; "DeprecatedField"]
+let private retiredEntityKindKey = kindKey ["AppCore"; "RetiredEntity"]
+let private retiredEntityIdAttrKey = attrKey ["AppCore"; "RetiredEntity"; "Id"]
 
 let private expectedMixedActiveCatalog : Catalog =
+    // Slice β: all three V1 levels (module / entity / attribute) carry
+    // through to the IR with `IsActive` populated from the source.
     let activeEntity : Kind =
         { SsKey    = activeEntityKindKey
           Name     = mkName "ActiveEntity"
           Origin   = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_ACTIVE" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_ACTIVE"; Catalog = None }
           Attributes = [
               { SsKey        = activeEntityIdAttrKey
                 Name         = mkName "Id"
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
-              // DeprecatedField (isActive: false) is dropped at the boundary.
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+              { SsKey        = activeEntityDeprecatedAttrKey
+                Name         = mkName "DeprecatedField"
+                Type         = Text
+                Column       = { ColumnName = "DEPRECATEDFIELD"; IsNullable = true }
+                IsPrimaryKey = false
+                IsMandatory = false; Length = Some 100; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = false; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           ]
           References = []
-          Indexes    = []; Description = None }
-    // RetiredEntity (isActive: false) is dropped at the boundary.
+          Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+    let retiredEntity : Kind =
+        { SsKey    = retiredEntityKindKey
+          Name     = mkName "RetiredEntity"
+          Origin   = OsNative
+          Modality = []
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_RETIRED"; Catalog = None }
+          Attributes = [
+              { SsKey        = retiredEntityIdAttrKey
+                Name         = mkName "Id"
+                Type         = Integer
+                Column       = { ColumnName = "ID"; IsNullable = false }
+                IsPrimaryKey = true
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+          ]
+          References = []
+          Indexes    = []; Description = None; IsActive = false; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ activeEntity ] } ] }
+          Kinds = [ activeEntity; retiredEntity ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 [<Fact>]
-let ``differential: V1 mixed-active fixture filters inactive records at the boundary`` () =
+let ``slice β: V1 mixed-active fixture carries IsActive through at all three levels`` () =
     let result = parseSync (CatalogReader.SnapshotJson v1MixedActiveFixture)
     match result with
     | Error errors ->
@@ -912,38 +925,38 @@ let private expectedIndexCatalog : Catalog =
           Name     = mkName "User"
           Origin   = OsNative
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
               { SsKey        = userIdAttrKey
                 Name         = mkName "Id"
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = userEmailAttrKey
                 Name         = mkName "Email"
                 Type         = Text
                 Column       = { ColumnName = "EMAIL"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = userIndexLastNameAttrKey
                 Name         = mkName "LastName"
                 Type         = Text
                 Column       = { ColumnName = "LASTNAME"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 100; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                IsMandatory = true; Length = Some 100; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = userIndexFirstNameAttrKey
                 Name         = mkName "FirstName"
                 Type         = Text
                 Column       = { ColumnName = "FIRSTNAME"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 100; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                IsMandatory = true; Length = Some 100; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = userIndexEmailLowerAttrKey
                 Name         = mkName "EmailLower"
                 Type         = Text
                 Column       = { ColumnName = "EMAILLOWER"; IsNullable = true }
                 IsPrimaryKey = false
-                IsMandatory = false; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                IsMandatory = false; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           ]
           References = []
           Indexes = [
@@ -951,12 +964,12 @@ let private expectedIndexCatalog : Catalog =
                 Name         = mkName "PK_USER"
                 Columns      = [ userIdAttrKey ]
                 IsUnique     = true
-                IsPrimaryKey = true }
+                IsPrimaryKey = true; ExtendedProperties = [] }
               { SsKey        = uxUserEmailIndexKey
                 Name         = mkName "UX_USER_EMAIL"
                 Columns      = [ userEmailAttrKey ]
                 IsUnique     = true
-                IsPrimaryKey = false }
+                IsPrimaryKey = false; ExtendedProperties = [] }
               { SsKey        = ixUserNameIndexKey
                 Name         = mkName "IX_USER_NAME"
                 Columns      = [ userIndexLastNameAttrKey; userIndexFirstNameAttrKey ]
@@ -965,13 +978,13 @@ let private expectedIndexCatalog : Catalog =
                 // ADMIRE entry's "what V2 will explicitly NOT carry
                 // forward" section.
                 IsUnique     = false
-                IsPrimaryKey = false }
+                IsPrimaryKey = false; ExtendedProperties = [] }
           ]
-          Description = None }
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ userKind ] } ] }
+          Kinds = [ userKind ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 [<Fact>]
 let ``differential: V1 index-bearing fixture parses with PK + unique + non-unique-with-include indexes`` () =
@@ -1084,27 +1097,27 @@ let private expectedStaticEntityCatalog : Catalog =
           // flow through `Projection.Adapters.Sql/Static.fs`
           // separately.
           Modality = [ Static [] ]
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_COUNTRY" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_COUNTRY"; Catalog = None }
           Attributes = [
               { SsKey        = countryIdAttrKey
                 Name         = mkName "Id"
                 Type         = Integer
                 Column       = { ColumnName = "ID"; IsNullable = false }
                 IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
+                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               { SsKey        = countryCodeAttrKey
                 Name         = mkName "Code"
                 Type         = Text
                 Column       = { ColumnName = "CODE"; IsNullable = false }
                 IsPrimaryKey = false
-                IsMandatory = true; Length = Some 8; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                IsMandatory = true; Length = Some 8; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
           ]
           References = []
-          Indexes    = []; Description = None }
+          Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = appCoreModuleKey
           Name  = mkName "AppCore"
-          Kinds = [ countryKind ] } ] }
+          Kinds = [ countryKind ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 [<Fact>]
 let ``differential: V1 static-entity fixture parses with Modality = [Static []]`` () =

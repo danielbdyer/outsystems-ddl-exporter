@@ -85,27 +85,27 @@ let private buildFixture () : Catalog * Kind =
           Origin   = OsNative
           Modality = [ Static [ row "1" "United States"
                                 row "2" "Canada" ] ]
-          Physical = { Schema = "dbo"; Table = "OSUSR_CDC_COUNTRY" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_CDC_COUNTRY"; Catalog = None }
           Attributes =
               [
                   { SsKey = idKey;    Name = mkName "Id";    Type = Integer
                     Column = { ColumnName = "ID";    IsNullable = false }
-                    IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                    IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                   { SsKey = codeKey;  Name = mkName "Code";  Type = Text
                     Column = { ColumnName = "CODE";  IsNullable = false }
-                    IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                    IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                   { SsKey = labelKey; Name = mkName "Label"; Type = Text
                     Column = { ColumnName = "LABEL"; IsNullable = false }
-                    IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                    IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               ]
           References = []
           Indexes    = []
-          Description = None }
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let m : Module =
         { SsKey = mkKey ["Module"]
           Name  = mkName "TestModule"
-          Kinds = [ kind ] }
-    { Modules = [ m ] }, kind
+          Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
+    { Modules = [ m ]; Sequences = [] }, kind
 
 let private executeScalarInt (cnn: SqlConnection) (sql: string) : Task<int> =
     task {
@@ -263,27 +263,27 @@ let private buildChangedFixture () : Catalog * Kind =
           Origin   = OsNative
           Modality = [ Static [ row "1" "USA"          // <-- changed
                                 row "2" "Canada" ] ]
-          Physical = { Schema = "dbo"; Table = "OSUSR_CDC_COUNTRY" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_CDC_COUNTRY"; Catalog = None }
           Attributes =
               [
                   { SsKey = idKey;    Name = mkName "Id";    Type = Integer
                     Column = { ColumnName = "ID";    IsNullable = false }
-                    IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                    IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                   { SsKey = codeKey;  Name = mkName "Code";  Type = Text
                     Column = { ColumnName = "CODE";  IsNullable = false }
-                    IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                    IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                   { SsKey = labelKey; Name = mkName "Label"; Type = Text
                     Column = { ColumnName = "LABEL"; IsNullable = false }
-                    IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                    IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
               ]
           References = []
           Indexes    = []
-          Description = None }
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let m : Module =
         { SsKey = mkKey ["Module"]
           Name  = mkName "TestModule"
-          Kinds = [ kind ] }
-    { Modules = [ m ] }, kind
+          Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
+    { Modules = [ m ]; Sequences = [] }, kind
 
 [<Fact>]
 let ``Slice γ: CDC-silence — V2 change-detection predicate emits zero CDC capture rows on idempotent redeploy`` () =

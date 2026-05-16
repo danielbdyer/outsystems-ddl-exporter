@@ -28,6 +28,7 @@
     <Compile Include="BenchTests.fs" />
     <Compile Include="SsKeyTests.fs" />
     <Compile Include="UuidV5Tests.fs" />
+    <Compile Include="IRBuilders.fs" />
     <Compile Include="Fixtures.fs" />
     <Compile Include="ConfigTests.fs" />
     <Compile Include="CatalogTests.fs" />
@@ -74,6 +75,9 @@
     <Compile Include="OsmCatalogReaderDifferentialTests.fs" />
     <Compile Include="OsmRowsetReaderTests.fs" />
     <Compile Include="DescriptionLiftTests.fs" />
+    <Compile Include="IsActiveCarryThroughTests.fs" />
+    <Compile Include="IRFidelityLiftTests.fs" />
+    <Compile Include="NoSilentDropTests.fs" />
     <Compile Include="NullabilityRulesTests.fs" />
     <Compile Include="NullabilityPassTests.fs" />
     <Compile Include="UniqueIndexRulesTests.fs" />

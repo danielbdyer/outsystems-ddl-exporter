@@ -81,14 +81,18 @@ let private programmaticUserCatalog : Catalog =
             Scale = None
             IsIdentity = false
             Description = None
-        }
+            IsActive = true
+            DefaultValue = None
+            Computed = None
+            ExtendedProperties = []
+            }
     let userKind : Kind =
         {
             SsKey = userKey
             Name = nameSafe "User"
             Origin = OsNative
             Modality = []
-            Physical = { Schema = "dbo"; Table = "OSUSR_M3_USER" }
+            Physical = { Schema = "dbo"; Table = "OSUSR_M3_USER"; Catalog = None }
             Attributes =
                 [
                     mkAttr "Id" Integer false true
@@ -99,14 +103,20 @@ let private programmaticUserCatalog : Catalog =
             References = []
             Indexes = []
             Description = None
+            IsActive = true
+            Triggers = []
+            ColumnChecks = []
+            ExtendedProperties = []
         }
     let userModule : Module =
         {
             SsKey = ssKeySafe "OS_MOD_M3"
             Name = nameSafe "M3"
             Kinds = [ userKind ]
-        }
-    { Modules = [ userModule ] }
+            IsActive = true
+            ExtendedProperties = []
+            }
+    { Modules = [ userModule ]; Sequences = [] }
 
 [<Fact>]
 let ``M3: V2-internal closure — programmatic Catalog round-trips through emit / deploy / read with empty PhysicalSchema diff`` () =

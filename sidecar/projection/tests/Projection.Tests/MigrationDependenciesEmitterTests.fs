@@ -50,30 +50,34 @@ let private mkCountryKind () : Kind =
         Name     = mkName "Country"
         Origin   = OsNative
         Modality = []  // NOT static — populated via Migration channel
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
         Attributes =
             [
                 { SsKey = idKey;    Name = mkName "Id";    Type = Integer
                   Column = { ColumnName = "ID";    IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = codeKey;  Name = mkName "Code";  Type = Text
                   Column = { ColumnName = "CODE";  IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = labelKey; Name = mkName "Label"; Type = Text
                   Column = { ColumnName = "LABEL"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
             ]
         References = []
         Indexes    = []
         Description = None
-    }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
 
 let private mkCatalog (kinds: Kind list) : Catalog =
     let m : Module =
         { SsKey = mkKey ["TestModule"]
           Name  = mkName "TestModule"
-          Kinds = kinds }
-    { Modules = [ m ] }
+          Kinds = kinds; IsActive = true; ExtendedProperties = [] }
+    { Modules = [ m ]; Sequences = [] }
 
 let private mkMigrationRow (kindKey: SsKey) (idValue: string) (code: string) (label: string) : MigrationDependencyRow =
     {

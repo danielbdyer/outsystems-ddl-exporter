@@ -48,23 +48,27 @@ let private mkCountryKind () : Kind =
         Origin   = OsNative
         Modality = [ Static [ row "US" "United States"
                               row "CA" "Canada" ] ]
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
         Attributes =
             [
                 { SsKey = idKey;    Name = mkName "Id";    Type = Integer
                   Column = { ColumnName = "ID";    IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = codeKey;  Name = mkName "Code";  Type = Text
                   Column = { ColumnName = "CODE";  IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = labelKey; Name = mkName "Label"; Type = Text
                   Column = { ColumnName = "LABEL"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
             ]
         References = []
         Indexes    = []
         Description = None
-    }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
 
 /// Non-static kind (no `Modality.Static` mark); should produce a no-op
 /// DataInsertScript per T11 strict-equality keyset.
@@ -77,27 +81,31 @@ let private mkRegularKind () : Kind =
         Name     = mkName "Customer"
         Origin   = OsNative
         Modality = []  // not static
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER"; Catalog = None }
         Attributes =
             [
                 { SsKey = idKey;   Name = mkName "Id";   Type = Integer
                   Column = { ColumnName = "ID";   IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = nameKey; Name = mkName "Name"; Type = Text
                   Column = { ColumnName = "NAME"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
             ]
         References = []
         Indexes    = []
         Description = None
-    }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
 
 let private mkCatalog (kinds: Kind list) : Catalog =
     let m : Module =
         { SsKey = mkKey ["TestModule"]
           Name  = mkName "TestModule"
-          Kinds = kinds }
-    { Modules = [ m ] }
+          Kinds = kinds; IsActive = true; ExtendedProperties = [] }
+    { Modules = [ m ]; Sequences = [] }
 
 /// Whitespace-normalize a rendered SQL string so substring assertions
 /// match across formatter variations. ScriptDom's `Sql160ScriptGenerator`
@@ -334,7 +342,7 @@ let ``Slice β: per-kind dispatch — only CDC-enabled kinds get the predicate``
         { country with
             SsKey    = regionKey
             Name     = mkName "Region"
-            Physical = { Schema = "dbo"; Table = "OSUSR_TEST_REGION" } }
+            Physical = { Schema = "dbo"; Table = "OSUSR_TEST_REGION"; Catalog = None } }
     let catalog = mkCatalog [ country; region ]
     let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
     let profile = { Profile.empty with CdcAwareness = cdc }
@@ -397,18 +405,18 @@ let private mkTreeKind () : Kind =
         Name     = mkName "Tree"
         Origin   = OsNative
         Modality = [ Static [ row ] ]
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_TREE" }
+        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_TREE"; Catalog = None }
         Attributes =
             [
                 { SsKey = idKey;     Name = mkName "Id";       Type = Integer
                   Column = { ColumnName = "ID";       IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = labelKey;  Name = mkName "Label";    Type = Text
                   Column = { ColumnName = "LABEL";    IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 { SsKey = parentKey; Name = mkName "ParentId"; Type = Integer
                   Column = { ColumnName = "PARENTID"; IsNullable = true }     // nullable → deferrable
-                  IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+                  IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
             ]
         References =
             [
@@ -418,7 +426,11 @@ let private mkTreeKind () : Kind =
             ]
         Indexes    = []
         Description = None
-    }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
 
 /// Self-referencing kind whose FK column is NOT NULL. Same shape as
 /// `mkTreeKind` but `ParentId` is non-nullable. The cycle still
@@ -537,28 +549,28 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
         { SsKey = ssk; Name = mkName name; Type = typ
           Column = { ColumnName = col; IsNullable = isNull }
           IsPrimaryKey = isPk; IsMandatory = not isNull
-          Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None }
+          Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
     let mkRef ssk name srcAttr tgt =
         { SsKey = ssk; Name = mkName name
           SourceAttribute = srcAttr; TargetKind = tgt; OnDelete = NoAction; IsUserFk = false }
     let aKind : Kind =
         { SsKey = aKey; Name = mkName "A"; Origin = OsNative
           Modality = [ Static [ aRow ] ]
-          Physical = { Schema = "dbo"; Table = "OSUSR_A" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_A"; Catalog = None }
           Attributes = [ mkAttr aIdK "Id"  Integer "ID"  true false
                          mkAttr aFkK "BId" Integer "BID" false true ]
           References = [ mkRef aRefK "ToB" aFkK bKey ]
           Indexes    = []
-          Description = None }
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let bKind : Kind =
         { SsKey = bKey; Name = mkName "B"; Origin = OsNative
           Modality = [ Static [ bRow ] ]
-          Physical = { Schema = "dbo"; Table = "OSUSR_B" }
+          Physical = { Schema = "dbo"; Table = "OSUSR_B"; Catalog = None }
           Attributes = [ mkAttr bIdK "Id"  Integer "ID"  true false
                          mkAttr bFkK "AId" Integer "AID" false true ]
           References = [ mkRef bRefK "ToA" bFkK aKey ]
           Indexes    = []
-          Description = None }
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog = mkCatalog [ aKind; bKind ]
     let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
     let m = ArtifactByKind.toMap artifact

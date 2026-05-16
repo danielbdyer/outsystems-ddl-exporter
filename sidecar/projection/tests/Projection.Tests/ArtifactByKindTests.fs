@@ -44,22 +44,28 @@ let private mkKind (n: string) : Kind =
         Name = nm n
         Origin = OsNative
         Modality = []
-        Physical = { Schema = "dbo"; Table = sprintf "OSUSR_S1S_%s" (n.ToUpperInvariant()) }
+        Physical = { Schema = "dbo"; Table = sprintf "OSUSR_S1S_%s" (n.ToUpperInvariant()); Catalog = None }
         Attributes = []
         References = []
         Indexes = []
         Description = None
-    }
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
 
 let private mkModule (n: string) (kinds: Kind list) : Module =
     {
         SsKey = ssKey (sprintf "OS_MOD_%s" n)
         Name = nm n
         Kinds = kinds
-    }
+        IsActive = true
+        ExtendedProperties = []
+        }
 
 let private mkCatalog (modules: Module list) : Catalog =
-    { Modules = modules }
+    { Modules = modules; Sequences = [] }
 
 let private emptyCatalog () : Catalog =
     mkCatalog []

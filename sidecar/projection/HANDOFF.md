@@ -1,8 +1,112 @@
-# Handoff letter — Bridge wave audibled; V2 self-containment codified
+# Handoff letter — Chapter A.0' CLOSED (all 9 slices shipped; ten L3 axioms D → A)
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## 2026-05-16 (chapter A.0' close — slice θ + slice ι) — IR-fidelity body fully landed; L3-Boundary-NoSilentDrop verified
+
+**Branch / baseline.** Continues on `claude/retire-isactive-disposition-WD4Ez`. **Test baseline at chapter close: 1202 / 1202 passing** (1177 prior + 21 new `NoSilentDropTests` + 4 new TableId.Catalog tests in `IRFidelityLiftTests`); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged from main (13 pre-existing on main; zero new introduced across chapter A.0').
+
+**Chapter A.0' closes.** Read `CHAPTER_A_0_PRIME_CLOSE.md` for the chapter-close synthesis (per-slice ledger, L3 promotions, meta-codifications, forward signals, close ritual checklist). Ten L3 axioms advance D → A: L3-S4 (Triggers), L3-S5 (Sequences), L3-S6 (DEFAULT), L3-S7 (Computed), L3-S8 (CHECK), L3-S9 (Descriptions + IsActive + ExtendedProperties), L3-S10 / L3-I10 (Catalog coordinate), L3-CC4 (IR fidelity for production), L3-Boundary-NoSilentDrop, and IsExternal/Origin (Bucket-B → A upgrade).
+
+**What shipped in slice θ + slice ι (this commit).**
+
+- **Slice θ — `TableId.Catalog : string option` (L3-S10 / L3-I10).** `TableId` extended from `{ Schema; Table }` to `{ Catalog : string option; Schema; Table }`. `TableId.create` retains its `(schema, table)` signature and defaults `Catalog = None` (V1's `db_catalog: null` parity); `TableId.createWithCatalog catalog schema table` carries explicit cross-database coordinates with blank-catalog rejection per A39. OSSYS JSON adapter (`parseKind`) reads V1's `db_catalog` field; rowset path + ReadSide default to `None`. 9 record-literal sites in src touched mechanically; tests adjusted via the Python pass. Chapter's structural enforcement holds — cross-database FKs no longer silently degrade to implicit-current-database scope.
+- **Slice ι — L3-Boundary-NoSilentDrop + IsExternal/Origin audit.** `NoSilentDropTests.fs` ships 21 tests in three sections:
+  - **Per-concept structural witnesses (12 tests)** — for each V1 concept in `V2_PRODUCTION_CUTOVER.md` §3.3, a runtime assertion against the V2 IR's typed home.
+  - **Kitchen-sink JSON fixture witness (1 test)** — six axes asserted across one Catalog: Descriptions + IsActive + Triggers + DEFAULT + ExtendedProperties + IsExternal=true → ExternalViaIntegrationStudio.
+  - **IsExternal / Origin mapping audit (8 tests)** — JSON-path two-way placeholder + rowset-path three-way real + the `isExternal=true never → OsNative` invariant.
+
+**Chapter A.0' meta-codifications** (full detail in close doc):
+
+1. Mechanical-edits precedent for record-extension slices (`/tmp/fix_fields.py` + dedupe + indent-normaliser scripts).
+2. `IRBuilders.fs` fixture-builder pattern (chapter A.0' XXXXL contribution; `Fixtures.fs` retrofitted as worked example).
+3. Per-axis property test as completion criterion (`NoSilentDropTests.fs` demonstrates the trifecta: per-concept structural + kitchen-sink + invariant property).
+4. Pillar-8 deviation discipline (slice γ: chapter open's "Catalog.Triggers" planning shorthand → implementation chose `Kind.Triggers` per domain analysis).
+
+**A18 amended preserved.** No emitter consumes Policy. All new IR fields are `Catalog`-side DataIntent evidence; Π consumes `Catalog × Profile` per A18 amended.
+
+**V2 self-containment preserved.** Zero carbon-copy events across chapter A.0' (10 slices total). `BACKLOG.md` V1 inheritance log remains empty.
+
+**Tolerance retirement signals.** `CommentMetadataUnreflected` Tolerance variant is one structural step closer to retirement: IR carries Description + ExtendedProperties + TableId.Catalog at completion. Full retirement gates on emitter consumption (chapter 4.1.A slice 8 ExtendedProperties DDL emission + chapter 3.x DacpacEmitter cross-database FK qualification).
+
+**Recommended next chapter.** Three independent forward-progress paths:
+
+1. **`LineageEvent.Classification` field (A.4.7-prelude small slice)** — unblocked by chapter A.0' close. Adds the `Classification : Classification` field to `LineageEvent` so events self-classify before the full A.4.7 traversal refactor. Per `DECISIONS 2026-05-15 (late)`. ~1 session.
+2. **Chapter 4.1.A slice 8 (ExtendedProperties + Descriptions DDL emission)** — emitter consumption of the IR fields chapter A.0' lifted. Retires the `CommentMetadataUnreflected` Tolerance variant. Per `Active deferrals` in `DECISIONS.md`. ~1-2 sessions.
+3. **A.4.7 (Transform registry, full refactor)** — `RegisteredTransform<'In, 'Out>` + Compose.run traversal + bidirectional property tests. The chapter A.0' IR shape is the input. ~3 weeks. The substantive next-chapter target.
+
+**Operator-side choice** (which to ship next):
+- If the operator wants the cutover-blocker progress, **slice 4.1.A.8** is the highest-leverage emitter work (Tolerance retirement).
+- If the operator wants structural commitments to compound, **A.4.7-prelude** is the smallest unblocking step.
+- If the operator wants the load-bearing refactor, **A.4.7 full** is ~3 weeks of focused work.
+
+**Outstanding (operator-side; unchanged):**
+- R1 — operator's "document of key evolutions" still pending. Hold UAT-users decisions until it lands.
+- Q2 / Q3 / Q4 / Q7 unchanged.
+
+**Forward signals retained.**
+- Rowset-path pickup for triggers / extended properties / defaults / column checks / db_catalog (gated on V1 rowset extension or DACPAC-adapter slice).
+- IRBuilders retroactive sweep (volume refactor; reduces next-chapter field-addition blast radius from ~150 sites to ~1).
+- `Module.create` parameter-pollution revisit-trigger.
+- `ModalityMark.mapPayload` helper extraction-trigger (pending fourth pass-module touch).
+
+## 2026-05-16 (XXXXL — slices γ + δ + ε + ζ + η) — IR-fidelity body shipped; chapter A.0' two slices from close
+
+**Branch / baseline.** Continues on `claude/retire-isactive-disposition-WD4Ez` (post-slice-β). **Test baseline: 1177 / 1177 passing** (1155 prior + 22 new `IRFidelityLiftTests`); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint clean across 27 rules. Five of chapter A.0''s remaining seven slices shipped as one coherent XXXXL slice; slice θ (`TableId.Catalog`) and ι (chapter-close L3-Boundary-NoSilentDrop property test) remain pending.
+
+**What shipped (one commit).** Six new value types in `Projection.Core.Catalog`: `Trigger`, `Sequence` + `SequenceCacheMode`, `ComputedColumnConfig`, `ColumnCheck`, `ExtendedProperty`, `TemporalConfig` + `TemporalRetention` + `TemporalRetentionUnit`. Nine new IR fields across `Attribute` / `Kind` / `Module` / `Index` / `Catalog`. One new `ModalityMark` variant (`Temporal of TemporalConfig`; closed-DU widening). One file extraction (`PrimitiveType.fs` split out so `SqlLiteral` can compile BEFORE `Catalog`; `Attribute.DefaultValue : SqlLiteral option` resolves cleanly). Two `*.create` signatures expanded (`Module.create` gained `extendedProperties`; `Catalog.create` gained `sequences`). OSSYS JSON adapter pickup wired for triggers + defaults + entity-level extended properties; rowset path + ReadSide default to empty/None.
+
+**The DECISIONS amendment is the load-bearing artifact.** `DECISIONS 2026-05-16 (slices γ + δ + ε + ζ + η — XXXXL)` codifies the five-slice body. Pillar-9 classification: all DataIntent; reachable from `Project(catalog, Policy.empty, profile)` without operator opinion. A18 amended preserved (no emitter consumes Policy). V2 self-containment preserved (no carbon-copy event; `BACKLOG.md` V1 inheritance log stays empty).
+
+**Refactor — `IRBuilders.fs` fixture-builder pattern (user-requested at XXXXL close).** Centralised `mkAttribute` / `mkKind` / `mkModule` / `mkIndex` / `mkCatalog` builders with minimum-evidence DataIntent defaults. `Fixtures.fs` retrofitted as the worked example. Next-chapter agents add new IR fields once in `IRBuilders.fs` instead of touching ~150 record-literal sites. The discipline is documented in `IRBuilders.fs` module-level docstring + the DECISIONS amendment's "Forward signals" section (item 4 — retroactive sweep at chapter close).
+
+**Pillar-8 deviation from the chapter open's "Catalog.Triggers" planning shorthand.** Slice γ ships `Kind.Triggers : Trigger list` (kind-scoped, not Catalog-scoped). Triggers are owned by tables per SQL Server semantics and V1's JSON projects them at entity level. The chapter open document records the corrected scope; the design rationale is in the DECISIONS amendment.
+
+**Closed-DU empirical-test discipline held (slice η).** `ModalityMark.Temporal` is the only DU-widening slice in the chapter. Match-site additions: 3 pass modules (`CanonicalizeIdentity`, `NamingMorphism`, `NormalizeStaticPopulations`) + `JsonEmitter.modalityString`. All three pass modules now have a `Temporal _ -> m` no-op match arm with a docstring naming the slice. No other ripple — the empirical test confirmed the discipline generalises to DU-widening identically to record-extension.
+
+**Next-most-ready slices (chapter A.0' is two slices from close):**
+
+- **Slice θ — `TableId.Catalog : string option`** — extends the `TableId` shape (currently `{ Schema; Table }`) with an optional 3-part catalog name. Touches every `TableId` literal site (potentially invasive; mechanical-edits precedent from prior slices applies but the touch-pattern differs from record extensions because `TableId` is a record-type, not an IR record like `Attribute` / `Kind`). L3-S10 / L3-I10 promotion.
+- **Slice ι — IsExternal / Origin mapping audit + L3-Boundary-NoSilentDrop property test** — pure property-test slice; no IR change. Per `CHAPTER_A_0_PRIME_OPEN.md` axis 7's chapter-close ritual, slice ι formalises the chapter's completion criterion: every V1 schema concept in `V2_PRODUCTION_CUTOVER.md` §3.3 either carries to the IR (slices α–η) or routes through `Diagnostic.Severity=Error` at the adapter boundary. Property test asserts the no-silent-drop predicate.
+
+Either ordering works. Recommendation: **slice ι first** — it's smaller, validates the lifts that already shipped, and gates chapter close. Slice θ can land at chapter close or as a subsequent slice depending on operator preference (the TableId extension's invasive blast radius makes it a clean candidate for its own chapter or a dedicated slice).
+
+**Forward signals (named in the DECISIONS amendment).** Rowset slice for triggers / extended properties / defaults / column checks (when V1's rowset bundle extends or DACPAC adapter lands); emitter consumption for the new IR fields per-consumer demand (CommentMetadataUnreflected Tolerance retires when emitters catch up); Module.create parameter-pollution revisit-trigger; IRBuilders retroactive sweep at chapter close; ModalityMark.mapPayload helper extraction at the four-pass-module threshold.
+
+**Outstanding (operator-side; unchanged):**
+- R1 — operator's "document of key evolutions" still pending. Hold UAT-users decisions until it lands.
+- Q2 / Q3 / Q4 / Q7 unchanged.
+
+## 2026-05-16 (slice β) — Chapter A.0' slice β shipped: IsActive lifted to IR, session-21 boundary filter retired (first pillar-9 worked example)
+
+**Branch / baseline.** New branch `claude/retire-isactive-disposition-WD4Ez` from main post-audible merge (PR #542 merged at `811f539`). Working tree clean before this commit. **Test baseline: 1155 / 1155 passing** (1146 prior + 9 new `IsActiveCarryThroughTests`); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint clean across 27 rules. The mechanical-edits precedent from slice α held (the closed-DU record-extension empirical-test discipline catches FS0764 errors at literal-construction sites only; semantic interpretation sites unaffected — 100+ literal sites across 23 test files received `IsActive = true` via a Python pass against the FS0764 worklist).
+
+**What shipped (one commit).** Chapter A.0' slice β: `Module.IsActive`, `Kind.IsActive`, `Attribute.IsActive` lifted into `Projection.Core.Catalog`; six OSSYS-adapter boundary filters retired (JSON: `parseModule`'s entity filter, `parseKind`'s attribute filter; rowset: `parseRowsetBundle`'s module filter, `parseModuleRow`'s entity filter, `parseKindRow`'s attribute filter; plus `parseAttribute*` populator changes). The `isActiveOrDefault` helper is preserved; its role flips from "gate inclusion" to "populate the IR field." `parseModule` (JSON path) gains a module-level `isActiveOrDefault` read (the JSON path did not previously filter at module level per Subagent #3's O2 finding; the read lands for parity with the rowset path's `ModuleRow.IsActive`). `Module.create` gains an `isActive: bool` parameter (the disjointness invariant on Kinds is field-orthogonal; no smart-constructor logic changes). `Projection.Adapters.Sql.ReadSide` defaults the new field to `true` on all three levels — the deployed-schema readback has no V1 `Is_Active` axis, so structural existence = active.
+
+**The DECISIONS amendment is the load-bearing artifact.** `DECISIONS 2026-05-16 (slice β) — Retire OSSYS-adapter IsActive boundary filter; lift IsActive to IR (supersedes session-21)` supersedes the session-21 silent-drop disposition (codified under `DECISIONS 2026-05-15 — OSSYS adapter translation rules`, rule 18). The amendment cites:
+- **Pillar 9 (harvest-dichotomy classification)** — slice β is the first worked example at slice level. Session 21's filter-at-the-adapter mis-placed an `OperatorIntent of Selection` at the adapter boundary, which is restricted to `DataIntent` carriage. The source value is `DataIntent` evidence; any filter is `OperatorIntent`, deferred-with-trigger.
+- **The 2026-05-16 (later) audible** — V2 self-containment posture: this slice carries no carbon-copy event, no V1 `ProjectReference`, no `ADMIRE.md` row, no `BACKLOG.md` V1-inheritance-log row. The lift is an internal IR refinement.
+- **Named failure mode (pillar 9 — skeleton-overlay drift, silent-inclusion-at-harvest sub-mode):** the session-21 rationale "IR grows under evidence — no consumer demands the records' presence" rationalized a *silent drop* of operator intent. The honest disposition (carry as evidence + defer the filter pass; or refuse the operation + document) was not taken at the time.
+
+**Why Kind.IsActive is in scope (not just Module + Attribute as §6.0' / §3.3 of `V2_PRODUCTION_CUTOVER.md` originally scoped).** The chapter-A.0' open's axis 4 amendment names Kind explicitly. Without `Kind.IsActive`, the rowset-path `parseKindRow` and JSON-path `parseKind` filters would have remained as residual silent drops, leaving an asymmetry against the chapter's L3-Boundary-NoSilentDrop completion criterion (slice ι property test). The HANDOFF 2026-05-15 entry flagged this and recommended inclusion; slice β honors it.
+
+**Witnesses.** 9 new tests in `tests/Projection.Tests/IsActiveCarryThroughTests.fs` cover JSON-path + rowset-path × Module / Kind / Attribute × explicit-true / explicit-false / default-true (JSON only), plus cross-source parity. Three rowset-path tests in `OsmRowsetReaderTests.fs` rewrite the prior `SnapshotRowsets: inactive ... drop at the boundary` tests as `SnapshotRowsets: inactive ... carry through with IsActive=false (slice β)`. The slice-2 reference-chain test rewrites as `slice 2 / slice β: inactive source attribute carries through with its reference`. The JSON-path `differential: V1 mixed-active fixture filters inactive records at the boundary` test rewrites as `slice β: V1 mixed-active fixture carries IsActive through at all three levels` (expected catalog now contains all five V1 records — three active, two inactive — with `IsActive` populated from source).
+
+**Pillar 9 bookkeeping — DataIntent vs OperatorIntent for this slice.**
+- **DataIntent (skeleton-reachable, no operator opinion):** the new `IsActive` field on `Module` / `Kind` / `Attribute`. Reachable from `Project(catalog, Policy.empty, profile)` without operator opinion. Lands in the skeleton.
+- **OperatorIntent of Selection (deferred-with-trigger):** any Selection-axis pass that re-applies an inactive-records drop policy. No current consumer demands it. When a consumer surfaces, the pass lands per chapter-4.x slice scope.
+
+**Next-most-ready slice: A.0' slice γ — `Catalog.Triggers : Trigger list` + `Trigger` value type + adapter pickup.** Per `CHAPTER_A_0_PRIME_OPEN.md` slice plan (L3-S4 promotion: D → A). Dependencies satisfied (β just shipped). Medium risk — new top-level `Catalog` field. Or pivot to slice ε (DefaultValue + Computed + ColumnChecks; L3-S6 / L3-S7 / L3-S8 promotions) if the operator prefers an Attribute / Kind body expansion before a top-level `Catalog` addition. Both inherit the mechanical-edits precedent (Python-pass against FS0764 worklist; `IsActive = true` shape for slice β maps to `Triggers = []` shape for slice γ, etc.).
+
+**Alternative starts (per the 2026-05-15 HANDOFF entry below).** Slice ι (IsExternal / Origin mapping audit; small property-test-only slice; pairs with the chapter-close L3-Boundary-NoSilentDrop scaffolding) is also unblocked. Useful chapter-mid hygiene.
+
+**The A.4.7-prelude small slice** (`LineageEvent.Classification` field) per the 2026-05-15 (late) entry below remains deferred-with-trigger: lands during or just after A.0' close. Slice β does not need it — the pillar-9 classification of slice β is documented in the DECISIONS amendment's text, not in a `LineageEvent.Classification` field.
+
+**Outstanding (operator-side; unchanged from the 2026-05-15 entry below):**
+- R1 — operator's "document of key evolutions" still pending. Hold UAT-users decisions until it lands.
+- Q2 / Q3 / Q4 / Q7 unchanged.
 
 ## 2026-05-16 (audible) — Bridge wave retired; V2 self-containment + carbon-copy editorial inheritance codified
 

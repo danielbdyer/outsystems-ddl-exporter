@@ -145,9 +145,10 @@ module CatalogReader =
 
     /// V1 rowset 3 — `#Attr` attributes; chapter 3.2 slice 1. FK to
     /// `KindRow.EntityId`. `AttrSsKey` is the load-bearing addition
-    /// over the JSON path. Per session-21 inactive-records filter:
-    /// `IsActive=false` rows are dropped at the boundary (parity with
-    /// the JSON path at `parseKind`'s attribute filter).
+    /// over the JSON path. `IsActive` is carried into the V2 IR's
+    /// `Attribute.IsActive` field per chapter A.0' slice β (the
+    /// session-21 boundary filter was retired; this DTO field is now
+    /// the rowset-path provenance for the IR field).
     type AttributeRow =
         {
             AttrId       : int
@@ -320,6 +321,35 @@ module CatalogReader =
         : Result<SsKey> =
         SsKey.synthesizedComposite "OS_IDX" [ moduleName; entityName; indexName ]
 
+    /// Trigger SsKey synthesis (chapter A.0' slice γ). Triggers
+    /// identify by their V1 name scoped to the entity they fire on
+    /// (a trigger is owned by exactly one table per SQL Server
+    /// semantics).
+    let private triggerSsKey
+        (moduleName: string) (entityName: string) (triggerName: string)
+        : Result<SsKey> =
+        SsKey.synthesizedComposite "OS_TRG" [ moduleName; entityName; triggerName ]
+
+    /// Sequence SsKey synthesis (chapter A.0' slice δ). Sequences
+    /// identify by schema + name (a sequence is a top-level
+    /// schema-scoped object per SQL Server semantics; SsKey carries
+    /// the full coordinate to disambiguate across modules / schemas).
+    let private sequenceSsKey
+        (schemaName: string) (sequenceName: string)
+        : Result<SsKey> =
+        SsKey.synthesizedComposite "OS_SEQ" [ schemaName; sequenceName ]
+
+    /// ColumnCheck SsKey synthesis (chapter A.0' slice ε). CHECK
+    /// constraints identify by their declared name scoped to the
+    /// entity. V1's `AttributeOnDiskCheckConstraint` carries a
+    /// nullable name; when absent, the check is unnamed and the
+    /// SsKey is derived from the entity + a synthetic discriminator
+    /// at call time.
+    let private columnCheckSsKey
+        (moduleName: string) (entityName: string) (checkName: string)
+        : Result<SsKey> =
+        SsKey.synthesizedComposite "OS_CHK" [ moduleName; entityName; checkName ]
+
     // -----------------------------------------------------------------------
     // JSON helpers — light wrappers over System.Text.Json.JsonElement.
     // These are private; they exist to keep the translation code
@@ -361,11 +391,16 @@ module CatalogReader =
     /// property is treated as active=true; explicit `false` is
     /// inactive; explicit `true` is active.
     ///
-    /// Used by the inactive-records filter at the boundary
-    /// (`DECISIONS 2026-05-15 — OSSYS adapter translation rules`,
-    /// session-21 amendment): `entity.isActive: false` drops the
-    /// entity from the V2 Catalog; `attribute.isActive: false`
-    /// drops the attribute from its Kind's Attributes list.
+    /// Chapter A.0' slice β — the session-21 inactive-records
+    /// filter retired. This helper now populates the V2 IR's
+    /// `Module.IsActive` / `Kind.IsActive` / `Attribute.IsActive`
+    /// carriage fields instead of gating record inclusion. Per the
+    /// pillar-9 harvest-dichotomy classification: filtering on a
+    /// lifecycle flag is `OperatorIntent` (a Selection-axis choice),
+    /// mis-placed at the adapter boundary, which is restricted to
+    /// `DataIntent` carriage. Downstream emitters decide whether to
+    /// suppress inactive records; no Selection-axis pass ships with
+    /// slice β (deferred-with-trigger; IR-grows-under-evidence).
     let private isActiveOrDefault (element: JsonElement) : bool =
         match element.TryGetProperty("isActive") with
         | true, value when value.ValueKind = JsonValueKind.False -> false
@@ -527,6 +562,31 @@ module CatalogReader =
                 match isAutoNumber with
                 | Ok true -> true
                 | _ -> false
+            // Chapter A.0' slice ε — DefaultValue lift. V1's JSON
+            // `default` field is typically `null` in current
+            // projections; when present, the adapter projects via
+            // `SqlLiteral.ofRaw` against the typed `PrimitiveType`.
+            // Falls back to `None` if the type-resolution failed
+            // upstream (the parent record error path handles the
+            // primitive's Error case).
+            let defaultValue : SqlLiteral option =
+                match primitive with
+                | Error _ -> None
+                | Ok p ->
+                    match attrJson.TryGetProperty("default") with
+                    | true, value when value.ValueKind <> JsonValueKind.Null ->
+                        let rawOpt =
+                            match value.ValueKind with
+                            | JsonValueKind.String ->
+                                match value.GetString() with
+                                | null -> None
+                                | s    -> Some s
+                            | JsonValueKind.Number -> Some (value.GetRawText())
+                            | JsonValueKind.True  -> Some "true"
+                            | JsonValueKind.False -> Some "false"
+                            | _ -> None
+                        rawOpt |> Option.map (SqlLiteral.ofRaw p)
+                    | _ -> None
             match nameDU, key, primitive with
             | Ok n, Ok k, Ok p ->
                 Result.success
@@ -540,7 +600,18 @@ module CatalogReader =
                       Precision    = precisionOpt
                       Scale        = scaleOpt
                       IsIdentity   = isIdentity
-                      Description  = description }
+                      Description  = description
+                      IsActive     = isActiveOrDefault attrJson
+                      DefaultValue = defaultValue
+                      // Chapter A.0' slice ε — Computed lift; V1's
+                      // JSON projection does not surface computed-
+                      // column metadata. Positioned for future use.
+                      Computed     = None
+                      // Chapter A.0' slice ζ — ExtendedProperties
+                      // attribute-level lift; V1's JSON projection
+                      // does not surface attribute-level extended
+                      // properties at the boundary today.
+                      ExtendedProperties = [] }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 // Substantive causes (e.g., `adapter.osm.unmappedDataType`
@@ -797,7 +868,12 @@ module CatalogReader =
                       Name         = n
                       Columns      = cols
                       IsUnique     = isUnique
-                      IsPrimaryKey = isPrimary }
+                      IsPrimaryKey = isPrimary
+                      // Chapter A.0' slice ζ — Index-level extended
+                      // properties; V1's JSON projection does not
+                      // surface index-level extended properties at
+                      // the boundary today. Empty default.
+                      ExtendedProperties = [] }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 propagateOrFallback
@@ -818,12 +894,86 @@ module CatalogReader =
                         "Required index fields missing on an entity in '%s.%s'."
                         moduleName entityName))
 
+    /// Parse one V1 entity-level `triggers[]` element into a V2
+    /// `Trigger`. Chapter A.0' slice γ — IR fidelity lift (L3-S4).
+    /// V1 JSON shape: `{ name, isDisabled, definition }`. V1's
+    /// `TriggerModel.Create` requires non-null definition; V2's
+    /// `Trigger.create` mirrors that invariant via the smart
+    /// constructor.
+    let private parseTrigger
+        (moduleName: string) (entityName: string) (triggerJson: JsonElement)
+        : Result<Trigger> =
+        let nameResult       = getString triggerJson "name"
+        let definitionResult = getString triggerJson "definition"
+        let isDisabled =
+            match triggerJson.TryGetProperty("isDisabled") with
+            | true, value when value.ValueKind = JsonValueKind.True -> true
+            | _ -> false
+        match nameResult, definitionResult with
+        | Ok triggerName, Ok definition ->
+            let key  = triggerSsKey moduleName entityName triggerName
+            let name = Name.create triggerName
+            match key, name with
+            | Ok k, Ok n -> Trigger.create k n isDisabled definition
+            | _ ->
+                propagateOrFallback
+                    [ Result.errors key
+                      Result.errors name ]
+                    (fun () ->
+                        adapterError
+                            "triggerBuild"
+                            (sprintf
+                                "Failed to build trigger '%s' on '%s.%s'."
+                                triggerName moduleName entityName))
+        | _ ->
+            propagateOrFallback
+                [ Result.errors nameResult
+                  Result.errors definitionResult ]
+                (fun () ->
+                    adapterError
+                        "triggerFields"
+                        (sprintf
+                            "Required trigger fields missing on '%s.%s'."
+                            moduleName entityName))
+
+    /// Parse one V1 entity-level `extendedProperties[]` element into a
+    /// V2 `ExtendedProperty`. Chapter A.0' slice ζ — IR fidelity lift
+    /// (L3-S9 extended-properties sub-axiom). V1 JSON shape:
+    /// `{ name, value }` (value may be null).
+    let private parseExtendedProperty
+        (moduleName: string) (entityName: string) (epJson: JsonElement)
+        : Result<ExtendedProperty> =
+        let nameResult = getString epJson "name"
+        let value =
+            match epJson.TryGetProperty("value") with
+            | true, v when v.ValueKind = JsonValueKind.String ->
+                match v.GetString() with
+                | null -> None
+                | s    -> Some s
+            | _ -> None
+        match nameResult with
+        | Ok epName -> ExtendedProperty.create epName value
+        | _ ->
+            propagateOrFallback
+                [ Result.errors nameResult ]
+                (fun () ->
+                    adapterError
+                        "extendedPropertyFields"
+                        (sprintf
+                            "Required extended-property fields missing on '%s.%s'."
+                            moduleName entityName))
+
     let private parseKind
         (moduleName: string) (entityJson: JsonElement)
         : Result<Kind> =
         let nameResult       = getString entityJson "name"
         let physicalResult   = getString entityJson "physicalName"
         let schemaResult     = getString entityJson "db_schema"
+        // Chapter A.0' slice θ — Catalog (database) coordinate lift
+        // (L3-S10 / L3-I10). V1's JSON projects `db_catalog` (typically
+        // `null`; explicit cross-database references land as a
+        // non-blank string). Defensive read via `getOptionalString`.
+        let catalogResult    = getOptionalString entityJson "db_catalog"
         let isStaticResult   = getBool   entityJson "isStatic"
         let isExternalResult = getBool   entityJson "isExternal"
         // Chapter A.0' slice α — Description lift. Same defensive
@@ -838,17 +988,16 @@ module CatalogReader =
                 | Error _ -> None
             let kindKey   = kindSsKey moduleName entityName
             let kindName  = Name.create entityName
-            // Inactive-records filter (session 21): attributes with
-            // `isActive: false` are dropped at the boundary. The
-            // session-21 DECISIONS amendment captures the rule, the
-            // bound, and the silent-drop disposition pending the
-            // future adapter-return-shape extension to support
-            // Diagnostics-attached audit.
+            // Chapter A.0' slice β — the session-21 inactive-records
+            // filter retires. Inactive attributes are carried into
+            // `Kind.Attributes` with `Attribute.IsActive=false`; the
+            // adapter no longer drops them. Pillar-9 harvest analysis:
+            // a Selection-axis filter is `OperatorIntent`, not
+            // `DataIntent`; the adapter carries only `DataIntent`.
             let attrJsonList =
                 match entityJson.TryGetProperty("attributes") with
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
                     arr.EnumerateArray()
-                    |> Seq.filter isActiveOrDefault
                     |> Seq.toList
                 | _ -> []
             let attrsResults =
@@ -882,8 +1031,30 @@ module CatalogReader =
                     |> List.map (parseIndex moduleName entityName)
                 | _ -> []
             let foldedIdx = Result.aggregate indexResults
-            match kindKey, kindName, foldedAttrs, foldedRefs, foldedIdx with
-            | Ok k, Ok n, Ok attrs, Ok refs, Ok idxs ->
+            // Chapter A.0' slice γ — Triggers lift. V1's JSON projects
+            // entity-level `triggers[]` (carrying name + isDisabled +
+            // definition). Empty array when none.
+            let triggerResults =
+                match entityJson.TryGetProperty("triggers") with
+                | true, arr when arr.ValueKind = JsonValueKind.Array ->
+                    arr.EnumerateArray()
+                    |> Seq.toList
+                    |> List.map (parseTrigger moduleName entityName)
+                | _ -> []
+            let foldedTriggers = Result.aggregate triggerResults
+            // Chapter A.0' slice ζ — ExtendedProperties lift (kind
+            // level). V1's JSON projects entity-level
+            // `extendedProperties[]`.
+            let epResults =
+                match entityJson.TryGetProperty("extendedProperties") with
+                | true, arr when arr.ValueKind = JsonValueKind.Array ->
+                    arr.EnumerateArray()
+                    |> Seq.toList
+                    |> List.map (parseExtendedProperty moduleName entityName)
+                | _ -> []
+            let foldedEps = Result.aggregate epResults
+            match kindKey, kindName, foldedAttrs, foldedRefs, foldedIdx, foldedTriggers, foldedEps with
+            | Ok k, Ok n, Ok attrs, Ok refs, Ok idxs, Ok triggers, Ok eps ->
                 let modality =
                     if isStatic then [ Static [] ] else []
                 Result.success
@@ -891,11 +1062,29 @@ module CatalogReader =
                       Name        = n
                       Origin      = parseOrigin isExternal
                       Modality    = modality
-                      Physical    = { Schema = schema; Table = physicalName }
+                      Physical    =
+                        { Schema = schema
+                          Table = physicalName
+                          // Chapter A.0' slice θ — `db_catalog` carried
+                          // through; `None` when V1 projects `null`
+                          // (implicit-current-database scope).
+                          Catalog =
+                            match catalogResult with
+                            | Ok value -> value
+                            | Error _  -> None }
                       Attributes  = attrs
                       References  = refs
                       Indexes     = idxs
-                      Description = description }
+                      Description = description
+                      IsActive    = isActiveOrDefault entityJson
+                      Triggers    = triggers
+                      // Chapter A.0' slice ε — ColumnChecks lift; V1's
+                      // JSON projection does not surface table-level
+                      // CHECK constraints today (V1 carries them on
+                      // the on-disk metadata channel, not the JSON
+                      // boundary). Empty default.
+                      ColumnChecks = []
+                      ExtendedProperties = eps }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`
                 // (codified at two-consumer threshold; same surface as
@@ -910,7 +1099,9 @@ module CatalogReader =
                       Result.errors kindName
                       Result.errors foldedAttrs
                       Result.errors foldedRefs
-                      Result.errors foldedIdx ]
+                      Result.errors foldedIdx
+                      Result.errors foldedTriggers
+                      Result.errors foldedEps ]
                     (fun () ->
                         adapterError
                             "kindBuild"
@@ -933,16 +1124,20 @@ module CatalogReader =
         | Ok rawName ->
             let modKey  = moduleSsKey rawName
             let modName = Name.create rawName
-            // Inactive-records filter (session 21): entities with
-            // `isActive: false` are dropped at the boundary. Same
-            // disposition as the attribute-level filter in
-            // parseKind. The DECISIONS amendment captures the
-            // rule.
+            // Chapter A.0' slice β — the session-21 entity-level
+            // filter retires. Inactive entities carry into
+            // `Module.Kinds` with `Kind.IsActive=false`; downstream
+            // emitters decide. Per Subagent #3's O2 finding the JSON
+            // path's `parseModule` did not previously filter on
+            // `module.isActive` (the filter only operated at entity
+            // and attribute levels); slice β adds module-level
+            // carriage via `isActiveOrDefault` so the IR's
+            // `Module.IsActive` field has authoritative provenance
+            // from both paths.
             let entitiesArr =
                 match moduleJson.TryGetProperty("entities") with
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
                     arr.EnumerateArray()
-                    |> Seq.filter isActiveOrDefault
                     |> Seq.toList
                     |> List.map (parseKind rawName)
                 | _ ->
@@ -955,7 +1150,11 @@ module CatalogReader =
                 // smart constructor, not record-literal — invariants
                 // (kind-SsKey-disjoint within module) are checked
                 // structurally at the boundary, not deferred.
-                Module.create k n kinds
+                //
+                // Chapter A.0' slice ζ — Module.ExtendedProperties
+                // populated empty; V1's JSON projection does not
+                // surface module-level extended properties.
+                Module.create k n kinds (isActiveOrDefault moduleJson) []
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 // Substantive causes survive the module-level wrap.
@@ -990,7 +1189,11 @@ module CatalogReader =
                 // Per DECISIONS pillar 6: boundary adapter flows
                 // through `Catalog.create` (aggregate-root invariant
                 // check) rather than record-literal construction.
-                Catalog.create modules
+                //
+                // Chapter A.0' slice δ — Catalog.Sequences populated
+                // empty; V1's `osm_model.json` projection does not
+                // surface sequences at the catalog boundary today.
+                Catalog.create modules []
             | Error errors  -> Error errors
         | _ ->
             Result.failureOf (
@@ -1071,7 +1274,15 @@ module CatalogReader =
                   Precision    = row.Precision
                   Scale        = row.Scale
                   IsIdentity   = row.IsAutoNumber
-                  Description  = row.Description }
+                  Description  = row.Description
+                  IsActive     = row.IsActive
+                  // Chapter A.0' slices ε + ζ — rowset path does not
+                  // surface DEFAULT / Computed / attribute-level
+                  // ExtendedProperties today; positioned for future
+                  // rowset extension or DACPAC adapter.
+                  DefaultValue = None
+                  Computed     = None
+                  ExtendedProperties = [] }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`.
             propagateOrFallback
@@ -1142,15 +1353,17 @@ module CatalogReader =
         : Result<Kind> =
         let kindKey  = kindSsKeyFromRow moduleName kindRow
         let kindName = Name.create kindRow.EntityName
-        // Inactive-records filter (session 21 carryover): drop
-        // attributes with `IsActive=false` at the boundary, parity
-        // with the JSON path. References on dropped attributes are
-        // implicitly dropped — the join below sees no surviving
-        // attribute paired with the reference row.
+        // Chapter A.0' slice β — the session-21 attribute-level
+        // filter retires on the rowset path (parity with the JSON
+        // path retirement). Inactive attributes are carried with
+        // `Attribute.IsActive=false`. References on inactive
+        // attributes are carried through the join below (an
+        // inactive attribute still has its reference rows; the
+        // adapter's adapter-boundary discipline restricts to
+        // `DataIntent` carriage).
         let attrRows =
             Map.tryFind kindRow.EntityId attributesByEntity
             |> Option.defaultValue []
-            |> List.filter (fun a -> a.IsActive)
         let attrResults =
             attrRows
             |> List.map (parseAttributeRow moduleName kindRow.EntityName)
@@ -1191,13 +1404,22 @@ module CatalogReader =
                   Origin      = parseOriginFromRowset kindRow.IsExternal moduleEspaceKind
                   Modality    = modality
                   Physical    = { Schema = kindRow.DbSchema
-                                  Table  = kindRow.PhysicalTableName }
+                                  Table  = kindRow.PhysicalTableName; Catalog = None }
                   Attributes  = attrs
                   References  = refs
                   // Indexes deferred to a future slice (rowsets 10-11
                   // #AllIdx / #IdxColsMapped). Empty at slice 2.
                   Indexes     = []
-                  Description = kindRow.Description }
+                  Description = kindRow.Description
+                  IsActive    = kindRow.IsActive
+                  // Chapter A.0' slices γ + ε + ζ — rowset path does
+                  // not surface triggers, table-level CHECK
+                  // constraints, or entity-level extended properties
+                  // today; positioned for future rowset slices or
+                  // DACPAC-adapter integration.
+                  Triggers    = []
+                  ColumnChecks = []
+                  ExtendedProperties = [] }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`
             // (codified at two-consumer threshold; same surface as
@@ -1224,13 +1446,13 @@ module CatalogReader =
         : Result<Module> =
         let modKey  = moduleSsKeyFromRow moduleRow
         let modName = Name.create moduleRow.EspaceName
-        // Inactive-records filter (session 21 carryover): drop
-        // entities with `IsActive=false` at the boundary, parity
-        // with parseModule's JSON-path entity filter.
+        // Chapter A.0' slice β — the session-21 entity-level filter
+        // retires on the rowset path (parity with the JSON path
+        // retirement). Inactive entities carry with
+        // `Kind.IsActive=false`.
         let kindRows =
             Map.tryFind moduleRow.EspaceId kindsByEspace
             |> Option.defaultValue []
-            |> List.filter (fun k -> k.IsActive)
         let kindResults =
             kindRows
             |> List.map (
@@ -1242,7 +1464,10 @@ module CatalogReader =
         let foldedKinds = Result.aggregate kindResults
         match modKey, modName, foldedKinds with
         | Ok k, Ok n, Ok kinds ->
-            Module.create k n kinds
+            // Chapter A.0' slice ζ — Module.ExtendedProperties empty
+            // on the rowset path; V1's rowsets do not surface
+            // module-level extended properties.
+            Module.create k n kinds moduleRow.IsActive []
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`.
             // Substantive causes survive the module-level wrap.
@@ -1279,15 +1504,16 @@ module CatalogReader =
             bundle.Kinds |> List.groupBy (fun k -> k.EspaceId) |> Map.ofList
         let referencesByAttr =
             bundle.References |> List.groupBy (fun r -> r.AttrId) |> Map.ofList
-        // Inactive-records filter at module level — parity with
-        // parseModule's session-21 isActive filter.
-        let activeModules =
-            bundle.Modules |> List.filter (fun m -> m.IsActive)
+        // Chapter A.0' slice β — the session-21 module-level filter
+        // retires. Inactive modules carry with `Module.IsActive=false`.
         let moduleResults =
-            activeModules
+            bundle.Modules
             |> List.map (parseModuleRow kindsByEspace attributesByEntity referencesByAttr)
         match Result.aggregate moduleResults with
-        | Ok modules -> Catalog.create modules
+        | Ok modules ->
+            // Chapter A.0' slice δ — Catalog.Sequences empty on the
+            // rowset path; V1's rowsets do not surface sequences.
+            Catalog.create modules []
         | Error errors -> Error errors
 
     /// Parse a V1 `osm_model.json` snapshot into a V2 `Catalog`.
