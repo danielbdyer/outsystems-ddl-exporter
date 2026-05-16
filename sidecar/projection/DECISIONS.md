@@ -11837,3 +11837,69 @@ Two chapter-open scope items deferred at slice ε implementation:
 - `tests/Projection.Tests/AdapterRegistrationsTests.fs` + `StrategyRegistrationsTests.fs` (13 witnesses).
 
 ---
+
+## 2026-05-16 (chapter A.4.7 close — slices ζ + θ + ι) — TransformRegistry classification filters + bidirectional property tests + A41 cash-out; L3-CC-Transform-Totality D → A
+
+**Status:** decided (chapter A.4.7 closes; structural commitments shipped; A41 cashed; L3 axiom promoted; chapter close doc + HANDOFF entry land).
+
+**Combined slice rationale.** The slice ζ classification filters + slice θ bidirectional property tests + slice ι chapter-close ritual depend on each other and ship as one close commit: the filters define what skeleton-purity means structurally; the property tests consume the filters; the AXIOMS A41 body + L3-CC-Transform-Totality D → A cash-out depends on the property tests being shipped + green. Splitting into three commits would create intermediate states where structural commitments are partially landed; combining into one preserves the chapter's commit-as-atomic-unit discipline at chapter close.
+
+**Slice ζ deliverables (minimum scope; full Compose.run refactor deferred-with-trigger).**
+
+Slice ζ ships `TransformRegistry.skeletonView` / `overlayView` / `overlayAxes` filter helpers on a list of `RegisteredTransformMetadata`. The filters define the skeleton/overlay partition structurally:
+
+- `skeletonView` — entries whose every `Site.Classification` is `DataIntent`. Reachable from `Project(catalog, Policy.empty, profile)` without operator opinion.
+- `overlayView` — entries with at least one `Site.Classification = OperatorIntent _`. The strictest-site rule applies: a multi-classification pass (TopologicalOrderPass-shaped) goes to overlay, not skeleton.
+- `overlayAxes` — the distinct `OverlayAxis` set used across all `OperatorIntent` sites. Used by the overlay-exercise property test for axis-coverage enumeration.
+
+**Deferred at slice ζ (forward signal):** the full `Compose.run` registry-traversal refactor. The chapter A.4.7 open's spec called for `Compose.run` to iterate `TransformRegistry.allInStageOrder` as its execution loop, replacing the hand-coded orchestration in `Projection.Pipeline.Pipeline.fs`. Reality at slice ζ implementation: passes have 6 distinct output types (Catalog, TopologicalOrder, NullabilityDecisionSet, etc.) — a generic registry traversal requires a pass-chaining adapter that knows how to feed each pass's output into the next pass's input. That design isn't in scope at chapter A.4.7 close; it lands when the registry needs to be load-bearing for execution (likely chapter 4.x or 5.x scalable-orchestration cutover-blocker concern). Slice θ's property tests work against the filter helpers + test-side aggregation, sidestepping the traversal refactor.
+
+**Slice θ deliverables (4 of 5 bidirectional property tests + 3 intentional-fail probes).**
+
+`tests/Projection.Tests/TransformRegistryCompletenessTests.fs` ships at slice θ as the chapter's structural exit gate:
+
+1. **Skeleton-purity property test** (`L3-CC-Transform-Totality: skeleton-view passes emit zero OperatorIntent LineageEvents`). Invokes the 4 callable skeleton-view passes (CanonicalizeIdentity / NamingMorphism / NormalizeStaticPopulations / SymmetricClosure) against `Fixtures.sampleCatalog`; aggregates lineage trails; asserts every event carries `Classification = DataIntent`. Catches misclassification leaks (a pass marked DataIntent that actually emits OperatorIntent events).
+2. **Overlay-exercise property test** (three sub-tests). (a) axis coverage: `TransformRegistry.overlayAxes` contains the four overlay axes the chapter actually uses (Selection / Tightening / Emission / Ordering); Insertion has no consumer at chapter A.4.7 close — forward signal for chapter 4.x. (b) representative-pass exercise: VisibilityMask with hide-OsNative mask produces `OperatorIntent Selection` events; TableRename with one rename spec produces `OperatorIntent Emission` events. The full sweep (every overlay pass fires in operator-reality canary with non-trivial Policy + Profile fixtures) is deferred-with-trigger to canary suite extensions or chapter 4.x.
+3. **Totality coverage property test** (three sub-tests). (a) entry count: 18 registrations (1 adapter + 12 passes + 5 strategies). (b) name set: exact-match against expected. (c) smart-constructor validation: the aggregated list passes through `TransformRegistry.create` (uniqueness + non-empty Rationale + non-empty NotImplementedInV2 rationale). The filesystem-scan variant (directory inspection at test boundary) is the full strength; slice θ ships the enumerated form.
+4. **Harvest-classification coverage property test** (`zero NotImplementedInV2 entries at chapter A.4.7 close`). At chapter close, no Tolerance entry has fired the triple deliverable (Skip stub + Tolerance + NotImplementedInV2 registry entry). The property test enumerates the registry and witnesses the empty NotImplementedInV2 set. Forward signal: when the first v1-harvest "don't bring forward" decision lands, all three deliverables ship together; this property gains substantive content.
+
+**Intentional-fail probes** (3): (a) DataIntent-claimed-but-actually-OperatorIntent pass — `skeletonView` excludes it (the leak is caught structurally); (b) empty `Site.Rationale` — `TransformRegistry.create` rejects via `registry.siteRationaleEmpty`; (c) `NotImplementedInV2 ""` — `TransformRegistry.create` rejects via `registry.notImplementedRationaleEmpty`.
+
+**Deferred at slice θ:** the fifth bidirectional property test — manifest digest round-trip. The test requires `ManifestEmitter` to write `registry.digest` + per-artifact `applied-transforms` field (slice η scope); deferred-with-trigger pending slice η.
+
+**Slice ι deliverables (A41 cash-out + chapter close ritual).**
+
+- **AXIOMS.md A41 body** filled per the scaffolding discipline (`DECISIONS 2026-05-22 — Stage 0 foundation phase`). The placeholder list is updated to mark A41 CASHED. A41's body codifies: the strongly-typed canonical registry shape; the bidirectional contract (skeleton-purity + overlay-exercise + totality coverage + harvest-classification coverage); the A18 ↔ A41 sibling structural commitment; pillar 9's structural pair framing; the fourth cross-cutting concern framing; the heterogeneous-output-types accommodation; the OverlayAxis ⊃ Policy DU axes weakening (per slice β's Q9 expansion).
+- **PRODUCT_AXIOMS.md L3-CC-Transform-Totality D → A.** The Tier column is updated to "Bucket: A (promoted at chapter A.4.7 close, 2026-05-16)." Forward-signal note: manifest digest round-trip property + runtime `Compose.runWithSkeleton` traversal land at slice η (consumer-pressure deferred).
+- **CHAPTER_A_4_7_CLOSE.md** ships per the close-doc convention (mirrors `CHAPTER_A_0_PRIME_CLOSE.md` structure): per-slice ledger + L3 axiom promotion table + four meta-codifications + six forward signals + pillar-9 audit + chapter-close ritual checklist + recommended next chapter.
+- **HANDOFF.md** gains a chapter A.4.7 close entry pointing at this DECISIONS amendment + the close doc + the recommended next-chapter options.
+
+**Four meta-codifications surfaced across the chapter** (documented in the close doc):
+
+1. **Per-rule-as-Sites for non-callable transformations.** When a structural commitment calls for N separate registry entries but the implementation has N rules embedded in one callable surface, ship N Sites within one registry entry. Worked precedents: CatalogReader (6 Sites for ~26 rules); TopologicalOrderPass (2 Sites for SortKahn + SelfLoopHandling).
+2. **Compile-order-constraint-solved-via-dedicated-module.** When a registration would create a circular dependency, extract it into a downstream module with access to both surfaces. Worked precedent: `StrategyRegistrations.fs`.
+3. **Factory pattern for configurable transformations.** Configurable transformations expose `.registered <config> : RegisteredTransform<...>` as a function returning the registered value, capturing config in the Run closure. Worked precedents: 8 of 12 passes.
+4. **Parallel-exposure during structural-commitment transitions.** When a structural commitment requires consumer migration, ship the new canonical surface alongside the old as a transition affordance; make the old private as a follow-on slice when consumer pressure surfaces. Worked precedent: slice γ kept `let run` public; slice γ.2 trigger documented.
+
+**Six forward signals** (deferred-with-trigger; full list in close doc):
+
+1. Slice γ.2 trigger — make `let run` private + migrate consumers.
+2. Slice η scope — `osm emit --skeleton-only` CLI + ManifestEmitter registry-digest extension.
+3. Compose.run registry-traversal refactor (likely chapter 4.x or 5.x).
+4. Fifth OverlayAxis expansion trigger (apply Q9-trigger-fires discipline).
+5. Policy.fs ↔ OverlayAxis collapse refactor (when call-sites consult both).
+6. Tolerance retirement signals (when first v1-harvest "don't bring forward" lands).
+
+**Baseline at chapter close.** 1281 / 1281 passing (1264 prior + 6 ζ filter tests + 11 slice θ property tests + intentional-fail probes). 0 skipped. 0 build warnings under `TreatWarningsAsErrors=true`. Lint count 13 — unchanged from main / chapter A.0' close / slices α–ε baseline; zero new introduced across chapter A.4.7.
+
+**Cross-references.**
+
+- `CHAPTER_A_4_7_OPEN.md` (the chapter's strategic-frame document; all 9 axes shipped; resolved-at-chapter-open Q9 expansion fired).
+- `CHAPTER_A_4_7_CLOSE.md` (this entry's companion close doc — per-slice ledger + meta-codifications + forward signals + chapter-close ritual).
+- `AXIOMS.md` A41 (cashed at this entry; placeholder marker updated).
+- `PRODUCT_AXIOMS.md` L3-CC-Transform-Totality (D → A at this entry).
+- `V2_PRODUCTION_CUTOVER.md` §6.4.7 (the workstream spec; subtask 4 — Compose.run traversal — refined at slice ζ; subtask 6 — CLI + manifest — deferred-with-trigger to slice η).
+- Per-slice DECISIONS entries: `2026-05-16 (chapter A.4.7 slice β)`; `2026-05-16 (chapter A.4.7 slice γ)`; `2026-05-16 (chapter A.4.7 slices δ + ε)`; this entry (slices ζ + θ + ι).
+- `tests/Projection.Tests/TransformRegistryCompletenessTests.fs` (the chapter's structural exit gate; 4 property tests + 3 intentional-fail probes).
+
+---

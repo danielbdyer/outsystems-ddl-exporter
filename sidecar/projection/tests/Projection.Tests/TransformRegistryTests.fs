@@ -242,6 +242,96 @@ let ``A.4.7 slice β: RegisteredTransform.toMetadata projects fields and drops R
 // at slice ε; this test witnesses the type-system reachability.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Chapter A.4.7 slice ζ — classification filter helpers (skeletonView /
+// overlayView / overlayAxes). The filters define what "skeleton" vs
+// "overlay" means structurally on the registry; slice θ's property
+// tests consume them to verify the skeleton-purity / overlay-exercise
+// claims.
+// ---------------------------------------------------------------------------
+
+let private pureDataIntentEntry : RegisteredTransformMetadata =
+    { mkEntry "pureDataIntent" Active with
+        Sites =
+          [ { SiteName = "site1"
+              Classification = DataIntent
+              Rationale = "structurally derived" }
+            { SiteName = "site2"
+              Classification = DataIntent
+              Rationale = "also derived" } ] }
+
+let private pureOperatorIntentEntry : RegisteredTransformMetadata =
+    { mkEntry "pureOperatorIntent" Active with
+        Sites =
+          [ { SiteName = "site1"
+              Classification = OperatorIntent Tightening
+              Rationale = "operator-supplied tightening" } ] }
+
+let private mixedEntry : RegisteredTransformMetadata =
+    // Mirrors TopologicalOrderPass's two-site shape (sortKahn DataIntent
+    // + selfLoopHandling OperatorIntent Ordering).
+    { mkEntry "mixedClassification" Active with
+        Sites =
+          [ { SiteName = "dataIntentSite"
+              Classification = DataIntent
+              Rationale = "topology-derived" }
+            { SiteName = "operatorIntentSite"
+              Classification = OperatorIntent Ordering
+              Rationale = "operator-supplied policy" } ] }
+
+[<Fact>]
+let ``A.4.7 slice ζ: skeletonView includes entries whose every Site is DataIntent`` () =
+    let entries = [ pureDataIntentEntry; pureOperatorIntentEntry; mixedEntry ]
+    let skeleton = TransformRegistry.skeletonView entries
+    let names = skeleton |> List.map (fun rt -> rt.Name)
+    Assert.Equal<string list>([ "pureDataIntent" ], names)
+
+[<Fact>]
+let ``A.4.7 slice ζ: skeletonView excludes multi-site passes with any OperatorIntent site`` () =
+    // Mirrors the named failure mode: a multi-site pass with one
+    // OperatorIntent site (like TopologicalOrderPass-shaped mixedEntry)
+    // is excluded from the skeleton — the pass-level classification
+    // follows the strictest site.
+    let entries = [ mixedEntry ]
+    let skeleton = TransformRegistry.skeletonView entries
+    Assert.Empty skeleton
+
+[<Fact>]
+let ``A.4.7 slice ζ: overlayView includes entries with any OperatorIntent site`` () =
+    let entries = [ pureDataIntentEntry; pureOperatorIntentEntry; mixedEntry ]
+    let overlay = TransformRegistry.overlayView entries
+    let names = overlay |> List.map (fun rt -> rt.Name) |> Set.ofList
+    Assert.Equal<Set<string>>(Set.ofList [ "pureOperatorIntent"; "mixedClassification" ], names)
+
+[<Fact>]
+let ``A.4.7 slice ζ: skeletonView and overlayView are not strictly disjoint when sites have mixed classifications`` () =
+    // pureDataIntent: skeletonView only.
+    // pureOperatorIntent: overlayView only.
+    // mixedClassification: overlayView only (excluded from skeleton).
+    // The named asymmetry: multi-classification passes go to overlay,
+    // not skeleton; the chapter-A.4.7-open's Sites-list mechanism
+    // surfaces this structurally.
+    let entries = [ pureDataIntentEntry; pureOperatorIntentEntry; mixedEntry ]
+    let skeleton = TransformRegistry.skeletonView entries |> Set.ofList
+    let overlay = TransformRegistry.overlayView entries |> Set.ofList
+    let intersection = Set.intersect skeleton overlay
+    Assert.Empty intersection
+    // Together they partition the registry exactly (no entry is in
+    // neither and no entry is in both).
+    Assert.Equal(List.length entries, Set.count skeleton + Set.count overlay)
+
+[<Fact>]
+let ``A.4.7 slice ζ: overlayAxes enumerates distinct OverlayAxis values used`` () =
+    let entries = [ pureDataIntentEntry; pureOperatorIntentEntry; mixedEntry ]
+    let axes = TransformRegistry.overlayAxes entries
+    // pureOperatorIntent uses Tightening; mixed uses Ordering.
+    Assert.Equal<Set<OverlayAxis>>(Set.ofList [ Tightening; Ordering ], axes)
+
+[<Fact>]
+let ``A.4.7 slice ζ: overlayAxes is empty for a pure-DataIntent registry`` () =
+    let axes = TransformRegistry.overlayAxes [ pureDataIntentEntry ]
+    Assert.Empty axes
+
 [<Fact>]
 let ``A.4.7 slice β: TransformSite carries Classification = OperatorIntent Ordering (Q9-trigger-fires worked example reachable)`` () =
     let entry =

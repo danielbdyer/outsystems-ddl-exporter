@@ -267,3 +267,65 @@ module TransformRegistry =
     /// `Compose.run` traversal consumes this as its execution loop.
     let allInStageOrder (entries: RegisteredTransformMetadata list) : RegisteredTransformMetadata list =
         entries |> List.sortBy (fun rt -> stageOrdinal rt.StageBinding)
+
+    /// **Skeleton view** — entries whose every Site classifies as
+    /// `DataIntent`. Reachable from `Project(catalog, Policy.empty,
+    /// profile)` without operator opinion; lands in the skeleton.
+    ///
+    /// Chapter A.4.7 slice ζ (minimum). The full `Compose.runWithSkeleton`
+    /// traversal-with-filter (per `V2_PRODUCTION_CUTOVER.md` §6.4.7 task 4)
+    /// is deferred-with-trigger pending pass-chaining adapter design for
+    /// heterogeneous output types; the filter helper ships now so slice
+    /// θ's skeleton-purity property test can verify the structural
+    /// classification correctness independently of runtime traversal.
+    ///
+    /// **Failure mode caught.** If a pass classified `DataIntent` actually
+    /// expresses operator intent (e.g., a filter that re-applies inactive-
+    /// records-drop policy classified as DataIntent rather than
+    /// OperatorIntent Selection), its Site list contains an `OperatorIntent`
+    /// entry, and the pass is excluded from the skeleton view — the
+    /// property test asserts every event emitted during a skeleton
+    /// traversal carries `Classification = DataIntent`; misclassification
+    /// surfaces as a leak.
+    let skeletonView (entries: RegisteredTransformMetadata list) : RegisteredTransformMetadata list =
+        entries
+        |> List.filter (fun rt ->
+            rt.Sites
+            |> List.forall (fun site ->
+                match site.Classification with
+                | DataIntent -> true
+                | OperatorIntent _ -> false))
+
+    /// **Overlay view** — entries whose Sites contain at least one
+    /// `OperatorIntent` classification. These are the registered
+    /// overlays that the skeleton excludes; the overlay-exercise
+    /// property test (slice θ) asserts each fires in at least one
+    /// canary scenario.
+    ///
+    /// Note: a multi-site pass with mixed classifications (e.g.,
+    /// `TopologicalOrderPass`'s sortKahn DataIntent + selfLoopHandling
+    /// OperatorIntent Ordering) appears in `overlayView` but NOT in
+    /// `skeletonView` — the pass-level classification follows the
+    /// strictest site. Slice θ's tests witness this asymmetry.
+    let overlayView (entries: RegisteredTransformMetadata list) : RegisteredTransformMetadata list =
+        entries
+        |> List.filter (fun rt ->
+            rt.Sites
+            |> List.exists (fun site ->
+                match site.Classification with
+                | OperatorIntent _ -> true
+                | DataIntent -> false))
+
+    /// **Overlay axes** present across the registry — every distinct
+    /// `OverlayAxis` value that appears on at least one `OperatorIntent`
+    /// site. Used by slice θ's overlay-exercise property test to
+    /// enumerate the operator-intent surface that the canary must
+    /// cover.
+    let overlayAxes (entries: RegisteredTransformMetadata list) : Set<OverlayAxis> =
+        entries
+        |> List.collect (fun rt -> rt.Sites)
+        |> List.choose (fun site ->
+            match site.Classification with
+            | OperatorIntent axis -> Some axis
+            | DataIntent -> None)
+        |> Set.ofList
