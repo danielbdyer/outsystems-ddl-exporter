@@ -94,7 +94,11 @@ Build the registry under A.4.7 (post-A.0' close; ~3 weeks; full-sweep retroactiv
 
 ## Executive backlog summary
 
-This document IS the V2 backlog (supersedes the prior `BACKLOG.md` which is now a forwarding pointer here). The V2-driver KPI reorders the backlog by V2-destination axis rather than V1-source-area; per-chapter operational detail continues to live in `CHAPTER_*_PRESCOPE_*.md` documents, which this backlog cross-references.
+**Operational backlog: `BACKLOG.md`** (re-canonicalized 2026-05-16 — Bridge wave). This document carries the strategic destination — phase ownership, per-axis correctness stakes, chapter sequencing under the V2-driver KPI. The operational ledger — what is in flight, scheduled, blocked, shipped, sunset, with per-phase Bridge method gradient transitions and cross-cutting infrastructure work — lives in `BACKLOG.md`. The two documents are sibling surfaces: this one is the *why*; `BACKLOG.md` is the *what and when*.
+
+The phase summary below is preserved as the strategic counts; cite `BACKLOG.md` per-phase sections for the operational detail (pending slices, Bridge methods consumed, per-phase risks, cross-cutting work).
+
+Per-chapter operational detail continues to live in `CHAPTER_*_PRESCOPE_*.md` documents; this backlog cross-references them and `BACKLOG.md` indexes them by phase.
 
 ### Counts by phase (chapter ownership under V2-driver KPI)
 

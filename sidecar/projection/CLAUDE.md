@@ -22,10 +22,21 @@ are **on-demand** references — read when the relevant work surfaces
 them, not as part of the canonical first-read pass.
 
 **`V2_DRIVER.md`** (codified 2026-05-10 chapter 3.7 sidebar; principal-PO
-discussion) is the destination-KPI document AND the operative backlog
-(supersedes the prior `BACKLOG.md` which is now a forwarding pointer).
-Read it before any chapter open; it codifies V2-driver as the project's
-north star and orders the remaining chapters under the V2-driver KPI.
+discussion) is the destination-KPI document — the *why* the cutover
+ladder bends toward V2-driver mode, the per-axis correctness stakes,
+the chapter ownership map. Slowest-rhythm strategic surface after the
+manifesto.
+
+**`BACKLOG.md`** (re-canonicalized 2026-05-16 — Bridge wave) is the
+operational ledger — *what is in flight, what is scheduled, what is
+blocked, what is shipped, and what is sunset*. Interweaves V2_DRIVER's
+per-phase chapter sequence with the Bridge wave's gradient transitions,
+cross-cutting infrastructure work, V1-side adoption opportunities, and
+the wave-wide risk register. Refreshed at every chapter close and at
+every Bridge method gradient transition.
+
+Read V2_DRIVER for the destination; read BACKLOG for the path. Both
+before any chapter open; BACKLOG before any chapter-mid status review.
 
 1. **`HANDOFF.md`** — bridge letter from the most-recent-closed
    chapter. Short on purpose. Names what is load-bearing and what
