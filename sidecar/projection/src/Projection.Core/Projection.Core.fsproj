@@ -45,6 +45,7 @@
     <Compile Include="Strategies/UniqueIndexRules.fs" />
     <Compile Include="Strategies/ForeignKeyRules.fs" />
     <Compile Include="Strategies/CategoricalUniquenessRules.fs" />
+    <Compile Include="Classification.fs" />
     <Compile Include="Lineage.fs" />
     <Compile Include="LineageBuffer.fs" />
     <Compile Include="Diagnostics.fs" />

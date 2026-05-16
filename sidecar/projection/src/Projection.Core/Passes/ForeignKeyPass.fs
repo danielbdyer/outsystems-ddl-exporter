@@ -78,12 +78,19 @@ module ForeignKeyPass =
     /// `NullabilityPass` and `UniqueIndexPass`. Chapter-3.6 slice-β
     /// widened the payload to the typed `AnnotationDetail.
     /// ForeignKeyDecision` variant.
+    /// Pillar 9 (chapter A.4.7 slice α): foreign-key enforcement
+    /// strengthens FK invariants beyond source evidence per
+    /// operator-supplied Tightening policy. Operator intent on the
+    /// Tightening axis. Lands as registered overlay.
+    let private classification : Classification = OperatorIntent Tightening
+
     let private decisionEvent (decision: ForeignKeyDecision) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = decision.ReferenceKey
-          TransformKind =
-              Annotated (ForeignKeyDecision (decision.InterventionId, decision.Outcome)) }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = decision.ReferenceKey
+          TransformKind  =
+              Annotated (ForeignKeyDecision (decision.InterventionId, decision.Outcome))
+          Classification = classification }
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// references by `SsKey` within each kind. Interventions are taken

@@ -364,11 +364,23 @@ module TopologicalOrderPass =
     // The pass.
     // -----------------------------------------------------------------------
 
+    /// Pillar 9 (chapter A.4.7 slice α): the events emitted by this
+    /// pass are all `Touched` (one per graph node from Kahn ordering),
+    /// classified `DataIntent` — the SortKahn site is topology-derived
+    /// (no operator opinion in node visitation). The SelfLoopHandling
+    /// site (an `OperatorIntent Ordering` site per the chapter A.4.7
+    /// open's Q9-trigger-fires worked example) affects `buildGraph`
+    /// but emits no per-event lineage at this slice. The Sites
+    /// distinction lands at slice ε with the registry entry; per-event
+    /// classification here is uniformly `DataIntent`.
+    let private classification : Classification = DataIntent
+
     let private touchedEvent (key: SsKey) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = key
-          TransformKind = Touched }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = key
+          TransformKind  = Touched
+          Classification = classification }
 
     /// Parameterized form. Per session-36 — `selfLoops` selects how a
     /// kind's reference to itself is handled during graph construction.

@@ -90,11 +90,18 @@ module SymmetricClosure =
     let private hasInverseAlready (refs: Reference list) (key: SsKey) : bool =
         refs |> List.exists (fun r -> r.SsKey = key)
 
+    /// Pillar 9 (chapter A.4.7 slice α): symmetric closure derives
+    /// inverse references from the existing graph topology — no
+    /// operator opinion enters. Skipped events name a topology-derived
+    /// reason (target absent / no PK). Lands in the skeleton.
+    let private classification : Classification = DataIntent
+
     let private createdEvent (key: SsKey) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = key
-          TransformKind = Created }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = key
+          TransformKind  = Created
+          Classification = classification }
 
     let private skippedEvent (key: SsKey) (reason: SymmetricClosureSkipReason) : LineageEvent =
         // Chapter-3.6 slice-γ: typed `SymmetricClosureSkipReason`
@@ -102,10 +109,11 @@ module SymmetricClosure =
         // The two skip cases (`TargetKindAbsent`,
         // `TargetHasNoPrimaryKey`) classified in `classifyStep` flow
         // through structurally to audit consumers.
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = key
-          TransformKind = Annotated (ClosureSkipped reason) }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = key
+          TransformKind  = Annotated (ClosureSkipped reason)
+          Classification = classification }
 
     /// Run the pass. For every directional reference whose target is
     /// resolvable in the catalog and has at least one primary-key

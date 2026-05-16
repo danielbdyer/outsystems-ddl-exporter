@@ -48,11 +48,18 @@ module NormalizeStaticPopulations =
     let private hasStaticModality (k: Kind) : bool =
         k.Modality |> List.exists (function Static _ -> true | _ -> false)
 
+    /// Pillar 9 (chapter A.4.7 slice α): static-population normalization
+    /// reorders rows deterministically — no operator opinion enters
+    /// (the ordering is canonical SsKey-then-content). Lands in the
+    /// skeleton.
+    let private classification : Classification = DataIntent
+
     let private touchedEvent (key: SsKey) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = key
-          TransformKind = Touched }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = key
+          TransformKind  = Touched
+          Classification = classification }
 
     /// Run the pass over the catalog. Kinds without a `Static` modality
     /// pass through structurally unchanged and emit no lineage events;

@@ -65,12 +65,20 @@ module CategoricalUniquenessPass =
     /// the three predecessors. Chapter-3.6 slice-β widened the
     /// payload to the typed
     /// `AnnotationDetail.CategoricalUniquenessDecision` variant.
+    /// Pillar 9 (chapter A.4.7 slice α): categorical-uniqueness
+    /// promotion strengthens uniqueness invariants on categorical
+    /// attributes beyond source evidence per operator-supplied
+    /// Tightening policy. Operator intent on the Tightening axis.
+    /// Lands as registered overlay.
+    let private classification : Classification = OperatorIntent Tightening
+
     let private decisionEvent (decision: CategoricalUniquenessDecision) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = decision.AttributeKey
-          TransformKind =
-              Annotated (CategoricalUniquenessDecision (decision.InterventionId, decision.Outcome)) }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = decision.AttributeKey
+          TransformKind  =
+              Annotated (CategoricalUniquenessDecision (decision.InterventionId, decision.Outcome))
+          Classification = classification }
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// attributes by `SsKey` within each kind. Interventions are taken

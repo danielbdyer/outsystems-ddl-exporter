@@ -56,11 +56,22 @@ module UserFkReflowPass =
     /// in `Lineage.fs:130`). Slice η consumers reading the trail can
     /// answer "which strategy resolved this user's identity?" via
     /// the label.
+    /// Pillar 9 (chapter A.4.7 slice α): User FK reflow consumes
+    /// operator-supplied User-table replacement specs and reroutes
+    /// references to point at the canonical User table. Operator
+    /// intent on the Selection axis — the operator selects which
+    /// User-table references reroute vs preserve as-is. Lands as
+    /// registered overlay. (Refinement candidate at slice γ harvest
+    /// analysis: Insertion may fit as well as Selection; pillar-8
+    /// four-question analysis at registration time.)
+    let private classification : Classification = OperatorIntent Selection
+
     let private matchedEvent (sourceKey: SsKey) (strategyLabel: string) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = sourceKey
-          TransformKind = Annotated (Label (System.String.Concat ("userFkReflow.matched-by-", strategyLabel))) }  // LINT-ALLOW: terminal diagnostic-label composition at the AnnotationDetail.Label boundary; BCL `String.Concat` is the right primitive for the two-segment audit-narration label
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = sourceKey
+          TransformKind  = Annotated (Label (System.String.Concat ("userFkReflow.matched-by-", strategyLabel)))  // LINT-ALLOW: terminal diagnostic-label composition at the AnnotationDetail.Label boundary; BCL `String.Concat` is the right primitive for the two-segment audit-narration label
+          Classification = classification }
 
     /// One `Warning` diagnostic per unmatched source user. Per
     /// pre-scope §6: `Source = "userFkReflow"`, `Code = "userFkReflow.

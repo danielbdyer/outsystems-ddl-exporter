@@ -89,11 +89,20 @@ module VisibilityMask =
     let private firstMatch (mask: Mask) (kind: Kind) : Predicate option =
         mask.Hide |> List.tryFind (fun p -> p.Test kind)
 
+    /// Pillar 9 (chapter A.4.7 slice α): visibility-mask hides kinds
+    /// per operator-supplied predicate (origin / explicit keys /
+    /// modality). The predicate is operator intent on the Selection
+    /// axis — operator chose which kinds appear in the catalog. Lands
+    /// as registered overlay; skeleton-purity property test (slice θ)
+    /// catches any leak.
+    let private classification : Classification = OperatorIntent Selection
+
     let private removedEvent (predicate: Predicate) (key: SsKey) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = key
-          TransformKind = Removed predicate.Reason }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = key
+          TransformKind  = Removed predicate.Reason
+          Classification = classification }
 
     // -----------------------------------------------------------------------
     // The pass.

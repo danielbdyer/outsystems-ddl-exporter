@@ -29,11 +29,17 @@ module NamingMorphism =
     /// identity morphism is `id`; composition is function composition.
     type Morphism = Name -> Name
 
+    /// Pillar 9 (chapter A.4.7 slice α): naming morphisms are V1→V2
+    /// presentation-name translations derived from data shape; no
+    /// operator opinion enters. Lands in the skeleton.
+    let private classification : Classification = DataIntent
+
     let private renamedEvent (key: SsKey) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = key
-          TransformKind = Renamed }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = key
+          TransformKind  = Renamed
+          Classification = classification }
 
     /// Apply the morphism to a single name. If the name is unchanged the
     /// caller emits no event (lineage records actual renames, not

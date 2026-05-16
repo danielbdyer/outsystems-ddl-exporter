@@ -57,12 +57,19 @@ module CanonicalizeIdentity =
         { m with
             Kinds = m.Kinds |> List.map canonicalizeKind |> List.sortBy (fun k -> k.SsKey) }
 
+    /// Pillar 9 (chapter A.4.7 slice α): canonicalization-of-identity
+    /// preserves data intention — sorting + normalization is reachable
+    /// from `Project(catalog, Policy.empty, profile)` without operator
+    /// opinion. Lands in the skeleton.
+    let private classification : Classification = DataIntent
+
     /// Build the lineage event recording that the pass observed a kind.
     let private touchedEvent (key: SsKey) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = key
-          TransformKind = Touched }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = key
+          TransformKind  = Touched
+          Classification = classification }
 
     /// Run the pass over a catalog. Returns the canonicalized catalog
     /// wrapped in a lineage with one `Touched` event per kind.

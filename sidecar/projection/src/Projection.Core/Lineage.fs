@@ -233,11 +233,23 @@ type TransformKind =
 /// `PassVersion` so functionally different versions of the same pass
 /// produce distinguishable lineage and replay determinism is preserved
 /// across pipeline evolution.
+///
+/// **Chapter A.4.7 slice α — `Classification` field.** Per pillar 9
+/// (harvest-dichotomy classification; `DECISIONS 2026-05-15 (late)`),
+/// every event carries its classification (`DataIntent` or
+/// `OperatorIntent of OverlayAxis`). Pass drivers self-classify by
+/// passing the per-pass / per-site classification to the event-helper.
+/// Slice α (this commit) establishes the type-system shape; slice β
+/// onward (`TransformRegistry.fs`) makes the classification canonical
+/// at the registry. The skeleton-purity property test (slice θ) asserts
+/// `Compose.runWithSkeleton` emits zero `OperatorIntent` events;
+/// misclassification leaks and the property fails.
 type LineageEvent = {
-    PassName      : string
-    PassVersion   : int
-    SsKey         : SsKey
-    TransformKind : TransformKind
+    PassName       : string
+    PassVersion    : int
+    SsKey          : SsKey
+    TransformKind  : TransformKind
+    Classification : Classification
 }
 
 

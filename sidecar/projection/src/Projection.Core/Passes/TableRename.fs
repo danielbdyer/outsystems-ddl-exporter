@@ -154,11 +154,20 @@ module TableRename =
     // suppressed at the visitor before the event is constructed.
     // -----------------------------------------------------------------------
 
+    /// Pillar 9 (chapter A.4.7 slice α): table-rename consumes
+    /// operator-supplied rename specs and rewrites the physical
+    /// realization (`Kind.Physical` only; identity untouched per A1).
+    /// Operator intent on the Emission axis — the operator selects
+    /// what physical form a kind takes in emitted output. Lands as
+    /// registered overlay.
+    let private classification : Classification = OperatorIntent Emission
+
     let private physicallyRenamedEvent (key: SsKey) (before: TableId) (after: TableId) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = key
-          TransformKind = PhysicallyRenamed { Before = before; After = after } }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = key
+          TransformKind  = PhysicallyRenamed { Before = before; After = after }
+          Classification = classification }
 
     /// Run the pass. Empty spec list short-circuits to a pass-through
     /// with no lineage events. Otherwise validates every spec first

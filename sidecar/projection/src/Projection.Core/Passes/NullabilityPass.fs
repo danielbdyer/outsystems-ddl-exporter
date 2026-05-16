@@ -63,12 +63,20 @@ module NullabilityPass =
     /// (interventionId, outcome))` (typed) — audit consumers
     /// pattern-match the structurally-preserved outcome directly,
     /// rather than substring-parsing a built name.
+    /// Pillar 9 (chapter A.4.7 slice α): nullability tightening
+    /// strengthens NOT NULL invariants beyond source evidence per
+    /// operator-supplied Tightening policy (Cautious / Aggressive /
+    /// Disabled). Operator intent on the Tightening axis. Lands as
+    /// registered overlay.
+    let private classification : Classification = OperatorIntent Tightening
+
     let private decisionEvent (decision: NullabilityDecision) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = decision.AttributeKey
-          TransformKind =
-              Annotated (NullabilityDecision (decision.InterventionId, decision.Outcome)) }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = decision.AttributeKey
+          TransformKind  =
+              Annotated (NullabilityDecision (decision.InterventionId, decision.Outcome))
+          Classification = classification }
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// attributes by `SsKey` within each kind. Interventions are taken
