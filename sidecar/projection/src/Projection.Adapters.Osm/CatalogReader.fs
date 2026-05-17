@@ -444,6 +444,35 @@ module CatalogReader =
                         "typeMismatch"
                         (sprintf "Property '%s' is not a numeric flag or boolean." name))
 
+    /// Optional V1 int-flag with a caller-supplied default. Mirrors
+    /// V1's `ISNULL(<col>, <default>)` SQL idiom (used at
+    /// `outsystems_model_export.sql:730` for `hasDbConstraint`, etc.).
+    /// Convenience over `match getIntFlag … with Ok v -> v | Error _ ->
+    /// default` — chapter 4.7 slice α consolidation. Returns the
+    /// flag value when present + parseable; returns the default for
+    /// absent / unparseable values (the failure case is itself the
+    /// V1-COALESCE-equivalent silent default).
+    let private getOptionalIntFlag
+        (element: JsonElement)
+        (name: string)
+        (defaultValue: bool)
+        : bool =
+        match getIntFlag element name with
+        | Ok v -> v
+        | Error _ -> defaultValue
+
+    /// Optional bool property with caller-supplied default. Sibling
+    /// of `getOptionalIntFlag` for fields V1 projects as JSON
+    /// booleans (e.g., index `isPlatformAuto`).
+    let private getOptionalBool
+        (element: JsonElement)
+        (name: string)
+        (defaultValue: bool)
+        : bool =
+        match getBool element name with
+        | Ok v -> v
+        | Error _ -> defaultValue
+
     /// Optional string property. Returns `None` for missing or
     /// JSON-null values, `Some s` for non-null strings, `Error`
     /// when the property exists but is not a string.
@@ -750,10 +779,11 @@ module CatalogReader =
                     // `reference_hasDbConstraint` per SnapshotJsonBuilder).
                     // Defaults to false when V1 source omits the field
                     // (mirrors V1's ISNULL coalesce semantics).
+                    // Chapter 4.7 slice α: getOptionalIntFlag retires the
+                    // local `match … | Ok v -> v | Error _ -> default`
+                    // pattern.
                     let hasDbConstraint =
-                        match getIntFlag attrJson "reference_hasDbConstraint" with
-                        | Ok v -> v
-                        | Error _ -> false
+                        getOptionalIntFlag attrJson "reference_hasDbConstraint" false
                     Result.success (Some
                         { SsKey           = rKey
                           Name            = rName
@@ -904,10 +934,10 @@ module CatalogReader =
                 // Chapter 4.6 slice β — capture V1's `isPlatformAuto`
                 // flag (JSON projection of IndexModel.IsPlatformAuto).
                 // Defaults to false when V1 source omits the field.
-                let isPlatformAuto =
-                    match getBool indexJson "isPlatformAuto" with
-                    | Ok v -> v
-                    | Error _ -> false
+                // Chapter 4.7 slice α: getOptionalBool retires the
+                // local `match … | Ok v -> v | Error _ -> default`
+                // pattern.
+                let isPlatformAuto = getOptionalBool indexJson "isPlatformAuto" false
                 Result.success
                     { SsKey        = k
                       Name         = n
