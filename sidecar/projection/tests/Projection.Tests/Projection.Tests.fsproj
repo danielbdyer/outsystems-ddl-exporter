@@ -115,6 +115,7 @@
     <Compile Include="IndexFilterTests.fs" />
     <Compile Include="IndexIncludedColumnsTests.fs" />
     <Compile Include="IndexOnDiskMetadataTests.fs" />
+    <Compile Include="IsPlatformAutoEmitterToggleTests.fs" />
     <Compile Include="ReferenceHasDbConstraintTests.fs" />
     <Compile Include="FilterParseDiagnosticTests.fs" />
     <Compile Include="BuildCreateIndexDiagnosticsTests.fs" />
