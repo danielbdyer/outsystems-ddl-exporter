@@ -12219,3 +12219,52 @@ Recorded in `V1_PARITY_MATRIX.md` row 29 as 🟡 DIVERGENCE.
   realization-layer typed surface, not a string field on the IR.
 
 ---
+
+## 2026-05-17 (slice 5.1.γ) — Command-timeout discipline: canary unlimited, production tunable
+
+V1's `MetadataSnapshotRunner` reads command timeout from
+`SqlExecutionOptions.CommandTimeoutSeconds` (caller-tunable, ADO.NET
+default 30s when unset). The pattern aligns with Polly / EF Core
+conventions — every request can carry a per-request timeout.
+
+V2's `MetadataSnapshotRunner.runAsync` sets `command.CommandTimeout <- 0`
+unconditionally. The rationale at chapter 5.0 close: V1's
+`outsystems_metadata_rowsets.sql` script begins with `SET TEXTSIZE -1`
+and includes complex queries that legitimately run long against a real
+OSSYS catalog (the 22 rowsets each materialize a temp-table query
+joining 3-5 sys.* views; aggregate execution time on a 300-table
+catalog can exceed the 30s ADO.NET default). Unlimited timeout removes
+a brittle gate at the canary's offline-extraction layer.
+
+The divergence is intentional and scope-limited:
+
+- **Canary scope (today):** unlimited timeout is correct. The canary
+  runs against a synthetic OSSYS source in a controlled Docker
+  container; there is no operator who'd want to interrupt a long
+  extraction. Determinism over interruptibility.
+- **Production scope (when V2 ships a CLI for cloud OSSYS):** unlimited
+  timeout is operator-hostile (no escape hatch from a runaway query).
+  Re-open trigger fires; `runAsync` grows a `commandTimeoutSeconds :
+  int option` parameter with default `Some 0` (preserving canary
+  behavior) but operator-settable via the CLI surface.
+
+The contract preserved across the trigger: callers that pass no timeout
+get the V2 default (unlimited). Callers that pass a value get V1-style
+ADO.NET timeout semantics. The canary's behavior is unchanged.
+
+Recorded in `V1_PARITY_MATRIX.md` row 33 as 🟡 DIVERGENCE. Companion
+rows 32 / 34 / 35 / 36 carry related production-wiring concerns
+(exception classification / transient retry / result-set contract
+enforcement / progress tracking) as 🟠 NOT-MAPPED rather than
+DIVERGENCE — those are genuine capabilities V2 lacks rather than V2
+choosing a different shape.
+
+### Cross-references
+
+- `V2_DRIVER.md` per-axis correctness stakes — V2-driver mode transition
+  requires production-grade wiring on top of canary-grade adapter.
+- `CHAPTER_5_0_CLOSE.md` §"What's deferred" — live-DB SqlClient wiring
+  is "a per-environment ops concern" (this DECISIONS row is the
+  operational shape of that deferral).
+
+---
