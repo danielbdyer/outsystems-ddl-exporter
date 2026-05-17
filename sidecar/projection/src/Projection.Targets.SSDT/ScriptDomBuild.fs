@@ -737,7 +737,21 @@ module ScriptDomBuild =
                     parens.Expression <- f
                     Some (parens :> BooleanExpression)
 
-    let buildCreateIndex (idx: IndexDef) : CreateIndexStatement =
+    /// Chapter 4.7 slice β — Diagnostics-aware CREATE INDEX builder.
+    /// Returns the typed `CreateIndexStatement` plus a Diagnostics
+    /// stream surfacing filter-parse failures (Source=emitter:ssdt;
+    /// Code=emit.ssdt.index.filterParseFailure; Severity=Warning).
+    /// When the filter parses cleanly, the entries list is empty and
+    /// the resulting CREATE INDEX carries the typed FilterPredicate.
+    /// When the filter fails to parse, the resulting CREATE INDEX
+    /// omits the WHERE clause AND the Diagnostics carries a Warning
+    /// entry consumers can surface in the manifest or per-emit log.
+    ///
+    /// Closes chapter 4.6 slice γ "Diagnostics-aware emitter signature"
+    /// forward signal by providing the canonical emitter contract
+    /// future consumers consume. The legacy `buildCreateIndex` (silent
+    /// skip) delegates to this function via `.Value`.
+    let buildCreateIndexWithDiagnostics (idx: IndexDef) : Diagnostics<CreateIndexStatement> =
         let stmt = CreateIndexStatement()
         stmt.Unique <- idx.IsUnique
         stmt.Name <- bracketed idx.Name
@@ -750,28 +764,31 @@ module ScriptDomBuild =
             colRef.MultiPartIdentifier <- mid
             col.Column <- colRef
             stmt.Columns.Add(col)
-        // Chapter 4.5 slice β — emit INCLUDE columns for covering
-        // indexes. ScriptDom's `CreateIndexStatement.IncludeColumns`
-        // is `IList<ColumnReferenceExpression>` (bare column refs,
-        // no sort order — INCLUDE columns are not sorted per SQL
-        // Server semantic).
+        // Chapter 4.5 slice β — INCLUDE columns for covering indexes.
         for colName in idx.IncludedColumns do
             let colRef = ColumnReferenceExpression()
             let mid = MultiPartIdentifier()
             mid.Identifiers.Add(bracketed colName)
             colRef.MultiPartIdentifier <- mid
             stmt.IncludeColumns.Add(colRef)
-        // Chapter 4.5 slice α — emit `WHERE <expr>` for filtered
-        // indexes. Filter expression parsed via TSql160Parser at
-        // emit time per chapter open Q1; silent-skip on parse
-        // failure per Q3.
+        // Chapter 4.5 slice α — WHERE clause via TSql160Parser, lifted
+        // through the Diagnostics writer per chapter 4.6 slice γ +
+        // chapter 4.7 slice β.
         match idx.Filter with
-        | None -> ()
+        | None -> Diagnostics.ofValue stmt
         | Some raw ->
-            match parseFilterPredicate raw with
-            | Some predicate -> stmt.FilterPredicate <- predicate
-            | None -> ()  // silent-skip; Diagnostic emission deferred
-        stmt
+            tryParseFilterWithDiagnostics raw
+            |> Diagnostics.map (fun predOpt ->
+                predOpt |> Option.iter (fun p -> stmt.FilterPredicate <- p)
+                stmt)
+
+    /// Legacy silent-skip CREATE INDEX builder (chapter 4.5 slice α
+    /// shape). Delegates to `buildCreateIndexWithDiagnostics` +
+    /// drops the Diagnostics entries. Callers wanting filter-parse
+    /// failures surfaced should consume `buildCreateIndexWithDiagnostics`
+    /// directly.
+    let buildCreateIndex (idx: IndexDef) : CreateIndexStatement =
+        (buildCreateIndexWithDiagnostics idx).Value
 
     // -----------------------------------------------------------------------
     // Statement-level dispatch.
