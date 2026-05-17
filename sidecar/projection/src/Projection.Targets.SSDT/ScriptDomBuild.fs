@@ -808,8 +808,7 @@ module ScriptDomBuild =
     /// extended-property convention; the value parameter is `NULL`
     /// when `propertyValue = None`.
     let buildSetExtendedProperty
-            (table: TableId)
-            (target: ExtendedPropertyTarget)
+            (owner: ExtendedPropertyOwner)
             (propertyName: string)
             (propertyValue: string option)
             : ExecuteStatement =
@@ -840,18 +839,33 @@ module ScriptDomBuild =
             | Some v -> nText v
             | None   -> NullLiteral() :> ScalarExpression
 
-        exec.Parameters.Add(parameter "@name"       (nText propertyName))
-        exec.Parameters.Add(parameter "@value"      valueExpr)
-        exec.Parameters.Add(parameter "@level0type" (nText "SCHEMA"))
-        exec.Parameters.Add(parameter "@level0name" (nText table.Schema))
-        exec.Parameters.Add(parameter "@level1type" (nText "TABLE"))
-        exec.Parameters.Add(parameter "@level1name" (nText table.Table))
-        match target with
-        | TableExtendedProperty -> ()
-        | ColumnExtendedProperty col ->
+        exec.Parameters.Add(parameter "@name"  (nText propertyName))
+        exec.Parameters.Add(parameter "@value" valueExpr)
+        // Chapter 4.9 slice ε — multi-level dispatch on owner. SCHEMA-
+        // only emits no @level1; TABLE owners (Table / Column / Index)
+        // always emit @level0=SCHEMA + @level1=TABLE; column / index
+        // add @level2.
+        match owner with
+        | SchemaProperty schema ->
+            exec.Parameters.Add(parameter "@level0type" (nText "SCHEMA"))
+            exec.Parameters.Add(parameter "@level0name" (nText schema))
+        | TableProperty table ->
+            exec.Parameters.Add(parameter "@level0type" (nText "SCHEMA"))
+            exec.Parameters.Add(parameter "@level0name" (nText table.Schema))
+            exec.Parameters.Add(parameter "@level1type" (nText "TABLE"))
+            exec.Parameters.Add(parameter "@level1name" (nText table.Table))
+        | ColumnProperty (table, col) ->
+            exec.Parameters.Add(parameter "@level0type" (nText "SCHEMA"))
+            exec.Parameters.Add(parameter "@level0name" (nText table.Schema))
+            exec.Parameters.Add(parameter "@level1type" (nText "TABLE"))
+            exec.Parameters.Add(parameter "@level1name" (nText table.Table))
             exec.Parameters.Add(parameter "@level2type" (nText "COLUMN"))
             exec.Parameters.Add(parameter "@level2name" (nText col))
-        | IndexExtendedProperty idx ->
+        | IndexProperty (table, idx) ->
+            exec.Parameters.Add(parameter "@level0type" (nText "SCHEMA"))
+            exec.Parameters.Add(parameter "@level0name" (nText table.Schema))
+            exec.Parameters.Add(parameter "@level1type" (nText "TABLE"))
+            exec.Parameters.Add(parameter "@level1name" (nText table.Table))
             exec.Parameters.Add(parameter "@level2type" (nText "INDEX"))
             exec.Parameters.Add(parameter "@level2name" (nText idx))
 
@@ -883,5 +897,5 @@ module ScriptDomBuild =
             Some (buildInsertRow table cells :> TSqlStatement)
         | SetIdentityInsert (table, enabled) ->
             Some (buildSetIdentityInsert table enabled :> TSqlStatement)
-        | SetExtendedProperty (table, target, propName, propValue) ->
-            Some (buildSetExtendedProperty table target propName propValue :> TSqlStatement)
+        | SetExtendedProperty (owner, propName, propValue) ->
+            Some (buildSetExtendedProperty owner propName propValue :> TSqlStatement)

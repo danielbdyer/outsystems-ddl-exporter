@@ -333,28 +333,28 @@ module SsdtDdlEmitter =
             match k.Description with
             | Some desc ->
                 yield Statement.SetExtendedProperty (
-                    table, TableExtendedProperty, "MS_Description", Some desc)
+                    TableProperty table, "MS_Description", Some desc)
             | None -> ()
 
             for ep in k.ExtendedProperties do
                 yield Statement.SetExtendedProperty (
-                    table, TableExtendedProperty, ep.Name, ep.Value)
+                    TableProperty table, ep.Name, ep.Value)
 
             for attr in k.Attributes do
                 let columnName = attr.Column.ColumnName
                 match attr.Description with
                 | Some desc ->
                     yield Statement.SetExtendedProperty (
-                        table, ColumnExtendedProperty columnName, "MS_Description", Some desc)
+                        ColumnProperty (table, columnName), "MS_Description", Some desc)
                 | None -> ()
                 for ep in attr.ExtendedProperties do
                     yield Statement.SetExtendedProperty (
-                        table, ColumnExtendedProperty columnName, ep.Name, ep.Value)
+                        ColumnProperty (table, columnName), ep.Name, ep.Value)
 
             for idx in k.Indexes do
                 for ep in idx.ExtendedProperties do
                     yield Statement.SetExtendedProperty (
-                        table, IndexExtendedProperty (Name.value idx.Name), ep.Name, ep.Value)
+                        IndexProperty (table, Name.value idx.Name), ep.Name, ep.Value)
         }
 
     /// Render one Kind to a typed `SsdtFile`. The CREATE TABLE
@@ -370,6 +370,29 @@ module SsdtDdlEmitter =
     /// statement gets emitted via the pinned-options writer, with
     /// blank-line framing between statements per A33 (deterministic-
     /// ordered schema emission).
+    /// Emit `Module.ExtendedProperties` as SCHEMA-level
+    /// `sp_addextendedproperty` statements when the given kind is the
+    /// alphabetically first kind of its schema within the module. The
+    /// "first kind per schema" gate ensures each module's SCHEMA-level
+    /// properties emit exactly once per distinct schema the module
+    /// occupies, even if the module spans multiple schemas. Chapter 4.9
+    /// slice ε.
+    let private moduleSchemaPropertyStatements (m: Module) (k: Kind) : Statement seq =
+        seq {
+            let schema = k.Physical.Schema
+            let firstKindOfSchema =
+                m.Kinds
+                |> List.filter (fun candidate -> candidate.Physical.Schema = schema)
+                |> List.sortBy (fun candidate -> candidate.SsKey)
+                |> List.tryHead
+            match firstKindOfSchema with
+            | Some first when first.SsKey = k.SsKey ->
+                for ep in m.ExtendedProperties do
+                    yield Statement.SetExtendedProperty (
+                        SchemaProperty schema, ep.Name, ep.Value)
+            | _ -> ()
+        }
+
     let private kindToSsdtFile
         (targetByKey: Map<SsKey, Kind>)
         (pkAttrByKey: Map<SsKey, Attribute>)
@@ -379,6 +402,7 @@ module SsdtDdlEmitter =
         use _ = Bench.scope "emit.ssdt.kindToSsdtFile"
         let statements =
             seq {
+                yield! moduleSchemaPropertyStatements m k
                 yield createTableStatement targetByKey pkAttrByKey k
                 yield! indexStatements k
                 yield! extendedPropertyStatements k

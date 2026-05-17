@@ -121,29 +121,33 @@ type CellValue =
         Raw : string
     }
 
-/// What kind of database object an extended-property attachment
-/// targets, per SQL Server's `sp_addextendedproperty` `@level2type`
-/// + `@level2name` slot. Chapter 4.1.A slice 8 emits these for V2
-/// IR's `Kind.Description` (table-level), `Attribute.Description` +
-/// `Attribute.ExtendedProperties` (column-level), `Kind.
-/// ExtendedProperties` (table-level), and `Index.ExtendedProperties`
-/// (index-level).
+/// What object owns an extended-property attachment in SQL Server's
+/// `sp_addextendedproperty` `@level0…@level2` taxonomy. Chapter 4.9
+/// slice ε — collapses the prior `TableId × ExtendedPropertyTarget`
+/// 2-tuple into a single concept-shaped DU that admits SCHEMA-level
+/// (Module-owned) extended properties naturally. The variants name
+/// *what* the owner IS:
 ///
-/// The DU is concept-shaped per pillar 8 — each variant names *what*
-/// the target IS in V1 / SQL Server's extended-property taxonomy.
-type ExtendedPropertyTarget =
-    /// `@level1type=TABLE, @level1name=<table>` only. Table-level
-    /// extended property (e.g., `MS_Description` on a Kind).
-    | TableExtendedProperty
-    /// `@level1type=TABLE, @level1name=<table>, @level2type=COLUMN,
-    /// @level2name=<column>`. Column-level extended property (e.g.,
-    /// `MS_Description` on an Attribute).
-    | ColumnExtendedProperty of columnName: string
-    /// `@level1type=TABLE, @level1name=<table>, @level2type=INDEX,
-    /// @level2name=<index>`. Index-level extended property
-    /// (chapter A.0' slice ζ carriage; V1 emits these for index
-    /// descriptions when present).
-    | IndexExtendedProperty of indexName: string
+///   - `SchemaProperty` — `@level0type=SCHEMA, @level0name=<schema>`
+///     only. Module-level extended property (V1 emits these for
+///     module-bearing schemas).
+///   - `TableProperty` — `@level0type=SCHEMA, @level1type=TABLE`.
+///     Kind-level extended property (e.g., `MS_Description` on a Kind).
+///   - `ColumnProperty` — `+ @level2type=COLUMN`. Attribute-level
+///     extended property (e.g., `MS_Description` on an Attribute).
+///   - `IndexProperty` — `+ @level2type=INDEX`. Index-level extended
+///     property (chapter A.0' slice ζ carriage; V1 emits these for
+///     index descriptions when present).
+type ExtendedPropertyOwner =
+    /// Module-level (SCHEMA-level) extended property. Chapter 4.9
+    /// slice ε.
+    | SchemaProperty of schema: string
+    /// Kind-level (TABLE-level) extended property.
+    | TableProperty of tableId: TableId
+    /// Attribute-level (COLUMN-level) extended property.
+    | ColumnProperty of tableId: TableId * columnName: string
+    /// Index-level extended property.
+    | IndexProperty of tableId: TableId * indexName: string
 
 type Statement =
     | Blank
@@ -156,15 +160,13 @@ type Statement =
     | CreateIndex of IndexDef
     | InsertRow of TableId * CellValue list
     | SetIdentityInsert of TableId * enabled: bool
-    /// Chapter 4.1.A slice 8: `EXEC sys.sp_addextendedproperty` call
-    /// attaching a named property + (optional) value to a schema
-    /// object. Consumes chapter A.0' slice α's `Kind.Description` +
-    /// `Attribute.Description` and slice ζ's `ExtendedProperties`
-    /// lists (Kind / Attribute / Index). Retires the `Tolerance
-    /// .CommentMetadataUnreflected` deferral when the emitter wires
-    /// this variant into `kindToSsdtFile`.
+    /// `EXEC sys.sp_addextendedproperty` call attaching a named
+    /// property + (optional) value to a schema object. Consumes
+    /// `Module.ExtendedProperties` (SCHEMA-level; chapter 4.9 slice ε),
+    /// `Kind.Description` + `Kind.ExtendedProperties` (TABLE-level),
+    /// `Attribute.Description` + `Attribute.ExtendedProperties`
+    /// (COLUMN-level), and `Index.ExtendedProperties` (INDEX-level).
     | SetExtendedProperty of
-        tableId: TableId *
-        target: ExtendedPropertyTarget *
+        owner: ExtendedPropertyOwner *
         propertyName: string *
         propertyValue: string option
