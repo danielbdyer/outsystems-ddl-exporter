@@ -82,6 +82,7 @@
     <Compile Include="MetadataExtractionSqlTests.fs" />
     <Compile Include="OssysExtractionCanaryTests.fs" />
     <Compile Include="OssysRowsetParityInventoryTests.fs" />
+    <Compile Include="OssysExtractionDiagnosticsParityTests.fs" />
     <Compile Include="IsActiveCarryThroughTests.fs" />
     <Compile Include="IRFidelityLiftTests.fs" />
     <Compile Include="NoSilentDropTests.fs" />

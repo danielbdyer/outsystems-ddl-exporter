@@ -86,6 +86,7 @@ Different V1 capabilities have different shapes of "equivalent output." Per slic
 | 27 | `OutsystemsTriggerJsonRow` (rowset 22 `#TriggerJson`; FOR JSON PATH per entity of triggers) | (not lifted; V2 has no trigger axis) | ⚫ V1-SUNSET | `OssysRowsetParityInventoryTests.``5.1.α row 27`` ` (Skip) | Slice 5.1.α. Underlying trigger evidence tracked at row 23. |
 | 28 | `OutsystemsModuleJsonRow` (rowset 23 `#ModuleJson`; root FOR JSON PATH envelope per module) | (not lifted; V2's `Catalog` IR is the structured equivalent) | ⚫ V1-SUNSET | `OssysRowsetParityInventoryTests.``5.1.α row 28`` ` (Skip) | Slice 5.1.α. The osm_model.json document root. V2 emits SSDT artifacts directly from `Catalog`. |
 | 29 | `OutsystemsMetadataSnapshot.DatabaseName` (envelope field; populated from `SqlConnection.Database`) | (not carried; absent from V2's `MetadataSnapshot`) | 🟡 DIVERGENCE | `OssysRowsetParityInventoryTests.``5.1.α row 29`` ` (Skip) | Slice 5.1.α. V2 treats database identity as a realization-time concern (emission parameter). See `DECISIONS 2026-05-17 (slice 5.1.α) — Database identity is a realization-time concern`. |
+| 30 | V1's operator-debugging telemetry surface during SQL extraction: `Pipeline/Sql/SqlMetadataLog.cs` (~86 LOC; observation accumulator), `Pipeline/SqlExtraction/MetadataRowSnapshot.cs` (~179 LOC; last-row-on-failure context), `Pipeline/SqlExtraction/SqlMetadataDiagnosticsWriter.cs` (~156 LOC; JSON-dump emitter writing to an operator-provided path) | V2's `MetadataSnapshotRunner.runAsync` returns `Result<MetadataSnapshot>` with success or single `ValidationError` on failure; no observation accumulator, no row-snapshot-on-failure, no JSON-dump emitter | 🟠 NOT-MAPPED | `OssysExtractionDiagnosticsParityTests.``5.1.ε row 30`` ` (Skip) | Slice 5.1.ε. Trigger: V2 ships a CLI surface for production OSSYS extraction OR a cutover-windowed failure mode demands partial-state context for post-mortem debugging. Diagnostics-axis row (first non-data-shape row in the matrix). |
 
 ---
 
@@ -93,20 +94,81 @@ Different V1 capabilities have different shapes of "equivalent output." Per slic
 
 The first wave targets the V1 SqlExtraction layer (most relevant to chapter 5.0's pivot). Each row below is a candidate slice; the next-agent should pick the highest-leverage row matching session capacity.
 
+The queue is grouped by **audit section** (A through F per the section
+chart below). Within a section, slices are unordered priority-wise;
+pick what matches the session's capacity. Each chapter-grade entry
+(e.g., 5.2.α, 5.3.α) carries a **sub-slice marker** when the cluster
+is too large for one session arc — the chapter-opening agent
+sub-slices the entry as their first task.
+
+### Section A — Ingest (OSSYS → V2 catalog acquisition)
+
 | Slice | V1 source(s) | Expected scope | Audit-priority rationale |
 |---|---|---|---|
 | ~~5.1.α~~ | ~~`src/Osm.Pipeline/SqlExtraction/IOutsystemsMetadataReader.cs`~~ | ~~~100 LOC; matrix rows 11–28~~ | **Shipped 2026-05-17 → matrix rows 11–29 (8 NOT-MAPPED + 3 DIVERGENCE + 8 V1-SUNSET).** |
-| **5.1.β** | `src/Osm.Pipeline/SqlExtraction/SnapshotValidator.cs` | ~200 LOC; 1 matrix row | Sanity-check semantics V2 may want for live-DB pickup. |
-| **5.1.γ** | `src/Osm.Pipeline/SqlExtraction/SqlClientOutsystemsMetadataReader.cs` | ~300 LOC; 1–3 matrix rows | Connection lifecycle, retry, timeout, transient-error semantics for the production wiring. |
-| **5.1.δ** | `src/Osm.Pipeline/SqlExtraction/FixtureAdvancedSqlExecutor.cs` + `FixtureOutsystemsMetadataReader.cs` | ~200 LOC; 1–2 matrix rows | V1's offline-test-fixture surface — useful precedent for V2's offline-test infrastructure. |
-| **5.1.ε** | `src/Osm.Pipeline/SqlExtraction/SqlMetadataDiagnosticsWriter.cs` | ~150 LOC; 1 matrix row | V1's diagnostic-event surface during extraction. Matters for Diagnostics-axis parity. |
-| **5.1.ζ** | `src/Osm.Pipeline/SqlExtraction/MetadataContractOverrides.cs` | ~100 LOC; 1 matrix row | V1's hook for tolerating contract drift across OutSystems versions. |
-| **5.2.α** | `src/Osm.Domain/Model/*.cs` (the aggregate-root model) | ~2000 LOC; 10+ matrix rows | The biggest single audit cluster. Likely produces many 🔵 V2-EXTENSION + several 🟢 PARITY + 🟠 NOT-MAPPED rows. |
-| **5.2.β** | `src/Osm.Json/Deserialization/*.cs` | ~1000 LOC | V1's JSON shape that V2 currently mirrors via `osm_model.json` parsing. |
-| **5.3.α** | `src/Osm.Smo/PerTableEmission/*.cs` | ~1500 LOC | V1's SMO-based emission. Matters for Schema-axis cutover-fidelity. |
-| **5.3.β** | `src/Osm.Smo/IndexScriptBuilder.cs` + `CreateTableStatementBuilder.cs` | Already partially audited (chapter 4.9 references) | Re-validates chapter 4.9's slice γ + ε against V1 byte-shape. |
+| **5.1.β** | `src/Osm.Pipeline/SqlExtraction/SnapshotValidator.cs` | ~200 LOC; 1 row | Sanity-check semantics V2 may want for live-DB pickup. |
+| **5.1.γ** | `src/Osm.Pipeline/SqlExtraction/SqlClientOutsystemsMetadataReader.cs` | ~300 LOC; 1–3 rows | Connection lifecycle, retry, timeout, transient-error semantics for the production wiring. |
+| **5.1.δ** | `src/Osm.Pipeline/SqlExtraction/FixtureAdvancedSqlExecutor.cs` + `FixtureOutsystemsMetadataReader.cs` | ~200 LOC; 1–2 rows | V1's offline-test-fixture surface — precedent for V2 offline infrastructure. |
+| ~~5.1.ε~~ | ~~`Pipeline/SqlExtraction/SqlMetadataDiagnosticsWriter.cs` + `Pipeline/Sql/SqlMetadataLog.cs` + `Pipeline/SqlExtraction/MetadataRowSnapshot.cs`~~ | ~~~420 LOC; 1 row~~ | **Shipped 2026-05-17 → matrix row 30 (NOT-MAPPED; Diagnostics-axis).** |
+| **5.1.ζ** | `src/Osm.Pipeline/SqlExtraction/MetadataContractOverrides.cs` | ~100 LOC; 1 row | V1's hook for tolerating contract drift across OutSystems versions. |
+| **5.1.σ** | `src/AdvancedSql/outsystems_model_export.sql` | 931 LOC SQL; 1 row | V1's JSON-emitter SQL — closes the AdvancedSql section started at row 1. Likely ⚫ V1-SUNSET (companion to rows 13/21/22/24-28). |
+| **5.2 chapter** — sub-slice at chapter open per the cluster boundaries below |
+| **5.2.α.module** | `Osm.Domain/Model/ModuleModel.cs` + `OsmModel.cs` + `OutSystemsInternalModel.cs` | ~250 LOC; 1–2 rows | V1's module aggregate-root. |
+| **5.2.α.entity** | `Osm.Domain/Model/EntityModel.cs` + `EntityMetadata.cs` | ~250 LOC; 1–2 rows | V1's entity aggregate. |
+| **5.2.α.attribute** | `Osm.Domain/Model/AttributeModel.cs` + `AttributeMetadata.cs` + `AttributeReality.cs` + `AttributeReference.cs` + `AttributeOnDisk*.cs` (3 files) | ~500 LOC; 2–3 rows | V1's attribute aggregate; parity to V2's `AttributeRow` axes. |
+| **5.2.α.index** | `Osm.Domain/Model/IndexModel.cs` + 7 sibling Index*.cs files | ~600 LOC; 2–3 rows | V1's index aggregate; intersects V2 chapter 4.5 + 4.9 work. |
+| **5.2.α.relationship** | `Osm.Domain/Model/RelationshipModel.cs` + `ForeignKeyModel.cs` + `RelationshipActualConstraint.cs` | ~300 LOC; 1–2 rows | V1's relationship + FK aggregate. |
+| **5.2.α.misc** | `Osm.Domain/Model/{SequenceModel,TriggerModel,ExtendedProperty,TemporalRetentionPolicy}.cs` | ~300 LOC; 1–2 rows | Misc aggregates; some carry-forward, some likely ⚫ V1-SUNSET. |
+| **5.2.α.valueobjects** | `Osm.Domain/ValueObjects/*.cs` | TBD; sub-slice when opened | V1's identity + naming VOs; intersects V2's `SsKey` / `Name` types. |
+| **5.2.β.*** | `Osm.Json/Deserialization/*.cs` (47 files) | sub-slice by deserializer cluster; 4–6 slices | V1's JSON shape V2's `osm_model.json` parsing mirrors. |
 
-**Trigger to add a slice to the queue:** any V1 audit slice that touches a new V1 file/cluster. Append a row above. The queue is unordered priority-wise; pick what matches the session's capacity.
+### Section B — Analyze (validate / tighten / profile; chapter 5.4)
+
+| Slice | V1 source(s) | Expected scope | Audit-priority rationale |
+|---|---|---|---|
+| **5.4.α** | `Osm.Validation/Tightening/Validations/{ValidationFinding,ValidationReport}.cs` | ~200 LOC; 1 row | V1's validation-report surface. |
+| **5.4.β.nullability** | `Osm.Validation/Tightening/Signals/Nullability*.cs` (6 files) | ~500 LOC; 1–3 rows | V1's nullability signal cluster; V2 `NullabilityRules` analog. |
+| **5.4.β.fk** | `Osm.Validation/Tightening/Signals/{ForeignKeySupportSignal,MandatorySignal}.cs` + adjacent | ~400 LOC; 1–2 rows | V1's FK + mandatory signals; V2 `ForeignKeyRules` analog. |
+| **5.4.β.unique** | `Osm.Validation/Tightening/Signals/{UniqueCleanSignal,RequiresEvidenceSignal,PrimaryKeySignal}.cs` + adjacent | ~400 LOC; 1–2 rows | V1's uniqueness signal cluster; V2 `UniqueIndexRules` analog. |
+| **5.4.γ** | `Osm.Validation/Tightening/Opportunities/*.cs` | sub-slice when opened | V1's opportunity-emission surface. |
+| **5.4.δ** | `Pipeline/Profiling/*.cs` (28 files) + `Osm.Domain/Profiling/*.cs` | sub-slice when opened | V1's statistical-profile extraction + use. |
+| **5.4.ε** | `Pipeline/Evidence/*.cs` (15 files) | sub-slice when opened | V1's profile / decision evidence carriers. |
+| **5.4.ζ** | `Pipeline/Application/*.cs` (21 files) + `Pipeline/Mediation/*.cs` | sub-slice when opened | V1's decision-to-overlay application pipeline. |
+
+### Section C — Emit (produce artifacts; chapter 5.3 + 5.5)
+
+| Slice | V1 source(s) | Expected scope | Audit-priority rationale |
+|---|---|---|---|
+| **5.3.α.*** | `Osm.Smo/PerTableEmission/*.cs` | sub-slice; 4–6 slices | V1's SMO-based emission; Schema-axis cutover-fidelity. |
+| **5.3.β** | `Osm.Smo/IndexScriptBuilder.cs` + `CreateTableStatementBuilder.cs` | partially audited (chapter 4.9 references) | Re-validates chapter 4.9 slice γ + ε against V1 byte-shape. |
+| **5.5.α** | `Osm.Emission/SsdtManifest.cs` + `SsdtPredicateCoverage.cs` | ~300 LOC; 2 rows | V2 `ManifestEmitter` + `PredicateCoverage` direct analog. Strong 🟢 PARITY candidate. |
+| **5.5.β** | `Osm.Emission/TableEmissionPlan.cs` + `TableEmissionPlanner.cs` + `TablePlanWriter.cs` + `TableHeaderFactory.cs` | ~600 LOC; 2–3 rows | V1's per-table emission planning + writing. |
+| **5.5.γ** | `Osm.Emission/{ManifestBuilder,SsdtEmitter}.cs` + `DynamicEntityInsertGenerator.cs` + `PhasedDynamicEntityInsertGenerator.cs` | ~500 LOC; 2–3 rows | V1's SSDT manifest builder + dynamic insert generators. |
+| **5.5.δ** | `Pipeline/StaticData/*.cs` + `Pipeline/DynamicData/*.cs` (8 files) | ~400 LOC; 2 rows | V1's seed + MERGE emission. V2 has `StaticSeedsEmitter` + `DataEmissionComposer`. |
+| **5.5.ε** | `Pipeline/UatUsers/**/*.cs` (23 files) | sub-slice; 3–4 slices | V1's User-FK reflow (V2 has consumer-side via chapter 4.2). |
+
+### Section D — Orchestrate (pipeline wiring; chapter 5.6)
+
+| Slice | V1 source(s) | Expected scope | Audit-priority rationale |
+|---|---|---|---|
+| **5.6.α** | `Pipeline/Orchestration/Build*.cs` (16+ files) | sub-slice; 6–8 slices per build-step | V1's BuildSsdt pipeline steps; V2 `Projection.Pipeline` analog. |
+| **5.6.β** | `Pipeline/Configuration/*.cs` + `Pipeline/Runtime/*.cs` (16 files) | sub-slice when opened | V1's operator config + runtime verbs. |
+| **5.6.γ** | `Pipeline/Sql/*.cs` + `Pipeline/ModelIngestion/*.cs` (13 files) | sub-slice when opened | V1's SQL execution + model ingestion helpers. |
+
+### Section E — Operate (CLI + load harness; chapter 5.7)
+
+| Slice | V1 source(s) | Expected scope | Audit-priority rationale |
+|---|---|---|---|
+| **5.7.α** | `Osm.Cli/Commands/*.cs` (~30 files) | sub-slice per command — 4–6 slices | V1's CLI command surface; V2 `Projection.Cli` analog. |
+| **5.7.β** | `Osm.LoadHarness/*.cs` (6 files) | ~300 LOC; 1–2 rows | V1's synthetic-load generators. |
+
+### Section F — Compare (schema-diff machinery; chapter 5.8)
+
+| Slice | V1 source(s) | Expected scope | Audit-priority rationale |
+|---|---|---|---|
+| **5.8.α** | `Osm.Dmm/DmmComparator.cs` + `IDmmLens.cs` + `{ScriptDom,Smo,SsdtProject}DmmLens.cs` + `SsdtTableLayoutComparator.cs` | ~600 LOC; 2–3 rows | V1's schema-diff lens machinery; V2's canary `PhysicalSchema` diff is the analog. |
+
+**Trigger to add a slice to the queue:** any V1 audit slice that touches a new V1 file/cluster. Append a row in the appropriate section. The queue is priority-unordered within a section; pick what matches the session's capacity.
 
 ---
 
