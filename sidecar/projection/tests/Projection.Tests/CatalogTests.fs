@@ -210,12 +210,7 @@ let ``Slice ζ: Reference carries IsUserFk : bool field`` () =
 [<Fact>]
 let ``Slice ζ: constructing a Reference with IsUserFk = true carries the flag`` () =
     let userFkRef : Reference =
-        { SsKey           = orderRefToCustomer
-          Name            = Name.create "CreatedByFk" |> Result.value
-          SourceAttribute = orderCustomerFkKey
-          TargetKind      = customerKey
-          OnDelete        = NoAction
-          IsUserFk        = true; HasDbConstraint = false }
+        { IRBuilders.mkReference orderRefToCustomer (Name.create "CreatedByFk" |> Result.value) orderCustomerFkKey customerKey with IsUserFk = true }
     Assert.True userFkRef.IsUserFk
 
 [<Fact>]
@@ -225,10 +220,5 @@ let ``Slice ζ: SymmetricClosure pass inherits IsUserFk from the original refere
     // users), its inverse (users → entity that created it) carries
     // the same flag for consumer gating at emission time.
     let userFkRef : Reference =
-        { SsKey           = orderRefToCustomer
-          Name            = Name.create "CreatedByFk" |> Result.value
-          SourceAttribute = orderCustomerFkKey
-          TargetKind      = customerKey
-          OnDelete        = NoAction
-          IsUserFk        = true; HasDbConstraint = false }
+        { IRBuilders.mkReference orderRefToCustomer (Name.create "CreatedByFk" |> Result.value) orderCustomerFkKey customerKey with IsUserFk = true }
     Assert.True userFkRef.IsUserFk

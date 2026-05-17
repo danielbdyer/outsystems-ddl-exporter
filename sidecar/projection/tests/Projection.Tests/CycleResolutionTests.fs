@@ -24,12 +24,7 @@ let private mkAttr (key: string) (nullable: bool) : Attribute =
       IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
 
 let private mkRef (sourceAttrKey: string) (action: ReferenceAction) : Reference =
-    { SsKey           = refKey ["x"]
-      Name            = Name.create "x" |> Result.value
-      SourceAttribute = testKey sourceAttrKey
-      TargetKind      = kindKey ["target"]
-      OnDelete        = action
-      IsUserFk        = false; HasDbConstraint = false }
+    { IRBuilders.mkReference (refKey ["x"]) (Name.create "x" |> Result.value) (testKey sourceAttrKey) (kindKey ["target"]) with OnDelete = action }
 
 let private kindWith (a: Attribute) : Kind =
     { SsKey      = kindKey ["owner"]

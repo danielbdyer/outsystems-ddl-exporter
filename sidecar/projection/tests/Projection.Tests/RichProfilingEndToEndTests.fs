@@ -113,12 +113,7 @@ let private child : Kind =
             Column       = { ColumnName = "PARENTID"; IsNullable = true }
             IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
       References = [
-          { SsKey           = childToParentRefKey
-            Name            = mkName "Parent"
-            SourceAttribute = childParentFkKey
-            TargetKind      = parentKindKey
-            OnDelete        = NoAction
-            IsUserFk        = false; HasDbConstraint = false } ]
+          IRBuilders.mkReference childToParentRefKey (mkName "Parent") childParentFkKey parentKindKey ]
       Indexes = []
       Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 

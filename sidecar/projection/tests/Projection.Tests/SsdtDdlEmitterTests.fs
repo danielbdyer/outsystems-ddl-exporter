@@ -462,36 +462,12 @@ let private indexedKind : Kind =
         References = []
         Indexes = [
             // Non-unique index on Lookup column.
-            {
-                SsKey = indexedNonUniqueIdxKey
-                Name = mkName "IX_OSUSR_X_INDEXED_LOOKUP"
-                Columns = [ attrKey ["Indexed"; "Lookup"] ]
-                IsUnique = false
-                IsPrimaryKey = false
-                ExtendedProperties = []
-                Filter = None
-                IncludedColumns = []; IsPlatformAuto = false }
+            IRBuilders.mkIndex indexedNonUniqueIdxKey (mkName "IX_OSUSR_X_INDEXED_LOOKUP") [ attrKey ["Indexed"; "Lookup"] ]
             // Unique index on Code column.
-            {
-                SsKey = indexedUniqueIdxKey
-                Name = mkName "UIX_OSUSR_X_INDEXED_CODE"
-                Columns = [ attrKey ["Indexed"; "Code"] ]
-                IsUnique = true
-                IsPrimaryKey = false
-                ExtendedProperties = []
-                Filter = None
-                IncludedColumns = []; IsPlatformAuto = false }
+            { IRBuilders.mkIndex indexedUniqueIdxKey (mkName "UIX_OSUSR_X_INDEXED_CODE") [ attrKey ["Indexed"; "Code"] ] with IsUnique = true }
             // PK index — should be SKIPPED by the emitter (PK is inlined
             // in CREATE TABLE per V1 convention).
-            {
-                SsKey = indexedPkIdxKey
-                Name = mkName "PK_OSUSR_X_INDEXED"
-                Columns = [ attrKey ["Indexed"; "Id"] ]
-                IsUnique = true
-                IsPrimaryKey = true
-                ExtendedProperties = []
-                Filter = None
-                IncludedColumns = []; IsPlatformAuto = false }
+            { IRBuilders.mkIndex indexedPkIdxKey (mkName "PK_OSUSR_X_INDEXED") [ attrKey ["Indexed"; "Id"] ] with IsUnique = true; IsPrimaryKey = true }
         ]
         Description = None
         IsActive = true
@@ -658,13 +634,7 @@ let private childKind : Kind =
                 }
         ]
         References = [
-            {
-                SsKey = childParentFkKey
-                Name = mkName "ParentFk"
-                SourceAttribute = childParentIdAttrKey
-                TargetKind = parentKindKey
-                OnDelete = NoAction
-                IsUserFk = false; HasDbConstraint = false }
+            IRBuilders.mkReference childParentFkKey (mkName "ParentFk") childParentIdAttrKey parentKindKey
         ]
         Indexes = []; Description = None
         IsActive = true
@@ -849,12 +819,7 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
                   IsPrimaryKey = false; IsMandatory = true
                   Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
           References =
-              [ { SsKey = crossRefKey
-                  Name = mkName "FkToA"
-                  SourceAttribute = bFkAttr
-                  TargetKind = aKindKey
-                  OnDelete = NoAction
-                  IsUserFk = false; HasDbConstraint = false } ]
+              [ IRBuilders.mkReference crossRefKey (mkName "FkToA") bFkAttr aKindKey ]
           Indexes = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog : Catalog =
@@ -919,9 +884,7 @@ let ``Slice 6: cross-module FK emits inline FOREIGN KEY constraint`` () =
                   IsPrimaryKey = false; IsMandatory = true
                   Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
           References =
-              [ { SsKey = crossRefKey; Name = mkName "FkToA"
-                  SourceAttribute = bFkAttr; TargetKind = aKindKey
-                  OnDelete = NoAction; IsUserFk = false; HasDbConstraint = false } ]
+              [ IRBuilders.mkReference crossRefKey (mkName "FkToA") bFkAttr aKindKey ]
           Indexes = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog : Catalog =
@@ -970,9 +933,7 @@ let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module F
                   IsPrimaryKey = false; IsMandatory = true
                   Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
           References =
-              [ { SsKey = crossRefKey; Name = mkName "FkToA"
-                  SourceAttribute = bFkAttr; TargetKind = aKindKey
-                  OnDelete = NoAction; IsUserFk = false; HasDbConstraint = false } ]
+              [ IRBuilders.mkReference crossRefKey (mkName "FkToA") bFkAttr aKindKey ]
           Indexes = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog : Catalog =

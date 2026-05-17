@@ -36,11 +36,7 @@ let private mkIndex
     (columns: SsKey list)
     (isUnique: bool)
     : Index =
-    { SsKey        = ssKey key
-      Name         = name "IX"
-      Columns      = columns
-      IsUnique     = isUnique
-      IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false }
+    { IRBuilders.mkIndex (ssKey key) (name "IX") columns with IsUnique = isUnique }
 
 let private mkConfig (single: bool) (composite: bool) : UniqueIndexTighteningConfig =
     UniqueIndexTighteningConfig.create single composite

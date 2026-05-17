@@ -174,12 +174,7 @@ let private addReference (sourceKey: SsKey) (targetKey: SsKey) (refKey: SsKey) (
                      |> List.map (fun k ->
                          if k.SsKey = sourceKey then
                              let newRef : Reference =
-                                 { SsKey           = refKey
-                                   Name            = Name.create refName |> Result.value
-                                   SourceAttribute = sourceAttrKey
-                                   TargetKind      = targetKey
-                                   OnDelete        = NoAction
-                                   IsUserFk        = false; HasDbConstraint = false }
+                                 IRBuilders.mkReference refKey (Name.create refName |> Result.value) sourceAttrKey targetKey
                              { k with References = newRef :: k.References }
                          else k) }))
       Sequences = c.Sequences }
@@ -394,12 +389,7 @@ let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Ki
             Column = { ColumnName = "FK"; IsNullable = false }
             IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
       References = [
-          { SsKey = mkKey fkKey
-            Name = mkName "ToOther"
-            SourceAttribute = attrFk
-            TargetKind = targetKey
-            OnDelete = NoAction
-            IsUserFk = false; HasDbConstraint = false } ]
+          IRBuilders.mkReference (mkKey fkKey) (mkName "ToOther") attrFk targetKey ]
       Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 [<Fact>]
@@ -449,12 +439,7 @@ let private kindWithRef
             Column = { ColumnName = "FK"; IsNullable = sourceAttrNullable }
             IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
       References = [
-          { SsKey = mkKey refKey
-            Name = mkName "ToOther"
-            SourceAttribute = attrFk
-            TargetKind = targetKey
-            OnDelete = onDelete
-            IsUserFk = false; HasDbConstraint = false } ]
+          { IRBuilders.mkReference (mkKey refKey) (mkName "ToOther") attrFk targetKey with OnDelete = onDelete } ]
       Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private noRefKind (kindKey: string) : Kind =

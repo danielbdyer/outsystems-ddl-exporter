@@ -375,9 +375,7 @@ let ``Slice ι: composeRendered emits Phase-1 (MERGE) of every kind before Phase
                       IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
                 ]
             References =
-                [ { SsKey = refKey; Name = mkName "RefSelf"
-                    SourceAttribute = parentKey; TargetKind = kindKey
-                    OnDelete = NoAction; IsUserFk = false; HasDbConstraint = false } ]
+                [ IRBuilders.mkReference refKey (mkName "RefSelf") parentKey kindKey ]
             Indexes    = []
             Description = None
             IsActive = true

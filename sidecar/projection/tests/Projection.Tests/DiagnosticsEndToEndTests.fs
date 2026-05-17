@@ -50,11 +50,7 @@ let private mkIndex
     (columns: SsKey list)
     (isUnique: bool)
     : Index =
-    { SsKey        = ssKey key
-      Name         = name "IX"
-      Columns      = columns
-      IsUnique     = isUnique
-      IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false }
+    { IRBuilders.mkIndex (ssKey key) (name "IX") columns with IsUnique = isUnique }
 
 /// Catalog with one already-unique single-column index (Customer.Name)
 /// plus three non-unique single-column indexes that will produce
@@ -382,12 +378,7 @@ let private fkCatalog : Catalog =
                 IsPrimaryKey = false
                 IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
           References = [
-              { SsKey           = fkRefKey
-                Name            = name "FkSource_Target"
-                SourceAttribute = fkSourceAttrKey
-                TargetKind      = fkTargetEntityKey
-                OnDelete        = NoAction
-                IsUserFk        = false; HasDbConstraint = false } ]
+              IRBuilders.mkReference fkRefKey (name "FkSource_Target") fkSourceAttrKey fkTargetEntityKey ]
           Indexes = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
@@ -509,12 +500,7 @@ let ``end-to-end: ForeignKey emits keep-reason and success-with-caveat entries s
     let secondRefKey  = ssKey "OS_REF_FkEnd_Source_Target_Strict"
     let secondAttrKey = ssKey "OS_ATTR_FkEnd_Source_StrictTargetId"
     let strictReference : Reference =
-        { SsKey           = secondRefKey
-          Name            = name "FkSource_StrictTarget"
-          SourceAttribute = secondAttrKey
-          TargetKind      = fkTargetEntityKey
-          OnDelete        = NoAction
-          IsUserFk        = false; HasDbConstraint = false }
+        IRBuilders.mkReference secondRefKey (name "FkSource_StrictTarget") secondAttrKey fkTargetEntityKey
     let strictAttribute : Attribute =
         { SsKey        = secondAttrKey
           Name         = name "StrictTargetId"

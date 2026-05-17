@@ -85,12 +85,7 @@ let ``missingTarget: target kind absent from catalog ⇒ DoNotEnforce(MissingTar
     // target.
     let danglingTargetKey = ssKey "OS_KIND_NoSuchKind"
     let danglingRef : Reference =
-        { SsKey           = ssKey "OS_REF_Order_Dangling"
-          Name            = name "Dangling"
-          SourceAttribute = orderCustomerFkKey
-          TargetKind      = danglingTargetKey
-          OnDelete        = NoAction
-          IsUserFk        = false; HasDbConstraint = false }
+        IRBuilders.mkReference (ssKey "OS_REF_Order_Dangling") (name "Dangling") orderCustomerFkKey danglingTargetKey
     let cfg = mkConfig true true true
     let decision = decide cfg sampleCatalog order danglingRef Profile.empty
     Assert.Equal(
