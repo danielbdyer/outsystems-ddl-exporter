@@ -110,6 +110,7 @@
     <Compile Include="ManifestEmitterTests.fs" />
     <Compile Include="ManifestCoverageTests.fs" />
     <Compile Include="ManifestPredicateCoverageTests.fs" />
+    <Compile Include="ManifestUnsupportedTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />
     <Compile Include="SiblingEmitterContractTests.fs" />

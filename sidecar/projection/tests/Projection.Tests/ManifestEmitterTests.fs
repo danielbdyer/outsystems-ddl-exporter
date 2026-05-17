@@ -107,17 +107,27 @@ let ``Chapter 4.4 slice β: ManifestEmitter PredicateCoverage emits typed object
     Assert.NotNull (pc.["predicateCounts"])
 
 [<Fact>]
-let ``ManifestEmitter chapter-4.4-territory fields still pending: preRemediation + unsupported`` () =
-    // After slice α + β, two deferrals remain. Unsupported retires
-    // at slice γ. PreRemediation stays empty-array per V2_DRIVER
-    // §154 (RemediationEmitter deferred to chapter 5+).
+let ``Chapter 4.4 slice γ: ManifestEmitter Unsupported emits sorted divergence names (not empty)`` () =
+    // Slice γ retires the `unsupported = []` default. The field now
+    // emits ToleratedDivergence.allKnown rendered as sorted strings.
+    let enriched = enrich sampleCatalog
+    let json = ManifestEmitter.toJson (ManifestEmitter.emit enriched)
+    let root = requireChild "root" (JsonNode.Parse(json))
+    let unsupported = requireChild "unsupported" root.["unsupported"]
+    let arr = unsupported.AsArray()
+    // At least 4 entries (current ToleratedDivergence.allKnown
+    // cardinality at chapter 4.4 close).
+    Assert.True (arr.Count >= 4, sprintf "expected ≥ 4 unsupported entries, got %d" arr.Count)
+
+[<Fact>]
+let ``ManifestEmitter preRemediation still pending: stays empty-array per V2_DRIVER §154`` () =
+    // After slices α + β + γ, only preRemediation remains empty per
+    // V2_DRIVER §154 (RemediationEmitter deferred to chapter 5+).
     let enriched = enrich sampleCatalog
     let json = ManifestEmitter.toJson (ManifestEmitter.emit enriched)
     let root = requireChild "root" (JsonNode.Parse(json))
     let preRemediation = requireChild "preRemediation" root.["preRemediation"]
-    let unsupported = requireChild "unsupported" root.["unsupported"]
     Assert.Equal (0, preRemediation.AsArray().Count)
-    Assert.Equal (0, unsupported.AsArray().Count)
 
 [<Fact>]
 let ``ManifestEmitter Tables order matches catalog declaration order`` () =

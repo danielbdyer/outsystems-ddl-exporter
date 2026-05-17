@@ -378,6 +378,46 @@ module PredicateCoverage =
         { Tables = tables; PredicateCounts = counts }
 
 
+/// Slice γ (chapter 4.4) — manifest's `Unsupported` field
+/// renders each `ToleratedDivergence` as its discriminator name,
+/// sorted by string comparison for T1 byte-determinism. Mirrors
+/// V1's `Unsupported : IReadOnlyList<string>` field shape.
+///
+/// Pillar-9 classification: DataIntent — `allKnown` is the
+/// closed-DU enumeration of V1↔V2 emit divergences V2 currently
+/// exhibits; no operator opinion at compute time.
+///
+/// Forward signal (per chapter 4.4 open Q3): when a downstream
+/// consumer demands per-divergence rationale strings (not just
+/// names), `Unsupported` widens to a typed record list and this
+/// module's signature changes accordingly.
+[<RequireQualifiedAccess>]
+module Unsupported =
+
+    /// Render `ToleratedDivergence` as its V1-vocabulary
+    /// discriminator name (matches the F# DU case name; preserves
+    /// V1 ubiquitous language per pillar 8).
+    let private toName (d: ToleratedDivergence) : string =
+        match d with
+        | ToleratedDivergence.HeaderCommentsOmitted        -> "HeaderCommentsOmitted"
+        | ToleratedDivergence.PostDeployForeignKeysSplit   -> "PostDeployForeignKeysSplit"
+        | ToleratedDivergence.IndexesUnreflected           -> "IndexesUnreflected"
+        | ToleratedDivergence.StaticPopulationsUnreflected -> "StaticPopulationsUnreflected"
+
+    /// Compute the manifest's `Unsupported` list. Renders every
+    /// empirically-known `ToleratedDivergence` variant as a string
+    /// in sorted order. T1 byte-determinism: same input → same
+    /// output (the input is empty unit; the output is the closed
+    /// enumeration). Bench scope per iterator-logging-as-first-
+    /// class-outcome discipline.
+    let compute () : string list =
+        use _ = Bench.scope "emit.manifest.unsupported"
+        ToleratedDivergence.allKnown
+        |> Set.toList
+        |> List.map toName
+        |> List.sort
+
+
 /// Slice α (chapter 4.4) — `Catalog -> CoverageSummary` computation.
 /// V2 emits every kind from the catalog (T11 keyset coverage); the
 /// computation reduces to `CreateComplete` over per-axis catalog
@@ -495,6 +535,12 @@ module ManifestEmitter =
             /// typed `PredicateName` values that render at the JSON
             /// terminal.
             PredicateCoverage : PredicateCoverage
+            /// **Chapter 4.4 slice γ** — V1↔V2 emit divergences in
+            /// play, rendered as sorted strings. Retires the
+            /// `chapter 4.4 fills` deferral for the Unsupported
+            /// axis. Mirrors V1's `Unsupported : IReadOnlyList<string>`
+            /// shape.
+            Unsupported : string list
         }
 
     /// Build the manifest from a Catalog + explicit registry-metadata
@@ -539,6 +585,7 @@ module ManifestEmitter =
             RegistryDigest = TransformRegistry.digest registry
             Coverage = Coverage.compute catalog
             PredicateCoverage = PredicateCoverage.compute catalog
+            Unsupported = Unsupported.compute ()
         }
 
     /// Build with the canonical production registry
@@ -627,11 +674,16 @@ module ManifestEmitter =
             predicateCountsArr.Add(countObj)
         predicateCoverageObj.Add("predicateCounts", predicateCountsArr)
         doc.Add("predicateCoverage", predicateCoverageObj :> JsonNode)
-        // Chapter 4.4 slice γ territory — Unsupported retires at γ.
+        // Chapter 4.4 slice γ — V1↔V2 emit divergences in play,
+        // sorted by string comparison. Retires the prior empty-array
+        // default.
+        let unsupportedArr = JsonArray()
+        for name in manifest.Unsupported do
+            unsupportedArr.Add(requireValue "unsupported.entry" (JsonValue.Create(name)))
+        doc.Add("unsupported", unsupportedArr)
         // PreRemediation stays empty-array per V2_DRIVER §154
         // (RemediationEmitter deferred to chapter 5+).
         doc.Add("preRemediation", JsonArray() :> JsonNode)
-        doc.Add("unsupported", JsonArray() :> JsonNode)
         doc :> JsonNode
 
     /// Render the manifest to JSON text. The terminal serialization
