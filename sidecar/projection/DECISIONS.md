@@ -12401,3 +12401,125 @@ Recorded in `V1_PARITY_MATRIX.md` row 38 as 🟡 DIVERGENCE.
   rather than a config-overlay.
 
 ---
+
+## 2026-05-17 (slice 5.8.α) — DMM lens machinery sunset; schema-diff concept harvested as future CLI verb
+
+V1's `Osm.Dmm` cluster (~2200 LOC across 8 files) is V1's schema-diff
+machinery. The architecture:
+
+- `IDmmLens<TSource>` — a port that produces `IReadOnlyList<DmmTable>`
+  from a source-of-unknown-kind.
+- Three lens adapters: `ScriptDomDmmLens` (parses raw T-SQL via
+  `Microsoft.SqlServer.TransactSql.ScriptDom`), `SmoDmmLens` (reads
+  the SMO model), `SsdtProjectDmmLens` (reads an SSDT project from
+  disk).
+- `DmmComparator` — feature-gated structural diff over Columns,
+  PrimaryKeys, Indexes, ForeignKeys (each axis can be enabled/disabled
+  via `DmmComparisonFeatures` flags).
+- `DmmModels` — DTOs (`DmmTable`, `DmmColumn`, `DmmIndex`, etc.).
+- `SsdtTableLayoutComparator` — specialized comparator for table-
+  layout drift.
+
+V1's operator-facing use case: an ad-hoc "compare these two schema
+sources" affordance. V1's pipeline uses it internally (e.g., DACPAC
+build verification: compare the produced `.dacpac` against an
+expected reference).
+
+**Decision: drop the V1 implementation; harvest the concept.**
+
+The V1 implementation will not be ported to V2 for three reasons:
+
+1. **V2's canary subsumes the load-bearing fidelity claim.** The
+   `PhysicalSchema` round-trip diff (source → emit → deploy → readback
+   → assert source ≈ target) is the cutover-fidelity gate. It
+   structurally enforces equivalence on the same axes V1's
+   `DmmComparator` toggles (columns / PKs / indexes / FKs), but only
+   for the specific source/target pair the canary exercises. For that
+   pair, V2 is strictly stronger than V1 (V2 enforces equivalence at
+   commit time; V1 was an ad-hoc operator tool).
+
+2. **The V1 lens classes are V1-trunk-tied.** `SsdtProjectDmmLens`
+   consumes V1's `SsdtProjectMetadata` model. Porting would either
+   carry V1's domain model into V2 (violating the V2 self-containment
+   discipline; `DECISIONS 2026-05-16 (later)`) or rewrite each lens
+   from scratch anyway. If we're rewriting from scratch, we adopt the
+   F# closed-DU idiom over the `IDmmLens<TSource>` interface.
+
+3. **The concept is genuinely worth harvesting.** V2 today cannot
+   diff arbitrary schema-source pairs (e.g., `(SSDT project, DACPAC
+   file)`, `(deployed before, deployed after)`). An operator-facing
+   `compare` verb is missing capability — V2's CLI exposes 4 verbs
+   (`emit` / `deploy` / `canary` / `--help`), and the canary case
+   is specifically `(live OSSYS source, live deployed target)`. A
+   generalized `compare` is a real CLI gap.
+
+**The harvest shape.**
+
+The V2 capability is reserved at matrix row 41 with the following
+structural plan:
+
+- Closed-DU `DiffSource` over the V1 interface pattern:
+  ```fsharp
+  type DiffSource =
+      | LiveDb of connectionString : string * databaseName : string
+      | SsdtProject of directory : string
+      | DacpacFile of path : string
+      | RawSql of text : string
+  ```
+- Core function: `Compare.run : DiffSource -> DiffSource -> Diagnostics<SchemaDiff>`
+- Per-variant adapter in `Projection.Adapters.{Sql,SSDT,Dacpac,RawSql}`.
+  - `LiveDb` adapter: already exists at
+    `Projection.Adapters.Sql.PhysicalSchemaReader`.
+  - `SsdtProject` adapter: leverages V2's existing SSDT reader.
+  - `DacpacFile` adapter: new, gated on the DACPAC adapter slice
+    (chapter 5.x.dacpac, currently deferred per `BACKLOG.md`
+    Phase 8).
+  - `RawSql` adapter: new, parses via `ScriptDom` (V2 already uses
+    ScriptDom for emission; consumption pattern is symmetric).
+- `SchemaDiff` is the typed diff payload — closed-DU per axis
+  (`ColumnDelta`, `PrimaryKeyDelta`, `IndexDelta`, `ForeignKeyDelta`)
+  emitted as `Diagnostics<SchemaDiff>` so the writer-monad chorus
+  discipline holds (`DECISIONS 2026-05-13 — Pass return-type
+  codification`).
+- CLI surface: `projection compare <left> <right>` next to `canary`
+  in `Projection.Cli/Program.fs`. Source specifiers parse from
+  `--source-{kind} <args>` flag pairs.
+
+**Acceptance.** A property test asserts T11 sibling-commutativity:
+for any `(a, b)` `DiffSource` pair, `Compare.run a b` produces a
+diff whose **inverse** equals `Compare.run b a` (column-added
+inverts to column-removed; same for all delta axes). This makes the
+operator-facing affordance algebraically clean: `diff a b` is
+information-equivalent to `diff b a` with directions flipped.
+
+**Dependencies.**
+- DACPAC adapter (matrix row 41 lift requires the DACPAC variant; the
+  V1 DACPAC build verification path is the strongest evidence the
+  variant is needed; deferred until DACPAC slice opens).
+- The Sql / SSDT adapters already exist; the LiveDb ↔ LiveDb,
+  LiveDb ↔ SsdtProject, and SsdtProject ↔ SsdtProject shapes can
+  ship today.
+
+**Trigger to open the chapter.** Operator workflow demands ad-hoc
+schema-diff outside the canary's specific scope, OR cutover dry-run
+discovers a diff case the canary doesn't cover. Likely shape: a
+small "chapter 5.cli.compare" slice; ~3-5 sessions.
+
+Recorded in `V1_PARITY_MATRIX.md` rows 40 (⚫ V1-SUNSET; V1 impl
+sunsets with V1) + 41 (🟠 NOT-MAPPED; V2 `compare` verb reserved).
+
+### Cross-references
+
+- `DECISIONS 2026-05-16 (later) — V2 self-containment + carbon-copy
+  editorial inheritance` — the parent discipline this entry refines
+  for the "drop V1 impl when it's V1-trunk-tied; harvest the concept
+  cleanly" pattern.
+- `CLAUDE.md` operating-disciplines table — "Sibling-wrapper
+  discipline" parallel: the closed-DU `DiffSource` over the
+  `IDmmLens<TSource>` interface follows the same F# idiom shift
+  (DUs over interfaces) that other V2 adapter ports have taken.
+- `V2_DRIVER.md` per-axis correctness stakes — schema-axis fidelity
+  is V2-driver-mode load-bearing; the canary is the today-mechanism,
+  the `compare` verb extends it.
+
+---
