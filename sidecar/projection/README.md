@@ -379,6 +379,38 @@ Build clean under `TreatWarningsAsErrors=true`; lint clean across
   surfaces as a `Skip` test stub at the test-file level, not as
   ADMIRE-prose commentary.
 
+## Status at chapter A.4.7' close (2026-05-17; registry becomes load-bearing for execution)
+
+- **1262 non-canary tests passing** + canary tests Docker-gated.
+  0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`;
+  lint count 13 — unchanged from chapter A.4.7 close baseline.
+- **Chapter A.4.7' shipped 8 substantive slices in one ship**
+  (α / β / γ / δ / ε / ζ / η / θ): `ComposeState` + `PassChainAdapter`
+  + `RegisteredTransforms` + `Compose.project` registry-driven +
+  `Compose.runSkeleton` + `TransformRegistry.digest` + `osm emit
+  --skeleton-only` CLI + `let run` private across 12 passes + A41
+  amended. See `CHAPTER_A_4_7_PRIME_CLOSE.md`.
+- **A41 amended (execution totality)**: `Compose.project` consumes
+  `RegisteredTransforms.allChainSteps` as the canonical execution
+  loop; bypassing the registry is structurally impossible because
+  the hand-coded pass sequence has retired.
+  L3-CC-Transform-Totality's underwriting tightens from metadata
+  totality (chapter A.4.7) to metadata + execution totality
+  (Bucket A preserved; backing strengthens).
+- **5/5 bidirectional property tests** green: skeleton-purity at
+  filter-shape (chapter A.4.7); skeleton-purity at true-execution
+  (NEW); overlay-exercise; totality coverage; registry-digest
+  round-trip (NEW). The chapter exit gate is met.
+- **`let run` private in all 12 pass modules**. Public callable is
+  `<Pass>.registered.Run` only. ~308 call sites migrated via
+  per-test-file shape-restoring shims (test-private; not a module
+  surface). Parallel-exposure transition affordance retired.
+- **Manifest carries `registry.digest`** (SHA256 over sorted
+  `RegisteredTransforms.all` metadata) for downstream audit
+  consumers; perturbation-sensitive + permutation-invariant.
+- **CLI exposes `osm emit --skeleton-only`** as the operator-facing
+  baseline (binary toggle; per-OverlayAxis flags deferred-with-trigger).
+
 ## Status at chapter-4.1.A close arc + 4.1.B in-flight (2026-05-10; joint chapter close ritual ran)
 
 - **840 non-canary tests passing** + ~16 Docker-dependent canary
