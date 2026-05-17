@@ -80,7 +80,7 @@ let private mkOrderKind () : Kind =
                 SourceAttribute = createdByKey
                 TargetKind      = mkKey ["IDM"; "User"]  // platform User kind (synthetic)
                 OnDelete        = NoAction
-                IsUserFk        = true } ]  // slice ζ User-FK marker
+                IsUserFk        = true; HasDbConstraint = false } ]  // slice ζ User-FK marker
         Indexes    = []
         Description = None
         IsActive = true

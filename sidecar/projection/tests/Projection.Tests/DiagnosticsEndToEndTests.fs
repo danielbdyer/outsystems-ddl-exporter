@@ -387,7 +387,7 @@ let private fkCatalog : Catalog =
                 SourceAttribute = fkSourceAttrKey
                 TargetKind      = fkTargetEntityKey
                 OnDelete        = NoAction
-                IsUserFk        = false } ]
+                IsUserFk        = false; HasDbConstraint = false } ]
           Indexes = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
@@ -514,7 +514,7 @@ let ``end-to-end: ForeignKey emits keep-reason and success-with-caveat entries s
           SourceAttribute = secondAttrKey
           TargetKind      = fkTargetEntityKey
           OnDelete        = NoAction
-          IsUserFk        = false }
+          IsUserFk        = false; HasDbConstraint = false }
     let strictAttribute : Attribute =
         { SsKey        = secondAttrKey
           Name         = name "StrictTargetId"

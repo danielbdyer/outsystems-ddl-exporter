@@ -509,6 +509,19 @@ type Reference = {
     /// otherwise. Slice η emitters consume this flag to gate User-
     /// FK column rewriting at row-emission time.
     IsUserFk        : bool
+    /// True iff this reference is backed by a real SQL Server FK
+    /// constraint (a `FOREIGN KEY ... REFERENCES` clause). V1's
+    /// `hasDbConstraint` int-flag (COALESCE'd from
+    /// `outsystems_model_export.sql:730` HasFK column). When false,
+    /// the reference exists only at the OutSystems model level
+    /// (logical-only FK); when true, a corresponding DB constraint
+    /// materializes the reference at the storage layer.
+    ///
+    /// Chapter 4.6 slice α — IR fidelity lift retiring chapter 4.4's
+    /// `HasLogicalForeignKeyWithoutDbConstraint` +
+    /// `HasLogicalForeignKeyWithDbConstraint` always-false
+    /// PredicateName variants.
+    HasDbConstraint : bool
 }
 
 

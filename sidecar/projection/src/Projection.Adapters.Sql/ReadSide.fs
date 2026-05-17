@@ -648,6 +648,11 @@ module ReadSide =
                     // chapter 4.2's adapter-integration boundary
                     // resolves the flag at the OSSYS-source seam.
                     IsUserFk = false
+                    // Chapter 4.6 slice α — ReadSide reconstructs
+                    // Reference from `sys.foreign_keys`, which by
+                    // definition lists references backed by DB
+                    // constraints. Always true on this path.
+                    HasDbConstraint = true
                 }
         }
 

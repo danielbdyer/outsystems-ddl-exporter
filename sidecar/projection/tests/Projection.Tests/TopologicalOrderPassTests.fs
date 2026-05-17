@@ -179,7 +179,7 @@ let private addReference (sourceKey: SsKey) (targetKey: SsKey) (refKey: SsKey) (
                                    SourceAttribute = sourceAttrKey
                                    TargetKind      = targetKey
                                    OnDelete        = NoAction
-                                   IsUserFk        = false }
+                                   IsUserFk        = false; HasDbConstraint = false }
                              { k with References = newRef :: k.References }
                          else k) }))
       Sequences = c.Sequences }
@@ -399,7 +399,7 @@ let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Ki
             SourceAttribute = attrFk
             TargetKind = targetKey
             OnDelete = NoAction
-            IsUserFk = false } ]
+            IsUserFk = false; HasDbConstraint = false } ]
       Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 [<Fact>]
@@ -454,7 +454,7 @@ let private kindWithRef
             SourceAttribute = attrFk
             TargetKind = targetKey
             OnDelete = onDelete
-            IsUserFk = false } ]
+            IsUserFk = false; HasDbConstraint = false } ]
       Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private noRefKind (kindKey: string) : Kind =

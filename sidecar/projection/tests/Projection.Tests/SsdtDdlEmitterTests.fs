@@ -667,8 +667,7 @@ let private childKind : Kind =
                 SourceAttribute = childParentIdAttrKey
                 TargetKind = parentKindKey
                 OnDelete = NoAction
-                IsUserFk = false
-            }
+                IsUserFk = false; HasDbConstraint = false }
         ]
         Indexes = []; Description = None
         IsActive = true
@@ -858,7 +857,7 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
                   SourceAttribute = bFkAttr
                   TargetKind = aKindKey
                   OnDelete = NoAction
-                  IsUserFk = false } ]
+                  IsUserFk = false; HasDbConstraint = false } ]
           Indexes = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog : Catalog =
@@ -925,7 +924,7 @@ let ``Slice 6: cross-module FK emits inline FOREIGN KEY constraint`` () =
           References =
               [ { SsKey = crossRefKey; Name = mkName "FkToA"
                   SourceAttribute = bFkAttr; TargetKind = aKindKey
-                  OnDelete = NoAction; IsUserFk = false } ]
+                  OnDelete = NoAction; IsUserFk = false; HasDbConstraint = false } ]
           Indexes = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog : Catalog =
@@ -976,7 +975,7 @@ let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module F
           References =
               [ { SsKey = crossRefKey; Name = mkName "FkToA"
                   SourceAttribute = bFkAttr; TargetKind = aKindKey
-                  OnDelete = NoAction; IsUserFk = false } ]
+                  OnDelete = NoAction; IsUserFk = false; HasDbConstraint = false } ]
           Indexes = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog : Catalog =

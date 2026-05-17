@@ -302,13 +302,16 @@ module PredicateName =
         | PredicateName.HasLogicalForeignKey ->
             not (List.isEmpty k.References)
         | PredicateName.HasLogicalForeignKeyWithoutDbConstraint ->
-            // No V2 IR evidence: `Reference` doesn't carry the
-            // logical-vs-physical distinction. Forward signal in
-            // DU docstring.
-            false
+            // Chapter 4.6 slice α — IR evidence lifted via
+            // `Reference.HasDbConstraint : bool`. Kind has a
+            // logical-only FK iff any of its references is
+            // unbacked by a DB constraint.
+            k.References |> List.exists (fun r -> not r.HasDbConstraint)
         | PredicateName.HasLogicalForeignKeyWithDbConstraint ->
-            // Same: no V2 IR evidence. Forward signal.
-            false
+            // Chapter 4.6 slice α — sibling: kind has a DB-constraint-
+            // backed FK iff any of its references is DB-constraint
+            // backed.
+            k.References |> List.exists (fun r -> r.HasDbConstraint)
 
 
 /// Slice β (chapter 4.4) — per-table predicate satisfaction entry.

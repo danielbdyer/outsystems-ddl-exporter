@@ -118,7 +118,7 @@ let private child : Kind =
             SourceAttribute = childParentFkKey
             TargetKind      = parentKindKey
             OnDelete        = NoAction
-            IsUserFk        = false } ]
+            IsUserFk        = false; HasDbConstraint = false } ]
       Indexes = []
       Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 

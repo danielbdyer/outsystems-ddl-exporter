@@ -56,18 +56,11 @@ let ``PredicateName.evaluate is deterministic`` () =
             let r2 = PredicateName.evaluate p k
             Assert.Equal (r1, r2)
 
-[<Fact>]
-let ``PredicateName.evaluate: variants without V2 IR evidence always return false`` () =
-    // Chapter 4.4: 4 variants always-false pending V2 IR.
-    // Chapter 4.5 slice α: HasFilteredIndex retires (Index.Filter lifted).
-    // Chapter 4.5 slice β: HasIncludedIndexColumns retires
-    // (Index.IncludedColumns lifted).
-    // HasLogicalForeignKey×DbConstraint pair: still always-false pending
-    // Tightening-decision-into-Reference flow.
-    let enriched = enrich sampleCatalog
-    for k in Catalog.allKinds enriched do
-        Assert.False (PredicateName.evaluate PredicateName.HasLogicalForeignKeyWithoutDbConstraint k)
-        Assert.False (PredicateName.evaluate PredicateName.HasLogicalForeignKeyWithDbConstraint k)
+// All chapter-4.4 always-false PredicateName variants have been retired
+// across chapters 4.5 (α/β) + 4.6 (α). The chapter-4.4 always-false test
+// is removed; per-axis cash-out tests in IndexFilterTests +
+// IndexIncludedColumnsTests + ReferenceHasDbConstraintTests now witness
+// real evaluation for every variant.
 
 [<Fact>]
 let ``Chapter 4.5 slice α: HasFilteredIndex returns true when any Index.Filter is Some`` () =

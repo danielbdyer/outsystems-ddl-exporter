@@ -215,7 +215,7 @@ let ``Slice ζ: constructing a Reference with IsUserFk = true carries the flag``
           SourceAttribute = orderCustomerFkKey
           TargetKind      = customerKey
           OnDelete        = NoAction
-          IsUserFk        = true }
+          IsUserFk        = true; HasDbConstraint = false }
     Assert.True userFkRef.IsUserFk
 
 [<Fact>]
@@ -230,5 +230,5 @@ let ``Slice ζ: SymmetricClosure pass inherits IsUserFk from the original refere
           SourceAttribute = orderCustomerFkKey
           TargetKind      = customerKey
           OnDelete        = NoAction
-          IsUserFk        = true }
+          IsUserFk        = true; HasDbConstraint = false }
     Assert.True userFkRef.IsUserFk

@@ -377,7 +377,10 @@ let private expectedReferenceCatalog : Catalog =
                 SourceAttribute = userAccountIdAttrKey
                 TargetKind      = accountKindKey
                 OnDelete        = NoAction
-                IsUserFk        = false }
+                // Chapter 4.6 slice α — V1 fixture sets
+                // `reference_hasDbConstraint: 1`; V2's parseReference
+                // captures it via getIntFlag.
+                IsUserFk        = false; HasDbConstraint = true }
           ]
           Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [

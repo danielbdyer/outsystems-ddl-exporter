@@ -29,7 +29,7 @@ let private mkRef (sourceAttrKey: string) (action: ReferenceAction) : Reference 
       SourceAttribute = testKey sourceAttrKey
       TargetKind      = kindKey ["target"]
       OnDelete        = action
-      IsUserFk        = false }
+      IsUserFk        = false; HasDbConstraint = false }
 
 let private kindWith (a: Attribute) : Kind =
     { SsKey      = kindKey ["owner"]

@@ -117,7 +117,7 @@ let order : Kind =
                 SourceAttribute = orderCustomerFkKey
                 TargetKind      = customerKey
                 OnDelete        = NoAction
-                IsUserFk        = false } ] }
+                IsUserFk        = false; HasDbConstraint = false } ] }
 
 // ---------------------------------------------------------------------------
 // Country — Static, with a small populated row set.

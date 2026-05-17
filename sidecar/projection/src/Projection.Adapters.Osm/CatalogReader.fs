@@ -743,6 +743,17 @@ module CatalogReader =
                 let onDelete    = parseDeleteRule deleteRuleCode
                 match refKey, refName, srcAttrKey, tgtKindKey, onDelete with
                 | Ok rKey, Ok rName, Ok srcKey, Ok tgtKey, Ok rule ->
+                    // Chapter 4.6 slice α — capture V1's
+                    // `reference_hasDbConstraint` int-flag
+                    // (COALESCE'd from outsystems_model_export.sql:730
+                    // HasFK column; V1's JSON projection renames to
+                    // `reference_hasDbConstraint` per SnapshotJsonBuilder).
+                    // Defaults to false when V1 source omits the field
+                    // (mirrors V1's ISNULL coalesce semantics).
+                    let hasDbConstraint =
+                        match getIntFlag attrJson "reference_hasDbConstraint" with
+                        | Ok v -> v
+                        | Error _ -> false
                     Result.success (Some
                         { SsKey           = rKey
                           Name            = rName
@@ -757,7 +768,8 @@ module CatalogReader =
                           // V1 reference ModelUserSchemaGraphFactory.
                           // GetSyntheticUserForeignKeys); the chapter
                           // 4.2 close ritual codifies the trigger.
-                          IsUserFk        = false })
+                          IsUserFk        = false
+                          HasDbConstraint = hasDbConstraint })
                 | _ ->
                     // Propagate underlying errors via
                     // `propagateOrFallback` — uniform with the four
@@ -1356,7 +1368,12 @@ module CatalogReader =
                   // depend on the OSSYS-platform user-kind
                   // identification surface that lands at the
                   // chapter 4.2 adapter-integration boundary).
-                  IsUserFk        = false }
+                  IsUserFk        = false
+                  // Chapter 4.6 slice α — rowset path carries
+                  // HasDbConstraint via the #FkReality rowset's
+                  // HasFK column (see ReferenceRow.HasDbConstraint
+                  // at line 193). Propagated unchanged from the row.
+                  HasDbConstraint = refRow.HasDbConstraint }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback` —
             // uniform with parseReference on the JSON path.
