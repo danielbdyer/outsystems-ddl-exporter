@@ -12329,3 +12329,75 @@ Recorded in `V1_PARITY_MATRIX.md` row 37 as 🟡 DIVERGENCE.
   paths consume.
 
 ---
+
+## 2026-05-17 (slice 5.1.ζ) — Contract-versioning posture: SQL pins, not operator overrides
+
+V1's `MetadataContractOverrides` lets operators configure per-result-set
+optional columns via `appsettings.json`
+(`metadataContract.optionalColumns.AttributeJson = ["AttributesJson"]`).
+At extraction time, processors consult `IsColumnOptional(resultSetName,
+columnName)` and tolerate NULL or missing columns when marked optional.
+The mechanism enables V1 to read across multiple OutSystems versions
+where columns may be renamed, dropped, or NULL in different versions.
+
+V2 chose a structurally different posture: **the carbon-copied SQL
+pins the contract version.** V2's `MetadataSnapshotRunner` reads via
+ordinal-indexed access (`readInt r 0`, `readString r 1`, …) —
+structurally insensitive to column renaming but sensitive to column
+reordering. There is no operator-configurable override; V2 expects the
+deployed OSSYS schema to match the carbon-copied SQL's contract
+version exactly.
+
+The posture comparison:
+
+| Axis | V1 (operator overrides) | V2 (SQL pins) |
+|---|---|---|
+| Source of contract truth | C# DTOs + `appsettings.json` overlay | The embedded SQL resource |
+| Operator surface | `optionalColumns` config dict | None — version is the SQL's |
+| Version-tolerance | Per-column, per-resultset, runtime | None — SQL must match schema |
+| Failure mode on mismatch | NULL tolerated where configured | Ordinal read fails or returns wrong column |
+| Detection at canary | Implicit; tolerated columns hide drift | Explicit; ordinal mismatch surfaces |
+
+V2's choice flows from the carbon-copy editorial-inheritance posture
+(`DECISIONS 2026-05-16 (later) — V2 self-containment`): the SQL script
+**is** the truth. If V2's deployed OSSYS source is on a different
+version than V2's carbon-copied SQL, the right response is to update
+the carbon-copy (re-pull from V1, re-commit, run the canary), not to
+overlay operator configuration that papers over the mismatch.
+
+V2 retains TWO inline NULL fallbacks at the rowset-read layer:
+- `IsAutoNumber` (column 11 of attribute row) defaults to `false`
+  when NULL.
+- `PhysicalCol` (column 17 of attribute row) falls back to
+  uppercase `AttrName` when NULL or whitespace.
+
+These are **data-shape resilience** (V1's source data legitimately
+emits NULL in these fields for some attribute kinds), not
+version-tolerance. They're column-specific, hard-coded, and don't
+extend to other fields.
+
+**Re-open trigger.** Cutover or post-cutover schema-drift surfaces a
+real OutSystems-version mismatch that V2's canary doesn't catch. At
+that point, options:
+- (a) Update the carbon-copy SQL + the F# row-mappers in lockstep
+  (preferred — keeps the "SQL pins contract" posture intact).
+- (b) Grow an operator-configurable override surface modeled on V1's
+  `MetadataContractOverrides` — likely a closed-DU
+  `ColumnOverride = OptionalNull | ColumnRename of source: string`
+  carried per-rowset, threaded through `runAsync` parameters.
+
+Choosing (a) preserves V2's structural simplicity; (b) is needed only
+if multiple OutSystems versions must be supported simultaneously.
+
+Recorded in `V1_PARITY_MATRIX.md` row 38 as 🟡 DIVERGENCE.
+
+### Cross-references
+
+- `DECISIONS 2026-05-16 (later) — V2 self-containment + carbon-copy
+  editorial inheritance` — the parent discipline this entry refines
+  for the contract-versioning sub-concern.
+- `Tolerance.fs` — V2's structural variance taxonomy lives here; if
+  trigger fires, the V2-side capability lifts as a Tolerance variant
+  rather than a config-overlay.
+
+---
