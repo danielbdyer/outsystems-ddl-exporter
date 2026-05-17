@@ -380,6 +380,27 @@ Build clean under `TreatWarningsAsErrors=true`; lint clean across
   surfaces as a `Skip` test stub at the test-file level, not as
   ADMIRE-prose commentary.
 
+## Status at chapter 4.4 close (2026-05-17; manifest diagnostic fields retire chapter-4.4-fills deferrals)
+
+- **1313 non-canary tests passing** + canary tests Docker-gated.
+  0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`;
+  lint count 13 — unchanged from chapter A.4.7' close baseline.
+- **Chapter 4.4 shipped 4 substantive slices end-to-end** (α / β / γ / δ):
+  `CoverageBreakdown` + `CoverageSummary` + `Coverage.compute` (slice α;
+  V1 percentage-rounding contract mirrored); `PredicateName` closed DU
+  with 16 V1-verbatim variants + `PredicateCoverage.compute` (slice β;
+  12 evaluable + 4 always-false-pending-V2-IR-refinement); `Unsupported`
+  from `ToleratedDivergence.allKnown` sorted as strings (slice γ); V1
+  differential test asserting V1-shape correspondence (slice δ). See
+  `CHAPTER_4_4_CLOSE.md`.
+- **Three of four `chapter 4.4 fills` deferrals retired.** `Coverage` /
+  `PredicateCoverage` / `Unsupported` now emit typed evidence. `PreRemediation`
+  stays empty per V2_DRIVER §154 (RemediationEmitter deferred to chapter 5+).
+- **V1 differential surface operative.** Cross-checks V2's emit shape
+  against V1's reference types — PredicateName names verbatim;
+  CoverageBreakdown rounding contract; SsdtManifest shape; documented
+  V2-only divergences (registry.digest; predicateCounts shape).
+
 ## Status at chapter A.4.7' close (2026-05-17; registry becomes load-bearing for execution)
 
 - **1262 non-canary tests passing** + canary tests Docker-gated.

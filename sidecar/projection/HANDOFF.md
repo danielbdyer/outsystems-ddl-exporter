@@ -4,6 +4,49 @@ To the next-chapter agent. Read this before anything else in the V2 sidecar. It 
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
 
+## 2026-05-17 (chapter 4.4 close — slices α + β + γ + δ) — Manifest diagnostic fields retire three of four chapter-4.4-fills deferrals
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1313 / 1313 non-canary passing** (1262 prior + 51 new across the chapter — 18 slice α + 14 slice β + 8 slice γ + 11 slice δ); canary tests skip when Docker unwarm. 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint count 13 — unchanged from chapter A.4.7' baseline.
+
+**Chapter 4.4 closes.** Read `CHAPTER_4_4_CLOSE.md` for the chapter-close synthesis (per-slice ledger + 8-item close ritual + V1-input-envelope walk + deferral re-affirmations). Read `CHAPTER_4_4_OPEN.md` for the strategic frame (eight axes; four-slice plan; four resolved-at-open questions).
+
+**What shipped (4 substantive commits + close).** Three of the four `chapter 4.4 fills` deferrals codified in `ManifestEmitter.fs:32-33,176-183` are retired. `Coverage` / `PredicateCoverage` / `Unsupported` now emit typed evidence; `PreRemediation` stays empty per `V2_DRIVER.md` §154 (RemediationEmitter deferred to chapter 5+).
+
+- **Slice α (`a6505e5`):** `CoverageBreakdown` + `CoverageSummary` + `Coverage.compute`. Mirrors V1's `Osm.Emission.CoverageBreakdown` shape + percentage-rounding contract (Math.Round AwayFromZero; total=0→100; emitted=0→0). T11 keyset coverage holds structurally — V2 emits everything so `Emitted = Total` per axis. 18 tests.
+- **Slice β (`09e71ce`):** `PredicateName` closed DU (16 variants matching V1's SsdtPredicateNames verbatim) + `PredicateCoverage`. 12 variants have V2 IR evidence; 4 always-false pending V2 IR refinement (HasFilteredIndex / HasIncludedIndexColumns / HasLogicalForeignKey×DbConstraint pair). PredicateCounts emits as sorted-by-name array of `{name, count}` objects per chapter open Q2 (documented divergence from V1's JSON-dict shape). 14 tests.
+- **Slice γ (`b08c7dc`):** `Unsupported.compute` renders `ToleratedDivergence.allKnown` as sorted strings. Closed-DU empirical-test discipline ensures content audit surfaces variant additions / retirements. 7 tests.
+- **Slice δ (this commit):** V1 differential test (`ManifestV1DifferentialTests.fs`) cross-checks V2's emit shape against V1's reference types — PredicateName names verbatim; CoverageBreakdown rounding contract; SsdtCoverageSummary three-axis shape; SsdtPredicateCoverage two-section shape; PredicateCoverageEntry fields; Unsupported as IReadOnlyList; PreRemediation empty per §154; documented V2-only divergences (registry.digest; predicateCounts shape). 11 tests. **Chapter-close ritual discharged.**
+
+**What's load-bearing.** After this chapter:
+
+- **`CoverageBreakdown` smart constructor** is the typed primitive for V1-shape coverage emission; V1-rounding-contract preserved.
+- **`PredicateName` closed DU** is the typed registry of V1's 16 named manifest predicates; when V2 IR grows the 4 always-false predicates' evidence, the lift surfaces via the closed-DU empirical-test discipline.
+- **`ToleratedDivergence` enumeration is the Unsupported source** — when a Tolerance variant retires (chapter widens IR + emitter consumption), the manifest's Unsupported list shortens; `ManifestUnsupportedTests.fs` "current-variant content audit" surfaces the retirement.
+- **Manifest's V1-compatible JSON schema** — every operator-consultable axis now carries typed evidence at the V1-shape surface (modulo documented divergences).
+
+**Forward signals retained (4):**
+
+1. **`PreRemediation` field population** — V2_DRIVER §154 deferred-to-chapter-5+ RemediationEmitter trigger. Empty-array structurally correct until RemediationEmitter ships.
+2. **`PredicateName` 4 always-false variants** — IR refinement triggers: Index.Filter for HasFilteredIndex; key/included column split for HasIncludedIndexColumns; logical-vs-physical Reference distinction for the WithDbConstraint pair.
+3. **Unsupported per-divergence rationale** — consumer-pressure trigger to widen string list → typed record list.
+4. **V1↔V2 PredicateCounts JSON-shape divergence** — Tolerance candidate (or shape-flip to JSON dict with key-sorted serialization) if byte-equality with V1 demanded.
+
+**Recommended next-chapter shortlist (superseding the chapter A.4.7' close entry's stale shortlist).** The V2-driver critical-path Phases 1–7 are all closed; chapter 4.4 retires the largest piece of named pending V2_DRIVER work. Remaining work:
+
+1. **Deferred-with-trigger items** (consumer-pressure-driven; ~1-2 sessions each as triggers fire):
+   - Module.ExtendedProperties emission — gated on V1 confirmation of module → schema convention.
+   - Sequence emission — gated on V1 fixture surfacing sequences.
+   - Chapter 4.3 slices δ (CLI wire-up) + ε (V1 differential).
+   - Chapter 4.2 OSSYS adapter User-kind identification surface + CSV adapter for ManualOverride.
+   - Chapter 3.x slices ε + ζ + per-Catalog parameterization.
+   - V1↔V2 byte-equality for sp_addextendedproperty / predicateCounts shape — if downstream consumer demands.
+2. **PhysicalSchema extended-property reflection** — extends canary's diff surface; orthogonal to emitter axis.
+3. **Phase 8 pragmatic close** — F# Analyzers SDK / Coordinates Stage 2 typed VOs / Hex port lifts / cutover-day operator runbook / V1 sunset planning. Consumer-pressure-driven; opens at cutover-15 to cutover+30 window.
+
+The 4 always-false `PredicateName` variants are forward-signal opportunities — when V2 IR grows the corresponding evidence (likely via a future DACPAC adapter slice or rowset extension), the manifest's PredicateCoverage tightens automatically and the close-ritual ToleratedDivergence-content-audit catches the retirement.
+
+---
+
 ## 2026-05-17 (post-A.4.7' doc-refresh hygiene) — V2_DRIVER + BACKLOG refreshed; recommended-next-chapter shortlist below supersedes the chapter A.4.7' close entry
 
 **Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline unchanged at 1262 / 1262 non-canary passing**; canary tests skip when Docker unwarm; 0 build warnings under `TreatWarningsAsErrors=true`; lint count 13. Operator-reality perf baseline re-recorded to absorb chapter A.4.7''s `compose.runChain` Bench scope (5 warm captures green; 202 labels × 5 runs; see `DECISIONS 2026-05-17 (post-chapter-A.4.7' hygiene) — Perf baseline re-recorded`).

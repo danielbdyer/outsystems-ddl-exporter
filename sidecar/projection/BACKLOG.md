@@ -7,13 +7,14 @@ per-phase chapter sequence with V1 inheritance opportunities (carbon-copy
 candidates and shipped carbon-copies), cross-cutting infrastructure work,
 and the risk register.
 
-**Current state as of 2026-05-17.** V2-driver critical-path Phases 1–7
-are all closed end-to-end. The largest piece of named pending V2_DRIVER
-work is **chapter 4.4 — Manifest diagnostic fields** (`Coverage` /
-`PredicateCoverage` / `PreRemediation` / `Unsupported` currently emit
-defaults). The rest of pending work lives in the deferred-with-trigger
-queue per chapter close docs. See §VII Sequencing graph for the current
-fan-out.
+**Current state as of 2026-05-17 (post-chapter-4.4 close).** V2-driver
+critical-path Phases 1–7 are all closed end-to-end. **Chapter 4.4
+(Manifest diagnostic fields) closed 2026-05-17** — three of the four
+`chapter 4.4 fills` deferrals retired (Coverage / PredicateCoverage /
+Unsupported emit typed evidence); `PreRemediation` stays empty per
+V2_DRIVER §154 (RemediationEmitter deferred to chapter 5+). The rest
+of pending work lives in the deferred-with-trigger queue per chapter
+close docs. See §VII Sequencing graph for the current fan-out.
 
 **Strategic relationship:**
 
@@ -51,6 +52,7 @@ the operational *what and when* is here.
   - [Phase 3.1 — IR fidelity lifts (chapter A.0'; closed)](#phase-31--ir-fidelity-lifts-chapter-a0-closed-2026-05-16)
   - [Phase 4 — Identity-as-driver (chapter 4.2; closed)](#phase-4--identity-as-driver-chapter-42-closed-2026-05-15)
   - [Phase 5 — Operational diagnostics (chapter 4.3; closed)](#phase-5--operational-diagnostics-chapter-43-closed-structural-slice-arc)
+  - [Phase 5.5 — Manifest diagnostic fields (chapter 4.4; closed)](#phase-55--manifest-diagnostic-fields-chapter-44-closed-2026-05-17)
   - [Phase 6 — DACPAC dev-tooling (chapter 3.x; closed)](#phase-6--dacpac-dev-tooling-chapter-3x-closed-under-reframe)
   - [Phase 7 — SnapshotRowsets (chapter 3.2; closed)](#phase-7--snapshotrowsets-chapter-32-closed)
   - [Phase 8 — Pragmatic close](#phase-8--pragmatic-close)
@@ -409,6 +411,42 @@ for the full close synthesis.
 
 ---
 
+### Phase 5.5 — Manifest diagnostic fields (chapter 4.4; CLOSED 2026-05-17)
+
+**Status:** closed end-to-end. Retires three of the four
+`chapter 4.4 fills` deferrals codified in `ManifestEmitter.fs:32-33`
+since chapter 4.1.A slice 9. Close synthesis at
+`CHAPTER_4_4_CLOSE.md`; chapter-open at `CHAPTER_4_4_OPEN.md`.
+
+**Strategic frame.** V2_DRIVER's per-axis correctness stakes places
+operational-diagnostics as "Lower" stakes — this chapter ships an
+operator-facing manifest surface, not a cutover-blocking property.
+V2's `ManifestEmitter` (chapter 4.1.A slice 9) shipped with four
+deferred fields emitting as `null` / empty arrays; this chapter
+populates three from existing V2 evidence (Catalog + IR + Tolerance
+taxonomy) and preserves the fourth (`PreRemediation`) per
+V2_DRIVER §154's RemediationEmitter deferral.
+
+**All slices shipped:**
+
+| Slice | Scope | Witness | Status |
+|---|---|---|---|
+| α | `CoverageBreakdown` + `CoverageSummary` + `Coverage.compute` | V1 percentage-rounding contract (AwayFromZero; total=0→100; emitted=0→0); T11 keyset coverage; 18 tests | shipped 2026-05-17 |
+| β | `PredicateName` closed DU (16 V1 variants verbatim) + `PredicateCoverage.compute` | Per-table predicate satisfaction + PredicateCounts aggregation; closed-DU empirical-test catches missing arms; 14 tests | shipped 2026-05-17 |
+| γ | `Unsupported.compute` renders `ToleratedDivergence.allKnown` as sorted strings | T1 byte-determinism; current-variant content audit; 7 tests | shipped 2026-05-17 |
+| δ | V1 differential test (`ManifestV1DifferentialTests.fs`) + chapter-close eight-item ritual | PredicateName names verbatim; CoverageBreakdown rounding contract; SsdtManifest shape; documented divergences; 11 tests | shipped 2026-05-17 |
+
+**Deferred-with-trigger (codified at close):**
+
+- **PreRemediation field population** — per V2_DRIVER §154 (RemediationEmitter deferred to chapter 5+). Empty-array structurally correct until RemediationEmitter ships.
+- **PredicateName 4 always-false variants** (HasFilteredIndex / HasIncludedIndexColumns / HasLogicalForeignKeyWithoutDbConstraint / HasLogicalForeignKeyWithDbConstraint) — V2 IR doesn't carry Filter expression / key-vs-included column split / logical-vs-physical Reference distinction. IR refinement triggers per docstring.
+- **Unsupported per-divergence rationale** — current shape is `string list`; widens to typed record list if consumer demands per-divergence explanation strings.
+- **V1↔V2 PredicateCounts JSON-shape divergence** — V2 emits sorted array of objects; V1 emits dict. Tolerance variant or shape-flip if byte-equality with V1 demanded.
+
+**V1 inheritance opportunities:** none. The chapter mirrors V1's SsdtManifest reference types (SsdtManifest.cs + SsdtPredicateCoverage.cs + ManifestBuilder.cs) at the V2 IR layer; no carbon-copy event.
+
+---
+
 ### Phase 6 — DACPAC dev-tooling (chapter 3.x; CLOSED under reframe)
 
 **Status:** closed under dev-tooling reframe. The chapter was originally
@@ -727,12 +765,14 @@ section above; this register catches the horizontal ones.
 ```
                   ┌──────────────────────────────────────┐
                   │  V2 sidecar — current state          │
-                  │  (as of 2026-05-17)                  │
-                  │  Phases 1–7 SHIPPED end-to-end       │
+                  │  (as of 2026-05-17 post-chapter-4.4) │
+                  │  Phases 1–7 + 5.5 SHIPPED end-to-end │
                   │  Pillar 9 + supreme operating        │
                   │  disciplines in place                │
                   │  Registry load-bearing for execution │
                   │  (chapter A.4.7' close)              │
+                  │  Manifest diagnostic fields retired  │
+                  │  (chapter 4.4 close)                 │
                   └────────────────┬─────────────────────┘
                                    │
                                    ▼
@@ -741,28 +781,31 @@ section above; this register catches the horizontal ones.
                   │  operationally complete              │
                   │  CDC silence ✓  Schema ✓  Identity ✓ │
                   │  Diagnostics ✓  DACPAC ✓  Rowsets ✓  │
+                  │  Manifest diagnostic fields ✓        │
                   └────────────────┬─────────────────────┘
                                    │
-       ┌───────────────────────────┼───────────────────────────┐
-       │                           │                           │
-       ▼                           ▼                           ▼
-┌──────────────────┐      ┌──────────────────┐        ┌──────────────────┐
-│ Chapter 4.4      │      │ Deferred-with-   │        │ Phase 8 —        │
-│ Manifest fields  │      │ trigger queue    │        │ pragmatic close  │
-│ (Coverage /      │      │ (per-chapter     │        │ (consumer-       │
-│  PredicateCov /  │      │  close docs)     │        │  pressure-driven)│
-│  PreRemediation /│      │                  │        │                  │
-│  Unsupported)    │      │ Module.ExtProps  │        │ F# Analyzers SDK │
-│                  │      │ Sequence emit    │        │ Coordinates St.2 │
-│ ~4-6 slices      │      │ Statement DU     │        │ Hex port lifts   │
-│ default-emission │      │  MERGE/UPDATE    │        │ V1 sunset plan   │
-│ retirement       │      │ Slice 4.3.δ/ε   │        │ Cutover runbook  │
-│                  │      │ Slice 3.x.ε/ζ   │        │                  │
-│                  │      │ 4.2 OSSYS user-K│        │                  │
-│                  │      │ 4.2 CSV adapter │        │                  │
-└────────┬─────────┘      └────────┬─────────┘        └────────┬─────────┘
-         │                         │                            │
-         └─────────────────────────┴────────────────────────────┘
+              ┌────────────────────┴────────────────────┐
+              │                                         │
+              ▼                                         ▼
+┌──────────────────────┐                ┌──────────────────────┐
+│ Deferred-with-       │                │ Phase 8 —            │
+│ trigger queue        │                │ pragmatic close      │
+│ (per-chapter         │                │ (consumer-           │
+│  close docs)         │                │  pressure-driven)    │
+│                      │                │                      │
+│ Module.ExtProps      │                │ F# Analyzers SDK     │
+│ Sequence emit        │                │ Coordinates St.2     │
+│ Statement DU         │                │ Hex port lifts       │
+│  MERGE/UPDATE        │                │ V1 sunset plan       │
+│ Slice 4.3.δ/ε       │                │ Cutover runbook      │
+│ Slice 3.x.ε/ζ       │                │                      │
+│ 4.2 OSSYS user-K     │                │ RemediationEmitter   │
+│ 4.2 CSV adapter      │                │  (V2_DRIVER §154)    │
+│ PredicateName 4-var  │                │                      │
+│ Unsupported widen    │                │                      │
+└──────────┬───────────┘                └──────────┬───────────┘
+           │                                       │
+           └───────────────────────────────────────┘
                                    │
                                    ▼
                   ┌──────────────────────────────────────┐
