@@ -85,6 +85,7 @@
     <Compile Include="StrategyRegistrationsTests.fs" />
     <Compile Include="TransformRegistryCompletenessTests.fs" />
     <Compile Include="ComposeChainAdapterTests.fs" />
+    <Compile Include="RegisteredTransformsTests.fs" />
     <Compile Include="SsdtExtendedPropertyEmissionTests.fs" />
     <Compile Include="NullabilityRulesTests.fs" />
     <Compile Include="NullabilityPassTests.fs" />

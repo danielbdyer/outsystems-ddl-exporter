@@ -67,6 +67,7 @@
     <Compile Include="Passes/ForeignKeyPass.fs" />
     <Compile Include="Passes/CategoricalUniquenessPass.fs" />
     <Compile Include="Passes/UserFkReflowPass.fs" />
+    <Compile Include="RegisteredTransforms.fs" />
   </ItemGroup>
 
   <ItemGroup>
