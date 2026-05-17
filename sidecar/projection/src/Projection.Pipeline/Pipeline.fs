@@ -102,6 +102,7 @@ module Compose =
     /// future-chapter concern).
     let private projectFromChain
         (chain: PassChainAdapter list)
+        (policy: EmissionPolicy)
         (catalog: Catalog)
         : Outputs =
         use _ = Bench.scope "compose.project"
@@ -110,11 +111,17 @@ module Compose =
              PassChainAdapter.compose chain (ComposeState.initial catalog)
              |> LineageDiagnostics.payload
              |> fun state -> state.Catalog)
+        // Chapter 4.9 slice δ — apply EmissionPolicy.filterPlatformAutoIndexes
+        // at the post-chain seam. The filter is `OperatorIntent of Emission`
+        // per pillar 9; lives outside the registered pass chain because
+        // its evidence is policy, not catalog-derived. Identity when
+        // `IncludePlatformAutoIndexes = true` (V1 parity default).
+        let emittedCatalog = EmissionPolicy.filterPlatformAutoIndexes policy composedCatalog
         let bundle =
             (use _ = Bench.scope "emit.ssdtBundle.compose"
-             match SsdtDdlEmitter.emitSlices composedCatalog with
+             match SsdtDdlEmitter.emitSlices emittedCatalog with
              | Ok ssdtFiles ->
-                 let manifest = ManifestEmitter.emit composedCatalog
+                 let manifest = ManifestEmitter.emit emittedCatalog
                  SsdtBundle.compose ssdtFiles manifest
              | Error err ->
                  // Unreachable in production paths: Catalog.allKinds is
@@ -128,12 +135,12 @@ module Compose =
              // Per Tier-1 #3: parse once at project time so the
              // Outputs seam is JsonNode-typed. Downstream consumers
              // query the tree without re-parse.
-             match JsonNode.Parse(JsonEmitter.emit composedCatalog) with
+             match JsonNode.Parse(JsonEmitter.emit emittedCatalog) with
              | null -> invalidOp "Compose.project: JsonEmitter.emit produced unparseable text (unreachable)"
              | n    -> n)
         let distributions =
             (use _ = Bench.scope "emit.distributions"
-             match JsonNode.Parse(DistributionsEmitter.emit composedCatalog Profile.empty) with
+             match JsonNode.Parse(DistributionsEmitter.emit emittedCatalog Profile.empty) with
              | null -> invalidOp "Compose.project: DistributionsEmitter.emit produced unparseable text (unreachable)"
              | n    -> n)
         {
@@ -145,17 +152,20 @@ module Compose =
     /// Production-shape project: routes through
     /// `RegisteredTransforms.allChainSteps`. The hand-coded "emit raw
     /// catalog" shape retired at chapter A.4.7' slice δ; the registry
-    /// is canonical.
-    let project (catalog: Catalog) : Outputs =
-        projectFromChain RegisteredTransforms.allChainSteps catalog
+    /// is canonical. Chapter 4.9 slice δ — accepts an `EmissionPolicy`
+    /// driving the platform-auto-indexes filter.
+    let project (policy: EmissionPolicy) (catalog: Catalog) : Outputs =
+        projectFromChain RegisteredTransforms.allChainSteps policy catalog
 
     /// Skeleton-shape project: routes through
     /// `RegisteredTransforms.skeletonChainSteps` (per chapter A.4.7'
     /// slice ε; the four pure-DataIntent passes). Yields the baseline
     /// reachable from `Project(catalog, Policy.empty, profile)` —
-    /// `osm emit --skeleton-only` consumes this.
+    /// `osm emit --skeleton-only` consumes this. Chapter 4.9 slice δ —
+    /// uses `EmissionPolicy.defaults` (no filtering) because the
+    /// skeleton view is operator-free by definition.
     let projectSkeleton (catalog: Catalog) : Outputs =
-        projectFromChain RegisteredTransforms.skeletonChainSteps catalog
+        projectFromChain RegisteredTransforms.skeletonChainSteps EmissionPolicy.empty catalog
 
     /// Chapter A.4.7' slice ε — registry-driven traversal restricted
     /// to the skeleton view (every Site classifies as `DataIntent`).
@@ -316,7 +326,7 @@ module Compose =
             let! parsed = read jsonPath
             match parsed with
             | Ok catalog ->
-                let outputs = project catalog
+                let outputs = project EmissionPolicy.empty catalog
                 return write outputDir outputs
             | Error errors ->
                 return Result.failure errors
@@ -378,7 +388,7 @@ module Compose =
             | Ok catalog ->
                 match applyRenames cfg catalog with
                 | Ok renamedCatalog ->
-                    let outputs = project renamedCatalog
+                    let outputs = project EmissionPolicy.empty renamedCatalog
                     return write cfg.Output.Dir outputs
                 | Error errors ->
                     return Result.failure errors

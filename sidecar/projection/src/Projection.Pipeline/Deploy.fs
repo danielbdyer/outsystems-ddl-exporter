@@ -981,7 +981,7 @@ module Deploy =
             let! parsed = Compose.read jsonPath
             match parsed with
             | Ok catalog ->
-                let outputs = Compose.project catalog
+                let outputs = Compose.project EmissionPolicy.empty catalog
                 // Per Tier-1 #2 (Outputs.Sql → SsdtBundle): aggregate
                 // the bundle's per-table SQL files into one batch
                 // for the ephemeral-deploy single-string contract.
