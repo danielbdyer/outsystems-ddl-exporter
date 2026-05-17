@@ -255,6 +255,12 @@ module SsdtDdlEmitter =
                     IsUnique = idx.IsUnique
                     Filter   = idx.Filter
                     IncludedColumns = includedColumnNames
+                    // Chapter 4.8 slice β — on-disk index options.
+                    FillFactor            = idx.FillFactor
+                    IsPadded              = idx.IsPadded
+                    AllowRowLocks         = idx.AllowRowLocks
+                    AllowPageLocks        = idx.AllowPageLocks
+                    NoRecomputeStatistics = idx.NoRecomputeStatistics
                 }
             Statement.CreateIndex indexDef)
 

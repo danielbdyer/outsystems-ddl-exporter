@@ -743,6 +743,39 @@ module ScriptDomBuild =
             mid.Identifiers.Add(bracketed colName)
             colRef.MultiPartIdentifier <- mid
             stmt.IncludeColumns.Add(colRef)
+        // Chapter 4.8 slice β — on-disk index options WITH (…) clause.
+        // Each option's typed ScriptDom IndexOption variant is added only
+        // when the field deviates from V1's IndexOnDiskMetadata.Empty
+        // default (FillFactor=None, IsPadded=false, AllowRowLocks=true,
+        // AllowPageLocks=true, NoRecomputeStatistics=false). SQL Server's
+        // CREATE INDEX omits the WITH clause when all defaults hold.
+        let intLiteral (n: int) : ScalarExpression =
+            let lit = IntegerLiteral()
+            lit.Value <- string n
+            lit :> ScalarExpression
+        let onOffOption (kind: IndexOptionKind) (isOn: bool) : IndexOption =
+            let opt = IndexStateOption()
+            opt.OptionKind <- kind
+            opt.OptionState <-
+                if isOn then OptionState.On
+                else OptionState.Off
+            opt :> IndexOption
+        let exprOption (kind: IndexOptionKind) (expr: ScalarExpression) : IndexOption =
+            let opt = IndexExpressionOption()
+            opt.OptionKind <- kind
+            opt.Expression <- expr
+            opt :> IndexOption
+        match idx.FillFactor with
+        | Some n -> stmt.IndexOptions.Add(exprOption IndexOptionKind.FillFactor (intLiteral n))
+        | None -> ()
+        if idx.IsPadded then
+            stmt.IndexOptions.Add(onOffOption IndexOptionKind.PadIndex true)
+        if not idx.AllowRowLocks then
+            stmt.IndexOptions.Add(onOffOption IndexOptionKind.AllowRowLocks false)
+        if not idx.AllowPageLocks then
+            stmt.IndexOptions.Add(onOffOption IndexOptionKind.AllowPageLocks false)
+        if idx.NoRecomputeStatistics then
+            stmt.IndexOptions.Add(onOffOption IndexOptionKind.StatisticsNoRecompute true)
         // Chapter 4.5 slice α — WHERE clause via TSql160Parser, lifted
         // through the Diagnostics writer.
         match idx.Filter with

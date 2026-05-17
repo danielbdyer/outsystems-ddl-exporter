@@ -590,6 +590,24 @@ type Index = {
     /// IndexColumnDirection / IsPlatformAuto). Source: V1's JSON
     /// `index.isPlatformAuto` projection.
     IsPlatformAuto : bool
+    /// SQL Server `FILLFACTOR` index option (per-index allocation
+    /// density 1-100). `None` = server default. Mirrors V1's
+    /// `IndexOnDiskMetadata.FillFactor`. Chapter 4.8 slice β.
+    FillFactor : int option
+    /// SQL Server `PAD_INDEX` option. `false` (V1 default) = OFF;
+    /// `true` = ON (apply FILLFACTOR to non-leaf intermediate pages).
+    /// Mirrors V1's `IndexOnDiskMetadata.IsPadded`. Chapter 4.8 slice β.
+    IsPadded : bool
+    /// SQL Server `ALLOW_ROW_LOCKS` option. `true` (V1 default) = ON.
+    /// Mirrors V1's `IndexOnDiskMetadata.AllowRowLocks`. Chapter 4.8 slice β.
+    AllowRowLocks : bool
+    /// SQL Server `ALLOW_PAGE_LOCKS` option. `true` (V1 default) = ON.
+    /// Mirrors V1's `IndexOnDiskMetadata.AllowPageLocks`. Chapter 4.8 slice β.
+    AllowPageLocks : bool
+    /// SQL Server `STATISTICS_NORECOMPUTE` option. `false` (V1 default)
+    /// = OFF (auto-update enabled). Mirrors V1's
+    /// `IndexOnDiskMetadata.NoRecomputeStatistics`. Chapter 4.8 slice β.
+    NoRecomputeStatistics : bool
 }
 
 

@@ -74,7 +74,7 @@ let ``Chapter 4.5 slice α: HasFilteredIndex returns true when any Index.Filter 
             IsPrimaryKey = false
             ExtendedProperties = []
             Filter = filterRaw
-            IncludedColumns = []; IsPlatformAuto = false }
+            IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
     let mkKindWith (label: string) (idx: Index) : Kind =
         let baseKind =
             IRBuilders.mkKind

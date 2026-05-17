@@ -951,7 +951,20 @@ module CatalogReader =
                       ExtendedProperties = []
                       Filter             = filter
                       IncludedColumns    = includedCols
-                      IsPlatformAuto     = isPlatformAuto }
+                      IsPlatformAuto     = isPlatformAuto
+                      // Chapter 4.8 slice β — on-disk Index metadata.
+                      // V1's JSON projection does not currently surface
+                      // these fields at the boundary; default to V1's
+                      // IndexOnDiskMetadata.Empty values (FillFactor=None,
+                      // IsPadded=false, AllowRowLocks=true,
+                      // AllowPageLocks=true, NoRecomputeStatistics=false).
+                      // Future DACPAC adapter or rowset slice surfaces
+                      // them per V1-fixture pressure.
+                      FillFactor            = None
+                      IsPadded              = false
+                      AllowRowLocks         = true
+                      AllowPageLocks        = true
+                      NoRecomputeStatistics = false }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 propagateOrFallback

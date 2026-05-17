@@ -26,8 +26,7 @@ let private plainIdx : IndexDef =
         Columns = [ "Id" ]
         IsUnique = false
         Filter = None
-        IncludedColumns = []
-    }
+        IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
 
 let private validFilterIdx : IndexDef =
     { plainIdx with

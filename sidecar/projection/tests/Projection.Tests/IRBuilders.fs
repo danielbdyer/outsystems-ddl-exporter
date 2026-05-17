@@ -97,6 +97,11 @@ let mkIndex
         Filter             = None
         IncludedColumns    = []
         IsPlatformAuto     = false
+        FillFactor         = None
+        IsPadded           = false
+        AllowRowLocks      = true
+        AllowPageLocks     = true
+        NoRecomputeStatistics = false
     }
 
 /// Build a `Reference` with minimum-evidence defaults. Required: ssKey,

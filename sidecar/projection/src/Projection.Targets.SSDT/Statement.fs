@@ -82,6 +82,15 @@ type IndexDef =
         /// realization layer (SsKey → column name resolved by the
         /// emitter before reaching here).
         IncludedColumns : string list
+        /// Chapter 4.8 slice β — SQL Server on-disk index options.
+        /// Mirrors V1's `IndexOnDiskMetadata` fields. Emitted via
+        /// ScriptDom's `CreateIndexStatement.IndexOptions` list when
+        /// at least one option deviates from default.
+        FillFactor : int option
+        IsPadded : bool
+        AllowRowLocks : bool
+        AllowPageLocks : bool
+        NoRecomputeStatistics : bool
     }
 
 /// One column's value within an `InsertRow`. `Raw` is the V2 IR
