@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Resources\outsystems_metadata_rowsets.sql" />
+    <EmbeddedResource Include="Resources\ossys-edge-case.seed.sql" />
   </ItemGroup>
 
   <ItemGroup>

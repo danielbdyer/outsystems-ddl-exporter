@@ -85,3 +85,37 @@ let ``Slice α: V1 source bytes match V2 embedded resource bytes (present-enviro
         // V1 trunk absent — assertion is vacuous; test passes by
         // construction. This is the V2-only branch case.
         Assert.True true
+
+// ---------------------------------------------------------------------------
+// Slice β — V1 OSSYS bootstrap fixture (`tests/Fixtures/sql/model.edge-case
+// .seed.sql`) carbon-copied to V2 at `Resources/ossys-edge-case.seed.sql`.
+// The canary mockup donor: a self-contained synthetic OSSYS schema +
+// deterministic edge-case data the rowsets SQL can query against.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Slice β: edge-case seed fixture loads`` () =
+    let seed = MetadataExtractionSql.readEdgeCaseSeed()
+    Assert.False(System.String.IsNullOrWhiteSpace seed)
+
+[<Fact>]
+let ``Slice β: edge-case seed creates the three required OSSYS tables`` () =
+    let seed = MetadataExtractionSql.readEdgeCaseSeed()
+    Assert.Contains("CREATE TABLE [dbo].[ossys_Espace]", seed)
+    Assert.Contains("CREATE TABLE [dbo].[ossys_Entity]", seed)
+    Assert.Contains("CREATE TABLE [dbo].[ossys_Entity_Attr]", seed)
+
+[<Fact>]
+let ``Slice β: edge-case seed creates physical OSUSR_ABC_CUSTOMER table`` () =
+    let seed = MetadataExtractionSql.readEdgeCaseSeed()
+    // The synthetic Customer table that ossys_Entity 1000 references.
+    Assert.Contains("CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER]", seed)
+    Assert.Contains("FK_OSUSR_ABC_CUSTOMER_OSUSR_DEF_CITY", seed)
+
+[<Fact>]
+let ``Slice β: edge-case seed populates three modules (eSpaces)`` () =
+    let seed = MetadataExtractionSql.readEdgeCaseSeed()
+    // The three INSERT modules (lines 96-99 of V1 fixture).
+    Assert.Contains("N'AppCore'", seed)
+    Assert.Contains("N'Ops'", seed)
+    Assert.Contains("N'SystemUsers'", seed)
