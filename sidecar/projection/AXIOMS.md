@@ -1293,6 +1293,29 @@ principle.
   structural-collapse refactor stays deferred-with-trigger
   (consumer pressure when call-sites consult both vocabularies).
 
+## A41 amendment (execution totality) — TBD chapter A.4.7' close
+
+**Scheduled at chapter A.4.7' open** (`CHAPTER_A_4_7_PRIME_OPEN.md`
+axis 8; placeholder per the scaffolding discipline). Chapter A.4.7'
+extends A41 from metadata totality (registry enumeration) to
+metadata + execution totality (registry-driven traversal):
+`Compose.run` folds `TransformRegistry.allChainSteps` as its
+execution loop; bypassing the registry is structurally impossible
+because the hand-coded pass sequence retires. Body to be filled at
+chapter A.4.7' close (slice θ) per the S0.F scaffolding discipline
+(`DECISIONS 2026-05-22 — Stage 0 foundation phase`).
+
+The amendment is expected to add (a) the `PassChainAdapter` type-
+erasure boundary as the load-bearing execution surface; (b) the
+skeleton-purity property test promoted from filter-shape (chapter
+A.4.7 slice θ) to true-execution (chapter A.4.7' slice ε); (c) the
+manifest digest round-trip as the fifth bidirectional property
+test (slice ζ); (d) cash-out of slice γ.2 (private `let run` +
+~328 call-site migration) closing the parallel-exposure transition
+affordance. L3-CC-Transform-Totality stays Bucket A; the
+underwriting tightens from metadata totality to metadata +
+execution totality.
+
 ## A32 cash-out — chapter 4.2 close (2026-05-11)
 
 **Cashed out** at chapter 4.2 close (per `CHAPTER_4_2_CLOSE.md` §8).
