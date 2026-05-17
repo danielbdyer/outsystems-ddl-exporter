@@ -294,9 +294,11 @@ module PredicateName =
             // index iff any of its indexes carry a Some filter.
             k.Indexes |> List.exists (fun i -> Option.isSome i.Filter)
         | PredicateName.HasIncludedIndexColumns ->
-            // No V2 IR evidence: `Index.Columns` is a flat SsKey list
-            // (no key/included split). Forward signal in DU docstring.
-            false
+            // Chapter 4.5 slice β — IR evidence lifted via
+            // `Index.IncludedColumns : SsKey list`. Kind has a
+            // covering index iff any of its indexes has at least one
+            // included column.
+            k.Indexes |> List.exists (fun i -> not (List.isEmpty i.IncludedColumns))
         | PredicateName.HasLogicalForeignKey ->
             not (List.isEmpty k.References)
         | PredicateName.HasLogicalForeignKeyWithoutDbConstraint ->

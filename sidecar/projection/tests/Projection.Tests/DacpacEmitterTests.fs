@@ -264,17 +264,17 @@ let private indexedCatalog : Catalog =
             { SsKey = idxKey ["IndexedWidget"; "UQ"; "Code"]
               Name = mkName "UQ_IndexedWidget_Code"
               Columns = [ codeKey ]
-              IsUnique = true; IsPrimaryKey = false; ExtendedProperties = []; Filter = None }
+              IsUnique = true; IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = [] }
             // Composite (non-unique) index on Region + Label.
             { SsKey = idxKey ["IndexedWidget"; "IX"; "RegionLabel"]
               Name = mkName "IX_IndexedWidget_RegionLabel"
               Columns = [ regionKey; labelKey ]
-              IsUnique = false; IsPrimaryKey = false; ExtendedProperties = []; Filter = None }
+              IsUnique = false; IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = [] }
             // Non-unique single-column index on Region.
             { SsKey = idxKey ["IndexedWidget"; "IX"; "Region"]
               Name = mkName "IX_IndexedWidget_Region"
               Columns = [ regionKey ]
-              IsUnique = false; IsPrimaryKey = false; ExtendedProperties = []; Filter = None }
+              IsUnique = false; IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = [] }
         ]
         Description = None
         IsActive = true

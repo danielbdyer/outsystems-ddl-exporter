@@ -113,6 +113,7 @@
     <Compile Include="ManifestUnsupportedTests.fs" />
     <Compile Include="ManifestV1DifferentialTests.fs" />
     <Compile Include="IndexFilterTests.fs" />
+    <Compile Include="IndexIncludedColumnsTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />
     <Compile Include="SiblingEmitterContractTests.fs" />

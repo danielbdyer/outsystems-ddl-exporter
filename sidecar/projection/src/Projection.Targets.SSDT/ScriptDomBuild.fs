@@ -688,6 +688,17 @@ module ScriptDomBuild =
             colRef.MultiPartIdentifier <- mid
             col.Column <- colRef
             stmt.Columns.Add(col)
+        // Chapter 4.5 slice β — emit INCLUDE columns for covering
+        // indexes. ScriptDom's `CreateIndexStatement.IncludeColumns`
+        // is `IList<ColumnReferenceExpression>` (bare column refs,
+        // no sort order — INCLUDE columns are not sorted per SQL
+        // Server semantic).
+        for colName in idx.IncludedColumns do
+            let colRef = ColumnReferenceExpression()
+            let mid = MultiPartIdentifier()
+            mid.Identifiers.Add(bracketed colName)
+            colRef.MultiPartIdentifier <- mid
+            stmt.IncludeColumns.Add(colRef)
         // Chapter 4.5 slice α — emit `WHERE <expr>` for filtered
         // indexes. Filter expression parsed via TSql160Parser at
         // emit time per chapter open Q1; silent-skip on parse

@@ -76,6 +76,12 @@ type IndexDef =
         /// `ScriptDomBuild.buildCreateIndex` parses at emit time
         /// via `TSql160Parser.ParseBooleanExpression`.
         Filter : string option
+        /// Chapter 4.5 slice β — INCLUDE column names for covering
+        /// indexes. Empty for indexes without INCLUDE clause (V1
+        /// default). Mirrors `Index.IncludedColumns` at the
+        /// realization layer (SsKey → column name resolved by the
+        /// emitter before reaching here).
+        IncludedColumns : string list
     }
 
 /// One column's value within an `InsertRow`. `Raw` is the V2 IR

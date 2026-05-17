@@ -245,6 +245,8 @@ module SsdtDdlEmitter =
         |> List.sortBy (fun idx -> idx.SsKey)
         |> List.map (fun idx ->
             let columnNames = idx.Columns |> List.map (resolveColumnName k)
+            let includedColumnNames =
+                idx.IncludedColumns |> List.map (resolveColumnName k)
             let indexDef : IndexDef =
                 {
                     Name     = Name.value idx.Name
@@ -252,6 +254,7 @@ module SsdtDdlEmitter =
                     Columns  = columnNames
                     IsUnique = idx.IsUnique
                     Filter   = idx.Filter
+                    IncludedColumns = includedColumnNames
                 }
             Statement.CreateIndex indexDef)
 

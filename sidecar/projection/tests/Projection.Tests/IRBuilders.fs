@@ -95,6 +95,7 @@ let mkIndex
         IsPrimaryKey       = false
         ExtendedProperties = []
         Filter             = None
+        IncludedColumns    = []
     }
 
 /// Build a `Catalog` with the given modules and no sequences. For

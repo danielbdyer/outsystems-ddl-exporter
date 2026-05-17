@@ -964,21 +964,22 @@ let private expectedIndexCatalog : Catalog =
                 Name         = mkName "PK_USER"
                 Columns      = [ userIdAttrKey ]
                 IsUnique     = true
-                IsPrimaryKey = true; ExtendedProperties = []; Filter = None }
+                IsPrimaryKey = true; ExtendedProperties = []; Filter = None; IncludedColumns = [] }
               { SsKey        = uxUserEmailIndexKey
                 Name         = mkName "UX_USER_EMAIL"
                 Columns      = [ userEmailAttrKey ]
                 IsUnique     = true
-                IsPrimaryKey = false; ExtendedProperties = []; Filter = None }
+                IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = [] }
               { SsKey        = ixUserNameIndexKey
                 Name         = mkName "IX_USER_NAME"
                 Columns      = [ userIndexLastNameAttrKey; userIndexFirstNameAttrKey ]
-                // EmailLower (isIncluded: true) is DROPPED at the boundary;
-                // V2's Columns carries only key columns per the OSSYS
-                // ADMIRE entry's "what V2 will explicitly NOT carry
-                // forward" section.
+                // EmailLower (isIncluded: true) is now CAPTURED via
+                // IncludedColumns per chapter 4.5 slice β. Pre-slice-β the
+                // adapter dropped it at the boundary; the divergence is
+                // retired and V2 emission now mirrors V1's INCLUDE clause.
                 IsUnique     = false
-                IsPrimaryKey = false; ExtendedProperties = []; Filter = None }
+                IsPrimaryKey = false; ExtendedProperties = []; Filter = None
+                IncludedColumns = [ userIndexEmailLowerAttrKey ] }
           ]
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [

@@ -823,46 +823,60 @@ module CatalogReader =
         | Ok indexName, Ok isPrimary, Ok isUnique ->
             let indexKey  = indexSsKey moduleName entityName indexName
             let indexNm   = Name.create indexName
-            // Walk columns[]; filter isIncluded=true; sort by ordinal;
-            // resolve each key column's attribute name to its V2 SsKey.
-            let keyColResults =
+            // Walk columns[]; partition into key columns + included columns
+            // (chapter 4.5 slice β — V2 now carries both axes; pre-slice-β
+            // the adapter dropped isIncluded=true entries). Sort each
+            // partition by ordinal; resolve attribute name to V2 SsKey.
+            let columnsList =
                 match indexJson.TryGetProperty("columns") with
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
-                    arr.EnumerateArray()
-                    |> Seq.toList
-                    |> List.choose (fun col ->
-                        // Drop isIncluded=true (V1 included columns).
-                        match col.TryGetProperty("isIncluded") with
-                        | true, v when v.ValueKind = JsonValueKind.True -> None
-                        | _ -> Some col)
-                    |> List.map (fun col ->
-                        // Best-effort ordinal extraction; missing
-                        // ordinal sorts as 0 (preserves first-in-array
-                        // for malformed-but-readable inputs).
-                        let ordinal =
-                            match col.TryGetProperty("ordinal") with
-                            | true, o when o.ValueKind = JsonValueKind.Number ->
-                                match o.TryGetInt32() with
-                                | true, n -> n
-                                | _       -> 0
-                            | _ -> 0
-                        let attrNameResult = getString col "attribute"
-                        ordinal, attrNameResult)
-                    |> List.sortBy fst
-                    |> List.map snd
-                    |> List.map (fun attrNameRes ->
-                        match attrNameRes with
-                        | Error es -> Error es
-                        | Ok an -> attributeSsKey moduleName entityName an)
+                    arr.EnumerateArray() |> Seq.toList
                 | _ -> []
+            let extractCol (col: JsonElement) =
+                // Best-effort ordinal extraction; missing ordinal sorts
+                // as 0 (preserves first-in-array for malformed input).
+                let ordinal =
+                    match col.TryGetProperty("ordinal") with
+                    | true, o when o.ValueKind = JsonValueKind.Number ->
+                        match o.TryGetInt32() with
+                        | true, n -> n
+                        | _       -> 0
+                    | _ -> 0
+                let attrNameResult = getString col "attribute"
+                ordinal, attrNameResult
+            let isIncluded (col: JsonElement) : bool =
+                match col.TryGetProperty("isIncluded") with
+                | true, v when v.ValueKind = JsonValueKind.True -> true
+                | _ -> false
+            let keyColResults =
+                columnsList
+                |> List.filter (fun c -> not (isIncluded c))
+                |> List.map extractCol
+                |> List.sortBy fst
+                |> List.map snd
+                |> List.map (fun attrNameRes ->
+                    match attrNameRes with
+                    | Error es -> Error es
+                    | Ok an -> attributeSsKey moduleName entityName an)
+            let includedColResults =
+                columnsList
+                |> List.filter isIncluded
+                |> List.map extractCol
+                |> List.sortBy fst
+                |> List.map snd
+                |> List.map (fun attrNameRes ->
+                    match attrNameRes with
+                    | Error es -> Error es
+                    | Ok an -> attributeSsKey moduleName entityName an)
             // Per `Result.aggregate` (chapter-3.1 close audit): the
             // canonical accumulator for `Result<'a> seq` collapses to
             // `Result<'a list>` with errors aggregated (not short-
             // circuited). Retires the O(N²) `xs @ [x]` fold pattern
             // per `DECISIONS 2026-05-09` Big-O discipline.
             let foldedKeyCols = Result.aggregate keyColResults
-            match indexKey, indexNm, foldedKeyCols with
-            | Ok k, Ok n, Ok cols ->
+            let foldedIncludedCols = Result.aggregate includedColResults
+            match indexKey, indexNm, foldedKeyCols, foldedIncludedCols with
+            | Ok k, Ok n, Ok cols, Ok includedCols ->
                 // Chapter 4.5 slice α — capture V1's
                 // `filterDefinition` if present (per V1 JSON shape;
                 // raw string preserved through to emit time, parsed
@@ -886,13 +900,15 @@ module CatalogReader =
                       // surface index-level extended properties at
                       // the boundary today. Empty default.
                       ExtendedProperties = []
-                      Filter             = filter }
+                      Filter             = filter
+                      IncludedColumns    = includedCols }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 propagateOrFallback
                     [ Result.errors indexKey
                       Result.errors indexNm
-                      Result.errors foldedKeyCols ]
+                      Result.errors foldedKeyCols
+                      Result.errors foldedIncludedCols ]
                     (fun () ->
                         adapterError
                             "indexBuild"

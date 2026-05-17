@@ -553,6 +553,19 @@ type Index = {
     /// V1's JSON `index.filterDefinition` projection (rowset path
     /// reads `sys.indexes.filter_definition`).
     Filter       : string option
+    /// SQL Server INCLUDE columns for covering indexes. V1's
+    /// `IndexColumnModel.IsIncluded = true` entries land here at the
+    /// adapter boundary (the V2-pre-chapter-4.5 adapter dropped them
+    /// per the documented ADMIRE divergence; slice β retires the drop).
+    /// Empty for indexes without included columns (V1 default).
+    ///
+    /// Chapter 4.5 slice β — IR fidelity lift retiring chapter 4.4's
+    /// `HasIncludedIndexColumns` always-false PredicateName variant.
+    /// Source: V1's JSON `index.columns[]` entries with
+    /// `isIncluded: true` (rowset path: index-columns rowset).
+    /// Ordered by V1 `ordinal` field at the adapter boundary
+    /// (same shape as `Columns` key-column ordering).
+    IncludedColumns : SsKey list
 }
 
 
