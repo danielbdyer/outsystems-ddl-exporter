@@ -132,7 +132,7 @@ let ``Emission: buildCreateIndex emits INCLUDE columns when non-empty`` () =
             IsUnique = false
             Filter = None
             IncludedColumns = [ "Name"; "Status" ] }
-    let stmt = ScriptDomBuild.buildCreateIndex idxDef
+    let stmt = (ScriptDomBuild.buildCreateIndex idxDef).Value
     Assert.Equal (2, stmt.IncludeColumns.Count)
 
 [<Fact>]
@@ -145,7 +145,7 @@ let ``Emission: buildCreateIndex omits INCLUDE when IncludedColumns is empty`` (
             IsUnique = false
             Filter = None
             IncludedColumns = [] }
-    let stmt = ScriptDomBuild.buildCreateIndex idxDef
+    let stmt = (ScriptDomBuild.buildCreateIndex idxDef).Value
     Assert.Equal (0, stmt.IncludeColumns.Count)
 
 // ---------------------------------------------------------------------------

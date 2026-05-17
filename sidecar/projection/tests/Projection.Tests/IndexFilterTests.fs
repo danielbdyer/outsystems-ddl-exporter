@@ -133,7 +133,7 @@ let ``Emission: buildCreateIndex emits WHERE clause when Filter is Some`` () =
             IsUnique = false
             Filter = Some "[IsActive] = 1"
             IncludedColumns = [] }
-    let stmt = ScriptDomBuild.buildCreateIndex idxDef
+    let stmt = (ScriptDomBuild.buildCreateIndex idxDef).Value
     Assert.NotNull stmt.FilterPredicate
 
 [<Fact>]
@@ -146,7 +146,7 @@ let ``Emission: buildCreateIndex omits WHERE clause when Filter is None`` () =
             IsUnique = false
             Filter = None
             IncludedColumns = [] }
-    let stmt = ScriptDomBuild.buildCreateIndex idxDef
+    let stmt = (ScriptDomBuild.buildCreateIndex idxDef).Value
     Assert.Null stmt.FilterPredicate
 
 [<Fact>]
@@ -163,7 +163,7 @@ let ``Emission: buildCreateIndex silently skips Filter on parse failure`` () =
             // Intentionally malformed SQL.
             Filter = Some "NOT A VALID FILTER ((("
             IncludedColumns = [] }
-    let stmt = ScriptDomBuild.buildCreateIndex idxDef
+    let stmt = (ScriptDomBuild.buildCreateIndex idxDef).Value
     Assert.Null stmt.FilterPredicate
 
 [<Fact>]
@@ -176,8 +176,8 @@ let ``Emission: T1 determinism — same input yields same FilterPredicate shape`
             IsUnique = true
             Filter = Some "[Status] = N'A'"
             IncludedColumns = [] }
-    let stmt1 = ScriptDomBuild.buildCreateIndex idxDef
-    let stmt2 = ScriptDomBuild.buildCreateIndex idxDef
+    let stmt1 = (ScriptDomBuild.buildCreateIndex idxDef).Value
+    let stmt2 = (ScriptDomBuild.buildCreateIndex idxDef).Value
     // Both have non-null FilterPredicate.
     Assert.NotNull stmt1.FilterPredicate
     Assert.NotNull stmt2.FilterPredicate

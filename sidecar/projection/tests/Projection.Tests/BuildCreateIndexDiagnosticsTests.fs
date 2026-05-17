@@ -7,8 +7,11 @@ open Projection.Targets.SSDT
 // ---------------------------------------------------------------------------
 // Chapter 4.7 slice β — Diagnostics-aware buildCreateIndex.
 //
-// buildCreateIndexWithDiagnostics is the canonical Diagnostics-bearing
-// emitter contract; buildCreateIndex (silent-skip) delegates via .Value.
+// buildCreateIndex is the canonical Diagnostics-bearing emitter contract.
+// It returns Diagnostics<CreateIndexStatement>. Callers that don't surface
+// diagnostics drop them explicitly via `.Value` at the call site
+// (V2-no-back-compat — no legacy silent-skip wrapper).
+//
 // Future emit-time Diagnostics consumers (CHECK constraint parse
 // validation; Module.ExtendedProperties; etc.) follow the same pattern.
 // ---------------------------------------------------------------------------
@@ -37,20 +40,20 @@ let private malformedFilterIdx : IndexDef =
         Filter = Some "NOT A VALID FILTER (((" }
 
 [<Fact>]
-let ``buildCreateIndexWithDiagnostics: no filter yields empty diagnostics`` () =
-    let result = ScriptDomBuild.buildCreateIndexWithDiagnostics plainIdx
+let ``buildCreateIndex: no filter yields empty diagnostics`` () =
+    let result = ScriptDomBuild.buildCreateIndex plainIdx
     Assert.Empty result.Entries
     Assert.Null result.Value.FilterPredicate
 
 [<Fact>]
-let ``buildCreateIndexWithDiagnostics: valid filter yields empty diagnostics + FilterPredicate set`` () =
-    let result = ScriptDomBuild.buildCreateIndexWithDiagnostics validFilterIdx
+let ``buildCreateIndex: valid filter yields empty diagnostics + FilterPredicate set`` () =
+    let result = ScriptDomBuild.buildCreateIndex validFilterIdx
     Assert.Empty result.Entries
     Assert.NotNull result.Value.FilterPredicate
 
 [<Fact>]
-let ``buildCreateIndexWithDiagnostics: malformed filter yields one Warning diagnostic + FilterPredicate null`` () =
-    let result = ScriptDomBuild.buildCreateIndexWithDiagnostics malformedFilterIdx
+let ``buildCreateIndex: malformed filter yields one Warning diagnostic + FilterPredicate null`` () =
+    let result = ScriptDomBuild.buildCreateIndex malformedFilterIdx
     Assert.Single result.Entries |> ignore
     let entry = result.Entries |> List.head
     Assert.Equal (DiagnosticSeverity.Warning, entry.Severity)
@@ -58,22 +61,14 @@ let ``buildCreateIndexWithDiagnostics: malformed filter yields one Warning diagn
     Assert.Null result.Value.FilterPredicate
 
 [<Fact>]
-let ``buildCreateIndex (legacy silent-skip) delegates to WithDiagnostics + drops entries`` () =
-    // Backward-compatibility witness: existing callers see no behavior change.
-    let raw = ScriptDomBuild.buildCreateIndex validFilterIdx
-    let withDiag = ScriptDomBuild.buildCreateIndexWithDiagnostics validFilterIdx
-    // Same FilterPredicate non-null status.
-    Assert.Equal (isNull raw.FilterPredicate, isNull withDiag.Value.FilterPredicate)
-
-[<Fact>]
-let ``buildCreateIndex (legacy silent-skip): malformed filter omits WHERE clause without surfacing the failure`` () =
-    let stmt = ScriptDomBuild.buildCreateIndex malformedFilterIdx
+let ``buildCreateIndex .Value: callers that drop diagnostics get the raw statement`` () =
+    // Pattern callers use when they explicitly don't surface diagnostics
+    // (e.g., the Statement-DU dispatcher in ScriptDomBuild.buildStatement).
+    let stmt = (ScriptDomBuild.buildCreateIndex malformedFilterIdx).Value
     Assert.Null stmt.FilterPredicate
-    // The silent-skip path provides no Diagnostic surface; consumers
-    // wanting the failure visible should use buildCreateIndexWithDiagnostics.
 
 [<Fact>]
-let ``buildCreateIndexWithDiagnostics: composability — Diagnostics.bind chains downstream emit decisions`` () =
+let ``buildCreateIndex: composability — Diagnostics.bind chains downstream emit decisions`` () =
     // Verify the writer composes per Diagnostics.bind contract.
     let countFilteredIndexes (idxs: IndexDef list) : Diagnostics<int> =
         idxs
@@ -81,7 +76,7 @@ let ``buildCreateIndexWithDiagnostics: composability — Diagnostics.bind chains
             (fun acc idx ->
                 Diagnostics.bind
                     (fun n ->
-                        ScriptDomBuild.buildCreateIndexWithDiagnostics idx
+                        ScriptDomBuild.buildCreateIndex idx
                         |> Diagnostics.map (fun stmt ->
                             if isNull stmt.FilterPredicate then n else n + 1))
                     acc)
@@ -91,7 +86,7 @@ let ``buildCreateIndexWithDiagnostics: composability — Diagnostics.bind chains
     Assert.Single result.Entries |> ignore  // malformed contributed one Warning entry
 
 [<Fact>]
-let ``buildCreateIndexWithDiagnostics: T1 determinism — same input yields same Diagnostics shape`` () =
-    let r1 = ScriptDomBuild.buildCreateIndexWithDiagnostics malformedFilterIdx
-    let r2 = ScriptDomBuild.buildCreateIndexWithDiagnostics malformedFilterIdx
+let ``buildCreateIndex: T1 determinism — same input yields same Diagnostics shape`` () =
+    let r1 = ScriptDomBuild.buildCreateIndex malformedFilterIdx
+    let r2 = ScriptDomBuild.buildCreateIndex malformedFilterIdx
     Assert.Equal (r1.Entries.Length, r2.Entries.Length)

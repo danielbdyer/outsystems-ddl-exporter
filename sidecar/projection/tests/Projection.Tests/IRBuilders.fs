@@ -99,6 +99,25 @@ let mkIndex
         IsPlatformAuto     = false
     }
 
+/// Build a `Reference` with minimum-evidence defaults. Required: ssKey,
+/// name, sourceAttribute, targetKind. Defaults: OnDelete = NoAction,
+/// IsUserFk = false, HasDbConstraint = false (V1's COALESCE-to-0 default).
+let mkReference
+    (ssKey: SsKey)
+    (name: Name)
+    (sourceAttribute: SsKey)
+    (targetKind: SsKey)
+    : Reference =
+    {
+        SsKey           = ssKey
+        Name            = name
+        SourceAttribute = sourceAttribute
+        TargetKind      = targetKind
+        OnDelete        = NoAction
+        IsUserFk        = false
+        HasDbConstraint = false
+    }
+
 /// Build a `Catalog` with the given modules and no sequences. For
 /// invariant-checking construction use `Catalog.create modules sequences`;
 /// `mkCatalog` is the no-invariant-check shorthand for test fixtures that

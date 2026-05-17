@@ -708,50 +708,22 @@ module ScriptDomBuild =
                         parens :> BooleanExpression
                 Diagnostics.ofValue (Some wrapped)
 
-    /// Silent-skip variant for the `buildCreateIndex` path (chapter
-    /// 4.5 slice α legacy shape). Returns just the parsed
-    /// `BooleanExpression option`; Diagnostic emission is dropped
-    /// at the buildCreateIndex layer until a `Diagnostics`-aware
-    /// emitter signature lands (chapter 4.6 slice γ open Q3
-    /// deferral). Future consumers wishing to surface parse failures
-    /// should call `tryParseFilterWithDiagnostics` directly.
-    let private parseFilterPredicate (raw: string) : BooleanExpression option =
-        if System.String.IsNullOrWhiteSpace raw then None
-        else
-            let parser = TSql160Parser(initialQuotedIdentifiers = false)
-            use reader = new System.IO.StringReader(raw)
-            // F#'s tuple-return binding for the C# `out` parameter
-            // shape: `BooleanExpression ParseBooleanExpression(TextReader, out IList<ParseError>)`.
-            let fragment, errors = parser.ParseBooleanExpression(reader)
-            match Option.ofObj fragment with
-            | None -> None
-            | Some _ when not (isNull errors) && errors.Count > 0 -> None
-            | Some f ->
-                // Wrap in BooleanParenthesisExpression for output
-                // readability (V1 IndexScriptBuilder convention;
-                // pillar 8 ubiquitous-language alignment).
-                match f with
-                | :? BooleanParenthesisExpression -> Some f
-                | _ ->
-                    let parens = BooleanParenthesisExpression()
-                    parens.Expression <- f
-                    Some (parens :> BooleanExpression)
-
-    /// Chapter 4.7 slice β — Diagnostics-aware CREATE INDEX builder.
-    /// Returns the typed `CreateIndexStatement` plus a Diagnostics
-    /// stream surfacing filter-parse failures (Source=emitter:ssdt;
-    /// Code=emit.ssdt.index.filterParseFailure; Severity=Warning).
-    /// When the filter parses cleanly, the entries list is empty and
-    /// the resulting CREATE INDEX carries the typed FilterPredicate.
-    /// When the filter fails to parse, the resulting CREATE INDEX
-    /// omits the WHERE clause AND the Diagnostics carries a Warning
-    /// entry consumers can surface in the manifest or per-emit log.
+    /// CREATE INDEX builder. Returns the typed `CreateIndexStatement`
+    /// paired with a Diagnostics stream surfacing filter-parse failures
+    /// (Source=emitter:ssdt; Code=emit.ssdt.index.filterParseFailure;
+    /// Severity=Warning). When the filter parses cleanly, the entries
+    /// list is empty and the resulting CREATE INDEX carries the typed
+    /// FilterPredicate. When the filter fails to parse, the resulting
+    /// CREATE INDEX omits the WHERE clause AND the Diagnostics carries
+    /// a Warning entry consumers can surface in the manifest or
+    /// per-emit log.
     ///
-    /// Closes chapter 4.6 slice γ "Diagnostics-aware emitter signature"
-    /// forward signal by providing the canonical emitter contract
-    /// future consumers consume. The legacy `buildCreateIndex` (silent
-    /// skip) delegates to this function via `.Value`.
-    let buildCreateIndexWithDiagnostics (idx: IndexDef) : Diagnostics<CreateIndexStatement> =
+    /// Callers that don't surface diagnostics drop them explicitly via
+    /// `.Value` at the call site (chapter 4.7 slice β cash-out of
+    /// chapter 4.6 slice γ "Diagnostics-aware emitter signature"
+    /// forward signal; V2-no-back-compat — no legacy silent-skip
+    /// wrapper).
+    let buildCreateIndex (idx: IndexDef) : Diagnostics<CreateIndexStatement> =
         let stmt = CreateIndexStatement()
         stmt.Unique <- idx.IsUnique
         stmt.Name <- bracketed idx.Name
@@ -772,8 +744,7 @@ module ScriptDomBuild =
             colRef.MultiPartIdentifier <- mid
             stmt.IncludeColumns.Add(colRef)
         // Chapter 4.5 slice α — WHERE clause via TSql160Parser, lifted
-        // through the Diagnostics writer per chapter 4.6 slice γ +
-        // chapter 4.7 slice β.
+        // through the Diagnostics writer.
         match idx.Filter with
         | None -> Diagnostics.ofValue stmt
         | Some raw ->
@@ -781,14 +752,6 @@ module ScriptDomBuild =
             |> Diagnostics.map (fun predOpt ->
                 predOpt |> Option.iter (fun p -> stmt.FilterPredicate <- p)
                 stmt)
-
-    /// Legacy silent-skip CREATE INDEX builder (chapter 4.5 slice α
-    /// shape). Delegates to `buildCreateIndexWithDiagnostics` +
-    /// drops the Diagnostics entries. Callers wanting filter-parse
-    /// failures surfaced should consume `buildCreateIndexWithDiagnostics`
-    /// directly.
-    let buildCreateIndex (idx: IndexDef) : CreateIndexStatement =
-        (buildCreateIndexWithDiagnostics idx).Value
 
     // -----------------------------------------------------------------------
     // Statement-level dispatch.
@@ -870,7 +833,12 @@ module ScriptDomBuild =
         | CreateTable (table, cols, pk, fks) ->
             Some (buildCreateTable table cols pk fks :> TSqlStatement)
         | CreateIndex idx ->
-            Some (buildCreateIndex idx :> TSqlStatement)
+            // The Statement-DU dispatcher drops Diagnostics — the
+            // dispatcher returns raw TSqlStatement per A35's stream
+            // contract. Future emit-time consumers wanting filter-
+            // parse failures surfaced consume `buildCreateIndex`
+            // directly (returns `Diagnostics<CreateIndexStatement>`).
+            Some ((buildCreateIndex idx).Value :> TSqlStatement)
         | InsertRow (table, cells) ->
             Some (buildInsertRow table cells :> TSqlStatement)
         | SetIdentityInsert (table, enabled) ->
