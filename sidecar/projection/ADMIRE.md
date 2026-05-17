@@ -2162,12 +2162,25 @@ out together rather than in isolation.
 ## 2026-05-13 — OSSYS catalog producer (`src/AdvancedSql/outsystems_metadata_rowsets.sql` → `MetadataSnapshotRunner` → `SnapshotJsonBuilder` → `osm_model.json`)
 
 **Status:** **extracted (chapter 2 close — JSON path; hybrid mode
-operating)** + **carbon-copy candidate (2026-05-16 audible)** —
+operating)** + **carbon-copy in flight (chapter 5.0 slice α; 2026-05-17)** —
 `DECISIONS 2026-05-13` — admire spectrum; session-23 amendment for
 the in-flight status; session-25 chapter-2-close transition to
 extracted; 2026-05-16 audible marking the chain as a carbon-copy
 candidate for the chapter that consumes a live SQL-extraction
-capability.
+capability; 2026-05-17 chapter 5.0 slice α opens carbon-copy.
+
+**Carbon-copy events:**
+- **2026-05-17 (chapter 5.0 slice α).** `outsystems_metadata_rowsets
+  .sql` carbon-copied verbatim from V1 source
+  (`src/AdvancedSql/outsystems_metadata_rowsets.sql`) to V2 at
+  `sidecar/projection/src/Projection.Adapters.OssysSql/Resources/
+  outsystems_metadata_rowsets.sql`. Embedded as a resource in the new
+  F# project `Projection.Adapters.OssysSql`; accessed via
+  `MetadataExtractionSql.read()`. Parity test
+  (`MetadataExtractionSqlTests`) verifies byte-equality against V1's
+  source when the V1 trunk is present alongside V2. Per chapter 5.0
+  open Q1: surrounding C# plumbing rewritten in F# at copy-time (not
+  carbon-copied as C#).
 
 **Audible update (2026-05-16; V2 self-containment).** The highest-
 value V1 inheritance candidate for V2. V1's metadata-extraction chain

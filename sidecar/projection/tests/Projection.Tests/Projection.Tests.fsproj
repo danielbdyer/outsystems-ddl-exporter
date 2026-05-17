@@ -79,6 +79,7 @@
     <Compile Include="IndexColumnDirectionTests.fs" />
     <Compile Include="ModuleExtendedPropertyEmissionTests.fs" />
     <Compile Include="WithDiagnosticsBuildersTests.fs" />
+    <Compile Include="MetadataExtractionSqlTests.fs" />
     <Compile Include="IsActiveCarryThroughTests.fs" />
     <Compile Include="IRFidelityLiftTests.fs" />
     <Compile Include="NoSilentDropTests.fs" />
@@ -153,6 +154,7 @@
     <ProjectReference Include="..\..\src\Projection.Targets.Distributions\Projection.Targets.Distributions.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.Sql\Projection.Adapters.Sql.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.Osm\Projection.Adapters.Osm.fsproj" />
+    <ProjectReference Include="..\..\src\Projection.Adapters.OssysSql\Projection.Adapters.OssysSql.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Pipeline\Projection.Pipeline.fsproj" />
   </ItemGroup>
 
