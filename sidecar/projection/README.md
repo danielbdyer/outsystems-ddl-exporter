@@ -380,6 +380,24 @@ Build clean under `TreatWarningsAsErrors=true`; lint clean across
   surfaces as a `Skip` test stub at the test-file level, not as
   ADMIRE-prose commentary.
 
+## Status at chapter 4.5 close (2026-05-17; Index IR fidelity + chapter-4.4 predicate cash-outs)
+
+- **1330 non-canary tests passing** + canary tests Docker-gated.
+  0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`;
+  lint count unchanged from chapter 4.4 close baseline.
+- **Chapter 4.5 shipped 2 substantive slices end-to-end** (α / β):
+  `Index.Filter : string option` IR + ScriptDom WHERE emission via
+  TSql160Parser.ParseBooleanExpression at emit time (slice α);
+  `Index.IncludedColumns : SsKey list` IR + ScriptDom INCLUDE emission
+  + OSSYS adapter `isIncluded=true` drop retired (slice β). Two of
+  chapter 4.4's four always-false `PredicateName` variants retire
+  (`HasFilteredIndex` + `HasIncludedIndexColumns`). See
+  `CHAPTER_4_5_CLOSE.md`.
+- **V2 emits cutover-fidelity filtered + covering indexes.** V1's
+  `IndexOnDiskMetadata.FilterDefinition` + `IndexColumnModel.IsIncluded`
+  reference shapes mirrored at the V2 IR layer; OSSYS adapter no
+  longer drops V1 included-column entries.
+
 ## Status at chapter 4.4 close (2026-05-17; manifest diagnostic fields retire chapter-4.4-fills deferrals)
 
 - **1313 non-canary tests passing** + canary tests Docker-gated.

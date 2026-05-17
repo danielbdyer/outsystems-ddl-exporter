@@ -7,12 +7,14 @@ per-phase chapter sequence with V1 inheritance opportunities (carbon-copy
 candidates and shipped carbon-copies), cross-cutting infrastructure work,
 and the risk register.
 
-**Current state as of 2026-05-17 (post-chapter-4.4 close).** V2-driver
-critical-path Phases 1–7 are all closed end-to-end. **Chapter 4.4
-(Manifest diagnostic fields) closed 2026-05-17** — three of the four
-`chapter 4.4 fills` deferrals retired (Coverage / PredicateCoverage /
-Unsupported emit typed evidence); `PreRemediation` stays empty per
-V2_DRIVER §154 (RemediationEmitter deferred to chapter 5+). The rest
+**Current state as of 2026-05-17 (post-chapter-4.5 close).** V2-driver
+critical-path Phases 1–7 are all closed end-to-end. Chapter 4.4
+(Manifest diagnostic fields) + **chapter 4.5 (Index IR fidelity)**
+closed 2026-05-17. Two of chapter 4.4's four always-false
+PredicateName variants retired by chapter 4.5: `HasFilteredIndex`
+(slice α; Index.Filter lifted) + `HasIncludedIndexColumns` (slice β;
+Index.IncludedColumns lifted + OSSYS adapter `isIncluded=true` drop
+retired). `PreRemediation` stays empty per V2_DRIVER §154. The rest
 of pending work lives in the deferred-with-trigger queue per chapter
 close docs. See §VII Sequencing graph for the current fan-out.
 
@@ -53,6 +55,7 @@ the operational *what and when* is here.
   - [Phase 4 — Identity-as-driver (chapter 4.2; closed)](#phase-4--identity-as-driver-chapter-42-closed-2026-05-15)
   - [Phase 5 — Operational diagnostics (chapter 4.3; closed)](#phase-5--operational-diagnostics-chapter-43-closed-structural-slice-arc)
   - [Phase 5.5 — Manifest diagnostic fields (chapter 4.4; closed)](#phase-55--manifest-diagnostic-fields-chapter-44-closed-2026-05-17)
+  - [Phase 5.6 — Index IR fidelity (chapter 4.5; closed)](#phase-56--index-ir-fidelity-chapter-45-closed-2026-05-17)
   - [Phase 6 — DACPAC dev-tooling (chapter 3.x; closed)](#phase-6--dacpac-dev-tooling-chapter-3x-closed-under-reframe)
   - [Phase 7 — SnapshotRowsets (chapter 3.2; closed)](#phase-7--snapshotrowsets-chapter-32-closed)
   - [Phase 8 — Pragmatic close](#phase-8--pragmatic-close)
@@ -444,6 +447,47 @@ V2_DRIVER §154's RemediationEmitter deferral.
 - **V1↔V2 PredicateCounts JSON-shape divergence** — V2 emits sorted array of objects; V1 emits dict. Tolerance variant or shape-flip if byte-equality with V1 demanded.
 
 **V1 inheritance opportunities:** none. The chapter mirrors V1's SsdtManifest reference types (SsdtManifest.cs + SsdtPredicateCoverage.cs + ManifestBuilder.cs) at the V2 IR layer; no carbon-copy event.
+
+---
+
+### Phase 5.6 — Index IR fidelity (chapter 4.5; CLOSED 2026-05-17)
+
+**Status:** closed end-to-end. Retires 2 of chapter 4.4's 4 always-false
+`PredicateName` variants by lifting V2's `Index` IR. Close synthesis
+at `CHAPTER_4_5_CLOSE.md`; chapter-open at `CHAPTER_4_5_OPEN.md`.
+
+**Strategic frame.** V2_DRIVER's per-axis correctness stakes places
+this as Schema-axis work (High stakes; structural cutover-fidelity
+weight). V1's `IndexOnDiskMetadata.FilterDefinition` +
+`IndexColumnModel.IsIncluded` reference shapes mirrored at V2 IR;
+the OSSYS adapter `isIncluded=true` drop divergence retires.
+
+**Slices shipped:**
+
+| Slice | Scope | Witness | Status |
+|---|---|---|---|
+| α | `Index.Filter : string option` + `IndexDef.Filter` + ScriptDom WHERE emission via TSql160Parser + adapter pickup + HasFilteredIndex cash-out | 9 tests in `IndexFilterTests.fs` + cross-chapter cash-out in `ManifestPredicateCoverageTests.fs` | shipped 2026-05-17 |
+| β | `Index.IncludedColumns : SsKey list` + `IndexDef.IncludedColumns` + ScriptDom INCLUDE emission + adapter partition-by-isIncluded + HasIncludedIndexColumns cash-out | 8 tests in `IndexIncludedColumnsTests.fs` + OsmCatalogReaderDifferentialTests EmailLower capture update | shipped 2026-05-17 |
+| γ | V1 differential consolidation + chapter close ritual | 8-item ritual discharged; HANDOFF + BACKLOG + README updated | shipped 2026-05-17 |
+
+**Deferred-with-trigger (codified at close):**
+
+- **`HasLogicalForeignKey×DbConstraint` predicate pair** — V2's
+  Reference doesn't carry logical-vs-physical distinction. Trigger:
+  Tightening-decision-into-Reference flow.
+- **`IndexColumnDirection`** (ASC/DESC per column) — record-modification
+  rather than additive. Trigger: emission demands per-column sort
+  direction (likely DACPAC adapter slice or fixture surfaces a non-ASC
+  index).
+- **`Index.IsPlatformAuto`** — adapter-derivable but no consumer demand.
+- **On-disk rich metadata** (FillFactor / IsPadded / etc.) — out of
+  V2-driver-correctness scope.
+- **Filter-parse-failure Diagnostic emission** — currently silent-skip;
+  trigger: real fixture surfaces a parse failure.
+
+**V1 inheritance opportunities:** none. The chapter mirrors V1's
+`IndexOnDiskMetadata` + `IndexColumnModel` shapes at the V2 IR layer.
+No carbon-copy event.
 
 ---
 

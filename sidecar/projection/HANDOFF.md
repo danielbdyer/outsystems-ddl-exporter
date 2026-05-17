@@ -4,6 +4,43 @@ To the next-chapter agent. Read this before anything else in the V2 sidecar. It 
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
 
+## 2026-05-17 (chapter 4.5 close — slices α + β) — Index IR fidelity (Filter + IncludedColumns) + chapter-4.4 predicate cash-outs
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1330 / 1330 non-canary passing** (1313 prior + 17 new across the chapter — 9 slice α + 8 slice β); canary tests skip when Docker unwarm. 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged.
+
+**Chapter 4.5 closes.** Read `CHAPTER_4_5_CLOSE.md` for the chapter-close synthesis. Read `CHAPTER_4_5_OPEN.md` for the strategic frame (eight-axis; three-slice plan; four resolved-at-open questions).
+
+**What shipped (2 substantive commits + close).** Two of the four `HasFilteredIndex / HasIncludedIndexColumns / HasLogicalForeignKey×DbConstraint` always-false PredicateName variants from chapter 4.4 retire. V2's Index IR + emission now carry V1's `IndexOnDiskMetadata.FilterDefinition` + `IndexColumnModel.IsIncluded` axes.
+
+- **Slice α (`59c19d8`):** `Index.Filter : string option` IR + `IndexDef.Filter` realization-layer field + `ScriptDomBuild.parseFilterPredicate` (TSql160Parser.ParseBooleanExpression at emit time; BooleanParenthesisExpression wrap per V1 IndexScriptBuilder convention) + `buildCreateIndex` emits WHERE clause + adapter captures V1 JSON `filterDefinition` + `HasFilteredIndex` predicate lifts to real. 9 tests in `IndexFilterTests.fs`.
+- **Slice β (`b9dc072`):** `Index.IncludedColumns : SsKey list` IR + `IndexDef.IncludedColumns` realization + `CatalogReader.parseIndex` partitions V1 `columns[]` by `isIncluded` flag (pre-slice-β the adapter dropped `isIncluded=true` per the documented ADMIRE divergence; that drop retires) + `ScriptDomBuild.buildCreateIndex` emits INCLUDE columns + `HasIncludedIndexColumns` predicate lifts. 8 tests in `IndexIncludedColumnsTests.fs`. `OsmCatalogReaderDifferentialTests` IX_USER_NAME expectation updated (EmailLower now captured).
+- **Slice γ (this commit):** Chapter close ritual + `CHAPTER_4_5_CLOSE.md` + HANDOFF + BACKLOG + README.
+
+**What's load-bearing going forward.**
+
+- **`TSql160Parser.ParseBooleanExpression` as the canonical filter-parse primitive** at the SSDT layer. Future SQL-expression-parsing consumers (CHECK constraint emission via DACPAC adapter; partial-index rewriting; etc.) inherit the primitive.
+- **Adapter-side partition-by-flag pattern** (`isIncluded` flag → key vs included columns). Future per-column-axis IR fields scale the same way.
+- **2 of 4 always-false predicates retired**; PredicateCoverage manifest section gains accurate per-table flags for filtered + INCLUDE-bearing indexes.
+
+**Forward signals retained (5):**
+
+1. **`HasLogicalForeignKey×DbConstraint` predicate pair** — V2's `Reference` doesn't carry logical-vs-physical distinction. Trigger: future chapter flows the Tightening-pass `ForeignKeyOutcome` decision into Reference.
+2. **`IndexColumnDirection`** (ASC/DESC per column) — record-modification (restructure `Columns : SsKey list` → `Columns : IndexColumn list`) rather than additive. Trigger: emission demands per-column sort direction.
+3. **`Index.IsPlatformAuto`** — adapter-derivable; no consumer demand.
+4. **On-disk rich metadata** (FillFactor / IsPadded / partition columns / data compression) — V1 carries; V2 emission doesn't need for V2-driver correctness.
+5. **Filter-parse-failure Diagnostic emission** — currently silent-skip; trigger: real fixture surfaces a parse failure.
+
+**Recommended next-chapter shortlist.** V2-driver structural surface remains operationally complete (Phases 1–7 + 5.5 + 5.6/4.5 closed). Pending work:
+
+1. **`HasLogicalForeignKey×DbConstraint` chapter** — retires the last 2 always-false PredicateName variants. Requires Tightening-decision-into-Reference flow (record-extension on Reference; pass-pipeline integration). Estimated 1-2 sessions.
+2. **`IndexColumnDirection` chapter** — record-modification (more invasive than chapter 4.5's record-extensions); restructures `Index.Columns : SsKey list` → `Index.Columns : IndexColumn list`. Estimated 1-2 sessions including ~80+ literal-site migrations.
+3. **Module.ExtendedProperties emission** — gated on V1 confirmation.
+4. **Sequence emission** — gated on V1 fixture.
+5. **OSSYS catalog producer carbon-copy** — Phase 8 / chapter 5+ live-SQL slice.
+6. **Phase 8 pragmatic close** — F# Analyzers SDK / Coordinates Stage 2 / Hex port lifts / cutover-day runbook / V1 sunset plan.
+
+---
+
 ## 2026-05-17 (chapter 4.4 close — slices α + β + γ + δ) — Manifest diagnostic fields retire three of four chapter-4.4-fills deferrals
 
 **Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1313 / 1313 non-canary passing** (1262 prior + 51 new across the chapter — 18 slice α + 14 slice β + 8 slice γ + 11 slice δ); canary tests skip when Docker unwarm. 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint count 13 — unchanged from chapter A.4.7' baseline.
