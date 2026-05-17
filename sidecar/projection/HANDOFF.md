@@ -4,6 +4,45 @@ To the next-chapter agent. Read this before anything else in the V2 sidecar. It 
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
 
+## 2026-05-17 (chapter 4.6 close — slices α + β + γ) — Forward-signal cleanup bundle (HasDbConstraint + IsPlatformAuto + filter-parse Diagnostic)
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1348 / 1348 non-canary passing** (1330 prior + 18 net new across the chapter — 10 slice α + 0 slice β + 9 slice γ minus 1 chapter-4.4 always-false test retired). 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged.
+
+**Chapter 4.6 closes.** Read `CHAPTER_4_6_CLOSE.md` for the chapter-close synthesis. Read `CHAPTER_4_6_OPEN.md` for the strategic frame.
+
+**What shipped (3 substantive commits + close).** All four chapter-4.4 always-false PredicateName variants now lift to real IR evaluation (slice α retires the last 2: HasLogicalForeignKeyWithoutDbConstraint + HasLogicalForeignKeyWithDbConstraint). One of four A.0' deferred concepts retires (slice β: IsPlatformAuto). Chapter 4.5 silent-skip Q3 deferral closes (slice γ: Diagnostics-aware filter-parse helper).
+
+- **Slice α (`75687e6`):** `Reference.HasDbConstraint : bool` IR + adapter pickup (JSON path captures `reference_hasDbConstraint` int-flag; rowset path propagates from `#FkReality` HasFK column; SymmetricClosure inherits; ReadSide defaults true). Both predicate variants lift to real evaluation. 24 Reference literal sites migrated via Python mechanical-edit pass. 10 tests.
+- **Slice β (`be44e74`):** `Index.IsPlatformAuto : bool` IR + adapter pickup. IR-only carriage; emitter consumption (operator-toggle) deferred. 9 Index literal sites migrated.
+- **Slice γ (`f2b2640`):** `ScriptDomBuild.tryParseFilterWithDiagnostics` public helper. Returns `Diagnostics<BooleanExpression option>` with `Source=emitter:ssdt`, `Code=emit.ssdt.index.filterParseFailure`, `Severity=Warning`, Metadata carrying raw filter + parser error count. 9 tests.
+
+**What's load-bearing going forward.**
+
+- **All 16 V1-aligned PredicateName variants evaluate against real V2 IR** — the chapter-4.4 always-false-pending-IR category is empty. Future predicate additions follow closed-DU widening + adapter pickup + emit-time evaluation pattern.
+- **`reference_hasDbConstraint` adapter primitive** — `getIntFlag` with COALESCE-to-false default. Reusable for future similar V1 int-flag fields.
+- **`tryParseFilterWithDiagnostics` helper** — the Diagnostics-aware parse primitive. Future emit-time parse consumers (CHECK constraint, partial-index rewriting, expression validation in DACPAC adapter) consume this surface.
+
+**Forward signals retained (after this chapter):**
+
+1. **`IndexColumnDirection`** (ASC/DESC per column) — record-modification rather than additive. Trigger: emission demands per-column sort direction.
+2. **`OriginalName` + `ExternalDatabaseType`** A.0' deferred concepts — untriggered.
+3. **On-disk rich Index metadata** (FillFactor / IsPadded / partition / data compression) — V1 carries; V2 emission doesn't need for V2-driver correctness.
+4. **`isPlatformAuto` emitter consumption** (NEW) — IR carriage shipped at slice β; operator-toggle wiring waits on a real workflow demanding platform-auto-index filtering.
+5. **Diagnostics-aware emitter signature** (NEW) — slice γ ships the helper; buildCreateIndex wiring waits on a downstream consumer needing filter-parse failures in the manifest or per-emit Diagnostics stream.
+6. **PreRemediation field population** — V2_DRIVER §154 RemediationEmitter chapter 5+.
+7. **Module.ExtendedProperties emission** — multi-level-aware emitter refactor.
+8. **Sequence emission** — V1 fixture gated.
+
+**Recommended next-chapter shortlist.** V2-driver structural surface remains operationally complete. Pending substantial work:
+
+1. **OSSYS catalog producer carbon-copy** — Phase 8 / chapter 5+ live-SQL slice. Highest-value V1 inheritance candidate per BACKLOG.
+2. **`IndexColumnDirection` chapter** — record-modification (~80+ literal-site migration). Triggered when emission needs per-column sort direction.
+3. **Module.ExtendedProperties emission** — schema-level sp_addextendedproperty (no level1 args). Needs multi-level-aware emitter refactor.
+4. **CREATE SEQUENCE emitter** — V1 fixture gated; build the typed CreateSequenceStatement path.
+5. **Phase 8 pragmatic close** — F# Analyzers SDK / Coordinates Stage 2 / Hex port lifts / cutover-day runbook / V1 sunset plan.
+
+---
+
 ## 2026-05-17 (chapter 4.5 close — slices α + β) — Index IR fidelity (Filter + IncludedColumns) + chapter-4.4 predicate cash-outs
 
 **Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1330 / 1330 non-canary passing** (1313 prior + 17 new across the chapter — 9 slice α + 8 slice β); canary tests skip when Docker unwarm. 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged.

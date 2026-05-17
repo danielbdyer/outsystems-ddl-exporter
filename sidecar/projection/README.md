@@ -380,6 +380,21 @@ Build clean under `TreatWarningsAsErrors=true`; lint clean across
   surfaces as a `Skip` test stub at the test-file level, not as
   ADMIRE-prose commentary.
 
+## Status at chapter 4.6 close (2026-05-17; forward-signal cleanup bundle — HasDbConstraint + IsPlatformAuto + filter-parse Diagnostic)
+
+- **1348 non-canary tests passing** + canary tests Docker-gated.
+  0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`;
+  lint count unchanged.
+- **Chapter 4.6 shipped 3 substantive slices end-to-end** (α / β / γ):
+  `Reference.HasDbConstraint : bool` IR + adapter pickup (JSON +
+  rowset + SymmetricClosure + ReadSide) + HasLogicalForeignKey×
+  DbConstraint predicate pair cash-out (slice α; retires the last 2
+  chapter-4.4 always-false PredicateName variants — **all 16
+  V1-aligned predicates now evaluate against real V2 IR**);
+  `Index.IsPlatformAuto : bool` IR lift (slice β); Diagnostics-aware
+  filter-parse helper `tryParseFilterWithDiagnostics` closing the
+  chapter 4.5 silent-skip Q3 deferral (slice γ). See `CHAPTER_4_6_CLOSE.md`.
+
 ## Status at chapter 4.5 close (2026-05-17; Index IR fidelity + chapter-4.4 predicate cash-outs)
 
 - **1330 non-canary tests passing** + canary tests Docker-gated.

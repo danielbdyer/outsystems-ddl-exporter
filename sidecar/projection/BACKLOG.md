@@ -7,16 +7,19 @@ per-phase chapter sequence with V1 inheritance opportunities (carbon-copy
 candidates and shipped carbon-copies), cross-cutting infrastructure work,
 and the risk register.
 
-**Current state as of 2026-05-17 (post-chapter-4.5 close).** V2-driver
-critical-path Phases 1–7 are all closed end-to-end. Chapter 4.4
-(Manifest diagnostic fields) + **chapter 4.5 (Index IR fidelity)**
-closed 2026-05-17. Two of chapter 4.4's four always-false
-PredicateName variants retired by chapter 4.5: `HasFilteredIndex`
-(slice α; Index.Filter lifted) + `HasIncludedIndexColumns` (slice β;
-Index.IncludedColumns lifted + OSSYS adapter `isIncluded=true` drop
-retired). `PreRemediation` stays empty per V2_DRIVER §154. The rest
-of pending work lives in the deferred-with-trigger queue per chapter
-close docs. See §VII Sequencing graph for the current fan-out.
+**Current state as of 2026-05-17 (post-chapter-4.6 close).** V2-driver
+critical-path Phases 1–7 are all closed end-to-end. Chapters 4.4
+(Manifest diagnostic fields) + 4.5 (Index IR fidelity) + **chapter 4.6
+(forward-signal cleanup bundle)** closed 2026-05-17. **All four of
+chapter 4.4's always-false PredicateName variants now lift to real
+V2 IR evaluation** — `HasFilteredIndex` + `HasIncludedIndexColumns`
+(chapter 4.5) plus `HasLogicalForeignKeyWithoutDbConstraint` +
+`HasLogicalForeignKeyWithDbConstraint` (chapter 4.6 slice α). One of
+four A.0' deferred concepts retired by chapter 4.6 slice β
+(`IsPlatformAuto`). Chapter 4.5 silent-skip Q3 deferral closed by
+chapter 4.6 slice γ (filter-parse Diagnostic helper). `PreRemediation`
+stays empty per V2_DRIVER §154. See §VII Sequencing graph for the
+current fan-out.
 
 **Strategic relationship:**
 
@@ -56,6 +59,7 @@ the operational *what and when* is here.
   - [Phase 5 — Operational diagnostics (chapter 4.3; closed)](#phase-5--operational-diagnostics-chapter-43-closed-structural-slice-arc)
   - [Phase 5.5 — Manifest diagnostic fields (chapter 4.4; closed)](#phase-55--manifest-diagnostic-fields-chapter-44-closed-2026-05-17)
   - [Phase 5.6 — Index IR fidelity (chapter 4.5; closed)](#phase-56--index-ir-fidelity-chapter-45-closed-2026-05-17)
+  - [Phase 5.7 — Forward-signal cleanup bundle (chapter 4.6; closed)](#phase-57--forward-signal-cleanup-bundle-chapter-46-closed-2026-05-17)
   - [Phase 6 — DACPAC dev-tooling (chapter 3.x; closed)](#phase-6--dacpac-dev-tooling-chapter-3x-closed-under-reframe)
   - [Phase 7 — SnapshotRowsets (chapter 3.2; closed)](#phase-7--snapshotrowsets-chapter-32-closed)
   - [Phase 8 — Pragmatic close](#phase-8--pragmatic-close)
@@ -487,6 +491,52 @@ the OSSYS adapter `isIncluded=true` drop divergence retires.
 
 **V1 inheritance opportunities:** none. The chapter mirrors V1's
 `IndexOnDiskMetadata` + `IndexColumnModel` shapes at the V2 IR layer.
+No carbon-copy event.
+
+---
+
+### Phase 5.7 — Forward-signal cleanup bundle (chapter 4.6; CLOSED 2026-05-17)
+
+**Status:** closed end-to-end. Retires three forward signals in a
+single chapter: the last 2 chapter-4.4 always-false PredicateName
+variants (slice α via Reference.HasDbConstraint lift); one of four
+A.0' deferred concepts (slice β via Index.IsPlatformAuto lift); the
+chapter 4.5 silent-skip Q3 deferral (slice γ via Diagnostics-aware
+filter-parse helper). Close synthesis at `CHAPTER_4_6_CLOSE.md`;
+chapter-open at `CHAPTER_4_6_OPEN.md`.
+
+**Strategic frame.** Three independent additive cash-outs in a single
+bundled chapter. Slice α has the largest leverage (closes the
+chapter-4.4 PredicateName always-false audit). All-16-V1-aligned
+PredicateName variants now evaluate against real V2 IR.
+
+**Slices shipped:**
+
+| Slice | Scope | Witness | Status |
+|---|---|---|---|
+| α | `Reference.HasDbConstraint : bool` + adapter pickup (JSON + rowset + SymmetricClosure + ReadSide) + HasLogicalForeignKey×DbConstraint pair cash-out | 10 tests in `ReferenceHasDbConstraintTests.fs` + chapter-4.4 always-false test retired | shipped 2026-05-17 |
+| β | `Index.IsPlatformAuto : bool` + adapter pickup | adapter pickup covered by existing OsmCatalogReaderDifferentialTests | shipped 2026-05-17 |
+| γ | `ScriptDomBuild.tryParseFilterWithDiagnostics` Diagnostics-aware helper | 9 tests in `FilterParseDiagnosticTests.fs` | shipped 2026-05-17 |
+| δ | V1 differential consolidation + chapter close ritual | 8-item ritual discharged; HANDOFF + BACKLOG + README updated | shipped 2026-05-17 |
+
+**Deferred-with-trigger (codified at close):**
+
+- **`isPlatformAuto` emitter consumption** (NEW) — IR carriage
+  shipped at slice β; operator-toggle wiring deferred. Trigger:
+  operator workflow demands filtering out platform-auto indexes.
+- **Diagnostics-aware emitter signature** (NEW) — `tryParseFilterWithDiagnostics`
+  available; `buildCreateIndex` wiring deferred. Trigger: downstream
+  consumer needs filter-parse failures to surface in the manifest.
+- **`IndexColumnDirection`** A.0' deferred concept — record-modification
+  rather than additive.
+- **`OriginalName` + `ExternalDatabaseType`** A.0' deferred concepts —
+  untriggered.
+- **On-disk rich Index metadata** — out of V2-driver-correctness scope.
+
+**V1 inheritance opportunities:** none. The chapter mirrors V1's
+`reference_hasDbConstraint` (outsystems_model_export.sql:730) +
+`IndexModel.IsPlatformAuto` (IndexModel.cs:13) + `IndexScriptBuilder.
+ParsePredicate` (IndexScriptBuilder.cs:403-419) at the V2 layer.
 No carbon-copy event.
 
 ---
