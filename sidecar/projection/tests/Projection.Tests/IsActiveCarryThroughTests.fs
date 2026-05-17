@@ -324,6 +324,8 @@ let private attrRowWith (isActive: bool) (attrId: int) (entityId: int) (attrName
         AttrSsKey    = None
         IsActive     = isActive
         Description  = None
+        OriginalName = None
+        ExternalDatabaseType = None
     }
 
 [<Fact>]

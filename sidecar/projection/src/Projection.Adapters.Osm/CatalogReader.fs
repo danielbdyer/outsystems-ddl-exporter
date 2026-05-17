@@ -168,6 +168,15 @@ module CatalogReader =
             /// `ossys_EntityAttr.Description` column. `None` when V1's
             /// source row is NULL.
             Description  : string option
+            /// Chapter 4.9 slice β — OriginalName lift (rowset path).
+            /// V1's `ossys_EntityAttr.OriginalName` column. `None` when
+            /// no rename history is recorded.
+            OriginalName : string option
+            /// Chapter 4.9 slice β — ExternalColumnType lift (rowset
+            /// path). V1's `ossys_EntityAttr.ExternalColumnType` column.
+            /// `None` for OS-native entities and when V1 omits the
+            /// override.
+            ExternalDatabaseType : string option
         }
 
     /// V1 rowset 4 — `#RefResolved` resolved-reference rows; chapter
@@ -565,6 +574,14 @@ module CatalogReader =
         // JSON property which `SnapshotJsonBuilder.cs` writes when
         // V1's `ossys_EntityAttr.Description` is non-null.
         let descriptionResult = getOptionalString attrJson "description"
+        // Chapter 4.9 slice β — OriginalName + ExternalDatabaseType lift.
+        // V1's JSON projects via `originalName` (NULL when no rename
+        // history) and `external_dbType` (NULL for OS-native entities
+        // and for external entities lacking an override). Both fields
+        // are defensive optional reads; the adapter carries `None` when
+        // the source omits or null-projects either.
+        let originalNameResult       = getOptionalString attrJson "originalName"
+        let externalDbTypeResult     = getOptionalString attrJson "external_dbType"
         match nameResult, physicalResult, dataTypeStr, isMandatory, isIdentifier with
         | Ok rawName, Ok physicalName, Ok rawDataType,
           Ok mandatory, Ok identifier ->
@@ -574,6 +591,14 @@ module CatalogReader =
             let description  =
                 match descriptionResult with
                 | Ok d -> d
+                | Error _ -> None
+            let originalName : string option =
+                match originalNameResult with
+                | Ok n -> n
+                | Error _ -> None
+            let externalDatabaseType : string option =
+                match externalDbTypeResult with
+                | Ok t -> t
                 | Error _ -> None
             // Per session-32 — V1 surfaces length / precision /
             // scale on attribute records when applicable. The
@@ -640,7 +665,9 @@ module CatalogReader =
                       // attribute-level lift; V1's JSON projection
                       // does not surface attribute-level extended
                       // properties at the boundary today.
-                      ExtendedProperties = [] }
+                      ExtendedProperties = []
+                      OriginalName       = originalName
+                      ExternalDatabaseType = externalDatabaseType }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 // Substantive causes (e.g., `adapter.osm.unmappedDataType`
@@ -1374,7 +1401,9 @@ module CatalogReader =
                   // rowset extension or DACPAC adapter.
                   DefaultValue = None
                   Computed     = None
-                  ExtendedProperties = [] }
+                  ExtendedProperties = []
+                  OriginalName = row.OriginalName
+                  ExternalDatabaseType = row.ExternalDatabaseType }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`.
             propagateOrFallback

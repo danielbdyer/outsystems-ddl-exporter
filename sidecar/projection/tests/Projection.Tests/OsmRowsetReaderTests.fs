@@ -82,6 +82,8 @@ let private idAttrRow (sskey: System.Guid option) : CatalogReader.AttributeRow =
         AttrSsKey    = sskey
         IsActive     = true
         Description  = None
+        OriginalName = None
+        ExternalDatabaseType = None
     }
 
 let private emailAttrRow (sskey: System.Guid option) : CatalogReader.AttributeRow =
@@ -100,6 +102,8 @@ let private emailAttrRow (sskey: System.Guid option) : CatalogReader.AttributeRo
         AttrSsKey    = sskey
         IsActive     = true
         Description  = None
+        OriginalName = None
+        ExternalDatabaseType = None
     }
 
 // ---------------------------------------------------------------------------
@@ -378,6 +382,8 @@ let private accountIdRow (sskey: System.Guid option) : CatalogReader.AttributeRo
         AttrSsKey    = sskey
         IsActive     = true
         Description  = None
+        OriginalName = None
+        ExternalDatabaseType = None
     }
 
 /// User has Id (PK + IDENTITY) and AccountId (FK to Account); the
@@ -402,6 +408,8 @@ let private userAccountIdRow : CatalogReader.AttributeRow =
         AttrSsKey    = None
         IsActive     = true
         Description  = None
+        OriginalName = None
+        ExternalDatabaseType = None
     }
 
 let private userAccountRefRow : CatalogReader.ReferenceRow =
@@ -629,6 +637,8 @@ let private billingAccountIdRow : CatalogReader.AttributeRow =
         AttrSsKey    = None
         IsActive     = true
         Description  = None
+        OriginalName = None
+        ExternalDatabaseType = Some "int"
     }
 
 let private externalBundle (espaceKind: string option) : CatalogReader.RowsetBundle =
@@ -791,6 +801,8 @@ let private systemAuditIdRow : CatalogReader.AttributeRow =
         AttrSsKey    = None
         IsActive     = true
         Description  = None
+        OriginalName = None
+        ExternalDatabaseType = None
     }
 
 let private systemBundle : CatalogReader.RowsetBundle =

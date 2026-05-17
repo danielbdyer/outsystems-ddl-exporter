@@ -46,6 +46,8 @@ let mkAttribute (ssKey: SsKey) (name: Name) (ptype: PrimitiveType) : Attribute =
         DefaultValue       = None
         Computed           = None
         ExtendedProperties = []
+        OriginalName       = None
+        ExternalDatabaseType = None
     }
 
 /// Build a `Kind` with the given attributes and minimum-evidence defaults.

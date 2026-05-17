@@ -400,9 +400,8 @@ let private mkTreeKind () : Kind =
             [
                 { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";       IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
                 { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL";    IsNullable = false }; IsMandatory = true }
-                { SsKey = parentKey; Name = mkName "ParentId"; Type = Integer
-                  Column = { ColumnName = "PARENTID"; IsNullable = true }     // nullable → deferrable
-                  IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+                { IRBuilders.mkAttribute parentKey (mkName "ParentId") Integer with
+                    Column = { ColumnName = "PARENTID"; IsNullable = true } }     // nullable → deferrable
             ]
         References =
             [

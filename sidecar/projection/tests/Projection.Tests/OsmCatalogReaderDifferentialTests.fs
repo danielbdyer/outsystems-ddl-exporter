@@ -471,7 +471,7 @@ let private expectedExternalCatalog : Catalog =
           Modality = []
           Physical = { Schema = "billing"; Table = "BILLING_ACCOUNT"; Catalog = None }
           Attributes = [
-              { IRBuilders.mkAttribute billingAccountIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+              { IRBuilders.mkAttribute billingAccountIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; ExternalDatabaseType = Some "int" }
           ]
           References = []
           Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }

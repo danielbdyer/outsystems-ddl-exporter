@@ -480,6 +480,23 @@ type Attribute = {
     /// slice ζ — IR fidelity lift (L3-S9 extended-properties
     /// sub-axiom; attribute level).
     ExtendedProperties : ExtendedProperty list
+    /// Prior attribute name carried from V1's `ossys_EntityAttr.OriginalName`
+    /// (JSON `originalName`). Set when an attribute has been renamed in
+    /// the model; `None` when no rename history exists. Carriage-only —
+    /// any rename-aware consumer (refactor-log emitter, V1-parity
+    /// migration paths) lands when triggered. Chapter 4.9 slice β —
+    /// retires one of two A.0'-deferred-out-of-scope concepts under
+    /// explicit principal-PO direction (`CHAPTER_4_9_OPEN.md` §Why).
+    OriginalName : string option
+    /// User-specified external SQL Server database type for external
+    /// entities (V1's `ossys_EntityAttr.ExternalColumnType`; JSON
+    /// `external_dbType`). `None` for OS-native entities and for
+    /// external entities where V1 omits the override. V2's
+    /// `PrimitiveType` abstraction (A13) remains canonical for
+    /// emission; this field is fidelity carriage for round-trip
+    /// reconstruction and future external-entity DDL paths.
+    /// Chapter 4.9 slice β.
+    ExternalDatabaseType : string option
 }
 
 

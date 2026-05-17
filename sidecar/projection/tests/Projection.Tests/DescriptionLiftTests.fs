@@ -269,6 +269,8 @@ let private idAttrRowWith (description: string option) : CatalogReader.Attribute
         AttrSsKey    = None
         IsActive     = true
         Description  = description
+        OriginalName = None
+        ExternalDatabaseType = None
     }
 
 [<Fact>]

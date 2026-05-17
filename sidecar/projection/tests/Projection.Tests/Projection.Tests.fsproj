@@ -75,6 +75,7 @@
     <Compile Include="OsmCatalogReaderDifferentialTests.fs" />
     <Compile Include="OsmRowsetReaderTests.fs" />
     <Compile Include="DescriptionLiftTests.fs" />
+    <Compile Include="OriginalNameAndExternalDbTypeLiftTests.fs" />
     <Compile Include="IsActiveCarryThroughTests.fs" />
     <Compile Include="IRFidelityLiftTests.fs" />
     <Compile Include="NoSilentDropTests.fs" />
