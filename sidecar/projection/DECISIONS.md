@@ -12070,3 +12070,152 @@ When the wrapper-vs-default-supplier classification is borderline (e.g., the wra
 - `DECISIONS 2026-05-16 (later) — V2 self-containment` — the parent V2-no-back-compat discipline this entry refines.
 
 ---
+
+## 2026-05-17 (slice 5.1.α) — V1's JSON-aggregation rowsets sunset with V1's `osm_model.json` emission path
+
+V1's `outsystems_metadata_rowsets.sql` emits eight FOR JSON PATH
+aggregation rowsets — `#AttrCheckJson` (rowset 8), `#FkColumnsJson`
+(16), `#FkAttrJson` (17), `#AttrJson` (19), `#RelJson` (20),
+`#IdxJson` (21), `#TriggerJson` (22), and `#ModuleJson` (23). Each
+collapses the structured rowsets above it into per-entity / per-
+attribute / per-FK JSON arrays. The reason these exist at all is to
+feed V1's `osm_model.json` emission — V1 reads the JSON rowsets back
+on the C# side and assembles the document.
+
+V2's catalog-acquisition path consumes V1's **structured** rowsets
+(Modules / Entities / Attributes / References / PhysicalTables —
+rowsets 1–5) directly into typed F# records via `MetadataSnapshotRunner`,
+then composes them into `CatalogReader.RowsetBundle` for translation
+into V2's `Catalog` IR. V2's emission path is the Π chorus
+(`Projection.Targets.SSDT`, `Projection.Targets.Json`,
+`Projection.Targets.Distributions`) operating on `Catalog`. **V2 does
+not produce `osm_model.json`.** Each downstream operator artifact V2
+needs is derived from the structured `Catalog`, not from a JSON
+intermediate.
+
+The classification of the 8 JSON-aggregation rowsets in
+`V1_PARITY_MATRIX.md` is therefore ⚫ V1-SUNSET, not 🟠 NOT-MAPPED:
+V2 does not need to "catch up" to V1's JSON-aggregation surface. V1's
+emission path is preserved through cutover-30 per `VISION.md` T-30 /
+T-15 ladder gates as fallback; thereafter the JSON-aggregation rowsets
+retire with V1.
+
+The one nuance: matrix row 26 (`#IdxJson` rowset 21) is **currently**
+consumed indirectly by V2 — V2's `Catalog.Indexes` IR is populated
+when the input arrives as `SnapshotJson` (which V1 produces from
+`#IdxJson`). The sunset rationale for row 26 is therefore conditional:
+V2 lifts structured rowsets 10 + 11 (`#AllIdx` + `#IdxColsMapped`;
+matrix rows 15 + 16, today 🟠 NOT-MAPPED) into `MetadataSnapshotRunner`
+**before** V1's emission decomissions. That lift retires the JSON
+dependency without losing index coverage.
+
+Recorded in `V1_PARITY_MATRIX.md` rows 13, 21, 22, 24, 25, 26, 27, 28
+as ⚫ V1-SUNSET. The single coverage stub per row lives at
+`tests/Projection.Tests/OssysRowsetParityInventoryTests.fs`.
+
+### Cross-references
+
+- `CHAPTER_5_0_CLOSE.md` — V2's OssysSql adapter as the catalog-
+  acquisition path replacing V1's JSON emission.
+- `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md` §6 — `SnapshotJson` and
+  `SnapshotRowsets` coexist permanently as input variants; this entry
+  scopes the sunset to V1's JSON **production** path, not V2's
+  consumption.
+- `VISION.md` T-30 / T-15 fallback ladder — V1 sunset timing.
+
+---
+
+## 2026-05-17 (slice 5.1.α) — Algebraic-join reconstruction over materialized FK-attribute lookup rowsets
+
+V1's `outsystems_metadata_rowsets.sql` materializes two FK-attribute
+lookup rowsets:
+
+- `#FkAttrMap` (rowset 14): distinct `(AttrId, FkObjectId)` pairs
+  bridging attributes to FK constraints.
+- `#AttrHasFK` (rowset 15): one row per attribute carrying any FK
+  constraint, bearing a `HasFK = 1` flag.
+
+Both exist as materialized lookup surfaces for V1's `ForeignKeyPass`
+and diagnostic emitters. V1 walks each at O(1) per attribute lookup.
+
+V2 deliberately diverges by **reconstructing both on-demand** from
+the algebraic join `Catalog.References` (logical FK declarations,
+sourced from rowset 4) ⊕ `PhysicalSchema.ForeignKeys` (deployed FK
+constraints, reflected from `sys.foreign_keys` on the canary target).
+Each lookup is a one-line F# pipeline expression at the consumer site
+(e.g., `catalog.References |> List.exists (fun r -> r.AttrId = aid)`).
+
+The materialization-vs-reconstruction trade-off:
+
+- V1 path: O(1) per lookup + O(N) memory for the materialized lookup
+  table. Worthwhile when N is unbounded or per-lookup cost dominates.
+- V2 path: O(N) per lookup over the references list + O(1) extra
+  memory. Worthwhile at V2's scale (≤ 300 tables; FK count linear in
+  table count) where N is small and consumers are infrequent.
+
+The substantive reason this is DIVERGENCE rather than NOT-MAPPED: V2
+**has** the FK-attribute lookup capability (via reconstruction); V2
+simply does not surface it as a materialized rowset. Cashing this out
+as a separate matrix row makes V2's algebraic-join choice visible to
+the parity-audit reader without obscuring it under a NOT-MAPPED status
+that would imply "V2 has nothing here."
+
+Recorded in `V1_PARITY_MATRIX.md` rows 19 + 20 as 🟡 DIVERGENCE.
+
+### Cross-references
+
+- `IR grows under evidence, not speculation` (CLAUDE.md operating-
+  disciplines table) — the materialized rowset surface is not earned
+  by a V2 consumer.
+- `Two-consumer threshold for emergent primitives` — when a second
+  consumer demands materialized lookup, the divergence can be revisited.
+
+---
+
+## 2026-05-17 (slice 5.1.α) — Database identity is a realization-time concern, not an IR field
+
+V1's `OutsystemsMetadataSnapshot` envelope carries a `DatabaseName :
+string` field, populated by `MetadataSnapshotRunner` (V1) from
+`SqlConnection.Database` at extraction time. V1's downstream consumers
+use it for two distinct purposes: (a) qualified-name composition (e.g.,
+`[DatabaseName].[schema].[table]` rendered into SMO scripts), and (b)
+audit-trail diagnostics (the snapshot is annotated with the source DB
+name in logs).
+
+V2's `MetadataSnapshot` (F# carrier in `MetadataSnapshotRunner.fs`) has
+no equivalent field. V2 treats database identity as a **realization-
+time concern**:
+
+- The `Catalog` IR is deployment-agnostic — the same `Catalog` can be
+  emitted to multiple target databases (cutover-windowed staging /
+  uat / prod), serialized to different artifact shapes (SSDT project /
+  DACPAC / JSON snapshot / sibling-Π distributions), and round-
+  tripped through different physical schemas without IR awareness of
+  the database name.
+- Emission consumers that need the database name take it as an
+  explicit parameter (`DacpacEmitter.emit databaseName catalog ...`)
+  or surface it via the CLI's deployment-target configuration
+  (`osm emit --target staging`).
+- Audit-trail logging of "what database was the catalog extracted
+  from" is the caller's responsibility, not the IR's. The
+  `MetadataSnapshotRunner.runAsync` caller holds the `SqlConnection`;
+  they know the database name in their own scope and log it where
+  appropriate.
+
+The substantive reason this is DIVERGENCE rather than NOT-MAPPED: V2
+**has** access to the database name structurally (via the caller's
+`SqlConnection.Database`); V2 chose not to thread it through the IR.
+This is a deliberate boundary-discipline choice — the IR carries the
+catalog **value**, not its provenance.
+
+Recorded in `V1_PARITY_MATRIX.md` row 29 as 🟡 DIVERGENCE.
+
+### Cross-references
+
+- A18 amended — Π consumes `Catalog × Profile`; provenance is not part
+  of the catalog's structural value.
+- `Identity is a type, not a string` (CLAUDE.md programming-style center
+  target) — database-name identity, when it surfaces, surfaces as a
+  realization-layer typed surface, not a string field on the IR.
+
+---
