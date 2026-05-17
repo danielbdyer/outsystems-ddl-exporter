@@ -89,13 +89,31 @@ module Compose =
     /// → same Outputs (T1 byte-determinism). Profile is `Profile.empty`
     /// for the dogfood frame; M2 onward will thread real profile
     /// evidence.
+    ///
+    /// **Chapter A.4.7' slice δ** wires `RegisteredTransforms.allChainSteps`
+    /// in front of the emitter fan-out per A41 (registry as load-bearing
+    /// execution surface). Catalog flows: raw → `compose allChainSteps`
+    /// → emitters. With skeleton-friendly defaults (Mask = empty;
+    /// Morphism = identity; RenameSpec = []; Policy = Policy.empty;
+    /// Profile = Profile.empty), Catalog-rewriting passes contribute
+    /// only the canonicalization / closure they would apply
+    /// unconditionally; decision-set passes write back evidence the
+    /// emitters do not yet consume (decision-set consumption is a
+    /// future-chapter concern).
     let project (catalog: Catalog) : Outputs =
         use _ = Bench.scope "compose.project"
+        let composedCatalog =
+            (use _ = Bench.scope "compose.runChain"
+             PassChainAdapter.compose
+                 RegisteredTransforms.allChainSteps
+                 (ComposeState.initial catalog)
+             |> LineageDiagnostics.payload
+             |> fun state -> state.Catalog)
         let bundle =
             (use _ = Bench.scope "emit.ssdtBundle.compose"
-             match SsdtDdlEmitter.emitSlices catalog with
+             match SsdtDdlEmitter.emitSlices composedCatalog with
              | Ok ssdtFiles ->
-                 let manifest = ManifestEmitter.emit catalog
+                 let manifest = ManifestEmitter.emit composedCatalog
                  SsdtBundle.compose ssdtFiles manifest
              | Error err ->
                  // Unreachable in production paths: Catalog.allKinds is
@@ -109,12 +127,12 @@ module Compose =
              // Per Tier-1 #3: parse once at project time so the
              // Outputs seam is JsonNode-typed. Downstream consumers
              // query the tree without re-parse.
-             match JsonNode.Parse(JsonEmitter.emit catalog) with
+             match JsonNode.Parse(JsonEmitter.emit composedCatalog) with
              | null -> invalidOp "Compose.project: JsonEmitter.emit produced unparseable text (unreachable)"
              | n    -> n)
         let distributions =
             (use _ = Bench.scope "emit.distributions"
-             match JsonNode.Parse(DistributionsEmitter.emit catalog Profile.empty) with
+             match JsonNode.Parse(DistributionsEmitter.emit composedCatalog Profile.empty) with
              | null -> invalidOp "Compose.project: DistributionsEmitter.emit produced unparseable text (unreachable)"
              | n    -> n)
         {
