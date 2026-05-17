@@ -5,6 +5,16 @@ open Projection.Core
 open Projection.Core.Passes
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — per-pass `let run` is private; shims wrap
+// `.registered.Run` and unwrap the Diagnostics layer so existing
+// assertions on `lineage.Trail` and `lineage.Value` keep reading.
+let private nmRun (morphism: NamingMorphism.Morphism) (catalog: Catalog) : Lineage<Catalog> =
+    (NamingMorphism.registered morphism).Run catalog
+    |> Lineage.map (fun d -> d.Value)
+
+let private ciRun (c: Catalog) : Lineage<Catalog> =
+    CanonicalizeIdentity.registered.Run c |> Lineage.map (fun d -> d.Value)
+
 // ---------------------------------------------------------------------------
 // Chapter A.4.7 slice α — Classification carry-through tests.
 //
@@ -145,7 +155,7 @@ let private mkName (s: string) : Name = Name.create s |> Result.value
 
 [<Fact>]
 let ``A.4.7 slice α: CanonicalizeIdentity events carry DataIntent`` () =
-    let lineage = CanonicalizeIdentity.run sampleCatalog
+    let lineage = ciRun sampleCatalog
     assertAllClassifiedAs DataIntent lineage.Trail
 
 [<Fact>]
@@ -189,7 +199,7 @@ let ``A.4.7 slice α: VisibilityMask events carry OperatorIntent Selection`` () 
     // Removed event classified OperatorIntent Selection — the filter
     // is operator intent on the Selection axis.
     let mask : VisibilityMask.Mask = { Hide = [ VisibilityMask.hideOrigin Origin.OsNative ] }
-    let lineage = VisibilityMask.run mask sampleCatalog
+    let lineage = (VisibilityMask.registered mask).Run sampleCatalog
     assertAllClassifiedAs (OperatorIntent Selection) lineage.Trail
 
 [<Fact>]

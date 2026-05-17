@@ -121,7 +121,12 @@ module VisibilityMask =
     /// reified `CatalogTraversal.mapKinds` primitive (`LineageBuffer
     /// .fs`). This driver expresses what the pass DECIDES per kind;
     /// the primitive owns HOW the catalog is walked.
-    let run (mask: Mask) (c: Catalog) : Lineage<Catalog> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface
+    // is `VisibilityMask.registered mask |> _.Run` (returns
+    // `Lineage<Diagnostics<Catalog>>`). Test sites unwrap the
+    // Diagnostics layer via `LineageDiagnostics.payload` or
+    // `.Value.Value`.
+    let private run (mask: Mask) (c: Catalog) : Lineage<Catalog> =
         use _ = Bench.scope "passes.visibilityMask"
         c |> CatalogTraversal.mapKinds (fun events k ->
             match firstMatch mask k with
