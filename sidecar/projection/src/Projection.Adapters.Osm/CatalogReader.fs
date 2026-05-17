@@ -198,6 +198,18 @@ module CatalogReader =
         {
             AttrId          : int
             RefEntityName   : string
+            /// V1 entity ID of the reference target. When the target
+            /// entity row carries its own `EntitySsKey` (V1 GUID-based
+            /// identity), the rowset adapter must resolve the target
+            /// SsKey via this ID rather than synthesizing the key from
+            /// `(SourceModule, RefEntityName)` (which produces a
+            /// different SsKey shape and breaks the danglingTarget
+            /// invariant for cross-key-shape catalogs). Chapter 5.0
+            /// slice γ — added to make GUID-bearing rowset bundles
+            /// produce valid Catalogs end-to-end. `None` when the
+            /// reference's target ID is unknown (defensive default;
+            /// fallback to synthesized key).
+            RefEntityId     : int option
             DeleteRuleCode  : string option
             HasDbConstraint : bool
         }
@@ -511,9 +523,27 @@ module CatalogReader =
     // -----------------------------------------------------------------------
 
     let private parsePrimitiveType (dataType: string) : Result<PrimitiveType> =
+        // V1's `OutsystemsAttribute.DataType` carries the OutSystems
+        // domain-type name (not the SQL type). Chapter 5.0 slice γ
+        // extends the mapping to cover the data types V1's
+        // `model.edge-case.seed.sql` fixture uses (Identifier / Text /
+        // Boolean / DateTime / Integer / Decimal). The mapping is
+        // V1-derived per the OSSYS adapter translation rule index
+        // (`DECISIONS 2026-05-15 — OSSYS adapter translation rules`).
         match dataType with
-        | "Identifier" -> Result.success Integer
-        | "Text"       -> Result.success Text
+        | "Identifier"        -> Result.success Integer
+        | "Integer"           -> Result.success Integer
+        | "LongInteger"       -> Result.success Integer
+        | "Text"              -> Result.success Text
+        | "Email"             -> Result.success Text
+        | "PhoneNumber"       -> Result.success Text
+        | "Boolean"           -> Result.success Boolean
+        | "DateTime"          -> Result.success DateTime
+        | "Date"              -> Result.success Date
+        | "Time"              -> Result.success Time
+        | "Decimal"           -> Result.success Decimal
+        | "Currency"          -> Result.success Decimal
+        | "BinaryData"        -> Result.success Binary
         | other ->
             Result.failureOf (
                 adapterError
@@ -1441,6 +1471,7 @@ module CatalogReader =
     /// kind name resolves within the source attribute's module).
     /// Cross-module FK lifts the same deferral.
     let private parseReferenceRowFor
+        (kindKeysByEntityId: Map<int, SsKey>)
         (moduleName: string)
         (entityName: string)
         (attrRow: AttributeRow)
@@ -1449,7 +1480,20 @@ module CatalogReader =
         let refKey     = referenceSsKey moduleName entityName attrRow.AttrName
         let refName    = Name.create attrRow.AttrName
         let srcAttrKey = attributeSsKeyFromRow moduleName entityName attrRow
-        let tgtKindKey = kindSsKey moduleName refRow.RefEntityName
+        // Chapter 5.0 slice γ — when the bundle carries the target's
+        // RefEntityId AND the target entity row has a resolved kind key
+        // in the global lookup, use it directly. This handles GUID-based
+        // EntitySsKey targets correctly (the fallback synthesized key
+        // produces a different SsKey shape that breaks the
+        // danglingTarget invariant). Falls back to the prior synthesized
+        // shape when the target ID is absent or unresolvable.
+        let tgtKindKey =
+            match refRow.RefEntityId with
+            | Some id ->
+                match Map.tryFind id kindKeysByEntityId with
+                | Some key -> Result.success key
+                | None -> kindSsKey moduleName refRow.RefEntityName
+            | None -> kindSsKey moduleName refRow.RefEntityName
         let onDelete   = parseDeleteRule refRow.DeleteRuleCode
         match refKey, refName, srcAttrKey, tgtKindKey, onDelete with
         | Ok rKey, Ok rName, Ok srcKey, Ok tgtKey, Ok rule ->
@@ -1487,6 +1531,7 @@ module CatalogReader =
                             attrRow.AttrName moduleName entityName))
 
     let private parseKindRow
+        (kindKeysByEntityId: Map<int, SsKey>)
         (moduleName: string)
         (moduleEspaceKind: string option)
         (attributesByEntity: Map<int, AttributeRow list>)
@@ -1522,7 +1567,7 @@ module CatalogReader =
             |> List.collect (fun a ->
                 Map.tryFind a.AttrId referencesByAttr
                 |> Option.defaultValue []
-                |> List.map (parseReferenceRowFor moduleName kindRow.EntityName a))
+                |> List.map (parseReferenceRowFor kindKeysByEntityId moduleName kindRow.EntityName a))
         let foldedRefs = Result.aggregate refResults
         match kindKey, kindName, foldedAttrs, foldedRefs with
         | Ok k, Ok n, Ok attrs, Ok refs ->
@@ -1581,6 +1626,7 @@ module CatalogReader =
                             kindRow.EntityName moduleName))
 
     let private parseModuleRow
+        (kindKeysByEntityId: Map<int, SsKey>)
         (kindsByEspace: Map<int, KindRow list>)
         (attributesByEntity: Map<int, AttributeRow list>)
         (referencesByAttr: Map<int, ReferenceRow list>)
@@ -1599,6 +1645,7 @@ module CatalogReader =
             kindRows
             |> List.map (
                 parseKindRow
+                    kindKeysByEntityId
                     moduleRow.EspaceName
                     moduleRow.EspaceKind
                     attributesByEntity
@@ -1646,11 +1693,37 @@ module CatalogReader =
             bundle.Kinds |> List.groupBy (fun k -> k.EspaceId) |> Map.ofList
         let referencesByAttr =
             bundle.References |> List.groupBy (fun r -> r.AttrId) |> Map.ofList
+        // Chapter 5.0 slice γ — build the global EntityId → SsKey
+        // lookup used by `parseReferenceRowFor` for cross-module FK
+        // resolution against GUID-bearing entity rows. Mirrors
+        // `kindSsKeyFromRow`'s shape: when an entity carries
+        // `EntitySsKey`, the resolved key uses `SsKey.ossysOriginal`;
+        // otherwise the synthesized `kindSsKey (moduleName, entityName)`
+        // shape. The moduleName for each entity is its owning module's
+        // EspaceName (joined via EspaceId).
+        let moduleNameByEspaceId =
+            bundle.Modules
+            |> List.map (fun m -> m.EspaceId, m.EspaceName)
+            |> Map.ofList
+        let kindKeysByEntityId =
+            bundle.Kinds
+            |> List.choose (fun k ->
+                match Map.tryFind k.EspaceId moduleNameByEspaceId with
+                | None -> None
+                | Some modName ->
+                    let resolved =
+                        match k.EntitySsKey with
+                        | Some g -> Ok (SsKey.ossysOriginal g)
+                        | None -> kindSsKey modName k.EntityName
+                    match resolved with
+                    | Ok key -> Some (k.EntityId, key)
+                    | Error _ -> None)
+            |> Map.ofList
         // Chapter A.0' slice β — the session-21 module-level filter
         // retires. Inactive modules carry with `Module.IsActive=false`.
         let moduleResults =
             bundle.Modules
-            |> List.map (parseModuleRow kindsByEspace attributesByEntity referencesByAttr)
+            |> List.map (parseModuleRow kindKeysByEntityId kindsByEspace attributesByEntity referencesByAttr)
         match Result.aggregate moduleResults with
         | Ok modules ->
             // Chapter A.0' slice δ — Catalog.Sequences empty on the

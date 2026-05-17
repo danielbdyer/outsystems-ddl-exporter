@@ -80,6 +80,7 @@
     <Compile Include="ModuleExtendedPropertyEmissionTests.fs" />
     <Compile Include="WithDiagnosticsBuildersTests.fs" />
     <Compile Include="MetadataExtractionSqlTests.fs" />
+    <Compile Include="OssysExtractionCanaryTests.fs" />
     <Compile Include="IsActiveCarryThroughTests.fs" />
     <Compile Include="IRFidelityLiftTests.fs" />
     <Compile Include="NoSilentDropTests.fs" />

@@ -416,6 +416,7 @@ let private userAccountRefRow : CatalogReader.ReferenceRow =
     {
         AttrId          = 113
         RefEntityName   = "Account"
+        RefEntityId     = None
         DeleteRuleCode  = Some "Protect"
         HasDbConstraint = true
     }

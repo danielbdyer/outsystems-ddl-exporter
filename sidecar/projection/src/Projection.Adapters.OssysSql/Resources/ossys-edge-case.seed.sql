@@ -1,34 +1,15 @@
-IF DB_ID(N'OutsystemsIntegration') IS NOT NULL
-BEGIN
-    ALTER DATABASE [OutsystemsIntegration] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-    DROP DATABASE [OutsystemsIntegration];
-END;
-GO
-
-CREATE DATABASE [OutsystemsIntegration];
-GO
-
-ALTER DATABASE [OutsystemsIntegration] SET RECOVERY SIMPLE;
-GO
-
-IF NOT EXISTS (SELECT 1 FROM sys.filegroups WHERE name = N'FG_Customers')
-BEGIN
-    ALTER DATABASE [OutsystemsIntegration] ADD FILEGROUP [FG_Customers];
-END;
-GO
-
-IF NOT EXISTS (SELECT 1 FROM sys.database_files WHERE name = N'OutsystemsIntegration_Customers')
-BEGIN
-    ALTER DATABASE [OutsystemsIntegration]
-        ADD FILE ( NAME = N'OutsystemsIntegration_Customers',
-                   FILENAME = N'/var/opt/mssql/data/OutsystemsIntegration_Customers.ndf',
-                   SIZE = 8MB,
-                   FILEGROWTH = 8MB ) TO FILEGROUP [FG_Customers];
-END;
-GO
-
-USE [OutsystemsIntegration];
-GO
+-- V2 chapter 5.0 slice γ divergence from V1 source: V1's
+-- model.edge-case.seed.sql created its own `OutsystemsIntegration`
+-- database + filegroup + ndf file. V2 runs against per-run databases
+-- created by `Deploy.withBootstrappedDatabase`, so this header strips
+-- the V1 DB / filegroup management. The structural shape (synthetic
+-- OSSYS schema + edge-case data) is preserved; the `ON [FG_Customers]`
+-- filegroup placements on CREATE INDEX lines are replaced with the
+-- default filegroup (PRIMARY) below at slice γ. V1's partition function
+-- + scheme + DATA_COMPRESSION REBUILD-PARTITION block (V1 lines
+-- 184-215) is also stripped here — partitioning requires Enterprise
+-- Edition + adds noise to the canary; structural intent of an audit
+-- trigger + index on JobRun is preserved without partitioning.
 
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'billing')
 BEGIN
@@ -152,17 +133,20 @@ CREATE TABLE [dbo].[OSUSR_ABC_CUSTOMER]
 );
 GO
 
+-- V2 chapter 5.0 slice γ divergence from V1 source: SQL Server (2012+)
+-- rejects IGNORE_DUP_KEY=ON on filtered indexes. V1's fixture either
+-- predates the constraint or runs against a lax server build; V2 drops
+-- the option to land cleanly on the warm Docker SQL Server (2022). The
+-- structural intent (filtered unique index on EMAIL) is preserved.
 CREATE UNIQUE NONCLUSTERED INDEX [IDX_CUSTOMER_EMAIL]
 ON [dbo].[OSUSR_ABC_CUSTOMER]([EMAIL] ASC)
 WHERE [EMAIL] IS NOT NULL
-WITH (FILLFACTOR = 85, IGNORE_DUP_KEY = ON, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
-ON [FG_Customers];
+WITH (FILLFACTOR = 85, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON);
 GO
 
 CREATE NONCLUSTERED INDEX [IDX_CUSTOMER_NAME]
 ON [dbo].[OSUSR_ABC_CUSTOMER]([LASTNAME] ASC, [FIRSTNAME] ASC)
-WITH (STATISTICS_NORECOMPUTE = ON, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
-ON [FG_Customers];
+WITH (STATISTICS_NORECOMPUTE = ON, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON);
 GO
 
 ALTER INDEX [IDX_CUSTOMER_NAME] ON [dbo].[OSUSR_ABC_CUSTOMER] DISABLE;
@@ -181,17 +165,12 @@ CREATE UNIQUE NONCLUSTERED INDEX [IDX_BILLINGACCOUNT_ACCTNUM]
 ON [billing].[BILLING_ACCOUNT]([ACCOUNTNUMBER] ASC);
 GO
 
-IF NOT EXISTS (SELECT 1 FROM sys.partition_functions WHERE name = N'PF_JobRun')
-BEGIN
-    CREATE PARTITION FUNCTION [PF_JobRun] (DATETIME2(7)) AS RANGE LEFT FOR VALUES ('2024-01-01T00:00:00');
-END;
-GO
-
-IF NOT EXISTS (SELECT 1 FROM sys.partition_schemes WHERE name = N'PS_JobRun')
-BEGIN
-    CREATE PARTITION SCHEME [PS_JobRun] AS PARTITION [PF_JobRun] TO ([PRIMARY], [PRIMARY]);
-END;
-GO
+-- V2 chapter 5.0 slice γ divergence: V1's partition function + scheme
+-- + DATA_COMPRESSION REBUILD-PARTITION block (lines 184-215 of V1
+-- source) require SQL Server Enterprise Edition + add noise the
+-- canary doesn't exercise. Replaced with a plain non-partitioned
+-- DESC index; structural intent (descending index on CreatedAt) is
+-- preserved for slice γ's IndexColumnDirection extraction tests.
 
 CREATE TABLE [dbo].[OSUSR_XYZ_JOBRUN]
 (
@@ -204,14 +183,7 @@ GO
 
 CREATE NONCLUSTERED INDEX [OSIDX_JOBRUN_CREATEDON]
 ON [dbo].[OSUSR_XYZ_JOBRUN]([CREATEDON] DESC)
-ON [PS_JobRun]([CREATEDON])
 WITH (ALLOW_ROW_LOCKS = OFF, ALLOW_PAGE_LOCKS = ON);
-GO
-
-ALTER INDEX [OSIDX_JOBRUN_CREATEDON] ON [dbo].[OSUSR_XYZ_JOBRUN]
-    REBUILD PARTITION = 1 WITH (DATA_COMPRESSION = PAGE);
-ALTER INDEX [OSIDX_JOBRUN_CREATEDON] ON [dbo].[OSUSR_XYZ_JOBRUN]
-    REBUILD PARTITION = 2 WITH (DATA_COMPRESSION = ROW);
 GO
 
 EXEC (N'CREATE TRIGGER [dbo].[TR_OSUSR_XYZ_JOBRUN_AUDIT] ON [dbo].[OSUSR_XYZ_JOBRUN] AFTER INSERT AS BEGIN SET NOCOUNT ON; END');

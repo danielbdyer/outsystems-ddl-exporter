@@ -16,10 +16,16 @@
 
   <ItemGroup>
     <Compile Include="MetadataExtractionSql.fs" />
+    <Compile Include="MetadataSnapshotRunner.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Projection.Core\Projection.Core.fsproj" />
+    <ProjectReference Include="..\Projection.Adapters.Osm\Projection.Adapters.Osm.fsproj" />
   </ItemGroup>
 
 </Project>
