@@ -48,9 +48,7 @@ let private mkKind (name: string) : Kind =
         Physical = { Schema = "dbo"; Table = sprintf "OSUSR_TEST_%s" (name.ToUpperInvariant()); Catalog = None }
         Attributes =
             [
-                { SsKey = idKey; Name = mkName "Id"; Type = Integer
-                  Column = { ColumnName = "ID"; IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
             ]
         References = []
         Indexes    = []

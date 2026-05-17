@@ -122,18 +122,8 @@ let private expectedCatalogSynthesized : Catalog =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
-              { SsKey        = userIdAttrKey
-                Name         = mkName "Id"
-                Type         = Integer
-                Column       = { ColumnName = "ID"; IsNullable = false }
-                IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-              { SsKey        = userEmailAttrKey
-                Name         = mkName "Email"
-                Type         = Text
-                Column       = { ColumnName = "EMAIL"; IsNullable = false }
-                IsPrimaryKey = false
-                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+              { IRBuilders.mkAttribute userIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+              { IRBuilders.mkAttribute userEmailAttrKey (mkName "Email") Text with Column = { ColumnName = "EMAIL"; IsNullable = false }; IsMandatory = true; Length = Some 250 }
           ]
           References = []
           Indexes    = []

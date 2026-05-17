@@ -69,23 +69,7 @@ let private nameSafe (s: string) : Name =
 let private programmaticUserCatalog : Catalog =
     let userKey = ssKeySafe "OS_KIND_M3_User"
     let mkAttr (column: string) (ptype: PrimitiveType) (nullable: bool) (isPk: bool) : Attribute =
-        {
-            SsKey = ssKeySafe (sprintf "OS_ATTR_M3_User_%s" column)
-            Name = nameSafe column
-            Type = ptype
-            Column = { ColumnName = column.ToUpperInvariant(); IsNullable = nullable }
-            IsPrimaryKey = isPk
-            IsMandatory = not nullable
-            Length = None
-            Precision = None
-            Scale = None
-            IsIdentity = false
-            Description = None
-            IsActive = true
-            DefaultValue = None
-            Computed = None
-            ExtendedProperties = []
-            }
+        { IRBuilders.mkAttribute (ssKeySafe (sprintf "OS_ATTR_M3_User_%s" column)) (nameSafe column) ptype with Column = { ColumnName = column.ToUpperInvariant(); IsNullable = nullable }; IsPrimaryKey = isPk; IsMandatory = not nullable }
     let userKind : Kind =
         {
             SsKey = userKey

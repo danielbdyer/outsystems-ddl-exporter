@@ -67,12 +67,8 @@ let private mkOrderKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_ORDER"; Catalog = None }
         Attributes =
             [
-                { SsKey = idKey;        Name = mkName "Id";        Type = Integer
-                  Column = { ColumnName = "ID";        IsNullable = false }
-                  IsPrimaryKey = true;  IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-                { SsKey = createdByKey; Name = mkName "CreatedBy"; Type = Integer
-                  Column = { ColumnName = "CREATEDBY"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";        IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { IRBuilders.mkAttribute createdByKey (mkName "CreatedBy") Integer with Column = { ColumnName = "CREATEDBY"; IsNullable = false }; IsMandatory = true }
             ]
         References =
             [ { SsKey           = createdByRefKey
@@ -180,12 +176,8 @@ let ``Slice η: kind with no User-FK references passes through unrewritten`` () 
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
           Attributes =
-              [ { SsKey = idKey;    Name = mkName "Id";    Type = Integer
-                  Column = { ColumnName = "ID";    IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-                { SsKey = labelKey; Name = mkName "Label"; Type = Text
-                  Column = { ColumnName = "LABEL"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+              [ { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true } ]
           References = []  // no User-FK
           Indexes    = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }

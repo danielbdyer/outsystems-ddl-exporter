@@ -17,11 +17,7 @@ let ``classify: non-nullable + NoAction = Other`` () =
     Assert.Equal<EdgeStrength>(EdgeStrength.Other, result)
 
 let private mkAttr (key: string) (nullable: bool) : Attribute =
-    { SsKey        = testKey key
-      Name         = Name.create "Fk" |> Result.value
-      Type         = Integer
-      Column       = { ColumnName = "FK"; IsNullable = nullable }
-      IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+    { IRBuilders.mkAttribute (testKey key) (Name.create "Fk" |> Result.value) Integer with Column = { ColumnName = "FK"; IsNullable = nullable } }
 
 let private mkRef (sourceAttrKey: string) (action: ReferenceAction) : Reference =
     { IRBuilders.mkReference (refKey ["x"]) (Name.create "x" |> Result.value) (testKey sourceAttrKey) (kindKey ["target"]) with OnDelete = action }

@@ -128,18 +128,8 @@ let private expectedCatalog : Catalog =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
-              { SsKey        = userIdAttrKey
-                Name         = mkName "Id"
-                Type         = Integer
-                Column       = { ColumnName = "ID"; IsNullable = false }
-                IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-              { SsKey        = userEmailAttrKey
-                Name         = mkName "Email"
-                Type         = Text
-                Column       = { ColumnName = "EMAIL"; IsNullable = false }
-                IsPrimaryKey = false
-                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+              { IRBuilders.mkAttribute userIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+              { IRBuilders.mkAttribute userEmailAttrKey (mkName "Email") Text with Column = { ColumnName = "EMAIL"; IsNullable = false }; IsMandatory = true; Length = Some 250 }
           ]
           References = []
           Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
@@ -342,12 +332,7 @@ let private expectedReferenceCatalog : Catalog =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_ACCOUNT"; Catalog = None }
           Attributes = [
-              { SsKey        = accountIdAttrKey
-                Name         = mkName "Id"
-                Type         = Integer
-                Column       = { ColumnName = "ID"; IsNullable = false }
-                IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+              { IRBuilders.mkAttribute accountIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
           ]
           References = []
           Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
@@ -358,18 +343,8 @@ let private expectedReferenceCatalog : Catalog =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
-              { SsKey        = userIdAttrKey
-                Name         = mkName "Id"
-                Type         = Integer
-                Column       = { ColumnName = "ID"; IsNullable = false }
-                IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-              { SsKey        = userAccountIdAttrKey
-                Name         = mkName "AccountId"
-                Type         = Integer
-                Column       = { ColumnName = "ACCOUNTID"; IsNullable = false }
-                IsPrimaryKey = false
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+              { IRBuilders.mkAttribute userIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+              { IRBuilders.mkAttribute userAccountIdAttrKey (mkName "AccountId") Integer with Column = { ColumnName = "ACCOUNTID"; IsNullable = false }; IsMandatory = true }
           ]
           References = [
               { IRBuilders.mkReference userAccountReferenceKey (mkName "AccountId") userAccountIdAttrKey accountKindKey with HasDbConstraint = true }
@@ -496,12 +471,7 @@ let private expectedExternalCatalog : Catalog =
           Modality = []
           Physical = { Schema = "billing"; Table = "BILLING_ACCOUNT"; Catalog = None }
           Attributes = [
-              { SsKey        = billingAccountIdAttrKey
-                Name         = mkName "Id"
-                Type         = Integer
-                Column       = { ColumnName = "ID"; IsNullable = false }
-                IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+              { IRBuilders.mkAttribute billingAccountIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
           ]
           References = []
           Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
@@ -679,18 +649,8 @@ let private expectedMixedActiveCatalog : Catalog =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_ACTIVE"; Catalog = None }
           Attributes = [
-              { SsKey        = activeEntityIdAttrKey
-                Name         = mkName "Id"
-                Type         = Integer
-                Column       = { ColumnName = "ID"; IsNullable = false }
-                IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-              { SsKey        = activeEntityDeprecatedAttrKey
-                Name         = mkName "DeprecatedField"
-                Type         = Text
-                Column       = { ColumnName = "DEPRECATEDFIELD"; IsNullable = true }
-                IsPrimaryKey = false
-                IsMandatory = false; Length = Some 100; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = false; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+              { IRBuilders.mkAttribute activeEntityIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+              { IRBuilders.mkAttribute activeEntityDeprecatedAttrKey (mkName "DeprecatedField") Text with Column = { ColumnName = "DEPRECATEDFIELD"; IsNullable = true }; Length = Some 100; IsActive = false }
           ]
           References = []
           Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
@@ -701,12 +661,7 @@ let private expectedMixedActiveCatalog : Catalog =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_RETIRED"; Catalog = None }
           Attributes = [
-              { SsKey        = retiredEntityIdAttrKey
-                Name         = mkName "Id"
-                Type         = Integer
-                Column       = { ColumnName = "ID"; IsNullable = false }
-                IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+              { IRBuilders.mkAttribute retiredEntityIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
           ]
           References = []
           Indexes    = []; Description = None; IsActive = false; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
@@ -922,36 +877,11 @@ let private expectedIndexCatalog : Catalog =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
-              { SsKey        = userIdAttrKey
-                Name         = mkName "Id"
-                Type         = Integer
-                Column       = { ColumnName = "ID"; IsNullable = false }
-                IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-              { SsKey        = userEmailAttrKey
-                Name         = mkName "Email"
-                Type         = Text
-                Column       = { ColumnName = "EMAIL"; IsNullable = false }
-                IsPrimaryKey = false
-                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-              { SsKey        = userIndexLastNameAttrKey
-                Name         = mkName "LastName"
-                Type         = Text
-                Column       = { ColumnName = "LASTNAME"; IsNullable = false }
-                IsPrimaryKey = false
-                IsMandatory = true; Length = Some 100; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-              { SsKey        = userIndexFirstNameAttrKey
-                Name         = mkName "FirstName"
-                Type         = Text
-                Column       = { ColumnName = "FIRSTNAME"; IsNullable = false }
-                IsPrimaryKey = false
-                IsMandatory = true; Length = Some 100; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-              { SsKey        = userIndexEmailLowerAttrKey
-                Name         = mkName "EmailLower"
-                Type         = Text
-                Column       = { ColumnName = "EMAILLOWER"; IsNullable = true }
-                IsPrimaryKey = false
-                IsMandatory = false; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+              { IRBuilders.mkAttribute userIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+              { IRBuilders.mkAttribute userEmailAttrKey (mkName "Email") Text with Column = { ColumnName = "EMAIL"; IsNullable = false }; IsMandatory = true; Length = Some 250 }
+              { IRBuilders.mkAttribute userIndexLastNameAttrKey (mkName "LastName") Text with Column = { ColumnName = "LASTNAME"; IsNullable = false }; IsMandatory = true; Length = Some 100 }
+              { IRBuilders.mkAttribute userIndexFirstNameAttrKey (mkName "FirstName") Text with Column = { ColumnName = "FIRSTNAME"; IsNullable = false }; IsMandatory = true; Length = Some 100 }
+              { IRBuilders.mkAttribute userIndexEmailLowerAttrKey (mkName "EmailLower") Text with Column = { ColumnName = "EMAILLOWER"; IsNullable = true }; Length = Some 250 }
           ]
           References = []
           Indexes = [
@@ -1078,18 +1008,8 @@ let private expectedStaticEntityCatalog : Catalog =
           Modality = [ Static [] ]
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_COUNTRY"; Catalog = None }
           Attributes = [
-              { SsKey        = countryIdAttrKey
-                Name         = mkName "Id"
-                Type         = Integer
-                Column       = { ColumnName = "ID"; IsNullable = false }
-                IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-              { SsKey        = countryCodeAttrKey
-                Name         = mkName "Code"
-                Type         = Text
-                Column       = { ColumnName = "CODE"; IsNullable = false }
-                IsPrimaryKey = false
-                IsMandatory = true; Length = Some 8; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+              { IRBuilders.mkAttribute countryIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+              { IRBuilders.mkAttribute countryCodeAttrKey (mkName "Code") Text with Column = { ColumnName = "CODE"; IsNullable = false }; IsMandatory = true; Length = Some 8 }
           ]
           References = []
           Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }

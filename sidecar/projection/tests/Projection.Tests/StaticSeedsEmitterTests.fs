@@ -51,15 +51,9 @@ let private mkCountryKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
         Attributes =
             [
-                { SsKey = idKey;    Name = mkName "Id";    Type = Integer
-                  Column = { ColumnName = "ID";    IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-                { SsKey = codeKey;  Name = mkName "Code";  Type = Text
-                  Column = { ColumnName = "CODE";  IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-                { SsKey = labelKey; Name = mkName "Label"; Type = Text
-                  Column = { ColumnName = "LABEL"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { IRBuilders.mkAttribute codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
+                { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
             ]
         References = []
         Indexes    = []
@@ -84,12 +78,8 @@ let private mkRegularKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER"; Catalog = None }
         Attributes =
             [
-                { SsKey = idKey;   Name = mkName "Id";   Type = Integer
-                  Column = { ColumnName = "ID";   IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-                { SsKey = nameKey; Name = mkName "Name"; Type = Text
-                  Column = { ColumnName = "NAME"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";   IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+                { IRBuilders.mkAttribute nameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false }; IsMandatory = true }
             ]
         References = []
         Indexes    = []
@@ -408,12 +398,8 @@ let private mkTreeKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_TREE"; Catalog = None }
         Attributes =
             [
-                { SsKey = idKey;     Name = mkName "Id";       Type = Integer
-                  Column = { ColumnName = "ID";       IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-                { SsKey = labelKey;  Name = mkName "Label";    Type = Text
-                  Column = { ColumnName = "LABEL";    IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";       IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL";    IsNullable = false }; IsMandatory = true }
                 { SsKey = parentKey; Name = mkName "ParentId"; Type = Integer
                   Column = { ColumnName = "PARENTID"; IsNullable = true }     // nullable → deferrable
                   IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
@@ -544,10 +530,7 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
         { Identifier = mkKey ["TestModule"; "B"; "Row"; "1"]
           Values = Map.ofList [ mkName "Id", "1"; mkName "AId", "1" ] }
     let mkAttr ssk name typ col isPk isNull =
-        { SsKey = ssk; Name = mkName name; Type = typ
-          Column = { ColumnName = col; IsNullable = isNull }
-          IsPrimaryKey = isPk; IsMandatory = not isNull
-          Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+        { IRBuilders.mkAttribute ssk (mkName name) typ with Column = { ColumnName = col; IsNullable = isNull }; IsPrimaryKey = isPk; IsMandatory = not isNull }
     let mkRef ssk name srcAttr tgt =
         IRBuilders.mkReference ssk (mkName name) srcAttr tgt
     let aKind : Kind =

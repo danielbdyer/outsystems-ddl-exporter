@@ -64,18 +64,8 @@ let private singleKindCatalog : Catalog =
         Modality = []
         Physical = { Schema = "dbo"; Table = "WIDGET"; Catalog = None }
         Attributes = [
-            { SsKey        = widgetIdKey
-              Name         = mkName "Id"
-              Type         = Integer
-              Column       = { ColumnName = "ID"; IsNullable = false }
-              IsPrimaryKey = true; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-            { SsKey        = widgetNameKey
-              Name         = mkName "Name"
-              Type         = Text
-              Column       = { ColumnName = "NAME"; IsNullable = false }
-              IsPrimaryKey = false; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+            { IRBuilders.mkAttribute widgetIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+            { IRBuilders.mkAttribute widgetNameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false } }
         ]
         References = []
         Indexes    = []
@@ -241,22 +231,10 @@ let private indexedCatalog : Catalog =
         Modality = []
         Physical = { Schema = "dbo"; Table = "INDEXED_WIDGET"; Catalog = None }
         Attributes = [
-            { SsKey = idKey; Name = mkName "Id"; Type = Integer
-              Column = { ColumnName = "ID"; IsNullable = false }
-              IsPrimaryKey = true; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-            { SsKey = codeKey; Name = mkName "Code"; Type = Text
-              Column = { ColumnName = "CODE"; IsNullable = false }
-              IsPrimaryKey = false; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-            { SsKey = regionKey; Name = mkName "Region"; Type = Text
-              Column = { ColumnName = "REGION"; IsNullable = false }
-              IsPrimaryKey = false; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-            { SsKey = labelKey; Name = mkName "Label"; Type = Text
-              Column = { ColumnName = "LABEL"; IsNullable = true }
-              IsPrimaryKey = false; IsMandatory = false
-              Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+            { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+            { IRBuilders.mkAttribute codeKey (mkName "Code") Text with Column = { ColumnName = "CODE"; IsNullable = false } }
+            { IRBuilders.mkAttribute regionKey (mkName "Region") Text with Column = { ColumnName = "REGION"; IsNullable = false } }
+            { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = true } }
         ]
         References = []
         Indexes = [

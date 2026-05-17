@@ -229,19 +229,7 @@ let private mkName (s: string) : Name =
 
 let private allPrimitiveTypesKind : Kind =
     let attr (label: string) (typ: PrimitiveType) (isPk: bool) : Attribute =
-        {
-            SsKey = attrKey ["AllTypes"; label]
-            Name = mkName label
-            Type = typ
-            Column = { ColumnName = label.ToUpperInvariant(); IsNullable = not isPk }
-            IsPrimaryKey = isPk
-            IsMandatory  = isPk
-            Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
-            IsActive = true
-            DefaultValue = None
-            Computed = None
-            ExtendedProperties = []
-            }
+        { IRBuilders.mkAttribute (attrKey ["AllTypes"; label]) (mkName label) typ with Column = { ColumnName = label.ToUpperInvariant(); IsNullable = not isPk }; IsPrimaryKey = isPk; IsMandatory = isPk }
     {
         SsKey = kindKey ["AllTypes"]
         Name = mkName "AllTypes"
@@ -334,19 +322,7 @@ let ``Slice 2: SsdtDdlEmitter emits a slice for the all-types fixture (T11 keyse
 
 let private compositePkKind : Kind =
     let attr (label: string) (typ: PrimitiveType) (isPk: bool) : Attribute =
-        {
-            SsKey = attrKey ["Composite"; label]
-            Name = mkName label
-            Type = typ
-            Column = { ColumnName = label.ToUpperInvariant(); IsNullable = false }
-            IsPrimaryKey = isPk
-            IsMandatory  = isPk
-            Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
-            IsActive = true
-            DefaultValue = None
-            Computed = None
-            ExtendedProperties = []
-            }
+        { IRBuilders.mkAttribute (attrKey ["Composite"; label]) (mkName label) typ with Column = { ColumnName = label.ToUpperInvariant(); IsNullable = false }; IsPrimaryKey = isPk; IsMandatory = isPk }
     {
         SsKey = kindKey ["Composite"]
         Name = mkName "Composite"
@@ -435,19 +411,7 @@ let private indexedPkIdxKey = idxKey ["Indexed"; "PK"]
 
 let private indexedKind : Kind =
     let attr (label: string) (typ: PrimitiveType) (isPk: bool) : Attribute =
-        {
-            SsKey = attrKey ["Indexed"; label]
-            Name = mkName label
-            Type = typ
-            Column = { ColumnName = label.ToUpperInvariant(); IsNullable = not isPk }
-            IsPrimaryKey = isPk
-            IsMandatory  = isPk
-            Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
-            IsActive = true
-            DefaultValue = None
-            Computed = None
-            ExtendedProperties = []
-            }
+        { IRBuilders.mkAttribute (attrKey ["Indexed"; label]) (mkName label) typ with Column = { ColumnName = label.ToUpperInvariant(); IsNullable = not isPk }; IsPrimaryKey = isPk; IsMandatory = isPk }
     {
         SsKey = indexedKindKey
         Name = mkName "Indexed"
@@ -576,19 +540,7 @@ let private parentKind : Kind =
         Modality = []
         Physical = { Schema = "dbo"; Table = "OSUSR_X_PARENT"; Catalog = None }
         Attributes = [
-            {
-                SsKey = attrKey ["Parent"; "Id"]
-                Name = mkName "Id"
-                Type = Integer
-                Column = { ColumnName = "ID"; IsNullable = false }
-                IsPrimaryKey = true
-                IsMandatory  = true
-                Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
-                IsActive = true
-                DefaultValue = None
-                Computed = None
-                ExtendedProperties = []
-                }
+            { IRBuilders.mkAttribute (attrKey ["Parent"; "Id"]) (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
         ]
         References = []
         Indexes = []; Description = None
@@ -606,32 +558,8 @@ let private childKind : Kind =
         Modality = []
         Physical = { Schema = "dbo"; Table = "OSUSR_X_CHILD"; Catalog = None }
         Attributes = [
-            {
-                SsKey = attrKey ["Child"; "Id"]
-                Name = mkName "Id"
-                Type = Integer
-                Column = { ColumnName = "ID"; IsNullable = false }
-                IsPrimaryKey = true
-                IsMandatory  = true
-                Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
-                IsActive = true
-                DefaultValue = None
-                Computed = None
-                ExtendedProperties = []
-                }
-            {
-                SsKey = childParentIdAttrKey
-                Name = mkName "ParentId"
-                Type = Integer
-                Column = { ColumnName = "PARENT_ID"; IsNullable = false }
-                IsPrimaryKey = false
-                IsMandatory  = true
-                Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None
-                IsActive = true
-                DefaultValue = None
-                Computed = None
-                ExtendedProperties = []
-                }
+            { IRBuilders.mkAttribute (attrKey ["Child"; "Id"]) (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+            { IRBuilders.mkAttribute childParentIdAttrKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENT_ID"; IsNullable = false }; IsMandatory = true }
         ]
         References = [
             IRBuilders.mkReference childParentFkKey (mkName "ParentFk") childParentIdAttrKey parentKindKey
@@ -796,10 +724,7 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
           Attributes =
-              [ { SsKey = aIdAttr; Name = mkName "Id"; Type = Integer
-                  Column = { ColumnName = "ID"; IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+              [ { IRBuilders.mkAttribute aIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
           References = []
           Indexes = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
@@ -810,14 +735,8 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
           Attributes =
-              [ { SsKey = bIdAttr; Name = mkName "Id"; Type = Integer
-                  Column = { ColumnName = "ID"; IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-                { SsKey = bFkAttr; Name = mkName "AId"; Type = Integer
-                  Column = { ColumnName = "A_ID"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+              [ { IRBuilders.mkAttribute bIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { IRBuilders.mkAttribute bFkAttr (mkName "AId") Integer with Column = { ColumnName = "A_ID"; IsNullable = false }; IsMandatory = true } ]
           References =
               [ IRBuilders.mkReference crossRefKey (mkName "FkToA") bFkAttr aKindKey ]
           Indexes = []
@@ -865,24 +784,15 @@ let ``Slice 6: cross-module FK emits inline FOREIGN KEY constraint`` () =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
           Attributes =
-              [ { SsKey = aIdAttr; Name = mkName "Id"; Type = Integer
-                  Column = { ColumnName = "ID"; IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+              [ { IRBuilders.mkAttribute aIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let bKind : Kind =
         { SsKey = bKindKey; Name = mkName "BKind"; Origin = OsNative
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
           Attributes =
-              [ { SsKey = bIdAttr; Name = mkName "Id"; Type = Integer
-                  Column = { ColumnName = "ID"; IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-                { SsKey = bFkAttr; Name = mkName "AId"; Type = Integer
-                  Column = { ColumnName = "A_ID"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+              [ { IRBuilders.mkAttribute bIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { IRBuilders.mkAttribute bFkAttr (mkName "AId") Integer with Column = { ColumnName = "A_ID"; IsNullable = false }; IsMandatory = true } ]
           References =
               [ IRBuilders.mkReference crossRefKey (mkName "FkToA") bFkAttr aKindKey ]
           Indexes = []
@@ -914,24 +824,15 @@ let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module F
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
           Attributes =
-              [ { SsKey = aIdAttr; Name = mkName "Id"; Type = Integer
-                  Column = { ColumnName = "ID"; IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+              [ { IRBuilders.mkAttribute aIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let bKind : Kind =
         { SsKey = bKindKey; Name = mkName "BKind"; Origin = OsNative
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
           Attributes =
-              [ { SsKey = bIdAttr; Name = mkName "Id"; Type = Integer
-                  Column = { ColumnName = "ID"; IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-                { SsKey = bFkAttr; Name = mkName "AId"; Type = Integer
-                  Column = { ColumnName = "A_ID"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true
-                  Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+              [ { IRBuilders.mkAttribute bIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { IRBuilders.mkAttribute bFkAttr (mkName "AId") Integer with Column = { ColumnName = "A_ID"; IsNullable = false }; IsMandatory = true } ]
           References =
               [ IRBuilders.mkReference crossRefKey (mkName "FkToA") bFkAttr aKindKey ]
           Indexes = []

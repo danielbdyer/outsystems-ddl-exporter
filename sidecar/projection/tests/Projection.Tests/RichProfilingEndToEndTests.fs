@@ -88,11 +88,7 @@ let private parent : Kind =
       Modality = []
       Physical = { Schema = "dbo"; Table = "OSUSR_R9_PARENT"; Catalog = None }
       Attributes = [
-          { SsKey        = parentIdKey
-            Name         = mkName "Id"
-            Type         = Integer
-            Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+          { IRBuilders.mkAttribute parentIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true } ]
       References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private child : Kind =
@@ -102,16 +98,8 @@ let private child : Kind =
       Modality = []
       Physical = { Schema = "dbo"; Table = "OSUSR_R9_CHILD"; Catalog = None }
       Attributes = [
-          { SsKey        = childIdKey
-            Name         = mkName "Id"
-            Type         = Integer
-            Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-          { SsKey        = childParentFkKey
-            Name         = mkName "ParentId"
-            Type         = Integer
-            Column       = { ColumnName = "PARENTID"; IsNullable = true }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+          { IRBuilders.mkAttribute childIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+          { IRBuilders.mkAttribute childParentFkKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } } ]
       References = [
           IRBuilders.mkReference childToParentRefKey (mkName "Parent") childParentFkKey parentKindKey ]
       Indexes = []
@@ -124,16 +112,8 @@ let private country : Kind =
       Modality = []
       Physical = { Schema = "dbo"; Table = "OSUSR_R9_COUNTRY"; Catalog = None }
       Attributes = [
-          { SsKey        = countryIdKey
-            Name         = mkName "Id"
-            Type         = Integer
-            Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-          { SsKey        = countryNameKey
-            Name         = mkName "Name"
-            Type         = Text
-            Column       = { ColumnName = "NAME"; IsNullable = false }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+          { IRBuilders.mkAttribute countryIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+          { IRBuilders.mkAttribute countryNameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false } } ]
       References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private endToEndCatalog : Catalog =
