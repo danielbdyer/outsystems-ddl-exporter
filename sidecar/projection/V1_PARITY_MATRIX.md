@@ -101,6 +101,284 @@ Different V1 capabilities have different shapes of "equivalent output." Per slic
 
 ---
 
+## Parity cash-out plans — what V2 work closes each gap
+
+The matrix's Notes column carries the per-row brief; this section
+expands the cash-out **shape, dependencies, and acceptance** for every
+🟠 NOT-MAPPED + 🟡 DIVERGENCE + ⚫ V1-SUNSET row. Organized by axis
+cluster rather than per-row so the reader sees the family of work
+together. Each block ends with **priority**: the order of value (which
+rows compound; which gate on other slices; which carry cutover risk).
+
+### Cluster A1 — OSSYS-source physical-reflection rowset lifts (rows 11–18 + 23; 9 rows × 🟠 NOT-MAPPED)
+
+**The shared axis.** V2's `MetadataSnapshotRunner.runAsync`
+(`sidecar/projection/src/Projection.Adapters.OssysSql/MetadataSnapshotRunner.fs`)
+walks 22 result sets but parses only the first 5; rowsets 6–15 + 18
+emit data V1 consumes that V2 currently discards.
+
+**Per-rowset lift shape** (constant pattern):
+
+1. Add F# record type `OssysXRow` to `MetadataSnapshotRunner.fs`
+   (5–15 typed fields mirroring V1's DTO at the columns V2 will
+   consume).
+2. Add `mapXRow` ordinal reader following the existing
+   `mapModuleRow` / `mapEntityRow` pattern (`readInt r 0`,
+   `readString r 1`, …).
+3. Add a parse + accumulate step in `runAsync` after the current
+   rowset 5 parse; the skip-loop for downstream rowsets shrinks
+   accordingly.
+4. Extend `MetadataSnapshot` aggregate with the new field
+   (`Indexes : OssysIndexRow list`, etc.).
+5. **Optional** when downstream consumption demands: extend
+   `CatalogReader.RowsetBundle` with the new lifted axis and add
+   JOIN logic in `MetadataSnapshotRunner.toBundle`. Downstream V2
+   IR fields (e.g., `Index.Filter` — already shipped chapter 4.5 —
+   pick up the new evidence.
+
+**Acceptance per row.** `OssysExtractionCanaryTests` (already gated
+by the Docker warm container) gains one assertion exercising the
+lifted axis against the synthetic OSSYS seed
+(`Resources/ossys-edge-case.seed.sql`). If the axis feeds an emission
+consumer, a downstream T1 byte-determinism test fires on the produced
+SSDT artifact.
+
+**Dependencies.** Independent at the row level — each rowset lifts in
+isolation. Soft ordering: rows 15 + 16 (Indexes + IndexColumns) lift
+together since IndexColumns FKs to Indexes by EntityId + IndexName.
+Rows 17 + 18 (ForeignKeys + FK columns) lift together for the same
+reason. Other rows are fully independent.
+
+**Priority.** Rows 15 + 16 are highest-leverage because lifting them
+**retires V2's structural dependence on V1's IndexJson rowset**
+(row 26, ⚫ V1-SUNSET) — V2's index axis becomes V1-independent. Rows
+17 + 18 unlock OSSYS-source FK reflection (different evidence than
+V2's existing PhysicalSchema.ForeignKeys which reflects the deployed
+target). Row 12 (ColumnChecks) is gated on a V2 IR refinement adding
+CHECK-constraint carriage on Attribute; it lifts when that IR slice
+opens. Row 23 (Triggers) requires a new `Catalog.Triggers` axis — its
+own chapter; not a sub-slice. Rows 11 + 14 + 18 (ColumnReality,
+PhysicalColumnsPresent) feed V2-source-side tightening that V2 doesn't
+do today; lift when a tightening rule demands source evidence.
+
+### Cluster A2 — Algebraic-join reconstruction (rows 19 + 20; 🟡 DIVERGENCE)
+
+**Re-open trigger.** ≥2 V2 callers need attribute → FK or attribute →
+HasFK navigation in a hot path; the algebraic join's O(N) per lookup
+becomes a perf concern. Cash-out shape: materialize a precomputed
+`Map<AttrId, FkConstraint list>` on `Catalog.create` and expose via
+`Catalog.foreignKeysByAttribute` accessor. Acceptance: a perf bench
+shows the materialized lookup outperforms the algebraic join at the
+two consumer sites.
+
+### Cluster A3 — JSON-aggregation rowset sunsets (rows 13, 21, 22, 24–28; 7 rows × ⚫ V1-SUNSET)
+
+**Migration impact.** V2's `SnapshotJson` input variant
+(`CatalogReader.SnapshotSource`) continues to consume historical
+`osm_model.json` files but does not require V1 to keep emitting them.
+The aggregation rowsets sunset alongside V1's emission path at
+cutover+30 per `VISION.md` T-30 / T-15 ladder.
+
+**One conditional**: row 26 (`#IdxJson`) — V2's `Catalog.Indexes` IR is
+currently populated when the input arrives as `SnapshotJson` (V1 reads
+`#IdxJson` → emits to `osm_model.json` → V2 parses). Before V1's
+emission decomissions, V2 must lift rows 15 + 16 (Cluster A1) into
+`OssysSql` to maintain index evidence via the structured path. **This is
+the only row in the cluster with a sequencing dependency.**
+
+### Cluster A4 — DatabaseName envelope (row 29; 🟡 DIVERGENCE)
+
+**Re-open trigger.** A V2 emission consumer needs the database name
+threaded through the Catalog (e.g., qualified-name rendering at the
+emission layer that doesn't currently take database as a parameter).
+Unlikely — the Catalog stays deployment-agnostic by design. If
+triggered: thread `databaseName : string option` through emission
+context, not through IR.
+
+### Cluster A5 — Operator-debugging telemetry (row 30; 🟠 NOT-MAPPED)
+
+**Cash-out shape.** Three V2 surfaces lift in lockstep:
+
+1. **`ExtractionLog` observation accumulator** — F# module in
+   `Projection.Adapters.OssysSql/ExtractionLog.fs` (parallel to V1's
+   `SqlMetadataLog`). Records: `Snapshot of MetadataSnapshot * timestamp`
+   on success; `Failure of ValidationError list * lastRowSnapshot option`
+   on failure; `Request of rowsetName * parameters` per rowset Read.
+2. **`MetadataSnapshotRunner.runAsync` parameter extension** —
+   optional `log : ExtractionLog option = None`; the runner calls
+   `ExtractionLog.recordRequest` before each rowset read and
+   `ExtractionLog.recordFailure` / `recordSnapshot` at exit.
+3. **`ExtractionLog.writeJson`** — `Utf8JsonWriter`-based emitter per
+   the typed-AST-as-first-instinct discipline; writes the log to an
+   operator-provided path.
+
+**Dependencies.** Independent; entirely additive. **Acceptance.** A test
+that runs extraction against a deliberately-malformed rowset and
+asserts the JSON dump contains the failed-row snapshot.
+
+**Priority.** Cash out when V2 ships a production CLI surface for
+OSSYS extraction OR when a real cutover-windowed failure demands
+post-mortem partial-state context.
+
+### Cluster A6 — F# type system subsumes V1 JSON-shape check (row 31; ⚫ V1-SUNSET)
+
+No parity work. Sunset rationale lives in the row's Notes.
+
+### Cluster A7 — Production wiring (rows 32–36; slice 5.1.γ; 5 rows)
+
+**Row 32 (🟠 NOT-MAPPED — exception classification).**
+
+**Cash-out shape.** Closed-DU
+`MetadataExtractionError = RowMappingFailure of context : RowMappingContext | ResultSetMissing of expectedSetName : string * gotCount : int | TransientSqlError of sqlException : SqlException * sqlNumber : int | OtherSqlError of message : string`
+added to `MetadataSnapshotRunner.fs`. Replace the single `with ex ->`
+clause with a `match ex with` that classifies into the DU; each
+variant maps to a distinct `ValidationError` code
+(`adapter.ossysSql.rowMapping` / `adapter.ossysSql.resultSetMissing` /
+`adapter.ossysSql.transient` / `adapter.ossysSql.runFailed`). **Dependencies.**
+Row 34's `TransientSqlError` variant lives here; rows 32 + 34 lift
+together. Row 35's `ResultSetMissing` variant also lives here.
+**Acceptance.** Property test asserts every classified exception
+produces a distinct ValidationError code (no two variants collide).
+
+**Row 33 (🟡 DIVERGENCE — command timeout).**
+
+See `DECISIONS 2026-05-17 (slice 5.1.γ)`. Re-open via
+`commandTimeoutSeconds : int option = Some 0` parameter to `runAsync`
+— canary semantics preserved; production CLI passes operator-tunable
+value via a `--command-timeout-seconds` flag. **Acceptance.** Canary
+tests pass with default; new test asserts the value flows through
+to `SqlCommand.CommandTimeout`.
+
+**Row 34 (🟠 NOT-MAPPED — transient-error retry). ★ CUTOVER-CRITICAL.**
+
+**Cash-out shape.** A Polly retry policy added to V2's `OssysSql`
+adapter at two seams: (1) connection-open (if V2 grows
+connection-factory ownership; today caller-owned), (2) command-execute
+(`ExecuteReaderAsync`). Retry config: 3 attempts, exponential
+backoff (1s / 2s / 4s base; jittered ±25%). Retry condition:
+`SqlException.Number` ∈ {-2 (timeout), -1 (network drop),
+40197 / 40501 / 40613 (Azure transients), 4060 / 18452 (auth
+transients)}. Implementation in a new module
+`Projection.Adapters.OssysSql/Retry.fs`. **Dependencies.** Row 32's
+DU absorbs `TransientSqlError`; lift together. Caller-managed connection
+lifecycle complicates connection-open retry — if V2 keeps caller-owned
+connections, retry only wraps command-execute. **Acceptance.** A test
+using a `MockSqlConnection` that throws a configured-transient on
+first attempt and succeeds on second asserts the runner completes
+successfully. **Status: blocking for cloud-OSSYS canary in dual-track
+cutover-window per V2_DRIVER + R6 split-brain governance.**
+
+**Row 35 (🟠 NOT-MAPPED — result-set contract enforcement).**
+
+**Cash-out shape.** Track expected rowset count `[<Literal>] let
+EXPECTED_RESULT_SETS = 22` constant. After the read loop completes
+(rowsets 0–4 parsed + remaining 17 skipped), assert
+`actualCount = EXPECTED_RESULT_SETS`; on breach emit
+`adapter.ossysSql.resultSetContractBreach` error. **Dependencies.**
+Row 32's DU absorbs `ResultSetMissing`. **Acceptance.** A test that
+feeds a `SqlDataReader` returning only N<22 result sets asserts the
+breach surfaces as a `ValidationError`.
+
+**Row 36 (🟠 NOT-MAPPED — progress tracking).**
+
+**Cash-out shape.** Optional
+`onProcessorComplete : (rowsetName : string * rowCount : int) -> unit`
+parameter to `runAsync`. The runner invokes after each rowset's parse
+completes. Default no-op. CLI threads a callback that prints to stdout
+(or a TUI progress bar at scale). **Dependencies.** Independent;
+entirely additive. **Acceptance.** A test passes a counting callback;
+asserts it's invoked 22 times (once per rowset, including the skipped
+ones).
+
+**Cluster priority.** Row 34 first (cutover-critical for cloud OSSYS).
+Rows 32 + 34 + 35 then bundle into one chapter (5.1.γ.next) since
+they share the closed-DU `MetadataExtractionError` shape. Row 33
+on operator demand (canary works fine today; tunable timeout is
+production-CLI-time). Row 36 last (operator-quality-of-life, not
+cutover-blocker).
+
+### Cluster A8 — Offline fixture shape (row 37; 🟡 DIVERGENCE)
+
+See `DECISIONS 2026-05-17 (slice 5.1.δ)`. V2 chose `SnapshotRowsets`
+literal records; re-open only if a test scenario needs `runAsync`
+exercised against fixture rowsets specifically (e.g., contract-version
+testing per row 38 needs a fake `SqlDataReader`). **If triggered:**
+add `Projection.Adapters.OssysSql/MockSqlDataReader.fs` as a thin
+test-fixture primitive (no V1 JSON manifests; the canary's `RowsetBundle`
+literals are the input shape).
+
+### Cluster A9 — Contract versioning (row 38; 🟡 DIVERGENCE)
+
+See `DECISIONS 2026-05-17 (slice 5.1.ζ)`. Two re-open options named:
+**(a) update carbon-copy SQL + F# row-mappers in lockstep** (preferred;
+preserves V2's structural simplicity); **(b) grow operator-configurable
+`ColumnOverride` DU** + thread through `runAsync` parameters. Option
+(b) only if multiple OutSystems versions must be supported
+simultaneously. The choice flows from the carbon-copy editorial-
+inheritance posture — V2 prefers updating the source-of-truth over
+overlaying configuration.
+
+### Cluster A10 — AdvancedSql export SQL sunset (row 39; ⚫ V1-SUNSET)
+
+No parity work. Migration impact = none; companion to Cluster A3.
+
+### Cluster F — Schema-diff machinery (rows 40 + 41)
+
+Row 40 sunsets with V1; no V2 parity work. Row 41 details its cash-out
+at the row's Notes (`DiffSource` closed-DU; `Compare.run` core function;
+per-variant adapter shape; T11 sibling-commutativity acceptance test).
+**Dependencies.** Row 41's full surface requires the DACPAC adapter
+(chapter 5.x.dacpac, currently deferred). **Today's shippable scope:**
+LiveDb ↔ LiveDb, LiveDb ↔ SsdtProject, SsdtProject ↔ SsdtProject —
+three of six pairs ship without the DACPAC adapter. **Priority.** Ship
+the three pairs when the principal-PO confirms operator demand for
+schema-diff outside the canary's specific scope. The CLI surface
+addition (`projection compare`) is the **direct CLI refinement** the
+slice 5.8.α drop-vs-harvest decision targets — operator gets a real
+schema-diff verb instead of an opaque canary.
+
+---
+
+## Open chapter sequence — what's queued at the chapter grain
+
+After the chapter 5.1 wave closes (all 5.1.* slices shipped), the
+remaining chapters land in this order:
+
+1. **Chapter 5.2 — JSON + Domain (A2 + A3)**. The biggest single
+   audit cluster. Sub-sliced per Domain aggregate (module / entity /
+   attribute / index / relationship / misc + valueobjects); the JSON
+   deserialization side mirrors V1's `Osm.Json.Deserialization`. Likely
+   surfaces many 🔵 V2-EXTENSION rows (V2's smart constructors + closed
+   DUs + A39 invariants strengthen what V1 had).
+2. **Chapter 5.4 — Tightening + Validations (Section B)**. V1's
+   `Osm.Validation` cluster vs V2's `Projection.Core/Passes`. This is
+   where **V2-driver mode confidence** is built — per-pass decision
+   parity. Each signal cluster (nullability / FK / unique) gets its
+   own slice; opportunities + profiling + evidence + application land
+   in adjacent slices.
+3. **Chapter 5.3 + 5.5 — Emission (Section C)**. V1's `Osm.Smo` SMO
+   emission vs V2's `Projection.Targets.SSDT`; V1's `Osm.Emission`
+   orchestration (manifest, plan, builder); V1's
+   static/dynamic data + UAT user reflow. Most slices land as
+   🟢 PARITY (V2 already has the structural equivalent; the audit
+   verifies the equivalence claim).
+4. **Chapter 5.8 — DMM concept-harvest (closed)**. Rows 40-41
+   shipped at slice 5.8.α; the V2 `compare` CLI verb is reserved.
+   Actual implementation lands when the principal-PO triggers it.
+5. **Chapter 5.6 — Pipeline orchestration (Section D)**. V1's
+   `Pipeline/Orchestration` build steps vs V2's `Projection.Pipeline`.
+   Mostly verification of V2's pipeline structure-completeness.
+6. **Chapter 5.7 — CLI + load harness (Section E)**. V1's `Osm.Cli`
+   command surface vs V2's `Projection.Cli`. Maps operator affordances
+   1:1 OR identifies V2 CLI gaps that the matrix surfaces (e.g., the
+   `compare` verb from row 41 already named).
+
+The remaining chapters drive V2-driver-mode confidence to completeness
+slice-by-slice. The matrix's append-only narrative compounds across
+the sequence.
+
+---
+
 ## Parity-audit slice queue (the in-flight wave)
 
 The first wave targets the V1 SqlExtraction layer (most relevant to chapter 5.0's pivot). Each row below is a candidate slice; the next-agent should pick the highest-leverage row matching session capacity.
