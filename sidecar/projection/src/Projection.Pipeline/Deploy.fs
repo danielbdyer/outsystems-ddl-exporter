@@ -486,6 +486,15 @@ module Deploy =
                     // ScriptDomGenerate per pillar 7).
                     do! flushBulk ()
                     appendDdl s
+                | SetExtendedProperty _ ->
+                    // Chapter 4.1.A slice 8: EXEC sys.sp_addextendedproperty
+                    // is a DDL-class statement (metadata attachment, not
+                    // data mutation). Same realization shape as CREATE
+                    // INDEX — flush any pending bulk inserts before
+                    // issuing the EXEC; route through Render.toSql which
+                    // delegates to ScriptDomGenerate.
+                    do! flushBulk ()
+                    appendDdl s
                 | SetIdentityInsert _ ->
                     do! flushBulk ()
                     appendDdl s

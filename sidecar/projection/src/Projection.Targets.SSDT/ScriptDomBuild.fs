@@ -662,6 +662,70 @@ module ScriptDomBuild =
     // -----------------------------------------------------------------------
 
     /// Map a SQL-bearing `Statement` to its `TSqlStatement` form.
+    /// Build an `ExecuteStatement` for a `SetExtendedProperty`. Chapter
+    /// 4.1.A slice 8: V1 form per `ExtendedPropertyScriptBuilder.cs`:
+    /// `EXEC sys.sp_addextendedproperty @name=N'…', @value=N'…',
+    ///  @level0type=N'SCHEMA', @level0name=N'<schema>',
+    ///  @level1type=N'TABLE',  @level1name=N'<table>'
+    ///  [, @level2type=N'COLUMN'|N'INDEX', @level2name=N'<col-or-idx>']`.
+    /// All string parameters are national (`N''`) per V1 + SQL Server
+    /// extended-property convention; the value parameter is `NULL`
+    /// when `propertyValue = None`.
+    let buildSetExtendedProperty
+            (table: TableId)
+            (target: ExtendedPropertyTarget)
+            (propertyName: string)
+            (propertyValue: string option)
+            : ExecuteStatement =
+        let nText (value: string) : ScalarExpression =
+            let l = StringLiteral()
+            l.Value <- value
+            l.IsNational <- true
+            l :> ScalarExpression
+
+        let parameter (name: string) (value: ScalarExpression) : ExecuteParameter =
+            let p = ExecuteParameter()
+            let vr = VariableReference()
+            vr.Name <- name
+            p.Variable <- vr
+            p.ParameterValue <- value
+            p
+
+        let procRef = ProcedureReference()
+        procRef.Name <- schemaObjectName "sys" "sp_addextendedproperty"
+        let procRefName = ProcedureReferenceName()
+        procRefName.ProcedureReference <- procRef
+
+        let exec = ExecutableProcedureReference()
+        exec.ProcedureReference <- procRefName
+
+        let valueExpr =
+            match propertyValue with
+            | Some v -> nText v
+            | None   -> NullLiteral() :> ScalarExpression
+
+        exec.Parameters.Add(parameter "@name"       (nText propertyName))
+        exec.Parameters.Add(parameter "@value"      valueExpr)
+        exec.Parameters.Add(parameter "@level0type" (nText "SCHEMA"))
+        exec.Parameters.Add(parameter "@level0name" (nText table.Schema))
+        exec.Parameters.Add(parameter "@level1type" (nText "TABLE"))
+        exec.Parameters.Add(parameter "@level1name" (nText table.Table))
+        match target with
+        | TableExtendedProperty -> ()
+        | ColumnExtendedProperty col ->
+            exec.Parameters.Add(parameter "@level2type" (nText "COLUMN"))
+            exec.Parameters.Add(parameter "@level2name" (nText col))
+        | IndexExtendedProperty idx ->
+            exec.Parameters.Add(parameter "@level2type" (nText "INDEX"))
+            exec.Parameters.Add(parameter "@level2name" (nText idx))
+
+        let spec = ExecuteSpecification()
+        spec.ExecutableEntity <- exec
+
+        let stmt = ExecuteStatement()
+        stmt.ExecuteSpecification <- spec
+        stmt
+
     /// Returns `None` for non-SQL variants (`Comment`, `Blank`) so
     /// the realization layer can splice them through the text
     /// stream directly. Closed-DU dispatch — adding a new variant
@@ -678,3 +742,5 @@ module ScriptDomBuild =
             Some (buildInsertRow table cells :> TSqlStatement)
         | SetIdentityInsert (table, enabled) ->
             Some (buildSetIdentityInsert table enabled :> TSqlStatement)
+        | SetExtendedProperty (table, target, propName, propValue) ->
+            Some (buildSetExtendedProperty table target propName propValue :> TSqlStatement)
