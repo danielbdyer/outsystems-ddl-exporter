@@ -12268,3 +12268,64 @@ choosing a different shape.
   operational shape of that deferral).
 
 ---
+
+## 2026-05-17 (slice 5.1.δ) — Offline fixture shape: in-memory RowsetBundle over manifest-keyed JSON files
+
+V1 ships two manifest-keyed offline fixtures —
+`FixtureAdvancedSqlExecutor` (implements `IAdvancedSqlExecutor` by
+reading pre-canned JSON rowset files from disk) and
+`FixtureOutsystemsMetadataReader` (implements `IOutsystemsMetadataReader`
+similarly) — totaling ~450 LOC. Both look up a JSON manifest by a
+key derived from `(modules + IncludeSystem + IncludeInactive)` filter
+parameters and dispatch to the matching disk-stored rowset bundle.
+V1's unit tests + offline pipelines use these fixtures to bypass live
+SQL execution entirely.
+
+V2 chose a different fixture shape. V2's
+`Projection.Adapters.Osm.CatalogReader.SnapshotRowsets` consumes an
+in-memory `RowsetBundle` constructed directly in F# (via
+`tests/Projection.Tests/IRBuilders.fs` literal constructors +
+`Fixtures.fs` shared bundles). Offline canary tests use this path
+and bypass `MetadataSnapshotRunner.runAsync` entirely. **No
+fixture-mode entry point exists for the `OssysSql` adapter
+specifically.**
+
+The shape comparison:
+
+| Axis | V1 (manifest-keyed JSON files) | V2 (in-memory rowset literals) |
+|---|---|---|
+| Storage | Disk JSON, manifest-keyed lookup | F# value literals in test source |
+| Construction | Tooling produces JSON; tests read it | Test source IS the fixture |
+| Mutation | Edit a JSON file | Edit an F# source line |
+| Type safety | Runtime JSON-shape parsing | Compile-time F# record-shape |
+| Versioning | Manifest file lifecycle | Git history on `.fs` source |
+| Reusability | Manifest entries cross test boundaries | Module-level `let private` shared values |
+
+V2's choice flows from the closed-DU empirical-test discipline (CLAUDE.md
+operating-disciplines table) + the F# typed-fixture idiom: literal
+records constructed in source are simpler than disk-stored JSON when
+the consumer is also F#, because the compiler catches shape drift at
+build time rather than test time. V1's manifest-keyed shape made
+sense in C# where literal-record-construction has more boilerplate.
+
+**Re-open trigger.** A test scenario surfaces that needs
+`MetadataSnapshotRunner.runAsync` exercised against fixture rowsets
+specifically — e.g., contract-version testing (matrix row 38;
+operator-configurable column tolerance) needs to exercise the
+SqlDataReader-walking layer, not bypass it. At that point, V2 grows
+an in-memory `IDataReader` adapter or a similar primitive that lets
+the runner consume rowset literals; the V1 JSON-manifest shape is
+not adopted (the F# idiom doesn't benefit from disk indirection).
+
+Recorded in `V1_PARITY_MATRIX.md` row 37 as 🟡 DIVERGENCE.
+
+### Cross-references
+
+- `Closed-DU expansion empirical-test discipline` (CLAUDE.md operating-
+  disciplines table) — F# fixture idiom prefers literal records over
+  disk-stored serialized fixtures.
+- `Projection.Adapters.Osm.CatalogReader.SnapshotSource` DU — the
+  three input variants (file / JSON / rowsets) the offline / online
+  paths consume.
+
+---

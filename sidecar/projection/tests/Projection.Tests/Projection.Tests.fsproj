@@ -85,6 +85,7 @@
     <Compile Include="OssysExtractionDiagnosticsParityTests.fs" />
     <Compile Include="OssysSnapshotShapeValidationParityTests.fs" />
     <Compile Include="OssysProductionWiringParityTests.fs" />
+    <Compile Include="OssysOfflineFixtureParityTests.fs" />
     <Compile Include="IsActiveCarryThroughTests.fs" />
     <Compile Include="IRFidelityLiftTests.fs" />
     <Compile Include="NoSilentDropTests.fs" />
