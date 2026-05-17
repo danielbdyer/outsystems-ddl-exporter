@@ -1,87 +1,87 @@
 # Handoff letter — Chapter 5.0 SHIPPED (OSSYS catalog producer carbon-copy; V2 stands on its own; V1 Parity Audit Wave opens next)
 
-To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
+To the next-chapter agent. Read this before anything else in the V2 sidecar. It is shorter than the work warrants, but it tells you what to read so you can carry your own weight.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
 
 ## 2026-05-17 (chapter 5.0 close — Phase 8 cutover-window pivot SHIPPED; V1 Parity Audit Wave opens)
 
-**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1454 / 1454 non-canary passing** (1441 prior + 13 net new). 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged. +1 gated parity Skip; +5 Docker-gated OSSYS extraction canary tests.
+### Where things stand
 
-**Chapter 5.0 closes.** Read `CHAPTER_5_0_CLOSE.md` for the chapter-close synthesis. Phase 8 (OSSYS catalog producer carbon-copy) shipped — **V2 now stands on its own**. Catalog acquisition is V1-independent; the live-DB pivot is one configuration step away (the runner is connection-agnostic; production wiring = supplying a real connection string).
+Branch: `claude/review-chapter-close-Rqo0x`. Test baseline at chapter close is 1454 / 1454 non-canary passing (1441 prior plus 13 net new), zero build warnings under `TreatWarningsAsErrors=true`, lint count unchanged. There is one gated parity Skip (a V1 byte-identity check that runs when the V1 trunk is checked out alongside V2) and five Docker-gated OSSYS extraction canary tests that exercise the full live-SQL chain against the warm SQL Server.
 
-**What's load-bearing going forward.**
+Read `CHAPTER_5_0_CLOSE.md` for the chapter-close synthesis. The headline: Phase 8 (OSSYS catalog producer carbon-copy) shipped. V2 stands on its own — catalog acquisition no longer depends on V1's runtime. The live-DB pivot is one configuration step away because `MetadataSnapshotRunner.runAsync` takes an open `SqlConnection`; production wiring is just supplying a real connection string against an OSSYS-hosting SQL Server.
 
-- **`Projection.Adapters.OssysSql`** — new F# adapter. Sibling to `Projection.Adapters.Sql` + `Projection.Adapters.Osm`. Embeds V1's `outsystems_metadata_rowsets.sql` verbatim (byte-identical) + V2-adapted bootstrap fixture for the canary.
-- **`MetadataSnapshotRunner.runAsync : SqlConnection -> SnapshotParameters -> Task<Result<MetadataSnapshot>>`** — F# runner. Walks all 22 V1 result sets; parses first 5 into typed records; composes via `toBundle` into V2's `CatalogReader.RowsetBundle`.
-- **`OssysExtractionCanaryTests`** (5 tests; Docker-gated) — the canary mockup the principal-PO asked for. Bootstrap synthetic OSSYS schema → extract → V2 Catalog → assert structural invariants. Deterministic across runs.
-- **`Deploy.withBootstrappedDatabase`** — new primitive for bootstrap-and-act canary shapes. Reusable for DACPAC bootstrap canaries, V1-JSON-snapshot bootstrap canaries, etc.
-- **Cross-key-shape FK resolution fix** (latent V2 bug surfaced + corrected at chapter 5.0 slice δ) — `parseReferenceRowFor` now resolves the target SsKey via `RefEntityId` global lookup map; preserves GUID-based identity; falls back to synthesized shape when target ID absent.
-- **`parsePrimitiveType` extension** — covers ~12 common OutSystems DataTypes (was Identifier + Text only).
+### Read these documents, in this order, before opening any slice
 
----
+You are joining a project with substantial accumulated discipline. The next-chapter work is high-stakes parity verification, not feature work, and it lands inside a tight discipline frame. Read these in order, and budget at least one full agent session for the reading before opening a slice:
 
-## Chapter 5.1+ opens — V1 Parity Audit Wave (Phase 5.12)
+1. `KICKOFF.md` — the canonical first-message brief for fresh agents. Five-minute orientation; pointer to everything else.
+2. `CLAUDE.md` — navigation surface. Lists the operating-disciplines table (24+ disciplines codified to date), the load-bearing commitments (A18 amended, A35–A40, writer-fidelity, V2 self-containment, pillar 9 data-intent / operator-intent separation), the programming style center target, and the F# feature surface taxonomy. Skim the whole file once; read the operating-disciplines table carefully.
+3. `VISION.md` — strategic frame. The cutover-as-forcing-function framing, the sibling chorus + verification posture, acceptance criteria, the cutover fallback ladder.
+4. `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` — the prior architects' framings, preserved for context.
+5. `AXIOMS.md` — the formal system. A1–A40 + T1–T11. A18 amended (Π consumes Catalog × Profile, never Policy), A35 (Π's canonical output is a typed deterministic stream), A39 (aggregate-root smart-constructor invariants), A40 (harmonization-via-parameterization), A41 (registry totality) are the load-bearing ones for chapter 5.1+. The "Amendments scheduled (chapter close)" section at the bottom carries placeholders for pending amendments.
+6. `DECISIONS.md` — append-only resolved-questions log. Read the most recent ten entries first; the rest as needed. Two indexes at the top: Active deferrals (catches silent-trigger fires) and Operating disciplines (cross-cutting practices). The Stage 0 governance burst (2026-05-22) cluster at the bottom carries the five pre-chapter-3 entries that ground V2-driver mode, R6 split-brain governance, and the T-30 / T-15 fallback ladder.
+7. `ADMIRE.md` — the canonical V1-reference register. The OSSYS catalog producer entry (2026-05-13) is the most-recently-cashed; read it to understand the carbon-copy events your chapter inherits.
+8. `BACKLOG.md` — the operational ledger. Section III's per-phase backlog tells you what's shipped, what's in flight, what's deferred. Phase 5.11 (chapter 5.0 close; OSSYS adapter shipped) and Phase 5.12 (V1 Parity Audit Wave; in flight) are your immediate context.
+9. `CHAPTER_5_0_CLOSE.md` — the most-recent close synthesis. Tells you what just shipped and what's deferred.
+10. `V1_PARITY_MATRIX.md` — the chapter 5.1+ discipline document. **This is mandatory reading before opening any parity-audit slice.** It carries the six classification statuses, the seven-step slice protocol, the initial slice queue, the anti-patterns the discipline forbids, and the cadence rules.
 
-**The chapter sequence pivots.** With V2 standing on its own structurally, the next-chapter agent's job shifts from "build the missing capability" to "verify parity with V1's existing capability." Per principal-PO direction at chapter 5.0 close:
+The "Reading order for a fresh agent" section in CLAUDE.md mirrors items 1–9 and provides links. The matrix doc is the chapter-5.1+ addition.
 
-> "I'd like to start heavily auditing the v1 codebase, step by step, to ensure there is maximal parity — there's a ton of code paths in V1 and I want to make sure the representational coverage-state of the parity is expressible in a formal way in the next agent's discipline. I'd prefer to go in depth on a given small slice, one slice at a time."
+### What chapter 5.0 leaves load-bearing for chapter 5.1+
 
-**The discipline document.** `V1_PARITY_MATRIX.md` opens at chapter 5.0 close (this commit). Read it before opening any chapter 5.1+ slice. The matrix is the substrate; each slice produces one row (or one amendment) + one test + one commit.
+The new F# adapter `Projection.Adapters.OssysSql` is a sibling to `Projection.Adapters.Sql` (deployed-schema reads via SqlClient) and `Projection.Adapters.Osm` (V1 JSON / rowset bundle reads). It embeds V1's `outsystems_metadata_rowsets.sql` verbatim as a resource (byte-identical to V1 source; md5-verified at copy time; gated parity test enforces equivalence when V1 trunk is present). It also embeds a V2-adapted bootstrap fixture (`Resources/ossys-edge-case.seed.sql`) carbon-copied from V1's `tests/Fixtures/sql/model.edge-case.seed.sql` with documented divergences for modern SQL Server compatibility.
 
-**The six classification statuses.** Every matrix row carries exactly one:
+The F# runner `MetadataSnapshotRunner.runAsync` takes an open `SqlConnection` plus `SnapshotParameters` (mirroring V1's five SQL parameters) and returns `Task<Result<MetadataSnapshot>>`. It walks all 22 result sets from the V1 SQL and parses the first 5 into typed F# records (Modules, Entities, Attributes, References, PhysicalTables), skipping the other 17 (those become parity-audit lift targets — each lift adds a `RowsetBundle` field, a typed record, a result-set parser, and `toBundle` JOIN logic). `MetadataSnapshotRunner.toBundle` composes the typed snapshot into V2's existing `CatalogReader.RowsetBundle`, joining PhysicalTable rows to entities for `DbSchema` and propagating Attribute `DeleteRule` to References.
 
-- 🟢 **PARITY** — V2 produces equivalent output for the V1 capability.
-- 🔵 **V2-EXTENSION** — V2 carries the capability + adds structural strength V1 lacks.
-- 🟡 **DIVERGENCE** — V2 deliberately diverges; rationale documented.
-- 🟠 **NOT-MAPPED** — V2 does not yet carry the capability; trigger named.
-- 🔴 **V1-BUG-CORRECTED** — V2 fixes a V1 bug or unsafety.
-- ⚫ **V1-SUNSET** — V2 does not carry forward by intent.
+The end-to-end canary lives at `OssysExtractionCanaryTests` (5 tests, Docker-gated via `skipIfNoDocker`). The flow: bootstrap the synthetic OSSYS schema with the carbon-copied seed, run extraction via `MetadataSnapshotRunner.runAsync`, compose into a `RowsetBundle`, parse to a V2 `Catalog`, then assert structural invariants (3 modules; AppCore has 3 entities; BillingAccount lands in the `billing` schema; Customer has 6 attributes including the CityId FK; extraction is deterministic across repeated runs). This is the canary mockup the principal-PO directed: "I wouldn't mind also finding a way to mock up the query itself so it can be included in the canary flow."
 
-**The slice protocol (per `V1_PARITY_MATRIX.md` §"How a parity-audit slice works"):**
+The Pipeline gained a reusable primitive — `Deploy.withBootstrappedDatabase` creates a per-run database, applies seed SQL against it, then invokes a body function with the open connection. Future canary shapes (DACPAC bootstrap, V1-JSON-snapshot bootstrap, alternate OSSYS fixtures) can reuse this.
 
-1. **Scope** one small V1 capability (50–500 LOC). Typically one C# file, one method, or one tightly-related cluster.
-2. **V1 trace** — read V1 source, understand inputs/outputs/invariants, name any V1 bugs.
-3. **V2 inventory** — find V2's representation (or absence). Trace V2's equivalent code path. Identify the delta.
-4. **Classification** — assign one of the six statuses. Justify in 1–3 sentences.
-5. **Coverage test** — add a test exercising the parity claim. Each status has its own test shape (see matrix doc).
-6. **Matrix update** — append a row (or amendment) to the matrix. **Append-only** — never modify rows in place.
-7. **Slice close** — single commit. Message names: V1 source path + V2 representation + classification + test added.
+Chapter 5.0 also fixed a latent V2 bug surfaced by the canary: `parseReferenceRowFor` previously constructed FK target SsKeys via `kindSsKey moduleName refRow.RefEntityName` (always synthesized), which broke against rowset bundles carrying GUID-based `EntitySsKey` values. The fix extended `CatalogReader.ReferenceRow` with `RefEntityId : int option`; `parseRowsetBundle` now builds a global `Map<int, SsKey>` from EntityRows joined to ModuleRows; `parseReferenceRowFor` resolves the target via this map and falls back to the synthesized shape when the ID is absent. The `RefEntityId = None` default preserves all prior test-fixture behavior. The fix is recorded in `V1_PARITY_MATRIX.md` row 9 as a 🔴 V1-BUG-CORRECTED entry. The `parsePrimitiveType` function was also extended from 2 types (Identifier, Text) to 12 (adds Integer, LongInteger, Email, PhoneNumber, Boolean, DateTime, Date, Time, Decimal, Currency, BinaryData); see `V1_PARITY_MATRIX.md` row 10 (currently 🟠 NOT-MAPPED partial — more V1 OutSystems types may exist; the parity audit slice that audits V1's `Osm.Domain.Model.OssysDataType` enum will surface them).
 
-**Cadence rules:**
+### Chapter 5.1+ — V1 Parity Audit Wave (Phase 5.12)
 
-- **One slice per agent session arc.** Do NOT bundle multiple slices into one commit — the matrix's value is its append-only narrative of independent coverage events.
-- The chapter-close ritual gains a "matrix coverage walk" item starting chapter 5.1 close.
-- Per-quarter matrix re-balance surfaces clusters of 🟠 NOT-MAPPED that warrant focused lift chapters.
+The chapter sequence pivots. With V2 standing on its own structurally, the work shifts from "build the missing capability" to "verify parity with V1's existing capability." Per principal-PO direction at chapter 5.0 close:
 
-**Initial slice queue** (pick what matches session capacity; see `V1_PARITY_MATRIX.md` §"Parity-audit slice queue" for the full table):
+> I'd like to start heavily auditing the v1 codebase, step by step, to ensure there is maximal parity — there's a ton of code paths in V1 and I want to make sure the representational coverage-state of the parity is expressible in a formal way in the next agent's discipline. I'd prefer to go in depth on a given small slice, one slice at a time.
 
-| Slice | V1 source | Priority |
-|---|---|---|
-| 5.1.α | `IOutsystemsMetadataReader.cs` (22 DTOs) | Inventories what's not yet lifted in V2 |
-| 5.1.β | `SnapshotValidator.cs` | Sanity-check semantics for live-DB pickup |
-| 5.1.γ | `SqlClientOutsystemsMetadataReader.cs` | Connection lifecycle for production wiring |
-| 5.1.ε | `SqlMetadataDiagnosticsWriter.cs` | Diagnostics-axis parity |
-| 5.2.α | `src/Osm.Domain/Model/*.cs` (V1 aggregate-root model) | Largest single audit cluster |
+The substrate for this work is `V1_PARITY_MATRIX.md`. Every parity-audit slice produces one row (or one dated amendment to an existing row) plus one test plus one commit. Rows accumulate. Each row is independently verifiable. Coverage gaps are structurally visible. The matrix is the formal expression of "representational coverage-state" the principal-PO asked for.
 
-**Anti-patterns the discipline forbids:**
+Every row carries exactly one of six classification statuses. **🟢 PARITY** means V2 produces equivalent output for the V1 capability against shared inputs — verified by a passing test that asserts equivalence on a representative input. **🔵 V2-EXTENSION** means V2 carries the capability and adds structural strength V1 lacks (type-safety, invariants, additional axis) — the extension is documented and the V1-equivalent shape still produces equivalent output. **🟡 DIVERGENCE** means V2 deliberately diverges — V1 has a behavior V2 does not replicate (intentional, principled); the divergence is documented at the call site plus a DECISIONS.md entry naming the rationale. **🟠 NOT-MAPPED** means V2 does not yet carry the V1 capability — the audit identified it but no V2 path exists; the trigger-to-cash-out is named. **🔴 V1-BUG-CORRECTED** means V2 implements the capability and fixes a V1 bug or unsafety; the V1 bug is referenced, the V2 correction is justified, a test exercises the corrected behavior. **⚫ V1-SUNSET** means the V1 capability is not carried forward by intent — V2 sunsets it; sunset rationale documented; downstream consumers either unaffected or migrated.
 
-- Bundling multiple slices into one commit (breaks the append-only narrative).
-- 🟠 NOT-MAPPED without a named trigger ("we'll get to it" is unacceptable).
-- Substituting the matrix for property tests — both are needed; they're orthogonal.
-- Static-analysis-style enumeration without per-row coverage tests.
+The seven-step slice protocol is in `V1_PARITY_MATRIX.md` under "How a parity-audit slice works." In summary: scope one small V1 capability (typically 50–500 LOC, audit-able in one session arc); trace V1's behavior (inputs, outputs, invariants, any V1 bugs you encounter); inventory V2's equivalent (or absence) and identify the delta; classify (one of the six statuses, justified in 1–3 sentences); add a coverage test whose shape matches the status (equivalence test for PARITY, V1-equivalent plus extension test for V2-EXTENSION, divergent-behavior test plus DECISIONS row for DIVERGENCE, Skip-stub reserving the contract name for NOT-MAPPED, regression test for V1-BUG-CORRECTED, Skip-stub naming the sunset for V1-SUNSET); append the matrix row (or dated amendment under "Status history" for an existing row); close with a single commit naming V1 source path plus V2 representation plus classification plus test added.
 
-**The matrix is the formal expression of "representational coverage-state" the principal-PO requested.** It compounds slice by slice. Each row is independently verifiable. Coverage gaps are structurally visible.
+The cadence rule is strict: **one slice per agent session arc.** Do not bundle multiple slices into one commit. The matrix's value is its append-only narrative of independent coverage events; bundling destroys that. The chapter-close ritual gains a "matrix coverage walk" item starting chapter 5.1 close (it lands when chapter 5.1 closes and the ritual amendment lands in DECISIONS.md).
 
----
+The initial slice queue is in `V1_PARITY_MATRIX.md` under "Parity-audit slice queue (the in-flight wave)." It runs from `5.1.α` (inventory `IOutsystemsMetadataReader.cs` — the 22 DTOs, ~100 LOC, produces matrix rows 11–28) through `5.1.ζ` (audit `MetadataContractOverrides.cs`, V1's hook for tolerating contract drift across OutSystems versions) and then expands to chapter 5.2 (V1's aggregate-root model in `src/Osm.Domain/Model/*.cs`, the largest single audit cluster, likely producing many 🔵 V2-EXTENSION and 🟢 PARITY rows) and chapter 5.3 (V1's SMO emission layer in `src/Osm.Smo/PerTableEmission/*.cs`, which matters for Schema-axis cutover-fidelity). Pick what matches your session capacity. The queue is priority-unordered; higher-leverage slices for the immediate ops pivot are `5.1.α` (inventory) and `5.1.γ` (`SqlClientOutsystemsMetadataReader.cs` — production wiring details, connection lifecycle, retry semantics, transient-error handling).
 
-## What this handoff does NOT tell you (read on your own)
+The discipline forbids four anti-patterns. **Do not bundle multiple slices into one commit** — it breaks the append-only narrative. **Do not file a 🟠 NOT-MAPPED row without a named trigger** — "we'll get to it" is unacceptable; the trigger must be concrete (consumer demand X, cutover-blocker Y, parity-audit identifies Z). **Do not substitute the matrix for property tests** — the matrix tracks per-capability parity status; property tests assert algebraic invariants (T1 determinism, T11 sibling commutativity, A39 smart-constructor invariants); they're orthogonal and both are needed. **Do not file static-analysis-style enumeration without per-row coverage tests** — every row must have an artifact (a test, a divergence document, a sunset rationale) that exists as evidence.
 
-- `CHAPTER_5_0_CLOSE.md` — full close synthesis.
-- `CHAPTER_5_0_OPEN.md` — strategic frame at chapter open.
-- `V1_PARITY_MATRIX.md` — the discipline document. **Required reading** before any 5.1+ slice.
-- `BACKLOG.md` Phase 5.11 (chapter 5.0; closed) + Phase 5.12 (parity audit wave; in flight).
-- `ADMIRE.md` 2026-05-13 entry (OSSYS catalog producer; carbon-copy events recorded).
+### Context you will need on V1's codebase shape
+
+V1 lives in the repository root at `src/`. The relevant clusters for chapter 5.1+ are: `src/AdvancedSql/` (two large SQL files; the rowsets one is already carbon-copied), `src/Osm.Pipeline/SqlExtraction/` (55 C# files; the orchestration, processors, DTOs, and connection abstractions), `src/Osm.Domain/Model/` (the aggregate-root domain model V2 specifically does not inherit — V2 reconstructs Catalog from rowsets fresh per the chapter-2 close commitment), `src/Osm.Json/Deserialization/` (V1's JSON-to-domain-model layer; V2 has a parallel F# implementation in `Projection.Adapters.Osm.CatalogReader`), and `src/Osm.Smo/` (V1's SMO-based emission layer; V2's emission is in `src/Projection.Targets.SSDT/`). When auditing a V1 file, look first at how V1 invokes it (call sites tell you what the capability is for); then read the file itself; then trace V2's equivalent.
+
+V2's adapter architecture is three-layered. `Projection.Adapters.Osm` consumes V1's JSON output (`SnapshotJson` variant) or V1-shaped rowset bundles (`SnapshotRowsets` variant) and produces a `Catalog`. `Projection.Adapters.Sql` reads a deployed SQL Server schema and produces a `Catalog` (used by the canary's round-trip closure tests). `Projection.Adapters.OssysSql` (new this chapter) executes the carbon-copied V1 SQL against a live OSSYS source and produces a `RowsetBundle` that `Projection.Adapters.Osm` then consumes. The three together cover the three Catalog-acquisition paths V2 supports.
+
+The pillar 9 (DataIntent vs OperatorIntent) classification matters at every audit step. V1's code paths typically conflate the two; V2's discipline separates them structurally. When you audit a V1 file, ask: is this transformation `DataIntent` (preserves data intention; reachable from `Project(catalog, Policy.empty, profile)` without operator opinion) or `OperatorIntent of OverlayAxis` (operator-supplied intent through Selection / Emission / Insertion / Tightening; lands as registered overlay)? Misclassification is the most common drift mode in V1 carbon-copies; the parity audit is a primary catch surface.
+
+### What the matrix already contains (chapter 5.0's seed entries)
+
+The matrix opens with ten rows recording chapter 5.0's work. Row 1 is the SQL file carbon-copy (🟢 PARITY; byte-equivalence verified). Row 2 is the bootstrap fixture (🟡 DIVERGENCE; V1 self-managed DB, IGNORE_DUP_KEY on filtered index, and partition function/scheme removed for modern SQL Server compatibility). Row 3 is the F# runner rewrite (🟢 PARITY for the 4 V2-consumed rowsets; F# rewrite at copy-time). Rows 4–8 are the per-result-set processors (V1 C# vs V2 F# — 🟢 PARITY each, with row 6 noting attribute-row partial coverage). Row 9 is the cross-key-shape FK resolution fix (🔴 V1-BUG-CORRECTED). Row 10 is the partial `parsePrimitiveType` coverage (🟠 NOT-MAPPED; trigger: parity audit identifies an untested OutSystems DataType).
+
+When you open chapter 5.1.α (the recommended first slice), you'll be appending rows 11 through approximately 28 — one per V1 rowset DTO in `IOutsystemsMetadataReader.cs`. Many will be 🟠 NOT-MAPPED (V2's `RowsetBundle` consumes only 4 of the 22). The audit identifies which lifts are highest-leverage for downstream V2 IR consumers.
+
+### What this handoff does NOT tell you
+
+Test infrastructure details, Docker warm-container lifecycle, the BatchSplitter's GO-statement handling, the bench observation primitives, the ScriptDom typed-AST emitter patterns, the LineageDiagnostics writer monad, the closed-DU empirical-test discipline — these are all in the canonical surfaces. Read `CLAUDE.md`'s "Programming style — the center target" and "F# feature surface" sections for the implementation idioms. Read the `tests/Projection.Tests/Fixtures.fs` and `tests/Projection.Tests/IRBuilders.fs` files to understand the test-fixture conventions. The chapter-3.1 close (`CHAPTER_3_1_CLOSE.md`) and the canary discipline entry in `CLAUDE.md`'s operating-disciplines table explain the canary-as-load-bearing-forcing-function commitment.
+
+If you find a discipline drift while auditing, you have authority to file a DECISIONS row codifying the catch — that is how disciplines compound. If you find a substantive V2 bug surfaced by an audit, fix it inline (chapter 5.0 slice δ is the precedent — the cross-key-shape FK resolution was fixed as part of the slice that surfaced it, not deferred). If you find a V1 capability V2 must absolutely carry forward but cannot scope into one parity-audit slice, file a 🟠 NOT-MAPPED matrix row with a named cutover-blocker trigger AND open a focused lift chapter (chapter 5.1.lift.α or similar).
+
+The bet, slice by slice: append-only coverage compounds into V2's structural answer to "how confident are we that V2 covers V1's surface?" That confidence is what the cutover ladder turns into V2-driver mode. The parity audit wave is how V2 earns the V1-side trust the cutover requires.
+
+Welcome. Read the documents. Then pick a slice.
 
 ---
 
