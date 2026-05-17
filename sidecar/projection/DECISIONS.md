@@ -11903,3 +11903,96 @@ Slice ζ ships `TransformRegistry.skeletonView` / `overlayView` / `overlayAxes` 
 - `tests/Projection.Tests/TransformRegistryCompletenessTests.fs` (the chapter's structural exit gate; 4 property tests + 3 intentional-fail probes).
 
 ---
+
+## 2026-05-17 (chapter 4.1.A slice 8 reopen + ship) — sp_addextendedproperty emission; CommentMetadataUnreflected Tolerance retired
+
+**Status:** decided (chapter 4.1.A's slice 8 deferred-with-trigger from chapter A.0' close + chapter 4.1.A close fires; the IR carriage shipped at chapter A.0' slices α + ζ now has its emitter consumer; the canary's `Tolerance.CommentMetadataUnreflected` divergence is no longer needed).
+
+**Context.** Chapter A.0' (closed 2026-05-16) lifted descriptions and extended properties into the IR — `Kind.Description : string option` + `Attribute.Description : string option` (slice α) and `ExtendedProperties : ExtendedProperty list` on Module / Kind / Attribute / Index (slice ζ). The close doc named the emitter consumption as a forward-signal trigger: "the operational deferral that Description + ExtendedProperties lifts EVENTUALLY retire — but only once emitters consume the IR fields (chapter 4.1.A slice 8 territory)." Chapter 4.1.A also closed with slice 8 deferred-with-trigger pending the IR carriage. Both triggers fire here.
+
+**Decision 1: typed `Statement.SetExtendedProperty` variant via ScriptDom typed-AST path.**
+
+Per the text-builder-as-first-instinct discipline (`DECISIONS 2026-05-10`; Tier-3 hard-requirement Active deferral), every new SQL-emitting consumer starts on the typed-AST library. Slice 8 ships `Statement.SetExtendedProperty of tableId * target * propertyName * propertyValue` plus an `ExtendedPropertyTarget = TableExtendedProperty | ColumnExtendedProperty of columnName | IndexExtendedProperty of indexName` DU (concept-shaped per pillar 8 — each variant names *what* the target IS in SQL Server's extended-property taxonomy; the `@level2type` slot's discriminator).
+
+`ScriptDomBuild.buildSetExtendedProperty` maps the variant to a ScriptDom `ExecuteStatement` wrapping `sys.sp_addextendedproperty` with national-string parameters. The fragment flows through `Sql160ScriptGenerator` at the absolute terminal boundary; per pillar 1, no `StringBuilder()` / `sprintf` shortcuts exist at this site.
+
+**Decision 2: textual deviation from V1 — `EXECUTE [sys].[sp_addextendedproperty]` vs `EXEC sys.sp_addextendedproperty`.**
+
+ScriptDom's `Sql160ScriptGenerator` canonicalizes:
+- `EXEC` shorthand → `EXECUTE` keyword
+- Unqualified `sys.sp_addextendedproperty` → bracket-quoted `[sys].[sp_addextendedproperty]`
+- Parameter spacing → `@name = N'...'` (spaces around `=`)
+
+V1's `ExtendedPropertyScriptBuilder.cs` emits the `EXEC` shorthand without bracketing. V2's emission is **textually different** from V1's but **semantically identical** — both call the same stored procedure with the same parameter set producing the same SQL Server extended-property entries.
+
+**The canary's `PhysicalSchema` diff is text-blind** — it compares structural schema state (column types, FK relationships, constraint definitions), not SQL text. The textual divergence does NOT surface as a canary failure. Forward signal: if a downstream consumer demands byte-equality with V1 (e.g., V1 source-of-truth deploys produce a script that's diffed line-by-line against V2's), the alternative is to use `String.Concat` at the terminal-text boundary OR adopt ScriptDom's `ScriptCompatibilityOptions` to produce `EXEC` shorthand. Today no consumer demands it; the typed-AST path is the right move.
+
+**Decision 3: per-kind emission order via `extendedPropertyStatements`.**
+
+`SsdtDdlEmitter.extendedPropertyStatements (k: Kind) : Statement seq` yields per-kind `SetExtendedProperty` statements in deterministic order (A33):
+
+1. Table-level `MS_Description` (Kind.Description) — once if `Some`.
+2. Table-level extended properties (Kind.ExtendedProperties) — in source order.
+3. Per-column `MS_Description` (Attribute.Description) — once per attribute that carries one.
+4. Per-column extended properties (Attribute.ExtendedProperties) — in source order.
+5. Per-index extended properties (Index.ExtendedProperties) — in source order, per index.
+
+Hooked into `kindToSsdtFile` after `indexStatements`. The seq is consumed by `ScriptDomGenerate.toText` which renders each statement via the typed-AST path (closed-DU dispatch through `ScriptDomBuild.buildStatement`).
+
+**Decision 4: `Module.ExtendedProperties` deferred-with-trigger.**
+
+SQL Server's `sp_addextendedproperty` supports `@level0type = N'SCHEMA'` with no level1/level2 args for schema-level extended properties. V1's `Osm.Domain.Model.Module` carries `ExtendedProperties : ExtendedProperty list` per chapter A.0' slice ζ; V2 currently does NOT emit them.
+
+Two possible mappings:
+- **Module → Schema (one-to-one).** If V1 confirms modules align 1:1 with SQL Server schemas, module-level extended properties emit at `@level0type = N'SCHEMA', @level0name = N'<schema>'` (no level1/level2). The single source of `<schema>` would be the kinds owned by the module (which carry their own schema in TableId; assumes all kinds in a module share one schema).
+- **Module → distributed via kinds.** Module-level extended properties emit redundantly on every kind in the module (per V1's `ApplyToEachTable` convention if present). Risk of duplication.
+
+The triple deliverable (Skip stub + Tolerance entry + NotImplementedInV2 registry entry) does NOT fire at slice 8 because the decision is "defer until V1 emission confirmed," not "v2 chose not to bring forward." Module-level emission is a forward signal awaiting V1-side evidence; the IR carriage exists, just no emitter.
+
+**Decision 5: `ExtendedPropertyTarget` is concept-shaped, not action-shaped.**
+
+Pillar 8 four-question naming analysis:
+
+1. **What domain concept does this represent?** The kind of database object an extended-property attachment targets — table, column, or index. SQL Server's `@level2type` axis.
+2. **Does V2 already name this concept?** No prior surface; this is the first emission of extended properties.
+3. **Concept-shaped or action-shaped?** `TableExtendedProperty | ColumnExtendedProperty | IndexExtendedProperty` — concept-shaped (each variant names *what* the attachment IS at the target). Alternative `AttachToTable | AttachToColumn | AttachToIndex` would be action-shaped (verbs).
+4. **Generic-suffix smell test?** No `Helper / Util / Manager / etc.` — clean.
+
+The variants carry the level2 identifier as a payload (`columnName: string` / `indexName: string`); the table itself is on the outer `Statement.SetExtendedProperty` payload (the `tableId` argument). The DU shape matches the SQL Server taxonomy's level0/level1/level2 nesting.
+
+**Tolerance retirement: `CommentMetadataUnreflected` removed from the DU.**
+
+Per the closed-DU empirical-test discipline (`DECISIONS 2026-05-13`): the variant is removed; the `coverage` round-trip function loses its arm; the `allKnown` set goes from 5 elements to 4; `ToleranceTests.``Closed-DU coverage: …`` ` updates the count assertion + cites the retirement; `ToleranceTests`'s FsCheck arbitrary loses the variant.
+
+The retirement is structural: V2's emitter is no longer silent on column/table/index descriptions and extended properties. `PhysicalSchema.fs`'s docstring (line 44, "What's NOT compared. … Indexes (non-PK), …") still treats descriptions as out-of-comparison — that's a `PhysicalSchema` reflection axis, separate from the emitter axis. Forward signal: chapter 4.1.B or a future canary slice extends `PhysicalSchema` to include extended-property reflection; at that point, the canary diff would surface description divergences as a separate concern.
+
+**Witnesses (7 new tests in `tests/Projection.Tests/SsdtExtendedPropertyEmissionTests.fs` + 1 updated assertion in `ToleranceTests.fs`):**
+
+- Kind.Description → table-level `MS_Description` (level0=SCHEMA, level1=TABLE, no level2).
+- Kind without Description → no `sp_addextendedproperty` emission for the kind.
+- Attribute.Description → column-level `MS_Description` (level2=COLUMN).
+- Kind.ExtendedProperties → per-entry `EXECUTE` with the entry's name + value (not just MS_Description).
+- ExtendedProperty with `None` value → `@value = NULL`.
+- T1: byte-deterministic across repeat invocations.
+- Closed-DU coverage: CommentMetadataUnreflected variant retired (4 variants remaining).
+
+**Baseline at slice 8 close.** 1226 / 1226 non-canary tests passing. Lint count 13 — unchanged. Canary tests skip when Docker unwarm (session-start state at this session was DEGRADED; canary suite intermittently passing per Docker availability).
+
+**Forward signals (deferred-with-trigger from this slice):**
+
+1. **Module.ExtendedProperties emission** — gated on V1-side confirmation of module-level emission convention.
+2. **PhysicalSchema extended-property reflection** — extends the canary's diff surface; separate from emitter axis; lands when canary needs to detect description divergences.
+3. **V1↔V2 byte-equality for sp_addextendedproperty text** — gated on a downstream consumer demanding line-by-line diff vs V1's `EXEC sys.sp_addextendedproperty` shorthand. ScriptDom canonicalizes to `EXECUTE [sys].[sp_addextendedproperty]`; alternative emission paths exist but no consumer demands them.
+
+**Cross-references.**
+
+- `CHAPTER_4_1_A_OPEN.md` slice 8 row (the original chapter scope).
+- `CHAPTER_4_1_A_CLOSE.md` (the chapter close that deferred slice 8).
+- `CHAPTER_A_0_PRIME_CLOSE.md` forward signal "Tolerance retirements are forward signals, not slice scope" (cited the CommentMetadataUnreflected retirement-gate as slice 8 territory).
+- `src/Projection.Targets.SSDT/Statement.fs` (SetExtendedProperty variant + ExtendedPropertyTarget DU shipped).
+- `src/Projection.Targets.SSDT/ScriptDomBuild.fs` (buildSetExtendedProperty builder).
+- `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs` (extendedPropertyStatements emission slot).
+- `src/Projection.Core/Tolerance.fs` (CommentMetadataUnreflected retirement).
+- `tests/Projection.Tests/SsdtExtendedPropertyEmissionTests.fs` (7 witnesses).
+
+---

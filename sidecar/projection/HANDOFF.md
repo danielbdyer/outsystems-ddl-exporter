@@ -1,8 +1,42 @@
-# Handoff letter — Chapter A.4.7 CLOSED (Transform registry + L3-CC-Transform-Totality D → A; A41 cashed)
+# Handoff letter — Chapter 4.1.A slice 8 SHIPPED (sp_addextendedproperty emission; CommentMetadataUnreflected retired)
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## 2026-05-17 (chapter 4.1.A slice 8 reopen + ship) — sp_addextendedproperty emission; CommentMetadataUnreflected Tolerance retired
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-VnRe8`. **Test baseline at slice close: 1226 / 1226 non-canary passing** (1219 prior + 7 new `SsdtExtendedPropertyEmissionTests`); canary tests skip when Docker unwarm. 0 build warnings under `TreatWarningsAsErrors=true`; lint count 13 — unchanged from main / chapter A.0' / A.4.7 baseline.
+
+**What shipped (`f140595`).** Chapter 4.1.A's slice 8 — deferred-with-trigger since chapter A.0' close — fires. The IR carriage from chapter A.0' (slices α + ζ) now has its emitter consumer.
+
+- **Typed Statement variant.** `Statement.SetExtendedProperty of tableId * target * propertyName * propertyValue` with `ExtendedPropertyTarget = TableExtendedProperty | ColumnExtendedProperty of columnName | IndexExtendedProperty of indexName` (concept-shaped per pillar 8; matches SQL Server's `@level2type` taxonomy).
+- **ScriptDom typed-AST emission.** `ScriptDomBuild.buildSetExtendedProperty` maps to `ExecuteStatement` wrapping `sys.sp_addextendedproperty` with national-string parameters. Per text-builder-as-first-instinct discipline (Tier-3 hard-requirement) — typed AST is the right move; no `StringBuilder()` shortcut at this site.
+- **Per-kind emission order** via `SsdtDdlEmitter.extendedPropertyStatements`: table description → table ExtendedProperties → per-column descriptions → per-column ExtendedProperties → per-index ExtendedProperties. Hooked into `kindToSsdtFile` after `indexStatements`.
+- **`Tolerance.CommentMetadataUnreflected` retired** per closed-DU empirical-test discipline. Variant removed; `allKnown` set goes from 5 to 4 elements; runtime test + FsCheck arbitrary updated.
+
+**Textual deviation from V1.** ScriptDom canonicalizes `EXEC sys.sp_addextendedproperty` → `EXECUTE [sys].[sp_addextendedproperty]` + `@name = N'...'` (spaces around `=`). Semantically identical; canary's `PhysicalSchema` diff is text-blind. Forward signal: if a consumer demands byte-equality with V1's text form, swap to `String.Concat`-at-terminal-boundary OR ScriptDom's `ScriptCompatibilityOptions` — today no consumer demands it.
+
+**Module.ExtendedProperties deferred-with-trigger.** SQL Server's `@level0type = N'SCHEMA'` semantics map module → schema only when modules align 1:1 with schemas. V2 doesn't yet formalize this; module-level emission awaits V1-side confirmation of emission convention. Triple deliverable (Skip stub + Tolerance + NotImplementedInV2 registry) does NOT fire — this is "defer until V1 confirmed," not "V2 chose not to bring forward."
+
+**Forward signals retained:**
+
+1. **Module.ExtendedProperties emission** — gated on V1 confirmation.
+2. **PhysicalSchema extended-property reflection** — extends canary's diff surface; separate from emitter axis.
+3. **V1↔V2 byte-equality for sp_addextendedproperty** — gated on consumer demand for line-by-line text diff with V1.
+4. **Sequence emission** — chapter A.0' slice δ shipped `Catalog.Sequences` IR carriage; no `CREATE SEQUENCE` emitter exists. Likely chapter 4.x slice when V1 fixture surfaces sequences.
+5. **The four deferred-out-of-A.0' V1 concepts** — `OriginalName`, `ExternalDatabaseType`, `IndexColumnDirection`, `IsPlatformAuto`. Each gated on its own consumer-pressure trigger.
+6. **Slice η** (chapter A.4.7 forward signal) — `osm emit --skeleton-only` CLI + ManifestEmitter registry-digest + per-artifact `applied-transforms` + fifth bidirectional property test (manifest digest round-trip).
+7. **Slice γ.2** (chapter A.4.7 forward signal) — make `let run` private in 12 pass modules + migrate ~80 call sites (~9 production + ~70 test).
+
+**Recommended next chapter.** Operator's call between:
+
+1. **Slice η — CLI + manifest extension.** Retires chapter A.4.7's last open forward signal. Adds operator-facing `osm emit --skeleton-only`; ManifestEmitter gains `registry.digest` + per-artifact `applied-transforms`; fifth bidirectional property test (manifest digest round-trip) ships. Estimated 1-2 sessions.
+2. **Slice γ.2 — private `run` migration.** Structural hygiene: make `let run` private in all 12 pass modules; migrate ~80 call sites to `<Pass>.registered.Run` / `(<Pass>.registered config).Run`. Mechanical but voluminous (notably ~50+ test sites). Estimated 2-3 sessions.
+3. **Module.ExtendedProperties / Sequence emission slices.** Forward-signal completion as V1-side evidence surfaces. Per-slice ~1-2 sessions.
+4. **Compose.run registry-traversal refactor.** Heavier — designs pass-chaining adapter for heterogeneous output types. Chapter 4.x or 5.x scope.
+
+## 2026-05-16 (chapter A.4.7 close — slices ζ + θ + ι) — Transform registry shipped; A41 cashed; L3-CC-Transform-Totality D → A
 
 ## 2026-05-16 (chapter A.4.7 close — slices ζ + θ + ι) — Transform registry shipped; A41 cashed; L3-CC-Transform-Totality D → A
 
