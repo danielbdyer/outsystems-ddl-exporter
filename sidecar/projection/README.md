@@ -380,6 +380,31 @@ Build clean under `TreatWarningsAsErrors=true`; lint clean across
   surfaces as a `Skip` test stub at the test-file level, not as
   ADMIRE-prose commentary.
 
+## Status at chapter 4.7 close (2026-05-17; refactor bundle + sibling-wrapper discipline codification)
+
+- **1354 non-canary tests passing** + canary tests Docker-gated.
+  0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`;
+  lint count unchanged.
+- **Chapter 4.7 shipped 3 slices + a mid-flight cleanup + discipline
+  codification**:
+  - Slice α: `getOptionalIntFlag` + `getOptionalBool` adapter
+    primitives (retire the V1-int-flag pickup boilerplate).
+  - Slice β + fix-forward: Diagnostics-aware `buildCreateIndex`
+    (canonical). Initial slice β shipped a back-compat silent-skip
+    wrapper; operator flagged it; fix-forward collapsed to one
+    canonical surface; callers explicitly drop via `.Value`.
+  - Cleanup: `composeWithMigration` + `emitWithUserRemap` middle-
+    tiers retired as overdifferentiated.
+  - Discipline: `DECISIONS 2026-05-17 (chapter 4.7 cleanup) —
+    Sibling-wrapper discipline` codifies the "hides information"
+    vs "supplies private/computed default" distinguishing test +
+    the N+1 corollary (overdifferentiated middle-tier anti-pattern).
+    CLAUDE.md operating-disciplines table gains a Sibling-wrapper
+    discipline row.
+  - Slice γ: `IRBuilders.mkReference` + Python sweep migrating 30
+    literals (9 Index + 21 Reference) across 15 test files. Future
+    IR-field-addition touch cost drops 85%+ for Index / Reference.
+
 ## Status at chapter 4.6 close (2026-05-17; forward-signal cleanup bundle — HasDbConstraint + IsPlatformAuto + filter-parse Diagnostic)
 
 - **1348 non-canary tests passing** + canary tests Docker-gated.

@@ -4,6 +4,36 @@ To the next-chapter agent. Read this before anything else in the V2 sidecar. It 
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
 
+## 2026-05-17 (chapter 4.7 close — slices α + β + γ + cleanup + discipline) — Refactor bundle + sibling-wrapper discipline codification
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1354 / 1354 non-canary passing** (1348 prior + 6 net new). 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged.
+
+**Chapter 4.7 closes.** Read `CHAPTER_4_7_CLOSE.md` for the chapter-close synthesis. The chapter shipped three planned refactors PLUS an unscheduled mid-flight tech-debt discovery + discipline codification triggered by an operator review.
+
+**What shipped (3 slices + cleanup + discipline codification).**
+
+- **Slice α — adapter consolidations.** `getOptionalIntFlag` + `getOptionalBool` retire the `match getIntFlag with Ok v -> v | Error _ -> default` boilerplate at V1-int-flag pickup sites.
+- **Slice β + fix-forward — Diagnostics-aware emitter signature.** Initial slice β shipped two surfaces (legacy silent-skip `buildCreateIndex` + `buildCreateIndexWithDiagnostics`); operator flagged the back-compat wrapper as unprincipled tech debt; fix-forward collapsed to one canonical Diagnostics-bearing `buildCreateIndex`. Callers explicitly drop diagnostics via `.Value` at the call site.
+- **Cleanup — 2 middle-tier wrappers retired.** Three-agent audit surfaced ~10 sibling-wrapper candidates; careful reread revealed most were principled F# default-argument idioms (preserved). Two were overdifferentiated middle-tier wrappers (tech debt; retired): `DataEmissionComposer.composeWithMigration` + `MigrationDependenciesEmitter.emitWithUserRemap`.
+- **Discipline codification.** `DECISIONS 2026-05-17 (chapter 4.7 cleanup) — Sibling-wrapper discipline` codifies the distinguishing test ("hides information" → tech debt; "supplies private/computed default" → F# idiom) + the N+1 corollary (overdifferentiated middle-tier anti-pattern). CLAUDE.md operating-disciplines table gains a Sibling-wrapper discipline row.
+- **Slice γ — IRBuilders retroactive sweep.** `mkReference` added; Python sweep migrated 30 literals across 15 test files (9 Index + 21 Reference). Future Index / Reference IR-field-addition touch cost drops 85%+.
+
+**What's load-bearing going forward.**
+
+- **Sibling-wrapper distinguishing test** is the canonical discipline. Future "should this wrapper be deleted?" questions resolve via the codified test; no re-walking the audit cycle.
+- **`IRBuilders.mkReference` + the Python migration pattern** are reusable. Future IR-field additions to Index / Reference touch ~2 sites instead of ~30.
+- **`buildCreateIndex` (Diagnostics-bearing)** is the canonical CREATE INDEX emitter contract. Pattern future emit-time Diagnostics consumers follow.
+- **`getOptionalIntFlag` + `getOptionalBool`** are the canonical V1-int-flag pickup primitives. Future adapter slices consume them.
+
+**Forward signals retained (after this chapter):**
+
+1. **Attribute / Kind / Module / Catalog literal sweep** — same Python pattern; richer field sets; trigger: time-budget.
+2. **WithDiagnostics emitter signature lift for buildCreateTable / buildSetExtendedProperty / buildMergeStatement / buildUpdateStatement** — trigger: a Diagnostics source emerges (CHECK constraint parse validation; extended-property name validation; MERGE expression parsing).
+3. **`UserFkReflowIntegrationTests.fs` Reference literal** — left unmigrated at slice γ due to mid-literal inline `//` comments; hand-migration deferred.
+4. **The 10 remaining forward-signal items from chapter 4.6** are now ~85% cheaper to ship for IR-field-adding ones (Index/Reference); proportionally cheaper for emitter-signature-touching ones via the established Diagnostics-bearing pattern.
+
+---
+
 ## 2026-05-17 (chapter 4.6 close — slices α + β + γ) — Forward-signal cleanup bundle (HasDbConstraint + IsPlatformAuto + filter-parse Diagnostic)
 
 **Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1348 / 1348 non-canary passing** (1330 prior + 18 net new across the chapter — 10 slice α + 0 slice β + 9 slice γ minus 1 chapter-4.4 always-false test retired). 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged.

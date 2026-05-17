@@ -7,10 +7,11 @@ per-phase chapter sequence with V1 inheritance opportunities (carbon-copy
 candidates and shipped carbon-copies), cross-cutting infrastructure work,
 and the risk register.
 
-**Current state as of 2026-05-17 (post-chapter-4.6 close).** V2-driver
+**Current state as of 2026-05-17 (post-chapter-4.7 close).** V2-driver
 critical-path Phases 1–7 are all closed end-to-end. Chapters 4.4
-(Manifest diagnostic fields) + 4.5 (Index IR fidelity) + **chapter 4.6
-(forward-signal cleanup bundle)** closed 2026-05-17. **All four of
+(Manifest diagnostic fields) + 4.5 (Index IR fidelity) + 4.6
+(forward-signal cleanup bundle) + **chapter 4.7 (refactor bundle +
+sibling-wrapper discipline codification)** closed 2026-05-17. **All four of
 chapter 4.4's always-false PredicateName variants now lift to real
 V2 IR evaluation** — `HasFilteredIndex` + `HasIncludedIndexColumns`
 (chapter 4.5) plus `HasLogicalForeignKeyWithoutDbConstraint` +
@@ -60,6 +61,7 @@ the operational *what and when* is here.
   - [Phase 5.5 — Manifest diagnostic fields (chapter 4.4; closed)](#phase-55--manifest-diagnostic-fields-chapter-44-closed-2026-05-17)
   - [Phase 5.6 — Index IR fidelity (chapter 4.5; closed)](#phase-56--index-ir-fidelity-chapter-45-closed-2026-05-17)
   - [Phase 5.7 — Forward-signal cleanup bundle (chapter 4.6; closed)](#phase-57--forward-signal-cleanup-bundle-chapter-46-closed-2026-05-17)
+  - [Phase 5.8 — Refactor bundle + sibling-wrapper discipline (chapter 4.7; closed)](#phase-58--refactor-bundle--sibling-wrapper-discipline-chapter-47-closed-2026-05-17)
   - [Phase 6 — DACPAC dev-tooling (chapter 3.x; closed)](#phase-6--dacpac-dev-tooling-chapter-3x-closed-under-reframe)
   - [Phase 7 — SnapshotRowsets (chapter 3.2; closed)](#phase-7--snapshotrowsets-chapter-32-closed)
   - [Phase 8 — Pragmatic close](#phase-8--pragmatic-close)
@@ -538,6 +540,44 @@ PredicateName variants now evaluate against real V2 IR.
 `IndexModel.IsPlatformAuto` (IndexModel.cs:13) + `IndexScriptBuilder.
 ParsePredicate` (IndexScriptBuilder.cs:403-419) at the V2 layer.
 No carbon-copy event.
+
+---
+
+### Phase 5.8 — Refactor bundle + sibling-wrapper discipline (chapter 4.7; CLOSED 2026-05-17)
+
+**Status:** closed end-to-end. Three preparatory refactors + an
+unscheduled mid-flight tech-debt cleanup + discipline codification.
+Close synthesis at `CHAPTER_4_7_CLOSE.md`; chapter-open at
+`CHAPTER_4_7_OPEN.md`.
+
+**Strategic frame.** Preparatory infrastructure for the chapter-4.6-
+close shortlist's remaining items. Reduces per-future-IR-field touch
+cost (slice γ); establishes Diagnostics-aware emitter contract (slice β);
+codifies sibling-wrapper distinguishing test as discipline (cleanup).
+
+**Slices shipped:**
+
+| Slice | Scope | Witness | Status |
+|---|---|---|---|
+| α | `getOptionalIntFlag` + `getOptionalBool` adapter primitives + 2 existing pattern usages migrated | retires the `match getIntFlag with Ok v -> v | Error _ -> default` boilerplate | shipped 2026-05-17 |
+| β + fix-forward | Diagnostics-aware `buildCreateIndex` (canonical); silent-skip wrapper retired mid-flight after operator flagged | 7 tests in `BuildCreateIndexDiagnosticsTests.fs`; chapter 4.6 slice γ "Diagnostics-aware emitter signature" forward signal closed | shipped 2026-05-17 |
+| Cleanup | `DataEmissionComposer.composeWithMigration` + `MigrationDependenciesEmitter.emitWithUserRemap` middle-tiers retired; 8 test call sites migrated | overdifferentiated middle-tier anti-pattern named + retired | shipped 2026-05-17 |
+| Discipline | `DECISIONS 2026-05-17 (chapter 4.7 cleanup) — Sibling-wrapper discipline` + CLAUDE.md operating-disciplines row | distinguishing test ("hides info" vs "supplies default") + N+1 corollary codified | shipped 2026-05-17 |
+| γ | `IRBuilders.mkReference` + Python sweep migrating 30 literals (9 Index + 21 Reference) across 15 test files | future IR-field-addition touch cost drops 85%+ for Index / Reference | shipped 2026-05-17 |
+| δ | V1 differential N/A (no V1 surfaces consumed) + chapter close ritual | 8-item ritual discharged | shipped 2026-05-17 |
+
+**Deferred-with-trigger (codified at close):**
+
+- **Attribute / Kind / Module / Catalog literal sweep** — same Python
+  pattern; trigger: time-budget for richer field-set migration.
+- **WithDiagnostics emitter signature lift for other ScriptDomBuild
+  builders** — trigger: a Diagnostics source emerges (CHECK constraint
+  parse validation; extended-property name validation; MERGE expression
+  parsing).
+- **`UserFkReflowIntegrationTests.fs` Reference literal** — left
+  unmigrated; hand-migration deferred.
+
+**V1 inheritance opportunities:** none. The chapter operates at V2 layer.
 
 ---
 
