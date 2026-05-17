@@ -65,6 +65,7 @@ the operational *what and when* is here.
   - [Phase 5.7 — Forward-signal cleanup bundle (chapter 4.6; closed)](#phase-57--forward-signal-cleanup-bundle-chapter-46-closed-2026-05-17)
   - [Phase 5.8 — Refactor bundle + sibling-wrapper discipline (chapter 4.7; closed)](#phase-58--refactor-bundle--sibling-wrapper-discipline-chapter-47-closed-2026-05-17)
   - [Phase 5.9 — IRBuilders Attribute sweep + on-disk Index metadata + isPlatformAuto emitter toggle (chapter 4.8; closed)](#phase-59--irbuilders-attribute-sweep--on-disk-index-metadata--isplatformauto-emitter-toggle-chapter-48-closed-2026-05-17)
+  - [Phase 5.10 — Big-batch forward-signal close-out + WithDiagnostics extensions (chapter 4.9; closed)](#phase-510--big-batch-forward-signal-close-out--withdiagnostics-extensions-chapter-49-closed-2026-05-17)
   - [Phase 6 — DACPAC dev-tooling (chapter 3.x; closed)](#phase-6--dacpac-dev-tooling-chapter-3x-closed-under-reframe)
   - [Phase 7 — SnapshotRowsets (chapter 3.2; closed)](#phase-7--snapshotrowsets-chapter-32-closed)
   - [Phase 8 — Pragmatic close](#phase-8--pragmatic-close)
@@ -614,6 +615,50 @@ open at `CHAPTER_4_8_OPEN.md`.
 **V1 inheritance opportunities:** none. The chapter mirrors V1's
 `IndexOnDiskMetadata` fields + `SsdtManifestOptions.IncludePlatformAuto
 Indexes` at V2 IR / Policy layer. No carbon-copy event.
+
+---
+
+### Phase 5.10 — Big-batch forward-signal close-out + WithDiagnostics extensions (chapter 4.9; CLOSED 2026-05-17)
+
+**Status:** closed. Six in-scope items at open (under explicit
+principal-PO direction) — six retired (one partial; slice α' codified
+as deferred-with-trigger). Close synthesis at `CHAPTER_4_9_CLOSE.md`;
+chapter-open at `CHAPTER_4_9_OPEN.md`.
+
+**Slices shipped:**
+
+| Slice | Scope | Witness | Status |
+|---|---|---|---|
+| α partial | IRBuilders Kind/Module/Catalog sweep (13 files / ~70 sites; 19 files deferred to α') | -104 net LOC; baseline preserved | shipped 2026-05-17 |
+| β | `Attribute.OriginalName` + `Attribute.ExternalDatabaseType` IR lift | 7 tests in `OriginalNameAndExternalDbTypeLiftTests.fs`; 2 existing tests refreshed | shipped 2026-05-17 |
+| γ | `IndexColumnDirection` DU + `IndexColumn` record; `Index.Columns` reshape; ScriptDom DESC emission | 5 tests in `IndexColumnDirectionTests.fs`; 5 test files refreshed | shipped 2026-05-17 |
+| δ | `EmissionPolicy.filterPlatformAutoIndexes` wired into `Compose.project` | 2 tests in `IsPlatformAutoEmitterToggleTests.fs` (end-to-end through Compose.project) | shipped 2026-05-17 |
+| ε | Multi-level `buildSetExtendedProperty` via `ExtendedPropertyOwner` DU; `Module.ExtendedProperties` emission | 6 tests in `ModuleExtendedPropertyEmissionTests.fs` | shipped 2026-05-17 |
+| ζ | Diagnostics-bearing canonical signatures for 4 ScriptDom builders | 5 tests in `WithDiagnosticsBuildersTests.fs` | shipped 2026-05-17 |
+| η | Chapter close ritual | 8-item ritual discharged | shipped 2026-05-17 |
+
+**Deferred-with-trigger (codified at close):**
+
+- **Slice α' — IRBuilders Kind/Module/Catalog sweep tail** (19 files;
+  ~80 sites). Two Python-pass failure modes codified: (a) record
+  literals inside multi-line list constructions where newline-separated
+  elements collapsed into space-separated currying; (b) record literals
+  nested inside `let`-bodies with inner `let` bindings + `if`-expressions
+  where nested structure collapsed onto a single line breaking F#
+  offside. Trigger: next IR-shape change to Kind/Module/Catalog that
+  forces touching the deferred files.
+- **PreRemediation / RemediationEmitter** — chapter 5+ territory; V2_DRIVER §154.
+- **Sequence emission** — V1-fixture-gated; trigger unchanged from
+  chapter 4.8.
+
+**V1 inheritance opportunities:** none. The chapter mirrors V1's
+`originalName` / `external_dbType` (Attribute JSON projections),
+`direction` (per-column ASC/DESC; V1's `IndexDocumentMapper`),
+`SortOrder` emission convention (V1's `IndexScriptBuilder`),
+SCHEMA-level `sp_addextendedproperty` (V1's
+`ExtendedPropertyScriptBuilder`). No carbon-copy event; mirrors at V2
+layer only. **Phase 8 (chapter 5+) opens next** with the OSSYS catalog
+producer carbon-copy — that's where carbon-copy fires.
 
 ---
 

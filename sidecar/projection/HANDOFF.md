@@ -1,8 +1,37 @@
-# Handoff letter — Chapter A.4.7' (prime) SHIPPED (Compose.run registry-traversal; registry load-bearing for execution; A41 amended)
+# Handoff letter — Chapter 4.9 SHIPPED (big-batch forward-signal close-out; six A.0'/4.6-shortlist items retired; Phase 8 opens next)
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## 2026-05-17 (chapter 4.9 close — slices α partial + β + γ + δ + ε + ζ) — Big-batch forward-signal close-out + WithDiagnostics extensions
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1441 / 1441 non-canary passing** (1367 prior + 74 net new). 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged.
+
+**Chapter 4.9 closes.** Read `CHAPTER_4_9_CLOSE.md` for the chapter-close synthesis. Six in-scope items at open under explicit principal-PO direction:
+
+- **Slice α partial (`d5342c7`):** IRBuilders Kind/Module/Catalog sweep. 13 files / ~70 sites migrated via indentation-preserving Python pass. 19 files deferred to slice α' (codified Python-pass failure modes: collapsed multi-line lists; nested let-let-if structure). Trigger: next IR-shape change to Kind/Module/Catalog forces touching deferred files.
+- **Slice β (`52fd00c`):** `Attribute.OriginalName` + `Attribute.ExternalDatabaseType` IR lift. Two additive `string option` fields; defensive JSON + rowset adapter pickup; ReadSide defaults to `None`.
+- **Slice γ (`77d0cb1`):** `IndexColumnDirection = Ascending | Descending` closed DU + `IndexColumn` record; `Index.Columns` reshape from `SsKey list` to `IndexColumn list`. ScriptDom emission sets `SortOrder = Descending` only on Descending (V1 IndexScriptBuilder convention).
+- **Slice δ (`567e5cf`):** `EmissionPolicy.filterPlatformAutoIndexes` wired into `Compose.project` at post-chain seam. Signature: `Compose.project EmissionPolicy Catalog -> Outputs`. Per pillar 9: operator-policy filter outside the registered pass chain.
+- **Slice ε (`d64bcef`):** Multi-level `buildSetExtendedProperty` via `ExtendedPropertyOwner` DU (SchemaProperty / TableProperty / ColumnProperty / IndexProperty). `Module.ExtendedProperties` emission per distinct schema, gated to alphabetically-first kind of each schema.
+- **Slice ζ (`646e73e`):** Diagnostics-bearing canonical signatures for `buildCreateTable` / `buildSetExtendedProperty` / `buildMergeStatement` / `buildUpdateStatement`. Pattern from chapter 4.7 slice β extends to 4 more builders; today entries empty.
+
+**What's load-bearing going forward.**
+
+- **`IndexColumn` DU + Direction** — V2's SSDT emit gained per-column ASC/DESC fidelity (cutover-fidelity gain). The record-modification touches strategies + validators via `c.Attribute`.
+- **`ExtendedPropertyOwner` four-variant DU** — concept-shaped (SchemaProperty / TableProperty / ColumnProperty / IndexProperty); admits Module-level emission structurally.
+- **`Compose.project EmissionPolicy Catalog -> Outputs` signature** — Policy threaded through the pipeline-shape function; future Emission-axis additions touch one signature.
+- **Diagnostics-bearing pattern at 5 ScriptDom builders** — buildCreateIndex (chapter 4.7) + buildCreateTable / buildSetExtendedProperty / buildMergeStatement / buildUpdateStatement (this chapter). Future Diagnostics sources flow through without re-shape.
+- **`Attribute.OriginalName` + `Attribute.ExternalDatabaseType`** — IR-carries-V1-metadata; emission lands when downstream consumers demand.
+
+**Forward signals retained (after this chapter):**
+
+1. **Slice α' — IRBuilders Kind/Module/Catalog sweep tail** (19 files; ~80 sites). Trigger: next IR-shape change forces touching the deferred files.
+2. **Phase 8 — OSSYS catalog producer carbon-copy** (live-SQL slice). Opens next per the chapter 4.9 strategic frame. Reads V1's `outsystems_metadata_rowsets.sql` against a live OSSYS-hosting SQL Server; produces the rowset bundle V2's adapter consumes.
+3. **PreRemediation / Sequence emission / RemediationEmitter** — chapter 5+ territory; unchanged cost.
+
+---
 
 ## 2026-05-17 (chapter 4.8 close — slices α + β + γ) — IRBuilders Attribute sweep + on-disk Index metadata + isPlatformAuto emitter toggle
 
