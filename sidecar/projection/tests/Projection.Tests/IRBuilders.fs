@@ -96,6 +96,7 @@ let mkIndex
         ExtendedProperties = []
         Filter             = None
         IncludedColumns    = []
+        IsPlatformAuto     = false
     }
 
 /// Build a `Catalog` with the given modules and no sequences. For

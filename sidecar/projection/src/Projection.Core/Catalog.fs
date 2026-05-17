@@ -579,6 +579,17 @@ type Index = {
     /// Ordered by V1 `ordinal` field at the adapter boundary
     /// (same shape as `Columns` key-column ordering).
     IncludedColumns : SsKey list
+    /// True iff this index is OutSystems-platform-auto-generated (V1
+    /// `IndexModel.IsPlatformAuto`). Auto indexes are emitted by the
+    /// V1 platform's index-creation logic; V2 inherits via the
+    /// adapter. Used by future emitters to gate whether to include
+    /// platform-auto indexes in the SSDT bundle (operator-toggle).
+    ///
+    /// Chapter 4.6 slice β — IR fidelity lift retiring one of four
+    /// A.0' deferred concepts (OriginalName / ExternalDatabaseType /
+    /// IndexColumnDirection / IsPlatformAuto). Source: V1's JSON
+    /// `index.isPlatformAuto` projection.
+    IsPlatformAuto : bool
 }
 
 

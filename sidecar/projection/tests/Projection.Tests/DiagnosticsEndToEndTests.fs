@@ -54,7 +54,7 @@ let private mkIndex
       Name         = name "IX"
       Columns      = columns
       IsUnique     = isUnique
-      IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = [] }
+      IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false }
 
 /// Catalog with one already-unique single-column index (Customer.Name)
 /// plus three non-unique single-column indexes that will produce

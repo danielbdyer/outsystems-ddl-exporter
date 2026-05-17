@@ -29,7 +29,7 @@ let private mkIndex
       Name         = name "IX"
       Columns      = columns
       IsUnique     = isUnique
-      IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = [] }
+      IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false }
 
 let private mkProbe (rowCount: int64) : ProbeStatus =
     ProbeStatus.create DateTimeOffset.UnixEpoch rowCount Succeeded

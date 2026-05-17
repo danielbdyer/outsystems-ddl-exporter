@@ -901,6 +901,13 @@ module CatalogReader =
                             Some raw
                         | _ -> None
                     | _ -> None
+                // Chapter 4.6 slice β — capture V1's `isPlatformAuto`
+                // flag (JSON projection of IndexModel.IsPlatformAuto).
+                // Defaults to false when V1 source omits the field.
+                let isPlatformAuto =
+                    match getBool indexJson "isPlatformAuto" with
+                    | Ok v -> v
+                    | Error _ -> false
                 Result.success
                     { SsKey        = k
                       Name         = n
@@ -913,7 +920,8 @@ module CatalogReader =
                       // the boundary today. Empty default.
                       ExtendedProperties = []
                       Filter             = filter
-                      IncludedColumns    = includedCols }
+                      IncludedColumns    = includedCols
+                      IsPlatformAuto     = isPlatformAuto }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 propagateOrFallback

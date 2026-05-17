@@ -967,12 +967,12 @@ let private expectedIndexCatalog : Catalog =
                 Name         = mkName "PK_USER"
                 Columns      = [ userIdAttrKey ]
                 IsUnique     = true
-                IsPrimaryKey = true; ExtendedProperties = []; Filter = None; IncludedColumns = [] }
+                IsPrimaryKey = true; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false }
               { SsKey        = uxUserEmailIndexKey
                 Name         = mkName "UX_USER_EMAIL"
                 Columns      = [ userEmailAttrKey ]
                 IsUnique     = true
-                IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = [] }
+                IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false }
               { SsKey        = ixUserNameIndexKey
                 Name         = mkName "IX_USER_NAME"
                 Columns      = [ userIndexLastNameAttrKey; userIndexFirstNameAttrKey ]
@@ -982,7 +982,7 @@ let private expectedIndexCatalog : Catalog =
                 // retired and V2 emission now mirrors V1's INCLUDE clause.
                 IsUnique     = false
                 IsPrimaryKey = false; ExtendedProperties = []; Filter = None
-                IncludedColumns = [ userIndexEmailLowerAttrKey ] }
+                IncludedColumns = [ userIndexEmailLowerAttrKey ]; IsPlatformAuto = false }
           ]
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [

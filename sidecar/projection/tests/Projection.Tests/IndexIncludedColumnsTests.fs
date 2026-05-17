@@ -131,8 +131,7 @@ let ``Emission: buildCreateIndex emits INCLUDE columns when non-empty`` () =
             Columns = [ "Id" ]
             IsUnique = false
             Filter = None
-            IncludedColumns = [ "Name"; "Status" ]
-        }
+            IncludedColumns = [ "Name"; "Status" ] }
     let stmt = ScriptDomBuild.buildCreateIndex idxDef
     Assert.Equal (2, stmt.IncludeColumns.Count)
 
@@ -145,8 +144,7 @@ let ``Emission: buildCreateIndex omits INCLUDE when IncludedColumns is empty`` (
             Columns = [ "Id" ]
             IsUnique = false
             Filter = None
-            IncludedColumns = []
-        }
+            IncludedColumns = [] }
     let stmt = ScriptDomBuild.buildCreateIndex idxDef
     Assert.Equal (0, stmt.IncludeColumns.Count)
 
@@ -163,8 +161,7 @@ let ``E2E: rendered SQL contains INCLUDE clause when IncludedColumns is non-empt
             Columns = [ "Id" ]
             IsUnique = false
             Filter = None
-            IncludedColumns = [ "Name" ]
-        }
+            IncludedColumns = [ "Name" ] }
     let sql = ScriptDomGenerate.toText (seq { Statement.CreateIndex idxDef })
     Assert.Contains ("INCLUDE", sql)
     Assert.Contains ("[Name]", sql)
@@ -178,8 +175,7 @@ let ``E2E: rendered SQL combines INCLUDE + WHERE when both are present`` () =
             Columns = [ "Id" ]
             IsUnique = false
             Filter = Some "[IsActive] = 1"
-            IncludedColumns = [ "Name" ]
-        }
+            IncludedColumns = [ "Name" ] }
     let sql = ScriptDomGenerate.toText (seq { Statement.CreateIndex idxDef })
     Assert.Contains ("INCLUDE", sql)
     Assert.Contains ("WHERE", sql)
@@ -202,6 +198,7 @@ let ``Chapter 4.5 slice β: HasIncludedIndexColumns returns true when any Index.
             ExtendedProperties = []
             Filter = None
             IncludedColumns = included
+            IsPlatformAuto = false
         }
     let mkKindWith (label: string) (idx: Index) : Kind =
         let baseKind =

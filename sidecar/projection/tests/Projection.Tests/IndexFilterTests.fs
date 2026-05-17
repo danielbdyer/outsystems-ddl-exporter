@@ -37,7 +37,7 @@ let private mkIndex (label: string) (filter: string option) : Index =
         ExtendedProperties = []
         Filter             = filter
         IncludedColumns    = []
-    }
+        IsPlatformAuto     = false }
 
 // ---------------------------------------------------------------------------
 // Adapter pickup: parseIndex reads filterDefinition from V1 JSON.
@@ -132,8 +132,7 @@ let ``Emission: buildCreateIndex emits WHERE clause when Filter is Some`` () =
             Columns = [ "Id" ]
             IsUnique = false
             Filter = Some "[IsActive] = 1"
-            IncludedColumns = []
-        }
+            IncludedColumns = [] }
     let stmt = ScriptDomBuild.buildCreateIndex idxDef
     Assert.NotNull stmt.FilterPredicate
 
@@ -146,8 +145,7 @@ let ``Emission: buildCreateIndex omits WHERE clause when Filter is None`` () =
             Columns = [ "Id" ]
             IsUnique = false
             Filter = None
-            IncludedColumns = []
-        }
+            IncludedColumns = [] }
     let stmt = ScriptDomBuild.buildCreateIndex idxDef
     Assert.Null stmt.FilterPredicate
 
@@ -164,8 +162,7 @@ let ``Emission: buildCreateIndex silently skips Filter on parse failure`` () =
             IsUnique = false
             // Intentionally malformed SQL.
             Filter = Some "NOT A VALID FILTER ((("
-            IncludedColumns = []
-        }
+            IncludedColumns = [] }
     let stmt = ScriptDomBuild.buildCreateIndex idxDef
     Assert.Null stmt.FilterPredicate
 
@@ -178,8 +175,7 @@ let ``Emission: T1 determinism — same input yields same FilterPredicate shape`
             Columns = [ "Id" ]
             IsUnique = true
             Filter = Some "[Status] = N'A'"
-            IncludedColumns = []
-        }
+            IncludedColumns = [] }
     let stmt1 = ScriptDomBuild.buildCreateIndex idxDef
     let stmt2 = ScriptDomBuild.buildCreateIndex idxDef
     // Both have non-null FilterPredicate.
@@ -199,8 +195,7 @@ let ``E2E: rendered SQL contains WHERE clause when Filter is Some`` () =
             Columns = [ "Id" ]
             IsUnique = false
             Filter = Some "[IsActive] = 1"
-            IncludedColumns = []
-        }
+            IncludedColumns = [] }
     let sql = ScriptDomGenerate.toText (seq { Statement.CreateIndex idxDef })
     Assert.Contains ("WHERE", sql)
     Assert.Contains ("[IsActive]", sql)

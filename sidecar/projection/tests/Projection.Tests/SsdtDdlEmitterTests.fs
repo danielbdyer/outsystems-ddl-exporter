@@ -470,8 +470,7 @@ let private indexedKind : Kind =
                 IsPrimaryKey = false
                 ExtendedProperties = []
                 Filter = None
-                IncludedColumns = []
-            }
+                IncludedColumns = []; IsPlatformAuto = false }
             // Unique index on Code column.
             {
                 SsKey = indexedUniqueIdxKey
@@ -481,8 +480,7 @@ let private indexedKind : Kind =
                 IsPrimaryKey = false
                 ExtendedProperties = []
                 Filter = None
-                IncludedColumns = []
-            }
+                IncludedColumns = []; IsPlatformAuto = false }
             // PK index — should be SKIPPED by the emitter (PK is inlined
             // in CREATE TABLE per V1 convention).
             {
@@ -493,8 +491,7 @@ let private indexedKind : Kind =
                 IsPrimaryKey = true
                 ExtendedProperties = []
                 Filter = None
-                IncludedColumns = []
-            }
+                IncludedColumns = []; IsPlatformAuto = false }
         ]
         Description = None
         IsActive = true
