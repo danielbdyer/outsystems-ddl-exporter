@@ -188,7 +188,7 @@ module StaticSeedsEmitter =
                 Rows       = typedRows |> List.map (typedValuesToSqlLiterals deferred k.Attributes)
                 CdcAware   = cdcAware
             }
-        let mergeStmt = ScriptDomBuild.buildMergeStatement args
+        let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value
         // ScriptDomGenerate.generateOne emits the MERGE without a
         // trailing `;` (semicolons appear between statements in a
         // batch, not after a single-statement render). SQL Server
@@ -234,7 +234,7 @@ module StaticSeedsEmitter =
             { Target     = table
               SetCells   = setCells
               WhereCells = whereCells }
-        let updateStmt = ScriptDomBuild.buildUpdateStatement args
+        let updateStmt = (ScriptDomBuild.buildUpdateStatement args).Value
         System.String.Concat(  // LINT-ALLOW: terminal UPDATE statement-terminator + GO-batch suffix on the rendered Phase-2 UPDATE (chapter 4.1.B slice δ); segments are typed (output of `ScriptDomGenerate.generateOne` from `ScriptDomBuild.buildUpdateStatement` typed AST + SQL Server's statement-terminator + V1 batch-separator literal); same architectural shape as `renderMerge`'s terminal-text boundary
             ScriptDomGenerate.generateOne (updateStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement),
             ";\nGO\n")

@@ -30,10 +30,12 @@ let private mkKindAt (schema: string) (table: string) : Kind =
 
 [<Fact>]
 let ``Slice ε: SchemaProperty emits level0=SCHEMA only`` () =
-    let stmt = ScriptDomBuild.buildSetExtendedProperty
-                    (SchemaProperty "billing")
-                    "MS_Description"
-                    (Some "Billing module schema annotation")
+    let stmt =
+        (ScriptDomBuild.buildSetExtendedProperty
+            (SchemaProperty "billing")
+            "MS_Description"
+            (Some "Billing module schema annotation")).Value
+    Assert.NotNull stmt
     let sql = ScriptDomGenerate.toText (seq { Statement.SetExtendedProperty (SchemaProperty "billing", "MS_Description", Some "Billing module schema annotation") })
     Assert.Contains("@level0type = N'SCHEMA'", sql)
     Assert.Contains("@level0name = N'billing'", sql)

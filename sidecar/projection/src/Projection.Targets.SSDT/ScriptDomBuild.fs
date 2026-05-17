@@ -211,12 +211,22 @@ module ScriptDomBuild =
     /// `(TableId, ColumnDef list, PrimaryKeyDef option, ForeignKeyDef list)`
     /// triple. Pure: same inputs → same fragment shape (verified by
     /// `tests/Projection.Tests/ScriptDomRoundTripTests.fs`).
+    /// CREATE TABLE builder. Returns the typed `CreateTableStatement`
+    /// paired with a Diagnostics stream. Chapter 4.9 slice ζ — the
+    /// canonical signature carries `Diagnostics<_>` so future
+    /// Diagnostics sources (column-default parse failures; check-
+    /// constraint parse failures; per-column metadata anomalies) can
+    /// surface through the same writer without re-introducing a
+    /// sibling-wrapper. Today the entries list is empty by
+    /// construction; callers explicitly drop via `.Value` at the call
+    /// site (per the chapter 4.7 sibling-wrapper discipline + V2-no-
+    /// back-compat).
     let buildCreateTable
         (table: TableId)
         (columns: ColumnDef list)
         (pk: PrimaryKeyDef option)
         (fks: ForeignKeyDef list)
-        : CreateTableStatement =
+        : Diagnostics<CreateTableStatement> =
         let stmt = CreateTableStatement()
         stmt.SchemaObjectName <- schemaObjectFromTableId table
         let def = TableDefinition()
@@ -229,7 +239,7 @@ module ScriptDomBuild =
         for fk in fks do
             def.TableConstraints.Add(foreignKeyConstraint fk)
         stmt.Definition <- def
-        stmt
+        Diagnostics.ofValue stmt
 
     // -----------------------------------------------------------------------
     // INSERT statements.
@@ -457,7 +467,13 @@ module ScriptDomBuild =
     /// the entire MERGE flows through ScriptDom's typed AST; rendering
     /// happens at `Sql160ScriptGenerator.GenerateScript` (no
     /// StringBuilder, no per-fragment LINT-ALLOWs).
-    let buildMergeStatement (args: MergeBuildArgs) : MergeStatement =
+    ///
+    /// Chapter 4.9 slice ζ — canonical Diagnostics-bearing signature.
+    /// Pattern established for future Diagnostics sources (row-literal
+    /// type-coercion failures; ON-clause condition anomalies; per-cell
+    /// SqlLiteral parse-back validation). Today the entries list is
+    /// empty by construction.
+    let private buildMergeStatementCore (args: MergeBuildArgs) : MergeStatement =
         let stmt = MergeStatement()
         let spec = MergeSpecification()
         // Target [schema].[table] AS Target
@@ -521,6 +537,10 @@ module ScriptDomBuild =
         stmt.MergeSpecification <- spec
         stmt
 
+    /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ).
+    let buildMergeStatement (args: MergeBuildArgs) : Diagnostics<MergeStatement> =
+        Diagnostics.ofValue (buildMergeStatementCore args)
+
     // -----------------------------------------------------------------------
     // UPDATE statement (chapter 4.1.B slice δ; two-phase insertion /
     // cycle-breaking).
@@ -579,7 +599,9 @@ module ScriptDomBuild =
     /// (text-builder-as-first-instinct discipline): every node typed,
     /// every literal flowing through `SqlLiteral`, no terminal text
     /// composition until `Sql160ScriptGenerator.GenerateScript`.
-    let buildUpdateStatement (args: UpdateBuildArgs) : UpdateStatement =
+    ///
+    /// Chapter 4.9 slice ζ — canonical Diagnostics-bearing signature.
+    let private buildUpdateStatementCore (args: UpdateBuildArgs) : UpdateStatement =
         let stmt = UpdateStatement()
         let spec = UpdateSpecification()
         let target = NamedTableReference()
@@ -609,6 +631,10 @@ module ScriptDomBuild =
 
         stmt.UpdateSpecification <- spec
         stmt
+
+    /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ).
+    let buildUpdateStatement (args: UpdateBuildArgs) : Diagnostics<UpdateStatement> =
+        Diagnostics.ofValue (buildUpdateStatementCore args)
 
     // -----------------------------------------------------------------------
     // SET IDENTITY_INSERT statement.
@@ -807,7 +833,13 @@ module ScriptDomBuild =
     /// All string parameters are national (`N''`) per V1 + SQL Server
     /// extended-property convention; the value parameter is `NULL`
     /// when `propertyValue = None`.
-    let buildSetExtendedProperty
+    /// Build an `ExecuteStatement` for an `sp_addextendedproperty`
+    /// call. Chapter 4.9 slice ζ — canonical Diagnostics-bearing
+    /// signature. Future Diagnostics sources (level-validation
+    /// failures on rare V1 ownership forms; truncation warnings on
+    /// >7500-char property values) flow through the writer without
+    /// reshaping the signature.
+    let private buildSetExtendedPropertyCore
             (owner: ExtendedPropertyOwner)
             (propertyName: string)
             (propertyValue: string option)
@@ -876,6 +908,14 @@ module ScriptDomBuild =
         stmt.ExecuteSpecification <- spec
         stmt
 
+    /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ).
+    let buildSetExtendedProperty
+            (owner: ExtendedPropertyOwner)
+            (propertyName: string)
+            (propertyValue: string option)
+            : Diagnostics<ExecuteStatement> =
+        Diagnostics.ofValue (buildSetExtendedPropertyCore owner propertyName propertyValue)
+
     /// Returns `None` for non-SQL variants (`Comment`, `Blank`) so
     /// the realization layer can splice them through the text
     /// stream directly. Closed-DU dispatch — adding a new variant
@@ -885,17 +925,20 @@ module ScriptDomBuild =
         | Blank -> None
         | Comment _ -> None
         | CreateTable (table, cols, pk, fks) ->
-            Some (buildCreateTable table cols pk fks :> TSqlStatement)
-        | CreateIndex idx ->
+            // Chapter 4.9 slice ζ — Diagnostics-bearing canonical
+            // signatures across CreateTable / CreateIndex /
+            // SetExtendedProperty / MergeStatement / UpdateStatement.
             // The Statement-DU dispatcher drops Diagnostics — the
             // dispatcher returns raw TSqlStatement per A35's stream
-            // contract. Future emit-time consumers wanting filter-
-            // parse failures surfaced consume `buildCreateIndex`
-            // directly (returns `Diagnostics<CreateIndexStatement>`).
+            // contract. Future emit-time consumers wanting per-
+            // builder Diagnostics surfaced consume the builders
+            // directly (each returns `Diagnostics<TSqlStatement>`).
+            Some ((buildCreateTable table cols pk fks).Value :> TSqlStatement)
+        | CreateIndex idx ->
             Some ((buildCreateIndex idx).Value :> TSqlStatement)
         | InsertRow (table, cells) ->
             Some (buildInsertRow table cells :> TSqlStatement)
         | SetIdentityInsert (table, enabled) ->
             Some (buildSetIdentityInsert table enabled :> TSqlStatement)
         | SetExtendedProperty (owner, propName, propValue) ->
-            Some (buildSetExtendedProperty owner propName propValue :> TSqlStatement)
+            Some ((buildSetExtendedProperty owner propName propValue).Value :> TSqlStatement)

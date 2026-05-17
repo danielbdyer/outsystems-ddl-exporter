@@ -78,6 +78,7 @@
     <Compile Include="OriginalNameAndExternalDbTypeLiftTests.fs" />
     <Compile Include="IndexColumnDirectionTests.fs" />
     <Compile Include="ModuleExtendedPropertyEmissionTests.fs" />
+    <Compile Include="WithDiagnosticsBuildersTests.fs" />
     <Compile Include="IsActiveCarryThroughTests.fs" />
     <Compile Include="IRFidelityLiftTests.fs" />
     <Compile Include="NoSilentDropTests.fs" />
