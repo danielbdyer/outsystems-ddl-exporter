@@ -11996,3 +11996,24 @@ The retirement is structural: V2's emitter is no longer silent on column/table/i
 - `tests/Projection.Tests/SsdtExtendedPropertyEmissionTests.fs` (7 witnesses).
 
 ---
+
+## 2026-05-17 (post-chapter-A.4.7' hygiene) — Perf baseline re-recorded to absorb the `compose.runChain` Bench scope
+
+**Why this amendment.** Per the canary-as-load-bearing-forcing-function discipline (`CLAUDE.md` operating-disciplines table; `DECISIONS 2026-05-10 — Perf-gate μ+σ statistical baseline`): re-record the baseline when the perf floor *legitimately* changes, and pair the re-record with a DECISIONS amendment naming the change. Chapter A.4.7' slice γ introduced the `compose.runChain` `Bench.scope` (the registry-driven traversal kernel in `PassChainAdapter.compose`); the prior baseline didn't carry this label, so it would have passed with a soft warning at every perf-gate invocation until rerecord.
+
+**What changed.** `PERF_GATE_RECORD=1 BENCH_RECORD_RUNS=5 bash sidecar/projection/scripts/perf-gate.sh` ran 5 warm operator-reality canary captures (50k rows × 300 tables × variegated FK density) and wrote the new μ+σ baseline to `bench/baseline-canary.json`. 202 labels covered; all five captures green.
+
+**New labels absorbed.** `compose.runChain` and its nested scopes (per-stage `compose.runChain.<stage>` entries from `PassChainAdapter.compose`'s registry traversal) join the baseline. Existing labels' μ+σ refresh in line with current hardware variance; no algorithmic floor-shift evidence in this re-record (the chapter A.4.7' refactor was structural, not perf-targeted — the registry-driven traversal replaces a hand-coded sequence of identical work).
+
+**Why not flat tolerance.** `K=5.0` on `MeanMs + K × σ_effective` (with `σ_effective = max(σ_observed, μ × 0.20)` Bayesian floor) absorbs cross-machine timing variance while still catching algorithmic regressions. The min-relative-stdev prior (20%) protects against N=5 underestimating true σ on I/O-bound labels.
+
+**Baseline at re-record.** `bench/baseline-canary.json` ships 202 labels × 5 runs. Top-5 by MeanMs are I/O / canary-deploy hotpaths (`deploy.runWideCanary`, `deploy.bulk.copyRows.batchSize`, `physicalSchema.rows.hash.elements`, `readside.readRowsStream.all.elements`, `deploy.executeStream.input.elements`). The `compose.runChain` family lands well below the deploy hotpaths — registry traversal is in-memory pass-chaining, not container work.
+
+**Cross-references.**
+
+- `bench/baseline-canary.json` (the new baseline).
+- `CHAPTER_A_4_7_PRIME_CLOSE.md` (the chapter that introduced `compose.runChain`).
+- `scripts/perf-gate.sh` (the statistical gate consuming this baseline).
+- `DECISIONS 2026-05-10 — Perf-gate μ+σ statistical baseline` (the codifying entry).
+
+---
