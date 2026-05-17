@@ -66,6 +66,8 @@ the operational *what and when* is here.
   - [Phase 5.8 — Refactor bundle + sibling-wrapper discipline (chapter 4.7; closed)](#phase-58--refactor-bundle--sibling-wrapper-discipline-chapter-47-closed-2026-05-17)
   - [Phase 5.9 — IRBuilders Attribute sweep + on-disk Index metadata + isPlatformAuto emitter toggle (chapter 4.8; closed)](#phase-59--irbuilders-attribute-sweep--on-disk-index-metadata--isplatformauto-emitter-toggle-chapter-48-closed-2026-05-17)
   - [Phase 5.10 — Big-batch forward-signal close-out + WithDiagnostics extensions (chapter 4.9; closed)](#phase-510--big-batch-forward-signal-close-out--withdiagnostics-extensions-chapter-49-closed-2026-05-17)
+  - [Phase 5.11 — OSSYS catalog producer carbon-copy (chapter 5.0; closed)](#phase-511--ossys-catalog-producer-carbon-copy-chapter-50-closed-2026-05-17)
+  - [Phase 5.12 — V1 Parity Audit Wave (chapter 5.1+; in flight)](#phase-512--v1-parity-audit-wave-chapter-51-in-flight)
   - [Phase 6 — DACPAC dev-tooling (chapter 3.x; closed)](#phase-6--dacpac-dev-tooling-chapter-3x-closed-under-reframe)
   - [Phase 7 — SnapshotRowsets (chapter 3.2; closed)](#phase-7--snapshotrowsets-chapter-32-closed)
   - [Phase 8 — Pragmatic close](#phase-8--pragmatic-close)
@@ -662,6 +664,113 @@ producer carbon-copy — that's where carbon-copy fires.
 
 ---
 
+### Phase 5.11 — OSSYS catalog producer carbon-copy (chapter 5.0; CLOSED 2026-05-17)
+
+**Status:** closed end-to-end. The cutover-window pivot — V2 stands
+on its own against an offline OSSYS source. Close synthesis at
+`CHAPTER_5_0_CLOSE.md`; chapter-open at `CHAPTER_5_0_OPEN.md`.
+
+**Slices shipped:**
+
+| Slice | Scope | Witness | Status |
+|---|---|---|---|
+| α | New `Projection.Adapters.OssysSql` F# project; `outsystems_metadata_rowsets.sql` carbon-copy verbatim (1184 LOC; byte-identical) | 4 tests in `MetadataExtractionSqlTests` + 1 gated parity test | shipped 2026-05-17 |
+| β | `model.edge-case.seed.sql` carbon-copy with documented divergences (modern SQL Server compat); canary mockup donor | 4 tests in `MetadataExtractionSqlTests` | shipped 2026-05-17 |
+| γ | F# `MetadataSnapshotRunner.runAsync` — executes SQL, walks 22 result sets, parses first 5 into typed records | absorbed in ε | shipped 2026-05-17 |
+| δ | `toBundle` composer — JOIN logic (PhysicalTable → KindRow.DbSchema; Attribute.DeleteRule → Reference.DeleteRuleCode; RefEntityId pass-through) | absorbed in ε | shipped 2026-05-17 |
+| ε | OSSYS extraction canary; `Deploy.withBootstrappedDatabase` primitive; cross-key-shape FK resolution fix; `parsePrimitiveType` extension | 5 canary tests in `OssysExtractionCanaryTests`; full chain Docker-gated | shipped 2026-05-17 |
+| η | Chapter close ritual + `V1_PARITY_MATRIX.md` opened | 8-item ritual discharged | shipped 2026-05-17 |
+
+**Deferred-with-trigger (codified at close):**
+
+- **17 uncomposed V1 rowsets.** V2's `RowsetBundle` consumes 4; V1
+  emits 22. The runner walks all 22 and skips 17. Per-rowset lift
+  trigger: V2 IR consumer demands the field OR parity audit identifies
+  drift.
+- **Live `SqlClient` wiring (production-ops piece).** Runner is
+  connection-agnostic; production wiring is supplying a real connection
+  string. Connection-string discipline, retry semantics, integration
+  test against real OSSYS instance — deferred as per-environment ops.
+
+**V1 inheritance opportunities:** OSSYS catalog producer **shipped**
+(was Phase 8 top entry). 3 carbon-copy events recorded in ADMIRE.md.
+The next-highest-leverage V1 inheritance candidates surface via the
+**Phase 5.12 parity audit wave**.
+
+**V1-side audit findings:**
+
+- **`OutsystemsIntegration` DB management** in V1's seed fixture
+  conflicts with V2's per-run-database lifecycle; documented divergence.
+- **`IGNORE_DUP_KEY = ON` on filtered index** in V1's seed is rejected
+  by modern SQL Server; documented divergence.
+- **Cross-module FK target SsKey-shape mismatch** in V2's prior
+  `parseReferenceRowFor` (latent bug surfaced by canary): GUID-bearing
+  target entities produced a synthesized-vs-OssysOriginal key shape
+  mismatch breaking the danglingTarget invariant. Fixed at slice δ.
+- **`parsePrimitiveType` coverage gap** (V2's prior implementation
+  only covered Identifier + Text). Extended to 12 common types.
+
+---
+
+### Phase 5.12 — V1 Parity Audit Wave (chapter 5.1+; IN FLIGHT)
+
+**Status:** opens at chapter 5.1. Indefinite cadence — one parity
+audit slice per agent session arc. Discipline document at
+`V1_PARITY_MATRIX.md` (opened 2026-05-17 chapter 5.0 close).
+
+**Strategic frame.** Per principal-PO direction at chapter 5.0 close:
+
+> "I'd like to start heavily auditing the v1 codebase, step by step,
+> to ensure there is maximal parity — there's a ton of code paths in
+> V1 and I want to make sure the representational coverage-state of
+> the parity is expressible in a formal way in the next agent's
+> discipline. I'd prefer to go in depth on a given small slice, one
+> slice at a time."
+
+The wave trades depth for breadth: each parity claim is independently
+verifiable, accumulates over time in a per-row append-only matrix,
+and produces an artifact that compounds. The matrix surfaces V2's
+structural answer to "how confident are we that V2 covers V1's
+surface?"
+
+**The six classification statuses** (per `V1_PARITY_MATRIX.md`):
+
+| Status | Meaning |
+|---|---|
+| 🟢 PARITY | V2 produces equivalent output for the V1 capability. |
+| 🔵 V2-EXTENSION | V2 carries the capability + adds structural strength. |
+| 🟡 DIVERGENCE | V2 deliberately diverges; rationale documented. |
+| 🟠 NOT-MAPPED | V2 does not yet carry; trigger named. |
+| 🔴 V1-BUG-CORRECTED | V2 fixes a V1 bug or unsafety. |
+| ⚫ V1-SUNSET | V2 does not carry forward by intent. |
+
+**Initial slice queue** (per `V1_PARITY_MATRIX.md` "Parity-audit
+slice queue"):
+
+| Slice | V1 source | Priority |
+|---|---|---|
+| 5.1.α | `IOutsystemsMetadataReader.cs` (22 DTOs) | Inventory unmapped surface |
+| 5.1.β | `SnapshotValidator.cs` | Live-DB sanity semantics |
+| 5.1.γ | `SqlClientOutsystemsMetadataReader.cs` | Production wiring details |
+| 5.1.δ | `FixtureAdvancedSqlExecutor.cs` | Offline-test infrastructure |
+| 5.1.ε | `SqlMetadataDiagnosticsWriter.cs` | Diagnostics-axis parity |
+| 5.1.ζ | `MetadataContractOverrides.cs` | Contract drift tolerance |
+| 5.2.α | `src/Osm.Domain/Model/*.cs` (V1 aggregate-root model) | Largest single audit cluster |
+| 5.2.β | `src/Osm.Json/Deserialization/*.cs` | V1 JSON shape audit |
+| 5.3.α | `src/Osm.Smo/PerTableEmission/*.cs` | Cutover-fidelity Schema-axis |
+
+**Cadence rules:**
+- One slice per session arc. **Do NOT bundle multiple slices** — the matrix's value is its append-only narrative of independent coverage events.
+- Single commit per slice. Commit message names V1 source + V2 representation + classification + test.
+- Matrix updates are amendments (do NOT modify rows in place).
+- The chapter-close ritual gains a "matrix coverage walk" item starting chapter 5.1 close.
+
+**V1-side risk:** the matrix is the structural answer to that
+risk. Quarterly re-balance surfaces clusters of 🟠 NOT-MAPPED that
+warrant focused lift chapters.
+
+---
+
 ### Phase 6 — DACPAC dev-tooling (chapter 3.x; CLOSED under reframe)
 
 **Status:** closed under dev-tooling reframe. The chapter was originally
@@ -743,13 +852,15 @@ operator runbook; V1 sunset planning.
 
 **V1 inheritance opportunities:**
 
-- **OSSYS catalog producer** — the highest-value carbon-copy candidate
-  in the entire wave. Lands at the chapter that introduces V2's
-  live-SQL-extraction source variant. The carbon-copy goes into a new
-  `Projection.Adapters.OssysSql` C# project (museum-polish) and a
-  vendored copy of `outsystems_metadata_rowsets.sql` (the SQL is the
-  truth; copied verbatim). Status: `proposed`. Trigger: the chapter
-  agent opens chapter 5+ slice for V2's live-SQL-extraction.
+- **OSSYS catalog producer** — ✅ **SHIPPED at chapter 5.0** (Phase
+  5.11; 2026-05-17). Landed as F# (not C#) per chapter 5.0 open Q1:
+  the SQL is the truth (carbon-copied verbatim); the surrounding
+  plumbing rewritten in F# at copy-time. Adapter at
+  `Projection.Adapters.OssysSql`. See Phase 5.11 entry above.
+- **Remaining V1 surface** — addressed via the **Phase 5.12 V1
+  Parity Audit Wave** (in flight at chapter 5.1+). The audit
+  produces classified rows in `V1_PARITY_MATRIX.md`; rows tagged
+  🟠 NOT-MAPPED + cutover-blocker drive follow-on lift chapters.
 
 **Cross-cutting work:**
 

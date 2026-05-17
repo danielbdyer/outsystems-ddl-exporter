@@ -1,8 +1,89 @@
-# Handoff letter — Chapter 4.9 SHIPPED (big-batch forward-signal close-out; six A.0'/4.6-shortlist items retired; Phase 8 opens next)
+# Handoff letter — Chapter 5.0 SHIPPED (OSSYS catalog producer carbon-copy; V2 stands on its own; V1 Parity Audit Wave opens next)
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## 2026-05-17 (chapter 5.0 close — Phase 8 cutover-window pivot SHIPPED; V1 Parity Audit Wave opens)
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1454 / 1454 non-canary passing** (1441 prior + 13 net new). 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged. +1 gated parity Skip; +5 Docker-gated OSSYS extraction canary tests.
+
+**Chapter 5.0 closes.** Read `CHAPTER_5_0_CLOSE.md` for the chapter-close synthesis. Phase 8 (OSSYS catalog producer carbon-copy) shipped — **V2 now stands on its own**. Catalog acquisition is V1-independent; the live-DB pivot is one configuration step away (the runner is connection-agnostic; production wiring = supplying a real connection string).
+
+**What's load-bearing going forward.**
+
+- **`Projection.Adapters.OssysSql`** — new F# adapter. Sibling to `Projection.Adapters.Sql` + `Projection.Adapters.Osm`. Embeds V1's `outsystems_metadata_rowsets.sql` verbatim (byte-identical) + V2-adapted bootstrap fixture for the canary.
+- **`MetadataSnapshotRunner.runAsync : SqlConnection -> SnapshotParameters -> Task<Result<MetadataSnapshot>>`** — F# runner. Walks all 22 V1 result sets; parses first 5 into typed records; composes via `toBundle` into V2's `CatalogReader.RowsetBundle`.
+- **`OssysExtractionCanaryTests`** (5 tests; Docker-gated) — the canary mockup the principal-PO asked for. Bootstrap synthetic OSSYS schema → extract → V2 Catalog → assert structural invariants. Deterministic across runs.
+- **`Deploy.withBootstrappedDatabase`** — new primitive for bootstrap-and-act canary shapes. Reusable for DACPAC bootstrap canaries, V1-JSON-snapshot bootstrap canaries, etc.
+- **Cross-key-shape FK resolution fix** (latent V2 bug surfaced + corrected at chapter 5.0 slice δ) — `parseReferenceRowFor` now resolves the target SsKey via `RefEntityId` global lookup map; preserves GUID-based identity; falls back to synthesized shape when target ID absent.
+- **`parsePrimitiveType` extension** — covers ~12 common OutSystems DataTypes (was Identifier + Text only).
+
+---
+
+## Chapter 5.1+ opens — V1 Parity Audit Wave (Phase 5.12)
+
+**The chapter sequence pivots.** With V2 standing on its own structurally, the next-chapter agent's job shifts from "build the missing capability" to "verify parity with V1's existing capability." Per principal-PO direction at chapter 5.0 close:
+
+> "I'd like to start heavily auditing the v1 codebase, step by step, to ensure there is maximal parity — there's a ton of code paths in V1 and I want to make sure the representational coverage-state of the parity is expressible in a formal way in the next agent's discipline. I'd prefer to go in depth on a given small slice, one slice at a time."
+
+**The discipline document.** `V1_PARITY_MATRIX.md` opens at chapter 5.0 close (this commit). Read it before opening any chapter 5.1+ slice. The matrix is the substrate; each slice produces one row (or one amendment) + one test + one commit.
+
+**The six classification statuses.** Every matrix row carries exactly one:
+
+- 🟢 **PARITY** — V2 produces equivalent output for the V1 capability.
+- 🔵 **V2-EXTENSION** — V2 carries the capability + adds structural strength V1 lacks.
+- 🟡 **DIVERGENCE** — V2 deliberately diverges; rationale documented.
+- 🟠 **NOT-MAPPED** — V2 does not yet carry the capability; trigger named.
+- 🔴 **V1-BUG-CORRECTED** — V2 fixes a V1 bug or unsafety.
+- ⚫ **V1-SUNSET** — V2 does not carry forward by intent.
+
+**The slice protocol (per `V1_PARITY_MATRIX.md` §"How a parity-audit slice works"):**
+
+1. **Scope** one small V1 capability (50–500 LOC). Typically one C# file, one method, or one tightly-related cluster.
+2. **V1 trace** — read V1 source, understand inputs/outputs/invariants, name any V1 bugs.
+3. **V2 inventory** — find V2's representation (or absence). Trace V2's equivalent code path. Identify the delta.
+4. **Classification** — assign one of the six statuses. Justify in 1–3 sentences.
+5. **Coverage test** — add a test exercising the parity claim. Each status has its own test shape (see matrix doc).
+6. **Matrix update** — append a row (or amendment) to the matrix. **Append-only** — never modify rows in place.
+7. **Slice close** — single commit. Message names: V1 source path + V2 representation + classification + test added.
+
+**Cadence rules:**
+
+- **One slice per agent session arc.** Do NOT bundle multiple slices into one commit — the matrix's value is its append-only narrative of independent coverage events.
+- The chapter-close ritual gains a "matrix coverage walk" item starting chapter 5.1 close.
+- Per-quarter matrix re-balance surfaces clusters of 🟠 NOT-MAPPED that warrant focused lift chapters.
+
+**Initial slice queue** (pick what matches session capacity; see `V1_PARITY_MATRIX.md` §"Parity-audit slice queue" for the full table):
+
+| Slice | V1 source | Priority |
+|---|---|---|
+| 5.1.α | `IOutsystemsMetadataReader.cs` (22 DTOs) | Inventories what's not yet lifted in V2 |
+| 5.1.β | `SnapshotValidator.cs` | Sanity-check semantics for live-DB pickup |
+| 5.1.γ | `SqlClientOutsystemsMetadataReader.cs` | Connection lifecycle for production wiring |
+| 5.1.ε | `SqlMetadataDiagnosticsWriter.cs` | Diagnostics-axis parity |
+| 5.2.α | `src/Osm.Domain/Model/*.cs` (V1 aggregate-root model) | Largest single audit cluster |
+
+**Anti-patterns the discipline forbids:**
+
+- Bundling multiple slices into one commit (breaks the append-only narrative).
+- 🟠 NOT-MAPPED without a named trigger ("we'll get to it" is unacceptable).
+- Substituting the matrix for property tests — both are needed; they're orthogonal.
+- Static-analysis-style enumeration without per-row coverage tests.
+
+**The matrix is the formal expression of "representational coverage-state" the principal-PO requested.** It compounds slice by slice. Each row is independently verifiable. Coverage gaps are structurally visible.
+
+---
+
+## What this handoff does NOT tell you (read on your own)
+
+- `CHAPTER_5_0_CLOSE.md` — full close synthesis.
+- `CHAPTER_5_0_OPEN.md` — strategic frame at chapter open.
+- `V1_PARITY_MATRIX.md` — the discipline document. **Required reading** before any 5.1+ slice.
+- `BACKLOG.md` Phase 5.11 (chapter 5.0; closed) + Phase 5.12 (parity audit wave; in flight).
+- `ADMIRE.md` 2026-05-13 entry (OSSYS catalog producer; carbon-copy events recorded).
+
+---
 
 ## 2026-05-17 (chapter 4.9 close — slices α partial + β + γ + δ + ε + ζ) — Big-batch forward-signal close-out + WithDiagnostics extensions
 
