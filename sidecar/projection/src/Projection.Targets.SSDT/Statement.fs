@@ -71,6 +71,11 @@ type IndexDef =
         Table : TableId
         Columns : string list
         IsUnique : bool
+        /// Chapter 4.5 slice α — raw filter-definition string for
+        /// filtered indexes. `None` for unfiltered (the V1 default).
+        /// `ScriptDomBuild.buildCreateIndex` parses at emit time
+        /// via `TSql160Parser.ParseBooleanExpression`.
+        Filter : string option
     }
 
 /// One column's value within an `InsertRow`. `Raw` is the V2 IR

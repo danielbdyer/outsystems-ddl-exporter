@@ -642,6 +642,39 @@ module ScriptDomBuild =
     /// V2 emits ASC by default per V1 convention; non-clustered is
     /// implicit (ScriptDom emits NONCLUSTERED for non-PK indexes
     /// per SQL Server defaults).
+    /// Parse a raw filter-definition string into a typed
+    /// `BooleanExpression`. Mirrors V1's
+    /// `IndexScriptBuilder.ParsePredicate`
+    /// (`src/Osm.Smo/PerTableEmission/IndexScriptBuilder.cs:403-419`)
+    /// shape, lifted to `TSql160Parser` for SQL Server 2022 compat
+    /// 160 alignment (V1 uses TSql150Parser; V2 targets 160 per
+    /// the supreme operating discipline pillar 4 + Sql160ScriptGenerator
+    /// precedent). Parse failures surface as `None` — chapter 4.5
+    /// open Q3: parse failures emit a Diagnostic warning + skip
+    /// the filter; the Diagnostic-emission pathway is deferred to a
+    /// later slice when actual parse failures surface.
+    let private parseFilterPredicate (raw: string) : BooleanExpression option =
+        if System.String.IsNullOrWhiteSpace raw then None
+        else
+            let parser = TSql160Parser(initialQuotedIdentifiers = false)
+            use reader = new System.IO.StringReader(raw)
+            // F#'s tuple-return binding for the C# `out` parameter
+            // shape: `BooleanExpression ParseBooleanExpression(TextReader, out IList<ParseError>)`.
+            let fragment, errors = parser.ParseBooleanExpression(reader)
+            match Option.ofObj fragment with
+            | None -> None
+            | Some _ when not (isNull errors) && errors.Count > 0 -> None
+            | Some f ->
+                // Wrap in BooleanParenthesisExpression for output
+                // readability (V1 IndexScriptBuilder convention;
+                // pillar 8 ubiquitous-language alignment).
+                match f with
+                | :? BooleanParenthesisExpression -> Some f
+                | _ ->
+                    let parens = BooleanParenthesisExpression()
+                    parens.Expression <- f
+                    Some (parens :> BooleanExpression)
+
     let buildCreateIndex (idx: IndexDef) : CreateIndexStatement =
         let stmt = CreateIndexStatement()
         stmt.Unique <- idx.IsUnique
@@ -655,6 +688,16 @@ module ScriptDomBuild =
             colRef.MultiPartIdentifier <- mid
             col.Column <- colRef
             stmt.Columns.Add(col)
+        // Chapter 4.5 slice α — emit `WHERE <expr>` for filtered
+        // indexes. Filter expression parsed via TSql160Parser at
+        // emit time per chapter open Q1; silent-skip on parse
+        // failure per Q3.
+        match idx.Filter with
+        | None -> ()
+        | Some raw ->
+            match parseFilterPredicate raw with
+            | Some predicate -> stmt.FilterPredicate <- predicate
+            | None -> ()  // silent-skip; Diagnostic emission deferred
         stmt
 
     // -----------------------------------------------------------------------

@@ -289,9 +289,10 @@ module PredicateName =
             |> List.exists (fun i ->
                 i.IsUnique && not i.IsPrimaryKey && List.length i.Columns > 1)
         | PredicateName.HasFilteredIndex ->
-            // No V2 IR evidence: `Index` doesn't carry a filter
-            // expression. Forward signal in DU docstring.
-            false
+            // Chapter 4.5 slice α — IR evidence lifted via
+            // `Index.Filter : string option`. Kind has a filtered
+            // index iff any of its indexes carry a Some filter.
+            k.Indexes |> List.exists (fun i -> Option.isSome i.Filter)
         | PredicateName.HasIncludedIndexColumns ->
             // No V2 IR evidence: `Index.Columns` is a flat SsKey list
             // (no key/included split). Forward signal in DU docstring.

@@ -541,6 +541,18 @@ type Index = {
     /// slice ζ — IR fidelity lift (L3-S9 extended-properties
     /// sub-axiom; index level).
     ExtendedProperties : ExtendedProperty list
+    /// SQL Server filter predicate for filtered indexes. Carried as
+    /// the raw V1 filter-definition string (mirrors V1's
+    /// `IndexOnDiskMetadata.FilterDefinition`); parsed at emit time
+    /// via `TSql160Parser.ParseExpression` into ScriptDom's
+    /// `BooleanExpression`. `None` for unfiltered indexes (V1
+    /// default).
+    ///
+    /// Chapter 4.5 slice α — IR fidelity lift retiring chapter 4.4's
+    /// `HasFilteredIndex` always-false PredicateName variant. Source:
+    /// V1's JSON `index.filterDefinition` projection (rowset path
+    /// reads `sys.indexes.filter_definition`).
+    Filter       : string option
 }
 
 

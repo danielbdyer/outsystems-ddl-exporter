@@ -40,7 +40,7 @@ let private mkIndex
       Name         = name "IX"
       Columns      = columns
       IsUnique     = isUnique
-      IsPrimaryKey = false; ExtendedProperties = [] }
+      IsPrimaryKey = false; ExtendedProperties = []; Filter = None }
 
 let private mkConfig (single: bool) (composite: bool) : UniqueIndexTighteningConfig =
     UniqueIndexTighteningConfig.create single composite

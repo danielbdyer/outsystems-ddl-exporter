@@ -251,6 +251,7 @@ module SsdtDdlEmitter =
                     Table    = toTableId k
                     Columns  = columnNames
                     IsUnique = idx.IsUnique
+                    Filter   = idx.Filter
                 }
             Statement.CreateIndex indexDef)
 

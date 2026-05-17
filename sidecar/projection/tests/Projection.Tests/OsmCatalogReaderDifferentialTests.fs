@@ -964,12 +964,12 @@ let private expectedIndexCatalog : Catalog =
                 Name         = mkName "PK_USER"
                 Columns      = [ userIdAttrKey ]
                 IsUnique     = true
-                IsPrimaryKey = true; ExtendedProperties = [] }
+                IsPrimaryKey = true; ExtendedProperties = []; Filter = None }
               { SsKey        = uxUserEmailIndexKey
                 Name         = mkName "UX_USER_EMAIL"
                 Columns      = [ userEmailAttrKey ]
                 IsUnique     = true
-                IsPrimaryKey = false; ExtendedProperties = [] }
+                IsPrimaryKey = false; ExtendedProperties = []; Filter = None }
               { SsKey        = ixUserNameIndexKey
                 Name         = mkName "IX_USER_NAME"
                 Columns      = [ userIndexLastNameAttrKey; userIndexFirstNameAttrKey ]
@@ -978,7 +978,7 @@ let private expectedIndexCatalog : Catalog =
                 // ADMIRE entry's "what V2 will explicitly NOT carry
                 // forward" section.
                 IsUnique     = false
-                IsPrimaryKey = false; ExtendedProperties = [] }
+                IsPrimaryKey = false; ExtendedProperties = []; Filter = None }
           ]
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [

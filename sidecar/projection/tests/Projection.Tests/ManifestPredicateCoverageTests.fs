@@ -58,16 +58,43 @@ let ``PredicateName.evaluate is deterministic`` () =
 
 [<Fact>]
 let ``PredicateName.evaluate: variants without V2 IR evidence always return false`` () =
-    // HasFilteredIndex / HasIncludedIndexColumns /
-    // HasLogicalForeignKeyWithoutDbConstraint /
-    // HasLogicalForeignKeyWithDbConstraint emit false until V2 IR
-    // grows the relevant field (forward signal in DU docstring).
+    // Chapter 4.4: 4 variants always-false pending V2 IR.
+    // Chapter 4.5 slice α: HasFilteredIndex retires from this list
+    // (Index.Filter lifted; predicate consults k.Indexes |> Filter.IsSome).
+    // Chapter 4.5 slice β (pending): HasIncludedIndexColumns will retire.
+    // HasLogicalForeignKey×DbConstraint pair: still always-false
+    // pending Tightening-decision-into-Reference flow.
     let enriched = enrich sampleCatalog
     for k in Catalog.allKinds enriched do
-        Assert.False (PredicateName.evaluate PredicateName.HasFilteredIndex k)
         Assert.False (PredicateName.evaluate PredicateName.HasIncludedIndexColumns k)
         Assert.False (PredicateName.evaluate PredicateName.HasLogicalForeignKeyWithoutDbConstraint k)
         Assert.False (PredicateName.evaluate PredicateName.HasLogicalForeignKeyWithDbConstraint k)
+
+[<Fact>]
+let ``Chapter 4.5 slice α: HasFilteredIndex returns true when any Index.Filter is Some`` () =
+    // Build a small fixture: one kind with a filtered index, one without.
+    let mkIdx (filterRaw: string option) =
+        {
+            SsKey = SsKey.synthesized "test" (sprintf "Idx:%s" (defaultArg filterRaw "Unfiltered")) |> Result.value
+            Name = Name.create "IX" |> Result.value
+            Columns = []
+            IsUnique = false
+            IsPrimaryKey = false
+            ExtendedProperties = []
+            Filter = filterRaw
+        }
+    let mkKindWith (label: string) (idx: Index) : Kind =
+        let baseKind =
+            IRBuilders.mkKind
+                (SsKey.synthesized "test" (sprintf "K:%s" label) |> Result.value)
+                (Name.create label |> Result.value)
+                (TableId.create "dbo" (sprintf "T_%s" label) |> Result.value)
+                []
+        { baseKind with Indexes = [idx] }
+    let unfiltered = mkKindWith "Unfiltered" (mkIdx None)
+    let filtered = mkKindWith "Filtered" (mkIdx (Some "[IsActive] = 1"))
+    Assert.False (PredicateName.evaluate PredicateName.HasFilteredIndex unfiltered)
+    Assert.True  (PredicateName.evaluate PredicateName.HasFilteredIndex filtered)
 
 // ---------------------------------------------------------------------------
 // PredicateCoverage.satisfiedBy: kind-level aggregation.

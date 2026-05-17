@@ -863,6 +863,18 @@ module CatalogReader =
             let foldedKeyCols = Result.aggregate keyColResults
             match indexKey, indexNm, foldedKeyCols with
             | Ok k, Ok n, Ok cols ->
+                // Chapter 4.5 slice α — capture V1's
+                // `filterDefinition` if present (per V1 JSON shape;
+                // raw string preserved through to emit time, parsed
+                // by TSql160Parser at ScriptDomBuild.buildCreateIndex).
+                let filter =
+                    match indexJson.TryGetProperty("filterDefinition") with
+                    | true, v when v.ValueKind = JsonValueKind.String ->
+                        match Option.ofObj (v.GetString()) with
+                        | Some raw when not (System.String.IsNullOrWhiteSpace raw) ->
+                            Some raw
+                        | _ -> None
+                    | _ -> None
                 Result.success
                     { SsKey        = k
                       Name         = n
@@ -873,7 +885,8 @@ module CatalogReader =
                       // properties; V1's JSON projection does not
                       // surface index-level extended properties at
                       // the boundary today. Empty default.
-                      ExtendedProperties = [] }
+                      ExtendedProperties = []
+                      Filter             = filter }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 propagateOrFallback

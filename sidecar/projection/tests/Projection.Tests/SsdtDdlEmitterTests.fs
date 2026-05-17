@@ -469,6 +469,7 @@ let private indexedKind : Kind =
                 IsUnique = false
                 IsPrimaryKey = false
                 ExtendedProperties = []
+                Filter = None
             }
             // Unique index on Code column.
             {
@@ -478,6 +479,7 @@ let private indexedKind : Kind =
                 IsUnique = true
                 IsPrimaryKey = false
                 ExtendedProperties = []
+                Filter = None
             }
             // PK index — should be SKIPPED by the emitter (PK is inlined
             // in CREATE TABLE per V1 convention).
@@ -488,6 +490,7 @@ let private indexedKind : Kind =
                 IsUnique = true
                 IsPrimaryKey = true
                 ExtendedProperties = []
+                Filter = None
             }
         ]
         Description = None
