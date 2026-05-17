@@ -109,6 +109,7 @@
     <Compile Include="CoordinatesStage2Tests.fs" />
     <Compile Include="ManifestEmitterTests.fs" />
     <Compile Include="ManifestCoverageTests.fs" />
+    <Compile Include="ManifestPredicateCoverageTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />
     <Compile Include="SiblingEmitterContractTests.fs" />

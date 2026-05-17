@@ -94,15 +94,26 @@ let ``Chapter 4.4 slice α: ManifestEmitter Coverage emits typed per-axis object
     Assert.NotNull (tables.["percentage"])
 
 [<Fact>]
-let ``ManifestEmitter chapter-4.4-territory fields still pending: predicateCoverage + preRemediation + unsupported`` () =
-    // After slice α, three deferrals remain. PredicateCoverage retires
-    // at slice β; Unsupported retires at slice γ. PreRemediation stays
-    // empty-array per V2_DRIVER §154 (RemediationEmitter deferred
-    // to chapter 5+).
+let ``Chapter 4.4 slice β: ManifestEmitter PredicateCoverage emits typed object (not null)`` () =
+    // Slice β retires the `predicateCoverage = null` default. The
+    // field now emits a PredicateCoverage object with `tables` array
+    // (per-kind predicate list) + `predicateCounts` array (sorted by
+    // predicate name; { name, count } objects per chapter open Q2).
     let enriched = enrich sampleCatalog
     let json = ManifestEmitter.toJson (ManifestEmitter.emit enriched)
     let root = requireChild "root" (JsonNode.Parse(json))
-    Assert.Null (root.["predicateCoverage"])
+    let pc = requireChild "predicateCoverage" root.["predicateCoverage"]
+    Assert.NotNull (pc.["tables"])
+    Assert.NotNull (pc.["predicateCounts"])
+
+[<Fact>]
+let ``ManifestEmitter chapter-4.4-territory fields still pending: preRemediation + unsupported`` () =
+    // After slice α + β, two deferrals remain. Unsupported retires
+    // at slice γ. PreRemediation stays empty-array per V2_DRIVER
+    // §154 (RemediationEmitter deferred to chapter 5+).
+    let enriched = enrich sampleCatalog
+    let json = ManifestEmitter.toJson (ManifestEmitter.emit enriched)
+    let root = requireChild "root" (JsonNode.Parse(json))
     let preRemediation = requireChild "preRemediation" root.["preRemediation"]
     let unsupported = requireChild "unsupported" root.["unsupported"]
     Assert.Equal (0, preRemediation.AsArray().Count)

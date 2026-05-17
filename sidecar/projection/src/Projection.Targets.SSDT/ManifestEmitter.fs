@@ -129,6 +129,255 @@ module CoverageSummary =
             |> Result.failure
 
 
+/// Slice β (chapter 4.4) — V1's 17 named manifest predicates as a
+/// closed DU. Mirrors V1's `SsdtPredicateNames` constants
+/// (`/home/user/outsystems-ddl-exporter/src/Osm.Emission/SsdtPredicateCoverage.cs:7-25`).
+/// Each variant names a structural property of a Kind that
+/// operators consult at the manifest surface.
+///
+/// Pillar-9 classification: DataIntent. Each evaluation reads the
+/// kind's IR fields; no operator opinion enters.
+///
+/// Pillar 8 four-question naming analysis. Each variant is
+/// concept-shaped (a `HasTrigger` IS the property "the kind has a
+/// trigger"; not "HandleTrigger" or "ProcessTrigger"). Variant
+/// names preserve V1's ubiquitous language verbatim.
+[<RequireQualifiedAccess>]
+type PredicateName =
+    /// Kind's `Modality` carries `ModalityMark.Temporal`.
+    | HasTemporalHistory
+    /// Kind's `Triggers` list is non-empty.
+    | HasTrigger
+    /// Kind's `Modality` carries `ModalityMark.Static`.
+    | IsStaticEntity
+    /// Kind's `Origin` is not `OsNative` (`ExternalViaIntegrationStudio`
+    /// or `ExternalDirect`).
+    | IsExternalEntity
+    /// Kind's `IsActive = false`.
+    | IsInactiveEntity
+    /// Kind has at least one Attribute with `IsActive = false`.
+    | HasInactiveColumns
+    /// Kind has at least one Attribute with `DefaultValue = Some _`.
+    | HasDefaultConstraint
+    /// Kind's `ColumnChecks` list is non-empty.
+    | HasCheckConstraint
+    /// Kind has at least one ExtendedProperty at table / column /
+    /// or index level.
+    | HasExtendedProperties
+    /// Kind has at least one non-PK Index with `IsUnique = true`.
+    | HasUniqueIndex
+    /// Kind has at least one non-PK unique Index with more than
+    /// one column.
+    | HasCompositeUniqueIndex
+    /// Kind has at least one Index with a filter predicate. V2 IR
+    /// doesn't carry filter expressions on `Index` (no `Filter`
+    /// field); always emits false. Forward signal: lifts to true
+    /// when an IR refinement adds the field under V1-fixture
+    /// pressure.
+    | HasFilteredIndex
+    /// Kind has at least one Index that distinguishes key columns
+    /// from included columns. V2 IR's `Index.Columns` is a flat
+    /// SsKey list (no key/included split); always emits false.
+    /// Forward signal: lifts to true when an IR refinement adds
+    /// the split.
+    | HasIncludedIndexColumns
+    /// Kind has at least one Reference (FK).
+    | HasLogicalForeignKey
+    /// Kind has a Reference that does NOT materialize as a DB
+    /// constraint. V2 IR's `Reference` doesn't carry the logical-
+    /// vs-physical distinction (every Reference is logical at IR;
+    /// whether it materializes a DB constraint is a Tightening
+    /// pass decision). Always emits false. Forward signal: lifts
+    /// when the tightening decision flows into the manifest.
+    | HasLogicalForeignKeyWithoutDbConstraint
+    /// Kind has a Reference that DOES materialize as a DB
+    /// constraint. Same V2 IR gap as
+    /// `HasLogicalForeignKeyWithoutDbConstraint`; always emits
+    /// false. Forward signal: lifts when tightening decision
+    /// surfaces.
+    | HasLogicalForeignKeyWithDbConstraint
+
+[<RequireQualifiedAccess>]
+module PredicateName =
+
+    /// V1-vocabulary string for the predicate (matches V1's
+    /// `SsdtPredicateNames` constants verbatim). Mirroring this
+    /// preserves operator ubiquitous-language continuity across the
+    /// V1↔V2 manifest surface (pillar 8).
+    let toString (p: PredicateName) : string =
+        match p with
+        | PredicateName.HasTemporalHistory                       -> "HasTemporalHistory"
+        | PredicateName.HasTrigger                               -> "HasTrigger"
+        | PredicateName.IsStaticEntity                           -> "IsStaticEntity"
+        | PredicateName.IsExternalEntity                         -> "IsExternalEntity"
+        | PredicateName.IsInactiveEntity                         -> "IsInactiveEntity"
+        | PredicateName.HasInactiveColumns                       -> "HasInactiveColumns"
+        | PredicateName.HasDefaultConstraint                     -> "HasDefaultConstraint"
+        | PredicateName.HasCheckConstraint                       -> "HasCheckConstraint"
+        | PredicateName.HasExtendedProperties                    -> "HasExtendedProperties"
+        | PredicateName.HasUniqueIndex                           -> "HasUniqueIndex"
+        | PredicateName.HasCompositeUniqueIndex                  -> "HasCompositeUniqueIndex"
+        | PredicateName.HasFilteredIndex                         -> "HasFilteredIndex"
+        | PredicateName.HasIncludedIndexColumns                  -> "HasIncludedIndexColumns"
+        | PredicateName.HasLogicalForeignKey                     -> "HasLogicalForeignKey"
+        | PredicateName.HasLogicalForeignKeyWithoutDbConstraint  -> "HasLogicalForeignKeyWithoutDbConstraint"
+        | PredicateName.HasLogicalForeignKeyWithDbConstraint     -> "HasLogicalForeignKeyWithDbConstraint"
+
+    /// Sorted canonical order — used at emission to guarantee T1
+    /// byte-determinism of the manifest's `PredicateCounts` array
+    /// shape (per chapter 4.4 open Q2: V2 emits PredicateCounts as
+    /// a sorted-by-name array of `{name, count}` objects, not as
+    /// a JSON dict).
+    let all : PredicateName list =
+        [ PredicateName.HasCheckConstraint
+          PredicateName.HasCompositeUniqueIndex
+          PredicateName.HasDefaultConstraint
+          PredicateName.HasExtendedProperties
+          PredicateName.HasFilteredIndex
+          PredicateName.HasInactiveColumns
+          PredicateName.HasIncludedIndexColumns
+          PredicateName.HasLogicalForeignKey
+          PredicateName.HasLogicalForeignKeyWithDbConstraint
+          PredicateName.HasLogicalForeignKeyWithoutDbConstraint
+          PredicateName.HasTemporalHistory
+          PredicateName.HasTrigger
+          PredicateName.HasUniqueIndex
+          PredicateName.IsExternalEntity
+          PredicateName.IsInactiveEntity
+          PredicateName.IsStaticEntity ]
+
+    /// Evaluate a single predicate against a Kind. Pure function;
+    /// the closed-DU exhaustive match ensures no variant goes
+    /// unevaluated. Variants marked "no V2 IR evidence" always
+    /// return false until the corresponding IR refinement lands.
+    let evaluate (p: PredicateName) (k: Kind) : bool =
+        match p with
+        | PredicateName.HasTemporalHistory ->
+            k.Modality
+            |> List.exists (function
+                | ModalityMark.Temporal _ -> true
+                | _ -> false)
+        | PredicateName.HasTrigger ->
+            not (List.isEmpty k.Triggers)
+        | PredicateName.IsStaticEntity ->
+            k.Modality
+            |> List.exists (function
+                | ModalityMark.Static _ -> true
+                | _ -> false)
+        | PredicateName.IsExternalEntity ->
+            match k.Origin with
+            | Origin.OsNative -> false
+            | Origin.ExternalViaIntegrationStudio
+            | Origin.ExternalDirect -> true
+        | PredicateName.IsInactiveEntity ->
+            not k.IsActive
+        | PredicateName.HasInactiveColumns ->
+            k.Attributes |> List.exists (fun a -> not a.IsActive)
+        | PredicateName.HasDefaultConstraint ->
+            k.Attributes |> List.exists (fun a -> Option.isSome a.DefaultValue)
+        | PredicateName.HasCheckConstraint ->
+            not (List.isEmpty k.ColumnChecks)
+        | PredicateName.HasExtendedProperties ->
+            not (List.isEmpty k.ExtendedProperties)
+            || k.Attributes |> List.exists (fun a -> not (List.isEmpty a.ExtendedProperties))
+            || k.Indexes |> List.exists (fun i -> not (List.isEmpty i.ExtendedProperties))
+        | PredicateName.HasUniqueIndex ->
+            k.Indexes
+            |> List.exists (fun i -> i.IsUnique && not i.IsPrimaryKey)
+        | PredicateName.HasCompositeUniqueIndex ->
+            k.Indexes
+            |> List.exists (fun i ->
+                i.IsUnique && not i.IsPrimaryKey && List.length i.Columns > 1)
+        | PredicateName.HasFilteredIndex ->
+            // No V2 IR evidence: `Index` doesn't carry a filter
+            // expression. Forward signal in DU docstring.
+            false
+        | PredicateName.HasIncludedIndexColumns ->
+            // No V2 IR evidence: `Index.Columns` is a flat SsKey list
+            // (no key/included split). Forward signal in DU docstring.
+            false
+        | PredicateName.HasLogicalForeignKey ->
+            not (List.isEmpty k.References)
+        | PredicateName.HasLogicalForeignKeyWithoutDbConstraint ->
+            // No V2 IR evidence: `Reference` doesn't carry the
+            // logical-vs-physical distinction. Forward signal in
+            // DU docstring.
+            false
+        | PredicateName.HasLogicalForeignKeyWithDbConstraint ->
+            // Same: no V2 IR evidence. Forward signal.
+            false
+
+
+/// Slice β (chapter 4.4) — per-table predicate satisfaction entry.
+/// Mirrors V1's `Osm.Emission.PredicateCoverageEntry`
+/// (`SsdtPredicateCoverage.cs:27-40`). Predicates carried as the
+/// typed `PredicateName` list (V2-native typed form); JSON
+/// serialization renders the names at the terminal boundary per
+/// pillar 1.
+type PredicateCoverageEntry = {
+    Module     : string
+    Schema     : string
+    Table      : string
+    Predicates : PredicateName list
+}
+
+/// Slice β (chapter 4.4) — manifest's predicate coverage summary.
+/// Mirrors V1's `Osm.Emission.SsdtPredicateCoverage`
+/// (`SsdtPredicateCoverage.cs:42-49`). `Tables` lists per-table
+/// satisfied-predicate entries; `PredicateCounts` is a Map from
+/// each predicate name to the count of tables that satisfy it.
+///
+/// Forward signal (per chapter 4.4 open Q2 resolved-at-open):
+/// JSON serialization emits `PredicateCounts` as a sorted-by-name
+/// array of `{ name, count }` objects (not as a JSON dict) to
+/// preserve T1 byte-determinism. Tolerance entry needed if V1
+/// differential demands JSON-shape parity.
+type PredicateCoverage = {
+    Tables          : PredicateCoverageEntry list
+    PredicateCounts : Map<PredicateName, int>
+}
+
+[<RequireQualifiedAccess>]
+module PredicateCoverage =
+
+    /// Empty predicate coverage — mirrors V1's
+    /// `SsdtPredicateCoverage.Empty`.
+    let empty : PredicateCoverage =
+        { Tables = []; PredicateCounts = Map.empty }
+
+    /// Evaluate every predicate against a kind; returns the
+    /// predicates that satisfy in canonical sorted order
+    /// (`PredicateName.all`).
+    let satisfiedBy (k: Kind) : PredicateName list =
+        PredicateName.all
+        |> List.filter (fun p -> PredicateName.evaluate p k)
+
+    /// Compute predicate coverage for a Catalog. Per A18 amended:
+    /// Catalog only. Per T1 byte-determinism: pure; same input →
+    /// same output. Tables emitted in catalog declaration order
+    /// (matches `ManifestEmitter.buildWith` Tables ordering);
+    /// PredicateCounts aggregated across every Kind in the catalog.
+    let compute (catalog: Catalog) : PredicateCoverage =
+        use _ = Bench.scope "emit.manifest.predicateCoverage"
+        let tables =
+            catalog.Modules
+            |> List.collect (fun m ->
+                m.Kinds
+                |> List.map (fun k ->
+                    {
+                        Module     = Name.value m.Name
+                        Schema     = k.Physical.Schema
+                        Table      = k.Physical.Table
+                        Predicates = satisfiedBy k
+                    }))
+        let counts =
+            tables
+            |> List.collect (fun entry -> entry.Predicates)
+            |> List.countBy id
+            |> Map.ofList
+        { Tables = tables; PredicateCounts = counts }
+
+
 /// Slice α (chapter 4.4) — `Catalog -> CoverageSummary` computation.
 /// V2 emits every kind from the catalog (T11 keyset coverage); the
 /// computation reduces to `CreateComplete` over per-axis catalog
@@ -238,6 +487,14 @@ module ManifestEmitter =
             /// coverage); the value is `CreateComplete` over the
             /// catalog's counts.
             Coverage : CoverageSummary
+            /// **Chapter 4.4 slice β** — per-table predicate
+            /// satisfaction + PredicateCounts aggregation. Retires
+            /// the `chapter 4.4 fills` deferral for the
+            /// PredicateCoverage axis. Mirrors V1's
+            /// `SsdtPredicateCoverage` shape; the V2 surface carries
+            /// typed `PredicateName` values that render at the JSON
+            /// terminal.
+            PredicateCoverage : PredicateCoverage
         }
 
     /// Build the manifest from a Catalog + explicit registry-metadata
@@ -281,6 +538,7 @@ module ManifestEmitter =
             EmitterVersion = version
             RegistryDigest = TransformRegistry.digest registry
             Coverage = Coverage.compute catalog
+            PredicateCoverage = PredicateCoverage.compute catalog
         }
 
     /// Build with the canonical production registry
@@ -336,10 +594,42 @@ module ManifestEmitter =
         coverageObj.Add("columns", buildBreakdown manifest.Coverage.Columns)
         coverageObj.Add("constraints", buildBreakdown manifest.Coverage.Constraints)
         doc.Add("coverage", coverageObj :> JsonNode)
-        // Chapter 4.4 slice β/γ territory — null/empty pending slices.
+        // Chapter 4.4 slice β — per-table predicate satisfaction +
+        // PredicateCounts aggregation. PredicateCounts emits as a
+        // sorted-by-name array of `{name, count}` objects (per
+        // chapter open Q2) to preserve T1 byte-determinism — V1
+        // serializes as a JSON dict; V2 documents the divergence.
+        let predicateCoverageObj = JsonObject()
+        let predicateTablesArr = JsonArray()
+        for entry in manifest.PredicateCoverage.Tables do
+            let entryObj = JsonObject()
+            entryObj.Add("module", requireValue "predicateCoverage.module" (JsonValue.Create(entry.Module)))
+            entryObj.Add("schema", requireValue "predicateCoverage.schema" (JsonValue.Create(entry.Schema)))
+            entryObj.Add("table", requireValue "predicateCoverage.table" (JsonValue.Create(entry.Table)))
+            let predsArr = JsonArray()
+            for p in entry.Predicates do
+                predsArr.Add(requireValue "predicateCoverage.predicate" (JsonValue.Create(PredicateName.toString p)))
+            entryObj.Add("predicates", predsArr)
+            predicateTablesArr.Add(entryObj)
+        predicateCoverageObj.Add("tables", predicateTablesArr)
+        let predicateCountsArr = JsonArray()
+        // Iterate in canonical sorted order (PredicateName.all) so
+        // every emit produces the same byte sequence regardless of
+        // Map.ofList's internal ordering.
+        for p in PredicateName.all do
+            let count =
+                manifest.PredicateCoverage.PredicateCounts
+                |> Map.tryFind p
+                |> Option.defaultValue 0
+            let countObj = JsonObject()
+            countObj.Add("name", requireValue "predicateCounts.name" (JsonValue.Create(PredicateName.toString p)))
+            countObj.Add("count", requireValue "predicateCounts.count" (JsonValue.Create(count)))
+            predicateCountsArr.Add(countObj)
+        predicateCoverageObj.Add("predicateCounts", predicateCountsArr)
+        doc.Add("predicateCoverage", predicateCoverageObj :> JsonNode)
+        // Chapter 4.4 slice γ territory — Unsupported retires at γ.
         // PreRemediation stays empty-array per V2_DRIVER §154
         // (RemediationEmitter deferred to chapter 5+).
-        doc.Add("predicateCoverage", null)
         doc.Add("preRemediation", JsonArray() :> JsonNode)
         doc.Add("unsupported", JsonArray() :> JsonNode)
         doc :> JsonNode
