@@ -110,7 +110,8 @@ module CategoricalUniquenessPass =
     /// event per decision. Iteration order is deterministic: kinds
     /// by `SsKey`, attributes by `SsKey`, interventions by
     /// registration order.
-    let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<CategoricalUniquenessDecisionSet> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `CategoricalUniquenessPass.registered.Run`
+    let private run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<CategoricalUniquenessDecisionSet> =
         use _ = Bench.scope "passes.categoricalUniqueness"
         let fanOutConfig : Composition.FanOutConfig<Kind * Attribute, _, _, _> = {
             InterventionFilter = TighteningPolicy.categoricalUniquenessInterventions

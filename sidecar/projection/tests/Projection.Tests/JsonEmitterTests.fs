@@ -10,8 +10,15 @@ open Projection.Targets.Json
 open Projection.Targets.SSDT
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `CanonicalizeIdentity.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<Catalog>>`. This per-file shim restores the
+// `Lineage<Catalog>` shape so existing assertions keep reading.
+let private ciRun (c: Catalog) : Lineage<Catalog> =
+    CanonicalizeIdentity.registered.Run c |> Lineage.map (fun d -> d.Value)
+
 let private enrich (c: Catalog) : Catalog =
-    (CanonicalizeIdentity.run c).Value
+    (ciRun c).Value
 
 // ---------------------------------------------------------------------------
 // T1: determinism. Repeat invocations on byte-identical input produce

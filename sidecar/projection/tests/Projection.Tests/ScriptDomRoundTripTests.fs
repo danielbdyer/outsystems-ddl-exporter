@@ -8,6 +8,13 @@ open Projection.Core.Passes
 open Projection.Targets.SSDT
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `CanonicalizeIdentity.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<Catalog>>`. This per-file shim restores the
+// `Lineage<Catalog>` shape so existing assertions keep reading.
+let private ciRun (c: Catalog) : Lineage<Catalog> =
+    CanonicalizeIdentity.registered.Run c |> Lineage.map (fun d -> d.Value)
+
 // ---------------------------------------------------------------------------
 // ScriptDom round-trip + determinism property tests.
 //
@@ -314,7 +321,7 @@ let ``ScriptDomGenerate.toText emits all SQL statements through ScriptDom`` () =
 
 [<Fact>]
 let ``Parse-roundtrip: full sampleCatalog emits parseable SQL`` () =
-    let enriched = (CanonicalizeIdentity.run sampleCatalog).Value
+    let enriched = (ciRun sampleCatalog).Value
     let stmts = SsdtDdlEmitter.statements enriched
     let emitted = ScriptDomGenerate.toText stmts
     let reparsed, errors = parseSql emitted

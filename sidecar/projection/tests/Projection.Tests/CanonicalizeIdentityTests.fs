@@ -7,6 +7,13 @@ open Projection.Core
 open Projection.Core.Passes
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `CanonicalizeIdentity.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<Catalog>>`. This per-file shim restores the
+// `Lineage<Catalog>` shape so existing assertions keep reading.
+let private ciRun (c: Catalog) : Lineage<Catalog> =
+    CanonicalizeIdentity.registered.Run c |> Lineage.map (fun d -> d.Value)
+
 // ---------------------------------------------------------------------------
 // Helpers — perturb a catalog without changing identity, so we can verify
 // canonicalization restores order.
@@ -53,15 +60,15 @@ let private renameKind (key: SsKey) (newName: string) (c: Catalog) : Catalog =
 
 [<Fact>]
 let ``canonicalizeIdentity: idempotent on the synthetic fixture`` () =
-    let once  = (CanonicalizeIdentity.run sampleCatalog).Value
-    let twice = (CanonicalizeIdentity.run once).Value
+    let once  = (ciRun sampleCatalog).Value
+    let twice = (ciRun once).Value
     Assert.Equal(once, twice)
 
 [<Fact>]
 let ``canonicalizeIdentity: idempotent on a perturbed catalog`` () =
     let perturbed = reverseAllCollections sampleCatalog
-    let once  = (CanonicalizeIdentity.run perturbed).Value
-    let twice = (CanonicalizeIdentity.run once).Value
+    let once  = (ciRun perturbed).Value
+    let twice = (ciRun once).Value
     Assert.Equal(once, twice)
 
 // ---------------------------------------------------------------------------
@@ -72,8 +79,8 @@ let ``canonicalizeIdentity: idempotent on a perturbed catalog`` () =
 
 [<Fact>]
 let ``canonicalizeIdentity: identity on already-canonical input`` () =
-    let canonical = (CanonicalizeIdentity.run sampleCatalog).Value
-    let again     = (CanonicalizeIdentity.run canonical).Value
+    let canonical = (ciRun sampleCatalog).Value
+    let again     = (ciRun canonical).Value
     Assert.Equal(canonical, again)
 
 // ---------------------------------------------------------------------------
@@ -85,9 +92,9 @@ let ``canonicalizeIdentity: identity on already-canonical input`` () =
 
 [<Fact>]
 let ``canonicalizeIdentity: normalizes a perturbed catalog to the canonical form`` () =
-    let canonical = (CanonicalizeIdentity.run sampleCatalog).Value
+    let canonical = (ciRun sampleCatalog).Value
     let perturbed = reverseAllCollections sampleCatalog
-    let normalized = (CanonicalizeIdentity.run perturbed).Value
+    let normalized = (ciRun perturbed).Value
     Assert.Equal(canonical, normalized)
 
 // ---------------------------------------------------------------------------
@@ -99,7 +106,7 @@ let ``canonicalizeIdentity: normalizes a perturbed catalog to the canonical form
 [<Fact>]
 let ``A4: canonicalizeIdentity preserves SsKey-keyed lookup across a rename`` () =
     let renamed = renameKind customerKey "RenamedCustomer" sampleCatalog
-    let result  = (CanonicalizeIdentity.run renamed).Value
+    let result  = (ciRun renamed).Value
     let found   = Catalog.tryFindKind customerKey result
     Assert.True(Option.isSome found)
     Assert.Equal("RenamedCustomer", Name.value (Option.get found).Name)
@@ -108,7 +115,7 @@ let ``A4: canonicalizeIdentity preserves SsKey-keyed lookup across a rename`` ()
 let ``A4: canonicalizeIdentity preserves the FK target SsKey across a rename`` () =
     // Rename Customer; Order's reference still points at the same SsKey.
     let renamed = renameKind customerKey "RenamedCustomer" sampleCatalog
-    let result  = (CanonicalizeIdentity.run renamed).Value
+    let result  = (ciRun renamed).Value
     let foundOrder = Catalog.tryFindKind orderKey result |> Option.get
     let ref = foundOrder.References |> List.exactlyOne
     Assert.Equal(customerKey, ref.TargetKind)
@@ -125,7 +132,7 @@ let ``A4: canonicalizeIdentity neither invents nor drops identities`` () =
         |> List.map (fun k -> k.SsKey)
         |> Set.ofList
     let outputKeys =
-        Catalog.allKinds (CanonicalizeIdentity.run sampleCatalog).Value
+        Catalog.allKinds (ciRun sampleCatalog).Value
         |> List.map (fun k -> k.SsKey)
         |> Set.ofList
     Assert.Equal<Set<SsKey>>(inputKeys, outputKeys)
@@ -136,8 +143,8 @@ let ``A4: canonicalizeIdentity neither invents nor drops identities`` () =
 
 [<Fact>]
 let ``T1: canonicalizeIdentity is deterministic`` () =
-    let r1 = CanonicalizeIdentity.run sampleCatalog
-    let r2 = CanonicalizeIdentity.run sampleCatalog
+    let r1 = ciRun sampleCatalog
+    let r2 = ciRun sampleCatalog
     Assert.Equal(r1.Value, r2.Value)
     Assert.Equal<LineageEvent list>(r1.Trail, r2.Trail)
 
@@ -147,20 +154,20 @@ let ``T1: canonicalizeIdentity is deterministic`` () =
 
 [<Fact>]
 let ``canonicalizeIdentity: kinds within a module are ordered by SsKey`` () =
-    let result = (CanonicalizeIdentity.run (reverseAllCollections sampleCatalog)).Value
+    let result = (ciRun (reverseAllCollections sampleCatalog)).Value
     let keys = result.Modules |> List.head |> fun m -> m.Kinds |> List.map (fun k -> k.SsKey)
     Assert.Equal<SsKey list>(keys, List.sort keys)
 
 [<Fact>]
 let ``canonicalizeIdentity: attributes within a kind are ordered by SsKey`` () =
-    let result = (CanonicalizeIdentity.run (reverseAllCollections sampleCatalog)).Value
+    let result = (ciRun (reverseAllCollections sampleCatalog)).Value
     for k in Catalog.allKinds result do
         let keys = k.Attributes |> List.map (fun a -> a.SsKey)
         Assert.Equal<SsKey list>(keys, List.sort keys)
 
 [<Fact>]
 let ``canonicalizeIdentity: static populations are ordered by Identifier`` () =
-    let result = (CanonicalizeIdentity.run (reverseAllCollections sampleCatalog)).Value
+    let result = (ciRun (reverseAllCollections sampleCatalog)).Value
     let countryK = Catalog.tryFindKind countryKey result |> Option.get
     match countryK.Modality with
     | [ Static rows ] ->
@@ -175,7 +182,7 @@ let ``canonicalizeIdentity: static populations are ordered by Identifier`` () =
 
 [<Fact>]
 let ``A25: canonicalizeIdentity emits one Touched event per kind`` () =
-    let result = CanonicalizeIdentity.run sampleCatalog
+    let result = ciRun sampleCatalog
     let kindCount = (Catalog.allKinds result.Value).Length
     Assert.Equal(kindCount, result.Trail.Length)
     Assert.All(result.Trail, fun e ->
@@ -183,14 +190,14 @@ let ``A25: canonicalizeIdentity emits one Touched event per kind`` () =
 
 [<Fact>]
 let ``A23: canonicalizeIdentity events carry the pass version`` () =
-    let result = CanonicalizeIdentity.run sampleCatalog
+    let result = ciRun sampleCatalog
     Assert.All(result.Trail, fun e ->
         Assert.Equal(CanonicalizeIdentity.version, e.PassVersion)
         Assert.Equal("canonicalizeIdentity", e.PassName))
 
 [<Fact>]
 let ``A25: every emitted event references a real catalog SsKey`` () =
-    let result = CanonicalizeIdentity.run sampleCatalog
+    let result = ciRun sampleCatalog
     let kindKeys =
         Catalog.allKinds result.Value
         |> List.map (fun k -> k.SsKey)
@@ -208,6 +215,6 @@ let ``canonicalizeIdentity: idempotent under collection reversal`` (reverseFlag:
     let input =
         if reverseFlag then reverseAllCollections sampleCatalog
         else sampleCatalog
-    let once  = (CanonicalizeIdentity.run input).Value
-    let twice = (CanonicalizeIdentity.run once).Value
+    let once  = (ciRun input).Value
+    let twice = (ciRun once).Value
     once = twice

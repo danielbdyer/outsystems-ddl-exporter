@@ -175,7 +175,8 @@ module TableRename =
     /// `CatalogTraversal.mapKinds`, emitting one `PhysicallyRenamed`
     /// event per rewritten kind. No-op renames (target equals the
     /// current physical realization) emit no event.
-    let run (specs: RenameSpec list) (c: Catalog) : Result<Lineage<Catalog>> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `TableRename.registered.Run`
+    let private run (specs: RenameSpec list) (c: Catalog) : Result<Lineage<Catalog>> =
         use _ = Bench.scope "passes.tableRename"
         match specs with
         | [] -> Result.success (Lineage.ofValueAndEvents [] c)

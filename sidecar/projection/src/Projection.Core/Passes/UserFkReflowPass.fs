@@ -335,7 +335,8 @@ module UserFkReflowPass =
     /// `Profile.SourceUsers` + `Profile.TargetUsers` (slice β) and
     /// `Policy.UserMatching` (slice α); produces
     /// `UserRemapContext` (slice γ).
-    let run
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `UserFkReflowPass.registered.Run`
+    let private run
         (_catalog: Catalog)
         (policy: Policy)
         (profile: Profile)

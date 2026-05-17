@@ -7,6 +7,13 @@ open Projection.Core
 open Projection.Core.Passes
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `NullabilityPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<NullabilityDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private nullRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<NullabilityDecisionSet>> =
+    (NullabilityPass.registered policy profile).Run catalog
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -33,12 +40,12 @@ let private policyWithInterventions (interventions: TighteningIntervention list)
 
 [<Fact>]
 let ``structural commitment: empty Policy yields emptyDecisionSet`` () =
-    let lineage = NullabilityPass.run sampleCatalog Policy.empty Profile.empty
+    let lineage = nullRun sampleCatalog Policy.empty Profile.empty
     Assert.Equal<NullabilityDecisionSet>(NullabilityRules.emptyDecisionSet, NullabilityPass.decisionsOf lineage)
 
 [<Fact>]
 let ``structural commitment: empty Policy emits no lineage events`` () =
-    let lineage = NullabilityPass.run sampleCatalog Policy.empty Profile.empty
+    let lineage = nullRun sampleCatalog Policy.empty Profile.empty
     Assert.Empty(lineage.Trail)
 
 [<Fact>]
@@ -50,7 +57,7 @@ let ``structural commitment: empty Tightening with non-empty other axes still yi
             Selection = IncludeOnly (Set.singleton customerKey)
             Emission  = EmissionPolicy.combined
             Insertion = InsertNew }
-    let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
+    let lineage = nullRun sampleCatalog policy Profile.empty
     Assert.Empty((LineageDiagnostics.payload lineage).Decisions)
     Assert.Empty(lineage.Trail)
 
@@ -63,7 +70,7 @@ let ``structural commitment: empty Tightening with non-empty other axes still yi
 [<Fact>]
 let ``one intervention: yields one decision per attribute on every kind`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig 0.0m false [])
-    let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
+    let lineage = nullRun sampleCatalog policy Profile.empty
     let totalAttributes =
         Catalog.allKinds sampleCatalog
         |> List.sumBy (fun k -> k.Attributes.Length)
@@ -72,14 +79,14 @@ let ``one intervention: yields one decision per attribute on every kind`` () =
 [<Fact>]
 let ``one intervention: every decision references its intervention id`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig 0.0m false [])
-    let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
+    let lineage = nullRun sampleCatalog policy Profile.empty
     Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("v1-style", d.InterventionId))
 
 [<Fact>]
 let ``one intervention: emits one Annotated lineage event per decision`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig 0.0m false [])
-    let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
+    let lineage = nullRun sampleCatalog policy Profile.empty
     Assert.Equal((LineageDiagnostics.payload lineage).Decisions.Length, lineage.Trail.Length)
     Assert.All(lineage.Trail, fun e ->
         match e.TransformKind with
@@ -95,7 +102,7 @@ let ``one intervention: lineage event detail names the intervention id and outco
     // three `NullabilityOutcome` variants (compiler-checked
     // exhaustiveness).
     let policy = policyWithIntervention "v1-style-2026" (mkConfig 0.0m false [])
-    let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
+    let lineage = nullRun sampleCatalog policy Profile.empty
     Assert.All(lineage.Trail, fun e ->
         match e.TransformKind with
         | Annotated (NullabilityDecision (id, outcome)) ->
@@ -120,7 +127,7 @@ let ``two interventions: emit decisions for every (attribute, intervention) pair
         policyWithInterventions
             [ Nullability ("alpha", cfg)
               Nullability ("beta",  cfg) ]
-    let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
+    let lineage = nullRun sampleCatalog policy Profile.empty
     let totalAttributes =
         Catalog.allKinds sampleCatalog
         |> List.sumBy (fun k -> k.Attributes.Length)
@@ -133,7 +140,7 @@ let ``two interventions: decisions are tagged with their producing intervention`
         policyWithInterventions
             [ Nullability ("alpha", cfg)
               Nullability ("beta",  cfg) ]
-    let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
+    let lineage = nullRun sampleCatalog policy Profile.empty
     let alphaCount =
         (LineageDiagnostics.payload lineage).Decisions
         |> List.filter (fun d -> d.InterventionId = "alpha")
@@ -157,7 +164,7 @@ let ``overrides survive through the pass: a KeepNullable override produces KeepN
         mkConfig 0.0m false
             [ { AttributeKey = pkAttr.SsKey; Action = OverrideAction.KeepNullable } ]
     let policy = policyWithIntervention "with-override" cfg
-    let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
+    let lineage = nullRun sampleCatalog policy Profile.empty
     let pkDecision =
         (LineageDiagnostics.payload lineage).Decisions
         |> List.find (fun d -> d.AttributeKey = pkAttr.SsKey)
@@ -170,8 +177,8 @@ let ``overrides survive through the pass: a KeepNullable override produces KeepN
 [<Fact>]
 let ``T1: NullabilityPass is deterministic on the triple`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig 0.0m false [])
-    let r1 = NullabilityPass.run sampleCatalog policy Profile.empty
-    let r2 = NullabilityPass.run sampleCatalog policy Profile.empty
+    let r1 = nullRun sampleCatalog policy Profile.empty
+    let r2 = nullRun sampleCatalog policy Profile.empty
     Assert.Equal<NullabilityDecisionSet>(NullabilityPass.decisionsOf r1, NullabilityPass.decisionsOf r2)
     Assert.Equal<LineageEvent list>(r1.Trail, r2.Trail)
 
@@ -200,8 +207,8 @@ let ``contract: NullabilityPass is invariant under input permutation``
         if reverseModules then { withModules with Modules = List.rev withModules.Modules }
         else withModules
     let policy = policyWithIntervention "v1-style" (mkConfig 0.0m false [])
-    let direct   = (NullabilityPass.run sampleCatalog policy Profile.empty).Value
-    let permuted = (NullabilityPass.run (perturb sampleCatalog) policy Profile.empty).Value
+    let direct   = (nullRun sampleCatalog policy Profile.empty).Value
+    let permuted = (nullRun (perturb sampleCatalog) policy Profile.empty).Value
     direct = permuted
 
 // ---------------------------------------------------------------------------
@@ -211,7 +218,7 @@ let ``contract: NullabilityPass is invariant under input permutation``
 [<Fact>]
 let ``A23: events carry pass version and name`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig 0.0m false [])
-    let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
+    let lineage = nullRun sampleCatalog policy Profile.empty
     Assert.All(lineage.Trail, fun e ->
         Assert.Equal(NullabilityPass.version, e.PassVersion)
         Assert.Equal("nullability", e.PassName))
@@ -219,7 +226,7 @@ let ``A23: events carry pass version and name`` () =
 [<Fact>]
 let ``A25: every emitted event references a real attribute SsKey`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig 0.0m false [])
-    let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
+    let lineage = nullRun sampleCatalog policy Profile.empty
     let attributeKeys =
         Catalog.allKinds sampleCatalog
         |> List.collect (fun k -> k.Attributes |> List.map (fun a -> a.SsKey))
@@ -237,7 +244,7 @@ let ``A25: every emitted event references a real attribute SsKey`` () =
 [<Fact>]
 let ``catalog passes through unchanged: structural by signature`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig 0.0m false [])
-    let _ = NullabilityPass.run sampleCatalog policy Profile.empty
+    let _ = nullRun sampleCatalog policy Profile.empty
     // sampleCatalog is referenced from the global Fixtures module; if
     // the pass mutated, the fixture would be corrupted across tests.
     Assert.Equal(3, (Catalog.allKinds sampleCatalog).Length)

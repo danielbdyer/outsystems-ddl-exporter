@@ -7,6 +7,20 @@ open Projection.Core
 open Projection.Core.Passes
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `SymmetricClosure.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<Catalog>>`. This per-file shim restores the
+// `Lineage<Catalog>` shape so existing assertions keep reading.
+let private scRun (c: Catalog) : Lineage<Catalog> =
+    SymmetricClosure.registered.Run c |> Lineage.map (fun d -> d.Value)
+
+// Chapter A.4.7' slice η — `CanonicalizeIdentity.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<Catalog>>`. This per-file shim restores the
+// `Lineage<Catalog>` shape so existing assertions keep reading.
+let private ciRun (c: Catalog) : Lineage<Catalog> =
+    CanonicalizeIdentity.registered.Run c |> Lineage.map (fun d -> d.Value)
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -25,7 +39,7 @@ let private allReferences (c: Catalog) : Reference list =
 
 [<Fact>]
 let ``inverse is added on the target kind for each directional reference`` () =
-    let result = SymmetricClosure.run sampleCatalog
+    let result = scRun sampleCatalog
     // Synthetic fixture: Order.Customer is the only reference. Customer
     // (the target) should now carry one inverse pointing back at Order.
     let customerOut = Catalog.tryFindKind customerKey result.Value |> Option.get
@@ -36,7 +50,7 @@ let ``inverse is added on the target kind for each directional reference`` () =
 
 [<Fact>]
 let ``inverse SsKey is Derived with reason "inverse"`` () =
-    let result = SymmetricClosure.run sampleCatalog
+    let result = scRun sampleCatalog
     let inverse =
         Catalog.tryFindKind customerKey result.Value
         |> Option.get
@@ -48,7 +62,7 @@ let ``inverse SsKey is Derived with reason "inverse"`` () =
 
 [<Fact>]
 let ``A5: inverse SsKey traces back to the original reference's root`` () =
-    let result = SymmetricClosure.run sampleCatalog
+    let result = scRun sampleCatalog
     let inverse =
         Catalog.tryFindKind customerKey result.Value
         |> Option.get
@@ -60,7 +74,7 @@ let ``A5: inverse SsKey traces back to the original reference's root`` () =
 
 [<Fact>]
 let ``inverse Name is the source kind's Name`` () =
-    let result = SymmetricClosure.run sampleCatalog
+    let result = scRun sampleCatalog
     let inverse =
         Catalog.tryFindKind customerKey result.Value
         |> Option.get
@@ -71,7 +85,7 @@ let ``inverse Name is the source kind's Name`` () =
 
 [<Fact>]
 let ``inverse SourceAttribute is the target kind's primary key`` () =
-    let result = SymmetricClosure.run sampleCatalog
+    let result = scRun sampleCatalog
     let inverse =
         Catalog.tryFindKind customerKey result.Value
         |> Option.get
@@ -88,14 +102,14 @@ let ``inverse SourceAttribute is the target kind's primary key`` () =
 
 [<Fact>]
 let ``contract: idempotent — running twice equals running once`` () =
-    let once  = (SymmetricClosure.run sampleCatalog).Value
-    let twice = (SymmetricClosure.run once).Value
+    let once  = (scRun sampleCatalog).Value
+    let twice = (scRun once).Value
     Assert.Equal(once, twice)
 
 [<Fact>]
 let ``idempotent: second run emits no Created events`` () =
-    let once = SymmetricClosure.run sampleCatalog
-    let twice = SymmetricClosure.run once.Value
+    let once = scRun sampleCatalog
+    let twice = scRun once.Value
     let createdInTwice =
         twice.Trail
         |> List.filter (fun e -> e.TransformKind = Created)
@@ -114,14 +128,14 @@ let ``A4: pass neither invents nor drops any Original kind SsKey`` () =
         |> List.map (fun k -> k.SsKey)
         |> Set.ofList
     let outputKinds =
-        Catalog.allKinds (SymmetricClosure.run sampleCatalog).Value
+        Catalog.allKinds (scRun sampleCatalog).Value
         |> List.map (fun k -> k.SsKey)
         |> Set.ofList
     Assert.Equal<Set<SsKey>>(inputKinds, outputKinds)
 
 [<Fact>]
 let ``A3: original references are preserved unchanged`` () =
-    let result = SymmetricClosure.run sampleCatalog
+    let result = scRun sampleCatalog
     let outOrder = Catalog.tryFindKind orderKey result.Value |> Option.get
     // Order's original reference to Customer is still there, byte-identical.
     Assert.Contains(order.References |> List.exactlyOne, outOrder.References)
@@ -132,8 +146,8 @@ let ``A3: original references are preserved unchanged`` () =
 
 [<Fact>]
 let ``T1: SymmetricClosure is deterministic`` () =
-    let r1 = SymmetricClosure.run sampleCatalog
-    let r2 = SymmetricClosure.run sampleCatalog
+    let r1 = scRun sampleCatalog
+    let r2 = scRun sampleCatalog
     Assert.Equal(r1.Value, r2.Value)
     Assert.Equal<LineageEvent list>(r1.Trail, r2.Trail)
 
@@ -143,7 +157,7 @@ let ``T1: SymmetricClosure is deterministic`` () =
 
 [<Fact>]
 let ``A23 + A25: Created events are emitted with pass version + name`` () =
-    let result = SymmetricClosure.run sampleCatalog
+    let result = scRun sampleCatalog
     let createdEvents = result.Trail |> List.filter (fun e -> e.TransformKind = Created)
     Assert.Equal(1, createdEvents.Length)
     Assert.All(createdEvents, fun e ->
@@ -152,7 +166,7 @@ let ``A23 + A25: Created events are emitted with pass version + name`` () =
 
 [<Fact>]
 let ``Created event SsKey matches the new inverse reference's SsKey`` () =
-    let result = SymmetricClosure.run sampleCatalog
+    let result = scRun sampleCatalog
     let createdEvent =
         result.Trail
         |> List.find (fun e -> e.TransformKind = Created)
@@ -186,7 +200,7 @@ let ``skip when target has no primary key`` () =
                             m.Kinds
                             |> List.map (fun k ->
                                 if k.SsKey = customerKey then strippedCustomer else k) }) }
-    let result = SymmetricClosure.run strippedCatalog
+    let result = scRun strippedCatalog
     // No inverse added.
     let outCustomer = Catalog.tryFindKind customerKey result.Value |> Option.get
     Assert.Empty(outCustomer.References)
@@ -208,8 +222,8 @@ let ``skip when target has no primary key`` () =
 
 [<Property>]
 let ``property: SymmetricClosure is idempotent on the synthetic catalog`` () =
-    let once  = (SymmetricClosure.run sampleCatalog).Value
-    let twice = (SymmetricClosure.run once).Value
+    let once  = (scRun sampleCatalog).Value
+    let twice = (scRun once).Value
     once = twice
 
 // ---------------------------------------------------------------------------
@@ -220,7 +234,7 @@ let ``property: SymmetricClosure is idempotent on the synthetic catalog`` () =
 [<Fact>]
 let ``reference count grows by exactly the number of inverses added`` () =
     let inputRefCount = (allReferences sampleCatalog).Length
-    let result = SymmetricClosure.run sampleCatalog
+    let result = scRun sampleCatalog
     let outputRefCount = (allReferences result.Value).Length
     Assert.Equal(inputRefCount + 1, outputRefCount)
 
@@ -233,11 +247,11 @@ let ``reference count grows by exactly the number of inverses added`` () =
 let ``composes with canonicalizeIdentity in either order — values converge`` () =
     let aThenB =
         sampleCatalog
-        |> SymmetricClosure.run
-        |> Lineage.bind CanonicalizeIdentity.run
+        |> scRun
+        |> Lineage.bind ciRun
     let bThenA =
         sampleCatalog
-        |> CanonicalizeIdentity.run
-        |> Lineage.bind SymmetricClosure.run
-        |> Lineage.bind CanonicalizeIdentity.run
+        |> ciRun
+        |> Lineage.bind scRun
+        |> Lineage.bind ciRun
     Assert.Equal(aThenB.Value, bThenA.Value)

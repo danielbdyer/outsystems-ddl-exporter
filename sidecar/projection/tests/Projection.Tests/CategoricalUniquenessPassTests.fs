@@ -8,6 +8,35 @@ open Projection.Core
 open Projection.Core.Passes
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `ForeignKeyPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<ForeignKeyDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private fkRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<ForeignKeyDecisionSet>> =
+    (ForeignKeyPass.registered policy profile).Run catalog
+
+// Chapter A.4.7' slice η — `UniqueIndexPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<UniqueIndexDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private uiRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<UniqueIndexDecisionSet>> =
+    (UniqueIndexPass.registered policy profile).Run catalog
+
+// Chapter A.4.7' slice η — `NullabilityPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<NullabilityDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private nullRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<NullabilityDecisionSet>> =
+    (NullabilityPass.registered policy profile).Run catalog
+
+// Chapter A.4.7' slice η — `CategoricalUniquenessPass.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<CategoricalUniquenessDecisionSet>>`. This per-file
+// shim restores the `Lineage<CategoricalUniquenessDecisionSet>` shape so
+// existing assertions keep reading.
+let private cuRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<CategoricalUniquenessDecisionSet> =
+    (CategoricalUniquenessPass.registered policy profile).Run catalog |> Lineage.map (fun d -> d.Value)
+
 // ---------------------------------------------------------------------------
 // Helpers — synthesize Categorical evidence + register the new
 // intervention. Mirrors the existing four pass-test fixtures.
@@ -45,14 +74,14 @@ let private policyWithInterventions (interventions: TighteningIntervention list)
 
 [<Fact>]
 let ``structural commitment: empty Policy yields emptyDecisionSet`` () =
-    let lineage = CategoricalUniquenessPass.run sampleCatalog Policy.empty Profile.empty
+    let lineage = cuRun sampleCatalog Policy.empty Profile.empty
     Assert.Equal<CategoricalUniquenessDecisionSet>(
         CategoricalUniquenessRules.emptyDecisionSet,
         lineage.Value)
 
 [<Fact>]
 let ``structural commitment: empty Policy emits no lineage events`` () =
-    let lineage = CategoricalUniquenessPass.run sampleCatalog Policy.empty Profile.empty
+    let lineage = cuRun sampleCatalog Policy.empty Profile.empty
     Assert.Empty(lineage.Trail)
 
 [<Fact>]
@@ -72,7 +101,7 @@ let ``structural commitment: a policy with only the other three interventions yi
             [ Nullability ("null-1", nullCfg)
               UniqueIndex ("uniq-1", uniqCfg)
               ForeignKey  ("fk-1",   fkCfg) ]
-    let lineage = CategoricalUniquenessPass.run sampleCatalog policy Profile.empty
+    let lineage = cuRun sampleCatalog policy Profile.empty
     Assert.Empty(lineage.Value.Decisions)
     Assert.Empty(lineage.Trail)
 
@@ -83,7 +112,7 @@ let ``structural commitment: a policy with only the other three interventions yi
 [<Fact>]
 let ``one intervention: yields one decision per attribute across the catalog`` () =
     let policy = policyWithIntervention "v2-distrib" (mkConfig 2L)
-    let lineage = CategoricalUniquenessPass.run sampleCatalog policy Profile.empty
+    let lineage = cuRun sampleCatalog policy Profile.empty
     let totalAttributes =
         Catalog.allKinds sampleCatalog |> List.sumBy (fun k -> k.Attributes.Length)
     Assert.Equal(totalAttributes, lineage.Value.Decisions.Length)
@@ -91,14 +120,14 @@ let ``one intervention: yields one decision per attribute across the catalog`` (
 [<Fact>]
 let ``one intervention: every decision references its intervention id`` () =
     let policy = policyWithIntervention "v2-distrib" (mkConfig 2L)
-    let lineage = CategoricalUniquenessPass.run sampleCatalog policy Profile.empty
+    let lineage = cuRun sampleCatalog policy Profile.empty
     Assert.All(lineage.Value.Decisions, fun d ->
         Assert.Equal("v2-distrib", d.InterventionId))
 
 [<Fact>]
 let ``one intervention: emits one Annotated lineage event per decision`` () =
     let policy = policyWithIntervention "v2-distrib" (mkConfig 2L)
-    let lineage = CategoricalUniquenessPass.run sampleCatalog policy Profile.empty
+    let lineage = cuRun sampleCatalog policy Profile.empty
     Assert.Equal(lineage.Value.Decisions.Length, lineage.Trail.Length)
     Assert.All(lineage.Trail, fun e ->
         match e.TransformKind with
@@ -109,7 +138,7 @@ let ``one intervention: emits one Annotated lineage event per decision`` () =
 let ``one intervention: every attribute lacking evidence surfaces as DoNotSuggest(NoCategoricalEvidence)`` () =
     let policy = policyWithIntervention "v2-distrib" (mkConfig 2L)
     // Empty Profile — no Categorical evidence anywhere.
-    let lineage = CategoricalUniquenessPass.run sampleCatalog policy Profile.empty
+    let lineage = cuRun sampleCatalog policy Profile.empty
     Assert.All(lineage.Value.Decisions, fun d ->
         Assert.Equal(
             CategoricalUniquenessOutcome.DoNotSuggest
@@ -124,7 +153,7 @@ let ``one intervention: an attribute with distinct vocabulary surfaces as Sugges
         mkCat countryCodeKey
             [ "CA", 1L; "MX", 1L; "US", 1L; "FR", 1L ] 4L
     let profile = { Profile.empty with Distributions = [ evidence ] }
-    let lineage = CategoricalUniquenessPass.run sampleCatalog policy profile
+    let lineage = cuRun sampleCatalog policy profile
     let countryDecision =
         lineage.Value.Decisions
         |> List.find (fun d -> d.AttributeKey = countryCodeKey)
@@ -143,7 +172,7 @@ let ``two interventions: emit decisions for every (attribute, intervention) pair
         policyWithInterventions
             [ CategoricalUniqueness ("alpha", cfg)
               CategoricalUniqueness ("beta",  cfg) ]
-    let lineage = CategoricalUniquenessPass.run sampleCatalog policy Profile.empty
+    let lineage = cuRun sampleCatalog policy Profile.empty
     let totalAttributes =
         Catalog.allKinds sampleCatalog |> List.sumBy (fun k -> k.Attributes.Length)
     Assert.Equal(totalAttributes * 2, lineage.Value.Decisions.Length)
@@ -155,7 +184,7 @@ let ``two interventions: decisions tagged with their producing intervention`` ()
         policyWithInterventions
             [ CategoricalUniqueness ("alpha", cfg)
               CategoricalUniqueness ("beta",  cfg) ]
-    let lineage = CategoricalUniquenessPass.run sampleCatalog policy Profile.empty
+    let lineage = cuRun sampleCatalog policy Profile.empty
     let alphaCount =
         lineage.Value.Decisions
         |> List.filter (fun d -> d.InterventionId = "alpha")
@@ -187,7 +216,7 @@ let ``coexistence: CategoricalUniquenessPass ignores the four other variants in 
               UniqueIndex           ("uniq-1", uniqCfg)
               ForeignKey            ("fk-1",   fkCfg)
               CategoricalUniqueness ("cu-1",   catUniqCfg) ]
-    let lineage = CategoricalUniquenessPass.run sampleCatalog policy Profile.empty
+    let lineage = cuRun sampleCatalog policy Profile.empty
     let totalAttributes =
         Catalog.allKinds sampleCatalog |> List.sumBy (fun k -> k.Attributes.Length)
     Assert.Equal(totalAttributes, lineage.Value.Decisions.Length)
@@ -204,7 +233,7 @@ let ``coexistence: NullabilityPass ignores CategoricalUniqueness interventions``
         policyWithInterventions
             [ Nullability           ("null-1", nullCfg)
               CategoricalUniqueness ("cu-1",   catUniqCfg) ]
-    let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
+    let lineage = nullRun sampleCatalog policy Profile.empty
     Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("null-1", d.InterventionId))
 
@@ -216,7 +245,7 @@ let ``coexistence: UniqueIndexPass ignores CategoricalUniqueness interventions``
         policyWithInterventions
             [ UniqueIndex           ("uniq-1", uniqCfg)
               CategoricalUniqueness ("cu-1",   catUniqCfg) ]
-    let lineage = UniqueIndexPass.run sampleCatalog policy Profile.empty
+    let lineage = uiRun sampleCatalog policy Profile.empty
     Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("uniq-1", d.InterventionId))
 
@@ -229,7 +258,7 @@ let ``coexistence: ForeignKeyPass ignores CategoricalUniqueness interventions`` 
         policyWithInterventions
             [ ForeignKey            ("fk-1", fkCfg)
               CategoricalUniqueness ("cu-1", catUniqCfg) ]
-    let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
+    let lineage = fkRun sampleCatalog policy Profile.empty
     Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("fk-1", d.InterventionId))
 
@@ -241,8 +270,8 @@ let ``coexistence: ForeignKeyPass ignores CategoricalUniqueness interventions`` 
 [<Fact>]
 let ``T1: CategoricalUniquenessPass is deterministic on the triple`` () =
     let policy = policyWithIntervention "v2-distrib" (mkConfig 2L)
-    let r1 = CategoricalUniquenessPass.run sampleCatalog policy Profile.empty
-    let r2 = CategoricalUniquenessPass.run sampleCatalog policy Profile.empty
+    let r1 = cuRun sampleCatalog policy Profile.empty
+    let r2 = cuRun sampleCatalog policy Profile.empty
     Assert.Equal<CategoricalUniquenessDecisionSet>(r1.Value, r2.Value)
     Assert.Equal<LineageEvent list>(r1.Trail, r2.Trail)
 
@@ -265,14 +294,14 @@ let ``contract: CategoricalUniquenessPass is invariant under input permutation``
         if reverseModules then { withModules with Modules = List.rev withModules.Modules }
         else withModules
     let policy = policyWithIntervention "v2-distrib" (mkConfig 2L)
-    let direct   = (CategoricalUniquenessPass.run sampleCatalog policy Profile.empty).Value
-    let permuted = (CategoricalUniquenessPass.run (perturb sampleCatalog) policy Profile.empty).Value
+    let direct   = (cuRun sampleCatalog policy Profile.empty).Value
+    let permuted = (cuRun (perturb sampleCatalog) policy Profile.empty).Value
     direct = permuted
 
 [<Fact>]
 let ``A23: events carry pass version and name`` () =
     let policy = policyWithIntervention "v2-distrib" (mkConfig 2L)
-    let lineage = CategoricalUniquenessPass.run sampleCatalog policy Profile.empty
+    let lineage = cuRun sampleCatalog policy Profile.empty
     Assert.All(lineage.Trail, fun e ->
         Assert.Equal(CategoricalUniquenessPass.version, e.PassVersion)
         Assert.Equal("categoricalUniqueness", e.PassName))
@@ -280,7 +309,7 @@ let ``A23: events carry pass version and name`` () =
 [<Fact>]
 let ``A25: every emitted event references a real attribute SsKey`` () =
     let policy = policyWithIntervention "v2-distrib" (mkConfig 2L)
-    let lineage = CategoricalUniquenessPass.run sampleCatalog policy Profile.empty
+    let lineage = cuRun sampleCatalog policy Profile.empty
     let attributeKeys =
         Catalog.allKinds sampleCatalog
         |> List.collect (fun k -> k.Attributes |> List.map (fun a -> a.SsKey))
@@ -295,5 +324,5 @@ let ``A25: every emitted event references a real attribute SsKey`` () =
 [<Fact>]
 let ``catalog passes through unchanged: structural by signature`` () =
     let policy = policyWithIntervention "v2-distrib" (mkConfig 2L)
-    let _ = CategoricalUniquenessPass.run sampleCatalog policy Profile.empty
+    let _ = cuRun sampleCatalog policy Profile.empty
     Assert.Equal(3, (Catalog.allKinds sampleCatalog).Length)

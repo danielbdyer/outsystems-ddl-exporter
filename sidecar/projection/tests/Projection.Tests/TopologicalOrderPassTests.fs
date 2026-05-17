@@ -7,6 +7,20 @@ open Projection.Core
 open Projection.Core.Passes
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `TopologicalOrderPass.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<TopologicalOrder>>`. This per-file shim restores the
+// `Lineage<TopologicalOrder>` shape so existing assertions keep reading.
+let private topoRun (c: Catalog) : Lineage<TopologicalOrder> =
+    TopologicalOrderPass.registered.Run c |> Lineage.map (fun d -> d.Value)
+
+// Chapter A.4.7' slice η — `SymmetricClosure.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<Catalog>>`. This per-file shim restores the
+// `Lineage<Catalog>` shape so existing assertions keep reading.
+let private scRun (c: Catalog) : Lineage<Catalog> =
+    SymmetricClosure.registered.Run c |> Lineage.map (fun d -> d.Value)
+
 // ---------------------------------------------------------------------------
 // Acyclic happy path — the synthetic fixture's only FK is Order → Customer,
 // so the order is some permutation that keeps Customer before Order.
@@ -16,12 +30,12 @@ open Projection.Tests.Fixtures
 
 [<Fact>]
 let ``acyclic catalog produces Mode = Topological`` () =
-    let result = TopologicalOrderPass.run sampleCatalog
+    let result = topoRun sampleCatalog
     Assert.Equal(Topological, result.Value.Mode)
 
 [<Fact>]
 let ``Order is non-empty and includes every kind exactly once`` () =
-    let result = TopologicalOrderPass.run sampleCatalog
+    let result = topoRun sampleCatalog
     let order = result.Value.Order
     let allKindKeys =
         Catalog.allKinds sampleCatalog
@@ -33,7 +47,7 @@ let ``Order is non-empty and includes every kind exactly once`` () =
 [<Fact>]
 let ``Customer precedes Order in the output`` () =
     // Order references Customer ⇒ Customer is the parent ⇒ comes first.
-    let result = TopologicalOrderPass.run sampleCatalog
+    let result = topoRun sampleCatalog
     Assert.True(TopologicalOrder.precedes customerKey orderKey result.Value)
 
 // ---------------------------------------------------------------------------
@@ -42,7 +56,7 @@ let ``Customer precedes Order in the output`` () =
 
 [<Fact>]
 let ``every FK edge has parent before child in the output`` () =
-    let result = TopologicalOrderPass.run sampleCatalog
+    let result = topoRun sampleCatalog
     // Walk the catalog's references; for each (source, target),
     // target should precede source in Order.
     for k in Catalog.allKinds sampleCatalog do
@@ -69,8 +83,8 @@ let private permuteModules (c: Catalog) : Catalog =
 
 [<Fact>]
 let ``contract: TopologicalOrder.run is invariant under input permutation`` () =
-    let direct  = TopologicalOrderPass.run sampleCatalog
-    let permuted = TopologicalOrderPass.run (permuteModules sampleCatalog)
+    let direct  = topoRun sampleCatalog
+    let permuted = topoRun (permuteModules sampleCatalog)
     Assert.Equal(direct.Value, permuted.Value)
 
 [<Property>]
@@ -89,8 +103,8 @@ let ``property: output is identical across input permutations`` (reverseModules:
               Sequences = c.Sequences }
         if reverseModules then { withModules with Modules = List.rev withModules.Modules }
         else withModules
-    let direct   = (TopologicalOrderPass.run sampleCatalog).Value
-    let permuted = (TopologicalOrderPass.run (perturb sampleCatalog)).Value
+    let direct   = (topoRun sampleCatalog).Value
+    let permuted = (topoRun (perturb sampleCatalog)).Value
     direct = permuted
 
 // ---------------------------------------------------------------------------
@@ -100,8 +114,8 @@ let ``property: output is identical across input permutations`` (reverseModules:
 
 [<Fact>]
 let ``T1: TopologicalOrderPass is deterministic`` () =
-    let r1 = TopologicalOrderPass.run sampleCatalog
-    let r2 = TopologicalOrderPass.run sampleCatalog
+    let r1 = topoRun sampleCatalog
+    let r2 = topoRun sampleCatalog
     Assert.Equal(r1.Value, r2.Value)
     Assert.Equal<LineageEvent list>(r1.Trail, r2.Trail)
 
@@ -111,7 +125,7 @@ let ``T1: TopologicalOrderPass is deterministic`` () =
 
 [<Fact>]
 let ``Edges record every FK reference (source, target)`` () =
-    let result = TopologicalOrderPass.run sampleCatalog
+    let result = topoRun sampleCatalog
     let expected =
         [ for k in Catalog.allKinds sampleCatalog do
             for r in k.References do
@@ -121,7 +135,7 @@ let ``Edges record every FK reference (source, target)`` () =
 
 [<Fact>]
 let ``no missing edges when every FK target is present`` () =
-    let result = TopologicalOrderPass.run sampleCatalog
+    let result = topoRun sampleCatalog
     Assert.Empty(result.Value.MissingEdges)
     Assert.True(TopologicalOrder.isComplete result.Value)
 
@@ -138,7 +152,7 @@ let ``MissingEdges are recorded when an FK target is absent`` () =
                         Kinds =
                             m.Kinds
                             |> List.filter (fun k -> k.SsKey <> customerKey) }) }
-    let result = TopologicalOrderPass.run withoutCustomer
+    let result = topoRun withoutCustomer
     let missing = result.Value.MissingEdges
     Assert.Equal(1, missing.Length)
     Assert.Equal((orderKey, customerKey), missing.[0])
@@ -177,7 +191,7 @@ let ``cycle: Mode is Alphabetical when input contains a cycle`` () =
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
-    let result = TopologicalOrderPass.run cyclic
+    let result = topoRun cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
 
 [<Fact>]
@@ -186,7 +200,7 @@ let ``cycle: every kind still appears in Order under alphabetical fallback`` () 
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
-    let result = TopologicalOrderPass.run cyclic
+    let result = topoRun cyclic
     let allKindKeys =
         Catalog.allKinds cyclic
         |> List.map (fun k -> k.SsKey)
@@ -199,7 +213,7 @@ let ``cycle: at least one CycleDiagnostic is emitted`` () =
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
-    let result = TopologicalOrderPass.run cyclic
+    let result = topoRun cyclic
     Assert.NotEmpty(result.Value.Cycles)
 
 // ---------------------------------------------------------------------------
@@ -216,7 +230,7 @@ let ``Tarjan: 2-cycle produces one SCC with both members`` () =
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
-    let result = TopologicalOrderPass.run cyclic
+    let result = topoRun cyclic
     Assert.Equal(1, result.Value.Cycles.Length)
     let scc = result.Value.Cycles |> List.head
     Assert.Equal<Set<SsKey>>(
@@ -229,7 +243,7 @@ let ``Tarjan: SCC members are sorted by SsKey within the diagnostic`` () =
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
-    let result = TopologicalOrderPass.run cyclic
+    let result = topoRun cyclic
     let scc = result.Value.Cycles |> List.head
     Assert.Equal<SsKey list>(scc.Members, List.sort scc.Members)
 
@@ -240,7 +254,7 @@ let ``Tarjan: Country (no cycle) is not in any SCC`` () =
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
-    let result = TopologicalOrderPass.run cyclic
+    let result = topoRun cyclic
     let allSccMembers =
         result.Value.Cycles
         |> List.collect (fun c -> c.Members)
@@ -253,8 +267,8 @@ let ``Tarjan: deterministic — same cyclic input produces same SCC list`` () =
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
-    let r1 = TopologicalOrderPass.run cyclic
-    let r2 = TopologicalOrderPass.run cyclic
+    let r1 = topoRun cyclic
+    let r2 = topoRun cyclic
     Assert.Equal<CycleDiagnostic list>(r1.Value.Cycles, r2.Value.Cycles)
 
 [<Fact>]
@@ -263,7 +277,7 @@ let ``Tarjan: BreakableEdges is empty in v2 (resolver pending v3)`` () =
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
-    let result = TopologicalOrderPass.run cyclic
+    let result = topoRun cyclic
     let scc = result.Value.Cycles |> List.head
     Assert.Empty(scc.BreakableEdges)
 
@@ -277,7 +291,7 @@ let ``Tarjan: SCC reason explains why the cycle stayed unresolved`` () =
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
-    let result = TopologicalOrderPass.run cyclic
+    let result = topoRun cyclic
     let scc = result.Value.Cycles |> List.head
     Assert.Contains("Weak edge", scc.Reason)
 
@@ -299,7 +313,7 @@ let ``v4 self-loop: kind referencing itself produces a 1-member SCC`` () =
     let selfCyclic =
         sampleCatalog
         |> addReference customerKey customerKey selfRefKey "self" customerNameKey
-    let result = TopologicalOrderPass.run selfCyclic
+    let result = topoRun selfCyclic
     Assert.NotEmpty(result.Value.Cycles)
     let scc =
         result.Value.Cycles
@@ -311,7 +325,7 @@ let ``v4 self-loop: non-self-loop 1-node SCCs are still NOT cycles (filter retai
     // Country is an isolated kind (no FKs); after Tarjan it would form a
     // singleton {Country} component but with no self-edge — the v4
     // filter keeps the pre-v4 behavior of dropping it.
-    let result = TopologicalOrderPass.run sampleCatalog
+    let result = topoRun sampleCatalog
     let allSccMembers =
         result.Value.Cycles
         |> List.collect (fun c -> c.Members)
@@ -343,7 +357,7 @@ let ``v4 self-loop: SkipSelfEdges policy still drops the self-edge before SCC`` 
 let ``contract: SCC enumeration is invariant under input permutation`` () =
     let withInverses =
         sampleCatalog
-        |> SymmetricClosure.run
+        |> scRun
         |> fun lineage -> lineage.Value
     let permuted =
         { Modules =
@@ -351,8 +365,8 @@ let ``contract: SCC enumeration is invariant under input permutation`` () =
              |> List.map (fun m -> { m with Kinds = List.rev m.Kinds })
              |> List.rev)
           Sequences = withInverses.Sequences }
-    let r1 = (TopologicalOrderPass.run withInverses).Value
-    let r2 = (TopologicalOrderPass.run permuted).Value
+    let r1 = (topoRun withInverses).Value
+    let r2 = (topoRun permuted).Value
     Assert.Equal<CycleDiagnostic list>(r1.Cycles, r2.Cycles)
 
 // ---------------------------------------------------------------------------
@@ -398,7 +412,7 @@ let ``Tarjan: two disjoint 2-cycles produce two SCCs`` () =
     let twoCycles : Catalog =
         { Modules = [
             { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c; d ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
-    let result = TopologicalOrderPass.run twoCycles
+    let result = topoRun twoCycles
     Assert.Equal(2, result.Value.Cycles.Length)
     // SCCs are sorted by smallest member; A-B comes before C-D.
     let firstScc  = result.Value.Cycles.[0]
@@ -488,7 +502,7 @@ let ``V1 contract: asymmetric-2-cycle auto-resolves via Weak edge`` () =
     let cyclic : Catalog =
         { Modules = [
             { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
-    let result = TopologicalOrderPass.run cyclic
+    let result = topoRun cyclic
     // Resolver succeeds — Mode is Topological, not Alphabetical.
     Assert.Equal(Topological, result.Value.Mode)
     // Parent precedes Audit (matching V1's expected order).
@@ -513,7 +527,7 @@ let ``resolver: 2-cycle with no Weak edges remains unresolved`` () =
     let cyclic : Catalog =
         { Modules = [
             { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
-    let result = TopologicalOrderPass.run cyclic
+    let result = topoRun cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
     Assert.Empty(diag.BreakableEdges)
@@ -528,7 +542,7 @@ let ``resolver: 2-cycle with two Weak edges remains unresolved`` () =
     let cyclic : Catalog =
         { Modules = [
             { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
-    let result = TopologicalOrderPass.run cyclic
+    let result = topoRun cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
     Assert.Empty(diag.BreakableEdges)
@@ -542,7 +556,7 @@ let ``resolver: 3-cycle remains unresolved (current resolver handles 2-cycles on
     let cyclic : Catalog =
         { Modules = [
             { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
-    let result = TopologicalOrderPass.run cyclic
+    let result = topoRun cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
     Assert.Equal(3, diag.Members.Length)
@@ -558,7 +572,7 @@ let ``resolver: Cascade edges are never broken`` () =
     let cyclic : Catalog =
         { Modules = [
             { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
-    let result = TopologicalOrderPass.run cyclic
+    let result = topoRun cyclic
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
     Assert.Empty(diag.BreakableEdges)
@@ -573,7 +587,7 @@ let ``resolver: resolved cycles still appear in Cycles for audit`` () =
     let cyclic : Catalog =
         { Modules = [
             { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
-    let result = TopologicalOrderPass.run cyclic
+    let result = topoRun cyclic
     Assert.Equal(Topological, result.Value.Mode)
     Assert.NotEmpty(result.Value.Cycles)
     let diag = result.Value.Cycles |> List.head
@@ -585,14 +599,14 @@ let ``resolver: resolved cycles still appear in Cycles for audit`` () =
 
 [<Fact>]
 let ``A25: emits one Touched event per kind scanned`` () =
-    let result = TopologicalOrderPass.run sampleCatalog
+    let result = topoRun sampleCatalog
     let touchedEvents = result.Trail |> List.filter (fun e -> e.TransformKind = Touched)
     let kindCount = (Catalog.allKinds sampleCatalog).Length
     Assert.Equal(kindCount, touchedEvents.Length)
 
 [<Fact>]
 let ``A23: events carry pass version and name`` () =
-    let result = TopologicalOrderPass.run sampleCatalog
+    let result = topoRun sampleCatalog
     Assert.All(result.Trail, fun e ->
         Assert.Equal(TopologicalOrderPass.version, e.PassVersion)
         Assert.Equal("topologicalOrder", e.PassName))
@@ -604,7 +618,7 @@ let ``A23: events carry pass version and name`` () =
 [<Fact>]
 let ``empty catalog produces empty TopologicalOrder`` () =
     let empty : Catalog = { Modules = []; Sequences = [] }
-    let result = TopologicalOrderPass.run empty
+    let result = topoRun empty
     Assert.Equal(Topological, result.Value.Mode)
     Assert.Empty(result.Value.Order)
     Assert.Empty(result.Value.Edges)
@@ -624,9 +638,9 @@ let ``empty catalog produces empty TopologicalOrder`` () =
 let ``post-symmetric-closure catalog is cyclic; emitters compose correctly`` () =
     let withInverses =
         sampleCatalog
-        |> SymmetricClosure.run
+        |> scRun
         |> fun lineage -> lineage.Value
-    let result = TopologicalOrderPass.run withInverses
+    let result = topoRun withInverses
     // Symmetric closure introduced an inverse on Customer → Order
     // alongside the original Order → Customer; the FK graph is now cyclic.
     Assert.Equal(Alphabetical, result.Value.Mode)

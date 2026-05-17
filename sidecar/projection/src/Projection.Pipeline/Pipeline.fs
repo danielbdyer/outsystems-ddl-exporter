@@ -340,7 +340,8 @@ module Compose =
     /// Apply config-driven catalog rewrites (today: table renames).
     /// Empty overrides short-circuit to the input catalog unchanged.
     /// Errors aggregate from boundary-mapping (`RenameBinding.fromConfig`)
-    /// and from pass-level validation (`TableRename.run`).
+    /// and from pass-level validation, surfaced through the registered
+    /// transform's Diagnostics layer per chapter A.4.7' slice η.
     let private applyRenames
         (cfg: Config.Config)
         (catalog: Projection.Core.Catalog)
@@ -351,8 +352,19 @@ module Compose =
             renames
             |> RenameBinding.fromConfig
             |> Result.bind (fun specs ->
-                Projection.Core.Passes.TableRename.run specs catalog)
-            |> Result.map (fun lineage -> lineage.Value)
+                let lineage = (Projection.Core.Passes.TableRename.registered specs).Run catalog
+                let diag = lineage.Value
+                let errors =
+                    diag.Entries
+                    |> List.filter (fun e -> e.Severity = Projection.Core.DiagnosticSeverity.Error)
+                if List.isEmpty errors then
+                    Result.success diag.Value
+                else
+                    errors
+                    |> List.map (fun e ->
+                        let metadata = e.Metadata |> Map.map (fun _ v -> Some v)
+                        ValidationError.createWithMetadata e.Code e.Message metadata)
+                    |> Error)
 
     /// Full end-to-end driven by a parsed `Config`. Reads `Model.Path`,
     /// applies config-driven catalog rewrites (rename), projects, writes

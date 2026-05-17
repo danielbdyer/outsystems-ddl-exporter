@@ -6,6 +6,30 @@ open Projection.Core.Passes
 open Projection.Adapters.Osm
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `SymmetricClosure.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<Catalog>>`. This per-file shim restores the
+// `Lineage<Catalog>` shape so existing assertions keep reading.
+let private scRun (c: Catalog) : Lineage<Catalog> =
+    SymmetricClosure.registered.Run c |> Lineage.map (fun d -> d.Value)
+
+// Chapter A.4.7' slice η — `NormalizeStaticPopulations.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<Catalog>>`. This per-file shim restores the
+// `Lineage<Catalog>` shape so existing assertions keep reading.
+let private nspRun (c: Catalog) : Lineage<Catalog> =
+    NormalizeStaticPopulations.registered.Run c |> Lineage.map (fun d -> d.Value)
+
+// Chapter A.4.7' slice η — per-pass `let run` is private; shims wrap
+// `.registered.Run` and unwrap the Diagnostics layer so existing
+// assertions on `lineage.Trail` and `lineage.Value` keep reading.
+let private nmRun (morphism: NamingMorphism.Morphism) (catalog: Catalog) : Lineage<Catalog> =
+    (NamingMorphism.registered morphism).Run catalog
+    |> Lineage.map (fun d -> d.Value)
+
+let private ciRun (c: Catalog) : Lineage<Catalog> =
+    CanonicalizeIdentity.registered.Run c |> Lineage.map (fun d -> d.Value)
+
 // ---------------------------------------------------------------------------
 // Chapter A.4.7 slice θ — bidirectional property tests.
 //
@@ -104,10 +128,10 @@ let ``L3-CC-Transform-Totality: skeleton-view passes emit zero OperatorIntent Li
     // misclassification leak (a pass marked DataIntent but emitting
     // OperatorIntent events) fails this assertion.
     let skeletonTrails =
-        [ CanonicalizeIdentity.run sampleCatalog
-          NamingMorphism.run appendUnderscoreV sampleCatalog
-          NormalizeStaticPopulations.run sampleCatalog
-          SymmetricClosure.run sampleCatalog ]
+        [ ciRun sampleCatalog
+          nmRun appendUnderscoreV sampleCatalog
+          nspRun sampleCatalog
+          scRun sampleCatalog ]
         |> List.collect (fun lineage -> lineage.Trail)
     Assert.NotEmpty skeletonTrails
     for event in skeletonTrails do

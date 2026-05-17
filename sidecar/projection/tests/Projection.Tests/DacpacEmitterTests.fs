@@ -9,6 +9,13 @@ open Projection.Core.Passes
 open Projection.Targets.SSDT
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `CanonicalizeIdentity.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<Catalog>>`. This per-file shim restores the
+// `Lineage<Catalog>` shape so existing assertions keep reading.
+let private ciRun (c: Catalog) : Lineage<Catalog> =
+    CanonicalizeIdentity.registered.Run c |> Lineage.map (fun d -> d.Value)
+
 // ---------------------------------------------------------------------------
 // Chapter 3.x slice α — dev-tooling DACPAC emission.
 //
@@ -26,7 +33,7 @@ open Projection.Tests.Fixtures
 // ---------------------------------------------------------------------------
 
 let private enrich (c: Catalog) : Catalog =
-    (CanonicalizeIdentity.run c).Value
+    (ciRun c).Value
 
 let private mustOkBytes (r: Result<byte[]>) : byte[] =
     match r with

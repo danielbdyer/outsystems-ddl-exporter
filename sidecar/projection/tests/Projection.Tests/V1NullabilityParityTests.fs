@@ -6,6 +6,13 @@ open Projection.Core
 open Projection.Core.Passes
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `NullabilityPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<NullabilityDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private nullRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<NullabilityDecisionSet>> =
+    (NullabilityPass.registered policy profile).Run catalog
+
 // ---------------------------------------------------------------------------
 // Full V1 parity test for NullabilityEvaluator's eight test scenarios
 // (tests/Osm.Validation.Tests/Policy/NullabilityEvaluatorTests.cs).
@@ -108,7 +115,7 @@ let ``V1 #1: mandatory column with nulls within budget tightens (LogicalMandator
     let catalog = buildCatalog true true
     let profile = buildProfile 100L 4L
     let cfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
-    let lineage = NullabilityPass.run catalog (policyWith cfg) profile
+    let lineage = nullRun catalog (policyWith cfg) profile
     let decision = decisionFor mandatoryAttributeKey lineage
     Assert.Equal(
         NullabilityOutcome.EnforceNotNull
@@ -131,7 +138,7 @@ let ``V1 #2: mandatory column with nulls beyond budget stays nullable when relax
     let catalog = buildCatalog true true
     let profile = buildProfile 100L 12L
     let cfg = NullabilityTighteningConfig.create 0.05m true [] |> Result.value
-    let lineage = NullabilityPass.run catalog (policyWith cfg) profile
+    let lineage = nullRun catalog (policyWith cfg) profile
     let decision = decisionFor mandatoryAttributeKey lineage
     Assert.Equal(
         NullabilityOutcome.KeepNullable
@@ -155,7 +162,7 @@ let ``V1 #3: mandatory column with nulls beyond budget + relaxation forbidden li
     let catalog = buildCatalog true true
     let profile = buildProfile 100L 12L
     let cfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
-    let lineage = NullabilityPass.run catalog (policyWith cfg) profile
+    let lineage = nullRun catalog (policyWith cfg) profile
     let decision = decisionFor mandatoryAttributeKey lineage
     Assert.Equal(
         NullabilityOutcome.RequireOperatorApproval
@@ -179,7 +186,7 @@ let ``V1 #4: relaxation allowed yields KeepNullable (same outcome as V1 #2 in V2
     let catalog = buildCatalog true true
     let profile = buildProfile 100L 12L
     let cfg = NullabilityTighteningConfig.create 0.05m true [] |> Result.value
-    let lineage = NullabilityPass.run catalog (policyWith cfg) profile
+    let lineage = nullRun catalog (policyWith cfg) profile
     let decision = decisionFor mandatoryAttributeKey lineage
     match decision.Outcome with
     | NullabilityOutcome.KeepNullable (RelaxedUnderEvidence _) -> ()
@@ -238,7 +245,7 @@ let ``V1 #6: Analyze creates remediation opportunity — Diagnostics stream emit
     let catalog = buildCatalog true true            // mandatory column
     let profile = buildProfile 100L 12L             // 12 nulls in 100 rows
     let cfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
-    let lineage = NullabilityPass.run catalog (policyWith cfg) profile
+    let lineage = nullRun catalog (policyWith cfg) profile
 
     // Decision side: mandatory column with nulls beyond budget +
     // relaxation forbidden ⇒ RequireOperatorApproval (V1 #3 already
@@ -271,7 +278,7 @@ let ``V1 #7: Analyze skips opportunity for intentional nullability — Diagnosti
     let catalog = buildCatalog true false           // non-mandatory column
     let profile = buildProfile 100L 0L              // zero nulls
     let cfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
-    let lineage = NullabilityPass.run catalog (policyWith cfg) profile
+    let lineage = nullRun catalog (policyWith cfg) profile
 
     let decision = decisionFor mandatoryAttributeKey lineage
     match decision.Outcome with
@@ -303,7 +310,7 @@ let ``V1 #8: an override produces KeepNullable(OperatorOverride) regardless of o
             0.0m false
             [ { AttributeKey = mandatoryAttributeKey; Action = OverrideAction.KeepNullable } ]
         |> Result.value
-    let lineage = NullabilityPass.run catalog (policyWith cfg) profile
+    let lineage = nullRun catalog (policyWith cfg) profile
     let decision = decisionFor mandatoryAttributeKey lineage
     Assert.Equal(NullabilityOutcome.KeepNullable OperatorOverride, decision.Outcome)
 
@@ -328,7 +335,7 @@ let ``V2 invariant (V1 implicit): PK + IsMandatory yields PrimaryKey, not Logica
                   NullCount            = 50L
                   NullCountProbeStatus = probe } ] }
     let cfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
-    let lineage = NullabilityPass.run catalog (policyWith cfg) profileWithIdNulls
+    let lineage = nullRun catalog (policyWith cfg) profileWithIdNulls
     let idDecision = decisionFor idAttributeKey lineage
     // PK takes precedence; profile evidence is not consulted for PK
     // attributes (signal hierarchy short-circuits at step 2).

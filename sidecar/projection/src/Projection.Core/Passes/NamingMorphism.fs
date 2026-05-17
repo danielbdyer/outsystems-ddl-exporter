@@ -96,7 +96,8 @@ module NamingMorphism =
     /// (no-op morphisms emit no events). Identity is preserved across
     /// the entire pass (A3, A4, A15) — `SsKey` fields are byte-
     /// identical between input and output.
-    let run (morphism: Morphism) (c: Catalog) : Lineage<Catalog> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `NamingMorphism.registered.Run`
+    let private run (morphism: Morphism) (c: Catalog) : Lineage<Catalog> =
         use _ = Bench.scope "passes.namingMorphism"
         let events = LineageBuffer.create ()
         let renamed =

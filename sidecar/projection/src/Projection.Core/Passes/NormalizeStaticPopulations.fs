@@ -74,7 +74,8 @@ module NormalizeStaticPopulations =
     /// Chapter-3.6 cross-cutting cleanup: delegates the
     /// catalog-traversal-with-event-collection pattern to the
     /// reified `CatalogTraversal.mapKinds` primitive.
-    let run (c: Catalog) : Lineage<Catalog> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `NormalizeStaticPopulations.registered.Run`
+    let private run (c: Catalog) : Lineage<Catalog> =
         use _ = Bench.scope "passes.normalizeStaticPopulations"
         c |> CatalogTraversal.mapKinds (fun events k ->
             if hasStaticModality k then

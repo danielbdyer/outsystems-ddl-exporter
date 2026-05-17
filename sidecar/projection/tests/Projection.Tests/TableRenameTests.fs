@@ -5,6 +5,28 @@ open Projection.Core
 open Projection.Core.Passes
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `TableRename.run` is private; the
+// canonical surface is `.registered.Run`. The original `run` returned
+// `Result<Lineage<Catalog>>` (validation can fail). This per-file shim
+// reconstructs that shape from the registry's
+// `Lineage<Diagnostics<Catalog>>` by promoting Error-severity entries
+// back to `Result.Error`.
+let private trRun (specs: TableRename.RenameSpec list) (c: Catalog) : Result<Lineage<Catalog>> =
+    let lineage = (TableRename.registered specs).Run c
+    let diag = lineage.Value
+    let errors =
+        diag.Entries
+        |> List.filter (fun e -> e.Severity = DiagnosticSeverity.Error)
+    if List.isEmpty errors then
+        Result.success (lineage |> Lineage.map (fun d -> d.Value))
+    else
+        errors
+        |> List.map (fun e ->
+            { Code = e.Code
+              Message = e.Message
+              Metadata = e.Metadata |> Map.map (fun _ v -> Some v) })
+        |> Error
+
 // -----------------------------------------------------------------------
 // Tests for `Projection.Core.Passes.TableRename` — the pre-emit
 // pass that rewrites `Kind.Physical` according to operator-supplied
@@ -49,7 +71,7 @@ let private findKindByKey (key: SsKey) (c: Catalog) : Kind =
 
 [<Fact>]
 let ``empty rename spec list: catalog unchanged, no lineage events`` () =
-    let result = TableRename.run [] sampleCatalog |> mustOk
+    let result = trRun [] sampleCatalog |> mustOk
     Assert.Same(sampleCatalog, result.Value)
     Assert.Empty(result.Trail)
 
@@ -64,7 +86,7 @@ let ``A1: rename preserves Kind.SsKey while rewriting Kind.Physical`` () =
     let specs : TableRename.RenameSpec list = [
         { Key = TableRename.Logical (mkName "Sales", mkName "Customer"); Target = target }
     ]
-    let result = TableRename.run specs sampleCatalog |> mustOk
+    let result = trRun specs sampleCatalog |> mustOk
     let renamedCustomer = findKindByKey customerKey result.Value
     Assert.Equal(originalCustomer.SsKey, renamedCustomer.SsKey)
     Assert.Equal(target, renamedCustomer.Physical)
@@ -77,7 +99,7 @@ let ``rename emits one PhysicallyRenamed event carrying typed before/after Table
     let specs : TableRename.RenameSpec list = [
         { Key = TableRename.Logical (mkName "Sales", mkName "Customer"); Target = target }
     ]
-    let result = TableRename.run specs sampleCatalog |> mustOk
+    let result = trRun specs sampleCatalog |> mustOk
     Assert.Equal(1, result.Trail.Length)
     let evt = List.head result.Trail
     Assert.Equal("tableRename", evt.PassName)
@@ -104,7 +126,7 @@ let ``no-op rename (target equals current physical) emits no lineage event`` () 
     let specs : TableRename.RenameSpec list = [
         { Key = TableRename.Logical (mkName "Sales", mkName "Customer"); Target = currentPhysical }
     ]
-    let result = TableRename.run specs sampleCatalog |> mustOk
+    let result = trRun specs sampleCatalog |> mustOk
     Assert.Empty(result.Trail)
     Assert.Equal(currentPhysical, (findKindByKey customerKey result.Value).Physical)
 
@@ -118,7 +140,7 @@ let ``references to renamed Kind continue to resolve via SsKey`` () =
         { Key = TableRename.Logical (mkName "Sales", mkName "Customer")
           Target = mkTableId "core" "CUSTOMER_NEW" }
     ]
-    let result = TableRename.run specs sampleCatalog |> mustOk
+    let result = trRun specs sampleCatalog |> mustOk
     let renamedOrder = findKindByKey orderKey result.Value
     let refToCustomer = renamedOrder.References |> List.head
     Assert.Equal(customerKey, refToCustomer.TargetKind)
@@ -134,7 +156,7 @@ let ``physical source form: schema.table resolves correctly`` () =
         { Key    = TableRename.Physical (mkTableId "dbo" "OSUSR_S1S_ORDER")
           Target = target }
     ]
-    let result = TableRename.run specs sampleCatalog |> mustOk
+    let result = trRun specs sampleCatalog |> mustOk
     let renamedOrder = findKindByKey orderKey result.Value
     Assert.Equal(target, renamedOrder.Physical)
 
@@ -146,7 +168,7 @@ let ``mixed logical and physical source forms each apply independently`` () =
         { Key    = TableRename.Logical (mkName "Sales", mkName "Customer"); Target = custTarget }
         { Key    = TableRename.Physical (mkTableId "dbo" "OSUSR_S1S_ORDER"); Target = orderTarget }
     ]
-    let result = TableRename.run specs sampleCatalog |> mustOk
+    let result = trRun specs sampleCatalog |> mustOk
     Assert.Equal(custTarget,  (findKindByKey customerKey result.Value).Physical)
     Assert.Equal(orderTarget, (findKindByKey orderKey    result.Value).Physical)
 
@@ -160,7 +182,7 @@ let ``source not found fails with structured error`` () =
         { Key    = TableRename.Logical (mkName "Sales", mkName "Phantom")
           Target = mkTableId "core" "ANY" }
     ]
-    let errors = TableRename.run specs sampleCatalog |> mustFail
+    let errors = trRun specs sampleCatalog |> mustFail
     Assert.True(hasCode "rename.sourceNotFound" errors)
 
 [<Fact>]
@@ -171,7 +193,7 @@ let ``two specs targeting the same kind fail with sourceDuplicate`` () =
         { Key    = TableRename.Physical (mkTableId "dbo" "OSUSR_S1S_CUSTOMER")
           Target = mkTableId "core" "CUSTOMER_B" }
     ]
-    let errors = TableRename.run specs sampleCatalog |> mustFail
+    let errors = trRun specs sampleCatalog |> mustFail
     Assert.True(hasCode "rename.sourceDuplicate" errors)
 
 [<Fact>]
@@ -181,7 +203,7 @@ let ``two specs mapping to the same target fail with targetCollision`` () =
         { Key = TableRename.Logical (mkName "Sales", mkName "Customer"); Target = shared }
         { Key = TableRename.Logical (mkName "Sales", mkName "Order");    Target = shared }
     ]
-    let errors = TableRename.run specs sampleCatalog |> mustFail
+    let errors = trRun specs sampleCatalog |> mustFail
     Assert.True(hasCode "rename.targetCollision" errors)
 
 // -----------------------------------------------------------------------
@@ -202,8 +224,8 @@ let ``D12: rename spec order does not affect the rewritten catalog`` () =
         { Key = TableRename.Logical (mkName "Sales", mkName "Order");    Target = orderTarget }
         { Key = TableRename.Logical (mkName "Sales", mkName "Customer"); Target = custTarget }
     ]
-    let resultA = TableRename.run specsA sampleCatalog |> mustOk
-    let resultB = TableRename.run specsB sampleCatalog |> mustOk
+    let resultA = trRun specsA sampleCatalog |> mustOk
+    let resultB = trRun specsB sampleCatalog |> mustOk
     Assert.Equal(resultA.Value, resultB.Value)
 
 // -----------------------------------------------------------------------

@@ -199,7 +199,8 @@ module NullabilityPass =
     /// what the pass produces. Same shape as `UniqueIndexPass.run`
     /// (session 14 commit 5); session 15 commit 2 applies the
     /// codification to its second pass.
-    let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<NullabilityDecisionSet>> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `NullabilityPass.registered.Run`
+    let private run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<NullabilityDecisionSet>> =
         use _ = Bench.scope "passes.nullability"
         let fanOutConfig : Composition.FanOutConfig<Kind * Attribute, _, _, _> = {
             InterventionFilter = TighteningPolicy.nullabilityInterventions

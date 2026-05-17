@@ -166,7 +166,8 @@ module SymmetricClosure =
     /// variant; the fold accumulator `(events: LineageEvent list,
     /// inversesByTarget: Map<SsKey, Reference list>)` carries the
     /// closure-construction state immutably.
-    let run (c: Catalog) : Lineage<Catalog> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `SymmetricClosure.registered.Run`
+    let private run (c: Catalog) : Lineage<Catalog> =
         use _ = Bench.scope "passes.symmetricClosure"
         let allKinds = Catalog.allKinds c
         let kindByKey =

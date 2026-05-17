@@ -476,7 +476,8 @@ module TopologicalOrderPass =
     /// policy. Returns a `Lineage<TopologicalOrder>`; the catalog
     /// itself is not modified. One `Touched` event per kind scanned
     /// (per A25). Equivalent to `runWith TreatAsCycle`.
-    let run (c: Catalog) : Lineage<TopologicalOrder> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `TopologicalOrderPass.registered.Run`
+    let private run (c: Catalog) : Lineage<TopologicalOrder> =
         use _ = Bench.scope "passes.topologicalOrder"
         runWith TreatAsCycle c
 

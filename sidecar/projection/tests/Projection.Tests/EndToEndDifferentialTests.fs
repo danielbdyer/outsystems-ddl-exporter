@@ -6,6 +6,13 @@ open Projection.Core.Passes
 open Projection.Adapters.Sql
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `NullabilityPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<NullabilityDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private nullRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<NullabilityDecisionSet>> =
+    (NullabilityPass.registered policy profile).Run catalog
+
 // ---------------------------------------------------------------------------
 // The session-6 milestone — end-to-end differential test.
 //
@@ -207,7 +214,7 @@ let ``MILESTONE: three-input projection passes end-to-end through both adapters 
                     [ Nullability ("v1-cautious-equivalent", interventionConfig) ] } }
 
     // 4. Run NullabilityPass — the three-input projection.
-    let lineage = NullabilityPass.run catalogWithPopulations policy profile
+    let lineage = nullRun catalogWithPopulations policy profile
 
     // 5. Assert: every catalog attribute received a decision.
     let totalAttributes =
@@ -304,7 +311,7 @@ let ``DIFFERENTIAL: V1 Cautious-mode equivalent produces same outcomes for V2-ex
                 { Interventions =
                     [ Nullability ("cautious-equivalent", interventionConfig) ] } }
 
-    let lineage = NullabilityPass.run catalogWithPopulations policy profile
+    let lineage = nullRun catalogWithPopulations policy profile
 
     // Every decision is one of the three V2-expressible cases —
     // EnforceNotNull(PrimaryKey), EnforceNotNull(PhysicallyNotNull), or
@@ -345,7 +352,7 @@ let ``T1 extended: end-to-end pipeline is deterministic on the triple`` () =
             { Policy.empty with
                 Tightening =
                     { Interventions = [ Nullability ("v1-cautious", cfg) ] } }
-        NullabilityPass.run cat policy profile
+        nullRun cat policy profile
 
     let r1 = runOnce ()
     let r2 = runOnce ()
@@ -367,6 +374,6 @@ let ``structural commitment end-to-end: rich Catalog + Profile + empty Tightenin
     let profile =
         ProfileSnapshot.attach cat (ProfileSnapshot.ProfileSnapshotJson profileMicroFkProtectJson)
         |> Result.value
-    let lineage = NullabilityPass.run cat Policy.empty profile
+    let lineage = nullRun cat Policy.empty profile
     Assert.Empty((LineageDiagnostics.payload lineage).Decisions)
     Assert.Empty(lineage.Trail)

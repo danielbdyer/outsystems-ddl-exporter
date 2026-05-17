@@ -7,6 +7,13 @@ open Projection.Targets.SSDT
 open Projection.Tests.Fixtures
 open Projection.Tests.IRBuilders
 
+// Chapter A.4.7' slice η — `CanonicalizeIdentity.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<Catalog>>`. This per-file shim restores the
+// `Lineage<Catalog>` shape so existing assertions keep reading.
+let private ciRun (c: Catalog) : Lineage<Catalog> =
+    CanonicalizeIdentity.registered.Run c |> Lineage.map (fun d -> d.Value)
+
 // ---------------------------------------------------------------------------
 // Chapter 4.1.A slice 8 — SSDT emission of `EXEC sys.sp_addextendedproperty`
 // calls consuming chapter A.0' slice α's `Description` fields (Kind +
@@ -28,7 +35,7 @@ open Projection.Tests.IRBuilders
 type private FsResult<'a, 'b> = Microsoft.FSharp.Core.Result<'a, 'b>
 
 let private enrich (c: Catalog) : Catalog =
-    (CanonicalizeIdentity.run c).Value
+    (ciRun c).Value
 
 let private mustOk (r: FsResult<'a, EmitError>) : 'a =
     match r with

@@ -244,7 +244,8 @@ module ForeignKeyPass =
     /// the type signature names what the pass produces. Same shape
     /// as `UniqueIndexPass.run` and `NullabilityPass.run`; this is
     /// the codification's third real test.
-    let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<ForeignKeyDecisionSet>> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `ForeignKeyPass.registered.Run`
+    let private run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<ForeignKeyDecisionSet>> =
         use _ = Bench.scope "passes.foreignKey"
         // ForeignKey's evaluate takes the catalog as an additional
         // input (cross-attribute reach for target-kind lookup, schema

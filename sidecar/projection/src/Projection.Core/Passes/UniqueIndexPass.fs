@@ -175,7 +175,8 @@ module UniqueIndexPass =
     /// names the production: this pass produces decisions plus
     /// observer-relevant diagnostics, and the type signature names
     /// what the pass produces.
-    let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<UniqueIndexDecisionSet>> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `UniqueIndexPass.registered.Run`
+    let private run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<UniqueIndexDecisionSet>> =
         use _ = Bench.scope "passes.uniqueIndex"
         let fanOutConfig : Composition.FanOutConfig<Kind * Index, _, _, _> = {
             InterventionFilter = TighteningPolicy.uniqueIndexInterventions

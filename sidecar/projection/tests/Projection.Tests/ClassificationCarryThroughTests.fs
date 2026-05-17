@@ -5,6 +5,49 @@ open Projection.Core
 open Projection.Core.Passes
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `TableRename.run` is private; the
+// canonical surface is `.registered.Run`. The original `run` returned
+// `Result<Lineage<Catalog>>` (validation can fail). This per-file shim
+// reconstructs that shape from the registry's
+// `Lineage<Diagnostics<Catalog>>` by promoting Error-severity entries
+// back to `Result.Error`.
+let private trRun (specs: TableRename.RenameSpec list) (c: Catalog) : Result<Lineage<Catalog>> =
+    let lineage = (TableRename.registered specs).Run c
+    let diag = lineage.Value
+    let errors =
+        diag.Entries
+        |> List.filter (fun e -> e.Severity = DiagnosticSeverity.Error)
+    if List.isEmpty errors then
+        Result.success (lineage |> Lineage.map (fun d -> d.Value))
+    else
+        errors
+        |> List.map (fun e ->
+            { Code = e.Code
+              Message = e.Message
+              Metadata = e.Metadata |> Map.map (fun _ v -> Some v) })
+        |> Error
+
+// Chapter A.4.7' slice η — `TopologicalOrderPass.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<TopologicalOrder>>`. This per-file shim restores the
+// `Lineage<TopologicalOrder>` shape so existing assertions keep reading.
+let private topoRun (c: Catalog) : Lineage<TopologicalOrder> =
+    TopologicalOrderPass.registered.Run c |> Lineage.map (fun d -> d.Value)
+
+// Chapter A.4.7' slice η — `SymmetricClosure.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<Catalog>>`. This per-file shim restores the
+// `Lineage<Catalog>` shape so existing assertions keep reading.
+let private scRun (c: Catalog) : Lineage<Catalog> =
+    SymmetricClosure.registered.Run c |> Lineage.map (fun d -> d.Value)
+
+// Chapter A.4.7' slice η — `NormalizeStaticPopulations.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<Catalog>>`. This per-file shim restores the
+// `Lineage<Catalog>` shape so existing assertions keep reading.
+let private nspRun (c: Catalog) : Lineage<Catalog> =
+    NormalizeStaticPopulations.registered.Run c |> Lineage.map (fun d -> d.Value)
+
 // Chapter A.4.7' slice η — per-pass `let run` is private; shims wrap
 // `.registered.Run` and unwrap the Diagnostics layer so existing
 // assertions on `lineage.Trail` and `lineage.Value` keep reading.
@@ -165,26 +208,26 @@ let ``A.4.7 slice α: NamingMorphism events carry DataIntent`` () =
     // would be untouched by an upper-case morphism).
     let appendUnderscoreV (n: Name) : Name =
         Name.create (System.String.Concat (Name.value n, "_v")) |> Result.value
-    let lineage = NamingMorphism.run appendUnderscoreV sampleCatalog
+    let lineage = nmRun appendUnderscoreV sampleCatalog
     assertAllClassifiedAs DataIntent lineage.Trail
 
 [<Fact>]
 let ``A.4.7 slice α: NormalizeStaticPopulations events carry DataIntent`` () =
-    let lineage = NormalizeStaticPopulations.run sampleCatalog
+    let lineage = nspRun sampleCatalog
     // The fixture has one Static kind (Country); the pass emits one
     // Touched event for it. Non-empty trail is the witness.
     assertAllClassifiedAs DataIntent lineage.Trail
 
 [<Fact>]
 let ``A.4.7 slice α: SymmetricClosure events carry DataIntent`` () =
-    let lineage = SymmetricClosure.run sampleCatalog
+    let lineage = scRun sampleCatalog
     // The fixture has one directional reference (Order → Customer);
     // the pass creates one inverse and emits one Created event.
     assertAllClassifiedAs DataIntent lineage.Trail
 
 [<Fact>]
 let ``A.4.7 slice α: TopologicalOrderPass events carry DataIntent`` () =
-    let lineage = TopologicalOrderPass.run sampleCatalog
+    let lineage = topoRun sampleCatalog
     // One Touched event per kind in the graph. The SelfLoopHandling
     // site (an OperatorIntent Ordering site per chapter A.4.7 open's
     // Q9-trigger-fires worked example) affects `buildGraph` but emits
@@ -212,9 +255,9 @@ let ``A.4.7 slice α: TableRename events carry OperatorIntent Emission`` () =
         { Key    = TableRename.Logical (mkName "Sales", mkName "Customer")
           Target = { Catalog = None; Schema = "renamed_schema"; Table = "renamed_table" } }
     ]
-    match TableRename.run specs sampleCatalog with
+    match trRun specs sampleCatalog with
     | Error es ->
         let codes = es |> List.map (fun e -> e.Code) |> String.concat ", "
-        Assert.Fail(sprintf "TableRename.run failed: %s" codes)
+        Assert.Fail(sprintf "trRun failed: %s" codes)
     | Ok lineage ->
         assertAllClassifiedAs (OperatorIntent Emission) lineage.Trail
