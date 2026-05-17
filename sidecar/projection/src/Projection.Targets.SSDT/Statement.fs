@@ -65,11 +65,29 @@ type PrimaryKeyDef =
 /// ([col1], [col2], ...)`. Composite indexes carry multiple columns;
 /// PK-marked indexes are skipped at the emitter (PK is inlined in
 /// CREATE TABLE per V1 convention).
+/// Per-column sort direction at the realization layer. Mirrors
+/// `IndexColumnDirection` from `Projection.Core.Catalog` — exists as a
+/// separate type because realization-layer types are name-shaped
+/// (string column name) rather than identity-shaped (SsKey).
+/// Chapter 4.9 slice γ.
+type IndexDefColumnDirection =
+    | Ascending
+    | Descending
+
+/// One key column within an `IndexDef.Columns` ordered list at the
+/// realization layer (column NAME, not SsKey). Chapter 4.9 slice γ —
+/// record-modification from the prior `string list` shape.
+type IndexDefColumn =
+    {
+        Name : string
+        Direction : IndexDefColumnDirection
+    }
+
 type IndexDef =
     {
         Name : string
         Table : TableId
-        Columns : string list
+        Columns : IndexDefColumn list
         IsUnique : bool
         /// Chapter 4.5 slice α — raw filter-definition string for
         /// filtered indexes. `None` for unfiltered (the V1 default).

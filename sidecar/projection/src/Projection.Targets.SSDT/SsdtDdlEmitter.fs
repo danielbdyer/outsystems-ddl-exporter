@@ -244,14 +244,24 @@ module SsdtDdlEmitter =
         |> List.filter (fun idx -> not idx.IsPrimaryKey)
         |> List.sortBy (fun idx -> idx.SsKey)
         |> List.map (fun idx ->
-            let columnNames = idx.Columns |> List.map (resolveColumnName k)
+            // Chapter 4.9 slice γ — Index.Columns now carries
+            // IndexColumn (SsKey + direction). Resolve to
+            // realization-layer IndexDefColumn (name + direction).
+            let keyColumns =
+                idx.Columns
+                |> List.map (fun c ->
+                    let direction =
+                        match c.Direction with
+                        | IndexColumnDirection.Descending -> IndexDefColumnDirection.Descending
+                        | IndexColumnDirection.Ascending  -> IndexDefColumnDirection.Ascending
+                    { Name = resolveColumnName k c.Attribute; Direction = direction })
             let includedColumnNames =
                 idx.IncludedColumns |> List.map (resolveColumnName k)
             let indexDef : IndexDef =
                 {
                     Name     = Name.value idx.Name
                     Table    = toTableId k
-                    Columns  = columnNames
+                    Columns  = keyColumns
                     IsUnique = idx.IsUnique
                     Filter   = idx.Filter
                     IncludedColumns = includedColumnNames

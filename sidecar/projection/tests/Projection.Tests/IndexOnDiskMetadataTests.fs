@@ -21,7 +21,7 @@ let private plainIdx : IndexDef =
     {
         Name = "IX_Plain"
         Table = mkTableId "dbo" "T"
-        Columns = [ "Id" ]
+        Columns = [ { Name = "Id"; Direction = IndexDefColumnDirection.Ascending } ]
         IsUnique = false
         Filter = None
         IncludedColumns = []

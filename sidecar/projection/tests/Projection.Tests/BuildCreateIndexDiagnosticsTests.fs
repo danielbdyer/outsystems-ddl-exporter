@@ -23,7 +23,7 @@ let private plainIdx : IndexDef =
     {
         Name = "IX_Plain"
         Table = mkTableId "dbo" "T"
-        Columns = [ "Id" ]
+        Columns = [ { Name = "Id"; Direction = IndexDefColumnDirection.Ascending } ]
         IsUnique = false
         Filter = None
         IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }

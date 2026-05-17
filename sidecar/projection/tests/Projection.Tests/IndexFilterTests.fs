@@ -31,7 +31,7 @@ let private mkIndex (label: string) (filter: string option) : Index =
     {
         SsKey              = mkKey (sprintf "Idx.%s" label)
         Name               = mkName (sprintf "IX_%s" label)
-        Columns            = [ mkAttrK ]
+        Columns            = [ { Attribute = mkAttrK; Direction = IndexColumnDirection.Ascending } ]
         IsUnique           = false
         IsPrimaryKey       = false
         ExtendedProperties = []
@@ -129,7 +129,7 @@ let ``Emission: buildCreateIndex emits WHERE clause when Filter is Some`` () =
         {
             Name = "IX_Active"
             Table = mkTableId "dbo" "T_Widget"
-            Columns = [ "Id" ]
+            Columns = [ { Name = "Id"; Direction = IndexDefColumnDirection.Ascending } ]
             IsUnique = false
             Filter = Some "[IsActive] = 1"
             IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
@@ -142,7 +142,7 @@ let ``Emission: buildCreateIndex omits WHERE clause when Filter is None`` () =
         {
             Name = "IX_Plain"
             Table = mkTableId "dbo" "T_Widget"
-            Columns = [ "Id" ]
+            Columns = [ { Name = "Id"; Direction = IndexDefColumnDirection.Ascending } ]
             IsUnique = false
             Filter = None
             IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
@@ -158,7 +158,7 @@ let ``Emission: buildCreateIndex silently skips Filter on parse failure`` () =
         {
             Name = "IX_BadFilter"
             Table = mkTableId "dbo" "T_Widget"
-            Columns = [ "Id" ]
+            Columns = [ { Name = "Id"; Direction = IndexDefColumnDirection.Ascending } ]
             IsUnique = false
             // Intentionally malformed SQL.
             Filter = Some "NOT A VALID FILTER ((("
@@ -172,7 +172,7 @@ let ``Emission: T1 determinism — same input yields same FilterPredicate shape`
         {
             Name = "IX_Det"
             Table = mkTableId "dbo" "T"
-            Columns = [ "Id" ]
+            Columns = [ { Name = "Id"; Direction = IndexDefColumnDirection.Ascending } ]
             IsUnique = true
             Filter = Some "[Status] = N'A'"
             IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
@@ -192,7 +192,7 @@ let ``E2E: rendered SQL contains WHERE clause when Filter is Some`` () =
         {
             Name = "IX_Active"
             Table = mkTableId "dbo" "T_Widget"
-            Columns = [ "Id" ]
+            Columns = [ { Name = "Id"; Direction = IndexDefColumnDirection.Ascending } ]
             IsUnique = false
             Filter = Some "[IsActive] = 1"
             IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }

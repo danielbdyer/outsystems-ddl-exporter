@@ -128,7 +128,7 @@ let ``Emission: buildCreateIndex emits INCLUDE columns when non-empty`` () =
         {
             Name = "IX_Cover"
             Table = mkTableId "dbo" "T"
-            Columns = [ "Id" ]
+            Columns = [ { Name = "Id"; Direction = IndexDefColumnDirection.Ascending } ]
             IsUnique = false
             Filter = None
             IncludedColumns = [ "Name"; "Status" ]; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
@@ -141,7 +141,7 @@ let ``Emission: buildCreateIndex omits INCLUDE when IncludedColumns is empty`` (
         {
             Name = "IX_Plain"
             Table = mkTableId "dbo" "T"
-            Columns = [ "Id" ]
+            Columns = [ { Name = "Id"; Direction = IndexDefColumnDirection.Ascending } ]
             IsUnique = false
             Filter = None
             IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
@@ -158,7 +158,7 @@ let ``E2E: rendered SQL contains INCLUDE clause when IncludedColumns is non-empt
         {
             Name = "IX_Cover"
             Table = mkTableId "dbo" "T_Widget"
-            Columns = [ "Id" ]
+            Columns = [ { Name = "Id"; Direction = IndexDefColumnDirection.Ascending } ]
             IsUnique = false
             Filter = None
             IncludedColumns = [ "Name" ]; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
@@ -172,7 +172,7 @@ let ``E2E: rendered SQL combines INCLUDE + WHERE when both are present`` () =
         {
             Name = "IX_FilteredCover"
             Table = mkTableId "dbo" "T_Widget"
-            Columns = [ "Id" ]
+            Columns = [ { Name = "Id"; Direction = IndexDefColumnDirection.Ascending } ]
             IsUnique = false
             Filter = Some "[IsActive] = 1"
             IncludedColumns = [ "Name" ]; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
@@ -192,7 +192,7 @@ let ``Chapter 4.5 slice β: HasIncludedIndexColumns returns true when any Index.
         {
             SsKey = mkKey (sprintf "Idx:%d" (List.length included))
             Name = mkName "IX"
-            Columns = [ mkKey "Attr.Id" ]
+            Columns = [ { Attribute = mkKey "Attr.Id"; Direction = IndexColumnDirection.Ascending } ]
             IsUnique = false
             IsPrimaryKey = false
             ExtendedProperties = []

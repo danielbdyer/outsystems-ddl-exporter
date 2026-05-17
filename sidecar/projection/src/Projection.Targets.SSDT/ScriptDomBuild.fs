@@ -728,13 +728,20 @@ module ScriptDomBuild =
         stmt.Unique <- idx.IsUnique
         stmt.Name <- bracketed idx.Name
         stmt.OnName <- schemaObjectFromTableId idx.Table
-        for colName in idx.Columns do
+        for keyCol in idx.Columns do
             let col = ColumnWithSortOrder()
             let colRef = ColumnReferenceExpression()
             let mid = MultiPartIdentifier()
-            mid.Identifiers.Add(bracketed colName)
+            mid.Identifiers.Add(bracketed keyCol.Name)
             colRef.MultiPartIdentifier <- mid
             col.Column <- colRef
+            // Chapter 4.9 slice γ — per-column sort direction. V1's
+            // IndexScriptBuilder convention sets SortOrder only on
+            // descending columns (ascending falls through as
+            // NotSpecified). Mirrors that here.
+            match keyCol.Direction with
+            | IndexDefColumnDirection.Descending -> col.SortOrder <- SortOrder.Descending
+            | IndexDefColumnDirection.Ascending  -> col.SortOrder <- SortOrder.NotSpecified
             stmt.Columns.Add(col)
         // Chapter 4.5 slice β — INCLUDE columns for covering indexes.
         for colName in idx.IncludedColumns do

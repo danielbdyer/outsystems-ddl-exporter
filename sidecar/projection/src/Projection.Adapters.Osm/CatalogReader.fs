@@ -912,28 +912,44 @@ module CatalogReader =
                         | _       -> 0
                     | _ -> 0
                 let attrNameResult = getString col "attribute"
-                ordinal, attrNameResult
+                ordinal, col, attrNameResult
             let isIncluded (col: JsonElement) : bool =
                 match col.TryGetProperty("isIncluded") with
                 | true, v when v.ValueKind = JsonValueKind.True -> true
                 | _ -> false
+            // Chapter 4.9 slice γ — parse per-column direction. V1's
+            // JSON property is `direction` ("ASC" / "DESC" /
+            // case-insensitive; absent / null / unknown → Ascending).
+            // V1's `IndexColumnDirection.Unspecified` collapses to
+            // Ascending under SQL Server semantics (the keyword is
+            // omitted in CREATE INDEX, matching ScriptDom's
+            // `SortOrder.NotSpecified`).
+            let parseDirection (col: JsonElement) : IndexColumnDirection =
+                match col.TryGetProperty("direction") with
+                | true, v when v.ValueKind = JsonValueKind.String ->
+                    match Option.ofObj (v.GetString()) with
+                    | Some raw when System.String.Equals(raw.Trim(), "DESC", System.StringComparison.OrdinalIgnoreCase) ->
+                        Descending
+                    | _ -> Ascending
+                | _ -> Ascending
             let keyColResults =
                 columnsList
                 |> List.filter (fun c -> not (isIncluded c))
                 |> List.map extractCol
-                |> List.sortBy fst
-                |> List.map snd
-                |> List.map (fun attrNameRes ->
+                |> List.sortBy (fun (o, _, _) -> o)
+                |> List.map (fun (_, col, attrNameRes) ->
                     match attrNameRes with
                     | Error es -> Error es
-                    | Ok an -> attributeSsKey moduleName entityName an)
+                    | Ok an ->
+                        match attributeSsKey moduleName entityName an with
+                        | Error es -> Error es
+                        | Ok key -> Result.success { Attribute = key; Direction = parseDirection col })
             let includedColResults =
                 columnsList
                 |> List.filter isIncluded
                 |> List.map extractCol
-                |> List.sortBy fst
-                |> List.map snd
-                |> List.map (fun attrNameRes ->
+                |> List.sortBy (fun (o, _, _) -> o)
+                |> List.map (fun (_, _, attrNameRes) ->
                     match attrNameRes with
                     | Error es -> Error es
                     | Ok an -> attributeSsKey moduleName entityName an)

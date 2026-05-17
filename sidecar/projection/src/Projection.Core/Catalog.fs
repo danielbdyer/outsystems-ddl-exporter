@@ -542,6 +542,28 @@ type Reference = {
 }
 
 
+/// Per-column sort direction within an `Index`. Chapter 4.9 slice γ
+/// — retires the third A.0'-deferred concept (`IndexColumnDirection`).
+/// SQL Server emits the keyword DESC after a column name when the
+/// direction is `Descending`; `Ascending` is the default and
+/// ScriptDom's `SortOrder.NotSpecified` carries it (matching V1's
+/// `IndexScriptBuilder` convention which sets `SortOrder` only on
+/// descending columns).
+type IndexColumnDirection =
+    | Ascending
+    | Descending
+
+/// One key column within an `Index.Columns` ordered list. Carries
+/// the participating `Attribute` SsKey + the per-column sort
+/// direction. Chapter 4.9 slice γ — record-modification of the prior
+/// `SsKey list` shape. Included columns (covering indexes) stay on
+/// `Index.IncludedColumns : SsKey list` — non-key columns carry no
+/// direction in SQL Server.
+type IndexColumn = {
+    Attribute : SsKey
+    Direction : IndexColumnDirection
+}
+
 /// A schema-level index on a kind. Carries identity, name, the
 /// participating attribute SsKeys (in declaration order; composite
 /// indexes have multiple), `IsUnique` (does the source treat this index
@@ -563,7 +585,11 @@ type Reference = {
 type Index = {
     SsKey        : SsKey
     Name         : Name
-    Columns      : SsKey list
+    /// Key columns in declaration order. Each entry carries the
+    /// attribute SsKey + per-column sort direction. Chapter 4.9
+    /// slice γ — record-modification from `SsKey list` to
+    /// `IndexColumn list`.
+    Columns      : IndexColumn list
     IsUnique     : bool
     IsPrimaryKey : bool
     /// SQL Server `sys.extended_properties` annotations attached to
@@ -912,13 +938,13 @@ module Catalog =
                 |> List.collect (fun idx ->
                     idx.Columns
                     |> List.choose (fun col ->
-                        if Set.contains col attrKeys then None
+                        if Set.contains col.Attribute attrKeys then None
                         else
                             Some (ValidationError.create
                                 "catalog.index.danglingColumn"
                                 (sprintf
                                     "Index %A on Kind %A references column SsKey %A absent from the kind's Attributes."
-                                    idx.SsKey k.SsKey col)))))
+                                    idx.SsKey k.SsKey col.Attribute)))))
 
         // Sequence SsKey disjointness (chapter A.0' slice δ). Sequences
         // are top-level Catalog objects; their SsKeys must be unique
