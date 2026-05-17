@@ -643,16 +643,78 @@ module ScriptDomBuild =
     /// implicit (ScriptDom emits NONCLUSTERED for non-PK indexes
     /// per SQL Server defaults).
     /// Parse a raw filter-definition string into a typed
-    /// `BooleanExpression`. Mirrors V1's
+    /// `BooleanExpression`, surfacing parse failures as Diagnostic
+    /// warnings via the V2 `Diagnostics<'a>` writer. Mirrors V1's
     /// `IndexScriptBuilder.ParsePredicate`
     /// (`src/Osm.Smo/PerTableEmission/IndexScriptBuilder.cs:403-419`)
-    /// shape, lifted to `TSql160Parser` for SQL Server 2022 compat
-    /// 160 alignment (V1 uses TSql150Parser; V2 targets 160 per
-    /// the supreme operating discipline pillar 4 + Sql160ScriptGenerator
-    /// precedent). Parse failures surface as `None` — chapter 4.5
-    /// open Q3: parse failures emit a Diagnostic warning + skip
-    /// the filter; the Diagnostic-emission pathway is deferred to a
-    /// later slice when actual parse failures surface.
+    /// shape, lifted to `TSql160Parser` (SQL Server 2022 compat 160
+    /// per supreme operating discipline pillar 4) + extended with
+    /// the V2 Diagnostics emission path codified at chapter 4.6
+    /// slice γ open Q3.
+    ///
+    /// **Diagnostic shape per chapter 4.6 open Q3:**
+    /// - Source = `"emitter:ssdt"`
+    /// - Code = `"emit.ssdt.index.filterParseFailure"`
+    /// - Severity = `Warning` (does not block emission)
+    /// - Message names the raw filter + parser error count
+    /// - Metadata carries `raw` (the original filter string) + `errorCount`
+    ///
+    /// **Returns `Diagnostics<BooleanExpression option>`** — Some on
+    /// successful parse (empty diagnostic entries); None with one
+    /// Warning entry per failure path. Consumers compose via
+    /// `Diagnostics.bind`.
+    let tryParseFilterWithDiagnostics (raw: string) : Diagnostics<BooleanExpression option> =
+        if System.String.IsNullOrWhiteSpace raw then
+            Diagnostics.ofValue None
+        else
+            let parser = TSql160Parser(initialQuotedIdentifiers = false)
+            use reader = new System.IO.StringReader(raw)
+            let fragment, errors = parser.ParseBooleanExpression(reader)
+            let errorCount = if isNull errors then 0 else errors.Count
+            match Option.ofObj fragment with
+            | None ->
+                let entry : DiagnosticEntry =
+                    { Source   = "emitter:ssdt"
+                      Severity = DiagnosticSeverity.Warning
+                      Code     = "emit.ssdt.index.filterParseFailure"
+                      Message  = sprintf "Index filter expression failed to parse; emit will omit WHERE clause (errors: %d)" errorCount
+                      SsKey    = None
+                      Metadata =
+                        Map.ofList
+                            [ "raw", raw
+                              "errorCount", string errorCount ] }
+                Diagnostics.ofValueWith entry None
+            | Some _ when errorCount > 0 ->
+                let entry : DiagnosticEntry =
+                    { Source   = "emitter:ssdt"
+                      Severity = DiagnosticSeverity.Warning
+                      Code     = "emit.ssdt.index.filterParseFailure"
+                      Message  = sprintf "Index filter parser reported errors; emit will omit WHERE clause (errors: %d)" errorCount
+                      SsKey    = None
+                      Metadata =
+                        Map.ofList
+                            [ "raw", raw
+                              "errorCount", string errorCount ] }
+                Diagnostics.ofValueWith entry None
+            | Some f ->
+                // Wrap in BooleanParenthesisExpression for output
+                // readability (V1 IndexScriptBuilder convention).
+                let wrapped =
+                    match f with
+                    | :? BooleanParenthesisExpression -> f
+                    | _ ->
+                        let parens = BooleanParenthesisExpression()
+                        parens.Expression <- f
+                        parens :> BooleanExpression
+                Diagnostics.ofValue (Some wrapped)
+
+    /// Silent-skip variant for the `buildCreateIndex` path (chapter
+    /// 4.5 slice α legacy shape). Returns just the parsed
+    /// `BooleanExpression option`; Diagnostic emission is dropped
+    /// at the buildCreateIndex layer until a `Diagnostics`-aware
+    /// emitter signature lands (chapter 4.6 slice γ open Q3
+    /// deferral). Future consumers wishing to surface parse failures
+    /// should call `tryParseFilterWithDiagnostics` directly.
     let private parseFilterPredicate (raw: string) : BooleanExpression option =
         if System.String.IsNullOrWhiteSpace raw then None
         else

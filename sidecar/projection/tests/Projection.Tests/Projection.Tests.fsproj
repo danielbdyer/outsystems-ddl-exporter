@@ -115,6 +115,7 @@
     <Compile Include="IndexFilterTests.fs" />
     <Compile Include="IndexIncludedColumnsTests.fs" />
     <Compile Include="ReferenceHasDbConstraintTests.fs" />
+    <Compile Include="FilterParseDiagnosticTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />
     <Compile Include="SiblingEmitterContractTests.fs" />
