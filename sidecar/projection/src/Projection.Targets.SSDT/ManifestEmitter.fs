@@ -35,6 +35,146 @@ open Projection.Core
 /// payload defers to its rightful chapter. Per pillar 1: the typed
 /// `Manifest` record IS the canonical form; the JSON text emerges
 /// only at the absolute terminal `Utf8JsonWriter` boundary.
+/// Slice α (chapter 4.4) — per-axis emit-vs-total breakdown.
+/// Mirrors V1's `Osm.Emission.CoverageBreakdown`
+/// (`SsdtManifest.cs:68-90`) including the percentage-rounding
+/// contract (`Math.Round(value, 2, MidpointRounding.AwayFromZero)`).
+///
+/// Pillar-9 classification: DataIntent. Reachable from `Catalog`
+/// alone without operator opinion; lands in the skeleton.
+///
+/// Pillar 8 four-question naming analysis. Concept-shaped: a
+/// `CoverageBreakdown` IS the axis's emit-vs-total summary, not
+/// a verb. Sibling vocabulary with V1's `CoverageBreakdown`.
+type CoverageBreakdown = {
+    /// Count of units the emitter emitted. Always ≤ `Total`
+    /// (smart-constructor invariant).
+    Emitted    : int
+    /// Count of units in the catalog. Always ≥ 0.
+    Total      : int
+    /// `Emitted` as a percentage of `Total`, rounded to 2 decimal
+    /// places (AwayFromZero, mirroring V1). Edge cases: `Total = 0`
+    /// → 100m (vacuous full coverage); `Emitted = 0` with
+    /// `Total > 0` → 0m.
+    Percentage : decimal
+}
+
+[<RequireQualifiedAccess>]
+module CoverageBreakdown =
+
+    let private emittedNegative =
+        ValidationError.create
+            "coverage.emittedNegative"
+            "Coverage Emitted count cannot be negative."
+    let private totalNegative =
+        ValidationError.create
+            "coverage.totalNegative"
+            "Coverage Total count cannot be negative."
+    let private emittedExceedsTotal =
+        ValidationError.create
+            "coverage.emittedExceedsTotal"
+            "Coverage Emitted count cannot exceed Total."
+
+    let private computePercentage (emitted: int) (total: int) : decimal =
+        if total <= 0 then 100m
+        elif emitted <= 0 then 0m
+        else
+            let value = (decimal emitted) / (decimal total) * 100m
+            System.Math.Round(value, 2, System.MidpointRounding.AwayFromZero)
+
+    /// Smart constructor (A39). Enforces non-negative counts +
+    /// `Emitted ≤ Total`. Percentage computed via V1's contract.
+    let create (emitted: int) (total: int) : Result<CoverageBreakdown> =
+        if emitted < 0 then Result.failureOf emittedNegative
+        elif total < 0 then Result.failureOf totalNegative
+        elif emitted > total then Result.failureOf emittedExceedsTotal
+        else
+            Result.success
+                { Emitted    = emitted
+                  Total      = total
+                  Percentage = computePercentage emitted total }
+
+
+/// Slice α (chapter 4.4) — per-axis coverage summary. Mirrors V1's
+/// `Osm.Emission.SsdtCoverageSummary` (`SsdtManifest.cs:54-66`).
+/// Three axes: Tables / Columns / Constraints. The constraint
+/// breakdown counts the union (PKs + non-PK unique indexes + FKs +
+/// CHECK constraints) of every structural constraint the emitter
+/// renders for a kind.
+type CoverageSummary = {
+    Tables      : CoverageBreakdown
+    Columns     : CoverageBreakdown
+    Constraints : CoverageBreakdown
+}
+
+[<RequireQualifiedAccess>]
+module CoverageSummary =
+
+    /// Build a summary where every axis reports `Emitted = Total`
+    /// (V2's emit-everything default; T11 keyset coverage holds
+    /// structurally). Mirrors V1's
+    /// `SsdtCoverageSummary.CreateComplete`.
+    let createComplete (tables: int) (columns: int) (constraints: int)
+        : Result<CoverageSummary> =
+        match CoverageBreakdown.create tables tables,
+              CoverageBreakdown.create columns columns,
+              CoverageBreakdown.create constraints constraints with
+        | Ok t, Ok c, Ok r ->
+            Result.success { Tables = t; Columns = c; Constraints = r }
+        | tablesR, columnsR, constraintsR ->
+            // Aggregate errors across all three axes for diagnostic
+            // completeness.
+            [tablesR; columnsR; constraintsR]
+            |> List.collect Result.errors
+            |> Result.failure
+
+
+/// Slice α (chapter 4.4) — `Catalog -> CoverageSummary` computation.
+/// V2 emits every kind from the catalog (T11 keyset coverage); the
+/// computation reduces to `CreateComplete` over per-axis catalog
+/// counts. A18 amended preserved: Catalog only.
+///
+/// Forward signal: if a future `EmissionPolicy.Selection` axis
+/// filters kinds, the emitted-vs-total split widens — `Coverage
+/// .compute` then takes the emit-set as a second argument.
+[<RequireQualifiedAccess>]
+module Coverage =
+
+    /// Count constraints attached to a kind for the manifest
+    /// coverage axis. PK counts as 1 if the kind has any PK
+    /// attributes (a kind has at most one primary key). Non-PK
+    /// unique indexes + FK references + CHECK constraints each
+    /// contribute their list length.
+    let private constraintsOf (k: Kind) : int =
+        let pkCount =
+            if k.Attributes |> List.exists (fun a -> a.IsPrimaryKey) then 1
+            else 0
+        let uniqueIndexCount =
+            k.Indexes
+            |> List.filter (fun i -> not i.IsPrimaryKey && i.IsUnique)
+            |> List.length
+        let fkCount = List.length k.References
+        let checkCount = List.length k.ColumnChecks
+        pkCount + uniqueIndexCount + fkCount + checkCount
+
+    /// Compute the coverage summary for a Catalog. Per A18 amended:
+    /// Catalog only; no Policy, no Profile. Per T1 byte-determinism:
+    /// pure function of the input; same input → same output.
+    let compute (catalog: Catalog) : CoverageSummary =
+        use _ = Bench.scope "emit.manifest.coverage"
+        let allKinds =
+            catalog.Modules |> List.collect (fun m -> m.Kinds)
+        let tableCount = List.length allKinds
+        let columnCount =
+            allKinds |> List.sumBy (fun k -> List.length k.Attributes)
+        let constraintCount =
+            allKinds |> List.sumBy constraintsOf
+        // Result.value safe here: counts are catalog-derived and
+        // therefore non-negative; emitted = total by construction.
+        CoverageSummary.createComplete tableCount columnCount constraintCount
+        |> Result.value
+
+
 [<RequireQualifiedAccess>]
 module ManifestEmitter =
 
@@ -91,6 +231,13 @@ module ManifestEmitter =
             /// (registry-digest round-trip) asserts both halves of the
             /// stability + perturbation contract.
             RegistryDigest : string
+            /// **Chapter 4.4 slice α** — per-axis emit-vs-total
+            /// summary (Tables / Columns / Constraints). Retires the
+            /// `chapter 4.4 fills` deferral for the Coverage axis.
+            /// V2 emits every kind in the catalog (T11 keyset
+            /// coverage); the value is `CreateComplete` over the
+            /// catalog's counts.
+            Coverage : CoverageSummary
         }
 
     /// Build the manifest from a Catalog + explicit registry-metadata
@@ -133,6 +280,7 @@ module ManifestEmitter =
             Tables = entries
             EmitterVersion = version
             RegistryDigest = TransformRegistry.digest registry
+            Coverage = Coverage.compute catalog
         }
 
     /// Build with the canonical production registry
@@ -173,11 +321,24 @@ module ManifestEmitter =
             entryObj.Add("foreignKeyCount", requireValue "foreignKeyCount" (JsonValue.Create(entry.ForeignKeyCount)))
             tablesArr.Add(entryObj)
         doc.Add("tables", tablesArr)
-        // Chapter 4.4 territory — null until the operational diagnostics
-        // chapter ships. Per V2-driver KPI smart-product-choices: emit
-        // the field shape so the V1-compatible schema is preserved; the
-        // semantic payload defers to its rightful chapter.
-        doc.Add("coverage", null)
+        // Chapter 4.4 slice α — per-axis Coverage breakdown.
+        // Retires the prior `null` default for this field. Mirrors V1's
+        // `SsdtCoverageSummary` shape (Tables / Columns / Constraints
+        // each with Emitted / Total / Percentage).
+        let buildBreakdown (b: CoverageBreakdown) : JsonNode =
+            let obj = JsonObject()
+            obj.Add("emitted", requireValue "emitted" (JsonValue.Create(b.Emitted)))
+            obj.Add("total", requireValue "total" (JsonValue.Create(b.Total)))
+            obj.Add("percentage", requireValue "percentage" (JsonValue.Create(b.Percentage)))
+            obj :> JsonNode
+        let coverageObj = JsonObject()
+        coverageObj.Add("tables", buildBreakdown manifest.Coverage.Tables)
+        coverageObj.Add("columns", buildBreakdown manifest.Coverage.Columns)
+        coverageObj.Add("constraints", buildBreakdown manifest.Coverage.Constraints)
+        doc.Add("coverage", coverageObj :> JsonNode)
+        // Chapter 4.4 slice β/γ territory — null/empty pending slices.
+        // PreRemediation stays empty-array per V2_DRIVER §154
+        // (RemediationEmitter deferred to chapter 5+).
         doc.Add("predicateCoverage", null)
         doc.Add("preRemediation", JsonArray() :> JsonNode)
         doc.Add("unsupported", JsonArray() :> JsonNode)
