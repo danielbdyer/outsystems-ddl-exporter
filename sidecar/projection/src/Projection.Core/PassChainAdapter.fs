@@ -45,3 +45,24 @@ module PassChainAdapter =
                 rt.Run state.Catalog
                 |> LineageDiagnostics.map (fun decision ->
                     writeBack decision state) }
+
+    /// Chapter A.4.7' slice γ — fold a `PassChainAdapter list` into
+    /// one composed Apply step. Each adapter's Apply is threaded
+    /// through `LineageDiagnostics.bind`; both writers compose
+    /// chronologically (A24: earliest-first; the Diagnostics-trail
+    /// sibling follows the same convention).
+    ///
+    /// Slice δ consumes `compose RegisteredTransforms.allChainSteps`
+    /// inside `Compose.project`; slice ε consumes
+    /// `compose skeletonChainSteps` inside `Compose.runWithSkeleton`.
+    /// The same primitive serves both consumers — heterogeneous
+    /// `'Out` is already erased at lift time, so the fold is well-
+    /// typed over the homogeneous adapter shape.
+    let compose
+        (adapters: PassChainAdapter list)
+        (state: ComposeState)
+        : Lineage<Diagnostics<ComposeState>> =
+        adapters
+        |> List.fold
+            (fun acc adapter -> LineageDiagnostics.bind adapter.Apply acc)
+            (LineageDiagnostics.ofValue state)
