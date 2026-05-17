@@ -214,8 +214,8 @@ let ``compose AllRemaining: Migration rows surface alongside Static (when popula
     let context =
         { Rows = [ mkMigrationRow country.SsKey "1" "US" "United States" ] }
     let artifact =
-        DataEmissionComposer.composeWithMigration
-            (policyWith AllRemaining) catalog Profile.empty context
+        DataEmissionComposer.composeFull
+            (policyWith AllRemaining) catalog Profile.empty context UserRemapContext.empty
         |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     // Country has no Static modality, so under AllRemaining the
@@ -229,8 +229,8 @@ let ``compose AllExceptStatic: Migration rows surface (Static is skipped, Migrat
     let context =
         { Rows = [ mkMigrationRow country.SsKey "1" "US" "United States" ] }
     let artifact =
-        DataEmissionComposer.composeWithMigration
-            (policyWith AllExceptStatic) catalog Profile.empty context
+        DataEmissionComposer.composeFull
+            (policyWith AllExceptStatic) catalog Profile.empty context UserRemapContext.empty
         |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     Assert.Equal (1, List.length script.Phase1Merges)
@@ -242,8 +242,8 @@ let ``compose AllData: Migration is skipped (only Static fires)`` () =
     let context =
         { Rows = [ mkMigrationRow country.SsKey "1" "US" "United States" ] }
     let artifact =
-        DataEmissionComposer.composeWithMigration
-            (policyWith AllData) catalog Profile.empty context
+        DataEmissionComposer.composeFull
+            (policyWith AllData) catalog Profile.empty context UserRemapContext.empty
         |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     // Country has no Static modality; AllData skips Migration; Bootstrap

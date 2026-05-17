@@ -430,16 +430,9 @@ module MigrationDependenciesEmitter =
         let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
         emitWithTopo topo catalog profile context UserRemapContext.empty
 
-    /// Π_MigrationDependencies emit with explicit UserRemapContext.
-    /// The slice η pipeline-integration entry point — callers that
-    /// have run `UserFkReflowPass.discover` supply the resulting
-    /// `UserRemapContext` to drive User-FK column rewriting.
-    let emitWithUserRemap
-        (catalog: Catalog)
-        (profile: Profile)
-        (context: MigrationDependencyContext)
-        (userRemap: UserRemapContext)
-        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        use _ = Bench.scope "emit.migrationDeps.emitWithUserRemap"
-        let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
-        emitWithTopo topo catalog profile context userRemap
+    // Chapter 4.7 cleanup: `emitWithUserRemap` retired as
+    // overdifferentiated middle-tier. Callers run
+    // `TopologicalOrderPass.runWith TreatAsCycle` explicitly and use
+    // `emitWithTopo` directly (which takes the precomputed topo +
+    // both contexts). The composer (`DataEmissionComposer.composeFull`)
+    // is the canonical pipeline entry point; hoists the topo once.

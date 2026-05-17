@@ -289,8 +289,8 @@ let ``Slice θ: partition fails (OverlappingEmitterCoverage) when a kind is popu
                 Identifier = mkKey ["TestModule"; "Country"; "Mig"; "Other"]
                 Values = Map.ofList [ mkName "Id", "9"; mkName "Code", "ZZ"; mkName "Label", "Other" ] } ] }
     let result =
-        DataEmissionComposer.composeWithMigration
-            (policyWith AllRemaining) catalog Profile.empty migration
+        DataEmissionComposer.composeFull
+            (policyWith AllRemaining) catalog Profile.empty migration UserRemapContext.empty
     match result with
     | Ok _ -> Assert.Fail "expected OverlappingEmitterCoverage error, got Ok"
     | Error (OverlappingEmitterCoverage (k, names)) ->
@@ -310,8 +310,8 @@ let ``Slice θ: partition holds under AllExceptStatic (Static skipped, Migration
                 Values = Map.ofList [ mkName "Id", "1"; mkName "Code", "US"; mkName "Label", "United States" ] } ] }
     // AllExceptStatic skips Static, so Migration alone owns the kind.
     let result =
-        DataEmissionComposer.composeWithMigration
-            (policyWith AllExceptStatic) catalog Profile.empty migration
+        DataEmissionComposer.composeFull
+            (policyWith AllExceptStatic) catalog Profile.empty migration UserRemapContext.empty
     match result with
     | Ok artifact ->
         let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
