@@ -86,3 +86,32 @@ module RegisteredTransforms =
           PassChainAdapter.liftDecisionPass
             (UserFkReflowPass.registered Policy.empty Profile.empty)
             ComposeState.withUserRemap ]
+
+    /// Chapter A.4.7' slice ε — `allChainSteps` filtered to entries
+    /// whose corresponding metadata is in `TransformRegistry.skeletonView`
+    /// (every Site classifies as `DataIntent`). Consumed by
+    /// `Compose.runSkeleton` (Pipeline.fs) to produce the baseline
+    /// reachable from `Project(catalog, Policy.empty, profile)`
+    /// without operator opinion.
+    ///
+    /// Join key is Name: each `PassChainAdapter.Name` mirrors the
+    /// wrapped `RegisteredTransform.Name`. The filter excludes passes
+    /// whose Sites contain at least one `OperatorIntent _` —
+    /// `TopologicalOrderPass` (selfLoopHandling = OperatorIntent
+    /// Ordering); the four Tightening-axis decision-set passes
+    /// (NullabilityPass / UniqueIndexPass / ForeignKeyPass /
+    /// CategoricalUniquenessPass — each Sites carries an
+    /// OperatorIntent Tightening); `VisibilityMask` (hideOrigin /
+    /// hideKeys / hideModality = OperatorIntent Selection);
+    /// `NamingMorphism` (presentation-name rewrite = OperatorIntent
+    /// Emission); `TableRename` (physical-name rewrite =
+    /// OperatorIntent Emission); `UserFkReflowPass` (UserRemap =
+    /// OperatorIntent Insertion).
+    let skeletonChainSteps : PassChainAdapter list =
+        let skeletonPassNames =
+            TransformRegistry.skeletonView all
+            |> List.filter (fun rt -> rt.StageBinding = Pass)
+            |> List.map (fun rt -> rt.Name)
+            |> Set.ofList
+        allChainSteps
+        |> List.filter (fun adapter -> Set.contains adapter.Name skeletonPassNames)

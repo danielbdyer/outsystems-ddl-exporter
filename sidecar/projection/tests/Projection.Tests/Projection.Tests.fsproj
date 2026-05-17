@@ -87,6 +87,7 @@
     <Compile Include="ComposeChainAdapterTests.fs" />
     <Compile Include="RegisteredTransformsTests.fs" />
     <Compile Include="PassChainAdapterComposeTests.fs" />
+    <Compile Include="SkeletonPurityTests.fs" />
     <Compile Include="SsdtExtendedPropertyEmissionTests.fs" />
     <Compile Include="NullabilityRulesTests.fs" />
     <Compile Include="NullabilityPassTests.fs" />

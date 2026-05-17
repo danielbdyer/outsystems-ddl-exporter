@@ -141,6 +141,22 @@ module Compose =
             Distributions = distributions
         }
 
+    /// Chapter A.4.7' slice ε — registry-driven traversal restricted
+    /// to the skeleton view (every Site classifies as `DataIntent`).
+    /// Returns the `Lineage<Diagnostics<ComposeState>>` from running
+    /// `RegisteredTransforms.skeletonChainSteps`; consumers inspect
+    /// the trail to assert skeleton-purity, or project to the final
+    /// Catalog for skeleton-only emit (slice ζ CLI).
+    ///
+    /// The skeleton-purity property test (`runSkeleton` emits zero
+    /// `OperatorIntent` LineageEvents) promotes from filter-shape
+    /// only (chapter A.4.7 slice θ) to true-execution at this slice.
+    let runSkeleton (catalog: Catalog) : Lineage<Diagnostics<ComposeState>> =
+        use _ = Bench.scope "compose.runSkeleton"
+        PassChainAdapter.compose
+            RegisteredTransforms.skeletonChainSteps
+            (ComposeState.initial catalog)
+
     /// Read a V1 `osm_model.json` from disk and parse it into a V2
     /// Catalog. Errors are surfaced via the codebase's single-arity
     /// `Result<'a>` (see `Result.fs` arity-coexistence note).
