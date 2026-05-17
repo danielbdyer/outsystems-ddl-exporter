@@ -1293,28 +1293,157 @@ principle.
   structural-collapse refactor stays deferred-with-trigger
   (consumer pressure when call-sites consult both vocabularies).
 
-## A41 amendment (execution totality) — TBD chapter A.4.7' close
+## A41 amendment (execution totality) — chapter A.4.7' close (2026-05-17)
 
-**Scheduled at chapter A.4.7' open** (`CHAPTER_A_4_7_PRIME_OPEN.md`
-axis 8; placeholder per the scaffolding discipline). Chapter A.4.7'
-extends A41 from metadata totality (registry enumeration) to
-metadata + execution totality (registry-driven traversal):
-`Compose.run` folds `TransformRegistry.allChainSteps` as its
-execution loop; bypassing the registry is structurally impossible
-because the hand-coded pass sequence retires. Body to be filled at
-chapter A.4.7' close (slice θ) per the S0.F scaffolding discipline
-(`DECISIONS 2026-05-22 — Stage 0 foundation phase`).
+**Cashed at chapter A.4.7' close** (per `CHAPTER_A_4_7_PRIME_CLOSE.md`
+ritual step 6). Amends A41 from metadata totality (registry
+enumeration; chapter A.4.7 close) to metadata + execution totality
+(registry-driven traversal). Underwrites
+`PRODUCT_AXIOMS.md` L3-CC-Transform-Totality (Bucket A; underwriting
+tightens from metadata-shape to metadata + execution fidelity).
 
-The amendment is expected to add (a) the `PassChainAdapter` type-
-erasure boundary as the load-bearing execution surface; (b) the
-skeleton-purity property test promoted from filter-shape (chapter
-A.4.7 slice θ) to true-execution (chapter A.4.7' slice ε); (c) the
-manifest digest round-trip as the fifth bidirectional property
-test (slice ζ); (d) cash-out of slice γ.2 (private `let run` +
-~328 call-site migration) closing the parallel-exposure transition
-affordance. L3-CC-Transform-Totality stays Bucket A; the
-underwriting tightens from metadata totality to metadata +
-execution totality.
+**A41 amended.** Every transformation site in V2 is enumerated as
+a `RegisteredTransform<'In, 'Out>` value (per A41 original) AND
+the registered chain steps are folded by the production composer
+(`Projection.Pipeline.Compose.project`) as the canonical execution
+loop. Bypassing the registry is structurally impossible because
+the hand-coded pass sequence has retired:
+
+```fsharp
+// Pipeline.fs — load-bearing
+let project (catalog: Catalog) : Outputs =
+    projectFromChain RegisteredTransforms.allChainSteps catalog
+```
+
+where `projectFromChain` is the registry-driven traversal kernel,
+shipping:
+
+```fsharp
+type PassChainAdapter = {
+    Name : string
+    Apply : ComposeState -> Lineage<Diagnostics<ComposeState>>
+}
+
+module PassChainAdapter =
+    val liftCatalogPass : RegisteredTransform<Catalog, Catalog> -> PassChainAdapter
+    val liftDecisionPass :
+        RegisteredTransform<Catalog, 'Decision>
+        -> ('Decision -> ComposeState -> ComposeState)
+        -> PassChainAdapter
+    val compose : PassChainAdapter list -> ComposeState -> Lineage<Diagnostics<ComposeState>>
+
+module RegisteredTransforms =
+    val all : RegisteredTransformMetadata list      // 17 Core-resident
+    val allChainSteps : PassChainAdapter list       // 12 production passes
+    val skeletonChainSteps : PassChainAdapter list  //  4 pure-DataIntent
+```
+
+**`ComposeState` aggregate solves heterogeneous output types.** The
+chapter-A.4.7-close-named blocker — 12 passes split 6-and-6 across
+`Lineage<Catalog>`-returning (chainable) vs `Lineage<'DecisionSet>`-
+returning — resolves via a unified `ComposeState` record carrying
+the Catalog under transformation + `Option<'DecisionSet>` fields
+for every decision-set producer (TopologicalOrder /
+NullabilityDecisionSet / UniqueIndexDecisionSet /
+ForeignKeyDecisionSet / CategoricalUniquenessDecisionSet /
+UserRemapContext). Type erasure happens at the adapter boundary
+(`liftCatalogPass` / `liftDecisionPass`), not in
+`RegisteredTransform<'In, 'Out>` itself; the typed `Run` field
+stays intact on each pass module's `.registered` export.
+
+**Bidirectional contract extends to runtime.** The five
+bidirectional property tests now hold at runtime:
+
+1. **Skeleton-purity at filter-shape** (chapter A.4.7 slice θ):
+   every Site in `TransformRegistry.skeletonView all` carries
+   `Classification = DataIntent`. Preserved.
+
+2. **Skeleton-purity at true-execution** (chapter A.4.7' slice ε,
+   NEW): `Compose.runSkeleton` against a representative Catalog
+   emits zero `LineageEvent` with `Classification = OperatorIntent _`.
+   Promotion from filter-shape to runtime structural enforcement.
+
+3. **Overlay-exercise** (chapter A.4.7 slice θ): every `OverlayAxis`
+   reachable from `OperatorIntent _` in `RegisteredTransforms.all`
+   fires in at least one canary scenario. Preserved.
+
+4. **Totality coverage** (chapter A.4.7 slice θ): every
+   transformation site in `src/Projection.Core/Passes/*.fs` +
+   `src/Projection.Adapters.Osm/CatalogReader.fs` +
+   `src/Projection.Core/Strategies/*.fs` has a registry entry.
+   Preserved.
+
+5. **Registry-digest round-trip** (chapter A.4.7' slice ζ, NEW):
+   `TransformRegistry.digest RegisteredTransforms.all` is stable
+   across emits; perturbing a single Sites.Rationale changes the
+   digest; the manifest carries `registry.digest` for downstream
+   audit. Reproducibility + sensitivity halves of the round-trip
+   contract.
+
+**Canonical-surface-only discipline.** Chapter A.4.7' slice η
+retires each pass module's parallel-exposure transition affordance:
+`let run` is now `let private run` in all 12 pass modules; the
+public callable is exclusively `.registered.Run`. ~308 call-site
+migration completed via per-test-file shape-restoring shims
+(test-private; not a module surface) + sed-based bulk substitution.
+Production sites (Pipeline.fs:applyRenames) migrated directly with
+the new Diagnostics-Errors-to-ValidationError boundary projection.
+
+**Implications.**
+
+- **L3-CC-Transform-Totality underwriting tightens** from metadata
+  totality to metadata + execution totality. Bucket A holds with
+  stronger structural backing: every pass observable in
+  `RegisteredTransforms.all` actually fires through
+  `Compose.project`'s fold; a pass that bypasses the registry
+  bypasses the production emit path entirely.
+
+- **A18 ↔ A41 sibling commitment, extended.** A18 amended forbids
+  `Policy` in emitters (Π-side commitment). A41 (original)
+  enumerated operator-intent sites at metadata. A41 (amended) makes
+  the enumeration *executable*: the same registry value that
+  enumerates the surface is the same value the composer folds.
+  Bypassing the type-witnessed surface requires bypassing the
+  composer itself.
+
+- **Pillar 9 structural pair, extended.** Pillar 9's
+  meta-discipline ("classify every transformation site at harvest
+  time") is now paired with both metadata totality (A41 original)
+  and execution totality (A41 amended). Misclassification leaks
+  surface bidirectionally — through the metadata enumeration AND
+  through the runtime trail emitted by the fold.
+
+- **`osm emit --skeleton-only` CLI surface.** The
+  skeleton-friendly baseline is reachable as an operator-facing
+  toggle (`runEmitSkeletonOnly` in `Projection.Cli/Program.fs`);
+  binary toggle per the consumer-pressure principle (per-OverlayAxis
+  flags remain deferred-with-trigger).
+
+**Carbon-copy events.** Zero across the chapter. The registry
+fold + skeleton view + digest are V2-native primitives with no
+V1 precedent; `BACKLOG.md`'s V1 inheritance log remains empty for
+this chapter. The chapter shipped 8 substantive slices (α / β / γ /
+δ / ε / ζ / η.1 partial / η complete) plus the close commit.
+
+**Worked example: `Compose.runSkeleton` true-execution.** Per
+chapter A.4.7' slice ε:
+
+```fsharp
+let runSkeleton (catalog: Catalog) : Lineage<Diagnostics<ComposeState>> =
+    use _ = Bench.scope "compose.runSkeleton"
+    PassChainAdapter.compose
+        RegisteredTransforms.skeletonChainSteps
+        (ComposeState.initial catalog)
+```
+
+`skeletonChainSteps` is derived by joining `allChainSteps` against
+`TransformRegistry.skeletonView all` on Name; resolves to four
+entries (CanonicalizeIdentity, NamingMorphism,
+NormalizeStaticPopulations, SymmetricClosure — the four passes
+whose every Site carries `Classification = DataIntent`). The
+property test (`SkeletonPurityTests.fs`) asserts the trail emitted
+by this fold carries zero `OperatorIntent _` events on a
+representative Catalog.
 
 ## A32 cash-out — chapter 4.2 close (2026-05-11)
 
