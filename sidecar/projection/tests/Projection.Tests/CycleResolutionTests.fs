@@ -23,13 +23,7 @@ let private mkRef (sourceAttrKey: string) (action: ReferenceAction) : Reference 
     { IRBuilders.mkReference (refKey ["x"]) (Name.create "x" |> Result.value) (testKey sourceAttrKey) (kindKey ["target"]) with OnDelete = action }
 
 let private kindWith (a: Attribute) : Kind =
-    { SsKey      = kindKey ["owner"]
-      Name       = Name.create "owner" |> Result.value
-      Origin     = OsNative
-      Modality   = []
-      Physical   = { Schema = "dbo"; Table = "owner"; Catalog = None }
-      Attributes = [ a ]
-      References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+    IRBuilders.mkKind (kindKey ["owner"]) (Name.create "owner" |> Result.value) { Schema = "dbo"; Table = "owner"; Catalog = None } [ a ]
 
 [<Fact>]
 let ``classify: nullable + NoAction = Weak`` () =

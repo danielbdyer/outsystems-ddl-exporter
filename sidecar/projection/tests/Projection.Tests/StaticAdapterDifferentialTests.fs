@@ -73,10 +73,7 @@ let private cityKind : Kind =
       References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private cityCatalog : Catalog =
-    { Modules = [
-        { SsKey = modKey "Cities"
-          Name  = mkName "Cities"
-          Kinds = [ cityKind ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
+    IRBuilders.mkCatalog [ IRBuilders.mkModule (modKey "Cities") (mkName "Cities") [ cityKind ] ]
 
 let private extractCityRows (c: Catalog) : StaticRow list =
     Catalog.tryFindKind cityKey c

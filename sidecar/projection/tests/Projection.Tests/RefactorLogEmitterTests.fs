@@ -41,7 +41,7 @@ let private renamedSalesModule : Module =
     { salesModule with Kinds = [ renamedCustomerKind; order; country ] }
 
 let private targetCatalog : Catalog =
-    { Modules = [ renamedSalesModule ]; Sequences = [] }
+    IRBuilders.mkCatalog [ renamedSalesModule ]
 
 // ---------------------------------------------------------------------------
 // Slice θ acceptance — RefactorLogEmitter realizes EmitterOverDiff

@@ -87,10 +87,8 @@ let private mkOrderKind () : Kind =
 
 let private mkCatalog (kinds: Kind list) : Catalog =
     let m : Module =
-        { SsKey = mkKey ["TestModule"]
-          Name  = mkName "TestModule"
-          Kinds = kinds; IsActive = true; ExtendedProperties = [] }
-    { Modules = [ m ]; Sequences = [] }
+        IRBuilders.mkModule (mkKey ["TestModule"]) (mkName "TestModule") kinds
+    IRBuilders.mkCatalog [ m ]
 
 let private orderRowKey (id: int) : SsKey =
     mkKey ["TestModule"; "Order"; "Row"; sprintf "%d" id]

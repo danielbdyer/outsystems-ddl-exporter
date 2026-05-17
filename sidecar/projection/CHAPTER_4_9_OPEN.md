@@ -25,7 +25,8 @@ After chapter 4.9 closes: **Phase 8 — OSSYS catalog producer carbon-copy** (li
 
 | # | Slice | Goal | Scope |
 |---|---|---|---|
-| α | IRBuilders sweep continuation (Kind/Module/Catalog) | ~150 literals migrated via indentation-preserving Python pass | ~500 test-file touches |
+| α | IRBuilders sweep continuation (Kind/Module/Catalog) | ~150 literals migrated via indentation-preserving Python pass | ~500 test-file touches (slice α shipped partial; 13 files / ~70 sites; remainder deferred — see slice α' below) |
+| α' | IRBuilders sweep tail (Kind/Module/Catalog) | ~80 remaining literals in 19 test files | manual targeted migration; trigger: next IR-shape change forces touching these sites |
 | β | `Attribute.OriginalName` + `Attribute.ExternalDatabaseType` IR + adapter pickup | Retires 2 of 4 A.0' deferred concepts | ~100 src + ~60 test |
 | γ | `IndexColumn` DU + `IndexColumnDirection` DU + Index.Columns reshape + ScriptDom emission | Cutover-fidelity for DESC indexes | ~200 src + ~100 test |
 | δ | `EmissionPolicy.filterPlatformAutoIndexes` wired into `Compose.project` | Pipeline-level toggle | ~30 src + ~30 test |
@@ -46,6 +47,8 @@ After chapter 4.9 closes: **Phase 8 — OSSYS catalog producer carbon-copy** (li
 **Q4 — WithDiagnostics for builders with no Diagnostics source.** Ship the canonical signature returning `Diagnostics.ofValue stmt`; future Diagnostics sources absorb without per-call-site changes.
 
 **Q5 — IRBuilders sweep indentation-preserving pass.** Rewrite preserves original literal's opening-brace column for closing-brace placement; overrides emit on new lines at original-indent + 4 spaces.
+
+**Q5 amendment (slice α partial).** The indentation-preserving pass is **safe** for the common shape (top-level let-binding + simple record literal) but **unsafe** for two structural forms surfaced during slice α: (a) record literals embedded inside multi-line list constructions where `[ a \n b \n c ]` newline-separates list elements — the pass collapses the list onto one line, producing `[ a b c ]` which F# reads as currying; (b) record literals nested inside `let`-bodies with multiple inner `let` bindings and `if`-expressions — the pass collapses the inner structure into a single line, breaking offside rules. **Trigger for slice α' resumption:** next IR-shape change to `Kind` / `Module` / `Catalog` that would force touching the 19 deferred test files. At that point, hand-migrate the literals as part of the change (the inline migration pays for itself when the touch is already required).
 
 ---
 

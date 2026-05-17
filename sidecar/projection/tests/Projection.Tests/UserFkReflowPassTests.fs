@@ -215,7 +215,7 @@ let ``run: reads Profile.SourceUsers + Profile.TargetUsers + Policy.UserMatching
             SourceUsers = srcs [ source ]
             TargetUsers = tgts [ target ] }
     let policy = { Policy.empty with UserMatching = ByEmail }
-    let catalog = { Modules = []; Sequences = [] }
+    let catalog = IRBuilders.mkCatalog []
     let result = (UserFkReflowPass.registered policy profile).Run catalog
     Assert.Equal (1, Map.count result.Value.Value.Mapping)
 

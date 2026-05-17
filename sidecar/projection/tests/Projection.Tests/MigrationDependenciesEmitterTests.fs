@@ -68,10 +68,8 @@ let private mkCountryKind () : Kind =
 
 let private mkCatalog (kinds: Kind list) : Catalog =
     let m : Module =
-        { SsKey = mkKey ["TestModule"]
-          Name  = mkName "TestModule"
-          Kinds = kinds; IsActive = true; ExtendedProperties = [] }
-    { Modules = [ m ]; Sequences = [] }
+        IRBuilders.mkModule (mkKey ["TestModule"]) (mkName "TestModule") kinds
+    IRBuilders.mkCatalog [ m ]
 
 let private mkMigrationRow (kindKey: SsKey) (idValue: string) (code: string) (label: string) : MigrationDependencyRow =
     {

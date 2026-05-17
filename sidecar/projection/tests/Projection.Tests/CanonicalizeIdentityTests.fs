@@ -29,29 +29,14 @@ let private reverseKinds (m: Module) : Module =
     { m with Kinds = List.rev m.Kinds }
 
 let private reverseAllCollections (c: Catalog) : Catalog =
-    { Modules =
-        c.Modules
-        |> List.map (fun m ->
-            { m with
-                Kinds =
-                    m.Kinds
-                    |> List.map (reverseAttributes >> reverseReferences) })
-        |> List.map reverseKinds
-        |> List.rev
-      Sequences = c.Sequences }
+    { IRBuilders.mkCatalog (c.Modules |> List.map (fun m -> { m with Kinds = m.Kinds |> List.map (reverseAttributes >> reverseReferences) }) |> List.map reverseKinds |> List.rev) with
+        Sequences = c.Sequences
+    }
 
 let private renameKind (key: SsKey) (newName: string) (c: Catalog) : Catalog =
-    { Modules =
-        c.Modules
-        |> List.map (fun m ->
-            { m with
-                Kinds =
-                    m.Kinds
-                    |> List.map (fun k ->
-                        if k.SsKey = key then
-                            { k with Name = Name.create newName |> Result.value }
-                        else k) })
-      Sequences = c.Sequences }
+    { IRBuilders.mkCatalog (c.Modules |> List.map (fun m -> { m with Kinds = m.Kinds |> List.map (fun k -> if k.SsKey = key then { k with Name = Name.create newName |> Result.value } else k) })) with
+        Sequences = c.Sequences
+    }
 
 // ---------------------------------------------------------------------------
 // Idempotence (A21 in the small): running the pass twice equals running it
