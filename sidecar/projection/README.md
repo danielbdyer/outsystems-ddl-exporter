@@ -380,6 +380,24 @@ Build clean under `TreatWarningsAsErrors=true`; lint clean across
   surfaces as a `Skip` test stub at the test-file level, not as
   ADMIRE-prose commentary.
 
+## Status at chapter 4.8 close (2026-05-17; IRBuilders Attribute sweep + on-disk Index metadata + isPlatformAuto emitter toggle)
+
+- **1367 non-canary tests passing** + canary tests Docker-gated.
+  0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`;
+  lint count unchanged.
+- **Chapter 4.8 shipped 3 orthogonal slices** (α / β / γ):
+  - Slice α: Attribute IRBuilders sweep (108 literals migrated across
+    21 test files; future Attribute additions ~2 sites).
+  - Slice β: 5 additive on-disk Index metadata fields (FillFactor /
+    IsPadded / AllowRowLocks / AllowPageLocks / NoRecomputeStatistics)
+    + ScriptDom IndexOptions emission. WITH (…) clause omitted when
+    all defaults hold; per-option non-default emission otherwise.
+  - Slice γ: `EmissionPolicy.IncludePlatformAutoIndexes` + filter-
+    Catalog projection. V1-parity operator toggle.
+- **Slice α scope reduction codified**: Kind / Module / Catalog
+  sweeps deferred — Python pass triggered F# offside-rule failures;
+  needs indentation-preserving rewrite.
+
 ## Status at chapter 4.7 close (2026-05-17; refactor bundle + sibling-wrapper discipline codification)
 
 - **1354 non-canary tests passing** + canary tests Docker-gated.

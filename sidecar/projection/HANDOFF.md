@@ -4,6 +4,33 @@ To the next-chapter agent. Read this before anything else in the V2 sidecar. It 
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
 
+## 2026-05-17 (chapter 4.8 close — slices α + β + γ) — IRBuilders Attribute sweep + on-disk Index metadata + isPlatformAuto emitter toggle
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1367 / 1367 non-canary passing** (1354 prior + 13 net new). 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged.
+
+**Chapter 4.8 closes.** Read `CHAPTER_4_8_CLOSE.md` for the chapter-close synthesis. Three orthogonal cash-outs from the chapter 4.6 close shortlist:
+
+- **Slice α (`c0becab`):** Attribute IRBuilders sweep. 108 literals migrated across 21 test files. Future Attribute field additions touch ~2 sites instead of ~108. Kind / Module / Catalog sweeps **deferred** — Python pass triggers F# offside-rule failures on larger types; needs indentation-preserving rewrite.
+- **Slice β (`3676ce7`):** 5 additive Index fields (`FillFactor` / `IsPadded` / `AllowRowLocks` / `AllowPageLocks` / `NoRecomputeStatistics`) + ScriptDom IndexOptions emission. Validates the 85%+ cost-reduction claim — 5 fields at ~6 touches via chapter 4.7's IRBuilders sweep.
+- **Slice γ (`0a0d2ea`):** `EmissionPolicy.IncludePlatformAutoIndexes` + `EmissionPolicy.filterPlatformAutoIndexes` Catalog-projection helper. Operator-toggle V2 parity with V1's `SsdtManifestOptions.IncludePlatformAutoIndexes`. Per A18 amended: filter at composition layer; emitters consume the filtered Catalog.
+
+**What's load-bearing going forward.**
+
+- **Attribute IRBuilders sweep precedent** — `mkAttribute` defaults absorb new fields; `OriginalName` + `ExternalDatabaseType` (chapter 4.6 shortlist item #2) become ~2-site changes.
+- **5 on-disk Index metadata fields with V1 parity** — V2's SSDT emit gained `FILLFACTOR` / `PAD_INDEX` / `ALLOW_ROW_LOCKS` / `ALLOW_PAGE_LOCKS` / `STATISTICS_NORECOMPUTE` option emission via ScriptDom `IndexOptions`.
+- **`EmissionPolicy.IncludePlatformAutoIndexes` axis + filter** — operator-toggle wired at Policy layer; composer/pipeline auto-application deferred per IR-grows-under-evidence.
+- **Slice α scope-reduction precedent** — when a Python pass triggers F# offside-rule failures, defer with explicit trigger (indentation-preserving rewrite); don't ship a half-working mass migration.
+
+**Forward signals retained (after this chapter):**
+
+1. **Kind / Module / Catalog IRBuilders sweep** — Python pass needs indentation-preserving rewrite. ~150 literal sites; cheap future Kind/Module/Catalog field additions when cashed.
+2. **Composer/Pipeline wiring of `IncludePlatformAutoIndexes`** — toggle is available via explicit caller invocation; pipeline-wired auto-application deferred until operator demand surfaces.
+3. **IndexColumnDirection** — record-modification (was painful pre-4.7; now possibly tractable post-4.7 sweep precedent, but still needs IndexColumn record + per-column-axis lift).
+4. **OriginalName + ExternalDatabaseType** — now cheap post-slice-α; trigger: agent picks them up.
+5. **PreRemediation / Module.ExtendedProperties / Sequence emission / OSSYS catalog producer / Phase 8** — unchanged cost; substantive new chapters when their triggers fire.
+
+---
+
 ## 2026-05-17 (chapter 4.7 close — slices α + β + γ + cleanup + discipline) — Refactor bundle + sibling-wrapper discipline codification
 
 **Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1354 / 1354 non-canary passing** (1348 prior + 6 net new). 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged.

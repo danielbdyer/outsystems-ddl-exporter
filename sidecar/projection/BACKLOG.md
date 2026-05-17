@@ -7,11 +7,13 @@ per-phase chapter sequence with V1 inheritance opportunities (carbon-copy
 candidates and shipped carbon-copies), cross-cutting infrastructure work,
 and the risk register.
 
-**Current state as of 2026-05-17 (post-chapter-4.7 close).** V2-driver
+**Current state as of 2026-05-17 (post-chapter-4.8 close).** V2-driver
 critical-path Phases 1–7 are all closed end-to-end. Chapters 4.4
 (Manifest diagnostic fields) + 4.5 (Index IR fidelity) + 4.6
-(forward-signal cleanup bundle) + **chapter 4.7 (refactor bundle +
-sibling-wrapper discipline codification)** closed 2026-05-17. **All four of
+(forward-signal cleanup bundle) + 4.7 (refactor bundle + sibling-
+wrapper discipline codification) + **chapter 4.8 (IRBuilders Attribute
+sweep + on-disk Index metadata + isPlatformAuto emitter toggle)**
+closed 2026-05-17. **All four of
 chapter 4.4's always-false PredicateName variants now lift to real
 V2 IR evaluation** — `HasFilteredIndex` + `HasIncludedIndexColumns`
 (chapter 4.5) plus `HasLogicalForeignKeyWithoutDbConstraint` +
@@ -62,6 +64,7 @@ the operational *what and when* is here.
   - [Phase 5.6 — Index IR fidelity (chapter 4.5; closed)](#phase-56--index-ir-fidelity-chapter-45-closed-2026-05-17)
   - [Phase 5.7 — Forward-signal cleanup bundle (chapter 4.6; closed)](#phase-57--forward-signal-cleanup-bundle-chapter-46-closed-2026-05-17)
   - [Phase 5.8 — Refactor bundle + sibling-wrapper discipline (chapter 4.7; closed)](#phase-58--refactor-bundle--sibling-wrapper-discipline-chapter-47-closed-2026-05-17)
+  - [Phase 5.9 — IRBuilders Attribute sweep + on-disk Index metadata + isPlatformAuto emitter toggle (chapter 4.8; closed)](#phase-59--irbuilders-attribute-sweep--on-disk-index-metadata--isplatformauto-emitter-toggle-chapter-48-closed-2026-05-17)
   - [Phase 6 — DACPAC dev-tooling (chapter 3.x; closed)](#phase-6--dacpac-dev-tooling-chapter-3x-closed-under-reframe)
   - [Phase 7 — SnapshotRowsets (chapter 3.2; closed)](#phase-7--snapshotrowsets-chapter-32-closed)
   - [Phase 8 — Pragmatic close](#phase-8--pragmatic-close)
@@ -578,6 +581,39 @@ codifies sibling-wrapper distinguishing test as discipline (cleanup).
   unmigrated; hand-migration deferred.
 
 **V1 inheritance opportunities:** none. The chapter operates at V2 layer.
+
+---
+
+### Phase 5.9 — IRBuilders Attribute sweep + on-disk Index metadata + isPlatformAuto emitter toggle (chapter 4.8; CLOSED 2026-05-17)
+
+**Status:** closed. Three orthogonal cash-outs from the chapter 4.6
+close shortlist. Close synthesis at `CHAPTER_4_8_CLOSE.md`; chapter-
+open at `CHAPTER_4_8_OPEN.md`.
+
+**Slices shipped:**
+
+| Slice | Scope | Witness | Status |
+|---|---|---|---|
+| α | Attribute IRBuilders sweep (108 literals; 21 test files) | baseline preserved post-migration; future Attribute additions ~2 sites | shipped 2026-05-17 |
+| β | 5 additive Index fields (FillFactor / IsPadded / AllowRowLocks / AllowPageLocks / NoRecomputeStatistics) + ScriptDom IndexOptions emission | 8 tests in `IndexOnDiskMetadataTests.fs` | shipped 2026-05-17 |
+| γ | `EmissionPolicy.IncludePlatformAutoIndexes` + `filterPlatformAutoIndexes` Catalog projection | 5 tests in `IsPlatformAutoEmitterToggleTests.fs` | shipped 2026-05-17 |
+| δ | Chapter close ritual | 8-item ritual discharged | shipped 2026-05-17 |
+
+**Deferred-with-trigger (codified at close):**
+
+- **Kind / Module / Catalog IRBuilders sweep** — Python pass needs
+  indentation-preserving rewrite (initial attempt triggered F# offside-
+  rule failures on the 162 literal sites across these types). Trigger:
+  agent willing to invest in the rewrite. Leverage if cashed: cheap
+  future Kind/Module/Catalog field additions.
+- **Composer/Pipeline wiring of `IncludePlatformAutoIndexes`** —
+  toggle + filter primitive available; pipeline-wired auto-application
+  deferred. Trigger: operator workflow demanding the toggle's effect
+  applied to the SSDT bundle composition.
+
+**V1 inheritance opportunities:** none. The chapter mirrors V1's
+`IndexOnDiskMetadata` fields + `SsdtManifestOptions.IncludePlatformAuto
+Indexes` at V2 IR / Policy layer. No carbon-copy event.
 
 ---
 
