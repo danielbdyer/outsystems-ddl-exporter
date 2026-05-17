@@ -4,6 +4,29 @@ To the next-chapter agent. Read this before anything else in the V2 sidecar. It 
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
 
+## 2026-05-17 (post-A.4.7' doc-refresh hygiene) — V2_DRIVER + BACKLOG refreshed; recommended-next-chapter shortlist below supersedes the chapter A.4.7' close entry
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline unchanged at 1262 / 1262 non-canary passing**; canary tests skip when Docker unwarm; 0 build warnings under `TreatWarningsAsErrors=true`; lint count 13. Operator-reality perf baseline re-recorded to absorb chapter A.4.7''s `compose.runChain` Bench scope (5 warm captures green; 202 labels × 5 runs; see `DECISIONS 2026-05-17 (post-chapter-A.4.7' hygiene) — Perf baseline re-recorded`).
+
+**What changed in this hygiene pass.** The "Recommended next chapter" list in the chapter A.4.7' close entry below listed chapter 4.1.B (closed 2026-05-11) and chapter 4.2 (closed 2026-05-15) as if openable — the author was treating the V2_DRIVER per-axis stakes table as canonical without noticing V2_DRIVER and BACKLOG had drifted. The drift was caught in this hygiene pass and patched:
+
+- `V2_DRIVER.md` Phase 3 / 4 / 5 / 6 / 7 rows updated to **shipped** with chapter-close-doc references and a current-state-as-of-2026-05-17 paragraph naming the operationally-complete structural surface.
+- `BACKLOG.md` Phase 3 / 4 / 5 / 6 status fields refreshed; per-phase slice tables shipped-out; deferred-with-trigger lists codified per chapter close docs; sequencing graph at §VII updated to show the current state.
+
+**Recommended next-chapter shortlist (superseding the chapter A.4.7' close entry below).** The V2-driver critical-path Phases (1–5 + 7) are all closed. The actually-pending named work is:
+
+1. **Chapter 4.4 — Operational Diagnostics manifest fields.** The largest piece of named pending V2_DRIVER work. `ManifestEmitter.fs:32-33,181` docstring + emission paths confirm `Coverage` / `PredicateCoverage` / `PreRemediation` / `Unsupported` currently emit as `null` / defaults. Chapter fills them under per-axis property test coverage. Likely 4-6 slices.
+2. **Module.ExtendedProperties emission** — deferred-with-trigger from chapter 4.1.A.8 (`DECISIONS 2026-05-17 — sp_addextendedproperty emission, Decision 4`). Gated on V1-side confirmation of module → schema convention. ~1 session if trigger fires.
+3. **Sequence emission** — `CREATE SEQUENCE` emitter for `Catalog.Sequences` IR shape (chapter A.0' slice δ shipped the IR; no emitter). Deferred until V1 fixture surfaces sequences. ~1-2 sessions if trigger fires.
+4. **Chapter 4.3 slice δ (CLI wire-up) + slice ε (V1 differential)** — deferred-with-trigger from chapter 4.3 close. Slice δ triggers on operator demand for one-command diagnostics emission; slice ε triggers on chapter that needs cross-version diagnostic-fidelity evidence.
+5. **Chapter 4.2 OSSYS adapter User-kind identification surface + CSV adapter for ManualOverride** — deferred-with-trigger from chapter 4.2 close. Slice triggers on real platform-user-kind data flow.
+6. **Chapter 3.x slices ε (modality marks → comments/extended properties) + ζ (byte-determinism via canonicalization)** — deferred-with-trigger from chapter 3.x close.
+7. **Phase 8 pragmatic close** — F# Analyzers SDK; Coordinates Stage 2 typed VOs; Hex port lifts; cutover-day operator runbook; V1 sunset planning. Consumer-pressure-driven; opens at cutover-15 to cutover+30 window per fallback-ladder gates.
+
+**The chapter A.4.7' close letter below remains accurate as a historical record of what shipped that chapter** — its 8 forward signals (item-numbered list) are all carried forward unchanged. Only the "Recommended next chapter" list at the bottom of that entry has been superseded by the shortlist above.
+
+---
+
 ## 2026-05-17 (chapter A.4.7' close — slices α + β + γ + δ + ε + ζ + η + θ) — Compose.run registry-traversal; A41 amended (execution totality); 5/5 bidirectional property tests; `let run` private across all 12 passes
 
 **Branch / baseline.** Continues on `claude/review-chapter-close-VnRe8`. **Test baseline at chapter close: 1262 / 1262 non-canary passing** (1226 prior + 36 new across the chapter — 6 ComposeChainAdapterTests + 5 RegisteredTransformsTests + 5 PassChainAdapterComposeTests + 3 SkeletonPurityTests + 5 RegistryDigestRoundTripTests + 12 sundry test additions across migrations); canary tests skip when Docker unwarm. 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint count 13 — unchanged from main / chapter A.4.7 close baseline; zero new introduced across chapter A.4.7'.

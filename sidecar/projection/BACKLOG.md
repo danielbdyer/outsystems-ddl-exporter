@@ -1,10 +1,19 @@
 # BACKLOG — Operational backlog for V2 cutover
 
-**Status:** re-canonicalized 2026-05-16. Sibling to `V2_DRIVER.md`. The
-operational ledger that interweaves V2_DRIVER's per-phase chapter
-sequence with V1 inheritance opportunities (carbon-copy candidates and
-shipped carbon-copies), cross-cutting infrastructure work, and the
-risk register.
+**Status:** re-canonicalized 2026-05-16; per-phase status refreshed
+2026-05-17 (post-chapter-A.4.7' doc-refresh hygiene). Sibling to
+`V2_DRIVER.md`. The operational ledger that interweaves V2_DRIVER's
+per-phase chapter sequence with V1 inheritance opportunities (carbon-copy
+candidates and shipped carbon-copies), cross-cutting infrastructure work,
+and the risk register.
+
+**Current state as of 2026-05-17.** V2-driver critical-path Phases 1–7
+are all closed end-to-end. The largest piece of named pending V2_DRIVER
+work is **chapter 4.4 — Manifest diagnostic fields** (`Coverage` /
+`PredicateCoverage` / `PreRemediation` / `Unsupported` currently emit
+defaults). The rest of pending work lives in the deferred-with-trigger
+queue per chapter close docs. See §VII Sequencing graph for the current
+fan-out.
 
 **Strategic relationship:**
 
@@ -38,11 +47,11 @@ the operational *what and when* is here.
 - [III. Per-phase backlog](#iii-per-phase-backlog)
   - [Phase 1 — Π port keystone (chapter 3.5)](#phase-1--π-port-keystone-chapter-35)
   - [Phase 2 — Schema-as-driver (chapter 4.1.A)](#phase-2--schema-as-driver-chapter-41a)
-  - [Phase 3 — Data-as-driver (chapter 4.1.B)](#phase-3--data-as-driver-chapter-41b)
-  - [Phase 3.1 — IR fidelity lifts (chapter A.0'; in flight)](#phase-31--ir-fidelity-lifts-chapter-a0-in-flight)
-  - [Phase 4 — Identity-as-driver (chapter 4.2)](#phase-4--identity-as-driver-chapter-42)
-  - [Phase 5 — Operational diagnostics (chapter 4.3)](#phase-5--operational-diagnostics-chapter-43)
-  - [Phase 6 — DACPAC (chapter 3.x; conditional)](#phase-6--dacpac-chapter-3x-conditional)
+  - [Phase 3 — Data-as-driver (chapter 4.1.B; closed)](#phase-3--data-as-driver-chapter-41b-closed-2026-05-11)
+  - [Phase 3.1 — IR fidelity lifts (chapter A.0'; closed)](#phase-31--ir-fidelity-lifts-chapter-a0-closed-2026-05-16)
+  - [Phase 4 — Identity-as-driver (chapter 4.2; closed)](#phase-4--identity-as-driver-chapter-42-closed-2026-05-15)
+  - [Phase 5 — Operational diagnostics (chapter 4.3; closed)](#phase-5--operational-diagnostics-chapter-43-closed-structural-slice-arc)
+  - [Phase 6 — DACPAC dev-tooling (chapter 3.x; closed)](#phase-6--dacpac-dev-tooling-chapter-3x-closed-under-reframe)
   - [Phase 7 — SnapshotRowsets (chapter 3.2; closed)](#phase-7--snapshotrowsets-chapter-32-closed)
   - [Phase 8 — Pragmatic close](#phase-8--pragmatic-close)
 - [IV. V1 inheritance log](#iv-v1-inheritance-log)
@@ -192,11 +201,18 @@ a discrete slice.
 
 ---
 
-### Phase 3 — Data-as-driver (chapter 4.1.B)
+### Phase 3 — Data-as-driver (chapter 4.1.B; CLOSED 2026-05-11)
 
-**Status:** α/β/γ shipped (chapter 4.1.B close 2026-05-11);
-StaticSeedsEmitter v0, Profile.CdcAwareness + change-detection MERGE,
-CDC-silence-on-idempotent-redeploy canary GREEN. Slices δ-θ pending.
+**Status:** closed end-to-end. All slices α through κ shipped:
+StaticSeedsEmitter v0 (α); Profile.CdcAwareness + change-detection
+MERGE (β); CDC-silence-on-idempotent-redeploy canary GREEN (γ); two-phase
+insertion / cycle-breaking + DeferredFkSet + ScriptDomBuild.buildUpdateStatement
+(δ); MigrationDependenciesEmitter (ε); BootstrapEmitter + UserRemapContext
+placeholder (ζ); DataEmissionComposer + EmissionPolicy.DataComposition
+DU (η); EmitError.OverlappingEmitterCoverage + partition assertion (θ);
+multi-kind global Phase-1-then-Phase-2 reification + typed Values lift
+(ι/κ). Tier-3 hard-requirement deferral cashed at slice ε
+(`ScriptDomBuild.buildMergeStatement` adopted in MigrationDependenciesEmitter).
 
 **Strategic frame.** V2_DRIVER.md Phase 3. The CDC-silence property
 test is the highest-leverage single deliverable in the entire chapter
@@ -205,15 +221,20 @@ deploy on every CDC-tracked table at operator-reality canary scale.
 See `CHAPTER_4_1_B_CLOSE.md` for shipped slices;
 `CHAPTER_4_PRESCOPE_DATA_TRIUMVIRATE.md` for full pre-scope.
 
-**Pending slices:**
+**All slices shipped:**
 
 | Slice | Scope | Witness | Status |
 |---|---|---|---|
-| δ | Two-phase insertion / DeferredFkSet refinement | property test asserts FK cycle resolution preserves order | scheduled |
-| ε | MigrationDependenciesEmitter typed-AST adoption (full UPDATE shape) | round-trip; idempotent-redeploy | scheduled |
-| ζ | BootstrapEmitter typed-AST adoption | round-trip; UserRemapContext slot wiring | scheduled (depends on Phase 4) |
-| η | Partition assertion + per-partition CDC discovery | property test asserts partition coverage | scheduled |
-| θ | Full data triumvirate close + chapter close ritual | every deferred slice closed; backlog refreshed | scheduled |
+| α | StaticSeedsEmitter v0 (V1-shape MERGE) | idempotent under repeat invocation; T1 byte-deterministic | shipped 2026-05-11 |
+| β | Profile.CdcAwareness + change-detection MERGE predicate | per-kind dispatch on CdcAwareness | shipped 2026-05-11 |
+| γ | CDC-silence-on-idempotent-redeploy canary (chapter signature) | `cdc.<schema>_<table>_CT` row count = 0 after redeploy | shipped 2026-05-11 |
+| δ | Two-phase insertion / DeferredFkSet + ScriptDomBuild.buildUpdateStatement | property test asserts FK cycle resolution preserves order | shipped (chapter 4.1.B close arc) |
+| ε | MigrationDependenciesEmitter typed-AST adoption (Tier-3 cash-out) | round-trip; idempotent-redeploy | shipped (chapter 4.1.B close arc) |
+| ζ | BootstrapEmitter v0 + UserRemapContext slot | structural stub; T11 preserved | shipped (chapter 4.1.B close arc) |
+| η | DataEmissionComposer + EmissionPolicy.DataComposition DU | composer dispatch; A18 amended preserved | shipped (chapter 4.1.B close arc) |
+| θ | EmitError.OverlappingEmitterCoverage + partition assertion | composer asserts no two emitters cover the same kind | shipped (chapter 4.1.B close arc) |
+| ι | DataInsertScript.RenderedPhase1/Phase2 split + composeRendered | global Phase-1-then-Phase-2 GO-batched output | shipped (chapter 4.1.B close arc) |
+| κ | DataInsertRow.Values : Map<Name, SqlLiteral> typed lift | pillar 1 holds at the row level | shipped (chapter 4.1.B close arc) |
 
 **V1 inheritance opportunities:**
 
@@ -226,21 +247,15 @@ See `CHAPTER_4_1_B_CLOSE.md` for shipped slices;
 - CDC test fixture (per chapter pre-scope) — adds CDC-aware rows to
   the canary fixture so the CDC-silence property has real coverage.
 
-**Per-phase risks:**
+**Per-phase residual risks (after close):**
 
-- *CDC-silence property failing on real production fixtures* — the
-  highest-stakes risk of the entire cutover. Mitigation: chapter
-  4.1.B slice θ runs the property at operator-reality canary scale
-  (50K rows × 300 tables) per the perf-gate baseline. Disagreement
-  blocks PR.
-- *Carbon-copy of V1's MERGE generation* surfacing performance
-  regression — V1's row-by-row patterns may not align with V2's
-  streaming primitives. Mitigation: F# rewrite is the default; carbon-
-  copy only if the slice agent finds the rewrite materially harder.
+- *CDC-silence property regressing on new fixtures* — caught structurally
+  by `CdcSilenceTests` (Docker-gated canary). Mitigation: the test ships
+  on the suite; a regression manifests as a red canary. No active drift
+  signal as of close.
 
-**Sequencing.** Independent of other phases. Estimated ~2-3 weeks at
-session cadence (V2_DRIVER estimate; unchanged under the V2
-self-containment posture).
+**Sequencing.** Closed end-to-end. See `CHAPTER_4_1_B_CLOSE.md` for the
+full close synthesis.
 
 ---
 
@@ -305,131 +320,129 @@ shipped at this baseline, 7 pending.
 
 ---
 
-### Phase 4 — Identity-as-driver (chapter 4.2)
+### Phase 4 — Identity-as-driver (chapter 4.2; CLOSED 2026-05-15)
 
-**Status:** not started. Pre-scope at
-`CHAPTER_4_PRESCOPE_USERFK_REFLOW.md`. Phase 4 of V2-driver KPI
-critical path.
+**Status:** closed end-to-end. Pre-scope at
+`CHAPTER_4_PRESCOPE_USERFK_REFLOW.md`. Close synthesis at
+`CHAPTER_4_2_CLOSE.md`. A32 cashed out at this close (passes may
+produce emitter-consumable values).
 
-**Strategic frame.** V2_DRIVER.md Phase 4. User FK reflow across
-environments. Every CreatedBy/UpdatedBy FK in target environment
-must resolve to a valid target User. Per-strategy property tests
-cover ByEmail, BySsKey, ManualOverride, FallbackToSystemUser.
+**All slices shipped:**
 
-**Pending slices:** TBD per chapter open (the pre-scope names α-η;
-chapter open lists them).
+| Slice | Scope | Witness | Status |
+|---|---|---|---|
+| α | UserMatchingStrategy DU + identity types (UserId / SourceUserId / TargetUserId / Email) + Policy axis extension | record-extension closed-DU empirical-test holds | shipped 2026-05-15 |
+| β | UserPopulation on Profile + new `UserIdentity.fs` Core file | A34 orthogonality preserved | shipped 2026-05-15 |
+| γ | UserRemap.fs in Core + UserRemapContext smart-constructor disjointness invariant | invariant tests green | shipped 2026-05-15 |
+| δ | UserFkReflowPass.discover (ByEmail real) | `Lineage<Diagnostics<UserRemapContext>>` return shape | shipped 2026-05-15 |
+| ε | Full strategy DU coverage (BySsKey + ManualOverride + FallbackToSystemUser) + lazy indexes | FallbackToSystemUser ⇒ `Set.isEmpty Unmatched` | shipped 2026-05-15 |
+| ζ | `Reference.IsUserFk : bool` field + adapter resolution | record-extension across 23 literal sites | shipped 2026-05-15 |
+| η | MigrationDependenciesEmitter user-FK column rewrite + multi-environment commutativity property (chapter signature) | source-keyset agreement across four target environments | shipped 2026-05-15 |
 
 **V1 inheritance opportunities:**
 
-- **UserMatchingEngine** — V1's `Osm.Pipeline.UatUsers.UserMatchingEngine.Execute`
-  implements the matching strategies. Status: `proposed` carbon-copy
-  candidate. The matching algorithm is small (~400 LOC); F# rewrite
-  via closed-DU strategy DU is the likely default (V2's algebraic
-  posture favors F#); carbon-copy as fallback. The chapter agent
-  decides at chapter open.
+- **UserMatchingEngine** — V1's `Osm.Pipeline.UatUsers.UserMatchingEngine.Execute`.
+  F# rewrite landed at chapter 4.2 close per the algebraic-posture default;
+  no carbon-copy event. The V1 source remains available as a reference oracle
+  for future differential tests (see chapter 4.2 close §V1-input-envelope walk).
 
-**Cross-cutting work:**
+**Deferred-with-trigger (codified at close):**
 
-- User-FK equivalence fixture — covers ByEmail / BySsKey /
-  ManualOverride / FallbackToSystemUser strategies and the
-  disjointness invariant on `UserRemapContext.Mapping.Keys ∩
-  Unmatched = ∅`.
-- Multi-environment property test (T11 specialization) — same source
-  population + ByEmail strategy against four distinct target
-  populations yields four `UserRemapContext` values whose source-keyset
-  agrees across all four.
-
-**Per-phase risks:**
-
-- *User-matching strategy DU exhaustiveness*. Mitigation: F#'s
-  exhaustiveness checking; the closed DU's expansion is empirically
-  tested.
-- *Per-strategy property test coverage gap*. Mitigation: each strategy
-  ships with its own property test; chapter close audits coverage.
-
-**Sequencing.** Independent of other phases. Estimated ~1-1.5 weeks at
-session cadence.
+- **OSSYS adapter User-kind identification surface** — chapter 4.2 ships every
+  `Reference` with `IsUserFk = false` from the OSSYS adapter; real platform-user-kind
+  identification requires `extension_id` lookup (per V1's
+  `ModelUserSchemaGraphFactory.GetSyntheticUserForeignKeys`). Slice η's emitter
+  integration is structurally complete; operationally a no-op until adapter
+  resolves real User-FKs.
+- **CSV adapter for `ManualOverride`** — pre-scope §3 names
+  `Projection.Adapters.UserMap.UserMapLoader`. Slice ε ships `ManualOverride`
+  consuming a programmatic `Map<SourceUserId, TargetUserId>`; the I/O adapter
+  at the boundary is deferred until a real operator workflow demands file-format pickup.
 
 ---
 
-### Phase 5 — Operational diagnostics (chapter 4.3)
+### Phase 5 — Operational diagnostics (chapter 4.3; CLOSED structural slice arc)
 
-**Status:** not started. Pre-scope at
-`CHAPTER_4_PRESCOPE_DIAGNOSTICS_AND_REMEDIATION.md` Part 1. Phase 5 of
-V2-driver KPI critical path.
+**Status:** closed (structural slice arc α/β/γ). Pre-scope at
+`CHAPTER_4_PRESCOPE_DIAGNOSTICS_AND_REMEDIATION.md` Part 1. Close
+synthesis at `CHAPTER_4_3_CLOSE.md`. Three-channel-deferral retired at
+this close ("refuse the split; the three V1 artifacts ARE the channels").
 
-**Strategic frame.** V2_DRIVER.md Phase 5. Three-channel Diagnostics
-split (DecisionLogEmitter / OpportunitiesEmitter / ValidationsEmitter)
-routing via Code-prefix table. See `CHAPTER_4_3_OPEN.md`.
+**Structural slice arc shipped:**
 
-**Pending slices:** TBD per chapter open.
+| Slice | Scope | Witness | Status |
+|---|---|---|---|
+| α | DecisionLogEmitter + new `Projection.Targets.OperationalDiagnostics` project + JsonNode typed seam at Π port | T11 keyset coverage; T1 byte-determinism | shipped |
+| β | Routing primitive + OpportunitiesEmitter + shared `DiagnosticDocument` extracted at second-consumer threshold | single point of routing decision; chronological-order preserved within bucket | shipped |
+| γ | ValidationsEmitter + Routing partition property (chapter signature) | every `DiagnosticEntry` routes to exactly one of three artifacts | shipped |
 
-**V1 inheritance opportunities:**
+**Deferred-with-trigger (codified at close):**
+
+- **Slice δ — CLI wire-up** — `osm emit --diagnostics` flag + Pipeline composition
+  for the three emitters. Trigger: operator demand for one-command diagnostics
+  emission.
+- **Slice ε — V1 differential** — equivalence test against V1's existing
+  `SqlMetadataDiagnosticsWriter` / `BasicDataIntegrityChecker` outputs on
+  shared fixtures. Trigger: chapter that needs the cross-version diagnostic-fidelity
+  evidence (likely chapter 5+ pragmatic close pre-cutover audit).
+
+**V1 inheritance opportunities (still applicable for future slices):**
 
 - **Diagnostic-finding generation** — V1's `SqlMetadataDiagnosticsWriter`
-  and `BasicDataIntegrityChecker` emit `ValidationError` arrays. Status:
-  `proposed` carbon-copy candidate. V2's `Diagnostics<T>` writer monad
-  is the algebraic target; the carbon-copy would extract V1's specific
-  finding-detection logic, refactored to emit V2-shaped `Finding`
-  records. The chapter agent decides at chapter open.
+  and `BasicDataIntegrityChecker`. Status: `proposed` carbon-copy
+  candidate for slice ε (V1 differential). F# rewrite preferred; carbon-copy
+  as fallback if V1's specific finding-detection logic is materially harder
+  to re-derive than to translate.
 
 **Cross-cutting work:**
 
 - Per-channel routing property test — `Code` prefix → channel mapping
   is exhaustive; every diagnostic lands in exactly one channel.
 
-**Per-phase risks:**
+**Per-phase residual risks (after close):**
 
-- *Routing correctness regression*. Mitigation: exhaustiveness property
-  test asserts every emitted `Code` matches a prefix.
+- *Routing correctness regression*. Caught structurally by the partition
+  property test (slice γ).
 
-**Sequencing.** Independent of other phases. Estimated ~1.5-2 weeks at
-session cadence.
+**Sequencing.** Closed (structural slice arc). See `CHAPTER_4_3_CLOSE.md`
+for the full close synthesis.
 
 ---
 
-### Phase 6 — DACPAC (chapter 3.x; conditional)
+### Phase 6 — DACPAC dev-tooling (chapter 3.x; CLOSED under reframe)
 
-**Status:** not started; deploy-path-conditional. If operator's deploy
-path requires DACPAC, this phase opens; otherwise defers indefinitely.
+**Status:** closed under dev-tooling reframe. The chapter was originally
+pre-scoped as deploy-path-conditional production-write; the operator
+reframed at chapter open (2026-05-11) to dev-tooling consumption surface
+(production deploy stays SSDT-style file deploy). Close synthesis at
+`CHAPTER_3_X_CLOSE.md`.
 
-**Strategic frame.** V2_DRIVER.md Phase 6. DacFx adoption +
-DacpacEmitter; A37 named erasure axes; T1 binary-normal-form amendment;
-T11 sibling-Π commutativity at the structural level between SSDT and
-DACPAC. See `CHAPTER_3_X_OPEN.md`.
+**Structural slice arc shipped:**
 
-**V1 inheritance opportunities (if pursued):**
+| Slice | Scope | Witness | Status |
+|---|---|---|---|
+| α | DacpacEmitter v0 + chapter open + `Microsoft.SqlServer.DacFx` v162.x adoption (Tier-3 text-builder-as-first-instinct cash-out) | `DacpacEmitter.emit : Catalog -> Result<byte[]>`; A18 amended preserved | shipped |
+| β | FK round-trip via DacFx | structural test on `sampleCatalog` Order→Customer FK | shipped |
+| γ | Indexes round-trip via DacFx | DacFx's `Index.Unique` property preserved across round-trip | shipped |
+| δ_dock | DockerImageEmitter (one-command dev stand-up via `docker pull` / `docker run`) | image-build canary green | shipped |
 
-- **DACPAC builder plumbing** — V1's `DacpacBuilder.CreateDacpac`
-  wraps DacFx. Status: `proposed` carbon-copy candidate if the
-  chapter opens. DacFx is C#-idiomatic; the carbon-copy would land
-  in a new C# adapter project — `Projection.Adapters.Dac` — with
-  museum-polish quality. Alternatively, V2 wraps DacFx directly from
-  F# (the existing `Projection.Targets.SSDT` precedent for ScriptDom).
-  The chapter agent decides at chapter open based on DACPAC fidelity
-  requirements.
-- **SMO emission plumbing** — V1's `SmoEntityEmitter` produces DDL via
-  SMO. Status: `proposed` (only relevant if DACPAC parity requires
-  SMO-style emission). The carbon-copy would land in
-  `Projection.Adapters.OssysSql` or a new `Projection.Adapters.Smo`
-  with museum-polish.
+**Deferred-with-trigger (codified at close):**
 
-**Cross-cutting work:**
+- **Slice ε — modality marks → DACPAC comments / extended properties** —
+  defers until consumer demand for DACPAC-level annotation surface.
+- **Slice ζ — byte-determinism cash-out via post-hoc canonicalization** —
+  defers until a downstream consumer compares `.dacpac` byte payloads
+  across runs (DacFx's serialization is order-stable at the model level
+  but the `.dacpac` ZIP-container byte layout is not deterministic).
+- **Per-Catalog parameterization** — defers until a non-`sampleCatalog`
+  consumer surfaces.
 
-- A37 named erasure axes — Tolerance entries naming what DACPAC erases.
-- T1 binary-normal-form amendment.
+**V1 inheritance opportunities (still applicable):**
 
-**Per-phase risks:**
-
-- *SMO/DacFx lifecycle wrapping complexity*. Mitigation: the carbon-
-  copy lands behind a museum-polish C# adapter; lifecycle stays
-  scoped per call; F# adapter consumes via `Result<'a>`.
-- *DacFx version compatibility with V2's existing pins*. Mitigation:
-  V2's existing csproj pins are reviewed at chapter open.
-
-**Conditional opening.** Phase 6 opens only if operator's deploy path
-requires DACPAC. Independent of Phases 3-5; can run in parallel or
-sequentially per chapter-cadence preference.
+- **DACPAC builder plumbing** — V1's `DacpacBuilder.CreateDacpac`.
+  F# wrapper landed (no C# subproject; pre-scope §6.2 bias yielded under
+  empirical pressure). No carbon-copy event; V1 source remains a reference
+  for slice ε / ζ if those surface.
 
 ---
 
@@ -714,40 +727,42 @@ section above; this register catches the horizontal ones.
 ```
                   ┌──────────────────────────────────────┐
                   │  V2 sidecar — current state          │
-                  │  Phases 1, 2, 7 substantively shipped│
+                  │  (as of 2026-05-17)                  │
+                  │  Phases 1–7 SHIPPED end-to-end       │
                   │  Pillar 9 + supreme operating        │
                   │  disciplines in place                │
+                  │  Registry load-bearing for execution │
+                  │  (chapter A.4.7' close)              │
+                  └────────────────┬─────────────────────┘
+                                   │
+                                   ▼
+                  ┌──────────────────────────────────────┐
+                  │  V2-driver KPI structural surface    │
+                  │  operationally complete              │
+                  │  CDC silence ✓  Schema ✓  Identity ✓ │
+                  │  Diagnostics ✓  DACPAC ✓  Rowsets ✓  │
                   └────────────────┬─────────────────────┘
                                    │
        ┌───────────────────────────┼───────────────────────────┐
        │                           │                           │
        ▼                           ▼                           ▼
 ┌──────────────────┐      ┌──────────────────┐        ┌──────────────────┐
-│ Phase 3 — Data   │      │ Phase 4 — Identity│        │ Phase 5 — Diag.  │
-│ (chapter 4.1.B)  │      │ (chapter 4.2)     │        │ (chapter 4.3)    │
-│ ~2-3 weeks       │      │ ~1-1.5 weeks      │        │ ~1.5-2 weeks     │
-│ CDC silence is   │      │ UserFkReflow      │        │ Three-channel    │
-│ load-bearing     │      │ multi-env T11     │        │ routing          │
+│ Chapter 4.4      │      │ Deferred-with-   │        │ Phase 8 —        │
+│ Manifest fields  │      │ trigger queue    │        │ pragmatic close  │
+│ (Coverage /      │      │ (per-chapter     │        │ (consumer-       │
+│  PredicateCov /  │      │  close docs)     │        │  pressure-driven)│
+│  PreRemediation /│      │                  │        │                  │
+│  Unsupported)    │      │ Module.ExtProps  │        │ F# Analyzers SDK │
+│                  │      │ Sequence emit    │        │ Coordinates St.2 │
+│ ~4-6 slices      │      │ Statement DU     │        │ Hex port lifts   │
+│ default-emission │      │  MERGE/UPDATE    │        │ V1 sunset plan   │
+│ retirement       │      │ Slice 4.3.δ/ε   │        │ Cutover runbook  │
+│                  │      │ Slice 3.x.ε/ζ   │        │                  │
+│                  │      │ 4.2 OSSYS user-K│        │                  │
+│                  │      │ 4.2 CSV adapter │        │                  │
 └────────┬─────────┘      └────────┬─────────┘        └────────┬─────────┘
          │                         │                            │
-         │  (chapter 4.1.B slice ζ │                            │
-         │   depends on Phase 4    │                            │
-         │   UserRemapContext)     │                            │
-         │                         │                            │
          └─────────────────────────┴────────────────────────────┘
-                                   │
-                                   ▼
-                  ┌──────────────────────────────────────┐
-                  │  V2-driver KPI critical path         │
-                  │  operationally complete              │
-                  └────────────────┬─────────────────────┘
-                                   │
-                                   ▼ (conditional)
-                  ┌──────────────────────────────────────┐
-                  │  Phase 6 — DACPAC (chapter 3.x)      │
-                  │  ~2.5 weeks (if pursued)             │
-                  │  Conditional on deploy path          │
-                  └────────────────┬─────────────────────┘
                                    │
                                    ▼
                   ┌──────────────────────────────────────┐
@@ -763,21 +778,31 @@ section above; this register catches the horizontal ones.
                   └──────────────────────────────────────┘
 ```
 
-**Parallelization notes:**
+**Parallelization notes (as of 2026-05-17):**
 
-- Phases 3, 4, 5 are independent at the chapter level. They can run in
-  parallel or sequentially per chapter-cadence preference. The one
-  dependency is chapter 4.1.B slice ζ (BootstrapEmitter), which
-  depends on chapter 4.2's `UserRemapContext`.
-- Phase 6 (DACPAC) is conditional; opens only if operator's deploy
-  path requires DACPAC.
-- Phase 8 (pragmatic close + cutover+30 gate) depends on every prior
-  phase closing first; runs in the cutover-15 to cutover+30 window.
+- The V2-driver critical-path Phases (1–5 + 7) are all closed. The
+  load-bearing chapter dependencies that motivated the parallel-vs-
+  sequential consideration (chapter 4.1.B slice ζ depending on chapter
+  4.2's `UserRemapContext`) are all resolved in shipped state.
+- **Chapter 4.4 (Manifest diagnostic fields)** is the largest piece of
+  named pending V2_DRIVER work; it's structurally independent of every
+  other lane. ManifestEmitter currently emits `Coverage` /
+  `PredicateCoverage` / `PreRemediation` / `Unsupported` as
+  `null` / defaults; the chapter fills them under per-axis property
+  test coverage.
+- **Deferred-with-trigger** items are consumer-pressure-driven; they
+  reopen when a real workflow demands them (Module.ExtendedProperties
+  emission gated on V1 confirmation; Sequence emission gated on V1
+  fixture surfacing; Statement DU MERGE/UPDATE promotion gated on
+  third consumer; etc.).
+- **Phase 8** (pragmatic close + cutover+30 gate) opens at the
+  cutover-15 to cutover+30 window per the T-30 / T-15 fallback ladder
+  gates discipline.
 
-**Critical-path estimate:** ~5-6 weeks of focused work spread across
-the operator's cutover timeline (assuming chapters 3, 4, 5 in
-parallel where staffing permits; sequential cadence extends the
-timeline).
+**Remaining estimate as of 2026-05-17:** chapter 4.4 is the next named
+substantive chapter (~1-2 weeks at session cadence). Deferred-with-trigger
+items add up to ~1-2 sessions each as triggers fire. Phase 8 timing is
+cutover-relative.
 
 ---
 

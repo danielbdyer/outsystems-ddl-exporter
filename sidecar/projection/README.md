@@ -83,11 +83,10 @@ editorial inheritance` for the codifying entry.
 
 ## Layout
 
-The current layout (chapters 3.1, 3.5/3.6/3.7 substantive, 4.1.A
-in-flight surface, 4.1.B α/β/γ shipped — CDC-silence canary green;
-RawTextEmitter retirement complete; Tier-1 typed-AST transitions
-complete — see `KICKOFF.md` for the full timeline + `HANDOFF.md`'s
-chapter 4.1.A close arc + 4.1.B in-flight prologue):
+The current layout (as of chapter A.4.7' close 2026-05-17; **V2-driver
+critical-path Phases 1–7 all CLOSED** — see `BACKLOG.md` per-phase
+sections for shipped slice ledgers and `HANDOFF.md`'s 2026-05-17
+doc-refresh entry for the actually-pending shortlist):
 
     sidecar/projection/
       README.md                 - this file
@@ -160,11 +159,13 @@ Slots reserved for future sessions (not yet built):
 
       src/Projection.Adapters.Files/        - C#: file system; snapshot store
       src/Projection.Host.Cli/              - C#: imperative shell; orchestrator
-      src/Projection.Targets.SSDT.DacpacEmitter/ - F#: DacpacEmitter via DacFx (`Microsoft.SqlServer.Dac`).
-                                              **DacFx adoption mandatory** at chapter open per the
-                                              Tier-3 text-builder-as-first-instinct discipline
-                                              (`DECISIONS 2026-05-10`); chapter not yet open.
       src/Projection.Targets.Faker/         - F#: synthetic-data Π consuming Profile
+
+(Note: DacpacEmitter via DacFx shipped at chapter 3.x close (2026-05-11)
+under the dev-tooling reframe — F# wrapper inside `Projection.Targets.SSDT`,
+no separate subproject; DockerImageEmitter sibling shipped the one-command
+dev stand-up artifact. The Tier-3 text-builder-as-first-instinct deferral
+is cashed out. See `CHAPTER_3_X_CLOSE.md`.)
 
 (Note: `src/Projection.Pipeline/` shipped at chapter 3.1 as **F#** —
 not C# as originally scaffolded; corrects line 85 below; `Projection.Pipeline`
