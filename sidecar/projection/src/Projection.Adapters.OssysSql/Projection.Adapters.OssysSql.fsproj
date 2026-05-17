@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>Projection.Adapters.OssysSql</RootNamespace>
+    <AssemblyName>Projection.Adapters.OssysSql</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\outsystems_metadata_rowsets.sql" />
+    <EmbeddedResource Include="Resources\ossys-edge-case.seed.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="MetadataExtractionSql.fs" />
+    <Compile Include="MetadataSnapshotRunner.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Projection.Core\Projection.Core.fsproj" />
+    <ProjectReference Include="..\Projection.Adapters.Osm\Projection.Adapters.Osm.fsproj" />
+  </ItemGroup>
+
+</Project>

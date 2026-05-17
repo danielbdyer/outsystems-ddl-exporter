@@ -50,11 +50,7 @@ let private mkIndex
     (columns: SsKey list)
     (isUnique: bool)
     : Index =
-    { SsKey        = ssKey key
-      Name         = name "IX"
-      Columns      = columns
-      IsUnique     = isUnique
-      IsPrimaryKey = false; ExtendedProperties = [] }
+    { IRBuilders.mkIndex (ssKey key) (name "IX") columns with IsUnique = isUnique }
 
 /// Catalog with one already-unique single-column index (Customer.Name)
 /// plus three non-unique single-column indexes that will produce
@@ -203,18 +199,8 @@ let private nullabilityCatalog : Catalog =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_DIAG_END_SAMPLE"; Catalog = None }
           Attributes = [
-              { SsKey        = idAttributeKey
-                Name         = name "Id"
-                Type         = Integer
-                Column       = { ColumnName = "ID"; IsNullable = false }
-                IsPrimaryKey = true
-                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-              { SsKey        = mandatoryAttributeKey
-                Name         = name "Mandatory"
-                Type         = Text
-                Column       = { ColumnName = "MANDATORY"; IsNullable = true }
-                IsPrimaryKey = false
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+              { IRBuilders.mkAttribute idAttributeKey (name "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+              { IRBuilders.mkAttribute mandatoryAttributeKey (name "Mandatory") Text with Column = { ColumnName = "MANDATORY"; IsNullable = true }; IsMandatory = true } ]
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = ssKey "OS_MOD_DiagEnd"
@@ -355,12 +341,7 @@ let private fkCatalog : Catalog =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_FK_END_TARGET"; Catalog = None }
           Attributes = [
-              { SsKey        = fkTargetIdKey
-                Name         = name "Id"
-                Type         = Integer
-                Column       = { ColumnName = "ID"; IsNullable = false }
-                IsPrimaryKey = true
-                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+              { IRBuilders.mkAttribute fkTargetIdKey (name "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true } ]
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let source : Kind =
         { SsKey    = fkSourceEntityKey
@@ -369,25 +350,10 @@ let private fkCatalog : Catalog =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_FK_END_SOURCE"; Catalog = None }
           Attributes = [
-              { SsKey        = fkSourceIdKey
-                Name         = name "Id"
-                Type         = Integer
-                Column       = { ColumnName = "ID"; IsNullable = false }
-                IsPrimaryKey = true
-                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-              { SsKey        = fkSourceAttrKey
-                Name         = name "TargetId"
-                Type         = Integer
-                Column       = { ColumnName = "TARGET_ID"; IsNullable = true }
-                IsPrimaryKey = false
-                IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+              { IRBuilders.mkAttribute fkSourceIdKey (name "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+              { IRBuilders.mkAttribute fkSourceAttrKey (name "TargetId") Integer with Column = { ColumnName = "TARGET_ID"; IsNullable = true } } ]
           References = [
-              { SsKey           = fkRefKey
-                Name            = name "FkSource_Target"
-                SourceAttribute = fkSourceAttrKey
-                TargetKind      = fkTargetEntityKey
-                OnDelete        = NoAction
-                IsUserFk        = false } ]
+              IRBuilders.mkReference fkRefKey (name "FkSource_Target") fkSourceAttrKey fkTargetEntityKey ]
           Indexes = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
@@ -509,19 +475,9 @@ let ``end-to-end: ForeignKey emits keep-reason and success-with-caveat entries s
     let secondRefKey  = ssKey "OS_REF_FkEnd_Source_Target_Strict"
     let secondAttrKey = ssKey "OS_ATTR_FkEnd_Source_StrictTargetId"
     let strictReference : Reference =
-        { SsKey           = secondRefKey
-          Name            = name "FkSource_StrictTarget"
-          SourceAttribute = secondAttrKey
-          TargetKind      = fkTargetEntityKey
-          OnDelete        = NoAction
-          IsUserFk        = false }
+        IRBuilders.mkReference secondRefKey (name "FkSource_StrictTarget") secondAttrKey fkTargetEntityKey
     let strictAttribute : Attribute =
-        { SsKey        = secondAttrKey
-          Name         = name "StrictTargetId"
-          Type         = Integer
-          Column       = { ColumnName = "STRICT_TARGET_ID"; IsNullable = true }
-          IsPrimaryKey = false
-          IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+        { IRBuilders.mkAttribute secondAttrKey (name "StrictTargetId") Integer with Column = { ColumnName = "STRICT_TARGET_ID"; IsNullable = true } }
     let augmentedSource =
         match fkCatalog.Modules.[0].Kinds |> List.tryFind (fun k -> k.SsKey = fkSourceEntityKey) with
         | Some k ->

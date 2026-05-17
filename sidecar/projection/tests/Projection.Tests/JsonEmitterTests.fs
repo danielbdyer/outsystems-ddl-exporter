@@ -169,28 +169,9 @@ let ``string escaping handles double quotes and backslashes`` () =
     // Build a tiny catalog with a name containing characters that must
     // be escaped. The emitter must produce parseable JSON.
     let troubleName = Name.create "with\"quote\\backslash" |> Result.value
-    let troubleKind : Kind = {
-        SsKey = kindKey ["Trouble"]
-        Name  = troubleName
-        Origin = OsNative
-        Modality = []
-        Physical = { Schema = "dbo"; Table = "T"; Catalog = None }
-        Attributes = []
-        References = []
-        Indexes    = []; Description = None
-        IsActive = true
-        Triggers = []
-        ColumnChecks = []
-        ExtendedProperties = []
-        }
-    let troubleModule : Module = {
-        SsKey = modKey "Trouble"
-        Name  = Name.create "M" |> Result.value
-        Kinds = [ troubleKind ]
-        IsActive = true
-        ExtendedProperties = []
-        }
-    let trouble : Catalog = { Modules = [ troubleModule ]; Sequences = [] }
+    let troubleKind : Kind = IRBuilders.mkKind (kindKey ["Trouble"]) troubleName { Schema = "dbo"; Table = "T"; Catalog = None } []
+    let troubleModule : Module = IRBuilders.mkModule (modKey "Trouble") (Name.create "M" |> Result.value) [ troubleKind ]
+    let trouble : Catalog = IRBuilders.mkCatalog [ troubleModule ]
     let output = JsonEmitter.emit trouble
     use _doc = System.Text.Json.JsonDocument.Parse output
     Assert.True(true)

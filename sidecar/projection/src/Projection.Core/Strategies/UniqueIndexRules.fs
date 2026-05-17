@@ -223,8 +223,9 @@ module UniqueIndexRules =
                 mkDecision (UniqueIndexOutcome.DoNotEnforce PolicyDisabled)
             else
                 // 3. Profile-driven decision.
+                let columnKeys = index.Columns |> List.map (fun c -> c.Attribute)
                 if isComposite index then
-                    match compositeProbe kind.SsKey index.Columns profile with
+                    match compositeProbe kind.SsKey columnKeys profile with
                     | Some true ->
                         mkDecision (UniqueIndexOutcome.EnforceUnique CompositeNoDuplicates)
                     | Some false ->
@@ -235,7 +236,7 @@ module UniqueIndexRules =
                     // Single-column path. The index has exactly one
                     // attribute (or zero — degenerate; treated as
                     // single-column with no probe).
-                    match index.Columns with
+                    match columnKeys with
                     | [] ->
                         mkDecision (UniqueIndexOutcome.DoNotEnforce NoCandidateProfiled)
                     | columnKey :: _ ->

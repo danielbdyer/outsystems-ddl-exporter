@@ -352,6 +352,14 @@ module ReadSide =
                             DefaultValue = None
                             Computed = None
                             ExtendedProperties = []
+                            // Chapter 4.9 slice β — ReadSide reads the
+                            // deployed schema, which carries no rename
+                            // history or external-DB-type override
+                            // metadata. Defaults to `None`; the OSSYS
+                            // adapter (JSON / rowset paths) carries the
+                            // V1-source values where present.
+                            OriginalName = None
+                            ExternalDatabaseType = None
                         }
 
     /// Format a SQL Server scalar value as the canonical raw
@@ -648,6 +656,11 @@ module ReadSide =
                     // chapter 4.2's adapter-integration boundary
                     // resolves the flag at the OSSYS-source seam.
                     IsUserFk = false
+                    // Chapter 4.6 slice α — ReadSide reconstructs
+                    // Reference from `sys.foreign_keys`, which by
+                    // definition lists references backed by DB
+                    // constraints. Always true on this path.
+                    HasDbConstraint = true
                 }
         }
 

@@ -656,6 +656,37 @@ module Deploy =
                 return! useEphemeralContainer body
         }
 
+    /// Bootstrap a fresh per-run database, deploy `seedSql` to it,
+    /// then invoke `body` with an open `SqlConnection`. Disposes the
+    /// connection on exit; the per-run database is left for the
+    /// container's cleanup. Chapter 5.0 slice γ — the OSSYS extraction
+    /// canary's orchestration primitive: caller seeds the database with
+    /// the synthetic OSSYS schema, then runs the rowsets-SQL extraction
+    /// against the seeded source.
+    ///
+    /// The body's `SqlConnection` is open against the bootstrapped
+    /// per-run database. The body is responsible for any exception
+    /// handling; this primitive does no error wrapping.
+    let withBootstrappedDatabase
+            (databaseLabel: string)
+            (seedSql: string)
+            (body: SqlConnection -> Task<'a>)
+            : Task<'a> =
+        task {
+            use _ = Bench.scope "deploy.withBootstrappedDatabase"
+            return!
+                useContainer (fun masterConn ->
+                    task {
+                        let dbName = uniqueDatabaseName DatabaseNameGenerator.guidBased databaseLabel
+                        do! createDatabase masterConn dbName
+                        let perDbConn = buildPerDbConnectionString masterConn dbName
+                        use cnn = new SqlConnection(perDbConn)
+                        do! cnn.OpenAsync()
+                        do! executeBatch cnn seedSql
+                        return! body cnn
+                    })
+        }
+
     /// Deploy `sql` to a fresh per-run database in an ephemeral
     /// container; report success / failure. Each call is independent.
     let runEphemeral (sql: string) : Task<Report> =
@@ -981,7 +1012,7 @@ module Deploy =
             let! parsed = Compose.read jsonPath
             match parsed with
             | Ok catalog ->
-                let outputs = Compose.project catalog
+                let outputs = Compose.project EmissionPolicy.empty catalog
                 // Per Tier-1 #2 (Outputs.Sql → SsdtBundle): aggregate
                 // the bundle's per-table SQL files into one batch
                 // for the ephemeral-deploy single-string contract.

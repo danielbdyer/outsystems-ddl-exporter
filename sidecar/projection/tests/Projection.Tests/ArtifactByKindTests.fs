@@ -39,33 +39,13 @@ let private mustOk (r: Result<'a, EmitError>) : 'a =
     | FsResult.Error e -> failwithf "fixture: ArtifactByKind.create failed: %A" e
 
 let private mkKind (n: string) : Kind =
-    {
-        SsKey = ssKey (sprintf "OS_KIND_%s" n)
-        Name = nm n
-        Origin = OsNative
-        Modality = []
-        Physical = { Schema = "dbo"; Table = sprintf "OSUSR_S1S_%s" (n.ToUpperInvariant()); Catalog = None }
-        Attributes = []
-        References = []
-        Indexes = []
-        Description = None
-        IsActive = true
-        Triggers = []
-        ColumnChecks = []
-        ExtendedProperties = []
-        }
+    IRBuilders.mkKind (ssKey (sprintf "OS_KIND_%s" n)) (nm n) { Schema = "dbo"; Table = sprintf "OSUSR_S1S_%s" (n.ToUpperInvariant()); Catalog = None } []
 
 let private mkModule (n: string) (kinds: Kind list) : Module =
-    {
-        SsKey = ssKey (sprintf "OS_MOD_%s" n)
-        Name = nm n
-        Kinds = kinds
-        IsActive = true
-        ExtendedProperties = []
-        }
+    IRBuilders.mkModule (ssKey (sprintf "OS_MOD_%s" n)) (nm n) kinds
 
 let private mkCatalog (modules: Module list) : Catalog =
-    { Modules = modules; Sequences = [] }
+    IRBuilders.mkCatalog modules
 
 let private emptyCatalog () : Catalog =
     mkCatalog []

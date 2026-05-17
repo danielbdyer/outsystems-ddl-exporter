@@ -53,15 +53,9 @@ let private mkCountryKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
         Attributes =
             [
-                { SsKey = idKey;    Name = mkName "Id";    Type = Integer
-                  Column = { ColumnName = "ID";    IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-                { SsKey = codeKey;  Name = mkName "Code";  Type = Text
-                  Column = { ColumnName = "CODE";  IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-                { SsKey = labelKey; Name = mkName "Label"; Type = Text
-                  Column = { ColumnName = "LABEL"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { IRBuilders.mkAttribute codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
+                { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
             ]
         References = []
         Indexes    = []
@@ -74,10 +68,8 @@ let private mkCountryKind () : Kind =
 
 let private mkCatalog (kinds: Kind list) : Catalog =
     let m : Module =
-        { SsKey = mkKey ["TestModule"]
-          Name  = mkName "TestModule"
-          Kinds = kinds; IsActive = true; ExtendedProperties = [] }
-    { Modules = [ m ]; Sequences = [] }
+        IRBuilders.mkModule (mkKey ["TestModule"]) (mkName "TestModule") kinds
+    IRBuilders.mkCatalog [ m ]
 
 let private mkMigrationRow (kindKey: SsKey) (idValue: string) (code: string) (label: string) : MigrationDependencyRow =
     {
@@ -214,8 +206,8 @@ let ``compose AllRemaining: Migration rows surface alongside Static (when popula
     let context =
         { Rows = [ mkMigrationRow country.SsKey "1" "US" "United States" ] }
     let artifact =
-        DataEmissionComposer.composeWithMigration
-            (policyWith AllRemaining) catalog Profile.empty context
+        DataEmissionComposer.composeFull
+            (policyWith AllRemaining) catalog Profile.empty context UserRemapContext.empty
         |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     // Country has no Static modality, so under AllRemaining the
@@ -229,8 +221,8 @@ let ``compose AllExceptStatic: Migration rows surface (Static is skipped, Migrat
     let context =
         { Rows = [ mkMigrationRow country.SsKey "1" "US" "United States" ] }
     let artifact =
-        DataEmissionComposer.composeWithMigration
-            (policyWith AllExceptStatic) catalog Profile.empty context
+        DataEmissionComposer.composeFull
+            (policyWith AllExceptStatic) catalog Profile.empty context UserRemapContext.empty
         |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     Assert.Equal (1, List.length script.Phase1Merges)
@@ -242,8 +234,8 @@ let ``compose AllData: Migration is skipped (only Static fires)`` () =
     let context =
         { Rows = [ mkMigrationRow country.SsKey "1" "US" "United States" ] }
     let artifact =
-        DataEmissionComposer.composeWithMigration
-            (policyWith AllData) catalog Profile.empty context
+        DataEmissionComposer.composeFull
+            (policyWith AllData) catalog Profile.empty context UserRemapContext.empty
         |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     // Country has no Static modality; AllData skips Migration; Bootstrap

@@ -480,6 +480,23 @@ type Attribute = {
     /// slice ζ — IR fidelity lift (L3-S9 extended-properties
     /// sub-axiom; attribute level).
     ExtendedProperties : ExtendedProperty list
+    /// Prior attribute name carried from V1's `ossys_EntityAttr.OriginalName`
+    /// (JSON `originalName`). Set when an attribute has been renamed in
+    /// the model; `None` when no rename history exists. Carriage-only —
+    /// any rename-aware consumer (refactor-log emitter, V1-parity
+    /// migration paths) lands when triggered. Chapter 4.9 slice β —
+    /// retires one of two A.0'-deferred-out-of-scope concepts under
+    /// explicit principal-PO direction (`CHAPTER_4_9_OPEN.md` §Why).
+    OriginalName : string option
+    /// User-specified external SQL Server database type for external
+    /// entities (V1's `ossys_EntityAttr.ExternalColumnType`; JSON
+    /// `external_dbType`). `None` for OS-native entities and for
+    /// external entities where V1 omits the override. V2's
+    /// `PrimitiveType` abstraction (A13) remains canonical for
+    /// emission; this field is fidelity carriage for round-trip
+    /// reconstruction and future external-entity DDL paths.
+    /// Chapter 4.9 slice β.
+    ExternalDatabaseType : string option
 }
 
 
@@ -509,8 +526,43 @@ type Reference = {
     /// otherwise. Slice η emitters consume this flag to gate User-
     /// FK column rewriting at row-emission time.
     IsUserFk        : bool
+    /// True iff this reference is backed by a real SQL Server FK
+    /// constraint (a `FOREIGN KEY ... REFERENCES` clause). V1's
+    /// `hasDbConstraint` int-flag (COALESCE'd from
+    /// `outsystems_model_export.sql:730` HasFK column). When false,
+    /// the reference exists only at the OutSystems model level
+    /// (logical-only FK); when true, a corresponding DB constraint
+    /// materializes the reference at the storage layer.
+    ///
+    /// Chapter 4.6 slice α — IR fidelity lift retiring chapter 4.4's
+    /// `HasLogicalForeignKeyWithoutDbConstraint` +
+    /// `HasLogicalForeignKeyWithDbConstraint` always-false
+    /// PredicateName variants.
+    HasDbConstraint : bool
 }
 
+
+/// Per-column sort direction within an `Index`. Chapter 4.9 slice γ
+/// — retires the third A.0'-deferred concept (`IndexColumnDirection`).
+/// SQL Server emits the keyword DESC after a column name when the
+/// direction is `Descending`; `Ascending` is the default and
+/// ScriptDom's `SortOrder.NotSpecified` carries it (matching V1's
+/// `IndexScriptBuilder` convention which sets `SortOrder` only on
+/// descending columns).
+type IndexColumnDirection =
+    | Ascending
+    | Descending
+
+/// One key column within an `Index.Columns` ordered list. Carries
+/// the participating `Attribute` SsKey + the per-column sort
+/// direction. Chapter 4.9 slice γ — record-modification of the prior
+/// `SsKey list` shape. Included columns (covering indexes) stay on
+/// `Index.IncludedColumns : SsKey list` — non-key columns carry no
+/// direction in SQL Server.
+type IndexColumn = {
+    Attribute : SsKey
+    Direction : IndexColumnDirection
+}
 
 /// A schema-level index on a kind. Carries identity, name, the
 /// participating attribute SsKeys (in declaration order; composite
@@ -533,7 +585,11 @@ type Reference = {
 type Index = {
     SsKey        : SsKey
     Name         : Name
-    Columns      : SsKey list
+    /// Key columns in declaration order. Each entry carries the
+    /// attribute SsKey + per-column sort direction. Chapter 4.9
+    /// slice γ — record-modification from `SsKey list` to
+    /// `IndexColumn list`.
+    Columns      : IndexColumn list
     IsUnique     : bool
     IsPrimaryKey : bool
     /// SQL Server `sys.extended_properties` annotations attached to
@@ -541,6 +597,60 @@ type Index = {
     /// slice ζ — IR fidelity lift (L3-S9 extended-properties
     /// sub-axiom; index level).
     ExtendedProperties : ExtendedProperty list
+    /// SQL Server filter predicate for filtered indexes. Carried as
+    /// the raw V1 filter-definition string (mirrors V1's
+    /// `IndexOnDiskMetadata.FilterDefinition`); parsed at emit time
+    /// via `TSql160Parser.ParseExpression` into ScriptDom's
+    /// `BooleanExpression`. `None` for unfiltered indexes (V1
+    /// default).
+    ///
+    /// Chapter 4.5 slice α — IR fidelity lift retiring chapter 4.4's
+    /// `HasFilteredIndex` always-false PredicateName variant. Source:
+    /// V1's JSON `index.filterDefinition` projection (rowset path
+    /// reads `sys.indexes.filter_definition`).
+    Filter       : string option
+    /// SQL Server INCLUDE columns for covering indexes. V1's
+    /// `IndexColumnModel.IsIncluded = true` entries land here at the
+    /// adapter boundary (the V2-pre-chapter-4.5 adapter dropped them
+    /// per the documented ADMIRE divergence; slice β retires the drop).
+    /// Empty for indexes without included columns (V1 default).
+    ///
+    /// Chapter 4.5 slice β — IR fidelity lift retiring chapter 4.4's
+    /// `HasIncludedIndexColumns` always-false PredicateName variant.
+    /// Source: V1's JSON `index.columns[]` entries with
+    /// `isIncluded: true` (rowset path: index-columns rowset).
+    /// Ordered by V1 `ordinal` field at the adapter boundary
+    /// (same shape as `Columns` key-column ordering).
+    IncludedColumns : SsKey list
+    /// True iff this index is OutSystems-platform-auto-generated (V1
+    /// `IndexModel.IsPlatformAuto`). Auto indexes are emitted by the
+    /// V1 platform's index-creation logic; V2 inherits via the
+    /// adapter. Used by future emitters to gate whether to include
+    /// platform-auto indexes in the SSDT bundle (operator-toggle).
+    ///
+    /// Chapter 4.6 slice β — IR fidelity lift retiring one of four
+    /// A.0' deferred concepts (OriginalName / ExternalDatabaseType /
+    /// IndexColumnDirection / IsPlatformAuto). Source: V1's JSON
+    /// `index.isPlatformAuto` projection.
+    IsPlatformAuto : bool
+    /// SQL Server `FILLFACTOR` index option (per-index allocation
+    /// density 1-100). `None` = server default. Mirrors V1's
+    /// `IndexOnDiskMetadata.FillFactor`. Chapter 4.8 slice β.
+    FillFactor : int option
+    /// SQL Server `PAD_INDEX` option. `false` (V1 default) = OFF;
+    /// `true` = ON (apply FILLFACTOR to non-leaf intermediate pages).
+    /// Mirrors V1's `IndexOnDiskMetadata.IsPadded`. Chapter 4.8 slice β.
+    IsPadded : bool
+    /// SQL Server `ALLOW_ROW_LOCKS` option. `true` (V1 default) = ON.
+    /// Mirrors V1's `IndexOnDiskMetadata.AllowRowLocks`. Chapter 4.8 slice β.
+    AllowRowLocks : bool
+    /// SQL Server `ALLOW_PAGE_LOCKS` option. `true` (V1 default) = ON.
+    /// Mirrors V1's `IndexOnDiskMetadata.AllowPageLocks`. Chapter 4.8 slice β.
+    AllowPageLocks : bool
+    /// SQL Server `STATISTICS_NORECOMPUTE` option. `false` (V1 default)
+    /// = OFF (auto-update enabled). Mirrors V1's
+    /// `IndexOnDiskMetadata.NoRecomputeStatistics`. Chapter 4.8 slice β.
+    NoRecomputeStatistics : bool
 }
 
 
@@ -828,13 +938,13 @@ module Catalog =
                 |> List.collect (fun idx ->
                     idx.Columns
                     |> List.choose (fun col ->
-                        if Set.contains col attrKeys then None
+                        if Set.contains col.Attribute attrKeys then None
                         else
                             Some (ValidationError.create
                                 "catalog.index.danglingColumn"
                                 (sprintf
                                     "Index %A on Kind %A references column SsKey %A absent from the kind's Attributes."
-                                    idx.SsKey k.SsKey col)))))
+                                    idx.SsKey k.SsKey col.Attribute)))))
 
         // Sequence SsKey disjointness (chapter A.0' slice δ). Sequences
         // are top-level Catalog objects; their SsKeys must be unique

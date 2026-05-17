@@ -85,7 +85,12 @@ module SymmetricClosure =
                   // → users), its inverse (users → entity that
                   // created it) carries the same flag for consumer
                   // gating at emission time.
-                  IsUserFk        = r.IsUserFk }
+                  IsUserFk        = r.IsUserFk
+                  // Chapter 4.6 slice α — inverse references inherit
+                  // the original's HasDbConstraint flag (if the
+                  // forward FK has a DB constraint, the inverse view
+                  // surfaces the same constraint at the storage layer).
+                  HasDbConstraint = r.HasDbConstraint }
 
     let private hasInverseAlready (refs: Reference list) (key: SsKey) : bool =
         refs |> List.exists (fun r -> r.SsKey = key)

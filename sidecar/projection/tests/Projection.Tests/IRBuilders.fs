@@ -46,6 +46,8 @@ let mkAttribute (ssKey: SsKey) (name: Name) (ptype: PrimitiveType) : Attribute =
         DefaultValue       = None
         Computed           = None
         ExtendedProperties = []
+        OriginalName       = None
+        ExternalDatabaseType = None
     }
 
 /// Build a `Kind` with the given attributes and minimum-evidence defaults.
@@ -81,7 +83,22 @@ let mkModule (ssKey: SsKey) (name: Name) (kinds: Kind list) : Module =
         ExtendedProperties = []
     }
 
-/// Build an `Index` with minimum-evidence defaults.
+/// Build one `IndexColumn` with the given direction. Chapter 4.9
+/// slice γ — used by tests that exercise DESC indexes; most tests
+/// build all-Ascending via `mkIndexColumns`.
+let mkIndexColumn (attribute: SsKey) (direction: IndexColumnDirection) : IndexColumn =
+    { Attribute = attribute; Direction = direction }
+
+/// Build an all-Ascending `IndexColumn list` from a list of attribute
+/// keys. The common shape for tests that don't care about direction.
+/// Chapter 4.9 slice γ.
+let mkIndexColumns (attributes: SsKey list) : IndexColumn list =
+    attributes |> List.map (fun a -> { Attribute = a; Direction = Ascending })
+
+/// Build an `Index` with minimum-evidence defaults. Accepts the
+/// attribute keys directly; defaults to all-Ascending. Tests opting
+/// into DESC direction override `Columns` via record-update with
+/// `mkIndexColumn` entries.
 let mkIndex
     (ssKey: SsKey)
     (name: Name)
@@ -90,10 +107,37 @@ let mkIndex
     {
         SsKey              = ssKey
         Name               = name
-        Columns            = columns
+        Columns            = mkIndexColumns columns
         IsUnique           = false
         IsPrimaryKey       = false
         ExtendedProperties = []
+        Filter             = None
+        IncludedColumns    = []
+        IsPlatformAuto     = false
+        FillFactor         = None
+        IsPadded           = false
+        AllowRowLocks      = true
+        AllowPageLocks     = true
+        NoRecomputeStatistics = false
+    }
+
+/// Build a `Reference` with minimum-evidence defaults. Required: ssKey,
+/// name, sourceAttribute, targetKind. Defaults: OnDelete = NoAction,
+/// IsUserFk = false, HasDbConstraint = false (V1's COALESCE-to-0 default).
+let mkReference
+    (ssKey: SsKey)
+    (name: Name)
+    (sourceAttribute: SsKey)
+    (targetKind: SsKey)
+    : Reference =
+    {
+        SsKey           = ssKey
+        Name            = name
+        SourceAttribute = sourceAttribute
+        TargetKind      = targetKind
+        OnDelete        = NoAction
+        IsUserFk        = false
+        HasDbConstraint = false
     }
 
 /// Build a `Catalog` with the given modules and no sequences. For

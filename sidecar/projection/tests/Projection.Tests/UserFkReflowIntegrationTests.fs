@@ -67,12 +67,8 @@ let private mkOrderKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_ORDER"; Catalog = None }
         Attributes =
             [
-                { SsKey = idKey;        Name = mkName "Id";        Type = Integer
-                  Column = { ColumnName = "ID";        IsNullable = false }
-                  IsPrimaryKey = true;  IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-                { SsKey = createdByKey; Name = mkName "CreatedBy"; Type = Integer
-                  Column = { ColumnName = "CREATEDBY"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";        IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { IRBuilders.mkAttribute createdByKey (mkName "CreatedBy") Integer with Column = { ColumnName = "CREATEDBY"; IsNullable = false }; IsMandatory = true }
             ]
         References =
             [ { SsKey           = createdByRefKey
@@ -80,7 +76,7 @@ let private mkOrderKind () : Kind =
                 SourceAttribute = createdByKey
                 TargetKind      = mkKey ["IDM"; "User"]  // platform User kind (synthetic)
                 OnDelete        = NoAction
-                IsUserFk        = true } ]  // slice ζ User-FK marker
+                IsUserFk        = true; HasDbConstraint = false } ]  // slice ζ User-FK marker
         Indexes    = []
         Description = None
         IsActive = true
@@ -91,10 +87,8 @@ let private mkOrderKind () : Kind =
 
 let private mkCatalog (kinds: Kind list) : Catalog =
     let m : Module =
-        { SsKey = mkKey ["TestModule"]
-          Name  = mkName "TestModule"
-          Kinds = kinds; IsActive = true; ExtendedProperties = [] }
-    { Modules = [ m ]; Sequences = [] }
+        IRBuilders.mkModule (mkKey ["TestModule"]) (mkName "TestModule") kinds
+    IRBuilders.mkCatalog [ m ]
 
 let private orderRowKey (id: int) : SsKey =
     mkKey ["TestModule"; "Order"; "Row"; sprintf "%d" id]
@@ -130,8 +124,8 @@ let ``Slice η: matched source User-FK value is rewritten to target-environment 
             []
         |> mustOk
     let artifact =
-        MigrationDependenciesEmitter.emitWithUserRemap
-            catalog Profile.empty migration userRemap
+        (let topo' = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value in
+             MigrationDependenciesEmitter.emitWithTopo topo' catalog Profile.empty migration userRemap)
         |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find order.SsKey
     Assert.Equal (1, List.length script.Phase1Merges)
@@ -155,8 +149,8 @@ let ``Slice η: unmatched source User-FK value drops the row (V1 diagnostic+skip
             [ NoFallbackConfigured (SourceUserId.ofInt 99) ]
         |> mustOk
     let artifact =
-        MigrationDependenciesEmitter.emitWithUserRemap
-            catalog Profile.empty migration userRemap
+        (let topo' = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value in
+             MigrationDependenciesEmitter.emitWithTopo topo' catalog Profile.empty migration userRemap)
         |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find order.SsKey
     // Only the matched row survives; the unmatched row is silently
@@ -180,12 +174,8 @@ let ``Slice η: kind with no User-FK references passes through unrewritten`` () 
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
           Attributes =
-              [ { SsKey = idKey;    Name = mkName "Id";    Type = Integer
-                  Column = { ColumnName = "ID";    IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-                { SsKey = labelKey; Name = mkName "Label"; Type = Text
-                  Column = { ColumnName = "LABEL"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+              [ { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true } ]
           References = []  // no User-FK
           Indexes    = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
@@ -206,8 +196,8 @@ let ``Slice η: kind with no User-FK references passes through unrewritten`` () 
             []
         |> mustOk
     let artifact =
-        MigrationDependenciesEmitter.emitWithUserRemap
-            catalog Profile.empty migration userRemap
+        (let topo' = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value in
+             MigrationDependenciesEmitter.emitWithTopo topo' catalog Profile.empty migration userRemap)
         |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     Assert.Equal (1, List.length script.Phase1Merges)

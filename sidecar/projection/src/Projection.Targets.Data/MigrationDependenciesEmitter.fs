@@ -210,7 +210,7 @@ module MigrationDependenciesEmitter =
                 Rows       = typedRows |> List.map (typedValuesToSqlLiterals deferred k.Attributes)
                 CdcAware   = cdcAware
             }
-        let mergeStmt = ScriptDomBuild.buildMergeStatement args
+        let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value
         System.String.Concat(  // LINT-ALLOW: terminal MERGE statement-terminator + GO-batch suffix on the rendered MERGE (chapter 4.1.B slice ε); segments are typed (output of `ScriptDomGenerate.generateOne` from typed AST + SQL Server's required MERGE statement-terminator + V1 batch-separator literal); same architectural shape as StaticSeedsEmitter's terminal-text boundary
             ScriptDomGenerate.generateOne (mergeStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement),
             ";\nGO\n")
@@ -245,7 +245,7 @@ module MigrationDependenciesEmitter =
             { Target     = table
               SetCells   = setCells
               WhereCells = whereCells }
-        let updateStmt = ScriptDomBuild.buildUpdateStatement args
+        let updateStmt = (ScriptDomBuild.buildUpdateStatement args).Value
         System.String.Concat(  // LINT-ALLOW: terminal UPDATE statement-terminator + GO-batch suffix on the rendered Phase-2 UPDATE (chapter 4.1.B slice ε); segments are typed (output of `ScriptDomGenerate.generateOne` from `ScriptDomBuild.buildUpdateStatement` typed AST + SQL Server's statement-terminator + V1 batch-separator literal); same architectural shape as StaticSeedsEmitter.renderUpdate
             ScriptDomGenerate.generateOne (updateStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement),
             ";\nGO\n")
@@ -430,16 +430,9 @@ module MigrationDependenciesEmitter =
         let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
         emitWithTopo topo catalog profile context UserRemapContext.empty
 
-    /// Π_MigrationDependencies emit with explicit UserRemapContext.
-    /// The slice η pipeline-integration entry point — callers that
-    /// have run `UserFkReflowPass.discover` supply the resulting
-    /// `UserRemapContext` to drive User-FK column rewriting.
-    let emitWithUserRemap
-        (catalog: Catalog)
-        (profile: Profile)
-        (context: MigrationDependencyContext)
-        (userRemap: UserRemapContext)
-        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        use _ = Bench.scope "emit.migrationDeps.emitWithUserRemap"
-        let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
-        emitWithTopo topo catalog profile context userRemap
+    // Chapter 4.7 cleanup: `emitWithUserRemap` retired as
+    // overdifferentiated middle-tier. Callers run
+    // `TopologicalOrderPass.runWith TreatAsCycle` explicitly and use
+    // `emitWithTopo` directly (which takes the precomputed topo +
+    // both contexts). The composer (`DataEmissionComposer.composeFull`)
+    // is the canonical pipeline entry point; hoists the topo once.

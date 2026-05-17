@@ -27,22 +27,9 @@ let private ciRun (c: Catalog) : Lineage<Catalog> =
 // ---------------------------------------------------------------------------
 
 let private withReversedCountryRows (c: Catalog) : Catalog =
-    { Modules =
-        c.Modules
-        |> List.map (fun m ->
-            { m with
-                Kinds =
-                    m.Kinds
-                    |> List.map (fun k ->
-                        if k.SsKey = countryKey then
-                            { k with
-                                Modality =
-                                    k.Modality
-                                    |> List.map (function
-                                        | Static rows -> Static (List.rev rows)
-                                        | other       -> other) }
-                        else k) })
-      Sequences = c.Sequences }
+    { IRBuilders.mkCatalog (c.Modules |> List.map (fun m -> { m with Kinds = m.Kinds |> List.map (fun k -> if k.SsKey = countryKey then { k with Modality = k.Modality |> List.map (function | Static rows -> Static (List.rev rows) | other -> other) } else k) })) with
+        Sequences = c.Sequences
+    }
 
 let private extractCountryRows (c: Catalog) : StaticRow list =
     let countryK = Catalog.tryFindKind countryKey c |> Option.get
@@ -162,17 +149,9 @@ let ``A23: events carry the pass version and name`` () =
 // ---------------------------------------------------------------------------
 
 let private withCountryRows (rows: StaticRow list) (c: Catalog) : Catalog =
-    { Modules =
-        c.Modules
-        |> List.map (fun m ->
-            { m with
-                Kinds =
-                    m.Kinds
-                    |> List.map (fun k ->
-                        if k.SsKey = countryKey then
-                            { k with Modality = [ Static rows ] }
-                        else k) })
-      Sequences = c.Sequences }
+    { IRBuilders.mkCatalog (c.Modules |> List.map (fun m -> { m with Kinds = m.Kinds |> List.map (fun k -> if k.SsKey = countryKey then { k with Modality = [ Static rows ] } else k) })) with
+        Sequences = c.Sequences
+    }
 
 [<Fact>]
 let ``edge: empty population list normalizes to empty list`` () =

@@ -65,11 +65,7 @@ let private parentKind : Kind =
       Modality = []
       Physical = { Schema = "dbo"; Table = "OSUSR_P_PARENT"; Catalog = None }
       Attributes = [
-          { SsKey        = parentIdKey
-            Name         = mkName "Id"
-            Type         = Integer
-            Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+          { IRBuilders.mkAttribute parentIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true } ]
       References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private childKind : Kind =
@@ -79,25 +75,10 @@ let private childKind : Kind =
       Modality = []
       Physical = { Schema = "dbo"; Table = "OSUSR_C_CHILD"; Catalog = None }
       Attributes = [
-          { SsKey        = childIdKey
-            Name         = mkName "Id"
-            Type         = Integer
-            Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-          { SsKey        = childParentFkKey
-            Name         = mkName "ParentId"
-            Type         = Integer
-            // FK column is nullable in the V1 fixture — exercises the
-            // KeepNullable(NoTighteningSignal) branch.
-            Column       = { ColumnName = "PARENTID"; IsNullable = true }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+          { IRBuilders.mkAttribute childIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+          { IRBuilders.mkAttribute childParentFkKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } } ]
       References = [
-          { SsKey           = childToParentRefKey
-            Name            = mkName "Parent"
-            SourceAttribute = childParentFkKey
-            TargetKind      = parentKindKey
-            OnDelete        = NoAction
-            IsUserFk        = false } ]
+          IRBuilders.mkReference childToParentRefKey (mkName "Parent") childParentFkKey parentKindKey ]
       Indexes = []
       Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
@@ -110,16 +91,8 @@ let private countryKind : Kind =
       Modality = [ Static [] ]
       Physical = { Schema = "dbo"; Table = "OSUSR_DEF_CITY"; Catalog = None }
       Attributes = [
-          { SsKey        = countryIdKey
-            Name         = mkName "Id"
-            Type         = Integer
-            Column       = { ColumnName = "ID"; IsNullable = false }
-            IsPrimaryKey = true; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-          { SsKey        = countryNameKey
-            Name         = mkName "Name"
-            Type         = Text
-            Column       = { ColumnName = "NAME"; IsNullable = false }
-            IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] } ]
+          { IRBuilders.mkAttribute countryIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+          { IRBuilders.mkAttribute countryNameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false } } ]
       References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private endToEndCatalog : Catalog =

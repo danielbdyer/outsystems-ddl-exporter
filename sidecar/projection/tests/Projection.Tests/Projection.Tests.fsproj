@@ -75,6 +75,12 @@
     <Compile Include="OsmCatalogReaderDifferentialTests.fs" />
     <Compile Include="OsmRowsetReaderTests.fs" />
     <Compile Include="DescriptionLiftTests.fs" />
+    <Compile Include="OriginalNameAndExternalDbTypeLiftTests.fs" />
+    <Compile Include="IndexColumnDirectionTests.fs" />
+    <Compile Include="ModuleExtendedPropertyEmissionTests.fs" />
+    <Compile Include="WithDiagnosticsBuildersTests.fs" />
+    <Compile Include="MetadataExtractionSqlTests.fs" />
+    <Compile Include="OssysExtractionCanaryTests.fs" />
     <Compile Include="IsActiveCarryThroughTests.fs" />
     <Compile Include="IRFidelityLiftTests.fs" />
     <Compile Include="NoSilentDropTests.fs" />
@@ -108,6 +114,17 @@
     <Compile Include="DockerImageEmitterTests.fs" />
     <Compile Include="CoordinatesStage2Tests.fs" />
     <Compile Include="ManifestEmitterTests.fs" />
+    <Compile Include="ManifestCoverageTests.fs" />
+    <Compile Include="ManifestPredicateCoverageTests.fs" />
+    <Compile Include="ManifestUnsupportedTests.fs" />
+    <Compile Include="ManifestV1DifferentialTests.fs" />
+    <Compile Include="IndexFilterTests.fs" />
+    <Compile Include="IndexIncludedColumnsTests.fs" />
+    <Compile Include="IndexOnDiskMetadataTests.fs" />
+    <Compile Include="IsPlatformAutoEmitterToggleTests.fs" />
+    <Compile Include="ReferenceHasDbConstraintTests.fs" />
+    <Compile Include="FilterParseDiagnosticTests.fs" />
+    <Compile Include="BuildCreateIndexDiagnosticsTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />
     <Compile Include="SiblingEmitterContractTests.fs" />
@@ -138,6 +155,7 @@
     <ProjectReference Include="..\..\src\Projection.Targets.Distributions\Projection.Targets.Distributions.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.Sql\Projection.Adapters.Sql.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.Osm\Projection.Adapters.Osm.fsproj" />
+    <ProjectReference Include="..\..\src\Projection.Adapters.OssysSql\Projection.Adapters.OssysSql.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Pipeline\Projection.Pipeline.fsproj" />
   </ItemGroup>
 

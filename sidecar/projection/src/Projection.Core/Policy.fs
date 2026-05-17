@@ -62,6 +62,12 @@ type EmissionPolicy = {
     EmitData        : bool
     EmitDiagnostics : bool
     DataComposition : DataComposition
+    /// Chapter 4.8 slice γ — operator toggle for platform-auto-generated
+    /// indexes (V1's `SsdtManifestOptions.IncludePlatformAutoIndexes`).
+    /// `true` (V1 default) = include platform-auto indexes in the SSDT
+    /// bundle; `false` = filter them at emission time. Consumes the
+    /// `Index.IsPlatformAuto` IR field shipped at chapter 4.6 slice β.
+    IncludePlatformAutoIndexes : bool
 }
 
 
@@ -443,7 +449,39 @@ module EmissionPolicy =
                 { EmitSchema      = emitSchema
                   EmitData        = emitData
                   EmitDiagnostics = emitDiagnostics
-                  DataComposition = dataComposition }
+                  DataComposition = dataComposition
+                  // Chapter 4.8 slice γ — V1 parity default.
+                  IncludePlatformAutoIndexes = true }
+
+    /// Replace `IncludePlatformAutoIndexes` while preserving the rest
+    /// of the policy. Chapter 4.8 slice γ. Operators set to `false` to
+    /// filter platform-auto indexes from the SSDT bundle.
+    let withIncludePlatformAutoIndexes (includeAuto: bool) (policy: EmissionPolicy) : EmissionPolicy =
+        { policy with IncludePlatformAutoIndexes = includeAuto }
+
+    /// Project a catalog by the `IncludePlatformAutoIndexes` toggle. When
+    /// the policy says `true` (V1 default), returns the catalog
+    /// unchanged. When `false`, returns a catalog with each Kind's
+    /// `Indexes` list pruned of `IsPlatformAuto = true` entries. Per A18
+    /// amended: the emitter consumes the filtered catalog; Policy lives
+    /// at the composition layer.
+    ///
+    /// Chapter 4.8 slice γ. Sibling to `SelectionPolicy.filterCatalog`.
+    let filterPlatformAutoIndexes (policy: EmissionPolicy) (c: Catalog) : Catalog =
+        if policy.IncludePlatformAutoIndexes then c
+        else
+            { Modules =
+                c.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                { k with
+                                    Indexes =
+                                        k.Indexes
+                                        |> List.filter (fun i -> not i.IsPlatformAuto) }) })
+              Sequences = c.Sequences }
 
     /// Default emission: schema only. The most common configuration and
     /// the one where the algebra's structural claims are sharpest.

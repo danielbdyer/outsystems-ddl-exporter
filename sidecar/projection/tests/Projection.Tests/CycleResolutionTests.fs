@@ -17,28 +17,13 @@ let ``classify: non-nullable + NoAction = Other`` () =
     Assert.Equal<EdgeStrength>(EdgeStrength.Other, result)
 
 let private mkAttr (key: string) (nullable: bool) : Attribute =
-    { SsKey        = testKey key
-      Name         = Name.create "Fk" |> Result.value
-      Type         = Integer
-      Column       = { ColumnName = "FK"; IsNullable = nullable }
-      IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+    { IRBuilders.mkAttribute (testKey key) (Name.create "Fk" |> Result.value) Integer with Column = { ColumnName = "FK"; IsNullable = nullable } }
 
 let private mkRef (sourceAttrKey: string) (action: ReferenceAction) : Reference =
-    { SsKey           = refKey ["x"]
-      Name            = Name.create "x" |> Result.value
-      SourceAttribute = testKey sourceAttrKey
-      TargetKind      = kindKey ["target"]
-      OnDelete        = action
-      IsUserFk        = false }
+    { IRBuilders.mkReference (refKey ["x"]) (Name.create "x" |> Result.value) (testKey sourceAttrKey) (kindKey ["target"]) with OnDelete = action }
 
 let private kindWith (a: Attribute) : Kind =
-    { SsKey      = kindKey ["owner"]
-      Name       = Name.create "owner" |> Result.value
-      Origin     = OsNative
-      Modality   = []
-      Physical   = { Schema = "dbo"; Table = "owner"; Catalog = None }
-      Attributes = [ a ]
-      References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+    IRBuilders.mkKind (kindKey ["owner"]) (Name.create "owner" |> Result.value) { Schema = "dbo"; Table = "owner"; Catalog = None } [ a ]
 
 [<Fact>]
 let ``classify: nullable + NoAction = Weak`` () =

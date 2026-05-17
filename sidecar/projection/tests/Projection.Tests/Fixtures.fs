@@ -112,12 +112,7 @@ let order : Kind =
               Column = { ColumnName = "CUSTOMER_ID"; IsNullable = false } } ]
         with
         References =
-            [ { SsKey           = orderRefToCustomer
-                Name            = name "Customer"
-                SourceAttribute = orderCustomerFkKey
-                TargetKind      = customerKey
-                OnDelete        = NoAction
-                IsUserFk        = false } ] }
+            [ IRBuilders.mkReference orderRefToCustomer (name "Customer") orderCustomerFkKey customerKey ] }
 
 // ---------------------------------------------------------------------------
 // Country — Static, with a small populated row set.

@@ -11996,3 +11996,77 @@ The retirement is structural: V2's emitter is no longer silent on column/table/i
 - `tests/Projection.Tests/SsdtExtendedPropertyEmissionTests.fs` (7 witnesses).
 
 ---
+
+## 2026-05-17 (post-chapter-A.4.7' hygiene) — Perf baseline re-recorded to absorb the `compose.runChain` Bench scope
+
+**Why this amendment.** Per the canary-as-load-bearing-forcing-function discipline (`CLAUDE.md` operating-disciplines table; `DECISIONS 2026-05-10 — Perf-gate μ+σ statistical baseline`): re-record the baseline when the perf floor *legitimately* changes, and pair the re-record with a DECISIONS amendment naming the change. Chapter A.4.7' slice γ introduced the `compose.runChain` `Bench.scope` (the registry-driven traversal kernel in `PassChainAdapter.compose`); the prior baseline didn't carry this label, so it would have passed with a soft warning at every perf-gate invocation until rerecord.
+
+**What changed.** `PERF_GATE_RECORD=1 BENCH_RECORD_RUNS=5 bash sidecar/projection/scripts/perf-gate.sh` ran 5 warm operator-reality canary captures (50k rows × 300 tables × variegated FK density) and wrote the new μ+σ baseline to `bench/baseline-canary.json`. 202 labels covered; all five captures green.
+
+**New labels absorbed.** `compose.runChain` and its nested scopes (per-stage `compose.runChain.<stage>` entries from `PassChainAdapter.compose`'s registry traversal) join the baseline. Existing labels' μ+σ refresh in line with current hardware variance; no algorithmic floor-shift evidence in this re-record (the chapter A.4.7' refactor was structural, not perf-targeted — the registry-driven traversal replaces a hand-coded sequence of identical work).
+
+**Why not flat tolerance.** `K=5.0` on `MeanMs + K × σ_effective` (with `σ_effective = max(σ_observed, μ × 0.20)` Bayesian floor) absorbs cross-machine timing variance while still catching algorithmic regressions. The min-relative-stdev prior (20%) protects against N=5 underestimating true σ on I/O-bound labels.
+
+**Baseline at re-record.** `bench/baseline-canary.json` ships 202 labels × 5 runs. Top-5 by MeanMs are I/O / canary-deploy hotpaths (`deploy.runWideCanary`, `deploy.bulk.copyRows.batchSize`, `physicalSchema.rows.hash.elements`, `readside.readRowsStream.all.elements`, `deploy.executeStream.input.elements`). The `compose.runChain` family lands well below the deploy hotpaths — registry traversal is in-memory pass-chaining, not container work.
+
+**Cross-references.**
+
+- `bench/baseline-canary.json` (the new baseline).
+- `CHAPTER_A_4_7_PRIME_CLOSE.md` (the chapter that introduced `compose.runChain`).
+- `scripts/perf-gate.sh` (the statistical gate consuming this baseline).
+- `DECISIONS 2026-05-10 — Perf-gate μ+σ statistical baseline` (the codifying entry).
+
+---
+
+## 2026-05-17 (chapter 4.7 cleanup) — Sibling-wrapper discipline: the "hides information" vs "supplies private/computed default" distinguishing test
+
+**Why this amendment.** Chapter 4.7 slice β originally shipped two parallel emitter surfaces — `buildCreateIndex` (silent-skip; raw `CreateIndexStatement`) and `buildCreateIndexWithDiagnostics` (Diagnostics-bearing) — with a "backward-compat" rationale. The operator flagged the unprincipled-wrapper anti-pattern; the fix-forward collapsed to one canonical Diagnostics-bearing `buildCreateIndex`. A follow-on three-agent audit surfaced ~10 sibling-wrapper candidates across Core / Targets / Adapters / Pipeline / Cli; careful reread revealed most were principled F# default-argument idioms (NOT tech debt) and only 2 were genuinely overdifferentiated middle-tier wrappers (tech debt; retired this commit).
+
+The two-pattern distinction matters because agents reading the V2-no-back-compat discipline (CLAUDE.md operating-disciplines table) need a sharper test than "two functions named with `X` and `XWith<thing>` is tech debt." The naive reading deletes legitimate F#-default-argument idioms and creates churn at call sites without improving code health.
+
+### The discipline (codified)
+
+**The distinguishing test for sibling-wrapper patterns:**
+
+> Does the wrapper **hide information the caller might want**, or does it **supply a private/computed default the caller couldn't otherwise access**?
+>
+> - **Hides information** → tech debt; collapse to the canonical (information-bearing) surface; callers explicitly drop information via `.Value` / `ignore` / etc. at the call site.
+> - **Supplies default** → F# default-argument idiom; principled. F# lacks `let`-bound parameter defaults; the wrapper IS the idiom for that pattern. Don't delete.
+
+**The N+1 corollary (named: "overdifferentiated middle-tier"):**
+
+When the same callable has N defaultable axes, two surfaces (zero defaults + all defaults explicit) are principled; mid-tier wrappers defaulting subsets are tech debt. The N+1 count generalizes: provide the minimum number of entry points to cover the operationally-distinct caller intents (zero-default + full-explicit, OR the explicit-named slices that have substantively different consumption contexts).
+
+### Worked counterfactuals
+
+**Real tech debt (collapsed):**
+
+- `buildCreateIndex` (chapter 4.7 slice β fix-forward) — the silent-skip variant hid a Diagnostic the caller might want. Canonical surface is `Diagnostics<CreateIndexStatement>`; consumers explicitly drop via `.Value` if they don't surface diagnostics.
+- `MigrationDependenciesEmitter.emitWithUserRemap` (this commit) — middle-tier between `emit` (defaults both contexts) and `emitWithTopo` (takes both explicitly). Three siblings defaulting different axes = anti-pattern; the explicit `UserRemapContext.empty` at the call site makes intent visible.
+- `DataEmissionComposer.composeWithMigration` (this commit) — same shape; middle-tier wrapper retired.
+
+**Principled F# default-argument idiom (preserved):**
+
+- `Compose.write` — `let private defaultFileWriter` closes over the canonical FileWriter; the wrapper threads in a value external callers can't reference. Removing it would force making `defaultFileWriter` public or duplicating the literal at every call site. F# lacks parameter defaults for `let`-bound functions; the wrapper IS the idiom.
+- `ManifestEmitter.build` — threads in `RegisteredTransforms.all` (the canonical production registry). Tests use `buildWith` with a custom registry; production uses `build`. Same idiom.
+- `StaticSeedsEmitter.emit` / `BootstrapEmitter.emit` / `MigrationDependenciesEmitter.emit` — each runs `TopologicalOrderPass.runWith` internally to compute the topo arg before delegating to `emitWithTopo`. The wrapper adds a real computation (the pass invocation), not just hides information. Composer hoists once + uses `emitWithTopo`; ad-hoc callers without precomputed topo use `emit`.
+
+**Intentional orthogonal surfaces (not even close to wrappers; preserved):**
+
+- `Pipeline.run` / `runSkeletonOnly` / `runWithConfig` — three distinct consumption patterns (full-emit / skeleton-only / config-driven). Each has live call sites with substantively different intents.
+- `Deploy.useContainer` / `useEphemeralContainer` — genuine warm-vs-ephemeral container policy axis (`PROJECTION_MSSQL_CONN_STR` env-var dispatch).
+- `Deploy.runWideCanary` / `runWideCanaryWithLoader` — text-batch vs bulk-realize axis; both have live consumers.
+- `CatalogReader.SnapshotSource` DU variants — file I/O / JSON parsing / rowset translation each dispatch to substantively different code paths.
+
+### When the test is ambiguous
+
+When the wrapper-vs-default-supplier classification is borderline (e.g., the wrapper computes a derived value AND also defaults a parameter), apply the **N+1 corollary**: keep ≤2 surfaces per callable (canonical-explicit + canonical-with-defaults); retire intermediate variants that default only some axes. The operator's "fine tune on this matter" amendment (2026-05-17) names the overdifferentiated middle-tier as the named failure mode.
+
+### Cross-references
+
+- `CLAUDE.md` operating-disciplines table — V2-no-back-compat row (this amendment refines the discipline with the distinguishing test).
+- Chapter 4.7 slice β fix-forward commit (`6951688`) — worked counterfactual.
+- Chapter 4.7 cleanup commit (`76c557a`) — `emitWithUserRemap` + `composeWithMigration` retirement.
+- `DECISIONS 2026-05-16 (later) — V2 self-containment` — the parent V2-no-back-compat discipline this entry refines.
+
+---

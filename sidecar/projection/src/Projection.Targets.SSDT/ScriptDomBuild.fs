@@ -211,12 +211,22 @@ module ScriptDomBuild =
     /// `(TableId, ColumnDef list, PrimaryKeyDef option, ForeignKeyDef list)`
     /// triple. Pure: same inputs → same fragment shape (verified by
     /// `tests/Projection.Tests/ScriptDomRoundTripTests.fs`).
+    /// CREATE TABLE builder. Returns the typed `CreateTableStatement`
+    /// paired with a Diagnostics stream. Chapter 4.9 slice ζ — the
+    /// canonical signature carries `Diagnostics<_>` so future
+    /// Diagnostics sources (column-default parse failures; check-
+    /// constraint parse failures; per-column metadata anomalies) can
+    /// surface through the same writer without re-introducing a
+    /// sibling-wrapper. Today the entries list is empty by
+    /// construction; callers explicitly drop via `.Value` at the call
+    /// site (per the chapter 4.7 sibling-wrapper discipline + V2-no-
+    /// back-compat).
     let buildCreateTable
         (table: TableId)
         (columns: ColumnDef list)
         (pk: PrimaryKeyDef option)
         (fks: ForeignKeyDef list)
-        : CreateTableStatement =
+        : Diagnostics<CreateTableStatement> =
         let stmt = CreateTableStatement()
         stmt.SchemaObjectName <- schemaObjectFromTableId table
         let def = TableDefinition()
@@ -229,7 +239,7 @@ module ScriptDomBuild =
         for fk in fks do
             def.TableConstraints.Add(foreignKeyConstraint fk)
         stmt.Definition <- def
-        stmt
+        Diagnostics.ofValue stmt
 
     // -----------------------------------------------------------------------
     // INSERT statements.
@@ -457,7 +467,13 @@ module ScriptDomBuild =
     /// the entire MERGE flows through ScriptDom's typed AST; rendering
     /// happens at `Sql160ScriptGenerator.GenerateScript` (no
     /// StringBuilder, no per-fragment LINT-ALLOWs).
-    let buildMergeStatement (args: MergeBuildArgs) : MergeStatement =
+    ///
+    /// Chapter 4.9 slice ζ — canonical Diagnostics-bearing signature.
+    /// Pattern established for future Diagnostics sources (row-literal
+    /// type-coercion failures; ON-clause condition anomalies; per-cell
+    /// SqlLiteral parse-back validation). Today the entries list is
+    /// empty by construction.
+    let private buildMergeStatementCore (args: MergeBuildArgs) : MergeStatement =
         let stmt = MergeStatement()
         let spec = MergeSpecification()
         // Target [schema].[table] AS Target
@@ -521,6 +537,10 @@ module ScriptDomBuild =
         stmt.MergeSpecification <- spec
         stmt
 
+    /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ).
+    let buildMergeStatement (args: MergeBuildArgs) : Diagnostics<MergeStatement> =
+        Diagnostics.ofValue (buildMergeStatementCore args)
+
     // -----------------------------------------------------------------------
     // UPDATE statement (chapter 4.1.B slice δ; two-phase insertion /
     // cycle-breaking).
@@ -579,7 +599,9 @@ module ScriptDomBuild =
     /// (text-builder-as-first-instinct discipline): every node typed,
     /// every literal flowing through `SqlLiteral`, no terminal text
     /// composition until `Sql160ScriptGenerator.GenerateScript`.
-    let buildUpdateStatement (args: UpdateBuildArgs) : UpdateStatement =
+    ///
+    /// Chapter 4.9 slice ζ — canonical Diagnostics-bearing signature.
+    let private buildUpdateStatementCore (args: UpdateBuildArgs) : UpdateStatement =
         let stmt = UpdateStatement()
         let spec = UpdateSpecification()
         let target = NamedTableReference()
@@ -609,6 +631,10 @@ module ScriptDomBuild =
 
         stmt.UpdateSpecification <- spec
         stmt
+
+    /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ).
+    let buildUpdateStatement (args: UpdateBuildArgs) : Diagnostics<UpdateStatement> =
+        Diagnostics.ofValue (buildUpdateStatementCore args)
 
     // -----------------------------------------------------------------------
     // SET IDENTITY_INSERT statement.
@@ -642,20 +668,156 @@ module ScriptDomBuild =
     /// V2 emits ASC by default per V1 convention; non-clustered is
     /// implicit (ScriptDom emits NONCLUSTERED for non-PK indexes
     /// per SQL Server defaults).
-    let buildCreateIndex (idx: IndexDef) : CreateIndexStatement =
+    /// Parse a raw filter-definition string into a typed
+    /// `BooleanExpression`, surfacing parse failures as Diagnostic
+    /// warnings via the V2 `Diagnostics<'a>` writer. Mirrors V1's
+    /// `IndexScriptBuilder.ParsePredicate`
+    /// (`src/Osm.Smo/PerTableEmission/IndexScriptBuilder.cs:403-419`)
+    /// shape, lifted to `TSql160Parser` (SQL Server 2022 compat 160
+    /// per supreme operating discipline pillar 4) + extended with
+    /// the V2 Diagnostics emission path codified at chapter 4.6
+    /// slice γ open Q3.
+    ///
+    /// **Diagnostic shape per chapter 4.6 open Q3:**
+    /// - Source = `"emitter:ssdt"`
+    /// - Code = `"emit.ssdt.index.filterParseFailure"`
+    /// - Severity = `Warning` (does not block emission)
+    /// - Message names the raw filter + parser error count
+    /// - Metadata carries `raw` (the original filter string) + `errorCount`
+    ///
+    /// **Returns `Diagnostics<BooleanExpression option>`** — Some on
+    /// successful parse (empty diagnostic entries); None with one
+    /// Warning entry per failure path. Consumers compose via
+    /// `Diagnostics.bind`.
+    let tryParseFilterWithDiagnostics (raw: string) : Diagnostics<BooleanExpression option> =
+        if System.String.IsNullOrWhiteSpace raw then
+            Diagnostics.ofValue None
+        else
+            let parser = TSql160Parser(initialQuotedIdentifiers = false)
+            use reader = new System.IO.StringReader(raw)
+            let fragment, errors = parser.ParseBooleanExpression(reader)
+            let errorCount = if isNull errors then 0 else errors.Count
+            match Option.ofObj fragment with
+            | None ->
+                let entry : DiagnosticEntry =
+                    { Source   = "emitter:ssdt"
+                      Severity = DiagnosticSeverity.Warning
+                      Code     = "emit.ssdt.index.filterParseFailure"
+                      Message  = sprintf "Index filter expression failed to parse; emit will omit WHERE clause (errors: %d)" errorCount
+                      SsKey    = None
+                      Metadata =
+                        Map.ofList
+                            [ "raw", raw
+                              "errorCount", string errorCount ] }
+                Diagnostics.ofValueWith entry None
+            | Some _ when errorCount > 0 ->
+                let entry : DiagnosticEntry =
+                    { Source   = "emitter:ssdt"
+                      Severity = DiagnosticSeverity.Warning
+                      Code     = "emit.ssdt.index.filterParseFailure"
+                      Message  = sprintf "Index filter parser reported errors; emit will omit WHERE clause (errors: %d)" errorCount
+                      SsKey    = None
+                      Metadata =
+                        Map.ofList
+                            [ "raw", raw
+                              "errorCount", string errorCount ] }
+                Diagnostics.ofValueWith entry None
+            | Some f ->
+                // Wrap in BooleanParenthesisExpression for output
+                // readability (V1 IndexScriptBuilder convention).
+                let wrapped =
+                    match f with
+                    | :? BooleanParenthesisExpression -> f
+                    | _ ->
+                        let parens = BooleanParenthesisExpression()
+                        parens.Expression <- f
+                        parens :> BooleanExpression
+                Diagnostics.ofValue (Some wrapped)
+
+    /// CREATE INDEX builder. Returns the typed `CreateIndexStatement`
+    /// paired with a Diagnostics stream surfacing filter-parse failures
+    /// (Source=emitter:ssdt; Code=emit.ssdt.index.filterParseFailure;
+    /// Severity=Warning). When the filter parses cleanly, the entries
+    /// list is empty and the resulting CREATE INDEX carries the typed
+    /// FilterPredicate. When the filter fails to parse, the resulting
+    /// CREATE INDEX omits the WHERE clause AND the Diagnostics carries
+    /// a Warning entry consumers can surface in the manifest or
+    /// per-emit log.
+    ///
+    /// Callers that don't surface diagnostics drop them explicitly via
+    /// `.Value` at the call site (chapter 4.7 slice β cash-out of
+    /// chapter 4.6 slice γ "Diagnostics-aware emitter signature"
+    /// forward signal; V2-no-back-compat — no legacy silent-skip
+    /// wrapper).
+    let buildCreateIndex (idx: IndexDef) : Diagnostics<CreateIndexStatement> =
         let stmt = CreateIndexStatement()
         stmt.Unique <- idx.IsUnique
         stmt.Name <- bracketed idx.Name
         stmt.OnName <- schemaObjectFromTableId idx.Table
-        for colName in idx.Columns do
+        for keyCol in idx.Columns do
             let col = ColumnWithSortOrder()
+            let colRef = ColumnReferenceExpression()
+            let mid = MultiPartIdentifier()
+            mid.Identifiers.Add(bracketed keyCol.Name)
+            colRef.MultiPartIdentifier <- mid
+            col.Column <- colRef
+            // Chapter 4.9 slice γ — per-column sort direction. V1's
+            // IndexScriptBuilder convention sets SortOrder only on
+            // descending columns (ascending falls through as
+            // NotSpecified). Mirrors that here.
+            match keyCol.Direction with
+            | IndexDefColumnDirection.Descending -> col.SortOrder <- SortOrder.Descending
+            | IndexDefColumnDirection.Ascending  -> col.SortOrder <- SortOrder.NotSpecified
+            stmt.Columns.Add(col)
+        // Chapter 4.5 slice β — INCLUDE columns for covering indexes.
+        for colName in idx.IncludedColumns do
             let colRef = ColumnReferenceExpression()
             let mid = MultiPartIdentifier()
             mid.Identifiers.Add(bracketed colName)
             colRef.MultiPartIdentifier <- mid
-            col.Column <- colRef
-            stmt.Columns.Add(col)
-        stmt
+            stmt.IncludeColumns.Add(colRef)
+        // Chapter 4.8 slice β — on-disk index options WITH (…) clause.
+        // Each option's typed ScriptDom IndexOption variant is added only
+        // when the field deviates from V1's IndexOnDiskMetadata.Empty
+        // default (FillFactor=None, IsPadded=false, AllowRowLocks=true,
+        // AllowPageLocks=true, NoRecomputeStatistics=false). SQL Server's
+        // CREATE INDEX omits the WITH clause when all defaults hold.
+        let intLiteral (n: int) : ScalarExpression =
+            let lit = IntegerLiteral()
+            lit.Value <- string n
+            lit :> ScalarExpression
+        let onOffOption (kind: IndexOptionKind) (isOn: bool) : IndexOption =
+            let opt = IndexStateOption()
+            opt.OptionKind <- kind
+            opt.OptionState <-
+                if isOn then OptionState.On
+                else OptionState.Off
+            opt :> IndexOption
+        let exprOption (kind: IndexOptionKind) (expr: ScalarExpression) : IndexOption =
+            let opt = IndexExpressionOption()
+            opt.OptionKind <- kind
+            opt.Expression <- expr
+            opt :> IndexOption
+        match idx.FillFactor with
+        | Some n -> stmt.IndexOptions.Add(exprOption IndexOptionKind.FillFactor (intLiteral n))
+        | None -> ()
+        if idx.IsPadded then
+            stmt.IndexOptions.Add(onOffOption IndexOptionKind.PadIndex true)
+        if not idx.AllowRowLocks then
+            stmt.IndexOptions.Add(onOffOption IndexOptionKind.AllowRowLocks false)
+        if not idx.AllowPageLocks then
+            stmt.IndexOptions.Add(onOffOption IndexOptionKind.AllowPageLocks false)
+        if idx.NoRecomputeStatistics then
+            stmt.IndexOptions.Add(onOffOption IndexOptionKind.StatisticsNoRecompute true)
+        // Chapter 4.5 slice α — WHERE clause via TSql160Parser, lifted
+        // through the Diagnostics writer.
+        match idx.Filter with
+        | None -> Diagnostics.ofValue stmt
+        | Some raw ->
+            tryParseFilterWithDiagnostics raw
+            |> Diagnostics.map (fun predOpt ->
+                predOpt |> Option.iter (fun p -> stmt.FilterPredicate <- p)
+                stmt)
 
     // -----------------------------------------------------------------------
     // Statement-level dispatch.
@@ -671,9 +833,14 @@ module ScriptDomBuild =
     /// All string parameters are national (`N''`) per V1 + SQL Server
     /// extended-property convention; the value parameter is `NULL`
     /// when `propertyValue = None`.
-    let buildSetExtendedProperty
-            (table: TableId)
-            (target: ExtendedPropertyTarget)
+    /// Build an `ExecuteStatement` for an `sp_addextendedproperty`
+    /// call. Chapter 4.9 slice ζ — canonical Diagnostics-bearing
+    /// signature. Future Diagnostics sources (level-validation
+    /// failures on rare V1 ownership forms; truncation warnings on
+    /// >7500-char property values) flow through the writer without
+    /// reshaping the signature.
+    let private buildSetExtendedPropertyCore
+            (owner: ExtendedPropertyOwner)
             (propertyName: string)
             (propertyValue: string option)
             : ExecuteStatement =
@@ -704,18 +871,33 @@ module ScriptDomBuild =
             | Some v -> nText v
             | None   -> NullLiteral() :> ScalarExpression
 
-        exec.Parameters.Add(parameter "@name"       (nText propertyName))
-        exec.Parameters.Add(parameter "@value"      valueExpr)
-        exec.Parameters.Add(parameter "@level0type" (nText "SCHEMA"))
-        exec.Parameters.Add(parameter "@level0name" (nText table.Schema))
-        exec.Parameters.Add(parameter "@level1type" (nText "TABLE"))
-        exec.Parameters.Add(parameter "@level1name" (nText table.Table))
-        match target with
-        | TableExtendedProperty -> ()
-        | ColumnExtendedProperty col ->
+        exec.Parameters.Add(parameter "@name"  (nText propertyName))
+        exec.Parameters.Add(parameter "@value" valueExpr)
+        // Chapter 4.9 slice ε — multi-level dispatch on owner. SCHEMA-
+        // only emits no @level1; TABLE owners (Table / Column / Index)
+        // always emit @level0=SCHEMA + @level1=TABLE; column / index
+        // add @level2.
+        match owner with
+        | SchemaProperty schema ->
+            exec.Parameters.Add(parameter "@level0type" (nText "SCHEMA"))
+            exec.Parameters.Add(parameter "@level0name" (nText schema))
+        | TableProperty table ->
+            exec.Parameters.Add(parameter "@level0type" (nText "SCHEMA"))
+            exec.Parameters.Add(parameter "@level0name" (nText table.Schema))
+            exec.Parameters.Add(parameter "@level1type" (nText "TABLE"))
+            exec.Parameters.Add(parameter "@level1name" (nText table.Table))
+        | ColumnProperty (table, col) ->
+            exec.Parameters.Add(parameter "@level0type" (nText "SCHEMA"))
+            exec.Parameters.Add(parameter "@level0name" (nText table.Schema))
+            exec.Parameters.Add(parameter "@level1type" (nText "TABLE"))
+            exec.Parameters.Add(parameter "@level1name" (nText table.Table))
             exec.Parameters.Add(parameter "@level2type" (nText "COLUMN"))
             exec.Parameters.Add(parameter "@level2name" (nText col))
-        | IndexExtendedProperty idx ->
+        | IndexProperty (table, idx) ->
+            exec.Parameters.Add(parameter "@level0type" (nText "SCHEMA"))
+            exec.Parameters.Add(parameter "@level0name" (nText table.Schema))
+            exec.Parameters.Add(parameter "@level1type" (nText "TABLE"))
+            exec.Parameters.Add(parameter "@level1name" (nText table.Table))
             exec.Parameters.Add(parameter "@level2type" (nText "INDEX"))
             exec.Parameters.Add(parameter "@level2name" (nText idx))
 
@@ -726,6 +908,14 @@ module ScriptDomBuild =
         stmt.ExecuteSpecification <- spec
         stmt
 
+    /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ).
+    let buildSetExtendedProperty
+            (owner: ExtendedPropertyOwner)
+            (propertyName: string)
+            (propertyValue: string option)
+            : Diagnostics<ExecuteStatement> =
+        Diagnostics.ofValue (buildSetExtendedPropertyCore owner propertyName propertyValue)
+
     /// Returns `None` for non-SQL variants (`Comment`, `Blank`) so
     /// the realization layer can splice them through the text
     /// stream directly. Closed-DU dispatch — adding a new variant
@@ -735,12 +925,20 @@ module ScriptDomBuild =
         | Blank -> None
         | Comment _ -> None
         | CreateTable (table, cols, pk, fks) ->
-            Some (buildCreateTable table cols pk fks :> TSqlStatement)
+            // Chapter 4.9 slice ζ — Diagnostics-bearing canonical
+            // signatures across CreateTable / CreateIndex /
+            // SetExtendedProperty / MergeStatement / UpdateStatement.
+            // The Statement-DU dispatcher drops Diagnostics — the
+            // dispatcher returns raw TSqlStatement per A35's stream
+            // contract. Future emit-time consumers wanting per-
+            // builder Diagnostics surfaced consume the builders
+            // directly (each returns `Diagnostics<TSqlStatement>`).
+            Some ((buildCreateTable table cols pk fks).Value :> TSqlStatement)
         | CreateIndex idx ->
-            Some (buildCreateIndex idx :> TSqlStatement)
+            Some ((buildCreateIndex idx).Value :> TSqlStatement)
         | InsertRow (table, cells) ->
             Some (buildInsertRow table cells :> TSqlStatement)
         | SetIdentityInsert (table, enabled) ->
             Some (buildSetIdentityInsert table enabled :> TSqlStatement)
-        | SetExtendedProperty (table, target, propName, propValue) ->
-            Some (buildSetExtendedProperty table target propName propValue :> TSqlStatement)
+        | SetExtendedProperty (owner, propName, propValue) ->
+            Some ((buildSetExtendedProperty owner propName propValue).Value :> TSqlStatement)

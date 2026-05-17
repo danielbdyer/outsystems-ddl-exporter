@@ -25,11 +25,7 @@ let private mkIndex
     (columns: SsKey list)
     (isUnique: bool)
     : Index =
-    { SsKey        = ssKey key
-      Name         = name "IX"
-      Columns      = columns
-      IsUnique     = isUnique
-      IsPrimaryKey = false; ExtendedProperties = [] }
+    { IRBuilders.mkIndex (ssKey key) (name "IX") columns with IsUnique = isUnique }
 
 let private mkProbe (rowCount: int64) : ProbeStatus =
     ProbeStatus.create DateTimeOffset.UnixEpoch rowCount Succeeded

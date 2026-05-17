@@ -168,6 +168,15 @@ module CatalogReader =
             /// `ossys_EntityAttr.Description` column. `None` when V1's
             /// source row is NULL.
             Description  : string option
+            /// Chapter 4.9 slice β — OriginalName lift (rowset path).
+            /// V1's `ossys_EntityAttr.OriginalName` column. `None` when
+            /// no rename history is recorded.
+            OriginalName : string option
+            /// Chapter 4.9 slice β — ExternalColumnType lift (rowset
+            /// path). V1's `ossys_EntityAttr.ExternalColumnType` column.
+            /// `None` for OS-native entities and when V1 omits the
+            /// override.
+            ExternalDatabaseType : string option
         }
 
     /// V1 rowset 4 — `#RefResolved` resolved-reference rows; chapter
@@ -189,6 +198,18 @@ module CatalogReader =
         {
             AttrId          : int
             RefEntityName   : string
+            /// V1 entity ID of the reference target. When the target
+            /// entity row carries its own `EntitySsKey` (V1 GUID-based
+            /// identity), the rowset adapter must resolve the target
+            /// SsKey via this ID rather than synthesizing the key from
+            /// `(SourceModule, RefEntityName)` (which produces a
+            /// different SsKey shape and breaks the danglingTarget
+            /// invariant for cross-key-shape catalogs). Chapter 5.0
+            /// slice γ — added to make GUID-bearing rowset bundles
+            /// produce valid Catalogs end-to-end. `None` when the
+            /// reference's target ID is unknown (defensive default;
+            /// fallback to synthesized key).
+            RefEntityId     : int option
             DeleteRuleCode  : string option
             HasDbConstraint : bool
         }
@@ -444,6 +465,35 @@ module CatalogReader =
                         "typeMismatch"
                         (sprintf "Property '%s' is not a numeric flag or boolean." name))
 
+    /// Optional V1 int-flag with a caller-supplied default. Mirrors
+    /// V1's `ISNULL(<col>, <default>)` SQL idiom (used at
+    /// `outsystems_model_export.sql:730` for `hasDbConstraint`, etc.).
+    /// Convenience over `match getIntFlag … with Ok v -> v | Error _ ->
+    /// default` — chapter 4.7 slice α consolidation. Returns the
+    /// flag value when present + parseable; returns the default for
+    /// absent / unparseable values (the failure case is itself the
+    /// V1-COALESCE-equivalent silent default).
+    let private getOptionalIntFlag
+        (element: JsonElement)
+        (name: string)
+        (defaultValue: bool)
+        : bool =
+        match getIntFlag element name with
+        | Ok v -> v
+        | Error _ -> defaultValue
+
+    /// Optional bool property with caller-supplied default. Sibling
+    /// of `getOptionalIntFlag` for fields V1 projects as JSON
+    /// booleans (e.g., index `isPlatformAuto`).
+    let private getOptionalBool
+        (element: JsonElement)
+        (name: string)
+        (defaultValue: bool)
+        : bool =
+        match getBool element name with
+        | Ok v -> v
+        | Error _ -> defaultValue
+
     /// Optional string property. Returns `None` for missing or
     /// JSON-null values, `Some s` for non-null strings, `Error`
     /// when the property exists but is not a string.
@@ -473,9 +523,27 @@ module CatalogReader =
     // -----------------------------------------------------------------------
 
     let private parsePrimitiveType (dataType: string) : Result<PrimitiveType> =
+        // V1's `OutsystemsAttribute.DataType` carries the OutSystems
+        // domain-type name (not the SQL type). Chapter 5.0 slice γ
+        // extends the mapping to cover the data types V1's
+        // `model.edge-case.seed.sql` fixture uses (Identifier / Text /
+        // Boolean / DateTime / Integer / Decimal). The mapping is
+        // V1-derived per the OSSYS adapter translation rule index
+        // (`DECISIONS 2026-05-15 — OSSYS adapter translation rules`).
         match dataType with
-        | "Identifier" -> Result.success Integer
-        | "Text"       -> Result.success Text
+        | "Identifier"        -> Result.success Integer
+        | "Integer"           -> Result.success Integer
+        | "LongInteger"       -> Result.success Integer
+        | "Text"              -> Result.success Text
+        | "Email"             -> Result.success Text
+        | "PhoneNumber"       -> Result.success Text
+        | "Boolean"           -> Result.success Boolean
+        | "DateTime"          -> Result.success DateTime
+        | "Date"              -> Result.success Date
+        | "Time"              -> Result.success Time
+        | "Decimal"           -> Result.success Decimal
+        | "Currency"          -> Result.success Decimal
+        | "BinaryData"        -> Result.success Binary
         | other ->
             Result.failureOf (
                 adapterError
@@ -536,6 +604,14 @@ module CatalogReader =
         // JSON property which `SnapshotJsonBuilder.cs` writes when
         // V1's `ossys_EntityAttr.Description` is non-null.
         let descriptionResult = getOptionalString attrJson "description"
+        // Chapter 4.9 slice β — OriginalName + ExternalDatabaseType lift.
+        // V1's JSON projects via `originalName` (NULL when no rename
+        // history) and `external_dbType` (NULL for OS-native entities
+        // and for external entities lacking an override). Both fields
+        // are defensive optional reads; the adapter carries `None` when
+        // the source omits or null-projects either.
+        let originalNameResult       = getOptionalString attrJson "originalName"
+        let externalDbTypeResult     = getOptionalString attrJson "external_dbType"
         match nameResult, physicalResult, dataTypeStr, isMandatory, isIdentifier with
         | Ok rawName, Ok physicalName, Ok rawDataType,
           Ok mandatory, Ok identifier ->
@@ -545,6 +621,14 @@ module CatalogReader =
             let description  =
                 match descriptionResult with
                 | Ok d -> d
+                | Error _ -> None
+            let originalName : string option =
+                match originalNameResult with
+                | Ok n -> n
+                | Error _ -> None
+            let externalDatabaseType : string option =
+                match externalDbTypeResult with
+                | Ok t -> t
                 | Error _ -> None
             // Per session-32 — V1 surfaces length / precision /
             // scale on attribute records when applicable. The
@@ -611,7 +695,9 @@ module CatalogReader =
                       // attribute-level lift; V1's JSON projection
                       // does not surface attribute-level extended
                       // properties at the boundary today.
-                      ExtendedProperties = [] }
+                      ExtendedProperties = []
+                      OriginalName       = originalName
+                      ExternalDatabaseType = externalDatabaseType }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 // Substantive causes (e.g., `adapter.osm.unmappedDataType`
@@ -743,6 +829,18 @@ module CatalogReader =
                 let onDelete    = parseDeleteRule deleteRuleCode
                 match refKey, refName, srcAttrKey, tgtKindKey, onDelete with
                 | Ok rKey, Ok rName, Ok srcKey, Ok tgtKey, Ok rule ->
+                    // Chapter 4.6 slice α — capture V1's
+                    // `reference_hasDbConstraint` int-flag
+                    // (COALESCE'd from outsystems_model_export.sql:730
+                    // HasFK column; V1's JSON projection renames to
+                    // `reference_hasDbConstraint` per SnapshotJsonBuilder).
+                    // Defaults to false when V1 source omits the field
+                    // (mirrors V1's ISNULL coalesce semantics).
+                    // Chapter 4.7 slice α: getOptionalIntFlag retires the
+                    // local `match … | Ok v -> v | Error _ -> default`
+                    // pattern.
+                    let hasDbConstraint =
+                        getOptionalIntFlag attrJson "reference_hasDbConstraint" false
                     Result.success (Some
                         { SsKey           = rKey
                           Name            = rName
@@ -757,7 +855,8 @@ module CatalogReader =
                           // V1 reference ModelUserSchemaGraphFactory.
                           // GetSyntheticUserForeignKeys); the chapter
                           // 4.2 close ritual codifies the trigger.
-                          IsUserFk        = false })
+                          IsUserFk        = false
+                          HasDbConstraint = hasDbConstraint })
                 | _ ->
                     // Propagate underlying errors via
                     // `propagateOrFallback` — uniform with the four
@@ -823,46 +922,95 @@ module CatalogReader =
         | Ok indexName, Ok isPrimary, Ok isUnique ->
             let indexKey  = indexSsKey moduleName entityName indexName
             let indexNm   = Name.create indexName
-            // Walk columns[]; filter isIncluded=true; sort by ordinal;
-            // resolve each key column's attribute name to its V2 SsKey.
-            let keyColResults =
+            // Walk columns[]; partition into key columns + included columns
+            // (chapter 4.5 slice β — V2 now carries both axes; pre-slice-β
+            // the adapter dropped isIncluded=true entries). Sort each
+            // partition by ordinal; resolve attribute name to V2 SsKey.
+            let columnsList =
                 match indexJson.TryGetProperty("columns") with
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
-                    arr.EnumerateArray()
-                    |> Seq.toList
-                    |> List.choose (fun col ->
-                        // Drop isIncluded=true (V1 included columns).
-                        match col.TryGetProperty("isIncluded") with
-                        | true, v when v.ValueKind = JsonValueKind.True -> None
-                        | _ -> Some col)
-                    |> List.map (fun col ->
-                        // Best-effort ordinal extraction; missing
-                        // ordinal sorts as 0 (preserves first-in-array
-                        // for malformed-but-readable inputs).
-                        let ordinal =
-                            match col.TryGetProperty("ordinal") with
-                            | true, o when o.ValueKind = JsonValueKind.Number ->
-                                match o.TryGetInt32() with
-                                | true, n -> n
-                                | _       -> 0
-                            | _ -> 0
-                        let attrNameResult = getString col "attribute"
-                        ordinal, attrNameResult)
-                    |> List.sortBy fst
-                    |> List.map snd
-                    |> List.map (fun attrNameRes ->
-                        match attrNameRes with
-                        | Error es -> Error es
-                        | Ok an -> attributeSsKey moduleName entityName an)
+                    arr.EnumerateArray() |> Seq.toList
                 | _ -> []
+            let extractCol (col: JsonElement) =
+                // Best-effort ordinal extraction; missing ordinal sorts
+                // as 0 (preserves first-in-array for malformed input).
+                let ordinal =
+                    match col.TryGetProperty("ordinal") with
+                    | true, o when o.ValueKind = JsonValueKind.Number ->
+                        match o.TryGetInt32() with
+                        | true, n -> n
+                        | _       -> 0
+                    | _ -> 0
+                let attrNameResult = getString col "attribute"
+                ordinal, col, attrNameResult
+            let isIncluded (col: JsonElement) : bool =
+                match col.TryGetProperty("isIncluded") with
+                | true, v when v.ValueKind = JsonValueKind.True -> true
+                | _ -> false
+            // Chapter 4.9 slice γ — parse per-column direction. V1's
+            // JSON property is `direction` ("ASC" / "DESC" /
+            // case-insensitive; absent / null / unknown → Ascending).
+            // V1's `IndexColumnDirection.Unspecified` collapses to
+            // Ascending under SQL Server semantics (the keyword is
+            // omitted in CREATE INDEX, matching ScriptDom's
+            // `SortOrder.NotSpecified`).
+            let parseDirection (col: JsonElement) : IndexColumnDirection =
+                match col.TryGetProperty("direction") with
+                | true, v when v.ValueKind = JsonValueKind.String ->
+                    match Option.ofObj (v.GetString()) with
+                    | Some raw when System.String.Equals(raw.Trim(), "DESC", System.StringComparison.OrdinalIgnoreCase) ->
+                        Descending
+                    | _ -> Ascending
+                | _ -> Ascending
+            let keyColResults =
+                columnsList
+                |> List.filter (fun c -> not (isIncluded c))
+                |> List.map extractCol
+                |> List.sortBy (fun (o, _, _) -> o)
+                |> List.map (fun (_, col, attrNameRes) ->
+                    match attrNameRes with
+                    | Error es -> Error es
+                    | Ok an ->
+                        match attributeSsKey moduleName entityName an with
+                        | Error es -> Error es
+                        | Ok key -> Result.success { Attribute = key; Direction = parseDirection col })
+            let includedColResults =
+                columnsList
+                |> List.filter isIncluded
+                |> List.map extractCol
+                |> List.sortBy (fun (o, _, _) -> o)
+                |> List.map (fun (_, _, attrNameRes) ->
+                    match attrNameRes with
+                    | Error es -> Error es
+                    | Ok an -> attributeSsKey moduleName entityName an)
             // Per `Result.aggregate` (chapter-3.1 close audit): the
             // canonical accumulator for `Result<'a> seq` collapses to
             // `Result<'a list>` with errors aggregated (not short-
             // circuited). Retires the O(N²) `xs @ [x]` fold pattern
             // per `DECISIONS 2026-05-09` Big-O discipline.
             let foldedKeyCols = Result.aggregate keyColResults
-            match indexKey, indexNm, foldedKeyCols with
-            | Ok k, Ok n, Ok cols ->
+            let foldedIncludedCols = Result.aggregate includedColResults
+            match indexKey, indexNm, foldedKeyCols, foldedIncludedCols with
+            | Ok k, Ok n, Ok cols, Ok includedCols ->
+                // Chapter 4.5 slice α — capture V1's
+                // `filterDefinition` if present (per V1 JSON shape;
+                // raw string preserved through to emit time, parsed
+                // by TSql160Parser at ScriptDomBuild.buildCreateIndex).
+                let filter =
+                    match indexJson.TryGetProperty("filterDefinition") with
+                    | true, v when v.ValueKind = JsonValueKind.String ->
+                        match Option.ofObj (v.GetString()) with
+                        | Some raw when not (System.String.IsNullOrWhiteSpace raw) ->
+                            Some raw
+                        | _ -> None
+                    | _ -> None
+                // Chapter 4.6 slice β — capture V1's `isPlatformAuto`
+                // flag (JSON projection of IndexModel.IsPlatformAuto).
+                // Defaults to false when V1 source omits the field.
+                // Chapter 4.7 slice α: getOptionalBool retires the
+                // local `match … | Ok v -> v | Error _ -> default`
+                // pattern.
+                let isPlatformAuto = getOptionalBool indexJson "isPlatformAuto" false
                 Result.success
                     { SsKey        = k
                       Name         = n
@@ -873,13 +1021,30 @@ module CatalogReader =
                       // properties; V1's JSON projection does not
                       // surface index-level extended properties at
                       // the boundary today. Empty default.
-                      ExtendedProperties = [] }
+                      ExtendedProperties = []
+                      Filter             = filter
+                      IncludedColumns    = includedCols
+                      IsPlatformAuto     = isPlatformAuto
+                      // Chapter 4.8 slice β — on-disk Index metadata.
+                      // V1's JSON projection does not currently surface
+                      // these fields at the boundary; default to V1's
+                      // IndexOnDiskMetadata.Empty values (FillFactor=None,
+                      // IsPadded=false, AllowRowLocks=true,
+                      // AllowPageLocks=true, NoRecomputeStatistics=false).
+                      // Future DACPAC adapter or rowset slice surfaces
+                      // them per V1-fixture pressure.
+                      FillFactor            = None
+                      IsPadded              = false
+                      AllowRowLocks         = true
+                      AllowPageLocks        = true
+                      NoRecomputeStatistics = false }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 propagateOrFallback
                     [ Result.errors indexKey
                       Result.errors indexNm
-                      Result.errors foldedKeyCols ]
+                      Result.errors foldedKeyCols
+                      Result.errors foldedIncludedCols ]
                     (fun () ->
                         adapterError
                             "indexBuild"
@@ -1282,7 +1447,9 @@ module CatalogReader =
                   // rowset extension or DACPAC adapter.
                   DefaultValue = None
                   Computed     = None
-                  ExtendedProperties = [] }
+                  ExtendedProperties = []
+                  OriginalName = row.OriginalName
+                  ExternalDatabaseType = row.ExternalDatabaseType }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`.
             propagateOrFallback
@@ -1304,6 +1471,7 @@ module CatalogReader =
     /// kind name resolves within the source attribute's module).
     /// Cross-module FK lifts the same deferral.
     let private parseReferenceRowFor
+        (kindKeysByEntityId: Map<int, SsKey>)
         (moduleName: string)
         (entityName: string)
         (attrRow: AttributeRow)
@@ -1312,7 +1480,20 @@ module CatalogReader =
         let refKey     = referenceSsKey moduleName entityName attrRow.AttrName
         let refName    = Name.create attrRow.AttrName
         let srcAttrKey = attributeSsKeyFromRow moduleName entityName attrRow
-        let tgtKindKey = kindSsKey moduleName refRow.RefEntityName
+        // Chapter 5.0 slice γ — when the bundle carries the target's
+        // RefEntityId AND the target entity row has a resolved kind key
+        // in the global lookup, use it directly. This handles GUID-based
+        // EntitySsKey targets correctly (the fallback synthesized key
+        // produces a different SsKey shape that breaks the
+        // danglingTarget invariant). Falls back to the prior synthesized
+        // shape when the target ID is absent or unresolvable.
+        let tgtKindKey =
+            match refRow.RefEntityId with
+            | Some id ->
+                match Map.tryFind id kindKeysByEntityId with
+                | Some key -> Result.success key
+                | None -> kindSsKey moduleName refRow.RefEntityName
+            | None -> kindSsKey moduleName refRow.RefEntityName
         let onDelete   = parseDeleteRule refRow.DeleteRuleCode
         match refKey, refName, srcAttrKey, tgtKindKey, onDelete with
         | Ok rKey, Ok rName, Ok srcKey, Ok tgtKey, Ok rule ->
@@ -1327,7 +1508,12 @@ module CatalogReader =
                   // depend on the OSSYS-platform user-kind
                   // identification surface that lands at the
                   // chapter 4.2 adapter-integration boundary).
-                  IsUserFk        = false }
+                  IsUserFk        = false
+                  // Chapter 4.6 slice α — rowset path carries
+                  // HasDbConstraint via the #FkReality rowset's
+                  // HasFK column (see ReferenceRow.HasDbConstraint
+                  // at line 193). Propagated unchanged from the row.
+                  HasDbConstraint = refRow.HasDbConstraint }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback` —
             // uniform with parseReference on the JSON path.
@@ -1345,6 +1531,7 @@ module CatalogReader =
                             attrRow.AttrName moduleName entityName))
 
     let private parseKindRow
+        (kindKeysByEntityId: Map<int, SsKey>)
         (moduleName: string)
         (moduleEspaceKind: string option)
         (attributesByEntity: Map<int, AttributeRow list>)
@@ -1380,7 +1567,7 @@ module CatalogReader =
             |> List.collect (fun a ->
                 Map.tryFind a.AttrId referencesByAttr
                 |> Option.defaultValue []
-                |> List.map (parseReferenceRowFor moduleName kindRow.EntityName a))
+                |> List.map (parseReferenceRowFor kindKeysByEntityId moduleName kindRow.EntityName a))
         let foldedRefs = Result.aggregate refResults
         match kindKey, kindName, foldedAttrs, foldedRefs with
         | Ok k, Ok n, Ok attrs, Ok refs ->
@@ -1439,6 +1626,7 @@ module CatalogReader =
                             kindRow.EntityName moduleName))
 
     let private parseModuleRow
+        (kindKeysByEntityId: Map<int, SsKey>)
         (kindsByEspace: Map<int, KindRow list>)
         (attributesByEntity: Map<int, AttributeRow list>)
         (referencesByAttr: Map<int, ReferenceRow list>)
@@ -1457,6 +1645,7 @@ module CatalogReader =
             kindRows
             |> List.map (
                 parseKindRow
+                    kindKeysByEntityId
                     moduleRow.EspaceName
                     moduleRow.EspaceKind
                     attributesByEntity
@@ -1504,11 +1693,37 @@ module CatalogReader =
             bundle.Kinds |> List.groupBy (fun k -> k.EspaceId) |> Map.ofList
         let referencesByAttr =
             bundle.References |> List.groupBy (fun r -> r.AttrId) |> Map.ofList
+        // Chapter 5.0 slice γ — build the global EntityId → SsKey
+        // lookup used by `parseReferenceRowFor` for cross-module FK
+        // resolution against GUID-bearing entity rows. Mirrors
+        // `kindSsKeyFromRow`'s shape: when an entity carries
+        // `EntitySsKey`, the resolved key uses `SsKey.ossysOriginal`;
+        // otherwise the synthesized `kindSsKey (moduleName, entityName)`
+        // shape. The moduleName for each entity is its owning module's
+        // EspaceName (joined via EspaceId).
+        let moduleNameByEspaceId =
+            bundle.Modules
+            |> List.map (fun m -> m.EspaceId, m.EspaceName)
+            |> Map.ofList
+        let kindKeysByEntityId =
+            bundle.Kinds
+            |> List.choose (fun k ->
+                match Map.tryFind k.EspaceId moduleNameByEspaceId with
+                | None -> None
+                | Some modName ->
+                    let resolved =
+                        match k.EntitySsKey with
+                        | Some g -> Ok (SsKey.ossysOriginal g)
+                        | None -> kindSsKey modName k.EntityName
+                    match resolved with
+                    | Ok key -> Some (k.EntityId, key)
+                    | Error _ -> None)
+            |> Map.ofList
         // Chapter A.0' slice β — the session-21 module-level filter
         // retires. Inactive modules carry with `Module.IsActive=false`.
         let moduleResults =
             bundle.Modules
-            |> List.map (parseModuleRow kindsByEspace attributesByEntity referencesByAttr)
+            |> List.map (parseModuleRow kindKeysByEntityId kindsByEspace attributesByEntity referencesByAttr)
         match Result.aggregate moduleResults with
         | Ok modules ->
             // Chapter A.0' slice δ — Catalog.Sequences empty on the

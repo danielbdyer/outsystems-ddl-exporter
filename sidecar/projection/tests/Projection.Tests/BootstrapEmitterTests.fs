@@ -40,33 +40,12 @@ let private mustOkEmit (r: Result<'a, EmitError>) : 'a =
 let private mkKind (name: string) : Kind =
     let kindKey = mkKey ["TestModule"; name]
     let idKey = mkKey ["TestModule"; name; "Id"]
-    {
-        SsKey    = kindKey
-        Name     = mkName name
-        Origin   = OsNative
-        Modality = []
-        Physical = { Schema = "dbo"; Table = sprintf "OSUSR_TEST_%s" (name.ToUpperInvariant()); Catalog = None }
-        Attributes =
-            [
-                { SsKey = idKey; Name = mkName "Id"; Type = Integer
-                  Column = { ColumnName = "ID"; IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-            ]
-        References = []
-        Indexes    = []
-        Description = None
-        IsActive = true
-        Triggers = []
-        ColumnChecks = []
-        ExtendedProperties = []
-        }
+    IRBuilders.mkKind kindKey (mkName name) { Schema = "dbo"; Table = sprintf "OSUSR_TEST_%s" (name.ToUpperInvariant()); Catalog = None } [ { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
 
 let private mkCatalog (kinds: Kind list) : Catalog =
     let m : Module =
-        { SsKey = mkKey ["TestModule"]
-          Name  = mkName "TestModule"
-          Kinds = kinds; IsActive = true; ExtendedProperties = [] }
-    { Modules = [ m ]; Sequences = [] }
+        IRBuilders.mkModule (mkKey ["TestModule"]) (mkName "TestModule") kinds
+    IRBuilders.mkCatalog [ m ]
 
 // ---------------------------------------------------------------------------
 // UserRemapContext — chapter 4.2 slice γ shape.

@@ -61,15 +61,9 @@ let private mkCountryKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
         Attributes =
             [
-                { SsKey = idKey;    Name = mkName "Id";    Type = Integer
-                  Column = { ColumnName = "ID";    IsNullable = false }
-                  IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-                { SsKey = codeKey;  Name = mkName "Code";  Type = Text
-                  Column = { ColumnName = "CODE";  IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-                { SsKey = labelKey; Name = mkName "Label"; Type = Text
-                  Column = { ColumnName = "LABEL"; IsNullable = false }
-                  IsPrimaryKey = false; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { IRBuilders.mkAttribute codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
+                { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
             ]
         References = []
         Indexes    = []
@@ -289,8 +283,8 @@ let ``Slice θ: partition fails (OverlappingEmitterCoverage) when a kind is popu
                 Identifier = mkKey ["TestModule"; "Country"; "Mig"; "Other"]
                 Values = Map.ofList [ mkName "Id", "9"; mkName "Code", "ZZ"; mkName "Label", "Other" ] } ] }
     let result =
-        DataEmissionComposer.composeWithMigration
-            (policyWith AllRemaining) catalog Profile.empty migration
+        DataEmissionComposer.composeFull
+            (policyWith AllRemaining) catalog Profile.empty migration UserRemapContext.empty
     match result with
     | Ok _ -> Assert.Fail "expected OverlappingEmitterCoverage error, got Ok"
     | Error (OverlappingEmitterCoverage (k, names)) ->
@@ -310,8 +304,8 @@ let ``Slice θ: partition holds under AllExceptStatic (Static skipped, Migration
                 Values = Map.ofList [ mkName "Id", "1"; mkName "Code", "US"; mkName "Label", "United States" ] } ] }
     // AllExceptStatic skips Static, so Migration alone owns the kind.
     let result =
-        DataEmissionComposer.composeWithMigration
-            (policyWith AllExceptStatic) catalog Profile.empty migration
+        DataEmissionComposer.composeFull
+            (policyWith AllExceptStatic) catalog Profile.empty migration UserRemapContext.empty
     match result with
     | Ok artifact ->
         let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
@@ -367,17 +361,11 @@ let ``Slice ι: composeRendered emits Phase-1 (MERGE) of every kind before Phase
             Physical = { Schema = "dbo"; Table = table; Catalog = None }
             Attributes =
                 [
-                    { SsKey = idKey;     Name = mkName "Id";       Type = Integer
-                      Column = { ColumnName = "ID";       IsNullable = false }
-                      IsPrimaryKey = true; IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-                    { SsKey = parentKey; Name = mkName "ParentId"; Type = Integer
-                      Column = { ColumnName = "PARENTID"; IsNullable = true }
-                      IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+                    { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";       IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                    { IRBuilders.mkAttribute parentKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } }
                 ]
             References =
-                [ { SsKey = refKey; Name = mkName "RefSelf"
-                    SourceAttribute = parentKey; TargetKind = kindKey
-                    OnDelete = NoAction; IsUserFk = false } ]
+                [ IRBuilders.mkReference refKey (mkName "RefSelf") parentKey kindKey ]
             Indexes    = []
             Description = None
             IsActive = true

@@ -82,6 +82,8 @@ let private idAttrRow (sskey: System.Guid option) : CatalogReader.AttributeRow =
         AttrSsKey    = sskey
         IsActive     = true
         Description  = None
+        OriginalName = None
+        ExternalDatabaseType = None
     }
 
 let private emailAttrRow (sskey: System.Guid option) : CatalogReader.AttributeRow =
@@ -100,6 +102,8 @@ let private emailAttrRow (sskey: System.Guid option) : CatalogReader.AttributeRo
         AttrSsKey    = sskey
         IsActive     = true
         Description  = None
+        OriginalName = None
+        ExternalDatabaseType = None
     }
 
 // ---------------------------------------------------------------------------
@@ -122,18 +126,8 @@ let private expectedCatalogSynthesized : Catalog =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
-              { SsKey        = userIdAttrKey
-                Name         = mkName "Id"
-                Type         = Integer
-                Column       = { ColumnName = "ID"; IsNullable = false }
-                IsPrimaryKey = true
-                IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = true; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
-              { SsKey        = userEmailAttrKey
-                Name         = mkName "Email"
-                Type         = Text
-                Column       = { ColumnName = "EMAIL"; IsNullable = false }
-                IsPrimaryKey = false
-                IsMandatory = true; Length = Some 250; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+              { IRBuilders.mkAttribute userIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+              { IRBuilders.mkAttribute userEmailAttrKey (mkName "Email") Text with Column = { ColumnName = "EMAIL"; IsNullable = false }; IsMandatory = true; Length = Some 250 }
           ]
           References = []
           Indexes    = []
@@ -388,6 +382,8 @@ let private accountIdRow (sskey: System.Guid option) : CatalogReader.AttributeRo
         AttrSsKey    = sskey
         IsActive     = true
         Description  = None
+        OriginalName = None
+        ExternalDatabaseType = None
     }
 
 /// User has Id (PK + IDENTITY) and AccountId (FK to Account); the
@@ -412,12 +408,15 @@ let private userAccountIdRow : CatalogReader.AttributeRow =
         AttrSsKey    = None
         IsActive     = true
         Description  = None
+        OriginalName = None
+        ExternalDatabaseType = None
     }
 
 let private userAccountRefRow : CatalogReader.ReferenceRow =
     {
         AttrId          = 113
         RefEntityName   = "Account"
+        RefEntityId     = None
         DeleteRuleCode  = Some "Protect"
         HasDbConstraint = true
     }
@@ -639,6 +638,8 @@ let private billingAccountIdRow : CatalogReader.AttributeRow =
         AttrSsKey    = None
         IsActive     = true
         Description  = None
+        OriginalName = None
+        ExternalDatabaseType = Some "int"
     }
 
 let private externalBundle (espaceKind: string option) : CatalogReader.RowsetBundle =
@@ -801,6 +802,8 @@ let private systemAuditIdRow : CatalogReader.AttributeRow =
         AttrSsKey    = None
         IsActive     = true
         Description  = None
+        OriginalName = None
+        ExternalDatabaseType = None
     }
 
 let private systemBundle : CatalogReader.RowsetBundle =

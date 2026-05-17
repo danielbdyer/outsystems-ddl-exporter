@@ -101,7 +101,7 @@ let private parseAndProject () : Compose.Outputs =
         | Error errors ->
             let codes = errors |> List.map (fun e -> e.Code) |> String.concat ", "
             failwithf "fixture: parse failed with codes: %s" codes
-    Compose.project catalog
+    Compose.project EmissionPolicy.empty catalog
 
 // ---------------------------------------------------------------------
 // E2E: parse + project succeeds and produces non-empty artifacts.

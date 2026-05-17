@@ -83,11 +83,10 @@ editorial inheritance` for the codifying entry.
 
 ## Layout
 
-The current layout (chapters 3.1, 3.5/3.6/3.7 substantive, 4.1.A
-in-flight surface, 4.1.B α/β/γ shipped — CDC-silence canary green;
-RawTextEmitter retirement complete; Tier-1 typed-AST transitions
-complete — see `KICKOFF.md` for the full timeline + `HANDOFF.md`'s
-chapter 4.1.A close arc + 4.1.B in-flight prologue):
+The current layout (as of chapter A.4.7' close 2026-05-17; **V2-driver
+critical-path Phases 1–7 all CLOSED** — see `BACKLOG.md` per-phase
+sections for shipped slice ledgers and `HANDOFF.md`'s 2026-05-17
+doc-refresh entry for the actually-pending shortlist):
 
     sidecar/projection/
       README.md                 - this file
@@ -160,11 +159,13 @@ Slots reserved for future sessions (not yet built):
 
       src/Projection.Adapters.Files/        - C#: file system; snapshot store
       src/Projection.Host.Cli/              - C#: imperative shell; orchestrator
-      src/Projection.Targets.SSDT.DacpacEmitter/ - F#: DacpacEmitter via DacFx (`Microsoft.SqlServer.Dac`).
-                                              **DacFx adoption mandatory** at chapter open per the
-                                              Tier-3 text-builder-as-first-instinct discipline
-                                              (`DECISIONS 2026-05-10`); chapter not yet open.
       src/Projection.Targets.Faker/         - F#: synthetic-data Π consuming Profile
+
+(Note: DacpacEmitter via DacFx shipped at chapter 3.x close (2026-05-11)
+under the dev-tooling reframe — F# wrapper inside `Projection.Targets.SSDT`,
+no separate subproject; DockerImageEmitter sibling shipped the one-command
+dev stand-up artifact. The Tier-3 text-builder-as-first-instinct deferral
+is cashed out. See `CHAPTER_3_X_CLOSE.md`.)
 
 (Note: `src/Projection.Pipeline/` shipped at chapter 3.1 as **F#** —
 not C# as originally scaffolded; corrects line 85 below; `Projection.Pipeline`
@@ -378,6 +379,103 @@ Build clean under `TreatWarningsAsErrors=true`; lint clean across
 - Where V2 deliberately diverges from a V1 contract, the divergence
   surfaces as a `Skip` test stub at the test-file level, not as
   ADMIRE-prose commentary.
+
+## Status at chapter 4.8 close (2026-05-17; IRBuilders Attribute sweep + on-disk Index metadata + isPlatformAuto emitter toggle)
+
+- **1367 non-canary tests passing** + canary tests Docker-gated.
+  0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`;
+  lint count unchanged.
+- **Chapter 4.8 shipped 3 orthogonal slices** (α / β / γ):
+  - Slice α: Attribute IRBuilders sweep (108 literals migrated across
+    21 test files; future Attribute additions ~2 sites).
+  - Slice β: 5 additive on-disk Index metadata fields (FillFactor /
+    IsPadded / AllowRowLocks / AllowPageLocks / NoRecomputeStatistics)
+    + ScriptDom IndexOptions emission. WITH (…) clause omitted when
+    all defaults hold; per-option non-default emission otherwise.
+  - Slice γ: `EmissionPolicy.IncludePlatformAutoIndexes` + filter-
+    Catalog projection. V1-parity operator toggle.
+- **Slice α scope reduction codified**: Kind / Module / Catalog
+  sweeps deferred — Python pass triggered F# offside-rule failures;
+  needs indentation-preserving rewrite.
+
+## Status at chapter 4.7 close (2026-05-17; refactor bundle + sibling-wrapper discipline codification)
+
+- **1354 non-canary tests passing** + canary tests Docker-gated.
+  0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`;
+  lint count unchanged.
+- **Chapter 4.7 shipped 3 slices + a mid-flight cleanup + discipline
+  codification**:
+  - Slice α: `getOptionalIntFlag` + `getOptionalBool` adapter
+    primitives (retire the V1-int-flag pickup boilerplate).
+  - Slice β + fix-forward: Diagnostics-aware `buildCreateIndex`
+    (canonical). Initial slice β shipped a back-compat silent-skip
+    wrapper; operator flagged it; fix-forward collapsed to one
+    canonical surface; callers explicitly drop via `.Value`.
+  - Cleanup: `composeWithMigration` + `emitWithUserRemap` middle-
+    tiers retired as overdifferentiated.
+  - Discipline: `DECISIONS 2026-05-17 (chapter 4.7 cleanup) —
+    Sibling-wrapper discipline` codifies the "hides information"
+    vs "supplies private/computed default" distinguishing test +
+    the N+1 corollary (overdifferentiated middle-tier anti-pattern).
+    CLAUDE.md operating-disciplines table gains a Sibling-wrapper
+    discipline row.
+  - Slice γ: `IRBuilders.mkReference` + Python sweep migrating 30
+    literals (9 Index + 21 Reference) across 15 test files. Future
+    IR-field-addition touch cost drops 85%+ for Index / Reference.
+
+## Status at chapter 4.6 close (2026-05-17; forward-signal cleanup bundle — HasDbConstraint + IsPlatformAuto + filter-parse Diagnostic)
+
+- **1348 non-canary tests passing** + canary tests Docker-gated.
+  0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`;
+  lint count unchanged.
+- **Chapter 4.6 shipped 3 substantive slices end-to-end** (α / β / γ):
+  `Reference.HasDbConstraint : bool` IR + adapter pickup (JSON +
+  rowset + SymmetricClosure + ReadSide) + HasLogicalForeignKey×
+  DbConstraint predicate pair cash-out (slice α; retires the last 2
+  chapter-4.4 always-false PredicateName variants — **all 16
+  V1-aligned predicates now evaluate against real V2 IR**);
+  `Index.IsPlatformAuto : bool` IR lift (slice β); Diagnostics-aware
+  filter-parse helper `tryParseFilterWithDiagnostics` closing the
+  chapter 4.5 silent-skip Q3 deferral (slice γ). See `CHAPTER_4_6_CLOSE.md`.
+
+## Status at chapter 4.5 close (2026-05-17; Index IR fidelity + chapter-4.4 predicate cash-outs)
+
+- **1330 non-canary tests passing** + canary tests Docker-gated.
+  0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`;
+  lint count unchanged from chapter 4.4 close baseline.
+- **Chapter 4.5 shipped 2 substantive slices end-to-end** (α / β):
+  `Index.Filter : string option` IR + ScriptDom WHERE emission via
+  TSql160Parser.ParseBooleanExpression at emit time (slice α);
+  `Index.IncludedColumns : SsKey list` IR + ScriptDom INCLUDE emission
+  + OSSYS adapter `isIncluded=true` drop retired (slice β). Two of
+  chapter 4.4's four always-false `PredicateName` variants retire
+  (`HasFilteredIndex` + `HasIncludedIndexColumns`). See
+  `CHAPTER_4_5_CLOSE.md`.
+- **V2 emits cutover-fidelity filtered + covering indexes.** V1's
+  `IndexOnDiskMetadata.FilterDefinition` + `IndexColumnModel.IsIncluded`
+  reference shapes mirrored at the V2 IR layer; OSSYS adapter no
+  longer drops V1 included-column entries.
+
+## Status at chapter 4.4 close (2026-05-17; manifest diagnostic fields retire chapter-4.4-fills deferrals)
+
+- **1313 non-canary tests passing** + canary tests Docker-gated.
+  0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`;
+  lint count 13 — unchanged from chapter A.4.7' close baseline.
+- **Chapter 4.4 shipped 4 substantive slices end-to-end** (α / β / γ / δ):
+  `CoverageBreakdown` + `CoverageSummary` + `Coverage.compute` (slice α;
+  V1 percentage-rounding contract mirrored); `PredicateName` closed DU
+  with 16 V1-verbatim variants + `PredicateCoverage.compute` (slice β;
+  12 evaluable + 4 always-false-pending-V2-IR-refinement); `Unsupported`
+  from `ToleratedDivergence.allKnown` sorted as strings (slice γ); V1
+  differential test asserting V1-shape correspondence (slice δ). See
+  `CHAPTER_4_4_CLOSE.md`.
+- **Three of four `chapter 4.4 fills` deferrals retired.** `Coverage` /
+  `PredicateCoverage` / `Unsupported` now emit typed evidence. `PreRemediation`
+  stays empty per V2_DRIVER §154 (RemediationEmitter deferred to chapter 5+).
+- **V1 differential surface operative.** Cross-checks V2's emit shape
+  against V1's reference types — PredicateName names verbatim;
+  CoverageBreakdown rounding contract; SsdtManifest shape; documented
+  V2-only divergences (registry.digest; predicateCounts shape).
 
 ## Status at chapter A.4.7' close (2026-05-17; registry becomes load-bearing for execution)
 

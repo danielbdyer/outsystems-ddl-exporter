@@ -85,12 +85,7 @@ let ``missingTarget: target kind absent from catalog ⇒ DoNotEnforce(MissingTar
     // target.
     let danglingTargetKey = ssKey "OS_KIND_NoSuchKind"
     let danglingRef : Reference =
-        { SsKey           = ssKey "OS_REF_Order_Dangling"
-          Name            = name "Dangling"
-          SourceAttribute = orderCustomerFkKey
-          TargetKind      = danglingTargetKey
-          OnDelete        = NoAction
-          IsUserFk        = false }
+        IRBuilders.mkReference (ssKey "OS_REF_Order_Dangling") (name "Dangling") orderCustomerFkKey danglingTargetKey
     let cfg = mkConfig true true true
     let decision = decide cfg sampleCatalog order danglingRef Profile.empty
     Assert.Equal(
@@ -184,7 +179,7 @@ let ``cross-schema: source and target in different schemas + AllowCrossSchema=fa
             Physical = { Schema = "alt"; Table = customer.Physical.Table; Catalog = None } }
     let altModule =
         { salesModule with Kinds = [ altCustomer; order; country ] }
-    let altCatalog : Catalog = { Modules = [ altModule ]; Sequences = [] }
+    let altCatalog : Catalog = IRBuilders.mkCatalog [ altModule ]
     let cfg = mkConfig true false false
     let profile =
         { Profile.empty with
@@ -214,7 +209,7 @@ let ``cross-schema: comparison is case-insensitive`` () =
             Physical = { Schema = "DBO"; Table = customer.Physical.Table; Catalog = None } }
     let altModule =
         { salesModule with Kinds = [ altCustomer; order; country ] }
-    let altCatalog : Catalog = { Modules = [ altModule ]; Sequences = [] }
+    let altCatalog : Catalog = IRBuilders.mkCatalog [ altModule ]
     let cfg = mkConfig true false false
     let profile =
         { Profile.empty with

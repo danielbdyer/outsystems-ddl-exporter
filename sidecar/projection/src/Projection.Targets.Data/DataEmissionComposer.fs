@@ -237,20 +237,14 @@ module DataEmissionComposer =
 
     /// `compose` variant accepting an explicit `MigrationDependency
     /// Context`. For callers (canary tests, future pipeline
-    /// integration) that supply migration rows programmatically.
-    /// `userRemap` defaults to `UserRemapContext.empty`.
-    let composeWithMigration
-        (policy: Policy)
-        (catalog: Catalog)
-        (profile: Profile)
-        (migration: MigrationDependencyContext)
-        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        (composeWithLineage
-            policy catalog profile migration UserRemapContext.empty).Value
-
     /// Full-arity compose accepting both Migration and UserRemap
     /// contexts explicitly. The pipeline-integration entry point
-    /// chapter 4.2 (UserFkReflowPass) wires up.
+    /// chapter 4.2 (UserFkReflowPass) wires up. Callers without a
+    /// UserRemapContext pass `UserRemapContext.empty` explicitly
+    /// (chapter 4.7 cleanup: the prior `composeWithMigration` middle-
+    /// tier wrapper retired as overdifferentiated — three sibling
+    /// surfaces defaulting different axis subsets is the anti-pattern;
+    /// the explicit default makes the caller's choice visible).
     let composeFull
         (policy: Policy)
         (catalog: Catalog)

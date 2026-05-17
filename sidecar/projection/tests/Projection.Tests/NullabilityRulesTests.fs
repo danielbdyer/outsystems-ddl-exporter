@@ -91,11 +91,7 @@ let ``structural: a non-PK physically-NOT-NULL attribute is EnforceNotNull(Physi
 let ``structural: a physically-nullable non-PK attribute without overrides yields KeepNullable(NoTighteningSignal)`` () =
     // Synthesize a nullable, non-PK attribute.
     let nullable : Attribute =
-        { SsKey        = attrKey ["Test"; "NullableNonPk"]
-          Name         = Name.create "Optional" |> Result.value
-          Type         = Text
-          Column       = { ColumnName = "OPTIONAL"; IsNullable = true }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+        { IRBuilders.mkAttribute (attrKey ["Test"; "NullableNonPk"]) (Name.create "Optional" |> Result.value) Text with Column = { ColumnName = "OPTIONAL"; IsNullable = true } }
     let decision = decideOnFixture nullable (mkConfig 0.0m false [])
     Assert.Equal(NullabilityOutcome.KeepNullable NoTighteningSignal, decision.Outcome)
 
@@ -129,11 +125,7 @@ let ``decision: InterventionId is the id passed to evaluate`` () =
 let ``enforces: true for EnforceNotNull, false for KeepNullable`` () =
     let pkAttr = customer.Attributes |> List.find (fun a -> a.IsPrimaryKey)
     let nullable : Attribute =
-        { SsKey        = attrKey ["T"]
-          Name         = Name.create "T" |> Result.value
-          Type         = Text
-          Column       = { ColumnName = "T"; IsNullable = true }
-          IsPrimaryKey = false; IsMandatory = false; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+        { IRBuilders.mkAttribute (attrKey ["T"]) (Name.create "T" |> Result.value) Text with Column = { ColumnName = "T"; IsNullable = true } }
     let cfg = mkConfig 0.0m false []
     Assert.True (NullabilityRules.enforces (decideOnFixture pkAttr cfg))
     Assert.False(NullabilityRules.enforces (decideOnFixture nullable cfg))
@@ -226,12 +218,7 @@ let ``outcome: NullabilityOutcome variants round-trip`` () =
 // ---------------------------------------------------------------------------
 
 let private mkMandatoryAttr (key: string) (isNullable: bool) : Attribute =
-    { SsKey        = testKey key
-      Name         = Name.create "M" |> Result.value
-      Type         = Text
-      Column       = { ColumnName = "M"; IsNullable = isNullable }
-      IsPrimaryKey = false
-      IsMandatory = true; Length = None; Precision = None; Scale = None; IsIdentity = false; Description = None; IsActive = true; DefaultValue = None; Computed = None; ExtendedProperties = [] }
+    { IRBuilders.mkAttribute (testKey key) (Name.create "M" |> Result.value) Text with Column = { ColumnName = "M"; IsNullable = isNullable }; IsMandatory = true }
 
 let private mkColProfile (attrKey: SsKey) (rowCount: int64) (nullCount: int64) : ColumnProfile =
     let probe =

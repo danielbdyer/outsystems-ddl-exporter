@@ -1,8 +1,317 @@
-# Handoff letter — Chapter A.4.7' (prime) SHIPPED (Compose.run registry-traversal; registry load-bearing for execution; A41 amended)
+# Handoff letter — Chapter 5.0 SHIPPED (OSSYS catalog producer carbon-copy; V2 stands on its own; V1 Parity Audit Wave opens next)
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## 2026-05-17 (chapter 5.0 close — Phase 8 cutover-window pivot SHIPPED; V1 Parity Audit Wave opens)
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1454 / 1454 non-canary passing** (1441 prior + 13 net new). 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged. +1 gated parity Skip; +5 Docker-gated OSSYS extraction canary tests.
+
+**Chapter 5.0 closes.** Read `CHAPTER_5_0_CLOSE.md` for the chapter-close synthesis. Phase 8 (OSSYS catalog producer carbon-copy) shipped — **V2 now stands on its own**. Catalog acquisition is V1-independent; the live-DB pivot is one configuration step away (the runner is connection-agnostic; production wiring = supplying a real connection string).
+
+**What's load-bearing going forward.**
+
+- **`Projection.Adapters.OssysSql`** — new F# adapter. Sibling to `Projection.Adapters.Sql` + `Projection.Adapters.Osm`. Embeds V1's `outsystems_metadata_rowsets.sql` verbatim (byte-identical) + V2-adapted bootstrap fixture for the canary.
+- **`MetadataSnapshotRunner.runAsync : SqlConnection -> SnapshotParameters -> Task<Result<MetadataSnapshot>>`** — F# runner. Walks all 22 V1 result sets; parses first 5 into typed records; composes via `toBundle` into V2's `CatalogReader.RowsetBundle`.
+- **`OssysExtractionCanaryTests`** (5 tests; Docker-gated) — the canary mockup the principal-PO asked for. Bootstrap synthetic OSSYS schema → extract → V2 Catalog → assert structural invariants. Deterministic across runs.
+- **`Deploy.withBootstrappedDatabase`** — new primitive for bootstrap-and-act canary shapes. Reusable for DACPAC bootstrap canaries, V1-JSON-snapshot bootstrap canaries, etc.
+- **Cross-key-shape FK resolution fix** (latent V2 bug surfaced + corrected at chapter 5.0 slice δ) — `parseReferenceRowFor` now resolves the target SsKey via `RefEntityId` global lookup map; preserves GUID-based identity; falls back to synthesized shape when target ID absent.
+- **`parsePrimitiveType` extension** — covers ~12 common OutSystems DataTypes (was Identifier + Text only).
+
+---
+
+## Chapter 5.1+ opens — V1 Parity Audit Wave (Phase 5.12)
+
+**The chapter sequence pivots.** With V2 standing on its own structurally, the next-chapter agent's job shifts from "build the missing capability" to "verify parity with V1's existing capability." Per principal-PO direction at chapter 5.0 close:
+
+> "I'd like to start heavily auditing the v1 codebase, step by step, to ensure there is maximal parity — there's a ton of code paths in V1 and I want to make sure the representational coverage-state of the parity is expressible in a formal way in the next agent's discipline. I'd prefer to go in depth on a given small slice, one slice at a time."
+
+**The discipline document.** `V1_PARITY_MATRIX.md` opens at chapter 5.0 close (this commit). Read it before opening any chapter 5.1+ slice. The matrix is the substrate; each slice produces one row (or one amendment) + one test + one commit.
+
+**The six classification statuses.** Every matrix row carries exactly one:
+
+- 🟢 **PARITY** — V2 produces equivalent output for the V1 capability.
+- 🔵 **V2-EXTENSION** — V2 carries the capability + adds structural strength V1 lacks.
+- 🟡 **DIVERGENCE** — V2 deliberately diverges; rationale documented.
+- 🟠 **NOT-MAPPED** — V2 does not yet carry the capability; trigger named.
+- 🔴 **V1-BUG-CORRECTED** — V2 fixes a V1 bug or unsafety.
+- ⚫ **V1-SUNSET** — V2 does not carry forward by intent.
+
+**The slice protocol (per `V1_PARITY_MATRIX.md` §"How a parity-audit slice works"):**
+
+1. **Scope** one small V1 capability (50–500 LOC). Typically one C# file, one method, or one tightly-related cluster.
+2. **V1 trace** — read V1 source, understand inputs/outputs/invariants, name any V1 bugs.
+3. **V2 inventory** — find V2's representation (or absence). Trace V2's equivalent code path. Identify the delta.
+4. **Classification** — assign one of the six statuses. Justify in 1–3 sentences.
+5. **Coverage test** — add a test exercising the parity claim. Each status has its own test shape (see matrix doc).
+6. **Matrix update** — append a row (or amendment) to the matrix. **Append-only** — never modify rows in place.
+7. **Slice close** — single commit. Message names: V1 source path + V2 representation + classification + test added.
+
+**Cadence rules:**
+
+- **One slice per agent session arc.** Do NOT bundle multiple slices into one commit — the matrix's value is its append-only narrative of independent coverage events.
+- The chapter-close ritual gains a "matrix coverage walk" item starting chapter 5.1 close.
+- Per-quarter matrix re-balance surfaces clusters of 🟠 NOT-MAPPED that warrant focused lift chapters.
+
+**Initial slice queue** (pick what matches session capacity; see `V1_PARITY_MATRIX.md` §"Parity-audit slice queue" for the full table):
+
+| Slice | V1 source | Priority |
+|---|---|---|
+| 5.1.α | `IOutsystemsMetadataReader.cs` (22 DTOs) | Inventories what's not yet lifted in V2 |
+| 5.1.β | `SnapshotValidator.cs` | Sanity-check semantics for live-DB pickup |
+| 5.1.γ | `SqlClientOutsystemsMetadataReader.cs` | Connection lifecycle for production wiring |
+| 5.1.ε | `SqlMetadataDiagnosticsWriter.cs` | Diagnostics-axis parity |
+| 5.2.α | `src/Osm.Domain/Model/*.cs` (V1 aggregate-root model) | Largest single audit cluster |
+
+**Anti-patterns the discipline forbids:**
+
+- Bundling multiple slices into one commit (breaks the append-only narrative).
+- 🟠 NOT-MAPPED without a named trigger ("we'll get to it" is unacceptable).
+- Substituting the matrix for property tests — both are needed; they're orthogonal.
+- Static-analysis-style enumeration without per-row coverage tests.
+
+**The matrix is the formal expression of "representational coverage-state" the principal-PO requested.** It compounds slice by slice. Each row is independently verifiable. Coverage gaps are structurally visible.
+
+---
+
+## What this handoff does NOT tell you (read on your own)
+
+- `CHAPTER_5_0_CLOSE.md` — full close synthesis.
+- `CHAPTER_5_0_OPEN.md` — strategic frame at chapter open.
+- `V1_PARITY_MATRIX.md` — the discipline document. **Required reading** before any 5.1+ slice.
+- `BACKLOG.md` Phase 5.11 (chapter 5.0; closed) + Phase 5.12 (parity audit wave; in flight).
+- `ADMIRE.md` 2026-05-13 entry (OSSYS catalog producer; carbon-copy events recorded).
+
+---
+
+## 2026-05-17 (chapter 4.9 close — slices α partial + β + γ + δ + ε + ζ) — Big-batch forward-signal close-out + WithDiagnostics extensions
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1441 / 1441 non-canary passing** (1367 prior + 74 net new). 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged.
+
+**Chapter 4.9 closes.** Read `CHAPTER_4_9_CLOSE.md` for the chapter-close synthesis. Six in-scope items at open under explicit principal-PO direction:
+
+- **Slice α partial (`d5342c7`):** IRBuilders Kind/Module/Catalog sweep. 13 files / ~70 sites migrated via indentation-preserving Python pass. 19 files deferred to slice α' (codified Python-pass failure modes: collapsed multi-line lists; nested let-let-if structure). Trigger: next IR-shape change to Kind/Module/Catalog forces touching deferred files.
+- **Slice β (`52fd00c`):** `Attribute.OriginalName` + `Attribute.ExternalDatabaseType` IR lift. Two additive `string option` fields; defensive JSON + rowset adapter pickup; ReadSide defaults to `None`.
+- **Slice γ (`77d0cb1`):** `IndexColumnDirection = Ascending | Descending` closed DU + `IndexColumn` record; `Index.Columns` reshape from `SsKey list` to `IndexColumn list`. ScriptDom emission sets `SortOrder = Descending` only on Descending (V1 IndexScriptBuilder convention).
+- **Slice δ (`567e5cf`):** `EmissionPolicy.filterPlatformAutoIndexes` wired into `Compose.project` at post-chain seam. Signature: `Compose.project EmissionPolicy Catalog -> Outputs`. Per pillar 9: operator-policy filter outside the registered pass chain.
+- **Slice ε (`d64bcef`):** Multi-level `buildSetExtendedProperty` via `ExtendedPropertyOwner` DU (SchemaProperty / TableProperty / ColumnProperty / IndexProperty). `Module.ExtendedProperties` emission per distinct schema, gated to alphabetically-first kind of each schema.
+- **Slice ζ (`646e73e`):** Diagnostics-bearing canonical signatures for `buildCreateTable` / `buildSetExtendedProperty` / `buildMergeStatement` / `buildUpdateStatement`. Pattern from chapter 4.7 slice β extends to 4 more builders; today entries empty.
+
+**What's load-bearing going forward.**
+
+- **`IndexColumn` DU + Direction** — V2's SSDT emit gained per-column ASC/DESC fidelity (cutover-fidelity gain). The record-modification touches strategies + validators via `c.Attribute`.
+- **`ExtendedPropertyOwner` four-variant DU** — concept-shaped (SchemaProperty / TableProperty / ColumnProperty / IndexProperty); admits Module-level emission structurally.
+- **`Compose.project EmissionPolicy Catalog -> Outputs` signature** — Policy threaded through the pipeline-shape function; future Emission-axis additions touch one signature.
+- **Diagnostics-bearing pattern at 5 ScriptDom builders** — buildCreateIndex (chapter 4.7) + buildCreateTable / buildSetExtendedProperty / buildMergeStatement / buildUpdateStatement (this chapter). Future Diagnostics sources flow through without re-shape.
+- **`Attribute.OriginalName` + `Attribute.ExternalDatabaseType`** — IR-carries-V1-metadata; emission lands when downstream consumers demand.
+
+**Forward signals retained (after this chapter):**
+
+1. **Slice α' — IRBuilders Kind/Module/Catalog sweep tail** (19 files; ~80 sites). Trigger: next IR-shape change forces touching the deferred files.
+2. **Phase 8 — OSSYS catalog producer carbon-copy** (live-SQL slice). Opens next per the chapter 4.9 strategic frame. Reads V1's `outsystems_metadata_rowsets.sql` against a live OSSYS-hosting SQL Server; produces the rowset bundle V2's adapter consumes.
+3. **PreRemediation / Sequence emission / RemediationEmitter** — chapter 5+ territory; unchanged cost.
+
+---
+
+## 2026-05-17 (chapter 4.8 close — slices α + β + γ) — IRBuilders Attribute sweep + on-disk Index metadata + isPlatformAuto emitter toggle
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1367 / 1367 non-canary passing** (1354 prior + 13 net new). 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged.
+
+**Chapter 4.8 closes.** Read `CHAPTER_4_8_CLOSE.md` for the chapter-close synthesis. Three orthogonal cash-outs from the chapter 4.6 close shortlist:
+
+- **Slice α (`c0becab`):** Attribute IRBuilders sweep. 108 literals migrated across 21 test files. Future Attribute field additions touch ~2 sites instead of ~108. Kind / Module / Catalog sweeps **deferred** — Python pass triggers F# offside-rule failures on larger types; needs indentation-preserving rewrite.
+- **Slice β (`3676ce7`):** 5 additive Index fields (`FillFactor` / `IsPadded` / `AllowRowLocks` / `AllowPageLocks` / `NoRecomputeStatistics`) + ScriptDom IndexOptions emission. Validates the 85%+ cost-reduction claim — 5 fields at ~6 touches via chapter 4.7's IRBuilders sweep.
+- **Slice γ (`0a0d2ea`):** `EmissionPolicy.IncludePlatformAutoIndexes` + `EmissionPolicy.filterPlatformAutoIndexes` Catalog-projection helper. Operator-toggle V2 parity with V1's `SsdtManifestOptions.IncludePlatformAutoIndexes`. Per A18 amended: filter at composition layer; emitters consume the filtered Catalog.
+
+**What's load-bearing going forward.**
+
+- **Attribute IRBuilders sweep precedent** — `mkAttribute` defaults absorb new fields; `OriginalName` + `ExternalDatabaseType` (chapter 4.6 shortlist item #2) become ~2-site changes.
+- **5 on-disk Index metadata fields with V1 parity** — V2's SSDT emit gained `FILLFACTOR` / `PAD_INDEX` / `ALLOW_ROW_LOCKS` / `ALLOW_PAGE_LOCKS` / `STATISTICS_NORECOMPUTE` option emission via ScriptDom `IndexOptions`.
+- **`EmissionPolicy.IncludePlatformAutoIndexes` axis + filter** — operator-toggle wired at Policy layer; composer/pipeline auto-application deferred per IR-grows-under-evidence.
+- **Slice α scope-reduction precedent** — when a Python pass triggers F# offside-rule failures, defer with explicit trigger (indentation-preserving rewrite); don't ship a half-working mass migration.
+
+**Forward signals retained (after this chapter):**
+
+1. **Kind / Module / Catalog IRBuilders sweep** — Python pass needs indentation-preserving rewrite. ~150 literal sites; cheap future Kind/Module/Catalog field additions when cashed.
+2. **Composer/Pipeline wiring of `IncludePlatformAutoIndexes`** — toggle is available via explicit caller invocation; pipeline-wired auto-application deferred until operator demand surfaces.
+3. **IndexColumnDirection** — record-modification (was painful pre-4.7; now possibly tractable post-4.7 sweep precedent, but still needs IndexColumn record + per-column-axis lift).
+4. **OriginalName + ExternalDatabaseType** — now cheap post-slice-α; trigger: agent picks them up.
+5. **PreRemediation / Module.ExtendedProperties / Sequence emission / OSSYS catalog producer / Phase 8** — unchanged cost; substantive new chapters when their triggers fire.
+
+---
+
+## 2026-05-17 (chapter 4.7 close — slices α + β + γ + cleanup + discipline) — Refactor bundle + sibling-wrapper discipline codification
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1354 / 1354 non-canary passing** (1348 prior + 6 net new). 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged.
+
+**Chapter 4.7 closes.** Read `CHAPTER_4_7_CLOSE.md` for the chapter-close synthesis. The chapter shipped three planned refactors PLUS an unscheduled mid-flight tech-debt discovery + discipline codification triggered by an operator review.
+
+**What shipped (3 slices + cleanup + discipline codification).**
+
+- **Slice α — adapter consolidations.** `getOptionalIntFlag` + `getOptionalBool` retire the `match getIntFlag with Ok v -> v | Error _ -> default` boilerplate at V1-int-flag pickup sites.
+- **Slice β + fix-forward — Diagnostics-aware emitter signature.** Initial slice β shipped two surfaces (legacy silent-skip `buildCreateIndex` + `buildCreateIndexWithDiagnostics`); operator flagged the back-compat wrapper as unprincipled tech debt; fix-forward collapsed to one canonical Diagnostics-bearing `buildCreateIndex`. Callers explicitly drop diagnostics via `.Value` at the call site.
+- **Cleanup — 2 middle-tier wrappers retired.** Three-agent audit surfaced ~10 sibling-wrapper candidates; careful reread revealed most were principled F# default-argument idioms (preserved). Two were overdifferentiated middle-tier wrappers (tech debt; retired): `DataEmissionComposer.composeWithMigration` + `MigrationDependenciesEmitter.emitWithUserRemap`.
+- **Discipline codification.** `DECISIONS 2026-05-17 (chapter 4.7 cleanup) — Sibling-wrapper discipline` codifies the distinguishing test ("hides information" → tech debt; "supplies private/computed default" → F# idiom) + the N+1 corollary (overdifferentiated middle-tier anti-pattern). CLAUDE.md operating-disciplines table gains a Sibling-wrapper discipline row.
+- **Slice γ — IRBuilders retroactive sweep.** `mkReference` added; Python sweep migrated 30 literals across 15 test files (9 Index + 21 Reference). Future Index / Reference IR-field-addition touch cost drops 85%+.
+
+**What's load-bearing going forward.**
+
+- **Sibling-wrapper distinguishing test** is the canonical discipline. Future "should this wrapper be deleted?" questions resolve via the codified test; no re-walking the audit cycle.
+- **`IRBuilders.mkReference` + the Python migration pattern** are reusable. Future IR-field additions to Index / Reference touch ~2 sites instead of ~30.
+- **`buildCreateIndex` (Diagnostics-bearing)** is the canonical CREATE INDEX emitter contract. Pattern future emit-time Diagnostics consumers follow.
+- **`getOptionalIntFlag` + `getOptionalBool`** are the canonical V1-int-flag pickup primitives. Future adapter slices consume them.
+
+**Forward signals retained (after this chapter):**
+
+1. **Attribute / Kind / Module / Catalog literal sweep** — same Python pattern; richer field sets; trigger: time-budget.
+2. **WithDiagnostics emitter signature lift for buildCreateTable / buildSetExtendedProperty / buildMergeStatement / buildUpdateStatement** — trigger: a Diagnostics source emerges (CHECK constraint parse validation; extended-property name validation; MERGE expression parsing).
+3. **`UserFkReflowIntegrationTests.fs` Reference literal** — left unmigrated at slice γ due to mid-literal inline `//` comments; hand-migration deferred.
+4. **The 10 remaining forward-signal items from chapter 4.6** are now ~85% cheaper to ship for IR-field-adding ones (Index/Reference); proportionally cheaper for emitter-signature-touching ones via the established Diagnostics-bearing pattern.
+
+---
+
+## 2026-05-17 (chapter 4.6 close — slices α + β + γ) — Forward-signal cleanup bundle (HasDbConstraint + IsPlatformAuto + filter-parse Diagnostic)
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1348 / 1348 non-canary passing** (1330 prior + 18 net new across the chapter — 10 slice α + 0 slice β + 9 slice γ minus 1 chapter-4.4 always-false test retired). 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged.
+
+**Chapter 4.6 closes.** Read `CHAPTER_4_6_CLOSE.md` for the chapter-close synthesis. Read `CHAPTER_4_6_OPEN.md` for the strategic frame.
+
+**What shipped (3 substantive commits + close).** All four chapter-4.4 always-false PredicateName variants now lift to real IR evaluation (slice α retires the last 2: HasLogicalForeignKeyWithoutDbConstraint + HasLogicalForeignKeyWithDbConstraint). One of four A.0' deferred concepts retires (slice β: IsPlatformAuto). Chapter 4.5 silent-skip Q3 deferral closes (slice γ: Diagnostics-aware filter-parse helper).
+
+- **Slice α (`75687e6`):** `Reference.HasDbConstraint : bool` IR + adapter pickup (JSON path captures `reference_hasDbConstraint` int-flag; rowset path propagates from `#FkReality` HasFK column; SymmetricClosure inherits; ReadSide defaults true). Both predicate variants lift to real evaluation. 24 Reference literal sites migrated via Python mechanical-edit pass. 10 tests.
+- **Slice β (`be44e74`):** `Index.IsPlatformAuto : bool` IR + adapter pickup. IR-only carriage; emitter consumption (operator-toggle) deferred. 9 Index literal sites migrated.
+- **Slice γ (`f2b2640`):** `ScriptDomBuild.tryParseFilterWithDiagnostics` public helper. Returns `Diagnostics<BooleanExpression option>` with `Source=emitter:ssdt`, `Code=emit.ssdt.index.filterParseFailure`, `Severity=Warning`, Metadata carrying raw filter + parser error count. 9 tests.
+
+**What's load-bearing going forward.**
+
+- **All 16 V1-aligned PredicateName variants evaluate against real V2 IR** — the chapter-4.4 always-false-pending-IR category is empty. Future predicate additions follow closed-DU widening + adapter pickup + emit-time evaluation pattern.
+- **`reference_hasDbConstraint` adapter primitive** — `getIntFlag` with COALESCE-to-false default. Reusable for future similar V1 int-flag fields.
+- **`tryParseFilterWithDiagnostics` helper** — the Diagnostics-aware parse primitive. Future emit-time parse consumers (CHECK constraint, partial-index rewriting, expression validation in DACPAC adapter) consume this surface.
+
+**Forward signals retained (after this chapter):**
+
+1. **`IndexColumnDirection`** (ASC/DESC per column) — record-modification rather than additive. Trigger: emission demands per-column sort direction.
+2. **`OriginalName` + `ExternalDatabaseType`** A.0' deferred concepts — untriggered.
+3. **On-disk rich Index metadata** (FillFactor / IsPadded / partition / data compression) — V1 carries; V2 emission doesn't need for V2-driver correctness.
+4. **`isPlatformAuto` emitter consumption** (NEW) — IR carriage shipped at slice β; operator-toggle wiring waits on a real workflow demanding platform-auto-index filtering.
+5. **Diagnostics-aware emitter signature** (NEW) — slice γ ships the helper; buildCreateIndex wiring waits on a downstream consumer needing filter-parse failures in the manifest or per-emit Diagnostics stream.
+6. **PreRemediation field population** — V2_DRIVER §154 RemediationEmitter chapter 5+.
+7. **Module.ExtendedProperties emission** — multi-level-aware emitter refactor.
+8. **Sequence emission** — V1 fixture gated.
+
+**Recommended next-chapter shortlist.** V2-driver structural surface remains operationally complete. Pending substantial work:
+
+1. **OSSYS catalog producer carbon-copy** — Phase 8 / chapter 5+ live-SQL slice. Highest-value V1 inheritance candidate per BACKLOG.
+2. **`IndexColumnDirection` chapter** — record-modification (~80+ literal-site migration). Triggered when emission needs per-column sort direction.
+3. **Module.ExtendedProperties emission** — schema-level sp_addextendedproperty (no level1 args). Needs multi-level-aware emitter refactor.
+4. **CREATE SEQUENCE emitter** — V1 fixture gated; build the typed CreateSequenceStatement path.
+5. **Phase 8 pragmatic close** — F# Analyzers SDK / Coordinates Stage 2 / Hex port lifts / cutover-day runbook / V1 sunset plan.
+
+---
+
+## 2026-05-17 (chapter 4.5 close — slices α + β) — Index IR fidelity (Filter + IncludedColumns) + chapter-4.4 predicate cash-outs
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1330 / 1330 non-canary passing** (1313 prior + 17 new across the chapter — 9 slice α + 8 slice β); canary tests skip when Docker unwarm. 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint count unchanged.
+
+**Chapter 4.5 closes.** Read `CHAPTER_4_5_CLOSE.md` for the chapter-close synthesis. Read `CHAPTER_4_5_OPEN.md` for the strategic frame (eight-axis; three-slice plan; four resolved-at-open questions).
+
+**What shipped (2 substantive commits + close).** Two of the four `HasFilteredIndex / HasIncludedIndexColumns / HasLogicalForeignKey×DbConstraint` always-false PredicateName variants from chapter 4.4 retire. V2's Index IR + emission now carry V1's `IndexOnDiskMetadata.FilterDefinition` + `IndexColumnModel.IsIncluded` axes.
+
+- **Slice α (`59c19d8`):** `Index.Filter : string option` IR + `IndexDef.Filter` realization-layer field + `ScriptDomBuild.parseFilterPredicate` (TSql160Parser.ParseBooleanExpression at emit time; BooleanParenthesisExpression wrap per V1 IndexScriptBuilder convention) + `buildCreateIndex` emits WHERE clause + adapter captures V1 JSON `filterDefinition` + `HasFilteredIndex` predicate lifts to real. 9 tests in `IndexFilterTests.fs`.
+- **Slice β (`b9dc072`):** `Index.IncludedColumns : SsKey list` IR + `IndexDef.IncludedColumns` realization + `CatalogReader.parseIndex` partitions V1 `columns[]` by `isIncluded` flag (pre-slice-β the adapter dropped `isIncluded=true` per the documented ADMIRE divergence; that drop retires) + `ScriptDomBuild.buildCreateIndex` emits INCLUDE columns + `HasIncludedIndexColumns` predicate lifts. 8 tests in `IndexIncludedColumnsTests.fs`. `OsmCatalogReaderDifferentialTests` IX_USER_NAME expectation updated (EmailLower now captured).
+- **Slice γ (this commit):** Chapter close ritual + `CHAPTER_4_5_CLOSE.md` + HANDOFF + BACKLOG + README.
+
+**What's load-bearing going forward.**
+
+- **`TSql160Parser.ParseBooleanExpression` as the canonical filter-parse primitive** at the SSDT layer. Future SQL-expression-parsing consumers (CHECK constraint emission via DACPAC adapter; partial-index rewriting; etc.) inherit the primitive.
+- **Adapter-side partition-by-flag pattern** (`isIncluded` flag → key vs included columns). Future per-column-axis IR fields scale the same way.
+- **2 of 4 always-false predicates retired**; PredicateCoverage manifest section gains accurate per-table flags for filtered + INCLUDE-bearing indexes.
+
+**Forward signals retained (5):**
+
+1. **`HasLogicalForeignKey×DbConstraint` predicate pair** — V2's `Reference` doesn't carry logical-vs-physical distinction. Trigger: future chapter flows the Tightening-pass `ForeignKeyOutcome` decision into Reference.
+2. **`IndexColumnDirection`** (ASC/DESC per column) — record-modification (restructure `Columns : SsKey list` → `Columns : IndexColumn list`) rather than additive. Trigger: emission demands per-column sort direction.
+3. **`Index.IsPlatformAuto`** — adapter-derivable; no consumer demand.
+4. **On-disk rich metadata** (FillFactor / IsPadded / partition columns / data compression) — V1 carries; V2 emission doesn't need for V2-driver correctness.
+5. **Filter-parse-failure Diagnostic emission** — currently silent-skip; trigger: real fixture surfaces a parse failure.
+
+**Recommended next-chapter shortlist.** V2-driver structural surface remains operationally complete (Phases 1–7 + 5.5 + 5.6/4.5 closed). Pending work:
+
+1. **`HasLogicalForeignKey×DbConstraint` chapter** — retires the last 2 always-false PredicateName variants. Requires Tightening-decision-into-Reference flow (record-extension on Reference; pass-pipeline integration). Estimated 1-2 sessions.
+2. **`IndexColumnDirection` chapter** — record-modification (more invasive than chapter 4.5's record-extensions); restructures `Index.Columns : SsKey list` → `Index.Columns : IndexColumn list`. Estimated 1-2 sessions including ~80+ literal-site migrations.
+3. **Module.ExtendedProperties emission** — gated on V1 confirmation.
+4. **Sequence emission** — gated on V1 fixture.
+5. **OSSYS catalog producer carbon-copy** — Phase 8 / chapter 5+ live-SQL slice.
+6. **Phase 8 pragmatic close** — F# Analyzers SDK / Coordinates Stage 2 / Hex port lifts / cutover-day runbook / V1 sunset plan.
+
+---
+
+## 2026-05-17 (chapter 4.4 close — slices α + β + γ + δ) — Manifest diagnostic fields retire three of four chapter-4.4-fills deferrals
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline at chapter close: 1313 / 1313 non-canary passing** (1262 prior + 51 new across the chapter — 18 slice α + 14 slice β + 8 slice γ + 11 slice δ); canary tests skip when Docker unwarm. 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint count 13 — unchanged from chapter A.4.7' baseline.
+
+**Chapter 4.4 closes.** Read `CHAPTER_4_4_CLOSE.md` for the chapter-close synthesis (per-slice ledger + 8-item close ritual + V1-input-envelope walk + deferral re-affirmations). Read `CHAPTER_4_4_OPEN.md` for the strategic frame (eight axes; four-slice plan; four resolved-at-open questions).
+
+**What shipped (4 substantive commits + close).** Three of the four `chapter 4.4 fills` deferrals codified in `ManifestEmitter.fs:32-33,176-183` are retired. `Coverage` / `PredicateCoverage` / `Unsupported` now emit typed evidence; `PreRemediation` stays empty per `V2_DRIVER.md` §154 (RemediationEmitter deferred to chapter 5+).
+
+- **Slice α (`a6505e5`):** `CoverageBreakdown` + `CoverageSummary` + `Coverage.compute`. Mirrors V1's `Osm.Emission.CoverageBreakdown` shape + percentage-rounding contract (Math.Round AwayFromZero; total=0→100; emitted=0→0). T11 keyset coverage holds structurally — V2 emits everything so `Emitted = Total` per axis. 18 tests.
+- **Slice β (`09e71ce`):** `PredicateName` closed DU (16 variants matching V1's SsdtPredicateNames verbatim) + `PredicateCoverage`. 12 variants have V2 IR evidence; 4 always-false pending V2 IR refinement (HasFilteredIndex / HasIncludedIndexColumns / HasLogicalForeignKey×DbConstraint pair). PredicateCounts emits as sorted-by-name array of `{name, count}` objects per chapter open Q2 (documented divergence from V1's JSON-dict shape). 14 tests.
+- **Slice γ (`b08c7dc`):** `Unsupported.compute` renders `ToleratedDivergence.allKnown` as sorted strings. Closed-DU empirical-test discipline ensures content audit surfaces variant additions / retirements. 7 tests.
+- **Slice δ (this commit):** V1 differential test (`ManifestV1DifferentialTests.fs`) cross-checks V2's emit shape against V1's reference types — PredicateName names verbatim; CoverageBreakdown rounding contract; SsdtCoverageSummary three-axis shape; SsdtPredicateCoverage two-section shape; PredicateCoverageEntry fields; Unsupported as IReadOnlyList; PreRemediation empty per §154; documented V2-only divergences (registry.digest; predicateCounts shape). 11 tests. **Chapter-close ritual discharged.**
+
+**What's load-bearing.** After this chapter:
+
+- **`CoverageBreakdown` smart constructor** is the typed primitive for V1-shape coverage emission; V1-rounding-contract preserved.
+- **`PredicateName` closed DU** is the typed registry of V1's 16 named manifest predicates; when V2 IR grows the 4 always-false predicates' evidence, the lift surfaces via the closed-DU empirical-test discipline.
+- **`ToleratedDivergence` enumeration is the Unsupported source** — when a Tolerance variant retires (chapter widens IR + emitter consumption), the manifest's Unsupported list shortens; `ManifestUnsupportedTests.fs` "current-variant content audit" surfaces the retirement.
+- **Manifest's V1-compatible JSON schema** — every operator-consultable axis now carries typed evidence at the V1-shape surface (modulo documented divergences).
+
+**Forward signals retained (4):**
+
+1. **`PreRemediation` field population** — V2_DRIVER §154 deferred-to-chapter-5+ RemediationEmitter trigger. Empty-array structurally correct until RemediationEmitter ships.
+2. **`PredicateName` 4 always-false variants** — IR refinement triggers: Index.Filter for HasFilteredIndex; key/included column split for HasIncludedIndexColumns; logical-vs-physical Reference distinction for the WithDbConstraint pair.
+3. **Unsupported per-divergence rationale** — consumer-pressure trigger to widen string list → typed record list.
+4. **V1↔V2 PredicateCounts JSON-shape divergence** — Tolerance candidate (or shape-flip to JSON dict with key-sorted serialization) if byte-equality with V1 demanded.
+
+**Recommended next-chapter shortlist (superseding the chapter A.4.7' close entry's stale shortlist).** The V2-driver critical-path Phases 1–7 are all closed; chapter 4.4 retires the largest piece of named pending V2_DRIVER work. Remaining work:
+
+1. **Deferred-with-trigger items** (consumer-pressure-driven; ~1-2 sessions each as triggers fire):
+   - Module.ExtendedProperties emission — gated on V1 confirmation of module → schema convention.
+   - Sequence emission — gated on V1 fixture surfacing sequences.
+   - Chapter 4.3 slices δ (CLI wire-up) + ε (V1 differential).
+   - Chapter 4.2 OSSYS adapter User-kind identification surface + CSV adapter for ManualOverride.
+   - Chapter 3.x slices ε + ζ + per-Catalog parameterization.
+   - V1↔V2 byte-equality for sp_addextendedproperty / predicateCounts shape — if downstream consumer demands.
+2. **PhysicalSchema extended-property reflection** — extends canary's diff surface; orthogonal to emitter axis.
+3. **Phase 8 pragmatic close** — F# Analyzers SDK / Coordinates Stage 2 typed VOs / Hex port lifts / cutover-day operator runbook / V1 sunset planning. Consumer-pressure-driven; opens at cutover-15 to cutover+30 window.
+
+The 4 always-false `PredicateName` variants are forward-signal opportunities — when V2 IR grows the corresponding evidence (likely via a future DACPAC adapter slice or rowset extension), the manifest's PredicateCoverage tightens automatically and the close-ritual ToleratedDivergence-content-audit catches the retirement.
+
+---
+
+## 2026-05-17 (post-A.4.7' doc-refresh hygiene) — V2_DRIVER + BACKLOG refreshed; recommended-next-chapter shortlist below supersedes the chapter A.4.7' close entry
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-Rqo0x`. **Test baseline unchanged at 1262 / 1262 non-canary passing**; canary tests skip when Docker unwarm; 0 build warnings under `TreatWarningsAsErrors=true`; lint count 13. Operator-reality perf baseline re-recorded to absorb chapter A.4.7''s `compose.runChain` Bench scope (5 warm captures green; 202 labels × 5 runs; see `DECISIONS 2026-05-17 (post-chapter-A.4.7' hygiene) — Perf baseline re-recorded`).
+
+**What changed in this hygiene pass.** The "Recommended next chapter" list in the chapter A.4.7' close entry below listed chapter 4.1.B (closed 2026-05-11) and chapter 4.2 (closed 2026-05-15) as if openable — the author was treating the V2_DRIVER per-axis stakes table as canonical without noticing V2_DRIVER and BACKLOG had drifted. The drift was caught in this hygiene pass and patched:
+
+- `V2_DRIVER.md` Phase 3 / 4 / 5 / 6 / 7 rows updated to **shipped** with chapter-close-doc references and a current-state-as-of-2026-05-17 paragraph naming the operationally-complete structural surface.
+- `BACKLOG.md` Phase 3 / 4 / 5 / 6 status fields refreshed; per-phase slice tables shipped-out; deferred-with-trigger lists codified per chapter close docs; sequencing graph at §VII updated to show the current state.
+
+**Recommended next-chapter shortlist (superseding the chapter A.4.7' close entry below).** The V2-driver critical-path Phases (1–5 + 7) are all closed. The actually-pending named work is:
+
+1. **Chapter 4.4 — Operational Diagnostics manifest fields.** The largest piece of named pending V2_DRIVER work. `ManifestEmitter.fs:32-33,181` docstring + emission paths confirm `Coverage` / `PredicateCoverage` / `PreRemediation` / `Unsupported` currently emit as `null` / defaults. Chapter fills them under per-axis property test coverage. Likely 4-6 slices.
+2. **Module.ExtendedProperties emission** — deferred-with-trigger from chapter 4.1.A.8 (`DECISIONS 2026-05-17 — sp_addextendedproperty emission, Decision 4`). Gated on V1-side confirmation of module → schema convention. ~1 session if trigger fires.
+3. **Sequence emission** — `CREATE SEQUENCE` emitter for `Catalog.Sequences` IR shape (chapter A.0' slice δ shipped the IR; no emitter). Deferred until V1 fixture surfaces sequences. ~1-2 sessions if trigger fires.
+4. **Chapter 4.3 slice δ (CLI wire-up) + slice ε (V1 differential)** — deferred-with-trigger from chapter 4.3 close. Slice δ triggers on operator demand for one-command diagnostics emission; slice ε triggers on chapter that needs cross-version diagnostic-fidelity evidence.
+5. **Chapter 4.2 OSSYS adapter User-kind identification surface + CSV adapter for ManualOverride** — deferred-with-trigger from chapter 4.2 close. Slice triggers on real platform-user-kind data flow.
+6. **Chapter 3.x slices ε (modality marks → comments/extended properties) + ζ (byte-determinism via canonicalization)** — deferred-with-trigger from chapter 3.x close.
+7. **Phase 8 pragmatic close** — F# Analyzers SDK; Coordinates Stage 2 typed VOs; Hex port lifts; cutover-day operator runbook; V1 sunset planning. Consumer-pressure-driven; opens at cutover-15 to cutover+30 window per fallback-ladder gates.
+
+**The chapter A.4.7' close letter below remains accurate as a historical record of what shipped that chapter** — its 8 forward signals (item-numbered list) are all carried forward unchanged. Only the "Recommended next chapter" list at the bottom of that entry has been superseded by the shortlist above.
+
+---
 
 ## 2026-05-17 (chapter A.4.7' close — slices α + β + γ + δ + ε + ζ + η + θ) — Compose.run registry-traversal; A41 amended (execution totality); 5/5 bidirectional property tests; `let run` private across all 12 passes
 
