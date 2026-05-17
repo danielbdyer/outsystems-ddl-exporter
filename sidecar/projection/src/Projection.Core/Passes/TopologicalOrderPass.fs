@@ -364,11 +364,23 @@ module TopologicalOrderPass =
     // The pass.
     // -----------------------------------------------------------------------
 
+    /// Pillar 9 (chapter A.4.7 slice α): the events emitted by this
+    /// pass are all `Touched` (one per graph node from Kahn ordering),
+    /// classified `DataIntent` — the SortKahn site is topology-derived
+    /// (no operator opinion in node visitation). The SelfLoopHandling
+    /// site (an `OperatorIntent Ordering` site per the chapter A.4.7
+    /// open's Q9-trigger-fires worked example) affects `buildGraph`
+    /// but emits no per-event lineage at this slice. The Sites
+    /// distinction lands at slice ε with the registry entry; per-event
+    /// classification here is uniformly `DataIntent`.
+    let private classification : Classification = DataIntent
+
     let private touchedEvent (key: SsKey) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = key
-          TransformKind = Touched }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = key
+          TransformKind  = Touched
+          Classification = classification }
 
     /// Parameterized form. Per session-36 — `selfLoops` selects how a
     /// kind's reference to itself is handled during graph construction.
@@ -464,6 +476,38 @@ module TopologicalOrderPass =
     /// policy. Returns a `Lineage<TopologicalOrder>`; the catalog
     /// itself is not modified. One `Touched` event per kind scanned
     /// (per A25). Equivalent to `runWith TreatAsCycle`.
-    let run (c: Catalog) : Lineage<TopologicalOrder> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `TopologicalOrderPass.registered.Run`
+    let private run (c: Catalog) : Lineage<TopologicalOrder> =
         use _ = Bench.scope "passes.topologicalOrder"
         runWith TreatAsCycle c
+
+    /// Chapter A.4.7 slice γ. **The chapter A.4.7 open Q9-trigger-
+    /// fires worked example**. Two sites — `sortKahn` (DataIntent;
+    /// Kahn ordering is topology-derived) and `selfLoopHandling`
+    /// (OperatorIntent Ordering; `SelfLoopPolicy` is the named
+    /// real-evidence trigger for the fifth `OverlayAxis` variant per
+    /// `DECISIONS 2026-05-16 (chapter A.4.7 slice β) — OverlayAxis
+    /// gains fifth variant Ordering`). The default `registered` uses
+    /// `TreatAsCycle`; `registeredWith` exposes the configurable
+    /// variant for slice ε consumers.
+    let registered : RegisteredTransform<Catalog, TopologicalOrder> =
+        { Name = passName
+          Domain = CrossCutting
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "sortKahn"
+                Classification = DataIntent
+                Rationale = "Kahn topological sort over kinds' SsKey-keyed reference graph. Deterministic; depends only on graph topology; no operator opinion." }
+              { SiteName = "selfLoopHandling"
+                Classification = OperatorIntent Ordering
+                Rationale = "SelfLoopPolicy (TreatAsCycle | SkipSelfEdges) controls how a kind's reference to itself is handled during graph construction. Operator-supplied (passed via `runWith`); the chapter A.4.7 open's Q9-trigger-fires fifth OverlayAxis worked example. The default `registered` captures TreatAsCycle; `registeredWith` exposes the configurable variant." } ]
+          Run = fun c -> run c |> Lineage.map Diagnostics.ofValue
+          Status = Active }
+
+    /// Chapter A.4.7 slice γ — configurable variant. Lets slice ε
+    /// (the OrderingPolicy-stage consumer) supply the `SelfLoopPolicy`
+    /// explicitly. The Sites list is the same as the default
+    /// `registered`; the Run closure differs.
+    let registeredWith (selfLoops: SelfLoopPolicy) : RegisteredTransform<Catalog, TopologicalOrder> =
+        { registered with
+            Run = fun c -> runWith selfLoops c |> Lineage.map Diagnostics.ofValue }

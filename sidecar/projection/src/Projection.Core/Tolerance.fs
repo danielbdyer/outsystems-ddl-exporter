@@ -55,13 +55,17 @@ type ToleratedDivergence =
     /// chapter 4.1.B will retire this variant for population kinds.
     | StaticPopulationsUnreflected
 
-    /// Column / table descriptions and extended properties are
-    /// absent from `PhysicalSchema`'s comparison surface (same
-    /// docstring at `PhysicalSchema.fs:44`). Chapter 4.1.A slice 8
-    /// (extended properties; gated on chapter 3.2 SnapshotRowsets)
-    /// will retire this variant when the IR carries them and the
-    /// emitter emits `sp_addextendedproperty` calls.
-    | CommentMetadataUnreflected
+    // **CommentMetadataUnreflected — RETIRED at chapter 4.1.A slice 8
+    // (2026-05-17).** Column / table / index descriptions and extended
+    // properties now emit as `EXEC sys.sp_addextendedproperty` calls
+    // via `SsdtDdlEmitter.extendedPropertyStatements`; the IR
+    // (chapter A.0' slices α + ζ) carries the data and the emitter
+    // consumes it. Removed from the DU per the closed-DU empirical-
+    // test discipline — adding the emission retires the variant.
+    // `PhysicalSchema.fs` may extend its comparison surface to cover
+    // extended properties as a separate forward signal; today the
+    // canary's `PhysicalSchema` diff treats descriptions as
+    // out-of-comparison, but the EMITTER side is no longer silent.
 
 /// Operations on individual `ToleratedDivergence` variants. The
 /// `allKnown` accessor is the closed-DU expansion empirical-test
@@ -83,7 +87,6 @@ module ToleratedDivergence =
         | ToleratedDivergence.PostDeployForeignKeysSplit     -> ToleratedDivergence.PostDeployForeignKeysSplit
         | ToleratedDivergence.IndexesUnreflected             -> ToleratedDivergence.IndexesUnreflected
         | ToleratedDivergence.StaticPopulationsUnreflected   -> ToleratedDivergence.StaticPopulationsUnreflected
-        | ToleratedDivergence.CommentMetadataUnreflected     -> ToleratedDivergence.CommentMetadataUnreflected
 
     /// Every empirically-grounded `ToleratedDivergence` variant.
     /// The closed-DU coverage test asserts this set has the same
@@ -103,7 +106,6 @@ module ToleratedDivergence =
                 coverage ToleratedDivergence.PostDeployForeignKeysSplit
                 coverage ToleratedDivergence.IndexesUnreflected
                 coverage ToleratedDivergence.StaticPopulationsUnreflected
-                coverage ToleratedDivergence.CommentMetadataUnreflected
             ]
 
 /// The equivalence-class definition for the canary's V1≈V2 and

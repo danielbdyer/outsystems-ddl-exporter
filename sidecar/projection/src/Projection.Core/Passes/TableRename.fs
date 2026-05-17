@@ -154,11 +154,20 @@ module TableRename =
     // suppressed at the visitor before the event is constructed.
     // -----------------------------------------------------------------------
 
+    /// Pillar 9 (chapter A.4.7 slice α): table-rename consumes
+    /// operator-supplied rename specs and rewrites the physical
+    /// realization (`Kind.Physical` only; identity untouched per A1).
+    /// Operator intent on the Emission axis — the operator selects
+    /// what physical form a kind takes in emitted output. Lands as
+    /// registered overlay.
+    let private classification : Classification = OperatorIntent Emission
+
     let private physicallyRenamedEvent (key: SsKey) (before: TableId) (after: TableId) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = key
-          TransformKind = PhysicallyRenamed { Before = before; After = after } }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = key
+          TransformKind  = PhysicallyRenamed { Before = before; After = after }
+          Classification = classification }
 
     /// Run the pass. Empty spec list short-circuits to a pass-through
     /// with no lineage events. Otherwise validates every spec first
@@ -166,7 +175,8 @@ module TableRename =
     /// `CatalogTraversal.mapKinds`, emitting one `PhysicallyRenamed`
     /// event per rewritten kind. No-op renames (target equals the
     /// current physical realization) emit no event.
-    let run (specs: RenameSpec list) (c: Catalog) : Result<Lineage<Catalog>> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `TableRename.registered.Run`
+    let private run (specs: RenameSpec list) (c: Catalog) : Result<Lineage<Catalog>> =
         use _ = Bench.scope "passes.tableRename"
         match specs with
         | [] -> Result.success (Lineage.ofValueAndEvents [] c)
@@ -182,3 +192,39 @@ module TableRename =
                         Some { k with Physical = target }
                     | _ -> Some k)
                 |> Result.success
+
+    /// Chapter A.4.7 slice γ — factory. Captures operator-supplied
+    /// `RenameSpec list` in closure. Single `OperatorIntent Emission`
+    /// site — operator chooses what physical form a kind takes in
+    /// emitted output. The pass returns `Result<Lineage<Catalog>>`
+    /// (validation against the catalog can fail); the Run closure
+    /// wraps the Result so the canonical `Lineage<Diagnostics<Catalog>>`
+    /// shape holds: on Ok, the lineage flows through with empty
+    /// Diagnostics; on Error, the input Catalog passes through
+    /// unchanged and the ValidationErrors surface as Diagnostics
+    /// entries with `Severity = Error` for downstream observer
+    /// inspection.
+    let registered (specs: RenameSpec list) : RegisteredTransform<Catalog, Catalog> =
+        { Name = passName
+          Domain = Schema
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "rename"
+                Classification = classification
+                Rationale = "Apply operator-supplied rename specs to kinds' physical realization (Kind.Physical only; identity untouched per A1). Operator chose what physical form each kind takes; lands as Emission-axis overlay." } ]
+          Run =
+            fun c ->
+                match run specs c with
+                | Ok lineage -> lineage |> Lineage.map Diagnostics.ofValue
+                | Error errs ->
+                    let entries =
+                        errs
+                        |> List.map (fun e ->
+                            { Source = passName
+                              Severity = DiagnosticSeverity.Error
+                              Code = e.Code
+                              Message = e.Message
+                              SsKey = None
+                              Metadata = Map.empty })
+                    Lineage.ofValue (Diagnostics.tellMany entries (Diagnostics.ofValue c))
+          Status = Active }

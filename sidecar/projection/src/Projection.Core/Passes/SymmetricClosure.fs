@@ -90,11 +90,18 @@ module SymmetricClosure =
     let private hasInverseAlready (refs: Reference list) (key: SsKey) : bool =
         refs |> List.exists (fun r -> r.SsKey = key)
 
+    /// Pillar 9 (chapter A.4.7 slice α): symmetric closure derives
+    /// inverse references from the existing graph topology — no
+    /// operator opinion enters. Skipped events name a topology-derived
+    /// reason (target absent / no PK). Lands in the skeleton.
+    let private classification : Classification = DataIntent
+
     let private createdEvent (key: SsKey) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = key
-          TransformKind = Created }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = key
+          TransformKind  = Created
+          Classification = classification }
 
     let private skippedEvent (key: SsKey) (reason: SymmetricClosureSkipReason) : LineageEvent =
         // Chapter-3.6 slice-γ: typed `SymmetricClosureSkipReason`
@@ -102,10 +109,11 @@ module SymmetricClosure =
         // The two skip cases (`TargetKindAbsent`,
         // `TargetHasNoPrimaryKey`) classified in `classifyStep` flow
         // through structurally to audit consumers.
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = key
-          TransformKind = Annotated (ClosureSkipped reason) }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = key
+          TransformKind  = Annotated (ClosureSkipped reason)
+          Classification = classification }
 
     /// Run the pass. For every directional reference whose target is
     /// resolvable in the catalog and has at least one primary-key
@@ -158,7 +166,8 @@ module SymmetricClosure =
     /// variant; the fold accumulator `(events: LineageEvent list,
     /// inversesByTarget: Map<SsKey, Reference list>)` carries the
     /// closure-construction state immutably.
-    let run (c: Catalog) : Lineage<Catalog> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `SymmetricClosure.registered.Run`
+    let private run (c: Catalog) : Lineage<Catalog> =
         use _ = Bench.scope "passes.symmetricClosure"
         let allKinds = Catalog.allKinds c
         let kindByKey =
@@ -216,3 +225,18 @@ module SymmetricClosure =
               Sequences = c.Sequences }
 
         Lineage.ofValueAndEvents events withInverses
+
+    /// Chapter A.4.7 slice γ. Single `DataIntent` site: derives
+    /// inverse references from existing graph topology + PK presence.
+    /// Skipped events carry topology-derived reasons (target absent /
+    /// no PK); no operator opinion enters.
+    let registered : RegisteredTransform<Catalog, Catalog> =
+        { Name = passName
+          Domain = Schema
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "synthesizeInverse"
+                Classification = classification
+                Rationale = "For each directional reference, synthesize the inverse on the target kind if the target is resolvable and has a primary key. Topology-derived; no operator opinion enters." } ]
+          Run = fun c -> run c |> Lineage.map Diagnostics.ofValue
+          Status = Active }

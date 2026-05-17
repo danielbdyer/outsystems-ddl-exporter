@@ -284,10 +284,65 @@ module SsdtDdlEmitter =
             k.Physical.Table,
             ".sql")
 
+    /// Per-kind `SetExtendedProperty` statements (chapter 4.1.A slice 8).
+    /// Consumes chapter A.0' slice α's `Kind.Description` +
+    /// `Attribute.Description` (V2 IR fields carrying V1's
+    /// `MS_Description` metadata) and slice ζ's `ExtendedProperties`
+    /// lists on `Kind` / `Attribute` / `Index`. Retires the
+    /// `Tolerance.CommentMetadataUnreflected` deferral.
+    ///
+    /// Emission order per V1 + canonical determinism (A33):
+    ///   1. Table-level `MS_Description` (Kind.Description) — once if Some.
+    ///   2. Table-level extended properties (Kind.ExtendedProperties)
+    ///      in source order.
+    ///   3. Per-column `MS_Description` (Attribute.Description) — once
+    ///      per attribute that carries one.
+    ///   4. Per-column extended properties (Attribute.ExtendedProperties)
+    ///      in source order.
+    ///   5. Per-index extended properties (Index.ExtendedProperties)
+    ///      in source order.
+    /// `Module.ExtendedProperties` are deferred-with-trigger:
+    /// SQL Server's level0 = SCHEMA semantics maps module → schema
+    /// only when modules align 1:1 with schemas, which V2 doesn't yet
+    /// formalize. The triple-deliverable will surface when V1
+    /// emission for module-level extended properties is confirmed
+    /// (chapter 4.x).
+    let private extendedPropertyStatements (k: Kind) : Statement seq =
+        seq {
+            let table = k.Physical
+            match k.Description with
+            | Some desc ->
+                yield Statement.SetExtendedProperty (
+                    table, TableExtendedProperty, "MS_Description", Some desc)
+            | None -> ()
+
+            for ep in k.ExtendedProperties do
+                yield Statement.SetExtendedProperty (
+                    table, TableExtendedProperty, ep.Name, ep.Value)
+
+            for attr in k.Attributes do
+                let columnName = attr.Column.ColumnName
+                match attr.Description with
+                | Some desc ->
+                    yield Statement.SetExtendedProperty (
+                        table, ColumnExtendedProperty columnName, "MS_Description", Some desc)
+                | None -> ()
+                for ep in attr.ExtendedProperties do
+                    yield Statement.SetExtendedProperty (
+                        table, ColumnExtendedProperty columnName, ep.Name, ep.Value)
+
+            for idx in k.Indexes do
+                for ep in idx.ExtendedProperties do
+                    yield Statement.SetExtendedProperty (
+                        table, IndexExtendedProperty (Name.value idx.Name), ep.Name, ep.Value)
+        }
+
     /// Render one Kind to a typed `SsdtFile`. The CREATE TABLE
     /// statement (slice 1; with FKs inline per slice 5) plus zero-or-
-    /// more CREATE INDEX statements (slice 3) flow through ScriptDom's
-    /// typed AST and emerge as SQL text only at the absolute terminal
+    /// more CREATE INDEX statements (slice 3) plus zero-or-more
+    /// `EXEC sys.sp_addextendedproperty` calls (slice 8 — Descriptions
+    /// and ExtendedProperties) flow through ScriptDom's typed AST and
+    /// emerge as SQL text only at the absolute terminal
     /// `Sql160ScriptGenerator` boundary (per pillar 1 + pillar 7).
     ///
     /// `ScriptDomGenerate.toText` (chapter 3.5) is the typed-statement-
@@ -306,6 +361,7 @@ module SsdtDdlEmitter =
             seq {
                 yield createTableStatement targetByKey pkAttrByKey k
                 yield! indexStatements k
+                yield! extendedPropertyStatements k
             }
         let body = ScriptDomGenerate.toText statements
         { RelativePath = relativePath m k; Body = body }

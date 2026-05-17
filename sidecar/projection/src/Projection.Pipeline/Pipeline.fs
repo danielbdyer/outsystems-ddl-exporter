@@ -89,13 +89,32 @@ module Compose =
     /// → same Outputs (T1 byte-determinism). Profile is `Profile.empty`
     /// for the dogfood frame; M2 onward will thread real profile
     /// evidence.
-    let project (catalog: Catalog) : Outputs =
+    ///
+    /// **Chapter A.4.7' slice δ** wires `RegisteredTransforms.allChainSteps`
+    /// in front of the emitter fan-out per A41 (registry as load-bearing
+    /// execution surface). Catalog flows: raw → `compose allChainSteps`
+    /// → emitters. With skeleton-friendly defaults (Mask = empty;
+    /// Morphism = identity; RenameSpec = []; Policy = Policy.empty;
+    /// Profile = Profile.empty), Catalog-rewriting passes contribute
+    /// only the canonicalization / closure they would apply
+    /// unconditionally; decision-set passes write back evidence the
+    /// emitters do not yet consume (decision-set consumption is a
+    /// future-chapter concern).
+    let private projectFromChain
+        (chain: PassChainAdapter list)
+        (catalog: Catalog)
+        : Outputs =
         use _ = Bench.scope "compose.project"
+        let composedCatalog =
+            (use _ = Bench.scope "compose.runChain"
+             PassChainAdapter.compose chain (ComposeState.initial catalog)
+             |> LineageDiagnostics.payload
+             |> fun state -> state.Catalog)
         let bundle =
             (use _ = Bench.scope "emit.ssdtBundle.compose"
-             match SsdtDdlEmitter.emitSlices catalog with
+             match SsdtDdlEmitter.emitSlices composedCatalog with
              | Ok ssdtFiles ->
-                 let manifest = ManifestEmitter.emit catalog
+                 let manifest = ManifestEmitter.emit composedCatalog
                  SsdtBundle.compose ssdtFiles manifest
              | Error err ->
                  // Unreachable in production paths: Catalog.allKinds is
@@ -109,12 +128,12 @@ module Compose =
              // Per Tier-1 #3: parse once at project time so the
              // Outputs seam is JsonNode-typed. Downstream consumers
              // query the tree without re-parse.
-             match JsonNode.Parse(JsonEmitter.emit catalog) with
+             match JsonNode.Parse(JsonEmitter.emit composedCatalog) with
              | null -> invalidOp "Compose.project: JsonEmitter.emit produced unparseable text (unreachable)"
              | n    -> n)
         let distributions =
             (use _ = Bench.scope "emit.distributions"
-             match JsonNode.Parse(DistributionsEmitter.emit catalog Profile.empty) with
+             match JsonNode.Parse(DistributionsEmitter.emit composedCatalog Profile.empty) with
              | null -> invalidOp "Compose.project: DistributionsEmitter.emit produced unparseable text (unreachable)"
              | n    -> n)
         {
@@ -122,6 +141,37 @@ module Compose =
             Json          = json
             Distributions = distributions
         }
+
+    /// Production-shape project: routes through
+    /// `RegisteredTransforms.allChainSteps`. The hand-coded "emit raw
+    /// catalog" shape retired at chapter A.4.7' slice δ; the registry
+    /// is canonical.
+    let project (catalog: Catalog) : Outputs =
+        projectFromChain RegisteredTransforms.allChainSteps catalog
+
+    /// Skeleton-shape project: routes through
+    /// `RegisteredTransforms.skeletonChainSteps` (per chapter A.4.7'
+    /// slice ε; the four pure-DataIntent passes). Yields the baseline
+    /// reachable from `Project(catalog, Policy.empty, profile)` —
+    /// `osm emit --skeleton-only` consumes this.
+    let projectSkeleton (catalog: Catalog) : Outputs =
+        projectFromChain RegisteredTransforms.skeletonChainSteps catalog
+
+    /// Chapter A.4.7' slice ε — registry-driven traversal restricted
+    /// to the skeleton view (every Site classifies as `DataIntent`).
+    /// Returns the `Lineage<Diagnostics<ComposeState>>` from running
+    /// `RegisteredTransforms.skeletonChainSteps`; consumers inspect
+    /// the trail to assert skeleton-purity, or project to the final
+    /// Catalog for skeleton-only emit (slice ζ CLI).
+    ///
+    /// The skeleton-purity property test (`runSkeleton` emits zero
+    /// `OperatorIntent` LineageEvents) promotes from filter-shape
+    /// only (chapter A.4.7 slice θ) to true-execution at this slice.
+    let runSkeleton (catalog: Catalog) : Lineage<Diagnostics<ComposeState>> =
+        use _ = Bench.scope "compose.runSkeleton"
+        PassChainAdapter.compose
+            RegisteredTransforms.skeletonChainSteps
+            (ComposeState.initial catalog)
 
     /// Read a V1 `osm_model.json` from disk and parse it into a V2
     /// Catalog. Errors are surfaced via the codebase's single-arity
@@ -272,10 +322,26 @@ module Compose =
                 return Result.failure errors
         }
 
+    /// Chapter A.4.7' slice ζ — skeleton-only emit. Reads JSON,
+    /// projects via `projectSkeleton`, writes to `outputDir`. The
+    /// resulting bundle reflects the V2 baseline before any operator
+    /// intent landed; consumed by the CLI's `--skeleton-only` flag.
+    let runSkeletonOnly (jsonPath: string) (outputDir: string) : Task<Result<string list>> =
+        task {
+            let! parsed = read jsonPath
+            match parsed with
+            | Ok catalog ->
+                let outputs = projectSkeleton catalog
+                return write outputDir outputs
+            | Error errors ->
+                return Result.failure errors
+        }
+
     /// Apply config-driven catalog rewrites (today: table renames).
     /// Empty overrides short-circuit to the input catalog unchanged.
     /// Errors aggregate from boundary-mapping (`RenameBinding.fromConfig`)
-    /// and from pass-level validation (`TableRename.run`).
+    /// and from pass-level validation, surfaced through the registered
+    /// transform's Diagnostics layer per chapter A.4.7' slice η.
     let private applyRenames
         (cfg: Config.Config)
         (catalog: Projection.Core.Catalog)
@@ -286,8 +352,19 @@ module Compose =
             renames
             |> RenameBinding.fromConfig
             |> Result.bind (fun specs ->
-                Projection.Core.Passes.TableRename.run specs catalog)
-            |> Result.map (fun lineage -> lineage.Value)
+                let lineage = (Projection.Core.Passes.TableRename.registered specs).Run catalog
+                let diag = lineage.Value
+                let errors =
+                    diag.Entries
+                    |> List.filter (fun e -> e.Severity = Projection.Core.DiagnosticSeverity.Error)
+                if List.isEmpty errors then
+                    Result.success diag.Value
+                else
+                    errors
+                    |> List.map (fun e ->
+                        let metadata = e.Metadata |> Map.map (fun _ v -> Some v)
+                        ValidationError.createWithMetadata e.Code e.Message metadata)
+                    |> Error)
 
     /// Full end-to-end driven by a parsed `Config`. Reads `Model.Path`,
     /// applies config-driven catalog rewrites (rename), projects, writes

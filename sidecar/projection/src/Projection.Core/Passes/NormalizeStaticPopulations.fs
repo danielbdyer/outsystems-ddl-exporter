@@ -48,11 +48,18 @@ module NormalizeStaticPopulations =
     let private hasStaticModality (k: Kind) : bool =
         k.Modality |> List.exists (function Static _ -> true | _ -> false)
 
+    /// Pillar 9 (chapter A.4.7 slice α): static-population normalization
+    /// reorders rows deterministically — no operator opinion enters
+    /// (the ordering is canonical SsKey-then-content). Lands in the
+    /// skeleton.
+    let private classification : Classification = DataIntent
+
     let private touchedEvent (key: SsKey) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = key
-          TransformKind = Touched }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = key
+          TransformKind  = Touched
+          Classification = classification }
 
     /// Run the pass over the catalog. Kinds without a `Static` modality
     /// pass through structurally unchanged and emit no lineage events;
@@ -67,7 +74,8 @@ module NormalizeStaticPopulations =
     /// Chapter-3.6 cross-cutting cleanup: delegates the
     /// catalog-traversal-with-event-collection pattern to the
     /// reified `CatalogTraversal.mapKinds` primitive.
-    let run (c: Catalog) : Lineage<Catalog> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `NormalizeStaticPopulations.registered.Run`
+    let private run (c: Catalog) : Lineage<Catalog> =
         use _ = Bench.scope "passes.normalizeStaticPopulations"
         c |> CatalogTraversal.mapKinds (fun events k ->
             if hasStaticModality k then
@@ -75,3 +83,17 @@ module NormalizeStaticPopulations =
                 Some { k with Modality = k.Modality |> List.map normalizeModality }
             else
                 Some k)
+
+    /// Chapter A.4.7 slice γ. Single `DataIntent` site: deterministic
+    /// row-reordering inside `ModalityMark.Static` kinds. No operator
+    /// opinion enters; the row ordering is content-derived.
+    let registered : RegisteredTransform<Catalog, Catalog> =
+        { Name = passName
+          Domain = Data
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "normalize"
+                Classification = classification
+                Rationale = "Deterministic row-reordering inside Static-modality kinds. Row order is content-derived (per the modality normalizer); no operator opinion enters." } ]
+          Run = fun c -> run c |> Lineage.map Diagnostics.ofValue
+          Status = Active }

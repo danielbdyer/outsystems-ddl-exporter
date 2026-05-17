@@ -10,6 +10,35 @@ open Projection.Targets.Json
 open Projection.Targets.SSDT
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `ForeignKeyPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<ForeignKeyDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private fkRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<ForeignKeyDecisionSet>> =
+    (ForeignKeyPass.registered policy profile).Run catalog
+
+// Chapter A.4.7' slice η — `UniqueIndexPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<UniqueIndexDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private uiRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<UniqueIndexDecisionSet>> =
+    (UniqueIndexPass.registered policy profile).Run catalog
+
+// Chapter A.4.7' slice η — `NullabilityPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<NullabilityDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private nullRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<NullabilityDecisionSet>> =
+    (NullabilityPass.registered policy profile).Run catalog
+
+// Chapter A.4.7' slice η — `CategoricalUniquenessPass.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<CategoricalUniquenessDecisionSet>>`. This per-file
+// shim restores the `Lineage<CategoricalUniquenessDecisionSet>` shape so
+// existing assertions keep reading.
+let private cuRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<CategoricalUniquenessDecisionSet> =
+    (CategoricalUniquenessPass.registered policy profile).Run catalog |> Lineage.map (fun d -> d.Value)
+
 // ---------------------------------------------------------------------------
 // Session 9 milestone — end-to-end rich-profiling validation.
 //
@@ -535,7 +564,7 @@ let private uniquenessPolicy =
 let ``MILESTONE 11: CategoricalUniquenessPass produces SuggestUnique end-to-end on rich-profiling fixture`` () =
     let profile = profileForCategoricalUniqueness ()
     let lineage =
-        CategoricalUniquenessPass.run endToEndCatalog uniquenessPolicy profile
+        cuRun endToEndCatalog uniquenessPolicy profile
     // Country.NAME has 4 distinct values, all unique in the sample
     // ⇒ SuggestUnique(EveryValueDistinct (4, 4)).
     let countryNameDecision =
@@ -550,7 +579,7 @@ let ``MILESTONE 11: CategoricalUniquenessPass produces SuggestUnique end-to-end 
 let ``MILESTONE 11: every attribute lacking Categorical evidence surfaces as DoNotSuggest(NoCategoricalEvidence)`` () =
     let profile = profileForCategoricalUniqueness ()
     let lineage =
-        CategoricalUniquenessPass.run endToEndCatalog uniquenessPolicy profile
+        cuRun endToEndCatalog uniquenessPolicy profile
     // Every attribute except Country.NAME has no Categorical evidence
     // ⇒ DoNotSuggest(NoCategoricalEvidence).
     let withoutCountryName =
@@ -566,7 +595,7 @@ let ``MILESTONE 11: every attribute lacking Categorical evidence surfaces as DoN
 let ``MILESTONE 11: lineage discipline carries through the fanOut primitive`` () =
     let profile = profileForCategoricalUniqueness ()
     let lineage =
-        CategoricalUniquenessPass.run endToEndCatalog uniquenessPolicy profile
+        cuRun endToEndCatalog uniquenessPolicy profile
     // One Annotated event per decision; pass version + name carried.
     Assert.Equal(lineage.Value.Decisions.Length, lineage.Trail.Length)
     Assert.All(lineage.Trail, fun e ->
@@ -595,10 +624,10 @@ let ``MILESTONE 11: five-strategy coexistence holds end-to-end on the rich-profi
                       CategoricalUniqueness ("cu-1",    categoricalUniquenessConfig) ] } }
     // Each pass filters its own variant; produces decisions only
     // tagged with its registered intervention id.
-    let nullLineage = NullabilityPass.run endToEndCatalog policy profile
-    let uniqLineage = UniqueIndexPass.run endToEndCatalog policy profile
-    let fkLineage   = ForeignKeyPass.run   endToEndCatalog policy profile
-    let cuLineage   = CategoricalUniquenessPass.run endToEndCatalog policy profile
+    let nullLineage = nullRun endToEndCatalog policy profile
+    let uniqLineage = uiRun endToEndCatalog policy profile
+    let fkLineage   = fkRun   endToEndCatalog policy profile
+    let cuLineage   = cuRun endToEndCatalog policy profile
     Assert.All((LineageDiagnostics.payload nullLineage).Decisions, fun d -> Assert.Equal("null-1", d.InterventionId))
     Assert.All((LineageDiagnostics.payload uniqLineage).Decisions, fun d -> Assert.Equal("uniq-1", d.InterventionId))
     Assert.All((LineageDiagnostics.payload fkLineage).Decisions,   fun d -> Assert.Equal("fk-1",   d.InterventionId))
@@ -607,7 +636,7 @@ let ``MILESTONE 11: five-strategy coexistence holds end-to-end on the rich-profi
 [<Fact>]
 let ``MILESTONE 11: T1 byte-determinism holds for the new strategy`` () =
     let profile = profileForCategoricalUniqueness ()
-    let r1 = CategoricalUniquenessPass.run endToEndCatalog uniquenessPolicy profile
-    let r2 = CategoricalUniquenessPass.run endToEndCatalog uniquenessPolicy profile
+    let r1 = cuRun endToEndCatalog uniquenessPolicy profile
+    let r2 = cuRun endToEndCatalog uniquenessPolicy profile
     Assert.Equal<CategoricalUniquenessDecisionSet>(r1.Value, r2.Value)
     Assert.Equal<LineageEvent list>(r1.Trail, r2.Trail)

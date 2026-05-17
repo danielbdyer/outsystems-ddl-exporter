@@ -11559,3 +11559,440 @@ Plus the corresponding IR-record field additions:
 - The Origin audit witness: `NoSilentDropTests.``Origin audit ...``` (5 tests across both adapter paths).
 
 ---
+
+## 2026-05-16 (chapter A.4.7 slice β) — OverlayAxis gains fifth variant Ordering (Q9 expansion provision fires; SelfLoopPolicy is the named real-evidence trigger)
+
+**Status:** decided (refines `DECISIONS 2026-05-15 (late)` Q9 answer by firing the reserved expansion provision; first worked example of the Q9 trigger-fires discipline).
+
+**Context.** `DECISIONS 2026-05-15 (late)` codified `OverlayAxis` as a closed DU with four variants (`Selection | Emission | Insertion | Tightening`), exactly matching `Projection.Core.Policy.fs`'s axis DU. The Q9 answer reserved expansion: "with an opportunity to expand in case we truly find a fifth axis is warranted by real evidence; today, the four Policy axes are exactly the OverlayAxis values." At chapter A.4.7 open (per `CHAPTER_A_4_7_OPEN.md` axis 9), the harvest-discipline classification of `TopologicalOrderPass.SelfLoopHandling` surfaced an operator-intent site that doesn't fit the four existing axes — `SelfLoopPolicy` is operator-supplied (it's an argument to `TopologicalOrderPass.runWith`, not topology-derived) but it controls ordering-policy semantics (how nodes are ordered when topology under-determines the choice), not selection / emission / insertion / tightening. Per the chapter-open operator decision, the Q9 expansion provision fires.
+
+**Decision: OverlayAxis gains a fifth variant `Ordering`.**
+
+```fsharp
+type OverlayAxis =
+    | Selection
+    | Emission
+    | Insertion
+    | Tightening
+    | Ordering    // chapter A.4.7 open Q9 expansion fired; SelfLoopPolicy real-evidence
+```
+
+**Naming rationale (pillar 8 four-question analysis).**
+
+1. **What domain concept does this represent?** Operator-supplied intent about ordering policy — how nodes are ordered when topology under-determines the choice. `SelfLoopPolicy` (TreatAsCycle vs SkipSelfEdges) is the canonical worked example.
+2. **Does V2 already name this concept?** `StageBinding.OrderingPolicy` names *where* the transformation fires (the stage seam). The proposed `OverlayAxis` variant names *whose intent it expresses* (the operator-intent axis). Distinct concerns; distinct names.
+3. **Is the proposed name concept-shaped?** `Ordering` is concept-shaped (the operator-intent dimension). `OrderingPolicy` was considered but rejected — it would collide with `StageBinding.OrderingPolicy` and conflate the stage-seam vocabulary with the operator-intent vocabulary.
+4. **Generic-suffix smell test?** `Ordering` passes (no Helper / Util / Manager / Service / Handler / Processor suffix).
+
+**Consequences.**
+
+- **The structural equivalence `OverlayAxis = Policy DU axes exactly` weakens to `OverlayAxis ⊃ Policy DU axes`.** `Policy.fs`'s four axes are now a strict subset of `OverlayAxis`'s five variants. The "Policy IS operator intent, reified" framing from `DECISIONS 2026-05-15 (late)` still holds — Policy axes ARE operator intent — but operator intent now has a fifth axis Policy doesn't carry.
+- **The `Policy.fs ↔ OverlayAxis` structural collapse refactor stays deferred-with-trigger** (per chapter A.4.7 open Out-of-scope clause). Two paths surface when consumer pressure forces resolution: (a) add `Policy.Ordering` axis to `Policy.fs` (the Policy DU expands; existing call sites add `Ordering = …` per pattern); (b) carve `OverlayAxis.Ordering` out of `Policy` (the OverlayAxis becomes the canonical home; Policy.fs becomes a structural subset projection). The decision deferred to whichever consumer first needs to consult both vocabularies at one call site; A.4.7 does not collapse.
+- **Future fifth-variant additions require the same trigger-fires discipline.** Q9's expansion provision is not a license to grow `OverlayAxis` speculatively. Each new variant must name its real-evidence trigger (the site / pass / consumer demand), articulate why the existing axes don't fit, and land via DECISIONS amendment at the implementation slice.
+- **`TopologicalOrderPass.SelfLoopHandling` is the canonical worked example.** At slice ε (per chapter A.4.7 open slice plan), the `TopologicalOrderPass.registered.Sites` list ships with two sub-sites: `SortKahn` classified `DataIntent` (Kahn ordering depends only on graph topology) and `SelfLoopHandling` classified `OperatorIntent Ordering` (SelfLoopPolicy is operator-supplied; this is the Q9-trigger-fires real-evidence).
+
+**Trigger-fires discipline (codified at this entry per the active-deferrals pattern).**
+
+When a future agent considers expanding `OverlayAxis` to a sixth (or further) variant, the discipline operates BEFORE the expansion lands:
+
+1. **Name the real-evidence trigger.** Identify the specific transformation site / pass / consumer surfacing the gap. Generic "this might be useful" rationale fails the discipline; the trigger must be concrete.
+2. **Articulate why the existing axes don't fit.** Run the candidate site's harvest analysis through Selection / Emission / Insertion / Tightening / Ordering. If a forced fit reads naturally (e.g., "this strengthens an existing invariant — Tightening"), use the existing axis. If every existing axis reads as a forced fit, the sixth variant is warranted.
+3. **Land the expansion via DECISIONS amendment** at the implementation slice (not anticipatorily). The amendment names the trigger, the harvest analysis, and the naming rationale per pillar-8 four-question analysis.
+4. **Document the consequences for `Policy.fs`.** Each new `OverlayAxis` variant widens the `OverlayAxis ⊃ Policy DU axes` gap; the deferred-with-trigger collapse refactor inherits the new variant's reconciliation cost.
+
+**Slice-ε classification map preview** (refinement candidates per pillar-8 deviation discipline; harvest analysis at registration time may refine):
+
+- `VisibilityMask` → `OperatorIntent Selection` (slice α; filters kinds by predicate).
+- `TableRename` → `OperatorIntent Emission` (slice α; operator-supplied rename specs change physical form).
+- `NullabilityPass` / `UniqueIndexPass` / `ForeignKeyPass` / `CategoricalUniquenessPass` → `OperatorIntent Tightening` (slice α; strengthen invariants beyond source evidence).
+- `UserFkReflowPass` → `OperatorIntent Selection` (slice α; refinement candidate at slice γ — operator-supplied User-table reflow specs select which references reroute; Insertion was considered as alternative classification but Selection reads more naturally for a re-direction operation).
+- `TopologicalOrderPass.SortKahn` site → `DataIntent` (slice α; topology-derived ordering).
+- `TopologicalOrderPass.SelfLoopHandling` site → `OperatorIntent Ordering` (slice ε; this entry's worked example).
+
+**Cross-references.**
+
+- `CHAPTER_A_4_7_OPEN.md` axis 9 (chapter-open codification of the Q9-trigger-fires decision).
+- `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification` (the predecessor entry codifying the reserved Q9 expansion).
+- `Projection.Core/Classification.fs` (shipped at slice α; the `Ordering` variant lands in code).
+- `Projection.Core/TransformRegistry.fs` (shipped at slice β; first registry surface to consume `OperatorIntent Ordering` via the slice-ε `TopologicalOrderPass` registration preview).
+- `CLAUDE.md` operating-disciplines table pillar 9 row (cross-reference updated to note the OverlayAxis ⊃ Policy weakening).
+
+---
+
+## 2026-05-16 (chapter A.4.7 slice β) — TransformRegistry.fs ships the canonical strongly-typed surface (empty `all` list; populated at slices γ / δ / ε)
+
+**Status:** decided (codification of the slice-β shipped artifact — type system + smart constructor + empty registry placeholder).
+
+**Context.** Chapter A.4.7's plan-of-record (per `V2_PRODUCTION_CUTOVER.md` §6.4.7 + `DECISIONS 2026-05-15 (late)`) commits to shipping `Projection.Core/TransformRegistry.fs` as the canonical strongly-typed surface for every transformation site in V2 — the fourth cross-cutting structural-evidence concern, sibling to Lineage / Diagnostics / Bench. Slice β ships the type-system establishment + smart-constructor invariants + empty `all` list as a structural placeholder; slices γ / δ / ε populate the list as pass modules / adapter rules / emitter strategies expose `.registered`.
+
+**Decision: ship the type system per the canonical shape (with two refinements).**
+
+The types shipped at `src/Projection.Core/TransformRegistry.fs`:
+
+- `StageBinding = Adapter | Pass | OrderingPolicy | Emitter | Pipeline` — the five stage seams.
+- `Domain = Schema | Data | Identity | Diagnostics | CutoverSafety | CrossCutting` — the codified concerns of V2's structural-evidence layer per `PRODUCT_AXIOMS.md`.
+- `TransformSite = { SiteName; Classification; Rationale }` — intra-pass classification fidelity per `DECISIONS 2026-05-15 (late)` Q11.
+- `TransformStatus = Active | NotImplementedInV2 of rationale` — harvest-workflow triple-deliverable enforcement.
+- `RegisteredTransform<'In, 'Out when 'Out : equality> = { Name; Domain; StageBinding; Sites; Run; Status }` — the typed canonical surface; each pass module's primary public export at slice γ onward.
+- `RegisteredTransformMetadata = { Name; Domain; StageBinding; Sites; Status }` — the type-erased projection for registry enumeration; drops `Run`.
+- `RegisteredTransform.toMetadata : RegisteredTransform<'In, 'Out> -> RegisteredTransformMetadata` — the projection helper.
+- `TransformRegistry.create : RegisteredTransformMetadata list -> Result<RegisteredTransformMetadata list>` — the smart constructor.
+- `TransformRegistry.all : RegisteredTransformMetadata list = []` — the empty registry (populated at slices γ / δ / ε).
+- `TransformRegistry.inStage : StageBinding -> RegisteredTransformMetadata list -> RegisteredTransformMetadata list` — per-stage filter.
+- `TransformRegistry.stageOrdinal : StageBinding -> int` — stage-execution ordering (Adapter < OrderingPolicy < Pass < Emitter < Pipeline).
+- `TransformRegistry.allInStageOrder : RegisteredTransformMetadata list -> RegisteredTransformMetadata list` — registry sorted by stage ordinal; consumed by `Compose.run` traversal at slice ζ.
+
+**Refinement 1: `RegisteredTransformMetadata` type-erased projection.** The spec (per `DECISIONS 2026-05-15 (late)`) sketched `TransformRegistry.all : RegisteredTransform<obj, obj> list` using `unbox` for type erasure. Slice β refines this to an explicit type-erased record (`RegisteredTransformMetadata`) that drops the `Run` field entirely. The justification: F# records aren't naturally covariant; `unbox`ing `RegisteredTransform<Catalog, Catalog>` to `RegisteredTransform<obj, obj>` is unsafe (the `Run` field's signature is incompatible). The explicit metadata record gives the same enumeration capability (totality scan, manifest emission, completeness property tests at slice θ) without unsafe boxing. Per-Run invocation uses the pass module's `.registered` export directly on the typed surface.
+
+**Refinement 2: `when 'Out : equality` constraint on `RegisteredTransform<'In, 'Out>`.** `Lineage<'a>` in `Projection.Core/Lineage.fs` carries a `when 'a : equality` constraint (chapter-3.7 slice α A26 cash-out). `Lineage<Diagnostics<'Out>>` propagates that constraint to `Diagnostics<'Out>`, which propagates to `'Out`. The constraint is structural — F# rejected the type definition without it. Pass-module `.registered` exports at slice γ will satisfy the constraint naturally (Catalog satisfies equality; TopologicalOrder satisfies equality; ArtifactByKind<'element> satisfies equality).
+
+**Smart-constructor invariants** (enforced at `TransformRegistry.create`):
+
+1. **Every Name unique within the registry.** Duplicate Names emit `registry.duplicatePassName` ValidationError naming every duplicated identifier (aggregated across the entry list).
+2. **Every Name non-empty.** Empty / whitespace-only Names emit `registry.nameEmpty` ValidationError.
+3. **Every Site.Rationale non-empty.** Per pillar 9's 4-step harvest workflow, every classified site requires substantive analysis prose. Empty rationales emit `registry.siteRationaleEmpty` ValidationError naming the pass + site.
+4. **NotImplementedInV2 rationale non-empty.** The triple-deliverable harvest workflow (Skip stub + Tolerance entry + NotImplementedInV2 registry entry) requires substantive rationale on the registry side. Empty rationales emit `registry.notImplementedRationaleEmpty` ValidationError.
+
+Errors aggregate across entries (operator sees every violation at once) rather than first-failure. The validation runs once at construction; the resulting metadata list is trusted thereafter.
+
+**Slice β ships empty `all`.** The list is hand-maintained at top-level evaluation order: each pass module's `.registered |> RegisteredTransform.toMetadata` reference is added explicitly at slice γ / δ / ε. F# top-level evaluation order resolves cross-module dependencies. The empty initial state is a structural placeholder; slice ζ's `Compose.run` traversal operates on whatever `TransformRegistry.all` contains at runtime.
+
+**Witnesses (17 tests at `tests/Projection.Tests/TransformRegistryTests.fs`):**
+
+- Type-system witnesses (4): StageBinding's five seams; Domain's six concerns; TransformStatus exhaustiveness; stageOrdinal ordering.
+- Smart-constructor tests (8): vacuous empty list; well-formed Active entry; well-formed NotImplementedInV2 entry; duplicate-Name rejection; empty-Name rejection; empty-Rationale rejection; empty-NotImplementedInV2-rationale rejection; multi-error aggregation.
+- Registry-shape tests (3): empty `all`; `inStage` filter; `allInStageOrder` sort.
+- Type-erased projection witness (1): `RegisteredTransform.toMetadata` drops Run.
+- OverlayAxis.Ordering reachability (1): TransformSite carries `Classification = OperatorIntent Ordering` per the chapter-A.4.7-open Q9-trigger-fires worked example; the slice-ε TopologicalOrderPass.SelfLoopHandling registration's site shape is reachable at slice β's type level.
+
+**Cross-references.**
+
+- `CHAPTER_A_4_7_OPEN.md` axes 1-3 + slice plan β row (chapter-open codification of the slice-β scope).
+- `V2_PRODUCTION_CUTOVER.md` §6.4.7 task 1 (the spec-of-record for the TransformRegistry module).
+- `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification` (the canonical strongly-typed registry shape this entry implements with two refinements).
+- `DECISIONS 2026-05-16 (chapter A.4.7 slice β) — OverlayAxis gains fifth variant Ordering` (sibling entry codifying the OverlayAxis expansion this slice depends on at slice ε).
+- `Projection.Core/TransformRegistry.fs` (the shipped artifact).
+- `tests/Projection.Tests/TransformRegistryTests.fs` (17 witnesses).
+
+---
+
+## 2026-05-16 (chapter A.4.7 slice γ) — Pass `.registered` exports ship across 12 passes; spec deviation: heterogeneous output types + parallel-exposure pattern
+
+**Status:** decided (codifies two pillar-8 deviations from the chapter A.4.7 open + V2_PRODUCTION_CUTOVER §6.4.7 spec at slice γ implementation time).
+
+**Context.** The chapter A.4.7 open + V2_PRODUCTION_CUTOVER §6.4.7 + DECISIONS 2026-05-15 (late) commit to "every pass module rewrites: `let run` becomes private; `let registered : RegisteredTransform<Catalog, Catalog> = { …; Run = run }` is the new primary export." Implementation at slice γ surfaced two empirical realities incompatible with this canonical shape: (a) the 12 pass modules produce six distinct output types, not uniformly `Catalog`; (b) several passes take operator-supplied configuration arguments (Mask, Morphism, RenameSpec list, Policy×Profile) that can't be erased into the `Catalog → ...` signature without a factory-or-context construct. Per the pillar-8 deviation discipline (slice plan rows are design intent at chapter open, not constraints at implementation; chapter A.0' slice γ's `Kind.Triggers` correction is the worked precedent), slice γ ships per-pass actual types + a factory pattern for configurable passes + parallel-exposure of `let run` during the migration.
+
+**Decision 1: heterogeneous output types per pass.**
+
+The 12 pass modules' actual return types fall into six categories. Slice γ ships `.registered` typed to each pass's actual signature rather than forcing a unified `Catalog → Catalog` shape:
+
+| Category | Output type | Passes |
+|---|---|---|
+| A | `Catalog` (no config) | CanonicalizeIdentity, NormalizeStaticPopulations, SymmetricClosure |
+| B | `Catalog` (with config) | NamingMorphism (Morphism), VisibilityMask (Mask) |
+| C | `TopologicalOrder` | TopologicalOrderPass (default + `registeredWith SelfLoopPolicy`) |
+| D | `<Domain>DecisionSet` (with Policy×Profile config) | NullabilityPass, UniqueIndexPass, ForeignKeyPass, CategoricalUniquenessPass |
+| E | `Catalog` with Result wrapping (with config) | TableRename |
+| F | `UserRemapContext` (with Policy×Profile config) | UserFkReflowPass |
+
+The output heterogeneity reflects V2's actual pass taxonomy: some passes transform the catalog directly (A/B/E); some produce decision sets to be applied separately (D); some produce ordering plans (C) or remap contexts (F). The chapter-A.4.7-open's spec underestimated this — its "unified `Catalog → Catalog`" was a simplifying assumption, not a structural commitment. Slice γ ships the honest type-level reflection of pass shapes; the registry's enumeration (via `RegisteredTransformMetadata` type erasure) handles the heterogeneity uniformly.
+
+**Decision 2: factory pattern for configurable passes.**
+
+For passes taking operator-supplied configuration arguments (Mask, Morphism, RenameSpec list, Policy, Profile), `.registered` is a function returning `RegisteredTransform<...>` rather than a value:
+
+```fsharp
+// Category B example:
+let registered (mask: Mask) : RegisteredTransform<Catalog, Catalog> = ...
+
+// Category D example:
+let registered (policy: Policy) (profile: Profile) : RegisteredTransform<Catalog, NullabilityDecisionSet> = ...
+```
+
+The factory captures the config in the closure; the returned `RegisteredTransform`'s `Run : Catalog -> Lineage<Diagnostics<'Out>>` signature is uniform at the consumer call site. Different configs produce different registered values; each registration is per-invocation. The static metadata (Name/Domain/StageBinding/Sites/Status) doesn't vary with config — slice γ's tests witness this via `RegisteredTransform.toMetadata` projection.
+
+**Decision 3: parallel-exposure of `let run` during slice γ.**
+
+The chapter A.4.7 open's structural commitment is that `let run` becomes private; consumers invoke `<Pass>.registered.Run` instead. Slice γ keeps `let run` **public** as a transition affordance. Two layers of justification:
+
+1. **Consumer migration explosion is a separate concern.** ~50+ existing call sites (tests + Pipeline) invoke `<Pass>.run` directly with the pass-specific signature (e.g., `NullabilityPass.run catalog policy profile`). Migrating them to `<Pass>.registered.Run` (or `<Pass>.registered config1 config2 |> fun rt -> rt.Run catalog`) is mechanical but voluminous. Folding the migration into slice γ's structural-commitment work would double the slice's surface area without adding registry-side capability.
+2. **Skeleton-purity property test (slice θ) catches bypass.** Once `Compose.run` traverses the registry (slice ζ), any pass invocation that bypasses the registry — including direct `<Pass>.run` calls — is structurally detectable: `Compose.runWithSkeleton`'s skeleton-purity property asserts every emitted `LineageEvent` carries `Classification = DataIntent`; a bypassing call site doesn't get the classification mirror, surfaces as an unclassified leak, and fails the property. The structural enforcement gates land at slice θ; slice γ.2 (consumer migration; making `run` private) can land independently before or after slice θ depending on operator priority.
+
+The parallel-exposure pattern is named for forward agents: when slice γ.2 fires (consumer migration trigger), make `let run` private in all 12 pass modules and update consumers to `<Pass>.registered.Run`.
+
+**Decision 4: TableRename's Result→Diagnostics wrapping.**
+
+`TableRename.run` returns `Result<Lineage<Catalog>>` because spec resolution against the catalog can fail (sourceNotFound / sourceAmbiguous / sourceDuplicate / targetCollision). To fit the registry's canonical `Catalog -> Lineage<Diagnostics<Catalog>>` shape, `TableRename.registered (specs)`'s Run closure wraps the Result:
+
+- **On `Ok lineage`:** the lineage flows through with empty Diagnostics (`Lineage.map Diagnostics.ofValue`).
+- **On `Error errs`:** the input Catalog passes through unchanged; each ValidationError surfaces as a `DiagnosticEntry` with `Severity = DiagnosticSeverity.Error`, `Source = passName`, `Code = e.Code`, `Message = e.Message`.
+
+Downstream consumers gate on the Diagnostics' error entries via `Diagnostics.entriesAt DiagnosticSeverity.Error` rather than inspecting a Result. This preserves the error information at runtime while keeping the unified Run signature. Slice θ's overlay-exercise property test will witness this — TableRename's `OperatorIntent Emission` site fires on valid specs and produces error diagnostics on invalid specs; both paths count toward overlay exercise.
+
+**Decision 5: TopologicalOrderPass ships `registered` + `registeredWith`.**
+
+The Q9-trigger-fires worked example surfaces in code as two exports:
+
+- `let registered : RegisteredTransform<Catalog, TopologicalOrder>` — default registration using `TreatAsCycle` self-loop policy. Sites carries the two-site decomposition (SortKahn DataIntent + SelfLoopHandling OperatorIntent Ordering).
+- `let registeredWith (selfLoops: SelfLoopPolicy) : RegisteredTransform<Catalog, TopologicalOrder>` — configurable variant for slice ε consumers that need to inspect or override the SelfLoopPolicy. Sites list is identical to `registered`; only the Run closure differs.
+
+This is the first registry consumer of `OverlayAxis.Ordering`. Slice ε will use `registeredWith` if a consumer needs to pin `SkipSelfEdges` (the alternative self-loop disposition); otherwise `registered` is the default surface.
+
+**Slice γ does NOT yet ship (carved out to follow-on work):**
+
+- **Slice γ.2 — make `let run` private + migrate consumers.** When operator pressure surfaces (or slice θ's structural property tests demand it), `let run` becomes private in all 12 pass modules and consumers update to `<Pass>.registered.Run`. The pattern of factory-vs-value drives the migration:
+  - Config-free passes: `<Pass>.run c` → `<Pass>.registered.Run c` (mechanical).
+  - Config-bearing passes: `<Pass>.run config1 config2 c` → `(<Pass>.registered config1 config2).Run c` (paren wrapping at each call site).
+- **TransformRegistry.all population.** Slice β's empty `all` list stays empty. Slice ζ's `Compose.run` traversal will populate the list via top-level F# evaluation order; the `.registered` exports + factories shipped here are the inputs. Slice ε (emitter strategies + OrderingPolicy + Pipeline) registers the remaining transformation sites.
+
+**Witnesses (18 tests at `tests/Projection.Tests/PassRegistrationsTests.fs`):**
+
+- Category A (3): CanonicalizeIdentity / NormalizeStaticPopulations / SymmetricClosure carry Identity/Data/Schema domains + DataIntent sites + Pass stage + Active status.
+- Category B (2): NamingMorphism / VisibilityMask factories produce DataIntent / OperatorIntent Selection sites; Run produces non-empty lineage trails.
+- Category C (3): TopologicalOrderPass carries two-site decomposition (SortKahn DataIntent + SelfLoopHandling OperatorIntent Ordering); Run produces TopologicalOrder; `registeredWith` exposes SelfLoopPolicy configurability.
+- Category D (4): NullabilityPass / UniqueIndexPass / ForeignKeyPass / CategoricalUniquenessPass factories produce OperatorIntent Tightening sites.
+- Category E (3): TableRename factory carries OperatorIntent Emission site; Run on Ok produces empty Diagnostics; Run on Error produces error diagnostics with Severity = Error.
+- Category F (1): UserFkReflowPass factory carries OperatorIntent Selection site.
+- Metadata projection sanity (1): `RegisteredTransform.toMetadata` drops Run; Sites + Rationale non-empty.
+
+**Cross-references.**
+
+- `CHAPTER_A_4_7_OPEN.md` slice γ row (chapter-open scope; informs the per-category implementation map).
+- `V2_PRODUCTION_CUTOVER.md` §6.4.7 task 2 (full-sweep refactor spec; revised at this entry per the heterogeneity + parallel-exposure findings).
+- `DECISIONS 2026-05-15 (late) — Pillar 9` (the canonical strongly-typed registry shape; the `Run : 'In -> Lineage<Diagnostics<'Out>>` signature governs slice γ's Run closures).
+- `DECISIONS 2026-05-16 (chapter A.4.7 slice β) — OverlayAxis gains fifth variant Ordering` (slice β codification; slice γ's TopologicalOrderPass consumes the fifth variant).
+- `tests/Projection.Tests/PassRegistrationsTests.fs` (18 witnesses).
+
+**Forward signal — slice γ.2 trigger.** Make `let run` private + migrate consumers when (a) slice θ's skeleton-purity property test demands structural enforcement, OR (b) operator pressure for canonical-surface-only API surfaces.
+
+---
+
+## 2026-05-16 (chapter A.4.7 slices δ + ε) — Adapter + strategy `RegisteredTransformMetadata` exports; per-rule-as-Sites pillar-8 deviation
+
+**Status:** decided (two-slice combined codification — adapter rules and emitter/strategy rules each ship metadata-only registrations via the same pattern; spec deviation rationale shared).
+
+**Context.** Chapter A.4.7's plan-of-record commits to registering "every transformative OSSYS adapter rule" + "emitter strategy registrations" + "OrderingPolicy sites" + "Pipeline-level transformations" as separate `RegisteredTransform<...>` entries (per `V2_PRODUCTION_CUTOVER.md` §6.4.7 tasks 2 + 5 + 7 + 8). Implementation at slices δ + ε surfaced three empirical realities incompatible with that canonical shape:
+
+1. **Adapter rules aren't independently callable.** The OSSYS adapter's transformative rules (identity synthesis, type translation, JSON/rowset aggregate parsing, IsActive carry-through, TableId.Catalog read) live as private helpers within `CatalogReader.fs`'s single `parse : SnapshotSource -> Task<Result<Catalog>>` entry. The whole adapter is one callable surface; per-rule extraction would mean refactoring ~26 helpers into standalone `RegisteredTransform<RawRow, CatalogFragment>` values — a larger refactor than slice δ's scope warrants.
+2. **Strategies aren't independently callable.** Pass strategies (NullabilityRules, UniqueIndexRules, ForeignKeyRules, CategoricalUniquenessRules, CycleResolution) are sub-modules of registered-intervention passes. They're dispatched via `Composition.fanOut` from inside the host pass module's `run` function; they have no `Catalog -> ...` callable signature. The `RegisteredTransform<'In, 'Out>` typed shell with `Run` field doesn't fit.
+3. **Compile-order constraint.** Strategy outcome types (NullabilityOutcome, etc.) are referenced by `Lineage.fs`'s `AnnotationDetail` DU. Strategies therefore compile *before* `Lineage.fs` + `TransformRegistry.fs`. Embedding `let registeredMetadata` directly inside each strategy module would require `RegisteredTransformMetadata` to be in scope at the strategy compile point, which is structurally impossible without a circular dependency.
+
+**Decision 1: per-rule classification via Sites within one metadata entry (slice δ).**
+
+`Projection.Adapters.Osm.CatalogReader.registeredMetadata : RegisteredTransformMetadata` ships at slice δ as a *single* registry entry at `StageBinding = Adapter` with `Domain = Schema` and a Sites list enumerating six grouped transformative-rule categories:
+
+- `identitySynthesis` (DataIntent) — SsKey derivation: moduleSsKey / kindSsKey / attributeSsKey / referenceSsKey / indexSsKey / triggerSsKey / sequenceSsKey / columnCheckSsKey.
+- `typeTranslation` (DataIntent) — parsePrimitiveType / parseDeleteRule / parseOrigin / parseOriginFromRowset.
+- `jsonAggregateParsing` (DataIntent) — parseAttribute / Reference / Index / Trigger / ExtendedProperty / Kind / Module / Document / JsonString.
+- `rowsetAggregateParsing` (DataIntent) — parseAttributeRow / ReferenceRowFor / KindRow / ModuleRow / RowsetBundle.
+- `isActiveCarryThrough` (DataIntent) — chapter A.0' slice β retroactive site (filter-at-adapter retired; carriage-only).
+- `tableIdCatalogRead` (DataIntent) — chapter A.0' slice θ retroactive site (V1 db_catalog → V2 TableId.Catalog).
+
+All sites classify as `DataIntent`. The adapter is purely a translation layer carrying V1 source-schema evidence forward; no operator opinion enters at the adapter boundary. The skeleton-purity property test (slice θ) will witness `Project(catalog, Policy.empty, profile)` traverses the adapter emitting zero `OperatorIntent` lineage events.
+
+The spec's "every transformative rule gets a separate `RegisteredTransform` entry" is honored at the *Sites granularity* (intra-adapter classification fidelity per `DECISIONS 2026-05-15 (late)` Q11), not at the *separate-callable-function* granularity. Per pillar-8 deviation discipline: slice plan rows are design intent, refined at implementation per harvest analysis.
+
+**Decision 2: dedicated `StrategyRegistrations` module solves the compile-order constraint (slice ε).**
+
+`src/Projection.Core/StrategyRegistrations.fs` ships at slice ε *after* `TransformRegistry.fs` and packages the strategy registrations as per-strategy values in one `[<RequireQualifiedAccess>] module StrategyRegistrations`:
+
+```fsharp
+module StrategyRegistrations =
+    let nullabilityRules           : RegisteredTransformMetadata = …  // Data, OperatorIntent Tightening
+    let uniqueIndexRules           : RegisteredTransformMetadata = …  // Schema, OperatorIntent Tightening
+    let foreignKeyRules            : RegisteredTransformMetadata = …  // Schema, OperatorIntent Tightening
+    let categoricalUniquenessRules : RegisteredTransformMetadata = …  // Data, OperatorIntent Tightening
+    let cycleResolution            : RegisteredTransformMetadata = …  // CrossCutting, DataIntent
+    let all : RegisteredTransformMetadata list = [ … ]
+```
+
+The four registered-intervention strategies classify as `OperatorIntent Tightening` (mirroring their host passes' classification from slice γ). The cycle-resolution strategy classifies as `DataIntent` — the asymmetric-2-cycle resolver chooses Weak-edge breakage algorithmically (no operator opinion at the per-cycle level); the broader `Ordering` operator-intent surface (SelfLoopPolicy) is captured separately at `TopologicalOrderPass.registered`'s `selfLoopHandling` site (from slice γ, the Q9-trigger-fires worked example).
+
+The dedicated-module approach preserves the strategy modules' own structure (they continue to compile before `Lineage.fs`) while making the registry surface available at the right compile point. Future strategies (e.g., a hypothetical `SelectionRules` strategy at chapter 4.x) follow the same pattern: define the outcome types in the strategy module; expose the registration in `StrategyRegistrations`.
+
+**Decision 3: slice ε does NOT refactor TopologicalOrderPass.StageBinding or Pipeline-level applyRenames (deferred).**
+
+Two chapter-open scope items deferred at slice ε implementation:
+
+- **TopologicalOrderPass.StageBinding refinement.** The chapter A.4.7 open mentions registering "OrderingPolicy sites at TopologicalOrderPass.SelfLoopPolicy" — suggesting either a refined `StageBinding = OrderingPolicy` for the whole pass, or a separate registry entry for the SelfLoopHandling concept. Slice γ shipped `TopologicalOrderPass.registered` at `StageBinding = Pass` with two Sites (sortKahn DataIntent + selfLoopHandling OperatorIntent Ordering). At slice ε, the Sites already capture the intra-pass classification fidelity; a separate OrderingPolicy-stage registration would be parallel enumeration, which violates `DECISIONS 2026-05-15 (late)` Q3 (single definition site, no parallel enumeration). Deferred-with-trigger: revisit at chapter close if the totality coverage property test (slice θ) demands a separate stage-level entry.
+- **Pipeline-level `applyRenames` registration.** `Projection.Pipeline.Pipeline.applyRenames` is a private wrapper in `Pipeline.fs` that delegates to `TableRename.run` after extracting `cfg.Overrides.TableRenames`. The chapter A.4.7 open frames this as a separate `StageBinding = Pipeline` registry entry. Slice γ shipped `TableRename.registered` at `StageBinding = Pass`; slice ε deferred the Pipeline-stage refinement because (a) the wrapper is `let private` and exposing it would require pipeline-API surgery, (b) `TableRename.registered` already classifies the rename concept at the operator-intent level (`OperatorIntent Emission`) — the StageBinding refinement is structural-organization, not classification. Forward signal: when slice ζ wires `Compose.run` to traverse the registry, the Pipeline-stage entry materializes naturally (the traversal needs to know where to invoke `applyRenames`).
+
+**Witnesses (13 tests across two files):**
+
+- `tests/Projection.Tests/AdapterRegistrationsTests.fs` (5): CatalogReader stage = Adapter; six-site enumeration; all DataIntent; non-empty Rationale; validates through `TransformRegistry.create`.
+- `tests/Projection.Tests/StrategyRegistrationsTests.fs` (8): four Tightening strategies + CycleResolution DataIntent; list of 5; aggregated `TransformRegistry.create` validation; non-empty Rationale audit.
+
+**Combined slice baseline.** 1264 / 1264 passing (1251 prior + 5 AdapterRegistrationsTests + 8 StrategyRegistrationsTests). Lint 13 — unchanged. Build 0 warnings under `TreatWarningsAsErrors=true`.
+
+**Forward signal — TransformRegistry.all aggregation.** Slice δ + ε add 1 (adapter) + 5 (strategies) entries reachable via their module-qualified names. `TransformRegistry.all` (currently `[]`) gets populated at slice ζ when `Compose.run` becomes a registry-traversal — the slice will aggregate via `[ CatalogReader.registeredMetadata; RegisteredTransform.toMetadata CanonicalizeIdentity.registered; …; yield! StrategyRegistrations.all; … ]`. Slice δ + ε do not write that aggregation themselves; the slices ship the metadata at module-qualified names so slice ζ has them to consume.
+
+**Cross-references.**
+
+- `CHAPTER_A_4_7_OPEN.md` slice δ + ε rows (chapter-open scope; informs the per-category implementation map).
+- `V2_PRODUCTION_CUTOVER.md` §6.4.7 tasks 2 + 5 + 7 + 8 (adapter / strategy / OrderingPolicy / Pipeline registration spec; revised at this entry per the heterogeneity findings).
+- `DECISIONS 2026-05-15 (late) — Pillar 9` (canonical registry shape; Q11 intra-pass classification fidelity via Sites).
+- `DECISIONS 2026-05-16 (chapter A.4.7 slice γ)` (predecessor entry codifying the pass `.registered` exports; slice δ + ε extend the same per-rule-as-Sites pattern to adapter + strategies).
+- `src/Projection.Adapters.Osm/CatalogReader.fs` (`registeredMetadata` shipped at slice δ).
+- `src/Projection.Core/StrategyRegistrations.fs` (5 strategy registrations shipped at slice ε).
+- `tests/Projection.Tests/AdapterRegistrationsTests.fs` + `StrategyRegistrationsTests.fs` (13 witnesses).
+
+---
+
+## 2026-05-16 (chapter A.4.7 close — slices ζ + θ + ι) — TransformRegistry classification filters + bidirectional property tests + A41 cash-out; L3-CC-Transform-Totality D → A
+
+**Status:** decided (chapter A.4.7 closes; structural commitments shipped; A41 cashed; L3 axiom promoted; chapter close doc + HANDOFF entry land).
+
+**Combined slice rationale.** The slice ζ classification filters + slice θ bidirectional property tests + slice ι chapter-close ritual depend on each other and ship as one close commit: the filters define what skeleton-purity means structurally; the property tests consume the filters; the AXIOMS A41 body + L3-CC-Transform-Totality D → A cash-out depends on the property tests being shipped + green. Splitting into three commits would create intermediate states where structural commitments are partially landed; combining into one preserves the chapter's commit-as-atomic-unit discipline at chapter close.
+
+**Slice ζ deliverables (minimum scope; full Compose.run refactor deferred-with-trigger).**
+
+Slice ζ ships `TransformRegistry.skeletonView` / `overlayView` / `overlayAxes` filter helpers on a list of `RegisteredTransformMetadata`. The filters define the skeleton/overlay partition structurally:
+
+- `skeletonView` — entries whose every `Site.Classification` is `DataIntent`. Reachable from `Project(catalog, Policy.empty, profile)` without operator opinion.
+- `overlayView` — entries with at least one `Site.Classification = OperatorIntent _`. The strictest-site rule applies: a multi-classification pass (TopologicalOrderPass-shaped) goes to overlay, not skeleton.
+- `overlayAxes` — the distinct `OverlayAxis` set used across all `OperatorIntent` sites. Used by the overlay-exercise property test for axis-coverage enumeration.
+
+**Deferred at slice ζ (forward signal):** the full `Compose.run` registry-traversal refactor. The chapter A.4.7 open's spec called for `Compose.run` to iterate `TransformRegistry.allInStageOrder` as its execution loop, replacing the hand-coded orchestration in `Projection.Pipeline.Pipeline.fs`. Reality at slice ζ implementation: passes have 6 distinct output types (Catalog, TopologicalOrder, NullabilityDecisionSet, etc.) — a generic registry traversal requires a pass-chaining adapter that knows how to feed each pass's output into the next pass's input. That design isn't in scope at chapter A.4.7 close; it lands when the registry needs to be load-bearing for execution (likely chapter 4.x or 5.x scalable-orchestration cutover-blocker concern). Slice θ's property tests work against the filter helpers + test-side aggregation, sidestepping the traversal refactor.
+
+**Slice θ deliverables (4 of 5 bidirectional property tests + 3 intentional-fail probes).**
+
+`tests/Projection.Tests/TransformRegistryCompletenessTests.fs` ships at slice θ as the chapter's structural exit gate:
+
+1. **Skeleton-purity property test** (`L3-CC-Transform-Totality: skeleton-view passes emit zero OperatorIntent LineageEvents`). Invokes the 4 callable skeleton-view passes (CanonicalizeIdentity / NamingMorphism / NormalizeStaticPopulations / SymmetricClosure) against `Fixtures.sampleCatalog`; aggregates lineage trails; asserts every event carries `Classification = DataIntent`. Catches misclassification leaks (a pass marked DataIntent that actually emits OperatorIntent events).
+2. **Overlay-exercise property test** (three sub-tests). (a) axis coverage: `TransformRegistry.overlayAxes` contains the four overlay axes the chapter actually uses (Selection / Tightening / Emission / Ordering); Insertion has no consumer at chapter A.4.7 close — forward signal for chapter 4.x. (b) representative-pass exercise: VisibilityMask with hide-OsNative mask produces `OperatorIntent Selection` events; TableRename with one rename spec produces `OperatorIntent Emission` events. The full sweep (every overlay pass fires in operator-reality canary with non-trivial Policy + Profile fixtures) is deferred-with-trigger to canary suite extensions or chapter 4.x.
+3. **Totality coverage property test** (three sub-tests). (a) entry count: 18 registrations (1 adapter + 12 passes + 5 strategies). (b) name set: exact-match against expected. (c) smart-constructor validation: the aggregated list passes through `TransformRegistry.create` (uniqueness + non-empty Rationale + non-empty NotImplementedInV2 rationale). The filesystem-scan variant (directory inspection at test boundary) is the full strength; slice θ ships the enumerated form.
+4. **Harvest-classification coverage property test** (`zero NotImplementedInV2 entries at chapter A.4.7 close`). At chapter close, no Tolerance entry has fired the triple deliverable (Skip stub + Tolerance + NotImplementedInV2 registry entry). The property test enumerates the registry and witnesses the empty NotImplementedInV2 set. Forward signal: when the first v1-harvest "don't bring forward" decision lands, all three deliverables ship together; this property gains substantive content.
+
+**Intentional-fail probes** (3): (a) DataIntent-claimed-but-actually-OperatorIntent pass — `skeletonView` excludes it (the leak is caught structurally); (b) empty `Site.Rationale` — `TransformRegistry.create` rejects via `registry.siteRationaleEmpty`; (c) `NotImplementedInV2 ""` — `TransformRegistry.create` rejects via `registry.notImplementedRationaleEmpty`.
+
+**Deferred at slice θ:** the fifth bidirectional property test — manifest digest round-trip. The test requires `ManifestEmitter` to write `registry.digest` + per-artifact `applied-transforms` field (slice η scope); deferred-with-trigger pending slice η.
+
+**Slice ι deliverables (A41 cash-out + chapter close ritual).**
+
+- **AXIOMS.md A41 body** filled per the scaffolding discipline (`DECISIONS 2026-05-22 — Stage 0 foundation phase`). The placeholder list is updated to mark A41 CASHED. A41's body codifies: the strongly-typed canonical registry shape; the bidirectional contract (skeleton-purity + overlay-exercise + totality coverage + harvest-classification coverage); the A18 ↔ A41 sibling structural commitment; pillar 9's structural pair framing; the fourth cross-cutting concern framing; the heterogeneous-output-types accommodation; the OverlayAxis ⊃ Policy DU axes weakening (per slice β's Q9 expansion).
+- **PRODUCT_AXIOMS.md L3-CC-Transform-Totality D → A.** The Tier column is updated to "Bucket: A (promoted at chapter A.4.7 close, 2026-05-16)." Forward-signal note: manifest digest round-trip property + runtime `Compose.runWithSkeleton` traversal land at slice η (consumer-pressure deferred).
+- **CHAPTER_A_4_7_CLOSE.md** ships per the close-doc convention (mirrors `CHAPTER_A_0_PRIME_CLOSE.md` structure): per-slice ledger + L3 axiom promotion table + four meta-codifications + six forward signals + pillar-9 audit + chapter-close ritual checklist + recommended next chapter.
+- **HANDOFF.md** gains a chapter A.4.7 close entry pointing at this DECISIONS amendment + the close doc + the recommended next-chapter options.
+
+**Four meta-codifications surfaced across the chapter** (documented in the close doc):
+
+1. **Per-rule-as-Sites for non-callable transformations.** When a structural commitment calls for N separate registry entries but the implementation has N rules embedded in one callable surface, ship N Sites within one registry entry. Worked precedents: CatalogReader (6 Sites for ~26 rules); TopologicalOrderPass (2 Sites for SortKahn + SelfLoopHandling).
+2. **Compile-order-constraint-solved-via-dedicated-module.** When a registration would create a circular dependency, extract it into a downstream module with access to both surfaces. Worked precedent: `StrategyRegistrations.fs`.
+3. **Factory pattern for configurable transformations.** Configurable transformations expose `.registered <config> : RegisteredTransform<...>` as a function returning the registered value, capturing config in the Run closure. Worked precedents: 8 of 12 passes.
+4. **Parallel-exposure during structural-commitment transitions.** When a structural commitment requires consumer migration, ship the new canonical surface alongside the old as a transition affordance; make the old private as a follow-on slice when consumer pressure surfaces. Worked precedent: slice γ kept `let run` public; slice γ.2 trigger documented.
+
+**Six forward signals** (deferred-with-trigger; full list in close doc):
+
+1. Slice γ.2 trigger — make `let run` private + migrate consumers.
+2. Slice η scope — `osm emit --skeleton-only` CLI + ManifestEmitter registry-digest extension.
+3. Compose.run registry-traversal refactor (likely chapter 4.x or 5.x).
+4. Fifth OverlayAxis expansion trigger (apply Q9-trigger-fires discipline).
+5. Policy.fs ↔ OverlayAxis collapse refactor (when call-sites consult both).
+6. Tolerance retirement signals (when first v1-harvest "don't bring forward" lands).
+
+**Baseline at chapter close.** 1281 / 1281 passing (1264 prior + 6 ζ filter tests + 11 slice θ property tests + intentional-fail probes). 0 skipped. 0 build warnings under `TreatWarningsAsErrors=true`. Lint count 13 — unchanged from main / chapter A.0' close / slices α–ε baseline; zero new introduced across chapter A.4.7.
+
+**Cross-references.**
+
+- `CHAPTER_A_4_7_OPEN.md` (the chapter's strategic-frame document; all 9 axes shipped; resolved-at-chapter-open Q9 expansion fired).
+- `CHAPTER_A_4_7_CLOSE.md` (this entry's companion close doc — per-slice ledger + meta-codifications + forward signals + chapter-close ritual).
+- `AXIOMS.md` A41 (cashed at this entry; placeholder marker updated).
+- `PRODUCT_AXIOMS.md` L3-CC-Transform-Totality (D → A at this entry).
+- `V2_PRODUCTION_CUTOVER.md` §6.4.7 (the workstream spec; subtask 4 — Compose.run traversal — refined at slice ζ; subtask 6 — CLI + manifest — deferred-with-trigger to slice η).
+- Per-slice DECISIONS entries: `2026-05-16 (chapter A.4.7 slice β)`; `2026-05-16 (chapter A.4.7 slice γ)`; `2026-05-16 (chapter A.4.7 slices δ + ε)`; this entry (slices ζ + θ + ι).
+- `tests/Projection.Tests/TransformRegistryCompletenessTests.fs` (the chapter's structural exit gate; 4 property tests + 3 intentional-fail probes).
+
+---
+
+## 2026-05-17 (chapter 4.1.A slice 8 reopen + ship) — sp_addextendedproperty emission; CommentMetadataUnreflected Tolerance retired
+
+**Status:** decided (chapter 4.1.A's slice 8 deferred-with-trigger from chapter A.0' close + chapter 4.1.A close fires; the IR carriage shipped at chapter A.0' slices α + ζ now has its emitter consumer; the canary's `Tolerance.CommentMetadataUnreflected` divergence is no longer needed).
+
+**Context.** Chapter A.0' (closed 2026-05-16) lifted descriptions and extended properties into the IR — `Kind.Description : string option` + `Attribute.Description : string option` (slice α) and `ExtendedProperties : ExtendedProperty list` on Module / Kind / Attribute / Index (slice ζ). The close doc named the emitter consumption as a forward-signal trigger: "the operational deferral that Description + ExtendedProperties lifts EVENTUALLY retire — but only once emitters consume the IR fields (chapter 4.1.A slice 8 territory)." Chapter 4.1.A also closed with slice 8 deferred-with-trigger pending the IR carriage. Both triggers fire here.
+
+**Decision 1: typed `Statement.SetExtendedProperty` variant via ScriptDom typed-AST path.**
+
+Per the text-builder-as-first-instinct discipline (`DECISIONS 2026-05-10`; Tier-3 hard-requirement Active deferral), every new SQL-emitting consumer starts on the typed-AST library. Slice 8 ships `Statement.SetExtendedProperty of tableId * target * propertyName * propertyValue` plus an `ExtendedPropertyTarget = TableExtendedProperty | ColumnExtendedProperty of columnName | IndexExtendedProperty of indexName` DU (concept-shaped per pillar 8 — each variant names *what* the target IS in SQL Server's extended-property taxonomy; the `@level2type` slot's discriminator).
+
+`ScriptDomBuild.buildSetExtendedProperty` maps the variant to a ScriptDom `ExecuteStatement` wrapping `sys.sp_addextendedproperty` with national-string parameters. The fragment flows through `Sql160ScriptGenerator` at the absolute terminal boundary; per pillar 1, no `StringBuilder()` / `sprintf` shortcuts exist at this site.
+
+**Decision 2: textual deviation from V1 — `EXECUTE [sys].[sp_addextendedproperty]` vs `EXEC sys.sp_addextendedproperty`.**
+
+ScriptDom's `Sql160ScriptGenerator` canonicalizes:
+- `EXEC` shorthand → `EXECUTE` keyword
+- Unqualified `sys.sp_addextendedproperty` → bracket-quoted `[sys].[sp_addextendedproperty]`
+- Parameter spacing → `@name = N'...'` (spaces around `=`)
+
+V1's `ExtendedPropertyScriptBuilder.cs` emits the `EXEC` shorthand without bracketing. V2's emission is **textually different** from V1's but **semantically identical** — both call the same stored procedure with the same parameter set producing the same SQL Server extended-property entries.
+
+**The canary's `PhysicalSchema` diff is text-blind** — it compares structural schema state (column types, FK relationships, constraint definitions), not SQL text. The textual divergence does NOT surface as a canary failure. Forward signal: if a downstream consumer demands byte-equality with V1 (e.g., V1 source-of-truth deploys produce a script that's diffed line-by-line against V2's), the alternative is to use `String.Concat` at the terminal-text boundary OR adopt ScriptDom's `ScriptCompatibilityOptions` to produce `EXEC` shorthand. Today no consumer demands it; the typed-AST path is the right move.
+
+**Decision 3: per-kind emission order via `extendedPropertyStatements`.**
+
+`SsdtDdlEmitter.extendedPropertyStatements (k: Kind) : Statement seq` yields per-kind `SetExtendedProperty` statements in deterministic order (A33):
+
+1. Table-level `MS_Description` (Kind.Description) — once if `Some`.
+2. Table-level extended properties (Kind.ExtendedProperties) — in source order.
+3. Per-column `MS_Description` (Attribute.Description) — once per attribute that carries one.
+4. Per-column extended properties (Attribute.ExtendedProperties) — in source order.
+5. Per-index extended properties (Index.ExtendedProperties) — in source order, per index.
+
+Hooked into `kindToSsdtFile` after `indexStatements`. The seq is consumed by `ScriptDomGenerate.toText` which renders each statement via the typed-AST path (closed-DU dispatch through `ScriptDomBuild.buildStatement`).
+
+**Decision 4: `Module.ExtendedProperties` deferred-with-trigger.**
+
+SQL Server's `sp_addextendedproperty` supports `@level0type = N'SCHEMA'` with no level1/level2 args for schema-level extended properties. V1's `Osm.Domain.Model.Module` carries `ExtendedProperties : ExtendedProperty list` per chapter A.0' slice ζ; V2 currently does NOT emit them.
+
+Two possible mappings:
+- **Module → Schema (one-to-one).** If V1 confirms modules align 1:1 with SQL Server schemas, module-level extended properties emit at `@level0type = N'SCHEMA', @level0name = N'<schema>'` (no level1/level2). The single source of `<schema>` would be the kinds owned by the module (which carry their own schema in TableId; assumes all kinds in a module share one schema).
+- **Module → distributed via kinds.** Module-level extended properties emit redundantly on every kind in the module (per V1's `ApplyToEachTable` convention if present). Risk of duplication.
+
+The triple deliverable (Skip stub + Tolerance entry + NotImplementedInV2 registry entry) does NOT fire at slice 8 because the decision is "defer until V1 emission confirmed," not "v2 chose not to bring forward." Module-level emission is a forward signal awaiting V1-side evidence; the IR carriage exists, just no emitter.
+
+**Decision 5: `ExtendedPropertyTarget` is concept-shaped, not action-shaped.**
+
+Pillar 8 four-question naming analysis:
+
+1. **What domain concept does this represent?** The kind of database object an extended-property attachment targets — table, column, or index. SQL Server's `@level2type` axis.
+2. **Does V2 already name this concept?** No prior surface; this is the first emission of extended properties.
+3. **Concept-shaped or action-shaped?** `TableExtendedProperty | ColumnExtendedProperty | IndexExtendedProperty` — concept-shaped (each variant names *what* the attachment IS at the target). Alternative `AttachToTable | AttachToColumn | AttachToIndex` would be action-shaped (verbs).
+4. **Generic-suffix smell test?** No `Helper / Util / Manager / etc.` — clean.
+
+The variants carry the level2 identifier as a payload (`columnName: string` / `indexName: string`); the table itself is on the outer `Statement.SetExtendedProperty` payload (the `tableId` argument). The DU shape matches the SQL Server taxonomy's level0/level1/level2 nesting.
+
+**Tolerance retirement: `CommentMetadataUnreflected` removed from the DU.**
+
+Per the closed-DU empirical-test discipline (`DECISIONS 2026-05-13`): the variant is removed; the `coverage` round-trip function loses its arm; the `allKnown` set goes from 5 elements to 4; `ToleranceTests.``Closed-DU coverage: …`` ` updates the count assertion + cites the retirement; `ToleranceTests`'s FsCheck arbitrary loses the variant.
+
+The retirement is structural: V2's emitter is no longer silent on column/table/index descriptions and extended properties. `PhysicalSchema.fs`'s docstring (line 44, "What's NOT compared. … Indexes (non-PK), …") still treats descriptions as out-of-comparison — that's a `PhysicalSchema` reflection axis, separate from the emitter axis. Forward signal: chapter 4.1.B or a future canary slice extends `PhysicalSchema` to include extended-property reflection; at that point, the canary diff would surface description divergences as a separate concern.
+
+**Witnesses (7 new tests in `tests/Projection.Tests/SsdtExtendedPropertyEmissionTests.fs` + 1 updated assertion in `ToleranceTests.fs`):**
+
+- Kind.Description → table-level `MS_Description` (level0=SCHEMA, level1=TABLE, no level2).
+- Kind without Description → no `sp_addextendedproperty` emission for the kind.
+- Attribute.Description → column-level `MS_Description` (level2=COLUMN).
+- Kind.ExtendedProperties → per-entry `EXECUTE` with the entry's name + value (not just MS_Description).
+- ExtendedProperty with `None` value → `@value = NULL`.
+- T1: byte-deterministic across repeat invocations.
+- Closed-DU coverage: CommentMetadataUnreflected variant retired (4 variants remaining).
+
+**Baseline at slice 8 close.** 1226 / 1226 non-canary tests passing. Lint count 13 — unchanged. Canary tests skip when Docker unwarm (session-start state at this session was DEGRADED; canary suite intermittently passing per Docker availability).
+
+**Forward signals (deferred-with-trigger from this slice):**
+
+1. **Module.ExtendedProperties emission** — gated on V1-side confirmation of module-level emission convention.
+2. **PhysicalSchema extended-property reflection** — extends the canary's diff surface; separate from emitter axis; lands when canary needs to detect description divergences.
+3. **V1↔V2 byte-equality for sp_addextendedproperty text** — gated on a downstream consumer demanding line-by-line diff vs V1's `EXEC sys.sp_addextendedproperty` shorthand. ScriptDom canonicalizes to `EXECUTE [sys].[sp_addextendedproperty]`; alternative emission paths exist but no consumer demands them.
+
+**Cross-references.**
+
+- `CHAPTER_4_1_A_OPEN.md` slice 8 row (the original chapter scope).
+- `CHAPTER_4_1_A_CLOSE.md` (the chapter close that deferred slice 8).
+- `CHAPTER_A_0_PRIME_CLOSE.md` forward signal "Tolerance retirements are forward signals, not slice scope" (cited the CommentMetadataUnreflected retirement-gate as slice 8 territory).
+- `src/Projection.Targets.SSDT/Statement.fs` (SetExtendedProperty variant + ExtendedPropertyTarget DU shipped).
+- `src/Projection.Targets.SSDT/ScriptDomBuild.fs` (buildSetExtendedProperty builder).
+- `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs` (extendedPropertyStatements emission slot).
+- `src/Projection.Core/Tolerance.fs` (CommentMetadataUnreflected retirement).
+- `tests/Projection.Tests/SsdtExtendedPropertyEmissionTests.fs` (7 witnesses).
+
+---

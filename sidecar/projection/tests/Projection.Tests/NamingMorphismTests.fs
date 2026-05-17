@@ -7,6 +7,13 @@ open Projection.Core
 open Projection.Core.Passes
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `NamingMorphism.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<Catalog>>`. This per-file shim restores the
+// `Lineage<Catalog>` shape so existing assertions keep reading.
+let private nmRun (morphism: NamingMorphism.Morphism) (catalog: Catalog) : Lineage<Catalog> =
+    (NamingMorphism.registered morphism).Run catalog |> Lineage.map (fun d -> d.Value)
+
 // ---------------------------------------------------------------------------
 // A15 (load-bearing): identity is untouched. For every named node, the
 // SsKey before and after the pass is byte-identical regardless of the
@@ -26,12 +33,12 @@ let private collectKeys (c: Catalog) : Set<SsKey> =
 
 [<Fact>]
 let ``A15: toUpper morphism preserves every SsKey in the catalog`` () =
-    let result = NamingMorphism.run NamingMorphism.toUpper sampleCatalog
+    let result = nmRun NamingMorphism.toUpper sampleCatalog
     Assert.Equal<Set<SsKey>>(collectKeys sampleCatalog, collectKeys result.Value)
 
 [<Fact>]
 let ``A15: withPrefix morphism preserves every SsKey in the catalog`` () =
-    let result = NamingMorphism.run (NamingMorphism.withPrefix "X_") sampleCatalog
+    let result = nmRun (NamingMorphism.withPrefix "X_") sampleCatalog
     Assert.Equal<Set<SsKey>>(collectKeys sampleCatalog, collectKeys result.Value)
 
 [<Property>]
@@ -39,7 +46,7 @@ let ``A15: any morphism preserves the catalog's SsKey set`` (s: NonEmptyString) 
     if System.String.IsNullOrWhiteSpace s.Get then true
     else
         let morphism : NamingMorphism.Morphism = fun (Name n) -> Name (s.Get + n)
-        let result = NamingMorphism.run morphism sampleCatalog
+        let result = nmRun morphism sampleCatalog
         collectKeys sampleCatalog = collectKeys result.Value
 
 // ---------------------------------------------------------------------------
@@ -48,7 +55,7 @@ let ``A15: any morphism preserves the catalog's SsKey set`` (s: NonEmptyString) 
 
 [<Fact>]
 let ``A4 + A15: Catalog.tryFindKind survives a uppercase rename`` () =
-    let result = NamingMorphism.run NamingMorphism.toUpper sampleCatalog
+    let result = nmRun NamingMorphism.toUpper sampleCatalog
     let found = Catalog.tryFindKind customerKey result.Value |> Option.get
     // SsKey is preserved; Name is uppercased.
     Assert.Equal(customerKey, found.SsKey)
@@ -56,7 +63,7 @@ let ``A4 + A15: Catalog.tryFindKind survives a uppercase rename`` () =
 
 [<Fact>]
 let ``A4 + A15: FK target SsKey survives a rename`` () =
-    let result = NamingMorphism.run NamingMorphism.toUpper sampleCatalog
+    let result = nmRun NamingMorphism.toUpper sampleCatalog
     let order = Catalog.tryFindKind orderKey result.Value |> Option.get
     let ref = order.References |> List.exactlyOne
     Assert.Equal(customerKey, ref.TargetKind)
@@ -67,14 +74,14 @@ let ``A4 + A15: FK target SsKey survives a rename`` () =
 
 [<Fact>]
 let ``identity morphism produces the input catalog unchanged`` () =
-    let result = NamingMorphism.run NamingMorphism.identity sampleCatalog
+    let result = nmRun NamingMorphism.identity sampleCatalog
     Assert.Equal(sampleCatalog, result.Value)
     Assert.Empty(result.Trail)
 
 [<Fact>]
 let ``a no-op morphism (any morphism returning same name) produces empty trail`` () =
     let noop : NamingMorphism.Morphism = id
-    let result = NamingMorphism.run noop sampleCatalog
+    let result = nmRun noop sampleCatalog
     Assert.Empty(result.Trail)
 
 // ---------------------------------------------------------------------------
@@ -88,11 +95,11 @@ let ``composition law: run (f >> g) = (run f) bind (run g) on values`` () =
     let f = NamingMorphism.withPrefix "X_"
     let g = NamingMorphism.withSuffix "_v2"
     let composed = f >> g
-    let directValue = (NamingMorphism.run composed sampleCatalog).Value
+    let directValue = (nmRun composed sampleCatalog).Value
     let stepwiseValue =
         sampleCatalog
-        |> NamingMorphism.run f
-        |> Lineage.bind (NamingMorphism.run g)
+        |> nmRun f
+        |> Lineage.bind (nmRun g)
         |> fun lineage -> lineage.Value
     Assert.Equal(directValue, stepwiseValue)
 
@@ -104,14 +111,14 @@ let ``composition law: run (f >> g) = (run f) bind (run g) on values`` () =
 
 [<Fact>]
 let ``every emitted event is a Renamed event`` () =
-    let result = NamingMorphism.run NamingMorphism.toUpper sampleCatalog
+    let result = nmRun NamingMorphism.toUpper sampleCatalog
     Assert.NotEmpty(result.Trail)
     Assert.All(result.Trail, fun e ->
         Assert.Equal(Renamed, e.TransformKind))
 
 [<Fact>]
 let ``A23: events carry the pass version and name`` () =
-    let result = NamingMorphism.run NamingMorphism.toUpper sampleCatalog
+    let result = nmRun NamingMorphism.toUpper sampleCatalog
     Assert.All(result.Trail, fun e ->
         Assert.Equal(NamingMorphism.version, e.PassVersion)
         Assert.Equal("namingMorphism", e.PassName))
@@ -126,7 +133,7 @@ let ``a morphism that only changes some names emits events only for those names`
     let customerName = Name.create "Customer" |> Result.value
     let m : NamingMorphism.Morphism =
         fun n -> if n = customerName then buyerName else n
-    let result = NamingMorphism.run m sampleCatalog
+    let result = nmRun m sampleCatalog
     Assert.Equal(2, result.Trail.Length)
     let renamedKeys = result.Trail |> List.map (fun e -> e.SsKey) |> Set.ofList
     Assert.Equal<Set<SsKey>>(Set.ofList [ customerKey; orderRefToCustomer ], renamedKeys)
@@ -138,7 +145,7 @@ let ``a morphism that only changes some names emits events only for those names`
 
 [<Fact>]
 let ``toUpper transforms every name`` () =
-    let result = NamingMorphism.run NamingMorphism.toUpper sampleCatalog
+    let result = nmRun NamingMorphism.toUpper sampleCatalog
     let allNames =
         Catalog.allKinds result.Value
         |> List.collect (fun k ->
@@ -150,7 +157,7 @@ let ``toUpper transforms every name`` () =
 [<Fact>]
 let ``withPrefix prepends to every name`` () =
     let prefix = "X_"
-    let result = NamingMorphism.run (NamingMorphism.withPrefix prefix) sampleCatalog
+    let result = nmRun (NamingMorphism.withPrefix prefix) sampleCatalog
     let kindNames = Catalog.allKinds result.Value |> List.map (fun k -> Name.value k.Name)
     for n in kindNames do
         Assert.StartsWith(prefix, n)
@@ -162,8 +169,8 @@ let ``withPrefix prepends to every name`` () =
 
 [<Fact>]
 let ``T1: namingMorphism is deterministic`` () =
-    let r1 = NamingMorphism.run NamingMorphism.toUpper sampleCatalog
-    let r2 = NamingMorphism.run NamingMorphism.toUpper sampleCatalog
+    let r1 = nmRun NamingMorphism.toUpper sampleCatalog
+    let r2 = nmRun NamingMorphism.toUpper sampleCatalog
     Assert.Equal(r1.Value, r2.Value)
     Assert.Equal<LineageEvent list>(r1.Trail, r2.Trail)
 
@@ -174,7 +181,7 @@ let ``T1: namingMorphism is deterministic`` () =
 
 [<Fact>]
 let ``namingMorphism preserves catalog cardinality`` () =
-    let result = NamingMorphism.run NamingMorphism.toUpper sampleCatalog
+    let result = nmRun NamingMorphism.toUpper sampleCatalog
     Assert.Equal(sampleCatalog.Modules.Length, result.Value.Modules.Length)
     let beforeKinds = Catalog.allKinds sampleCatalog
     let afterKinds  = Catalog.allKinds result.Value

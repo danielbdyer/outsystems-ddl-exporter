@@ -56,11 +56,22 @@ module UserFkReflowPass =
     /// in `Lineage.fs:130`). Slice η consumers reading the trail can
     /// answer "which strategy resolved this user's identity?" via
     /// the label.
+    /// Pillar 9 (chapter A.4.7 slice α): User FK reflow consumes
+    /// operator-supplied User-table replacement specs and reroutes
+    /// references to point at the canonical User table. Operator
+    /// intent on the Selection axis — the operator selects which
+    /// User-table references reroute vs preserve as-is. Lands as
+    /// registered overlay. (Refinement candidate at slice γ harvest
+    /// analysis: Insertion may fit as well as Selection; pillar-8
+    /// four-question analysis at registration time.)
+    let private classification : Classification = OperatorIntent Selection
+
     let private matchedEvent (sourceKey: SsKey) (strategyLabel: string) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = sourceKey
-          TransformKind = Annotated (Label (System.String.Concat ("userFkReflow.matched-by-", strategyLabel))) }  // LINT-ALLOW: terminal diagnostic-label composition at the AnnotationDetail.Label boundary; BCL `String.Concat` is the right primitive for the two-segment audit-narration label
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = sourceKey
+          TransformKind  = Annotated (Label (System.String.Concat ("userFkReflow.matched-by-", strategyLabel)))  // LINT-ALLOW: terminal diagnostic-label composition at the AnnotationDetail.Label boundary; BCL `String.Concat` is the right primitive for the two-segment audit-narration label
+          Classification = classification }
 
     /// One `Warning` diagnostic per unmatched source user. Per
     /// pre-scope §6: `Source = "userFkReflow"`, `Code = "userFkReflow.
@@ -324,10 +335,30 @@ module UserFkReflowPass =
     /// `Profile.SourceUsers` + `Profile.TargetUsers` (slice β) and
     /// `Policy.UserMatching` (slice α); produces
     /// `UserRemapContext` (slice γ).
-    let run
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `UserFkReflowPass.registered.Run`
+    let private run
         (_catalog: Catalog)
         (policy: Policy)
         (profile: Profile)
         : Lineage<Diagnostics<UserRemapContext>> =
         use _ = Bench.scope "passes.userFkReflow"
         discover profile.SourceUsers profile.TargetUsers policy.UserMatching
+
+    /// Chapter A.4.7 slice γ — factory. Captures operator-supplied
+    /// `Policy` (`UserMatching` axis) + `Profile`
+    /// (`SourceUsers` / `TargetUsers` evidence) in closure. Single
+    /// `OperatorIntent Selection` site — operator selects which
+    /// User-table references reroute via the matching strategies +
+    /// source/target user populations. Output is `UserRemapContext`
+    /// (not Catalog) — this is a decision-producing pass; downstream
+    /// consumers apply the remap.
+    let registered (policy: Policy) (profile: Profile) : RegisteredTransform<Catalog, UserRemapContext> =
+        { Name = passName
+          Domain = Identity
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "reflow"
+                Classification = classification
+                Rationale = "Reroute User-table references via operator-supplied matching strategies (Policy.UserMatching) + source/target user populations (Profile). Lands as Selection-axis overlay; Insertion was considered alternative classification, but re-direction reads more naturally as Selection (which references reroute)." } ]
+          Run = fun c -> run c policy profile
+          Status = Active }

@@ -74,10 +74,17 @@ let private syntheticBuildEvent (decision: SyntheticDecision) : LineageEvent =
     // free-form variant is the right surface here. Production
     // pass drivers (Nullability/UniqueIndex/ForeignKey/
     // CategoricalUniqueness) use their typed variants.
-    { PassName      = "synthetic"
-      PassVersion   = 1
-      SsKey         = decision.AttributeKey
-      TransformKind = Annotated (Label decision.InterventionId) }
+    //
+    // Chapter A.4.7 slice α: the synthetic fanOut test is
+    // composition-shape only; `DataIntent` is the test-fixture
+    // convention. Production registered-intervention strategies
+    // are `OperatorIntent Tightening` per their pass-module
+    // classifications.
+    { PassName       = "synthetic"
+      PassVersion    = 1
+      SsKey          = decision.AttributeKey
+      TransformKind  = Annotated (Label decision.InterventionId)
+      Classification = DataIntent }
 
 let private syntheticConfig : Composition.FanOutConfig<Kind * Attribute, SyntheticConfig, SyntheticDecision, SyntheticDecisionSet> = {
     InterventionFilter = syntheticInterventionFilter

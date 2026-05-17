@@ -2,8 +2,16 @@ module Projection.Tests.ProfileSnapshotAdapterTests
 
 open Xunit
 open Projection.Core
+open Projection.Core.Passes
 open Projection.Adapters.Sql
 open Projection.Tests.Fixtures
+
+// Chapter A.4.7' slice η — `NullabilityPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<NullabilityDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private nullRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<NullabilityDecisionSet>> =
+    (NullabilityPass.registered policy profile).Run catalog
 
 // ---------------------------------------------------------------------------
 // V1 fixture content embedded as a string constant. Sourced from
@@ -292,7 +300,7 @@ let ``T1: ProfileSnapshot.attach is deterministic`` () =
 let ``composition: profile-adapter output feeds NullabilityPass under empty Tightening`` () =
     let profile = ProfileSnapshot.attach microFkCatalog (ProfileSnapshot.ProfileSnapshotJson microFkProtectJson) |> Result.value
     let lineage =
-        Projection.Core.Passes.NullabilityPass.run
+        nullRun
             microFkCatalog Policy.empty profile
     // Observable identity on empty Tightening — the pass produces no
     // decisions even with rich Profile data, because no intervention

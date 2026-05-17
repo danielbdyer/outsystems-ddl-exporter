@@ -5,6 +5,27 @@ open Projection.Core
 open Projection.Core.Passes
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `ForeignKeyPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<ForeignKeyDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private fkRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<ForeignKeyDecisionSet>> =
+    (ForeignKeyPass.registered policy profile).Run catalog
+
+// Chapter A.4.7' slice η — `UniqueIndexPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<UniqueIndexDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private uiRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<UniqueIndexDecisionSet>> =
+    (UniqueIndexPass.registered policy profile).Run catalog
+
+// Chapter A.4.7' slice η — `NullabilityPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<NullabilityDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private nullRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<NullabilityDecisionSet>> =
+    (NullabilityPass.registered policy profile).Run catalog
+
 // ---------------------------------------------------------------------------
 // End-to-end milestone — UniqueIndex with its opportunity stream
 // flowing through Lineage<Diagnostics<_>> end-to-end.
@@ -65,7 +86,7 @@ let private singleOffCompositeOnPolicy : Policy =
 
 [<Fact>]
 let ``end-to-end: lineage trail and diagnostic stream populate together`` () =
-    let result = UniqueIndexPass.run endToEndCatalog singleOffCompositeOnPolicy Profile.empty
+    let result = uiRun endToEndCatalog singleOffCompositeOnPolicy Profile.empty
 
     // Lineage trail: one Annotated event per decision.
     let decisions = (UniqueIndexPass.decisionsOf result).Decisions
@@ -93,7 +114,7 @@ let ``end-to-end: lineage trail and diagnostic stream populate together`` () =
 
 [<Fact>]
 let ``end-to-end: diagnostic SsKeys align with the decisions that produced them`` () =
-    let result = UniqueIndexPass.run endToEndCatalog singleOffCompositeOnPolicy Profile.empty
+    let result = uiRun endToEndCatalog singleOffCompositeOnPolicy Profile.empty
 
     let doNotEnforceKeys =
         (UniqueIndexPass.decisionsOf result).Decisions
@@ -116,8 +137,8 @@ let ``end-to-end: diagnostic SsKeys align with the decisions that produced them`
 
 [<Fact>]
 let ``T1: byte-determinism holds for the dual writer (decisions + lineage + diagnostics)`` () =
-    let r1 = UniqueIndexPass.run endToEndCatalog singleOffCompositeOnPolicy Profile.empty
-    let r2 = UniqueIndexPass.run endToEndCatalog singleOffCompositeOnPolicy Profile.empty
+    let r1 = uiRun endToEndCatalog singleOffCompositeOnPolicy Profile.empty
+    let r2 = uiRun endToEndCatalog singleOffCompositeOnPolicy Profile.empty
 
     // The decision set, the lineage trail, and the diagnostic stream
     // each independently hold byte-determinism. Asserting them
@@ -137,7 +158,7 @@ let ``T1: byte-determinism holds for the dual writer (decisions + lineage + diag
 
 [<Fact>]
 let ``end-to-end: empty policy yields empty decisions, empty trail, empty diagnostics`` () =
-    let result = UniqueIndexPass.run endToEndCatalog Policy.empty Profile.empty
+    let result = uiRun endToEndCatalog Policy.empty Profile.empty
 
     Assert.Empty((UniqueIndexPass.decisionsOf result).Decisions)
     Assert.Empty(result.Trail)
@@ -151,7 +172,7 @@ let ``end-to-end: empty policy yields empty decisions, empty trail, empty diagno
 
 [<Fact>]
 let ``end-to-end: LineageDiagnostics.diagnostics returns the inner Diagnostics<_>`` () =
-    let result = UniqueIndexPass.run endToEndCatalog singleOffCompositeOnPolicy Profile.empty
+    let result = uiRun endToEndCatalog singleOffCompositeOnPolicy Profile.empty
     let diag : Diagnostics<UniqueIndexDecisionSet> = LineageDiagnostics.diagnostics result
 
     Assert.Equal<UniqueIndexDecisionSet>(
@@ -220,7 +241,7 @@ let private nullabilityPolicyForOpportunity : Policy =
 [<Fact>]
 let ``end-to-end: Nullability opportunity stream emits one DiagnosticSeverity.Warning entry on RequireOperatorApproval`` () =
     let result =
-        NullabilityPass.run
+        nullRun
             nullabilityCatalog
             nullabilityPolicyForOpportunity
             nullabilityProfileWithNullsBeyondBudget
@@ -265,8 +286,8 @@ let ``end-to-end: Nullability and UniqueIndex opportunity streams remain indepen
                     [ Nullability ("null-1", nullabilityCfg)
                       UniqueIndex  ("uniq-1", uniqueCfg) ] } }
 
-    let nullResult = NullabilityPass.run combinedCatalog combinedPolicy nullabilityProfileWithNullsBeyondBudget
-    let uniqResult = UniqueIndexPass.run combinedCatalog combinedPolicy Profile.empty
+    let nullResult = nullRun combinedCatalog combinedPolicy nullabilityProfileWithNullsBeyondBudget
+    let uniqResult = uiRun combinedCatalog combinedPolicy Profile.empty
 
     let nullEntries = LineageDiagnostics.entries nullResult
     let uniqEntries = LineageDiagnostics.entries uniqResult
@@ -291,12 +312,12 @@ let ``end-to-end: Nullability and UniqueIndex opportunity streams remain indepen
 [<Fact>]
 let ``T1: byte-determinism holds for NullabilityPass under the dual writer`` () =
     let r1 =
-        NullabilityPass.run
+        nullRun
             nullabilityCatalog
             nullabilityPolicyForOpportunity
             nullabilityProfileWithNullsBeyondBudget
     let r2 =
-        NullabilityPass.run
+        nullRun
             nullabilityCatalog
             nullabilityPolicyForOpportunity
             nullabilityProfileWithNullsBeyondBudget
@@ -400,7 +421,7 @@ let private fkPolicyAllowingNoCheck : Policy =
 [<Fact>]
 let ``end-to-end: ForeignKey opportunity stream emits one DiagnosticSeverity.Warning entry on success-with-caveat (ScriptWithNoCheck)`` () =
     let result =
-        ForeignKeyPass.run fkCatalog fkPolicyAllowingNoCheck fkProfileWithOrphans
+        fkRun fkCatalog fkPolicyAllowingNoCheck fkProfileWithOrphans
 
     // Decision side: orphans observed + AllowNoCheckCreation=true ⇒
     // EnforceConstraint(ScriptWithNoCheck). The constraint IS created;
@@ -443,9 +464,9 @@ let ``end-to-end: ForeignKey + Nullability + UniqueIndex opportunity streams rem
                       UniqueIndex  ("uniq-1", uniqCfg)
                       ForeignKey   ("fk-1",   fkCfg) ] } }
 
-    let nullResult = NullabilityPass.run combinedCatalog combinedPolicy nullabilityProfileWithNullsBeyondBudget
-    let uniqResult = UniqueIndexPass.run combinedCatalog combinedPolicy Profile.empty
-    let fkResult   = ForeignKeyPass.run  combinedCatalog combinedPolicy fkProfileWithOrphans
+    let nullResult = nullRun combinedCatalog combinedPolicy nullabilityProfileWithNullsBeyondBudget
+    let uniqResult = uiRun combinedCatalog combinedPolicy Profile.empty
+    let fkResult   = fkRun  combinedCatalog combinedPolicy fkProfileWithOrphans
 
     let nullEntries = LineageDiagnostics.entries nullResult
     let uniqEntries = LineageDiagnostics.entries uniqResult
@@ -555,8 +576,8 @@ let ``end-to-end: ForeignKey emits keep-reason and success-with-caveat entries s
         { Policy.empty with
             Tightening = { Interventions = [ ForeignKey ("strict", strictCfg) ] } }
 
-    let permissiveResult = ForeignKeyPass.run augmentedCatalog permissivePolicy profile
-    let strictResult     = ForeignKeyPass.run augmentedCatalog strictPolicy     profile
+    let permissiveResult = fkRun augmentedCatalog permissivePolicy profile
+    let strictResult     = fkRun augmentedCatalog strictPolicy     profile
 
     // Permissive run: two ScriptWithNoCheck entries (success-with-
     // caveat for both references).
@@ -584,8 +605,8 @@ let ``end-to-end: ForeignKey emits keep-reason and success-with-caveat entries s
 
 [<Fact>]
 let ``T1: byte-determinism holds for ForeignKeyPass under the dual writer`` () =
-    let r1 = ForeignKeyPass.run fkCatalog fkPolicyAllowingNoCheck fkProfileWithOrphans
-    let r2 = ForeignKeyPass.run fkCatalog fkPolicyAllowingNoCheck fkProfileWithOrphans
+    let r1 = fkRun fkCatalog fkPolicyAllowingNoCheck fkProfileWithOrphans
+    let r2 = fkRun fkCatalog fkPolicyAllowingNoCheck fkProfileWithOrphans
 
     Assert.Equal<ForeignKeyDecisionSet>(
         ForeignKeyPass.decisionsOf r1,

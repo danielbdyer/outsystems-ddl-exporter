@@ -1,8 +1,130 @@
-# Handoff letter — Chapter A.0' CLOSED (all 9 slices shipped; ten L3 axioms D → A)
+# Handoff letter — Chapter A.4.7' (prime) SHIPPED (Compose.run registry-traversal; registry load-bearing for execution; A41 amended)
 
 To the next-chapter agent. Read this before anything else in the V2 sidecar. It is short on purpose.
 
 The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+
+## 2026-05-17 (chapter A.4.7' close — slices α + β + γ + δ + ε + ζ + η + θ) — Compose.run registry-traversal; A41 amended (execution totality); 5/5 bidirectional property tests; `let run` private across all 12 passes
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-VnRe8`. **Test baseline at chapter close: 1262 / 1262 non-canary passing** (1226 prior + 36 new across the chapter — 6 ComposeChainAdapterTests + 5 RegisteredTransformsTests + 5 PassChainAdapterComposeTests + 3 SkeletonPurityTests + 5 RegistryDigestRoundTripTests + 12 sundry test additions across migrations); canary tests skip when Docker unwarm. 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint count 13 — unchanged from main / chapter A.4.7 close baseline; zero new introduced across chapter A.4.7'.
+
+**Chapter A.4.7' closes.** Read `CHAPTER_A_4_7_PRIME_CLOSE.md` for the chapter-close synthesis (8-slice ledger, A41 amendment cash-out, 4 meta-codifications, 8 forward signals, pillar-9 audit, verifiability-triangle audit, chapter-close ritual checklist). Read `CHAPTER_A_4_7_PRIME_OPEN.md` for the strategic frame (9 axes; 8-slice plan; resolved-at-chapter-open naming + slicing decisions).
+
+**What shipped (8 substantive commits + close).** Chapter A.4.7' cashes chapter A.4.7's forward signal #3 ("Compose.run registry-traversal refactor") in full. The registry is now the load-bearing execution surface for V2's emit path — bypassing it is structurally impossible because the hand-coded pass sequence has retired. A41 amended (execution totality) cashes the chapter A.4.7 metadata-only commitment into metadata + execution.
+
+- **Slice α (`d376ee0`):** ComposeState aggregate + PassChainAdapter lift constructors. 6 witness tests.
+- **Slice β (`4f83325`):** `RegisteredTransforms.all` (17) + `allChainSteps` (12) populated at end of Core compile order. Naming via pillar 8: concept-shaped plural. 5 witness tests.
+- **Slice γ (`b5a515a`):** `PassChainAdapter.compose` traversal kernel; A24 trail ordering. 5 tests.
+- **Slice δ (`5b90fdf`):** `Compose.project` consumes registry; hand-coded sequence retires; registry load-bearing. Empirical-bet validated: zero byte-shifts.
+- **Slice ε (`908e50d`):** `RegisteredTransforms.skeletonChainSteps` (4 entries) + `Compose.runSkeleton` + skeleton-purity true-execution property test. 3 tests.
+- **Slice ζ (`22f26b8`):** `TransformRegistry.digest` + ManifestEmitter `registry.digest` field + `osm emit --skeleton-only` CLI + 5th bidirectional property test (registry-digest round-trip). 5 tests. **5/5 bidirectional property tests met — chapter exit gate.**
+- **Slice η.1 partial (`c58fb11`):** VisibilityMask `let run` privatized as trial; Stop-hook-recovery checkpoint.
+- **Slice η complete (`11f03e8`):** All 11 remaining passes privatized; ~308 call sites migrated via per-test-file shape-restoring shims. 39 files changed. Subagent-driven bulk + parent ValidationError boundary fix.
+- **Slice θ (this commit):** A41 amendment body filled in `AXIOMS.md`; `CHAPTER_A_4_7_PRIME_CLOSE.md` ships; this HANDOFF.md updated. 4 meta-codifications captured (compile-order-resolved-at-assembly-point; empirical-bet method; per-test-file shape-restoring shim; Stop-hook respect via partial-commit-with-explicit-deferral).
+
+**What's load-bearing.** After this chapter:
+
+- **The registry is V2's load-bearing execution surface.** `Compose.project` consumes `RegisteredTransforms.allChainSteps` as its execution loop; bypassing requires bypassing the composer itself.
+- **`let run` is private in all 12 pass modules.** Public callable is `<Pass>.registered.Run` only. Parallel-exposure transition affordance retired.
+- **Manifest carries `registry.digest`** for downstream audit consumers.
+- **CLI exposes `osm emit --skeleton-only`** as the operator-facing skeleton baseline.
+- **5/5 bidirectional property tests** green at runtime.
+
+**Forward signals retained (8):**
+
+1. `applied-transforms : (SsKey × OverlayAxis option) list` per-artifact manifest field — deferred from slice ζ per consumer-pressure.
+2. Per-OverlayAxis CLI flags — deferred from chapter A.4.7 open Q8.
+3. `Policy.fs` ↔ `OverlayAxis` structural collapse — preserved deferral.
+4. Emitter-as-chain-step — trigger: fourth emitter OR runtime emitter classification.
+5. Adapter-as-chain-step — trigger: V2 composes multiple adapters.
+6. `Compose.run` async-streaming form — trigger: chain-level streaming perf concern at 300-table scale.
+7. `ComposeState.Profile` field — trigger: consumer needs runtime profile inspection.
+8. `runChain` placement re-evaluation — trigger: third consumer demands per-stage variant.
+
+**Recommended next chapter.** Operator's call between:
+
+1. **Chapter 4.1.B** — CDC-silence-on-idempotent-redeploy property test (V2_DRIVER's highest-leverage single deliverable). Slice α: ScriptDomBuild.buildMergeStatement (Tier-3 hard-requirement deferral from chapter 4.1.A close).
+2. **Chapter 4.2** — User FK reflow consumer side (chapter A.4.7 forward signal). Open at 2026-05-16 close.
+3. **Chapter 4.4** — Operational Diagnostics (Coverage / PredicateCoverage / PreRemediation / Unsupported manifest fields).
+4. **Module.ExtendedProperties emission** — deferred-with-trigger from chapter 4.1.A.8; gated on V1 confirmation.
+
+## 2026-05-17 (chapter 4.1.A slice 8 reopen + ship) — sp_addextendedproperty emission; CommentMetadataUnreflected Tolerance retired
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-VnRe8`. **Test baseline at slice close: 1226 / 1226 non-canary passing** (1219 prior + 7 new `SsdtExtendedPropertyEmissionTests`); canary tests skip when Docker unwarm. 0 build warnings under `TreatWarningsAsErrors=true`; lint count 13 — unchanged from main / chapter A.0' / A.4.7 baseline.
+
+**What shipped (`f140595`).** Chapter 4.1.A's slice 8 — deferred-with-trigger since chapter A.0' close — fires. The IR carriage from chapter A.0' (slices α + ζ) now has its emitter consumer.
+
+- **Typed Statement variant.** `Statement.SetExtendedProperty of tableId * target * propertyName * propertyValue` with `ExtendedPropertyTarget = TableExtendedProperty | ColumnExtendedProperty of columnName | IndexExtendedProperty of indexName` (concept-shaped per pillar 8; matches SQL Server's `@level2type` taxonomy).
+- **ScriptDom typed-AST emission.** `ScriptDomBuild.buildSetExtendedProperty` maps to `ExecuteStatement` wrapping `sys.sp_addextendedproperty` with national-string parameters. Per text-builder-as-first-instinct discipline (Tier-3 hard-requirement) — typed AST is the right move; no `StringBuilder()` shortcut at this site.
+- **Per-kind emission order** via `SsdtDdlEmitter.extendedPropertyStatements`: table description → table ExtendedProperties → per-column descriptions → per-column ExtendedProperties → per-index ExtendedProperties. Hooked into `kindToSsdtFile` after `indexStatements`.
+- **`Tolerance.CommentMetadataUnreflected` retired** per closed-DU empirical-test discipline. Variant removed; `allKnown` set goes from 5 to 4 elements; runtime test + FsCheck arbitrary updated.
+
+**Textual deviation from V1.** ScriptDom canonicalizes `EXEC sys.sp_addextendedproperty` → `EXECUTE [sys].[sp_addextendedproperty]` + `@name = N'...'` (spaces around `=`). Semantically identical; canary's `PhysicalSchema` diff is text-blind. Forward signal: if a consumer demands byte-equality with V1's text form, swap to `String.Concat`-at-terminal-boundary OR ScriptDom's `ScriptCompatibilityOptions` — today no consumer demands it.
+
+**Module.ExtendedProperties deferred-with-trigger.** SQL Server's `@level0type = N'SCHEMA'` semantics map module → schema only when modules align 1:1 with schemas. V2 doesn't yet formalize this; module-level emission awaits V1-side confirmation of emission convention. Triple deliverable (Skip stub + Tolerance + NotImplementedInV2 registry) does NOT fire — this is "defer until V1 confirmed," not "V2 chose not to bring forward."
+
+**Forward signals retained:**
+
+1. **Module.ExtendedProperties emission** — gated on V1 confirmation.
+2. **PhysicalSchema extended-property reflection** — extends canary's diff surface; separate from emitter axis.
+3. **V1↔V2 byte-equality for sp_addextendedproperty** — gated on consumer demand for line-by-line text diff with V1.
+4. **Sequence emission** — chapter A.0' slice δ shipped `Catalog.Sequences` IR carriage; no `CREATE SEQUENCE` emitter exists. Likely chapter 4.x slice when V1 fixture surfaces sequences.
+5. **The four deferred-out-of-A.0' V1 concepts** — `OriginalName`, `ExternalDatabaseType`, `IndexColumnDirection`, `IsPlatformAuto`. Each gated on its own consumer-pressure trigger.
+6. **Slice η** (chapter A.4.7 forward signal) — `osm emit --skeleton-only` CLI + ManifestEmitter registry-digest + per-artifact `applied-transforms` + fifth bidirectional property test (manifest digest round-trip).
+7. **Slice γ.2** (chapter A.4.7 forward signal) — make `let run` private in 12 pass modules + migrate ~80 call sites (~9 production + ~70 test).
+
+**Recommended next chapter.** Operator's call between:
+
+1. **Slice η — CLI + manifest extension.** Retires chapter A.4.7's last open forward signal. Adds operator-facing `osm emit --skeleton-only`; ManifestEmitter gains `registry.digest` + per-artifact `applied-transforms`; fifth bidirectional property test (manifest digest round-trip) ships. Estimated 1-2 sessions.
+2. **Slice γ.2 — private `run` migration.** Structural hygiene: make `let run` private in all 12 pass modules; migrate ~80 call sites to `<Pass>.registered.Run` / `(<Pass>.registered config).Run`. Mechanical but voluminous (notably ~50+ test sites). Estimated 2-3 sessions.
+3. **Module.ExtendedProperties / Sequence emission slices.** Forward-signal completion as V1-side evidence surfaces. Per-slice ~1-2 sessions.
+4. **Compose.run registry-traversal refactor.** Heavier — designs pass-chaining adapter for heterogeneous output types. Chapter 4.x or 5.x scope.
+
+## 2026-05-16 (chapter A.4.7 close — slices ζ + θ + ι) — Transform registry shipped; A41 cashed; L3-CC-Transform-Totality D → A
+
+## 2026-05-16 (chapter A.4.7 close — slices ζ + θ + ι) — Transform registry shipped; A41 cashed; L3-CC-Transform-Totality D → A
+
+**Branch / baseline.** Continues on `claude/review-chapter-close-VnRe8`. **Test baseline at chapter close: 1281 / 1281 passing** (1202 prior + 79 new across the chapter — 14 ClassificationCarryThroughTests + 25 TransformRegistryTests + 18 PassRegistrationsTests + 5 AdapterRegistrationsTests + 8 StrategyRegistrationsTests + 11 TransformRegistryCompletenessTests including 3 intentional-fail probes); 0 skipped; 0 build warnings under `TreatWarningsAsErrors=true`; lint count 13 — unchanged from main; zero new introduced across chapter A.4.7.
+
+**Chapter A.4.7 closes.** Read `CHAPTER_A_4_7_CLOSE.md` for the chapter-close synthesis (per-slice ledger, L3 axiom promotion, four meta-codifications, six forward signals, pillar-9 audit, chapter-close ritual checklist). Read `CHAPTER_A_4_7_OPEN.md` for the strategic frame (9 axes; 9-slice plan; resolved-at-chapter-open Q9 expansion).
+
+**What shipped (5 commits across the chapter).** Chapter A.4.7 ships V2's fourth cross-cutting structural-evidence concern — `TransformRegistry` (sibling to Lineage / Diagnostics / Bench). The data-intent / operator-intent dichotomy promoted from convention to type-witnessed bidirectional contract. 18 transformation sites classified (1 adapter + 12 passes + 5 strategies). 4 of 5 bidirectional property tests shipped + 3 intentional-fail probes. The fifth property — manifest digest round-trip — deferred-with-trigger to slice η (consumer-pressure deferred).
+
+- **Slice α (`e060e70`):** `Projection.Core/Classification.fs` ships `OverlayAxis` (Selection / Emission / Insertion / Tightening / Ordering) + `Classification` (DataIntent / OperatorIntent of OverlayAxis). `LineageEvent.Classification` field added; writer-fidelity primitives propagate; 12 passes self-classify.
+- **Slice β (`e6e94e0`):** `Projection.Core/TransformRegistry.fs` ships `StageBinding` / `Domain` / `TransformSite` / `TransformStatus` / `RegisteredTransform<'In, 'Out>` / `RegisteredTransformMetadata` + smart constructor. Fifth `OverlayAxis` variant `Ordering` ships per Q9-trigger-fires worked example (TopologicalOrderPass.SelfLoopPolicy is the named real-evidence trigger).
+- **Slice γ (`bfec22f`):** 12 pass `.registered` exports across 6 categories (3 simple + 2 config factory + 1 multi-site + 4 intervention factories + 1 Result-wrapping + 1 UserFkReflowPass). Spec deviation codified: heterogeneous output types, factory pattern, parallel-exposure of `let run`. Slice γ.2 forward-signaled.
+- **Slices δ + ε (`244533e`):** `CatalogReader.registeredMetadata` (1 adapter entry with 6 Sites for ~26 transformative rules) + `StrategyRegistrations` module (5 strategy entries — 4 Tightening + 1 DataIntent CycleResolution). Per-rule-as-Sites pattern; dedicated `StrategyRegistrations.fs` solves compile-order constraint.
+- **Slices ζ + θ + ι (this commit):** `TransformRegistry.skeletonView` / `overlayView` / `overlayAxes` filter helpers. `TransformRegistryCompletenessTests.fs` ships 4 bidirectional property tests + 3 intentional-fail probes. AXIOMS A41 body cashed. `PRODUCT_AXIOMS.md` L3-CC-Transform-Totality D → A. `CHAPTER_A_4_7_CLOSE.md` + this HANDOFF entry.
+
+**Chapter A.4.7 meta-codifications** (full detail in close doc):
+
+1. **Per-rule-as-Sites for non-callable transformations** — when a structural commitment calls for N separate registry entries but the implementation has N rules embedded in one callable surface, ship N Sites within one registry entry. Worked at CatalogReader (6 Sites for ~26 rules) and TopologicalOrderPass (2 Sites for SortKahn + SelfLoopHandling).
+2. **Compile-order-constraint-solved-via-dedicated-module** — extract registrations into a downstream module when embedding would create a circular dependency. Worked at `StrategyRegistrations.fs`.
+3. **Factory pattern for configurable transformations** — `.registered <config>` returns `RegisteredTransform<...>`; static metadata + per-config Run closure. Worked at 8 of 12 passes.
+4. **Parallel-exposure during structural-commitment transitions** — ship new canonical surface alongside the old as a transition affordance. Worked at slice γ; γ.2 trigger documented.
+
+**A18 ↔ A41 sibling commitment preserved.** A18 amended (no Policy in emitters) + A41 (registry totality + bidirectional property tests) are now type-witnessed siblings carrying the data-intent / operator-intent dichotomy bidirectionally. The four meta-disciplines (pillar 8 / pillar 7 amendment / text-builder-as-first-instinct / pillar 9) are now fully realized as type-witnessed-bidirectional contracts after chapter A.4.7 close.
+
+**V2 self-containment preserved.** Zero carbon-copy events across chapter A.4.7. `BACKLOG.md` V1 inheritance log remains empty.
+
+**Six forward signals** (deferred-with-trigger; full list in close doc):
+
+1. Slice γ.2 trigger — make `let run` private + migrate consumers from `<Pass>.run` to `<Pass>.registered.Run`.
+2. Slice η scope — `osm emit --skeleton-only` CLI flag + ManifestEmitter registry-digest extension + per-artifact `applied-transforms` field + fifth property test (manifest digest round-trip).
+3. `Compose.run` registry-traversal refactor — replace hand-coded orchestration with `TransformRegistry.allInStageOrder` traversal. Requires pass-chaining adapter for heterogeneous output types. Likely chapter 4.x or 5.x scalable-orchestration cutover-blocker concern.
+4. Fifth `OverlayAxis` expansion trigger — apply Q9-trigger-fires discipline when future chapter surfaces real-evidence for an operator-intent axis not subsumed by the existing five.
+5. `Policy.fs ↔ OverlayAxis` collapse refactor — lands when call-sites consult both vocabularies at one site.
+6. Tolerance retirement signals — when first v1-harvest "don't bring forward" decision lands, triple deliverable fires (Skip stub + Tolerance + NotImplementedInV2 registry entry); slice θ's harvest-classification coverage test gains substantive content.
+
+**Recommended next chapter.** Three forward paths from chapter A.0' close; one (LineageEvent.Classification) retired by chapter A.4.7 slice α; one (A.4.7 full registry refactor) retired by this chapter. Remaining:
+
+1. **Chapter 4.1.A slice 8 (ExtendedProperties + Descriptions DDL emission)** — highest-leverage cutover-blocker progress at this point. IR carriage is complete (chapter A.0' slices α + ζ); SSDT emitter consumes IR fields + emits `sp_addextendedproperty` calls. Retires `CommentMetadataUnreflected` Tolerance variant. ~1-2 sessions.
+
+Alternatives per `V2_DRIVER.md`: A.5 (Profile-JSON ingestion + completeness audit), A.6 (differential-testing soak), A.7 (user matching), chapter 3.x DacpacEmitter, chapter 4.1.B (data triumvirate continuation).
+
+**Outstanding (operator-side; unchanged):**
+- R1 — operator's "document of key evolutions" still pending. Hold UAT-users decisions until it lands.
+- Q2 / Q3 / Q4 / Q7 unchanged.
 
 ## 2026-05-16 (chapter A.0' close — slice θ + slice ι) — IR-fidelity body fully landed; L3-Boundary-NoSilentDrop verified
 

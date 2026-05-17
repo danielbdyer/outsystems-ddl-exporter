@@ -8,6 +8,27 @@ open Projection.Core
 open Projection.Core.Passes
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `ForeignKeyPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<ForeignKeyDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private fkRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<ForeignKeyDecisionSet>> =
+    (ForeignKeyPass.registered policy profile).Run catalog
+
+// Chapter A.4.7' slice η — `UniqueIndexPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<UniqueIndexDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private uiRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<UniqueIndexDecisionSet>> =
+    (UniqueIndexPass.registered policy profile).Run catalog
+
+// Chapter A.4.7' slice η — `NullabilityPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<NullabilityDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private nullRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<NullabilityDecisionSet>> =
+    (NullabilityPass.registered policy profile).Run catalog
+
 // ---------------------------------------------------------------------------
 // Helpers — the ForeignKey pass driver tested at registry-iteration
 // granularity, mirroring NullabilityPassTests and UniqueIndexPassTests.
@@ -54,14 +75,14 @@ let private orderRef : Reference =
 
 [<Fact>]
 let ``structural commitment: empty Policy yields emptyDecisionSet`` () =
-    let lineage = ForeignKeyPass.run sampleCatalog Policy.empty Profile.empty
+    let lineage = fkRun sampleCatalog Policy.empty Profile.empty
     Assert.Equal<ForeignKeyDecisionSet>(
         ForeignKeyRules.emptyDecisionSet,
         ForeignKeyPass.decisionsOf lineage)
 
 [<Fact>]
 let ``structural commitment: empty Policy emits no lineage events`` () =
-    let lineage = ForeignKeyPass.run sampleCatalog Policy.empty Profile.empty
+    let lineage = fkRun sampleCatalog Policy.empty Profile.empty
     Assert.Empty(lineage.Trail)
 
 [<Fact>]
@@ -77,7 +98,7 @@ let ``structural commitment: a policy with only Nullability/UniqueIndex interven
         policyWithInterventions
             [ Nullability ("null-1", nullCfg)
               UniqueIndex ("uniq-1", uniqCfg) ]
-    let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
+    let lineage = fkRun sampleCatalog policy Profile.empty
     Assert.Empty((LineageDiagnostics.payload lineage).Decisions)
     Assert.Empty(lineage.Trail)
 
@@ -88,7 +109,7 @@ let ``structural commitment: empty Tightening with non-empty other axes still yi
             Selection = IncludeOnly (Set.singleton orderKey)
             Emission  = EmissionPolicy.combined
             Insertion = InsertNew }
-    let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
+    let lineage = fkRun sampleCatalog policy Profile.empty
     Assert.Empty((LineageDiagnostics.payload lineage).Decisions)
     Assert.Empty(lineage.Trail)
 
@@ -100,21 +121,21 @@ let ``structural commitment: empty Tightening with non-empty other axes still yi
 [<Fact>]
 let ``one intervention: yields one decision per reference across the catalog`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true true)
-    let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
+    let lineage = fkRun sampleCatalog policy Profile.empty
     let totalReferences = (allReferences sampleCatalog).Length
     Assert.Equal(totalReferences, (LineageDiagnostics.payload lineage).Decisions.Length)
 
 [<Fact>]
 let ``one intervention: every decision references its intervention id`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true true)
-    let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
+    let lineage = fkRun sampleCatalog policy Profile.empty
     Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("v1-style", d.InterventionId))
 
 [<Fact>]
 let ``one intervention: emits one Annotated lineage event per decision`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true true)
-    let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
+    let lineage = fkRun sampleCatalog policy Profile.empty
     Assert.Equal((LineageDiagnostics.payload lineage).Decisions.Length, lineage.Trail.Length)
     Assert.All(lineage.Trail, fun e ->
         match e.TransformKind with
@@ -126,7 +147,7 @@ let ``one intervention: lineage event detail names the intervention id and an ou
     // Chapter-3.6 slice-β: typed `AnnotationDetail.ForeignKeyDecision`
     // payload — outcome flows through structurally.
     let policy = policyWithIntervention "v1-style-2026" (mkConfig true true true)
-    let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
+    let lineage = fkRun sampleCatalog policy Profile.empty
     Assert.All(lineage.Trail, fun e ->
         match e.TransformKind with
         | Annotated (ForeignKeyDecision (id, outcome)) ->
@@ -149,7 +170,7 @@ let ``two interventions: emit decisions for every (reference, intervention) pair
         policyWithInterventions
             [ ForeignKey ("alpha", cfg)
               ForeignKey ("beta",  cfg) ]
-    let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
+    let lineage = fkRun sampleCatalog policy Profile.empty
     let totalReferences = (allReferences sampleCatalog).Length
     Assert.Equal(totalReferences * 2, (LineageDiagnostics.payload lineage).Decisions.Length)
 
@@ -160,7 +181,7 @@ let ``two interventions: decisions are tagged with their producing intervention`
         policyWithInterventions
             [ ForeignKey ("alpha", cfg)
               ForeignKey ("beta",  cfg) ]
-    let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
+    let lineage = fkRun sampleCatalog policy Profile.empty
     let alphaCount =
         (LineageDiagnostics.payload lineage).Decisions
         |> List.filter (fun d -> d.InterventionId = "alpha")
@@ -189,7 +210,7 @@ let ``coexistence: ForeignKeyPass ignores Nullability and UniqueIndex interventi
             [ Nullability ("null-1", nullCfg)
               UniqueIndex ("uniq-1", uniqCfg)
               ForeignKey  ("fk-1",   fkCfg) ]
-    let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
+    let lineage = fkRun sampleCatalog policy Profile.empty
     let totalReferences = (allReferences sampleCatalog).Length
     Assert.Equal(totalReferences, (LineageDiagnostics.payload lineage).Decisions.Length)
     Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
@@ -205,7 +226,7 @@ let ``coexistence: NullabilityPass ignores ForeignKey interventions`` () =
         policyWithInterventions
             [ Nullability ("null-1", nullCfg)
               ForeignKey  ("fk-1",   fkCfg) ]
-    let lineage = NullabilityPass.run sampleCatalog policy Profile.empty
+    let lineage = nullRun sampleCatalog policy Profile.empty
     Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("null-1", d.InterventionId))
 
@@ -220,7 +241,7 @@ let ``coexistence: UniqueIndexPass ignores ForeignKey interventions`` () =
     // No indexes in sampleCatalog, so empty decisions is expected;
     // but the test still verifies UniqueIndexPass doesn't produce
     // any FK-tagged decisions or fail.
-    let lineage = UniqueIndexPass.run sampleCatalog policy Profile.empty
+    let lineage = uiRun sampleCatalog policy Profile.empty
     Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("uniq-1", d.InterventionId))
 
@@ -234,7 +255,7 @@ let ``orphan handling: profile shows orphans + AllowNoCheckCreation=true ⇒ Scr
     let profile =
         { Profile.empty with
             ForeignKeys = [ mkReality orderRef.SsKey true 8L Succeeded ] }
-    let lineage = ForeignKeyPass.run sampleCatalog policy profile
+    let lineage = fkRun sampleCatalog policy profile
     let orderDecision =
         (LineageDiagnostics.payload lineage).Decisions
         |> List.find (fun d -> d.ReferenceKey = orderRef.SsKey)
@@ -249,8 +270,8 @@ let ``orphan handling: profile shows orphans + AllowNoCheckCreation=true ⇒ Scr
 [<Fact>]
 let ``T1: ForeignKeyPass is deterministic on the triple`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true true)
-    let r1 = ForeignKeyPass.run sampleCatalog policy Profile.empty
-    let r2 = ForeignKeyPass.run sampleCatalog policy Profile.empty
+    let r1 = fkRun sampleCatalog policy Profile.empty
+    let r2 = fkRun sampleCatalog policy Profile.empty
     Assert.Equal<ForeignKeyDecisionSet>(ForeignKeyPass.decisionsOf r1, ForeignKeyPass.decisionsOf r2)
     Assert.Equal<LineageEvent list>(r1.Trail, r2.Trail)
 
@@ -277,8 +298,8 @@ let ``contract: ForeignKeyPass is invariant under input permutation``
         if reverseModules then { withModules with Modules = List.rev withModules.Modules }
         else withModules
     let policy = policyWithIntervention "v1-style" (mkConfig true true true)
-    let direct   = ForeignKeyPass.decisionsOf (ForeignKeyPass.run sampleCatalog policy Profile.empty)
-    let permuted = ForeignKeyPass.decisionsOf (ForeignKeyPass.run (perturb sampleCatalog) policy Profile.empty)
+    let direct   = ForeignKeyPass.decisionsOf (fkRun sampleCatalog policy Profile.empty)
+    let permuted = ForeignKeyPass.decisionsOf (fkRun (perturb sampleCatalog) policy Profile.empty)
     direct = permuted
 
 // ---------------------------------------------------------------------------
@@ -289,7 +310,7 @@ let ``contract: ForeignKeyPass is invariant under input permutation``
 [<Fact>]
 let ``A23: events carry pass version and name`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true true)
-    let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
+    let lineage = fkRun sampleCatalog policy Profile.empty
     Assert.All(lineage.Trail, fun e ->
         Assert.Equal(ForeignKeyPass.version, e.PassVersion)
         Assert.Equal("foreignKey", e.PassName))
@@ -297,7 +318,7 @@ let ``A23: events carry pass version and name`` () =
 [<Fact>]
 let ``A25: every emitted event references a real reference SsKey`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true true)
-    let lineage = ForeignKeyPass.run sampleCatalog policy Profile.empty
+    let lineage = fkRun sampleCatalog policy Profile.empty
     let referenceKeys =
         allReferences sampleCatalog
         |> List.map (fun r -> r.SsKey)
@@ -312,7 +333,7 @@ let ``A25: every emitted event references a real reference SsKey`` () =
 [<Fact>]
 let ``catalog passes through unchanged: structural by signature`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true true)
-    let _ = ForeignKeyPass.run sampleCatalog policy Profile.empty
+    let _ = fkRun sampleCatalog policy Profile.empty
     Assert.Equal(3, (Catalog.allKinds sampleCatalog).Length)
 
 // ---------------------------------------------------------------------------
@@ -346,7 +367,7 @@ let ``V1 ForeignKey: success-with-caveat decision (ScriptWithNoCheck) emits a Di
     let profile =
         { Profile.empty with
             ForeignKeys = [ mkReality orderRef.SsKey true 8L Succeeded ] }
-    let lineage = ForeignKeyPass.run sampleCatalog policy profile
+    let lineage = fkRun sampleCatalog policy profile
 
     // Decision side: confirm the orderRef decision is
     // EnforceConstraint(ScriptWithNoCheck _).

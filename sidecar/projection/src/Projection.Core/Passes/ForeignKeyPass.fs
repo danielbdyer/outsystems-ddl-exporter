@@ -78,12 +78,19 @@ module ForeignKeyPass =
     /// `NullabilityPass` and `UniqueIndexPass`. Chapter-3.6 slice-β
     /// widened the payload to the typed `AnnotationDetail.
     /// ForeignKeyDecision` variant.
+    /// Pillar 9 (chapter A.4.7 slice α): foreign-key enforcement
+    /// strengthens FK invariants beyond source evidence per
+    /// operator-supplied Tightening policy. Operator intent on the
+    /// Tightening axis. Lands as registered overlay.
+    let private classification : Classification = OperatorIntent Tightening
+
     let private decisionEvent (decision: ForeignKeyDecision) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = decision.ReferenceKey
-          TransformKind =
-              Annotated (ForeignKeyDecision (decision.InterventionId, decision.Outcome)) }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = decision.ReferenceKey
+          TransformKind  =
+              Annotated (ForeignKeyDecision (decision.InterventionId, decision.Outcome))
+          Classification = classification }
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// references by `SsKey` within each kind. Interventions are taken
@@ -237,7 +244,8 @@ module ForeignKeyPass =
     /// the type signature names what the pass produces. Same shape
     /// as `UniqueIndexPass.run` and `NullabilityPass.run`; this is
     /// the codification's third real test.
-    let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<ForeignKeyDecisionSet>> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `ForeignKeyPass.registered.Run`
+    let private run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<ForeignKeyDecisionSet>> =
         use _ = Bench.scope "passes.foreignKey"
         // ForeignKey's evaluate takes the catalog as an additional
         // input (cross-attribute reach for target-kind lookup, schema
@@ -268,3 +276,18 @@ module ForeignKeyPass =
     /// `NullabilityPass.decisionsOf`.
     let decisionsOf (result: Lineage<Diagnostics<ForeignKeyDecisionSet>>) : ForeignKeyDecisionSet =
         LineageDiagnostics.payload result
+
+    /// Chapter A.4.7 slice γ — factory. Captures the operator-supplied
+    /// `Policy` + `Profile` in closure. Single `OperatorIntent
+    /// Tightening` site — the Tightening policy enforces FK
+    /// invariants beyond source evidence per operator opinion.
+    let registered (policy: Policy) (profile: Profile) : RegisteredTransform<Catalog, ForeignKeyDecisionSet> =
+        { Name = passName
+          Domain = Schema
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "tightenForeignKey"
+                Classification = classification
+                Rationale = "Enforce foreign-key invariants per operator-supplied Tightening policy. Profile evidence (orphan-row probes) drives the empirical decisions; lands as Tightening-axis overlay." } ]
+          Run = fun c -> run c policy profile
+          Status = Active }

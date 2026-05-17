@@ -11,11 +11,16 @@ open Projection.Tests.Fixtures
 // Helpers — lineage events keyed to the synthetic fixture's identities.
 // ---------------------------------------------------------------------------
 
+// Chapter A.4.7 slice α: writer-monad-laws tests are algebra-only;
+// the `Classification` field's value doesn't affect the laws.
+// `DataIntent` is the convention for test-fixture events whose
+// payload's typed shape is also incidental.
 let private touched (passName: string) (passVersion: int) (key: SsKey) : LineageEvent =
-    { PassName      = passName
-      PassVersion   = passVersion
-      SsKey         = key
-      TransformKind = Touched }
+    { PassName       = passName
+      PassVersion    = passVersion
+      SsKey          = key
+      TransformKind  = Touched
+      Classification = DataIntent }
 
 let private annotated (passName: string) (passVersion: int) (key: SsKey) (detail: string) : LineageEvent =
     // Chapter-3.6 slice-β: writer-monad-laws tests use the
@@ -23,10 +28,11 @@ let private annotated (passName: string) (passVersion: int) (key: SsKey) (detail
     // laws (left identity, right identity, associativity) hold for
     // any payload type, so the detail's typed shape is incidental
     // to what the tests prove.
-    { PassName      = passName
-      PassVersion   = passVersion
-      SsKey         = key
-      TransformKind = Annotated (Label detail) }
+    { PassName       = passName
+      PassVersion    = passVersion
+      SsKey          = key
+      TransformKind  = Annotated (Label detail)
+      Classification = DataIntent }
 
 // ---------------------------------------------------------------------------
 // Monad laws. Lineage is the writer monad over the (List, ++, []) monoid;

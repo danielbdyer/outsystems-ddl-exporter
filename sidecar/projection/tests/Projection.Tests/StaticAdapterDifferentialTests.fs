@@ -6,6 +6,13 @@ open Projection.Core.Passes
 open Projection.Adapters.Sql
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `NormalizeStaticPopulations.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<Catalog>>`. This per-file shim restores the
+// `Lineage<Catalog>` shape so existing assertions keep reading.
+let private nspRun (c: Catalog) : Lineage<Catalog> =
+    NormalizeStaticPopulations.registered.Run c |> Lineage.map (fun d -> d.Value)
+
 // ---------------------------------------------------------------------------
 // Differential test for the EntitySeedDeterminizer migration.
 //
@@ -104,7 +111,7 @@ let ``V1 contract: V1 fixture round-trips through adapter and normalizer`` () =
         Assert.Fail(sprintf "Adapter failed: %A" errors)
     | Ok populated ->
         // 2. Normalize the populated catalog.
-        let normalized = (NormalizeStaticPopulations.run populated).Value
+        let normalized = (nspRun populated).Value
         // 3. Verify rows are present in PK order — the V1 contract.
         let rows = extractCityRows normalized
         Assert.Equal(3, rows.Length)
@@ -116,7 +123,7 @@ let ``V1 contract: V1 fixture round-trips through adapter and normalizer`` () =
 [<Fact>]
 let ``V1 contract: row identifiers derive deterministically from PK values`` () =
     let populated = Static.attachStaticPopulations cityCatalog (Static.StaticPopulationsJson v1FixtureContent) |> Result.value
-    let normalized = (NormalizeStaticPopulations.run populated).Value
+    let normalized = (nspRun populated).Value
     let rows = extractCityRows normalized
     // Identifier root-traces back to the parent kind's SsKey + the
     // PK value (per A5 deterministic derivation).
@@ -164,12 +171,12 @@ let ``differential: shuffled-input output matches sorted-input output`` () =
     let direct =
         Static.attachStaticPopulations cityCatalog (Static.StaticPopulationsJson v1FixtureContent)
         |> Result.value
-        |> NormalizeStaticPopulations.run
+        |> nspRun
         |> fun lineage -> lineage.Value
     let viaShuffled =
         Static.attachStaticPopulations cityCatalog (Static.StaticPopulationsJson shuffledFixture)
         |> Result.value
-        |> NormalizeStaticPopulations.run
+        |> nspRun
         |> fun lineage -> lineage.Value
     Assert.Equal(direct, viaShuffled)
 

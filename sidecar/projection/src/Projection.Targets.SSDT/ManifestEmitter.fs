@@ -83,15 +83,23 @@ module ManifestEmitter =
             /// to detect manifest-schema changes; bump
             /// `ManifestEmitter.version` when the shape changes.
             EmitterVersion : int
+            /// **Chapter A.4.7' slice ζ** — deterministic SHA256 digest
+            /// of the registered-transforms metadata. Stable across
+            /// emit calls when the registry is unchanged; changes when
+            /// any Name / Domain / StageBinding / Sites / Status field
+            /// changes. The 5th bidirectional property test
+            /// (registry-digest round-trip) asserts both halves of the
+            /// stability + perturbation contract.
+            RegistryDigest : string
         }
 
-    /// Build the manifest from a Catalog. Per A18 amended: Catalog
-    /// only, no Profile, no Policy. The Tables array is built by
-    /// walking the catalog's Modules in declared order, then each
-    /// module's Kinds in declared order; per A33 (deterministic-
-    /// ordered schema emission), the input Catalog already arrived
-    /// in canonical order via `CanonicalizeIdentity.run`.
-    let build (catalog: Catalog) : Manifest =
+    /// Build the manifest from a Catalog + explicit registry-metadata
+    /// list. The `registry` parameter feeds the slice-ζ
+    /// `RegistryDigest` field; production callers use
+    /// `RegisteredTransforms.all`; the 5th bidirectional property test
+    /// supplies a perturbed list to exercise digest sensitivity.
+    /// Per A18 amended: Catalog only, no Profile, no Policy.
+    let buildWith (registry: RegisteredTransformMetadata list) (catalog: Catalog) : Manifest =
         use _ = Bench.scope "emit.manifest.build"
         let entries =
             catalog.Modules
@@ -124,7 +132,14 @@ module ManifestEmitter =
         {
             Tables = entries
             EmitterVersion = version
+            RegistryDigest = TransformRegistry.digest registry
         }
+
+    /// Build with the canonical production registry
+    /// (`RegisteredTransforms.all`). Preserves the existing emit
+    /// signature; production callers continue to use this form.
+    let build (catalog: Catalog) : Manifest =
+        buildWith RegisteredTransforms.all catalog
 
     let private requireValue (label: string) (v: JsonValue | null) : JsonNode =
         match Option.ofObj v with
@@ -141,6 +156,12 @@ module ManifestEmitter =
         let doc = JsonObject()
         doc.Add("emitter", requireValue "emitter" (JsonValue.Create("Projection.Targets.SSDT.ManifestEmitter")))
         doc.Add("version", requireValue "version" (JsonValue.Create(manifest.EmitterVersion)))
+        // Chapter A.4.7' slice ζ — load-bearing per A41 (registry as
+        // execution-totality surface). Stable across emit calls when
+        // the registry is unchanged; perturbation surfaces here.
+        let registryObj = JsonObject()
+        registryObj.Add("digest", requireValue "registry.digest" (JsonValue.Create(manifest.RegistryDigest)))
+        doc.Add("registry", registryObj :> JsonNode)
         let tablesArr = JsonArray()
         for entry in manifest.Tables do
             let entryObj = JsonObject()

@@ -10,6 +10,13 @@ open Projection.Targets.Distributions
 open Projection.Tests.Fixtures
 open Projection.Tests.ProfileFixtures
 
+// Chapter A.4.7' slice η — `CanonicalizeIdentity.run` is private; the
+// canonical surface is `.registered.Run` returning
+// `Lineage<Diagnostics<Catalog>>`. This per-file shim restores the
+// `Lineage<Catalog>` shape so existing assertions keep reading.
+let private ciRun (c: Catalog) : Lineage<Catalog> =
+    CanonicalizeIdentity.registered.Run c |> Lineage.map (fun d -> d.Value)
+
 // ---------------------------------------------------------------------------
 // T11 — sibling-Π commutativity, encoded as a structural type theorem.
 //
@@ -44,7 +51,7 @@ open Projection.Tests.ProfileFixtures
 // ---------------------------------------------------------------------------
 
 let private enrich (c: Catalog) : Catalog =
-    (CanonicalizeIdentity.run c).Value
+    (ciRun c).Value
 
 let private expectedKeyset (c: Catalog) : Set<SsKey> =
     Catalog.allKinds c |> List.map (fun k -> k.SsKey) |> Set.ofList

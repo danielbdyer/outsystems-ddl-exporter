@@ -69,7 +69,7 @@ module DacpacEmitter =
     /// structural guarantee for future stream-extending slices.
     let private isSchemaStatement (s: Statement) : bool =
         match s with
-        | CreateTable _ | CreateIndex _ -> true
+        | CreateTable _ | CreateIndex _ | SetExtendedProperty _ -> true
         | InsertRow _ | SetIdentityInsert _ | Comment _ | Blank -> false
 
     /// Render one DDL Statement into its standalone T-SQL form via

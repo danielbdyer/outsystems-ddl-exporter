@@ -138,10 +138,13 @@ let ``Diagnostics.entriesAt filters by severity`` () =
 // ---------------------------------------------------------------------------
 
 let private lineageEvent (key: SsKey) (kind: TransformKind) =
-    { PassName      = "TestPass"
-      PassVersion   = 1
-      SsKey         = key
-      TransformKind = kind }
+    // Chapter A.4.7 slice α: dual-writer composition tests are
+    // shape-only; `DataIntent` is the test-fixture convention.
+    { PassName       = "TestPass"
+      PassVersion    = 1
+      SsKey          = key
+      TransformKind  = kind
+      Classification = DataIntent }
 
 [<Fact>]
 let ``LineageDiagnostics.ofValue is empty in both trails`` () =

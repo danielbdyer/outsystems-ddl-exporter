@@ -65,12 +65,20 @@ module CategoricalUniquenessPass =
     /// the three predecessors. Chapter-3.6 slice-β widened the
     /// payload to the typed
     /// `AnnotationDetail.CategoricalUniquenessDecision` variant.
+    /// Pillar 9 (chapter A.4.7 slice α): categorical-uniqueness
+    /// promotion strengthens uniqueness invariants on categorical
+    /// attributes beyond source evidence per operator-supplied
+    /// Tightening policy. Operator intent on the Tightening axis.
+    /// Lands as registered overlay.
+    let private classification : Classification = OperatorIntent Tightening
+
     let private decisionEvent (decision: CategoricalUniquenessDecision) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = decision.AttributeKey
-          TransformKind =
-              Annotated (CategoricalUniquenessDecision (decision.InterventionId, decision.Outcome)) }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = decision.AttributeKey
+          TransformKind  =
+              Annotated (CategoricalUniquenessDecision (decision.InterventionId, decision.Outcome))
+          Classification = classification }
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// attributes by `SsKey` within each kind. Interventions are taken
@@ -102,7 +110,8 @@ module CategoricalUniquenessPass =
     /// event per decision. Iteration order is deterministic: kinds
     /// by `SsKey`, attributes by `SsKey`, interventions by
     /// registration order.
-    let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<CategoricalUniquenessDecisionSet> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `CategoricalUniquenessPass.registered.Run`
+    let private run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<CategoricalUniquenessDecisionSet> =
         use _ = Bench.scope "passes.categoricalUniqueness"
         let fanOutConfig : Composition.FanOutConfig<Kind * Attribute, _, _, _> = {
             InterventionFilter = TighteningPolicy.categoricalUniquenessInterventions
@@ -114,3 +123,21 @@ module CategoricalUniquenessPass =
             BuildEvent         = decisionEvent
         }
         Composition.fanOut fanOutConfig catalog policy profile
+
+    /// Chapter A.4.7 slice γ — factory. Captures the operator-supplied
+    /// `Policy` + `Profile` in closure. Single `OperatorIntent
+    /// Tightening` site — the Tightening policy promotes categorical
+    /// uniqueness per operator opinion. The pass returns plain
+    /// `Lineage<DecisionSet>` (no Diagnostics); the Run closure wraps
+    /// via `Lineage.map Diagnostics.ofValue` to match the registry's
+    /// canonical shape.
+    let registered (policy: Policy) (profile: Profile) : RegisteredTransform<Catalog, CategoricalUniquenessDecisionSet> =
+        { Name = passName
+          Domain = Data
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "tightenCategoricalUniqueness"
+                Classification = classification
+                Rationale = "Promote categorical uniqueness per operator-supplied Tightening policy. Profile evidence drives the empirical decisions; lands as Tightening-axis overlay." } ]
+          Run = fun c -> run c policy profile |> Lineage.map Diagnostics.ofValue
+          Status = Active }

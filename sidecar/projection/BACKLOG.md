@@ -572,6 +572,14 @@ deliberate, not omissions.
 Items that span multiple chapters; tracked here so the horizontal
 visibility holds.
 
+**Pillar-9 / TransformRegistry arc (chapter A.4.7 + chapter A.4.7'):**
+
+| Chapter | Cash-out | Status |
+|---|---|---|
+| A.4.7 (CLOSED 2026-05-16) | `TransformRegistry` type-system + 18 classifications (1 adapter + 12 passes + 5 strategies) + 4 of 5 bidirectional property tests + filter helpers (`skeletonView` / `overlayView` / `overlayAxes`) + A41 (metadata totality). | shipped |
+| A.4.7' (CLOSED 2026-05-17) | `ComposeState` + `PassChainAdapter` + `RegisteredTransforms.all` / `allChainSteps` / `skeletonChainSteps` + `Compose.project` registry-driven + `Compose.runSkeleton` + skeleton-purity true-execution + `TransformRegistry.digest` + `ManifestEmitter.registry.digest` + `osm emit --skeleton-only` CLI + `let run` private across 12 passes + 5th bidirectional property test (registry-digest round-trip) + A41 amended (execution totality). | shipped |
+| forward-signal cash-outs | `applied-transforms` per-artifact manifest field; per-OverlayAxis CLI flags; `Policy.fs` ↔ `OverlayAxis` collapse; emitter-as-chain-step; adapter-as-chain-step; async-streaming compose. | deferred-with-trigger (per `CHAPTER_A_4_7_PRIME_CLOSE.md` forward signals) |
+
 **Test infrastructure growth:**
 
 | Test | Scope | Status |

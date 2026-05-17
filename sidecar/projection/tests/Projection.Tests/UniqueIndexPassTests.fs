@@ -8,6 +8,20 @@ open Projection.Core
 open Projection.Core.Passes
 open Projection.Tests.Fixtures
 
+// Chapter A.4.7' slice η — `UniqueIndexPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<UniqueIndexDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private uiRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<UniqueIndexDecisionSet>> =
+    (UniqueIndexPass.registered policy profile).Run catalog
+
+// Chapter A.4.7' slice η — `NullabilityPass.run` is private; the
+// canonical surface is `.registered.Run`. Shape-compatible — both
+// return `Lineage<Diagnostics<NullabilityDecisionSet>>`; this shim is
+// a pure rename so existing assertions keep reading.
+let private nullRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<NullabilityDecisionSet>> =
+    (NullabilityPass.registered policy profile).Run catalog
+
 // ---------------------------------------------------------------------------
 // Helpers — small named constructors for building catalogs with unique
 // indexes. The base sampleCatalog has Indexes = []; tests that need
@@ -71,14 +85,14 @@ let private allIndexes (c: Catalog) : Index list =
 
 [<Fact>]
 let ``structural commitment: empty Policy yields emptyDecisionSet`` () =
-    let lineage = UniqueIndexPass.run indexedCatalog Policy.empty Profile.empty
+    let lineage = uiRun indexedCatalog Policy.empty Profile.empty
     Assert.Equal<UniqueIndexDecisionSet>(
         UniqueIndexRules.emptyDecisionSet,
         UniqueIndexPass.decisionsOf lineage)
 
 [<Fact>]
 let ``structural commitment: empty Policy emits no lineage events`` () =
-    let lineage = UniqueIndexPass.run indexedCatalog Policy.empty Profile.empty
+    let lineage = uiRun indexedCatalog Policy.empty Profile.empty
     Assert.Empty(lineage.Trail)
 
 [<Fact>]
@@ -90,7 +104,7 @@ let ``structural commitment: a policy with only Nullability interventions yields
         |> Result.value
     let policy =
         policyWithInterventions [ Nullability ("v1-style", nullCfg) ]
-    let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let lineage = uiRun indexedCatalog policy Profile.empty
     Assert.Empty((LineageDiagnostics.payload lineage).Decisions)
     Assert.Empty(lineage.Trail)
 
@@ -101,7 +115,7 @@ let ``structural commitment: empty Tightening with non-empty other axes still yi
             Selection = IncludeOnly (Set.singleton customerKey)
             Emission  = EmissionPolicy.combined
             Insertion = InsertNew }
-    let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let lineage = uiRun indexedCatalog policy Profile.empty
     Assert.Empty((LineageDiagnostics.payload lineage).Decisions)
     Assert.Empty(lineage.Trail)
 
@@ -113,21 +127,21 @@ let ``structural commitment: empty Tightening with non-empty other axes still yi
 [<Fact>]
 let ``one intervention: yields one decision per index across the catalog`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true)
-    let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let lineage = uiRun indexedCatalog policy Profile.empty
     let totalIndexes = (allIndexes indexedCatalog).Length
     Assert.Equal(totalIndexes, (LineageDiagnostics.payload lineage).Decisions.Length)
 
 [<Fact>]
 let ``one intervention: every decision references its intervention id`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true)
-    let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let lineage = uiRun indexedCatalog policy Profile.empty
     Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("v1-style", d.InterventionId))
 
 [<Fact>]
 let ``one intervention: emits one Annotated lineage event per decision`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true)
-    let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let lineage = uiRun indexedCatalog policy Profile.empty
     Assert.Equal((LineageDiagnostics.payload lineage).Decisions.Length, lineage.Trail.Length)
     Assert.All(lineage.Trail, fun e ->
         match e.TransformKind with
@@ -139,7 +153,7 @@ let ``one intervention: lineage event detail names the intervention id and an ou
     // Chapter-3.6 slice-β: typed `AnnotationDetail.UniqueIndexDecision`
     // payload — outcome flows through structurally.
     let policy = policyWithIntervention "v1-style-2026" (mkConfig true true)
-    let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let lineage = uiRun indexedCatalog policy Profile.empty
     Assert.All(lineage.Trail, fun e ->
         match e.TransformKind with
         | Annotated (UniqueIndexDecision (id, outcome)) ->
@@ -154,7 +168,7 @@ let ``one intervention: lineage event detail names the intervention id and an ou
 [<Fact>]
 let ``one intervention: AlreadyUnique decisions surface for catalog-declared unique indexes`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true)
-    let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let lineage = uiRun indexedCatalog policy Profile.empty
     let alreadyUniqueDecisions =
         (LineageDiagnostics.payload lineage).Decisions
         |> List.filter (fun d ->
@@ -175,7 +189,7 @@ let ``two interventions: emit decisions for every (index, intervention) pair`` (
         policyWithInterventions
             [ UniqueIndex ("alpha", cfg)
               UniqueIndex ("beta",  cfg) ]
-    let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let lineage = uiRun indexedCatalog policy Profile.empty
     let totalIndexes = (allIndexes indexedCatalog).Length
     Assert.Equal(totalIndexes * 2, (LineageDiagnostics.payload lineage).Decisions.Length)
 
@@ -186,7 +200,7 @@ let ``two interventions: decisions are tagged with their producing intervention`
         policyWithInterventions
             [ UniqueIndex ("alpha", cfg)
               UniqueIndex ("beta",  cfg) ]
-    let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let lineage = uiRun indexedCatalog policy Profile.empty
     let alphaCount =
         (LineageDiagnostics.payload lineage).Decisions
         |> List.filter (fun d -> d.InterventionId = "alpha")
@@ -213,7 +227,7 @@ let ``coexistence: UniqueIndexPass ignores Nullability interventions in a mixed 
         policyWithInterventions
             [ Nullability ("null-1", nullCfg)
               UniqueIndex ("uniq-1", uniqCfg) ]
-    let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let lineage = uiRun indexedCatalog policy Profile.empty
     let totalIndexes = (allIndexes indexedCatalog).Length
     Assert.Equal(totalIndexes, (LineageDiagnostics.payload lineage).Decisions.Length)
     Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
@@ -229,7 +243,7 @@ let ``coexistence: NullabilityPass ignores UniqueIndex interventions in a mixed 
         policyWithInterventions
             [ Nullability ("null-1", nullCfg)
               UniqueIndex ("uniq-1", uniqCfg) ]
-    let lineage = NullabilityPass.run indexedCatalog policy Profile.empty
+    let lineage = nullRun indexedCatalog policy Profile.empty
     Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         Assert.Equal("null-1", d.InterventionId))
 
@@ -241,7 +255,7 @@ let ``coexistence: NullabilityPass ignores UniqueIndex interventions in a mixed 
 let ``policy gates: single-column toggle off produces PolicyDisabled for non-unique single-column indexes`` () =
     // Single off, composite on.
     let policy = policyWithIntervention "gated" (mkConfig false true)
-    let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let lineage = uiRun indexedCatalog policy Profile.empty
     // Non-unique single-column indexes: orderSingle, countrySingle (two).
     let policyDisabledCount =
         (LineageDiagnostics.payload lineage).Decisions
@@ -259,8 +273,8 @@ let ``policy gates: single-column toggle off produces PolicyDisabled for non-uni
 [<Fact>]
 let ``T1: UniqueIndexPass is deterministic on the triple`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true)
-    let r1 = UniqueIndexPass.run indexedCatalog policy Profile.empty
-    let r2 = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let r1 = uiRun indexedCatalog policy Profile.empty
+    let r2 = uiRun indexedCatalog policy Profile.empty
     Assert.Equal<UniqueIndexDecisionSet>(UniqueIndexPass.decisionsOf r1, UniqueIndexPass.decisionsOf r2)
     Assert.Equal<LineageEvent list>(r1.Trail, r2.Trail)
 
@@ -289,8 +303,8 @@ let ``contract: UniqueIndexPass is invariant under input permutation``
         if reverseModules then { withModules with Modules = List.rev withModules.Modules }
         else withModules
     let policy = policyWithIntervention "v1-style" (mkConfig true true)
-    let direct   = UniqueIndexPass.decisionsOf (UniqueIndexPass.run indexedCatalog policy Profile.empty)
-    let permuted = UniqueIndexPass.decisionsOf (UniqueIndexPass.run (perturb indexedCatalog) policy Profile.empty)
+    let direct   = UniqueIndexPass.decisionsOf (uiRun indexedCatalog policy Profile.empty)
+    let permuted = UniqueIndexPass.decisionsOf (uiRun (perturb indexedCatalog) policy Profile.empty)
     direct = permuted
 
 // ---------------------------------------------------------------------------
@@ -301,7 +315,7 @@ let ``contract: UniqueIndexPass is invariant under input permutation``
 [<Fact>]
 let ``A23: events carry pass version and name`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true)
-    let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let lineage = uiRun indexedCatalog policy Profile.empty
     Assert.All(lineage.Trail, fun e ->
         Assert.Equal(UniqueIndexPass.version, e.PassVersion)
         Assert.Equal("uniqueIndex", e.PassName))
@@ -309,7 +323,7 @@ let ``A23: events carry pass version and name`` () =
 [<Fact>]
 let ``A25: every emitted event references a real index SsKey`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true)
-    let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let lineage = uiRun indexedCatalog policy Profile.empty
     let indexKeys =
         allIndexes indexedCatalog
         |> List.map (fun ix -> ix.SsKey)
@@ -326,7 +340,7 @@ let ``A25: every emitted event references a real index SsKey`` () =
 [<Fact>]
 let ``catalog passes through unchanged: structural by signature`` () =
     let policy = policyWithIntervention "v1-style" (mkConfig true true)
-    let _ = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let _ = uiRun indexedCatalog policy Profile.empty
     // Sanity: indexedCatalog still has its expected shape.
     Assert.Equal(3, (Catalog.allKinds indexedCatalog).Length)
     Assert.Equal(4, (allIndexes indexedCatalog).Length)
@@ -365,7 +379,7 @@ let ``V1 UniqueIndex: opportunity-stream emits a DiagnosticSeverity.Warning entr
     // decisions for the two non-unique single-column indexes in the
     // fixture (orderSingle, countrySingle).
     let policy = policyWithIntervention "gated" (mkConfig false true)
-    let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let lineage = uiRun indexedCatalog policy Profile.empty
 
     let decisions = (UniqueIndexPass.decisionsOf lineage).Decisions
     let doNotEnforce =
@@ -404,7 +418,7 @@ let ``V1 UniqueIndex: opportunity-stream emits no entries when every decision is
     // that enforces single + composite unique with the index already
     // catalog-declared unique produces an EnforceUnique outcome.
     let policy = policyWithIntervention "v1-style" (mkConfig true true)
-    let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let lineage = uiRun indexedCatalog policy Profile.empty
 
     let decisions = (UniqueIndexPass.decisionsOf lineage).Decisions
     let enforceCount =
@@ -425,7 +439,7 @@ let ``V1 UniqueIndex: opportunity-stream entries follow decision order`` () =
     // Diagnostics writer): entries are emitted in the same order as
     // the decisions that produced them.
     let policy = policyWithIntervention "gated" (mkConfig false true)
-    let lineage = UniqueIndexPass.run indexedCatalog policy Profile.empty
+    let lineage = uiRun indexedCatalog policy Profile.empty
 
     let doNotEnforceKeys =
         (UniqueIndexPass.decisionsOf lineage).Decisions

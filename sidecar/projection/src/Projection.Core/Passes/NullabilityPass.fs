@@ -63,12 +63,20 @@ module NullabilityPass =
     /// (interventionId, outcome))` (typed) — audit consumers
     /// pattern-match the structurally-preserved outcome directly,
     /// rather than substring-parsing a built name.
+    /// Pillar 9 (chapter A.4.7 slice α): nullability tightening
+    /// strengthens NOT NULL invariants beyond source evidence per
+    /// operator-supplied Tightening policy (Cautious / Aggressive /
+    /// Disabled). Operator intent on the Tightening axis. Lands as
+    /// registered overlay.
+    let private classification : Classification = OperatorIntent Tightening
+
     let private decisionEvent (decision: NullabilityDecision) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = decision.AttributeKey
-          TransformKind =
-              Annotated (NullabilityDecision (decision.InterventionId, decision.Outcome)) }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = decision.AttributeKey
+          TransformKind  =
+              Annotated (NullabilityDecision (decision.InterventionId, decision.Outcome))
+          Classification = classification }
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// attributes by `SsKey` within each kind. Interventions are taken
@@ -191,7 +199,8 @@ module NullabilityPass =
     /// what the pass produces. Same shape as `UniqueIndexPass.run`
     /// (session 14 commit 5); session 15 commit 2 applies the
     /// codification to its second pass.
-    let run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<NullabilityDecisionSet>> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `NullabilityPass.registered.Run`
+    let private run (catalog: Catalog) (policy: Policy) (profile: Profile) : Lineage<Diagnostics<NullabilityDecisionSet>> =
         use _ = Bench.scope "passes.nullability"
         let fanOutConfig : Composition.FanOutConfig<Kind * Attribute, _, _, _> = {
             InterventionFilter = TighteningPolicy.nullabilityInterventions
@@ -217,3 +226,20 @@ module NullabilityPass =
     /// available. Mirrors `UniqueIndexPass.decisionsOf`.
     let decisionsOf (result: Lineage<Diagnostics<NullabilityDecisionSet>>) : NullabilityDecisionSet =
         LineageDiagnostics.payload result
+
+    /// Chapter A.4.7 slice γ — factory. Captures the operator-supplied
+    /// `Policy` + `Profile` in a closure; the Run signature reduces to
+    /// `Catalog -> Lineage<Diagnostics<NullabilityDecisionSet>>`. Single
+    /// `OperatorIntent Tightening` site — the Tightening policy
+    /// strengthens NOT NULL invariants beyond source evidence per
+    /// operator opinion.
+    let registered (policy: Policy) (profile: Profile) : RegisteredTransform<Catalog, NullabilityDecisionSet> =
+        { Name = passName
+          Domain = Data
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "tightenNullability"
+                Classification = classification
+                Rationale = "Strengthen attribute NOT NULL invariants beyond source evidence per operator-supplied Tightening policy (Cautious / Aggressive / Disabled). Operator-supplied policy + profile evidence drive the decisions; lands as Tightening-axis overlay." } ]
+          Run = fun c -> run c policy profile
+          Status = Active }

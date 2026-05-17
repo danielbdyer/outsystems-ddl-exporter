@@ -45,9 +45,14 @@
     <Compile Include="Strategies/UniqueIndexRules.fs" />
     <Compile Include="Strategies/ForeignKeyRules.fs" />
     <Compile Include="Strategies/CategoricalUniquenessRules.fs" />
+    <Compile Include="ComposeState.fs" />
+    <Compile Include="Classification.fs" />
     <Compile Include="Lineage.fs" />
     <Compile Include="LineageBuffer.fs" />
     <Compile Include="Diagnostics.fs" />
+    <Compile Include="TransformRegistry.fs" />
+    <Compile Include="StrategyRegistrations.fs" />
+    <Compile Include="PassChainAdapter.fs" />
     <Compile Include="Types.fs" />
     <Compile Include="Strategies/Composition.fs" />
     <Compile Include="Passes/CanonicalizeIdentity.fs" />
@@ -62,6 +67,7 @@
     <Compile Include="Passes/ForeignKeyPass.fs" />
     <Compile Include="Passes/CategoricalUniquenessPass.fs" />
     <Compile Include="Passes/UserFkReflowPass.fs" />
+    <Compile Include="RegisteredTransforms.fs" />
   </ItemGroup>
 
   <ItemGroup>

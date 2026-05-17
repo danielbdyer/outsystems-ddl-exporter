@@ -1179,6 +1179,272 @@ A40 lands when the harmonized form replaces N≥2 duplicate
 algorithms (chapter-3.1 satisfies N=2; chapter-4 may surface
 another instance).
 
+## A41 — Transform registry totality + canonical strongly-typed shape (chapter A.4.7 close, 2026-05-16)
+
+**Promoted from candidate to A41 at chapter A.4.7 close** (per
+`DECISIONS 2026-05-16 (chapter A.4.7 close)`). Underwrites
+`PRODUCT_AXIOMS.md` L3-CC-Transform-Totality (D → A at chapter
+A.4.7 close).
+
+**A41.** Every transformation site in V2 is enumerated as a
+`RegisteredTransform<'In, 'Out>` value (for callable pass-stage
+sites) or a `RegisteredTransformMetadata` value (for adapter / strategy
+sites that aren't independently callable in the canonical
+`Catalog -> Lineage<Diagnostics<...>>` shape) in
+`Projection.Core.TransformRegistry`. The registry is canonical
+for the transformation's metadata + (where applicable) the typed
+transformation function definition; **no parallel enumeration** —
+each module's primary public surface is its `.registered` /
+`.registeredMetadata` export. The type system:
+
+```fsharp
+type StageBinding   = Adapter | Pass | OrderingPolicy | Emitter | Pipeline
+type OverlayAxis    = Selection | Emission | Insertion | Tightening | Ordering
+                      // = Policy DU axes + Ordering (Q9-trigger-fires worked example)
+type Classification = DataIntent | OperatorIntent of OverlayAxis
+type TransformSite  = { SiteName : string ; Classification : Classification ; Rationale : string }
+type TransformStatus = Active | NotImplementedInV2 of rationale: string
+type RegisteredTransform<'In, 'Out when 'Out : equality> = {
+    Name : string
+    Domain : Domain                       // Schema | Data | Identity | Diagnostics | CutoverSafety | CrossCutting
+    StageBinding : StageBinding
+    Sites : TransformSite list           // intra-pass classification fidelity (per DECISIONS 2026-05-15 (late) Q11)
+    Run : 'In -> Lineage<Diagnostics<'Out>>
+    Status : TransformStatus
+}
+type RegisteredTransformMetadata = { Name; Domain; StageBinding; Sites; Status }
+                                  // type-erased projection (drops Run); the registry's enumeration form
+```
+
+**Bidirectional contract.** A18 amended forbids `Policy` in
+emitters (the Π-side commitment by structural type). A41 enumerates
+every transformation site that DOES consume operator-supplied intent
+(Policy / rename specs / config overrides / SelfLoopPolicy / etc.) so
+the dichotomy holds bidirectionally:
+
+- **Skeleton-purity** (axiom statement): every `LineageEvent`
+  emitted under the skeleton view of the registry carries
+  `Classification = DataIntent`. The skeleton view filters to
+  entries whose every `Site` is `DataIntent`; an operator-intent
+  leak fails the property.
+- **Overlay-exercise** (axiom statement): every `OverlayAxis`
+  value reachable from `OperatorIntent _` in some registered Site
+  fires in at least one canary scenario. A dead overlay
+  (registered but never exercised) fails the property.
+- **Totality coverage** (axiom statement): every transformation
+  site in `src/Projection.Core/Passes/*.fs` +
+  `src/Projection.Adapters.Osm/CatalogReader.fs` +
+  `src/Projection.Core/Strategies/*.fs` has a corresponding
+  registry entry. A missing entry fails the property.
+- **Harvest-classification coverage** (axiom statement): every
+  v1↔v2 transformation gap that V2 chose not to bring forward
+  ships as a triple deliverable — Skip test stub citing the
+  classification rationale + `Tolerance.fs` entry + registry
+  entry with `Status = NotImplementedInV2 of rationale`. A
+  Tolerance entry without a registry mirror fails the property.
+
+**Worked example.** Chapter A.4.7 ships the registry at
+`src/Projection.Core/TransformRegistry.fs`, classifies
+12 passes (slice γ) + 1 adapter (slice δ) + 5 strategies (slice
+ε) = 18 transformation sites, and proves the bidirectional
+contract via `TransformRegistryCompletenessTests` (4 property
+tests + 3 intentional-fail probes at slice θ). The fifth
+property — manifest digest round-trip — deferred-with-trigger to
+slice η (CLI + manifest extension) per consumer-pressure
+principle.
+
+**Implications.**
+
+- **A18 ↔ A41 sibling commitment.** Together they reify the
+  data-intent / operator-intent dichotomy as a type-witnessed
+  bidirectional contract, not a one-sided convention. A18 is the
+  Π-side commitment (no `Policy` in emitters by structural type);
+  A41 is the Pass-side commitment (registry totality enumerates
+  every operator-intent site by structural type + property test).
+- **Pillar 9's structural pair.** Pillar 9 (harvest-dichotomy
+  classification) is the meta-discipline at consideration time;
+  A41 is the structural commitment that catches its failures. The
+  meta-discipline-with-structural-test pattern (pillar 8 +
+  pillar 7 amendment + text-builder-as-first-instinct + pillar 9)
+  holds across all four meta-disciplines after chapter A.4.7
+  close.
+- **Fourth cross-cutting concern.** The `TransformRegistry` joins
+  Lineage / Diagnostics / Bench as the fourth cross-cutting
+  structural-evidence concern. Each plugs into every stage that
+  has its kind of activity; each is enforced structurally; each
+  has its own writer/observer primitive. Future agents reading
+  `V2_DRIVER.md` per-axis stakes table see this four-concern
+  framing as canonical.
+- **Heterogeneous output types are honored** (per `DECISIONS
+  2026-05-16 (chapter A.4.7 slice γ)`). The canonical spec's
+  "unified `Catalog → Catalog`" assumption was refined at
+  implementation: passes produce six distinct output types
+  (Catalog, TopologicalOrder, NullabilityDecisionSet, etc.); the
+  `RegisteredTransform<'In, 'Out>` type-parameter shape carries
+  the heterogeneity. The metadata-only `RegisteredTransformMetadata`
+  view drops Run for non-callable sites (adapter rules, strategies)
+  — same registry enumeration; explicit type erasure.
+- **OverlayAxis ⊃ Policy DU axes** (per `DECISIONS 2026-05-16
+  (chapter A.4.7 slice β)`). The fifth variant `Ordering` ships
+  at slice β as the Q9-trigger-fires worked example
+  (`TopologicalOrderPass.SelfLoopPolicy` is the named real-evidence
+  trigger). Future fifth-variant expansions require the same
+  trigger-fires discipline. The `Policy.fs` ↔ `OverlayAxis`
+  structural-collapse refactor stays deferred-with-trigger
+  (consumer pressure when call-sites consult both vocabularies).
+
+## A41 amendment (execution totality) — chapter A.4.7' close (2026-05-17)
+
+**Cashed at chapter A.4.7' close** (per `CHAPTER_A_4_7_PRIME_CLOSE.md`
+ritual step 6). Amends A41 from metadata totality (registry
+enumeration; chapter A.4.7 close) to metadata + execution totality
+(registry-driven traversal). Underwrites
+`PRODUCT_AXIOMS.md` L3-CC-Transform-Totality (Bucket A; underwriting
+tightens from metadata-shape to metadata + execution fidelity).
+
+**A41 amended.** Every transformation site in V2 is enumerated as
+a `RegisteredTransform<'In, 'Out>` value (per A41 original) AND
+the registered chain steps are folded by the production composer
+(`Projection.Pipeline.Compose.project`) as the canonical execution
+loop. Bypassing the registry is structurally impossible because
+the hand-coded pass sequence has retired:
+
+```fsharp
+// Pipeline.fs — load-bearing
+let project (catalog: Catalog) : Outputs =
+    projectFromChain RegisteredTransforms.allChainSteps catalog
+```
+
+where `projectFromChain` is the registry-driven traversal kernel,
+shipping:
+
+```fsharp
+type PassChainAdapter = {
+    Name : string
+    Apply : ComposeState -> Lineage<Diagnostics<ComposeState>>
+}
+
+module PassChainAdapter =
+    val liftCatalogPass : RegisteredTransform<Catalog, Catalog> -> PassChainAdapter
+    val liftDecisionPass :
+        RegisteredTransform<Catalog, 'Decision>
+        -> ('Decision -> ComposeState -> ComposeState)
+        -> PassChainAdapter
+    val compose : PassChainAdapter list -> ComposeState -> Lineage<Diagnostics<ComposeState>>
+
+module RegisteredTransforms =
+    val all : RegisteredTransformMetadata list      // 17 Core-resident
+    val allChainSteps : PassChainAdapter list       // 12 production passes
+    val skeletonChainSteps : PassChainAdapter list  //  4 pure-DataIntent
+```
+
+**`ComposeState` aggregate solves heterogeneous output types.** The
+chapter-A.4.7-close-named blocker — 12 passes split 6-and-6 across
+`Lineage<Catalog>`-returning (chainable) vs `Lineage<'DecisionSet>`-
+returning — resolves via a unified `ComposeState` record carrying
+the Catalog under transformation + `Option<'DecisionSet>` fields
+for every decision-set producer (TopologicalOrder /
+NullabilityDecisionSet / UniqueIndexDecisionSet /
+ForeignKeyDecisionSet / CategoricalUniquenessDecisionSet /
+UserRemapContext). Type erasure happens at the adapter boundary
+(`liftCatalogPass` / `liftDecisionPass`), not in
+`RegisteredTransform<'In, 'Out>` itself; the typed `Run` field
+stays intact on each pass module's `.registered` export.
+
+**Bidirectional contract extends to runtime.** The five
+bidirectional property tests now hold at runtime:
+
+1. **Skeleton-purity at filter-shape** (chapter A.4.7 slice θ):
+   every Site in `TransformRegistry.skeletonView all` carries
+   `Classification = DataIntent`. Preserved.
+
+2. **Skeleton-purity at true-execution** (chapter A.4.7' slice ε,
+   NEW): `Compose.runSkeleton` against a representative Catalog
+   emits zero `LineageEvent` with `Classification = OperatorIntent _`.
+   Promotion from filter-shape to runtime structural enforcement.
+
+3. **Overlay-exercise** (chapter A.4.7 slice θ): every `OverlayAxis`
+   reachable from `OperatorIntent _` in `RegisteredTransforms.all`
+   fires in at least one canary scenario. Preserved.
+
+4. **Totality coverage** (chapter A.4.7 slice θ): every
+   transformation site in `src/Projection.Core/Passes/*.fs` +
+   `src/Projection.Adapters.Osm/CatalogReader.fs` +
+   `src/Projection.Core/Strategies/*.fs` has a registry entry.
+   Preserved.
+
+5. **Registry-digest round-trip** (chapter A.4.7' slice ζ, NEW):
+   `TransformRegistry.digest RegisteredTransforms.all` is stable
+   across emits; perturbing a single Sites.Rationale changes the
+   digest; the manifest carries `registry.digest` for downstream
+   audit. Reproducibility + sensitivity halves of the round-trip
+   contract.
+
+**Canonical-surface-only discipline.** Chapter A.4.7' slice η
+retires each pass module's parallel-exposure transition affordance:
+`let run` is now `let private run` in all 12 pass modules; the
+public callable is exclusively `.registered.Run`. ~308 call-site
+migration completed via per-test-file shape-restoring shims
+(test-private; not a module surface) + sed-based bulk substitution.
+Production sites (Pipeline.fs:applyRenames) migrated directly with
+the new Diagnostics-Errors-to-ValidationError boundary projection.
+
+**Implications.**
+
+- **L3-CC-Transform-Totality underwriting tightens** from metadata
+  totality to metadata + execution totality. Bucket A holds with
+  stronger structural backing: every pass observable in
+  `RegisteredTransforms.all` actually fires through
+  `Compose.project`'s fold; a pass that bypasses the registry
+  bypasses the production emit path entirely.
+
+- **A18 ↔ A41 sibling commitment, extended.** A18 amended forbids
+  `Policy` in emitters (Π-side commitment). A41 (original)
+  enumerated operator-intent sites at metadata. A41 (amended) makes
+  the enumeration *executable*: the same registry value that
+  enumerates the surface is the same value the composer folds.
+  Bypassing the type-witnessed surface requires bypassing the
+  composer itself.
+
+- **Pillar 9 structural pair, extended.** Pillar 9's
+  meta-discipline ("classify every transformation site at harvest
+  time") is now paired with both metadata totality (A41 original)
+  and execution totality (A41 amended). Misclassification leaks
+  surface bidirectionally — through the metadata enumeration AND
+  through the runtime trail emitted by the fold.
+
+- **`osm emit --skeleton-only` CLI surface.** The
+  skeleton-friendly baseline is reachable as an operator-facing
+  toggle (`runEmitSkeletonOnly` in `Projection.Cli/Program.fs`);
+  binary toggle per the consumer-pressure principle (per-OverlayAxis
+  flags remain deferred-with-trigger).
+
+**Carbon-copy events.** Zero across the chapter. The registry
+fold + skeleton view + digest are V2-native primitives with no
+V1 precedent; `BACKLOG.md`'s V1 inheritance log remains empty for
+this chapter. The chapter shipped 8 substantive slices (α / β / γ /
+δ / ε / ζ / η.1 partial / η complete) plus the close commit.
+
+**Worked example: `Compose.runSkeleton` true-execution.** Per
+chapter A.4.7' slice ε:
+
+```fsharp
+let runSkeleton (catalog: Catalog) : Lineage<Diagnostics<ComposeState>> =
+    use _ = Bench.scope "compose.runSkeleton"
+    PassChainAdapter.compose
+        RegisteredTransforms.skeletonChainSteps
+        (ComposeState.initial catalog)
+```
+
+`skeletonChainSteps` is derived by joining `allChainSteps` against
+`TransformRegistry.skeletonView all` on Name; resolves to four
+entries (CanonicalizeIdentity, NamingMorphism,
+NormalizeStaticPopulations, SymmetricClosure — the four passes
+whose every Site carries `Classification = DataIntent`). The
+property test (`SkeletonPurityTests.fs`) asserts the trail emitted
+by this fold carries zero `OperatorIntent _` events on a
+representative Catalog.
+
 ## A32 cash-out — chapter 4.2 close (2026-05-11)
 
 **Cashed out** at chapter 4.2 close (per `CHAPTER_4_2_CLOSE.md` §8).
@@ -1264,7 +1530,7 @@ to the close date.
 - T1 amended (binary normal-form composition) — chapter 3.3 close (chapter not yet open).
 - A37 candidate (Π-erased axes) — chapter 3.4 close (chapter not yet open).
 - A32 cash-out — chapter 4.2 close (User FK reflow chapter).
-- **A41 candidate (Transform registry totality + canonical strongly-typed shape)** — A.4.7 close (`V2_PRODUCTION_CUTOVER.md` §6.4.7; underwrites `PRODUCT_AXIOMS.md` L3-CC-Transform-Totality). Statement (placeholder, to be finalized at chapter close):
+- **A41 (Transform registry totality + canonical strongly-typed shape) — CASHED at chapter A.4.7 close 2026-05-16.** See A41 body above. The placeholder below records the pre-cash statement for historical traceability:
 
    *Every transformation site in V2 is enumerated as a `RegisteredTransform<'In, 'Out>` value in `Projection.Core.TransformRegistry`, where the registry is canonical for both metadata AND the transformation-function definition itself (single definition site; no parallel enumeration; each module's primary public surface is its `<PassName>.registered` value). The type:*
 

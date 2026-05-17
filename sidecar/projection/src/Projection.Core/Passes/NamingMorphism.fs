@@ -29,11 +29,17 @@ module NamingMorphism =
     /// identity morphism is `id`; composition is function composition.
     type Morphism = Name -> Name
 
+    /// Pillar 9 (chapter A.4.7 slice α): naming morphisms are V1→V2
+    /// presentation-name translations derived from data shape; no
+    /// operator opinion enters. Lands in the skeleton.
+    let private classification : Classification = DataIntent
+
     let private renamedEvent (key: SsKey) : LineageEvent =
-        { PassName      = passName
-          PassVersion   = version
-          SsKey         = key
-          TransformKind = Renamed }
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = key
+          TransformKind  = Renamed
+          Classification = classification }
 
     /// Apply the morphism to a single name. If the name is unchanged the
     /// caller emits no event (lineage records actual renames, not
@@ -90,7 +96,8 @@ module NamingMorphism =
     /// (no-op morphisms emit no events). Identity is preserved across
     /// the entire pass (A3, A4, A15) — `SsKey` fields are byte-
     /// identical between input and output.
-    let run (morphism: Morphism) (c: Catalog) : Lineage<Catalog> =
+    // Chapter A.4.7' slice η: `let run` is private; canonical surface is `NamingMorphism.registered.Run`
+    let private run (morphism: Morphism) (c: Catalog) : Lineage<Catalog> =
         use _ = Bench.scope "passes.namingMorphism"
         let events = LineageBuffer.create ()
         let renamed =
@@ -118,3 +125,19 @@ module NamingMorphism =
     /// The identity morphism — names pass through untouched. Useful for
     /// tests and for "no naming policy" pipelines.
     let identity : Morphism = id
+
+    /// Chapter A.4.7 slice γ — factory. The morphism is V1→V2
+    /// presentation-name translation (the morphism IS data, derived
+    /// from source-schema patterns); the pass applies it uniformly
+    /// across the catalog without operator opinion entering at the
+    /// per-kind level. Lineage events are `DataIntent`.
+    let registered (morphism: Morphism) : RegisteredTransform<Catalog, Catalog> =
+        { Name = passName
+          Domain = Identity
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "rename"
+                Classification = classification
+                Rationale = "Apply a Name → Name morphism across the catalog. The morphism itself is data (V1→V2 presentation-name translation derived from source-schema patterns); the pass invocation is mechanical." } ]
+          Run = fun c -> run morphism c |> Lineage.map Diagnostics.ofValue
+          Status = Active }
