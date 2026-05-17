@@ -329,3 +329,85 @@ module TransformRegistry =
             | OperatorIntent axis -> Some axis
             | DataIntent -> None)
         |> Set.ofList
+
+    // Domain / StageBinding / Classification / OverlayAxis projection
+    // helpers — Sites' Rationale strings appear as-is. Per pillar 1:
+    // typed DU → stable string at the digest boundary; explicit
+    // projection is the discipline (`sprintf "%A"` forbidden — its
+    // shape depends on F# compiler version).
+    let private domainName (d: Domain) : string =
+        match d with
+        | Schema -> "Schema"
+        | Data -> "Data"
+        | Identity -> "Identity"
+        | Diagnostics -> "Diagnostics"
+        | CutoverSafety -> "CutoverSafety"
+        | CrossCutting -> "CrossCutting"
+
+    let private stageName (s: StageBinding) : string =
+        match s with
+        | Adapter -> "Adapter"
+        | Pass -> "Pass"
+        | OrderingPolicy -> "OrderingPolicy"
+        | Emitter -> "Emitter"
+        | Pipeline -> "Pipeline"
+
+    let private overlayAxisName (a: OverlayAxis) : string =
+        match a with
+        | Selection -> "Selection"
+        | Emission -> "Emission"
+        | Insertion -> "Insertion"
+        | Tightening -> "Tightening"
+        | Ordering -> "Ordering"
+
+    let private classificationName (c: Classification) : string =
+        match c with
+        | DataIntent -> "DataIntent"
+        | OperatorIntent axis ->
+            System.String.Concat ("OperatorIntent.", overlayAxisName axis)  // LINT-ALLOW: terminal digest-projection at the SHA256 boundary; segments are typed (literal prefix + closed-DU case name); BCL `String.Concat` is the use-case-specific library for two-segment qualified-case-name composition
+
+    let private statusName (s: TransformStatus) : string =
+        match s with
+        | Active -> "Active"
+        | NotImplementedInV2 r ->
+            System.String.Concat ("NotImplementedInV2:", r)  // LINT-ALLOW: terminal digest-projection at the SHA256 boundary; segments are typed (literal prefix + rationale string from the registry record); BCL `String.Concat` is the use-case-specific library for two-segment case-name + payload composition
+
+    /// Chapter A.4.7' slice ζ — deterministic SHA256 digest of the
+    /// registry's metadata content. Sorted by Name; serialized field-
+    /// by-field via the explicit DU-projection helpers above; hashed
+    /// via `System.Security.Cryptography.SHA256.HashData`. Returned as
+    /// lowercase hex string suitable for the manifest's
+    /// `registry.digest` field.
+    ///
+    /// Property: any change to Name / Domain / StageBinding / Sites
+    /// (SiteName, Classification, Rationale) / Status changes the
+    /// digest; reorderings do not (the sort by Name normalizes input
+    /// order). The 5th bidirectional property test asserts the round-
+    /// trip stability + perturbation sensitivity per A41.
+    let digest (entries: RegisteredTransformMetadata list) : string =
+        let sorted = entries |> List.sortBy (fun e -> e.Name)
+        let buffer = System.Text.StringBuilder()  // LINT-ALLOW-FILE-MUTATION not needed — instance-local mutation only; sealed at this function's exit via the SHA256.HashData call. Per slice ζ: deterministic concatenation of typed DU projections at the SHA256 boundary; no consumer reads the StringBuilder, only the resulting bytes.
+        for entry in sorted do
+            buffer.Append('|') |> ignore
+            buffer.Append("name=") |> ignore
+            buffer.Append(entry.Name) |> ignore
+            buffer.Append("|domain=") |> ignore
+            buffer.Append(domainName entry.Domain) |> ignore
+            buffer.Append("|stage=") |> ignore
+            buffer.Append(stageName entry.StageBinding) |> ignore
+            buffer.Append("|status=") |> ignore
+            buffer.Append(statusName entry.Status) |> ignore
+            buffer.Append("|sites=[") |> ignore
+            for site in entry.Sites do
+                buffer.Append('{') |> ignore
+                buffer.Append("siteName=") |> ignore
+                buffer.Append(site.SiteName) |> ignore
+                buffer.Append(";classification=") |> ignore
+                buffer.Append(classificationName site.Classification) |> ignore
+                buffer.Append(";rationale=") |> ignore
+                buffer.Append(site.Rationale) |> ignore
+                buffer.Append('}') |> ignore
+            buffer.Append(']') |> ignore
+        let bytes = System.Text.Encoding.UTF8.GetBytes(buffer.ToString())
+        let hash = System.Security.Cryptography.SHA256.HashData(bytes)
+        System.Convert.ToHexString(hash).ToLowerInvariant()

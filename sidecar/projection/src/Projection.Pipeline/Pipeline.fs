@@ -100,13 +100,14 @@ module Compose =
     /// unconditionally; decision-set passes write back evidence the
     /// emitters do not yet consume (decision-set consumption is a
     /// future-chapter concern).
-    let project (catalog: Catalog) : Outputs =
+    let private projectFromChain
+        (chain: PassChainAdapter list)
+        (catalog: Catalog)
+        : Outputs =
         use _ = Bench.scope "compose.project"
         let composedCatalog =
             (use _ = Bench.scope "compose.runChain"
-             PassChainAdapter.compose
-                 RegisteredTransforms.allChainSteps
-                 (ComposeState.initial catalog)
+             PassChainAdapter.compose chain (ComposeState.initial catalog)
              |> LineageDiagnostics.payload
              |> fun state -> state.Catalog)
         let bundle =
@@ -140,6 +141,21 @@ module Compose =
             Json          = json
             Distributions = distributions
         }
+
+    /// Production-shape project: routes through
+    /// `RegisteredTransforms.allChainSteps`. The hand-coded "emit raw
+    /// catalog" shape retired at chapter A.4.7' slice δ; the registry
+    /// is canonical.
+    let project (catalog: Catalog) : Outputs =
+        projectFromChain RegisteredTransforms.allChainSteps catalog
+
+    /// Skeleton-shape project: routes through
+    /// `RegisteredTransforms.skeletonChainSteps` (per chapter A.4.7'
+    /// slice ε; the four pure-DataIntent passes). Yields the baseline
+    /// reachable from `Project(catalog, Policy.empty, profile)` —
+    /// `osm emit --skeleton-only` consumes this.
+    let projectSkeleton (catalog: Catalog) : Outputs =
+        projectFromChain RegisteredTransforms.skeletonChainSteps catalog
 
     /// Chapter A.4.7' slice ε — registry-driven traversal restricted
     /// to the skeleton view (every Site classifies as `DataIntent`).
@@ -301,6 +317,21 @@ module Compose =
             match parsed with
             | Ok catalog ->
                 let outputs = project catalog
+                return write outputDir outputs
+            | Error errors ->
+                return Result.failure errors
+        }
+
+    /// Chapter A.4.7' slice ζ — skeleton-only emit. Reads JSON,
+    /// projects via `projectSkeleton`, writes to `outputDir`. The
+    /// resulting bundle reflects the V2 baseline before any operator
+    /// intent landed; consumed by the CLI's `--skeleton-only` flag.
+    let runSkeletonOnly (jsonPath: string) (outputDir: string) : Task<Result<string list>> =
+        task {
+            let! parsed = read jsonPath
+            match parsed with
+            | Ok catalog ->
+                let outputs = projectSkeleton catalog
                 return write outputDir outputs
             | Error errors ->
                 return Result.failure errors

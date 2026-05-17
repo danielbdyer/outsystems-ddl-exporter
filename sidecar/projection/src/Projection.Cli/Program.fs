@@ -18,16 +18,19 @@ let private usageLines : string list =
         ""
         "USAGE:"
         "    projection emit --config <path>"
-        "    projection emit   <input-osm-model.json> <output-dir>"
+        "    projection emit [--skeleton-only] <input-osm-model.json> <output-dir>"
         "    projection deploy <input-osm-model.json>"
         "    projection canary <source-ddl-file>"
         ""
         "SUBCOMMANDS:"
         "    emit    Parse V1 JSON, project through three sibling Π's,"
         "            and write SSDT / JSON / Distributions artifacts."
-        "            Two argument forms:"
-        "              --config <path>   read unified config JSON (V2_PRODUCTION_CUTOVER §5.1)."
-        "              <input> <out>     legacy positional form (kept during A.1 transition)."
+        "            Three argument forms:"
+        "              --config <path>     read unified config JSON (V2_PRODUCTION_CUTOVER §5.1)."
+        "              --skeleton-only <input> <out>  project through skeletonChainSteps"
+        "                                  only (the four pure-DataIntent passes; per"
+        "                                  chapter A.4.7' slice ζ)."
+        "              <input> <out>       legacy positional form (kept during A.1 transition)."
         ""
         "    deploy  Parse V1 JSON, project SSDT, spin up an ephemeral"
         "            SQL Server container, deploy the SSDT, count tables,"
@@ -122,6 +125,40 @@ let private runEmit (inputPath: string) (outputDir: string) : int =
                     2
                 )
         dumpBench "emit"
+        exitCode
+
+/// Chapter A.4.7' slice ζ — `emit --skeleton-only`. Reads V1 JSON,
+/// projects through `RegisteredTransforms.skeletonChainSteps` (the
+/// four pure-DataIntent passes), writes the resulting bundle.
+/// Operator-intent passes (Selection / Emission / Insertion /
+/// Tightening / Ordering overlays) are excluded from the emit; the
+/// resulting artifacts are the V2 baseline before any operator
+/// opinion lands.
+let private runEmitSkeletonOnly (inputPath: string) (outputDir: string) : int =
+    if not (File.Exists inputPath) then
+        die 1 (sprintf "projection: input file not found: %s" inputPath)
+    else
+        let task = Compose.runSkeletonOnly inputPath outputDir
+        let result = task.GetAwaiter().GetResult()
+        let exitCode =
+            match result with
+            | Ok paths ->
+                printfn
+                    "projection: wrote %d skeleton-only artifact(s) to %s"
+                    paths.Length
+                    outputDir
+                paths
+                |> List.iter (fun p ->
+                    let info = FileInfo p
+                    printfn "  %s (%d bytes)" p info.Length)
+                0
+            | Error errors ->
+                (
+                    Console.Error.WriteLine "projection: parse failed:"
+                    printErrors Console.Error errors
+                    2
+                )
+        dumpBench "emit-skeleton-only"
         exitCode
 
 /// `emit --config <path>` entry. Reads the unified config JSON, surfaces
@@ -245,6 +282,8 @@ let main argv =
     match argv with
     | [| "emit"; "--config"; configPath |] ->
         runEmitFromConfig configPath
+    | [| "emit"; "--skeleton-only"; inputPath; outputDir |] ->
+        runEmitSkeletonOnly inputPath outputDir
     | [| "emit"; inputPath; outputDir |] ->
         runEmit inputPath outputDir
     | [| "deploy"; inputPath |] ->
