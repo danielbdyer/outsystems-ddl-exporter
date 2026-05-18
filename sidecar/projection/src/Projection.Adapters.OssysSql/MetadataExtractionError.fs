@@ -18,11 +18,12 @@ open Projection.Core
 /// **Per V2 pattern #11 (ternary outcome space + named keep-reason
 /// variants):** the variants are exhaustive over the production-wiring
 /// failure axes V2 observes today; closed-DU expansion is the discipline
-/// for adding new variants when their producer ships (matrix row 35
-/// `ResultSetMissing` ships in the result-set-contract slice).
+/// for adding new variants when their producer ships.
 ///
 /// Matrix rows 32 (exception classification) + 34 (transient-retry; the
-/// `TransientSqlError` variant is what's left after Polly retry exhaustion).
+/// `TransientSqlError` variant is what's left after Polly retry
+/// exhaustion) + 35 (result-set count contract — `ResultSetMissing`
+/// variant produced by `resultSetContractCheck`).
 [<RequireQualifiedAccess>]
 type MetadataExtractionError =
     /// A row-mapper closure raised an exception while parsing one row of a

@@ -1,10 +1,20 @@
 module Projection.Tests.OssysProductionWiringParityTests
 
-// V1 parity audit — slice 5.1.γ. Reserves contract names for
-// `V1_PARITY_MATRIX.md` rows 32–36 (V1's production-wiring
-// behaviors on `SqlClientOutsystemsMetadataReader` + adjacent
-// connection/command/processor abstractions). Each row tracks
-// one structurally-orthogonal concern.
+// V1 parity audit — chapter 5.1.γ. `V1_PARITY_MATRIX.md` rows 32–36
+// covering V1's production-wiring behaviors on
+// `SqlClientOutsystemsMetadataReader` + adjacent connection/command/
+// processor abstractions.
+//
+// **Chapter close 2026-05-18.** All five rows shipped across two
+// cash-out arcs:
+//   - slice 5.13.production-wiring-classification → rows 32 + 34 + 35
+//     (DU + Polly retry + result-set count contract)
+//   - slice 5.13.progress-callback → row 36 (per-rowset observation)
+//   - slice 5.13.command-timeout + sibling-wrapper-collapse → row 33
+//     (tunable timeout via RunOptions; retires runAsyncWithProgress
+//     overdifferentiated middle-tier)
+//
+// Zero Skip stubs in this file as of chapter close.
 
 open System
 open System.Threading.Tasks
@@ -13,17 +23,10 @@ open Projection.Core
 open Projection.Adapters.OssysSql
 
 // -----------------------------------------------------------------
-// Slice 5.13.exception-class (matrix row 32) + 5.13.transient-retry
-// (matrix row 34) — paired. Shipped 2026-05-18.
-//
-// The closed-DU `MetadataExtractionError` carries three variants
-// today (RowMappingFailure / TransientSqlError / OtherSqlError); the
-// fourth `ResultSetMissing` variant defers to the result-set-contract
-// slice per the IR-grows-under-evidence discipline (matrix row 35).
-//
-// The Polly retry pipeline at command-execute boundary tolerates
-// transient cloud-OSSYS failures without false-positive divergence
-// per R6 split-brain governance.
+// Slice 5.13.production-wiring-classification: rows 32 + 34 + 35.
+// Closed-DU MetadataExtractionError (4 variants); Polly retry
+// pipeline at command-execute boundary; post-loop result-set
+// contract check.
 // -----------------------------------------------------------------
 
 /// Custom test exception simulating a transient SQL failure. Used in
