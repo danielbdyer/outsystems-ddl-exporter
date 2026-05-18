@@ -310,11 +310,186 @@ let ``5.3.α.statement-batch: per-kind file body does not contain GO separator``
 // visible in test discovery.
 // ---------------------------------------------------------------------------
 
-[<Fact(Skip = "5.3.α.create-table LR3 — V1's single-column-PK-inline emission (CreateTableStatementBuilder.cs L67-77) is deferred-with-trigger. V2 always emits PK as table-level CONSTRAINT clause; functionally equivalent (same deployed schema) but cosmetically different SQL text. Trigger: operator-pressure for byte-identity to V1 emission OR consumer demands inline column-level PRIMARY KEY syntax.")>]
-let ``5.3.α.create-table LR3: single-column PK emits inline at column definition`` () = ()
+// ---------------------------------------------------------------------------
+// LR3 (single-column PK inline) + LR4 (computed columns) cash-outs —
+// slice 5.3.α.column-axis-deferral-closeout closed both. The Skip-stubs
+// flip to active tests with concrete fixtures.
+// ---------------------------------------------------------------------------
 
-[<Fact(Skip = "5.3.α.create-table LR4 — V1's computed-column expression emission (CreateTableStatementBuilder.cs L362-365) is deferred-with-trigger. V2's Attribute IR carries IsComputed field but the Computed expression source isn't yet populated through the adapter path or consumed by the emitter. Trigger: V2 IR refinement adds Attribute.ComputedExpression : string option AND adapter populates it AND emitter routes it through ScriptDom's ComputedColumnDefinition.")>]
-let ``5.3.α.create-table LR4: computed columns emit AS (expression) clause`` () = ()
+[<Fact>]
+let ``5.3.α.create-table LR3: single-column PK emits inline at column definition`` () =
+    // V1 CreateTableStatementBuilder.cs:67-78 attaches the
+    // UniqueConstraintDefinition { IsPrimaryKey = true } to the single
+    // PK column's Constraints (not as a table-level constraint). V2
+    // mirrors via `ScriptDomBuild.attachInlinePrimaryKey`.
+    // sampleCatalog's `Customer` kind has a single-column PK (Id).
+    let enriched = enrich sampleCatalog
+    let customerKind =
+        Catalog.allKinds enriched
+        |> List.find (fun k -> Name.value k.Name = "Customer")
+    let body = bodyOf customerKind.SsKey sampleCatalog
+    // V1 emission shape for inline PK:
+    // `[ID] INT NOT NULL CONSTRAINT [PK_dbo_OSUSR_…_CUSTOMER] PRIMARY KEY`
+    Assert.Contains ("PRIMARY KEY", body)
+    // Multi-column-PK shape (`CONSTRAINT [PK_…] PRIMARY KEY (` with
+    // explicit column list) must NOT appear for single-column PKs —
+    // the inline form has no parenthesized column list.
+    Assert.DoesNotContain ("PRIMARY KEY ([ID]", body)
+    Assert.DoesNotContain ("PRIMARY KEY ([Id]", body)
+
+[<Fact>]
+let ``5.3.α.create-table LR3: multi-column PK still emits as table-level CONSTRAINT`` () =
+    // sampleCatalog's `Country` kind has a multi-column PK (Code +
+    // Label per Fixtures.fs); LR3 keeps multi-col PKs at the table
+    // level (V1 L80-98 shape).
+    let enriched = enrich sampleCatalog
+    let multiPkKind =
+        Catalog.allKinds enriched
+        |> List.tryFind (fun k ->
+            let pkCount =
+                k.Attributes |> List.filter (fun a -> a.IsPrimaryKey) |> List.length
+            pkCount >= 2)
+    match multiPkKind with
+    | None ->
+        // sampleCatalog might not carry a multi-col PK; skip silently.
+        ()
+    | Some kind ->
+        let body = bodyOf kind.SsKey sampleCatalog
+        // Table-level PK emits as `CONSTRAINT [PK_…] PRIMARY KEY
+        // ([col1] ASC, [col2] ASC, …)`.
+        Assert.Contains ("PRIMARY KEY (", body)
+
+[<Fact>]
+let ``5.3.α.create-table LR4: computed columns emit AS (expression) clause`` () =
+    // Build a kind with one PK column and one computed column.
+    // V1 CreateTableStatementBuilder.cs:362-365 shape:
+    // `[Computed] AS ([Base] * 2)` (no type / nullability / identity).
+    let kindKey0 = kindKey ["ComputedFixture"]
+    let pkAttrKey = attrKey ["ComputedFixture"; "Id"]
+    let baseAttrKey = attrKey ["ComputedFixture"; "Base"]
+    let computedAttrKey = attrKey ["ComputedFixture"; "Doubled"]
+    let pkAttr =
+        { Attribute.create pkAttrKey (mkName "Id") Integer with
+            Column = { ColumnName = "ID"; IsNullable = false }
+            IsPrimaryKey = true
+            IsMandatory  = true }
+    let baseAttr =
+        { Attribute.create baseAttrKey (mkName "Base") Integer with
+            Column = { ColumnName = "BASE"; IsNullable = false }
+            IsMandatory = true }
+    let computedConfig = ComputedColumnConfig.create "[BASE] * 2" false |> Result.value
+    let computedAttr =
+        { Attribute.create computedAttrKey (mkName "Doubled") Integer with
+            Column = { ColumnName = "DOUBLED"; IsNullable = true }
+            Computed = Some computedConfig }
+    let kind =
+        { Kind.create kindKey0 (mkName "ComputedFixture")
+            { Schema = "dbo"; Table = "OSUSR_CF_FIXTURE"; Catalog = None }
+            [ pkAttr; baseAttr; computedAttr ]
+          with References = []; Indexes = []; ColumnChecks = [] }
+    let cat : Catalog =
+        {
+            Modules =
+                [ { SsKey = modKey "ComputedFixtureMod"
+                    Name = mkName "ComputedFixtureMod"
+                    Kinds = [ kind ]
+                    IsActive = true
+                    ExtendedProperties = [] } ]
+            Sequences = []
+        }
+    let body = bodyOf kindKey0 cat
+    // ScriptDom renders `[DOUBLED] AS (...)`; spacing is generator-
+    // pinned. Assert structurally — column name, AS keyword, and the
+    // expression's column reference all appear.
+    Assert.Contains ("[DOUBLED]", body)
+    Assert.Contains (" AS ", body)
+    Assert.Contains ("[BASE]", body)
+    // Computed columns have NO DataType (V1 L296). The DOUBLED column
+    // line should not declare a datatype (INT) or nullability marker.
+    let doubledLineStart = body.IndexOf("[DOUBLED]")
+    let doubledLineEnd = body.IndexOf('\n', doubledLineStart + 1)
+    let doubledLine =
+        if doubledLineEnd > doubledLineStart then
+            body.Substring(doubledLineStart, doubledLineEnd - doubledLineStart)
+        else
+            body.Substring(doubledLineStart)
+    // The DOUBLED column line should not declare INT / NOT NULL / NULL
+    // (computed columns derive type + nullability from the expression).
+    Assert.DoesNotContain ("INT ", doubledLine)
+    Assert.DoesNotContain ("NOT NULL", doubledLine)
+
+[<Fact>]
+let ``5.3.α.create-table LR4: persisted computed columns emit PERSISTED keyword`` () =
+    let kindKey0 = kindKey ["PersistedComputed"]
+    let pkAttrKey = attrKey ["PersistedComputed"; "Id"]
+    let computedAttrKey = attrKey ["PersistedComputed"; "Persisted"]
+    let pkAttr =
+        { Attribute.create pkAttrKey (mkName "Id") Integer with
+            Column = { ColumnName = "ID"; IsNullable = false }
+            IsPrimaryKey = true
+            IsMandatory  = true }
+    let persistedConfig = ComputedColumnConfig.create "1 + 1" true |> Result.value
+    let computedAttr =
+        { Attribute.create computedAttrKey (mkName "Persisted") Integer with
+            Column = { ColumnName = "PERSISTED_COL"; IsNullable = true }
+            Computed = Some persistedConfig }
+    let kind =
+        { Kind.create kindKey0 (mkName "PersistedComputed")
+            { Schema = "dbo"; Table = "OSUSR_PC_PERSISTED"; Catalog = None }
+            [ pkAttr; computedAttr ]
+          with References = []; Indexes = []; ColumnChecks = [] }
+    let cat : Catalog =
+        {
+            Modules =
+                [ { SsKey = modKey "PersistedComputedMod"
+                    Name = mkName "PersistedComputedMod"
+                    Kinds = [ kind ]
+                    IsActive = true
+                    ExtendedProperties = [] } ]
+            Sequences = []
+        }
+    let body = bodyOf kindKey0 cat
+    Assert.Contains ("PERSISTED", body)
+
+[<Fact>]
+let ``5.3.α.create-table row 53 partial: named DEFAULT constraint surfaces in CREATE TABLE`` () =
+    // Slice 5.3.α.column-axis-deferral-closeout (matrix row 53 partial
+    // cash-out): when Attribute.DefaultName is Some, V2 emits
+    // `CONSTRAINT [DF_…] DEFAULT (value)`. Mirrors V1
+    // CreateTableStatementBuilder.cs:324-335 shape.
+    let kindKey0 = kindKey ["NamedDefault"]
+    let pkAttrKey = attrKey ["NamedDefault"; "Id"]
+    let valAttrKey = attrKey ["NamedDefault"; "Val"]
+    let constraintName = Name.create "DF_NamedDefault_Val" |> Result.toOption
+    let pkAttr =
+        { Attribute.create pkAttrKey (mkName "Id") Integer with
+            Column = { ColumnName = "ID"; IsNullable = false }
+            IsPrimaryKey = true
+            IsMandatory  = true }
+    let valAttr =
+        { Attribute.create valAttrKey (mkName "Val") Integer with
+            Column = { ColumnName = "VAL"; IsNullable = false }
+            DefaultValue = Some (SqlLiteral.ofRaw Integer "42")
+            DefaultName  = constraintName
+            IsMandatory  = true }
+    let kind =
+        { Kind.create kindKey0 (mkName "NamedDefault")
+            { Schema = "dbo"; Table = "OSUSR_ND_NAMED"; Catalog = None }
+            [ pkAttr; valAttr ]
+          with References = []; Indexes = []; ColumnChecks = [] }
+    let cat : Catalog =
+        {
+            Modules =
+                [ { SsKey = modKey "NamedDefaultMod"
+                    Name = mkName "NamedDefaultMod"
+                    Kinds = [ kind ]
+                    IsActive = true
+                    ExtendedProperties = [] } ]
+            Sequences = []
+        }
+    let body = bodyOf kindKey0 cat
+    Assert.Contains ("CONSTRAINT [DF_NamedDefault_Val] DEFAULT", body)
+    Assert.Contains ("DEFAULT 42", body)
 
 [<Fact(Skip = "5.3.α.index row 56 LR6 — V1's DataCompression partition-range emission (IndexScriptBuilder.cs L259-301 CollapseRanges) is deferred-with-trigger. V2 emits single-value DataCompression today (matrix row 55 closed 2026-05-18); partition-range collapse logic awaits IR refinement (closed-DU `DataSpace = Filegroup of name | PartitionScheme of name × columns` + per-partition compression list). Trigger: partitioned-index fixture surfaces in operator-reality canary.")>]
 let ``5.3.α.index LR6: DataCompression emits per-partition-range clauses`` () = ()

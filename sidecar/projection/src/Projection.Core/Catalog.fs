@@ -469,6 +469,17 @@ type Attribute = {
     /// Carried as a typed `SqlLiteral` per pillar 1 (data-structure-
     /// oriented; the IR consumes typed values, not raw strings).
     DefaultValue : SqlLiteral option
+    /// Named DEFAULT constraint identity. `None` when V2 emits an
+    /// auto-named DEFAULT (SQL Server generates `DF_<table>_<column>_<hash>`);
+    /// `Some name` round-trips V1's deployed-target constraint name
+    /// (V1 source: `AttributeOnDiskDefaultConstraint.Name`). Slice
+    /// 5.3.α.column-axis-deferral-closeout (matrix row 53 partial cash-out).
+    /// Carriage-only: the realization layer's `ColumnDef.DefaultName`
+    /// already accepts the optional identifier; SsdtDdlEmitter threads
+    /// the value through without further transformation. The
+    /// `IsNotTrusted` axis (row 53 full envelope) deferred-with-trigger
+    /// pending V2 emission of WITH NOCHECK CHECK CONSTRAINT for defaults.
+    DefaultName  : Name option
     /// SQL Server computed-column configuration. `None` for
     /// non-computed columns. Chapter A.0' slice ε — IR fidelity lift
     /// (L3-S7 computed-column sub-axiom). V1's source JSON does not
@@ -856,7 +867,7 @@ module Attribute =
     ///   - `Length = None`; `Precision = None`; `Scale = None`
     ///   - `IsIdentity = false`
     ///   - `Description = None`; `IsActive = true` (V1 default)
-    ///   - `DefaultValue = None`; `Computed = None`
+    ///   - `DefaultValue = None`; `DefaultName = None`; `Computed = None`
     ///   - `ExtendedProperties = []`
     ///   - `OriginalName = None`; `ExternalDatabaseType = None`
     ///
@@ -877,6 +888,7 @@ module Attribute =
             Description          = None
             IsActive             = true
             DefaultValue         = None
+            DefaultName          = None
             Computed             = None
             ExtendedProperties   = []
             OriginalName         = None

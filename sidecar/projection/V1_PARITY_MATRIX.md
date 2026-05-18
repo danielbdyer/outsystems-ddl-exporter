@@ -1168,6 +1168,69 @@ Reference|Index|IndexColumn|IndexColumns)` remain in source.
 
 ---
 
+### Rows 53 + 182 — 2026-05-18 (XXXXXL arc: slice 5.3.α.column-axis-deferral-closeout cashes out LR3 + LR4 + row 53 partial)
+
+**Original classifications (immediately prior to this arc):**
+- Row 53 (slice 5.2.α.attribute, 2026-05-18; amended above by 5.3.α.smo-audit): 🟠 NOT-MAPPED. V2's `Attribute.DefaultValue : SqlLiteral option` carried only the typed value; constraint metadata (Name + IsNotTrusted) dropped at adapter boundary.
+- Row 182 (slice 5.3.α.smo-audit, 2026-05-18): 🟢 PARITY (97%); 2 deferred axes remained — LR3 (single-column PK inline) + LR4 (computed columns).
+
+**Reclassified (slice 5.3.α.column-axis-deferral-closeout, 2026-05-18):**
+
+| Row | Updated status | What shipped |
+|---|---|---|
+| 53 | 🟢 PARITY (partial — Name carriage closed; IsNotTrusted axis deferred-with-trigger) | `Attribute.DefaultName : Name option` added to V2 IR (Catalog.fs); `Attribute.create` defaults to None; SsdtDdlEmitter.columnDef threads through (replacing hardcoded None); ScriptDomBuild already supports named DEFAULT constraints — emission of `CONSTRAINT [DF_…] DEFAULT (value)` now active when Name is Some. The remaining `IsNotTrusted` axis stays deferred (WITH NOCHECK on default constraints is a rarely-used post-create operator state; trigger: V2 emission needs to round-trip a NOCHECK'd DEFAULT). |
+| 182 | 🟢 PARITY (99%); 0 V1-CreateTable deferred axes remain | LR3 + LR4 closed. The remaining 1% is `IsNotTrusted` on column DEFAULT constraints (V1 carries but doesn't emit at column level — same axis as row 53 partial deferral). |
+
+**LR3 cash-out (single-column PK inline emission):**
+
+V1 `CreateTableStatementBuilder.cs:67-78` attaches `UniqueConstraintDefinition { IsPrimaryKey = true; Clustered = true; ConstraintIdentifier = … }` to the single PK column's `Constraints` instead of as a table-level `TableConstraints` entry. V2 now mirrors via `ScriptDomBuild.attachInlinePrimaryKey` (single-column case) + the existing `primaryKeyConstraint` builder (multi-column case). The dispatch lives in `buildCreateTable`:
+
+```fsharp
+match p.Columns with
+| [ _ ] -> attachInlinePrimaryKey def.ColumnDefinitions p
+| _     -> def.TableConstraints.Add(primaryKeyConstraint p)
+```
+
+Single-column PKs emit as `[ID] INT NOT NULL CONSTRAINT [PK_dbo_Customer] PRIMARY KEY` (V1-equivalent shape); multi-column PKs continue to emit as table-level `CONSTRAINT [PK_…] PRIMARY KEY ([col1], [col2])`. **Pillar 1 + pillar 7 confirmation:** the typed `ColumnDefinition.Constraints` collection is ScriptDom's canonical surface for the inline form; no string composition required.
+
+**LR4 cash-out (computed column emission):**
+
+V1 `CreateTableStatementBuilder.cs:362-365` sets `definition.ComputedColumnExpression` when `column.IsComputed && column.ComputedExpression.HasValue`; the column's DataType is null (L296), no NullableConstraintDefinition (L299-302), no IdentityOptions (L304-311). V2 now mirrors:
+
+- `Statement.fs` `ColumnDef` extended with `Computed : ComputedColumnConfig option` (V2 IR's existing type per `Catalog.fs:152`).
+- `ScriptDomBuild.columnDefinition` branches on `c.Computed`: when `Some config`, set `col.ComputedColumnExpression` (parsed via `TSql160Parser.ParseExpression`) + `col.IsPersisted` (from `config.IsPersisted`); skip Type / Length / Precision / Scale / Identity / Nullability / DEFAULT material.
+- `SsdtDdlEmitter.columnDef` (Attribute → ColumnDef projection) threads `Computed = a.Computed`.
+- Parse-failure fallback wraps the raw expression text in a `StringLiteral` (preserves emission surface even when the parser rejects the input; real V1-source expressions parse cleanly).
+
+**Row 53 partial cash-out (DefaultName carriage):**
+
+V1 `AttributeOnDiskDefaultConstraint.Name` carries the deployed-target's named DEFAULT constraint identifier (e.g., `DF_Customer_CreatedAt`). V2 now mirrors:
+
+- `Catalog.fs` `Attribute` extended with `DefaultName : Name option` field; `Attribute.create` defaults to None.
+- `SsdtDdlEmitter.columnDef` threads `DefaultName = a.DefaultName |> Option.map Name.value` (replacing the previously-hardcoded `None`).
+- `ScriptDomBuild.columnDefinition` already supports the named-DEFAULT branch (slice 5.13.column-features-emit shipped it); the IR field now actually feeds it.
+- Adapter sites updated: `Projection.Adapters.Osm/CatalogReader.fs` (JSON path + rowset path) + `Projection.Adapters.Sql/ReadSide.fs` default `DefaultName = None`. Source-side wiring (parsing from `#ColumnReality.DefaultConstraintName` rowset) deferred to a follow-up rowset slice; carriage-only today.
+
+**Coverage tests (5 new + 2 Skip-stubs flipped to active):**
+- `SsdtSchemaFidelityPropertyTests.5.3.α.create-table LR3: single-column PK emits inline at column definition` (active; was Skip)
+- `SsdtSchemaFidelityPropertyTests.5.3.α.create-table LR3: multi-column PK still emits as table-level CONSTRAINT`
+- `SsdtSchemaFidelityPropertyTests.5.3.α.create-table LR4: computed columns emit AS (expression) clause` (active; was Skip)
+- `SsdtSchemaFidelityPropertyTests.5.3.α.create-table LR4: persisted computed columns emit PERSISTED keyword`
+- `SsdtSchemaFidelityPropertyTests.5.3.α.create-table row 53 partial: named DEFAULT constraint surfaces in CREATE TABLE`
+- `ScriptDomRoundTripTests.ScriptDom CreateTable carries the primary-key constraint` (updated to check both inline + table-level surfaces; LR3-aware)
+
+**Deferred (after this slice):**
+- **Row 53 `IsNotTrusted` axis** — V1 `AttributeOnDiskDefaultConstraint.IsNotTrusted` tracks whether the DEFAULT constraint is currently NOCHECK'd on the deployed target. V2 carries no axis today; emission would require `Statement.AlterTableNoCheckDefault` parallel to the existing `Statement.AlterTableNoCheckConstraint` (matrix row 59 pattern). **Trigger**: V2 emission must round-trip a NOCHECK'd DEFAULT constraint (rare; usually a remediation-time concern).
+- **Row 56 partition-scheme cluster (LR6 + LR7)** — unchanged from the prior amendment; remains the only non-trivial SCHEMA-axis residual (needs closed-DU `DataSpace = Filegroup | PartitionScheme of name × columns` IR design).
+
+**Cross-references.**
+- `DECISIONS 2026-05-18 (slice 5.3.α.column-axis-deferral-closeout) — Column-axis deferrals cash-out: LR3 inline-PK + LR4 computed columns + row 53 DefaultName carriage` (the slice's discipline codification)
+- V1 source: `src/Osm.Smo/PerTableEmission/CreateTableStatementBuilder.cs:67-78` (LR3), `:362-365` (LR4), `:319-335` (named-DEFAULT)
+- The prior 5.3.α.smo-audit amendment established the per-file audit baseline; this slice closes the named-deferred axes that audit identified
+- Row 53 was originally classified at slice 5.2.α.attribute (2026-05-18); the Name half closes here while IsNotTrusted defers with a fresh trigger
+
+---
+
 ### Rows 120 + 182 + 183 — 2026-05-18 (XXXXXL arc: slice 5.3.α.smo-audit completes the SMO PerTableEmission cluster line-by-line walk)
 
 **Original classifications:**

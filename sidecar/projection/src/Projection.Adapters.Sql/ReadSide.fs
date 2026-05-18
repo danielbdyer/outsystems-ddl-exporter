@@ -350,6 +350,7 @@ module ReadSide =
                             // deployed schema. Empty / None defaults
                             // until that slice lands.
                             DefaultValue = None
+                            DefaultName = None
                             Computed = None
                             ExtendedProperties = []
                             // Chapter 4.9 slice β — ReadSide reads the

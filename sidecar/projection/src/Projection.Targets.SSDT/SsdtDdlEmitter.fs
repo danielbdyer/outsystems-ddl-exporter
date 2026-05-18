@@ -116,7 +116,21 @@ module SsdtDdlEmitter =
             // field; rowset path leaves it None pending the
             // #Attr.DefaultValue lift (separate slice).
             DefaultValue = a.DefaultValue
-            DefaultName  = None
+            // Slice 5.3.α.column-axis-deferral-closeout (matrix row 53
+            // partial cash-out): thread V2 IR's `Attribute.DefaultName`
+            // through. V1 source: `AttributeOnDiskDefaultConstraint.Name`
+            // (the deployed-target's named DEFAULT constraint identifier).
+            // The realization layer emits `CONSTRAINT [name] DEFAULT (value)`
+            // when DefaultName is Some; SQL Server auto-names otherwise.
+            DefaultName  = a.DefaultName |> Option.map Name.value
+            // Slice 5.3.α.column-axis-deferral-closeout (LR4 cash-out):
+            // thread V2 IR's `Attribute.Computed`. Computed columns
+            // suppress Type / Length / Precision / Scale / Identity /
+            // Nullability / DEFAULT material at the realization layer
+            // (V1 CreateTableStatementBuilder.cs L362-365 + L296-302
+            // shape). The realization layer emits `[col] AS (expression)
+            // [PERSISTED]` when Computed is Some.
+            Computed     = a.Computed
             Provenance   = ""
         }
 

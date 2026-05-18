@@ -197,44 +197,85 @@ module ScriptDomBuild =
     /// PRIMARY KEY constraint is emitted at the table level (not per
     /// column) — see `buildPrimaryKey` below. Same convention as
     /// `Render.fs`.
+    /// Parse a computed-column expression via TSql160Parser. Slice
+    /// 5.3.α.column-axis-deferral-closeout (LR4). V1 source:
+    /// `CreateTableStatementBuilder.cs:391-409` (ParseExpression).
+    /// Parse failure falls back to a `StringLiteral` wrapping the raw
+    /// text — preserves emission surface even when the parser can't
+    /// produce a typed AST (real V1-source expressions parse cleanly).
+    let private parseComputedExpression (expr: string) : ScalarExpression =
+        let parser = TSql160Parser(initialQuotedIdentifiers = false)
+        use reader = new System.IO.StringReader(expr)
+        let fragment, _errors = parser.ParseExpression(reader)
+        match Option.ofObj fragment with
+        | Some e -> e
+        | None ->
+            let str = StringLiteral()
+            str.Value <- expr
+            str :> ScalarExpression
+
     let private columnDefinition (c: ColumnDef) : ColumnDefinition =
         let col = ColumnDefinition()
         col.ColumnIdentifier <- bracketed c.Name
-        col.DataType <- dataTypeReference c.Type c.Length c.Precision c.Scale
-        // Nullability — ScriptDom NULL/NOT NULL constraint is a
-        // `NullableConstraintDefinition` on `Constraints`.
-        let nullCons = NullableConstraintDefinition()
-        nullCons.Nullable <- c.Nullable
-        col.Constraints.Add(nullCons)
-        // IDENTITY(1,1) when applicable. ScriptDom carries
-        // `IdentityOptions` directly on the column.
-        if c.IsIdentity then
-            let identity = IdentityOptions()
-            let seedLit = IntegerLiteral()
-            seedLit.Value <- "1"
-            identity.IdentitySeed <- seedLit
-            let incLit = IntegerLiteral()
-            incLit.Value <- "1"
-            identity.IdentityIncrement <- incLit
-            col.IdentityOptions <- identity
-        // DEFAULT clause (slice 5.13.column-features-emit): when the
-        // column carries a typed `SqlLiteral` default, emit an
-        // inline `[CONSTRAINT <name>] DEFAULT <literal>` clause.
-        // ScriptDom carries this as a `DefaultConstraintDefinition`
-        // on `Constraints`. The literal flows through `buildSqlLiteral`
-        // — same typed-AST path the MERGE / UPDATE statements use,
-        // so the rendered DEFAULT value is byte-identical to other
-        // emission surfaces.
-        match c.DefaultValue with
-        | None -> ()
-        | Some lit ->
-            let defCons = DefaultConstraintDefinition()
-            match c.DefaultName with
-            | Some name when not (System.String.IsNullOrWhiteSpace name) ->
-                defCons.ConstraintIdentifier <- bracketed name
-            | _ -> ()
-            defCons.Expression <- buildSqlLiteral lit
-            col.Constraints.Add(defCons)
+        match c.Computed with
+        | Some config ->
+            // LR4 cash-out — computed column. V1 shape (CreateTable
+            // StatementBuilder.cs:296,299-302,304-311,362-365):
+            // DataType = null; no NullableConstraintDefinition;
+            // no IdentityOptions; ComputedColumnExpression set on
+            // the ColumnDefinition. The PERSISTED flag is V1-deferred
+            // (V1 doesn't emit persistence; V2's ComputedColumnConfig
+            // .IsPersisted is carriage-only until ScriptDom round-trip
+            // demands it on emit).
+            col.ComputedColumnExpression <- parseComputedExpression config.Expression
+            if config.IsPersisted then
+                col.IsPersisted <- true
+        | None ->
+            col.DataType <- dataTypeReference c.Type c.Length c.Precision c.Scale
+            // Nullability — ScriptDom NULL/NOT NULL constraint is a
+            // `NullableConstraintDefinition` on `Constraints`.
+            let nullCons = NullableConstraintDefinition()
+            nullCons.Nullable <- c.Nullable
+            col.Constraints.Add(nullCons)
+            // IDENTITY(1,1) when applicable. ScriptDom carries
+            // `IdentityOptions` directly on the column.
+            if c.IsIdentity then
+                let identity = IdentityOptions()
+                let seedLit = IntegerLiteral()
+                seedLit.Value <- "1"
+                identity.IdentitySeed <- seedLit
+                let incLit = IntegerLiteral()
+                incLit.Value <- "1"
+                identity.IdentityIncrement <- incLit
+                col.IdentityOptions <- identity
+            // DEFAULT clause (slice 5.13.column-features-emit): when the
+            // column carries a typed `SqlLiteral` default, emit an
+            // inline `[CONSTRAINT <name>] DEFAULT <literal>` clause.
+            // ScriptDom carries this as a `DefaultConstraintDefinition`
+            // on `Constraints`. The literal flows through `buildSqlLiteral`
+            // — same typed-AST path the MERGE / UPDATE statements use,
+            // so the rendered DEFAULT value is byte-identical to other
+            // emission surfaces.
+            match c.DefaultValue with
+            | None -> ()
+            | Some lit ->
+                let defCons = DefaultConstraintDefinition()
+                match c.DefaultName with
+                | Some name when not (System.String.IsNullOrWhiteSpace name) ->
+                    defCons.ConstraintIdentifier <- bracketed name
+                | _ -> ()
+                defCons.Expression <- buildSqlLiteral lit
+                col.Constraints.Add(defCons)
+            // LR3 cash-out — single-column PK inline. When the column
+            // carries IsPrimaryKey AND the caller signals (via the
+            // Statement.CreateTable shape) that this is a single-column
+            // PK, attach a `UniqueConstraintDefinition { IsPrimaryKey =
+            // true }` inline. The signal is the absence of a table-
+            // level PrimaryKeyDef on the CreateTableStatement; see
+            // `buildCreateTable` for the dispatch logic.
+            // (Inline-PK constraint is added by `buildCreateTable` per
+            //  the single-vs-multi-column shape; this site only carries
+            //  the per-column material.)
         col
 
     /// Build a table-level CHECK constraint via TSql160Parser. Slice
@@ -342,6 +383,38 @@ module ScriptDomBuild =
     /// construction; callers explicitly drop via `.Value` at the call
     /// site (per the chapter 4.7 sibling-wrapper discipline + V2-no-
     /// back-compat).
+    /// LR3 cash-out — V1's CreateTableStatementBuilder.cs:67-78 inlines
+    /// single-column PKs at the column-constraint level instead of as
+    /// a separate table-level constraint. The shape: when exactly one
+    /// PK column exists, attach a `UniqueConstraintDefinition` to that
+    /// column's `Constraints`; skip the table-level PK entry. Multi-
+    /// column PKs continue to emit as table-level (V1 L80-98 shape).
+    let private attachInlinePrimaryKey
+        (colDefs: System.Collections.Generic.IList<ColumnDefinition>)
+        (pk: PrimaryKeyDef)
+        : unit =
+        match pk.Columns with
+        | [ pkColumnName ] ->
+            // Find the matching ColumnDefinition by identifier value.
+            let target =
+                colDefs
+                |> Seq.tryFind (fun cd ->
+                    match Option.ofObj cd.ColumnIdentifier with
+                    | Some ident ->
+                        System.String.Equals(
+                            ident.Value, pkColumnName,
+                            System.StringComparison.OrdinalIgnoreCase)
+                    | None -> false)
+            match target with
+            | Some cd ->
+                let cons = UniqueConstraintDefinition()
+                cons.IsPrimaryKey <- true
+                cons.Clustered <- System.Nullable(true)
+                cons.ConstraintIdentifier <- bracketed pk.Name
+                cd.Constraints.Add(cons)
+            | None -> ()
+        | _ -> ()
+
     let buildCreateTable
         (table: TableId)
         (columns: ColumnDef list)
@@ -357,7 +430,12 @@ module ScriptDomBuild =
         match pk with
         | None -> ()
         | Some p ->
-            def.TableConstraints.Add(primaryKeyConstraint p)
+            // LR3 — single-column PKs inline at the column-constraint
+            // level (V1 CreateTableStatementBuilder.cs:67-78 shape);
+            // multi-column PKs remain table-level (V1 L80-98 shape).
+            match p.Columns with
+            | [ _ ] -> attachInlinePrimaryKey def.ColumnDefinitions p
+            | _     -> def.TableConstraints.Add(primaryKeyConstraint p)
         for fk in fks do
             def.TableConstraints.Add(foreignKeyConstraint fk)
         // Slice 5.13.column-features-emit (chapter A.0' slice ε emit

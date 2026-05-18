@@ -60,6 +60,15 @@ type ColumnDef =
         /// clause then omits the identifier and SQL Server
         /// auto-names the constraint).
         DefaultName : string option
+        /// Computed column expression + persistence flag. When `Some`,
+        /// the column is computed and the realization layer emits
+        /// `[col] AS (expression) [PERSISTED]`; the `Type` / `Length` /
+        /// `Precision` / `Scale` / `IsIdentity` / `Nullable` material
+        /// is omitted (server-inferred from the expression). Slice
+        /// 5.3.α.column-axis-deferral-closeout (LR4); V1 source:
+        /// `CreateTableStatementBuilder.cs:362-365` (column.IsComputed
+        /// + column.ComputedExpression).
+        Computed : ComputedColumnConfig option
         /// The originating attribute's display name + SsKey root,
         /// preserved so `Render.toText` can keep the diffable-form
         /// trailing comment that the v1 emitter carried.

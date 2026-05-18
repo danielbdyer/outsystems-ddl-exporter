@@ -15237,6 +15237,143 @@ that don't require closure.
 
 ---
 
+## 2026-05-18 (slice 5.3.α.column-axis-deferral-closeout) — Three V1 deferrals brought in: LR3 single-column PK inline + LR4 computed column emission + row 53 DefaultName carriage
+
+### Scope
+
+User-directed cash-out: "Let's take up the deferrals, if they are in V1
+we need to continue to bring it in." Per V1_PARITY_MATRIX.md
+post-5.3.α.smo-audit state, three V1 column-axis features were carried
+as deferred-with-trigger:
+
+- **LR3** — V1's single-column-PK inline emission
+  (`CreateTableStatementBuilder.cs:67-78`). V2 always emitted PK at the
+  table-constraint level; the inline column-constraint form was a no-op
+  divergence ("functionally equivalent / cosmetically different").
+- **LR4** — V1's computed-column emission
+  (`CreateTableStatementBuilder.cs:362-365`). V2's IR carried
+  `Attribute.Computed : ComputedColumnConfig option` since chapter
+  A.0' slice ε but the realization-layer `ColumnDef` had no `Computed`
+  field; the projection from Attribute → ColumnDef silently dropped it.
+- **Row 53 (partial)** — V1's `AttributeOnDiskDefaultConstraint.Name`
+  carrying the deployed-target's named DEFAULT constraint identifier
+  (e.g., `DF_Customer_CreatedAt`). V2's IR carried `Attribute
+  .DefaultValue : SqlLiteral option` (typed value only) without a
+  constraint-name axis.
+
+This slice closes all three (row 53 partial — the Name half ships;
+the IsNotTrusted axis defers with a refreshed trigger).
+
+### What ships
+
+**IR extensions (Projection.Core):**
+
+- `Attribute.DefaultName : Name option` added to `Catalog.fs` lines
+  ~472-484. `Attribute.create` defaults to `None`. Three raw-record-
+  literal sites updated to thread the field (CatalogReader.fs JSON
+  path + rowset path; ReadSide.fs deployed-target reflection); all
+  default to `None` today (carriage-only — source-side population
+  defers to a future rowset-extension slice).
+
+**Realization-layer extensions (Projection.Targets.SSDT):**
+
+- `Statement.fs` `ColumnDef` extended with `Computed : ComputedColumnConfig
+  option` field. Three raw-record-literal sites in `ScriptDomRoundTripTests
+  .fs` updated to set `Computed = None`.
+- `SsdtDdlEmitter.columnDef` projection (Attribute → ColumnDef) threads
+  `DefaultName = a.DefaultName |> Option.map Name.value` (replacing
+  hardcoded `None`) + `Computed = a.Computed`.
+
+**Emission changes (ScriptDomBuild.fs):**
+
+- `parseComputedExpression` helper: parses computed-column expression
+  via `TSql160Parser.ParseExpression`; falls back to `StringLiteral`
+  wrapping the raw text on parse failure (preserves emission surface).
+- `columnDefinition` branches on `c.Computed`: when `Some config`, set
+  `col.ComputedColumnExpression` + `col.IsPersisted`; skip Type /
+  Length / Precision / Scale / Identity / Nullability / DEFAULT
+  material (matches V1 L296-302 shape for computed columns).
+- `attachInlinePrimaryKey` helper: when the PK is single-column,
+  attaches `UniqueConstraintDefinition { IsPrimaryKey = true; Clustered
+  = true; ConstraintIdentifier = … }` to the matching `ColumnDefinition
+  .Constraints` (V1 `CreateTableStatementBuilder.cs:67-78` shape).
+- `buildCreateTable` dispatches: `match p.Columns with [ _ ] →
+  attachInlinePrimaryKey | _ → primaryKeyConstraint` (table-level for
+  multi-column PKs per V1 L80-98 shape).
+
+**Tests:**
+
+- `SsdtSchemaFidelityPropertyTests` — two Skip-stubs flipped to active
+  (LR3 single-column PK inline + LR4 computed columns emit AS); three
+  new active tests (LR3 multi-column-PK table-level; LR4 PERSISTED
+  keyword; row 53 partial named DEFAULT constraint surfaces).
+- `ScriptDomRoundTripTests` — `ScriptDom CreateTable carries the
+  primary-key constraint` updated to check BOTH inline + table-level
+  surfaces (LR3-aware).
+
+### Operating-discipline payoff
+
+**The "if it's in V1, bring it in" directive operationalized.** Three
+deferrals brought in cleanly in one arc. The IR extensions land via
+the record-extension generalization pattern (CLAUDE.md operating-
+discipline: "F# field-missing errors light up at literal-construction
+sites only") — 4 sites needed migration (Attribute: 3 raw literals;
+ColumnDef: 3 raw literals in the existing test). All consumers
+flowing through `Attribute.create` / `Kind.create` smart constructors
+absorbed the new fields silently via default values.
+
+**Closed-DU expansion empirical-test discipline confirmed AGAIN.**
+The two record-extension events (Attribute.DefaultName + ColumnDef
+.Computed) lit up field-missing errors at exactly the predicted
+sites; no semantic-interpretation site needed changes. The compiler's
+totality check IS the seam-correctness check.
+
+### Coverage (5 new + 2 flipped + 1 updated)
+
+After this slice: 1622 → ~1627 non-canary passing (expected from
++5 tests; verification pending full-suite green). 4 Skip-stubs in
+`SsdtSchemaFidelityPropertyTests` → 2 (LR6 + LR7 partition cluster
+remain).
+
+### Deferred (after this slice)
+
+- **Row 53 `IsNotTrusted` axis** — Trigger refreshed: V2 emission
+  must round-trip a NOCHECK'd DEFAULT constraint (rare; usually a
+  remediation-time concern when bulk-load operators temporarily
+  disable a default).
+- **Row 56 partition-scheme cluster (LR6 + LR7)** — unchanged; the
+  only non-trivial SCHEMA-axis residual. Needs closed-DU `DataSpace =
+  Filegroup of name | PartitionScheme of name × columns` IR design.
+- **Source-side population of `Attribute.DefaultName`** — today the
+  field defaults to `None` from both adapter paths and ReadSide. The
+  V1 `#ColumnReality.DefaultConstraintName` rowset carries the
+  deployed-target's constraint name; lifting it through the rowset
+  adapter is a follow-up slice (paired with the row 11 / cluster A1
+  pattern).
+- **Source-side population of `Attribute.Computed`** — V1's JSON
+  doesn't carry computed-column metadata today; ReadSide could query
+  `sys.computed_columns` over the deployed schema. Same trigger as
+  the DefaultName source-side lift.
+
+### Cross-references
+
+- `DECISIONS 2026-05-18 (slice 5.3.α.smo-audit)` (the audit baseline
+  that identified these deferrals)
+- `V1_PARITY_MATRIX.md` rows 53 + 182 amendments (the slice's
+  matrix-amendment surface)
+- V1 source: `src/Osm.Smo/PerTableEmission/CreateTableStatementBuilder
+  .cs:67-78` (LR3 inline-PK shape), `:319-335` (named DEFAULT), `:362-365`
+  (computed column emission)
+- The two remaining SsdtSchemaFidelityPropertyTests Skip-stubs (LR6
+  + LR7) are the structural visibility of the only remaining SCHEMA-
+  axis residual cluster (row 56) per the "Make divergences visible"
+  operating discipline
+- Confirms the closed-DU expansion empirical-test discipline at scale:
+  every field-extension lit up at literal-construction sites only;
+  semantic-interpretation sites unaffected
+
+---
+
 ## 2026-05-18 (slice 5.3.α.smo-audit) — V1 SMO PerTableEmission cluster fully audited; ScriptDom canonical emission replaces V1 post-render formatting as load-bearing architecture
 
 ### Scope

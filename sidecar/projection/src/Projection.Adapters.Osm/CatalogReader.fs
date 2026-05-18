@@ -832,6 +832,7 @@ module CatalogReader =
                       Description  = description
                       IsActive     = isActiveOrDefault attrJson
                       DefaultValue = defaultValue
+                      DefaultName  = None
                       // Chapter A.0' slice ε — Computed lift; V1's
                       // JSON projection does not surface computed-
                       // column metadata. Positioned for future use.
@@ -1575,6 +1576,7 @@ module CatalogReader =
                   // ExtendedProperties today; positioned for future
                   // rowset extension or DACPAC adapter.
                   DefaultValue = None
+                  DefaultName  = None
                   Computed     = None
                   ExtendedProperties = []
                   OriginalName = row.OriginalName

@@ -62,6 +62,7 @@ let private sampleColumns : ColumnDef list =
             Length = None; Precision = None; Scale = None
             Nullable = false; IsIdentity = true; IsPrimaryKey = true
             DefaultValue = None; DefaultName = None
+            Computed = None
             Provenance = "Id"
         }
         {
@@ -70,6 +71,7 @@ let private sampleColumns : ColumnDef list =
             Length = Some 100; Precision = None; Scale = None
             Nullable = false; IsIdentity = false; IsPrimaryKey = false
             DefaultValue = None; DefaultName = None
+            Computed = None
             Provenance = "Name"
         }
         {
@@ -78,6 +80,7 @@ let private sampleColumns : ColumnDef list =
             Length = None; Precision = Some 18; Scale = Some 4
             Nullable = true; IsIdentity = false; IsPrimaryKey = false
             DefaultValue = None; DefaultName = None
+            Computed = None
             Provenance = "Score"
         }
     ]
@@ -172,12 +175,26 @@ let ``ScriptDom CreateTable carries the primary-key constraint`` () =
     let reparsed, _ = parseSql emitted
     let script = reparsed :?> TSqlScript
     let stmt = script.Batches.[0].Statements.[0] :?> CreateTableStatement
-    let pks =
+    // Slice 5.3.α.column-axis-deferral-closeout (LR3): single-column PKs
+    // inline at the column-constraint level (V1 CreateTableStatementBuilder
+    // .cs:67-78 shape); multi-column PKs remain table-level. The sample
+    // PK is single-column ([ "Id" ]) so the constraint appears on the
+    // matching ColumnDefinition's Constraints list.
+    let inlinePks =
+        stmt.Definition.ColumnDefinitions
+        |> Seq.collect (fun cd ->
+            cd.Constraints
+            |> Seq.choose (function
+                | :? UniqueConstraintDefinition as u when u.IsPrimaryKey -> Some u
+                | _ -> None))
+        |> List.ofSeq
+    let tableLevelPks =
         stmt.Definition.TableConstraints
         |> Seq.choose (function
             | :? UniqueConstraintDefinition as u when u.IsPrimaryKey -> Some u
             | _ -> None)
         |> List.ofSeq
+    let pks = inlinePks @ tableLevelPks
     Assert.Single(pks) |> ignore
     let pk = List.head pks
     Assert.Equal("PK_dbo_Customer", pk.ConstraintIdentifier.Value)
