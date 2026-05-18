@@ -92,6 +92,7 @@
     <Compile Include="OssysDomainModuleParityTests.fs" />
     <Compile Include="OssysDomainEntityParityTests.fs" />
     <Compile Include="OssysDomainAttributeParityTests.fs" />
+    <Compile Include="OssysDomainIndexParityTests.fs" />
     <Compile Include="IsActiveCarryThroughTests.fs" />
     <Compile Include="IRFidelityLiftTests.fs" />
     <Compile Include="NoSilentDropTests.fs" />
