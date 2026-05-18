@@ -102,7 +102,7 @@ Per `V2_DRIVER.md` per-axis correctness stakes. For each axis: where V2 stands; 
 - Typed `UserRemapContext` IR + `RemapDiagnostic` DU (row 174)
 
 **Gated for flip:**
-- **Remaining matching strategies** (BySsKey / Regex / FallbackToSystemUser) — deferred to chapter 4.2 slice ε per pre-scope
+- ~~**Remaining matching strategies** (BySsKey / Regex / FallbackToSystemUser)~~ **CLOSED 2026-05-18** by slice 5.13.identity-axis-closure. All four `UserMatchingStrategy` DU variants (ByEmail, BySsKey, ManualOverride, FallbackToSystemUser) ship in `UserFkReflowPass.applyStrategy`; the slice 5.13.identity-axis-closure pin pins five property-test families (totality + per-source-diagnostic-count + diagnostics-cardinality + permutation-invariance + idempotence + FallbackToSystemUser safety net) across 13 FsCheck properties. V1's `Regex` strategy collapses to `ManualOverride` per `Policy.fs` pre-scope rationale (structurally indistinguishable for V2's algebraic purposes).
 - **UAT verification surface** (row 177) — V1 has 3 verifiers + report; V2 verification deferred post-cutover; canary's round-trip diff + tolerance table cover dual-track mode
 - **`osm uat-users` CLI verb** (row 113) — cash-out ~1500 LOC; trigger: cutover enters UAT phase
 - **Per-FK orphan-sample diagnostics** (row 89) — V2 carries orphan COUNT but not row identifiers; cash-out: add `OrphanSamples` field to `Profile.ForeignKeys` when consumer demands

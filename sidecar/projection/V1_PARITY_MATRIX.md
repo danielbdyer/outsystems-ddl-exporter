@@ -339,6 +339,69 @@ rowset (23 of them) in source order.
 
 ---
 
+### Row 174 — 2026-05-18 (closed by slice 5.13.identity-axis-closure)
+
+**Original classification (slice omnibus, 2026-05-18):** 🟢 PARITY
+(partial). The Notes claimed "Slice δ ships ByEmail; BySsKey /
+Regex / FallbackToSystemUser deferred to slice ε."
+
+**Reclassified (slice 5.13.identity-axis-closure, 2026-05-18):**
+🟢 PARITY (full).
+
+**Rationale.** Same audit-catch pattern as row 160 — the "deferred
+to slice ε" claim was stale at the time of the audit.
+`UserFkReflowPass.applyStrategy` (in
+`src/Projection.Core/Passes/UserFkReflowPass.fs`) handles **all
+four UserMatchingStrategy DU variants** today (lines 200-220):
+ByEmail, BySsKey, ManualOverride, FallbackToSystemUser. The
+example-level test surface (`UserFkReflowPassTests.fs` —
+26 tests including "Slice ε: all four strategy variants produce
+decisions (closed-DU coverage)") shipped alongside the
+implementation.
+
+**Per Phase 8 acceptance criterion** (CUTOVER_READINESS_BRIEF
+blocker #2: "Property test asserting symmetry of matched +
+unmatched diagnostics on shared fixtures"), this slice cashes out
+the property surface:
+
+- **S1 totality** — every source user appears in exactly one of
+  `Mapping.Keys` or `Unmatched` (exhaustive partition); FsCheck
+  property across 4 strategy variants
+- **S2 per-source diagnostic count** — matched → 0 Warnings;
+  unmatched → 1 Warning
+- **S3 diagnostics count** = `Unmatched.Count`
+- **S4 permutation invariance** — source-list ordering doesn't
+  affect output
+- **S5 idempotence** — repeated `discover` produces equal output
+  (T1 byte-determinism)
+- **FallbackToSystemUser safety net** — `Set.isEmpty Unmatched`
+  structurally under three primary-strategy variants
+  (ByEmail / BySsKey / ManualOverride)
+
+V1's `UserMatchingEngine.cs` collapsed `Regex` into V2's
+`ManualOverride` per `Policy.fs:295-304` pre-scope rationale —
+V1's Regex is structurally indistinguishable from operator-supplied
+transformation for V2's algebraic purposes. The kickoff prompt's
+"Regex" mention is subsumed; the DU is closed at 4 variants.
+
+**Companion: cross-axis registry filters.**
+`TransformRegistry.byDomain` + `TransformRegistry.byOverlayAxis`
+ship per the two-consumer threshold (Data axis at slice
+5.13.data-emission-registry + Identity axis at this slice).
+The filters compose across projects: the IDENTITY axis confidence
+view assembles via `(RegisteredTransforms.all @
+RegisteredDataTransforms.all) |> byDomain Identity`. No parallel
+aggregator required.
+
+**Coverage tests now passing:**
+- `UserFkReflowPropertyTests` — 13 FsCheck properties across the
+  four strategy variants + 1 generator-arb-bootstrap fact
+- `IdentityAxisRegistryTests` — 8 cross-axis registry-filter tests
+  (byDomain / byOverlayAxis / filter composition / disjoint
+  partition / cross-project validation)
+
+---
+
 ### Row 160 — 2026-05-18 (closed by slice 5.13.data-emission-registry)
 
 **Original classification (slice 5.5.β+γ+δ, 2026-05-18):** 🟢 PARITY

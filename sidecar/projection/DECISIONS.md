@@ -14159,3 +14159,120 @@ property held all along.
   surface.
 
 ---
+
+## 2026-05-18 (slice 5.13.identity-axis-closure) — `UserFkReflowPass` strategy totality property surface + cross-axis registry filters
+
+Closes matrix row 174 (`UserMatchingStrategy` DU coverage — slice
+δ→ε implementation deferral reclassified) and ships the Phase 8
+acceptance-criterion property surface for the IDENTITY axis. Same
+audit-catch pattern as row 160 (slice 5.13.data-emission-registry):
+the "deferred" claim was stale at audit; the implementation had
+already shipped via the closed-DU expansion empirical-test
+discipline.
+
+### What lands
+
+**Property surface.** New file
+`tests/Projection.Tests/UserFkReflowPropertyTests.fs` carries 13
+FsCheck-driven properties pinning the load-bearing axioms of
+`UserFkReflowPass.discover`:
+
+- **S1 totality** — `Mapping.Keys ∪ Unmatched = source population's
+  Ids` (exhaustive partition); FsCheck property over 4 strategy
+  variants
+- **S2 per-source diagnostic count** — matched → 0 Warnings;
+  unmatched → 1 Warning
+- **S3 diagnostics count** = `Unmatched.Count`
+- **S4 permutation invariance** — source-list ordering doesn't
+  affect output (`Mapping` + `Unmatched` + sorted-Diagnostics equal)
+- **S5 idempotence** — repeated `discover` produces equal output
+  (T1 byte-determinism extension)
+- **FallbackToSystemUser safety net** — `Set.isEmpty Unmatched`
+  structurally under three primary-strategy variants
+  (ByEmail / BySsKey / ManualOverride)
+
+The properties use a custom FsCheck `Arb` generator
+(`PopulationPair`) producing deterministic 0..12-user populations
+with positive ids in `[1, 50]` and 50%-probability emails — narrow
+enough to bound algorithm execution time across 100 samples,
+broad enough to surface non-trivial match-rate distributions.
+
+**Cross-axis registry filters.** New helpers in
+`src/Projection.Core/TransformRegistry.fs`:
+
+```fsharp
+let byDomain (domain: Domain) (entries: RegisteredTransformMetadata list)
+    : RegisteredTransformMetadata list
+let byOverlayAxis (axis: OverlayAxis) (entries: RegisteredTransformMetadata list)
+    : RegisteredTransformMetadata list
+```
+
+The two-consumer threshold fires: Data axis at
+`5.13.data-emission-registry` + Identity axis at this slice. Per
+the discipline, an axis-specific aggregator (a parallel
+`RegisteredIdentityTransforms` module) would be the alternative;
+the filter pattern is cleaner because IDENTITY's registered sites
+cross project boundaries (Core: UserFkReflowPass, NamingMorphism,
+CanonicalizeIdentity; Targets.Data: Migration + Bootstrap User-FK
+sites). Filter composition at the consumer assembles the
+cross-cutting view without a project-specific aggregator owning
+mixed-project knowledge.
+
+**IDENTITY-axis registry view.** New file
+`tests/Projection.Tests/IdentityAxisRegistryTests.fs` carries
+8 cross-axis registry-filter tests:
+- `byDomain Identity` returns 3 entries (CanonicalizeIdentity +
+  NamingMorphism + UserFkReflowPass)
+- `byOverlayAxis Insertion` includes the data-emission siblings
+  (Migration / Bootstrap / Composer) but NOT UserFkReflowPass
+  (which is OperatorIntent Selection)
+- `byOverlayAxis Selection` includes UserFkReflowPass
+- `byDomain partition` is disjoint (every entry in exactly one
+  Domain bucket)
+- Cross-project composition validates through
+  `TransformRegistry.create` (no Name collisions across
+  Core + Data registries)
+- Filter composition: `byDomain Identity ∩ byOverlayAxis Selection
+  = UserFkReflowPass` exclusively
+
+### Why "Regex" doesn't earn a new DU variant
+
+The kickoff prompt named "Regex" as one of the remaining slice-ε
+strategies (alongside BySsKey + ManualOverride +
+FallbackToSystemUser). V2's `Policy.UserMatchingStrategy` DU is
+closed at 4 variants WITHOUT Regex — per `Policy.fs:295-304`
+pre-scope rationale, V1's Regex is "structurally indistinguishable
+from operator-supplied transformation for V2's algebraic
+purposes." A regex pattern matching N source users to N target
+users produces N entries in a `ManualOverride` map; the DU
+collapse is principled.
+
+If a future consumer demands declarative regex specification (vs
+expanded-out override map), the IR-grows-under-evidence discipline
+re-opens the DU with a new `RegexPattern` variant. Until then,
+ManualOverride is the canonical form.
+
+### Property-test discipline at the IDENTITY axis
+
+Per V2_DRIVER's per-axis correctness stakes (depth-Highest:
+verification-depth co-equal with CDC silence), IDENTITY-axis
+property tests are the structural enforcement substrate for R6
+dual-track flip readiness. The 13 properties here are the
+canonical surface; future identity-axis work (UAT verification at
+row 177; `osm uat-users` CLI at row 113) consumes them as
+preconditions.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` row 174 — Status-history amendment.
+- `DECISIONS 2026-05-18 (slice 5.13.data-emission-registry)` —
+  the data-axis precedent; this slice mirrors its registry-
+  classification pattern at the identity axis.
+- `CUTOVER_READINESS_BRIEF.md` Section 2 Axis 3 — IDENTITY axis
+  confidence map refreshed.
+- `BACKLOG.md` Phase 5.13 — `5.13.user-matching` retires.
+- `CHAPTER_4_PRESCOPE_USERFK_REFLOW.md` §6 acceptance criterion
+  ("every unmatched user produces exactly one Warning") — pinned
+  as the S3 property.
+
+---
