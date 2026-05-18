@@ -13285,3 +13285,129 @@ Recorded in `V1_PARITY_MATRIX.md` row 90 as 🟡 DIVERGENCE.
 
 ---
 
+## 2026-05-18 (slice 5.5.α.manifest) — V1-differential walk: manifest scope-reduction with V2-extension fields; TableManifestEntry counts over name-lists
+
+Chapter 4.4 close shipped V2's `ManifestEmitter` covering Coverage /
+PredicateCoverage / Unsupported sections + the V2-extension fields
+(registry.digest + emitter.version). The chapter close confirmed
+PARITY on V1-shape modulo three documented divergences:
+predicateCounts JSON shape (covered by chapter 4.4 open Q2);
+PreRemediation deferred per V2_DRIVER §154; registry.digest
+V2-only addition.
+
+This DECISIONS entry codifies two structural rationales surfaced by
+the V1-differential walk in slice 5.5.α.manifest (the post-chapter
+audit comparing V2's emitter against V1's actual `SsdtManifest.cs`
++ `ManifestBuilder.cs` source).
+
+### (1) Manifest scope reduction — Options + PolicySummary deferred
+
+V1's `SsdtManifest` carries 8 top-level fields: Tables, Options,
+PolicySummary, Emission, PreRemediation, Coverage, PredicateCoverage,
+Unsupported. V2's `Manifest` carries 6: Tables, EmitterVersion,
+RegistryDigest, Coverage, PredicateCoverage, Unsupported. The
+**scope reduction** drops Options + PolicySummary; **scope addition**
+adds EmitterVersion + RegistryDigest.
+
+**Rationale for the reduction.** V1's manifest is a UNION of multiple
+semantic layers:
+
+- **Catalog evidence** (Tables, Coverage, PredicateCoverage,
+  Unsupported) — the schema-shape statistics that V2 carries today.
+- **Policy projection** (PolicySummary) — a flattened view of the
+  TighteningPolicy that produced the artifact set.
+- **Operator configuration** (Options) — the operator-supplied
+  config that drove the run (e.g., DataProtectionMode, FailureMode).
+
+V2's manifest is **catalog-only** (per A18 amended — emitters consume
+Catalog × Profile, never Policy). Policy projection + operator
+configuration are NOT manifest concerns in V2's architecture:
+
+- Policy projection: when a consumer needs to inspect what policy
+  produced the artifact set, the answer is the decision-log JSON
+  (per-pass DecisionSet output) — that surface IS the policy
+  projection; the manifest doesn't need to duplicate it.
+- Operator configuration: when a consumer needs to inspect what
+  config drove the run, the answer is the config JSON itself — V2's
+  CLI surfaces `--config <path>` as the canonical input; reproducing
+  the config inside the manifest would duplicate it.
+
+The reduction is **principled separation of concerns**, not parity
+loss. **Re-open trigger for Options + PolicySummary fields**: a V2
+consumer demands manifest-side replication of these surfaces. Likely
+shape: optional `Options : OptionsManifest option` and `Policy :
+PolicyManifest option` fields on the V2 `Manifest` record; populated
+by consumers that demand them; absent by default (preserving the
+catalog-only invariant for the default emission path).
+
+**Rationale for the addition.** V2 adds two fields V1 lacks:
+
+- **EmitterVersion**: a versioning stamp for the manifest schema
+  itself. Operators inspecting a manifest can determine which
+  version of V2 produced it. Critical for cutover diagnostics when
+  multiple V2 versions emit during a transition window.
+- **RegistryDigest**: a SHA256 of the RegisteredTransforms registry
+  metadata (chapter A.4.7' slice ζ). Operators can verify the
+  registry didn't drift between emission + verification.
+
+Both additions are V2-EXTENSION; neither has a V1 analog because V1's
+manifest is single-version + has no transform-registry concept.
+
+### (2) TableManifestEntry — counts over name-lists
+
+V1's `TableManifestEntry` carries Module, Schema, Table, TableFile,
+**Indexes** (list<string>), **ForeignKeys** (list<string>),
+**IncludesExtendedProperties** (bool). V2 carries Module, Schema,
+Table, TableFile, **IndexCount** (int), **ForeignKeyCount** (int).
+
+**Rationale.** V1's name lists in the manifest are **metadata
+redundant with the per-table DDL files**. An operator inspecting
+`TableSchema.dbo.Customer.sql` already sees every index + FK
+defined in it. The name lists in the manifest exist as a parallel
+inventory — useful for cross-checking, but not load-bearing for
+either operator workflow or downstream consumer logic.
+
+V2's `IndexCount` + `ForeignKeyCount` give **the same operator-
+visible information** (how many of each per table) without
+duplicating the names. Cash-out for the rare consumer that wants
+name-level granularity: parse the per-table DDL file (the source
+of truth). The manifest is the **summary**; the DDL files are the
+**detail**.
+
+**IncludesExtendedProperties bool**: V2 drops this entirely. V2's
+extended-property emission is per chapter 4.1.A slice 8 — every
+table emits its extended properties as part of the per-table DDL;
+the bool flag in V1's manifest pre-dates V2's per-kind multi-level
+extended-property emission. The flag was V1-era; V2's emission
+machinery makes the bool always-true for any table with extended
+properties (and trivially-false otherwise), so the bool carries no
+information not already in the DDL.
+
+**Operationally transparent.** Downstream consumers reading V2's
+manifest get cardinality (sufficient for coverage metrics, summary
+reports, dashboarding); consumers that need name-level detail parse
+the DDL (the canonical source). No information loss; structural
+simplification.
+
+**Re-open trigger.** A consumer surface (manifest-driven dashboard
+or operator-review report) demands index/FK names in the manifest
+without parsing the per-table DDL. Cash-out: extend
+`TableManifestEntry` with `IndexNames : Name list` + `ForeignKeyNames
+: Name list`. Optional fields; defaulted to empty when the consumer
+doesn't need them.
+
+### Cross-references
+
+- Chapter 4.4 close DECISIONS — established the manifest's V1-shape
+  with documented divergences; this entry is the post-chapter
+  walk's substantive findings.
+- A18 amended — Π consumes Catalog × Profile, never Policy; the
+  basis for V2's catalog-only manifest scope.
+- Matrix row 83 + V2_DRIVER §154 — RemediationEmitter chapter 5+
+  deferral; PreRemediation field remains empty until that ships.
+- Matrix row 41 + `DECISIONS 2026-05-17 (slice 5.8.α)` — V2's
+  `compare` verb concept-harvest; future consumer that might consume
+  Options/PolicySummary manifest fields.
+
+---
+
