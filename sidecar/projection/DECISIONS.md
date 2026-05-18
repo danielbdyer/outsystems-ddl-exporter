@@ -15237,6 +15237,122 @@ that don't require closure.
 
 ---
 
+## 2026-05-18 (slice 5.3.α.smo-audit) — V1 SMO PerTableEmission cluster fully audited; ScriptDom canonical emission replaces V1 post-render formatting as load-bearing architecture
+
+### Scope
+
+User-directed XXXXXL audit pass on V1's `src/Osm.Smo/PerTableEmission/`
+cluster (1905 LOC across 7 C# files), per HANDOFF 2026-05-18 next-move
+candidate B ("SMO → ScriptDom emission audit"). The cluster ships V1's
+per-table SQL generation surface — CreateTable / Index / FK / PK / Check
+/ Default / Extended Properties — and is the structural counterpart to
+V2's `Projection.Targets.SSDT/{ScriptDomBuild,SsdtDdlEmitter,Render,
+BatchSplitter}.fs`. Prior audits closed rows 120 (cluster-level
+architecture choice) + 182 (CreateTableStatementBuilder line-by-line) +
+183 (IndexScriptBuilder line-by-line). This slice completes the
+audit on the remaining 5 V1 files.
+
+### What ships
+
+**Matrix amendments (V1_PARITY_MATRIX.md):**
+
+- **Status-history amendment** for rows 120 + 182 + 183 reflecting
+  2026-05-18 closures of named-deferred axes (DEFAULT + CHECK +
+  IgnoreDupKey + DataCompression-single + ON UPDATE + NOCHECK all
+  shipped via slices `5.13.{column,fk,index}-features-emit`). Row 182
+  rises from 95% → 97% PARITY (2 deferred axes remain: LR3
+  single-column-PK-inline + LR4 computed columns). Row 183 rises from
+  70% → 90% PARITY (2 deferred axes remain: LR6 partition-range
+  DataCompression + LR7 FileGroup/PartitionScheme — both row 56
+  cluster).
+
+- **5 new matrix rows** (186-190) for previously-unaudited V1 SMO
+  files. Classifications:
+  - 186 `CreateTableFormatter.cs` (~235 LOC) — 🟡 DIVERGENCE
+  - 187 `ConstraintFormatter.cs` (~313 LOC) — 🟡 DIVERGENCE
+  - 188 `StatementBatchFormatter.cs` (~60 LOC) — 🟡 DIVERGENCE
+  - 189 `IdentifierFormatter.cs` (~146 LOC) — 🟡 DIVERGENCE
+  - 190 `ExtendedPropertyScriptBuilder.cs` (~142 LOC) — 🟢 PARITY
+
+**New test file `SsdtSchemaFidelityPropertyTests.fs`** (~280 LOC):
+12 structural-fidelity property tests + 4 Skip-stubs reserving names
+for deferred axes (LR3 / LR4 / LR6 / LR7) with explicit triggers in
+the Skip prose.
+
+### Operating-discipline payoff
+
+**"Post-render formatting is V1-only; V2's structural emission via
+ScriptDom is canonical."** This is the cluster-level architectural
+finding the audit codifies. Per `DECISIONS 2026-05-10 — Text-builder-
+as-first-instinct discipline`, ScriptDom is the canonical typed-AST
+library; V1's `CreateTableFormatter` + `ConstraintFormatter` +
+`StatementBatchFormatter` + `IdentifierFormatter` (954 LOC across 4
+files) are V1-era artifacts handling idiosyncrasies that don't appear
+in V2's emission by construction. V2 replaces 4 V1 files (954 LOC of
+post-render manipulation) with **zero V2 LOC** — the equivalent
+content lands at the typed-AST boundary deterministically.
+
+**Cluster-level structural reduction confirmed:** 7 V1 files →
+3 V2 files (ScriptDomBuild + SsdtDdlEmitter + BatchSplitter; Render
+delegates). 1905 V1 LOC → ~2200 V2 LOC ratio is misleading because
+V2's coverage extends beyond V1's (Profile-evidence emitters,
+typed-statement stream realization, RegisteredTransform metadata,
+classification fidelity). The **post-render formatting cluster
+(4 files, 954 LOC) maps to 0 V2 LOC** — load-bearing architectural
+gain.
+
+### Coverage (12 new + 4 skip-stubs)
+
+Per the operating-discipline "Make divergences visible" — every
+deferred-with-trigger axis surfaces as a `[<Fact(Skip = "…")>]` stub
+with the trigger prose in the Skip string. Test discovery shows the
+4 stubs (LR3 / LR4 / LR6 / LR7) so future agents see the residuals
+structurally, not via doc-search.
+
+### Deferred (after this slice)
+
+**Two named SCHEMA-axis residuals remain** (consistent with HANDOFF
+2026-05-18's "Three SCHEMA-axis residuals remain. Two are
+no-consumer-pressure deferrals (single-column-PK inline; computed
+columns). Partition-scheme is the only one requiring non-trivial IR
+design"):
+
+- **LR3 (single-column-PK inline)** — V1 emits `[Id] INT NOT NULL
+  PRIMARY KEY` for single-column PKs (CreateTableStatementBuilder L67-77);
+  V2 always emits as table-level CONSTRAINT clause. Functionally
+  equivalent (PhysicalSchema diff is empty); cosmetically different
+  SQL text. **Trigger to cash out**: operator-pressure for byte-identity
+  to V1 emission OR consumer demand for inline column-level PK syntax.
+- **LR4 (computed columns)** — V1 emits `[col] AS (expression)` for
+  computed columns; V2's `Attribute.IsComputed` field exists but the
+  expression source isn't yet populated through the adapter path or
+  consumed by the emitter. **Trigger**: V2 IR refinement adds
+  `Attribute.ComputedExpression : string option` + adapter populates +
+  emitter routes it through ScriptDom's `ComputedColumnDefinition`.
+
+**Row 56 partition-scheme cluster (LR6 + LR7)** remains the only
+non-trivial residual; closed-DU `DataSpace = Filegroup of name |
+PartitionScheme of name × columns` lift is the cash-out shape per
+prior amendments. Trigger: partitioned-index fixture in operator-reality
+canary.
+
+### Cross-references
+
+- `DECISIONS 2026-05-10 — Text-builder-as-first-instinct discipline`
+  (the load-bearing architectural choice the audit confirms operationally)
+- `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy
+  classification` (every site classified; the audit applies the
+  discipline to the SMO cluster)
+- `V1_PARITY_MATRIX.md` rows 120 + 182 + 183 + 186-190 (the audit's
+  matrix-amendment surface)
+- `HANDOFF 2026-05-18` next-move candidate B (SMO → ScriptDom emission
+  audit); this slice is the cash-out
+- The 4 skip-stubs in `SsdtSchemaFidelityPropertyTests.fs` (LR3 / LR4 /
+  LR6 / LR7) are the structural visibility of the deferred axes per
+  the "Make divergences visible" operating discipline
+
+---
+
 ## 2026-05-18 (slice 5.13.shim-retirement) — Full IRBuilders shim retirement: pure delegations + shape adapters lifted to Core; only the two skip-Result test-fixture conveniences remain
 
 ### Scope
