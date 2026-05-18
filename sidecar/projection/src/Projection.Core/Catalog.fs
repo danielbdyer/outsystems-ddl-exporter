@@ -539,6 +539,26 @@ type Reference = {
     /// `HasLogicalForeignKeyWithDbConstraint` always-false
     /// PredicateName variants.
     HasDbConstraint : bool
+    /// Optional ON UPDATE referential action. `None` = unstated (V1
+    /// default; SQL Server emits no ON UPDATE clause, server-default
+    /// NO ACTION applies). `Some action` = operator-supplied explicit
+    /// action carried from V1's `#FkReality.UpdateAction` column. The
+    /// SSDT emitter consumes via ScriptDom's
+    /// `ForeignKeyConstraintDefinition.UpdateAction`.
+    ///
+    /// Slice 5.13.fk-features-emit (matrix row 58 cash-out).
+    OnUpdate        : ReferenceAction option
+    /// Whether the FK constraint is currently TRUSTED at the deployed
+    /// target (i.e., the FK was created normally OR re-validated after
+    /// a WITH NOCHECK insert). `true` (default) preserves V1's default
+    /// emission shape. `false` carries from V1's
+    /// `#FkReality.IsNoCheck = 1` and triggers a post-CREATE-TABLE
+    /// `ALTER TABLE ... WITH NOCHECK CHECK CONSTRAINT [<fk>]`
+    /// statement so V2's emission round-trips against a deployed
+    /// target carrying NOCHECK'd FKs.
+    ///
+    /// Slice 5.13.fk-features-emit (matrix row 59 cash-out).
+    IsConstraintTrusted : bool
 }
 
 
@@ -746,6 +766,136 @@ type Catalog = {
 }
 
 
+/// Slice 5.13.fk-features-emit (smart-constructor closure) — production-
+/// side smart constructors for the IR aggregate records that lacked
+/// them. The pattern mirrors the test-side `IRBuilders.mkX` helpers
+/// (`tests/Projection.Tests/IRBuilders.fs`) lifted to production. Each
+/// constructor takes the minimum-evidence positional arguments; all
+/// optional axes default to their no-evidence form. Field extensions
+/// land on the constructor body only — literal-construction sites
+/// continue working via record-update syntax (`{ Attribute.create … with
+/// IsActive = false }`).
+///
+/// Rationale (per user direction; A39 codification): when an IR record
+/// is extension-prone (i.e., chapter-A.0' lifts repeatedly add fields),
+/// every additional field forces a sweep across every literal site.
+/// The smart constructor absorbs the field at one location; consumers
+/// stay stable. Sibling to `Module.create` + `Catalog.create` (the
+/// pre-existing pattern); siblings to the existing `Name.create` +
+/// `ColumnCheck.create` + `Trigger.create` + `Sequence.create`.
+
+[<RequireQualifiedAccess>]
+module Attribute =
+
+    /// Build an `Attribute` with minimum-evidence defaults. Required:
+    /// `ssKey`, `name`, `ptype`. Optional axes default to:
+    ///   - `Column = { ColumnName = Name.value name; IsNullable = false }`
+    ///   - `IsPrimaryKey = false`; `IsMandatory = false`
+    ///   - `Length = None`; `Precision = None`; `Scale = None`
+    ///   - `IsIdentity = false`
+    ///   - `Description = None`; `IsActive = true` (V1 default)
+    ///   - `DefaultValue = None`; `Computed = None`
+    ///   - `ExtendedProperties = []`
+    ///   - `OriginalName = None`; `ExternalDatabaseType = None`
+    ///
+    /// Consumers override via record-update: `{ Attribute.create k n
+    /// Integer with IsPrimaryKey = true; IsMandatory = true }`.
+    let create (ssKey: SsKey) (name: Name) (ptype: PrimitiveType) : Attribute =
+        {
+            SsKey                = ssKey
+            Name                 = name
+            Type                 = ptype
+            Column               = { ColumnName = Name.value name; IsNullable = false }
+            IsPrimaryKey         = false
+            IsMandatory          = false
+            Length               = None
+            Precision            = None
+            Scale                = None
+            IsIdentity           = false
+            Description          = None
+            IsActive             = true
+            DefaultValue         = None
+            Computed             = None
+            ExtendedProperties   = []
+            OriginalName         = None
+            ExternalDatabaseType = None
+        }
+
+
+[<RequireQualifiedAccess>]
+module Reference =
+
+    /// Build a `Reference` with minimum-evidence defaults. Required:
+    /// `ssKey`, `name`, `sourceAttribute`, `targetKind`. Optional axes
+    /// default to:
+    ///   - `OnDelete = NoAction` (SQL Server's server-default behavior)
+    ///   - `IsUserFk = false`
+    ///   - `HasDbConstraint = false` (V1's COALESCE-to-0 default;
+    ///     adapters opt into `true` when reflection observes the
+    ///     constraint)
+    ///   - `OnUpdate = None` (unstated → SQL Server emits no ON UPDATE
+    ///     clause; server default NO ACTION applies)
+    ///   - `IsConstraintTrusted = true` (V1 default; FKs are TRUSTED
+    ///     unless `#FkReality.IsNoCheck = 1` flips this)
+    ///
+    /// Consumers override via record-update: `{ Reference.create k n s
+    /// t with OnDelete = Cascade; HasDbConstraint = true }`.
+    let create
+        (ssKey: SsKey)
+        (name: Name)
+        (sourceAttribute: SsKey)
+        (targetKind: SsKey)
+        : Reference =
+        {
+            SsKey               = ssKey
+            Name                = name
+            SourceAttribute     = sourceAttribute
+            TargetKind          = targetKind
+            OnDelete            = NoAction
+            IsUserFk            = false
+            HasDbConstraint     = false
+            OnUpdate            = None
+            IsConstraintTrusted = true
+        }
+
+
+[<RequireQualifiedAccess>]
+module Index =
+
+    /// Build an `Index` with minimum-evidence defaults. Required:
+    /// `ssKey`, `name`, `columns`. Optional axes default to:
+    ///   - `IsUnique = false`; `IsPrimaryKey = false`
+    ///   - `ExtendedProperties = []`
+    ///   - `Filter = None`; `IncludedColumns = []`
+    ///   - `IsPlatformAuto = false`
+    ///   - `FillFactor = None`; `IsPadded = false`
+    ///   - `AllowRowLocks = true`; `AllowPageLocks = true` (V1 defaults)
+    ///   - `NoRecomputeStatistics = false`
+    ///
+    /// Consumers override via record-update.
+    let create
+        (ssKey: SsKey)
+        (name: Name)
+        (columns: IndexColumn list)
+        : Index =
+        {
+            SsKey                 = ssKey
+            Name                  = name
+            Columns               = columns
+            IsUnique              = false
+            IsPrimaryKey          = false
+            ExtendedProperties    = []
+            Filter                = None
+            IncludedColumns       = []
+            IsPlatformAuto        = false
+            FillFactor            = None
+            IsPadded              = false
+            AllowRowLocks         = true
+            AllowPageLocks        = true
+            NoRecomputeStatistics = false
+        }
+
+
 /// Identity-based equality and lookup helpers for catalog nodes (A4).
 /// The default F# record `=` compares all fields, which is the right
 /// operator for "did this pass change anything?" tests; these helpers are
@@ -753,6 +903,37 @@ type Catalog = {
 /// for catalog-level identity.
 [<RequireQualifiedAccess>]
 module Kind =
+
+    /// Build a `Kind` with minimum-evidence defaults. Required: `ssKey`,
+    /// `name`, `physical`, `attributes`. Optional axes default to:
+    ///   - `Origin = OsNative`
+    ///   - `Modality = []`; `References = []`; `Indexes = []`
+    ///   - `Description = None`; `IsActive = true`
+    ///   - `Triggers = []`; `ColumnChecks = []`
+    ///   - `ExtendedProperties = []`
+    ///
+    /// Consumers override via record-update.
+    let create
+        (ssKey: SsKey)
+        (name: Name)
+        (physical: PhysicalRealization)
+        (attributes: Attribute list)
+        : Kind =
+        {
+            SsKey              = ssKey
+            Name               = name
+            Origin             = OsNative
+            Modality           = []
+            Physical           = physical
+            Attributes         = attributes
+            References         = []
+            Indexes            = []
+            Description        = None
+            IsActive           = true
+            Triggers           = []
+            ColumnChecks       = []
+            ExtendedProperties = []
+        }
 
     /// True when two kinds share the same SsKey, regardless of names,
     /// attribute orderings, modality marks, or any other field. Encodes

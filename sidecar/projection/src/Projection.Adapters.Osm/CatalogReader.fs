@@ -951,22 +951,18 @@ module CatalogReader =
                     // pattern.
                     let hasDbConstraint =
                         getOptionalIntFlag attrJson "reference_hasDbConstraint" false
+                    // Slice 5.13.fk-features-emit — smart-constructor
+                    // migration. `Reference.create` carries the
+                    // minimum-evidence defaults (OnDelete = NoAction;
+                    // IsUserFk = false; HasDbConstraint = false;
+                    // OnUpdate = None; IsConstraintTrusted = true);
+                    // the JSON path overrides what the source carries.
+                    // User-FK detection (chapter 4.2 deferral) stays at
+                    // default `false`.
                     Result.success (Some
-                        { SsKey           = rKey
-                          Name            = rName
-                          SourceAttribute = srcKey
-                          TargetKind      = tgtKey
-                          OnDelete        = rule
-                          // Slice ζ: User-FK detection deferred to a
-                          // sibling pass at chapter 4.2's adapter-
-                          // integration boundary. Defaults to false
-                          // until the OSSYS-platform user-kind
-                          // identification surface materializes (per
-                          // V1 reference ModelUserSchemaGraphFactory.
-                          // GetSyntheticUserForeignKeys); the chapter
-                          // 4.2 close ritual codifies the trigger.
-                          IsUserFk        = false
-                          HasDbConstraint = hasDbConstraint })
+                        { Reference.create rKey rName srcKey tgtKey with
+                            OnDelete        = rule
+                            HasDbConstraint = hasDbConstraint })
                 | _ ->
                     // Propagate underlying errors via
                     // `propagateOrFallback` — uniform with the four
@@ -1607,23 +1603,15 @@ module CatalogReader =
         let onDelete   = parseDeleteRule refRow.DeleteRuleCode
         match refKey, refName, srcAttrKey, tgtKindKey, onDelete with
         | Ok rKey, Ok rName, Ok srcKey, Ok tgtKey, Ok rule ->
+            // Slice 5.13.fk-features-emit — smart-constructor migration.
+            // `Reference.create` carries minimum-evidence defaults; the
+            // rowset path overrides OnDelete + HasDbConstraint from the
+            // row. OnUpdate + IsConstraintTrusted populated when the
+            // FK-features-emit slice wires from #FkReality.
             Result.success
-                { SsKey           = rKey
-                  Name            = rName
-                  SourceAttribute = srcKey
-                  TargetKind      = tgtKey
-                  OnDelete        = rule
-                  // Slice ζ: User-FK detection deferred at the
-                  // rowset adapter (same as the JSON adapter; both
-                  // depend on the OSSYS-platform user-kind
-                  // identification surface that lands at the
-                  // chapter 4.2 adapter-integration boundary).
-                  IsUserFk        = false
-                  // Chapter 4.6 slice α — rowset path carries
-                  // HasDbConstraint via the #FkReality rowset's
-                  // HasFK column (see ReferenceRow.HasDbConstraint
-                  // at line 193). Propagated unchanged from the row.
-                  HasDbConstraint = refRow.HasDbConstraint }
+                { Reference.create rKey rName srcKey tgtKey with
+                    OnDelete        = rule
+                    HasDbConstraint = refRow.HasDbConstraint }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback` —
             // uniform with parseReference on the JSON path.

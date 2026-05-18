@@ -71,12 +71,12 @@ let private mkOrderKind () : Kind =
                 { IRBuilders.mkAttribute createdByKey (mkName "CreatedBy") Integer with Column = { ColumnName = "CREATEDBY"; IsNullable = false }; IsMandatory = true }
             ]
         References =
-            [ { SsKey           = createdByRefKey
-                Name            = mkName "CreatedByFk"
-                SourceAttribute = createdByKey
-                TargetKind      = mkKey ["IDM"; "User"]  // platform User kind (synthetic)
-                OnDelete        = NoAction
-                IsUserFk        = true; HasDbConstraint = false } ]  // slice ζ User-FK marker
+            [ { Reference.create
+                  createdByRefKey
+                  (mkName "CreatedByFk")
+                  createdByKey
+                  (mkKey ["IDM"; "User"])  // platform User kind (synthetic)
+                with IsUserFk = true } ]  // slice ζ User-FK marker
         Indexes    = []
         Description = None
         IsActive = true

@@ -635,33 +635,17 @@ module ReadSide =
                     "READSIDE_REF"
                     (sprintf "%s.%s.%s" srcSchema srcTable srcColumn)
             let! refName = Name.create (sprintf "FK_%s_%s" srcTable srcColumn)
+            // Slice 5.13.fk-features-emit — smart-constructor migration.
+            // ReadSide reconstructs Reference from `sys.foreign_keys`,
+            // which by definition lists references backed by DB
+            // constraints (HasDbConstraint = true). The schema-only
+            // ReadSide surface today carries no OnDelete / OnUpdate /
+            // IsConstraintTrusted axes — defaults remain from
+            // `Reference.create` until a follow-up slice joins
+            // `sys.foreign_keys`'s referential-action + trust columns.
             return
-                {
-                    SsKey = refKey
-                    Name = refName
-                    SourceAttribute = srcAttrKey
-                    TargetKind = tgtKindKey
-                    // Delete-rule recovery requires
-                    // joining sys.foreign_keys.delete_referential_action_desc;
-                    // defer to a follow-up slice.
-                    // NoAction is the SQL Server default
-                    // and matches the OutSystems-shape
-                    // fixtures we currently target.
-                    OnDelete = NoAction
-                    // Slice ζ: User-FK detection is not part of
-                    // the schema-only ReadSide surface (the read-
-                    // side reconstructs Catalog from `sys.foreign_keys`;
-                    // it has no User-population evidence to
-                    // identify the user kind). Defaults to false;
-                    // chapter 4.2's adapter-integration boundary
-                    // resolves the flag at the OSSYS-source seam.
-                    IsUserFk = false
-                    // Chapter 4.6 slice α — ReadSide reconstructs
-                    // Reference from `sys.foreign_keys`, which by
-                    // definition lists references backed by DB
-                    // constraints. Always true on this path.
-                    HasDbConstraint = true
-                }
+                { Reference.create refKey refName srcAttrKey tgtKindKey with
+                    HasDbConstraint = true }
         }
 
     /// Attach references to a Kind based on the FKs grouped by

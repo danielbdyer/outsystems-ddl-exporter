@@ -74,23 +74,27 @@ module SymmetricClosure =
             // PK attribute. Composite-FK semantics arrive when a real V1
             // fixture has them; the migration path is documented in the
             // EntityDependencySorter admire entry.
+            // Slice 5.13.fk-features-emit — smart-constructor migration.
+            // Inverse references inherit ALL the original's FK metadata
+            // (the inverse view is a logical projection; the underlying
+            // physical FK constraint with its ON UPDATE + trust state
+            // remains the original). The `Reference.create` defaults
+            // provide the structural floor; the `with` overrides
+            // propagate the original's flags. OnDelete intentionally
+            // stays at `NoAction` (default) — inverse references don't
+            // carry the original's cascade behavior, since the
+            // operational direction reverses.
             Some
-                { SsKey           = deriveInverseKey r
-                  Name            = sourceKind.Name
-                  SourceAttribute = pkAttr.SsKey
-                  TargetKind      = sourceKind.SsKey
-                  OnDelete        = NoAction
-                  // Inverse references inherit the original's User-FK
-                  // status — if the original is a User-FK (CreatedBy
-                  // → users), its inverse (users → entity that
-                  // created it) carries the same flag for consumer
-                  // gating at emission time.
-                  IsUserFk        = r.IsUserFk
-                  // Chapter 4.6 slice α — inverse references inherit
-                  // the original's HasDbConstraint flag (if the
-                  // forward FK has a DB constraint, the inverse view
-                  // surfaces the same constraint at the storage layer).
-                  HasDbConstraint = r.HasDbConstraint }
+                { Reference.create
+                    (deriveInverseKey r)
+                    sourceKind.Name
+                    pkAttr.SsKey
+                    sourceKind.SsKey
+                  with
+                    IsUserFk            = r.IsUserFk
+                    HasDbConstraint     = r.HasDbConstraint
+                    OnUpdate            = r.OnUpdate
+                    IsConstraintTrusted = r.IsConstraintTrusted }
 
     let private hasInverseAlready (refs: Reference list) (key: SsKey) : bool =
         refs |> List.exists (fun r -> r.SsKey = key)

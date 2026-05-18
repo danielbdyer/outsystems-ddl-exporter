@@ -27,51 +27,22 @@ open Projection.Core
 /// options, V1-default-true for IsActive. Tests opting into specific
 /// values (e.g., `IsActive = false`) override via record-update.
 
-/// Build an `Attribute` with minimum-evidence defaults. Override fields
-/// via record-update syntax (`{ mkAttribute key name ptype with ... }`).
+/// Build an `Attribute` with minimum-evidence defaults. Delegates to
+/// the production-side `Attribute.create` smart constructor (slice
+/// 5.13.fk-features-emit).
 let mkAttribute (ssKey: SsKey) (name: Name) (ptype: PrimitiveType) : Attribute =
-    {
-        SsKey              = ssKey
-        Name               = name
-        Type               = ptype
-        Column             = { ColumnName = Name.value name; IsNullable = false }
-        IsPrimaryKey       = false
-        IsMandatory        = false
-        Length             = None
-        Precision          = None
-        Scale              = None
-        IsIdentity         = false
-        Description        = None
-        IsActive           = true
-        DefaultValue       = None
-        Computed           = None
-        ExtendedProperties = []
-        OriginalName       = None
-        ExternalDatabaseType = None
-    }
+    Attribute.create ssKey name ptype
 
-/// Build a `Kind` with the given attributes and minimum-evidence defaults.
+/// Build a `Kind` with the given attributes and minimum-evidence
+/// defaults. Delegates to the production-side `Kind.create` smart
+/// constructor (slice 5.13.fk-features-emit).
 let mkKind
     (ssKey: SsKey)
     (name: Name)
     (physical: PhysicalRealization)
     (attributes: Attribute list)
     : Kind =
-    {
-        SsKey              = ssKey
-        Name               = name
-        Origin             = OsNative
-        Modality           = []
-        Physical           = physical
-        Attributes         = attributes
-        References         = []
-        Indexes            = []
-        Description        = None
-        IsActive           = true
-        Triggers           = []
-        ColumnChecks       = []
-        ExtendedProperties = []
-    }
+    Kind.create ssKey name physical attributes
 
 /// Build a `Module` with the given kinds and minimum-evidence defaults.
 let mkModule (ssKey: SsKey) (name: Name) (kinds: Kind list) : Module =
@@ -96,49 +67,27 @@ let mkIndexColumns (attributes: SsKey list) : IndexColumn list =
     attributes |> List.map (fun a -> { Attribute = a; Direction = Ascending })
 
 /// Build an `Index` with minimum-evidence defaults. Accepts the
-/// attribute keys directly; defaults to all-Ascending. Tests opting
-/// into DESC direction override `Columns` via record-update with
-/// `mkIndexColumn` entries.
+/// attribute keys directly; defaults to all-Ascending. Delegates to
+/// the production-side `Index.create` smart constructor (slice
+/// 5.13.fk-features-emit).
 let mkIndex
     (ssKey: SsKey)
     (name: Name)
     (columns: SsKey list)
     : Index =
-    {
-        SsKey              = ssKey
-        Name               = name
-        Columns            = mkIndexColumns columns
-        IsUnique           = false
-        IsPrimaryKey       = false
-        ExtendedProperties = []
-        Filter             = None
-        IncludedColumns    = []
-        IsPlatformAuto     = false
-        FillFactor         = None
-        IsPadded           = false
-        AllowRowLocks      = true
-        AllowPageLocks     = true
-        NoRecomputeStatistics = false
-    }
+    Index.create ssKey name (mkIndexColumns columns)
 
-/// Build a `Reference` with minimum-evidence defaults. Required: ssKey,
-/// name, sourceAttribute, targetKind. Defaults: OnDelete = NoAction,
-/// IsUserFk = false, HasDbConstraint = false (V1's COALESCE-to-0 default).
+/// Build a `Reference` with minimum-evidence defaults. Delegates to
+/// the production-side `Reference.create` smart constructor (slice
+/// 5.13.fk-features-emit); the test fixture stays consistent with the
+/// production default geometry.
 let mkReference
     (ssKey: SsKey)
     (name: Name)
     (sourceAttribute: SsKey)
     (targetKind: SsKey)
     : Reference =
-    {
-        SsKey           = ssKey
-        Name            = name
-        SourceAttribute = sourceAttribute
-        TargetKind      = targetKind
-        OnDelete        = NoAction
-        IsUserFk        = false
-        HasDbConstraint = false
-    }
+    Reference.create ssKey name sourceAttribute targetKind
 
 /// Build a `Catalog` with the given modules and no sequences. For
 /// invariant-checking construction use `Catalog.create modules sequences`;
