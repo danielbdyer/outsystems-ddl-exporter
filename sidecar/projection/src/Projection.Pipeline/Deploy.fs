@@ -498,6 +498,15 @@ module Deploy =
                 | SetIdentityInsert _ ->
                     do! flushBulk ()
                     appendDdl s
+                | AlterTableNoCheckConstraint _ ->
+                    // Slice 5.13.fk-features-emit (matrix row 59) —
+                    // ALTER TABLE ... WITH NOCHECK CHECK CONSTRAINT
+                    // is a DDL-class statement; same realization shape
+                    // as the other DDL arms (flush bulk inserts before
+                    // issuing DDL, then route through Render.toSql
+                    // which delegates to ScriptDomGenerate).
+                    do! flushBulk ()
+                    appendDdl s
                 | InsertRow (table, values) ->
                     let shape = values |> List.map (fun v -> v.Column)
                     let canAppend =

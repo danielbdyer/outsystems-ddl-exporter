@@ -302,9 +302,18 @@ module ScriptDomBuild =
             cons.Columns.Add(order)
         cons :> ConstraintDefinition
 
+    let private toDeleteUpdateAction (a: ReferenceActionSql) : DeleteUpdateAction =
+        match a with
+        | NoActionSql -> DeleteUpdateAction.NoAction
+        | CascadeSql  -> DeleteUpdateAction.Cascade
+        | SetNullSql  -> DeleteUpdateAction.SetNull
+
     /// Build a single-column foreign-key constraint per V2's
     /// `ForeignKeyDef`. Maps V2's `ReferenceActionSql` DU to
-    /// ScriptDom's `DeleteUpdateAction`.
+    /// ScriptDom's `DeleteUpdateAction`. Slice 5.13.fk-features-emit:
+    /// emits the optional `UpdateAction` from `fk.OnUpdate`. When
+    /// `None`, ScriptDom omits the ON UPDATE clause and SQL Server's
+    /// server-default NO ACTION applies (preserves V1 emission shape).
     let private foreignKeyConstraint
         (fk: ForeignKeyDef)
         : ConstraintDefinition =
@@ -313,11 +322,10 @@ module ScriptDomBuild =
         cons.Columns.Add(bracketed fk.SourceColumn)
         cons.ReferenceTableName <- schemaObjectFromTableId fk.Target
         cons.ReferencedTableColumns.Add(bracketed fk.TargetColumn)
-        cons.DeleteAction <-
-            match fk.OnDelete with
-            | NoActionSql -> DeleteUpdateAction.NoAction
-            | CascadeSql  -> DeleteUpdateAction.Cascade
-            | SetNullSql  -> DeleteUpdateAction.SetNull
+        cons.DeleteAction <- toDeleteUpdateAction fk.OnDelete
+        match fk.OnUpdate with
+        | Some action -> cons.UpdateAction <- toDeleteUpdateAction action
+        | None        -> ()
         cons :> ConstraintDefinition
 
     /// Build a `CreateTableStatement` from V2's typed
@@ -1060,6 +1068,30 @@ module ScriptDomBuild =
         stmt.ExecuteSpecification <- spec
         stmt
 
+    /// Build `ALTER TABLE <table> WITH NOCHECK CHECK CONSTRAINT
+    /// <constraintName>` via ScriptDom's
+    /// `AlterTableConstraintModificationStatement`. Preserves the
+    /// deployed target's FK trust state when V1's
+    /// `#FkReality.IsNoCheck = 1` flips `Reference.IsConstraintTrusted`
+    /// to `false`. Slice 5.13.fk-features-emit (matrix row 59).
+    ///
+    /// Renders as the V1 emission shape:
+    ///   `ALTER TABLE [Schema].[Table] WITH NOCHECK CHECK CONSTRAINT [FK_…]`
+    /// — the `WITH NOCHECK` prefix (ExistingRowsCheckEnforcement)
+    /// tells SQL Server to skip validation of existing rows; the
+    /// trailing `CHECK CONSTRAINT` (ConstraintEnforcement) re-enables
+    /// the constraint going forward.
+    let buildAlterTableNoCheckConstraint
+            (table: TableId)
+            (constraintName: string)
+            : AlterTableConstraintModificationStatement =
+        let stmt = AlterTableConstraintModificationStatement()
+        stmt.SchemaObjectName <- schemaObjectFromTableId table
+        stmt.ConstraintNames.Add(bracketed constraintName)
+        stmt.ExistingRowsCheckEnforcement <- ConstraintEnforcement.NoCheck
+        stmt.ConstraintEnforcement <- ConstraintEnforcement.Check
+        stmt
+
     /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ).
     let buildSetExtendedProperty
             (owner: ExtendedPropertyOwner)
@@ -1086,3 +1118,5 @@ module ScriptDomBuild =
             Some (buildSetIdentityInsert table enabled :> TSqlStatement)
         | SetExtendedProperty (owner, propName, propValue) ->
             Some ((buildSetExtendedProperty owner propName propValue).Value :> TSqlStatement)
+        | AlterTableNoCheckConstraint (table, constraintName) ->
+            Some (buildAlterTableNoCheckConstraint table constraintName :> TSqlStatement)

@@ -135,7 +135,8 @@ module Render =
             |> ignore
         | CreateTable _
         | CreateIndex _
-        | SetExtendedProperty _ ->
+        | SetExtendedProperty _
+        | AlterTableNoCheckConstraint _ ->
             // Per pillar 7 four-question analysis at this site:
             //   1. Use-case-specific library: ScriptDom's
             //      `Sql160ScriptGenerator` via `ScriptDomGenerate
@@ -144,23 +145,22 @@ module Render =
             //   3. Cost: trivial (one delegate call).
             //   4. Structural reason it doesn't apply: NO — ScriptDom
             //      emits CREATE TABLE / CREATE INDEX / EXEC
-            //      sys.sp_addextendedproperty correctly per Sql160
+            //      sys.sp_addextendedproperty / ALTER TABLE …
+            //      WITH NOCHECK CHECK CONSTRAINT correctly per Sql160
             //      grammar.
             //
             // Slice 5.13.column-features-emit moved CREATE TABLE
-            // into this delegation arm so DEFAULT-constraint +
-            // CHECK-constraint emission live in one place
-            // (`ScriptDomBuild.columnDefinition` +
-            // `ScriptDomBuild.checkConstraint`). Single source of
-            // truth retires the prior StringBuilder duplication.
+            // into this delegation arm; slice 5.13.fk-features-emit
+            // added the AlterTableNoCheckConstraint variant. Single
+            // source of truth via `ScriptDomBuild` retires the prior
+            // StringBuilder duplication.
             match ScriptDomBuild.buildStatement s with
             | Some fragment ->
                 sb.Append(ScriptDomGenerate.generateOne fragment).AppendLine() |> ignore
             | None ->
                 // Unreachable: CreateTable / CreateIndex /
-                // SetExtendedProperty always build typed fragments
-                // (per ScriptDomBuild.buildStatement's exhaustive
-                // match).
+                // SetExtendedProperty / AlterTableNoCheckConstraint
+                // always build typed fragments.
                 ()
 
     /// Fold a statement stream into a single SQL-text artifact. The

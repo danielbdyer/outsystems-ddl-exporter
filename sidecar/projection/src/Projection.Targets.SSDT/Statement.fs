@@ -93,6 +93,19 @@ type ForeignKeyDef =
         Target : TableId
         TargetColumn : string
         OnDelete : ReferenceActionSql
+        /// Optional ON UPDATE referential action (slice
+        /// 5.13.fk-features-emit; matrix row 58). `None` = unstated;
+        /// ScriptDom omits the ON UPDATE clause (server-default NO
+        /// ACTION applies). `Some action` = explicit clause.
+        OnUpdate : ReferenceActionSql option
+        /// Whether the FK constraint is TRUSTED at the deployed
+        /// target. `true` (V1 default) = no special handling. `false`
+        /// = the realization layer emits a sibling
+        /// `Statement.AlterTableNoCheckConstraint` after CREATE TABLE
+        /// so the FK round-trips against a deployed target carrying
+        /// NOCHECK'd constraints. Slice 5.13.fk-features-emit (matrix
+        /// row 59).
+        IsConstraintTrusted : bool
     }
 
 type PrimaryKeyDef =
@@ -214,3 +227,10 @@ type Statement =
         owner: ExtendedPropertyOwner *
         propertyName: string *
         propertyValue: string option
+    /// `ALTER TABLE <table> WITH NOCHECK CHECK CONSTRAINT <fk>` —
+    /// preserves a deployed target's FK trust state when V1's
+    /// `#FkReality.IsNoCheck = 1` flips `Reference.IsConstraintTrusted`
+    /// to `false`. Emitted by `SsdtDdlEmitter` after the CREATE TABLE
+    /// statement of the owning kind, once per untrusted FK. Slice
+    /// 5.13.fk-features-emit (matrix row 59).
+    | AlterTableNoCheckConstraint of table: TableId * constraintName: string

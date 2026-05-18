@@ -222,6 +222,14 @@ module SsdtDdlEmitter =
                     Target       = toTableId target
                     TargetColumn = pkAttr.Column.ColumnName
                     OnDelete     = toReferenceActionSql r.OnDelete
+                    // Slice 5.13.fk-features-emit (matrix rows 58 + 59).
+                    // OnUpdate threads through to ScriptDom's
+                    // ForeignKeyConstraintDefinition.UpdateAction;
+                    // IsConstraintTrusted feeds the post-CREATE-TABLE
+                    // ALTER TABLE NOCHECK statement emitted by
+                    // `untrustedFkAlters` (sibling helper below).
+                    OnUpdate            = r.OnUpdate |> Option.map toReferenceActionSql
+                    IsConstraintTrusted = r.IsConstraintTrusted
                 }
         | _ -> None
 
@@ -246,6 +254,29 @@ module SsdtDdlEmitter =
         // realization layer's CHECK-constraint emission.
         let checks = k.ColumnChecks |> List.map columnCheckDef
         Statement.CreateTable (toTableId k, columns, pk, fks, checks)
+
+    /// Yield one `AlterTableNoCheckConstraint` statement per
+    /// `IsConstraintTrusted = false` FK on this kind. Emitted AFTER
+    /// the kind's CREATE TABLE so the named constraint exists when the
+    /// ALTER references it. Slice 5.13.fk-features-emit (matrix row 59).
+    ///
+    /// Same FK resolution path as `createTableStatement` (via
+    /// `fkDef`); a reference that doesn't resolve to a `ForeignKeyDef`
+    /// (cross-catalog target; missing PK on target) silently drops
+    /// here too — the corresponding CREATE TABLE inline FK is absent
+    /// by the same predicate, so the ALTER would be referencing a
+    /// non-existent constraint anyway.
+    let private untrustedFkAlters
+        (targetByKey: Map<SsKey, Kind>)
+        (pkAttrByKey: Map<SsKey, Attribute>)
+        (k: Kind)
+        : Statement list =
+        k.References
+        |> List.choose (fun r ->
+            match fkDef targetByKey pkAttrByKey k r with
+            | Some fk when not fk.IsConstraintTrusted ->
+                Some (Statement.AlterTableNoCheckConstraint (toTableId k, fk.Name))
+            | _ -> None)
 
     /// Resolve a column-SsKey to its physical column name within a
     /// kind. The IR's `Index.Columns` carries SsKey list (per
@@ -434,6 +465,17 @@ module SsdtDdlEmitter =
             seq {
                 yield! moduleSchemaPropertyStatements m k
                 yield createTableStatement targetByKey pkAttrByKey k
+                // Slice 5.13.fk-features-emit (matrix row 59):
+                // post-CREATE-TABLE ALTER statements preserve the
+                // deployed target's NOCHECK FK trust state. Emitted
+                // BEFORE indexes (CREATE INDEX is unaffected by FK
+                // trust, but the FK constraint must exist before
+                // ALTER references it — CREATE TABLE just created it
+                // inline). Today no adapter populates
+                // `IsConstraintTrusted = false`; this seam is
+                // structurally positioned for the rowset-path JOIN
+                // slice that wires `#FkReality.IsNoCheck`.
+                yield! untrustedFkAlters targetByKey pkAttrByKey k
                 yield! indexStatements k
                 yield! extendedPropertyStatements k
             }
@@ -525,6 +567,10 @@ module SsdtDdlEmitter =
         seq {
             for k in orderedKinds do
                 yield createTableStatement targetByKey pkAttrByKey k
+                // Slice 5.13.fk-features-emit — mirrors the per-kind
+                // emission order in `kindToSsdtFile`: post-CREATE-TABLE
+                // ALTER for untrusted FKs, then indexes.
+                yield! untrustedFkAlters targetByKey pkAttrByKey k
                 yield! indexStatements k
         }
 

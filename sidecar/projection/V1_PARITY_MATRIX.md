@@ -803,6 +803,99 @@ realization-layer additions:
 
 ---
 
+### Rows 58 + 59 (FK ON UPDATE + WITH NOCHECK) — 2026-05-18 (closed by slice 5.13.fk-features-emit, paired with slice 5.13.smart-constructor-lift)
+
+**Original classifications (slice 5.2.α.relationship, 2026-05-18):**
+- Row 58: 🟠 NOT-MAPPED. V2's `Reference.OnDelete : ReferenceAction`
+  carried only delete; ON UPDATE dropped at the adapter boundary;
+  V2 didn't emit ON UPDATE clauses.
+- Row 59: 🟠 NOT-MAPPED. V2's `Reference.HasDbConstraint : bool` was
+  binary (presence/absence); no FK-trust-state axis; V2 emitted no
+  WITH NOCHECK preservation step.
+
+**Reclassified (slice 5.13.fk-features-emit, 2026-05-18):**
+Row 58 → 🟢 PARITY (emit-side shipped; adapter wiring deferred
+until a JOIN slice threads `#FkReality.UpdateAction` through
+`OssysReferenceRow` → `ReferenceRow`). Row 59 → 🟢 PARITY (emit-
+side shipped; adapter wiring deferred for the same JOIN slice).
+
+**Rationale.** Slice 5.13.fk-features-emit closes the emit-side gap
+on the FK axis, mirroring the slice 5.13.column-features-emit
+pattern on the column axis. Realization-layer additions:
+
+- `Projection.Core/Catalog.fs` — `Reference` IR (extended in the
+  paired smart-constructor-lift slice):
+  - `OnUpdate : ReferenceAction option` (matrix row 58) — `None`
+    = unstated (V1 default; SQL Server emits no ON UPDATE clause).
+  - `IsConstraintTrusted : bool` (matrix row 59) — `true` (V1
+    default); `false` triggers the post-CREATE-TABLE ALTER
+    statement.
+- `Projection.Targets.SSDT/Statement.fs`:
+  - `ForeignKeyDef` extended with `OnUpdate : ReferenceActionSql
+    option` + `IsConstraintTrusted : bool`.
+  - New `Statement.AlterTableNoCheckConstraint of TableId *
+    constraintName : string` variant.
+- `Projection.Targets.SSDT/ScriptDomBuild.fs`:
+  - `foreignKeyConstraint` emits `cons.UpdateAction <-
+    toDeleteUpdateAction action` when `OnUpdate = Some action`;
+    omits the clause when `None` (preserves V1 emission shape).
+  - New `buildAlterTableNoCheckConstraint` builder uses
+    `AlterTableConstraintModificationStatement` with
+    `ExistingRowsCheckEnforcement = NoCheck` + `ConstraintEnforcement
+    = Check` → renders as `ALTER TABLE <table> WITH NOCHECK CHECK
+    CONSTRAINT [<fk>]` (verified against ScriptDom's
+    `Sql160ScriptGenerator` output).
+  - Closed-DU dispatcher (`buildStatement`) extended.
+  - Shared `toDeleteUpdateAction` private helper eliminates the
+    duplicate ReferenceActionSql → DeleteUpdateAction mapping that
+    OnUpdate + OnDelete would otherwise carry separately.
+- `Projection.Targets.SSDT/Render.fs` — `AlterTableNoCheckConstraint`
+  threaded into the `ScriptDomGenerate` delegation arm (single
+  source of truth alongside CREATE TABLE / CREATE INDEX /
+  SetExtendedProperty).
+- `Projection.Targets.SSDT/SsdtDdlEmitter.fs`:
+  - `fkDef` populates `OnUpdate` + `IsConstraintTrusted` from
+    `Reference`.
+  - New private `untrustedFkAlters` yields one
+    `AlterTableNoCheckConstraint` per `IsConstraintTrusted = false`
+    FK. Wired into BOTH per-kind `kindToSsdtFile` (emitSlices
+    artifact body) AND the catalog-wide `statements` stream.
+    Statements ordered: CREATE TABLE → ALTER TABLE NOCHECK (per
+    FK) → CREATE INDEX → SetExtendedProperty.
+- `Projection.Targets.SSDT/DacpacEmitter.fs` —
+  `isSchemaStatement` accepts the new variant.
+- `Projection.Pipeline/Deploy.fs` — deploy-time stream handles
+  the new variant as a DDL-class statement (flushes bulk before
+  the ALTER).
+
+**Coverage tests now passing (5 new):**
+- `SsdtDdlEmitterTests.``Slice 5.13.fk-features-emit: OnUpdate = None
+  omits the ON UPDATE clause (V1 emission shape)`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.fk-features-emit: OnUpdate = Some
+  Cascade emits ON UPDATE CASCADE`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.fk-features-emit:
+  IsConstraintTrusted = true omits ALTER TABLE WITH NOCHECK`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.fk-features-emit:
+  IsConstraintTrusted = false emits post-CREATE-TABLE ALTER TABLE
+  WITH NOCHECK CHECK CONSTRAINT`` ` (includes statement-ordering
+  assertion: ALTER must come after CREATE)
+- `SsdtDdlEmitterTests.``Slice 5.13.fk-features-emit: T1 byte-
+  determinism holds for OnUpdate + WITH NOCHECK emissions`` `
+
+**Deferred (no consumer pressure yet):**
+- Rowset adapter JOIN — `OssysReferenceRow` (per-attribute logical
+  FK edges from V1 `#References`) needs to JOIN
+  `OssysFkRealityRow` (per-FK-constraint sys.foreign_keys
+  reflection) on (EntityId, parent column) to populate
+  `OnUpdate` + `IsConstraintTrusted`. Today's `toBundle` does NOT
+  perform this JOIN; the rowset path produces References with the
+  smart-constructor defaults (`OnUpdate = None`,
+  `IsConstraintTrusted = true`). The emit-side is positioned for
+  the JOIN slice; canary remains green because OutSystems-shape
+  fixtures don't carry deployed WITH NOCHECK FKs.
+
+---
+
 ## Parity cash-out plans — what V2 work closes each gap
 
 The matrix's Notes column carries the per-row brief; this section

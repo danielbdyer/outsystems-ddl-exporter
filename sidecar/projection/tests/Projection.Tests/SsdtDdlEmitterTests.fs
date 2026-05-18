@@ -927,3 +927,108 @@ let ``Slice 5.13.column-features-emit: T1 byte-determinism holds with DEFAULT + 
     let b1 = (ArtifactByKind.toMap a1 |> Map.find columnFeaturesKind.SsKey).Body
     let b2 = (ArtifactByKind.toMap a2 |> Map.find columnFeaturesKind.SsKey).Body
     Assert.Equal (b1, b2)
+
+// ---------------------------------------------------------------------------
+// Slice 5.13.fk-features-emit — ON UPDATE referential action + WITH NOCHECK
+// FK trust-state preservation through the SSDT realization. Mirrors the
+// column-features-emit pattern on the FK axis (matrix rows 58 + 59).
+// ---------------------------------------------------------------------------
+
+let private fkFeaturesAKey       = kindKey ["A"; "AKind"]
+let private fkFeaturesBKey       = kindKey ["B"; "BKind"]
+let private fkFeaturesAIdAttr    = attrKey ["A"; "AKind"; "Id"]
+let private fkFeaturesBIdAttr    = attrKey ["B"; "BKind"; "Id"]
+let private fkFeaturesBFkAttr    = attrKey ["B"; "BKind"; "AId"]
+let private fkFeaturesCrossRef   = refKey ["B"; "BKind"; "AId"]
+
+let private fkFeaturesAKind : Kind =
+    { Kind.create
+        fkFeaturesAKey
+        (mkName "AKind")
+        { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
+        [ { IRBuilders.mkAttribute fkFeaturesAIdAttr (mkName "Id") Integer with
+                Column       = { ColumnName = "ID"; IsNullable = false }
+                IsPrimaryKey = true
+                IsMandatory  = true } ]
+      with References = []; Indexes = [] }
+
+let private fkFeaturesBKind (onUpdate: ReferenceAction option) (trusted: bool) : Kind =
+    let ref =
+        { Reference.create
+            fkFeaturesCrossRef (mkName "FkToA") fkFeaturesBFkAttr fkFeaturesAKey with
+            OnDelete            = Cascade
+            HasDbConstraint     = true
+            OnUpdate            = onUpdate
+            IsConstraintTrusted = trusted }
+    { Kind.create
+        fkFeaturesBKey
+        (mkName "BKind")
+        { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
+        [ { IRBuilders.mkAttribute fkFeaturesBIdAttr (mkName "Id") Integer with
+                Column       = { ColumnName = "ID"; IsNullable = false }
+                IsPrimaryKey = true
+                IsMandatory  = true }
+          { IRBuilders.mkAttribute fkFeaturesBFkAttr (mkName "AId") Integer with
+                Column       = { ColumnName = "A_ID"; IsNullable = false }
+                IsMandatory  = true } ]
+      with References = [ ref ]; Indexes = [] }
+
+let private fkFeaturesCatalog (onUpdate: ReferenceAction option) (trusted: bool) : Catalog =
+    {
+        Modules =
+            [ { SsKey = modKey "A"; Name = mkName "A"; Kinds = [ fkFeaturesAKind ]; IsActive = true; ExtendedProperties = [] }
+              { SsKey = modKey "B"; Name = mkName "B"; Kinds = [ fkFeaturesBKind onUpdate trusted ]; IsActive = true; ExtendedProperties = [] } ]
+        Sequences = []
+    }
+
+[<Fact>]
+let ``Slice 5.13.fk-features-emit: OnUpdate = None omits the ON UPDATE clause (V1 emission shape)`` () =
+    let enriched = enrich (fkFeaturesCatalog None true)
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let body = (ArtifactByKind.toMap artifact |> Map.find fkFeaturesBKey).Body
+    // OnDelete = Cascade still emits ON DELETE CASCADE.
+    Assert.Contains ("ON DELETE CASCADE", body)
+    // OnUpdate = None means no ON UPDATE clause in the FK definition.
+    Assert.DoesNotContain ("ON UPDATE", body)
+
+[<Fact>]
+let ``Slice 5.13.fk-features-emit: OnUpdate = Some Cascade emits ON UPDATE CASCADE`` () =
+    let enriched = enrich (fkFeaturesCatalog (Some Cascade) true)
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let body = (ArtifactByKind.toMap artifact |> Map.find fkFeaturesBKey).Body
+    Assert.Contains ("ON DELETE CASCADE", body)
+    Assert.Contains ("ON UPDATE CASCADE", body)
+
+[<Fact>]
+let ``Slice 5.13.fk-features-emit: IsConstraintTrusted = true omits ALTER TABLE WITH NOCHECK`` () =
+    let enriched = enrich (fkFeaturesCatalog None true)
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let body = (ArtifactByKind.toMap artifact |> Map.find fkFeaturesBKey).Body
+    Assert.DoesNotContain ("WITH NOCHECK", body)
+    Assert.DoesNotContain ("ALTER TABLE", body)
+
+[<Fact>]
+let ``Slice 5.13.fk-features-emit: IsConstraintTrusted = false emits post-CREATE-TABLE ALTER TABLE WITH NOCHECK CHECK CONSTRAINT`` () =
+    let enriched = enrich (fkFeaturesCatalog None false)
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let body = (ArtifactByKind.toMap artifact |> Map.find fkFeaturesBKey).Body
+    // V1 emission shape: full ALTER statement with WITH NOCHECK prefix
+    // + CHECK CONSTRAINT suffix referencing the named FK.
+    Assert.Contains ("ALTER TABLE [dbo].[OSUSR_B_BKIND] WITH NOCHECK CHECK CONSTRAINT", body)
+    Assert.Contains ("FK_OSUSR_B_BKIND_OSUSR_A_AKIND_A_ID", body)
+    // The CREATE TABLE itself does not carry NOCHECK inline — ScriptDom
+    // models this as a separate ALTER statement (preservation of the
+    // deployed state is a post-creation concern).
+    let createIdx = body.IndexOf "CREATE TABLE [dbo].[OSUSR_B_BKIND]"
+    let alterIdx  = body.IndexOf "ALTER TABLE [dbo].[OSUSR_B_BKIND] WITH NOCHECK"
+    Assert.True (createIdx >= 0)
+    Assert.True (alterIdx > createIdx, "ALTER TABLE must come after CREATE TABLE")
+
+[<Fact>]
+let ``Slice 5.13.fk-features-emit: T1 byte-determinism holds for OnUpdate + WITH NOCHECK emissions`` () =
+    let enriched = enrich (fkFeaturesCatalog (Some Cascade) false)
+    let a1 = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let a2 = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let b1 = (ArtifactByKind.toMap a1 |> Map.find fkFeaturesBKey).Body
+    let b2 = (ArtifactByKind.toMap a2 |> Map.find fkFeaturesBKey).Body
+    Assert.Equal (b1, b2)

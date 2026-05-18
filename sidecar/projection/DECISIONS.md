@@ -14746,3 +14746,145 @@ Full test suite: **1552 passing, 0 failing** (up from 1549 pre-slice;
   — the new builders honor the Tier-3 typed-AST commitment.
 
 ---
+
+## 2026-05-18 (slice 5.13.fk-features-emit) — ON UPDATE referential action + WITH NOCHECK FK trust-state preservation; new `Statement.AlterTableNoCheckConstraint` variant
+
+### Scope
+
+Closes the emit-side gap on the FK axis (matrix rows 58 + 59).
+Mirrors the slice 5.13.column-features-emit pattern: a paired
+slice (`5.13.smart-constructor-lift`) extended the `Reference`
+IR with `OnUpdate : ReferenceAction option` +
+`IsConstraintTrusted : bool` and lifted the smart-constructor
+pattern to four IR aggregates (Attribute / Reference / Index /
+Kind); this slice wires the new fields through the realization
+layer.
+
+### What ships
+
+**`Projection.Targets.SSDT/Statement.fs`:**
+
+- `ForeignKeyDef` extended with `OnUpdate : ReferenceActionSql
+  option` + `IsConstraintTrusted : bool`.
+- New `Statement.AlterTableNoCheckConstraint of TableId *
+  constraintName : string` variant — emitted after CREATE TABLE
+  to preserve a deployed target's NOCHECK FK trust state.
+
+**`Projection.Targets.SSDT/ScriptDomBuild.fs`:**
+
+- `foreignKeyConstraint` emits the optional `UpdateAction` via
+  ScriptDom's `ForeignKeyConstraintDefinition.UpdateAction`
+  property; `None` omits the clause and SQL Server's
+  server-default NO ACTION applies (preserves V1 emission shape
+  unchanged for the dominant case where no operator-supplied ON
+  UPDATE evidence exists).
+- New `buildAlterTableNoCheckConstraint` builder uses ScriptDom's
+  `AlterTableConstraintModificationStatement` with
+  `ExistingRowsCheckEnforcement = NoCheck` + `ConstraintEnforcement
+  = Check`. Renders as the V1 emission shape: `ALTER TABLE
+  [Schema].[Table] WITH NOCHECK CHECK CONSTRAINT [FK_…]` (verified
+  empirically against `Sql160ScriptGenerator` output).
+- Shared private `toDeleteUpdateAction` helper for the
+  ReferenceActionSql → DeleteUpdateAction mapping (two consumers:
+  DeleteAction + UpdateAction).
+- Closed-DU dispatcher (`buildStatement`) extended for the new
+  Statement variant.
+
+**`Projection.Targets.SSDT/Render.fs`:**
+
+- `AlterTableNoCheckConstraint` joins the `ScriptDomGenerate`
+  delegation arm alongside CREATE TABLE / CREATE INDEX /
+  SetExtendedProperty (single source of truth).
+
+**`Projection.Targets.SSDT/SsdtDdlEmitter.fs`:**
+
+- `fkDef` populates `OnUpdate` + `IsConstraintTrusted` from
+  `Reference`.
+- New private `untrustedFkAlters` helper yields one
+  `AlterTableNoCheckConstraint` per `IsConstraintTrusted = false`
+  FK on the kind. Threaded into BOTH the per-kind
+  `kindToSsdtFile` (emitSlices artifact body) AND the catalog-
+  wide `statements` stream. Statement ordering: CREATE TABLE →
+  ALTER TABLE NOCHECK (per untrusted FK) → CREATE INDEX →
+  SetExtendedProperty (matches V1's emission shape).
+
+**`Projection.Targets.SSDT/DacpacEmitter.fs` + `Projection.Pipeline/Deploy.fs`:**
+
+- `isSchemaStatement` accepts the new variant (DacpacEmitter).
+- `Deploy.executeStream` handles the new variant as a DDL-class
+  statement (flushes bulk inserts before issuing the ALTER).
+
+### Operating-discipline payoff
+
+- **Text-builder-as-first-instinct discipline** — the new ALTER
+  TABLE builder starts on ScriptDom's typed AST
+  (`AlterTableConstraintModificationStatement` is the canonical
+  Microsoft surface); no StringBuilder shortcut surfaces at the
+  realization-layer site. The rendering was validated
+  empirically before commit (verified `ALTER TABLE [dbo].[Order]
+  WITH NOCHECK CHECK CONSTRAINT [FK_Order_Customer]` is the exact
+  output for the chosen `ConstraintEnforcement` flag pair).
+- **Closed-DU expansion empirical-test discipline** — the new
+  `Statement.AlterTableNoCheckConstraint` variant produced
+  compile-time exhaustiveness errors at exactly THREE pattern-
+  match sites (`DacpacEmitter.isSchemaStatement`, `Render.toSql`,
+  `Deploy.executeStream`). Zero literal-construction sites broke
+  (the new variant is only constructed inside
+  `SsdtDdlEmitter.untrustedFkAlters`).
+- **Single source of truth** — `untrustedFkAlters` lives in one
+  place and threads into both realization paths (per-kind body
+  + catalog stream) without duplication.
+- **Sibling-wrapper discipline** — the `toDeleteUpdateAction`
+  private helper crosses the two-consumer threshold (DeleteAction
+  + UpdateAction); extraction is principled.
+
+### Coverage tests now passing (5 new)
+
+- `SsdtDdlEmitterTests.``Slice 5.13.fk-features-emit: OnUpdate = None
+  omits the ON UPDATE clause (V1 emission shape)`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.fk-features-emit: OnUpdate = Some
+  Cascade emits ON UPDATE CASCADE`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.fk-features-emit:
+  IsConstraintTrusted = true omits ALTER TABLE WITH NOCHECK`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.fk-features-emit:
+  IsConstraintTrusted = false emits post-CREATE-TABLE ALTER TABLE
+  WITH NOCHECK CHECK CONSTRAINT`` ` (asserts statement order)
+- `SsdtDdlEmitterTests.``Slice 5.13.fk-features-emit: T1 byte-
+  determinism holds for OnUpdate + WITH NOCHECK emissions`` `
+
+Full test suite: **1557 passing, 0 failing** (up from 1552
+pre-slice; +5 net new).
+
+### Deferred (no consumer pressure yet)
+
+- **Rowset adapter JOIN** — `OssysReferenceRow` (per-attribute
+  logical FK edges from V1 `#References`) needs JOINing with
+  `OssysFkRealityRow` (per-FK-constraint sys.foreign_keys
+  reflection) on (EntityId, parent column) to populate the new
+  Reference fields from rowset evidence. Today's `toBundle` does
+  NOT perform this JOIN; the rowset path produces References
+  with smart-constructor defaults (`OnUpdate = None`,
+  `IsConstraintTrusted = true`). The emit-side is positioned for
+  the JOIN slice; canary stays green because the OutSystems-shape
+  fixtures don't carry deployed WITH NOCHECK FKs. Cash-out
+  trigger: an environment's `#FkReality` rowset shows
+  `IsNoCheck = 1` AND the canary detects the V2 emission
+  difference (Tolerance-named).
+- **Multi-column composite-FK** — `OssysFkColumnRow` is lifted
+  but V2's `Reference` IR remains single-column-per-edge.
+  Composite-FK refactor lives outside this slice.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` rows 58 + 59 — Status-history amendments
+  record the closure.
+- `BACKLOG.md` Phase 5.13 — `5.13.update-action` +
+  `5.13.nocheck-state` retire (emit-side); the rowset-adapter
+  JOIN entry remains.
+- `DECISIONS 2026-05-10 — Text-builder-as-first-instinct
+  discipline` — the new builders honor the Tier-3 typed-AST
+  commitment.
+- Sibling slice (`5.13.smart-constructor-lift`, 2026-05-18) —
+  shipped the IR-side `Reference` extension + the four production
+  smart constructors; this slice consumes the IR seam at the
+  realization layer.
