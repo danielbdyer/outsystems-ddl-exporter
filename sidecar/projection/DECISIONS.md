@@ -12587,3 +12587,85 @@ Recorded in `V1_PARITY_MATRIX.md` row 42 as 🟡 DIVERGENCE.
   back (the evidence is the V1 parity-audit finding).
 
 ---
+
+## 2026-05-18 (slice 5.2.α.attribute) — V1 three-layer attribute model consolidates into V2 typed Attribute + table-scoped checks
+
+V1's attribute aggregate is **three layers across 7 files**:
+
+- **Logical** (`AttributeModel` + `AttributeMetadata`) — the OSSYS-
+  declared shape: name, column name, data type, default, mandatory
+  flag, identifier flag, autonumber flag, description, extended
+  properties.
+- **Physical reality** (`AttributeReality`) — runtime reflection +
+  statistical evidence sourced from deployment-target sys.* +
+  sampling: `IsNullableInDatabase`, `HasNulls`, `HasDuplicates`,
+  `HasOrphans`, `IsPresentButInactive`.
+- **On-disk evidence** (`AttributeOnDiskMetadata` +
+  `AttributeOnDiskCheckConstraint` + `AttributeOnDiskDefaultConstraint`)
+  — SQL Server schema introspection: SqlType, MaxLength, Precision,
+  Scale, Collation, IsIdentity, IsComputed, ComputedDefinition,
+  CheckConstraints array, DefaultConstraint envelope.
+
+V2 **consolidates** into a single `Attribute` record (~21 fields)
+plus a table-scoped `Kind.ColumnChecks : ColumnCheck list` (chapter
+A.0' slice ε; L3-S5 sub-axiom). The mapping:
+
+| V1 layer | V2 destination |
+|---|---|
+| Logical (AttributeModel + AttributeMetadata) | `Attribute` fields directly |
+| On-disk schema (AttributeOnDiskMetadata) | `Attribute` fields directly (Type, Length, Precision, Scale, IsIdentity, Computed) |
+| On-disk CHECK arrays | `Kind.ColumnChecks` (lifted out; table-scoped per SQL Server semantic) |
+| On-disk DEFAULT envelope | `Attribute.DefaultValue : SqlLiteral option` (Definition only; Name + IsNotTrusted dropped — see row 53) |
+| Physical reality (AttributeReality) | **Not carried** — V2's data-intent boundary excludes reflection (see row 49) |
+
+V2's consolidation is **principled** under pillar 9 (DataIntent /
+OperatorIntent dichotomy):
+
+- **Logical + on-disk schema** = DataIntent (sourced from V1 rowsets;
+  reachable from `Project(catalog, Policy.empty, profile)` without
+  operator opinion). Belongs in `Attribute` IR.
+- **Physical reality** = OperatorIntent / observation evidence
+  (sourced at inspection time; varies per environment). Belongs in
+  `Profile` (separate axis per A34 — Profile is independent of
+  Catalog and Policy).
+- **CHECK constraint placement** = SQL Server semantic correction.
+  V1's per-attribute nesting was a mismodeling because CHECK
+  constraints may span multiple columns (`CHECK (Col1 > Col2)`);
+  V2's `Kind.ColumnChecks` table-scoping reflects the SQL Server
+  reality.
+
+The consolidation is one of V2's load-bearing structural moves —
+without it, V2's Catalog IR would carry both observation evidence
+(layer 3) AND schema definition (layers 1 + 3 on-disk), conflating
+the two. V2's separation makes the DataIntent skeleton purely a
+schema definition; the Profile axis carries the orthogonal
+observational evidence.
+
+**Re-open trigger.** V2 grows a `Profile.AttributeReality` carrier
+when a downstream consumer (tightening pass; remediation emitter)
+needs per-attribute reflection state. Cash-out shape: add
+`Profile.AttributeReality` record (parallel to V1's `AttributeReality`);
+thread through ReadSide adapter; consumers access via `Profile`
+projection. The 5 V1 reality fields lift in lockstep.
+
+Recorded in `V1_PARITY_MATRIX.md` row 48 as 🟡 DIVERGENCE. Companion
+rows 49 (reality fields 🟠 NOT-MAPPED) and 50 (CHECK placement
+🔵 V2-EXTENSION) carry the structural deltas; rows 51 + 52
+(reference lift; typed primitives) carry the V2-EXTENSION strengths;
+row 53 (default-constraint envelope 🟠 NOT-MAPPED) carries the
+remaining gap.
+
+### Cross-references
+
+- Pillar 9 (`CLAUDE.md` operating-disciplines + load-bearing
+  commitments) — the DataIntent / OperatorIntent dichotomy that
+  underwrites the consolidation.
+- A34 (Profile is independent of Catalog and Policy) — the basis for
+  the Profile axis carrying observation evidence.
+- A39 (aggregate-root smart-constructor invariants) — `Attribute`
+  and `ColumnCheck` create functions enforce per-aggregate invariants.
+- Chapter A.0' slice ε (CHECK constraint IR lift) — the chapter
+  that landed `Kind.ColumnChecks`.
+
+---
+
