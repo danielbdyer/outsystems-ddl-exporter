@@ -14046,3 +14046,116 @@ would have made the future collapse a multi-call-site refactor.
   slice executes.
 
 ---
+
+## 2026-05-18 (slice 5.13.data-emission-registry) — Data-axis transform registry: structurally separate operator-intent overlays from pure-core vanilla emission
+
+Closes matrix row 160 (cross-emitter global Phase-1-then-Phase-2
+ordering — reclassified from "🟢 PARITY (partial); open item NOT YET
+REIFIED" to "🟢 PARITY (full)"; the original "NOT YET REIFIED" claim
+was stale at the time of the audit) and operationalizes pillar 9's
+"separate overrides from pure-core vanilla emission" discipline at
+the data axis.
+
+### What lands
+
+Four new `RegisteredTransformMetadata` entries in
+`Projection.Targets.Data/RegisteredDataTransforms.all`, mirroring
+the `CatalogReader.registeredMetadata` adapter pattern:
+
+| Entry | StageBinding | Site classifications |
+|---|---|---|
+| `dataEmissionComposer` | Pipeline | `compositionDispatch` (**OperatorIntent Emission**); `migrationContextThreading` (**OperatorIntent Insertion**); `userRemapContextThreading` (**OperatorIntent Insertion**); `globalPhaseOrdering` (DataIntent); `partitionAssertion` (DataIntent) |
+| `staticSeedsEmitter` | Emitter | `staticRowsProjection` (DataIntent); `cdcAwareChangeDetection` (DataIntent); `deferredFkPhase2` (DataIntent) |
+| `migrationDependenciesEmitter` | Emitter | `migrationRowEmission` (**OperatorIntent Insertion**); `userRemapRewrite` (**OperatorIntent Insertion**); `deferredFkPhase2` (DataIntent) |
+| `bootstrapEmitter` | Emitter | `userRemapBootstrap` (**OperatorIntent Insertion**) — `Status = NotImplementedInV2` at slice-ζ MVP |
+
+### The pillar-9 separation visible in the registry
+
+The user-emphasized discipline — "separate out 'overrides' of
+business logic into the transform registry, separating it from
+policy implementation and pure core vanilla exporting" —
+manifests structurally here:
+
+- **Vanilla pure-core emission** is fully DataIntent — `staticSeedsEmitter`'s
+  three sites; the composer's `globalPhaseOrdering` and
+  `partitionAssertion` sites; `migrationDependenciesEmitter`'s
+  `deferredFkPhase2` site. The skeleton-purity property test
+  (`composeRendered Policy.empty catalog Profile.empty` with
+  `MigrationDependencyContext.empty` + `UserRemapContext.empty`)
+  reaches every DataIntent site exactly.
+- **Operator-intent overlays** are explicitly classified:
+  - `Policy.Emission.DataComposition` reading → composer's
+    `compositionDispatch` site → `OperatorIntent Emission`
+  - `MigrationDependencyContext.Rows` → composer's
+    `migrationContextThreading` + emitter's `migrationRowEmission`
+    → `OperatorIntent Insertion`
+  - `UserRemapContext.Mapping` → composer's
+    `userRemapContextThreading` + emitter's `userRemapRewrite` +
+    bootstrap's `userRemapBootstrap` → `OperatorIntent Insertion`
+
+The bidirectional property tests (`skeletonView` /
+`overlayView` / `overlayAxes`) enforce the discipline:
+
+- `skeletonView RegisteredDataTransforms.all` returns only
+  `staticSeedsEmitter` (every Site is DataIntent); the composer +
+  Migration + Bootstrap drop out because they have ≥1 OperatorIntent
+  Site.
+- `overlayView RegisteredDataTransforms.all` returns the composer +
+  Migration + Bootstrap.
+- `overlayAxes` returns `{ Emission, Insertion }` — the data-axis
+  operator-intent surface; explicitly NOT `{ Selection, Tightening,
+  Ordering }` (those live at VisibilityMask, the four
+  tightening passes, and TopologicalOrderPass respectively).
+
+### Why metadata-only registration (no typed Run binding)
+
+Emitter signatures take heterogeneous inputs (`Catalog × Profile ×
+MigrationDependencyContext × UserRemapContext`) and produce
+`Result<ArtifactByKind<DataInsertScript>, EmitError>` envelopes —
+neither fits the `'In -> Lineage<Diagnostics<'Out>>` typed Run shape
+cleanly. The adapter precedent (`CatalogReader.registeredMetadata`)
+established metadata-only registration as the right surface for
+boundary translations; the data-emission axis inherits that pattern.
+
+The composer is registered at `StageBinding = Pipeline` (not
+Emitter) — it orchestrates three sibling-Π emitters; it is the
+data-axis dispatch layer, not itself an emitter producing artifacts
+directly. Per `TransformRegistry.fs`'s StageBinding docstring:
+"Pipeline — `Compose`-level transformations."
+
+### Matrix row 160 reclassification: the audit caught a stale claim
+
+The slice 5.5.β+γ+δ audit (rows 158-164) named row 160 as "🟢
+PARITY (partial); **Open item per slice η**: cross-emitter global
+phase ordering NOT YET REIFIED." This claim was stale at audit time
+— `DataEmissionComposer.composeRenderedFull` (chapter 4.1.B slice ι,
+shipped 2026-05-11) already walks the unioned artifact in
+topological order, concatenating ALL Phase-1 texts before ALL
+Phase-2 texts. Slice θ's partition assertion guarantees each kind
+maps to one emitter; cross-emitter ordering is a structural
+property of the topological walk.
+
+What the audit correctly identified: the **test surface was
+missing** — slice ι's test asserted ordering across kinds within
+the StaticSeedsEmitter alone, not across emitters. The new
+`composeRenderedFull global-Phase1-then-Phase2 holds across
+emitters` test exercises a Country (Static) + LegacyOrder (Migration)
+catalog and pins the property. Test was the gap; the structural
+property held all along.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` row 160 — Status-history amendment records
+  the stale-claim reclassification + the rationale.
+- `DECISIONS 2026-05-15 (late) — Pillar 9` — the canonical
+  discipline document; this entry operationalizes pillar 9 at the
+  data axis.
+- `CHAPTER_4_1_B_CLOSE.md` slice η + ι — the original cash-out
+  where the registry classification + cross-emitter ordering
+  shipped; this slice records the registry classification surface
+  + closes the missing-property-test gap.
+- `BACKLOG.md` Phase 3 — chapter 4.1.B slice list; this slice
+  doesn't reopen the chapter but completes its registry-coverage
+  surface.
+
+---

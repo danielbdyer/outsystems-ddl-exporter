@@ -258,6 +258,16 @@ See `CHAPTER_4_1_B_CLOSE.md` for shipped slices;
 - CDC test fixture (per chapter pre-scope) — adds CDC-aware rows to
   the canary fixture so the CDC-silence property has real coverage.
 
+**Post-close additions:**
+
+- Slice 5.13.data-emission-registry (2026-05-18) — adds
+  `RegisteredDataTransforms.all` (4 data-axis registry entries:
+  composer + 3 emitters) per pillar 9. Closes matrix row 160's
+  "NOT YET REIFIED" claim (which was stale at audit; the structural
+  property held since slice ι; the missing piece was the
+  cross-emitter property test). 13 new registry-classification
+  tests + 2 new cross-emitter ordering tests.
+
 **Per-phase residual risks (after close):**
 
 - *CDC-silence property regressing on new fixtures* — caught structurally

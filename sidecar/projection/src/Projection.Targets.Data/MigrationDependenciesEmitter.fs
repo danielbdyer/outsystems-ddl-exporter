@@ -436,3 +436,29 @@ module MigrationDependenciesEmitter =
     // `emitWithTopo` directly (which takes the precomputed topo +
     // both contexts). The composer (`DataEmissionComposer.composeFull`)
     // is the canonical pipeline entry point; hoists the topo once.
+
+    /// Harvest-discipline classification per pillar 9 (chapter 5.13
+    /// slice data-emission-registry). Three sites — the structural
+    /// emission is `DataIntent` (the per-kind MERGE construction is
+    /// pure projection of `Catalog × Profile`), while the two
+    /// operator-published inputs (`MigrationDependencyContext` rows;
+    /// `UserRemapContext` mapping) are `OperatorIntent Insertion`.
+    /// Pillar 9 → V2 splits the "what the operator publishes" axis
+    /// from the "how it gets emitted" axis structurally; the
+    /// composer threads the operator inputs but the emitter's
+    /// emission shape is the same regardless.
+    let registeredMetadata : RegisteredTransformMetadata =
+        { Name = "migrationDependenciesEmitter"
+          Domain = Data
+          StageBinding = Emitter
+          Sites =
+            [ { SiteName = "migrationRowEmission"
+                Classification = OperatorIntent Insertion
+                Rationale = "`MigrationDependencyContext.Rows` is operator-published legacy-domain row inventory (pre-scope §2.2: 'environment-specific evidence the migration team supplies'). Each row's `(KindKey, Identifier, Values)` is operator-supplied content that wouldn't be reachable from `Project(catalog, Policy.empty, profile)` — it lands via the operator-supplied context. OverlayAxis = Insertion (what content the catalog gains beyond source evidence)." }
+              { SiteName = "userRemapRewrite"
+                Classification = OperatorIntent Insertion
+                Rationale = "`UserRemapContext.Mapping` rewrites User-FK column values on migration rows from source-environment IDs to target-environment IDs (chapter 4.2 slice γ refinement). The remap mapping is operator-supplied evidence (pre-scope IDENTITY axis); applying it to migration rows is an operator-intent transformation. OverlayAxis = Insertion (the remap inserts the target-side ID where the source-side ID was)." }
+              { SiteName = "deferredFkPhase2"
+                Classification = DataIntent
+                Rationale = "Two-phase cycle-breaking parallel to `StaticSeedsEmitter` — Phase-1 emits MERGEs with deferred FK columns NULLed; Phase-2 UPDATEs populate them. Cycle membership is structural (topology-derived); the deferral is the same algebra as the static-rows emitter. DataIntent because the cycle-resolution is structural, not operator-supplied." } ]
+          Status = Active }

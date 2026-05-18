@@ -359,3 +359,35 @@ module StaticSeedsEmitter =
         use _ = Bench.scope "emit.staticSeeds.emit"
         let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
         emitWithTopo topo catalog profile
+
+    /// Harvest-discipline classification per pillar 9 (chapter 5.13
+    /// slice data-emission-registry). Three sites covering the
+    /// emitter's surfaces; all `DataIntent` — the emitter consumes
+    /// `Catalog × Profile` only (per A18 amended), and Profile's
+    /// `CdcAwareness` field is evidence-shaped (not operator-supplied
+    /// policy). The skeleton-purity property test asserts this
+    /// emitter participates in `Project(catalog, Policy.empty,
+    /// profile)` without emitting `OperatorIntent` lineage events.
+    ///
+    /// Per the canonical `RegisteredTransformMetadata` shape used by
+    /// emitters (mirrors `CatalogReader.registeredMetadata` from the
+    /// adapter precedent — the typed `RegisteredTransform<'In, 'Out>`
+    /// shell doesn't cleanly fit emitter signatures with
+    /// `ArtifactByKind<_>` outputs + `Result<_, EmitError>` envelopes;
+    /// metadata-only registration captures the classification
+    /// surface without forcing a Run-binding mismatch).
+    let registeredMetadata : RegisteredTransformMetadata =
+        { Name = "staticSeedsEmitter"
+          Domain = Data
+          StageBinding = Emitter
+          Sites =
+            [ { SiteName = "staticRowsProjection"
+                Classification = DataIntent
+                Rationale = "Emit MERGE statements for kinds whose `Modality` list contains `Static rows` — pure projection of Catalog-resident evidence (the Static rows are catalog data, not operator overlay). Per A18 amended, the emitter consumes Catalog × Profile only; no Policy enters this site." }
+              { SiteName = "cdcAwareChangeDetection"
+                Classification = DataIntent
+                Rationale = "Per-kind MERGE WHEN MATCHED predicate gates UPDATE on actual column-level differences when `Profile.CdcAwareness.CdcEnabled` carries the kind. Profile is *evidence* (A18 amended; pillar 9 — Profile-driven observations are DataIntent); the CDC predicate IS the data-intent shape, not an operator override. Slice β (chapter 4.1.B) cash-out." }
+              { SiteName = "deferredFkPhase2"
+                Classification = DataIntent
+                Rationale = "Two-phase cycle-breaking — Phase-1 emits MERGEs with deferred FK columns NULLed; Phase-2 UPDATEs populate them once all Phase-1 inserts complete. Cycle membership is structural (from `TopologicalOrder.Cycles`); the deferral is topology-derived, not operator-supplied. Slice δ (chapter 4.1.B) cash-out." } ]
+          Status = Active }

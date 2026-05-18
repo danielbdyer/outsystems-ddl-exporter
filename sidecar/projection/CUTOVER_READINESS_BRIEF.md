@@ -76,7 +76,7 @@ Per `V2_DRIVER.md` per-axis correctness stakes. For each axis: where V2 stands; 
 - SQL literal handling via typed `SqlLiteral.fs` IR + ScriptDomBuild.bracketed (row 164; chapter 4.1.B slice κ pillar 1 lift)
 
 **Gated for flip:**
-- **Global Phase1/Phase2 interleaving** (row 160 open item per slice η) — cross-emitter global phase ordering (Phase-1-ALL across StaticSeeds + Migration + Bootstrap, then Phase-2-ALL) NOT YET REIFIED; per-kind rendering currently. **Trigger:** chapter 4.2+ migration-dependency at scale.
+- ~~**Global Phase1/Phase2 interleaving** (row 160 open item per slice η)~~ **CLOSED 2026-05-18** by slice 5.13.data-emission-registry. The cross-emitter global phase ordering IS reified at `DataEmissionComposer.composeRenderedFull` (slice ι, shipped 2026-05-11); the missing piece was the property test, now landed (`composeRenderedFull global-Phase1-then-Phase2 holds across emitters` exercises StaticSeeds + Migration populating different kinds). The slice also ships `RegisteredDataTransforms.all` — pillar 9 classification of every data-axis transformation site separating operator-intent overlays from pure-core vanilla emission.
 - **Full FK preflight (orphan rows + cross-module audit)** (row 162) — V2's TopologicalOrderPass.MissingEdges is partial; full orphan + cross-module check deferred to chapter 4.2 slices γ+δ
 - **CDC-silence-on-idempotent-redeploy property test** (chapter 4.1.B; highest-leverage single deliverable per V2_DRIVER) — must show green on operator-reality canary
 

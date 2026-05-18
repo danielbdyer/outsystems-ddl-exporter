@@ -339,6 +339,64 @@ rowset (23 of them) in source order.
 
 ---
 
+### Row 160 — 2026-05-18 (closed by slice 5.13.data-emission-registry)
+
+**Original classification (slice 5.5.β+γ+δ, 2026-05-18):** 🟢 PARITY
+(partial). The Notes column claimed "**Open item per slice η**:
+cross-emitter global phase ordering (Phase-1-ALL across StaticSeeds +
+Migration + Bootstrap, then Phase-2-ALL) NOT YET REIFIED."
+
+**Reclassified (slice 5.13.data-emission-registry, 2026-05-18):**
+🟢 PARITY (full).
+
+**Rationale.** The "NOT YET REIFIED" claim was **stale at the time
+the matrix was authored**. `DataEmissionComposer.composeRenderedFull`
+(chapter 4.1.B slice ι, shipped 2026-05-11) already walks the
+unioned artifact in topological order, concatenating ALL Phase-1
+texts (across all kinds + all emitters) before ALL Phase-2 texts.
+The slice θ partition assertion guarantees each kind belongs to
+exactly one emitter under a given `DataComposition`; cross-emitter
+ordering is therefore a structural property of the topological walk,
+not a separate reification.
+
+The audit slice 5.5.β+γ+δ noted only the WITHIN-emitter test surface
+(slice ι test asserts ordering across kinds inside StaticSeedsEmitter
+alone). The cross-emitter property test was missing — slice
+5.13.data-emission-registry adds it:
+
+```
+DataEmissionComposerTests.``5.13.data-emission-registry:
+    composeRenderedFull global-Phase1-then-Phase2 holds across emitters (matrix row 160)``
+```
+
+The test exercises a 2-kind catalog where Country lives in
+StaticSeedsEmitter (Static modality) and LegacyOrder lives in
+MigrationDependenciesEmitter (migration context row); asserts both
+emitters' Phase-1 outputs precede either emitter's Phase-2 output.
+
+**Companion: data-emission registry.** The slice also adds
+`RegisteredDataTransforms.all` — four `RegisteredTransformMetadata`
+entries (composer + three emitters) classifying each transformation
+site per pillar 9. The composer's `compositionDispatch` site
+(reading `Policy.Emission.DataComposition`) classifies as
+`OperatorIntent Emission`; its `globalPhaseOrdering` +
+`partitionAssertion` sites classify as `DataIntent`. The
+MigrationDependenciesEmitter splits operator-published inputs
+(`migrationRowEmission`, `userRemapRewrite` →
+`OperatorIntent Insertion`) from the structural cycle-resolution
+(`deferredFkPhase2` → `DataIntent`). StaticSeedsEmitter is fully
+DataIntent (Profile.CdcAwareness is evidence per A18 amended).
+BootstrapEmitter ships `NotImplementedInV2 of rationale` per the
+slice-ζ MVP empty-stub posture; the rationale substantively names
+chapter 4.2 slice η as the trigger.
+
+**Coverage tests now passing:**
+- `DataEmissionComposerTests.``5.13.data-emission-registry: composeRenderedFull global-Phase1-then-Phase2 holds across emitters (matrix row 160)`` `
+- `DataEmissionComposerTests.``5.13.data-emission-registry: cross-emitter coverage holds the partition invariant (no overlap)`` `
+- 13 new `RegisteredDataTransformsTests` (cardinality + create-validates + StageBinding + Domain + per-Site classifications + skeletonView / overlayView / overlayAxes filters + Core+Data registry composition)
+
+---
+
 ### Row 33 — 2026-05-18 (closed by slice 5.13.command-timeout + sibling-wrapper-collapse)
 
 **Original classification (slice 5.1.γ, 2026-05-17):** 🟡 DIVERGENCE.

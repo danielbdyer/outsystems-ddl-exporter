@@ -112,6 +112,7 @@
     <Compile Include="NoSilentDropTests.fs" />
     <Compile Include="ClassificationCarryThroughTests.fs" />
     <Compile Include="TransformRegistryTests.fs" />
+    <Compile Include="RegisteredDataTransformsTests.fs" />
     <Compile Include="PassRegistrationsTests.fs" />
     <Compile Include="AdapterRegistrationsTests.fs" />
     <Compile Include="StrategyRegistrationsTests.fs" />

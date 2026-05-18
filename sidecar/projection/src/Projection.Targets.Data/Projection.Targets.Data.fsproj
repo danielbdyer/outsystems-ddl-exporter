@@ -16,6 +16,7 @@
     <Compile Include="MigrationDependenciesEmitter.fs" />
     <Compile Include="BootstrapEmitter.fs" />
     <Compile Include="DataEmissionComposer.fs" />
+    <Compile Include="RegisteredDataTransforms.fs" />
   </ItemGroup>
 
   <ItemGroup>

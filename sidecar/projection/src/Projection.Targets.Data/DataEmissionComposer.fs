@@ -334,3 +334,38 @@ module DataEmissionComposer =
             policy catalog profile
             MigrationDependencyContext.empty
             UserRemapContext.empty
+
+    /// Harvest-discipline classification per pillar 9 (chapter 5.13
+    /// slice data-emission-registry). Five sites covering the
+    /// composer's surfaces; classifies which inputs are
+    /// data-intention vs operator-intention so the skeleton-purity
+    /// property test asserts `composeRendered policy catalog
+    /// Profile.empty` with `policy = Policy.empty + empty contexts`
+    /// is reachable as the DataIntent baseline.
+    ///
+    /// **Stage binding = Pipeline.** The composer orchestrates three
+    /// sibling-Π emitters; it is the data-axis dispatch layer, not
+    /// itself an emitter producing artifacts directly. Per
+    /// `TransformRegistry.fs` StageBinding docstring: "Pipeline —
+    /// `Compose`-level transformations."
+    let registeredMetadata : RegisteredTransformMetadata =
+        { Name = "dataEmissionComposer"
+          Domain = Data
+          StageBinding = Pipeline
+          Sites =
+            [ { SiteName = "compositionDispatch"
+                Classification = OperatorIntent Emission
+                Rationale = "Reads `Policy.Emission.DataComposition` (closed DU `AllRemaining \| AllExceptStatic \| AllData`) and dispatches which sibling emitters fire. This is the canonical site where operator intent enters the data-emission pipeline — the composer is the only data-axis surface that consumes `Policy`. OverlayAxis = Emission (chooses what physical form a kind takes in emitted output)." }
+              { SiteName = "migrationContextThreading"
+                Classification = OperatorIntent Insertion
+                Rationale = "Threads the operator-supplied `MigrationDependencyContext` to `MigrationDependenciesEmitter`. The context's row inventory is operator-published evidence (pre-scope §2.2); the composer is the routing layer. OverlayAxis = Insertion." }
+              { SiteName = "userRemapContextThreading"
+                Classification = OperatorIntent Insertion
+                Rationale = "Threads the operator-supplied `UserRemapContext` to `MigrationDependenciesEmitter` + `BootstrapEmitter`. The remap mapping is operator-supplied (chapter 4.2 slice γ); the composer is the routing layer. OverlayAxis = Insertion." }
+              { SiteName = "globalPhaseOrdering"
+                Classification = DataIntent
+                Rationale = "Slice ι cash-out — concatenate ALL Phase-1 MERGEs (across all kinds + all emitters, in topological order) before ANY Phase-2 UPDATE. The ordering is structural (deploy-correctness for multi-kind FK cycles); no operator opinion enters. DataIntent — the topology is the source of truth." }
+              { SiteName = "partitionAssertion"
+                Classification = DataIntent
+                Rationale = "Slice θ cash-out — every kind's populated coverage comes from at most one sibling emitter under a given `DataComposition`; overlap surfaces as `EmitError.OverlappingEmitterCoverage`. The partition check is structural fidelity (not configurable); fires deterministically on first overlap in catalog order." } ]
+          Status = Active }
