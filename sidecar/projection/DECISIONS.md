@@ -12851,3 +12851,198 @@ Recorded in `V1_PARITY_MATRIX.md` row 65 as 🔵 V2-EXTENSION.
 
 ---
 
+## 2026-05-18 (slice 5.4.γ.evaluators) — Per-axis decision sets over per-column aggregation: preserving axis orthogonality
+
+V1's `Osm.Validation/Tightening/ColumnAnalysis.cs` + `ColumnAnalysisBuilder.cs`
+carry a **per-column aggregate** combining all decision axes (nullability +
+foreign-key + unique-index) plus orthogonal evidence (ChangeRisk,
+opportunity list). V1's evaluators populate this surface as their
+primary emitter-facing output; downstream consumers see one
+`ColumnAnalysis` record per column with all axes pre-joined.
+
+V2 emits **three separate per-axis decision sets**:
+
+```fsharp
+NullabilityPass.run  : Catalog -> Policy -> Profile -> Lineage<Diagnostics<NullabilityDecisionSet>>
+ForeignKeyPass.run   : Catalog -> Policy -> Profile -> Lineage<Diagnostics<ForeignKeyDecisionSet>>
+UniqueIndexPass.run  : Catalog -> Policy -> Profile -> Lineage<Diagnostics<UniqueIndexDecisionSet>>
+```
+
+Each pass output is keyed by SsKey; consumers JOIN at the boundary
+when per-column aggregation is needed. V2 has **no `ColumnAnalysis`
+analog in core** — the per-column join is a downstream consumer concern.
+
+**Why this is principled (not merely cosmetic).**
+
+1. **Axis orthogonality.** Pillar 9 (harvest-dichotomy classification —
+   `DECISIONS 2026-05-15 (late)`) makes axis separation a structural
+   invariant. The skeleton (Catalog after adapter projection) is
+   axis-neutral; decisions layer atop as orthogonal overlays. A
+   per-column aggregator conflates the axes back into a single
+   surface — undoing the structural separation.
+
+2. **Pass independence is testable.** A property test asserts each
+   pass's output is independent of other passes' policy config —
+   changing `Policy.Nullability` doesn't change `UniqueIndexDecisionSet`
+   or `ForeignKeyDecisionSet` on the same Catalog. This is the
+   structural test for pillar-9 compliance. V1's per-column aggregator
+   makes this property invisible (a change to nullability policy might
+   re-shuffle the aggregator's output via implicit ordering); V2's
+   per-axis sets make it explicit.
+
+3. **Emitter consumption is natural.** V2 emitters that need per-column
+   data JOIN the three sets at their boundary. The JOIN is one-liner
+   F# (group-by SsKey, merge per attribute). The cost of the join is
+   borne where the consumption happens; the cost of NOT joining (when
+   the consumer is per-axis, like the manifest emitter's
+   `PredicateCoverage` section) is preserved.
+
+4. **Lineage events stay axis-classified.** V1's per-column aggregator
+   loses the per-axis lineage trail at the aggregation boundary; V2's
+   per-pass output preserves the trail (every lineage event carries
+   its pass's classification per `OperatorIntent of OverlayAxis`
+   pillar 9). The audit trail is structurally honest about which axis
+   produced which decision.
+
+**Migration impact.**
+
+`ColumnAnalysis` is V1's emitter-facing surface — it's not load-bearing
+beyond V1's emission path. V2's emitters consume the three decision
+sets directly; no `ColumnAnalysis` migration needed for V2's emission.
+If a future V2 emitter wants the per-column join shape (e.g., a CSV
+emitter that wants one row per column with all axes), the join lives
+as a thin projection module `Projection.Targets.OperationalDiagnostics.ColumnAnalysis`
+that consumes the three decision sets.
+
+**Re-open trigger.**
+
+A V2 consumer (manifest emitter; operator-review report; cutover
+dry-run output; CSV exporter) demands a canonical per-column join
+surface as a primary capability (not as a one-off projection). At
+that point, the projection module lifts into `Projection.Targets/`
+as a reusable surface. V2's core stays per-axis; the projection lives
+at the realization boundary per A36.
+
+Recorded in `V1_PARITY_MATRIX.md` row 71 as 🟡 DIVERGENCE.
+
+### Cross-references
+
+- Pillar 9 (`DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy
+  classification`) — the parent discipline this entry refines for the
+  per-axis-vs-per-column decomposition.
+- A36 (chapter-3.1; bulk-vs-incremental is realization-layer policy)
+  — the basis for the projection module living at the emission
+  boundary, not in core.
+- `DECISIONS 2026-05-18 (slice 5.4.β.nullability) — Ternary outcome
+  space` — the per-axis outcomes that the decision sets carry.
+- A42 candidate (per-axis decision-set axiom; scheduled at chapter
+  close per the AXIOMS scaffolding discipline) — names the
+  axis-independence property as a structural commitment.
+
+---
+
+## 2026-05-18 (slice 5.4.γ.evaluators) — Foreign-key diagnostic emission is exhaustive per keep-reason; V1 silent-skip pattern replaced with named keep-reason variants
+
+V1's `Osm.Validation/Tightening/ForeignKeyEvaluator.cs` (~243 LOC)
+produces per-reference decisions with a 2-tuple shape `(CreateConstraint
+: bool, ScriptWithNoCheck : bool)` and defers opportunity creation to
+`OpportunityBuilder.Add` via a side channel. **V1's known gap (pre-
+session-8 refinement):** `OpportunityBuilder` silently skips some
+failure paths — when a FK reference has no resolvable target entity
+(cross-module FK referencing a missing target), V1's evaluator returns
+`(CreateConstraint = false, ScriptWithNoCheck = false)` without an
+accompanying opportunity record. The decision is silently dropped from
+operator visibility.
+
+V2's `ForeignKeyPass` + `ForeignKeyRules.evaluate` produce a closed-DU
+outcome `ForeignKeyOutcome` with **exhaustive named keep-reasons**:
+
+```fsharp
+[<RequireQualifiedAccess>]
+type ForeignKeyOutcome =
+    | EnforceConstraint of ForeignKeyAction
+    | DoNotEnforce of ForeignKeyKeepReason
+    | RequireOperatorApproval of ForeignKeyConflict
+
+and ForeignKeyKeepReason =
+    | MissingTarget                       // V1's silently-skipped case
+    | LogicalReferenceWithoutDbConstraint
+    | TargetIsExternalEntity
+    | UserFkReflowDeferred
+    | OperatorOverride
+    // ... (every keep-reason gets a named variant)
+```
+
+Every non-enforcement reason becomes a named DU variant; the F# pattern-
+match exhaustiveness check refuses to compile a consumer that doesn't
+handle every case. V2 emits **both failure-side AND success-with-caveat
+diagnostics**:
+
+- Failure-side: each `DoNotEnforce` variant emits one diagnostic with
+  the keep-reason name + structured context.
+- Success-with-caveat: `EnforceConstraint(ScriptWithNoCheck orphanCount)`
+  emits a diagnostic noting the orphan-row count (operators see the
+  caveat before deployment).
+
+**Why this is principled (V1-bug-corrected, not merely cosmetic).**
+
+1. **Total decisions, named skips** (`DECISIONS 2026-05-11` —
+   Strategy-layer codification: refinement 3). V1's silent-skip
+   violates this discipline; the "no decision" case was unnamed,
+   uncoded, and unobservable. V2's named variant promotes the silent
+   case to a structural commitment — every input gets a named outcome;
+   no input falls through to silence.
+
+2. **Operator visibility.** V1's silent-skip means missing-target FK
+   references never appear in operator reports. Operators discover the
+   issue only when the deployed schema fails a referential-integrity
+   check (or worse: silent data corruption when the FK is never
+   created). V2's `MissingTarget` variant ensures every such reference
+   surfaces in the diagnostics stream + the lineage trail.
+
+3. **Type-checked exhaustiveness.** F# pattern-match exhaustiveness
+   catches the silent-skip class at compile time — a consumer that
+   forgets the `MissingTarget` case fails to compile. V1's C# 2-tuple
+   has no such structural check.
+
+4. **Cardinality preservation.** V1's evaluator runs over every
+   reference and produces a (potentially-silent) decision; V2's pass
+   runs over every (reference × intervention) pair and produces a
+   named outcome. The cardinality is preserved; V2's contribution is
+   making the silent decisions structurally visible.
+
+**Symmetric application.**
+
+The "exhaustive per keep-reason" pattern applies to all sibling
+strategies — `NullabilityOutcome.KeepNullable` variants enumerate every
+keep-reason (RelaxedUnderEvidence, OperatorOverride, NoEvidence,
+etc.); `UniqueIndexOutcome.DoNotEnforce` similarly. This is the
+**type-system operationalization** of the "Total decisions, named
+skips" discipline; the discipline becomes structurally inevitable
+rather than a code-review aspiration.
+
+**Migration impact.**
+
+Zero V1-side migration — V1's silent-skip behavior is a V1-only
+artifact; V2's exhaustive emission is V2's canonical output.
+Downstream emitters consuming V2's outcome benefit from the
+exhaustiveness (no JOIN-and-detect-missing logic needed).
+
+Recorded in `V1_PARITY_MATRIX.md` row 73 as 🔵 V2-EXTENSION (with
+🔴 V1-BUG-CORRECTED secondary classification for the missing-target
+silent-skip).
+
+### Cross-references
+
+- `DECISIONS 2026-05-11 — Strategy-layer codification: empirical
+  verdict after the fourth instance` (refinement 3: total decisions,
+  named skips) — the parent discipline.
+- `DECISIONS 2026-05-18 (slice 5.4.β.nullability) — Ternary outcome
+  space` — the sibling pattern for nullability outcomes; the same
+  exhaustive-keep-reasons discipline applies.
+- `DECISIONS 2026-05-14 — Writer codification reaches its stability
+  mark` — the writer-monad discipline that makes per-keep-reason
+  diagnostic emission ergonomic.
+
+---
+
