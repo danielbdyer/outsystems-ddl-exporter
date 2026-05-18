@@ -12669,3 +12669,84 @@ remaining gap.
 
 ---
 
+## 2026-05-18 (slice 5.2.α.relationship) — V1 three-type relationship/FK split conflates into V2 single Reference
+
+V1 separates the foreign-key axis across **three types**:
+
+- **`RelationshipModel`** — the **logical** edge: source-attribute →
+  target-entity (via-attribute), `DeleteRuleCode : string`,
+  `HasDatabaseConstraint : bool`. Lives on `EntityModel.Relationships`.
+- **`ForeignKeyModel`** — the **physical** constraint: constraint
+  name, `DeleteRule : string`, `UpdateRule : string`. Lives on
+  `EntityOnDiskMetadata.ForeignKeys` (constructed at SMO-emit time).
+- **`RelationshipActualConstraint`** — the **reconciliation**:
+  bridges logical to physical with per-column mapping
+  (`Columns : RelationshipActualConstraintColumn list`) + per-action
+  NOCHECK state (empty `OnDeleteAction` / `OnUpdateAction` strings
+  signal `WITH NOCHECK`).
+
+V2 **conflates** all three into a single `Reference` record:
+
+```fsharp
+type Reference = {
+    SsKey            : SsKey               // typed identity
+    SourceAttribute  : SsKey               // → Attribute
+    TargetKind       : SsKey               // → Kind
+    OnDelete         : ReferenceAction     // closed DU: NoAction | Cascade | SetNull | Restrict
+    HasDbConstraint  : bool                // chapter 4.6 slice α lift
+    RefEntityId      : int option          // chapter 5.0 slice δ cross-key-shape resolution
+}
+```
+
+The conflation flows from V2's chapter 4.6 design that lifted
+`HasDbConstraint` directly onto `Reference` — closing the
+logical/physical distinction at the IR layer. V2's single-type
+choice has structural advantages:
+
+- **Symmetric closure pass** (chapter 3.5) becomes simpler — operates
+  over `Reference list`, not over the three-way V1 join.
+- **Topological ordering pass** (chapter 3.7) consumes
+  `Reference list` directly via SsKey-graph walking.
+- **FK reflow pass** (chapter 4.2) operates over the unified
+  Reference shape; no need to reconcile three sources.
+
+The conflation has **costs** the matrix tracks separately:
+
+- **Row 58** 🟠 NOT-MAPPED: V1's `UpdateRule` is dropped at the
+  adapter boundary; V2 carries only `OnDelete`. ON UPDATE referential
+  actions can't round-trip. Cash-out: add `Reference.OnUpdate :
+  ReferenceAction option`.
+- **Row 59** 🟠 NOT-MAPPED: V1's per-constraint NOCHECK state is
+  binary in V2 (`HasDbConstraint` is presence/absence, not
+  enforcement state). Cash-out: add
+  `Reference.IsConstraintTrusted : bool`.
+
+Both costs are **deferrable** — V2's canary doesn't require them
+today; the cash-out triggers fire when production OSSYS targets
+need ON UPDATE round-trip or WITH NOCHECK round-trip (rare).
+
+**Re-open trigger for the conflation itself.** V2 needs to
+round-trip FK constraint **names** (not just shapes). V2 currently
+generates FK names at emit time via convention (e.g.,
+`FK_TableName_TargetTableName`); if a deployed target has
+operator-supplied FK names that V2 must preserve, the conflation
+breaks down (V2 has no place to carry the V1 `ForeignKeyModel.Name`
+field). Cash-out shape: extend `Reference` with `Name : Name option`
+— defaults `None` (use convention) when not specified; populates
+from V1 adapter when source provides.
+
+Recorded in `V1_PARITY_MATRIX.md` row 57 as 🟡 DIVERGENCE. Companion
+rows 58 + 59 carry the deferrable costs as 🟠 NOT-MAPPED.
+
+### Cross-references
+
+- Chapter 4.6 slice α — the original `HasDbConstraint` lift that
+  closed the logical/physical distinction.
+- Chapter 5.0 slice δ — cross-key-shape FK resolution that added
+  `RefEntityId : int option` for GUID-based identity threading.
+- A39 (aggregate-root smart-constructor invariants) —
+  `Reference.create` smart constructor enforces typed identity +
+  ReferenceAction validation.
+
+---
+
