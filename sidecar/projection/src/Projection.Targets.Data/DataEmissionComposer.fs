@@ -349,23 +349,23 @@ module DataEmissionComposer =
     /// `TransformRegistry.fs` StageBinding docstring: "Pipeline —
     /// `Compose`-level transformations."
     let registeredMetadata : RegisteredTransformMetadata =
+        // Pipeline-bound (composer-stage); record literal form per the
+        // sibling-emitter-registry-helper arc's "metadata helpers cover
+        // Emitter + Adapter only; Pipeline / Pass / OrderingPolicy
+        // flow through their typed shells or stay literal." TransformSite
+        // helpers still apply for the inner sites.
         { Name = "dataEmissionComposer"
           Domain = Data
           StageBinding = Pipeline
           Sites =
-            [ { SiteName = "compositionDispatch"
-                Classification = OperatorIntent Emission
-                Rationale = "Reads `Policy.Emission.DataComposition` (closed DU `AllRemaining \| AllExceptStatic \| AllData`) and dispatches which sibling emitters fire. This is the canonical site where operator intent enters the data-emission pipeline — the composer is the only data-axis surface that consumes `Policy`. OverlayAxis = Emission (chooses what physical form a kind takes in emitted output)." }
-              { SiteName = "migrationContextThreading"
-                Classification = OperatorIntent Insertion
-                Rationale = "Threads the operator-supplied `MigrationDependencyContext` to `MigrationDependenciesEmitter`. The context's row inventory is operator-published evidence (pre-scope §2.2); the composer is the routing layer. OverlayAxis = Insertion." }
-              { SiteName = "userRemapContextThreading"
-                Classification = OperatorIntent Insertion
-                Rationale = "Threads the operator-supplied `UserRemapContext` to `MigrationDependenciesEmitter` + `BootstrapEmitter`. The remap mapping is operator-supplied (chapter 4.2 slice γ); the composer is the routing layer. OverlayAxis = Insertion." }
-              { SiteName = "globalPhaseOrdering"
-                Classification = DataIntent
-                Rationale = "Slice ι cash-out — concatenate ALL Phase-1 MERGEs (across all kinds + all emitters, in topological order) before ANY Phase-2 UPDATE. The ordering is structural (deploy-correctness for multi-kind FK cycles); no operator opinion enters. DataIntent — the topology is the source of truth." }
-              { SiteName = "partitionAssertion"
-                Classification = DataIntent
-                Rationale = "Slice θ cash-out — every kind's populated coverage comes from at most one sibling emitter under a given `DataComposition`; overlap surfaces as `EmitError.OverlappingEmitterCoverage`. The partition check is structural fidelity (not configurable); fires deterministically on first overlap in catalog order." } ]
+            [ TransformSite.operatorIntent "compositionDispatch" Emission
+                "Reads `Policy.Emission.DataComposition` (closed DU `AllRemaining \| AllExceptStatic \| AllData`) and dispatches which sibling emitters fire. This is the canonical site where operator intent enters the data-emission pipeline — the composer is the only data-axis surface that consumes `Policy`. OverlayAxis = Emission (chooses what physical form a kind takes in emitted output)."
+              TransformSite.operatorIntent "migrationContextThreading" Insertion
+                "Threads the operator-supplied `MigrationDependencyContext` to `MigrationDependenciesEmitter`. The context's row inventory is operator-published evidence (pre-scope §2.2); the composer is the routing layer. OverlayAxis = Insertion."
+              TransformSite.operatorIntent "userRemapContextThreading" Insertion
+                "Threads the operator-supplied `UserRemapContext` to `MigrationDependenciesEmitter` + `BootstrapEmitter`. The remap mapping is operator-supplied (chapter 4.2 slice γ); the composer is the routing layer. OverlayAxis = Insertion."
+              TransformSite.dataIntent "globalPhaseOrdering"
+                "Slice ι cash-out — concatenate ALL Phase-1 MERGEs (across all kinds + all emitters, in topological order) before ANY Phase-2 UPDATE. The ordering is structural (deploy-correctness for multi-kind FK cycles); no operator opinion enters. DataIntent — the topology is the source of truth."
+              TransformSite.dataIntent "partitionAssertion"
+                "Slice θ cash-out — every kind's populated coverage comes from at most one sibling emitter under a given `DataComposition`; overlap surfaces as `EmitError.OverlappingEmitterCoverage`. The partition check is structural fidelity (not configurable); fires deterministically on first overlap in catalog order." ]
           Status = Active }

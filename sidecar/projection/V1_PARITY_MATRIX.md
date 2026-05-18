@@ -1163,6 +1163,80 @@ Reference|Index|IndexColumn|IndexColumns)` remain in source.
 
 ---
 
+### TransformRegistry Emitter-stage coverage (continued — sibling chorus closure) — 2026-05-18 (XXXXXL arc: slices 5.13.sibling-emitter-registry-{json,distributions,static-population,helper-extraction})
+
+**Original framing (HANDOFF 2026-05-18 — emit-features arc closing):**
+"Sibling emitter `registeredMetadata` lifts — propagate the SSDT precedent. Five emitters await (`JsonEmitter` / `DistributionsEmitter` / `StaticPopulationEmitter` / `StaticSeedsEmitter` / `MigrationDependenciesEmitter`). Each is ~30 LOC of Sites enumeration + 6 mirror tests. After the second registration, extract a shared `emitterMetadataBuilder` helper. After the third, the helper is principled. Closes pillar-9 totality coverage to the full sibling chorus."
+
+**Discovery upon opening the arc.** Two of the five named emitters
+(`StaticSeedsEmitter`, `MigrationDependenciesEmitter`) plus two
+**unmentioned** emitters (`DataEmissionComposer`, `BootstrapEmitter`)
+had **already** lifted `registeredMetadata` via slice
+`5.13.data-emission-registry` (Status-history amendment at row 160
+above). They live in `Projection.Targets.Data/RegisteredDataTransforms.fs`'s
+`all` aggregation surface (4 entries). The HANDOFF was stale on
+those; only **3 emitters truly pending** (`JsonEmitter`,
+`DistributionsEmitter`, `StaticPopulationEmitter`).
+
+**Closed by XXXXXL arc (4 slices, 2026-05-18):**
+
+| Slice | Emitter | Domain | Sites | Classification |
+|---|---|---|---|---|
+| 5.13.sibling-emitter-registry-json | `JsonEmitter.registeredMetadata` | Schema | 6 (catalogDocument / kindJson / attributeJson / referenceJson / modalityProjection / emitSlices) | All DataIntent — A18 amended (Catalog only) |
+| 5.13.sibling-emitter-registry-distributions | `DistributionsEmitter.registeredMetadata` | Diagnostics | 7 (catalogDocument / kindJson / attributeDistributionJson / writeCategorical / writeNumeric / writeProbeStatus / emitSlices) | All DataIntent — Profile is evidence per pillar 9 |
+| 5.13.sibling-emitter-registry-static-population | `StaticPopulationEmitter.registeredMetadata` | Data | 5 (kindStatements / rowToCellValues / identityToggle / topologicalOrder / statements) | All DataIntent — Static rows live in `Kind.Modality`; catalog-resident evidence |
+| 5.13.sibling-emitter-registry-helper-extraction | `TransformSite.dataIntent` + `TransformSite.operatorIntent` + `RegisteredTransformMetadata.emitter` + `RegisteredTransformMetadata.adapter` helpers in `Projection.Core/TransformRegistry.fs`; sweep of 9 existing registrations (3 new + 4 data-axis siblings + SsdtDdl + CatalogReader) | n/a (Core helper) | n/a | n/a |
+
+**Helper extraction (slice 4) rationale.** Position A (full extraction per `DECISIONS 2026-05-13 — Anticipation vs. speculation in abstraction extraction`) earned at the 3rd consumer: shape visibility ✓ (9 registrations share the literal record syntax) + concrete second consumer ✓ (this arc lifted 3 new ones). The two helpers:
+
+- `TransformSite.dataIntent (name, rationale)` — DataIntent arm.
+- `TransformSite.operatorIntent (name, axis, rationale)` — OperatorIntent arm; the `OverlayAxis` is explicit (Selection / Emission / Insertion / Tightening / Ordering).
+- `RegisteredTransformMetadata.emitter (name, domain, sites)` — fixes `StageBinding = Emitter` + `Status = Active`.
+- `RegisteredTransformMetadata.adapter (name, domain, sites)` — sibling to `emitter`; fixes `StageBinding = Adapter`.
+
+The helpers put the load-bearing **classification axis** in the function name rather than nested in a record literal field. Pass / OrderingPolicy / Pipeline bindings continue to flow through the typed `RegisteredTransform<'In, 'Out>` shell (those bindings carry `Run`); the metadata-only helpers cover the Emitter + Adapter "no typed shell" cases (per the `CatalogReader.registeredMetadata` cherry-pick precedent).
+
+**`NotImplementedInV2` carve-out.** `BootstrapEmitter` ships `Status = NotImplementedInV2 "..."` (slice ζ MVP) and stays in record-literal form for the outer envelope while still using `TransformSite.operatorIntent` for the inner site. `DataEmissionComposer` ships `StageBinding = Pipeline` (composer-stage, not Emitter) and stays in record-literal form for the outer envelope while still using `TransformSite.dataIntent / operatorIntent` for the 5 inner sites.
+
+**Full sibling chorus after the arc (10 registrations across 4 stages):**
+
+| Project | Registration | Stage | Status |
+|---|---|---|---|
+| `Projection.Core` | (12 entries via `RegisteredTransforms.all` — passes + ordering policies) | Pass / OrderingPolicy | Active |
+| `Projection.Adapters.Osm` | `CatalogReader.registeredMetadata` (6 sites) | Adapter | Active |
+| `Projection.Targets.SSDT` | `SsdtDdlEmitter.registeredMetadata` (11 sites) | Emitter | Active |
+| `Projection.Targets.Json` | `JsonEmitter.registeredMetadata` (6 sites) | Emitter | Active |
+| `Projection.Targets.Distributions` | `DistributionsEmitter.registeredMetadata` (7 sites) | Emitter | Active |
+| `Projection.Targets.Data` | `DataEmissionComposer.registeredMetadata` (5 sites) | Pipeline | Active |
+| `Projection.Targets.Data` | `StaticSeedsEmitter.registeredMetadata` (3 sites) | Emitter | Active |
+| `Projection.Targets.Data` | `StaticPopulationEmitter.registeredMetadata` (5 sites) | Emitter | Active |
+| `Projection.Targets.Data` | `MigrationDependenciesEmitter.registeredMetadata` (3 sites) | Emitter | Active |
+| `Projection.Targets.Data` | `BootstrapEmitter.registeredMetadata` (1 site) | Emitter | NotImplementedInV2 |
+
+**Classification breakdown (47 classified sites across the arc-touched + adjacent emitters):**
+- **DataIntent (39 sites)** — every JsonEmitter site (6), every DistributionsEmitter site (7), every StaticPopulationEmitter site (5), every CatalogReader site (6), every SsdtDdlEmitter site (11), every StaticSeedsEmitter site (3), DataEmissionComposer's 2 structural sites (globalPhaseOrdering / partitionAssertion), MigrationDependenciesEmitter's deferredFkPhase2.
+- **OperatorIntent (8 sites)** — DataEmissionComposer's 3 routing sites (compositionDispatch = Emission; migrationContextThreading / userRemapContextThreading = Insertion); MigrationDependenciesEmitter's 2 row-source sites (migrationRowEmission / userRemapRewrite = Insertion); BootstrapEmitter's userRemapBootstrap (Insertion).
+
+The split is structurally honest: the **routing surfaces** (DataEmissionComposer thread operator-supplied context) and **content-injection surfaces** (MigrationDependenciesEmitter consumes operator-published rows; BootstrapEmitter consumes operator-supplied UserRemapContext) carry OperatorIntent; the **projection surfaces** (every emitter that takes Catalog-or-Profile and produces an artifact) carry DataIntent. A18 amended holds structurally: no emitter site classifies as OperatorIntent except where the routing layer threads operator-supplied context.
+
+**Coverage tests (18 new emitter-registration tests across the 3 lifts + sweep):**
+- 6 mirror tests per lift (Name / Domain / StageBinding / Sites enumeration / DataIntent classification / non-empty Rationale)
+- 1 TransformRegistry.create validation test per lift
+- 1 joint-registry assembly test per lift (asserts the SSDT + new siblings + Core passes form a valid registry)
+- `EmitterRegistrationsTests.fs` grows from 6 → 24 tests (6 + 6 + 6 + 6).
+
+**Two-consumer extraction precedent codified.** This arc validates the operating-disciplines table entry "Anticipation vs. speculation in abstraction extraction (Position A/B/C)" at scale: 9 emitter + adapter registrations sharing the same literal record syntax triggered the Position A full extraction the moment shape visibility + concrete 3rd consumer were both met. The helpers + the sweep landed in one commit; future emitter / adapter lifts default to the helper form.
+
+**Cross-references.**
+- `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification` (the load-bearing discipline).
+- `DECISIONS 2026-05-13 — Anticipation vs. speculation in abstraction extraction` (the two-consumer threshold refined with Position A/B/C; Position A earned in slice 4).
+- `DECISIONS 2026-05-13 — Two-consumer threshold for emergent primitives` (the canonical extraction discipline).
+- `RegisteredDataTransforms.all` precedent (slice `5.13.data-emission-registry`): per-project registry surface; consumer concatenates at call site.
+- The unified Pipeline-level registry assembly (a `RegisteredEmitterTransforms.all` parallel to `RegisteredDataTransforms.all` but for non-Data emitters) **deferred**. Trigger: when the canary / CLI / skeleton-purity property test needs a one-stop "every emitter known to the project" iteration surface. Today, consumers concatenate `[ SsdtDdlEmitter.registeredMetadata; JsonEmitter.registeredMetadata; DistributionsEmitter.registeredMetadata ] @ RegisteredDataTransforms.all @ RegisteredTransforms.all` at the call site — explicit, type-checked, no new surface required.
+- `HANDOFF 2026-05-18` "Highest-leverage next moves" item #2 (sibling-emitter `registeredMetadata` lifts); this arc is the cash-out.
+
+---
+
 ### Rows 12 + 53 + 55 + 58 + 59 + 182 — 2026-05-18 (verification depth upgraded by slice 5.13.schema-axis-property-sweep)
 
 **Original classifications (slices 5.13.column-features-emit, 5.13.fk-features-emit, 5.13.index-features-emit, all 2026-05-18):**

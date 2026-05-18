@@ -2233,26 +2233,16 @@ module CatalogReader =
     /// witness that `Project(catalog, Policy.empty, profile)` traverses
     /// the adapter without emitting any `OperatorIntent` lineage event.
     let registeredMetadata : RegisteredTransformMetadata =
-        { Name = "ossysCatalogReader"
-          Domain = Schema
-          StageBinding = Adapter
-          Sites =
-            [ { SiteName = "identitySynthesis"
-                Classification = DataIntent
-                Rationale = "Synthesize V2 SsKeys from V1 names: moduleSsKey / kindSsKey / attributeSsKey / referenceSsKey / indexSsKey / triggerSsKey / sequenceSsKey / columnCheckSsKey. Derivation is deterministic from source identifiers; no operator opinion enters." }
-              { SiteName = "typeTranslation"
-                Classification = DataIntent
-                Rationale = "Map V1 type/code values to V2 typed DUs: parsePrimitiveType (V1 dataType string → V2 PrimitiveType per A13's typed surface); parseDeleteRule (V1 onDelete code → V2 ReferenceAction); parseOrigin / parseOriginFromRowset (isExternal flag → Origin DU). All translations are structural — V1's vocabulary maps deterministically into V2's typed system." }
-              { SiteName = "jsonAggregateParsing"
-                Classification = DataIntent
-                Rationale = "Assemble JSON-path IR records: parseAttribute / parseReference / parseIndex / parseTrigger / parseExtendedProperty / parseKind / parseModule / parseDocument / parseJsonString. Each parser threads V1 evidence into V2's typed records; the parsing is field-by-field translation with no operator overlay." }
-              { SiteName = "rowsetAggregateParsing"
-                Classification = DataIntent
-                Rationale = "Assemble rowset-path IR records: parseAttributeRow / parseReferenceRowFor / parseKindRow / parseModuleRow / parseRowsetBundle. Mirrors the JSON-path semantics for the rowset-source variant (chapter 3.2 slice 1 onward); same DataIntent translation discipline." }
-              { SiteName = "isActiveCarryThrough"
-                Classification = DataIntent
-                Rationale = "Chapter A.0' slice β retroactive site. IsActive is carried through at Module / Kind / Attribute levels (not filtered at the adapter boundary; the session-21 filter was retired as a mis-placed OperatorIntent of Selection per DECISIONS 2026-05-16 (slice β) — the first worked example of pillar 9). The carriage itself is DataIntent evidence; a downstream Selection-axis pass that re-applies an inactive-records drop is deferred-with-trigger per IR-grows-under-evidence." }
-              { SiteName = "tableIdCatalogRead"
-                Classification = DataIntent
-                Rationale = "Chapter A.0' slice θ retroactive site. V1's db_catalog field is read into TableId.Catalog (string option); cross-database FK qualification carries through without silent degradation to implicit-current-database scope. DataIntent — source-schema evidence carried forward." } ]
-          Status = Active }
+        RegisteredTransformMetadata.adapter "ossysCatalogReader" Schema
+            [ TransformSite.dataIntent "identitySynthesis"
+                "Synthesize V2 SsKeys from V1 names: moduleSsKey / kindSsKey / attributeSsKey / referenceSsKey / indexSsKey / triggerSsKey / sequenceSsKey / columnCheckSsKey. Derivation is deterministic from source identifiers; no operator opinion enters."
+              TransformSite.dataIntent "typeTranslation"
+                "Map V1 type/code values to V2 typed DUs: parsePrimitiveType (V1 dataType string → V2 PrimitiveType per A13's typed surface); parseDeleteRule (V1 onDelete code → V2 ReferenceAction); parseOrigin / parseOriginFromRowset (isExternal flag → Origin DU). All translations are structural — V1's vocabulary maps deterministically into V2's typed system."
+              TransformSite.dataIntent "jsonAggregateParsing"
+                "Assemble JSON-path IR records: parseAttribute / parseReference / parseIndex / parseTrigger / parseExtendedProperty / parseKind / parseModule / parseDocument / parseJsonString. Each parser threads V1 evidence into V2's typed records; the parsing is field-by-field translation with no operator overlay."
+              TransformSite.dataIntent "rowsetAggregateParsing"
+                "Assemble rowset-path IR records: parseAttributeRow / parseReferenceRowFor / parseKindRow / parseModuleRow / parseRowsetBundle. Mirrors the JSON-path semantics for the rowset-source variant (chapter 3.2 slice 1 onward); same DataIntent translation discipline."
+              TransformSite.dataIntent "isActiveCarryThrough"
+                "Chapter A.0' slice β retroactive site. IsActive is carried through at Module / Kind / Attribute levels (not filtered at the adapter boundary; the session-21 filter was retired as a mis-placed OperatorIntent of Selection per DECISIONS 2026-05-16 (slice β) — the first worked example of pillar 9). The carriage itself is DataIntent evidence; a downstream Selection-axis pass that re-applies an inactive-records drop is deferred-with-trigger per IR-grows-under-evidence."
+              TransformSite.dataIntent "tableIdCatalogRead"
+                "Chapter A.0' slice θ retroactive site. V1's db_catalog field is read into TableId.Catalog (string option); cross-database FK qualification carries through without silent degradation to implicit-current-database scope. DataIntent — source-schema evidence carried forward." ]

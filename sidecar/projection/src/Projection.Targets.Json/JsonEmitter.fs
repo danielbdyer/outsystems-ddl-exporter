@@ -236,3 +236,38 @@ module JsonEmitter =
                 writer.WriteEndObject()
                 writer.Flush()
             Encoding.UTF8.GetString(stream.ToArray())
+
+    // -----------------------------------------------------------------------
+    // Slice 5.13.sibling-emitter-registry-json — `registeredMetadata`
+    // entry for the JsonEmitter sibling Π. Mirrors the
+    // `SsdtDdlEmitter.registeredMetadata` precedent (chapter 5.13 slice
+    // emit-features-registry, 2026-05-18) on the JSON-projection axis.
+    //
+    // **Classification.** All Sites carry `DataIntent` — `emitSlices`
+    // signature is `Catalog → Result<ArtifactByKind<JsonNode>, EmitError>`
+    // (per A18, Catalog only; no Profile, no Policy). The projection is
+    // shape-preserving: every IR field maps 1:1 to a JSON property. No
+    // operator policy enters at any site.
+    //
+    // **Project-boundary note.** Lives in `Projection.Targets.Json`; the
+    // consumer that wants the full sibling-emitter chorus (CLI / canary /
+    // ManifestEmitter prepend chain) assembles via project-owned lists
+    // concatenated at the call site. Same cherry-pick boundary precedent
+    // as `CatalogReader.registeredMetadata` (in `Projection.Adapters.Osm`)
+    // + `RegisteredDataTransforms.all` (in `Projection.Targets.Data`).
+    // -----------------------------------------------------------------------
+
+    let registeredMetadata : RegisteredTransformMetadata =
+        RegisteredTransformMetadata.emitter "jsonEmitter" Schema
+            [ TransformSite.dataIntent "catalogDocument"
+                "Top-level emit assembles `{ emitter, version, modules : [...] }` via `Utf8JsonWriter` with pinned `JsonOptions.indented` (T1 byte-determinism). Catalog → string projection; per-module envelope wraps `kindJson` outputs in declaration order."
+              TransformSite.dataIntent "kindJson"
+                "Project Kind → JsonNode via `writeKind` — ssKey / name / origin / modality / physical / attributes[] / references[] in fixed property order. Path flows through `kindJsonNode` (`Utf8JsonWriter` → `MemoryStream` → `byte[]` → `JsonNode.Parse(ReadOnlySpan<byte>)`) so the typed JsonNode is the canonical sibling-Π port value (pillar 1; chapter 3.7 slice ε)."
+              TransformSite.dataIntent "attributeJson"
+                "Project Attribute → JsonNode via `writeAttribute` — ssKey / name / type / column / nullable / primaryKey / mandatory. Closed-DU `PrimitiveType` flattens to `primitiveString` (9 variants); ssKey flattens via `renderSsKey` (root + optional `[derived]` marker)."
+              TransformSite.dataIntent "referenceJson"
+                "Project Reference → JsonNode via `writeReference` — ssKey / name / sourceAttribute / targetKind / onDelete. Closed-DU `ReferenceAction` flattens to `actionString` (4 variants). `OnUpdate` + `IsConstraintTrusted` (slice 5.13.fk-features-emit IR lifts) carriage-deferred pending JSON consumer demand."
+              TransformSite.dataIntent "modalityProjection"
+                "Project ModalityMark list → JSON string array via `writeModality` — closed-DU `ModalityMark` dispatch carries `Static(n)` row-count summary, `TenantScoped / SoftDeletable / SystemOwned` payload-free marks, `Temporal _` summary. Per-variant string projection collapses payload; consumers needing full payload reach for the typed IR."
+              TransformSite.dataIntent "emitSlices"
+                "Π port realization — `Catalog → Result<ArtifactByKind<JsonNode>, EmitError>` (A35 stream-realization pattern on the JSON axis). Per-kind `JsonNode` carries the typed structure at the port boundary (T11 structural by construction); `ArtifactByKind.create` validates the smart-constructor invariant that keyset equals `Catalog.allKinds`'s SsKey set." ]
