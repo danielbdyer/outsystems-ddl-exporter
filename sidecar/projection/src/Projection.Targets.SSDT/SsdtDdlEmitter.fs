@@ -318,6 +318,15 @@ module SsdtDdlEmitter =
                     { Name = resolveColumnName k c.Attribute; Direction = direction })
             let includedColumnNames =
                 idx.IncludedColumns |> List.map (resolveColumnName k)
+            // Slice 5.13.index-features-emit (matrix row 56) — map
+            // V2's `DataCompressionLevel` IR DU to the realization-
+            // layer mirror. Closed-DU dispatch keeps the seam typed.
+            let dataCompressionSql =
+                idx.DataCompression
+                |> Option.map (function
+                    | DataCompressionLevel.None -> NoneCompressionSql
+                    | DataCompressionLevel.Row  -> RowCompressionSql
+                    | DataCompressionLevel.Page -> PageCompressionSql)
             let indexDef : IndexDef =
                 {
                     Name     = Name.value idx.Name
@@ -332,8 +341,25 @@ module SsdtDdlEmitter =
                     AllowRowLocks         = idx.AllowRowLocks
                     AllowPageLocks        = idx.AllowPageLocks
                     NoRecomputeStatistics = idx.NoRecomputeStatistics
+                    // Slice 5.13.index-features-emit (matrix rows 55 + 56).
+                    IgnoreDuplicateKey    = idx.IgnoreDuplicateKey
+                    IsDisabled            = idx.IsDisabled
+                    DataCompression       = dataCompressionSql
                 }
             Statement.CreateIndex indexDef)
+
+    /// Yield one `AlterIndexDisable` statement per non-PK index where
+    /// `IsDisabled = true`. Emitted AFTER the kind's CREATE INDEX
+    /// statements so the named index exists when the ALTER references
+    /// it. PK-marked indexes filter out at `indexStatements` (PK is
+    /// always enforced; V1 invariant). Slice 5.13.index-features-emit
+    /// (matrix row 55).
+    let private disabledIndexAlters (k: Kind) : Statement list =
+        k.Indexes
+        |> List.filter (fun idx -> not idx.IsPrimaryKey && idx.IsDisabled)
+        |> List.sortBy (fun idx -> idx.SsKey)
+        |> List.map (fun idx ->
+            Statement.AlterIndexDisable (toTableId k, Name.value idx.Name))
 
     /// Build the cross-platform-deterministic relative path for a
     /// kind's SSDT DDL file. V1 convention: `Modules/<ModuleName>/
@@ -477,6 +503,12 @@ module SsdtDdlEmitter =
                 // slice that wires `#FkReality.IsNoCheck`.
                 yield! untrustedFkAlters targetByKey pkAttrByKey k
                 yield! indexStatements k
+                // Slice 5.13.index-features-emit (matrix row 55):
+                // post-CREATE-INDEX ALTER INDEX DISABLE statements
+                // preserve the deployed target's index disable state.
+                // Emitted AFTER CREATE INDEX so the named index
+                // exists when the ALTER references it.
+                yield! disabledIndexAlters k
                 yield! extendedPropertyStatements k
             }
         let body = ScriptDomGenerate.toText statements
@@ -569,9 +601,12 @@ module SsdtDdlEmitter =
                 yield createTableStatement targetByKey pkAttrByKey k
                 // Slice 5.13.fk-features-emit — mirrors the per-kind
                 // emission order in `kindToSsdtFile`: post-CREATE-TABLE
-                // ALTER for untrusted FKs, then indexes.
+                // ALTER for untrusted FKs, then indexes, then post-
+                // CREATE-INDEX ALTER for disabled indexes.
                 yield! untrustedFkAlters targetByKey pkAttrByKey k
                 yield! indexStatements k
+                // Slice 5.13.index-features-emit (matrix row 55).
+                yield! disabledIndexAlters k
         }
 
     let emitSlices : Emitter<SsdtFile> = fun catalog ->

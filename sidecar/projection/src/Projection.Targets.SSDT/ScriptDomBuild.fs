@@ -969,6 +969,35 @@ module ScriptDomBuild =
             stmt.IndexOptions.Add(onOffOption IndexOptionKind.AllowPageLocks false)
         if idx.NoRecomputeStatistics then
             stmt.IndexOptions.Add(onOffOption IndexOptionKind.StatisticsNoRecompute true)
+        // Slice 5.13.index-features-emit (matrix row 55):
+        // `IGNORE_DUP_KEY = ON` via IndexStateOption.
+        if idx.IgnoreDuplicateKey then
+            stmt.IndexOptions.Add(onOffOption IndexOptionKind.IgnoreDupKey true)
+        // Slice 5.13.index-features-emit (matrix row 56):
+        // `DATA_COMPRESSION = <level>` via DataCompressionOption.
+        // The realization-layer enum (`IndexDataCompressionSql`) maps
+        // 1:1 to ScriptDom's `DataCompressionLevel` (modulo the
+        // columnstore variants V2 doesn't surface today; lift trigger:
+        // a columnstore-bearing index surfaces in production).
+        match idx.DataCompression with
+        | None -> ()
+        | Some level ->
+            let opt = DataCompressionOption()
+            opt.OptionKind <- IndexOptionKind.DataCompression
+            // Fully qualify ScriptDom's `DataCompressionLevel` —
+            // Core's `Projection.Core.DataCompressionLevel` shares
+            // the same type-name (intentional parallel modeling per
+            // pillar 8 ubiquitous language); at this join site the
+            // F# compiler needs the namespace prefix to disambiguate.
+            opt.CompressionLevel <-
+                match level with
+                | NoneCompressionSql ->
+                    Microsoft.SqlServer.TransactSql.ScriptDom.DataCompressionLevel.None
+                | RowCompressionSql ->
+                    Microsoft.SqlServer.TransactSql.ScriptDom.DataCompressionLevel.Row
+                | PageCompressionSql ->
+                    Microsoft.SqlServer.TransactSql.ScriptDom.DataCompressionLevel.Page
+            stmt.IndexOptions.Add(opt :> IndexOption)
         // Chapter 4.5 slice α — WHERE clause via TSql160Parser, lifted
         // through the Diagnostics writer.
         match idx.Filter with
@@ -1092,6 +1121,25 @@ module ScriptDomBuild =
         stmt.ConstraintEnforcement <- ConstraintEnforcement.Check
         stmt
 
+    /// Build `ALTER INDEX <indexName> ON <table> DISABLE` via
+    /// ScriptDom's `AlterIndexStatement` with
+    /// `AlterIndexType.Disable`. Preserves a deployed target's
+    /// disabled-index state when V1's
+    /// `IndexOnDiskMetadata.IsDisabled = true`. Slice
+    /// 5.13.index-features-emit (matrix row 55).
+    ///
+    /// Renders as the V1 emission shape:
+    ///   `ALTER INDEX [name] ON [Schema].[Table] DISABLE`
+    let buildAlterIndexDisable
+            (table: TableId)
+            (indexName: string)
+            : AlterIndexStatement =
+        let stmt = AlterIndexStatement()
+        stmt.Name <- bracketed indexName
+        stmt.OnName <- schemaObjectFromTableId table
+        stmt.AlterIndexType <- AlterIndexType.Disable
+        stmt
+
     /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ).
     let buildSetExtendedProperty
             (owner: ExtendedPropertyOwner)
@@ -1120,3 +1168,5 @@ module ScriptDomBuild =
             Some ((buildSetExtendedProperty owner propName propValue).Value :> TSqlStatement)
         | AlterTableNoCheckConstraint (table, constraintName) ->
             Some (buildAlterTableNoCheckConstraint table constraintName :> TSqlStatement)
+        | AlterIndexDisable (table, indexName) ->
+            Some (buildAlterIndexDisable table indexName :> TSqlStatement)

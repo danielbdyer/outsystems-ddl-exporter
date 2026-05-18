@@ -14888,3 +14888,173 @@ pre-slice; +5 net new).
   shipped the IR-side `Reference` extension + the four production
   smart constructors; this slice consumes the IR seam at the
   realization layer.
+
+---
+
+## 2026-05-18 (slice 5.13.index-features-emit) — IGNORE_DUP_KEY + DATA_COMPRESSION + post-CREATE-INDEX ALTER INDEX DISABLE; new `Statement.AlterIndexDisable` variant; new `DataCompressionLevel` IR DU
+
+### Scope
+
+Closes the emit-side gap on the index axis (matrix rows 55 + 56).
+Mirrors the column-features-emit + fk-features-emit pattern on the
+index axis, completing the LR3 + LR4 lead-up refactor pair. Three
+axes ship structurally; row 56's partition-scheme axis defers
+pending consumer pressure.
+
+### What ships
+
+**`Projection.Core/Catalog.fs`:**
+
+- New `[<RequireQualifiedAccess>] type DataCompressionLevel =
+  None | Row | Page` — mirrors ScriptDom's enum modulo the
+  columnstore variants V2 has no fixture evidence for. The
+  qualified-access form makes case access unambiguous at the IR
+  side; the SSDT-side realization layer uses a parallel
+  `IndexDataCompressionSql` DU because at the ScriptDom join site
+  the two type-names collide (intentional parallel modeling per
+  pillar 8 ubiquitous language; the namespace prefix
+  disambiguates at the boundary).
+- `Index` IR extended with three new fields:
+  - `IgnoreDuplicateKey : bool` (defaults `false`) → `IGNORE_DUP_KEY
+    = ON` in the WITH clause.
+  - `IsDisabled : bool` (defaults `false`) → post-CREATE-INDEX
+    `ALTER INDEX [name] ON [table] DISABLE`. Disable state is
+    NOT a CREATE-INDEX clause in T-SQL grammar; ScriptDom models
+    it as a sibling `AlterIndexStatement`.
+  - `DataCompression : DataCompressionLevel option` (defaults
+    `None` → no `DATA_COMPRESSION` clause emitted; server
+    inherits table/partition-level setting).
+- `Index.create` smart constructor updated to default the new
+  fields — closed-DU expansion empirical-test discipline holds:
+  the field extension lit up exactly TWO production-side literal
+  sites (both in `CatalogReader.fs`); both migrated to use
+  `Index.create … with …` as part of this slice.
+
+**`Projection.Targets.SSDT/Statement.fs`:**
+
+- New `IndexDataCompressionSql = NoneCompressionSql |
+  RowCompressionSql | PageCompressionSql` (realization-layer
+  mirror).
+- `IndexDef` extended with `IgnoreDuplicateKey : bool` +
+  `IsDisabled : bool` + `DataCompression : IndexDataCompressionSql
+  option`.
+- New `Statement.AlterIndexDisable of TableId * indexName :
+  string` variant.
+
+**`Projection.Targets.SSDT/ScriptDomBuild.fs`:**
+
+- `buildCreateIndex` emits `IGNORE_DUP_KEY = ON` via
+  `IndexStateOption` with `IndexOptionKind.IgnoreDupKey`.
+- `buildCreateIndex` emits `DATA_COMPRESSION = <level>` via
+  `DataCompressionOption.CompressionLevel`. The join-site DU
+  mapping (`IndexDataCompressionSql` →
+  `Microsoft.SqlServer.TransactSql.ScriptDom.DataCompressionLevel`)
+  requires the namespace prefix on the ScriptDom enum to
+  disambiguate from `Projection.Core.DataCompressionLevel`.
+- New `buildAlterIndexDisable` returns
+  `AlterIndexStatement` with `AlterIndexType.Disable`; renders
+  empirically as `ALTER INDEX [name] ON [Schema].[Table] DISABLE`
+  (validated against `Sql160ScriptGenerator` output before
+  commit).
+- Closed-DU `buildStatement` dispatcher extended.
+
+**`Projection.Targets.SSDT/Render.fs`:**
+
+- `AlterIndexDisable` joins the ScriptDomGenerate delegation arm
+  alongside the other ScriptDom-typed statements.
+
+**`Projection.Targets.SSDT/SsdtDdlEmitter.fs`:**
+
+- `indexStatements` maps `Index.DataCompression : Core.DataCompressionLevel`
+  to the realization-layer `IndexDataCompressionSql` via closed-DU
+  dispatch; the three new fields thread through.
+- New private `disabledIndexAlters` yields one
+  `AlterIndexDisable` per disabled non-PK index (PK-marked
+  indexes always enforced per V1 invariant). Wired into BOTH
+  per-kind body AND catalog-wide stream. Statement order:
+  CREATE TABLE → ALTER NOCHECK (per untrusted FK) → CREATE
+  INDEX → ALTER DISABLE (per disabled index) → SetExtendedProperty.
+
+**`Projection.Targets.SSDT/DacpacEmitter.fs` + `Projection.Pipeline/Deploy.fs`:**
+
+- Closed-DU exhaustiveness extended for the new Statement variant.
+
+### Operating-discipline payoff
+
+- **Text-builder-as-first-instinct discipline** — both new
+  emissions (IGNORE_DUP_KEY + DATA_COMPRESSION + ALTER INDEX
+  DISABLE) start on ScriptDom's typed-AST surface. The rendering
+  was validated empirically before commit (FsCheck-style probe
+  against `Sql160ScriptGenerator` confirmed the chosen
+  IndexOptionKind / DataCompressionOption / AlterIndexType
+  combinations produce the exact V1 emission shape).
+- **Pillar 7 gold-standard library** — ScriptDom's `IndexOption`
+  hierarchy + `DataCompressionOption` + `AlterIndexStatement` are
+  the Microsoft-canonical surfaces; no StringBuilder shortcut
+  survives at the new emission sites.
+- **Pillar 8 ubiquitous language** — `DataCompressionLevel` on
+  the Core side intentionally parallels ScriptDom's enum
+  type-name; the namespace prefix at the join site is the
+  principled disambiguation. The closed-DU `[<RequireQualifiedAccess>]`
+  attribute lets V2 readers see `DataCompressionLevel.Page`
+  unambiguously at every consumer site.
+- **Closed-DU expansion empirical-test discipline** — confirmed
+  again: the three new `Index` fields produced field-missing
+  errors at exactly TWO production literal sites + ~20 test-
+  fixture literal sites. The two production sites migrated
+  cleanly to `Index.create … with`; the test sites batched via a
+  single sed substitution (the literal-end token
+  `NoRecomputeStatistics = false` was uniquely positioned for
+  surgical append). The new `Statement.AlterIndexDisable` variant
+  produced exhaustiveness errors at exactly THREE pattern-match
+  sites (DacpacEmitter, Render, Deploy).
+- **Pillar 9 framing** — DATA_COMPRESSION, IGNORE_DUP_KEY,
+  IsDisabled are all `DataIntent` (source-derived reflection),
+  NOT `OperatorIntent` — no EmissionPolicy flag needed. The IR
+  fields are zero-evidence-defaulted; the realization layer
+  emits only when the source surfaces an explicit non-default
+  value.
+- **Single source of truth** — `disabledIndexAlters` lives in
+  one place and threads into both realization paths (per-kind
+  body + catalog stream) without duplication.
+
+### Coverage tests now passing (8 new)
+
+- IgnoreDuplicateKey false → omits IGNORE_DUP_KEY (V1 default)
+- IgnoreDuplicateKey true → emits IGNORE_DUP_KEY = ON
+- DataCompression None → omits DATA_COMPRESSION (V1 default)
+- DataCompression Page → emits DATA_COMPRESSION = PAGE
+- DataCompression Row → emits DATA_COMPRESSION = ROW
+- IsDisabled false → omits ALTER INDEX DISABLE (V1 default)
+- IsDisabled true → emits post-CREATE-INDEX ALTER INDEX DISABLE
+  (with statement-ordering assertion)
+- T1 byte-determinism holds across all three new axes
+
+### Deferred
+
+- **Rowset adapter wiring** — V1's `#AllIdx` rowset surfaces all
+  three axes; today's `toBundle` does NOT thread them. Same
+  pattern as the FK-features-emit deferral: emit-side is
+  structurally positioned, adapter wiring follow-up gated on
+  operator-reality evidence.
+- **Row 56 partition-scheme + per-partition compression list**
+  — single-value DataCompression covers the dominant case;
+  partitioned-index fixtures are not in V2's test surface today.
+  Closed-DU `DataSpace = Filegroup of name | PartitionScheme of
+  name × columns` + per-partition compression list lands when
+  a partitioned-index canary requires it.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` rows 55 + 56 — Status-history amendments
+  record the closure.
+- `BACKLOG.md` Phase 5.13 — `5.13.index-disabled-igdupkey`
+  retires (emit-side); `5.13.index-partition` remains for the
+  partition axis; LR4 retires the three shipped axes (the
+  partition residual remains).
+- `DECISIONS 2026-05-10 — Text-builder-as-first-instinct
+  discipline` — the new builders honor the Tier-3 typed-AST
+  commitment.
+- Sibling slices (`5.13.column-features-emit` +
+  `5.13.fk-features-emit` + `5.13.smart-constructor-lift`,
+  2026-05-18) — same pattern applied to column + FK axes.

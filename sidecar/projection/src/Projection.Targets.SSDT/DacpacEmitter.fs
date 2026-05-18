@@ -70,7 +70,7 @@ module DacpacEmitter =
     let private isSchemaStatement (s: Statement) : bool =
         match s with
         | CreateTable _ | CreateIndex _ | SetExtendedProperty _
-        | AlterTableNoCheckConstraint _ -> true
+        | AlterTableNoCheckConstraint _ | AlterIndexDisable _ -> true
         | InsertRow _ | SetIdentityInsert _ | Comment _ | Blank -> false
 
     /// Render one DDL Statement into its standalone T-SQL form via

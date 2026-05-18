@@ -1032,3 +1032,111 @@ let ``Slice 5.13.fk-features-emit: T1 byte-determinism holds for OnUpdate + WITH
     let b1 = (ArtifactByKind.toMap a1 |> Map.find fkFeaturesBKey).Body
     let b2 = (ArtifactByKind.toMap a2 |> Map.find fkFeaturesBKey).Body
     Assert.Equal (b1, b2)
+
+// ---------------------------------------------------------------------------
+// Slice 5.13.index-features-emit — IGNORE_DUP_KEY + DATA_COMPRESSION +
+// post-CREATE-INDEX ALTER INDEX DISABLE through the SSDT realization.
+// Mirrors the FK + column slices on the index axis (matrix rows 55 + 56).
+// ---------------------------------------------------------------------------
+
+let private idxFeaturesKindKey   = kindKey ["Widget"]
+let private idxFeaturesIdAttr    = attrKey ["Widget"; "Id"]
+let private idxFeaturesNameAttr  = attrKey ["Widget"; "Name"]
+let private idxFeaturesIdxKey    = SsKey.synthesizedComposite "OS_IDX" ["Widget"; "IX_Name"] |> Result.value
+
+let private idxFeaturesKind
+    (ignoreDup: bool)
+    (disabled: bool)
+    (compression: DataCompressionLevel option)
+    : Kind =
+    let idAttr =
+        { IRBuilders.mkAttribute idxFeaturesIdAttr (mkName "Id") Integer with
+            Column       = { ColumnName = "ID"; IsNullable = false }
+            IsPrimaryKey = true
+            IsMandatory  = true }
+    let nameAttr =
+        { IRBuilders.mkAttribute idxFeaturesNameAttr (mkName "Name") Text with
+            Column       = { ColumnName = "NAME"; IsNullable = false }
+            Length       = Some 100
+            IsMandatory  = true }
+    let idx =
+        { Index.create idxFeaturesIdxKey (mkName "IX_Widget_Name") (IRBuilders.mkIndexColumns [ idxFeaturesNameAttr ]) with
+            IsUnique           = true
+            IgnoreDuplicateKey = ignoreDup
+            IsDisabled         = disabled
+            DataCompression    = compression }
+    { Kind.create
+        idxFeaturesKindKey
+        (mkName "Widget")
+        { Schema = "dbo"; Table = "OSUSR_W_WIDGET"; Catalog = None }
+        [ idAttr; nameAttr ]
+      with Indexes = [ idx ] }
+
+let private idxFeaturesCatalog ignoreDup disabled compression : Catalog =
+    {
+        Modules = [
+            IRBuilders.mkModule (modKey "WidgetModule") (mkName "WidgetModule")
+                [ idxFeaturesKind ignoreDup disabled compression ]
+        ]
+        Sequences = []
+    }
+
+[<Fact>]
+let ``Slice 5.13.index-features-emit: IgnoreDuplicateKey = false omits IGNORE_DUP_KEY (V1 default)`` () =
+    let enriched = enrich (idxFeaturesCatalog false false None)
+    let body = (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices enriched |> mustOk) |> Map.find idxFeaturesKindKey).Body
+    Assert.DoesNotContain ("IGNORE_DUP_KEY", body)
+
+[<Fact>]
+let ``Slice 5.13.index-features-emit: IgnoreDuplicateKey = true emits IGNORE_DUP_KEY = ON in WITH clause`` () =
+    let enriched = enrich (idxFeaturesCatalog true false None)
+    let body = (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices enriched |> mustOk) |> Map.find idxFeaturesKindKey).Body
+    Assert.Contains ("IGNORE_DUP_KEY = ON", body)
+
+[<Fact>]
+let ``Slice 5.13.index-features-emit: DataCompression = None omits DATA_COMPRESSION (V1 default)`` () =
+    let enriched = enrich (idxFeaturesCatalog false false None)
+    let body = (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices enriched |> mustOk) |> Map.find idxFeaturesKindKey).Body
+    Assert.DoesNotContain ("DATA_COMPRESSION", body)
+
+[<Fact>]
+let ``Slice 5.13.index-features-emit: DataCompression = Page emits DATA_COMPRESSION = PAGE`` () =
+    let enriched = enrich (idxFeaturesCatalog false false (Some DataCompressionLevel.Page))
+    let body = (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices enriched |> mustOk) |> Map.find idxFeaturesKindKey).Body
+    Assert.Contains ("DATA_COMPRESSION = PAGE", body)
+
+[<Fact>]
+let ``Slice 5.13.index-features-emit: DataCompression = Row emits DATA_COMPRESSION = ROW`` () =
+    let enriched = enrich (idxFeaturesCatalog false false (Some DataCompressionLevel.Row))
+    let body = (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices enriched |> mustOk) |> Map.find idxFeaturesKindKey).Body
+    Assert.Contains ("DATA_COMPRESSION = ROW", body)
+
+[<Fact>]
+let ``Slice 5.13.index-features-emit: IsDisabled = false omits ALTER INDEX DISABLE (V1 default)`` () =
+    let enriched = enrich (idxFeaturesCatalog false false None)
+    let body = (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices enriched |> mustOk) |> Map.find idxFeaturesKindKey).Body
+    Assert.DoesNotContain ("ALTER INDEX", body)
+    Assert.DoesNotContain ("DISABLE", body)
+
+[<Fact>]
+let ``Slice 5.13.index-features-emit: IsDisabled = true emits post-CREATE-INDEX ALTER INDEX DISABLE`` () =
+    let enriched = enrich (idxFeaturesCatalog false true None)
+    let body = (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices enriched |> mustOk) |> Map.find idxFeaturesKindKey).Body
+    // V1 emission shape: ALTER INDEX [name] ON [Schema].[Table] DISABLE.
+    Assert.Contains ("ALTER INDEX [IX_Widget_Name]", body)
+    Assert.Contains ("DISABLE", body)
+    // ALTER comes after CREATE INDEX so the named index exists when
+    // the ALTER references it.
+    let createIdx = body.IndexOf "CREATE UNIQUE INDEX [IX_Widget_Name]"
+    let alterIdx  = body.IndexOf "ALTER INDEX [IX_Widget_Name]"
+    Assert.True (createIdx >= 0)
+    Assert.True (alterIdx > createIdx, "ALTER INDEX must come after CREATE INDEX")
+
+[<Fact>]
+let ``Slice 5.13.index-features-emit: T1 byte-determinism holds across the new index axes`` () =
+    let enriched = enrich (idxFeaturesCatalog true true (Some DataCompressionLevel.Page))
+    let a1 = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let a2 = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let b1 = (ArtifactByKind.toMap a1 |> Map.find idxFeaturesKindKey).Body
+    let b2 = (ArtifactByKind.toMap a2 |> Map.find idxFeaturesKindKey).Body
+    Assert.Equal (b1, b2)

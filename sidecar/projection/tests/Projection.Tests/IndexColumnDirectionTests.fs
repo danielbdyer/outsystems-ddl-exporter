@@ -35,7 +35,7 @@ let ``Slice γ: buildCreateIndex sets SortOrder.NotSpecified for Ascending colum
             IsUnique = false
             Filter = None
             IncludedColumns = []
-            FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false
+            FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None
         }
     let stmt = (ScriptDomBuild.buildCreateIndex idxDef).Value
     let col = stmt.Columns |> Seq.head
@@ -51,7 +51,7 @@ let ``Slice γ: buildCreateIndex sets SortOrder.Descending for Descending column
             IsUnique = false
             Filter = None
             IncludedColumns = []
-            FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false
+            FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None
         }
     let stmt = (ScriptDomBuild.buildCreateIndex idxDef).Value
     let col = stmt.Columns |> Seq.head
@@ -69,7 +69,7 @@ let ``Slice γ: rendered SQL contains DESC keyword for descending columns`` () =
             IsUnique = false
             Filter = None
             IncludedColumns = []
-            FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false
+            FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None
         }
     let sql = ScriptDomGenerate.toText (seq { Statement.CreateIndex idxDef })
     Assert.Contains("[CreatedAt] DESC", sql)

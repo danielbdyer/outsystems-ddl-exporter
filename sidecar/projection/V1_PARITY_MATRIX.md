@@ -896,6 +896,116 @@ pattern on the column axis. Realization-layer additions:
 
 ---
 
+### Rows 55 + 56 (Index features: IGNORE_DUP_KEY + ALTER INDEX DISABLE + DATA_COMPRESSION) — 2026-05-18 (closed by slice 5.13.index-features-emit, partial for row 56)
+
+**Original classifications (slice 5.2.α.index, 2026-05-18):**
+- Row 55: 🟠 NOT-MAPPED. V2's `Index` carried neither `IsDisabled`
+  nor `IgnoreDuplicateKey`.
+- Row 56: 🟠 NOT-MAPPED. V2's `Index` had no partition / data-space /
+  data-compression carriage.
+
+**Reclassified (slice 5.13.index-features-emit, 2026-05-18):**
+Row 55 → 🟢 PARITY (emit-side shipped; both axes fully wired through
+to ScriptDom emission). Row 56 → 🟢 PARITY (partial — single-value
+`DataCompression` shipped; `DataSpace` + per-partition compression
+deferred to a follow-up slice when partitioned-index fixtures
+surface; production canary is unaffected because OutSystems-shape
+schemas don't use partitioning).
+
+**Rationale.** Slice 5.13.index-features-emit closes the emit-side
+gap on the index axis, mirroring the FK + column pair pattern.
+The realization-layer additions:
+
+- `Projection.Core/Catalog.fs`:
+  - New `[<RequireQualifiedAccess>] type DataCompressionLevel =
+    None | Row | Page` (mirrors ScriptDom's enum modulo the
+    columnstore variants V2 has no fixture evidence for).
+  - `Index` IR extended with `IgnoreDuplicateKey : bool` (defaults
+    `false` — V1 default) + `IsDisabled : bool` (defaults `false`)
+    + `DataCompression : DataCompressionLevel option` (defaults
+    `None` — V1 default: no explicit DATA_COMPRESSION clause).
+  - `Index.create` updated to default the new fields.
+- `Projection.Targets.SSDT/Statement.fs`:
+  - New `IndexDataCompressionSql` DU (realization-layer mirror of
+    the Core DU).
+  - `IndexDef` extended with the same three fields (closed-DU
+    expansion at the realization layer mirrors Core's shape).
+  - New `Statement.AlterIndexDisable of TableId * indexName :
+    string` variant.
+- `Projection.Targets.SSDT/ScriptDomBuild.fs`:
+  - `buildCreateIndex` emits `IGNORE_DUP_KEY = ON` via
+    `IndexStateOption` with `IndexOptionKind.IgnoreDupKey` when
+    `IgnoreDuplicateKey = true`.
+  - `buildCreateIndex` emits `DATA_COMPRESSION = <level>` via
+    `DataCompressionOption.CompressionLevel` when
+    `DataCompression = Some _`. The realization-layer DU
+    (`IndexDataCompressionSql`) maps 1:1 to ScriptDom's
+    `DataCompressionLevel` (the namespace prefix is required at
+    the join site because Core's `DataCompressionLevel` shares
+    the type-name — intentional parallel modeling per pillar 8
+    ubiquitous language).
+  - New `buildAlterIndexDisable` builder uses
+    `AlterIndexStatement` with `AlterIndexType.Disable` →
+    renders as `ALTER INDEX [name] ON [Schema].[Table] DISABLE`.
+  - Closed-DU `buildStatement` dispatcher extended for the new
+    variant.
+- `Projection.Targets.SSDT/Render.fs` — new variant joins the
+  ScriptDomGenerate delegation arm.
+- `Projection.Targets.SSDT/SsdtDdlEmitter.fs`:
+  - `indexStatements` maps `idx.DataCompression` (Core DU) to the
+    realization-layer `IndexDataCompressionSql` and populates the
+    three new `IndexDef` fields.
+  - New private `disabledIndexAlters` yields one
+    `AlterIndexDisable` statement per disabled non-PK index.
+    Wired into BOTH per-kind `kindToSsdtFile` (emitSlices artifact
+    body) AND the catalog-wide `statements` stream. Order: CREATE
+    TABLE → ALTER NOCHECK (per FK) → CREATE INDEX → ALTER DISABLE
+    (per disabled index) → SetExtendedProperty.
+- `Projection.Targets.SSDT/DacpacEmitter.fs` —
+  `isSchemaStatement` accepts the new variant.
+- `Projection.Pipeline/Deploy.fs` — `executeStream` handles the
+  new variant as a DDL-class statement.
+
+**Coverage tests now passing (8 new):**
+- `SsdtDdlEmitterTests.``Slice 5.13.index-features-emit:
+  IgnoreDuplicateKey = false omits IGNORE_DUP_KEY (V1 default)`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.index-features-emit:
+  IgnoreDuplicateKey = true emits IGNORE_DUP_KEY = ON in WITH
+  clause`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.index-features-emit:
+  DataCompression = None omits DATA_COMPRESSION (V1 default)`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.index-features-emit:
+  DataCompression = Page emits DATA_COMPRESSION = PAGE`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.index-features-emit:
+  DataCompression = Row emits DATA_COMPRESSION = ROW`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.index-features-emit:
+  IsDisabled = false omits ALTER INDEX DISABLE (V1 default)`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.index-features-emit:
+  IsDisabled = true emits post-CREATE-INDEX ALTER INDEX
+  DISABLE`` ` (asserts statement order)
+- `SsdtDdlEmitterTests.``Slice 5.13.index-features-emit: T1
+  byte-determinism holds across the new index axes`` `
+
+**Deferred (no consumer pressure yet):**
+- **Rowset adapter wiring** — V1's `#AllIdx` rowset surfaces
+  the new axes (`IsDisabled` from `sys.indexes.is_disabled`,
+  `IgnoreDuplicateKey` from `sys.indexes.ignore_dup_key`,
+  `DataCompression` from `sys.partitions.data_compression`).
+  Today's `MetadataSnapshotRunner.toBundle` does NOT thread
+  these onto `Index` (the rowset-path `Index` literals default
+  the new fields via `Index.create`). Cash-out trigger: a
+  deployed target's reflection surfaces these axes AND the
+  canary detects an emission delta.
+- **Row 56 partition axis** (`DataSpace` + per-partition
+  compression list) — single-value `DataCompression` covers the
+  90% case (uniform compression across all partitions or no
+  partition); partitioned-index fixtures are not yet in V2's
+  test surface. The closed-DU `DataSpace = Filegroup |
+  PartitionScheme` + per-partition list lands when a partitioned-
+  index canary requires it.
+
+---
+
 ## Parity cash-out plans — what V2 work closes each gap
 
 The matrix's Notes column carries the per-row brief; this section

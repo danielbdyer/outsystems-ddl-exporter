@@ -1117,33 +1117,21 @@ module CatalogReader =
                 // local `match … | Ok v -> v | Error _ -> default`
                 // pattern.
                 let isPlatformAuto = getOptionalBool indexJson "isPlatformAuto" false
+                // Slice 5.13.smart-constructor-lift migration —
+                // `Index.create` carries minimum-evidence defaults;
+                // the JSON path overrides what the source surfaces.
+                // V1's JSON projection does not yet carry on-disk
+                // metadata or the slice 5.13.index-features-emit
+                // axes (IgnoreDuplicateKey / IsDisabled /
+                // DataCompression); those stay at smart-constructor
+                // defaults pending a rowset wiring slice.
                 Result.success
-                    { SsKey        = k
-                      Name         = n
-                      Columns      = cols
-                      IsUnique     = isUnique
-                      IsPrimaryKey = isPrimary
-                      // Chapter A.0' slice ζ — Index-level extended
-                      // properties; V1's JSON projection does not
-                      // surface index-level extended properties at
-                      // the boundary today. Empty default.
-                      ExtendedProperties = []
-                      Filter             = filter
-                      IncludedColumns    = includedCols
-                      IsPlatformAuto     = isPlatformAuto
-                      // Chapter 4.8 slice β — on-disk Index metadata.
-                      // V1's JSON projection does not currently surface
-                      // these fields at the boundary; default to V1's
-                      // IndexOnDiskMetadata.Empty values (FillFactor=None,
-                      // IsPadded=false, AllowRowLocks=true,
-                      // AllowPageLocks=true, NoRecomputeStatistics=false).
-                      // Future DACPAC adapter or rowset slice surfaces
-                      // them per V1-fixture pressure.
-                      FillFactor            = None
-                      IsPadded              = false
-                      AllowRowLocks         = true
-                      AllowPageLocks        = true
-                      NoRecomputeStatistics = false }
+                    { Index.create k n cols with
+                        IsUnique       = isUnique
+                        IsPrimaryKey   = isPrimary
+                        Filter         = filter
+                        IncludedColumns = includedCols
+                        IsPlatformAuto = isPlatformAuto }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 propagateOrFallback
@@ -1805,25 +1793,26 @@ module CatalogReader =
             | _ -> None
         match indexKey, indexName, foldedKeyCols, foldedIncludedCols with
         | Ok k, Ok n, Ok keys, Ok included ->
+            // Slice 5.13.smart-constructor-lift migration — rowset
+            // path overrides axes it observes from #AllIdx
+            // (IsUnique/IsPrimary, on-disk metadata, filter,
+            // included columns). IsPlatformAuto stays at default
+            // (rowset path doesn't surface it). Slice
+            // 5.13.index-features-emit axes (IgnoreDuplicateKey /
+            // IsDisabled / DataCompression) stay at defaults
+            // pending a rowset wiring slice; today's #AllIdx
+            // doesn't carry them.
             Result.success
-                { SsKey                 = k
-                  Name                  = n
-                  Columns               = keys
-                  IsUnique              = row.IsUnique
-                  IsPrimaryKey          = row.IsPrimary
-                  ExtendedProperties    = []
-                  Filter                = filter
-                  IncludedColumns       = included
-                  // V1's rowset path doesn't surface IsPlatformAuto;
-                  // the flag lives on V1's logical-IndexModel
-                  // projection, not on `sys.indexes` reality. JSON
-                  // path supplies it; rowset path defaults false.
-                  IsPlatformAuto        = false
-                  FillFactor            = fillFactor
-                  IsPadded              = row.IsPadded
-                  AllowRowLocks         = row.AllowRowLocks
-                  AllowPageLocks        = row.AllowPageLocks
-                  NoRecomputeStatistics = row.NoRecompute }
+                { Index.create k n keys with
+                    IsUnique              = row.IsUnique
+                    IsPrimaryKey          = row.IsPrimary
+                    Filter                = filter
+                    IncludedColumns       = included
+                    FillFactor            = fillFactor
+                    IsPadded              = row.IsPadded
+                    AllowRowLocks         = row.AllowRowLocks
+                    AllowPageLocks        = row.AllowPageLocks
+                    NoRecomputeStatistics = row.NoRecompute }
         | _ ->
             propagateOrFallback
                 [ Result.errors indexKey

@@ -887,7 +887,7 @@ let private expectedIndexCatalog : Catalog =
           Indexes = [
               { IRBuilders.mkIndex pkUserIndexKey (mkName "PK_USER") [ userIdAttrKey ] with IsUnique = true; IsPrimaryKey = true }
               { IRBuilders.mkIndex uxUserEmailIndexKey (mkName "UX_USER_EMAIL") [ userEmailAttrKey ] with IsUnique = true }
-              { IRBuilders.mkIndex ixUserNameIndexKey (mkName "IX_USER_NAME") [ userIndexLastNameAttrKey; userIndexFirstNameAttrKey ] with IncludedColumns = [ userIndexEmailLowerAttrKey ]; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
+              { IRBuilders.mkIndex ixUserNameIndexKey (mkName "IX_USER_NAME") [ userIndexLastNameAttrKey; userIndexFirstNameAttrKey ] with IncludedColumns = [ userIndexEmailLowerAttrKey ]; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
           ]
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [

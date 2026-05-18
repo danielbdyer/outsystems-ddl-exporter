@@ -37,7 +37,7 @@ let private mkIndex (label: string) (filter: string option) : Index =
         ExtendedProperties = []
         Filter             = filter
         IncludedColumns    = []
-        IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
+        IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
 
 // ---------------------------------------------------------------------------
 // Adapter pickup: parseIndex reads filterDefinition from V1 JSON.
@@ -132,7 +132,7 @@ let ``Emission: buildCreateIndex emits WHERE clause when Filter is Some`` () =
             Columns = [ { Name = "Id"; Direction = IndexDefColumnDirection.Ascending } ]
             IsUnique = false
             Filter = Some "[IsActive] = 1"
-            IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
+            IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
     let stmt = (ScriptDomBuild.buildCreateIndex idxDef).Value
     Assert.NotNull stmt.FilterPredicate
 
@@ -145,7 +145,7 @@ let ``Emission: buildCreateIndex omits WHERE clause when Filter is None`` () =
             Columns = [ { Name = "Id"; Direction = IndexDefColumnDirection.Ascending } ]
             IsUnique = false
             Filter = None
-            IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
+            IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
     let stmt = (ScriptDomBuild.buildCreateIndex idxDef).Value
     Assert.Null stmt.FilterPredicate
 
@@ -162,7 +162,7 @@ let ``Emission: buildCreateIndex silently skips Filter on parse failure`` () =
             IsUnique = false
             // Intentionally malformed SQL.
             Filter = Some "NOT A VALID FILTER ((("
-            IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
+            IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
     let stmt = (ScriptDomBuild.buildCreateIndex idxDef).Value
     Assert.Null stmt.FilterPredicate
 
@@ -175,7 +175,7 @@ let ``Emission: T1 determinism — same input yields same FilterPredicate shape`
             Columns = [ { Name = "Id"; Direction = IndexDefColumnDirection.Ascending } ]
             IsUnique = true
             Filter = Some "[Status] = N'A'"
-            IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
+            IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
     let stmt1 = (ScriptDomBuild.buildCreateIndex idxDef).Value
     let stmt2 = (ScriptDomBuild.buildCreateIndex idxDef).Value
     // Both have non-null FilterPredicate.
@@ -195,7 +195,7 @@ let ``E2E: rendered SQL contains WHERE clause when Filter is Some`` () =
             Columns = [ { Name = "Id"; Direction = IndexDefColumnDirection.Ascending } ]
             IsUnique = false
             Filter = Some "[IsActive] = 1"
-            IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
+            IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
     let sql = ScriptDomGenerate.toText (seq { Statement.CreateIndex idxDef })
     Assert.Contains ("WHERE", sql)
     Assert.Contains ("[IsActive]", sql)

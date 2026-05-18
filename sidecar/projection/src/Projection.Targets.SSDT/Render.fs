@@ -136,7 +136,8 @@ module Render =
         | CreateTable _
         | CreateIndex _
         | SetExtendedProperty _
-        | AlterTableNoCheckConstraint _ ->
+        | AlterTableNoCheckConstraint _
+        | AlterIndexDisable _ ->
             // Per pillar 7 four-question analysis at this site:
             //   1. Use-case-specific library: ScriptDom's
             //      `Sql160ScriptGenerator` via `ScriptDomGenerate

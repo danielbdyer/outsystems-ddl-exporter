@@ -140,6 +140,15 @@ type IndexDefColumn =
         Direction : IndexDefColumnDirection
     }
 
+/// SQL Server `DATA_COMPRESSION` levels at the realization layer.
+/// Mirrors `Projection.Core.DataCompressionLevel` (the IR-side DU)
+/// at the SSDT boundary; the SsdtDdlEmitter maps one to the other.
+/// Slice 5.13.index-features-emit (matrix row 56).
+type IndexDataCompressionSql =
+    | NoneCompressionSql
+    | RowCompressionSql
+    | PageCompressionSql
+
 type IndexDef =
     {
         Name : string
@@ -166,6 +175,22 @@ type IndexDef =
         AllowRowLocks : bool
         AllowPageLocks : bool
         NoRecomputeStatistics : bool
+        /// Slice 5.13.index-features-emit (matrix row 55) —
+        /// `IGNORE_DUP_KEY = ON` when `true`. ScriptDom's
+        /// `IndexStateOption` with `IndexOptionKind.IgnoreDupKey`.
+        IgnoreDuplicateKey : bool
+        /// Slice 5.13.index-features-emit (matrix row 55) — when
+        /// `true`, the realization layer emits a post-CREATE-INDEX
+        /// `Statement.AlterIndexDisable` so the index lands in
+        /// disabled state. CREATE INDEX always lands enabled; DISABLE
+        /// is a separate ALTER statement (ScriptDom doesn't model
+        /// the disable state as a CREATE-INDEX clause).
+        IsDisabled : bool
+        /// Slice 5.13.index-features-emit (matrix row 56) —
+        /// `DATA_COMPRESSION = NONE | ROW | PAGE` when populated.
+        /// `None` omits the option from the WITH clause (server-
+        /// default applies).
+        DataCompression : IndexDataCompressionSql option
     }
 
 /// One column's value within an `InsertRow`. `Raw` is the V2 IR
@@ -234,3 +259,12 @@ type Statement =
     /// statement of the owning kind, once per untrusted FK. Slice
     /// 5.13.fk-features-emit (matrix row 59).
     | AlterTableNoCheckConstraint of table: TableId * constraintName: string
+    /// `ALTER INDEX <name> ON <table> DISABLE` — preserves a
+    /// deployed target's index disable state when V1's
+    /// `IndexOnDiskMetadata.IsDisabled = true`. Emitted by
+    /// `SsdtDdlEmitter` after the CREATE INDEX statement of the
+    /// owning index, once per disabled non-PK index. PK-marked
+    /// indexes are inlined in CREATE TABLE and are not disabled
+    /// (V1's invariant — primary keys are always enforced). Slice
+    /// 5.13.index-features-emit (matrix row 55).
+    | AlterIndexDisable of table: TableId * indexName: string

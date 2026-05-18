@@ -584,6 +584,18 @@ type IndexColumn = {
     Direction : IndexColumnDirection
 }
 
+/// SQL Server `DATA_COMPRESSION` levels for an index (or partition
+/// range). Mirrors ScriptDom's `DataCompressionLevel` enum modulo
+/// the columnstore variants (which V1 doesn't surface and V2 has no
+/// fixture evidence for; lift trigger: an actual columnstore-bearing
+/// index surfaces in production). Slice 5.13.index-features-emit
+/// (matrix row 56).
+[<RequireQualifiedAccess>]
+type DataCompressionLevel =
+    | None
+    | Row
+    | Page
+
 /// A schema-level index on a kind. Carries identity, name, the
 /// participating attribute SsKeys (in declaration order; composite
 /// indexes have multiple), `IsUnique` (does the source treat this index
@@ -671,6 +683,35 @@ type Index = {
     /// = OFF (auto-update enabled). Mirrors V1's
     /// `IndexOnDiskMetadata.NoRecomputeStatistics`. Chapter 4.8 slice β.
     NoRecomputeStatistics : bool
+    /// SQL Server `IGNORE_DUP_KEY` option. `false` (V1 default) =
+    /// OFF (a duplicate-key insert fails the entire statement); `true`
+    /// = ON (the duplicate row is silently skipped, the statement
+    /// succeeds for the other rows). Mirrors V1's
+    /// `IndexOnDiskMetadata.IgnoreDuplicateKey`. Emitted as
+    /// `IGNORE_DUP_KEY = ON` in the CREATE INDEX `WITH (…)` clause.
+    /// Slice 5.13.index-features-emit (matrix row 55).
+    IgnoreDuplicateKey : bool
+    /// SQL Server index disable state. `false` (V1 default) = enabled
+    /// (the index participates in query plans and is maintained on
+    /// data changes); `true` = disabled (the index is preserved in
+    /// metadata but its B-tree is dropped — restored only by a
+    /// REBUILD). Mirrors V1's `IndexOnDiskMetadata.IsDisabled`.
+    /// Emitted as a post-CREATE-INDEX `ALTER INDEX [name] ON [table]
+    /// DISABLE` statement (ScriptDom's `AlterIndexStatement` with
+    /// `AlterIndexType.Disable`), since the disable state is not a
+    /// CREATE-INDEX clause. Slice 5.13.index-features-emit (matrix
+    /// row 55).
+    IsDisabled : bool
+    /// SQL Server `DATA_COMPRESSION` option. `None` (V1 default) =
+    /// no explicit DATA_COMPRESSION clause emitted (server inherits
+    /// table-level or partition-level setting). `Some level` =
+    /// explicit `DATA_COMPRESSION = NONE | ROW | PAGE` in the
+    /// CREATE INDEX `WITH (…)` clause. Mirrors V1's
+    /// `IndexOnDiskMetadata.DataCompression` (single-value form;
+    /// per-partition-range compression deferred to a follow-up
+    /// slice when partitioned indexes surface in fixture data).
+    /// Slice 5.13.index-features-emit (matrix row 56).
+    DataCompression : DataCompressionLevel option
 }
 
 
@@ -871,6 +912,10 @@ module Index =
     ///   - `FillFactor = None`; `IsPadded = false`
     ///   - `AllowRowLocks = true`; `AllowPageLocks = true` (V1 defaults)
     ///   - `NoRecomputeStatistics = false`
+    ///   - `IgnoreDuplicateKey = false` (V1 default)
+    ///   - `IsDisabled = false` (V1 default)
+    ///   - `DataCompression = None` (V1 default: no explicit
+    ///     DATA_COMPRESSION clause)
     ///
     /// Consumers override via record-update.
     let create
@@ -893,6 +938,9 @@ module Index =
             AllowRowLocks         = true
             AllowPageLocks        = true
             NoRecomputeStatistics = false
+            IgnoreDuplicateKey    = false
+            IsDisabled            = false
+            DataCompression       = None
         }
 
 

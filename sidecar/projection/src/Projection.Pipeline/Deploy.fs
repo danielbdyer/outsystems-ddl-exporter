@@ -507,6 +507,12 @@ module Deploy =
                     // which delegates to ScriptDomGenerate).
                     do! flushBulk ()
                     appendDdl s
+                | AlterIndexDisable _ ->
+                    // Slice 5.13.index-features-emit (matrix row 55) —
+                    // ALTER INDEX … DISABLE is a DDL-class statement;
+                    // same realization shape as the other DDL arms.
+                    do! flushBulk ()
+                    appendDdl s
                 | InsertRow (table, values) ->
                     let shape = values |> List.map (fun v -> v.Column)
                     let canAppend =
