@@ -339,6 +339,49 @@ rowset (23 of them) in source order.
 
 ---
 
+### Row 42 — 2026-05-18 (closed by slice 5.13.module-non-empty-invariant; LR1)
+
+**Original classification (slice 5.2.α.module, 2026-05-18):** 🟡 DIVERGENCE.
+V2's `Module.create` permitted empty `Module.Kinds`; the gap was an
+under-specification, not a deliberate weakening (per
+`DECISIONS 2026-05-18 (slice 5.2.α.module)` path (a) preferred but
+deferred to the next time `Module.create` was touched).
+
+**Reclassified (slice 5.13.module-non-empty-invariant, 2026-05-18):**
+🟢 PARITY.
+
+**Rationale.** LR1 ships as part of the Phase 8 lead-up-refactors
+queue. `Module.create` now lifts V1's `ModuleModel.Create` non-empty
+Entity invariant: empty `kinds` list fails with
+`module.kinds.empty` ValidationError. Per A39 (aggregate-root
+smart-constructor invariants). The check sits BEFORE the duplicate
+SsKey check so the failure mode is reported as cardinality-empty,
+not duplicate-key-on-zero-keys.
+
+V2 is **stronger than V1 (and stronger than V1-parity)** —
+V1's check throws on `entities.IsDefaultOrEmpty`; V2's check
+fails-fast with a typed `ValidationError` carrying the offending
+module's SsKey. Test fixtures that construct empty modules via the
+`IRBuilders.mkModule` literal builder are unaffected (the builder is
+a documented "trusted by construction" bypass per A39's "consumers
+that flow through `create` trust the value" contract).
+
+**Coverage tests now passing:**
+- `OssysDomainModuleParityTests.``5.2.α row 42: V2 Module.create rejects empty Kinds per V1 parity (LR1)`` `
+- `OssysDomainModuleParityTests.``5.2.α row 42: V2 Module.create accepts non-empty Kinds`` `
+
+**Discovered side-effect (worth noting).** The new invariant
+surfaced a JSON-shape mismatch in
+`OsmRowsetReaderTests.``Closed-DU expansion: SnapshotJson + SnapshotRowsets coexist; both paths usable from same caller`` `
+— the test's JSON fixture used `"entities": []`. The fixture grew to
+include a single User entity (matching the rowset bundle); both
+SnapshotJson and SnapshotRowsets paths now produce equivalent
+non-empty Catalogs. This is exactly the **ghost-module bug** the
+LR1 invariant prevents — the test was silently constructing
+zero-Kind modules.
+
+---
+
 ### Row 23 — 2026-05-18 (discovered by slice 5.2.α.misc)
 
 **Original classification (slice 5.1.α, 2026-05-17):** 🟠 NOT-MAPPED.

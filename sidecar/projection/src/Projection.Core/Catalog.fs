@@ -816,6 +816,20 @@ module Module =
         (isActive: bool)
         (extendedProperties: ExtendedProperty list)
         : Result<Module> =
+        // LR1 (slice 5.13.module-non-empty-invariant, matrix row 42):
+        // per-module non-empty Kind invariant. V1's `ModuleModel.Create`
+        // enforces this; V2 lifts the same axis per A39 (aggregate-root
+        // smart-constructor invariants) + `DECISIONS 2026-05-18 (slice
+        // 5.2.α.module)` path (a). Prevents a ghost-module class of bug
+        // in transformation passes — a module with zero kinds is
+        // semantically meaningless at every consumer (emitter / pass /
+        // diagnostic) but was silently constructible.
+        if List.isEmpty kinds then
+            Result.failureOf (
+                ValidationError.create
+                    "module.kinds.empty"
+                    (sprintf "Module %A must contain at least one Kind." ssKey))
+        else
         let duplicates =
             kinds
             |> List.groupBy (fun k -> k.SsKey)

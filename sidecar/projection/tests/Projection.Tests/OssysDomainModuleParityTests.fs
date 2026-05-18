@@ -4,10 +4,48 @@ module Projection.Tests.OssysDomainModuleParityTests
 // (V1's module-level aggregate vs V2's Catalog/Module reconstruction).
 
 open Xunit
+open Projection.Core
+open Projection.Tests.IRBuilders
 
-[<Fact(Skip = "Matrix row 42 — 🟡 DIVERGENCE. V1's `ModuleModel.Create` enforces per-module non-empty Entity invariant (`entities.IsDefaultOrEmpty` → 'module.entities.empty' error). V2's `Module.create` permits empty `Module.Kinds`; cardinality enforcement is deferred to caller / adapter discipline. See `DECISIONS 2026-05-18 (slice 5.2.α.module) — Per-module non-empty invariant: caller discipline over Module.create`. Re-open trigger: a transformation pass produces an empty module (ghost module bug surfaces during cutover).")>]
-let ``5.2.α row 42: V1 per-module non-empty invariant vs V2 caller discipline`` () : unit =
-    failwith "deferred — see V1_PARITY_MATRIX.md row 42 + DECISIONS 2026-05-18 (slice 5.2.α.module)"
+let private mkN s = Name.create s |> Result.value
+let private mkKey s = SsKey.synthesized "TEST" s |> Result.value
+
+[<Fact>]
+let ``5.2.α row 42: V2 Module.create rejects empty Kinds per V1 parity (LR1)`` () =
+    // Slice 5.13.module-non-empty-invariant — `Module.create` lifts V1's
+    // `ModuleModel.Create` non-empty Entity invariant. Empty-Kind
+    // modules are semantically meaningless at every consumer
+    // (emitter / pass / diagnostic); structural rejection prevents the
+    // ghost-module class of bug in transformation passes.
+    let result =
+        Module.create
+            (mkKey "AppCore")
+            (mkN "AppCore")
+            []
+            true
+            []
+    Assert.True(Result.isFailure result)
+    let err = Result.errors result |> List.head
+    Assert.Equal("module.kinds.empty", err.Code)
+
+[<Fact>]
+let ``5.2.α row 42: V2 Module.create accepts non-empty Kinds`` () =
+    let kind =
+        mkKind
+            (mkKey "AppCore.User")
+            (mkN "User")
+            (TableId.create "dbo" "OSUSR_APPCORE_USER" |> Result.value)
+            []
+    let result =
+        Module.create
+            (mkKey "AppCore")
+            (mkN "AppCore")
+            [ kind ]
+            true
+            []
+    Assert.True(Result.isSuccess result)
+    let m = Result.value result
+    Assert.Equal(1, List.length m.Kinds)
 
 [<Fact(Skip = "Matrix row 43 — 🔵 V2-EXTENSION. V1's `ModuleModel.Create` validates logical-name + case-insensitive physical-name uniqueness across the module's entities (two distinct error codes: `module.entities.duplicateLogical` / `module.entities.duplicatePhysical`). V2 enforces SsKey-based uniqueness (`Catalog.create` global Kind SsKey disjointness; A11 coproduct-cell discipline). V2's choice flows from pillar 9 + A2 (identity is by SsKey, never name) — two Kinds with the same Name but different SsKeys are distinct catalog objects. The decoupling is structurally stronger; V2's identity check is type-witnessed. No DECISIONS row needed (existing A2 axiom covers).")>]
 let ``5.2.α row 43: V1 name-based entity uniqueness vs V2 SsKey-based uniqueness (V2 stronger)`` () : unit =

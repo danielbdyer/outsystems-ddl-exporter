@@ -313,12 +313,30 @@ let ``SnapshotRowsets: inactive attributes carry through with IsActive=false (sl
 
 [<Fact>]
 let ``Closed-DU expansion: SnapshotJson + SnapshotRowsets coexist; both paths usable from same caller`` () =
+    // Both paths now construct a module with one Kind to satisfy the
+    // LR1 per-module non-empty Kind invariant (matrix row 42; slice
+    // 5.13.module-non-empty-invariant). The test's intent
+    // (cross-path-from-same-caller) holds; the fixture grows minimally
+    // to remain Module.create-valid.
     let json =
         """{ "exportedAtUtc": "2026-05-10T00:00:00Z",
              "modules": [ { "name": "AppCore", "isSystem": false, "isActive": true,
-                            "entities": [] } ] }"""
+                            "entities": [
+                              { "name": "User", "physicalName": "OSUSR_APPCORE_USER",
+                                "db_schema": "dbo", "isStatic": false, "isExternal": false,
+                                "isSystem": false, "isActive": true,
+                                "attributes": [
+                                  { "name": "Id", "physicalName": "ID",
+                                    "dataType": "Integer", "isMandatory": true,
+                                    "isIdentifier": true, "isAutoNumber": true,
+                                    "isActive": true, "isReference": false } ] } ] } ] }"""
     let bundle : CatalogReader.RowsetBundle =
-        { Modules = [ moduleRow None ]; Kinds = []; Attributes = []; References = [] }
+        {
+            Modules    = [ moduleRow None ]
+            Kinds      = [ userKindRow None ]
+            Attributes = [ idAttrRow None ]
+            References = []
+        }
     let resJson = parseSync (CatalogReader.SnapshotJson json)
     let resRow  = parseSync (CatalogReader.SnapshotRowsets bundle)
     match resJson, resRow with

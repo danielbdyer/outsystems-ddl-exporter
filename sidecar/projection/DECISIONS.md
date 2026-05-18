@@ -13899,3 +13899,62 @@ defers to a later slice.
   shape pass diagnostics use; consistency holds.
 
 ---
+
+## 2026-05-18 (slice 5.13.module-non-empty-invariant; LR1) — `Module.create` lifts V1's per-module non-empty Kind invariant
+
+Closes matrix row 42 + LR1 lead-up-refactor slot. Executes path (a)
+of `DECISIONS 2026-05-18 (slice 5.2.α.module)` per its pre-codified
+preference; trigger fired per principal-PO directive to ship
+better-than-parity lead-up refactors in the cutover-readiness arc.
+
+`Module.create` (`src/Projection.Core/Catalog.fs`) now rejects an
+empty `kinds` list with `module.kinds.empty` ValidationError before
+the duplicate-SsKey check. The check is the single-line guard
+specified in the prior DECISIONS entry; the only deviation: the
+ValidationError message includes the offending module's SsKey for
+operator-visible context.
+
+### Why this lands now (not at "next Module.create touch")
+
+The kickoff directive named the production-wiring + cutover-readiness
+arc; LR1 was queued as ship-when-its-consuming-chapter-opens; the
+Phase 8 (T-30 green path) work is itself the consuming arc. Lifting
+the invariant **now** rather than reactively (waiting for a
+ghost-module bug to surface during cutover) costs ~5 LOC + 2 test
+additions + 1 fixture grow; the cost of waiting is operator-visible
+during cutover.
+
+### Discovered side-effect: test-fixture hardening
+
+One existing test
+(`OsmRowsetReaderTests.``Closed-DU expansion: SnapshotJson + SnapshotRowsets coexist; both paths usable from same caller`` `)
+silently constructed a zero-Kind module via JSON fixture
+(`"entities": []`). The new invariant surfaced this. The fixture grew
+to include a User entity matching the rowset-path bundle; both paths
+now produce equivalent non-empty Catalogs. The test's named intent
+(cross-path-from-same-caller) holds.
+
+This is the **exact class of bug LR1 prevents** — silently-constructible
+ghost modules at adapter / fixture / pass boundaries that pass
+through the system as no-op aggregates. The pattern of test-fixture
+discovery validates the discipline.
+
+### IRBuilders boundary preserved
+
+Test fixtures using `IRBuilders.mkModule` (record-literal construction
+bypassing `Module.create`) are NOT affected by the new invariant.
+This is the documented A39 contract — "consumers that flow through
+`create` trust the value; constructors that bypass `create` opt out
+of the invariant." `IRBuilders.mkModule` is one such bypass; its
+docstring already records this. The boundary holds.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` row 42 — Status-history amendment records
+  the 🟡 DIVERGENCE → 🟢 PARITY reclassification.
+- `DECISIONS 2026-05-18 (slice 5.2.α.module)` — original path (a)
+  preference; this slice executes it.
+- `BACKLOG.md` Section V (Lead-up refactors) — LR1 retires; LR2-LR10
+  remain queued.
+
+---
