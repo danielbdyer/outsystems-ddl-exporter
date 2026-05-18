@@ -576,6 +576,21 @@ module ScriptDomBuild =
             Target     : TableId
             SetCells   : (string * SqlLiteral) list
             WhereCells : (string * SqlLiteral) list
+            /// When `true`, append a change-detection predicate to the
+            /// WHERE clause (`AND (<set-col-differs> OR ...)`) so a
+            /// no-op UPDATE is structurally filtered before SQL Server
+            /// observes it. Symmetric to `MergeBuildArgs.CdcAware`'s
+            /// effect on the `WHEN MATCHED AND (...)` predicate.
+            ///
+            /// Per `DECISIONS 2026-05-18 (slice 5.13.cdc-silence-cross-emitter)`:
+            /// V2 must structurally guarantee CDC silence for every
+            /// emission delta variant — Phase-2 UPDATE cannot lean on
+            /// SQL Server's no-op-MERGE optimization (which applies
+            /// to MERGE WHEN MATCHED UPDATE, not standalone UPDATE).
+            /// When `CdcAware = false` and `SetCells` is non-empty,
+            /// the UPDATE fires unconditionally on PK match — the
+            /// pre-slice shape, preserved for non-CDC-tracked tables.
+            CdcAware   : bool
         }
 
     /// Build a single-part `[col]` column reference (no Target/Source
@@ -595,12 +610,71 @@ module ScriptDomBuild =
         cmp.SecondExpression <- buildSqlLiteral lit
         cmp
 
+    /// Build `[col] IS [NOT] NULL` against a single-part column ref
+    /// (no Target/Source alias — UPDATE statement has only the
+    /// target table in scope). Sibling to the MERGE-side aliased
+    /// `isNullCheck`.
+    let private singlePartIsNullCheck (col: string) (negate: bool) : BooleanIsNullExpression =
+        let n = BooleanIsNullExpression()
+        n.Expression <- barColumnRef col :> ScalarExpression
+        n.IsNot <- negate
+        n
+
+    /// Build `[col] <> <literal>` for a standalone-UPDATE change-
+    /// detection term.
+    let private barInequality (col: string) (lit: SqlLiteral) : BooleanComparisonExpression =
+        let cmp = BooleanComparisonExpression()
+        cmp.ComparisonType <- BooleanComparisonType.NotEqualToBrackets
+        cmp.FirstExpression <- barColumnRef col :> ScalarExpression
+        cmp.SecondExpression <- buildSqlLiteral lit
+        cmp
+
+    /// Single-column change-detection predicate suitable for a
+    /// standalone UPDATE's WHERE clause:
+    ///
+    ///   - literal is NULL → predicate = `[col] IS NOT NULL`
+    ///     (difference iff target carries a value)
+    ///   - literal is non-NULL → predicate =
+    ///     `[col] <> <lit> OR [col] IS NULL`
+    ///     (difference iff target value differs OR is NULL)
+    ///
+    /// Sibling to the MERGE-side `perColumnChangeDetection`. The
+    /// shape differs because UPDATE has no Source table — the new
+    /// value is the typed `SqlLiteral` known at build-time, so the
+    /// literal-IS-NULL branch collapses at compile-time rather than
+    /// emitting a `<lit> IS NULL` SQL expression. Equivalent
+    /// truth-table; tighter SQL.
+    let private perColumnPhase2Difference (col: string) (lit: SqlLiteral) : BooleanExpression =
+        match lit with
+        | SqlLiteral.NullLit ->
+            singlePartIsNullCheck col true :> BooleanExpression
+        | _ ->
+            let inequality = barInequality col lit :> BooleanExpression
+            let isNull = singlePartIsNullCheck col false :> BooleanExpression
+            boolBinary BooleanBinaryExpressionType.Or inequality isNull
+            |> boolParen
+
+    /// Full change-detection predicate across all SET cells: per-cell
+    /// predicates joined with OR. Wrapped in parentheses for
+    /// well-grouped emission under ScriptDom's rendering rules.
+    let private phase2DifferencePredicate (setCells: (string * SqlLiteral) list) : BooleanExpression =
+        setCells
+        |> List.map (fun (col, lit) -> perColumnPhase2Difference col lit)
+        |> foldBool BooleanBinaryExpressionType.Or
+        |> boolParen
+
     /// Build the `UpdateStatement` for the supplied args. Per Tier-3
     /// (text-builder-as-first-instinct discipline): every node typed,
     /// every literal flowing through `SqlLiteral`, no terminal text
     /// composition until `Sql160ScriptGenerator.GenerateScript`.
     ///
     /// Chapter 4.9 slice ζ — canonical Diagnostics-bearing signature.
+    /// Slice 5.13.cdc-silence-cross-emitter extension: when
+    /// `args.CdcAware = true`, the WHERE clause appends a
+    /// `(<any-set-cell-differs>)` term so no-op UPDATEs are
+    /// structurally filtered before SQL Server observes them
+    /// (eliminates the CDC leak path for Phase-2 UPDATEs on
+    /// idempotent redeploy).
     let private buildUpdateStatementCore (args: UpdateBuildArgs) : UpdateStatement =
         let stmt = UpdateStatement()
         let spec = UpdateSpecification()
@@ -615,18 +689,28 @@ module ScriptDomBuild =
             setClause.NewValue <- buildSqlLiteral lit
             spec.SetClauses.Add(setClause :> SetClause)
 
-        // WHERE-clause: [pk1] = <litpk1> [AND [pk2] = <litpk2> ...].
-        // Empty WhereCells list emits no WHERE clause (full-table
-        // UPDATE — caller's responsibility to avoid that shape).
+        // WHERE-clause: [pk1] = <litpk1> [AND [pk2] = <litpk2> ...]
+        //               [AND (<set-cell-differs> OR ...)]
+        //
+        // The change-detection term is appended when CdcAware = true
+        // and SetCells is non-empty; an UPDATE with no SET cells
+        // can't fire CDC (it's a no-op statement at the parser
+        // boundary), so the predicate-append guard skips that
+        // degenerate case.
         match args.WhereCells with
         | [] -> ()
         | cells ->
-            let terms =
+            let pkTerms =
                 cells
                 |> List.map (fun (col, lit) ->
                     whereEquality col lit :> BooleanExpression)
+            let allTerms =
+                if args.CdcAware && not (List.isEmpty args.SetCells) then
+                    pkTerms @ [ phase2DifferencePredicate args.SetCells ]
+                else
+                    pkTerms
             let where = WhereClause()
-            where.SearchCondition <- foldBool BooleanBinaryExpressionType.And terms
+            where.SearchCondition <- foldBool BooleanBinaryExpressionType.And allTerms
             spec.WhereClause <- where
 
         stmt.UpdateSpecification <- spec

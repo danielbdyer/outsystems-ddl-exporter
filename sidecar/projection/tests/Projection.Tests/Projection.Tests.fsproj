@@ -51,6 +51,7 @@
     <Compile Include="DataEmissionComposerTests.fs" />
     <Compile Include="StaticPopulationEmitterTests.fs" />
     <Compile Include="CdcSilenceTests.fs" />
+    <Compile Include="CdcSilenceCrossEmitterTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
     <Compile Include="ProfileFixtures.fs" />
     <Compile Include="ProfileTests.fs" />

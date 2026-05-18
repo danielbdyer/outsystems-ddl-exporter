@@ -77,6 +77,7 @@ let ``Slice ζ: buildUpdateStatement returns Diagnostics with empty entries toda
             Target = table
             SetCells = [ ("Name", setLit) ]
             WhereCells = [ ("Id", pkLit) ]
+            CdcAware = false
         }
     let result = ScriptDomBuild.buildUpdateStatement args
     Assert.Empty result.Entries

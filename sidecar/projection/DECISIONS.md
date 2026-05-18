@@ -14276,3 +14276,171 @@ preconditions.
   as the S3 property.
 
 ---
+
+## 2026-05-18 (slice 5.13.cdc-silence-cross-emitter) — Phase-1 UpdColumns excludes deferred; Phase-2 UPDATE carries change-detection predicate; CDC silence is structurally guaranteed, not optimizer-dependent
+
+Closes Phase 8 T-30-green blocker #1 (DATA axis V2-driver flip).
+The third and final of the three blocking deliverables (after slice
+7's row 160 cross-emitter ordering and slice 8's row 174 identity
+property surface). Per V2_DRIVER + CLAUDE.md operating-disciplines
+table: "the CDC-silence-on-idempotent-redeploy property test
+(chapter 4.1.B) is the highest-leverage single deliverable in the
+entire chapter sequence."
+
+### The principle (operator-stated)
+
+> "Continue to work towards approaching this from first principles.
+> It's crucial that we work inside of complete determinism for all
+> the possible variants of emission delta."
+
+V2's emission must **structurally** guarantee CDC silence for every
+emission delta variant. Leaning on SQL Server's no-op optimization
+is insufficient — it covers MERGE WHEN MATCHED UPDATE (per SQL
+Server 2022's MERGE → CDC pipeline) but NOT standalone UPDATE.
+
+### Two compounding structural bugs (discovered empirically)
+
+The slice opened by writing a cross-emitter idempotent-redeploy
+CDC canary (Country Static + LegacyOrder Migration with self-FK
+cycle). Initial test surfaced `baseline=5, post=9` — 4 NEW CDC
+entries per redeploy. Decomposition:
+
+**Bug 1 — Phase-1 MERGE WHEN MATCHED UPDATE touches deferred
+columns.** The MERGE's `UpdColumns` was `updatableColumnNames k`
+(all non-PK columns), INCLUDING the deferred columns NULLed in
+Phase-1 VALUES. On idempotent redeploy:
+
+```
+Target.PARENTID = 1            (set by Phase-2 of first deploy)
+Source.PARENTID = NULL         (Phase-1 VALUES carry deferred=NULL)
+Predicate: Target.PARENTID <> Source.PARENTID  → 1 <> NULL → NULL/false
+           OR (Target IS NULL AND Source IS NOT NULL)  → false
+           OR (Target IS NOT NULL AND Source IS NULL)  → TRUE
+→ WHEN MATCHED predicate fires → UPDATE Target.PARENTID = Source.PARENTID = NULL
+→ CDC captures the change (2 entries: __$operation 3 + 4)
+```
+
+**Bug 2 — Phase-2 UPDATE fires unconditionally on PK match.** Even
+with bug 1 fixed (deferred excluded from MERGE UpdColumns), the
+Phase-2 UPDATE still fires:
+
+```
+UPDATE [t]
+SET [PARENTID] = 1
+WHERE [ID] = 1                 ← matches → UPDATE fires
+→ Target.PARENTID was already 1; UPDATE is a no-op semantically
+→ CDC captures the UPDATE (2 entries: __$operation 3 + 4)
+```
+
+Total leak: 2 + 2 = 4 CDC entries per deferred-column row per
+redeploy. Matches the observed `post - baseline = 4`.
+
+### Structural fix (three coupled changes)
+
+**Fix A — `UpdateBuildArgs` gains `CdcAware : bool`.** Symmetric to
+`MergeBuildArgs.CdcAware`; when `true`, `buildUpdateStatementCore`
+appends a change-detection predicate to the WHERE clause:
+
+```
+WHERE [pk1] = <litpk1> AND ... AND (
+    (∃ SetCell (col, lit) : Target.col differs from lit)
+)
+```
+
+The per-cell predicate matches the MERGE-side `perColumnChangeDetection`
+modulo single-part column refs (no Target/Source aliasing in a
+standalone UPDATE) and literal-NULL collapse (the literal is known
+at build-time; `<lit> IS NULL` is decided statically):
+
+- `lit = NullLit` → predicate = `[col] IS NOT NULL` (difference iff
+  target carries a value)
+- `lit = non-null` → predicate = `[col] <> <lit> OR [col] IS NULL`
+
+**Fix B — Phase-1 MERGE excludes deferred from `UpdColumns`.** Both
+emitters (`StaticSeedsEmitter.renderMerge` +
+`MigrationDependenciesEmitter.renderMerge`) replace
+`updatableColumnNames k` with:
+
+```fsharp
+k.Attributes
+|> List.filter (fun a -> not a.IsPrimaryKey)
+|> List.filter (fun a -> not (Set.contains a.Name deferred))
+|> List.map (fun a -> a.Column.ColumnName)
+```
+
+When all updatable columns are deferred (the load-bearing case for
+a single-FK-column kind in a self-cycle), `UpdColumns` is empty
+and the MERGE has only WHEN NOT MATCHED INSERT (no WHEN MATCHED
+branch at all). SQL Server accepts this shape.
+
+**Fix C — `renderUpdate` gains `cdcAware` parameter.** Threads
+through both emitters' `kindToScript` (which already has
+`cdcAware` in scope from `CdcAwareness.isEnabled k.SsKey cdc`).
+
+### Why both fixes are needed
+
+After Fix B alone: redeploy MERGE → no WHEN MATCHED UPDATE on
+deferred → no Phase-1 CDC leak. But Phase-2 UPDATE still fires
+unconditionally → 2 CDC entries leak per row.
+
+After Fix A alone: Phase-2 UPDATE WHERE filters out no-op → no
+Phase-2 CDC leak. But Phase-1 MERGE still overwrites Target's
+deferred column to NULL → Phase-1 CDC leak (2 entries) AND
+semantic incorrectness (target row briefly carries NULL FK during
+redeploy).
+
+Both fixes together: zero CDC entries, semantically idempotent.
+
+### Empirical verification
+
+`CdcSilenceCrossEmitterTests` (5 tests, all Docker-gated except C0):
+- C0: structural assertions on emitted SQL shape ✓
+- C1: single-emitter composer redeploy → 0 CDC entries ✓
+- C2: cross-emitter (Static + Migration) redeploy → 0 CDC entries ✓
+- C3: Phase-2 UPDATE redeploy → 0 CDC entries ✓
+- C4 sensitivity: changed-content redeploy → ≥1 CDC entry (proves
+  canary mechanism is real, rules out trivial-pass) ✓
+
+Full suite: 1547 passed (was 1542 pre-slice; +5 new), 0 failed.
+The structural fixes don't regress any existing behavior.
+
+### Better-than-V1
+
+V1's `PhasedDynamicEntityInsertGenerator` (`Osm.Emission/`) carries
+both structural bugs:
+- V1's Phase-1 INSERT branch and Phase-1 UPDATE branch both
+  reference all columns including deferred-FK columns.
+- V1's Phase-2 UPDATE is unconditional on PK match.
+
+V1 happens to work for non-CDC-tracked deployments because the
+end-state is correct (Phase-1 sets deferred to NULL; Phase-2 sets
+it back; final row carries the right values). But under CDC,
+V1's redeploy generates 4 spurious capture entries per deferred
+row. V2 now structurally guarantees CDC silence; V1 does not.
+
+### Why standalone UPDATE differs from MERGE WHEN MATCHED UPDATE
+
+SQL Server 2022's MERGE → CDC pipeline empirically does NOT
+capture no-op MERGE-MATCHED-UPDATE — the optimizer recognizes
+column-unchanged-on-match and elides the CDC write. Standalone
+UPDATE does NOT carry the same optimization: any UPDATE that
+matches a row triggers CDC capture, regardless of whether the
+SET values differ from current.
+
+V2 cannot lean on this asymmetric optimization. The principled
+posture is symmetry: Phase-2 UPDATE carries the same
+change-detection predicate as the MERGE's WHEN MATCHED AND clause.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` rows 160 + 163 — Status-history amendments
+  with the structural-fix rationale.
+- `CUTOVER_READINESS_BRIEF.md` Section 4 blocker #1 — closed.
+- `BACKLOG.md` Phase 5.13 — `5.13.cdc-silence` retires.
+- `V2_DRIVER.md` per-axis correctness stakes — DATA axis V2-driver
+  flip is now structurally enabled.
+- `CdcSilenceTests` (single-emitter slice γ) — the precedent
+  canary; this slice's tests extend its property surface to the
+  full pipeline.
+
+---

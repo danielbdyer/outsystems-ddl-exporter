@@ -201,12 +201,24 @@ module MigrationDependenciesEmitter =
         let table : TableId =
             { Schema = k.Physical.Schema
               Table  = k.Physical.Table; Catalog = None }
+        // Slice 5.13.cdc-silence-cross-emitter: mirror of
+        // `StaticSeedsEmitter.renderMerge`. Deferred columns are
+        // owned by Phase-2; including them in Phase-1's WHEN MATCHED
+        // UPDATE branch causes idempotent redeploy to overwrite the
+        // target column with the Phase-1 NULL, then Phase-2 sets it
+        // back. Filtering deferred from UpdColumns makes Phase-1
+        // structurally silent on the deferred-FK axis.
+        let updColumns =
+            k.Attributes
+            |> List.filter (fun a -> not a.IsPrimaryKey)
+            |> List.filter (fun a -> not (Set.contains a.Name deferred))
+            |> List.map (fun a -> a.Column.ColumnName)
         let args : ScriptDomBuild.MergeBuildArgs =
             {
                 Target     = table
                 AllColumns = orderedColumnNames k
                 PkColumns  = pkColumnNames k
-                UpdColumns = updatableColumnNames k
+                UpdColumns = updColumns
                 Rows       = typedRows |> List.map (typedValuesToSqlLiterals deferred k.Attributes)
                 CdcAware   = cdcAware
             }
@@ -220,6 +232,7 @@ module MigrationDependenciesEmitter =
     /// Tier-3 cash-out: `ScriptDomBuild.buildUpdateStatement` is the
     /// typed-AST primitive; this emitter is its second consumer.
     let private renderUpdate
+        (cdcAware: bool)
         (k: Kind)
         (deferred: Set<Name>)
         (typedValues: Map<Name, SqlLiteral>)
@@ -244,7 +257,8 @@ module MigrationDependenciesEmitter =
         let args : ScriptDomBuild.UpdateBuildArgs =
             { Target     = table
               SetCells   = setCells
-              WhereCells = whereCells }
+              WhereCells = whereCells
+              CdcAware   = cdcAware }
         let updateStmt = (ScriptDomBuild.buildUpdateStatement args).Value
         System.String.Concat(  // LINT-ALLOW: terminal UPDATE statement-terminator + GO-batch suffix on the rendered Phase-2 UPDATE (chapter 4.1.B slice ε); segments are typed (output of `ScriptDomGenerate.generateOne` from `ScriptDomBuild.buildUpdateStatement` typed AST + SQL Server's statement-terminator + V1 batch-separator literal); same architectural shape as StaticSeedsEmitter.renderUpdate
             ScriptDomGenerate.generateOne (updateStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement),
@@ -371,7 +385,7 @@ module MigrationDependenciesEmitter =
                 if Set.isEmpty deferred then ""
                 else
                     typedRows
-                    |> List.map (fun (_, vs) -> renderUpdate k deferred vs)
+                    |> List.map (fun (_, vs) -> renderUpdate cdcAware k deferred vs)
                     |> System.String.Concat  // LINT-ALLOW: terminal Phase-2 cross-row UPDATE concatenation (chapter 4.1.B slice ι; mirror of StaticSeedsEmitter); each segment is the ScriptDom-rendered + GO-batched UPDATE for one row; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary
             let rendered =
                 System.String.Concat(renderedPhase1, renderedPhase2)  // LINT-ALLOW: terminal per-kind concatenation of ScriptDom-rendered Phase-1 + Phase-2 strings (chapter 4.1.B slice κ; mirror of StaticSeedsEmitter); both segments are typed-AST outputs already terminated by `;\nGO\n`

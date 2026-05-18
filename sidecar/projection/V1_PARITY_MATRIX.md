@@ -339,6 +339,84 @@ rowset (23 of them) in source order.
 
 ---
 
+### Rows 160 + 163 (Phase-2 UPDATE) — 2026-05-18 (closed by slice 5.13.cdc-silence-cross-emitter; STRUCTURAL FIX)
+
+**Closure of Phase 8 T-30-green blocker #1 (DATA axis V2-driver flip).**
+The third and final of the three Phase 8 blocking deliverables —
+*"the highest-leverage single deliverable in the entire chapter
+sequence"* per V2_DRIVER and CLAUDE.md operating disciplines.
+
+**Method.** Slice opens by walking the first-principles claim: V2's
+full data-emission pipeline must produce CDC-silent output on
+idempotent redeploy across emitters with CDC-tracked tables.
+Existing canary covers single-emitter (`StaticSeedsEmitter` alone,
+no Phase-2 UPDATE). New canary `CdcSilenceCrossEmitterTests` extends
+to cross-emitter + Phase-2 UPDATE under live SQL Server CDC.
+
+**Discovery (the empirical finding).** The cross-emitter test
+initially failed with `baseline=5, post=9` — 4 NEW CDC entries
+fired per idempotent redeploy. Two compounding structural bugs:
+
+1. **Phase-1 MERGE incorrectly UPDATEs deferred columns.** The
+   MERGE's `WHEN MATCHED` UpdColumns included deferred columns
+   (those NULLed in Phase-1 VALUES to break FK cycles). On
+   redeploy, the cdcAware predicate evaluated `Target.col (=1) <>
+   Source.col (=NULL)` → TRUE → UPDATE fired → target's deferred
+   column set BACK to NULL. CDC captured the change (2 entries:
+   operation 3 "before" + operation 4 "after").
+
+2. **Phase-2 UPDATE has no change-detection predicate.** Even
+   without bug 1, the Phase-2 UPDATE would still fire
+   unconditionally on PK match, setting the deferred column to
+   its known value. SQL Server's CDC captures the no-op standalone
+   UPDATE (2 entries: __$operation 3 + 4). Unlike `MERGE WHEN
+   MATCHED UPDATE`, standalone UPDATE does NOT carry the SQL Server
+   2022 no-op optimization.
+
+The two leaks compounded: 2 + 2 = 4 CDC entries per redeploy per
+deferred-column row. Matches the observed `post - baseline = 4`.
+
+**Structural fix (per first-principles directive: V2 must guarantee
+silence structurally, not lean on SQL Server's optimizer).**
+
+| Fix | Location | Effect |
+|---|---|---|
+| Exclude deferred from Phase-1 `UpdColumns` | `StaticSeedsEmitter.renderMerge` + `MigrationDependenciesEmitter.renderMerge` | Phase-1 MERGE doesn't touch deferred columns at all. When all updatable columns are deferred, the WHEN MATCHED branch disappears entirely (MERGE has only WHEN NOT MATCHED INSERT). |
+| Add change-detection predicate to Phase-2 UPDATE WHERE | `ScriptDomBuild.UpdateBuildArgs.CdcAware` + `buildUpdateStatementCore.phase2DifferencePredicate` | Standalone UPDATE WHERE clause becomes `[pk] = <litpk> AND (<set-col-differs> OR ...)`. No-op redeploys filter at the boundary. |
+| Thread cdcAware to renderUpdate | Both emitter `renderUpdate` signatures + their `kindToScript` callers | The flag plumbs through; `Profile.CdcAwareness` determines per-kind dispatch. |
+
+**Empirical verification.** After the fix:
+- C0 structural test: Country MERGE has predicate; LegacyOrder MERGE has only INSERT; Phase-2 UPDATE has predicate. ✓
+- C1 single-emitter via composer: redeploy CDC entries = 0. ✓
+- C2 cross-emitter (Country Static + LegacyOrder Migration with self-FK cycle): redeploy CDC entries = 0. ✓
+- C3 Phase-2 UPDATE redeploy: CDC entries = 0. ✓
+- C4 sensitivity (changed content): CDC entries > 0 (proves canary mechanism real). ✓
+
+**Better-than-V1.** V1's `PhasedDynamicEntityInsertGenerator` has
+the same two structural bugs (Phase-1 doesn't exclude deferred;
+Phase-2 has no change-detection predicate). V2 now structurally
+guarantees idempotent CDC silence — V1 leaks under the same
+workload.
+
+**Rows reclassified:**
+- Row 160 (Phase-2 cycle-breaking): 🟢 PARITY (partial; chapter
+  4.1.B) → 🟢 PARITY (full) + 🔵 V2-EXTENSION on the CDC silence
+  axis. V2 now structurally CDC-silent under deferred-FK
+  redeploy; V1 is not.
+- Row 163 (MERGE shape): 🟢 PARITY (chapter 4.1.B) → 🔵
+  V2-EXTENSION on the deferred-column filtering axis. V2's MERGE
+  excludes deferred columns from WHEN MATCHED UPDATE; V1's MERGE
+  shape didn't.
+
+**Coverage tests now passing (5 new):**
+- `CdcSilenceCrossEmitterTests.``5.13.cdc-silence-cross-emitter C0: cross-emitter composer output contains cdcAware MERGE predicate for both emitters`` `
+- `CdcSilenceCrossEmitterTests.``5.13.cdc-silence-cross-emitter C1: composer single-emitter redeploy fires zero CDC captures`` ` (Docker-gated)
+- `CdcSilenceCrossEmitterTests.``5.13.cdc-silence-cross-emitter C2: composer cross-emitter (Static + Migration) redeploy fires zero CDC captures`` ` (Docker-gated)
+- `CdcSilenceCrossEmitterTests.``5.13.cdc-silence-cross-emitter C3: Phase-2 UPDATE redeploy fires zero NEW CDC captures (discovery)`` ` (Docker-gated)
+- `CdcSilenceCrossEmitterTests.``5.13.cdc-silence-cross-emitter C4 sensitivity: changed-content composer redeploy DOES fire CDC`` ` (Docker-gated)
+
+---
+
 ### Row 174 — 2026-05-18 (closed by slice 5.13.identity-axis-closure)
 
 **Original classification (slice omnibus, 2026-05-18):** 🟢 PARITY
