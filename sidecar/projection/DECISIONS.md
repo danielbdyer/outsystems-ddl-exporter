@@ -13411,3 +13411,137 @@ doesn't need them.
 
 ---
 
+## 2026-05-18 (slice 5.7.α.cli) — V2 CLI deliberately minimal: production-deferred posture; reopen per verb on operator demand
+
+V1's `Osm.Cli` cluster ships **12 operator-facing verbs** (plus a
+nested `policy explain` subcommand) across ~5.5K LOC, wrapped in a
+sophisticated System.CommandLine-based option-binding infrastructure:
+7 specialized binders + `VerbOptionRegistry` + `VerbOptionsBuilder` +
+`IProgressRunner` (Spectre.Console TUI) + `CommandConsole`
+abstraction + `OpenReportVerbExtension` (cross-platform report
+launching).
+
+V2's `Projection.Cli` ships **4 verbs** in ~306 LOC: `emit`
+(with `--config` / `--skeleton-only` variants), `deploy`, `canary`,
+`--help`. Raw `argv` pattern matching; no option binders; no TUI;
+no centralized console abstraction; no report launching.
+
+This is a **deliberate posture**, not parity regression.
+
+### The principle
+
+V2's CLI surface area is the **minimum needed to validate V2-driver
+mode**. The 4 verbs cover:
+
+- **`emit`** — the SSDT projection (V2's primary deliverable; the
+  thing V2 produces that V1 also produces; canary verifies they
+  match modulo Tolerance).
+- **`deploy`** — applies the emitted artifacts to a target database.
+- **`canary`** — runs the PhysicalSchema round-trip diff (the
+  cutover-fidelity gate per the canary load-bearing discipline).
+- **`--help`** — the orientation surface.
+
+These four verbs are sufficient to:
+
+- Run the per-commit + per-Stop-hook canary gate (per CLAUDE.md
+  operating disciplines — "Canary as load-bearing forcing function").
+- Run the dual-track cutover-window emission (per R6 split-brain
+  governance — V2 emits-but-doesn't-ship while V1 owns the production
+  write path).
+- Run the cutover deployment when R6 transitions to V2-driver.
+
+**Every additional V1 verb is operator UX, not cutover capability.**
+V2's posture: ship the cutover-critical surface; defer everything
+else until operator demand surfaces.
+
+### What this looks like in the matrix
+
+The 5.7.α.cli slice classifies the 8 V1 verbs V2 doesn't carry as
+🟠 NOT-MAPPED — each with:
+
+- **Cash-out shape**: the exact CLI surface (verb name, arguments,
+  output shape) + the LOC estimate + the F# implementation pattern
+  (typically a thin wrapper over an existing V2 capability).
+- **Dependencies**: which V2 capabilities must ship first (e.g.,
+  `extract-model` depends on production wiring per rows 32-36;
+  `profile` depends on LiveProfiler per row 85; `analyze` depends
+  on SummaryFormatter per row 81).
+- **Trigger**: the concrete operator workflow that demands the verb.
+  Not "we'll get to it" — a named workflow (e.g., "operators iterate
+  on tightening policy before emission" for `analyze`).
+
+The 3 cross-cutting infrastructure concerns (option binders,
+progress TUI, report launching) get the same treatment.
+
+### Why this is structurally sound
+
+1. **Cherry-pick safety preserved.** V2's minimal CLI means fewer
+   adapter surfaces; fewer adapter surfaces mean fewer V1-version
+   coupling points. V2's CLI is self-contained F# — no V1 trunk
+   references; cherry-pick-clean.
+
+2. **Per-verb cash-out is incremental.** Each NOT-MAPPED row is a
+   bounded slice (typically ~30-300 LOC); operator demand surfaces
+   the trigger; the verb lifts as a clean slice. The matrix's
+   append-only narrative compounds — each verb that ships flips a
+   row from 🟠 to 🟢 with an amendment.
+
+3. **Config-driven defaults are stronger than CLI-driven defaults.**
+   V1's CLI carries cross-verb config via `CliGlobalOptions`
+   dependency-injection. V2 puts cross-verb config in the unified
+   config JSON (`osm emit --config <path>`); CLI flags are
+   per-invocation overrides only. The config IS the operator's
+   intent, persisted; the CLI flag is the per-invocation deviation.
+   Operators iterate on config; CLI flags handle exceptions.
+
+4. **Pillar 1 (data-structure-oriented) extends to CLI.** V1's
+   `CommandConsole` abstraction is centralized formatting (testable
+   but mockable); V2's per-line `Console.Error.WriteLine` is
+   structured per-line writes (typed list flows in; per-line writes
+   flow out; no intermediate concatenation; pure functional I/O).
+   V2's approach is **more testable** because output is deterministic
+   (no formatting class to mock).
+
+### Re-open triggers (per-verb)
+
+The 8 NOT-MAPPED verbs and 3 cross-cutting concerns have specific
+triggers:
+
+| Verb / concern | Trigger | Estimated LOC |
+|---|---|---|
+| `osm extract` | Chapter 5.1.β production wiring lands | 50 |
+| `osm profile` | Row 85 LiveProfiler lands | 30 |
+| `osm analyze` | Operator workflow demands pre-emission iteration | 300 |
+| `osm policy explain` | Operator demands CLI-based policy drill-down | 300 |
+| `osm uat-users` | Chapter 4.2 + cutover enters UAT phase | 1500 |
+| `osm verify-data` | Chapter 4.3+ post-deploy verification | 200 |
+| `--open-report` flag | Operator demands integrated report-launching | 150 |
+| `compare` verb | Operator demands ad-hoc schema-diff (matrix row 41) | 500 |
+| Option-binder infrastructure | CLI expands beyond 4 verbs with composable axes | 500 |
+| Global options | Operator demands `--log-level` / `--verbose` / `--quiet` | 50 |
+| Progress TUI | Chapter 5.1 production CLI wiring + operator feedback | 200 |
+
+Total estimated cash-out across all NOT-MAPPED + DIVERGENCE rows:
+~3780 LOC across 10 slices. Comparable to V1's ~5.5K LOC CLI; V2's
+slice-at-a-time discipline lets each verb ship when its operator
+demand surfaces, not in one bulk port.
+
+### Cross-references
+
+- A36 (chapter-3.1; bulk-vs-incremental is realization-layer
+  policy) — basis for `full-export` decomposition (matrix row 106).
+- `DECISIONS 2026-05-23 — Iterator-logging is a first-class outcome
+  over time` — basis for progress-TUI cash-out via Bench (matrix
+  row 118).
+- `DECISIONS 2026-05-17 (slice 5.8.α) — DMM lens machinery sunset;
+  schema-diff concept harvested as future CLI verb` — basis for
+  `compare` verb reservation (matrix row 109 sunset + row 41
+  concept-harvest).
+- Matrix row 81 (slice 5.4.γ.opportunities) — SummaryFormatter
+  consumer; co-dependent with `analyze` + `policy explain` verbs.
+- R6 split-brain governance (DECISIONS 2026-05-22) — basis for
+  "V2 owns the cutover-critical surface; V1 owns production CLI
+  during cutover window" allocation.
+
+---
+
