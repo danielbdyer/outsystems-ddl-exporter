@@ -13198,3 +13198,90 @@ carry the related structural deltas.
 
 ---
 
+## 2026-05-18 (slice 5.4.δ.profiling) — Sampling policy is operator intent; lives in the orchestrator, not in Profile IR
+
+V1's `Osm.Pipeline.Profiling.TableSamplingPolicy` is a per-table
+sampling heuristic — `ShouldSample()` decides whether to sample
+(row count > `RowCountSamplingThreshold`), `GetSampleSize()` returns
+the actual sample size (`min(SampleSize, RowCount, MaxRowsPerTable)`).
+Configuration lives in `SqlProfilerOptions.Sampling`. The heuristic is
+shared by all V1 query builders (NullCountQueryBuilder,
+UniqueCandidateQueryBuilder, ForeignKeyProbeQueryBuilder) — every
+probe consults the policy to determine whether to add `TOP
+(@SampleSize)` to the SQL.
+
+V2 deliberately does NOT carry this policy in `Profile` (the IR).
+V2's `Profile` records carry `ProbeStatus` per probe — a witness of
+what sample size WAS used at acquisition time — but the sampling
+DECISION is not part of the IR.
+
+**Why this is principled (not omission).**
+
+1. **Pillar 9 alignment.** Sampling policy is operator-intent (the
+   operator chooses speed over accuracy on large tables; the choice
+   is per-environment + per-run + per-deployment-window). V2's
+   Profile is data-intent evidence (the observations the operator
+   gets). Coupling the policy to the IR would conflate the two —
+   operators inspecting Profile would see policy decisions
+   embedded in evidence; pass consumers consuming Profile would
+   need to handle a per-row policy field that's irrelevant to
+   their decision logic.
+
+2. **A34 compliance.** Profile is independent of Catalog and Policy
+   (A34). The sampling policy is policy — moving it into Profile
+   would violate the independence; passes that consume Profile
+   would acquire transitive coupling to the sampling-policy
+   surface.
+
+3. **Witness suffices for consumers.** Consumers that need to reason
+   about confidence (e.g., a tightening pass that wants to defer a
+   decision when the sample size was small) read
+   `Profile.Columns.NullCountProbeStatus.SampleSize` — the witness
+   value, not the policy intent. The witness is sufficient for
+   downstream pattern-matching; the policy that produced it is
+   external context.
+
+**Where the policy lives in V2.**
+
+Sampling policy lives in `Projection.Pipeline.Config` (when the
+LiveProfiler cash-out per matrix row 85 lands). The Config carries
+per-environment sampling parameters (threshold, size, max rows per
+table); the LiveProfiler adapter consumes the Config + the Catalog
++ the SqlConnection to produce a Profile. The Profile records the
+witness; the Config is consulted no further by downstream consumers.
+
+**Trade-off explicitly named.**
+
+V2 loses V1's heuristic constraint-checking surface
+(`SqlProfilerOptions` enforces threshold > 0; sample size > 0; max
+rows > sample size; etc.). The cost is borne at the Config layer
+when LiveProfiler ships — Config carries smart-constructor invariants
+on sampling-related fields (per A39). The IR (Profile) stays clean
+of policy.
+
+**Re-open trigger.**
+
+LiveProfiler cash-out (matrix row 85) lands. Sampling heuristic
+ports as a private helper in the adapter (not lifted to Core's IR).
+The helper consumes `Config.Sampling` + `Catalog.tableRowCount` +
+returns `int option` (None = full-scan; Some n = sample n rows).
+Decision point: should the helper be public so Pipeline code can
+inspect "what sample size was chosen for table X"? Today: no —
+the Profile witness is sufficient. Future: surface as a Config
+projection if a debugging/observability consumer demands it.
+
+Recorded in `V1_PARITY_MATRIX.md` row 90 as 🟡 DIVERGENCE.
+
+### Cross-references
+
+- A34 (Profile independent of Catalog and Policy) — the basis for
+  excluding sampling policy from Profile IR.
+- Pillar 9 (`DECISIONS 2026-05-15 (late) — Harvest-dichotomy
+  classification`) — sampling is operator-intent; not data-intent.
+- A39 (aggregate-root smart-constructor invariants) — sampling
+  parameter validation lands on Config.Sampling at Pipeline layer
+  when LiveProfiler ships.
+- Matrix row 85 — LiveProfiler cash-out trigger; co-dependent.
+
+---
+
