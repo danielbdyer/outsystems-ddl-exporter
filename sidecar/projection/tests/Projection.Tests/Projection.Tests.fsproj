@@ -106,6 +106,7 @@
     <Compile Include="OssysJsonDeserializationParityTests.fs" />
     <Compile Include="OssysSsdtDataEmissionParityTests.fs" />
     <Compile Include="OssysPipelineEvidenceParityTests.fs" />
+    <Compile Include="OssysOmnibusClosingParityTests.fs" />
     <Compile Include="IsActiveCarryThroughTests.fs" />
     <Compile Include="IRFidelityLiftTests.fs" />
     <Compile Include="NoSilentDropTests.fs" />
