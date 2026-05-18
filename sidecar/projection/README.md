@@ -380,6 +380,43 @@ Build clean under `TreatWarningsAsErrors=true`; lint clean across
   surfaces as a `Skip` test stub at the test-file level, not as
   ADMIRE-prose commentary.
 
+## Status at 2026-05-18 (emit-features arc; column + FK + index CREATE-clause parity rows close)
+
+- **1565 non-canary tests passing** + canary tests Docker-gated.
+  0 failing; 0 build warnings under `TreatWarningsAsErrors=true`;
+  lint count unchanged. (1454 at chapter 5.0 close + 111 across the
+  chapter 5.13 arc; this session's four slices added the column /
+  FK / index trio of emit-feature closures plus the production-side
+  smart-constructor lift.)
+- **SCHEMA-axis V2-driver gate close to ready** — every V1
+  CreateTable + CreateIndex axis V1 emits is now structurally
+  emitted by V2's `SsdtDdlEmitter`, modulo three named residuals
+  (single-column PK inline optimization; computed columns;
+  partition-scheme axis). The next-agent handoff (`HANDOFF.md`
+  entry dated 2026-05-18) carries the full per-axis table.
+- **Production-side smart constructors universal across IR
+  aggregates** — `Attribute.create / Reference.create /
+  Index.create / Kind.create` join the pre-existing `Module.create
+  / Catalog.create / Name.create / ColumnCheck.create /
+  Trigger.create / Sequence.create / SsKey.original`. Field
+  extensions now land at one site instead of N. Test fixtures
+  (`IRBuilders.mkX`) are one-line shims to the production
+  constructors.
+- **Two new `Statement` variants ship for post-CREATE state
+  preservation** — `AlterTableNoCheckConstraint` (FK trust
+  preservation when `Reference.IsConstraintTrusted = false`) +
+  `AlterIndexDisable` (index disable preservation when
+  `Index.IsDisabled = true`). Both flow through ScriptDom's typed
+  AST (`AlterTableConstraintModificationStatement` +
+  `AlterIndexStatement` respectively). Three-consumer threshold
+  for a shared `PostCreateAlter` consolidation not yet met.
+- **New `[<RequireQualifiedAccess>] type DataCompressionLevel`
+  Core DU** — modeling SQL Server's row/page compression option
+  for indexes; mirrors ScriptDom's enum modulo columnstore
+  variants (deferred until fixture evidence surfaces).
+- **Matrix coverage** — rows 12 + 53 + 55 + 56 (partial) + 58 +
+  59 + 182 closed to 🟢 PARITY in this arc.
+
 ## Status at chapter 4.8 close (2026-05-17; IRBuilders Attribute sweep + on-disk Index metadata + isPlatformAuto emitter toggle)
 
 - **1367 non-canary tests passing** + canary tests Docker-gated.

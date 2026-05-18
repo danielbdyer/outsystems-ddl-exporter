@@ -1,8 +1,114 @@
-# Handoff letter — Chapter 5.0 SHIPPED (OSSYS catalog producer carbon-copy; V2 stands on its own; V1 Parity Audit Wave opens next)
+# Handoff letter — 2026-05-18 (post-emit-features arc; SCHEMA-axis V2-driver gate close to ready)
 
-To the next-chapter agent. Read this before anything else in the V2 sidecar. It is shorter than the work warrants, but it tells you what to read so you can carry your own weight.
+To the next agent. The chapter-5.0 letter sits below this one; read both. The matrix discipline (`V1_PARITY_MATRIX.md`) and the operating-disciplines table (`CLAUDE.md`) are unchanged. This entry tells you what shipped on 2026-05-18, what's load-bearing for the next move, and where the blind spots are.
 
-The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+## 2026-05-18 (emit-features arc — column / FK / index parity rows close)
+
+### What shipped (four slices in one session arc)
+
+Branch: `claude/transient-retry-exception-class-9MpoR`. Test baseline at end of arc: **1565 / 1565 non-canary passing** (1454 at chapter 5.0 close + 111 across the chapter 5.13 arc; this session added the column/FK/index trio + the smart-constructor lift). Zero build warnings under `TreatWarningsAsErrors=true`. Lint count unchanged.
+
+The four slices, in commit order:
+
+1. **`5.13.column-features-emit`** — DEFAULT + CHECK clause emission through ScriptDom. `ColumnDef` extended with `DefaultValue : SqlLiteral option` + `DefaultName : string option`; new `ColumnCheckDef` record; `Statement.CreateTable` constructor extended with a fifth `ColumnCheckDef list` argument. `ScriptDomBuild.columnDefinition` emits `DefaultConstraintDefinition` from typed literals; new `checkConstraint` builder parses via `TSql160Parser.ParseBooleanExpression`. `Render.fs` CREATE TABLE arm collapsed into `ScriptDomGenerate` delegation (single source of truth). Matrix rows 12 + 53 + 182 close to 🟢 PARITY.
+
+2. **`5.13.smart-constructor-lift`** — Production-side smart constructors for the four IR aggregate records that lacked them: `Attribute.create / Reference.create / Index.create / Kind.create`. The pattern previously existed only on the test side via `IRBuilders.mkX` helpers; this slice lifts it to production. `IRBuilders.mkAttribute / mkReference / mkIndex / mkKind` now delegate to the production constructors (one-line shims; the default geometry is shared). Five production-side literal sites migrated; ~20 test-side literal sites stayed stable (they already used IRBuilders). This slice was operator-directed mid-arc: "create a smart constructor for this and any and all use cases similar to this before doing the work." The discipline holds: closed-DU expansion errors light up at literal-construction sites only; field-extension propagation is bounded. The Reference IR gained `OnUpdate : ReferenceAction option` + `IsConstraintTrusted : bool` as carriage-only fields, consumed by the next slice.
+
+3. **`5.13.fk-features-emit`** — ON UPDATE referential action + WITH NOCHECK trust-state preservation. `ForeignKeyDef` extended with `OnUpdate : ReferenceActionSql option` + `IsConstraintTrusted : bool`. New `Statement.AlterTableNoCheckConstraint of TableId * constraintName : string` variant. New `ScriptDomBuild.buildAlterTableNoCheckConstraint` builder uses `AlterTableConstraintModificationStatement` with `ExistingRowsCheckEnforcement = NoCheck` + `ConstraintEnforcement = Check` (renders empirically as `ALTER TABLE [Schema].[Table] WITH NOCHECK CHECK CONSTRAINT [FK_…]`). `SsdtDdlEmitter.untrustedFkAlters` yields one ALTER per untrusted FK after the kind's CREATE TABLE. Matrix rows 58 + 59 close to 🟢 PARITY (emit-side; adapter rowset-path JOIN deferred).
+
+4. **`5.13.index-features-emit`** — IGNORE_DUP_KEY + DATA_COMPRESSION + post-CREATE ALTER INDEX DISABLE. New `[<RequireQualifiedAccess>] type DataCompressionLevel = None | Row | Page` Core DU; `Index` extended with `IgnoreDuplicateKey : bool` + `IsDisabled : bool` + `DataCompression : DataCompressionLevel option`. `IndexDef` extended with realization-layer mirror (`IndexDataCompressionSql`). New `Statement.AlterIndexDisable of TableId * indexName : string` variant. `ScriptDomBuild.buildCreateIndex` emits `IGNORE_DUP_KEY = ON` + `DATA_COMPRESSION = <level>` in the WITH clause; new `buildAlterIndexDisable` uses `AlterIndexStatement` with `AlterIndexType.Disable`. `SsdtDdlEmitter.disabledIndexAlters` yields one ALTER per disabled non-PK index after CREATE INDEX. Matrix rows 55 + 56 close to 🟢 PARITY (emit-side; row 56's partition-scheme axis deferred until partitioned-index fixtures surface).
+
+### The pattern that emerged across all four slices
+
+The column / FK / index slices follow the same shape, in this order:
+
+1. **Extend Core IR** with the new fields (smart-constructor absorbs the defaults). When the IR record lacks a smart constructor, lift the pattern first per the A39 codification — that's what the smart-constructor-lift slice did mid-arc.
+2. **Extend SSDT `Statement.fs`** with the realization-layer mirror — typically a new field on `ColumnDef` / `ForeignKeyDef` / `IndexDef`, sometimes a sibling DU at the realization-layer boundary (`IndexDataCompressionSql` mirrors `DataCompressionLevel` because the Core+ScriptDom type-names collide).
+3. **Add a new `Statement` variant** when the emission is a post-CREATE ALTER preserving deployed state. So far we have two: `AlterTableNoCheckConstraint` (FK trust) + `AlterIndexDisable` (index disable). Both share the shape "named entity, post-CREATE, ScriptDom-typed."
+4. **Empirically validate ScriptDom rendering** via `dotnet fsi` before adopting an unfamiliar API. The session probed `AlterTableConstraintModificationStatement`'s flag pair to confirm `WITH NOCHECK CHECK CONSTRAINT` rendered correctly; probed `AlterIndexStatement.AlterIndexType.Disable` for ALTER INDEX DISABLE; probed `DataCompressionOption.CompressionLevel` + `IndexOptionKind.IgnoreDupKey` for the IndexOption surface. This is the **text-builder-as-first-instinct discipline** operating: typed AST first, with empirical validation when the API is unfamiliar.
+5. **Add ScriptDom typed-AST builder** in `ScriptDomBuild.fs`. Extend `buildStatement` dispatcher's closed-DU match.
+6. **Update `Render.fs`** — the new variant joins the `ScriptDomGenerate` delegation arm alongside CREATE TABLE / CREATE INDEX / SetExtendedProperty.
+7. **Update `SsdtDdlEmitter.fs`** — extend the `Def` projection (`columnDef` / `fkDef` / `indexStatements`) to populate the new fields; add a private helper (`untrustedFkAlters` / `disabledIndexAlters`) yielding the post-CREATE ALTER statements; thread the helper into BOTH the per-kind `kindToSsdtFile` AND the catalog-wide `statements` stream.
+8. **Update `DacpacEmitter.isSchemaStatement` + `Deploy.executeStream`** for closed-DU exhaustiveness on the new variant.
+9. **Add focused canary tests** asserting the V1-default omission, the new-axis emission, statement ordering (ALTER comes after CREATE), and T1 byte-determinism.
+10. **Document the slice** in `V1_PARITY_MATRIX.md` (Status-history amendment), `DECISIONS.md` (dated entry), `BACKLOG.md` (retire the Phase-5.13 entry, retire/downgrade the LR entry).
+
+This pattern is the playbook for the row-56-partition slice when it lands.
+
+### Mechanics that worked
+
+- **Background test runs while continuing to edit.** The full suite is ~4.5 minutes; running it via `Bash run_in_background:true` and using `Monitor` with an until-loop on the output file lets you finish doc updates / fixture writes / commit prep without polling. The `Monitor` tool emits a single notification on completion.
+- **Sed for bulk literal-site updates with a stable end-token.** When the index-features-emit field extension lit up ~20 test literal sites, all of them ended with `NoRecomputeStatistics = false` (the prior most-recently-added Index field). A single sed substitution appended the three new fields uniformly. The mechanic only works when there's a positionally-stable hook; the closed-DU expansion empirical-test discipline guarantees the literal sites are bounded and locatable.
+- **Empirical ScriptDom probing via `dotnet fsi /tmp/inspect.fsx`.** Three times this session, the unfamiliar-API question ("does ScriptDom emit `WITH NOCHECK CHECK CONSTRAINT` correctly with these flags?") was answered by a 20-line fsi script printing `GenerateScript` output before any production code landed. This is cheap and replaces speculation with evidence.
+- **Smart-constructor lift FIRST.** The arc's third slice was a refactor the user enforced mid-flight: "Let's create a smart constructor for this and any and all use cases similar to this before doing the work." It paid off twice — the field extensions in slices 3 and 4 landed at the smart-constructor body only; literal sites stayed stable. When you're about to extend an IR aggregate that lacks a smart constructor, lift the pattern first.
+- **One slice per commit, even when the slices are siblings.** The arc shipped four commits (column-features → smart-constructor-lift → fk-features → index-features), not one. This preserves the matrix's append-only narrative and makes the closed-DU expansion empirical-test evidence visible per axis.
+
+### Where the SCHEMA-axis V2-driver gate stands
+
+Per `V2_DRIVER.md`'s per-axis stakes table, SCHEMA-axis V2-driver requires every emit-side feature V1 supports to ship on V2's emission. As of end-of-arc:
+
+| V1 CreateTable axis | V2 status |
+|---|---|
+| Column data type + nullability + IDENTITY | 🟢 PARITY (chapter 4.1.A + chapter 3.5) |
+| Multi-column PK | 🟢 PARITY (chapter 4.1.A slice 4) |
+| FK constraints (inline) | 🟢 PARITY (chapter 4.1.A slice 5 + 6) |
+| FK ON DELETE referential action | 🟢 PARITY (chapter 4.1.A slice 5) |
+| **FK ON UPDATE referential action** | **🟢 PARITY (this arc)** |
+| **FK WITH NOCHECK preservation** | **🟢 PARITY (this arc)** |
+| **Column DEFAULT clause** | **🟢 PARITY (this arc)** |
+| **Table-level CHECK constraint** | **🟢 PARITY (this arc)** |
+| Single-column PK inline | 🟠 NOT-MAPPED (LR3 residual; V2 always emits PK as table-level) |
+| Computed columns | 🟠 NOT-MAPPED (no V2 consumer pressure; IR carries the field) |
+
+| V1 CreateIndex axis | V2 status |
+|---|---|
+| Key columns + sort direction | 🟢 PARITY (chapter 4.9 slice γ) |
+| INCLUDE columns | 🟢 PARITY (chapter 4.5 slice β) |
+| Filtered indexes (WHERE clause) | 🟢 PARITY (chapter 4.5 slice α) |
+| FillFactor + PadIndex + StatsNoRecompute + AllowRowLocks + AllowPageLocks | 🟢 PARITY (chapter 4.8 slice β) |
+| **IGNORE_DUP_KEY** | **🟢 PARITY (this arc)** |
+| **DATA_COMPRESSION (single-value)** | **🟢 PARITY (this arc)** |
+| **IsDisabled (post-CREATE ALTER)** | **🟢 PARITY (this arc)** |
+| DataSpace (Filegroup / PartitionScheme) + per-partition compression | 🟠 NOT-MAPPED (row 56 residual) |
+
+Single-column-PK inline optimization + computed columns + partition-scheme axis are the three SCHEMA-axis residuals. The first two are no-consumer-pressure deferrals; partition-scheme is the only one that requires non-trivial IR design (closed-DU `DataSpace = Filegroup of name | PartitionScheme of name × columns` + per-partition compression list).
+
+### Blind spots and watch-outs for the next agent
+
+**(1) TransformRegistry coverage gap.** Pillar 9 says every transformation site carries a classification (`DataIntent` or `OperatorIntent of OverlayAxis`); the registry is the structural witness. The new emit-side helpers shipped this arc — `untrustedFkAlters`, `disabledIndexAlters`, `columnCheckDef`, `columnDef → DefaultConstraint` mapping, the new ScriptDom builders — are all DataIntent and should appear in the registry, but they DON'T. The Emitter-stage registry coverage is incomplete. Watch out: when you read `Compose.run` or the manifest-emitter's `applied-transforms` output and notice these emit-side projections are absent, that's the gap. The right cash-out is a follow-up slice (`5.13.emit-features-registry`) that adds `RegisteredTransform<Kind, Statement seq>` entries with `StageBinding = Emitter` for each of these helpers, plus an updated harvest-classification-coverage test. This is genuinely the highest-leverage TransformRegistry opportunity the codebase has today.
+
+**(2) Two new Statement variants share shape — three-consumer threshold approaching.** `AlterTableNoCheckConstraint` (FK trust preservation) and `AlterIndexDisable` (index disable preservation) both follow the pattern "post-CREATE ALTER scoped to a named entity, preserving deployed-state evidence." If a third such variant lands (the next candidate is FK trust state for CHECK constraints, paired with column-features-emit's NOCHECK deferral on `ColumnCheckDef.IsNotTrusted`), the two-consumer threshold codification suggests folding them into a single `Statement.PostCreateAlter` with a closed-DU payload (`AlterKind = FkNoCheck | IndexDisable | CheckNoCheck | …`). Don't pre-extract; surface when the third consumer arrives. Per the anticipation-vs-speculation discipline: structural alignment is visible (the shape is concrete), but the third concrete consumer is not yet here.
+
+**(3) Rowset-adapter JOIN follow-up — same shape twice, ready for one slice.** Both this arc's FK and index slices shipped emit-side but deferred the rowset-adapter JOIN. The deferred work is structurally identical in both cases: `MetadataSnapshotRunner.toBundle` needs to JOIN `OssysFkRealityRow.UpdateAction / IsNoCheck` onto `ReferenceRow` (per FK), and `OssysAllIdxRow.IsDisabled / IgnoreDuplicateKey / DataCompression` onto `IndexRow` (per index). The two JOINs share the same access pattern: (`EntityId`, looked-up-attribute-or-self-row). A single follow-up slice (`5.13.rowset-feature-joins`) can close both. Two-consumer threshold for a shared `RowsetJoinContext` helper at toBundle. The trigger is operator-reality evidence (a deployed environment surfacing `IsDisabled = 1` or `IsNoCheck = 1` AND canary catching the delta).
+
+**(4) IRBuilders test fixtures are now thin shims — possible retirement.** Post-smart-constructor-lift, `IRBuilders.mkAttribute / mkReference / mkIndex / mkKind` are one-line delegations to `Attribute.create / Reference.create / Index.create / Kind.create`. The original purpose of IRBuilders was absorbing field extensions at one site so test fixtures stayed stable across IR growth; that work now lives in the production smart constructors. The IRBuilders shims still serve as named test-side aliases ("read as `mkAttribute` at the test site"), but they no longer pay technical weight. Watch out: this might be a soft-retirement candidate. The N=2-consumer threshold says shims with two consumers (test side + the rename-noise it spares) should stay; the smell test says they're dead weight. Defer judgment until a third agent independently asks "why does IRBuilders exist?" — if the answer is "it doesn't anymore," retire it as a follow-up slice. Don't pre-emptively pull.
+
+**(5) `Render.fs` StringBuilder retirement candidate.** Of the seven Statement variants, only `InsertRow` + `SetIdentityInsert` (plus the no-SQL `Comment` + `Blank`) still flow through Render's StringBuilder path. Both have ScriptDomBuild builders already (`buildInsertRow` + `buildSetIdentityInsert`). The StringBuilder path could retire entirely in favor of full `ScriptDomGenerate` delegation — same pattern as the column-features-emit slice's CREATE TABLE arm consolidation. Trigger: when the next feature adds a row-shape (`UPDATE` / `DELETE` statements for the cdc-silence-cross-emitter slice, or `MERGE` for the static-seeds-emitter cash-out), pulling the lever during that slice keeps the change reviewable. Don't open a hygiene-only slice; surface it during real feature pressure.
+
+**(6) `Render.formatSqlLiteral` shim.** Per `Render.fs:91-99`, this is a Tier-1 #4 retirement deferral — the typed surface is `SqlLiteral.formatRaw` in Core. The shim preserves legacy call-site shape. Retire when no consumer references it (likely already true; needs a grep).
+
+**(7) `OssysReferenceRow` / `OssysFkColumnRow` are lifted but not consumed.** Cluster A1 (slice 5.13.ossys-rowsets-cluster) lifted the typed rowsets at the runner layer; the JOIN onto V2 IR is partial. `OssysFkColumnRow` (per-FK column membership, including composite FKs) has NO V2 consumer because Reference IR remains single-column. Composite-FK refactor lives outside this arc — flag it on the deferred-axis list.
+
+**(8) `DataCompressionLevel` name collision is principled but adversarial-test it.** The Core DU `Projection.Core.DataCompressionLevel` and ScriptDom's `Microsoft.SqlServer.TransactSql.ScriptDom.DataCompressionLevel` intentionally share the type-name (pillar 8 ubiquitous language). The join site in `ScriptDomBuild.fs` requires the namespace prefix to disambiguate. This is principled, but the next agent should expect the same disambiguation cost at any future site that maps between the two. Watch for the pattern when extending the Core DU with columnstore variants (deferred).
+
+### Document references the next agent should know
+
+The canonical reading order is in `CLAUDE.md`. For this arc's substance specifically:
+
+- **`V1_PARITY_MATRIX.md`** — Status-history amendments at rows 12 + 53 + 182 (column-features), 58 + 59 (FK-features), 55 + 56 (index-features). The amendment shape mirrors the slice — read those if you're about to land a parallel slice; the prose tells you what was decided.
+- **`DECISIONS.md` (last six entries, all dated 2026-05-18)** — column-features-emit; smart-constructor-lift; fk-features-emit; index-features-emit; plus the prior arc's data-emission-registry; identity-axis-closure; cdc-silence-cross-emitter; column-features-emit; smart-constructor-lift; fk-features-emit; index-features-emit. Read the most recent six in reverse chronological order.
+- **`BACKLOG.md` Phase 5.13 section** — retired entries: `5.13.column-checks-ir`, `5.13.column-features-emit`, `5.13.update-action`, `5.13.nocheck-state`, `5.13.index-disabled-igdupkey`. New residual entries: `5.13.fk-reality-join`, `5.13.index-data-compression`, `5.13.index-partition`. LR3 + LR6 + LR7 retired (partial); LR4 retires the three index axes (partition residual remains).
+- **`tests/Projection.Tests/SsdtDdlEmitterTests.fs`** — 16 new canary tests across the three feature slices. They're the executable record of "what V1's emission shape looks like for these axes." Read the test names; they cite V1 default vs new-axis emission.
+
+### What this letter does NOT cover
+
+The matrix coverage walk (chapter-5.1+ discipline), the canary discipline (chapter-3.1 contribution), pillar 9's full framing (`DECISIONS 2026-05-15 (late)`), the bench primitives (`Bench.scope` / `streamProbe`), the ScriptDom integration (`ScriptDomBuild` + `ScriptDomGenerate`), the writer-monad surfaces (`Lineage`, `Diagnostics`, `LineageDiagnostics`) — all of these are in the canonical surfaces. Read `CLAUDE.md`'s operating-disciplines table for the cross-references.
+
+If the canary detects an emission delta the cluster-A1 rowset-adapter wiring would close, write the matrix amendment first, then open the JOIN slice. If you find a structural blind spot this letter missed, append it here — that's how this surface earns its keep.
+
+Welcome. Read the documents. Then pick a slice.
+
+---
 
 ## 2026-05-17 (chapter 5.0 close — Phase 8 cutover-window pivot SHIPPED; V1 Parity Audit Wave opens)
 

@@ -340,13 +340,24 @@ the canonical surface is the code itself, the pattern is named.
 - **Records for products; closed DUs for sums.** F# records carry
   PascalCase fields; closed DUs widen only when evidence forces a
   new variant.
-- **Smart constructors return `Result<'a>`.** Every value type whose
-  invariants the type system can't express directly carries a
-  `create` that returns `Result<'a>` and rejects malformed inputs.
+- **Smart constructors return `Result<'a>`** (for value types
+  carrying invariants beyond what the type system expresses
+  directly) — or **return the bare value with defaulted fields**
+  (for IR aggregate records whose invariant is "every field has a
+  sensible no-evidence default; overrides flow via record-update").
   Downstream consumers pattern-match without re-validating; the
-  invariant rides on every value. Worked examples:
-  `CategoricalDistribution.create`, `NumericDistribution.create`,
-  `SsKey.original`, `Name.create`.
+  invariant rides on every value. Worked examples of the
+  `Result<'a>` form: `CategoricalDistribution.create`,
+  `NumericDistribution.create`, `SsKey.original`, `Name.create`,
+  `Module.create`, `Catalog.create`, `ColumnCheck.create`,
+  `Trigger.create`, `Sequence.create`. Worked examples of the
+  bare-value form (slice 5.13.smart-constructor-lift,
+  2026-05-18): `Attribute.create`, `Reference.create`,
+  `Index.create`, `Kind.create` — these absorb chapter-A.0' field
+  extensions at one site instead of N. Test fixtures in
+  `tests/Projection.Tests/IRBuilders.fs` are one-line shims that
+  delegate to the production smart constructors; the default
+  geometry is shared.
 - **`[<RequireQualifiedAccess>]` when case names may collide.**
   Outcome and KeepReason DUs across strategies share generic case
   names (`PolicyDisabled`, `EvidenceMissing`); F# resolves
