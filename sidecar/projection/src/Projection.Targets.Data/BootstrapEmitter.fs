@@ -98,3 +98,27 @@ module BootstrapEmitter =
         use _ = Bench.scope "emit.bootstrap.emit"
         let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
         emitWithTopo topo catalog profile userRemap
+
+    /// Harvest-discipline classification per pillar 9 (chapter 5.13
+    /// slice data-emission-registry).
+    ///
+    /// **Status = NotImplementedInV2 at slice-ζ-MVP scope.** The
+    /// emitter ships structurally (T11 keyset coverage; composer-
+    /// dispatch hook; A18-amended signature) but emits no rows today.
+    /// The rationale captures the deferral substantively per the
+    /// `TransformRegistry.create` non-empty-rationale invariant.
+    /// Future chapter 4.2 slice η wires the populated `UserRemapContext`
+    /// into actual row emission; the registry entry transitions to
+    /// `Active` with the Sites widening (per the closed-DU expansion
+    /// empirical-test discipline).
+    let registeredMetadata : RegisteredTransformMetadata =
+        { Name = "bootstrapEmitter"
+          Domain = Data
+          StageBinding = Emitter
+          Sites =
+            [ { SiteName = "userRemapBootstrap"
+                Classification = OperatorIntent Insertion
+                Rationale = "Slice ζ MVP — Bootstrap's data-publication surface is the operator's `UserRemapContext` (target-environment user identity mapping). The emitter consumes the context but emits no rows yet (chapter 4.2 slice η populates the per-kind row source). OverlayAxis = Insertion when the future emission lands; named here so chapter 4.2's cash-out doesn't need to invent the classification." } ]
+          Status =
+            NotImplementedInV2
+                "Slice ζ MVP — Bootstrap emits the empty no-op artifact for every kind today. Chapter 4.2 slice η (UserFkReflowPass emitter integration) lands the per-kind row source; chapter 4.3 (Diagnostics emitters) lands the Profile-evidence-derived row source. The structural hook + composer dispatch land at slice ζ so chapters 4.2 + 4.3 have a fixed insertion point and the slice θ partition assertion is honest (the composer asks Bootstrap for its coverage rather than silently knowing it's empty)." }

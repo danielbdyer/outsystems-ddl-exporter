@@ -330,6 +330,39 @@ module TransformRegistry =
             | DataIntent -> None)
         |> Set.ofList
 
+    /// **By-domain filter** — entries belonging to the named `Domain`.
+    /// Per pillar 9's six-concern domain taxonomy
+    /// (Schema / Data / Identity / Diagnostics / CutoverSafety /
+    /// CrossCutting): the per-axis confidence map in
+    /// `CUTOVER_READINESS_BRIEF.md` is the operator-facing
+    /// projection of this view. Slice 5.13.identity-axis-closure
+    /// codifies the filter as the two-consumer threshold:
+    ///   (1) Data axis aggregation lives at `RegisteredDataTransforms`
+    ///       (slice 5.13.data-emission-registry)
+    ///   (2) Identity axis aggregation reads cross-project metadata
+    ///       (UserFkReflowPass in Core + Migration / Bootstrap
+    ///       User-FK Sites in Data) via this filter rather than a
+    ///       parallel aggregator.
+    let byDomain (domain: Domain) (entries: RegisteredTransformMetadata list) : RegisteredTransformMetadata list =
+        entries |> List.filter (fun rt -> rt.Domain = domain)
+
+    /// **By-overlay-axis filter** — entries whose Sites contain at
+    /// least one `OperatorIntent <axis>` classification. Cross-cuts
+    /// `Domain` (a single overlay axis can fire across multiple
+    /// domains; e.g., `Insertion` fires on both Identity-axis
+    /// MigrationDeps emitter sites AND Data-axis static-seed
+    /// emission). Slice 5.13.identity-axis-closure uses this to
+    /// surface every transformation site that touches the
+    /// operator-supplied User-FK reflow surface.
+    let byOverlayAxis (axis: OverlayAxis) (entries: RegisteredTransformMetadata list) : RegisteredTransformMetadata list =
+        entries
+        |> List.filter (fun rt ->
+            rt.Sites
+            |> List.exists (fun site ->
+                match site.Classification with
+                | OperatorIntent a -> a = axis
+                | DataIntent -> false))
+
     // Domain / StageBinding / Classification / OverlayAxis projection
     // helpers — Sites' Rationale strings appear as-is. Per pillar 1:
     // typed DU → stable string at the digest boundary; explicit

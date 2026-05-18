@@ -179,12 +179,27 @@ module StaticSeedsEmitter =
         let table : TableId =
             { Schema = k.Physical.Schema
               Table  = k.Physical.Table; Catalog = None }
+        // Slice 5.13.cdc-silence-cross-emitter: exclude deferred
+        // columns from WHEN MATCHED UPDATE's UpdColumns. Deferred
+        // columns are owned by Phase-2; including them in Phase-1's
+        // UPDATE branch causes idempotent redeploy to set the
+        // target column to NULL (because Source's value is the
+        // Phase-1 NULL form) and Phase-2 then sets it back. The
+        // round-trip leaks 4 CDC entries per row. Filtering
+        // deferred from UpdColumns makes Phase-1 silent on the
+        // deferred-FK axis; Phase-2 owns the cycle-resolution
+        // emission alone.
+        let updColumns =
+            k.Attributes
+            |> List.filter (fun a -> not a.IsPrimaryKey)
+            |> List.filter (fun a -> not (Set.contains a.Name deferred))
+            |> List.map (fun a -> a.Column.ColumnName)
         let args : ScriptDomBuild.MergeBuildArgs =
             {
                 Target     = table
                 AllColumns = orderedColumnNames k
                 PkColumns  = pkColumnNames k
-                UpdColumns = updatableColumnNames k
+                UpdColumns = updColumns
                 Rows       = typedRows |> List.map (typedValuesToSqlLiterals deferred k.Attributes)
                 CdcAware   = cdcAware
             }
@@ -209,6 +224,7 @@ module StaticSeedsEmitter =
     /// chapter-4.1.B slice-δ addition that lands the typed shape.
     /// Same `;\nGO\n` terminal framing as `renderMerge`.
     let private renderUpdate
+        (cdcAware: bool)
         (k: Kind)
         (deferred: Set<Name>)
         (typedValues: Map<Name, SqlLiteral>)
@@ -233,7 +249,8 @@ module StaticSeedsEmitter =
         let args : ScriptDomBuild.UpdateBuildArgs =
             { Target     = table
               SetCells   = setCells
-              WhereCells = whereCells }
+              WhereCells = whereCells
+              CdcAware   = cdcAware }
         let updateStmt = (ScriptDomBuild.buildUpdateStatement args).Value
         System.String.Concat(  // LINT-ALLOW: terminal UPDATE statement-terminator + GO-batch suffix on the rendered Phase-2 UPDATE (chapter 4.1.B slice δ); segments are typed (output of `ScriptDomGenerate.generateOne` from `ScriptDomBuild.buildUpdateStatement` typed AST + SQL Server's statement-terminator + V1 batch-separator literal); same architectural shape as `renderMerge`'s terminal-text boundary
             ScriptDomGenerate.generateOne (updateStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement),
@@ -291,7 +308,7 @@ module StaticSeedsEmitter =
                 if Set.isEmpty deferred then ""
                 else
                     typedRows
-                    |> List.map (fun (_, vs) -> renderUpdate k deferred vs)
+                    |> List.map (fun (_, vs) -> renderUpdate cdcAware k deferred vs)
                     |> System.String.Concat  // LINT-ALLOW: terminal Phase-2 cross-row UPDATE concatenation (chapter 4.1.B slice ι); each segment is the ScriptDom-rendered + GO-batched UPDATE for one row; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary; the typed `Statement` DU does not yet model UPDATE so `ScriptDomGenerate.toText` is not applicable
             // Per-kind self-complete view: Phase-1 + Phase-2 in
             // textual order. Slice ι splits these for the composer's
@@ -359,3 +376,35 @@ module StaticSeedsEmitter =
         use _ = Bench.scope "emit.staticSeeds.emit"
         let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
         emitWithTopo topo catalog profile
+
+    /// Harvest-discipline classification per pillar 9 (chapter 5.13
+    /// slice data-emission-registry). Three sites covering the
+    /// emitter's surfaces; all `DataIntent` — the emitter consumes
+    /// `Catalog × Profile` only (per A18 amended), and Profile's
+    /// `CdcAwareness` field is evidence-shaped (not operator-supplied
+    /// policy). The skeleton-purity property test asserts this
+    /// emitter participates in `Project(catalog, Policy.empty,
+    /// profile)` without emitting `OperatorIntent` lineage events.
+    ///
+    /// Per the canonical `RegisteredTransformMetadata` shape used by
+    /// emitters (mirrors `CatalogReader.registeredMetadata` from the
+    /// adapter precedent — the typed `RegisteredTransform<'In, 'Out>`
+    /// shell doesn't cleanly fit emitter signatures with
+    /// `ArtifactByKind<_>` outputs + `Result<_, EmitError>` envelopes;
+    /// metadata-only registration captures the classification
+    /// surface without forcing a Run-binding mismatch).
+    let registeredMetadata : RegisteredTransformMetadata =
+        { Name = "staticSeedsEmitter"
+          Domain = Data
+          StageBinding = Emitter
+          Sites =
+            [ { SiteName = "staticRowsProjection"
+                Classification = DataIntent
+                Rationale = "Emit MERGE statements for kinds whose `Modality` list contains `Static rows` — pure projection of Catalog-resident evidence (the Static rows are catalog data, not operator overlay). Per A18 amended, the emitter consumes Catalog × Profile only; no Policy enters this site." }
+              { SiteName = "cdcAwareChangeDetection"
+                Classification = DataIntent
+                Rationale = "Per-kind MERGE WHEN MATCHED predicate gates UPDATE on actual column-level differences when `Profile.CdcAwareness.CdcEnabled` carries the kind. Profile is *evidence* (A18 amended; pillar 9 — Profile-driven observations are DataIntent); the CDC predicate IS the data-intent shape, not an operator override. Slice β (chapter 4.1.B) cash-out." }
+              { SiteName = "deferredFkPhase2"
+                Classification = DataIntent
+                Rationale = "Two-phase cycle-breaking — Phase-1 emits MERGEs with deferred FK columns NULLed; Phase-2 UPDATEs populate them once all Phase-1 inserts complete. Cycle membership is structural (from `TopologicalOrder.Cycles`); the deferral is topology-derived, not operator-supplied. Slice δ (chapter 4.1.B) cash-out." } ]
+          Status = Active }

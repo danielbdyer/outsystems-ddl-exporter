@@ -88,7 +88,7 @@ let private parent : Kind =
       Modality = []
       Physical = { Schema = "dbo"; Table = "OSUSR_R9_PARENT"; Catalog = None }
       Attributes = [
-          { IRBuilders.mkAttribute parentIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true } ]
+          { Attribute.create parentIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true } ]
       References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private child : Kind =
@@ -98,10 +98,10 @@ let private child : Kind =
       Modality = []
       Physical = { Schema = "dbo"; Table = "OSUSR_R9_CHILD"; Catalog = None }
       Attributes = [
-          { IRBuilders.mkAttribute childIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-          { IRBuilders.mkAttribute childParentFkKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } } ]
+          { Attribute.create childIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+          { Attribute.create childParentFkKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } } ]
       References = [
-          IRBuilders.mkReference childToParentRefKey (mkName "Parent") childParentFkKey parentKindKey ]
+          Reference.create childToParentRefKey (mkName "Parent") childParentFkKey parentKindKey ]
       Indexes = []
       Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
@@ -112,8 +112,8 @@ let private country : Kind =
       Modality = []
       Physical = { Schema = "dbo"; Table = "OSUSR_R9_COUNTRY"; Catalog = None }
       Attributes = [
-          { IRBuilders.mkAttribute countryIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-          { IRBuilders.mkAttribute countryNameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false } } ]
+          { Attribute.create countryIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+          { Attribute.create countryNameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false } } ]
       References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private endToEndCatalog : Catalog =

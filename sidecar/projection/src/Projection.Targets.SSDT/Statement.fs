@@ -24,6 +24,15 @@ open Projection.Core
 /// IR-typed column declaration. The realization layer (`Render`)
 /// converts `(Type, Length, Precision, Scale)` to its SQL type
 /// expression, so emit-time and deploy-time agree by construction.
+///
+/// Slice 5.13.column-features-emit (chapter A.0' slice ε emit-side
+/// closure) extends the record with `DefaultValue` + `DefaultName` +
+/// `Computed`. The realization layer's `columnDefinition` builder
+/// emits these as inline column constraints (`CONSTRAINT <name>
+/// DEFAULT <expr>` and `AS <expr> [PERSISTED]`). When `Computed`
+/// is `Some`, the column has no `Type` / `Length` / `Precision` /
+/// `Scale` / `IsIdentity` material (the expression's result type
+/// is server-inferred); the builder skips those clauses.
 type ColumnDef =
     {
         Name : string
@@ -34,10 +43,45 @@ type ColumnDef =
         Nullable : bool
         IsIdentity : bool
         IsPrimaryKey : bool
+        /// Default-value expression as a typed `SqlLiteral` or
+        /// `None`. Source: V1's `#Attr.DefaultValue` (logical default
+        /// V1 carries) + `#ColumnReality.DefaultDefinition` (the
+        /// deployed-target reality). The realization layer emits
+        /// `[CONSTRAINT <name>] DEFAULT <literal>` for typed literals;
+        /// expression-shaped defaults (e.g., `getutcdate()`) flow
+        /// via raw-string pass-through at the realization boundary
+        /// (matrix row 53; chapter A.0' slice ε emit closure).
+        DefaultValue : SqlLiteral option
+        /// Named-default-constraint identifier (V1's
+        /// `DF_<table>_<column>` shape). Mirrors V1's deployed-
+        /// target constraint identity so V2's CREATE TABLE
+        /// round-trips against V1 emissions. `None` when the
+        /// default carries no explicit name (V2's `CONSTRAINT`
+        /// clause then omits the identifier and SQL Server
+        /// auto-names the constraint).
+        DefaultName : string option
         /// The originating attribute's display name + SsKey root,
         /// preserved so `Render.toText` can keep the diffable-form
         /// trailing comment that the v1 emitter carried.
         Provenance : string
+    }
+
+/// Table-level CHECK constraint. V2's `Kind.ColumnChecks` IR (chapter
+/// A.0' slice ε) carries one entry per unique constraint (table-
+/// scoped — a CHECK can reference multiple columns; V1's per-column
+/// rowset projection dedupes here). Slice 5.13.column-features-emit
+/// wires these into V2's `Statement.CreateTable` via the new
+/// `ColumnCheckDef list` slot.
+///
+/// `Definition` is the V1 reality string (e.g., `([Age] >= 0 AND
+/// [Age] < 200)`). The realization layer parses via
+/// `TSql160Parser.ParseBooleanExpression` and embeds the typed
+/// `BooleanExpression` into ScriptDom's `CheckConstraintDefinition`.
+type ColumnCheckDef =
+    {
+        Name         : string option
+        Definition   : string
+        IsNotTrusted : bool
     }
 
 type ReferenceActionSql = NoActionSql | CascadeSql | SetNullSql
@@ -49,6 +93,19 @@ type ForeignKeyDef =
         Target : TableId
         TargetColumn : string
         OnDelete : ReferenceActionSql
+        /// Optional ON UPDATE referential action (slice
+        /// 5.13.fk-features-emit; matrix row 58). `None` = unstated;
+        /// ScriptDom omits the ON UPDATE clause (server-default NO
+        /// ACTION applies). `Some action` = explicit clause.
+        OnUpdate : ReferenceActionSql option
+        /// Whether the FK constraint is TRUSTED at the deployed
+        /// target. `true` (V1 default) = no special handling. `false`
+        /// = the realization layer emits a sibling
+        /// `Statement.AlterTableNoCheckConstraint` after CREATE TABLE
+        /// so the FK round-trips against a deployed target carrying
+        /// NOCHECK'd constraints. Slice 5.13.fk-features-emit (matrix
+        /// row 59).
+        IsConstraintTrusted : bool
     }
 
 type PrimaryKeyDef =
@@ -83,6 +140,15 @@ type IndexDefColumn =
         Direction : IndexDefColumnDirection
     }
 
+/// SQL Server `DATA_COMPRESSION` levels at the realization layer.
+/// Mirrors `Projection.Core.DataCompressionLevel` (the IR-side DU)
+/// at the SSDT boundary; the SsdtDdlEmitter maps one to the other.
+/// Slice 5.13.index-features-emit (matrix row 56).
+type IndexDataCompressionSql =
+    | NoneCompressionSql
+    | RowCompressionSql
+    | PageCompressionSql
+
 type IndexDef =
     {
         Name : string
@@ -109,6 +175,22 @@ type IndexDef =
         AllowRowLocks : bool
         AllowPageLocks : bool
         NoRecomputeStatistics : bool
+        /// Slice 5.13.index-features-emit (matrix row 55) —
+        /// `IGNORE_DUP_KEY = ON` when `true`. ScriptDom's
+        /// `IndexStateOption` with `IndexOptionKind.IgnoreDupKey`.
+        IgnoreDuplicateKey : bool
+        /// Slice 5.13.index-features-emit (matrix row 55) — when
+        /// `true`, the realization layer emits a post-CREATE-INDEX
+        /// `Statement.AlterIndexDisable` so the index lands in
+        /// disabled state. CREATE INDEX always lands enabled; DISABLE
+        /// is a separate ALTER statement (ScriptDom doesn't model
+        /// the disable state as a CREATE-INDEX clause).
+        IsDisabled : bool
+        /// Slice 5.13.index-features-emit (matrix row 56) —
+        /// `DATA_COMPRESSION = NONE | ROW | PAGE` when populated.
+        /// `None` omits the option from the WITH clause (server-
+        /// default applies).
+        DataCompression : IndexDataCompressionSql option
     }
 
 /// One column's value within an `InsertRow`. `Raw` is the V2 IR
@@ -152,7 +234,7 @@ type ExtendedPropertyOwner =
 type Statement =
     | Blank
     | Comment of text: string
-    | CreateTable of TableId * ColumnDef list * PrimaryKeyDef option * ForeignKeyDef list
+    | CreateTable of TableId * ColumnDef list * PrimaryKeyDef option * ForeignKeyDef list * ColumnCheckDef list
     /// Chapter 4.1.A slice 3: CREATE INDEX statement for non-PK
     /// indexes. PK-marked indexes are inlined in CREATE TABLE per
     /// V1 convention; the SsdtDdlEmitter filters them before
@@ -170,3 +252,19 @@ type Statement =
         owner: ExtendedPropertyOwner *
         propertyName: string *
         propertyValue: string option
+    /// `ALTER TABLE <table> WITH NOCHECK CHECK CONSTRAINT <fk>` —
+    /// preserves a deployed target's FK trust state when V1's
+    /// `#FkReality.IsNoCheck = 1` flips `Reference.IsConstraintTrusted`
+    /// to `false`. Emitted by `SsdtDdlEmitter` after the CREATE TABLE
+    /// statement of the owning kind, once per untrusted FK. Slice
+    /// 5.13.fk-features-emit (matrix row 59).
+    | AlterTableNoCheckConstraint of table: TableId * constraintName: string
+    /// `ALTER INDEX <name> ON <table> DISABLE` — preserves a
+    /// deployed target's index disable state when V1's
+    /// `IndexOnDiskMetadata.IsDisabled = true`. Emitted by
+    /// `SsdtDdlEmitter` after the CREATE INDEX statement of the
+    /// owning index, once per disabled non-PK index. PK-marked
+    /// indexes are inlined in CREATE TABLE and are not disabled
+    /// (V1's invariant — primary keys are always enforced). Slice
+    /// 5.13.index-features-emit (matrix row 55).
+    | AlterIndexDisable of table: TableId * indexName: string

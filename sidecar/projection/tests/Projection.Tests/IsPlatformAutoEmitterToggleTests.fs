@@ -15,13 +15,13 @@ open Projection.Tests.IRBuilders
 // emitter consumes the filtered Catalog.
 // ---------------------------------------------------------------------------
 
-let private autoIdx = mkIndex (testKey "Auto") (Name.create "IX_Auto" |> Result.value) []
+let private autoIdx = Index.ofKeyColumns (testKey "Auto") (Name.create "IX_Auto" |> Result.value) []
 let private autoIdx' = { autoIdx with IsPlatformAuto = true }
-let private userIdx = mkIndex (testKey "User") (Name.create "IX_User" |> Result.value) []
+let private userIdx = Index.ofKeyColumns (testKey "User") (Name.create "IX_User" |> Result.value) []
 
 let private kindWithBothIndexes =
     let physical = TableId.create "dbo" "T" |> Result.value
-    let k = mkKind (testKey "K") (Name.create "K" |> Result.value) physical []
+    let k = Kind.create (testKey "K") (Name.create "K" |> Result.value) physical []
     { k with Indexes = [ autoIdx'; userIdx ] }
 
 let private mod1 = mkModule (testKey "M") (Name.create "M" |> Result.value) [ kindWithBothIndexes ]

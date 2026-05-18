@@ -595,10 +595,19 @@ module ManifestEmitter =
         }
 
     /// Build with the canonical production registry
-    /// (`RegisteredTransforms.all`). Preserves the existing emit
-    /// signature; production callers continue to use this form.
+    /// (`RegisteredTransforms.all` prepended with the SSDT emitter's
+    /// `registeredMetadata`). Slice 5.13.emit-features-registry
+    /// (2026-05-18) wired the SSDT emitter's `RegisteredTransform`
+    /// surface into the manifest path so the totality-coverage scan
+    /// reaches the emit-stage Sites. Preserves the existing emit
+    /// signature; production callers continue to use this form. The
+    /// OSSYS adapter's `CatalogReader.registeredMetadata` lives in
+    /// `Projection.Adapters.Osm` (cherry-pick boundary) — Pipeline-
+    /// level assembly prepends it when consumed alongside the
+    /// adapter.
     let build (catalog: Catalog) : Manifest =
-        buildWith RegisteredTransforms.all catalog
+        let registry = SsdtDdlEmitter.registeredMetadata :: RegisteredTransforms.all
+        buildWith registry catalog
 
     let private requireValue (label: string) (v: JsonValue | null) : JsonNode =
         match Option.ofObj v with

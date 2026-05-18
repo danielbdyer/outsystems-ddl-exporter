@@ -201,12 +201,24 @@ module MigrationDependenciesEmitter =
         let table : TableId =
             { Schema = k.Physical.Schema
               Table  = k.Physical.Table; Catalog = None }
+        // Slice 5.13.cdc-silence-cross-emitter: mirror of
+        // `StaticSeedsEmitter.renderMerge`. Deferred columns are
+        // owned by Phase-2; including them in Phase-1's WHEN MATCHED
+        // UPDATE branch causes idempotent redeploy to overwrite the
+        // target column with the Phase-1 NULL, then Phase-2 sets it
+        // back. Filtering deferred from UpdColumns makes Phase-1
+        // structurally silent on the deferred-FK axis.
+        let updColumns =
+            k.Attributes
+            |> List.filter (fun a -> not a.IsPrimaryKey)
+            |> List.filter (fun a -> not (Set.contains a.Name deferred))
+            |> List.map (fun a -> a.Column.ColumnName)
         let args : ScriptDomBuild.MergeBuildArgs =
             {
                 Target     = table
                 AllColumns = orderedColumnNames k
                 PkColumns  = pkColumnNames k
-                UpdColumns = updatableColumnNames k
+                UpdColumns = updColumns
                 Rows       = typedRows |> List.map (typedValuesToSqlLiterals deferred k.Attributes)
                 CdcAware   = cdcAware
             }
@@ -220,6 +232,7 @@ module MigrationDependenciesEmitter =
     /// Tier-3 cash-out: `ScriptDomBuild.buildUpdateStatement` is the
     /// typed-AST primitive; this emitter is its second consumer.
     let private renderUpdate
+        (cdcAware: bool)
         (k: Kind)
         (deferred: Set<Name>)
         (typedValues: Map<Name, SqlLiteral>)
@@ -244,7 +257,8 @@ module MigrationDependenciesEmitter =
         let args : ScriptDomBuild.UpdateBuildArgs =
             { Target     = table
               SetCells   = setCells
-              WhereCells = whereCells }
+              WhereCells = whereCells
+              CdcAware   = cdcAware }
         let updateStmt = (ScriptDomBuild.buildUpdateStatement args).Value
         System.String.Concat(  // LINT-ALLOW: terminal UPDATE statement-terminator + GO-batch suffix on the rendered Phase-2 UPDATE (chapter 4.1.B slice ε); segments are typed (output of `ScriptDomGenerate.generateOne` from `ScriptDomBuild.buildUpdateStatement` typed AST + SQL Server's statement-terminator + V1 batch-separator literal); same architectural shape as StaticSeedsEmitter.renderUpdate
             ScriptDomGenerate.generateOne (updateStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement),
@@ -371,7 +385,7 @@ module MigrationDependenciesEmitter =
                 if Set.isEmpty deferred then ""
                 else
                     typedRows
-                    |> List.map (fun (_, vs) -> renderUpdate k deferred vs)
+                    |> List.map (fun (_, vs) -> renderUpdate cdcAware k deferred vs)
                     |> System.String.Concat  // LINT-ALLOW: terminal Phase-2 cross-row UPDATE concatenation (chapter 4.1.B slice ι; mirror of StaticSeedsEmitter); each segment is the ScriptDom-rendered + GO-batched UPDATE for one row; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary
             let rendered =
                 System.String.Concat(renderedPhase1, renderedPhase2)  // LINT-ALLOW: terminal per-kind concatenation of ScriptDom-rendered Phase-1 + Phase-2 strings (chapter 4.1.B slice κ; mirror of StaticSeedsEmitter); both segments are typed-AST outputs already terminated by `;\nGO\n`
@@ -436,3 +450,29 @@ module MigrationDependenciesEmitter =
     // `emitWithTopo` directly (which takes the precomputed topo +
     // both contexts). The composer (`DataEmissionComposer.composeFull`)
     // is the canonical pipeline entry point; hoists the topo once.
+
+    /// Harvest-discipline classification per pillar 9 (chapter 5.13
+    /// slice data-emission-registry). Three sites — the structural
+    /// emission is `DataIntent` (the per-kind MERGE construction is
+    /// pure projection of `Catalog × Profile`), while the two
+    /// operator-published inputs (`MigrationDependencyContext` rows;
+    /// `UserRemapContext` mapping) are `OperatorIntent Insertion`.
+    /// Pillar 9 → V2 splits the "what the operator publishes" axis
+    /// from the "how it gets emitted" axis structurally; the
+    /// composer threads the operator inputs but the emitter's
+    /// emission shape is the same regardless.
+    let registeredMetadata : RegisteredTransformMetadata =
+        { Name = "migrationDependenciesEmitter"
+          Domain = Data
+          StageBinding = Emitter
+          Sites =
+            [ { SiteName = "migrationRowEmission"
+                Classification = OperatorIntent Insertion
+                Rationale = "`MigrationDependencyContext.Rows` is operator-published legacy-domain row inventory (pre-scope §2.2: 'environment-specific evidence the migration team supplies'). Each row's `(KindKey, Identifier, Values)` is operator-supplied content that wouldn't be reachable from `Project(catalog, Policy.empty, profile)` — it lands via the operator-supplied context. OverlayAxis = Insertion (what content the catalog gains beyond source evidence)." }
+              { SiteName = "userRemapRewrite"
+                Classification = OperatorIntent Insertion
+                Rationale = "`UserRemapContext.Mapping` rewrites User-FK column values on migration rows from source-environment IDs to target-environment IDs (chapter 4.2 slice γ refinement). The remap mapping is operator-supplied evidence (pre-scope IDENTITY axis); applying it to migration rows is an operator-intent transformation. OverlayAxis = Insertion (the remap inserts the target-side ID where the source-side ID was)." }
+              { SiteName = "deferredFkPhase2"
+                Classification = DataIntent
+                Rationale = "Two-phase cycle-breaking parallel to `StaticSeedsEmitter` — Phase-1 emits MERGEs with deferred FK columns NULLed; Phase-2 UPDATEs populate them. Cycle membership is structural (topology-derived); the deferral is the same algebra as the static-rows emitter. DataIntent because the cycle-resolution is structural, not operator-supplied." } ]
+          Status = Active }

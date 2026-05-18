@@ -18,11 +18,11 @@ open Projection.Tests.IRBuilders
 
 let private mkAttr (name: string) : Attribute =
     let k = testKey name
-    IRBuilders.mkAttribute k (Name.create name |> Result.value) Integer
+    Attribute.create k (Name.create name |> Result.value) Integer
 
 let private mkKindAt (schema: string) (table: string) : Kind =
     let physical = TableId.create schema table |> Result.value
-    mkKind (testKey table) (Name.create table |> Result.value) physical [ mkAttr "Id" ]
+    Kind.create (testKey table) (Name.create table |> Result.value) physical [ mkAttr "Id" ]
 
 // ---------------------------------------------------------------------------
 // ScriptDom level — buildSetExtendedProperty dispatches on owner.

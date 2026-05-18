@@ -539,6 +539,26 @@ type Reference = {
     /// `HasLogicalForeignKeyWithDbConstraint` always-false
     /// PredicateName variants.
     HasDbConstraint : bool
+    /// Optional ON UPDATE referential action. `None` = unstated (V1
+    /// default; SQL Server emits no ON UPDATE clause, server-default
+    /// NO ACTION applies). `Some action` = operator-supplied explicit
+    /// action carried from V1's `#FkReality.UpdateAction` column. The
+    /// SSDT emitter consumes via ScriptDom's
+    /// `ForeignKeyConstraintDefinition.UpdateAction`.
+    ///
+    /// Slice 5.13.fk-features-emit (matrix row 58 cash-out).
+    OnUpdate        : ReferenceAction option
+    /// Whether the FK constraint is currently TRUSTED at the deployed
+    /// target (i.e., the FK was created normally OR re-validated after
+    /// a WITH NOCHECK insert). `true` (default) preserves V1's default
+    /// emission shape. `false` carries from V1's
+    /// `#FkReality.IsNoCheck = 1` and triggers a post-CREATE-TABLE
+    /// `ALTER TABLE ... WITH NOCHECK CHECK CONSTRAINT [<fk>]`
+    /// statement so V2's emission round-trips against a deployed
+    /// target carrying NOCHECK'd FKs.
+    ///
+    /// Slice 5.13.fk-features-emit (matrix row 59 cash-out).
+    IsConstraintTrusted : bool
 }
 
 
@@ -563,6 +583,39 @@ type IndexColumn = {
     Attribute : SsKey
     Direction : IndexColumnDirection
 }
+
+[<RequireQualifiedAccess>]
+module IndexColumn =
+
+    /// Build one `IndexColumn` with the given attribute + direction.
+    /// Slice 5.13.shim-retirement (2026-05-18) — lifted from the
+    /// test-side `IRBuilders.mkIndexColumn` so production code paths
+    /// (and the test surface uniformly) name the IndexColumn shape
+    /// through the production module.
+    let create (attribute: SsKey) (direction: IndexColumnDirection) : IndexColumn =
+        { Attribute = attribute; Direction = direction }
+
+    /// Build an all-Ascending `IndexColumn list` from a list of
+    /// attribute SsKeys. The common shape for consumers that don't
+    /// care about per-column sort direction (most indexes; V1
+    /// defaults SortOrder to ASC and DESC requires an explicit
+    /// override). Slice 5.13.shim-retirement (2026-05-18) — lifted
+    /// from the test-side `IRBuilders.mkIndexColumns`.
+    let ascendingList (attributes: SsKey list) : IndexColumn list =
+        attributes |> List.map (fun a -> create a Ascending)
+
+
+/// SQL Server `DATA_COMPRESSION` levels for an index (or partition
+/// range). Mirrors ScriptDom's `DataCompressionLevel` enum modulo
+/// the columnstore variants (which V1 doesn't surface and V2 has no
+/// fixture evidence for; lift trigger: an actual columnstore-bearing
+/// index surfaces in production). Slice 5.13.index-features-emit
+/// (matrix row 56).
+[<RequireQualifiedAccess>]
+type DataCompressionLevel =
+    | None
+    | Row
+    | Page
 
 /// A schema-level index on a kind. Carries identity, name, the
 /// participating attribute SsKeys (in declaration order; composite
@@ -651,6 +704,35 @@ type Index = {
     /// = OFF (auto-update enabled). Mirrors V1's
     /// `IndexOnDiskMetadata.NoRecomputeStatistics`. Chapter 4.8 slice β.
     NoRecomputeStatistics : bool
+    /// SQL Server `IGNORE_DUP_KEY` option. `false` (V1 default) =
+    /// OFF (a duplicate-key insert fails the entire statement); `true`
+    /// = ON (the duplicate row is silently skipped, the statement
+    /// succeeds for the other rows). Mirrors V1's
+    /// `IndexOnDiskMetadata.IgnoreDuplicateKey`. Emitted as
+    /// `IGNORE_DUP_KEY = ON` in the CREATE INDEX `WITH (…)` clause.
+    /// Slice 5.13.index-features-emit (matrix row 55).
+    IgnoreDuplicateKey : bool
+    /// SQL Server index disable state. `false` (V1 default) = enabled
+    /// (the index participates in query plans and is maintained on
+    /// data changes); `true` = disabled (the index is preserved in
+    /// metadata but its B-tree is dropped — restored only by a
+    /// REBUILD). Mirrors V1's `IndexOnDiskMetadata.IsDisabled`.
+    /// Emitted as a post-CREATE-INDEX `ALTER INDEX [name] ON [table]
+    /// DISABLE` statement (ScriptDom's `AlterIndexStatement` with
+    /// `AlterIndexType.Disable`), since the disable state is not a
+    /// CREATE-INDEX clause. Slice 5.13.index-features-emit (matrix
+    /// row 55).
+    IsDisabled : bool
+    /// SQL Server `DATA_COMPRESSION` option. `None` (V1 default) =
+    /// no explicit DATA_COMPRESSION clause emitted (server inherits
+    /// table-level or partition-level setting). `Some level` =
+    /// explicit `DATA_COMPRESSION = NONE | ROW | PAGE` in the
+    /// CREATE INDEX `WITH (…)` clause. Mirrors V1's
+    /// `IndexOnDiskMetadata.DataCompression` (single-value form;
+    /// per-partition-range compression deferred to a follow-up
+    /// slice when partitioned indexes surface in fixture data).
+    /// Slice 5.13.index-features-emit (matrix row 56).
+    DataCompression : DataCompressionLevel option
 }
 
 
@@ -746,6 +828,157 @@ type Catalog = {
 }
 
 
+/// Slice 5.13.fk-features-emit (smart-constructor closure) — production-
+/// side smart constructors for the IR aggregate records that lacked
+/// them. The pattern mirrors the test-side `IRBuilders.mkX` helpers
+/// (`tests/Projection.Tests/IRBuilders.fs`) lifted to production. Each
+/// constructor takes the minimum-evidence positional arguments; all
+/// optional axes default to their no-evidence form. Field extensions
+/// land on the constructor body only — literal-construction sites
+/// continue working via record-update syntax (`{ Attribute.create … with
+/// IsActive = false }`).
+///
+/// Rationale (per user direction; A39 codification): when an IR record
+/// is extension-prone (i.e., chapter-A.0' lifts repeatedly add fields),
+/// every additional field forces a sweep across every literal site.
+/// The smart constructor absorbs the field at one location; consumers
+/// stay stable. Sibling to `Module.create` + `Catalog.create` (the
+/// pre-existing pattern); siblings to the existing `Name.create` +
+/// `ColumnCheck.create` + `Trigger.create` + `Sequence.create`.
+
+[<RequireQualifiedAccess>]
+module Attribute =
+
+    /// Build an `Attribute` with minimum-evidence defaults. Required:
+    /// `ssKey`, `name`, `ptype`. Optional axes default to:
+    ///   - `Column = { ColumnName = Name.value name; IsNullable = false }`
+    ///   - `IsPrimaryKey = false`; `IsMandatory = false`
+    ///   - `Length = None`; `Precision = None`; `Scale = None`
+    ///   - `IsIdentity = false`
+    ///   - `Description = None`; `IsActive = true` (V1 default)
+    ///   - `DefaultValue = None`; `Computed = None`
+    ///   - `ExtendedProperties = []`
+    ///   - `OriginalName = None`; `ExternalDatabaseType = None`
+    ///
+    /// Consumers override via record-update: `{ Attribute.create k n
+    /// Integer with IsPrimaryKey = true; IsMandatory = true }`.
+    let create (ssKey: SsKey) (name: Name) (ptype: PrimitiveType) : Attribute =
+        {
+            SsKey                = ssKey
+            Name                 = name
+            Type                 = ptype
+            Column               = { ColumnName = Name.value name; IsNullable = false }
+            IsPrimaryKey         = false
+            IsMandatory          = false
+            Length               = None
+            Precision            = None
+            Scale                = None
+            IsIdentity           = false
+            Description          = None
+            IsActive             = true
+            DefaultValue         = None
+            Computed             = None
+            ExtendedProperties   = []
+            OriginalName         = None
+            ExternalDatabaseType = None
+        }
+
+
+[<RequireQualifiedAccess>]
+module Reference =
+
+    /// Build a `Reference` with minimum-evidence defaults. Required:
+    /// `ssKey`, `name`, `sourceAttribute`, `targetKind`. Optional axes
+    /// default to:
+    ///   - `OnDelete = NoAction` (SQL Server's server-default behavior)
+    ///   - `IsUserFk = false`
+    ///   - `HasDbConstraint = false` (V1's COALESCE-to-0 default;
+    ///     adapters opt into `true` when reflection observes the
+    ///     constraint)
+    ///   - `OnUpdate = None` (unstated → SQL Server emits no ON UPDATE
+    ///     clause; server default NO ACTION applies)
+    ///   - `IsConstraintTrusted = true` (V1 default; FKs are TRUSTED
+    ///     unless `#FkReality.IsNoCheck = 1` flips this)
+    ///
+    /// Consumers override via record-update: `{ Reference.create k n s
+    /// t with OnDelete = Cascade; HasDbConstraint = true }`.
+    let create
+        (ssKey: SsKey)
+        (name: Name)
+        (sourceAttribute: SsKey)
+        (targetKind: SsKey)
+        : Reference =
+        {
+            SsKey               = ssKey
+            Name                = name
+            SourceAttribute     = sourceAttribute
+            TargetKind          = targetKind
+            OnDelete            = NoAction
+            IsUserFk            = false
+            HasDbConstraint     = false
+            OnUpdate            = None
+            IsConstraintTrusted = true
+        }
+
+
+[<RequireQualifiedAccess>]
+module Index =
+
+    /// Build an `Index` with minimum-evidence defaults. Required:
+    /// `ssKey`, `name`, `columns`. Optional axes default to:
+    ///   - `IsUnique = false`; `IsPrimaryKey = false`
+    ///   - `ExtendedProperties = []`
+    ///   - `Filter = None`; `IncludedColumns = []`
+    ///   - `IsPlatformAuto = false`
+    ///   - `FillFactor = None`; `IsPadded = false`
+    ///   - `AllowRowLocks = true`; `AllowPageLocks = true` (V1 defaults)
+    ///   - `NoRecomputeStatistics = false`
+    ///   - `IgnoreDuplicateKey = false` (V1 default)
+    ///   - `IsDisabled = false` (V1 default)
+    ///   - `DataCompression = None` (V1 default: no explicit
+    ///     DATA_COMPRESSION clause)
+    ///
+    /// Consumers override via record-update.
+    let create
+        (ssKey: SsKey)
+        (name: Name)
+        (columns: IndexColumn list)
+        : Index =
+        {
+            SsKey                 = ssKey
+            Name                  = name
+            Columns               = columns
+            IsUnique              = false
+            IsPrimaryKey          = false
+            ExtendedProperties    = []
+            Filter                = None
+            IncludedColumns       = []
+            IsPlatformAuto        = false
+            FillFactor            = None
+            IsPadded              = false
+            AllowRowLocks         = true
+            AllowPageLocks        = true
+            NoRecomputeStatistics = false
+            IgnoreDuplicateKey    = false
+            IsDisabled            = false
+            DataCompression       = None
+        }
+
+    /// Build an `Index` from a `SsKey list` of key columns
+    /// (interpreted as all-Ascending). Convenience for the common
+    /// case where consumers don't care about per-column sort
+    /// direction. Equivalent to `Index.create ssKey name
+    /// (IndexColumn.ascendingList attributes)`. Slice
+    /// 5.13.shim-retirement (2026-05-18) — lifted from the test-side
+    /// `IRBuilders.mkIndex`.
+    let ofKeyColumns
+        (ssKey: SsKey)
+        (name: Name)
+        (attributes: SsKey list)
+        : Index =
+        create ssKey name (IndexColumn.ascendingList attributes)
+
+
 /// Identity-based equality and lookup helpers for catalog nodes (A4).
 /// The default F# record `=` compares all fields, which is the right
 /// operator for "did this pass change anything?" tests; these helpers are
@@ -753,6 +986,37 @@ type Catalog = {
 /// for catalog-level identity.
 [<RequireQualifiedAccess>]
 module Kind =
+
+    /// Build a `Kind` with minimum-evidence defaults. Required: `ssKey`,
+    /// `name`, `physical`, `attributes`. Optional axes default to:
+    ///   - `Origin = OsNative`
+    ///   - `Modality = []`; `References = []`; `Indexes = []`
+    ///   - `Description = None`; `IsActive = true`
+    ///   - `Triggers = []`; `ColumnChecks = []`
+    ///   - `ExtendedProperties = []`
+    ///
+    /// Consumers override via record-update.
+    let create
+        (ssKey: SsKey)
+        (name: Name)
+        (physical: PhysicalRealization)
+        (attributes: Attribute list)
+        : Kind =
+        {
+            SsKey              = ssKey
+            Name               = name
+            Origin             = OsNative
+            Modality           = []
+            Physical           = physical
+            Attributes         = attributes
+            References         = []
+            Indexes            = []
+            Description        = None
+            IsActive           = true
+            Triggers           = []
+            ColumnChecks       = []
+            ExtendedProperties = []
+        }
 
     /// True when two kinds share the same SsKey, regardless of names,
     /// attribute orderings, modality marks, or any other field. Encodes
@@ -816,6 +1080,20 @@ module Module =
         (isActive: bool)
         (extendedProperties: ExtendedProperty list)
         : Result<Module> =
+        // LR1 (slice 5.13.module-non-empty-invariant, matrix row 42):
+        // per-module non-empty Kind invariant. V1's `ModuleModel.Create`
+        // enforces this; V2 lifts the same axis per A39 (aggregate-root
+        // smart-constructor invariants) + `DECISIONS 2026-05-18 (slice
+        // 5.2.α.module)` path (a). Prevents a ghost-module class of bug
+        // in transformation passes — a module with zero kinds is
+        // semantically meaningless at every consumer (emitter / pass /
+        // diagnostic) but was silently constructible.
+        if List.isEmpty kinds then
+            Result.failureOf (
+                ValidationError.create
+                    "module.kinds.empty"
+                    (sprintf "Module %A must contain at least one Kind." ssKey))
+        else
         let duplicates =
             kinds
             |> List.groupBy (fun k -> k.SsKey)

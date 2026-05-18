@@ -104,7 +104,32 @@ module SsdtDdlEmitter =
             Nullable     = a.Column.IsNullable
             IsIdentity   = a.IsIdentity
             IsPrimaryKey = a.IsPrimaryKey
+            // Slice 5.13.column-features-emit: DEFAULT clause carriage
+            // from Attribute.DefaultValue (chapter A.0' slice ε IR
+            // lift). V2 IR carries `SqlLiteral option`; the realization
+            // layer's `columnDefinition` emits an inline
+            // `CONSTRAINT <name> DEFAULT <literal>` when populated.
+            // The default name surfaces from a future rowset wiring
+            // (#ColumnReality.DefaultConstraintName); when absent,
+            // SQL Server auto-names the constraint. Today the JSON
+            // path populates DefaultValue from V1's "default" JSON
+            // field; rowset path leaves it None pending the
+            // #Attr.DefaultValue lift (separate slice).
+            DefaultValue = a.DefaultValue
+            DefaultName  = None
             Provenance   = ""
+        }
+
+    /// Project a `Kind.ColumnChecks` entry to the SSDT realization
+    /// layer's `ColumnCheckDef`. Slice 5.13.column-features-emit
+    /// (chapter A.0' slice ε emit closure). The `Name` field maps
+    /// V2's `Name option` directly (V1's CHECK constraint name when
+    /// present; SQL Server auto-name when None).
+    let private columnCheckDef (chk: ColumnCheck) : ColumnCheckDef =
+        {
+            Name         = chk.Name |> Option.map Name.value
+            Definition   = chk.Definition
+            IsNotTrusted = chk.IsNotTrusted
         }
 
     /// Build the primary-key definition from a Kind's attributes.
@@ -197,6 +222,14 @@ module SsdtDdlEmitter =
                     Target       = toTableId target
                     TargetColumn = pkAttr.Column.ColumnName
                     OnDelete     = toReferenceActionSql r.OnDelete
+                    // Slice 5.13.fk-features-emit (matrix rows 58 + 59).
+                    // OnUpdate threads through to ScriptDom's
+                    // ForeignKeyConstraintDefinition.UpdateAction;
+                    // IsConstraintTrusted feeds the post-CREATE-TABLE
+                    // ALTER TABLE NOCHECK statement emitted by
+                    // `untrustedFkAlters` (sibling helper below).
+                    OnUpdate            = r.OnUpdate |> Option.map toReferenceActionSql
+                    IsConstraintTrusted = r.IsConstraintTrusted
                 }
         | _ -> None
 
@@ -215,7 +248,35 @@ module SsdtDdlEmitter =
         let columns = k.Attributes |> List.map columnDef
         let pk = pkDef k
         let fks = k.References |> List.choose (fkDef targetByKey pkAttrByKey k)
-        Statement.CreateTable (toTableId k, columns, pk, fks)
+        // Slice 5.13.column-features-emit: thread Kind.ColumnChecks
+        // (chapter A.0' slice ε IR; now populated via cluster A1's
+        // rowset path lifting #ColumnCheckReality) through the
+        // realization layer's CHECK-constraint emission.
+        let checks = k.ColumnChecks |> List.map columnCheckDef
+        Statement.CreateTable (toTableId k, columns, pk, fks, checks)
+
+    /// Yield one `AlterTableNoCheckConstraint` statement per
+    /// `IsConstraintTrusted = false` FK on this kind. Emitted AFTER
+    /// the kind's CREATE TABLE so the named constraint exists when the
+    /// ALTER references it. Slice 5.13.fk-features-emit (matrix row 59).
+    ///
+    /// Same FK resolution path as `createTableStatement` (via
+    /// `fkDef`); a reference that doesn't resolve to a `ForeignKeyDef`
+    /// (cross-catalog target; missing PK on target) silently drops
+    /// here too — the corresponding CREATE TABLE inline FK is absent
+    /// by the same predicate, so the ALTER would be referencing a
+    /// non-existent constraint anyway.
+    let private untrustedFkAlters
+        (targetByKey: Map<SsKey, Kind>)
+        (pkAttrByKey: Map<SsKey, Attribute>)
+        (k: Kind)
+        : Statement list =
+        k.References
+        |> List.choose (fun r ->
+            match fkDef targetByKey pkAttrByKey k r with
+            | Some fk when not fk.IsConstraintTrusted ->
+                Some (Statement.AlterTableNoCheckConstraint (toTableId k, fk.Name))
+            | _ -> None)
 
     /// Resolve a column-SsKey to its physical column name within a
     /// kind. The IR's `Index.Columns` carries SsKey list (per
@@ -257,6 +318,15 @@ module SsdtDdlEmitter =
                     { Name = resolveColumnName k c.Attribute; Direction = direction })
             let includedColumnNames =
                 idx.IncludedColumns |> List.map (resolveColumnName k)
+            // Slice 5.13.index-features-emit (matrix row 56) — map
+            // V2's `DataCompressionLevel` IR DU to the realization-
+            // layer mirror. Closed-DU dispatch keeps the seam typed.
+            let dataCompressionSql =
+                idx.DataCompression
+                |> Option.map (function
+                    | DataCompressionLevel.None -> NoneCompressionSql
+                    | DataCompressionLevel.Row  -> RowCompressionSql
+                    | DataCompressionLevel.Page -> PageCompressionSql)
             let indexDef : IndexDef =
                 {
                     Name     = Name.value idx.Name
@@ -271,8 +341,25 @@ module SsdtDdlEmitter =
                     AllowRowLocks         = idx.AllowRowLocks
                     AllowPageLocks        = idx.AllowPageLocks
                     NoRecomputeStatistics = idx.NoRecomputeStatistics
+                    // Slice 5.13.index-features-emit (matrix rows 55 + 56).
+                    IgnoreDuplicateKey    = idx.IgnoreDuplicateKey
+                    IsDisabled            = idx.IsDisabled
+                    DataCompression       = dataCompressionSql
                 }
             Statement.CreateIndex indexDef)
+
+    /// Yield one `AlterIndexDisable` statement per non-PK index where
+    /// `IsDisabled = true`. Emitted AFTER the kind's CREATE INDEX
+    /// statements so the named index exists when the ALTER references
+    /// it. PK-marked indexes filter out at `indexStatements` (PK is
+    /// always enforced; V1 invariant). Slice 5.13.index-features-emit
+    /// (matrix row 55).
+    let private disabledIndexAlters (k: Kind) : Statement list =
+        k.Indexes
+        |> List.filter (fun idx -> not idx.IsPrimaryKey && idx.IsDisabled)
+        |> List.sortBy (fun idx -> idx.SsKey)
+        |> List.map (fun idx ->
+            Statement.AlterIndexDisable (toTableId k, Name.value idx.Name))
 
     /// Build the cross-platform-deterministic relative path for a
     /// kind's SSDT DDL file. V1 convention: `Modules/<ModuleName>/
@@ -404,7 +491,24 @@ module SsdtDdlEmitter =
             seq {
                 yield! moduleSchemaPropertyStatements m k
                 yield createTableStatement targetByKey pkAttrByKey k
+                // Slice 5.13.fk-features-emit (matrix row 59):
+                // post-CREATE-TABLE ALTER statements preserve the
+                // deployed target's NOCHECK FK trust state. Emitted
+                // BEFORE indexes (CREATE INDEX is unaffected by FK
+                // trust, but the FK constraint must exist before
+                // ALTER references it — CREATE TABLE just created it
+                // inline). Today no adapter populates
+                // `IsConstraintTrusted = false`; this seam is
+                // structurally positioned for the rowset-path JOIN
+                // slice that wires `#FkReality.IsNoCheck`.
+                yield! untrustedFkAlters targetByKey pkAttrByKey k
                 yield! indexStatements k
+                // Slice 5.13.index-features-emit (matrix row 55):
+                // post-CREATE-INDEX ALTER INDEX DISABLE statements
+                // preserve the deployed target's index disable state.
+                // Emitted AFTER CREATE INDEX so the named index
+                // exists when the ALTER references it.
+                yield! disabledIndexAlters k
                 yield! extendedPropertyStatements k
             }
         let body = ScriptDomGenerate.toText statements
@@ -495,7 +599,14 @@ module SsdtDdlEmitter =
         seq {
             for k in orderedKinds do
                 yield createTableStatement targetByKey pkAttrByKey k
+                // Slice 5.13.fk-features-emit — mirrors the per-kind
+                // emission order in `kindToSsdtFile`: post-CREATE-TABLE
+                // ALTER for untrusted FKs, then indexes, then post-
+                // CREATE-INDEX ALTER for disabled indexes.
+                yield! untrustedFkAlters targetByKey pkAttrByKey k
                 yield! indexStatements k
+                // Slice 5.13.index-features-emit (matrix row 55).
+                yield! disabledIndexAlters k
         }
 
     let emitSlices : Emitter<SsdtFile> = fun catalog ->
@@ -517,3 +628,67 @@ module SsdtDdlEmitter =
                     invalidOp (sprintf "SsdtDdlEmitter.emitSlices: kind %A has no owning module (unreachable; Catalog.allKinds invariant)" k.SsKey))
             |> Map.ofList
         ArtifactByKind.create catalog slices
+
+    /// Slice 5.13.emit-features-registry (2026-05-18) — the SSDT
+    /// emitter's `RegisteredTransform` surface. Metadata-only per the
+    /// OSSYS-adapter precedent (chapter A.4.7 slice δ): the emitter's
+    /// `Catalog -> Result<ArtifactByKind<SsdtFile>, EmitError>`
+    /// signature doesn't fit the typed `RegisteredTransform<'In, 'Out>
+    /// .Run : 'In -> Lineage<Diagnostics<'Out>>` shell because Result-
+    /// with-EmitError is the realization-layer boundary's error
+    /// reporting; Lineage+Diagnostics is the pass-layer evidence-trail
+    /// shape. The metadata view is what the registry's totality-coverage
+    /// scan + manifest emission need; per-site invocation uses
+    /// `SsdtDdlEmitter.emitSlices` directly.
+    ///
+    /// All emission sites classify as `DataIntent` per pillar 9: an
+    /// SSDT emitter projects evidence from the Catalog into the
+    /// realization layer's typed Statement stream; no operator opinion
+    /// enters. Selection-axis operator intent (e.g., which schemas to
+    /// include) runs in passes upstream of the emitter (A18 amended).
+    ///
+    /// The Sites enumeration is intra-pass-classification fidelity at
+    /// the emission-feature level — one Site per V1-CreateTable axis
+    /// V2 emits structurally. Adding a new emit feature (e.g., the
+    /// row-56 partition-scheme axis) requires extending this list
+    /// (and the harvest-classification rationale must name the axis
+    /// substantively).
+    let registeredMetadata : RegisteredTransformMetadata =
+        { Name = "ssdtDdlEmitter"
+          Domain = Schema
+          StageBinding = Emitter
+          Sites =
+            [ { SiteName = "createTable"
+                Classification = DataIntent
+                Rationale = "Project Kind → Statement.CreateTable via ScriptDom's typed AST (CreateTableStatement). Columns / nullability / IDENTITY / multi-column PK / inline FK constraints all flow through ScriptDomBuild.buildCreateTable. The projection is shape-preserving: V2 IR evidence maps 1:1 to ScriptDom's grammar." }
+              { SiteName = "createIndex"
+                Classification = DataIntent
+                Rationale = "Project Kind.Indexes → Statement.CreateIndex per non-PK index via ScriptDomBuild.buildCreateIndex. Key columns + sort direction + INCLUDE + filter + on-disk options (FillFactor / PadIndex / AllowRowLocks / AllowPageLocks / StatsNoRecompute) thread through ScriptDom's IndexOption hierarchy. PK-marked indexes filter out — PK is inlined in CREATE TABLE per V1 convention." }
+              { SiteName = "columnDefaultClause"
+                Classification = DataIntent
+                Rationale = "Slice 5.13.column-features-emit (matrix row 53). Project Attribute.DefaultValue : SqlLiteral option → ScriptDom's DefaultConstraintDefinition on the column's Constraints. The literal flows through buildSqlLiteral (same path as MERGE / UPDATE statements). DefaultName (V1 constraint identity) is positioned but unwired pending the rowset-path lift of #ColumnReality.DefaultConstraintName." }
+              { SiteName = "columnCheckConstraint"
+                Classification = DataIntent
+                Rationale = "Slice 5.13.column-features-emit (matrix row 12). Project Kind.ColumnChecks : ColumnCheck list → ScriptDom's CheckConstraintDefinition entries on TableConstraints. The check predicate parses via TSql160Parser.ParseBooleanExpression; parse-failure fallback wraps raw text. Source: V1's #ColumnCheckReality rowset (cluster A1)." }
+              { SiteName = "foreignKeyConstraint"
+                Classification = DataIntent
+                Rationale = "Project Reference → ScriptDom's ForeignKeyConstraintDefinition (inline in CREATE TABLE). DeleteAction maps V2's ReferenceAction DU to ScriptDom's DeleteUpdateAction. Slice 5.13.fk-features-emit (matrix row 58) extended with UpdateAction when Reference.OnUpdate = Some action; None omits the clause (V1 default)." }
+              { SiteName = "alterTableNoCheckConstraint"
+                Classification = DataIntent
+                Rationale = "Slice 5.13.fk-features-emit (matrix row 59). When Reference.IsConstraintTrusted = false, emit a post-CREATE-TABLE Statement.AlterTableNoCheckConstraint via ScriptDom's AlterTableConstraintModificationStatement with ExistingRowsCheckEnforcement = NoCheck + ConstraintEnforcement = Check. Preserves the deployed target's WITH NOCHECK FK trust state across emit → deploy → readback. Source: V1's #FkReality.IsNoCheck via the toBundle JOIN." }
+              { SiteName = "alterIndexDisable"
+                Classification = DataIntent
+                Rationale = "Slice 5.13.index-features-emit (matrix row 55). When Index.IsDisabled = true, emit a post-CREATE-INDEX Statement.AlterIndexDisable via ScriptDom's AlterIndexStatement with AlterIndexType.Disable. Preserves the deployed target's disabled-index state. Source: V1's #AllIdx.IsDisabled via the toBundle path." }
+              { SiteName = "indexIgnoreDuplicateKey"
+                Classification = DataIntent
+                Rationale = "Slice 5.13.index-features-emit (matrix row 55). When Index.IgnoreDuplicateKey = true, emit IGNORE_DUP_KEY = ON in the CREATE INDEX WITH clause via ScriptDom's IndexStateOption + IndexOptionKind.IgnoreDupKey. Source: V1's #AllIdx.IgnoreDupKey." }
+              { SiteName = "indexDataCompression"
+                Classification = DataIntent
+                Rationale = "Slice 5.13.index-features-emit (matrix row 56 partial). When Index.DataCompression = Some level, emit DATA_COMPRESSION = NONE|ROW|PAGE in the CREATE INDEX WITH clause via ScriptDom's DataCompressionOption. Single-value form (uniform across partitions) ships; per-partition compression list is the row 56 residual. Source: V1's #AllIdx.DataCompressionJson parsed via tryParseUniformDataCompression." }
+              { SiteName = "setExtendedProperty"
+                Classification = DataIntent
+                Rationale = "Project ExtendedProperty values at Schema / Table / Column / Index levels → Statement.SetExtendedProperty (chapter 4.1.A slice 8). ScriptDom builds EXEC sys.sp_addextendedproperty with typed ExecuteParameter binding (multi-level @level0type / @level1type / @level2type). Replaces V1's hand-rolled escaping." }
+              { SiteName = "topologicalOrder"
+                Classification = DataIntent
+                Rationale = "Order kinds via TopologicalOrderPass.runWith SkipSelfEdges (per A40 SelfLoopPolicy) so FK targets emit before referencers — deploy-time inline FK constraints resolve against an already-created target. Same algorithm pillar that RawTextEmitter used (chapter 3.1 harmonization-via-parameterization). DataIntent: ordering is structural-evidence, not operator opinion." } ]
+          Status = Active }

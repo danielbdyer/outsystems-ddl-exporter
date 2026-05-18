@@ -45,12 +45,12 @@ let private nullRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lin
 let private ssKey (s: string) : SsKey = testKey s
 let private name  (s: string) : Name  = Name.create s   |> Result.value
 
-let private mkIndex
+let private indexFixture
     (key: string)
     (columns: SsKey list)
     (isUnique: bool)
     : Index =
-    { IRBuilders.mkIndex (ssKey key) (name "IX") columns with IsUnique = isUnique }
+    { Index.ofKeyColumns (ssKey key) (name "IX") columns with IsUnique = isUnique }
 
 /// Catalog with one already-unique single-column index (Customer.Name)
 /// plus three non-unique single-column indexes that will produce
@@ -59,11 +59,11 @@ let private mkIndex
 /// V1's UniqueIndexDecisionStrategyTests).
 let private endToEndCatalog : Catalog =
     let customerSingleUnique =
-        mkIndex "OS_IDX_Customer_Name_U" [ customerNameKey ] true
+        indexFixture "OS_IDX_Customer_Name_U" [ customerNameKey ] true
     let orderSingle =
-        mkIndex "OS_IDX_Order_CustomerId" [ orderCustomerFkKey ] false
+        indexFixture "OS_IDX_Order_CustomerId" [ orderCustomerFkKey ] false
     let countrySingle =
-        mkIndex "OS_IDX_Country_Code" [ countryCodeKey ] false
+        indexFixture "OS_IDX_Country_Code" [ countryCodeKey ] false
     let customer' = { customer with Indexes = [ customerSingleUnique ] }
     let order'    = { order    with Indexes = [ orderSingle ] }
     let country'  = { country  with Indexes = [ countrySingle ] }
@@ -199,8 +199,8 @@ let private nullabilityCatalog : Catalog =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_DIAG_END_SAMPLE"; Catalog = None }
           Attributes = [
-              { IRBuilders.mkAttribute idAttributeKey (name "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-              { IRBuilders.mkAttribute mandatoryAttributeKey (name "Mandatory") Text with Column = { ColumnName = "MANDATORY"; IsNullable = true }; IsMandatory = true } ]
+              { Attribute.create idAttributeKey (name "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+              { Attribute.create mandatoryAttributeKey (name "Mandatory") Text with Column = { ColumnName = "MANDATORY"; IsNullable = true }; IsMandatory = true } ]
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = ssKey "OS_MOD_DiagEnd"
@@ -341,7 +341,7 @@ let private fkCatalog : Catalog =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_FK_END_TARGET"; Catalog = None }
           Attributes = [
-              { IRBuilders.mkAttribute fkTargetIdKey (name "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true } ]
+              { Attribute.create fkTargetIdKey (name "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true } ]
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let source : Kind =
         { SsKey    = fkSourceEntityKey
@@ -350,10 +350,10 @@ let private fkCatalog : Catalog =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_FK_END_SOURCE"; Catalog = None }
           Attributes = [
-              { IRBuilders.mkAttribute fkSourceIdKey (name "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-              { IRBuilders.mkAttribute fkSourceAttrKey (name "TargetId") Integer with Column = { ColumnName = "TARGET_ID"; IsNullable = true } } ]
+              { Attribute.create fkSourceIdKey (name "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+              { Attribute.create fkSourceAttrKey (name "TargetId") Integer with Column = { ColumnName = "TARGET_ID"; IsNullable = true } } ]
           References = [
-              IRBuilders.mkReference fkRefKey (name "FkSource_Target") fkSourceAttrKey fkTargetEntityKey ]
+              Reference.create fkRefKey (name "FkSource_Target") fkSourceAttrKey fkTargetEntityKey ]
           Indexes = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
@@ -475,9 +475,9 @@ let ``end-to-end: ForeignKey emits keep-reason and success-with-caveat entries s
     let secondRefKey  = ssKey "OS_REF_FkEnd_Source_Target_Strict"
     let secondAttrKey = ssKey "OS_ATTR_FkEnd_Source_StrictTargetId"
     let strictReference : Reference =
-        IRBuilders.mkReference secondRefKey (name "FkSource_StrictTarget") secondAttrKey fkTargetEntityKey
+        Reference.create secondRefKey (name "FkSource_StrictTarget") secondAttrKey fkTargetEntityKey
     let strictAttribute : Attribute =
-        { IRBuilders.mkAttribute secondAttrKey (name "StrictTargetId") Integer with Column = { ColumnName = "STRICT_TARGET_ID"; IsNullable = true } }
+        { Attribute.create secondAttrKey (name "StrictTargetId") Integer with Column = { ColumnName = "STRICT_TARGET_ID"; IsNullable = true } }
     let augmentedSource =
         match fkCatalog.Modules.[0].Kinds |> List.tryFind (fun k -> k.SsKey = fkSourceEntityKey) with
         | Some k ->

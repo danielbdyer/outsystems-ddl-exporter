@@ -29,7 +29,7 @@ let private plainIdx : IndexDef =
         IsPadded = false
         AllowRowLocks = true
         AllowPageLocks = true
-        NoRecomputeStatistics = false
+        NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None
     }
 
 [<Fact>]

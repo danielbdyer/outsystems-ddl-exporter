@@ -173,7 +173,7 @@ let ``SsdtDdlEmitter.statements yields one CreateTable per catalog kind`` () =
         stmts
         |> List.choose (fun s ->
             match s with
-            | CreateTable (table, _, _, _) -> Some table
+            | CreateTable (table, _, _, _, _) -> Some table
             | _ -> None)
     Assert.Equal (List.length allKinds, List.length createTables)
 
@@ -229,7 +229,7 @@ let private mkName (s: string) : Name =
 
 let private allPrimitiveTypesKind : Kind =
     let attr (label: string) (typ: PrimitiveType) (isPk: bool) : Attribute =
-        { IRBuilders.mkAttribute (attrKey ["AllTypes"; label]) (mkName label) typ with Column = { ColumnName = label.ToUpperInvariant(); IsNullable = not isPk }; IsPrimaryKey = isPk; IsMandatory = isPk }
+        { Attribute.create (attrKey ["AllTypes"; label]) (mkName label) typ with Column = { ColumnName = label.ToUpperInvariant(); IsNullable = not isPk }; IsPrimaryKey = isPk; IsMandatory = isPk }
     {
         SsKey = kindKey ["AllTypes"]
         Name = mkName "AllTypes"
@@ -322,7 +322,7 @@ let ``Slice 2: SsdtDdlEmitter emits a slice for the all-types fixture (T11 keyse
 
 let private compositePkKind : Kind =
     let attr (label: string) (typ: PrimitiveType) (isPk: bool) : Attribute =
-        { IRBuilders.mkAttribute (attrKey ["Composite"; label]) (mkName label) typ with Column = { ColumnName = label.ToUpperInvariant(); IsNullable = false }; IsPrimaryKey = isPk; IsMandatory = isPk }
+        { Attribute.create (attrKey ["Composite"; label]) (mkName label) typ with Column = { ColumnName = label.ToUpperInvariant(); IsNullable = false }; IsPrimaryKey = isPk; IsMandatory = isPk }
     {
         SsKey = kindKey ["Composite"]
         Name = mkName "Composite"
@@ -411,7 +411,7 @@ let private indexedPkIdxKey = idxKey ["Indexed"; "PK"]
 
 let private indexedKind : Kind =
     let attr (label: string) (typ: PrimitiveType) (isPk: bool) : Attribute =
-        { IRBuilders.mkAttribute (attrKey ["Indexed"; label]) (mkName label) typ with Column = { ColumnName = label.ToUpperInvariant(); IsNullable = not isPk }; IsPrimaryKey = isPk; IsMandatory = isPk }
+        { Attribute.create (attrKey ["Indexed"; label]) (mkName label) typ with Column = { ColumnName = label.ToUpperInvariant(); IsNullable = not isPk }; IsPrimaryKey = isPk; IsMandatory = isPk }
     {
         SsKey = indexedKindKey
         Name = mkName "Indexed"
@@ -426,12 +426,12 @@ let private indexedKind : Kind =
         References = []
         Indexes = [
             // Non-unique index on Lookup column.
-            IRBuilders.mkIndex indexedNonUniqueIdxKey (mkName "IX_OSUSR_X_INDEXED_LOOKUP") [ attrKey ["Indexed"; "Lookup"] ]
+            Index.ofKeyColumns indexedNonUniqueIdxKey (mkName "IX_OSUSR_X_INDEXED_LOOKUP") [ attrKey ["Indexed"; "Lookup"] ]
             // Unique index on Code column.
-            { IRBuilders.mkIndex indexedUniqueIdxKey (mkName "UIX_OSUSR_X_INDEXED_CODE") [ attrKey ["Indexed"; "Code"] ] with IsUnique = true }
+            { Index.ofKeyColumns indexedUniqueIdxKey (mkName "UIX_OSUSR_X_INDEXED_CODE") [ attrKey ["Indexed"; "Code"] ] with IsUnique = true }
             // PK index — should be SKIPPED by the emitter (PK is inlined
             // in CREATE TABLE per V1 convention).
-            { IRBuilders.mkIndex indexedPkIdxKey (mkName "PK_OSUSR_X_INDEXED") [ attrKey ["Indexed"; "Id"] ] with IsUnique = true; IsPrimaryKey = true }
+            { Index.ofKeyColumns indexedPkIdxKey (mkName "PK_OSUSR_X_INDEXED") [ attrKey ["Indexed"; "Id"] ] with IsUnique = true; IsPrimaryKey = true }
         ]
         Description = None
         IsActive = true
@@ -540,7 +540,7 @@ let private parentKind : Kind =
         Modality = []
         Physical = { Schema = "dbo"; Table = "OSUSR_X_PARENT"; Catalog = None }
         Attributes = [
-            { IRBuilders.mkAttribute (attrKey ["Parent"; "Id"]) (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+            { Attribute.create (attrKey ["Parent"; "Id"]) (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
         ]
         References = []
         Indexes = []; Description = None
@@ -558,11 +558,11 @@ let private childKind : Kind =
         Modality = []
         Physical = { Schema = "dbo"; Table = "OSUSR_X_CHILD"; Catalog = None }
         Attributes = [
-            { IRBuilders.mkAttribute (attrKey ["Child"; "Id"]) (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-            { IRBuilders.mkAttribute childParentIdAttrKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENT_ID"; IsNullable = false }; IsMandatory = true }
+            { Attribute.create (attrKey ["Child"; "Id"]) (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+            { Attribute.create childParentIdAttrKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENT_ID"; IsNullable = false }; IsMandatory = true }
         ]
         References = [
-            IRBuilders.mkReference childParentFkKey (mkName "ParentFk") childParentIdAttrKey parentKindKey
+            Reference.create childParentFkKey (mkName "ParentFk") childParentIdAttrKey parentKindKey
         ]
         Indexes = []; Description = None
         IsActive = true
@@ -724,7 +724,7 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
           Attributes =
-              [ { IRBuilders.mkAttribute aIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
+              [ { Attribute.create aIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
           References = []
           Indexes = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
@@ -735,10 +735,10 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
           Attributes =
-              [ { IRBuilders.mkAttribute bIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                { IRBuilders.mkAttribute bFkAttr (mkName "AId") Integer with Column = { ColumnName = "A_ID"; IsNullable = false }; IsMandatory = true } ]
+              [ { Attribute.create bIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create bFkAttr (mkName "AId") Integer with Column = { ColumnName = "A_ID"; IsNullable = false }; IsMandatory = true } ]
           References =
-              [ IRBuilders.mkReference crossRefKey (mkName "FkToA") bFkAttr aKindKey ]
+              [ Reference.create crossRefKey (mkName "FkToA") bFkAttr aKindKey ]
           Indexes = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog : Catalog =
@@ -755,7 +755,7 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
         statements
         |> List.findIndex (fun stmt ->
             match stmt with
-            | Statement.CreateTable (table, _, _, _) ->
+            | Statement.CreateTable (table, _, _, _, _) ->
                 table.Schema + "." + table.Table =
                     (Catalog.tryFindKind kindKey enriched
                      |> Option.map (fun k -> k.Physical.Schema + "." + k.Physical.Table)
@@ -784,17 +784,17 @@ let ``Slice 6: cross-module FK emits inline FOREIGN KEY constraint`` () =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
           Attributes =
-              [ { IRBuilders.mkAttribute aIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
+              [ { Attribute.create aIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let bKind : Kind =
         { SsKey = bKindKey; Name = mkName "BKind"; Origin = OsNative
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
           Attributes =
-              [ { IRBuilders.mkAttribute bIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                { IRBuilders.mkAttribute bFkAttr (mkName "AId") Integer with Column = { ColumnName = "A_ID"; IsNullable = false }; IsMandatory = true } ]
+              [ { Attribute.create bIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create bFkAttr (mkName "AId") Integer with Column = { ColumnName = "A_ID"; IsNullable = false }; IsMandatory = true } ]
           References =
-              [ IRBuilders.mkReference crossRefKey (mkName "FkToA") bFkAttr aKindKey ]
+              [ Reference.create crossRefKey (mkName "FkToA") bFkAttr aKindKey ]
           Indexes = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog : Catalog =
@@ -824,17 +824,17 @@ let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module F
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
           Attributes =
-              [ { IRBuilders.mkAttribute aIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
+              [ { Attribute.create aIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let bKind : Kind =
         { SsKey = bKindKey; Name = mkName "BKind"; Origin = OsNative
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
           Attributes =
-              [ { IRBuilders.mkAttribute bIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                { IRBuilders.mkAttribute bFkAttr (mkName "AId") Integer with Column = { ColumnName = "A_ID"; IsNullable = false }; IsMandatory = true } ]
+              [ { Attribute.create bIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create bFkAttr (mkName "AId") Integer with Column = { ColumnName = "A_ID"; IsNullable = false }; IsMandatory = true } ]
           References =
-              [ IRBuilders.mkReference crossRefKey (mkName "FkToA") bFkAttr aKindKey ]
+              [ Reference.create crossRefKey (mkName "FkToA") bFkAttr aKindKey ]
           Indexes = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog : Catalog =
@@ -848,3 +848,295 @@ let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module F
     Assert.Equal<Set<SsKey>>
         (Set.ofList [ aKindKey; bKindKey ],
          keys)
+
+// ---------------------------------------------------------------------------
+// Slice 5.13.column-features-emit — DEFAULT + CHECK emission through the
+// SSDT realization. Confirms `Attribute.DefaultValue` (`SqlLiteral option`)
+// and `Kind.ColumnChecks` (`ColumnCheck list`) both surface in the
+// rendered CREATE TABLE body. The typed-AST path is the same one
+// `ScriptDomBuild.buildCreateTable` exercises in
+// `ScriptDomRoundTripTests`; this canary closes the V2-Attribute → SSDT-
+// emission integration gap (chapter A.0' slice ε emit closure).
+// ---------------------------------------------------------------------------
+
+let private columnFeaturesKind : Kind =
+    let mkAttr key label typ isPk =
+        { Attribute.create (attrKey ["Widget"; key]) (mkName label) typ
+            with Column = { ColumnName = label.ToUpperInvariant(); IsNullable = not isPk }
+                 IsPrimaryKey = isPk
+                 IsMandatory  = isPk }
+    let idAttr = mkAttr "Id" "Id" Integer true
+    let priceAttr =
+        { mkAttr "Price" "Price" Integer false with
+            DefaultValue = Some (SqlLiteral.ofRaw Integer "0") }
+    let nameAttr =
+        { mkAttr "Name" "Name" Text false with
+            Length = Some 100
+            DefaultValue = Some (SqlLiteral.ofRaw Text "unknown") }
+    let checkOk =
+        ColumnCheck.create
+            (attrKey ["Widget"; "CK_Price"])
+            (Name.create "CK_Widget_PricePositive" |> Result.toOption)
+            "([PRICE] >= 0)"
+            false
+        |> Result.value
+    { Kind.create
+        (kindKey ["Widget"])
+        (mkName "Widget")
+        { Schema = "dbo"; Table = "OSUSR_W_WIDGET"; Catalog = None }
+        [ idAttr; priceAttr; nameAttr ]
+      with ColumnChecks = [ checkOk ] }
+
+let private columnFeaturesCatalog : Catalog =
+    {
+        Modules = [
+            IRBuilders.mkModule (modKey "WidgetModule") (mkName "WidgetModule") [ columnFeaturesKind ]
+        ]
+        Sequences = []
+    }
+
+[<Fact>]
+let ``Slice 5.13.column-features-emit: DEFAULT clause surfaces in CREATE TABLE body for typed-literal default`` () =
+    let enriched = enrich columnFeaturesCatalog
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let file =
+        ArtifactByKind.toMap artifact
+        |> Map.find columnFeaturesKind.SsKey
+    // ScriptDom emits `DEFAULT <literal>` as an inline column constraint;
+    // assert the integer + text defaults both surfaced.
+    Assert.Contains ("DEFAULT 0", file.Body)
+    Assert.Contains ("DEFAULT N'unknown'", file.Body)
+
+[<Fact>]
+let ``Slice 5.13.column-features-emit: CHECK constraint surfaces in CREATE TABLE body via TSql160Parser`` () =
+    let enriched = enrich columnFeaturesCatalog
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let file =
+        ArtifactByKind.toMap artifact
+        |> Map.find columnFeaturesKind.SsKey
+    // The CHECK constraint is named and parsed from `([PRICE] >= 0)`;
+    // ScriptDom round-trips it as `CHECK ([PRICE]>=0)` (no spaces around
+    // the operator per the generator's pinned options).
+    Assert.Contains ("CONSTRAINT [CK_Widget_PricePositive] CHECK", file.Body)
+
+[<Fact>]
+let ``Slice 5.13.column-features-emit: T1 byte-determinism holds with DEFAULT + CHECK`` () =
+    let enriched = enrich columnFeaturesCatalog
+    let a1 = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let a2 = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let b1 = (ArtifactByKind.toMap a1 |> Map.find columnFeaturesKind.SsKey).Body
+    let b2 = (ArtifactByKind.toMap a2 |> Map.find columnFeaturesKind.SsKey).Body
+    Assert.Equal (b1, b2)
+
+// ---------------------------------------------------------------------------
+// Slice 5.13.fk-features-emit — ON UPDATE referential action + WITH NOCHECK
+// FK trust-state preservation through the SSDT realization. Mirrors the
+// column-features-emit pattern on the FK axis (matrix rows 58 + 59).
+// ---------------------------------------------------------------------------
+
+let private fkFeaturesAKey       = kindKey ["A"; "AKind"]
+let private fkFeaturesBKey       = kindKey ["B"; "BKind"]
+let private fkFeaturesAIdAttr    = attrKey ["A"; "AKind"; "Id"]
+let private fkFeaturesBIdAttr    = attrKey ["B"; "BKind"; "Id"]
+let private fkFeaturesBFkAttr    = attrKey ["B"; "BKind"; "AId"]
+let private fkFeaturesCrossRef   = refKey ["B"; "BKind"; "AId"]
+
+let private fkFeaturesAKind : Kind =
+    { Kind.create
+        fkFeaturesAKey
+        (mkName "AKind")
+        { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
+        [ { Attribute.create fkFeaturesAIdAttr (mkName "Id") Integer with
+                Column       = { ColumnName = "ID"; IsNullable = false }
+                IsPrimaryKey = true
+                IsMandatory  = true } ]
+      with References = []; Indexes = [] }
+
+let private fkFeaturesBKind (onUpdate: ReferenceAction option) (trusted: bool) : Kind =
+    let ref =
+        { Reference.create
+            fkFeaturesCrossRef (mkName "FkToA") fkFeaturesBFkAttr fkFeaturesAKey with
+            OnDelete            = Cascade
+            HasDbConstraint     = true
+            OnUpdate            = onUpdate
+            IsConstraintTrusted = trusted }
+    { Kind.create
+        fkFeaturesBKey
+        (mkName "BKind")
+        { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
+        [ { Attribute.create fkFeaturesBIdAttr (mkName "Id") Integer with
+                Column       = { ColumnName = "ID"; IsNullable = false }
+                IsPrimaryKey = true
+                IsMandatory  = true }
+          { Attribute.create fkFeaturesBFkAttr (mkName "AId") Integer with
+                Column       = { ColumnName = "A_ID"; IsNullable = false }
+                IsMandatory  = true } ]
+      with References = [ ref ]; Indexes = [] }
+
+let private fkFeaturesCatalog (onUpdate: ReferenceAction option) (trusted: bool) : Catalog =
+    {
+        Modules =
+            [ { SsKey = modKey "A"; Name = mkName "A"; Kinds = [ fkFeaturesAKind ]; IsActive = true; ExtendedProperties = [] }
+              { SsKey = modKey "B"; Name = mkName "B"; Kinds = [ fkFeaturesBKind onUpdate trusted ]; IsActive = true; ExtendedProperties = [] } ]
+        Sequences = []
+    }
+
+[<Fact>]
+let ``Slice 5.13.fk-features-emit: OnUpdate = None omits the ON UPDATE clause (V1 emission shape)`` () =
+    let enriched = enrich (fkFeaturesCatalog None true)
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let body = (ArtifactByKind.toMap artifact |> Map.find fkFeaturesBKey).Body
+    // OnDelete = Cascade still emits ON DELETE CASCADE.
+    Assert.Contains ("ON DELETE CASCADE", body)
+    // OnUpdate = None means no ON UPDATE clause in the FK definition.
+    Assert.DoesNotContain ("ON UPDATE", body)
+
+[<Fact>]
+let ``Slice 5.13.fk-features-emit: OnUpdate = Some Cascade emits ON UPDATE CASCADE`` () =
+    let enriched = enrich (fkFeaturesCatalog (Some Cascade) true)
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let body = (ArtifactByKind.toMap artifact |> Map.find fkFeaturesBKey).Body
+    Assert.Contains ("ON DELETE CASCADE", body)
+    Assert.Contains ("ON UPDATE CASCADE", body)
+
+[<Fact>]
+let ``Slice 5.13.fk-features-emit: IsConstraintTrusted = true omits ALTER TABLE WITH NOCHECK`` () =
+    let enriched = enrich (fkFeaturesCatalog None true)
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let body = (ArtifactByKind.toMap artifact |> Map.find fkFeaturesBKey).Body
+    Assert.DoesNotContain ("WITH NOCHECK", body)
+    Assert.DoesNotContain ("ALTER TABLE", body)
+
+[<Fact>]
+let ``Slice 5.13.fk-features-emit: IsConstraintTrusted = false emits post-CREATE-TABLE ALTER TABLE WITH NOCHECK CHECK CONSTRAINT`` () =
+    let enriched = enrich (fkFeaturesCatalog None false)
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let body = (ArtifactByKind.toMap artifact |> Map.find fkFeaturesBKey).Body
+    // V1 emission shape: full ALTER statement with WITH NOCHECK prefix
+    // + CHECK CONSTRAINT suffix referencing the named FK.
+    Assert.Contains ("ALTER TABLE [dbo].[OSUSR_B_BKIND] WITH NOCHECK CHECK CONSTRAINT", body)
+    Assert.Contains ("FK_OSUSR_B_BKIND_OSUSR_A_AKIND_A_ID", body)
+    // The CREATE TABLE itself does not carry NOCHECK inline — ScriptDom
+    // models this as a separate ALTER statement (preservation of the
+    // deployed state is a post-creation concern).
+    let createIdx = body.IndexOf "CREATE TABLE [dbo].[OSUSR_B_BKIND]"
+    let alterIdx  = body.IndexOf "ALTER TABLE [dbo].[OSUSR_B_BKIND] WITH NOCHECK"
+    Assert.True (createIdx >= 0)
+    Assert.True (alterIdx > createIdx, "ALTER TABLE must come after CREATE TABLE")
+
+[<Fact>]
+let ``Slice 5.13.fk-features-emit: T1 byte-determinism holds for OnUpdate + WITH NOCHECK emissions`` () =
+    let enriched = enrich (fkFeaturesCatalog (Some Cascade) false)
+    let a1 = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let a2 = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let b1 = (ArtifactByKind.toMap a1 |> Map.find fkFeaturesBKey).Body
+    let b2 = (ArtifactByKind.toMap a2 |> Map.find fkFeaturesBKey).Body
+    Assert.Equal (b1, b2)
+
+// ---------------------------------------------------------------------------
+// Slice 5.13.index-features-emit — IGNORE_DUP_KEY + DATA_COMPRESSION +
+// post-CREATE-INDEX ALTER INDEX DISABLE through the SSDT realization.
+// Mirrors the FK + column slices on the index axis (matrix rows 55 + 56).
+// ---------------------------------------------------------------------------
+
+let private idxFeaturesKindKey   = kindKey ["Widget"]
+let private idxFeaturesIdAttr    = attrKey ["Widget"; "Id"]
+let private idxFeaturesNameAttr  = attrKey ["Widget"; "Name"]
+let private idxFeaturesIdxKey    = SsKey.synthesizedComposite "OS_IDX" ["Widget"; "IX_Name"] |> Result.value
+
+let private idxFeaturesKind
+    (ignoreDup: bool)
+    (disabled: bool)
+    (compression: DataCompressionLevel option)
+    : Kind =
+    let idAttr =
+        { Attribute.create idxFeaturesIdAttr (mkName "Id") Integer with
+            Column       = { ColumnName = "ID"; IsNullable = false }
+            IsPrimaryKey = true
+            IsMandatory  = true }
+    let nameAttr =
+        { Attribute.create idxFeaturesNameAttr (mkName "Name") Text with
+            Column       = { ColumnName = "NAME"; IsNullable = false }
+            Length       = Some 100
+            IsMandatory  = true }
+    let idx =
+        { Index.create idxFeaturesIdxKey (mkName "IX_Widget_Name") (IndexColumn.ascendingList [ idxFeaturesNameAttr ]) with
+            IsUnique           = true
+            IgnoreDuplicateKey = ignoreDup
+            IsDisabled         = disabled
+            DataCompression    = compression }
+    { Kind.create
+        idxFeaturesKindKey
+        (mkName "Widget")
+        { Schema = "dbo"; Table = "OSUSR_W_WIDGET"; Catalog = None }
+        [ idAttr; nameAttr ]
+      with Indexes = [ idx ] }
+
+let private idxFeaturesCatalog ignoreDup disabled compression : Catalog =
+    {
+        Modules = [
+            IRBuilders.mkModule (modKey "WidgetModule") (mkName "WidgetModule")
+                [ idxFeaturesKind ignoreDup disabled compression ]
+        ]
+        Sequences = []
+    }
+
+[<Fact>]
+let ``Slice 5.13.index-features-emit: IgnoreDuplicateKey = false omits IGNORE_DUP_KEY (V1 default)`` () =
+    let enriched = enrich (idxFeaturesCatalog false false None)
+    let body = (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices enriched |> mustOk) |> Map.find idxFeaturesKindKey).Body
+    Assert.DoesNotContain ("IGNORE_DUP_KEY", body)
+
+[<Fact>]
+let ``Slice 5.13.index-features-emit: IgnoreDuplicateKey = true emits IGNORE_DUP_KEY = ON in WITH clause`` () =
+    let enriched = enrich (idxFeaturesCatalog true false None)
+    let body = (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices enriched |> mustOk) |> Map.find idxFeaturesKindKey).Body
+    Assert.Contains ("IGNORE_DUP_KEY = ON", body)
+
+[<Fact>]
+let ``Slice 5.13.index-features-emit: DataCompression = None omits DATA_COMPRESSION (V1 default)`` () =
+    let enriched = enrich (idxFeaturesCatalog false false None)
+    let body = (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices enriched |> mustOk) |> Map.find idxFeaturesKindKey).Body
+    Assert.DoesNotContain ("DATA_COMPRESSION", body)
+
+[<Fact>]
+let ``Slice 5.13.index-features-emit: DataCompression = Page emits DATA_COMPRESSION = PAGE`` () =
+    let enriched = enrich (idxFeaturesCatalog false false (Some DataCompressionLevel.Page))
+    let body = (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices enriched |> mustOk) |> Map.find idxFeaturesKindKey).Body
+    Assert.Contains ("DATA_COMPRESSION = PAGE", body)
+
+[<Fact>]
+let ``Slice 5.13.index-features-emit: DataCompression = Row emits DATA_COMPRESSION = ROW`` () =
+    let enriched = enrich (idxFeaturesCatalog false false (Some DataCompressionLevel.Row))
+    let body = (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices enriched |> mustOk) |> Map.find idxFeaturesKindKey).Body
+    Assert.Contains ("DATA_COMPRESSION = ROW", body)
+
+[<Fact>]
+let ``Slice 5.13.index-features-emit: IsDisabled = false omits ALTER INDEX DISABLE (V1 default)`` () =
+    let enriched = enrich (idxFeaturesCatalog false false None)
+    let body = (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices enriched |> mustOk) |> Map.find idxFeaturesKindKey).Body
+    Assert.DoesNotContain ("ALTER INDEX", body)
+    Assert.DoesNotContain ("DISABLE", body)
+
+[<Fact>]
+let ``Slice 5.13.index-features-emit: IsDisabled = true emits post-CREATE-INDEX ALTER INDEX DISABLE`` () =
+    let enriched = enrich (idxFeaturesCatalog false true None)
+    let body = (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices enriched |> mustOk) |> Map.find idxFeaturesKindKey).Body
+    // V1 emission shape: ALTER INDEX [name] ON [Schema].[Table] DISABLE.
+    Assert.Contains ("ALTER INDEX [IX_Widget_Name]", body)
+    Assert.Contains ("DISABLE", body)
+    // ALTER comes after CREATE INDEX so the named index exists when
+    // the ALTER references it.
+    let createIdx = body.IndexOf "CREATE UNIQUE INDEX [IX_Widget_Name]"
+    let alterIdx  = body.IndexOf "ALTER INDEX [IX_Widget_Name]"
+    Assert.True (createIdx >= 0)
+    Assert.True (alterIdx > createIdx, "ALTER INDEX must come after CREATE INDEX")
+
+[<Fact>]
+let ``Slice 5.13.index-features-emit: T1 byte-determinism holds across the new index axes`` () =
+    let enriched = enrich (idxFeaturesCatalog true true (Some DataCompressionLevel.Page))
+    let a1 = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let a2 = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let b1 = (ArtifactByKind.toMap a1 |> Map.find idxFeaturesKindKey).Body
+    let b2 = (ArtifactByKind.toMap a2 |> Map.find idxFeaturesKindKey).Body
+    Assert.Equal (b1, b2)

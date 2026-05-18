@@ -51,6 +51,7 @@
     <Compile Include="DataEmissionComposerTests.fs" />
     <Compile Include="StaticPopulationEmitterTests.fs" />
     <Compile Include="CdcSilenceTests.fs" />
+    <Compile Include="CdcSilenceCrossEmitterTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
     <Compile Include="ProfileFixtures.fs" />
     <Compile Include="ProfileTests.fs" />
@@ -60,6 +61,7 @@
     <Compile Include="UserPopulationTests.fs" />
     <Compile Include="UserRemapContextTests.fs" />
     <Compile Include="UserFkReflowPassTests.fs" />
+    <Compile Include="UserFkReflowPropertyTests.fs" />
     <Compile Include="UserFkReflowIntegrationTests.fs" />
     <Compile Include="DecisionLogEmitterTests.fs" />
     <Compile Include="OperationalDiagnosticsRoutingTests.fs" />
@@ -112,8 +114,11 @@
     <Compile Include="NoSilentDropTests.fs" />
     <Compile Include="ClassificationCarryThroughTests.fs" />
     <Compile Include="TransformRegistryTests.fs" />
+    <Compile Include="RegisteredDataTransformsTests.fs" />
+    <Compile Include="IdentityAxisRegistryTests.fs" />
     <Compile Include="PassRegistrationsTests.fs" />
     <Compile Include="AdapterRegistrationsTests.fs" />
+    <Compile Include="EmitterRegistrationsTests.fs" />
     <Compile Include="StrategyRegistrationsTests.fs" />
     <Compile Include="TransformRegistryCompletenessTests.fs" />
     <Compile Include="ComposeChainAdapterTests.fs" />

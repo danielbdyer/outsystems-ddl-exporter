@@ -143,19 +143,16 @@ let ``Adapter pickup: missing hasDbConstraint defaults to false (V1 COALESCE par
 // ---------------------------------------------------------------------------
 
 let private mkRef (hasDb: bool) : Reference =
-    {
-        SsKey = mkKey (sprintf "Ref.%b" hasDb)
-        Name = mkName "FK"
-        SourceAttribute = mkKey "Attr.A"
-        TargetKind = mkKey "K.Target"
-        OnDelete = NoAction
-        IsUserFk = false
-        HasDbConstraint = hasDb
-    }
+    { Reference.create
+        (mkKey (sprintf "Ref.%b" hasDb))
+        (mkName "FK")
+        (mkKey "Attr.A")
+        (mkKey "K.Target")
+      with HasDbConstraint = hasDb }
 
 let private mkKindWith (label: string) (refs: Reference list) : Kind =
     let baseKind =
-        mkKind
+        Kind.create
             (mkKey (sprintf "K:%s" label))
             (mkName label)
             (mkTableId "dbo" (sprintf "T_%s" label))
@@ -212,11 +209,12 @@ let ``SymmetricClosure: inverse Reference inherits HasDbConstraint from the forw
     // catalog scaffolding than this targeted test needs.
     let r = mkRef true
     let inverse : Reference =
-        { SsKey = mkKey "Inverse"
-          Name = mkName "FK_Inverse"
-          SourceAttribute = mkKey "Inverse.PK"
-          TargetKind = mkKey "K.Source"
-          OnDelete = NoAction
-          IsUserFk = r.IsUserFk
-          HasDbConstraint = r.HasDbConstraint }
+        { Reference.create
+            (mkKey "Inverse")
+            (mkName "FK_Inverse")
+            (mkKey "Inverse.PK")
+            (mkKey "K.Source")
+          with
+            IsUserFk        = r.IsUserFk
+            HasDbConstraint = r.HasDbConstraint }
     Assert.Equal (r.HasDbConstraint, inverse.HasDbConstraint)

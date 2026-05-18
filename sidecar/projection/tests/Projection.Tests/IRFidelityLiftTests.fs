@@ -24,8 +24,8 @@ open Projection.Tests.IRBuilders
 // reachable from `Project(catalog, Policy.empty, profile)` without
 // operator opinion).
 //
-// **Test-fixture pattern.** Tests use `IRBuilders.mkAttribute` /
-// `mkKind` / etc. so that future slices that add IR fields only update
+// **Test-fixture pattern.** Tests use `Attribute.create` /
+// `Kind.create` / etc. so that future slices that add IR fields only update
 // the builder, not these tests. See `IRBuilders.fs` for the discipline.
 // ---------------------------------------------------------------------------
 
@@ -351,7 +351,7 @@ let ``L3-S4 temporal: Infinite retention round-trips through ModalityMark`` () =
           PeriodEnd     = None
           Retention     = Infinite }
     let kind =
-        mkKind
+        Kind.create
             (mkSsKey "OS_KIND_M_K")
             (mkName' "K")
             { Schema = "dbo"; Table = "T"; Catalog = None }
@@ -367,18 +367,18 @@ let ``L3-S4 temporal: Infinite retention round-trips through ModalityMark`` () =
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``IRBuilders: mkAttribute defaults all new fields to DataIntent zero-evidence`` () =
+let ``IRBuilders: Attribute.create defaults all new fields to DataIntent zero-evidence`` () =
     let attr =
-        mkAttribute (mkSsKey "OS_ATTR_M_K_A") (mkName' "A") Integer
+        Attribute.create (mkSsKey "OS_ATTR_M_K_A") (mkName' "A") Integer
     Assert.True(attr.IsActive)
     Assert.Equal<SqlLiteral option>(None, attr.DefaultValue)
     Assert.Equal<ComputedColumnConfig option>(None, attr.Computed)
     Assert.Empty(attr.ExtendedProperties)
 
 [<Fact>]
-let ``IRBuilders: mkKind defaults Triggers / ColumnChecks / ExtendedProperties to []`` () =
+let ``IRBuilders: Kind.create defaults Triggers / ColumnChecks / ExtendedProperties to []`` () =
     let kind =
-        mkKind
+        Kind.create
             (mkSsKey "OS_KIND_M_K")
             (mkName' "K")
             { Schema = "dbo"; Table = "T"; Catalog = None }

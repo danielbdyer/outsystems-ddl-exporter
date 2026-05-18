@@ -1,8 +1,147 @@
-# Handoff letter — Chapter 5.0 SHIPPED (OSSYS catalog producer carbon-copy; V2 stands on its own; V1 Parity Audit Wave opens next)
+# Handoff letter — 2026-05-18 (emit-features arc + blind-spot closure + IRBuilders full retirement; SCHEMA-axis V2-driver gate ready modulo named residuals)
 
-To the next-chapter agent. Read this before anything else in the V2 sidecar. It is shorter than the work warrants, but it tells you what to read so you can carry your own weight.
+To the next agent. The chapter-5.0 letter sits below this one; read both. The matrix discipline (`V1_PARITY_MATRIX.md`) and the operating-disciplines table (`CLAUDE.md`) are unchanged. This letter tells you what shipped on 2026-05-18, what's now load-bearing, the patterns that compounded across the arc, and how to apply them on upcoming parity-matrix slices.
 
-The chapter-1 and chapter-2 handoff letters are preserved at `HANDOFF_CHAPTER_1.md` and `HANDOFF_CHAPTER_2.md` adjacent to this file. Read them after this one if you want the prior architects' framings.
+**TL;DR for the impatient.** Test baseline **1571 / 1571 non-canary passing**. SCHEMA-axis V2-driver gate ready modulo three named residuals (single-column-PK inline; computed columns; partition-scheme axis). Pillar-8 ubiquitous-language consistency now structural across emit + read + test surfaces — `Attribute.create / Reference.create / Kind.create / Index.create / Index.ofKeyColumns / IndexColumn.create / IndexColumn.ascendingList / Module.create / Catalog.create` are THE canonical IR constructors. The TransformRegistry now reaches the Emitter stage (one emitter wired, five pending). Render.fs StringBuilder relic retired. Cluster-A1 cash-out complete (FK + index rowset-adapter JOIN). Next-highest-leverage moves listed below.
+
+## 2026-05-18 (emit-features arc + blind-spot closure + IRBuilders retirement)
+
+### What shipped (six slices in one session arc)
+
+Branch: `claude/transient-retry-exception-class-9MpoR`. Test baseline at end of arc: **1571 / 1571 non-canary passing** (1454 at chapter 5.0 close + 117 across the chapter 5.13 arc). Zero build warnings under `TreatWarningsAsErrors=true`. Lint count unchanged.
+
+The six slices, in commit order:
+
+1. **`5.13.column-features-emit`** — DEFAULT + CHECK clause emission through ScriptDom. `ColumnDef` extended with `DefaultValue : SqlLiteral option` + `DefaultName : string option`; new `ColumnCheckDef` record; `Statement.CreateTable` constructor extended with a fifth `ColumnCheckDef list` argument. `ScriptDomBuild.columnDefinition` emits `DefaultConstraintDefinition`; new `checkConstraint` builder parses via `TSql160Parser.ParseBooleanExpression`. `Render.fs` CREATE TABLE arm collapsed into `ScriptDomGenerate` delegation. Matrix rows 12 + 53 + 182 close to 🟢 PARITY.
+
+2. **`5.13.smart-constructor-lift`** — Production-side smart constructors for the four IR aggregate records that lacked them: `Attribute.create / Reference.create / Index.create / Kind.create`. Pattern previously test-side-only via `IRBuilders.mkX`; this slice lifts to production. Five production literal sites migrated. The Reference IR gained `OnUpdate : ReferenceAction option` + `IsConstraintTrusted : bool` as carriage-only fields, consumed by the next slice. **Operator-directed mid-arc:** "create a smart constructor for this and any and all use cases similar to this before doing the work." Paid off twice — slices 3 and 4's field extensions landed at the constructor body only; literal sites stayed stable.
+
+3. **`5.13.fk-features-emit`** — ON UPDATE referential action + WITH NOCHECK trust-state preservation. `ForeignKeyDef` extended with `OnUpdate : ReferenceActionSql option` + `IsConstraintTrusted : bool`. New `Statement.AlterTableNoCheckConstraint` variant. New `ScriptDomBuild.buildAlterTableNoCheckConstraint` uses `AlterTableConstraintModificationStatement` with `ExistingRowsCheckEnforcement = NoCheck` + `ConstraintEnforcement = Check` (renders as `ALTER TABLE [Schema].[Table] WITH NOCHECK CHECK CONSTRAINT [FK_…]`). `SsdtDdlEmitter.untrustedFkAlters` yields one ALTER per untrusted FK after CREATE TABLE. Matrix rows 58 + 59 close to 🟢 PARITY.
+
+4. **`5.13.index-features-emit`** — IGNORE_DUP_KEY + DATA_COMPRESSION + post-CREATE ALTER INDEX DISABLE. New `[<RequireQualifiedAccess>] type DataCompressionLevel = None | Row | Page` Core DU; `Index` extended with `IgnoreDuplicateKey : bool` + `IsDisabled : bool` + `DataCompression : DataCompressionLevel option`. New `Statement.AlterIndexDisable` variant. `ScriptDomBuild.buildCreateIndex` emits `IGNORE_DUP_KEY = ON` + `DATA_COMPRESSION = <level>`; new `buildAlterIndexDisable` uses `AlterIndexStatement` with `AlterIndexType.Disable`. Matrix rows 55 + 56 close to 🟢 PARITY (emit-side; row 56's partition-scheme axis deferred).
+
+5. **`5.13.blind-spot-closure`** — four operator-flagged gaps closed before handoff rewrite:
+   - **TransformRegistry Emitter-stage coverage**: new `SsdtDdlEmitter.registeredMetadata` with 11 classified Sites; `ManifestEmitter.build` prepends to `RegisteredTransforms.all`; 6 new `EmitterRegistrationsTests.fs` tests.
+   - **Rowset-adapter JOIN follow-up**: `MetadataSnapshotRunner.toBundle` performs the 3-step FK JOIN (`OssysReferenceRow.AttrId → OssysFkColumnRow.ParentAttrId → FkObjectId → OssysFkRealityRow`); index reality wires `OssysAllIdxRow.IsDisabled / IgnoreDupKey / DataCompressionJson`. Cluster-A1 cash-out complete.
+   - **Render.fs StringBuilder retirement**: `toSql`'s per-variant arms collapsed to a single `_ ->` delegation arm. Four dead-weight helpers retired (`columnSqlType / formatSqlLiteral / actionSql / renderColumn`). Render.fs reduces to 4 public functions.
+   - **IRBuilders qualified-shim migration**: ~36+ test files swept from `IRBuilders.mkAttribute / mkKind / mkReference` → production smart constructors.
+
+6. **`5.13.shim-retirement`** — full IRBuilders retirement. Six shims retired (`mkAttribute / mkKind / mkReference / mkIndex / mkIndexColumn / mkIndexColumns`); three lifted to Core as canonical helpers (`IndexColumn.create`, `IndexColumn.ascendingList`, `Index.ofKeyColumns`). Test surface swept (qualified + unqualified). IRBuilders.fs shrinks to two skip-Result test-fixture conveniences (`mkModule`, `mkCatalog`) where production constructors return `Result<_>`. **Operator-directed final close-out:** "Let's go ahead and retire IRBuilders if you think we're ready to do so, so we don't persist old practices." Pillar-8 ubiquitous-language consistency now structural.
+
+### Where the SCHEMA-axis V2-driver gate stands
+
+Per `V2_DRIVER.md`'s per-axis stakes table, SCHEMA-axis V2-driver requires every emit-side feature V1 supports to ship on V2's emission. End-of-arc snapshot:
+
+| V1 CreateTable axis | V2 status |
+|---|---|
+| Column data type + nullability + IDENTITY | 🟢 PARITY (chapter 4.1.A + chapter 3.5) |
+| Multi-column PK | 🟢 PARITY (chapter 4.1.A slice 4) |
+| FK constraints (inline) | 🟢 PARITY (chapter 4.1.A slice 5 + 6) |
+| FK ON DELETE referential action | 🟢 PARITY (chapter 4.1.A slice 5) |
+| FK ON UPDATE referential action | 🟢 PARITY (this arc; emit + adapter) |
+| FK WITH NOCHECK preservation | 🟢 PARITY (this arc; emit + adapter) |
+| Column DEFAULT clause | 🟢 PARITY (this arc) |
+| Table-level CHECK constraint | 🟢 PARITY (this arc) |
+| Single-column PK inline | 🟠 NOT-MAPPED (LR3 residual; V2 always emits PK as table-level) |
+| Computed columns | 🟠 NOT-MAPPED (no V2 consumer pressure; IR carries the field) |
+
+| V1 CreateIndex axis | V2 status |
+|---|---|
+| Key columns + sort direction | 🟢 PARITY (chapter 4.9 slice γ) |
+| INCLUDE columns | 🟢 PARITY (chapter 4.5 slice β) |
+| Filtered indexes (WHERE clause) | 🟢 PARITY (chapter 4.5 slice α) |
+| FillFactor + PadIndex + StatsNoRecompute + AllowRowLocks + AllowPageLocks | 🟢 PARITY (chapter 4.8 slice β) |
+| IGNORE_DUP_KEY | 🟢 PARITY (this arc; emit + adapter) |
+| DATA_COMPRESSION (single-value) | 🟢 PARITY (this arc; emit + adapter) |
+| IsDisabled (post-CREATE ALTER) | 🟢 PARITY (this arc; emit + adapter) |
+| DataSpace (Filegroup / PartitionScheme) + per-partition compression | 🟠 NOT-MAPPED (row 56 residual) |
+
+Three SCHEMA-axis residuals remain. Two are no-consumer-pressure deferrals (single-column-PK inline; computed columns). Partition-scheme is the only one requiring non-trivial IR design.
+
+### Insights for upcoming parity-matrix slices
+
+This arc compounded several patterns the codebase didn't have before. These are the high-leverage transfers — apply them on the next slice you open.
+
+**(1) The shape-adapter lift pattern. When a test-side helper provides shape adaptation, lift it to Core; don't accumulate parallel vocabulary.** This arc's worked example: `IRBuilders.mkIndexColumn` / `mkIndexColumns` / `mkIndex` lifted to `IndexColumn.create` / `IndexColumn.ascendingList` / `Index.ofKeyColumns`. Production consumers (adapters, emitters) and test fixtures now name the same shape through one canonical surface. **Application:** when you reach for a test-only helper that converts SsKey-shapes or skips Result-wrappers, ask "does production also benefit?" If yes, lift to Core. If no (pure skip-validator convenience for fixture-known-good values), keep in IRBuilders.fs and document the bypass.
+
+**(2) The empirical-validation-before-commit protocol for unfamiliar typed-AST APIs.** Before adopting a ScriptDom / DacFx / System.Text.Json class you haven't used before, write a 20-line `dotnet fsi /tmp/inspect.fsx` probe FIRST. Print `GenerateScript` output. Confirm the rendered text matches V1 emission shape. THEN write production code. This arc validated three unfamiliar APIs this way (`AlterTableConstraintModificationStatement` flag pair for WITH NOCHECK; `AlterIndexStatement.AlterIndexType.Disable`; `DataCompressionOption.CompressionLevel` + `IndexOptionKind.IgnoreDupKey`). The probe is cheap, reproducible, replaces speculation with evidence. **Application:** when the next emit-axis lands (e.g., trigger emission for chapter-4.10), probe `CreateTriggerStatement` first.
+
+**(3) The post-CREATE ALTER preservation pattern — two consumers, third approaching.** `Statement.AlterTableNoCheckConstraint` (FK NOCHECK) + `Statement.AlterIndexDisable` (Index disable) both follow the shape "named entity, post-CREATE structural ALTER, preserves deployed-target state evidence." `ColumnCheckDef.IsNotTrusted` is the next likely candidate (the IR field is carried but not emitted). When that lands as a third variant, the two-consumer-threshold codification suggests consolidating to `Statement.PostCreateAlter of TableId * AlterKind` where `AlterKind = FkNoCheck of … | IndexDisable of … | CheckNoCheck of …`. **Don't pre-extract** — Position A (full extraction) requires both shape visibility AND a third concrete consumer; only Position B (structural alignment) is met today. **Application:** when you encounter the third post-CREATE-ALTER need, propose the consolidation in the slice's DECISIONS entry.
+
+**(4) The smart-constructor-FIRST discipline pays off twice.** The closed-DU expansion empirical-test discipline (chapter 3.2 codification) says field extensions light up at literal-construction sites only. When the aggregate has a smart constructor, the literal-construction site is ONE — the constructor body. When it doesn't, the sites are N — every test fixture + every production literal. **Application:** before extending an IR aggregate that lacks `<Name>.create`, lift the smart constructor first. The lift slice was operator-directed mid-arc and paid for itself twice over (slices 3 and 4 field extensions landed at the constructor body only). The pattern is now production-side universal for the IR aggregates (`Attribute / Reference / Index / Kind / Module / Catalog`).
+
+**(5) The rowset-adapter JOIN shape is mature — apply uniformly.** The 3-step JOIN pattern at `MetadataSnapshotRunner.toBundle` is the canonical shape for any V1 reflection that splits per-attribute logical from per-constraint physical. The FK example: `OssysReferenceRow.AttrId → OssysFkColumnRow.ParentAttrId → FkObjectId → OssysFkRealityRow`. Build the lookup Maps once at toBundle entry; walk per-attribute; propagate via `Reference.create … with`. **Application:** the next sibling JOIN candidate is `OssysTriggerRow` → trigger-reality-per-table aggregation (if matrix row 23 cash-out demands richer trigger evidence). Apply the same shape: Maps once, walk per-attribute, propagate via smart-constructor record-update.
+
+**(6) The TransformRegistry Emitter-stage shape is concrete — five emitters await.** `SsdtDdlEmitter.registeredMetadata` shipped with 11 classified Sites + a `ManifestEmitter.build` prepend chain. Five sibling emitters need parallel entries (`JsonEmitter`, `DistributionsEmitter`, `StaticPopulationEmitter`, `StaticSeedsEmitter`, `MigrationDependenciesEmitter`). Each is ~30 LOC of Sites enumeration + 6 mirror tests. **Application:** when you lift the next emitter's metadata, copy `SsdtDdlEmitter.registeredMetadata`'s shape verbatim. After the second registration, evaluate extracting a shared `emitterMetadata` helper (two-consumer threshold met). After the third, the helper is principled.
+
+**(7) Pillar-8 ubiquitous-language consistency is now structurally enforced — don't reintroduce parallel test vocabulary.** After IRBuilders retirement, every IR construction names the production smart constructor: `Attribute.create / Reference.create / Kind.create / Index.create / Index.ofKeyColumns / IndexColumn.create / IndexColumn.ascendingList / Module.create / Catalog.create`. When you write a new test fixture, reach for these directly. The two skip-Result conveniences (`IRBuilders.mkModule`, `IRBuilders.mkCatalog`) exist for fixture-known-good shorthand; document the bypass in usage comments if it's non-obvious why a fixture skips validation.
+
+**(8) The matrix Status-history amendment shape is canonical.** Read the seven 2026-05-18 amendments in `V1_PARITY_MATRIX.md` for the template. The shape: **Original classification** (slice + date + status) → **Reclassified by** (current slice + status) → **Rationale** (what the slice did) → **Coverage tests now passing** (named tests) → **Deferred** (named residuals with explicit triggers) → **Cross-references** (DECISIONS / BACKLOG / sibling slice). The shape compounds — each amendment is a self-contained classification event the matrix can scan without re-reading prior commits.
+
+**(9) When sed sweeps cross local-helper boundaries, use bounded patterns.** This arc's IRBuilders retirement sweep used `\bmkIndex\b` and accidentally caught four local `let private mkIndex` declarations in test files (with different signatures than the IRBuilders shim). Each broke with `error FS0682: Invalid declaration`. The fix was easy (rename to `indexFixture`) but the sed broadness was real. **Application:** when a bare-name sed sweep risks shadowing, use a more bounded pattern (e.g., constrain by context with `awk` or fall back to per-file `Edit` calls for the at-risk sites). Or: forbid local helper names that collide with module-level helpers; rename the locals proactively.
+
+**(10) The closed-DU expansion empirical-test discipline at scale.** The pattern compounded again this arc — each closed-DU variant addition (`AlterTableNoCheckConstraint` + `AlterIndexDisable`) lit up exhaustiveness errors at exactly 3 pattern-match sites (`DacpacEmitter.isSchemaStatement`, `Render.toSql`, `Deploy.executeStream`). Each record-field addition (Reference's `OnUpdate` + `IsConstraintTrusted`; Index's `IgnoreDuplicateKey` + `IsDisabled` + `DataCompression`) lit up at literal-construction sites only (~5-20 per extension). The discipline holds; the bound is structural; new closed-DU additions are predictable. **Application:** when you add a variant or field, trust the compiler to find the sites. If errors appear at unexpected locations, the seam is wrong — investigate before patching.
+
+### Highest-leverage next moves (ordered)
+
+The SCHEMA-axis is ready modulo named residuals; the gating axes are DATA + IDENTITY. Candidates for the next slice, ordered by leverage:
+
+1. **Per-axis property test sweep on SCHEMA emission** (~200 LOC). V2_DRIVER's bar for V2-driver is "structural-type-level enforcement plus per-axis property tests." Today's canary tests cover example-based assertions; FsCheck property tests for permutation invariance + T1 byte-determinism + V1↔V2 equivalence on the new emit axes would lock SCHEMA-axis V2-driver mode. Each axis (DEFAULT / CHECK / OnUpdate / NOCHECK / IGNORE_DUP_KEY / DATA_COMPRESSION / IsDisabled) gets a property test asserting "every Catalog reaches byte-identical emission across shuffled traversal." This closes the "verification depth Highest" bar for SCHEMA without requiring DATA or IDENTITY axis work.
+
+2. **Sibling emitter `registeredMetadata` lifts — propagate the SSDT precedent.** Five emitters await (Json / Distributions / StaticPopulation / StaticSeeds / MigrationDependencies). Each is ~30 LOC of Sites enumeration + 6 mirror tests (~80 LOC). After the second registration, extract a shared `emitterMetadataBuilder` helper. After the third, the helper is principled (two-consumer threshold). Closes pillar-9 totality coverage to the full sibling chorus.
+
+3. **DATA-axis cutover-blocker closure** — V2_DRIVER's "highest-leverage single deliverable in the entire chapter sequence" is CDC-silence-on-idempotent-redeploy. Chapter 4.1.B in flight; the cdc-silence-cross-emitter slice (earlier 2026-05-18) shipped a structural fix. The next move is a property test asserting CDC-silence invariant across every static-population fixture. Estimated ~300 LOC; high stakes.
+
+4. **IDENTITY-axis cutover-blocker** — chapter 4.2 slice ε's user-matching property tests (already shipped) + the UAT-CLI verb (`5.13.uat-cli` in BACKLOG, ~1500 LOC). User CSV matching strategies + a real UAT dry-run.
+
+5. **Row 56 partition-scheme axis** (the only remaining SCHEMA residual that needs IR design). Closed-DU `DataSpace = Filegroup of name | PartitionScheme of name × columns : SsKey list` + per-partition compression list. Triggered when a partitioned-index fixture surfaces in operator-reality canary; until then, deferred-with-trigger.
+
+6. **`Profile.AttributeReality` lift** (matrix row 49). Cluster A1 lifted `OssysColumnRealityRow`; V2 has no consumer. Triggered when a tightening / remediation pass needs source-side column reflection (HasNulls / HasDuplicates / HasOrphans / IsPresentButInactive). The Profile axis is independent of the SCHEMA axis (A34).
+
+### Mechanics worth carrying forward
+
+- **Background test runs via `Bash run_in_background:true` + `Monitor` with until-loop on the output file.** Full suite is ~2-5 minutes; running it in the background while doing doc updates / fixture writes / commit prep saves linear time. The Monitor tool emits a single notification on completion.
+- **Empirical typed-AST probing via `dotnet fsi /tmp/inspect.fsx`.** 20-line script printing the rendered output for unfamiliar APIs. Replaces speculation with evidence. Applied three times this arc.
+- **Sed for bulk literal-site updates with a stable end-token.** When a closed-DU field-extension lights up ~20 literal sites, a single sed substitution closes the propagation if the literal end-token is positionally stable (e.g., `NoRecomputeStatistics = false`). The mechanic only works when there's a positionally-stable hook; the closed-DU empirical-test discipline guarantees the literal sites are bounded and locatable.
+- **Smart-constructor-FIRST when extending an IR aggregate.** Lift before extending; the bench scoring "field-extension propagation bounded" works at full strength only when the aggregate has a constructor.
+- **Cluster-shaped slices for parallel-feature-axis closures.** The four feature slices this arc followed an identical 10-step pattern documented in the prior handoff section. The playbook is concrete; apply it when the next sibling axis surfaces.
+- **One slice per commit, even when slices are siblings.** The matrix's value is its append-only narrative of independent classification events; bundling destroys that.
+
+### Deferrals after this arc (small, well-scoped)
+
+**(A) `PostCreateAlter` consolidation — two-consumer threshold approaching.** See insight #3 above. Track when the third consumer arrives; consolidate then.
+
+**(B) `OssysFkColumnRow` composite-FK consumption — speculative.** Cluster A1 lifted the typed rowset; V2's `Reference` IR remains single-column-per-edge. Lift when composite-FK fixture surfaces.
+
+**(C) `DataCompressionLevel` name collision — principled invariant.** The Core DU and ScriptDom's enum share the type-name (pillar-8 ubiquitous language); the join site uses the namespace prefix to disambiguate. Documented invariant.
+
+**(D) `Reference.reflected` factory — adapter-side default-flip candidate.** `Reference.create` defaults `HasDbConstraint = false` (V1 COALESCE-to-0); both `ReadSide.fs` (sys.foreign_keys) and `MetadataSnapshotRunner.toBundle` (rowset) override to `true` because their evidence is direct constraint reflection. Two-consumer threshold met. If a third adapter does the same default-flip (e.g., DacFx adapter), introduce `Reference.reflected (ssKey) (name) (src) (target)` that defaults `HasDbConstraint = true`. Defer until the third consumer surfaces.
+
+**(E) IRBuilders.fs module rename — discoverability cost vs cleanliness.** The remaining two helpers (`mkModule`, `mkCatalog`) are skip-Result test-fixture conveniences. The module name "IRBuilders" no longer describes the contents accurately ("test-fixture skip-Result conveniences" would). Rename to e.g. `TestFixtures` or merge into `Fixtures.fs` is a candidate, but the `open Projection.Tests.IRBuilders` line is in ~10 files. Defer until a hygiene-batch slice.
+
+### Document references the next agent should know
+
+The canonical reading order is in `CLAUDE.md`. For this arc's substance specifically:
+
+- **`V1_PARITY_MATRIX.md`** — Seven Status-history amendments dated 2026-05-18: rows 12 + 53 + 182 (column-features), 58 + 59 (FK-features), 55 + 56 (index-features), 17 + 18 (FK rowset-adapter JOIN), plus TransformRegistry Emitter-stage + Render.fs StringBuilder retirement + IRBuilders full retirement. Read these for the canonical amendment shape (insight #8).
+- **`DECISIONS.md`** — Six entries dated 2026-05-18: column-features-emit; smart-constructor-lift; fk-features-emit; index-features-emit; blind-spot-closure; shim-retirement. Read in reverse chronological order.
+- **`BACKLOG.md` Phase 5.13 section** — Retired: `5.13.column-checks-ir`, `5.13.column-features-emit`, `5.13.update-action`, `5.13.nocheck-state`, `5.13.index-disabled-igdupkey`, `5.13.fk-reality-join`, `5.13.emit-features-registry`, `5.13.render-stringbuilder-retirement`, `5.13.shim-retirement`. Residual: `5.13.index-partition`. LR3 + LR4 + LR6 + LR7 retired (partial); the partition residual remains.
+- **`tests/Projection.Tests/SsdtDdlEmitterTests.fs`** — 16 canary tests across the three feature slices. Executable record of "what V1's emission shape looks like for these axes."
+- **`tests/Projection.Tests/EmitterRegistrationsTests.fs`** — 6 tests asserting the SSDT emitter's `RegisteredTransform` surface. Template for the five pending sibling-emitter registrations.
+- **`src/Projection.Core/Catalog.fs`** — `module IndexColumn` + `Index.ofKeyColumns` are the new canonical helpers (post-shim-retirement). The `Index.ofKeyColumns` convenience is the all-Ascending shortcut.
+- **`src/Projection.Core/RegisteredTransforms.fs`** — Core-resident registry list. `ManifestEmitter.build` prepends `SsdtDdlEmitter.registeredMetadata`. When a sibling emitter lifts its `registeredMetadata`, mirror the SSDT precedent + the prepend chain.
+
+### Closing posture
+
+The codebase is in good shape. SCHEMA-axis V2-driver gate is ready modulo three named residuals (single-column-PK inline; computed columns; partition-scheme axis). Pillar-8 ubiquitous-language consistency is structurally enforced — `<Type>.create` is the canonical IR-construction surface everywhere. The TransformRegistry reaches the Emitter stage on the SSDT side; the pattern is concrete for the five pending siblings. The Render.fs StringBuilder relic retired; every SQL-bearing statement flows through ONE pipeline. The cluster-A1 cash-out is complete.
+
+Hold the spine. The disciplines that earned this state — closed-DU expansion empirical-test, smart-constructor-FIRST, text-builder-as-first-instinct, ubiquitous-language consistency, pillar-9 harvest classification, per-slice commit discipline — continue to compound. The codebase has more structural fortification today than it had at the start of this arc; the next slice inherits that.
+
+If you find a structural blind spot this letter missed, append it here — that's how this surface earns its keep.
+
+Welcome. Read the documents. Then pick a slice.
+
+---
 
 ## 2026-05-17 (chapter 5.0 close — Phase 8 cutover-window pivot SHIPPED; V1 Parity Audit Wave opens)
 

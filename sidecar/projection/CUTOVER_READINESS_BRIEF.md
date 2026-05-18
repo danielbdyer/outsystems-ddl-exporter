@@ -76,9 +76,9 @@ Per `V2_DRIVER.md` per-axis correctness stakes. For each axis: where V2 stands; 
 - SQL literal handling via typed `SqlLiteral.fs` IR + ScriptDomBuild.bracketed (row 164; chapter 4.1.B slice κ pillar 1 lift)
 
 **Gated for flip:**
-- **Global Phase1/Phase2 interleaving** (row 160 open item per slice η) — cross-emitter global phase ordering (Phase-1-ALL across StaticSeeds + Migration + Bootstrap, then Phase-2-ALL) NOT YET REIFIED; per-kind rendering currently. **Trigger:** chapter 4.2+ migration-dependency at scale.
+- ~~**Global Phase1/Phase2 interleaving** (row 160 open item per slice η)~~ **CLOSED 2026-05-18** by slice 5.13.data-emission-registry. The cross-emitter global phase ordering IS reified at `DataEmissionComposer.composeRenderedFull` (slice ι, shipped 2026-05-11); the missing piece was the property test, now landed (`composeRenderedFull global-Phase1-then-Phase2 holds across emitters` exercises StaticSeeds + Migration populating different kinds). The slice also ships `RegisteredDataTransforms.all` — pillar 9 classification of every data-axis transformation site separating operator-intent overlays from pure-core vanilla emission.
 - **Full FK preflight (orphan rows + cross-module audit)** (row 162) — V2's TopologicalOrderPass.MissingEdges is partial; full orphan + cross-module check deferred to chapter 4.2 slices γ+δ
-- **CDC-silence-on-idempotent-redeploy property test** (chapter 4.1.B; highest-leverage single deliverable per V2_DRIVER) — must show green on operator-reality canary
+- ~~**CDC-silence-on-idempotent-redeploy property test** (chapter 4.1.B; highest-leverage single deliverable per V2_DRIVER)~~ **CLOSED 2026-05-18** by slice 5.13.cdc-silence-cross-emitter. The cross-emitter property test (`CdcSilenceCrossEmitterTests`) covers the full pipeline (Country Static + LegacyOrder Migration with self-FK cycle); idempotent redeploy fires zero CDC entries across both tables; sensitivity counter-test confirms canary mechanism is real. Slice discovered + fixed two compounding structural bugs (Phase-1 MERGE was updating deferred columns to NULL; Phase-2 UPDATE had no change-detection predicate). V2 now structurally guarantees CDC silence regardless of SQL Server's no-op-MERGE optimizer.
 
 **Sunset:**
 - V1's raw-INSERT `DynamicEntityInsertGenerator` (~790 LOC) — V2 emits typed MERGE
@@ -102,7 +102,7 @@ Per `V2_DRIVER.md` per-axis correctness stakes. For each axis: where V2 stands; 
 - Typed `UserRemapContext` IR + `RemapDiagnostic` DU (row 174)
 
 **Gated for flip:**
-- **Remaining matching strategies** (BySsKey / Regex / FallbackToSystemUser) — deferred to chapter 4.2 slice ε per pre-scope
+- ~~**Remaining matching strategies** (BySsKey / Regex / FallbackToSystemUser)~~ **CLOSED 2026-05-18** by slice 5.13.identity-axis-closure. All four `UserMatchingStrategy` DU variants (ByEmail, BySsKey, ManualOverride, FallbackToSystemUser) ship in `UserFkReflowPass.applyStrategy`; the slice 5.13.identity-axis-closure pin pins five property-test families (totality + per-source-diagnostic-count + diagnostics-cardinality + permutation-invariance + idempotence + FallbackToSystemUser safety net) across 13 FsCheck properties. V1's `Regex` strategy collapses to `ManualOverride` per `Policy.fs` pre-scope rationale (structurally indistinguishable for V2's algebraic purposes).
 - **UAT verification surface** (row 177) — V1 has 3 verifiers + report; V2 verification deferred post-cutover; canary's round-trip diff + tolerance table cover dual-track mode
 - **`osm uat-users` CLI verb** (row 113) — cash-out ~1500 LOC; trigger: cutover enters UAT phase
 - **Per-FK orphan-sample diagnostics** (row 89) — V2 carries orphan COUNT but not row identifiers; cash-out: add `OrphanSamples` field to `Profile.ForeignKeys` when consumer demands
@@ -294,13 +294,30 @@ Per `DECISIONS 2026-05-22 — R6`, V2-driver flip happens per (environment × ar
 
 **Operator impact:** UAT cutover requires operator review of unmatched users; manual remap CSV is the substitute.
 
-### Risk 5: Transient SqlException tolerance not shipped
+### Risk 5: Transient SqlException tolerance — ✅ CLOSED 2026-05-18
 
-Per matrix row 34 — V2's OssysSql adapter has zero transient-retry today; cloud OSSYS (Azure SQL) connections may produce transient failures.
+**Status: shipped** by slice `5.13.production-wiring-classification`
+(matrix rows 32 + 34 + 35 bundled) + slice `5.13.progress-callback`
+(matrix row 36).
 
-**Mitigation:** V2 emits-but-doesn't-ship per R6 in dual-track; canary failures from transient SqlExceptions are operationally retryable (re-run canary).
+V2's `Projection.Adapters.OssysSql/Retry.fs` now carries a Polly v8
+`ResiliencePipeline` wrapping `command.ExecuteReaderAsync` at the
+command-execute boundary. 3 retries with exponential backoff + jitter;
+predicate matches `SqlException.Number ∈ {-2, -1, 4060, 18452, 40197,
+40501, 40613}` (timeout / network drop / cannot-open-db / auth
+transient / Azure SQL service-busy / service-error / db-unavailable).
+The closed-DU `MetadataExtractionError` (4 variants) lifts retry
+exhaustion to `TransientSqlError` with structured `sqlNumber`
+metadata so cutover-window operators can distinguish transient
+exhaustion from non-transient SQL errors.
 
-**Operator impact:** cutover-day extraction may need manual retries on transient cloud failures. Polly retry policy is named as cutover-critical cash-out; chapter 5.1.γ slice opens it.
+R6 dual-track canary now tolerates cloud-OSSYS transients structurally;
+the risk is no longer outstanding. The Polly pipeline is
+predicate-parameterized so future seams (connection-open retry; cloud
+SQL DBs with new transient classes) can extend without changing the
+runner.
+
+See `DECISIONS 2026-05-18 (slice 5.13.production-wiring-classification)`.
 
 ---
 

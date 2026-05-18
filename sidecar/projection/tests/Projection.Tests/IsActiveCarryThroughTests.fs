@@ -334,7 +334,7 @@ let ``L3-S9 IsActive: rowset path carries inactive Module into the IR`` () =
         { Modules    = [ moduleRowWith false 1 "Legacy" ]
           Kinds      = [ kindRowWith true 11 1 "Retired" ]
           Attributes = [ attrRowWith true 111 11 "Id" ]
-          References = [] }
+          References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = [] }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok catalog ->
@@ -346,7 +346,7 @@ let ``L3-S9 IsActive: rowset path carries inactive Kind into the IR`` () =
         { Modules    = [ moduleRowWith true 1 "AppCore" ]
           Kinds      = [ kindRowWith false 11 1 "Retired" ]
           Attributes = [ attrRowWith true 111 11 "Id" ]
-          References = [] }
+          References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = [] }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok catalog ->
@@ -359,7 +359,7 @@ let ``L3-S9 IsActive: rowset path carries inactive Attribute into the IR`` () =
           Kinds      = [ kindRowWith true 11 1 "User" ]
           Attributes = [ attrRowWith true 111 11 "Id"
                          attrRowWith false 112 11 "DeletedField" ]
-          References = [] }
+          References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = [] }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok catalog ->
@@ -378,7 +378,7 @@ let ``L3-S9 IsActive: cross-source parity — same V1 values produce identical I
         { Modules    = [ moduleRowWith true 1 "AppCore" ]
           Kinds      = [ kindRowWith true 11 1 "User" ]
           Attributes = [ attrRowWith true 111 11 "Id" ]
-          References = [] }
+          References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = [] }
     let resJson = parseSync (CatalogReader.SnapshotJson v1FixtureAllActive)
     let resRow  = parseSync (CatalogReader.SnapshotRowsets bundle)
     match resJson, resRow with

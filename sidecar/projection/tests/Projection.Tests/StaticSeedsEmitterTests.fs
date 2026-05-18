@@ -51,9 +51,9 @@ let private mkCountryKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
         Attributes =
             [
-                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                { IRBuilders.mkAttribute codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
-                { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
+                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
+                { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
             ]
         References = []
         Indexes    = []
@@ -78,8 +78,8 @@ let private mkRegularKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER"; Catalog = None }
         Attributes =
             [
-                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";   IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
-                { IRBuilders.mkAttribute nameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false }; IsMandatory = true }
+                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";   IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+                { Attribute.create nameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false }; IsMandatory = true }
             ]
         References = []
         Indexes    = []
@@ -398,14 +398,14 @@ let private mkTreeKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_TREE"; Catalog = None }
         Attributes =
             [
-                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";       IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL";    IsNullable = false }; IsMandatory = true }
-                { IRBuilders.mkAttribute parentKey (mkName "ParentId") Integer with
+                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";       IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL";    IsNullable = false }; IsMandatory = true }
+                { Attribute.create parentKey (mkName "ParentId") Integer with
                     Column = { ColumnName = "PARENTID"; IsNullable = true } }     // nullable → deferrable
             ]
         References =
             [
-                IRBuilders.mkReference refKey (mkName "RefParent") parentKey kindKey
+                Reference.create refKey (mkName "RefParent") parentKey kindKey
             ]
         Indexes    = []
         Description = None
@@ -529,9 +529,9 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
         { Identifier = mkKey ["TestModule"; "B"; "Row"; "1"]
           Values = Map.ofList [ mkName "Id", "1"; mkName "AId", "1" ] }
     let mkAttr ssk name typ col isPk isNull =
-        { IRBuilders.mkAttribute ssk (mkName name) typ with Column = { ColumnName = col; IsNullable = isNull }; IsPrimaryKey = isPk; IsMandatory = not isNull }
+        { Attribute.create ssk (mkName name) typ with Column = { ColumnName = col; IsNullable = isNull }; IsPrimaryKey = isPk; IsMandatory = not isNull }
     let mkRef ssk name srcAttr tgt =
-        IRBuilders.mkReference ssk (mkName name) srcAttr tgt
+        Reference.create ssk (mkName name) srcAttr tgt
     let aKind : Kind =
         { SsKey = aKey; Name = mkName "A"; Origin = OsNative
           Modality = [ Static [ aRow ] ]

@@ -174,7 +174,7 @@ let private addReference (sourceKey: SsKey) (targetKey: SsKey) (refKey: SsKey) (
                      |> List.map (fun k ->
                          if k.SsKey = sourceKey then
                              let newRef : Reference =
-                                 IRBuilders.mkReference refKey (Name.create refName |> Result.value) sourceAttrKey targetKey
+                                 Reference.create refKey (Name.create refName |> Result.value) sourceAttrKey targetKey
                              { k with References = newRef :: k.References }
                          else k) }))
       Sequences = c.Sequences }
@@ -382,10 +382,10 @@ let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Ki
       Modality = []
       Physical = { Schema = "dbo"; Table = kindKey; Catalog = None }
       Attributes = [
-          { IRBuilders.mkAttribute attrId (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-          { IRBuilders.mkAttribute attrFk (mkName "Fk") Integer with Column = { ColumnName = "FK"; IsNullable = false } } ]
+          { Attribute.create attrId (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+          { Attribute.create attrFk (mkName "Fk") Integer with Column = { ColumnName = "FK"; IsNullable = false } } ]
       References = [
-          IRBuilders.mkReference (mkKey fkKey) (mkName "ToOther") attrFk targetKey ]
+          Reference.create (mkKey fkKey) (mkName "ToOther") attrFk targetKey ]
       Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 [<Fact>]
@@ -428,10 +428,10 @@ let private kindWithRef
       Modality = []
       Physical = { Schema = "dbo"; Table = kindKey; Catalog = None }
       Attributes = [
-          { IRBuilders.mkAttribute attrId (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-          { IRBuilders.mkAttribute attrFk (mkName "Fk") Integer with Column = { ColumnName = "FK"; IsNullable = sourceAttrNullable } } ]
+          { Attribute.create attrId (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+          { Attribute.create attrFk (mkName "Fk") Integer with Column = { ColumnName = "FK"; IsNullable = sourceAttrNullable } } ]
       References = [
-          { IRBuilders.mkReference (mkKey refKey) (mkName "ToOther") attrFk targetKey with OnDelete = onDelete } ]
+          { Reference.create (mkKey refKey) (mkName "ToOther") attrFk targetKey with OnDelete = onDelete } ]
       Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private noRefKind (kindKey: string) : Kind =
@@ -442,7 +442,7 @@ let private noRefKind (kindKey: string) : Kind =
       Modality = []
       Physical = { Schema = "dbo"; Table = kindKey; Catalog = None }
       Attributes = [
-          { IRBuilders.mkAttribute attrId (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true } ]
+          { Attribute.create attrId (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true } ]
       References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 // ---------------------------------------------------------------------------

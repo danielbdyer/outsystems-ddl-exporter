@@ -212,6 +212,22 @@ module CatalogReader =
             RefEntityId     : int option
             DeleteRuleCode  : string option
             HasDbConstraint : bool
+            /// Slice 5.13.fk-features-emit cash-out (matrix row 58
+            /// adapter-wiring residual). Optional ON UPDATE
+            /// referential action carried from V1's
+            /// `#FkReality.UpdateAction` per the
+            /// `OssysReferenceRow → OssysFkColumnRow → OssysFkRealityRow`
+            /// JOIN at `toBundle`. `None` when the rowset bundle
+            /// doesn't surface a matching FK constraint (cross-
+            /// catalog / JSON-path / non-OSSYS-source).
+            OnUpdate        : string option
+            /// Slice 5.13.fk-features-emit cash-out (matrix row 59
+            /// adapter-wiring residual). `false` when V1's
+            /// `#FkReality.IsNoCheck = 1` flows through the same JOIN
+            /// path; `true` (default) preserves V1's TRUSTED-by-default
+            /// emission shape. Cross-catalog and JSON-path references
+            /// default to `true`.
+            IsConstraintTrusted : bool
         }
 
     /// V1 rowset bundle — the in-memory carrier the future C# SqlClient
@@ -231,13 +247,142 @@ module CatalogReader =
     /// the record (existing literal sites must add `References = []`
     /// explicitly; the empirical-test discipline applies — the
     /// changed-callers walk catches surprises at compile time).
+    /// V1 rowset `#AllIdx` — per-index physical reflection (chapter 5.13
+    /// slice ossys-rowsets-cluster; matrix row 15). One row per index
+    /// per Kind. JOINs by (EntityId, IndexName) with `IndexColumnRow`.
+    /// Carries the V1 reflection fields V2's `Index` IR can consume;
+    /// fields V2 IR doesn't yet model (IsDisabled, IgnoreDupKey,
+    /// DataSpaceName/Type, PartitionColumnsJson, DataCompressionJson)
+    /// remain typed on the snapshot but don't flow into IR — those are
+    /// matrix rows 55 + 56 (deferred-with-trigger).
+    type IndexRow =
+        {
+            EntityId         : int
+            IndexName        : string
+            IsUnique         : bool
+            IsPrimary        : bool
+            FilterDefinition : string option
+            IsPadded         : bool
+            FillFactor       : int
+            AllowRowLocks    : bool
+            AllowPageLocks   : bool
+            NoRecompute      : bool
+            /// Slice 5.13.fk-reality-join (paired with index-features
+            /// adapter wiring) — `false` (V1 default) when the index
+            /// is enabled; `true` when V1's `#AllIdx.IsDisabled = 1`.
+            /// Threads to `Index.IsDisabled`; the SSDT emitter yields
+            /// a post-CREATE-INDEX `ALTER INDEX … DISABLE` when set.
+            IsDisabled       : bool
+            /// Slice 5.13.fk-reality-join (paired) — `false` (V1
+            /// default); `true` when V1's `#AllIdx.IgnoreDupKey = 1`.
+            /// Threads to `Index.IgnoreDuplicateKey`; the SSDT emitter
+            /// adds `IGNORE_DUP_KEY = ON` to the WITH clause.
+            IgnoreDupKey     : bool
+            /// Slice 5.13.fk-reality-join (paired) — single-value
+            /// data compression level when uniform across partitions
+            /// (`"NONE" | "ROW" | "PAGE"`). `None` when the index
+            /// has no explicit compression option set OR carries
+            /// heterogeneous per-partition compression (the partition
+            /// axis is the row 56 residual). Threads to
+            /// `Index.DataCompression`.
+            DataCompression  : string option
+        }
+
+    /// V1 rowset `#IdxColsMapped` — per-index column membership
+    /// (chapter 5.13 slice ossys-rowsets-cluster; matrix row 16).
+    /// One row per column per Index per Kind. `Direction` is V1's
+    /// per-column sort direction (`"ASC"` / `"DESC"` / `null` →
+    /// Ascending under SQL Server semantics). `HumanAttr` is V1's
+    /// logical attribute name (preferred for SsKey resolution);
+    /// `PhysicalColumn` is the fallback when the index references a
+    /// column not in V1's logical attribute set.
+    type IndexColumnRow =
+        {
+            EntityId       : int
+            IndexName      : string
+            Ordinal        : int
+            HumanAttr      : string option
+            PhysicalColumn : string option
+            IsIncluded     : bool
+            Direction      : string option
+        }
+
+    /// V1 rowset `#Triggers` — per-trigger physical reflection
+    /// (chapter 5.13 slice ossys-rowsets-cluster; matrix row 23). One
+    /// row per trigger per Kind. The trigger Definition is the full
+    /// T-SQL `CREATE TRIGGER ...` body V1 reconstructs from
+    /// `sys.sql_modules`; V2's `Trigger.Definition` IR field carries
+    /// it through to emit. Triggers with empty/missing Definition lift
+    /// to `Trigger.Definition = ""` — defensive shape per `Trigger.create`'s
+    /// blank-rejection invariant; the adapter filters such rows out
+    /// before constructing the IR.
+    type TriggerRow =
+        {
+            EntityId    : int
+            TriggerName : string
+            IsDisabled  : bool
+            Definition  : string option
+        }
+
+    /// V1 rowset `#ColumnCheckReality` — per-column CHECK constraint
+    /// reflection (chapter 5.13 slice ossys-rowsets-cluster; matrix
+    /// row 12). One row per CHECK constraint per attribute; V2's
+    /// `Kind.ColumnChecks` IR is table-scoped (one list per Kind)
+    /// because a CHECK can reference multiple columns. The adapter
+    /// groups rows by the AttrId's owning Kind and produces a flat
+    /// per-Kind `ColumnCheck list`.
+    type ColumnCheckRow =
+        {
+            AttrId         : int
+            ConstraintName : string
+            Definition     : string
+            IsNotTrusted   : bool
+        }
+
     type RowsetBundle =
         {
-            Modules    : ModuleRow list
-            Kinds      : KindRow list
-            Attributes : AttributeRow list
-            References : ReferenceRow list
+            Modules      : ModuleRow list
+            Kinds        : KindRow list
+            Attributes   : AttributeRow list
+            References   : ReferenceRow list
+            /// V1 rowset 9 (`#AllIdx`) — per-index physical reflection.
+            /// Lifts into `Kind.Indexes` via JOIN with `IndexColumns`.
+            /// Empty for fixtures / sources that don't carry index
+            /// reality (the JSON path produces empty here; rowset
+            /// path populates from `#AllIdx`).
+            Indexes      : IndexRow list
+            /// V1 rowset 10 (`#IdxColsMapped`) — per-index column
+            /// membership. JOINs to `IndexRow` by (EntityId, IndexName).
+            IndexColumns : IndexColumnRow list
+            /// V1 rowset 17 (`#Triggers`) — per-trigger reflection.
+            /// Lifts into `Kind.Triggers`.
+            Triggers     : TriggerRow list
+            /// V1 rowset 6 (`#ColumnCheckReality`) — per-column CHECK
+            /// constraints. Lifts into `Kind.ColumnChecks` (grouped
+            /// by the AttrId's owning Kind).
+            ColumnChecks : ColumnCheckRow list
         }
+
+    /// Empty RowsetBundle helper. Test fixtures + JSON-path placeholders
+    /// use `{ RowsetBundle.empty with Modules = ...; ... }` to override
+    /// only the populated axes; rowset-extension fields default to `[]`
+    /// per IR-grows-under-evidence (the per-axis-extension lift trigger
+    /// is the slice that wires the consuming IR). Per slice
+    /// 5.13.ossys-rowsets-cluster: lifting `Indexes`, `IndexColumns`,
+    /// `Triggers`, `ColumnChecks` extended the record shape; this empty
+    /// helper retires the literal-site-explosion that follows record
+    /// extensions.
+    [<RequireQualifiedAccess>]
+    module RowsetBundle =
+        let empty : RowsetBundle =
+            { Modules      = []
+              Kinds        = []
+              Attributes   = []
+              References   = []
+              Indexes      = []
+              IndexColumns = []
+              Triggers     = []
+              ColumnChecks = [] }
 
     type SnapshotSource =
         /// Path to a V1-produced `osm_model.json` file on disk.
@@ -841,22 +986,18 @@ module CatalogReader =
                     // pattern.
                     let hasDbConstraint =
                         getOptionalIntFlag attrJson "reference_hasDbConstraint" false
+                    // Slice 5.13.fk-features-emit — smart-constructor
+                    // migration. `Reference.create` carries the
+                    // minimum-evidence defaults (OnDelete = NoAction;
+                    // IsUserFk = false; HasDbConstraint = false;
+                    // OnUpdate = None; IsConstraintTrusted = true);
+                    // the JSON path overrides what the source carries.
+                    // User-FK detection (chapter 4.2 deferral) stays at
+                    // default `false`.
                     Result.success (Some
-                        { SsKey           = rKey
-                          Name            = rName
-                          SourceAttribute = srcKey
-                          TargetKind      = tgtKey
-                          OnDelete        = rule
-                          // Slice ζ: User-FK detection deferred to a
-                          // sibling pass at chapter 4.2's adapter-
-                          // integration boundary. Defaults to false
-                          // until the OSSYS-platform user-kind
-                          // identification surface materializes (per
-                          // V1 reference ModelUserSchemaGraphFactory.
-                          // GetSyntheticUserForeignKeys); the chapter
-                          // 4.2 close ritual codifies the trigger.
-                          IsUserFk        = false
-                          HasDbConstraint = hasDbConstraint })
+                        { Reference.create rKey rName srcKey tgtKey with
+                            OnDelete        = rule
+                            HasDbConstraint = hasDbConstraint })
                 | _ ->
                     // Propagate underlying errors via
                     // `propagateOrFallback` — uniform with the four
@@ -1011,33 +1152,21 @@ module CatalogReader =
                 // local `match … | Ok v -> v | Error _ -> default`
                 // pattern.
                 let isPlatformAuto = getOptionalBool indexJson "isPlatformAuto" false
+                // Slice 5.13.smart-constructor-lift migration —
+                // `Index.create` carries minimum-evidence defaults;
+                // the JSON path overrides what the source surfaces.
+                // V1's JSON projection does not yet carry on-disk
+                // metadata or the slice 5.13.index-features-emit
+                // axes (IgnoreDuplicateKey / IsDisabled /
+                // DataCompression); those stay at smart-constructor
+                // defaults pending a rowset wiring slice.
                 Result.success
-                    { SsKey        = k
-                      Name         = n
-                      Columns      = cols
-                      IsUnique     = isUnique
-                      IsPrimaryKey = isPrimary
-                      // Chapter A.0' slice ζ — Index-level extended
-                      // properties; V1's JSON projection does not
-                      // surface index-level extended properties at
-                      // the boundary today. Empty default.
-                      ExtendedProperties = []
-                      Filter             = filter
-                      IncludedColumns    = includedCols
-                      IsPlatformAuto     = isPlatformAuto
-                      // Chapter 4.8 slice β — on-disk Index metadata.
-                      // V1's JSON projection does not currently surface
-                      // these fields at the boundary; default to V1's
-                      // IndexOnDiskMetadata.Empty values (FillFactor=None,
-                      // IsPadded=false, AllowRowLocks=true,
-                      // AllowPageLocks=true, NoRecomputeStatistics=false).
-                      // Future DACPAC adapter or rowset slice surfaces
-                      // them per V1-fixture pressure.
-                      FillFactor            = None
-                      IsPadded              = false
-                      AllowRowLocks         = true
-                      AllowPageLocks        = true
-                      NoRecomputeStatistics = false }
+                    { Index.create k n cols with
+                        IsUnique       = isUnique
+                        IsPrimaryKey   = isPrimary
+                        Filter         = filter
+                        IncludedColumns = includedCols
+                        IsPlatformAuto = isPlatformAuto }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 propagateOrFallback
@@ -1495,25 +1624,33 @@ module CatalogReader =
                 | None -> kindSsKey moduleName refRow.RefEntityName
             | None -> kindSsKey moduleName refRow.RefEntityName
         let onDelete   = parseDeleteRule refRow.DeleteRuleCode
+        // Slice 5.13.fk-reality-join — `OnUpdate` carries through the
+        // same `parseDeleteRule` shape (V1's referential-action vocabulary
+        // is uniform across DELETE / UPDATE). `None` propagates as the
+        // unstated default; parse failures degrade to `None` too (the
+        // rowset adapter never blocks reference construction on an
+        // unfamiliar update-action keyword — same posture as the
+        // delete-rule path).
+        let onUpdateRule =
+            refRow.OnUpdate
+            |> Option.bind (fun code ->
+                match parseDeleteRule (Some code) with
+                | Ok action -> Some action
+                | Error _   -> None)
         match refKey, refName, srcAttrKey, tgtKindKey, onDelete with
         | Ok rKey, Ok rName, Ok srcKey, Ok tgtKey, Ok rule ->
+            // Slice 5.13.fk-features-emit — smart-constructor migration.
+            // Slice 5.13.fk-reality-join (2026-05-18) — `OnUpdate` +
+            // `IsConstraintTrusted` thread through from the rowset
+            // path's `#FkReality` JOIN at `toBundle`. Cross-catalog +
+            // JSON-path references default to `(None, true)` per the
+            // smart-constructor defaults.
             Result.success
-                { SsKey           = rKey
-                  Name            = rName
-                  SourceAttribute = srcKey
-                  TargetKind      = tgtKey
-                  OnDelete        = rule
-                  // Slice ζ: User-FK detection deferred at the
-                  // rowset adapter (same as the JSON adapter; both
-                  // depend on the OSSYS-platform user-kind
-                  // identification surface that lands at the
-                  // chapter 4.2 adapter-integration boundary).
-                  IsUserFk        = false
-                  // Chapter 4.6 slice α — rowset path carries
-                  // HasDbConstraint via the #FkReality rowset's
-                  // HasFK column (see ReferenceRow.HasDbConstraint
-                  // at line 193). Propagated unchanged from the row.
-                  HasDbConstraint = refRow.HasDbConstraint }
+                { Reference.create rKey rName srcKey tgtKey with
+                    OnDelete            = rule
+                    HasDbConstraint     = refRow.HasDbConstraint
+                    OnUpdate            = onUpdateRule
+                    IsConstraintTrusted = refRow.IsConstraintTrusted }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback` —
             // uniform with parseReference on the JSON path.
@@ -1530,12 +1667,285 @@ module CatalogReader =
                             "Failed to build reference for attribute '%s' on '%s.%s' from rowset bundle."
                             attrRow.AttrName moduleName entityName))
 
+    /// Per-id-keyed groupings the rowset-bundle parser threads through
+    /// `parseModuleRow` → `parseKindRow`. Slice 5.13.ossys-rowsets-cluster
+    /// consolidates four existing Maps + four new index/trigger/check
+    /// Maps into one record so future rowset lifts (matrix rows 58 +
+    /// 59 cash-out, etc.) extend the context shape rather than the
+    /// function signature.
+    ///
+    /// Sibling-wrapper-discipline-friendly: extending the record (an
+    /// IR-grows-under-evidence move) is structurally cheap; expanding
+    /// the parseKindRow signature with N more Maps is the anti-pattern
+    /// the discipline names.
+    type private RowsetParseContext =
+        {
+            /// EntityId → kind's resolved V2 SsKey (composite of GUID or
+            /// synthesized identity per `kindSsKeyFromRow`). Used by
+            /// `parseReferenceRowFor` for cross-module FK resolution.
+            KindKeysByEntityId : Map<int, SsKey>
+            /// EspaceId → kinds belonging to that module. Owned by
+            /// `parseModuleRow`'s walk.
+            KindsByEspace : Map<int, KindRow list>
+            /// EntityId → attributes belonging to that kind. Used by
+            /// `parseKindRow` for attribute construction.
+            AttributesByEntity : Map<int, AttributeRow list>
+            /// AttrId → references on that attribute. Used by
+            /// `parseKindRow` for reference assembly.
+            ReferencesByAttr : Map<int, ReferenceRow list>
+            /// EntityId → indexes belonging to that kind. Slice
+            /// 5.13.ossys-rowsets-cluster; matrix row 15.
+            IndexesByEntity : Map<int, IndexRow list>
+            /// (EntityId, IndexName) → index columns belonging to that
+            /// index. Slice 5.13.ossys-rowsets-cluster; matrix row 16.
+            IndexColumnsByIndex : Map<int * string, IndexColumnRow list>
+            /// EntityId → triggers belonging to that kind. Slice
+            /// 5.13.ossys-rowsets-cluster; matrix row 23.
+            TriggersByEntity : Map<int, TriggerRow list>
+            /// EntityId → CHECK constraints rolling up from this
+            /// kind's attributes. Pre-grouped from `ColumnCheckRow`
+            /// (per-AttrId in V1) into per-Kind list via AttrId→EntityId
+            /// resolution at context construction. Slice
+            /// 5.13.ossys-rowsets-cluster; matrix row 12.
+            ColumnChecksByEntity : Map<int, ColumnCheckRow list>
+        }
+
+    /// Slice 5.13.ossys-rowsets-cluster — IndexColumn direction parser.
+    /// V1's `#IdxColsMapped.Direction` carries `"ASC"` / `"DESC"`
+    /// (case-insensitive); absent / null collapses to Ascending under
+    /// SQL Server semantics (the keyword is omitted in CREATE INDEX,
+    /// matching ScriptDom's `SortOrder.NotSpecified`). Sibling to the
+    /// JSON-path's inline `parseDirection`.
+    let private parseRowsetIndexDirection (raw: string option) : IndexColumnDirection =
+        match raw with
+        | Some d when
+            System.String.Equals(d.Trim(), "DESC", System.StringComparison.OrdinalIgnoreCase) ->
+            Descending
+        | _ -> Ascending
+
+    /// Slice 5.13.ossys-rowsets-cluster — IndexColumn attribute SsKey
+    /// resolution. V1's `#IdxColsMapped.HumanAttr` is the COALESCE of
+    /// `(PhysicalColumnName, DatabaseColumnName, AttrName)` — it
+    /// carries the PHYSICAL name first when present (the typical
+    /// case for OS-managed attributes), falling back to the logical
+    /// name only when the physical name is empty. To bridge to V2's
+    /// `attributeSsKey` (which keys on the **logical** AttrName), the
+    /// resolver looks up the candidate string in the kind's
+    /// `AttributeRow` list and uses the resolved `AttrName`.
+    ///
+    /// **Resolution order** (case-insensitive against the kind's
+    /// attribute set):
+    ///   1. `HumanAttr` matches an attribute's `AttrName` → use that
+    ///      attribute's `AttrName`. Covers V1's COALESCE fallback to
+    ///      `AttrName` when both physical-name columns are NULL.
+    ///   2. `HumanAttr` matches an attribute's `PhysicalCol` → use
+    ///      that attribute's `AttrName`. Covers V1's COALESCE
+    ///      primary case where the PhysicalColumnName populates
+    ///      HumanAttr.
+    ///   3. `PhysicalColumn` matches an attribute's `PhysicalCol` →
+    ///      use that attribute's `AttrName`. Fallback for rows where
+    ///      HumanAttr is NULL.
+    ///   4. None of the above → fail with `indexColumnUnresolved`.
+    ///      The index references a column V2's attribute set doesn't
+    ///      model — typically a system column (`OSPK`); the
+    ///      diagnostic surfaces it so the operator can choose to
+    ///      drop the index or extend V2's attribute model.
+    let private resolveIndexColumnAttribute
+        (moduleName: string)
+        (entityName: string)
+        (entityAttrs: AttributeRow list)
+        (row: IndexColumnRow)
+        : Result<SsKey> =
+        let trimNonEmpty (s: string option) =
+            s |> Option.map (fun v -> v.Trim())
+              |> Option.filter (fun v -> not (System.String.IsNullOrEmpty v))
+        let humanAttr   = trimNonEmpty row.HumanAttr
+        let physColumn  = trimNonEmpty row.PhysicalColumn
+        let findByAttrName (target: string) =
+            entityAttrs
+            |> List.tryFind (fun a ->
+                System.String.Equals(a.AttrName, target, System.StringComparison.OrdinalIgnoreCase))
+        let findByPhysicalCol (target: string) =
+            entityAttrs
+            |> List.tryFind (fun a ->
+                System.String.Equals(a.PhysicalCol, target, System.StringComparison.OrdinalIgnoreCase))
+        let firstHit (candidates: (unit -> AttributeRow option) list) : AttributeRow option =
+            candidates
+            |> List.tryPick (fun thunk -> thunk ())
+        let resolved =
+            firstHit
+                [ (fun () -> humanAttr  |> Option.bind findByAttrName)
+                  (fun () -> humanAttr  |> Option.bind findByPhysicalCol)
+                  (fun () -> physColumn |> Option.bind findByPhysicalCol) ]
+        match resolved with
+        | Some attr ->
+            // Per parseAttributeRow's shape: attribute SsKey is
+            // `OssysOriginal GUID` when AttrSsKey is populated, else
+            // synthesized from AttrName. Use the same helper to
+            // produce a key that matches the attribute's actual SsKey.
+            attributeSsKeyFromRow moduleName entityName attr
+        | None ->
+            Result.failureOf (
+                adapterError
+                    "indexColumnUnresolved"
+                    (sprintf
+                        "Index '%s' on kind '%s' references column '%s' (humanAttr='%s'); no matching attribute in V2's IR for this kind."
+                        row.IndexName
+                        entityName
+                        (defaultArg physColumn "")
+                        (defaultArg humanAttr "")))
+
+    /// Slice 5.13.ossys-rowsets-cluster — per-Index assembly. Joins
+    /// `IndexRow` with its `IndexColumnRow` list (lookup by EntityId
+    /// + IndexName via `ctx.IndexColumnsByIndex`), partitions into
+    /// key columns + included columns, sorts each partition by
+    /// `Ordinal` for T1 byte-determinism, resolves attribute SsKeys
+    /// per column, and lifts to V2's `Index` IR.
+    let private parseIndexRowFor
+        (ctx: RowsetParseContext)
+        (moduleName: string)
+        (entityName: string)
+        (entityAttrs: AttributeRow list)
+        (row: IndexRow)
+        : Result<Index> =
+        let indexKey  = indexSsKey moduleName entityName row.IndexName
+        let indexName = Name.create row.IndexName
+        let cols =
+            Map.tryFind (row.EntityId, row.IndexName) ctx.IndexColumnsByIndex
+            |> Option.defaultValue []
+        let keyCols =
+            cols
+            |> List.filter (fun c -> not c.IsIncluded)
+            |> List.sortBy (fun c -> c.Ordinal)
+        let includedCols =
+            cols
+            |> List.filter (fun c -> c.IsIncluded)
+            |> List.sortBy (fun c -> c.Ordinal)
+        let keyColResults =
+            keyCols
+            |> List.map (fun c ->
+                resolveIndexColumnAttribute moduleName entityName entityAttrs c
+                |> Result.map (fun attrKey ->
+                    { Attribute = attrKey
+                      Direction = parseRowsetIndexDirection c.Direction } : IndexColumn))
+        let includedColResults =
+            includedCols
+            |> List.map (resolveIndexColumnAttribute moduleName entityName entityAttrs)
+        let foldedKeyCols      = Result.aggregate keyColResults
+        let foldedIncludedCols = Result.aggregate includedColResults
+        // FillFactor: SQL Server stores 0 as "server default" (unset);
+        // V2 represents the default as None. Non-zero values pass
+        // through; clamping to [1, 100] is V1's responsibility.
+        let fillFactor =
+            if row.FillFactor = 0 then None else Some row.FillFactor
+        let filter =
+            match row.FilterDefinition with
+            | Some s when not (System.String.IsNullOrWhiteSpace s) -> Some s
+            | _ -> None
+        match indexKey, indexName, foldedKeyCols, foldedIncludedCols with
+        | Ok k, Ok n, Ok keys, Ok included ->
+            // Slice 5.13.smart-constructor-lift migration + slice
+            // 5.13.fk-reality-join (2026-05-18) — rowset path
+            // surfaces every #AllIdx axis V1 reflects: IsUnique /
+            // IsPrimary, on-disk metadata, filter, included columns,
+            // plus the slice-5.13.index-features-emit triple
+            // (IsDisabled / IgnoreDuplicateKey / DataCompression).
+            // IsPlatformAuto stays at default (rowset path doesn't
+            // surface it; it lives on V1's logical IndexModel
+            // projection, not on sys.indexes reality).
+            let dataCompressionLevel =
+                row.DataCompression
+                |> Option.bind (fun s ->
+                    match s.ToUpperInvariant() with
+                    | "NONE" -> Some DataCompressionLevel.None
+                    | "ROW"  -> Some DataCompressionLevel.Row
+                    | "PAGE" -> Some DataCompressionLevel.Page
+                    | _      -> None)
+            Result.success
+                { Index.create k n keys with
+                    IsUnique              = row.IsUnique
+                    IsPrimaryKey          = row.IsPrimary
+                    Filter                = filter
+                    IncludedColumns       = included
+                    FillFactor            = fillFactor
+                    IsPadded              = row.IsPadded
+                    AllowRowLocks         = row.AllowRowLocks
+                    AllowPageLocks        = row.AllowPageLocks
+                    NoRecomputeStatistics = row.NoRecompute
+                    IsDisabled            = row.IsDisabled
+                    IgnoreDuplicateKey    = row.IgnoreDupKey
+                    DataCompression       = dataCompressionLevel }
+        | _ ->
+            propagateOrFallback
+                [ Result.errors indexKey
+                  Result.errors indexName
+                  Result.errors foldedKeyCols
+                  Result.errors foldedIncludedCols ]
+                (fun () ->
+                    adapterError
+                        "indexRowBuild"
+                        (sprintf
+                            "Failed to build index '%s' on kind '%s' from rowset bundle."
+                            row.IndexName
+                            entityName))
+
+    /// Slice 5.13.ossys-rowsets-cluster — per-Trigger lift. Sibling
+    /// to the JSON-path's `parseTrigger`. The caller pre-filters rows
+    /// with blank Definition (Trigger.create rejects them); `def` is
+    /// the unwrapped non-blank definition string.
+    let private parseTriggerRowFor
+        (moduleName: string)
+        (entityName: string)
+        (row: TriggerRow)
+        (def: string)
+        : Result<Trigger> =
+        let trigKey  = triggerSsKey moduleName entityName row.TriggerName
+        let trigName = Name.create row.TriggerName
+        match trigKey, trigName with
+        | Ok k, Ok n ->
+            Trigger.create k n row.IsDisabled def
+        | _ ->
+            propagateOrFallback
+                [ Result.errors trigKey
+                  Result.errors trigName ]
+                (fun () ->
+                    adapterError
+                        "triggerRowBuild"
+                        (sprintf
+                            "Failed to build trigger '%s' on kind '%s' from rowset bundle."
+                            row.TriggerName
+                            entityName))
+
+    /// Slice 5.13.ossys-rowsets-cluster — per-ColumnCheck lift. V1's
+    /// `#ColumnCheckReality` is per-column; V2's `Kind.ColumnChecks`
+    /// is table-scoped (multi-column CHECKs collapse to one entry).
+    /// The caller dedupes by ConstraintName before passing rows here.
+    let private parseColumnCheckRowFor
+        (moduleName: string)
+        (entityName: string)
+        (row: ColumnCheckRow)
+        : Result<ColumnCheck> =
+        let chkKey  = columnCheckSsKey moduleName entityName row.ConstraintName
+        let chkName = Name.create row.ConstraintName
+        match chkKey, chkName with
+        | Ok k, Ok n ->
+            ColumnCheck.create k (Some n) row.Definition row.IsNotTrusted
+        | _ ->
+            propagateOrFallback
+                [ Result.errors chkKey
+                  Result.errors chkName ]
+                (fun () ->
+                    adapterError
+                        "columnCheckRowBuild"
+                        (sprintf
+                            "Failed to build CHECK constraint '%s' on kind '%s' from rowset bundle."
+                            row.ConstraintName
+                            entityName))
+
     let private parseKindRow
-        (kindKeysByEntityId: Map<int, SsKey>)
+        (ctx: RowsetParseContext)
         (moduleName: string)
         (moduleEspaceKind: string option)
-        (attributesByEntity: Map<int, AttributeRow list>)
-        (referencesByAttr: Map<int, ReferenceRow list>)
         (kindRow: KindRow)
         : Result<Kind> =
         let kindKey  = kindSsKeyFromRow moduleName kindRow
@@ -1549,34 +1959,57 @@ module CatalogReader =
         // adapter's adapter-boundary discipline restricts to
         // `DataIntent` carriage).
         let attrRows =
-            Map.tryFind kindRow.EntityId attributesByEntity
+            Map.tryFind kindRow.EntityId ctx.AttributesByEntity
             |> Option.defaultValue []
         let attrResults =
             attrRows
             |> List.map (parseAttributeRow moduleName kindRow.EntityName)
         let foldedAttrs = Result.aggregate attrResults
-        // Slice 2: per-attribute reference build. For each surviving
-        // attribute, look up its reference rows by AttrId; multi-row
-        // collations (composite FKs) are not carried at slice 2 — V2's
-        // `Reference` is single-attribute today; cross-FK composite
-        // case is a documented deferral. Reference order is
-        // declared-attribute order (matches the JSON path's
-        // attribute-walk shape).
         let refResults =
             attrRows
             |> List.collect (fun a ->
-                Map.tryFind a.AttrId referencesByAttr
+                Map.tryFind a.AttrId ctx.ReferencesByAttr
                 |> Option.defaultValue []
-                |> List.map (parseReferenceRowFor kindKeysByEntityId moduleName kindRow.EntityName a))
+                |> List.map (parseReferenceRowFor ctx.KindKeysByEntityId moduleName kindRow.EntityName a))
         let foldedRefs = Result.aggregate refResults
-        match kindKey, kindName, foldedAttrs, foldedRefs with
-        | Ok k, Ok n, Ok attrs, Ok refs ->
-            // Modality marks list. `Static []` (parity with parseKind:
-            // populations NOT carried by rowsets 1-3; defer to a later
-            // slice surfacing V1 rowset 19+); `SystemOwned` (slice 4:
-            // lifts V1's IsSystemEntity into the V2 IR). Order is
-            // declaration order — Static first if present, SystemOwned
-            // second if present. Future ModalityMark variants append.
+        // Slice 5.13.ossys-rowsets-cluster — per-Kind index assembly
+        // from `IndexesByEntity` × `IndexColumnsByIndex`. The JOIN
+        // resolves each IndexColumnRow's HumanAttr (preferred) or
+        // PhysicalColumn (fallback) to V2's attribute SsKey via the
+        // same `attributeSsKey` synthesizer the JSON path uses. Sort
+        // by Ordinal within (key columns + included columns)
+        // partitions for byte-determinism.
+        let indexResults =
+            Map.tryFind kindRow.EntityId ctx.IndexesByEntity
+            |> Option.defaultValue []
+            |> List.map (parseIndexRowFor ctx moduleName kindRow.EntityName attrRows)
+        let foldedIndexes = Result.aggregate indexResults
+        let triggerResults =
+            Map.tryFind kindRow.EntityId ctx.TriggersByEntity
+            |> Option.defaultValue []
+            |> List.choose (fun row ->
+                // `Trigger.create` rejects blank Definition; V1 rows
+                // with NULL TriggerDefinition (rare; defensive)
+                // filter out at the adapter boundary.
+                match row.Definition with
+                | None -> None
+                | Some def when System.String.IsNullOrWhiteSpace def -> None
+                | Some def -> Some (parseTriggerRowFor moduleName kindRow.EntityName row def))
+        let foldedTriggers = Result.aggregate triggerResults
+        let columnCheckResults =
+            Map.tryFind kindRow.EntityId ctx.ColumnChecksByEntity
+            |> Option.defaultValue []
+            // Dedupe by ConstraintName — a multi-column CHECK
+            // surfaces once per column in `#ColumnCheckReality`; V2's
+            // `Kind.ColumnChecks` is table-scoped (one entry per
+            // unique constraint).
+            |> List.distinctBy (fun row -> row.ConstraintName)
+            |> List.map (parseColumnCheckRowFor moduleName kindRow.EntityName)
+        let foldedColumnChecks = Result.aggregate columnCheckResults
+        match kindKey, kindName, foldedAttrs, foldedRefs,
+              foldedIndexes, foldedTriggers, foldedColumnChecks with
+        | Ok k, Ok n, Ok attrs, Ok refs,
+          Ok idx, Ok trigs, Ok checks ->
             let modality =
                 [
                     if kindRow.IsStatic       then yield Static []
@@ -1585,39 +2018,29 @@ module CatalogReader =
             Result.success
                 { SsKey       = k
                   Name        = n
-                  // Origin via parseOriginFromRowset (slice 3): three-way
-                  // real driven by ModuleRow.EspaceKind. Refines the
-                  // JSON-path's parseOrigin two-way placeholder.
                   Origin      = parseOriginFromRowset kindRow.IsExternal moduleEspaceKind
                   Modality    = modality
                   Physical    = { Schema = kindRow.DbSchema
                                   Table  = kindRow.PhysicalTableName; Catalog = None }
                   Attributes  = attrs
                   References  = refs
-                  // Indexes deferred to a future slice (rowsets 10-11
-                  // #AllIdx / #IdxColsMapped). Empty at slice 2.
-                  Indexes     = []
+                  Indexes     = idx
                   Description = kindRow.Description
                   IsActive    = kindRow.IsActive
-                  // Chapter A.0' slices γ + ε + ζ — rowset path does
-                  // not surface triggers, table-level CHECK
-                  // constraints, or entity-level extended properties
-                  // today; positioned for future rowset slices or
-                  // DACPAC-adapter integration.
-                  Triggers    = []
-                  ColumnChecks = []
+                  Triggers    = trigs
+                  ColumnChecks = checks
+                  // Module-level ExtendedProperties not surfaced by
+                  // V1's rowsets (chapter A.0' slice ζ deferral).
                   ExtendedProperties = [] }
         | _ ->
-            // Propagate underlying errors via `propagateOrFallback`
-            // (codified at two-consumer threshold; same surface as
-            // parseKind on the JSON path). Substantive causes — e.g.,
-            // `adapter.osm.unmappedDeleteRule` from `parseDeleteRule`
-            // — survive the kind-level wrap.
             propagateOrFallback
                 [ Result.errors kindKey
                   Result.errors kindName
                   Result.errors foldedAttrs
-                  Result.errors foldedRefs ]
+                  Result.errors foldedRefs
+                  Result.errors foldedIndexes
+                  Result.errors foldedTriggers
+                  Result.errors foldedColumnChecks ]
                 (fun () ->
                     adapterError
                         "kindRowBuild"
@@ -1626,30 +2049,17 @@ module CatalogReader =
                             kindRow.EntityName moduleName))
 
     let private parseModuleRow
-        (kindKeysByEntityId: Map<int, SsKey>)
-        (kindsByEspace: Map<int, KindRow list>)
-        (attributesByEntity: Map<int, AttributeRow list>)
-        (referencesByAttr: Map<int, ReferenceRow list>)
+        (ctx: RowsetParseContext)
         (moduleRow: ModuleRow)
         : Result<Module> =
         let modKey  = moduleSsKeyFromRow moduleRow
         let modName = Name.create moduleRow.EspaceName
-        // Chapter A.0' slice β — the session-21 entity-level filter
-        // retires on the rowset path (parity with the JSON path
-        // retirement). Inactive entities carry with
-        // `Kind.IsActive=false`.
         let kindRows =
-            Map.tryFind moduleRow.EspaceId kindsByEspace
+            Map.tryFind moduleRow.EspaceId ctx.KindsByEspace
             |> Option.defaultValue []
         let kindResults =
             kindRows
-            |> List.map (
-                parseKindRow
-                    kindKeysByEntityId
-                    moduleRow.EspaceName
-                    moduleRow.EspaceKind
-                    attributesByEntity
-                    referencesByAttr)
+            |> List.map (parseKindRow ctx moduleRow.EspaceName moduleRow.EspaceKind)
         let foldedKinds = Result.aggregate kindResults
         match modKey, modName, foldedKinds with
         | Ok k, Ok n, Ok kinds ->
@@ -1658,8 +2068,6 @@ module CatalogReader =
             // module-level extended properties.
             Module.create k n kinds moduleRow.IsActive []
         | _ ->
-            // Propagate underlying errors via `propagateOrFallback`.
-            // Substantive causes survive the module-level wrap.
             propagateOrFallback
                 [ Result.errors modKey
                   Result.errors modName
@@ -1693,14 +2101,33 @@ module CatalogReader =
             bundle.Kinds |> List.groupBy (fun k -> k.EspaceId) |> Map.ofList
         let referencesByAttr =
             bundle.References |> List.groupBy (fun r -> r.AttrId) |> Map.ofList
-        // Chapter 5.0 slice γ — build the global EntityId → SsKey
-        // lookup used by `parseReferenceRowFor` for cross-module FK
-        // resolution against GUID-bearing entity rows. Mirrors
-        // `kindSsKeyFromRow`'s shape: when an entity carries
-        // `EntitySsKey`, the resolved key uses `SsKey.ossysOriginal`;
-        // otherwise the synthesized `kindSsKey (moduleName, entityName)`
-        // shape. The moduleName for each entity is its owning module's
-        // EspaceName (joined via EspaceId).
+        // Slice 5.13.ossys-rowsets-cluster — per-id-keyed groupings
+        // for the new index/trigger/check axes.
+        let indexesByEntity =
+            bundle.Indexes |> List.groupBy (fun i -> i.EntityId) |> Map.ofList
+        let indexColumnsByIndex =
+            bundle.IndexColumns
+            |> List.groupBy (fun c -> c.EntityId, c.IndexName)
+            |> Map.ofList
+        let triggersByEntity =
+            bundle.Triggers |> List.groupBy (fun t -> t.EntityId) |> Map.ofList
+        // ColumnChecks are per-AttrId in V1's rowset; group up to
+        // per-EntityId via the AttrId→EntityId resolution from the
+        // attributes bundle. This pre-roll is O(C) rather than the
+        // per-Kind alternative which would be O(C × E) (re-walk per
+        // Kind), so the pre-built map keeps parseKindRow cheap.
+        let entityByAttrId =
+            bundle.Attributes
+            |> List.map (fun a -> a.AttrId, a.EntityId)
+            |> Map.ofList
+        let columnChecksByEntity =
+            bundle.ColumnChecks
+            |> List.choose (fun row ->
+                Map.tryFind row.AttrId entityByAttrId
+                |> Option.map (fun eid -> eid, row))
+            |> List.groupBy fst
+            |> List.map (fun (eid, pairs) -> eid, pairs |> List.map snd)
+            |> Map.ofList
         let moduleNameByEspaceId =
             bundle.Modules
             |> List.map (fun m -> m.EspaceId, m.EspaceName)
@@ -1719,15 +2146,19 @@ module CatalogReader =
                     | Ok key -> Some (k.EntityId, key)
                     | Error _ -> None)
             |> Map.ofList
-        // Chapter A.0' slice β — the session-21 module-level filter
-        // retires. Inactive modules carry with `Module.IsActive=false`.
+        let ctx : RowsetParseContext =
+            { KindKeysByEntityId   = kindKeysByEntityId
+              KindsByEspace        = kindsByEspace
+              AttributesByEntity   = attributesByEntity
+              ReferencesByAttr     = referencesByAttr
+              IndexesByEntity      = indexesByEntity
+              IndexColumnsByIndex  = indexColumnsByIndex
+              TriggersByEntity     = triggersByEntity
+              ColumnChecksByEntity = columnChecksByEntity }
         let moduleResults =
-            bundle.Modules
-            |> List.map (parseModuleRow kindKeysByEntityId kindsByEspace attributesByEntity referencesByAttr)
+            bundle.Modules |> List.map (parseModuleRow ctx)
         match Result.aggregate moduleResults with
         | Ok modules ->
-            // Chapter A.0' slice δ — Catalog.Sequences empty on the
-            // rowset path; V1's rowsets do not surface sequences.
             Catalog.create modules []
         | Error errors -> Error errors
 

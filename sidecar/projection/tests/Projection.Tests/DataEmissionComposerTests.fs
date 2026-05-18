@@ -61,9 +61,9 @@ let private mkCountryKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
         Attributes =
             [
-                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                { IRBuilders.mkAttribute codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
-                { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
+                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
+                { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
             ]
         References = []
         Indexes    = []
@@ -361,11 +361,11 @@ let ``Slice ι: composeRendered emits Phase-1 (MERGE) of every kind before Phase
             Physical = { Schema = "dbo"; Table = table; Catalog = None }
             Attributes =
                 [
-                    { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";       IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                    { IRBuilders.mkAttribute parentKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } }
+                    { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";       IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                    { Attribute.create parentKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } }
                 ]
             References =
-                [ IRBuilders.mkReference refKey (mkName "RefSelf") parentKey kindKey ]
+                [ Reference.create refKey (mkName "RefSelf") parentKey kindKey ]
             Indexes    = []
             Description = None
             IsActive = true
@@ -451,3 +451,139 @@ let ``composeWithLineage: payload Result matches compose's Result for the same i
     let s1 = ArtifactByKind.toMap viaLineage |> Map.find country.SsKey
     let s2 = ArtifactByKind.toMap viaCompose |> Map.find country.SsKey
     Assert.Equal<string> (s1.Rendered, s2.Rendered)
+
+// ---------------------------------------------------------------------------
+// Chapter 5.13 slice data-emission-registry — cross-emitter global
+// Phase-1-then-Phase-2 ordering. Matrix row 160 cash-out: the slice ι
+// property previously tested ordering across kinds within a single
+// emitter (StaticSeedsEmitter). The cross-emitter case is structurally
+// equivalent (composeRenderedFull walks the unioned artifact in topo
+// order then concatenates all Phase-1 texts before all Phase-2 texts),
+// but the property test surface was missing.
+// ---------------------------------------------------------------------------
+
+/// Build a kind WITHOUT static modality but with a self-FK cycle on a
+/// nullable column. The fixture is suitable for Migration to populate
+/// — the kind has no Static.Modality rows, so StaticSeedsEmitter skips
+/// it under AllRemaining; MigrationDependencyContext rows for the kind
+/// populate it via the migration sibling.
+let private mkLegacyKindForMigration (name: string) (table: string) : Kind =
+    let kindKey = mkKey ["TestModule"; name]
+    let idKey = mkKey ["TestModule"; name; "Id"]
+    let parentKey = mkKey ["TestModule"; name; "ParentId"]
+    let refKey = mkKey ["TestModule"; name; "RefSelf"]
+    {
+        SsKey    = kindKey
+        Name     = mkName name
+        Origin   = OsNative
+        Modality = []   // NOT Static — Migration populates instead
+        Physical = { Schema = "dbo"; Table = table; Catalog = None }
+        Attributes =
+            [
+                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";       IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create parentKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } }
+            ]
+        References =
+            [ Reference.create refKey (mkName "RefSelf") parentKey kindKey ]
+        Indexes    = []
+        Description = None
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
+
+[<Fact>]
+let ``5.13.data-emission-registry: composeRenderedFull global-Phase1-then-Phase2 holds across emitters (matrix row 160)`` () =
+    // Cross-emitter scenario:
+    //   - Country: Static modality → StaticSeedsEmitter populates
+    //   - LegacyOrder: no static modality, but migration context has
+    //     a row for it → MigrationDependenciesEmitter populates.
+    //     The self-FK on LegacyOrder.ParentId triggers Phase-2
+    //     UPDATEs from the migration emitter.
+    //   - The partition assertion holds (each kind in exactly one
+    //     emitter's coverage).
+    //
+    // Property: ALL Phase-1 MERGEs (from BOTH emitters, in topo order)
+    // appear BEFORE any Phase-2 UPDATE (from either emitter). This
+    // is the load-bearing claim for matrix row 160 — cross-emitter
+    // global phase ordering IS reified at composeRenderedFull.
+    let country = mkCountryKind ()
+    let legacy = mkLegacyKindForMigration "LegacyOrder" "OSUSR_TEST_LEGACY_ORDER"
+    let catalog = mkCatalog [ country; legacy ]
+    let migration : MigrationDependencyContext =
+        { Rows =
+            [ { KindKey = legacy.SsKey
+                Identifier = mkKey ["TestModule"; "LegacyOrder"; "Row"; "1"]
+                Values =
+                    Map.ofList
+                        [ mkName "Id",       "1"
+                          mkName "ParentId", "1" ] } ] }
+    let text =
+        DataEmissionComposer.composeRenderedFull
+            (policyWith AllRemaining)
+            catalog
+            Profile.empty
+            migration
+            UserRemapContext.empty
+        |> mustOkEmit
+    let n = normWsCmp text
+    // Both emitters should produce Phase-1 output.
+    Assert.Contains ("MERGE INTO [dbo].[OSUSR_TEST_COUNTRY]", n)
+    Assert.Contains ("MERGE INTO [dbo].[OSUSR_TEST_LEGACY_ORDER]", n)
+    // Migration's LegacyOrder kind has a self-FK on nullable
+    // ParentId → Phase-2 UPDATE surfaces from the Migration emitter.
+    Assert.Contains ("UPDATE [dbo].[OSUSR_TEST_LEGACY_ORDER]", n)
+    // The load-bearing global-ordering invariant: every MERGE-INTO
+    // index sits before every UPDATE index, ACROSS both emitters.
+    let mergeIdxCountry = n.IndexOf "MERGE INTO [dbo].[OSUSR_TEST_COUNTRY]"
+    let mergeIdxLegacy  = n.IndexOf "MERGE INTO [dbo].[OSUSR_TEST_LEGACY_ORDER]"
+    let updateIdxLegacy = n.IndexOf "UPDATE [dbo].[OSUSR_TEST_LEGACY_ORDER]"
+    let lastMerge = max mergeIdxCountry mergeIdxLegacy
+    Assert.True(
+        lastMerge < updateIdxLegacy,
+        sprintf
+            "cross-emitter global ordering violated: lastMerge=%d updateIdxLegacy=%d"
+            lastMerge
+            updateIdxLegacy)
+
+[<Fact>]
+let ``5.13.data-emission-registry: cross-emitter coverage holds the partition invariant (no overlap)`` () =
+    // The cross-emitter case must not trigger
+    // OverlappingEmitterCoverage — Country is in Static, LegacyOrder
+    // is in Migration; disjoint coverage. This protects the
+    // global-ordering claim from being trivially satisfied by an
+    // overlap-error path.
+    let country = mkCountryKind ()
+    let legacy = mkLegacyKindForMigration "LegacyOrder" "OSUSR_TEST_LEGACY_ORDER"
+    let catalog = mkCatalog [ country; legacy ]
+    let migration : MigrationDependencyContext =
+        { Rows =
+            [ { KindKey = legacy.SsKey
+                Identifier = mkKey ["TestModule"; "LegacyOrder"; "Row"; "1"]
+                Values =
+                    Map.ofList
+                        [ mkName "Id",       "1"
+                          mkName "ParentId", "1" ] } ] }
+    let result =
+        DataEmissionComposer.composeFull
+            (policyWith AllRemaining)
+            catalog
+            Profile.empty
+            migration
+            UserRemapContext.empty
+    match result with
+    | Ok artifact ->
+        let map = ArtifactByKind.toMap artifact
+        let countryScript = Map.find country.SsKey map
+        let legacyScript  = Map.find legacy.SsKey map
+        // Country has 2 static rows (US + CA) → StaticSeedsEmitter
+        // produces 2 MERGEs; LegacyOrder has 1 migration row →
+        // MigrationDependenciesEmitter produces 1 MERGE.
+        Assert.Equal(2, List.length countryScript.Phase1Merges)
+        Assert.Equal(1, List.length legacyScript.Phase1Merges)
+        // Legacy has self-FK on ParentId → migration emitter
+        // produces a Phase-2 UPDATE.
+        Assert.Equal(1, List.length legacyScript.Phase2Updates)
+        Assert.Equal(0, List.length countryScript.Phase2Updates)
+    | Error e -> Assert.Fail (sprintf "expected partition success, got %A" e)

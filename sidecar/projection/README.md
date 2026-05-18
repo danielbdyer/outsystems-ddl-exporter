@@ -380,6 +380,65 @@ Build clean under `TreatWarningsAsErrors=true`; lint clean across
   surfaces as a `Skip` test stub at the test-file level, not as
   ADMIRE-prose commentary.
 
+## Status at 2026-05-18 (emit-features arc + blind-spot closure; SCHEMA-axis V2-driver gate ready modulo named residuals)
+
+- **1571 non-canary tests passing** + canary tests Docker-gated.
+  0 failing; 0 build warnings under `TreatWarningsAsErrors=true`;
+  lint count unchanged. (1454 at chapter 5.0 close + 117 across the
+  chapter 5.13 arc; this session's five slices added the column /
+  FK / index trio of emit-feature closures plus the production-side
+  smart-constructor lift plus the blind-spot closure arc.)
+- **SCHEMA-axis V2-driver gate ready modulo named residuals** —
+  every V1 CreateTable + CreateIndex axis V1 emits is now
+  structurally emitted by V2's `SsdtDdlEmitter` AND wired through
+  V2's adapter (rowset-path JOIN closure) AND classified in V2's
+  `TransformRegistry` as Emitter-stage Sites. Three named residuals
+  remain: single-column PK inline optimization; computed columns;
+  partition-scheme axis. The first two are no-consumer-pressure
+  deferrals; partition-scheme requires IR design.
+- **Production-side smart constructors universal across IR
+  aggregates** — `Attribute.create / Reference.create /
+  Index.create / Kind.create` join the pre-existing `Module.create
+  / Catalog.create / Name.create / ColumnCheck.create /
+  Trigger.create / Sequence.create / SsKey.original`. Field
+  extensions land at one site instead of N.
+- **Two new `Statement` variants ship for post-CREATE state
+  preservation** — `AlterTableNoCheckConstraint` (FK trust
+  preservation when `Reference.IsConstraintTrusted = false`) +
+  `AlterIndexDisable` (index disable preservation when
+  `Index.IsDisabled = true`). Both flow through ScriptDom's typed
+  AST.
+- **New `[<RequireQualifiedAccess>] type DataCompressionLevel`
+  Core DU** — modeling SQL Server's row/page compression option
+  for indexes; mirrors ScriptDom's enum modulo columnstore
+  variants (deferred until fixture evidence surfaces).
+- **TransformRegistry reaches Emitter stage** —
+  `SsdtDdlEmitter.registeredMetadata` ships with 11 classified
+  Sites; `ManifestEmitter.build` prepends to
+  `RegisteredTransforms.all` so the totality-coverage scan reaches
+  every V2 emit feature.
+- **Rowset-adapter JOIN closes the structural evidence chain** —
+  V1 source (`#FkReality.UpdateAction / IsNoCheck`,
+  `#AllIdx.IsDisabled / IgnoreDupKey / DataCompressionJson`) now
+  flows through `MetadataSnapshotRunner.toBundle` to V2's
+  per-attribute `Reference` + per-index `Index` IR; from there
+  through `SsdtDdlEmitter` to ScriptDom-typed emission.
+- **`Render.fs` StringBuilder relic retired** — every SQL-bearing
+  Statement flows through ONE pipeline (ScriptDomBuild →
+  ScriptDomGenerate). Render.fs reduces to 4 public functions.
+- **IRBuilders shim full retirement** — six dead-weight test-side
+  builders retired (mkAttribute / mkKind / mkReference / mkIndex /
+  mkIndexColumn / mkIndexColumns); three lifted to Core as
+  canonical helpers (`IndexColumn.create`,
+  `IndexColumn.ascendingList`, `Index.ofKeyColumns`). Pillar-8
+  ubiquitous-language consistency now holds across emit + read +
+  test surfaces. The two skip-Result test-fixture conveniences
+  (`mkModule`, `mkCatalog`) remain as principled adapters.
+- **Matrix coverage** — rows 12 + 17 + 18 + 53 + 55 + 56 (partial) +
+  58 + 59 + 182 closed to 🟢 PARITY in this arc; plus
+  Status-history amendments for TransformRegistry Emitter-stage
+  coverage + Render.fs StringBuilder retirement.
+
 ## Status at chapter 4.8 close (2026-05-17; IRBuilders Attribute sweep + on-disk Index metadata + isPlatformAuto emitter toggle)
 
 - **1367 non-canary tests passing** + canary tests Docker-gated.

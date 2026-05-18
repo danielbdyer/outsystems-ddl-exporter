@@ -15,7 +15,7 @@ open Projection.Tests.IRBuilders
 //
 // **Chapter A.0' post-XXXXL refactor.** This file now uses
 // `IRBuilders.mk*` to construct records with minimum-evidence
-// defaults; per-fixture overrides via `{ mkAttribute ... with ... }`.
+// defaults; per-fixture overrides via `{ Attribute.create ... with ... }`.
 // New IR fields added by subsequent slices land in `IRBuilders.fs`
 // alone, not here. Pre-refactor: ~150 record-literal sites carried
 // every field explicitly; ExpressLane refactor consolidates the
@@ -66,7 +66,7 @@ let testKey (label: string) : SsKey =
 /// uppercased from the logical name. Override IsPrimaryKey via
 /// record-update at the call site.
 let private mkFixtureAttribute (key: SsKey) (logical: string) (ptype: PrimitiveType) (isPk: bool) : Attribute =
-    { mkAttribute key (name logical) ptype with
+    { Attribute.create key (name logical) ptype with
         Column       = { ColumnName = logical.ToUpperInvariant(); IsNullable = false }
         IsPrimaryKey = isPk }
 
@@ -80,7 +80,7 @@ let customerNameKey   = attrKey ["Customer"; "Name"]
 let customerTenantKey = attrKey ["Customer"; "TenantId"]
 
 let customer : Kind =
-    { mkKind
+    { Kind.create
         customerKey
         (name "Customer")
         { Schema = "dbo"; Table = "OSUSR_S1S_CUSTOMER"; Catalog = None }
@@ -102,7 +102,7 @@ let orderCustomerFkKey  = attrKey ["Order"; "CustomerId"]
 let orderRefToCustomer  = refKey  ["Order"; "Customer"]
 
 let order : Kind =
-    { mkKind
+    { Kind.create
         orderKey
         (name "Order")
         { Schema = "dbo"; Table = "OSUSR_S1S_ORDER"; Catalog = None }
@@ -112,7 +112,7 @@ let order : Kind =
               Column = { ColumnName = "CUSTOMER_ID"; IsNullable = false } } ]
         with
         References =
-            [ IRBuilders.mkReference orderRefToCustomer (name "Customer") orderCustomerFkKey customerKey ] }
+            [ Reference.create orderRefToCustomer (name "Customer") orderCustomerFkKey customerKey ] }
 
 // ---------------------------------------------------------------------------
 // Country — Static, with a small populated row set.
@@ -142,7 +142,7 @@ let countryPopulations : StaticRow list = [
 ]
 
 let country : Kind =
-    { mkKind
+    { Kind.create
         countryKey
         (name "Country")
         { Schema = "dbo"; Table = "OSUSR_S1S_COUNTRY"; Catalog = None }

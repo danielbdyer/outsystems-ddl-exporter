@@ -20,12 +20,12 @@ let private name  (s: string) : Name  = Name.create s   |> Result.value
 let private mkConfig (single: bool) (composite: bool) : UniqueIndexTighteningConfig =
     UniqueIndexTighteningConfig.create single composite
 
-let private mkIndex
+let private indexFixture
     (key: string)
     (columns: SsKey list)
     (isUnique: bool)
     : Index =
-    { IRBuilders.mkIndex (ssKey key) (name "IX") columns with IsUnique = isUnique }
+    { Index.ofKeyColumns (ssKey key) (name "IX") columns with IsUnique = isUnique }
 
 let private mkProbe (rowCount: int64) : ProbeStatus =
     ProbeStatus.create DateTimeOffset.UnixEpoch rowCount Succeeded
@@ -70,7 +70,7 @@ let private decide
 [<Fact>]
 let ``alreadyUnique: catalog-declared unique short-circuits with AlreadyUnique`` () =
     // Single-column index, declared unique, no profile evidence at all.
-    let index = mkIndex "OS_IDX_Customer_Email_Unique" [ customerNameKey ] true
+    let index = indexFixture "OS_IDX_Customer_Email_Unique" [ customerNameKey ] true
     let cfg = mkConfig false false  // both toggles off — irrelevant
     let decision = decide cfg customer index Profile.empty
     Assert.Equal(
@@ -80,7 +80,7 @@ let ``alreadyUnique: catalog-declared unique short-circuits with AlreadyUnique``
 [<Fact>]
 let ``alreadyUnique: composite catalog-declared unique short-circuits regardless of toggles`` () =
     let index =
-        mkIndex
+        indexFixture
             "OS_IDX_Customer_NameTenant"
             [ customerNameKey; customerTenantKey ]
             true
@@ -95,7 +95,7 @@ let ``alreadyUnique: composite catalog-declared unique short-circuits regardless
 let ``alreadyUnique: profile evidence is not consulted when the catalog declares unique`` () =
     // Profile shows duplicates (which would normally block enforcement) —
     // but the catalog says the index is unique, so we trust the source.
-    let index = mkIndex "OS_IDX_X" [ customerNameKey ] true
+    let index = indexFixture "OS_IDX_X" [ customerNameKey ] true
     let cfg = mkConfig true false
     let profile =
         { Profile.empty with
@@ -112,7 +112,7 @@ let ``alreadyUnique: profile evidence is not consulted when the catalog declares
 
 [<Fact>]
 let ``policyDisabled: single-column index with EnforceSingleColumnUnique=false yields DoNotEnforce(PolicyDisabled)`` () =
-    let index = mkIndex "OS_IDX_Single" [ customerNameKey ] false
+    let index = indexFixture "OS_IDX_Single" [ customerNameKey ] false
     let cfg = mkConfig false true   // composite on, single off
     let decision = decide cfg customer index Profile.empty
     Assert.Equal(
@@ -122,7 +122,7 @@ let ``policyDisabled: single-column index with EnforceSingleColumnUnique=false y
 [<Fact>]
 let ``policyDisabled: composite index with EnforceMultiColumnUnique=false yields DoNotEnforce(PolicyDisabled)`` () =
     let index =
-        mkIndex "OS_IDX_Composite" [ customerNameKey; customerTenantKey ] false
+        indexFixture "OS_IDX_Composite" [ customerNameKey; customerTenantKey ] false
     let cfg = mkConfig true false   // single on, composite off
     let decision = decide cfg customer index Profile.empty
     Assert.Equal(
@@ -133,7 +133,7 @@ let ``policyDisabled: composite index with EnforceMultiColumnUnique=false yields
 let ``policyDisabled: profile evidence is not consulted when the gate is off`` () =
     // Even with strong evidence (probe succeeded, no duplicates), the
     // gate-off result wins — the algebra reports the gate.
-    let index = mkIndex "OS_IDX_X" [ customerNameKey ] false
+    let index = indexFixture "OS_IDX_X" [ customerNameKey ] false
     let cfg = mkConfig false false
     let profile =
         { Profile.empty with
@@ -149,7 +149,7 @@ let ``policyDisabled: profile evidence is not consulted when the gate is off`` (
 
 [<Fact>]
 let ``single-column: probe succeeded + no duplicates ⇒ EnforceUnique(SingleColumnNoDuplicates)`` () =
-    let index = mkIndex "OS_IDX_Single_Clean" [ customerNameKey ] false
+    let index = indexFixture "OS_IDX_Single_Clean" [ customerNameKey ] false
     let cfg = mkConfig true false
     let profile =
         { Profile.empty with
@@ -161,7 +161,7 @@ let ``single-column: probe succeeded + no duplicates ⇒ EnforceUnique(SingleCol
 
 [<Fact>]
 let ``single-column: probe succeeded + duplicates present ⇒ DoNotEnforce(DataHasDuplicates)`` () =
-    let index = mkIndex "OS_IDX_Single_Dirty" [ customerNameKey ] false
+    let index = indexFixture "OS_IDX_Single_Dirty" [ customerNameKey ] false
     let cfg = mkConfig true false
     let profile =
         { Profile.empty with
@@ -178,7 +178,7 @@ let ``single-column: probe unreliable ⇒ DoNotEnforce(NoCandidateProfiled)`` ()
     // NoCandidateProfiled (the rules module collapses the "no probe" and
     // "unreliable probe" cases into the same keep reason — there's no
     // observable difference at the decision level).
-    let index = mkIndex "OS_IDX_Single_Unreliable" [ customerNameKey ] false
+    let index = indexFixture "OS_IDX_Single_Unreliable" [ customerNameKey ] false
     let cfg = mkConfig true false
     let profile =
         { Profile.empty with
@@ -190,7 +190,7 @@ let ``single-column: probe unreliable ⇒ DoNotEnforce(NoCandidateProfiled)`` ()
 
 [<Fact>]
 let ``single-column: no candidate profiled ⇒ DoNotEnforce(NoCandidateProfiled)`` () =
-    let index = mkIndex "OS_IDX_Single_Missing" [ customerNameKey ] false
+    let index = indexFixture "OS_IDX_Single_Missing" [ customerNameKey ] false
     let cfg = mkConfig true false
     let decision = decide cfg customer index Profile.empty
     Assert.Equal(
@@ -202,7 +202,7 @@ let ``single-column: degenerate empty-columns index ⇒ DoNotEnforce(NoCandidate
     // An index with zero columns is degenerate but representable. The
     // rules module classifies it as single-column (since not composite)
     // and reports NoCandidateProfiled — no probe could exist.
-    let index = mkIndex "OS_IDX_Empty" [] false
+    let index = indexFixture "OS_IDX_Empty" [] false
     let cfg = mkConfig true true
     let decision = decide cfg customer index Profile.empty
     Assert.Equal(
@@ -216,7 +216,7 @@ let ``single-column: degenerate empty-columns index ⇒ DoNotEnforce(NoCandidate
 [<Fact>]
 let ``composite: probe succeeded + no duplicates ⇒ EnforceUnique(CompositeNoDuplicates)`` () =
     let index =
-        mkIndex
+        indexFixture
             "OS_IDX_Composite_Clean"
             [ customerNameKey; customerTenantKey ]
             false
@@ -233,7 +233,7 @@ let ``composite: probe succeeded + no duplicates ⇒ EnforceUnique(CompositeNoDu
 [<Fact>]
 let ``composite: probe succeeded + duplicates ⇒ DoNotEnforce(DataHasDuplicates)`` () =
     let index =
-        mkIndex
+        indexFixture
             "OS_IDX_Composite_Dirty"
             [ customerNameKey; customerTenantKey ]
             false
@@ -252,7 +252,7 @@ let ``composite: candidate is matched by attribute set, not by column order`` ()
     // Index lists [name; tenant]; profile reports [tenant; name]. Same
     // attribute set, same kind — the candidate must match.
     let index =
-        mkIndex
+        indexFixture
             "OS_IDX_Composite_OrderInverted"
             [ customerNameKey; customerTenantKey ]
             false
@@ -269,7 +269,7 @@ let ``composite: candidate is matched by attribute set, not by column order`` ()
 [<Fact>]
 let ``composite: candidate keyed to a different kind is not matched`` () =
     let index =
-        mkIndex
+        indexFixture
             "OS_IDX_Composite_WrongKind"
             [ customerNameKey; customerTenantKey ]
             false
@@ -287,7 +287,7 @@ let ``composite: candidate keyed to a different kind is not matched`` () =
 [<Fact>]
 let ``composite: no candidate ⇒ DoNotEnforce(NoCandidateProfiled)`` () =
     let index =
-        mkIndex
+        indexFixture
             "OS_IDX_Composite_Missing"
             [ customerNameKey; customerTenantKey ]
             false
@@ -304,13 +304,13 @@ let ``composite: no candidate ⇒ DoNotEnforce(NoCandidateProfiled)`` () =
 
 [<Fact>]
 let ``decision: IndexKey is the index being decided`` () =
-    let index = mkIndex "OS_IDX_For_Key_Test" [ customerNameKey ] true
+    let index = indexFixture "OS_IDX_For_Key_Test" [ customerNameKey ] true
     let decision = decide (mkConfig true true) customer index Profile.empty
     Assert.Equal(index.SsKey, decision.IndexKey)
 
 [<Fact>]
 let ``decision: InterventionId is the id passed to evaluate`` () =
-    let index = mkIndex "OS_IDX_For_Id_Test" [ customerNameKey ] true
+    let index = indexFixture "OS_IDX_For_Id_Test" [ customerNameKey ] true
     let decision =
         UniqueIndexRules.evaluate
             "named-intervention-2026-05-10"
@@ -326,8 +326,8 @@ let ``decision: InterventionId is the id passed to evaluate`` () =
 
 [<Fact>]
 let ``enforces: true for EnforceUnique, false for DoNotEnforce`` () =
-    let enforcedIndex = mkIndex "OS_IDX_E" [ customerNameKey ] true
-    let blockedIndex  = mkIndex "OS_IDX_B" [ customerNameKey ] false
+    let enforcedIndex = indexFixture "OS_IDX_E" [ customerNameKey ] true
+    let blockedIndex  = indexFixture "OS_IDX_B" [ customerNameKey ] false
     let cfg = mkConfig false false  // single off → blocked
     let enforcedDecision = decide cfg customer enforcedIndex Profile.empty
     let blockedDecision  = decide cfg customer blockedIndex  Profile.empty
@@ -340,7 +340,7 @@ let ``enforces: true for EnforceUnique, false for DoNotEnforce`` () =
 
 [<Fact>]
 let ``T1: evaluate is deterministic`` () =
-    let index = mkIndex "OS_IDX_Det" [ customerNameKey ] false
+    let index = indexFixture "OS_IDX_Det" [ customerNameKey ] false
     let cfg = mkConfig true true
     let profile =
         { Profile.empty with
@@ -353,7 +353,7 @@ let ``T1: evaluate is deterministic`` () =
 let ``property: evaluate is reflexive on equal inputs`` (id: NonEmptyString) =
     if String.IsNullOrWhiteSpace id.Get then true
     else
-        let index = mkIndex "OS_IDX_Refl" [ customerNameKey ] true
+        let index = indexFixture "OS_IDX_Refl" [ customerNameKey ] true
         let cfg = mkConfig true true
         let d1 = UniqueIndexRules.evaluate id.Get cfg customer index Profile.empty
         let d2 = UniqueIndexRules.evaluate id.Get cfg customer index Profile.empty

@@ -64,8 +64,8 @@ let private singleKindCatalog : Catalog =
         Modality = []
         Physical = { Schema = "dbo"; Table = "WIDGET"; Catalog = None }
         Attributes = [
-            { IRBuilders.mkAttribute widgetIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-            { IRBuilders.mkAttribute widgetNameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false } }
+            { Attribute.create widgetIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+            { Attribute.create widgetNameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false } }
         ]
         References = []
         Indexes    = []
@@ -231,28 +231,28 @@ let private indexedCatalog : Catalog =
         Modality = []
         Physical = { Schema = "dbo"; Table = "INDEXED_WIDGET"; Catalog = None }
         Attributes = [
-            { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-            { IRBuilders.mkAttribute codeKey (mkName "Code") Text with Column = { ColumnName = "CODE"; IsNullable = false } }
-            { IRBuilders.mkAttribute regionKey (mkName "Region") Text with Column = { ColumnName = "REGION"; IsNullable = false } }
-            { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = true } }
+            { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+            { Attribute.create codeKey (mkName "Code") Text with Column = { ColumnName = "CODE"; IsNullable = false } }
+            { Attribute.create regionKey (mkName "Region") Text with Column = { ColumnName = "REGION"; IsNullable = false } }
+            { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = true } }
         ]
         References = []
         Indexes = [
             // Single-column unique index on Code.
             { SsKey = idxKey ["IndexedWidget"; "UQ"; "Code"]
               Name = mkName "UQ_IndexedWidget_Code"
-              Columns = IRBuilders.mkIndexColumns [ codeKey ]
-              IsUnique = true; IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
+              Columns = IndexColumn.ascendingList [ codeKey ]
+              IsUnique = true; IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
             // Composite (non-unique) index on Region + Label.
             { SsKey = idxKey ["IndexedWidget"; "IX"; "RegionLabel"]
               Name = mkName "IX_IndexedWidget_RegionLabel"
-              Columns = IRBuilders.mkIndexColumns [ regionKey; labelKey ]
-              IsUnique = false; IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
+              Columns = IndexColumn.ascendingList [ regionKey; labelKey ]
+              IsUnique = false; IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
             // Non-unique single-column index on Region.
             { SsKey = idxKey ["IndexedWidget"; "IX"; "Region"]
               Name = mkName "IX_IndexedWidget_Region"
-              Columns = IRBuilders.mkIndexColumns [ regionKey ]
-              IsUnique = false; IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false }
+              Columns = IndexColumn.ascendingList [ regionKey ]
+              IsUnique = false; IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
         ]
         Description = None
         IsActive = true

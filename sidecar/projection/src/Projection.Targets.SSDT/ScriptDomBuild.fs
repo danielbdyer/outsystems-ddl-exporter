@@ -137,125 +137,17 @@ module ScriptDomBuild =
         | _ -> ()
         r :> DataTypeReference
 
-    // -----------------------------------------------------------------------
-    // Column definitions inside CREATE TABLE.
-    // -----------------------------------------------------------------------
-
-    /// Build a `ColumnDefinition` for a V2 `ColumnDef`. Includes
-    /// nullability constraint, IDENTITY(1,1) clause when applicable.
-    /// PRIMARY KEY constraint is emitted at the table level (not per
-    /// column) — see `buildPrimaryKey` below. Same convention as
-    /// `Render.fs`.
-    let private columnDefinition (c: ColumnDef) : ColumnDefinition =
-        let col = ColumnDefinition()
-        col.ColumnIdentifier <- bracketed c.Name
-        col.DataType <- dataTypeReference c.Type c.Length c.Precision c.Scale
-        // Nullability — ScriptDom NULL/NOT NULL constraint is a
-        // `NullableConstraintDefinition` on `Constraints`.
-        let nullCons = NullableConstraintDefinition()
-        nullCons.Nullable <- c.Nullable
-        col.Constraints.Add(nullCons)
-        // IDENTITY(1,1) when applicable. ScriptDom carries
-        // `IdentityOptions` directly on the column.
-        if c.IsIdentity then
-            let identity = IdentityOptions()
-            let seedLit = IntegerLiteral()
-            seedLit.Value <- "1"
-            identity.IdentitySeed <- seedLit
-            let incLit = IntegerLiteral()
-            incLit.Value <- "1"
-            identity.IdentityIncrement <- incLit
-            col.IdentityOptions <- identity
-        col
-
-    /// Build the table-level PRIMARY KEY constraint (when present).
-    /// ScriptDom carries this as a
-    /// `UniqueConstraintDefinition { IsPrimaryKey = true }` in
-    /// `CreateTableStatement.Definition.TableConstraints`.
-    let private primaryKeyConstraint
-        (pk: PrimaryKeyDef)
-        : ConstraintDefinition =
-        let cons = UniqueConstraintDefinition()
-        cons.IsPrimaryKey <- true
-        cons.ConstraintIdentifier <- bracketed pk.Name
-        for col in pk.Columns do
-            let order = ColumnWithSortOrder()
-            let colRef = ColumnReferenceExpression()
-            let mid = MultiPartIdentifier()
-            mid.Identifiers.Add(bracketed col)
-            colRef.MultiPartIdentifier <- mid
-            order.Column <- colRef
-            order.SortOrder <- SortOrder.NotSpecified
-            cons.Columns.Add(order)
-        cons :> ConstraintDefinition
-
-    /// Build a single-column foreign-key constraint per V2's
-    /// `ForeignKeyDef`. Maps V2's `ReferenceActionSql` DU to
-    /// ScriptDom's `DeleteUpdateAction`.
-    let private foreignKeyConstraint
-        (fk: ForeignKeyDef)
-        : ConstraintDefinition =
-        let cons = ForeignKeyConstraintDefinition()
-        cons.ConstraintIdentifier <- bracketed fk.Name
-        cons.Columns.Add(bracketed fk.SourceColumn)
-        cons.ReferenceTableName <- schemaObjectFromTableId fk.Target
-        cons.ReferencedTableColumns.Add(bracketed fk.TargetColumn)
-        cons.DeleteAction <-
-            match fk.OnDelete with
-            | NoActionSql -> DeleteUpdateAction.NoAction
-            | CascadeSql  -> DeleteUpdateAction.Cascade
-            | SetNullSql  -> DeleteUpdateAction.SetNull
-        cons :> ConstraintDefinition
-
-    /// Build a `CreateTableStatement` from V2's typed
-    /// `(TableId, ColumnDef list, PrimaryKeyDef option, ForeignKeyDef list)`
-    /// triple. Pure: same inputs → same fragment shape (verified by
-    /// `tests/Projection.Tests/ScriptDomRoundTripTests.fs`).
-    /// CREATE TABLE builder. Returns the typed `CreateTableStatement`
-    /// paired with a Diagnostics stream. Chapter 4.9 slice ζ — the
-    /// canonical signature carries `Diagnostics<_>` so future
-    /// Diagnostics sources (column-default parse failures; check-
-    /// constraint parse failures; per-column metadata anomalies) can
-    /// surface through the same writer without re-introducing a
-    /// sibling-wrapper. Today the entries list is empty by
-    /// construction; callers explicitly drop via `.Value` at the call
-    /// site (per the chapter 4.7 sibling-wrapper discipline + V2-no-
-    /// back-compat).
-    let buildCreateTable
-        (table: TableId)
-        (columns: ColumnDef list)
-        (pk: PrimaryKeyDef option)
-        (fks: ForeignKeyDef list)
-        : Diagnostics<CreateTableStatement> =
-        let stmt = CreateTableStatement()
-        stmt.SchemaObjectName <- schemaObjectFromTableId table
-        let def = TableDefinition()
-        for c in columns do
-            def.ColumnDefinitions.Add(columnDefinition c)
-        match pk with
-        | None -> ()
-        | Some p ->
-            def.TableConstraints.Add(primaryKeyConstraint p)
-        for fk in fks do
-            def.TableConstraints.Add(foreignKeyConstraint fk)
-        stmt.Definition <- def
-        Diagnostics.ofValue stmt
-
-    // -----------------------------------------------------------------------
-    // INSERT statements.
-    // -----------------------------------------------------------------------
-
-    /// Build the V-typed `Literal` expression for one cell. `""` is
-    /// NULL; numeric / text / binary / guid / boolean dispatch per
     /// Map a typed `SqlLiteral` value to a ScriptDom `ScalarExpression`
     /// (specifically a `Literal` subclass projected to its supertype
-    /// for use in `RowValue.ColumnValues`). Per the Tier-1 #4 transition
-    /// (RawTextEmitter retirement arc): the IR→typed-literal projection
-    /// lives in `Projection.Core.SqlLiteral`; this is the SSDT-resident
-    /// `SqlLiteral` → ScriptDom-`Literal` mapping. Used by both
-    /// `cellExpression` (single-row `InsertStatement` VALUES) and
-    /// `buildMergeStatement` (multi-row VALUES inside MERGE's
-    /// InlineDerivedTable).
+    /// for use in `RowValue.ColumnValues` + DEFAULT clauses). Per the
+    /// Tier-1 #4 transition (RawTextEmitter retirement arc): the
+    /// IR→typed-literal projection lives in
+    /// `Projection.Core.SqlLiteral`; this is the SSDT-resident
+    /// `SqlLiteral` → ScriptDom-`Literal` mapping. Used by
+    /// `cellExpression` (single-row INSERT VALUES), `buildMergeStatement`
+    /// (MERGE InlineDerivedTable), `buildUpdateStatement` (UPDATE SET +
+    /// change-detection WHERE), and `columnDefinition` (DEFAULT
+    /// constraint emission per slice 5.13.column-features-emit).
     let buildSqlLiteral (lit: SqlLiteral) : ScalarExpression =
         match lit with
         | NullLit ->
@@ -295,6 +187,190 @@ module ScriptDomBuild =
             // writer emits the value verbatim.
             l.Value <- prefixed
             l :> ScalarExpression
+
+    // -----------------------------------------------------------------------
+    // Column definitions inside CREATE TABLE.
+    // -----------------------------------------------------------------------
+
+    /// Build a `ColumnDefinition` for a V2 `ColumnDef`. Includes
+    /// nullability constraint, IDENTITY(1,1) clause when applicable.
+    /// PRIMARY KEY constraint is emitted at the table level (not per
+    /// column) — see `buildPrimaryKey` below. Same convention as
+    /// `Render.fs`.
+    let private columnDefinition (c: ColumnDef) : ColumnDefinition =
+        let col = ColumnDefinition()
+        col.ColumnIdentifier <- bracketed c.Name
+        col.DataType <- dataTypeReference c.Type c.Length c.Precision c.Scale
+        // Nullability — ScriptDom NULL/NOT NULL constraint is a
+        // `NullableConstraintDefinition` on `Constraints`.
+        let nullCons = NullableConstraintDefinition()
+        nullCons.Nullable <- c.Nullable
+        col.Constraints.Add(nullCons)
+        // IDENTITY(1,1) when applicable. ScriptDom carries
+        // `IdentityOptions` directly on the column.
+        if c.IsIdentity then
+            let identity = IdentityOptions()
+            let seedLit = IntegerLiteral()
+            seedLit.Value <- "1"
+            identity.IdentitySeed <- seedLit
+            let incLit = IntegerLiteral()
+            incLit.Value <- "1"
+            identity.IdentityIncrement <- incLit
+            col.IdentityOptions <- identity
+        // DEFAULT clause (slice 5.13.column-features-emit): when the
+        // column carries a typed `SqlLiteral` default, emit an
+        // inline `[CONSTRAINT <name>] DEFAULT <literal>` clause.
+        // ScriptDom carries this as a `DefaultConstraintDefinition`
+        // on `Constraints`. The literal flows through `buildSqlLiteral`
+        // — same typed-AST path the MERGE / UPDATE statements use,
+        // so the rendered DEFAULT value is byte-identical to other
+        // emission surfaces.
+        match c.DefaultValue with
+        | None -> ()
+        | Some lit ->
+            let defCons = DefaultConstraintDefinition()
+            match c.DefaultName with
+            | Some name when not (System.String.IsNullOrWhiteSpace name) ->
+                defCons.ConstraintIdentifier <- bracketed name
+            | _ -> ()
+            defCons.Expression <- buildSqlLiteral lit
+            col.Constraints.Add(defCons)
+        col
+
+    /// Build a table-level CHECK constraint via TSql160Parser. Slice
+    /// 5.13.column-features-emit (chapter A.0' slice ε emit closure).
+    /// V1's `#ColumnCheckReality.Definition` carries the deployed
+    /// expression text (e.g., `([Age] >= 0)`); we parse it via
+    /// `TSql160Parser.ParseBooleanExpression` and embed the typed
+    /// `BooleanExpression` into ScriptDom's `CheckConstraintDefinition`.
+    /// Parse failure surfaces as a `Diagnostics<...>` Warning entry
+    /// in a future slice; today the failure path produces a
+    /// `BooleanParenthesisExpression` with the raw text as a
+    /// `StringLiteral` (last-resort fallback so emission proceeds).
+    let private checkConstraint (chk: ColumnCheckDef) : CheckConstraintDefinition =
+        let cons = CheckConstraintDefinition()
+        match chk.Name with
+        | Some name when not (System.String.IsNullOrWhiteSpace name) ->
+            cons.ConstraintIdentifier <- bracketed name
+        | _ -> ()
+        let parser = TSql160Parser(initialQuotedIdentifiers = false)
+        use reader = new System.IO.StringReader(chk.Definition)
+        let fragment, _errors = parser.ParseBooleanExpression(reader)
+        cons.CheckCondition <-
+            match Option.ofObj fragment with
+            | Some expr -> expr
+            | None ->
+                // Last-resort fallback: wrap raw text in a literal
+                // (preserves the SQL surface even when the parser
+                // can't produce a typed AST). Real production V1
+                // expressions parse cleanly under TSql160Parser.
+                let str = StringLiteral()
+                str.Value <- chk.Definition
+                let cmp = BooleanComparisonExpression()
+                cmp.ComparisonType <- BooleanComparisonType.Equals
+                cmp.FirstExpression <- str :> ScalarExpression
+                cmp.SecondExpression <- str :> ScalarExpression
+                cmp :> BooleanExpression
+        // V1's `IsNotTrusted` reflects whether the deployed-target's
+        // CHECK is currently NOCHECK'd (operator may have disabled it
+        // for a bulk-load). ScriptDom doesn't model the NOCHECK state
+        // inline in `CHECK constraint`; the WITH NOCHECK clause is
+        // emitted at ALTER TABLE level. For inline emission we just
+        // carry the constraint definition; preservation of NOCHECK
+        // state is a future post-emit ALTER TABLE step (matrix row
+        // 59 cash-out).
+        cons
+
+    /// Build the table-level PRIMARY KEY constraint (when present).
+    /// ScriptDom carries this as a
+    /// `UniqueConstraintDefinition { IsPrimaryKey = true }` in
+    /// `CreateTableStatement.Definition.TableConstraints`.
+    let private primaryKeyConstraint
+        (pk: PrimaryKeyDef)
+        : ConstraintDefinition =
+        let cons = UniqueConstraintDefinition()
+        cons.IsPrimaryKey <- true
+        cons.ConstraintIdentifier <- bracketed pk.Name
+        for col in pk.Columns do
+            let order = ColumnWithSortOrder()
+            let colRef = ColumnReferenceExpression()
+            let mid = MultiPartIdentifier()
+            mid.Identifiers.Add(bracketed col)
+            colRef.MultiPartIdentifier <- mid
+            order.Column <- colRef
+            order.SortOrder <- SortOrder.NotSpecified
+            cons.Columns.Add(order)
+        cons :> ConstraintDefinition
+
+    let private toDeleteUpdateAction (a: ReferenceActionSql) : DeleteUpdateAction =
+        match a with
+        | NoActionSql -> DeleteUpdateAction.NoAction
+        | CascadeSql  -> DeleteUpdateAction.Cascade
+        | SetNullSql  -> DeleteUpdateAction.SetNull
+
+    /// Build a single-column foreign-key constraint per V2's
+    /// `ForeignKeyDef`. Maps V2's `ReferenceActionSql` DU to
+    /// ScriptDom's `DeleteUpdateAction`. Slice 5.13.fk-features-emit:
+    /// emits the optional `UpdateAction` from `fk.OnUpdate`. When
+    /// `None`, ScriptDom omits the ON UPDATE clause and SQL Server's
+    /// server-default NO ACTION applies (preserves V1 emission shape).
+    let private foreignKeyConstraint
+        (fk: ForeignKeyDef)
+        : ConstraintDefinition =
+        let cons = ForeignKeyConstraintDefinition()
+        cons.ConstraintIdentifier <- bracketed fk.Name
+        cons.Columns.Add(bracketed fk.SourceColumn)
+        cons.ReferenceTableName <- schemaObjectFromTableId fk.Target
+        cons.ReferencedTableColumns.Add(bracketed fk.TargetColumn)
+        cons.DeleteAction <- toDeleteUpdateAction fk.OnDelete
+        match fk.OnUpdate with
+        | Some action -> cons.UpdateAction <- toDeleteUpdateAction action
+        | None        -> ()
+        cons :> ConstraintDefinition
+
+    /// Build a `CreateTableStatement` from V2's typed
+    /// `(TableId, ColumnDef list, PrimaryKeyDef option, ForeignKeyDef list)`
+    /// triple. Pure: same inputs → same fragment shape (verified by
+    /// `tests/Projection.Tests/ScriptDomRoundTripTests.fs`).
+    /// CREATE TABLE builder. Returns the typed `CreateTableStatement`
+    /// paired with a Diagnostics stream. Chapter 4.9 slice ζ — the
+    /// canonical signature carries `Diagnostics<_>` so future
+    /// Diagnostics sources (column-default parse failures; check-
+    /// constraint parse failures; per-column metadata anomalies) can
+    /// surface through the same writer without re-introducing a
+    /// sibling-wrapper. Today the entries list is empty by
+    /// construction; callers explicitly drop via `.Value` at the call
+    /// site (per the chapter 4.7 sibling-wrapper discipline + V2-no-
+    /// back-compat).
+    let buildCreateTable
+        (table: TableId)
+        (columns: ColumnDef list)
+        (pk: PrimaryKeyDef option)
+        (fks: ForeignKeyDef list)
+        (checks: ColumnCheckDef list)
+        : Diagnostics<CreateTableStatement> =
+        let stmt = CreateTableStatement()
+        stmt.SchemaObjectName <- schemaObjectFromTableId table
+        let def = TableDefinition()
+        for c in columns do
+            def.ColumnDefinitions.Add(columnDefinition c)
+        match pk with
+        | None -> ()
+        | Some p ->
+            def.TableConstraints.Add(primaryKeyConstraint p)
+        for fk in fks do
+            def.TableConstraints.Add(foreignKeyConstraint fk)
+        // Slice 5.13.column-features-emit (chapter A.0' slice ε emit
+        // closure): table-level CHECK constraints follow PK + FK in
+        // declaration order, matching V1's CREATE TABLE shape.
+        for chk in checks do
+            def.TableConstraints.Add(checkConstraint chk)
+        stmt.Definition <- def
+        Diagnostics.ofValue stmt
+
+    // -----------------------------------------------------------------------
+    // INSERT statements.
+    // -----------------------------------------------------------------------
 
     /// Cell-value → ScalarExpression. Routes through the typed
     /// `SqlLiteral.ofRaw` projection (Core) and the SSDT-resident
@@ -576,6 +652,21 @@ module ScriptDomBuild =
             Target     : TableId
             SetCells   : (string * SqlLiteral) list
             WhereCells : (string * SqlLiteral) list
+            /// When `true`, append a change-detection predicate to the
+            /// WHERE clause (`AND (<set-col-differs> OR ...)`) so a
+            /// no-op UPDATE is structurally filtered before SQL Server
+            /// observes it. Symmetric to `MergeBuildArgs.CdcAware`'s
+            /// effect on the `WHEN MATCHED AND (...)` predicate.
+            ///
+            /// Per `DECISIONS 2026-05-18 (slice 5.13.cdc-silence-cross-emitter)`:
+            /// V2 must structurally guarantee CDC silence for every
+            /// emission delta variant — Phase-2 UPDATE cannot lean on
+            /// SQL Server's no-op-MERGE optimization (which applies
+            /// to MERGE WHEN MATCHED UPDATE, not standalone UPDATE).
+            /// When `CdcAware = false` and `SetCells` is non-empty,
+            /// the UPDATE fires unconditionally on PK match — the
+            /// pre-slice shape, preserved for non-CDC-tracked tables.
+            CdcAware   : bool
         }
 
     /// Build a single-part `[col]` column reference (no Target/Source
@@ -595,12 +686,71 @@ module ScriptDomBuild =
         cmp.SecondExpression <- buildSqlLiteral lit
         cmp
 
+    /// Build `[col] IS [NOT] NULL` against a single-part column ref
+    /// (no Target/Source alias — UPDATE statement has only the
+    /// target table in scope). Sibling to the MERGE-side aliased
+    /// `isNullCheck`.
+    let private singlePartIsNullCheck (col: string) (negate: bool) : BooleanIsNullExpression =
+        let n = BooleanIsNullExpression()
+        n.Expression <- barColumnRef col :> ScalarExpression
+        n.IsNot <- negate
+        n
+
+    /// Build `[col] <> <literal>` for a standalone-UPDATE change-
+    /// detection term.
+    let private barInequality (col: string) (lit: SqlLiteral) : BooleanComparisonExpression =
+        let cmp = BooleanComparisonExpression()
+        cmp.ComparisonType <- BooleanComparisonType.NotEqualToBrackets
+        cmp.FirstExpression <- barColumnRef col :> ScalarExpression
+        cmp.SecondExpression <- buildSqlLiteral lit
+        cmp
+
+    /// Single-column change-detection predicate suitable for a
+    /// standalone UPDATE's WHERE clause:
+    ///
+    ///   - literal is NULL → predicate = `[col] IS NOT NULL`
+    ///     (difference iff target carries a value)
+    ///   - literal is non-NULL → predicate =
+    ///     `[col] <> <lit> OR [col] IS NULL`
+    ///     (difference iff target value differs OR is NULL)
+    ///
+    /// Sibling to the MERGE-side `perColumnChangeDetection`. The
+    /// shape differs because UPDATE has no Source table — the new
+    /// value is the typed `SqlLiteral` known at build-time, so the
+    /// literal-IS-NULL branch collapses at compile-time rather than
+    /// emitting a `<lit> IS NULL` SQL expression. Equivalent
+    /// truth-table; tighter SQL.
+    let private perColumnPhase2Difference (col: string) (lit: SqlLiteral) : BooleanExpression =
+        match lit with
+        | SqlLiteral.NullLit ->
+            singlePartIsNullCheck col true :> BooleanExpression
+        | _ ->
+            let inequality = barInequality col lit :> BooleanExpression
+            let isNull = singlePartIsNullCheck col false :> BooleanExpression
+            boolBinary BooleanBinaryExpressionType.Or inequality isNull
+            |> boolParen
+
+    /// Full change-detection predicate across all SET cells: per-cell
+    /// predicates joined with OR. Wrapped in parentheses for
+    /// well-grouped emission under ScriptDom's rendering rules.
+    let private phase2DifferencePredicate (setCells: (string * SqlLiteral) list) : BooleanExpression =
+        setCells
+        |> List.map (fun (col, lit) -> perColumnPhase2Difference col lit)
+        |> foldBool BooleanBinaryExpressionType.Or
+        |> boolParen
+
     /// Build the `UpdateStatement` for the supplied args. Per Tier-3
     /// (text-builder-as-first-instinct discipline): every node typed,
     /// every literal flowing through `SqlLiteral`, no terminal text
     /// composition until `Sql160ScriptGenerator.GenerateScript`.
     ///
     /// Chapter 4.9 slice ζ — canonical Diagnostics-bearing signature.
+    /// Slice 5.13.cdc-silence-cross-emitter extension: when
+    /// `args.CdcAware = true`, the WHERE clause appends a
+    /// `(<any-set-cell-differs>)` term so no-op UPDATEs are
+    /// structurally filtered before SQL Server observes them
+    /// (eliminates the CDC leak path for Phase-2 UPDATEs on
+    /// idempotent redeploy).
     let private buildUpdateStatementCore (args: UpdateBuildArgs) : UpdateStatement =
         let stmt = UpdateStatement()
         let spec = UpdateSpecification()
@@ -615,18 +765,28 @@ module ScriptDomBuild =
             setClause.NewValue <- buildSqlLiteral lit
             spec.SetClauses.Add(setClause :> SetClause)
 
-        // WHERE-clause: [pk1] = <litpk1> [AND [pk2] = <litpk2> ...].
-        // Empty WhereCells list emits no WHERE clause (full-table
-        // UPDATE — caller's responsibility to avoid that shape).
+        // WHERE-clause: [pk1] = <litpk1> [AND [pk2] = <litpk2> ...]
+        //               [AND (<set-cell-differs> OR ...)]
+        //
+        // The change-detection term is appended when CdcAware = true
+        // and SetCells is non-empty; an UPDATE with no SET cells
+        // can't fire CDC (it's a no-op statement at the parser
+        // boundary), so the predicate-append guard skips that
+        // degenerate case.
         match args.WhereCells with
         | [] -> ()
         | cells ->
-            let terms =
+            let pkTerms =
                 cells
                 |> List.map (fun (col, lit) ->
                     whereEquality col lit :> BooleanExpression)
+            let allTerms =
+                if args.CdcAware && not (List.isEmpty args.SetCells) then
+                    pkTerms @ [ phase2DifferencePredicate args.SetCells ]
+                else
+                    pkTerms
             let where = WhereClause()
-            where.SearchCondition <- foldBool BooleanBinaryExpressionType.And terms
+            where.SearchCondition <- foldBool BooleanBinaryExpressionType.And allTerms
             spec.WhereClause <- where
 
         stmt.UpdateSpecification <- spec
@@ -809,6 +969,35 @@ module ScriptDomBuild =
             stmt.IndexOptions.Add(onOffOption IndexOptionKind.AllowPageLocks false)
         if idx.NoRecomputeStatistics then
             stmt.IndexOptions.Add(onOffOption IndexOptionKind.StatisticsNoRecompute true)
+        // Slice 5.13.index-features-emit (matrix row 55):
+        // `IGNORE_DUP_KEY = ON` via IndexStateOption.
+        if idx.IgnoreDuplicateKey then
+            stmt.IndexOptions.Add(onOffOption IndexOptionKind.IgnoreDupKey true)
+        // Slice 5.13.index-features-emit (matrix row 56):
+        // `DATA_COMPRESSION = <level>` via DataCompressionOption.
+        // The realization-layer enum (`IndexDataCompressionSql`) maps
+        // 1:1 to ScriptDom's `DataCompressionLevel` (modulo the
+        // columnstore variants V2 doesn't surface today; lift trigger:
+        // a columnstore-bearing index surfaces in production).
+        match idx.DataCompression with
+        | None -> ()
+        | Some level ->
+            let opt = DataCompressionOption()
+            opt.OptionKind <- IndexOptionKind.DataCompression
+            // Fully qualify ScriptDom's `DataCompressionLevel` —
+            // Core's `Projection.Core.DataCompressionLevel` shares
+            // the same type-name (intentional parallel modeling per
+            // pillar 8 ubiquitous language); at this join site the
+            // F# compiler needs the namespace prefix to disambiguate.
+            opt.CompressionLevel <-
+                match level with
+                | NoneCompressionSql ->
+                    Microsoft.SqlServer.TransactSql.ScriptDom.DataCompressionLevel.None
+                | RowCompressionSql ->
+                    Microsoft.SqlServer.TransactSql.ScriptDom.DataCompressionLevel.Row
+                | PageCompressionSql ->
+                    Microsoft.SqlServer.TransactSql.ScriptDom.DataCompressionLevel.Page
+            stmt.IndexOptions.Add(opt :> IndexOption)
         // Chapter 4.5 slice α — WHERE clause via TSql160Parser, lifted
         // through the Diagnostics writer.
         match idx.Filter with
@@ -908,6 +1097,49 @@ module ScriptDomBuild =
         stmt.ExecuteSpecification <- spec
         stmt
 
+    /// Build `ALTER TABLE <table> WITH NOCHECK CHECK CONSTRAINT
+    /// <constraintName>` via ScriptDom's
+    /// `AlterTableConstraintModificationStatement`. Preserves the
+    /// deployed target's FK trust state when V1's
+    /// `#FkReality.IsNoCheck = 1` flips `Reference.IsConstraintTrusted`
+    /// to `false`. Slice 5.13.fk-features-emit (matrix row 59).
+    ///
+    /// Renders as the V1 emission shape:
+    ///   `ALTER TABLE [Schema].[Table] WITH NOCHECK CHECK CONSTRAINT [FK_…]`
+    /// — the `WITH NOCHECK` prefix (ExistingRowsCheckEnforcement)
+    /// tells SQL Server to skip validation of existing rows; the
+    /// trailing `CHECK CONSTRAINT` (ConstraintEnforcement) re-enables
+    /// the constraint going forward.
+    let buildAlterTableNoCheckConstraint
+            (table: TableId)
+            (constraintName: string)
+            : AlterTableConstraintModificationStatement =
+        let stmt = AlterTableConstraintModificationStatement()
+        stmt.SchemaObjectName <- schemaObjectFromTableId table
+        stmt.ConstraintNames.Add(bracketed constraintName)
+        stmt.ExistingRowsCheckEnforcement <- ConstraintEnforcement.NoCheck
+        stmt.ConstraintEnforcement <- ConstraintEnforcement.Check
+        stmt
+
+    /// Build `ALTER INDEX <indexName> ON <table> DISABLE` via
+    /// ScriptDom's `AlterIndexStatement` with
+    /// `AlterIndexType.Disable`. Preserves a deployed target's
+    /// disabled-index state when V1's
+    /// `IndexOnDiskMetadata.IsDisabled = true`. Slice
+    /// 5.13.index-features-emit (matrix row 55).
+    ///
+    /// Renders as the V1 emission shape:
+    ///   `ALTER INDEX [name] ON [Schema].[Table] DISABLE`
+    let buildAlterIndexDisable
+            (table: TableId)
+            (indexName: string)
+            : AlterIndexStatement =
+        let stmt = AlterIndexStatement()
+        stmt.Name <- bracketed indexName
+        stmt.OnName <- schemaObjectFromTableId table
+        stmt.AlterIndexType <- AlterIndexType.Disable
+        stmt
+
     /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ).
     let buildSetExtendedProperty
             (owner: ExtendedPropertyOwner)
@@ -924,16 +1156,8 @@ module ScriptDomBuild =
         match stmt with
         | Blank -> None
         | Comment _ -> None
-        | CreateTable (table, cols, pk, fks) ->
-            // Chapter 4.9 slice ζ — Diagnostics-bearing canonical
-            // signatures across CreateTable / CreateIndex /
-            // SetExtendedProperty / MergeStatement / UpdateStatement.
-            // The Statement-DU dispatcher drops Diagnostics — the
-            // dispatcher returns raw TSqlStatement per A35's stream
-            // contract. Future emit-time consumers wanting per-
-            // builder Diagnostics surfaced consume the builders
-            // directly (each returns `Diagnostics<TSqlStatement>`).
-            Some ((buildCreateTable table cols pk fks).Value :> TSqlStatement)
+        | CreateTable (table, cols, pk, fks, checks) ->
+            Some ((buildCreateTable table cols pk fks checks).Value :> TSqlStatement)
         | CreateIndex idx ->
             Some ((buildCreateIndex idx).Value :> TSqlStatement)
         | InsertRow (table, cells) ->
@@ -942,3 +1166,7 @@ module ScriptDomBuild =
             Some (buildSetIdentityInsert table enabled :> TSqlStatement)
         | SetExtendedProperty (owner, propName, propValue) ->
             Some ((buildSetExtendedProperty owner propName propValue).Value :> TSqlStatement)
+        | AlterTableNoCheckConstraint (table, constraintName) ->
+            Some (buildAlterTableNoCheckConstraint table constraintName :> TSqlStatement)
+        | AlterIndexDisable (table, indexName) ->
+            Some (buildAlterIndexDisable table indexName :> TSqlStatement)

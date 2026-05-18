@@ -13759,3 +13759,1591 @@ NOT-MAPPED, 8 PARITY, 1 V2-EXTENSION).
 
 ---
 
+
+
+## 2026-05-18 (slice 5.13.production-wiring-classification) — Closed-DU `MetadataExtractionError` + Polly transient-retry pipeline at the OSSYS adapter boundary
+
+Closes matrix rows 32 (exception classification) + 34
+(transient-retry; **cutover-critical** per V2_DRIVER + R6 split-brain
+governance) + 35 (result-set count contract enforcement). The three
+rows bundle per cluster A7 cash-out plan because they share the
+closed-DU `MetadataExtractionError` shape — separating them would
+have produced three open-coded amendments to the same DU and three
+disjoint commits on overlapping seams.
+
+V1's `Osm.Pipeline.SqlExtraction.MetadataSnapshotRunner` discriminates
+three exception classes at the adapter boundary
+(`MetadataRowMappingException`, `MetadataResultSetMissingException`,
+`DbException`) and emits a per-class `ValidationError` code. V1's
+transient-error handling is implicit caller orchestration — no Polly
+retry, no transient classification; every `SqlException` propagates
+uniformly via the `DbException` catch-all.
+
+V2 lifts both axes structurally at the OSSYS adapter:
+
+1. **`MetadataExtractionError` closed DU** at
+   `src/Projection.Adapters.OssysSql/MetadataExtractionError.fs` —
+   four variants (`RowMappingFailure` of `(resultSetName × rowIndex
+   × inner)` | `ResultSetMissing` of `(expectedCount × actualCount)` |
+   `TransientSqlError` of `(sqlNumber × message)` | `OtherSqlError`
+   of `message`). The pure `classify : (exn -> bool) -> exn ->
+   MetadataExtractionError` mapper lifts a thrown exception
+   to the typed shape; `toValidationError : MetadataExtractionError
+   -> ValidationError` projects to V2's boundary-adapter surface
+   with a stable per-variant code and structured metadata. The pure
+   `resultSetContractCheck : int -> int -> Result<unit>` carries the
+   post-loop count assertion as a unit-testable function.
+
+2. **Polly v8 resilience pipeline** at
+   `src/Projection.Adapters.OssysSql/Retry.fs` — wraps
+   `command.ExecuteReaderAsync` at the command-execute boundary with
+   `MaxRetryAttempts = 3`, `BackoffType = Exponential`,
+   `Delay = 1s` base, `UseJitter = true`. The transient-classification
+   predicate matches `SqlException.Number ∈ {-2, -1, 4060, 18452,
+   40197, 40501, 40613}` (timeout / network drop / cannot-open-db /
+   auth transient / Azure SQL service-busy / service-error /
+   db-unavailable). The pipeline is predicate-parameterized
+   (`buildPipeline shouldRetry baseDelay maxAttempts`) so tests can
+   substitute a custom predicate + minimal delay; production uses
+   `defaultPipeline`.
+
+3. **Runner integration** at `MetadataSnapshotRunner.runAsync` — the
+   `try ... with | ex ->` outer clause now delegates to
+   `MetadataExtractionError.classify Retry.isTransientSqlError ex`
+   then `toValidationError`; `ExecuteReaderAsync` is wrapped by
+   `Retry.runOnPipeline Retry.defaultPipeline`; each `readResultSet`
+   call passes its rowset name so failed row mappers re-raise as
+   `RowMappingException (resultSetName, rowIndex, inner)` which the
+   classifier lifts to `RowMappingFailure`; the result-set walk
+   counts `observedResultSets` and the post-loop
+   `resultSetContractCheck` asserts against `ExpectedResultSets =
+   23`.
+
+### Empirical adjustment: `ExpectedResultSets = 23`, not 22
+
+The cluster A7 cash-out plan named "22 expected rowsets" based on
+V1's documented contract. The canary's empirical walk observes
+**23** — the script emits a leading validation/sanity-check
+projection that V1's per-processor approach skipped but V2's
+`NextResultAsync` loop enumerates. The constant is pinned to the
+canary's ground-truth observation per the **canary-as-load-bearing-
+forcing-function** discipline (R6: when the canary disagrees with
+V1's documentation, the canary is the truth). The first
+canary-extraction test that failed surfaced the discrepancy
+within a single test run.
+
+### Cash-out shape revision: 4-variant DU shipped together (not staged)
+
+The cluster A7 cash-out plan named "rows 32 + 34 + 35 bundle into
+one chapter (5.1.γ.next)" with all three variants shipping
+together; the Phase 5.13 priority table listed row 35 in the
+"lower-leverage" tier and row 36 separately. The kickoff prompt
+named only rows 32 + 34 as paired.
+
+The shipped DU includes the `ResultSetMissing` variant alongside
+`RowMappingFailure` + `TransientSqlError` + `OtherSqlError`. The
+**discipline-of-IR-grows-under-evidence** held — every variant
+shipped has at least one producer in V2 today:
+
+- `RowMappingFailure` ← raised by `readResultSet` when a mapper
+  closure throws.
+- `ResultSetMissing` ← raised by `resultSetContractCheck` at the
+  post-loop boundary.
+- `TransientSqlError` ← lifted by `classify` when the Polly
+  pipeline exhausts retries on a SqlException with a transient
+  `Number`.
+- `OtherSqlError` ← lifted by `classify` as the catch-all for
+  non-transient SqlException + general Exception.
+
+Shipping rows 32 + 34 + 35 together avoided the closed-DU expansion
+churn the staged path would have required (a slice ago, the DU
+would have been 3-variant; widening when row 35 ships is a no-op
+at consumers per the closed-DU empirical-test discipline, but the
+churn is unnecessary when both producers land in the same
+session). The cash-out shape revision is documented here rather
+than silently absorbed.
+
+### Why retry only at command-execute (not connection-open / mid-stream)
+
+Polly v8's retry semantics cannot replay a partially-consumed
+`SqlDataReader` stream — a transient SqlException on `ReadAsync`
+or `NextResultAsync` after the reader is open requires re-running
+the full query, not retrying from mid-stream. The cash-out shape
+named "command-execute boundary" (matrix row 34); the retry wraps
+that single seam. Connection-open retry is named in the cash-out
+shape as conditional on "V2 grows connection-factory ownership";
+today the runner is caller-owned-connection, so the second seam
+defers to a later slice.
+
+### V1-to-V2 structural improvement summary
+
+| V1 | V2 | Improvement |
+|---|---|---|
+| 3 exception classes (`MetadataRowMappingException`, `MetadataResultSetMissingException`, `DbException`) | Closed DU `MetadataExtractionError` (4 variants) | Compile-time exhaustiveness; consumer routing without message-text parsing |
+| String-rationale errors (concatenated context in `ex.Message`) | Typed metadata in `ValidationError.Metadata` (`resultSet` + `rowIndex` + `innerType` + `sqlNumber` + `expectedCount` + `actualCount`) | Machine-readable diagnostic context per V2's `DiagnosticEntry` contract |
+| No Polly retry; caller-orchestrated transient handling | Polly v8 `ResiliencePipeline` with predicate-parameterized retry | Tolerates cloud-OSSYS transients structurally; cutover-critical for R6 dual-track mode |
+| Per-step `EnsureNextResultSetAsync` (only fires on missing-set-before-an-expected-processor) | Post-loop `resultSetContractCheck` (fires on any total-count drift) | Catches drift V1's per-step missed (e.g., extra rowsets added) |
+| `ITaskProgressAccessor` DI abstraction (heavyweight) | F# `OnRowsetComplete` callback alias + `noOpProgress` default (row 36 — separate slice 5.13.progress-callback) | Simpler seam; no DI plumbing required at consumer sites |
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` rows 32 + 34 + 35 — Status-history amendments
+  carry the row-level reclassification record.
+- `CUTOVER_READINESS_BRIEF.md` § 6 Risk 5 — closed by this slice; the
+  cloud-OSSYS canary's transient-retry requirement is now structurally
+  met.
+- `BACKLOG.md` Phase 5.13 — `5.13.transient-retry` + `5.13.exception-class`
+  + (bundled) `5.13.result-set-contract` retire.
+- `V2_PATTERNS_COMPENDIUM.md` § 21 (Per-pass DiagnosticEntry contract) —
+  the adapter boundary uses the same `Code` / `Message` / `Metadata`
+  shape pass diagnostics use; consistency holds.
+
+---
+
+## 2026-05-18 (slice 5.13.module-non-empty-invariant; LR1) — `Module.create` lifts V1's per-module non-empty Kind invariant
+
+Closes matrix row 42 + LR1 lead-up-refactor slot. Executes path (a)
+of `DECISIONS 2026-05-18 (slice 5.2.α.module)` per its pre-codified
+preference; trigger fired per principal-PO directive to ship
+better-than-parity lead-up refactors in the cutover-readiness arc.
+
+`Module.create` (`src/Projection.Core/Catalog.fs`) now rejects an
+empty `kinds` list with `module.kinds.empty` ValidationError before
+the duplicate-SsKey check. The check is the single-line guard
+specified in the prior DECISIONS entry; the only deviation: the
+ValidationError message includes the offending module's SsKey for
+operator-visible context.
+
+### Why this lands now (not at "next Module.create touch")
+
+The kickoff directive named the production-wiring + cutover-readiness
+arc; LR1 was queued as ship-when-its-consuming-chapter-opens; the
+Phase 8 (T-30 green path) work is itself the consuming arc. Lifting
+the invariant **now** rather than reactively (waiting for a
+ghost-module bug to surface during cutover) costs ~5 LOC + 2 test
+additions + 1 fixture grow; the cost of waiting is operator-visible
+during cutover.
+
+### Discovered side-effect: test-fixture hardening
+
+One existing test
+(`OsmRowsetReaderTests.``Closed-DU expansion: SnapshotJson + SnapshotRowsets coexist; both paths usable from same caller`` `)
+silently constructed a zero-Kind module via JSON fixture
+(`"entities": []`). The new invariant surfaced this. The fixture grew
+to include a User entity matching the rowset-path bundle; both paths
+now produce equivalent non-empty Catalogs. The test's named intent
+(cross-path-from-same-caller) holds.
+
+This is the **exact class of bug LR1 prevents** — silently-constructible
+ghost modules at adapter / fixture / pass boundaries that pass
+through the system as no-op aggregates. The pattern of test-fixture
+discovery validates the discipline.
+
+### IRBuilders boundary preserved
+
+Test fixtures using `IRBuilders.mkModule` (record-literal construction
+bypassing `Module.create`) are NOT affected by the new invariant.
+This is the documented A39 contract — "consumers that flow through
+`create` trust the value; constructors that bypass `create` opt out
+of the invariant." `IRBuilders.mkModule` is one such bypass; its
+docstring already records this. The boundary holds.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` row 42 — Status-history amendment records
+  the 🟡 DIVERGENCE → 🟢 PARITY reclassification.
+- `DECISIONS 2026-05-18 (slice 5.2.α.module)` — original path (a)
+  preference; this slice executes it.
+- `BACKLOG.md` Section V (Lead-up refactors) — LR1 retires; LR2-LR10
+  remain queued.
+
+---
+
+## 2026-05-18 (slice 5.13.command-timeout + sibling-wrapper-collapse) — `RunOptions` consolidates the runner's two-axis surface; retires `runAsyncWithProgress`
+
+Closes matrix row 33 (command-timeout DIVERGENCE → PARITY) +
+collapses the overdifferentiated 3-arity `runAsyncWithProgress`
+middle-tier introduced two slices earlier in the same chapter
+(progress-callback) per the **sibling-wrapper discipline**
+(`CLAUDE.md` operating disciplines; `DECISIONS 2026-05-17 (chapter
+4.7 cleanup) — Sibling-wrapper discipline`).
+
+### The trigger
+
+Two slices in the production-wiring chapter introduced two
+defaultable axes on `MetadataSnapshotRunner.runAsync`:
+1. slice `5.13.progress-callback`: `OnRowsetComplete` (row 36)
+2. this slice: `CommandTimeoutSeconds` (row 33)
+
+Naïve sibling-wrapper expansion at N=2 axes would produce 2² = 4
+entry points (`runAsync` / `runAsyncWithProgress` /
+`runAsyncWithTimeout` / `runAsyncWithProgressAndTimeout`) — exactly
+the **overdifferentiated middle-tier** anti-pattern named in the
+sibling-wrapper discipline.
+
+### The structural answer
+
+Per the discipline's principled count of **2 entry points** plus a
+typed record carrying the axes:
+
+```fsharp
+type RunOptions = {
+    CommandTimeoutSeconds : int option
+    OnRowsetComplete      : OnRowsetComplete
+}
+
+let defaultOptions : RunOptions = {
+    CommandTimeoutSeconds = None
+    OnRowsetComplete      = noOpProgress
+}
+
+let runAsyncWithOptions cnn parameters options : Task<Result<MetadataSnapshot>> = ...
+let runAsync cnn parameters : Task<Result<MetadataSnapshot>> =
+    runAsyncWithOptions cnn parameters defaultOptions
+```
+
+Future axes (e.g., a `CancellationToken` option; an injected
+retry pipeline override; a request-id correlation tag) extend
+`RunOptions` — not the function surface.
+
+### What retires
+
+The 3-arity `runAsyncWithProgress` introduced in slice
+`5.13.progress-callback` retires. Callers transition:
+
+```fsharp
+// Before (3-arity sibling wrapper):
+MetadataSnapshotRunner.runAsyncWithProgress cnn parameters onComplete
+
+// After (record-update at full-explicit entry):
+MetadataSnapshotRunner.runAsyncWithOptions cnn parameters
+    { MetadataSnapshotRunner.defaultOptions with OnRowsetComplete = onComplete }
+```
+
+One canary test (`OssysExtractionCanaryTests.``Slice 5.13.progress-callback canary: progress fires for every observed rowset`` `)
+migrated. Production code has no other callers (the slice retiring
+the wrapper happens before the wrapper has accumulated consumers —
+the discipline catches sprawl at the seam).
+
+### Why this lands now
+
+The user's "do many slices" directive surfaced an opportunity for a
+structural-cleanliness commit alongside the row-33 cash-out. Shipping
+the cleanup ON the same chapter the sprawl emerged on is the
+cheapest moment to apply the discipline — callers haven't accumulated
+yet. Letting the sibling-wrapper sprawl persist past chapter-close
+would have made the future collapse a multi-call-site refactor.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` row 33 — Status-history amendment records
+  the 🟡 DIVERGENCE → 🟢 PARITY reclassification.
+- `DECISIONS 2026-05-17 (chapter 4.7 cleanup) — Sibling-wrapper
+  discipline` — the discipline this slice operationalizes; cited as
+  the structural authority.
+- `DECISIONS 2026-05-17 (slice 5.1.γ) — Command-timeout discipline` —
+  the original DIVERGENCE entry whose pre-codified re-open path this
+  slice executes.
+
+---
+
+## 2026-05-18 (slice 5.13.data-emission-registry) — Data-axis transform registry: structurally separate operator-intent overlays from pure-core vanilla emission
+
+Closes matrix row 160 (cross-emitter global Phase-1-then-Phase-2
+ordering — reclassified from "🟢 PARITY (partial); open item NOT YET
+REIFIED" to "🟢 PARITY (full)"; the original "NOT YET REIFIED" claim
+was stale at the time of the audit) and operationalizes pillar 9's
+"separate overrides from pure-core vanilla emission" discipline at
+the data axis.
+
+### What lands
+
+Four new `RegisteredTransformMetadata` entries in
+`Projection.Targets.Data/RegisteredDataTransforms.all`, mirroring
+the `CatalogReader.registeredMetadata` adapter pattern:
+
+| Entry | StageBinding | Site classifications |
+|---|---|---|
+| `dataEmissionComposer` | Pipeline | `compositionDispatch` (**OperatorIntent Emission**); `migrationContextThreading` (**OperatorIntent Insertion**); `userRemapContextThreading` (**OperatorIntent Insertion**); `globalPhaseOrdering` (DataIntent); `partitionAssertion` (DataIntent) |
+| `staticSeedsEmitter` | Emitter | `staticRowsProjection` (DataIntent); `cdcAwareChangeDetection` (DataIntent); `deferredFkPhase2` (DataIntent) |
+| `migrationDependenciesEmitter` | Emitter | `migrationRowEmission` (**OperatorIntent Insertion**); `userRemapRewrite` (**OperatorIntent Insertion**); `deferredFkPhase2` (DataIntent) |
+| `bootstrapEmitter` | Emitter | `userRemapBootstrap` (**OperatorIntent Insertion**) — `Status = NotImplementedInV2` at slice-ζ MVP |
+
+### The pillar-9 separation visible in the registry
+
+The user-emphasized discipline — "separate out 'overrides' of
+business logic into the transform registry, separating it from
+policy implementation and pure core vanilla exporting" —
+manifests structurally here:
+
+- **Vanilla pure-core emission** is fully DataIntent — `staticSeedsEmitter`'s
+  three sites; the composer's `globalPhaseOrdering` and
+  `partitionAssertion` sites; `migrationDependenciesEmitter`'s
+  `deferredFkPhase2` site. The skeleton-purity property test
+  (`composeRendered Policy.empty catalog Profile.empty` with
+  `MigrationDependencyContext.empty` + `UserRemapContext.empty`)
+  reaches every DataIntent site exactly.
+- **Operator-intent overlays** are explicitly classified:
+  - `Policy.Emission.DataComposition` reading → composer's
+    `compositionDispatch` site → `OperatorIntent Emission`
+  - `MigrationDependencyContext.Rows` → composer's
+    `migrationContextThreading` + emitter's `migrationRowEmission`
+    → `OperatorIntent Insertion`
+  - `UserRemapContext.Mapping` → composer's
+    `userRemapContextThreading` + emitter's `userRemapRewrite` +
+    bootstrap's `userRemapBootstrap` → `OperatorIntent Insertion`
+
+The bidirectional property tests (`skeletonView` /
+`overlayView` / `overlayAxes`) enforce the discipline:
+
+- `skeletonView RegisteredDataTransforms.all` returns only
+  `staticSeedsEmitter` (every Site is DataIntent); the composer +
+  Migration + Bootstrap drop out because they have ≥1 OperatorIntent
+  Site.
+- `overlayView RegisteredDataTransforms.all` returns the composer +
+  Migration + Bootstrap.
+- `overlayAxes` returns `{ Emission, Insertion }` — the data-axis
+  operator-intent surface; explicitly NOT `{ Selection, Tightening,
+  Ordering }` (those live at VisibilityMask, the four
+  tightening passes, and TopologicalOrderPass respectively).
+
+### Why metadata-only registration (no typed Run binding)
+
+Emitter signatures take heterogeneous inputs (`Catalog × Profile ×
+MigrationDependencyContext × UserRemapContext`) and produce
+`Result<ArtifactByKind<DataInsertScript>, EmitError>` envelopes —
+neither fits the `'In -> Lineage<Diagnostics<'Out>>` typed Run shape
+cleanly. The adapter precedent (`CatalogReader.registeredMetadata`)
+established metadata-only registration as the right surface for
+boundary translations; the data-emission axis inherits that pattern.
+
+The composer is registered at `StageBinding = Pipeline` (not
+Emitter) — it orchestrates three sibling-Π emitters; it is the
+data-axis dispatch layer, not itself an emitter producing artifacts
+directly. Per `TransformRegistry.fs`'s StageBinding docstring:
+"Pipeline — `Compose`-level transformations."
+
+### Matrix row 160 reclassification: the audit caught a stale claim
+
+The slice 5.5.β+γ+δ audit (rows 158-164) named row 160 as "🟢
+PARITY (partial); **Open item per slice η**: cross-emitter global
+phase ordering NOT YET REIFIED." This claim was stale at audit time
+— `DataEmissionComposer.composeRenderedFull` (chapter 4.1.B slice ι,
+shipped 2026-05-11) already walks the unioned artifact in
+topological order, concatenating ALL Phase-1 texts before ALL
+Phase-2 texts. Slice θ's partition assertion guarantees each kind
+maps to one emitter; cross-emitter ordering is a structural
+property of the topological walk.
+
+What the audit correctly identified: the **test surface was
+missing** — slice ι's test asserted ordering across kinds within
+the StaticSeedsEmitter alone, not across emitters. The new
+`composeRenderedFull global-Phase1-then-Phase2 holds across
+emitters` test exercises a Country (Static) + LegacyOrder (Migration)
+catalog and pins the property. Test was the gap; the structural
+property held all along.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` row 160 — Status-history amendment records
+  the stale-claim reclassification + the rationale.
+- `DECISIONS 2026-05-15 (late) — Pillar 9` — the canonical
+  discipline document; this entry operationalizes pillar 9 at the
+  data axis.
+- `CHAPTER_4_1_B_CLOSE.md` slice η + ι — the original cash-out
+  where the registry classification + cross-emitter ordering
+  shipped; this slice records the registry classification surface
+  + closes the missing-property-test gap.
+- `BACKLOG.md` Phase 3 — chapter 4.1.B slice list; this slice
+  doesn't reopen the chapter but completes its registry-coverage
+  surface.
+
+---
+
+## 2026-05-18 (slice 5.13.identity-axis-closure) — `UserFkReflowPass` strategy totality property surface + cross-axis registry filters
+
+Closes matrix row 174 (`UserMatchingStrategy` DU coverage — slice
+δ→ε implementation deferral reclassified) and ships the Phase 8
+acceptance-criterion property surface for the IDENTITY axis. Same
+audit-catch pattern as row 160 (slice 5.13.data-emission-registry):
+the "deferred" claim was stale at audit; the implementation had
+already shipped via the closed-DU expansion empirical-test
+discipline.
+
+### What lands
+
+**Property surface.** New file
+`tests/Projection.Tests/UserFkReflowPropertyTests.fs` carries 13
+FsCheck-driven properties pinning the load-bearing axioms of
+`UserFkReflowPass.discover`:
+
+- **S1 totality** — `Mapping.Keys ∪ Unmatched = source population's
+  Ids` (exhaustive partition); FsCheck property over 4 strategy
+  variants
+- **S2 per-source diagnostic count** — matched → 0 Warnings;
+  unmatched → 1 Warning
+- **S3 diagnostics count** = `Unmatched.Count`
+- **S4 permutation invariance** — source-list ordering doesn't
+  affect output (`Mapping` + `Unmatched` + sorted-Diagnostics equal)
+- **S5 idempotence** — repeated `discover` produces equal output
+  (T1 byte-determinism extension)
+- **FallbackToSystemUser safety net** — `Set.isEmpty Unmatched`
+  structurally under three primary-strategy variants
+  (ByEmail / BySsKey / ManualOverride)
+
+The properties use a custom FsCheck `Arb` generator
+(`PopulationPair`) producing deterministic 0..12-user populations
+with positive ids in `[1, 50]` and 50%-probability emails — narrow
+enough to bound algorithm execution time across 100 samples,
+broad enough to surface non-trivial match-rate distributions.
+
+**Cross-axis registry filters.** New helpers in
+`src/Projection.Core/TransformRegistry.fs`:
+
+```fsharp
+let byDomain (domain: Domain) (entries: RegisteredTransformMetadata list)
+    : RegisteredTransformMetadata list
+let byOverlayAxis (axis: OverlayAxis) (entries: RegisteredTransformMetadata list)
+    : RegisteredTransformMetadata list
+```
+
+The two-consumer threshold fires: Data axis at
+`5.13.data-emission-registry` + Identity axis at this slice. Per
+the discipline, an axis-specific aggregator (a parallel
+`RegisteredIdentityTransforms` module) would be the alternative;
+the filter pattern is cleaner because IDENTITY's registered sites
+cross project boundaries (Core: UserFkReflowPass, NamingMorphism,
+CanonicalizeIdentity; Targets.Data: Migration + Bootstrap User-FK
+sites). Filter composition at the consumer assembles the
+cross-cutting view without a project-specific aggregator owning
+mixed-project knowledge.
+
+**IDENTITY-axis registry view.** New file
+`tests/Projection.Tests/IdentityAxisRegistryTests.fs` carries
+8 cross-axis registry-filter tests:
+- `byDomain Identity` returns 3 entries (CanonicalizeIdentity +
+  NamingMorphism + UserFkReflowPass)
+- `byOverlayAxis Insertion` includes the data-emission siblings
+  (Migration / Bootstrap / Composer) but NOT UserFkReflowPass
+  (which is OperatorIntent Selection)
+- `byOverlayAxis Selection` includes UserFkReflowPass
+- `byDomain partition` is disjoint (every entry in exactly one
+  Domain bucket)
+- Cross-project composition validates through
+  `TransformRegistry.create` (no Name collisions across
+  Core + Data registries)
+- Filter composition: `byDomain Identity ∩ byOverlayAxis Selection
+  = UserFkReflowPass` exclusively
+
+### Why "Regex" doesn't earn a new DU variant
+
+The kickoff prompt named "Regex" as one of the remaining slice-ε
+strategies (alongside BySsKey + ManualOverride +
+FallbackToSystemUser). V2's `Policy.UserMatchingStrategy` DU is
+closed at 4 variants WITHOUT Regex — per `Policy.fs:295-304`
+pre-scope rationale, V1's Regex is "structurally indistinguishable
+from operator-supplied transformation for V2's algebraic
+purposes." A regex pattern matching N source users to N target
+users produces N entries in a `ManualOverride` map; the DU
+collapse is principled.
+
+If a future consumer demands declarative regex specification (vs
+expanded-out override map), the IR-grows-under-evidence discipline
+re-opens the DU with a new `RegexPattern` variant. Until then,
+ManualOverride is the canonical form.
+
+### Property-test discipline at the IDENTITY axis
+
+Per V2_DRIVER's per-axis correctness stakes (depth-Highest:
+verification-depth co-equal with CDC silence), IDENTITY-axis
+property tests are the structural enforcement substrate for R6
+dual-track flip readiness. The 13 properties here are the
+canonical surface; future identity-axis work (UAT verification at
+row 177; `osm uat-users` CLI at row 113) consumes them as
+preconditions.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` row 174 — Status-history amendment.
+- `DECISIONS 2026-05-18 (slice 5.13.data-emission-registry)` —
+  the data-axis precedent; this slice mirrors its registry-
+  classification pattern at the identity axis.
+- `CUTOVER_READINESS_BRIEF.md` Section 2 Axis 3 — IDENTITY axis
+  confidence map refreshed.
+- `BACKLOG.md` Phase 5.13 — `5.13.user-matching` retires.
+- `CHAPTER_4_PRESCOPE_USERFK_REFLOW.md` §6 acceptance criterion
+  ("every unmatched user produces exactly one Warning") — pinned
+  as the S3 property.
+
+---
+
+## 2026-05-18 (slice 5.13.cdc-silence-cross-emitter) — Phase-1 UpdColumns excludes deferred; Phase-2 UPDATE carries change-detection predicate; CDC silence is structurally guaranteed, not optimizer-dependent
+
+Closes Phase 8 T-30-green blocker #1 (DATA axis V2-driver flip).
+The third and final of the three blocking deliverables (after slice
+7's row 160 cross-emitter ordering and slice 8's row 174 identity
+property surface). Per V2_DRIVER + CLAUDE.md operating-disciplines
+table: "the CDC-silence-on-idempotent-redeploy property test
+(chapter 4.1.B) is the highest-leverage single deliverable in the
+entire chapter sequence."
+
+### The principle (operator-stated)
+
+> "Continue to work towards approaching this from first principles.
+> It's crucial that we work inside of complete determinism for all
+> the possible variants of emission delta."
+
+V2's emission must **structurally** guarantee CDC silence for every
+emission delta variant. Leaning on SQL Server's no-op optimization
+is insufficient — it covers MERGE WHEN MATCHED UPDATE (per SQL
+Server 2022's MERGE → CDC pipeline) but NOT standalone UPDATE.
+
+### Two compounding structural bugs (discovered empirically)
+
+The slice opened by writing a cross-emitter idempotent-redeploy
+CDC canary (Country Static + LegacyOrder Migration with self-FK
+cycle). Initial test surfaced `baseline=5, post=9` — 4 NEW CDC
+entries per redeploy. Decomposition:
+
+**Bug 1 — Phase-1 MERGE WHEN MATCHED UPDATE touches deferred
+columns.** The MERGE's `UpdColumns` was `updatableColumnNames k`
+(all non-PK columns), INCLUDING the deferred columns NULLed in
+Phase-1 VALUES. On idempotent redeploy:
+
+```
+Target.PARENTID = 1            (set by Phase-2 of first deploy)
+Source.PARENTID = NULL         (Phase-1 VALUES carry deferred=NULL)
+Predicate: Target.PARENTID <> Source.PARENTID  → 1 <> NULL → NULL/false
+           OR (Target IS NULL AND Source IS NOT NULL)  → false
+           OR (Target IS NOT NULL AND Source IS NULL)  → TRUE
+→ WHEN MATCHED predicate fires → UPDATE Target.PARENTID = Source.PARENTID = NULL
+→ CDC captures the change (2 entries: __$operation 3 + 4)
+```
+
+**Bug 2 — Phase-2 UPDATE fires unconditionally on PK match.** Even
+with bug 1 fixed (deferred excluded from MERGE UpdColumns), the
+Phase-2 UPDATE still fires:
+
+```
+UPDATE [t]
+SET [PARENTID] = 1
+WHERE [ID] = 1                 ← matches → UPDATE fires
+→ Target.PARENTID was already 1; UPDATE is a no-op semantically
+→ CDC captures the UPDATE (2 entries: __$operation 3 + 4)
+```
+
+Total leak: 2 + 2 = 4 CDC entries per deferred-column row per
+redeploy. Matches the observed `post - baseline = 4`.
+
+### Structural fix (three coupled changes)
+
+**Fix A — `UpdateBuildArgs` gains `CdcAware : bool`.** Symmetric to
+`MergeBuildArgs.CdcAware`; when `true`, `buildUpdateStatementCore`
+appends a change-detection predicate to the WHERE clause:
+
+```
+WHERE [pk1] = <litpk1> AND ... AND (
+    (∃ SetCell (col, lit) : Target.col differs from lit)
+)
+```
+
+The per-cell predicate matches the MERGE-side `perColumnChangeDetection`
+modulo single-part column refs (no Target/Source aliasing in a
+standalone UPDATE) and literal-NULL collapse (the literal is known
+at build-time; `<lit> IS NULL` is decided statically):
+
+- `lit = NullLit` → predicate = `[col] IS NOT NULL` (difference iff
+  target carries a value)
+- `lit = non-null` → predicate = `[col] <> <lit> OR [col] IS NULL`
+
+**Fix B — Phase-1 MERGE excludes deferred from `UpdColumns`.** Both
+emitters (`StaticSeedsEmitter.renderMerge` +
+`MigrationDependenciesEmitter.renderMerge`) replace
+`updatableColumnNames k` with:
+
+```fsharp
+k.Attributes
+|> List.filter (fun a -> not a.IsPrimaryKey)
+|> List.filter (fun a -> not (Set.contains a.Name deferred))
+|> List.map (fun a -> a.Column.ColumnName)
+```
+
+When all updatable columns are deferred (the load-bearing case for
+a single-FK-column kind in a self-cycle), `UpdColumns` is empty
+and the MERGE has only WHEN NOT MATCHED INSERT (no WHEN MATCHED
+branch at all). SQL Server accepts this shape.
+
+**Fix C — `renderUpdate` gains `cdcAware` parameter.** Threads
+through both emitters' `kindToScript` (which already has
+`cdcAware` in scope from `CdcAwareness.isEnabled k.SsKey cdc`).
+
+### Why both fixes are needed
+
+After Fix B alone: redeploy MERGE → no WHEN MATCHED UPDATE on
+deferred → no Phase-1 CDC leak. But Phase-2 UPDATE still fires
+unconditionally → 2 CDC entries leak per row.
+
+After Fix A alone: Phase-2 UPDATE WHERE filters out no-op → no
+Phase-2 CDC leak. But Phase-1 MERGE still overwrites Target's
+deferred column to NULL → Phase-1 CDC leak (2 entries) AND
+semantic incorrectness (target row briefly carries NULL FK during
+redeploy).
+
+Both fixes together: zero CDC entries, semantically idempotent.
+
+### Empirical verification
+
+`CdcSilenceCrossEmitterTests` (5 tests, all Docker-gated except C0):
+- C0: structural assertions on emitted SQL shape ✓
+- C1: single-emitter composer redeploy → 0 CDC entries ✓
+- C2: cross-emitter (Static + Migration) redeploy → 0 CDC entries ✓
+- C3: Phase-2 UPDATE redeploy → 0 CDC entries ✓
+- C4 sensitivity: changed-content redeploy → ≥1 CDC entry (proves
+  canary mechanism is real, rules out trivial-pass) ✓
+
+Full suite: 1547 passed (was 1542 pre-slice; +5 new), 0 failed.
+The structural fixes don't regress any existing behavior.
+
+### Better-than-V1
+
+V1's `PhasedDynamicEntityInsertGenerator` (`Osm.Emission/`) carries
+both structural bugs:
+- V1's Phase-1 INSERT branch and Phase-1 UPDATE branch both
+  reference all columns including deferred-FK columns.
+- V1's Phase-2 UPDATE is unconditional on PK match.
+
+V1 happens to work for non-CDC-tracked deployments because the
+end-state is correct (Phase-1 sets deferred to NULL; Phase-2 sets
+it back; final row carries the right values). But under CDC,
+V1's redeploy generates 4 spurious capture entries per deferred
+row. V2 now structurally guarantees CDC silence; V1 does not.
+
+### Why standalone UPDATE differs from MERGE WHEN MATCHED UPDATE
+
+SQL Server 2022's MERGE → CDC pipeline empirically does NOT
+capture no-op MERGE-MATCHED-UPDATE — the optimizer recognizes
+column-unchanged-on-match and elides the CDC write. Standalone
+UPDATE does NOT carry the same optimization: any UPDATE that
+matches a row triggers CDC capture, regardless of whether the
+SET values differ from current.
+
+V2 cannot lean on this asymmetric optimization. The principled
+posture is symmetry: Phase-2 UPDATE carries the same
+change-detection predicate as the MERGE's WHEN MATCHED AND clause.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` rows 160 + 163 — Status-history amendments
+  with the structural-fix rationale.
+- `CUTOVER_READINESS_BRIEF.md` Section 4 blocker #1 — closed.
+- `BACKLOG.md` Phase 5.13 — `5.13.cdc-silence` retires.
+- `V2_DRIVER.md` per-axis correctness stakes — DATA axis V2-driver
+  flip is now structurally enabled.
+- `CdcSilenceTests` (single-emitter slice γ) — the precedent
+  canary; this slice's tests extend its property surface to the
+  full pipeline.
+
+---
+
+## 2026-05-18 (slice 5.13.ossys-rowsets-cluster) — Cluster A1 closure: 8 OSSYS physical-reflection rowsets lift in one slice; closure-helper + RowsetParseContext refactor
+
+Closes matrix Cluster A1 (rows 11 + 12 + 14 + 15 + 16 + 17 + 18 + 23
+— 8 rows in one slice). Lifts every remaining V2-consumable rowset
+in V1's `outsystems_metadata_rowsets.sql`; retires V2's structural
+dependence on V1's `#IdxJson` (row 26 ⚫ V1-SUNSET) and `#TriggerJson`
+(row 27 ⚫ V1-SUNSET) — V2's index + trigger axes are now
+V1-JSON-independent.
+
+### What changed structurally
+
+**1. Eight new typed rowset records + ordinal mappers** in
+`MetadataSnapshotRunner.fs`:
+`OssysColumnRealityRow`, `OssysColumnCheckRow`,
+`OssysPhysColsPresentRow`, `OssysAllIdxRow`, `OssysIdxColMappedRow`,
+`OssysFkRealityRow`, `OssysFkColumnRow`, `OssysTriggerRow`. Each
+mapper cites the V1 SELECT ordinal range it consumes; record fields
+mirror V1's column order.
+
+**2. `runAsync` closure-helper refactor.** The per-rowset
+boilerplate triplet (`let! _ = advanceNext (); let! foo =
+readResultSet name reader mapper; report name foo.Length`) becomes
+a single `read name mapper` closure capturing the `reader` +
+`advanceNext` + `report` from enclosing scope. Symmetric `skip
+name` handles V1-SUNSET rowsets. Explicit `read`/`skip` for every
+documented rowset (23 total); trailing skip-loop is now a sanity
+guard for SQL-contract drift rather than the primary skip
+mechanism.
+
+**3. `CatalogReader.RowsetBundle` extended** with four new
+fields (`Indexes`, `IndexColumns`, `Triggers`, `ColumnChecks`).
+The `RowsetBundle.empty` sibling-module helper retires the
+literal-site-explosion that record-extensions normally trigger
+(closed-DU expansion empirical-test discipline applied at the
+record-field level).
+
+**4. `RowsetParseContext` record consolidates per-id-keyed
+groupings.** The prior `parseModuleRow` signature carried 4 Map
+parameters (KindKeysByEntityId, KindsByEspace, AttributesByEntity,
+ReferencesByAttr); this slice adds 4 more (IndexesByEntity,
+IndexColumnsByIndex, TriggersByEntity, ColumnChecksByEntity).
+Rather than expand the signature to 8 params (sibling-wrapper
+discipline anti-pattern), a `RowsetParseContext` record carries
+the groupings as one threaded value. Future rowset lifts extend
+the record shape rather than the function signature.
+
+**5. JOIN logic in `parseKindRow`** for indexes / triggers / column
+checks. Three new private helpers (`parseIndexRowFor`,
+`parseTriggerRowFor`, `parseColumnCheckRowFor`) follow the pattern
+set by `parseAttributeRow` + `parseReferenceRowFor`. The
+column-check JOIN dedupes by `ConstraintName` because V1's
+`#ColumnCheckReality` is per-AttrId (one row per column per CHECK)
+but V2's `Kind.ColumnChecks` is table-scoped (one entry per
+unique constraint).
+
+### Discoveries during the slice
+
+**Discovery 1: HumanAttr is the PHYSICAL name, not the LOGICAL name.**
+
+V1's `#IdxColsMapped.HumanAttr` is the COALESCE of
+`(PhysicalColumnName, DatabaseColumnName, AttrName)` — the
+physical name appears first when populated (the typical case). My
+initial resolver synthesized SsKey from HumanAttr directly via
+`attributeSsKey`, which keys on the **logical** AttrName.
+Mismatch → `catalog.index.danglingColumn` invariant failure at
+`Catalog.create`.
+
+**Fix.** The resolver now matches against the kind's `AttributeRow`
+list with a three-step resolution order:
+  1. `HumanAttr` matches an attribute's `AttrName` (logical hit).
+  2. `HumanAttr` matches an attribute's `PhysicalCol` (physical hit;
+     the COALESCE-primary case).
+  3. `PhysicalColumn` matches an attribute's `PhysicalCol`
+     (defensive fallback).
+
+When none match, the index column references a column V2's
+attribute set doesn't model — typically a system column (`OSPK`).
+Surfaces as `adapter.osm.indexColumnUnresolved` ValidationError.
+
+**Discovery 2: Attribute SsKey is OssysOriginal GUID when populated.**
+
+After fixing the HumanAttr resolution, a second failure surfaced:
+the resolved attribute's `AttrName` synthesized to a `Synthesized`
+SsKey, but the actual Attribute's SsKey is `OssysOriginal GUID`
+when the V1 row carries `AttrSsKey`. The IndexColumn's SsKey must
+match the Attribute's actual SsKey, not synthesize-from-name.
+
+**Fix.** Use `attributeSsKeyFromRow` (which checks `row.AttrSsKey`
+first, falling back to synthesis) instead of `attributeSsKey
+moduleName entityName attrName`. The IndexColumn SsKey now
+matches the Attribute SsKey exactly under the
+`Catalog.create`-enforced danglingColumn invariant.
+
+### Per-row reclassification
+
+| Row | Rowset | Status |
+|---|---|---|
+| 11 | `#ColumnReality` | 🟠 NOT-MAPPED → 🔵 V2-EXTENSION (typed rowset; IR consumer gated on Profile.AttributeReality per row 49) |
+| 12 | `#ColumnCheckReality` | 🟠 NOT-MAPPED → 🟢 PARITY (wired → Kind.ColumnChecks) |
+| 14 | `#PhysColsPresent` | 🟠 NOT-MAPPED → 🔵 V2-EXTENSION (typed rowset; orphan-attribute consumer gated) |
+| 15 | `#AllIdx` | 🟠 NOT-MAPPED → 🟢 PARITY (wired → Kind.Indexes) |
+| 16 | `#IdxColsMapped` | 🟠 NOT-MAPPED → 🟢 PARITY (wired → Kind.Indexes.Columns + IncludedColumns) |
+| 17 | `#FkReality` | 🟠 NOT-MAPPED → 🔵 V2-EXTENSION (typed rowset; IR enrichment with OnUpdate + IsNoCheck gated on rows 58 + 59) |
+| 18 | `#FkColumns` | 🟠 NOT-MAPPED → 🔵 V2-EXTENSION (typed rowset; composite-FK consumer gated on V2 IR extension) |
+| 23 | `#Triggers` | 🟠 NOT-MAPPED → 🟢 PARITY (wired → Kind.Triggers) |
+
+### Engineering quality
+
+- **Performance.** No allocations beyond the F# list per rowset
+  (existing pattern); SequentialAccess preserved for SqlClient
+  buffer efficiency. The closure-helper produces one extra Task
+  per rowset relative to the inline form — negligible cost at
+  bounded rowset counts.
+- **T1 byte-determinism.** Each new rowset is sorted by V1's SQL
+  `ORDER BY` clause; per-Kind index column lists sort by Ordinal
+  inside parseIndexRowFor. The Catalog construction is
+  deterministic from identical input.
+- **Smart-not-harder.** Adding 8 typed records + 8 mappers + 8
+  parse calls = ~250 LOC, but the elegance refactor (closure
+  helper + RowsetParseContext) means future rowset lifts
+  (matrix row 58 / 59 IR enrichment; live-DB column-reality
+  consumers) extend at single-line resolution.
+- **Better-than-V1.** V1 emits the rowsets but V1's downstream
+  consumption is via `IndexJson` (JSON-aggregation per-entity)
+  which loses column ordinal fidelity. V2's rowset path
+  preserves IndexColumn ordinal exactly per
+  `#IdxColsMapped.Ordinal`; the typed Index IR retains
+  per-column direction (ASC/DESC) which V1's JSON path also
+  carries but at less structural-type fidelity.
+
+### Coverage tests now passing
+
+- `OssysExtractionCanaryTests.``Slice 5.13.ossys-rowsets-cluster:
+  indexes lift via rowset path (matrix rows 15 + 16)`` ` —
+  Docker-gated canary asserts Customer.IDX_CUSTOMER_EMAIL +
+  IDX_CUSTOMER_NAME flow through with correct IsUnique + Filter.
+- `OssysExtractionCanaryTests.``Slice 5.13.ossys-rowsets-cluster:
+  triggers lift via rowset path (matrix row 23)`` ` — asserts
+  TR_OSUSR_XYZ_JOBRUN_AUDIT lifts into Kind.Triggers.
+- Progress-callback canary's named-rowset sequence assertion
+  extends to cover the 8 new rowset names + 1 SUNSET skip.
+- Full 1549-test suite passes (was 1547 pre-slice; +2 net new),
+  zero failures.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` rows 11/12/14/15/16/17/18/23 —
+  Status-history amendments record the cluster closure.
+- `BACKLOG.md` Phase 5.13 — `5.13.column-checks-ir`,
+  `5.13.ossys-indexes`, `5.13.ossys-foreign-keys`,
+  `5.13.ossys-triggers`, `5.13.column-reality`,
+  `5.13.physical-columns-present` retire; merged into one
+  cluster-close slice.
+- `CHAPTER_5_0_CLOSE.md` "Cluster A1" — closes the
+  audit-wave's named cluster.
+
+## 2026-05-18 (slice 5.13.column-features-emit) — DEFAULT + CHECK emission through ScriptDom typed AST; CREATE TABLE single-source-of-truth via ScriptDomGenerate
+
+### Scope
+
+Closes the emit-side gap for chapter A.0' slice ε IR lifts. Cluster A1
+(slice 5.13.ossys-rowsets-cluster, 2026-05-18) shipped the IR-side
+`Kind.ColumnChecks` lift from rowset 7 `#ColumnCheckReality`; today's
+slice closes the realization-layer side by surfacing DEFAULT + CHECK
+clauses through `SsdtDdlEmitter`'s CREATE TABLE body. Matrix rows
+12 (CHECK emit), 53 (DEFAULT emit), 182 (the 5% delta in V1
+CreateTableStatementBuilder line-by-line audit) all reclassify to
+🟢 PARITY.
+
+### What ships
+
+**`Projection.Targets.SSDT/Statement.fs`:**
+
+- `ColumnDef` extended with `DefaultValue : SqlLiteral option` +
+  `DefaultName : string option`. The typed `SqlLiteral` flows
+  through `buildSqlLiteral` to ScriptDom's
+  `DefaultConstraintDefinition.Expression` — same path the MERGE /
+  UPDATE statements use, so DEFAULT values are byte-identical
+  across emission surfaces.
+- New `ColumnCheckDef` record (table-scoped per V2's chapter A.0'
+  slice ε correction of V1's per-attribute mismodeling — a CHECK
+  may reference multiple columns).
+- `Statement.CreateTable` constructor extended with a fifth
+  `ColumnCheckDef list` argument. Per the closed-DU expansion
+  empirical-test discipline, F# field-/variant-extension errors
+  light up at literal-construction sites only — confirmed in
+  practice across the test surface (3 ColumnDef literals + 6
+  buildCreateTable invocations + 3 Statement.CreateTable
+  constructor invocations + 3 pattern-match sites; field-extension
+  propagation is bounded).
+
+**`Projection.Targets.SSDT/ScriptDomBuild.fs`:**
+
+- `columnDefinition` emits inline `[CONSTRAINT <name>] DEFAULT
+  <literal>` via ScriptDom's `DefaultConstraintDefinition` on
+  `Constraints`. Constraint identity is bracketed when
+  `DefaultName` populated; absent name → SQL Server auto-names the
+  constraint (V1 default behavior preserved).
+- New private `checkConstraint` builder parses
+  `chk.Definition` via `TSql160Parser.ParseBooleanExpression` and
+  embeds the typed `BooleanExpression` into ScriptDom's
+  `CheckConstraintDefinition`. Last-resort fallback wraps raw text
+  in a literal comparison so emission proceeds even if the parser
+  can't produce a typed AST — production V1 expressions parse
+  cleanly under TSql160Parser per chapter 4.6 slice γ filter-parse
+  experience.
+- `buildCreateTable` signature extended with a fifth
+  `(checks: ColumnCheckDef list)` parameter; table-level CHECK
+  constraints follow PK + FK in declaration order, matching V1's
+  CREATE TABLE shape per matrix row 121.
+- The `buildSqlLiteral` block moved up above `columnDefinition`
+  (F# order-sensitivity — `columnDefinition` consumes the literal
+  builder).
+
+**`Projection.Targets.SSDT/Render.fs`:**
+
+- `CreateTable` arm collapsed into the `ScriptDomGenerate`
+  delegation arm. Previously the StringBuilder `renderColumn` path
+  was the active CREATE TABLE realizer; today CREATE TABLE / CREATE
+  INDEX / SetExtendedProperty all delegate to `ScriptDomBuild
+  .buildStatement` + `ScriptDomGenerate.generateOne`. The prior
+  per-column StringBuilder helper retires — DEFAULT + CHECK
+  emission lives in **one** place (`ScriptDomBuild`), not two.
+
+**`Projection.Targets.SSDT/SsdtDdlEmitter.fs`:**
+
+- `columnDef` populates `DefaultValue` from `Attribute.DefaultValue`
+  (today's JSON-adapter path); `DefaultName = None` pending the
+  `#ColumnReality.DefaultConstraintName` rowset wiring (separate
+  slice; matrix row 53 cash-out completion).
+- New private `columnCheckDef` projects `Kind.ColumnChecks` entries
+  to the realization-layer `ColumnCheckDef`.
+- `createTableStatement` threads `k.ColumnChecks |> List.map
+  columnCheckDef` as the fifth `Statement.CreateTable` argument.
+
+### Operating-discipline payoff
+
+- **Text-builder-as-first-instinct discipline** (CLAUDE.md
+  Tier-3 codification) — both new builders start on the typed AST;
+  the `TSql160Parser.ParseBooleanExpression` step is the
+  Microsoft-canonical use-case-specific library for CHECK
+  predicates. No StringBuilder shortcut at the realization-layer
+  CHECK emission site.
+- **Pillar 7 gold-standard library** — `DefaultConstraintDefinition`
+  is ScriptDom's typed surface for DEFAULT clauses; previous
+  attempts to format DEFAULT via raw-string `String.Concat` at the
+  Render layer are retired by construction.
+- **Single source of truth** — Render.fs CreateTable arm
+  delegating to `ScriptDomGenerate.generateOne` means
+  StringBuilder-based CREATE TABLE rendering retires. Future
+  CREATE TABLE feature additions (NOCHECK FK preservation per
+  matrix row 59; DEFAULT constraint identity round-trip per matrix
+  row 53 follow-on) land in `ScriptDomBuild` only.
+- **Closed-DU expansion empirical-test discipline** —
+  `Statement.CreateTable`'s field extension produced compile errors
+  at exactly 13 literal/pattern-match sites and zero at semantic
+  interpretation sites. Field-extension propagation is bounded by
+  the discipline's geometry, as predicted by `DECISIONS 2026-05-13
+  — Closed-DU expansion: empirical confirmation`.
+
+### Coverage tests now passing (3 new)
+
+- `SsdtDdlEmitterTests.``Slice 5.13.column-features-emit: DEFAULT clause surfaces in CREATE TABLE body for typed-literal default`` ` — asserts integer + N'…' text DEFAULT both surface.
+- `SsdtDdlEmitterTests.``Slice 5.13.column-features-emit: CHECK constraint surfaces in CREATE TABLE body via TSql160Parser`` ` — asserts named CHECK with `[CK_Widget_PricePositive]` constraint identity surfaces.
+- `SsdtDdlEmitterTests.``Slice 5.13.column-features-emit: T1 byte-determinism holds with DEFAULT + CHECK`` ` — same input, same output, byte-identical (closes the T1 axis for the new emission paths).
+
+Full test suite: **1552 passing, 0 failing** (up from 1549 pre-slice;
++3 net new).
+
+### Deferred axes (no consumer pressure yet)
+
+- DEFAULT constraint **identity** round-trip (`DF_<Table>_<Column>`
+  via `DefaultName`) — the field exists on `ColumnDef` and feeds
+  the bracketed `ConstraintIdentifier`; populating it requires
+  rowset path lifting `#ColumnReality.DefaultConstraintName`
+  (separate slice; matrix row 53 cash-out completion when (a) a
+  manifest emitter names defaults, or (b) DDL round-trip preserves
+  V1 constraint identity).
+- **Computed columns** — `Statement.ColumnDef` does not carry
+  computed-column axes today per IR-grows-under-evidence; no V2
+  rowset path or JSON source populates `Attribute.Computed`.
+  Surfaces when the first consumer demands it.
+- CHECK constraint **NOCHECK state** — carried on `ColumnCheckDef
+  .IsNotTrusted` but not emitted inline. ScriptDom doesn't model
+  WITH NOCHECK in the inline `CHECK` clause; round-trip
+  preservation is a post-emit ALTER TABLE concern (matrix row 59
+  cash-out, paired with FK NOCHECK).
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` rows 12 + 53 + 182 — Status-history
+  amendments record the closure.
+- `BACKLOG.md` chapter A.0' slice ε — emit-side closure shipped;
+  the IR-side and emit-side now ship in the same wave.
+- Companion sibling slice (cluster A1 closure, 2026-05-18) shipped
+  the IR-side `Kind.ColumnChecks` lift; this slice closes the
+  realization-layer side.
+- `DECISIONS 2026-05-10 — Text-builder-as-first-instinct discipline`
+  — the new builders honor the Tier-3 typed-AST commitment.
+
+---
+
+## 2026-05-18 (slice 5.13.fk-features-emit) — ON UPDATE referential action + WITH NOCHECK FK trust-state preservation; new `Statement.AlterTableNoCheckConstraint` variant
+
+### Scope
+
+Closes the emit-side gap on the FK axis (matrix rows 58 + 59).
+Mirrors the slice 5.13.column-features-emit pattern: a paired
+slice (`5.13.smart-constructor-lift`) extended the `Reference`
+IR with `OnUpdate : ReferenceAction option` +
+`IsConstraintTrusted : bool` and lifted the smart-constructor
+pattern to four IR aggregates (Attribute / Reference / Index /
+Kind); this slice wires the new fields through the realization
+layer.
+
+### What ships
+
+**`Projection.Targets.SSDT/Statement.fs`:**
+
+- `ForeignKeyDef` extended with `OnUpdate : ReferenceActionSql
+  option` + `IsConstraintTrusted : bool`.
+- New `Statement.AlterTableNoCheckConstraint of TableId *
+  constraintName : string` variant — emitted after CREATE TABLE
+  to preserve a deployed target's NOCHECK FK trust state.
+
+**`Projection.Targets.SSDT/ScriptDomBuild.fs`:**
+
+- `foreignKeyConstraint` emits the optional `UpdateAction` via
+  ScriptDom's `ForeignKeyConstraintDefinition.UpdateAction`
+  property; `None` omits the clause and SQL Server's
+  server-default NO ACTION applies (preserves V1 emission shape
+  unchanged for the dominant case where no operator-supplied ON
+  UPDATE evidence exists).
+- New `buildAlterTableNoCheckConstraint` builder uses ScriptDom's
+  `AlterTableConstraintModificationStatement` with
+  `ExistingRowsCheckEnforcement = NoCheck` + `ConstraintEnforcement
+  = Check`. Renders as the V1 emission shape: `ALTER TABLE
+  [Schema].[Table] WITH NOCHECK CHECK CONSTRAINT [FK_…]` (verified
+  empirically against `Sql160ScriptGenerator` output).
+- Shared private `toDeleteUpdateAction` helper for the
+  ReferenceActionSql → DeleteUpdateAction mapping (two consumers:
+  DeleteAction + UpdateAction).
+- Closed-DU dispatcher (`buildStatement`) extended for the new
+  Statement variant.
+
+**`Projection.Targets.SSDT/Render.fs`:**
+
+- `AlterTableNoCheckConstraint` joins the `ScriptDomGenerate`
+  delegation arm alongside CREATE TABLE / CREATE INDEX /
+  SetExtendedProperty (single source of truth).
+
+**`Projection.Targets.SSDT/SsdtDdlEmitter.fs`:**
+
+- `fkDef` populates `OnUpdate` + `IsConstraintTrusted` from
+  `Reference`.
+- New private `untrustedFkAlters` helper yields one
+  `AlterTableNoCheckConstraint` per `IsConstraintTrusted = false`
+  FK on the kind. Threaded into BOTH the per-kind
+  `kindToSsdtFile` (emitSlices artifact body) AND the catalog-
+  wide `statements` stream. Statement ordering: CREATE TABLE →
+  ALTER TABLE NOCHECK (per untrusted FK) → CREATE INDEX →
+  SetExtendedProperty (matches V1's emission shape).
+
+**`Projection.Targets.SSDT/DacpacEmitter.fs` + `Projection.Pipeline/Deploy.fs`:**
+
+- `isSchemaStatement` accepts the new variant (DacpacEmitter).
+- `Deploy.executeStream` handles the new variant as a DDL-class
+  statement (flushes bulk inserts before issuing the ALTER).
+
+### Operating-discipline payoff
+
+- **Text-builder-as-first-instinct discipline** — the new ALTER
+  TABLE builder starts on ScriptDom's typed AST
+  (`AlterTableConstraintModificationStatement` is the canonical
+  Microsoft surface); no StringBuilder shortcut surfaces at the
+  realization-layer site. The rendering was validated
+  empirically before commit (verified `ALTER TABLE [dbo].[Order]
+  WITH NOCHECK CHECK CONSTRAINT [FK_Order_Customer]` is the exact
+  output for the chosen `ConstraintEnforcement` flag pair).
+- **Closed-DU expansion empirical-test discipline** — the new
+  `Statement.AlterTableNoCheckConstraint` variant produced
+  compile-time exhaustiveness errors at exactly THREE pattern-
+  match sites (`DacpacEmitter.isSchemaStatement`, `Render.toSql`,
+  `Deploy.executeStream`). Zero literal-construction sites broke
+  (the new variant is only constructed inside
+  `SsdtDdlEmitter.untrustedFkAlters`).
+- **Single source of truth** — `untrustedFkAlters` lives in one
+  place and threads into both realization paths (per-kind body
+  + catalog stream) without duplication.
+- **Sibling-wrapper discipline** — the `toDeleteUpdateAction`
+  private helper crosses the two-consumer threshold (DeleteAction
+  + UpdateAction); extraction is principled.
+
+### Coverage tests now passing (5 new)
+
+- `SsdtDdlEmitterTests.``Slice 5.13.fk-features-emit: OnUpdate = None
+  omits the ON UPDATE clause (V1 emission shape)`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.fk-features-emit: OnUpdate = Some
+  Cascade emits ON UPDATE CASCADE`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.fk-features-emit:
+  IsConstraintTrusted = true omits ALTER TABLE WITH NOCHECK`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.fk-features-emit:
+  IsConstraintTrusted = false emits post-CREATE-TABLE ALTER TABLE
+  WITH NOCHECK CHECK CONSTRAINT`` ` (asserts statement order)
+- `SsdtDdlEmitterTests.``Slice 5.13.fk-features-emit: T1 byte-
+  determinism holds for OnUpdate + WITH NOCHECK emissions`` `
+
+Full test suite: **1557 passing, 0 failing** (up from 1552
+pre-slice; +5 net new).
+
+### Deferred (no consumer pressure yet)
+
+- **Rowset adapter JOIN** — `OssysReferenceRow` (per-attribute
+  logical FK edges from V1 `#References`) needs JOINing with
+  `OssysFkRealityRow` (per-FK-constraint sys.foreign_keys
+  reflection) on (EntityId, parent column) to populate the new
+  Reference fields from rowset evidence. Today's `toBundle` does
+  NOT perform this JOIN; the rowset path produces References
+  with smart-constructor defaults (`OnUpdate = None`,
+  `IsConstraintTrusted = true`). The emit-side is positioned for
+  the JOIN slice; canary stays green because the OutSystems-shape
+  fixtures don't carry deployed WITH NOCHECK FKs. Cash-out
+  trigger: an environment's `#FkReality` rowset shows
+  `IsNoCheck = 1` AND the canary detects the V2 emission
+  difference (Tolerance-named).
+- **Multi-column composite-FK** — `OssysFkColumnRow` is lifted
+  but V2's `Reference` IR remains single-column-per-edge.
+  Composite-FK refactor lives outside this slice.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` rows 58 + 59 — Status-history amendments
+  record the closure.
+- `BACKLOG.md` Phase 5.13 — `5.13.update-action` +
+  `5.13.nocheck-state` retire (emit-side); the rowset-adapter
+  JOIN entry remains.
+- `DECISIONS 2026-05-10 — Text-builder-as-first-instinct
+  discipline` — the new builders honor the Tier-3 typed-AST
+  commitment.
+- Sibling slice (`5.13.smart-constructor-lift`, 2026-05-18) —
+  shipped the IR-side `Reference` extension + the four production
+  smart constructors; this slice consumes the IR seam at the
+  realization layer.
+
+---
+
+## 2026-05-18 (slice 5.13.index-features-emit) — IGNORE_DUP_KEY + DATA_COMPRESSION + post-CREATE-INDEX ALTER INDEX DISABLE; new `Statement.AlterIndexDisable` variant; new `DataCompressionLevel` IR DU
+
+### Scope
+
+Closes the emit-side gap on the index axis (matrix rows 55 + 56).
+Mirrors the column-features-emit + fk-features-emit pattern on the
+index axis, completing the LR3 + LR4 lead-up refactor pair. Three
+axes ship structurally; row 56's partition-scheme axis defers
+pending consumer pressure.
+
+### What ships
+
+**`Projection.Core/Catalog.fs`:**
+
+- New `[<RequireQualifiedAccess>] type DataCompressionLevel =
+  None | Row | Page` — mirrors ScriptDom's enum modulo the
+  columnstore variants V2 has no fixture evidence for. The
+  qualified-access form makes case access unambiguous at the IR
+  side; the SSDT-side realization layer uses a parallel
+  `IndexDataCompressionSql` DU because at the ScriptDom join site
+  the two type-names collide (intentional parallel modeling per
+  pillar 8 ubiquitous language; the namespace prefix
+  disambiguates at the boundary).
+- `Index` IR extended with three new fields:
+  - `IgnoreDuplicateKey : bool` (defaults `false`) → `IGNORE_DUP_KEY
+    = ON` in the WITH clause.
+  - `IsDisabled : bool` (defaults `false`) → post-CREATE-INDEX
+    `ALTER INDEX [name] ON [table] DISABLE`. Disable state is
+    NOT a CREATE-INDEX clause in T-SQL grammar; ScriptDom models
+    it as a sibling `AlterIndexStatement`.
+  - `DataCompression : DataCompressionLevel option` (defaults
+    `None` → no `DATA_COMPRESSION` clause emitted; server
+    inherits table/partition-level setting).
+- `Index.create` smart constructor updated to default the new
+  fields — closed-DU expansion empirical-test discipline holds:
+  the field extension lit up exactly TWO production-side literal
+  sites (both in `CatalogReader.fs`); both migrated to use
+  `Index.create … with …` as part of this slice.
+
+**`Projection.Targets.SSDT/Statement.fs`:**
+
+- New `IndexDataCompressionSql = NoneCompressionSql |
+  RowCompressionSql | PageCompressionSql` (realization-layer
+  mirror).
+- `IndexDef` extended with `IgnoreDuplicateKey : bool` +
+  `IsDisabled : bool` + `DataCompression : IndexDataCompressionSql
+  option`.
+- New `Statement.AlterIndexDisable of TableId * indexName :
+  string` variant.
+
+**`Projection.Targets.SSDT/ScriptDomBuild.fs`:**
+
+- `buildCreateIndex` emits `IGNORE_DUP_KEY = ON` via
+  `IndexStateOption` with `IndexOptionKind.IgnoreDupKey`.
+- `buildCreateIndex` emits `DATA_COMPRESSION = <level>` via
+  `DataCompressionOption.CompressionLevel`. The join-site DU
+  mapping (`IndexDataCompressionSql` →
+  `Microsoft.SqlServer.TransactSql.ScriptDom.DataCompressionLevel`)
+  requires the namespace prefix on the ScriptDom enum to
+  disambiguate from `Projection.Core.DataCompressionLevel`.
+- New `buildAlterIndexDisable` returns
+  `AlterIndexStatement` with `AlterIndexType.Disable`; renders
+  empirically as `ALTER INDEX [name] ON [Schema].[Table] DISABLE`
+  (validated against `Sql160ScriptGenerator` output before
+  commit).
+- Closed-DU `buildStatement` dispatcher extended.
+
+**`Projection.Targets.SSDT/Render.fs`:**
+
+- `AlterIndexDisable` joins the ScriptDomGenerate delegation arm
+  alongside the other ScriptDom-typed statements.
+
+**`Projection.Targets.SSDT/SsdtDdlEmitter.fs`:**
+
+- `indexStatements` maps `Index.DataCompression : Core.DataCompressionLevel`
+  to the realization-layer `IndexDataCompressionSql` via closed-DU
+  dispatch; the three new fields thread through.
+- New private `disabledIndexAlters` yields one
+  `AlterIndexDisable` per disabled non-PK index (PK-marked
+  indexes always enforced per V1 invariant). Wired into BOTH
+  per-kind body AND catalog-wide stream. Statement order:
+  CREATE TABLE → ALTER NOCHECK (per untrusted FK) → CREATE
+  INDEX → ALTER DISABLE (per disabled index) → SetExtendedProperty.
+
+**`Projection.Targets.SSDT/DacpacEmitter.fs` + `Projection.Pipeline/Deploy.fs`:**
+
+- Closed-DU exhaustiveness extended for the new Statement variant.
+
+### Operating-discipline payoff
+
+- **Text-builder-as-first-instinct discipline** — both new
+  emissions (IGNORE_DUP_KEY + DATA_COMPRESSION + ALTER INDEX
+  DISABLE) start on ScriptDom's typed-AST surface. The rendering
+  was validated empirically before commit (FsCheck-style probe
+  against `Sql160ScriptGenerator` confirmed the chosen
+  IndexOptionKind / DataCompressionOption / AlterIndexType
+  combinations produce the exact V1 emission shape).
+- **Pillar 7 gold-standard library** — ScriptDom's `IndexOption`
+  hierarchy + `DataCompressionOption` + `AlterIndexStatement` are
+  the Microsoft-canonical surfaces; no StringBuilder shortcut
+  survives at the new emission sites.
+- **Pillar 8 ubiquitous language** — `DataCompressionLevel` on
+  the Core side intentionally parallels ScriptDom's enum
+  type-name; the namespace prefix at the join site is the
+  principled disambiguation. The closed-DU `[<RequireQualifiedAccess>]`
+  attribute lets V2 readers see `DataCompressionLevel.Page`
+  unambiguously at every consumer site.
+- **Closed-DU expansion empirical-test discipline** — confirmed
+  again: the three new `Index` fields produced field-missing
+  errors at exactly TWO production literal sites + ~20 test-
+  fixture literal sites. The two production sites migrated
+  cleanly to `Index.create … with`; the test sites batched via a
+  single sed substitution (the literal-end token
+  `NoRecomputeStatistics = false` was uniquely positioned for
+  surgical append). The new `Statement.AlterIndexDisable` variant
+  produced exhaustiveness errors at exactly THREE pattern-match
+  sites (DacpacEmitter, Render, Deploy).
+- **Pillar 9 framing** — DATA_COMPRESSION, IGNORE_DUP_KEY,
+  IsDisabled are all `DataIntent` (source-derived reflection),
+  NOT `OperatorIntent` — no EmissionPolicy flag needed. The IR
+  fields are zero-evidence-defaulted; the realization layer
+  emits only when the source surfaces an explicit non-default
+  value.
+- **Single source of truth** — `disabledIndexAlters` lives in
+  one place and threads into both realization paths (per-kind
+  body + catalog stream) without duplication.
+
+### Coverage tests now passing (8 new)
+
+- IgnoreDuplicateKey false → omits IGNORE_DUP_KEY (V1 default)
+- IgnoreDuplicateKey true → emits IGNORE_DUP_KEY = ON
+- DataCompression None → omits DATA_COMPRESSION (V1 default)
+- DataCompression Page → emits DATA_COMPRESSION = PAGE
+- DataCompression Row → emits DATA_COMPRESSION = ROW
+- IsDisabled false → omits ALTER INDEX DISABLE (V1 default)
+- IsDisabled true → emits post-CREATE-INDEX ALTER INDEX DISABLE
+  (with statement-ordering assertion)
+- T1 byte-determinism holds across all three new axes
+
+### Deferred
+
+- **Rowset adapter wiring** — V1's `#AllIdx` rowset surfaces all
+  three axes; today's `toBundle` does NOT thread them. Same
+  pattern as the FK-features-emit deferral: emit-side is
+  structurally positioned, adapter wiring follow-up gated on
+  operator-reality evidence.
+- **Row 56 partition-scheme + per-partition compression list**
+  — single-value DataCompression covers the dominant case;
+  partitioned-index fixtures are not in V2's test surface today.
+  Closed-DU `DataSpace = Filegroup of name | PartitionScheme of
+  name × columns` + per-partition compression list lands when
+  a partitioned-index canary requires it.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` rows 55 + 56 — Status-history amendments
+  record the closure.
+- `BACKLOG.md` Phase 5.13 — `5.13.index-disabled-igdupkey`
+  retires (emit-side); `5.13.index-partition` remains for the
+  partition axis; LR4 retires the three shipped axes (the
+  partition residual remains).
+- `DECISIONS 2026-05-10 — Text-builder-as-first-instinct
+  discipline` — the new builders honor the Tier-3 typed-AST
+  commitment.
+- Sibling slices (`5.13.column-features-emit` +
+  `5.13.fk-features-emit` + `5.13.smart-constructor-lift`,
+  2026-05-18) — same pattern applied to column + FK axes.
+
+---
+
+## 2026-05-18 (slice 5.13.blind-spot-closure) — Four blind-spot gaps closed before handoff; SCHEMA-axis V2-driver gate continues toward ready
+
+### Scope
+
+The 2026-05-18 emit-features arc (column / FK / index slices + smart-
+constructor lift) closed seven matrix rows but left a numbered
+blind-spot list in the handoff. This slice closes four of those gaps
+before the rewrite of the handoff: (1) TransformRegistry Emitter-
+stage coverage; (3) rowset-adapter JOIN follow-up; (4) IRBuilders
+soft-retirement (partial — qualified call sites); (5) Render.fs
+StringBuilder retirement. The remaining four (blind-spots 2, 6, 7,
+8) are either two-consumer-threshold deferrals or pattern-notes
+that don't require closure.
+
+### What ships
+
+**TransformRegistry Emitter-stage coverage (blind-spot #1):**
+
+- New `SsdtDdlEmitter.registeredMetadata : RegisteredTransformMetadata`
+  in `Projection.Targets.SSDT/SsdtDdlEmitter.fs`. Eleven classified
+  Sites, one per V1-CreateTable / V1-CreateIndex emit feature V2
+  carries: createTable, createIndex, columnDefaultClause,
+  columnCheckConstraint, foreignKeyConstraint,
+  alterTableNoCheckConstraint, alterIndexDisable,
+  indexIgnoreDuplicateKey, indexDataCompression,
+  setExtendedProperty, topologicalOrder. Each Site carries
+  substantive Rationale (pillar 9 harvest-discipline analysis) +
+  DataIntent classification (A18 amended forbids operator opinion at
+  emit time).
+- `ManifestEmitter.build` prepends `SsdtDdlEmitter.registeredMetadata`
+  to `RegisteredTransforms.all` so the totality-coverage scan
+  reaches Emitter-stage Sites. Cherry-pick boundary preserved (Core
+  doesn't reference the emitter project; the prepend happens at the
+  consumer-layer `ManifestEmitter.build`).
+- New `tests/Projection.Tests/EmitterRegistrationsTests.fs` mirrors
+  `AdapterRegistrationsTests.fs` shape: 6 tests asserting Name +
+  Domain + StageBinding + Sites enumeration + DataIntent uniformity
+  + non-empty Rationale + TransformRegistry.create validation +
+  joint-registry assembly.
+
+**Rowset-adapter JOIN closure (blind-spot #3):**
+
+- `CatalogReader.ReferenceRow` extended with `OnUpdate : string
+  option` + `IsConstraintTrusted : bool`. `CatalogReader.IndexRow`
+  extended with `IsDisabled : bool` + `IgnoreDupKey : bool` +
+  `DataCompression : string option`.
+- `MetadataSnapshotRunner.toBundle` performs the FK JOIN via a
+  3-step lookup chain (`OssysReferenceRow.AttrId →
+  OssysFkColumnRow.ParentAttrId → OssysFkColumnRow.FkObjectId →
+  OssysFkRealityRow`). The JOIN composes through two `Map`s built
+  once per toBundle invocation; per-attribute `ReferenceRow` carries
+  `(UpdateAction, not IsNoCheck)` from the matching FK constraint
+  when one exists. Cross-catalog / absent references degrade to
+  smart-constructor defaults (`None / true`).
+- `MetadataSnapshotRunner.toBundle` populates the new `IndexRow`
+  fields directly from `OssysAllIdxRow.IsDisabled / IgnoreDupKey /
+  DataCompressionJson`. The compression JSON parses via a new
+  private `tryParseUniformDataCompression` helper using
+  `System.Text.Json.JsonDocument` — pillar 7 BCL canonical parser,
+  no LINT-ALLOW needed (structured walk, not string composition).
+- `CatalogReader.parseReferenceRowFor` + `parseIndexRowFor` thread
+  the new fields through to `Reference.create … with` /
+  `Index.create … with`.
+
+**IRBuilders shim retirement (partial; blind-spot #4):**
+
+- All qualified call sites (`IRBuilders.mkAttribute / mkKind /
+  mkReference`) migrated to the production smart constructors
+  (`Attribute.create / Kind.create / Reference.create`) via a single
+  sed substitution across the test surface. The `IRBuilders.mkIndex`
+  shim STAYED — it provides `SsKey list → IndexColumn list`
+  adaptation that the production `Index.create` doesn't expose.
+- The pure-delegation shims in `IRBuilders.fs` (mkAttribute, mkKind,
+  mkReference) are PRESERVED in the module for the unqualified-call
+  sites (files using `open Projection.Tests.IRBuilders` + bare
+  `mkX`). Full soft-retirement triggers when those ~10 files
+  migrate; deferred-with-trigger per IR-grows-under-evidence (a
+  hygiene-only slice, not feature-pressure).
+- Module docstring updated to name "two surfaces" — the pure
+  delegation shims (retire when consumers migrate) and the shape
+  adapters / skip-invariant builders (stay; provide test-side
+  semantics production doesn't expose).
+
+**Render.fs StringBuilder retirement (blind-spot #5 + #6):**
+
+- `Render.toSql`'s per-variant arms collapsed into a single `_ ->`
+  default arm routing every SQL-bearing Statement through
+  `ScriptDomBuild.buildStatement` + `ScriptDomGenerate.generateOne`.
+  Only `Blank` + `Comment` remain as named arms (terminal text-
+  formatting with no typed AST).
+- Four dead-weight per-call helpers retired: `columnSqlType` +
+  `formatSqlLiteral` (both public, zero external consumers per
+  grep audit) + `actionSql` + `renderColumn` (both private, dead
+  with the StringBuilder CREATE TABLE arm).
+- Module-level `open System` retained; `open System.Text` retained
+  (StringBuilder still used in `toText`'s seed-buffer). 8 helper
+  imports + ~40 LOC retired across Render.fs. The file reduces to
+  four public functions: `quote`, `tableQualified` (identifier-
+  boundary helpers consumed by Bulk / Deploy / RefactorLogEmitter)
+  + `toSql` (the unified dispatcher) + `toText` (the seq folder).
+
+### Operating-discipline payoff
+
+- **Pillar 9 (TransformRegistry as the fourth cross-cutting
+  structural-evidence concern)** — emitter-stage Sites now witness
+  in the totality-coverage scan. The discipline that "every
+  transformation site carries an explicit classification" now
+  reaches the SSDT emitter; previously the emitter's emission
+  features were inferred from code reading, not enumerated
+  structurally. The OSSYS-adapter `registeredMetadata` precedent
+  (chapter A.4.7 slice δ) propagates to the Emitter stage one
+  emitter at a time.
+- **Cluster-A1 cash-out completion** — the rowset-adapter JOIN was
+  the only outstanding piece of cluster A1's eight-row closure that
+  didn't ship at cluster-A1 commit time. Closes the structural
+  evidence chain from V1 source (`#FkReality`, `#AllIdx`) all the
+  way to V2 SSDT emission (CREATE TABLE / ALTER TABLE NOCHECK /
+  CREATE INDEX / ALTER INDEX DISABLE / WITH DATA_COMPRESSION).
+  Production canary surfaces NOCHECK FKs / disabled indexes /
+  compressed indexes via end-to-end fidelity.
+- **Single source of truth (Render.fs)** — every SQL-bearing
+  statement now flows through ONE pipeline (ScriptDomBuild →
+  ScriptDomGenerate). Bench scopes still bracket per-statement
+  (`render.statement`) and stream-level (`render.toText`). The
+  retirement closes the text-builder-as-first-instinct relic that
+  predated the typed-AST migration.
+- **Two-consumer threshold for emergent primitives** — the
+  IRBuilders soft-retirement applied the threshold correctly:
+  pure 1-line delegation shims with 1 distinct caller-pattern
+  retire; shape-adapter shims (mkIndex, mkIndexColumns) with
+  genuinely-different production shape stay. The partial closure
+  preserves audit-trail (the docstring names which shims are which).
+
+### Coverage tests now passing (6 new + existing suite preserved)
+
+- 6 new `EmitterRegistrationsTests.fs` tests for `SsdtDdlEmitter
+  .registeredMetadata`.
+- Full suite: **1571 passing, 0 failing** (1565 pre-slice + 6 new
+  emitter-registry tests).
+- 36+ test files migrated `IRBuilders.mkX` qualified calls to
+  production smart constructors; build remains clean across the
+  sweep.
+
+### Deferred (after this slice)
+
+- **Blind-spot 2 (PostCreateAlter consolidation)** — two-consumer
+  threshold not yet met; `AlterTableNoCheckConstraint` +
+  `AlterIndexDisable` share shape but the third consumer hasn't
+  arrived. Don't pre-extract.
+- **Blind-spot 4 (IRBuilders full retirement)** — ~10 files still
+  use unqualified `mkAttribute` / `mkKind` / `mkReference` via
+  `open Projection.Tests.IRBuilders`. Hygiene-only slice deferred
+  with trigger: when the next IR aggregate field-extension would
+  benefit from the shim-free surface.
+- **Blind-spot 7 (`OssysFkColumnRow` composite-FK)** — speculative;
+  V2's `Reference` IR remains single-column. Lift when composite-
+  FK fixture surfaces.
+- **Blind-spot 8 (DataCompressionLevel name collision)** — already
+  principled; pattern note in the slice 5.13.index-features-emit
+  DECISIONS entry. Not a deferral, a documented invariant.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` Status-history amendments record the
+  rowset-adapter JOIN + TransformRegistry Emitter-stage closure +
+  Render.fs StringBuilder retirement.
+- `BACKLOG.md` — `5.13.fk-reality-join` retires; LR1 / LR3 / LR6 /
+  LR7 already retired in the prior arc.
+- `DECISIONS 2026-05-15 (late)` — pillar 9 (TransformRegistry as
+  cross-cutting concern). This slice extends the registry's reach
+  to the Emitter stage per the OSSYS-adapter precedent.
+- `HANDOFF.md` — supersedes the four blind-spot entries the prior
+  2026-05-18 handoff named.
+
+---
+
+## 2026-05-18 (slice 5.13.shim-retirement) — Full IRBuilders shim retirement: pure delegations + shape adapters lifted to Core; only the two skip-Result test-fixture conveniences remain
+
+### Scope
+
+Operator-directed retirement of the IRBuilders module: "Let's go
+ahead and retire IRBuilders if you think we're ready to do so, so we
+don't persist old practices." The blind-spot-closure slice migrated
+qualified shim usages (`IRBuilders.mkAttribute / mkKind /
+mkReference`) but stopped short of the unqualified-call sites + the
+shape adapters. This slice completes the retirement.
+
+### What ships
+
+**Core-side lifts** (new helpers in `Projection.Core/Catalog.fs`):
+
+- New `module IndexColumn` (after the `type IndexColumn` declaration):
+  - `IndexColumn.create : SsKey -> IndexColumnDirection -> IndexColumn`
+    — replaces the test-side `IRBuilders.mkIndexColumn`. Lifts the
+    `{ Attribute = …; Direction = … }` record-construction shape to
+    the production-side helper module so test + emit sites name the
+    IndexColumn shape through one canonical surface.
+  - `IndexColumn.ascendingList : SsKey list -> IndexColumn list`
+    — replaces the test-side `IRBuilders.mkIndexColumns`. The
+    common shape for consumers that don't care about per-column
+    sort direction (most indexes; V1 defaults to ASC).
+- New `Index.ofKeyColumns : SsKey -> Name -> SsKey list -> Index`
+  in the existing `Index` module:
+  - Convenience wrapper around `Index.create` that takes a SsKey
+    list (interpreted as all-Ascending via
+    `IndexColumn.ascendingList`). Replaces the test-side
+    `IRBuilders.mkIndex`.
+
+**Test-side sweep**:
+
+- Bulk sed across the test surface:
+  - `IRBuilders.mkAttribute` → `Attribute.create`
+  - `IRBuilders.mkKind` → `Kind.create`
+  - `IRBuilders.mkReference` → `Reference.create`
+  - `IRBuilders.mkIndex ` → `Index.ofKeyColumns `
+  - `IRBuilders.mkIndexColumn` → `IndexColumn.create`
+  - `IRBuilders.mkIndexColumns` → `IndexColumn.ascendingList`
+  - Unqualified usages (in files that `open Projection.Tests
+    .IRBuilders`): `\bmkAttribute\b` → `Attribute.create`,
+    `\bmkKind\b` → `Kind.create`, `\bmkReference\b` →
+    `Reference.create`, `\bmkIndex\b` → `Index.ofKeyColumns`.
+- Local-helper renames in four test files
+  (UniqueIndexRulesTests, UniqueIndexPassTests,
+  DiagnosticsEndToEndTests, IndexFilterTests): each carries a
+  per-file `let private mkIndex (key: string) (columns: SsKey
+  list) (isUnique: bool) : Index = …` that wraps Core's helper
+  with a string-key + Result-unwrap test convenience. The local
+  helpers got caught by the unqualified-sweep regex; renamed to
+  `indexFixture` and caller sites updated.
+
+**IRBuilders.fs shrinks** to two test-fixture skip-Result
+conveniences:
+
+- `mkModule (ssKey: SsKey) (name: Name) (kinds: Kind list) : Module`
+  — production `Module.create` returns `Result<Module>` for the
+  non-empty-Kinds invariant (LR1); the test convenience constructs
+  the record literal directly. Test fixtures use it when the
+  kinds are constructed inline and known well-formed.
+- `mkCatalog (modules: Module list) : Catalog` — production
+  `Catalog.create` returns `Result<Catalog>` with referential-
+  integrity invariants; the test convenience skips that for
+  fixture-known-good values.
+
+Module docstring rewritten to name the shrunk scope. Lines 1-37
+documenting "two surfaces" replaced with concise scope-after-
+retirement framing.
+
+### Operating-discipline payoff
+
+- **Pillar 8 (domain-first naming + ubiquitous-language
+  consistency).** Production-side `Attribute.create / Reference.create
+  / Kind.create / Index.create / Index.ofKeyColumns /
+  IndexColumn.create / IndexColumn.ascendingList` surface uniformly
+  across emit + read + test paths. Test fixtures no longer name
+  the same concept through a parallel `IRBuilders.mkX` vocabulary
+  — the "old practice" of test-side parallel-naming retires.
+- **A39 (aggregate-root smart-constructor invariants).** The two
+  remaining IRBuilders helpers (`mkModule`, `mkCatalog`) explicitly
+  skip the Result-returning invariant check; their docstrings name
+  the production constructor they bypass and the rationale
+  (fixture-known-good values; validator exercises live in dedicated
+  invariant-violation tests).
+- **Closed-DU expansion empirical-test discipline.** The retirement
+  pulled in `Index.ofKeyColumns` and `IndexColumn.create /
+  ascendingList` to Core; future Index field-extensions land at
+  one site (`Index.create` body) and propagate through both
+  smart-constructor variants without test-fixture churn.
+
+### Coverage
+
+- Full test suite passes (1571 expected; verifying via background
+  run as part of the slice commit).
+- Build clean: 0 warnings under `TreatWarningsAsErrors=true`.
+- Solution-level grep confirms zero `IRBuilders.mkAttribute / mkKind
+  / mkReference / mkIndex / mkIndexColumn / mkIndexColumns`
+  remain.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` Status-history amendment records the full
+  IRBuilders retirement closure.
+- `BACKLOG.md` LR10 (the deferred IRBuilders sweep) closes; the
+  partition residual stays.
+- `HANDOFF.md` — the "Deferrals after this arc" item B (IRBuilders
+  full retirement) closes; the prior letter's partial-soft-retirement
+  framing is superseded.
