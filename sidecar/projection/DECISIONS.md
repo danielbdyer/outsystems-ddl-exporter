@@ -13545,3 +13545,104 @@ demand surfaces, not in one bulk port.
 
 ---
 
+## 2026-05-18 (slice 5.3.α.smo) — Schema emission via ScriptDom typed-AST over SMO scripter
+
+V1's schema emission machinery (`Osm.Smo/` cluster, 44 files /
+~7109 LOC) is built on `Microsoft.SqlServer.Management.Smo` — the
+SMO scripter library. V1 constructs mutable `Table` / `Column` /
+`Index` / `ForeignKey` objects, configures their properties, then
+calls `Table.Script()` to render the DDL text. The pattern works
+but inherits SMO's well-known liabilities: inconsistent script
+output (whitespace, option ordering), reverse-engineered grammar
+(no canonical specification), per-version regressions.
+
+V2 chose `Microsoft.SqlServer.TransactSql.ScriptDom` instead — the
+typed-AST library that ships with the SQL Server SDK as the
+canonical grammar. V2's emission constructs typed `CreateTableStatement`
+/ `CreateIndexStatement` / `ExecuteStatement` values via
+`ScriptDomBuild.buildCreateTable` / `buildCreateIndex` /
+`buildSetExtendedProperty`, then delegates rendering to
+`Sql160ScriptGenerator` with pinned options (canonical formatting:
+square-bracket quoting, semicolon terminators, capitalized keywords).
+
+**Why ScriptDom over SMO.**
+
+1. **Canonical grammar.** ScriptDom IS the grammar — it's the parse
+   tree the SQL Server engine itself uses. SMO is a reverse-engineered
+   library that produces text resembling DDL; ScriptDom produces text
+   that parses cleanly back into ScriptDom.
+
+2. **Determinism.** ScriptDom's `Sql160ScriptGenerator` with pinned
+   options produces byte-deterministic output. SMO's `Script()` is
+   non-deterministic across SMO versions (option ordering drifts).
+   Per T1 (byte-determinism), V2 needs canonical output.
+
+3. **Pillar 7 (gold-standard library) + text-builder-as-first-instinct.**
+   `DECISIONS 2026-05-10 — Text-builder-as-first-instinct discipline`
+   names ScriptDom as the obligation for T-SQL emission. SMO violates
+   the discipline (the script output is text-only; consumers parse it
+   to manipulate).
+
+4. **Test surface.** ScriptDom typed AST is testable via property
+   tests (round-trip: parse-emit-parse-equal). SMO's text output
+   requires regex-based assertions.
+
+5. **Future composability.** Adding new DDL forms (sequences,
+   temporal tables, partition functions) is a typed-AST extension
+   in ScriptDom (add a new builder function); in SMO, it requires
+   SMO library cooperation.
+
+**What V2 inherits structurally.**
+
+V2's emission preserves V1's logical decomposition (per-table
+emission; per-index emission; per-extended-property emission) but
+implements via ScriptDom. The shape parity is high — slice 5.3.α
+audit confirms:
+
+- CREATE TABLE: 95% parity (columns, PK logic, FK constraints,
+  NOCHECK routing). Deferred: column defaults / CHECK constraints /
+  computed columns / single-column PK inline optimization (slice ζ
+  candidates).
+- CREATE INDEX: 70% parity (columns, sort, INCLUDE, WHERE clause,
+  lock options). Deferred: IgnoreDupKey / DataCompression /
+  FileGroup/PartitionScheme (slice ζ candidates).
+- Extended properties: 100% parity (same `sp_addextendedproperty`
+  surface; typed AST eliminates hand-rolled escaping).
+- Triggers: NOT-MAPPED — V2's Trigger IR ships; emission deferred
+  to chapter 4.2 (coordinated with User FK reflow) or chapter 5+.
+
+**Acceptance.**
+
+The canary's PhysicalSchema round-trip diff is the load-bearing
+fidelity gate. R6 split-brain governance gates V2-driver per-
+environment flip on N=10 consecutive green canary runs + operator
+sign-off. ScriptDom emission produces the V2 side of the diff;
+the diff asserts source-DDL ≈ V2-emitted-DDL modulo named
+Tolerance variants.
+
+**Re-open trigger.**
+
+None expected — ScriptDom is the canonical grammar; switching back
+to SMO would violate text-builder-as-first-instinct + pillar 7.
+Future emission extensions (partition functions, sequences,
+temporal tables) extend the ScriptDom builders.
+
+Recorded in `V1_PARITY_MATRIX.md` row 120 as 🟡 DIVERGENCE.
+Companion rows 121-130 carry the per-axis parity confirmations +
+deferrals.
+
+### Cross-references
+
+- `DECISIONS 2026-05-10 — Text-builder-as-first-instinct discipline`
+  — the parent discipline this entry instantiates for schema
+  emission.
+- `DECISIONS 2026-05-10 — Built-in obligation` — ScriptDom is
+  named as the canonical T-SQL emission library.
+- Chapter 4.1.A close arc — the canonical V2 emission migration
+  from SMO to ScriptDom.
+- T1 (byte-determinism) — load-bearing for V2's canonical output.
+- Pillar 7 (gold-standard library) — ScriptDom satisfies; SMO does
+  not.
+
+---
+
