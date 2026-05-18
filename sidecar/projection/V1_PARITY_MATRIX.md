@@ -116,6 +116,49 @@ Different V1 capabilities have different shapes of "equivalent output." Per slic
 | 57 | V1's FK axis spans 3 types: `Osm.Domain/Model/RelationshipModel.cs` (logical edge — via-attribute-to-entity, DeleteRuleCode, HasDatabaseConstraint) + `ForeignKeyModel.cs` (physical constraint — name, DeleteRule, UpdateRule) + `RelationshipActualConstraint.cs` (reconciliation — per-column mapping, per-action NOCHECK state via empty action strings) | V2's `Reference` record (in `Catalog.fs`) **conflates** all three: `{ SsKey, SourceAttribute : SsKey, TargetKind : SsKey, OnDelete : ReferenceAction, HasDbConstraint : bool, RefEntityId : int option }`. Chapter 4.6 design closed the logical/physical distinction at the IR layer | 🟡 DIVERGENCE | `OssysDomainRelationshipParityTests.``5.2.α row 57`` ` (Skip) | Slice 5.2.α.relationship. See `DECISIONS 2026-05-18 (slice 5.2.α.relationship) — V1 three-type relationship/FK split conflates into V2 single Reference`. V2's conflation enables symmetric closure (chapter 3.5), topological ordering (chapter 3.7), FK reflow (chapter 4.2). **Re-open trigger**: V2 needs to round-trip FK constraint **names** (operator-supplied) — currently V2 generates names by convention. Cash-out: extend Reference with `Name : Name option` (defaults None; adapter populates from V1 source). |
 | 58 | `Osm.Domain/Model/ForeignKeyModel.cs` carries paired delete + update referential actions (`DeleteRule : string`, `UpdateRule : string`); V1 emits both at SMO emission time | V2's `Reference.OnDelete : ReferenceAction` carries only delete; UpdateAction dropped at adapter boundary; V2 doesn't emit ON UPDATE clauses | 🟠 NOT-MAPPED | `OssysDomainRelationshipParityTests.``5.2.α row 58`` ` (Skip) | Slice 5.2.α.relationship. **Cash-out shape**: extend `Reference` with `OnUpdate : ReferenceAction option` (defaults `None` → ON UPDATE NO ACTION); adapter pickup at OssysSql ForeignKeys rowset (paired with matrix row 17 lift); emitter consumption at `ScriptDomBuild.buildForeignKey` (set `ForeignKeyConstraintDefinition.UpdateAction = …` when Some). **Acceptance**: a property test asserts ON UPDATE survives emit → deploy → readback for each ReferenceAction variant. **Trigger**: V2's SSDT emission must support ON UPDATE referential actions (a deployed target has ON UPDATE CASCADE V2 must round-trip; OR V2's emission needs explicit ON UPDATE NO ACTION per modern T-SQL conventions). |
 | 59 | `Osm.Domain/Model/RelationshipActualConstraint.cs` per-constraint NOCHECK state — V1 distinguishes "FK constraint exists but is not enforced" (the `WITH NOCHECK` clause was applied) from "FK constraint exists and is trusted." Signaled by empty `OnDeleteAction` / `OnUpdateAction` strings | V2's `Reference.HasDbConstraint : bool` is binary (presence/absence); no enforcement-state axis | 🟠 NOT-MAPPED | `OssysDomainRelationshipParityTests.``5.2.α row 59`` ` (Skip) | Slice 5.2.α.relationship. **Cash-out shape**: extend `Reference` with `IsConstraintTrusted : bool` (defaults `true`); adapter pickup at OssysSql `#FkReality` rowset's `IsNoCheck` column (paired with matrix row 17 lift); emitter consumption at `ScriptDomBuild.buildForeignKey` (emit `WITH NOCHECK` when `IsConstraintTrusted = false`). **Acceptance**: a round-trip test asserts WITH NOCHECK state survives emit → deploy → readback. **Trigger**: a deployed target carries WITH NOCHECK FK constraints V2 must round-trip (rare; usually a remediation-time concern when adding FKs to existing data without forced validation). |
+| 60 | `Osm.Domain/Model/SequenceModel.cs` (~150 LOC; Schema, Name, DataType, StartValue, Increment, Minimum, Maximum, IsCycleEnabled, `SequenceCacheMode` enum (Unspecified/Cache/NoCache/UnsupportedYet), CacheSize, ExtendedProperties) | V2's `Sequence` record in `Catalog.Sequences` (`Catalog.fs` lines 227–279) carries all V1 fields plus typed SsKey identity. V1's 4-variant cache enum maps to V2's 3-variant closed DU (Unspecified | Cache | NoCache); UnsupportedYet variant deferred per slice-β normalization | 🟢 PARITY (IR; emitter deferred) | `OssysDomainMiscParityTests.``5.2.α row 60`` ` (Skip) | Slice 5.2.α.misc. Chapter A.0' slice δ shipped IR; L3-S5 sub-axiom. Sequence-level ExtendedProperties dropped at adapter boundary (trigger: re-add when sequence-level extended-properties accessor lands). Emitter (`CREATE SEQUENCE` DDL) is deferred per chapter A.0' slice δ — IR shipped without emission consumer. |
+| 61 | `Osm.Domain/Model/TriggerModel.cs` (Name, IsDisabled, Definition; schema-scoped) | V2's `Trigger` record in `Kind.Triggers` (`Catalog.fs` lines 181–212) carries all V1 fields plus typed SsKey identity; placement is kind-scoped per the domain semantic (a trigger is owned by the table it fires on). Chapter A.0' slice γ shipped; L3-S4 sub-axiom | 🟢 PARITY | `OssysDomainMiscParityTests.``5.2.α row 61`` ` (Skip) | Slice 5.2.α.misc. **Important**: this finding makes matrix row 23 (OutsystemsTriggerRow → MetadataSnapshot.Triggers — original 🟠 NOT-MAPPED) **stale**. V2's Trigger IR is shipped; the OSSYS-source rowset 18 `#Triggers` lifts into the existing V2 `Trigger` shape (not a new axis). See row 23 Status history amendment below. |
+| 62 | `Osm.Domain/Model/ExtendedProperty.cs` (Name : string, Value : string?; smart constructor normalizes empty-string Value to null) | V2's `ExtendedProperty` record (`Catalog.fs` lines 78–105) carries Name + Value : string option; module function `ExtendedProperty.create` mirrors V1's empty-string normalization. Smart-constructor invariants match (non-blank Name) | 🟢 PARITY | `OssysDomainMiscParityTests.``5.2.α row 62`` ` (Skip) | Slice 5.2.α.misc. **Scope**: V2 places ExtendedProperty at 4 levels — `Attribute.ExtendedProperties`, `Index.ExtendedProperties`, `Kind.ExtendedProperties`, `Module.ExtendedProperties`. V1's scope is broader (also sequences). V2's 4-level placement is the operationally-complete set today; sequence-level deferred per row 60's trigger. Emitter is `ScriptDomBuild.buildSetExtendedProperty` per chapter 4.1.A slice 8; module-level emission gated on V1-side confirmation of module→schema convention (deferred per `DECISIONS 2026-05-17 — sp_addextendedproperty emission`). |
+| 63 | `Osm.Domain/Model/TemporalRetentionPolicy.cs` (4-variant Kind enum: None/Infinite/Limited/UnsupportedYet, Value, Unit enum) + `EntityMetadata.Temporal : TemporalTableMetadata` (Type, HistorySchema, HistoryTable, PeriodStartColumn, PeriodEndColumn, RetentionPolicy, ExtendedProperties) | V2's temporal axis embeds in `ModalityMark.Temporal of TemporalConfig` (`Catalog.fs` line 337) carrying `TemporalRetention = Infinite | Limited of int × TemporalRetentionUnit` + `TemporalConfig = { HistorySchema; HistoryTable; PeriodStart; PeriodEnd; Retention }`. V2 **refines** V1's 4-variant enum to 2-variant DU: None is implicit (absence of `ModalityMark.Temporal` from modality list); UnsupportedYet deferred per chapter A.0' slice η scope | 🟢 PARITY (IR; emitter deferred) | `OssysDomainMiscParityTests.``5.2.α row 63`` ` (Skip) | Slice 5.2.α.misc. V2's refinement is structural tightening (None becomes presence/absence at the parent ModalityMark list level — type-witnessed). Temporal-table DDL emission (`CREATE TABLE ... PERIOD FOR ... HISTORY_RETENTION_PERIOD ...`) deferred pending SSDT realization gate. |
+
+---
+
+## Status history amendments — row reclassifications discovered by later slices
+
+The matrix is append-only at the row level — original rows are not
+modified in place. When a later slice discovers that an earlier row's
+classification was stale (e.g., V2 actually carries the capability;
+the original audit missed it), append a dated amendment to this
+section naming the prior status, the new status, and the discovery
+slice.
+
+### Row 23 — 2026-05-18 (discovered by slice 5.2.α.misc)
+
+**Original classification (slice 5.1.α, 2026-05-17):** 🟠 NOT-MAPPED.
+The row claimed V2 carried no trigger axis in `Catalog` IR; trigger
+named V2 IR refinement adds `Catalog.Triggers` axis AND a downstream
+emitter demands trigger evidence.
+
+**Reclassified (slice 5.2.α.misc, 2026-05-18):** 🟢 PARITY (IR
+shipped; emitter status: structured trigger emission deferred
+pending SSDT realization gate per chapter A.0' slice η).
+
+**Rationale.** Slice 5.2.α.misc's audit of V1's `TriggerModel.cs`
+discovered that V2 already carries `Trigger` IR in `Kind.Triggers`
+(chapter A.0' slice γ; L3-S4 sub-axiom). The original row 23 was
+authored against a stale view of V2's IR — the matrix-row author
+in slice 5.1.α inventoried `IOutsystemsMetadataReader.cs`'s DTOs
+without cross-checking V2's existing `Catalog.fs` for the
+corresponding IR axis. The OSSYS-source rowset 18 `#Triggers`
+lifts into the existing V2 `Trigger` shape (not a new axis); the
+cash-out work for row 23 is the rowset 18 → V2 `Trigger` mapping
+in `MetadataSnapshotRunner`, not the IR construction the original
+row implied.
+
+**Companion row.** Matrix row 61 (slice 5.2.α.misc) carries the
+full V1 → V2 mapping for `TriggerModel`. The triple (row 23
+amendment + row 61 + the existing IR) is the parity claim's
+complete record.
 
 ---
 
