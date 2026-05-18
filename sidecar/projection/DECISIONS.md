@@ -12750,3 +12750,104 @@ rows 58 + 59 carry the deferrable costs as 🟠 NOT-MAPPED.
 
 ---
 
+## 2026-05-18 (slice 5.4.β.nullability) — Ternary outcome space for operator-approval decision lifting
+
+V1's tightening strategies (nullability / unique-index / FK) return
+**2-valued** `SignalEvaluation.Result : bool`. When a decision is
+contested (e.g., a mandatory column with nulls beyond budget AND a
+tightening policy that forbids silent relaxation), V1 returns `false`
+AND surfaces an `Opportunity` record with `Disposition.NeedsRemediation`
+through a side channel. The decision is deferred via out-of-band
+metadata; downstream consumers (manifest emitter, operator-review
+report builder) must JOIN the boolean result with the opportunity
+list to reconstruct the full decision space.
+
+V2 reifies the third state directly into the outcome type. Each
+strategy's outcome carries **three variants**:
+
+```fsharp
+[<RequireQualifiedAccess>]
+type NullabilityOutcome =
+    | EnforceNotNull of NullabilityRationale     // tighten the column
+    | KeepNullable of KeepNullableReason         // do not tighten
+    | RequireOperatorApproval of NullabilityConflict   // decision lifted
+
+[<RequireQualifiedAccess>]
+type UniqueIndexOutcome =
+    | EnforceUnique of …
+    | DoNotEnforce of …
+    | RequireOperatorApproval of UniqueIndexConflict
+
+[<RequireQualifiedAccess>]
+type ForeignKeyOutcome =
+    | EnforceConstraint of …
+    | DoNotEnforce of …
+    | RequireOperatorApproval of ForeignKeyConflict
+```
+
+The third variant is **canonical** — it carries typed conflict
+evidence (`NullabilityConflict`, `UniqueIndexConflict`,
+`ForeignKeyConflict`), and consumers pattern-match exhaustively with
+F# compiler enforcement of all three cases. No side channel, no
+metadata-drift risk.
+
+**Why this is principled (not merely cosmetic).**
+
+1. **Discoverability.** The decision space is visible in the type
+   signature; readers see all three states at the call site without
+   tracing side-channel collectors.
+2. **Exhaustiveness.** F# pattern-match exhaustiveness checking
+   refuses to compile a consumer that ignores `RequireOperatorApproval`.
+   V1's 2-valued result allowed silent loss of the third state
+   (if a consumer forgot to JOIN with the opportunity list, the
+   contested decision was simply absent from the report).
+3. **Provenance.** Each `RequireOperatorApproval` variant carries a
+   typed `*Conflict` evidence value (e.g.,
+   `MandatoryButHasNullsBeyondBudget of nullCount × rowCount × budget`).
+   The conflict's source data is structurally accessible, not embedded
+   in string rationales.
+4. **Symmetry.** The same pattern applies across three sibling
+   strategies (nullability / unique-index / FK), making the
+   "operator-approval lifting" concept a registered structural
+   primitive rather than a per-strategy ad-hoc.
+
+**Pattern application beyond the three current strategies.**
+
+When a future tightening strategy lands (categorical-uniqueness;
+cycle-resolution; user-fk-reflow; etc.), the canonical outcome shape
+is **3 variants**: positive decision + negative decision + operator-
+approval. The `RequireOperatorApproval` variant carries
+strategy-specific conflict evidence. This is the canonical strategy
+shape per the "Strategy-layer codification" discipline
+(`DECISIONS 2026-05-11`) — and this entry refines that discipline by
+naming the ternary outcome as a required structural feature.
+
+**Compatibility with V1 during cutover.**
+
+V1's `Opportunity.Disposition.NeedsRemediation` records correspond
+1:1 to V2's `RequireOperatorApproval(...)` outcomes. When V2 emits
+the manifest, the `Opportunities` array (V2 carries this for V1
+parity per matrix row 30 telemetry) renders each
+`RequireOperatorApproval` outcome to one Opportunity record matching
+V1's schema. The dual-track canary asserts `(V1 Opportunities ≈ V2
+Opportunities)` modulo named Tolerance variants.
+
+Recorded in `V1_PARITY_MATRIX.md` row 65 as 🔵 V2-EXTENSION.
+
+### Cross-references
+
+- `DECISIONS 2026-05-11 — Strategy-layer codification: empirical
+  verdict after the fourth instance` — the parent discipline this
+  entry refines.
+- `Total decisions, named skips` (CLAUDE.md operating-disciplines
+  table) — the ternary outcome operationalizes this discipline at
+  the type-system level (every input gets a decision; "no decision"
+  is `RequireOperatorApproval`, not silence).
+- Pillar 1 (data-structure-oriented) — typed conflict evidence
+  carried per outcome variant; no string-parsing round-trip.
+- A41 candidate (registry totality + bidirectional property tests)
+  — the harvest-classification dimension; operator-approval outcomes
+  fire as `OperatorIntent` lineage events.
+
+---
+
