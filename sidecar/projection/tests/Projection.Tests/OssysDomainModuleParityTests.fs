@@ -31,7 +31,7 @@ let ``5.2.α row 42: V2 Module.create rejects empty Kinds per V1 parity (LR1)`` 
 [<Fact>]
 let ``5.2.α row 42: V2 Module.create accepts non-empty Kinds`` () =
     let kind =
-        mkKind
+        Kind.create
             (mkKey "AppCore.User")
             (mkN "User")
             (TableId.create "dbo" "OSUSR_APPCORE_USER" |> Result.value)

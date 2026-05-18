@@ -426,6 +426,14 @@ Build clean under `TreatWarningsAsErrors=true`; lint clean across
 - **`Render.fs` StringBuilder relic retired** — every SQL-bearing
   Statement flows through ONE pipeline (ScriptDomBuild →
   ScriptDomGenerate). Render.fs reduces to 4 public functions.
+- **IRBuilders shim full retirement** — six dead-weight test-side
+  builders retired (mkAttribute / mkKind / mkReference / mkIndex /
+  mkIndexColumn / mkIndexColumns); three lifted to Core as
+  canonical helpers (`IndexColumn.create`,
+  `IndexColumn.ascendingList`, `Index.ofKeyColumns`). Pillar-8
+  ubiquitous-language consistency now holds across emit + read +
+  test surfaces. The two skip-Result test-fixture conveniences
+  (`mkModule`, `mkCatalog`) remain as principled adapters.
 - **Matrix coverage** — rows 12 + 17 + 18 + 53 + 55 + 56 (partial) +
   58 + 59 + 182 closed to 🟢 PARITY in this arc; plus
   Status-history amendments for TransformRegistry Emitter-stage

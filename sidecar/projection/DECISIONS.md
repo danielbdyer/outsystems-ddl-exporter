@@ -15234,3 +15234,116 @@ that don't require closure.
   to the Emitter stage per the OSSYS-adapter precedent.
 - `HANDOFF.md` — supersedes the four blind-spot entries the prior
   2026-05-18 handoff named.
+
+---
+
+## 2026-05-18 (slice 5.13.shim-retirement) — Full IRBuilders shim retirement: pure delegations + shape adapters lifted to Core; only the two skip-Result test-fixture conveniences remain
+
+### Scope
+
+Operator-directed retirement of the IRBuilders module: "Let's go
+ahead and retire IRBuilders if you think we're ready to do so, so we
+don't persist old practices." The blind-spot-closure slice migrated
+qualified shim usages (`IRBuilders.mkAttribute / mkKind /
+mkReference`) but stopped short of the unqualified-call sites + the
+shape adapters. This slice completes the retirement.
+
+### What ships
+
+**Core-side lifts** (new helpers in `Projection.Core/Catalog.fs`):
+
+- New `module IndexColumn` (after the `type IndexColumn` declaration):
+  - `IndexColumn.create : SsKey -> IndexColumnDirection -> IndexColumn`
+    — replaces the test-side `IRBuilders.mkIndexColumn`. Lifts the
+    `{ Attribute = …; Direction = … }` record-construction shape to
+    the production-side helper module so test + emit sites name the
+    IndexColumn shape through one canonical surface.
+  - `IndexColumn.ascendingList : SsKey list -> IndexColumn list`
+    — replaces the test-side `IRBuilders.mkIndexColumns`. The
+    common shape for consumers that don't care about per-column
+    sort direction (most indexes; V1 defaults to ASC).
+- New `Index.ofKeyColumns : SsKey -> Name -> SsKey list -> Index`
+  in the existing `Index` module:
+  - Convenience wrapper around `Index.create` that takes a SsKey
+    list (interpreted as all-Ascending via
+    `IndexColumn.ascendingList`). Replaces the test-side
+    `IRBuilders.mkIndex`.
+
+**Test-side sweep**:
+
+- Bulk sed across the test surface:
+  - `IRBuilders.mkAttribute` → `Attribute.create`
+  - `IRBuilders.mkKind` → `Kind.create`
+  - `IRBuilders.mkReference` → `Reference.create`
+  - `IRBuilders.mkIndex ` → `Index.ofKeyColumns `
+  - `IRBuilders.mkIndexColumn` → `IndexColumn.create`
+  - `IRBuilders.mkIndexColumns` → `IndexColumn.ascendingList`
+  - Unqualified usages (in files that `open Projection.Tests
+    .IRBuilders`): `\bmkAttribute\b` → `Attribute.create`,
+    `\bmkKind\b` → `Kind.create`, `\bmkReference\b` →
+    `Reference.create`, `\bmkIndex\b` → `Index.ofKeyColumns`.
+- Local-helper renames in four test files
+  (UniqueIndexRulesTests, UniqueIndexPassTests,
+  DiagnosticsEndToEndTests, IndexFilterTests): each carries a
+  per-file `let private mkIndex (key: string) (columns: SsKey
+  list) (isUnique: bool) : Index = …` that wraps Core's helper
+  with a string-key + Result-unwrap test convenience. The local
+  helpers got caught by the unqualified-sweep regex; renamed to
+  `indexFixture` and caller sites updated.
+
+**IRBuilders.fs shrinks** to two test-fixture skip-Result
+conveniences:
+
+- `mkModule (ssKey: SsKey) (name: Name) (kinds: Kind list) : Module`
+  — production `Module.create` returns `Result<Module>` for the
+  non-empty-Kinds invariant (LR1); the test convenience constructs
+  the record literal directly. Test fixtures use it when the
+  kinds are constructed inline and known well-formed.
+- `mkCatalog (modules: Module list) : Catalog` — production
+  `Catalog.create` returns `Result<Catalog>` with referential-
+  integrity invariants; the test convenience skips that for
+  fixture-known-good values.
+
+Module docstring rewritten to name the shrunk scope. Lines 1-37
+documenting "two surfaces" replaced with concise scope-after-
+retirement framing.
+
+### Operating-discipline payoff
+
+- **Pillar 8 (domain-first naming + ubiquitous-language
+  consistency).** Production-side `Attribute.create / Reference.create
+  / Kind.create / Index.create / Index.ofKeyColumns /
+  IndexColumn.create / IndexColumn.ascendingList` surface uniformly
+  across emit + read + test paths. Test fixtures no longer name
+  the same concept through a parallel `IRBuilders.mkX` vocabulary
+  — the "old practice" of test-side parallel-naming retires.
+- **A39 (aggregate-root smart-constructor invariants).** The two
+  remaining IRBuilders helpers (`mkModule`, `mkCatalog`) explicitly
+  skip the Result-returning invariant check; their docstrings name
+  the production constructor they bypass and the rationale
+  (fixture-known-good values; validator exercises live in dedicated
+  invariant-violation tests).
+- **Closed-DU expansion empirical-test discipline.** The retirement
+  pulled in `Index.ofKeyColumns` and `IndexColumn.create /
+  ascendingList` to Core; future Index field-extensions land at
+  one site (`Index.create` body) and propagate through both
+  smart-constructor variants without test-fixture churn.
+
+### Coverage
+
+- Full test suite passes (1571 expected; verifying via background
+  run as part of the slice commit).
+- Build clean: 0 warnings under `TreatWarningsAsErrors=true`.
+- Solution-level grep confirms zero `IRBuilders.mkAttribute / mkKind
+  / mkReference / mkIndex / mkIndexColumn / mkIndexColumns`
+  remain.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` Status-history amendment records the full
+  IRBuilders retirement closure.
+- `BACKLOG.md` LR10 (the deferred IRBuilders sweep) closes; the
+  partition residual stays.
+- `HANDOFF.md` — the "Deferrals after this arc" item B (IRBuilders
+  full retirement) closes; the prior letter's partial-soft-retirement
+  framing is superseded.

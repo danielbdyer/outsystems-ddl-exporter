@@ -1123,6 +1123,46 @@ preserved (`ScriptDomGenerate.generateOne` is the only path).
 
 ---
 
+### IRBuilders shim full retirement — 2026-05-18 (closed by slice 5.13.shim-retirement)
+
+**Original framing (handoff 2026-05-18 — blind-spot-closure):**
+The "IRBuilders shim soft-retirement (partial)" entry named the
+remaining unqualified-call sites + the shape adapters as the
+follow-up trigger. The slice closed the qualified-call migration
+but left the unqualified-call sweep + the shape-adapter Core lift
+for a future agent.
+
+**Closed by slice 5.13.shim-retirement (2026-05-18):**
+Full retirement of the IRBuilders practice. Six helpers retired
+(`mkAttribute`, `mkKind`, `mkReference`, `mkIndex`, `mkIndexColumn`,
+`mkIndexColumns`); three lifted to Core (`IndexColumn.create`,
+`IndexColumn.ascendingList`, `Index.ofKeyColumns`); the test surface
+swept (qualified + unqualified) to the production-side smart
+constructors and the new Core helpers. Local `let private mkIndex`
+helpers in four test files (caught by the unqualified-sweep regex)
+renamed to `indexFixture` and their callers updated.
+
+**Module shrunk** to two test-fixture skip-Result conveniences:
+`mkModule` + `mkCatalog` — production `Module.create` /
+`Catalog.create` return `Result<_>` for invariant-checking; the
+test conveniences construct the record literal directly when the
+fixture is known well-formed. Module docstring rewritten to name
+the shrunk scope.
+
+**What this closes structurally:** pillar-8 ubiquitous-language
+consistency now holds across the test surface — `Attribute.create
+/ Reference.create / Kind.create / Index.create /
+Index.ofKeyColumns / IndexColumn.create /
+IndexColumn.ascendingList` are the canonical surfaces for every
+consumer (emit / read / test). The "old practice" of parallel
+test-side `IRBuilders.mkX` vocabulary retires.
+
+**Coverage:** existing test suite witnesses (1571 tests pass).
+Solution-level grep confirms zero `IRBuilders.mk(Attribute|Kind|
+Reference|Index|IndexColumn|IndexColumns)` remain in source.
+
+---
+
 ## Parity cash-out plans — what V2 work closes each gap
 
 The matrix's Notes column carries the per-row brief; this section

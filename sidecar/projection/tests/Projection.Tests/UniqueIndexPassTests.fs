@@ -31,12 +31,12 @@ let private nullRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lin
 let private ssKey (s: string) : SsKey = testKey s
 let private name  (s: string) : Name  = Name.create s   |> Result.value
 
-let private mkIndex
+let private indexFixture
     (key: string)
     (columns: SsKey list)
     (isUnique: bool)
     : Index =
-    { IRBuilders.mkIndex (ssKey key) (name "IX") columns with IsUnique = isUnique }
+    { Index.ofKeyColumns (ssKey key) (name "IX") columns with IsUnique = isUnique }
 
 let private mkConfig (single: bool) (composite: bool) : UniqueIndexTighteningConfig =
     UniqueIndexTighteningConfig.create single composite
@@ -56,13 +56,13 @@ let private policyWithInterventions (interventions: TighteningIntervention list)
 /// single-column index each. Total: four indexes across three kinds.
 let private indexedCatalog : Catalog =
     let customerSingleUnique =
-        mkIndex "OS_IDX_Customer_Name_U" [ customerNameKey ] true
+        indexFixture "OS_IDX_Customer_Name_U" [ customerNameKey ] true
     let customerComposite =
-        mkIndex "OS_IDX_Customer_NameTenant" [ customerNameKey; customerTenantKey ] false
+        indexFixture "OS_IDX_Customer_NameTenant" [ customerNameKey; customerTenantKey ] false
     let orderSingle =
-        mkIndex "OS_IDX_Order_CustomerId" [ orderCustomerFkKey ] false
+        indexFixture "OS_IDX_Order_CustomerId" [ orderCustomerFkKey ] false
     let countrySingle =
-        mkIndex "OS_IDX_Country_Code" [ countryCodeKey ] false
+        indexFixture "OS_IDX_Country_Code" [ countryCodeKey ] false
     let customer' = { customer with Indexes = [ customerSingleUnique; customerComposite ] }
     let order'    = { order    with Indexes = [ orderSingle ] }
     let country'  = { country  with Indexes = [ countrySingle ] }

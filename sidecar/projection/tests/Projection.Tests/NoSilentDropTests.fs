@@ -60,11 +60,11 @@ let private findAttr name (k: Kind) =
 
 let private emptyKind () : Kind =
     let key = SsKey.synthesized "TEST" "K" |> Result.value
-    mkKind key (mkName' "K") { Schema = "dbo"; Table = "T"; Catalog = None } []
+    Kind.create key (mkName' "K") { Schema = "dbo"; Table = "T"; Catalog = None } []
 
 let private emptyAttr () : Attribute =
     let key = SsKey.synthesized "TEST" "A" |> Result.value
-    mkAttribute key (mkName' "A") Integer
+    Attribute.create key (mkName' "A") Integer
 
 [<Fact>]
 let ``L3-Boundary-NoSilentDrop: Kind carries Triggers (L3-S4 home)`` () =
@@ -120,7 +120,7 @@ let ``L3-Boundary-NoSilentDrop: ExtendedProperties on Attribute (L3-S9)`` () =
 [<Fact>]
 let ``L3-Boundary-NoSilentDrop: ExtendedProperties on Index (L3-S9)`` () =
     let key = SsKey.synthesized "TEST" "IX" |> Result.value
-    let i = mkIndex key (mkName' "IX") []
+    let i = Index.ofKeyColumns key (mkName' "IX") []
     Assert.Empty(i.ExtendedProperties)
 
 [<Fact>]

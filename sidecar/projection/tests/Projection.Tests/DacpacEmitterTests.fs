@@ -241,17 +241,17 @@ let private indexedCatalog : Catalog =
             // Single-column unique index on Code.
             { SsKey = idxKey ["IndexedWidget"; "UQ"; "Code"]
               Name = mkName "UQ_IndexedWidget_Code"
-              Columns = IRBuilders.mkIndexColumns [ codeKey ]
+              Columns = IndexColumn.ascendingList [ codeKey ]
               IsUnique = true; IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
             // Composite (non-unique) index on Region + Label.
             { SsKey = idxKey ["IndexedWidget"; "IX"; "RegionLabel"]
               Name = mkName "IX_IndexedWidget_RegionLabel"
-              Columns = IRBuilders.mkIndexColumns [ regionKey; labelKey ]
+              Columns = IndexColumn.ascendingList [ regionKey; labelKey ]
               IsUnique = false; IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
             // Non-unique single-column index on Region.
             { SsKey = idxKey ["IndexedWidget"; "IX"; "Region"]
               Name = mkName "IX_IndexedWidget_Region"
-              Columns = IRBuilders.mkIndexColumns [ regionKey ]
+              Columns = IndexColumn.ascendingList [ regionKey ]
               IsUnique = false; IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
         ]
         Description = None

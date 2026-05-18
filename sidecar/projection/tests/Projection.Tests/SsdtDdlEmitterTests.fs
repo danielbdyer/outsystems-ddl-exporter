@@ -426,12 +426,12 @@ let private indexedKind : Kind =
         References = []
         Indexes = [
             // Non-unique index on Lookup column.
-            IRBuilders.mkIndex indexedNonUniqueIdxKey (mkName "IX_OSUSR_X_INDEXED_LOOKUP") [ attrKey ["Indexed"; "Lookup"] ]
+            Index.ofKeyColumns indexedNonUniqueIdxKey (mkName "IX_OSUSR_X_INDEXED_LOOKUP") [ attrKey ["Indexed"; "Lookup"] ]
             // Unique index on Code column.
-            { IRBuilders.mkIndex indexedUniqueIdxKey (mkName "UIX_OSUSR_X_INDEXED_CODE") [ attrKey ["Indexed"; "Code"] ] with IsUnique = true }
+            { Index.ofKeyColumns indexedUniqueIdxKey (mkName "UIX_OSUSR_X_INDEXED_CODE") [ attrKey ["Indexed"; "Code"] ] with IsUnique = true }
             // PK index — should be SKIPPED by the emitter (PK is inlined
             // in CREATE TABLE per V1 convention).
-            { IRBuilders.mkIndex indexedPkIdxKey (mkName "PK_OSUSR_X_INDEXED") [ attrKey ["Indexed"; "Id"] ] with IsUnique = true; IsPrimaryKey = true }
+            { Index.ofKeyColumns indexedPkIdxKey (mkName "PK_OSUSR_X_INDEXED") [ attrKey ["Indexed"; "Id"] ] with IsUnique = true; IsPrimaryKey = true }
         ]
         Description = None
         IsActive = true
@@ -1060,7 +1060,7 @@ let private idxFeaturesKind
             Length       = Some 100
             IsMandatory  = true }
     let idx =
-        { Index.create idxFeaturesIdxKey (mkName "IX_Widget_Name") (IRBuilders.mkIndexColumns [ idxFeaturesNameAttr ]) with
+        { Index.create idxFeaturesIdxKey (mkName "IX_Widget_Name") (IndexColumn.ascendingList [ idxFeaturesNameAttr ]) with
             IsUnique           = true
             IgnoreDuplicateKey = ignoreDup
             IsDisabled         = disabled

@@ -27,7 +27,7 @@ let private mkTableId (schema: string) (table: string) : TableId =
 
 let private mkAttrK : SsKey = mkKey "Attr.Id"
 
-let private mkIndex (label: string) (filter: string option) : Index =
+let private indexFixture (label: string) (filter: string option) : Index =
     {
         SsKey              = mkKey (sprintf "Idx.%s" label)
         Name               = mkName (sprintf "IX_%s" label)

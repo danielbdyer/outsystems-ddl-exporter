@@ -201,7 +201,7 @@ let ``Chapter 4.5 slice β: HasIncludedIndexColumns returns true when any Index.
             IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
     let mkKindWith (label: string) (idx: Index) : Kind =
         let baseKind =
-            mkKind
+            Kind.create
                 (mkKey (sprintf "K:%s" label))
                 (mkName label)
                 (mkTableId "dbo" (sprintf "T_%s" label))

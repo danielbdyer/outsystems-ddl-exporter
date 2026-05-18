@@ -152,7 +152,7 @@ let private mkRef (hasDb: bool) : Reference =
 
 let private mkKindWith (label: string) (refs: Reference list) : Kind =
     let baseKind =
-        mkKind
+        Kind.create
             (mkKey (sprintf "K:%s" label))
             (mkName label)
             (mkTableId "dbo" (sprintf "T_%s" label))

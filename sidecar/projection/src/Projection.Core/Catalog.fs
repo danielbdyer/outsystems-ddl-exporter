@@ -584,6 +584,27 @@ type IndexColumn = {
     Direction : IndexColumnDirection
 }
 
+[<RequireQualifiedAccess>]
+module IndexColumn =
+
+    /// Build one `IndexColumn` with the given attribute + direction.
+    /// Slice 5.13.shim-retirement (2026-05-18) — lifted from the
+    /// test-side `IRBuilders.mkIndexColumn` so production code paths
+    /// (and the test surface uniformly) name the IndexColumn shape
+    /// through the production module.
+    let create (attribute: SsKey) (direction: IndexColumnDirection) : IndexColumn =
+        { Attribute = attribute; Direction = direction }
+
+    /// Build an all-Ascending `IndexColumn list` from a list of
+    /// attribute SsKeys. The common shape for consumers that don't
+    /// care about per-column sort direction (most indexes; V1
+    /// defaults SortOrder to ASC and DESC requires an explicit
+    /// override). Slice 5.13.shim-retirement (2026-05-18) — lifted
+    /// from the test-side `IRBuilders.mkIndexColumns`.
+    let ascendingList (attributes: SsKey list) : IndexColumn list =
+        attributes |> List.map (fun a -> create a Ascending)
+
+
 /// SQL Server `DATA_COMPRESSION` levels for an index (or partition
 /// range). Mirrors ScriptDom's `DataCompressionLevel` enum modulo
 /// the columnstore variants (which V1 doesn't surface and V2 has no
@@ -942,6 +963,20 @@ module Index =
             IsDisabled            = false
             DataCompression       = None
         }
+
+    /// Build an `Index` from a `SsKey list` of key columns
+    /// (interpreted as all-Ascending). Convenience for the common
+    /// case where consumers don't care about per-column sort
+    /// direction. Equivalent to `Index.create ssKey name
+    /// (IndexColumn.ascendingList attributes)`. Slice
+    /// 5.13.shim-retirement (2026-05-18) — lifted from the test-side
+    /// `IRBuilders.mkIndex`.
+    let ofKeyColumns
+        (ssKey: SsKey)
+        (name: Name)
+        (attributes: SsKey list)
+        : Index =
+        create ssKey name (IndexColumn.ascendingList attributes)
 
 
 /// Identity-based equality and lookup helpers for catalog nodes (A4).
