@@ -189,15 +189,153 @@ module MetadataSnapshotRunner =
           TableName  : string
           ObjectId   : int }
 
-    /// Aggregate snapshot: the 5 V2-consumed rowsets in their V1-shaped
-    /// typed form. Slice δ composes this into `CatalogReader.RowsetBundle`.
+    /// `#ColumnReality` rowset (matrix row 11). One row per V1 attribute
+    /// reflecting the deployed-target `sys.columns` projection — typed
+    /// per-column reality the source-side adapter sees through V1's
+    /// SQL. Currently no V2 consumer; lifts at the runner layer so a
+    /// future tightening-rule that needs source-reflection evidence
+    /// (e.g., Profile.AttributeReality per matrix row 49) can wire from
+    /// here without re-walking the rowset.
+    type OssysColumnRealityRow =
+        { AttrId                : int
+          IsNullable            : bool
+          SqlType               : string option
+          MaxLength             : int option
+          Precision             : int option
+          Scale                 : int option
+          CollationName         : string option
+          IsIdentity            : bool
+          IsComputed            : bool
+          ComputedDefinition    : string option
+          DefaultConstraintName : string option
+          DefaultDefinition     : string option
+          PhysicalColumn        : string option }
+
+    /// `#ColumnCheckReality` rowset (matrix row 12). Per-column CHECK
+    /// constraint reflection. V2's `Kind.ColumnChecks` IR exists per
+    /// chapter A.0' slice ε (matrix row 50); the rowset path now wires
+    /// to it.
+    type OssysColumnCheckRow =
+        { AttrId         : int
+          ConstraintName : string
+          Definition     : string
+          IsNotTrusted   : bool }
+
+    /// `#PhysColsPresent` rowset (matrix row 14). Set of `AttrId` whose
+    /// physical column actually exists in `sys.columns` — V1's
+    /// orphan-attribute detection signal. No V2 consumer yet; lifts at
+    /// the runner layer for future Profile-evidence consumers.
+    type OssysPhysColsPresentRow =
+        { AttrId : int }
+
+    /// `#AllIdx` rowset (matrix row 15). Per-index physical reflection
+    /// (UQ + IX + PK; columns flagged by `Kind = 'UNIQUE' | 'INDEX' |
+    /// 'PRIMARY KEY'`). Retires V2's structural dependence on V1's
+    /// `IndexJson` JSON-aggregation rowset (row 26) — V2's index axis
+    /// becomes V1-IndexJson-independent. JOIN target for
+    /// `Kind.Indexes` IR.
+    type OssysAllIdxRow =
+        { EntityId            : int
+          ObjectId            : int
+          IndexId             : int
+          IndexName           : string
+          IsUnique            : bool
+          IsPrimary           : bool
+          Kind                : string
+          FilterDefinition    : string option
+          IsDisabled          : bool
+          IsPadded            : bool
+          FillFactor          : int
+          IgnoreDupKey        : bool
+          AllowRowLocks       : bool
+          AllowPageLocks      : bool
+          NoRecompute         : bool
+          DataSpaceName       : string option
+          DataSpaceType       : string option
+          PartitionColumnsJson: string option
+          DataCompressionJson : string option }
+
+    /// `#IdxColsMapped` rowset (matrix row 16). Per-index column
+    /// membership — key columns + included columns + sort direction +
+    /// human attribute name. JOINs by (EntityId, IndexName) against
+    /// `OssysAllIdxRow`; the (EntityId, AttrId) lookup against
+    /// `OssysAttributeRow` resolves human → AttrId for V2's SsKey
+    /// derivation.
+    type OssysIdxColMappedRow =
+        { EntityId       : int
+          IndexName      : string
+          Ordinal        : int
+          PhysicalColumn : string option
+          IsIncluded     : bool
+          Direction      : string option
+          HumanAttr      : string option }
+
+    /// `#FkReality` rowset (matrix row 17). Per-FK constraint
+    /// reflection from V1 source-side `sys.foreign_keys`. Carries
+    /// `OnUpdate` + `IsNoCheck` which V2's existing Reference IR does
+    /// not yet model (matrix rows 58 + 59 cash-out); the typed rowset
+    /// lifts at the runner layer so a future Reference IR extension
+    /// wires from this evidence.
+    type OssysFkRealityRow =
+        { EntityId           : int
+          FkObjectId         : int
+          FkName             : string
+          DeleteAction       : string option
+          UpdateAction       : string option
+          ReferencedObjectId : int
+          ReferencedEntityId : int option
+          ReferencedSchema   : string option
+          ReferencedTable    : string option
+          IsNoCheck          : bool }
+
+    /// `#FkColumns` rowset (matrix row 18). Per-FK column membership
+    /// (composite FK support). V2's existing Reference IR is
+    /// single-column per chapter 5.0; multi-column FKs (composite keys)
+    /// would consume this in a future IR refinement. Lifts at runner
+    /// layer.
+    type OssysFkColumnRow =
+        { EntityId           : int
+          FkObjectId         : int
+          Ordinal            : int
+          ParentColumn       : string
+          ReferencedColumn   : string
+          ParentAttrId       : int option
+          ParentAttrName     : string option
+          ReferencedAttrId   : int option
+          ReferencedAttrName : string option }
+
+    /// `#Triggers` rowset (matrix row 23). Per-trigger reflection from
+    /// V1 source-side `sys.triggers`. V2's `Kind.Triggers` IR exists
+    /// (chapter A.0' slice γ); the rowset path now wires to it. The
+    /// trigger Definition is the full T-SQL `CREATE TRIGGER ...` body
+    /// V1 reconstructs from `sys.sql_modules`; V2's Trigger record
+    /// carries it through to emit.
+    type OssysTriggerRow =
+        { EntityId          : int
+          TriggerName       : string
+          IsDisabled        : bool
+          TriggerDefinition : string option }
+
+    /// Aggregate snapshot — the 5 originally-lifted rowsets plus the 8
+    /// new physical-reflection rowsets (slice 5.13.ossys-rowsets-cluster).
+    /// `toBundle` projects this into V2's `CatalogReader.RowsetBundle`,
+    /// applying JOIN logic for the index / trigger / column-check axes
+    /// that have V2 IR consumers ready.
     type MetadataSnapshot =
         {
-            Modules        : OssysModuleRow list
-            Entities       : OssysEntityRow list
-            Attributes     : OssysAttributeRow list
-            References     : OssysReferenceRow list
-            PhysicalTables : OssysPhysicalTableRow list
+            Modules            : OssysModuleRow list
+            Entities           : OssysEntityRow list
+            Attributes         : OssysAttributeRow list
+            References         : OssysReferenceRow list
+            PhysicalTables     : OssysPhysicalTableRow list
+            ColumnReality      : OssysColumnRealityRow list
+            ColumnChecks       : OssysColumnCheckRow list
+            PhysColsPresent    : OssysPhysColsPresentRow list
+            Indexes            : OssysAllIdxRow list
+            IndexColumns       : OssysIdxColMappedRow list
+            ForeignKeysReality : OssysFkRealityRow list
+            ForeignKeyColumns  : OssysFkColumnRow list
+            Triggers           : OssysTriggerRow list
         }
 
     // -------------------------------------------------------------------
@@ -350,6 +488,102 @@ module MetadataSnapshotRunner =
           TableName  = readString r 2
           ObjectId   = readInt r 3 }
 
+    // Slice 5.13.ossys-rowsets-cluster: mappers for rowsets 5–18 (less
+    // the V1-SUNSET JSON-aggregation helpers).  Ordinal layout mirrors
+    // V1's SELECT-projection ordering in `outsystems_metadata_rowsets.sql`
+    // (see line numbers cited in each mapper's docstring).
+
+    let private mapColumnRealityRow (r: SqlDataReader) : OssysColumnRealityRow =
+        // V1 SELECT at outsystems_metadata_rowsets.sql:1025-1040
+        { AttrId                = readInt        r 0
+          IsNullable            = readBool       r 1
+          SqlType               = readStringOpt  r 2
+          MaxLength             = readIntOpt     r 3
+          Precision             = readIntOpt     r 4
+          Scale                 = readIntOpt     r 5
+          CollationName         = readStringOpt  r 6
+          IsIdentity            = readBool       r 7
+          IsComputed            = readBool       r 8
+          ComputedDefinition    = readStringOpt  r 9
+          DefaultConstraintName = readStringOpt  r 10
+          DefaultDefinition     = readStringOpt  r 11
+          PhysicalColumn        = readStringOpt  r 12 }
+
+    let private mapColumnCheckRow (r: SqlDataReader) : OssysColumnCheckRow =
+        // V1 SELECT at outsystems_metadata_rowsets.sql:1042-1048
+        { AttrId         = readInt    r 0
+          ConstraintName = readString r 1
+          Definition     = readString r 2
+          IsNotTrusted   = readBool   r 3 }
+
+    let private mapPhysColsPresentRow (r: SqlDataReader) : OssysPhysColsPresentRow =
+        // V1 SELECT at outsystems_metadata_rowsets.sql:1056-1059
+        { AttrId = readInt r 0 }
+
+    let private mapAllIdxRow (r: SqlDataReader) : OssysAllIdxRow =
+        // V1 SELECT at outsystems_metadata_rowsets.sql:1061-1082
+        { EntityId             = readInt        r 0
+          ObjectId             = readInt        r 1
+          IndexId              = readInt        r 2
+          IndexName            = readString     r 3
+          IsUnique             = readBool       r 4
+          IsPrimary            = readBool       r 5
+          Kind                 = readString     r 6
+          FilterDefinition     = readStringOpt  r 7
+          IsDisabled           = readBool       r 8
+          IsPadded             = readBool       r 9
+          FillFactor           = readInt        r 10
+          IgnoreDupKey         = readBool       r 11
+          AllowRowLocks        = readBool       r 12
+          AllowPageLocks       = readBool       r 13
+          NoRecompute          = readBool       r 14
+          DataSpaceName        = readStringOpt  r 15
+          DataSpaceType        = readStringOpt  r 16
+          PartitionColumnsJson = readStringOpt  r 17
+          DataCompressionJson  = readStringOpt  r 18 }
+
+    let private mapIdxColMappedRow (r: SqlDataReader) : OssysIdxColMappedRow =
+        // V1 SELECT at outsystems_metadata_rowsets.sql:1084-1092
+        { EntityId       = readInt       r 0
+          IndexName      = readString    r 1
+          Ordinal        = readInt       r 2
+          PhysicalColumn = readStringOpt r 3
+          IsIncluded     = readBool      r 4
+          Direction      = readStringOpt r 5
+          HumanAttr      = readStringOpt r 6 }
+
+    let private mapFkRealityRow (r: SqlDataReader) : OssysFkRealityRow =
+        // V1 SELECT at outsystems_metadata_rowsets.sql:1095-1106
+        { EntityId           = readInt        r 0
+          FkObjectId         = readInt        r 1
+          FkName             = readString     r 2
+          DeleteAction       = readStringOpt  r 3
+          UpdateAction       = readStringOpt  r 4
+          ReferencedObjectId = readInt        r 5
+          ReferencedEntityId = readIntOpt     r 6
+          ReferencedSchema   = readStringOpt  r 7
+          ReferencedTable    = readStringOpt  r 8
+          IsNoCheck          = readBool       r 9 }
+
+    let private mapFkColumnRow (r: SqlDataReader) : OssysFkColumnRow =
+        // V1 SELECT at outsystems_metadata_rowsets.sql:1109-1119
+        { EntityId           = readInt        r 0
+          FkObjectId         = readInt        r 1
+          Ordinal            = readInt        r 2
+          ParentColumn       = readString     r 3
+          ReferencedColumn   = readString     r 4
+          ParentAttrId       = readIntOpt     r 5
+          ParentAttrName     = readStringOpt  r 6
+          ReferencedAttrId   = readIntOpt     r 7
+          ReferencedAttrName = readStringOpt  r 8 }
+
+    let private mapTriggerRow (r: SqlDataReader) : OssysTriggerRow =
+        // V1 SELECT at outsystems_metadata_rowsets.sql:1146-1151
+        { EntityId          = readInt       r 0
+          TriggerName       = readString    r 1
+          IsDisabled        = readBool      r 2
+          TriggerDefinition = readStringOpt r 3 }
+
     /// Number of user-visible result sets the carbon-copied OSSYS rowsets
     /// script emits. V1's documentation describes 22 user-visible rowsets
     /// (rowsets 0..21); the canary's empirical walk observes **23** —
@@ -460,38 +694,93 @@ module MetadataSnapshotRunner =
                         ResultSetName  = name
                         RowCount       = rowCount
                     }
-                let! modules        = readResultSet "modules" reader mapModuleRow
+                // Reader opens already-positioned at rowset 0; subsequent
+                // reads advance via `read`. Slice 5.13.ossys-rowsets-cluster
+                // lifts the per-rowset advance + read + report triplet
+                // into a closure helper that keeps the per-rowset
+                // surface to ~1 line each.
+                //
+                // `read name mapper` advances to the next rowset, parses
+                // every row via the typed mapper, reports the rowcount
+                // for progress observation. Symmetric `skip name`
+                // advances + skips + reports rowcount=0 for the V1-SUNSET
+                // JSON-aggregation tail (#AttrCheckJson, #FkAttrMap,
+                // #AttrHasFK, #FkColumnsJson, #FkAttrJson, #AttrJson,
+                // #RelJson, #IdxJson, #TriggerJson, #ModuleJson).
+                let read (name: string) (mapper: SqlDataReader -> 'T) : Task<'T list> =
+                    task {
+                        let! _ = advanceNext ()
+                        let! rows = readResultSet name reader mapper
+                        report name rows.Length
+                        return rows
+                    }
+                let skip (name: string) : Task<unit> =
+                    task {
+                        let! _ = advanceNext ()
+                        do! skipResultSet reader
+                        report name 0
+                    }
+
+                // Rowset 0 — modules (no advance; reader opens here).
+                let! modules = readResultSet "modules" reader mapModuleRow
                 report "modules" modules.Length
-                let! _              = advanceNext ()
-                let! entities       = readResultSet "entities" reader mapEntityRow
-                report "entities" entities.Length
-                let! _              = advanceNext ()
-                let! attributes     = readResultSet "attributes" reader mapAttributeRow
-                report "attributes" attributes.Length
-                let! _              = advanceNext ()
-                let! references     = readResultSet "references" reader mapReferenceRow
-                report "references" references.Length
-                let! _              = advanceNext ()
-                let! physicalTables = readResultSet "physicalTables" reader mapPhysicalTableRow
-                report "physicalTables" physicalTables.Length
-                // Skip the remaining result sets — V2's RowsetBundle
-                // doesn't yet consume them. Future slice ε can expand.
+
+                // Rowsets 1–4 — already-lifted V2-consumed surface.
+                let! entities       = read "entities"       mapEntityRow
+                let! attributes     = read "attributes"     mapAttributeRow
+                let! references     = read "references"     mapReferenceRow
+                let! physicalTables = read "physicalTables" mapPhysicalTableRow
+
+                // Rowsets 5–18 — physical-reflection lifts (slice
+                // 5.13.ossys-rowsets-cluster). #AttrCheckJson (rowset
+                // 7), #FkAttrMap, #AttrHasFK, #FkColumnsJson,
+                // #FkAttrJson (rowsets 13–16) are V1-SUNSET JSON
+                // helpers V2 doesn't consume; skipped with the same
+                // report-shape so progress count stays accurate.
+                let! columnReality   = read "columnReality"   mapColumnRealityRow
+                let! columnChecks    = read "columnChecks"    mapColumnCheckRow
+                do! skip "attrCheckJson"
+                let! physColsPresent = read "physColsPresent" mapPhysColsPresentRow
+                let! indexes         = read "allIdx"          mapAllIdxRow
+                let! indexColumns    = read "idxColsMapped"   mapIdxColMappedRow
+                let! fkReality       = read "fkReality"       mapFkRealityRow
+                let! fkColumns       = read "fkColumns"       mapFkColumnRow
+                do! skip "fkAttrMap"
+                do! skip "attrHasFK"
+                do! skip "fkColumnsJson"
+                do! skip "fkAttrJson"
+
+                // Rowset 17 — triggers (matrix row 23).
+                let! triggers = read "triggers" mapTriggerRow
+
+                // Rowsets 18–22 — V1-SUNSET JSON aggregation tail.
+                do! skip "attrJson"
+                do! skip "relJson"
+                do! skip "idxJson"
+                do! skip "triggerJson"
+                do! skip "moduleJson"
+
+                // Drain any trailing rowsets the SQL might emit beyond
+                // the documented 23. Per matrix row 35: a SQL-contract
+                // drift adds rowsets here; the contract check below
+                // surfaces the structural drift before the IR-build
+                // path silently absorbs it. Today this loop should be
+                // a no-op (advanceNext returns false on its first call).
                 let mutable hasMore = true
-                let mutable skippedIndex = 0
+                let mutable trailingIdx = 0
                 while hasMore do
                     let! advanced = advanceNext ()
                     if not advanced then hasMore <- false
                     else
                         do! skipResultSet reader
-                        report (sprintf "skipped-%d" skippedIndex) 0
-                        skippedIndex <- skippedIndex + 1
-                // Contract check (matrix row 35): the carbon-copied OSSYS
-                // rowsets script's 22-result-set shape is a documented
-                // V1 contract. If actual < expected, the script drifted
-                // (V1 refactor dropped a rowset) and V2 surfaces the
-                // structural drift instead of silently accepting partial
-                // data. V1's `EnsureNextResultSetAsync` fires per-step;
-                // V2's post-loop count is the same axis, single-shot.
+                        report (sprintf "trailing-%d" trailingIdx) 0
+                        trailingIdx <- trailingIdx + 1
+
+                // Contract check (matrix row 35): assert observed
+                // rowset count matches `ExpectedResultSets`. The
+                // explicit-read shape above already enumerates every
+                // documented rowset; this check is the structural
+                // forcing function that catches future drift.
                 let contractCheck =
                     MetadataExtractionError.resultSetContractCheck
                         ExpectedResultSets
@@ -500,11 +789,19 @@ module MetadataSnapshotRunner =
                 | Error errors -> return Result.failure errors
                 | Ok () ->
                     return Result.success {
-                        Modules        = modules
-                        Entities       = entities
-                        Attributes     = attributes
-                        References     = references
-                        PhysicalTables = physicalTables
+                        Modules            = modules
+                        Entities           = entities
+                        Attributes         = attributes
+                        References         = references
+                        PhysicalTables     = physicalTables
+                        ColumnReality      = columnReality
+                        ColumnChecks       = columnChecks
+                        PhysColsPresent    = physColsPresent
+                        Indexes            = indexes
+                        IndexColumns       = indexColumns
+                        ForeignKeysReality = fkReality
+                        ForeignKeyColumns  = fkColumns
+                        Triggers           = triggers
                     }
             with
             | ex ->
@@ -622,9 +919,67 @@ module MetadataSnapshotRunner =
                         } : CatalogReader.ReferenceRow)
                 | _ -> None)
 
+        // Slice 5.13.ossys-rowsets-cluster — JOIN logic for the new
+        // index/trigger/check axes. The mappings are largely shape-
+        // preserving (V1 source columns → V2 RowsetBundle row fields);
+        // CatalogReader.parseRowsetBundle does the EntityId-keyed
+        // group-and-resolve work via RowsetParseContext.
+        let indexes =
+            snapshot.Indexes
+            |> List.map (fun i ->
+                {
+                    EntityId         = i.EntityId
+                    IndexName        = i.IndexName
+                    IsUnique         = i.IsUnique
+                    IsPrimary        = i.IsPrimary
+                    FilterDefinition = i.FilterDefinition
+                    IsPadded         = i.IsPadded
+                    FillFactor       = i.FillFactor
+                    AllowRowLocks    = i.AllowRowLocks
+                    AllowPageLocks   = i.AllowPageLocks
+                    NoRecompute      = i.NoRecompute
+                } : CatalogReader.IndexRow)
+
+        let indexColumns =
+            snapshot.IndexColumns
+            |> List.map (fun c ->
+                {
+                    EntityId       = c.EntityId
+                    IndexName      = c.IndexName
+                    Ordinal        = c.Ordinal
+                    HumanAttr      = c.HumanAttr
+                    PhysicalColumn = c.PhysicalColumn
+                    IsIncluded     = c.IsIncluded
+                    Direction      = c.Direction
+                } : CatalogReader.IndexColumnRow)
+
+        let triggers =
+            snapshot.Triggers
+            |> List.map (fun t ->
+                {
+                    EntityId    = t.EntityId
+                    TriggerName = t.TriggerName
+                    IsDisabled  = t.IsDisabled
+                    Definition  = t.TriggerDefinition
+                } : CatalogReader.TriggerRow)
+
+        let columnChecks =
+            snapshot.ColumnChecks
+            |> List.map (fun c ->
+                {
+                    AttrId         = c.AttrId
+                    ConstraintName = c.ConstraintName
+                    Definition     = c.Definition
+                    IsNotTrusted   = c.IsNotTrusted
+                } : CatalogReader.ColumnCheckRow)
+
         {
-            Modules    = modules
-            Kinds      = kinds
-            Attributes = attributes
-            References = references
+            Modules      = modules
+            Kinds        = kinds
+            Attributes   = attributes
+            References   = references
+            Indexes      = indexes
+            IndexColumns = indexColumns
+            Triggers     = triggers
+            ColumnChecks = columnChecks
         }

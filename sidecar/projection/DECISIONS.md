@@ -14444,3 +14444,161 @@ change-detection predicate as the MERGE's WHEN MATCHED AND clause.
   full pipeline.
 
 ---
+
+## 2026-05-18 (slice 5.13.ossys-rowsets-cluster) — Cluster A1 closure: 8 OSSYS physical-reflection rowsets lift in one slice; closure-helper + RowsetParseContext refactor
+
+Closes matrix Cluster A1 (rows 11 + 12 + 14 + 15 + 16 + 17 + 18 + 23
+— 8 rows in one slice). Lifts every remaining V2-consumable rowset
+in V1's `outsystems_metadata_rowsets.sql`; retires V2's structural
+dependence on V1's `#IdxJson` (row 26 ⚫ V1-SUNSET) and `#TriggerJson`
+(row 27 ⚫ V1-SUNSET) — V2's index + trigger axes are now
+V1-JSON-independent.
+
+### What changed structurally
+
+**1. Eight new typed rowset records + ordinal mappers** in
+`MetadataSnapshotRunner.fs`:
+`OssysColumnRealityRow`, `OssysColumnCheckRow`,
+`OssysPhysColsPresentRow`, `OssysAllIdxRow`, `OssysIdxColMappedRow`,
+`OssysFkRealityRow`, `OssysFkColumnRow`, `OssysTriggerRow`. Each
+mapper cites the V1 SELECT ordinal range it consumes; record fields
+mirror V1's column order.
+
+**2. `runAsync` closure-helper refactor.** The per-rowset
+boilerplate triplet (`let! _ = advanceNext (); let! foo =
+readResultSet name reader mapper; report name foo.Length`) becomes
+a single `read name mapper` closure capturing the `reader` +
+`advanceNext` + `report` from enclosing scope. Symmetric `skip
+name` handles V1-SUNSET rowsets. Explicit `read`/`skip` for every
+documented rowset (23 total); trailing skip-loop is now a sanity
+guard for SQL-contract drift rather than the primary skip
+mechanism.
+
+**3. `CatalogReader.RowsetBundle` extended** with four new
+fields (`Indexes`, `IndexColumns`, `Triggers`, `ColumnChecks`).
+The `RowsetBundle.empty` sibling-module helper retires the
+literal-site-explosion that record-extensions normally trigger
+(closed-DU expansion empirical-test discipline applied at the
+record-field level).
+
+**4. `RowsetParseContext` record consolidates per-id-keyed
+groupings.** The prior `parseModuleRow` signature carried 4 Map
+parameters (KindKeysByEntityId, KindsByEspace, AttributesByEntity,
+ReferencesByAttr); this slice adds 4 more (IndexesByEntity,
+IndexColumnsByIndex, TriggersByEntity, ColumnChecksByEntity).
+Rather than expand the signature to 8 params (sibling-wrapper
+discipline anti-pattern), a `RowsetParseContext` record carries
+the groupings as one threaded value. Future rowset lifts extend
+the record shape rather than the function signature.
+
+**5. JOIN logic in `parseKindRow`** for indexes / triggers / column
+checks. Three new private helpers (`parseIndexRowFor`,
+`parseTriggerRowFor`, `parseColumnCheckRowFor`) follow the pattern
+set by `parseAttributeRow` + `parseReferenceRowFor`. The
+column-check JOIN dedupes by `ConstraintName` because V1's
+`#ColumnCheckReality` is per-AttrId (one row per column per CHECK)
+but V2's `Kind.ColumnChecks` is table-scoped (one entry per
+unique constraint).
+
+### Discoveries during the slice
+
+**Discovery 1: HumanAttr is the PHYSICAL name, not the LOGICAL name.**
+
+V1's `#IdxColsMapped.HumanAttr` is the COALESCE of
+`(PhysicalColumnName, DatabaseColumnName, AttrName)` — the
+physical name appears first when populated (the typical case). My
+initial resolver synthesized SsKey from HumanAttr directly via
+`attributeSsKey`, which keys on the **logical** AttrName.
+Mismatch → `catalog.index.danglingColumn` invariant failure at
+`Catalog.create`.
+
+**Fix.** The resolver now matches against the kind's `AttributeRow`
+list with a three-step resolution order:
+  1. `HumanAttr` matches an attribute's `AttrName` (logical hit).
+  2. `HumanAttr` matches an attribute's `PhysicalCol` (physical hit;
+     the COALESCE-primary case).
+  3. `PhysicalColumn` matches an attribute's `PhysicalCol`
+     (defensive fallback).
+
+When none match, the index column references a column V2's
+attribute set doesn't model — typically a system column (`OSPK`).
+Surfaces as `adapter.osm.indexColumnUnresolved` ValidationError.
+
+**Discovery 2: Attribute SsKey is OssysOriginal GUID when populated.**
+
+After fixing the HumanAttr resolution, a second failure surfaced:
+the resolved attribute's `AttrName` synthesized to a `Synthesized`
+SsKey, but the actual Attribute's SsKey is `OssysOriginal GUID`
+when the V1 row carries `AttrSsKey`. The IndexColumn's SsKey must
+match the Attribute's actual SsKey, not synthesize-from-name.
+
+**Fix.** Use `attributeSsKeyFromRow` (which checks `row.AttrSsKey`
+first, falling back to synthesis) instead of `attributeSsKey
+moduleName entityName attrName`. The IndexColumn SsKey now
+matches the Attribute SsKey exactly under the
+`Catalog.create`-enforced danglingColumn invariant.
+
+### Per-row reclassification
+
+| Row | Rowset | Status |
+|---|---|---|
+| 11 | `#ColumnReality` | 🟠 NOT-MAPPED → 🔵 V2-EXTENSION (typed rowset; IR consumer gated on Profile.AttributeReality per row 49) |
+| 12 | `#ColumnCheckReality` | 🟠 NOT-MAPPED → 🟢 PARITY (wired → Kind.ColumnChecks) |
+| 14 | `#PhysColsPresent` | 🟠 NOT-MAPPED → 🔵 V2-EXTENSION (typed rowset; orphan-attribute consumer gated) |
+| 15 | `#AllIdx` | 🟠 NOT-MAPPED → 🟢 PARITY (wired → Kind.Indexes) |
+| 16 | `#IdxColsMapped` | 🟠 NOT-MAPPED → 🟢 PARITY (wired → Kind.Indexes.Columns + IncludedColumns) |
+| 17 | `#FkReality` | 🟠 NOT-MAPPED → 🔵 V2-EXTENSION (typed rowset; IR enrichment with OnUpdate + IsNoCheck gated on rows 58 + 59) |
+| 18 | `#FkColumns` | 🟠 NOT-MAPPED → 🔵 V2-EXTENSION (typed rowset; composite-FK consumer gated on V2 IR extension) |
+| 23 | `#Triggers` | 🟠 NOT-MAPPED → 🟢 PARITY (wired → Kind.Triggers) |
+
+### Engineering quality
+
+- **Performance.** No allocations beyond the F# list per rowset
+  (existing pattern); SequentialAccess preserved for SqlClient
+  buffer efficiency. The closure-helper produces one extra Task
+  per rowset relative to the inline form — negligible cost at
+  bounded rowset counts.
+- **T1 byte-determinism.** Each new rowset is sorted by V1's SQL
+  `ORDER BY` clause; per-Kind index column lists sort by Ordinal
+  inside parseIndexRowFor. The Catalog construction is
+  deterministic from identical input.
+- **Smart-not-harder.** Adding 8 typed records + 8 mappers + 8
+  parse calls = ~250 LOC, but the elegance refactor (closure
+  helper + RowsetParseContext) means future rowset lifts
+  (matrix row 58 / 59 IR enrichment; live-DB column-reality
+  consumers) extend at single-line resolution.
+- **Better-than-V1.** V1 emits the rowsets but V1's downstream
+  consumption is via `IndexJson` (JSON-aggregation per-entity)
+  which loses column ordinal fidelity. V2's rowset path
+  preserves IndexColumn ordinal exactly per
+  `#IdxColsMapped.Ordinal`; the typed Index IR retains
+  per-column direction (ASC/DESC) which V1's JSON path also
+  carries but at less structural-type fidelity.
+
+### Coverage tests now passing
+
+- `OssysExtractionCanaryTests.``Slice 5.13.ossys-rowsets-cluster:
+  indexes lift via rowset path (matrix rows 15 + 16)`` ` —
+  Docker-gated canary asserts Customer.IDX_CUSTOMER_EMAIL +
+  IDX_CUSTOMER_NAME flow through with correct IsUnique + Filter.
+- `OssysExtractionCanaryTests.``Slice 5.13.ossys-rowsets-cluster:
+  triggers lift via rowset path (matrix row 23)`` ` — asserts
+  TR_OSUSR_XYZ_JOBRUN_AUDIT lifts into Kind.Triggers.
+- Progress-callback canary's named-rowset sequence assertion
+  extends to cover the 8 new rowset names + 1 SUNSET skip.
+- Full 1549-test suite passes (was 1547 pre-slice; +2 net new),
+  zero failures.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` rows 11/12/14/15/16/17/18/23 —
+  Status-history amendments record the cluster closure.
+- `BACKLOG.md` Phase 5.13 — `5.13.column-checks-ir`,
+  `5.13.ossys-indexes`, `5.13.ossys-foreign-keys`,
+  `5.13.ossys-triggers`, `5.13.column-reality`,
+  `5.13.physical-columns-present` retire; merged into one
+  cluster-close slice.
+- `CHAPTER_5_0_CLOSE.md` "Cluster A1" — closes the
+  audit-wave's named cluster.
+
+---

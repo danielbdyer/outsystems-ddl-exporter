@@ -330,7 +330,7 @@ let private rowsetWith (isExternal: bool) (espaceKind: string option) : CatalogR
           AttrSsKey = None; IsActive = true; Description = None
           OriginalName = None; ExternalDatabaseType = None }
     { Modules = [ moduleRow ]; Kinds = [ kindRow ]
-      Attributes = [ idRow ]; References = [] }
+      Attributes = [ idRow ]; References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = [] }
 
 [<Fact>]
 let ``Origin audit (rowset path): isExternal=false → OsNative regardless of EspaceKind`` () =

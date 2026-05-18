@@ -219,7 +219,7 @@ let ``Slice β: rowset path carries Attribute.OriginalName from AttributeRow`` (
         { Modules    = [ moduleRow ]
           Kinds      = [ accountKindRow ]
           Attributes = [ mkAttrRow 111 "EmailAddress" (Some "Email") None ]
-          References = [] }
+          References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = [] }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok catalog ->
@@ -233,7 +233,7 @@ let ``Slice β: rowset path carries Attribute.ExternalDatabaseType from Attribut
         { Modules    = [ moduleRow ]
           Kinds      = [ accountKindRow ]
           Attributes = [ mkAttrRow 112 "LegacyKey" None (Some "NVARCHAR(50)") ]
-          References = [] }
+          References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = [] }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok catalog ->
@@ -247,7 +247,7 @@ let ``Slice β: rowset path defaults both fields to None when source omits`` () 
         { Modules    = [ moduleRow ]
           Kinds      = [ accountKindRow ]
           Attributes = [ mkAttrRow 113 "Id" None None ]
-          References = [] }
+          References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = [] }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok catalog ->

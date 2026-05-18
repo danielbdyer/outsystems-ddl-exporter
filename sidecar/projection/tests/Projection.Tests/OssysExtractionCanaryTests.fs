@@ -185,3 +185,87 @@ let ``Slice 5.13.progress-callback canary: progress fires for every observed row
             Assert.Equal<string list>(
                 [ "modules"; "entities"; "attributes"; "references"; "physicalTables" ],
                 firstFive)
+            // The next 8 observations are the slice 5.13.ossys-rowsets-cluster
+            // lifts (with one SUNSET skip between columnChecks and
+            // physColsPresent). They cover matrix rows 11 + 12 + 14 +
+            // 15 + 16 + 17 + 18 + 23.
+            let liftedFamily =
+                observations
+                |> Seq.skip 5
+                |> Seq.take 9
+                |> Seq.map (fun o -> o.ResultSetName)
+                |> List.ofSeq
+            Assert.Equal<string list>(
+                [ "columnReality"; "columnChecks"; "attrCheckJson";
+                  "physColsPresent"; "allIdx"; "idxColsMapped";
+                  "fkReality"; "fkColumns"; "fkAttrMap" ],
+                liftedFamily)
+
+// ----------------------------------------------------------------
+// Slice 5.13.ossys-rowsets-cluster — canary tests asserting the
+// lifted physical-reflection axes (indexes / triggers / column
+// checks) flow into V2's IR via the rowset path. Closes matrix
+// rows 12 + 15 + 16 + 23 (the rows with V2 IR consumers ready).
+// ----------------------------------------------------------------
+
+[<Fact>]
+let ``Slice 5.13.ossys-rowsets-cluster: indexes lift via rowset path (matrix rows 15 + 16)`` () =
+    if skipIfNoDocker "ossys-canary-indexes" then
+        let result = (extractFromSeed ()).GetAwaiter().GetResult()
+        match result with
+        | Error errors ->
+            Assert.Fail (sprintf "OSSYS canary extraction failed: %A" errors)
+        | Ok catalog ->
+            // The seed (ossys-edge-case.seed.sql) declares:
+            //   - IDX_CUSTOMER_EMAIL (filtered unique on Customer.Email)
+            //   - IDX_CUSTOMER_NAME (LastName, FirstName; DISABLED)
+            //   - IDX_BILLINGACCOUNT_ACCTNUM (unique)
+            //
+            // The rowset adapter now lifts #AllIdx + #IdxColsMapped
+            // into Kind.Indexes via the JOIN logic in
+            // CatalogReader.parseIndexRowFor. At least the unique
+            // indexes should appear; verify the structure.
+            let appCore =
+                catalog.Modules
+                |> List.find (fun m -> Name.value m.Name = "AppCore")
+            let customer =
+                appCore.Kinds
+                |> List.find (fun k -> Name.value k.Name = "Customer")
+            // Customer has at least the two declared user indexes
+            // (IDX_CUSTOMER_EMAIL + IDX_CUSTOMER_NAME) — the
+            // primary key is auto-named and may or may not appear
+            // depending on V1's #AllIdx Kind classification.
+            let indexNames =
+                customer.Indexes
+                |> List.map (fun i -> Name.value i.Name)
+                |> Set.ofList
+            Assert.Contains("IDX_CUSTOMER_EMAIL", indexNames)
+            Assert.Contains("IDX_CUSTOMER_NAME", indexNames)
+            // IDX_CUSTOMER_EMAIL is unique + filtered.
+            let emailIdx =
+                customer.Indexes
+                |> List.find (fun i -> Name.value i.Name = "IDX_CUSTOMER_EMAIL")
+            Assert.True(emailIdx.IsUnique)
+            Assert.False(emailIdx.IsPrimaryKey)
+            match emailIdx.Filter with
+            | Some _ -> ()
+            | None -> Assert.Fail("IDX_CUSTOMER_EMAIL expected to carry a filter (rowset-path #AllIdx.FilterDefinition)")
+
+[<Fact>]
+let ``Slice 5.13.ossys-rowsets-cluster: triggers lift via rowset path (matrix row 23)`` () =
+    if skipIfNoDocker "ossys-canary-triggers" then
+        let result = (extractFromSeed ()).GetAwaiter().GetResult()
+        match result with
+        | Error errors ->
+            Assert.Fail (sprintf "OSSYS canary extraction failed: %A" errors)
+        | Ok catalog ->
+            // The seed declares TR_OSUSR_XYZ_JOBRUN_AUDIT on the
+            // JOBRUN entity (Ops module). The rowset adapter now
+            // lifts #Triggers into Kind.Triggers.
+            let allTriggers =
+                catalog.Modules
+                |> List.collect (fun m -> m.Kinds)
+                |> List.collect (fun k -> k.Triggers)
+                |> List.map (fun t -> Name.value t.Name)
+                |> Set.ofList
+            Assert.Contains("TR_OSUSR_XYZ_JOBRUN_AUDIT", allTriggers)

@@ -254,6 +254,73 @@ the original audit missed it), append a dated amendment to this
 section naming the prior status, the new status, and the discovery
 slice.
 
+### Rows 11 + 12 + 14 + 15 + 16 + 17 + 18 + 23 — 2026-05-18 (closed by slice 5.13.ossys-rowsets-cluster)
+
+**Cluster A1 closure** — eight OSSYS-source physical-reflection rowsets
+lift in one slice. The plan from `V1_PARITY_MATRIX.md` Cluster A1
+("Per-rowset lift shape" — F# record + ordinal mapper + parse-and-
+accumulate + MetadataSnapshot extension + optional RowsetBundle
+integration) executed across all eight rowsets, with the IR-integration
+optional step taken for the four rowsets whose V2 IR consumers exist
+(rows 12, 15, 16, 23).
+
+**Original classification (audit-wave slice 5.0.γ, 2026-05-17):** 🟠 NOT-MAPPED.
+V2 walked all 22 result sets but parsed only the first 5.
+
+**Reclassified (slice 5.13.ossys-rowsets-cluster, 2026-05-18):**
+
+| Row | Rowset | Status | IR integration |
+|---|---|---|---|
+| 11 | `#ColumnReality` | 🔵 V2-EXTENSION (typed rowset; no IR consumer yet) | deferred — gated on `Profile.AttributeReality` row 49 |
+| 12 | `#ColumnCheckReality` | 🟢 PARITY | wired → `Kind.ColumnChecks` |
+| 14 | `#PhysColsPresent` | 🔵 V2-EXTENSION (typed rowset; no IR consumer yet) | deferred — gated on V2 orphan-attribute consumer |
+| 15 | `#AllIdx` | 🟢 PARITY | wired → `Kind.Indexes` |
+| 16 | `#IdxColsMapped` | 🟢 PARITY | wired → `Kind.Indexes.Columns` + `Kind.Indexes.IncludedColumns` |
+| 17 | `#FkReality` | 🔵 V2-EXTENSION (typed rowset carries OnUpdate + IsNoCheck; IR enrichment gated on rows 58 + 59) | deferred — IR enrichment is rows 58 + 59's slice |
+| 18 | `#FkColumns` | 🔵 V2-EXTENSION (typed rowset; composite-FK consumer gated on V2 IR extension) | deferred — V2 Reference IR is single-column |
+| 23 | `#Triggers` | 🟢 PARITY | wired → `Kind.Triggers` |
+
+**Retires V2's structural dependence on V1's `#IdxJson`** (row 26,
+⚫ V1-SUNSET) — V2's index axis is now V1-IndexJson-independent.
+Same retirement applies to `#TriggerJson` (row 27) for triggers.
+
+**Engineering quality.** The slice opens with the closure-helper
+refactor in `MetadataSnapshotRunner.runAsync`:
+
+```fsharp
+let read name mapper = task {
+    let! _ = advanceNext ()
+    let! rows = readResultSet name reader mapper
+    report name rows.Length
+    return rows }
+let skip name = task { ... }
+```
+
+Replaces 5 `let! _ = advanceNext(); let! foo = readResultSet ...;
+report ...` triplets with one closure used per rowset. Explicit
+`read`/`skip` calls for every documented rowset (23 total); the
+trailing skip-loop becomes a sanity guard for SQL-contract drift.
+
+The downstream `parseRowsetBundle` consolidates eight per-id-keyed
+groupings into one `RowsetParseContext` record threaded through
+`parseModuleRow` → `parseKindRow` — future rowset lifts extend the
+context record rather than the function signature
+(sibling-wrapper discipline applied at the data-shape level).
+
+V2 produces a `Kind.Indexes` / `Kind.Triggers` / `Kind.ColumnChecks`
+surface from the rowset path that's now equivalent to the JSON
+path's; the synthetic seed fixture's `IDX_CUSTOMER_EMAIL` (filtered
+unique), `IDX_CUSTOMER_NAME` (disabled), and
+`TR_OSUSR_XYZ_JOBRUN_AUDIT` (trigger) all flow through to the V2
+IR.
+
+**Coverage tests now passing:**
+- `OssysExtractionCanaryTests.``Slice 5.13.ossys-rowsets-cluster: indexes lift via rowset path (matrix rows 15 + 16)`` `
+- `OssysExtractionCanaryTests.``Slice 5.13.ossys-rowsets-cluster: triggers lift via rowset path (matrix row 23)`` `
+- progress-callback canary now asserts the full named-rowset sequence (rows 11/12/14/15/16/17/18/23 surface as named progress observations)
+
+---
+
 ### Rows 32 + 34 + 35 — 2026-05-18 (closed by slice 5.13.production-wiring-classification)
 
 **Original classifications (slice 5.1.γ, 2026-05-17):**
