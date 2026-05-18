@@ -24,7 +24,7 @@ open Projection.Tests.IRBuilders
 // reachable from `Project(catalog, Policy.empty, profile)` without
 // operator opinion).
 //
-// **Test-fixture pattern.** Tests use `IRBuilders.mkAttribute` /
+// **Test-fixture pattern.** Tests use `Attribute.create` /
 // `mkKind` / etc. so that future slices that add IR fields only update
 // the builder, not these tests. See `IRBuilders.fs` for the discipline.
 // ---------------------------------------------------------------------------

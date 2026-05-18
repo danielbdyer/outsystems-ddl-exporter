@@ -15058,3 +15058,179 @@ pending consumer pressure.
 - Sibling slices (`5.13.column-features-emit` +
   `5.13.fk-features-emit` + `5.13.smart-constructor-lift`,
   2026-05-18) — same pattern applied to column + FK axes.
+
+---
+
+## 2026-05-18 (slice 5.13.blind-spot-closure) — Four blind-spot gaps closed before handoff; SCHEMA-axis V2-driver gate continues toward ready
+
+### Scope
+
+The 2026-05-18 emit-features arc (column / FK / index slices + smart-
+constructor lift) closed seven matrix rows but left a numbered
+blind-spot list in the handoff. This slice closes four of those gaps
+before the rewrite of the handoff: (1) TransformRegistry Emitter-
+stage coverage; (3) rowset-adapter JOIN follow-up; (4) IRBuilders
+soft-retirement (partial — qualified call sites); (5) Render.fs
+StringBuilder retirement. The remaining four (blind-spots 2, 6, 7,
+8) are either two-consumer-threshold deferrals or pattern-notes
+that don't require closure.
+
+### What ships
+
+**TransformRegistry Emitter-stage coverage (blind-spot #1):**
+
+- New `SsdtDdlEmitter.registeredMetadata : RegisteredTransformMetadata`
+  in `Projection.Targets.SSDT/SsdtDdlEmitter.fs`. Eleven classified
+  Sites, one per V1-CreateTable / V1-CreateIndex emit feature V2
+  carries: createTable, createIndex, columnDefaultClause,
+  columnCheckConstraint, foreignKeyConstraint,
+  alterTableNoCheckConstraint, alterIndexDisable,
+  indexIgnoreDuplicateKey, indexDataCompression,
+  setExtendedProperty, topologicalOrder. Each Site carries
+  substantive Rationale (pillar 9 harvest-discipline analysis) +
+  DataIntent classification (A18 amended forbids operator opinion at
+  emit time).
+- `ManifestEmitter.build` prepends `SsdtDdlEmitter.registeredMetadata`
+  to `RegisteredTransforms.all` so the totality-coverage scan
+  reaches Emitter-stage Sites. Cherry-pick boundary preserved (Core
+  doesn't reference the emitter project; the prepend happens at the
+  consumer-layer `ManifestEmitter.build`).
+- New `tests/Projection.Tests/EmitterRegistrationsTests.fs` mirrors
+  `AdapterRegistrationsTests.fs` shape: 6 tests asserting Name +
+  Domain + StageBinding + Sites enumeration + DataIntent uniformity
+  + non-empty Rationale + TransformRegistry.create validation +
+  joint-registry assembly.
+
+**Rowset-adapter JOIN closure (blind-spot #3):**
+
+- `CatalogReader.ReferenceRow` extended with `OnUpdate : string
+  option` + `IsConstraintTrusted : bool`. `CatalogReader.IndexRow`
+  extended with `IsDisabled : bool` + `IgnoreDupKey : bool` +
+  `DataCompression : string option`.
+- `MetadataSnapshotRunner.toBundle` performs the FK JOIN via a
+  3-step lookup chain (`OssysReferenceRow.AttrId →
+  OssysFkColumnRow.ParentAttrId → OssysFkColumnRow.FkObjectId →
+  OssysFkRealityRow`). The JOIN composes through two `Map`s built
+  once per toBundle invocation; per-attribute `ReferenceRow` carries
+  `(UpdateAction, not IsNoCheck)` from the matching FK constraint
+  when one exists. Cross-catalog / absent references degrade to
+  smart-constructor defaults (`None / true`).
+- `MetadataSnapshotRunner.toBundle` populates the new `IndexRow`
+  fields directly from `OssysAllIdxRow.IsDisabled / IgnoreDupKey /
+  DataCompressionJson`. The compression JSON parses via a new
+  private `tryParseUniformDataCompression` helper using
+  `System.Text.Json.JsonDocument` — pillar 7 BCL canonical parser,
+  no LINT-ALLOW needed (structured walk, not string composition).
+- `CatalogReader.parseReferenceRowFor` + `parseIndexRowFor` thread
+  the new fields through to `Reference.create … with` /
+  `Index.create … with`.
+
+**IRBuilders shim retirement (partial; blind-spot #4):**
+
+- All qualified call sites (`IRBuilders.mkAttribute / mkKind /
+  mkReference`) migrated to the production smart constructors
+  (`Attribute.create / Kind.create / Reference.create`) via a single
+  sed substitution across the test surface. The `IRBuilders.mkIndex`
+  shim STAYED — it provides `SsKey list → IndexColumn list`
+  adaptation that the production `Index.create` doesn't expose.
+- The pure-delegation shims in `IRBuilders.fs` (mkAttribute, mkKind,
+  mkReference) are PRESERVED in the module for the unqualified-call
+  sites (files using `open Projection.Tests.IRBuilders` + bare
+  `mkX`). Full soft-retirement triggers when those ~10 files
+  migrate; deferred-with-trigger per IR-grows-under-evidence (a
+  hygiene-only slice, not feature-pressure).
+- Module docstring updated to name "two surfaces" — the pure
+  delegation shims (retire when consumers migrate) and the shape
+  adapters / skip-invariant builders (stay; provide test-side
+  semantics production doesn't expose).
+
+**Render.fs StringBuilder retirement (blind-spot #5 + #6):**
+
+- `Render.toSql`'s per-variant arms collapsed into a single `_ ->`
+  default arm routing every SQL-bearing Statement through
+  `ScriptDomBuild.buildStatement` + `ScriptDomGenerate.generateOne`.
+  Only `Blank` + `Comment` remain as named arms (terminal text-
+  formatting with no typed AST).
+- Four dead-weight per-call helpers retired: `columnSqlType` +
+  `formatSqlLiteral` (both public, zero external consumers per
+  grep audit) + `actionSql` + `renderColumn` (both private, dead
+  with the StringBuilder CREATE TABLE arm).
+- Module-level `open System` retained; `open System.Text` retained
+  (StringBuilder still used in `toText`'s seed-buffer). 8 helper
+  imports + ~40 LOC retired across Render.fs. The file reduces to
+  four public functions: `quote`, `tableQualified` (identifier-
+  boundary helpers consumed by Bulk / Deploy / RefactorLogEmitter)
+  + `toSql` (the unified dispatcher) + `toText` (the seq folder).
+
+### Operating-discipline payoff
+
+- **Pillar 9 (TransformRegistry as the fourth cross-cutting
+  structural-evidence concern)** — emitter-stage Sites now witness
+  in the totality-coverage scan. The discipline that "every
+  transformation site carries an explicit classification" now
+  reaches the SSDT emitter; previously the emitter's emission
+  features were inferred from code reading, not enumerated
+  structurally. The OSSYS-adapter `registeredMetadata` precedent
+  (chapter A.4.7 slice δ) propagates to the Emitter stage one
+  emitter at a time.
+- **Cluster-A1 cash-out completion** — the rowset-adapter JOIN was
+  the only outstanding piece of cluster A1's eight-row closure that
+  didn't ship at cluster-A1 commit time. Closes the structural
+  evidence chain from V1 source (`#FkReality`, `#AllIdx`) all the
+  way to V2 SSDT emission (CREATE TABLE / ALTER TABLE NOCHECK /
+  CREATE INDEX / ALTER INDEX DISABLE / WITH DATA_COMPRESSION).
+  Production canary surfaces NOCHECK FKs / disabled indexes /
+  compressed indexes via end-to-end fidelity.
+- **Single source of truth (Render.fs)** — every SQL-bearing
+  statement now flows through ONE pipeline (ScriptDomBuild →
+  ScriptDomGenerate). Bench scopes still bracket per-statement
+  (`render.statement`) and stream-level (`render.toText`). The
+  retirement closes the text-builder-as-first-instinct relic that
+  predated the typed-AST migration.
+- **Two-consumer threshold for emergent primitives** — the
+  IRBuilders soft-retirement applied the threshold correctly:
+  pure 1-line delegation shims with 1 distinct caller-pattern
+  retire; shape-adapter shims (mkIndex, mkIndexColumns) with
+  genuinely-different production shape stay. The partial closure
+  preserves audit-trail (the docstring names which shims are which).
+
+### Coverage tests now passing (6 new + existing suite preserved)
+
+- 6 new `EmitterRegistrationsTests.fs` tests for `SsdtDdlEmitter
+  .registeredMetadata`.
+- Full suite: **1571 passing, 0 failing** (1565 pre-slice + 6 new
+  emitter-registry tests).
+- 36+ test files migrated `IRBuilders.mkX` qualified calls to
+  production smart constructors; build remains clean across the
+  sweep.
+
+### Deferred (after this slice)
+
+- **Blind-spot 2 (PostCreateAlter consolidation)** — two-consumer
+  threshold not yet met; `AlterTableNoCheckConstraint` +
+  `AlterIndexDisable` share shape but the third consumer hasn't
+  arrived. Don't pre-extract.
+- **Blind-spot 4 (IRBuilders full retirement)** — ~10 files still
+  use unqualified `mkAttribute` / `mkKind` / `mkReference` via
+  `open Projection.Tests.IRBuilders`. Hygiene-only slice deferred
+  with trigger: when the next IR aggregate field-extension would
+  benefit from the shim-free surface.
+- **Blind-spot 7 (`OssysFkColumnRow` composite-FK)** — speculative;
+  V2's `Reference` IR remains single-column. Lift when composite-
+  FK fixture surfaces.
+- **Blind-spot 8 (DataCompressionLevel name collision)** — already
+  principled; pattern note in the slice 5.13.index-features-emit
+  DECISIONS entry. Not a deferral, a documented invariant.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` Status-history amendments record the
+  rowset-adapter JOIN + TransformRegistry Emitter-stage closure +
+  Render.fs StringBuilder retirement.
+- `BACKLOG.md` — `5.13.fk-reality-join` retires; LR1 / LR3 / LR6 /
+  LR7 already retired in the prior arc.
+- `DECISIONS 2026-05-15 (late)` — pillar 9 (TransformRegistry as
+  cross-cutting concern). This slice extends the registry's reach
+  to the Emitter stage per the OSSYS-adapter precedent.
+- `HANDOFF.md` — supersedes the four blind-spot entries the prior
+  2026-05-18 handoff named.

@@ -2,25 +2,33 @@ module Projection.Tests.IRBuilders
 
 open Projection.Core
 
-/// Fixture builders for V2 IR records. Centralises the "empty / sensible
-/// default" form so future slices that add fields to `Attribute` / `Kind` /
-/// `Module` / `Catalog` / `Index` update one site instead of ~150 record
-/// literals across the test surface.
+/// Test-fixture shape-adapters and skip-invariant-check builders for V2 IR
+/// records. Production-side smart constructors (`Attribute.create`,
+/// `Reference.create`, `Kind.create`, `Index.create`) absorb field
+/// extensions at one site per the A39 codification (slice
+/// 5.13.smart-constructor-lift, 2026-05-18). Slice
+/// 5.13.shim-retirement (2026-05-18) migrated qualified-call sites
+/// (`IRBuilders.mkAttribute …`) to direct `Attribute.create …` calls.
+/// The shim wrappers stay for unqualified-call sites (files that
+/// `open Projection.Tests.IRBuilders` and use `mkX` bare); full
+/// soft-retirement triggers when those sites migrate (a separate
+/// hygiene slice deferred-with-trigger).
 ///
-/// **Why this exists.** Chapter A.0' slices α/β/γ+δ+ε+ζ+η each added new
-/// fields to the IR (Description, IsActive, Triggers, Sequences,
-/// DefaultValue, Computed, ColumnChecks, ExtendedProperties at four levels,
-/// ModalityMark.Temporal). Pre-existing tests construct records from
-/// scratch — every new field forces a mechanical edit across the entire
-/// test surface. The builders below absorb new fields with the slice that
-/// adds them; downstream tests use `{ mkAttribute ... with FieldOfInterest
-/// = ... }` and stay stable across IR growth.
+/// **Two surfaces remain:**
+///   - **Pure delegation shims** (`mkAttribute`, `mkKind`, `mkReference`)
+///     — 1-line wrappers around the production smart constructors.
+///     Pillar-9 framing: zero-cost adapters serving the unqualified-
+///     usage call sites. Retire when those call sites migrate.
+///   - **Shape adapters + skip-invariant builders** (`mkIndex`,
+///     `mkIndexColumn`, `mkIndexColumns`, `mkModule`, `mkCatalog`)
+///     — provide test-side semantics the production smart constructors
+///     don't expose (SsKey→IndexColumn list conversion; skip-Result
+///     shorthand). These stay.
 ///
 /// **Discipline (pillar 8 — domain-first naming).** Builder names answer
-/// "what does this REPRESENT" (an `Attribute`, a `Kind`, etc.), not "what
-/// does this DO" (no `Helper` / `Util` / `Builder` suffix on the modules
-/// themselves; the module name `IRBuilders` is the file-level concept —
-/// the *family of builders*).
+/// "what does this REPRESENT" (`mkIndexColumns` ⇒ a list of index
+/// columns), not "what does this DO". The module name `IRBuilders` is
+/// the file-level concept — the *family of test-fixture adapters*.
 ///
 /// **Discipline (pillar 9 — DataIntent default).** All builder defaults
 /// represent DataIntent zero-evidence values: empty collections, `None`
@@ -28,14 +36,13 @@ open Projection.Core
 /// values (e.g., `IsActive = false`) override via record-update.
 
 /// Build an `Attribute` with minimum-evidence defaults. Delegates to
-/// the production-side `Attribute.create` smart constructor (slice
-/// 5.13.fk-features-emit).
+/// the production-side `Attribute.create` smart constructor.
 let mkAttribute (ssKey: SsKey) (name: Name) (ptype: PrimitiveType) : Attribute =
     Attribute.create ssKey name ptype
 
 /// Build a `Kind` with the given attributes and minimum-evidence
 /// defaults. Delegates to the production-side `Kind.create` smart
-/// constructor (slice 5.13.fk-features-emit).
+/// constructor.
 let mkKind
     (ssKey: SsKey)
     (name: Name)
@@ -43,6 +50,16 @@ let mkKind
     (attributes: Attribute list)
     : Kind =
     Kind.create ssKey name physical attributes
+
+/// Build a `Reference` with minimum-evidence defaults. Delegates to
+/// the production-side `Reference.create` smart constructor.
+let mkReference
+    (ssKey: SsKey)
+    (name: Name)
+    (sourceAttribute: SsKey)
+    (targetKind: SsKey)
+    : Reference =
+    Reference.create ssKey name sourceAttribute targetKind
 
 /// Build a `Module` with the given kinds and minimum-evidence defaults.
 let mkModule (ssKey: SsKey) (name: Name) (kinds: Kind list) : Module =
@@ -76,18 +93,6 @@ let mkIndex
     (columns: SsKey list)
     : Index =
     Index.create ssKey name (mkIndexColumns columns)
-
-/// Build a `Reference` with minimum-evidence defaults. Delegates to
-/// the production-side `Reference.create` smart constructor (slice
-/// 5.13.fk-features-emit); the test fixture stays consistent with the
-/// production default geometry.
-let mkReference
-    (ssKey: SsKey)
-    (name: Name)
-    (sourceAttribute: SsKey)
-    (targetKind: SsKey)
-    : Reference =
-    Reference.create ssKey name sourceAttribute targetKind
 
 /// Build a `Catalog` with the given modules and no sequences. For
 /// invariant-checking construction use `Catalog.create modules sequences`;

@@ -67,8 +67,8 @@ let private mkOrderKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_ORDER"; Catalog = None }
         Attributes =
             [
-                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";        IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                { IRBuilders.mkAttribute createdByKey (mkName "CreatedBy") Integer with Column = { ColumnName = "CREATEDBY"; IsNullable = false }; IsMandatory = true }
+                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";        IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create createdByKey (mkName "CreatedBy") Integer with Column = { ColumnName = "CREATEDBY"; IsNullable = false }; IsMandatory = true }
             ]
         References =
             [ { Reference.create
@@ -174,8 +174,8 @@ let ``Slice η: kind with no User-FK references passes through unrewritten`` () 
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
           Attributes =
-              [ { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true } ]
+              [ { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true } ]
           References = []  // no User-FK
           Indexes    = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }

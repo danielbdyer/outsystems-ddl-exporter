@@ -1006,6 +1006,123 @@ The realization-layer additions:
 
 ---
 
+### Rows 17 + 18 (FK reality + FK column rowsets adapter wiring) + Rows 55 + 56 (Index reality rowsets adapter wiring) — 2026-05-18 (closed by slice 5.13.blind-spot-closure)
+
+**Original classifications (cluster A1, 2026-05-18):**
+- Rows 17 + 18 lifted as typed `OssysFkRealityRow` + `OssysFkColumnRow`
+  at the runner layer; the JOIN onto V2's per-attribute `ReferenceRow`
+  was deferred at the cluster-A1 commit.
+- Row 55 + 56 (rowset side) lifted as typed `OssysAllIdxRow` at the
+  runner layer; the IsDisabled / IgnoreDupKey / DataCompression fields
+  were captured but not wired through `parseIndexRowFor`.
+
+**Reclassified (slice 5.13.blind-spot-closure, 2026-05-18):** all four
+remain at their post-emit-side-shipped status (FK + index emit closed
+at the trio of 5.13.fk-features-emit + 5.13.index-features-emit
+slices); the adapter rowset-path JOIN now lands so production
+emissions can round-trip the deployed reality:
+
+- `MetadataSnapshotRunner.toBundle` now performs a 3-step JOIN
+  (`OssysReferenceRow.AttrId → OssysFkColumnRow.ParentAttrId →
+  OssysFkColumnRow.FkObjectId → OssysFkRealityRow`) so each
+  per-attribute `ReferenceRow` carries `OnUpdate` + `IsConstraintTrusted`
+  from the FK-constraint reflection.
+- `IndexRow` extended with `IsDisabled` + `IgnoreDupKey` +
+  `DataCompression : string option`; populated directly from the
+  `OssysAllIdxRow` flags. `DataCompressionJson` parses via
+  `tryParseUniformDataCompression` (System.Text.Json structured walk)
+  yielding `Some "<level>"` when uniform across partitions, `None`
+  when heterogeneous or absent.
+- `parseReferenceRowFor` + `parseIndexRowFor` thread the new fields
+  through to `Reference.create … with` / `Index.create … with`.
+
+**Coverage tests:** existing canary suite + 1565 non-canary tests
+pass with the JOIN active. No new tests needed at the adapter layer —
+the existing emit-side canary tests assert the round-trip shape; the
+adapter JOIN is the missing source of evidence those tests already
+expect.
+
+**What this closes for the next agent:** the row-58 + 59 + 55 +
+56-partial deferrals named in the prior handoff's "rowset-adapter
+JOIN follow-up" blind-spot. The composite-FK refactor (row 18
+multi-column support) + row 56 partition-scheme axis remain as
+named deferrals (no fixture pressure yet).
+
+---
+
+### TransformRegistry Emitter-stage coverage — 2026-05-18 (closed by slice 5.13.blind-spot-closure)
+
+**Original framing (handoff 2026-05-18 — emit-features arc):**
+The blind-spot entry named "TransformRegistry coverage gap on the
+new emit-side helpers" — `untrustedFkAlters`, `disabledIndexAlters`,
+`columnCheckDef`, the DefaultConstraint mapping, etc. The right
+granularity (per the chapter A.4.7 slice δ precedent for the OSSYS
+adapter) is one `registeredMetadata` entry per emitter, with each
+emission feature as a classified `TransformSite` within its Sites
+list.
+
+**Closed by slice 5.13.blind-spot-closure (2026-05-18):**
+`SsdtDdlEmitter.registeredMetadata : RegisteredTransformMetadata`
+ships with eleven classified Sites — every V1-CreateTable +
+V1-CreateIndex emit feature V2 carries (createTable / createIndex /
+columnDefaultClause / columnCheckConstraint / foreignKeyConstraint /
+alterTableNoCheckConstraint / alterIndexDisable /
+indexIgnoreDuplicateKey / indexDataCompression / setExtendedProperty /
+topologicalOrder), each carrying substantive Rationale + DataIntent
+classification (the SSDT emitter projects evidence; A18 amended
+forbids operator opinion at emit time).
+
+`ManifestEmitter.build` now prepends `SsdtDdlEmitter.registeredMetadata`
+to `RegisteredTransforms.all` so the totality-coverage scan reaches
+the emit-stage Sites. The OSSYS adapter's `registeredMetadata`
+remains in `Projection.Adapters.Osm` (cherry-pick boundary); future
+sibling emitter `registeredMetadata` (Json / Distributions /
+StaticPopulation / StaticSeeds / MigrationDependencies) lift when
+parity audit evidence demands them.
+
+**Coverage tests (6 new):**
+`EmitterRegistrationsTests.fs` mirrors the
+`AdapterRegistrationsTests.fs` shape — Name + Domain + StageBinding +
+Sites enumeration + every-Site-DataIntent + every-Site-non-empty-
+Rationale + TransformRegistry.create validation + joint-registry
+assembly through ManifestEmitter.build.
+
+---
+
+### Render.fs StringBuilder retirement — 2026-05-18 (closed by slice 5.13.blind-spot-closure)
+
+**Original framing (handoff 2026-05-18 — emit-features arc):**
+The blind-spot entry named "Render.fs StringBuilder retirement
+candidate" — only `InsertRow` + `SetIdentityInsert` had StringBuilder
+paths after the column-features-emit slice; both had ScriptDom
+builders already (`buildInsertRow` + `buildSetIdentityInsert`). The
+StringBuilder path was StringBuilder-as-first-instinct legacy from
+chapter 4.1.A.
+
+**Closed by slice 5.13.blind-spot-closure (2026-05-18):**
+`Render.toSql`'s per-variant arms collapsed into a single `_ ->`
+default arm that routes every SQL-bearing Statement through
+`ScriptDomBuild.buildStatement` + `ScriptDomGenerate.generateOne`.
+Only `Blank` + `Comment` remain as named arms — they're terminal
+text-formatting (newline + `-- ` prefix) for which no typed AST
+exists. The four dead-weight per-call helpers retired:
+`columnSqlType` + `formatSqlLiteral` (both public, zero external
+consumers) + `actionSql` + `renderColumn` (both private, dead with
+the StringBuilder CREATE TABLE arm). 8 imports and ~40 LOC retired.
+
+The full SSDT emission chain now lives in `ScriptDomBuild` —
+`Render.fs` reduces to four public functions: `quote` /
+`tableQualified` (identifier-boundary helpers still consumed by
+`Bulk` / `Deploy` / `RefactorLogEmitter`) + `toSql` (the unified
+dispatcher) + `toText` (the seq folder). Pillar 1 (data-structure-
+oriented) holds at full strength; pillar 7 gold-standard library is
+the canonical surface for every SQL-bearing emit.
+
+**Coverage:** existing test suite witnesses. T1 byte-determinism
+preserved (`ScriptDomGenerate.generateOne` is the only path).
+
+---
+
 ## Parity cash-out plans — what V2 work closes each gap
 
 The matrix's Notes column carries the per-row brief; this section

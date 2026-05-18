@@ -91,9 +91,9 @@ let private mkCountryKind () : Kind =
       Physical = { Schema = "dbo"; Table = "CDCX_COUNTRY"; Catalog = None }
       Attributes =
           [
-              { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-              { IRBuilders.mkAttribute codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
-              { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
+              { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+              { Attribute.create codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
+              { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
           ]
       References = []
       Indexes    = []
@@ -122,10 +122,10 @@ let private mkLegacyOrderKind () : Kind =
       Physical = { Schema = "dbo"; Table = "CDCX_LEGACY_ORDER"; Catalog = None }
       Attributes =
           [
-              { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-              { IRBuilders.mkAttribute parentKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } }
+              { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+              { Attribute.create parentKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } }
           ]
-      References = [ IRBuilders.mkReference refKey (mkName "RefSelf") parentKey legacyOrderKindKey ]
+      References = [ Reference.create refKey (mkName "RefSelf") parentKey legacyOrderKindKey ]
       Indexes    = []
       Description = None
       IsActive = true

@@ -77,7 +77,7 @@ let ``Chapter 4.5 slice α: HasFilteredIndex returns true when any Index.Filter 
             IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
     let mkKindWith (label: string) (idx: Index) : Kind =
         let baseKind =
-            IRBuilders.mkKind
+            Kind.create
                 (SsKey.synthesized "test" (sprintf "K:%s" label) |> Result.value)
                 (Name.create label |> Result.value)
                 (TableId.create "dbo" (sprintf "T_%s" label) |> Result.value)

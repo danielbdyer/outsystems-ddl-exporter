@@ -212,6 +212,22 @@ module CatalogReader =
             RefEntityId     : int option
             DeleteRuleCode  : string option
             HasDbConstraint : bool
+            /// Slice 5.13.fk-features-emit cash-out (matrix row 58
+            /// adapter-wiring residual). Optional ON UPDATE
+            /// referential action carried from V1's
+            /// `#FkReality.UpdateAction` per the
+            /// `OssysReferenceRow → OssysFkColumnRow → OssysFkRealityRow`
+            /// JOIN at `toBundle`. `None` when the rowset bundle
+            /// doesn't surface a matching FK constraint (cross-
+            /// catalog / JSON-path / non-OSSYS-source).
+            OnUpdate        : string option
+            /// Slice 5.13.fk-features-emit cash-out (matrix row 59
+            /// adapter-wiring residual). `false` when V1's
+            /// `#FkReality.IsNoCheck = 1` flows through the same JOIN
+            /// path; `true` (default) preserves V1's TRUSTED-by-default
+            /// emission shape. Cross-catalog and JSON-path references
+            /// default to `true`.
+            IsConstraintTrusted : bool
         }
 
     /// V1 rowset bundle — the in-memory carrier the future C# SqlClient
@@ -251,6 +267,25 @@ module CatalogReader =
             AllowRowLocks    : bool
             AllowPageLocks   : bool
             NoRecompute      : bool
+            /// Slice 5.13.fk-reality-join (paired with index-features
+            /// adapter wiring) — `false` (V1 default) when the index
+            /// is enabled; `true` when V1's `#AllIdx.IsDisabled = 1`.
+            /// Threads to `Index.IsDisabled`; the SSDT emitter yields
+            /// a post-CREATE-INDEX `ALTER INDEX … DISABLE` when set.
+            IsDisabled       : bool
+            /// Slice 5.13.fk-reality-join (paired) — `false` (V1
+            /// default); `true` when V1's `#AllIdx.IgnoreDupKey = 1`.
+            /// Threads to `Index.IgnoreDuplicateKey`; the SSDT emitter
+            /// adds `IGNORE_DUP_KEY = ON` to the WITH clause.
+            IgnoreDupKey     : bool
+            /// Slice 5.13.fk-reality-join (paired) — single-value
+            /// data compression level when uniform across partitions
+            /// (`"NONE" | "ROW" | "PAGE"`). `None` when the index
+            /// has no explicit compression option set OR carries
+            /// heterogeneous per-partition compression (the partition
+            /// axis is the row 56 residual). Threads to
+            /// `Index.DataCompression`.
+            DataCompression  : string option
         }
 
     /// V1 rowset `#IdxColsMapped` — per-index column membership
@@ -1589,17 +1624,33 @@ module CatalogReader =
                 | None -> kindSsKey moduleName refRow.RefEntityName
             | None -> kindSsKey moduleName refRow.RefEntityName
         let onDelete   = parseDeleteRule refRow.DeleteRuleCode
+        // Slice 5.13.fk-reality-join — `OnUpdate` carries through the
+        // same `parseDeleteRule` shape (V1's referential-action vocabulary
+        // is uniform across DELETE / UPDATE). `None` propagates as the
+        // unstated default; parse failures degrade to `None` too (the
+        // rowset adapter never blocks reference construction on an
+        // unfamiliar update-action keyword — same posture as the
+        // delete-rule path).
+        let onUpdateRule =
+            refRow.OnUpdate
+            |> Option.bind (fun code ->
+                match parseDeleteRule (Some code) with
+                | Ok action -> Some action
+                | Error _   -> None)
         match refKey, refName, srcAttrKey, tgtKindKey, onDelete with
         | Ok rKey, Ok rName, Ok srcKey, Ok tgtKey, Ok rule ->
             // Slice 5.13.fk-features-emit — smart-constructor migration.
-            // `Reference.create` carries minimum-evidence defaults; the
-            // rowset path overrides OnDelete + HasDbConstraint from the
-            // row. OnUpdate + IsConstraintTrusted populated when the
-            // FK-features-emit slice wires from #FkReality.
+            // Slice 5.13.fk-reality-join (2026-05-18) — `OnUpdate` +
+            // `IsConstraintTrusted` thread through from the rowset
+            // path's `#FkReality` JOIN at `toBundle`. Cross-catalog +
+            // JSON-path references default to `(None, true)` per the
+            // smart-constructor defaults.
             Result.success
                 { Reference.create rKey rName srcKey tgtKey with
-                    OnDelete        = rule
-                    HasDbConstraint = refRow.HasDbConstraint }
+                    OnDelete            = rule
+                    HasDbConstraint     = refRow.HasDbConstraint
+                    OnUpdate            = onUpdateRule
+                    IsConstraintTrusted = refRow.IsConstraintTrusted }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback` —
             // uniform with parseReference on the JSON path.
@@ -1793,15 +1844,23 @@ module CatalogReader =
             | _ -> None
         match indexKey, indexName, foldedKeyCols, foldedIncludedCols with
         | Ok k, Ok n, Ok keys, Ok included ->
-            // Slice 5.13.smart-constructor-lift migration — rowset
-            // path overrides axes it observes from #AllIdx
-            // (IsUnique/IsPrimary, on-disk metadata, filter,
-            // included columns). IsPlatformAuto stays at default
-            // (rowset path doesn't surface it). Slice
-            // 5.13.index-features-emit axes (IgnoreDuplicateKey /
-            // IsDisabled / DataCompression) stay at defaults
-            // pending a rowset wiring slice; today's #AllIdx
-            // doesn't carry them.
+            // Slice 5.13.smart-constructor-lift migration + slice
+            // 5.13.fk-reality-join (2026-05-18) — rowset path
+            // surfaces every #AllIdx axis V1 reflects: IsUnique /
+            // IsPrimary, on-disk metadata, filter, included columns,
+            // plus the slice-5.13.index-features-emit triple
+            // (IsDisabled / IgnoreDuplicateKey / DataCompression).
+            // IsPlatformAuto stays at default (rowset path doesn't
+            // surface it; it lives on V1's logical IndexModel
+            // projection, not on sys.indexes reality).
+            let dataCompressionLevel =
+                row.DataCompression
+                |> Option.bind (fun s ->
+                    match s.ToUpperInvariant() with
+                    | "NONE" -> Some DataCompressionLevel.None
+                    | "ROW"  -> Some DataCompressionLevel.Row
+                    | "PAGE" -> Some DataCompressionLevel.Page
+                    | _      -> None)
             Result.success
                 { Index.create k n keys with
                     IsUnique              = row.IsUnique
@@ -1812,7 +1871,10 @@ module CatalogReader =
                     IsPadded              = row.IsPadded
                     AllowRowLocks         = row.AllowRowLocks
                     AllowPageLocks        = row.AllowPageLocks
-                    NoRecomputeStatistics = row.NoRecompute }
+                    NoRecomputeStatistics = row.NoRecompute
+                    IsDisabled            = row.IsDisabled
+                    IgnoreDuplicateKey    = row.IgnoreDupKey
+                    DataCompression       = dataCompressionLevel }
         | _ ->
             propagateOrFallback
                 [ Result.errors indexKey

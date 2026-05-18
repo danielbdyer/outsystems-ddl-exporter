@@ -62,8 +62,8 @@ let private buildCatalog (mandatoryColumnIsNullable: bool) (mandatoryColumnIsMan
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_TEST_SAMPLE"; Catalog = None }
           Attributes = [
-              { IRBuilders.mkAttribute idAttributeKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-              { IRBuilders.mkAttribute mandatoryAttributeKey (mkName "Mandatory") Text with Column = { ColumnName = "MANDATORY"; IsNullable = mandatoryColumnIsNullable }; IsMandatory = mandatoryColumnIsMandatory } ]
+              { Attribute.create idAttributeKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+              { Attribute.create mandatoryAttributeKey (mkName "Mandatory") Text with Column = { ColumnName = "MANDATORY"; IsNullable = mandatoryColumnIsNullable }; IsMandatory = mandatoryColumnIsMandatory } ]
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = mkKey "OS_MOD_Sample"

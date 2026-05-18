@@ -838,6 +838,38 @@ module MetadataSnapshotRunner =
     ///     the attribute; V2's `ReferenceRow` carries it on the reference).
     ///     `HasDbConstraint` defaults to `true` when an FK is reflected
     ///     in the references rowset.
+
+    /// Parse V1's `#AllIdx.DataCompressionJson` into a single-value
+    /// compression code when the JSON encodes uniform compression
+    /// across every partition. The JSON shape per V1's SQL is
+    /// `[{"P":1,"Code":"PAGE"}, …]` — one entry per partition.
+    /// Returns `Some "<code>"` when every entry's Code matches;
+    /// `None` when heterogeneous or unparseable (row 56 partition
+    /// axis residual). Pillar 7 four-question analysis: the typed
+    /// AST library is `System.Text.Json` (JsonDocument is the BCL
+    /// canonical parser); no LINT-ALLOW needed because the parsing
+    /// is a structured walk, not string composition.
+    let private tryParseUniformDataCompression (json: string) : string option =
+        try
+            use doc = System.Text.Json.JsonDocument.Parse(json)
+            if doc.RootElement.ValueKind <> System.Text.Json.JsonValueKind.Array then
+                None
+            else
+                let codes =
+                    seq {
+                        for entry in doc.RootElement.EnumerateArray() do
+                            let mutable codeEl = Unchecked.defaultof<System.Text.Json.JsonElement>
+                            if entry.TryGetProperty("Code", &codeEl) then
+                                match Option.ofObj (codeEl.GetString()) with
+                                | Some s -> yield s
+                                | None   -> ()
+                    }
+                    |> Seq.toList
+                match codes |> List.distinct with
+                | [ single ] -> Some single
+                | _          -> None
+        with _ -> None
+
     let toBundle (snapshot: MetadataSnapshot) : CatalogReader.RowsetBundle =
         let physicalByEntity =
             snapshot.PhysicalTables
@@ -904,18 +936,56 @@ module MetadataSnapshotRunner =
                     ExternalDatabaseType = a.ExternalDbType
                 } : CatalogReader.AttributeRow)
 
+        // Slice 5.13.fk-reality-join — JOIN OssysReferenceRow with
+        // OssysFkRealityRow via OssysFkColumnRow's parent-attribute
+        // pivot. The JOIN key chain is:
+        //   OssysReferenceRow.AttrId
+        //     ↔ OssysFkColumnRow.ParentAttrId
+        //     ↔ OssysFkColumnRow.FkObjectId
+        //     ↔ OssysFkRealityRow.FkObjectId
+        // For composite FKs, multiple OssysReferenceRow entries map
+        // to the same FkObjectId via different ParentAttrIds — each
+        // V2 Reference (single-column today) sees the same
+        // FkReality metadata as a result. Per-FK-constraint axes
+        // (UpdateAction + IsNoCheck) are constant across columns;
+        // V2's per-attribute Reference IR is the natural carrier.
+        let fkRealityById =
+            snapshot.ForeignKeysReality
+            |> List.map (fun fk -> fk.FkObjectId, fk)
+            |> Map.ofList
+        let fkRealityByParentAttrId =
+            snapshot.ForeignKeyColumns
+            |> List.choose (fun c ->
+                match c.ParentAttrId, Map.tryFind c.FkObjectId fkRealityById with
+                | Some pid, Some fk -> Some (pid, fk)
+                | _ -> None)
+            |> Map.ofList
+
         let references =
             snapshot.References
             |> List.choose (fun r ->
                 match r.RefEntityName, Map.tryFind r.AttrId attributeById with
                 | Some refName, Some attr ->
+                    // The JOIN: when this attribute's FK is reflected
+                    // in #FkReality, propagate UpdateAction + the
+                    // inverted IsNoCheck. Absent rows degrade to the
+                    // ReferenceRow defaults (None / true).
+                    let fkOpt = Map.tryFind r.AttrId fkRealityByParentAttrId
+                    let onUpdate =
+                        fkOpt |> Option.bind (fun fk -> fk.UpdateAction)
+                    let isTrusted =
+                        match fkOpt with
+                        | Some fk -> not fk.IsNoCheck
+                        | None    -> true
                     Some
                         ({
-                            AttrId          = r.AttrId
-                            RefEntityName   = refName
-                            RefEntityId     = r.RefEntityId
-                            DeleteRuleCode  = attr.DeleteRule
-                            HasDbConstraint = true
+                            AttrId              = r.AttrId
+                            RefEntityName       = refName
+                            RefEntityId         = r.RefEntityId
+                            DeleteRuleCode      = attr.DeleteRule
+                            HasDbConstraint     = true
+                            OnUpdate            = onUpdate
+                            IsConstraintTrusted = isTrusted
                         } : CatalogReader.ReferenceRow)
                 | _ -> None)
 
@@ -927,6 +997,18 @@ module MetadataSnapshotRunner =
         let indexes =
             snapshot.Indexes
             |> List.map (fun i ->
+                // Slice 5.13.fk-reality-join (paired with index-
+                // features adapter wiring) — parse `#AllIdx
+                // .DataCompressionJson` into a single-value level
+                // when the JSON encodes uniform compression across
+                // all partitions. The V1 SQL emits the compression
+                // map as JSON like `[{"P":1,"Code":"PAGE"}, …]`;
+                // when every partition's `Code` matches, the single-
+                // value form is faithful. Heterogeneous compression
+                // surfaces as `None` here (row 56 partition residual).
+                let dataCompression =
+                    i.DataCompressionJson
+                    |> Option.bind tryParseUniformDataCompression
                 {
                     EntityId         = i.EntityId
                     IndexName        = i.IndexName
@@ -938,6 +1020,9 @@ module MetadataSnapshotRunner =
                     AllowRowLocks    = i.AllowRowLocks
                     AllowPageLocks   = i.AllowPageLocks
                     NoRecompute      = i.NoRecompute
+                    IsDisabled       = i.IsDisabled
+                    IgnoreDupKey     = i.IgnoreDupKey
+                    DataCompression  = dataCompression
                 } : CatalogReader.IndexRow)
 
         let indexColumns =

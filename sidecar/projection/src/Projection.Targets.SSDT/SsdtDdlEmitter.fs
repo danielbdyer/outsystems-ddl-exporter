@@ -628,3 +628,67 @@ module SsdtDdlEmitter =
                     invalidOp (sprintf "SsdtDdlEmitter.emitSlices: kind %A has no owning module (unreachable; Catalog.allKinds invariant)" k.SsKey))
             |> Map.ofList
         ArtifactByKind.create catalog slices
+
+    /// Slice 5.13.emit-features-registry (2026-05-18) — the SSDT
+    /// emitter's `RegisteredTransform` surface. Metadata-only per the
+    /// OSSYS-adapter precedent (chapter A.4.7 slice δ): the emitter's
+    /// `Catalog -> Result<ArtifactByKind<SsdtFile>, EmitError>`
+    /// signature doesn't fit the typed `RegisteredTransform<'In, 'Out>
+    /// .Run : 'In -> Lineage<Diagnostics<'Out>>` shell because Result-
+    /// with-EmitError is the realization-layer boundary's error
+    /// reporting; Lineage+Diagnostics is the pass-layer evidence-trail
+    /// shape. The metadata view is what the registry's totality-coverage
+    /// scan + manifest emission need; per-site invocation uses
+    /// `SsdtDdlEmitter.emitSlices` directly.
+    ///
+    /// All emission sites classify as `DataIntent` per pillar 9: an
+    /// SSDT emitter projects evidence from the Catalog into the
+    /// realization layer's typed Statement stream; no operator opinion
+    /// enters. Selection-axis operator intent (e.g., which schemas to
+    /// include) runs in passes upstream of the emitter (A18 amended).
+    ///
+    /// The Sites enumeration is intra-pass-classification fidelity at
+    /// the emission-feature level — one Site per V1-CreateTable axis
+    /// V2 emits structurally. Adding a new emit feature (e.g., the
+    /// row-56 partition-scheme axis) requires extending this list
+    /// (and the harvest-classification rationale must name the axis
+    /// substantively).
+    let registeredMetadata : RegisteredTransformMetadata =
+        { Name = "ssdtDdlEmitter"
+          Domain = Schema
+          StageBinding = Emitter
+          Sites =
+            [ { SiteName = "createTable"
+                Classification = DataIntent
+                Rationale = "Project Kind → Statement.CreateTable via ScriptDom's typed AST (CreateTableStatement). Columns / nullability / IDENTITY / multi-column PK / inline FK constraints all flow through ScriptDomBuild.buildCreateTable. The projection is shape-preserving: V2 IR evidence maps 1:1 to ScriptDom's grammar." }
+              { SiteName = "createIndex"
+                Classification = DataIntent
+                Rationale = "Project Kind.Indexes → Statement.CreateIndex per non-PK index via ScriptDomBuild.buildCreateIndex. Key columns + sort direction + INCLUDE + filter + on-disk options (FillFactor / PadIndex / AllowRowLocks / AllowPageLocks / StatsNoRecompute) thread through ScriptDom's IndexOption hierarchy. PK-marked indexes filter out — PK is inlined in CREATE TABLE per V1 convention." }
+              { SiteName = "columnDefaultClause"
+                Classification = DataIntent
+                Rationale = "Slice 5.13.column-features-emit (matrix row 53). Project Attribute.DefaultValue : SqlLiteral option → ScriptDom's DefaultConstraintDefinition on the column's Constraints. The literal flows through buildSqlLiteral (same path as MERGE / UPDATE statements). DefaultName (V1 constraint identity) is positioned but unwired pending the rowset-path lift of #ColumnReality.DefaultConstraintName." }
+              { SiteName = "columnCheckConstraint"
+                Classification = DataIntent
+                Rationale = "Slice 5.13.column-features-emit (matrix row 12). Project Kind.ColumnChecks : ColumnCheck list → ScriptDom's CheckConstraintDefinition entries on TableConstraints. The check predicate parses via TSql160Parser.ParseBooleanExpression; parse-failure fallback wraps raw text. Source: V1's #ColumnCheckReality rowset (cluster A1)." }
+              { SiteName = "foreignKeyConstraint"
+                Classification = DataIntent
+                Rationale = "Project Reference → ScriptDom's ForeignKeyConstraintDefinition (inline in CREATE TABLE). DeleteAction maps V2's ReferenceAction DU to ScriptDom's DeleteUpdateAction. Slice 5.13.fk-features-emit (matrix row 58) extended with UpdateAction when Reference.OnUpdate = Some action; None omits the clause (V1 default)." }
+              { SiteName = "alterTableNoCheckConstraint"
+                Classification = DataIntent
+                Rationale = "Slice 5.13.fk-features-emit (matrix row 59). When Reference.IsConstraintTrusted = false, emit a post-CREATE-TABLE Statement.AlterTableNoCheckConstraint via ScriptDom's AlterTableConstraintModificationStatement with ExistingRowsCheckEnforcement = NoCheck + ConstraintEnforcement = Check. Preserves the deployed target's WITH NOCHECK FK trust state across emit → deploy → readback. Source: V1's #FkReality.IsNoCheck via the toBundle JOIN." }
+              { SiteName = "alterIndexDisable"
+                Classification = DataIntent
+                Rationale = "Slice 5.13.index-features-emit (matrix row 55). When Index.IsDisabled = true, emit a post-CREATE-INDEX Statement.AlterIndexDisable via ScriptDom's AlterIndexStatement with AlterIndexType.Disable. Preserves the deployed target's disabled-index state. Source: V1's #AllIdx.IsDisabled via the toBundle path." }
+              { SiteName = "indexIgnoreDuplicateKey"
+                Classification = DataIntent
+                Rationale = "Slice 5.13.index-features-emit (matrix row 55). When Index.IgnoreDuplicateKey = true, emit IGNORE_DUP_KEY = ON in the CREATE INDEX WITH clause via ScriptDom's IndexStateOption + IndexOptionKind.IgnoreDupKey. Source: V1's #AllIdx.IgnoreDupKey." }
+              { SiteName = "indexDataCompression"
+                Classification = DataIntent
+                Rationale = "Slice 5.13.index-features-emit (matrix row 56 partial). When Index.DataCompression = Some level, emit DATA_COMPRESSION = NONE|ROW|PAGE in the CREATE INDEX WITH clause via ScriptDom's DataCompressionOption. Single-value form (uniform across partitions) ships; per-partition compression list is the row 56 residual. Source: V1's #AllIdx.DataCompressionJson parsed via tryParseUniformDataCompression." }
+              { SiteName = "setExtendedProperty"
+                Classification = DataIntent
+                Rationale = "Project ExtendedProperty values at Schema / Table / Column / Index levels → Statement.SetExtendedProperty (chapter 4.1.A slice 8). ScriptDom builds EXEC sys.sp_addextendedproperty with typed ExecuteParameter binding (multi-level @level0type / @level1type / @level2type). Replaces V1's hand-rolled escaping." }
+              { SiteName = "topologicalOrder"
+                Classification = DataIntent
+                Rationale = "Order kinds via TopologicalOrderPass.runWith SkipSelfEdges (per A40 SelfLoopPolicy) so FK targets emit before referencers — deploy-time inline FK constraints resolve against an already-created target. Same algorithm pillar that RawTextEmitter used (chapter 3.1 harmonization-via-parameterization). DataIntent: ordering is structural-evidence, not operator opinion." } ]
+          Status = Active }

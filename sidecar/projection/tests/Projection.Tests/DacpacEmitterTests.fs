@@ -64,8 +64,8 @@ let private singleKindCatalog : Catalog =
         Modality = []
         Physical = { Schema = "dbo"; Table = "WIDGET"; Catalog = None }
         Attributes = [
-            { IRBuilders.mkAttribute widgetIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-            { IRBuilders.mkAttribute widgetNameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false } }
+            { Attribute.create widgetIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+            { Attribute.create widgetNameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false } }
         ]
         References = []
         Indexes    = []
@@ -231,10 +231,10 @@ let private indexedCatalog : Catalog =
         Modality = []
         Physical = { Schema = "dbo"; Table = "INDEXED_WIDGET"; Catalog = None }
         Attributes = [
-            { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-            { IRBuilders.mkAttribute codeKey (mkName "Code") Text with Column = { ColumnName = "CODE"; IsNullable = false } }
-            { IRBuilders.mkAttribute regionKey (mkName "Region") Text with Column = { ColumnName = "REGION"; IsNullable = false } }
-            { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = true } }
+            { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+            { Attribute.create codeKey (mkName "Code") Text with Column = { ColumnName = "CODE"; IsNullable = false } }
+            { Attribute.create regionKey (mkName "Region") Text with Column = { ColumnName = "REGION"; IsNullable = false } }
+            { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = true } }
         ]
         References = []
         Indexes = [

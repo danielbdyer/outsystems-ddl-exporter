@@ -40,7 +40,7 @@ let private mustOkEmit (r: Result<'a, EmitError>) : 'a =
 let private mkKind (name: string) : Kind =
     let kindKey = mkKey ["TestModule"; name]
     let idKey = mkKey ["TestModule"; name; "Id"]
-    IRBuilders.mkKind kindKey (mkName name) { Schema = "dbo"; Table = sprintf "OSUSR_TEST_%s" (name.ToUpperInvariant()); Catalog = None } [ { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
+    Kind.create kindKey (mkName name) { Schema = "dbo"; Table = sprintf "OSUSR_TEST_%s" (name.ToUpperInvariant()); Catalog = None } [ { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
 
 let private mkCatalog (kinds: Kind list) : Catalog =
     let m : Module =

@@ -126,8 +126,8 @@ let private expectedCatalogSynthesized : Catalog =
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
-              { IRBuilders.mkAttribute userIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
-              { IRBuilders.mkAttribute userEmailAttrKey (mkName "Email") Text with Column = { ColumnName = "EMAIL"; IsNullable = false }; IsMandatory = true; Length = Some 250 }
+              { Attribute.create userIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+              { Attribute.create userEmailAttrKey (mkName "Email") Text with Column = { ColumnName = "EMAIL"; IsNullable = false }; IsMandatory = true; Length = Some 250 }
           ]
           References = []
           Indexes    = []
@@ -460,11 +460,13 @@ let private userAccountIdRow : CatalogReader.AttributeRow =
 
 let private userAccountRefRow : CatalogReader.ReferenceRow =
     {
-        AttrId          = 113
-        RefEntityName   = "Account"
-        RefEntityId     = None
-        DeleteRuleCode  = Some "Protect"
-        HasDbConstraint = true
+        AttrId              = 113
+        RefEntityName       = "Account"
+        RefEntityId         = None
+        DeleteRuleCode      = Some "Protect"
+        HasDbConstraint     = true
+        OnUpdate            = None
+        IsConstraintTrusted = true
     }
 
 let private accountKindKey            = kindKey ["AppCore"; "Account"]

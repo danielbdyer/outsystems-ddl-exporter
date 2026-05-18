@@ -66,9 +66,9 @@ let private cityKind : Kind =
       Modality = [ Static [] ]   // empty populations; adapter fills these in
       Physical = { Schema = "dbo"; Table = "OSUSR_DEF_CITY"; Catalog = None }
       Attributes = [
-          { IRBuilders.mkAttribute cityIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-          { IRBuilders.mkAttribute cityNameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false } }
-          { IRBuilders.mkAttribute cityActiveKey (mkName "IsActive") Boolean with Column = { ColumnName = "ISACTIVE"; IsNullable = false } }
+          { Attribute.create cityIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
+          { Attribute.create cityNameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false } }
+          { Attribute.create cityActiveKey (mkName "IsActive") Boolean with Column = { ColumnName = "ISACTIVE"; IsNullable = false } }
       ]
       References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 

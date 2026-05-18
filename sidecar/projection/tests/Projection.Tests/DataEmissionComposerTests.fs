@@ -61,9 +61,9 @@ let private mkCountryKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
         Attributes =
             [
-                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                { IRBuilders.mkAttribute codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
-                { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
+                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
+                { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
             ]
         References = []
         Indexes    = []
@@ -361,11 +361,11 @@ let ``Slice ι: composeRendered emits Phase-1 (MERGE) of every kind before Phase
             Physical = { Schema = "dbo"; Table = table; Catalog = None }
             Attributes =
                 [
-                    { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";       IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                    { IRBuilders.mkAttribute parentKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } }
+                    { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";       IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                    { Attribute.create parentKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } }
                 ]
             References =
-                [ IRBuilders.mkReference refKey (mkName "RefSelf") parentKey kindKey ]
+                [ Reference.create refKey (mkName "RefSelf") parentKey kindKey ]
             Indexes    = []
             Description = None
             IsActive = true
@@ -480,11 +480,11 @@ let private mkLegacyKindForMigration (name: string) (table: string) : Kind =
         Physical = { Schema = "dbo"; Table = table; Catalog = None }
         Attributes =
             [
-                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";       IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                { IRBuilders.mkAttribute parentKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } }
+                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";       IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create parentKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } }
             ]
         References =
-            [ IRBuilders.mkReference refKey (mkName "RefSelf") parentKey kindKey ]
+            [ Reference.create refKey (mkName "RefSelf") parentKey kindKey ]
         Indexes    = []
         Description = None
         IsActive = true

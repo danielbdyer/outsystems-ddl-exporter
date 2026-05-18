@@ -63,9 +63,9 @@ let private mkCountryKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
         Attributes =
             [
-                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
-                { IRBuilders.mkAttribute codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
-                { IRBuilders.mkAttribute labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
+                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+                { Attribute.create codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
+                { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
             ]
         References = []
         Indexes    = []
@@ -96,8 +96,8 @@ let private mkLanguageKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_LANGUAGE"; Catalog = None }
         Attributes =
             [
-                { IRBuilders.mkAttribute codeKey (mkName "Code") Text with Column = { ColumnName = "CODE"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                { IRBuilders.mkAttribute nameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false }; IsMandatory = true }
+                { Attribute.create codeKey (mkName "Code") Text with Column = { ColumnName = "CODE"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create nameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false }; IsMandatory = true }
             ]
         References = []
         Indexes    = []
@@ -121,8 +121,8 @@ let private mkRegularKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER"; Catalog = None }
         Attributes =
             [
-                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID";   IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
-                { IRBuilders.mkAttribute nameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false }; IsMandatory = true }
+                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";   IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+                { Attribute.create nameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false }; IsMandatory = true }
             ]
         References = []
         Indexes    = []
@@ -147,7 +147,7 @@ let private mkEmptyStaticKind () : Kind =
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_EMPTY"; Catalog = None }
         Attributes =
             [
-                { IRBuilders.mkAttribute idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
             ]
         References = []
         Indexes    = []
