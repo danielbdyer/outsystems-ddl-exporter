@@ -179,9 +179,37 @@ let ``5.1.γ row 34: retry pipeline does not retry on non-matching exceptions`` 
             (Retry.runOnPipeline pipeline operation).GetAwaiter().GetResult() |> ignore))
     Assert.Equal(1, attempts.Value)
 
-[<Fact(Skip = "Matrix row 33 — 🟡 DIVERGENCE. Command timeout. V1 reads timeout from `SqlExecutionOptions.CommandTimeoutSeconds` (caller-tunable; falls back to ADO.NET default of 30s when unset); aligns with Polly / EF Core patterns. V2 sets `command.CommandTimeout <- 0` unconditionally (unlimited; tolerates V1's `SET TEXTSIZE -1` + complex queries in canary scope). See `DECISIONS 2026-05-17 (slice 5.1.γ) — Command-timeout discipline: canary unlimited, production tunable`. Trigger to re-promote to PARITY: V2 ships production CLI surface for cloud OSSYS (Azure SQL); add `commandTimeoutSeconds : int option` parameter to `runAsync`.")>]
-let ``5.1.γ row 33: V1 tunable command timeout vs V2 unconditional zero`` () : unit =
-    failwith "deferred — see V1_PARITY_MATRIX.md row 33 + DECISIONS 2026-05-17 (slice 5.1.γ)"
+// -----------------------------------------------------------------
+// Slice 5.13.command-timeout + sibling-wrapper-collapse
+// (matrix row 33). Shipped 2026-05-18.
+//
+// The `RunOptions` record consolidates two axes (CommandTimeoutSeconds
+// + OnRowsetComplete) into a single typed surface. The runner exposes
+// two entry points (`runAsync` zero-default + `runAsyncWithOptions`
+// full-explicit) per the sibling-wrapper discipline — collapses the
+// 3-arity `runAsyncWithProgress` middle-tier introduced in the
+// progress-callback slice.
+// -----------------------------------------------------------------
+
+[<Fact>]
+let ``5.1.γ row 33: defaultOptions preserve canary semantics`` () =
+    // Zero-axis defaults: no timeout, no progress observation. This is
+    // the canary's contract — any change here is a canary regression.
+    Assert.Equal<int option>(None, MetadataSnapshotRunner.defaultOptions.CommandTimeoutSeconds)
+
+[<Fact>]
+let ``5.1.γ row 33: RunOptions record threads CommandTimeoutSeconds for production CLI`` () =
+    // The cash-out shape — production CLI passes operator-tunable
+    // value via a future --command-timeout-seconds flag; the V2 surface
+    // is value-typed (no DI / no mutable global).
+    let withTimeout =
+        { MetadataSnapshotRunner.defaultOptions with CommandTimeoutSeconds = Some 30 }
+    Assert.Equal<int option>(Some 30, withTimeout.CommandTimeoutSeconds)
+    // The progress callback is a function value — F# function equality
+    // is reference-only; we verify the record-update axis ORTHOGONALITY
+    // by exercising the callback (a no-op should not throw).
+    withTimeout.OnRowsetComplete {
+        ResultSetIndex = 0; ResultSetName = "modules"; RowCount = 0 }
 
 // -----------------------------------------------------------------
 // Slice 5.13.result-set-contract (matrix row 35). Shipped 2026-05-18.

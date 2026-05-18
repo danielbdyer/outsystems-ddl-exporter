@@ -161,10 +161,11 @@ let ``Slice 5.13.progress-callback canary: progress fires for every observed row
             Deploy.withBootstrappedDatabase "OssysProgressCanary" seed (fun cnn ->
                 task {
                     return!
-                        MetadataSnapshotRunner.runAsyncWithProgress
+                        MetadataSnapshotRunner.runAsyncWithOptions
                             cnn
                             MetadataSnapshotRunner.defaultParameters
-                            onComplete
+                            { MetadataSnapshotRunner.defaultOptions with
+                                OnRowsetComplete = onComplete }
                 })
             |> fun t -> t.GetAwaiter().GetResult()
         match result with

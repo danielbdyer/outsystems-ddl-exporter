@@ -100,6 +100,38 @@ module MetadataSnapshotRunner =
     /// supply one — extraction proceeds with zero observation overhead.
     let noOpProgress : OnRowsetComplete = fun _ -> ()
 
+    /// Optional axes for `runAsyncWithOptions`. Per the **sibling-wrapper
+    /// discipline** (`CLAUDE.md` operating disciplines / chapter 4.7
+    /// cleanup) — `MetadataSnapshotRunner` has two genuinely-orthogonal
+    /// consumption axes (progress observation; command timeout). The
+    /// principled count is **2 entry points** (`runAsync` zero-default;
+    /// `runAsyncWithOptions` full-explicit) plus a typed record carrying
+    /// the axes; new axes extend `RunOptions` rather than spawning new
+    /// wrapper functions.
+    ///
+    /// - `CommandTimeoutSeconds = None` preserves V2's canary-time
+    ///   behavior (sets `command.CommandTimeout <- 0`, unlimited;
+    ///   tolerates V1's `SET TEXTSIZE -1` + complex queries). `Some n`
+    ///   sets the ADO.NET timeout to `n` seconds (V1-style;
+    ///   operator-tunable when V2 ships production CLI for cloud OSSYS).
+    ///   Matrix row 33.
+    /// - `OnRowsetComplete = noOpProgress` keeps extraction
+    ///   observation-free; CLI surfaces wire their own callback. Matrix
+    ///   row 36.
+    type RunOptions =
+        {
+            CommandTimeoutSeconds : int option
+            OnRowsetComplete      : OnRowsetComplete
+        }
+
+    /// Default options — canary-preserving (unlimited timeout, no
+    /// progress observation). `runAsync` delegates with these.
+    let defaultOptions : RunOptions =
+        {
+            CommandTimeoutSeconds = None
+            OnRowsetComplete      = noOpProgress
+        }
+
     /// V1-shaped typed rowsets parsed from the first 5 result sets.
     /// These mirror V1's `Outsystems*Row` DTOs at the columns V2's
     /// `CatalogReader.RowsetBundle` consumes (with the JOIN composition
@@ -333,10 +365,10 @@ module MetadataSnapshotRunner =
     let ExpectedResultSets = 23
 
     /// Execute the carbon-copied rowsets SQL against `cnn` (already open)
-    /// with the supplied parameters. Walks all `ExpectedResultSets` result
-    /// sets; parses the first 5 into typed records and skips the
-    /// remaining 18. Returns a `MetadataSnapshot` carrying the 5
-    /// V2-relevant rowsets.
+    /// with the supplied parameters + options. Walks all
+    /// `ExpectedResultSets` result sets; parses the first 5 into typed
+    /// records and skips the remaining. Returns a `MetadataSnapshot`
+    /// carrying the 5 V2-relevant rowsets.
     ///
     /// **Determinism.** The SQL script is deterministic by construction
     /// (V1's pillar 1 / T1 commitment); parameter inputs + database state
@@ -344,20 +376,32 @@ module MetadataSnapshotRunner =
     /// database state (e.g., applying `readEdgeCaseSeed()` first) when
     /// determinism across runs matters.
     ///
-    /// Three-arity form takes an explicit `onRowsetComplete` callback
-    /// (matrix row 36 — progress tracking). The two-arity overload uses
-    /// `noOpProgress` for caller convenience.
-    let runAsyncWithProgress
+    /// Full-explicit entry point — takes a typed `RunOptions` record
+    /// carrying both progress observation (matrix row 36) and command
+    /// timeout (matrix row 33). The `runAsync` convenience uses
+    /// `defaultOptions`; new axes extend `RunOptions` rather than
+    /// spawning new wrapper functions per the sibling-wrapper
+    /// discipline.
+    let runAsyncWithOptions
             (cnn: SqlConnection)
             (parameters: SnapshotParameters)
-            (onRowsetComplete: OnRowsetComplete)
+            (options: RunOptions)
             : Task<Result<MetadataSnapshot>> =
         task {
             try
                 let script = MetadataExtractionSql.read()
                 use command = new SqlCommand(script, cnn)
                 command.CommandType <- CommandType.Text
-                command.CommandTimeout <- 0  // unlimited; V1's SET TEXTSIZE -1 + complex queries can run long
+                // Matrix row 33: caller-tunable command timeout. None
+                // preserves the canary's unlimited-timeout semantics
+                // (V1's SET TEXTSIZE -1 + complex queries can run long);
+                // Some n sets ADO.NET's per-command timeout to n seconds
+                // (V1-style; operator-tunable via production CLI's
+                // `--command-timeout-seconds` flag when that ships).
+                command.CommandTimeout <-
+                    match options.CommandTimeoutSeconds with
+                    | Some n -> n
+                    | None   -> 0
                 let moduleCsv =
                     parameters.ModuleNames |> String.concat ","
                 command.Parameters.AddWithValue("@ModuleNamesCsv", box moduleCsv)
@@ -411,7 +455,7 @@ module MetadataSnapshotRunner =
                     // ResultSetIndex is the zero-based position at the
                     // time of reporting (observedResultSets - 1 because
                     // the counter has already incremented past this set).
-                    onRowsetComplete {
+                    options.OnRowsetComplete {
                         ResultSetIndex = observedResultSets - 1
                         ResultSetName  = name
                         RowCount       = rowCount
@@ -477,14 +521,14 @@ module MetadataSnapshotRunner =
                     MetadataExtractionError.toValidationError classified)
         }
 
-    /// Convenience overload — no progress observation. Delegates to
-    /// `runAsyncWithProgress` with `noOpProgress`. This is the canonical
-    /// canary-extraction entry point (the canary doesn't observe
-    /// progress); production CLI surfaces use `runAsyncWithProgress`
-    /// directly with their own callback.
+    /// Zero-default entry point — uses `defaultOptions` (no progress
+    /// observation, unlimited command timeout). Canonical canary-
+    /// extraction surface; production CLI surfaces compose
+    /// `runAsyncWithOptions` directly with `{ defaultOptions with ... }`
+    /// overriding axes as needed.
     let runAsync (cnn: SqlConnection) (parameters: SnapshotParameters)
             : Task<Result<MetadataSnapshot>> =
-        runAsyncWithProgress cnn parameters noOpProgress
+        runAsyncWithOptions cnn parameters defaultOptions
 
     /// Compose the typed snapshot into V2's `CatalogReader.RowsetBundle`.
     /// JOIN logic:

@@ -13958,3 +13958,91 @@ docstring already records this. The boundary holds.
   remain queued.
 
 ---
+
+## 2026-05-18 (slice 5.13.command-timeout + sibling-wrapper-collapse) — `RunOptions` consolidates the runner's two-axis surface; retires `runAsyncWithProgress`
+
+Closes matrix row 33 (command-timeout DIVERGENCE → PARITY) +
+collapses the overdifferentiated 3-arity `runAsyncWithProgress`
+middle-tier introduced two slices earlier in the same chapter
+(progress-callback) per the **sibling-wrapper discipline**
+(`CLAUDE.md` operating disciplines; `DECISIONS 2026-05-17 (chapter
+4.7 cleanup) — Sibling-wrapper discipline`).
+
+### The trigger
+
+Two slices in the production-wiring chapter introduced two
+defaultable axes on `MetadataSnapshotRunner.runAsync`:
+1. slice `5.13.progress-callback`: `OnRowsetComplete` (row 36)
+2. this slice: `CommandTimeoutSeconds` (row 33)
+
+Naïve sibling-wrapper expansion at N=2 axes would produce 2² = 4
+entry points (`runAsync` / `runAsyncWithProgress` /
+`runAsyncWithTimeout` / `runAsyncWithProgressAndTimeout`) — exactly
+the **overdifferentiated middle-tier** anti-pattern named in the
+sibling-wrapper discipline.
+
+### The structural answer
+
+Per the discipline's principled count of **2 entry points** plus a
+typed record carrying the axes:
+
+```fsharp
+type RunOptions = {
+    CommandTimeoutSeconds : int option
+    OnRowsetComplete      : OnRowsetComplete
+}
+
+let defaultOptions : RunOptions = {
+    CommandTimeoutSeconds = None
+    OnRowsetComplete      = noOpProgress
+}
+
+let runAsyncWithOptions cnn parameters options : Task<Result<MetadataSnapshot>> = ...
+let runAsync cnn parameters : Task<Result<MetadataSnapshot>> =
+    runAsyncWithOptions cnn parameters defaultOptions
+```
+
+Future axes (e.g., a `CancellationToken` option; an injected
+retry pipeline override; a request-id correlation tag) extend
+`RunOptions` — not the function surface.
+
+### What retires
+
+The 3-arity `runAsyncWithProgress` introduced in slice
+`5.13.progress-callback` retires. Callers transition:
+
+```fsharp
+// Before (3-arity sibling wrapper):
+MetadataSnapshotRunner.runAsyncWithProgress cnn parameters onComplete
+
+// After (record-update at full-explicit entry):
+MetadataSnapshotRunner.runAsyncWithOptions cnn parameters
+    { MetadataSnapshotRunner.defaultOptions with OnRowsetComplete = onComplete }
+```
+
+One canary test (`OssysExtractionCanaryTests.``Slice 5.13.progress-callback canary: progress fires for every observed rowset`` `)
+migrated. Production code has no other callers (the slice retiring
+the wrapper happens before the wrapper has accumulated consumers —
+the discipline catches sprawl at the seam).
+
+### Why this lands now
+
+The user's "do many slices" directive surfaced an opportunity for a
+structural-cleanliness commit alongside the row-33 cash-out. Shipping
+the cleanup ON the same chapter the sprawl emerged on is the
+cheapest moment to apply the discipline — callers haven't accumulated
+yet. Letting the sibling-wrapper sprawl persist past chapter-close
+would have made the future collapse a multi-call-site refactor.
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` row 33 — Status-history amendment records
+  the 🟡 DIVERGENCE → 🟢 PARITY reclassification.
+- `DECISIONS 2026-05-17 (chapter 4.7 cleanup) — Sibling-wrapper
+  discipline` — the discipline this slice operationalizes; cited as
+  the structural authority.
+- `DECISIONS 2026-05-17 (slice 5.1.γ) — Command-timeout discipline` —
+  the original DIVERGENCE entry whose pre-codified re-open path this
+  slice executes.
+
+---

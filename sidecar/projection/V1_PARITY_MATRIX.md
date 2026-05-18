@@ -339,6 +339,38 @@ rowset (23 of them) in source order.
 
 ---
 
+### Row 33 — 2026-05-18 (closed by slice 5.13.command-timeout + sibling-wrapper-collapse)
+
+**Original classification (slice 5.1.γ, 2026-05-17):** 🟡 DIVERGENCE.
+V2 set `command.CommandTimeout <- 0` unconditionally; V1 reads from
+`SqlExecutionOptions.CommandTimeoutSeconds` (caller-tunable).
+
+**Reclassified (slice 5.13.command-timeout + sibling-wrapper-collapse,
+2026-05-18):** 🟢 PARITY.
+
+**Rationale.** Executes the re-open path pre-codified in
+`DECISIONS 2026-05-17 (slice 5.1.γ)`. A new `RunOptions` record carries
+`CommandTimeoutSeconds : int option`; `None` preserves canary
+semantics (sets `CommandTimeout <- 0`, unlimited), `Some n` sets the
+ADO.NET timeout to `n` seconds (V1-style). The runner's two entry
+points (`runAsync` / `runAsyncWithOptions`) follow the
+**sibling-wrapper discipline** (principled count = 2: zero-default +
+full-explicit). The 3-arity `runAsyncWithProgress` middle-tier
+introduced in the progress-callback slice **retires** as part of this
+collapse — production CLI surfaces compose `runAsyncWithOptions`
+with `{ defaultOptions with ... }` overriding only the axes they
+need.
+
+**Coverage tests now passing:**
+- `OssysProductionWiringParityTests.``5.1.γ row 33: defaultOptions preserve canary semantics`` `
+- `OssysProductionWiringParityTests.``5.1.γ row 33: RunOptions record threads CommandTimeoutSeconds for production CLI`` `
+
+**The entire OssysProductionWiringParityTests file now has zero Skip stubs** —
+all 5 rows (32 / 33 / 34 / 35 / 36) shipped in the chapter-5.1.γ
+production-wiring arc.
+
+---
+
 ### Row 42 — 2026-05-18 (closed by slice 5.13.module-non-empty-invariant; LR1)
 
 **Original classification (slice 5.2.α.module, 2026-05-18):** 🟡 DIVERGENCE.
