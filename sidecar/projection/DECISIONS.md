@@ -12070,3 +12070,1692 @@ When the wrapper-vs-default-supplier classification is borderline (e.g., the wra
 - `DECISIONS 2026-05-16 (later) — V2 self-containment` — the parent V2-no-back-compat discipline this entry refines.
 
 ---
+
+## 2026-05-17 (slice 5.1.α) — V1's JSON-aggregation rowsets sunset with V1's `osm_model.json` emission path
+
+V1's `outsystems_metadata_rowsets.sql` emits eight FOR JSON PATH
+aggregation rowsets — `#AttrCheckJson` (rowset 8), `#FkColumnsJson`
+(16), `#FkAttrJson` (17), `#AttrJson` (19), `#RelJson` (20),
+`#IdxJson` (21), `#TriggerJson` (22), and `#ModuleJson` (23). Each
+collapses the structured rowsets above it into per-entity / per-
+attribute / per-FK JSON arrays. The reason these exist at all is to
+feed V1's `osm_model.json` emission — V1 reads the JSON rowsets back
+on the C# side and assembles the document.
+
+V2's catalog-acquisition path consumes V1's **structured** rowsets
+(Modules / Entities / Attributes / References / PhysicalTables —
+rowsets 1–5) directly into typed F# records via `MetadataSnapshotRunner`,
+then composes them into `CatalogReader.RowsetBundle` for translation
+into V2's `Catalog` IR. V2's emission path is the Π chorus
+(`Projection.Targets.SSDT`, `Projection.Targets.Json`,
+`Projection.Targets.Distributions`) operating on `Catalog`. **V2 does
+not produce `osm_model.json`.** Each downstream operator artifact V2
+needs is derived from the structured `Catalog`, not from a JSON
+intermediate.
+
+The classification of the 8 JSON-aggregation rowsets in
+`V1_PARITY_MATRIX.md` is therefore ⚫ V1-SUNSET, not 🟠 NOT-MAPPED:
+V2 does not need to "catch up" to V1's JSON-aggregation surface. V1's
+emission path is preserved through cutover-30 per `VISION.md` T-30 /
+T-15 ladder gates as fallback; thereafter the JSON-aggregation rowsets
+retire with V1.
+
+The one nuance: matrix row 26 (`#IdxJson` rowset 21) is **currently**
+consumed indirectly by V2 — V2's `Catalog.Indexes` IR is populated
+when the input arrives as `SnapshotJson` (which V1 produces from
+`#IdxJson`). The sunset rationale for row 26 is therefore conditional:
+V2 lifts structured rowsets 10 + 11 (`#AllIdx` + `#IdxColsMapped`;
+matrix rows 15 + 16, today 🟠 NOT-MAPPED) into `MetadataSnapshotRunner`
+**before** V1's emission decomissions. That lift retires the JSON
+dependency without losing index coverage.
+
+Recorded in `V1_PARITY_MATRIX.md` rows 13, 21, 22, 24, 25, 26, 27, 28
+as ⚫ V1-SUNSET. The single coverage stub per row lives at
+`tests/Projection.Tests/OssysRowsetParityInventoryTests.fs`.
+
+### Cross-references
+
+- `CHAPTER_5_0_CLOSE.md` — V2's OssysSql adapter as the catalog-
+  acquisition path replacing V1's JSON emission.
+- `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md` §6 — `SnapshotJson` and
+  `SnapshotRowsets` coexist permanently as input variants; this entry
+  scopes the sunset to V1's JSON **production** path, not V2's
+  consumption.
+- `VISION.md` T-30 / T-15 fallback ladder — V1 sunset timing.
+
+---
+
+## 2026-05-17 (slice 5.1.α) — Algebraic-join reconstruction over materialized FK-attribute lookup rowsets
+
+V1's `outsystems_metadata_rowsets.sql` materializes two FK-attribute
+lookup rowsets:
+
+- `#FkAttrMap` (rowset 14): distinct `(AttrId, FkObjectId)` pairs
+  bridging attributes to FK constraints.
+- `#AttrHasFK` (rowset 15): one row per attribute carrying any FK
+  constraint, bearing a `HasFK = 1` flag.
+
+Both exist as materialized lookup surfaces for V1's `ForeignKeyPass`
+and diagnostic emitters. V1 walks each at O(1) per attribute lookup.
+
+V2 deliberately diverges by **reconstructing both on-demand** from
+the algebraic join `Catalog.References` (logical FK declarations,
+sourced from rowset 4) ⊕ `PhysicalSchema.ForeignKeys` (deployed FK
+constraints, reflected from `sys.foreign_keys` on the canary target).
+Each lookup is a one-line F# pipeline expression at the consumer site
+(e.g., `catalog.References |> List.exists (fun r -> r.AttrId = aid)`).
+
+The materialization-vs-reconstruction trade-off:
+
+- V1 path: O(1) per lookup + O(N) memory for the materialized lookup
+  table. Worthwhile when N is unbounded or per-lookup cost dominates.
+- V2 path: O(N) per lookup over the references list + O(1) extra
+  memory. Worthwhile at V2's scale (≤ 300 tables; FK count linear in
+  table count) where N is small and consumers are infrequent.
+
+The substantive reason this is DIVERGENCE rather than NOT-MAPPED: V2
+**has** the FK-attribute lookup capability (via reconstruction); V2
+simply does not surface it as a materialized rowset. Cashing this out
+as a separate matrix row makes V2's algebraic-join choice visible to
+the parity-audit reader without obscuring it under a NOT-MAPPED status
+that would imply "V2 has nothing here."
+
+Recorded in `V1_PARITY_MATRIX.md` rows 19 + 20 as 🟡 DIVERGENCE.
+
+### Cross-references
+
+- `IR grows under evidence, not speculation` (CLAUDE.md operating-
+  disciplines table) — the materialized rowset surface is not earned
+  by a V2 consumer.
+- `Two-consumer threshold for emergent primitives` — when a second
+  consumer demands materialized lookup, the divergence can be revisited.
+
+---
+
+## 2026-05-17 (slice 5.1.α) — Database identity is a realization-time concern, not an IR field
+
+V1's `OutsystemsMetadataSnapshot` envelope carries a `DatabaseName :
+string` field, populated by `MetadataSnapshotRunner` (V1) from
+`SqlConnection.Database` at extraction time. V1's downstream consumers
+use it for two distinct purposes: (a) qualified-name composition (e.g.,
+`[DatabaseName].[schema].[table]` rendered into SMO scripts), and (b)
+audit-trail diagnostics (the snapshot is annotated with the source DB
+name in logs).
+
+V2's `MetadataSnapshot` (F# carrier in `MetadataSnapshotRunner.fs`) has
+no equivalent field. V2 treats database identity as a **realization-
+time concern**:
+
+- The `Catalog` IR is deployment-agnostic — the same `Catalog` can be
+  emitted to multiple target databases (cutover-windowed staging /
+  uat / prod), serialized to different artifact shapes (SSDT project /
+  DACPAC / JSON snapshot / sibling-Π distributions), and round-
+  tripped through different physical schemas without IR awareness of
+  the database name.
+- Emission consumers that need the database name take it as an
+  explicit parameter (`DacpacEmitter.emit databaseName catalog ...`)
+  or surface it via the CLI's deployment-target configuration
+  (`osm emit --target staging`).
+- Audit-trail logging of "what database was the catalog extracted
+  from" is the caller's responsibility, not the IR's. The
+  `MetadataSnapshotRunner.runAsync` caller holds the `SqlConnection`;
+  they know the database name in their own scope and log it where
+  appropriate.
+
+The substantive reason this is DIVERGENCE rather than NOT-MAPPED: V2
+**has** access to the database name structurally (via the caller's
+`SqlConnection.Database`); V2 chose not to thread it through the IR.
+This is a deliberate boundary-discipline choice — the IR carries the
+catalog **value**, not its provenance.
+
+Recorded in `V1_PARITY_MATRIX.md` row 29 as 🟡 DIVERGENCE.
+
+### Cross-references
+
+- A18 amended — Π consumes `Catalog × Profile`; provenance is not part
+  of the catalog's structural value.
+- `Identity is a type, not a string` (CLAUDE.md programming-style center
+  target) — database-name identity, when it surfaces, surfaces as a
+  realization-layer typed surface, not a string field on the IR.
+
+---
+
+## 2026-05-17 (slice 5.1.γ) — Command-timeout discipline: canary unlimited, production tunable
+
+V1's `MetadataSnapshotRunner` reads command timeout from
+`SqlExecutionOptions.CommandTimeoutSeconds` (caller-tunable, ADO.NET
+default 30s when unset). The pattern aligns with Polly / EF Core
+conventions — every request can carry a per-request timeout.
+
+V2's `MetadataSnapshotRunner.runAsync` sets `command.CommandTimeout <- 0`
+unconditionally. The rationale at chapter 5.0 close: V1's
+`outsystems_metadata_rowsets.sql` script begins with `SET TEXTSIZE -1`
+and includes complex queries that legitimately run long against a real
+OSSYS catalog (the 22 rowsets each materialize a temp-table query
+joining 3-5 sys.* views; aggregate execution time on a 300-table
+catalog can exceed the 30s ADO.NET default). Unlimited timeout removes
+a brittle gate at the canary's offline-extraction layer.
+
+The divergence is intentional and scope-limited:
+
+- **Canary scope (today):** unlimited timeout is correct. The canary
+  runs against a synthetic OSSYS source in a controlled Docker
+  container; there is no operator who'd want to interrupt a long
+  extraction. Determinism over interruptibility.
+- **Production scope (when V2 ships a CLI for cloud OSSYS):** unlimited
+  timeout is operator-hostile (no escape hatch from a runaway query).
+  Re-open trigger fires; `runAsync` grows a `commandTimeoutSeconds :
+  int option` parameter with default `Some 0` (preserving canary
+  behavior) but operator-settable via the CLI surface.
+
+The contract preserved across the trigger: callers that pass no timeout
+get the V2 default (unlimited). Callers that pass a value get V1-style
+ADO.NET timeout semantics. The canary's behavior is unchanged.
+
+Recorded in `V1_PARITY_MATRIX.md` row 33 as 🟡 DIVERGENCE. Companion
+rows 32 / 34 / 35 / 36 carry related production-wiring concerns
+(exception classification / transient retry / result-set contract
+enforcement / progress tracking) as 🟠 NOT-MAPPED rather than
+DIVERGENCE — those are genuine capabilities V2 lacks rather than V2
+choosing a different shape.
+
+### Cross-references
+
+- `V2_DRIVER.md` per-axis correctness stakes — V2-driver mode transition
+  requires production-grade wiring on top of canary-grade adapter.
+- `CHAPTER_5_0_CLOSE.md` §"What's deferred" — live-DB SqlClient wiring
+  is "a per-environment ops concern" (this DECISIONS row is the
+  operational shape of that deferral).
+
+---
+
+## 2026-05-17 (slice 5.1.δ) — Offline fixture shape: in-memory RowsetBundle over manifest-keyed JSON files
+
+V1 ships two manifest-keyed offline fixtures —
+`FixtureAdvancedSqlExecutor` (implements `IAdvancedSqlExecutor` by
+reading pre-canned JSON rowset files from disk) and
+`FixtureOutsystemsMetadataReader` (implements `IOutsystemsMetadataReader`
+similarly) — totaling ~450 LOC. Both look up a JSON manifest by a
+key derived from `(modules + IncludeSystem + IncludeInactive)` filter
+parameters and dispatch to the matching disk-stored rowset bundle.
+V1's unit tests + offline pipelines use these fixtures to bypass live
+SQL execution entirely.
+
+V2 chose a different fixture shape. V2's
+`Projection.Adapters.Osm.CatalogReader.SnapshotRowsets` consumes an
+in-memory `RowsetBundle` constructed directly in F# (via
+`tests/Projection.Tests/IRBuilders.fs` literal constructors +
+`Fixtures.fs` shared bundles). Offline canary tests use this path
+and bypass `MetadataSnapshotRunner.runAsync` entirely. **No
+fixture-mode entry point exists for the `OssysSql` adapter
+specifically.**
+
+The shape comparison:
+
+| Axis | V1 (manifest-keyed JSON files) | V2 (in-memory rowset literals) |
+|---|---|---|
+| Storage | Disk JSON, manifest-keyed lookup | F# value literals in test source |
+| Construction | Tooling produces JSON; tests read it | Test source IS the fixture |
+| Mutation | Edit a JSON file | Edit an F# source line |
+| Type safety | Runtime JSON-shape parsing | Compile-time F# record-shape |
+| Versioning | Manifest file lifecycle | Git history on `.fs` source |
+| Reusability | Manifest entries cross test boundaries | Module-level `let private` shared values |
+
+V2's choice flows from the closed-DU empirical-test discipline (CLAUDE.md
+operating-disciplines table) + the F# typed-fixture idiom: literal
+records constructed in source are simpler than disk-stored JSON when
+the consumer is also F#, because the compiler catches shape drift at
+build time rather than test time. V1's manifest-keyed shape made
+sense in C# where literal-record-construction has more boilerplate.
+
+**Re-open trigger.** A test scenario surfaces that needs
+`MetadataSnapshotRunner.runAsync` exercised against fixture rowsets
+specifically — e.g., contract-version testing (matrix row 38;
+operator-configurable column tolerance) needs to exercise the
+SqlDataReader-walking layer, not bypass it. At that point, V2 grows
+an in-memory `IDataReader` adapter or a similar primitive that lets
+the runner consume rowset literals; the V1 JSON-manifest shape is
+not adopted (the F# idiom doesn't benefit from disk indirection).
+
+Recorded in `V1_PARITY_MATRIX.md` row 37 as 🟡 DIVERGENCE.
+
+### Cross-references
+
+- `Closed-DU expansion empirical-test discipline` (CLAUDE.md operating-
+  disciplines table) — F# fixture idiom prefers literal records over
+  disk-stored serialized fixtures.
+- `Projection.Adapters.Osm.CatalogReader.SnapshotSource` DU — the
+  three input variants (file / JSON / rowsets) the offline / online
+  paths consume.
+
+---
+
+## 2026-05-17 (slice 5.1.ζ) — Contract-versioning posture: SQL pins, not operator overrides
+
+V1's `MetadataContractOverrides` lets operators configure per-result-set
+optional columns via `appsettings.json`
+(`metadataContract.optionalColumns.AttributeJson = ["AttributesJson"]`).
+At extraction time, processors consult `IsColumnOptional(resultSetName,
+columnName)` and tolerate NULL or missing columns when marked optional.
+The mechanism enables V1 to read across multiple OutSystems versions
+where columns may be renamed, dropped, or NULL in different versions.
+
+V2 chose a structurally different posture: **the carbon-copied SQL
+pins the contract version.** V2's `MetadataSnapshotRunner` reads via
+ordinal-indexed access (`readInt r 0`, `readString r 1`, …) —
+structurally insensitive to column renaming but sensitive to column
+reordering. There is no operator-configurable override; V2 expects the
+deployed OSSYS schema to match the carbon-copied SQL's contract
+version exactly.
+
+The posture comparison:
+
+| Axis | V1 (operator overrides) | V2 (SQL pins) |
+|---|---|---|
+| Source of contract truth | C# DTOs + `appsettings.json` overlay | The embedded SQL resource |
+| Operator surface | `optionalColumns` config dict | None — version is the SQL's |
+| Version-tolerance | Per-column, per-resultset, runtime | None — SQL must match schema |
+| Failure mode on mismatch | NULL tolerated where configured | Ordinal read fails or returns wrong column |
+| Detection at canary | Implicit; tolerated columns hide drift | Explicit; ordinal mismatch surfaces |
+
+V2's choice flows from the carbon-copy editorial-inheritance posture
+(`DECISIONS 2026-05-16 (later) — V2 self-containment`): the SQL script
+**is** the truth. If V2's deployed OSSYS source is on a different
+version than V2's carbon-copied SQL, the right response is to update
+the carbon-copy (re-pull from V1, re-commit, run the canary), not to
+overlay operator configuration that papers over the mismatch.
+
+V2 retains TWO inline NULL fallbacks at the rowset-read layer:
+- `IsAutoNumber` (column 11 of attribute row) defaults to `false`
+  when NULL.
+- `PhysicalCol` (column 17 of attribute row) falls back to
+  uppercase `AttrName` when NULL or whitespace.
+
+These are **data-shape resilience** (V1's source data legitimately
+emits NULL in these fields for some attribute kinds), not
+version-tolerance. They're column-specific, hard-coded, and don't
+extend to other fields.
+
+**Re-open trigger.** Cutover or post-cutover schema-drift surfaces a
+real OutSystems-version mismatch that V2's canary doesn't catch. At
+that point, options:
+- (a) Update the carbon-copy SQL + the F# row-mappers in lockstep
+  (preferred — keeps the "SQL pins contract" posture intact).
+- (b) Grow an operator-configurable override surface modeled on V1's
+  `MetadataContractOverrides` — likely a closed-DU
+  `ColumnOverride = OptionalNull | ColumnRename of source: string`
+  carried per-rowset, threaded through `runAsync` parameters.
+
+Choosing (a) preserves V2's structural simplicity; (b) is needed only
+if multiple OutSystems versions must be supported simultaneously.
+
+Recorded in `V1_PARITY_MATRIX.md` row 38 as 🟡 DIVERGENCE.
+
+### Cross-references
+
+- `DECISIONS 2026-05-16 (later) — V2 self-containment + carbon-copy
+  editorial inheritance` — the parent discipline this entry refines
+  for the contract-versioning sub-concern.
+- `Tolerance.fs` — V2's structural variance taxonomy lives here; if
+  trigger fires, the V2-side capability lifts as a Tolerance variant
+  rather than a config-overlay.
+
+---
+
+## 2026-05-17 (slice 5.8.α) — DMM lens machinery sunset; schema-diff concept harvested as future CLI verb
+
+V1's `Osm.Dmm` cluster (~2200 LOC across 8 files) is V1's schema-diff
+machinery. The architecture:
+
+- `IDmmLens<TSource>` — a port that produces `IReadOnlyList<DmmTable>`
+  from a source-of-unknown-kind.
+- Three lens adapters: `ScriptDomDmmLens` (parses raw T-SQL via
+  `Microsoft.SqlServer.TransactSql.ScriptDom`), `SmoDmmLens` (reads
+  the SMO model), `SsdtProjectDmmLens` (reads an SSDT project from
+  disk).
+- `DmmComparator` — feature-gated structural diff over Columns,
+  PrimaryKeys, Indexes, ForeignKeys (each axis can be enabled/disabled
+  via `DmmComparisonFeatures` flags).
+- `DmmModels` — DTOs (`DmmTable`, `DmmColumn`, `DmmIndex`, etc.).
+- `SsdtTableLayoutComparator` — specialized comparator for table-
+  layout drift.
+
+V1's operator-facing use case: an ad-hoc "compare these two schema
+sources" affordance. V1's pipeline uses it internally (e.g., DACPAC
+build verification: compare the produced `.dacpac` against an
+expected reference).
+
+**Decision: drop the V1 implementation; harvest the concept.**
+
+The V1 implementation will not be ported to V2 for three reasons:
+
+1. **V2's canary subsumes the load-bearing fidelity claim.** The
+   `PhysicalSchema` round-trip diff (source → emit → deploy → readback
+   → assert source ≈ target) is the cutover-fidelity gate. It
+   structurally enforces equivalence on the same axes V1's
+   `DmmComparator` toggles (columns / PKs / indexes / FKs), but only
+   for the specific source/target pair the canary exercises. For that
+   pair, V2 is strictly stronger than V1 (V2 enforces equivalence at
+   commit time; V1 was an ad-hoc operator tool).
+
+2. **The V1 lens classes are V1-trunk-tied.** `SsdtProjectDmmLens`
+   consumes V1's `SsdtProjectMetadata` model. Porting would either
+   carry V1's domain model into V2 (violating the V2 self-containment
+   discipline; `DECISIONS 2026-05-16 (later)`) or rewrite each lens
+   from scratch anyway. If we're rewriting from scratch, we adopt the
+   F# closed-DU idiom over the `IDmmLens<TSource>` interface.
+
+3. **The concept is genuinely worth harvesting.** V2 today cannot
+   diff arbitrary schema-source pairs (e.g., `(SSDT project, DACPAC
+   file)`, `(deployed before, deployed after)`). An operator-facing
+   `compare` verb is missing capability — V2's CLI exposes 4 verbs
+   (`emit` / `deploy` / `canary` / `--help`), and the canary case
+   is specifically `(live OSSYS source, live deployed target)`. A
+   generalized `compare` is a real CLI gap.
+
+**The harvest shape.**
+
+The V2 capability is reserved at matrix row 41 with the following
+structural plan:
+
+- Closed-DU `DiffSource` over the V1 interface pattern:
+  ```fsharp
+  type DiffSource =
+      | LiveDb of connectionString : string * databaseName : string
+      | SsdtProject of directory : string
+      | DacpacFile of path : string
+      | RawSql of text : string
+  ```
+- Core function: `Compare.run : DiffSource -> DiffSource -> Diagnostics<SchemaDiff>`
+- Per-variant adapter in `Projection.Adapters.{Sql,SSDT,Dacpac,RawSql}`.
+  - `LiveDb` adapter: already exists at
+    `Projection.Adapters.Sql.PhysicalSchemaReader`.
+  - `SsdtProject` adapter: leverages V2's existing SSDT reader.
+  - `DacpacFile` adapter: new, gated on the DACPAC adapter slice
+    (chapter 5.x.dacpac, currently deferred per `BACKLOG.md`
+    Phase 8).
+  - `RawSql` adapter: new, parses via `ScriptDom` (V2 already uses
+    ScriptDom for emission; consumption pattern is symmetric).
+- `SchemaDiff` is the typed diff payload — closed-DU per axis
+  (`ColumnDelta`, `PrimaryKeyDelta`, `IndexDelta`, `ForeignKeyDelta`)
+  emitted as `Diagnostics<SchemaDiff>` so the writer-monad chorus
+  discipline holds (`DECISIONS 2026-05-13 — Pass return-type
+  codification`).
+- CLI surface: `projection compare <left> <right>` next to `canary`
+  in `Projection.Cli/Program.fs`. Source specifiers parse from
+  `--source-{kind} <args>` flag pairs.
+
+**Acceptance.** A property test asserts T11 sibling-commutativity:
+for any `(a, b)` `DiffSource` pair, `Compare.run a b` produces a
+diff whose **inverse** equals `Compare.run b a` (column-added
+inverts to column-removed; same for all delta axes). This makes the
+operator-facing affordance algebraically clean: `diff a b` is
+information-equivalent to `diff b a` with directions flipped.
+
+**Dependencies.**
+- DACPAC adapter (matrix row 41 lift requires the DACPAC variant; the
+  V1 DACPAC build verification path is the strongest evidence the
+  variant is needed; deferred until DACPAC slice opens).
+- The Sql / SSDT adapters already exist; the LiveDb ↔ LiveDb,
+  LiveDb ↔ SsdtProject, and SsdtProject ↔ SsdtProject shapes can
+  ship today.
+
+**Trigger to open the chapter.** Operator workflow demands ad-hoc
+schema-diff outside the canary's specific scope, OR cutover dry-run
+discovers a diff case the canary doesn't cover. Likely shape: a
+small "chapter 5.cli.compare" slice; ~3-5 sessions.
+
+Recorded in `V1_PARITY_MATRIX.md` rows 40 (⚫ V1-SUNSET; V1 impl
+sunsets with V1) + 41 (🟠 NOT-MAPPED; V2 `compare` verb reserved).
+
+### Cross-references
+
+- `DECISIONS 2026-05-16 (later) — V2 self-containment + carbon-copy
+  editorial inheritance` — the parent discipline this entry refines
+  for the "drop V1 impl when it's V1-trunk-tied; harvest the concept
+  cleanly" pattern.
+- `CLAUDE.md` operating-disciplines table — "Sibling-wrapper
+  discipline" parallel: the closed-DU `DiffSource` over the
+  `IDmmLens<TSource>` interface follows the same F# idiom shift
+  (DUs over interfaces) that other V2 adapter ports have taken.
+- `V2_DRIVER.md` per-axis correctness stakes — schema-axis fidelity
+  is V2-driver-mode load-bearing; the canary is the today-mechanism,
+  the `compare` verb extends it.
+
+---
+
+## 2026-05-18 (slice 5.2.α.module) — Per-module non-empty invariant: caller discipline over Module.create
+
+V1's `ModuleModel.Create` enforces a per-module non-empty Entity
+invariant: a module constructed with zero entities fails fast with a
+`module.entities.empty` ValidationError. The invariant is one of three
+shape-checks V1 applies (per-module entity non-empty + logical-name
+uniqueness + case-insensitive physical-name uniqueness).
+
+V2's `Module.create` (in `Catalog.fs`) permits empty `Module.Kinds`.
+The structural invariants V2 enforces at the Module aggregate
+boundary are limited to Kind-SsKey disjointness within the module.
+V2's `Catalog.create` (the outer aggregate root) enforces global
+Kind-SsKey uniqueness across all modules but does not check per-module
+min-cardinality either.
+
+The divergence is **not principled** — it's an under-specification.
+V2 didn't deliberately decide "empty modules are OK"; the invariant
+simply wasn't lifted from V1 during the chapter-2 / chapter-3.x
+work that built `Module.create`. The audit slice 5.2.α.module surfaces
+the gap.
+
+Two paths forward:
+
+**(a) Restore the invariant (preferred).** Add to `Module.create`:
+
+```fsharp
+if List.isEmpty kinds then
+    Result.failureOf (ValidationError.create
+        "module.kinds.empty"
+        "module must contain at least one kind")
+else
+    // existing SsKey-disjointness check ...
+```
+
+Cost: ~5 LOC; one new error code; possibly some adapter tests need
+updating. Acceptance: unit test verifying
+`Module.create "M" [] = Error [{Code="module.kinds.empty"; ...}]`.
+
+**(b) Document the deliberate weakening.** If a downstream V2
+consumer legitimately constructs empty modules (currently no evidence
+for this), explicitly state that empty modules are permitted at the
+aggregate boundary and document the compensating constraint (adapters
++ passes always produce non-empty modules; the catalog-assembly path
+guarantees the post-condition without the Module.create check).
+
+**Decision.** Path (a) is preferred — it costs little, aligns with
+V1 parity, and prevents a ghost-module class of bug in transformation
+passes. Cash-out scheduled for the next time `Module.create` is
+touched (no urgent trigger); meanwhile, the matrix row 42 carries
+the gap visibly.
+
+Recorded in `V1_PARITY_MATRIX.md` row 42 as 🟡 DIVERGENCE.
+
+### Cross-references
+
+- A39 (aggregate-root smart-constructor invariants) — `Module.create`
+  is the canonical instance.
+- `IR grows under evidence, not speculation` (CLAUDE.md operating-
+  disciplines table) — the same discipline that justified V2's
+  initial under-specification now justifies adding the invariant
+  back (the evidence is the V1 parity-audit finding).
+
+---
+
+## 2026-05-18 (slice 5.2.α.attribute) — V1 three-layer attribute model consolidates into V2 typed Attribute + table-scoped checks
+
+V1's attribute aggregate is **three layers across 7 files**:
+
+- **Logical** (`AttributeModel` + `AttributeMetadata`) — the OSSYS-
+  declared shape: name, column name, data type, default, mandatory
+  flag, identifier flag, autonumber flag, description, extended
+  properties.
+- **Physical reality** (`AttributeReality`) — runtime reflection +
+  statistical evidence sourced from deployment-target sys.* +
+  sampling: `IsNullableInDatabase`, `HasNulls`, `HasDuplicates`,
+  `HasOrphans`, `IsPresentButInactive`.
+- **On-disk evidence** (`AttributeOnDiskMetadata` +
+  `AttributeOnDiskCheckConstraint` + `AttributeOnDiskDefaultConstraint`)
+  — SQL Server schema introspection: SqlType, MaxLength, Precision,
+  Scale, Collation, IsIdentity, IsComputed, ComputedDefinition,
+  CheckConstraints array, DefaultConstraint envelope.
+
+V2 **consolidates** into a single `Attribute` record (~21 fields)
+plus a table-scoped `Kind.ColumnChecks : ColumnCheck list` (chapter
+A.0' slice ε; L3-S5 sub-axiom). The mapping:
+
+| V1 layer | V2 destination |
+|---|---|
+| Logical (AttributeModel + AttributeMetadata) | `Attribute` fields directly |
+| On-disk schema (AttributeOnDiskMetadata) | `Attribute` fields directly (Type, Length, Precision, Scale, IsIdentity, Computed) |
+| On-disk CHECK arrays | `Kind.ColumnChecks` (lifted out; table-scoped per SQL Server semantic) |
+| On-disk DEFAULT envelope | `Attribute.DefaultValue : SqlLiteral option` (Definition only; Name + IsNotTrusted dropped — see row 53) |
+| Physical reality (AttributeReality) | **Not carried** — V2's data-intent boundary excludes reflection (see row 49) |
+
+V2's consolidation is **principled** under pillar 9 (DataIntent /
+OperatorIntent dichotomy):
+
+- **Logical + on-disk schema** = DataIntent (sourced from V1 rowsets;
+  reachable from `Project(catalog, Policy.empty, profile)` without
+  operator opinion). Belongs in `Attribute` IR.
+- **Physical reality** = OperatorIntent / observation evidence
+  (sourced at inspection time; varies per environment). Belongs in
+  `Profile` (separate axis per A34 — Profile is independent of
+  Catalog and Policy).
+- **CHECK constraint placement** = SQL Server semantic correction.
+  V1's per-attribute nesting was a mismodeling because CHECK
+  constraints may span multiple columns (`CHECK (Col1 > Col2)`);
+  V2's `Kind.ColumnChecks` table-scoping reflects the SQL Server
+  reality.
+
+The consolidation is one of V2's load-bearing structural moves —
+without it, V2's Catalog IR would carry both observation evidence
+(layer 3) AND schema definition (layers 1 + 3 on-disk), conflating
+the two. V2's separation makes the DataIntent skeleton purely a
+schema definition; the Profile axis carries the orthogonal
+observational evidence.
+
+**Re-open trigger.** V2 grows a `Profile.AttributeReality` carrier
+when a downstream consumer (tightening pass; remediation emitter)
+needs per-attribute reflection state. Cash-out shape: add
+`Profile.AttributeReality` record (parallel to V1's `AttributeReality`);
+thread through ReadSide adapter; consumers access via `Profile`
+projection. The 5 V1 reality fields lift in lockstep.
+
+Recorded in `V1_PARITY_MATRIX.md` row 48 as 🟡 DIVERGENCE. Companion
+rows 49 (reality fields 🟠 NOT-MAPPED) and 50 (CHECK placement
+🔵 V2-EXTENSION) carry the structural deltas; rows 51 + 52
+(reference lift; typed primitives) carry the V2-EXTENSION strengths;
+row 53 (default-constraint envelope 🟠 NOT-MAPPED) carries the
+remaining gap.
+
+### Cross-references
+
+- Pillar 9 (`CLAUDE.md` operating-disciplines + load-bearing
+  commitments) — the DataIntent / OperatorIntent dichotomy that
+  underwrites the consolidation.
+- A34 (Profile is independent of Catalog and Policy) — the basis for
+  the Profile axis carrying observation evidence.
+- A39 (aggregate-root smart-constructor invariants) — `Attribute`
+  and `ColumnCheck` create functions enforce per-aggregate invariants.
+- Chapter A.0' slice ε (CHECK constraint IR lift) — the chapter
+  that landed `Kind.ColumnChecks`.
+
+---
+
+## 2026-05-18 (slice 5.2.α.relationship) — V1 three-type relationship/FK split conflates into V2 single Reference
+
+V1 separates the foreign-key axis across **three types**:
+
+- **`RelationshipModel`** — the **logical** edge: source-attribute →
+  target-entity (via-attribute), `DeleteRuleCode : string`,
+  `HasDatabaseConstraint : bool`. Lives on `EntityModel.Relationships`.
+- **`ForeignKeyModel`** — the **physical** constraint: constraint
+  name, `DeleteRule : string`, `UpdateRule : string`. Lives on
+  `EntityOnDiskMetadata.ForeignKeys` (constructed at SMO-emit time).
+- **`RelationshipActualConstraint`** — the **reconciliation**:
+  bridges logical to physical with per-column mapping
+  (`Columns : RelationshipActualConstraintColumn list`) + per-action
+  NOCHECK state (empty `OnDeleteAction` / `OnUpdateAction` strings
+  signal `WITH NOCHECK`).
+
+V2 **conflates** all three into a single `Reference` record:
+
+```fsharp
+type Reference = {
+    SsKey            : SsKey               // typed identity
+    SourceAttribute  : SsKey               // → Attribute
+    TargetKind       : SsKey               // → Kind
+    OnDelete         : ReferenceAction     // closed DU: NoAction | Cascade | SetNull | Restrict
+    HasDbConstraint  : bool                // chapter 4.6 slice α lift
+    RefEntityId      : int option          // chapter 5.0 slice δ cross-key-shape resolution
+}
+```
+
+The conflation flows from V2's chapter 4.6 design that lifted
+`HasDbConstraint` directly onto `Reference` — closing the
+logical/physical distinction at the IR layer. V2's single-type
+choice has structural advantages:
+
+- **Symmetric closure pass** (chapter 3.5) becomes simpler — operates
+  over `Reference list`, not over the three-way V1 join.
+- **Topological ordering pass** (chapter 3.7) consumes
+  `Reference list` directly via SsKey-graph walking.
+- **FK reflow pass** (chapter 4.2) operates over the unified
+  Reference shape; no need to reconcile three sources.
+
+The conflation has **costs** the matrix tracks separately:
+
+- **Row 58** 🟠 NOT-MAPPED: V1's `UpdateRule` is dropped at the
+  adapter boundary; V2 carries only `OnDelete`. ON UPDATE referential
+  actions can't round-trip. Cash-out: add `Reference.OnUpdate :
+  ReferenceAction option`.
+- **Row 59** 🟠 NOT-MAPPED: V1's per-constraint NOCHECK state is
+  binary in V2 (`HasDbConstraint` is presence/absence, not
+  enforcement state). Cash-out: add
+  `Reference.IsConstraintTrusted : bool`.
+
+Both costs are **deferrable** — V2's canary doesn't require them
+today; the cash-out triggers fire when production OSSYS targets
+need ON UPDATE round-trip or WITH NOCHECK round-trip (rare).
+
+**Re-open trigger for the conflation itself.** V2 needs to
+round-trip FK constraint **names** (not just shapes). V2 currently
+generates FK names at emit time via convention (e.g.,
+`FK_TableName_TargetTableName`); if a deployed target has
+operator-supplied FK names that V2 must preserve, the conflation
+breaks down (V2 has no place to carry the V1 `ForeignKeyModel.Name`
+field). Cash-out shape: extend `Reference` with `Name : Name option`
+— defaults `None` (use convention) when not specified; populates
+from V1 adapter when source provides.
+
+Recorded in `V1_PARITY_MATRIX.md` row 57 as 🟡 DIVERGENCE. Companion
+rows 58 + 59 carry the deferrable costs as 🟠 NOT-MAPPED.
+
+### Cross-references
+
+- Chapter 4.6 slice α — the original `HasDbConstraint` lift that
+  closed the logical/physical distinction.
+- Chapter 5.0 slice δ — cross-key-shape FK resolution that added
+  `RefEntityId : int option` for GUID-based identity threading.
+- A39 (aggregate-root smart-constructor invariants) —
+  `Reference.create` smart constructor enforces typed identity +
+  ReferenceAction validation.
+
+---
+
+## 2026-05-18 (slice 5.4.β.nullability) — Ternary outcome space for operator-approval decision lifting
+
+V1's tightening strategies (nullability / unique-index / FK) return
+**2-valued** `SignalEvaluation.Result : bool`. When a decision is
+contested (e.g., a mandatory column with nulls beyond budget AND a
+tightening policy that forbids silent relaxation), V1 returns `false`
+AND surfaces an `Opportunity` record with `Disposition.NeedsRemediation`
+through a side channel. The decision is deferred via out-of-band
+metadata; downstream consumers (manifest emitter, operator-review
+report builder) must JOIN the boolean result with the opportunity
+list to reconstruct the full decision space.
+
+V2 reifies the third state directly into the outcome type. Each
+strategy's outcome carries **three variants**:
+
+```fsharp
+[<RequireQualifiedAccess>]
+type NullabilityOutcome =
+    | EnforceNotNull of NullabilityRationale     // tighten the column
+    | KeepNullable of KeepNullableReason         // do not tighten
+    | RequireOperatorApproval of NullabilityConflict   // decision lifted
+
+[<RequireQualifiedAccess>]
+type UniqueIndexOutcome =
+    | EnforceUnique of …
+    | DoNotEnforce of …
+    | RequireOperatorApproval of UniqueIndexConflict
+
+[<RequireQualifiedAccess>]
+type ForeignKeyOutcome =
+    | EnforceConstraint of …
+    | DoNotEnforce of …
+    | RequireOperatorApproval of ForeignKeyConflict
+```
+
+The third variant is **canonical** — it carries typed conflict
+evidence (`NullabilityConflict`, `UniqueIndexConflict`,
+`ForeignKeyConflict`), and consumers pattern-match exhaustively with
+F# compiler enforcement of all three cases. No side channel, no
+metadata-drift risk.
+
+**Why this is principled (not merely cosmetic).**
+
+1. **Discoverability.** The decision space is visible in the type
+   signature; readers see all three states at the call site without
+   tracing side-channel collectors.
+2. **Exhaustiveness.** F# pattern-match exhaustiveness checking
+   refuses to compile a consumer that ignores `RequireOperatorApproval`.
+   V1's 2-valued result allowed silent loss of the third state
+   (if a consumer forgot to JOIN with the opportunity list, the
+   contested decision was simply absent from the report).
+3. **Provenance.** Each `RequireOperatorApproval` variant carries a
+   typed `*Conflict` evidence value (e.g.,
+   `MandatoryButHasNullsBeyondBudget of nullCount × rowCount × budget`).
+   The conflict's source data is structurally accessible, not embedded
+   in string rationales.
+4. **Symmetry.** The same pattern applies across three sibling
+   strategies (nullability / unique-index / FK), making the
+   "operator-approval lifting" concept a registered structural
+   primitive rather than a per-strategy ad-hoc.
+
+**Pattern application beyond the three current strategies.**
+
+When a future tightening strategy lands (categorical-uniqueness;
+cycle-resolution; user-fk-reflow; etc.), the canonical outcome shape
+is **3 variants**: positive decision + negative decision + operator-
+approval. The `RequireOperatorApproval` variant carries
+strategy-specific conflict evidence. This is the canonical strategy
+shape per the "Strategy-layer codification" discipline
+(`DECISIONS 2026-05-11`) — and this entry refines that discipline by
+naming the ternary outcome as a required structural feature.
+
+**Compatibility with V1 during cutover.**
+
+V1's `Opportunity.Disposition.NeedsRemediation` records correspond
+1:1 to V2's `RequireOperatorApproval(...)` outcomes. When V2 emits
+the manifest, the `Opportunities` array (V2 carries this for V1
+parity per matrix row 30 telemetry) renders each
+`RequireOperatorApproval` outcome to one Opportunity record matching
+V1's schema. The dual-track canary asserts `(V1 Opportunities ≈ V2
+Opportunities)` modulo named Tolerance variants.
+
+Recorded in `V1_PARITY_MATRIX.md` row 65 as 🔵 V2-EXTENSION.
+
+### Cross-references
+
+- `DECISIONS 2026-05-11 — Strategy-layer codification: empirical
+  verdict after the fourth instance` — the parent discipline this
+  entry refines.
+- `Total decisions, named skips` (CLAUDE.md operating-disciplines
+  table) — the ternary outcome operationalizes this discipline at
+  the type-system level (every input gets a decision; "no decision"
+  is `RequireOperatorApproval`, not silence).
+- Pillar 1 (data-structure-oriented) — typed conflict evidence
+  carried per outcome variant; no string-parsing round-trip.
+- A41 candidate (registry totality + bidirectional property tests)
+  — the harvest-classification dimension; operator-approval outcomes
+  fire as `OperatorIntent` lineage events.
+
+---
+
+## 2026-05-18 (slice 5.4.γ.evaluators) — Per-axis decision sets over per-column aggregation: preserving axis orthogonality
+
+V1's `Osm.Validation/Tightening/ColumnAnalysis.cs` + `ColumnAnalysisBuilder.cs`
+carry a **per-column aggregate** combining all decision axes (nullability +
+foreign-key + unique-index) plus orthogonal evidence (ChangeRisk,
+opportunity list). V1's evaluators populate this surface as their
+primary emitter-facing output; downstream consumers see one
+`ColumnAnalysis` record per column with all axes pre-joined.
+
+V2 emits **three separate per-axis decision sets**:
+
+```fsharp
+NullabilityPass.run  : Catalog -> Policy -> Profile -> Lineage<Diagnostics<NullabilityDecisionSet>>
+ForeignKeyPass.run   : Catalog -> Policy -> Profile -> Lineage<Diagnostics<ForeignKeyDecisionSet>>
+UniqueIndexPass.run  : Catalog -> Policy -> Profile -> Lineage<Diagnostics<UniqueIndexDecisionSet>>
+```
+
+Each pass output is keyed by SsKey; consumers JOIN at the boundary
+when per-column aggregation is needed. V2 has **no `ColumnAnalysis`
+analog in core** — the per-column join is a downstream consumer concern.
+
+**Why this is principled (not merely cosmetic).**
+
+1. **Axis orthogonality.** Pillar 9 (harvest-dichotomy classification —
+   `DECISIONS 2026-05-15 (late)`) makes axis separation a structural
+   invariant. The skeleton (Catalog after adapter projection) is
+   axis-neutral; decisions layer atop as orthogonal overlays. A
+   per-column aggregator conflates the axes back into a single
+   surface — undoing the structural separation.
+
+2. **Pass independence is testable.** A property test asserts each
+   pass's output is independent of other passes' policy config —
+   changing `Policy.Nullability` doesn't change `UniqueIndexDecisionSet`
+   or `ForeignKeyDecisionSet` on the same Catalog. This is the
+   structural test for pillar-9 compliance. V1's per-column aggregator
+   makes this property invisible (a change to nullability policy might
+   re-shuffle the aggregator's output via implicit ordering); V2's
+   per-axis sets make it explicit.
+
+3. **Emitter consumption is natural.** V2 emitters that need per-column
+   data JOIN the three sets at their boundary. The JOIN is one-liner
+   F# (group-by SsKey, merge per attribute). The cost of the join is
+   borne where the consumption happens; the cost of NOT joining (when
+   the consumer is per-axis, like the manifest emitter's
+   `PredicateCoverage` section) is preserved.
+
+4. **Lineage events stay axis-classified.** V1's per-column aggregator
+   loses the per-axis lineage trail at the aggregation boundary; V2's
+   per-pass output preserves the trail (every lineage event carries
+   its pass's classification per `OperatorIntent of OverlayAxis`
+   pillar 9). The audit trail is structurally honest about which axis
+   produced which decision.
+
+**Migration impact.**
+
+`ColumnAnalysis` is V1's emitter-facing surface — it's not load-bearing
+beyond V1's emission path. V2's emitters consume the three decision
+sets directly; no `ColumnAnalysis` migration needed for V2's emission.
+If a future V2 emitter wants the per-column join shape (e.g., a CSV
+emitter that wants one row per column with all axes), the join lives
+as a thin projection module `Projection.Targets.OperationalDiagnostics.ColumnAnalysis`
+that consumes the three decision sets.
+
+**Re-open trigger.**
+
+A V2 consumer (manifest emitter; operator-review report; cutover
+dry-run output; CSV exporter) demands a canonical per-column join
+surface as a primary capability (not as a one-off projection). At
+that point, the projection module lifts into `Projection.Targets/`
+as a reusable surface. V2's core stays per-axis; the projection lives
+at the realization boundary per A36.
+
+Recorded in `V1_PARITY_MATRIX.md` row 71 as 🟡 DIVERGENCE.
+
+### Cross-references
+
+- Pillar 9 (`DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy
+  classification`) — the parent discipline this entry refines for the
+  per-axis-vs-per-column decomposition.
+- A36 (chapter-3.1; bulk-vs-incremental is realization-layer policy)
+  — the basis for the projection module living at the emission
+  boundary, not in core.
+- `DECISIONS 2026-05-18 (slice 5.4.β.nullability) — Ternary outcome
+  space` — the per-axis outcomes that the decision sets carry.
+- A42 candidate (per-axis decision-set axiom; scheduled at chapter
+  close per the AXIOMS scaffolding discipline) — names the
+  axis-independence property as a structural commitment.
+
+---
+
+## 2026-05-18 (slice 5.4.γ.evaluators) — Foreign-key diagnostic emission is exhaustive per keep-reason; V1 silent-skip pattern replaced with named keep-reason variants
+
+V1's `Osm.Validation/Tightening/ForeignKeyEvaluator.cs` (~243 LOC)
+produces per-reference decisions with a 2-tuple shape `(CreateConstraint
+: bool, ScriptWithNoCheck : bool)` and defers opportunity creation to
+`OpportunityBuilder.Add` via a side channel. **V1's known gap (pre-
+session-8 refinement):** `OpportunityBuilder` silently skips some
+failure paths — when a FK reference has no resolvable target entity
+(cross-module FK referencing a missing target), V1's evaluator returns
+`(CreateConstraint = false, ScriptWithNoCheck = false)` without an
+accompanying opportunity record. The decision is silently dropped from
+operator visibility.
+
+V2's `ForeignKeyPass` + `ForeignKeyRules.evaluate` produce a closed-DU
+outcome `ForeignKeyOutcome` with **exhaustive named keep-reasons**:
+
+```fsharp
+[<RequireQualifiedAccess>]
+type ForeignKeyOutcome =
+    | EnforceConstraint of ForeignKeyAction
+    | DoNotEnforce of ForeignKeyKeepReason
+    | RequireOperatorApproval of ForeignKeyConflict
+
+and ForeignKeyKeepReason =
+    | MissingTarget                       // V1's silently-skipped case
+    | LogicalReferenceWithoutDbConstraint
+    | TargetIsExternalEntity
+    | UserFkReflowDeferred
+    | OperatorOverride
+    // ... (every keep-reason gets a named variant)
+```
+
+Every non-enforcement reason becomes a named DU variant; the F# pattern-
+match exhaustiveness check refuses to compile a consumer that doesn't
+handle every case. V2 emits **both failure-side AND success-with-caveat
+diagnostics**:
+
+- Failure-side: each `DoNotEnforce` variant emits one diagnostic with
+  the keep-reason name + structured context.
+- Success-with-caveat: `EnforceConstraint(ScriptWithNoCheck orphanCount)`
+  emits a diagnostic noting the orphan-row count (operators see the
+  caveat before deployment).
+
+**Why this is principled (V1-bug-corrected, not merely cosmetic).**
+
+1. **Total decisions, named skips** (`DECISIONS 2026-05-11` —
+   Strategy-layer codification: refinement 3). V1's silent-skip
+   violates this discipline; the "no decision" case was unnamed,
+   uncoded, and unobservable. V2's named variant promotes the silent
+   case to a structural commitment — every input gets a named outcome;
+   no input falls through to silence.
+
+2. **Operator visibility.** V1's silent-skip means missing-target FK
+   references never appear in operator reports. Operators discover the
+   issue only when the deployed schema fails a referential-integrity
+   check (or worse: silent data corruption when the FK is never
+   created). V2's `MissingTarget` variant ensures every such reference
+   surfaces in the diagnostics stream + the lineage trail.
+
+3. **Type-checked exhaustiveness.** F# pattern-match exhaustiveness
+   catches the silent-skip class at compile time — a consumer that
+   forgets the `MissingTarget` case fails to compile. V1's C# 2-tuple
+   has no such structural check.
+
+4. **Cardinality preservation.** V1's evaluator runs over every
+   reference and produces a (potentially-silent) decision; V2's pass
+   runs over every (reference × intervention) pair and produces a
+   named outcome. The cardinality is preserved; V2's contribution is
+   making the silent decisions structurally visible.
+
+**Symmetric application.**
+
+The "exhaustive per keep-reason" pattern applies to all sibling
+strategies — `NullabilityOutcome.KeepNullable` variants enumerate every
+keep-reason (RelaxedUnderEvidence, OperatorOverride, NoEvidence,
+etc.); `UniqueIndexOutcome.DoNotEnforce` similarly. This is the
+**type-system operationalization** of the "Total decisions, named
+skips" discipline; the discipline becomes structurally inevitable
+rather than a code-review aspiration.
+
+**Migration impact.**
+
+Zero V1-side migration — V1's silent-skip behavior is a V1-only
+artifact; V2's exhaustive emission is V2's canonical output.
+Downstream emitters consuming V2's outcome benefit from the
+exhaustiveness (no JOIN-and-detect-missing logic needed).
+
+Recorded in `V1_PARITY_MATRIX.md` row 73 as 🔵 V2-EXTENSION (with
+🔴 V1-BUG-CORRECTED secondary classification for the missing-target
+silent-skip).
+
+### Cross-references
+
+- `DECISIONS 2026-05-11 — Strategy-layer codification: empirical
+  verdict after the fourth instance` (refinement 3: total decisions,
+  named skips) — the parent discipline.
+- `DECISIONS 2026-05-18 (slice 5.4.β.nullability) — Ternary outcome
+  space` — the sibling pattern for nullability outcomes; the same
+  exhaustive-keep-reasons discipline applies.
+- `DECISIONS 2026-05-14 — Writer codification reaches its stability
+  mark` — the writer-monad discipline that makes per-keep-reason
+  diagnostic emission ergonomic.
+
+---
+
+## 2026-05-18 (slice 5.4.γ.opportunities) — Per-pass DiagnosticEntry contract: typed outcomes in Lineage; prose narration in Diagnostics
+
+V1's `Osm.Validation/Tightening/Opportunity.cs` (~196 LOC) carries a
+**domain-specific opportunity record** with tightening-coupled fields:
+Type + Title + Summary + Risk + Disposition + Category + Evidence
+(opaque array) + Rationales (string array) + EvidenceSummary +
+Columns. Per-decision diagnostic information is bundled with risk
+classification, disposition routing, and remediation hints in a
+single shape.
+
+V2 distributes the same information across **two structurally distinct
+surfaces**:
+
+1. **Lineage events** carry typed Outcome DUs (`NullabilityOutcome` /
+   `UniqueIndexOutcome` / `ForeignKeyOutcome`) with structurally
+   embedded evidence (null count, row count, budget, orphan count,
+   target SsKey). Risk classification + disposition routing are pure
+   projections from the Outcome variant (per slice 5.4.γ.evaluators
+   row 76 — `RiskClassification.riskOf` emitter-side function).
+
+2. **DiagnosticEntry** (generic, in `Projection.Core/Diagnostics.fs`)
+   carries operator-visible prose narration: Source (producer name) +
+   Severity + Code (routing prefix) + Message (prose) + SsKey (typed
+   identity) + Metadata (`Map<string, string>` for non-structural
+   values).
+
+The DiagnosticEntry contract per pass is:
+
+```fsharp
+type DiagnosticEntry = {
+    Source   : string         // "pass:nullability", "pass:uniqueIndex", "pass:foreignKey"
+    Severity : Severity       // Info | Warning | Error
+    Code     : string         // "tightening.nullability.relaxedUnderEvidence", etc.
+    Message  : string         // prose; deterministic projection from Outcome
+    SsKey    : SsKey          // points to the IR node (Attribute / Index / Reference)
+    Metadata : Map<string, string>  // non-structural values only
+}
+```
+
+**Per-pass conventions (codified):**
+
+- **Source field**: `pass:<passName>` (lower-camel) for all pass-
+  produced diagnostics. Adapters use `adapter:<name>`; emitters use
+  `emitter:<name>`.
+- **Code routing prefix**: dot-separated, top-prefix names the
+  concern domain. `tightening.nullability.*` for nullability
+  diagnostics; `tightening.uniqueIndex.*` for unique-index;
+  `tightening.foreignKey.*` for FK. The Code is operator-filterable
+  via prefix (`tightening.*` matches all tightening; `tightening.fk.*`
+  matches FK-only).
+- **Severity gating**: `Info` for audit-worthy decisions (e.g.,
+  `KeepNullable(RelaxedUnderEvidence)`); `Warning` for
+  operator-approval-required decisions
+  (e.g., `RequireOperatorApproval(...)`); `Error` reserved for
+  catastrophic adapter/parsing failures (rare in passes).
+- **SsKey field**: every pass-produced diagnostic carries the SsKey
+  of the IR node the decision applies to (attribute / index /
+  reference). Consumers can correlate diagnostics with decisions.
+- **Metadata discipline (load-bearing)**: Metadata carries **only
+  non-structural values** that are not already on the typed Outcome.
+  Typed evidence (null count, row count, budget) is on the Outcome
+  variant; Metadata carries interventionId (string), numeric
+  thresholds duplicated for prose rendering, and operator-visible
+  hints. **No duplication of typed structure** — this is the
+  data-structure-oriented discipline (pillar 1) operationalized at
+  the diagnostic-emission boundary.
+
+**Emission gating (which Outcome variants emit DiagnosticEntry):**
+
+- **`Enforce*` (positive decisions)** — silent by default. The Lineage
+  event carries the decision; the manifest's `Coverage` section
+  carries the count; no per-decision diagnostic emitted (would flood
+  the operator stream). Exception: `EnforceConstraint(ScriptWithNoCheck
+  orphanCount)` for FK emits a `Warning` diagnostic naming the
+  orphan count — the operator needs to know.
+- **`KeepNullable / DoNotEnforce` (negative decisions)** — variant-
+  by-variant; per the "Total decisions, named skips" discipline (per
+  `DECISIONS 2026-05-18 (slice 5.4.γ.evaluators) — Foreign-key
+  diagnostic emission is exhaustive per keep-reason`), every named
+  keep-reason emits an `Info` diagnostic so the operator sees why
+  the decision didn't tighten. The keep-reason name is in the Code
+  prefix; the typed evidence is in the Outcome (consumers correlate
+  via SsKey + intervention).
+- **`RequireOperatorApproval` (contested decisions)** — always emits
+  a `Warning` diagnostic with the conflict evidence in Metadata + a
+  prose Message describing the conflict (e.g., null count vs. budget
+  for nullability).
+
+**Why this is principled.**
+
+1. **Separation of concerns.** Typed Outcomes carry the decision +
+   evidence (machine-consumable); DiagnosticEntries carry the prose
+   narration + Code (operator-facing). Conflating them (as V1 does
+   in `Opportunity`) makes both surfaces harder to evolve —
+   machine consumers must parse prose; operator consumers must
+   handle untyped Evidence arrays.
+
+2. **Filterability.** V2's Code routing prefix enables operators to
+   subscribe to specific concerns (`tightening.nullability.*`
+   shows nullability decisions only). V1's Opportunity carries
+   Category but lacks the dot-prefix routing convention.
+
+3. **Composability across producer surfaces.** The same DiagnosticEntry
+   type is emitted by adapters (parsing failures), passes (decisions),
+   and emitters (filter-parse warnings); consumers handle a single
+   shape. V1's TighteningDiagnostic is tightening-specific; extending
+   to new producer surfaces requires new types.
+
+4. **Pillar 1 compliance.** Metadata is string-keyed but stores only
+   non-structural values; typed structure stays on the Outcome
+   variant. No string-parsing round-trip from Metadata back to typed
+   data.
+
+**Migration impact during cutover.**
+
+V1's Opportunity → V1's PolicyDecisionSummaryFormatter consumes string
+Rationales for bucket classification. V2's V1-compatibility emitter
+(when one is built per matrix row 81 cash-out) maps from V2's typed
+Outcome to V1's Opportunity shape:
+- V2 `EnforceNotNull(PrimaryKey)` → V1 Opportunity with Type=Tighten,
+  Rationale=PrimaryKey, Risk=Low.
+- V2 `RequireOperatorApproval(MandatoryButHasNullsBeyondBudget)` →
+  V1 Opportunity with Type=Remediation, Rationale=Mandatory +
+  DataHasNulls, Risk=High, Disposition=NeedsRemediation.
+
+The dual-track canary asserts (V1 Opportunities ≈ V2 derived-
+Opportunities) modulo named Tolerance variants.
+
+Recorded in `V1_PARITY_MATRIX.md` row 77 as 🟡 DIVERGENCE. Companion
+rows 78 (V1 builder vs V2 writer-monad), 82 (V1 tightening-specific
+diagnostic vs V2 generic), 84 (V1 string-rationale constants sunset)
+carry the related structural deltas.
+
+### Cross-references
+
+- `DECISIONS 2026-05-11 — Strategy-layer codification: empirical
+  verdict after the fourth instance` — refinement 3 (total decisions,
+  named skips) is the parent discipline; the Code routing prefix
+  convention operationalizes it for diagnostics.
+- `DECISIONS 2026-05-13 — Pass return-type codification` — the
+  `Lineage<Diagnostics<DecisionSet>>` shape is the canonical pass
+  output; this entry codifies the contract for the inner Diagnostics
+  surface.
+- `DECISIONS 2026-05-18 (slice 5.4.β.nullability) — Ternary outcome
+  space` — the typed Outcome DUs the DiagnosticEntry contract
+  references.
+- `DECISIONS 2026-05-18 (slice 5.4.γ.evaluators) — Foreign-key
+  diagnostic emission is exhaustive per keep-reason` — the sibling
+  pattern operationalizing emission per keep-reason.
+
+---
+
+## 2026-05-18 (slice 5.4.δ.profiling) — Sampling policy is operator intent; lives in the orchestrator, not in Profile IR
+
+V1's `Osm.Pipeline.Profiling.TableSamplingPolicy` is a per-table
+sampling heuristic — `ShouldSample()` decides whether to sample
+(row count > `RowCountSamplingThreshold`), `GetSampleSize()` returns
+the actual sample size (`min(SampleSize, RowCount, MaxRowsPerTable)`).
+Configuration lives in `SqlProfilerOptions.Sampling`. The heuristic is
+shared by all V1 query builders (NullCountQueryBuilder,
+UniqueCandidateQueryBuilder, ForeignKeyProbeQueryBuilder) — every
+probe consults the policy to determine whether to add `TOP
+(@SampleSize)` to the SQL.
+
+V2 deliberately does NOT carry this policy in `Profile` (the IR).
+V2's `Profile` records carry `ProbeStatus` per probe — a witness of
+what sample size WAS used at acquisition time — but the sampling
+DECISION is not part of the IR.
+
+**Why this is principled (not omission).**
+
+1. **Pillar 9 alignment.** Sampling policy is operator-intent (the
+   operator chooses speed over accuracy on large tables; the choice
+   is per-environment + per-run + per-deployment-window). V2's
+   Profile is data-intent evidence (the observations the operator
+   gets). Coupling the policy to the IR would conflate the two —
+   operators inspecting Profile would see policy decisions
+   embedded in evidence; pass consumers consuming Profile would
+   need to handle a per-row policy field that's irrelevant to
+   their decision logic.
+
+2. **A34 compliance.** Profile is independent of Catalog and Policy
+   (A34). The sampling policy is policy — moving it into Profile
+   would violate the independence; passes that consume Profile
+   would acquire transitive coupling to the sampling-policy
+   surface.
+
+3. **Witness suffices for consumers.** Consumers that need to reason
+   about confidence (e.g., a tightening pass that wants to defer a
+   decision when the sample size was small) read
+   `Profile.Columns.NullCountProbeStatus.SampleSize` — the witness
+   value, not the policy intent. The witness is sufficient for
+   downstream pattern-matching; the policy that produced it is
+   external context.
+
+**Where the policy lives in V2.**
+
+Sampling policy lives in `Projection.Pipeline.Config` (when the
+LiveProfiler cash-out per matrix row 85 lands). The Config carries
+per-environment sampling parameters (threshold, size, max rows per
+table); the LiveProfiler adapter consumes the Config + the Catalog
++ the SqlConnection to produce a Profile. The Profile records the
+witness; the Config is consulted no further by downstream consumers.
+
+**Trade-off explicitly named.**
+
+V2 loses V1's heuristic constraint-checking surface
+(`SqlProfilerOptions` enforces threshold > 0; sample size > 0; max
+rows > sample size; etc.). The cost is borne at the Config layer
+when LiveProfiler ships — Config carries smart-constructor invariants
+on sampling-related fields (per A39). The IR (Profile) stays clean
+of policy.
+
+**Re-open trigger.**
+
+LiveProfiler cash-out (matrix row 85) lands. Sampling heuristic
+ports as a private helper in the adapter (not lifted to Core's IR).
+The helper consumes `Config.Sampling` + `Catalog.tableRowCount` +
+returns `int option` (None = full-scan; Some n = sample n rows).
+Decision point: should the helper be public so Pipeline code can
+inspect "what sample size was chosen for table X"? Today: no —
+the Profile witness is sufficient. Future: surface as a Config
+projection if a debugging/observability consumer demands it.
+
+Recorded in `V1_PARITY_MATRIX.md` row 90 as 🟡 DIVERGENCE.
+
+### Cross-references
+
+- A34 (Profile independent of Catalog and Policy) — the basis for
+  excluding sampling policy from Profile IR.
+- Pillar 9 (`DECISIONS 2026-05-15 (late) — Harvest-dichotomy
+  classification`) — sampling is operator-intent; not data-intent.
+- A39 (aggregate-root smart-constructor invariants) — sampling
+  parameter validation lands on Config.Sampling at Pipeline layer
+  when LiveProfiler ships.
+- Matrix row 85 — LiveProfiler cash-out trigger; co-dependent.
+
+---
+
+## 2026-05-18 (slice 5.5.α.manifest) — V1-differential walk: manifest scope-reduction with V2-extension fields; TableManifestEntry counts over name-lists
+
+Chapter 4.4 close shipped V2's `ManifestEmitter` covering Coverage /
+PredicateCoverage / Unsupported sections + the V2-extension fields
+(registry.digest + emitter.version). The chapter close confirmed
+PARITY on V1-shape modulo three documented divergences:
+predicateCounts JSON shape (covered by chapter 4.4 open Q2);
+PreRemediation deferred per V2_DRIVER §154; registry.digest
+V2-only addition.
+
+This DECISIONS entry codifies two structural rationales surfaced by
+the V1-differential walk in slice 5.5.α.manifest (the post-chapter
+audit comparing V2's emitter against V1's actual `SsdtManifest.cs`
++ `ManifestBuilder.cs` source).
+
+### (1) Manifest scope reduction — Options + PolicySummary deferred
+
+V1's `SsdtManifest` carries 8 top-level fields: Tables, Options,
+PolicySummary, Emission, PreRemediation, Coverage, PredicateCoverage,
+Unsupported. V2's `Manifest` carries 6: Tables, EmitterVersion,
+RegistryDigest, Coverage, PredicateCoverage, Unsupported. The
+**scope reduction** drops Options + PolicySummary; **scope addition**
+adds EmitterVersion + RegistryDigest.
+
+**Rationale for the reduction.** V1's manifest is a UNION of multiple
+semantic layers:
+
+- **Catalog evidence** (Tables, Coverage, PredicateCoverage,
+  Unsupported) — the schema-shape statistics that V2 carries today.
+- **Policy projection** (PolicySummary) — a flattened view of the
+  TighteningPolicy that produced the artifact set.
+- **Operator configuration** (Options) — the operator-supplied
+  config that drove the run (e.g., DataProtectionMode, FailureMode).
+
+V2's manifest is **catalog-only** (per A18 amended — emitters consume
+Catalog × Profile, never Policy). Policy projection + operator
+configuration are NOT manifest concerns in V2's architecture:
+
+- Policy projection: when a consumer needs to inspect what policy
+  produced the artifact set, the answer is the decision-log JSON
+  (per-pass DecisionSet output) — that surface IS the policy
+  projection; the manifest doesn't need to duplicate it.
+- Operator configuration: when a consumer needs to inspect what
+  config drove the run, the answer is the config JSON itself — V2's
+  CLI surfaces `--config <path>` as the canonical input; reproducing
+  the config inside the manifest would duplicate it.
+
+The reduction is **principled separation of concerns**, not parity
+loss. **Re-open trigger for Options + PolicySummary fields**: a V2
+consumer demands manifest-side replication of these surfaces. Likely
+shape: optional `Options : OptionsManifest option` and `Policy :
+PolicyManifest option` fields on the V2 `Manifest` record; populated
+by consumers that demand them; absent by default (preserving the
+catalog-only invariant for the default emission path).
+
+**Rationale for the addition.** V2 adds two fields V1 lacks:
+
+- **EmitterVersion**: a versioning stamp for the manifest schema
+  itself. Operators inspecting a manifest can determine which
+  version of V2 produced it. Critical for cutover diagnostics when
+  multiple V2 versions emit during a transition window.
+- **RegistryDigest**: a SHA256 of the RegisteredTransforms registry
+  metadata (chapter A.4.7' slice ζ). Operators can verify the
+  registry didn't drift between emission + verification.
+
+Both additions are V2-EXTENSION; neither has a V1 analog because V1's
+manifest is single-version + has no transform-registry concept.
+
+### (2) TableManifestEntry — counts over name-lists
+
+V1's `TableManifestEntry` carries Module, Schema, Table, TableFile,
+**Indexes** (list<string>), **ForeignKeys** (list<string>),
+**IncludesExtendedProperties** (bool). V2 carries Module, Schema,
+Table, TableFile, **IndexCount** (int), **ForeignKeyCount** (int).
+
+**Rationale.** V1's name lists in the manifest are **metadata
+redundant with the per-table DDL files**. An operator inspecting
+`TableSchema.dbo.Customer.sql` already sees every index + FK
+defined in it. The name lists in the manifest exist as a parallel
+inventory — useful for cross-checking, but not load-bearing for
+either operator workflow or downstream consumer logic.
+
+V2's `IndexCount` + `ForeignKeyCount` give **the same operator-
+visible information** (how many of each per table) without
+duplicating the names. Cash-out for the rare consumer that wants
+name-level granularity: parse the per-table DDL file (the source
+of truth). The manifest is the **summary**; the DDL files are the
+**detail**.
+
+**IncludesExtendedProperties bool**: V2 drops this entirely. V2's
+extended-property emission is per chapter 4.1.A slice 8 — every
+table emits its extended properties as part of the per-table DDL;
+the bool flag in V1's manifest pre-dates V2's per-kind multi-level
+extended-property emission. The flag was V1-era; V2's emission
+machinery makes the bool always-true for any table with extended
+properties (and trivially-false otherwise), so the bool carries no
+information not already in the DDL.
+
+**Operationally transparent.** Downstream consumers reading V2's
+manifest get cardinality (sufficient for coverage metrics, summary
+reports, dashboarding); consumers that need name-level detail parse
+the DDL (the canonical source). No information loss; structural
+simplification.
+
+**Re-open trigger.** A consumer surface (manifest-driven dashboard
+or operator-review report) demands index/FK names in the manifest
+without parsing the per-table DDL. Cash-out: extend
+`TableManifestEntry` with `IndexNames : Name list` + `ForeignKeyNames
+: Name list`. Optional fields; defaulted to empty when the consumer
+doesn't need them.
+
+### Cross-references
+
+- Chapter 4.4 close DECISIONS — established the manifest's V1-shape
+  with documented divergences; this entry is the post-chapter
+  walk's substantive findings.
+- A18 amended — Π consumes Catalog × Profile, never Policy; the
+  basis for V2's catalog-only manifest scope.
+- Matrix row 83 + V2_DRIVER §154 — RemediationEmitter chapter 5+
+  deferral; PreRemediation field remains empty until that ships.
+- Matrix row 41 + `DECISIONS 2026-05-17 (slice 5.8.α)` — V2's
+  `compare` verb concept-harvest; future consumer that might consume
+  Options/PolicySummary manifest fields.
+
+---
+
+## 2026-05-18 (slice 5.7.α.cli) — V2 CLI deliberately minimal: production-deferred posture; reopen per verb on operator demand
+
+V1's `Osm.Cli` cluster ships **12 operator-facing verbs** (plus a
+nested `policy explain` subcommand) across ~5.5K LOC, wrapped in a
+sophisticated System.CommandLine-based option-binding infrastructure:
+7 specialized binders + `VerbOptionRegistry` + `VerbOptionsBuilder` +
+`IProgressRunner` (Spectre.Console TUI) + `CommandConsole`
+abstraction + `OpenReportVerbExtension` (cross-platform report
+launching).
+
+V2's `Projection.Cli` ships **4 verbs** in ~306 LOC: `emit`
+(with `--config` / `--skeleton-only` variants), `deploy`, `canary`,
+`--help`. Raw `argv` pattern matching; no option binders; no TUI;
+no centralized console abstraction; no report launching.
+
+This is a **deliberate posture**, not parity regression.
+
+### The principle
+
+V2's CLI surface area is the **minimum needed to validate V2-driver
+mode**. The 4 verbs cover:
+
+- **`emit`** — the SSDT projection (V2's primary deliverable; the
+  thing V2 produces that V1 also produces; canary verifies they
+  match modulo Tolerance).
+- **`deploy`** — applies the emitted artifacts to a target database.
+- **`canary`** — runs the PhysicalSchema round-trip diff (the
+  cutover-fidelity gate per the canary load-bearing discipline).
+- **`--help`** — the orientation surface.
+
+These four verbs are sufficient to:
+
+- Run the per-commit + per-Stop-hook canary gate (per CLAUDE.md
+  operating disciplines — "Canary as load-bearing forcing function").
+- Run the dual-track cutover-window emission (per R6 split-brain
+  governance — V2 emits-but-doesn't-ship while V1 owns the production
+  write path).
+- Run the cutover deployment when R6 transitions to V2-driver.
+
+**Every additional V1 verb is operator UX, not cutover capability.**
+V2's posture: ship the cutover-critical surface; defer everything
+else until operator demand surfaces.
+
+### What this looks like in the matrix
+
+The 5.7.α.cli slice classifies the 8 V1 verbs V2 doesn't carry as
+🟠 NOT-MAPPED — each with:
+
+- **Cash-out shape**: the exact CLI surface (verb name, arguments,
+  output shape) + the LOC estimate + the F# implementation pattern
+  (typically a thin wrapper over an existing V2 capability).
+- **Dependencies**: which V2 capabilities must ship first (e.g.,
+  `extract-model` depends on production wiring per rows 32-36;
+  `profile` depends on LiveProfiler per row 85; `analyze` depends
+  on SummaryFormatter per row 81).
+- **Trigger**: the concrete operator workflow that demands the verb.
+  Not "we'll get to it" — a named workflow (e.g., "operators iterate
+  on tightening policy before emission" for `analyze`).
+
+The 3 cross-cutting infrastructure concerns (option binders,
+progress TUI, report launching) get the same treatment.
+
+### Why this is structurally sound
+
+1. **Cherry-pick safety preserved.** V2's minimal CLI means fewer
+   adapter surfaces; fewer adapter surfaces mean fewer V1-version
+   coupling points. V2's CLI is self-contained F# — no V1 trunk
+   references; cherry-pick-clean.
+
+2. **Per-verb cash-out is incremental.** Each NOT-MAPPED row is a
+   bounded slice (typically ~30-300 LOC); operator demand surfaces
+   the trigger; the verb lifts as a clean slice. The matrix's
+   append-only narrative compounds — each verb that ships flips a
+   row from 🟠 to 🟢 with an amendment.
+
+3. **Config-driven defaults are stronger than CLI-driven defaults.**
+   V1's CLI carries cross-verb config via `CliGlobalOptions`
+   dependency-injection. V2 puts cross-verb config in the unified
+   config JSON (`osm emit --config <path>`); CLI flags are
+   per-invocation overrides only. The config IS the operator's
+   intent, persisted; the CLI flag is the per-invocation deviation.
+   Operators iterate on config; CLI flags handle exceptions.
+
+4. **Pillar 1 (data-structure-oriented) extends to CLI.** V1's
+   `CommandConsole` abstraction is centralized formatting (testable
+   but mockable); V2's per-line `Console.Error.WriteLine` is
+   structured per-line writes (typed list flows in; per-line writes
+   flow out; no intermediate concatenation; pure functional I/O).
+   V2's approach is **more testable** because output is deterministic
+   (no formatting class to mock).
+
+### Re-open triggers (per-verb)
+
+The 8 NOT-MAPPED verbs and 3 cross-cutting concerns have specific
+triggers:
+
+| Verb / concern | Trigger | Estimated LOC |
+|---|---|---|
+| `osm extract` | Chapter 5.1.β production wiring lands | 50 |
+| `osm profile` | Row 85 LiveProfiler lands | 30 |
+| `osm analyze` | Operator workflow demands pre-emission iteration | 300 |
+| `osm policy explain` | Operator demands CLI-based policy drill-down | 300 |
+| `osm uat-users` | Chapter 4.2 + cutover enters UAT phase | 1500 |
+| `osm verify-data` | Chapter 4.3+ post-deploy verification | 200 |
+| `--open-report` flag | Operator demands integrated report-launching | 150 |
+| `compare` verb | Operator demands ad-hoc schema-diff (matrix row 41) | 500 |
+| Option-binder infrastructure | CLI expands beyond 4 verbs with composable axes | 500 |
+| Global options | Operator demands `--log-level` / `--verbose` / `--quiet` | 50 |
+| Progress TUI | Chapter 5.1 production CLI wiring + operator feedback | 200 |
+
+Total estimated cash-out across all NOT-MAPPED + DIVERGENCE rows:
+~3780 LOC across 10 slices. Comparable to V1's ~5.5K LOC CLI; V2's
+slice-at-a-time discipline lets each verb ship when its operator
+demand surfaces, not in one bulk port.
+
+### Cross-references
+
+- A36 (chapter-3.1; bulk-vs-incremental is realization-layer
+  policy) — basis for `full-export` decomposition (matrix row 106).
+- `DECISIONS 2026-05-23 — Iterator-logging is a first-class outcome
+  over time` — basis for progress-TUI cash-out via Bench (matrix
+  row 118).
+- `DECISIONS 2026-05-17 (slice 5.8.α) — DMM lens machinery sunset;
+  schema-diff concept harvested as future CLI verb` — basis for
+  `compare` verb reservation (matrix row 109 sunset + row 41
+  concept-harvest).
+- Matrix row 81 (slice 5.4.γ.opportunities) — SummaryFormatter
+  consumer; co-dependent with `analyze` + `policy explain` verbs.
+- R6 split-brain governance (DECISIONS 2026-05-22) — basis for
+  "V2 owns the cutover-critical surface; V1 owns production CLI
+  during cutover window" allocation.
+
+---
+
+## 2026-05-18 (slice 5.3.α.smo) — Schema emission via ScriptDom typed-AST over SMO scripter
+
+V1's schema emission machinery (`Osm.Smo/` cluster, 44 files /
+~7109 LOC) is built on `Microsoft.SqlServer.Management.Smo` — the
+SMO scripter library. V1 constructs mutable `Table` / `Column` /
+`Index` / `ForeignKey` objects, configures their properties, then
+calls `Table.Script()` to render the DDL text. The pattern works
+but inherits SMO's well-known liabilities: inconsistent script
+output (whitespace, option ordering), reverse-engineered grammar
+(no canonical specification), per-version regressions.
+
+V2 chose `Microsoft.SqlServer.TransactSql.ScriptDom` instead — the
+typed-AST library that ships with the SQL Server SDK as the
+canonical grammar. V2's emission constructs typed `CreateTableStatement`
+/ `CreateIndexStatement` / `ExecuteStatement` values via
+`ScriptDomBuild.buildCreateTable` / `buildCreateIndex` /
+`buildSetExtendedProperty`, then delegates rendering to
+`Sql160ScriptGenerator` with pinned options (canonical formatting:
+square-bracket quoting, semicolon terminators, capitalized keywords).
+
+**Why ScriptDom over SMO.**
+
+1. **Canonical grammar.** ScriptDom IS the grammar — it's the parse
+   tree the SQL Server engine itself uses. SMO is a reverse-engineered
+   library that produces text resembling DDL; ScriptDom produces text
+   that parses cleanly back into ScriptDom.
+
+2. **Determinism.** ScriptDom's `Sql160ScriptGenerator` with pinned
+   options produces byte-deterministic output. SMO's `Script()` is
+   non-deterministic across SMO versions (option ordering drifts).
+   Per T1 (byte-determinism), V2 needs canonical output.
+
+3. **Pillar 7 (gold-standard library) + text-builder-as-first-instinct.**
+   `DECISIONS 2026-05-10 — Text-builder-as-first-instinct discipline`
+   names ScriptDom as the obligation for T-SQL emission. SMO violates
+   the discipline (the script output is text-only; consumers parse it
+   to manipulate).
+
+4. **Test surface.** ScriptDom typed AST is testable via property
+   tests (round-trip: parse-emit-parse-equal). SMO's text output
+   requires regex-based assertions.
+
+5. **Future composability.** Adding new DDL forms (sequences,
+   temporal tables, partition functions) is a typed-AST extension
+   in ScriptDom (add a new builder function); in SMO, it requires
+   SMO library cooperation.
+
+**What V2 inherits structurally.**
+
+V2's emission preserves V1's logical decomposition (per-table
+emission; per-index emission; per-extended-property emission) but
+implements via ScriptDom. The shape parity is high — slice 5.3.α
+audit confirms:
+
+- CREATE TABLE: 95% parity (columns, PK logic, FK constraints,
+  NOCHECK routing). Deferred: column defaults / CHECK constraints /
+  computed columns / single-column PK inline optimization (slice ζ
+  candidates).
+- CREATE INDEX: 70% parity (columns, sort, INCLUDE, WHERE clause,
+  lock options). Deferred: IgnoreDupKey / DataCompression /
+  FileGroup/PartitionScheme (slice ζ candidates).
+- Extended properties: 100% parity (same `sp_addextendedproperty`
+  surface; typed AST eliminates hand-rolled escaping).
+- Triggers: NOT-MAPPED — V2's Trigger IR ships; emission deferred
+  to chapter 4.2 (coordinated with User FK reflow) or chapter 5+.
+
+**Acceptance.**
+
+The canary's PhysicalSchema round-trip diff is the load-bearing
+fidelity gate. R6 split-brain governance gates V2-driver per-
+environment flip on N=10 consecutive green canary runs + operator
+sign-off. ScriptDom emission produces the V2 side of the diff;
+the diff asserts source-DDL ≈ V2-emitted-DDL modulo named
+Tolerance variants.
+
+**Re-open trigger.**
+
+None expected — ScriptDom is the canonical grammar; switching back
+to SMO would violate text-builder-as-first-instinct + pillar 7.
+Future emission extensions (partition functions, sequences,
+temporal tables) extend the ScriptDom builders.
+
+Recorded in `V1_PARITY_MATRIX.md` row 120 as 🟡 DIVERGENCE.
+Companion rows 121-130 carry the per-axis parity confirmations +
+deferrals.
+
+### Cross-references
+
+- `DECISIONS 2026-05-10 — Text-builder-as-first-instinct discipline`
+  — the parent discipline this entry instantiates for schema
+  emission.
+- `DECISIONS 2026-05-10 — Built-in obligation` — ScriptDom is
+  named as the canonical T-SQL emission library.
+- Chapter 4.1.A close arc — the canonical V2 emission migration
+  from SMO to ScriptDom.
+- T1 (byte-determinism) — load-bearing for V2's canonical output.
+- Pillar 7 (gold-standard library) — ScriptDom satisfies; SMO does
+  not.
+
+---
+
+## 2026-05-18 (slice 5.6.α.orchestration) — Registry-driven composition over imperative step-chaining
+
+V1's `BuildSsdtPipeline.HandleAsync` is an imperative step-chained
+orchestrator: 12 sequential `.BindAsync()` calls; each step is a
+named field with DI-injected `IBuildSsdtStep<TState, TNextState>`;
+ordering is source-coupled (changing the sequence requires editing
+the source file + adjusting type chains).
+
+V2 inverts the pattern. `RegisteredTransforms.allChainSteps` is a
+list of `PassChainAdapter` entries (12 entries: 6 Catalog-rewriting
+passes + 6 decision-set-producing passes); `Compose.project`
+consumes the list via fold-and-bind, threading `ComposeState`
+through the chain. The pipeline IS the registry; the registry IS
+the pipeline.
+
+**Why this is principled (not merely cosmetic).**
+
+1. **A41 candidate — Registry totality + bidirectional property
+   tests.** The registry enumerates every `OperatorIntent`
+   transformation; skeleton-purity property test asserts `Compose
+   .runWithSkeleton` emits zero `OperatorIntent` events;
+   overlay-exercise property test asserts every registered
+   `OperatorIntent` fires in the canary. Together they make
+   pillar 9 (data-intent / operator-intent separation) a
+   type-witnessed bidirectional contract, not a discipline.
+
+2. **Decoupled axes.** V1's `IBuildSsdtStep<TState, TNextState>`
+   couples identity (DI field name), ordering (source position),
+   and implementation (the step class). V2 decouples: identity is
+   metadata in `TransformRegistry` (`Sites`, `StageBinding`); ordering
+   is list position in `allChainSteps`; implementation is the
+   closure in `Apply`. Reordering, adding, or removing passes is a
+   list edit + property-test reassessment, not a source-coupled
+   refactor.
+
+3. **Manifest applied-transforms field.** Per matrix row 95 +
+   chapter 4.4 close, V2's manifest carries `applied-transforms`
+   per artifact — the registry can enumerate which passes touched
+   which Kind. V1's pipeline has no such surface (steps run; their
+   identity is implicit). The registry IS what makes this surface
+   possible.
+
+4. **Skeleton vs full projection.** V2's `RegisteredTransforms
+   .skeletonChainSteps` filters the registry to only `DataIntent`
+   passes — the skeleton baseline. `Compose.runSkeleton` projects
+   the skeleton; consumers compare it against full projection to
+   identify operator-intent surfaces. V1 has no equivalent — every
+   step runs; skeleton is not first-class.
+
+5. **CLI surface.** V2's `osm emit --skeleton-only` (chapter A.4.7'
+   slice ζ; shipped) is operationally trivial because the registry
+   filter is in place. V1 has no equivalent CLI verb because the
+   skeleton concept is not first-class.
+
+**The architecture comparison.**
+
+| Axis | V1 (imperative step-chaining) | V2 (registry-driven composition) |
+|---|---|---|
+| Pipeline definition | Source code (HandleAsync method) | Data (allChainSteps list) |
+| Step identity | DI field name | Metadata field on RegisteredTransform |
+| Ordering | Source position | List position |
+| Adding a step | Edit source + adjust type chains | Append to allChainSteps |
+| Removing a step | Edit source + collapse type chains | Remove from allChainSteps |
+| Skeleton variant | Not first-class | `skeletonChainSteps` filter |
+| Applied-transforms | Implicit (no surface) | Manifest field per artifact |
+| Per-pass observability | Centralized PipelineExecutionLog | Per-pass Lineage + Diagnostics |
+| Testing | Integration test of full pipeline | Per-pass property tests + chain assertion |
+
+**State threading.**
+
+V1 threads state via per-step record types (`PipelineInitialized` →
+`BootstrapCompleted` → ... — 18+ intermediate record types). V2
+accumulates evidence in one `ComposeState` record (7 fields: Catalog
++ TopologicalOrder + 4 decision-sets + UserRemap). V2's fixed-shape
+state + smart-constructor invariants (A39) eliminates the per-step
+type explosion.
+
+**Trade-off explicitly named.**
+
+V1's per-step typing enforces "each step consumes exactly what the
+prior step produced" at compile time. V2's fixed-shape `ComposeState`
+relies on smart constructors to enforce per-field invariants
+(`emptyDecisionSet` for unfilled fields). The trade-off is type
+witnessing (V1 stronger; V2 looser at the state level but stronger
+at the pass-output level via Outcome DUs).
+
+**Re-open trigger.**
+
+None expected. The registry pattern is load-bearing for pillar 9
++ A41 candidate; reverting would require a substantive amendment to
+both. The registry is the cross-cutting structural-evidence
+concern sibling to Lineage / Diagnostics / Bench.
+
+Recorded in `V1_PARITY_MATRIX.md` row 131 as 🟡 DIVERGENCE.
+Companion rows 132-147 carry the per-step audit (3 SUNSET, 5
+NOT-MAPPED, 8 PARITY, 1 V2-EXTENSION).
+
+### Cross-references
+
+- `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy
+  classification` — the parent discipline this entry instantiates
+  for pipeline composition.
+- Chapter A.4.7' axes 1-3 — the canonical V2 registry shipping
+  arc.
+- A41 candidate (registry totality + bidirectional property tests)
+  — formal axiom shape; scheduled at chapter close per AXIOMS
+  scaffolding discipline.
+- `DECISIONS 2026-05-18 (slice 5.4.γ.opportunities) — Per-pass
+  DiagnosticEntry contract` — the diagnostic surface registry
+  passes consume.
+
+---
+
