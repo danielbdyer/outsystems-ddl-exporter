@@ -13046,3 +13046,155 @@ silent-skip).
 
 ---
 
+## 2026-05-18 (slice 5.4.γ.opportunities) — Per-pass DiagnosticEntry contract: typed outcomes in Lineage; prose narration in Diagnostics
+
+V1's `Osm.Validation/Tightening/Opportunity.cs` (~196 LOC) carries a
+**domain-specific opportunity record** with tightening-coupled fields:
+Type + Title + Summary + Risk + Disposition + Category + Evidence
+(opaque array) + Rationales (string array) + EvidenceSummary +
+Columns. Per-decision diagnostic information is bundled with risk
+classification, disposition routing, and remediation hints in a
+single shape.
+
+V2 distributes the same information across **two structurally distinct
+surfaces**:
+
+1. **Lineage events** carry typed Outcome DUs (`NullabilityOutcome` /
+   `UniqueIndexOutcome` / `ForeignKeyOutcome`) with structurally
+   embedded evidence (null count, row count, budget, orphan count,
+   target SsKey). Risk classification + disposition routing are pure
+   projections from the Outcome variant (per slice 5.4.γ.evaluators
+   row 76 — `RiskClassification.riskOf` emitter-side function).
+
+2. **DiagnosticEntry** (generic, in `Projection.Core/Diagnostics.fs`)
+   carries operator-visible prose narration: Source (producer name) +
+   Severity + Code (routing prefix) + Message (prose) + SsKey (typed
+   identity) + Metadata (`Map<string, string>` for non-structural
+   values).
+
+The DiagnosticEntry contract per pass is:
+
+```fsharp
+type DiagnosticEntry = {
+    Source   : string         // "pass:nullability", "pass:uniqueIndex", "pass:foreignKey"
+    Severity : Severity       // Info | Warning | Error
+    Code     : string         // "tightening.nullability.relaxedUnderEvidence", etc.
+    Message  : string         // prose; deterministic projection from Outcome
+    SsKey    : SsKey          // points to the IR node (Attribute / Index / Reference)
+    Metadata : Map<string, string>  // non-structural values only
+}
+```
+
+**Per-pass conventions (codified):**
+
+- **Source field**: `pass:<passName>` (lower-camel) for all pass-
+  produced diagnostics. Adapters use `adapter:<name>`; emitters use
+  `emitter:<name>`.
+- **Code routing prefix**: dot-separated, top-prefix names the
+  concern domain. `tightening.nullability.*` for nullability
+  diagnostics; `tightening.uniqueIndex.*` for unique-index;
+  `tightening.foreignKey.*` for FK. The Code is operator-filterable
+  via prefix (`tightening.*` matches all tightening; `tightening.fk.*`
+  matches FK-only).
+- **Severity gating**: `Info` for audit-worthy decisions (e.g.,
+  `KeepNullable(RelaxedUnderEvidence)`); `Warning` for
+  operator-approval-required decisions
+  (e.g., `RequireOperatorApproval(...)`); `Error` reserved for
+  catastrophic adapter/parsing failures (rare in passes).
+- **SsKey field**: every pass-produced diagnostic carries the SsKey
+  of the IR node the decision applies to (attribute / index /
+  reference). Consumers can correlate diagnostics with decisions.
+- **Metadata discipline (load-bearing)**: Metadata carries **only
+  non-structural values** that are not already on the typed Outcome.
+  Typed evidence (null count, row count, budget) is on the Outcome
+  variant; Metadata carries interventionId (string), numeric
+  thresholds duplicated for prose rendering, and operator-visible
+  hints. **No duplication of typed structure** — this is the
+  data-structure-oriented discipline (pillar 1) operationalized at
+  the diagnostic-emission boundary.
+
+**Emission gating (which Outcome variants emit DiagnosticEntry):**
+
+- **`Enforce*` (positive decisions)** — silent by default. The Lineage
+  event carries the decision; the manifest's `Coverage` section
+  carries the count; no per-decision diagnostic emitted (would flood
+  the operator stream). Exception: `EnforceConstraint(ScriptWithNoCheck
+  orphanCount)` for FK emits a `Warning` diagnostic naming the
+  orphan count — the operator needs to know.
+- **`KeepNullable / DoNotEnforce` (negative decisions)** — variant-
+  by-variant; per the "Total decisions, named skips" discipline (per
+  `DECISIONS 2026-05-18 (slice 5.4.γ.evaluators) — Foreign-key
+  diagnostic emission is exhaustive per keep-reason`), every named
+  keep-reason emits an `Info` diagnostic so the operator sees why
+  the decision didn't tighten. The keep-reason name is in the Code
+  prefix; the typed evidence is in the Outcome (consumers correlate
+  via SsKey + intervention).
+- **`RequireOperatorApproval` (contested decisions)** — always emits
+  a `Warning` diagnostic with the conflict evidence in Metadata + a
+  prose Message describing the conflict (e.g., null count vs. budget
+  for nullability).
+
+**Why this is principled.**
+
+1. **Separation of concerns.** Typed Outcomes carry the decision +
+   evidence (machine-consumable); DiagnosticEntries carry the prose
+   narration + Code (operator-facing). Conflating them (as V1 does
+   in `Opportunity`) makes both surfaces harder to evolve —
+   machine consumers must parse prose; operator consumers must
+   handle untyped Evidence arrays.
+
+2. **Filterability.** V2's Code routing prefix enables operators to
+   subscribe to specific concerns (`tightening.nullability.*`
+   shows nullability decisions only). V1's Opportunity carries
+   Category but lacks the dot-prefix routing convention.
+
+3. **Composability across producer surfaces.** The same DiagnosticEntry
+   type is emitted by adapters (parsing failures), passes (decisions),
+   and emitters (filter-parse warnings); consumers handle a single
+   shape. V1's TighteningDiagnostic is tightening-specific; extending
+   to new producer surfaces requires new types.
+
+4. **Pillar 1 compliance.** Metadata is string-keyed but stores only
+   non-structural values; typed structure stays on the Outcome
+   variant. No string-parsing round-trip from Metadata back to typed
+   data.
+
+**Migration impact during cutover.**
+
+V1's Opportunity → V1's PolicyDecisionSummaryFormatter consumes string
+Rationales for bucket classification. V2's V1-compatibility emitter
+(when one is built per matrix row 81 cash-out) maps from V2's typed
+Outcome to V1's Opportunity shape:
+- V2 `EnforceNotNull(PrimaryKey)` → V1 Opportunity with Type=Tighten,
+  Rationale=PrimaryKey, Risk=Low.
+- V2 `RequireOperatorApproval(MandatoryButHasNullsBeyondBudget)` →
+  V1 Opportunity with Type=Remediation, Rationale=Mandatory +
+  DataHasNulls, Risk=High, Disposition=NeedsRemediation.
+
+The dual-track canary asserts (V1 Opportunities ≈ V2 derived-
+Opportunities) modulo named Tolerance variants.
+
+Recorded in `V1_PARITY_MATRIX.md` row 77 as 🟡 DIVERGENCE. Companion
+rows 78 (V1 builder vs V2 writer-monad), 82 (V1 tightening-specific
+diagnostic vs V2 generic), 84 (V1 string-rationale constants sunset)
+carry the related structural deltas.
+
+### Cross-references
+
+- `DECISIONS 2026-05-11 — Strategy-layer codification: empirical
+  verdict after the fourth instance` — refinement 3 (total decisions,
+  named skips) is the parent discipline; the Code routing prefix
+  convention operationalizes it for diagnostics.
+- `DECISIONS 2026-05-13 — Pass return-type codification` — the
+  `Lineage<Diagnostics<DecisionSet>>` shape is the canonical pass
+  output; this entry codifies the contract for the inner Diagnostics
+  surface.
+- `DECISIONS 2026-05-18 (slice 5.4.β.nullability) — Ternary outcome
+  space` — the typed Outcome DUs the DiagnosticEntry contract
+  references.
+- `DECISIONS 2026-05-18 (slice 5.4.γ.evaluators) — Foreign-key
+  diagnostic emission is exhaustive per keep-reason` — the sibling
+  pattern operationalizing emission per keep-reason.
+
+---
+

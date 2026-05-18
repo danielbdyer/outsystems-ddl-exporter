@@ -97,6 +97,7 @@
     <Compile Include="OssysDomainMiscParityTests.fs" />
     <Compile Include="OssysTighteningNullabilityParityTests.fs" />
     <Compile Include="OssysTighteningEvaluatorsParityTests.fs" />
+    <Compile Include="OssysTighteningOpportunitiesParityTests.fs" />
     <Compile Include="IsActiveCarryThroughTests.fs" />
     <Compile Include="IRFidelityLiftTests.fs" />
     <Compile Include="NoSilentDropTests.fs" />
