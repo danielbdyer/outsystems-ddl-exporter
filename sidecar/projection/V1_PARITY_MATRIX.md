@@ -1163,6 +1163,128 @@ Reference|Index|IndexColumn|IndexColumns)` remain in source.
 
 ---
 
+### Rows 12 + 53 + 55 + 58 + 59 + 182 — 2026-05-18 (verification depth upgraded by slice 5.13.schema-axis-property-sweep)
+
+**Original classifications (slices 5.13.column-features-emit, 5.13.fk-features-emit, 5.13.index-features-emit, all 2026-05-18):**
+All six rows shipped at 🟢 PARITY with example-based canary tests
+(`SsdtDdlEmitterTests.fs` slice-tagged tests; one fixture variant value
+per axis). The classification establishes structural-type-level
+enforcement (closed-DU + record-field extensions through ScriptDom).
+
+**Verification depth upgraded (slice 5.13.schema-axis-property-sweep,
+2026-05-18):** 🟢 PARITY (status unchanged) — verification depth lifts
+from example-based to property-based for every axis the 2026-05-18
+emit-features arc shipped. Closes the SCHEMA-axis V2-driver gate's
+"per-axis property tests" requirement per `V2_DRIVER.md` per-axis stakes
+table (verification depth: Highest).
+
+**Rationale.** V2_DRIVER's bar for SCHEMA-axis V2-driver mode is
+*structural-type-level enforcement plus per-axis property tests*. The
+shipped 2026-05-18 arc satisfied the structural-type half; canary
+coverage was example-based (one fixture per axis). This slice adds 21
+FsCheck property tests (`SsdtDdlEmitterPropertyTests.fs`, ~430 LOC)
+across the seven shipped axes — three pinned properties per axis: T1
+byte-determinism (P1), Modules-list permutation invariance (P2), and
+V1-emission-clause coverage across the variant space (P3). The (P1 +
+P2) pair codifies the algebraic surface that operator-reality canary
+cannot exercise (PhysicalSchema-diff asserts deployed shape, not
+byte-determinism of SQL text). The (P3) pair amplifies the canary
+tests' single-variant coverage across the full variant space (e.g.,
+every `ReferenceAction option` value for OnUpdate; both Boolean values
+for IsConstraintTrusted / IsDisabled / IgnoreDuplicateKey; every
+`DataCompressionLevel option` value).
+
+**Coverage axes (21 properties × 7 axes):**
+
+| Axis | Matrix row(s) | P1 (T1) | P2 (permutation) | P3 (V1 shape) |
+|---|---|---|---|---|
+| DEFAULT (column) | 53 + 182 | ✓ | ✓ | ✓ |
+| CHECK (table-level) | 12 + 182 | ✓ | ✓ | ✓ |
+| OnUpdate (FK) | 58 | ✓ | ✓ | ✓ |
+| IsConstraintTrusted (FK NOCHECK) | 59 | ✓ | ✓ | ✓ |
+| IGNORE_DUP_KEY (index) | 55 | ✓ | ✓ | ✓ |
+| DATA_COMPRESSION (single-value) | 55 + 56 (partial; partition-scheme deferred) | ✓ | ✓ | ✓ |
+| IsDisabled (index) | 55 | ✓ | ✓ | ✓ |
+
+**Structural finding surfaced by P3 (recorded inline):** the DEFAULT
+text-literal generator initially included `""` (empty raw); this
+falsified P3 immediately. Tracing the failure to `SqlLiteral.ofRaw`
+(`SqlLiteral.fs:75-76`) confirmed V2's IR convention: empty raw is
+the NULL sentinel (renders as `DEFAULT NULL`, not `DEFAULT N''`).
+The property correctly surfaced the convention; the generator was
+narrowed to non-empty text strings with a comment naming the
+NULL-as-default axis as a structurally-distinct surface (covered by
+V2's "no DefaultValue → no DEFAULT clause" semantic; out of the
+2026-05-18 arc's scope). Pillar-1 confirmation: the typed IR ↔ emitter
+seam holds — the property test catches a real semantic invariant the
+example-based canary missed.
+
+**Coverage tests now passing (21 new, all under
+`Projection.Tests.SsdtDdlEmitterPropertyTests`):**
+- `5.13.schema-axis-property-sweep: DEFAULT (P1) T1 byte-determinism`
+- `5.13.schema-axis-property-sweep: DEFAULT (P2) permutation invariance on Modules`
+- `5.13.schema-axis-property-sweep: DEFAULT (P3) V1 emission clause surfaces`
+- `5.13.schema-axis-property-sweep: CHECK (P1) T1 byte-determinism`
+- `5.13.schema-axis-property-sweep: CHECK (P2) permutation invariance on Modules`
+- `5.13.schema-axis-property-sweep: CHECK (P3) named constraint surfaces`
+- `5.13.schema-axis-property-sweep: OnUpdate (P1) T1 byte-determinism`
+- `5.13.schema-axis-property-sweep: OnUpdate (P2) permutation invariance on Modules`
+- `5.13.schema-axis-property-sweep: OnUpdate (P3) ON UPDATE clause surfaces (or absent for None)`
+- `5.13.schema-axis-property-sweep: NOCHECK (P1) T1 byte-determinism`
+- `5.13.schema-axis-property-sweep: NOCHECK (P2) permutation invariance on Modules`
+- `5.13.schema-axis-property-sweep: NOCHECK (P3) ALTER WITH NOCHECK present iff not trusted`
+- `5.13.schema-axis-property-sweep: IGNORE_DUP_KEY (P1) T1 byte-determinism`
+- `5.13.schema-axis-property-sweep: IGNORE_DUP_KEY (P2) permutation invariance on Modules`
+- `5.13.schema-axis-property-sweep: IGNORE_DUP_KEY (P3) clause present iff true`
+- `5.13.schema-axis-property-sweep: DATA_COMPRESSION (P1) T1 byte-determinism`
+- `5.13.schema-axis-property-sweep: DATA_COMPRESSION (P2) permutation invariance on Modules`
+- `5.13.schema-axis-property-sweep: DATA_COMPRESSION (P3) clause surfaces (or absent for None)`
+- `5.13.schema-axis-property-sweep: IsDisabled (P1) T1 byte-determinism`
+- `5.13.schema-axis-property-sweep: IsDisabled (P2) permutation invariance on Modules`
+- `5.13.schema-axis-property-sweep: IsDisabled (P3) ALTER INDEX DISABLE present iff true`
+
+**Deferred (named with explicit triggers):**
+- **Row 56 partition-scheme axis** — P-suite scope is single-value
+  `DataCompressionLevel` (None / Row / Page); partition-scheme +
+  per-partition-compression remains the only SCHEMA-axis residual
+  needing non-trivial IR design (closed-DU `DataSpace = Filegroup |
+  PartitionScheme of name × columns` per row 56 cash-out shape).
+  Trigger: partitioned-index fixture surfaces in operator-reality
+  canary.
+- **NULL-as-default axis** — `Attribute.DefaultValue = None` is V2's
+  "no DEFAULT clause" semantic, structurally distinct from a
+  `Some NullLit` default. The current emit-features arc does not
+  exercise NullLit defaults; the deferral is consistent with
+  IR-grows-under-evidence (no V2 consumer produces NullLit defaults
+  today).
+- **Permutation depth beyond Modules-level** — Kinds-within-Module
+  shuffle and Indexes-within-Kind shuffle (the emitter sorts indexes
+  by SsKey per `SsdtDdlEmitter.fs:306`) are not exercised in this
+  pass. Both are covered structurally by P2's "shuffled traversal is
+  byte-identical" claim when the Modules-level seam is the source of
+  ordering nondeterminism, but a richer permutation invariance suite
+  is a natural follow-on when the next sibling-emitter property-test
+  sweep lands.
+
+**Cross-references.**
+- `DECISIONS 2026-05-10 — V2-driver as destination KPI` (the KPI).
+- `V2_DRIVER.md` per-axis stakes table — SCHEMA-axis verification
+  depth = Highest; "structural-type-level enforcement plus per-axis
+  property tests."
+- `HANDOFF 2026-05-18` "Highest-leverage next moves" item #1
+  ("Per-axis property test sweep on SCHEMA emission ~200 LOC"); this
+  slice is the cash-out.
+- Sibling pattern precedent: `UserFkReflowPropertyTests.fs` (slice
+  5.13.identity-axis-closure) — the canonical FsCheck Arbitrary +
+  per-axiom property layout.
+- The sibling `Render.fs StringBuilder retirement` and `TransformRegistry
+  Emitter-stage coverage` amendments (also 2026-05-18) sit alongside
+  this one — together they close the SCHEMA-axis V2-driver gate's
+  structural-emission half (one canonical typed-AST pipeline; one
+  registered emitter metadata surface; per-axis property coverage).
+
+---
+
 ## Parity cash-out plans — what V2 work closes each gap
 
 The matrix's Notes column carries the per-row brief; this section

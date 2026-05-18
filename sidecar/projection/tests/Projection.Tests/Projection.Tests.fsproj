@@ -141,6 +141,7 @@
     <Compile Include="EndToEndDifferentialTests.fs" />
     <Compile Include="V1NullabilityParityTests.fs" />
     <Compile Include="SsdtDdlEmitterTests.fs" />
+    <Compile Include="SsdtDdlEmitterPropertyTests.fs" />
     <Compile Include="DacpacEmitterTests.fs" />
     <Compile Include="DockerImageEmitterTests.fs" />
     <Compile Include="CoordinatesStage2Tests.fs" />
