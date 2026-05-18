@@ -254,6 +254,91 @@ the original audit missed it), append a dated amendment to this
 section naming the prior status, the new status, and the discovery
 slice.
 
+### Rows 32 + 34 + 35 — 2026-05-18 (closed by slice 5.13.production-wiring-classification)
+
+**Original classifications (slice 5.1.γ, 2026-05-17):**
+- Row 32: 🟠 NOT-MAPPED. Exception classification absent; V2 used a
+  single `with ex ->` catch wrapping `ex.Message` in `ValidationError`.
+- Row 34: 🟠 NOT-MAPPED. Transient-error retry absent; every
+  `SqlException` propagated immediately.
+- Row 35: 🟠 NOT-MAPPED. V2 read result sets via a silent
+  `while hasMore` loop with no count contract enforcement.
+
+**Reclassified (slice 5.13.production-wiring-classification,
+2026-05-18):** All three → 🔵 V2-EXTENSION.
+
+**Rationale.** Bundled per cluster A7 cash-out plan ("Rows 32 + 34
++ 35 then bundle into one chapter since they share the closed-DU
+`MetadataExtractionError` shape"). The closed-DU
+`MetadataExtractionError` (4-variant: `RowMappingFailure |
+ResultSetMissing | TransientSqlError | OtherSqlError`) lives at
+`src/Projection.Adapters.OssysSql/MetadataExtractionError.fs`; the
+Polly v8 resilience pipeline lives at
+`src/Projection.Adapters.OssysSql/Retry.fs`. Both wire into
+`MetadataSnapshotRunner.runAsync` at the command-execute boundary
+(retry) + outer classifier (DU) + post-loop contract check
+(`ExpectedResultSets = 23`). V2 is **structurally stronger** than V1
+on every axis: the typed DU plus the pure `classify` /
+`toValidationError` / `resultSetContractCheck` mappers make
+error-routing contracts machine-checkable; Polly retry that V1
+lacked tolerates cloud-OSSYS transients without false-positive
+divergence reports per R6 split-brain governance; post-loop count
+assertion catches drift V1's per-step `EnsureNextResultSetAsync`
+couldn't (V1 only fired on missing-rowset-before-an-expected-processor,
+not on extra-or-missing total-count drift). Per `DECISIONS 2026-05-18
+(slice 5.13.production-wiring-classification)`.
+
+**Empirical adjustment.** The `ExpectedResultSets` constant pins at
+**23**, not V1's documented 22 — the canary's `NextResultAsync` loop
+observes a leading validation/sanity-check projection V1's
+per-processor walk doesn't enumerate. Truth is the canary (R6:
+canary is V2's load-bearing forcing function).
+
+**Coverage tests now passing (10 new):**
+- `OssysProductionWiringParityTests.``5.1.γ row 32: each MetadataExtractionError variant maps to a distinct ValidationError code`` `
+- `OssysProductionWiringParityTests.``5.1.γ row 32: RowMappingFailure ValidationError carries resultSet + rowIndex metadata`` `
+- `OssysProductionWiringParityTests.``5.1.γ row 32: TransientSqlError ValidationError carries sqlNumber metadata`` `
+- `OssysProductionWiringParityTests.``5.1.γ row 32: classify lifts RowMappingException to RowMappingFailure`` `
+- `OssysProductionWiringParityTests.``5.1.γ row 32: classify lifts non-SqlException to OtherSqlError`` `
+- `OssysProductionWiringParityTests.``5.1.γ row 34: transientSqlNumbers covers the documented cutover-critical numbers`` `
+- `OssysProductionWiringParityTests.``5.1.γ row 34: isTransientSqlError refuses non-SqlException`` `
+- `OssysProductionWiringParityTests.``5.1.γ row 34: retry pipeline retries until the operation succeeds`` `
+- `OssysProductionWiringParityTests.``5.1.γ row 34: retry pipeline surfaces the final exception after retries exhaust`` `
+- `OssysProductionWiringParityTests.``5.1.γ row 34: retry pipeline does not retry on non-matching exceptions`` `
+- `OssysProductionWiringParityTests.``5.1.γ row 35: V2 surfaces result-set count mismatch on OSSYS rowsets`` `
+- `OssysProductionWiringParityTests.``5.1.γ row 35: every MetadataExtractionError variant produces a distinct code`` `
+- (plus three more on the resultSetContractCheck function)
+
+---
+
+### Row 36 — 2026-05-18 (closed by slice 5.13.progress-callback)
+
+**Original classification (slice 5.1.γ, 2026-05-17):** 🟠 NOT-MAPPED.
+V2 had no progress observation; `runAsync` was opaque start to
+finish.
+
+**Reclassified (slice 5.13.progress-callback, 2026-05-18):**
+🔵 V2-EXTENSION.
+
+**Rationale.** V2 introduces `MetadataSnapshotRunner.ProgressObservation`
+(record of `ResultSetIndex × ResultSetName × RowCount`) +
+`OnRowsetComplete` callback alias + a three-arity
+`runAsyncWithProgress` entry point + a `noOpProgress` default + a
+two-arity `runAsync` convenience overload that delegates with no-op.
+V2 is **structurally stronger** than V1 — V1 wired
+`ITaskProgressAccessor` (a heavyweight DI abstraction); V2's F#
+callback is a simple value-typed seam consumers can wrap with their
+own TUI / stdout / Spectre adapter without DI plumbing. The canary
+end-to-end test asserts the callback fires for every observed
+rowset (23 of them) in source order.
+
+**Coverage tests now passing:**
+- `OssysProductionWiringParityTests.``5.1.γ row 36: V2 carries per-rowset progress observation on OSSYS extraction`` `
+- `OssysProductionWiringParityTests.``5.1.γ row 36: noOpProgress is a no-throw default`` `
+- `OssysExtractionCanaryTests.``Slice 5.13.progress-callback canary: progress fires for every observed rowset`` `
+
+---
+
 ### Row 23 — 2026-05-18 (discovered by slice 5.2.α.misc)
 
 **Original classification (slice 5.1.α, 2026-05-17):** 🟠 NOT-MAPPED.

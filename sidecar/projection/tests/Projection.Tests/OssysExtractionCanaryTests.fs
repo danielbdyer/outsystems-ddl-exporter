@@ -144,3 +144,43 @@ let ``Slice ε canary: extraction is deterministic across repeated runs`` () =
             Assert.Equal<string list>(names1, names2)
         | _ ->
             Assert.Fail (sprintf "OSSYS canary determinism check: r1=%A r2=%A" r1 r2)
+
+[<Fact>]
+let ``Slice 5.13.progress-callback canary: progress fires for every observed rowset`` () =
+    // Live-extraction test for matrix row 36 — the callback must fire
+    // once per result set in the script's observed shape
+    // (`ExpectedResultSets = 23` per matrix row 35's empirical
+    // observation). Confirms the runner walks the documented contract
+    // shape end-to-end with the callback wired.
+    if skipIfNoDocker "ossys-canary-progress" then
+        let observations = ResizeArray<MetadataSnapshotRunner.ProgressObservation>()
+        let onComplete : MetadataSnapshotRunner.OnRowsetComplete =
+            fun obs -> lock observations (fun () -> observations.Add obs)
+        let seed = MetadataExtractionSql.readEdgeCaseSeed()
+        let result =
+            Deploy.withBootstrappedDatabase "OssysProgressCanary" seed (fun cnn ->
+                task {
+                    return!
+                        MetadataSnapshotRunner.runAsyncWithProgress
+                            cnn
+                            MetadataSnapshotRunner.defaultParameters
+                            onComplete
+                })
+            |> fun t -> t.GetAwaiter().GetResult()
+        match result with
+        | Error errors ->
+            Assert.Fail (sprintf "OSSYS progress-callback extraction failed: %A" errors)
+        | Ok _ ->
+            Assert.Equal(
+                MetadataSnapshotRunner.ExpectedResultSets,
+                observations.Count)
+            // The first 5 observations should be the V2-consumed rowsets
+            // by name; subsequent ones are the skipped-N tail.
+            let firstFive =
+                observations
+                |> Seq.take 5
+                |> Seq.map (fun o -> o.ResultSetName)
+                |> List.ofSeq
+            Assert.Equal<string list>(
+                [ "modules"; "entities"; "attributes"; "references"; "physicalTables" ],
+                firstFive)

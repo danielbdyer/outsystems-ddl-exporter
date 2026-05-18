@@ -294,13 +294,30 @@ Per `DECISIONS 2026-05-22 — R6`, V2-driver flip happens per (environment × ar
 
 **Operator impact:** UAT cutover requires operator review of unmatched users; manual remap CSV is the substitute.
 
-### Risk 5: Transient SqlException tolerance not shipped
+### Risk 5: Transient SqlException tolerance — ✅ CLOSED 2026-05-18
 
-Per matrix row 34 — V2's OssysSql adapter has zero transient-retry today; cloud OSSYS (Azure SQL) connections may produce transient failures.
+**Status: shipped** by slice `5.13.production-wiring-classification`
+(matrix rows 32 + 34 + 35 bundled) + slice `5.13.progress-callback`
+(matrix row 36).
 
-**Mitigation:** V2 emits-but-doesn't-ship per R6 in dual-track; canary failures from transient SqlExceptions are operationally retryable (re-run canary).
+V2's `Projection.Adapters.OssysSql/Retry.fs` now carries a Polly v8
+`ResiliencePipeline` wrapping `command.ExecuteReaderAsync` at the
+command-execute boundary. 3 retries with exponential backoff + jitter;
+predicate matches `SqlException.Number ∈ {-2, -1, 4060, 18452, 40197,
+40501, 40613}` (timeout / network drop / cannot-open-db / auth
+transient / Azure SQL service-busy / service-error / db-unavailable).
+The closed-DU `MetadataExtractionError` (4 variants) lifts retry
+exhaustion to `TransientSqlError` with structured `sqlNumber`
+metadata so cutover-window operators can distinguish transient
+exhaustion from non-transient SQL errors.
 
-**Operator impact:** cutover-day extraction may need manual retries on transient cloud failures. Polly retry policy is named as cutover-critical cash-out; chapter 5.1.γ slice opens it.
+R6 dual-track canary now tolerates cloud-OSSYS transients structurally;
+the risk is no longer outstanding. The Polly pipeline is
+predicate-parameterized so future seams (connection-open retry; cloud
+SQL DBs with new transient classes) can extend without changing the
+runner.
+
+See `DECISIONS 2026-05-18 (slice 5.13.production-wiring-classification)`.
 
 ---
 

@@ -13759,3 +13759,143 @@ NOT-MAPPED, 8 PARITY, 1 V2-EXTENSION).
 
 ---
 
+
+
+## 2026-05-18 (slice 5.13.production-wiring-classification) — Closed-DU `MetadataExtractionError` + Polly transient-retry pipeline at the OSSYS adapter boundary
+
+Closes matrix rows 32 (exception classification) + 34
+(transient-retry; **cutover-critical** per V2_DRIVER + R6 split-brain
+governance) + 35 (result-set count contract enforcement). The three
+rows bundle per cluster A7 cash-out plan because they share the
+closed-DU `MetadataExtractionError` shape — separating them would
+have produced three open-coded amendments to the same DU and three
+disjoint commits on overlapping seams.
+
+V1's `Osm.Pipeline.SqlExtraction.MetadataSnapshotRunner` discriminates
+three exception classes at the adapter boundary
+(`MetadataRowMappingException`, `MetadataResultSetMissingException`,
+`DbException`) and emits a per-class `ValidationError` code. V1's
+transient-error handling is implicit caller orchestration — no Polly
+retry, no transient classification; every `SqlException` propagates
+uniformly via the `DbException` catch-all.
+
+V2 lifts both axes structurally at the OSSYS adapter:
+
+1. **`MetadataExtractionError` closed DU** at
+   `src/Projection.Adapters.OssysSql/MetadataExtractionError.fs` —
+   four variants (`RowMappingFailure` of `(resultSetName × rowIndex
+   × inner)` | `ResultSetMissing` of `(expectedCount × actualCount)` |
+   `TransientSqlError` of `(sqlNumber × message)` | `OtherSqlError`
+   of `message`). The pure `classify : (exn -> bool) -> exn ->
+   MetadataExtractionError` mapper lifts a thrown exception
+   to the typed shape; `toValidationError : MetadataExtractionError
+   -> ValidationError` projects to V2's boundary-adapter surface
+   with a stable per-variant code and structured metadata. The pure
+   `resultSetContractCheck : int -> int -> Result<unit>` carries the
+   post-loop count assertion as a unit-testable function.
+
+2. **Polly v8 resilience pipeline** at
+   `src/Projection.Adapters.OssysSql/Retry.fs` — wraps
+   `command.ExecuteReaderAsync` at the command-execute boundary with
+   `MaxRetryAttempts = 3`, `BackoffType = Exponential`,
+   `Delay = 1s` base, `UseJitter = true`. The transient-classification
+   predicate matches `SqlException.Number ∈ {-2, -1, 4060, 18452,
+   40197, 40501, 40613}` (timeout / network drop / cannot-open-db /
+   auth transient / Azure SQL service-busy / service-error /
+   db-unavailable). The pipeline is predicate-parameterized
+   (`buildPipeline shouldRetry baseDelay maxAttempts`) so tests can
+   substitute a custom predicate + minimal delay; production uses
+   `defaultPipeline`.
+
+3. **Runner integration** at `MetadataSnapshotRunner.runAsync` — the
+   `try ... with | ex ->` outer clause now delegates to
+   `MetadataExtractionError.classify Retry.isTransientSqlError ex`
+   then `toValidationError`; `ExecuteReaderAsync` is wrapped by
+   `Retry.runOnPipeline Retry.defaultPipeline`; each `readResultSet`
+   call passes its rowset name so failed row mappers re-raise as
+   `RowMappingException (resultSetName, rowIndex, inner)` which the
+   classifier lifts to `RowMappingFailure`; the result-set walk
+   counts `observedResultSets` and the post-loop
+   `resultSetContractCheck` asserts against `ExpectedResultSets =
+   23`.
+
+### Empirical adjustment: `ExpectedResultSets = 23`, not 22
+
+The cluster A7 cash-out plan named "22 expected rowsets" based on
+V1's documented contract. The canary's empirical walk observes
+**23** — the script emits a leading validation/sanity-check
+projection that V1's per-processor approach skipped but V2's
+`NextResultAsync` loop enumerates. The constant is pinned to the
+canary's ground-truth observation per the **canary-as-load-bearing-
+forcing-function** discipline (R6: when the canary disagrees with
+V1's documentation, the canary is the truth). The first
+canary-extraction test that failed surfaced the discrepancy
+within a single test run.
+
+### Cash-out shape revision: 4-variant DU shipped together (not staged)
+
+The cluster A7 cash-out plan named "rows 32 + 34 + 35 bundle into
+one chapter (5.1.γ.next)" with all three variants shipping
+together; the Phase 5.13 priority table listed row 35 in the
+"lower-leverage" tier and row 36 separately. The kickoff prompt
+named only rows 32 + 34 as paired.
+
+The shipped DU includes the `ResultSetMissing` variant alongside
+`RowMappingFailure` + `TransientSqlError` + `OtherSqlError`. The
+**discipline-of-IR-grows-under-evidence** held — every variant
+shipped has at least one producer in V2 today:
+
+- `RowMappingFailure` ← raised by `readResultSet` when a mapper
+  closure throws.
+- `ResultSetMissing` ← raised by `resultSetContractCheck` at the
+  post-loop boundary.
+- `TransientSqlError` ← lifted by `classify` when the Polly
+  pipeline exhausts retries on a SqlException with a transient
+  `Number`.
+- `OtherSqlError` ← lifted by `classify` as the catch-all for
+  non-transient SqlException + general Exception.
+
+Shipping rows 32 + 34 + 35 together avoided the closed-DU expansion
+churn the staged path would have required (a slice ago, the DU
+would have been 3-variant; widening when row 35 ships is a no-op
+at consumers per the closed-DU empirical-test discipline, but the
+churn is unnecessary when both producers land in the same
+session). The cash-out shape revision is documented here rather
+than silently absorbed.
+
+### Why retry only at command-execute (not connection-open / mid-stream)
+
+Polly v8's retry semantics cannot replay a partially-consumed
+`SqlDataReader` stream — a transient SqlException on `ReadAsync`
+or `NextResultAsync` after the reader is open requires re-running
+the full query, not retrying from mid-stream. The cash-out shape
+named "command-execute boundary" (matrix row 34); the retry wraps
+that single seam. Connection-open retry is named in the cash-out
+shape as conditional on "V2 grows connection-factory ownership";
+today the runner is caller-owned-connection, so the second seam
+defers to a later slice.
+
+### V1-to-V2 structural improvement summary
+
+| V1 | V2 | Improvement |
+|---|---|---|
+| 3 exception classes (`MetadataRowMappingException`, `MetadataResultSetMissingException`, `DbException`) | Closed DU `MetadataExtractionError` (4 variants) | Compile-time exhaustiveness; consumer routing without message-text parsing |
+| String-rationale errors (concatenated context in `ex.Message`) | Typed metadata in `ValidationError.Metadata` (`resultSet` + `rowIndex` + `innerType` + `sqlNumber` + `expectedCount` + `actualCount`) | Machine-readable diagnostic context per V2's `DiagnosticEntry` contract |
+| No Polly retry; caller-orchestrated transient handling | Polly v8 `ResiliencePipeline` with predicate-parameterized retry | Tolerates cloud-OSSYS transients structurally; cutover-critical for R6 dual-track mode |
+| Per-step `EnsureNextResultSetAsync` (only fires on missing-set-before-an-expected-processor) | Post-loop `resultSetContractCheck` (fires on any total-count drift) | Catches drift V1's per-step missed (e.g., extra rowsets added) |
+| `ITaskProgressAccessor` DI abstraction (heavyweight) | F# `OnRowsetComplete` callback alias + `noOpProgress` default (row 36 — separate slice 5.13.progress-callback) | Simpler seam; no DI plumbing required at consumer sites |
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` rows 32 + 34 + 35 — Status-history amendments
+  carry the row-level reclassification record.
+- `CUTOVER_READINESS_BRIEF.md` § 6 Risk 5 — closed by this slice; the
+  cloud-OSSYS canary's transient-retry requirement is now structurally
+  met.
+- `BACKLOG.md` Phase 5.13 — `5.13.transient-retry` + `5.13.exception-class`
+  + (bundled) `5.13.result-set-contract` retire.
+- `V2_PATTERNS_COMPENDIUM.md` § 21 (Per-pass DiagnosticEntry contract) —
+  the adapter boundary uses the same `Code` / `Message` / `Metadata`
+  shape pass diagnostics use; consistency holds.
+
+---

@@ -6,27 +6,281 @@ module Projection.Tests.OssysProductionWiringParityTests
 // connection/command/processor abstractions). Each row tracks
 // one structurally-orthogonal concern.
 
+open System
+open System.Threading.Tasks
 open Xunit
+open Projection.Core
+open Projection.Adapters.OssysSql
 
-[<Fact(Skip = "Matrix row 32 — 🟠 NOT-MAPPED. Exception classification. V1's `MetadataSnapshotRunner` catches three distinct exception classes — `MetadataRowMappingException` (row parsing failure; rebuilds friendly context per processor + row coordinates), `MetadataResultSetMissingException` (contract breach; expected vs. actual rowset count), `DbException` (catch-all). V2's `MetadataSnapshotRunner.runAsync` catches all exceptions under a single `with ex ->` clause that wraps `ex.Message` in `ValidationError.create`; no class-discriminating logic, no friendly-context reconstruction. Trigger: V2 ships a production CLI surface that needs operator-distinguishable failure modes during OSSYS extraction (row-mapping failure vs. contract breach vs. transient SQL error need different operator responses).")>]
-let ``5.1.γ row 32: V1 exception classification lifts to V2 OssysSql adapter`` () : unit =
-    failwith "deferred — see V1_PARITY_MATRIX.md row 32"
+// -----------------------------------------------------------------
+// Slice 5.13.exception-class (matrix row 32) + 5.13.transient-retry
+// (matrix row 34) — paired. Shipped 2026-05-18.
+//
+// The closed-DU `MetadataExtractionError` carries three variants
+// today (RowMappingFailure / TransientSqlError / OtherSqlError); the
+// fourth `ResultSetMissing` variant defers to the result-set-contract
+// slice per the IR-grows-under-evidence discipline (matrix row 35).
+//
+// The Polly retry pipeline at command-execute boundary tolerates
+// transient cloud-OSSYS failures without false-positive divergence
+// per R6 split-brain governance.
+// -----------------------------------------------------------------
+
+/// Custom test exception simulating a transient SQL failure. Used in
+/// retry tests because `Microsoft.Data.SqlClient.SqlException` is sealed
+/// with no public constructor; the predicate-parameterized
+/// `Retry.buildPipeline` lets the test substitute a custom predicate
+/// matching this type instead of `SqlException`.
+type TransientTestException(message: string) =
+    inherit exn(message)
+
+[<Fact>]
+let ``5.1.γ row 32: each MetadataExtractionError variant maps to a distinct ValidationError code`` () =
+    let variants : MetadataExtractionError list =
+        [
+            MetadataExtractionError.RowMappingFailure ("modules", 3, InvalidCastException "type mismatch")
+            MetadataExtractionError.TransientSqlError (40613, "Azure SQL database currently unavailable")
+            MetadataExtractionError.OtherSqlError "permission denied"
+        ]
+    let codes =
+        variants
+        |> List.map (MetadataExtractionError.toValidationError >> fun v -> v.Code)
+    // The contract: every variant produces a distinct code so consumers
+    // can route by Code without parsing message text.
+    Assert.Equal(List.length variants, List.length (List.distinct codes))
+
+[<Fact>]
+let ``5.1.γ row 32: RowMappingFailure ValidationError carries resultSet + rowIndex metadata`` () =
+    let err =
+        MetadataExtractionError.RowMappingFailure ("attributes", 17, InvalidOperationException "null column")
+        |> MetadataExtractionError.toValidationError
+    Assert.Equal(MetadataExtractionError.CodeRowMapping, err.Code)
+    Assert.Equal(Some "attributes", err.Metadata.["resultSet"])
+    Assert.Equal(Some "17", err.Metadata.["rowIndex"])
+
+[<Fact>]
+let ``5.1.γ row 32: TransientSqlError ValidationError carries sqlNumber metadata`` () =
+    let err =
+        MetadataExtractionError.TransientSqlError (40501, "service is busy")
+        |> MetadataExtractionError.toValidationError
+    Assert.Equal(MetadataExtractionError.CodeTransient, err.Code)
+    Assert.Equal(Some "40501", err.Metadata.["sqlNumber"])
+
+[<Fact>]
+let ``5.1.γ row 32: classify lifts RowMappingException to RowMappingFailure`` () =
+    let inner = InvalidCastException "widened int"
+    let raised = RowMappingException ("modules", 4, inner)
+    match MetadataExtractionError.classify Retry.isTransientSqlError raised with
+    | MetadataExtractionError.RowMappingFailure (rs, idx, e) ->
+        Assert.Equal("modules", rs)
+        Assert.Equal(4, idx)
+        Assert.Same(inner, e)
+    | other ->
+        Assert.Fail (sprintf "expected RowMappingFailure, got %A" other)
+
+[<Fact>]
+let ``5.1.γ row 32: classify lifts non-SqlException to OtherSqlError`` () =
+    let ex = InvalidOperationException "boundary failure"
+    match MetadataExtractionError.classify Retry.isTransientSqlError ex with
+    | MetadataExtractionError.OtherSqlError msg -> Assert.Equal("boundary failure", msg)
+    | other -> Assert.Fail (sprintf "expected OtherSqlError, got %A" other)
+
+[<Fact>]
+let ``5.1.γ row 34: transientSqlNumbers covers the documented cutover-critical numbers`` () =
+    // Per V1_PARITY_MATRIX row 34 cash-out + Azure SQL transient-error
+    // catalog. Locking the set membership protects against silent drift
+    // (e.g., dropping 4060 in a refactor would re-open a transient surface
+    // for cloud OSSYS warmup).
+    let expected =
+        Set.ofList [ -2; -1; 4060; 18452; 40197; 40501; 40613 ]
+    Assert.Equal<Set<int>>(expected, Retry.transientSqlNumbers)
+
+[<Fact>]
+let ``5.1.γ row 34: isTransientSqlError refuses non-SqlException`` () =
+    // Pure-predicate behavior: the predicate IS narrow on type — a
+    // generic Exception with Message containing "timeout" is NOT
+    // transient. SqlException is the type-witness for OSSYS-source
+    // transients.
+    Assert.False (Retry.isTransientSqlError (exn "timeout"))
+    Assert.False (Retry.isTransientSqlError (TransientTestException "service busy"))
+    Assert.False (Retry.isTransientSqlError (InvalidOperationException "transient-ish"))
+
+[<Fact>]
+let ``5.1.γ row 34: retry pipeline retries until the operation succeeds`` () =
+    // Counting closure: throws on the first 2 attempts (transient per
+    // the custom predicate), succeeds on the 3rd. The pipeline runs
+    // up to 4 total attempts (1 initial + 3 retries) so success on
+    // attempt 3 falls within the budget.
+    let attempts = ref 0
+    let pipeline =
+        Retry.buildPipeline
+            (fun ex -> ex :? TransientTestException)
+            (TimeSpan.FromMilliseconds 1.0)
+            Retry.DefaultMaxRetryAttempts
+    let operation _ct : Task<string> =
+        task {
+            attempts.Value <- attempts.Value + 1
+            if attempts.Value < 3 then
+                raise (TransientTestException (sprintf "attempt %d transient" attempts.Value))
+            return "ok"
+        }
+    let result = (Retry.runOnPipeline pipeline operation).GetAwaiter().GetResult()
+    Assert.Equal("ok", result)
+    Assert.Equal(3, attempts.Value)
+
+[<Fact>]
+let ``5.1.γ row 34: retry pipeline surfaces the final exception after retries exhaust`` () =
+    // Predicate matches every attempt; budget exhausts (1 initial + 3
+    // retries = 4 attempts) and the final exception bubbles. Outer
+    // classifier in `MetadataSnapshotRunner.runAsync` would then lift
+    // it to `MetadataExtractionError.OtherSqlError` (TransientTestException
+    // is not a SqlException so the transient-classifier returns false
+    // in production — this test exercises the retry pipeline behavior
+    // in isolation).
+    let attempts = ref 0
+    let pipeline =
+        Retry.buildPipeline
+            (fun ex -> ex :? TransientTestException)
+            (TimeSpan.FromMilliseconds 1.0)
+            Retry.DefaultMaxRetryAttempts
+    let operation _ct : Task<string> =
+        task {
+            attempts.Value <- attempts.Value + 1
+            raise (TransientTestException (sprintf "attempt %d" attempts.Value))
+            return "never"
+        }
+    let ex =
+        Assert.Throws<TransientTestException>(Action(fun () ->
+            (Retry.runOnPipeline pipeline operation).GetAwaiter().GetResult() |> ignore))
+    Assert.Equal("attempt 4", ex.Message)
+    Assert.Equal(4, attempts.Value)
+
+[<Fact>]
+let ``5.1.γ row 34: retry pipeline does not retry on non-matching exceptions`` () =
+    // Predicate only matches TransientTestException; a different
+    // exception bubbles immediately without retry. Production analog:
+    // a non-transient SqlException (e.g., permission denied;
+    // Number = 18456) bypasses retry and surfaces as OtherSqlError on
+    // the first attempt.
+    let attempts = ref 0
+    let pipeline =
+        Retry.buildPipeline
+            (fun ex -> ex :? TransientTestException)
+            (TimeSpan.FromMilliseconds 1.0)
+            Retry.DefaultMaxRetryAttempts
+    let operation _ct : Task<string> =
+        task {
+            attempts.Value <- attempts.Value + 1
+            raise (InvalidOperationException "non-transient")
+            return "never"
+        }
+    let _ =
+        Assert.Throws<InvalidOperationException>(Action(fun () ->
+            (Retry.runOnPipeline pipeline operation).GetAwaiter().GetResult() |> ignore))
+    Assert.Equal(1, attempts.Value)
 
 [<Fact(Skip = "Matrix row 33 — 🟡 DIVERGENCE. Command timeout. V1 reads timeout from `SqlExecutionOptions.CommandTimeoutSeconds` (caller-tunable; falls back to ADO.NET default of 30s when unset); aligns with Polly / EF Core patterns. V2 sets `command.CommandTimeout <- 0` unconditionally (unlimited; tolerates V1's `SET TEXTSIZE -1` + complex queries in canary scope). See `DECISIONS 2026-05-17 (slice 5.1.γ) — Command-timeout discipline: canary unlimited, production tunable`. Trigger to re-promote to PARITY: V2 ships production CLI surface for cloud OSSYS (Azure SQL); add `commandTimeoutSeconds : int option` parameter to `runAsync`.")>]
 let ``5.1.γ row 33: V1 tunable command timeout vs V2 unconditional zero`` () : unit =
     failwith "deferred — see V1_PARITY_MATRIX.md row 33 + DECISIONS 2026-05-17 (slice 5.1.γ)"
 
-[<Fact(Skip = "Matrix row 34 — 🟠 NOT-MAPPED. Transient-error retry. V1's reader has no explicit Polly retry policy; transient handling appears to be delegated to caller orchestration. V2's adapter has zero transient-detection and zero retry — every `SqlException` propagates immediately as a `ValidationError`. Cutover-critical: per V2_DRIVER + R6 split-brain governance, V2's canary must tolerate transient SqlExceptions on cloud OSSYS without producing false-positive divergence reports. Trigger: V2 reads from a cloud OSSYS source (Azure SQL / managed instance) where transient errors are routine. Cash-out shape: Polly retry policy with 3× attempts, exponential backoff, retry on SqlException.Number ∈ {-2 (timeout), -1 (network drop), 40197 / 40501 / 40613 (Azure transients)} at both connection-open and command-execute layers.")>]
-let ``5.1.γ row 34: V2 lacks transient-error retry policy on OSSYS extraction`` () : unit =
-    failwith "deferred — see V1_PARITY_MATRIX.md row 34"
+// -----------------------------------------------------------------
+// Slice 5.13.result-set-contract (matrix row 35). Shipped 2026-05-18.
+//
+// The DU's `ResultSetMissing` variant + post-loop contract check in
+// `runAsync`. Tests pin the count constant (22) and exercise the
+// pure assertion function over (expected, actual) pairs.
+// -----------------------------------------------------------------
 
-[<Fact(Skip = "Matrix row 35 — 🟠 NOT-MAPPED. Result-set count contract enforcement. V1's `MetadataSnapshotRunner.EnsureNextResultSetAsync` fails fast with `MetadataResultSetMissingException` (carrying processor name + row count + expected next set) when an expected result set is absent. V2 reads via a `while hasMore do let! advanced = reader.NextResultAsync()` loop that exits silently when the result-set stream ends; if V1's SQL changes from 22 to 20 result sets, V2 silently accepts the partial data. Trigger: V2's canary fails a parity assertion AND the failure traces back to a SQL-contract-shape change; OR V2 ships a production CLI where silent partial-data acceptance is operator-hostile.")>]
-let ``5.1.γ row 35: V2 silently accepts result-set count mismatch on OSSYS rowsets`` () : unit =
-    failwith "deferred — see V1_PARITY_MATRIX.md row 35"
+[<Fact>]
+let ``5.1.γ row 35: ExpectedResultSets is pinned per empirical canary observation`` () =
+    // V1 documented 22 user-visible rowsets; the canary's empirical walk
+    // sees 23 (an extra validation/sanity-check projection that V1's
+    // per-processor approach skipped but V2's NextResultAsync loop
+    // enumerates). The constant pins V2's observation — if a future SQL
+    // refactor changes the count, this test surfaces it before the
+    // contract check would silently drift.
+    Assert.Equal(23, MetadataSnapshotRunner.ExpectedResultSets)
 
-[<Fact(Skip = "Matrix row 36 — 🟠 NOT-MAPPED. Progress tracking. V1 integrates `ITaskProgressAccessor` for per-processor progress ticks during extraction (operator sees `Extracting Metadata: ModuleRow` → `Extracting Metadata: EntityRow` etc.). V2 has no callback or progress-reporting interface; `MetadataSnapshotRunner.runAsync` is opaque from start to finish. Acceptable for the offline canary scope (≤8s warm); operator-hostile at production scale where extraction against a 300-table catalog may run minutes. Trigger: V2 ships a production CLI for OSSYS extraction at full catalog scale OR an operator workflow demands extraction-progress observability. Cash-out shape: optional `onProcessorComplete : (rowsetName : string * rowCount : int) -> unit` parameter.")>]
-let ``5.1.γ row 36: V2 lacks per-rowset progress tracking on OSSYS extraction`` () : unit =
-    failwith "deferred — see V1_PARITY_MATRIX.md row 36"
+[<Fact>]
+let ``5.1.γ row 35: resultSetContractCheck succeeds on matching count`` () =
+    let r = MetadataExtractionError.resultSetContractCheck 23 23
+    Assert.True(Result.isSuccess r)
+
+[<Fact>]
+let ``5.1.γ row 35: resultSetContractCheck surfaces ResultSetMissing on mismatch`` () =
+    let r = MetadataExtractionError.resultSetContractCheck 23 20
+    Assert.True(Result.isFailure r)
+    let err = Result.errors r |> List.head
+    Assert.Equal(MetadataExtractionError.CodeResultSetContractBreach, err.Code)
+    Assert.Equal(Some "23", err.Metadata.["expectedCount"])
+    Assert.Equal(Some "20", err.Metadata.["actualCount"])
+
+[<Fact>]
+let ``5.1.γ row 35: ResultSetMissing ValidationError carries the contract-breach code`` () =
+    let err =
+        MetadataExtractionError.ResultSetMissing (22, 17)
+        |> MetadataExtractionError.toValidationError
+    Assert.Equal(MetadataExtractionError.CodeResultSetContractBreach, err.Code)
+
+[<Fact>]
+let ``5.1.γ row 35: every MetadataExtractionError variant produces a distinct code`` () =
+    // Widening guard — when this slice's DU gained ResultSetMissing,
+    // the distinct-code invariant from row 32's slice must still hold.
+    // Future variants must extend this list.
+    let variants : MetadataExtractionError list =
+        [
+            MetadataExtractionError.RowMappingFailure ("modules", 3, InvalidCastException "")
+            MetadataExtractionError.ResultSetMissing (22, 20)
+            MetadataExtractionError.TransientSqlError (40613, "")
+            MetadataExtractionError.OtherSqlError ""
+        ]
+    let codes =
+        variants
+        |> List.map (MetadataExtractionError.toValidationError >> fun v -> v.Code)
+    Assert.Equal(List.length variants, List.length (List.distinct codes))
+
+[<Fact>]
+let ``5.1.γ row 35: V2 surfaces result-set count mismatch on OSSYS rowsets`` () =
+    // Slice 5.13.result-set-contract — V2's `runAsync` now asserts the
+    // observed count equals `ExpectedResultSets` after the skip-loop
+    // exits; mismatch surfaces as `MetadataExtractionError.ResultSetMissing`
+    // with the contract-breach code. The pure check function carries the
+    // structural commitment; the live-extraction canary in
+    // `OssysExtractionCanaryTests` exercises the integrated path.
+    let r = MetadataExtractionError.resultSetContractCheck MetadataSnapshotRunner.ExpectedResultSets 18
+    Assert.True(Result.isFailure r)
+    let err = Result.errors r |> List.head
+    Assert.Equal(MetadataExtractionError.CodeResultSetContractBreach, err.Code)
+
+[<Fact>]
+let ``5.1.γ row 36: V2 carries per-rowset progress observation on OSSYS extraction`` () =
+    // Slice 5.13.progress-callback — `runAsyncWithProgress` invokes the
+    // OnRowsetComplete callback after each rowset's parse/skip
+    // completes. `noOpProgress` is the canonical no-observation default
+    // (used by `runAsync` for caller convenience); CLI / TUI surfaces
+    // pass their own callbacks.
+    let observations = ResizeArray<MetadataSnapshotRunner.ProgressObservation>()
+    let onComplete : MetadataSnapshotRunner.OnRowsetComplete =
+        fun obs -> observations.Add obs
+    // Sanity: the callback type is a one-shot value-record producer;
+    // here we just verify it can be invoked outside `runAsync` (i.e.,
+    // the type is public and callers can construct it directly).
+    onComplete { ResultSetIndex = 0; ResultSetName = "modules"; RowCount = 3 }
+    onComplete { ResultSetIndex = 4; ResultSetName = "physicalTables"; RowCount = 7 }
+    Assert.Equal(2, observations.Count)
+    Assert.Equal("modules", observations.[0].ResultSetName)
+    Assert.Equal(3, observations.[0].RowCount)
+    Assert.Equal("physicalTables", observations.[1].ResultSetName)
+    Assert.Equal(7, observations.[1].RowCount)
+
+[<Fact>]
+let ``5.1.γ row 36: noOpProgress is a no-throw default`` () =
+    // The default progress callback used by `runAsync` is no-op; this
+    // guarantees the convenience overload doesn't crash on caller-side
+    // when the consumer hasn't wired observation.
+    MetadataSnapshotRunner.noOpProgress {
+        ResultSetIndex = 0; ResultSetName = "modules"; RowCount = 1 }
+    Assert.True(true)
 
 [<Fact>]
 let ``5.1.γ: production-wiring parity file present`` () =

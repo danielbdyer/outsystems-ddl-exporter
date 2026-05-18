@@ -72,6 +72,34 @@ module MetadataSnapshotRunner =
             EntityFilterJson     = None
         }
 
+    /// Per-rowset progress observation. Invoked by `runAsync` after each
+    /// rowset's parse completes (or skip completes, for the 18 V2-skipped
+    /// rowsets). `ResultSetIndex` is the zero-based position in the
+    /// emitted result-set stream; `ResultSetName` is the V2-side label
+    /// (`"modules"`, `"entities"`, `"attributes"`, `"references"`,
+    /// `"physicalTables"`, or `"skipped-N"` for the 18 V2-skipped sets);
+    /// `RowCount` is the number of rows parsed (always 0 for skipped
+    /// sets — we don't materialize the unread rows).
+    ///
+    /// Matrix row 36 cash-out. V1's `ITaskProgressAccessor` is the
+    /// V1-shape for the same axis; V2 lifts to a simpler F# callback
+    /// that adapter consumers (CLI / TUI / Spectre) wire as they need.
+    type ProgressObservation =
+        {
+            ResultSetIndex : int
+            ResultSetName  : string
+            RowCount       : int
+        }
+
+    /// Callback type for per-rowset progress observation. Default is
+    /// no-op (see `noOpProgress`); CLI surfaces wire stdout / TUI
+    /// adapters by passing their own callback.
+    type OnRowsetComplete = ProgressObservation -> unit
+
+    /// No-op progress callback. Used as the default when callers don't
+    /// supply one — extraction proceeds with zero observation overhead.
+    let noOpProgress : OnRowsetComplete = fun _ -> ()
+
     /// V1-shaped typed rowsets parsed from the first 5 result sets.
     /// These mirror V1's `Outsystems*Row` DTOs at the columns V2's
     /// `CatalogReader.RowsetBundle` consumes (with the JOIN composition
@@ -186,16 +214,33 @@ module MetadataSnapshotRunner =
     /// Read all rows of the current result set via `mapper`; advance to
     /// the next result set when complete. Returns the rows in source
     /// order.
+    ///
+    /// Mapper failures (e.g., `InvalidCastException` from a widened SQL
+    /// type or `InvalidOperationException` from a required-but-NULL
+    /// column) re-raise as `RowMappingException` carrying the
+    /// `resultSetName` + zero-based `rowIndex` for downstream
+    /// classification (matrix row 32 cash-out — the typed
+    /// `MetadataExtractionError.RowMappingFailure` variant).
     let private readResultSet<'T>
+            (resultSetName: string)
             (reader: SqlDataReader)
             (mapper: SqlDataReader -> 'T)
             : Task<'T list> =
         task {
             let acc = ResizeArray<'T>()
+            let mutable rowIndex = 0
             let mutable hasMore = true
             while hasMore do
                 let! advanced = reader.ReadAsync()
-                if advanced then acc.Add(mapper reader)
+                if advanced then
+                    let row =
+                        try
+                            mapper reader
+                        with
+                        | :? RowMappingException -> reraise ()
+                        | ex -> raise (RowMappingException (resultSetName, rowIndex, ex))
+                    acc.Add row
+                    rowIndex <- rowIndex + 1
                 else hasMore <- false
             return List.ofSeq acc
         }
@@ -273,17 +318,39 @@ module MetadataSnapshotRunner =
           TableName  = readString r 2
           ObjectId   = readInt r 3 }
 
+    /// Number of user-visible result sets the carbon-copied OSSYS rowsets
+    /// script emits. V1's documentation describes 22 user-visible rowsets
+    /// (rowsets 0..21); the canary's empirical walk observes **23** —
+    /// the script includes a leading validation/sanity-check projection
+    /// that V1's per-processor walk doesn't enumerate but V2's
+    /// `NextResultAsync` loop does. **Truth is the canary** (R6 split-brain:
+    /// the canary is V2's load-bearing forcing function); the constant
+    /// pins what V2 actually observes against the carbon-copied SQL.
+    /// The post-loop assertion in `runAsync` surfaces SQL-contract drift
+    /// (e.g., a V1 trunk refactor drops a rowset) as `ResultSetMissing`
+    /// instead of silently accepting partial data. Matrix row 35.
+    [<Literal>]
+    let ExpectedResultSets = 23
+
     /// Execute the carbon-copied rowsets SQL against `cnn` (already open)
-    /// with the supplied parameters. Walks all 22 result sets;
-    /// parses the first 5 into typed records and skips the remaining 17.
-    /// Returns a `MetadataSnapshot` carrying the 5 V2-relevant rowsets.
+    /// with the supplied parameters. Walks all `ExpectedResultSets` result
+    /// sets; parses the first 5 into typed records and skips the
+    /// remaining 18. Returns a `MetadataSnapshot` carrying the 5
+    /// V2-relevant rowsets.
     ///
     /// **Determinism.** The SQL script is deterministic by construction
     /// (V1's pillar 1 / T1 commitment); parameter inputs + database state
     /// fully determine the output. Caller is responsible for fixing the
     /// database state (e.g., applying `readEdgeCaseSeed()` first) when
     /// determinism across runs matters.
-    let runAsync (cnn: SqlConnection) (parameters: SnapshotParameters)
+    ///
+    /// Three-arity form takes an explicit `onRowsetComplete` callback
+    /// (matrix row 36 — progress tracking). The two-arity overload uses
+    /// `noOpProgress` for caller convenience.
+    let runAsyncWithProgress
+            (cnn: SqlConnection)
+            (parameters: SnapshotParameters)
+            (onRowsetComplete: OnRowsetComplete)
             : Task<Result<MetadataSnapshot>> =
         task {
             try
@@ -308,7 +375,16 @@ module MetadataSnapshotRunner =
                     | None -> System.DBNull.Value :> obj
                 command.Parameters.Add(entityFilterParam) |> ignore
 
-                use! reader = command.ExecuteReaderAsync(CommandBehavior.SequentialAccess)
+                // Polly retry wraps `ExecuteReaderAsync` at the
+                // command-execute boundary — the dominant transient
+                // surface (matrix row 34 cash-out; cutover-critical per
+                // V2_DRIVER + R6 split-brain governance). V1 had no
+                // retry; V2 owns the policy structurally inside the
+                // adapter so dual-track canary tolerates transient
+                // cloud-OSSYS failures without false-positive divergence.
+                use! reader =
+                    Retry.runOnPipeline Retry.defaultPipeline (fun _ct ->
+                        command.ExecuteReaderAsync(CommandBehavior.SequentialAccess))
                 // The V1 script also emits diagnostic prints; result sets
                 // are emitted in fixed order starting with the validation
                 // sanity-check first. We rely on the script's documented
@@ -319,36 +395,96 @@ module MetadataSnapshotRunner =
                 // PRINT messages by enumerating all readers regardless of
                 // the row shape; we mirror that by reading every result
                 // set sequentially.
-                let! modules        = readResultSet reader mapModuleRow
-                let! _              = reader.NextResultAsync()
-                let! entities       = readResultSet reader mapEntityRow
-                let! _              = reader.NextResultAsync()
-                let! attributes     = readResultSet reader mapAttributeRow
-                let! _              = reader.NextResultAsync()
-                let! references     = readResultSet reader mapReferenceRow
-                let! _              = reader.NextResultAsync()
-                let! physicalTables = readResultSet reader mapPhysicalTableRow
-                // Skip the remaining 17 result sets — V2's RowsetBundle
+                // Track observed result-set count for the post-loop
+                // contract check (matrix row 35). The reader opens on
+                // result set 0 already-positioned; every successful
+                // NextResultAsync advances + increments.
+                let mutable observedResultSets = 1
+                let advanceNext () =
+                    task {
+                        let! advanced = reader.NextResultAsync()
+                        if advanced then
+                            observedResultSets <- observedResultSets + 1
+                        return advanced
+                    }
+                let report (name: string) (rowCount: int) : unit =
+                    // ResultSetIndex is the zero-based position at the
+                    // time of reporting (observedResultSets - 1 because
+                    // the counter has already incremented past this set).
+                    onRowsetComplete {
+                        ResultSetIndex = observedResultSets - 1
+                        ResultSetName  = name
+                        RowCount       = rowCount
+                    }
+                let! modules        = readResultSet "modules" reader mapModuleRow
+                report "modules" modules.Length
+                let! _              = advanceNext ()
+                let! entities       = readResultSet "entities" reader mapEntityRow
+                report "entities" entities.Length
+                let! _              = advanceNext ()
+                let! attributes     = readResultSet "attributes" reader mapAttributeRow
+                report "attributes" attributes.Length
+                let! _              = advanceNext ()
+                let! references     = readResultSet "references" reader mapReferenceRow
+                report "references" references.Length
+                let! _              = advanceNext ()
+                let! physicalTables = readResultSet "physicalTables" reader mapPhysicalTableRow
+                report "physicalTables" physicalTables.Length
+                // Skip the remaining result sets — V2's RowsetBundle
                 // doesn't yet consume them. Future slice ε can expand.
                 let mutable hasMore = true
+                let mutable skippedIndex = 0
                 while hasMore do
-                    let! advanced = reader.NextResultAsync()
+                    let! advanced = advanceNext ()
                     if not advanced then hasMore <- false
-                    else do! skipResultSet reader
-                return Result.success {
-                    Modules        = modules
-                    Entities       = entities
-                    Attributes     = attributes
-                    References     = references
-                    PhysicalTables = physicalTables
-                }
+                    else
+                        do! skipResultSet reader
+                        report (sprintf "skipped-%d" skippedIndex) 0
+                        skippedIndex <- skippedIndex + 1
+                // Contract check (matrix row 35): the carbon-copied OSSYS
+                // rowsets script's 22-result-set shape is a documented
+                // V1 contract. If actual < expected, the script drifted
+                // (V1 refactor dropped a rowset) and V2 surfaces the
+                // structural drift instead of silently accepting partial
+                // data. V1's `EnsureNextResultSetAsync` fires per-step;
+                // V2's post-loop count is the same axis, single-shot.
+                let contractCheck =
+                    MetadataExtractionError.resultSetContractCheck
+                        ExpectedResultSets
+                        observedResultSets
+                match contractCheck with
+                | Error errors -> return Result.failure errors
+                | Ok () ->
+                    return Result.success {
+                        Modules        = modules
+                        Entities       = entities
+                        Attributes     = attributes
+                        References     = references
+                        PhysicalTables = physicalTables
+                    }
             with
             | ex ->
+                // Matrix row 32 — typed exception classification at the
+                // adapter boundary. The closed-DU `MetadataExtractionError`
+                // distinguishes operator-actionable failure modes
+                // (row-mapping vs transient SQL vs other) so consumers
+                // can route by `ValidationError.Code` without parsing
+                // message text. V1's three-exception-class catch lifts to
+                // the same typed surface — structurally stronger.
+                let classified =
+                    MetadataExtractionError.classify Retry.isTransientSqlError ex
                 return Result.failureOf (
-                    ValidationError.create
-                        "adapter.ossysSql.runFailed"
-                        (sprintf "MetadataSnapshotRunner.runAsync failed: %s" ex.Message))
+                    MetadataExtractionError.toValidationError classified)
         }
+
+    /// Convenience overload — no progress observation. Delegates to
+    /// `runAsyncWithProgress` with `noOpProgress`. This is the canonical
+    /// canary-extraction entry point (the canary doesn't observe
+    /// progress); production CLI surfaces use `runAsyncWithProgress`
+    /// directly with their own callback.
+    let runAsync (cnn: SqlConnection) (parameters: SnapshotParameters)
+            : Task<Result<MetadataSnapshot>> =
+        runAsyncWithProgress cnn parameters noOpProgress
 
     /// Compose the typed snapshot into V2's `CatalogReader.RowsetBundle`.
     /// JOIN logic:

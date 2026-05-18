@@ -16,11 +16,14 @@
 
   <ItemGroup>
     <Compile Include="MetadataExtractionSql.fs" />
+    <Compile Include="MetadataExtractionError.fs" />
+    <Compile Include="Retry.fs" />
     <Compile Include="MetadataSnapshotRunner.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <PackageReference Include="Polly" Version="8.5.0" />
   </ItemGroup>
 
   <ItemGroup>
