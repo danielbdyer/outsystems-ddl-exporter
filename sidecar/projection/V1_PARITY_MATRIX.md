@@ -710,6 +710,99 @@ complete record.
 
 ---
 
+### Rows 12 + 53 + 182 (CHECK + DEFAULT emit clauses) — 2026-05-18 (closed by slice 5.13.column-features-emit)
+
+**Original classifications:**
+- Row 12 (slice 5.1.α, 2026-05-17): 🟠 NOT-MAPPED. V2's IR carried
+  no CHECK-constraint axis. Trigger: "V2 IR refinement adds a
+  CHECK-constraint field AND a downstream emitter (SSDT or DACPAC)
+  demands it." The cluster A1 closure (2026-05-18) shipped the
+  IR-side rowset 7 `#ColumnCheckReality` → `Kind.ColumnChecks` lift.
+- Row 53 (slice 5.2.α.attribute, 2026-05-18): 🟠 NOT-MAPPED. V2
+  carried `Attribute.DefaultValue : SqlLiteral option` (typed
+  Definition) but no DDL-emitter consumer surfaced the value at the
+  CREATE TABLE boundary.
+- Row 182 (slice 5.3.β, 2026-05-18): 🟢 PARITY (95%). The 5%
+  delta named "column defaults + CHECK constraints + computed
+  columns (V1 319-364) — ColumnDef IR fields exist; emit layer
+  deferred per slice ζ candidates."
+
+**Reclassified (slice 5.13.column-features-emit, 2026-05-18):**
+Row 12 → 🟢 PARITY (rowset-to-emit closure). Row 53 → 🟢 PARITY
+(DEFAULT clause emission closure; constraint identity carriage
+deferred to a follow-on slice when a `DF_TableName_ColumnName`
+round-trip requirement surfaces). Row 182 → 🟢 PARITY (computed
+columns remain deferred per IR-grows-under-evidence; no V2 consumer
+populates `Attribute.Computed` today).
+
+**Rationale.** Slice 5.13.column-features-emit closes the emit-side
+gap for chapter A.0' slice ε IR lifts (DEFAULT + CHECK). The
+realization-layer additions:
+
+- `Projection.Targets.SSDT/Statement.fs`:
+  - `ColumnDef` extended with `DefaultValue : SqlLiteral option`
+    + `DefaultName : string option`.
+  - New `ColumnCheckDef` record (`Name : string option *
+    Definition : string * IsNotTrusted : bool`).
+  - `Statement.CreateTable` constructor extended with a fifth
+    `ColumnCheckDef list` argument (closed-DU expansion empirical-test
+    discipline — F# field-/variant-extension errors light up at
+    literal-construction sites only).
+- `Projection.Targets.SSDT/ScriptDomBuild.fs`:
+  - `columnDefinition` emits `DEFAULT <literal>` via
+    `DefaultConstraintDefinition` on `Constraints`; constraint
+    identity carriage via `ConstraintIdentifier` when
+    `DefaultName` populated. The literal flows through
+    `buildSqlLiteral` — same typed-AST path the MERGE / UPDATE
+    statements use, so DEFAULT values are byte-identical across
+    emission surfaces.
+  - New private `checkConstraint` builder parses `chk.Definition`
+    via `TSql160Parser.ParseBooleanExpression` and embeds the
+    typed `BooleanExpression` into ScriptDom's
+    `CheckConstraintDefinition`. Parse-failure path falls back to
+    a raw-text comparison (preserves SQL surface; real production
+    expressions parse cleanly under TSql160Parser).
+  - `buildCreateTable` extended to consume `ColumnCheckDef list`;
+    table-level CHECK constraints follow PK + FK in declaration
+    order (matches V1's CREATE TABLE shape).
+- `Projection.Targets.SSDT/Render.fs`:
+  - `CreateTable` arm collapsed into the `ScriptDomGenerate`
+    delegation arm (single source of truth; prior
+    StringBuilder duplication retired).
+- `Projection.Targets.SSDT/SsdtDdlEmitter.fs`:
+  - `columnDef` populates `DefaultValue` from `Attribute.DefaultValue`
+    (today's JSON adapter path); `DefaultName = None` pending the
+    `#ColumnReality.DefaultDefinition` rowset wiring (separate
+    slice).
+  - New private `columnCheckDef` projects `Kind.ColumnChecks` entries
+    to the realization-layer shape.
+  - `createTableStatement` threads `k.ColumnChecks |> List.map
+    columnCheckDef` as the fifth `Statement.CreateTable` argument.
+
+**Coverage tests now passing:**
+- `SsdtDdlEmitterTests.``Slice 5.13.column-features-emit: DEFAULT clause surfaces in CREATE TABLE body for typed-literal default`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.column-features-emit: CHECK constraint surfaces in CREATE TABLE body via TSql160Parser`` `
+- `SsdtDdlEmitterTests.``Slice 5.13.column-features-emit: T1 byte-determinism holds with DEFAULT + CHECK`` `
+
+**Deferred axes (no consumer pressure yet):**
+- DEFAULT constraint **identity** (`DF_<Table>_<Column>` round-trip
+  via `DefaultName`) — the field exists; populating it requires
+  rowset path lifting `#ColumnReality.DefaultConstraintName`
+  (separate slice; matrix row 53 cash-out completion when (a) a
+  manifest emitter names defaults, or (b) DDL round-trip preserves
+  V1 constraint identity).
+- **Computed columns** (V2's `Attribute.Computed : ComputedColumnConfig
+  option`) — Statement.ColumnDef does NOT carry computed-column
+  axes today per IR-grows-under-evidence; no rowset path or JSON
+  source populates `Attribute.Computed`. Adds when first consumer
+  surfaces.
+- CHECK constraint **NOCHECK state** (`ColumnCheckDef.IsNotTrusted`)
+  is carried but not emitted inline — ScriptDom doesn't model
+  WITH NOCHECK in the inline CHECK clause; round-trip preservation
+  is a post-emit ALTER TABLE concern (matrix row 59 cash-out).
+
+---
+
 ## Parity cash-out plans — what V2 work closes each gap
 
 The matrix's Notes column carries the per-row brief; this section

@@ -104,7 +104,32 @@ module SsdtDdlEmitter =
             Nullable     = a.Column.IsNullable
             IsIdentity   = a.IsIdentity
             IsPrimaryKey = a.IsPrimaryKey
+            // Slice 5.13.column-features-emit: DEFAULT clause carriage
+            // from Attribute.DefaultValue (chapter A.0' slice ε IR
+            // lift). V2 IR carries `SqlLiteral option`; the realization
+            // layer's `columnDefinition` emits an inline
+            // `CONSTRAINT <name> DEFAULT <literal>` when populated.
+            // The default name surfaces from a future rowset wiring
+            // (#ColumnReality.DefaultConstraintName); when absent,
+            // SQL Server auto-names the constraint. Today the JSON
+            // path populates DefaultValue from V1's "default" JSON
+            // field; rowset path leaves it None pending the
+            // #Attr.DefaultValue lift (separate slice).
+            DefaultValue = a.DefaultValue
+            DefaultName  = None
             Provenance   = ""
+        }
+
+    /// Project a `Kind.ColumnChecks` entry to the SSDT realization
+    /// layer's `ColumnCheckDef`. Slice 5.13.column-features-emit
+    /// (chapter A.0' slice ε emit closure). The `Name` field maps
+    /// V2's `Name option` directly (V1's CHECK constraint name when
+    /// present; SQL Server auto-name when None).
+    let private columnCheckDef (chk: ColumnCheck) : ColumnCheckDef =
+        {
+            Name         = chk.Name |> Option.map Name.value
+            Definition   = chk.Definition
+            IsNotTrusted = chk.IsNotTrusted
         }
 
     /// Build the primary-key definition from a Kind's attributes.
@@ -215,7 +240,12 @@ module SsdtDdlEmitter =
         let columns = k.Attributes |> List.map columnDef
         let pk = pkDef k
         let fks = k.References |> List.choose (fkDef targetByKey pkAttrByKey k)
-        Statement.CreateTable (toTableId k, columns, pk, fks)
+        // Slice 5.13.column-features-emit: thread Kind.ColumnChecks
+        // (chapter A.0' slice ε IR; now populated via cluster A1's
+        // rowset path lifting #ColumnCheckReality) through the
+        // realization layer's CHECK-constraint emission.
+        let checks = k.ColumnChecks |> List.map columnCheckDef
+        Statement.CreateTable (toTableId k, columns, pk, fks, checks)
 
     /// Resolve a column-SsKey to its physical column name within a
     /// kind. The IR's `Index.Columns` carries SsKey list (per

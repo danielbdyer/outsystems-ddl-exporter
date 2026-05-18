@@ -28,7 +28,7 @@ let private mkTable (schema: string) (table: string) : TableId =
 let ``Slice ζ: buildCreateTable returns Diagnostics with empty entries today`` () =
     let table = mkTable "dbo" "Widget"
     let cols : ColumnDef list = []
-    let result = ScriptDomBuild.buildCreateTable table cols None []
+    let result = ScriptDomBuild.buildCreateTable table cols None [] []
     Assert.Empty result.Entries
     Assert.NotNull result.Value
 

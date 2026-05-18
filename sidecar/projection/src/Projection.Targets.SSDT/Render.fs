@@ -122,40 +122,6 @@ module Render =
             sb.AppendLine() |> ignore
         | Comment text ->
             sb.Append("-- ").AppendLine(text) |> ignore
-        | CreateTable (table, columns, pk, fks) ->
-            sb.Append("CREATE TABLE ").Append(tableQualified table).AppendLine(" (") |> ignore
-            let hasPk = Option.isSome pk
-            let hasFks = not (List.isEmpty fks)
-            let lastColIdx = columns.Length - 1
-            columns
-            |> List.iteri (fun i c ->
-                let needsComma = i < lastColIdx || hasPk || hasFks
-                let sep = if needsComma then "," else ""
-                renderColumn sb c sep)
-            match pk with
-            | Some p ->
-                let cols = p.Columns |> List.map quote |> String.concat ", "
-                let sep = if hasFks then "," else ""
-                sb.Append("    CONSTRAINT ").Append(quote p.Name)
-                    .Append(" PRIMARY KEY (").Append(cols).Append(")").AppendLine(sep)
-                |> ignore
-            | None -> ()
-            let lastFkIdx = fks.Length - 1
-            fks
-            |> List.iteri (fun i fk ->
-                let sep = if i < lastFkIdx then "," else ""
-                sb.Append("    CONSTRAINT ").Append(quote fk.Name)
-                    .Append(" FOREIGN KEY (").Append(quote fk.SourceColumn)
-                    .Append(") REFERENCES ").Append(tableQualified fk.Target)
-                    .Append(" (").Append(quote fk.TargetColumn).Append(")")
-                    .AppendLine(sep)
-                |> ignore
-                // OnDelete clause is deferred — current emitter relies on
-                // SQL Server's NO ACTION default (matches the V2 IR for
-                // OutSystems-shaped fixtures). Surface here when the
-                // canary surfaces a non-default delete-rule.
-                ignore (actionSql fk.OnDelete))
-            sb.AppendLine(");") |> ignore
         | InsertRow (table, values) ->
             let cols = values |> List.map (fun v -> quote v.Column) |> String.concat ", "
             let vals = values |> List.map (fun v -> formatSqlLiteral v.Type v.Raw) |> String.concat ", "
@@ -167,6 +133,7 @@ module Render =
             sb.Append("SET IDENTITY_INSERT ").Append(tableQualified table)
                 .AppendLine(if enabled then " ON;" else " OFF;")
             |> ignore
+        | CreateTable _
         | CreateIndex _
         | SetExtendedProperty _ ->
             // Per pillar 7 four-question analysis at this site:
@@ -176,20 +143,24 @@ module Render =
             //   2. Already in codebase: yes (chapter 3.5).
             //   3. Cost: trivial (one delegate call).
             //   4. Structural reason it doesn't apply: NO — ScriptDom
-            //      emits CREATE INDEX + EXEC sys.sp_addextendedproperty
-            //      correctly per Sql160 grammar.
-            // Conclusion: delegate to ScriptDomGenerate (pillar-7 right
-            // move). The full Render→ScriptDomGenerate migration is a
-            // separate slice when the second consumer pressures it;
-            // each variant added here joins the typed-AST delegation
-            // arm rather than re-implementing the text emission.
+            //      emits CREATE TABLE / CREATE INDEX / EXEC
+            //      sys.sp_addextendedproperty correctly per Sql160
+            //      grammar.
+            //
+            // Slice 5.13.column-features-emit moved CREATE TABLE
+            // into this delegation arm so DEFAULT-constraint +
+            // CHECK-constraint emission live in one place
+            // (`ScriptDomBuild.columnDefinition` +
+            // `ScriptDomBuild.checkConstraint`). Single source of
+            // truth retires the prior StringBuilder duplication.
             match ScriptDomBuild.buildStatement s with
             | Some fragment ->
                 sb.Append(ScriptDomGenerate.generateOne fragment).AppendLine() |> ignore
             | None ->
-                // Unreachable: CreateIndex / SetExtendedProperty always
-                // build typed fragments (per ScriptDomBuild.buildStatement
-                // 's exhaustive match).
+                // Unreachable: CreateTable / CreateIndex /
+                // SetExtendedProperty always build typed fragments
+                // (per ScriptDomBuild.buildStatement's exhaustive
+                // match).
                 ()
 
     /// Fold a statement stream into a single SQL-text artifact. The

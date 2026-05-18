@@ -173,7 +173,7 @@ let ``SsdtDdlEmitter.statements yields one CreateTable per catalog kind`` () =
         stmts
         |> List.choose (fun s ->
             match s with
-            | CreateTable (table, _, _, _) -> Some table
+            | CreateTable (table, _, _, _, _) -> Some table
             | _ -> None)
     Assert.Equal (List.length allKinds, List.length createTables)
 
@@ -755,7 +755,7 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
         statements
         |> List.findIndex (fun stmt ->
             match stmt with
-            | Statement.CreateTable (table, _, _, _) ->
+            | Statement.CreateTable (table, _, _, _, _) ->
                 table.Schema + "." + table.Table =
                     (Catalog.tryFindKind kindKey enriched
                      |> Option.map (fun k -> k.Physical.Schema + "." + k.Physical.Table)
@@ -848,3 +848,82 @@ let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module F
     Assert.Equal<Set<SsKey>>
         (Set.ofList [ aKindKey; bKindKey ],
          keys)
+
+// ---------------------------------------------------------------------------
+// Slice 5.13.column-features-emit — DEFAULT + CHECK emission through the
+// SSDT realization. Confirms `Attribute.DefaultValue` (`SqlLiteral option`)
+// and `Kind.ColumnChecks` (`ColumnCheck list`) both surface in the
+// rendered CREATE TABLE body. The typed-AST path is the same one
+// `ScriptDomBuild.buildCreateTable` exercises in
+// `ScriptDomRoundTripTests`; this canary closes the V2-Attribute → SSDT-
+// emission integration gap (chapter A.0' slice ε emit closure).
+// ---------------------------------------------------------------------------
+
+let private columnFeaturesKind : Kind =
+    let mkAttr key label typ isPk =
+        { IRBuilders.mkAttribute (attrKey ["Widget"; key]) (mkName label) typ
+            with Column = { ColumnName = label.ToUpperInvariant(); IsNullable = not isPk }
+                 IsPrimaryKey = isPk
+                 IsMandatory  = isPk }
+    let idAttr = mkAttr "Id" "Id" Integer true
+    let priceAttr =
+        { mkAttr "Price" "Price" Integer false with
+            DefaultValue = Some (SqlLiteral.ofRaw Integer "0") }
+    let nameAttr =
+        { mkAttr "Name" "Name" Text false with
+            Length = Some 100
+            DefaultValue = Some (SqlLiteral.ofRaw Text "unknown") }
+    let checkOk =
+        ColumnCheck.create
+            (attrKey ["Widget"; "CK_Price"])
+            (Name.create "CK_Widget_PricePositive" |> Result.toOption)
+            "([PRICE] >= 0)"
+            false
+        |> Result.value
+    { IRBuilders.mkKind
+        (kindKey ["Widget"])
+        (mkName "Widget")
+        { Schema = "dbo"; Table = "OSUSR_W_WIDGET"; Catalog = None }
+        [ idAttr; priceAttr; nameAttr ]
+      with ColumnChecks = [ checkOk ] }
+
+let private columnFeaturesCatalog : Catalog =
+    {
+        Modules = [
+            IRBuilders.mkModule (modKey "WidgetModule") (mkName "WidgetModule") [ columnFeaturesKind ]
+        ]
+        Sequences = []
+    }
+
+[<Fact>]
+let ``Slice 5.13.column-features-emit: DEFAULT clause surfaces in CREATE TABLE body for typed-literal default`` () =
+    let enriched = enrich columnFeaturesCatalog
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let file =
+        ArtifactByKind.toMap artifact
+        |> Map.find columnFeaturesKind.SsKey
+    // ScriptDom emits `DEFAULT <literal>` as an inline column constraint;
+    // assert the integer + text defaults both surfaced.
+    Assert.Contains ("DEFAULT 0", file.Body)
+    Assert.Contains ("DEFAULT N'unknown'", file.Body)
+
+[<Fact>]
+let ``Slice 5.13.column-features-emit: CHECK constraint surfaces in CREATE TABLE body via TSql160Parser`` () =
+    let enriched = enrich columnFeaturesCatalog
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let file =
+        ArtifactByKind.toMap artifact
+        |> Map.find columnFeaturesKind.SsKey
+    // The CHECK constraint is named and parsed from `([PRICE] >= 0)`;
+    // ScriptDom round-trips it as `CHECK ([PRICE]>=0)` (no spaces around
+    // the operator per the generator's pinned options).
+    Assert.Contains ("CONSTRAINT [CK_Widget_PricePositive] CHECK", file.Body)
+
+[<Fact>]
+let ``Slice 5.13.column-features-emit: T1 byte-determinism holds with DEFAULT + CHECK`` () =
+    let enriched = enrich columnFeaturesCatalog
+    let a1 = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let a2 = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let b1 = (ArtifactByKind.toMap a1 |> Map.find columnFeaturesKind.SsKey).Body
+    let b2 = (ArtifactByKind.toMap a2 |> Map.find columnFeaturesKind.SsKey).Body
+    Assert.Equal (b1, b2)

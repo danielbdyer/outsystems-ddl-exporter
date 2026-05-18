@@ -24,6 +24,15 @@ open Projection.Core
 /// IR-typed column declaration. The realization layer (`Render`)
 /// converts `(Type, Length, Precision, Scale)` to its SQL type
 /// expression, so emit-time and deploy-time agree by construction.
+///
+/// Slice 5.13.column-features-emit (chapter A.0' slice ε emit-side
+/// closure) extends the record with `DefaultValue` + `DefaultName` +
+/// `Computed`. The realization layer's `columnDefinition` builder
+/// emits these as inline column constraints (`CONSTRAINT <name>
+/// DEFAULT <expr>` and `AS <expr> [PERSISTED]`). When `Computed`
+/// is `Some`, the column has no `Type` / `Length` / `Precision` /
+/// `Scale` / `IsIdentity` material (the expression's result type
+/// is server-inferred); the builder skips those clauses.
 type ColumnDef =
     {
         Name : string
@@ -34,10 +43,45 @@ type ColumnDef =
         Nullable : bool
         IsIdentity : bool
         IsPrimaryKey : bool
+        /// Default-value expression as a typed `SqlLiteral` or
+        /// `None`. Source: V1's `#Attr.DefaultValue` (logical default
+        /// V1 carries) + `#ColumnReality.DefaultDefinition` (the
+        /// deployed-target reality). The realization layer emits
+        /// `[CONSTRAINT <name>] DEFAULT <literal>` for typed literals;
+        /// expression-shaped defaults (e.g., `getutcdate()`) flow
+        /// via raw-string pass-through at the realization boundary
+        /// (matrix row 53; chapter A.0' slice ε emit closure).
+        DefaultValue : SqlLiteral option
+        /// Named-default-constraint identifier (V1's
+        /// `DF_<table>_<column>` shape). Mirrors V1's deployed-
+        /// target constraint identity so V2's CREATE TABLE
+        /// round-trips against V1 emissions. `None` when the
+        /// default carries no explicit name (V2's `CONSTRAINT`
+        /// clause then omits the identifier and SQL Server
+        /// auto-names the constraint).
+        DefaultName : string option
         /// The originating attribute's display name + SsKey root,
         /// preserved so `Render.toText` can keep the diffable-form
         /// trailing comment that the v1 emitter carried.
         Provenance : string
+    }
+
+/// Table-level CHECK constraint. V2's `Kind.ColumnChecks` IR (chapter
+/// A.0' slice ε) carries one entry per unique constraint (table-
+/// scoped — a CHECK can reference multiple columns; V1's per-column
+/// rowset projection dedupes here). Slice 5.13.column-features-emit
+/// wires these into V2's `Statement.CreateTable` via the new
+/// `ColumnCheckDef list` slot.
+///
+/// `Definition` is the V1 reality string (e.g., `([Age] >= 0 AND
+/// [Age] < 200)`). The realization layer parses via
+/// `TSql160Parser.ParseBooleanExpression` and embeds the typed
+/// `BooleanExpression` into ScriptDom's `CheckConstraintDefinition`.
+type ColumnCheckDef =
+    {
+        Name         : string option
+        Definition   : string
+        IsNotTrusted : bool
     }
 
 type ReferenceActionSql = NoActionSql | CascadeSql | SetNullSql
@@ -152,7 +196,7 @@ type ExtendedPropertyOwner =
 type Statement =
     | Blank
     | Comment of text: string
-    | CreateTable of TableId * ColumnDef list * PrimaryKeyDef option * ForeignKeyDef list
+    | CreateTable of TableId * ColumnDef list * PrimaryKeyDef option * ForeignKeyDef list * ColumnCheckDef list
     /// Chapter 4.1.A slice 3: CREATE INDEX statement for non-PK
     /// indexes. PK-marked indexes are inlined in CREATE TABLE per
     /// V1 convention; the SsdtDdlEmitter filters them before

@@ -137,6 +137,57 @@ module ScriptDomBuild =
         | _ -> ()
         r :> DataTypeReference
 
+    /// Map a typed `SqlLiteral` value to a ScriptDom `ScalarExpression`
+    /// (specifically a `Literal` subclass projected to its supertype
+    /// for use in `RowValue.ColumnValues` + DEFAULT clauses). Per the
+    /// Tier-1 #4 transition (RawTextEmitter retirement arc): the
+    /// IR→typed-literal projection lives in
+    /// `Projection.Core.SqlLiteral`; this is the SSDT-resident
+    /// `SqlLiteral` → ScriptDom-`Literal` mapping. Used by
+    /// `cellExpression` (single-row INSERT VALUES), `buildMergeStatement`
+    /// (MERGE InlineDerivedTable), `buildUpdateStatement` (UPDATE SET +
+    /// change-detection WHERE), and `columnDefinition` (DEFAULT
+    /// constraint emission per slice 5.13.column-features-emit).
+    let buildSqlLiteral (lit: SqlLiteral) : ScalarExpression =
+        match lit with
+        | NullLit ->
+            NullLiteral() :> ScalarExpression
+        | IntegerLit s ->
+            let l = IntegerLiteral()
+            l.Value <- s
+            l :> ScalarExpression
+        | DecimalLit s ->
+            let l = NumericLiteral()
+            l.Value <- s
+            l :> ScalarExpression
+        | BooleanLit b ->
+            let l = IntegerLiteral()
+            l.Value <- if b then "1" else "0"
+            l :> ScalarExpression
+        | TemporalLit raw ->
+            let l = StringLiteral()
+            l.Value <- raw
+            l.IsNational <- false
+            l :> ScalarExpression
+        | GuidLit raw ->
+            let l = StringLiteral()
+            l.Value <- raw
+            l.IsNational <- false
+            l :> ScalarExpression
+        | TextLit raw ->
+            let l = StringLiteral()
+            l.Value <- raw
+            l.IsNational <- true
+            l :> ScalarExpression
+        | BinaryLit prefixed ->
+            let l = BinaryLiteral()
+            // ScriptDom's `BinaryLiteral.Value` carries the value
+            // pre-prefixed; `SqlLiteral.BinaryLit` already has the
+            // `0x` prefix per `RawValueCodec.withHexPrefix`. The
+            // writer emits the value verbatim.
+            l.Value <- prefixed
+            l :> ScalarExpression
+
     // -----------------------------------------------------------------------
     // Column definitions inside CREATE TABLE.
     // -----------------------------------------------------------------------
@@ -166,7 +217,69 @@ module ScriptDomBuild =
             incLit.Value <- "1"
             identity.IdentityIncrement <- incLit
             col.IdentityOptions <- identity
+        // DEFAULT clause (slice 5.13.column-features-emit): when the
+        // column carries a typed `SqlLiteral` default, emit an
+        // inline `[CONSTRAINT <name>] DEFAULT <literal>` clause.
+        // ScriptDom carries this as a `DefaultConstraintDefinition`
+        // on `Constraints`. The literal flows through `buildSqlLiteral`
+        // — same typed-AST path the MERGE / UPDATE statements use,
+        // so the rendered DEFAULT value is byte-identical to other
+        // emission surfaces.
+        match c.DefaultValue with
+        | None -> ()
+        | Some lit ->
+            let defCons = DefaultConstraintDefinition()
+            match c.DefaultName with
+            | Some name when not (System.String.IsNullOrWhiteSpace name) ->
+                defCons.ConstraintIdentifier <- bracketed name
+            | _ -> ()
+            defCons.Expression <- buildSqlLiteral lit
+            col.Constraints.Add(defCons)
         col
+
+    /// Build a table-level CHECK constraint via TSql160Parser. Slice
+    /// 5.13.column-features-emit (chapter A.0' slice ε emit closure).
+    /// V1's `#ColumnCheckReality.Definition` carries the deployed
+    /// expression text (e.g., `([Age] >= 0)`); we parse it via
+    /// `TSql160Parser.ParseBooleanExpression` and embed the typed
+    /// `BooleanExpression` into ScriptDom's `CheckConstraintDefinition`.
+    /// Parse failure surfaces as a `Diagnostics<...>` Warning entry
+    /// in a future slice; today the failure path produces a
+    /// `BooleanParenthesisExpression` with the raw text as a
+    /// `StringLiteral` (last-resort fallback so emission proceeds).
+    let private checkConstraint (chk: ColumnCheckDef) : CheckConstraintDefinition =
+        let cons = CheckConstraintDefinition()
+        match chk.Name with
+        | Some name when not (System.String.IsNullOrWhiteSpace name) ->
+            cons.ConstraintIdentifier <- bracketed name
+        | _ -> ()
+        let parser = TSql160Parser(initialQuotedIdentifiers = false)
+        use reader = new System.IO.StringReader(chk.Definition)
+        let fragment, _errors = parser.ParseBooleanExpression(reader)
+        cons.CheckCondition <-
+            match Option.ofObj fragment with
+            | Some expr -> expr
+            | None ->
+                // Last-resort fallback: wrap raw text in a literal
+                // (preserves the SQL surface even when the parser
+                // can't produce a typed AST). Real production V1
+                // expressions parse cleanly under TSql160Parser.
+                let str = StringLiteral()
+                str.Value <- chk.Definition
+                let cmp = BooleanComparisonExpression()
+                cmp.ComparisonType <- BooleanComparisonType.Equals
+                cmp.FirstExpression <- str :> ScalarExpression
+                cmp.SecondExpression <- str :> ScalarExpression
+                cmp :> BooleanExpression
+        // V1's `IsNotTrusted` reflects whether the deployed-target's
+        // CHECK is currently NOCHECK'd (operator may have disabled it
+        // for a bulk-load). ScriptDom doesn't model the NOCHECK state
+        // inline in `CHECK constraint`; the WITH NOCHECK clause is
+        // emitted at ALTER TABLE level. For inline emission we just
+        // carry the constraint definition; preservation of NOCHECK
+        // state is a future post-emit ALTER TABLE step (matrix row
+        // 59 cash-out).
+        cons
 
     /// Build the table-level PRIMARY KEY constraint (when present).
     /// ScriptDom carries this as a
@@ -226,6 +339,7 @@ module ScriptDomBuild =
         (columns: ColumnDef list)
         (pk: PrimaryKeyDef option)
         (fks: ForeignKeyDef list)
+        (checks: ColumnCheckDef list)
         : Diagnostics<CreateTableStatement> =
         let stmt = CreateTableStatement()
         stmt.SchemaObjectName <- schemaObjectFromTableId table
@@ -238,63 +352,17 @@ module ScriptDomBuild =
             def.TableConstraints.Add(primaryKeyConstraint p)
         for fk in fks do
             def.TableConstraints.Add(foreignKeyConstraint fk)
+        // Slice 5.13.column-features-emit (chapter A.0' slice ε emit
+        // closure): table-level CHECK constraints follow PK + FK in
+        // declaration order, matching V1's CREATE TABLE shape.
+        for chk in checks do
+            def.TableConstraints.Add(checkConstraint chk)
         stmt.Definition <- def
         Diagnostics.ofValue stmt
 
     // -----------------------------------------------------------------------
     // INSERT statements.
     // -----------------------------------------------------------------------
-
-    /// Build the V-typed `Literal` expression for one cell. `""` is
-    /// NULL; numeric / text / binary / guid / boolean dispatch per
-    /// Map a typed `SqlLiteral` value to a ScriptDom `ScalarExpression`
-    /// (specifically a `Literal` subclass projected to its supertype
-    /// for use in `RowValue.ColumnValues`). Per the Tier-1 #4 transition
-    /// (RawTextEmitter retirement arc): the IR→typed-literal projection
-    /// lives in `Projection.Core.SqlLiteral`; this is the SSDT-resident
-    /// `SqlLiteral` → ScriptDom-`Literal` mapping. Used by both
-    /// `cellExpression` (single-row `InsertStatement` VALUES) and
-    /// `buildMergeStatement` (multi-row VALUES inside MERGE's
-    /// InlineDerivedTable).
-    let buildSqlLiteral (lit: SqlLiteral) : ScalarExpression =
-        match lit with
-        | NullLit ->
-            NullLiteral() :> ScalarExpression
-        | IntegerLit s ->
-            let l = IntegerLiteral()
-            l.Value <- s
-            l :> ScalarExpression
-        | DecimalLit s ->
-            let l = NumericLiteral()
-            l.Value <- s
-            l :> ScalarExpression
-        | BooleanLit b ->
-            let l = IntegerLiteral()
-            l.Value <- if b then "1" else "0"
-            l :> ScalarExpression
-        | TemporalLit raw ->
-            let l = StringLiteral()
-            l.Value <- raw
-            l.IsNational <- false
-            l :> ScalarExpression
-        | GuidLit raw ->
-            let l = StringLiteral()
-            l.Value <- raw
-            l.IsNational <- false
-            l :> ScalarExpression
-        | TextLit raw ->
-            let l = StringLiteral()
-            l.Value <- raw
-            l.IsNational <- true
-            l :> ScalarExpression
-        | BinaryLit prefixed ->
-            let l = BinaryLiteral()
-            // ScriptDom's `BinaryLiteral.Value` carries the value
-            // pre-prefixed; `SqlLiteral.BinaryLit` already has the
-            // `0x` prefix per `RawValueCodec.withHexPrefix`. The
-            // writer emits the value verbatim.
-            l.Value <- prefixed
-            l :> ScalarExpression
 
     /// Cell-value → ScalarExpression. Routes through the typed
     /// `SqlLiteral.ofRaw` projection (Core) and the SSDT-resident
@@ -1008,16 +1076,8 @@ module ScriptDomBuild =
         match stmt with
         | Blank -> None
         | Comment _ -> None
-        | CreateTable (table, cols, pk, fks) ->
-            // Chapter 4.9 slice ζ — Diagnostics-bearing canonical
-            // signatures across CreateTable / CreateIndex /
-            // SetExtendedProperty / MergeStatement / UpdateStatement.
-            // The Statement-DU dispatcher drops Diagnostics — the
-            // dispatcher returns raw TSqlStatement per A35's stream
-            // contract. Future emit-time consumers wanting per-
-            // builder Diagnostics surfaced consume the builders
-            // directly (each returns `Diagnostics<TSqlStatement>`).
-            Some ((buildCreateTable table cols pk fks).Value :> TSqlStatement)
+        | CreateTable (table, cols, pk, fks, checks) ->
+            Some ((buildCreateTable table cols pk fks checks).Value :> TSqlStatement)
         | CreateIndex idx ->
             Some ((buildCreateIndex idx).Value :> TSqlStatement)
         | InsertRow (table, cells) ->

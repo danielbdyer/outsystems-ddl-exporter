@@ -14601,4 +14601,148 @@ matches the Attribute SsKey exactly under the
 - `CHAPTER_5_0_CLOSE.md` "Cluster A1" — closes the
   audit-wave's named cluster.
 
+## 2026-05-18 (slice 5.13.column-features-emit) — DEFAULT + CHECK emission through ScriptDom typed AST; CREATE TABLE single-source-of-truth via ScriptDomGenerate
+
+### Scope
+
+Closes the emit-side gap for chapter A.0' slice ε IR lifts. Cluster A1
+(slice 5.13.ossys-rowsets-cluster, 2026-05-18) shipped the IR-side
+`Kind.ColumnChecks` lift from rowset 7 `#ColumnCheckReality`; today's
+slice closes the realization-layer side by surfacing DEFAULT + CHECK
+clauses through `SsdtDdlEmitter`'s CREATE TABLE body. Matrix rows
+12 (CHECK emit), 53 (DEFAULT emit), 182 (the 5% delta in V1
+CreateTableStatementBuilder line-by-line audit) all reclassify to
+🟢 PARITY.
+
+### What ships
+
+**`Projection.Targets.SSDT/Statement.fs`:**
+
+- `ColumnDef` extended with `DefaultValue : SqlLiteral option` +
+  `DefaultName : string option`. The typed `SqlLiteral` flows
+  through `buildSqlLiteral` to ScriptDom's
+  `DefaultConstraintDefinition.Expression` — same path the MERGE /
+  UPDATE statements use, so DEFAULT values are byte-identical
+  across emission surfaces.
+- New `ColumnCheckDef` record (table-scoped per V2's chapter A.0'
+  slice ε correction of V1's per-attribute mismodeling — a CHECK
+  may reference multiple columns).
+- `Statement.CreateTable` constructor extended with a fifth
+  `ColumnCheckDef list` argument. Per the closed-DU expansion
+  empirical-test discipline, F# field-/variant-extension errors
+  light up at literal-construction sites only — confirmed in
+  practice across the test surface (3 ColumnDef literals + 6
+  buildCreateTable invocations + 3 Statement.CreateTable
+  constructor invocations + 3 pattern-match sites; field-extension
+  propagation is bounded).
+
+**`Projection.Targets.SSDT/ScriptDomBuild.fs`:**
+
+- `columnDefinition` emits inline `[CONSTRAINT <name>] DEFAULT
+  <literal>` via ScriptDom's `DefaultConstraintDefinition` on
+  `Constraints`. Constraint identity is bracketed when
+  `DefaultName` populated; absent name → SQL Server auto-names the
+  constraint (V1 default behavior preserved).
+- New private `checkConstraint` builder parses
+  `chk.Definition` via `TSql160Parser.ParseBooleanExpression` and
+  embeds the typed `BooleanExpression` into ScriptDom's
+  `CheckConstraintDefinition`. Last-resort fallback wraps raw text
+  in a literal comparison so emission proceeds even if the parser
+  can't produce a typed AST — production V1 expressions parse
+  cleanly under TSql160Parser per chapter 4.6 slice γ filter-parse
+  experience.
+- `buildCreateTable` signature extended with a fifth
+  `(checks: ColumnCheckDef list)` parameter; table-level CHECK
+  constraints follow PK + FK in declaration order, matching V1's
+  CREATE TABLE shape per matrix row 121.
+- The `buildSqlLiteral` block moved up above `columnDefinition`
+  (F# order-sensitivity — `columnDefinition` consumes the literal
+  builder).
+
+**`Projection.Targets.SSDT/Render.fs`:**
+
+- `CreateTable` arm collapsed into the `ScriptDomGenerate`
+  delegation arm. Previously the StringBuilder `renderColumn` path
+  was the active CREATE TABLE realizer; today CREATE TABLE / CREATE
+  INDEX / SetExtendedProperty all delegate to `ScriptDomBuild
+  .buildStatement` + `ScriptDomGenerate.generateOne`. The prior
+  per-column StringBuilder helper retires — DEFAULT + CHECK
+  emission lives in **one** place (`ScriptDomBuild`), not two.
+
+**`Projection.Targets.SSDT/SsdtDdlEmitter.fs`:**
+
+- `columnDef` populates `DefaultValue` from `Attribute.DefaultValue`
+  (today's JSON-adapter path); `DefaultName = None` pending the
+  `#ColumnReality.DefaultConstraintName` rowset wiring (separate
+  slice; matrix row 53 cash-out completion).
+- New private `columnCheckDef` projects `Kind.ColumnChecks` entries
+  to the realization-layer `ColumnCheckDef`.
+- `createTableStatement` threads `k.ColumnChecks |> List.map
+  columnCheckDef` as the fifth `Statement.CreateTable` argument.
+
+### Operating-discipline payoff
+
+- **Text-builder-as-first-instinct discipline** (CLAUDE.md
+  Tier-3 codification) — both new builders start on the typed AST;
+  the `TSql160Parser.ParseBooleanExpression` step is the
+  Microsoft-canonical use-case-specific library for CHECK
+  predicates. No StringBuilder shortcut at the realization-layer
+  CHECK emission site.
+- **Pillar 7 gold-standard library** — `DefaultConstraintDefinition`
+  is ScriptDom's typed surface for DEFAULT clauses; previous
+  attempts to format DEFAULT via raw-string `String.Concat` at the
+  Render layer are retired by construction.
+- **Single source of truth** — Render.fs CreateTable arm
+  delegating to `ScriptDomGenerate.generateOne` means
+  StringBuilder-based CREATE TABLE rendering retires. Future
+  CREATE TABLE feature additions (NOCHECK FK preservation per
+  matrix row 59; DEFAULT constraint identity round-trip per matrix
+  row 53 follow-on) land in `ScriptDomBuild` only.
+- **Closed-DU expansion empirical-test discipline** —
+  `Statement.CreateTable`'s field extension produced compile errors
+  at exactly 13 literal/pattern-match sites and zero at semantic
+  interpretation sites. Field-extension propagation is bounded by
+  the discipline's geometry, as predicted by `DECISIONS 2026-05-13
+  — Closed-DU expansion: empirical confirmation`.
+
+### Coverage tests now passing (3 new)
+
+- `SsdtDdlEmitterTests.``Slice 5.13.column-features-emit: DEFAULT clause surfaces in CREATE TABLE body for typed-literal default`` ` — asserts integer + N'…' text DEFAULT both surface.
+- `SsdtDdlEmitterTests.``Slice 5.13.column-features-emit: CHECK constraint surfaces in CREATE TABLE body via TSql160Parser`` ` — asserts named CHECK with `[CK_Widget_PricePositive]` constraint identity surfaces.
+- `SsdtDdlEmitterTests.``Slice 5.13.column-features-emit: T1 byte-determinism holds with DEFAULT + CHECK`` ` — same input, same output, byte-identical (closes the T1 axis for the new emission paths).
+
+Full test suite: **1552 passing, 0 failing** (up from 1549 pre-slice;
++3 net new).
+
+### Deferred axes (no consumer pressure yet)
+
+- DEFAULT constraint **identity** round-trip (`DF_<Table>_<Column>`
+  via `DefaultName`) — the field exists on `ColumnDef` and feeds
+  the bracketed `ConstraintIdentifier`; populating it requires
+  rowset path lifting `#ColumnReality.DefaultConstraintName`
+  (separate slice; matrix row 53 cash-out completion when (a) a
+  manifest emitter names defaults, or (b) DDL round-trip preserves
+  V1 constraint identity).
+- **Computed columns** — `Statement.ColumnDef` does not carry
+  computed-column axes today per IR-grows-under-evidence; no V2
+  rowset path or JSON source populates `Attribute.Computed`.
+  Surfaces when the first consumer demands it.
+- CHECK constraint **NOCHECK state** — carried on `ColumnCheckDef
+  .IsNotTrusted` but not emitted inline. ScriptDom doesn't model
+  WITH NOCHECK in the inline `CHECK` clause; round-trip
+  preservation is a post-emit ALTER TABLE concern (matrix row 59
+  cash-out, paired with FK NOCHECK).
+
+### Cross-references
+
+- `V1_PARITY_MATRIX.md` rows 12 + 53 + 182 — Status-history
+  amendments record the closure.
+- `BACKLOG.md` chapter A.0' slice ε — emit-side closure shipped;
+  the IR-side and emit-side now ship in the same wave.
+- Companion sibling slice (cluster A1 closure, 2026-05-18) shipped
+  the IR-side `Kind.ColumnChecks` lift; this slice closes the
+  realization-layer side.
+- `DECISIONS 2026-05-10 — Text-builder-as-first-instinct discipline`
+  — the new builders honor the Tier-3 typed-AST commitment.
+
 ---
