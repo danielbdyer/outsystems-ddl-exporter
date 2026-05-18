@@ -12523,3 +12523,67 @@ sunsets with V1) + 41 (🟠 NOT-MAPPED; V2 `compare` verb reserved).
   the `compare` verb extends it.
 
 ---
+
+## 2026-05-18 (slice 5.2.α.module) — Per-module non-empty invariant: caller discipline over Module.create
+
+V1's `ModuleModel.Create` enforces a per-module non-empty Entity
+invariant: a module constructed with zero entities fails fast with a
+`module.entities.empty` ValidationError. The invariant is one of three
+shape-checks V1 applies (per-module entity non-empty + logical-name
+uniqueness + case-insensitive physical-name uniqueness).
+
+V2's `Module.create` (in `Catalog.fs`) permits empty `Module.Kinds`.
+The structural invariants V2 enforces at the Module aggregate
+boundary are limited to Kind-SsKey disjointness within the module.
+V2's `Catalog.create` (the outer aggregate root) enforces global
+Kind-SsKey uniqueness across all modules but does not check per-module
+min-cardinality either.
+
+The divergence is **not principled** — it's an under-specification.
+V2 didn't deliberately decide "empty modules are OK"; the invariant
+simply wasn't lifted from V1 during the chapter-2 / chapter-3.x
+work that built `Module.create`. The audit slice 5.2.α.module surfaces
+the gap.
+
+Two paths forward:
+
+**(a) Restore the invariant (preferred).** Add to `Module.create`:
+
+```fsharp
+if List.isEmpty kinds then
+    Result.failureOf (ValidationError.create
+        "module.kinds.empty"
+        "module must contain at least one kind")
+else
+    // existing SsKey-disjointness check ...
+```
+
+Cost: ~5 LOC; one new error code; possibly some adapter tests need
+updating. Acceptance: unit test verifying
+`Module.create "M" [] = Error [{Code="module.kinds.empty"; ...}]`.
+
+**(b) Document the deliberate weakening.** If a downstream V2
+consumer legitimately constructs empty modules (currently no evidence
+for this), explicitly state that empty modules are permitted at the
+aggregate boundary and document the compensating constraint (adapters
++ passes always produce non-empty modules; the catalog-assembly path
+guarantees the post-condition without the Module.create check).
+
+**Decision.** Path (a) is preferred — it costs little, aligns with
+V1 parity, and prevents a ghost-module class of bug in transformation
+passes. Cash-out scheduled for the next time `Module.create` is
+touched (no urgent trigger); meanwhile, the matrix row 42 carries
+the gap visibly.
+
+Recorded in `V1_PARITY_MATRIX.md` row 42 as 🟡 DIVERGENCE.
+
+### Cross-references
+
+- A39 (aggregate-root smart-constructor invariants) — `Module.create`
+  is the canonical instance.
+- `IR grows under evidence, not speculation` (CLAUDE.md operating-
+  disciplines table) — the same discipline that justified V2's
+  initial under-specification now justifies adding the invariant
+  back (the evidence is the V1 parity-audit finding).
+
+---

@@ -89,6 +89,7 @@
     <Compile Include="OssysContractVersioningParityTests.fs" />
     <Compile Include="AdvancedSqlExportParityTests.fs" />
     <Compile Include="SchemaDiffLensParityTests.fs" />
+    <Compile Include="OssysDomainModuleParityTests.fs" />
     <Compile Include="IsActiveCarryThroughTests.fs" />
     <Compile Include="IRFidelityLiftTests.fs" />
     <Compile Include="NoSilentDropTests.fs" />
