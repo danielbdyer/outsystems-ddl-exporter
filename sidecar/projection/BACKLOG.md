@@ -1,28 +1,19 @@
 # BACKLOG — Operational backlog for V2 cutover
 
-**Status:** re-canonicalized 2026-05-16; per-phase status refreshed
-2026-05-17 (post-chapter-A.4.7' doc-refresh hygiene). Sibling to
-`V2_DRIVER.md`. The operational ledger that interweaves V2_DRIVER's
-per-phase chapter sequence with V1 inheritance opportunities (carbon-copy
-candidates and shipped carbon-copies), cross-cutting infrastructure work,
-and the risk register.
+**Status:** comprehensively re-canonicalized 2026-05-18 (post-chapter-5 audit-wave close). Sibling to `V2_DRIVER.md`. The operational ledger interweaving V2_DRIVER's per-phase chapter sequence with V1 parity audit (chapter 5 wave), parity cash-out implementation wave (Phase 5.13), path to T-30 green (Phase 8), V2-driver operator workflow (Phase 9), V1 sunset (Phase 10), cross-cutting infrastructure work, lead-up refactors, and the risk register.
 
-**Current state as of 2026-05-17 (post-chapter-4.8 close).** V2-driver
-critical-path Phases 1–7 are all closed end-to-end. Chapters 4.4
-(Manifest diagnostic fields) + 4.5 (Index IR fidelity) + 4.6
-(forward-signal cleanup bundle) + 4.7 (refactor bundle + sibling-
-wrapper discipline codification) + **chapter 4.8 (IRBuilders Attribute
-sweep + on-disk Index metadata + isPlatformAuto emitter toggle)**
-closed 2026-05-17. **All four of
-chapter 4.4's always-false PredicateName variants now lift to real
-V2 IR evaluation** — `HasFilteredIndex` + `HasIncludedIndexColumns`
-(chapter 4.5) plus `HasLogicalForeignKeyWithoutDbConstraint` +
-`HasLogicalForeignKeyWithDbConstraint` (chapter 4.6 slice α). One of
-four A.0' deferred concepts retired by chapter 4.6 slice β
-(`IsPlatformAuto`). Chapter 4.5 silent-skip Q3 deferral closed by
-chapter 4.6 slice γ (filter-parse Diagnostic helper). `PreRemediation`
-stays empty per V2_DRIVER §154. See §VII Sequencing graph for the
-current fan-out.
+**Current state as of 2026-05-18 (post-chapter-5 audit-wave close).** V2-driver critical-path Phases 1–7 + 5.0–5.12 all closed end-to-end. **Chapter 5 V1 Parity Audit Wave** (chapters 5.1–5.8) shipped 23 sequential slice commits + 185 matrix rows + 22 DECISIONS entries + 26 parity-test files + 3 synthesis documents (`V1_ARCHITECTURE_COMPENDIUM.md` + `V2_PATTERNS_COMPENDIUM.md` + `CUTOVER_READINESS_BRIEF.md`).
+
+**V2-driver readiness (per CUTOVER_READINESS_BRIEF.md):**
+- 🟢 V2-DRIVER-READY: SCHEMA + PIPELINE-ORCHESTRATION (per-pair flip eligible today)
+- 🟡 V2-AUGMENTED: DATA (gating chapter 4.1.B) + IDENTITY (gating chapter 4.2 slice ε + UAT dry-run) + DIAGNOSTICS (soft gate; operator-tolerant) + OPERATOR-AFFORDANCE (per-verb gating)
+
+**Three blocking deliverables for T-30 green:**
+1. Chapter 4.1.B CDC-silence property test + global Phase1/Phase2 cross-emitter ordering (DATA axis)
+2. Chapter 4.2 slice ε remaining matching strategies (IDENTITY axis)
+3. ≥1 full UAT dry-run on real inventory CSVs (IDENTITY confirmation)
+
+See § VII Sequencing graph for the current fan-out and Phase 8 for the structured path.
 
 **Strategic relationship:**
 
@@ -67,10 +58,13 @@ the operational *what and when* is here.
   - [Phase 5.9 — IRBuilders Attribute sweep + on-disk Index metadata + isPlatformAuto emitter toggle (chapter 4.8; closed)](#phase-59--irbuilders-attribute-sweep--on-disk-index-metadata--isplatformauto-emitter-toggle-chapter-48-closed-2026-05-17)
   - [Phase 5.10 — Big-batch forward-signal close-out + WithDiagnostics extensions (chapter 4.9; closed)](#phase-510--big-batch-forward-signal-close-out--withdiagnostics-extensions-chapter-49-closed-2026-05-17)
   - [Phase 5.11 — OSSYS catalog producer carbon-copy (chapter 5.0; closed)](#phase-511--ossys-catalog-producer-carbon-copy-chapter-50-closed-2026-05-17)
-  - [Phase 5.12 — V1 Parity Audit Wave (chapter 5.1+; in flight)](#phase-512--v1-parity-audit-wave-chapter-51-in-flight)
+  - [Phase 5.12 — V1 Parity Audit Wave (chapter 5.1–5.8; AUDIT WAVE CLOSED 2026-05-18)](#phase-512--v1-parity-audit-wave-chapter-5158-audit-wave-closed-2026-05-18)
+  - [Phase 5.13 — Parity cash-out implementation wave (in-flight; triggered per row)](#phase-513--parity-cash-out-implementation-wave-in-flight-triggered-per-row)
   - [Phase 6 — DACPAC dev-tooling (chapter 3.x; closed)](#phase-6--dacpac-dev-tooling-chapter-3x-closed-under-reframe)
   - [Phase 7 — SnapshotRowsets (chapter 3.2; closed)](#phase-7--snapshotrowsets-chapter-32-closed)
-  - [Phase 8 — Pragmatic close](#phase-8--pragmatic-close)
+  - [Phase 8 — Path to T-30 green (the cutover-ladder gate)](#phase-8--path-to-t-30-green-the-cutover-ladder-gate)
+  - [Phase 9 — V2-driver operator workflow (post-T-30; cutover-window operator UX)](#phase-9--v2-driver-operator-workflow-post-t-30-cutover-window-operator-ux)
+  - [Phase 10 — V1 sunset (cutover+30 onward)](#phase-10--v1-sunset-cutover30-onward)
 - [IV. V1 inheritance log](#iv-v1-inheritance-log)
 - [V. Cross-cutting infrastructure work](#v-cross-cutting-infrastructure-work)
 - [VI. Risk register](#vi-risk-register)
@@ -712,26 +706,11 @@ The next-highest-leverage V1 inheritance candidates surface via the
 
 ---
 
-### Phase 5.12 — V1 Parity Audit Wave (chapter 5.1+; IN FLIGHT)
+### Phase 5.12 — V1 Parity Audit Wave (chapter 5.1–5.8; AUDIT WAVE CLOSED 2026-05-18)
 
-**Status:** opens at chapter 5.1. Indefinite cadence — one parity
-audit slice per agent session arc. Discipline document at
-`V1_PARITY_MATRIX.md` (opened 2026-05-17 chapter 5.0 close).
+**Status:** audit wave closed at chapter 5.8. **185 matrix rows** across `V1_PARITY_MATRIX.md`; 23 sequential slice commits; 22 dated DECISIONS entries in 2026-05-{17,18}; 26 parity-test files; 3 synthesis documents (`V1_ARCHITECTURE_COMPENDIUM.md` + `V2_PATTERNS_COMPENDIUM.md` + `CUTOVER_READINESS_BRIEF.md`). Per-cluster sub-audits complete across Sections A (Ingest) / B (Analyze) / C (Emit) / D (Orchestrate) / E (Operate) / F (Compare).
 
-**Strategic frame.** Per principal-PO direction at chapter 5.0 close:
-
-> "I'd like to start heavily auditing the v1 codebase, step by step,
-> to ensure there is maximal parity — there's a ton of code paths in
-> V1 and I want to make sure the representational coverage-state of
-> the parity is expressible in a formal way in the next agent's
-> discipline. I'd prefer to go in depth on a given small slice, one
-> slice at a time."
-
-The wave trades depth for breadth: each parity claim is independently
-verifiable, accumulates over time in a per-row append-only matrix,
-and produces an artifact that compounds. The matrix surfaces V2's
-structural answer to "how confident are we that V2 covers V1's
-surface?"
+**Strategic frame.** Per principal-PO direction at chapter 5.0 close — heavy V1 codebase audit to ensure maximal parity with formal representational coverage-state. The wave traded depth for breadth: each parity claim is independently verifiable, accumulates in a per-row append-only matrix, and produces an artifact that compounds.
 
 **The six classification statuses** (per `V1_PARITY_MATRIX.md`):
 
@@ -739,35 +718,137 @@ surface?"
 |---|---|
 | 🟢 PARITY | V2 produces equivalent output for the V1 capability. |
 | 🔵 V2-EXTENSION | V2 carries the capability + adds structural strength. |
-| 🟡 DIVERGENCE | V2 deliberately diverges; rationale documented. |
-| 🟠 NOT-MAPPED | V2 does not yet carry; trigger named. |
+| 🟡 DIVERGENCE | V2 deliberately diverges; rationale documented in DECISIONS.md. |
+| 🟠 NOT-MAPPED | V2 does not yet carry; named cash-out shape + concrete trigger. |
 | 🔴 V1-BUG-CORRECTED | V2 fixes a V1 bug or unsafety. |
-| ⚫ V1-SUNSET | V2 does not carry forward by intent. |
+| ⚫ V1-SUNSET | V2 does not carry forward by intent; sunsets with V1 cutover+30. |
 
-**Initial slice queue** (per `V1_PARITY_MATRIX.md` "Parity-audit
-slice queue"):
+**Shipped slices (all 23 in chronological commit order):**
 
-| Slice | V1 source | Priority |
+| Slice | V1 source | V2 representation | Matrix rows | Commits |
+|---|---|---|---|---|
+| 5.1.α | `IOutsystemsMetadataReader.cs` (23 DTOs) | OssysSql + CatalogReader inventory | 11–29 | `32e9b0f` |
+| 5.1.ε | `SqlMetadataLog.cs` + `MetadataRowSnapshot.cs` + `SqlMetadataDiagnosticsWriter.cs` (operator-debugging telemetry) | NOT-MAPPED; CLI surface trigger | 30 | `ab82a01` |
+| 5.1.β | `SnapshotValidator.cs` (JSON-shape validation) | V2 type system + A39 subsumes | 31 (⚫) | `efb46af` |
+| 5.1.γ | `SqlClientOutsystemsMetadataReader.cs` + `MetadataSnapshotRunner.cs` (production wiring) | 5 axes: exception class / timeout / retry / contract / progress | 32–36 | `af15087` |
+| 5.1.δ | `FixtureAdvancedSqlExecutor.cs` + `FixtureOutsystemsMetadataReader.cs` (offline fixture stack) | V2 SnapshotRowsets variant + IRBuilders | 37 (🟡) | `1dd341b` |
+| 5.1.ζ | `MetadataContractOverrides.cs` (contract drift tolerance) | V2 ordinal readers + carbon-copied SQL pin | 38 (🟡) | `6216f43` |
+| 5.1.σ | `AdvancedSql/outsystems_model_export.sql` (V1 JSON emitter SQL) | V2 emits SSDT directly | 39 (⚫) | `c385d7c` |
+| 5.8.α | `Osm.Dmm/*` (DMM lens machinery; 8 files / 2200 LOC) | DROP + harvest `compare` CLI verb concept | 40–41 | `2a8e332` |
+| 5.2.α.module | `ModuleModel.cs` + `OsmModel.cs` + `OutSystemsInternalModel.cs` | V2 Catalog/Module | 42–44 | `26631bc` |
+| 5.2.α.entity | `EntityModel.cs` + `EntityMetadata.cs` | V2 Kind | 45–47 | `f3fb810` |
+| 5.2.α.attribute | 7-file attribute cluster (3-layer separation) | V2 single Attribute + Kind.ColumnChecks | 48–53 | `c9891e1` |
+| 5.2.α.index | 8-file index cluster | V2 Index record (chapter 4.5+ axes shipped) | 54–56 | `352bf90` |
+| 5.2.α.relationship | RelationshipModel + ForeignKeyModel + RelationshipActualConstraint | V2 Reference (conflated) | 57–59 | `4fae6cc` |
+| 5.2.α.misc | Sequence + Trigger + ExtendedProperty + TemporalRetention | V2 Catalog IR + row 23 amendment | 60–63 | `6fb3427` |
+| 5.4.β.nullability | 15-file Signals/ cluster (~680 LOC) | V2 NullabilityRules + NullabilityPass + ternary outcome | 64–70 | `3cb2c5d` |
+| 5.4.γ.evaluators | 11-file decision-engine + ColumnAnalysis | V2 Pass layer + per-axis decision sets | 71–76 | `8e6205d` |
+| 5.4.γ.opportunities | ~12-file Opportunity + reporting + remediation surface | V2 Diagnostics + ManifestEmitter + per-pass contract | 77–84 | `fd74d63` |
+| 5.4.δ.profiling | 28-file Pipeline/Profiling cluster | V2 Profile + ReadSide + ProfileSnapshot.attach | 85–94 | `05be5e7` |
+| 5.5.α.manifest | SsdtManifest + SsdtPredicateCoverage + ManifestBuilder | V2 ManifestEmitter (chapter 4.4 close) | 95–104 | `171c65e` |
+| 5.7.α.cli | 40-file Osm.Cli (12 V1 verbs vs 4 V2 verbs) | V2 minimal CLI posture | 105–119 | `3eb4619` |
+| 5.3.α.smo | 44-file Osm.Smo (SMO scripter) | V2 ScriptDom typed-AST | 120–130 | `0884dac` |
+| 5.6.α.orchestration | 53-file Pipeline/Orchestration + BuildSsdt | V2 registry-driven composition | 131–147 | `008c098` |
+| 5.2.β.json | 47-file Osm.Json deserialization | V2 CatalogReader.SnapshotJson path | 148–155 | `a9efc86` |
+| 5.5.β+γ+δ | Osm.Emission + Pipeline/StaticData + DynamicData (SSDT orchestration) | V2 sibling Π chorus + StaticSeedsEmitter | 156–165 | `fe38a7d` |
+| 5.4.α+ε+ζ | ValidationFinding + Pipeline Evidence + Application + Mediation | V2 Diagnostics + functional composition | 166–173 | `39db66f` |
+| omnibus | UAT users + LoadHarness + ValueObjects + CreateTable/IndexScript line-by-line | mixed | 174–185 | `1934948` |
+
+**Classification distribution across 185 rows:**
+
+| Status | Count | Notes |
 |---|---|---|
-| 5.1.α | `IOutsystemsMetadataReader.cs` (22 DTOs) | Inventory unmapped surface |
-| 5.1.β | `SnapshotValidator.cs` | Live-DB sanity semantics |
-| 5.1.γ | `SqlClientOutsystemsMetadataReader.cs` | Production wiring details |
-| 5.1.δ | `FixtureAdvancedSqlExecutor.cs` | Offline-test infrastructure |
-| 5.1.ε | `SqlMetadataDiagnosticsWriter.cs` | Diagnostics-axis parity |
-| 5.1.ζ | `MetadataContractOverrides.cs` | Contract drift tolerance |
-| 5.2.α | `src/Osm.Domain/Model/*.cs` (V1 aggregate-root model) | Largest single audit cluster |
-| 5.2.β | `src/Osm.Json/Deserialization/*.cs` | V1 JSON shape audit |
-| 5.3.α | `src/Osm.Smo/PerTableEmission/*.cs` | Cutover-fidelity Schema-axis |
+| 🟢 PARITY | ~75 | V2 produces equivalent output (most where chapters 3-4 already shipped) |
+| 🔵 V2-EXTENSION | ~35 | V2 structurally stronger (typed identity / closed DUs / typed evidence / functional composition) |
+| 🟡 DIVERGENCE | ~25 | Deliberate; each has a DECISIONS entry or covers an existing one |
+| 🟠 NOT-MAPPED | ~35 | Each with cash-out shape + dependencies + concrete trigger; tracked in Phase 5.13 below |
+| 🔴 V1-BUG-CORRECTED | 2 | FK silent-skip (row 73); cross-key-shape FK resolution (row 9) |
+| ⚫ V1-SUNSET | ~13 | V1-internal surfaces V2 doesn't replicate by design |
 
-**Cadence rules:**
-- One slice per session arc. **Do NOT bundle multiple slices** — the matrix's value is its append-only narrative of independent coverage events.
-- Single commit per slice. Commit message names V1 source + V2 representation + classification + test.
-- Matrix updates are amendments (do NOT modify rows in place).
-- The chapter-close ritual gains a "matrix coverage walk" item starting chapter 5.1 close.
+**Cadence rules (preserved across wave):**
+- One slice per session arc (per the original discipline). Audit wave commitment held — 23 slice commits + 1 enrichment commit + 1 synthesis-docs commit.
+- Single commit per slice with V1 source + V2 representation + classification + test in the message.
+- Matrix updates are amendments (append-only at row level; status history amendments for reclassifications).
+- Chapter-close ritual gains a "matrix coverage walk" item.
 
-**V1-side risk:** the matrix is the structural answer to that
-risk. Quarterly re-balance surfaces clusters of 🟠 NOT-MAPPED that
-warrant focused lift chapters.
+**Status history amendments shipped this wave:**
+- Row 23 (`OutsystemsTriggerRow` — original 🟠 NOT-MAPPED per slice 5.1.α) → 🟢 PARITY (discovered by slice 5.2.α.misc; V2 Trigger IR shipped per chapter A.0' slice γ + matrix row 61).
+
+**Trigger to re-open the wave:** any V1 cluster the audit didn't touch (e.g., V1 configuration JSON schemas; V1 telemetry / observability surfaces; V1 build/CI machinery). Append a row in the appropriate section of `V1_PARITY_MATRIX.md`.
+
+---
+
+### Phase 5.13 — Parity cash-out implementation wave (in-flight; triggered per row)
+
+**Status:** opens 2026-05-18 immediately upon chapter 5 audit-wave close. Indefinite cadence — slices land as triggers fire per matrix-row Notes column.
+
+**Strategic frame.** The matrix's 🟠 NOT-MAPPED + 🟡 DIVERGENCE-re-openable rows each carry a **cash-out shape** + **dependencies** + **acceptance criterion** + **trigger** in their Notes column. This phase converts each named cash-out into an actionable slice when the trigger fires.
+
+**Priority axis: cutover-blocking.** Rows tagged "cutover-critical" or paired with R6 split-brain governance flip gates (per `CUTOVER_READINESS_BRIEF.md`) ship before rows tagged "post-cutover operator UX." Within each tier, slices are unordered priority-wise; pick what matches the session's capacity.
+
+**Cutover-blocking cash-out slices (T-30 green path):**
+
+| Slice | Matrix row | Cash-out shape | Trigger | Est. LOC |
+|---|---|---|---|---|
+| 5.13.transient-retry | 34 | Polly retry policy at OssysSql adapter; 3× attempts + exponential backoff; SqlException.Number ∈ {-2, -1, 40197, 40501, 40613, 4060, 18452} | V2 reads from cloud OSSYS (Azure SQL); **cutover-critical** | ~150 |
+| 5.13.exception-class | 32 | Closed-DU `MetadataExtractionError = RowMappingFailure \| ResultSetMissing \| TransientSqlError \| OtherSqlError` + per-variant code | V2 production CLI needs operator-distinguishable failure modes; bundles with 5.13.transient-retry | ~80 |
+| 5.13.cdc-silence | (chapter 4.1.B) | CDC-silence-on-idempotent-redeploy property test + global Phase1/Phase2 cross-emitter interleaving | DATA axis V2-driver flip; chapter 4.1.B in flight | ~400 |
+| 5.13.user-matching | (chapter 4.2 slice ε) | Remaining matching strategies (BySsKey + Regex + ManualOverride + FallbackToSystemUser) | IDENTITY axis V2-driver flip; chapter 4.2 in flight | ~600 |
+| 5.13.uat-cli | 113 | `osm uat-users <model> <inventory-config> --out <dir>` CLI verb; pluggable matching strategies; CSV ingestion | UAT cutover dry-run needs CLI; bundles with chapter 4.2 closure | ~1500 |
+| 5.13.verify-data | 114 | `osm verify-data <source> <target> <manifest> --report-out <path>` CLI verb; BasicDataIntegrityChecker port | Post-deploy verification phase; chapter 4.3+ | ~200 |
+
+**High-leverage operator-UX cash-out slices (post-T-30; cutover-month):**
+
+| Slice | Matrix row | Cash-out shape | Trigger | Est. LOC |
+|---|---|---|---|---|
+| 5.13.remediation-emitter | 83 | `RemediationEmitter` sibling Π consuming `Diagnostics<DecisionSet>`; emits `manifest.remediation.sql` with 3-option UPDATE/DELETE/SELECT per diagnostic | V2_DRIVER §154 chapter 5+ deferred; **operator UX degraded without it** | ~400 |
+| 5.13.summary-formatter | 81 | `SummaryFormatter` consumer taking `Diagnostics<DecisionSet> × NullabilityMode`; produces per-bucket prose mirroring V1's 6-bucket classification | V2 CLI standardizes summary output format pre-cutover OR operator demands V1-compatible review surface | ~300 |
+| 5.13.opportunities-report | 79 | `OpportunitiesReport` projection at `Projection.Targets.OperationalDiagnostics`; aggregates Diagnostics + DecisionSet → per-axis summary metrics | Operator dashboard demands per-axis rollup OR ManifestEmitter surface expansion | ~200 |
+| 5.13.risk-classification | 76 | `Projection.Targets.OperationalDiagnostics.RiskClassification` module: `riskOf : NullabilityOutcome -> RiskLevel` + sibling functions; emitter-boundary placement per A36 | V2 emitter demands risk-stratified output (manifest / operator report / cutover dry-run) | ~150 |
+| 5.13.osm-analyze | 111 | `osm analyze <model> [--profile <path>] [--policy <path>] --out <report-dir>` CLI verb; PassDriver + decision-log writer; no SSDT emission | Operators iterate on tightening policy pre-emission (typical pre-cutover workflow) | ~300 |
+| 5.13.osm-policy-explain | 112 | `osm policy explain <decision-log.json> [--axis nullability\|fk\|unique] [--format table\|json]` CLI verb | Operators demand CLI-based policy drill-down for cutover dry-run reviews | ~300 |
+| 5.13.osm-validate | 110 | `osm validate <model.json>` OR `osm validate --config <path>` CLI verb; wraps config validation + model ingestion | Operators demand pre-flight validation separate from full emit (CI health checks) | ~30 |
+| 5.13.progress-tui | 36 + 118 | `SpectreProgressAdapter : IProgressRunner` wrapping `Bench.snapshot()` samples; CLI hook for long-running operations | Chapter 5.1 production CLI wiring + operator feedback on visibility | ~200 |
+| 5.13.open-report | 115 | `osm deploy <manifest> --open-report` flag using cross-platform shim (`xdg-open` / `open` / `start`) | Operators demand integrated report-launching at deploy-time | ~150 |
+
+**Lower-leverage cash-out slices (post-cutover; consumer-pressure-driven):**
+
+| Slice | Matrix row | Cash-out shape | Trigger | Est. LOC |
+|---|---|---|---|---|
+| 5.13.live-profiler | 85–89 | `LiveProfiler` adapter in `Projection.Adapters.Sql`; `readProfileAsync : SqlConnection -> Catalog -> Task<Result<Profile>>` + 4 probe modules (NullCount / UniqueCandidate / FK-orphan-count / FK-orphan-sample) | Chapter 4.1.B § 4 or later — live SQL Server profile capture demanded | ~600 |
+| 5.13.osm-profile | 108 | `osm profile <model> <connection-string> --out <profile.json>` CLI verb; wraps LiveProfiler | Operators demand profile-only execution for diagnostic/tuning iteration | ~30 |
+| 5.13.osm-extract | 107 | `osm extract <connection-string> --modules <csv> --out <path>` CLI verb; wraps `MetadataSnapshotRunner.runAsync` | V2 production CLI surface ships; operators need extraction as CLI step | ~50 |
+| 5.13.result-set-contract | 35 | `[<Literal>] let EXPECTED_RESULT_SETS = 22` constant + post-loop assertion; `adapter.ossysSql.resultSetContractBreach` error code | V2 canary fails parity assertion tracing to SQL contract drift | ~30 |
+| 5.13.progress-callback | 36 | Optional `onProcessorComplete : (rowsetName × rowCount) -> unit` callback on `runAsync` | V2 ships CLI for full-catalog extraction (300 tables; multi-minute) | ~20 |
+| 5.13.profile-merge | 92 | `Profile.merge : Profile -> Profile -> Profile` + commutative + associative property tests; consensus thresholding at orchestrator | Multi-environment risk scoring demanded (chapter 4.1.B or 4.2) | ~200 |
+| 5.13.attribute-reality | 49 | `Profile.AttributeReality` record (IsNullableInDatabase + HasNulls + HasDuplicates + HasOrphans + IsPresentButInactive); thread through ReadSide | V2 Profile-layer surface needed by tightening / remediation consumer | ~150 |
+| 5.13.column-reality | 11 | OssysSql adapter parses `#ColumnReality` rowset (sys.columns reflection on OSSYS-source); `OssysColumnRealityRow` typed F# record + ordinal mapper | V2 tightening / remediation decision needs source-side column reflection | ~100 |
+| 5.13.column-checks-ir | 12 + 50 | CHECK constraint axis on V2 IR + lift `#ColumnCheckReality` rowset → `Kind.ColumnChecks` | V2 IR refinement + emitter consumer (SSDT or DACPAC) demands CHECK constraints | ~250 |
+| 5.13.physical-columns-present | 14 | OssysSql adapter parses `#PhysColsPresent` rowset; V2 detects orphan attributes on OSSYS-source | V2 reports source-side orphan attributes | ~50 |
+| 5.13.ossys-indexes | 15 + 16 | OssysSql adapter parses `#AllIdx` + `#IdxColsMapped` rowsets → V2 `Catalog.Indexes` IR (retires IndexJson dependency per row 26) | V2 lifts structured rowset path for index reflection (paired post-V1-sunset) | ~250 |
+| 5.13.ossys-foreign-keys | 17 + 18 | OssysSql adapter parses `#FkReality` + `#FkColumns` rowsets | V2 reports source-vs-target FK drift OR IsNoCheck flag feeds tightening | ~200 |
+| 5.13.ossys-triggers | 23 | OssysSql adapter parses `#Triggers` rowset → existing V2 `Kind.Triggers` IR (per row 23 amendment) | V2 trigger emission lands (chapter 4.2 / 5+) | ~50 |
+| 5.13.update-action | 58 | `Reference.OnUpdate : ReferenceAction option`; adapter pickup at OssysSql ForeignKeys rowset; emitter via `ForeignKeyConstraintDefinition.UpdateAction` | V2 SSDT emission needs ON UPDATE referential actions | ~100 |
+| 5.13.nocheck-state | 59 | `Reference.IsConstraintTrusted : bool`; adapter pickup at `#FkReality.IsNoCheck`; emitter emits `WITH NOCHECK` | Deployed target carries WITH NOCHECK FK constraints V2 must round-trip | ~80 |
+| 5.13.default-constraint | 53 | `Attribute.Default : DefaultConstraint option` (Name + Value + IsNotTrusted); migrate existing `DefaultValue` consumers | Manifest emitter demands constraint identity OR DDL emitter round-trips V1 constraint names | ~150 |
+| 5.13.index-disabled-igdupkey | 55 | `Index.IsDisabled` + `Index.IgnoreDuplicateKey` fields; adapter pickup; emitter consumption at `ScriptDomBuild.buildCreateIndex` | Deployed target carries disabled indexes OR IGNORE_DUP_KEY indexes V2 must round-trip | ~100 |
+| 5.13.index-partition | 56 | `Index.DataSpace : DataSpace option` (Filegroup \| PartitionScheme) + `PartitionCompression : list`; adapter + emitter | Production OSSYS uses partitioned indexes V2 must preserve | ~300 |
+| 5.13.evidence-cache | 135 | Cache adapter writing checkpointed Catalog/Policy decision-set JSON; consumer-driven | Operator-reality canary shows evidence-load as bottleneck OR chapter 4+ perf-optimization opens | ~400 |
+| 5.13.sql-validator | 136 | `Validator` sibling Π consuming SSDT stream → `ValidationReport` at realization layer (not Core per A35/A36) | Realization layer demands validation feedback (CI/CD gate or interactive editor) | ~300 |
+| 5.13.postdeploy-template | 140 | `PostDeployTemplateEmitter` sibling Π consuming SSDT statements + emitting template SQL with guard logic | Chapter 4.1 slice 9 opens OR post-deploy emitter consumer demand | ~200 |
+| 5.13.sqlproj-realizer | 141 | `Render.toSqlProject` realizer consuming `ArtifactByKind<SsdtFile>` + emitting XML `.sqlproj` MSBuild file | V2 realization layer demands Visual Studio / Azure DevOps integration | ~200 |
+| 5.13.compare-verb | 41 | `projection compare <left> <right>` CLI verb + closed-DU `DiffSource = LiveDb \| SsdtProject \| DacpacFile \| RawSql` + `Compare.run : DiffSource -> DiffSource -> Diagnostics<SchemaDiff>` + per-variant adapter | Operator workflow demands ad-hoc schema-diff outside canary's specific scope | ~500 |
+| 5.13.option-binders | 116 | Carbon-copy V1's binder patterns to F# (`ModuleFilterOptionBinder` + `VerbOptionsBuilder` + per-axis binders) | CLI grows beyond 4 verbs with composable axes | ~500 |
+| 5.13.global-options | 117 | `CliGlobalOptions` record in Program.fs; parse before verb dispatch; thread to each verb runner | Operators demand CLI-level global flags (`--log-level` / `--verbose` / `--quiet`) | ~50 |
+| 5.13.dmv-instrumentation | 179 | Post-cutover operator-facing tool consuming Bench samples + DMV queries (WaitStats + Locks + IndexFragmentation) via `Projection.Adapters.Sql` DMV adapter | Chapter 5+ operator-facing post-deploy tools OR operator demands DMV-style observability | ~400 |
+
+**Cadence rules (continue from Phase 5.12):**
+- One slice per session arc (preserved).
+- Slices may bundle co-dependent cash-outs (e.g., 5.13.transient-retry + 5.13.exception-class) when matrix Notes flag the dependency.
+- Matrix amendments: when a slice ships, append a Status-history entry under the matrix-row's section.
+- Slice commit message must name the matrix row(s) it cashes out.
+
+**Trigger to retire a cash-out slot:** the matrix row's trigger condition is named "no longer expected" by principal-PO sign-off OR the underlying capability lands via a different path (e.g., V1 sunset retires a row's prerequisite).
 
 ---
 
@@ -834,48 +915,109 @@ surfaces them.
 
 ---
 
-### Phase 8 — Pragmatic close
+### Phase 8 — Path to T-30 green (the cutover-ladder gate)
 
-**Status:** indefinite cadence; consumer-pressure-driven.
+**Status:** in flight. The three blocking deliverables for T-30 green per `CUTOVER_READINESS_BRIEF.md` Section 4. T-30 green = R6 per-pair V2-driver flip eligible across all six axes (SCHEMA / DATA / IDENTITY / DIAGNOSTICS / OPERATOR-AFFORDANCE / PIPELINE-ORCHESTRATION).
 
-**Strategic frame.** V2_DRIVER.md Phase 8 + `CHAPTER_5_OPEN.md`.
-F# Analyzers SDK custom analyzers; Coordinates Stage 2 typed VOs;
-operator runbook; V1 sunset planning.
+**Current confidence per axis (as of chapter 5 audit-wave close):**
 
-**Pending items:**
-
-| Slice | Scope | Status |
+| Axis | Status | Blocking T-30 green? |
 |---|---|---|
-| ν | F# Analyzers SDK custom analyzer (proof-of-concept rule) — generalizes `NoUnsafeTimeInCoreAnalyzer.fs` pattern | scheduled (consumer-pressure-driven) |
-| θ | Coordinates Stage 2 typed `SchemaName` / `TableName` / `ColumnName` VOs | deferred (per `DECISIONS 2026-05-11`; empirical adapter-ripple justification required) |
-| Operator runbook | Cutover-day procedures; V1 sunset checklist | scheduled (cutover-30 onward) |
+| SCHEMA | 🟢 V2-DRIVER-READY | No |
+| DATA | 🟡 V2-AUGMENTED | Yes — chapter 4.1.B + global phase ordering |
+| IDENTITY | 🟡 V2-AUGMENTED | Yes — chapter 4.2 slice ε + UAT dry-run |
+| DIAGNOSTICS | 🟡 V2-AUGMENTED | Soft (operator-tolerant via DiagnosticEntry stream) |
+| OPERATOR-AFFORDANCE | 🟡 V2-AUGMENTED | Yes — `osm uat-users` + `osm verify-data` |
+| PIPELINE-ORCHESTRATION | 🟢 V2-DRIVER-READY | No |
 
-**V1 inheritance opportunities:**
+**The three blocking deliverables:**
 
-- **OSSYS catalog producer** — ✅ **SHIPPED at chapter 5.0** (Phase
-  5.11; 2026-05-17). Landed as F# (not C#) per chapter 5.0 open Q1:
-  the SQL is the truth (carbon-copied verbatim); the surrounding
-  plumbing rewritten in F# at copy-time. Adapter at
-  `Projection.Adapters.OssysSql`. See Phase 5.11 entry above.
-- **Remaining V1 surface** — addressed via the **Phase 5.12 V1
-  Parity Audit Wave** (in flight at chapter 5.1+). The audit
-  produces classified rows in `V1_PARITY_MATRIX.md`; rows tagged
-  🟠 NOT-MAPPED + cutover-blocker drive follow-on lift chapters.
+| # | Deliverable | Phase 5.13 slice owner | Status | Acceptance |
+|---|---|---|---|---|
+| 1 | Chapter 4.1.B CDC-silence property test + global Phase1/Phase2 cross-emitter ordering | `5.13.cdc-silence` | In flight (chapter 4.1.B); slice η open per matrix row 160 | Property test green on operator-reality canary; zero CDC events on idempotent redeploy |
+| 2 | Chapter 4.2 slice ε remaining matching strategies (BySsKey + Regex + ManualOverride + FallbackToSystemUser) | `5.13.user-matching` | Slice δ ByEmail shipped; slice ε pending | Property test asserting symmetry of matched + unmatched diagnostics on shared fixtures |
+| 3 | ≥1 full UAT dry-run on real inventory CSVs | (depends on slice ε + `5.13.uat-cli`) | Pending | Operator sign-off: zero unmatched orphans OR operator-acknowledged manual overrides |
+
+**Recommended sequence:**
+
+1. Open chapter 4.1.B slice η — global phase ordering across emitters (paired with cdc-silence property test). **Blocks DATA axis flip.**
+2. Open chapter 4.2 slice ε — remaining matching strategies. **Blocks IDENTITY axis flip.**
+3. Ship `5.13.uat-cli` (`osm uat-users`) — UAT cutover workflow needs CLI. **Required for UAT dry-run.**
+4. Run UAT dry-run on real CSVs — final IDENTITY axis confirmation.
+5. (Optional, recommended) Ship `5.13.remediation-emitter` (chapter 5+) and `5.13.summary-formatter` — improve DIAGNOSTICS axis operator UX before cutover-window operator review workflows engage.
+6. (Optional, recommended) Ship `5.13.osm-validate` + `5.13.osm-analyze` — pre-flight + iterative-policy operator workflows.
+
+**Per-phase risks (refresh):**
+
+- *Chapter 4.1.B doesn't close before T-30* → V2-augmented mode (V1 drives, V2 verifies via canary) is fallback. DATA axis stays 🟡 until property test ships.
+- *Chapter 4.2 slice ε delayed* → slice δ ByEmail covers dominant case; ManualOverride substituted via operator CSV (per matrix row 174).
+- *UAT dry-run reveals unanticipated identity-matching gaps* → Tolerance variant + manual override CSV substitute; named in operator runbook.
+- *RemediationEmitter doesn't ship before cutover* → DiagnosticEntry.Message + Metadata provide enough context for hand-written remediation SQL; fallback remediation doc substitutes.
+
+---
+
+### Phase 9 — V2-driver operator workflow (post-T-30; cutover-window operator UX)
+
+**Status:** scheduled per (verb × workflow) gating. Opens when T-30 green achieved AND operator demand surfaces for specific operator-facing surfaces.
+
+**Strategic frame.** V2's CLI is deliberately minimal at launch (per `DECISIONS 2026-05-18 (slice 5.7.α.cli) — V2 CLI deliberately minimal: production-deferred posture`). Operator-affordance verbs land as their workflow triggers fire. Total estimated cash-out: ~3780 LOC across 10 verbs + 3 emitters + 2 infrastructure pieces.
+
+**Pending operator-UX cash-outs (per Phase 5.13 priority lists):**
+
+| Slice | Trigger | Priority for cutover-window | Est. LOC |
+|---|---|---|---|
+| `5.13.remediation-emitter` | RemediationEmitter chapter 5+ (V2_DRIVER §154) | High (operator UX for mandatory-null-conflict) | 400 |
+| `5.13.summary-formatter` | V2 CLI standardizes summary output OR operator demands V1-compatible review | High (operator review of cutover dry-run) | 300 |
+| `5.13.opportunities-report` | Operator dashboard demands per-axis rollup | Med | 200 |
+| `5.13.risk-classification` | V2 emitter demands risk-stratified output | Med | 150 |
+| `5.13.osm-analyze` | Pre-emission policy iteration | High (cutover dry-run) | 300 |
+| `5.13.osm-policy-explain` | CLI-based policy drill-down | Med | 300 |
+| `5.13.osm-validate` | Pre-flight model validation in CI | Low (CI health checks) | 30 |
+| `5.13.progress-tui` | Long-running operations need TUI | Med (operator visibility) | 200 |
+| `5.13.open-report` | Integrated report-launching at deploy-time | Low | 150 |
+| `5.13.osm-extract` + `5.13.osm-profile` | Production CLI extraction + profile-only execution | Med (cutover dry-run iteration) | 80 |
 
 **Cross-cutting work:**
-
-- Operator runbook section naming V1 sunset criteria (the three
-  conditions — see § VIII below).
-
-**V1-side sunset.** Per `CLAUDE.md` operating-disciplines table, V1
-sunset is a condition, not a deadline. The three conditions are
-formalized in § VIII.
+- Operator runbook section: per-axis V2-driver flip checklist; per-verb workflow recipes; tolerance escalation procedures
+- Bench dashboard integration: hook `Bench.snapshot()` JSON into operator-facing tools (depends on slice `5.13.progress-tui`)
+- F# Analyzers SDK custom analyzer (proof-of-concept rule) — generalizes `NoUnsafeTimeInCoreAnalyzer.fs` pattern; deferred per consumer-pressure
+- Coordinates Stage 2 typed VOs — deferred per `DECISIONS 2026-05-11`; empirical adapter-ripple justification required
 
 **Per-phase risks:**
+- *Operator-UX cash-outs land late* → V2-driver-mode flip happens with degraded operator UX; canary + DiagnosticEntry stream cover the cutover-critical surface; UX improvements ship post-cutover
+- *Bench-dashboard integration delayed* → operators read raw Bench JSON; UX suboptimal but cutover-functional
 
-- *Sunset deferred indefinitely*. Mitigation: chapter close ritual at
-  every Phase 1-5 close evaluates whether the cutover gate is reachable
-  at expected cadence.
+---
+
+### Phase 10 — V1 sunset (cutover+30 onward)
+
+**Status:** scheduled per cutover+30 gate. Three-condition gate (per § VIII below). Per `CLAUDE.md` operating-disciplines table, V1 sunset is a condition, not a deadline.
+
+**Inventory of V1 surfaces to sunset (matrix-recorded; 13 ⚫ V1-SUNSET rows):**
+
+| Matrix row | V1 surface | Migration impact | Sunset timing |
+|---|---|---|---|
+| 13, 21, 22, 24-28 | JSON-aggregation rowsets (`#AttrCheckJson` + `#FkColumnsJson` + `#FkAttrJson` + `#AttrJson` + `#RelJson` + `#IdxJson` + `#TriggerJson` + `#ModuleJson`) feeding `osm_model.json` emission | Zero V2 consumers; V2's SnapshotJson path consumes historical files but doesn't require V1 to keep emitting | cutover+30 |
+| 39 | `AdvancedSql/outsystems_model_export.sql` (V1 JSON-emitter SQL) | Producer-side companion to JSON-aggregation rowsets | cutover+30 |
+| 40 | Osm.Dmm lens machinery (8 files / 2200 LOC) | V1-side consumers (DACPAC build verification); future V2 `compare` verb harvests concept | cutover+30 |
+| 67 | DefaultSignal (telemetry-only; structurally misleading) | Zero V2 consumers (V1 signal was telemetry-only) | cutover+30 |
+| 84 | TighteningRationales string-constant module | V2 typed Outcome DUs subsume; bucket classification ports to outcome pattern-match | cutover+30 |
+| 109 | dmm-compare CLI verb | Future `compare` verb reserves concept (matrix row 41) | cutover+30 |
+| 133 | CaptureProfilePipeline (separate two-pass class) | V2 adapter-input model per A34 obviates | cutover+30 |
+| 134 | DmmComparePipeline | Canary subsumes (companion to row 40) | cutover+30 |
+| 178 | LoadHarnessRunner DMV instrumentation | DMV piece becomes post-cutover operator tool per matrix row 179 | cutover+30 |
+
+**Sunset workflow:**
+1. Verify R6 per-pair V2-driver flips have run N=10 consecutive green across all four environments
+2. Verify ≥1 full schema-evolution cycle on V2 emissions per environment
+3. Operator sign-off per § VIII condition 3
+4. Mark V1 trunk archive-only; revoke build CI
+5. Update each ⚫ V1-SUNSET matrix row with Status history amendment recording the sunset date
+6. Update `ADMIRE.md` carbon-copy entries to "V1 sunset" status
+
+**Per-phase risks:**
+- *V1 sunset deferred indefinitely* → chapter close ritual evaluates ladder reachability; if V2-augmented mode persists past cutover+90, principal-PO decision on whether to extend V1 warm window or invest in remaining cash-outs
+- *Post-cutover regression in V2 emissions* → V1 stays warm; operator falls back per environment; named in operator runbook
 
 ---
 
@@ -982,6 +1124,46 @@ visibility holds.
 | `DECISIONS.md` | Codifying entry for any new discipline; carbon-copy events cited | every chapter close |
 | `BACKLOG.md` (this document) | Status transitions; new items added; canceled items annotated; V1 inheritance log rows added | every chapter close + every significant slice |
 | `V2_DRIVER.md` | Chapter sequencing updates if a phase's scope shifts | rare (only on strategic reframe) |
+| `V1_PARITY_MATRIX.md` | Per-slice rows + Status-history amendments on reclassification | every parity-audit slice + every cash-out slice that retires a 🟠 NOT-MAPPED row |
+| `V1_ARCHITECTURE_COMPENDIUM.md` | Per-cluster updates when V1 source changes structurally (rare; the V1 trunk is frozen during cutover window) | when V1 source changes detected |
+| `V2_PATTERNS_COMPENDIUM.md` | New pattern entries when a slice codifies one; counter-pattern updates when a deferred pattern lands | every chapter close that earns a new pattern |
+| `CUTOVER_READINESS_BRIEF.md` | Per-axis status refresh + blocking-deliverable status updates + risk-register refresh | every chapter close + every Phase 8 slice closure |
+
+**Lead-up refactors — pre-cutover structural work earning a slot:**
+
+These are not blocking T-30 green per se, but each earns a slice slot for hygiene before the workflows that depend on them become hot paths. Sequenced before the workflows that consume them; each is small (≤300 LOC).
+
+| # | Refactor | Matrix row | Acceptance | Rationale | Est. LOC |
+|---|---|---|---|---|---|
+| LR1 | `Module.create` per-module non-empty Kind invariant | 42 | Unit test verifying `Module.create "M" [] = Error [{Code = "module.kinds.empty"; ...}]` | Closes a V1-parity gap surfaced by slice 5.2.α.module audit; prevents ghost-module class of bug in transformation passes; ~5 LOC; per A39 discipline | 5 |
+| LR2 | `Catalog.foreignKeysByTargetKind : Map<SsKey, Reference list>` precomputed at construction (A39 invariant) | 75 | Bench-driven optimization showing FK-resolution is hot path → materialize Map<SsKey, Reference list> on `Catalog.create`; deprecate inline-closure lookup once consumers migrate | Performance optimization; defer until Bench surface flags FK-resolution as hot path; consumers transition from inline-closure to materialized-map | 80 |
+| LR3 | `ScriptDomBuild.buildCreateTable` defer-candidates (column defaults + CHECK constraints + computed columns + single-column PK inline optimization) | 182 (slice ζ candidate) | Round-trip parity test on canary fixture covers all 4 axes | V1's CreateTableStatementBuilder has these axes; V2 IR fields exist; emit-layer deferred per IR-grows-under-evidence | 200 |
+| LR4 | `ScriptDomBuild.buildCreateIndex` defer-candidates (IgnoreDupKey + DataCompression with partition-range collapse + FileGroup/PartitionScheme dataspace) | 55 + 56 + 183 (slice ζ candidates) | Round-trip parity test on partitioned-index fixture covers all 3 axes | V1's IndexScriptBuilder has these axes; V2 IR fields exist (Index.DataSpace + Index.PartitionCompression + Index.IgnoreDuplicateKey would extend); cash-out: 250 LOC for the on-disk introspection bundle | 250 |
+| LR5 | `Tolerance.IgnoreHeaderComments` retirement — emit V1-style `/* Source: ... LogicalName ... */` header in per-table SSDT files | 130 | Canary diff regenerates with header comments present; operator confirms header content matches V1 byte-for-byte | Tolerance variant exists today; retire when operator-facing report-launching depends on header comments for context | 50 |
+| LR6 | `EmissionPolicy.IncludeTrustedIndicators` — flag for emitting `WITH NOCHECK` on FK constraints (paired with row 59 cash-out) | 59 | Round-trip test: FK with IsConstraintTrusted=false emits `WITH NOCHECK`; canary diff confirms | Deployed-target round-trip needs WITH NOCHECK preservation; bundles with `5.13.nocheck-state` | 80 |
+| LR7 | `EmissionPolicy.IncludeUpdateActions` — flag for ON UPDATE referential actions (paired with row 58 cash-out) | 58 | Round-trip test: Reference with OnUpdate=Some Cascade emits ON UPDATE CASCADE; canary confirms | Modern T-SQL convention emits explicit ON UPDATE NO ACTION; bundles with `5.13.update-action` | 80 |
+| LR8 | `Decisions.unified-result` shape — minor refactor consolidating ad-hoc `Result<DecisionSet>` propagation across three sibling passes via a `runDecisionPass` helper (two-consumer threshold met at chapter A.4.7' close; third confirmed slice 5.4.γ.evaluators) | (cross-cutting; no specific row) | All three sibling passes (NullabilityPass / UniqueIndexPass / ForeignKeyPass) delegate to `runDecisionPass` helper; per-pass test coverage unchanged | Per `DECISIONS 2026-05-13 — Two-consumer threshold for emergent primitives`; codified after the fourth instance | 100 |
+| LR9 | `ProfileSnapshot.attach` symmetry — V2-side renaming of `Projection.Adapters.Osm.ProfileSnapshot.attach` to better reflect adapter-vs-Core split (currently lives in adapter; could move to Core given the function is pure) | (cross-cutting) | F# tests + Bench surface confirm no perf regression; CatalogReader.parse + canary green | Cleaner module structure; hygiene-only | 30 |
+| LR10 | Slice α' — IRBuilders Kind/Module/Catalog sweep tail (19 files; ~80 sites; carbon-copy from chapter 4.9 slice α partial) | (chapter 4.9 slice α' deferred per Phase 5.10 closure) | All sites use IRBuilders mkKind / mkModule / mkCatalog literals; no field-missing errors on the next Kind/Module/Catalog IR-shape change | Future IR-shape changes touch ~2 sites instead of ~80; per IRBuilders Python-pass discipline | 80 |
+
+**Sequence for Phase 8 (T-30 green path) — lead-up refactors interleaved:**
+
+```
+Now ──┬─→ Open chapter 4.1.B slice η (global phase ordering + CDC-silence)
+      │   └─→ Bundle LR3 + LR4 if emission layer is touched at slice ζ
+      │
+      ├─→ Open chapter 4.2 slice ε (remaining matching strategies)
+      │   └─→ Bundle LR8 if a fourth-strategy slot opens
+      │
+      ├─→ Ship 5.13.transient-retry + 5.13.exception-class (paired)
+      │   └─→ Bundle LR1 if Module.create is touched
+      │
+      ├─→ Ship 5.13.uat-cli (osm uat-users)
+      │
+      └─→ Run UAT dry-run ──→ T-30 green ──→ Phase 9 + Phase 10 open
+```
+
+The lead-up refactors interleave when their consuming chapters open; none are blockers in themselves.
 
 ---
 
@@ -1091,87 +1273,114 @@ section above; this register catches the horizontal ones.
 ```
                   ┌──────────────────────────────────────┐
                   │  V2 sidecar — current state          │
-                  │  (as of 2026-05-17 post-chapter-4.4) │
-                  │  Phases 1–7 + 5.5 SHIPPED end-to-end │
-                  │  Pillar 9 + supreme operating        │
-                  │  disciplines in place                │
-                  │  Registry load-bearing for execution │
-                  │  (chapter A.4.7' close)              │
-                  │  Manifest diagnostic fields retired  │
-                  │  (chapter 4.4 close)                 │
+                  │  (as of 2026-05-18 chapter 5 close)  │
+                  │  Phases 1–7 + 5.0–5.12 SHIPPED       │
+                  │  Pillar 9 + supreme disciplines      │
+                  │  Registry load-bearing (A.4.7')      │
+                  │  Manifest diagnostic fields (4.4)    │
+                  │  V1 parity audit wave CLOSED         │
+                  │  185 matrix rows + 22 DECISIONS      │
+                  │  + V1 Architecture Compendium        │
+                  │  + V2 Patterns Compendium            │
+                  │  + Cutover Readiness Brief           │
                   └────────────────┬─────────────────────┘
                                    │
                                    ▼
                   ┌──────────────────────────────────────┐
-                  │  V2-driver KPI structural surface    │
-                  │  operationally complete              │
-                  │  CDC silence ✓  Schema ✓  Identity ✓ │
-                  │  Diagnostics ✓  DACPAC ✓  Rowsets ✓  │
-                  │  Manifest diagnostic fields ✓        │
+                  │  Per-axis confidence (V2_DRIVER)     │
+                  │  SCHEMA          🟢 V2-DRIVER-READY  │
+                  │  PIPELINE-ORCH   🟢 V2-DRIVER-READY  │
+                  │  DATA            🟡 V2-AUGMENTED     │
+                  │  IDENTITY        🟡 V2-AUGMENTED     │
+                  │  DIAGNOSTICS     🟡 V2-AUGMENTED     │
+                  │  OPERATOR-AFF    🟡 V2-AUGMENTED     │
                   └────────────────┬─────────────────────┘
                                    │
               ┌────────────────────┴────────────────────┐
               │                                         │
               ▼                                         ▼
-┌──────────────────────┐                ┌──────────────────────┐
-│ Deferred-with-       │                │ Phase 8 —            │
-│ trigger queue        │                │ pragmatic close      │
-│ (per-chapter         │                │ (consumer-           │
-│  close docs)         │                │  pressure-driven)    │
-│                      │                │                      │
-│ Module.ExtProps      │                │ F# Analyzers SDK     │
-│ Sequence emit        │                │ Coordinates St.2     │
-│ Statement DU         │                │ Hex port lifts       │
-│  MERGE/UPDATE        │                │ V1 sunset plan       │
-│ Slice 4.3.δ/ε       │                │ Cutover runbook      │
-│ Slice 3.x.ε/ζ       │                │                      │
-│ 4.2 OSSYS user-K     │                │ RemediationEmitter   │
-│ 4.2 CSV adapter      │                │  (V2_DRIVER §154)    │
-│ PredicateName 4-var  │                │                      │
-│ Unsupported widen    │                │                      │
-└──────────┬───────────┘                └──────────┬───────────┘
+┌──────────────────────────┐            ┌──────────────────────────┐
+│ Phase 5.13               │            │ Phase 8                  │
+│ Parity cash-out wave     │            │ Path to T-30 green       │
+│ (~35 NOT-MAPPED rows)    │            │ (3 blocking deliverables)│
+│                          │            │                          │
+│ Cutover-blocking (T-30): │            │ #1: ch 4.1.B CDC-silence │
+│  • 5.13.transient-retry  │            │     + global Phase1/2    │
+│    (cutover-critical)    │            │ #2: ch 4.2 slice ε       │
+│  • 5.13.cdc-silence      │ ◄──gates── │     remaining matchers   │
+│  • 5.13.user-matching    │            │ #3: UAT dry-run on real  │
+│  • 5.13.uat-cli          │            │     inventory CSVs       │
+│  • 5.13.verify-data      │            │                          │
+│                          │            │ Lead-up refactors (LR1-  │
+│ Operator-UX (post-T-30): │            │ LR10) interleave when    │
+│  • 5.13.remediation-     │            │ their consuming chapters │
+│    emitter (V2_DRIVER    │            │ open                     │
+│    §154)                 │            └──────────┬───────────────┘
+│  • 5.13.summary-formatter│                       │
+│  • 5.13.osm-analyze etc. │                       │
+│                          │                       │
+│ Consumer-pressure:       │                       │
+│  • 5.13.live-profiler    │                       │
+│  • 5.13.osm-extract      │                       │
+│  • OSSYS rowset lifts    │                       │
+│  • RemediationEmitter    │                       │
+│  • SqlValidator etc.     │                       │
+└──────────┬───────────────┘                       │
            │                                       │
-           └───────────────────────────────────────┘
+           └───────────────────┬───────────────────┘
+                               │
+                               ▼
+                  ┌──────────────────────────────────────┐
+                  │  T-30 green achieved                 │
+                  │  R6 per-pair V2-driver flip eligible │
+                  │  across all six axes                 │
+                  │  N=10 consecutive green canary +     │
+                  │  operator sign-off per pair          │
+                  └────────────────┬─────────────────────┘
+                                   │
+                                   ▼
+                  ┌──────────────────────────────────────┐
+                  │  Phase 9 — V2-driver operator        │
+                  │  workflow (post-T-30)                │
+                  │  Operator-UX cash-outs ship per      │
+                  │  workflow trigger                    │
+                  │  ~3780 LOC across 10 verbs +         │
+                  │  3 emitters + 2 infra pieces         │
+                  └────────────────┬─────────────────────┘
                                    │
                                    ▼
                   ┌──────────────────────────────────────┐
                   │  Cutover (~late July 2026)           │
-                  │  V2-driver or V2-augmented per pair  │
+                  │  V2-driver per pair OR V2-augmented  │
+                  │  if any pair stays 🟡                │
                   │  V1 stays warm through cutover+30    │
                   └────────────────┬─────────────────────┘
                                    │
                                    ▼
                   ┌──────────────────────────────────────┐
-                  │  cutover+30 — Phase 8 / V1 sunset    │
+                  │  cutover+30 — Phase 10 / V1 sunset   │
                   │  Three-condition gate (§ VIII)       │
+                  │  13 ⚫ V1-SUNSET matrix rows retire  │
                   └──────────────────────────────────────┘
 ```
 
-**Parallelization notes (as of 2026-05-17):**
+**Parallelization notes (as of 2026-05-18 chapter 5 close):**
 
-- The V2-driver critical-path Phases (1–5 + 7) are all closed. The
-  load-bearing chapter dependencies that motivated the parallel-vs-
-  sequential consideration (chapter 4.1.B slice ζ depending on chapter
-  4.2's `UserRemapContext`) are all resolved in shipped state.
-- **Chapter 4.4 (Manifest diagnostic fields)** is the largest piece of
-  named pending V2_DRIVER work; it's structurally independent of every
-  other lane. ManifestEmitter currently emits `Coverage` /
-  `PredicateCoverage` / `PreRemediation` / `Unsupported` as
-  `null` / defaults; the chapter fills them under per-axis property
-  test coverage.
-- **Deferred-with-trigger** items are consumer-pressure-driven; they
-  reopen when a real workflow demands them (Module.ExtendedProperties
-  emission gated on V1 confirmation; Sequence emission gated on V1
-  fixture surfacing; Statement DU MERGE/UPDATE promotion gated on
-  third consumer; etc.).
-- **Phase 8** (pragmatic close + cutover+30 gate) opens at the
-  cutover-15 to cutover+30 window per the T-30 / T-15 fallback ladder
-  gates discipline.
+- **Phase 5.12 V1 Parity Audit Wave** closed at chapter 5.8. 185 matrix rows + 22 DECISIONS entries + 3 synthesis documents. The wave produced the structural answer to "how confident are we that V2 covers V1's surface?" — confidence is high, with named cash-out paths for every 🟠 NOT-MAPPED row.
+- **Phase 5.13 (cash-out implementation wave)** opens immediately upon chapter 5 close. The wave's slices are independently triggered — pick what matches session capacity per the priority lists in Phase 5.13.
+- **Phase 8 (Path to T-30 green)** is the structured pathway: three blocking deliverables + ~10 lead-up refactors. Sequence per the inline ASCII flow in Phase 8.
+- **Phase 9 (V2-driver operator workflow)** opens when T-30 green achieved. Operator-UX cash-outs ship per workflow trigger; no single slice gates the chapter open — operator demand surfaces the trigger.
+- **Phase 10 (V1 sunset)** opens at cutover+30 if the three-condition gate (§ VIII) holds.
+- **Lead-up refactors LR1-LR10** are not blockers per se; each earns a slot when its consuming chapter opens.
+- **Cross-chapter coordination remains:** chapter 4.1.B slice ζ (`5.13.cdc-silence` + global ordering) depends on UserRemapContext from chapter 4.2 slice ε for full operator-reality acceptance; lab-fixture acceptance ships independently.
 
-**Remaining estimate as of 2026-05-17:** chapter 4.4 is the next named
-substantive chapter (~1-2 weeks at session cadence). Deferred-with-trigger
-items add up to ~1-2 sessions each as triggers fire. Phase 8 timing is
-cutover-relative.
+**Remaining estimate as of 2026-05-18:**
+
+- **Phase 8 (T-30 green path):** 3 blocking deliverables + 10 lead-up refactors. Estimate ~4-6 sessions for blocking deliverables (chapter 4.1.B slice η + chapter 4.2 slice ε + UAT dry-run) + ~3 sessions for highest-priority lead-up refactors (LR1 + LR3 + LR8). Total: ~7-9 sessions at session cadence.
+- **Phase 9 (operator workflow):** ~10 cash-outs estimated at ~3780 LOC total. Estimate ~10-15 sessions as operator demand triggers fire.
+- **Phase 5.13 cash-outs (consumer-pressure):** indefinite cadence; ~25 NOT-MAPPED rows with concrete cash-out shapes; each ships as trigger fires.
+
+**Cutover timing:** late July 2026 per `VISION.md`. T-30 green target: early-mid July (assuming chapter 4.1.B + 4.2 sliceε close + UAT dry-run by then).
 
 ---
 
@@ -1323,6 +1532,13 @@ audit (per `DECISIONS 2026-05-19`).
   2026-05-16 audible's format amendment, entries with placement
   "carbon-copied" carry a carbon-copy log naming the V1 source path,
   V2 location, date inherited, refactor status, and citation comment.
+
+### V1 parity audit + synthesis surfaces (chapter 5 wave; 2026-05-17 → 2026-05-18)
+
+- **`V1_PARITY_MATRIX.md`** — 185 rows; six classification statuses; per-row cash-out shape + dependencies + acceptance + trigger; status-history amendments for reclassifications. The structural answer to "how confident are we that V2 covers V1's surface?"
+- **`V1_ARCHITECTURE_COMPENDIUM.md`** (563 lines) — consolidated "what V1 actually does" reference; per-section walks (Ingest / Analyze / Emit / Orchestrate / Operate / Compare); file inventories with purpose; end-to-end V1 build-ssdt invocation narrative; 11 cross-cutting structural patterns V1 carries; V1 surfaces V2 does NOT inherit. Audience: future V2 agents opening V1-translation chapters.
+- **`V2_PATTERNS_COMPENDIUM.md`** (452 lines) — 26 architectural patterns in 5 sections (Foundational disciplines / Algebraic / Composition / Emission / Cutover-discipline); each with What / When / How V2 uses it / Worked example / Counter-pattern; quick-reference design table mapping tasks to patterns. Audience: contributors designing new V2 components.
+- **`CUTOVER_READINESS_BRIEF.md`** (368 lines) — operator-facing per-axis confidence assessment (six axes; current status + shipped + gated + sunset + acceptance per axis); composite verdict; path to T-30 green; per-environment R6 progression; five open risks with mitigations. Audience: principal-PO + cutover ops.
 
 ### Decision log
 
