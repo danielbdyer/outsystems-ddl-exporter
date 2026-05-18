@@ -102,6 +102,7 @@
     <Compile Include="OssysSsdtManifestParityTests.fs" />
     <Compile Include="OssysCliVerbsParityTests.fs" />
     <Compile Include="OssysSmoEmissionParityTests.fs" />
+    <Compile Include="OssysPipelineOrchestrationParityTests.fs" />
     <Compile Include="IsActiveCarryThroughTests.fs" />
     <Compile Include="IRFidelityLiftTests.fs" />
     <Compile Include="NoSilentDropTests.fs" />

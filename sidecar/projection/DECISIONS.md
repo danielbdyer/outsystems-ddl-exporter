@@ -13646,3 +13646,116 @@ deferrals.
 
 ---
 
+## 2026-05-18 (slice 5.6.α.orchestration) — Registry-driven composition over imperative step-chaining
+
+V1's `BuildSsdtPipeline.HandleAsync` is an imperative step-chained
+orchestrator: 12 sequential `.BindAsync()` calls; each step is a
+named field with DI-injected `IBuildSsdtStep<TState, TNextState>`;
+ordering is source-coupled (changing the sequence requires editing
+the source file + adjusting type chains).
+
+V2 inverts the pattern. `RegisteredTransforms.allChainSteps` is a
+list of `PassChainAdapter` entries (12 entries: 6 Catalog-rewriting
+passes + 6 decision-set-producing passes); `Compose.project`
+consumes the list via fold-and-bind, threading `ComposeState`
+through the chain. The pipeline IS the registry; the registry IS
+the pipeline.
+
+**Why this is principled (not merely cosmetic).**
+
+1. **A41 candidate — Registry totality + bidirectional property
+   tests.** The registry enumerates every `OperatorIntent`
+   transformation; skeleton-purity property test asserts `Compose
+   .runWithSkeleton` emits zero `OperatorIntent` events;
+   overlay-exercise property test asserts every registered
+   `OperatorIntent` fires in the canary. Together they make
+   pillar 9 (data-intent / operator-intent separation) a
+   type-witnessed bidirectional contract, not a discipline.
+
+2. **Decoupled axes.** V1's `IBuildSsdtStep<TState, TNextState>`
+   couples identity (DI field name), ordering (source position),
+   and implementation (the step class). V2 decouples: identity is
+   metadata in `TransformRegistry` (`Sites`, `StageBinding`); ordering
+   is list position in `allChainSteps`; implementation is the
+   closure in `Apply`. Reordering, adding, or removing passes is a
+   list edit + property-test reassessment, not a source-coupled
+   refactor.
+
+3. **Manifest applied-transforms field.** Per matrix row 95 +
+   chapter 4.4 close, V2's manifest carries `applied-transforms`
+   per artifact — the registry can enumerate which passes touched
+   which Kind. V1's pipeline has no such surface (steps run; their
+   identity is implicit). The registry IS what makes this surface
+   possible.
+
+4. **Skeleton vs full projection.** V2's `RegisteredTransforms
+   .skeletonChainSteps` filters the registry to only `DataIntent`
+   passes — the skeleton baseline. `Compose.runSkeleton` projects
+   the skeleton; consumers compare it against full projection to
+   identify operator-intent surfaces. V1 has no equivalent — every
+   step runs; skeleton is not first-class.
+
+5. **CLI surface.** V2's `osm emit --skeleton-only` (chapter A.4.7'
+   slice ζ; shipped) is operationally trivial because the registry
+   filter is in place. V1 has no equivalent CLI verb because the
+   skeleton concept is not first-class.
+
+**The architecture comparison.**
+
+| Axis | V1 (imperative step-chaining) | V2 (registry-driven composition) |
+|---|---|---|
+| Pipeline definition | Source code (HandleAsync method) | Data (allChainSteps list) |
+| Step identity | DI field name | Metadata field on RegisteredTransform |
+| Ordering | Source position | List position |
+| Adding a step | Edit source + adjust type chains | Append to allChainSteps |
+| Removing a step | Edit source + collapse type chains | Remove from allChainSteps |
+| Skeleton variant | Not first-class | `skeletonChainSteps` filter |
+| Applied-transforms | Implicit (no surface) | Manifest field per artifact |
+| Per-pass observability | Centralized PipelineExecutionLog | Per-pass Lineage + Diagnostics |
+| Testing | Integration test of full pipeline | Per-pass property tests + chain assertion |
+
+**State threading.**
+
+V1 threads state via per-step record types (`PipelineInitialized` →
+`BootstrapCompleted` → ... — 18+ intermediate record types). V2
+accumulates evidence in one `ComposeState` record (7 fields: Catalog
++ TopologicalOrder + 4 decision-sets + UserRemap). V2's fixed-shape
+state + smart-constructor invariants (A39) eliminates the per-step
+type explosion.
+
+**Trade-off explicitly named.**
+
+V1's per-step typing enforces "each step consumes exactly what the
+prior step produced" at compile time. V2's fixed-shape `ComposeState`
+relies on smart constructors to enforce per-field invariants
+(`emptyDecisionSet` for unfilled fields). The trade-off is type
+witnessing (V1 stronger; V2 looser at the state level but stronger
+at the pass-output level via Outcome DUs).
+
+**Re-open trigger.**
+
+None expected. The registry pattern is load-bearing for pillar 9
++ A41 candidate; reverting would require a substantive amendment to
+both. The registry is the cross-cutting structural-evidence
+concern sibling to Lineage / Diagnostics / Bench.
+
+Recorded in `V1_PARITY_MATRIX.md` row 131 as 🟡 DIVERGENCE.
+Companion rows 132-147 carry the per-step audit (3 SUNSET, 5
+NOT-MAPPED, 8 PARITY, 1 V2-EXTENSION).
+
+### Cross-references
+
+- `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy
+  classification` — the parent discipline this entry instantiates
+  for pipeline composition.
+- Chapter A.4.7' axes 1-3 — the canonical V2 registry shipping
+  arc.
+- A41 candidate (registry totality + bidirectional property tests)
+  — formal axiom shape; scheduled at chapter close per AXIOMS
+  scaffolding discipline.
+- `DECISIONS 2026-05-18 (slice 5.4.γ.opportunities) — Per-pass
+  DiagnosticEntry contract` — the diagnostic surface registry
+  passes consume.
+
+---
+
