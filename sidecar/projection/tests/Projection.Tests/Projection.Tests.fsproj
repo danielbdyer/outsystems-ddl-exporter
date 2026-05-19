@@ -178,6 +178,7 @@
     <Compile Include="CanaryRoundTripTests.fs" />
     <Compile Include="GeneratorScaleTests.fs" />
     <Compile Include="ComprehensiveCanaryTests.fs" />
+    <Compile Include="ExecuteBatchParallelTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
