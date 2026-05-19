@@ -259,6 +259,64 @@ the original audit missed it), append a dated amendment to this
 section naming the prior status, the new status, and the discovery
 slice.
 
+### Row 86 — 2026-05-19 (slice B.3.2.column-null-counts — LiveProfiler exact NullCount probe; closes cutover-blocker silent default in NullabilityRules)
+
+**Original framing.**
+- Row 86 (audit-wave slice 5.4.δ, 2026-05-18): 🟠 NOT-MAPPED.
+  V1's `NullCountQueryBuilder.BuildCommandText()` emits a per-column null-count query (`SELECT SUM(CASE WHEN [col] IS NULL THEN 1 ELSE 0 END)`); V2's `Profile.Columns.NullCount` carries the IR but acquisition was absent.
+- Refreshed at slice A.4.7'-prelude.live-profiler (2026-05-19): partial closure (`HasNulls : bool` boolean witness only via `EXISTS`); exact cardinality deferred. Re-open trigger: a `NullabilityRules` consumer demands the exact count to differentiate budget-tolerance bands.
+
+**The trigger fired.** `Strategies/NullabilityRules.fs:249-274` reads `Profile.tryFindColumn attribute.SsKey profile` and consults `col.RowCount` + `col.NullCount` to drive 5 distinct decision branches:
+
+| col.NullCount | Budget check | Outcome |
+|---|---|---|
+| 0 | n/a | `EnforceNotNull (LogicalMandatoryNoNulls col.RowCount)` |
+| 1..N | `nullCount ≤ rowCount × NullBudget` | `EnforceNotNull (LogicalMandatoryWithinBudget …)` |
+| >budget | `AllowMandatoryRelaxation = true` | `KeepNullable (RelaxedUnderEvidence …)` |
+| >budget | `AllowMandatoryRelaxation = false` | `RequireOperatorApproval (MandatoryButHasNullsBeyondBudget …)` |
+| — | profile absent | `EnforceNotNull LogicalMandatoryNoProfile` |
+
+Before this slice: the live-probe path filled `Profile.AttributeRealities.HasNulls : bool` but **not** `Profile.Columns.NullCount`. Every live-probe-driven `NullabilityRules` evaluation on a mandatory-but-not-strictly-NOT-NULL column hit the `None` branch (line 250-252) and routed to `LogicalMandatoryNoProfile` regardless of deployed null cardinality — V2 in V2-driver mode produced undifferentiated decisions, losing the budget-tolerance discrimination V1 carried.
+
+**Reclassified (slice B.3.2.column-null-counts, 2026-05-19):**
+
+| Row | Prior status | Updated status | What shipped |
+|---|---|---|---|
+| 86 | 🟠 NOT-MAPPED (boolean witness only via HasNulls) | 🟢 PARITY (exact int64 cardinality) | `LiveProfiler.fs`: new `captureColumnProfiles : SqlConnection → Catalog → Task<Result<ColumnProfile list>>`. Mirrors V1's `NullCountQueryBuilder` shape but adopts the batched-per-kind discipline: one round-trip per non-static table, returning `[c_rows]` (table row count via `COUNT_BIG(*)`) and `[c0]..[cN]` (per-attribute null counts via `COUNT_BIG(CASE WHEN col IS NULL THEN 1 END)`). Adapter constructs N `ColumnProfile` records per kind via the existing `ColumnProfile.create` smart constructor (preserves the `rowCount ≥ 0`, `nullCount ≥ 0`, `nullCount ≤ rowCount` invariants by SQL semantics + by-construction). PK attributes included in the result (NullCount = 0 by construction; consumer pre-filters via `attribute.IsPrimaryKey`). `LiveProfiler.attach` extended to compose `Columns` axis alongside `AttributeRealities` + `ForeignKeys`. |
+
+**Per pillar 9: all probes carry DataIntent.** The probe observes deployed null counts; no operator policy enters at probe time. Sampling policy stays deferred to `Pipeline.Config` per matrix row 90's prior decision (slice 6 of this chapter wires it through every capture).
+
+**Per A18 amended + A34.** `LiveProfiler.captureColumnProfiles` reads Catalog (to identify probable attributes per kind) but emits Profile evidence only — no catalog mutation, no policy consumption.
+
+**Verification depth: 5 new Docker-gated integration tests** in `LiveProfilerIntegrationTests.fs` (reusing the Items fixture: 4 rows, NAME has 1 NULL, CODE has 0 NULLs, ID is PK):
+
+- NAME column reflects `NullCount = 1L`, `RowCount = 4L`.
+- CODE column reflects `NullCount = 0L`, `RowCount = 4L` (clean).
+- PK column reflects `NullCount = 0L` by construction + `RowCount = 4L`.
+- `ProbeStatus.SampleSize = rowCount` + `Outcome = Succeeded`.
+- Totality: 3 ColumnProfile entries (one per attribute including PK).
+
+Plus the updated composability test from slice 1 now asserts `Columns` populates alongside `AttributeRealities` + `ForeignKeys` in the `attach` flow.
+
+All 15 LiveProfilerIntegrationTests pass against the warm container (~51s warm for the full class). Non-Docker baseline holds.
+
+**Cross-references.**
+- `CHAPTER_B_3_OPEN.md` — strategic frame (slice 2 of 6).
+- `DECISIONS 2026-05-19 (slice B.3.2.column-null-counts)` — cash-out rationale + batched-per-kind probe shape choice + sampling deferral.
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.live-profiler)` — the prior arc that named "exact NullCount cardinality" as deferred.
+- V1 source: `Pipeline/Profiling/NullCountQueryBuilder.BuildCommandText()` — query shape mirrored at the SQL level; V2's `COUNT_BIG` variant chosen over V1's `SUM(int)` for BIGINT type-safety on the F# read side (per slice B.3.1's same audit-during-validation finding).
+- Consumer: `Projection.Core/Strategies/NullabilityRules.fs:249-274` — the cutover-blocker silent-default that closes via this slice.
+
+**Refreshed deferral triggers (after this slice).**
+
+- **Per-column null-count probe of a column whose declared type is BLOB/TEXT/IMAGE** — the probe shape `COUNT_BIG(CASE WHEN col IS NULL THEN 1 END)` is type-agnostic at SQL parse but legacy `IMAGE` columns reject equality predicates. Trigger: deployed-target carries legacy LOB columns AND tightening decisions need null evidence on them. Cash-out shape: per-attribute fallback to `EXISTS`-shaped probe matching `captureAttributeRealities.HasNulls`.
+- **Sampling policy** — full-table scans today via `COUNT_BIG(*)`. Inherited deferral from slice B.3.1; cash-out at slice 6 wires `SqlProfilerOptions.Sampling` through every LiveProfiler capture.
+- **`RowCount` divergence between kinds** — current shape captures row count per kind (same row count for every attribute within a kind). V1's `NullCountQueryBuilder` likewise issued one query per table; the per-attribute-different `RowCount` case doesn't arise. If V2 grows a per-attribute sampling refinement (e.g., probe distinct attributes at different sample sizes), `ColumnProfile.RowCount` becomes per-attribute distinct. Trigger: sampling slice (slice 6).
+
+**Operating-discipline payoff.** The batched-per-kind probe pattern compounds with slice 1's per-Reference probe — both shapes are "one query per logical scope; aggregate projections per attribute" — and is a clean template for slice 3 (per-Index composite-unique probe) which is "one query per Index; GROUP BY composite key; aggregate `HAVING COUNT_BIG(*) > 1`." The sibling-wrapper discipline holds: `captureColumnProfiles` is the third named capture sibling alongside `captureAttributeRealities` + `captureForeignKeyRealities`. The "audit during validation" discipline absorbed the F# class-layout rule fix (helpers must precede members) inline, not as a follow-up.
+
+---
+
 ### Row 88 — 2026-05-19 (slice B.3.1.foreign-key-reality — LiveProfiler per-FK orphan probe; closes cutover-blocker silent default in ForeignKeyRules)
 
 **Original framing.**

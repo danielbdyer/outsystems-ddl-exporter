@@ -41,16 +41,22 @@ open Projection.Core
 ///     `IsNullableInDatabase` + `HasNulls` + `HasDuplicates` +
 ///     `IsPresentButInactive` per non-PK attribute. Surfaces as
 ///     `captureAttributeRealities`.
-///   - Slice B.3.1.foreign-key-reality (this slice, 2026-05-19):
-///     captures `Profile.ForeignKeys[ssKey].HasOrphan` +
-///     `OrphanCount` per `Reference`. Surfaces as
-///     `captureForeignKeyRealities`. Single-column PK targets only;
-///     composite-PK targets defer with named trigger (the relevant
-///     `Reference` returns a defaulted `ForeignKeyReality` with
-///     `ProbeOutcome.AmbiguousMapping`). Sibling-adapter
-///     composability holds: `attach` runs both captures.
+///   - Slice B.3.1.foreign-key-reality (2026-05-19): captures
+///     `Profile.ForeignKeys[ssKey].HasOrphan` + `OrphanCount` per
+///     `Reference`. Surfaces as `captureForeignKeyRealities`.
+///     Single-column PK targets only; composite-PK targets defer
+///     with named trigger (`Outcome = AmbiguousMapping`).
+///   - Slice B.3.2.column-null-counts (this slice, 2026-05-19):
+///     captures `Profile.Columns[ssKey].RowCount` + `NullCount` +
+///     `NullCountProbeStatus` per attribute. Surfaces as
+///     `captureColumnProfiles`. Batched per-kind probe: one
+///     `COUNT_BIG`-based query per non-static table yielding row
+///     count + per-attribute null count. V1's
+///     `NullCountQueryBuilder` shape mirrored.
+///   - Sibling-adapter composability holds: `attach` runs all three
+///     captures and composes into the input Profile.
 ///
-/// Per the chapter B.3 open document — this is slice 1 of the
+/// Per the chapter B.3 open document — slices 1-2 of the
 /// LiveProfiler deep-probe sweep cashing out the deferrals named
 /// at slice A.4.7'-prelude.live-profiler.
 [<RequireQualifiedAccess>]
@@ -219,6 +225,127 @@ module LiveProfiler =
         |> List.exists (function
             | Static _ -> true
             | _ -> false)
+
+    /// Per-kind batched null-count probe SQL — one round-trip per
+    /// kind returning the table's row count (column 0) and the null
+    /// count for every attribute (columns 1..N). V1's
+    /// `NullCountQueryBuilder.BuildCommandText()` shape adapted to
+    /// `COUNT_BIG` projections for BIGINT type-safety on the F# read
+    /// side. The `CASE WHEN col IS NULL THEN 1 END` form (no ELSE)
+    /// emits NULL for non-null rows so `COUNT_BIG` skips them
+    /// naturally.
+    let private columnProfileSql (kind: Kind) : string =
+        let table =
+            System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; segments are typed via Identifier.EncodeIdentifier
+                ".",
+                [| encode kind.Physical.Schema; encode kind.Physical.Table |])
+        let perColumnNullCount (idx: int) (attr: Attribute) : string =
+            let col = encode attr.Column.ColumnName
+            System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; encode + integer index are typed
+                "COUNT_BIG(CASE WHEN ", col, " IS NULL THEN 1 END) AS [c", string idx, "]")
+        let selectList =
+            kind.Attributes
+            |> List.mapi perColumnNullCount
+            |> String.concat ", "  // LINT-ALLOW: positional comma joiner for typed segments
+        System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; segments are typed
+            "SELECT COUNT_BIG(*) AS [c_rows], ", selectList, " FROM ", table)
+
+    /// Per-kind capture for column null-count statistics. Empty
+    /// attribute lists yield empty result (defensive; the schema
+    /// invariants forbid attribute-less kinds in production).
+    /// Empty source tables yield row-count = 0 and null-count = 0
+    /// per attribute (SQL Server `COUNT_BIG` of an empty set is 0,
+    /// not NULL — distinct from `SUM` of an empty set).
+    let private captureKindColumnProfiles
+        (cnn: SqlConnection)
+        (kind: Kind)
+        : Task<ColumnProfile list> =
+        task {
+            use _ = Bench.scope "profile.live.captureKindColumnProfiles"
+            if List.isEmpty kind.Attributes then return []
+            else
+                use cmd = cnn.CreateCommand()
+                cmd.CommandText <- columnProfileSql kind
+                cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
+                use! reader = cmd.ExecuteReaderAsync()
+                let! advanced = reader.ReadAsync()
+                if not advanced then return []
+                else
+                    let rowCount =
+                        if reader.IsDBNull(0) then 0L else reader.GetInt64(0)
+                    let probeStatus =
+                        { CapturedAtUtc = DateTimeOffset.MinValue
+                          SampleSize    = rowCount
+                          Outcome       = Succeeded }
+                    let profiles = System.Collections.Generic.List<ColumnProfile>()
+                    let mutable idx = 0
+                    for attr in kind.Attributes do
+                        let nullCount =
+                            if reader.IsDBNull(1 + idx) then 0L
+                            else reader.GetInt64(1 + idx)
+                        // `ColumnProfile.create` enforces
+                        // `nullCount ≤ rowCount` etc. The SQL
+                        // semantics guarantee these by construction
+                        // (`COUNT_BIG(CASE WHEN col IS NULL THEN 1)`
+                        // cannot exceed `COUNT_BIG(*)`); any
+                        // violation is a deeper invariant breach
+                        // that should propagate. Raise via
+                        // `failwithf` so the outer try-with surfaces
+                        // a `ValidationError` with full context.
+                        match ColumnProfile.create attr.SsKey rowCount nullCount probeStatus with
+                        | Ok p -> profiles.Add p
+                        | Error errs ->
+                            let codes = errs |> List.map (fun e -> e.Code) |> String.concat ", "
+                            failwithf
+                                "ColumnProfile.create rejected (rowCount=%d, nullCount=%d, attr=%A): %s"
+                                rowCount nullCount attr.SsKey codes
+                        idx <- idx + 1
+                    return List.ofSeq profiles
+        }
+
+    /// Capture `ColumnProfile` per non-static kind. Mirrors V1's
+    /// `NullCountQueryBuilder` shape: one query per table; null
+    /// counts batched across attributes. Static kinds skipped
+    /// (catalog-resident data).
+    ///
+    /// **What this slice covers (B.3.2):**
+    ///   - `ColumnProfile.RowCount` per attribute (shared per kind
+    ///     via the single `COUNT_BIG(*)` projection)
+    ///   - `ColumnProfile.NullCount` per attribute via `COUNT_BIG(
+    ///     CASE WHEN col IS NULL THEN 1 END)` projection
+    ///   - `ColumnProfile.NullCountProbeStatus` with `Succeeded`
+    ///     outcome + SampleSize = rowCount (full-table scan today)
+    ///
+    /// **Deferred (named follow-up triggers; inherited from
+    /// `captureAttributeRealities`):**
+    ///   - Sampling policy — full-table scans today. Trigger:
+    ///     operator-reality canary latency at scale; cash-out at
+    ///     chapter B.3 slice 6 wires `SqlProfilerOptions.Sampling`
+    ///     through every capture function.
+    let captureColumnProfiles
+        (cnn: SqlConnection)
+        (catalog: Catalog)
+        : Task<Result<ColumnProfile list>> =
+        task {
+            use _ = Bench.scope "profile.live.captureColumnProfiles"
+            try
+                let nonStaticKinds =
+                    catalog.Modules
+                    |> List.collect (fun m -> m.Kinds)
+                    |> List.filter (fun k -> not (isStaticKind k))
+                let profiles = System.Collections.Generic.List<ColumnProfile>()
+                for kind in nonStaticKinds do
+                    let! perKind = captureKindColumnProfiles cnn kind
+                    profiles.AddRange perKind
+                return Result.success (List.ofSeq profiles)
+            with
+            | ex ->
+                return
+                    Result.failureOf
+                        (ValidationError.create
+                            "profile.live.captureColumnProfilesFailed"
+                            (System.String.Concat("LiveProfiler.captureColumnProfiles failed: ", ex.Message)))
+        }
 
     let captureAttributeRealities
         (cnn: SqlConnection)
@@ -402,12 +529,12 @@ module LiveProfiler =
     /// `ProfileSnapshot.attach` / `ProfileStatistics.attach`: the
     /// adapter is composable, not authoritative — callers chain
     /// multiple sibling adapters per the rich-profiling agenda.
-    /// Runs both `captureAttributeRealities` and
-    /// `captureForeignKeyRealities` and composes both into the input
-    /// `Profile`; pre-populated `AttributeRealities` and
-    /// `ForeignKeys` are overwritten with the freshly-probed values
-    /// (the live-probe path is authoritative for the axes it
-    /// covers); other sibling axes (`Columns`, `UniqueCandidates`,
+    /// Runs `captureAttributeRealities`, `captureForeignKeyRealities`,
+    /// and `captureColumnProfiles` and composes all three into the
+    /// input `Profile`; pre-populated `AttributeRealities`,
+    /// `ForeignKeys`, and `Columns` are overwritten with the freshly-
+    /// probed values (the live-probe path is authoritative for the
+    /// axes it covers); other sibling axes (`UniqueCandidates`,
     /// `Distributions`, …) are preserved untouched per the sibling-
     /// adapter composability discipline.
     let attach
@@ -424,9 +551,14 @@ module LiveProfiler =
                 match fkCaptured with
                 | Error errors -> return Result.failure errors
                 | Ok fkRealities ->
-                    return
-                        Result.success
-                            { profile with
-                                AttributeRealities = realities
-                                ForeignKeys        = fkRealities }
+                    let! colCaptured = captureColumnProfiles cnn catalog
+                    match colCaptured with
+                    | Error errors -> return Result.failure errors
+                    | Ok columns ->
+                        return
+                            Result.success
+                                { profile with
+                                    AttributeRealities = realities
+                                    ForeignKeys        = fkRealities
+                                    Columns            = columns }
         }

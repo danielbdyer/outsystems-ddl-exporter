@@ -1,25 +1,34 @@
-# Handoff letter — 2026-05-19 (later) (chapter B.3 opens — LiveProfiler deep-probe sweep; slice 1 ships per-FK orphan probe closing ForeignKeyRules silent-default cutover-blocker)
+# Handoff letter — 2026-05-19 (later) (chapter B.3 in flight — LiveProfiler deep-probe sweep; slices 1 + 2 ship; FK orphan + exact NullCount probes close two tightening-rule silent-default cutover-blockers)
 
-To the next agent. This letter sits above the earlier 2026-05-19 letter (A.4.7'-prelude 18-slice arc) and the 2026-05-18 letter. Read all three (chapter-3.1 letter sits at the bottom). This letter tells you what shipped this session as **slice 1 of chapter B.3**, the strategic frame the chapter operates under, and what slices 2-6 cash out next.
+To the next agent. This letter sits above the earlier 2026-05-19 letter (A.4.7'-prelude 18-slice arc) and the 2026-05-18 letter. Read all three (chapter-3.1 letter sits at the bottom). This letter tells you what shipped this session as **slices 1-2 of chapter B.3**, the strategic frame the chapter operates under, and what slices 3-6 cash out next.
 
 ## TL;DR
 
-**Chapter B.3 opened.** `CHAPTER_B_3_OPEN.md` ships with the strategic frame for the LiveProfiler deep-probe sweep — V2 owns source-side statistical evidence end-to-end so V1-JSON can sunset at cutover+30 without degrading tightening-pass decisions. The chapter operationalizes V2_PRODUCTION_CUTOVER §7.4 (Phase B.3; pre-scoped 3-4 weeks) incrementally as 6 focused slices.
+**Chapter B.3 opened + 2 slices shipped.** `CHAPTER_B_3_OPEN.md` ships with the strategic frame for the LiveProfiler deep-probe sweep — V2 owns source-side statistical evidence end-to-end so V1-JSON can sunset at cutover+30 without degrading tightening-pass decisions. The chapter operationalizes V2_PRODUCTION_CUTOVER §7.4 (Phase B.3; pre-scoped 3-4 weeks) incrementally as 6 focused slices.
 
-**Slice 1 (B.3.1.foreign-key-reality) shipped.** Row 88 closes from 🟠 NOT-MAPPED (partial) → 🟢 PARITY. The cutover-blocker shape closed: `ForeignKeyRules.evaluate:269-310` reads `reality.HasOrphan` + `reality.OrphanCount` to decide between `EnforceConstraint`, `ScriptWithNoCheck(orphanCount)`, `DoNotEnforce(DataHasOrphans orphanCount)`, and `EvidenceMissing` — before this slice, the live-probe path filled neither, silently routing every FK decision to `EvidenceMissing` regardless of deployed evidence.
+**Slice 1 (B.3.1.foreign-key-reality) shipped.** Row 88 closes from 🟠 NOT-MAPPED (partial) → 🟢 PARITY (single-column-PK targets). The cutover-blocker shape closed: `ForeignKeyRules.evaluate:269-310` reads `reality.HasOrphan` + `reality.OrphanCount` to decide between `EnforceConstraint`, `ScriptWithNoCheck(orphanCount)`, `DoNotEnforce(DataHasOrphans orphanCount)`, and `EvidenceMissing` — before this slice, the live-probe path filled neither, silently routing every FK decision to `EvidenceMissing` regardless of deployed evidence.
 
-**What's load-bearing after this slice:**
-- **`LiveProfiler.captureForeignKeyRealities`** (`src/Projection.Adapters.Sql/LiveProfiler.fs`). Per-Reference combined probe via `COUNT_BIG`-based LEFT JOIN; single round-trip per FK; populates `Profile.ForeignKeys` with `HasOrphan` + `OrphanCount` + `ProbeStatus`. Single-column PK targets only; composite-PK targets defer with `Outcome = AmbiguousMapping` (the ForeignKeyRules rule routes these safely to `EvidenceMissing`).
-- **`LiveProfiler.capture` renamed to `captureAttributeRealities`** + new sibling `captureForeignKeyRealities` + extended `attach` composes both. The sibling-named capture surface generalizes naturally to slices 2-6 (NullCounts; Composite-unique; Orphan-sample; Distributions; Sampling+merge).
-- **`ForeignKeyReality.create`** smart constructor in `Profile.fs` — mirrors `AttributeReality.create` precedent.
+**Slice 2 (B.3.2.column-null-counts) shipped.** Row 86 closes from 🟠 NOT-MAPPED (boolean witness only) → 🟢 PARITY (exact int64 cardinality). Sibling cutover-blocker shape closed: `NullabilityRules.evaluate:249-274` reads `col.RowCount` + `col.NullCount` to drive 5 distinct decision branches (`LogicalMandatoryNoNulls` / `LogicalMandatoryWithinBudget` / `RelaxedUnderEvidence` / `MandatoryButHasNullsBeyondBudget` / `LogicalMandatoryNoProfile`). Before this slice, the live-probe path filled `HasNulls : bool` but not `NullCount : int64` — every mandatory-but-not-strictly-NOT-NULL column routed silently to `LogicalMandatoryNoProfile`. Now V2 in V2-driver mode preserves the budget-tolerance discrimination V1 carried.
 
-**Test baseline at slice close: 1679 / 1679 non-Docker passing + 10 / 10 LiveProfilerIntegrationTests passing (4 new B.3.1 tests + 6 existing).** ~33s warm for the full Docker-gated LiveProfiler class. Solution build clean (0 warnings under `TreatWarningsAsErrors=true`).
+**What's load-bearing after slices 1 + 2:**
+- **`LiveProfiler.captureForeignKeyRealities`** (slice 1) — per-Reference `COUNT_BIG`-based LEFT JOIN probe; single round-trip per FK; populates `Profile.ForeignKeys` with `HasOrphan` + `OrphanCount` + `ProbeStatus`. Single-column PK targets only; composite-PK targets defer with `Outcome = AmbiguousMapping`.
+- **`LiveProfiler.captureColumnProfiles`** (slice 2) — batched-per-kind `COUNT_BIG`-based null-count probe; single round-trip per non-static table emitting `RowCount` + per-attribute `NullCount`; populates `Profile.Columns` per attribute (including PK; consumer pre-filters).
+- **`LiveProfiler.capture` renamed to `captureAttributeRealities`** + sibling `captureForeignKeyRealities` + sibling `captureColumnProfiles` + extended `attach` composes all three. Three named capture siblings form a ubiquitous-language-consistent family; slices 3-6 inherit the shape.
+- **`ForeignKeyReality.create`** smart constructor in `Profile.fs` (slice 1) — mirrors `AttributeReality.create` precedent; sibling pattern reusable for future probe-axis additions.
+
+**Probe-shape pattern established across slices 1 + 2:**
+- Per-Reference probes use `COUNT_BIG` LEFT JOIN aggregates (one round-trip per FK).
+- Per-Kind probes use `COUNT_BIG` aggregate projections (one round-trip per table, N+1 columns).
+- All probes use bracket-quoted aliases (`[c_rows]` etc.) to avoid T-SQL reserved-word tokenization (`RowCount` collides with `@@ROWCOUNT`).
+- `COUNT_BIG` over `SUM(int)` for BIGINT type-safety on F# `GetInt64` read side.
+- The pattern compounds: slice 3 per-Index composite probe is one round-trip per Index with `GROUP BY` + `HAVING COUNT_BIG(*) > 1`; slice 5 per-attribute distribution probe is one round-trip per attribute with `PERCENTILE_CONT` aggregates.
+
+**Test baseline at slice 2 close: 1679 / 1679 non-Docker passing + 15 / 15 LiveProfilerIntegrationTests passing (4 new B.3.1 tests + 5 new B.3.2 tests + 6 existing).** ~51s warm for the full Docker-gated LiveProfiler class. Solution build clean (0 warnings under `TreatWarningsAsErrors=true`).
 
 ## Next slices in the chapter (per CHAPTER_B_3_OPEN.md)
 
 | Slice | Scope | Consumer pressure |
 |---|---|---|
-| 2 | Exact int64 NullCount probe (row 86 deep) | `NullabilityRules` reads `ColumnProfile.NullCount` for tightening decisions; live-probe path empty today |
 | 3 | Composite-unique probe (row 87 deep + composite-PK FK extension) | `UniqueIndexRules` consumes composite evidence; sibling cash-out for slice-1's composite-PK FK deferral |
 | 4 | FK orphan-sample rows (row 89) | Diagnostics surface (pillar 9 — operational, not data-intent); chapter 4.3 OperationalDiagnostics consumer |
 | 5 | Distribution live-probe | Synthetic-data foundation (future); tightening decisions informed by cardinality |
@@ -27,26 +36,27 @@ To the next agent. This letter sits above the earlier 2026-05-19 letter (A.4.7'-
 
 Slices 1/2/3 are independent and parallelizable. Slice 4 depends on slice 1 (the orphan-sample is TOP-N extension of slice 1's orphan-count query). Slice 6 is the rollup refactor retro-wiring sampling into earlier slices' captures.
 
-## Operating-discipline notes from slice 1
+## Operating-discipline notes from slices 1 + 2
 
-- **The three-class typology classified this slice clean.** V2-boundary-discipline — the IR axis existed (`Profile.ForeignKeys` with `HasOrphan` / `OrphanCount` / `ProbeStatus`); the consumer existed (`ForeignKeyRules.evaluate`); the live-probe adapter source was missing. Resolution: extend the existing `LiveProfiler` surface; no new IR types; no consumer changes.
-- **Smart-constructor-FIRST.** `ForeignKeyReality.create` lands at the same commit as the probe site that consumes it. Future probe refinements (ProbeStatus refinement; IsNoCheck-from-deployed-reflection) propagate at the constructor body only.
-- **Audit during validation surfaced two SQL fixes** — `SUM(int)` overflow / F# `GetInt64` type mismatch (fixed with `COUNT_BIG`); `RowCount` alias reserved-keyword collision (fixed with `[RowCount]` bracket quoting). Both fixes folded into the slice rather than deferred as follow-ups.
-- **Sibling-wrapper discipline holds.** The rename `capture` → `captureAttributeRealities` makes the parallel-capture surface ubiquitous-language-consistent. Future captures (NullCounts / Composite-unique / Orphan-sample / Distributions) land as named siblings.
+- **The three-class typology classified both slices clean.** V2-boundary-discipline — the IR axis existed (`Profile.ForeignKeys`, `Profile.Columns` with smart constructors); the consumer existed (`ForeignKeyRules.evaluate`, `NullabilityRules.evaluate`); the live-probe adapter source was missing. Resolution: extend the existing `LiveProfiler` surface; no new IR types; no consumer changes.
+- **Smart-constructor-FIRST.** `ForeignKeyReality.create` lands at the same commit as the probe site that consumes it (slice 1). Slice 2 reused `ColumnProfile.create` (it already existed from chapter 3.1 work). Future probe refinements propagate at the constructor body only.
+- **Audit during validation absorbed three fixes inline** — `SUM(int)` overflow / F# `GetInt64` type mismatch (fixed with `COUNT_BIG` at slice 1); `RowCount` alias reserved-keyword collision (fixed with `[RowCount]` bracket quoting at slice 1); F# class-layout rule FS0960 (let-helpers must precede members; fixed by relocating slice 2's helpers above the slice 1 member declarations). All folded inline; none deferred.
+- **Sibling-wrapper discipline holds across three captures.** `captureAttributeRealities` + `captureForeignKeyRealities` + `captureColumnProfiles` form a ubiquitous-language-consistent family at the F# adapter boundary; slices 3-6 add additional siblings (`captureCompositeUniqueCandidates` / `captureForeignKeyOrphanSamples` / `captureDistributions`).
+- **Probe-shape evidence pattern.** Per-scope `COUNT_BIG` aggregates + bracket-quoted aliases + Result-of-list at the boundary make a clean template. The pattern was discovered at slice 1 (per-Reference); confirmed at slice 2 (per-Kind batched); will generalize at slice 3 (per-Index) and slice 5 (per-attribute distribution).
 
 ## Reading order for the next agent
 
 1. **This letter** (~5 minutes).
 2. **`CHAPTER_B_3_OPEN.md`** — strategic frame + 6-slice plan + dependency map. **Load-bearing for the rest of the chapter.**
-3. **`DECISIONS 2026-05-19 (slice B.3.1.foreign-key-reality)`** — slice cash-out rationale + composite-PK deferral.
-4. **`V1_PARITY_MATRIX.md` Row 88 amendment** — the canonical reclassification template (reusable for slices 2-6).
+3. **`DECISIONS 2026-05-19 (slice B.3.2.column-null-counts)`** + **`DECISIONS 2026-05-19 (slice B.3.1.foreign-key-reality)`** — slice cash-out rationale + probe-shape choices.
+4. **`V1_PARITY_MATRIX.md` Row 88 + Row 86 amendments** — the canonical reclassification templates (reusable for slices 3-6).
 5. The earlier 2026-05-19 (A.4.7'-prelude arc) handoff + 2026-05-18 + chapter-close docs as needed.
 
-When you open slice 2, the trace-before-fixture discipline applies — find V1's `NullCountQueryBuilder.BuildCommandText()`, mirror the SUM-of-CASE shape (V2 uses `COUNT_BIG` per slice 1's discipline note for type-safety), wire into a new `LiveProfiler.captureColumnNullCounts` sibling; `ColumnProfile.create` already exists (lift to bare-record-default if necessary). The chapter's slice 2 closes row 86's exact-NullCount cardinality deferral.
+When you open slice 3 (composite-unique probe), the trace-before-fixture discipline applies — V1's `UniqueCandidateQueryBuilder.BuildCommandText()` carries the composite shape; mirror the `GROUP BY ... HAVING COUNT_BIG(*) > 1` form. Per-Index round-trips (mirrors slice 1's per-Reference shape). `UniqueCandidateProfile.create` + `CompositeUniqueCandidateProfile.create` already exist. The slice closes row 87's deep deferral AND naturally unblocks slice 1's composite-PK FK extension (same probe shape).
 
-Hold the spine. The LiveProfiler deep-probe surface is V2's path to V2-driver mode for the DATA axis; slice 1 closed the first silent-default; each subsequent slice closes a sibling silent-default. The chapter compounds.
+Hold the spine. The LiveProfiler deep-probe surface is V2's path to V2-driver mode for the DATA axis; slices 1 + 2 closed two silent-defaults; each subsequent slice closes a sibling silent-default. The chapter compounds.
 
-— The slice-B.3.1 architect.
+— The slice-B.3.2 architect.
 
 ---
 

@@ -17347,3 +17347,61 @@ The current probe handles single-column PK targets only. For targets with zero o
 - `V2_PRODUCTION_CUTOVER §7.4` (B.3) — chapter operationalizes B.3 incrementally; the 5-query-builder port lives as one slice each.
 - `V2_DRIVER.md` per-axis stakes (DATA-axis cutover-blocker) — the rule-driving silent-default this slice closes is the cash-out shape for the DATA-axis verification depth.
 - V1 source: `Pipeline/Profiling/ForeignKeyProbeQueryBuilder.BuildRealityCommandText()` (query shape mirrored at the SQL level; V2's `COUNT_BIG` variant chosen for type-safety on the F# read side).
+
+---
+
+## 2026-05-19 (slice B.3.2.column-null-counts) — LiveProfiler exact NullCount probe ships; NullabilityRules silent-default cutover-blocker closes (5 decision branches re-enabled on live-probe path)
+
+### Scope
+
+Slice 2 of chapter B.3. Closes the "exact NullCount cardinality" deferral named at slice A.4.7'-prelude.live-profiler (2026-05-19): the V2 LiveProfiler's HasNulls probe captured boolean witness only via `EXISTS`; `Profile.Columns.NullCount` (the int64 cardinality field consumed by `NullabilityRules.evaluate`) stayed empty on the live-probe path, filled only by V1-JSON via `ProfileSnapshot.attach`.
+
+### What ships
+
+- **`LiveProfiler.fs`** — new `captureColumnProfiles : SqlConnection → Catalog → Task<Result<ColumnProfile list>>`. Mirrors V1's `NullCountQueryBuilder.BuildCommandText()` query shape but adopts a **batched-per-kind** discipline (one round-trip per non-static table; aggregate projections per attribute):
+  ```sql
+  SELECT COUNT_BIG(*) AS [c_rows],
+         COUNT_BIG(CASE WHEN [col0] IS NULL THEN 1 END) AS [c0],
+         COUNT_BIG(CASE WHEN [col1] IS NULL THEN 1 END) AS [c1],
+         ...
+  FROM [schema].[table]
+  ```
+  Adapter constructs N `ColumnProfile` records per kind via the existing `ColumnProfile.create` smart constructor; F# `Result` propagation surfaces invariant breaches (rowCount < 0; nullCount < 0; nullCount > rowCount) via the outer try-with as `profile.live.captureColumnProfilesFailed`. SQL semantics make those breaches structurally impossible — `COUNT_BIG(CASE WHEN col IS NULL THEN 1)` ≤ `COUNT_BIG(*)` by construction — but the Result chain catches any unexpected invariant violation cleanly.
+- **`LiveProfiler.attach` extended** — composes the new Columns axis alongside `AttributeRealities` (slice A.4.7'-prelude.live-profiler) and `ForeignKeys` (slice B.3.1). Sibling-axis composability preserved (`UniqueCandidates`, `Distributions` untouched).
+- **5 Docker-gated integration tests** — exact NullCount per column on the existing Items fixture (4 rows; NAME has 1 NULL; CODE has 0 NULLs; ID PK has 0 NULLs by construction); ProbeStatus.SampleSize reflects rowCount; totality (one entry per attribute including PK).
+- **B.3.1 attach-composability test extended** to assert `Columns` populates alongside `AttributeRealities` + `ForeignKeys` (3 axes in the two-kind catalog = 3+1+5 entries).
+
+### Why now (the cutover-blocker shape)
+
+`Strategies/NullabilityRules.fs:249-274` reads `Profile.tryFindColumn attribute.SsKey profile` then consults `col.RowCount` + `col.NullCount` to drive 5 distinct decision branches: `LogicalMandatoryNoNulls`, `LogicalMandatoryWithinBudget`, `RelaxedUnderEvidence`, `MandatoryButHasNullsBeyondBudget`, `LogicalMandatoryNoProfile`. Before this slice: the live-probe path filled `AttributeRealities.HasNulls : bool` but not `Profile.Columns.NullCount`. Every live-probe-driven `NullabilityRules` evaluation on a mandatory-but-not-strictly-NOT-NULL column hit the `None` branch and routed to `LogicalMandatoryNoProfile` regardless of deployed null cardinality. V2 in V2-driver mode (post V1-JSON sunset at cutover+30) produced undifferentiated decisions — losing the budget-tolerance discrimination V1 carried. Slice 2 closes this by filling `Profile.Columns` from live observation.
+
+### Probe-shape rationale: batched-per-kind, not per-attribute
+
+V1's `NullCountQueryBuilder.BuildCommandText` already batched per-kind (one query produces null counts for all attributes of one table). V2's slice A.4.7'-prelude.live-profiler probe (`captureAttributeRealities`) chose per-attribute round-trips for the boolean witnesses — acceptable because each EXISTS probe short-circuits at the first matching row and runs in milliseconds. **For exact counts via `COUNT_BIG`, per-attribute round-trips would scan the table N times** (once per attribute) — quadratic at scale. The batched-per-kind shape scans each table once. The chapter B.3 open document anticipates this difference in §4 "Probe shape: combined-query short-circuit" — boolean witnesses are per-attribute; aggregate counts are per-kind.
+
+### Pillar 9 — DataIntent classification
+
+The probe carries DataIntent. The query observes deployed null cardinality; no operator policy enters. Sampling policy stays operator intent per matrix row 90's prior `DECISIONS 2026-05-18 (slice 5.4.δ.profiling)` and lands at slice 6.
+
+### Discipline payoffs
+
+- **Sibling-wrapper discipline (third capture sibling).** `captureColumnProfiles` joins `captureAttributeRealities` + `captureForeignKeyRealities` as the third named capture surface. The three names form a ubiquitous-language-consistent family at the F# adapter boundary; future slices (composite-unique probes, distribution probes, orphan-samples) inherit the naming shape.
+- **Three-class typology classified this slice clean.** V2-boundary-discipline — the IR axis (`Profile.Columns` with the smart constructor `ColumnProfile.create`) existed; the consumer (`NullabilityRules.evaluate`) existed; the live-probe adapter source was missing. Resolution: extend the existing `LiveProfiler` surface; no new IR types; no consumer changes.
+- **Audit during validation surfaced F# class-layout fix** — `let`-bound helpers must precede `[<Fact>]` members in a class definition (FS0960). Fixed inline by relocating `findColumn` + `runColumnProfileScenario` to the let-binding block before any member.
+
+### Verification
+
+- 15/15 LiveProfilerIntegrationTests pass green against the warm container (~51s warm for the full class).
+- 1679/1679 non-Docker baseline holds.
+- Solution build clean (0 warnings under `TreatWarningsAsErrors=true`).
+- `NullabilityRules` consumer test unchanged — V1-JSON-snapshot path still routes through the same `Profile.tryFindColumn` lookup; the live-probe path is now the second source filling the same IR axis.
+
+### Cross-references
+
+- `CHAPTER_B_3_OPEN.md` — strategic frame; slice 2 of 6.
+- `V1_PARITY_MATRIX.md` Row 86 amendment — formal status reclassification 🟠 NOT-MAPPED (boolean witness only) → 🟢 PARITY (exact int64 cardinality).
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.live-profiler)` — the predecessor arc naming "exact NullCount cardinality" as deferred.
+- `DECISIONS 2026-05-19 (slice B.3.1.foreign-key-reality)` — the slice 1 sibling; the same `COUNT_BIG` type-safety + bracket-quoted alias disciplines apply.
+- `V2_PRODUCTION_CUTOVER §7.4` (B.3) — chapter operationalizes incrementally; slice 2 of 6 in the deep-probe sweep.
+- V1 source: `Pipeline/Profiling/NullCountQueryBuilder.BuildCommandText()` (query shape mirrored; V2's `COUNT_BIG` over V1's `SUM(int)` for BIGINT type-safety on the F# read side).
+- Consumer: `Projection.Core/Strategies/NullabilityRules.fs:249-274` — the silent-default this slice closes.

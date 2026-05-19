@@ -225,6 +225,17 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
             return mustOk result
         })
 
+    let findColumn (columns: ColumnProfile list) (key: SsKey) : ColumnProfile =
+        columns |> List.find (fun c -> c.AttributeKey = key)
+
+    let runColumnProfileScenario () : Task<ColumnProfile list> =
+        fixture.WithEphemeralDatabase "LiveProfilerColumnProfile" (fun cnn _ -> task {
+            do! Deploy.executeBatch cnn schemaSql
+            do! Deploy.executeBatch cnn seedSql
+            let! result = LiveProfiler.captureColumnProfiles cnn itemsCatalog
+            return mustOk result
+        })
+
     interface IClassFixture<EphemeralContainerFixture>
 
     [<Fact>]
@@ -282,7 +293,7 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
     // ---------------------------------------------------------------
 
     [<Fact>]
-    member _.``A.4.7'-prelude.live-profiler: attach composes captured realities into Profile.AttributeRealities`` () =
+    member _.``A.4.7'-prelude.live-profiler: attach composes captured realities into Profile.AttributeRealities + Profile.Columns`` () =
         if not (skipIfNoDocker "live-profiler-attach-compose") then () else
         let p =
             (fixture.WithEphemeralDatabase "LiveProfilerAttach" (fun cnn _ -> task {
@@ -291,15 +302,67 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
                 let! attachResult = LiveProfiler.attach cnn itemsCatalog Profile.empty
                 return mustOk attachResult
             })).GetAwaiter().GetResult()
-        // The attach output is Profile.empty + realities populated.
+        // AttributeRealities populated (slice A.4.7'-prelude.live-profiler).
         Assert.NotEmpty p.AttributeRealities
         Assert.Equal(3, List.length p.AttributeRealities)
+        // Columns populated by slice B.3.2 — one entry per attribute including PK.
+        Assert.NotEmpty p.Columns
+        Assert.Equal(3, List.length p.Columns)
         // No References in the items catalog → ForeignKeys empty.
         Assert.Empty p.ForeignKeys
         // Other sibling Profile axes (filled by other adapters) remain empty.
-        Assert.Empty p.Columns
         Assert.Empty p.UniqueCandidates
         Assert.Empty p.Distributions
+
+    // ---------------------------------------------------------------
+    // Slice B.3.2.column-null-counts — captureColumnProfiles probes
+    // null cardinality per attribute via batched COUNT_BIG query.
+    // Uses the same Items fixture (4 rows; NAME has 1 NULL; CODE
+    // has 0 NULLs; ID is PK NOT NULL).
+    // ---------------------------------------------------------------
+
+    [<Fact>]
+    member _.``B.3.2.column-null-counts: NAME column reflects NullCount = 1 (one row with NULL)`` () =
+        if not (skipIfNoDocker "live-profiler-col-null-count-name") then () else
+        let columns = (runColumnProfileScenario ()).GetAwaiter().GetResult()
+        let name = findColumn columns nameAttrKey
+        Assert.Equal(4L, name.RowCount)
+        Assert.Equal(1L, name.NullCount)
+
+    [<Fact>]
+    member _.``B.3.2.column-null-counts: CODE column reflects NullCount = 0 (no NULLs)`` () =
+        if not (skipIfNoDocker "live-profiler-col-null-count-code") then () else
+        let columns = (runColumnProfileScenario ()).GetAwaiter().GetResult()
+        let code = findColumn columns codeAttrKey
+        Assert.Equal(4L, code.RowCount)
+        Assert.Equal(0L, code.NullCount)
+
+    [<Fact>]
+    member _.``B.3.2.column-null-counts: PK column reflects NullCount = 0 by construction`` () =
+        if not (skipIfNoDocker "live-profiler-col-null-count-pk") then () else
+        let columns = (runColumnProfileScenario ()).GetAwaiter().GetResult()
+        let id = findColumn columns idAttrKey
+        // PK is NOT NULL by construction → COUNT_BIG of nulls = 0.
+        // Profile still emits an entry per attribute (totality).
+        Assert.Equal(4L, id.RowCount)
+        Assert.Equal(0L, id.NullCount)
+
+    [<Fact>]
+    member _.``B.3.2.column-null-counts: ProbeStatus reflects rowCount as SampleSize + Succeeded outcome`` () =
+        if not (skipIfNoDocker "live-profiler-col-probe-status") then () else
+        let columns = (runColumnProfileScenario ()).GetAwaiter().GetResult()
+        let name = findColumn columns nameAttrKey
+        Assert.Equal(4L, name.NullCountProbeStatus.SampleSize)
+        Assert.Equal(Succeeded, name.NullCountProbeStatus.Outcome)
+
+    [<Fact>]
+    member _.``B.3.2.column-null-counts: captured profiles cover every attribute (PK + non-PK)`` () =
+        if not (skipIfNoDocker "live-profiler-col-totality") then () else
+        let columns = (runColumnProfileScenario ()).GetAwaiter().GetResult()
+        let keys = columns |> List.map (fun c -> c.AttributeKey) |> Set.ofList
+        Assert.Equal<Set<SsKey>>(
+            Set.ofList [ idAttrKey; nameAttrKey; codeAttrKey ],
+            keys)
 
     // ---------------------------------------------------------------
     // Slice B.3.1.foreign-key-reality — captureForeignKeyRealities
@@ -338,7 +401,7 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
         Assert.Equal(Succeeded, fk.ProbeStatus.Outcome)
 
     [<Fact>]
-    member _.``B.3.1.foreign-key-reality: attach composes both AttributeRealities and ForeignKeys`` () =
+    member _.``B.3.1.foreign-key-reality: attach composes AttributeRealities + ForeignKeys + Columns`` () =
         if not (skipIfNoDocker "live-profiler-fk-attach-compose") then () else
         let p =
             (fixture.WithEphemeralDatabase "LiveProfilerFkAttach" (fun cnn _ -> task {
@@ -349,15 +412,17 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
                 let! attachResult = LiveProfiler.attach cnn twoKindCatalog Profile.empty
                 return mustOk attachResult
             })).GetAwaiter().GetResult()
-        // Both axes populated — sibling-composability across captures.
+        // Three axes populated — sibling-composability across captures.
         Assert.NotEmpty p.AttributeRealities
         Assert.NotEmpty p.ForeignKeys
+        Assert.NotEmpty p.Columns
         // Single Reference in twoKindCatalog → exactly one FK reality.
         Assert.Equal(1, List.length p.ForeignKeys)
         let fk = findFkReality p.ForeignKeys childFkKey
         Assert.True(fk.HasOrphan)
         Assert.Equal(1L, fk.OrphanCount)
+        // Columns: 3 Items attrs + 2 Children attrs = 5.
+        Assert.Equal(5, List.length p.Columns)
         // Other sibling Profile axes (filled by other adapters) remain empty.
-        Assert.Empty p.Columns
         Assert.Empty p.UniqueCandidates
         Assert.Empty p.Distributions
