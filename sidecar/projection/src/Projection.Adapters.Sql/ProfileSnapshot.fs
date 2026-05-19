@@ -377,11 +377,14 @@ module ProfileSnapshot =
     /// variants land via closed-DU expansion in the type definition
     /// above; no signature change at this consumer.
     let attach (catalog: Catalog) (source: ProfileSnapshotSource) : Result<Profile> =
+        use _ = Bench.scope "profile.snapshot.attach"
         let profileJson =
             match source with
             | ProfileSnapshotJson json -> json
         try
-            use doc = JsonDocument.Parse(profileJson)
+            use doc =
+                (use _ = Bench.scope "profile.snapshot.attach.parse"
+                 JsonDocument.Parse(profileJson))
             let root = doc.RootElement
             if root.ValueKind <> JsonValueKind.Object then
                 Result.failureOf
@@ -389,11 +392,21 @@ module ProfileSnapshot =
                         "profileAdapter.json.shape"
                         "Expected top-level object.")
             else
-                let index = buildIndex catalog
-                let columnsR = collectArray (parseColumnProfile index) root "columns"
-                let uniqueR = collectArray (parseUniqueCandidate index) root "uniqueCandidates"
-                let compositeR = collectArray (parseCompositeUniqueCandidate index) root "compositeUniqueCandidates"
-                let fkRealityR = collectArray (parseForeignKeyReality index) root "fkReality"
+                let index =
+                    (use _ = Bench.scope "profile.snapshot.attach.buildIndex"
+                     buildIndex catalog)
+                let columnsR =
+                    (use _ = Bench.scope "profile.snapshot.attach.parseColumns"
+                     collectArray (parseColumnProfile index) root "columns")
+                let uniqueR =
+                    (use _ = Bench.scope "profile.snapshot.attach.parseUniqueCandidates"
+                     collectArray (parseUniqueCandidate index) root "uniqueCandidates")
+                let compositeR =
+                    (use _ = Bench.scope "profile.snapshot.attach.parseCompositeUniqueCandidates"
+                     collectArray (parseCompositeUniqueCandidate index) root "compositeUniqueCandidates")
+                let fkRealityR =
+                    (use _ = Bench.scope "profile.snapshot.attach.parseFkReality"
+                     collectArray (parseForeignKeyReality index) root "fkReality")
 
                 columnsR
                 |> Result.bind (fun columns ->

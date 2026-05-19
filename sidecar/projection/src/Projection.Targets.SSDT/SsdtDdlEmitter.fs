@@ -639,9 +639,13 @@ module SsdtDdlEmitter =
         use _ = Bench.scope "emit.ssdt.emitSlices"
         let modules = moduleByKindKey catalog
         let allKinds, targetByKey, pkAttrByKey = buildLookups catalog
+        // Per-kind iterMap — surfaces P50/P95/P99 of per-kind emission
+        // cost (the dominant emit.ssdt work at production scale is
+        // proportional to the kind count). Slice A.4.7'-prelude
+        // .perf-sweep-6 instrumentation gap-fill.
         let slices =
             allKinds
-            |> List.map (fun k ->
+            |> Bench.iterMap "emit.ssdt.emitSlices.kind" (fun k ->
                 match Map.tryFind k.SsKey modules with
                 | Some m ->
                     k.SsKey, kindToSsdtFile targetByKey pkAttrByKey m k
