@@ -215,6 +215,7 @@ module ScriptDomBuild =
             str :> ScalarExpression
 
     let private columnDefinition (c: ColumnDef) : ColumnDefinition =
+        use _ = Bench.scope "emit.scriptDom.build.columnDefinition"
         let col = ColumnDefinition()
         col.ColumnIdentifier <- bracketed c.Name
         match c.Computed with
@@ -422,11 +423,13 @@ module ScriptDomBuild =
         (fks: ForeignKeyDef list)
         (checks: ColumnCheckDef list)
         : Diagnostics<CreateTableStatement> =
+        use _ = Bench.scope "emit.scriptDom.build.createTable"
         let stmt = CreateTableStatement()
         stmt.SchemaObjectName <- schemaObjectFromTableId table
         let def = TableDefinition()
-        for c in columns do
-            def.ColumnDefinitions.Add(columnDefinition c)
+        columns
+        |> Bench.iterDo "emit.scriptDom.build.columns" (fun c ->
+            def.ColumnDefinitions.Add(columnDefinition c))
         match pk with
         | None -> ()
         | Some p ->
@@ -436,13 +439,15 @@ module ScriptDomBuild =
             match p.Columns with
             | [ _ ] -> attachInlinePrimaryKey def.ColumnDefinitions p
             | _     -> def.TableConstraints.Add(primaryKeyConstraint p)
-        for fk in fks do
-            def.TableConstraints.Add(foreignKeyConstraint fk)
+        fks
+        |> Bench.iterDo "emit.scriptDom.build.createTable.fk" (fun fk ->
+            def.TableConstraints.Add(foreignKeyConstraint fk))
         // Slice 5.13.column-features-emit (chapter A.0' slice ε emit
         // closure): table-level CHECK constraints follow PK + FK in
         // declaration order, matching V1's CREATE TABLE shape.
-        for chk in checks do
-            def.TableConstraints.Add(checkConstraint chk)
+        checks
+        |> Bench.iterDo "emit.scriptDom.build.createTable.check" (fun chk ->
+            def.TableConstraints.Add(checkConstraint chk))
         stmt.Definition <- def
         Diagnostics.ofValue stmt
 
@@ -464,6 +469,7 @@ module ScriptDomBuild =
         (table: TableId)
         (cells: CellValue list)
         : InsertStatement =
+        use _ = Bench.scope "emit.scriptDom.build.insertRow"
         let stmt = InsertStatement()
         let spec = InsertSpecification()
         let target = NamedTableReference()
@@ -628,6 +634,7 @@ module ScriptDomBuild =
     /// SqlLiteral parse-back validation). Today the entries list is
     /// empty by construction.
     let private buildMergeStatementCore (args: MergeBuildArgs) : MergeStatement =
+        use _ = Bench.scope "emit.scriptDom.build.merge"
         let stmt = MergeStatement()
         let spec = MergeSpecification()
         // Target [schema].[table] AS Target
@@ -638,11 +645,12 @@ module ScriptDomBuild =
 
         // Source: USING (VALUES (...), (...)) AS Source(c1, c2, ...)
         let inline_ = InlineDerivedTable()
-        for row in args.Rows do
+        args.Rows
+        |> Bench.iterDo "emit.scriptDom.build.merge.row" (fun row ->
             let rv = RowValue()
             for cell in row do
                 rv.ColumnValues.Add(buildSqlLiteral cell)
-            inline_.RowValues.Add(rv)
+            inline_.RowValues.Add(rv))
         inline_.Alias <- bracketed "Source"
         for c in args.AllColumns do
             inline_.Columns.Add(bracketed c)
@@ -830,6 +838,7 @@ module ScriptDomBuild =
     /// (eliminates the CDC leak path for Phase-2 UPDATEs on
     /// idempotent redeploy).
     let private buildUpdateStatementCore (args: UpdateBuildArgs) : UpdateStatement =
+        use _ = Bench.scope "emit.scriptDom.build.update"
         let stmt = UpdateStatement()
         let spec = UpdateSpecification()
         let target = NamedTableReference()
@@ -888,6 +897,7 @@ module ScriptDomBuild =
         (table: TableId)
         (enabled: bool)
         : SetIdentityInsertStatement =
+        use _ = Bench.scope "emit.scriptDom.build.setIdentityInsert"
         let stmt = SetIdentityInsertStatement()
         stmt.Table <- schemaObjectFromTableId table
         stmt.IsOn <- enabled
@@ -988,11 +998,13 @@ module ScriptDomBuild =
     /// forward signal; V2-no-back-compat — no legacy silent-skip
     /// wrapper).
     let buildCreateIndex (idx: IndexDef) : Diagnostics<CreateIndexStatement> =
+        use _ = Bench.scope "emit.scriptDom.build.createIndex"
         let stmt = CreateIndexStatement()
         stmt.Unique <- idx.IsUnique
         stmt.Name <- bracketed idx.Name
         stmt.OnName <- schemaObjectFromTableId idx.Table
-        for keyCol in idx.Columns do
+        idx.Columns
+        |> Bench.iterDo "emit.scriptDom.build.createIndex.keyColumn" (fun keyCol ->
             let col = ColumnWithSortOrder()
             let colRef = ColumnReferenceExpression()
             let mid = MultiPartIdentifier()
@@ -1006,14 +1018,15 @@ module ScriptDomBuild =
             match keyCol.Direction with
             | IndexDefColumnDirection.Descending -> col.SortOrder <- SortOrder.Descending
             | IndexDefColumnDirection.Ascending  -> col.SortOrder <- SortOrder.NotSpecified
-            stmt.Columns.Add(col)
+            stmt.Columns.Add(col))
         // Chapter 4.5 slice β — INCLUDE columns for covering indexes.
-        for colName in idx.IncludedColumns do
+        idx.IncludedColumns
+        |> Bench.iterDo "emit.scriptDom.build.createIndex.includeColumn" (fun colName ->
             let colRef = ColumnReferenceExpression()
             let mid = MultiPartIdentifier()
             mid.Identifiers.Add(bracketed colName)
             colRef.MultiPartIdentifier <- mid
-            stmt.IncludeColumns.Add(colRef)
+            stmt.IncludeColumns.Add(colRef))
         // Chapter 4.8 slice β — on-disk index options WITH (…) clause.
         // Each option's typed ScriptDom IndexOption variant is added only
         // when the field deviates from V1's IndexOnDiskMetadata.Empty
@@ -1130,6 +1143,7 @@ module ScriptDomBuild =
             (propertyName: string)
             (propertyValue: string option)
             : ExecuteStatement =
+        use _ = Bench.scope "emit.scriptDom.build.setExtendedProperty"
         let nText (value: string) : ScalarExpression =
             let l = StringLiteral()
             l.Value <- value
@@ -1211,6 +1225,7 @@ module ScriptDomBuild =
             (table: TableId)
             (constraintName: string)
             : AlterTableConstraintModificationStatement =
+        use _ = Bench.scope "emit.scriptDom.build.alterTableNoCheckConstraint"
         let stmt = AlterTableConstraintModificationStatement()
         stmt.SchemaObjectName <- schemaObjectFromTableId table
         stmt.ConstraintNames.Add(bracketed constraintName)
@@ -1231,6 +1246,7 @@ module ScriptDomBuild =
             (table: TableId)
             (indexName: string)
             : AlterIndexStatement =
+        use _ = Bench.scope "emit.scriptDom.build.alterIndexDisable"
         let stmt = AlterIndexStatement()
         stmt.Name <- bracketed indexName
         stmt.OnName <- schemaObjectFromTableId table

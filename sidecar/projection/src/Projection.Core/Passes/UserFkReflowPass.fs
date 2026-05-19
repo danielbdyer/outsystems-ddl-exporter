@@ -293,8 +293,15 @@ module UserFkReflowPass =
         (strategy: UserMatchingStrategy)
         (sources: UserAttributes<SourceUserId> list)
         : State =
+        // Per-candidate deferred-FK scan distribution surfaces under
+        // `pass.userFkReflow.candidate` — one Bench sample per
+        // source user evaluated against the matching strategy
+        // (email/ssKey index hits, fallback recursion). The fold
+        // accumulator threading is preserved; the scope decorates
+        // each iteration body.
         sources
         |> List.fold (fun (state: State) source ->
+            use _ = Bench.scope "pass.userFkReflow.candidate"
             match applyStrategy emailIndex ssKeyIndex strategy source with
             | Matched (target, label) ->
                 { state with

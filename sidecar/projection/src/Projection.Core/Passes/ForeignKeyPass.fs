@@ -261,7 +261,15 @@ module ForeignKeyPass =
             BuildEvent         = decisionEvent
         }
         let lineage = Composition.fanOut fanOutConfig catalog policy profile
-        let entries = lineage.Value.Decisions |> List.choose opportunityEntry
+        // Per-reference distribution surfaces under
+        // `pass.fk.reference` — one Bench sample per decision
+        // opportunity-evaluation iteration (decision-count =
+        // references × interventions; the heterogeneous-emission
+        // shape means per-iteration cost varies across outcomes).
+        let entries =
+            lineage.Value.Decisions
+            |> Bench.iterMap "pass.fk.reference" opportunityEntry
+            |> List.choose id
         lineage
         |> LineageDiagnostics.ofLineage
         |> LineageDiagnostics.tellDiagnostics entries

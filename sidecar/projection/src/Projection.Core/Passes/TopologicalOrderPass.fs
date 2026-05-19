@@ -151,7 +151,16 @@ module TopologicalOrderPass =
               MissingEdges    = []
               ClassifiedEdges = Map.empty }
 
-        let scanned = sortedKinds |> List.fold folder initial
+        // Per-kind graph-construction distribution surfaces under
+        // `pass.topologicalOrder.kind` — one Bench sample per kind
+        // scanned for FK references (the inner per-reference fold
+        // runs within each sample). Bench.iterMap-style decoration
+        // around the fold body preserves the accumulator threading.
+        let scanned =
+            sortedKinds
+            |> List.fold (fun st k ->
+                use _ = Bench.scope "pass.topologicalOrder.kind"
+                folder st k) initial
 
         // Sort the Edges / MissingEdges lists so the output is
         // independent of accumulation order.
@@ -320,7 +329,14 @@ module TopologicalOrderPass =
         let resolved = ResizeArray<CycleDiagnostic>()
         let unresolved = ResizeArray<CycleDiagnostic>()
 
-        for scc in sccs do
+        // Per-SCC cycle-resolution distribution surfaces under
+        // `pass.topologicalOrder.scc` — one Bench sample per SCC
+        // resolver-invocation (internal-edge enumeration +
+        // resolver dispatch + diagnostic accumulation). Tarjan's
+        // per-node + per-edge cost runs upstream in `tarjanScc`;
+        // this surfaces the resolver pass-back-through.
+        sccs
+        |> Bench.iterDo "pass.topologicalOrder.scc" (fun scc ->
             let internalEdges = internalEdgesOf scc graph.ClassifiedEdges
             let step = resolver scc internalEdges
             if List.isEmpty step.EdgesToBreak then
@@ -336,7 +352,7 @@ module TopologicalOrderPass =
                 resolved.Add(
                     { Members        = scc
                       BreakableEdges = step.EdgesToBreak
-                      Reason         = step.Reason })
+                      Reason         = step.Reason }))
 
         { RemovedPrecedenceEdges = removed
           ResolvedDiagnostics    = resolved |> List.ofSeq

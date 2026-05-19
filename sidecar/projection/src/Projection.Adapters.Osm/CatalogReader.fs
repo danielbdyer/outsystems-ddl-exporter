@@ -1349,10 +1349,10 @@ module CatalogReader =
                 | _ -> []
             let attrsResults =
                 attrJsonList
-                |> List.map (parseAttribute moduleName entityName)
+                |> Bench.iterMap "adapter.osm.parse.attribute" (parseAttribute moduleName entityName)
             let refResults =
                 attrJsonList
-                |> List.map (parseReference moduleName entityName)
+                |> Bench.iterMap "adapter.osm.parse.reference" (parseReference moduleName entityName)
             // Collect attribute results — `Result.aggregate` collapses
             // `Result<'a> seq` to `Result<'a list>` with errors
             // aggregated. Retires the O(N²) `xs @ [x]` fold pattern.
@@ -1375,7 +1375,7 @@ module CatalogReader =
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
                     arr.EnumerateArray()
                     |> Seq.toList
-                    |> List.map (parseIndex moduleName entityName)
+                    |> Bench.iterMap "adapter.osm.parse.index" (parseIndex moduleName entityName)
                 | _ -> []
             let foldedIdx = Result.aggregate indexResults
             // Chapter A.0' slice γ — Triggers lift. V1's JSON projects
@@ -1386,7 +1386,7 @@ module CatalogReader =
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
                     arr.EnumerateArray()
                     |> Seq.toList
-                    |> List.map (parseTrigger moduleName entityName)
+                    |> Bench.iterMap "adapter.osm.parse.trigger" (parseTrigger moduleName entityName)
                 | _ -> []
             let foldedTriggers = Result.aggregate triggerResults
             // Chapter A.0' slice ζ — ExtendedProperties lift (kind
@@ -1397,7 +1397,7 @@ module CatalogReader =
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
                     arr.EnumerateArray()
                     |> Seq.toList
-                    |> List.map (parseExtendedProperty moduleName entityName)
+                    |> Bench.iterMap "adapter.osm.parse.extendedProperty" (parseExtendedProperty moduleName entityName)
                 | _ -> []
             let foldedEps = Result.aggregate epResults
             match kindKey, kindName, foldedAttrs, foldedRefs, foldedIdx, foldedTriggers, foldedEps with
@@ -1486,7 +1486,7 @@ module CatalogReader =
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
                     arr.EnumerateArray()
                     |> Seq.toList
-                    |> List.map (parseKind rawName)
+                    |> Bench.iterMap "adapter.osm.parse.kind" (parseKind rawName)
                 | _ ->
                     []
             let foldedKinds = Result.aggregate entitiesArr
@@ -1529,7 +1529,7 @@ module CatalogReader =
             let modulesList =
                 arr.EnumerateArray()
                 |> Seq.toList
-                |> List.map parseModule
+                |> Bench.iterMap "adapter.osm.parse.module" parseModule
             let folded = Result.aggregate modulesList
             match folded with
             | Ok modules ->
@@ -2056,7 +2056,7 @@ module CatalogReader =
             |> Option.defaultValue []
         let attrResults =
             attrRows
-            |> List.map (parseAttributeRow moduleName kindRow.EntityName)
+            |> Bench.iterMap "adapter.osm.parse.rowsetAttribute" (parseAttributeRow moduleName kindRow.EntityName)
         let foldedAttrs = Result.aggregate attrResults
         let refResults =
             attrRows
@@ -2075,7 +2075,7 @@ module CatalogReader =
         let indexResults =
             Map.tryFind kindRow.EntityId ctx.IndexesByEntity
             |> Option.defaultValue []
-            |> List.map (parseIndexRowFor ctx moduleName kindRow.EntityName attrRows)
+            |> Bench.iterMap "adapter.osm.parse.rowsetIndex" (parseIndexRowFor ctx moduleName kindRow.EntityName attrRows)
         let foldedIndexes = Result.aggregate indexResults
         let triggerResults =
             Map.tryFind kindRow.EntityId ctx.TriggersByEntity
@@ -2097,7 +2097,7 @@ module CatalogReader =
             // `Kind.ColumnChecks` is table-scoped (one entry per
             // unique constraint).
             |> List.distinctBy (fun row -> row.ConstraintName)
-            |> List.map (parseColumnCheckRowFor moduleName kindRow.EntityName)
+            |> Bench.iterMap "adapter.osm.parse.rowsetColumnCheck" (parseColumnCheckRowFor moduleName kindRow.EntityName)
         let foldedColumnChecks = Result.aggregate columnCheckResults
         match kindKey, kindName, foldedAttrs, foldedRefs,
               foldedIndexes, foldedTriggers, foldedColumnChecks with
@@ -2152,7 +2152,7 @@ module CatalogReader =
             |> Option.defaultValue []
         let kindResults =
             kindRows
-            |> List.map (parseKindRow ctx moduleRow.EspaceName moduleRow.EspaceKind)
+            |> Bench.iterMap "adapter.osm.parse.rowsetKind" (parseKindRow ctx moduleRow.EspaceName moduleRow.EspaceKind)
         let foldedKinds = Result.aggregate kindResults
         match modKey, modName, foldedKinds with
         | Ok k, Ok n, Ok kinds ->
@@ -2249,7 +2249,7 @@ module CatalogReader =
               TriggersByEntity     = triggersByEntity
               ColumnChecksByEntity = columnChecksByEntity }
         let moduleResults =
-            bundle.Modules |> List.map (parseModuleRow ctx)
+            bundle.Modules |> Bench.iterMap "adapter.osm.parse.rowsetModule" (parseModuleRow ctx)
         match Result.aggregate moduleResults with
         | Ok modules ->
             Catalog.create modules []
@@ -2263,6 +2263,7 @@ module CatalogReader =
     /// `Task<...>` shape. See `DECISIONS 2026-05-15 — OSSYS adapter
     /// parse signature` for the rationale.
     let parse (source: SnapshotSource) : Task<Result<Catalog>> =
+        use _ = Bench.scope "adapter.osm.parse"
         match source with
         | SnapshotJson json ->
             Task.FromResult(parseJsonString json)

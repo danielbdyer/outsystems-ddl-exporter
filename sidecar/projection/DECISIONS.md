@@ -16214,6 +16214,214 @@ test surface.
 
 ---
 
+## 2026-05-19 (slice A.4.7'-prelude.bench-fleet) — Five-agent parallel dispatch lifts Bench instrumentation coverage 44% → ~56% across the V2 dark paths; 51 new labels under 5 namespaces; 34 structural-perf opportunities documented for follow-up
+
+### Scope
+
+User-directed parallel-fleet dispatch. After the
+A.4.7'-prelude.test-fixture-lift slice tackled the test surface
+(iteration-speed observable to developers), this slice tackles the
+inside of the system (perf observable to operators via the bench
+gate). The bench-coverage survey (parallel-dispatched in the prior
+slice) returned a top-5 punch list of dark paths; this slice
+executes all five in one go via five parallel `claude` sub-agents,
+each owning a disjoint file + namespace.
+
+### Dispatch protocol
+
+Five-agent fleet, parallel, disjoint scope:
+
+| Agent | File(s) | Bench namespace |
+|---|---|---|
+| A | `Projection.Adapters.Osm/CatalogReader.fs` (2341 LOC) | `adapter.osm.parse.*` |
+| B | `Projection.Adapters.OssysSql/MetadataSnapshotRunner.fs` (1156 LOC) | `adapter.osm.extract.*` |
+| C | `Projection.Targets.SSDT/ScriptDomBuild.fs` (1269 LOC) | `emit.scriptDom.build.*` |
+| D | `Projection.Core/Catalog.fs` + `Policy.fs` (2064 LOC) | `ir.catalog.*` + `ir.policy.*` + `ir.kind.*` + `ir.module.*` |
+| E | 5 pass files in `Projection.Core/Passes/` (1634 LOC) | `pass.<name>.*` |
+
+**Coordination shape:**
+
+- File-disjoint scope: zero merge-conflict risk (each agent edits
+  unique files only).
+- Namespace partition: zero label-collision risk (each agent owns
+  a distinct namespace; agents A and B both touch the OSSYS
+  adapter family but use distinct `parse` vs `extract` sub-prefixes
+  to disambiguate).
+- Compile-check at single-project granularity per agent (avoid
+  build contention on shared bin/obj across parallel agents).
+- No agent commits; orchestrator handles git after all five
+  complete (aggregated commit).
+- Each agent reports: files edited (line ranges), bench calls
+  added (count + namespace inventory), compile status,
+  structural-perf opportunities spotted.
+
+**Why parallel works here:** the bench-instrumentation work is
+strictly **additive** (no existing semantics change; no type
+signatures change; no return shapes change). Five additive edits
+on disjoint files compose without conflict by construction.
+
+### What ships
+
+**51 new bench labels** across 10 files:
+
+- **13 under `adapter.osm.parse.*`** (Agent A) — JSON path:
+  `parse` entry + per-module / per-kind / per-attribute /
+  per-reference / per-index / per-trigger / per-extendedProperty
+  loops; rowset path: per-rowsetModule / per-rowsetKind /
+  per-rowsetAttribute / per-rowsetIndex / per-rowsetColumnCheck
+  loops.
+- **7 under `adapter.osm.extract.*`** (Agent B) — entry scope +
+  per-rowset umbrella + dynamic-per-rowset-name + `toBundle`
+  projection.
+- **16 under `emit.scriptDom.build.*`** (Agent C) — per-statement
+  scopes for createTable / createIndex / merge / update /
+  insertRow / setIdentityInsert / alterTableNoCheckConstraint /
+  alterIndexDisable / setExtendedProperty / columnDefinition;
+  per-element loops for columns / fk / check / merge.row /
+  createIndex.keyColumn / createIndex.includeColumn.
+- **9 under `ir.catalog.*` / `ir.policy.*`** (Agent D) — smart-
+  constructor scopes for Kind / Module / Catalog; Catalog.allKinds
+  scan; per-axis Policy constructors (emission / nullability /
+  uniqueIndex / foreignKey / categoricalUniqueness).
+- **6 under `pass.<name>.*`** (Agent E) — per-iteration sub-scopes
+  for fk.reference / topologicalOrder.kind / topologicalOrder.scc
+  / userFkReflow.candidate / nullability.attribute /
+  uniqueIndex.index. Top-level `passes.<name>` scopes preserved.
+
+**Coverage delta:**
+- File-level coverage: 38 / 86 (44%) → ~48 / 86 (~56%)
+- Adapter file coverage: 8% → ~83%
+- Pass-layer per-iteration coverage: 0 → 100% (every pass with an
+  inner loop now emits per-element samples)
+
+### Operating-discipline payoffs
+
+**Parallel-fleet dispatch protocol confirmed.** N=5 parallel
+sub-agents on additive, file-disjoint, namespace-disjoint work
+ships clean. Total wall time ~4-6 minutes for the fleet (vs
+~25-30 minutes serial). The protocol composes when:
+- Each agent's edits are strictly additive (no shared mutation
+  surfaces)
+- File scope is disjoint (no merge conflicts by construction)
+- Label / namespace scope is disjoint (no behavioral collision)
+- Per-agent validation is single-project (no shared build state)
+- Orchestrator handles git at the end (aggregated commit)
+
+Failure modes that would break the protocol: shared file edits;
+shared namespace edits; cross-file refactors requiring coordination;
+type-signature changes propagating across project boundaries.
+
+**The side-mission discipline produces follow-up scope.** Each
+agent was asked to opportunistically spot structural-perf
+opportunities while reading their assigned files — without
+shipping them in this slice. The result: **34 perf opportunities
+documented across the five reports**, queued for a follow-up
+structural-perf-sweep slice. The bench-only delivery stays
+reviewable in isolation; perf changes ship next with bench-before/
+after data on each label.
+
+**Iterator-logging discipline operationalized at fleet scale.**
+Per `CLAUDE.md` "Iterator-logging is a first-class outcome over
+time" — before this slice, the pass layer had 100% file-level
+coverage but ZERO per-iteration `iterMap` / `iterDo`. After:
+100% on both surfaces. Per-iteration distribution (Count / Mean /
+P50 / P95 / P99) is now operator-visible for every pass.
+
+**A39 (aggregate-root smart-constructor invariants) is now
+perf-visible.** `Kind.create` / `Module.create` / `Catalog.create`
+each carry a `Bench.scope` — operators reading the bench rollup
+table see the structural-validation cost they're paying as a
+direct consequence of the smart-constructor invariant discipline.
+
+### Side mission: 34 structural-perf opportunities (NOT shipped)
+
+Each agent's report includes a `structural-perf-opportunities`
+section. Summary (ranked roughly by leverage):
+
+**High leverage (multi-table catalog ≥ 300 tables):**
+1. `Catalog.tryFindKind` linear scan → `KindIndex : Map<SsKey, Kind>`
+   at `Catalog.create` (Agent D #1). O(n²) → O(n log n) across
+   emitter passes; **highest single-finding leverage**.
+2. `Kind.tryFindAttribute` linear scan → per-Kind
+   `AttributeIndex : Map<SsKey, Attribute>` (Agent D #3).
+3. `TSql160Parser` per-call allocation at 3 sites in ScriptDomBuild
+   (Agent C #1-3). Tens-of-KB internal state per call; hoist to
+   module-private with per-thread cache.
+4. `MetadataSnapshotRunner.toBundle` `Map.ofList` → `Dictionary<int, _>`
+   for the 4 lookup maps (Agent B #5). O(N log N) → O(N) build;
+   O(log N) → O(1) read; ~30% faster toBundle at 300-entity scale.
+5. `resolveIndexColumnAttribute` O(N×M) string compares → per-Kind
+   pre-computed Maps (Agent A #3). ~30K → ~3K lookups on the
+   300-table canary.
+
+**Medium leverage:**
+6. TopologicalOrderPass Kahn + Tarjan `Map`/`Set` → function-local
+   `Dictionary` + `HashSet` (Agent E #1-2). The discipline table
+   explicitly names Tarjan as the worked example for function-local
+   mutables; this is a pure perf win with no shape change.
+7. `Catalog.tryFindOwningModule` linear scan → `KindOwnership` map
+   piggybacks on #1 (Agent D #2).
+8. Three-pass `sortedReferences` / `sortedContexts` shape in
+   NullabilityPass / UniqueIndexPass / ForeignKeyPass (Agent E #5).
+   N=3 of the same shape hits the two-consumer threshold; emergent
+   primitive in `Catalog` or `Composition`.
+
+**Low-Medium leverage (situational):**
+9-15. Various sortedBy chains, double-walks, ResizeArray→array
+   shape changes across the fleet's reports.
+
+The remaining ~19 findings are situational or low-impact (closures,
+allocation patterns inside cold paths, BCL type-equivalent swaps).
+
+**Cash-out shape (next slice).** Open a structural-perf-sweep
+slice with the top 5-8 findings as scope. Each fix ships with
+before-bench-label vs after-bench-label data on the canary surface.
+The new labels from THIS slice are how that slice's wins get
+measured.
+
+### Deferred (after this slice; refreshed triggers)
+
+- **`bench/baseline-canary.json` refresh.** Trigger: next
+  operator-reality run captures the new labels; `PERF_GATE_RECORD=1`
+  rebaselines. Until then, the perf-gate's regression detector
+  emits soft warnings for new labels (the existing behavior).
+- **Remaining instrumentation gaps.** This slice touched the top
+  10 highest-leverage files; secondary gaps remain at
+  `TransformRegistry.fs` (530 LOC, 0 calls); `Pipeline.fs` (397
+  LOC, 9 calls — top-level only, inner phases not wrapped);
+  `DataEmissionComposer.fs` (371 LOC, 4 calls — same shape).
+  Trigger: next bench-coverage audit at chapter close.
+- **Structural-perf-sweep slice scope.** The 34 opportunities live
+  in the fleet's per-agent reports
+  (`tasks/{a0587db8efef43cc3, abdbe4c55b09d794e, ae34dc5899067aea6,
+  aab2b23926ca547bb, ab8e0e44aa05b0124}.output`). Trigger: operator
+  signs off; next slice opens with the punch list.
+
+### Cross-references
+
+- `src/Projection.Core/Bench.fs:103-233` — primitive surface
+  (`scope` / `iterDo` / `iteriDo` / `iterMap` / `streamProbe` /
+  `streamTransit` / `recordSample`)
+- `CLAUDE.md` operating disciplines table → "Iterator-logging is
+  a first-class outcome over time" — discipline at the file
+  header level since session 9; this slice closes the
+  N=10-files-at-once gap that the discipline alone couldn't
+  enforce without survey + dispatch
+- `scripts/perf-gate.sh` — statistical regression detector;
+  new labels join on next `PERF_GATE_RECORD=1` pass
+- `DECISIONS 2026-05-09 — Audits surface things not on the agenda`
+  — the discipline this slice operationalizes at fleet scale
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.test-fixture-lift)`
+  — the prior slice's dispatch precedent (two parallel survey
+  agents) is the precursor to this slice's five parallel
+  execution agents
+- A39 (aggregate-root smart-constructor invariants) — the
+  invariant-enforcement work now has bench visibility via the
+  `ir.kind.create` / `ir.module.create` / `ir.catalog.create`
+  scopes
+
+---
+
 ## 2026-05-19 (slice A.4.7'-prelude+pipeline-registry) — Pipeline-level unified registry surface + bidirectional property-test layer (skeleton-purity sweep + per-axis overlay-exercise) + CDC-silence shape sweep
 
 ### Scope

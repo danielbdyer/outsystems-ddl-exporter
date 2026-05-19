@@ -212,7 +212,15 @@ module NullabilityPass =
             BuildEvent         = decisionEvent
         }
         let lineage = Composition.fanOut fanOutConfig catalog policy profile
-        let entries = lineage.Value.Decisions |> List.choose opportunityEntry
+        // Per-attribute distribution surfaces under
+        // `pass.nullability.attribute` — one Bench sample per
+        // decision opportunity-evaluation iteration (decision-count
+        // = attributes × interventions; the per-iteration tail
+        // bounds the diagnostic-mapping cost).
+        let entries =
+            lineage.Value.Decisions
+            |> Bench.iterMap "pass.nullability.attribute" opportunityEntry
+            |> List.choose id
         lineage
         |> LineageDiagnostics.ofLineage
         |> LineageDiagnostics.tellDiagnostics entries

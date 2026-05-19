@@ -1612,6 +1612,131 @@ construction.
 
 ---
 
+### Bench instrumentation — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.bench-fleet — five-agent parallel dispatch lifts Bench coverage from 44% to ~56% across dark adapter / emit / IR / pass surfaces; 51 new labels)
+
+**Original framing.** A bench-coverage survey (parallel-dispatched
+during slice A.4.7'-prelude.test-fixture-lift) identified the
+adapter / emit / IR / pass surfaces as the V2 perf-gate's dark
+paths: 44% file-level bench coverage (38 of 86 files); 0 calls in
+the OSSYS adapter family (3497 LOC across two files); 0 calls in
+ScriptDomBuild (1269 LOC); inner-loop instrumentation absent across
+all 12 pass files despite the iterator-logging discipline. The
+perf-gate (`scripts/perf-gate.sh`'s statistical regression detector)
+cannot catch regressions in these dark paths because the labels
+don't exist.
+
+**Five-agent parallel fleet dispatch (2026-05-19).** Five `claude`
+sub-agents executed in parallel on disjoint files, each owning a
+distinct namespace; build + compile-check passed per agent
+single-project. Coordination by namespace partition (zero label
+collision risk) + file-disjoint scope (zero merge-conflict risk).
+
+| Agent | Scope | Namespace | Bench calls added |
+|---|---|---|---|
+| A | `Projection.Adapters.Osm/CatalogReader.fs` (2341 LOC; was 0 calls) | `adapter.osm.parse.*` | 13 (JSON path: module/kind/attribute/reference/index/trigger/extendedProperty; rowset path: rowsetModule/rowsetKind/rowsetAttribute/rowsetIndex/rowsetColumnCheck; entry scope) |
+| B | `Projection.Adapters.OssysSql/MetadataSnapshotRunner.fs` (1156 LOC; was 0 calls) | `adapter.osm.extract.*` | 7 (entry scope + per-rowset umbrella + dynamic per-rowset-name + `toBundle` projection scope) |
+| C | `Projection.Targets.SSDT/ScriptDomBuild.fs` (1269 LOC; was 0 calls) | `emit.scriptDom.build.*` | 16 (per-statement-type scope: createTable / createIndex / merge / update / insertRow / setIdentityInsert / alterTableNoCheckConstraint / alterIndexDisable / setExtendedProperty / columnDefinition; per-element loops: columns / fk / check / merge.row / createIndex.keyColumn / createIndex.includeColumn) |
+| D | `Projection.Core/Catalog.fs` + `Policy.fs` (2064 LOC; was 0 calls) | `ir.catalog.*` + `ir.policy.*` + `ir.kind.*` + `ir.module.*` | 9 (smart-constructor scopes for Kind/Module/Catalog + Catalog.allKinds scan; per-axis Policy constructor scopes: emission/nullability/uniqueIndex/foreignKey/categoricalUniqueness) |
+| E | 5 pass files (1634 LOC; previously top-level scopes only) | `pass.<name>.*` | 6 (per-iteration sub-scopes: fk.reference / topologicalOrder.kind / topologicalOrder.scc / userFkReflow.candidate / nullability.attribute / uniqueIndex.index) |
+| **Total** | **10 files** | — | **51 new bench labels** |
+
+**Coverage delta:** instrumented file count rises from 38 → ~48 of
+86 (~56%); adapter coverage rises from 8% → ~83%; pass-layer
+sub-discipline coverage rises from 0 → 100% (every pass with an
+inner loop now emits per-element samples).
+
+**Per pillar 9: DataIntent.** Every bench call is observation, not
+policy. Bench is the fourth cross-cutting structural-evidence
+concern alongside Lineage / Diagnostics / Registry. T1 byte-
+determinism preserved: `Bench.scope` is RAII via `use`,
+thread-safe + lock-protected; `Bench.iterDo` / `Bench.iterMap`
+preserve iteration order.
+
+**Per A39 (aggregate-root smart-constructor invariants).** The
+new `ir.kind.create` / `ir.module.create` / `ir.catalog.create`
+scopes time the smart-constructor validation work — the structural
+forcing function for IR aggregate invariants is now perf-visible.
+
+**Validation gate:** solution-level `dotnet build Projection.sln`
+passes 0 warnings / 0 errors. Non-Docker test suite passes
+1622 / 162 skip / 0 fail in 3s (unchanged). The `Operator-reality
+canary` run surfaces 6 of the 51 new labels in the bench output
+(the labels that fire on the emit + topological-order code paths
+the canary exercises); the remaining 45 labels are in the code
+and will fire when their corresponding code paths execute (e.g.,
+the OSSYS adapter labels fire on cold-start metadata ingress; the
+tightening-pass labels fire under decision-set-bearing pipelines).
+
+**Side mission: 34 structural-perf opportunities documented (not
+shipped this slice).** Each agent spotted opportunities while
+reading their assigned files; all are deferred for a follow-up
+slice. The standout findings:
+
+- **Agent A (CatalogReader):** `resolveIndexColumnAttribute` is
+  O(N×M) with `List.tryFind` per index column. Pre-computed
+  `Map<string, AttributeRow>` per kind would collapse ~30K
+  `String.Equals` calls to ~3K Map lookups per 300-table-canary
+  parse.
+- **Agent B (MetadataSnapshotRunner):** `toBundle` builds 4
+  `Map.ofList` lookup maps (`EntityId`, `AttrId`, `FkObjectId`,
+  `ParentAttrId`) — O(N log N) construction + O(log N) reads. A
+  `Dictionary<int, _>` would give O(N) + O(1) for ~30% faster
+  toBundle at 300-entity scale.
+- **Agent C (ScriptDomBuild):** `TSql160Parser` allocated per-call
+  at 3 sites (parseComputedExpression / checkConstraint /
+  tryParseFilterWithDiagnostics). Each parser carries ~tens-of-KB
+  of internal state; hoisting to module-private + per-thread cache
+  is the worked precedent.
+- **Agent D (Catalog/Policy):** `Catalog.tryFindKind` is a linear
+  scan O(modules × kinds) called repeatedly during FK resolution.
+  Pre-computed `KindIndex : Map<SsKey, Kind>` at `Catalog.create`
+  would turn O(n²) into O(n log n) across all emitter passes.
+  Highest-leverage single finding.
+- **Agent E (Pass layer):** TopologicalOrderPass's Kahn + Tarjan
+  use `Map`/`Set` (O(log n) per op) where the operating-disciplines
+  table EXPLICITLY names Tarjan as the worked example for
+  function-local mutables. `Dictionary<SsKey, int>` + `HashSet<SsKey>`
+  would shave to O(1).
+
+These 34 findings become the **next slice's** scope (a structural-
+perf-sweep slice that lifts the most impactful 5-8 wins with
+before/after bench data on each label).
+
+**Cross-references.**
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.bench-fleet)` —
+  five-agent parallel dispatch protocol + the 34 perf opportunities
+  punch list
+- `CLAUDE.md` operating disciplines table → "Iterator-logging is a
+  first-class outcome over time" — discipline operationalized at
+  fleet scale; before slice, 100% file coverage on pass layer but
+  only top-level scopes; after slice, per-iteration `iterMap`
+  coverage on hot loops
+- `scripts/perf-gate.sh` — statistical regression detector now has
+  ~56% file-level instrumentation surface; the 45 new labels not
+  yet in `bench/baseline-canary.json` will require a `PERF_GATE_RECORD=1`
+  refresh pass when the next operator-reality run includes them
+- Source surveys: bench survey at
+  `tasks/aa0e085b470582bba.output`; per-agent reports at
+  `tasks/{a0587db8efef43cc3, abdbe4c55b09d794e, ae34dc5899067aea6,
+  aab2b23926ca547bb, ab8e0e44aa05b0124}.output`
+
+**Refreshed deferral triggers (after this slice).**
+
+- **Baseline-canary.json refresh.** Trigger: next operator-reality
+  canary run captures the new labels; `PERF_GATE_RECORD=1` invokes
+  the rebaseline.
+- **Bench label coverage expansion.** Agents touched the 10
+  highest-leverage files; remaining gaps include `TransformRegistry.fs`
+  (530 LOC, 0 calls), `Pipeline.fs` (397 LOC, 9 calls — sub-discipline
+  inner loops not wrapped), `DataEmissionComposer.fs` (371 LOC, 4
+  calls — inner phases not wrapped). Trigger: next bench-survey
+  audit, or a chapter-close ritual currency check.
+- **Perf-sweep slice (the 34 opportunities).** Trigger: operator
+  signs off on this slice's bench-only delivery; next slice opens
+  with the perf-opportunity punch list as scope.
+
+---
+
 ### Rows 11 + 53 — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.row53-source-side wires V1 #ColumnReality into Attribute.Computed + Attribute.DefaultName)
 
 **Original framing.** Slice 5.13.ossys-rowsets-cluster (2026-05-18)

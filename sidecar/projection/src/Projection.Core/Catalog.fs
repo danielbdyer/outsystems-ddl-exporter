@@ -1056,6 +1056,7 @@ module Kind =
         (physical: PhysicalRealization)
         (attributes: Attribute list)
         : Kind =
+        use _ = Bench.scope "ir.kind.create"
         {
             SsKey              = ssKey
             Name               = name
@@ -1134,6 +1135,7 @@ module Module =
         (isActive: bool)
         (extendedProperties: ExtendedProperty list)
         : Result<Module> =
+        use _ = Bench.scope "ir.module.create"
         // LR1 (slice 5.13.module-non-empty-invariant, matrix row 42):
         // per-module non-empty Kind invariant. V1's `ModuleModel.Create`
         // enforces this; V2 lifts the same axis per A39 (aggregate-root
@@ -1187,6 +1189,7 @@ module Catalog =
 
     /// Enumerate all kinds across all modules.
     let allKinds (c: Catalog) : Kind list =
+        use _ = Bench.scope "ir.catalog.scan.allKinds"
         c.Modules |> List.collect (fun m -> m.Kinds)
 
     /// Smart constructor enforcing the catalog-wide aggregate
@@ -1208,6 +1211,7 @@ module Catalog =
     /// to violate. Aggregates errors so a consumer sees every
     /// violation in one Result.
     let create (modules: Module list) (sequences: Sequence list) : Result<Catalog> =
+        use _ = Bench.scope "ir.catalog.create"
         let moduleDupes =
             modules
             |> List.groupBy (fun m -> m.SsKey)

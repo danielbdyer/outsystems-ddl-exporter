@@ -622,6 +622,7 @@ module MetadataSnapshotRunner =
             (options: RunOptions)
             : Task<Result<MetadataSnapshot>> =
         task {
+            use _ = Bench.scope "adapter.osm.extract"
             try
                 let script = MetadataExtractionSql.read()
                 use command = new SqlCommand(script, cnn)
@@ -709,6 +710,8 @@ module MetadataSnapshotRunner =
                 // #RelJson, #IdxJson, #TriggerJson, #ModuleJson).
                 let read (name: string) (mapper: SqlDataReader -> 'T) : Task<'T list> =
                     task {
+                        use _ = Bench.scope "adapter.osm.extract.rowset"
+                        use _ = Bench.scope (sprintf "adapter.osm.extract.rowset.%s" name)
                         let! _ = advanceNext ()
                         let! rows = readResultSet name reader mapper
                         report name rows.Length
@@ -716,14 +719,22 @@ module MetadataSnapshotRunner =
                     }
                 let skip (name: string) : Task<unit> =
                     task {
+                        use _ = Bench.scope "adapter.osm.extract.rowset"
+                        use _ = Bench.scope (sprintf "adapter.osm.extract.rowset.%s" name)
                         let! _ = advanceNext ()
                         do! skipResultSet reader
                         report name 0
                     }
 
                 // Rowset 0 — modules (no advance; reader opens here).
-                let! modules = readResultSet "modules" reader mapModuleRow
-                report "modules" modules.Length
+                let! modules =
+                    task {
+                        use _ = Bench.scope "adapter.osm.extract.rowset"
+                        use _ = Bench.scope "adapter.osm.extract.rowset.modules"
+                        let! rows = readResultSet "modules" reader mapModuleRow
+                        report "modules" rows.Length
+                        return rows
+                    }
 
                 // Rowsets 1–4 — already-lifted V2-consumed surface.
                 let! entities       = read "entities"       mapEntityRow
@@ -925,6 +936,7 @@ module MetadataSnapshotRunner =
         | _ -> None
 
     let toBundle (snapshot: MetadataSnapshot) : CatalogReader.RowsetBundle =
+        use _ = Bench.scope "adapter.osm.extract.toBundle"
         let physicalByEntity =
             snapshot.PhysicalTables
             |> List.map (fun pt -> pt.EntityId, pt)

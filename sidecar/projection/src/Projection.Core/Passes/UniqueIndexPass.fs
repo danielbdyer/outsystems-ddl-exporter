@@ -188,7 +188,14 @@ module UniqueIndexPass =
             BuildEvent         = decisionEvent
         }
         let lineage = Composition.fanOut fanOutConfig catalog policy profile
-        let entries = lineage.Value.Decisions |> List.choose opportunityEntry
+        // Per-index distribution surfaces under
+        // `pass.uniqueIndex.index` — one Bench sample per decision
+        // opportunity-evaluation iteration (decision-count =
+        // indexes × interventions).
+        let entries =
+            lineage.Value.Decisions
+            |> Bench.iterMap "pass.uniqueIndex.index" opportunityEntry
+            |> List.choose id
         lineage
         |> LineageDiagnostics.ofLineage
         |> LineageDiagnostics.tellDiagnostics entries
