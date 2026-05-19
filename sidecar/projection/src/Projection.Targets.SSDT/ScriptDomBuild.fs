@@ -38,6 +38,23 @@ open Projection.Core
 module ScriptDomBuild =
 
     // -----------------------------------------------------------------------
+    // Per-thread TSql160Parser cache — slice A.4.7'-prelude.perf-sweep-3
+    // (`PERF_OPPORTUNITIES.md` Ranks C1-C3). `TSql160Parser` carries
+    // tens-of-KB of internal state per allocation; three call sites
+    // (`parseComputedExpression`, `checkConstraint`,
+    // `tryParseFilterWithDiagnostics`) previously allocated a fresh
+    // parser per call. At production scale (300 tables × per-table
+    // CHECK constraints + computed columns + filtered indexes) this
+    // compounded to thousands of parser allocations per pipeline pass.
+    // ScriptDom's `TSql160Parser` is documented as **not thread-safe**;
+    // `System.Threading.ThreadLocal<T>` gives one parser per thread,
+    // lazily initialized on first access, reused for every subsequent
+    // parse on that thread.
+    let private threadLocalParser =
+        new System.Threading.ThreadLocal<TSql160Parser>(
+            fun () -> TSql160Parser(initialQuotedIdentifiers = false))
+
+    // -----------------------------------------------------------------------
     // Identifier / type helpers — typed wrappers over ScriptDom's mutable
     // Identifier / TypeReference primitives.
     // -----------------------------------------------------------------------
@@ -204,9 +221,8 @@ module ScriptDomBuild =
     /// text — preserves emission surface even when the parser can't
     /// produce a typed AST (real V1-source expressions parse cleanly).
     let private parseComputedExpression (expr: string) : ScalarExpression =
-        let parser = TSql160Parser(initialQuotedIdentifiers = false)
         use reader = new System.IO.StringReader(expr)
-        let fragment, _errors = parser.ParseExpression(reader)
+        let fragment, _errors = threadLocalParser.Value.ParseExpression(reader)
         match Option.ofObj fragment with
         | Some e -> e
         | None ->
@@ -295,9 +311,8 @@ module ScriptDomBuild =
         | Some name when not (System.String.IsNullOrWhiteSpace name) ->
             cons.ConstraintIdentifier <- bracketed name
         | _ -> ()
-        let parser = TSql160Parser(initialQuotedIdentifiers = false)
         use reader = new System.IO.StringReader(chk.Definition)
-        let fragment, _errors = parser.ParseBooleanExpression(reader)
+        let fragment, _errors = threadLocalParser.Value.ParseBooleanExpression(reader)
         cons.CheckCondition <-
             match Option.ofObj fragment with
             | Some expr -> expr
@@ -941,9 +956,8 @@ module ScriptDomBuild =
         if System.String.IsNullOrWhiteSpace raw then
             Diagnostics.ofValue None
         else
-            let parser = TSql160Parser(initialQuotedIdentifiers = false)
             use reader = new System.IO.StringReader(raw)
-            let fragment, errors = parser.ParseBooleanExpression(reader)
+            let fragment, errors = threadLocalParser.Value.ParseBooleanExpression(reader)
             let errorCount = if isNull errors then 0 else errors.Count
             match Option.ofObj fragment with
             | None ->
