@@ -1520,6 +1520,98 @@ Sibling-adapter composability is structural, not aspirational.
 
 ---
 
+### Test-infrastructure — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.test-fixture-lift — Docker-gated test cluster cut by 48%; per-class container amortization)
+
+**Original framing (survey-by-agent, 2026-05-19).** A
+two-survey-agent dispatch identified the V2 Docker-gated test
+cluster as the suite's primary iteration-speed sink: four files
+(`LiveProfilerIntegrationTests` + `CdcSilenceTests` +
+`CdcSilencePropertyTests` + `CdcSilenceCrossEmitterTests`) totalling
+16 tests each spinning their own ephemeral SQL Server container via
+`Deploy.useEphemeralContainer` — paying ~5-10s of container
+cold-start per test. The survey predicted ~60-80s recoverable via
+xUnit `IClassFixture` lift.
+
+**What ships (slice A.4.7'-prelude.test-fixture-lift, 2026-05-19):**
+
+| Surface | Shape |
+|---|---|
+| `Deploy.acquireEphemeralContainer` (NEW) | `unit → Task<EphemeralContainerHandle>` — handle-based lifecycle alongside scope-based `useEphemeralContainer`. The handle's `DisposeAsync` reaps the container; xUnit `IAsyncLifetime` calls it once per test class. |
+| `EphemeralContainerFixture` (NEW) | `IAsyncLifetime` fixture in `tests/Projection.Tests/EphemeralContainerFixture.fs`. `InitializeAsync` calls `acquireEphemeralContainer`; `DisposeAsync` reaps. Exposes `MasterConnectionString` + `WithEphemeralDatabase prefix body` helper that handles per-test CREATE DATABASE / DROP DATABASE (with `SINGLE_USER WITH ROLLBACK IMMEDIATE`) in a `try/finally` envelope. |
+| `LiveProfilerIntegrationTests` migrated | 6 tests now share one container via `IClassFixture<EphemeralContainerFixture>`. Module → type rewrite; per-test scenarios call `fixture.WithEphemeralDatabase "LiveProfiler"`. |
+| `CdcSilenceTests` migrated | 2 tests share one container. The CDC isolation discipline (`Deploy.useEphemeralContainer` was originally chosen over the warm container precisely because CDC infrastructure has instance-wide side effects on `master.sys.databases.is_cdc_enabled`) holds at the **per-class** granularity now: each Docker-gated CDC class gets its own container; tests within a class share. |
+| `CdcSilencePropertyTests` migrated | 3 shape-sweep tests share one container. |
+| `CdcSilenceCrossEmitterTests` migrated | 4 C1-C4 Docker tests share one container; C0 (pure-structural, no Docker) lifted to a separate `CdcSilenceCrossEmitterStructural` module so the no-Docker path doesn't trigger container init. |
+| `CanaryRoundTripTests` audited | No work needed. Uses `Deploy.runWithReadback` / `runWideCanary` which route through `Deploy.useContainer` (warm-container shortcut via `PROJECTION_MSSQL_CONN_STR`). Already amortized at the session level. |
+
+**Measured impact (before → after):**
+
+| Cluster | Before | After | Delta |
+|---|---|---|---|
+| CDC trio (10 tests across 3 files) | **1m50s** | (subset) | — |
+| LiveProfiler (6 tests) | **1m1s** | (subset) | — |
+| **Combined 16 Docker tests** | **~2m51s** | **1m22s** | **~89s saved (~52% reduction)** |
+| Full Docker set incl. structural C0 (18 tests / 16 pass + 2 skip) | n/a | **1m29s** | — |
+| Non-Docker suite (1622 tests) | 2s | 2s | unchanged (no fixture overhead) |
+
+**Survey prediction vs. delivery:** survey-agent estimated 60-80s
+recoverable; actual delivery 89s (~12% above the optimistic end
+of the prediction). The over-delivery comes from one factor the
+survey didn't quantify: per-class container reuse also amortizes
+the Testcontainers .NET driver's first-call SDK initialization (≈1s
+per process), not just the SQL Server boot time.
+
+**Per pillar 9: DataIntent.** Test infrastructure is observation
+(verification), not policy. The fixture lift preserves every
+existing test's semantic envelope (per-test ephemeral database,
+best-effort drop, CDC isolation per class); the only thing that
+changed is the container-cost amortization granularity.
+
+**Per A18 amended + sibling-wrapper discipline.** The new primitive
+`Deploy.acquireEphemeralContainer` is a principled sibling to
+`Deploy.useEphemeralContainer` — distinguishable test:
+`acquireEphemeralContainer` exposes a handle the caller manages;
+`useEphemeralContainer` owns lifecycle for one body. Two distinct
+information-bearing surfaces (handle-based vs. scope-based);
+neither is a tech-debt wrapper of the other. `useEphemeralContainer`
+is rewritten as a thin wrapper that calls `acquireEphemeralContainer`
++ try/finally + body — single source of truth for container
+construction.
+
+**Cross-references.**
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.test-fixture-lift)` —
+  fixture-lift cash-out + measured-impact codification
+- Sibling-wrapper discipline (`DECISIONS 2026-05-17 — chapter 4.7
+  cleanup`) — the new acquire/use pair earns its place
+- `Deploy.useEphemeralContainer` docstring (line 637-641) — the
+  comment explicitly named "per-test-class amortization belongs in
+  xUnit `IClassFixture` / `IAsyncLifetime` machinery the caller
+  arranges" — this slice operationalizes that hint
+- `CLAUDE.md` operating disciplines table → "Iterator speed is a
+  first-class outcome" (Bench discipline cousin) — test-iteration
+  speed is the developer-facing analog of the operator-facing perf
+  gate
+
+**Refreshed deferral triggers (after this slice).**
+
+- **Pass-layer + adapter-layer Bench coverage gap** (named by the
+  parallel-dispatched bench-coverage survey, 2026-05-19). Survey
+  identified 44% file coverage of bench instrumentation; the
+  critical gaps are `Projection.Adapters.Osm/CatalogReader.fs`
+  (2341 LOC, 0 bench calls) + `Projection.Adapters.OssysSql/
+  MetadataSnapshotRunner.fs` (1156 LOC, 0 bench calls). Trigger:
+  next iteration-speed slice tackles the **inside** of the system
+  (the bench survey's punch list) the same way this slice tackled
+  the test surface.
+- **Other Docker-gated test files** — `CanaryDeployTests`,
+  `GeneratorScaleTests`, `StaticPopulationEmitterTests` all use
+  the warm container path (`Deploy.useContainer`); no fixture
+  lift needed. Trigger: if any of these start using
+  `useEphemeralContainer` directly (e.g., for instance-wide-state
+  isolation), apply the same fixture pattern.
+
+---
+
 ### Rows 11 + 53 — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.row53-source-side wires V1 #ColumnReality into Attribute.Computed + Attribute.DefaultName)
 
 **Original framing.** Slice 5.13.ossys-rowsets-cluster (2026-05-18)

@@ -639,25 +639,54 @@ module Deploy =
     /// per-test; per-test-class amortization belongs in xUnit
     /// `IClassFixture` / `IAsyncLifetime` machinery the caller
     /// arranges.
-    let useEphemeralContainer (body: string -> Task<'a>) : Task<'a> =
+    /// Handle for a started ephemeral container. The `MasterConnectionString`
+    /// is the open contract; `DisposeAsync` reaps the container. Per-test-class
+    /// xUnit `IAsyncLifetime` fixtures construct this once and share across
+    /// test methods to amortize the ~5-10s container cold-start
+    /// (slice A.4.7'-prelude.test-fixture-lift, 2026-05-19).
+    type EphemeralContainerHandle =
+        {
+            MasterConnectionString : string
+            DisposeAsync : unit -> Task
+        }
+
+    /// Spin up a fresh Testcontainers SQL Server and return a handle whose
+    /// `DisposeAsync` reaps it. Sibling to `useEphemeralContainer`: the
+    /// scope-based form (`useEphemeralContainer`) owns the lifecycle for
+    /// one body; the handle form lets a test-class fixture own the
+    /// lifecycle across multiple test methods.
+    let acquireEphemeralContainer () : Task<EphemeralContainerHandle> =
         task {
-            use _ = Bench.scope "deploy.useEphemeralContainer"
+            use _ = Bench.scope "deploy.acquireEphemeralContainer"
             let container =
                 MsSqlBuilder()
                     .WithImage(DefaultImage)
                     .WithCleanUp(true)
                     .Build()
+            do!
+                task {
+                    use _ = Bench.scope "deploy.containerStart"
+                    return! container.StartAsync()
+                }
+            return
+                {
+                    MasterConnectionString = container.GetConnectionString()
+                    DisposeAsync = fun () ->
+                        task {
+                            use _ = Bench.scope "deploy.containerDispose"
+                            do! container.DisposeAsync()
+                        } :> Task
+                }
+        }
+
+    let useEphemeralContainer (body: string -> Task<'a>) : Task<'a> =
+        task {
+            use _ = Bench.scope "deploy.useEphemeralContainer"
+            let! handle = acquireEphemeralContainer ()
             try
-                do!
-                    task {
-                        use _ = Bench.scope "deploy.containerStart"
-                        return! container.StartAsync()
-                    }
-                let masterConn = container.GetConnectionString()
-                return! body masterConn
+                return! body handle.MasterConnectionString
             finally
-                use _ = Bench.scope "deploy.containerDispose"
-                container.DisposeAsync().AsTask().GetAwaiter().GetResult()
+                handle.DisposeAsync().GetAwaiter().GetResult()
         }
 
     let useContainer (body: string -> Task<'a>) : Task<'a> =

@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <Compile Include="TestCollections.fs" />
+    <Compile Include="EphemeralContainerFixture.fs" />
     <Compile Include="ScaffoldingTests.fs" />
     <Compile Include="ResultTests.fs" />
     <Compile Include="BenchTests.fs" />

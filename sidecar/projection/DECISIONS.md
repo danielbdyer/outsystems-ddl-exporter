@@ -16039,6 +16039,181 @@ shape matches the chapter-3.2 close generalization at session 41.
 
 ---
 
+## 2026-05-19 (slice A.4.7'-prelude.test-fixture-lift) — xUnit IClassFixture amortizes ephemeral SQL Server container across Docker-gated test classes; Docker cluster cuts 48% (2m51s → 1m22s); per-class container reuse with per-test database isolation
+
+### Scope
+
+User-directed dual-survey-then-execute cycle (2026-05-19). After
+slice A.4.7'-prelude.live-profiler shipped, two parallel survey
+agents identified iteration-speed gaps. Survey 1 (escape-character
++ typed-AST audit) returned no work needed — the codebase has
+exemplary typed-AST adoption already. Survey 2 (slow-test audit)
+identified the Docker-gated test cluster as a 2m51s sink across
+16 tests, with ~60-80s recoverable via xUnit `IClassFixture` lift.
+This slice executes the lift; results exceeded the survey's
+prediction (~89s recovered).
+
+### What ships
+
+**`src/Projection.Pipeline/Deploy.fs`:**
+
+- New record type `EphemeralContainerHandle = { MasterConnectionString : string; DisposeAsync : unit → Task }` — handle-based lifecycle alongside the scope-based shape.
+- New primitive `acquireEphemeralContainer : unit → Task<EphemeralContainerHandle>` — spins one Testcontainers MsSqlContainer; returns a handle whose `DisposeAsync` reaps it. Bench-scoped at `deploy.acquireEphemeralContainer` + nested `deploy.containerStart` / `deploy.containerDispose`.
+- Existing `useEphemeralContainer` rewritten as a thin wrapper:
+  `acquireEphemeralContainer` + try/finally + body. Same external
+  surface; same Bench labels. The two-primitive split avoids
+  duplicating Testcontainers construction logic.
+
+**`tests/Projection.Tests/EphemeralContainerFixture.fs` (NEW, ~110 LOC):**
+
+- `EphemeralContainerFixture` class implements `IAsyncLifetime`.
+- `InitializeAsync` calls `Deploy.acquireEphemeralContainer`;
+  `DisposeAsync` reaps the container handle.
+- `MasterConnectionString` exposes the shared connection string;
+  throws `invalidOp` if used pre-init (defense against fixture
+  misconfiguration).
+- `WithEphemeralDatabase prefix body` — per-test CREATE DATABASE
+  / DROP DATABASE lifecycle (best-effort drop with `SINGLE_USER
+  WITH ROLLBACK IMMEDIATE`) wrapping the caller's body. Same
+  shape every existing Docker test was open-coding before this
+  slice.
+
+**4 Docker-gated test files migrated:**
+
+| File | Before | After |
+|---|---|---|
+| `LiveProfilerIntegrationTests` (6 tests) | module + per-test `Deploy.useEphemeralContainer` | `namespace` + `type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture)` with `IClassFixture<EphemeralContainerFixture>` |
+| `CdcSilenceTests` (2 tests) | same | same |
+| `CdcSilencePropertyTests` (3 tests) | same | same |
+| `CdcSilenceCrossEmitterTests` (4 Docker + 1 structural) | same | 4 Docker tests in fixture-bearing type; C0 (pure-structural, no Docker) split to a sibling `CdcSilenceCrossEmitterStructural` plain module to avoid container init on the no-Docker path |
+
+The fixture-bearing migration preserves every existing test's
+semantic envelope (per-test ephemeral database, best-effort drop,
+CDC isolation per class). The CDC isolation discipline (`Deploy
+.useEphemeralContainer` was originally chosen over the warm
+container because CDC infrastructure has instance-wide side effects
+on `master.sys.databases.is_cdc_enabled`) holds at the **per-class**
+granularity: each Docker-gated CDC class gets its own container;
+tests within a class share. The `Docker-SqlServer` collection's
+`DisableParallelization = true` continues to serialize classes,
+preventing cross-class CDC contamination.
+
+### Measured impact
+
+Baseline (before fixture lift; raw `dotnet test` against the
+respective test files):
+
+- **CdcSilenceTests + CdcSilencePropertyTests + CdcSilenceCrossEmitterTests** (10 Docker tests across 3 files): **1m50s** total
+- **LiveProfilerIntegrationTests** (6 Docker tests): **1m1s** (measured during slice A.4.7'-prelude.live-profiler ship, 2026-05-19)
+- **Combined baseline (16 Docker tests)**: **~2m51s**
+
+After fixture lift:
+
+- **Same 16 tests under per-class fixture + per-test DB lifecycle**: **1m22s**
+- **Delta**: ~89s saved (~52% reduction)
+- Full Docker set including C0 structural (18 tests; 16 pass + 2 skip): **1m29s**
+
+The 89s recovered is ~12% above the survey-agent's optimistic 80s
+prediction. The over-delivery is attributable to one factor the
+survey didn't quantify: per-class container reuse amortizes the
+Testcontainers .NET driver's first-call SDK initialization (≈1s
+per process), not just the SQL Server boot.
+
+**Non-Docker suite regression check:** 1622 pass / 162 skip / 0
+fail in 2 seconds (unchanged from pre-slice baseline).
+
+### Operating-discipline payoffs
+
+**Survey-then-execute is the textbook pattern for iteration-speed
+work.** The slice opens with two parallel survey agents (escape-
+character audit + slow-test audit) returning concrete punch lists
+under 1500 words each. The slow-test survey produced a ranked
+list of fixture-lift candidates with concrete sketch code; the
+slice executes the top 3 ranks + audits Rank 4 (CanaryRoundTrip
+— no work needed) + measures impact. The survey's prediction
+holds within 15% on the headline number.
+
+**Sibling-wrapper discipline preserved at the new primitive.**
+`acquireEphemeralContainer` and `useEphemeralContainer` are
+distinguished by information-bearing surface (handle-based vs.
+scope-based). The principled-defaults test (chapter 4.7 cleanup
+amendment): does the wrapper hide information the caller might
+want, or does it supply a private default the caller couldn't
+otherwise access? Answer: the scope-based form supplies the
+try/finally pattern as a convenience; the handle-based form
+exposes the lifecycle for caller-owned management. Different
+consumption surfaces; both earn their place. `useEphemeralContainer`
+is rewritten as `acquireEphemeralContainer` + try/finally + body
+so the construction logic has one home.
+
+**Container construction at the boundary, fixture lifecycle in
+the test layer.** Deploy.fs owns Testcontainers construction;
+the fixture file owns xUnit lifecycle wiring. The cherry-pick
+discipline holds — Projection.Pipeline.fs has no test-framework
+dependency; the fixture file has no production-emit dependency.
+
+**The bench-survey punch list is now the next iteration target.**
+Parallel to the slow-test survey, a bench-coverage survey
+identified 44% file coverage of `Bench` instrumentation (123 calls
+across 38 of 86 files). Critical gaps: `Projection.Adapters.Osm/
+CatalogReader.fs` (2341 LOC, 0 calls), `Projection.Adapters.OssysSql/
+MetadataSnapshotRunner.fs` (1156 LOC, 0 calls), `Projection
+.Targets.SSDT/ScriptDomBuild.fs` (1269 LOC, 0 calls). The
+operator-reality canary cannot detect regressions in these dark
+paths because the labels don't exist. Trigger: next slice tackles
+the **inside** of the system the same way this slice tackled the
+test surface.
+
+### Deferred (after this slice; refreshed triggers)
+
+- **Bench instrumentation on adapter + ScriptDomBuild paths.**
+  See the bench-survey punch list in
+  `tasks/aa0e085b470582bba.output` (orphan; will be re-surfaced as
+  the next slice's scope). Estimated 5-6 hours of additive
+  instrumentation work; would lift adapter/core visibility from
+  ~8% to ~50%.
+- **xUnit collection-fixture (vs. class-fixture) for CDC class
+  cluster.** If CDC's three test classes are migrated to share
+  one container across the entire collection (via
+  `ICollectionFixture<T>` rather than `IClassFixture<T>`), the
+  three CDC containers could collapse to one — another ~20s of
+  recovery. Trigger: the additional contention risk between CDC
+  classes is empirically zero (none of the CDC tests share
+  database state; per-test DB isolation already preserves it).
+  Cash-out shape: define `CdcCollectionFixture` + `[<CollectionDefinition>]`
+  in TestCollections.fs; all three classes opt in via collection
+  attribute. Deferred per "ship the obvious win first" — the
+  class-fixture shape already recovers 52%.
+- **`Operator-reality canary` per-class fixture.** Currently runs
+  via warm container (no ephemeral spinup); class-fixture pattern
+  doesn't apply unless the canary moves to its own container per
+  scenario. Trigger: per-commit perf gate's wall time becomes a
+  CI bottleneck (currently ~10-12s and well within budget).
+
+### Cross-references
+
+- `Deploy.useEphemeralContainer` docstring (now at
+  `src/Projection.Pipeline/Deploy.fs:637-641`) — the prior comment
+  explicitly named "per-test-class amortization belongs in xUnit
+  `IClassFixture` / `IAsyncLifetime` machinery the caller arranges";
+  this slice operationalizes that hint
+- `tests/Projection.Tests/TestCollections.fs` — the `Docker-SqlServer`
+  collection's `DisableParallelization = true` continues to
+  serialize cross-class CDC operations; the class-fixture lift
+  preserves this guarantee
+- `DECISIONS 2026-05-17 (chapter 4.7 cleanup) — Sibling-wrapper
+  discipline` — the principled-defaults test applied to
+  `acquireEphemeralContainer` vs. `useEphemeralContainer`
+- `DECISIONS 2026-05-09 — Audits surface things not on the agenda`
+  — survey-by-agent applied as the iteration-speed audit cycle
+- Survey results: slow-test survey at
+  `tasks/a6ba07bc8d69475a7.output`; bench-coverage survey at
+  `tasks/aa0e085b470582bba.output`; escape-character survey at
+  `tasks/a043c107f603b2fe7.output` (all three dispatched in the
+  current session as parallel `Explore`-agent runs)
+
+---
+
 ## 2026-05-19 (slice A.4.7'-prelude+pipeline-registry) — Pipeline-level unified registry surface + bidirectional property-test layer (skeleton-purity sweep + per-axis overlay-exercise) + CDC-silence shape sweep
 
 ### Scope
