@@ -174,8 +174,10 @@
     <Compile Include="CanaryDeployTests.fs" />
     <Compile Include="Fixtures/SourceSchema.fs" />
     <Compile Include="Fixtures/FixtureGenerator.fs" />
+    <Compile Include="Fixtures/OssysFixtureSynthesizer.fs" />
     <Compile Include="CanaryRoundTripTests.fs" />
     <Compile Include="GeneratorScaleTests.fs" />
+    <Compile Include="ComprehensiveCanaryTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
