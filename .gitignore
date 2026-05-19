@@ -14,6 +14,12 @@ TestResults/
 .nuget/packages/
 *.DS_Store
 
+# Agent worktrees — transient isolated working trees created by
+# the Claude Code harness when dispatching background agents.
+# These are session-scoped artifacts; the harness reclaims them
+# when the agent completes / session ends.
+.claude/worktrees/
+
 # Sidecar canary bench snapshots — Bench.persistJson writes here.
 # Per session-29 framing, these accumulate locally per session for
 # cross-run perf comparison; not checked in (timings drift by host).
