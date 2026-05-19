@@ -206,6 +206,7 @@ module CategoricalUniquenessRules =
         (attribute: Attribute)
         (profile: Profile)
         : CategoricalUniquenessDecision =
+        use _ = Bench.scope "rules.categoricalUniqueness.evaluate"
 
         let mkDecision outcome : CategoricalUniquenessDecision =
             { AttributeKey   = attribute.SsKey

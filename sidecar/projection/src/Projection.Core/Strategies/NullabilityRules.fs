@@ -226,6 +226,7 @@ module NullabilityRules =
         (attribute: Attribute)
         (profile: Profile)
         : NullabilityDecision =
+        use _ = Bench.scope "rules.nullability.evaluate"
 
         let mkDecision outcome : NullabilityDecision =
             { AttributeKey   = attribute.SsKey

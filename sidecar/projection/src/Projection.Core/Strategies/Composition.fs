@@ -132,6 +132,7 @@ module Composition =
         (policy: Policy)
         (profile: Profile)
         : Lineage<'decisionSet> =
+        use _ = Bench.scope "composition.fanOut"
         let interventions = config.InterventionFilter policy.Tightening
         if List.isEmpty interventions then
             // Observable identity — no decisions, no events.

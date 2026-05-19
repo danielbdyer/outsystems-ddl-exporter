@@ -246,6 +246,7 @@ module ForeignKeyRules =
         (catalog: Catalog)
         (profile: Profile)
         : ForeignKeyDecision =
+        use _ = Bench.scope "rules.foreignKey.evaluate"
 
         let mkDecision outcome : ForeignKeyDecision =
             { ReferenceKey   = reference.SsKey

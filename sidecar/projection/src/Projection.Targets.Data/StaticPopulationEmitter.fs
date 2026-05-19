@@ -135,6 +135,7 @@ module StaticPopulationEmitter =
                 | None   -> ()  // unreachable: order is derived from catalog
                 | Some k -> yield! kindStatements k
         }
+        |> Bench.streamProbe "emit.staticPopulation.statements.stream"
 
     // -----------------------------------------------------------------------
     // Slice 5.13.sibling-emitter-registry-static-population —

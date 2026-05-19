@@ -205,6 +205,7 @@ module UniqueIndexRules =
         (index: Index)
         (profile: Profile)
         : UniqueIndexDecision =
+        use _ = Bench.scope "rules.uniqueIndex.evaluate"
 
         let mkDecision outcome : UniqueIndexDecision =
             { IndexKey       = index.SsKey

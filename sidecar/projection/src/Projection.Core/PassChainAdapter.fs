@@ -62,7 +62,12 @@ module PassChainAdapter =
         (adapters: PassChainAdapter list)
         (state: ComposeState)
         : Lineage<Diagnostics<ComposeState>> =
+        use _ = Bench.scope "compose.passChain.compose"
         adapters
         |> List.fold
-            (fun acc adapter -> LineageDiagnostics.bind adapter.Apply acc)
+            (fun acc adapter ->
+                let timedApply (s: ComposeState) =
+                    use _ = Bench.scope (System.String.Concat("compose.passChain.", adapter.Name))
+                    adapter.Apply s
+                LineageDiagnostics.bind timedApply acc)
             (LineageDiagnostics.ofValue state)
