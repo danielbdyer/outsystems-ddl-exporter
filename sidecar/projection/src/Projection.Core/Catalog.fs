@@ -628,6 +628,36 @@ type DataCompressionLevel =
     | Row
     | Page
 
+/// SQL Server index storage placement — the dataspace an index resides
+/// on. Closed-DU mirroring V1's `IndexDataSpace.cs` aggregate
+/// (`Name : string`, `Type : DataSpaceType`). Per matrix row 56 cash-
+/// out shape: closed-DU `DataSpace = Filegroup of name | PartitionScheme
+/// of name × columns`. Slice A.4.7'-prelude.row56-dataspace (LR7
+/// closure).
+///
+/// **Variants.**
+///   - `Filegroup name` — index resides on a named filegroup
+///     (`PRIMARY`, `INDEX_FG`, etc.). Emitted as `ON [name]`.
+///     V1 source: `sys.data_spaces.type_desc = 'ROWS_FILEGROUP'`.
+///   - `PartitionScheme (name, columns)` — index uses a partition
+///     scheme keyed by named partition columns. Emitted as
+///     `ON [name]([col1], [col2], ...)`. Columns reference table
+///     columns (typically the partition key); V1 carries them as
+///     names (not SsKeys) from the `sys.index_columns` reflection
+///     where `partition_ordinal > 0`. V2 mirrors as `string list`
+///     at the IR layer; emitter resolves to ScriptDom identifiers.
+///     V1 source: `sys.data_spaces.type_desc = 'PARTITION_SCHEME'`
+///     + `OUTER APPLY sys.index_columns WHERE partition_ordinal > 0`.
+///
+/// `Index.DataSpace = None` (the default) means no explicit `ON`
+/// clause — SQL Server inherits the table-level dataspace
+/// (typically `PRIMARY` filegroup). This matches V1's behavior
+/// when no dataspace is specified.
+[<RequireQualifiedAccess>]
+type DataSpace =
+    | Filegroup of name: string
+    | PartitionScheme of name: string * columns: string list
+
 /// A schema-level index on a kind. Carries identity, name, the
 /// participating attribute SsKeys (in declaration order; composite
 /// indexes have multiple), `IsUnique` (does the source treat this index
@@ -744,6 +774,15 @@ type Index = {
     /// slice when partitioned indexes surface in fixture data).
     /// Slice 5.13.index-features-emit (matrix row 56).
     DataCompression : DataCompressionLevel option
+    /// SQL Server index dataspace placement. `None` (the default) =
+    /// no explicit `ON` clause; SQL Server inherits the table-level
+    /// dataspace (typically `PRIMARY`). `Some (Filegroup name)` =
+    /// emit `ON [name]` (V1's `IndexDataSpace.Type = ROWS_FILEGROUP`
+    /// shape). `Some (PartitionScheme (name, cols))` = emit
+    /// `ON [name]([col1], [col2], …)` (V1's `Type = PARTITION_SCHEME`
+    /// shape). Closed-DU per matrix row 56 cash-out (LR7 closure).
+    /// Slice A.4.7'-prelude.row56-dataspace.
+    DataSpace : DataSpace option
 }
 
 
@@ -949,6 +988,8 @@ module Index =
     ///   - `IsDisabled = false` (V1 default)
     ///   - `DataCompression = None` (V1 default: no explicit
     ///     DATA_COMPRESSION clause)
+    ///   - `DataSpace = None` (V1 default: index inherits table-level
+    ///     dataspace; no explicit `ON` clause)
     ///
     /// Consumers override via record-update.
     let create
@@ -974,6 +1015,7 @@ module Index =
             IgnoreDuplicateKey    = false
             IsDisabled            = false
             DataCompression       = None
+            DataSpace             = None
         }
 
     /// Build an `Index` from a `SsKey list` of key columns

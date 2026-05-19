@@ -870,6 +870,60 @@ module MetadataSnapshotRunner =
                 | _          -> None
         with _ -> None
 
+    /// Slice A.4.7'-prelude.row56-dataspace (LR7 closure): parse
+    /// V1's `#AllIdx.PartitionColumnsJson` into a `string list`.
+    /// JSON shape per V1's SQL is `[{"ordinal":1,"name":"PartitionKey"}, …]`
+    /// — one entry per partition column. Returns the column names
+    /// in ordinal order (V1's SQL already sorts by `partition_ordinal`).
+    /// `None` when the JSON is malformed; `Some []` when the JSON
+    /// is an empty array (legal for filegroup-backed indexes).
+    let private tryParsePartitionColumns (json: string) : string list option =
+        try
+            use doc = System.Text.Json.JsonDocument.Parse(json)
+            if doc.RootElement.ValueKind <> System.Text.Json.JsonValueKind.Array then
+                None
+            else
+                let names =
+                    seq {
+                        for entry in doc.RootElement.EnumerateArray() do
+                            let mutable nameEl = Unchecked.defaultof<System.Text.Json.JsonElement>
+                            if entry.TryGetProperty("name", &nameEl) then
+                                match Option.ofObj (nameEl.GetString()) with
+                                | Some s when not (System.String.IsNullOrWhiteSpace s) -> yield s
+                                | _ -> ()
+                    }
+                    |> Seq.toList
+                Some names
+        with _ -> None
+
+    /// Slice A.4.7'-prelude.row56-dataspace (LR7 closure): project
+    /// V1's `#AllIdx.DataSpaceName` + `DataSpaceType` (+
+    /// `PartitionColumnsJson` for partition schemes) into V2's
+    /// closed-DU `DataSpace option`. Returns `None` for the default
+    /// case (no dataspace name OR unrecognized type) — V2 omits
+    /// the `ON` clause in that case rather than emitting an
+    /// unsupported shape. V1's `type_desc` values are
+    /// `'ROWS_FILEGROUP'` (mapping to Filegroup) and
+    /// `'PARTITION_SCHEME'` (mapping to PartitionScheme).
+    let private tryProjectDataSpace
+        (name: string option)
+        (typeDesc: string option)
+        (partitionColumnsJson: string option)
+        : DataSpace option =
+        match name, typeDesc with
+        | Some n, Some t when not (System.String.IsNullOrWhiteSpace n) ->
+            match t.ToUpperInvariant() with
+            | "ROWS_FILEGROUP" ->
+                Some (DataSpace.Filegroup n)
+            | "PARTITION_SCHEME" ->
+                let cols =
+                    partitionColumnsJson
+                    |> Option.bind tryParsePartitionColumns
+                    |> Option.defaultValue []
+                Some (DataSpace.PartitionScheme (n, cols))
+            | _ -> None
+        | _ -> None
+
     let toBundle (snapshot: MetadataSnapshot) : CatalogReader.RowsetBundle =
         let physicalByEntity =
             snapshot.PhysicalTables
@@ -1030,6 +1084,16 @@ module MetadataSnapshotRunner =
                 let dataCompression =
                     i.DataCompressionJson
                     |> Option.bind tryParseUniformDataCompression
+                // Slice A.4.7'-prelude.row56-dataspace (LR7 closure)
+                // — project V1's three dataspace fields into the
+                // closed-DU; unknown type_desc values silently degrade
+                // to None (V2 omits the ON clause for unrecognized
+                // shapes rather than emitting a guess).
+                let dataSpace =
+                    tryProjectDataSpace
+                        i.DataSpaceName
+                        i.DataSpaceType
+                        i.PartitionColumnsJson
                 {
                     EntityId         = i.EntityId
                     IndexName        = i.IndexName
@@ -1044,6 +1108,7 @@ module MetadataSnapshotRunner =
                     IsDisabled       = i.IsDisabled
                     IgnoreDupKey     = i.IgnoreDupKey
                     DataCompression  = dataCompression
+                    DataSpace        = dataSpace
                 } : CatalogReader.IndexRow)
 
         let indexColumns =

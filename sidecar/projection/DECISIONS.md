@@ -15237,6 +15237,151 @@ that don't require closure.
 
 ---
 
+## 2026-05-19 (slice A.4.7'-prelude.row56-dataspace) — LR7 closure: DataSpace closed-DU + end-to-end wiring (V1 filegroup + partition-scheme → V2 Index.DataSpace → ScriptDom emission)
+
+### Scope
+
+User-directed slice B from prior arc proposal — Row 56 partition-
+scheme cluster. Last non-trivial SCHEMA-axis residual closure.
+
+V1's index reflection (`sys.indexes` JOIN `sys.data_spaces` JOIN
+`sys.partitions` JOIN `sys.index_columns WHERE partition_ordinal > 0`)
+carries three dataspace concepts: filegroup name, partition scheme
+name, and partition columns. V1's `IndexScriptBuilder.cs:322-374`
+emits these as `ON [filegroup]` or `ON [scheme]([cols])` clauses.
+
+V2 had the source-side data structurally available
+(`OssysAllIdxRow.DataSpaceName / DataSpaceType / PartitionColumnsJson`)
+since slice 5.13.ossys-rowsets-cluster (2026-05-18) but no IR consumer
++ no emitter wiring.
+
+### What ships
+
+**`Projection.Core`:**
+- New closed-DU `DataSpace = Filegroup of name | PartitionScheme of
+  name × columns : string list` in `Catalog.fs`. Per pillar-8 concept-
+  shaped naming: mirrors V1's `IndexDataSpace.cs` aggregate.
+- New `Index.DataSpace : DataSpace option` field; `Index.create`
+  defaults to `None` (matching V1 "no explicit ON clause; inherit
+  table-level").
+- Partition columns carried as `string list` (column names, not
+  SsKeys) per V1's data shape — partition columns reference table
+  columns that may or may not be in the index's key/included columns,
+  and V1's JSON projection is name-based; resolving to SsKeys at the
+  IR layer is premature.
+
+**`Projection.Targets.SSDT`:**
+- New realization-layer DU `IndexDataSpaceSql = FilegroupDataSpaceSql
+  of name | PartitionSchemeDataSpaceSql of name × columns : string list`.
+- New `IndexDef.DataSpace : IndexDataSpaceSql option` field.
+- `SsdtDdlEmitter.indexStatements` projects `Index.DataSpace` →
+  realization-layer DU via closed-DU dispatch.
+- `ScriptDomBuild.buildCreateIndex` emits via ScriptDom's
+  `FileGroupOrPartitionScheme`: filegroup form sets just `Name`;
+  partition-scheme form additionally populates `PartitionSchemeColumns`.
+
+**`Projection.Adapters.OssysSql` + `Projection.Adapters.Osm`:**
+- New `tryParsePartitionColumns` helper parses V1's
+  `PartitionColumnsJson` (shape `[{"ordinal": N, "name": "Col"}, …]`)
+  into `string list` in ordinal order.
+- New `tryProjectDataSpace` helper projects V1's `(DataSpaceName,
+  DataSpaceType, PartitionColumnsJson)` triple → V2 `DataSpace option`.
+  Unknown `type_desc` values (anything other than `ROWS_FILEGROUP` /
+  `PARTITION_SCHEME`) silently degrade to `None` — V2 omits the ON
+  clause rather than emitting an unsupported shape.
+- `MetadataSnapshotRunner.toBundle` populates `CatalogReader.IndexRow
+  .DataSpace`; `CatalogReader.parseRowsetBundle` threads to
+  `Index.DataSpace` via record update on `Index.create`.
+
+**TransformRegistry: new `indexDataSpace` Site.**
+- `SsdtDdlEmitter.registeredMetadata.Sites` extended from 11 to 12
+  Sites. Per pillar 9, the new Site classifies as DataIntent (emitter
+  projects evidence; A18 amended forbids operator opinion at emit
+  time). Rationale prose cites the V1 source path (`#AllIdx
+  .DataSpaceName + DataSpaceType + PartitionColumnsJson` → V2 IR via
+  `tryProjectDataSpace`) and the ScriptDom emission shape.
+
+### Operating-discipline payoff
+
+**Closed-DU expansion empirical-test discipline confirmed at scale.**
+Adding `DataSpace : DataSpace option` to `Index` + `DataSpace :
+IndexDataSpaceSql option` to `IndexDef` lit up field-missing errors
+at exactly 23 literal-construction sites (8 in tests for `IndexDef`,
+14 for inline forms across `Index`/`IndexDef`, 1 in production
+`SsdtDdlEmitter`); semantic-interpretation sites (pattern matches,
+field accesses) unaffected. Sed sweep handled all forms. The
+discipline holds.
+
+**Pillar 9 + TransformRegistry-worthy analysis: a new Site earned its
+place.** The criterion: "every distinct V1-emission axis V2 carries
+gets its own Site within the registry's Sites enumeration." LR7's
+DataSpace emission is structurally distinct from existing index-
+features Sites (`indexDataCompression` covers compression-level
+emission via `DataCompressionOption`; `indexDataSpace` covers
+storage-placement emission via `FileGroupOrPartitionScheme`). The
+two surfaces have different ScriptDom types + different emission
+clauses + different V1 source-data paths. Per the discipline, the
+new Site is principled — not boilerplate.
+
+**Core/vanilla vs TransformRegistry-worthy applied correctly.**
+- DataSpace IR field carriage: core/vanilla (catalog evidence; no
+  Site needed — fields don't earn Sites, transformations do)
+- Adapter projection: core/vanilla within existing
+  `rowsetAggregateParsing` Site (V1 reflection → V2 IR translation)
+- Emitter projection: TransformRegistry-worthy — new `indexDataSpace`
+  Site (V2 IR → ScriptDom typed AST; distinct emission axis from
+  existing Sites)
+
+### Coverage (7 new + 1 Skip-stub flipped)
+
+`tests/Projection.Tests/IndexDataSpaceTests.fs`:
+- Filegroup variant: `ON [filegroup]` + `PRIMARY` explicit name
+- PartitionScheme variant: `ON [scheme] ([col])` single + multi-column
+- None case: no second `ON` clause (only the table-target `ON
+  [schema].[table]`)
+- T1 byte-determinism across all variants
+- Site classification (DataIntent + Rationale prose)
+
+Plus the existing LR7 Skip-stub in `SsdtSchemaFidelityPropertyTests`
+flipped to active.
+
+### Deferred (after this slice; refreshed triggers)
+
+- **LR6 — per-partition DataCompression with heterogeneous values
+  across partitions.** Today V2 ships single-value compression via
+  `tryParseUniformDataCompression` (uniform across all partitions);
+  heterogeneous compression degrades to `None`. Cash-out shape: IR
+  refinement either `DataCompression : (int *
+  DataCompressionLevel) list` (per-partition map) OR closed-DU
+  expansion at `DataCompressionLevel` (`UniformCompression of
+  DataCompressionLevel | PerPartition of (int *
+  DataCompressionLevel) list`). Trigger: a fixture surfaces with
+  heterogeneous per-partition compression that V2 must round-trip.
+  The PartitionScheme arm of `DataSpace` is structurally present
+  (partition columns carried), so this lift extends only the
+  compression-level axis.
+
+### Cross-references
+
+- V1 SQL source: `outsystems_metadata_rowsets.sql:484-487, 497-498,
+  499-514` (DataSpaceName + DataSpaceType + PartitionColumnsJson +
+  DataCompressionJson columns; JOIN to sys.data_spaces + OUTER APPLY
+  for partition columns)
+- V1 emitter source: `IndexScriptBuilder.cs:322-374` (ON clause
+  emission with both arms)
+- ScriptDom shape: `CreateIndexStatement.OnFileGroupOrPartitionScheme
+  : FileGroupOrPartitionScheme` (filegroup form: empty
+  `PartitionSchemeColumns`; partition-scheme form: non-empty)
+- `DECISIONS 2026-05-15 (late) — Pillar 9` (the harvest-dichotomy
+  discipline; new Site classifies as DataIntent)
+- `DECISIONS 2026-05-13 — Closed-DU expansion empirical-test
+  discipline` (the field-missing-errors-at-literal-sites pattern
+  that held across 23 sites)
+- Matrix row 56 (this slice's amendment); rows 55 + 11 (sibling
+  prior amendments on the index axis)
+
+---
+
 ## 2026-05-19 (slice A.4.7'-prelude.row53-source-side) — V1 #ColumnReality source-side population: Attribute.Computed + Attribute.DefaultName brought in end-to-end
 
 ### Scope

@@ -341,6 +341,16 @@ module SsdtDdlEmitter =
                     | DataCompressionLevel.None -> NoneCompressionSql
                     | DataCompressionLevel.Row  -> RowCompressionSql
                     | DataCompressionLevel.Page -> PageCompressionSql)
+            // Slice A.4.7'-prelude.row56-dataspace (LR7 closure): map
+            // V2's `DataSpace` IR DU to the realization-layer mirror.
+            // Closed-DU dispatch keeps the seam typed.
+            let dataSpaceSql =
+                idx.DataSpace
+                |> Option.map (function
+                    | DataSpace.Filegroup name ->
+                        FilegroupDataSpaceSql name
+                    | DataSpace.PartitionScheme (name, cols) ->
+                        PartitionSchemeDataSpaceSql (name, cols))
             let indexDef : IndexDef =
                 {
                     Name     = Name.value idx.Name
@@ -359,6 +369,8 @@ module SsdtDdlEmitter =
                     IgnoreDuplicateKey    = idx.IgnoreDuplicateKey
                     IsDisabled            = idx.IsDisabled
                     DataCompression       = dataCompressionSql
+                    // Slice A.4.7'-prelude.row56-dataspace (LR7).
+                    DataSpace             = dataSpaceSql
                 }
             Statement.CreateIndex indexDef)
 
@@ -687,6 +699,8 @@ module SsdtDdlEmitter =
                 "Slice 5.13.index-features-emit (matrix row 55). When Index.IgnoreDuplicateKey = true, emit IGNORE_DUP_KEY = ON in the CREATE INDEX WITH clause via ScriptDom's IndexStateOption + IndexOptionKind.IgnoreDupKey. Source: V1's #AllIdx.IgnoreDupKey."
               TransformSite.dataIntent "indexDataCompression"
                 "Slice 5.13.index-features-emit (matrix row 56 partial). When Index.DataCompression = Some level, emit DATA_COMPRESSION = NONE|ROW|PAGE in the CREATE INDEX WITH clause via ScriptDom's DataCompressionOption. Single-value form (uniform across partitions) ships; per-partition compression list is the row 56 residual. Source: V1's #AllIdx.DataCompressionJson parsed via tryParseUniformDataCompression."
+              TransformSite.dataIntent "indexDataSpace"
+                "Slice A.4.7'-prelude.row56-dataspace (LR7 closure). When Index.DataSpace = Some, emit `ON [filegroup]` (DataSpace.Filegroup) or `ON [partition_scheme]([cols])` (DataSpace.PartitionScheme) via ScriptDom's CreateIndexStatement.OnFileGroupOrPartitionScheme. Both variants share ScriptDom's FileGroupOrPartitionScheme shape (IsFileGroup discriminates); the realization-layer DU mirrors V1's `IndexDataSpace.Type` enum closed-set. Source: V1's #AllIdx.DataSpaceName + DataSpaceType (+ PartitionColumnsJson for partition schemes) projected via tryProjectDataSpace at the OssysSql adapter boundary."
               TransformSite.dataIntent "setExtendedProperty"
                 "Project ExtendedProperty values at Schema / Table / Column / Index levels → Statement.SetExtendedProperty (chapter 4.1.A slice 8). ScriptDom builds EXEC sys.sp_addextendedproperty with typed ExecuteParameter binding (multi-level @level0type / @level1type / @level2type). Replaces V1's hand-rolled escaping."
               TransformSite.dataIntent "topologicalOrder"

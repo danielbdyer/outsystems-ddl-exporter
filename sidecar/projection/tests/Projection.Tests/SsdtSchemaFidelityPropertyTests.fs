@@ -494,5 +494,40 @@ let ``5.3.α.create-table row 53 partial: named DEFAULT constraint surfaces in C
 [<Fact(Skip = "5.3.α.index row 56 LR6 — V1's DataCompression partition-range emission (IndexScriptBuilder.cs L259-301 CollapseRanges) is deferred-with-trigger. V2 emits single-value DataCompression today (matrix row 55 closed 2026-05-18); partition-range collapse logic awaits IR refinement (closed-DU `DataSpace = Filegroup of name | PartitionScheme of name × columns` + per-partition compression list). Trigger: partitioned-index fixture surfaces in operator-reality canary.")>]
 let ``5.3.α.index LR6: DataCompression emits per-partition-range clauses`` () = ()
 
-[<Fact(Skip = "5.3.α.index row 56 LR7 — V1's FileGroup / PartitionScheme dataspace emission (IndexScriptBuilder.cs L322-374) is deferred-with-trigger. V2 has no Index.DataSpace IR field; paired deferral with LR6 (closed-DU DataSpace lifts both). Trigger: partitioned-index fixture OR operator-pressure for filegroup-pinned indexes surfaces.")>]
-let ``5.3.α.index LR7: filegroup and partition-scheme ON clauses emit`` () = ()
+[<Fact>]
+let ``5.3.α.index LR7: filegroup and partition-scheme ON clauses emit`` () =
+    // Closed by slice A.4.7'-prelude.row56-dataspace (2026-05-19).
+    // Detailed assertions live in IndexDataSpaceTests.fs (7 tests
+    // covering Filegroup / PartitionScheme / None / multi-column /
+    // T1 byte-determinism / Site classification). This stub witnesses
+    // the contract name remains discoverable in test discovery; the
+    // existing tests carry the load-bearing verification.
+    let cat =
+        let kindKey0 = kindKey ["LR7Witness"]
+        let idAttrKey = attrKey ["LR7Witness"; "Id"]
+        let idxKey0 =
+            SsKey.synthesizedComposite "OS_IDX" ["LR7Witness"; "IX"]
+            |> Result.value
+        let idAttr =
+            { Attribute.create idAttrKey (mkName "Id") Integer with
+                Column       = { ColumnName = "ID"; IsNullable = false }
+                IsPrimaryKey = true
+                IsMandatory  = true }
+        let idx =
+            { Index.create idxKey0 (mkName "IX_LR7Witness")
+                (IndexColumn.ascendingList [ idAttrKey ]) with
+                DataSpace = Some (DataSpace.Filegroup "INDEX_FG") }
+        let kind =
+            { Kind.create kindKey0 (mkName "LR7Witness")
+                { Schema = "dbo"; Table = "OSUSR_LR7_IDX"; Catalog = None }
+                [ idAttr ]
+              with Indexes = [ idx ] }
+        { Modules =
+            [ { SsKey = modKey "LR7Mod"
+                Name = mkName "LR7Mod"
+                Kinds = [ kind ]
+                IsActive = true
+                ExtendedProperties = [] } ]
+          Sequences = [] }
+    let body = bodyOf (kindKey ["LR7Witness"]) cat
+    Assert.Contains ("ON [INDEX_FG]", body)

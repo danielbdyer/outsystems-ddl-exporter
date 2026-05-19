@@ -1076,6 +1076,25 @@ module ScriptDomBuild =
                 | PageCompressionSql ->
                     Microsoft.SqlServer.TransactSql.ScriptDom.DataCompressionLevel.Page
             stmt.IndexOptions.Add(opt :> IndexOption)
+        // Slice A.4.7'-prelude.row56-dataspace (LR7 closure): emit
+        // `ON [filegroup]` or `ON [scheme]([cols])` via ScriptDom's
+        // `FileGroupOrPartitionScheme`. Closed-DU dispatch on the
+        // realization-layer `IndexDataSpaceSql` produces both variants
+        // through the same ScriptDom shape (IsFileGroup discriminates).
+        match idx.DataSpace with
+        | None -> ()
+        | Some (FilegroupDataSpaceSql name) ->
+            let ds = FileGroupOrPartitionScheme()
+            ds.Name <- IdentifierOrValueExpression()
+            ds.Name.Identifier <- bracketed name
+            stmt.OnFileGroupOrPartitionScheme <- ds
+        | Some (PartitionSchemeDataSpaceSql (name, cols)) ->
+            let ds = FileGroupOrPartitionScheme()
+            ds.Name <- IdentifierOrValueExpression()
+            ds.Name.Identifier <- bracketed name
+            for col in cols do
+                ds.PartitionSchemeColumns.Add(bracketed col)
+            stmt.OnFileGroupOrPartitionScheme <- ds
         // Chapter 4.5 slice α — WHERE clause via TSql160Parser, lifted
         // through the Diagnostics writer.
         match idx.Filter with

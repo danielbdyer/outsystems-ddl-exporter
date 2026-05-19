@@ -307,6 +307,16 @@ module CatalogReader =
             /// axis is the row 56 residual). Threads to
             /// `Index.DataCompression`.
             DataCompression  : string option
+            /// Slice A.4.7'-prelude.row56-dataspace (LR7 closure) —
+            /// optional index dataspace placement carried from V1
+            /// `#AllIdx.DataSpaceName` + `DataSpaceType` + (for
+            /// partition schemes) `PartitionColumnsJson`. `None`
+            /// when no DataSpace is set OR when V1's `type_desc`
+            /// is something other than `ROWS_FILEGROUP` /
+            /// `PARTITION_SCHEME` (defensive — V2 omits the `ON`
+            /// clause rather than emitting an unrecognized
+            /// dataspace shape).
+            DataSpace        : DataSpace option
         }
 
     /// V1 rowset `#IdxColsMapped` — per-index column membership
@@ -1929,7 +1939,15 @@ module CatalogReader =
                     NoRecomputeStatistics = row.NoRecompute
                     IsDisabled            = row.IsDisabled
                     IgnoreDuplicateKey    = row.IgnoreDupKey
-                    DataCompression       = dataCompressionLevel }
+                    DataCompression       = dataCompressionLevel
+                    // Slice A.4.7'-prelude.row56-dataspace (LR7
+                    // closure): V1 #AllIdx.DataSpaceName/Type/
+                    // PartitionColumnsJson → V2 Index.DataSpace.
+                    // Carriage is direct; MetadataSnapshotRunner
+                    // .toBundle does the JSON parse + DU shaping
+                    // (the Adapter.Osm boundary trusts the typed
+                    // DataSpace coming from the OssysSql adapter).
+                    DataSpace             = row.DataSpace }
         | _ ->
             propagateOrFallback
                 [ Result.errors indexKey

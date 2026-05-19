@@ -1168,6 +1168,74 @@ Reference|Index|IndexColumn|IndexColumns)` remain in source.
 
 ---
 
+### Row 56 — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.row56-dataspace closes LR7 — filegroup + partition-scheme dataspace emission end-to-end)
+
+**Original framing.** Matrix row 56 named two paired residuals:
+- **LR6** — DataCompression partition-range emission (V1
+  `IndexScriptBuilder.cs:259-301 CollapseRanges`)
+- **LR7** — FileGroup / PartitionScheme dataspace emission (V1
+  `IndexScriptBuilder.cs:322-374`)
+
+Both were deferred-with-trigger ("partitioned-index fixture surfaces
+in operator-reality canary OR operator-pressure for filegroup-pinned
+indexes"). Slice A.4.7'-prelude.row56-dataspace (2026-05-19) closes
+LR7 in full; LR6 (per-partition compression with heterogeneous values)
+remains deferred — it requires either a richer `DataCompression : (int *
+DataCompressionLevel) list` IR or a closed-DU expansion at
+`DataCompressionLevel`. Single-value DataCompression shipped earlier
+(slice 5.13.index-features-emit, matrix row 55).
+
+**Reclassified (slice A.4.7'-prelude.row56-dataspace, 2026-05-19):**
+
+| Residual | Prior status | Updated status | What shipped |
+|---|---|---|---|
+| LR7 | 🟠 Deferred-with-trigger (FileGroup + PartitionScheme dataspace emission) | 🟢 PARITY (Filegroup + PartitionScheme arms both shipped end-to-end) | Closed-DU `Catalog.DataSpace = Filegroup of name \| PartitionScheme of name × columns : string list`; `Index.DataSpace : DataSpace option` field; adapter wires from V1 `#AllIdx.DataSpaceName + DataSpaceType + PartitionColumnsJson` via `MetadataSnapshotRunner.tryProjectDataSpace`; emitter ships ScriptDom `CreateIndexStatement.OnFileGroupOrPartitionScheme` via new realization-layer `IndexDataSpaceSql` DU; new `indexDataSpace` Site in `SsdtDdlEmitter.registeredMetadata`. |
+| LR6 | 🟠 Deferred-with-trigger | 🟠 Deferred-with-trigger (refreshed) | Per-partition DataCompression with heterogeneous values across partitions. Today V2 ships single-value compression (uniform across all partitions via `tryParseUniformDataCompression`). Heterogeneous compression surfaces as `None`. Cash-out shape: IR refinement either `DataCompression : (int * DataCompressionLevel) list` (per-partition map) OR closed-DU expansion at `DataCompressionLevel`. Trigger: a fixture surfaces with heterogeneous per-partition compression that V2 must round-trip. |
+
+**Per pillar 9: structural decomposition (DataIntent everywhere).**
+- `DataSpace` IR field carriage = DataIntent (V2 catalog evidence)
+- Adapter projection from V1 source-side reflection = DataIntent
+  within the existing `rowsetAggregateParsing` Site
+- Emitter projection to ScriptDom = DataIntent within a new
+  `indexDataSpace` Site (TransformRegistry-worthy — sibling to
+  `indexDataCompression`; each distinct V1-emission axis V2 carries
+  earns its own Site)
+
+The new Site lives in `SsdtDdlEmitter.registeredMetadata.Sites`,
+making `SsdtDdlEmitter.registeredMetadata` total **12 Sites** (was 11).
+
+**Coverage tests (7 new in `IndexDataSpaceTests.fs`):**
+- `LR7 Filegroup: CREATE INDEX emits ON [filegroup]`
+- `LR7 Filegroup: PRIMARY filegroup name renders explicitly`
+- `LR7 None: CREATE INDEX omits ON clause when DataSpace = None`
+- `LR7 PartitionScheme: CREATE INDEX emits ON [scheme] ([col])`
+- `LR7 PartitionScheme: multi-column partition key emits comma-separated list`
+- `LR7: T1 byte-determinism holds across DataSpace variants`
+- `SsdtDdlEmitter.registeredMetadata exposes indexDataSpace Site as DataIntent`
+
+Plus the existing `5.3.α.index LR7: filegroup and partition-scheme ON
+clauses emit` Skip-stub in `SsdtSchemaFidelityPropertyTests` flipped
+to active.
+
+**Cross-references.**
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.row56-dataspace) —
+  LR7 closure: DataSpace closed-DU + end-to-end wiring`
+- V1 SQL source: `outsystems_metadata_rowsets.sql:484-487` (data_space
+  + partition_columns + data_compression JOIN); `:497-498` (sys
+  .data_spaces JOIN); `:499-514` (PartitionColumnsJson OUTER APPLY)
+- Matrix row 56 prior amendments (slice 5.13.index-features-emit
+  partial closure; subsequent named-trigger deferrals)
+- Pillar 9 — new `indexDataSpace` Site is structurally distinct
+  emission feature; classification = DataIntent; A18 amended (emitter
+  consumes Catalog only)
+- ScriptDom emission shape: `CreateIndexStatement.OnFileGroupOrPartitionScheme :
+  FileGroupOrPartitionScheme` with `Name : IdentifierOrValueExpression`
+  + `PartitionSchemeColumns : list<Identifier>` (filegroup form has
+  empty PartitionSchemeColumns; partition-scheme has non-empty); V2's
+  realization-layer DU `IndexDataSpaceSql` discriminates structurally
+
+---
+
 ### Rows 11 + 53 — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.row53-source-side wires V1 #ColumnReality into Attribute.Computed + Attribute.DefaultName)
 
 **Original framing.** Slice 5.13.ossys-rowsets-cluster (2026-05-18)
