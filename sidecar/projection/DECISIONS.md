@@ -18072,3 +18072,37 @@ The chapter's V2-driver-axis-stakes contribution: **DATA axis silent-default cut
 - `ADMIRE.md` — Faker evidence chain; all four nodes shipped (categorical / numeric / cardinality / joint).
 - `DECISIONS Active deferrals — Faker emitter` — trigger structurally met; awaits explicit promotion at chapter B.4 / chapter 5 open.
 - V1 source: V1 had no direct FK-correlation surface; slice 8 is V2-growth per `ADMIRE.md`'s V2-growth admire mode.
+
+## 2026-05-19 (slice B.4.3.composite-pk-fk) — Composite-PK FK reality probe resolved as out-of-scope; the slice-1 `AmbiguousMapping` outcome is the right answer
+
+### Scope
+
+Chapter B.4 slice 3 was scoped (per `CHAPTER_B_4_OPEN.md`) as "cash out the slice-1 `ForeignKeyReality` composite-PK deferral via `projectTupleKeys`." The chapter B.3 close letter named this as an open question (line 115: "Composite-PK FK extension?"). At slice open, surfacing the design choice to the principal-PO produced the canonical answer: **composite primary keys are not an OutSystems use case the operator has ever encountered**; the slice's premise (that V2 needs to probe FK reality against composite-PK targets) does not match operator-reality demand.
+
+### What changes (documentation only; no code change)
+
+The `Cache.deriveForeignKeyRealitiesWith` branch that returns `ambiguous` for non-single-column-PK targets (`LiveProfiler.fs:802`) stands as the correct answer. Same for `Cache.deriveForeignKeyOrphanSamplesWith` (`LiveProfiler.fs:912`). A clarifying comment near each branch points at this DECISIONS entry so future readers see the operator-confirmed scope decision.
+
+No fixture, no test, no code path. The composite-PK FK probe is not a real consumer pressure; resolving it would over-engineer a degenerate case.
+
+### Why this isn't deferring the same deferral again
+
+The earlier deferral (`CHAPTER_B_3_CLOSE.md` open question; chapter B.3 slice 1) said the cash-out *was structurally trivial via* `projectTupleKeys` and awaited a "composite-PK fixture or consumer demand." Today's resolution closes the question via the second path: **the consumer demand does not exist**. This is not a re-deferral; it is an empirical determination that the degenerate case has no operator consumer.
+
+If composite PKs ever surface in a real OS-source catalog (e.g., a custom-defined entity with explicit multi-column PK declared via OS extension), the `Reference` IR's singular `SourceAttribute` constraint would block resolution anyway — the cross-module FK IR refinement deferral (Active deferrals row, "Cross-module FK IR refinement") covers that case under its own trigger. So even under hypothetical future composite-PK pressure, the work would land via the IR refinement deferral, not this one.
+
+### Discipline reinforced
+
+**Defer-then-resolve-as-out-of-scope is a valid resolution path for an open question.** Open questions can close by (a) cash-out under consumer pressure, (b) re-affirmation that the trigger has not fired, OR (c) operator-confirmed determination that the case is not a real consumer. Path (c) is the resolution today. The chapter-close-ritual's "Active deferrals scan" must permit (c) as a closure shape; the failure mode would be treating (c) as "still deferred" and re-scoping the same work at each chapter open.
+
+### Chapter B.4 slice count
+
+Chapter B.4 plan dropped from 8 slices to **7 effective slices** (slice 3 closes via documentation only). The chapter-close gate is unaffected — the four substantive deliverables (logging-format contract; capture retirement; ModuleFilter + MetadataContractOverrides ports; CLI subcommand triad) all proceed.
+
+### Cross-references
+
+- `CHAPTER_B_4_OPEN.md` slice 3 row marked DONE-AS-RESOLVED-OUT-OF-SCOPE with this DECISIONS entry as cross-reference.
+- `CHAPTER_B_3_CLOSE.md` open question 3 (line 115) closes via path (c).
+- `LiveProfiler.fs` clarifying comments at the two `ambiguous` branches.
+- Active deferrals index: this deferral was never formally added (it lived as a chapter B.3 close-letter open question); no removal required.
+

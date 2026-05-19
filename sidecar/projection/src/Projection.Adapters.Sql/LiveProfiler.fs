@@ -748,9 +748,13 @@ module LiveProfiler =
         /// in-memory derivation: build a `Set` from target PK column
         /// values; iterate source FK column values; orphan-count
         /// = source values not present in target set. Single-column
-        /// PK targets only (composite-PK FK extension uses
-        /// `projectTupleKeys` once a fixture surfaces). Mirrors
-        /// slice 1's SQL LEFT JOIN orphan-count probe.
+        /// PK targets only — composite-PK targets resolve to
+        /// `ProbeStatus.ambiguous` (the `| _ -> ambiguous` branch
+        /// below). Per `DECISIONS 2026-05-19 (slice B.4.3.composite-
+        /// pk-fk)`, composite primary keys are not an OS use case
+        /// the operator has encountered; the degenerate case stays
+        /// resolved out-of-scope. Mirrors slice 1's SQL LEFT JOIN
+        /// orphan-count probe.
         let deriveForeignKeyRealitiesWith
             (targetIndex: ForeignKeyTargetIndex)
             (cache: EvidenceCache)
@@ -814,7 +818,12 @@ module LiveProfiler =
         /// Derive `DiagnosticEntry list` carrying TOP-N orphan
         /// samples per orphan-bearing FK. Pillar 9: operational
         /// diagnostics, not data-intent. Mirrors slice 4's TOP-N
-        /// SQL probe shape but runs from cache (no SQL).
+        /// SQL probe shape but runs from cache (no SQL). Single-
+        /// column PK targets only — composite-PK targets produce
+        /// no DiagnosticEntry (the `| _ -> None` branch at the end
+        /// of the inner match). Same operator-confirmed scope as
+        /// `deriveForeignKeyRealitiesWith` per `DECISIONS
+        /// 2026-05-19 (slice B.4.3.composite-pk-fk)`.
         ///
         /// Default sample limit (cache-derivation copy; mirrors
         /// slice 4's per-Reference SQL constant). 5 per slice 4
