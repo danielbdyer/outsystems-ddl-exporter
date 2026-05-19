@@ -354,6 +354,58 @@ type CategoricalDistribution = {
 ///
 /// Every constructed `NumericDistribution` value satisfies these
 /// contracts; consumers pattern-match without re-validating.
+/// First two statistical moments of a numeric distribution — Mean
+/// (first moment; central tendency) and population standard
+/// deviation (square root of the second central moment; spread).
+/// The two travel together as an algebraic unit per
+/// `DECISIONS 2026-05-19 (slice B.3.5)` — when one is meaningful
+/// without the other, V2 has the wrong abstraction. Lands as
+/// `NumericDistribution.Moments : StatisticalMoments option`
+/// because LiveProfiler can compute them via SQL Server
+/// `AVG` + `STDEVP` aggregates, but V1-JSON snapshots (the prior
+/// distribution source) don't carry them. The optional carries the
+/// presence of the evidence; the smart constructor `withMoments`
+/// validates the within-range invariant.
+///
+/// **Per pillar 9: DataIntent.** Statistical moments are
+/// observational evidence (computed from deployed reality without
+/// operator opinion); they belong in `Profile`, not in `Policy`.
+///
+/// **Foundational evidence for the deferred Faker emitter.** Per
+/// `ADMIRE.md` (V1 numeric-histograms → Faker Π → synthetic numeric
+/// generation) + `DECISIONS Active deferrals — Faker emitter
+/// (synthetic-data Π)`: μ + σ are the canonical moments a
+/// shape-preserving synthetic-data generator consumes alongside the
+/// percentile shape. Slice B.3.5 closes the V2 evidence-capture
+/// gap; Faker's gating condition (third evidence type lands OR
+/// concrete consumer demand) compounds toward firing.
+type StatisticalMoments = {
+    /// Population mean (μ) — sum of observed values divided by sample size.
+    Mean   : decimal
+    /// Population standard deviation (σ) — square root of the average
+    /// squared deviation from the mean. Non-negative by definition.
+    StdDev : decimal
+}
+
+[<RequireQualifiedAccess>]
+module StatisticalMoments =
+
+    let private negativeStdDev =
+        ValidationError.create
+            "statisticalMoments.stdDev.negative"
+            "StdDev must be non-negative."
+
+    /// Construct a `StatisticalMoments`. Validates `StdDev ≥ 0`
+    /// (the structural invariant — standard deviation of any
+    /// observed distribution is non-negative by definition). `Mean`
+    /// has no by-itself invariant; the within-range check
+    /// (`Min ≤ Mean ≤ Max`) lives at `NumericDistribution.withMoments`
+    /// because it requires the distribution's bounds.
+    let create (mean: decimal) (stdDev: decimal) : Result<StatisticalMoments> =
+        if stdDev < 0M then Result.failureOf negativeStdDev
+        else Result.success { Mean = mean; StdDev = stdDev }
+
+
 type NumericDistribution = {
     /// Identity of the Attribute whose distribution this is.
     AttributeKey : SsKey
@@ -376,6 +428,15 @@ type NumericDistribution = {
     /// the percentiles are stable estimates; low `SampleSize` means
     /// they may shift with additional observations.
     SampleSize   : int64
+    /// First two statistical moments (Mean + StdDev). `None` when
+    /// the source (V1-JSON snapshot) didn't carry them; `Some` when
+    /// LiveProfiler probed them via `AVG` + `STDEVP` aggregates.
+    /// Added at slice B.3.5; enriches the distribution beyond the
+    /// percentile-shape with central-tendency + spread evidence
+    /// foundational for shape-preserving synthetic data generation
+    /// (the deferred Faker emitter consumes both this and the
+    /// percentile field set).
+    Moments      : StatisticalMoments option
     /// Probe metadata.
     ProbeStatus  : ProbeStatus
 }
@@ -528,7 +589,33 @@ module NumericDistribution =
                   P99          = p99
                   Max          = max
                   SampleSize   = sampleSize
+                  Moments      = None
                   ProbeStatus  = probeStatus }
+
+    let private meanOutOfRange =
+        ValidationError.create
+            "numericDistribution.mean.outOfRange"
+            "Mean must lie within [Min, Max] — central tendency cannot fall outside the observed range."
+
+    /// Enrich an existing distribution with `StatisticalMoments`.
+    /// Validates the within-range invariant `Min ≤ Mean ≤ Max`
+    /// (the by-itself `StdDev ≥ 0` invariant is enforced by
+    /// `StatisticalMoments.create`). Returns a `NumericDistribution`
+    /// with `Moments = Some moments`; the consumer chooses whether
+    /// to read the moments alongside the percentile shape.
+    ///
+    /// Slice B.3.5 cash-out — LiveProfiler probes `AVG` + `STDEVP`
+    /// per numeric attribute and threads the result through this
+    /// enrichment. V1-JSON adapter path leaves `Moments = None`
+    /// (V1's snapshot doesn't carry μ + σ).
+    let withMoments
+        (moments: StatisticalMoments)
+        (dist: NumericDistribution)
+        : Result<NumericDistribution> =
+        if moments.Mean < dist.Min || moments.Mean > dist.Max then
+            Result.failureOf meanOutOfRange
+        else
+            Result.success { dist with Moments = Some moments }
 
     /// Inter-quartile range (P75 - P25). Convenience for consumers
     /// that reason about spread; pure derivation, no caching.
@@ -540,6 +627,19 @@ module NumericDistribution =
     /// reason about tail-heaviness.
     let observedRange (d: NumericDistribution) : decimal =
         d.Max - d.Min
+
+    /// Coefficient of variation (σ / μ) — the dimensionless ratio of
+    /// spread to central tendency. Common in synthetic-data quality
+    /// scoring and anomaly detection. Returns `None` when moments
+    /// are unavailable OR when Mean is zero (CV is undefined for
+    /// zero-centered data). Per
+    /// `DECISIONS 2026-05-19 (slice B.3.5)` — exposed as a pure
+    /// derivation so consumers can reason about distribution shape
+    /// without a separate IR field; lifts via `withMoments` evidence.
+    let coefficientOfVariation (d: NumericDistribution) : decimal option =
+        match d.Moments with
+        | Some m when m.Mean <> 0M -> Some (m.StdDev / m.Mean)
+        | _ -> None
 
     /// True iff every percentile coincides with `Min` (or
     /// equivalently with `Max`, since the monotonicity contract

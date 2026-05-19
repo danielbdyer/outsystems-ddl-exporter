@@ -52,21 +52,29 @@ open Projection.Core
 ///     `captureColumnProfiles`. Batched per-kind probe: one
 ///     `COUNT_BIG`-based query per non-static table yielding row
 ///     count + per-attribute null count.
-///   - Slice B.3.3.unique-candidates (this slice, 2026-05-19):
-///     populates `Profile.UniqueCandidates` (single-column) via
-///     attach-time projection from `AttributeRealities
-///     .HasDuplicates` (no extra SQL — projects the existing
-///     witness). Populates `Profile.CompositeUniqueCandidates` via
+///   - Slice B.3.3.unique-candidates (2026-05-19): populates
+///     `Profile.UniqueCandidates` (single-column) via attach-time
+///     projection from `AttributeRealities.HasDuplicates` (no extra
+///     SQL — projects the existing witness). Populates
+///     `Profile.CompositeUniqueCandidates` via
 ///     `captureCompositeUniqueCandidates` — per-Index `GROUP BY …
-///     HAVING COUNT_BIG(*) > 1` probe with `IS NOT NULL` filter on
-///     every participating column. Mirrors V1's
-///     `UniqueCandidateQueryBuilder` shape.
+///     HAVING COUNT_BIG(*) > 1` probe.
+///   - Slice B.3.4.fk-orphan-samples (2026-05-19): emits
+///     `DiagnosticEntry list` per orphan-bearing FK via the
+///     standalone `captureForeignKeyOrphanSamples` capture. Pillar 9
+///     pivot — operational samples land in Diagnostics, not Profile
+///     axis.
 ///   - Sibling-adapter composability holds: `attach` runs every
-///     capture and composes into the input Profile.
+///     Profile-side capture and composes into the input Profile;
+///     `captureForeignKeyOrphanSamples` is a separate caller-invoked
+///     surface (Diagnostics output, not Profile mutation).
 ///
-/// Per the chapter B.3 open document — slices 1-3 of the
+/// Per the chapter B.3 open document — slices 1-4 of the
 /// LiveProfiler deep-probe sweep cashing out the deferrals named
-/// at slice A.4.7'-prelude.live-profiler.
+/// at slice A.4.7'-prelude.live-profiler. Slices 5-7 (IR keystone
+/// for statistical moments + single-scan-per-kind probe
+/// consolidation + sampling/multi-env) land subsequently per the
+/// chapter open's 7-slice expansion.
 [<RequireQualifiedAccess>]
 module LiveProfiler =
 

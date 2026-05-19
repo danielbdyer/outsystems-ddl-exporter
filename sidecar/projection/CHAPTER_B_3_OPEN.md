@@ -22,20 +22,22 @@ This chapter operationalizes **V2_PRODUCTION_CUTOVER §7.4 (Phase B.3)** — V2 
 
 8. **Close ritual paired with the live-profiler arc + the row-49/85/86/87 reclassifications.** Single chapter close at the end of the arc; the closure document re-walks the deferrals named at slice A.4.7'-prelude.live-profiler and records which fired + cashed vs which deferred-further.
 
-## Slice plan (6 substantive slices)
+## Slice plan (8 substantive slices — expanded from 6 at slice 5 close)
 
-Slice naming uses `A.4.7'-prelude.live-profiler-deep.<n>.<axis>` for consistency with the most recent arc. Each slice ships its own commit + matrix amendment + DECISIONS entry.
+Slice naming uses `B.3.<n>.<axis>` for chapter coherence. Each slice ships its own commit + matrix amendment + DECISIONS entry. **Plan expanded from 6 to 8 slices at slice 5 close** per two principal-PO refinements: (a) per-data-type evidence + no-overfetching architectural concern, and (b) FK-mediated correlative analysis for shape-preserving synthetic data.
 
-| Slice | Scope | Closes | Consumer pressure |
-|---|---|---|---|
-| **1** (this session) | `ForeignKeyReality.create` smart constructor; `LiveProfiler.captureForeignKeyRealities` + extended `attach`; Docker-gated integration tests (clean FK, orphan FK, composability) | Row 88 deep + 2026-05-19 deferral "HasOrphans per-FK probe" | `ForeignKeyRules.evaluate:278-286` reads `reality.HasOrphan` + `OrphanCount`; today silent-default |
-| **2** | `LiveProfiler.captureColumnNullCounts` (exact int64 via aggregate `SUM(CASE WHEN col IS NULL THEN 1 ELSE 0 END)` per kind); composes into `Profile.Columns` alongside existing AttributeReality witness | Row 86 deep + 2026-05-19 deferral "exact NullCount cardinality" | `NullabilityRules` consumes `ColumnProfile.NullCount` for tightening decisions; live-probe path empty today |
-| **3** | `LiveProfiler.captureCompositeUniqueCandidates` (per-Index composite probe via `GROUP BY ... HAVING COUNT_BIG(*) > 1`); composes into `Profile.CompositeUniqueCandidates` | Row 87 deep + 2026-05-19 deferral "composite-unique probes" | `UniqueIndexRules` consumes composite evidence for multi-column index decisions |
-| **4** | `LiveProfiler.captureForeignKeyOrphanSamples` per FK (TOP-N orphan rows for operator diagnostics); lands as Diagnostics surface (pillar 9 — sample is operational, not data-intent), not Profile field | Row 89 | Chapter 4.3 OperationalDiagnostics or cutover dry-run discovery |
-| **5** | `LiveProfiler.captureDistributions` (per-attribute cardinality + percentile + top-N) feeding `Profile.Distributions`; replaces V1-JSON-only path | New matrix row (no V1 V1_PARITY_MATRIX entry exists; doc the addition at slice close) | Future synthetic-data work; tightening decisions informed by cardinality |
-| **6** | Sampling policy + multi-environment merge (rows 90 + 92); `Profile.merge : Profile → Profile → Profile` (commutative + associative property tests); wire `SqlProfilerOptions.Sampling` through LiveProfiler | Rows 90 (DIVERGENCE close) + 92 (NOT-MAPPED close) | Multi-env risk scoring for chapter 4.x or operator-reality scale |
+| Slice | Scope | Status |
+|---|---|---|
+| **1** B.3.1.foreign-key-reality | `ForeignKeyReality.create` smart constructor; `LiveProfiler.captureForeignKeyRealities`; closes `ForeignKeyRules` silent-default | ✓ shipped |
+| **2** B.3.2.column-null-counts | `LiveProfiler.captureColumnProfiles` batched-per-kind null-count probe; closes `NullabilityRules` silent-default | ✓ shipped |
+| **3** B.3.3.unique-candidates | `LiveProfiler.captureCompositeUniqueCandidates` + `projectUniqueCandidates` + `ProbeStatus` primitives extracted; closes `UniqueIndexRules` silent-defaults | ✓ shipped |
+| **4** B.3.4.fk-orphan-samples | `LiveProfiler.captureForeignKeyOrphanSamples` emitting Diagnostics; first worked example of pillar 9 pivot at adapter layer | ✓ shipped |
+| **5** B.3.5.statistical-moments-ir | **IR keystone only** — `StatisticalMoments` + `NumericDistribution.Moments` + `withMoments` + `coefficientOfVariation`. Algebraic-paradigm work the user asked for; live-probe captures deferred to slice 6 (probe consolidation). | ✓ shipped |
+| **6** B.3.6.probe-consolidation | **Single-scan-per-kind statistical-evidence query that fans out into typed `AttributeDistribution` variants** (Numeric / Categorical / Text). One round-trip per kind captures HasNulls + HasDuplicates + NullCount + RowCount + per-attribute Min/Max/Mean/StdDev (numeric) + frequencies (categorical) + LEN stats (text). Consolidates the per-attribute round-trips accreted across slices 1-3 into a discovery-phase probe. Fills `Profile.Distributions` from the single scan. Addresses the "no overfetching" principal-PO concern. | pending |
+| **7** B.3.7.sampling-multi-env | Sampling policy + multi-environment merge (rows 90 + 92). `Profile.merge : Profile → Profile → Profile` (commutative + associative property tests); wire `SqlProfilerOptions.Sampling` through every LiveProfiler capture. | pending |
+| **8** B.3.8.fk-correlation | FK-mediated correlative evidence: (a) per-Reference fan-out cardinality (child-count distribution per parent); (b) per-Reference selectivity / clumping (value-frequency over source FK column); (c) multi-FK joint distributions (co-occurrence counts for shape-preserving synthetic data with coherent FK relationships). Foundation for the deferred Faker emitter's joint-distribution requirement (per `ADMIRE.md` and Active deferrals index). | pending |
 
-**Chapter close ritual** runs after slice 6. Eight items per `CLAUDE.md`: Active deferrals scan; contract-vs-implementation walk; CLAUDE.md / README.md staleness; HANDOFF + close-doc scope; fresh-eye walk; operating-disciplines table currency; V1-input-envelope walk; per-axis-stakes evaluation against V2_DRIVER.
+**Chapter close ritual** runs after slice 8. Eight items per `CLAUDE.md`: Active deferrals scan; contract-vs-implementation walk; CLAUDE.md / README.md staleness; HANDOFF + close-doc scope; fresh-eye walk; operating-disciplines table currency; V1-input-envelope walk; per-axis-stakes evaluation against V2_DRIVER. **Bonus close item for this chapter**: re-evaluate Faker's Active-deferrals trigger condition — slices 5 + 6 + 8 collectively ship the statistical-moments + per-type-distribution + joint-FK evidence that the Faker emitter's gating condition names ("third evidence type lands OR concrete consumer demand").
 
 ## Out of scope
 

@@ -17575,3 +17575,87 @@ The orphan-sample probe **observes** deployed reality (DataIntent at the probe l
 - `DECISIONS 2026-05-19 (slice B.3.1.foreign-key-reality)` — sibling probe; the orphan-count → orphan-sample evolution lives here.
 - V1 source: `Pipeline/Profiling/ForeignKeyOrphanSampleQueryBuilder.BuildCommandText()` — query shape mirrored (TOP-N extension of slice 1's anti-join).
 - Future consumer: chapter 4.3 OperationalDiagnostics emitters; cutover dry-run operator workflows.
+
+---
+
+## 2026-05-19 (slice B.3.5.statistical-moments-ir) — IR keystone: StatisticalMoments + NumericDistribution.withMoments + coefficientOfVariation; chapter B.3 expanded 6→8 slices with principal-PO refinements on per-data-type evidence + no-overfetching + FK correlation
+
+### Scope
+
+Slice 5 of chapter B.3. **IR keystone slice** — lands the algebraic-paradigm work for advanced statistical analysis (Mean + StdDev, derivable Coefficient of Variation) without yet wiring a live-probe path. The capture-side live-probe work moves to slice 6 (probe consolidation) per the principal-PO no-overfetching refinement; chapter B.3 expands from 6 to 8 slices.
+
+### Why this slice is IR-only
+
+The original slice-5 plan shipped per-attribute live-probe captures for Numeric + Categorical distributions. Two principal-PO refinements at slice 5 close redirected the design:
+
+1. **No-overfetching discipline**: per-attribute round-trips for distribution probes accrete across slices 1–5 to thousands of queries at production scale (300 tables × N attributes × multiple probes). The "discovery phase" pattern V1 uses (single-scan-per-table + derive all per-attribute evidence) is the right shape; redoing slice 5 as IR-only lets slice 6 land the consolidation cleanly with the Moments fields ready to fill.
+2. **Per-data-type evidence variants**: the closed DU `AttributeDistribution = Categorical | Numeric` doesn't yet cover string-shape evidence (length stats; char-class composition) or other future variants (Temporal; Boolean). The IR widening lives in slice 6 alongside the consolidation; shipping it inline with per-attribute round-trips would deprecate work twice.
+
+Combined: ship the algebraic-paradigm IR keystone now (Mean + StdDev are foundational regardless of capture path); defer all capture-side work to the consolidation slice.
+
+### What ships
+
+**`Profile.fs` extensions** — pure IR with smart constructors:
+
+- **`StatisticalMoments`** record carrying `Mean : decimal` + `StdDev : decimal`. The two moments travel together as an algebraic unit; neither is meaningful in isolation for shape-preserving synthesis. Smart constructor `StatisticalMoments.create` validates `StdDev ≥ 0`.
+- **`NumericDistribution.Moments : StatisticalMoments option`** — new field on `NumericDistribution`. `None` when the source (V1-JSON path) doesn't carry moments; `Some` when LiveProfiler probes them (slice 6). `NumericDistribution.create` defaults to `None` (existing callers unchanged).
+- **`NumericDistribution.withMoments`** enrichment smart constructor: chains `create` → `withMoments` so the within-range invariant (`Min ≤ Mean ≤ Max`) is enforced structurally. Validates `Mean ∈ [Min, Max]` and returns `Result<NumericDistribution>`.
+- **`NumericDistribution.coefficientOfVariation`** pure derivation: returns `Some (σ/μ)` when Moments present AND μ ≠ 0; returns `None` otherwise. CV is a dimensionless ratio commonly used in shape-preserving synthetic data quality scoring and anomaly detection. Per the "discrete-rationale DUs absorb continuous evidence" discipline — derived from existing fields rather than a new IR field; the consumer pattern-matches on Option.
+
+**Unit tests (9 new) in `AttributeDistributionTests.fs`:**
+
+- `StatisticalMoments.create` rejects negative StdDev; accepts zero StdDev (degenerate constant column is structurally valid).
+- `NumericDistribution.create` defaults Moments to None.
+- `NumericDistribution.withMoments` enriches correctly; preserves the original distribution's immutability.
+- `NumericDistribution.withMoments` rejects Mean < Min AND Mean > Max with the named `numericDistribution.mean.outOfRange` error code.
+- `coefficientOfVariation` returns None when Moments absent; Some σ/μ when present; None when μ = 0 (CV is undefined for zero-centered distributions).
+
+**Pure-Core tests; no Docker required.** 34ms test runtime.
+
+### Why algebraic paradigms here
+
+The F# move for "additional statistical evidence beyond the percentile shape":
+
+1. **Closed record as algebraic unit** — `StatisticalMoments` packages Mean + StdDev so consumers can't read one without the other being defined. The smart constructor enforces the by-itself invariant (`StdDev ≥ 0`).
+2. **Optional field for "this evidence MAY be present"** — `NumericDistribution.Moments : StatisticalMoments option` makes the presence-vs-absence a structural property of the type, not a convention or sentinel value. F#'s discriminated-union Option is the natural primitive.
+3. **Enrichment smart constructor (`withMoments`)** — the cross-record invariant (`Min ≤ Mean ≤ Max`) requires the distribution's bounds, so it can't live in `StatisticalMoments.create`. `withMoments` takes both records and validates the relational invariant before returning the enriched distribution wrapped in `Result`.
+4. **Pure derivation for downstream properties (`coefficientOfVariation`)** — CV is a function of existing fields. No new IR field; pure function. Consumers reading CV pattern-match on `Some/None`. Per `DECISIONS 2026-05-13 — IR grows under evidence, not speculation`, this avoids speculative IR widening.
+
+The pattern is replicable for future moments (skewness, kurtosis, etc.) — each lands as either a smart-constructor-validated optional field or a pure derivation, never a new required-field IR break.
+
+### Chapter B.3 plan expansion (6 → 8 slices)
+
+| Original | Expanded |
+|---|---|
+| 5 = Distribution live-probe | 5 = IR keystone (StatisticalMoments) |
+| 6 = Sampling + multi-env | 6 = Single-scan-per-kind probe consolidation (probes + per-type distribution variants + Faker-ready evidence) |
+|  | 7 = Sampling policy + multi-environment merge |
+|  | 8 = FK correlation triplet (fan-out cardinality + selectivity + multi-FK joint distributions) |
+
+Per `DECISIONS 2026-05-15 — Strategic frame for multi-session chapters`: the slice-5 close refines the chapter open document with two new slices and the sequencing rationale.
+
+### Faker connection (the deferred trigger compounds)
+
+`ADMIRE.md` names Faker's gating evidence chain:
+- Categorical value frequencies → Distribution-report Π → Synthetic generation
+- Numeric histograms / percentiles → Synthetic generator (Faker Π) → Plausible synthetic numeric values
+- Joint distributions across FK pairs → Faker Π → Coherent synthetic data across relationships
+
+`DECISIONS Active deferrals` names the trigger condition: "Either a third evidence type lands, or a use case forces proceeding with two evidence types and accepting the limitations."
+
+Chapter B.3 slices 5 + 6 + 8 collectively ship:
+- Slice 5: μ + σ moments on the existing Numeric variant (this slice; foundation for shape preservation beyond percentiles).
+- Slice 6: TextDistribution (length stats) as a third evidence variant + per-type-variant DU widening + the single-scan-per-kind consolidation feeding all variants.
+- Slice 8: Joint distributions across FK pairs — exactly the ADMIRE-named Faker evidence.
+
+**Chapter B.3 close re-evaluates Faker's deferred trigger** per the chapter-close ritual's Active-deferrals scan. The structural evidence for promotion will likely be present.
+
+### Cross-references
+
+- `CHAPTER_B_3_OPEN.md` — updated 8-slice plan; slice-5 status flipped to "shipped (IR keystone)".
+- `DECISIONS Active deferrals — Faker emitter (synthetic-data Π)` — the trigger condition this chapter approaches.
+- `ADMIRE.md` — V1 evidence-types chain → Faker Π gating diagram.
+- `DECISIONS 2026-05-13 — Decimal as default for continuous statistical evidence` — discipline T1 byte-determinism rests on; Mean + StdDev fields are `decimal`.
+- `DECISIONS 2026-05-13 — IR grows under evidence, not speculation` — the discipline `coefficientOfVariation` (pure derivation, no new field) honors.
+- `AXIOMS.md` — structural-commitment-via-construction-validation principle the smart constructors operate.
+- V1 source — `SqlDataProfiler` orchestration (matrix row 85) named statistical-moment capture but didn't expose μ + σ as separate fields; V2 lifts them to first-class IR.
