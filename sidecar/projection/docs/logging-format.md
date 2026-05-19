@@ -1,6 +1,6 @@
 # V2 Logging-Format Contract
 
-**Slice:** B.4.1 (chapter B.4 opening; axiom-first). **Status:** structural promotion in flight (L3 axiom statement proposed in §16; final placement at chapter close). **Predecessor:** chapter B.3 close letter; chapter B.4 open at `CHAPTER_B_4_OPEN.md`. **Consumers in this chapter:** slices 6-8 (`projection extract` / `projection profile` / `projection full-export`) MUST emit events conforming to this contract or the chapter close gate fails.
+**Slice:** B.4.1 (chapter B.4 opening; axiom-first). **Status:** structural promotion in flight (L3 axiom statement proposed in §17; final placement at chapter close). **Predecessor:** chapter B.3 close letter; chapter B.4 open at `CHAPTER_B_4_OPEN.md`. **Consumers in this chapter:** slices 6-8 (`projection extract` / `projection profile` / `projection full-export`) MUST emit events conforming to this contract or the chapter close gate fails.
 
 This document defines the operator-visible event stream V2 emits during every CLI run. It is the structural surface every CLI subcommand projects onto when it writes to the operator's terminal. The contract is single-sink, single-format, single-vocabulary — the inverse of V1's three-library mess. The contract names the **envelope**, the **categories**, the **levels**, the **classification taxonomies** (lifted verbatim from V1 where V1 had the right idea but smeared the shape across prose), the **terminal `runSummary` event** that closes every run, the **roll-up collapse algorithm** the runSummary uses, and the **antipatterns banned by construction**. The closing sections name next-step extension cues for the TransformRegistry, the proposed L3 axiom that codifies the contract, and the open questions deferred from this slice.
 
@@ -77,7 +77,7 @@ V2 does not need new writers. The contract is the **serialization** of three wri
 | `Diagnostics<'a>` | `Projection.Core.Diagnostics` (`Diagnostics.fs`) | Carries `DiagnosticEntry { Source; Severity (Info/Warning/Error); Code; Message; SsKey option; Metadata: Map<string,string> }` records | Observer-relevant findings beyond pure decisions |
 | `Bench.Run` / `Bench.Stats` | `Projection.Core.Bench` (`Bench.fs`); persisted via `Projection.Pipeline.BenchSink` (`BenchSink.fs:46`) | Carries per-label `(Count, MeanMs, P50, P95, P99, TotalMs, StdevMs)` aggregates | Iterator-logging perf surface; per-iteration distribution |
 
-A fourth writer is planned but not yet shipped: `TransformRegistry` (per pillar 9 + L3-CC-Transform-Totality + A41 candidate; full-sweep retroactive refactor at A.4.7 per `V2_PRODUCTION_CUTOVER.md §6.4.7`). When it lands, the contract's envelope already accommodates its events (see §16 next steps).
+A fourth writer is planned but not yet shipped: `TransformRegistry` (per pillar 9 + L3-CC-Transform-Totality + A41 candidate; full-sweep retroactive refactor at A.4.7 per `V2_PRODUCTION_CUTOVER.md §6.4.7`). When it lands, the contract's envelope already accommodates its events (see §18 next steps).
 
 **The contract specifies how all three (and eventually four) writers project onto a single unified envelope at the CLI boundary.** Internal pass code continues to write to the existing typed writers; the boundary is where serialization happens, where the envelope is applied, and where the event reaches the operator.
 
@@ -531,7 +531,101 @@ These run at the CLI boundary (`Projection.Cli/Program.fs`); the writer-monad ou
 - `Logging.runSummary-failure`: every failed/aborted run emits `summary.runComplete` with `outcome ∈ {failed, aborted}`. Property over fixture failure injections.
 - `Logging.suggestedConfig-on-required-codes`: every emitted event whose code is in the "MUST carry suggestedConfig" list of §12 carries `payload.suggestedConfig`. Property over fixture events.
 
-## §15 What about Core's existing writers?
+## §15 CLI library recommendations
+
+The contract's wire format is library-agnostic — `System.Text.Json` on the F# stdlib suffices to write the envelope. But the CLI shell that wraps the LogSink (argument parsing, optional TTY rendering) is a real surface, and **V1's choice of three competing libraries to undifferentiated sinks (Spectre.Console + Microsoft.Extensions.Logging + System.CommandLine all written from `Osm.Cli/Osm.Cli.csproj:10-13`) is the antipattern this contract refuses**. This section names V2's library choices and the strict adapter discipline that prevents the V1 mess from re-emerging.
+
+### 15.1 The two-channel pattern
+
+```
+┌────────────────────────────────────────────┐
+│ F# producer (pass / adapter)               │
+│   writes to Lineage / Diagnostics / Bench  │
+└────────────────────────────────────────────┘
+                  │
+                  ▼
+┌────────────────────────────────────────────┐
+│ LogSink (Projection.Pipeline.LogSink)      │
+│   serializes envelopes to NDJSON           │
+└────────────────────────────────────────────┘
+                  │
+       ┌──────────┴────────────┐
+       ▼                       ▼
+ ┌──────────────┐    ┌────────────────────────┐
+ │ stderr       │    │ TtyRenderer            │
+ │ (NDJSON      │    │ (Spectre.Console under │
+ │  primary)    │    │  strict adapter;       │
+ │              │    │  opt-in via --pretty;  │
+ │              │    │  gated on TTY detect)  │
+ └──────────────┘    └────────────────────────┘
+```
+
+**Channel 1 (default, always-on): stderr NDJSON.** The structured event stream per §3-§13. Machine-parseable. Operators pipe with `2>events.log` or `2>&1 \| jq`. This channel IS the contract.
+
+**Channel 2 (opt-in, TTY-gated): Spectre.Console pretty rendering.** A Spectre-based renderer that subscribes to the same event stream and draws progress bars / tables / status indicators on stderr. Activates ONLY when (a) the operator passes `--pretty`, AND (b) `Console.IsErrorRedirected = false` (stderr is a real TTY, not a pipe or file). When channel 2 is active, channel 1 routes elsewhere: a `--json-out <path>` flag writes NDJSON to a file; without `--json-out`, channel 1's stderr write is suppressed and NDJSON is unrecoverable for that run. **Never both channels to the same TTY** — that's V1's failure mode (Spectre ANSI escapes interleaved with raw logger output on the same stream).
+
+**Default behavior.** No `--pretty` flag → channel 1 to stderr; Spectre uninvoked. Operator gets clean NDJSON. This is the path slices 6-8 default to; the chapter B.4 close gate is "this default behavior emits conforming events." Channel 2 (`--pretty`) is a quality-of-life feature on top of the structural commitment, never a substitute for it.
+
+### 15.2 Library choices
+
+| Concern | Recommended library | Rationale | Banned alternatives |
+|---|---|---|---|
+| **Argument parsing** | **Argu** (`fsprojects/Argu`) | F#-native; discriminated-union-based subcommand definition matches V2's closed-DU posture; idiomatic in the F# CLI ecosystem; pairs naturally with `Result<Config, ConfigError>` smart-constructor for parsed config | `System.CommandLine` (V1's choice at `Osm.Cli.csproj:13`; C#-shaped; verbose from F#); raw `argv` parsing (loses type safety) |
+| **Structured event serialization** | **`System.Text.Json`** (.NET stdlib) | Already used by `BenchSink.persistJson` (`BenchSink.fs:31-34`); no third-party dependency; envelope is small + stable so no need for richer serializers; UTF-8 by default; performant | `Newtonsoft.Json` (extra dependency; V2 has no precedent); hand-rolled string concatenation (reinvents `JsonSerializer.Serialize` poorly; violates the text-builder-as-first-instinct discipline) |
+| **Logger primitives** | **None — `LogSink` is hand-rolled** | The contract IS the logger; introducing `Microsoft.Extensions.Logging` would either (a) require routing every level through `LogSink` (extra indirection over a fundamentally simple sink) or (b) bypass `LogSink` (re-introducing V1's mess where `_logger.LogInformation` writes to stdout alongside `console.Out.Write`) | `Microsoft.Extensions.Logging` + `AddSimpleConsole` (V1's pattern at `Program.cs:18`; the failure mode this contract refuses); `Serilog` (same concern unless strictly routed via `LogSink`); any logger that owns its own sink |
+| **TTY pretty rendering (opt-in)** | **Spectre.Console** (`spectreconsole/spectre.console`) — under strict adapter | When a renderer is wanted, Spectre IS the highest-quality choice (progress bars, tables, trees, colored output, robust ANSI handling, TTY-detection helpers). V1's mess was using Spectre AS the event stream, not as a derived rendering consumer. Used as a subscriber to the `LogSink` event stream, gated on `--pretty` + `Console.IsErrorRedirected = false`, Spectre's strengths apply cleanly | Hand-rolled ANSI escape codes (reinvents Spectre poorly); progress libraries that write to stdout (mixes with piped artifact data); Spectre used as the primary emit surface (V1's pattern; banned by §13.4 + §13.11) |
+
+**F# / .NET versioning posture.** V2 targets .NET 9 (carbon-copy inherits from V1's `csproj` settings). `System.Text.Json` is built in; `Argu` and `Spectre.Console` are NuGet packages added at the `Projection.Cli` project boundary only — never referenced from `Projection.Core` (no I/O in Core; CLI-shell libraries are boundary concerns).
+
+### 15.3 The `TtyRenderer` strict adapter
+
+If channel 2 lands (optional for chapter B.4; the chapter close gate does NOT require it — it's a post-chapter slice if operator feedback warrants), the F# adapter shape is:
+
+```fsharp
+[<RequireQualifiedAccess>]
+module TtyRenderer =
+    /// Activates Spectre.Console as a subscriber to the LogSink
+    /// event stream. Idempotent; returns IDisposable to detach.
+    /// Caller MUST verify (a) operator passed --pretty AND
+    /// (b) Console.IsErrorRedirected = false before calling.
+    /// While active, LogSink.emit suppresses its default stderr
+    /// write (avoids double-rendering). NDJSON can still be
+    /// captured via the jsonOutPath supplied at activation.
+    val attach: jsonOutPath: string option -> System.IDisposable
+
+    /// Render strategy per category — closed mapping; extensions
+    /// require a DECISIONS entry naming the new strategy.
+    /// (Defaults: profile.cache.populated -> progress tick;
+    ///  transform.declined -> table row append; summary.runComplete
+    ///  -> final summary panel; warn/error -> colored log line;
+    ///  everything else -> compact log line.)
+    val internal renderStrategy: Category -> code: string -> RenderStrategy
+```
+
+**The discipline behind "strict adapter."** The adapter has exactly two responsibilities: (1) consume the structured event stream `LogSink` produces; (2) render it via Spectre. The adapter NEVER:
+- writes its own events bypassing the LogSink envelope
+- accepts pass-author-supplied messages outside the envelope
+- emits to stdout (only stderr)
+- mixes Spectre rendering with raw `Console.WriteLine` / `printfn` / `eprintfn` (those are banned project-wide outside the LogSink + TtyRenderer modules — see §15.5)
+
+Per pillar 9, the adapter's existence is `OperatorIntent of Emission` — the operator's choice to see pretty output classifies as an emission-axis transform. One `config.toggleResolved` event fires at run start naming `pretty=<bool>` with `source=operator|default`.
+
+### 15.4 What this means for slices 6-8
+
+| Slice | Implication |
+|---|---|
+| **6** (extract) | Adds `Argu`-based command surface for `projection extract --config <path>`. No `--pretty` flag yet (channel 2 is post-chapter); default emit = NDJSON to stderr. |
+| **7** (profile) | Same `Argu` shape for `projection profile`. `summary.benchPersisted` fires post-run; would render as a Spectre summary panel under channel 2. |
+| **8** (full-export) | Same `Argu` shape for `projection full-export`. The composition's `summary.stageCompleted` events drive Spectre's multi-stage progress rendering when channel 2 is active. |
+| **post-chapter** | `--pretty` + `TtyRenderer` lands as a follow-up slice if operator feedback shows the NDJSON-only default is unfriendly for interactive runs. Not gating Phase B exit; the structural channel 1 is the deliverable. |
+
+### 15.5 What about `Console.WriteLine` / `printfn` / `eprintfn`?
+
+**Banned outside `LogSink.emit`.** Every operator-visible byte flows through the LogSink envelope. The build-time discipline is grep-auditable: any `Console.WriteLine` / `Console.Write` / `printfn` / `eprintfn` / `printf` outside `LogSink.fs` (or its sibling `TtyRenderer.fs` if Spectre lands) requires a per-line justification comment per the substantive-rationale discipline (CLAUDE.md operating disciplines table). Slice 1's exit-criterion test verifies this: a grep over `sidecar/projection/src/` for the patterns produces only audited (or LogSink-local) results.
+
+Exception: `BenchSink.persistJson` writes JSON file content to disk via `File.WriteAllText` (`BenchSink.fs:63`). That's a file-write boundary, not a console-output boundary; it is not subject to this ban. Similarly, F# Result-error rendering at the unhandled-exception level (the CLI's last-resort `try/with` at `Program.fs` top level) may write to stderr directly with an explicit LINT-ALLOW; the entry-point boundary is its own audited site.
+
+## §16 What about Core's existing writers?
 
 Core's `Lineage<'a>` and `Diagnostics<'a>` writers are NOT touched by this contract. They continue to be the typed in-process surfaces F# passes write to. The serialization layer at `Projection.Pipeline.LogSink` projects them onto the envelope at egress.
 
@@ -542,7 +636,7 @@ This preserves three commitments:
 
 What changes is the **CLI surface's projection** — instead of writing the writer outputs as artifact JSON only (the current chapter-3.1 cash-out), the CLI also emits per-event envelopes to stderr during execution. The artifact files (decision log, opportunities report) continue to be the post-hoc analyzable forms; the event stream is the in-flight operator surface.
 
-## §16 Proposed L3 axiom additions
+## §17 Proposed L3 axiom additions
 
 The verifiability-triangle audit catalog (`AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` Part III) currently has no L3 axiom naming the operator-facing event stream's structural commitments. Slice 1 proposes two additions to the L3-X (Diagnostics) section, to land at chapter B.4 close:
 
@@ -564,7 +658,7 @@ Both axioms are pillar-9-relevant: L3-X11 underwrites the envelope's `source` fi
 
 At chapter B.4 close, the catalog entry is added to `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` §3.4; the coverage map row (§10.4) lists both axioms as Bucket A.
 
-## §17 Next steps — extension cues for slices 2-8
+## §18 Next steps — extension cues for slices 2-8
 
 Slice 1 lands the contract. Slices 2-8 consume it. Each subsequent slice adds events to V2's emission surface; the contract's discipline says **additive only**, **closed taxonomies extended via the closed-DU expansion empirical-test discipline**, **renames require DECISIONS entries**.
 
@@ -585,7 +679,7 @@ Slice 1 lands the contract. Slices 2-8 consume it. Each subsequent slice adds ev
 - **`deploy.fallbackTimeout`** — when bulk-copy realization falls back to per-row INSERT (out-of-scope today; deferred per chapter 4.1.A close).
 - **`transform.classifierShift`** — when a `LineageEvent` classification differs between two runs of the same input (reserved for future regression-detection surface).
 
-## §18 Open questions deferred from this slice
+## §19 Open questions deferred from this slice
 
 These questions surfaced during slice 1 contract design but did not gate the contract's landing. Each carries an explicit re-open trigger.
 
