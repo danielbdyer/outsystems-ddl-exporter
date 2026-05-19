@@ -297,6 +297,197 @@ module ComprehensiveCanaryTests =
         // (per-SCC iteration).
         let topo = TopologicalOrderPass.runWith TreatAsCycle catalog
         printfn "TopologicalOrderPass: order length = %d" topo.Value.Order.Length
+        // CategoricalUniquenessPass — fires `pass.categoricalUniqueness.attribute`
+        // and `rules.categoricalUniqueness.evaluate` (slice A.4.7'-prelude
+        // .bench-fleet-round2). Slice A.4.7'-prelude.canary-extensions
+        // surfaces the previously-missed strategy label.
+        let catResult = (CategoricalUniquenessPass.registered policy profile).Run catalog
+        printfn "CategoricalUniquenessPass: %d decisions" ((LineageDiagnostics.payload catResult).Decisions.Length)
+        // Compose.project — fires `compose.passChain.compose` plus
+        // per-adapter sub-labels via `PassChainAdapter.compose`. Routes
+        // through `RegisteredTransforms.allChainSteps`; surfaces the
+        // chain-orchestration overhead distinct from per-pass body work.
+        let outputs = Compose.project EmissionPolicy.empty catalog
+        printfn "Compose.project: SSDT bundle = %d files; JSON parsed; Distributions parsed"
+            outputs.SsdtBundle.Count
+        // ManifestEmitter.emit — fires `ir.registry.digest` +
+        // `ir.registry.skeletonView`. Manifest emission is the operator-
+        // diagnostic artifact; constructing the registry digest is the
+        // canonical TransformRegistry consumer.
+        let manifest = ManifestEmitter.emit catalog
+        printfn "ManifestEmitter: registry digest = %s..." (manifest.RegistryDigest.Substring(0, 8))
+        // TransformRegistry.create + overlayView — fires the remaining
+        // registry validation + overlay-filter labels. The canary doesn't
+        // BUILD a registry (uses the static RegisteredTransforms.all list)
+        // so we explicitly invoke create + overlayView here to surface
+        // the validation + overlay-axis-filter cost in the baseline.
+        let validatedRegistry =
+            match TransformRegistry.create RegisteredTransforms.all with
+            | Ok entries -> entries
+            | Error errs -> failwithf "TransformRegistry.create: %A" errs
+        let overlayEntries = TransformRegistry.overlayView validatedRegistry
+        printfn "TransformRegistry: %d entries; %d overlay entries"
+            validatedRegistry.Length overlayEntries.Length
+        // StaticPopulationEmitter.statements rendered through Render.toText
+        // — fires `emit.scriptDom.build.insertRow` + `setIdentityInsert`.
+        // composeRenderedFull (data axis above) uses MERGE shape, not
+        // InsertRow shape; static-population emission is the InsertRow
+        // realization (canary round-trip lane).
+        let staticPopStream =
+            StaticPopulationEmitter.statements catalog
+        let staticPopText = Render.toText staticPopStream
+        printfn "StaticPopulationEmitter: %d bytes (InsertRow realization)"
+            staticPopText.Length
+
+    /// Phase 10.5: Rare-path bench-label coverage via supplementary
+    /// in-memory fixtures. The primary 300-table catalog doesn't
+    /// exercise certain low-frequency code paths:
+    ///   - `emit.scriptDom.build.setIdentityInsert` — kinds with
+    ///     `IsIdentity` attribute (the generator omits IDENTITY PKs)
+    ///   - `emit.scriptDom.build.update` — Phase-2 UPDATE for
+    ///     cycle-broken kinds (the generator's catalog has no cycles
+    ///     in static rows)
+    ///   - `emit.staticSeeds.phase2Row` — same as above
+    ///   - `emit.migrationDeps.phase2Row` — non-empty
+    ///     MigrationDependencyContext on a cycle-participating kind
+    ///   - `adapter.osm.parse.rowsetColumnCheck` — the rowset bundle
+    ///     has non-empty `ColumnChecks` (the OSSYS synthesizer doesn't
+    ///     populate the `#ColumnCheckReality` rowset)
+    /// These supplementary fixtures fire those labels with minimal
+    /// in-memory constructions; pure F# (no DB deploy).
+    let private runSupplementaryFixtures () : Task<unit> =
+        task {
+            // --- Cyclic kind with IDENTITY PK + self-FK on nullable
+            // column. Modality = Static so StaticSeeds.emit fires
+            // Phase-2 UPDATE.
+            let mkSuppKey parts =
+                SsKey.synthesizedComposite "OS_CANARY_SUPP" parts |> Result.value
+            let mkSuppName s = Name.create s |> Result.value
+            let cyclicKindKey = mkSuppKey ["Cyclic"]
+            let idKey      = mkSuppKey ["Cyclic"; "Id"]
+            let parentKey  = mkSuppKey ["Cyclic"; "ParentId"]
+            let labelKey   = mkSuppKey ["Cyclic"; "Label"]
+            let refKey     = mkSuppKey ["Cyclic"; "RefSelf"]
+            let suppRow id parent label =
+                { Identifier = mkSuppKey ["Cyclic"; "Row"; id]
+                  Values =
+                      Map.ofList
+                          [ mkSuppName "Id",       id
+                            mkSuppName "ParentId", parent
+                            mkSuppName "Label",    label ] }
+            let cyclicKind : Kind =
+                { SsKey = cyclicKindKey
+                  Name  = mkSuppName "Cyclic"
+                  Origin = OsNative
+                  Modality =
+                      [ Static
+                            [ suppRow "1" "1" "self-ref"
+                              suppRow "2" "1" "child" ] ]
+                  Physical =
+                      { Schema = "dbo"
+                        Table = "CANARY_SUPP_CYCLIC"
+                        Catalog = None }
+                  Attributes =
+                      [ { Attribute.create idKey (mkSuppName "Id") Integer with
+                            Column = { ColumnName = "ID"; IsNullable = false }
+                            IsPrimaryKey = true
+                            IsMandatory  = true
+                            IsIdentity   = true }
+                        { Attribute.create parentKey (mkSuppName "ParentId") Integer with
+                            Column = { ColumnName = "PARENTID"; IsNullable = true } }
+                        { Attribute.create labelKey (mkSuppName "Label") Text with
+                            Column = { ColumnName = "LABEL"; IsNullable = false }
+                            Length = Some 50
+                            IsMandatory = true } ]
+                  References = [ Reference.create refKey (mkSuppName "RefSelf") parentKey cyclicKindKey ]
+                  Indexes = []; Description = None; IsActive = true
+                  Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+            let suppCatalog : Catalog =
+                { Modules =
+                    [ { SsKey = mkSuppKey ["SuppModule"]
+                        Name  = mkSuppName "SuppModule"
+                        Kinds = [ cyclicKind ]
+                        IsActive = true
+                        ExtendedProperties = [] } ]
+                  Sequences = [] }
+            let suppCdc = CdcAwareness.create (Set.ofList [ cyclicKind.SsKey ]) Map.empty
+            let suppProfile = { Profile.empty with CdcAwareness = suppCdc }
+
+            // StaticSeedsEmitter.emit on the cyclic catalog — the
+            // self-FK on nullable ParentId puts the kind in a 1-node
+            // SCC; cycle resolver defers ParentId; Phase-2 UPDATE
+            // fires. Surfaces `emit.staticSeeds.phase2Row` and
+            // `emit.scriptDom.build.update`.
+            match StaticSeedsEmitter.emit suppCatalog suppProfile with
+            | Ok _ -> ()
+            | Error e -> failwithf "supplementary StaticSeedsEmitter.emit: %A" e
+
+            // StaticPopulationEmitter render with IDENTITY PK
+            // — fires `emit.scriptDom.build.setIdentityInsert` (the
+            // SET IDENTITY_INSERT ON/OFF brackets around InsertRow).
+            let _ = StaticPopulationEmitter.statements suppCatalog |> Render.toText
+
+            // MigrationDependenciesEmitter with non-empty context on
+            // the cyclic kind — fires `emit.migrationDeps.phase2Row`
+            // (Phase-2 UPDATE for cycle-participating migration row).
+            let migCtx : MigrationDependencyContext =
+                { Rows =
+                    [ { KindKey = cyclicKind.SsKey
+                        Identifier = mkSuppKey ["Cyclic"; "MigRow"; "1"]
+                        Values =
+                            Map.ofList
+                                [ mkSuppName "Id",       "1"
+                                  mkSuppName "ParentId", "1"
+                                  mkSuppName "Label",    "mig-self" ] } ] }
+            match MigrationDependenciesEmitter.emit suppCatalog suppProfile migCtx with
+            | Ok _ -> ()
+            | Error e -> failwithf "supplementary MigrationDependenciesEmitter.emit: %A" e
+
+            // Synthetic RowsetBundle with ColumnCheck row — fires
+            // `adapter.osm.parse.rowsetColumnCheck` via
+            // `CatalogReader.parse(SnapshotRowsets bundle)`. The
+            // bundle carries minimal valid contents (1 module + 1
+            // kind + 1 attribute) plus 1 ColumnCheck row so the
+            // per-columnCheck loop fires inside `parseKindRow`.
+            let suppEspaceId = 99
+            let suppEntityId = 999
+            let suppAttrId   = 9999
+            let modRow : CatalogReader.ModuleRow =
+                { EspaceId = suppEspaceId; EspaceName = "SuppEspace"
+                  IsSystemModule = false; IsActive = true
+                  EspaceKind = None; EspaceSsKey = None }
+            let kindRow : CatalogReader.KindRow =
+                { EntityId = suppEntityId; EspaceId = suppEspaceId
+                  EntityName = "SuppKind"; PhysicalTableName = "SUPP_KIND"
+                  DbSchema = "dbo"; IsStatic = false; IsExternal = false
+                  IsSystemEntity = false; IsActive = true
+                  EntitySsKey = None; PrimaryKeySsKey = None
+                  Description = None }
+            let attrRow : CatalogReader.AttributeRow =
+                { AttrId = suppAttrId; EntityId = suppEntityId
+                  AttrName = "Id"; PhysicalCol = "ID"
+                  DataType = "Integer"; IsMandatory = true
+                  IsIdentifier = true; IsAutoNumber = false
+                  Length = None; Precision = None; Scale = None
+                  AttrSsKey = None; IsActive = true
+                  Description = None; OriginalName = None
+                  ExternalDatabaseType = None
+                  IsComputed = false; ComputedDefinition = None
+                  DefaultConstraintName = None }
+            let checkRow : CatalogReader.ColumnCheckRow =
+                { AttrId = suppAttrId
+                  ConstraintName = "CHK_SUPP"
+                  Definition = "[ID] > 0"
+                  IsNotTrusted = false }
+            let suppBundle : CatalogReader.RowsetBundle =
+                { CatalogReader.RowsetBundle.empty with
+                    Modules      = [ modRow ]
+                    Kinds        = [ kindRow ]
+                    Attributes   = [ attrRow ]
+                    ColumnChecks = [ checkRow ] }
+            let! _ = CatalogReader.parse (CatalogReader.SnapshotRowsets suppBundle)
+            printfn "Supplementary fixtures: cyclic-kind + identity-PK + migration-cycle + rowset-columnCheck fired"
+        }
 
     /// Phase 11-12: compose schema + data emission and concatenate
     /// into a single deployable T-SQL stream. Fires all
@@ -718,6 +909,12 @@ module ComprehensiveCanaryTests =
             runPasses syntheticCatalog policy (buildProfile syntheticCatalog)
 
             runPasses catalogReadSide policy profile
+
+            // Supplementary fixtures — fire the 5 rare-path bench labels
+            // (Phase-2 UPDATE; IDENTITY PK; non-empty MigrationContext;
+            // rowset ColumnCheck). Pure in-memory; no DB deploy.
+            (runSupplementaryFixtures ()).GetAwaiter().GetResult()
+
             let emittedSql = composeEmission catalogReadSide policy profile
 
             // ---------------------------------------------------------
