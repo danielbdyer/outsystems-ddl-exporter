@@ -17405,3 +17405,101 @@ The probe carries DataIntent. The query observes deployed null cardinality; no o
 - `V2_PRODUCTION_CUTOVER §7.4` (B.3) — chapter operationalizes incrementally; slice 2 of 6 in the deep-probe sweep.
 - V1 source: `Pipeline/Profiling/NullCountQueryBuilder.BuildCommandText()` (query shape mirrored; V2's `COUNT_BIG` over V1's `SUM(int)` for BIGINT type-safety on the F# read side).
 - Consumer: `Projection.Core/Strategies/NullabilityRules.fs:249-274` — the silent-default this slice closes.
+
+---
+
+## 2026-05-19 (slice B.3.3.unique-candidates) — LiveProfiler composite-uniqueness probe + UniqueCandidate projection from AttributeRealities; UniqueIndexRules silent-defaults close on both single + composite paths; ProbeStatus helper primitives extracted at the 8-consumer threshold
+
+### Scope
+
+Slice 3 of chapter B.3. Closes the "composite-unique probes" deferral named at slice A.4.7'-prelude.live-profiler. Two structural outcomes:
+1. Per-Index composite-uniqueness probe lands as `LiveProfiler.captureCompositeUniqueCandidates`.
+2. Per-attribute single-column unique-candidate evidence flows from the existing `AttributeRealities.HasDuplicates` witness via a new attach-time projection — no extra SQL.
+
+The slice also co-ships a hygiene refactor: the duplicate "no-probe-ran ProbeStatus literal" inlined at 8 sites collapses to 3 named primitives (`ProbeStatus.noProbeRun`, `ProbeStatus.observed`, `ProbeStatus.ambiguous`).
+
+### What ships
+
+**`Profile.fs` extensions:**
+- `UniqueCandidateProfile.create : SsKey → UniqueCandidateProfile` smart constructor — sibling to `ForeignKeyReality.create`.
+- `CompositeUniqueCandidateProfile.create : SsKey → SsKey list → CompositeUniqueCandidateProfile` smart constructor.
+- Three new `ProbeStatus` module-level helpers extracted at the two-consumer threshold (8 consumer sites collapse to 1 primitive each):
+  - `ProbeStatus.noProbeRun : ProbeStatus` — minimum-evidence default used by Profile smart constructors.
+  - `ProbeStatus.observed (sampleSize: int64) : ProbeStatus` — adapter-side "probe ran" shape.
+  - `ProbeStatus.ambiguous : ProbeStatus` — "target shape unmappable" shape (composite-PK FK; composite probe with unresolved attributes).
+- All 4 Profile smart constructors (`AttributeReality.create`, `ForeignKeyReality.create`, `UniqueCandidateProfile.create`, `CompositeUniqueCandidateProfile.create`) refactored to use `ProbeStatus.noProbeRun`.
+
+**`LiveProfiler.fs` extensions:**
+- New `captureCompositeUniqueCandidates : SqlConnection → Catalog → Task<Result<CompositeUniqueCandidateProfile list>>` per-Index combined probe:
+  ```sql
+  SELECT (SELECT COUNT_BIG(*) FROM <table>) AS [RowCount],
+         CASE WHEN EXISTS (
+             SELECT 1 FROM <table>
+             WHERE <col1> IS NOT NULL AND <col2> IS NOT NULL AND ...
+             GROUP BY <cols>
+             HAVING COUNT_BIG(*) > 1
+         ) THEN 1 ELSE 0 END AS [HasDuplicate]
+  ```
+  One round-trip per non-unique multi-column Index. Resolves attribute SsKey → physical column via `Kind.tryFindAttribute`; returns `ProbeStatus.ambiguous` when any column fails to resolve (defensive; structurally impossible post `Catalog.create`).
+- New `projectUniqueCandidates : AttributeReality list → UniqueCandidateProfile list` attach-time projection — fills `Profile.UniqueCandidates` from the existing `AttributeRealities.HasDuplicates` witness; no extra SQL.
+- `LiveProfiler.attach` extended to compose all five axes (`AttributeRealities` + `ForeignKeys` + `Columns` + `UniqueCandidates` + `CompositeUniqueCandidates`).
+- All 4 LiveProfiler adapter sites that previously inlined the ProbeStatus literal refactored to use `ProbeStatus.observed` / `ProbeStatus.ambiguous` / `ProbeStatus.noProbeRun`.
+
+**5 new Docker-gated integration tests:** Products fixture with composite index on `(Name, Code)`; clean + duplicate seeds; UniqueCandidate projection on Items fixture; attach-composability with composite Index → 5-axis Profile.
+
+### Why now (the cutover-blocker shape)
+
+`Strategies/UniqueIndexRules.fs:155-188` reads:
+- Single-column path: `Profile.tryFindUnique attributeKey profile` → `Profile.UniqueCandidates` list.
+- Composite path: walks `profile.CompositeUniqueCandidates` matching by KindKey + AttributeKeys set.
+
+Before this slice: live-probe filled `AttributeRealities.HasDuplicates : bool` (per-attribute witness) but **not** `Profile.UniqueCandidates` (the axis the rule actually reads). And `Profile.CompositeUniqueCandidates` was filled only via V1-JSON. Result: every live-probe-driven UniqueIndexRules decision routed to `DoNotEnforce NoCandidateProfiled` regardless of deployed duplicate-evidence. V2 in V2-driver mode lost V1's unique-candidate discrimination on both single-column and composite paths.
+
+### Dual-axis question: HasDuplicate carried in two IR axes (discipline note)
+
+`Profile.AttributeRealities.HasDuplicates` and `Profile.UniqueCandidates.HasDuplicate` carry **semantically identical** single-column duplicate evidence. The dual carriage is V1-historical:
+- `AttributeReality` shipped at chapter 4.4 / live-profiler arc as a unified per-attribute deployed-target reflection record.
+- `UniqueCandidateProfile` shipped at chapter 1 (the earliest Profile axis) sourced from V1-JSON's per-candidate uniqueness output.
+
+This slice **does not** consolidate the two. The projection at attach time bridges them without committing to one. Future slices (chapter 4 close audit OR an explicit consolidation slice) can retire one axis when a third consumer surfaces demanding one over the other. Per "IR grows under evidence, not speculation" — the dual carriage costs O(n) memory; the consolidation costs an axis change touching every consumer. Deferred-with-trigger.
+
+### ProbeStatus primitive extraction (hygiene refactor co-shipped)
+
+The audit during slice 3 surfaced 8 inlined instances of the "no-probe-ran ProbeStatus literal" shape: `{ CapturedAtUtc = DateTimeOffset.MinValue; SampleSize = ...; Outcome = Succeeded | AmbiguousMapping }`. 4 sites in Profile smart constructors (one per Reality/Profile record); 4 sites in LiveProfiler adapter (probeReference; probeCompositeUnique; captureKindColumnProfiles; projectUniqueCandidates).
+
+The 2-consumer-threshold discipline (`DECISIONS 2026-05-13 — Emergent primitives earn their place through multi-consumer demand`) is met with 8 consumers. Three named helpers extracted:
+
+| Helper | Shape | Used by |
+|---|---|---|
+| `ProbeStatus.noProbeRun` | `{ MinValue; 0L; Succeeded }` | Profile smart constructors (default) + `projectUniqueCandidates` |
+| `ProbeStatus.observed (sampleSize)` | `{ MinValue; sampleSize; Succeeded }` | `probeReference` + `probeCompositeUnique` + `captureKindColumnProfiles` |
+| `ProbeStatus.ambiguous` | `{ MinValue; 0L; AmbiguousMapping }` | `probeReference` (composite-PK target) + `probeCompositeUnique` (unresolved attribute) |
+
+8 inlined record literals → 8 named references. If a future refactor changes `CapturedAtUtc` (e.g., adapter-supplied clock per A35), the change lands at 3 sites instead of 8.
+
+### Pillar 9 — DataIntent classification
+
+Both new probes carry DataIntent. The composite probe observes deployed group-cardinality; the projection from `AttributeRealities.HasDuplicates` is structural axis-renaming. Sampling policy stays operator intent per matrix row 90.
+
+### Discipline payoffs (3-slice chapter retrospective)
+
+- **Probe-shape composability across three scopes.** Slice 1: per-Reference; slice 2: per-Kind batched; slice 3: per-Index. All use `COUNT_BIG` aggregates + bracket-quoted aliases. Slices 4-5-6 inherit the pattern (per-FK orphan-sample; per-attribute distribution; sampling-policy refactor).
+- **Smart-constructor-FIRST as a pre-slice ritual.** Each slice's first commit lifts the missing `.create` smart constructor before any probe code touches the file.
+- **Audit during validation absorbs three fixes inline.** Slice 1: `SUM(int)` → `COUNT_BIG`; slice 2: FS0960 let-before-member; slice 3: `CAST AS bit` → Boolean reader mismatch (caught at first test run) AND the 8-site ProbeStatus duplication. None deferred.
+- **The sibling-wrapper discipline now spans 4 named captures** (`captureAttributeRealities` + `captureForeignKeyRealities` + `captureColumnProfiles` + `captureCompositeUniqueCandidates`) plus 1 named projection (`projectUniqueCandidates`).
+
+### Verification
+
+- 20/20 LiveProfilerIntegrationTests pass green (~1m10s warm).
+- 1679/1679 non-Docker baseline holds.
+- Solution build clean (0 warnings).
+
+### Cross-references
+
+- `CHAPTER_B_3_OPEN.md` — slice 3 of 6.
+- `V1_PARITY_MATRIX.md` Row 87 amendment — formal reclassification.
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.live-profiler)` — predecessor arc; named "composite-unique probes" as deferred.
+- `DECISIONS 2026-05-19 (slice B.3.1)` + `DECISIONS 2026-05-19 (slice B.3.2)` — sibling chapter-B.3 slices; same probe-shape disciplines apply.
+- `DECISIONS 2026-05-13 — Emergent primitives earn their place through multi-consumer demand` — the 2-consumer-threshold discipline that justifies the ProbeStatus extraction.
+- V1 source: `Pipeline/Profiling/UniqueCandidateQueryBuilder.BuildCommandText()` — composite-uniqueness probe shape mirrored.
+- Consumer: `Projection.Core/Strategies/UniqueIndexRules.fs:155-188` — the silent-default this slice closes.

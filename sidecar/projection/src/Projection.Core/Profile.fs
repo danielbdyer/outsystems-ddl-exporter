@@ -50,6 +50,40 @@ module ProbeStatus =
         | Succeeded -> true
         | _         -> false
 
+    /// No-probe-ran shape — minimum-evidence default for smart
+    /// constructors of Profile records. `CapturedAtUtc = MinValue`
+    /// because Core has no clock (per the F# feature surface
+    /// taxonomy — DateTime.Now is out of scope for Core); adapters
+    /// at the boundary supply real timestamps when probes actually
+    /// run. Extracted at chapter B.3 slice 3 cash-out per the
+    /// two-consumer-threshold discipline (8 inlined sites → 1
+    /// named primitive).
+    let noProbeRun : ProbeStatus =
+        { CapturedAtUtc = DateTimeOffset.MinValue
+          SampleSize    = 0L
+          Outcome       = Succeeded }
+
+    /// Probe-ran-successfully shape parameterized on observed sample
+    /// size. Used by LiveProfiler captures where `rowCount` is the
+    /// number of rows examined. Sibling to `noProbeRun`; canonical
+    /// for adapter sites where the probe completed.
+    let observed (sampleSize: int64) : ProbeStatus =
+        { CapturedAtUtc = DateTimeOffset.MinValue
+          SampleSize    = sampleSize
+          Outcome       = Succeeded }
+
+    /// Probe-couldn't-execute shape — used when the target shape is
+    /// structurally unmappable to the probe primitive (e.g.,
+    /// composite-PK FK in slice B.3.1's per-Reference probe; a
+    /// future composite-key extension cashes the deferral).
+    /// `UniqueIndexRules.evaluate` + `ForeignKeyRules.evaluate`
+    /// route AmbiguousMapping outcomes to `DoNotEnforce
+    /// EvidenceMissing` — the conservative-safe behavior.
+    let ambiguous : ProbeStatus =
+        { CapturedAtUtc = DateTimeOffset.MinValue
+          SampleSize    = 0L
+          Outcome       = AmbiguousMapping }
+
 
 /// Per-column data-quality observation. Keyed by the Attribute's `SsKey`
 /// so consumers look up by identity (A4), not by physical coordinate. The
@@ -166,6 +200,21 @@ type UniqueCandidateProfile = {
     ProbeStatus  : ProbeStatus
 }
 
+[<RequireQualifiedAccess>]
+module UniqueCandidateProfile =
+
+    /// Minimum-evidence default. `HasDuplicate = false` (no
+    /// duplicates observed); `ProbeStatus` defaults to the no-probe-
+    /// ran shape. Adapters override via record-update. Mirrors
+    /// `AttributeReality.create` + `ForeignKeyReality.create`
+    /// precedent per the chapter B.3 slice 3 cash-out.
+    let create (attributeKey: SsKey) : UniqueCandidateProfile =
+        {
+            AttributeKey = attributeKey
+            HasDuplicate = false
+            ProbeStatus  = ProbeStatus.noProbeRun
+        }
+
 
 /// Multi-column uniqueness probe. Keyed by the Kind's `SsKey` plus the
 /// participating Attribute `SsKey`s.
@@ -181,6 +230,26 @@ type CompositeUniqueCandidateProfile = {
     HasDuplicate  : bool
     ProbeStatus   : ProbeStatus
 }
+
+[<RequireQualifiedAccess>]
+module CompositeUniqueCandidateProfile =
+
+    /// Minimum-evidence default. `HasDuplicate = false` (no
+    /// duplicates observed); `ProbeStatus` defaults to the no-probe-
+    /// ran shape. Adapters override via record-update. Mirrors
+    /// `AttributeReality.create` + `ForeignKeyReality.create` +
+    /// `UniqueCandidateProfile.create` precedent per the chapter B.3
+    /// slice 3 cash-out.
+    let create
+        (kindKey: SsKey)
+        (attributeKeys: SsKey list)
+        : CompositeUniqueCandidateProfile =
+        {
+            KindKey       = kindKey
+            AttributeKeys = attributeKeys
+            HasDuplicate  = false
+            ProbeStatus   = ProbeStatus.noProbeRun
+        }
 
 
 /// Foreign-key referential-integrity observation. Keyed by the
@@ -216,10 +285,7 @@ module ForeignKeyReality =
             HasOrphan    = false
             OrphanCount  = 0L
             IsNoCheck    = false
-            ProbeStatus  =
-                { CapturedAtUtc = DateTimeOffset.MinValue
-                  SampleSize    = 0L
-                  Outcome       = Succeeded }
+            ProbeStatus  = ProbeStatus.noProbeRun
         }
 
 

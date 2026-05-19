@@ -46,17 +46,25 @@ open Projection.Core
 ///     `Reference`. Surfaces as `captureForeignKeyRealities`.
 ///     Single-column PK targets only; composite-PK targets defer
 ///     with named trigger (`Outcome = AmbiguousMapping`).
-///   - Slice B.3.2.column-null-counts (this slice, 2026-05-19):
-///     captures `Profile.Columns[ssKey].RowCount` + `NullCount` +
+///   - Slice B.3.2.column-null-counts (2026-05-19): captures
+///     `Profile.Columns[ssKey].RowCount` + `NullCount` +
 ///     `NullCountProbeStatus` per attribute. Surfaces as
 ///     `captureColumnProfiles`. Batched per-kind probe: one
 ///     `COUNT_BIG`-based query per non-static table yielding row
-///     count + per-attribute null count. V1's
-///     `NullCountQueryBuilder` shape mirrored.
-///   - Sibling-adapter composability holds: `attach` runs all three
-///     captures and composes into the input Profile.
+///     count + per-attribute null count.
+///   - Slice B.3.3.unique-candidates (this slice, 2026-05-19):
+///     populates `Profile.UniqueCandidates` (single-column) via
+///     attach-time projection from `AttributeRealities
+///     .HasDuplicates` (no extra SQL — projects the existing
+///     witness). Populates `Profile.CompositeUniqueCandidates` via
+///     `captureCompositeUniqueCandidates` — per-Index `GROUP BY …
+///     HAVING COUNT_BIG(*) > 1` probe with `IS NOT NULL` filter on
+///     every participating column. Mirrors V1's
+///     `UniqueCandidateQueryBuilder` shape.
+///   - Sibling-adapter composability holds: `attach` runs every
+///     capture and composes into the input Profile.
 ///
-/// Per the chapter B.3 open document — slices 1-2 of the
+/// Per the chapter B.3 open document — slices 1-3 of the
 /// LiveProfiler deep-probe sweep cashing out the deferrals named
 /// at slice A.4.7'-prelude.live-profiler.
 [<RequireQualifiedAccess>]
@@ -273,10 +281,7 @@ module LiveProfiler =
                 else
                     let rowCount =
                         if reader.IsDBNull(0) then 0L else reader.GetInt64(0)
-                    let probeStatus =
-                        { CapturedAtUtc = DateTimeOffset.MinValue
-                          SampleSize    = rowCount
-                          Outcome       = Succeeded }
+                    let probeStatus = ProbeStatus.observed rowCount
                     let profiles = System.Collections.Generic.List<ColumnProfile>()
                     let mutable idx = 0
                     for attr in kind.Attributes do
@@ -425,10 +430,7 @@ module LiveProfiler =
             let defaulted =
                 ForeignKeyReality.create reference.SsKey
             let ambiguous =
-                { defaulted with
-                    ProbeStatus =
-                        { defaulted.ProbeStatus with
-                            Outcome = AmbiguousMapping } }
+                { defaulted with ProbeStatus = ProbeStatus.ambiguous }
             match Kind.tryFindAttribute reference.SourceAttribute srcKind with
             | None -> return ambiguous
             | Some srcAttr ->
@@ -457,10 +459,7 @@ module LiveProfiler =
                                   HasOrphan    = orphanCount > 0L
                                   OrphanCount  = orphanCount
                                   IsNoCheck    = not reference.IsConstraintTrusted
-                                  ProbeStatus  =
-                                    { CapturedAtUtc = DateTimeOffset.MinValue
-                                      SampleSize    = rowCount
-                                      Outcome       = Succeeded } }
+                                  ProbeStatus  = ProbeStatus.observed rowCount }
                         else
                             // Empty source table — no orphans by vacuum.
                             return defaulted
@@ -501,6 +500,161 @@ module LiveProfiler =
     ///   - Sampling policy — full-table scans today. Same deferral
     ///     as `captureAttributeRealities`; trigger is operator-
     ///     reality latency concern at scale.
+    /// Per-Index composite-uniqueness probe SQL. The probe queries
+    /// whether ANY group of values across `cols` repeats — the
+    /// canonical V1 shape via `EXISTS (… GROUP BY <cols> HAVING
+    /// COUNT_BIG(*) > 1)`. Each column carries an `IS NOT NULL` gate
+    /// (SQL Server treats NULL values as group-distinct under
+    /// GROUP BY anyway; the explicit filter documents the V1 NULL-
+    /// semantics convention). Returns row count + boolean witness
+    /// via combined query (one round-trip per Index).
+    let private compositeUniqueProbeSql
+        (kind: Kind) (indexColumns: Attribute list)
+        : string =
+        let table =
+            System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; segments are typed via Identifier.EncodeIdentifier
+                ".",
+                [| encode kind.Physical.Schema; encode kind.Physical.Table |])
+        let cols =
+            indexColumns
+            |> List.map (fun a -> encode a.Column.ColumnName)
+        let notNullFilter =
+            cols
+            |> List.map (fun c -> System.String.Concat(c, " IS NOT NULL"))  // LINT-ALLOW: typed encode segments
+            |> String.concat " AND "  // LINT-ALLOW: SQL conjunction joiner over typed segments
+        let groupByCols =
+            cols |> String.concat ", "  // LINT-ALLOW: positional comma joiner over typed segments
+        // `CASE WHEN EXISTS THEN 1 ELSE 0 END` returns INT (not BIT).
+        // Bracket-quoted `[RowCount]` avoids the same reserved-keyword
+        // collision noted at slice B.3.1 (V1 token tables tokenize
+        // RowCount via @@ROWCOUNT).
+        System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; encode outputs are typed safe segments
+            "SELECT ",
+            "(SELECT COUNT_BIG(*) FROM ", table, ") AS [RowCount], ",
+            "CASE WHEN EXISTS (",
+            "SELECT 1 FROM ", table, " ",
+            "WHERE ", notNullFilter, " ",
+            "GROUP BY ", groupByCols, " ",
+            "HAVING COUNT_BIG(*) > 1",
+            ") THEN 1 ELSE 0 END AS [HasDuplicate]")
+
+    /// Determine whether an Index is a multi-column non-unique
+    /// candidate worth probing. `IsUnique = true` indexes are
+    /// already-unique by catalog declaration (no probe needed).
+    /// Single-column candidates land via the attach-time projection
+    /// from `AttributeReality.HasDuplicates`. Indexes with zero or
+    /// one columns aren't composite by definition.
+    let private isCompositeCandidate (index: Index) : bool =
+        not index.IsUnique && List.length index.Columns >= 2
+
+    /// Per-Index composite-uniqueness probe. Walks the index's
+    /// columns, resolves each via `Kind.tryFindAttribute`, runs the
+    /// combined probe. Returns a defaulted
+    /// `CompositeUniqueCandidateProfile` with `Outcome =
+    /// AmbiguousMapping` when any column fails to resolve.
+    let private probeCompositeUnique
+        (cnn: SqlConnection)
+        (kind: Kind)
+        (index: Index)
+        : Task<CompositeUniqueCandidateProfile> =
+        task {
+            use _ = Bench.scope "profile.live.probeCompositeUnique"
+            let attributeKeys =
+                index.Columns |> List.map (fun ic -> ic.Attribute)
+            let defaulted =
+                CompositeUniqueCandidateProfile.create kind.SsKey attributeKeys
+            let resolved =
+                index.Columns
+                |> List.map (fun ic -> Kind.tryFindAttribute ic.Attribute kind)
+            if resolved |> List.exists Option.isNone then
+                return { defaulted with ProbeStatus = ProbeStatus.ambiguous }
+            else
+                let attributes = resolved |> List.choose id
+                use cmd = cnn.CreateCommand()
+                cmd.CommandText <- compositeUniqueProbeSql kind attributes
+                cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
+                use! reader = cmd.ExecuteReaderAsync()
+                let! advanced = reader.ReadAsync()
+                if advanced then
+                    let rowCount =
+                        if reader.IsDBNull(0) then 0L else reader.GetInt64(0)
+                    let hasDuplicate = reader.GetInt32(1) = 1
+                    return
+                        { KindKey       = kind.SsKey
+                          AttributeKeys = attributeKeys
+                          HasDuplicate  = hasDuplicate
+                          ProbeStatus   = ProbeStatus.observed rowCount }
+                else
+                    return defaulted
+        }
+
+    /// Capture composite-uniqueness candidates per Index in the
+    /// catalog. Single-column candidates land via the attach-time
+    /// projection from `AttributeReality.HasDuplicates` (the
+    /// existing per-attribute HasDuplicates probe in
+    /// `captureAttributeRealities` already carries the witness).
+    /// Static kinds skipped (catalog-resident data).
+    ///
+    /// **What this slice covers (B.3.3):**
+    ///   - `CompositeUniqueCandidateProfile.HasDuplicate` per
+    ///     non-unique multi-column Index via `GROUP BY … HAVING
+    ///     COUNT_BIG(*) > 1` probe
+    ///   - `RowCount` from a sibling sub-select populates
+    ///     `ProbeStatus.SampleSize`
+    ///   - Single-column `UniqueCandidateProfile.HasDuplicate`
+    ///     projected at `attach` time from `AttributeReality
+    ///     .HasDuplicates` (no extra SQL)
+    let captureCompositeUniqueCandidates
+        (cnn: SqlConnection)
+        (catalog: Catalog)
+        : Task<Result<CompositeUniqueCandidateProfile list>> =
+        task {
+            use _ = Bench.scope "profile.live.captureCompositeUniqueCandidates"
+            try
+                let candidates =
+                    System.Collections.Generic.List<CompositeUniqueCandidateProfile>()
+                for m in catalog.Modules do
+                    for kind in m.Kinds do
+                        if not (isStaticKind kind) then
+                            for index in kind.Indexes do
+                                if isCompositeCandidate index then
+                                    let! profile = probeCompositeUnique cnn kind index
+                                    candidates.Add profile
+                return Result.success (List.ofSeq candidates)
+            with
+            | ex ->
+                return
+                    Result.failureOf
+                        (ValidationError.create
+                            "profile.live.captureCompositeUniqueCandidatesFailed"
+                            (System.String.Concat("LiveProfiler.captureCompositeUniqueCandidates failed: ", ex.Message)))
+        }
+
+    /// Project `AttributeReality.HasDuplicates` evidence into
+    /// `UniqueCandidateProfile` records. The two IR axes carry
+    /// semantically identical single-column-duplicate witnesses;
+    /// `UniqueIndexRules.evaluate` reads `UniqueCandidates`, not
+    /// `AttributeRealities`, so the projection fills the axis the
+    /// rule actually consults. PK attributes project as
+    /// `HasDuplicate = false` (`AttributeReality.create` default for
+    /// PKs since the live-probe skips them per
+    /// `captureAttributeRealities` logic).
+    ///
+    /// Per the chapter B.3 slice 3 design rationale (DECISIONS
+    /// 2026-05-19 (slice B.3.3)): no extra SQL probes; the
+    /// existing per-attribute HasDuplicates EXISTS+GROUP BY probe
+    /// already provides the witness, so the projection is the
+    /// canonical path. A future consolidation slice may retire one
+    /// of the two axes (the dual-axis carriage is V1-historical).
+    let private projectUniqueCandidates
+        (realities: AttributeReality list)
+        : UniqueCandidateProfile list =
+        realities
+        |> List.map (fun r ->
+            { AttributeKey = r.AttributeKey
+              HasDuplicate = r.HasDuplicates
+              ProbeStatus  = ProbeStatus.noProbeRun })
+
     let captureForeignKeyRealities
         (cnn: SqlConnection)
         (catalog: Catalog)
@@ -529,14 +683,20 @@ module LiveProfiler =
     /// `ProfileSnapshot.attach` / `ProfileStatistics.attach`: the
     /// adapter is composable, not authoritative — callers chain
     /// multiple sibling adapters per the rich-profiling agenda.
-    /// Runs `captureAttributeRealities`, `captureForeignKeyRealities`,
-    /// and `captureColumnProfiles` and composes all three into the
-    /// input `Profile`; pre-populated `AttributeRealities`,
-    /// `ForeignKeys`, and `Columns` are overwritten with the freshly-
-    /// probed values (the live-probe path is authoritative for the
-    /// axes it covers); other sibling axes (`UniqueCandidates`,
-    /// `Distributions`, …) are preserved untouched per the sibling-
-    /// adapter composability discipline.
+    /// Runs every LiveProfiler capture and composes the results into
+    /// the input `Profile`. Pre-populated axes are overwritten with
+    /// the freshly-probed values (the live-probe path is
+    /// authoritative for axes it covers); sibling axes filled by
+    /// other adapters (`Distributions`) are preserved untouched.
+    ///
+    /// Axes filled:
+    ///   - `AttributeRealities` (slice A.4.7'-prelude.live-profiler)
+    ///   - `ForeignKeys` (slice B.3.1.foreign-key-reality)
+    ///   - `Columns` (slice B.3.2.column-null-counts)
+    ///   - `UniqueCandidates` (slice B.3.3 — projected from
+    ///     `AttributeRealities.HasDuplicates`; no extra SQL)
+    ///   - `CompositeUniqueCandidates` (slice B.3.3 — per-Index
+    ///     `GROUP BY … HAVING COUNT_BIG(*) > 1` probe)
     let attach
         (cnn: SqlConnection)
         (catalog: Catalog)
@@ -555,10 +715,18 @@ module LiveProfiler =
                     match colCaptured with
                     | Error errors -> return Result.failure errors
                     | Ok columns ->
-                        return
-                            Result.success
-                                { profile with
-                                    AttributeRealities = realities
-                                    ForeignKeys        = fkRealities
-                                    Columns            = columns }
+                        let! compositeCaptured =
+                            captureCompositeUniqueCandidates cnn catalog
+                        match compositeCaptured with
+                        | Error errors -> return Result.failure errors
+                        | Ok composites ->
+                            return
+                                Result.success
+                                    { profile with
+                                        AttributeRealities         = realities
+                                        ForeignKeys                = fkRealities
+                                        Columns                    = columns
+                                        UniqueCandidates           =
+                                            projectUniqueCandidates realities
+                                        CompositeUniqueCandidates  = composites }
         }

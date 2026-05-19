@@ -197,6 +197,85 @@ module private LiveProfilerFixtures =
     let findFkReality (realities: ForeignKeyReality list) (key: SsKey) : ForeignKeyReality =
         realities |> List.find (fun r -> r.ReferenceKey = key)
 
+    // ---------------------------------------------------------------
+    // Composite-unique fixture for slice B.3.3 — `Products` table
+    // with (Name, Code) composite non-unique index. Two seeds
+    // exercise the HasDuplicate true/false branches.
+    // ---------------------------------------------------------------
+
+    let productsKindKey   = mkKey ["Products"]
+    let prodIdAttrKey     = mkKey ["Products"; "Id"]
+    let prodNameAttrKey   = mkKey ["Products"; "Name"]
+    let prodCodeAttrKey   = mkKey ["Products"; "Code"]
+    let prodCompositeIxKey = mkKey ["Products"; "IX_Name_Code"]
+
+    let productsKind : Kind =
+        let idAttr =
+            { Attribute.create prodIdAttrKey (mkName "Id") Integer with
+                Column       = { ColumnName = "ID"; IsNullable = false }
+                IsPrimaryKey = true
+                IsMandatory  = true }
+        let nameAttr =
+            { Attribute.create prodNameAttrKey (mkName "Name") Text with
+                Column      = { ColumnName = "NAME"; IsNullable = false }
+                Length      = Some 50
+                IsMandatory = true }
+        let codeAttr =
+            { Attribute.create prodCodeAttrKey (mkName "Code") Text with
+                Column      = { ColumnName = "CODE"; IsNullable = false }
+                Length      = Some 10
+                IsMandatory = true }
+        let compositeIx =
+            Index.ofKeyColumns prodCompositeIxKey (mkName "IX_Name_Code")
+                [ prodNameAttrKey; prodCodeAttrKey ]
+        { Kind.create productsKindKey (mkName "Products")
+            { Schema = "dbo"; Table = "OSUSR_LP_PRODUCTS"; Catalog = None }
+            [ idAttr; nameAttr; codeAttr ]
+          with References = []; Indexes = [ compositeIx ]; ColumnChecks = [] }
+
+    let productsCatalog : Catalog =
+        {
+            Modules =
+                [ { SsKey = mkKey ["Module"]
+                    Name  = mkName "TestModule"
+                    Kinds = [ productsKind ]
+                    IsActive = true
+                    ExtendedProperties = [] } ]
+            Sequences = []
+        }
+
+    let productsSchemaSql : string =
+        "CREATE TABLE [dbo].[OSUSR_LP_PRODUCTS] (" +
+        "[ID] INT NOT NULL PRIMARY KEY, " +
+        "[NAME] NVARCHAR(50) NOT NULL, " +
+        "[CODE] NVARCHAR(10) NOT NULL" +
+        ");"
+
+    /// 4 rows; every (Name, Code) pair is distinct → HasDuplicate=false.
+    let productsCleanSql : string =
+        "INSERT INTO [dbo].[OSUSR_LP_PRODUCTS] ([ID], [NAME], [CODE]) VALUES " +
+        "(1, N'alpha', N'A1'), " +
+        "(2, N'alpha', N'A2'), " +
+        "(3, N'beta',  N'B1'), " +
+        "(4, N'gamma', N'G1');"
+
+    /// 4 rows; rows 1 and 2 share (Name, Code) = ('alpha', 'A1')
+    /// → HasDuplicate=true; OrphanCount-equivalent group count > 1.
+    let productsDuplicateSql : string =
+        "INSERT INTO [dbo].[OSUSR_LP_PRODUCTS] ([ID], [NAME], [CODE]) VALUES " +
+        "(1, N'alpha', N'A1'), " +
+        "(2, N'alpha', N'A1'), " +
+        "(3, N'beta',  N'B1'), " +
+        "(4, N'gamma', N'G1');"
+
+    let findCompositeUnique (candidates: CompositeUniqueCandidateProfile list) (kindKey: SsKey) (attrs: SsKey list) : CompositeUniqueCandidateProfile =
+        let attrSet = Set.ofList attrs
+        candidates
+        |> List.find (fun c -> c.KindKey = kindKey && Set.ofList c.AttributeKeys = attrSet)
+
+    let findUnique (candidates: UniqueCandidateProfile list) (key: SsKey) : UniqueCandidateProfile =
+        candidates |> List.find (fun c -> c.AttributeKey = key)
+
 open LiveProfilerFixtures
 
 // ---------------------------------------------------------------------------
@@ -233,6 +312,14 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
             do! Deploy.executeBatch cnn schemaSql
             do! Deploy.executeBatch cnn seedSql
             let! result = LiveProfiler.captureColumnProfiles cnn itemsCatalog
+            return mustOk result
+        })
+
+    let runCompositeUniqueScenario (productsSeed: string) : Task<CompositeUniqueCandidateProfile list> =
+        fixture.WithEphemeralDatabase "LiveProfilerCompositeUnique" (fun cnn _ -> task {
+            do! Deploy.executeBatch cnn productsSchemaSql
+            do! Deploy.executeBatch cnn productsSeed
+            let! result = LiveProfiler.captureCompositeUniqueCandidates cnn productsCatalog
             return mustOk result
         })
 
@@ -308,10 +395,15 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
         // Columns populated by slice B.3.2 — one entry per attribute including PK.
         Assert.NotEmpty p.Columns
         Assert.Equal(3, List.length p.Columns)
+        // UniqueCandidates populated by slice B.3.3 — projected from
+        // AttributeRealities.HasDuplicates (per-attribute, including PK).
+        Assert.NotEmpty p.UniqueCandidates
+        Assert.Equal(3, List.length p.UniqueCandidates)
         // No References in the items catalog → ForeignKeys empty.
         Assert.Empty p.ForeignKeys
+        // No composite Indexes in itemsCatalog → CompositeUniqueCandidates empty.
+        Assert.Empty p.CompositeUniqueCandidates
         // Other sibling Profile axes (filled by other adapters) remain empty.
-        Assert.Empty p.UniqueCandidates
         Assert.Empty p.Distributions
 
     // ---------------------------------------------------------------
@@ -401,7 +493,7 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
         Assert.Equal(Succeeded, fk.ProbeStatus.Outcome)
 
     [<Fact>]
-    member _.``B.3.1.foreign-key-reality: attach composes AttributeRealities + ForeignKeys + Columns`` () =
+    member _.``B.3.1.foreign-key-reality: attach composes AttributeRealities + ForeignKeys + Columns + UniqueCandidates`` () =
         if not (skipIfNoDocker "live-profiler-fk-attach-compose") then () else
         let p =
             (fixture.WithEphemeralDatabase "LiveProfilerFkAttach" (fun cnn _ -> task {
@@ -412,17 +504,100 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
                 let! attachResult = LiveProfiler.attach cnn twoKindCatalog Profile.empty
                 return mustOk attachResult
             })).GetAwaiter().GetResult()
-        // Three axes populated — sibling-composability across captures.
+        // Four axes populated — sibling-composability across captures.
         Assert.NotEmpty p.AttributeRealities
         Assert.NotEmpty p.ForeignKeys
         Assert.NotEmpty p.Columns
+        Assert.NotEmpty p.UniqueCandidates
         // Single Reference in twoKindCatalog → exactly one FK reality.
         Assert.Equal(1, List.length p.ForeignKeys)
         let fk = findFkReality p.ForeignKeys childFkKey
         Assert.True(fk.HasOrphan)
         Assert.Equal(1L, fk.OrphanCount)
-        // Columns: 3 Items attrs + 2 Children attrs = 5.
+        // Columns + UniqueCandidates: 3 Items attrs + 2 Children attrs = 5.
         Assert.Equal(5, List.length p.Columns)
+        Assert.Equal(5, List.length p.UniqueCandidates)
+        // No composite Indexes declared in twoKindCatalog.
+        Assert.Empty p.CompositeUniqueCandidates
         // Other sibling Profile axes (filled by other adapters) remain empty.
-        Assert.Empty p.UniqueCandidates
         Assert.Empty p.Distributions
+
+    // ---------------------------------------------------------------
+    // Slice B.3.3.unique-candidates — captureCompositeUniqueCandidates
+    // probes multi-column non-unique indexes; UniqueCandidates
+    // projected from AttributeRealities.HasDuplicates at attach time.
+    // ---------------------------------------------------------------
+
+    [<Fact>]
+    member _.``B.3.3.unique-candidates: composite index on distinct (Name, Code) pairs produces HasDuplicate = false`` () =
+        if not (skipIfNoDocker "live-profiler-composite-unique-clean") then () else
+        let candidates =
+            (runCompositeUniqueScenario productsCleanSql).GetAwaiter().GetResult()
+        let candidate =
+            findCompositeUnique candidates productsKindKey
+                [ prodNameAttrKey; prodCodeAttrKey ]
+        Assert.False(candidate.HasDuplicate,
+                     sprintf "expected HasDuplicate = false on distinct composite values; got %A" candidate)
+        Assert.Equal(4L, candidate.ProbeStatus.SampleSize)
+        Assert.Equal(Succeeded, candidate.ProbeStatus.Outcome)
+
+    [<Fact>]
+    member _.``B.3.3.unique-candidates: composite index on duplicate (Name, Code) pair produces HasDuplicate = true`` () =
+        if not (skipIfNoDocker "live-profiler-composite-unique-duplicate") then () else
+        let candidates =
+            (runCompositeUniqueScenario productsDuplicateSql).GetAwaiter().GetResult()
+        let candidate =
+            findCompositeUnique candidates productsKindKey
+                [ prodNameAttrKey; prodCodeAttrKey ]
+        Assert.True(candidate.HasDuplicate,
+                    sprintf "expected HasDuplicate = true (two rows share alpha/A1); got %A" candidate)
+        Assert.Equal(4L, candidate.ProbeStatus.SampleSize)
+
+    [<Fact>]
+    member _.``B.3.3.unique-candidates: UniqueCandidates projects HasDuplicate from AttributeRealities.HasDuplicates (NAME has 'alpha' twice)`` () =
+        if not (skipIfNoDocker "live-profiler-unique-projection-name") then () else
+        let p =
+            (fixture.WithEphemeralDatabase "LiveProfilerUniqueProjection" (fun cnn _ -> task {
+                do! Deploy.executeBatch cnn schemaSql
+                do! Deploy.executeBatch cnn seedSql
+                let! attachResult = LiveProfiler.attach cnn itemsCatalog Profile.empty
+                return mustOk attachResult
+            })).GetAwaiter().GetResult()
+        let nameCandidate = findUnique p.UniqueCandidates nameAttrKey
+        Assert.True(nameCandidate.HasDuplicate,
+                    sprintf "expected HasDuplicate = true on NAME (two 'alpha' rows); got %A" nameCandidate)
+
+    [<Fact>]
+    member _.``B.3.3.unique-candidates: UniqueCandidates projects HasDuplicate = false on CODE (all distinct)`` () =
+        if not (skipIfNoDocker "live-profiler-unique-projection-code") then () else
+        let p =
+            (fixture.WithEphemeralDatabase "LiveProfilerUniqueProjectionCode" (fun cnn _ -> task {
+                do! Deploy.executeBatch cnn schemaSql
+                do! Deploy.executeBatch cnn seedSql
+                let! attachResult = LiveProfiler.attach cnn itemsCatalog Profile.empty
+                return mustOk attachResult
+            })).GetAwaiter().GetResult()
+        let codeCandidate = findUnique p.UniqueCandidates codeAttrKey
+        Assert.False(codeCandidate.HasDuplicate,
+                     sprintf "expected HasDuplicate = false on CODE (all distinct); got %A" codeCandidate)
+
+    [<Fact>]
+    member _.``B.3.3.unique-candidates: attach with composite index populates CompositeUniqueCandidates`` () =
+        if not (skipIfNoDocker "live-profiler-composite-attach-compose") then () else
+        let p =
+            (fixture.WithEphemeralDatabase "LiveProfilerCompositeAttach" (fun cnn _ -> task {
+                do! Deploy.executeBatch cnn productsSchemaSql
+                do! Deploy.executeBatch cnn productsDuplicateSql
+                let! attachResult = LiveProfiler.attach cnn productsCatalog Profile.empty
+                return mustOk attachResult
+            })).GetAwaiter().GetResult()
+        // Composite-uniqueness axis populated with one entry per
+        // non-unique multi-column Index.
+        Assert.NotEmpty p.CompositeUniqueCandidates
+        Assert.Equal(1, List.length p.CompositeUniqueCandidates)
+        let composite =
+            findCompositeUnique p.CompositeUniqueCandidates productsKindKey
+                [ prodNameAttrKey; prodCodeAttrKey ]
+        Assert.True(composite.HasDuplicate)
+        // Per-attribute UniqueCandidates also populated via projection.
+        Assert.Equal(3, List.length p.UniqueCandidates)
