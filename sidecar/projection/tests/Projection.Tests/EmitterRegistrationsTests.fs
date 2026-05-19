@@ -47,6 +47,10 @@ let ``Slice 5.13.emit-features-registry: SsdtDdlEmitter.registeredMetadata enume
             "alterIndexDisable"
             "indexIgnoreDuplicateKey"
             "indexDataCompression"
+            // Added by slice A.4.7'-prelude.row56-dataspace (LR7 closure):
+            // distinct V1-emission axis (DataSpace placement via ScriptDom's
+            // FileGroupOrPartitionScheme) earns its own Site per pillar 9.
+            "indexDataSpace"
             "setExtendedProperty"
             "topologicalOrder"
         ]
@@ -283,6 +287,79 @@ let ``Slice 5.13.sibling-emitter-registry-static-population: joint registry (SSD
         @ RegisteredTransforms.all
     match TransformRegistry.create joint with
     | Ok entries -> Assert.True (List.length entries >= 20)  // 12 Core + 4 data + 4 sibling emitters (incl. SSDT)
+    | Error es ->
+        let codes = es |> List.map (fun e -> e.Code) |> String.concat ", "
+        Assert.Fail(sprintf "Expected joint registry to validate; got errors: %s" codes)
+
+// ---------------------------------------------------------------------------
+// Slice A.4.7'-prelude.dacpac-registry — `DacpacEmitter.registeredMetadata`
+// witnesses. Closes the last sibling-Π registry gap. The emitter
+// signature is `Catalog → Result<byte[]>` (dev-tooling DACPAC
+// realization; pre-scope §6.8); per A18 amended, Catalog only.
+// T1 binary amendment: content-equality via DacFx round-trip (not
+// byte-equality); Sites' Rationale prose names the constraint.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Slice A.4.7'-prelude.dacpac-registry: DacpacEmitter.registeredMetadata is at the Emitter stage`` () =
+    let rt = DacpacEmitter.registeredMetadata
+    Assert.Equal("dacpacEmitter", rt.Name)
+    Assert.Equal(Schema, rt.Domain)
+    Assert.Equal(Emitter, rt.StageBinding)
+    Assert.Equal(Active, rt.Status)
+
+[<Fact>]
+let ``Slice A.4.7'-prelude.dacpac-registry: DacpacEmitter.registeredMetadata enumerates every emission feature`` () =
+    let rt = DacpacEmitter.registeredMetadata
+    let siteNames = rt.Sites |> List.map (fun s -> s.SiteName) |> Set.ofList
+    let expected =
+        Set.ofList [
+            "schemaStatementFilter"
+            "statementIngestion"
+            "packageMetadata"
+            "packageBuild"
+            "emit"
+        ]
+    Assert.Equal<Set<string>>(expected, siteNames)
+
+[<Fact>]
+let ``Slice A.4.7'-prelude.dacpac-registry: every DacpacEmitter site classifies as DataIntent (A18 amended: Catalog only)`` () =
+    let rt = DacpacEmitter.registeredMetadata
+    for site in rt.Sites do
+        Assert.Equal(DataIntent, site.Classification)
+
+[<Fact>]
+let ``Slice A.4.7'-prelude.dacpac-registry: every DacpacEmitter site carries non-empty Rationale (pillar 9 harvest discipline)`` () =
+    let rt = DacpacEmitter.registeredMetadata
+    for site in rt.Sites do
+        Assert.False (System.String.IsNullOrWhiteSpace site.Rationale)
+
+[<Fact>]
+let ``Slice A.4.7'-prelude.dacpac-registry: DacpacEmitter.registeredMetadata validates through TransformRegistry.create`` () =
+    match TransformRegistry.create [ DacpacEmitter.registeredMetadata ] with
+    | Ok entries -> Assert.Equal(1, List.length entries)
+    | Error es ->
+        let codes = es |> List.map (fun e -> e.Code) |> String.concat ", "
+        Assert.Fail(sprintf "Expected emitter metadata to validate; got errors: %s" codes)
+
+[<Fact>]
+let ``Slice A.4.7'-prelude.dacpac-registry: joint registry (SSDT + DACPAC + Json + Distributions + StaticPopulation + four Data-axis siblings) validates`` () =
+    // Closes the last sibling-Π registry gap. DacpacEmitter is the
+    // dev-tooling .dacpac binary realization; sibling to SSDT (file
+    // bundle) + JSON (manifest) + Distributions (profile evidence) +
+    // StaticPopulation (typed Statement stream) + the four Data-axis
+    // emitters. After this slice: 10 emitter registrations across
+    // 4 stage bindings.
+    let joint =
+        [ SsdtDdlEmitter.registeredMetadata
+          DacpacEmitter.registeredMetadata
+          JsonEmitter.registeredMetadata
+          DistributionsEmitter.registeredMetadata
+          StaticPopulationEmitter.registeredMetadata ]
+        @ RegisteredDataTransforms.all
+        @ RegisteredTransforms.all
+    match TransformRegistry.create joint with
+    | Ok entries -> Assert.True (List.length entries >= 21)  // 12 Core + 4 data + 5 sibling emitters (incl. SSDT + DACPAC)
     | Error es ->
         let codes = es |> List.map (fun e -> e.Code) |> String.concat ", "
         Assert.Fail(sprintf "Expected joint registry to validate; got errors: %s" codes)

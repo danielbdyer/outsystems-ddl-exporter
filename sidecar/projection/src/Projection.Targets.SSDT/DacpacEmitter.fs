@@ -146,3 +146,37 @@ module DacpacEmitter =
             dacFxFailure
                 "emitter.dacpac.failed"
                 (String.Concat("DacFx emission failed: ", ex.Message))
+
+    // -----------------------------------------------------------------------
+    // Slice A.4.7'-prelude.dacpac-registry — `registeredMetadata`
+    // entry for the DacpacEmitter sibling-Π realization. Closes the
+    // last sibling-Π registry gap (every other Π emitter shipped
+    // `registeredMetadata` during slice 5.13.sibling-emitter-registry-*
+    // / 5.13.data-emission-registry; DacpacEmitter was the lone
+    // holdout).
+    //
+    // **Classification.** All Sites carry `DataIntent`. The emitter
+    // signature is `Catalog → Result<byte[]>` (per A18 amended:
+    // Catalog only; no Profile, no Policy). DacFx model construction +
+    // serialization are V2-controlled boundary translations into a
+    // Microsoft typed library; no operator policy enters at any site.
+    //
+    // **T1 amendment.** Per the file header: binary emitters carry
+    // a content-equality form of T1 (DacFx round-trip equality on
+    // model objects), not byte-equality, because DacFx embeds wall-
+    // clock timestamps in `Origin.xml`. The Sites prose names this
+    // explicitly so consumers don't expect byte-determinism.
+    // -----------------------------------------------------------------------
+
+    let registeredMetadata : RegisteredTransformMetadata =
+        RegisteredTransformMetadata.emitter "dacpacEmitter" Schema
+            [ TransformSite.dataIntent "schemaStatementFilter"
+                "Filter the Π statement stream (`SsdtDdlEmitter.statements`) to DDL-only via closed-DU predicate `isSchemaStatement` — admits CreateTable / CreateIndex / SetExtendedProperty / AlterTableNoCheckConstraint / AlterIndexDisable; rejects InsertRow / SetIdentityInsert / Comment / Blank (DacFx's Public Model API accepts schema objects, not row data). Pure DataIntent — the filter is structural; no Policy enters."
+              TransformSite.dataIntent "statementIngestion"
+                "Per-statement `TSqlModel.AddObjects` via `ScriptDomBuild.buildStatement` → `ScriptDomGenerate.generateOne` rendered script. Per-statement (not multi-statement-batch) avoids DacFx's `GO`-separator grammar coupling; each statement enters the DacFx model as a single typed object. Statement-text is byte-deterministic via Sql160ScriptGenerator's pinned options."
+              TransformSite.dataIntent "packageMetadata"
+                "DacFx `PackageMetadata` (Name = `ProjectionCatalog`, Description = dev-tooling brief, Version = `1.0.0.0`). Per pre-scope §6.8: no wall-clock embedding in emitter-controlled fields. Constants today; per-Catalog derivation (Name = catalog-derived, Version = snapshot hash) lands when a consumer demands it. DataIntent — V2-controlled defaults, no operator opinion."
+              TransformSite.dataIntent "packageBuild"
+                "`DacPackageExtensions.BuildPackage(stream, model, metadata)` serializes the TSqlModel to `.dacpac` bytes via `MemoryStream` (no file system I/O in Core/Targets; DacFx's internal zip plumbing confined to the in-memory stream). The output is a Microsoft-canonical `.dacpac` consumable by `sqlpackage.exe`, Visual Studio Publish DAC Package, or `DacServices.Deploy`."
+              TransformSite.dataIntent "emit"
+                "Π port realization — `Catalog → Result<byte[]>`. Sibling-Π to `SsdtDdlEmitter.emitSlices` (directory bundle for production deploy) + `JsonEmitter.emit` (JSON manifest for downstream consumers). T1 binary amendment: content-equality via DacFx round-trip (two emit calls produce non-byte-identical streams due to Origin.xml wall-clock embedding; the algebraic claim holds at the model level per DacpacEmitterTests' content-determinism test)." ]

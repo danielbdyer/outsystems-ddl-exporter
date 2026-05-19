@@ -51,6 +51,7 @@ module RegisteredAllTransforms =
     let all : RegisteredTransformMetadata list =
         [ CatalogReader.registeredMetadata
           SsdtDdlEmitter.registeredMetadata
+          DacpacEmitter.registeredMetadata
           JsonEmitter.registeredMetadata
           DistributionsEmitter.registeredMetadata
           StaticPopulationEmitter.registeredMetadata ]

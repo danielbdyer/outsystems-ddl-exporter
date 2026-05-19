@@ -15237,6 +15237,142 @@ that don't require closure.
 
 ---
 
+## 2026-05-19 (slice A.4.7'-prelude.dacpac-registry) — Last sibling-Π TransformRegistry gap closed: DacpacEmitter.registeredMetadata
+
+### Scope
+
+User-directed slice C continuation. The original slice-C proposal
+("DACPAC emitter, ~1200-1800 LOC, opens DACPAC as a sibling Π")
+turned out mostly-shipped — chapter 3.x slice α (148 LOC; DacFx
+integration + Π stream filter + round-trip tests + content-equality
+T1 amendment) already adopted DacFx as the canonical .dacpac
+serializer.
+
+The remaining gap: `DacpacEmitter` had no `registeredMetadata`,
+making it the lone sibling-Π emitter holdout from the
+2026-05-18 sibling-emitter-registry sweep. Per the user's prior
+"work smarter not harder" + "TransformRegistry-worthy vs core/vanilla"
+guidance, the slice closes the registry gap rather than re-treading
+the DacFx-adoption work.
+
+### What ships
+
+**`DacpacEmitter.registeredMetadata` with 5 classified Sites:**
+
+- `schemaStatementFilter` — DataIntent: closed-DU predicate
+  filtering the Π statement stream to DDL only (CreateTable /
+  CreateIndex / SetExtendedProperty / AlterTableNoCheckConstraint /
+  AlterIndexDisable admitted; row data + comments rejected per
+  DacFx's Public Model API contract).
+- `statementIngestion` — DataIntent: per-statement
+  `TSqlModel.AddObjects` via ScriptDom-rendered script. Per-statement
+  (not GO-batched) avoids DacFx's batch-separator grammar coupling.
+- `packageMetadata` — DataIntent: DacFx `PackageMetadata` (Name /
+  Description / Version) constants per pre-scope §6.8 (no
+  wall-clock embedding in V2-controlled fields).
+- `packageBuild` — DataIntent: `DacPackageExtensions.BuildPackage`
+  serializes TSqlModel → byte stream via in-memory MemoryStream
+  (DacFx's internal zip plumbing confined; no file I/O in
+  Core/Targets per F#-pure-core posture).
+- `emit` — DataIntent: Π port realization `Catalog → Result<byte[]>`.
+  T1 binary amendment named in the Rationale prose (DacFx embeds
+  wall-clock in Origin.xml; content-equality via round-trip is the
+  load-bearing T1 form).
+
+All sites carry DataIntent per A18 amended (emitter consumes Catalog
+only; no Profile, no Policy).
+
+**Pipeline-level registry assembly extended.**
+`RegisteredAllTransforms.all` (the Pipeline-level unified surface
+shipped at slice A.4.7'-prelude+pipeline-registry) gains
+DacpacEmitter in the sibling-emitter prepend chain — 10 emitter/
+adapter registrations total (was 9; the +1 is DacpacEmitter).
+
+**Tests: 6 new in `EmitterRegistrationsTests.fs`** (mirrors the
+JsonEmitter / DistributionsEmitter / StaticPopulationEmitter pattern
+established at the 2026-05-18 sweep arc). Plus 1 amendment to the
+existing SsdtDdlEmitter site-enumeration test for `indexDataSpace`
+(added by slice B per matrix row 56 closure but not reflected in
+this enumeration test until now).
+
+### Operating-discipline payoff
+
+**Sibling chorus closure.** After this slice, **every sibling-Π
+emitter V2 ships carries `registeredMetadata`** — no holdouts. The
+structural-evidence layer's TransformRegistry concern reaches every
+emission site V2 emits. Per pillar 9's cross-cutting concern
+commitment (Lineage / Diagnostics / Bench / TransformRegistry all
+plug into every stage), the registry layer is now complete.
+
+**"Work smarter not harder" applied.** The naive reading of "slice C
+DACPAC emitter" suggested ~1200-1800 LOC of new work. Actual scope
+on opening: ~30 LOC of `registeredMetadata` declaration + 6 mirror
+tests + 1 existing-test amendment + matrix/DECISIONS prose. The
+heavy lifting (DacFx adoption, content-equality T1, round-trip
+testing) was already shipped at chapter 3.x slice α — what this
+slice closes is the structural registration gap.
+
+**"TransformRegistry worthy vs core/vanilla" applied correctly.**
+DacpacEmitter's 5 Sites are TransformRegistry-worthy by the
+discipline: each names a distinct emission-axis transformation
+(filter / ingestion / metadata / serialization / port realization)
+with its own ScriptDom or DacFx surface. None duplicate sibling
+emitter Sites (the filter shape is DACPAC-specific; the DacFx
+calls are DACPAC-specific; the port shape `Catalog → byte[]` is
+DACPAC-specific).
+
+### Coverage (6 new tests)
+
+`EmitterRegistrationsTests.fs`:
+- Stage / Name / Domain / Status assertions
+- Site name enumeration matches the 5 expected names exactly
+- Every Site classifies as DataIntent (A18 amended sanity)
+- Every Site Rationale is non-empty (pillar 9 harvest discipline)
+- TransformRegistry.create validates the single-entry registry
+- Joint registry (SSDT + DACPAC + Json + Distributions +
+  StaticPopulation + four Data-axis siblings + Core) validates
+  with ≥21 entries
+
+Plus 1 amendment to the existing SsdtDdlEmitter site-enumeration
+test (slice B added `indexDataSpace` Site; the enumeration test
+needs the new name added to the expected set).
+
+### Deferred (after this slice; no new triggers)
+
+The DacpacEmitter's existing deferrals (per chapter 3.x slice α
+prose) remain:
+- Per-Catalog package-name derivation (today: constant
+  `ProjectionCatalog`). Trigger: a consumer demands DACPAC-name
+  reflecting the source-system identity.
+- Per-Catalog version derivation (today: constant `1.0.0.0`).
+  Trigger: cutover-windowed DACPAC versioning needs snapshot-hash
+  derivation.
+- Schema-diff CLI verb (matrix row 41 — `osm compare` verb
+  consuming SSDT projects + DACPAC files via the DiffSource
+  closed-DU). Trigger: operator workflow demands ad-hoc schema-diff
+  outside the canary's specific scope.
+
+These are not refreshed by this slice — they remain the same
+trigger conditions named at chapter 3.x slice α.
+
+### Cross-references
+
+- `CLAUDE.md` Active deferrals — text-builder-as-first-instinct
+  discipline named "chapter 3.x DacpacEmitter MUST adopt DacFx"
+  (satisfied at chapter 3.x slice α); this slice retroactively
+  brings the emitter into the registry chorus per pillar 9
+- `DECISIONS 2026-05-11 — Chapter 3.x DacpacEmitter open` (the
+  DacFx-adoption scoping)
+- `DECISIONS 2026-05-15 (late) — Pillar 9` (the harvest-dichotomy
+  discipline; all DacpacEmitter sites classify as DataIntent)
+- `DECISIONS 2026-05-18 (slice 5.13.sibling-emitter-registry-*)` —
+  the sibling-emitter-registry sweep arc this slice completes
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude+pipeline-registry)`
+  — the Pipeline-level unified registry that gains the DACPAC
+  entry here
+
+---
+
 ## 2026-05-19 (slice A.4.7'-prelude.row56-dataspace) — LR7 closure: DataSpace closed-DU + end-to-end wiring (V1 filegroup + partition-scheme → V2 Index.DataSpace → ScriptDom emission)
 
 ### Scope

@@ -1168,6 +1168,84 @@ Reference|Index|IndexColumn|IndexColumns)` remain in source.
 
 ---
 
+### DacpacEmitter registry — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.dacpac-registry closes the last sibling-Π TransformRegistry gap)
+
+**Original framing.** Per CLAUDE.md's Active deferrals + the
+text-builder-as-first-instinct discipline: "chapter 3.x DacpacEmitter
+MUST adopt `Microsoft.SqlServer.Dac` (DacFx)." The DacpacEmitter
+itself shipped at chapter 3.x slice α (148 LOC; DacFx integration +
+typed model + round-trip tests). Per the prior sibling-emitter-
+registry sweep arc (2026-05-18), every other sibling-Π emitter
+(SsdtDdlEmitter / JsonEmitter / DistributionsEmitter /
+StaticPopulationEmitter / StaticSeedsEmitter / MigrationDependencies
++ DataEmissionComposer / BootstrapEmitter) shipped `registeredMetadata`;
+DacpacEmitter was the lone holdout.
+
+**Closed by slice A.4.7'-prelude.dacpac-registry (2026-05-19):**
+
+`DacpacEmitter.registeredMetadata : RegisteredTransformMetadata`
+ships with **5 classified Sites** — every V1-irrelevant axis (V2's
+DACPAC is dev-tooling-only; no V1 counterpart) carrying substantive
+Rationale + DataIntent classification per A18 amended (emitter
+consumes Catalog only):
+
+| Site | Classification | Rationale shape |
+|---|---|---|
+| `schemaStatementFilter` | DataIntent | Closed-DU predicate filtering Π stream to DDL only (admits CreateTable / CreateIndex / SetExtendedProperty / AlterTableNoCheckConstraint / AlterIndexDisable; rejects InsertRow / SetIdentityInsert / Comment / Blank). |
+| `statementIngestion` | DataIntent | Per-statement `TSqlModel.AddObjects` via ScriptDom-rendered script. Per-statement (not GO-batched) avoids DacFx's batch-separator grammar coupling. |
+| `packageMetadata` | DataIntent | DacFx `PackageMetadata` (Name / Description / Version constants per pre-scope §6.8: no wall-clock embedding in V2-controlled fields). |
+| `packageBuild` | DataIntent | `DacPackageExtensions.BuildPackage(stream, model, metadata)` serializes TSqlModel → `.dacpac` bytes via in-memory MemoryStream (DacFx's internal zip plumbing confined to the stream; no file I/O in Core/Targets). |
+| `emit` | DataIntent | Π port realization — `Catalog → Result<byte[]>`. T1 binary amendment named: content-equality via DacFx round-trip (Origin.xml wall-clock prevents byte-equality; the algebraic claim holds at the model level). |
+
+**Pipeline-level registry assembly extended.** `Projection.Pipeline
+.RegisteredAllTransforms.all` (slice A.4.7'-prelude+pipeline-registry,
+2026-05-19) gained `DacpacEmitter.registeredMetadata` in the
+sibling-emitter prepend chain; the unified registry now covers
+**10 emitter / adapter registrations** (was 9):
+
+- Adapter (1): `CatalogReader` (OSSYS)
+- Emitter (6): `SsdtDdlEmitter`, **`DacpacEmitter`** (new),
+  `JsonEmitter`, `DistributionsEmitter`, `StaticPopulationEmitter`,
+  `StaticSeedsEmitter` + `MigrationDependenciesEmitter` +
+  `BootstrapEmitter` (3 in `RegisteredDataTransforms.all`)
+- Pipeline (1): `DataEmissionComposer`
+- Pass / OrderingPolicy (12): `RegisteredTransforms.all` (Core)
+
+**Coverage tests (6 new in `EmitterRegistrationsTests.fs`):**
+- DacpacEmitter.registeredMetadata is at the Emitter stage
+- enumerates every emission feature (5 Site names)
+- every Site classifies as DataIntent (A18 amended)
+- every Site carries non-empty Rationale (pillar 9 harvest discipline)
+- validates through TransformRegistry.create
+- joint registry (SSDT + DACPAC + Json + Distributions +
+  StaticPopulation + four Data-axis siblings) validates with ≥21
+  entries
+
+Plus an amendment to the existing site-enumeration test for
+SsdtDdlEmitter to include `indexDataSpace` (added in slice B per
+matrix row 56 closure).
+
+**Cross-references.**
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.dacpac-registry) —
+  DacpacEmitter registry: last sibling-Π TransformRegistry gap closed`
+- `CLAUDE.md` Active deferrals — text-builder-as-first-instinct
+  discipline named "chapter 3.x DacpacEmitter MUST adopt DacFx";
+  the DacFx integration shipped at chapter 3.x slice α; this slice
+  retroactively brings the emitter into the registry chorus
+- `DECISIONS 2026-05-11 — Chapter 3.x DacpacEmitter open` (the
+  original DacFx-adoption scoping)
+- The prior sibling-emitter-registry-* arc (2026-05-18) — same
+  pattern; DacpacEmitter was a known holdout per the
+  helper-extraction amendment's table
+
+**Sibling chorus closure.** After this slice, **every sibling-Π
+emitter V2 ships carries `registeredMetadata`** — no holdouts.
+The structural-evidence layer (Lineage / Diagnostics / Bench /
+TransformRegistry) reaches every emission site V2 emits, per
+pillar 9's cross-cutting concern commitment.
+
+---
+
 ### Row 56 — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.row56-dataspace closes LR7 — filegroup + partition-scheme dataspace emission end-to-end)
 
 **Original framing.** Matrix row 56 named two paired residuals:
