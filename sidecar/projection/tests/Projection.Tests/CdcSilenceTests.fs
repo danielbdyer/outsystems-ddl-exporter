@@ -195,7 +195,7 @@ type CdcSilenceTests(fixture: EphemeralContainerFixture) =
     /// `secondSeedSql` (the property under test). Returns
     /// `(baselineCount, postCount)`.
     let runScenario (firstSeedSql: string) (secondSeedSql: string) (kind: Kind) (schemaSql: string) : Task<int * int> =
-        fixture.WithEphemeralDatabase "CdcSilence" (fun cnn -> task {
+        fixture.WithEphemeralDatabase "CdcSilence" (fun cnn _ -> task {
             do! Deploy.executeBatch cnn schemaSql
             do! Deploy.executeBatch cnn "EXEC sys.sp_cdc_enable_db;"
             let enableTableSql =

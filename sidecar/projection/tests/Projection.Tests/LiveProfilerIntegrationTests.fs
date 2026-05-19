@@ -127,7 +127,7 @@ open LiveProfilerFixtures
 type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
 
     let runCaptureScenario () : Task<AttributeReality list> =
-        fixture.WithEphemeralDatabase "LiveProfiler" (fun cnn -> task {
+        fixture.WithEphemeralDatabase "LiveProfiler" (fun cnn _ -> task {
             do! Deploy.executeBatch cnn schemaSql
             do! Deploy.executeBatch cnn seedSql
             let! captureResult = LiveProfiler.capture cnn itemsCatalog
@@ -194,7 +194,7 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
     member _.``A.4.7'-prelude.live-profiler: attach composes captured realities into Profile.AttributeRealities`` () =
         if not (skipIfNoDocker "live-profiler-attach-compose") then () else
         let p =
-            (fixture.WithEphemeralDatabase "LiveProfilerAttach" (fun cnn -> task {
+            (fixture.WithEphemeralDatabase "LiveProfilerAttach" (fun cnn _ -> task {
                 do! Deploy.executeBatch cnn schemaSql
                 do! Deploy.executeBatch cnn seedSql
                 let! attachResult = LiveProfiler.attach cnn itemsCatalog Profile.empty

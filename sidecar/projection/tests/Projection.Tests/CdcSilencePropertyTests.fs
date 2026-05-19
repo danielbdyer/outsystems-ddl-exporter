@@ -241,7 +241,7 @@ type CdcSilencePropertyTests(fixture: EphemeralContainerFixture) =
         (seedSql: string)
         (kind: Kind)
         : Task<int * int> =
-        fixture.WithEphemeralDatabase "CdcSilenceProp" (fun cnn -> task {
+        fixture.WithEphemeralDatabase "CdcSilenceProp" (fun cnn _ -> task {
             do! Deploy.executeBatch cnn schemaSql
             do! Deploy.executeBatch cnn "EXEC sys.sp_cdc_enable_db;"
             let enableSql =

@@ -302,7 +302,7 @@ type CdcSilenceCrossEmitterTests(fixture: EphemeralContainerFixture) =
             (tracked: CdcTrackedTable list)
             (schemaSql: string)
             : Task<int * int> =
-        fixture.WithEphemeralDatabase "CdcSilenceX" (fun cnn -> task {
+        fixture.WithEphemeralDatabase "CdcSilenceX" (fun cnn _ -> task {
             do! Deploy.executeBatch cnn schemaSql
             do! enableCdcOn cnn tracked
             do! Deploy.executeBatch cnn firstSeedSql

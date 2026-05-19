@@ -36,7 +36,7 @@ open Projection.Targets.SSDT
 ///     member _.``my test`` () =
 ///         task {
 ///             let! result =
-///                 fixture.WithEphemeralDatabase "MyPrefix" (fun cnn -> task {
+///                 fixture.WithEphemeralDatabase "MyPrefix" (fun cnn _ -> task {
 ///                     do! Deploy.executeBatch cnn schemaSql
 ///                     // ... per-test work ...
 ///                     return computed
@@ -73,13 +73,20 @@ type EphemeralContainerFixture() =
 
     /// Per-test ephemeral database lifecycle on the shared container.
     /// Creates `<prefix>_<guid>` via the master connection; opens a
-    /// connection on the per-DB connection string and passes it to
-    /// `body`; best-effort drops the database (with
-    /// `SINGLE_USER WITH ROLLBACK IMMEDIATE`) on exit even when the
-    /// body raises.
+    /// connection on the per-DB connection string and passes BOTH
+    /// the open connection AND the per-DB connection string to
+    /// `body` (the string lets callers open additional connections
+    /// for parallel dispatch via `Deploy.executeBatchParallel`).
+    /// Best-effort drops the database (with `SINGLE_USER WITH
+    /// ROLLBACK IMMEDIATE`) on exit even when the body raises.
+    ///
+    /// Per chapter-4.7 sibling-wrapper discipline: the body
+    /// receives the full information-bearing surface (connection +
+    /// connection string); callers that don't need the string
+    /// drop it via `_` in the lambda parameter list.
     member this.WithEphemeralDatabase
             (prefix: string)
-            (body: SqlConnection -> Task<'a>)
+            (body: SqlConnection -> string -> Task<'a>)
             : Task<'a> =
         task {
             let dbName =
@@ -99,7 +106,7 @@ type EphemeralContainerFixture() =
             try
                 use cnnPerDb = new SqlConnection(perDbConn)
                 do! cnnPerDb.OpenAsync()
-                return! body cnnPerDb
+                return! body cnnPerDb perDbConn
             finally
                 try
                     use cnnDrop = new SqlConnection(masterConn)

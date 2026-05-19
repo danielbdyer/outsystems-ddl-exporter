@@ -141,3 +141,57 @@ module TopologicalOrder =
     /// emitters with strict referential-integrity requirements.
     let isComplete (t: TopologicalOrder) : bool =
         List.isEmpty t.MissingEdges
+
+    /// Kahn-style topological **levels** — outer list ordered by
+    /// dependency depth; inner list contains kinds at that level
+    /// sorted by `SsKey` for deterministic emission. Level 0 holds
+    /// kinds with no FK dependencies; level N holds kinds whose
+    /// deepest dependency sits at level N-1.
+    ///
+    /// **Parallel-safety invariant:** kinds at the same level have
+    /// NO directed FK edge between them (in either direction). The
+    /// realization layer (`Deploy.executeBatchParallel`) consumes
+    /// per-level groups and dispatches within-level segments in
+    /// parallel without violating FK constraints. Slice
+    /// A.4.7'-prelude.perf-sweep-6 (composer-levels) cash-out.
+    ///
+    /// **Cycle handling:** members of `t.Cycles` participate at the
+    /// level computed by the post-resolution `t.Order` traversal —
+    /// edges broken by the cycle resolver are honored as "absent"
+    /// for level computation (their FK dependency is restored by
+    /// Phase-2 UPDATE in the data-emission triumvirate). The
+    /// cycle-broken edge does NOT prevent the cycle-participating
+    /// kind from receiving a finite level.
+    ///
+    /// **Algorithm:** single fold over `t.Order` (which is already
+    /// topologically valid post-cycle-resolution). For each kind k,
+    /// look up its FK parents in `t.Edges` (each `(child, parent)`
+    /// pair contributes one parent entry); take `1 + max(known
+    /// parent levels)`. Parents not yet seen — broken edges where
+    /// the cycle-resolved arrival of the cycle-participating kind
+    /// precedes its broken parent in `t.Order` — contribute 0.
+    let levels (t: TopologicalOrder) : SsKey list list =
+        let parentsOf =
+            t.Edges
+            |> List.groupBy fst
+            |> List.map (fun (child, edges) -> child, edges |> List.map snd)
+            |> Map.ofList
+        let computeLevel (levelMap: Map<SsKey, int>) (k: SsKey) : int =
+            match Map.tryFind k parentsOf with
+            | None -> 0
+            | Some parents ->
+                let knownLevels =
+                    parents |> List.choose (fun p -> Map.tryFind p levelMap)
+                if List.isEmpty knownLevels then 0
+                else (List.max knownLevels) + 1
+        let finalMap =
+            t.Order
+            |> List.fold
+                (fun acc k -> Map.add k (computeLevel acc k) acc)
+                Map.empty
+        finalMap
+        |> Map.toList
+        |> List.groupBy snd
+        |> List.sortBy fst
+        |> List.map (fun (_, pairs) ->
+            pairs |> List.map fst |> List.sort)

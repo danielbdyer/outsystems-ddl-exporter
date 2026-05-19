@@ -540,6 +540,54 @@ module ComprehensiveCanaryTests =
             combined.AppendLine dataText |> ignore
         combined.ToString()
 
+    /// **Leveled deployment plan** for parallel target-deploy
+    /// (slice A.4.7'-prelude.perf-sweep-6.composer-levels).
+    /// Schema deploys sequentially (FK ordering); each Phase-1 /
+    /// Phase-2 level deploys in parallel via
+    /// `Deploy.executeBatchParallel` (within-level kinds are FK-
+    /// independent per `TopologicalOrder.levels`'s invariant).
+    type private LeveledDeploymentPlan = {
+        Schema       : string
+        Phase1Levels : string list
+        Phase2Levels : string list
+    }
+
+    /// Sibling of `composeEmission` for leveled deployment. Fires the
+    /// same `emit.scriptDom.build.*` labels (the underlying ScriptDom
+    /// build path is unchanged); routes data through
+    /// `DataEmissionComposer.composeRenderedLeveled` so the canary's
+    /// target-deploy can dispatch each level in parallel via
+    /// `Deploy.executeBatchParallel`.
+    let private composeEmissionLeveled
+            (catalog: Catalog)
+            (policy: Policy)
+            (profile: Profile)
+            : LeveledDeploymentPlan =
+        let schemaStatements = SsdtDdlEmitter.statements catalog |> List.ofSeq
+        let schemaText = Render.toText (schemaStatements |> List.toSeq)
+        printfn "SSDT schema emission: %d statements, %d bytes" schemaStatements.Length schemaText.Length
+        let dataResult =
+            DataEmissionComposer.composeRenderedLeveled
+                policy
+                catalog
+                profile
+                MigrationDependencyContext.empty
+                UserRemapContext.empty
+        match dataResult with
+        | Ok leveled ->
+            printfn
+                "Data emission leveled: %d Phase-1 levels, %d Phase-2 levels (%d + %d bytes)"
+                leveled.Phase1Levels.Length
+                leveled.Phase2Levels.Length
+                (leveled.Phase1Levels |> List.sumBy (fun s -> s.Length))
+                (leveled.Phase2Levels |> List.sumBy (fun s -> s.Length))
+            { Schema       = schemaText
+              Phase1Levels = leveled.Phase1Levels
+              Phase2Levels = leveled.Phase2Levels }
+        | Error e ->
+            printfn "DataEmissionComposer.composeRenderedLeveled error: %A" e
+            { Schema = schemaText; Phase1Levels = []; Phase2Levels = [] }
+
     /// Project the source-side OSSYS extraction back into a Catalog
     /// AND read the source DDL via ReadSide. Returns both for the
     /// shared-axis assertion.
@@ -816,7 +864,7 @@ module ComprehensiveCanaryTests =
             // OSSYS adapter and via ReadSide.
             // ---------------------------------------------------------
             let result =
-                fixture.WithEphemeralDatabase "CompCanarySource" (fun cnn -> task {
+                fixture.WithEphemeralDatabase "CompCanarySource" (fun cnn _ -> task {
                     // OSSYS schema + metadata
                     do! Deploy.executeBatch cnn ossysSeed
                     // User-table DDL (per FixtureGenerator)
@@ -877,7 +925,7 @@ module ComprehensiveCanaryTests =
             // setExtendedProperty / etc. labels that the readside-
             // derived catalog lacks).
             let edgeCaseCatalogResult =
-                fixture.WithEphemeralDatabase "CompCanaryEdge" (fun cnn -> task {
+                fixture.WithEphemeralDatabase "CompCanaryEdge" (fun cnn _ -> task {
                     let edgeSeed = MetadataExtractionSql.readEdgeCaseSeed ()
                     do! Deploy.executeBatch cnn edgeSeed
                     let! snapshotResult =
@@ -933,15 +981,41 @@ module ComprehensiveCanaryTests =
             // rowset ColumnCheck). Pure in-memory; no DB deploy.
             (runSupplementaryFixtures ()).GetAwaiter().GetResult()
 
-            let emittedSql = composeEmission catalogReadSide policy profile
+            // Leveled plan for parallel target-deploy (slice
+            // A.4.7'-prelude.perf-sweep-6.composer-levels). Schema
+            // sequential; each Phase-1 / Phase-2 level dispatched in
+            // parallel within itself via `Deploy.executeBatchParallel`.
+            // Fires all the same emit.scriptDom.build.* labels that
+            // the prior `composeEmission` did (the underlying
+            // dispatchSiblings + unionSiblings path is shared) plus
+            // the new compose.data.composeRenderedLeveled label.
+            let leveledPlan =
+                composeEmissionLeveled catalogReadSide policy profile
 
             // ---------------------------------------------------------
-            // TARGET phase: deploy emitted SQL to a fresh DB and read
-            // it back. Assertion B asserts empty PhysicalSchema diff.
+            // TARGET phase: deploy emitted SQL to a fresh DB via the
+            // leveled plan, then read it back. Assertion B asserts
+            // empty PhysicalSchema diff.
+            //
+            // Parallelism = 4: matches the conservative 4-way
+            // ceiling validated by the microbenchmark in
+            // ExecuteBatchParallelTests; SQL Server's connection-pool
+            // overhead and per-segment contention favor the lower
+            // end of the parallel range at canary scale.
             // ---------------------------------------------------------
+            let targetParallelism = 4
             let targetCatalogResult =
-                fixture.WithEphemeralDatabase "CompCanaryTarget" (fun cnn -> task {
-                    do! Deploy.executeBatch cnn emittedSql
+                fixture.WithEphemeralDatabase "CompCanaryTarget" (fun cnn perDbConn -> task {
+                    // Phase A: schema (sequential — FK-ordered DDL).
+                    do! Deploy.executeBatch cnn leveledPlan.Schema
+                    // Phase B: data Phase-1 levels (parallel within level).
+                    for levelText in leveledPlan.Phase1Levels do
+                        if levelText.Length > 0 then
+                            do! Deploy.executeBatchParallel perDbConn levelText targetParallelism
+                    // Phase C: data Phase-2 levels (parallel within level).
+                    for levelText in leveledPlan.Phase2Levels do
+                        if levelText.Length > 0 then
+                            do! Deploy.executeBatchParallel perDbConn levelText targetParallelism
                     return! ReadSide.read cnn
                 })
                 |> fun t -> t.GetAwaiter().GetResult()
