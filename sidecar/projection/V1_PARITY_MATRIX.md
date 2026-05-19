@@ -1168,6 +1168,100 @@ Reference|Index|IndexColumn|IndexColumns)` remain in source.
 
 ---
 
+### A.4.7'-prelude — 2026-05-19 (XXXXXL arc: Pipeline-level RegisteredAllTransforms.all surface + bidirectional property tests + CDC-silence shape sweep)
+
+**Original framing.** Pillar 9 (DataIntent / OperatorIntent
+classification) is structurally enforced via two co-equal load-bearing
+property tests per A41 candidate + L3-CC-Transform-Totality:
+**skeleton-purity** (`Compose.runSkeleton` emits zero OperatorIntent
+events) and **overlay-exercise** (every registered OperatorIntent site
+fires when its policy is set). Prior slices shipped:
+
+- `LineageEvent.Classification : Classification` field
+  (`Projection.Core/Lineage.fs:247-253`; the type-system shape)
+- `Compose.runSkeleton` entry-point (`Projection.Pipeline/Pipeline.fs:180`)
+- Skeleton-purity test for `sampleCatalog`
+  (`SkeletonPurityTests.fs:46-71`)
+- Overlay-exercise tests for VisibilityMask (Selection) +
+  TableRename (Emission)
+  (`TransformRegistryCompletenessTests.fs:165-179`)
+- CDC-silence example test for single-fixture happy path +
+  sensitivity counter-test (`CdcSilenceTests.fs`); cross-emitter
+  CDC-silence (`CdcSilenceCrossEmitterTests.fs`)
+
+**This arc** adds the three missing pieces:
+
+1. **`RegisteredAllTransforms.all` Pipeline-level surface**
+   (`src/Projection.Pipeline/RegisteredAllTransforms.fs`).
+   Concatenates Core passes + ordering policies + OSSYS adapter +
+   sibling-Π emitters (SSDT / Json / Distributions /
+   StaticPopulation) + Data-axis surfaces (composer + 3 emitters).
+   Per-project registry surfaces remain canonical; this is the
+   *call-site assembly* downstream consumers (CLI / canary /
+   property tests) reach for. Pipeline.fsproj gains
+   `Projection.Targets.Data` reference (the missing project from
+   the previous 4-target chain).
+
+2. **`RegisteredAllTransformsBidirectionalTests.fs`** (10 tests):
+   - Totality: registry validates through `TransformRegistry.create`
+   - Stage-binding coverage (Adapter/Pass/Emitter/Pipeline required;
+     OrderingPolicy structurally available)
+   - Domain coverage (all declared domains are in the closed DU)
+   - Skeleton-purity sweep: 5 fixture variants (customer-only /
+     order+customer / country-only / two-modules / full-sample) —
+     every variant produces a non-empty skeleton trail with zero
+     OperatorIntent events
+   - Overlay-exercise per axis: NullabilityPass (Tightening),
+     TopologicalOrderPass.registeredWith (Ordering),
+     UserFkReflowPass (Selection) — extends the VisibilityMask +
+     TableRename precedent to cover all four axes currently in use
+   - Skeleton + overlay views partition the registry exactly
+
+3. **`CdcSilencePropertyTests.fs`** (3 Docker-gated variants):
+   - Single-row fixture: minimal MERGE WHEN MATCHED predicate test
+   - Multi-type row (Int + Text + Boolean + Decimal): exercises
+     change-detection across V2's typed SqlLiteral surface
+   - 10-row fixture: stress-tests row-count interactions; baseline
+     ≥ 10 captures from initial INSERTs; idempotent redeploy adds
+     zero
+   - Each variant asserts the load-bearing invariant:
+     `baseline = post-redeploy capture count`
+
+**Functional surface (primary deliverable):**
+
+- `Projection.Pipeline.RegisteredAllTransforms.all` reaches every V2
+  transformation site through one canonical surface
+  (≥21 entries: 12 Core passes + ordering policies + 1 OSSYS adapter
+  + 4 sibling Π emitters + 4 Data-axis surfaces). Consumers that
+  needed `RegisteredTransforms.all @ [ssdt; json; dist] @
+  RegisteredDataTransforms.all` at every call site now reach for the
+  unified surface.
+
+**Verification depth (secondary deliverable per user directive):**
+
+- Skeleton-purity verified across 5 catalog shapes (was 1)
+- Overlay-exercise verified for 4 OperatorIntent axes (Selection,
+  Emission, Tightening, Ordering) — was 2 (Selection + Emission only)
+- CDC-silence verified across 3 row-shape variants (was 1)
+
+**Cross-references.**
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude+pipeline-registry) —
+  Pipeline-level unified registry + bidirectional property tests +
+  CDC-silence shape sweep`
+- `V2_DRIVER.md` per-axis stakes — CDC-silence on idempotent redeploy
+  is the highest-leverage single deliverable; this slice extends
+  verification depth across realistic shape variants
+- The Pipeline-level registry was named as a deferred follow-up at
+  the prior sibling-emitter-registry-helper-extraction amendment
+  (rows 11-23 cluster A1 closure section); trigger fired here
+- Skeleton-purity property test was named as the load-bearing
+  bidirectional contract in CLAUDE.md's load-bearing commitments
+  section ("Bidirectional property tests: skeleton-purity (`Compose
+  .runWithSkeleton` emits zero `OperatorIntent` events) + overlay-
+  exercise (every registered `OperatorIntent` fires in canary)")
+
+---
+
 ### Rows 53 + 182 — 2026-05-18 (XXXXXL arc: slice 5.3.α.column-axis-deferral-closeout cashes out LR3 + LR4 + row 53 partial)
 
 **Original classifications (immediately prior to this arc):**

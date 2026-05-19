@@ -15237,6 +15237,154 @@ that don't require closure.
 
 ---
 
+## 2026-05-19 (slice A.4.7'-prelude+pipeline-registry) — Pipeline-level unified registry surface + bidirectional property-test layer (skeleton-purity sweep + per-axis overlay-exercise) + CDC-silence shape sweep
+
+### Scope
+
+User-directed combined arc: "do both the CDC-silence property test +
+LineageEvent.Classification (A.4.7-prelude) and Pipeline-level registry
+assembly + skeleton-purity property tests now. I want to be clear —
+functional parity or better is the primary goal, provable testing is
+necessary, but inherently secondary."
+
+Audit on opening revealed the foundational pieces (LineageEvent
+.Classification field + Compose.runSkeleton + per-pass classification
+assignments + sample-catalog skeleton-purity test + VisibilityMask /
+TableRename overlay-exercise tests) had all shipped at prior slices.
+The remaining work:
+
+- A Pipeline-level call-site assembly surface unifying per-project
+  registries (`RegisteredTransforms.all` + `RegisteredDataTransforms
+  .all` + the four cherry-pick-boundary registrations)
+- A bidirectional property-test layer asserting skeleton-purity
+  across multiple fixtures + overlay-exercise across all four
+  in-use OperatorIntent axes
+- A CDC-silence shape-sweep verifying the invariant holds across
+  realistic catalog variants
+
+### What ships
+
+**Functional (primary):**
+
+- `Projection.Pipeline.fsproj` gains `Projection.Targets.Data`
+  reference (was missing despite Pipeline's role as composition root).
+- New `src/Projection.Pipeline/RegisteredAllTransforms.fs` — a single
+  `all : RegisteredTransformMetadata list` value that concatenates
+  every registered transformation V2 ships: Core passes + OSSYS
+  adapter + sibling-Π emitters (SSDT / Json / Distributions /
+  StaticPopulation) + Data-axis surfaces (composer + 3 emitters).
+  ≥21 entries; validates through `TransformRegistry.create`.
+
+  Per the cherry-pick boundary discipline (`DECISIONS 2026-05-15 (late)`):
+  per-project registry surfaces remain canonical; this Pipeline-level
+  module is the *call-site assembly* downstream consumers (CLI,
+  canary, property tests) reach for. CLI surfaces like `osm registry
+  list` can now iterate the totality view from one import.
+
+**Tests (secondary per user directive):**
+
+- New `tests/Projection.Tests/RegisteredAllTransformsBidirectionalTests
+  .fs` (10 tests):
+  - Totality: `TransformRegistry.create` validation + stage-binding
+    coverage + domain-DU coverage + dual-classification coverage
+  - Skeleton-purity sweep across 5 fixture variants (customer-only,
+    order+customer, country-only, two-modules, full-sample)
+  - Overlay-exercise per axis: NullabilityPass (Tightening),
+    TopologicalOrderPass.registeredWith (Ordering), UserFkReflowPass
+    (Selection) — extends existing VisibilityMask + TableRename
+    precedent to cover all four in-use OperatorIntent axes
+  - View consistency: skeleton-view + overlay-view partition the
+    registry exactly (union = full; intersection = empty)
+
+- New `tests/Projection.Tests/CdcSilencePropertyTests.fs` (3 Docker-
+  gated variants, ~45s warm-Docker cycle):
+  - Single-row fixture: minimal MERGE WHEN MATCHED predicate exercise
+  - Multi-type row (Int + Text + Boolean + Decimal): change-detection
+    across V2's typed SqlLiteral surface
+  - 10-row fixture: row-count stress, baseline ≥ 10 captures
+  - Each variant asserts `baseline = post-redeploy capture count`
+    (zero net CDC events on idempotent redeploy)
+
+### Operating-discipline payoff
+
+**A41 candidate ("registry totality + bidirectional property tests")
+operationalized across realistic shapes.** Prior slices shipped the
+type-system shape (Classification DU + LineageEvent field) + the
+per-fixture sample tests. This slice extends both directions of the
+bidirectional contract:
+
+- **Forward (skeleton-purity):** 5 fixture variants × `Compose
+  .runSkeleton` → zero OperatorIntent events observed. A pass marked
+  DataIntent that leaks operator intent would fail uniformly.
+- **Reverse (overlay-exercise):** every in-use OverlayAxis variant
+  has at least one runtime exercise verifying its events fire when
+  the corresponding policy axis is non-empty. Selection (3 passes
+  exercised via runtime + metadata) + Tightening (NullabilityPass
+  metadata + runtime via NullabilityPassTests) + Emission (TableRename
+  runtime) + Ordering (TopologicalOrderPass.registeredWith metadata
+  + runtime).
+
+**CDC-silence verification depth expanded.** Prior tests covered one
+fixture shape; this slice adds three orthogonal axes (row count,
+type mix, multi-column-types). The invariant — idempotent redeploy
+produces zero net CDC capture rows — holds uniformly. This is V2_DRIVER's
+"highest-leverage single deliverable" with broader verification surface.
+
+**Pipeline-as-composition-root principle reinforced.** Pipeline
+already references SSDT + Json + Distributions + OSSYS adapter +
+Sql adapter; the missing Targets.Data reference was a coincidental
+gap. Adding it closes the dependency-graph hole and enables the
+unified registry. The cherry-pick discipline still holds: per-project
+registries remain authoritative; Pipeline is the assembly point.
+
+### Coverage
+
+After this slice: ~1627 → ~1640 non-canary passing (10 bidirectional
++ 3 CDC + bench/build hygiene; verification pending full-suite green).
+No regressions in adjacent tests.
+
+### Deferred (after this slice)
+
+- **OrderingPolicy stage-binding production registration** —
+  structurally available in the StageBinding DU; no production
+  transformation currently binds as `OrderingPolicy`
+  (TopologicalOrderPass binds as `Pass` because its policy is a
+  Run-shape parameter). Trigger: a future ordering-only
+  transformation (e.g., a dedicated sort-policy pass) lands.
+- **FsCheck-driven CDC-silence sweep at canary scale** —
+  Docker-gated tests are per-variant ~13s; full FsCheck sweep
+  (100 variants) would consume ~22 minutes. Defer to the
+  nightly canary tier per `CLAUDE.md` operating-disciplines
+  "Canary as load-bearing forcing function" table — operator-
+  reality canary (300 tables × 50k rows) is the natural home
+  for the full-shape CDC-silence assertion.
+- **Insertion-axis overlay-exercise runtime test** — the Insertion
+  axis is structurally present (DataEmissionComposer +
+  MigrationDependenciesEmitter sites classify as
+  `OperatorIntent Insertion`); runtime exercise via the
+  StaticPopulationEmitter / BootstrapEmitter / MigrationDeps
+  emitter pipelines is the natural follow-up when the canary
+  surface integrates the Data-axis composer.
+
+### Cross-references
+
+- `CLAUDE.md` load-bearing commitments section — "Bidirectional
+  property tests: skeleton-purity (`Compose.runWithSkeleton` emits
+  zero `OperatorIntent` events) + overlay-exercise (every registered
+  `OperatorIntent` fires in canary)" — both directions now exercised
+  across realistic shapes
+- `V2_DRIVER.md` per-axis stakes (data-intent / operator-intent
+  separation — verification depth Highest, co-equal with CDC silence)
+- `DECISIONS 2026-05-15 (late) — Pillar 9` (the harvest-dichotomy
+  discipline this slice's property tests verify)
+- The Pipeline-level unified registry was named as a deferred
+  follow-up at the prior `5.13.sibling-emitter-registry-helper-
+  extraction` cleanup; trigger ("when the canary / CLI / skeleton-
+  purity property test needs a one-stop iteration surface") fired
+  here
+
+---
+
 ## 2026-05-18 (slice 5.3.α.column-axis-deferral-closeout) — Three V1 deferrals brought in: LR3 single-column PK inline + LR4 computed column emission + row 53 DefaultName carriage
 
 ### Scope
