@@ -400,6 +400,15 @@ module Deploy =
             Bench.recordSample "deploy.executeBatch.segments" (int64 segments.Length)
             for segment in segments do
                 use _ = Bench.scope "deploy.executeBatch.segment"
+                // Slice A.4.7'-prelude.perf-sweep-4 diagnostic: per-segment
+                // size sample so the bench rollup surfaces segment-size
+                // distribution. The dominant `deploy.executeBatch` cost
+                // (~83% of canary wall at production scale) is SQL Server
+                // wait time on per-segment ExecuteNonQueryAsync round-
+                // trips; surfacing P50/P95/P99 of segment size lets the
+                // perf-sweep judge whether parallel-segment dispatch or
+                // segment-shape reduction is the higher-leverage target.
+                Bench.recordSample "deploy.executeBatch.segment.bytes" (int64 segment.Length)
                 use cmd = cnn.CreateCommand()
                 cmd.CommandText <- segment
                 // Per session-34 — `0` disables the client-side command
