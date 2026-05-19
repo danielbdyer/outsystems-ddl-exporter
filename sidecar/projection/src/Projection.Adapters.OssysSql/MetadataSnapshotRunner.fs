@@ -914,9 +914,27 @@ module MetadataSnapshotRunner =
                     Description       = e.Description
                 } : CatalogReader.KindRow)
 
+        // Slice A.4.7'-prelude.row53-source-side — join
+        // `OssysColumnRealityRow` by AttrId so each AttributeRow
+        // surfaces V1's deployed-target reflection (IsComputed +
+        // ComputedDefinition + DefaultConstraintName). The 3-step
+        // JOIN pattern mirrors slice 5.13.fk-reality-join — Maps
+        // once at toBundle entry; walk per-attribute; defaults to
+        // empty fields when no ColumnReality row exists (attribute
+        // never reflected against deployed schema; rowset path's
+        // source-side reflection didn't fire).
+        let columnRealityByAttrId =
+            snapshot.ColumnReality
+            |> List.map (fun cr -> cr.AttrId, cr)
+            |> Map.ofList
+
         let attributes =
             snapshot.Attributes
             |> List.map (fun a ->
+                let realityIsComputed, realityComputedDef, realityDefaultName =
+                    match Map.tryFind a.AttrId columnRealityByAttrId with
+                    | Some cr -> cr.IsComputed, cr.ComputedDefinition, cr.DefaultConstraintName
+                    | None    -> false, None, None
                 {
                     AttrId               = a.AttrId
                     EntityId             = a.EntityId
@@ -934,6 +952,9 @@ module MetadataSnapshotRunner =
                     Description          = a.Description
                     OriginalName         = a.OriginalName
                     ExternalDatabaseType = a.ExternalDbType
+                    IsComputed            = realityIsComputed
+                    ComputedDefinition    = realityComputedDef
+                    DefaultConstraintName = realityDefaultName
                 } : CatalogReader.AttributeRow)
 
         // Slice 5.13.fk-reality-join — JOIN OssysReferenceRow with

@@ -211,6 +211,9 @@ let private mkAttrRow
         Description         = None
         OriginalName        = originalName
         ExternalDatabaseType = externalDbType
+        IsComputed           = false
+        ComputedDefinition   = None
+        DefaultConstraintName = None
     }
 
 [<Fact>]

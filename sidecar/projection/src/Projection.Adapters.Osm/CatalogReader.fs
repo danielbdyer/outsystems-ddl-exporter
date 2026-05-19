@@ -177,6 +177,27 @@ module CatalogReader =
             /// `None` for OS-native entities and when V1 omits the
             /// override.
             ExternalDatabaseType : string option
+            /// Slice A.4.7'-prelude.row53-source-side — V1
+            /// `#ColumnReality.IsComputed` (sys.columns.is_computed).
+            /// `true` when the column is a SQL Server computed column.
+            /// Pairs with `ComputedDefinition` to populate
+            /// `Attribute.Computed : ComputedColumnConfig option`.
+            IsComputed           : bool
+            /// Slice A.4.7'-prelude.row53-source-side — V1
+            /// `#ColumnReality.ComputedDefinition`
+            /// (sys.computed_columns.definition). The expression text
+            /// of a computed column (e.g., `([Base] * 2)`). `None`
+            /// when the column is not computed. Combined with
+            /// `IsComputed` to construct `ComputedColumnConfig`.
+            ComputedDefinition   : string option
+            /// Slice A.4.7'-prelude.row53-source-side — V1
+            /// `#ColumnReality.DefaultConstraintName`
+            /// (sys.default_constraints.name). V1's deployed-target
+            /// DEFAULT constraint identifier (e.g.,
+            /// `DF_Customer_CreatedAt`). `None` when no named DEFAULT
+            /// constraint exists. Threads to `Attribute.DefaultName`
+            /// for round-trip parity with V1 emission.
+            DefaultConstraintName : string option
         }
 
     /// V1 rowset 4 — `#RefResolved` resolved-reference rows; chapter
@@ -1571,13 +1592,45 @@ module CatalogReader =
                   IsIdentity   = row.IsAutoNumber
                   Description  = row.Description
                   IsActive     = row.IsActive
-                  // Chapter A.0' slices ε + ζ — rowset path does not
-                  // surface DEFAULT / Computed / attribute-level
-                  // ExtendedProperties today; positioned for future
-                  // rowset extension or DACPAC adapter.
+                  // Slice A.4.7'-prelude.row53-source-side: V1's
+                  // `#ColumnReality.DefaultDefinition` carries the
+                  // expression text (e.g., `((0))`, `(getdate())`).
+                  // Parens-stripping + literal-vs-expression
+                  // disambiguation deferred per matrix row 53's named
+                  // trigger ("expression-shaped defaults flow via
+                  // raw-string pass-through at the realization
+                  // boundary"). For now: rowset path leaves
+                  // DefaultValue = None; the JSON path's
+                  // `parseAttribute` populates from V1's `default`
+                  // field which V1 emits as the literal value.
                   DefaultValue = None
-                  DefaultName  = None
-                  Computed     = None
+                  // Slice A.4.7'-prelude.row53-source-side: V1
+                  // `#ColumnReality.DefaultConstraintName` (sys
+                  // .default_constraints.name) → V2 DefaultName for
+                  // round-trip parity with V1's `DF_<table>_<column>`
+                  // constraint identifier. `None` when no named
+                  // DEFAULT constraint exists at the deployed target.
+                  DefaultName  =
+                      row.DefaultConstraintName
+                      |> Option.bind (fun raw ->
+                          Name.create raw |> Result.toOption)
+                  // Slice A.4.7'-prelude.row53-source-side (LR4 cash-
+                  // out completion): V1 `#ColumnReality.IsComputed` +
+                  // `ComputedDefinition` (sys.computed_columns
+                  // .definition) → V2 ComputedColumnConfig. The
+                  // `IsPersisted` axis defaults to false because V1's
+                  // SQL doesn't surface `sys.computed_columns
+                  // .is_persisted`; persisted-detection is a follow-up
+                  // rowset extension when V2 emission demands the
+                  // PERSISTED keyword for round-trip.
+                  Computed     =
+                      if row.IsComputed then
+                          row.ComputedDefinition
+                          |> Option.bind (fun expr ->
+                              ComputedColumnConfig.create expr false
+                              |> Result.toOption)
+                      else
+                          None
                   ExtendedProperties = []
                   OriginalName = row.OriginalName
                   ExternalDatabaseType = row.ExternalDatabaseType }
@@ -2243,7 +2296,7 @@ module CatalogReader =
               TransformSite.dataIntent "jsonAggregateParsing"
                 "Assemble JSON-path IR records: parseAttribute / parseReference / parseIndex / parseTrigger / parseExtendedProperty / parseKind / parseModule / parseDocument / parseJsonString. Each parser threads V1 evidence into V2's typed records; the parsing is field-by-field translation with no operator overlay."
               TransformSite.dataIntent "rowsetAggregateParsing"
-                "Assemble rowset-path IR records: parseAttributeRow / parseReferenceRowFor / parseKindRow / parseModuleRow / parseRowsetBundle. Mirrors the JSON-path semantics for the rowset-source variant (chapter 3.2 slice 1 onward); same DataIntent translation discipline."
+                "Assemble rowset-path IR records: parseAttributeRow / parseReferenceRowFor / parseKindRow / parseModuleRow / parseRowsetBundle. Mirrors the JSON-path semantics for the rowset-source variant (chapter 3.2 slice 1 onward); same DataIntent translation discipline. Slice A.4.7'-prelude.row53-source-side extended the AttributeRow projection to surface V1 `#ColumnReality` reflection (IsComputed + ComputedDefinition + DefaultConstraintName) — V1 deployed-target evidence flows into `Attribute.Computed : ComputedColumnConfig option` + `Attribute.DefaultName : Name option` via `MetadataSnapshotRunner.toBundle`'s join."
               TransformSite.dataIntent "isActiveCarryThrough"
                 "Chapter A.0' slice β retroactive site. IsActive is carried through at Module / Kind / Attribute levels (not filtered at the adapter boundary; the session-21 filter was retired as a mis-placed OperatorIntent of Selection per DECISIONS 2026-05-16 (slice β) — the first worked example of pillar 9). The carriage itself is DataIntent evidence; a downstream Selection-axis pass that re-applies an inactive-records drop is deferred-with-trigger per IR-grows-under-evidence."
               TransformSite.dataIntent "tableIdCatalogRead"

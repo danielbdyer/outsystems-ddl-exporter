@@ -15237,6 +15237,132 @@ that don't require closure.
 
 ---
 
+## 2026-05-19 (slice A.4.7'-prelude.row53-source-side) — V1 #ColumnReality source-side population: Attribute.Computed + Attribute.DefaultName brought in end-to-end
+
+### Scope
+
+User-directed deferral closeout: "Let's do A then! Work smarter not
+harder. Continue to pay attention to that which is TransformRegistry
+worthy and which is core/vanilla."
+
+Slice 5.3.α.column-axis-deferral-closeout (2026-05-18) shipped
+`Attribute.DefaultName : Name option` + emitter wiring for LR4
+(computed columns) — both as carriage-only IR fields awaiting
+source-side population. The source-side data lives in V1's
+`#ColumnReality` rowset (matrix row 11), which slice
+5.13.ossys-rowsets-cluster (2026-05-18) shipped as `OssysColumnRealityRow`
+without an IR consumer.
+
+This slice wires the two ends together: `MetadataSnapshotRunner
+.toBundle` joins by AttrId and surfaces the V1 reflection fields into
+`CatalogReader.AttributeRow`; `parseAttributeRow` consumes them to
+populate `Attribute.Computed` + `Attribute.DefaultName`.
+
+### What ships
+
+**`Projection.Adapters.Osm.CatalogReader.AttributeRow` extended** with
+three fields per V1's `#ColumnReality` (carriage from the rowset path):
+
+- `IsComputed : bool` — V1's `sys.columns.is_computed`
+- `ComputedDefinition : string option` — V1's `sys.computed_columns.definition`
+- `DefaultConstraintName : string option` — V1's `sys.default_constraints.name`
+
+**`MetadataSnapshotRunner.toBundle` extended** with a per-attribute
+join via `Map<AttrId, OssysColumnRealityRow>` (3-step JOIN pattern
+mirroring slice 5.13.fk-reality-join). Attributes without a
+ColumnReality row (no deployed-target reflection captured) default
+to `IsComputed = false; ComputedDefinition = None;
+DefaultConstraintName = None` — preserves all existing test-fixture
+behavior.
+
+**`CatalogReader.parseAttributeRow` consumes the new fields:**
+- `Attribute.DefaultName = row.DefaultConstraintName |> Option.bind
+  (fun raw → Name.create raw |> Result.toOption)` — `Name.create`
+  invalid names degrade to `None` rather than failing the whole
+  attribute (defensive parsing for V1-source identifier shape drift)
+- `Attribute.Computed` — when `row.IsComputed = true`, attempt
+  `ComputedColumnConfig.create expr false` (IsPersisted = false
+  default since V1's #ColumnReality doesn't surface
+  sys.computed_columns.is_persisted); empty / blank expressions
+  degrade to `None` per `ComputedColumnConfig.create`'s validation
+
+**Test fixture migration:** 6 raw-record-literal test sites
+(OsmRowsetReaderTests + DescriptionLiftTests + IsActiveCarryThroughTests
++ OriginalNameAndExternalDbTypeLiftTests + OsmCatalogReaderDifferentialTests
++ NoSilentDropTests) updated to populate the three new fields with
+default values via sed sweep. The closed-DU expansion empirical-test
+discipline confirmed: field-missing errors lit up at literal-
+construction sites only; semantic-interpretation sites unaffected.
+
+### Operating-discipline payoff
+
+**Pillar 9 classification: pure DataIntent — no new TransformRegistry
+Sites.** V1 source → V2 IR translation is the canonical DataIntent
+projection shape. The existing `rowsetAggregateParsing` Site within
+`CatalogReader.registeredMetadata` already covers this kind of
+boundary translation; its Rationale prose amended to name the
+`#ColumnReality` join + the three new fields. Per user direction
+"continue to pay attention to that which is TransformRegistry
+worthy and which is core/vanilla" — this slice is core/vanilla.
+
+**"Work smarter not harder" applied:** the structural surfaces all
+existed (typed rowset row + IR fields). The slice is the wiring
+between them. ~150 LOC of meaningful change (adapter join + parser
+consumption + 6 fixture migrations) + 6 focused tests verifying
+the round-trip.
+
+### Coverage (6 new tests)
+
+`tests/Projection.Tests/ColumnRealitySourceSidePopulationTests.fs`:
+- 3 tests for the Computed axis (positive + negative + edge case)
+- 2 tests for the DefaultName axis (positive + negative)
+- 1 test verifying the `rowsetAggregateParsing` Site classification
+  remains DataIntent + the Rationale names the new fields
+
+### Deferred (after this slice; refreshed triggers)
+
+- **`DefaultDefinition` source-side population (the value, not the
+  name)** — V1's `#ColumnReality.DefaultDefinition` carries the
+  expression text with outer parens (e.g., `((0))`, `(getdate())`).
+  V2's `Attribute.DefaultValue : SqlLiteral option` is
+  typed-literal-only. Expression-shaped defaults (function calls,
+  computed expressions) need either a new `DefaultExpression : string
+  option` IR field OR an `ExpressionLit` SqlLiteral variant. Trigger:
+  a fixture surfaces with `getdate()` / `newid()` / `((0))` defaults
+  that V2 must round-trip.
+- **`IsPersisted` source-side detection** — V1's SQL doesn't query
+  `sys.computed_columns.is_persisted`. V2 defaults to `false`.
+  Trigger: V2 emission needs to round-trip PERSISTED keyword for
+  fidelity with V1's existing `is_persisted = 1` columns. Cash-out
+  shape: extend `#ColumnReality` SQL with `cc.is_persisted` lookup;
+  extend `OssysColumnRealityRow` + `mapColumnRealityRow`; thread
+  through `toBundle` + `parseAttributeRow`.
+- **JSON-path source-side population** — V1's JSON envelope already
+  carries `computedDefinition` (per `outsystems_metadata_rowsets.sql
+  :780`) + named-default JSON_QUERY (L782-787). The JSON-path
+  `parseAttribute` could populate from these fields; today only
+  the rowset-path is wired. Trigger: V2 consumer reads from
+  `osm_model.json` and needs the same source-side fidelity as
+  the rowset path provides.
+
+### Cross-references
+
+- V1 SQL source: `src/AdvancedSql/outsystems_metadata_rowsets.sql:375-407`
+  (`#ColumnReality` build); the join chain is `sys.columns c` →
+  `sys.computed_columns cc` (L403-404) + `sys.default_constraints
+  dc` (L405-406)
+- Matrix row 11 (`#ColumnReality` rowset) + row 53 (Attribute.Default
+  envelope) — both prior amendments named the deferred-with-trigger
+  fields this slice closes
+- `DECISIONS 2026-05-15 (late) — Pillar 9` — the classification
+  discipline this slice operationalizes (DataIntent within existing
+  Site; no new OperatorIntent overlay)
+- `DECISIONS 2026-05-18 (slice 5.3.α.column-axis-deferral-closeout)`
+  — the prior slice that named these source-side populations as
+  deferred follow-ups
+
+---
+
 ## 2026-05-19 (slice A.4.7'-prelude+pipeline-registry) — Pipeline-level unified registry surface + bidirectional property-test layer (skeleton-purity sweep + per-axis overlay-exercise) + CDC-silence shape sweep
 
 ### Scope
