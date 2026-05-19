@@ -746,6 +746,27 @@ module CatalogReader =
                     "unmappedDeleteRule"
                     (sprintf "reference_deleteRuleCode '%s' has no V2 ReferenceAction mapping yet." other))
 
+    /// Slice A.4.7'-prelude.row17-18-rowset-roundtrip — parse V1's
+    /// `#FkReality.update_referential_action_desc` / `delete_referential
+    /// _action_desc` (SQL Server vocabulary, distinct from
+    /// `parseDeleteRule`'s OutSystems vocabulary). SQL Server's
+    /// `sys.foreign_keys` columns emit `NO_ACTION` / `CASCADE` /
+    /// `SET_NULL` / `SET_DEFAULT` (underscored uppercase per
+    /// `*_referential_action_desc`). Returns `None` for unrecognized
+    /// vocabulary (defensive — V2 omits the ON UPDATE clause rather
+    /// than emitting an unsupported variant). `SET_DEFAULT` degrades
+    /// to `None` because V2's `ReferenceAction` DU doesn't model it
+    /// yet (lift trigger: a real-world FK with ON UPDATE SET DEFAULT
+    /// surfaces in fixture data).
+    let private parseSqlForeignKeyAction (code: string option) : ReferenceAction option =
+        match code with
+        | None                -> None
+        | Some "NO_ACTION"    -> Some NoAction
+        | Some "CASCADE"      -> Some Cascade
+        | Some "SET_NULL"     -> Some SetNull
+        | Some "SET_DEFAULT"  -> None
+        | Some _              -> None
+
     // -----------------------------------------------------------------------
     // Translation — V1 attribute → V2 Attribute.
     // -----------------------------------------------------------------------
@@ -1689,19 +1710,18 @@ module CatalogReader =
                 | None -> kindSsKey moduleName refRow.RefEntityName
             | None -> kindSsKey moduleName refRow.RefEntityName
         let onDelete   = parseDeleteRule refRow.DeleteRuleCode
-        // Slice 5.13.fk-reality-join — `OnUpdate` carries through the
-        // same `parseDeleteRule` shape (V1's referential-action vocabulary
-        // is uniform across DELETE / UPDATE). `None` propagates as the
-        // unstated default; parse failures degrade to `None` too (the
-        // rowset adapter never blocks reference construction on an
-        // unfamiliar update-action keyword — same posture as the
-        // delete-rule path).
-        let onUpdateRule =
-            refRow.OnUpdate
-            |> Option.bind (fun code ->
-                match parseDeleteRule (Some code) with
-                | Ok action -> Some action
-                | Error _   -> None)
+        // Slice A.4.7'-prelude.row17-18-rowset-roundtrip — `OnUpdate`
+        // carries SQL Server's `sys.foreign_keys.update_referential_action
+        // _desc` vocabulary (NO_ACTION / CASCADE / SET_NULL / SET_DEFAULT),
+        // not OutSystems' DeleteRuleCode vocabulary
+        // (Delete / Protect / Ignore / SetNull). The prior
+        // 5.13.fk-reality-join slice routed through `parseDeleteRule`
+        // which silently dropped every valid SQL Server value into the
+        // error branch (bug found 2026-05-19 via FkRealityRowsetRoundTripTests).
+        // `parseSqlForeignKeyAction` is the SQL-Server-vocabulary parser;
+        // unfamiliar values degrade to None per the rowset adapter's
+        // defensive-parsing posture.
+        let onUpdateRule = parseSqlForeignKeyAction refRow.OnUpdate
         match refKey, refName, srcAttrKey, tgtKindKey, onDelete with
         | Ok rKey, Ok rName, Ok srcKey, Ok tgtKey, Ok rule ->
             // Slice 5.13.fk-features-emit — smart-constructor migration.
@@ -2310,7 +2330,7 @@ module CatalogReader =
             [ TransformSite.dataIntent "identitySynthesis"
                 "Synthesize V2 SsKeys from V1 names: moduleSsKey / kindSsKey / attributeSsKey / referenceSsKey / indexSsKey / triggerSsKey / sequenceSsKey / columnCheckSsKey. Derivation is deterministic from source identifiers; no operator opinion enters."
               TransformSite.dataIntent "typeTranslation"
-                "Map V1 type/code values to V2 typed DUs: parsePrimitiveType (V1 dataType string → V2 PrimitiveType per A13's typed surface); parseDeleteRule (V1 onDelete code → V2 ReferenceAction); parseOrigin / parseOriginFromRowset (isExternal flag → Origin DU). All translations are structural — V1's vocabulary maps deterministically into V2's typed system."
+                "Map V1 type/code values to V2 typed DUs: parsePrimitiveType (V1 dataType string → V2 PrimitiveType per A13's typed surface); parseDeleteRule (V1 OutSystems-domain onDelete code 'Delete'/'Protect'/'Ignore'/'SetNull' → V2 ReferenceAction); parseSqlForeignKeyAction (V1 #FkReality SQL-Server-domain update_referential_action_desc 'NO_ACTION'/'CASCADE'/'SET_NULL'/'SET_DEFAULT' → V2 ReferenceAction option — distinct vocabulary from parseDeleteRule per slice A.4.7'-prelude.row17-18-rowset-roundtrip); parseOrigin / parseOriginFromRowset (isExternal flag → Origin DU). All translations are structural — V1's vocabulary maps deterministically into V2's typed system."
               TransformSite.dataIntent "jsonAggregateParsing"
                 "Assemble JSON-path IR records: parseAttribute / parseReference / parseIndex / parseTrigger / parseExtendedProperty / parseKind / parseModule / parseDocument / parseJsonString. Each parser threads V1 evidence into V2's typed records; the parsing is field-by-field translation with no operator overlay."
               TransformSite.dataIntent "rowsetAggregateParsing"

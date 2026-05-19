@@ -15237,6 +15237,156 @@ that don't require closure.
 
 ---
 
+## 2026-05-19 (slice A.4.7'-prelude.row17-18-rowset-roundtrip) — V1↔V2 BUG-CORRECTED: rowset FK reality round-trip; SQL Server vs OutSystems vocabulary disambiguated structurally
+
+### Scope
+
+User-directed slice B (FK rowset 3-step JOIN). The slice opened as
+expected — `Reference.OnUpdate` + `Reference.IsConstraintTrusted`
+were carriage-only fields awaiting rowset-side population per the
+prior matrix audit. Discovery during verification-depth audit:
+slice 5.13.fk-reality-join (2026-05-18) had shipped the JOIN logic
++ matrix amendment classified rows 17/18 as wired, but the parsing
+layer SILENTLY DROPPED every non-default value.
+
+### The bug
+
+V1's `#FkReality` rowset emits `fk.update_referential_action_desc`
+(SQL Server `sys.foreign_keys` column; vocabulary: `NO_ACTION` /
+`CASCADE` / `SET_NULL` / `SET_DEFAULT`). The 3-step JOIN at
+`MetadataSnapshotRunner.toBundle` correctly populated
+`CatalogReader.ReferenceRow.OnUpdate : string option` with that
+SQL Server vocabulary.
+
+`CatalogReader.parseReferenceRowFor` then parsed the string via
+`parseDeleteRule`, which only recognizes OutSystems-domain
+vocabulary (`Delete` / `Protect` / `Ignore` / `SetNull`). Every
+SQL Server value fell into the error branch; the surrounding
+`Option.bind` silently degraded errors to `None`:
+
+```fsharp
+let onUpdateRule =
+    refRow.OnUpdate
+    |> Option.bind (fun code ->
+        match parseDeleteRule (Some code) with
+        | Ok action -> Some action
+        | Error _   -> None)  // ← silent degradation
+```
+
+Result: V2 NEVER populated `Reference.OnUpdate` from the rowset
+path when the source FK had a non-default ON UPDATE action. The
+JOIN was correctly wired; the type-translation layer was broken.
+
+### What ships
+
+**`Projection.Adapters.Osm/CatalogReader.fs`:**
+
+- New `parseSqlForeignKeyAction : string option → ReferenceAction
+  option` — SQL Server's vocabulary parser. Distinct from
+  `parseDeleteRule` (OutSystems vocabulary). Handles:
+  - `None` → `None` (server-default; no ON UPDATE clause)
+  - `Some "NO_ACTION"` → `Some NoAction`
+  - `Some "CASCADE"` → `Some Cascade`
+  - `Some "SET_NULL"` → `Some SetNull`
+  - `Some "SET_DEFAULT"` → `None` (V2's `ReferenceAction` DU doesn't
+    model SET_DEFAULT; lift trigger: real-world FK with SET DEFAULT
+    surfaces in fixture data)
+  - `Some _` (unrecognized) → `None` (defensive; rowset adapter
+    never blocks reference construction on unfamiliar vocabulary)
+
+- `parseReferenceRowFor` updated to route `refRow.OnUpdate` through
+  `parseSqlForeignKeyAction` (one-line swap from `parseDeleteRule`).
+
+- `CatalogReader.registeredMetadata.Sites` `typeTranslation`
+  Rationale amended to name both parsers: `parseDeleteRule` for
+  OS-domain `onDelete`; `parseSqlForeignKeyAction` for SQL-domain
+  `#FkReality.update_referential_action_desc`. The dual-vocabulary
+  discipline becomes structurally visible at the registry.
+
+**Tests: 8 new in `FkRealityRowsetRoundTripTests.fs`:**
+
+- Each `OnUpdate` variant round-trips: CASCADE / SET_NULL / NO_ACTION
+  / None / SET_DEFAULT (deferred)
+- Each `IsConstraintTrusted` variant: true / false
+- Combined case (both axes together)
+
+Tests were authored to FAIL before the fix (4 of 8 initially failing
+on the SQL Server vocabulary cases); after the fix, 8/8 pass.
+
+### Operating-discipline payoff
+
+**"Audit during validation" textbook payoff.** Per `DECISIONS
+2026-05-09 — Audits surface things not on the agenda`: the prior
+slice 5.13.fk-reality-join shipped the JOIN logic; the matrix
+amendment classified rows 17/18 as wired. The verification-depth
+pass (writing end-to-end tests that exercise non-default SQL Server
+values) surfaced the parsing bug. Without writing the tests, the
+bug would have shipped to production deploy and surfaced only when
+an operator deployed an FK with `ON UPDATE CASCADE` and discovered
+V2 emitted no ON UPDATE clause despite the source DB having one.
+
+**Pillar 8 + pillar 9 application: vocabulary IS the domain seam.**
+The mistake was conflating two different domains: OutSystems
+(`ossys_Reference.DeleteRuleCode`) emits domain-coded values
+(`Delete` / `Protect` / `Ignore` / `SetNull`); SQL Server
+(`sys.foreign_keys.update_referential_action_desc`) emits
+schema-reflection values (`NO_ACTION` / `CASCADE` / `SET_NULL` /
+`SET_DEFAULT`). The two vocabularies cannot share one parser. The
+fix names them separately (`parseDeleteRule` for OS-domain;
+`parseSqlForeignKeyAction` for SQL-domain) and the Site Rationale
+records the distinction so future readers see the boundary
+structurally.
+
+**Verification-as-bug-finder confirmed at scale.** Today's session
+has surfaced 1 functional-parity bug via this slice (FK rowset
+parser vocabulary) + 0 from the prior 7 slices (which were
+structurally additive, not modifying existing translation layers).
+The cost-of-finding-via-test pattern: 8 tests authored; 4 failed
+on the first run; bug located in 2-line section of CatalogReader;
+fix shipped in same slice. The verification depth IS the audit.
+
+### Coverage
+
+After this slice: + 8 tests (5 OnUpdate variants + 2
+IsConstraintTrusted variants + 1 combined). Existing
+`OsmRowsetReaderTests.fs` already exercised the default case
+(OnUpdate = None; IsConstraintTrusted = true); the new tests fill
+the non-default coverage gap that allowed the bug to ship.
+
+### Deferred (after this slice; refreshed triggers)
+
+- **`SET_DEFAULT` ReferenceAction variant** — V2's `ReferenceAction`
+  DU currently models `NoAction | Cascade | SetNull | Restrict`.
+  SQL Server's `SET_DEFAULT` doesn't map (the `Restrict` variant is
+  V1-style ANSI semantics). Today degrades to `None`. Trigger: a
+  real-world FK with `ON UPDATE SET DEFAULT` (or ON DELETE SET
+  DEFAULT) surfaces in fixture data. Cash-out: extend
+  `ReferenceAction` DU; closed-DU expansion empirical-test discipline
+  predicts the variant lights up at all exhaustive match sites
+  (current count: 4 sites in CatalogReader + ScriptDomBuild + Render).
+
+### Cross-references
+
+- V1 SQL source: `outsystems_metadata_rowsets.sql:280-289`
+  (`#FkReality` build); `fk.update_referential_action_desc` emits
+  SQL Server's underscored-uppercase vocabulary
+- Prior slices: 5.13.fk-reality-join (2026-05-18) wired the JOIN;
+  5.13.fk-features-emit (2026-05-18) shipped the IR fields + emitter;
+  5.13.blind-spot-closure (2026-05-18) amended the matrix to claim
+  the rowset adapter wiring — this slice surfaces the parsing-layer
+  bug that the prior amendment claim glossed over
+- `DECISIONS 2026-05-09 — Audits surface things not on the agenda`
+  (the discipline this slice operationalizes; verification depth IS
+  the audit surface)
+- Pillar 8 (`DECISIONS 2026-05-10`) — domain-first naming. The two
+  vocabulary parsers earn distinct names because they translate
+  distinct domains; conflating them was a category error
+- Pillar 9 (`DECISIONS 2026-05-15 (late)`) — DataIntent classification;
+  both parsers live in the same `typeTranslation` Site of
+  CatalogReader.registeredMetadata
+
+---
+
 ## 2026-05-19 (slice A.4.7'-prelude.dacpac-registry) — Last sibling-Π TransformRegistry gap closed: DacpacEmitter.registeredMetadata
 
 ### Scope

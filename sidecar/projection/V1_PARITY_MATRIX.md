@@ -1168,6 +1168,95 @@ Reference|Index|IndexColumn|IndexColumns)` remain in source.
 
 ---
 
+### Rows 17 + 18 — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.row17-18-rowset-roundtrip — V1↔V2 BUG-CORRECTED finalizing FK rowset reality round-trip)
+
+**Original framing.** Slice 5.13.fk-reality-join (2026-05-18) wired
+the 3-step JOIN at `MetadataSnapshotRunner.toBundle`:
+`OssysReferenceRow → OssysFkColumnRow → OssysFkRealityRow`. Slice
+5.13.fk-features-emit (2026-05-18) shipped `Reference.OnUpdate` +
+`Reference.IsConstraintTrusted` IR fields + emitter. The
+slice 5.13.blind-spot-closure amendment classified rows 17/18 as
+🔵 V2-EXTENSION (typed rowsets carry OnUpdate + IsNoCheck) with the
+rowset adapter wiring named as shipped.
+
+**Bug found 2026-05-19 (during slice B verification audit).** The
+JOIN wiring at `toBundle` correctly populates
+`CatalogReader.ReferenceRow.OnUpdate : string option` with V1's
+`#FkReality.update_referential_action_desc` (SQL Server vocabulary:
+`NO_ACTION` / `CASCADE` / `SET_NULL` / `SET_DEFAULT`). However,
+`CatalogReader.parseReferenceRowFor` parsed that string via
+`parseDeleteRule`, which only recognizes OutSystems-domain
+vocabulary (`Delete` / `Protect` / `Ignore` / `SetNull`). Every SQL
+Server value fell into `parseDeleteRule`'s error branch; the surrounding
+`Option.bind` silently degraded errors to `None`. Result: **V2 never
+populated `Reference.OnUpdate` from the rowset path when the source
+FK had a non-default ON UPDATE action**, despite the JOIN being
+correctly wired.
+
+The IsConstraintTrusted axis worked correctly (no string parsing
+needed; bool flows directly through).
+
+**Reclassified (slice A.4.7'-prelude.row17-18-rowset-roundtrip,
+2026-05-19):**
+
+| Row | Prior status | Updated status | What shipped |
+|---|---|---|---|
+| 17 | 🔵 V2-EXTENSION (rowset shipped; IR enrichment gated) | 🔴 V1-BUG-CORRECTED + 🟢 PARITY | New `parseSqlForeignKeyAction` helper in CatalogReader.fs handles SQL Server's vocabulary (`NO_ACTION` / `CASCADE` / `SET_NULL` / `SET_DEFAULT`). `parseReferenceRowFor` swapped from `parseDeleteRule` → `parseSqlForeignKeyAction` on the `OnUpdate` axis. `SET_DEFAULT` degrades to `None` (V2's `ReferenceAction` DU doesn't model it; lift trigger: real-world FK with SET DEFAULT surfaces). |
+| 18 | 🔵 V2-EXTENSION | 🟢 PARITY | IsConstraintTrusted axis worked correctly; verified by end-to-end test. The 3-step JOIN at `MetadataSnapshotRunner.toBundle` from prior slice remains canonical. |
+
+**Per pillar 9: pure DataIntent.** The new `parseSqlForeignKeyAction`
+joins the family of vocabulary-translation helpers within the
+existing `typeTranslation` Site in `CatalogReader.registeredMetadata`;
+no new TransformRegistry Sites needed. The Site's Rationale is
+amended to name both vocabulary parsers (`parseDeleteRule` for OS
+domain, `parseSqlForeignKeyAction` for SQL Server domain) — making
+the dual-vocabulary discipline structurally visible at the registry.
+
+**Verification depth: 8 new end-to-end tests** in
+`FkRealityRowsetRoundTripTests.fs`:
+
+- `V1 #FkReality.UpdateAction = "CASCADE"` → `Reference.OnUpdate = Some Cascade`
+- `V1 #FkReality.UpdateAction = "SET_NULL"` → `Reference.OnUpdate = Some SetNull`
+- `V1 #FkReality.UpdateAction = "NO_ACTION"` → `Reference.OnUpdate = Some NoAction`
+- `V1 #FkReality.UpdateAction = None` → `Reference.OnUpdate = None` (server-default)
+- `V1 #FkReality.UpdateAction = "SET_DEFAULT"` → `Reference.OnUpdate = None` (deferred ReferenceAction variant)
+- `ReferenceRow.IsConstraintTrusted = true` → `Reference.IsConstraintTrusted = true`
+- `ReferenceRow.IsConstraintTrusted = false` → `Reference.IsConstraintTrusted = false` (NOCHECK preserved)
+- Combined: both axes together (production cutover scenario)
+
+**Operating-discipline payoff.** This slice is a textbook
+**"audit during validation"** payoff per `DECISIONS 2026-05-09`. The
+prior slice 5.13.fk-reality-join shipped the JOIN logic + amendment
+classified rows 17/18 as "wired." The verification-depth pass
+(adding end-to-end tests that exercise non-default values) surfaced
+the parsing bug. Without writing the tests, the bug would have
+shipped to production deploy and surfaced only when an operator
+deployed an FK with `ON UPDATE CASCADE` and discovered V2 emitted
+no ON UPDATE clause. Functional parity now structurally verified.
+
+**Cross-references.**
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.row17-18-rowset-roundtrip)`
+  — V1↔V2 vocabulary disambiguation + bug fix codification
+- V1 SQL source: `outsystems_metadata_rowsets.sql:280-289` (`#FkReality`
+  build); `fk.update_referential_action_desc` (SQL Server's
+  underscored-uppercase vocabulary)
+- Prior amendments: slice 5.13.fk-reality-join (the JOIN wiring) +
+  slice 5.13.fk-features-emit (the IR fields + emitter) +
+  slice 5.13.blind-spot-closure (the rowset adapter wiring claim
+  that this slice now structurally pins)
+- `DECISIONS 2026-05-09 — Audits surface things not on the agenda`
+  — the operating discipline this slice operationalizes
+- Pillar 9 (`DECISIONS 2026-05-15 (late)`) — DataIntent classification;
+  `typeTranslation` Site's Rationale amended to name both parsers
+
+**Refreshed deferral trigger:** `SET_DEFAULT` → currently degrades
+to `None`. Trigger to add a `Restrict`-like variant or extend the
+existing `ReferenceAction` DU: a real-world FK with `ON UPDATE SET
+DEFAULT` surfaces in fixture data. Pillar-9 classification of the
+extension: DataIntent (V2's IR grows under evidence).
+
+---
+
 ### DacpacEmitter registry — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.dacpac-registry closes the last sibling-Π TransformRegistry gap)
 
 **Original framing.** Per CLAUDE.md's Active deferrals + the
