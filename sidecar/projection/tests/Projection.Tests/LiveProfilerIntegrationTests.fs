@@ -323,6 +323,22 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
             return mustOk result
         })
 
+    let runOrphanSampleScenario (childSeed: string) : Task<DiagnosticEntry list> =
+        fixture.WithEphemeralDatabase "LiveProfilerOrphanSample" (fun cnn _ -> task {
+            do! Deploy.executeBatch cnn schemaSql
+            do! Deploy.executeBatch cnn childSchemaSql
+            do! Deploy.executeBatch cnn seedSql
+            do! Deploy.executeBatch cnn childSeed
+            // First populate Profile.ForeignKeys via slice 1's probe;
+            // slice 4 reads HasOrphan from that evidence.
+            let! profileResult =
+                LiveProfiler.attach cnn twoKindCatalog Profile.empty
+            let profile = mustOk profileResult
+            let! result =
+                LiveProfiler.captureForeignKeyOrphanSamples cnn twoKindCatalog profile
+            return mustOk result
+        })
+
     interface IClassFixture<EphemeralContainerFixture>
 
     [<Fact>]
@@ -580,6 +596,61 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
         let codeCandidate = findUnique p.UniqueCandidates codeAttrKey
         Assert.False(codeCandidate.HasDuplicate,
                      sprintf "expected HasDuplicate = false on CODE (all distinct); got %A" codeCandidate)
+
+    // ---------------------------------------------------------------
+    // Slice B.3.4.fk-orphan-samples — captureForeignKeyOrphanSamples
+    // produces DiagnosticEntry per orphan-bearing FK (pillar 9:
+    // operational diagnostics; not Profile axis). Reuses the
+    // Items + Children fixture from slice B.3.1.
+    // ---------------------------------------------------------------
+
+    [<Fact>]
+    member _.``B.3.4.fk-orphan-samples: orphan-bearing FK emits one DiagnosticEntry with sample values`` () =
+        if not (skipIfNoDocker "live-profiler-orphan-sample-emit") then () else
+        let entries =
+            (runOrphanSampleScenario childSeedOneOrphanSql).GetAwaiter().GetResult()
+        Assert.Equal(1, List.length entries)
+        let entry = List.head entries
+        Assert.Equal(DiagnosticSeverity.Warning, entry.Severity)
+        Assert.Equal("profiling.foreignKey.orphanSample", entry.Code)
+        Assert.Equal(Some childFkKey, entry.SsKey)
+        Assert.Equal("1", entry.Metadata |> Map.find "orphanCount")
+        Assert.Equal("1", entry.Metadata |> Map.find "sampleSize")
+        // The orphan value in childSeedOneOrphanSql is 999.
+        Assert.Equal("999", entry.Metadata |> Map.find "sample.0")
+        Assert.Equal("PARENT_ID", entry.Metadata |> Map.find "sourceColumn")
+        Assert.Equal("ID", entry.Metadata |> Map.find "targetColumn")
+
+    [<Fact>]
+    member _.``B.3.4.fk-orphan-samples: clean FK produces empty DiagnosticEntry list`` () =
+        if not (skipIfNoDocker "live-profiler-orphan-sample-clean") then () else
+        let entries =
+            (runOrphanSampleScenario childSeedCleanSql).GetAwaiter().GetResult()
+        // No orphans → no DiagnosticEntry emitted.
+        Assert.Empty entries
+
+    [<Fact>]
+    member _.``B.3.4.fk-orphan-samples: sample respects deterministic ordering and TOP-N limit`` () =
+        if not (skipIfNoDocker "live-profiler-orphan-sample-ordering") then () else
+        // Build a fixture with 7 orphan rows; default limit is 5.
+        let manyOrphansSeed =
+            "INSERT INTO [dbo].[OSUSR_LP_CHILDREN] ([ID], [PARENT_ID]) VALUES " +
+            "(10, 901), (11, 902), (12, 903), (13, 904), " +
+            "(14, 905), (15, 906), (16, 907);"
+        let entries =
+            (runOrphanSampleScenario manyOrphansSeed).GetAwaiter().GetResult()
+        Assert.Equal(1, List.length entries)
+        let entry = List.head entries
+        Assert.Equal("7", entry.Metadata |> Map.find "orphanCount")
+        Assert.Equal("5", entry.Metadata |> Map.find "sampleSize")
+        // Determinism: ordered by orphan value ascending.
+        Assert.Equal("901", entry.Metadata |> Map.find "sample.0")
+        Assert.Equal("902", entry.Metadata |> Map.find "sample.1")
+        Assert.Equal("903", entry.Metadata |> Map.find "sample.2")
+        Assert.Equal("904", entry.Metadata |> Map.find "sample.3")
+        Assert.Equal("905", entry.Metadata |> Map.find "sample.4")
+        // Sixth and seventh orphans (906, 907) are below the TOP-N cap.
+        Assert.False(entry.Metadata |> Map.containsKey "sample.5")
 
     [<Fact>]
     member _.``B.3.3.unique-candidates: attach with composite index populates CompositeUniqueCandidates`` () =

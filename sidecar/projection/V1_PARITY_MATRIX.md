@@ -259,6 +259,53 @@ the original audit missed it), append a dated amendment to this
 section naming the prior status, the new status, and the discovery
 slice.
 
+### Row 89 — 2026-05-19 (slice B.3.4.fk-orphan-samples — LiveProfiler per-FK orphan-row sample probe; pillar 9 pivot lands on Diagnostics, not Profile)
+
+**Original framing.**
+- Row 89 (audit-wave slice 5.4.δ, 2026-05-18): 🟠 NOT-MAPPED. V1's `ForeignKeyOrphanSampleQueryBuilder.BuildCommandText()` emits `SELECT TOP (@SampleLimit)` of orphan rows with PK identifiers + orphan value + `TotalOrphans` count for operator diagnostics. **Rationale-for-absence at original audit**: "V1's orphan sample is operational diagnostics, not data-intent evidence. Per pillar 9, Profile carries data-intent only; operational samples land in `Diagnostics<'output>`."
+- Confirmed via this slice: the pillar 9 pivot holds. The capture function returns `Task<Result<DiagnosticEntry list>>` not a Profile axis extension.
+
+**Reclassified (slice B.3.4.fk-orphan-samples, 2026-05-19):**
+
+| Row | Prior status | Updated status | What shipped |
+|---|---|---|---|
+| 89 | 🟠 NOT-MAPPED | 🟢 PARITY (pillar 9 routing — Diagnostics axis, not Profile axis) | `LiveProfiler.fs`: new `captureForeignKeyOrphanSamples : SqlConnection → Catalog → Profile → Task<Result<DiagnosticEntry list>>`. Per-Reference TOP-N orphan-sample probe (default limit 5; operator-tunable at slice 6 via `SqlProfilerOptions.Sampling`). Walks `Profile.ForeignKeys` and probes only references where `HasOrphan = true` (slice 1's evidence drives slice 4's sampling — the chapter dependency map predicted this). Emits one `DiagnosticEntry` per orphan-bearing FK with `Source = "adapter:LiveProfiler"`, `Severity = Warning`, `Code = "profiling.foreignKey.orphanSample"`, and `Metadata` carrying `orphanCount` + `sampleSize` + `sourceColumn` + `targetColumn` + `sample.0..N-1` keys. Clean FKs emit no entry. |
+
+**Per pillar 9: pillar 9 pivot operationalized.** The slice is the chapter's first concrete worked example of "operational diagnostics live in `Diagnostics<'_>`, not in Profile IR" beyond Tightening rule outputs. The capture function takes `Profile` as input (to filter to orphan-bearing FKs) but emits `DiagnosticEntry list` as output — no Profile mutation, no new Profile axis. `attach` left unchanged.
+
+**Probe-shape extension of slice B.3.1.** The orphan-sample SQL is the TOP-N extension of slice 1's orphan-count anti-join:
+```sql
+SELECT TOP (@SampleLimit) s.<srcCol> AS [OrphanValue]
+FROM <src> AS s
+LEFT JOIN <tgt> AS t ON s.<srcCol> = t.<tgtPK>
+WHERE s.<srcCol> IS NOT NULL AND t.<tgtPK> IS NULL
+ORDER BY s.<srcCol>
+```
+Per A1: deterministic sampling via `ORDER BY <srcCol>` ensures repeated probes return identical samples.
+
+**Verification depth: 3 new Docker-gated integration tests** in `LiveProfilerIntegrationTests.fs`:
+
+- Orphan-present scenario (1 orphan, value 999): one DiagnosticEntry emitted with `orphanCount = 1`, `sampleSize = 1`, `sample.0 = "999"`, and the source/target column names populated correctly.
+- Clean scenario (no orphans): empty DiagnosticEntry list (orphans-bearing FKs only).
+- Ordering + TOP-N test: 7 orphans seeded with values 901–907; the entry reports `orphanCount = 7`, `sampleSize = 5` (TOP-N cap), and samples `sample.0..4` = 901..905 in deterministic ascending order; `sample.5` not present.
+
+All 23 LiveProfilerIntegrationTests pass against the warm container. Non-Docker baseline holds.
+
+**Cross-references.**
+- `CHAPTER_B_3_OPEN.md` — slice 4 of 6 in the chapter sequence; pillar 9 pivot named explicitly in §4.
+- `DECISIONS 2026-05-19 (slice B.3.4.fk-orphan-samples)` — cash-out rationale.
+- `DECISIONS 2026-05-15 (late) — Pillar 9` — the meta-discipline the pivot operationalizes.
+- V1 source: `Pipeline/Profiling/ForeignKeyOrphanSampleQueryBuilder.BuildCommandText()` — query shape mirrored as TOP-N extension of slice 1's anti-join.
+- Consumer (future): chapter 4.3 OperationalDiagnostics emitters consume the diagnostic stream; cutover dry-run output routes orphan-sample diagnostics to operators.
+
+**Refreshed deferral triggers (after this slice).**
+
+- **Operator-tunable sample limit** — fixed at 5 today via `defaultOrphanSampleLimit`. Trigger: slice 6 wires `SqlProfilerOptions.Sampling` through every capture.
+- **Source-row PK identifiers in sample** — current shape emits only the orphan FK value. V1's `ForeignKeyOrphanSampleQueryBuilder` also includes source-row PK identifiers (for operator navigation back to the offending row). Trigger: operator workflow demands navigation; cash-out shape: extend `foreignKeyOrphanSampleSql` to also project `s.<pk>` when source has single-column PK; serialize in Metadata as `sample.<i>.sourcePk`.
+- **Composite-PK target orphan samples** — same deferral inherited from slice B.3.1 + B.3.3.
+
+---
+
 ### Row 87 — 2026-05-19 (slice B.3.3.unique-candidates — LiveProfiler composite-uniqueness probe + single-column UniqueCandidate projection; closes cutover-blocker silent default in UniqueIndexRules; ProbeStatus helper primitive extracted)
 
 **Original framing.**

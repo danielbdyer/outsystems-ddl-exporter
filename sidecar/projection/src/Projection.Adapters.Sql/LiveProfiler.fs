@@ -630,6 +630,197 @@ module LiveProfiler =
                             (System.String.Concat("LiveProfiler.captureCompositeUniqueCandidates failed: ", ex.Message)))
         }
 
+    /// Default sample limit for FK orphan-sample probes (slice
+    /// B.3.4). Operator-tunable via `SqlProfilerOptions.Sampling` at
+    /// slice 6; constant here so slice 4 ships independently.
+    [<Literal>]
+    let private defaultOrphanSampleLimit = 5
+
+    /// Per-Reference orphan-sample probe SQL — `TOP N` extension of
+    /// slice B.3.1's orphan-count shape. Returns up to N source-side
+    /// FK values that don't resolve in the target table; ordered by
+    /// the FK value itself for determinism (A1 — deterministic
+    /// sampling under repeated probes).
+    let private foreignKeyOrphanSampleSql
+        (sampleLimit: int)
+        (srcKind: Kind) (srcAttr: Attribute)
+        (tgtKind: Kind) (tgtPkAttr: Attribute)
+        : string =
+        let srcTable =
+            System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; segments are typed via Identifier.EncodeIdentifier
+                ".",
+                [| encode srcKind.Physical.Schema; encode srcKind.Physical.Table |])
+        let tgtTable =
+            System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; segments are typed via Identifier.EncodeIdentifier
+                ".",
+                [| encode tgtKind.Physical.Schema; encode tgtKind.Physical.Table |])
+        let srcCol = encode srcAttr.Column.ColumnName
+        let tgtCol = encode tgtPkAttr.Column.ColumnName
+        System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; encode + integer literal are typed safe segments
+            "SELECT TOP (", string sampleLimit, ") ",
+            "s.", srcCol, " AS [OrphanValue] ",
+            "FROM ", srcTable, " AS s ",
+            "LEFT JOIN ", tgtTable, " AS t ON s.", srcCol, " = t.", tgtCol, " ",
+            "WHERE s.", srcCol, " IS NOT NULL AND t.", tgtCol, " IS NULL ",
+            "ORDER BY s.", srcCol)
+
+    /// Probe one Reference for orphan-row samples. Returns a
+    /// `DiagnosticEntry` carrying the sample values in Metadata when
+    /// orphans were observed; returns `None` when the FK is clean
+    /// (no DiagnosticEntry emitted in the clean case — operators see
+    /// orphan-bearing FKs only). Composite-PK targets and unresolved
+    /// attributes skip silently (same shape as slice B.3.1's
+    /// `probeReference` deferrals).
+    let private probeOrphanSample
+        (cnn: SqlConnection)
+        (catalog: Catalog)
+        (srcKind: Kind)
+        (reality: ForeignKeyReality)
+        (reference: Reference)
+        (sampleLimit: int)
+        : Task<DiagnosticEntry option> =
+        task {
+            use _ = Bench.scope "profile.live.probeOrphanSample"
+            match Kind.tryFindAttribute reference.SourceAttribute srcKind with
+            | None -> return None
+            | Some srcAttr ->
+                match Catalog.tryFindKind reference.TargetKind catalog with
+                | None -> return None
+                | Some tgtKind ->
+                    match Kind.primaryKey tgtKind with
+                    | [ tgtPkAttr ] ->
+                        use cmd = cnn.CreateCommand()
+                        cmd.CommandText <-
+                            foreignKeyOrphanSampleSql sampleLimit srcKind srcAttr tgtKind tgtPkAttr
+                        cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
+                        use! reader = cmd.ExecuteReaderAsync()
+                        let samples = System.Collections.Generic.List<string>()
+                        let mutable keepGoing = true
+                        while keepGoing do
+                            let! advanced = reader.ReadAsync()
+                            if advanced then
+                                // FK source values are typed at the
+                                // column boundary (INT for OS native
+                                // IDs; strings for natural keys); the
+                                // diagnostic surface is Map<string,
+                                // string>, so project via
+                                // InvariantCulture ToString.
+                                let value = reader.GetValue(0)
+                                let formatted =
+                                    match value with
+                                    | :? int as i ->
+                                        i.ToString System.Globalization.CultureInfo.InvariantCulture
+                                    | :? int64 as i ->
+                                        i.ToString System.Globalization.CultureInfo.InvariantCulture
+                                    | :? string as s -> s
+                                    | other ->
+                                        // BCL `ToString()` returns `string | null` under
+                                        // F# nullness analysis; defensive-default to "<null>"
+                                        // covers the structurally-impossible-here case
+                                        // (orphan-value filter excludes NULLs).
+                                        match other.ToString() with
+                                        | null -> "<null>"
+                                        | s    -> s
+                                samples.Add formatted
+                            else
+                                keepGoing <- false
+                        if samples.Count = 0 then return None
+                        else
+                            let metadata =
+                                let baseEntries =
+                                    [ "orphanCount", reality.OrphanCount.ToString System.Globalization.CultureInfo.InvariantCulture
+                                      "sampleSize",  samples.Count.ToString System.Globalization.CultureInfo.InvariantCulture
+                                      "sourceColumn", srcAttr.Column.ColumnName
+                                      "targetColumn", tgtPkAttr.Column.ColumnName ]
+                                let perSample =
+                                    samples
+                                    |> Seq.mapi (fun i v ->
+                                        System.String.Concat("sample.", string i), v)  // LINT-ALLOW: structured metadata key
+                                    |> List.ofSeq
+                                Map.ofList (baseEntries @ perSample)
+                            return
+                                Some
+                                    { Source   = "adapter:LiveProfiler"
+                                      Severity = DiagnosticSeverity.Warning
+                                      Code     = "profiling.foreignKey.orphanSample"
+                                      Message  =
+                                        System.String.Concat(  // LINT-ALLOW: operator-facing prose narration; segments are typed (int64 ToString + reference Name)
+                                            "Foreign key '",
+                                            Name.value reference.Name,
+                                            "' has ",
+                                            reality.OrphanCount.ToString System.Globalization.CultureInfo.InvariantCulture,
+                                            " orphan source row(s); sampled ",
+                                            samples.Count.ToString System.Globalization.CultureInfo.InvariantCulture,
+                                            ".")
+                                      SsKey    = Some reference.SsKey
+                                      Metadata = metadata }
+                    | _ -> return None
+        }
+
+    /// Capture FK orphan-row samples as `DiagnosticEntry` records.
+    /// Per pillar 9, operational samples are operator-intent
+    /// observation, not data-intent evidence — so the surface is
+    /// `Diagnostics<'_>`, not a `Profile` axis. Walks
+    /// `Profile.ForeignKeys` filtering to `HasOrphan = true` (only
+    /// probes FKs with observed orphans per slice B.3.1's evidence);
+    /// per-FK TOP-N probe yields up to `sampleLimit` orphan values
+    /// in deterministic order. Clean FKs emit no entry.
+    ///
+    /// **What this slice covers (B.3.4):**
+    ///   - One `DiagnosticEntry` per orphan-bearing FK
+    ///   - `Severity = Warning`
+    ///   - `Code = "profiling.foreignKey.orphanSample"`
+    ///   - `Metadata` carries `orphanCount`, `sampleSize`,
+    ///     `sourceColumn`, `targetColumn`, plus `sample.0` ..
+    ///     `sample.N-1` keys with the orphan values
+    ///   - Up to `defaultOrphanSampleLimit` (5) samples per FK
+    ///   - Deterministic ordering via `ORDER BY <srcCol>`
+    ///
+    /// **Deferred (named follow-up triggers):**
+    ///   - Operator-tunable sample limit — fixed at 5 today via
+    ///     `defaultOrphanSampleLimit`. Trigger: chapter B.3 slice 6
+    ///     wires `SqlProfilerOptions.Sampling` through.
+    ///   - Source-row PK identifiers in sample — current shape
+    ///     emits only the orphan FK value. V1's
+    ///     `ForeignKeyOrphanSampleQueryBuilder` also includes
+    ///     source-row PK identifiers. Trigger: operator workflow
+    ///     demands navigation back to the offending source row.
+    ///   - Composite-PK target probes — same deferral as slice
+    ///     B.3.1 (composite shape inherits from slice B.3.3).
+    let captureForeignKeyOrphanSamples
+        (cnn: SqlConnection)
+        (catalog: Catalog)
+        (profile: Profile)
+        : Task<Result<DiagnosticEntry list>> =
+        task {
+            use _ = Bench.scope "profile.live.captureForeignKeyOrphanSamples"
+            try
+                let entries =
+                    System.Collections.Generic.List<DiagnosticEntry>()
+                for m in catalog.Modules do
+                    for kind in m.Kinds do
+                        if not (isStaticKind kind) then
+                            for reference in kind.References do
+                                match Profile.tryFindForeignKey reference.SsKey profile with
+                                | Some reality when reality.HasOrphan ->
+                                    let! sampleOpt =
+                                        probeOrphanSample
+                                            cnn catalog kind reality reference
+                                            defaultOrphanSampleLimit
+                                    match sampleOpt with
+                                    | Some entry -> entries.Add entry
+                                    | None -> ()
+                                | _ -> ()
+                return Result.success (List.ofSeq entries)
+            with
+            | ex ->
+                return
+                    Result.failureOf
+                        (ValidationError.create
+                            "profile.live.captureForeignKeyOrphanSamplesFailed"
+                            (System.String.Concat("LiveProfiler.captureForeignKeyOrphanSamples failed: ", ex.Message)))
+        }
+
     /// Project `AttributeReality.HasDuplicates` evidence into
     /// `UniqueCandidateProfile` records. The two IR axes carry
     /// semantically identical single-column-duplicate witnesses;

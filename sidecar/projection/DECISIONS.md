@@ -17503,3 +17503,75 @@ Both new probes carry DataIntent. The composite probe observes deployed group-ca
 - `DECISIONS 2026-05-13 — Emergent primitives earn their place through multi-consumer demand` — the 2-consumer-threshold discipline that justifies the ProbeStatus extraction.
 - V1 source: `Pipeline/Profiling/UniqueCandidateQueryBuilder.BuildCommandText()` — composite-uniqueness probe shape mirrored.
 - Consumer: `Projection.Core/Strategies/UniqueIndexRules.fs:155-188` — the silent-default this slice closes.
+
+---
+
+## 2026-05-19 (slice B.3.4.fk-orphan-samples) — LiveProfiler per-FK orphan-row sample probe; first worked example of pillar 9 pivot at the adapter layer (operational diagnostics land in Diagnostics, not in Profile axis)
+
+### Scope
+
+Slice 4 of chapter B.3. Cashes row 89 (V1's `ForeignKeyOrphanSampleQueryBuilder` operator-facing orphan-row sampling).
+
+The slice's signature contribution to the chapter: **the first time the LiveProfiler emits `DiagnosticEntry list` rather than extending the Profile aggregate.** Per pillar 9, V1's orphan-row sampling is operator-intent observation (operational diagnostics, not data-intent evidence). The capture function's output shape — `Task<Result<DiagnosticEntry list>>` — encodes this structurally. `attach` left unchanged.
+
+### What ships
+
+- **`LiveProfiler.captureForeignKeyOrphanSamples : SqlConnection → Catalog → Profile → Task<Result<DiagnosticEntry list>>`.** Walks `Profile.ForeignKeys` filtering to `HasOrphan = true` (the slice-1 evidence drives the slice-4 sampling — chapter dependency map predicted this); per orphan-bearing Reference, runs the V1-mirrored TOP-N probe:
+  ```sql
+  SELECT TOP (@SampleLimit) s.<srcCol> AS [OrphanValue]
+  FROM <src> AS s
+  LEFT JOIN <tgt> AS t ON s.<srcCol> = t.<tgtPK>
+  WHERE s.<srcCol> IS NOT NULL AND t.<tgtPK> IS NULL
+  ORDER BY s.<srcCol>
+  ```
+  Default sample limit 5 (operator-tunable at slice 6 via `SqlProfilerOptions.Sampling`).
+- Emits one `DiagnosticEntry` per orphan-bearing FK:
+  - `Source = "adapter:LiveProfiler"`
+  - `Severity = DiagnosticSeverity.Warning`
+  - `Code = "profiling.foreignKey.orphanSample"`
+  - `SsKey = Some reference.SsKey`
+  - `Message = "Foreign key '<name>' has <N> orphan source row(s); sampled <M>."`
+  - `Metadata = Map [ "orphanCount" -> "N"; "sampleSize" -> "M"; "sourceColumn" -> "<col>"; "targetColumn" -> "<col>"; "sample.0" -> "v0"; ...; "sample.M-1" -> "vM-1" ]`
+- Clean FKs emit no entry — operators see orphan-bearing FKs only.
+- 3 Docker-gated integration tests (orphan-present, clean, TOP-N + deterministic ordering with 7 orphans seeded).
+
+### Why now (the pillar 9 pivot)
+
+Per `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification`: every transformation site is classified as either **DataIntent** (preserves data intention; lands in the skeleton — `Profile` is DataIntent evidence) or **OperatorIntent of OverlayAxis** (operator-supplied intent; lands as registered overlay). V1's orphan-row sample is **operational diagnostics**: rows the operator inspects to navigate from "this FK has orphans" back to "which rows specifically" — it serves the operator's review workflow, not the algorithmic decision. Profile.ForeignKeys.HasOrphan + OrphanCount drive ForeignKeyRules (DataIntent); the orphan-row sample is operator-intent observation.
+
+The structural-type discipline: the capture function's return type `Task<Result<DiagnosticEntry list>>` makes the routing decision a property of the type signature, not a convention. If a future agent reaches for "let's add OrphanSample to ForeignKeyReality," the type signature's mismatch is the structural objection.
+
+### Probe-shape derivation from slice B.3.1
+
+Slice 1's per-Reference orphan-count probe and slice 4's per-Reference orphan-sample probe share the LEFT JOIN + IS NULL anti-join skeleton. The difference: slice 1 aggregates (`COUNT_BIG(*)`); slice 4 enumerates (`SELECT TOP N s.<col>`). The two probes are siblings — slice 4 could co-locate with slice 1 in a future refactor (one SQL round-trip producing both count + sample). Deferred-with-trigger: when slice 6's sampling-policy refactor lands, evaluate whether the slice-1/slice-4 probes consolidate (their queries are structurally adjacent; running them in one round-trip saves a round-trip per orphan-bearing FK).
+
+### Pillar 9 — DataIntent vs OperatorIntent classification
+
+The orphan-sample probe **observes** deployed reality (DataIntent at the probe layer — no operator policy enters the SQL). The output **routing** (Diagnostics, not Profile) is the operator-intent recognition. The two classifications can co-exist on a single capture function:
+- Probe layer: DataIntent (observation).
+- Output layer: routes to operator-intent surface (Diagnostics) because operators inspect samples; they don't drive algorithmic decisions from them.
+
+### Sibling-wrapper discipline expansion
+
+`captureForeignKeyOrphanSamples` is the fifth named capture sibling (`captureAttributeRealities` + `captureForeignKeyRealities` + `captureColumnProfiles` + `captureCompositeUniqueCandidates` + `captureForeignKeyOrphanSamples`) plus `projectUniqueCandidates`. The ubiquitous-language consistency holds.
+
+### Discipline payoffs
+
+- **Pillar 9 worked example codified at the adapter layer.** Prior to this slice, pillar 9 was a meta-discipline with worked examples at the IR layer (Profile axes vs Catalog axes) and the pass layer (DataIntent passes vs OperatorIntent passes). Slice 4 surfaces the adapter-layer example: a capture function whose probe is DataIntent but whose output routes to operator-intent surface.
+- **Smart-constructor-FIRST not needed this slice.** `DiagnosticEntry` already has a record-literal construction shape; no new IR types. Reuse `Profile.tryFindForeignKey` for the orphan-bearing-FK filter (no new lookup helper).
+- **F# nullness analysis caught a subtle defensive coverage gap.** `reader.GetValue(0).ToString()` returns `string | null` under .NET 9's nullness analyzer; the inline match-on-null handles the structurally-impossible-here case (orphan-value filter excludes NULLs) without bypassing the type system.
+
+### Verification
+
+- 23/23 LiveProfilerIntegrationTests pass green (4 + 5 + 5 + 3 + 6 = 23; the 4 + 5 + 5 are slices B.3.1 / B.3.2 / B.3.3; +3 new B.3.4; +6 existing A.4.7'-prelude.live-profiler).
+- 1679/1679 non-Docker baseline holds.
+- Solution build clean (0 warnings).
+
+### Cross-references
+
+- `CHAPTER_B_3_OPEN.md` — slice 4 of 6.
+- `V1_PARITY_MATRIX.md` Row 89 amendment — formal reclassification.
+- `DECISIONS 2026-05-15 (late) — Pillar 9` — the meta-discipline this slice operationalizes at the adapter layer.
+- `DECISIONS 2026-05-19 (slice B.3.1.foreign-key-reality)` — sibling probe; the orphan-count → orphan-sample evolution lives here.
+- V1 source: `Pipeline/Profiling/ForeignKeyOrphanSampleQueryBuilder.BuildCommandText()` — query shape mirrored (TOP-N extension of slice 1's anti-join).
+- Future consumer: chapter 4.3 OperationalDiagnostics emitters; cutover dry-run operator workflows.
