@@ -1737,6 +1737,59 @@ before/after bench data on each label).
 
 ---
 
+### Perf-sweep arc — 2026-05-19 (XXXXXL arc: slices A.4.7'-prelude.perf-sweep-{1-7} + defensive-hardening; canary wall 3:34 → 2:22 = ~34% reduction; PERF_OPPORTUNITIES.md punch list mostly cashed)
+
+**The PERF_OPPORTUNITIES.md punch list (34 structural-perf findings
+from the bench-fleet survey) was largely closed in this arc.** Per the
+bench-driven optimization protocol (`DECISIONS 2026-05-24`), each
+shipped fix carries before/after canary bench data at production
+scale (300 tables × 100MB; comprehensive canary).
+
+**Slices shipped:**
+
+| Slice | Commit | Scope | Wall-time impact |
+|---|---|---|---|
+| `perf-sweep-1` | `80f6185` | Tarjan + Kahn `Map`/`Set` → `Dictionary`/`HashSet` (Ranks 3+4) + production-scale canary (300×100MB) + env-var gate (`PROJECTION_RUN_COMPREHENSIVE_CANARY`) | Sub-ms per iteration (Big-O); canary baseline 3:34 |
+| `perf-sweep-2` | `df03328` | `KindIndex` + `KindOwnership` + `AttributeIndex` caches via `ConditionalWeakTable` (Ranks 1+2 / D1-D3) | -0.2% (noise; preserves O(n²)→O(n log n) at 1000+ kinds) |
+| `perf-sweep-3` | `57ec251` | `TSql160Parser` per-call → `System.Threading.ThreadLocal` (Ranks C1-C3) | `render.statement` -19% across 504K calls; wall-noise overall |
+| `perf-sweep-4` | `60ef70f` | Per-segment `deploy.executeBatch.segment.bytes` diagnostic | Observability; revealed 100×405KB MERGE cluster |
+| `perf-sweep-5` | `d989bd0`, `e616640` | `Deploy.executeBatchParallel` primitive + `ExecuteBatchParallelTests.fs` (3 facts) | Microbench 1.21-1.75×; canary integration deferred to slice 6 |
+| **`perf-sweep-6`** | **`9fa1d4c`** | **`TopologicalOrder.levels` (Kahn-with-level-counter) + `DataEmissionComposer.composeRenderedLeveled` + canary parallel data deploy** | **3:34 → 2:22 (-72s, -34%); the wall-time-mover** |
+| `perf-sweep-7` | `21c2c8b` | `Deploy.resolveParallelism` env-adaptive (DMV → ProcessorCount → static fallback); env-var `PROJECTION_DEPLOY_PARALLELISM` override | Wall-time matches slice-6 baseline (auto-detect resolves to ≥4 on the container) |
+| `defensive-hardening` | `f8a7f01` | 9 audit findings: silent DBNull → 0 corruption (`MetadataSnapshotRunner.readInt`); infinite `CommandTimeout=0` at 5 sites → new `CommandTimeoutPolicy`; defensive cast-switch on Time/Guid/Binary; empty-result diagnostic in `readColumnRows`; `executeBatchParallel` pool-cap; `readRows` List.head fallback; FK `SCHEMA_NAME()` DBNull guard; Docker `UserProfile` empty-string guard | Correctness; no perf delta |
+
+**New canonical surfaces** (the next slice can compose with these):
+
+- `src/Projection.Core/TopologicalOrder.fs:levels` — parallel-safety primitive (every same-level pair has no FK edge between them; property-tested)
+- `src/Projection.Targets.Data/DataEmissionComposer.fs:composeRenderedLeveled` + `LeveledDeploymentText` record
+- `src/Projection.Pipeline/Deploy.fs`:
+  - `acquireEphemeralContainer : unit → Task<EphemeralContainerHandle>` (handle-based; sibling to `useEphemeralContainer`)
+  - `executeBatchParallel : connString → sql → parallelism → Task<unit>` (caller contract: segment-ordering independence)
+  - `detectParallelism` / `resolveParallelism` (env-adaptive)
+  - `capParallelismToPool` (defensive against pool exhaustion)
+- `src/Projection.Adapters.Sql/SqlPolicy.fs:CommandTimeoutPolicy.resolve` — defensive-fallback module for SQL realization policies
+- `tests/Projection.Tests/EphemeralContainerFixture.fs` — shared Docker-gated fixture (xUnit `IClassFixture`); now passes both `cnn` AND `connString` to body (per chapter-4.7 sibling-wrapper discipline lift)
+- `tests/Projection.Tests/ComprehensiveCanaryTests.fs` — production-scale operator-reality canary (300×100MB; gated)
+- `tests/Projection.Tests/Fixtures/OssysFixtureSynthesizer.fs` — `GeneratedFixture` → OSSYS-shape INSERTs
+- `tests/Projection.Tests/ExecuteBatchParallelTests.fs` — parallel primitive validation + microbench
+
+**Environment-tunable knobs introduced:**
+- `PROJECTION_RUN_COMPREHENSIVE_CANARY=1` — gates the production-scale canary (~3-4 min wall)
+- `PROJECTION_DEPLOY_PARALLELISM=<n>` — overrides auto-detected parallelism
+- `PROJECTION_COMMAND_TIMEOUT_SEC=<n>` — overrides 300s default command timeout (`0` = unlimited)
+
+**Cross-references:**
+- `PERF_OPPORTUNITIES.md` (header section "PERF-SWEEP ARC RESULTS") — per-finding status table
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.perf-sweep-6 composer-levels)` — the wall-time-moving slice's rationale + the parallel-safety invariant proof
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.defensive-hardening)` — 9 audit findings + the high-bar `tryProbeServerCpus` template
+- `HANDOFF.md` 2026-05-19 letter — the next-agent-facing summary of the arc
+
+**Refreshed deferral triggers (after this arc):**
+- **Schema-side level grouping in SSDT** — would enable parallel schema deploy. Trigger: schema deploy becomes a visible bottleneck (it's ~14s of the 132s canary deploy today; not yet hot).
+- **`bench/baseline-canary.json` refresh** — 83 new labels not yet baselined; perf-gate accepts new labels with soft warning. Trigger: per-commit gate becomes flaky on new-label false-positives; record fresh baseline via `PERF_GATE_RECORD=1`.
+
+---
+
 ### Rows 11 + 53 — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.row53-source-side wires V1 #ColumnReality into Attribute.Computed + Attribute.DefaultName)
 
 **Original framing.** Slice 5.13.ossys-rowsets-cluster (2026-05-18)

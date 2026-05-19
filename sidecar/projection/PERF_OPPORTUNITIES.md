@@ -7,6 +7,33 @@ this document is the queue for the **next** slice — a structural-perf
 sweep that ships fixes with before/after data on each affected bench
 label.
 
+## 🎯 PERF-SWEEP ARC RESULTS (2026-05-19)
+
+**Status: top-leverage findings SHIPPED; canary wall-time 3:34 → 2:22 (~34% reduction).**
+
+| Finding | Slice | Status |
+|---|---|---|
+| **Tarjan/Kahn `Map`/`Set` → `Dictionary`/`HashSet`** (Ranks 3+4 / E1+E2) | `perf-sweep-1` (`80f6185`) | ✅ Shipped (structural Big-O; sub-ms at canary scale) |
+| **`Catalog.tryFindKind` → `KindIndex` cache** (Rank 1 / D1) | `perf-sweep-2` (`df03328`) | ✅ Shipped (ConditionalWeakTable-keyed) |
+| **`Catalog.tryFindOwningModule` → `KindOwnership` cache** (Rank 7 / D2) | `perf-sweep-2` (`df03328`) | ✅ Shipped (piggybacks on KindIndex) |
+| **`Kind.tryFindAttribute` → `AttributeIndex` cache** (Rank 2 / D3) | `perf-sweep-2` (`df03328`) | ✅ Shipped |
+| **`TSql160Parser` per-call → `ThreadLocal` cache** (Rank 7 / C1-C3) | `perf-sweep-3` (`57ec251`) | ✅ Shipped (`render.statement` -19% across 504K calls) |
+| **Per-segment-size diagnostic** | `perf-sweep-4` (`60ef70f`) | ✅ Shipped (revealed 100×405KB MERGE cluster) |
+| **`Deploy.executeBatchParallel` primitive** | `perf-sweep-5` (`d989bd0`, `e616640`) | ✅ Shipped + 3 tests in `ExecuteBatchParallelTests.fs` |
+| **`TopologicalOrder.levels` + `composeRenderedLeveled` + parallel data deploy** (Rank N/A — emergent from preflight) | **`perf-sweep-6` (`9fa1d4c`)** | ✅ Shipped — **canary 3:34 → 2:22 (-72s, -34%); the wall-time-moving slice** |
+| **`Deploy.resolveParallelism` (DMV → ProcessorCount → static)** | `perf-sweep-7` (`21c2c8b`) | ✅ Shipped (env-adaptive; `PROJECTION_DEPLOY_PARALLELISM` override) |
+| **Defensive-hardening (9 audit findings)** | `defensive-hardening` (`f8a7f01`) | ✅ Shipped (DBNull guards, bounded timeouts, cast hardening, pool caps, empty-result diagnostics, UserProfile guard) |
+
+**What remains open** (lower-leverage; not blocking any current path):
+
+- **Schema-side level grouping** in `SsdtDdlEmitter` (CREATE TABLE per topological level) — would unlock parallel schema deploy too. Estimated ~50 LOC mirror of the composer-levels pattern. **Trigger:** schema deploy becomes a visible bottleneck (it isn't today — schema is ~14s of the 132s canary deploy time).
+- **A4 — `parseRowsetBundle` 8 sequential `Map.ofList`** (Agent A's finding) — would benefit from `Array.Parallel.map`. Low-leverage at current scale.
+- **C8 — `schemaObjectFromTableId` per-call allocation** (Agent C) — STRUCTURAL FLOOR (typed-AST library requires per-fragment instances). Documented; no fix.
+- **D5 — `Catalog.create` triple-walk over allKindList** (Agent D) — minor; trivial fold collapse.
+- **E3 — TopologicalOrderPass `internalEdgesOf` O(|scc|²)** — conditional on real-world SCC sizes; not material on the current canary.
+
+**Per the bench-driven optimization protocol** (`DECISIONS 2026-05-24`): shipped fixes pair with before/after canary bench data captured at production scale (300 tables × 100MB). The slice arc's commit messages embed the per-slice deltas.
+
 ## ✅ BASELINE GATE STATUS — RESOLVED
 
 **Per slice A.4.7'-prelude.canary-100pct (commit `a0c21e0`, 2026-05-19):**

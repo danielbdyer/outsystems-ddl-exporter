@@ -1,3 +1,144 @@
+# Handoff letter — 2026-05-19 (XXXXXL session: A.4.7'-prelude arc — DATA-axis cutover-blocker shipped; comprehensive operator-reality canary at production scale; perf-sweep delivers measurable wall-time wins; defensive-fallback hardening complete)
+
+To the next agent. This letter sits above the 2026-05-18 letter; read both (chapter-3.1 letter sits below 2026-05-18). The matrix discipline (`V1_PARITY_MATRIX.md`) and the operating-disciplines table (`CLAUDE.md`) remain canonical. This letter tells you what shipped across the 2026-05-19 session arc, what's NEW load-bearing on the perf + observability + defensive-fallback surfaces, the new canonical files you inherit, and where to point your next parity-matrix slices.
+
+## TL;DR
+
+**18 slices shipped** across an arc that prioritized cutover-blocker cash-out, instrumentation depth, production-scale canary fidelity, and measurable perf wins:
+
+- **`A.4.7'-prelude.live-profiler`** (`4c0cbce`) — DATA-axis cutover-blocker cashed out: `Profile.AttributeReality` IR + `LiveProfiler` adapter (sibling to `ProfileSnapshot.attach` / `ProfileStatistics.attach`). Matrix rows 49 + 85 + 86 + 87 close to 🟢 PARITY.
+- **`A.4.7'-prelude.test-fixture-lift`** (`7a58199`) — xUnit `IClassFixture<EphemeralContainerFixture>` amortizes Docker containers across test classes. **Docker test cluster: 2m51s → 1m22s (~52% reduction)** with zero coverage loss. New shared fixture is the canonical Docker-gated test surface.
+- **`A.4.7'-prelude.bench-fleet`** (`0d0b567`) — Five-agent parallel dispatch instruments adapter / emit / IR / pass dark paths. **51 new bench labels** under disjoint namespaces (`adapter.osm.parse.*`, `adapter.osm.extract.*`, `emit.scriptDom.build.*`, `ir.catalog.*`, `pass.*.*`). Bench file-coverage 44% → ~56%.
+- **`A.4.7'-prelude.bench-fleet-{followup, round2, round3}`** (`fba4b07`, `535fdc5`, `a634ad4`) — 26 more bench labels across registries, strategies, composition, profile adapters, sibling emitters. Total bench coverage after arc: ~62%.
+- **`A.4.7'-prelude.comprehensive-canary`** (`fe5da32`) — Operator-reality canary routes 300-table fixture through the OSSYS adapter (not just `ReadSide`), runs all tightening passes, asserts both source≈target AND OSSYS≈ReadSide. ~1110 LOC of new fixture + canary harness; dual-axis correctness.
+- **`A.4.7'-prelude.canary-100pct`** (`a0c21e0`) — Supplementary inline fixtures push canary coverage to **65/65 = 100% of declared bench labels**. The baseline-gate prerequisite for the perf-sweep is structurally satisfied.
+- **`A.4.7'-prelude.canary-production-scale`** (`80f6185`) — `GenerateSpec.comprehensiveCanary` scaled to 300 tables × 100MB seed data (matches `operatorReality` topology + 10× row volume). Now env-var-gated behind `PROJECTION_RUN_COMPREHENSIVE_CANARY=1` (~3-4 min wall; opt-in for perf-targeted work).
+- **`A.4.7'-prelude.perf-sweep-{1-7}`** — seven structural-perf slices culminating in the wall-time-mover:
+  - Slices 1-3 (`80f6185`, `df03328`, `57ec251`): Tarjan/Kahn `Map`→`Dictionary`; `KindIndex` + `AttributeIndex` `ConditionalWeakTable` caches; `TSql160Parser` `ThreadLocal`. Structural Big-O / allocation reduction; visible per-iteration savings sub-millisecond at canary scale.
+  - Slice 4 (`60ef70f`): per-segment size diagnostic — revealed the 100×405KB MERGE cluster.
+  - Slice 5 (`d989bd0`, `e616640`): `Deploy.executeBatchParallel` primitive + preflight tests (`ExecuteBatchParallelTests.fs`).
+  - **Slice 6 (`9fa1d4c`): composer-levels parallel data deploy.** `TopologicalOrder.levels` + `DataEmissionComposer.composeRenderedLeveled` + canary integration. **Canary wall 3:34 → 2:22 (~34% reduction; -72s).** This is the slice that actually moves the clock.
+  - Slice 7 (`21c2c8b`): environment-adaptive auto-scale (`Deploy.resolveParallelism`) with layered probe — SQL Server DMV (`sys.dm_os_sys_info.cpu_count`) → `Environment.ProcessorCount` → static fallback. Env-var override `PROJECTION_DEPLOY_PARALLELISM`.
+- **`A.4.7'-prelude.defensive-hardening`** (`f8a7f01`) — All 9 audit findings from the defensive-fallback audit closed. New `CommandTimeoutPolicy` module (`src/Projection.Adapters.Sql/SqlPolicy.fs`); defensive cast-switches on Time/Guid/Binary; DBNull guards across DMV reads; pool-cap on parallelism; empty-result diagnostics; UserProfile guard for distroless containers. **Silent-corruption + infinite-hang + cast-fragility + restricted-env gaps all closed.**
+
+**Non-Docker regression baseline at arc close: 1629 / 1629 passing.** Solution build green at every commit.
+
+## What's NEW load-bearing on the perf + observability + defensive surfaces
+
+These surfaces are now canonical and should compound across future chapters. **If your work touches a SQL Server interaction site, the patterns here are how V2 does it.**
+
+### Canonical perf-realization primitives (`src/Projection.Pipeline/Deploy.fs`)
+
+- **`Deploy.executeBatch : SqlConnection → string → Task<unit>`** — sequential per-segment dispatch with `BatchSplitter`. Use for FK-ordered SQL (schema DDL; cross-table-dependent INSERTs).
+- **`Deploy.executeBatchParallel : connString → sql → parallelism → Task<unit>`** — parallel within-level dispatch via `SemaphoreSlim`. **Caller contract: all segments in `sql` MUST be mutually FK-independent.** Caps parallelism against `SqlConnectionStringBuilder.MaxPoolSize / 2` for restricted environments.
+- **`Deploy.resolveParallelism : connString → Task<int>`** — environment-adaptive parallelism via DMV → ProcessorCount → static fallback. Env-var `PROJECTION_DEPLOY_PARALLELISM` overrides. Caches per-connection-string for the session.
+- **`Deploy.acquireEphemeralContainer : unit → Task<EphemeralContainerHandle>`** — handle-based container lifecycle; sibling to `useEphemeralContainer` (scope-based). The fixture-lift slice's enabler.
+
+### Canonical composer-level surface (`src/Projection.Targets.Data/DataEmissionComposer.fs`)
+
+- **`composeRenderedLeveled : Policy → Catalog → Profile → MigrationContext → UserRemapContext → Result<LeveledDeploymentText, EmitError>`** — returns `{ Phase1Levels : string list; Phase2Levels : string list }` for parallel-safe per-level dispatch. Built on **`TopologicalOrder.levels : TopologicalOrder → SsKey list list`** (Kahn-style; parallel-safety invariant proved structurally).
+- `composeRenderedFull` preserved as the byte-flat surface for callers not yet updated.
+
+### Canonical defensive-fallback module (`src/Projection.Adapters.Sql/SqlPolicy.fs`)
+
+- **`CommandTimeoutPolicy.resolve : unit → int`** — 300s default; env-var `PROJECTION_COMMAND_TIMEOUT_SEC` overrides; invalid input stderr-announces and falls back. **Use at every `cmd.CommandTimeout <-` site.** Already wired at all 5 known sites (LiveProfiler probe, ReadSide stream open, executeBatch + executeBatchParallel dispatch).
+
+### Canonical Docker-gated test fixture (`tests/Projection.Tests/EphemeralContainerFixture.fs`)
+
+- `EphemeralContainerFixture` implements `IAsyncLifetime`; xUnit shares one container per test class via `IClassFixture<EphemeralContainerFixture>`.
+- `WithEphemeralDatabase prefix (cnn → connStr → body) : Task<'a>` — passes BOTH the open connection AND the per-DB connection string (chapter-4.7 sibling-wrapper discipline applied). Callers that don't need the string drop via `(fun cnn _ -> ...)`.
+- 8 callers across `CdcSilenceTests`, `CdcSilencePropertyTests`, `CdcSilenceCrossEmitterTests`, `LiveProfilerIntegrationTests`, `ComprehensiveCanaryTests` all use this fixture.
+
+### Canonical comprehensive canary (`tests/Projection.Tests/ComprehensiveCanaryTests.fs`)
+
+- Production-scale operator-reality canary at 300 tables × 100MB. Routes through OSSYS adapter (not just `ReadSide`), runs all tightening passes, exercises every pillar of the V2 pipeline. Asserts source≈target (PhysicalSchema empty diff) AND OSSYS≈ReadSide (entity-name overlap).
+- **Env-gated:** `PROJECTION_RUN_COMPREHENSIVE_CANARY=1` to run; default skip. Wall time ~2:22 warm at slice-6 baseline.
+- `OssysFixtureSynthesizer.fs` (`tests/Projection.Tests/Fixtures/`) emits the OSSYS schema DDL + INSERTs from a `GeneratedFixture`. Reusable for future operator-reality fixtures.
+
+### Bench label inventory (the new observability surface)
+
+83 new labels added across the arc. Namespaces:
+- `adapter.osm.parse.*` (13) — OSSYS JSON + rowset parsing
+- `adapter.osm.extract.*` (7+ dynamic per-rowset) — SQL extraction
+- `emit.scriptDom.build.*` (16) — per-statement-shape ScriptDom AST construction
+- `ir.catalog.*` / `ir.policy.*` / `ir.kind.*` / `ir.module.*` (9) — IR construction
+- `pass.<name>.*` (6) — per-iteration pass-layer work
+- `ir.registry.*` (4) — TransformRegistry validation + queries
+- `compose.data.dispatchSiblings.*` (3) — per-sibling-emitter dispatch
+- `compose.data.composeRenderedLeveled.*` (3) — level-aware data composer
+- `compose.passChain.*` (1+12 dynamic per-adapter) — pass-chain orchestration
+- `composition.fanOut` (1) — registered-intervention dispatcher
+- `emit.staticSeeds.{kind, phase2Row}` (2) + `emit.migrationDeps.{kind, phase2Row}` (2)
+- `emit.staticPopulation.statements.stream` (1+counter) — InsertRow realization
+- `emit.ssdt.emitSlices.kind` (1) — per-kind SSDT emission
+- `profile.snapshot.attach.*` (7) — V1-JSON snapshot adapter
+- `rules.{nullability,uniqueIndex,foreignKey,categoricalUniqueness}.evaluate` (4) — strategy-level
+- `deploy.executeBatchParallel.{segments, parallelism, segment, segment.bytes}` (4)
+- `deploy.executeBatch.segment.bytes` (1) — diagnostic
+- `deploy.detectParallelism.{serverCpus, clientCpus, resolved}` (3)
+- `deploy.resolveParallelism.{envOverride, cached}` (2)
+- `deploy.acquireEphemeralContainer` (1)
+
+Per-iteration `iterMap` adopted across the pass layer (`pass.*.<entity>`) per the iterator-logging discipline.
+
+## What's deferred / next priorities
+
+### Parity matrix status
+
+98 rows still classified `🟠 NOT-MAPPED` or `🟡 DIVERGENCE`. The DATA-axis cutover-blocker (rows 49 + 85 + 86 + 87) closed today; the SCHEMA-axis closure from 2026-05-18 holds. The highest-leverage open clusters:
+
+- **OSSYS rowset extension (rows 11, 14)** — `#ColumnReality` source-side computed/default; `#PhysColsPresent` orphan-attribute axis. Trigger fires when tightening / remediation decisions demand source-side state.
+- **IDENTITY-axis cutover** (matrix rows in the 100-130 range covering User FK reflow / UserRemap) — `UserFkReflowPass` shipped; the remaining work is the canary-cycle verification.
+- **Manifest scope-reduction residuals (row 95: PreRemediation / Options / PolicySummary)** — deferred at slice 5.5.α.manifest. Trigger: chapters 4.5+ when policy/profile metadata surfaces have V2 consumers.
+
+### Perf-sweep open items (`PERF_OPPORTUNITIES.md`)
+
+**Shipped:** Tarjan/Kahn (Ranks 3+4); KindIndex + AttributeIndex caches (Ranks 1+2); TSql160Parser hoist (Ranks C1-C3); composer-levels + parallel data deploy.
+
+**Open but lower-leverage:**
+- Schema-side level grouping in `SsdtDdlEmitter` (mirror of composer-levels for CREATE TABLE + CREATE INDEX) — would unlock parallel schema deploy too
+- ScriptDom `MultiPartIdentifier`/`schemaObjectFromTableId` per-call allocation — irreducible per the typed-AST library contract, but worth documenting as structural floor
+- `Catalog.create` triple-walk over `allKindList` (D5 in PERF_OPPORTUNITIES) — minor; would shave ms off `ir.catalog.create`
+- Various per-kind double-walks in `CatalogReader.parseIndex*` — low-leverage at current canary scale
+
+### Newly-visible bench labels not yet baselined
+
+Most of the 83 new labels are NOT in `bench/baseline-canary.json` (the perf-gate baseline was recorded BEFORE these labels existed). The perf-gate at `scripts/perf-gate.sh` accepts new labels with a soft warning; record a fresh baseline via `PERF_GATE_RECORD=1` when convenient.
+
+### Defensive-fallback audit punch list
+
+All 9 findings closed this arc. No outstanding items in this category.
+
+## Where to start
+
+For a parity-matrix-focused continuation:
+
+1. **Read this letter, CLAUDE.md, the 2026-05-18 letter, and the most-recent ~10 DECISIONS entries** — orient. ~30 minutes.
+2. **Open `V1_PARITY_MATRIX.md`** and pick a `🟠 NOT-MAPPED` row from the matrix where the cash-out trigger named the chapter you're operating in.
+3. **Trace V1's actual handling first** (per `DECISIONS 2026-05-19 — Trace-before-fixture pattern`) — classify into the three-class typology (JSON-projection-lossiness / V2-boundary-discipline / alternative-IR-surface) before writing the failing test.
+4. **Use the new perf primitives** (`Deploy.executeBatchParallel` + `Deploy.resolveParallelism`) if your slice involves SQL Server deploy at scale. Use the `EphemeralContainerFixture` if your slice needs Docker.
+5. **Run the comprehensive canary** (`PROJECTION_RUN_COMPREHENSIVE_CANARY=1`) BEFORE shipping any perf-sensitive change so you have a clean before-baseline; re-run after to compare.
+
+## A note from your predecessor (read this if you're scanning quickly)
+
+Hey — fresh agent, take a beat before opening a new chapter. The 2026-05-19 arc was wide (18 slices) but tightly coupled by a single discipline: **survey-then-execute via dispatched agents**. Three parallel survey agents kicked off the bench-fleet (escape-character audit + slow-test audit + bench-coverage audit); a five-agent parallel fleet executed the survey's punch list; a single-execution agent built the comprehensive canary; a preflight agent validated the parallel-deploy primitive before integration; a final audit agent found the 9 defensive-fallback gaps. **The dispatch protocol is the meta-discipline that compounded across the day.** When your work touches multiple files in parallel-safe ways, use it.
+
+A few specific pointers — places that earned my attention and deserve yours:
+
+- **`PERF_OPPORTUNITIES.md`** at the projection root is the durable home for 34 structural-perf findings. The top 5-7 shipped this arc; the rest are scoped for future work. Read the header section ("BASELINE GATE STATUS — RESOLVED") for context.
+- **`tests/Projection.Tests/ComprehensiveCanaryTests.fs`** is the new canonical end-to-end test. ~1100 LOC. If you change the V2 pipeline shape (new pass, new emitter, new adapter), this test is where you verify the change at production scale. Env-gated; opt in.
+- **`tests/Projection.Tests/ExecuteBatchParallelTests.fs`** validates the parallel-deploy primitive with a microbench. Mirror its shape if you ship more perf primitives.
+- **`src/Projection.Adapters.Sql/SqlPolicy.fs`** is the new defensive-fallback module. Per the chapter-4.7 sibling-wrapper discipline, future SQL realization policies (timeout / pool-cap / retry / circuit-breaker) live here as sibling `*Policy` modules.
+- **`src/Projection.Core/TopologicalOrder.fs:levels`** is the parallel-safety primitive. Property-tested at 7 test cases; the parallel-safety invariant (every same-level pair has no FK edge between them) holds structurally. If you ship a schema-side analog (CREATE TABLE per topological level), this is the function you compose with.
+- **`src/Projection.Pipeline/Deploy.fs`** grew significantly. The deploy primitives are the load-bearing realization-layer surface for chapter 4.x. The `resolveParallelism` + `executeBatchParallel` shape is the production-canary path.
+- **The Bench discipline** went from 44% to ~62% file coverage. The bench survey at `tasks/aa0e085b470582bba.output` (ephemeral — preserved findings live in this letter + PERF_OPPORTUNITIES.md) found that the pass layer has 100% file coverage but per-iteration `iterMap` was the gap. That gap is closed.
+
+The branch state assumes you're operating from `claude/schema-property-tests-barRS` merged to `main`. The codebase is in a strong state — every commit ships green; every architectural commitment from prior chapters holds. The disciplines aren't constraints; they're the load-bearing structure. Hold the spine.
+
+— The 2026-05-19 architect.
+
+---
+
 # Handoff letter — 2026-05-18 (emit-features arc + blind-spot closure + IRBuilders full retirement; SCHEMA-axis V2-driver gate ready modulo named residuals)
 
 To the next agent. The chapter-5.0 letter sits below this one; read both. The matrix discipline (`V1_PARITY_MATRIX.md`) and the operating-disciplines table (`CLAUDE.md`) are unchanged. This letter tells you what shipped on 2026-05-18, what's now load-bearing, the patterns that compounded across the arc, and how to apply them on upcoming parity-matrix slices.
