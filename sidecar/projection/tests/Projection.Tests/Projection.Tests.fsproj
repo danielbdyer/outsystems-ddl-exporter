@@ -79,6 +79,7 @@
     <Compile Include="OsmRowsetReaderTests.fs" />
     <Compile Include="ColumnRealitySourceSidePopulationTests.fs" />
     <Compile Include="FkRealityRowsetRoundTripTests.fs" />
+    <Compile Include="LiveProfilerIntegrationTests.fs" />
     <Compile Include="DescriptionLiftTests.fs" />
     <Compile Include="OriginalNameAndExternalDbTypeLiftTests.fs" />
     <Compile Include="IndexColumnDirectionTests.fs" />

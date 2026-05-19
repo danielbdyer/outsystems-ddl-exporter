@@ -415,6 +415,14 @@ module ProfileSnapshot =
                                   // distribution evidence (ADMIRE.md
                                   // 2026-05-12).
                                   Distributions             = []
+                                  // AttributeRealities populated by the
+                                  // LiveProfiler sibling adapter (slice
+                                  // A.4.7'-prelude.live-profiler, 2026-05-19;
+                                  // matrix row 49 cash-out). V1's JSON
+                                  // ProfileSnapshot has no per-attribute
+                                  // reality projection; empty-default keeps
+                                  // A34 (Profile independence).
+                                  AttributeRealities        = []
                                   // CdcAwareness populated by the
                                   // chapter-3.1 read-side adapter
                                   // extension (slice γ); the V1

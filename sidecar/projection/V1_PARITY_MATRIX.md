@@ -1403,6 +1403,123 @@ to active.
 
 ---
 
+### Rows 49 + 85 + 86 + 87 — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.live-profiler — DATA-axis cutover-blocker; Profile.AttributeReality + LiveProfiler adapter ship)
+
+**Original framing.**
+- Row 49 (audit-wave slice 5.2.α, 2026-05-18): 🟠 NOT-MAPPED.
+  `Osm.Domain/Model/AttributeReality.cs`'s 5 runtime-reflection fields
+  (`IsNullableInDatabase` / `HasNulls` / `HasDuplicates` / `HasOrphans` /
+  `IsPresentButInactive`) not carried; V2's data-intent boundary
+  excluded reflection statistics from schema-definition IR. Re-open
+  trigger named: "V2 grows a Profile-layer surface AND a downstream
+  consumer (tightening pass; remediation emitter) needs to consume
+  per-attribute reflection state."
+- Row 85 (audit-wave slice 5.4.δ, 2026-05-18): 🟠 NOT-MAPPED.
+  `Pipeline/Profiling/SqlDataProfiler.CaptureAsync()` live-probe
+  orchestration deferred; V2 shipped `ReadSide` (catalog structure
+  only) + `ProfileSnapshot.attach` (V1-JSON adapter) but no live-SQL
+  probe orchestration.
+- Rows 86 + 87 (audit-wave slice 5.4.δ, 2026-05-18): 🟠 NOT-MAPPED.
+  NullCount + UniqueCandidate probe query builders deferred (V2's
+  `Profile.Columns` + `Profile.UniqueCandidates` carry the IR; the
+  acquisition was absent).
+
+**Reclassified (slice A.4.7'-prelude.live-profiler, 2026-05-19):**
+
+| Row | Prior status | Updated status | What shipped |
+|---|---|---|---|
+| 49 | 🟠 NOT-MAPPED | 🟢 PARITY (4 of 5 axes; 1 axis deferred) | New `Profile.AttributeReality` record in `Projection.Core/Profile.fs` carries the 5 fields per attribute key. `Profile.AttributeRealities : AttributeReality list` field added; `Profile.empty.AttributeRealities = []`. `AttributeReality.create` smart constructor seeds all booleans to `false`. The shape mirrors V1's `AttributeReality.cs` field-for-field. |
+| 85 | 🟠 NOT-MAPPED | 🟢 PARITY (subset of axes; orchestrator-side surface; full-table scan for now) | New `Projection.Adapters.Sql/LiveProfiler.fs` sibling to `ProfileSnapshot.fs` + `ProfileStatistics.fs` — `LiveProfiler.capture : SqlConnection → Catalog → Task<Result<AttributeReality list>>` + `LiveProfiler.attach : SqlConnection → Catalog → Profile → Task<Result<Profile>>`. Walks every non-static kind; reflects nullability via `INFORMATION_SCHEMA.COLUMNS` (one round-trip per kind); runs combined `HasNulls` + `HasDuplicates` probe per non-PK attribute (single round-trip per attribute via `EXISTS` short-circuiting). PK attributes get `IsNullableInDatabase` populated; probing skipped (PK is by construction NOT NULL + unique). Static kinds skipped (`Modality.Static` rows are catalog-resident). |
+| 86 | 🟠 NOT-MAPPED | 🟢 PARITY (HasNulls axis) | `LiveProfiler.probeAttribute` emits `EXISTS (SELECT 1 FROM <tbl> WHERE <col> IS NULL)` per attribute as part of the combined probe; observed bit lifts into `AttributeReality.HasNulls`. V1's `NullCountQueryBuilder` emits SUM-of-CASE counts (cardinality-of-nulls); V2 emits EXISTS (boolean witness only). The witness shape matches V1's downstream consumer (`AttributeReality.HasNulls`) — exact counts are deferred to V2's existing `Profile.Columns.NullCount` axis (which goes through `ProfileStatistics.attach`/JSON snapshot today). |
+| 87 | 🟠 NOT-MAPPED | 🟢 PARITY (HasDuplicates axis) | `LiveProfiler.probeAttribute` emits `EXISTS (… GROUP BY <col> HAVING COUNT_BIG(*) > 1)` per attribute as part of the combined probe; observed bit lifts into `AttributeReality.HasDuplicates`. V1's `UniqueCandidateQueryBuilder` emits a per-candidate uniqueness check; V2's probe matches the witness shape (boolean only). Composite-unique probes (V1's composite branch) are deferred — `LiveProfiler` walks per-attribute, not per-candidate; cash-out lands when an `Index` consumer demands the per-candidate evidence. |
+
+**Per pillar 9: all probes carry DataIntent.** Every probe in
+`LiveProfiler` observes deployed reality; no operator policy enters
+at probe time. Sampling policy (when V2 adopts non-full-table
+probing) lives in `Pipeline.Config` per matrix row 90's prior
+`DECISIONS 2026-05-18 (slice 5.4.δ.profiling) — Sampling policy is
+operator intent; lives in the orchestrator, not in Profile IR`.
+`LiveProfiler` consumes Catalog (to identify which attributes to
+probe) but emits Profile evidence only — no catalog mutation, no
+policy consumption (A18 amended + A34).
+
+**Verification depth: 6 Docker-gated integration tests** in
+`LiveProfilerIntegrationTests.fs`. Items table fixture with 4 rows
+(NAME: 1 NULL, 2 'alpha' duplicates, 1 'gamma'; CODE: 4 distinct
+non-nulls); ID = PK INT NOT NULL; NAME = NVARCHAR NULL; CODE =
+NVARCHAR NOT NULL. Tests:
+
+- NAME.HasNulls = true (one NULL row observed)
+- NAME.HasDuplicates = true ('alpha' appears twice)
+- CODE.HasNulls = false AND CODE.HasDuplicates = false (clean column)
+- IsNullableInDatabase reflection: ID = false; NAME = true; CODE = false
+- Totality: 3 reality entries (one per attribute including PK)
+- `attach` composes captured realities into `Profile.empty.AttributeRealities`;
+  other Profile axes remain empty (sibling-adapter composability)
+
+All 6 pass green against `Deploy.useEphemeralContainer` (mssql 2022
+CU-latest); per-test ephemeral database; best-effort drop with
+SINGLE_USER + ROLLBACK IMMEDIATE.
+
+**Cross-references.**
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.live-profiler)` —
+  Profile.AttributeReality cash-out + LiveProfiler probe-shape
+  rationale + deferral list
+- V1 source: `Osm.Pipeline/Profiling/SqlDataProfiler.cs` (the live-
+  probe orchestrator); `NullCountQueryBuilder.cs` (HasNulls probe
+  shape); `UniqueCandidateQueryBuilder.cs` (HasDuplicates probe
+  shape); `Osm.Domain/Model/AttributeReality.cs` (5-field IR)
+- Pillar 9 (`DECISIONS 2026-05-15 (late)`) — DataIntent classification;
+  `LiveProfiler` is observation-only
+- A18 amended + A34 — Profile independent of Catalog + Policy
+- V2_DRIVER per-axis stakes (DATA axis cutover-blocker)
+- Sibling adapters: `ProfileSnapshot.attach` (V1-JSON snapshot) +
+  `ProfileStatistics.attach` (V2 distribution JSON) + `LiveProfiler
+  .attach` (live SQL Server probe) — the three composable Profile
+  surfaces named in `DECISIONS 2026-05-11 — the rich-profiling
+  agenda`
+
+**Refreshed deferral triggers (after this slice).**
+
+- **`HasOrphans` per-FK probe** — V2's `AttributeReality.HasOrphans`
+  defaults to `false`. Trigger: `ForeignKeyRules` consumer demands
+  orphan-evidence refinement of its `Outcome` decisions (i.e., a
+  property test asserts decision changes when orphans are present
+  vs absent). Cash-out shape: per-`Reference` probe (`EXISTS (FK
+  source row WHERE PK target absent)`) inside `LiveProfiler`;
+  joined onto the per-attribute reality stream by source attribute
+  SsKey.
+- **`IsPresentButInactive` full closure** — current shape is
+  `Map.containsKey + not attr.IsActive`. The "deployed-but-inactive"
+  half is captured; the "logically-active-but-deployment-missing"
+  half (column expected by Catalog but absent in deployed
+  `INFORMATION_SCHEMA.COLUMNS`) is canary territory, not LiveProfiler
+  territory. Trigger: the canary's PhysicalSchema diff surfaces a
+  consumer that wants the per-attribute presence/inactivity flag
+  rather than the diff entries.
+- **Sampling policy** — full-table scans today (one EXISTS per
+  attribute; one INFORMATION_SCHEMA query per kind). Trigger:
+  production canary surfaces a profile-capture latency concern at
+  operator-reality scale (300 tables × 50k rows); cash-out via
+  `SqlProfilerOptions.Sampling` (matrix row 90's prior naming the
+  orchestrator-side home).
+- **Composite-unique probes** — `LiveProfiler` walks per-attribute,
+  not per-candidate. Trigger: an `Index` consumer demands the
+  per-candidate evidence (e.g., a composite UNIQUE index tightening
+  decision needs orphan-evidence per-candidate).
+
+**Operating-discipline payoff.** Three sibling Profile adapters
+(`ProfileSnapshot.attach`, `ProfileStatistics.attach`, `LiveProfiler
+.attach`) now ship the canonical composition shape: each consumes
+its own evidence source and lays it onto the Profile aggregate
+without overwriting sibling axes. Worked example in the integration
+test: `LiveProfiler.attach cnn catalog Profile.empty` returns a
+Profile with `AttributeRealities` populated and `Columns` /
+`UniqueCandidates` / `ForeignKeys` / `Distributions` all empty.
+Sibling-adapter composability is structural, not aspirational.
+
+---
+
 ### Rows 11 + 53 — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.row53-source-side wires V1 #ColumnReality into Attribute.Computed + Attribute.DefaultName)
 
 **Original framing.** Slice 5.13.ossys-rowsets-cluster (2026-05-18)
