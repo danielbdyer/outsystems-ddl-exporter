@@ -15,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="MetadataContractOverrides.fs" />
     <Compile Include="MetadataExtractionSql.fs" />
     <Compile Include="MetadataExtractionError.fs" />
     <Compile Include="Retry.fs" />

@@ -2898,3 +2898,32 @@ Operator-supplied selection seam over the catalog: filters `Catalog → Catalog`
 - **`ValidationOverrides` axis NOT ported here**: V1's `ModuleFilterOptions.ValidationOverrides` is a per-module validation suppression surface; that lands at slice 5 (`MetadataContractOverrides`) where it is the natural home structurally. The V2 port at this slice carries no validation-overrides field on `ModuleFilterOptions`.
 - **Operator-input case sensitivity**: matching is case-insensitive (lowercase-normalized at construction; matches V1 `OrdinalIgnoreCase` semantics). Original-case names preserved for diagnostic messages so operators see their own typing in error output.
 - **Pillar 9 / TransformRegistry wiring**: this slice ships the pure filter only; the `RegisteredTransform<ModuleFilterOptions, Catalog>` registration + `transform.applied` event emission per the logging-format contract land at slice 7 (`full-export` CLI) where the orchestrator invokes the filter.
+
+## 2026-05-19 — `MetadataContractOverrides` (`src/Osm.Pipeline/SqlExtraction/MetadataContractOverrides.cs`)
+**Status:** **carbon-copied (chapter B.4 slice 5)** — mechanism shipped at `src/Projection.Adapters.OssysSql/MetadataContractOverrides.fs`; wiring into specific V2 mappers deferred (no current V2 consumer; the V1 sole consumer reads a V1-SUNSET rowset V2 skips). **Mode:** V1-migration (V1 has the canonical shape; V2 ports the mechanism + defers wiring under IR-grows-under-evidence).
+
+### What it does (algebraic terms)
+Operator-supplied weakening of V2's strict metadata-contract enforcement at SQL extraction time. Each entry names a (result-set, column) pair where V2's strict mapper would normally fail-fast on a NULL value; the override declares the column as optional for that run. Pure value carrier — no I/O; consumed at runtime by `MetadataSnapshotRunner` mappers via `isColumnOptional resultSetName columnName overrides : bool` lookup.
+
+### V2 placement
+**Carbon-copied** to `src/Projection.Adapters.OssysSql/MetadataContractOverrides.fs`. Same project as V1's natural V2 location (V2's F# adapter for the OSSYS SQL extraction path); compiles before the `MetadataExtractionSql` / `MetadataSnapshotRunner` siblings so future wiring can consume the type without circular dependency.
+
+### V2 placement — carbon-copy log
+- **V1 source path** (at V1 HEAD V2 inherited from, 2026-05-19):
+  - `src/Osm.Pipeline/SqlExtraction/MetadataContractOverrides.cs` (~140 LOC)
+- **V2 location**: `sidecar/projection/src/Projection.Adapters.OssysSql/MetadataContractOverrides.fs`.
+- **Date inherited**: 2026-05-19.
+- **Refactor status**: **partially refactored** — V2 idioms (F# record + `[<RequireQualifiedAccess>]` module + `Result<_>`-returning smart constructor accumulating per-entry errors; V1 threw `ArgumentException` on first blank input). Set semantics for column lists (V1 used `HashSet<string>`-with-`OrdinalIgnoreCase`; V2 uses lowercase-normalized `Set<string>`). Case-insensitive normalization with original-case `ResultSetLabels` + `ColumnLabels` preserved for diagnostics (mirrors slice-4 `ModuleFilter` convention). `MetadataContractOverrides.empty` replaces V1's `Strict` property (concept-shaped naming per pillar 8).
+- **Citation comment**: at the top of `MetadataContractOverrides.fs`, citing the V1 source path + chapter+slice ID + this ADMIRE entry pointer.
+
+### Existing test coverage (V1)
+- V1 has implicit coverage through `AttributeJsonResultSetProcessor`'s tests (the sole consumer); no dedicated `MetadataContractOverridesTests.cs` file in the trunk.
+
+### V2 test coverage
+- `tests/Projection.Tests/MetadataContractOverridesTests.fs` — 25 tests covering: `empty` / `hasOverrides` baseline; smart-constructor parsing with case-insensitive normalization + original-case label preservation + trim + multiple-result-set merging + blank-column silent skip + null-input safety + error accumulation; `isColumnOptional` runtime lookup with case-insensitive matching + blank-input V2 safety (returns false rather than V1's throw); `withOptional` fluent additive with idempotence + multi-call accumulation + blank-input no-op + first-sight label preservation.
+
+### Edges / risks
+- **No V2 consumer at slice land.** V1's single production call site was `AttributeJsonResultSetProcessor.IsColumnOptional("AttributeJson", "AttributesJson")` — V2's `MetadataSnapshotRunner.fs:778` skips the V1-SUNSET `attrJson` rowset (`do! skip "attrJson"`) because V2 reads the structured `attributes` rowset directly. So V2 has zero direct carry-over of V1's single wiring site. Per IR-grows-under-evidence: pick the V2 mapper to make relaxable on real V1-source drift, not speculatively. Active deferral row added with trigger: "real V1-source drift event surfaces a strict column producing NULL in production."
+- **`OverlayAxis` classification deferred to slice 7.** Operator intent here is "weaken the extraction-time metadata contract" — none of V2's five existing `OverlayAxis` variants (`Selection | Emission | Insertion | Tightening | Ordering`) describe extraction-time contract relaxation cleanly. `Tightening` is the closest semantic stretch (operator decision about constraint enforcement) but V2 reserves that axis for catalog-emit constraint enforcement, not source-data-read tolerance. Slice 7 decides at TransformRegistry wiring time whether to add a sixth `OverlayAxis.Extraction` variant per the chapter A.4.7 open's Q9 trigger-fires discipline, or stretch `Tightening` with a docstring note.
+- **V1 throws; V2 returns safe defaults.** V1's `IsColumnOptional` throws `ArgumentException` on blank result-set / column inputs; V2 returns `false` (the safe "strict" default). Mapper passing a blank name is a V2-side bug, not an operator-input issue — fail-soft rather than crash the extraction.
+- **Slice-5 framing in chapter B.4 open ("per-attribute tightening / emission overrides") is broader than V1's actual `MetadataContractOverrides`.** V2's per-attribute tightening overrides already exist structurally as `Projection.Core.Policy.TighteningOverride` (`Policy.fs:118` — SsKey-keyed with `OverrideAction.KeepNullable`); slice 7 wires the operator-config surface to that pre-existing V2 mechanism. The slice-5 carbon-copy here covers the V1-parity extraction-contract surface only.
