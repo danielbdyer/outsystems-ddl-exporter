@@ -133,4 +133,7 @@ let sampleProfile : Profile = {
     CdcAwareness              = CdcAwareness.empty
     SourceUsers               = UserPopulation.empty
     TargetUsers               = UserPopulation.empty
+    ForeignKeyCardinalities   = []
+    ForeignKeySelectivities   = []
+    JointDistributions        = []
 }

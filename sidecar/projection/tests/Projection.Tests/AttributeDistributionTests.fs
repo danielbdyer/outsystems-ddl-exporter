@@ -497,3 +497,104 @@ let ``coexistence: Categorical and Numeric distributions on different attributes
     // Cross-shape lookups still return None.
     Assert.Equal<CategoricalDistribution option>(None, Profile.tryFindCategorical customerNameKey profile)
     Assert.Equal<NumericDistribution option>    (None, Profile.tryFindNumeric countryCodeKey profile)
+
+// ---------------------------------------------------------------------------
+// Slice B.3.5 — StatisticalMoments + NumericDistribution.withMoments
+// + coefficientOfVariation. IR keystone (no Docker; pure-Core surface).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``B.3.5: StatisticalMoments.create rejects negative StdDev`` () =
+    match StatisticalMoments.create 50m -1m with
+    | Ok _ -> Assert.Fail "expected failure on negative StdDev"
+    | Error errs ->
+        Assert.Contains("statisticalMoments.stdDev.negative", errs |> List.map (fun e -> e.Code))
+
+[<Fact>]
+let ``B.3.5: StatisticalMoments.create accepts zero StdDev (degenerate constant column)`` () =
+    let moments = StatisticalMoments.create 42m 0m |> Result.value
+    Assert.Equal(42m, moments.Mean)
+    Assert.Equal(0m, moments.StdDev)
+
+[<Fact>]
+let ``B.3.5: NumericDistribution.create defaults Moments to None (no live probe ran)`` () =
+    let probe = succeededProbe 100L
+    let dist =
+        NumericDistribution.create
+            customerNameKey 0m 10m 25m 50m 90m 99m 100m 100L probe
+        |> Result.value
+    Assert.Equal<StatisticalMoments option>(None, dist.Moments)
+
+[<Fact>]
+let ``B.3.5: NumericDistribution.withMoments enriches a distribution with mean + stddev`` () =
+    let probe = succeededProbe 100L
+    let dist =
+        NumericDistribution.create
+            customerNameKey 0m 10m 25m 50m 90m 99m 100m 100L probe
+        |> Result.value
+    let moments = StatisticalMoments.create 50m 28m |> Result.value
+    let enriched =
+        NumericDistribution.withMoments moments dist |> Result.value
+    Assert.Equal<StatisticalMoments option>(Some moments, enriched.Moments)
+    // Original distribution unchanged (immutability).
+    Assert.Equal<StatisticalMoments option>(None, dist.Moments)
+
+[<Fact>]
+let ``B.3.5: NumericDistribution.withMoments rejects mean below Min`` () =
+    let probe = succeededProbe 100L
+    let dist =
+        NumericDistribution.create
+            customerNameKey 10m 20m 30m 50m 80m 95m 100m 100L probe
+        |> Result.value
+    let moments = StatisticalMoments.create 5m 10m |> Result.value
+    // Mean = 5 falls outside [Min=10, Max=100]; structural rejection.
+    match NumericDistribution.withMoments moments dist with
+    | Ok _ -> Assert.Fail "expected failure when mean < Min"
+    | Error errs ->
+        Assert.Contains("numericDistribution.mean.outOfRange", errs |> List.map (fun e -> e.Code))
+
+[<Fact>]
+let ``B.3.5: NumericDistribution.withMoments rejects mean above Max`` () =
+    let probe = succeededProbe 100L
+    let dist =
+        NumericDistribution.create
+            customerNameKey 10m 20m 30m 50m 80m 95m 100m 100L probe
+        |> Result.value
+    let moments = StatisticalMoments.create 150m 10m |> Result.value
+    // Mean = 150 falls outside [Min=10, Max=100]; structural rejection.
+    match NumericDistribution.withMoments moments dist with
+    | Ok _ -> Assert.Fail "expected failure when mean > Max"
+    | Error errs ->
+        Assert.Contains("numericDistribution.mean.outOfRange", errs |> List.map (fun e -> e.Code))
+
+[<Fact>]
+let ``B.3.5: NumericDistribution.coefficientOfVariation returns None when Moments absent`` () =
+    let probe = succeededProbe 100L
+    let dist =
+        NumericDistribution.create
+            customerNameKey 0m 10m 25m 50m 90m 99m 100m 100L probe
+        |> Result.value
+    Assert.Equal<decimal option>(None, NumericDistribution.coefficientOfVariation dist)
+
+[<Fact>]
+let ``B.3.5: NumericDistribution.coefficientOfVariation returns sigma/mu when Moments present`` () =
+    let probe = succeededProbe 100L
+    let dist =
+        NumericDistribution.create
+            customerNameKey 0m 10m 25m 50m 90m 99m 100m 100L probe
+        |> Result.value
+    let moments = StatisticalMoments.create 50m 25m |> Result.value
+    let enriched = NumericDistribution.withMoments moments dist |> Result.value
+    Assert.Equal<decimal option>(Some 0.5m, NumericDistribution.coefficientOfVariation enriched)
+
+[<Fact>]
+let ``B.3.5: NumericDistribution.coefficientOfVariation returns None when Mean is zero (CV undefined)`` () =
+    let probe = succeededProbe 100L
+    let dist =
+        NumericDistribution.create
+            customerNameKey -5m -3m -1m 0m 2m 4m 5m 100L probe
+        |> Result.value
+    let moments = StatisticalMoments.create 0m 2m |> Result.value
+    let enriched = NumericDistribution.withMoments moments dist |> Result.value
+    // Per the discipline: CV is undefined when μ = 0; return None.
+    Assert.Equal<decimal option>(None, NumericDistribution.coefficientOfVariation enriched)

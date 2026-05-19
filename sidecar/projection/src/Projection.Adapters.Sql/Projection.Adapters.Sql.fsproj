@@ -15,6 +15,7 @@
     <Compile Include="Static.fs" />
     <Compile Include="ProfileSnapshot.fs" />
     <Compile Include="ProfileStatistics.fs" />
+    <Compile Include="EvidenceCache.fs" />
     <Compile Include="LiveProfiler.fs" />
     <Compile Include="ReadSide.fs" />
   </ItemGroup>

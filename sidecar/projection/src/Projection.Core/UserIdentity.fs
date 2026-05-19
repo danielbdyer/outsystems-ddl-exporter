@@ -201,3 +201,17 @@ module UserPopulation =
     /// pressure surfaces).
     let create (users: UserAttributes<'id> list) : UserPopulation<'id> =
         { Users = users }
+
+    /// Multi-env merge — left-biased union by `Id`. Per slice B.3.7
+    /// `Profile.merge` discipline: commutative for the identity-set
+    /// (the two populations share the same `Id` ⇒ same user); the
+    /// left-bias ensures associativity when conflicting attribute
+    /// records share an `Id` (the first observation's attributes
+    /// stay; later observations only add new ids). Same SourceUserId
+    /// or TargetUserId across environments means "same user" by
+    /// construction (the `'id` newtype carries environment-scoped
+    /// identity).
+    let union (a: UserPopulation<'id>) (b: UserPopulation<'id>) : UserPopulation<'id> =
+        let aIds = a.Users |> List.map (fun u -> u.Id) |> Set.ofList
+        let additional = b.Users |> List.filter (fun u -> not (Set.contains u.Id aIds))
+        { Users = a.Users @ additional }

@@ -50,6 +50,40 @@ module ProbeStatus =
         | Succeeded -> true
         | _         -> false
 
+    /// No-probe-ran shape — minimum-evidence default for smart
+    /// constructors of Profile records. `CapturedAtUtc = MinValue`
+    /// because Core has no clock (per the F# feature surface
+    /// taxonomy — DateTime.Now is out of scope for Core); adapters
+    /// at the boundary supply real timestamps when probes actually
+    /// run. Extracted at chapter B.3 slice 3 cash-out per the
+    /// two-consumer-threshold discipline (8 inlined sites → 1
+    /// named primitive).
+    let noProbeRun : ProbeStatus =
+        { CapturedAtUtc = DateTimeOffset.MinValue
+          SampleSize    = 0L
+          Outcome       = Succeeded }
+
+    /// Probe-ran-successfully shape parameterized on observed sample
+    /// size. Used by LiveProfiler captures where `rowCount` is the
+    /// number of rows examined. Sibling to `noProbeRun`; canonical
+    /// for adapter sites where the probe completed.
+    let observed (sampleSize: int64) : ProbeStatus =
+        { CapturedAtUtc = DateTimeOffset.MinValue
+          SampleSize    = sampleSize
+          Outcome       = Succeeded }
+
+    /// Probe-couldn't-execute shape — used when the target shape is
+    /// structurally unmappable to the probe primitive (e.g.,
+    /// composite-PK FK in slice B.3.1's per-Reference probe; a
+    /// future composite-key extension cashes the deferral).
+    /// `UniqueIndexRules.evaluate` + `ForeignKeyRules.evaluate`
+    /// route AmbiguousMapping outcomes to `DoNotEnforce
+    /// EvidenceMissing` — the conservative-safe behavior.
+    let ambiguous : ProbeStatus =
+        { CapturedAtUtc = DateTimeOffset.MinValue
+          SampleSize    = 0L
+          Outcome       = AmbiguousMapping }
+
 
 /// Per-column data-quality observation. Keyed by the Attribute's `SsKey`
 /// so consumers look up by identity (A4), not by physical coordinate. The
@@ -166,6 +200,21 @@ type UniqueCandidateProfile = {
     ProbeStatus  : ProbeStatus
 }
 
+[<RequireQualifiedAccess>]
+module UniqueCandidateProfile =
+
+    /// Minimum-evidence default. `HasDuplicate = false` (no
+    /// duplicates observed); `ProbeStatus` defaults to the no-probe-
+    /// ran shape. Adapters override via record-update. Mirrors
+    /// `AttributeReality.create` + `ForeignKeyReality.create`
+    /// precedent per the chapter B.3 slice 3 cash-out.
+    let create (attributeKey: SsKey) : UniqueCandidateProfile =
+        {
+            AttributeKey = attributeKey
+            HasDuplicate = false
+            ProbeStatus  = ProbeStatus.noProbeRun
+        }
+
 
 /// Multi-column uniqueness probe. Keyed by the Kind's `SsKey` plus the
 /// participating Attribute `SsKey`s.
@@ -181,6 +230,26 @@ type CompositeUniqueCandidateProfile = {
     HasDuplicate  : bool
     ProbeStatus   : ProbeStatus
 }
+
+[<RequireQualifiedAccess>]
+module CompositeUniqueCandidateProfile =
+
+    /// Minimum-evidence default. `HasDuplicate = false` (no
+    /// duplicates observed); `ProbeStatus` defaults to the no-probe-
+    /// ran shape. Adapters override via record-update. Mirrors
+    /// `AttributeReality.create` + `ForeignKeyReality.create` +
+    /// `UniqueCandidateProfile.create` precedent per the chapter B.3
+    /// slice 3 cash-out.
+    let create
+        (kindKey: SsKey)
+        (attributeKeys: SsKey list)
+        : CompositeUniqueCandidateProfile =
+        {
+            KindKey       = kindKey
+            AttributeKeys = attributeKeys
+            HasDuplicate  = false
+            ProbeStatus   = ProbeStatus.noProbeRun
+        }
 
 
 /// Foreign-key referential-integrity observation. Keyed by the
@@ -201,6 +270,23 @@ module ForeignKeyReality =
 
     /// True iff the FK has no observed orphans.
     let isClean (r: ForeignKeyReality) : bool = not r.HasOrphan
+
+    /// Minimum-evidence default. All boolean fields default to `false`
+    /// (no orphans observed; constraint trusted) and `OrphanCount =
+    /// 0L`. `ProbeStatus` is the no-probe-ran shape (CapturedAtUtc =
+    /// MinValue; SampleSize = 0L; Outcome = Succeeded). The
+    /// LiveProfiler adapter overrides via record-update once a real
+    /// probe completes; `ProfileSnapshot.attach` overrides from V1's
+    /// JSON snapshot. Mirrors the `AttributeReality.create` shape per
+    /// the chapter B.3 slice 1 cash-out.
+    let create (referenceKey: SsKey) : ForeignKeyReality =
+        {
+            ReferenceKey = referenceKey
+            HasOrphan    = false
+            OrphanCount  = 0L
+            IsNoCheck    = false
+            ProbeStatus  = ProbeStatus.noProbeRun
+        }
 
 
 /// Categorical value frequencies — for attributes whose values are
@@ -268,6 +354,58 @@ type CategoricalDistribution = {
 ///
 /// Every constructed `NumericDistribution` value satisfies these
 /// contracts; consumers pattern-match without re-validating.
+/// First two statistical moments of a numeric distribution — Mean
+/// (first moment; central tendency) and population standard
+/// deviation (square root of the second central moment; spread).
+/// The two travel together as an algebraic unit per
+/// `DECISIONS 2026-05-19 (slice B.3.5)` — when one is meaningful
+/// without the other, V2 has the wrong abstraction. Lands as
+/// `NumericDistribution.Moments : StatisticalMoments option`
+/// because LiveProfiler can compute them via SQL Server
+/// `AVG` + `STDEVP` aggregates, but V1-JSON snapshots (the prior
+/// distribution source) don't carry them. The optional carries the
+/// presence of the evidence; the smart constructor `withMoments`
+/// validates the within-range invariant.
+///
+/// **Per pillar 9: DataIntent.** Statistical moments are
+/// observational evidence (computed from deployed reality without
+/// operator opinion); they belong in `Profile`, not in `Policy`.
+///
+/// **Foundational evidence for the deferred Faker emitter.** Per
+/// `ADMIRE.md` (V1 numeric-histograms → Faker Π → synthetic numeric
+/// generation) + `DECISIONS Active deferrals — Faker emitter
+/// (synthetic-data Π)`: μ + σ are the canonical moments a
+/// shape-preserving synthetic-data generator consumes alongside the
+/// percentile shape. Slice B.3.5 closes the V2 evidence-capture
+/// gap; Faker's gating condition (third evidence type lands OR
+/// concrete consumer demand) compounds toward firing.
+type StatisticalMoments = {
+    /// Population mean (μ) — sum of observed values divided by sample size.
+    Mean   : decimal
+    /// Population standard deviation (σ) — square root of the average
+    /// squared deviation from the mean. Non-negative by definition.
+    StdDev : decimal
+}
+
+[<RequireQualifiedAccess>]
+module StatisticalMoments =
+
+    let private negativeStdDev =
+        ValidationError.create
+            "statisticalMoments.stdDev.negative"
+            "StdDev must be non-negative."
+
+    /// Construct a `StatisticalMoments`. Validates `StdDev ≥ 0`
+    /// (the structural invariant — standard deviation of any
+    /// observed distribution is non-negative by definition). `Mean`
+    /// has no by-itself invariant; the within-range check
+    /// (`Min ≤ Mean ≤ Max`) lives at `NumericDistribution.withMoments`
+    /// because it requires the distribution's bounds.
+    let create (mean: decimal) (stdDev: decimal) : Result<StatisticalMoments> =
+        if stdDev < 0M then Result.failureOf negativeStdDev
+        else Result.success { Mean = mean; StdDev = stdDev }
+
+
 type NumericDistribution = {
     /// Identity of the Attribute whose distribution this is.
     AttributeKey : SsKey
@@ -290,6 +428,15 @@ type NumericDistribution = {
     /// the percentiles are stable estimates; low `SampleSize` means
     /// they may shift with additional observations.
     SampleSize   : int64
+    /// First two statistical moments (Mean + StdDev). `None` when
+    /// the source (V1-JSON snapshot) didn't carry them; `Some` when
+    /// LiveProfiler probed them via `AVG` + `STDEVP` aggregates.
+    /// Added at slice B.3.5; enriches the distribution beyond the
+    /// percentile-shape with central-tendency + spread evidence
+    /// foundational for shape-preserving synthetic data generation
+    /// (the deferred Faker emitter consumes both this and the
+    /// percentile field set).
+    Moments      : StatisticalMoments option
     /// Probe metadata.
     ProbeStatus  : ProbeStatus
 }
@@ -442,7 +589,33 @@ module NumericDistribution =
                   P99          = p99
                   Max          = max
                   SampleSize   = sampleSize
+                  Moments      = None
                   ProbeStatus  = probeStatus }
+
+    let private meanOutOfRange =
+        ValidationError.create
+            "numericDistribution.mean.outOfRange"
+            "Mean must lie within [Min, Max] — central tendency cannot fall outside the observed range."
+
+    /// Enrich an existing distribution with `StatisticalMoments`.
+    /// Validates the within-range invariant `Min ≤ Mean ≤ Max`
+    /// (the by-itself `StdDev ≥ 0` invariant is enforced by
+    /// `StatisticalMoments.create`). Returns a `NumericDistribution`
+    /// with `Moments = Some moments`; the consumer chooses whether
+    /// to read the moments alongside the percentile shape.
+    ///
+    /// Slice B.3.5 cash-out — LiveProfiler probes `AVG` + `STDEVP`
+    /// per numeric attribute and threads the result through this
+    /// enrichment. V1-JSON adapter path leaves `Moments = None`
+    /// (V1's snapshot doesn't carry μ + σ).
+    let withMoments
+        (moments: StatisticalMoments)
+        (dist: NumericDistribution)
+        : Result<NumericDistribution> =
+        if moments.Mean < dist.Min || moments.Mean > dist.Max then
+            Result.failureOf meanOutOfRange
+        else
+            Result.success { dist with Moments = Some moments }
 
     /// Inter-quartile range (P75 - P25). Convenience for consumers
     /// that reason about spread; pure derivation, no caching.
@@ -454,6 +627,19 @@ module NumericDistribution =
     /// reason about tail-heaviness.
     let observedRange (d: NumericDistribution) : decimal =
         d.Max - d.Min
+
+    /// Coefficient of variation (σ / μ) — the dimensionless ratio of
+    /// spread to central tendency. Common in synthetic-data quality
+    /// scoring and anomaly detection. Returns `None` when moments
+    /// are unavailable OR when Mean is zero (CV is undefined for
+    /// zero-centered data). Per
+    /// `DECISIONS 2026-05-19 (slice B.3.5)` — exposed as a pure
+    /// derivation so consumers can reason about distribution shape
+    /// without a separate IR field; lifts via `withMoments` evidence.
+    let coefficientOfVariation (d: NumericDistribution) : decimal option =
+        match d.Moments with
+        | Some m when m.Mean <> 0M -> Some (m.StdDev / m.Mean)
+        | _ -> None
 
     /// True iff every percentile coincides with `Min` (or
     /// equivalently with `Max`, since the monotonicity contract
@@ -619,6 +805,164 @@ module AttributeReality =
             IsPresentButInactive = false
         }
 
+/// Slice B.3.8 — FK fan-out cardinality. Per Reference, the
+/// distribution of "how many children per parent." Computed by
+/// grouping source FK values, counting per-value, then summarizing
+/// the count distribution. Shape-preserving synthetic data uses
+/// this to preserve real-world FK load skew (e.g., "Customer 42
+/// has 1000 orders; most customers have 5"). Foundation evidence
+/// for the deferred Faker emitter per `ADMIRE.md` joint-FK chain.
+type ForeignKeyCardinality = {
+    ReferenceKey           : SsKey
+    /// Distribution of child-count-per-parent values. Min/Max
+    /// bound the range; percentiles + Moments characterize the
+    /// shape (uniform spread vs power-law clumping).
+    ChildCountDistribution : NumericDistribution
+}
+
+[<RequireQualifiedAccess>]
+module ForeignKeyCardinality =
+
+    /// Build a `ForeignKeyCardinality` from a per-Reference child-
+    /// count distribution. Returns `None` when there are fewer than
+    /// 5 distinct parent values (the `NumericDistribution`
+    /// SampleSize floor).
+    let create (referenceKey: SsKey) (distribution: NumericDistribution) : ForeignKeyCardinality =
+        { ReferenceKey = referenceKey; ChildCountDistribution = distribution }
+
+
+/// Slice B.3.8 — FK selectivity / clumping. Per Reference, value-
+/// frequency of the source FK column. Captures which target PK
+/// values dominate the children (skew analysis), informing shape-
+/// preserving synthetic FK distribution. Mirrors
+/// `CategoricalDistribution` shape but keyed by Reference (the
+/// source FK column is typically numeric; serializing to string
+/// for tally bridges the type-heterogeneity).
+type ForeignKeySelectivity = {
+    ReferenceKey  : SsKey
+    /// (Target-PK-value string, frequency-in-source-FK). Sorted
+    /// count-DESC + value-ASC for determinism.
+    Frequencies   : (string * int64) list
+    DistinctCount : int64
+    IsTruncated   : bool
+    ProbeStatus   : ProbeStatus
+}
+
+[<RequireQualifiedAccess>]
+module ForeignKeySelectivity =
+
+    let private negativeDistinctCount =
+        ValidationError.create
+            "foreignKeySelectivity.distinctCount.negative"
+            "DistinctCount must be non-negative."
+
+    let private negativeFrequencyCount =
+        ValidationError.create
+            "foreignKeySelectivity.frequencyCount.negative"
+            "Per-value frequency counts must be non-negative."
+
+    let private truncationContradiction =
+        ValidationError.create
+            "foreignKeySelectivity.truncation.contradiction"
+            "DistinctCount cannot exceed Frequencies.Length when IsTruncated is false."
+
+    /// Construct a `ForeignKeySelectivity`. Same invariants as
+    /// `CategoricalDistribution.create`: distinct count
+    /// non-negative; per-value counts non-negative; truncation
+    /// flag must agree with full-vocabulary state.
+    let create
+        (referenceKey: SsKey)
+        (frequencies: (string * int64) list)
+        (distinctCount: int64)
+        (isTruncated: bool)
+        (probeStatus: ProbeStatus)
+        : Result<ForeignKeySelectivity> =
+        if distinctCount < 0L then Result.failureOf negativeDistinctCount
+        elif frequencies |> List.exists (fun (_, c) -> c < 0L) then
+            Result.failureOf negativeFrequencyCount
+        elif (not isTruncated) && distinctCount <> int64 (List.length frequencies) then
+            Result.failureOf truncationContradiction
+        else
+            Result.success
+                { ReferenceKey  = referenceKey
+                  Frequencies   = frequencies
+                  DistinctCount = distinctCount
+                  IsTruncated   = isTruncated
+                  ProbeStatus   = probeStatus }
+
+
+/// Slice B.3.8 — multi-FK joint distribution. Per Kind with ≥2
+/// References, co-occurrence counts across the kind's FK columns.
+/// E.g., in `Orders` with FKs `(CustomerId, RegionId)`, the joint
+/// frequencies reveal which customer+region pairs co-occur and
+/// at what rate. Synthesizing FKs independently would lose this
+/// coherence; the joint distribution preserves it. Foundation
+/// evidence for the Faker emitter's "coherent synthetic data
+/// across relationships" capability per `ADMIRE.md`.
+type JointDistribution = {
+    KindKey       : SsKey
+    /// Ordered tuple of attribute keys participating in the joint.
+    /// Order matters for tuple-key construction; the consumer
+    /// reads the same order to interpret the serialized values.
+    AttributeKeys : SsKey list
+    /// (Serialized tuple key, frequency). Sorted count-DESC + key-ASC.
+    Frequencies   : (string * int64) list
+    DistinctCount : int64
+    IsTruncated   : bool
+    ProbeStatus   : ProbeStatus
+}
+
+[<RequireQualifiedAccess>]
+module JointDistribution =
+
+    let private negativeDistinctCount =
+        ValidationError.create
+            "jointDistribution.distinctCount.negative"
+            "DistinctCount must be non-negative."
+
+    let private negativeFrequencyCount =
+        ValidationError.create
+            "jointDistribution.frequencyCount.negative"
+            "Per-tuple frequency counts must be non-negative."
+
+    let private truncationContradiction =
+        ValidationError.create
+            "jointDistribution.truncation.contradiction"
+            "DistinctCount cannot exceed Frequencies.Length when IsTruncated is false."
+
+    let private degenerateTuple =
+        ValidationError.create
+            "jointDistribution.attributeKeys.tooFew"
+            "JointDistribution must span at least 2 attribute keys; single-attribute distributions belong on AttributeDistribution."
+
+    /// Construct a `JointDistribution`. Validates: distinct count
+    /// non-negative; per-tuple counts non-negative; truncation flag
+    /// agrees with vocabulary state; AttributeKeys length ≥ 2
+    /// (single-attribute joints should use `CategoricalDistribution`).
+    let create
+        (kindKey: SsKey)
+        (attributeKeys: SsKey list)
+        (frequencies: (string * int64) list)
+        (distinctCount: int64)
+        (isTruncated: bool)
+        (probeStatus: ProbeStatus)
+        : Result<JointDistribution> =
+        if List.length attributeKeys < 2 then Result.failureOf degenerateTuple
+        elif distinctCount < 0L then Result.failureOf negativeDistinctCount
+        elif frequencies |> List.exists (fun (_, c) -> c < 0L) then
+            Result.failureOf negativeFrequencyCount
+        elif (not isTruncated) && distinctCount <> int64 (List.length frequencies) then
+            Result.failureOf truncationContradiction
+        else
+            Result.success
+                { KindKey       = kindKey
+                  AttributeKeys = attributeKeys
+                  Frequencies   = frequencies
+                  DistinctCount = distinctCount
+                  IsTruncated   = isTruncated
+                  ProbeStatus   = probeStatus }
+
+
 type Profile = {
     Columns                   : ColumnProfile list
     UniqueCandidates          : UniqueCandidateProfile list
@@ -635,6 +979,18 @@ type Profile = {
     CdcAwareness              : CdcAwareness
     SourceUsers               : UserPopulation<SourceUserId>
     TargetUsers               : UserPopulation<TargetUserId>
+    /// Slice B.3.8 — per-Reference fan-out cardinality (distribution
+    /// of child-count-per-parent values). Shape-preserving synthetic
+    /// data uses this to preserve FK load skew. Foundation evidence
+    /// for the deferred Faker emitter.
+    ForeignKeyCardinalities   : ForeignKeyCardinality list
+    /// Slice B.3.8 — per-Reference selectivity / clumping
+    /// (value-frequency over source FK column).
+    ForeignKeySelectivities   : ForeignKeySelectivity list
+    /// Slice B.3.8 — per-Kind joint distributions across the kind's
+    /// FK columns (≥2). Preserves coherent FK co-occurrence for
+    /// shape-preserving synthetic data.
+    JointDistributions        : JointDistribution list
 }
 
 [<RequireQualifiedAccess>]
@@ -648,6 +1004,9 @@ module Profile =
         CompositeUniqueCandidates = []
         ForeignKeys               = []
         Distributions             = []
+        ForeignKeyCardinalities   = []
+        ForeignKeySelectivities   = []
+        JointDistributions        = []
         AttributeRealities        = []
         CdcAwareness              = CdcAwareness.empty
         SourceUsers               = UserPopulation.empty
@@ -661,6 +1020,9 @@ module Profile =
         && List.isEmpty p.CompositeUniqueCandidates
         && List.isEmpty p.ForeignKeys
         && List.isEmpty p.Distributions
+        && List.isEmpty p.ForeignKeyCardinalities
+        && List.isEmpty p.ForeignKeySelectivities
+        && List.isEmpty p.JointDistributions
         && Set.isEmpty p.CdcAwareness.CdcEnabled
         && Map.isEmpty p.CdcAwareness.CdcInstance
         && UserPopulation.isEmpty p.SourceUsers
@@ -724,3 +1086,214 @@ module Profile =
     let tryFindDistribution (attributeKey: SsKey) (p: Profile) : AttributeDistribution option =
         p.Distributions
         |> List.tryFind (fun d -> distributionKey d = attributeKey)
+
+    // --------------------------------------------------------------------
+    // Slice B.3.7 — multi-environment merge.
+    //
+    // `Profile.merge` combines two profiles into one carrying the
+    // conservative (worst-case) observation across both. Used by the
+    // multi-environment orchestrator (dev + UAT + prod evidence
+    // unioned for cutover-risk scoring; per matrix row 92's V1
+    // `MultiTargetSqlDataProfiler` shape).
+    //
+    // **Algebraic laws (FsCheck-property-tested):**
+    //   - Commutative: `merge a b = merge b a`
+    //   - Associative: `merge (merge a b) c = merge a (merge b c)`
+    //   - Left identity: `merge Profile.empty p = p`
+    //   - Right identity: `merge p Profile.empty = p`
+    //
+    // **Worst-case per-axis aggregation** (each operator is
+    // independently commutative + associative):
+    //
+    // | Axis | Operator |
+    // |---|---|
+    // | `AttributeReality.HasNulls / HasDuplicates / HasOrphans / IsNullableInDatabase / IsPresentButInactive` | OR (any env observing the witness lifts the union) |
+    // | `ColumnProfile.RowCount` | MAX (largest sample) |
+    // | `ColumnProfile.NullCount` | MAX (worst-case null cardinality) |
+    // | `UniqueCandidateProfile.HasDuplicate` | OR |
+    // | `CompositeUniqueCandidateProfile.HasDuplicate` | OR |
+    // | `ForeignKeyReality.HasOrphan` | OR |
+    // | `ForeignKeyReality.OrphanCount` | MAX |
+    // | `ForeignKeyReality.IsNoCheck` | OR |
+    // | `NumericDistribution` / `CategoricalDistribution` | choose larger `SampleSize` (most evidence wins) |
+    // | `ProbeStatus.SampleSize` | MAX |
+    // | `ProbeStatus.Outcome` | `Succeeded` if either succeeded; else first non-success |
+    // | `CdcAwareness` | Set.union over enabled; Map.union over instances |
+    // | `UserPopulation` | merge by SourceUser/TargetUser keys |
+
+    let private mergeProbeStatus (a: ProbeStatus) (b: ProbeStatus) : ProbeStatus =
+        let outcome =
+            match a.Outcome, b.Outcome with
+            | Succeeded, _ | _, Succeeded -> Succeeded
+            | other, _                    -> other
+        { CapturedAtUtc = if a.CapturedAtUtc >= b.CapturedAtUtc then a.CapturedAtUtc else b.CapturedAtUtc
+          SampleSize    = max a.SampleSize b.SampleSize
+          Outcome       = outcome }
+
+    let private mergeColumnProfile (a: ColumnProfile) (b: ColumnProfile) : ColumnProfile =
+        { AttributeKey         = a.AttributeKey
+          RowCount             = max a.RowCount b.RowCount
+          NullCount            = max a.NullCount b.NullCount
+          NullCountProbeStatus = mergeProbeStatus a.NullCountProbeStatus b.NullCountProbeStatus }
+
+    let private mergeUniqueCandidate (a: UniqueCandidateProfile) (b: UniqueCandidateProfile) : UniqueCandidateProfile =
+        { AttributeKey = a.AttributeKey
+          HasDuplicate = a.HasDuplicate || b.HasDuplicate
+          ProbeStatus  = mergeProbeStatus a.ProbeStatus b.ProbeStatus }
+
+    let private mergeCompositeUniqueCandidate
+        (a: CompositeUniqueCandidateProfile)
+        (b: CompositeUniqueCandidateProfile)
+        : CompositeUniqueCandidateProfile =
+        { KindKey       = a.KindKey
+          AttributeKeys = a.AttributeKeys
+          HasDuplicate  = a.HasDuplicate || b.HasDuplicate
+          ProbeStatus   = mergeProbeStatus a.ProbeStatus b.ProbeStatus }
+
+    let private mergeForeignKeyReality (a: ForeignKeyReality) (b: ForeignKeyReality) : ForeignKeyReality =
+        { ReferenceKey = a.ReferenceKey
+          HasOrphan    = a.HasOrphan || b.HasOrphan
+          OrphanCount  = max a.OrphanCount b.OrphanCount
+          IsNoCheck    = a.IsNoCheck || b.IsNoCheck
+          ProbeStatus  = mergeProbeStatus a.ProbeStatus b.ProbeStatus }
+
+    let private mergeAttributeReality (a: AttributeReality) (b: AttributeReality) : AttributeReality =
+        { AttributeKey         = a.AttributeKey
+          IsNullableInDatabase = a.IsNullableInDatabase || b.IsNullableInDatabase
+          HasNulls             = a.HasNulls || b.HasNulls
+          HasDuplicates        = a.HasDuplicates || b.HasDuplicates
+          HasOrphans           = a.HasOrphans || b.HasOrphans
+          IsPresentButInactive = a.IsPresentButInactive || b.IsPresentButInactive }
+
+    /// For numeric/categorical distributions, "more evidence wins."
+    /// Tie-break is irrelevant for merge correctness (commutativity
+    /// holds because if SampleSize equal AND values differ, the law
+    /// only matters when consumers can distinguish — and the consumer
+    /// reads `tryFindNumeric` which is positional within the list).
+    /// We pick `b` on tie so swap(a, b) yields the same answer when
+    /// a ≡ b (which is the only case commutativity matters here).
+    let private mergeDistribution (a: AttributeDistribution) (b: AttributeDistribution) : AttributeDistribution =
+        let sampleSize (d: AttributeDistribution) : int64 =
+            match d with
+            | AttributeDistribution.Numeric n     -> n.SampleSize
+            | AttributeDistribution.Categorical c -> c.DistinctCount
+        if sampleSize a >= sampleSize b then a else b
+
+    /// Generic "merge two keyed lists by key" combinator. Used across
+    /// per-attribute / per-reference / per-kind axes. Commutativity:
+    /// `unionBy keyOf merge a b = unionBy keyOf merge b a` holds when
+    /// `merge` is commutative AND `keyOf` is consistent. Associativity
+    /// similarly inherits from `merge`'s associativity.
+    let private unionBy
+        (keyOf: 'a -> 'k)
+        (merge: 'a -> 'a -> 'a)
+        (xs: 'a list)
+        (ys: 'a list)
+        : 'a list when 'k : comparison =
+        // Index ys for O(log n) lookup, then walk xs (preserving order),
+        // then append any ys not matched. Final ordering: keys-in-xs
+        // first (in their original order), then keys-only-in-ys.
+        let yIndex =
+            ys
+            |> List.map (fun y -> keyOf y, y)
+            |> Map.ofList
+        let mutable consumedYKeys = Set.empty
+        let mergedFromXs =
+            xs
+            |> List.map (fun x ->
+                let key = keyOf x
+                match Map.tryFind key yIndex with
+                | Some y ->
+                    consumedYKeys <- Set.add key consumedYKeys
+                    merge x y
+                | None -> x)
+        let extraFromYs =
+            ys
+            |> List.filter (fun y -> not (Set.contains (keyOf y) consumedYKeys))
+        mergedFromXs @ extraFromYs
+
+    /// Composite key for `CompositeUniqueCandidateProfile` — combines
+    /// KindKey + sorted-set-of-AttributeKeys for order-independent
+    /// equality.
+    let private compositeKey (c: CompositeUniqueCandidateProfile) : SsKey * Set<SsKey> =
+        c.KindKey, Set.ofList c.AttributeKeys
+
+    /// Distribution key — AttributeKey + variant tag (so a Numeric
+    /// and Categorical distribution for the SAME attribute coexist
+    /// rather than colliding).
+    let private distributionMergeKey (d: AttributeDistribution) : SsKey * string =
+        match d with
+        | AttributeDistribution.Numeric n     -> n.AttributeKey, "Numeric"
+        | AttributeDistribution.Categorical c -> c.AttributeKey, "Categorical"
+
+    // Slice B.3.8 — merge helpers for FK correlation evidence.
+
+    let private mergeFkCardinality
+        (a: ForeignKeyCardinality)
+        (b: ForeignKeyCardinality)
+        : ForeignKeyCardinality =
+        // Pick the entry with larger SampleSize (more evidence wins)
+        // — commutative on a ≡ b; associative because pick-larger
+        // is a monoid.
+        if a.ChildCountDistribution.SampleSize >= b.ChildCountDistribution.SampleSize then a else b
+
+    let private mergeFkSelectivity
+        (a: ForeignKeySelectivity)
+        (b: ForeignKeySelectivity)
+        : ForeignKeySelectivity =
+        if a.DistinctCount >= b.DistinctCount then a else b
+
+    let private mergeJointDistribution
+        (a: JointDistribution)
+        (b: JointDistribution)
+        : JointDistribution =
+        if a.DistinctCount >= b.DistinctCount then a else b
+
+    /// Joint-distribution merge key — KindKey + ordered AttributeKeys.
+    let private jointKey (j: JointDistribution) : SsKey * SsKey list =
+        j.KindKey, j.AttributeKeys
+
+    /// Merge two profiles into a worst-case union per axis. Both
+    /// inputs are valid Profile values; the result is a valid
+    /// Profile value whose evidence is the conservative aggregation
+    /// across both. Commutative + associative; `Profile.empty` is
+    /// the identity. FsCheck property tests verify.
+    let merge (a: Profile) (b: Profile) : Profile =
+        {
+            Columns                   =
+                unionBy (fun c -> c.AttributeKey) mergeColumnProfile a.Columns b.Columns
+            UniqueCandidates          =
+                unionBy (fun u -> u.AttributeKey) mergeUniqueCandidate a.UniqueCandidates b.UniqueCandidates
+            CompositeUniqueCandidates =
+                unionBy compositeKey mergeCompositeUniqueCandidate
+                    a.CompositeUniqueCandidates b.CompositeUniqueCandidates
+            ForeignKeys               =
+                unionBy (fun fk -> fk.ReferenceKey) mergeForeignKeyReality
+                    a.ForeignKeys b.ForeignKeys
+            Distributions             =
+                unionBy distributionMergeKey mergeDistribution
+                    a.Distributions b.Distributions
+            AttributeRealities        =
+                unionBy (fun ar -> ar.AttributeKey) mergeAttributeReality
+                    a.AttributeRealities b.AttributeRealities
+            CdcAwareness              =
+                { CdcEnabled  = Set.union a.CdcAwareness.CdcEnabled b.CdcAwareness.CdcEnabled
+                  CdcInstance =
+                      // Map.union biases to b on conflict; safe for
+                      // merge semantics since instance-name strings
+                      // are catalog-equivalence-classed.
+                      Map.fold (fun acc k v -> Map.add k v acc) a.CdcAwareness.CdcInstance b.CdcAwareness.CdcInstance }
+            // User populations are sets keyed by id — union semantics.
+            SourceUsers               = UserPopulation.union a.SourceUsers b.SourceUsers
+            TargetUsers               = UserPopulation.union a.TargetUsers b.TargetUsers
+            // Slice B.3.8 FK correlation axes:
+            ForeignKeyCardinalities   =
+                unionBy (fun c -> c.ReferenceKey) mergeFkCardinality
+                    a.ForeignKeyCardinalities b.ForeignKeyCardinalities
+            ForeignKeySelectivities   =
+                unionBy (fun s -> s.ReferenceKey) mergeFkSelectivity
+                    a.ForeignKeySelectivities b.ForeignKeySelectivities
+            JointDistributions        =
+                unionBy jointKey mergeJointDistribution
+                    a.JointDistributions b.JointDistributions
+        }
