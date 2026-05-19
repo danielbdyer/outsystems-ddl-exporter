@@ -997,25 +997,27 @@ module ComprehensiveCanaryTests =
             // leveled plan, then read it back. Assertion B asserts
             // empty PhysicalSchema diff.
             //
-            // Parallelism = 4: matches the conservative 4-way
-            // ceiling validated by the microbenchmark in
-            // ExecuteBatchParallelTests; SQL Server's connection-pool
-            // overhead and per-segment contention favor the lower
-            // end of the parallel range at canary scale.
+            // Parallelism is environment-adaptive
+            // (slice A.4.7'-prelude.perf-sweep-7.auto-scale):
+            // `Deploy.resolveParallelism` probes `sys.dm_os_sys_info`
+            // for the SQL Server's CPU count and caps at 16; the
+            // `PROJECTION_DEPLOY_PARALLELISM` env var overrides if
+            // operators need to tune for a constrained environment.
             // ---------------------------------------------------------
-            let targetParallelism = 4
             let targetCatalogResult =
                 fixture.WithEphemeralDatabase "CompCanaryTarget" (fun cnn perDbConn -> task {
+                    let! parallelism = Deploy.resolveParallelism perDbConn
+                    printfn "Target-deploy parallelism resolved to %d" parallelism
                     // Phase A: schema (sequential — FK-ordered DDL).
                     do! Deploy.executeBatch cnn leveledPlan.Schema
                     // Phase B: data Phase-1 levels (parallel within level).
                     for levelText in leveledPlan.Phase1Levels do
                         if levelText.Length > 0 then
-                            do! Deploy.executeBatchParallel perDbConn levelText targetParallelism
+                            do! Deploy.executeBatchParallel perDbConn levelText parallelism
                     // Phase C: data Phase-2 levels (parallel within level).
                     for levelText in leveledPlan.Phase2Levels do
                         if levelText.Length > 0 then
-                            do! Deploy.executeBatchParallel perDbConn levelText targetParallelism
+                            do! Deploy.executeBatchParallel perDbConn levelText parallelism
                     return! ReadSide.read cnn
                 })
                 |> fun t -> t.GetAwaiter().GetResult()

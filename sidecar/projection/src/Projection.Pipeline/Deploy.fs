@@ -418,6 +418,169 @@ module Deploy =
                 ()
         }
 
+    /// Cache of resolved parallelism per connection string. Per slice
+    /// A.4.7'-prelude.perf-sweep-7.auto-scale: a single DMV round-trip
+    /// at first use surfaces the SQL Server's CPU count; subsequent
+    /// calls hit the cache. `ConcurrentDictionary` is the standard
+    /// concurrent cache; reference-equal connection strings (the
+    /// common case — same SqlConnection.ConnectionString reused) hit
+    /// the same entry.
+    let private parallelismCache =
+        System.Collections.Concurrent.ConcurrentDictionary<string, int>()
+
+    /// Static fallback parallelism — used when both the SQL Server DMV
+    /// probe AND the client-CPU heuristic are unavailable. Conservative
+    /// default validated by the `ExecuteBatchParallelTests` microbench
+    /// (1.21-1.75× speedup at parallelism=4 on the warm container).
+    [<Literal>]
+    let private FallbackParallelism : int = 4
+
+    /// Maximum parallelism cap — beyond this, lock contention on MERGE-
+    /// shaped workloads dominates the speedup. Empirical per the
+    /// SQL Server best-practices literature for bulk-write workloads.
+    [<Literal>]
+    let private MaxParallelism : int = 16
+
+    /// Minimum parallelism floor — below this, the parallel-dispatch
+    /// overhead exceeds the speedup.
+    [<Literal>]
+    let private MinParallelism : int = 2
+
+    /// Attempt to read SQL Server's CPU count via
+    /// `sys.dm_os_sys_info.cpu_count`. Returns `Some n` on success,
+    /// `None` on **any** failure mode:
+    ///   - Connection failure (network, timeout)
+    ///   - Permission denied (`VIEW SERVER STATE` required; restricted
+    ///     in managed-instance / Azure SQL Database / least-privileged
+    ///     production accounts)
+    ///   - DMV missing or column renamed (very old SQL Server versions)
+    ///   - Scalar query returns null / DBNull (defensive against
+    ///     unexpected result shapes)
+    ///   - Cast failure (defensive against non-integer return types)
+    /// Never throws — exceptions are caught and converted to `None`.
+    let private tryProbeServerCpus (connectionString: string) : Task<int option> =
+        task {
+            try
+                use cnn = new SqlConnection(connectionString)
+                do! cnn.OpenAsync()
+                use cmd = cnn.CreateCommand()
+                cmd.CommandText <- "SELECT cpu_count FROM sys.dm_os_sys_info"
+                cmd.CommandTimeout <- 5
+                let! raw = cmd.ExecuteScalarAsync()
+                match raw with
+                | null -> return None
+                | :? System.DBNull -> return None
+                | other ->
+                    try
+                        let n = System.Convert.ToInt32 other
+                        if n > 0 then return Some n
+                        else return None
+                    with _ -> return None
+            with _ -> return None
+        }
+
+    /// Layered probe for the deploy-dispatch parallelism. Tries layers
+    /// in order; first success wins:
+    ///   1. **SQL Server DMV** (`sys.dm_os_sys_info.cpu_count`) —
+    ///      authoritative when accessible; matches the actual
+    ///      server-side concurrency capacity. Capped via
+    ///      `clamp(MinParallelism, MaxParallelism, serverCpus)`.
+    ///   2. **Client CPU count** (`Environment.ProcessorCount`) —
+    ///      defensive fallback for environments where the DMV is
+    ///      restricted (managed instances; least-privileged accounts;
+    ///      cross-server-version compatibility). Capped at `min 8`
+    ///      because the client is the dispatcher (not the workload);
+    ///      large client parallelism without a matched server
+    ///      doesn't translate to throughput.
+    ///   3. **Static fallback** (`FallbackParallelism`, currently 4) —
+    ///      last-resort safe default. Reached only when (a) the DMV
+    ///      probe failed AND (b) `Environment.ProcessorCount`
+    ///      returned ≤ 0 (extraordinarily unlikely; defensive against
+    ///      bizarre runtime conditions).
+    ///
+    /// Each layer logs the chosen path to stderr so operators can see
+    /// WHY a given parallelism was selected — important for debugging
+    /// unexpected deploy throughput in restricted environments.
+    let detectParallelism (connectionString: string) : Task<int> =
+        task {
+            use _ = Bench.scope "deploy.detectParallelism"
+            // Layer 1: SQL Server DMV
+            let! serverProbe = tryProbeServerCpus connectionString
+            match serverProbe with
+            | Some serverCpus ->
+                let clamped = max MinParallelism (min MaxParallelism serverCpus)
+                Bench.recordSample "deploy.detectParallelism.serverCpus" (int64 serverCpus)
+                Bench.recordSample "deploy.detectParallelism.resolved" (int64 clamped)
+                return clamped
+            | None ->
+                // Layer 2: client CPU count — defensive fallback when
+                // DMV is unreachable (Azure SQL Database; restricted
+                // accounts; cross-version compatibility).
+                let clientCpus = System.Environment.ProcessorCount
+                if clientCpus > 0 then
+                    // Smaller ceiling on the client-side fallback: the
+                    // client is just the parallelism dispatcher, not
+                    // the SQL workload — too much client parallelism
+                    // without matched server capacity wastes
+                    // connection-pool slots without throughput gain.
+                    let clamped = max MinParallelism (min 8 clientCpus)
+                    eprintfn
+                        "deploy.detectParallelism: SQL Server DMV unavailable; falling back to Environment.ProcessorCount = %d (clamped to %d)"
+                        clientCpus clamped
+                    Bench.recordSample "deploy.detectParallelism.clientCpus" (int64 clientCpus)
+                    Bench.recordSample "deploy.detectParallelism.resolved" (int64 clamped)
+                    return clamped
+                else
+                    // Layer 3: static fallback (last resort).
+                    eprintfn
+                        "deploy.detectParallelism: both SQL Server DMV and Environment.ProcessorCount unavailable; falling back to %d"
+                        FallbackParallelism
+                    Bench.recordSample "deploy.detectParallelism.resolved" (int64 FallbackParallelism)
+                    return FallbackParallelism
+        }
+
+    /// Resolve the parallelism for data-deploy dispatch. Priority order:
+    ///   1. `PROJECTION_DEPLOY_PARALLELISM` env var (operator override;
+    ///      escape hatch for tuning or for environments where DMV
+    ///      access is restricted)
+    ///   2. Auto-detect via `detectParallelism` (DMV probe; cached
+    ///      per-connection-string for the session)
+    ///   3. Fallback to 4 (matches the prior hardcoded value)
+    ///
+    /// Slice A.4.7'-prelude.perf-sweep-7.auto-scale — environment-
+    /// adaptive realization policy per A36 (bulk-vs-incremental is
+    /// realization-layer policy; parallelism choice is the same
+    /// category).
+    let resolveParallelism (connectionString: string) : Task<int> =
+        task {
+            use _ = Bench.scope "deploy.resolveParallelism"
+            match System.Environment.GetEnvironmentVariable "PROJECTION_DEPLOY_PARALLELISM" with
+            | s when not (System.String.IsNullOrWhiteSpace s) ->
+                match System.Int32.TryParse s with
+                | true, n when n > 0 ->
+                    Bench.recordSample "deploy.resolveParallelism.envOverride" (int64 n)
+                    return n
+                | _ ->
+                    eprintfn
+                        "PROJECTION_DEPLOY_PARALLELISM='%s' is not a positive integer; auto-detecting"
+                        s
+                    match parallelismCache.TryGetValue connectionString with
+                    | true, cached -> return cached
+                    | false, _ ->
+                        let! detected = detectParallelism connectionString
+                        parallelismCache.TryAdd(connectionString, detected) |> ignore
+                        return detected
+            | _ ->
+                match parallelismCache.TryGetValue connectionString with
+                | true, cached ->
+                    Bench.recordSample "deploy.resolveParallelism.cached" (int64 cached)
+                    return cached
+                | false, _ ->
+                    let! detected = detectParallelism connectionString
+                    parallelismCache.TryAdd(connectionString, detected) |> ignore
+                    return detected
+        }
+
     /// **Parallel-segment realization of a SQL text batch** (slice
     /// A.4.7'-prelude.perf-sweep-5 primitive; integration deferred per
     /// preflight). Splits via `BatchSplitter` then dispatches segments
