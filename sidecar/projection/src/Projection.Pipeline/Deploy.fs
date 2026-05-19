@@ -418,6 +418,62 @@ module Deploy =
                 ()
         }
 
+    /// **Parallel-segment realization of a SQL text batch** (slice
+    /// A.4.7'-prelude.perf-sweep-5 primitive; integration deferred per
+    /// preflight). Splits via `BatchSplitter` then dispatches segments
+    /// across `parallelism` concurrent SqlConnections gated by a
+    /// SemaphoreSlim. Each segment runs on its own freshly-opened
+    /// connection; `SqlConnection`'s internal pooling (keyed on the
+    /// connection string) makes the per-segment new/Open/Dispose cheap
+    /// on warm pools.
+    ///
+    /// **CALLER CONTRACT — segment-ordering independence.** The caller
+    /// MUST guarantee that all segments in `sql` are mutually
+    /// independent. Violating this contract produces nondeterministic
+    /// failures (FK constraints; Phase-1/Phase-2 sequencing; etc.).
+    /// True for: a topological-level group of independent kinds at a
+    /// single phase. FALSE for: full schema DDL (FK target → FK source);
+    /// full data deploy (Phase-1 MERGEs are topologically ordered;
+    /// Phase-2 UPDATEs reference Phase-1 rows).
+    ///
+    /// **Status — landed without integration.** The composer-side
+    /// refactor to emit parallel-safe topological-level groups is
+    /// deferred to a dedicated architectural slice. This primitive
+    /// ships as a ready tool with the preflight contract documented;
+    /// the canary continues using sequential `executeBatch` until the
+    /// composer exposes safe groups.
+    let executeBatchParallel
+            (connectionString: string)
+            (sql: string)
+            (parallelism: int)
+            : Task<unit> =
+        task {
+            use _ = Bench.scope "deploy.executeBatchParallel"
+            let segments = BatchSplitter.splitWithLoudFallback "deploy.executeBatchParallel" sql
+            Bench.recordSample "deploy.executeBatchParallel.segments" (int64 segments.Length)
+            Bench.recordSample "deploy.executeBatchParallel.parallelism" (int64 parallelism)
+            use semaphore = new System.Threading.SemaphoreSlim(parallelism, parallelism)
+            let runSegment (segment: string) : Task<unit> =
+                task {
+                    do! semaphore.WaitAsync()
+                    try
+                        use _ = Bench.scope "deploy.executeBatchParallel.segment"
+                        Bench.recordSample "deploy.executeBatchParallel.segment.bytes" (int64 segment.Length)
+                        use cnn = new SqlConnection(connectionString)
+                        do! cnn.OpenAsync()
+                        use cmd = cnn.CreateCommand()
+                        cmd.CommandText <- segment
+                        cmd.CommandTimeout <- 0
+                        let! _ = cmd.ExecuteNonQueryAsync()
+                        ()
+                    finally
+                        semaphore.Release() |> ignore
+                }
+            let tasks = segments |> Array.map runSegment
+            let! _ = Task.WhenAll(tasks)
+            ()
+        }
+
     /// Default bulk batch size — per session-35 bench, 1000 was
     /// network-round-trip dominant (~12 ms per 1000-row batch on a
     /// warm container). Bumping to 5000 amortizes the round-trip
