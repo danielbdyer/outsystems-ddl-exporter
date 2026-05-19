@@ -3,17 +3,19 @@ namespace Projection.Tests
 // Docker-gated integration tests for `Projection.Adapters.Sql
 // .LiveProfiler`. Bootstraps an ephemeral SQL Server database,
 // creates small tables with known nulls + duplicates + FK orphans,
-// runs LiveProfiler captures, and asserts the captured realities
+// captures an EvidenceCache substrate, derives every Profile axis
+// in pure F# via `Cache.deriveX`, and asserts the derivations
 // reflect the deployed evidence.
 //
-// Slice arc:
-//   - A.4.7'-prelude.live-profiler (2026-05-19): AttributeReality
-//     coverage (HasNulls / HasDuplicates / IsNullableInDatabase /
-//     IsPresentButInactive); the `captureAttributeRealities` surface.
-//   - B.3.1.foreign-key-reality (this slice): ForeignKeyReality
-//     coverage (HasOrphan / OrphanCount per Reference); the
-//     `captureForeignKeyRealities` surface; sibling-composability
-//     under `attach`.
+// Post-slice-B.4.2.capture-retirement: the per-attribute /
+// per-Reference SQL captures retired; every test exercises the
+// cache-derive path. Coverage:
+//   - AttributeReality (HasNulls / HasDuplicates / IsNullable
+//     InDatabase / IsPresentButInactive) via Cache.derive
+//     AttributeRealities.
+//   - ForeignKeyReality (HasOrphan / OrphanCount per Reference) via
+//     Cache.deriveForeignKeyRealities; sibling-composability under
+//     `attach`.
 //
 // Per matrix row 49 + V2_DRIVER per-axis stakes (DATA-axis
 // cutover-blocker). The cutover trigger named the LiveProfiler as
@@ -286,12 +288,17 @@ open LiveProfilerFixtures
 [<Xunit.Collection("Docker-SqlServer")>]
 type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
 
+    // Scenario helpers — post-slice-B.4.2-retirement: each derives
+    // the Profile axis from the EvidenceCache substrate (one cache
+    // capture, three SQL round-trips per non-static kind).
+
     let runCaptureScenario () : Task<AttributeReality list> =
         fixture.WithEphemeralDatabase "LiveProfiler" (fun cnn _ -> task {
             do! Deploy.executeBatch cnn schemaSql
             do! Deploy.executeBatch cnn seedSql
-            let! captureResult = LiveProfiler.captureAttributeRealities cnn itemsCatalog
-            return mustOk captureResult
+            let! cacheR = LiveProfiler.captureEvidenceCache cnn itemsCatalog
+            let cache = mustOk cacheR
+            return LiveProfiler.Cache.deriveAttributeRealities cache itemsCatalog
         })
 
     let runForeignKeyScenario (childSeed: string) : Task<ForeignKeyReality list> =
@@ -300,8 +307,9 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
             do! Deploy.executeBatch cnn childSchemaSql
             do! Deploy.executeBatch cnn seedSql
             do! Deploy.executeBatch cnn childSeed
-            let! result = LiveProfiler.captureForeignKeyRealities cnn twoKindCatalog
-            return mustOk result
+            let! cacheR = LiveProfiler.captureEvidenceCache cnn twoKindCatalog
+            let cache = mustOk cacheR
+            return LiveProfiler.Cache.deriveForeignKeyRealities cache twoKindCatalog
         })
 
     let findColumn (columns: ColumnProfile list) (key: SsKey) : ColumnProfile =
@@ -311,16 +319,18 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
         fixture.WithEphemeralDatabase "LiveProfilerColumnProfile" (fun cnn _ -> task {
             do! Deploy.executeBatch cnn schemaSql
             do! Deploy.executeBatch cnn seedSql
-            let! result = LiveProfiler.captureColumnProfiles cnn itemsCatalog
-            return mustOk result
+            let! cacheR = LiveProfiler.captureEvidenceCache cnn itemsCatalog
+            let cache = mustOk cacheR
+            return LiveProfiler.Cache.deriveColumnProfiles cache itemsCatalog
         })
 
     let runCompositeUniqueScenario (productsSeed: string) : Task<CompositeUniqueCandidateProfile list> =
         fixture.WithEphemeralDatabase "LiveProfilerCompositeUnique" (fun cnn _ -> task {
             do! Deploy.executeBatch cnn productsSchemaSql
             do! Deploy.executeBatch cnn productsSeed
-            let! result = LiveProfiler.captureCompositeUniqueCandidates cnn productsCatalog
-            return mustOk result
+            let! cacheR = LiveProfiler.captureEvidenceCache cnn productsCatalog
+            let cache = mustOk cacheR
+            return LiveProfiler.Cache.deriveCompositeUniqueCandidates cache productsCatalog
         })
 
     let runOrphanSampleScenario (childSeed: string) : Task<DiagnosticEntry list> =
@@ -329,14 +339,9 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
             do! Deploy.executeBatch cnn childSchemaSql
             do! Deploy.executeBatch cnn seedSql
             do! Deploy.executeBatch cnn childSeed
-            // First populate Profile.ForeignKeys via slice 1's probe;
-            // slice 4 reads HasOrphan from that evidence.
-            let! profileResult =
-                LiveProfiler.attach cnn twoKindCatalog Profile.empty
-            let profile = mustOk profileResult
-            let! result =
-                LiveProfiler.captureForeignKeyOrphanSamples cnn twoKindCatalog profile
-            return mustOk result
+            let! cacheR = LiveProfiler.captureEvidenceCache cnn twoKindCatalog
+            let cache = mustOk cacheR
+            return LiveProfiler.Cache.deriveForeignKeyOrphanSamples cache twoKindCatalog
         })
 
     interface IClassFixture<EphemeralContainerFixture>
@@ -425,10 +430,10 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
         Assert.NotEmpty p.Distributions
 
     // ---------------------------------------------------------------
-    // Slice B.3.2.column-null-counts — captureColumnProfiles probes
-    // null cardinality per attribute via batched COUNT_BIG query.
-    // Uses the same Items fixture (4 rows; NAME has 1 NULL; CODE
-    // has 0 NULLs; ID is PK NOT NULL).
+    // Slice B.3.2.column-null-counts — Cache.deriveColumnProfiles
+    // tallies null cardinality per attribute from the cache row-stream
+    // substrate. Uses the same Items fixture (4 rows; NAME has 1 NULL;
+    // CODE has 0 NULLs; ID is PK NOT NULL).
     // ---------------------------------------------------------------
 
     [<Fact>]
@@ -475,9 +480,9 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
             keys)
 
     // ---------------------------------------------------------------
-    // Slice B.3.1.foreign-key-reality — captureForeignKeyRealities
-    // observes orphan FK rows in the deployed target. Test fixture:
-    // Items + Children with a FK and one orphan row.
+    // Slice B.3.1.foreign-key-reality — Cache.deriveForeignKeyRealities
+    // observes orphan FK rows from the cache row-stream substrate.
+    // Test fixture: Items + Children with a FK and one orphan row.
     // ---------------------------------------------------------------
 
     [<Fact>]
@@ -672,53 +677,41 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
         Assert.Equal(0L, cached.NullCounts.[idAttrKey])
 
     [<Fact>]
-    member _.``B.3.6.evidence-cache: Cache.deriveAttributeRealities matches existing captureAttributeRealities`` () =
-        if not (skipIfNoDocker "live-profiler-cache-attr-equivalence") then () else
-        let (fromCache, fromSql) =
-            (fixture.WithEphemeralDatabase "LiveProfilerCacheEq" (fun cnn _ -> task {
+    member _.``B.3.6.evidence-cache: Cache.deriveAttributeRealities populates HasNulls + HasDuplicates + IsNullableInDatabase`` () =
+        if not (skipIfNoDocker "live-profiler-cache-attr-shape") then () else
+        let derived =
+            (fixture.WithEphemeralDatabase "LiveProfilerCacheAttr" (fun cnn _ -> task {
                 do! Deploy.executeBatch cnn schemaSql
                 do! Deploy.executeBatch cnn seedSql
                 let! cacheR = LiveProfiler.captureEvidenceCache cnn itemsCatalog
                 let cache = mustOk cacheR
-                let derived = LiveProfiler.Cache.deriveAttributeRealities cache itemsCatalog
-                let! sqlR = LiveProfiler.captureAttributeRealities cnn itemsCatalog
-                let sql = mustOk sqlR
-                return (derived, sql)
+                return LiveProfiler.Cache.deriveAttributeRealities cache itemsCatalog
             })).GetAwaiter().GetResult()
         let keysOf (xs: AttributeReality list) = xs |> List.map (fun r -> r.AttributeKey) |> Set.ofList
-        Assert.Equal<Set<SsKey>>(keysOf fromSql, keysOf fromCache)
-        let pairBy key =
-            (fromCache |> List.find (fun r -> r.AttributeKey = key),
-             fromSql   |> List.find (fun r -> r.AttributeKey = key))
-        let (cacheName, sqlName) = pairBy nameAttrKey
-        Assert.Equal(sqlName.HasNulls,             cacheName.HasNulls)
-        Assert.Equal(sqlName.HasDuplicates,        cacheName.HasDuplicates)
-        Assert.Equal(sqlName.IsNullableInDatabase, cacheName.IsNullableInDatabase)
+        Assert.Equal<Set<SsKey>>(Set.ofList [ idAttrKey; nameAttrKey; codeAttrKey ], keysOf derived)
+        let name = derived |> List.find (fun r -> r.AttributeKey = nameAttrKey)
+        Assert.True name.HasNulls
+        Assert.True name.HasDuplicates
+        Assert.True name.IsNullableInDatabase
 
     [<Fact>]
-    member _.``B.3.6.evidence-cache: Cache.deriveColumnProfiles matches existing captureColumnProfiles`` () =
-        if not (skipIfNoDocker "live-profiler-cache-col-equivalence") then () else
-        let (fromCache, fromSql) =
-            (fixture.WithEphemeralDatabase "LiveProfilerCacheColEq" (fun cnn _ -> task {
+    member _.``B.3.6.evidence-cache: Cache.deriveColumnProfiles populates RowCount + NullCount per attribute`` () =
+        if not (skipIfNoDocker "live-profiler-cache-col-shape") then () else
+        let derived =
+            (fixture.WithEphemeralDatabase "LiveProfilerCacheCol" (fun cnn _ -> task {
                 do! Deploy.executeBatch cnn schemaSql
                 do! Deploy.executeBatch cnn seedSql
                 let! cacheR = LiveProfiler.captureEvidenceCache cnn itemsCatalog
                 let cache = mustOk cacheR
-                let derived = LiveProfiler.Cache.deriveColumnProfiles cache itemsCatalog
-                let! sqlR = LiveProfiler.captureColumnProfiles cnn itemsCatalog
-                let sql = mustOk sqlR
-                return (derived, sql)
+                return LiveProfiler.Cache.deriveColumnProfiles cache itemsCatalog
             })).GetAwaiter().GetResult()
-        Assert.Equal(List.length fromSql, List.length fromCache)
-        let pairBy key =
-            (fromCache |> List.find (fun c -> c.AttributeKey = key),
-             fromSql   |> List.find (fun c -> c.AttributeKey = key))
-        let (cacheName, sqlName) = pairBy nameAttrKey
-        Assert.Equal(sqlName.NullCount, cacheName.NullCount)
-        Assert.Equal(sqlName.RowCount,  cacheName.RowCount)
+        Assert.Equal(3, List.length derived)
+        let name = derived |> List.find (fun c -> c.AttributeKey = nameAttrKey)
+        Assert.Equal(4L, name.RowCount)
+        Assert.Equal(1L, name.NullCount)
 
     [<Fact>]
-    member _.``B.3.6.evidence-cache: attach uses cache pivot AND existing FK + composite SQL captures still compose`` () =
+    member _.``B.3.6.evidence-cache: attach via cache pivot composes every Profile axis (AttributeRealities + Columns + UniqueCandidates + ForeignKeys + CompositeUniqueCandidates)`` () =
         if not (skipIfNoDocker "live-profiler-cache-attach-integration") then () else
         let p =
             (fixture.WithEphemeralDatabase "LiveProfilerCacheAttach" (fun cnn _ -> task {
@@ -729,11 +722,11 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
                 let! attachResult = LiveProfiler.attach cnn twoKindCatalog Profile.empty
                 return mustOk attachResult
             })).GetAwaiter().GetResult()
-        // Cache-derived axes (slice 6) populate.
+        // Every cache-derived Profile axis populates (slice B.3.6b
+        // + B.4.2 retirement: cache is the sole derivation substrate).
         Assert.NotEmpty p.AttributeRealities
         Assert.NotEmpty p.Columns
         Assert.NotEmpty p.UniqueCandidates
-        // SQL-captured axes (slice 1 + 3 transitional) still populate.
         Assert.NotEmpty p.ForeignKeys
         let fk = findFkReality p.ForeignKeys childFkKey
         Assert.True(fk.HasOrphan)
@@ -772,9 +765,10 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
         Assert.NotEmpty p.Distributions
 
     // ---------------------------------------------------------------
-    // Slice B.3.3.unique-candidates — captureCompositeUniqueCandidates
-    // probes multi-column non-unique indexes; UniqueCandidates
-    // projected from AttributeRealities.HasDuplicates at attach time.
+    // Slice B.3.3.unique-candidates — Cache.deriveCompositeUnique
+    // Candidates derives multi-column non-unique evidence from the
+    // cache row-stream substrate; UniqueCandidates project from
+    // AttributeRealities.HasDuplicates at attach time.
     // ---------------------------------------------------------------
 
     [<Fact>]
@@ -831,9 +825,9 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
                      sprintf "expected HasDuplicate = false on CODE (all distinct); got %A" codeCandidate)
 
     // ---------------------------------------------------------------
-    // Slice B.3.4.fk-orphan-samples — captureForeignKeyOrphanSamples
-    // produces DiagnosticEntry per orphan-bearing FK (pillar 9:
-    // operational diagnostics; not Profile axis). Reuses the
+    // Slice B.3.4.fk-orphan-samples — Cache.deriveForeignKeyOrphan
+    // Samples produces DiagnosticEntry per orphan-bearing FK (pillar
+    // 9: operational diagnostics; not Profile axis). Reuses the
     // Items + Children fixture from slice B.3.1.
     // ---------------------------------------------------------------
 
