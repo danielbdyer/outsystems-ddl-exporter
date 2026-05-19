@@ -7,6 +7,33 @@ this document is the queue for the **next** slice — a structural-perf
 sweep that ships fixes with before/after data on each affected bench
 label.
 
+## ✅ BASELINE GATE STATUS — RESOLVED
+
+**Per slice A.4.7'-prelude.canary-100pct (commit `a0c21e0`, 2026-05-19):**
+The comprehensive operator-reality canary now fires **65/65 = 100%**
+of declared new bench labels (fleet 51 + followup 11 + round-2 7) in
+a single 17-second deterministic run. The "comprehensive canary
+requirement" pre-condition stated at the bottom of this document is
+**satisfied**.
+
+**What the perf-sweep can rely on:**
+- `ComprehensiveCanaryTests.fs` exercises every code path the 65
+  bench labels gate. Same seed → same execution → reproducible
+  before/after measurements per label.
+- Per-run bench JSON persisted at `bench/canary/<utc>.json` under
+  tag `comprehensiveOperatorReality`.
+- The perf-sweep slice's first task: optionally record
+  `bench/baseline-comprehensive.json` via `PERF_GATE_RECORD=1` with
+  the comprehensive filter, OR work directly from the per-run
+  snapshots (deterministic seed makes single-run comparison
+  reliable enough for slice-level perf decisions; N=5 baseline
+  is operator-CI territory).
+
+The remaining 34 perf opportunities below are now the perf-sweep
+slice's scope.
+
+---
+
 **Why this document exists.** The per-agent reports were produced as
 ephemeral task outputs (`tasks/*.output`). The container is reclaimed
 after session inactivity; that content is not durable. DECISIONS.md +

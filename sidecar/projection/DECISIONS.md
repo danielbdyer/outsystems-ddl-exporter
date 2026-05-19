@@ -16214,6 +16214,113 @@ test surface.
 
 ---
 
+## 2026-05-19 (slices A.4.7'-prelude.{bench-fleet-followup, bench-fleet-round2, comprehensive-canary, canary-100pct}) — Bench coverage 44% → ~62% across 21 files; comprehensive operator-reality canary fires 65/65 = 100% of declared new labels in 17s; baseline gate for the upcoming structural-perf-sweep slice is resolved
+
+### Scope
+
+User-directed multi-slice arc following the bench-fleet dispatch. The
+fleet shipped 51 labels (10 files) at the highest-leverage gaps; the
+remaining secondary gaps + the rare-path canary coverage required
+four follow-up slices to land. End state: **65/65 declared bench
+labels fire in a single deterministic canary run**; the baseline-
+gate prerequisite for the upcoming structural-perf-sweep slice is
+fully resolved.
+
+### The four follow-up slices
+
+| Slice | Commit | What ships |
+|---|---|---|
+| `bench-fleet-followup` | `fba4b07` | 11 more labels across `TransformRegistry.fs` + `DataEmissionComposer.fs` + `StaticSeedsEmitter.fs` + `MigrationDependenciesEmitter.fs` (secondary gaps the survey named). |
+| `bench-fleet-round2` | `535fdc5` | 7 more labels: `rules.<name>.evaluate` × 4 (strategy layer) + `compose.passChain.compose` (with dynamic per-adapter sub-labels) + `composition.fanOut` + `emit.staticPopulation.statements.stream`. |
+| `comprehensive-canary` | `fe5da32` | The single-execution-agent dispatch deliverable: `OssysFixtureSynthesizer.fs` (260 LOC NEW) + `ComprehensiveCanaryTests.fs` (735 LOC NEW) + extended `FixtureGenerator.fs`. Routes 300-table operator-reality fixture through the OSSYS adapter, runs the full pipeline (passes + tightening + emit), deploys + diffs source vs target, AND cross-validates OSSYS-extracted Catalog against ReadSide-extracted Catalog. Initial coverage: 46/51 declared labels fire (80% pre-extensions). |
+| `canary-100pct` | `a0c21e0` | Extends the canary to fire **all** 65 labels: invokes `CategoricalUniquenessPass` (4th tightening pass); routes through `Compose.project` (the registered-pass-chain entry point + dynamic per-adapter labels); invokes `ManifestEmitter.emit` + explicit `TransformRegistry.create`/`overlayView`; renders `StaticPopulationEmitter.statements`; adds `runSupplementaryFixtures` (pure in-memory) with a cyclic IDENTITY-PK kind for Phase-2 UPDATE / SetIdentityInsert + non-empty `MigrationDependencyContext` + synthetic `RowsetBundle` with ColumnCheck row. |
+
+### Coverage trajectory
+
+| Slice | Cumulative new labels | File coverage |
+|---|---|---|
+| Pre-fleet baseline | 0 | 38 / 86 (44%) |
+| After bench-fleet (5 agents) | 51 | 48 / 86 (~56%) |
+| After bench-fleet-followup | 62 | ~52 / 86 (~60%) |
+| After bench-fleet-round2 | 69 | ~58 / 86 (~62%) |
+| After canary-100pct | 69 declared (65 unique fleet+followup+round2) + 13 dynamic per-adapter compose.passChain labels | 100% of declared fire in canary |
+
+### Canary characteristics
+
+- **Wall time:** 17s warm (within 60s Stop-hook budget)
+- **Deterministic:** same `GenerateSpec.comprehensiveCanary` seed → same canary execution every run
+- **Pure-F# supplementary fixtures:** the 4 rare-path label sources are inline in-memory constructions (no extra DB deploy)
+- **Bench JSON persists:** `bench/canary/<utc>.json` per run, tagged `comprehensiveOperatorReality` (~215 total labels — 65 declared new + ~150 pre-existing emit/deploy/readside)
+- **Validation contracts (3-way):**
+  - (A) OSSYS-extracted Catalog ≈ ReadSide-extracted Catalog on entity-name overlap (100% match, 98/98)
+  - (B) PhysicalSchema(source) ≈ PhysicalSchema(target) — empty diff
+  - (C) ≥45 of declared new bench labels fire (current: 65/65)
+
+### Operating-discipline payoffs
+
+**Survey-then-execute composes at multi-slice scale.** The arc opened
+with three parallel survey agents (escape-character + slow-test +
+bench-coverage) producing prioritized punch lists. The fleet's
+five-agent parallel dispatch executed bench coverage's top 5 ranks;
+follow-up slices closed secondary gaps surfaced during canary
+verification. Total wall time: ~3 hours from survey kickoff to 100%
+canary baseline. Same discipline (survey → dispatch → verify →
+follow-up) compresses what could have been a multi-week effort.
+
+**Coverage 100% as a baseline gate.** Per the user's "we need to
+baseline our before" direction, the perf-sweep slice cannot ship
+without confidence that each affected bench label has measurable
+before-state. The canary's 65/65 coverage establishes that
+confidence structurally. The perf-sweep slice's first task is to
+optionally record `bench/baseline-comprehensive.json` via
+`PERF_GATE_RECORD=1` with the comprehensive filter, OR work
+directly from per-run snapshots (deterministic seed makes
+single-run comparison sufficient for slice-level decisions).
+
+**Dual-validation canary discipline.** Source≈Target (V2-internal
+round-trip; the canary's primary contract) + OSSYS≈ReadSide (the
+adapter's faithfulness; the new axis this slice adds) compose
+cleanly. The OSSYS adapter is now structurally verified at the
+canary level, not just unit-tested. Future adapter changes must
+hold both axes; either fails the canary.
+
+### Cross-references
+
+- `PERF_OPPORTUNITIES.md` — 34 structural-perf opportunities
+  documented for the upcoming perf-sweep slice; baseline-gate
+  status header now reads "RESOLVED" per this slice arc
+- `tests/Projection.Tests/ComprehensiveCanaryTests.fs` — the
+  comprehensive canary (single-source-of-truth bench-label
+  exerciser)
+- `tests/Projection.Tests/Fixtures/OssysFixtureSynthesizer.fs` —
+  OSSYS-shape synthesizer over `GeneratedFixture.Entities`
+- `tests/Projection.Tests/Fixtures/FixtureGenerator.fs` — extended
+  with structural-data layer (`GeneratedEntityModel` / `GeneratedAttribute`)
+  + `GenerateSpec.comprehensiveCanary`
+- Prior slice: `DECISIONS 2026-05-19 (slice A.4.7'-prelude.bench-fleet)`
+  for the 5-agent fleet dispatch protocol that originated this arc
+
+### Refreshed deferral triggers (after this arc)
+
+- **Structural-perf-sweep slice scope.** The 34 opportunities in
+  `PERF_OPPORTUNITIES.md` are the perf-sweep's scope. Top 5 by
+  leverage: `Catalog.tryFindKind` linear scan → KindIndex Map;
+  `Kind.tryFindAttribute` linear scan → AttributeIndex; Tarjan
+  Map/Set → Dictionary+HashSet; Kahn Map → Dictionary; `toBundle`
+  Map.ofList → Dictionary.
+- **Perf-gate canary switch (optional).** Current perf-gate runs
+  the `Operator-reality` canary (~9s; 70-label baseline). Switching
+  to the comprehensive canary (~17s; 215-label baseline) would
+  give the perf-gate visibility on every new label. Trigger: when
+  the perf-sweep ships its first wins, decide whether to switch
+  the gate or maintain both as separate signals.
+- **5 documented rare-path labels** at the original 80% coverage
+  point are now firing via supplementary fixtures. If the perf-
+  sweep finds a regression on one of these, the supplementary
+  fixture is small enough to debug deterministically.
+
+---
+
 ## 2026-05-19 (slice A.4.7'-prelude.bench-fleet) — Five-agent parallel dispatch lifts Bench instrumentation coverage 44% → ~56% across the V2 dark paths; 51 new labels under 5 namespaces; 34 structural-perf opportunities documented for follow-up
 
 ### Scope
