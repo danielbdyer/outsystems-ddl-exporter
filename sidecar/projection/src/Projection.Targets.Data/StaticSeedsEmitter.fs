@@ -308,7 +308,7 @@ module StaticSeedsEmitter =
                 if Set.isEmpty deferred then ""
                 else
                     typedRows
-                    |> List.map (fun (_, vs) -> renderUpdate cdcAware k deferred vs)
+                    |> Bench.iterMap "emit.staticSeeds.phase2Row" (fun (_, vs) -> renderUpdate cdcAware k deferred vs)
                     |> System.String.Concat  // LINT-ALLOW: terminal Phase-2 cross-row UPDATE concatenation (chapter 4.1.B slice ι); each segment is the ScriptDom-rendered + GO-batched UPDATE for one row; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary; the typed `Statement` DU does not yet model UPDATE so `ScriptDomGenerate.toText` is not applicable
             // Per-kind self-complete view: Phase-1 + Phase-2 in
             // textual order. Slice ι splits these for the composer's
@@ -357,7 +357,7 @@ module StaticSeedsEmitter =
         let allKinds = Catalog.allKinds catalog
         let slices =
             allKinds
-            |> List.map (fun k -> k.SsKey, kindToScript cdc cycleMembers k)
+            |> Bench.iterMap "emit.staticSeeds.kind" (fun k -> k.SsKey, kindToScript cdc cycleMembers k)
             |> Map.ofList
         ArtifactByKind.create catalog slices
 

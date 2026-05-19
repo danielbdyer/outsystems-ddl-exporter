@@ -385,7 +385,7 @@ module MigrationDependenciesEmitter =
                 if Set.isEmpty deferred then ""
                 else
                     typedRows
-                    |> List.map (fun (_, vs) -> renderUpdate cdcAware k deferred vs)
+                    |> Bench.iterMap "emit.migrationDeps.phase2Row" (fun (_, vs) -> renderUpdate cdcAware k deferred vs)
                     |> System.String.Concat  // LINT-ALLOW: terminal Phase-2 cross-row UPDATE concatenation (chapter 4.1.B slice ι; mirror of StaticSeedsEmitter); each segment is the ScriptDom-rendered + GO-batched UPDATE for one row; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary
             let rendered =
                 System.String.Concat(renderedPhase1, renderedPhase2)  // LINT-ALLOW: terminal per-kind concatenation of ScriptDom-rendered Phase-1 + Phase-2 strings (chapter 4.1.B slice κ; mirror of StaticSeedsEmitter); both segments are typed-AST outputs already terminated by `;\nGO\n`
@@ -424,7 +424,7 @@ module MigrationDependenciesEmitter =
         let allKinds = Catalog.allKinds catalog
         let slices =
             allKinds
-            |> List.map (fun k -> k.SsKey, kindToScript cdc cycleMembers userRemap rowsByKind k)
+            |> Bench.iterMap "emit.migrationDeps.kind" (fun k -> k.SsKey, kindToScript cdc cycleMembers userRemap rowsByKind k)
             |> Map.ofList
         ArtifactByKind.create catalog slices
 

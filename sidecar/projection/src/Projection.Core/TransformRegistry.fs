@@ -300,6 +300,7 @@ module TransformRegistry =
     /// `.registered`. The validation runs once at construction; the
     /// resulting metadata list is trusted thereafter.
     let create (entries: RegisteredTransformMetadata list) : Result<RegisteredTransformMetadata list> =
+        use _ = Bench.scope "ir.registry.create"
         let entryErrors =
             entries
             |> List.collect (fun entry ->
@@ -372,6 +373,7 @@ module TransformRegistry =
     /// traversal carries `Classification = DataIntent`; misclassification
     /// surfaces as a leak.
     let skeletonView (entries: RegisteredTransformMetadata list) : RegisteredTransformMetadata list =
+        use _ = Bench.scope "ir.registry.skeletonView"
         entries
         |> List.filter (fun rt ->
             rt.Sites
@@ -392,6 +394,7 @@ module TransformRegistry =
     /// `skeletonView` — the pass-level classification follows the
     /// strictest site. Slice θ's tests witness this asymmetry.
     let overlayView (entries: RegisteredTransformMetadata list) : RegisteredTransformMetadata list =
+        use _ = Bench.scope "ir.registry.overlayView"
         entries
         |> List.filter (fun rt ->
             rt.Sites
@@ -502,6 +505,7 @@ module TransformRegistry =
     /// order). The 5th bidirectional property test asserts the round-
     /// trip stability + perturbation sensitivity per A41.
     let digest (entries: RegisteredTransformMetadata list) : string =
+        use _ = Bench.scope "ir.registry.digest"
         let sorted = entries |> List.sortBy (fun e -> e.Name)
         let buffer = System.Text.StringBuilder()  // LINT-ALLOW-FILE-MUTATION not needed — instance-local mutation only; sealed at this function's exit via the SHA256.HashData call. Per slice ζ: deterministic concatenation of typed DU projections at the SHA256 boundary; no consumer reads the StringBuilder, only the resulting bytes.
         for entry in sorted do

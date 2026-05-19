@@ -110,16 +110,19 @@ module DataEmissionComposer =
         : Result<SiblingArtifacts, EmitError> =
         use _ = Bench.scope "compose.data.dispatchSiblings"
         let staticSeeds =
+            use _ = Bench.scope "compose.data.dispatchSiblings.staticSeeds"
             match composition with
             | AllRemaining
             | AllData         -> StaticSeedsEmitter.emitWithTopo topo catalog profile
             | AllExceptStatic -> emptyArtifact catalog
         let migrationDependencies =
+            use _ = Bench.scope "compose.data.dispatchSiblings.migrationDeps"
             match composition with
             | AllRemaining
             | AllExceptStatic -> MigrationDependenciesEmitter.emitWithTopo topo catalog profile migration userRemap
             | AllData         -> emptyArtifact catalog
         let bootstrap =
+            use _ = Bench.scope "compose.data.dispatchSiblings.bootstrap"
             BootstrapEmitter.emitWithTopo topo catalog profile userRemap
         match staticSeeds, migrationDependencies, bootstrap with
         | Ok s, Ok m, Ok b ->
