@@ -1,6 +1,6 @@
 # V2 Logging-Format Contract
 
-**Slice:** B.4.1 (chapter B.4 opening; axiom-first). **Status:** structural promotion in flight (L3 axiom statement proposed in §17; final placement at chapter close). **Predecessor:** chapter B.3 close letter; chapter B.4 open at `CHAPTER_B_4_OPEN.md`. **Consumers in this chapter:** slices 6-8 (`projection extract` / `projection profile` / `projection full-export`) MUST emit events conforming to this contract or the chapter close gate fails.
+**Slice:** B.4.1 (chapter B.4 opening; axiom-first). **Status:** structural promotion in flight (L3 axiom statement proposed in §17; final placement at chapter close). **Predecessor:** chapter B.3 close letter; chapter B.4 open at `CHAPTER_B_4_OPEN.md`. **Consumers in this chapter (post-rescope; see `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)`):** slice 6 (`actionable-diagnostics` — operationalizes §12's `suggestedConfig` discipline on the JSON-artifact emitters) + slice 7 (`full-export` CLI subcommand — only operator-facing CLI surface in this chapter; standalone `extract` + `profile` subcommands dropped at chapter-mid). The CLI's emitted event stream + the JSON artifacts' actionable-payload discipline MUST conform or the chapter close gate fails.
 
 This document defines the operator-visible event stream V2 emits during every CLI run. It is the structural surface every CLI subcommand projects onto when it writes to the operator's terminal. The contract is single-sink, single-format, single-vocabulary — the inverse of V1's three-library mess. The contract names the **envelope**, the **categories**, the **levels**, the **classification taxonomies** (lifted verbatim from V1 where V1 had the right idea but smeared the shape across prose), the **terminal `runSummary` event** that closes every run, the **roll-up collapse algorithm** the runSummary uses, and the **antipatterns banned by construction**. The closing sections name next-step extension cues for the TransformRegistry, the proposed L3 axiom that codifies the contract, and the open questions deferred from this slice.
 
@@ -119,7 +119,7 @@ Every event V2 emits to the operator stream conforms to this envelope. The envel
 
 ## §4 Levels
 
-Closed five-way enum. `Trace` and `Debug` are NOT emitted by default; they require explicit operator opt-in (`--verbose` / `--debug` flags at the CLI surface, slice 6-8).
+Closed five-way enum. `Trace` and `Debug` are NOT emitted by default; they require explicit operator opt-in (`--verbose` / `--debug` flags at the CLI surface, slice 7).
 
 | Level | When it fires | Default visibility |
 |---|---|---|
@@ -134,7 +134,7 @@ Closed five-way enum. `Trace` and `Debug` are NOT emitted by default; they requi
 ## §5 Sink discipline
 
 V2 emits ALL events to **stderr**. stdout is reserved for:
-1. Artifact data when the operator pipes (`projection extract --to -` writes osm_model.json to stdout).
+1. Artifact data when the operator pipes (e.g., a future `projection extract --to -` would write osm_model.json to stdout; in chapter B.4 post-rescope the only CLI subcommand is `full-export` writing to a config-supplied output directory, but the channel discipline holds for any future stdout-writing subcommand).
 2. Nothing else.
 
 **Rationale.** Operators pipe stdout. If events go to stdout, `extract | jq` mixes events with the artifact data — a parser cannot recover. Events go to stderr; data goes to stdout; the operator's shell handles `2>events.log` separately from `> model.json`.
@@ -164,7 +164,7 @@ A ninth category (`progress`) was considered and rejected: progress IS phase-bea
 
 ## §7 Codes — canonical taxonomy
 
-The code surface is the operator's grep target. Every code is dot-separated, top-prefixed by category, and **stable across V2 versions** (codes are part of the contract; renames require a DECISIONS entry naming the prior code as deprecated). The taxonomy below is the slice 1 baseline; slices 6-8 may extend it under the discipline "additive only; renames require an entry."
+The code surface is the operator's grep target. Every code is dot-separated, top-prefixed by category, and **stable across V2 versions** (codes are part of the contract; renames require a DECISIONS entry naming the prior code as deprecated). The taxonomy below is the slice 1 baseline; slice 7 (full-export CLI) may extend it under the discipline "additive only; renames require an entry."
 
 ### 7.1 `config.*` codes
 
@@ -345,7 +345,7 @@ Each category names the structured payload properties its events emit. The contr
 
 ### 9.5 Other category payload shapes
 
-`emit.*`, `deploy.*`, `canary.*`, `summary.*` payload shapes follow the same discipline: every numeric goes in `payload`; no f-string composition; SsKey identifies the node when applicable. Examples in the slices 6-8 implementations.
+`emit.*`, `deploy.*`, `canary.*`, `summary.*` payload shapes follow the same discipline: every numeric goes in `payload`; no f-string composition; SsKey identifies the node when applicable. Examples in the slice 7 (full-export CLI) implementations.
 
 ## §10 The terminal `runSummary` event
 
@@ -564,7 +564,7 @@ The contract's wire format is library-agnostic — `System.Text.Json` on the F# 
 
 **Channel 2 (opt-in, TTY-gated): Spectre.Console pretty rendering.** A Spectre-based renderer that subscribes to the same event stream and draws progress bars / tables / status indicators on stderr. Activates ONLY when (a) the operator passes `--pretty`, AND (b) `Console.IsErrorRedirected = false` (stderr is a real TTY, not a pipe or file). When channel 2 is active, channel 1 routes elsewhere: a `--json-out <path>` flag writes NDJSON to a file; without `--json-out`, channel 1's stderr write is suppressed and NDJSON is unrecoverable for that run. **Never both channels to the same TTY** — that's V1's failure mode (Spectre ANSI escapes interleaved with raw logger output on the same stream).
 
-**Default behavior.** No `--pretty` flag → channel 1 to stderr; Spectre uninvoked. Operator gets clean NDJSON. This is the path slices 6-8 default to; the chapter B.4 close gate is "this default behavior emits conforming events." Channel 2 (`--pretty`) is a quality-of-life feature on top of the structural commitment, never a substitute for it.
+**Default behavior.** No `--pretty` flag → channel 1 to stderr; Spectre uninvoked. Operator gets clean NDJSON. This is the path slice 7 (full-export CLI) default to; the chapter B.4 close gate is "this default behavior emits conforming events." Channel 2 (`--pretty`) is a quality-of-life feature on top of the structural commitment, never a substitute for it.
 
 ### 15.2 Library choices
 
@@ -610,13 +610,11 @@ module TtyRenderer =
 
 Per pillar 9, the adapter's existence is `OperatorIntent of Emission` — the operator's choice to see pretty output classifies as an emission-axis transform. One `config.toggleResolved` event fires at run start naming `pretty=<bool>` with `source=operator|default`.
 
-### 15.4 What this means for slices 6-8
+### 15.4 What this means for slice 7 (full-export CLI)
 
 | Slice | Implication |
 |---|---|
-| **6** (extract) | Adds `Argu`-based command surface for `projection extract --config <path>`. No `--pretty` flag yet (channel 2 is post-chapter); default emit = NDJSON to stderr. |
-| **7** (profile) | Same `Argu` shape for `projection profile`. `summary.benchPersisted` fires post-run; would render as a Spectre summary panel under channel 2. |
-| **8** (full-export) | Same `Argu` shape for `projection full-export`. The composition's `summary.stageCompleted` events drive Spectre's multi-stage progress rendering when channel 2 is active. |
+| **7** (full-export) | Adds `Argu`-based command surface for `projection full-export --config <path> [--output <dir>]`. No `--pretty` flag yet (channel 2 is post-chapter); default emit = NDJSON to stderr. The composition's `summary.stageCompleted` events drive Spectre's multi-stage progress rendering when channel 2 lands; `summary.benchPersisted` fires post-run and would render as a Spectre summary panel under channel 2. (Standalone `extract` + `profile` subcommands originally scoped at chapter-open are dropped per chapter-mid rescope.) |
 | **post-chapter** | `--pretty` + `TtyRenderer` lands as a follow-up slice if operator feedback shows the NDJSON-only default is unfriendly for interactive runs. Not gating Phase B exit; the structural channel 1 is the deliverable. |
 
 ### 15.5 What about `Console.WriteLine` / `printfn` / `eprintfn`?
@@ -644,7 +642,7 @@ The verifiability-triangle audit catalog (`AUDIT_2026_05_12_VERIFIABILITY_TRIANG
 Every V2 CLI subcommand emits to stderr as NDJSON; every emitted event conforms to the envelope of §3; every event's `code` is in §7's taxonomy (or an additive extension landed under DECISIONS); every `summary.runComplete` is the last line of stderr.
 - Tier 1 (cutover blocker — operator's primary surface).
 - Currently named: yes (this document; promoted to Bucket A at chapter B.4 close).
-- Verifiability: property tests per §14 + Docker-gated integration tests in slices 6-8.
+- Verifiability: property tests per §14 + Docker-gated integration tests in slice 7 (full-export CLI).
 - Failure mode if violated: operator cannot reliably parse V2's output; downstream tooling (dashboards, alerting) cannot be built on V2's surface.
 
 **L3-X12: Every actionable event carries a `suggestedConfig` payload pointing at the JSON-path edit that would address it.**
@@ -658,19 +656,20 @@ Both axioms are pillar-9-relevant: L3-X11 underwrites the envelope's `source` fi
 
 At chapter B.4 close, the catalog entry is added to `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` §3.4; the coverage map row (§10.4) lists both axioms as Bucket A.
 
-## §18 Next steps — extension cues for slices 2-8
+## §18 Next steps — extension cues for slices 2-7 (post-rescope)
 
-Slice 1 lands the contract. Slices 2-8 consume it. Each subsequent slice adds events to V2's emission surface; the contract's discipline says **additive only**, **closed taxonomies extended via the closed-DU expansion empirical-test discipline**, **renames require DECISIONS entries**.
+Slice 1 lands the contract. Slices 2-7 consume it. Each subsequent slice adds events to V2's emission surface; the contract's discipline says **additive only**, **closed taxonomies extended via the closed-DU expansion empirical-test discipline**, **renames require DECISIONS entries**.
+
+**Rescope note (2026-05-19):** The chapter-open named eight substantive slices; chapter-mid rescope (`DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)`) drops standalone `extract` + `profile` subcommands, adds an actionable-diagnostics slice (operationalizes §12 on the JSON-artifact emitters), and rescopes the full-export subcommand. The table below is the post-rescope shape.
 
 | Slice | Surface | Extension cue |
 |---|---|---|
-| **2** (B.4.2.capture-retirement) | LiveProfiler post-retirement | The seven `LiveProfilerIntegrationTests` direct-SQL tests reshape to assert on `Cache.derive*` output; the tests now also assert that `profile.cache.populated` and `profile.probe.*` events fire correctly. The structural cleanup reduces the emission surface (5 fewer SQL probes); the event surface is preserved by routing through `Cache.derive*` and emitting one event per derivation. |
-| **3** (B.4.3.composite-pk-fk) | FK reality cash-out | The composite-PK FK fixture adds at minimum one `profile.probe.succeeded` event with `axis=foreignKeyReality, outcome=Succeeded` (vs. the prior `outcome=AmbiguousMapping`). When the FK still cannot resolve (target with NO PK), the event remains `profile.probe.ambiguousMapping` with the updated `candidateTargets` payload. |
-| **4** (B.4.4.module-filter-port) | ModuleFilter | At config resolution, emit one `config.toggleResolved` event per module-filter rule resolved (`source=operator`). During extract, every excluded module fires one `extract.module.parsed` with payload `excluded: true`. |
+| **2** (B.4.2.capture-retirement) — DONE | LiveProfiler post-retirement | The seven `LiveProfilerIntegrationTests` direct-SQL tests reshape to assert on `Cache.derive*` output; the tests now also assert that `profile.cache.populated` and `profile.probe.*` events fire correctly. The structural cleanup reduces the emission surface (5 fewer SQL probes); the event surface is preserved by routing through `Cache.derive*` and emitting one event per derivation. |
+| **3** (B.4.3.composite-pk-fk) — DONE (resolved out-of-scope) | FK reality cash-out | No event-stream change (documentation-only; principal-PO answered composite-PK targets are not an OS use case). The slice-1 `AmbiguousMapping` outcome stands as the correct degenerate-case answer; codes unchanged. |
+| **4** (B.4.4.module-filter-port) | ModuleFilter | At config resolution, emit one `config.toggleResolved` event per module-filter rule resolved (`source=operator`). During extract (under the slice-7 `full-export` orchestration), every excluded module fires one `extract.module.parsed` with payload `excluded: true`. |
 | **5** (B.4.5.metadata-contract-overrides) | MetadataContractOverrides | At config resolution, emit one `transform.registered` per override (`intent=OperatorIntent, overlayAxis=Tightening or Emission`, `source=operator`). During emit, every applied override fires `transform.applied` with the typed outcome. |
-| **6** (B.4.6.projection-extract) | extract subcommand | The CLI subcommand emits `config.runStart` first, `extract.started`, `extract.module.parsed` per module, `extract.completed`, and `summary.runComplete` last. Docker-gated integration test asserts envelope schema conformance against `LogSink.emit` output. |
-| **7** (B.4.7.projection-profile) | profile subcommand | The CLI subcommand emits `profile.started`, `profile.cache.populated` per kind, `profile.probe.*` per derivation, `profile.completed`, `summary.benchPersisted`, `summary.runComplete`. Docker-gated integration test exercises a fixture with a forced `FallbackTimeout` and asserts the event carries the `suggestedConfig` payload. |
-| **8** (B.4.8.projection-full-export) | full-export subcommand | The CLI subcommand composes all of the above plus `emit.*` per target, `canary.*` if canary runs, `summary.stageCompleted` per stage. Docker-gated integration test exercises end-to-end OSSYS-to-SSDT flow and asserts runSummary contains all five stages. Phase B exit gate runs here. |
+| **6** (B.4.6.actionable-diagnostics) — NEW post-rescope | JSON-artifact emitters (decision-log.json / opportunities.json / validation.json) | Operationalizes §12 (`suggestedConfig` discipline) on the artifact side. Every actionable JSON entry whose finding has an addressable config knob carries a `suggestedConfig: { path, currentValue, proposedValue, rationale }` payload. Findings filtered/clustered/capped: sort by severity → cluster by axis → cap top-N per axis with overflow count surfaced. Property tests: `suggestedConfig` non-empty invariant; cluster-cap invariants under FsCheck-generated noisy inputs. This is L3-X12's structural cash-out on the artifact-side surface; pairs with the event-stream side from this contract. |
+| **7** (B.4.7.full-export-cli) — RESCOPED from old slice 8 | full-export subcommand | The CLI subcommand emits the full event surface: `config.runStart` first, then `extract.*` (snapshot read; no live OSSYS in this chapter), `profile.*` per kind/derivation, `transform.registered` + `transform.applied` per overlay (slices 4-5), `emit.*` per target (SSDT + seeds + migration; NO dacpac in this chapter), `summary.stageCompleted` per stage, `summary.runComplete` last. The emitted JSON artifacts carry slice-6's actionable payloads. Docker-gated integration test exercises end-to-end snapshot-to-SSDT+seeds+migration+actionable-diagnostics flow and asserts runSummary contains the orchestrated stages. **Phase B *structural* exit gate** runs here; the functional-equivalence arm (V2 vs V1 `osm_model.json` against live OSSYS) waits on a follow-up chapter when `LiveOssysConnection` lands. |
 
 **TransformRegistry cues (post-chapter-B.4; the A.4.7 retroactive refactor).** When `TransformRegistry` lands (per `V2_PRODUCTION_CUTOVER.md §6.4.7`), the `transform.registered` events at run start become the registry's structural surface: every `RegisteredTransform<'In, 'Out>` projects to one `transform.registered` envelope. The registry's totality property — every transformation site is named in the registry — is verifiable from the event stream: the count of `transform.registered` envelopes at any successful run equals the registry's static count. The skeleton-purity property (per pillar 9) is verifiable: a run with `--skeleton-only` should emit zero `transform.registered` envelopes with `intent=OperatorIntent`.
 
