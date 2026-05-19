@@ -8,6 +8,7 @@ namespace Projection.Core.Passes
 // falls under the discipline's allowed exception per
 // `DECISIONS 2026-05-09 — Built-in obligation`.
 
+open System.Collections.Generic
 open Projection.Core
 
 /// The topological-order pass — produces a `TopologicalOrder` value
@@ -181,12 +182,18 @@ module TopologicalOrderPass =
 
     let private kahnSort (graph: Graph) : SsKey list * SsKey list =
         // Returns (sorted, unprocessed). Unprocessed is non-empty iff a
-        // cycle exists.
-        let mutable indegree = graph.Indegree
+        // cycle exists. Function-local mutable Dictionary for indegree
+        // (per the operating-disciplines table — Tarjan/Kahn worked
+        // example); O(1) per decrement vs F# Map's O(log n).
+        let indegree : Dictionary<SsKey, int> = Dictionary()
+        for KeyValue(k, v) in graph.Indegree do
+            indegree.[k] <- v
         let mutable ready =
             graph.Nodes
             |> List.filter (fun n ->
-                Map.tryFind n indegree |> Option.defaultValue 0 = 0)
+                match indegree.TryGetValue n with
+                | true, v  -> v = 0
+                | false, _ -> true)
             |> List.sort
         let result = ResizeArray<SsKey>()
         while not (List.isEmpty ready) do
@@ -195,9 +202,12 @@ module TopologicalOrderPass =
             result.Add(head)
             let children = Map.tryFind head graph.Adjacency |> Option.defaultValue []
             for child in children do
-                let current = Map.tryFind child indegree |> Option.defaultValue 0
+                let current =
+                    match indegree.TryGetValue child with
+                    | true, v  -> v
+                    | false, _ -> 0
                 let next = current - 1
-                indegree <- Map.add child next indegree
+                indegree.[child] <- next
                 if next = 0 then
                     // Insert in sorted position so the ready list stays
                     // a sorted set.
@@ -205,9 +215,10 @@ module TopologicalOrderPass =
                         (child :: ready)
                         |> List.sort
         let sorted = result |> List.ofSeq
+        let processedSet = HashSet<SsKey>(sorted)
         let unprocessed =
             graph.Nodes
-            |> List.filter (fun n -> not (List.contains n sorted))
+            |> List.filter (fun n -> not (processedSet.Contains n))
             |> List.sort
         sorted, unprocessed
 
@@ -224,11 +235,17 @@ module TopologicalOrderPass =
     // -----------------------------------------------------------------------
 
     let private tarjanScc (nodes: SsKey list) (adjacency: Map<SsKey, SsKey list>) : SsKey list list =
-        let nodeSet = Set.ofList nodes
+        // Function-local mutable Dictionary / HashSet per the operating-
+        // disciplines table ("Mutable state only function-local for
+        // performance-sensitive algorithms (Tarjan SCC, ResizeArray
+        // accumulators)"). O(1) per insert/lookup vs Map/Set's O(log n);
+        // the algorithmic hot path on 300-table catalogs sees the
+        // compounding effect.
+        let nodeSet = HashSet<SsKey>(nodes)
         let mutable index = 0
-        let mutable indices : Map<SsKey, int> = Map.empty
-        let mutable lowlinks : Map<SsKey, int> = Map.empty
-        let mutable onStack : Set<SsKey> = Set.empty
+        let indices : Dictionary<SsKey, int> = Dictionary()
+        let lowlinks : Dictionary<SsKey, int> = Dictionary()
+        let onStack : HashSet<SsKey> = HashSet()
         let stack = ResizeArray<SsKey>()
         let components = ResizeArray<SsKey list>()
 
@@ -237,38 +254,34 @@ module TopologicalOrderPass =
         let childrenOf (v: SsKey) : SsKey list =
             Map.tryFind v adjacency
             |> Option.defaultValue []
-            |> List.filter (fun w -> Set.contains w nodeSet)
+            |> List.filter (fun w -> nodeSet.Contains w)
             |> List.sort
 
         let rec strongConnect (v: SsKey) : unit =
-            indices  <- Map.add v index indices
-            lowlinks <- Map.add v index lowlinks
-            index    <- index + 1
+            indices.[v]  <- index
+            lowlinks.[v] <- index
+            index        <- index + 1
             stack.Add(v)
-            onStack <- Set.add v onStack
+            onStack.Add(v) |> ignore
             for w in childrenOf v do
-                if not (Map.containsKey w indices) then
+                if not (indices.ContainsKey w) then
                     strongConnect w
-                    let lw = Map.find w lowlinks
-                    let lv = Map.find v lowlinks
-                    lowlinks <- Map.add v (min lv lw) lowlinks
-                elif Set.contains w onStack then
-                    let iw = Map.find w indices
-                    let lv = Map.find v lowlinks
-                    lowlinks <- Map.add v (min lv iw) lowlinks
-            if Map.find v lowlinks = Map.find v indices then
+                    lowlinks.[v] <- min lowlinks.[v] lowlinks.[w]
+                elif onStack.Contains w then
+                    lowlinks.[v] <- min lowlinks.[v] indices.[w]
+            if lowlinks.[v] = indices.[v] then
                 let comp = ResizeArray<SsKey>()
                 let mutable popping = true
                 while popping do
                     let w = stack.[stack.Count - 1]
                     stack.RemoveAt(stack.Count - 1)
-                    onStack <- Set.remove w onStack
+                    onStack.Remove(w) |> ignore
                     comp.Add(w)
                     if w = v then popping <- false
                 components.Add(comp |> List.ofSeq |> List.sort)
 
         for v in nodes do
-            if not (Map.containsKey v indices) then
+            if not (indices.ContainsKey v) then
                 strongConnect v
 
         // Filter to cycle-bearing SCCs:

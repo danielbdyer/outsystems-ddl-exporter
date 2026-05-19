@@ -198,17 +198,25 @@ module GenerateSpec =
     /// + data emission + dual deploy + diff). Wall-time target <60s
     /// warm; coverage matters more than scale.
     ///
-    /// **Shape:** 4 modules × (15 regular + 10 static) = 100 tables;
-    /// 20 rows × 10 static = 200 static rows. Variegated via the same
-    /// RNG-driven attribute / FK density as realistic / operatorReality.
+    /// **Shape:** 8 modules × (25 regular + ~12-13 static) = 300 tables;
+    /// 5000 rows × 100 static = ~500k static rows ≈ 100MB of seed data.
+    /// Matches `operatorReality` topology + 10× the row volume for the
+    /// "production scenario" baseline. Variegated via the same RNG-driven
+    /// attribute / FK density.
+    ///
+    /// Per slice A.4.7'-prelude.canary-production-scale (2026-05-19):
+    /// the comprehensive canary now exercises bench labels at production
+    /// cardinality so per-iteration distribution (P50/P95/P99) surfaces
+    /// real timings (vs the prior 100-table scale where most labels
+    /// reported sub-millisecond per-iteration means).
     let comprehensiveCanary : GenerateSpec =
         {
-            Modules = 4
-            Entities = 60
-            StaticEntities = 40
-            AvgAttrsPerEntity = 8
-            FkDensity = 0.25
-            StaticRowsPerEntity = 20
+            Modules = 8
+            Entities = 200
+            StaticEntities = 100
+            AvgAttrsPerEntity = 10
+            FkDensity = 0.2
+            StaticRowsPerEntity = 5000
             Seed = 42
         }
 

@@ -134,6 +134,23 @@ module ComprehensiveCanaryTests =
             printfn "SKIP %s: Docker daemon not reachable." label
             false
 
+    /// Per slice A.4.7'-prelude.canary-production-scale (2026-05-19):
+    /// the comprehensive canary now exercises bench labels at production
+    /// cardinality (300 tables × 100MB of seed data; wall time ~3-4 min
+    /// warm). To keep developer iteration speed, gate behind
+    /// `PROJECTION_RUN_COMPREHENSIVE_CANARY=1` — matches the existing
+    /// `PROJECTION_RUN_BULK_CANARY` / `PROJECTION_RUN_REALISTIC_CANARY`
+    /// pattern. The perf-sweep slice (and any future perf-targeted work)
+    /// explicitly sets this env var to capture before/after baselines.
+    let private skipIfNotEnabled (label: string) : bool =
+        match System.Environment.GetEnvironmentVariable "PROJECTION_RUN_COMPREHENSIVE_CANARY" with
+        | "1" -> true
+        | _ ->
+            printfn
+                "SKIP %s: set PROJECTION_RUN_COMPREHENSIVE_CANARY=1 to run (production-scale; ~3-4 min wall time)."
+                label
+            false
+
     /// Build a non-empty Policy exercising every Tightening axis (so
     /// pass.nullability.attribute / pass.uniqueIndex.index /
     /// pass.fk.reference all fire on the per-attribute / per-index /
@@ -777,6 +794,7 @@ module ComprehensiveCanaryTests =
 
         [<Fact>]
         member _.``Slice A.4.7'-prelude.comprehensive-canary: full V2 pipeline at 100-table scale produces empty diff + ≥45/51 bench labels`` () =
+            if not (skipIfNotEnabled "comprehensive-canary") then () else
             if not (skipIfNoDocker "comprehensive-canary") then () else
             Bench.reset ()
             let startTime = DateTime.UtcNow
