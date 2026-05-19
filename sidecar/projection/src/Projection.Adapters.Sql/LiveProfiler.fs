@@ -86,7 +86,7 @@ module LiveProfiler =
             use _ = Bench.scope "profile.live.probeAttribute"
             use cmd = cnn.CreateCommand()
             cmd.CommandText <- probeSql kind attr
-            cmd.CommandTimeout <- 0
+            cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
             use! reader = cmd.ExecuteReaderAsync()
             let! advanced = reader.ReadAsync()
             if advanced then
@@ -106,7 +106,7 @@ module LiveProfiler =
             use _ = Bench.scope "profile.live.reflectNullability"
             use cmd = cnn.CreateCommand()
             cmd.CommandText <- nullabilityReflectionSql
-            cmd.CommandTimeout <- 0
+            cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
             cmd.Parameters.AddWithValue("@schema", kind.Physical.Schema) |> ignore
             cmd.Parameters.AddWithValue("@table",  kind.Physical.Table)  |> ignore
             use! reader = cmd.ExecuteReaderAsync()

@@ -358,8 +358,18 @@ module MetadataSnapshotRunner =
         // V1 sometimes returns int via flexible widening (Int16 / Int64);
         // SqlDataReader.GetInt32 throws on type mismatch. Use Convert to
         // tolerate width variation.
-        let value = reader.GetValue(ordinal)
-        System.Convert.ToInt32(value)
+        //
+        // Defensive-fallback (slice A.4.7'-prelude.defensive-hardening,
+        // 2026-05-19): mirror `readString`'s explicit DBNull guard.
+        // `Convert.ToInt32 DBNull.Value` silently returns 0 — which is
+        // the WORST failure shape (silent identity/FK corruption in the
+        // produced Catalog). Raise on NULL so the caller's snapshot
+        // contract is honored (any required-int column with NULL is a
+        // V1-source data integrity issue, not a V2 adapter problem).
+        if reader.IsDBNull(ordinal) then
+            invalidOp (sprintf "MetadataSnapshotRunner: required int column at ordinal %d was NULL" ordinal)
+        else
+            System.Convert.ToInt32(reader.GetValue(ordinal))
 
     let private readIntOpt (reader: SqlDataReader) (ordinal: int) : int option =
         if reader.IsDBNull(ordinal) then None

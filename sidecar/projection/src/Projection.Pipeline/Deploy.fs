@@ -83,9 +83,19 @@ module Deploy =
         let private SystemSocketPath : string = "/var/run/docker.sock"
 
         let private socketCandidates : string list =
+            // Defensive against empty home directory (distroless
+            // containers; `USER nobody`; k8s pods without `$HOME`):
+            // `GetFolderPath SpecialFolder.UserProfile` returns "" on
+            // those hosts; `Path.Combine("", ...)` yields a relative
+            // path that resolves against `CurrentDirectory`, which
+            // is misleading at probe time. Guard the rootless
+            // candidate behind a non-empty home.
             let home = Environment.GetFolderPath Environment.SpecialFolder.UserProfile
-            let userSocket = Path.Combine(home, ".docker", "run", "docker.sock")
-            [ SystemSocketPath; userSocket ]
+            if String.IsNullOrEmpty home then
+                [ SystemSocketPath ]
+            else
+                [ SystemSocketPath
+                  Path.Combine(home, ".docker", "run", "docker.sock") ]
 
         // Why these specific values (not arbitrary):
         // - `ProbeTimeoutMs = 2000`: `docker version` against a healthy
@@ -413,7 +423,7 @@ module Deploy =
                 cmd.CommandText <- segment
                 // Per session-34 — `0` disables the client-side command
                 // timeout. SQL Server handles the work; we just wait.
-                cmd.CommandTimeout <- 0
+                cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
                 let! _ = cmd.ExecuteNonQueryAsync()
                 ()
         }
@@ -605,6 +615,36 @@ module Deploy =
     /// ships as a ready tool with the preflight contract documented;
     /// the canary continues using sequential `executeBatch` until the
     /// composer exposes safe groups.
+    /// Cap the requested parallelism against the connection string's
+    /// `Max Pool Size` (slice A.4.7'-prelude.defensive-hardening).
+    /// Defensive against Azure SQL Database tier connection caps
+    /// (Basic/S0 limit concurrent connections to 30; least-privilege
+    /// accounts often run with smaller pool sizes); without the cap,
+    /// `cnn.OpenAsync()` throws `SqlException` error 10928 ("Resource
+    /// ID limit reached") for some segments, leaving partial DDL.
+    /// Halves the pool budget to leave headroom for adjacent
+    /// in-flight connections (e.g., the canary's source-DB read
+    /// happens concurrently with the target-DB deploy).
+    let private capParallelismToPool (connectionString: string) (requested: int) : int =
+        try
+            let builder = SqlConnectionStringBuilder connectionString
+            let maxPool = builder.MaxPoolSize
+            // SqlConnectionStringBuilder.MaxPoolSize defaults to 100.
+            // Halve to leave headroom for concurrent connections.
+            let safeCeil = max 1 (maxPool / 2)
+            if requested > safeCeil then
+                eprintfn
+                    "deploy.executeBatchParallel: requested parallelism %d exceeds half of MaxPoolSize %d; capping to %d"
+                    requested maxPool safeCeil
+                safeCeil
+            else
+                requested
+        with _ ->
+            // Pathologically bad connection string falls through to
+            // the requested value; SqlConnection itself will surface
+            // the syntactic issue at Open time.
+            requested
+
     let executeBatchParallel
             (connectionString: string)
             (sql: string)
@@ -613,9 +653,10 @@ module Deploy =
         task {
             use _ = Bench.scope "deploy.executeBatchParallel"
             let segments = BatchSplitter.splitWithLoudFallback "deploy.executeBatchParallel" sql
+            let cappedParallelism = capParallelismToPool connectionString parallelism
             Bench.recordSample "deploy.executeBatchParallel.segments" (int64 segments.Length)
-            Bench.recordSample "deploy.executeBatchParallel.parallelism" (int64 parallelism)
-            use semaphore = new System.Threading.SemaphoreSlim(parallelism, parallelism)
+            Bench.recordSample "deploy.executeBatchParallel.parallelism" (int64 cappedParallelism)
+            use semaphore = new System.Threading.SemaphoreSlim(cappedParallelism, cappedParallelism)
             let runSegment (segment: string) : Task<unit> =
                 task {
                     do! semaphore.WaitAsync()
@@ -626,7 +667,7 @@ module Deploy =
                         do! cnn.OpenAsync()
                         use cmd = cnn.CreateCommand()
                         cmd.CommandText <- segment
-                        cmd.CommandTimeout <- 0
+                        cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
                         let! _ = cmd.ExecuteNonQueryAsync()
                         ()
                     finally
@@ -780,8 +821,16 @@ module Deploy =
             use _ = Bench.scope "deploy.countUserTables"
             use cmd = cnn.CreateCommand()
             cmd.CommandText <- countUserTablesSql
-            let! tablesObj = cmd.ExecuteScalarAsync()
-            return Convert.ToInt32 tablesObj
+            let! raw = cmd.ExecuteScalarAsync()
+            // Defensive DBNull/null handling (slice
+            // A.4.7'-prelude.defensive-hardening): mirror the
+            // `tryProbeServerCpus` template — `Convert.ToInt32 null`
+            // returns 0 silently, masking a connection failure as
+            // "no tables in DB." Pattern-match on the boxed result.
+            match raw with
+            | null -> return 0
+            | :? DBNull -> return 0
+            | other -> return Convert.ToInt32 other
         }
 
     /// Environment variable that, when set, points all canary
