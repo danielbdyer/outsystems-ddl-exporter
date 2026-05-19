@@ -1099,6 +1099,32 @@ module Kind =
             | _           -> None)
         |> Option.defaultValue []
 
+    /// Per-Kind attribute-index cache. Per slice
+    /// A.4.7'-prelude.perf-sweep-2 (`PERF_OPPORTUNITIES.md` Rank 2):
+    /// `tryFindAttribute` is called per FK column resolution in
+    /// `StaticSeedsEmitter.deferredColumns`, `MigrationDependenciesEmitter`,
+    /// `UserFkReflowPass`; at 300-table × 10-attrs/kind production
+    /// scale the prior `List.tryFind` was O(n²) across the emit
+    /// pipeline. The `ConditionalWeakTable` keys per-Kind-instance
+    /// (F# records are reference types under the hood); the index is
+    /// built on first lookup and reused for every subsequent lookup
+    /// against the same instance.
+    let private attributeIndexCache =
+        System.Runtime.CompilerServices.ConditionalWeakTable<Kind, Map<SsKey, Attribute>>()
+
+    let attributeIndex (k: Kind) : Map<SsKey, Attribute> =
+        match attributeIndexCache.TryGetValue(k) with
+        | true, idx -> idx
+        | false, _ ->
+            let idx = k.Attributes |> List.map (fun a -> a.SsKey, a) |> Map.ofList
+            // `GetValue` is the thread-safe idempotent add (vs `Add`
+            // which throws on duplicate key); use it so concurrent
+            // callers from a future parallel-pass driver see one
+            // index per Kind.
+            attributeIndexCache.GetValue(
+                k,
+                System.Runtime.CompilerServices.ConditionalWeakTable<Kind, Map<SsKey, Attribute>>.CreateValueCallback(fun _ -> idx))
+
     /// Find an attribute on the kind by SsKey (per A4 — identity-keyed
     /// lookup, never by name). Returns `None` if absent. Lifted to
     /// Core at chapter 4.1.B slice ε per the slice-δ improvement
@@ -1108,7 +1134,7 @@ module Kind =
     /// third consumer at chapter 4.2's `UserFkReflowPass` is on the
     /// horizon. Two-consumer threshold met.
     let tryFindAttribute (ssKey: SsKey) (k: Kind) : Attribute option =
-        k.Attributes |> List.tryFind (fun a -> a.SsKey = ssKey)
+        Map.tryFind ssKey (attributeIndex k)
 
 
 [<RequireQualifiedAccess>]
@@ -1177,15 +1203,58 @@ module Module =
 [<RequireQualifiedAccess>]
 module Catalog =
 
+    /// Per-Catalog kind-index cache. Per slice
+    /// A.4.7'-prelude.perf-sweep-2 (`PERF_OPPORTUNITIES.md` Rank 1 —
+    /// highest single-finding leverage): `tryFindKind` is the hottest
+    /// cross-cutting lookup in V2 — emitters resolve FK targets,
+    /// passes look up referenced kinds, the cycle resolver walks the
+    /// FK graph. The prior `List.tryPick` was O(modules ×
+    /// kinds_per_module) per call; at 300-table × per-FK-reference
+    /// scale that compounded across the full pipeline. The
+    /// `ConditionalWeakTable` keys per-Catalog-instance; the index
+    /// is built on first lookup and reused thereafter. Both
+    /// `kindIndex` and `kindOwnershipIndex` populate at the same
+    /// site (one pass over modules) so a single first-lookup pays
+    /// for both lookups.
+    let private kindIndexCache =
+        System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Map<SsKey, Kind>>()
+
+    let private kindOwnershipIndexCache =
+        System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Map<SsKey, Module>>()
+
+    let kindIndex (c: Catalog) : Map<SsKey, Kind> =
+        match kindIndexCache.TryGetValue(c) with
+        | true, idx -> idx
+        | false, _ ->
+            let idx =
+                c.Modules
+                |> List.collect (fun m -> m.Kinds)
+                |> List.map (fun k -> k.SsKey, k)
+                |> Map.ofList
+            kindIndexCache.GetValue(
+                c,
+                System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Map<SsKey, Kind>>.CreateValueCallback(fun _ -> idx))
+
+    let kindOwnershipIndex (c: Catalog) : Map<SsKey, Module> =
+        match kindOwnershipIndexCache.TryGetValue(c) with
+        | true, idx -> idx
+        | false, _ ->
+            let idx =
+                c.Modules
+                |> List.collect (fun m -> m.Kinds |> List.map (fun k -> k.SsKey, m))
+                |> Map.ofList
+            kindOwnershipIndexCache.GetValue(
+                c,
+                System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Map<SsKey, Module>>.CreateValueCallback(fun _ -> idx))
+
     /// Find a kind anywhere in the catalog by SsKey. Returns `None` if
     /// absent. A4: lookup is by identity, never by name.
     let tryFindKind (ssKey: SsKey) (c: Catalog) : Kind option =
-        c.Modules |> List.tryPick (Module.tryFindKind ssKey)
+        Map.tryFind ssKey (kindIndex c)
 
     /// Find the module that owns a given kind by SsKey.
     let tryFindOwningModule (ssKey: SsKey) (c: Catalog) : Module option =
-        c.Modules |> List.tryFind (fun m ->
-            m.Kinds |> List.exists (fun k -> k.SsKey = ssKey))
+        Map.tryFind ssKey (kindOwnershipIndex c)
 
     /// Enumerate all kinds across all modules.
     let allKinds (c: Catalog) : Kind list =
