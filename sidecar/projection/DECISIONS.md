@@ -18285,3 +18285,61 @@ The mechanism ships uncategorized at slice 5. The TransformRegistry registration
 - `tests/Projection.Tests/MetadataContractOverridesTests.fs` — 25 tests covering parsing + lookup + builder; case-insensitive normalization + original-case label preservation + error accumulation + V2 safe-default divergence from V1's throw.
 - `src/Projection.Core/Policy.fs:118` — `TighteningOverride` (the V2-native per-attribute override surface; slice 7 wires operator config to this).
 - Active deferrals index — two new rows: `MetadataContractOverrides` wiring into V2 mappers + `OverlayAxis.Extraction` candidate.
+
+## 2026-05-19 (chapter B.4 mid-chapter strategic exploration) — slice 7 ships thin (full-export CLI wrapper over today's 3 wired config sections); chapter C opens for the broader operator-facing surface (4 slices: tightening priority + special-circumstances + emission-folders + tag-groups-as-closed-DU); axis 3 (static seed data file format) deferred-with-trigger pending operator dataset pressure
+
+### Context
+
+After slices 4 + 5 landed (ModuleFilter port + MetadataContractOverrides mechanism), the principal operator surfaced six operator-facing axes they want available as a coherent whole: (1) rename a table, (2) move a table from one emission folder to another, (3) insert arbitrary data shaped like a given table, (4) tighten attributes per-column, (5) allow special circumstances (e.g., a table without a primary key), (6) feature-toggle tag groups (flip several related transforms on/off as a named group).
+
+A first-principles exploration dispatch surveyed the V1 CLI + config surface against V2's current state. Key surprise: V2's `Pipeline.Config` parser is shape-complete but **only 3 of ~15 sections have wired consumers** — `Model.Path`, `Overrides.TableRenames`, `Output.Dir`. The rest (`Profile`, `Cache`, `Profiler`, `TypeMapping`, `DynamicData`, `Emission` booleans, `Policy.Selection`, `Policy.Insertion`, `Policy.UserMatching`, `Overrides.MigrationDependencies` / `StaticData` / `CircularDependencies`) parse successfully but are silently ignored at compose time. Operator-typed entries for those sections produce no error, no warning, no behaviour.
+
+### Per-axis status (against V2 today)
+
+| Axis | V2 status | Gap shape |
+|---|---|---|
+| 1. Rename a table | ✓ wired | None |
+| 2. Move emission folder | gap | New `Overrides.EmissionFolders : Map<SsKey, string>` + `SsdtFile.RelativePath` rewrite pass |
+| 3. Insert arbitrary data | partial | `Modality.Static` + `StaticSeedsEmitter` exist; missing config-driven population path (file format + adapter + schema validation) |
+| 4. Tighten attributes | partial | `Policy.TighteningPolicy` + `TighteningOverride` exist structurally; missing config-binding layer |
+| 5. Special circumstances | partial | `Overrides.CircularDependencies` parses today; missing the pass that reads + suppresses diagnostics. No "allow missing PK" surface yet |
+| 6. Tag groups | novel | No V1 or V2 precedent. Requires `RegisteredTransform.Tags` field + filter at `Compose.runWithConfig` |
+
+### Four resolved decisions (this exploration)
+
+1. **Slice 7 ships THIN.** `full-export` CLI = wrapper over today's 3 wired sections (Model.Path, TableRenames, Output.Dir) plus the slice-6 actionable-diagnostics enrichment + the SnapshotJson / SnapshotRowsets connectivity per the chapter B.4 rescope. Dormant config sections continue to parse-but-ignore (operator hand-writing future-shaped configs gets no surprises). Chapter B.4 closes on its current 7-slice budget; the broader operator surface lands as a sibling chapter.
+
+2. **Chapter C opens for the broader operator-facing surface.** Four slices, sequenced by leverage:
+   - **C.1 (priority)** — wire **tightening axis (axis 4)**. `Policy.TighteningPolicy` + `TighteningOverride` already exist as F# types; the slice ships the config-binding layer mapping config strings (e.g., `"tightening.attributes": [{"ssKey": "...", "action": "ForceNotNull"}]`) → registered interventions. Highest leverage per the operator (tightest feedback loop with day-to-day cutover work).
+   - **C.2** — special-circumstances axis (axis 5). New consumer pass for `Overrides.CircularDependencies.AllowedCycles` (already parsed); extend the surface with `Overrides.AllowMissingPrimaryKey : SsKey list` allowlist + the suppress-diagnostic pass that reads it.
+   - **C.3** — emission-folder targeting axis (axis 2). New `Overrides.EmissionFolders : Map<SsKey, string>` config section + `SsdtFile.RelativePath` rewrite pass + emit-time validation (folder paths respect SSDT naming conventions).
+   - **C.4** — tag-groups axis (axis 6). Closed `TransformGroup` DU (preset list, no operator-defined custom groups — see decision 3 below) + `RegisteredTransform.Tags : Set<TransformGroup>` field + `Policy.TransformGroups : Map<TransformGroup, bool>` config + filter at `Compose.runWithConfig`.
+
+3. **Tag groups = fixed preset list, not operator-defined sets.** Per the operator's chapter-B.4 strategic exploration answer: V2 ships a closed `TransformGroup` DU (preliminary list: `CDC | UATUsers | MigrationDependencies | Bootstrap | RefactorLog | ... `) rather than allowing arbitrary operator-invented group names. Closed-DU forces structural totality at chapter close — preset membership is V2-owned + reviewed at each chapter close per the closed-DU expansion empirical-test discipline. Operators toggle named presets; they can't invent new ones. Trade-off: less flexibility but stronger structural guarantees + clearer surface area + no preset-vs-actual-transform divergence risk. The preset list seeds at C.4 slice land time based on the actual transform set that exists then; the closed DU grows under the same "trigger fires" discipline as `OverlayAxis` (real evidence of an operator-facing transform group not in the preset set warrants a new variant + DECISIONS entry).
+
+4. **Axis 3 (insert arbitrary data, operator-supplied seed file) DEFERRED-WITH-TRIGGER.** Per the operator's answer: don't ship in chapter B.4 OR chapter C; surface under concrete operator dataset pressure. Today V2 has `Modality.Static` + `StaticSeedsEmitter` for profile-derived seeds only. The deferred-trigger condition: a real operator workflow surfaces with a concrete dataset they want emitted as MERGE statements that didn't come from profile observation. Active deferral row added with this trigger; format decision (JSON-shaped-like-Kind vs CSV vs SQL) defers to the same trigger event.
+
+### Sequencing summary
+
+- **Chapter B.4 remaining**: slice 6 (actionable-diagnostics) → slice 7 (thin full-export CLI). Both ship inside the chapter B.4 budget.
+- **Chapter C (next chapter)**: 4 slices in leverage order — C.1 tightening → C.2 special-circumstances → C.3 emission-folders → C.4 tag-groups. Estimated 3–4 weeks; each slice is ~1 week.
+- **Out-of-scope across both chapters**: axis 3 (static seed data file format) deferred-with-trigger; surfaces under concrete operator dataset pressure with its own slice when the time comes.
+
+### Active deferrals added
+
+Two new rows in the Active deferrals index:
+
+- **Axis 3 — operator-supplied static seed data file format + consumer**: deferred at this exploration; trigger = concrete operator workflow surfaces with a dataset they want emitted as MERGE statements that didn't come from profile observation. Cash-out includes file-format decision (JSON-rows / CSV / something else), parsing adapter location, schema-validation discipline, and `Modality.Static` population path from the file.
+- **Dormant config-section wiring sweep**: of V2's ~15 `Pipeline.Config` sections, 12 are parsed-but-dormant today. Slice 7 doesn't wire the dormant sections (per the thin-slice-7 decision); chapter C wires axes 4 + 5 + 2 + 6 by way of new + existing sections. The remaining dormant sections (`Profile.Path`, `Cache.*`, `Profiler.*`, `TypeMapping.*`, `DynamicData.*`, `Emission.*`, `Policy.UserMatching.*`) wait for their respective consumer-pressure events. Each carries its own latent trigger; the meta-row here points at the sweep so future agents see the full dormant inventory at a glance.
+
+### Discipline reinforced
+
+**First-principles operator-surface exploration earns its place as a chapter-mid practice.** When the operator names "I want N things" and the existing slice plan was carbon-copying V1 components piecemeal, a first-principles dispatch surfaces the gap between the slice budget + the holistic operator need. The exploration produces a sequencing decision that's structurally honest about what fits in the current chapter vs. what needs its own chapter — same discipline as the chapter-mid-audit, applied to operator surface rather than consistency drift.
+
+**Operator-surface mapping = config-consumer audit.** The exploration discovered that V2's config parser is much further ahead of V2's config consumer wiring than anyone was tracking. This is a class of finding that doesn't surface in slice-by-slice work because each slice consumes the section it needs; the dormant sections never produce a failing test. Periodic config-consumer audits (per-chapter-close item?) would catch this earlier.
+
+### Cross-references
+
+- Active deferrals index — two new rows (axis 3 file format + dormant config-section wiring sweep).
+- Chapter B.4 slice plan — slice 7 row revised to reflect thin scope.
+- Future Chapter C opens against this DECISIONS entry as its slice-plan basis.
