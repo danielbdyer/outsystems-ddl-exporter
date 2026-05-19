@@ -125,12 +125,6 @@ module Config =
         CircularDependencies   : CircularDependenciesSection option
     }
 
-    type DynamicDataSection = {
-        InsertMode           : string
-        StaticSeedParentMode : string
-        DeferJunctionTables  : bool
-    }
-
     type EmissionSection = {
         Ssdt                  : bool
         Dacpac                : bool
@@ -166,7 +160,6 @@ module Config =
         Profiler     : ProfilerSection
         TypeMapping  : TypeMappingSection
         Overrides    : OverridesSection
-        DynamicData  : DynamicDataSection
         Emission     : EmissionSection
         Policy       : PolicySection
         Output       : OutputSection
@@ -207,12 +200,6 @@ module Config =
         MigrationDependencies = None
         StaticData            = None
         CircularDependencies  = None
-    }
-
-    let private defaultDynamicData : DynamicDataSection = {
-        InsertMode           = "PerEntity"
-        StaticSeedParentMode = "Include"
-        DeferJunctionTables  = false
     }
 
     let private defaultEmission : EmissionSection = {
@@ -742,35 +729,6 @@ module Config =
                                 CircularDependencies  = cycles
                             }
 
-    let private parseDynamicData (root: JsonElement) : Result<DynamicDataSection> =
-        match tryGetProperty root "dynamicData" with
-        | None -> Result.success defaultDynamicData
-        | Some element ->
-            let insertModeR =
-                match getOptionalString element "insertMode" with
-                | Error es -> Error es
-                | Ok None -> Result.success defaultDynamicData.InsertMode
-                | Ok (Some s) -> Result.success s
-            match insertModeR with
-            | Error es -> Error es
-            | Ok insertMode ->
-                let parentModeR =
-                    match getOptionalString element "staticSeedParentMode" with
-                    | Error es -> Error es
-                    | Ok None -> Result.success defaultDynamicData.StaticSeedParentMode
-                    | Ok (Some s) -> Result.success s
-                match parentModeR with
-                | Error es -> Error es
-                | Ok parentMode ->
-                    match getBoolOr element "deferJunctionTables" defaultDynamicData.DeferJunctionTables with
-                    | Error es -> Error es
-                    | Ok defer ->
-                        Result.success {
-                            InsertMode           = insertMode
-                            StaticSeedParentMode = parentMode
-                            DeferJunctionTables  = defer
-                        }
-
     let private parseEmission (root: JsonElement) : Result<EmissionSection> =
         match tryGetProperty root "emission" with
         | None -> Result.success defaultEmission
@@ -909,30 +867,26 @@ module Config =
                                 match parseOverrides root with
                                 | Error es -> Error es
                                 | Ok overrides ->
-                                    match parseDynamicData root with
+                                    match parseEmission root with
                                     | Error es -> Error es
-                                    | Ok dynamicData ->
-                                        match parseEmission root with
+                                    | Ok emission ->
+                                        match parsePolicy root with
                                         | Error es -> Error es
-                                        | Ok emission ->
-                                            match parsePolicy root with
+                                        | Ok policy ->
+                                            match parseOutput root with
                                             | Error es -> Error es
-                                            | Ok policy ->
-                                                match parseOutput root with
-                                                | Error es -> Error es
-                                                | Ok output ->
-                                                    Result.success {
-                                                        Model       = model
-                                                        Profile     = profile
-                                                        Cache       = cache
-                                                        Profiler    = profiler
-                                                        TypeMapping = typeMapping
-                                                        Overrides   = overrides
-                                                        DynamicData = dynamicData
-                                                        Emission    = emission
-                                                        Policy      = policy
-                                                        Output      = output
-                                                    }
+                                            | Ok output ->
+                                                Result.success {
+                                                    Model       = model
+                                                    Profile     = profile
+                                                    Cache       = cache
+                                                    Profiler    = profiler
+                                                    TypeMapping = typeMapping
+                                                    Overrides   = overrides
+                                                    Emission    = emission
+                                                    Policy      = policy
+                                                    Output      = output
+                                                }
 
     /// Parse a JSON string into a typed `Config`. Order of operations:
     ///   1. Parse the JSON syntactically. Malformed JSON returns
