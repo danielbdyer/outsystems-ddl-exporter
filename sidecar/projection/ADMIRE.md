@@ -1511,10 +1511,23 @@ adapter (`Projection.Adapters.Sql/ProfileStatistics.fs`) is the V2
 boundary; `DistributionsEmitter` (`Projection.Targets.Distributions/`)
 is the first sibling Π consuming the rich evidence; the rich-profiling
 end-to-end milestone (`RichProfilingEndToEndTests.fs`) validates the
-full pipeline. Faker (synthetic-data Π) remains deferred until at least
-a third evidence type lands or the limitations of two are explicitly
-accepted (`HANDOFF.md`, "What's deferred"; `CHAPTER_1_CLOSE.md §4
-priority 8`).
+full pipeline.
+
+**Status update at chapter B.3 close (2026-05-19): Faker's deferred
+trigger is STRUCTURALLY MET.** Chapter B.3 (LiveProfiler deep-probe
+sweep) shipped three new evidence types at slice B.3.8
+(`ForeignKeyCardinality` — fan-out cardinality per Reference;
+`ForeignKeySelectivity` — value-frequency clumping per Reference;
+`JointDistribution` — multi-FK co-occurrence per Kind) plus slice
+B.3.5's `StatisticalMoments` lifted the Numeric variant from
+"percentiles + range" to "percentiles + range + Mean + StdDev + CV."
+All four gating evidence chain nodes named in the table below now
+ship from cache derivations in `Projection.Adapters.Sql/LiveProfiler.Cache`.
+
+Explicit promotion from deferred to scoped-for-implementation is a
+chapter B.4 / chapter 5+ open decision; the structural prerequisites
+are in place. See `CHAPTER_B_3_CLOSE.md` §"Substantive contributions
+§3" + `DECISIONS Active deferrals — Faker emitter` (updated row).
 
 **Significance.** The first admire entry that surfaces **V1 absence
 to fill, not V1 logic to migrate**. Every prior admire (six entries)

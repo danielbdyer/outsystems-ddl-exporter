@@ -83,10 +83,15 @@ editorial inheritance` for the codifying entry.
 
 ## Layout
 
-The current layout (as of chapter A.4.7' close 2026-05-17; **V2-driver
-critical-path Phases 1–7 all CLOSED** — see `BACKLOG.md` per-phase
-sections for shipped slice ledgers and `HANDOFF.md`'s 2026-05-17
-doc-refresh entry for the actually-pending shortlist):
+The current layout (as of chapter B.3 close 2026-05-19; **V2-driver
+critical-path Phases 1–7 all CLOSED + chapter B.3 (LiveProfiler
+deep-probe sweep) CLOSED at 8/8 slices** — DATA-axis cutover-blocker
+silent-default closed across all three tightening rules; Faker
+emitter's deferred trigger structurally met; ~6000 → ~900 SQL
+round-trips at 300-table production scale via discovery-then-derive
+cache architecture; see `CHAPTER_B_3_CLOSE.md`, `BACKLOG.md` per-phase
+sections for shipped slice ledgers, and `HANDOFF.md`'s 2026-05-19
+chapter B.3 close letter for the actually-pending shortlist):
 
     sidecar/projection/
       README.md                 - this file

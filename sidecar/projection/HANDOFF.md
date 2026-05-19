@@ -1,5 +1,36 @@
 # Handoff letter — 2026-05-19 (chapter B.3 CLOSES) (FK correlation triplet ships; Faker emitter's deferred trigger structurally met; chapter B.3 complete 8/8 slices)
 
+---
+
+## 📍 Next-agent orientation — DO THIS FIRST
+
+> **You're picking up V2 after chapter B.3 closed.** The chapter finished structurally complete; nothing is in flight. The branch (`claude/audit-parity-matrix-37foc`) is at `eda4504` with 8 slice commits + this close letter, all pushed.
+>
+> **Read these, in this order (~30 min):**
+>
+> 1. **This letter** (the latest, at the top) — 5 min. Names what shipped + the three open questions for your chapter open.
+> 2. **`CHAPTER_B_3_CLOSE.md`** — 10 min. Primary close artifact. Read the "Substantive contributions" + "Three open questions for the next chapter's opening" sections in particular.
+> 3. **`CLAUDE.md` operating disciplines table** — 5 min. Two new entries at the bottom from chapter B.3 (EvidenceCache discovery-then-derive pattern; Big-O audit at multiple-derivation sites).
+> 4. **`DECISIONS Active deferrals — index`** at top of `DECISIONS.md` — 5 min. The Faker emitter row was updated at chapter close (trigger structurally met; awaiting explicit promotion).
+> 5. **`V2_DRIVER.md` per-axis stakes table** — 5 min. Confirm where chapter B.3 work landed (DATA-axis cutover-blocker silent-default closed across all 3 tightening rules).
+>
+> **Then orient on the next chapter** by re-reading the "Three open questions" section of `CHAPTER_B_3_CLOSE.md` + the "Next chapter (B.4 candidates)" section below. Pick ONE open question to bring forward to the principal-PO as the chapter-open conversation. The decisions are: (a) promote Faker now, (b) ship CLI subcommands per V2_PRODUCTION_CUTOVER §7.5 (chapter B.4), or (c) hygiene-close — retire the transitional SQL captures + close out composite-PK FK deferral. Each has different cutover-window implications.
+>
+> **Best practices the chapter taught (carry forward):**
+>
+> - **Smart-constructor-FIRST.** Every new IR aggregate gets `.create` BEFORE the slice that consumes it. Slice 1's `ForeignKeyReality.create`, slice 3's two new creates, slice 5's `StatisticalMoments.create`, slice 8's three new creates — each absorbed subsequent field extensions at one site. Pillar of the chapter's compounding velocity.
+> - **Discovery-then-derive.** When you reach for "another per-attribute SQL probe," stop. The `EvidenceCache` substrate is canonical. New evidence shapes land as `Cache.deriveX` pure-F# primitives. Three SQL queries per kind is the bound; cross-derivation shared state lives in the cache (`ColumnsByKey`) or precomputed indices (`buildForeignKeyTargetIndex`).
+> - **Audit during validation, fold inline.** Every SQL gotcha (SUM(int) → COUNT_BIG; reserved-keyword `RowCount`; `CAST AS bit` Boolean read; F# nullness on `obj.ToString()`; 8-site `ProbeStatus` duplication) got caught mid-slice and folded inline. Don't defer fixes that surface during validation — the codification absorbs refinements while the slice is hot.
+> - **Pillar 9 routing.** Operational diagnostics → `Diagnostics<'_>`. Data-intent observation → `Profile`. Operator intent → `Options` / `Policy`. Slice 4 + slice 7 are worked examples; the routing decision is structural (return type), not conventional.
+> - **Algebraic laws on merges.** `Profile.merge` (slice 7) passes commutative + associative + identity FsCheck properties. When you add multi-environment / cross-source aggregation surfaces, the laws are the verification. T1 byte-determinism rests on them.
+> - **The `*With`-overload pattern.** When two derivations share precomputed state, expose `derivXWith index` + the simple-wrapper `derivX` that builds the index per call. Per sibling-wrapper discipline: the wrapper supplies a default the caller couldn't otherwise compute — it's the principled F# default-argument idiom, not tech debt.
+>
+> **The chapter-close ritual lives in `CLAUDE.md`**. When YOUR chapter closes, run all 8 items (Active deferrals scan; contract-vs-implementation walk; CLAUDE.md / README.md staleness; HANDOFF + close-doc; fresh-eye walk; operating-disciplines table currency; V1-input-envelope walk; per-axis-stakes evaluation against `V2_DRIVER.md`). Chapter B.3's close artifacts (`CHAPTER_B_3_CLOSE.md` + this updated HANDOFF + matrix amendments + DECISIONS entries + CLAUDE.md updates) are the template.
+>
+> **Branch protocol.** This session worked on `claude/audit-parity-matrix-37foc`. If you're continuing in that chapter's afterglow, develop on the same branch; if you're opening a new chapter (B.4 / B.x — Faker / etc.), the V2 convention is a new branch (`claude/<chapter-id>-<slug>`). Confirm with the principal-PO before opening — chapter-open decisions are theirs.
+
+---
+
 To the next agent. Chapter B.3 is structurally complete. All 8 slices shipped + tested; the DATA-axis cutover-blocker silent-default closed across all three tightening rules; the LiveProfiler architecture pivoted to discovery-then-derive (in-memory typed-row cache + pure-F# derivations); the Faker emitter's `ADMIRE.md`-named gating evidence chain has all four nodes shipped. The deferred Faker trigger is structurally met — awaits explicit promotion at chapter B.4 or chapter 5 open.
 
 ## Chapter B.3 summary (8 slices)
