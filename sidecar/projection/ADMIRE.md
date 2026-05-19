@@ -2865,3 +2865,36 @@ multi-session, likely demanding refinements during validation
 agent inherits this entry as the starting point and follows the
 migration path outline above. Implementation does not start in
 this commit; the explicit framing is the deliverable.
+
+## 2026-05-19 — `ModuleFilter` + `ModuleFilterOptions` + `ModuleEntityFilterOptions` (`src/Osm.Pipeline/ModelIngestion/ModuleFilter.cs` + `src/Osm.Domain/Configuration/ModuleFilterOptions.cs` + `src/Osm.Domain/Configuration/ModuleEntityFilterOptions.cs`)
+**Status:** **carbon-copied (chapter B.4 slice 4)** — single F# file consolidating three V1 C# files; structural shape preserved; V2 vocabulary throughout. **Mode:** V1-migration (V1 has the canonical shape; V2 honors it).
+
+### What it does (algebraic terms)
+Operator-supplied selection seam over the catalog: filters `Catalog → Catalog` by module-name include list, system-modules toggle, inactive-modules toggle, and per-module entity restrictions. Pillar 9 classification: `OperatorIntent of Selection`. Pure function; no I/O; lives in `Projection.Core`.
+
+### V2 placement
+**Carbon-copied** to `src/Projection.Core/ModuleFilter.fs`. Three V1 files consolidated into one F# module-shaped surface per V2's "consolidate related types + consuming operation under the bounded-context module name" convention (V1 separated by C# class-per-file).
+
+### V2 placement — carbon-copy log
+- **V1 source paths** (at V1 HEAD V2 inherited from, 2026-05-19):
+  - `src/Osm.Pipeline/ModelIngestion/ModuleFilter.cs` (~140 LOC)
+  - `src/Osm.Domain/Configuration/ModuleFilterOptions.cs` (~220 LOC)
+  - `src/Osm.Domain/Configuration/ModuleEntityFilterOptions.cs` (~130 LOC)
+- **V2 location**: `sidecar/projection/src/Projection.Core/ModuleFilter.fs`.
+- **Date inherited**: 2026-05-19.
+- **Refactor status**: **partially refactored** — V2 vocabulary (Catalog / Module / Kind / Name / SsKey / ModalityMark) replaces V1 vocabulary (OsmModel / ModuleModel / EntityModel / ModuleName); structural shape preserved; V1's `ValidationOverrides` axis (per-module validation suppression) deliberately NOT ported (routes through slice 5's `MetadataContractOverrides` port). V1's per-module `IsSystemModule` bit translates to V2's per-kind `ModalityMark.SystemOwned` ("a module is treated as system-owned iff every kind in it carries SystemOwned").
+- **Citation comment**: at the top of `ModuleFilter.fs`, listing the three V1 source paths + chapter+slice ID + this ADMIRE entry pointer.
+
+### Existing test coverage (V1)
+- `tests/Osm.Pipeline.Tests/ModuleFilterTests.cs` — example scenarios for each filter axis + missing-name / empty-result failure modes.
+- `tests/Osm.Pipeline.Tests/ModuleFilterConsistencyTests.cs` — cross-pipeline invariance properties.
+- `tests/Osm.Domain.Tests/ModuleFilterOptionsTests.cs` — smart-constructor validation tests.
+
+### V2 test coverage
+- `tests/Projection.Tests/ModuleFilterTests.fs` — 30 tests covering: empty/identity behaviour; module-name filter; case-insensitive matching; missing-module error; system-modules filter via per-kind Modality; inactive-modules filter (module + kind level); per-module entity filters; smart-constructor validation (null/whitespace/dedup/trim/error-accumulation); idempotence + subset properties.
+
+### Edges / risks
+- **V2 translation of `IsSystemModule`**: V1 carries a per-module flag; V2 derives it from per-kind `ModalityMark.SystemOwned`. A V1 "mixed" module (some system kinds + some app kinds) was treated as non-system by V1 (single bit per module); V2 treats it as non-system iff at least one kind is non-SystemOwned. Same V1 behaviour for the all-system + all-app cases; differs on the mixed-modality edge (where V1 effectively held a per-module override and V2 does not). Surface as a `DECISIONS` entry if a real V1 mixed-modality fixture round-trip surfaces a divergence; otherwise the V2 translation is the cleaner shape.
+- **`ValidationOverrides` axis NOT ported here**: V1's `ModuleFilterOptions.ValidationOverrides` is a per-module validation suppression surface; that lands at slice 5 (`MetadataContractOverrides`) where it is the natural home structurally. The V2 port at this slice carries no validation-overrides field on `ModuleFilterOptions`.
+- **Operator-input case sensitivity**: matching is case-insensitive (lowercase-normalized at construction; matches V1 `OrdinalIgnoreCase` semantics). Original-case names preserved for diagnostic messages so operators see their own typing in error output.
+- **Pillar 9 / TransformRegistry wiring**: this slice ships the pure filter only; the `RegisteredTransform<ModuleFilterOptions, Catalog>` registration + `transform.applied` event emission per the logging-format contract land at slice 7 (`full-export` CLI) where the orchestrator invokes the filter.

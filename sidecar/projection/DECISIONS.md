@@ -18177,3 +18177,57 @@ The functional-equivalence arm is inherently gated on infrastructure outside V2'
 - `sidecar/projection/docs/logging-format.md` §1 + §18 updated to reflect new consumer set + new slice table.
 - Active deferrals index — three new rows landed (standalone extract+profile subcommands; multi-environment + UAT-users; data-twin CLI verb); `LiveOssysConnection` row updated with the corporate-network-access framing.
 - `CHAPTER_3_X_CLOSE.md` already documents the `DockerImageEmitter` substrate (slice δ_dock) — the `data-twin` verb's chapter will pick that up as the wrapped surface.
+
+## 2026-05-19 (slice B.4.4.module-filter-port) — ModuleFilter carbon-copied from V1 to Projection.Core; V1's IsSystemModule per-module flag translates to V2's per-kind ModalityMark.SystemOwned aggregate; ValidationOverrides axis routed to slice 5 not here
+
+### What landed
+
+`src/Projection.Core/ModuleFilter.fs` (~330 LOC) — single F# file consolidating V1's three carbon-copy donor files:
+- `src/Osm.Pipeline/ModelIngestion/ModuleFilter.cs` (~140 LOC; the executor)
+- `src/Osm.Domain/Configuration/ModuleFilterOptions.cs` (~220 LOC; the operator-facing options)
+- `src/Osm.Domain/Configuration/ModuleEntityFilterOptions.cs` (~130 LOC; per-module entity restrictions)
+
+Plus 30 new tests at `tests/Projection.Tests/ModuleFilterTests.fs` (all passing; 76/76 green across the regression-critical surfaces — ModuleFilter + CatalogTests + ConfigTests — at 152ms total). Build clean under `TreatWarningsAsErrors=true`. File-header citation + ADMIRE entry per the V2 self-containment + carbon-copy editorial inheritance discipline.
+
+### V1-to-V2 vocabulary translation
+
+| V1 (C#) | V2 (F#) |
+|---|---|
+| `OsmModel` | `Catalog` |
+| `ModuleModel` | `Module` |
+| `EntityModel` | `Kind` |
+| `ModuleName` | `Name` |
+| `ImmutableArray<ModuleName>` | `Set<string>` (lowercase-normalized) + `string list` (original-case for diagnostics) |
+| `ImmutableDictionary<string, ModuleEntityFilterOptions>` | `Map<string, ModuleEntityFilter>` |
+| `ModuleModel.IsSystemModule` (per-module bit) | `Kind.Modality |> List.contains ModalityMark.SystemOwned` aggregated to module via `every kind is SystemOwned` |
+| `ModuleModel.IsActive` | `Module.IsActive` (same field; chapter A.0' slice β IR fidelity lift surfaced it) |
+| `Result<OsmModel>` | `Result<Catalog>` (V2's `Microsoft.FSharp.Core.Result<'a, ValidationError list>` alias) |
+
+### Three substantive translation decisions
+
+1. **`IsSystemModule` → per-kind `ModalityMark.SystemOwned` aggregate.** V1's per-module bit becomes V2's per-kind modality marked at adapter time per `CatalogReader.fs:2109` (`if kindRow.IsSystemEntity then yield SystemOwned`). The aggregate test "every kind in this module is SystemOwned" is the cleanest translation. A mixed-modality module (some system + some app kinds) passes the filter in V2 even when `IncludeSystemModules = false`; V1 would have dropped it if its per-module bit was set. Surface as a refined translation if a real V1 mixed-modality fixture round-trip surfaces divergence; otherwise the per-kind shape is the cleaner V2 invariant.
+
+2. **`ValidationOverrides` axis NOT ported here.** V1's `ModuleFilterOptions.ValidationOverrides` is a per-module validation suppression surface coupled to V1's monolithic model layer. Structurally it is a `MetadataContractOverrides` concern (operator-supplied override of metadata-contract validation per module); slice 5 (chapter B.4.5) is the natural home. The V2 port at this slice carries no `ValidationOverrides` field on `ModuleFilterOptions`; slice 5 lands the related surface separately.
+
+3. **Three-files-into-one F# consolidation.** V1's C# class-per-file convention separates `ModuleFilter` (executor) from `ModuleFilterOptions` (operator DTO) from `ModuleEntityFilterOptions` (per-module-entity DTO). V2's F# convention consolidates related types + the consuming operation under the bounded-context module name (`Projection.Core.ModuleFilter` carries `ModuleFilterOptions`, `ModuleEntityFilter`, and the `apply` operation). Same shape; cleaner navigation.
+
+### Pillar 9 — `OperatorIntent of Selection`
+
+Every axis in `ModuleFilterOptions` (module-name list; `IncludeSystemModules`; `IncludeInactiveModules`; per-module entity restrictions) expresses operator-supplied intent narrowing the universe of work the downstream pipeline operates against. None of these fields represent data intention; an empty-options instance (`ModuleFilter.empty`) is the identity transformation (DataIntent-preserving pass-through). The `ModuleFilter.apply` function short-circuits to `Ok input` when `hasFilter opts` returns false — the no-operator-intent path is the structural skeleton.
+
+### TransformRegistry wiring deferred to slice 7
+
+This slice ships the pure filter only. The `RegisteredTransform<ModuleFilterOptions, Catalog>` registration + `transform.applied` event emission per the logging-format contract §18 slice-4 cue (`config.toggleResolved` per resolved rule + `transform.applied` carrying `intent=OperatorIntent, overlayAxis=Selection`) land at slice 7 (`full-export` CLI) where the orchestrator invokes the filter against an operator-supplied config + emits the conforming events. Splitting the structural surface (Core) from the orchestration surface (CLI) follows the pillar 9 + L3-CC-Transform-Totality bidirectional contract: the filter is the structural seam; the registration is the type-witnessed-totality side. Both land in the chapter; the orchestration side waits for the consumer.
+
+### Discipline reinforced
+
+**Carbon-copy editorial inheritance is consolidate-friendly.** V2's F# convention consolidates three V1 C# files into one bounded-context module without losing structural fidelity. The carbon-copy is **partial-refactor at copy time** per the discipline — V2 vocabulary applied; structural shape preserved; deliberately-omitted V1 axis (`ValidationOverrides`) routed to its natural V2 home with cross-reference. Future agents reading `ModuleFilter.fs` see the V1 source cited in the file-header + the V2 translation decisions documented in the file's docstrings.
+
+**Big-O audit at construction time.** `apply` builds the catalog-index map once at the start; per-operator-name lookups are O(1) against the map; per-module entity-filter lookups are O(1) against the entity-filter map; per-kind name comparisons inside a module are O(k) where k is the entity-filter size (small constant). Total complexity: O(modules + filters + filtered-kinds). No naive O(modules × filters) scans.
+
+### Cross-references
+
+- `ADMIRE.md` — 2026-05-19 entry: `ModuleFilter` + `ModuleFilterOptions` + `ModuleEntityFilterOptions` carbon-copy log with three V1 source paths, V2 location, refactor status, citation comment.
+- `CHAPTER_B_4_OPEN.md` slice 4 row will flip to DONE referencing this entry.
+- `tests/Projection.Tests/ModuleFilterTests.fs` — 30 tests covering every axis + smart-constructor validation + algebraic properties.
+- `src/Projection.Pipeline/Config.fs` `ModelSection` already carries the operator-facing config record (`Modules`, `IncludeSystemModules`, `IncludeInactiveModules`, `ValidationOverrides`); slice 7 wires the config record through `ModuleFilter.createOptions` into `ModuleFilter.apply`.
