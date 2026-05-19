@@ -202,6 +202,26 @@ module ForeignKeyReality =
     /// True iff the FK has no observed orphans.
     let isClean (r: ForeignKeyReality) : bool = not r.HasOrphan
 
+    /// Minimum-evidence default. All boolean fields default to `false`
+    /// (no orphans observed; constraint trusted) and `OrphanCount =
+    /// 0L`. `ProbeStatus` is the no-probe-ran shape (CapturedAtUtc =
+    /// MinValue; SampleSize = 0L; Outcome = Succeeded). The
+    /// LiveProfiler adapter overrides via record-update once a real
+    /// probe completes; `ProfileSnapshot.attach` overrides from V1's
+    /// JSON snapshot. Mirrors the `AttributeReality.create` shape per
+    /// the chapter B.3 slice 1 cash-out.
+    let create (referenceKey: SsKey) : ForeignKeyReality =
+        {
+            ReferenceKey = referenceKey
+            HasOrphan    = false
+            OrphanCount  = 0L
+            IsNoCheck    = false
+            ProbeStatus  =
+                { CapturedAtUtc = DateTimeOffset.MinValue
+                  SampleSize    = 0L
+                  Outcome       = Succeeded }
+        }
+
 
 /// Categorical value frequencies — for attributes whose values are
 /// drawn from a small or moderate vocabulary. The first

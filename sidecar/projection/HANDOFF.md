@@ -1,3 +1,55 @@
+# Handoff letter — 2026-05-19 (later) (chapter B.3 opens — LiveProfiler deep-probe sweep; slice 1 ships per-FK orphan probe closing ForeignKeyRules silent-default cutover-blocker)
+
+To the next agent. This letter sits above the earlier 2026-05-19 letter (A.4.7'-prelude 18-slice arc) and the 2026-05-18 letter. Read all three (chapter-3.1 letter sits at the bottom). This letter tells you what shipped this session as **slice 1 of chapter B.3**, the strategic frame the chapter operates under, and what slices 2-6 cash out next.
+
+## TL;DR
+
+**Chapter B.3 opened.** `CHAPTER_B_3_OPEN.md` ships with the strategic frame for the LiveProfiler deep-probe sweep — V2 owns source-side statistical evidence end-to-end so V1-JSON can sunset at cutover+30 without degrading tightening-pass decisions. The chapter operationalizes V2_PRODUCTION_CUTOVER §7.4 (Phase B.3; pre-scoped 3-4 weeks) incrementally as 6 focused slices.
+
+**Slice 1 (B.3.1.foreign-key-reality) shipped.** Row 88 closes from 🟠 NOT-MAPPED (partial) → 🟢 PARITY. The cutover-blocker shape closed: `ForeignKeyRules.evaluate:269-310` reads `reality.HasOrphan` + `reality.OrphanCount` to decide between `EnforceConstraint`, `ScriptWithNoCheck(orphanCount)`, `DoNotEnforce(DataHasOrphans orphanCount)`, and `EvidenceMissing` — before this slice, the live-probe path filled neither, silently routing every FK decision to `EvidenceMissing` regardless of deployed evidence.
+
+**What's load-bearing after this slice:**
+- **`LiveProfiler.captureForeignKeyRealities`** (`src/Projection.Adapters.Sql/LiveProfiler.fs`). Per-Reference combined probe via `COUNT_BIG`-based LEFT JOIN; single round-trip per FK; populates `Profile.ForeignKeys` with `HasOrphan` + `OrphanCount` + `ProbeStatus`. Single-column PK targets only; composite-PK targets defer with `Outcome = AmbiguousMapping` (the ForeignKeyRules rule routes these safely to `EvidenceMissing`).
+- **`LiveProfiler.capture` renamed to `captureAttributeRealities`** + new sibling `captureForeignKeyRealities` + extended `attach` composes both. The sibling-named capture surface generalizes naturally to slices 2-6 (NullCounts; Composite-unique; Orphan-sample; Distributions; Sampling+merge).
+- **`ForeignKeyReality.create`** smart constructor in `Profile.fs` — mirrors `AttributeReality.create` precedent.
+
+**Test baseline at slice close: 1679 / 1679 non-Docker passing + 10 / 10 LiveProfilerIntegrationTests passing (4 new B.3.1 tests + 6 existing).** ~33s warm for the full Docker-gated LiveProfiler class. Solution build clean (0 warnings under `TreatWarningsAsErrors=true`).
+
+## Next slices in the chapter (per CHAPTER_B_3_OPEN.md)
+
+| Slice | Scope | Consumer pressure |
+|---|---|---|
+| 2 | Exact int64 NullCount probe (row 86 deep) | `NullabilityRules` reads `ColumnProfile.NullCount` for tightening decisions; live-probe path empty today |
+| 3 | Composite-unique probe (row 87 deep + composite-PK FK extension) | `UniqueIndexRules` consumes composite evidence; sibling cash-out for slice-1's composite-PK FK deferral |
+| 4 | FK orphan-sample rows (row 89) | Diagnostics surface (pillar 9 — operational, not data-intent); chapter 4.3 OperationalDiagnostics consumer |
+| 5 | Distribution live-probe | Synthetic-data foundation (future); tightening decisions informed by cardinality |
+| 6 | Sampling policy + multi-environment merge (rows 90 + 92) | Operator-reality scale + multi-env risk scoring |
+
+Slices 1/2/3 are independent and parallelizable. Slice 4 depends on slice 1 (the orphan-sample is TOP-N extension of slice 1's orphan-count query). Slice 6 is the rollup refactor retro-wiring sampling into earlier slices' captures.
+
+## Operating-discipline notes from slice 1
+
+- **The three-class typology classified this slice clean.** V2-boundary-discipline — the IR axis existed (`Profile.ForeignKeys` with `HasOrphan` / `OrphanCount` / `ProbeStatus`); the consumer existed (`ForeignKeyRules.evaluate`); the live-probe adapter source was missing. Resolution: extend the existing `LiveProfiler` surface; no new IR types; no consumer changes.
+- **Smart-constructor-FIRST.** `ForeignKeyReality.create` lands at the same commit as the probe site that consumes it. Future probe refinements (ProbeStatus refinement; IsNoCheck-from-deployed-reflection) propagate at the constructor body only.
+- **Audit during validation surfaced two SQL fixes** — `SUM(int)` overflow / F# `GetInt64` type mismatch (fixed with `COUNT_BIG`); `RowCount` alias reserved-keyword collision (fixed with `[RowCount]` bracket quoting). Both fixes folded into the slice rather than deferred as follow-ups.
+- **Sibling-wrapper discipline holds.** The rename `capture` → `captureAttributeRealities` makes the parallel-capture surface ubiquitous-language-consistent. Future captures (NullCounts / Composite-unique / Orphan-sample / Distributions) land as named siblings.
+
+## Reading order for the next agent
+
+1. **This letter** (~5 minutes).
+2. **`CHAPTER_B_3_OPEN.md`** — strategic frame + 6-slice plan + dependency map. **Load-bearing for the rest of the chapter.**
+3. **`DECISIONS 2026-05-19 (slice B.3.1.foreign-key-reality)`** — slice cash-out rationale + composite-PK deferral.
+4. **`V1_PARITY_MATRIX.md` Row 88 amendment** — the canonical reclassification template (reusable for slices 2-6).
+5. The earlier 2026-05-19 (A.4.7'-prelude arc) handoff + 2026-05-18 + chapter-close docs as needed.
+
+When you open slice 2, the trace-before-fixture discipline applies — find V1's `NullCountQueryBuilder.BuildCommandText()`, mirror the SUM-of-CASE shape (V2 uses `COUNT_BIG` per slice 1's discipline note for type-safety), wire into a new `LiveProfiler.captureColumnNullCounts` sibling; `ColumnProfile.create` already exists (lift to bare-record-default if necessary). The chapter's slice 2 closes row 86's exact-NullCount cardinality deferral.
+
+Hold the spine. The LiveProfiler deep-probe surface is V2's path to V2-driver mode for the DATA axis; slice 1 closed the first silent-default; each subsequent slice closes a sibling silent-default. The chapter compounds.
+
+— The slice-B.3.1 architect.
+
+---
+
 # Handoff letter — 2026-05-19 (XXXXXL session: A.4.7'-prelude arc — DATA-axis cutover-blocker shipped; comprehensive operator-reality canary at production scale; perf-sweep delivers measurable wall-time wins; defensive-fallback hardening complete)
 
 To the next agent. This letter sits above the 2026-05-18 letter; read both (chapter-3.1 letter sits below 2026-05-18). The matrix discipline (`V1_PARITY_MATRIX.md`) and the operating-disciplines table (`CLAUDE.md`) remain canonical. This letter tells you what shipped across the 2026-05-19 session arc, what's NEW load-bearing on the perf + observability + defensive-fallback surfaces, the new canonical files you inherit, and where to point your next parity-matrix slices.

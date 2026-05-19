@@ -259,6 +259,52 @@ the original audit missed it), append a dated amendment to this
 section naming the prior status, the new status, and the discovery
 slice.
 
+### Row 88 — 2026-05-19 (slice B.3.1.foreign-key-reality — LiveProfiler per-FK orphan probe; closes cutover-blocker silent default in ForeignKeyRules)
+
+**Original framing.**
+- Row 88 (audit-wave slice 5.4.δ, 2026-05-18): 🟠 NOT-MAPPED (partial).
+  V1's `ForeignKeyProbeQueryBuilder.BuildRealityCommandText()` emits per-FK orphan count via `LEFT JOIN target WHERE source.col IS NOT NULL AND target.col IS NULL`; the metadata probe (TRUSTED / NO CHECK flags) shipped at chapter 4.6 slice α, but orphan-count probe was absent. V2's `Profile.ForeignKeys` carries the IR (`HasOrphan` + `OrphanCount` + `IsNoCheck` + `ProbeStatus`) but the only path filling it was `ProfileSnapshot.attach` from V1-JSON.
+- Refreshed at slice A.4.7'-prelude.live-profiler (2026-05-19): named follow-up trigger "**`HasOrphans` per-FK probe** — V2's `AttributeReality.HasOrphans` defaults to `false`. Trigger: `ForeignKeyRules` consumer demands orphan-evidence refinement."
+
+**The trigger fired.** `Strategies/ForeignKeyRules.fs:269-286` reads `Profile.tryFindForeignKey reference.SsKey profile`; on `ProbeStatus.isReliable` it consults `reality.HasOrphan` + `reality.OrphanCount`. With the live-probe path empty (no `captureForeignKeyRealities` shipped), every live-probe-driven evaluation hit the `None` branch (line 311-315) and routed to `DoNotEnforce EvidenceMissing` regardless of actual deployed-target evidence. The cutover-blocker shape: V1-JSON sunsets cutover+30 (per V2_DRIVER + R6 governance); if V2 ships V2-driver mode without the live-probe orphan-evidence path, every FK decision degrades to the strict-conservative default and orphans-with-tolerable-NoCheck cases silently re-route. This slice closes the gap.
+
+**Reclassified (slice B.3.1.foreign-key-reality, 2026-05-19):**
+
+| Row | Prior status | Updated status | What shipped |
+|---|---|---|---|
+| 88 | 🟠 NOT-MAPPED (partial — metadata shipped) | 🟢 PARITY (single-column-PK targets; composite-PK targets deferred via `AmbiguousMapping`) | `Profile.fs`: new `ForeignKeyReality.create` smart constructor (sibling to `AttributeReality.create`) with minimum-evidence defaults. `LiveProfiler.fs`: new `captureForeignKeyRealities : SqlConnection → Catalog → Task<Result<ForeignKeyReality list>>` running combined `COUNT_BIG`-based orphan probe per Reference (one round-trip per FK; `[RowCount]` populates `ProbeStatus.SampleSize`, `[OrphanCount]` populates `HasOrphan` + `OrphanCount`). Existing `LiveProfiler.capture` renamed to `captureAttributeRealities`; sibling-named per the chapter-4.7 sibling-wrapper discipline. `LiveProfiler.attach` extended to compose both captures into the input `Profile`; sibling-axis composability preserved (Columns / UniqueCandidates / Distributions untouched). Composite-PK targets surface as `Outcome = AmbiguousMapping` so `ForeignKeyRules.evaluate` routes them safely to `DoNotEnforce EvidenceMissing` (line 306-310). |
+
+**Per pillar 9: all probes carry DataIntent.** `IsNoCheck` is read from `Reference.IsConstraintTrusted` (which carries V1's source-side `#FkReality.IsNoCheck` per chapter 4.6 slice α); no operator policy enters at probe time. Sampling policy stays deferred to `Pipeline.Config` per matrix row 90.
+
+**Per A18 amended + A34.** `LiveProfiler.captureForeignKeyRealities` reads Catalog (to identify references + resolve target PK columns) but emits Profile evidence only — no catalog mutation, no policy consumption.
+
+**Verification depth: 4 Docker-gated integration tests** in `LiveProfilerIntegrationTests.fs` (Items + Children fixture; OSUSR_LP_ITEMS with 4 rows, OSUSR_LP_CHILDREN with FK to Items.ID):
+
+- Orphan-present scenario: 4 child rows with PARENT_ID ∈ {1, 2, 3, 999}; assert `HasOrphan = true` + `OrphanCount = 1L`.
+- Clean scenario: 3 child rows with PARENT_ID ∈ {1, 2, 4} (all existing parents); assert `HasOrphan = false` + `OrphanCount = 0L`.
+- `ProbeStatus.SampleSize` reflects the child-table row count (4) + `Outcome = Succeeded` on the single-column-PK path.
+- `attach` composability: `Profile.empty |> attach` populates both `AttributeRealities` (3 entries for Items) and `ForeignKeys` (1 entry for the FK reference) while leaving sibling axes empty.
+
+All 10 LiveProfilerIntegrationTests pass against the warm container (~33s for the full class; per-class container reuse via `EphemeralContainerFixture`). Non-Docker baseline holds at 1679 / 1679 passing.
+
+**Cross-references.**
+- `CHAPTER_B_3_OPEN.md` — strategic frame for the LiveProfiler deep-probe sweep (this slice is slice 1 of 6).
+- `DECISIONS 2026-05-19 (slice B.3.1.foreign-key-reality)` — cash-out rationale + composite-PK deferral.
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.live-profiler)` — the prior arc that named the "HasOrphans per-FK probe" deferral now closed here.
+- V1 source: `Pipeline/Profiling/ForeignKeyProbeQueryBuilder.BuildRealityCommandText()` (V1's orphan-count probe shape); `Pipeline/Profiling/SqlDataProfiler.cs` (V1's orchestration; V2 inlines via Task-monad composition).
+- Consumer: `Projection.Core/Strategies/ForeignKeyRules.fs:269-310` (the cutover-blocker silent-default that closes via this slice).
+- V2_PRODUCTION_CUTOVER §7.4 — Phase B.3 (this chapter operationalizes B.3 incrementally).
+
+**Refreshed deferral triggers (after this slice).**
+
+- **Composite-PK target probe** — current shape returns `Outcome = AmbiguousMapping` when the target Kind has zero or multiple PK attributes. Trigger: composite-PK fixture surfaces in operator-reality canary OR `ForeignKeyRules` evaluator needs precise orphan evidence on composite-keyed targets. Cash-out shape: extend `foreignKeyProbeSql` to handle multi-column `ON` clause via `AND`-joined column pairs; the LEFT JOIN + IS NULL check generalizes naturally to N columns.
+- **`IsNoCheck` reflection from deployed `sys.foreign_keys`** — current shape reads V1's source-side `Reference.IsConstraintTrusted` (negated). Trigger: deployed-target orphans observed via the probe AND the deployed-target NOCHECK state diverging from the source-side state (cutover drift evidence).
+- **Sampling policy** — full-table scans today via `COUNT_BIG`. Inherited from `captureAttributeRealities`'s same deferral. Trigger: operator-reality canary surfaces FK-probe latency concern at scale (300 tables × 50k FK rows); cash-out via slice 6 of this chapter (`SqlProfilerOptions.Sampling` wiring through both capture functions).
+
+**Operating-discipline payoff.** The slice closes a **silent-default cutover-blocker** with ~200 LOC of focused live-probe extension. The smart-constructor-FIRST discipline paid off again — adding `ForeignKeyReality.create` first meant the FK-probe site is a literal-record-construction with overrides, mirroring the `AttributeReality.create` precedent. The sibling-wrapper rename (`capture` → `captureAttributeRealities` + sibling `captureForeignKeyRealities`) makes the parallel capture surface ubiquitous-language-consistent at the F# adapter boundary; future captures (slice 2: NullCounts; slice 3: Composite-unique; slice 5: Distributions) all land as named siblings, not action-shaped extensions.
+
+---
+
 ### Rows 11 + 12 + 14 + 15 + 16 + 17 + 18 + 23 — 2026-05-18 (closed by slice 5.13.ossys-rowsets-cluster)
 
 **Cluster A1 closure** — eight OSSYS-source physical-reflection rowsets

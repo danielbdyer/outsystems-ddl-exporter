@@ -17287,3 +17287,63 @@ retirement framing.
 - `HANDOFF.md` — the "Deferrals after this arc" item B (IRBuilders
   full retirement) closes; the prior letter's partial-soft-retirement
   framing is superseded.
+
+---
+
+## 2026-05-19 (slice B.3.1.foreign-key-reality) — LiveProfiler deep-probe arc opens (chapter B.3); per-FK orphan probe ships; ForeignKeyRules silent-default cutover-blocker closes
+
+### Scope
+
+Chapter B.3 opens (per `CHAPTER_B_3_OPEN.md`) — the LiveProfiler deep-probe sweep operationalizes V2_PRODUCTION_CUTOVER §7.4 incrementally as ~6 focused slices. Slice 1 cashes the highest-leverage single deferral named at slice A.4.7'-prelude.live-profiler (2026-05-19): the `HasOrphans` per-FK probe.
+
+### What ships
+
+- **`Profile.fs`** — new `ForeignKeyReality.create : SsKey → ForeignKeyReality` smart constructor with minimum-evidence defaults (mirrors `AttributeReality.create` precedent; no Result wrapping — invariants are by-construction).
+- **`LiveProfiler.fs`** — new `captureForeignKeyRealities : SqlConnection → Catalog → Task<Result<ForeignKeyReality list>>`. Per-Reference combined probe via:
+  ```sql
+  SELECT COUNT_BIG(s.<src_col>) AS [RowCount],
+         COUNT_BIG(CASE WHEN t.<tgt_pk> IS NULL THEN 1 END) AS [OrphanCount]
+  FROM <src_schema>.<src_table> AS s
+  LEFT JOIN <tgt_schema>.<tgt_table> AS t ON s.<src_col> = t.<tgt_pk>
+  WHERE s.<src_col> IS NOT NULL
+  ```
+  Bracket-quoted aliases — `RowCount` is reserved-ish (collides with `@@ROWCOUNT` / `SET ROWCOUNT` tokenization at parse time). `COUNT_BIG` chosen over `SUM(int)` to return `BIGINT` consistently (avoids overflow + F# `GetInt64` type mismatch).
+- **`LiveProfiler.capture` renamed to `captureAttributeRealities`** — sibling-named per the chapter-4.7 sibling-wrapper discipline. The two callers (test integration; doc string) updated.
+- **`LiveProfiler.attach` extended** to compose both captures into the input Profile. Pre-populated `AttributeRealities` and `ForeignKeys` are overwritten (the live-probe path is authoritative for axes it covers); sibling axes (`Columns`, `UniqueCandidates`, `Distributions`) preserved untouched.
+- **4 Docker-gated integration tests** in `LiveProfilerIntegrationTests.fs` — Items + Children fixture with FK; orphan-present + clean scenarios; ProbeStatus.SampleSize verification; attach composability across both axes.
+- **`CHAPTER_B_3_OPEN.md`** ships with the chapter strategic frame + 6-slice plan + dependency map.
+
+### Why now (the cutover-blocker shape)
+
+`Strategies/ForeignKeyRules.fs:269-310` reads `Profile.tryFindForeignKey reference.SsKey profile`. On `ProbeStatus.isReliable` it consults `reality.HasOrphan` + `reality.OrphanCount` to choose between `EnforceConstraint`, `ScriptWithNoCheck(orphanCount)`, `DoNotEnforce(DataHasOrphans orphanCount)`, and `DoNotEnforce(EvidenceMissing)`. Before this slice: the live-probe path (LiveProfiler) shipped only `AttributeReality`; `Profile.ForeignKeys` stayed empty → every live-probe FK evaluation hit the `None` branch → silent-default `DoNotEnforce EvidenceMissing` regardless of deployed evidence. V1-JSON sunsets cutover+30; V2 in V2-driver mode without this probe degrades every FK decision to the strict-conservative default. The slice closes the silent-default gap by populating `Profile.ForeignKeys` from live observation.
+
+### Pillar 9 — DataIntent classification
+
+All probes carry DataIntent. The probe observes deployed reality; no operator policy enters. `IsNoCheck` reads `Reference.IsConstraintTrusted` (negated) — that field already flows from V1's source-side `#FkReality.IsNoCheck` per chapter 4.6 slice α. Sampling policy stays operator intent per matrix row 90's prior `DECISIONS 2026-05-18 (slice 5.4.δ.profiling)`.
+
+### Composite-PK target deferral (named trigger)
+
+The current probe handles single-column PK targets only. For targets with zero or multi-column PK, `probeReference` returns a defaulted `ForeignKeyReality` with `Outcome = AmbiguousMapping`. `ForeignKeyRules.evaluate:306-310` reads unreliable-probe outcomes as `EvidenceMissing` → routes to `DoNotEnforce` — the conservative-safe behavior. **Trigger to cash out**: composite-PK fixture surfaces in operator-reality canary OR consumer needs precise orphan evidence on composite-keyed targets. **Cash-out shape**: extend `foreignKeyProbeSql` with multi-column `ON` clause via `AND`-joined column pairs; the LEFT JOIN + IS NULL check generalizes naturally to N columns. Lives in slice 3 of this chapter (the composite-unique probe slice; same composite-shape mechanics).
+
+### Discipline payoffs (the chapter pattern reinforced)
+
+- **Sibling-wrapper discipline (chapter 4.7 cleanup amendment).** `LiveProfiler.capture` was the singular surface from slice A.4.7'-prelude.live-profiler. Slice 1 of this chapter is the principled second consumer (FK reality); the rename to `captureAttributeRealities` + sibling `captureForeignKeyRealities` makes the surface ubiquitous-language-consistent across what's now a parallel-capture chorus. Future captures (slice 2: NullCounts; slice 3: Composite-unique; slice 5: Distributions) land as named siblings, not action-shaped extensions.
+- **Smart-constructor-FIRST pays off again.** `ForeignKeyReality.create` lands first; the new probe site is a literal-record-construction with `with`-update overrides — mirrors the `AttributeReality.create` pattern. Future probe-site additions (ProbeStatus refinement / IsNoCheck-from-reflection) land at the constructor body, propagating bounded.
+- **Three-class typology (per `DECISIONS 2026-05-19 — Trace-before-fixture pattern`).** The slice classified cleanly as **V2-boundary-discipline** (V2 has the IR axis + the consumer; the adapter source-side filling was missing). Resolution: extend the existing LiveProfiler surface; no new IR types; the consumer didn't change.
+- **Audit during validation.** The pre-ship verification surfaced two SQL issues at integration-test time: SUM(int) type mismatch with F# GetInt64 (fixed with `COUNT_BIG`); `RowCount` alias reserved-keyword collision (fixed with bracket quoting). Both fixes land in the slice rather than as follow-ups; the discipline absorbs the refinements during validation.
+
+### Verification
+
+- **4 new Docker-gated integration tests** pass green against the warm `projection-mssql-warm` container. Per-class container reuse via `EphemeralContainerFixture` keeps the 10-test class at ~33s warm.
+- **Solution build clean.** 0 warnings under `TreatWarningsAsErrors=true`.
+- **Non-Docker baseline holds** at 1679 / 1679 passing.
+- **ForeignKeyRules consumer test** (`ForeignKeyRulesTests`): unchanged — V1-JSON-snapshot path still routes through the same `Profile.tryFindForeignKey` lookup; the live-probe path is now a second source filling the same IR axis.
+
+### Cross-references
+
+- `CHAPTER_B_3_OPEN.md` (this commit) — strategic frame; slice sequence; dependency map.
+- `V1_PARITY_MATRIX.md` Row 88 amendment — formal status reclassification 🟠 NOT-MAPPED (partial) → 🟢 PARITY (single-column-PK targets; composite-PK deferred via `AmbiguousMapping`).
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.live-profiler)` — the predecessor arc that named "HasOrphans per-FK probe" as the deferred-with-trigger this slice cashes.
+- `V2_PRODUCTION_CUTOVER §7.4` (B.3) — chapter operationalizes B.3 incrementally; the 5-query-builder port lives as one slice each.
+- `V2_DRIVER.md` per-axis stakes (DATA-axis cutover-blocker) — the rule-driving silent-default this slice closes is the cash-out shape for the DATA-axis verification depth.
+- V1 source: `Pipeline/Profiling/ForeignKeyProbeQueryBuilder.BuildRealityCommandText()` (query shape mirrored at the SQL level; V2's `COUNT_BIG` variant chosen for type-safety on the F# read side).
