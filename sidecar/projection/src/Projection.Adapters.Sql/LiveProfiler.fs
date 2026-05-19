@@ -1655,6 +1655,240 @@ module LiveProfiler =
             let targetIndex = buildForeignKeyTargetIndex cache catalog
             deriveForeignKeyOrphanSamplesWith targetIndex cache catalog
 
+        // -----------------------------------------------------------------
+        // Slice B.3.8 — FK correlation triplet (Faker foundation).
+        //   - deriveForeignKeyCardinalities: per-Reference fan-out
+        //     (distribution of child-count-per-parent)
+        //   - deriveForeignKeySelectivities: per-Reference clumping
+        //     (value-frequency over source FK column)
+        //   - deriveMultiFkJointDistributions: per-Kind joint
+        //     distribution across the kind's FK columns (≥2)
+        // -----------------------------------------------------------------
+
+        let private isStaticKindForCorrelation (k: Kind) : bool =
+            k.Modality
+            |> List.exists (function
+                | Static _ -> true
+                | _ -> false)
+
+        /// Compute percentile via continuous linear interpolation
+        /// (PERCENTILE_CONT semantics). Reused from
+        /// `deriveNumericDistributions` — extracted here for the
+        /// fan-out cardinality derivation.
+        let private percentileOnSorted (sorted: decimal array) (p: decimal) : decimal =
+            if sorted.Length = 0 then 0M
+            elif sorted.Length = 1 then sorted.[0]
+            else
+                let n = decimal (sorted.Length - 1)
+                let h = n * p
+                let lo = int h
+                let frac = h - decimal lo
+                if lo >= sorted.Length - 1 then sorted.[sorted.Length - 1]
+                else sorted.[lo] + frac * (sorted.[lo + 1] - sorted.[lo])
+
+        /// Derive per-Reference fan-out cardinality. Group source FK
+        /// values by their target-PK value; per-parent child count
+        /// = group size. Summarize the count distribution via
+        /// `NumericDistribution.create` + `withMoments`.
+        let deriveForeignKeyCardinalities
+            (cache: EvidenceCache)
+            (catalog: Catalog)
+            : ForeignKeyCardinality list =
+            use _ = Bench.scope "profile.cache.deriveForeignKeyCardinalities"
+            catalog
+            |> Catalog.allKinds
+            |> List.collect (fun srcKind ->
+                if isStaticKindForCorrelation srcKind then []
+                else
+                    srcKind.References
+                    |> List.choose (fun reference ->
+                        let srcColumnOpt =
+                            EvidenceCache.tryFindColumn srcKind.SsKey reference.SourceAttribute cache
+                        match srcColumnOpt with
+                        | None -> None
+                        | Some sCol ->
+                            let nonNullKeys =
+                                sCol.Values |> Array.choose cacheValueKey
+                            if nonNullKeys.Length < 5 then None
+                            else
+                                let countsPerParent =
+                                    nonNullKeys
+                                    |> Array.groupBy id
+                                    |> Array.map (fun (_, occ) -> decimal occ.Length)
+                                if countsPerParent.Length < 5 then None
+                                else
+                                    let sorted = countsPerParent |> Array.sort
+                                    let min_ = sorted.[0]
+                                    let max_ = sorted.[sorted.Length - 1]
+                                    let mean =
+                                        (countsPerParent |> Array.sum) / decimal countsPerParent.Length
+                                    let variance =
+                                        countsPerParent
+                                        |> Array.sumBy (fun v ->
+                                            let d = v - mean
+                                            d * d)
+                                        |> fun s -> s / decimal countsPerParent.Length
+                                    let stdDev = decimal (sqrt (float variance))
+                                    let sampleSize = int64 countsPerParent.Length
+                                    let probeStatus = ProbeStatus.observed sampleSize
+                                    let baseResult =
+                                        NumericDistribution.create
+                                            reference.SsKey
+                                            min_
+                                            (percentileOnSorted sorted 0.25M)
+                                            (percentileOnSorted sorted 0.50M)
+                                            (percentileOnSorted sorted 0.75M)
+                                            (percentileOnSorted sorted 0.95M)
+                                            (percentileOnSorted sorted 0.99M)
+                                            max_ sampleSize probeStatus
+                                    let momentsResult =
+                                        StatisticalMoments.create mean stdDev
+                                    let enriched =
+                                        baseResult
+                                        |> Result.bind (fun dist ->
+                                            momentsResult
+                                            |> Result.bind (fun m ->
+                                                NumericDistribution.withMoments m dist))
+                                    match enriched with
+                                    | Ok dist -> Some (ForeignKeyCardinality.create reference.SsKey dist)
+                                    | Error _ ->
+                                        match baseResult with
+                                        | Ok dist -> Some (ForeignKeyCardinality.create reference.SsKey dist)
+                                        | Error _ -> None))
+
+        [<Literal>]
+        let private defaultFkSelectivityVocabularyLimit = 50
+
+        /// Derive per-Reference selectivity. Single-pass Dictionary
+        /// frequency tally over source FK column values. Truncate at
+        /// 50 by default (matches categorical limit).
+        let deriveForeignKeySelectivities
+            (cache: EvidenceCache)
+            (catalog: Catalog)
+            : ForeignKeySelectivity list =
+            use _ = Bench.scope "profile.cache.deriveForeignKeySelectivities"
+            catalog
+            |> Catalog.allKinds
+            |> List.collect (fun srcKind ->
+                if isStaticKindForCorrelation srcKind then []
+                else
+                    srcKind.References
+                    |> List.choose (fun reference ->
+                        let srcColumnOpt =
+                            EvidenceCache.tryFindColumn srcKind.SsKey reference.SourceAttribute cache
+                        match srcColumnOpt with
+                        | None -> None
+                        | Some sCol ->
+                            let freq = System.Collections.Generic.Dictionary<string, int64>()
+                            for v in sCol.Values do
+                                match cacheValueKey v with
+                                | Some k ->
+                                    match freq.TryGetValue k with
+                                    | true, c  -> freq.[k] <- c + 1L
+                                    | false, _ -> freq.[k] <- 1L
+                                | None -> ()
+                            if freq.Count = 0 then None
+                            else
+                                let distinctCount = int64 freq.Count
+                                let entries =
+                                    freq
+                                    |> Seq.map (fun kvp -> kvp.Key, kvp.Value)
+                                    |> Seq.toArray
+                                let sorted =
+                                    entries
+                                    |> Array.sortWith (fun (vA, cA) (vB, cB) ->
+                                        let cmpCount = compare cB cA
+                                        if cmpCount <> 0 then cmpCount
+                                        else compare vA vB)
+                                let truncated =
+                                    if sorted.Length > defaultFkSelectivityVocabularyLimit then
+                                        Array.sub sorted 0 defaultFkSelectivityVocabularyLimit
+                                    else sorted
+                                let isTruncated =
+                                    distinctCount > int64 defaultFkSelectivityVocabularyLimit
+                                let probeStatus = ProbeStatus.observed distinctCount
+                                match
+                                    ForeignKeySelectivity.create
+                                        reference.SsKey
+                                        (List.ofArray truncated)
+                                        distinctCount
+                                        isTruncated
+                                        probeStatus
+                                with
+                                | Ok s -> Some s
+                                | Error _ -> None))
+
+        [<Literal>]
+        let private defaultJointVocabularyLimit = 100
+
+        /// Derive per-Kind joint distribution across the kind's FK
+        /// columns (≥2 References required). For each kind, project
+        /// per-row tuples of source FK values; group by tuple key;
+        /// truncate to top-N. Single emitted joint per kind covering
+        /// ALL its FK columns; per-pair / per-triple joints land if
+        /// a consumer surfaces (per "IR grows under evidence").
+        let deriveMultiFkJointDistributions
+            (cache: EvidenceCache)
+            (catalog: Catalog)
+            : JointDistribution list =
+            use _ = Bench.scope "profile.cache.deriveMultiFkJointDistributions"
+            catalog
+            |> Catalog.allKinds
+            |> List.choose (fun srcKind ->
+                if isStaticKindForCorrelation srcKind then None
+                else
+                    let fkAttributeKeys =
+                        srcKind.References
+                        |> List.map (fun r -> r.SourceAttribute)
+                    if List.length fkAttributeKeys < 2 then None
+                    else
+                        let resolved =
+                            fkAttributeKeys
+                            |> List.map (fun key ->
+                                EvidenceCache.tryFindColumn srcKind.SsKey key cache)
+                        if resolved |> List.exists Option.isNone then None
+                        else
+                            let columns = resolved |> List.choose id
+                            match projectTupleKeys columns with
+                            | None -> None
+                            | Some tuples ->
+                                let freq = System.Collections.Generic.Dictionary<string, int64>()
+                                for t in tuples do
+                                    match freq.TryGetValue t with
+                                    | true, c  -> freq.[t] <- c + 1L
+                                    | false, _ -> freq.[t] <- 1L
+                                if freq.Count = 0 then None
+                                else
+                                    let distinctCount = int64 freq.Count
+                                    let entries =
+                                        freq
+                                        |> Seq.map (fun kvp -> kvp.Key, kvp.Value)
+                                        |> Seq.toArray
+                                    let sorted =
+                                        entries
+                                        |> Array.sortWith (fun (vA, cA) (vB, cB) ->
+                                            let cmpCount = compare cB cA
+                                            if cmpCount <> 0 then cmpCount
+                                            else compare vA vB)
+                                    let truncated =
+                                        if sorted.Length > defaultJointVocabularyLimit then
+                                            Array.sub sorted 0 defaultJointVocabularyLimit
+                                        else sorted
+                                    let isTruncated =
+                                        distinctCount > int64 defaultJointVocabularyLimit
+                                    let probeStatus = ProbeStatus.observed distinctCount
+                                    match
+                                        JointDistribution.create
+                                            srcKind.SsKey
+                                            fkAttributeKeys
+                                            (List.ofArray truncated)
+                                            distinctCount
+                                            isTruncated
+                                            probeStatus
+                                    with
+                                    | Ok j -> Some j
+                                    | Error _ -> None)
+
     /// Attach Profile evidence by deriving from an in-memory cache.
     /// Synchronous; pure F#. Composes EVERY cache-derived Profile
     /// axis. Slice 6b completes the architectural pivot — all axes
@@ -1683,6 +1917,9 @@ module LiveProfiler =
         let categoricalDists = Cache.deriveCategoricalDistributions cache catalog
         let composites = Cache.deriveCompositeUniqueCandidates cache catalog
         let foreignKeys = Cache.deriveForeignKeyRealitiesWith fkTargetIndex cache catalog
+        let fkCardinalities = Cache.deriveForeignKeyCardinalities cache catalog
+        let fkSelectivities = Cache.deriveForeignKeySelectivities cache catalog
+        let jointDists = Cache.deriveMultiFkJointDistributions cache catalog
         let distributions =
             (numericDists |> List.map AttributeDistribution.Numeric)
             @ (categoricalDists |> List.map AttributeDistribution.Categorical)
@@ -1692,7 +1929,10 @@ module LiveProfiler =
             UniqueCandidates           = projectUniqueCandidates realities
             CompositeUniqueCandidates  = composites
             ForeignKeys                = foreignKeys
-            Distributions              = distributions }
+            Distributions              = distributions
+            ForeignKeyCardinalities    = fkCardinalities
+            ForeignKeySelectivities    = fkSelectivities
+            JointDistributions         = jointDists }
 
     /// Attach realities into an existing Profile. Sibling shape to
     /// `ProfileSnapshot.attach` / `ProfileStatistics.attach`: the

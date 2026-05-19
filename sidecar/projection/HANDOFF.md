@@ -1,4 +1,93 @@
-# Handoff letter — 2026-05-19 (latest) (slice B.3.6b cache-fold complete — ALL Profile axes derive from cache in pure F#; Big-O audit shipped 3 inline optimizations; ~6000 → ~900 SQL round-trips at 300-table scale)
+# Handoff letter — 2026-05-19 (chapter B.3 CLOSES) (FK correlation triplet ships; Faker emitter's deferred trigger structurally met; chapter B.3 complete 8/8 slices)
+
+To the next agent. Chapter B.3 is structurally complete. All 8 slices shipped + tested; the DATA-axis cutover-blocker silent-default closed across all three tightening rules; the LiveProfiler architecture pivoted to discovery-then-derive (in-memory typed-row cache + pure-F# derivations); the Faker emitter's `ADMIRE.md`-named gating evidence chain has all four nodes shipped. The deferred Faker trigger is structurally met — awaits explicit promotion at chapter B.4 or chapter 5 open.
+
+## Chapter B.3 summary (8 slices)
+
+| Slice | Cash-out | Matrix-row impact |
+|---|---|---|
+| 1 — `foreign-key-reality` | FK orphan-count probe; `ForeignKeyRules` silent-default closes | Row 88 → 🟢 |
+| 2 — `column-null-counts` | Exact int64 NullCount probe; `NullabilityRules` 5-branch silent-default closes | Row 86 → 🟢 |
+| 3 — `unique-candidates` | Composite uniqueness + `projectUniqueCandidates` + `ProbeStatus` primitive extraction; `UniqueIndexRules` silent-default closes | Row 87 → 🟢 |
+| 4 — `fk-orphan-samples` | TOP-N orphan-row samples as `DiagnosticEntry`; pillar 9 pivot worked example | Row 89 → 🟢 |
+| 5 — `statistical-moments-ir` | `StatisticalMoments` + `withMoments` + `coefficientOfVariation` IR keystone | (no specific row; algebraic foundation) |
+| 6 — `evidence-cache` | EvidenceCache architectural pivot; 3 pure-F# derivations from cache MVP | (chapter-level amendment) |
+| 6b — `cache-fold-residuals` | Remaining 4 derivations folded into cache; ALL Profile axes derive from cache; Big-O audit ships 3 inline optimizations | (chapter-level amendment) |
+| 7 — `sampling-multi-env` | `SqlProfilerOptions` sampling cap + `Profile.merge` with commutative/associative property tests | Rows 90 + 92 → 🟢 |
+| 8 — `fk-correlation` | Three new IR types (`ForeignKeyCardinality` / `ForeignKeySelectivity` / `JointDistribution`); Faker's deferred trigger structurally met | (chapter-level amendment) |
+
+## What's load-bearing after chapter B.3
+
+**Live-probe data path (post-pivot):**
+- `LiveProfiler.captureEvidenceCache` — 3 SQL queries per non-static kind (aggregate + row-stream + nullability reflection)
+- `LiveProfiler.attachFromCache` — synchronous pure-F# compose; populates 9 Profile axes
+- 12 `Cache.derive*` primitives covering every Profile axis except CdcAwareness + UserPopulation (those flow through separate adapters)
+- `SqlProfilerOptions` operator-tunable sampling cap (slice 7)
+
+**Cross-derivation shared state (Big-O audit codification, slice 6b):**
+- `CachedKind.ColumnsByKey` precomputed Map (O(log C) column lookups)
+- `Cache.buildForeignKeyTargetIndex` + `*With`-overload pattern for FK derivations sharing target PK sets
+
+**IR keystones (slice 5 + 8):**
+- `StatisticalMoments` + `NumericDistribution.withMoments` + `coefficientOfVariation`
+- `ForeignKeyCardinality` / `ForeignKeySelectivity` / `JointDistribution` (Faker foundation)
+- `Profile.merge` with worst-case aggregation (commutative + associative; FsCheck-verified)
+- `UserPopulation.union`
+
+**Faker emitter status after chapter B.3:**
+
+Per `ADMIRE.md`'s evidence-chain diagram, all four gating nodes have shipped:
+- ✓ Categorical value frequencies → `Cache.deriveCategoricalDistributions`
+- ✓ Numeric histograms / percentiles + range → `Cache.deriveNumericDistributions` + `StatisticalMoments`
+- ✓ Joint distributions across FK pairs → `Cache.deriveMultiFkJointDistributions`
+- ✓ Cardinality-aware tightening → `Cache.deriveForeignKeyCardinalities`
+
+Per `DECISIONS Active deferrals — Faker emitter (synthetic-data Π)`: trigger named "third evidence type lands OR concrete consumer demand." Three new evidence types shipped at slice 8; trigger structurally met. Promotion from deferred to scoped-for-implementation is a chapter B.4 / chapter 5 open decision.
+
+## SQL round-trip count at 300-table production scale
+
+| Architecture state | Round-trips |
+|---|---|
+| Pre-chapter B.3 (slices 1-4 SQL captures + slice A.4.7'-prelude live-profiler) | ~6000 |
+| Slice 6 MVP (cache + 3 derivations; FK + composite still SQL) | ~2400 |
+| **Chapter B.3 close** (slice 6b cache-fold + slice 7 sampling-tunable) | **~900** (3 per kind; sampling further reduces under operator config) |
+
+6-7× reduction vs pre-chapter architecture. All SQL round-trips concentrate in `captureEvidenceCache`; everything else is pure-F# fold over typed-row cache.
+
+## Test baseline at chapter close
+
+- 1695/1695 non-Docker baseline passing
+- 33/33 LiveProfiler Docker-gated integration tests passing (~1m55s warm)
+- Solution build clean (0 warnings under `TreatWarningsAsErrors=true`)
+- New property-test coverage: 7 `Profile.merge` algebraic-law tests (FsCheck.Xunit; commutative + associative + identity); 9 `NumericDistribution.withMoments` + `coefficientOfVariation` IR-keystone tests
+
+## Next chapter (B.4 candidates)
+
+Per `V2_PRODUCTION_CUTOVER §7.5`, **chapter B.4** is the natural next:
+- `projection extract`, `projection profile`, `projection full-export` CLI subcommands
+- V2 logging-format contract documentation
+- ModuleFilter + MetadataContractOverrides ports
+
+Or, given chapter B.3's Faker foundation, a **chapter B.x — Faker emitter** is now structurally unblocked. Open question for the next agent (or principal-PO): promote Faker to scoped-for-implementation, or stay deferred until concrete cutover-window consumer pressure surfaces?
+
+## Reading order for the next agent
+
+1. **This letter** (~5 minutes).
+2. **`CHAPTER_B_3_OPEN.md`** — 9-slice plan; all marked ✓ shipped.
+3. **`DECISIONS 2026-05-19 (slice B.3.8.fk-correlation)`** — chapter close + Faker trigger re-evaluation.
+4. **`DECISIONS Active deferrals — Faker emitter`** — the deferred trigger this chapter resolved structurally.
+5. **`V1_PARITY_MATRIX.md` "Chapter B.3 closure" amendment** — final status; 6 rows transitioned to 🟢 (88 / 86 / 87 / 89 / 90 / 92).
+6. **`ADMIRE.md` Faker evidence chain** — all four nodes shipped.
+
+Chapter B.3 is the substantive contribution: V2 owns source-side statistical evidence end-to-end; V1-JSON can sunset at cutover+30 without degrading tightening decisions; synthetic-data shape preservation has its evidence foundation in place.
+
+Hold the spine. The chapter compounds — slice 5's IR keystone enabled slice 6's distributions; slice 6's cache substrate enabled slice 6b's full fold; slice 6b's `projectTupleKeys` primitive enabled slice 8's joint distributions. Each slice was earned.
+
+— The slice-B.3.8 architect (chapter close).
+
+---
+
+# Handoff letter — 2026-05-19 (slice B.3.6b cache-fold complete — ALL Profile axes derive from cache in pure F#; Big-O audit shipped 3 inline optimizations; ~6000 → ~900 SQL round-trips at 300-table scale)
 
 To the next agent. Slice 6b shipped after the slice 6 MVP letter below. This letter updates: cache-fold is now complete (all 4 remaining derivations folded in); Big-O audit fired inline with 3 optimizations; chapter B.3 now at slice 6b of 9; remaining slices are 7 (sampling + multi-env) and 8 (FK correlation triplet).
 

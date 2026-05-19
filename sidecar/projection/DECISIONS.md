@@ -17955,3 +17955,120 @@ The property-test surface is the verification depth: 50 random trials × 2 commu
 - `V1_PARITY_MATRIX.md` Rows 90 + 92 amendments.
 - `DECISIONS 2026-05-18 (slice 5.4.δ.profiling)` — sampling-is-operator-intent decision this slice operationalizes.
 - V1 source: `Pipeline/Profiling/TableSamplingPolicy.cs` (sampling heuristic; row 90) + `MultiTargetSqlDataProfiler.CaptureAsync` (worst-case merge; row 92).
+
+---
+
+## 2026-05-19 (slice B.3.8.fk-correlation) — FK correlation triplet; three new IR types ship the Faker emitter's gating evidence chain; chapter B.3 closes structurally complete
+
+### Scope
+
+Final slice of chapter B.3. Ships three new IR types that complete the deferred Faker emitter's gating evidence chain per `ADMIRE.md`:
+
+| `ADMIRE.md` Faker chain node | Slice that lands it |
+|---|---|
+| Categorical value frequencies → Synthetic generation | Slice 6b `Cache.deriveCategoricalDistributions` |
+| Numeric histograms / percentiles → Plausible synthetic numeric values | Slice 5 + 6 (`StatisticalMoments` + `Cache.deriveNumericDistributions`) |
+| Range (min/max) per numeric → Synthetic value bounds | Slice 5 (`NumericDistribution.Min` / `Max`) |
+| **Joint distributions across FK pairs → Coherent synthetic data** | **Slice 8 `JointDistribution` (this slice)** |
+| **Cardinality-aware tightening** | **Slice 8 `ForeignKeyCardinality` (this slice)** |
+
+### What ships
+
+**Three new IR types in `Profile.fs`** with smart constructors:
+
+```fsharp
+type ForeignKeyCardinality = {
+    ReferenceKey           : SsKey
+    ChildCountDistribution : NumericDistribution  // distribution of child-count-per-parent
+}
+
+type ForeignKeySelectivity = {
+    ReferenceKey  : SsKey
+    Frequencies   : (string * int64) list  // (target-PK-value string, source freq) DESC by count
+    DistinctCount : int64
+    IsTruncated   : bool
+    ProbeStatus   : ProbeStatus
+}
+
+type JointDistribution = {
+    KindKey       : SsKey
+    AttributeKeys : SsKey list   // ≥2 columns; ordered tuple
+    Frequencies   : (string * int64) list  // (serialized tuple, count)
+    DistinctCount : int64
+    IsTruncated   : bool
+    ProbeStatus   : ProbeStatus
+}
+```
+
+Smart-constructor invariants mirror `CategoricalDistribution.create` (distinct count ≥ 0; per-value counts ≥ 0; truncation flag agrees with vocab); `JointDistribution.create` adds the "≥ 2 AttributeKeys" guard (single-attribute joints belong on `CategoricalDistribution`).
+
+**Three new `Cache.derive*` primitives** in `LiveProfiler.fs`:
+
+- `deriveForeignKeyCardinalities` — per Reference, `Array.groupBy` source FK values; child counts → `NumericDistribution.create` + `withMoments` (chains slice 5's IR keystone primitives). Requires ≥5 distinct parent values per the `NumericDistribution.sampleSizeFloor`.
+- `deriveForeignKeySelectivities` — single-pass `Dictionary<string, int64>` over source FK values; sort + truncate at vocabulary limit (50). Same shape as slice 6b's categorical derivation but Reference-keyed.
+- `deriveMultiFkJointDistributions` — per Kind with ≥2 References, reuses slice 6b's `projectTupleKeys` over the kind's FK columns; `Dictionary` tuple-frequency tally; truncate at 100.
+
+**Three new `Profile` axes** + `attachFromCache` populates them + `Profile.merge` extended (worst-case = pick-larger-evidence by SampleSize / DistinctCount; commutative + associative).
+
+**3 new Docker-gated integration tests:**
+
+- Selectivity captures per-FK-value frequencies (4 distinct parents in orphan-bearing scenario; all freq=1).
+- Fan-out cardinality respects the sample-size floor (4 distinct parents → no entry).
+- Fan-out cardinality summarizes the child-count distribution on a 10-row × 5-parent skewed seed: Min=1, Max=4, Mean=2.
+
+### Faker trigger re-evaluation (the load-bearing claim)
+
+Per `DECISIONS Active deferrals — Faker emitter (synthetic-data Π)`: "Either a third evidence type lands, or a use case forces proceeding with two evidence types and accepting the limitations."
+
+Three new evidence types ship this slice (cardinality + selectivity + joint distributions). The structural prerequisites for Faker promotion are now in place. Per the chapter-close ritual + `DECISIONS 2026-05-13 — Active deferrals re-checked at chapter close`, chapter B.3's close formally re-evaluates the deferred trigger. Recommendation: promote Faker from deferred to scoped-for-implementation in chapter B.4 (or chapter 5+) with explicit consumer-pressure named.
+
+### Per-IR-type discipline notes
+
+- **`ForeignKeyCardinality.create` returns the bare record** (not `Result<>`) — invariants are guaranteed by the upstream `NumericDistribution.create` smart constructor. Mirrors the bare-value-form discipline from slice 1's `ForeignKeyReality.create`.
+- **`ForeignKeySelectivity.create` returns `Result<>`** — has its own structural invariants (distinct count + truncation flag). Mirrors `CategoricalDistribution.create`.
+- **`JointDistribution.create` returns `Result<>`** with the additional "AttributeKeys ≥ 2" guard. The guard makes the single-attribute case structurally redirected to `CategoricalDistribution` — pillar 9 typed-discrimination via smart constructor (the type system catches misclassification).
+
+### Pillar 9 + A18 amended + A34 — discipline carryover
+
+All three derivations carry DataIntent (pure observation; no policy enters). Pillar 9 typed-discrimination: `ForeignKeyCardinality` keyed by Reference (the relationship-level evidence); `ForeignKeySelectivity` keyed by Reference; `JointDistribution` keyed by Kind + AttributeKeys (the typed-tuple). Each lives in a Profile axis distinct from the existing per-attribute distributions.
+
+### Memory footprint at production scale
+
+Worst-case at 300 tables × 5 refs × full-scan cache:
+
+- Cardinality entries: 300 × 5 = 1500 NumericDistributions (~250KB)
+- Selectivity entries: 300 × 5 × 50 vocab-cap = 75000 tuples (~6MB)
+- Joint distributions: 300 × 100 vocab-cap = 30000 tuples (~3MB)
+
+~10MB total for FK correlation evidence — bounded by the vocabulary caps (50 + 100). Sampling cap from slice 7 further bounds this when operators opt in.
+
+### Verification
+
+- 3 new Docker integration tests pass.
+- 33 total LiveProfiler integration tests pass.
+- Non-Docker baseline holds at 1695/1695.
+- Solution build clean (0 warnings).
+
+### Chapter B.3 closes structurally complete
+
+8 slices shipped across the chapter:
+
+- Slice 1: FK orphan-count probe (row 88 → 🟢)
+- Slice 2: exact NullCount probe (row 86 → 🟢)
+- Slice 3: composite-unique probe + `ProbeStatus` primitives (row 87 → 🟢)
+- Slice 4: FK orphan-sample diagnostics (row 89 → 🟢)
+- Slice 5: `StatisticalMoments` IR keystone
+- Slice 6: EvidenceCache MVP (architectural pivot)
+- Slice 6b: cache-fold residuals + Big-O audit optimizations
+- Slice 7: sampling policy + `Profile.merge` (rows 90 + 92 → 🟢)
+- Slice 8: FK correlation triplet (Faker foundation) (this slice)
+
+The chapter's V2-driver-axis-stakes contribution: **DATA axis silent-default cutover-blocker closed across all three tightening rules** (NullabilityRules, UniqueIndexRules, ForeignKeyRules) + **discovery-then-derive architecture** with ~6000 → ~900 SQL round-trips at 300-table scale + **structurally-complete Faker gating evidence**.
+
+### Cross-references
+
+- `CHAPTER_B_3_OPEN.md` — slice 8 marked ✓ shipped; chapter B.3 closes at 8/8 slices.
+- `V1_PARITY_MATRIX.md` "Chapter B.3 closure" amendment.
+- `ADMIRE.md` — Faker evidence chain; all four nodes shipped (categorical / numeric / cardinality / joint).
+- `DECISIONS Active deferrals — Faker emitter` — trigger structurally met; awaits explicit promotion at chapter B.4 / chapter 5 open.
+- V1 source: V1 had no direct FK-correlation surface; slice 8 is V2-growth per `ADMIRE.md`'s V2-growth admire mode.

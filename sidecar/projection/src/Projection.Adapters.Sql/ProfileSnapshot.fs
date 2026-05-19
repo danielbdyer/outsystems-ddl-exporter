@@ -454,7 +454,13 @@ module ProfileSnapshot =
                                   // empty-default produces identical
                                   // output as no User-FK reflow.
                                   SourceUsers               = UserPopulation.empty
-                                  TargetUsers               = UserPopulation.empty }))))
+                                  TargetUsers               = UserPopulation.empty
+                                  // FK correlation axes (slice B.3.8) populated
+                                  // by LiveProfiler via cache derivations; V1's
+                                  // JSON snapshot has no correlation evidence.
+                                  ForeignKeyCardinalities   = []
+                                  ForeignKeySelectivities   = []
+                                  JointDistributions        = [] }))))
         with
         | :? JsonException as ex ->
             Result.failureOf

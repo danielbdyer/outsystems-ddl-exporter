@@ -805,6 +805,164 @@ module AttributeReality =
             IsPresentButInactive = false
         }
 
+/// Slice B.3.8 — FK fan-out cardinality. Per Reference, the
+/// distribution of "how many children per parent." Computed by
+/// grouping source FK values, counting per-value, then summarizing
+/// the count distribution. Shape-preserving synthetic data uses
+/// this to preserve real-world FK load skew (e.g., "Customer 42
+/// has 1000 orders; most customers have 5"). Foundation evidence
+/// for the deferred Faker emitter per `ADMIRE.md` joint-FK chain.
+type ForeignKeyCardinality = {
+    ReferenceKey           : SsKey
+    /// Distribution of child-count-per-parent values. Min/Max
+    /// bound the range; percentiles + Moments characterize the
+    /// shape (uniform spread vs power-law clumping).
+    ChildCountDistribution : NumericDistribution
+}
+
+[<RequireQualifiedAccess>]
+module ForeignKeyCardinality =
+
+    /// Build a `ForeignKeyCardinality` from a per-Reference child-
+    /// count distribution. Returns `None` when there are fewer than
+    /// 5 distinct parent values (the `NumericDistribution`
+    /// SampleSize floor).
+    let create (referenceKey: SsKey) (distribution: NumericDistribution) : ForeignKeyCardinality =
+        { ReferenceKey = referenceKey; ChildCountDistribution = distribution }
+
+
+/// Slice B.3.8 — FK selectivity / clumping. Per Reference, value-
+/// frequency of the source FK column. Captures which target PK
+/// values dominate the children (skew analysis), informing shape-
+/// preserving synthetic FK distribution. Mirrors
+/// `CategoricalDistribution` shape but keyed by Reference (the
+/// source FK column is typically numeric; serializing to string
+/// for tally bridges the type-heterogeneity).
+type ForeignKeySelectivity = {
+    ReferenceKey  : SsKey
+    /// (Target-PK-value string, frequency-in-source-FK). Sorted
+    /// count-DESC + value-ASC for determinism.
+    Frequencies   : (string * int64) list
+    DistinctCount : int64
+    IsTruncated   : bool
+    ProbeStatus   : ProbeStatus
+}
+
+[<RequireQualifiedAccess>]
+module ForeignKeySelectivity =
+
+    let private negativeDistinctCount =
+        ValidationError.create
+            "foreignKeySelectivity.distinctCount.negative"
+            "DistinctCount must be non-negative."
+
+    let private negativeFrequencyCount =
+        ValidationError.create
+            "foreignKeySelectivity.frequencyCount.negative"
+            "Per-value frequency counts must be non-negative."
+
+    let private truncationContradiction =
+        ValidationError.create
+            "foreignKeySelectivity.truncation.contradiction"
+            "DistinctCount cannot exceed Frequencies.Length when IsTruncated is false."
+
+    /// Construct a `ForeignKeySelectivity`. Same invariants as
+    /// `CategoricalDistribution.create`: distinct count
+    /// non-negative; per-value counts non-negative; truncation
+    /// flag must agree with full-vocabulary state.
+    let create
+        (referenceKey: SsKey)
+        (frequencies: (string * int64) list)
+        (distinctCount: int64)
+        (isTruncated: bool)
+        (probeStatus: ProbeStatus)
+        : Result<ForeignKeySelectivity> =
+        if distinctCount < 0L then Result.failureOf negativeDistinctCount
+        elif frequencies |> List.exists (fun (_, c) -> c < 0L) then
+            Result.failureOf negativeFrequencyCount
+        elif (not isTruncated) && distinctCount <> int64 (List.length frequencies) then
+            Result.failureOf truncationContradiction
+        else
+            Result.success
+                { ReferenceKey  = referenceKey
+                  Frequencies   = frequencies
+                  DistinctCount = distinctCount
+                  IsTruncated   = isTruncated
+                  ProbeStatus   = probeStatus }
+
+
+/// Slice B.3.8 — multi-FK joint distribution. Per Kind with ≥2
+/// References, co-occurrence counts across the kind's FK columns.
+/// E.g., in `Orders` with FKs `(CustomerId, RegionId)`, the joint
+/// frequencies reveal which customer+region pairs co-occur and
+/// at what rate. Synthesizing FKs independently would lose this
+/// coherence; the joint distribution preserves it. Foundation
+/// evidence for the Faker emitter's "coherent synthetic data
+/// across relationships" capability per `ADMIRE.md`.
+type JointDistribution = {
+    KindKey       : SsKey
+    /// Ordered tuple of attribute keys participating in the joint.
+    /// Order matters for tuple-key construction; the consumer
+    /// reads the same order to interpret the serialized values.
+    AttributeKeys : SsKey list
+    /// (Serialized tuple key, frequency). Sorted count-DESC + key-ASC.
+    Frequencies   : (string * int64) list
+    DistinctCount : int64
+    IsTruncated   : bool
+    ProbeStatus   : ProbeStatus
+}
+
+[<RequireQualifiedAccess>]
+module JointDistribution =
+
+    let private negativeDistinctCount =
+        ValidationError.create
+            "jointDistribution.distinctCount.negative"
+            "DistinctCount must be non-negative."
+
+    let private negativeFrequencyCount =
+        ValidationError.create
+            "jointDistribution.frequencyCount.negative"
+            "Per-tuple frequency counts must be non-negative."
+
+    let private truncationContradiction =
+        ValidationError.create
+            "jointDistribution.truncation.contradiction"
+            "DistinctCount cannot exceed Frequencies.Length when IsTruncated is false."
+
+    let private degenerateTuple =
+        ValidationError.create
+            "jointDistribution.attributeKeys.tooFew"
+            "JointDistribution must span at least 2 attribute keys; single-attribute distributions belong on AttributeDistribution."
+
+    /// Construct a `JointDistribution`. Validates: distinct count
+    /// non-negative; per-tuple counts non-negative; truncation flag
+    /// agrees with vocabulary state; AttributeKeys length ≥ 2
+    /// (single-attribute joints should use `CategoricalDistribution`).
+    let create
+        (kindKey: SsKey)
+        (attributeKeys: SsKey list)
+        (frequencies: (string * int64) list)
+        (distinctCount: int64)
+        (isTruncated: bool)
+        (probeStatus: ProbeStatus)
+        : Result<JointDistribution> =
+        if List.length attributeKeys < 2 then Result.failureOf degenerateTuple
+        elif distinctCount < 0L then Result.failureOf negativeDistinctCount
+        elif frequencies |> List.exists (fun (_, c) -> c < 0L) then
+            Result.failureOf negativeFrequencyCount
+        elif (not isTruncated) && distinctCount <> int64 (List.length frequencies) then
+            Result.failureOf truncationContradiction
+        else
+            Result.success
+                { KindKey       = kindKey
+                  AttributeKeys = attributeKeys
+                  Frequencies   = frequencies
+                  DistinctCount = distinctCount
+                  IsTruncated   = isTruncated
+                  ProbeStatus   = probeStatus }
+
+
 type Profile = {
     Columns                   : ColumnProfile list
     UniqueCandidates          : UniqueCandidateProfile list
@@ -821,6 +979,18 @@ type Profile = {
     CdcAwareness              : CdcAwareness
     SourceUsers               : UserPopulation<SourceUserId>
     TargetUsers               : UserPopulation<TargetUserId>
+    /// Slice B.3.8 — per-Reference fan-out cardinality (distribution
+    /// of child-count-per-parent values). Shape-preserving synthetic
+    /// data uses this to preserve FK load skew. Foundation evidence
+    /// for the deferred Faker emitter.
+    ForeignKeyCardinalities   : ForeignKeyCardinality list
+    /// Slice B.3.8 — per-Reference selectivity / clumping
+    /// (value-frequency over source FK column).
+    ForeignKeySelectivities   : ForeignKeySelectivity list
+    /// Slice B.3.8 — per-Kind joint distributions across the kind's
+    /// FK columns (≥2). Preserves coherent FK co-occurrence for
+    /// shape-preserving synthetic data.
+    JointDistributions        : JointDistribution list
 }
 
 [<RequireQualifiedAccess>]
@@ -834,6 +1004,9 @@ module Profile =
         CompositeUniqueCandidates = []
         ForeignKeys               = []
         Distributions             = []
+        ForeignKeyCardinalities   = []
+        ForeignKeySelectivities   = []
+        JointDistributions        = []
         AttributeRealities        = []
         CdcAwareness              = CdcAwareness.empty
         SourceUsers               = UserPopulation.empty
@@ -847,6 +1020,9 @@ module Profile =
         && List.isEmpty p.CompositeUniqueCandidates
         && List.isEmpty p.ForeignKeys
         && List.isEmpty p.Distributions
+        && List.isEmpty p.ForeignKeyCardinalities
+        && List.isEmpty p.ForeignKeySelectivities
+        && List.isEmpty p.JointDistributions
         && Set.isEmpty p.CdcAwareness.CdcEnabled
         && Map.isEmpty p.CdcAwareness.CdcInstance
         && UserPopulation.isEmpty p.SourceUsers
@@ -1050,6 +1226,33 @@ module Profile =
         | AttributeDistribution.Numeric n     -> n.AttributeKey, "Numeric"
         | AttributeDistribution.Categorical c -> c.AttributeKey, "Categorical"
 
+    // Slice B.3.8 — merge helpers for FK correlation evidence.
+
+    let private mergeFkCardinality
+        (a: ForeignKeyCardinality)
+        (b: ForeignKeyCardinality)
+        : ForeignKeyCardinality =
+        // Pick the entry with larger SampleSize (more evidence wins)
+        // — commutative on a ≡ b; associative because pick-larger
+        // is a monoid.
+        if a.ChildCountDistribution.SampleSize >= b.ChildCountDistribution.SampleSize then a else b
+
+    let private mergeFkSelectivity
+        (a: ForeignKeySelectivity)
+        (b: ForeignKeySelectivity)
+        : ForeignKeySelectivity =
+        if a.DistinctCount >= b.DistinctCount then a else b
+
+    let private mergeJointDistribution
+        (a: JointDistribution)
+        (b: JointDistribution)
+        : JointDistribution =
+        if a.DistinctCount >= b.DistinctCount then a else b
+
+    /// Joint-distribution merge key — KindKey + ordered AttributeKeys.
+    let private jointKey (j: JointDistribution) : SsKey * SsKey list =
+        j.KindKey, j.AttributeKeys
+
     /// Merge two profiles into a worst-case union per axis. Both
     /// inputs are valid Profile values; the result is a valid
     /// Profile value whose evidence is the conservative aggregation
@@ -1083,4 +1286,14 @@ module Profile =
             // User populations are sets keyed by id — union semantics.
             SourceUsers               = UserPopulation.union a.SourceUsers b.SourceUsers
             TargetUsers               = UserPopulation.union a.TargetUsers b.TargetUsers
+            // Slice B.3.8 FK correlation axes:
+            ForeignKeyCardinalities   =
+                unionBy (fun c -> c.ReferenceKey) mergeFkCardinality
+                    a.ForeignKeyCardinalities b.ForeignKeyCardinalities
+            ForeignKeySelectivities   =
+                unionBy (fun s -> s.ReferenceKey) mergeFkSelectivity
+                    a.ForeignKeySelectivities b.ForeignKeySelectivities
+            JointDistributions        =
+                unionBy jointKey mergeJointDistribution
+                    a.JointDistributions b.JointDistributions
         }

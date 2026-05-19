@@ -259,6 +259,72 @@ the original audit missed it), append a dated amendment to this
 section naming the prior status, the new status, and the discovery
 slice.
 
+### Chapter B.3 closure — 2026-05-19 (slice B.3.8.fk-correlation — three new IR types ship the Faker emitter's gating evidence chain; FK fan-out + selectivity + multi-FK joint distributions)
+
+**Original framing.** Per `ADMIRE.md`, the deferred Faker emitter's gating evidence chain names three FK correlation shapes that V2 had no IR for:
+
+- "Range (min/max) per numeric/temporal → Synthetic generator (Faker Π) → Plausible synthetic values" (covered by slice 5's `StatisticalMoments` + slice 6's `Cache.deriveNumericDistributions`)
+- "Joint distributions across FK pairs → Faker Π → Coherent synthetic data across relationships" (NEW — slice 8)
+- "Cardinality-aware tightening" (NEW — slice 8 fan-out cardinality enables this)
+
+Per `DECISIONS Active deferrals — Faker emitter (synthetic-data Π)`: "Either a third evidence type lands, or a use case forces proceeding with two evidence types." Slice 8 lands THREE new evidence types (FK fan-out cardinality, FK selectivity, multi-FK joint distributions); chapter B.3 close re-evaluates the deferred trigger.
+
+**What ships (slice B.3.8.fk-correlation, 2026-05-19):**
+
+Three new IR types + smart constructors in `Profile.fs`:
+
+| Type | Shape | Smart constructor invariants |
+|---|---|---|
+| `ForeignKeyCardinality` | Per-Reference; carries `NumericDistribution` over child-count-per-parent values | None beyond `NumericDistribution.create` (SampleSize ≥ 5; monotonic percentiles) |
+| `ForeignKeySelectivity` | Per-Reference; carries `(string * int64) list` of (target-PK-value, frequency) DESC by count | DistinctCount ≥ 0; per-value counts ≥ 0; truncation flag agrees with vocab state |
+| `JointDistribution` | Per-Kind; spans ≥2 AttributeKeys; tuple-keyed frequency list | All of the above PLUS AttributeKeys length ≥ 2 (single-attribute joints use `CategoricalDistribution`) |
+
+Three new `Profile` axes:
+
+- `Profile.ForeignKeyCardinalities : ForeignKeyCardinality list`
+- `Profile.ForeignKeySelectivities : ForeignKeySelectivity list`
+- `Profile.JointDistributions : JointDistribution list`
+
+Three new `Cache.derive*` primitives:
+
+- `Cache.deriveForeignKeyCardinalities` — per Reference, `Array.groupBy` source FK values; child counts → `NumericDistribution.create` + `withMoments` (chains through slice 5's IR keystone primitives). Requires ≥5 distinct parent values per `NumericDistribution`'s sample-size floor.
+- `Cache.deriveForeignKeySelectivities` — single-pass `Dictionary<string, int64>` over source FK values; sort + truncate at vocabulary limit (50 default). Same shape as `deriveCategoricalDistributions` but keyed by Reference.
+- `Cache.deriveMultiFkJointDistributions` — per Kind with ≥2 References, `projectTupleKeys` over the kind's FK columns; `Dictionary` tuple-frequency tally; truncate at 100 default.
+
+`attachFromCache` extended to populate all three axes; `Profile.merge` extended to handle them (worst-case aggregation = pick-larger-evidence by SampleSize / DistinctCount). All three operators are commutative + associative; merge laws preserved.
+
+**Verification depth: 3 new Docker-gated integration tests:**
+
+- Selectivity emits per-FK-value frequencies on the Items+Children fixture (4 distinct parent values; all freq=1).
+- Fan-out cardinality respects the NumericDistribution sample-size floor (4 distinct parents → no entry).
+- Fan-out cardinality summarizes the child-count distribution on a 10-row × 5-parent skewed seed: Min=1, Max=4, Mean=2.
+
+All 33 LiveProfiler integration tests pass.
+
+**Per pillar 9: all three derivations carry DataIntent.** Cache observation; no operator policy enters. Per A18 amended + A34: derivations read Catalog + cache; emit Profile evidence only.
+
+**Faker gating-evidence chain — re-evaluation at chapter B.3 close:**
+
+| ADMIRE-named gating chain | Slice that lands it | Status |
+|---|---|---|
+| Categorical value frequencies → Faker synthetic generation | Slice 6b `Cache.deriveCategoricalDistributions` | ✓ |
+| Numeric histograms / percentiles → Faker plausible numeric values | Slice 5 `StatisticalMoments` + slice 6 `Cache.deriveNumericDistributions` | ✓ |
+| Range (min/max) per numeric → Faker synthetic value bounds | Slice 5's `NumericDistribution.Min` / `Max` | ✓ |
+| **Joint distributions across FK pairs → Faker coherent synthetic data** | **Slice 8 `JointDistribution`** | ✓ |
+| **Cardinality-aware tightening** | **Slice 8 `ForeignKeyCardinality`** | ✓ |
+
+**Faker emitter's deferred trigger condition is structurally met.** Per `DECISIONS Active deferrals — Faker emitter`: trigger named "third evidence type lands OR concrete consumer demand." Three new evidence types shipped this slice (cardinality + selectivity + joint distributions); the gating condition fires. Faker emitter promotion from deferred to scoped-for-implementation is a chapter B.4 / chapter 5 decision; the structural prerequisites are in place.
+
+**Cross-references.**
+
+- `CHAPTER_B_3_OPEN.md` — slice 8 marked ✓ shipped; chapter B.3 closes at 8 shipped slices.
+- `DECISIONS 2026-05-19 (slice B.3.8.fk-correlation)` — full cash-out + Faker-trigger re-evaluation.
+- `DECISIONS Active deferrals — Faker emitter (synthetic-data Π)` — the deferred trigger this slice resolves.
+- `ADMIRE.md` — V1 evidence-types-chain → Faker Π gating diagram; all four chain nodes shipped at this slice.
+- V1 source: V1 had no direct FK-correlation surface (slice 8 is V2-growth, not V1-port); the joint-distribution capability is a V2 extension per `ADMIRE.md`'s V2-growth admire mode.
+
+---
+
 ### Rows 90 + 92 — 2026-05-19 (slice B.3.7.sampling-multi-env — `SqlProfilerOptions` ships with operator-tunable sampling cap; `Profile.merge` ships with commutative + associative property tests)
 
 **Original framing.**

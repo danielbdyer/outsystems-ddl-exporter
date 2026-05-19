@@ -517,6 +517,90 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
     // existing SQL-probe captures.
     // ---------------------------------------------------------------
 
+    // ---------------------------------------------------------------
+    // Slice B.3.8.fk-correlation — fan-out cardinality + selectivity.
+    // Uses the two-kind Items + Children fixture from slice B.3.1.
+    // ---------------------------------------------------------------
+
+    [<Fact>]
+    member _.``B.3.8.fk-correlation: selectivity captures FK value frequencies (clumping)`` () =
+        if not (skipIfNoDocker "live-profiler-fk-selectivity") then () else
+        // Re-use the orphan-bearing scenario: 4 child rows with
+        // PARENT_ID values [1, 2, 3, 999]. All four values are
+        // distinct → DistinctCount = 4; each frequency = 1.
+        let p =
+            (fixture.WithEphemeralDatabase "LiveProfilerFkSelectivity" (fun cnn _ -> task {
+                do! Deploy.executeBatch cnn schemaSql
+                do! Deploy.executeBatch cnn childSchemaSql
+                do! Deploy.executeBatch cnn seedSql
+                do! Deploy.executeBatch cnn childSeedOneOrphanSql
+                let! attachResult = LiveProfiler.attach cnn twoKindCatalog Profile.empty
+                return mustOk attachResult
+            })).GetAwaiter().GetResult()
+        Assert.NotEmpty p.ForeignKeySelectivities
+        let sel =
+            p.ForeignKeySelectivities
+            |> List.find (fun s -> s.ReferenceKey = childFkKey)
+        Assert.Equal(4L, sel.DistinctCount)
+        Assert.False(sel.IsTruncated)
+        Assert.Equal(4, List.length sel.Frequencies)
+        // All four FK values appear exactly once → all freq = 1.
+        sel.Frequencies |> List.iter (fun (_, count) -> Assert.Equal(1L, count))
+
+    [<Fact>]
+    member _.``B.3.8.fk-correlation: fan-out cardinality requires >= 5 distinct parents`` () =
+        if not (skipIfNoDocker "live-profiler-fk-cardinality-floor") then () else
+        // 4 children, 4 distinct parents — below NumericDistribution
+        // sample-size floor (5). No cardinality entry emitted.
+        let p =
+            (fixture.WithEphemeralDatabase "LiveProfilerFkCardFloor" (fun cnn _ -> task {
+                do! Deploy.executeBatch cnn schemaSql
+                do! Deploy.executeBatch cnn childSchemaSql
+                do! Deploy.executeBatch cnn seedSql
+                do! Deploy.executeBatch cnn childSeedOneOrphanSql
+                let! attachResult = LiveProfiler.attach cnn twoKindCatalog Profile.empty
+                return mustOk attachResult
+            })).GetAwaiter().GetResult()
+        // Below floor → empty cardinality list.
+        Assert.Empty p.ForeignKeyCardinalities
+
+    [<Fact>]
+    member _.``B.3.8.fk-correlation: fan-out cardinality summarizes child-count-per-parent distribution when >= 5 distinct parents`` () =
+        if not (skipIfNoDocker "live-profiler-fk-cardinality") then () else
+        // Need 5+ distinct parent values to exceed NumericDistribution
+        // SampleSize floor. Seed 10 children across 5 distinct parents
+        // with skewed distribution: parent 1 has 4 children, parent 2
+        // has 3, parent 3 has 1, parent 4 has 1, parent 5 has 1.
+        // Child counts: [4, 3, 1, 1, 1].
+        let skewedSeed =
+            "INSERT INTO [dbo].[OSUSR_LP_CHILDREN] ([ID], [PARENT_ID]) VALUES " +
+            "(10, 1), (11, 1), (12, 1), (13, 1), " +
+            "(14, 2), (15, 2), (16, 2), " +
+            "(17, 3), (18, 4), (19, 5);"
+        let p =
+            (fixture.WithEphemeralDatabase "LiveProfilerFkCardinality" (fun cnn _ -> task {
+                do! Deploy.executeBatch cnn schemaSql
+                do! Deploy.executeBatch cnn childSchemaSql
+                do! Deploy.executeBatch cnn seedSql
+                do! Deploy.executeBatch cnn skewedSeed
+                let! attachResult = LiveProfiler.attach cnn twoKindCatalog Profile.empty
+                return mustOk attachResult
+            })).GetAwaiter().GetResult()
+        Assert.NotEmpty p.ForeignKeyCardinalities
+        let card =
+            p.ForeignKeyCardinalities
+            |> List.find (fun c -> c.ReferenceKey = childFkKey)
+        let dist = card.ChildCountDistribution
+        // 5 distinct parents → SampleSize = 5.
+        Assert.Equal(5L, dist.SampleSize)
+        // Min = 1 child (parents 3/4/5); Max = 4 children (parent 1).
+        Assert.Equal(1M, dist.Min)
+        Assert.Equal(4M, dist.Max)
+        // Mean = (4 + 3 + 1 + 1 + 1) / 5 = 2.0.
+        match dist.Moments with
+        | Some m -> Assert.Equal(2M, m.Mean)
+        | None   -> Assert.Fail "Expected Moments populated"
+
     [<Fact>]
     member _.``B.3.7.sampling: captureEvidenceCacheWith maxRows caps the row stream per kind`` () =
         if not (skipIfNoDocker "live-profiler-sampling-cap") then () else
