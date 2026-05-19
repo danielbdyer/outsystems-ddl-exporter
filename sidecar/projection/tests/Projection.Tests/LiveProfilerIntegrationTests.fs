@@ -508,6 +508,113 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
         Assert.Equal(4L, fk.ProbeStatus.SampleSize)
         Assert.Equal(Succeeded, fk.ProbeStatus.Outcome)
 
+    // ---------------------------------------------------------------
+    // Slice B.3.6.evidence-cache — captureEvidenceCache discovery +
+    // pure-F# Cache.derive* primitives. Asserts the cache holds the
+    // expected rows and derivations produce equivalent IR to the
+    // existing SQL-probe captures.
+    // ---------------------------------------------------------------
+
+    [<Fact>]
+    member _.``B.3.6.evidence-cache: captureEvidenceCache holds full-scan row data per kind (column-oriented)`` () =
+        if not (skipIfNoDocker "live-profiler-cache-capture") then () else
+        let cache =
+            (fixture.WithEphemeralDatabase "LiveProfilerCache" (fun cnn _ -> task {
+                do! Deploy.executeBatch cnn schemaSql
+                do! Deploy.executeBatch cnn seedSql
+                let! result = LiveProfiler.captureEvidenceCache cnn itemsCatalog
+                return mustOk result
+            })).GetAwaiter().GetResult()
+        Assert.True(Map.containsKey itemsKindKey cache.Kinds)
+        let cached = cache.Kinds.[itemsKindKey]
+        Assert.Equal(4L, cached.RowCount)
+        Assert.Equal(3, List.length cached.Columns)
+        for column in cached.Columns do
+            Assert.Equal(4, column.Values.Length)
+
+    [<Fact>]
+    member _.``B.3.6.evidence-cache: cache holds exact per-attribute NullCount from aggregate query`` () =
+        if not (skipIfNoDocker "live-profiler-cache-nullcounts") then () else
+        let cache =
+            (fixture.WithEphemeralDatabase "LiveProfilerCacheNulls" (fun cnn _ -> task {
+                do! Deploy.executeBatch cnn schemaSql
+                do! Deploy.executeBatch cnn seedSql
+                let! result = LiveProfiler.captureEvidenceCache cnn itemsCatalog
+                return mustOk result
+            })).GetAwaiter().GetResult()
+        let cached = cache.Kinds.[itemsKindKey]
+        Assert.Equal(1L, cached.NullCounts.[nameAttrKey])
+        Assert.Equal(0L, cached.NullCounts.[codeAttrKey])
+        Assert.Equal(0L, cached.NullCounts.[idAttrKey])
+
+    [<Fact>]
+    member _.``B.3.6.evidence-cache: Cache.deriveAttributeRealities matches existing captureAttributeRealities`` () =
+        if not (skipIfNoDocker "live-profiler-cache-attr-equivalence") then () else
+        let (fromCache, fromSql) =
+            (fixture.WithEphemeralDatabase "LiveProfilerCacheEq" (fun cnn _ -> task {
+                do! Deploy.executeBatch cnn schemaSql
+                do! Deploy.executeBatch cnn seedSql
+                let! cacheR = LiveProfiler.captureEvidenceCache cnn itemsCatalog
+                let cache = mustOk cacheR
+                let derived = LiveProfiler.Cache.deriveAttributeRealities cache itemsCatalog
+                let! sqlR = LiveProfiler.captureAttributeRealities cnn itemsCatalog
+                let sql = mustOk sqlR
+                return (derived, sql)
+            })).GetAwaiter().GetResult()
+        let keysOf (xs: AttributeReality list) = xs |> List.map (fun r -> r.AttributeKey) |> Set.ofList
+        Assert.Equal<Set<SsKey>>(keysOf fromSql, keysOf fromCache)
+        let pairBy key =
+            (fromCache |> List.find (fun r -> r.AttributeKey = key),
+             fromSql   |> List.find (fun r -> r.AttributeKey = key))
+        let (cacheName, sqlName) = pairBy nameAttrKey
+        Assert.Equal(sqlName.HasNulls,             cacheName.HasNulls)
+        Assert.Equal(sqlName.HasDuplicates,        cacheName.HasDuplicates)
+        Assert.Equal(sqlName.IsNullableInDatabase, cacheName.IsNullableInDatabase)
+
+    [<Fact>]
+    member _.``B.3.6.evidence-cache: Cache.deriveColumnProfiles matches existing captureColumnProfiles`` () =
+        if not (skipIfNoDocker "live-profiler-cache-col-equivalence") then () else
+        let (fromCache, fromSql) =
+            (fixture.WithEphemeralDatabase "LiveProfilerCacheColEq" (fun cnn _ -> task {
+                do! Deploy.executeBatch cnn schemaSql
+                do! Deploy.executeBatch cnn seedSql
+                let! cacheR = LiveProfiler.captureEvidenceCache cnn itemsCatalog
+                let cache = mustOk cacheR
+                let derived = LiveProfiler.Cache.deriveColumnProfiles cache itemsCatalog
+                let! sqlR = LiveProfiler.captureColumnProfiles cnn itemsCatalog
+                let sql = mustOk sqlR
+                return (derived, sql)
+            })).GetAwaiter().GetResult()
+        Assert.Equal(List.length fromSql, List.length fromCache)
+        let pairBy key =
+            (fromCache |> List.find (fun c -> c.AttributeKey = key),
+             fromSql   |> List.find (fun c -> c.AttributeKey = key))
+        let (cacheName, sqlName) = pairBy nameAttrKey
+        Assert.Equal(sqlName.NullCount, cacheName.NullCount)
+        Assert.Equal(sqlName.RowCount,  cacheName.RowCount)
+
+    [<Fact>]
+    member _.``B.3.6.evidence-cache: attach uses cache pivot AND existing FK + composite SQL captures still compose`` () =
+        if not (skipIfNoDocker "live-profiler-cache-attach-integration") then () else
+        let p =
+            (fixture.WithEphemeralDatabase "LiveProfilerCacheAttach" (fun cnn _ -> task {
+                do! Deploy.executeBatch cnn schemaSql
+                do! Deploy.executeBatch cnn childSchemaSql
+                do! Deploy.executeBatch cnn seedSql
+                do! Deploy.executeBatch cnn childSeedOneOrphanSql
+                let! attachResult = LiveProfiler.attach cnn twoKindCatalog Profile.empty
+                return mustOk attachResult
+            })).GetAwaiter().GetResult()
+        // Cache-derived axes (slice 6) populate.
+        Assert.NotEmpty p.AttributeRealities
+        Assert.NotEmpty p.Columns
+        Assert.NotEmpty p.UniqueCandidates
+        // SQL-captured axes (slice 1 + 3 transitional) still populate.
+        Assert.NotEmpty p.ForeignKeys
+        let fk = findFkReality p.ForeignKeys childFkKey
+        Assert.True(fk.HasOrphan)
+        Assert.Equal(1L, fk.OrphanCount)
+
     [<Fact>]
     member _.``B.3.1.foreign-key-reality: attach composes AttributeRealities + ForeignKeys + Columns + UniqueCandidates`` () =
         if not (skipIfNoDocker "live-profiler-fk-attach-compose") then () else

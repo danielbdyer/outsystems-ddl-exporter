@@ -878,6 +878,376 @@ module LiveProfiler =
                             (System.String.Concat("LiveProfiler.captureForeignKeyRealities failed: ", ex.Message)))
         }
 
+    // -----------------------------------------------------------------
+    // Slice B.3.6 — EvidenceCache discovery + pure-F# derivations
+    // -----------------------------------------------------------------
+
+    /// Aggregate-query SQL for a kind: one row returning exact
+    /// RowCount + per-attribute exact NullCount. Mirrors slice
+    /// B.3.2's `columnProfileSql` shape.
+    let private cacheAggregateSql (kind: Kind) : string =
+        let table =
+            System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; typed segments
+                ".",
+                [| encode kind.Physical.Schema; encode kind.Physical.Table |])
+        let perColumnNullCount (idx: int) (attr: Attribute) : string =
+            let col = encode attr.Column.ColumnName
+            System.String.Concat(  // LINT-ALLOW: typed encode + integer index
+                "COUNT_BIG(CASE WHEN ", col, " IS NULL THEN 1 END) AS [c", string idx, "]")
+        let selectList =
+            kind.Attributes
+            |> List.mapi perColumnNullCount
+            |> String.concat ", "  // LINT-ALLOW: positional comma joiner
+        System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; typed segments
+            "SELECT COUNT_BIG(*) AS [c_rows], ", selectList, " FROM ", table)
+
+    /// Row-streaming SQL for a kind: project every catalog attribute
+    /// in declaration order (positional alignment with
+    /// `kind.Attributes`). Full-scan default per slice 6 design.
+    let private cacheRowStreamSql (kind: Kind) : string =
+        let table =
+            System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; typed segments
+                ".",
+                [| encode kind.Physical.Schema; encode kind.Physical.Table |])
+        let columnList =
+            kind.Attributes
+            |> List.map (fun a -> encode a.Column.ColumnName)
+            |> String.concat ", "  // LINT-ALLOW: positional comma joiner over typed encode segments
+        System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; typed segments
+            "SELECT ", columnList, " FROM ", table)
+
+    /// Discovery for one kind: 3 queries (aggregate + reflection +
+    /// row-stream); composes into a `CachedKind`.
+    let private discoverKind
+        (cnn: SqlConnection)
+        (kind: Kind)
+        : Task<CachedKind option> =
+        task {
+            use _ = Bench.scope "profile.live.discoverKind"
+            if List.isEmpty kind.Attributes then return None
+            else
+                // 1. Aggregate: exact RowCount + per-attribute NullCount.
+                let! (rowCount, nullCounts) = task {
+                    use cmd = cnn.CreateCommand()
+                    cmd.CommandText <- cacheAggregateSql kind
+                    cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
+                    use! reader = cmd.ExecuteReaderAsync()
+                    let! advanced = reader.ReadAsync()
+                    if not advanced then
+                        return (0L, Map.empty)
+                    else
+                        let rc =
+                            if reader.IsDBNull(0) then 0L else reader.GetInt64(0)
+                        let counts =
+                            kind.Attributes
+                            |> List.mapi (fun idx attr ->
+                                let nc =
+                                    if reader.IsDBNull(1 + idx) then 0L
+                                    else reader.GetInt64(1 + idx)
+                                attr.SsKey, nc)
+                            |> Map.ofList
+                        return (rc, counts)
+                }
+                // 2. Reflection: per-column IsNullableInDatabase from
+                //    INFORMATION_SCHEMA. Returns Map<colName, bool>.
+                let! nullabilityMap = reflectNullability cnn kind
+                // 3. Row-stream: SELECT * → per-row CachedValue array.
+                //    Column-oriented final shape (transpose at end).
+                let perColumnValues =
+                    Array.init (List.length kind.Attributes) (fun _ ->
+                        System.Collections.Generic.List<CachedValue>())
+                use cmd = cnn.CreateCommand()
+                cmd.CommandText <- cacheRowStreamSql kind
+                cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
+                use! reader = cmd.ExecuteReaderAsync()
+                let mutable keepReading = true
+                while keepReading do
+                    let! advanced = reader.ReadAsync()
+                    if advanced then
+                        for idx = 0 to (List.length kind.Attributes - 1) do
+                            let cellValue =
+                                CachedValue.ofReaderValue (reader.GetValue idx)
+                            perColumnValues.[idx].Add cellValue
+                    else
+                        keepReading <- false
+                let columns =
+                    kind.Attributes
+                    |> List.mapi (fun idx attr ->
+                        let isNullable =
+                            Map.tryFind attr.Column.ColumnName nullabilityMap
+                            |> Option.defaultValue false
+                        { AttributeKey         = attr.SsKey
+                          IsNullableInDatabase = isNullable
+                          Values               = perColumnValues.[idx].ToArray() })
+                return
+                    Some
+                        { KindKey    = kind.SsKey
+                          RowCount   = rowCount
+                          NullCounts = nullCounts
+                          Columns    = columns }
+        }
+
+    /// Capture a complete EvidenceCache for the catalog. Walks every
+    /// non-static kind, runs the 3-query discovery, composes into a
+    /// keyed cache.
+    ///
+    /// Slice B.3.6 architectural pivot: replaces the accreted
+    /// per-attribute / per-Reference / per-Index SQL probes from
+    /// slices 1-5 with ONE bulk-extraction phase per kind. All
+    /// downstream Profile-axis derivations run in pure F# from the
+    /// cache (see `Cache.derive*`). Net round-trip count per
+    /// catalog drops from ~6000 (at 300 tables × 10 attrs) to ~900
+    /// (3 per kind regardless of attribute count).
+    let captureEvidenceCache
+        (cnn: SqlConnection)
+        (catalog: Catalog)
+        : Task<Result<EvidenceCache>> =
+        task {
+            use _ = Bench.scope "profile.live.captureEvidenceCache"
+            try
+                let nonStaticKinds =
+                    catalog.Modules
+                    |> List.collect (fun m -> m.Kinds)
+                    |> List.filter (fun k -> not (isStaticKind k))
+                let mutable acc : Map<SsKey, CachedKind> = Map.empty
+                for kind in nonStaticKinds do
+                    let! result = discoverKind cnn kind
+                    match result with
+                    | Some cached -> acc <- Map.add cached.KindKey cached acc
+                    | None        -> ()
+                return Result.success { Kinds = acc }
+            with
+            | ex ->
+                return
+                    Result.failureOf
+                        (ValidationError.create
+                            "profile.live.captureEvidenceCacheFailed"
+                            (System.String.Concat("LiveProfiler.captureEvidenceCache failed: ", ex.Message)))
+        }
+
+    /// Pure-F# derivations from EvidenceCache. Synchronous; no SQL.
+    /// Each function takes the cache + the catalog (for attribute
+    /// lookup) and returns the relevant Profile axis IR list.
+    module Cache =
+
+        /// Derive `ColumnProfile` per attribute. Uses the cache's
+        /// exact aggregates (RowCount + NullCount per attribute);
+        /// the smart-constructor invariants hold by SQL construction.
+        let deriveColumnProfiles
+            (cache: EvidenceCache)
+            (catalog: Catalog)
+            : ColumnProfile list =
+            use _ = Bench.scope "profile.cache.deriveColumnProfiles"
+            let probeStatus = ProbeStatus.noProbeRun
+            catalog
+            |> Catalog.allKinds
+            |> List.collect (fun kind ->
+                match Map.tryFind kind.SsKey cache.Kinds with
+                | None        -> []
+                | Some cached ->
+                    let statusWithSample =
+                        ProbeStatus.observed cached.RowCount
+                    kind.Attributes
+                    |> List.choose (fun attr ->
+                        let nullCount =
+                            Map.tryFind attr.SsKey cached.NullCounts
+                            |> Option.defaultValue 0L
+                        match
+                            ColumnProfile.create
+                                attr.SsKey cached.RowCount nullCount statusWithSample
+                        with
+                        | Ok p    -> Some p
+                        | Error _ -> None))
+            // The probeStatus binding above is a stylistic hold;
+            // the real probe status uses the observed sample size
+            // (full RowCount under full-scan default per slice 6).
+            |> fun result ->
+                ignore probeStatus
+                result
+
+        /// Derive `AttributeReality` per attribute. HasNulls /
+        /// HasDuplicates computed via column-scan in F# (the
+        /// no-overfetching premise — these come from the cache, not
+        /// from new SQL probes). IsNullableInDatabase from the
+        /// cache's reflection. IsPresentButInactive derived from
+        /// catalog.IsActive AND nullabilityMap-presence (the
+        /// existing slice A.4.7'-prelude.live-profiler logic, now
+        /// cache-resident).
+        let deriveAttributeRealities
+            (cache: EvidenceCache)
+            (catalog: Catalog)
+            : AttributeReality list =
+            use _ = Bench.scope "profile.cache.deriveAttributeRealities"
+            catalog
+            |> Catalog.allKinds
+            |> List.collect (fun kind ->
+                match Map.tryFind kind.SsKey cache.Kinds with
+                | None        -> []
+                | Some cached ->
+                    cached.Columns
+                    |> List.map (fun column ->
+                        let hasNulls =
+                            column.Values
+                            |> Array.exists CachedValue.isNull
+                        // HasDuplicates: ignore nulls; check whether
+                        // any non-null value repeats. Use Set for
+                        // O(n log n) detection on string projection
+                        // (best-effort across heterogeneous types).
+                        let hasDuplicates =
+                            let seen = System.Collections.Generic.HashSet<string>()
+                            let mutable found = false
+                            for v in column.Values do
+                                if not found then
+                                    match v with
+                                    | NullValue -> ()
+                                    | _ ->
+                                        let key =
+                                            match v with
+                                            | IntValue i -> "i:" + i.ToString System.Globalization.CultureInfo.InvariantCulture
+                                            | DecimalValue d -> "d:" + d.ToString System.Globalization.CultureInfo.InvariantCulture
+                                            | StringValue s -> "s:" + s
+                                            | DateValue dto -> "t:" + dto.UtcTicks.ToString System.Globalization.CultureInfo.InvariantCulture
+                                            | BinaryValue _ -> "b"  // binary-equality coarse
+                                            | NullValue -> "n"
+                                        if not (seen.Add key) then found <- true
+                            found
+                        let attr =
+                            Kind.tryFindAttribute column.AttributeKey kind
+                        let isPresentButInactive =
+                            match attr with
+                            | Some a -> column.IsNullableInDatabase |> ignore; not a.IsActive
+                            | None   -> false
+                        // Note: IsPresentButInactive simplifies to
+                        // `not attr.IsActive` since the column being
+                        // in the cache means it's present by
+                        // construction (we discovered it via SELECT).
+                        // The original A.4.7'-prelude logic also
+                        // confirmed presence via nullabilityMap;
+                        // both signals collapse here.
+                        { AttributeReality.create column.AttributeKey with
+                            IsNullableInDatabase = column.IsNullableInDatabase
+                            HasNulls             = hasNulls
+                            HasDuplicates        = hasDuplicates
+                            IsPresentButInactive = isPresentButInactive }))
+
+        /// Derive `NumericDistribution` per numeric attribute. Pure
+        /// F# computation over cached column values:
+        ///   - Min/Max/Mean via Array.min/max/average (decimal)
+        ///   - StdDev via population formula (sqrt of mean of
+        ///     squared deviations)
+        ///   - Percentiles via sorted-array index
+        ///   - Composed via NumericDistribution.create chained
+        ///     through StatisticalMoments + withMoments (slice 5's
+        ///     IR keystone primitives)
+        let deriveNumericDistributions
+            (cache: EvidenceCache)
+            (catalog: Catalog)
+            : NumericDistribution list =
+            use _ = Bench.scope "profile.cache.deriveNumericDistributions"
+            let isNumeric (attr: Attribute) : bool =
+                match attr.Type with
+                | PrimitiveType.Integer | PrimitiveType.Decimal -> true
+                | _ -> false
+            let percentile (sorted: decimal array) (p: decimal) : decimal =
+                // Continuous linear-interpolation percentile (PERCENTILE_CONT
+                // semantics from SQL Server). For sorted array of length N,
+                // h = (N - 1) * p; floor(h) = lo; ceil(h) = hi; fraction = h - lo.
+                if sorted.Length = 0 then 0M
+                elif sorted.Length = 1 then sorted.[0]
+                else
+                    let n = decimal (sorted.Length - 1)
+                    let h = n * p
+                    let lo = int h
+                    let frac = h - decimal lo
+                    if lo >= sorted.Length - 1 then sorted.[sorted.Length - 1]
+                    else
+                        sorted.[lo] + frac * (sorted.[lo + 1] - sorted.[lo])
+            catalog
+            |> Catalog.allKinds
+            |> List.collect (fun kind ->
+                match Map.tryFind kind.SsKey cache.Kinds with
+                | None        -> []
+                | Some cached ->
+                    kind.Attributes
+                    |> List.filter isNumeric
+                    |> List.choose (fun attr ->
+                        let column =
+                            cached.Columns
+                            |> List.tryFind (fun c -> c.AttributeKey = attr.SsKey)
+                        match column with
+                        | None        -> None
+                        | Some column ->
+                            let nonNullValues =
+                                column.Values
+                                |> Array.choose CachedValue.tryDecimal
+                            let sampleSize = int64 nonNullValues.Length
+                            if sampleSize < 5L then None
+                            else
+                                let sorted = nonNullValues |> Array.sort
+                                let min_  = sorted.[0]
+                                let max_  = sorted.[sorted.Length - 1]
+                                let mean  =
+                                    (nonNullValues |> Array.sum)
+                                        / decimal nonNullValues.Length
+                                // Population standard deviation:
+                                // sqrt(mean of squared deviations).
+                                let variance =
+                                    nonNullValues
+                                    |> Array.sumBy (fun v ->
+                                        let d = v - mean
+                                        d * d)
+                                    |> fun s -> s / decimal nonNullValues.Length
+                                let stdDev =
+                                    decimal (sqrt (float variance))
+                                let probeStatus = ProbeStatus.observed sampleSize
+                                let baseResult =
+                                    NumericDistribution.create
+                                        attr.SsKey
+                                        min_
+                                        (percentile sorted 0.25M)
+                                        (percentile sorted 0.50M)
+                                        (percentile sorted 0.75M)
+                                        (percentile sorted 0.95M)
+                                        (percentile sorted 0.99M)
+                                        max_ sampleSize probeStatus
+                                let momentsResult =
+                                    StatisticalMoments.create mean stdDev
+                                let enriched =
+                                    baseResult
+                                    |> Result.bind (fun dist ->
+                                        momentsResult
+                                        |> Result.bind (fun m ->
+                                            NumericDistribution.withMoments m dist))
+                                match enriched with
+                                | Ok d    -> Some d
+                                | Error _ ->
+                                    match baseResult with
+                                    | Ok d -> Some d
+                                    | Error _ -> None))
+
+    /// Attach Profile evidence by deriving from an in-memory cache.
+    /// Synchronous; pure F#. Composes the cache-derived axes into
+    /// the input Profile. Slice 6 MVP scope: derives ColumnProfiles
+    /// + AttributeRealities + NumericDistributions from cache; the
+    /// other axes still flow through their existing SQL captures
+    /// (slice 1 FK + slice 3 composite + slice 4 orphan-samples).
+    /// Slice 6b folds the remaining derivations into cache.
+    let attachFromCache
+        (cache: EvidenceCache)
+        (catalog: Catalog)
+        (profile: Profile)
+        : Profile =
+        use _ = Bench.scope "profile.cache.attachFromCache"
+        let realities = Cache.deriveAttributeRealities cache catalog
+        let columns = Cache.deriveColumnProfiles cache catalog
+        let numericDists = Cache.deriveNumericDistributions cache catalog
+        { profile with
+            AttributeRealities = realities
+            Columns            = columns
+            UniqueCandidates   = projectUniqueCandidates realities
+            Distributions      =
+                numericDists |> List.map AttributeDistribution.Numeric }
+
     /// Attach realities into an existing Profile. Sibling shape to
     /// `ProfileSnapshot.attach` / `ProfileStatistics.attach`: the
     /// adapter is composable, not authoritative — callers chain
@@ -902,30 +1272,29 @@ module LiveProfiler =
         (profile: Profile)
         : Task<Result<Profile>> =
         task {
-            let! attrCaptured = captureAttributeRealities cnn catalog
-            match attrCaptured with
+            // Slice B.3.6 architectural pivot: capture EvidenceCache
+            // once (3 queries per kind regardless of attribute count);
+            // derive AttributeRealities / Columns / UniqueCandidates /
+            // NumericDistributions in pure F#. FK orphans + composite
+            // uniqueness still use slice-1/3 SQL captures; slice 6b
+            // folds those into cache-derivation too.
+            let! cacheResult = captureEvidenceCache cnn catalog
+            match cacheResult with
             | Error errors -> return Result.failure errors
-            | Ok realities ->
+            | Ok cache ->
+                let fromCache = attachFromCache cache catalog profile
                 let! fkCaptured = captureForeignKeyRealities cnn catalog
                 match fkCaptured with
                 | Error errors -> return Result.failure errors
                 | Ok fkRealities ->
-                    let! colCaptured = captureColumnProfiles cnn catalog
-                    match colCaptured with
+                    let! compositeCaptured =
+                        captureCompositeUniqueCandidates cnn catalog
+                    match compositeCaptured with
                     | Error errors -> return Result.failure errors
-                    | Ok columns ->
-                        let! compositeCaptured =
-                            captureCompositeUniqueCandidates cnn catalog
-                        match compositeCaptured with
-                        | Error errors -> return Result.failure errors
-                        | Ok composites ->
-                            return
-                                Result.success
-                                    { profile with
-                                        AttributeRealities         = realities
-                                        ForeignKeys                = fkRealities
-                                        Columns                    = columns
-                                        UniqueCandidates           =
-                                            projectUniqueCandidates realities
-                                        CompositeUniqueCandidates  = composites }
+                    | Ok composites ->
+                        return
+                            Result.success
+                                { fromCache with
+                                    ForeignKeys               = fkRealities
+                                    CompositeUniqueCandidates = composites }
         }

@@ -259,6 +259,84 @@ the original audit missed it), append a dated amendment to this
 section naming the prior status, the new status, and the discovery
 slice.
 
+### Chapter B.3 architectural pivot — 2026-05-19 (slice B.3.6.evidence-cache — single-discovery in-memory EvidenceCache replaces per-attribute SQL probes; pure-F# derivations from typed-row substrate)
+
+**Original framing.** Slices 1-5 of chapter B.3 each shipped a SQL probe for one Profile axis (FK orphan-count; exact NullCount; composite uniqueness; FK orphan-sample; statistical-moments IR keystone). The accreted per-attribute / per-Reference / per-Index round-trips totalled ~6000 SQL queries at production scale (300 tables × 10 attrs × multiple probes). Principal-PO no-overfetching concern surfaced mid-slice-5: "let's not make a naive mistake and try and query unnecessarily — no overfetching, please, just exact fetching, even if that means a bit more work up front."
+
+**Reclassification (slice B.3.6.evidence-cache, 2026-05-19):**
+
+The chapter B.3 architecture **pivots to a discovery-cache pattern**:
+
+| Aspect | Before (slices 1-5) | After (slice 6 onward) |
+|---|---|---|
+| Per-kind round-trips | 1 (nullability) + N (per non-PK attr HasNulls/HasDup) + 1 (column profiles) = N+2 | 3 (aggregate + row-stream + nullability reflection) regardless of N |
+| Distribution probes | Per numeric attr; per categorical attr (deferred slice 5 SQL) | Pure F# `Array.sort` + `Array.groupBy` over cached column data |
+| FK orphan probes | Per-Reference SQL LEFT JOIN | Cross-table in-memory `Set.intersect`/`difference` (slice 6b) |
+| Composite uniqueness | Per-Index SQL GROUP BY | In-memory tuple `List.groupBy` (slice 6b) |
+| Memory pressure | Minimal (SQL aggregates only) | Full-scan default per principal-PO direction; cache holds typed row values |
+| Net round-trip count at 300 tables | ~6000 | ~900 (3 per kind) + R (FK) + I (composite); slice 6b reduces to ~900 by folding FK + composite into cache |
+
+**What ships in slice 6 MVP:**
+
+- New `EvidenceCache.fs` (`src/Projection.Adapters.Sql/`) — typed substrate:
+  - `CachedValue` closed DU (`IntValue | DecimalValue | StringValue | DateValue | BinaryValue | NullValue`) with `ofReaderValue` adapter from `obj` + `tryInt` / `tryDecimal` / `tryString` projection helpers.
+  - `CachedColumn` record carrying `AttributeKey` + `IsNullableInDatabase` + column-oriented `Values : CachedValue array`.
+  - `CachedKind` record with exact `RowCount` + `NullCounts : Map<SsKey, int64>` + `Columns : CachedColumn list`.
+  - `EvidenceCache` record keyed by Kind SsKey for cross-table lookups (FK derivation prerequisite).
+  - `EvidenceCache.tryFindKind` + `tryFindColumn` lookup primitives.
+
+- New `LiveProfiler.captureEvidenceCache : SqlConnection → Catalog → Task<Result<EvidenceCache>>` — discovery primitive. Per non-static kind: 1 aggregate query (exact RowCount + per-attribute NullCount) + 1 row-stream query (full-scan SELECT all columns) + 1 INFORMATION_SCHEMA reflection. Three round-trips per kind regardless of attribute count.
+
+- New `LiveProfiler.Cache` submodule — pure-F# derivations:
+  - `Cache.deriveColumnProfiles : EvidenceCache → Catalog → ColumnProfile list` (replaces `captureColumnProfiles` SQL aggregate)
+  - `Cache.deriveAttributeRealities : EvidenceCache → Catalog → AttributeReality list` (replaces `captureAttributeRealities` per-attribute probes)
+  - `Cache.deriveNumericDistributions : EvidenceCache → Catalog → NumericDistribution list` (chains through slice 5's `NumericDistribution.create` + `StatisticalMoments.create` + `withMoments`; population std-dev via `sqrt(mean of squared deviations)`; percentiles via `Array.sort` + linear interpolation per V1's `PERCENTILE_CONT` semantics)
+
+- New `LiveProfiler.attachFromCache : EvidenceCache → Catalog → Profile → Profile` — synchronous pure-F# attach.
+
+- Rewritten `LiveProfiler.attach`: capture cache (3 queries per kind) → derive AttributeRealities + Columns + UniqueCandidates + NumericDistributions from cache → call slice-1 `captureForeignKeyRealities` and slice-3 `captureCompositeUniqueCandidates` for the SQL-axis transitional residuals. The residuals fold into cache derivations at slice 6b.
+
+**5 new Docker-gated integration tests:**
+
+- Cache holds full-scan row data per kind (column-oriented; values arrays match RowCount).
+- Cache holds exact per-attribute NullCount from the aggregate query (NAME: 1; CODE: 0; PK: 0).
+- `Cache.deriveAttributeRealities` produces identical IR to `captureAttributeRealities` on the Items fixture (HasNulls / HasDuplicates / IsNullableInDatabase all agree).
+- `Cache.deriveColumnProfiles` produces identical IR to `captureColumnProfiles` on the Items fixture (NullCount + RowCount agree).
+- `attach` uses the cache pivot for cache-derived axes AND the existing SQL captures still compose for FK + composite (transitional integration test on the two-kind Items+Children fixture; orphan FK detected via slice-1 SQL while cache-derived axes populate via slice 6).
+
+All 28 LiveProfilerIntegrationTests pass (23 existing + 5 new B.3.6). Non-Docker baseline 1688/1688.
+
+**Deferred follow-ups (named triggers):**
+
+- **Slice 6b (immediate next)** — fold `captureForeignKeyRealities`, `captureForeignKeyOrphanSamples`, and `captureCompositeUniqueCandidates` into `Cache.derive*` cross-table primitives. Per user direction "Fold FK probes into cache (cross-table in-memory)" — these become Set.difference / List.groupBy operations over cached source/target columns. Composite-PK FK extension (slice 1 deferral) becomes trivial via tuple-set differences.
+- **Slice 6c** — add `Cache.deriveCategoricalDistributions` (per-string-column `Array.groupBy` in F#; eliminates the per-categorical-attribute SQL probe slice 5 reverted).
+- **Slice 7** — sampling policy + multi-environment merge. Today's full-scan default per principal-PO direction; cache grows linearly with data size. Sampling caps land here.
+- **Slice 8** — FK correlation triplet (fan-out cardinality + selectivity / clumping + multi-FK joint distributions). All three derive in F# from the cache once slices 6b + 6c ship.
+
+**Per pillar 9: EvidenceCache is DataIntent.** Pure observation of deployed reality; no operator policy enters cache construction. Derivation functions are pure F#; consumers can re-derive any Profile axis from the cache without re-querying SQL.
+
+**Per A18 amended + A34.** `captureEvidenceCache` reads Catalog (to identify which kinds + attributes to probe); derivations read Catalog + EvidenceCache and emit Profile evidence. No Catalog mutation; no Policy consumption.
+
+**Per A35 stream-realization pattern.** Cache discovery streams rows in via `SqlDataReader.ReadAsync()`; aggregates over the in-memory column arrays preserve T1 byte-determinism (decimal arithmetic; sorted-array percentile interpolation).
+
+**Operating-discipline payoff (chapter B.3 retrospective at mid-slice-6):**
+
+- **The user's no-overfetching premise drives substantive architectural change.** Slices 1-5 shipped functionality but accreted SQL probes; slice 6 pivots to a cache architecture that the no-overfetching premise demands. The pivot was caught mid-slice-5 (during the per-data-type expansion conversation) and absorbed cleanly because the discipline was operated, not just declared.
+- **F# typed-column substrate aligns with V2's pure-core posture.** `CachedValue` closed DU keeps type discipline at the cache layer; derivations are pure F# (`Array.sort`, `Array.groupBy`, `Array.sumBy`). Per the V2 algebraic discipline: "data structures in; pure transformations through; typed values out."
+- **Smart-constructor-FIRST holds across the pivot.** Slice 5 lifted `StatisticalMoments.create` + `withMoments`; slice 6's `Cache.deriveNumericDistributions` chains through them without modification. The IR keystone slice paid off at slice 6 exactly as predicted.
+- **Test discipline: equivalence tests assert "cache path produces same IR as SQL path."** Two of the five new tests compare `Cache.deriveX` output to `captureX` output. As slice 6b retires the SQL captures, the equivalence tests anchor the transition.
+
+**Cross-references.**
+
+- `CHAPTER_B_3_OPEN.md` — chapter plan; slice 6 was originally "probe consolidation" then expanded to "EvidenceCache architecture" mid-slice per principal-PO direction.
+- `DECISIONS 2026-05-19 (slice B.3.6.evidence-cache)` — full cash-out rationale + cache-substrate design + deferral list.
+- `DECISIONS 2026-05-19 (slice B.3.5.statistical-moments-ir)` — slice 5 IR keystone the cache derivations chain through.
+- V1 source: `Pipeline/Profiling/SqlDataProfiler.cs` orchestrator + `ProfilingQueryExecutor` (672 LOC) — V1's equivalent discovery-then-derive pattern; slice 6 ports the architectural pattern into F# with the cache as the discovery substrate.
+- `ADMIRE.md` (Faker emitter section) — joint distributions across FK pairs become trivial from the cache once slices 6b + 8 ship; the deferred Faker emitter's gating evidence chain is closer to operational.
+- `AXIOMS.md` A35 stream-realization pattern — cache discovery uses streaming readers; derivations fold over in-memory arrays. T1 byte-determinism preserved.
+
+---
+
 ### Row 89 — 2026-05-19 (slice B.3.4.fk-orphan-samples — LiveProfiler per-FK orphan-row sample probe; pillar 9 pivot lands on Diagnostics, not Profile)
 
 **Original framing.**

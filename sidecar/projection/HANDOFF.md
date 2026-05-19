@@ -1,3 +1,72 @@
+# Handoff letter — 2026-05-19 (latest) (chapter B.3 architectural pivot — EvidenceCache MVP ships; per-attribute SQL probes replaced with in-memory typed-row substrate; slice 6 of 9-slice expanded plan)
+
+To the next agent. The 2026-05-19 chapter B.3 in-flight letter sits below; read it for the slice-1-through-5 ship state. This letter (the latest) tells you what slice 6 shipped + how the chapter architecturally pivoted mid-flight.
+
+## TL;DR
+
+**Slice 6 (B.3.6.evidence-cache) shipped as MVP.** The chapter B.3 architecture pivots from "per-axis SQL probes" to "discovery-cache + pure-F# derivations." `LiveProfiler.captureEvidenceCache` makes 3 SQL queries per kind (aggregate + row-stream + reflection); all subsequent Profile-axis derivations run in pure F# from the cache. AttributeRealities, Columns, UniqueCandidates, NumericDistributions all derive via the new `LiveProfiler.Cache.derive*` primitives. FK orphans + composite uniqueness still use slices 1+3 SQL captures during MVP; slice 6b folds them into cache derivations.
+
+**Architectural pivot rationale.** Principal-PO no-overfetching premise: "let's not make a naive mistake and try and query unnecessarily." Slices 1-5 accreted SQL probes (~6000 round-trips at 300 tables); slice 6 substrate brings that to ~900 + (R + I) for residual SQL captures, dropping to ~900 + 0 once slice 6b retires the residual SQL.
+
+**Chapter B.3 expanded to 9 slices (was 8).** Slice 6 split into 6 (MVP cache) + 6b (fold residual SQL into cache).
+
+## What's load-bearing after slice 6
+
+- **`EvidenceCache.fs` (new)** — typed substrate. `CachedValue` closed DU (IntValue / DecimalValue / StringValue / DateValue / BinaryValue / NullValue) + `CachedColumn` (per-attribute typed cells) + `CachedKind` (per-kind RowCount + NullCounts + Columns) + `EvidenceCache` (Map keyed by SsKey).
+- **`LiveProfiler.captureEvidenceCache`** — discovery primitive. 3 round-trips per non-static kind: COUNT_BIG aggregate + full-scan row stream + INFORMATION_SCHEMA reflection. Returns typed in-memory cache.
+- **`LiveProfiler.Cache` submodule** — pure-F# derivations:
+  - `deriveColumnProfiles` (uses exact aggregates from cache)
+  - `deriveAttributeRealities` (HasNulls via `Array.exists`; HasDuplicates via `HashSet` over typed projections; nullability + IsPresentButInactive from cache + catalog)
+  - `deriveNumericDistributions` (`Array.sort` + linear-interpolation percentiles + population std-dev; chains through slice 5's `StatisticalMoments.create` + `withMoments`)
+- **`LiveProfiler.attachFromCache`** — synchronous pure-F# compose. Future consumers (pre-loaded snapshots; serialized caches) avoid Task overhead.
+- **Rewired `LiveProfiler.attach`** — capture cache once; derive cache-axes via `attachFromCache`; call slice 1 + 3 SQL captures for residual FK + composite. The residuals retire at slice 6b.
+- **Slice 5 IR keystone (`StatisticalMoments` + `withMoments` + `coefficientOfVariation`)** — composes cleanly through cache derivations; no modifications required.
+
+## Probe-shape comparison (before/after)
+
+| Capture | Before (slices 1-5) | After (slice 6 MVP) | After (slice 6b planned) |
+|---|---|---|---|
+| Per-kind round-trips | N+2 (nullability + N attr probes + 1 batched null-count) | 3 (aggregate + row-stream + nullability) | 3 |
+| Distribution capture | Per-attribute (numeric + categorical) | In-memory `Array.sort` for numeric; per-categorical SQL deferred | All in-memory |
+| FK orphan probes | Per Reference (LEFT JOIN) | Per Reference (unchanged; transitional) | In-memory Set.difference |
+| Composite uniqueness | Per Index (GROUP BY) | Per Index (unchanged; transitional) | In-memory tuple `List.groupBy` |
+| Net round-trips at 300 tables | ~6000 | ~900 + R + I (~1500 total) | ~900 |
+
+## Operating-discipline notes from slice 6
+
+- **The architectural pivot was caught and absorbed mid-flight.** Principal-PO no-overfetching premise surfaced during slice-5 conversation; slice 6 was originally "probe consolidation (batched-per-kind SQL)" then pivoted to "EvidenceCache architecture (in-memory typed-row substrate)" before any SQL-consolidation code shipped. The in-flight SQL probe work (numericDistributionsBatchSql + categoricalDistributionSql) was stashed via git; the cache architecture was designed + shipped fresh. This is the discipline doing what it's supposed to: catch the right shape before LOC accretes.
+- **Smart-constructor-FIRST paid off across the pivot.** Slice 5's `StatisticalMoments.create` + `NumericDistribution.withMoments` + `coefficientOfVariation` chain through `Cache.deriveNumericDistributions` unchanged. The IR keystone slice 5 was a structural deposit; slice 6 withdrew it.
+- **F# typed-column substrate aligns with V2's pure-core posture.** `CachedValue` closed DU keeps type discipline at the cache layer; derivations are pure F# (`Array.sort`, `Array.groupBy`, `Array.sumBy`). Per V2's pure-core / no-I/O-in-Core commitment: cache lives in `Projection.Adapters.Sql` (boundary); derivations could lift to `Projection.Core` once a second consumer needs them.
+- **Equivalence tests anchor the slice 6b transition.** Two of the five new tests compare `Cache.derive*` output against existing `captureX` SQL output. As slice 6b retires the SQL captures, these tests prove the cache path still produces the same IR.
+
+## Next slices
+
+| Slice | Scope |
+|---|---|
+| **6b** — `B.3.6b.cache-fold-residuals` | Fold remaining SQL captures into `Cache.derive*`: FK orphans (cross-table Set.difference); composite uniqueness (tuple-keyed `List.groupBy`); categorical distributions (per-column `Array.groupBy`); FK orphan-samples (in-memory filter + truncate). Composite-PK FK probe (slice 1 deferral) becomes trivial via tuple-set differences. After 6b, ALL Profile axes derive from cache; SQL probes retire. |
+| **7** — `B.3.7.sampling-multi-env` | Sampling policy (replace full-scan default with operator-tunable cap via `SqlProfilerOptions.Sampling`) + multi-environment merge (`Profile.merge` with commutative + associative property tests). |
+| **8** — `B.3.8.fk-correlation` | FK-mediated correlative evidence (fan-out cardinality + selectivity + multi-FK joint distributions); shape-preserving synthetic-data foundation for the deferred Faker emitter. All three derive from cache in pure F#. |
+
+After slice 8: chapter B.3 closes; re-evaluate Faker emitter's deferred trigger condition (per `ADMIRE.md` + Active deferrals — slices 5/6/6b/8 collectively ship the gating evidence).
+
+## Reading order for the next agent
+
+1. **This letter** (~5 minutes).
+2. **`CHAPTER_B_3_OPEN.md`** — updated 9-slice plan; slice 6 status `shipped (MVP)`; slice 6b enumerated.
+3. **`DECISIONS 2026-05-19 (slice B.3.6.evidence-cache)`** — the architectural-pivot rationale + cache-substrate design + MVP scope + named deferrals.
+4. **`V1_PARITY_MATRIX.md` "Chapter B.3 architectural pivot" amendment** — formal matrix-level reclassification.
+5. **`src/Projection.Adapters.Sql/EvidenceCache.fs`** — new file; types + projection helpers + lookup primitives. ~225 LOC.
+6. **`src/Projection.Adapters.Sql/LiveProfiler.fs`** — `captureEvidenceCache` + `LiveProfiler.Cache` submodule + new `attach`.
+7. The earlier 2026-05-19 in-flight letter + 2026-05-18 letter as needed.
+
+When you open slice 6b, the discipline is: replicate the slice-6 equivalence-test pattern for FK + composite + categorical. Add `Cache.deriveX` per axis; assert it produces identical IR to the existing `captureX` SQL surface; then retire the SQL surface. The cache lookup primitive `EvidenceCache.tryFindKind` lets you access target-side data for cross-table FK derivations cleanly.
+
+Hold the spine. The architectural pivot was the right work even though it stretched slice 6 substantially. Chapter B.3 is now structurally aligned with V2's no-overfetching premise; future probe additions land as `Cache.derive*` pure-F# functions, not as new SQL queries.
+
+— The slice-B.3.6 architect.
+
+---
+
 # Handoff letter — 2026-05-19 (later) (chapter B.3 in flight — LiveProfiler deep-probe sweep; slices 1 + 2 + 3 ship; FK orphan + exact NullCount + composite-unique probes close THREE tightening-rule silent-default cutover-blockers; ProbeStatus primitives extracted)
 
 To the next agent. This letter sits above the earlier 2026-05-19 letter (A.4.7'-prelude 18-slice arc) and the 2026-05-18 letter. Read all three (chapter-3.1 letter sits at the bottom). This letter tells you what shipped this session as **slices 1-3 of chapter B.3** plus a co-shipped `ProbeStatus` hygiene refactor, the strategic frame the chapter operates under, and what slices 4-6 cash out next.
