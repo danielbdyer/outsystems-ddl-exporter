@@ -259,6 +259,64 @@ the original audit missed it), append a dated amendment to this
 section naming the prior status, the new status, and the discovery
 slice.
 
+### Chapter B.3 cache-fold completion — 2026-05-19 (slice B.3.6b.cache-fold-residuals — FK + composite + categorical + orphan-samples fold from SQL captures into pure-F# Cache.derive*; ALL Profile axes derive from cache; SQL probes retire from `attach`)
+
+**Original framing.** Slice B.3.6 shipped the EvidenceCache MVP — discovery primitive + 3 pure-F# derivations (AttributeRealities + Columns + NumericDistributions) — but kept slice-1's `captureForeignKeyRealities` and slice-3's `captureCompositeUniqueCandidates` as transitional SQL captures called by `attach`. Categorical distributions weren't yet derivable. The chapter's "all axes from cache" claim was 4-of-7 axes complete.
+
+**Reclassification (slice B.3.6b.cache-fold-residuals, 2026-05-19):**
+
+`attach` now invokes `captureEvidenceCache` once (3 queries per kind) → derives ALL Profile axes in pure F# via `attachFromCache`. Zero per-Reference or per-Index round-trips. The legacy SQL captures remain as transitional public surfaces for callers that haven't migrated but no longer participate in the `attach` flow.
+
+**Four new `Cache.derive*` primitives:**
+
+| Derivation | Replaces | Shape |
+|---|---|---|
+| `Cache.deriveCategoricalDistributions` | (slice 5 SQL capture; reverted before commit) | Single-pass `Dictionary<string, int64>` frequency tally per categorical column; `Array.sortWith` (count DESC, value ASC) + truncate at `defaultCategoricalVocabularyLimit`. |
+| `Cache.deriveCompositeUniqueCandidates` | Slice 3's `captureCompositeUniqueCandidates` | Per non-unique multi-column Index, projects per-row tuples (`projectTupleKeys`); `Array.groupBy` on tuple keys; HasDuplicate iff any group > 1. |
+| `Cache.deriveForeignKeyRealities` | Slice 1's `captureForeignKeyRealities` | Cross-table Set.difference: build target PK Set; iterate source FK values; orphan-count = source ∖ target. Composite-PK FK (slice 1 deferral) becomes trivial via `projectTupleKeys` once a fixture surfaces. |
+| `Cache.deriveForeignKeyOrphanSamples` | Slice 4's `captureForeignKeyOrphanSamples` | Per orphan-bearing Reference, deterministic ascending sort of orphan values; TOP-N sample; emits DiagnosticEntry (pillar 9 — Diagnostics output, not Profile axis). |
+
+**Big-O optimizations co-shipped (audit during validation):**
+
+| Optimization | Before | After | Benefit |
+|---|---|---|---|
+| Pre-indexed `CachedKind.ColumnsByKey : Map<SsKey, CachedColumn>` | `List.tryFind` O(C) per column lookup | `Map.tryFind` O(log C) per lookup | Eliminates O(C²) per-kind patterns across 4 derivations (numeric, composite, categorical, FK) |
+| Memoized FK target PK sets via `buildForeignKeyTargetIndex` | Set built per Reference in `deriveForeignKeyRealities` AND again in `deriveForeignKeyOrphanSamples` | Built once at `attachFromCache` entry; shared via `*With` overloads | N-to-1 reuse when N references share a target; eliminates 2x duplicate pass |
+| Single-pass `Dictionary` frequency tally for categorical | 3-pass `Array.choose tryString` + `Array.groupBy id` + `Array.map` | 1-pass `Dictionary<string, int64>` accumulator | Eliminates 2 intermediate array allocations per column |
+
+**Round-trip count net change:**
+
+| Catalog scale | Before slice 6 | After slice 6 MVP | After slice 6b |
+|---|---|---|---|
+| 300 tables × 10 attrs × 5 References each × 2 composite indexes | ~6000 SQL round-trips | ~900 (cache) + ~1500 (R + I + orphan-samples) ≈ ~2400 | **~900** (3 per kind) |
+
+Net 6-7x reduction vs pre-slice-6 architecture.
+
+**Verification depth: 28 LiveProfiler integration tests pass on the new cache-only attach path.** All slice 1-5 tests continue to assert their original IR contracts; slice 6 equivalence tests confirm `Cache.derive*` matches the legacy SQL captures byte-for-byte. Two assertions updated post-slice-6b (`Assert.Empty p.Distributions` → `Assert.NotEmpty p.Distributions` on the Items + two-kind fixtures) reflecting that cache-pivot attach now populates Distributions automatically for the integer PK columns.
+
+**Public-surface contract (post-6b):**
+
+- `LiveProfiler.attach` runs cache-only (3 SQL queries per non-static kind; pure-F# derivations for all axes).
+- `LiveProfiler.captureEvidenceCache` + `LiveProfiler.attachFromCache` for callers wanting two-phase control.
+- `LiveProfiler.Cache.derive*` (9 primitives total: deriveColumnProfiles / deriveAttributeRealities / deriveNumericDistributions / deriveCategoricalDistributions / deriveCompositeUniqueCandidates / deriveForeignKeyRealities / deriveForeignKeyOrphanSamples / deriveForeignKeyRealitiesWith / deriveForeignKeyOrphanSamplesWith).
+- Legacy SQL captures (`captureAttributeRealities`, `captureColumnProfiles`, `captureForeignKeyRealities`, `captureCompositeUniqueCandidates`, `captureForeignKeyOrphanSamples`) remain available for backward-compat consumers but unused by `attach`. Retired in chapter B.3 close once no consumer depends on them.
+
+**Operating-discipline payoff:**
+
+- **Pillar 9 holds across all 4 new derivations.** Pure observation from cache; no operator policy enters. The pillar 9 pivot for orphan samples (slice 4 — DiagnosticEntry output, not Profile axis) carries through to the cache derivation; same routing semantics, zero SQL.
+- **Smart-constructor-FIRST holds.** All new derivations chain through existing smart constructors (`CategoricalDistribution.create`, `CompositeUniqueCandidateProfile.create`, `ForeignKeyReality.create`, slice-5's `StatisticalMoments` + `NumericDistribution.withMoments` for numeric). No new IR types; record-update over defaulted values.
+- **Audit during validation.** Big-O audit fired naturally after slice 6b's first build; three optimizations (column-index map; FK target-set memoization; single-pass dictionary) folded inline. Per `DECISIONS 2026-05-09 — Audits surface things not on the agenda` — fixes land during the slice, not as follow-ups.
+- **A35 stream-realization pattern holds.** Cache discovery streams rows in via `SqlDataReader.ReadAsync()`; derivations fold over the in-memory column arrays. T1 byte-determinism preserved via decimal arithmetic + deterministic sort ordering.
+
+**Cross-references.**
+
+- `CHAPTER_B_3_OPEN.md` — slice 6 status flips from `shipped (MVP)` to `shipped (complete cache-fold)`.
+- `DECISIONS 2026-05-19 (slice B.3.6b.cache-fold-residuals)` — full cash-out + Big-O audit + the four optimization rationales.
+- `DECISIONS 2026-05-19 (slice B.3.6.evidence-cache)` — predecessor MVP slice; the cache substrate that slice 6b completes.
+- `DECISIONS 2026-05-19 (slice B.3.5.statistical-moments-ir)` — slice 5 keystone the numeric derivation composes through.
+
+---
+
 ### Chapter B.3 architectural pivot — 2026-05-19 (slice B.3.6.evidence-cache — single-discovery in-memory EvidenceCache replaces per-attribute SQL probes; pure-F# derivations from typed-row substrate)
 
 **Original framing.** Slices 1-5 of chapter B.3 each shipped a SQL probe for one Profile axis (FK orphan-count; exact NullCount; composite uniqueness; FK orphan-sample; statistical-moments IR keystone). The accreted per-attribute / per-Reference / per-Index round-trips totalled ~6000 SQL queries at production scale (300 tables × 10 attrs × multiple probes). Principal-PO no-overfetching concern surfaced mid-slice-5: "let's not make a naive mistake and try and query unnecessarily — no overfetching, please, just exact fetching, even if that means a bit more work up front."

@@ -979,12 +979,17 @@ module LiveProfiler =
                         { AttributeKey         = attr.SsKey
                           IsNullableInDatabase = isNullable
                           Values               = perColumnValues.[idx].ToArray() })
+                let columnsByKey =
+                    columns
+                    |> List.map (fun c -> c.AttributeKey, c)
+                    |> Map.ofList
                 return
                     Some
-                        { KindKey    = kind.SsKey
-                          RowCount   = rowCount
-                          NullCounts = nullCounts
-                          Columns    = columns }
+                        { KindKey      = kind.SsKey
+                          RowCount     = rowCount
+                          NullCounts   = nullCounts
+                          Columns      = columns
+                          ColumnsByKey = columnsByKey }
         }
 
     /// Capture a complete EvidenceCache for the catalog. Walks every
@@ -1171,9 +1176,7 @@ module LiveProfiler =
                     kind.Attributes
                     |> List.filter isNumeric
                     |> List.choose (fun attr ->
-                        let column =
-                            cached.Columns
-                            |> List.tryFind (fun c -> c.AttributeKey = attr.SsKey)
+                        let column = Map.tryFind attr.SsKey cached.ColumnsByKey
                         match column with
                         | None        -> None
                         | Some column ->
@@ -1225,28 +1228,437 @@ module LiveProfiler =
                                     | Ok d -> Some d
                                     | Error _ -> None))
 
+        /// Default vocabulary cap for categorical distributions
+        /// derived from the cache. Slice 7 wires this through
+        /// `SqlProfilerOptions.Sampling` for operator tuning.
+        [<Literal>]
+        let private defaultCategoricalVocabularyLimit = 50
+
+        /// Derive `CategoricalDistribution` per string-typed
+        /// attribute. Pure-F# `Array.groupBy` over cached string
+        /// values; sorts frequencies DESC by count then alphabetically
+        /// by value (deterministic; matches the SQL ORDER BY shape
+        /// V1's `UniqueCandidateQueryBuilder` used). Truncates at
+        /// `defaultCategoricalVocabularyLimit`; sets `IsTruncated`
+        /// when distinct count exceeds the cap.
+        let deriveCategoricalDistributions
+            (cache: EvidenceCache)
+            (catalog: Catalog)
+            : CategoricalDistribution list =
+            use _ = Bench.scope "profile.cache.deriveCategoricalDistributions"
+            let isCategorical (attr: Attribute) : bool =
+                match attr.Type with
+                | PrimitiveType.Text -> true
+                | _ -> false
+            catalog
+            |> Catalog.allKinds
+            |> List.collect (fun kind ->
+                match Map.tryFind kind.SsKey cache.Kinds with
+                | None        -> []
+                | Some cached ->
+                    kind.Attributes
+                    |> List.filter isCategorical
+                    |> List.choose (fun attr ->
+                        let column = Map.tryFind attr.SsKey cached.ColumnsByKey
+                        match column with
+                        | None        -> None
+                        | Some column ->
+                            // Single-pass Dictionary frequency tally
+                            // (slice 6b Big-O optimization #3): one
+                            // walk over column values builds the
+                            // frequency map; no intermediate
+                            // Array.choose / Array.groupBy / Array.map.
+                            let freq = System.Collections.Generic.Dictionary<string, int64>()
+                            for v in column.Values do
+                                match v with
+                                | StringValue s ->
+                                    match freq.TryGetValue s with
+                                    | true, c  -> freq.[s] <- c + 1L
+                                    | false, _ -> freq.[s] <- 1L
+                                | _ -> ()
+                            if freq.Count = 0 then None
+                            else
+                                let distinctCount = int64 freq.Count
+                                let entries =
+                                    freq
+                                    |> Seq.map (fun kvp -> kvp.Key, kvp.Value)
+                                    |> Seq.toArray
+                                let sortedByCountDesc =
+                                    entries
+                                    |> Array.sortWith (fun (vA, cA) (vB, cB) ->
+                                        // Count DESC, then value ASC (deterministic
+                                        // tie-break — same shape as V1's SQL
+                                        // ORDER BY COUNT_BIG(*) DESC, <col>).
+                                        let cmpCount = compare cB cA
+                                        if cmpCount <> 0 then cmpCount
+                                        else compare vA vB)
+                                let truncated =
+                                    if sortedByCountDesc.Length > defaultCategoricalVocabularyLimit then
+                                        Array.sub sortedByCountDesc 0 defaultCategoricalVocabularyLimit
+                                    else sortedByCountDesc
+                                let isTruncated =
+                                    distinctCount > int64 defaultCategoricalVocabularyLimit
+                                let probeStatus = ProbeStatus.observed distinctCount
+                                match
+                                    CategoricalDistribution.create
+                                        attr.SsKey
+                                        (List.ofArray truncated)
+                                        distinctCount
+                                        isTruncated
+                                        probeStatus
+                                with
+                                | Ok d    -> Some d
+                                | Error _ -> None))
+
+        /// Project a CachedColumn's per-row values into a tuple-key
+        /// projection across multiple columns. Returns an array of
+        /// canonical-string tuples aligned by row index; rows where
+        /// ANY column is null are excluded (SQL Server's GROUP BY
+        /// convention; mirrors slice 3's `WHERE <col1> IS NOT NULL
+        /// AND <col2> IS NOT NULL` filter).
+        let private projectTupleKeys
+            (columns: CachedColumn list)
+            : string array option =
+            if List.isEmpty columns then None
+            else
+                let rowCount = columns.Head.Values.Length
+                // Same row count assumed across columns (cache invariant).
+                let result = ResizeArray<string>()
+                for rowIdx = 0 to rowCount - 1 do
+                    let mutable hasNull = false
+                    let parts = ResizeArray<string>()
+                    for column in columns do
+                        if not hasNull then
+                            let v = column.Values.[rowIdx]
+                            match v with
+                            | NullValue -> hasNull <- true
+                            | IntValue i -> parts.Add("i:" + i.ToString System.Globalization.CultureInfo.InvariantCulture)
+                            | DecimalValue d -> parts.Add("d:" + d.ToString System.Globalization.CultureInfo.InvariantCulture)
+                            | StringValue s -> parts.Add("s:" + s)
+                            | DateValue dto -> parts.Add("t:" + dto.UtcTicks.ToString System.Globalization.CultureInfo.InvariantCulture)
+                            | BinaryValue _ -> parts.Add("b")  // binary equality coarse
+                    if not hasNull then
+                        result.Add(System.String.Join("|", parts))
+                Some (result.ToArray())
+
+        /// Derive `CompositeUniqueCandidateProfile` per non-unique
+        /// multi-column Index. Pure-F# tuple-keyed `Array.groupBy`;
+        /// HasDuplicate iff any group has count > 1. Mirrors slice
+        /// 3's SQL `GROUP BY <cols> HAVING COUNT_BIG(*) > 1` shape.
+        let deriveCompositeUniqueCandidates
+            (cache: EvidenceCache)
+            (catalog: Catalog)
+            : CompositeUniqueCandidateProfile list =
+            use _ = Bench.scope "profile.cache.deriveCompositeUniqueCandidates"
+            let isCompositeCandidate (index: Index) : bool =
+                not index.IsUnique && List.length index.Columns >= 2
+            catalog
+            |> Catalog.allKinds
+            |> List.collect (fun kind ->
+                match Map.tryFind kind.SsKey cache.Kinds with
+                | None        -> []
+                | Some cached ->
+                    kind.Indexes
+                    |> List.filter isCompositeCandidate
+                    |> List.map (fun index ->
+                        let attributeKeys =
+                            index.Columns |> List.map (fun ic -> ic.Attribute)
+                        let resolvedColumns =
+                            attributeKeys
+                            |> List.map (fun key ->
+                                Map.tryFind key cached.ColumnsByKey)
+                        if resolvedColumns |> List.exists Option.isNone then
+                            // One or more index columns absent from cache —
+                            // mark ambiguous, conservative-safe.
+                            let defaulted =
+                                CompositeUniqueCandidateProfile.create
+                                    kind.SsKey attributeKeys
+                            { defaulted with ProbeStatus = ProbeStatus.ambiguous }
+                        else
+                            let columns = resolvedColumns |> List.choose id
+                            match projectTupleKeys columns with
+                            | None -> CompositeUniqueCandidateProfile.create kind.SsKey attributeKeys
+                            | Some tuples ->
+                                let hasDuplicate =
+                                    tuples
+                                    |> Array.groupBy id
+                                    |> Array.exists (fun (_, occ) -> occ.Length > 1)
+                                { KindKey       = kind.SsKey
+                                  AttributeKeys = attributeKeys
+                                  HasDuplicate  = hasDuplicate
+                                  ProbeStatus   = ProbeStatus.observed cached.RowCount }))
+
+        /// Project a CachedColumn value into a comparable string key
+        /// (heterogeneous-equality bridge). Used by FK orphan
+        /// derivation to compare source FK values against target PK
+        /// values. Excludes NullValue (FK probes always filter
+        /// `IS NOT NULL`).
+        let private cacheValueKey (v: CachedValue) : string option =
+            match v with
+            | NullValue -> None
+            | IntValue i -> Some ("i:" + i.ToString System.Globalization.CultureInfo.InvariantCulture)
+            | DecimalValue d -> Some ("d:" + d.ToString System.Globalization.CultureInfo.InvariantCulture)
+            | StringValue s -> Some ("s:" + s)
+            | DateValue dto -> Some ("t:" + dto.UtcTicks.ToString System.Globalization.CultureInfo.InvariantCulture)
+            | BinaryValue _ -> Some "b"
+
+        /// Pre-built FK target PK sets, keyed by (targetKindKey,
+        /// targetPkAttrKey). Built once per `attachFromCache` call;
+        /// shared between `deriveForeignKeyRealities` and
+        /// `deriveForeignKeyOrphanSamples`. Eliminates N-to-1
+        /// duplicate Set construction when N references share a
+        /// target AND eliminates 2x duplicate work across the two
+        /// FK derivation passes (slice 6b Big-O audit).
+        type private ForeignKeyTargetIndex = Map<SsKey * SsKey, Set<string>>
+
+        let buildForeignKeyTargetIndex
+            (cache: EvidenceCache)
+            (catalog: Catalog)
+            : ForeignKeyTargetIndex =
+            use _ = Bench.scope "profile.cache.buildForeignKeyTargetIndex"
+            // Collect distinct (targetKind, targetPkAttr) pairs that any
+            // Reference points at; build the Set per pair once.
+            let pairs =
+                catalog
+                |> Catalog.allKinds
+                |> List.collect (fun srcKind ->
+                    srcKind.References
+                    |> List.choose (fun reference ->
+                        match Catalog.tryFindKind reference.TargetKind catalog with
+                        | None -> None
+                        | Some tgtKind ->
+                            match Kind.primaryKey tgtKind with
+                            | [ tgtPkAttr ] ->
+                                Some (tgtKind.SsKey, tgtPkAttr.SsKey)
+                            | _ -> None))
+                |> List.distinct
+            pairs
+            |> List.choose (fun (kindKey, attrKey) ->
+                match EvidenceCache.tryFindColumn kindKey attrKey cache with
+                | None -> None
+                | Some col ->
+                    let pkSet =
+                        col.Values
+                        |> Array.choose cacheValueKey
+                        |> Set.ofArray
+                    Some ((kindKey, attrKey), pkSet))
+            |> Map.ofList
+
+        /// Derive `ForeignKeyReality` per Reference. Cross-table
+        /// in-memory derivation: build a `Set` from target PK column
+        /// values; iterate source FK column values; orphan-count
+        /// = source values not present in target set. Single-column
+        /// PK targets only (composite-PK FK extension uses
+        /// `projectTupleKeys` once a fixture surfaces). Mirrors
+        /// slice 1's SQL LEFT JOIN orphan-count probe.
+        let deriveForeignKeyRealitiesWith
+            (targetIndex: ForeignKeyTargetIndex)
+            (cache: EvidenceCache)
+            (catalog: Catalog)
+            : ForeignKeyReality list =
+            use _ = Bench.scope "profile.cache.deriveForeignKeyRealities"
+            let isStatic (k: Kind) : bool =
+                k.Modality
+                |> List.exists (function
+                    | Static _ -> true
+                    | _ -> false)
+            catalog
+            |> Catalog.allKinds
+            |> List.collect (fun srcKind ->
+                if isStatic srcKind then []
+                else
+                    srcKind.References
+                    |> List.map (fun reference ->
+                        let defaulted = ForeignKeyReality.create reference.SsKey
+                        let ambiguous =
+                            { defaulted with ProbeStatus = ProbeStatus.ambiguous }
+                        match Catalog.tryFindKind reference.TargetKind catalog with
+                        | None -> ambiguous
+                        | Some tgtKind ->
+                            match Kind.primaryKey tgtKind with
+                            | [ tgtPkAttr ] ->
+                                let srcColumn =
+                                    EvidenceCache.tryFindColumn srcKind.SsKey reference.SourceAttribute cache
+                                let targetSetOpt =
+                                    Map.tryFind (tgtKind.SsKey, tgtPkAttr.SsKey) targetIndex
+                                match srcColumn, targetSetOpt with
+                                | Some sCol, Some targetSet ->
+                                    let orphanCount =
+                                        sCol.Values
+                                        |> Array.choose cacheValueKey
+                                        |> Array.filter (fun k -> not (Set.contains k targetSet))
+                                        |> Array.length
+                                        |> int64
+                                    let rowCount =
+                                        match Map.tryFind srcKind.SsKey cache.Kinds with
+                                        | Some k -> k.RowCount
+                                        | None   -> 0L
+                                    { ReferenceKey = reference.SsKey
+                                      HasOrphan    = orphanCount > 0L
+                                      OrphanCount  = orphanCount
+                                      IsNoCheck    = not reference.IsConstraintTrusted
+                                      ProbeStatus  = ProbeStatus.observed rowCount }
+                                | _ -> ambiguous
+                            | _ -> ambiguous))
+
+        /// Public-surface entry point: builds the target-PK-set index
+        /// per-call. `attachFromCache` uses the With-overload directly
+        /// to share the index across FK realities + orphan samples.
+        let deriveForeignKeyRealities
+            (cache: EvidenceCache)
+            (catalog: Catalog)
+            : ForeignKeyReality list =
+            let targetIndex = buildForeignKeyTargetIndex cache catalog
+            deriveForeignKeyRealitiesWith targetIndex cache catalog
+
+        /// Derive `DiagnosticEntry list` carrying TOP-N orphan
+        /// samples per orphan-bearing FK. Pillar 9: operational
+        /// diagnostics, not data-intent. Mirrors slice 4's TOP-N
+        /// SQL probe shape but runs from cache (no SQL).
+        ///
+        /// Default sample limit (cache-derivation copy; mirrors
+        /// slice 4's per-Reference SQL constant). 5 per slice 4
+        /// precedent; operator-tunable at slice 7.
+        [<Literal>]
+        let private cacheOrphanSampleLimit = 5
+
+        let deriveForeignKeyOrphanSamplesWith
+            (targetIndex: ForeignKeyTargetIndex)
+            (cache: EvidenceCache)
+            (catalog: Catalog)
+            : DiagnosticEntry list =
+            use _ = Bench.scope "profile.cache.deriveForeignKeyOrphanSamples"
+            let isStatic (k: Kind) : bool =
+                k.Modality
+                |> List.exists (function
+                    | Static _ -> true
+                    | _ -> false)
+            catalog
+            |> Catalog.allKinds
+            |> List.collect (fun srcKind ->
+                if isStatic srcKind then []
+                else
+                    srcKind.References
+                    |> List.choose (fun reference ->
+                        match Catalog.tryFindKind reference.TargetKind catalog with
+                        | None -> None
+                        | Some tgtKind ->
+                            match Kind.primaryKey tgtKind with
+                            | [ tgtPkAttr ] ->
+                                let srcAttr =
+                                    Kind.tryFindAttribute reference.SourceAttribute srcKind
+                                let srcColumn =
+                                    EvidenceCache.tryFindColumn srcKind.SsKey reference.SourceAttribute cache
+                                let targetSetOpt =
+                                    Map.tryFind (tgtKind.SsKey, tgtPkAttr.SsKey) targetIndex
+                                match srcAttr, srcColumn, targetSetOpt with
+                                | Some srcAttr, Some sCol, Some targetSet ->
+                                    // targetSet pre-built; no per-Reference Set.ofArray.
+                                    let orphanValues =
+                                        sCol.Values
+                                        |> Array.choose (fun cv ->
+                                            match cacheValueKey cv with
+                                            | Some k when not (Set.contains k targetSet) ->
+                                                // Render the orphan value as a
+                                                // string for the diagnostic
+                                                // payload (typed-to-string per
+                                                // slice 4 precedent).
+                                                let display =
+                                                    match cv with
+                                                    | IntValue i -> i.ToString System.Globalization.CultureInfo.InvariantCulture
+                                                    | DecimalValue d -> d.ToString System.Globalization.CultureInfo.InvariantCulture
+                                                    | StringValue s -> s
+                                                    | DateValue dto -> dto.ToString System.Globalization.CultureInfo.InvariantCulture
+                                                    | BinaryValue _ -> "<binary>"
+                                                    | NullValue -> "<null>"
+                                                Some display
+                                            | _ -> None)
+                                    if orphanValues.Length = 0 then None
+                                    else
+                                        // Deterministic ordering (A1): sort
+                                        // orphan values ASC.
+                                        let sortedOrphans = orphanValues |> Array.sort
+                                        let sampled =
+                                            if sortedOrphans.Length > cacheOrphanSampleLimit then
+                                                Array.sub sortedOrphans 0 cacheOrphanSampleLimit
+                                            else sortedOrphans
+                                        let baseEntries =
+                                            [ "orphanCount", sortedOrphans.Length.ToString System.Globalization.CultureInfo.InvariantCulture
+                                              "sampleSize",  sampled.Length.ToString System.Globalization.CultureInfo.InvariantCulture
+                                              "sourceColumn", srcAttr.Column.ColumnName
+                                              "targetColumn", tgtPkAttr.Column.ColumnName ]
+                                        let perSample =
+                                            sampled
+                                            |> Array.mapi (fun i v ->
+                                                System.String.Concat("sample.", string i), v)  // LINT-ALLOW: structured metadata key
+                                            |> List.ofArray
+                                        let metadata = Map.ofList (baseEntries @ perSample)
+                                        Some
+                                            { Source   = "adapter:LiveProfiler"
+                                              Severity = DiagnosticSeverity.Warning
+                                              Code     = "profiling.foreignKey.orphanSample"
+                                              Message  =
+                                                System.String.Concat(  // LINT-ALLOW: operator-facing prose narration
+                                                    "Foreign key '",
+                                                    Name.value reference.Name,
+                                                    "' has ",
+                                                    sortedOrphans.Length.ToString System.Globalization.CultureInfo.InvariantCulture,
+                                                    " orphan source row(s); sampled ",
+                                                    sampled.Length.ToString System.Globalization.CultureInfo.InvariantCulture,
+                                                    ".")
+                                              SsKey    = Some reference.SsKey
+                                              Metadata = metadata }
+                                | _ -> None
+                            | _ -> None))
+
+        /// Public-surface entry point: builds the target-PK-set index
+        /// per-call. `attachFromCache` uses the With-overload directly
+        /// to share the index across FK realities + orphan samples.
+        let deriveForeignKeyOrphanSamples
+            (cache: EvidenceCache)
+            (catalog: Catalog)
+            : DiagnosticEntry list =
+            let targetIndex = buildForeignKeyTargetIndex cache catalog
+            deriveForeignKeyOrphanSamplesWith targetIndex cache catalog
+
     /// Attach Profile evidence by deriving from an in-memory cache.
-    /// Synchronous; pure F#. Composes the cache-derived axes into
-    /// the input Profile. Slice 6 MVP scope: derives ColumnProfiles
-    /// + AttributeRealities + NumericDistributions from cache; the
-    /// other axes still flow through their existing SQL captures
-    /// (slice 1 FK + slice 3 composite + slice 4 orphan-samples).
-    /// Slice 6b folds the remaining derivations into cache.
+    /// Synchronous; pure F#. Composes EVERY cache-derived Profile
+    /// axis. Slice 6b completes the architectural pivot — all axes
+    /// (AttributeRealities, Columns, UniqueCandidates, FK realities,
+    /// composite uniqueness, numeric + categorical distributions)
+    /// derive from cache without further SQL round-trips. The
+    /// existing SQL captures (`captureAttributeRealities`,
+    /// `captureColumnProfiles`, `captureForeignKeyRealities`,
+    /// `captureCompositeUniqueCandidates`,
+    /// `captureForeignKeyOrphanSamples`) remain as transitional
+    /// public-surface accessors for callers that haven't migrated
+    /// but are unused by `attach`.
     let attachFromCache
         (cache: EvidenceCache)
         (catalog: Catalog)
         (profile: Profile)
         : Profile =
         use _ = Bench.scope "profile.cache.attachFromCache"
+        // Pre-build FK target PK sets ONCE; share across the two FK
+        // derivations. Slice 6b Big-O optimization #2: eliminates
+        // duplicate Set construction (per Reference + per pass).
+        let fkTargetIndex = Cache.buildForeignKeyTargetIndex cache catalog
         let realities = Cache.deriveAttributeRealities cache catalog
         let columns = Cache.deriveColumnProfiles cache catalog
         let numericDists = Cache.deriveNumericDistributions cache catalog
+        let categoricalDists = Cache.deriveCategoricalDistributions cache catalog
+        let composites = Cache.deriveCompositeUniqueCandidates cache catalog
+        let foreignKeys = Cache.deriveForeignKeyRealitiesWith fkTargetIndex cache catalog
+        let distributions =
+            (numericDists |> List.map AttributeDistribution.Numeric)
+            @ (categoricalDists |> List.map AttributeDistribution.Categorical)
         { profile with
-            AttributeRealities = realities
-            Columns            = columns
-            UniqueCandidates   = projectUniqueCandidates realities
-            Distributions      =
-                numericDists |> List.map AttributeDistribution.Numeric }
+            AttributeRealities         = realities
+            Columns                    = columns
+            UniqueCandidates           = projectUniqueCandidates realities
+            CompositeUniqueCandidates  = composites
+            ForeignKeys                = foreignKeys
+            Distributions              = distributions }
 
     /// Attach realities into an existing Profile. Sibling shape to
     /// `ProfileSnapshot.attach` / `ProfileStatistics.attach`: the
@@ -1272,29 +1684,18 @@ module LiveProfiler =
         (profile: Profile)
         : Task<Result<Profile>> =
         task {
-            // Slice B.3.6 architectural pivot: capture EvidenceCache
+            // Slice B.3.6b: cache-driven only. Capture EvidenceCache
             // once (3 queries per kind regardless of attribute count);
-            // derive AttributeRealities / Columns / UniqueCandidates /
-            // NumericDistributions in pure F#. FK orphans + composite
-            // uniqueness still use slice-1/3 SQL captures; slice 6b
-            // folds those into cache-derivation too.
+            // ALL Profile axes derive from cache in pure F# via
+            // `attachFromCache`. The legacy SQL captures
+            // (`captureAttributeRealities`, `captureColumnProfiles`,
+            // `captureForeignKeyRealities`,
+            // `captureCompositeUniqueCandidates`,
+            // `captureForeignKeyOrphanSamples`) remain as transitional
+            // public-surface accessors but `attach` no longer touches
+            // them. Total SQL round-trips: 3 per non-static kind.
             let! cacheResult = captureEvidenceCache cnn catalog
             match cacheResult with
             | Error errors -> return Result.failure errors
-            | Ok cache ->
-                let fromCache = attachFromCache cache catalog profile
-                let! fkCaptured = captureForeignKeyRealities cnn catalog
-                match fkCaptured with
-                | Error errors -> return Result.failure errors
-                | Ok fkRealities ->
-                    let! compositeCaptured =
-                        captureCompositeUniqueCandidates cnn catalog
-                    match compositeCaptured with
-                    | Error errors -> return Result.failure errors
-                    | Ok composites ->
-                        return
-                            Result.success
-                                { fromCache with
-                                    ForeignKeys               = fkRealities
-                                    CompositeUniqueCandidates = composites }
+            | Ok cache    -> return Result.success (attachFromCache cache catalog profile)
         }

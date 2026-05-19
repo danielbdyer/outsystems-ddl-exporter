@@ -160,6 +160,13 @@ type CachedKind = {
     /// `Columns.[i].Values.Length = RowCount` for all i; slice 7
     /// adds sampling caps.
     Columns    : CachedColumn list
+    /// Pre-indexed column lookup by attribute SsKey. Built once at
+    /// `discoverKind` time so `Cache.derive*` consumers can do
+    /// O(log C) column lookups instead of O(C) `List.tryFind` scans
+    /// (slice 6b Big-O audit). Discipline: ColumnsByKey MUST
+    /// correspond exactly to Columns; constructed-correctly by the
+    /// discovery primitive.
+    ColumnsByKey : Map<SsKey, CachedColumn>
 }
 
 
@@ -187,7 +194,8 @@ module EvidenceCache =
     /// Find a column within a kind by attribute SsKey. Returns
     /// `None` when the attribute exists in catalog but the cache
     /// has no column for it (e.g., column dropped from deployed
-    /// schema; reflection silent).
+    /// schema; reflection silent). O(log C) via the precomputed
+    /// `ColumnsByKey` index per slice 6b Big-O audit.
     let tryFindColumn
         (kindKey: SsKey)
         (attributeKey: SsKey)
@@ -195,5 +203,4 @@ module EvidenceCache =
         : CachedColumn option =
         cache
         |> tryFindKind kindKey
-        |> Option.bind (fun k ->
-            k.Columns |> List.tryFind (fun c -> c.AttributeKey = attributeKey))
+        |> Option.bind (fun k -> Map.tryFind attributeKey k.ColumnsByKey)

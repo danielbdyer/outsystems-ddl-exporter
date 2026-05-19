@@ -17786,3 +17786,79 @@ The Faker emitter's gating condition (per `ADMIRE.md` + Active deferrals): "thir
 - `ADMIRE.md` Faker emitter gating evidence — slice 6 + 6b move the chain forward; chapter close re-evaluates the deferred-trigger.
 - `AXIOMS.md` A35 (stream-realization) + structural-commitment-via-construction-validation — cache discovery + derivation respect both.
 - V1 source — `Pipeline/Profiling/SqlDataProfiler.cs` orchestrator + `ProfilingQueryExecutor` (672 LOC); V2 ports the architectural pattern (discovery → derivation) into F# with the EvidenceCache as the substrate.
+
+---
+
+## 2026-05-19 (slice B.3.6b.cache-fold-residuals) — Cache-fold completes: FK + composite + categorical + orphan-samples derive from cache in pure F#; ALL Profile axes off SQL; Big-O audit fires three optimizations inline
+
+### Scope
+
+Completes the slice B.3.6 architectural pivot. The MVP shipped 3 derivations from cache (AttributeRealities + Columns + NumericDistributions) and kept slices 1+3+4's SQL captures as transitional. Slice 6b ships the remaining four derivations and rewires `attach` to be cache-only. Net round-trip count at 300 tables drops from ~2400 (post-MVP) to ~900 (3 per kind).
+
+A mid-slice Big-O audit fires three optimizations inline.
+
+### What ships
+
+**Four new `Cache.derive*` primitives in `LiveProfiler.fs`:**
+
+- `Cache.deriveCategoricalDistributions : EvidenceCache → Catalog → CategoricalDistribution list` — per non-static kind, per string attribute: single-pass `Dictionary<string, int64>` frequency tally; `Array.sortWith` (count DESC, value ASC); truncate at `defaultCategoricalVocabularyLimit = 50`; `IsTruncated` witness when distinct > cap.
+- `Cache.deriveCompositeUniqueCandidates : EvidenceCache → Catalog → CompositeUniqueCandidateProfile list` — per non-unique multi-column Index: `projectTupleKeys` projects per-row tuples (NULLs in any column exclude the row); `Array.groupBy` on tuple keys; HasDuplicate iff any group > 1. Composite-PK FK extension (slice 1 deferral) becomes trivial via the same `projectTupleKeys` primitive once a composite-PK fixture surfaces.
+- `Cache.deriveForeignKeyRealities : EvidenceCache → Catalog → ForeignKeyReality list` — cross-table Set.difference: build target PK Set; iterate source FK values; orphan-count = source ∖ target. Mirrors slice 1's SQL LEFT JOIN semantics in pure F#.
+- `Cache.deriveForeignKeyOrphanSamples : EvidenceCache → Catalog → DiagnosticEntry list` — per orphan-bearing Reference, deterministic ascending sort of orphan values; TOP-N sample; emits DiagnosticEntry per pillar 9's Diagnostics output discipline (operational, not data-intent).
+
+**Rewired `LiveProfiler.attachFromCache`:** now composes ALL six Profile axes from cache (AttributeRealities, Columns, UniqueCandidates, CompositeUniqueCandidates, ForeignKeys, Distributions=Numeric+Categorical). `LiveProfiler.attach` simplifies to two steps: capture cache → attachFromCache. Total SQL round-trips: 3 per non-static kind.
+
+**Big-O optimization #1: pre-indexed `CachedKind.ColumnsByKey : Map<SsKey, CachedColumn>`** built once at `discoverKind` time. `EvidenceCache.tryFindColumn` becomes O(log K + log C) instead of O(log K + C). Eliminates O(C²) per-kind patterns across 4 column-lookup-heavy derivations (numeric, composite, categorical, FK).
+
+**Big-O optimization #2: memoized FK target PK sets** via `Cache.buildForeignKeyTargetIndex` + `*With`-overload pattern. `attachFromCache` builds the target index ONCE; `deriveForeignKeyRealitiesWith` and `deriveForeignKeyOrphanSamplesWith` share it. Eliminates N-to-1 duplicate Set construction (when N references share a target) AND eliminates the 2× duplicate work across the two FK derivation passes.
+
+**Big-O optimization #3: single-pass `Dictionary<string, int64>` frequency tally** in `deriveCategoricalDistributions`. Replaces 3-pass `Array.choose tryString` + `Array.groupBy id` + `Array.map` with one accumulator pass. Eliminates 2 intermediate array allocations per categorical column.
+
+### Round-trip count audit
+
+| Catalog scale | Before slice 6 | After slice 6 MVP | After slice 6b |
+|---|---|---|---|
+| 300 tables × 10 attrs × 5 refs × 2 composite | ~6000 | ~2400 | **~900** |
+
+3× reduction vs MVP; 6-7× reduction vs pre-slice-6 architecture. All SQL round-trips concentrate in `captureEvidenceCache` (3 per kind: aggregate + row-stream + nullability reflection).
+
+### Why public `*With`-overloads
+
+The `*With` shape (`deriveForeignKeyRealitiesWith` + `deriveForeignKeyOrphanSamplesWith` taking a `ForeignKeyTargetIndex`) is the F# move for "let callers share precomputed state across multiple derivations." Wrapper functions (`deriveForeignKeyRealities` / `deriveForeignKeyOrphanSamples`) build the index per-call for single-use convenience; `attachFromCache` skips them and uses the With-overloads directly to amortize.
+
+Per `DECISIONS 2026-05-17 (chapter 4.7 cleanup) — Sibling-wrapper discipline`: the With-overload supplies a private/computed default the caller couldn't otherwise access (the shared target index), so it's the principled F# default-argument idiom — not the overdifferentiated-middle-tier anti-pattern.
+
+### Big-O audit discipline (codified)
+
+The audit fired naturally mid-slice during the principal-PO's "audit for Big O notation and optimize these recent derivations to optimal" prompt. Three optimizations identified across 7 derivation functions, all with concrete leverage:
+
+1. `List.tryFind` O(C) → `Map.tryFind` O(log C) at 4 column-lookup sites
+2. Per-Reference Set construction → memoized across two passes
+3. 3-pass `Array.choose`/`groupBy`/`map` → 1-pass Dictionary
+
+**Discipline codification:** when adding multiple derivations over the same cached substrate, **plan the cross-derivation shared-state explicitly**. The `*With`-overload pattern is the F# idiom for sharing computed work; the audit catches the inadvertent N-pass-reconstruction pattern before it ships. Pairs with `DECISIONS 2026-05-24 — Bench-driven optimization protocol`: structural Big-O optimization at design time + bench-driven optimization at hot paths.
+
+### Pillar 9 + A18 amended + A34 — discipline carryover
+
+The four new derivations carry over the slice 1-4 / 6 pillar-9 routing:
+
+- `Cache.deriveForeignKeyOrphanSamples` emits `DiagnosticEntry list` (operational, not data-intent — same as slice 4).
+- All cache derivations consume EvidenceCache (DataIntent observation of deployed reality); no Policy enters; emit Profile evidence only.
+- Per A35: cache populated via streaming reader; derivations fold over column arrays. T1 byte-determinism preserved.
+
+### Verification
+
+- 28/28 LiveProfiler integration tests pass green (1m33s warm). All slice 1-5 tests continue to assert their original IR contracts via the cache-only attach path.
+- Slice 1 + 3 equivalence tests (introduced at slice 6 MVP) confirm `Cache.derive*` matches the SQL-capture IR byte-for-byte; they pass through slice 6b's refactor unchanged.
+- Two assertions adjusted: `Assert.Empty p.Distributions` → `Assert.NotEmpty p.Distributions` on the Items + two-kind composability tests (cache-pivot now populates Distributions automatically for integer PKs).
+- 1688/1688 non-Docker baseline holds.
+- Solution build clean (0 warnings under `TreatWarningsAsErrors=true`).
+
+### Cross-references
+
+- `CHAPTER_B_3_OPEN.md` — slice 6 status flips from `shipped (MVP)` to `shipped (complete cache-fold)`; slice 6b enumerated as complete; slices 7 + 8 remain.
+- `V1_PARITY_MATRIX.md` "Chapter B.3 cache-fold completion" amendment (the row 14 / row 88 / row 86 / row 87 / row 89 amendments stand; this is a chapter-level architectural amendment).
+- `DECISIONS 2026-05-19 (slice B.3.6.evidence-cache)` — predecessor MVP; the substrate slice 6b completes.
+- `DECISIONS 2026-05-09 — Audits surface things not on the agenda` — the discipline the Big-O audit operates.
+- `DECISIONS 2026-05-13 — Emergent primitives earn their place through multi-consumer demand` — the threshold pattern the `*With` overload extraction honors.
+- `DECISIONS 2026-05-17 (chapter 4.7 cleanup) — Sibling-wrapper discipline` — the principled-default test that justifies the `*With` + simple wrapper public surface.

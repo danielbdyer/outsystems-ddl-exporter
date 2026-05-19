@@ -419,8 +419,10 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
         Assert.Empty p.ForeignKeys
         // No composite Indexes in itemsCatalog → CompositeUniqueCandidates empty.
         Assert.Empty p.CompositeUniqueCandidates
-        // Other sibling Profile axes (filled by other adapters) remain empty.
-        Assert.Empty p.Distributions
+        // Slice 6b cache-pivot: Distributions populated from cache
+        // (Integer PK gets a NumericDistribution; Text columns get
+        // CategoricalDistributions where row count permits).
+        Assert.NotEmpty p.Distributions
 
     // ---------------------------------------------------------------
     // Slice B.3.2.column-null-counts — captureColumnProfiles probes
@@ -642,8 +644,10 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
         Assert.Equal(5, List.length p.UniqueCandidates)
         // No composite Indexes declared in twoKindCatalog.
         Assert.Empty p.CompositeUniqueCandidates
-        // Other sibling Profile axes (filled by other adapters) remain empty.
-        Assert.Empty p.Distributions
+        // Slice 6b cache-pivot: Distributions populated from cache
+        // (Integer PKs get NumericDistributions; Text columns get
+        // CategoricalDistributions where row counts permit).
+        Assert.NotEmpty p.Distributions
 
     // ---------------------------------------------------------------
     // Slice B.3.3.unique-candidates — captureCompositeUniqueCandidates

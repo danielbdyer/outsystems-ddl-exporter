@@ -1,4 +1,79 @@
-# Handoff letter — 2026-05-19 (latest) (chapter B.3 architectural pivot — EvidenceCache MVP ships; per-attribute SQL probes replaced with in-memory typed-row substrate; slice 6 of 9-slice expanded plan)
+# Handoff letter — 2026-05-19 (latest) (slice B.3.6b cache-fold complete — ALL Profile axes derive from cache in pure F#; Big-O audit shipped 3 inline optimizations; ~6000 → ~900 SQL round-trips at 300-table scale)
+
+To the next agent. Slice 6b shipped after the slice 6 MVP letter below. This letter updates: cache-fold is now complete (all 4 remaining derivations folded in); Big-O audit fired inline with 3 optimizations; chapter B.3 now at slice 6b of 9; remaining slices are 7 (sampling + multi-env) and 8 (FK correlation triplet).
+
+## TL;DR
+
+**Slice 6b (B.3.6b.cache-fold-residuals) shipped.** Four new `Cache.derive*` primitives complete the architectural pivot:
+
+- `Cache.deriveCategoricalDistributions` — single-pass `Dictionary<string, int64>` frequency tally per string column
+- `Cache.deriveCompositeUniqueCandidates` — `projectTupleKeys` + `Array.groupBy` on tuple keys
+- `Cache.deriveForeignKeyRealities` — cross-table Set.difference using shared target-PK index
+- `Cache.deriveForeignKeyOrphanSamples` — deterministic ascending sort + TOP-N over orphans
+
+`LiveProfiler.attach` is now cache-only: capture once (3 SQL queries per kind) → derive all 6 Profile axes in pure F#.
+
+**Big-O audit fired inline with three optimizations:**
+
+1. **`CachedKind.ColumnsByKey : Map<SsKey, CachedColumn>`** precomputed at `discoverKind` — `EvidenceCache.tryFindColumn` becomes O(log K + log C) instead of O(log K + C). Eliminates O(C²) per-kind patterns across 4 derivations.
+2. **Memoized FK target PK sets** via `Cache.buildForeignKeyTargetIndex` + `*With`-overload pattern. Built once at `attachFromCache` entry; shared across FK realities + orphan samples. Eliminates N-to-1 + 2× duplicate Set construction.
+3. **Single-pass `Dictionary` frequency tally** for categorical distributions. Replaces 3-pass `Array.choose`/`groupBy`/`map` with one accumulator pass.
+
+**Net SQL round-trip count at 300-table production scale:**
+
+| State | Round-trips |
+|---|---|
+| Pre-slice 6 (slices 1-5) | ~6000 |
+| Slice 6 MVP | ~2400 |
+| **Slice 6b complete** | **~900** (3 per kind regardless of axis count) |
+
+3× reduction vs MVP; 6-7× reduction vs pre-pivot architecture.
+
+## What's load-bearing after slice 6b
+
+- **`captureEvidenceCache`** — 3 SQL queries per non-static kind (aggregate + row-stream + nullability reflection); typed in-memory `EvidenceCache` substrate.
+- **`attachFromCache`** — synchronous pure F# compose; runs all 6 derivations from cache.
+- **9 `Cache.derive*` primitives total**: `deriveColumnProfiles` / `deriveAttributeRealities` / `deriveNumericDistributions` / `deriveCategoricalDistributions` / `deriveCompositeUniqueCandidates` / `deriveForeignKeyRealities` / `deriveForeignKeyOrphanSamples` plus `deriveForeignKeyRealitiesWith` / `deriveForeignKeyOrphanSamplesWith` (`*With`-overloads sharing the precomputed target-PK index).
+- **`buildForeignKeyTargetIndex`** — precomputed target PK Set lookup, public-surface for callers that want to amortize across multiple FK derivations.
+- **`CachedKind.ColumnsByKey`** — pre-indexed column lookup; O(log C) instead of O(C) `List.tryFind`.
+
+**Public-surface migration path:** legacy SQL captures (`captureAttributeRealities`, `captureColumnProfiles`, `captureForeignKeyRealities`, `captureCompositeUniqueCandidates`, `captureForeignKeyOrphanSamples`) remain available for backward-compat but are unused by `attach`. Retire in chapter B.3 close once no consumer depends on them.
+
+## Big-O audit discipline (codified mid-slice)
+
+The user's "audit for Big O notation and optimize these recent derivations to optimal" prompt fired the audit. Three optimizations identified across 7 derivation functions with concrete leverage. All folded inline rather than deferred.
+
+**Codification:** when adding multiple derivations over the same cached substrate, **plan cross-derivation shared-state explicitly**. The `*With`-overload pattern is the F# idiom for sharing computed work; the audit catches inadvertent N-pass-reconstruction before it ships. Pairs with `DECISIONS 2026-05-24 — Bench-driven optimization protocol`: structural Big-O optimization at design time + bench-driven at hot paths.
+
+## Remaining chapter B.3 slices (2)
+
+| Slice | Scope |
+|---|---|
+| **7** — `B.3.7.sampling-multi-env` | Sampling policy (replace full-scan default with operator-tunable cap via `SqlProfilerOptions.Sampling`) + multi-environment merge (`Profile.merge` with commutative + associative property tests). |
+| **8** — `B.3.8.fk-correlation` | FK-mediated correlative evidence triplet: per-Reference fan-out cardinality (child-count distribution per parent); per-Reference selectivity / clumping (value-frequency over source FK column); multi-FK joint distributions (co-occurrence counts across multiple FKs of a kind). Foundation for the deferred Faker emitter's shape-preserving synthetic-data joint-distribution requirement. All three derive in pure F# from the cache. |
+
+After slice 8 closes chapter B.3, the Faker emitter's deferred trigger (`ADMIRE.md` + Active deferrals) re-evaluates per the chapter-close ritual; slices 5/6/6b/8 collectively land the gating evidence (statistical moments + categorical via cache + multi-FK joint distributions).
+
+## Reading order for the next agent
+
+1. **This letter** (~5 minutes).
+2. **`CHAPTER_B_3_OPEN.md`** — 9-slice plan; slices 1-6b status `shipped`.
+3. **`DECISIONS 2026-05-19 (slice B.3.6b.cache-fold-residuals)`** — full cash-out + Big-O audit + the four optimization rationales + the `*With`-overload sibling-wrapper discipline check.
+4. **`V1_PARITY_MATRIX.md` "Chapter B.3 cache-fold completion" amendment** — formal matrix-level reclassification.
+5. **`src/Projection.Adapters.Sql/EvidenceCache.fs`** — `ColumnsByKey` pre-indexed lookup; `tryFindColumn` O(log C).
+6. **`src/Projection.Adapters.Sql/LiveProfiler.fs`** — `Cache` module now has 9 derivations + `buildForeignKeyTargetIndex` + `*With`-overload pattern.
+
+When you open slice 7, the work is bounded: thread `SqlProfilerOptions.Sampling` through `cacheRowStreamSql` (replace bare `SELECT` with `SELECT TOP @N ORDER BY <pk>`); add `Profile.merge` per A35/A34/A39 disciplines (commutative + associative property tests via FsCheck.Xunit).
+
+When you open slice 8, three new derivations in `Cache`: fan-out cardinality (per-Reference NumericDistribution over child-counts-per-parent — uses existing `NumericDistribution.create` + `withMoments`), selectivity (per-Reference CategoricalDistribution-like over source FK values — new IR type `ForeignKeySelectivity` or reuse Categorical keyed by Reference), and multi-FK joint distributions (new IR type `JointDistribution` carrying tuple-keyed frequencies). The cache substrate makes all three straightforward F# `Array.groupBy`-based derivations.
+
+Hold the spine. Chapter B.3's architecture is now clean: 3 SQL queries per kind; everything else pure F# over the cache. The Big-O audit discipline is codified; future cross-derivation shared-state should plan the `*With`-overload pattern up front.
+
+— The slice-B.3.6b architect.
+
+---
+
+# Handoff letter — 2026-05-19 (slice 6 MVP) (chapter B.3 architectural pivot — EvidenceCache MVP ships; per-attribute SQL probes replaced with in-memory typed-row substrate; slice 6 of 9-slice expanded plan)
 
 To the next agent. The 2026-05-19 chapter B.3 in-flight letter sits below; read it for the slice-1-through-5 ship state. This letter (the latest) tells you what slice 6 shipped + how the chapter architecturally pivoted mid-flight.
 
