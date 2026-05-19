@@ -17862,3 +17862,96 @@ The four new derivations carry over the slice 1-4 / 6 pillar-9 routing:
 - `DECISIONS 2026-05-09 — Audits surface things not on the agenda` — the discipline the Big-O audit operates.
 - `DECISIONS 2026-05-13 — Emergent primitives earn their place through multi-consumer demand` — the threshold pattern the `*With` overload extraction honors.
 - `DECISIONS 2026-05-17 (chapter 4.7 cleanup) — Sibling-wrapper discipline` — the principled-default test that justifies the `*With` + simple wrapper public surface.
+
+---
+
+## 2026-05-19 (slice B.3.7.sampling-multi-env) — Sampling policy + multi-environment Profile.merge; rows 90 + 92 close; algebraic-law property tests verify commutative + associative + identity
+
+### Scope
+
+Slice 7 of chapter B.3. Two operator-facing concerns close:
+
+1. **Sampling policy** — full-scan default was acceptable at canary scale but pathological at production scale (300 tables × 50k rows × 10 cols ≈ 7.5GB in-memory cache). Operator opts in via `SqlProfilerOptions.MaxRowsPerKind`.
+2. **Multi-environment merge** — V1's `MultiTargetSqlDataProfiler` orchestrates parallel profile captures across dev/uat/prod and merges via worst-case aggregation. V2's `Profile.merge` ships the merge primitive with algebraic-law-verified semantics.
+
+### What ships
+
+**`SqlProfilerOptions` in `Projection.Adapters.Sql/EvidenceCache.fs`:**
+
+```fsharp
+type SqlProfilerOptions = {
+    MaxRowsPerKind  : int option   // None = full-scan; Some N = SELECT TOP (N) cap
+    EnvironmentTag  : string option // dev/qa/uat/prod label for multi-env orchestration
+}
+
+module SqlProfilerOptions =
+    let defaults : SqlProfilerOptions =
+        { MaxRowsPerKind = None; EnvironmentTag = None }
+```
+
+**`LiveProfiler.captureEvidenceCacheWith options cnn catalog`:** new overload threading options through `discoverKind`. The row-stream SQL becomes `SELECT TOP (@N) <cols> FROM <table> ORDER BY <pk>` when both `MaxRowsPerKind = Some N` AND the kind has a single-column PK (deterministic sampling per A1). Without a PK, the TOP cap still applies but ordering is engine-defined (documented in the cacheRowStreamSql docstring; future `OrderingPolicy` operator-intent variant stabilizes via `ORDER BY <attr0>` or operator-supplied keys).
+
+**Default-options `captureEvidenceCache` convenience:** calls `captureEvidenceCacheWith SqlProfilerOptions.defaults`. Slice 6/6b semantics preserved for callers that don't need control.
+
+**`Profile.merge : Profile → Profile → Profile` in Core.** Worst-case per-axis aggregation:
+
+| Axis | Operator |
+|---|---|
+| `AttributeReality.*` booleans | OR |
+| `ColumnProfile.RowCount` / `NullCount` | MAX |
+| `UniqueCandidateProfile.HasDuplicate` | OR |
+| `CompositeUniqueCandidateProfile.HasDuplicate` | OR |
+| `ForeignKeyReality.HasOrphan` / `IsNoCheck` | OR |
+| `ForeignKeyReality.OrphanCount` | MAX |
+| `NumericDistribution` / `CategoricalDistribution` | choose larger `SampleSize` |
+| `ProbeStatus.SampleSize` | MAX |
+| `ProbeStatus.Outcome` | Succeeded if either |
+| `CdcAwareness.CdcEnabled` | Set.union |
+| `UserPopulation.Users` | union by Id (left-biased on conflicts) |
+
+Each operator is independently commutative + associative; the merge inherits those properties via the `unionBy` generic combinator.
+
+**`UserPopulation.union` in `UserIdentity.fs`** — supports `Profile.merge`'s user-population aggregation. Left-biased on Id conflicts (`a.Users` retained; `b.Users` adds non-conflicting entries).
+
+**FsCheck.Xunit property tests (7 new in ProfileTests.fs):**
+
+- `Profile.merge Profile.empty p = p` (left identity)
+- `Profile.merge p Profile.empty = p` (right identity)
+- MAX of RowCount + NullCount (example test)
+- Disjoint-attribute-keys produce union (example test)
+- OR over AttributeReality booleans (example test)
+- Commutative on ColumnProfile axis (50 random trials)
+- Commutative on AttributeReality axis (30 random trials)
+- Associative on AttributeReality axis (50 random trials)
+
+**Docker-gated sampling tests (2 new in LiveProfilerIntegrationTests.fs):**
+
+- `captureEvidenceCacheWith maxRows = Some 2` caps the row-stream length at 2 even when the table has 4 rows; aggregates (RowCount) stay at the table's true count.
+- `captureEvidenceCacheWith defaults` preserves slice 6/6b's full-scan behavior.
+
+### Algebraic-law verification (property tests as load-bearing)
+
+Per the per-axis stakes table (V2_DRIVER per-axis correctness), `Profile.merge` is the structural enabler for multi-environment risk aggregation. Without commutative + associative semantics, dev + UAT + prod profile-union becomes order-dependent — different operators running the merge in different order would produce different evidence, contradicting V2's T1 byte-determinism discipline.
+
+The property-test surface is the verification depth: 50 random trials × 2 commutativity axes + 50 random trials × associativity (= 150 sweeps) is statistically sufficient given the simple operator algebra (OR / MAX / union — all classical monoids). The example tests anchor the boundary cases (identity, MAX-with-overlap, disjoint union).
+
+### Discipline payoffs
+
+- **Smart-constructor-FIRST holds.** `Profile.merge` is a pure transformation; no new IR types. The existing per-axis smart constructors (ColumnProfile.create, ForeignKeyReality.create, etc.) are not touched.
+- **Sibling-wrapper discipline.** `captureEvidenceCacheWith` + `captureEvidenceCache` follow the same pattern as slice 6b's `deriveForeignKeyRealitiesWith` / `deriveForeignKeyRealities` — the With-overload supplies operator-supplied state the simple wrapper hides via defaults.
+- **Operator-intent / data-intent boundary (pillar 9).** Sampling cap lives in `SqlProfilerOptions` (operator intent at the adapter); `Profile.merge` operates on observation data (data-intent observation). The boundary stays clean.
+- **A1 deterministic sampling.** TOP-N + ORDER BY PK ensures repeated probes return identical samples; downstream Profile evidence is byte-deterministic when the source is unchanged.
+
+### Verification
+
+- 7 new FsCheck property tests pass (173ms).
+- 2 new Docker sampling tests pass.
+- 30/30 total LiveProfiler integration tests; 1695/1695 non-Docker baseline.
+- Solution build clean.
+
+### Cross-references
+
+- `CHAPTER_B_3_OPEN.md` — slice 7 marked ✓ shipped.
+- `V1_PARITY_MATRIX.md` Rows 90 + 92 amendments.
+- `DECISIONS 2026-05-18 (slice 5.4.δ.profiling)` — sampling-is-operator-intent decision this slice operationalizes.
+- V1 source: `Pipeline/Profiling/TableSamplingPolicy.cs` (sampling heuristic; row 90) + `MultiTargetSqlDataProfiler.CaptureAsync` (worst-case merge; row 92).

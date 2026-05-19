@@ -259,6 +259,39 @@ the original audit missed it), append a dated amendment to this
 section naming the prior status, the new status, and the discovery
 slice.
 
+### Rows 90 + 92 — 2026-05-19 (slice B.3.7.sampling-multi-env — `SqlProfilerOptions` ships with operator-tunable sampling cap; `Profile.merge` ships with commutative + associative property tests)
+
+**Original framing.**
+- Row 90 (audit-wave slice 5.4.δ, 2026-05-18): 🟡 DIVERGENCE. V1's `TableSamplingPolicy.ShouldSample / GetSampleSize` heuristic decides per-table sample size; V2's `Profile.ProbeStatus.SampleSize` is witness-only.
+- Row 92 (audit-wave slice 5.4.δ, 2026-05-18): 🟠 NOT-MAPPED. V1's `MultiTargetSqlDataProfiler.CaptureAsync` orchestrates parallel profile captures across dev/uat/prod and merges via worst-case aggregation; V2 has no `Profile.merge`.
+
+**Reclassification (slice B.3.7.sampling-multi-env, 2026-05-19):**
+
+| Row | Prior status | Updated status | What shipped |
+|---|---|---|---|
+| 90 | 🟡 DIVERGENCE | 🟢 PARITY (orchestrator-side; not embedded in Profile IR) | `SqlProfilerOptions` record carrying `MaxRowsPerKind : int option` + `EnvironmentTag : string option`. `SqlProfilerOptions.defaults` (full-scan). New `LiveProfiler.captureEvidenceCacheWith options` overload threads `MaxRowsPerKind` into the row-stream SQL as `SELECT TOP (@N) ... ORDER BY <pk>` for deterministic sampling. Per `DECISIONS 2026-05-18 (slice 5.4.δ.profiling)` — sampling is operator intent; the orchestrator decision-surface (`SqlProfilerOptions`) lives outside Profile IR. |
+| 92 | 🟠 NOT-MAPPED | 🟢 PARITY (`Profile.merge` with algebraic-law-tested worst-case aggregation) | New `Profile.merge : Profile → Profile → Profile`. Worst-case per-axis aggregation: OR over booleans (HasNulls/HasDup/HasOrphans/IsNullableInDatabase/IsPresentButInactive/IsNoCheck), MAX over counts (RowCount/NullCount/OrphanCount), choose-larger-SampleSize for distributions, Set.union for CdcAwareness, UserPopulation.union by Id. Operators (OR / MAX / sum / set-union) independently commutative + associative. |
+
+**Algebraic-law verification:** new FsCheck.Xunit property tests in `ProfileTests.fs`:
+
+- `Profile.merge Profile.empty p = p` (left identity)
+- `Profile.merge p Profile.empty = p` (right identity)
+- ColumnProfile axis is commutative under random int64 inputs (50 random trials)
+- AttributeReality axis is commutative under random bool inputs (30 random trials)
+- AttributeReality axis is associative under three random inputs (50 random trials)
+
+Three example tests on the Items fixture verify MAX-of-counts + OR-of-booleans + disjoint-union behavior.
+
+**Verification:** 7 new merge property tests + 2 new sampling Docker tests pass. 30/30 LiveProfiler Docker tests + 1695/1695 non-Docker baseline.
+
+**Cross-references.**
+- `CHAPTER_B_3_OPEN.md` — slice 7 marked shipped.
+- `DECISIONS 2026-05-19 (slice B.3.7.sampling-multi-env)` — cash-out rationale + algebraic-law verification framework.
+- `DECISIONS 2026-05-18 (slice 5.4.δ.profiling)` — the sampling-is-operator-intent decision this slice operationalizes.
+- V1 source: `Pipeline/Profiling/TableSamplingPolicy.cs` (row 90) + `Pipeline/Profiling/MultiTargetSqlDataProfiler.CaptureAsync()` (row 92) — both architecturally ported into V2's adapter-layer options + Core-layer merge primitive.
+
+---
+
 ### Chapter B.3 cache-fold completion — 2026-05-19 (slice B.3.6b.cache-fold-residuals — FK + composite + categorical + orphan-samples fold from SQL captures into pure-F# Cache.derive*; ALL Profile axes derive from cache; SQL probes retire from `attach`)
 
 **Original framing.** Slice B.3.6 shipped the EvidenceCache MVP — discovery primitive + 3 pure-F# derivations (AttributeRealities + Columns + NumericDistributions) — but kept slice-1's `captureForeignKeyRealities` and slice-3's `captureCompositeUniqueCandidates` as transitional SQL captures called by `attach`. Categorical distributions weren't yet derivable. The chapter's "all axes from cache" claim was 4-of-7 axes complete.

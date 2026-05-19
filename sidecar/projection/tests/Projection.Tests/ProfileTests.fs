@@ -215,3 +215,91 @@ let ``ColumnProfile.nullPercentage is deterministic`` (rowCount: int64) (nullCou
           NullCount            = nullCount
           NullCountProbeStatus = probe }
     ColumnProfile.nullPercentage cp = ColumnProfile.nullPercentage cp
+
+// ---------------------------------------------------------------------------
+// Slice B.3.7 — Profile.merge multi-environment aggregation.
+// FsCheck property tests verify the algebraic laws (commutative,
+// associative, identity) hold for the worst-case-aggregation semantics.
+// ---------------------------------------------------------------------------
+
+let private mkProbe (sample: int64) : ProbeStatus =
+    { CapturedAtUtc = DateTimeOffset.UnixEpoch
+      SampleSize    = sample
+      Outcome       = Succeeded }
+
+let private profileWithColumn (key: SsKey) (rowCount: int64) (nullCount: int64) : Profile =
+    { Profile.empty with
+        Columns = [
+            { AttributeKey         = key
+              RowCount             = max 0L rowCount
+              NullCount             = max 0L (min nullCount rowCount)
+              NullCountProbeStatus = mkProbe (max 0L rowCount) }
+        ] }
+
+let private profileWithAttributeReality (key: SsKey) (hasNulls: bool) (hasDup: bool) : Profile =
+    { Profile.empty with
+        AttributeRealities = [
+            { AttributeReality.create key with
+                HasNulls      = hasNulls
+                HasDuplicates = hasDup }
+        ] }
+
+[<Fact>]
+let ``B.3.7: Profile.merge with empty profile is identity`` () =
+    let p = profileWithColumn customerIdAttrKey 100L 5L
+    Assert.Equal<ColumnProfile list>(p.Columns, (Profile.merge p Profile.empty).Columns)
+    Assert.Equal<ColumnProfile list>(p.Columns, (Profile.merge Profile.empty p).Columns)
+
+[<Fact>]
+let ``B.3.7: Profile.merge takes worst-case MAX of RowCount + NullCount per attribute`` () =
+    let a = profileWithColumn customerIdAttrKey 100L 5L
+    let b = profileWithColumn customerIdAttrKey 200L 30L
+    let merged = Profile.merge a b
+    Assert.Equal(1, List.length merged.Columns)
+    let col = merged.Columns.Head
+    Assert.Equal(200L, col.RowCount)
+    Assert.Equal(30L, col.NullCount)
+
+[<Fact>]
+let ``B.3.7: Profile.merge unions columns for disjoint attribute keys`` () =
+    let a = profileWithColumn customerIdAttrKey 100L 5L
+    let b = profileWithColumn customerNameKey 200L 0L
+    let merged = Profile.merge a b
+    Assert.Equal(2, List.length merged.Columns)
+
+[<Fact>]
+let ``B.3.7: Profile.merge ORs over AttributeReality booleans`` () =
+    let a = profileWithAttributeReality customerIdAttrKey true false
+    let b = profileWithAttributeReality customerIdAttrKey false true
+    let merged = Profile.merge a b
+    Assert.Equal(1, List.length merged.AttributeRealities)
+    let r = merged.AttributeRealities.Head
+    Assert.True(r.HasNulls)
+    Assert.True(r.HasDuplicates)
+
+[<Property(MaxTest = 50)>]
+let ``B.3.7: Profile.merge is commutative on ColumnProfile axis`` (rA: int64) (nA: int64) (rB: int64) (nB: int64) =
+    // Sample int64 values; nullCount clamped ≤ rowCount inside profileWithColumn.
+    let a = profileWithColumn customerIdAttrKey rA nA
+    let b = profileWithColumn customerIdAttrKey rB nB
+    let ab = (Profile.merge a b).Columns
+    let ba = (Profile.merge b a).Columns
+    // List-equality on Columns; merge contributes single entry per attribute.
+    ab = ba
+
+[<Property(MaxTest = 50)>]
+let ``B.3.7: Profile.merge is associative on AttributeReality axis``
+    (h1A: bool) (h2A: bool) (h1B: bool) (h2B: bool) (h1C: bool) (h2C: bool) =
+    let a = profileWithAttributeReality customerIdAttrKey h1A h2A
+    let b = profileWithAttributeReality customerIdAttrKey h1B h2B
+    let c = profileWithAttributeReality customerIdAttrKey h1C h2C
+    let lhs = Profile.merge (Profile.merge a b) c
+    let rhs = Profile.merge a (Profile.merge b c)
+    lhs.AttributeRealities = rhs.AttributeRealities
+
+[<Property(MaxTest = 30)>]
+let ``B.3.7: Profile.merge is commutative on AttributeReality booleans``
+    (h1A: bool) (h2A: bool) (h1B: bool) (h2B: bool) =
+    let a = profileWithAttributeReality customerIdAttrKey h1A h2A
+    let b = profileWithAttributeReality customerIdAttrKey h1B h2B
+    (Profile.merge a b).AttributeRealities = (Profile.merge b a).AttributeRealities

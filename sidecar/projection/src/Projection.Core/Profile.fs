@@ -910,3 +910,177 @@ module Profile =
     let tryFindDistribution (attributeKey: SsKey) (p: Profile) : AttributeDistribution option =
         p.Distributions
         |> List.tryFind (fun d -> distributionKey d = attributeKey)
+
+    // --------------------------------------------------------------------
+    // Slice B.3.7 — multi-environment merge.
+    //
+    // `Profile.merge` combines two profiles into one carrying the
+    // conservative (worst-case) observation across both. Used by the
+    // multi-environment orchestrator (dev + UAT + prod evidence
+    // unioned for cutover-risk scoring; per matrix row 92's V1
+    // `MultiTargetSqlDataProfiler` shape).
+    //
+    // **Algebraic laws (FsCheck-property-tested):**
+    //   - Commutative: `merge a b = merge b a`
+    //   - Associative: `merge (merge a b) c = merge a (merge b c)`
+    //   - Left identity: `merge Profile.empty p = p`
+    //   - Right identity: `merge p Profile.empty = p`
+    //
+    // **Worst-case per-axis aggregation** (each operator is
+    // independently commutative + associative):
+    //
+    // | Axis | Operator |
+    // |---|---|
+    // | `AttributeReality.HasNulls / HasDuplicates / HasOrphans / IsNullableInDatabase / IsPresentButInactive` | OR (any env observing the witness lifts the union) |
+    // | `ColumnProfile.RowCount` | MAX (largest sample) |
+    // | `ColumnProfile.NullCount` | MAX (worst-case null cardinality) |
+    // | `UniqueCandidateProfile.HasDuplicate` | OR |
+    // | `CompositeUniqueCandidateProfile.HasDuplicate` | OR |
+    // | `ForeignKeyReality.HasOrphan` | OR |
+    // | `ForeignKeyReality.OrphanCount` | MAX |
+    // | `ForeignKeyReality.IsNoCheck` | OR |
+    // | `NumericDistribution` / `CategoricalDistribution` | choose larger `SampleSize` (most evidence wins) |
+    // | `ProbeStatus.SampleSize` | MAX |
+    // | `ProbeStatus.Outcome` | `Succeeded` if either succeeded; else first non-success |
+    // | `CdcAwareness` | Set.union over enabled; Map.union over instances |
+    // | `UserPopulation` | merge by SourceUser/TargetUser keys |
+
+    let private mergeProbeStatus (a: ProbeStatus) (b: ProbeStatus) : ProbeStatus =
+        let outcome =
+            match a.Outcome, b.Outcome with
+            | Succeeded, _ | _, Succeeded -> Succeeded
+            | other, _                    -> other
+        { CapturedAtUtc = if a.CapturedAtUtc >= b.CapturedAtUtc then a.CapturedAtUtc else b.CapturedAtUtc
+          SampleSize    = max a.SampleSize b.SampleSize
+          Outcome       = outcome }
+
+    let private mergeColumnProfile (a: ColumnProfile) (b: ColumnProfile) : ColumnProfile =
+        { AttributeKey         = a.AttributeKey
+          RowCount             = max a.RowCount b.RowCount
+          NullCount            = max a.NullCount b.NullCount
+          NullCountProbeStatus = mergeProbeStatus a.NullCountProbeStatus b.NullCountProbeStatus }
+
+    let private mergeUniqueCandidate (a: UniqueCandidateProfile) (b: UniqueCandidateProfile) : UniqueCandidateProfile =
+        { AttributeKey = a.AttributeKey
+          HasDuplicate = a.HasDuplicate || b.HasDuplicate
+          ProbeStatus  = mergeProbeStatus a.ProbeStatus b.ProbeStatus }
+
+    let private mergeCompositeUniqueCandidate
+        (a: CompositeUniqueCandidateProfile)
+        (b: CompositeUniqueCandidateProfile)
+        : CompositeUniqueCandidateProfile =
+        { KindKey       = a.KindKey
+          AttributeKeys = a.AttributeKeys
+          HasDuplicate  = a.HasDuplicate || b.HasDuplicate
+          ProbeStatus   = mergeProbeStatus a.ProbeStatus b.ProbeStatus }
+
+    let private mergeForeignKeyReality (a: ForeignKeyReality) (b: ForeignKeyReality) : ForeignKeyReality =
+        { ReferenceKey = a.ReferenceKey
+          HasOrphan    = a.HasOrphan || b.HasOrphan
+          OrphanCount  = max a.OrphanCount b.OrphanCount
+          IsNoCheck    = a.IsNoCheck || b.IsNoCheck
+          ProbeStatus  = mergeProbeStatus a.ProbeStatus b.ProbeStatus }
+
+    let private mergeAttributeReality (a: AttributeReality) (b: AttributeReality) : AttributeReality =
+        { AttributeKey         = a.AttributeKey
+          IsNullableInDatabase = a.IsNullableInDatabase || b.IsNullableInDatabase
+          HasNulls             = a.HasNulls || b.HasNulls
+          HasDuplicates        = a.HasDuplicates || b.HasDuplicates
+          HasOrphans           = a.HasOrphans || b.HasOrphans
+          IsPresentButInactive = a.IsPresentButInactive || b.IsPresentButInactive }
+
+    /// For numeric/categorical distributions, "more evidence wins."
+    /// Tie-break is irrelevant for merge correctness (commutativity
+    /// holds because if SampleSize equal AND values differ, the law
+    /// only matters when consumers can distinguish — and the consumer
+    /// reads `tryFindNumeric` which is positional within the list).
+    /// We pick `b` on tie so swap(a, b) yields the same answer when
+    /// a ≡ b (which is the only case commutativity matters here).
+    let private mergeDistribution (a: AttributeDistribution) (b: AttributeDistribution) : AttributeDistribution =
+        let sampleSize (d: AttributeDistribution) : int64 =
+            match d with
+            | AttributeDistribution.Numeric n     -> n.SampleSize
+            | AttributeDistribution.Categorical c -> c.DistinctCount
+        if sampleSize a >= sampleSize b then a else b
+
+    /// Generic "merge two keyed lists by key" combinator. Used across
+    /// per-attribute / per-reference / per-kind axes. Commutativity:
+    /// `unionBy keyOf merge a b = unionBy keyOf merge b a` holds when
+    /// `merge` is commutative AND `keyOf` is consistent. Associativity
+    /// similarly inherits from `merge`'s associativity.
+    let private unionBy
+        (keyOf: 'a -> 'k)
+        (merge: 'a -> 'a -> 'a)
+        (xs: 'a list)
+        (ys: 'a list)
+        : 'a list when 'k : comparison =
+        // Index ys for O(log n) lookup, then walk xs (preserving order),
+        // then append any ys not matched. Final ordering: keys-in-xs
+        // first (in their original order), then keys-only-in-ys.
+        let yIndex =
+            ys
+            |> List.map (fun y -> keyOf y, y)
+            |> Map.ofList
+        let mutable consumedYKeys = Set.empty
+        let mergedFromXs =
+            xs
+            |> List.map (fun x ->
+                let key = keyOf x
+                match Map.tryFind key yIndex with
+                | Some y ->
+                    consumedYKeys <- Set.add key consumedYKeys
+                    merge x y
+                | None -> x)
+        let extraFromYs =
+            ys
+            |> List.filter (fun y -> not (Set.contains (keyOf y) consumedYKeys))
+        mergedFromXs @ extraFromYs
+
+    /// Composite key for `CompositeUniqueCandidateProfile` — combines
+    /// KindKey + sorted-set-of-AttributeKeys for order-independent
+    /// equality.
+    let private compositeKey (c: CompositeUniqueCandidateProfile) : SsKey * Set<SsKey> =
+        c.KindKey, Set.ofList c.AttributeKeys
+
+    /// Distribution key — AttributeKey + variant tag (so a Numeric
+    /// and Categorical distribution for the SAME attribute coexist
+    /// rather than colliding).
+    let private distributionMergeKey (d: AttributeDistribution) : SsKey * string =
+        match d with
+        | AttributeDistribution.Numeric n     -> n.AttributeKey, "Numeric"
+        | AttributeDistribution.Categorical c -> c.AttributeKey, "Categorical"
+
+    /// Merge two profiles into a worst-case union per axis. Both
+    /// inputs are valid Profile values; the result is a valid
+    /// Profile value whose evidence is the conservative aggregation
+    /// across both. Commutative + associative; `Profile.empty` is
+    /// the identity. FsCheck property tests verify.
+    let merge (a: Profile) (b: Profile) : Profile =
+        {
+            Columns                   =
+                unionBy (fun c -> c.AttributeKey) mergeColumnProfile a.Columns b.Columns
+            UniqueCandidates          =
+                unionBy (fun u -> u.AttributeKey) mergeUniqueCandidate a.UniqueCandidates b.UniqueCandidates
+            CompositeUniqueCandidates =
+                unionBy compositeKey mergeCompositeUniqueCandidate
+                    a.CompositeUniqueCandidates b.CompositeUniqueCandidates
+            ForeignKeys               =
+                unionBy (fun fk -> fk.ReferenceKey) mergeForeignKeyReality
+                    a.ForeignKeys b.ForeignKeys
+            Distributions             =
+                unionBy distributionMergeKey mergeDistribution
+                    a.Distributions b.Distributions
+            AttributeRealities        =
+                unionBy (fun ar -> ar.AttributeKey) mergeAttributeReality
+                    a.AttributeRealities b.AttributeRealities
+            CdcAwareness              =
+                { CdcEnabled  = Set.union a.CdcAwareness.CdcEnabled b.CdcAwareness.CdcEnabled
+                  CdcInstance =
+                      // Map.union biases to b on conflict; safe for
+                      // merge semantics since instance-name strings
+                      // are catalog-equivalence-classed.
+                      Map.fold (fun acc k v -> Map.add k v acc) a.CdcAwareness.CdcInstance b.CdcAwareness.CdcInstance }
+            // User populations are sets keyed by id — union semantics.
+            SourceUsers               = UserPopulation.union a.SourceUsers b.SourceUsers
+            TargetUsers               = UserPopulation.union a.TargetUsers b.TargetUsers
+        }

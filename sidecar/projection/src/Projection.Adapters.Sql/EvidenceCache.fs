@@ -178,6 +178,39 @@ type EvidenceCache = {
 }
 
 
+/// Operator-supplied profile-capture options. Slice B.3.7 surfaces:
+///   - `MaxRowsPerKind` — optional sampling cap. `None` = full-scan
+///     (slice 6/6b default); `Some N` = `SELECT TOP (N)` capped at
+///     extraction time. Sampling is **deterministic** when the kind
+///     has a single-column PK (the cache stream uses `ORDER BY
+///     <pk>` for repeatable extraction).
+///   - `EnvironmentTag` — operator-supplied label for the
+///     environment being profiled (dev / qa / uat / prod). Plumbed
+///     through to `ProbeStatus.Outcome` if/when adapters need
+///     environment-aware diagnostics; for slice 7's scope, used by
+///     the multi-env orchestrator to label profiles before merge.
+///
+/// Per `DECISIONS 2026-05-18 (slice 5.4.δ.profiling)` — sampling
+/// policy is operator intent, lives in the orchestrator/options,
+/// not in Profile IR. `SqlProfilerOptions` is the orchestrator
+/// surface that carries the operator's choice into the adapter.
+type SqlProfilerOptions = {
+    MaxRowsPerKind  : int option
+    EnvironmentTag  : string option
+}
+
+[<RequireQualifiedAccess>]
+module SqlProfilerOptions =
+
+    /// Default options: full-scan (no sampling cap), no environment
+    /// tag. Slice 6/6b shipped with this implicit shape; slice 7
+    /// makes it explicit so operators can opt into sampling.
+    let defaults : SqlProfilerOptions = {
+        MaxRowsPerKind  = None
+        EnvironmentTag  = None
+    }
+
+
 [<RequireQualifiedAccess>]
 module EvidenceCache =
 

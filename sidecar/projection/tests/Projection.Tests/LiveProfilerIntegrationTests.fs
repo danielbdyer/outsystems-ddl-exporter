@@ -518,6 +518,44 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
     // ---------------------------------------------------------------
 
     [<Fact>]
+    member _.``B.3.7.sampling: captureEvidenceCacheWith maxRows caps the row stream per kind`` () =
+        if not (skipIfNoDocker "live-profiler-sampling-cap") then () else
+        let cache =
+            (fixture.WithEphemeralDatabase "LiveProfilerSampling" (fun cnn _ -> task {
+                do! Deploy.executeBatch cnn schemaSql
+                do! Deploy.executeBatch cnn seedSql
+                let options =
+                    { SqlProfilerOptions.defaults with MaxRowsPerKind = Some 2 }
+                let! result = LiveProfiler.captureEvidenceCacheWith options cnn itemsCatalog
+                return mustOk result
+            })).GetAwaiter().GetResult()
+        let cached = cache.Kinds.[itemsKindKey]
+        // Sample cap = 2 rows; full table has 4. RowCount aggregate is
+        // independent of sampling (full COUNT_BIG over the table).
+        Assert.Equal(4L, cached.RowCount)
+        // Sampled column-array length reflects the TOP-N cap.
+        for column in cached.Columns do
+            Assert.Equal(2, column.Values.Length)
+
+    [<Fact>]
+    member _.``B.3.7.sampling: default options preserve full-scan behavior (slice 6 baseline)`` () =
+        if not (skipIfNoDocker "live-profiler-sampling-default") then () else
+        let cache =
+            (fixture.WithEphemeralDatabase "LiveProfilerSamplingDefault" (fun cnn _ -> task {
+                do! Deploy.executeBatch cnn schemaSql
+                do! Deploy.executeBatch cnn seedSql
+                let! result =
+                    LiveProfiler.captureEvidenceCacheWith
+                        SqlProfilerOptions.defaults cnn itemsCatalog
+                return mustOk result
+            })).GetAwaiter().GetResult()
+        let cached = cache.Kinds.[itemsKindKey]
+        // No sampling cap → values.Length = RowCount (full scan).
+        Assert.Equal(4L, cached.RowCount)
+        for column in cached.Columns do
+            Assert.Equal(4, column.Values.Length)
+
+    [<Fact>]
     member _.``B.3.6.evidence-cache: captureEvidenceCache holds full-scan row data per kind (column-oriented)`` () =
         if not (skipIfNoDocker "live-profiler-cache-capture") then () else
         let cache =

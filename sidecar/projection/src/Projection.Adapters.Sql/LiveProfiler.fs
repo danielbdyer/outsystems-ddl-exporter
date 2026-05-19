@@ -903,8 +903,17 @@ module LiveProfiler =
 
     /// Row-streaming SQL for a kind: project every catalog attribute
     /// in declaration order (positional alignment with
-    /// `kind.Attributes`). Full-scan default per slice 6 design.
-    let private cacheRowStreamSql (kind: Kind) : string =
+    /// `kind.Attributes`). Slice 7 adds optional `TOP (@N)` cap +
+    /// deterministic `ORDER BY <pk>` when a single-column PK
+    /// exists. Without a PK, sample ordering is engine-defined; the
+    /// adapter still applies the TOP cap but operators should treat
+    /// the sampled rows as nondeterministic (a future
+    /// `OrderingPolicy` operator-intent variant can stabilize via
+    /// `ORDER BY <attr0>` or operator-supplied keys).
+    let private cacheRowStreamSql
+        (maxRows: int option)
+        (kind: Kind)
+        : string =
         let table =
             System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; typed segments
                 ".",
@@ -913,13 +922,26 @@ module LiveProfiler =
             kind.Attributes
             |> List.map (fun a -> encode a.Column.ColumnName)
             |> String.concat ", "  // LINT-ALLOW: positional comma joiner over typed encode segments
+        let topClause =
+            match maxRows with
+            | Some n when n > 0 -> System.String.Concat("TOP (", string n, ") ")
+            | _                 -> ""
+        let orderClause =
+            match maxRows, Kind.primaryKey kind with
+            | Some _, [ pk ] ->
+                // Deterministic sampling: ORDER BY single-column PK
+                // (A1 — deterministic sampling under repeated probes).
+                System.String.Concat(" ORDER BY ", encode pk.Column.ColumnName)
+            | _ -> ""
         System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; typed segments
-            "SELECT ", columnList, " FROM ", table)
+            "SELECT ", topClause, columnList, " FROM ", table, orderClause)
 
     /// Discovery for one kind: 3 queries (aggregate + reflection +
-    /// row-stream); composes into a `CachedKind`.
+    /// row-stream); composes into a `CachedKind`. Slice 7 accepts
+    /// `maxRows` to opt into TOP-N sampling on the row-stream query.
     let private discoverKind
         (cnn: SqlConnection)
+        (maxRows: int option)
         (kind: Kind)
         : Task<CachedKind option> =
         task {
@@ -957,7 +979,7 @@ module LiveProfiler =
                     Array.init (List.length kind.Attributes) (fun _ ->
                         System.Collections.Generic.List<CachedValue>())
                 use cmd = cnn.CreateCommand()
-                cmd.CommandText <- cacheRowStreamSql kind
+                cmd.CommandText <- cacheRowStreamSql maxRows kind
                 cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
                 use! reader = cmd.ExecuteReaderAsync()
                 let mutable keepReading = true
@@ -1003,7 +1025,11 @@ module LiveProfiler =
     /// cache (see `Cache.derive*`). Net round-trip count per
     /// catalog drops from ~6000 (at 300 tables × 10 attrs) to ~900
     /// (3 per kind regardless of attribute count).
-    let captureEvidenceCache
+    /// Sampling-aware overload. `attach` uses `defaults` (full-scan);
+    /// operator-driven CLIs supply explicit `SqlProfilerOptions` for
+    /// large catalogs. Slice 7 cash-out.
+    let captureEvidenceCacheWith
+        (options: SqlProfilerOptions)
         (cnn: SqlConnection)
         (catalog: Catalog)
         : Task<Result<EvidenceCache>> =
@@ -1016,7 +1042,7 @@ module LiveProfiler =
                     |> List.filter (fun k -> not (isStaticKind k))
                 let mutable acc : Map<SsKey, CachedKind> = Map.empty
                 for kind in nonStaticKinds do
-                    let! result = discoverKind cnn kind
+                    let! result = discoverKind cnn options.MaxRowsPerKind kind
                     match result with
                     | Some cached -> acc <- Map.add cached.KindKey cached acc
                     | None        -> ()
@@ -1029,6 +1055,14 @@ module LiveProfiler =
                             "profile.live.captureEvidenceCacheFailed"
                             (System.String.Concat("LiveProfiler.captureEvidenceCache failed: ", ex.Message)))
         }
+
+    /// Default-options convenience: full-scan. Public-surface entry
+    /// point for callers that don't need to control sampling.
+    let captureEvidenceCache
+        (cnn: SqlConnection)
+        (catalog: Catalog)
+        : Task<Result<EvidenceCache>> =
+        captureEvidenceCacheWith SqlProfilerOptions.defaults cnn catalog
 
     /// Pure-F# derivations from EvidenceCache. Synchronous; no SQL.
     /// Each function takes the cache + the catalog (for attribute
