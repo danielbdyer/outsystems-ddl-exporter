@@ -110,16 +110,19 @@ module DataEmissionComposer =
         : Result<SiblingArtifacts, EmitError> =
         use _ = Bench.scope "compose.data.dispatchSiblings"
         let staticSeeds =
+            use _ = Bench.scope "compose.data.dispatchSiblings.staticSeeds"
             match composition with
             | AllRemaining
             | AllData         -> StaticSeedsEmitter.emitWithTopo topo catalog profile
             | AllExceptStatic -> emptyArtifact catalog
         let migrationDependencies =
+            use _ = Bench.scope "compose.data.dispatchSiblings.migrationDeps"
             match composition with
             | AllRemaining
             | AllExceptStatic -> MigrationDependenciesEmitter.emitWithTopo topo catalog profile migration userRemap
             | AllData         -> emptyArtifact catalog
         let bootstrap =
+            use _ = Bench.scope "compose.data.dispatchSiblings.bootstrap"
             BootstrapEmitter.emitWithTopo topo catalog profile userRemap
         match staticSeeds, migrationDependencies, bootstrap with
         | Ok s, Ok m, Ok b ->
@@ -323,6 +326,72 @@ module DataEmissionComposer =
                     |> System.String.Concat  // LINT-ALLOW: terminal global Phase-1-then-Phase-2 concatenation across all kinds in topological order (chapter 4.1.B slice ι); each segment is the per-kind ScriptDom-rendered RenderedPhase1 / RenderedPhase2 string already terminated by `;\nGO\n`; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary; preserves the global cycle-correct deploy order that per-kind Rendered cannot express
                 Ok allText
 
+    /// Per-level rendered text for parallel-safe deployment. Each
+    /// `string` in `Phase1Levels` / `Phase2Levels` concatenates the
+    /// rendered SQL for every kind at one topological level; the
+    /// list itself is level-ordered (level 0 first).
+    ///
+    /// **Realization contract:** callers MUST deploy `Phase1Levels`
+    /// in order, then `Phase2Levels` in order. Within a single level
+    /// string, segments are mutually FK-independent — callers MAY
+    /// dispatch via `Deploy.executeBatchParallel` for within-level
+    /// parallelism. Empty levels are dropped from the output (a
+    /// level whose kinds have empty `RenderedPhase1` or
+    /// `RenderedPhase2` doesn't appear). Slice
+    /// A.4.7'-prelude.perf-sweep-6 (composer-levels) cash-out.
+    type LeveledDeploymentText = {
+        Phase1Levels : string list
+        Phase2Levels : string list
+    }
+
+    /// Level-aware sibling of `composeRenderedFull` — returns the
+    /// rendered text grouped by topological level so callers can
+    /// dispatch each level's segments in parallel via
+    /// `Deploy.executeBatchParallel`. Same `dispatchSiblings` +
+    /// `unionSiblings` partition pipeline; the only differences from
+    /// `composeRenderedFull` are (a) per-level grouping via
+    /// `TopologicalOrder.levels`, (b) structured return type, (c)
+    /// empty-level dropping.
+    let composeRenderedLeveled
+        (policy: Policy)
+        (catalog: Catalog)
+        (profile: Profile)
+        (migration: MigrationDependencyContext)
+        (userRemap: UserRemapContext)
+        : Result<LeveledDeploymentText, EmitError> =
+        use _ = Bench.scope "compose.data.composeRenderedLeveled"
+        let topoLineage = TopologicalOrderPass.runWith TreatAsCycle catalog
+        let topo = topoLineage.Value
+        let composition = policy.Emission.DataComposition
+        match dispatchSiblings composition topo catalog profile migration userRemap with
+        | Error e -> Error e
+        | Ok siblings ->
+            match unionSiblings catalog siblings with
+            | Error e -> Error e
+            | Ok artifact ->
+                let map = ArtifactByKind.toMap artifact
+                let levels = TopologicalOrder.levels topo
+                let textForLevel
+                    (selector: DataInsertScript -> string)
+                    (levelKeys: SsKey list)
+                    : string =
+                    levelKeys
+                    |> List.choose (fun k ->
+                        Map.tryFind k map |> Option.map selector)
+                    |> System.String.Concat  // LINT-ALLOW: terminal cross-kind concatenation within a single topological level (slice A.4.7'-prelude.perf-sweep-6); each segment is a ScriptDom-rendered string already terminated by `;\nGO\n`; within-level kinds are SsKey-sorted via `TopologicalOrder.levels`; parallel-safety is the load-bearing contract for `Deploy.executeBatchParallel` consumers
+                let nonEmpty = List.filter (fun (s: string) -> s.Length > 0)
+                let phase1 =
+                    levels
+                    |> List.map (textForLevel (fun s -> s.RenderedPhase1))
+                    |> nonEmpty
+                let phase2 =
+                    levels
+                    |> List.map (textForLevel (fun s -> s.RenderedPhase2))
+                    |> nonEmpty
+                Bench.recordSample "compose.data.composeRenderedLeveled.phase1Levels" (int64 phase1.Length)
+                Bench.recordSample "compose.data.composeRenderedLeveled.phase2Levels" (int64 phase2.Length)
+                Ok { Phase1Levels = phase1; Phase2Levels = phase2 }
+
     /// Π_Data compose-rendered (canary-test convenience). Defaults
     /// migration + userRemap to empty.
     let composeRendered
@@ -349,23 +418,23 @@ module DataEmissionComposer =
     /// `TransformRegistry.fs` StageBinding docstring: "Pipeline —
     /// `Compose`-level transformations."
     let registeredMetadata : RegisteredTransformMetadata =
+        // Pipeline-bound (composer-stage); record literal form per the
+        // sibling-emitter-registry-helper arc's "metadata helpers cover
+        // Emitter + Adapter only; Pipeline / Pass / OrderingPolicy
+        // flow through their typed shells or stay literal." TransformSite
+        // helpers still apply for the inner sites.
         { Name = "dataEmissionComposer"
           Domain = Data
           StageBinding = Pipeline
           Sites =
-            [ { SiteName = "compositionDispatch"
-                Classification = OperatorIntent Emission
-                Rationale = "Reads `Policy.Emission.DataComposition` (closed DU `AllRemaining \| AllExceptStatic \| AllData`) and dispatches which sibling emitters fire. This is the canonical site where operator intent enters the data-emission pipeline — the composer is the only data-axis surface that consumes `Policy`. OverlayAxis = Emission (chooses what physical form a kind takes in emitted output)." }
-              { SiteName = "migrationContextThreading"
-                Classification = OperatorIntent Insertion
-                Rationale = "Threads the operator-supplied `MigrationDependencyContext` to `MigrationDependenciesEmitter`. The context's row inventory is operator-published evidence (pre-scope §2.2); the composer is the routing layer. OverlayAxis = Insertion." }
-              { SiteName = "userRemapContextThreading"
-                Classification = OperatorIntent Insertion
-                Rationale = "Threads the operator-supplied `UserRemapContext` to `MigrationDependenciesEmitter` + `BootstrapEmitter`. The remap mapping is operator-supplied (chapter 4.2 slice γ); the composer is the routing layer. OverlayAxis = Insertion." }
-              { SiteName = "globalPhaseOrdering"
-                Classification = DataIntent
-                Rationale = "Slice ι cash-out — concatenate ALL Phase-1 MERGEs (across all kinds + all emitters, in topological order) before ANY Phase-2 UPDATE. The ordering is structural (deploy-correctness for multi-kind FK cycles); no operator opinion enters. DataIntent — the topology is the source of truth." }
-              { SiteName = "partitionAssertion"
-                Classification = DataIntent
-                Rationale = "Slice θ cash-out — every kind's populated coverage comes from at most one sibling emitter under a given `DataComposition`; overlap surfaces as `EmitError.OverlappingEmitterCoverage`. The partition check is structural fidelity (not configurable); fires deterministically on first overlap in catalog order." } ]
+            [ TransformSite.operatorIntent "compositionDispatch" Emission
+                "Reads `Policy.Emission.DataComposition` (closed DU `AllRemaining \| AllExceptStatic \| AllData`) and dispatches which sibling emitters fire. This is the canonical site where operator intent enters the data-emission pipeline — the composer is the only data-axis surface that consumes `Policy`. OverlayAxis = Emission (chooses what physical form a kind takes in emitted output)."
+              TransformSite.operatorIntent "migrationContextThreading" Insertion
+                "Threads the operator-supplied `MigrationDependencyContext` to `MigrationDependenciesEmitter`. The context's row inventory is operator-published evidence (pre-scope §2.2); the composer is the routing layer. OverlayAxis = Insertion."
+              TransformSite.operatorIntent "userRemapContextThreading" Insertion
+                "Threads the operator-supplied `UserRemapContext` to `MigrationDependenciesEmitter` + `BootstrapEmitter`. The remap mapping is operator-supplied (chapter 4.2 slice γ); the composer is the routing layer. OverlayAxis = Insertion."
+              TransformSite.dataIntent "globalPhaseOrdering"
+                "Slice ι cash-out — concatenate ALL Phase-1 MERGEs (across all kinds + all emitters, in topological order) before ANY Phase-2 UPDATE. The ordering is structural (deploy-correctness for multi-kind FK cycles); no operator opinion enters. DataIntent — the topology is the source of truth."
+              TransformSite.dataIntent "partitionAssertion"
+                "Slice θ cash-out — every kind's populated coverage comes from at most one sibling emitter under a given `DataComposition`; overlap surfaces as `EmitError.OverlappingEmitterCoverage`. The partition check is structural fidelity (not configurable); fires deterministically on first overlap in catalog order." ]
           Status = Active }

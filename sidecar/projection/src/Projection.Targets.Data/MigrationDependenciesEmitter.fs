@@ -385,7 +385,7 @@ module MigrationDependenciesEmitter =
                 if Set.isEmpty deferred then ""
                 else
                     typedRows
-                    |> List.map (fun (_, vs) -> renderUpdate cdcAware k deferred vs)
+                    |> Bench.iterMap "emit.migrationDeps.phase2Row" (fun (_, vs) -> renderUpdate cdcAware k deferred vs)
                     |> System.String.Concat  // LINT-ALLOW: terminal Phase-2 cross-row UPDATE concatenation (chapter 4.1.B slice ι; mirror of StaticSeedsEmitter); each segment is the ScriptDom-rendered + GO-batched UPDATE for one row; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary
             let rendered =
                 System.String.Concat(renderedPhase1, renderedPhase2)  // LINT-ALLOW: terminal per-kind concatenation of ScriptDom-rendered Phase-1 + Phase-2 strings (chapter 4.1.B slice κ; mirror of StaticSeedsEmitter); both segments are typed-AST outputs already terminated by `;\nGO\n`
@@ -424,7 +424,7 @@ module MigrationDependenciesEmitter =
         let allKinds = Catalog.allKinds catalog
         let slices =
             allKinds
-            |> List.map (fun k -> k.SsKey, kindToScript cdc cycleMembers userRemap rowsByKind k)
+            |> Bench.iterMap "emit.migrationDeps.kind" (fun k -> k.SsKey, kindToScript cdc cycleMembers userRemap rowsByKind k)
             |> Map.ofList
         ArtifactByKind.create catalog slices
 
@@ -462,17 +462,10 @@ module MigrationDependenciesEmitter =
     /// composer threads the operator inputs but the emitter's
     /// emission shape is the same regardless.
     let registeredMetadata : RegisteredTransformMetadata =
-        { Name = "migrationDependenciesEmitter"
-          Domain = Data
-          StageBinding = Emitter
-          Sites =
-            [ { SiteName = "migrationRowEmission"
-                Classification = OperatorIntent Insertion
-                Rationale = "`MigrationDependencyContext.Rows` is operator-published legacy-domain row inventory (pre-scope §2.2: 'environment-specific evidence the migration team supplies'). Each row's `(KindKey, Identifier, Values)` is operator-supplied content that wouldn't be reachable from `Project(catalog, Policy.empty, profile)` — it lands via the operator-supplied context. OverlayAxis = Insertion (what content the catalog gains beyond source evidence)." }
-              { SiteName = "userRemapRewrite"
-                Classification = OperatorIntent Insertion
-                Rationale = "`UserRemapContext.Mapping` rewrites User-FK column values on migration rows from source-environment IDs to target-environment IDs (chapter 4.2 slice γ refinement). The remap mapping is operator-supplied evidence (pre-scope IDENTITY axis); applying it to migration rows is an operator-intent transformation. OverlayAxis = Insertion (the remap inserts the target-side ID where the source-side ID was)." }
-              { SiteName = "deferredFkPhase2"
-                Classification = DataIntent
-                Rationale = "Two-phase cycle-breaking parallel to `StaticSeedsEmitter` — Phase-1 emits MERGEs with deferred FK columns NULLed; Phase-2 UPDATEs populate them. Cycle membership is structural (topology-derived); the deferral is the same algebra as the static-rows emitter. DataIntent because the cycle-resolution is structural, not operator-supplied." } ]
-          Status = Active }
+        RegisteredTransformMetadata.emitter "migrationDependenciesEmitter" Data
+            [ TransformSite.operatorIntent "migrationRowEmission" Insertion
+                "`MigrationDependencyContext.Rows` is operator-published legacy-domain row inventory (pre-scope §2.2: 'environment-specific evidence the migration team supplies'). Each row's `(KindKey, Identifier, Values)` is operator-supplied content that wouldn't be reachable from `Project(catalog, Policy.empty, profile)` — it lands via the operator-supplied context. OverlayAxis = Insertion (what content the catalog gains beyond source evidence)."
+              TransformSite.operatorIntent "userRemapRewrite" Insertion
+                "`UserRemapContext.Mapping` rewrites User-FK column values on migration rows from source-environment IDs to target-environment IDs (chapter 4.2 slice γ refinement). The remap mapping is operator-supplied evidence (pre-scope IDENTITY axis); applying it to migration rows is an operator-intent transformation. OverlayAxis = Insertion (the remap inserts the target-side ID where the source-side ID was)."
+              TransformSite.dataIntent "deferredFkPhase2"
+                "Two-phase cycle-breaking parallel to `StaticSeedsEmitter` — Phase-1 emits MERGEs with deferred FK columns NULLed; Phase-2 UPDATEs populate them. Cycle membership is structural (topology-derived); the deferral is the same algebra as the static-rows emitter. DataIntent because the cycle-resolution is structural, not operator-supplied." ]

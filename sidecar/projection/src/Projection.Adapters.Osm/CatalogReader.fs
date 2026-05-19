@@ -177,6 +177,27 @@ module CatalogReader =
             /// `None` for OS-native entities and when V1 omits the
             /// override.
             ExternalDatabaseType : string option
+            /// Slice A.4.7'-prelude.row53-source-side — V1
+            /// `#ColumnReality.IsComputed` (sys.columns.is_computed).
+            /// `true` when the column is a SQL Server computed column.
+            /// Pairs with `ComputedDefinition` to populate
+            /// `Attribute.Computed : ComputedColumnConfig option`.
+            IsComputed           : bool
+            /// Slice A.4.7'-prelude.row53-source-side — V1
+            /// `#ColumnReality.ComputedDefinition`
+            /// (sys.computed_columns.definition). The expression text
+            /// of a computed column (e.g., `([Base] * 2)`). `None`
+            /// when the column is not computed. Combined with
+            /// `IsComputed` to construct `ComputedColumnConfig`.
+            ComputedDefinition   : string option
+            /// Slice A.4.7'-prelude.row53-source-side — V1
+            /// `#ColumnReality.DefaultConstraintName`
+            /// (sys.default_constraints.name). V1's deployed-target
+            /// DEFAULT constraint identifier (e.g.,
+            /// `DF_Customer_CreatedAt`). `None` when no named DEFAULT
+            /// constraint exists. Threads to `Attribute.DefaultName`
+            /// for round-trip parity with V1 emission.
+            DefaultConstraintName : string option
         }
 
     /// V1 rowset 4 — `#RefResolved` resolved-reference rows; chapter
@@ -286,6 +307,16 @@ module CatalogReader =
             /// axis is the row 56 residual). Threads to
             /// `Index.DataCompression`.
             DataCompression  : string option
+            /// Slice A.4.7'-prelude.row56-dataspace (LR7 closure) —
+            /// optional index dataspace placement carried from V1
+            /// `#AllIdx.DataSpaceName` + `DataSpaceType` + (for
+            /// partition schemes) `PartitionColumnsJson`. `None`
+            /// when no DataSpace is set OR when V1's `type_desc`
+            /// is something other than `ROWS_FILEGROUP` /
+            /// `PARTITION_SCHEME` (defensive — V2 omits the `ON`
+            /// clause rather than emitting an unrecognized
+            /// dataspace shape).
+            DataSpace        : DataSpace option
         }
 
     /// V1 rowset `#IdxColsMapped` — per-index column membership
@@ -715,6 +746,27 @@ module CatalogReader =
                     "unmappedDeleteRule"
                     (sprintf "reference_deleteRuleCode '%s' has no V2 ReferenceAction mapping yet." other))
 
+    /// Slice A.4.7'-prelude.row17-18-rowset-roundtrip — parse V1's
+    /// `#FkReality.update_referential_action_desc` / `delete_referential
+    /// _action_desc` (SQL Server vocabulary, distinct from
+    /// `parseDeleteRule`'s OutSystems vocabulary). SQL Server's
+    /// `sys.foreign_keys` columns emit `NO_ACTION` / `CASCADE` /
+    /// `SET_NULL` / `SET_DEFAULT` (underscored uppercase per
+    /// `*_referential_action_desc`). Returns `None` for unrecognized
+    /// vocabulary (defensive — V2 omits the ON UPDATE clause rather
+    /// than emitting an unsupported variant). `SET_DEFAULT` degrades
+    /// to `None` because V2's `ReferenceAction` DU doesn't model it
+    /// yet (lift trigger: a real-world FK with ON UPDATE SET DEFAULT
+    /// surfaces in fixture data).
+    let private parseSqlForeignKeyAction (code: string option) : ReferenceAction option =
+        match code with
+        | None                -> None
+        | Some "NO_ACTION"    -> Some NoAction
+        | Some "CASCADE"      -> Some Cascade
+        | Some "SET_NULL"     -> Some SetNull
+        | Some "SET_DEFAULT"  -> None
+        | Some _              -> None
+
     // -----------------------------------------------------------------------
     // Translation — V1 attribute → V2 Attribute.
     // -----------------------------------------------------------------------
@@ -832,6 +884,7 @@ module CatalogReader =
                       Description  = description
                       IsActive     = isActiveOrDefault attrJson
                       DefaultValue = defaultValue
+                      DefaultName  = None
                       // Chapter A.0' slice ε — Computed lift; V1's
                       // JSON projection does not surface computed-
                       // column metadata. Positioned for future use.
@@ -1296,10 +1349,10 @@ module CatalogReader =
                 | _ -> []
             let attrsResults =
                 attrJsonList
-                |> List.map (parseAttribute moduleName entityName)
+                |> Bench.iterMap "adapter.osm.parse.attribute" (parseAttribute moduleName entityName)
             let refResults =
                 attrJsonList
-                |> List.map (parseReference moduleName entityName)
+                |> Bench.iterMap "adapter.osm.parse.reference" (parseReference moduleName entityName)
             // Collect attribute results — `Result.aggregate` collapses
             // `Result<'a> seq` to `Result<'a list>` with errors
             // aggregated. Retires the O(N²) `xs @ [x]` fold pattern.
@@ -1322,7 +1375,7 @@ module CatalogReader =
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
                     arr.EnumerateArray()
                     |> Seq.toList
-                    |> List.map (parseIndex moduleName entityName)
+                    |> Bench.iterMap "adapter.osm.parse.index" (parseIndex moduleName entityName)
                 | _ -> []
             let foldedIdx = Result.aggregate indexResults
             // Chapter A.0' slice γ — Triggers lift. V1's JSON projects
@@ -1333,7 +1386,7 @@ module CatalogReader =
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
                     arr.EnumerateArray()
                     |> Seq.toList
-                    |> List.map (parseTrigger moduleName entityName)
+                    |> Bench.iterMap "adapter.osm.parse.trigger" (parseTrigger moduleName entityName)
                 | _ -> []
             let foldedTriggers = Result.aggregate triggerResults
             // Chapter A.0' slice ζ — ExtendedProperties lift (kind
@@ -1344,7 +1397,7 @@ module CatalogReader =
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
                     arr.EnumerateArray()
                     |> Seq.toList
-                    |> List.map (parseExtendedProperty moduleName entityName)
+                    |> Bench.iterMap "adapter.osm.parse.extendedProperty" (parseExtendedProperty moduleName entityName)
                 | _ -> []
             let foldedEps = Result.aggregate epResults
             match kindKey, kindName, foldedAttrs, foldedRefs, foldedIdx, foldedTriggers, foldedEps with
@@ -1433,7 +1486,7 @@ module CatalogReader =
                 | true, arr when arr.ValueKind = JsonValueKind.Array ->
                     arr.EnumerateArray()
                     |> Seq.toList
-                    |> List.map (parseKind rawName)
+                    |> Bench.iterMap "adapter.osm.parse.kind" (parseKind rawName)
                 | _ ->
                     []
             let foldedKinds = Result.aggregate entitiesArr
@@ -1476,7 +1529,7 @@ module CatalogReader =
             let modulesList =
                 arr.EnumerateArray()
                 |> Seq.toList
-                |> List.map parseModule
+                |> Bench.iterMap "adapter.osm.parse.module" parseModule
             let folded = Result.aggregate modulesList
             match folded with
             | Ok modules ->
@@ -1570,12 +1623,45 @@ module CatalogReader =
                   IsIdentity   = row.IsAutoNumber
                   Description  = row.Description
                   IsActive     = row.IsActive
-                  // Chapter A.0' slices ε + ζ — rowset path does not
-                  // surface DEFAULT / Computed / attribute-level
-                  // ExtendedProperties today; positioned for future
-                  // rowset extension or DACPAC adapter.
+                  // Slice A.4.7'-prelude.row53-source-side: V1's
+                  // `#ColumnReality.DefaultDefinition` carries the
+                  // expression text (e.g., `((0))`, `(getdate())`).
+                  // Parens-stripping + literal-vs-expression
+                  // disambiguation deferred per matrix row 53's named
+                  // trigger ("expression-shaped defaults flow via
+                  // raw-string pass-through at the realization
+                  // boundary"). For now: rowset path leaves
+                  // DefaultValue = None; the JSON path's
+                  // `parseAttribute` populates from V1's `default`
+                  // field which V1 emits as the literal value.
                   DefaultValue = None
-                  Computed     = None
+                  // Slice A.4.7'-prelude.row53-source-side: V1
+                  // `#ColumnReality.DefaultConstraintName` (sys
+                  // .default_constraints.name) → V2 DefaultName for
+                  // round-trip parity with V1's `DF_<table>_<column>`
+                  // constraint identifier. `None` when no named
+                  // DEFAULT constraint exists at the deployed target.
+                  DefaultName  =
+                      row.DefaultConstraintName
+                      |> Option.bind (fun raw ->
+                          Name.create raw |> Result.toOption)
+                  // Slice A.4.7'-prelude.row53-source-side (LR4 cash-
+                  // out completion): V1 `#ColumnReality.IsComputed` +
+                  // `ComputedDefinition` (sys.computed_columns
+                  // .definition) → V2 ComputedColumnConfig. The
+                  // `IsPersisted` axis defaults to false because V1's
+                  // SQL doesn't surface `sys.computed_columns
+                  // .is_persisted`; persisted-detection is a follow-up
+                  // rowset extension when V2 emission demands the
+                  // PERSISTED keyword for round-trip.
+                  Computed     =
+                      if row.IsComputed then
+                          row.ComputedDefinition
+                          |> Option.bind (fun expr ->
+                              ComputedColumnConfig.create expr false
+                              |> Result.toOption)
+                      else
+                          None
                   ExtendedProperties = []
                   OriginalName = row.OriginalName
                   ExternalDatabaseType = row.ExternalDatabaseType }
@@ -1624,19 +1710,18 @@ module CatalogReader =
                 | None -> kindSsKey moduleName refRow.RefEntityName
             | None -> kindSsKey moduleName refRow.RefEntityName
         let onDelete   = parseDeleteRule refRow.DeleteRuleCode
-        // Slice 5.13.fk-reality-join — `OnUpdate` carries through the
-        // same `parseDeleteRule` shape (V1's referential-action vocabulary
-        // is uniform across DELETE / UPDATE). `None` propagates as the
-        // unstated default; parse failures degrade to `None` too (the
-        // rowset adapter never blocks reference construction on an
-        // unfamiliar update-action keyword — same posture as the
-        // delete-rule path).
-        let onUpdateRule =
-            refRow.OnUpdate
-            |> Option.bind (fun code ->
-                match parseDeleteRule (Some code) with
-                | Ok action -> Some action
-                | Error _   -> None)
+        // Slice A.4.7'-prelude.row17-18-rowset-roundtrip — `OnUpdate`
+        // carries SQL Server's `sys.foreign_keys.update_referential_action
+        // _desc` vocabulary (NO_ACTION / CASCADE / SET_NULL / SET_DEFAULT),
+        // not OutSystems' DeleteRuleCode vocabulary
+        // (Delete / Protect / Ignore / SetNull). The prior
+        // 5.13.fk-reality-join slice routed through `parseDeleteRule`
+        // which silently dropped every valid SQL Server value into the
+        // error branch (bug found 2026-05-19 via FkRealityRowsetRoundTripTests).
+        // `parseSqlForeignKeyAction` is the SQL-Server-vocabulary parser;
+        // unfamiliar values degrade to None per the rowset adapter's
+        // defensive-parsing posture.
+        let onUpdateRule = parseSqlForeignKeyAction refRow.OnUpdate
         match refKey, refName, srcAttrKey, tgtKindKey, onDelete with
         | Ok rKey, Ok rName, Ok srcKey, Ok tgtKey, Ok rule ->
             // Slice 5.13.fk-features-emit — smart-constructor migration.
@@ -1874,7 +1959,15 @@ module CatalogReader =
                     NoRecomputeStatistics = row.NoRecompute
                     IsDisabled            = row.IsDisabled
                     IgnoreDuplicateKey    = row.IgnoreDupKey
-                    DataCompression       = dataCompressionLevel }
+                    DataCompression       = dataCompressionLevel
+                    // Slice A.4.7'-prelude.row56-dataspace (LR7
+                    // closure): V1 #AllIdx.DataSpaceName/Type/
+                    // PartitionColumnsJson → V2 Index.DataSpace.
+                    // Carriage is direct; MetadataSnapshotRunner
+                    // .toBundle does the JSON parse + DU shaping
+                    // (the Adapter.Osm boundary trusts the typed
+                    // DataSpace coming from the OssysSql adapter).
+                    DataSpace             = row.DataSpace }
         | _ ->
             propagateOrFallback
                 [ Result.errors indexKey
@@ -1963,7 +2056,7 @@ module CatalogReader =
             |> Option.defaultValue []
         let attrResults =
             attrRows
-            |> List.map (parseAttributeRow moduleName kindRow.EntityName)
+            |> Bench.iterMap "adapter.osm.parse.rowsetAttribute" (parseAttributeRow moduleName kindRow.EntityName)
         let foldedAttrs = Result.aggregate attrResults
         let refResults =
             attrRows
@@ -1982,7 +2075,7 @@ module CatalogReader =
         let indexResults =
             Map.tryFind kindRow.EntityId ctx.IndexesByEntity
             |> Option.defaultValue []
-            |> List.map (parseIndexRowFor ctx moduleName kindRow.EntityName attrRows)
+            |> Bench.iterMap "adapter.osm.parse.rowsetIndex" (parseIndexRowFor ctx moduleName kindRow.EntityName attrRows)
         let foldedIndexes = Result.aggregate indexResults
         let triggerResults =
             Map.tryFind kindRow.EntityId ctx.TriggersByEntity
@@ -2004,7 +2097,7 @@ module CatalogReader =
             // `Kind.ColumnChecks` is table-scoped (one entry per
             // unique constraint).
             |> List.distinctBy (fun row -> row.ConstraintName)
-            |> List.map (parseColumnCheckRowFor moduleName kindRow.EntityName)
+            |> Bench.iterMap "adapter.osm.parse.rowsetColumnCheck" (parseColumnCheckRowFor moduleName kindRow.EntityName)
         let foldedColumnChecks = Result.aggregate columnCheckResults
         match kindKey, kindName, foldedAttrs, foldedRefs,
               foldedIndexes, foldedTriggers, foldedColumnChecks with
@@ -2059,7 +2152,7 @@ module CatalogReader =
             |> Option.defaultValue []
         let kindResults =
             kindRows
-            |> List.map (parseKindRow ctx moduleRow.EspaceName moduleRow.EspaceKind)
+            |> Bench.iterMap "adapter.osm.parse.rowsetKind" (parseKindRow ctx moduleRow.EspaceName moduleRow.EspaceKind)
         let foldedKinds = Result.aggregate kindResults
         match modKey, modName, foldedKinds with
         | Ok k, Ok n, Ok kinds ->
@@ -2156,7 +2249,7 @@ module CatalogReader =
               TriggersByEntity     = triggersByEntity
               ColumnChecksByEntity = columnChecksByEntity }
         let moduleResults =
-            bundle.Modules |> List.map (parseModuleRow ctx)
+            bundle.Modules |> Bench.iterMap "adapter.osm.parse.rowsetModule" (parseModuleRow ctx)
         match Result.aggregate moduleResults with
         | Ok modules ->
             Catalog.create modules []
@@ -2170,6 +2263,7 @@ module CatalogReader =
     /// `Task<...>` shape. See `DECISIONS 2026-05-15 — OSSYS adapter
     /// parse signature` for the rationale.
     let parse (source: SnapshotSource) : Task<Result<Catalog>> =
+        use _ = Bench.scope "adapter.osm.parse"
         match source with
         | SnapshotJson json ->
             Task.FromResult(parseJsonString json)
@@ -2233,26 +2327,16 @@ module CatalogReader =
     /// witness that `Project(catalog, Policy.empty, profile)` traverses
     /// the adapter without emitting any `OperatorIntent` lineage event.
     let registeredMetadata : RegisteredTransformMetadata =
-        { Name = "ossysCatalogReader"
-          Domain = Schema
-          StageBinding = Adapter
-          Sites =
-            [ { SiteName = "identitySynthesis"
-                Classification = DataIntent
-                Rationale = "Synthesize V2 SsKeys from V1 names: moduleSsKey / kindSsKey / attributeSsKey / referenceSsKey / indexSsKey / triggerSsKey / sequenceSsKey / columnCheckSsKey. Derivation is deterministic from source identifiers; no operator opinion enters." }
-              { SiteName = "typeTranslation"
-                Classification = DataIntent
-                Rationale = "Map V1 type/code values to V2 typed DUs: parsePrimitiveType (V1 dataType string → V2 PrimitiveType per A13's typed surface); parseDeleteRule (V1 onDelete code → V2 ReferenceAction); parseOrigin / parseOriginFromRowset (isExternal flag → Origin DU). All translations are structural — V1's vocabulary maps deterministically into V2's typed system." }
-              { SiteName = "jsonAggregateParsing"
-                Classification = DataIntent
-                Rationale = "Assemble JSON-path IR records: parseAttribute / parseReference / parseIndex / parseTrigger / parseExtendedProperty / parseKind / parseModule / parseDocument / parseJsonString. Each parser threads V1 evidence into V2's typed records; the parsing is field-by-field translation with no operator overlay." }
-              { SiteName = "rowsetAggregateParsing"
-                Classification = DataIntent
-                Rationale = "Assemble rowset-path IR records: parseAttributeRow / parseReferenceRowFor / parseKindRow / parseModuleRow / parseRowsetBundle. Mirrors the JSON-path semantics for the rowset-source variant (chapter 3.2 slice 1 onward); same DataIntent translation discipline." }
-              { SiteName = "isActiveCarryThrough"
-                Classification = DataIntent
-                Rationale = "Chapter A.0' slice β retroactive site. IsActive is carried through at Module / Kind / Attribute levels (not filtered at the adapter boundary; the session-21 filter was retired as a mis-placed OperatorIntent of Selection per DECISIONS 2026-05-16 (slice β) — the first worked example of pillar 9). The carriage itself is DataIntent evidence; a downstream Selection-axis pass that re-applies an inactive-records drop is deferred-with-trigger per IR-grows-under-evidence." }
-              { SiteName = "tableIdCatalogRead"
-                Classification = DataIntent
-                Rationale = "Chapter A.0' slice θ retroactive site. V1's db_catalog field is read into TableId.Catalog (string option); cross-database FK qualification carries through without silent degradation to implicit-current-database scope. DataIntent — source-schema evidence carried forward." } ]
-          Status = Active }
+        RegisteredTransformMetadata.adapter "ossysCatalogReader" Schema
+            [ TransformSite.dataIntent "identitySynthesis"
+                "Synthesize V2 SsKeys from V1 names: moduleSsKey / kindSsKey / attributeSsKey / referenceSsKey / indexSsKey / triggerSsKey / sequenceSsKey / columnCheckSsKey. Derivation is deterministic from source identifiers; no operator opinion enters."
+              TransformSite.dataIntent "typeTranslation"
+                "Map V1 type/code values to V2 typed DUs: parsePrimitiveType (V1 dataType string → V2 PrimitiveType per A13's typed surface); parseDeleteRule (V1 OutSystems-domain onDelete code 'Delete'/'Protect'/'Ignore'/'SetNull' → V2 ReferenceAction); parseSqlForeignKeyAction (V1 #FkReality SQL-Server-domain update_referential_action_desc 'NO_ACTION'/'CASCADE'/'SET_NULL'/'SET_DEFAULT' → V2 ReferenceAction option — distinct vocabulary from parseDeleteRule per slice A.4.7'-prelude.row17-18-rowset-roundtrip); parseOrigin / parseOriginFromRowset (isExternal flag → Origin DU). All translations are structural — V1's vocabulary maps deterministically into V2's typed system."
+              TransformSite.dataIntent "jsonAggregateParsing"
+                "Assemble JSON-path IR records: parseAttribute / parseReference / parseIndex / parseTrigger / parseExtendedProperty / parseKind / parseModule / parseDocument / parseJsonString. Each parser threads V1 evidence into V2's typed records; the parsing is field-by-field translation with no operator overlay."
+              TransformSite.dataIntent "rowsetAggregateParsing"
+                "Assemble rowset-path IR records: parseAttributeRow / parseReferenceRowFor / parseKindRow / parseModuleRow / parseRowsetBundle. Mirrors the JSON-path semantics for the rowset-source variant (chapter 3.2 slice 1 onward); same DataIntent translation discipline. Slice A.4.7'-prelude.row53-source-side extended the AttributeRow projection to surface V1 `#ColumnReality` reflection (IsComputed + ComputedDefinition + DefaultConstraintName) — V1 deployed-target evidence flows into `Attribute.Computed : ComputedColumnConfig option` + `Attribute.DefaultName : Name option` via `MetadataSnapshotRunner.toBundle`'s join."
+              TransformSite.dataIntent "isActiveCarryThrough"
+                "Chapter A.0' slice β retroactive site. IsActive is carried through at Module / Kind / Attribute levels (not filtered at the adapter boundary; the session-21 filter was retired as a mis-placed OperatorIntent of Selection per DECISIONS 2026-05-16 (slice β) — the first worked example of pillar 9). The carriage itself is DataIntent evidence; a downstream Selection-axis pass that re-applies an inactive-records drop is deferred-with-trigger per IR-grows-under-evidence."
+              TransformSite.dataIntent "tableIdCatalogRead"
+                "Chapter A.0' slice θ retroactive site. V1's db_catalog field is read into TableId.Catalog (string option); cross-database FK qualification carries through without silent degradation to implicit-current-database scope. DataIntent — source-schema evidence carried forward." ]

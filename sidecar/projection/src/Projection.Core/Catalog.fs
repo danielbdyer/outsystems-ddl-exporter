@@ -469,6 +469,17 @@ type Attribute = {
     /// Carried as a typed `SqlLiteral` per pillar 1 (data-structure-
     /// oriented; the IR consumes typed values, not raw strings).
     DefaultValue : SqlLiteral option
+    /// Named DEFAULT constraint identity. `None` when V2 emits an
+    /// auto-named DEFAULT (SQL Server generates `DF_<table>_<column>_<hash>`);
+    /// `Some name` round-trips V1's deployed-target constraint name
+    /// (V1 source: `AttributeOnDiskDefaultConstraint.Name`). Slice
+    /// 5.3.α.column-axis-deferral-closeout (matrix row 53 partial cash-out).
+    /// Carriage-only: the realization layer's `ColumnDef.DefaultName`
+    /// already accepts the optional identifier; SsdtDdlEmitter threads
+    /// the value through without further transformation. The
+    /// `IsNotTrusted` axis (row 53 full envelope) deferred-with-trigger
+    /// pending V2 emission of WITH NOCHECK CHECK CONSTRAINT for defaults.
+    DefaultName  : Name option
     /// SQL Server computed-column configuration. `None` for
     /// non-computed columns. Chapter A.0' slice ε — IR fidelity lift
     /// (L3-S7 computed-column sub-axiom). V1's source JSON does not
@@ -617,6 +628,36 @@ type DataCompressionLevel =
     | Row
     | Page
 
+/// SQL Server index storage placement — the dataspace an index resides
+/// on. Closed-DU mirroring V1's `IndexDataSpace.cs` aggregate
+/// (`Name : string`, `Type : DataSpaceType`). Per matrix row 56 cash-
+/// out shape: closed-DU `DataSpace = Filegroup of name | PartitionScheme
+/// of name × columns`. Slice A.4.7'-prelude.row56-dataspace (LR7
+/// closure).
+///
+/// **Variants.**
+///   - `Filegroup name` — index resides on a named filegroup
+///     (`PRIMARY`, `INDEX_FG`, etc.). Emitted as `ON [name]`.
+///     V1 source: `sys.data_spaces.type_desc = 'ROWS_FILEGROUP'`.
+///   - `PartitionScheme (name, columns)` — index uses a partition
+///     scheme keyed by named partition columns. Emitted as
+///     `ON [name]([col1], [col2], ...)`. Columns reference table
+///     columns (typically the partition key); V1 carries them as
+///     names (not SsKeys) from the `sys.index_columns` reflection
+///     where `partition_ordinal > 0`. V2 mirrors as `string list`
+///     at the IR layer; emitter resolves to ScriptDom identifiers.
+///     V1 source: `sys.data_spaces.type_desc = 'PARTITION_SCHEME'`
+///     + `OUTER APPLY sys.index_columns WHERE partition_ordinal > 0`.
+///
+/// `Index.DataSpace = None` (the default) means no explicit `ON`
+/// clause — SQL Server inherits the table-level dataspace
+/// (typically `PRIMARY` filegroup). This matches V1's behavior
+/// when no dataspace is specified.
+[<RequireQualifiedAccess>]
+type DataSpace =
+    | Filegroup of name: string
+    | PartitionScheme of name: string * columns: string list
+
 /// A schema-level index on a kind. Carries identity, name, the
 /// participating attribute SsKeys (in declaration order; composite
 /// indexes have multiple), `IsUnique` (does the source treat this index
@@ -733,6 +774,15 @@ type Index = {
     /// slice when partitioned indexes surface in fixture data).
     /// Slice 5.13.index-features-emit (matrix row 56).
     DataCompression : DataCompressionLevel option
+    /// SQL Server index dataspace placement. `None` (the default) =
+    /// no explicit `ON` clause; SQL Server inherits the table-level
+    /// dataspace (typically `PRIMARY`). `Some (Filegroup name)` =
+    /// emit `ON [name]` (V1's `IndexDataSpace.Type = ROWS_FILEGROUP`
+    /// shape). `Some (PartitionScheme (name, cols))` = emit
+    /// `ON [name]([col1], [col2], …)` (V1's `Type = PARTITION_SCHEME`
+    /// shape). Closed-DU per matrix row 56 cash-out (LR7 closure).
+    /// Slice A.4.7'-prelude.row56-dataspace.
+    DataSpace : DataSpace option
 }
 
 
@@ -856,7 +906,7 @@ module Attribute =
     ///   - `Length = None`; `Precision = None`; `Scale = None`
     ///   - `IsIdentity = false`
     ///   - `Description = None`; `IsActive = true` (V1 default)
-    ///   - `DefaultValue = None`; `Computed = None`
+    ///   - `DefaultValue = None`; `DefaultName = None`; `Computed = None`
     ///   - `ExtendedProperties = []`
     ///   - `OriginalName = None`; `ExternalDatabaseType = None`
     ///
@@ -877,6 +927,7 @@ module Attribute =
             Description          = None
             IsActive             = true
             DefaultValue         = None
+            DefaultName          = None
             Computed             = None
             ExtendedProperties   = []
             OriginalName         = None
@@ -937,6 +988,8 @@ module Index =
     ///   - `IsDisabled = false` (V1 default)
     ///   - `DataCompression = None` (V1 default: no explicit
     ///     DATA_COMPRESSION clause)
+    ///   - `DataSpace = None` (V1 default: index inherits table-level
+    ///     dataspace; no explicit `ON` clause)
     ///
     /// Consumers override via record-update.
     let create
@@ -962,6 +1015,7 @@ module Index =
             IgnoreDuplicateKey    = false
             IsDisabled            = false
             DataCompression       = None
+            DataSpace             = None
         }
 
     /// Build an `Index` from a `SsKey list` of key columns
@@ -1002,6 +1056,7 @@ module Kind =
         (physical: PhysicalRealization)
         (attributes: Attribute list)
         : Kind =
+        use _ = Bench.scope "ir.kind.create"
         {
             SsKey              = ssKey
             Name               = name
@@ -1044,6 +1099,32 @@ module Kind =
             | _           -> None)
         |> Option.defaultValue []
 
+    /// Per-Kind attribute-index cache. Per slice
+    /// A.4.7'-prelude.perf-sweep-2 (`PERF_OPPORTUNITIES.md` Rank 2):
+    /// `tryFindAttribute` is called per FK column resolution in
+    /// `StaticSeedsEmitter.deferredColumns`, `MigrationDependenciesEmitter`,
+    /// `UserFkReflowPass`; at 300-table × 10-attrs/kind production
+    /// scale the prior `List.tryFind` was O(n²) across the emit
+    /// pipeline. The `ConditionalWeakTable` keys per-Kind-instance
+    /// (F# records are reference types under the hood); the index is
+    /// built on first lookup and reused for every subsequent lookup
+    /// against the same instance.
+    let private attributeIndexCache =
+        System.Runtime.CompilerServices.ConditionalWeakTable<Kind, Map<SsKey, Attribute>>()
+
+    let attributeIndex (k: Kind) : Map<SsKey, Attribute> =
+        match attributeIndexCache.TryGetValue(k) with
+        | true, idx -> idx
+        | false, _ ->
+            let idx = k.Attributes |> List.map (fun a -> a.SsKey, a) |> Map.ofList
+            // `GetValue` is the thread-safe idempotent add (vs `Add`
+            // which throws on duplicate key); use it so concurrent
+            // callers from a future parallel-pass driver see one
+            // index per Kind.
+            attributeIndexCache.GetValue(
+                k,
+                System.Runtime.CompilerServices.ConditionalWeakTable<Kind, Map<SsKey, Attribute>>.CreateValueCallback(fun _ -> idx))
+
     /// Find an attribute on the kind by SsKey (per A4 — identity-keyed
     /// lookup, never by name). Returns `None` if absent. Lifted to
     /// Core at chapter 4.1.B slice ε per the slice-δ improvement
@@ -1053,7 +1134,7 @@ module Kind =
     /// third consumer at chapter 4.2's `UserFkReflowPass` is on the
     /// horizon. Two-consumer threshold met.
     let tryFindAttribute (ssKey: SsKey) (k: Kind) : Attribute option =
-        k.Attributes |> List.tryFind (fun a -> a.SsKey = ssKey)
+        Map.tryFind ssKey (attributeIndex k)
 
 
 [<RequireQualifiedAccess>]
@@ -1080,6 +1161,7 @@ module Module =
         (isActive: bool)
         (extendedProperties: ExtendedProperty list)
         : Result<Module> =
+        use _ = Bench.scope "ir.module.create"
         // LR1 (slice 5.13.module-non-empty-invariant, matrix row 42):
         // per-module non-empty Kind invariant. V1's `ModuleModel.Create`
         // enforces this; V2 lifts the same axis per A39 (aggregate-root
@@ -1121,18 +1203,62 @@ module Module =
 [<RequireQualifiedAccess>]
 module Catalog =
 
+    /// Per-Catalog kind-index cache. Per slice
+    /// A.4.7'-prelude.perf-sweep-2 (`PERF_OPPORTUNITIES.md` Rank 1 —
+    /// highest single-finding leverage): `tryFindKind` is the hottest
+    /// cross-cutting lookup in V2 — emitters resolve FK targets,
+    /// passes look up referenced kinds, the cycle resolver walks the
+    /// FK graph. The prior `List.tryPick` was O(modules ×
+    /// kinds_per_module) per call; at 300-table × per-FK-reference
+    /// scale that compounded across the full pipeline. The
+    /// `ConditionalWeakTable` keys per-Catalog-instance; the index
+    /// is built on first lookup and reused thereafter. Both
+    /// `kindIndex` and `kindOwnershipIndex` populate at the same
+    /// site (one pass over modules) so a single first-lookup pays
+    /// for both lookups.
+    let private kindIndexCache =
+        System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Map<SsKey, Kind>>()
+
+    let private kindOwnershipIndexCache =
+        System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Map<SsKey, Module>>()
+
+    let kindIndex (c: Catalog) : Map<SsKey, Kind> =
+        match kindIndexCache.TryGetValue(c) with
+        | true, idx -> idx
+        | false, _ ->
+            let idx =
+                c.Modules
+                |> List.collect (fun m -> m.Kinds)
+                |> List.map (fun k -> k.SsKey, k)
+                |> Map.ofList
+            kindIndexCache.GetValue(
+                c,
+                System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Map<SsKey, Kind>>.CreateValueCallback(fun _ -> idx))
+
+    let kindOwnershipIndex (c: Catalog) : Map<SsKey, Module> =
+        match kindOwnershipIndexCache.TryGetValue(c) with
+        | true, idx -> idx
+        | false, _ ->
+            let idx =
+                c.Modules
+                |> List.collect (fun m -> m.Kinds |> List.map (fun k -> k.SsKey, m))
+                |> Map.ofList
+            kindOwnershipIndexCache.GetValue(
+                c,
+                System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Map<SsKey, Module>>.CreateValueCallback(fun _ -> idx))
+
     /// Find a kind anywhere in the catalog by SsKey. Returns `None` if
     /// absent. A4: lookup is by identity, never by name.
     let tryFindKind (ssKey: SsKey) (c: Catalog) : Kind option =
-        c.Modules |> List.tryPick (Module.tryFindKind ssKey)
+        Map.tryFind ssKey (kindIndex c)
 
     /// Find the module that owns a given kind by SsKey.
     let tryFindOwningModule (ssKey: SsKey) (c: Catalog) : Module option =
-        c.Modules |> List.tryFind (fun m ->
-            m.Kinds |> List.exists (fun k -> k.SsKey = ssKey))
+        Map.tryFind ssKey (kindOwnershipIndex c)
 
     /// Enumerate all kinds across all modules.
     let allKinds (c: Catalog) : Kind list =
+        use _ = Bench.scope "ir.catalog.scan.allKinds"
         c.Modules |> List.collect (fun m -> m.Kinds)
 
     /// Smart constructor enforcing the catalog-wide aggregate
@@ -1154,6 +1280,7 @@ module Catalog =
     /// to violate. Aggregates errors so a consumer sees every
     /// violation in one Result.
     let create (modules: Module list) (sequences: Sequence list) : Result<Catalog> =
+        use _ = Bench.scope "ir.catalog.create"
         let moduleDupes =
             modules
             |> List.groupBy (fun m -> m.SsKey)

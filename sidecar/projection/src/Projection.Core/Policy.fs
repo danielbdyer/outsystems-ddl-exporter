@@ -442,6 +442,7 @@ module EmissionPolicy =
         (emitDiagnostics: bool)
         (dataComposition: DataComposition)
         : Result<EmissionPolicy> =
+        use _ = Bench.scope "ir.policy.emission.create"
         if not emitSchema && not emitData && not emitDiagnostics then
             Result.failureOf allFalse
         else
@@ -533,6 +534,7 @@ module NullabilityTighteningConfig =
         (allowMandatoryRelaxation: bool)
         (overrides: TighteningOverride list)
         : Result<NullabilityTighteningConfig> =
+        use _ = Bench.scope "ir.policy.nullability.create"
         if nullBudget < 0.0m || nullBudget > 1.0m then
             Result.failureOf nullBudgetOutOfRange
         else
@@ -565,6 +567,7 @@ module UniqueIndexTighteningConfig =
         (enforceSingleColumnUnique: bool)
         (enforceMultiColumnUnique: bool)
         : UniqueIndexTighteningConfig =
+        use _ = Bench.scope "ir.policy.uniqueIndex.create"
         { EnforceSingleColumnUnique = enforceSingleColumnUnique
           EnforceMultiColumnUnique  = enforceMultiColumnUnique }
 
@@ -583,6 +586,7 @@ module CategoricalUniquenessConfig =
     /// (DECISIONS 2026-05-09 — Tightening as a registry of named
     /// interventions).
     let create (minDistinctCountForUniqueness: int64) : Result<CategoricalUniquenessConfig> =
+        use _ = Bench.scope "ir.policy.categoricalUniqueness.create"
         if minDistinctCountForUniqueness < 0L then
             Result.failureOf negativeFloor
         else
@@ -605,6 +609,7 @@ module ForeignKeyTighteningConfig =
         (treatMissingDeleteRuleAsIgnore: bool)
         (allowNoCheckCreation: bool)
         : ForeignKeyTighteningConfig =
+        use _ = Bench.scope "ir.policy.foreignKey.create"
         { EnableCreation                 = enableCreation
           AllowCrossSchema               = allowCrossSchema
           AllowCrossCatalog              = allowCrossCatalog

@@ -328,7 +328,8 @@ let private rowsetWith (isExternal: bool) (espaceKind: string option) : CatalogR
           DataType = "Identifier"; IsMandatory = true; IsIdentifier = true
           IsAutoNumber = true; Length = None; Precision = None; Scale = None
           AttrSsKey = None; IsActive = true; Description = None
-          OriginalName = None; ExternalDatabaseType = None }
+          OriginalName = None; ExternalDatabaseType = None
+          IsComputed = false; ComputedDefinition = None; DefaultConstraintName = None }
     { Modules = [ moduleRow ]; Kinds = [ kindRow ]
       Attributes = [ idRow ]; References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = [] }
 

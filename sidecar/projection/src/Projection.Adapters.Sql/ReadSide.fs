@@ -153,6 +153,17 @@ module ReadSide =
                         })
                 else
                     hasMore <- false
+            // Defensive diagnostic (slice A.4.7'-prelude.defensive-
+            // hardening): zero column rows from INFORMATION_SCHEMA.COLUMNS
+            // is a SIGNAL not silence. Either (a) the user-schema is
+            // genuinely empty (rare in production), or (b) the
+            // VIEW DEFINITION permission is restricted (the user has
+            // db_datareader but cannot see metadata). Surface the
+            // signal so operators can diagnose; downstream emits an
+            // empty SSDT bundle otherwise.
+            if rows.Count = 0 then
+                eprintfn
+                    "readside.readColumnRows: zero rows from INFORMATION_SCHEMA.COLUMNS; verify VIEW DEFINITION permission on user schemas (Azure SQL least-privilege accounts may filter metadata)"
             return List.ofSeq rows
         }
 
@@ -262,16 +273,25 @@ module ReadSide =
             use! reader = cmd.ExecuteReaderAsync()
             let rows = ResizeArray<string * string * string * string * string * string>()
             let mutable hasMore = true
+            // Defensive DBNull guard (slice A.4.7'-prelude.defensive-
+            // hardening): SCHEMA_NAME() returns NULL if the schema
+            // was dropped between metadata read and FK probe (rare
+            // race), or if the user lacks VIEW DEFINITION on the
+            // referenced schema. `reader.GetString` throws
+            // `InvalidCastException` on NULL; treat-as-empty filters
+            // the row out at the downstream consumer (which checks
+            // for non-empty schema/table).
+            let safeStr i = if reader.IsDBNull i then "" else reader.GetString i
             while hasMore do
                 let! more = reader.ReadAsync()
                 if more then
                     rows.Add(
-                        reader.GetString 0,
-                        reader.GetString 1,
-                        reader.GetString 2,
-                        reader.GetString 3,
-                        reader.GetString 4,
-                        reader.GetString 5)
+                        safeStr 0,
+                        safeStr 1,
+                        safeStr 2,
+                        safeStr 3,
+                        safeStr 4,
+                        safeStr 5)
                 else
                     hasMore <- false
             return List.ofSeq rows
@@ -350,6 +370,7 @@ module ReadSide =
                             // deployed schema. Empty / None defaults
                             // until that slice lands.
                             DefaultValue = None
+                            DefaultName = None
                             Computed = None
                             ExtendedProperties = []
                             // Chapter 4.9 slice β — ReadSide reads the
@@ -403,9 +424,28 @@ module ReadSide =
             | Date ->
                 RawValueCodec.formatDate (System.Convert.ToDateTime v)
             | Time ->
-                RawValueCodec.formatTime (v :?> System.TimeSpan)
+                // Defensive type-switch (slice
+                // A.4.7'-prelude.defensive-hardening): some SQL
+                // providers surface `time` columns as `DateTime`
+                // rather than `TimeSpan`; the prior `:?>` cast
+                // threw `InvalidCastException` on those drivers.
+                let ts =
+                    match v with
+                    | :? System.TimeSpan as t -> t
+                    | :? System.DateTime as dt -> dt.TimeOfDay
+                    | other ->
+                        invalidOp
+                            (sprintf "ReadSide.Time: unexpected runtime type %s" (other.GetType().FullName))
+                RawValueCodec.formatTime ts
             | Guid ->
-                RawValueCodec.formatGuid (v :?> System.Guid)
+                let guid =
+                    match v with
+                    | :? System.Guid as g -> g
+                    | :? System.Data.SqlTypes.SqlGuid as sg -> sg.Value
+                    | other ->
+                        invalidOp
+                            (sprintf "ReadSide.Guid: unexpected runtime type %s" (other.GetType().FullName))
+                RawValueCodec.formatGuid guid
             | Decimal ->
                 System.Convert.ToDecimal(v).ToString(inv)
             | Text ->
@@ -413,7 +453,17 @@ module ReadSide =
                 | null -> ""
                 | s -> s
             | Binary ->
-                System.Convert.ToHexString (v :?> byte[])
+                // Older SqlClient surfaces `varbinary`/`binary` as
+                // `SqlBytes` / `SqlBinary` rather than `byte[]`.
+                let bytes =
+                    match v with
+                    | :? (byte[]) as b -> b
+                    | :? System.Data.SqlTypes.SqlBytes as sb -> sb.Value
+                    | :? System.Data.SqlTypes.SqlBinary as sb -> sb.Value
+                    | other ->
+                        invalidOp
+                            (sprintf "ReadSide.Binary: unexpected runtime type %s" (other.GetType().FullName))
+                System.Convert.ToHexString bytes
 
     /// Stream a table's rows as an `AsyncStream<StaticRow>` — pull-
     /// based, bench-instrumented, no row materialization. Per
@@ -442,8 +492,20 @@ module ReadSide =
             kind.Attributes
             |> List.tryFind (fun a -> a.IsPrimaryKey)
             |> Option.map (fun a -> a.Column.ColumnName)
-            |> Option.defaultValue (
-                kind.Attributes |> List.head |> fun a -> a.Column.ColumnName)
+            |> Option.defaultWith (fun () ->
+                // Defensive against an attribute-less Kind (slice
+                // A.4.7'-prelude.defensive-hardening). The A39
+                // smart-constructor invariant guarantees non-empty
+                // attributes for any `Kind.create`-built value;
+                // this explicit match keeps the failure mode
+                // legible if a future code path bypasses the
+                // smart constructor.
+                match kind.Attributes with
+                | a :: _ -> a.Column.ColumnName
+                | [] ->
+                    failwithf
+                        "ReadSide.readRows: Kind %A has no attributes — A39 invariant violated"
+                        kind.SsKey)
         let qualified =
             System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; segments are typed (each via Identifier.EncodeIdentifier)
                 ".",
@@ -473,7 +535,7 @@ module ReadSide =
                 use _ = Bench.scope "readside.readRowsStream.open"
                 let cmd = cnn.CreateCommand()
                 cmd.CommandText <- cmdText
-                cmd.CommandTimeout <- 0
+                cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
                 cmdOpt <- Some cmd
                 let! reader = cmd.ExecuteReaderAsync()
                 readerOpt <- Some reader

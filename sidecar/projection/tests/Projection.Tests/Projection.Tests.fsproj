@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <Compile Include="TestCollections.fs" />
+    <Compile Include="EphemeralContainerFixture.fs" />
     <Compile Include="ScaffoldingTests.fs" />
     <Compile Include="ResultTests.fs" />
     <Compile Include="BenchTests.fs" />
@@ -52,6 +53,7 @@
     <Compile Include="StaticPopulationEmitterTests.fs" />
     <Compile Include="CdcSilenceTests.fs" />
     <Compile Include="CdcSilenceCrossEmitterTests.fs" />
+    <Compile Include="CdcSilencePropertyTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
     <Compile Include="ProfileFixtures.fs" />
     <Compile Include="ProfileTests.fs" />
@@ -76,6 +78,9 @@
     <Compile Include="StaticAdapterDifferentialTests.fs" />
     <Compile Include="OsmCatalogReaderDifferentialTests.fs" />
     <Compile Include="OsmRowsetReaderTests.fs" />
+    <Compile Include="ColumnRealitySourceSidePopulationTests.fs" />
+    <Compile Include="FkRealityRowsetRoundTripTests.fs" />
+    <Compile Include="LiveProfilerIntegrationTests.fs" />
     <Compile Include="DescriptionLiftTests.fs" />
     <Compile Include="OriginalNameAndExternalDbTypeLiftTests.fs" />
     <Compile Include="IndexColumnDirectionTests.fs" />
@@ -125,6 +130,7 @@
     <Compile Include="RegisteredTransformsTests.fs" />
     <Compile Include="PassChainAdapterComposeTests.fs" />
     <Compile Include="SkeletonPurityTests.fs" />
+    <Compile Include="RegisteredAllTransformsBidirectionalTests.fs" />
     <Compile Include="RegistryDigestRoundTripTests.fs" />
     <Compile Include="SsdtExtendedPropertyEmissionTests.fs" />
     <Compile Include="NullabilityRulesTests.fs" />
@@ -141,6 +147,8 @@
     <Compile Include="EndToEndDifferentialTests.fs" />
     <Compile Include="V1NullabilityParityTests.fs" />
     <Compile Include="SsdtDdlEmitterTests.fs" />
+    <Compile Include="SsdtDdlEmitterPropertyTests.fs" />
+    <Compile Include="SsdtSchemaFidelityPropertyTests.fs" />
     <Compile Include="DacpacEmitterTests.fs" />
     <Compile Include="DockerImageEmitterTests.fs" />
     <Compile Include="CoordinatesStage2Tests.fs" />
@@ -152,6 +160,7 @@
     <Compile Include="IndexFilterTests.fs" />
     <Compile Include="IndexIncludedColumnsTests.fs" />
     <Compile Include="IndexOnDiskMetadataTests.fs" />
+    <Compile Include="IndexDataSpaceTests.fs" />
     <Compile Include="IsPlatformAutoEmitterToggleTests.fs" />
     <Compile Include="ReferenceHasDbConstraintTests.fs" />
     <Compile Include="FilterParseDiagnosticTests.fs" />
@@ -165,8 +174,11 @@
     <Compile Include="CanaryDeployTests.fs" />
     <Compile Include="Fixtures/SourceSchema.fs" />
     <Compile Include="Fixtures/FixtureGenerator.fs" />
+    <Compile Include="Fixtures/OssysFixtureSynthesizer.fs" />
     <Compile Include="CanaryRoundTripTests.fs" />
     <Compile Include="GeneratorScaleTests.fs" />
+    <Compile Include="ComprehensiveCanaryTests.fs" />
+    <Compile Include="ExecuteBatchParallelTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

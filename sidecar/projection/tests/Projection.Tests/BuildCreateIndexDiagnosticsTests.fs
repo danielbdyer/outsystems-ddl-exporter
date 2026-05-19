@@ -26,7 +26,7 @@ let private plainIdx : IndexDef =
         Columns = [ { Name = "Id"; Direction = IndexDefColumnDirection.Ascending } ]
         IsUnique = false
         Filter = None
-        IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
+        IncludedColumns = []; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None; DataSpace = None }
 
 let private validFilterIdx : IndexDef =
     { plainIdx with

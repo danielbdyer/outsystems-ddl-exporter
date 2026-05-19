@@ -308,7 +308,7 @@ module StaticSeedsEmitter =
                 if Set.isEmpty deferred then ""
                 else
                     typedRows
-                    |> List.map (fun (_, vs) -> renderUpdate cdcAware k deferred vs)
+                    |> Bench.iterMap "emit.staticSeeds.phase2Row" (fun (_, vs) -> renderUpdate cdcAware k deferred vs)
                     |> System.String.Concat  // LINT-ALLOW: terminal Phase-2 cross-row UPDATE concatenation (chapter 4.1.B slice ι); each segment is the ScriptDom-rendered + GO-batched UPDATE for one row; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary; the typed `Statement` DU does not yet model UPDATE so `ScriptDomGenerate.toText` is not applicable
             // Per-kind self-complete view: Phase-1 + Phase-2 in
             // textual order. Slice ι splits these for the composer's
@@ -357,7 +357,7 @@ module StaticSeedsEmitter =
         let allKinds = Catalog.allKinds catalog
         let slices =
             allKinds
-            |> List.map (fun k -> k.SsKey, kindToScript cdc cycleMembers k)
+            |> Bench.iterMap "emit.staticSeeds.kind" (fun k -> k.SsKey, kindToScript cdc cycleMembers k)
             |> Map.ofList
         ArtifactByKind.create catalog slices
 
@@ -394,17 +394,10 @@ module StaticSeedsEmitter =
     /// metadata-only registration captures the classification
     /// surface without forcing a Run-binding mismatch).
     let registeredMetadata : RegisteredTransformMetadata =
-        { Name = "staticSeedsEmitter"
-          Domain = Data
-          StageBinding = Emitter
-          Sites =
-            [ { SiteName = "staticRowsProjection"
-                Classification = DataIntent
-                Rationale = "Emit MERGE statements for kinds whose `Modality` list contains `Static rows` — pure projection of Catalog-resident evidence (the Static rows are catalog data, not operator overlay). Per A18 amended, the emitter consumes Catalog × Profile only; no Policy enters this site." }
-              { SiteName = "cdcAwareChangeDetection"
-                Classification = DataIntent
-                Rationale = "Per-kind MERGE WHEN MATCHED predicate gates UPDATE on actual column-level differences when `Profile.CdcAwareness.CdcEnabled` carries the kind. Profile is *evidence* (A18 amended; pillar 9 — Profile-driven observations are DataIntent); the CDC predicate IS the data-intent shape, not an operator override. Slice β (chapter 4.1.B) cash-out." }
-              { SiteName = "deferredFkPhase2"
-                Classification = DataIntent
-                Rationale = "Two-phase cycle-breaking — Phase-1 emits MERGEs with deferred FK columns NULLed; Phase-2 UPDATEs populate them once all Phase-1 inserts complete. Cycle membership is structural (from `TopologicalOrder.Cycles`); the deferral is topology-derived, not operator-supplied. Slice δ (chapter 4.1.B) cash-out." } ]
-          Status = Active }
+        RegisteredTransformMetadata.emitter "staticSeedsEmitter" Data
+            [ TransformSite.dataIntent "staticRowsProjection"
+                "Emit MERGE statements for kinds whose `Modality` list contains `Static rows` — pure projection of Catalog-resident evidence (the Static rows are catalog data, not operator overlay). Per A18 amended, the emitter consumes Catalog × Profile only; no Policy enters this site."
+              TransformSite.dataIntent "cdcAwareChangeDetection"
+                "Per-kind MERGE WHEN MATCHED predicate gates UPDATE on actual column-level differences when `Profile.CdcAwareness.CdcEnabled` carries the kind. Profile is *evidence* (A18 amended; pillar 9 — Profile-driven observations are DataIntent); the CDC predicate IS the data-intent shape, not an operator override. Slice β (chapter 4.1.B) cash-out."
+              TransformSite.dataIntent "deferredFkPhase2"
+                "Two-phase cycle-breaking — Phase-1 emits MERGEs with deferred FK columns NULLed; Phase-2 UPDATEs populate them once all Phase-1 inserts complete. Cycle membership is structural (from `TopologicalOrder.Cycles`); the deferral is topology-derived, not operator-supplied. Slice δ (chapter 4.1.B) cash-out." ]

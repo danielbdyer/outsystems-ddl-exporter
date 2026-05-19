@@ -83,9 +83,19 @@ module Deploy =
         let private SystemSocketPath : string = "/var/run/docker.sock"
 
         let private socketCandidates : string list =
+            // Defensive against empty home directory (distroless
+            // containers; `USER nobody`; k8s pods without `$HOME`):
+            // `GetFolderPath SpecialFolder.UserProfile` returns "" on
+            // those hosts; `Path.Combine("", ...)` yields a relative
+            // path that resolves against `CurrentDirectory`, which
+            // is misleading at probe time. Guard the rootless
+            // candidate behind a non-empty home.
             let home = Environment.GetFolderPath Environment.SpecialFolder.UserProfile
-            let userSocket = Path.Combine(home, ".docker", "run", "docker.sock")
-            [ SystemSocketPath; userSocket ]
+            if String.IsNullOrEmpty home then
+                [ SystemSocketPath ]
+            else
+                [ SystemSocketPath
+                  Path.Combine(home, ".docker", "run", "docker.sock") ]
 
         // Why these specific values (not arbitrary):
         // - `ProbeTimeoutMs = 2000`: `docker version` against a healthy
@@ -400,13 +410,272 @@ module Deploy =
             Bench.recordSample "deploy.executeBatch.segments" (int64 segments.Length)
             for segment in segments do
                 use _ = Bench.scope "deploy.executeBatch.segment"
+                // Slice A.4.7'-prelude.perf-sweep-4 diagnostic: per-segment
+                // size sample so the bench rollup surfaces segment-size
+                // distribution. The dominant `deploy.executeBatch` cost
+                // (~83% of canary wall at production scale) is SQL Server
+                // wait time on per-segment ExecuteNonQueryAsync round-
+                // trips; surfacing P50/P95/P99 of segment size lets the
+                // perf-sweep judge whether parallel-segment dispatch or
+                // segment-shape reduction is the higher-leverage target.
+                Bench.recordSample "deploy.executeBatch.segment.bytes" (int64 segment.Length)
                 use cmd = cnn.CreateCommand()
                 cmd.CommandText <- segment
                 // Per session-34 — `0` disables the client-side command
                 // timeout. SQL Server handles the work; we just wait.
-                cmd.CommandTimeout <- 0
+                cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
                 let! _ = cmd.ExecuteNonQueryAsync()
                 ()
+        }
+
+    /// Cache of resolved parallelism per connection string. Per slice
+    /// A.4.7'-prelude.perf-sweep-7.auto-scale: a single DMV round-trip
+    /// at first use surfaces the SQL Server's CPU count; subsequent
+    /// calls hit the cache. `ConcurrentDictionary` is the standard
+    /// concurrent cache; reference-equal connection strings (the
+    /// common case — same SqlConnection.ConnectionString reused) hit
+    /// the same entry.
+    let private parallelismCache =
+        System.Collections.Concurrent.ConcurrentDictionary<string, int>()
+
+    /// Static fallback parallelism — used when both the SQL Server DMV
+    /// probe AND the client-CPU heuristic are unavailable. Conservative
+    /// default validated by the `ExecuteBatchParallelTests` microbench
+    /// (1.21-1.75× speedup at parallelism=4 on the warm container).
+    [<Literal>]
+    let private FallbackParallelism : int = 4
+
+    /// Maximum parallelism cap — beyond this, lock contention on MERGE-
+    /// shaped workloads dominates the speedup. Empirical per the
+    /// SQL Server best-practices literature for bulk-write workloads.
+    [<Literal>]
+    let private MaxParallelism : int = 16
+
+    /// Minimum parallelism floor — below this, the parallel-dispatch
+    /// overhead exceeds the speedup.
+    [<Literal>]
+    let private MinParallelism : int = 2
+
+    /// Attempt to read SQL Server's CPU count via
+    /// `sys.dm_os_sys_info.cpu_count`. Returns `Some n` on success,
+    /// `None` on **any** failure mode:
+    ///   - Connection failure (network, timeout)
+    ///   - Permission denied (`VIEW SERVER STATE` required; restricted
+    ///     in managed-instance / Azure SQL Database / least-privileged
+    ///     production accounts)
+    ///   - DMV missing or column renamed (very old SQL Server versions)
+    ///   - Scalar query returns null / DBNull (defensive against
+    ///     unexpected result shapes)
+    ///   - Cast failure (defensive against non-integer return types)
+    /// Never throws — exceptions are caught and converted to `None`.
+    let private tryProbeServerCpus (connectionString: string) : Task<int option> =
+        task {
+            try
+                use cnn = new SqlConnection(connectionString)
+                do! cnn.OpenAsync()
+                use cmd = cnn.CreateCommand()
+                cmd.CommandText <- "SELECT cpu_count FROM sys.dm_os_sys_info"
+                cmd.CommandTimeout <- 5
+                let! raw = cmd.ExecuteScalarAsync()
+                match raw with
+                | null -> return None
+                | :? System.DBNull -> return None
+                | other ->
+                    try
+                        let n = System.Convert.ToInt32 other
+                        if n > 0 then return Some n
+                        else return None
+                    with _ -> return None
+            with _ -> return None
+        }
+
+    /// Layered probe for the deploy-dispatch parallelism. Tries layers
+    /// in order; first success wins:
+    ///   1. **SQL Server DMV** (`sys.dm_os_sys_info.cpu_count`) —
+    ///      authoritative when accessible; matches the actual
+    ///      server-side concurrency capacity. Capped via
+    ///      `clamp(MinParallelism, MaxParallelism, serverCpus)`.
+    ///   2. **Client CPU count** (`Environment.ProcessorCount`) —
+    ///      defensive fallback for environments where the DMV is
+    ///      restricted (managed instances; least-privileged accounts;
+    ///      cross-server-version compatibility). Capped at `min 8`
+    ///      because the client is the dispatcher (not the workload);
+    ///      large client parallelism without a matched server
+    ///      doesn't translate to throughput.
+    ///   3. **Static fallback** (`FallbackParallelism`, currently 4) —
+    ///      last-resort safe default. Reached only when (a) the DMV
+    ///      probe failed AND (b) `Environment.ProcessorCount`
+    ///      returned ≤ 0 (extraordinarily unlikely; defensive against
+    ///      bizarre runtime conditions).
+    ///
+    /// Each layer logs the chosen path to stderr so operators can see
+    /// WHY a given parallelism was selected — important for debugging
+    /// unexpected deploy throughput in restricted environments.
+    let detectParallelism (connectionString: string) : Task<int> =
+        task {
+            use _ = Bench.scope "deploy.detectParallelism"
+            // Layer 1: SQL Server DMV
+            let! serverProbe = tryProbeServerCpus connectionString
+            match serverProbe with
+            | Some serverCpus ->
+                let clamped = max MinParallelism (min MaxParallelism serverCpus)
+                Bench.recordSample "deploy.detectParallelism.serverCpus" (int64 serverCpus)
+                Bench.recordSample "deploy.detectParallelism.resolved" (int64 clamped)
+                return clamped
+            | None ->
+                // Layer 2: client CPU count — defensive fallback when
+                // DMV is unreachable (Azure SQL Database; restricted
+                // accounts; cross-version compatibility).
+                let clientCpus = System.Environment.ProcessorCount
+                if clientCpus > 0 then
+                    // Smaller ceiling on the client-side fallback: the
+                    // client is just the parallelism dispatcher, not
+                    // the SQL workload — too much client parallelism
+                    // without matched server capacity wastes
+                    // connection-pool slots without throughput gain.
+                    let clamped = max MinParallelism (min 8 clientCpus)
+                    eprintfn
+                        "deploy.detectParallelism: SQL Server DMV unavailable; falling back to Environment.ProcessorCount = %d (clamped to %d)"
+                        clientCpus clamped
+                    Bench.recordSample "deploy.detectParallelism.clientCpus" (int64 clientCpus)
+                    Bench.recordSample "deploy.detectParallelism.resolved" (int64 clamped)
+                    return clamped
+                else
+                    // Layer 3: static fallback (last resort).
+                    eprintfn
+                        "deploy.detectParallelism: both SQL Server DMV and Environment.ProcessorCount unavailable; falling back to %d"
+                        FallbackParallelism
+                    Bench.recordSample "deploy.detectParallelism.resolved" (int64 FallbackParallelism)
+                    return FallbackParallelism
+        }
+
+    /// Resolve the parallelism for data-deploy dispatch. Priority order:
+    ///   1. `PROJECTION_DEPLOY_PARALLELISM` env var (operator override;
+    ///      escape hatch for tuning or for environments where DMV
+    ///      access is restricted)
+    ///   2. Auto-detect via `detectParallelism` (DMV probe; cached
+    ///      per-connection-string for the session)
+    ///   3. Fallback to 4 (matches the prior hardcoded value)
+    ///
+    /// Slice A.4.7'-prelude.perf-sweep-7.auto-scale — environment-
+    /// adaptive realization policy per A36 (bulk-vs-incremental is
+    /// realization-layer policy; parallelism choice is the same
+    /// category).
+    let resolveParallelism (connectionString: string) : Task<int> =
+        task {
+            use _ = Bench.scope "deploy.resolveParallelism"
+            match System.Environment.GetEnvironmentVariable "PROJECTION_DEPLOY_PARALLELISM" with
+            | s when not (System.String.IsNullOrWhiteSpace s) ->
+                match System.Int32.TryParse s with
+                | true, n when n > 0 ->
+                    Bench.recordSample "deploy.resolveParallelism.envOverride" (int64 n)
+                    return n
+                | _ ->
+                    eprintfn
+                        "PROJECTION_DEPLOY_PARALLELISM='%s' is not a positive integer; auto-detecting"
+                        s
+                    match parallelismCache.TryGetValue connectionString with
+                    | true, cached -> return cached
+                    | false, _ ->
+                        let! detected = detectParallelism connectionString
+                        parallelismCache.TryAdd(connectionString, detected) |> ignore
+                        return detected
+            | _ ->
+                match parallelismCache.TryGetValue connectionString with
+                | true, cached ->
+                    Bench.recordSample "deploy.resolveParallelism.cached" (int64 cached)
+                    return cached
+                | false, _ ->
+                    let! detected = detectParallelism connectionString
+                    parallelismCache.TryAdd(connectionString, detected) |> ignore
+                    return detected
+        }
+
+    /// **Parallel-segment realization of a SQL text batch** (slice
+    /// A.4.7'-prelude.perf-sweep-5 primitive; integration deferred per
+    /// preflight). Splits via `BatchSplitter` then dispatches segments
+    /// across `parallelism` concurrent SqlConnections gated by a
+    /// SemaphoreSlim. Each segment runs on its own freshly-opened
+    /// connection; `SqlConnection`'s internal pooling (keyed on the
+    /// connection string) makes the per-segment new/Open/Dispose cheap
+    /// on warm pools.
+    ///
+    /// **CALLER CONTRACT — segment-ordering independence.** The caller
+    /// MUST guarantee that all segments in `sql` are mutually
+    /// independent. Violating this contract produces nondeterministic
+    /// failures (FK constraints; Phase-1/Phase-2 sequencing; etc.).
+    /// True for: a topological-level group of independent kinds at a
+    /// single phase. FALSE for: full schema DDL (FK target → FK source);
+    /// full data deploy (Phase-1 MERGEs are topologically ordered;
+    /// Phase-2 UPDATEs reference Phase-1 rows).
+    ///
+    /// **Status — landed without integration.** The composer-side
+    /// refactor to emit parallel-safe topological-level groups is
+    /// deferred to a dedicated architectural slice. This primitive
+    /// ships as a ready tool with the preflight contract documented;
+    /// the canary continues using sequential `executeBatch` until the
+    /// composer exposes safe groups.
+    /// Cap the requested parallelism against the connection string's
+    /// `Max Pool Size` (slice A.4.7'-prelude.defensive-hardening).
+    /// Defensive against Azure SQL Database tier connection caps
+    /// (Basic/S0 limit concurrent connections to 30; least-privilege
+    /// accounts often run with smaller pool sizes); without the cap,
+    /// `cnn.OpenAsync()` throws `SqlException` error 10928 ("Resource
+    /// ID limit reached") for some segments, leaving partial DDL.
+    /// Halves the pool budget to leave headroom for adjacent
+    /// in-flight connections (e.g., the canary's source-DB read
+    /// happens concurrently with the target-DB deploy).
+    let private capParallelismToPool (connectionString: string) (requested: int) : int =
+        try
+            let builder = SqlConnectionStringBuilder connectionString
+            let maxPool = builder.MaxPoolSize
+            // SqlConnectionStringBuilder.MaxPoolSize defaults to 100.
+            // Halve to leave headroom for concurrent connections.
+            let safeCeil = max 1 (maxPool / 2)
+            if requested > safeCeil then
+                eprintfn
+                    "deploy.executeBatchParallel: requested parallelism %d exceeds half of MaxPoolSize %d; capping to %d"
+                    requested maxPool safeCeil
+                safeCeil
+            else
+                requested
+        with _ ->
+            // Pathologically bad connection string falls through to
+            // the requested value; SqlConnection itself will surface
+            // the syntactic issue at Open time.
+            requested
+
+    let executeBatchParallel
+            (connectionString: string)
+            (sql: string)
+            (parallelism: int)
+            : Task<unit> =
+        task {
+            use _ = Bench.scope "deploy.executeBatchParallel"
+            let segments = BatchSplitter.splitWithLoudFallback "deploy.executeBatchParallel" sql
+            let cappedParallelism = capParallelismToPool connectionString parallelism
+            Bench.recordSample "deploy.executeBatchParallel.segments" (int64 segments.Length)
+            Bench.recordSample "deploy.executeBatchParallel.parallelism" (int64 cappedParallelism)
+            use semaphore = new System.Threading.SemaphoreSlim(cappedParallelism, cappedParallelism)
+            let runSegment (segment: string) : Task<unit> =
+                task {
+                    do! semaphore.WaitAsync()
+                    try
+                        use _ = Bench.scope "deploy.executeBatchParallel.segment"
+                        Bench.recordSample "deploy.executeBatchParallel.segment.bytes" (int64 segment.Length)
+                        use cnn = new SqlConnection(connectionString)
+                        do! cnn.OpenAsync()
+                        use cmd = cnn.CreateCommand()
+                        cmd.CommandText <- segment
+                        cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
+                        let! _ = cmd.ExecuteNonQueryAsync()
+                        ()
+                    finally
+                        semaphore.Release() |> ignore
+                }
+            let tasks = segments |> Array.map runSegment
+            let! _ = Task.WhenAll(tasks)
+            ()
         }
 
     /// Default bulk batch size — per session-35 bench, 1000 was
@@ -552,8 +821,16 @@ module Deploy =
             use _ = Bench.scope "deploy.countUserTables"
             use cmd = cnn.CreateCommand()
             cmd.CommandText <- countUserTablesSql
-            let! tablesObj = cmd.ExecuteScalarAsync()
-            return Convert.ToInt32 tablesObj
+            let! raw = cmd.ExecuteScalarAsync()
+            // Defensive DBNull/null handling (slice
+            // A.4.7'-prelude.defensive-hardening): mirror the
+            // `tryProbeServerCpus` template — `Convert.ToInt32 null`
+            // returns 0 silently, masking a connection failure as
+            // "no tables in DB." Pattern-match on the boxed result.
+            match raw with
+            | null -> return 0
+            | :? DBNull -> return 0
+            | other -> return Convert.ToInt32 other
         }
 
     /// Environment variable that, when set, points all canary
@@ -639,25 +916,54 @@ module Deploy =
     /// per-test; per-test-class amortization belongs in xUnit
     /// `IClassFixture` / `IAsyncLifetime` machinery the caller
     /// arranges.
-    let useEphemeralContainer (body: string -> Task<'a>) : Task<'a> =
+    /// Handle for a started ephemeral container. The `MasterConnectionString`
+    /// is the open contract; `DisposeAsync` reaps the container. Per-test-class
+    /// xUnit `IAsyncLifetime` fixtures construct this once and share across
+    /// test methods to amortize the ~5-10s container cold-start
+    /// (slice A.4.7'-prelude.test-fixture-lift, 2026-05-19).
+    type EphemeralContainerHandle =
+        {
+            MasterConnectionString : string
+            DisposeAsync : unit -> Task
+        }
+
+    /// Spin up a fresh Testcontainers SQL Server and return a handle whose
+    /// `DisposeAsync` reaps it. Sibling to `useEphemeralContainer`: the
+    /// scope-based form (`useEphemeralContainer`) owns the lifecycle for
+    /// one body; the handle form lets a test-class fixture own the
+    /// lifecycle across multiple test methods.
+    let acquireEphemeralContainer () : Task<EphemeralContainerHandle> =
         task {
-            use _ = Bench.scope "deploy.useEphemeralContainer"
+            use _ = Bench.scope "deploy.acquireEphemeralContainer"
             let container =
                 MsSqlBuilder()
                     .WithImage(DefaultImage)
                     .WithCleanUp(true)
                     .Build()
+            do!
+                task {
+                    use _ = Bench.scope "deploy.containerStart"
+                    return! container.StartAsync()
+                }
+            return
+                {
+                    MasterConnectionString = container.GetConnectionString()
+                    DisposeAsync = fun () ->
+                        task {
+                            use _ = Bench.scope "deploy.containerDispose"
+                            do! container.DisposeAsync()
+                        } :> Task
+                }
+        }
+
+    let useEphemeralContainer (body: string -> Task<'a>) : Task<'a> =
+        task {
+            use _ = Bench.scope "deploy.useEphemeralContainer"
+            let! handle = acquireEphemeralContainer ()
             try
-                do!
-                    task {
-                        use _ = Bench.scope "deploy.containerStart"
-                        return! container.StartAsync()
-                    }
-                let masterConn = container.GetConnectionString()
-                return! body masterConn
+                return! body handle.MasterConnectionString
             finally
-                use _ = Bench.scope "deploy.containerDispose"
-                container.DisposeAsync().AsTask().GetAwaiter().GetResult()
+                handle.DisposeAsync().GetAwaiter().GetResult()
         }
 
     let useContainer (body: string -> Task<'a>) : Task<'a> =

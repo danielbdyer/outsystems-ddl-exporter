@@ -135,3 +135,31 @@ module StaticPopulationEmitter =
                 | None   -> ()  // unreachable: order is derived from catalog
                 | Some k -> yield! kindStatements k
         }
+        |> Bench.streamProbe "emit.staticPopulation.statements.stream"
+
+    // -----------------------------------------------------------------------
+    // Slice 5.13.sibling-emitter-registry-static-population —
+    // `registeredMetadata` entry for the StaticPopulationEmitter sibling Π.
+    // Mirrors `StaticSeedsEmitter.registeredMetadata`'s precedent on the
+    // fresh-deploy InsertRow axis (vs. idempotent MERGE).
+    //
+    // **Classification.** All Sites carry `DataIntent`. Static rows live
+    // in `Kind.Modality` (the `Static rows` variant); they ARE catalog-
+    // resident evidence, not operator overlay. The emitter projects from
+    // Catalog only (no Profile, no Policy — A18 amended). Per pillar 9,
+    // this is the same classification logic that `StaticSeedsEmitter`
+    // uses (sibling shape; same source data, different output algebra).
+    // -----------------------------------------------------------------------
+
+    let registeredMetadata : RegisteredTransformMetadata =
+        RegisteredTransformMetadata.emitter "staticPopulationEmitter" Data
+            [ TransformSite.dataIntent "kindStatements"
+                "Per-kind static rows from `Kind.Modality.Static` → `seq<Statement>` of `InsertRow` bracketed by `SetIdentityInsert` toggles when any attribute carries `IsIdentity`. Pure projection of catalog-resident static data (the rows live in the IR; the emitter just streams them). Sibling to `StaticSeedsEmitter.staticRowsProjection` on the InsertRow-vs-MERGE realization axis."
+              TransformSite.dataIntent "rowToCellValues"
+                "Project (`Attribute`, raw) pair → typed `CellValue` per column. Partial-fixture discipline: a row that omits a column's value contributes no `CellValue` for that column (per the session-33 `RawTextEmitter.rowToInsert` precedent; `SqlBulkCopy.KeepNulls` honors the same shape). Excluded columns become DEFAULT-or-NULL at the realization layer, not explicit NULL."
+              TransformSite.dataIntent "identityToggle"
+                "Emit `SET IDENTITY_INSERT [table] ON` before the row block and `OFF` after when the kind carries any `IsIdentity` attribute. Pure projection of `Kind.Attributes.IsIdentity` evidence; emitted unconditionally for both realization layers (`Render.toSql` consumes; `Bulk.copyRows` honors `SqlBulkCopyOptions.KeepIdentity` and the toggle is redundant-but-correct)."
+              TransformSite.dataIntent "topologicalOrder"
+                "Order kinds via `TopologicalOrderPass.runWith SkipSelfEdges` so FK targets' rows insert before referencers'. Identical algorithm to `SsdtDdlEmitter.topologicalOrder` (per A40 harmonization-via-parameterization); composing `Seq.append (SsdtDdlEmitter.statements c) (StaticPopulationEmitter.statements c)` yields the canonical schema-then-data deploy form."
+              TransformSite.dataIntent "statements"
+                "Catalog-wide typed statement stream realization (A35) — `Catalog → seq<Statement>` over `Modality.Static` populations. Sibling Π to `SsdtDdlEmitter.statements` on the data-axis; both consume Catalog only (A18). Empty-population kinds contribute no statements (stream-form T11 caveat: per-kind absence is silent, not a structural breach)." ]

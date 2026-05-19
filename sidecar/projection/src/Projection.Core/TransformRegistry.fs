@@ -144,6 +144,90 @@ module RegisteredTransform =
           Sites = rt.Sites
           Status = rt.Status }
 
+/// Smart-constructors for the typed `TransformSite` value. Per pillar 9
+/// the classification (DataIntent vs OperatorIntent OverlayAxis) is the
+/// load-bearing axis of every site; lifting these helpers into the
+/// function name puts the classification at the head of every site
+/// declaration rather than nested inside a record literal field.
+///
+/// Two-consumer threshold cleared at slice 5.13.sibling-emitter-registry-
+/// helper-extraction (2026-05-18): 9 emitter + adapter registrations
+/// (SsdtDdl / Json / Distributions / StaticPopulation / DataEmissionComposer
+/// / StaticSeeds / MigrationDependencies / Bootstrap / CatalogReader)
+/// shared the literal record syntax; the helpers absorb the boilerplate.
+[<RequireQualifiedAccess>]
+module TransformSite =
+
+    /// A site that projects evidence without operator opinion. Per
+    /// pillar 9's 4-step harvest workflow, this is the DataIntent arm:
+    /// the transformation is reachable from
+    /// `Project(catalog, Policy.empty, profile)` without operator-supplied
+    /// overlay. The rationale prose names what the projection does and
+    /// why no Policy enters.
+    let dataIntent (name: string) (rationale: string) : TransformSite =
+        { SiteName = name
+          Classification = DataIntent
+          Rationale = rationale }
+
+    /// A site that expresses operator-supplied intent through the named
+    /// `OverlayAxis`. Per pillar 9, this is the OperatorIntent arm: the
+    /// transformation lands as a registered overlay carrying classified
+    /// `LineageEvent`s. The axis IS the operator-intent vocabulary
+    /// (Selection / Emission / Insertion / Tightening / Ordering); the
+    /// rationale prose names the source of operator intent (e.g.,
+    /// "operator-supplied UserRemapContext" / "Policy.Emission.DataComposition").
+    let operatorIntent (name: string) (axis: OverlayAxis) (rationale: string) : TransformSite =
+        { SiteName = name
+          Classification = OperatorIntent axis
+          Rationale = rationale }
+
+/// Smart-constructors for `RegisteredTransformMetadata` at the two
+/// most common StageBinding values (Emitter + Adapter). The Pass /
+/// OrderingPolicy / Pipeline bindings continue to flow through the
+/// typed `RegisteredTransform<'In, 'Out>` shell + `RegisteredTransform.
+/// toMetadata` projection (those bindings carry the `Run` field).
+/// Emitter + Adapter signatures don't fit the typed shell (heterogeneous
+/// `'In` / `'Out` with `ArtifactByKind<_>` / `Result<_, EmitError>` /
+/// `Task<_>` envelopes); metadata-only registration is the principled
+/// form for both — `CatalogReader.registeredMetadata` is the adapter
+/// precedent, `SsdtDdlEmitter.registeredMetadata` is the emitter
+/// precedent.
+///
+/// Both helpers fix `Status = Active`. Consumers that need a
+/// `NotImplementedInV2` registration use the record-literal form
+/// directly — the per-rationale parameter would clutter the common
+/// constructor for a rare case.
+[<RequireQualifiedAccess>]
+module RegisteredTransformMetadata =
+
+    /// Construct emitter-stage metadata. The `StageBinding = Emitter`
+    /// binding is fixed; callers supply Name + Domain + Sites.
+    let emitter
+        (name: string)
+        (domain: Domain)
+        (sites: TransformSite list)
+        : RegisteredTransformMetadata =
+        { Name = name
+          Domain = domain
+          StageBinding = Emitter
+          Sites = sites
+          Status = Active }
+
+    /// Construct adapter-stage metadata. The `StageBinding = Adapter`
+    /// binding is fixed; sibling to `emitter`. The CatalogReader
+    /// precedent ships at the cherry-pick boundary (slice δ); future
+    /// adapter `registeredMetadata` lifts use this constructor.
+    let adapter
+        (name: string)
+        (domain: Domain)
+        (sites: TransformSite list)
+        : RegisteredTransformMetadata =
+        { Name = name
+          Domain = domain
+          StageBinding = Adapter
+          Sites = sites
+          Status = Active }
+
 [<RequireQualifiedAccess>]
 module TransformRegistry =
 
@@ -216,6 +300,7 @@ module TransformRegistry =
     /// `.registered`. The validation runs once at construction; the
     /// resulting metadata list is trusted thereafter.
     let create (entries: RegisteredTransformMetadata list) : Result<RegisteredTransformMetadata list> =
+        use _ = Bench.scope "ir.registry.create"
         let entryErrors =
             entries
             |> List.collect (fun entry ->
@@ -288,6 +373,7 @@ module TransformRegistry =
     /// traversal carries `Classification = DataIntent`; misclassification
     /// surfaces as a leak.
     let skeletonView (entries: RegisteredTransformMetadata list) : RegisteredTransformMetadata list =
+        use _ = Bench.scope "ir.registry.skeletonView"
         entries
         |> List.filter (fun rt ->
             rt.Sites
@@ -308,6 +394,7 @@ module TransformRegistry =
     /// `skeletonView` — the pass-level classification follows the
     /// strictest site. Slice θ's tests witness this asymmetry.
     let overlayView (entries: RegisteredTransformMetadata list) : RegisteredTransformMetadata list =
+        use _ = Bench.scope "ir.registry.overlayView"
         entries
         |> List.filter (fun rt ->
             rt.Sites
@@ -418,6 +505,7 @@ module TransformRegistry =
     /// order). The 5th bidirectional property test asserts the round-
     /// trip stability + perturbation sensitivity per A41.
     let digest (entries: RegisteredTransformMetadata list) : string =
+        use _ = Bench.scope "ir.registry.digest"
         let sorted = entries |> List.sortBy (fun e -> e.Name)
         let buffer = System.Text.StringBuilder()  // LINT-ALLOW-FILE-MUTATION not needed — instance-local mutation only; sealed at this function's exit via the SHA256.HashData call. Per slice ζ: deterministic concatenation of typed DU projections at the SHA256 boundary; no consumer reads the StringBuilder, only the resulting bytes.
         for entry in sorted do

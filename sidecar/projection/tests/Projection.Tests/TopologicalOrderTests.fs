@@ -157,3 +157,108 @@ let ``precedes is anti-symmetric on the synthetic ordering`` () =
                 let ab = TopologicalOrder.precedes a b threeKindOrder
                 let ba = TopologicalOrder.precedes b a threeKindOrder
                 Assert.False(ab && ba)
+
+// ---------------------------------------------------------------------------
+// levels — Kahn-style level assignment for parallel-safe emission groups.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``levels: empty order produces empty level list`` () =
+    Assert.Empty(TopologicalOrder.levels TopologicalOrder.empty)
+
+[<Fact>]
+let ``levels: solitary kind with no edges lives at level 0`` () =
+    let t : TopologicalOrder =
+        { TopologicalOrder.empty with
+            Order = [ customerKey ]
+            Edges = [] }
+    Assert.Equal<SsKey list list>(
+        [ [ customerKey ] ],
+        TopologicalOrder.levels t)
+
+[<Fact>]
+let ``levels: chain customer<-order<-country produces three singleton levels`` () =
+    // Edges are (child, parent) — country depends on order; order depends on customer.
+    let t : TopologicalOrder =
+        { TopologicalOrder.empty with
+            Order = [ customerKey; orderKey; countryKey ]
+            Edges = [ orderKey, customerKey
+                      countryKey, orderKey ] }
+    Assert.Equal<SsKey list list>(
+        [ [ customerKey ]; [ orderKey ]; [ countryKey ] ],
+        TopologicalOrder.levels t)
+
+[<Fact>]
+let ``levels: two independent kinds collapse into one level-0 group`` () =
+    let t : TopologicalOrder =
+        { TopologicalOrder.empty with
+            Order = [ customerKey; countryKey ]
+            Edges = [] }
+    // Both at level 0; inner list sorted by SsKey.
+    let result = TopologicalOrder.levels t
+    Assert.Single(result) |> ignore
+    let level0 = List.head result
+    Assert.Equal(2, List.length level0)
+    Assert.Contains(customerKey, level0)
+    Assert.Contains(countryKey, level0)
+
+[<Fact>]
+let ``levels: diamond shape — two parents at level 0; shared dependent at level 1`` () =
+    // customer <- order; country <- order. order depends on both.
+    let t : TopologicalOrder =
+        { TopologicalOrder.empty with
+            Order = [ customerKey; countryKey; orderKey ]
+            Edges = [ orderKey, customerKey
+                      orderKey, countryKey ] }
+    let result = TopologicalOrder.levels t
+    Assert.Equal(2, List.length result)
+    let level0 = List.head result
+    let level1 = List.item 1 result
+    Assert.Equal(2, List.length level0)
+    Assert.Contains(customerKey, level0)
+    Assert.Contains(countryKey,  level0)
+    Assert.Equal<SsKey list>([ orderKey ], level1)
+
+[<Fact>]
+let ``levels: parallel-safety invariant holds — no edge between kinds at the same level`` () =
+    // Variegated graph: 4 kinds, mixed dependencies.
+    let aKey = kindKey ["A"]
+    let bKey = kindKey ["B"]
+    let cKey = kindKey ["C"]
+    let dKey = kindKey ["D"]
+    let t : TopologicalOrder =
+        { TopologicalOrder.empty with
+            Order = [ aKey; bKey; cKey; dKey ]
+            Edges = [ cKey, aKey  // C depends on A
+                      cKey, bKey  // C depends on B
+                      dKey, cKey ] }  // D depends on C
+    let levels = TopologicalOrder.levels t
+    // For each level, check no two kinds at that level have an edge between them.
+    let levelOf (k: SsKey) : int =
+        levels
+        |> List.findIndex (List.contains k)
+    for (child, parent) in t.Edges do
+        let childLvl = levelOf child
+        let parentLvl = levelOf parent
+        Assert.True(
+            parentLvl < childLvl,
+            sprintf "edge (%A → %A): parent level %d should be < child level %d" parent child parentLvl childLvl)
+
+[<Fact>]
+let ``levels: cycle-broken kind receives finite level`` () =
+    // A ⟶ B ⟶ A (self-cycle). Cycle-resolver picks A first; B follows.
+    // Edge (A, B) means A depends on B — but B comes AFTER A in Order
+    // (because cycle resolver broke that edge); so A's "parent B" is
+    // treated as unknown → A goes to level 0.
+    let aKey = kindKey ["A"]
+    let bKey = kindKey ["B"]
+    let t : TopologicalOrder =
+        { TopologicalOrder.empty with
+            Mode  = JunctionDeferred
+            Order = [ aKey; bKey ]
+            Edges = [ aKey, bKey
+                      bKey, aKey ] }
+    let result = TopologicalOrder.levels t
+    Assert.Equal(2, List.length result)
+    Assert.Equal<SsKey list>([ aKey ], List.head result)
+    Assert.Equal<SsKey list>([ bKey ], List.item 1 result)

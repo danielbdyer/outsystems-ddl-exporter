@@ -242,6 +242,11 @@ Different V1 capabilities have different shapes of "equivalent output." Per slic
 | 183 | `Osm.Smo/IndexScriptBuilder.cs` (~452 LOC) line-by-line audit: index columns + sort order (V1 65-84) ↔ V2 757-771; INCLUDE columns (V1 67-71) ↔ V2 773-778; WHERE clause (V1 410 TSql150) ↔ V2 698 TSql160 (upgraded SQL Server 2022). FillFactor + PadIndex + StatisticsNoRecompute + AllowRowLocks + AllowPageLocks: 100% parity | **Deferred axes** (slice ζ candidates): IgnoreDupKey (V1 215-221); DataCompression with partition-range collapse (V1 259-301); FileGroup/PartitionScheme dataspace (V1 322-374); paired matrix rows 55+56 | 🟢 PARITY (70%) | `OssysOmnibusClosingParityTests.``5.3.β row 183`` ` (Skip) | Omnibus. V2 upgraded to TSql160 + filter-parse failures observable via Diagnostics. |
 | 184 | V1 `IndexScriptBuilder.ParsePredicate` returns null on parse failure (silent; filtered by caller; V1 lines 403-419) | V2 `ScriptDomBuild.tryParseFilterWithDiagnostics` (chapter 4.6 slice γ; lines 692-735) emits Diagnostics Warning entry + None on parse failure | 🔵 V2-EXTENSION | `OssysOmnibusClosingParityTests.``5.3.β row 184`` ` (Skip) | Omnibus. V1's silent-skip becomes V2's named diagnostic per Total-decisions-named-skips discipline + slice 5.4.γ.opportunities Per-pass DiagnosticEntry contract. |
 | 185 | V1 `IndexScriptBuilder.ColumnReferenceRewriteVisitor` (lines 421-450) rewrites column references post-parse (physical → logical name mapping) via visitor pattern | V2 encodes both names in ColumnDef and uses logical (Name field) at emit time; no rewriter visitor | 🔵 V2-EXTENSION | `OssysOmnibusClosingParityTests.``5.3.β row 185`` ` (Skip) | Omnibus. Per pillar 8 — names are concepts; deterministic at-source generation. V2 IR carries both names from CatalogReader; emitter consumes logical name directly. V2's IR-level naming eliminates rewriter complexity. |
+| 186 | `Osm.Smo/PerTableEmission/CreateTableFormatter.cs` (~235 LOC) — V1 post-render normalization: splits inline DEFAULT / CONSTRAINT clauses across lines with 4-space indent; strips trailing commas from the last column. Operates on already-rendered SQL text per `format.NormalizeWhitespace` operator option | V2 has **no equivalent**. `Sql160ScriptGenerator` produces canonical formatted SQL at the typed-AST boundary; the trailing-comma / inline-clause idiosyncrasies V1 post-processes don't appear in V2's emission by construction (verified by `SsdtSchemaFidelityPropertyTests.5.3.α.formatting`) | 🟡 DIVERGENCE | `SsdtSchemaFidelityPropertyTests.5.3.α.formatting: emitted SQL parses back via TSql160Parser without errors` + `… does not require V1-style trailing-comma fixup` | Slice 5.3.α.smo-audit. V2's ScriptDom-canonical approach replaces V1's SMO + post-render-formatting two-pass via single-pass typed-AST emission. **Documented architecture choice** — same as matrix row 120's cluster-level DIVERGENCE. Per `DECISIONS 2026-05-10 — Text-builder-as-first-instinct discipline`: ScriptDom is the canonical typed-AST library; post-render text manipulation is a V1-era artifact. **Migration impact**: zero — V1's formatter operates on V1's SMO output, not V2's. **Sunset timing**: with V1, cutover+30. |
+| 187 | `Osm.Smo/PerTableEmission/ConstraintFormatter.cs` (~313 LOC) — V1 post-render FK + PK constraint formatting: detects FOREIGN KEY + REFERENCES + ON DELETE/UPDATE; splits across lines with indent; synthesizes missing ON DELETE / ON UPDATE = NO ACTION; emits `-- Source constraint was not trusted (WITH NOCHECK)` comment per FK trust lookup | V2 has **no equivalent**. ScriptDom's `ForeignKeyConstraintDefinition` emits the same logical content as a single typed AST node; `Sql160ScriptGenerator` renders deterministically. NOCHECK FK trust state surfaces structurally via `Reference.IsConstraintTrusted` + the post-CREATE-TABLE `Statement.AlterTableNoCheckConstraint` (slice 5.13.fk-features-emit; matrix row 59) rather than via a trailing prose comment | 🟡 DIVERGENCE | `SsdtSchemaFidelityPropertyTests.5.3.α.pk-and-fk: every kind with references emits FOREIGN KEY clauses matching reference count` | Slice 5.3.α.smo-audit. **NOCHECK trust state has a structural carriage in V2** (matrix row 59 closed 2026-05-18) — replacing V1's prose-comment carriage with typed ALTER TABLE statements. The missing-ON-UPDATE synthesis pattern is V1-specific scripting fidelity that V2 omits (V2 only emits ON UPDATE when `Reference.OnUpdate = Some action` per slice 5.13.fk-features-emit row 58). |
+| 188 | `Osm.Smo/PerTableEmission/StatementBatchFormatter.cs` (~60 LOC) — V1 batch-assembly: `JoinStatements` concatenates per-table SQL statements with `GO` separators (CRLF + GO + CRLF); optional `NormalizeWhitespace` trim-trailing-spaces pass | V2 splits this concern: **per-kind SsdtFile carries one logical statement block** (no GO inside the file body, verified by `SsdtSchemaFidelityPropertyTests.5.3.α.statement-batch`); `Projection.Targets.SSDT.BatchSplitter` handles the **inverse** direction (parsing a deployed SQL stream split on `^GO$` lines via ScriptDom's `TSql160Parser` with `^GO$` line-fold fallback); GO-batching at deploy time happens at the realization layer (`Deploy.executeStream` reads one Statement at a time; CLI emission concatenates files with implicit batch boundaries) | 🟡 DIVERGENCE | `SsdtSchemaFidelityPropertyTests.5.3.α.statement-batch: per-kind file body does not contain GO separator` | Slice 5.3.α.smo-audit. V2's concept-shaped `BatchSplitter` (pillar 8 worked precedent in CLAUDE.md) names the inverse-direction-only role; the V1-direction (writer-side GO assembly) lives at the realization layer per A35 + A36 (bulk-vs-incremental is realization-layer policy). |
+| 189 | `Osm.Smo/PerTableEmission/IdentifierFormatter.cs` (~146 LOC) — V1 identifier quoting: `CreateIdentifier` / `BuildSchemaObjectName` / `BuildColumnReference` route through `MapQuoteType` (L112) defaulting to `QuoteType.SquareBracket`; `QuoteIdentifier` for string-composed sites doubles `]` inside brackets per V1 escape convention; `ResolveConstraintName` remaps constraint names on table rename (case-insensitive substring replace) | V2's ScriptDom builders use `Identifier(value, QuoteType.SquareBracket)` constructors directly; `Sql160ScriptGenerator`'s pinned options produce the same bracket form deterministically. **Quote-strategy operator parameter has no V2 equivalent** — V2 pins SquareBracket structurally (Sql160ScriptGenerator default); double-quote / bare forms aren't reachable. **Constraint-name remap on table rename** is handled at IR-rewrite time by `TableRename.applyRenames` (chapter 4.1.A close) — the rename IS the identity refresh, not a post-render text substitution | 🟡 DIVERGENCE | `SsdtSchemaFidelityPropertyTests.5.3.α.identifier: emitted column references use bracket-quoting consistently` + `… escape closing bracket if present` | Slice 5.3.α.smo-audit. V2's structurally-pinned quote strategy + IR-rewrite-time rename together replace V1's operator-configurable quoting + post-render rename rewriting. **Re-open trigger**: V2 grows an operator-tunable identifier-quoting axis (low probability; SQL Server uniformly accepts bracket form regardless of QUOTED_IDENTIFIER setting). |
+| 190 | `Osm.Smo/PerTableEmission/ExtendedPropertyScriptBuilder.cs` (~142 LOC) — V1 extended-property emission at Table / Column / Index levels via string-composed `EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'…', @level0type=N'SCHEMA',@level0name=N'…', @level1type=N'TABLE',@level1name=N'…' [, @level2type=N'COLUMN'|N'CONSTRAINT'|N'INDEX', @level2name=N'…']` statements (raw-text concatenation with `EscapeSqlLiteral` single-quote doubling) | V2's `ScriptDomBuild.buildSetExtendedPropertyCore` (`Projection.Targets.SSDT/ScriptDomBuild.fs:1031`) emits the same `EXEC sys.sp_addextendedproperty` shape via typed `ExecuteStatement` + typed `ExecuteParameter` bindings; multi-level @level0type / @level1type / @level2type prefixes assembled per `ExtendedPropertyOwner` DU (Schema / Table / Column / Index — V2 adds Schema-level beyond V1's three). Replaces V1's hand-rolled escaping with ScriptDom's `nText` literal builder | 🟢 PARITY | `SsdtSchemaFidelityPropertyTests.5.3.α.extended-properties: emission uses sys.sp_addextendedproperty for description carriage` | Slice 5.3.α.smo-audit. V2 carries the V1 capability AND adds the Schema-level (V1 emits Table / Column / Index only). The L3-S6 sub-axiom (extended-property emission) holds structurally; chapter 4.1.A slice 8 was the closure. The `Sites` enumeration on `SsdtDdlEmitter.registeredMetadata` carries `setExtendedProperty` as a classified DataIntent transformation. |
 
 ---
 
@@ -1160,6 +1165,1117 @@ test-side `IRBuilders.mkX` vocabulary retires.
 **Coverage:** existing test suite witnesses (1571 tests pass).
 Solution-level grep confirms zero `IRBuilders.mk(Attribute|Kind|
 Reference|Index|IndexColumn|IndexColumns)` remain in source.
+
+---
+
+### Rows 17 + 18 — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.row17-18-rowset-roundtrip — V1↔V2 BUG-CORRECTED finalizing FK rowset reality round-trip)
+
+**Original framing.** Slice 5.13.fk-reality-join (2026-05-18) wired
+the 3-step JOIN at `MetadataSnapshotRunner.toBundle`:
+`OssysReferenceRow → OssysFkColumnRow → OssysFkRealityRow`. Slice
+5.13.fk-features-emit (2026-05-18) shipped `Reference.OnUpdate` +
+`Reference.IsConstraintTrusted` IR fields + emitter. The
+slice 5.13.blind-spot-closure amendment classified rows 17/18 as
+🔵 V2-EXTENSION (typed rowsets carry OnUpdate + IsNoCheck) with the
+rowset adapter wiring named as shipped.
+
+**Bug found 2026-05-19 (during slice B verification audit).** The
+JOIN wiring at `toBundle` correctly populates
+`CatalogReader.ReferenceRow.OnUpdate : string option` with V1's
+`#FkReality.update_referential_action_desc` (SQL Server vocabulary:
+`NO_ACTION` / `CASCADE` / `SET_NULL` / `SET_DEFAULT`). However,
+`CatalogReader.parseReferenceRowFor` parsed that string via
+`parseDeleteRule`, which only recognizes OutSystems-domain
+vocabulary (`Delete` / `Protect` / `Ignore` / `SetNull`). Every SQL
+Server value fell into `parseDeleteRule`'s error branch; the surrounding
+`Option.bind` silently degraded errors to `None`. Result: **V2 never
+populated `Reference.OnUpdate` from the rowset path when the source
+FK had a non-default ON UPDATE action**, despite the JOIN being
+correctly wired.
+
+The IsConstraintTrusted axis worked correctly (no string parsing
+needed; bool flows directly through).
+
+**Reclassified (slice A.4.7'-prelude.row17-18-rowset-roundtrip,
+2026-05-19):**
+
+| Row | Prior status | Updated status | What shipped |
+|---|---|---|---|
+| 17 | 🔵 V2-EXTENSION (rowset shipped; IR enrichment gated) | 🔴 V1-BUG-CORRECTED + 🟢 PARITY | New `parseSqlForeignKeyAction` helper in CatalogReader.fs handles SQL Server's vocabulary (`NO_ACTION` / `CASCADE` / `SET_NULL` / `SET_DEFAULT`). `parseReferenceRowFor` swapped from `parseDeleteRule` → `parseSqlForeignKeyAction` on the `OnUpdate` axis. `SET_DEFAULT` degrades to `None` (V2's `ReferenceAction` DU doesn't model it; lift trigger: real-world FK with SET DEFAULT surfaces). |
+| 18 | 🔵 V2-EXTENSION | 🟢 PARITY | IsConstraintTrusted axis worked correctly; verified by end-to-end test. The 3-step JOIN at `MetadataSnapshotRunner.toBundle` from prior slice remains canonical. |
+
+**Per pillar 9: pure DataIntent.** The new `parseSqlForeignKeyAction`
+joins the family of vocabulary-translation helpers within the
+existing `typeTranslation` Site in `CatalogReader.registeredMetadata`;
+no new TransformRegistry Sites needed. The Site's Rationale is
+amended to name both vocabulary parsers (`parseDeleteRule` for OS
+domain, `parseSqlForeignKeyAction` for SQL Server domain) — making
+the dual-vocabulary discipline structurally visible at the registry.
+
+**Verification depth: 8 new end-to-end tests** in
+`FkRealityRowsetRoundTripTests.fs`:
+
+- `V1 #FkReality.UpdateAction = "CASCADE"` → `Reference.OnUpdate = Some Cascade`
+- `V1 #FkReality.UpdateAction = "SET_NULL"` → `Reference.OnUpdate = Some SetNull`
+- `V1 #FkReality.UpdateAction = "NO_ACTION"` → `Reference.OnUpdate = Some NoAction`
+- `V1 #FkReality.UpdateAction = None` → `Reference.OnUpdate = None` (server-default)
+- `V1 #FkReality.UpdateAction = "SET_DEFAULT"` → `Reference.OnUpdate = None` (deferred ReferenceAction variant)
+- `ReferenceRow.IsConstraintTrusted = true` → `Reference.IsConstraintTrusted = true`
+- `ReferenceRow.IsConstraintTrusted = false` → `Reference.IsConstraintTrusted = false` (NOCHECK preserved)
+- Combined: both axes together (production cutover scenario)
+
+**Operating-discipline payoff.** This slice is a textbook
+**"audit during validation"** payoff per `DECISIONS 2026-05-09`. The
+prior slice 5.13.fk-reality-join shipped the JOIN logic + amendment
+classified rows 17/18 as "wired." The verification-depth pass
+(adding end-to-end tests that exercise non-default values) surfaced
+the parsing bug. Without writing the tests, the bug would have
+shipped to production deploy and surfaced only when an operator
+deployed an FK with `ON UPDATE CASCADE` and discovered V2 emitted
+no ON UPDATE clause. Functional parity now structurally verified.
+
+**Cross-references.**
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.row17-18-rowset-roundtrip)`
+  — V1↔V2 vocabulary disambiguation + bug fix codification
+- V1 SQL source: `outsystems_metadata_rowsets.sql:280-289` (`#FkReality`
+  build); `fk.update_referential_action_desc` (SQL Server's
+  underscored-uppercase vocabulary)
+- Prior amendments: slice 5.13.fk-reality-join (the JOIN wiring) +
+  slice 5.13.fk-features-emit (the IR fields + emitter) +
+  slice 5.13.blind-spot-closure (the rowset adapter wiring claim
+  that this slice now structurally pins)
+- `DECISIONS 2026-05-09 — Audits surface things not on the agenda`
+  — the operating discipline this slice operationalizes
+- Pillar 9 (`DECISIONS 2026-05-15 (late)`) — DataIntent classification;
+  `typeTranslation` Site's Rationale amended to name both parsers
+
+**Refreshed deferral trigger:** `SET_DEFAULT` → currently degrades
+to `None`. Trigger to add a `Restrict`-like variant or extend the
+existing `ReferenceAction` DU: a real-world FK with `ON UPDATE SET
+DEFAULT` surfaces in fixture data. Pillar-9 classification of the
+extension: DataIntent (V2's IR grows under evidence).
+
+---
+
+### DacpacEmitter registry — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.dacpac-registry closes the last sibling-Π TransformRegistry gap)
+
+**Original framing.** Per CLAUDE.md's Active deferrals + the
+text-builder-as-first-instinct discipline: "chapter 3.x DacpacEmitter
+MUST adopt `Microsoft.SqlServer.Dac` (DacFx)." The DacpacEmitter
+itself shipped at chapter 3.x slice α (148 LOC; DacFx integration +
+typed model + round-trip tests). Per the prior sibling-emitter-
+registry sweep arc (2026-05-18), every other sibling-Π emitter
+(SsdtDdlEmitter / JsonEmitter / DistributionsEmitter /
+StaticPopulationEmitter / StaticSeedsEmitter / MigrationDependencies
++ DataEmissionComposer / BootstrapEmitter) shipped `registeredMetadata`;
+DacpacEmitter was the lone holdout.
+
+**Closed by slice A.4.7'-prelude.dacpac-registry (2026-05-19):**
+
+`DacpacEmitter.registeredMetadata : RegisteredTransformMetadata`
+ships with **5 classified Sites** — every V1-irrelevant axis (V2's
+DACPAC is dev-tooling-only; no V1 counterpart) carrying substantive
+Rationale + DataIntent classification per A18 amended (emitter
+consumes Catalog only):
+
+| Site | Classification | Rationale shape |
+|---|---|---|
+| `schemaStatementFilter` | DataIntent | Closed-DU predicate filtering Π stream to DDL only (admits CreateTable / CreateIndex / SetExtendedProperty / AlterTableNoCheckConstraint / AlterIndexDisable; rejects InsertRow / SetIdentityInsert / Comment / Blank). |
+| `statementIngestion` | DataIntent | Per-statement `TSqlModel.AddObjects` via ScriptDom-rendered script. Per-statement (not GO-batched) avoids DacFx's batch-separator grammar coupling. |
+| `packageMetadata` | DataIntent | DacFx `PackageMetadata` (Name / Description / Version constants per pre-scope §6.8: no wall-clock embedding in V2-controlled fields). |
+| `packageBuild` | DataIntent | `DacPackageExtensions.BuildPackage(stream, model, metadata)` serializes TSqlModel → `.dacpac` bytes via in-memory MemoryStream (DacFx's internal zip plumbing confined to the stream; no file I/O in Core/Targets). |
+| `emit` | DataIntent | Π port realization — `Catalog → Result<byte[]>`. T1 binary amendment named: content-equality via DacFx round-trip (Origin.xml wall-clock prevents byte-equality; the algebraic claim holds at the model level). |
+
+**Pipeline-level registry assembly extended.** `Projection.Pipeline
+.RegisteredAllTransforms.all` (slice A.4.7'-prelude+pipeline-registry,
+2026-05-19) gained `DacpacEmitter.registeredMetadata` in the
+sibling-emitter prepend chain; the unified registry now covers
+**10 emitter / adapter registrations** (was 9):
+
+- Adapter (1): `CatalogReader` (OSSYS)
+- Emitter (6): `SsdtDdlEmitter`, **`DacpacEmitter`** (new),
+  `JsonEmitter`, `DistributionsEmitter`, `StaticPopulationEmitter`,
+  `StaticSeedsEmitter` + `MigrationDependenciesEmitter` +
+  `BootstrapEmitter` (3 in `RegisteredDataTransforms.all`)
+- Pipeline (1): `DataEmissionComposer`
+- Pass / OrderingPolicy (12): `RegisteredTransforms.all` (Core)
+
+**Coverage tests (6 new in `EmitterRegistrationsTests.fs`):**
+- DacpacEmitter.registeredMetadata is at the Emitter stage
+- enumerates every emission feature (5 Site names)
+- every Site classifies as DataIntent (A18 amended)
+- every Site carries non-empty Rationale (pillar 9 harvest discipline)
+- validates through TransformRegistry.create
+- joint registry (SSDT + DACPAC + Json + Distributions +
+  StaticPopulation + four Data-axis siblings) validates with ≥21
+  entries
+
+Plus an amendment to the existing site-enumeration test for
+SsdtDdlEmitter to include `indexDataSpace` (added in slice B per
+matrix row 56 closure).
+
+**Cross-references.**
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.dacpac-registry) —
+  DacpacEmitter registry: last sibling-Π TransformRegistry gap closed`
+- `CLAUDE.md` Active deferrals — text-builder-as-first-instinct
+  discipline named "chapter 3.x DacpacEmitter MUST adopt DacFx";
+  the DacFx integration shipped at chapter 3.x slice α; this slice
+  retroactively brings the emitter into the registry chorus
+- `DECISIONS 2026-05-11 — Chapter 3.x DacpacEmitter open` (the
+  original DacFx-adoption scoping)
+- The prior sibling-emitter-registry-* arc (2026-05-18) — same
+  pattern; DacpacEmitter was a known holdout per the
+  helper-extraction amendment's table
+
+**Sibling chorus closure.** After this slice, **every sibling-Π
+emitter V2 ships carries `registeredMetadata`** — no holdouts.
+The structural-evidence layer (Lineage / Diagnostics / Bench /
+TransformRegistry) reaches every emission site V2 emits, per
+pillar 9's cross-cutting concern commitment.
+
+---
+
+### Row 56 — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.row56-dataspace closes LR7 — filegroup + partition-scheme dataspace emission end-to-end)
+
+**Original framing.** Matrix row 56 named two paired residuals:
+- **LR6** — DataCompression partition-range emission (V1
+  `IndexScriptBuilder.cs:259-301 CollapseRanges`)
+- **LR7** — FileGroup / PartitionScheme dataspace emission (V1
+  `IndexScriptBuilder.cs:322-374`)
+
+Both were deferred-with-trigger ("partitioned-index fixture surfaces
+in operator-reality canary OR operator-pressure for filegroup-pinned
+indexes"). Slice A.4.7'-prelude.row56-dataspace (2026-05-19) closes
+LR7 in full; LR6 (per-partition compression with heterogeneous values)
+remains deferred — it requires either a richer `DataCompression : (int *
+DataCompressionLevel) list` IR or a closed-DU expansion at
+`DataCompressionLevel`. Single-value DataCompression shipped earlier
+(slice 5.13.index-features-emit, matrix row 55).
+
+**Reclassified (slice A.4.7'-prelude.row56-dataspace, 2026-05-19):**
+
+| Residual | Prior status | Updated status | What shipped |
+|---|---|---|---|
+| LR7 | 🟠 Deferred-with-trigger (FileGroup + PartitionScheme dataspace emission) | 🟢 PARITY (Filegroup + PartitionScheme arms both shipped end-to-end) | Closed-DU `Catalog.DataSpace = Filegroup of name \| PartitionScheme of name × columns : string list`; `Index.DataSpace : DataSpace option` field; adapter wires from V1 `#AllIdx.DataSpaceName + DataSpaceType + PartitionColumnsJson` via `MetadataSnapshotRunner.tryProjectDataSpace`; emitter ships ScriptDom `CreateIndexStatement.OnFileGroupOrPartitionScheme` via new realization-layer `IndexDataSpaceSql` DU; new `indexDataSpace` Site in `SsdtDdlEmitter.registeredMetadata`. |
+| LR6 | 🟠 Deferred-with-trigger | 🟠 Deferred-with-trigger (refreshed) | Per-partition DataCompression with heterogeneous values across partitions. Today V2 ships single-value compression (uniform across all partitions via `tryParseUniformDataCompression`). Heterogeneous compression surfaces as `None`. Cash-out shape: IR refinement either `DataCompression : (int * DataCompressionLevel) list` (per-partition map) OR closed-DU expansion at `DataCompressionLevel`. Trigger: a fixture surfaces with heterogeneous per-partition compression that V2 must round-trip. |
+
+**Per pillar 9: structural decomposition (DataIntent everywhere).**
+- `DataSpace` IR field carriage = DataIntent (V2 catalog evidence)
+- Adapter projection from V1 source-side reflection = DataIntent
+  within the existing `rowsetAggregateParsing` Site
+- Emitter projection to ScriptDom = DataIntent within a new
+  `indexDataSpace` Site (TransformRegistry-worthy — sibling to
+  `indexDataCompression`; each distinct V1-emission axis V2 carries
+  earns its own Site)
+
+The new Site lives in `SsdtDdlEmitter.registeredMetadata.Sites`,
+making `SsdtDdlEmitter.registeredMetadata` total **12 Sites** (was 11).
+
+**Coverage tests (7 new in `IndexDataSpaceTests.fs`):**
+- `LR7 Filegroup: CREATE INDEX emits ON [filegroup]`
+- `LR7 Filegroup: PRIMARY filegroup name renders explicitly`
+- `LR7 None: CREATE INDEX omits ON clause when DataSpace = None`
+- `LR7 PartitionScheme: CREATE INDEX emits ON [scheme] ([col])`
+- `LR7 PartitionScheme: multi-column partition key emits comma-separated list`
+- `LR7: T1 byte-determinism holds across DataSpace variants`
+- `SsdtDdlEmitter.registeredMetadata exposes indexDataSpace Site as DataIntent`
+
+Plus the existing `5.3.α.index LR7: filegroup and partition-scheme ON
+clauses emit` Skip-stub in `SsdtSchemaFidelityPropertyTests` flipped
+to active.
+
+**Cross-references.**
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.row56-dataspace) —
+  LR7 closure: DataSpace closed-DU + end-to-end wiring`
+- V1 SQL source: `outsystems_metadata_rowsets.sql:484-487` (data_space
+  + partition_columns + data_compression JOIN); `:497-498` (sys
+  .data_spaces JOIN); `:499-514` (PartitionColumnsJson OUTER APPLY)
+- Matrix row 56 prior amendments (slice 5.13.index-features-emit
+  partial closure; subsequent named-trigger deferrals)
+- Pillar 9 — new `indexDataSpace` Site is structurally distinct
+  emission feature; classification = DataIntent; A18 amended (emitter
+  consumes Catalog only)
+- ScriptDom emission shape: `CreateIndexStatement.OnFileGroupOrPartitionScheme :
+  FileGroupOrPartitionScheme` with `Name : IdentifierOrValueExpression`
+  + `PartitionSchemeColumns : list<Identifier>` (filegroup form has
+  empty PartitionSchemeColumns; partition-scheme has non-empty); V2's
+  realization-layer DU `IndexDataSpaceSql` discriminates structurally
+
+---
+
+### Rows 49 + 85 + 86 + 87 — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.live-profiler — DATA-axis cutover-blocker; Profile.AttributeReality + LiveProfiler adapter ship)
+
+**Original framing.**
+- Row 49 (audit-wave slice 5.2.α, 2026-05-18): 🟠 NOT-MAPPED.
+  `Osm.Domain/Model/AttributeReality.cs`'s 5 runtime-reflection fields
+  (`IsNullableInDatabase` / `HasNulls` / `HasDuplicates` / `HasOrphans` /
+  `IsPresentButInactive`) not carried; V2's data-intent boundary
+  excluded reflection statistics from schema-definition IR. Re-open
+  trigger named: "V2 grows a Profile-layer surface AND a downstream
+  consumer (tightening pass; remediation emitter) needs to consume
+  per-attribute reflection state."
+- Row 85 (audit-wave slice 5.4.δ, 2026-05-18): 🟠 NOT-MAPPED.
+  `Pipeline/Profiling/SqlDataProfiler.CaptureAsync()` live-probe
+  orchestration deferred; V2 shipped `ReadSide` (catalog structure
+  only) + `ProfileSnapshot.attach` (V1-JSON adapter) but no live-SQL
+  probe orchestration.
+- Rows 86 + 87 (audit-wave slice 5.4.δ, 2026-05-18): 🟠 NOT-MAPPED.
+  NullCount + UniqueCandidate probe query builders deferred (V2's
+  `Profile.Columns` + `Profile.UniqueCandidates` carry the IR; the
+  acquisition was absent).
+
+**Reclassified (slice A.4.7'-prelude.live-profiler, 2026-05-19):**
+
+| Row | Prior status | Updated status | What shipped |
+|---|---|---|---|
+| 49 | 🟠 NOT-MAPPED | 🟢 PARITY (4 of 5 axes; 1 axis deferred) | New `Profile.AttributeReality` record in `Projection.Core/Profile.fs` carries the 5 fields per attribute key. `Profile.AttributeRealities : AttributeReality list` field added; `Profile.empty.AttributeRealities = []`. `AttributeReality.create` smart constructor seeds all booleans to `false`. The shape mirrors V1's `AttributeReality.cs` field-for-field. |
+| 85 | 🟠 NOT-MAPPED | 🟢 PARITY (subset of axes; orchestrator-side surface; full-table scan for now) | New `Projection.Adapters.Sql/LiveProfiler.fs` sibling to `ProfileSnapshot.fs` + `ProfileStatistics.fs` — `LiveProfiler.capture : SqlConnection → Catalog → Task<Result<AttributeReality list>>` + `LiveProfiler.attach : SqlConnection → Catalog → Profile → Task<Result<Profile>>`. Walks every non-static kind; reflects nullability via `INFORMATION_SCHEMA.COLUMNS` (one round-trip per kind); runs combined `HasNulls` + `HasDuplicates` probe per non-PK attribute (single round-trip per attribute via `EXISTS` short-circuiting). PK attributes get `IsNullableInDatabase` populated; probing skipped (PK is by construction NOT NULL + unique). Static kinds skipped (`Modality.Static` rows are catalog-resident). |
+| 86 | 🟠 NOT-MAPPED | 🟢 PARITY (HasNulls axis) | `LiveProfiler.probeAttribute` emits `EXISTS (SELECT 1 FROM <tbl> WHERE <col> IS NULL)` per attribute as part of the combined probe; observed bit lifts into `AttributeReality.HasNulls`. V1's `NullCountQueryBuilder` emits SUM-of-CASE counts (cardinality-of-nulls); V2 emits EXISTS (boolean witness only). The witness shape matches V1's downstream consumer (`AttributeReality.HasNulls`) — exact counts are deferred to V2's existing `Profile.Columns.NullCount` axis (which goes through `ProfileStatistics.attach`/JSON snapshot today). |
+| 87 | 🟠 NOT-MAPPED | 🟢 PARITY (HasDuplicates axis) | `LiveProfiler.probeAttribute` emits `EXISTS (… GROUP BY <col> HAVING COUNT_BIG(*) > 1)` per attribute as part of the combined probe; observed bit lifts into `AttributeReality.HasDuplicates`. V1's `UniqueCandidateQueryBuilder` emits a per-candidate uniqueness check; V2's probe matches the witness shape (boolean only). Composite-unique probes (V1's composite branch) are deferred — `LiveProfiler` walks per-attribute, not per-candidate; cash-out lands when an `Index` consumer demands the per-candidate evidence. |
+
+**Per pillar 9: all probes carry DataIntent.** Every probe in
+`LiveProfiler` observes deployed reality; no operator policy enters
+at probe time. Sampling policy (when V2 adopts non-full-table
+probing) lives in `Pipeline.Config` per matrix row 90's prior
+`DECISIONS 2026-05-18 (slice 5.4.δ.profiling) — Sampling policy is
+operator intent; lives in the orchestrator, not in Profile IR`.
+`LiveProfiler` consumes Catalog (to identify which attributes to
+probe) but emits Profile evidence only — no catalog mutation, no
+policy consumption (A18 amended + A34).
+
+**Verification depth: 6 Docker-gated integration tests** in
+`LiveProfilerIntegrationTests.fs`. Items table fixture with 4 rows
+(NAME: 1 NULL, 2 'alpha' duplicates, 1 'gamma'; CODE: 4 distinct
+non-nulls); ID = PK INT NOT NULL; NAME = NVARCHAR NULL; CODE =
+NVARCHAR NOT NULL. Tests:
+
+- NAME.HasNulls = true (one NULL row observed)
+- NAME.HasDuplicates = true ('alpha' appears twice)
+- CODE.HasNulls = false AND CODE.HasDuplicates = false (clean column)
+- IsNullableInDatabase reflection: ID = false; NAME = true; CODE = false
+- Totality: 3 reality entries (one per attribute including PK)
+- `attach` composes captured realities into `Profile.empty.AttributeRealities`;
+  other Profile axes remain empty (sibling-adapter composability)
+
+All 6 pass green against `Deploy.useEphemeralContainer` (mssql 2022
+CU-latest); per-test ephemeral database; best-effort drop with
+SINGLE_USER + ROLLBACK IMMEDIATE.
+
+**Cross-references.**
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.live-profiler)` —
+  Profile.AttributeReality cash-out + LiveProfiler probe-shape
+  rationale + deferral list
+- V1 source: `Osm.Pipeline/Profiling/SqlDataProfiler.cs` (the live-
+  probe orchestrator); `NullCountQueryBuilder.cs` (HasNulls probe
+  shape); `UniqueCandidateQueryBuilder.cs` (HasDuplicates probe
+  shape); `Osm.Domain/Model/AttributeReality.cs` (5-field IR)
+- Pillar 9 (`DECISIONS 2026-05-15 (late)`) — DataIntent classification;
+  `LiveProfiler` is observation-only
+- A18 amended + A34 — Profile independent of Catalog + Policy
+- V2_DRIVER per-axis stakes (DATA axis cutover-blocker)
+- Sibling adapters: `ProfileSnapshot.attach` (V1-JSON snapshot) +
+  `ProfileStatistics.attach` (V2 distribution JSON) + `LiveProfiler
+  .attach` (live SQL Server probe) — the three composable Profile
+  surfaces named in `DECISIONS 2026-05-11 — the rich-profiling
+  agenda`
+
+**Refreshed deferral triggers (after this slice).**
+
+- **`HasOrphans` per-FK probe** — V2's `AttributeReality.HasOrphans`
+  defaults to `false`. Trigger: `ForeignKeyRules` consumer demands
+  orphan-evidence refinement of its `Outcome` decisions (i.e., a
+  property test asserts decision changes when orphans are present
+  vs absent). Cash-out shape: per-`Reference` probe (`EXISTS (FK
+  source row WHERE PK target absent)`) inside `LiveProfiler`;
+  joined onto the per-attribute reality stream by source attribute
+  SsKey.
+- **`IsPresentButInactive` full closure** — current shape is
+  `Map.containsKey + not attr.IsActive`. The "deployed-but-inactive"
+  half is captured; the "logically-active-but-deployment-missing"
+  half (column expected by Catalog but absent in deployed
+  `INFORMATION_SCHEMA.COLUMNS`) is canary territory, not LiveProfiler
+  territory. Trigger: the canary's PhysicalSchema diff surfaces a
+  consumer that wants the per-attribute presence/inactivity flag
+  rather than the diff entries.
+- **Sampling policy** — full-table scans today (one EXISTS per
+  attribute; one INFORMATION_SCHEMA query per kind). Trigger:
+  production canary surfaces a profile-capture latency concern at
+  operator-reality scale (300 tables × 50k rows); cash-out via
+  `SqlProfilerOptions.Sampling` (matrix row 90's prior naming the
+  orchestrator-side home).
+- **Composite-unique probes** — `LiveProfiler` walks per-attribute,
+  not per-candidate. Trigger: an `Index` consumer demands the
+  per-candidate evidence (e.g., a composite UNIQUE index tightening
+  decision needs orphan-evidence per-candidate).
+
+**Operating-discipline payoff.** Three sibling Profile adapters
+(`ProfileSnapshot.attach`, `ProfileStatistics.attach`, `LiveProfiler
+.attach`) now ship the canonical composition shape: each consumes
+its own evidence source and lays it onto the Profile aggregate
+without overwriting sibling axes. Worked example in the integration
+test: `LiveProfiler.attach cnn catalog Profile.empty` returns a
+Profile with `AttributeRealities` populated and `Columns` /
+`UniqueCandidates` / `ForeignKeys` / `Distributions` all empty.
+Sibling-adapter composability is structural, not aspirational.
+
+---
+
+### Test-infrastructure — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.test-fixture-lift — Docker-gated test cluster cut by 48%; per-class container amortization)
+
+**Original framing (survey-by-agent, 2026-05-19).** A
+two-survey-agent dispatch identified the V2 Docker-gated test
+cluster as the suite's primary iteration-speed sink: four files
+(`LiveProfilerIntegrationTests` + `CdcSilenceTests` +
+`CdcSilencePropertyTests` + `CdcSilenceCrossEmitterTests`) totalling
+16 tests each spinning their own ephemeral SQL Server container via
+`Deploy.useEphemeralContainer` — paying ~5-10s of container
+cold-start per test. The survey predicted ~60-80s recoverable via
+xUnit `IClassFixture` lift.
+
+**What ships (slice A.4.7'-prelude.test-fixture-lift, 2026-05-19):**
+
+| Surface | Shape |
+|---|---|
+| `Deploy.acquireEphemeralContainer` (NEW) | `unit → Task<EphemeralContainerHandle>` — handle-based lifecycle alongside scope-based `useEphemeralContainer`. The handle's `DisposeAsync` reaps the container; xUnit `IAsyncLifetime` calls it once per test class. |
+| `EphemeralContainerFixture` (NEW) | `IAsyncLifetime` fixture in `tests/Projection.Tests/EphemeralContainerFixture.fs`. `InitializeAsync` calls `acquireEphemeralContainer`; `DisposeAsync` reaps. Exposes `MasterConnectionString` + `WithEphemeralDatabase prefix body` helper that handles per-test CREATE DATABASE / DROP DATABASE (with `SINGLE_USER WITH ROLLBACK IMMEDIATE`) in a `try/finally` envelope. |
+| `LiveProfilerIntegrationTests` migrated | 6 tests now share one container via `IClassFixture<EphemeralContainerFixture>`. Module → type rewrite; per-test scenarios call `fixture.WithEphemeralDatabase "LiveProfiler"`. |
+| `CdcSilenceTests` migrated | 2 tests share one container. The CDC isolation discipline (`Deploy.useEphemeralContainer` was originally chosen over the warm container precisely because CDC infrastructure has instance-wide side effects on `master.sys.databases.is_cdc_enabled`) holds at the **per-class** granularity now: each Docker-gated CDC class gets its own container; tests within a class share. |
+| `CdcSilencePropertyTests` migrated | 3 shape-sweep tests share one container. |
+| `CdcSilenceCrossEmitterTests` migrated | 4 C1-C4 Docker tests share one container; C0 (pure-structural, no Docker) lifted to a separate `CdcSilenceCrossEmitterStructural` module so the no-Docker path doesn't trigger container init. |
+| `CanaryRoundTripTests` audited | No work needed. Uses `Deploy.runWithReadback` / `runWideCanary` which route through `Deploy.useContainer` (warm-container shortcut via `PROJECTION_MSSQL_CONN_STR`). Already amortized at the session level. |
+
+**Measured impact (before → after):**
+
+| Cluster | Before | After | Delta |
+|---|---|---|---|
+| CDC trio (10 tests across 3 files) | **1m50s** | (subset) | — |
+| LiveProfiler (6 tests) | **1m1s** | (subset) | — |
+| **Combined 16 Docker tests** | **~2m51s** | **1m22s** | **~89s saved (~52% reduction)** |
+| Full Docker set incl. structural C0 (18 tests / 16 pass + 2 skip) | n/a | **1m29s** | — |
+| Non-Docker suite (1622 tests) | 2s | 2s | unchanged (no fixture overhead) |
+
+**Survey prediction vs. delivery:** survey-agent estimated 60-80s
+recoverable; actual delivery 89s (~12% above the optimistic end
+of the prediction). The over-delivery comes from one factor the
+survey didn't quantify: per-class container reuse also amortizes
+the Testcontainers .NET driver's first-call SDK initialization (≈1s
+per process), not just the SQL Server boot time.
+
+**Per pillar 9: DataIntent.** Test infrastructure is observation
+(verification), not policy. The fixture lift preserves every
+existing test's semantic envelope (per-test ephemeral database,
+best-effort drop, CDC isolation per class); the only thing that
+changed is the container-cost amortization granularity.
+
+**Per A18 amended + sibling-wrapper discipline.** The new primitive
+`Deploy.acquireEphemeralContainer` is a principled sibling to
+`Deploy.useEphemeralContainer` — distinguishable test:
+`acquireEphemeralContainer` exposes a handle the caller manages;
+`useEphemeralContainer` owns lifecycle for one body. Two distinct
+information-bearing surfaces (handle-based vs. scope-based);
+neither is a tech-debt wrapper of the other. `useEphemeralContainer`
+is rewritten as a thin wrapper that calls `acquireEphemeralContainer`
++ try/finally + body — single source of truth for container
+construction.
+
+**Cross-references.**
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.test-fixture-lift)` —
+  fixture-lift cash-out + measured-impact codification
+- Sibling-wrapper discipline (`DECISIONS 2026-05-17 — chapter 4.7
+  cleanup`) — the new acquire/use pair earns its place
+- `Deploy.useEphemeralContainer` docstring (line 637-641) — the
+  comment explicitly named "per-test-class amortization belongs in
+  xUnit `IClassFixture` / `IAsyncLifetime` machinery the caller
+  arranges" — this slice operationalizes that hint
+- `CLAUDE.md` operating disciplines table → "Iterator speed is a
+  first-class outcome" (Bench discipline cousin) — test-iteration
+  speed is the developer-facing analog of the operator-facing perf
+  gate
+
+**Refreshed deferral triggers (after this slice).**
+
+- **Pass-layer + adapter-layer Bench coverage gap** (named by the
+  parallel-dispatched bench-coverage survey, 2026-05-19). Survey
+  identified 44% file coverage of bench instrumentation; the
+  critical gaps are `Projection.Adapters.Osm/CatalogReader.fs`
+  (2341 LOC, 0 bench calls) + `Projection.Adapters.OssysSql/
+  MetadataSnapshotRunner.fs` (1156 LOC, 0 bench calls). Trigger:
+  next iteration-speed slice tackles the **inside** of the system
+  (the bench survey's punch list) the same way this slice tackled
+  the test surface.
+- **Other Docker-gated test files** — `CanaryDeployTests`,
+  `GeneratorScaleTests`, `StaticPopulationEmitterTests` all use
+  the warm container path (`Deploy.useContainer`); no fixture
+  lift needed. Trigger: if any of these start using
+  `useEphemeralContainer` directly (e.g., for instance-wide-state
+  isolation), apply the same fixture pattern.
+
+---
+
+### Bench instrumentation — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.bench-fleet — five-agent parallel dispatch lifts Bench coverage from 44% to ~56% across dark adapter / emit / IR / pass surfaces; 51 new labels)
+
+**Original framing.** A bench-coverage survey (parallel-dispatched
+during slice A.4.7'-prelude.test-fixture-lift) identified the
+adapter / emit / IR / pass surfaces as the V2 perf-gate's dark
+paths: 44% file-level bench coverage (38 of 86 files); 0 calls in
+the OSSYS adapter family (3497 LOC across two files); 0 calls in
+ScriptDomBuild (1269 LOC); inner-loop instrumentation absent across
+all 12 pass files despite the iterator-logging discipline. The
+perf-gate (`scripts/perf-gate.sh`'s statistical regression detector)
+cannot catch regressions in these dark paths because the labels
+don't exist.
+
+**Five-agent parallel fleet dispatch (2026-05-19).** Five `claude`
+sub-agents executed in parallel on disjoint files, each owning a
+distinct namespace; build + compile-check passed per agent
+single-project. Coordination by namespace partition (zero label
+collision risk) + file-disjoint scope (zero merge-conflict risk).
+
+| Agent | Scope | Namespace | Bench calls added |
+|---|---|---|---|
+| A | `Projection.Adapters.Osm/CatalogReader.fs` (2341 LOC; was 0 calls) | `adapter.osm.parse.*` | 13 (JSON path: module/kind/attribute/reference/index/trigger/extendedProperty; rowset path: rowsetModule/rowsetKind/rowsetAttribute/rowsetIndex/rowsetColumnCheck; entry scope) |
+| B | `Projection.Adapters.OssysSql/MetadataSnapshotRunner.fs` (1156 LOC; was 0 calls) | `adapter.osm.extract.*` | 7 (entry scope + per-rowset umbrella + dynamic per-rowset-name + `toBundle` projection scope) |
+| C | `Projection.Targets.SSDT/ScriptDomBuild.fs` (1269 LOC; was 0 calls) | `emit.scriptDom.build.*` | 16 (per-statement-type scope: createTable / createIndex / merge / update / insertRow / setIdentityInsert / alterTableNoCheckConstraint / alterIndexDisable / setExtendedProperty / columnDefinition; per-element loops: columns / fk / check / merge.row / createIndex.keyColumn / createIndex.includeColumn) |
+| D | `Projection.Core/Catalog.fs` + `Policy.fs` (2064 LOC; was 0 calls) | `ir.catalog.*` + `ir.policy.*` + `ir.kind.*` + `ir.module.*` | 9 (smart-constructor scopes for Kind/Module/Catalog + Catalog.allKinds scan; per-axis Policy constructor scopes: emission/nullability/uniqueIndex/foreignKey/categoricalUniqueness) |
+| E | 5 pass files (1634 LOC; previously top-level scopes only) | `pass.<name>.*` | 6 (per-iteration sub-scopes: fk.reference / topologicalOrder.kind / topologicalOrder.scc / userFkReflow.candidate / nullability.attribute / uniqueIndex.index) |
+| **Total** | **10 files** | — | **51 new bench labels** |
+
+**Coverage delta:** instrumented file count rises from 38 → ~48 of
+86 (~56%); adapter coverage rises from 8% → ~83%; pass-layer
+sub-discipline coverage rises from 0 → 100% (every pass with an
+inner loop now emits per-element samples).
+
+**Per pillar 9: DataIntent.** Every bench call is observation, not
+policy. Bench is the fourth cross-cutting structural-evidence
+concern alongside Lineage / Diagnostics / Registry. T1 byte-
+determinism preserved: `Bench.scope` is RAII via `use`,
+thread-safe + lock-protected; `Bench.iterDo` / `Bench.iterMap`
+preserve iteration order.
+
+**Per A39 (aggregate-root smart-constructor invariants).** The
+new `ir.kind.create` / `ir.module.create` / `ir.catalog.create`
+scopes time the smart-constructor validation work — the structural
+forcing function for IR aggregate invariants is now perf-visible.
+
+**Validation gate:** solution-level `dotnet build Projection.sln`
+passes 0 warnings / 0 errors. Non-Docker test suite passes
+1622 / 162 skip / 0 fail in 3s (unchanged). The `Operator-reality
+canary` run surfaces 6 of the 51 new labels in the bench output
+(the labels that fire on the emit + topological-order code paths
+the canary exercises); the remaining 45 labels are in the code
+and will fire when their corresponding code paths execute (e.g.,
+the OSSYS adapter labels fire on cold-start metadata ingress; the
+tightening-pass labels fire under decision-set-bearing pipelines).
+
+**Side mission: 34 structural-perf opportunities documented (not
+shipped this slice).** Each agent spotted opportunities while
+reading their assigned files; all are deferred for a follow-up
+slice. The standout findings:
+
+- **Agent A (CatalogReader):** `resolveIndexColumnAttribute` is
+  O(N×M) with `List.tryFind` per index column. Pre-computed
+  `Map<string, AttributeRow>` per kind would collapse ~30K
+  `String.Equals` calls to ~3K Map lookups per 300-table-canary
+  parse.
+- **Agent B (MetadataSnapshotRunner):** `toBundle` builds 4
+  `Map.ofList` lookup maps (`EntityId`, `AttrId`, `FkObjectId`,
+  `ParentAttrId`) — O(N log N) construction + O(log N) reads. A
+  `Dictionary<int, _>` would give O(N) + O(1) for ~30% faster
+  toBundle at 300-entity scale.
+- **Agent C (ScriptDomBuild):** `TSql160Parser` allocated per-call
+  at 3 sites (parseComputedExpression / checkConstraint /
+  tryParseFilterWithDiagnostics). Each parser carries ~tens-of-KB
+  of internal state; hoisting to module-private + per-thread cache
+  is the worked precedent.
+- **Agent D (Catalog/Policy):** `Catalog.tryFindKind` is a linear
+  scan O(modules × kinds) called repeatedly during FK resolution.
+  Pre-computed `KindIndex : Map<SsKey, Kind>` at `Catalog.create`
+  would turn O(n²) into O(n log n) across all emitter passes.
+  Highest-leverage single finding.
+- **Agent E (Pass layer):** TopologicalOrderPass's Kahn + Tarjan
+  use `Map`/`Set` (O(log n) per op) where the operating-disciplines
+  table EXPLICITLY names Tarjan as the worked example for
+  function-local mutables. `Dictionary<SsKey, int>` + `HashSet<SsKey>`
+  would shave to O(1).
+
+These 34 findings become the **next slice's** scope (a structural-
+perf-sweep slice that lifts the most impactful 5-8 wins with
+before/after bench data on each label).
+
+**Cross-references.**
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.bench-fleet)` —
+  five-agent parallel dispatch protocol + the 34 perf opportunities
+  punch list
+- `CLAUDE.md` operating disciplines table → "Iterator-logging is a
+  first-class outcome over time" — discipline operationalized at
+  fleet scale; before slice, 100% file coverage on pass layer but
+  only top-level scopes; after slice, per-iteration `iterMap`
+  coverage on hot loops
+- `scripts/perf-gate.sh` — statistical regression detector now has
+  ~56% file-level instrumentation surface; the 45 new labels not
+  yet in `bench/baseline-canary.json` will require a `PERF_GATE_RECORD=1`
+  refresh pass when the next operator-reality run includes them
+- Source surveys: bench survey at
+  `tasks/aa0e085b470582bba.output`; per-agent reports at
+  `tasks/{a0587db8efef43cc3, abdbe4c55b09d794e, ae34dc5899067aea6,
+  aab2b23926ca547bb, ab8e0e44aa05b0124}.output`
+
+**Refreshed deferral triggers (after this slice).**
+
+- **Baseline-canary.json refresh.** Trigger: next operator-reality
+  canary run captures the new labels; `PERF_GATE_RECORD=1` invokes
+  the rebaseline.
+- **Bench label coverage expansion.** Agents touched the 10
+  highest-leverage files; remaining gaps include `TransformRegistry.fs`
+  (530 LOC, 0 calls), `Pipeline.fs` (397 LOC, 9 calls — sub-discipline
+  inner loops not wrapped), `DataEmissionComposer.fs` (371 LOC, 4
+  calls — inner phases not wrapped). Trigger: next bench-survey
+  audit, or a chapter-close ritual currency check.
+- **Perf-sweep slice (the 34 opportunities).** Trigger: operator
+  signs off on this slice's bench-only delivery; next slice opens
+  with the perf-opportunity punch list as scope.
+
+---
+
+### Perf-sweep arc — 2026-05-19 (XXXXXL arc: slices A.4.7'-prelude.perf-sweep-{1-7} + defensive-hardening; canary wall 3:34 → 2:22 = ~34% reduction; PERF_OPPORTUNITIES.md punch list mostly cashed)
+
+**The PERF_OPPORTUNITIES.md punch list (34 structural-perf findings
+from the bench-fleet survey) was largely closed in this arc.** Per the
+bench-driven optimization protocol (`DECISIONS 2026-05-24`), each
+shipped fix carries before/after canary bench data at production
+scale (300 tables × 100MB; comprehensive canary).
+
+**Slices shipped:**
+
+| Slice | Commit | Scope | Wall-time impact |
+|---|---|---|---|
+| `perf-sweep-1` | `80f6185` | Tarjan + Kahn `Map`/`Set` → `Dictionary`/`HashSet` (Ranks 3+4) + production-scale canary (300×100MB) + env-var gate (`PROJECTION_RUN_COMPREHENSIVE_CANARY`) | Sub-ms per iteration (Big-O); canary baseline 3:34 |
+| `perf-sweep-2` | `df03328` | `KindIndex` + `KindOwnership` + `AttributeIndex` caches via `ConditionalWeakTable` (Ranks 1+2 / D1-D3) | -0.2% (noise; preserves O(n²)→O(n log n) at 1000+ kinds) |
+| `perf-sweep-3` | `57ec251` | `TSql160Parser` per-call → `System.Threading.ThreadLocal` (Ranks C1-C3) | `render.statement` -19% across 504K calls; wall-noise overall |
+| `perf-sweep-4` | `60ef70f` | Per-segment `deploy.executeBatch.segment.bytes` diagnostic | Observability; revealed 100×405KB MERGE cluster |
+| `perf-sweep-5` | `d989bd0`, `e616640` | `Deploy.executeBatchParallel` primitive + `ExecuteBatchParallelTests.fs` (3 facts) | Microbench 1.21-1.75×; canary integration deferred to slice 6 |
+| **`perf-sweep-6`** | **`9fa1d4c`** | **`TopologicalOrder.levels` (Kahn-with-level-counter) + `DataEmissionComposer.composeRenderedLeveled` + canary parallel data deploy** | **3:34 → 2:22 (-72s, -34%); the wall-time-mover** |
+| `perf-sweep-7` | `21c2c8b` | `Deploy.resolveParallelism` env-adaptive (DMV → ProcessorCount → static fallback); env-var `PROJECTION_DEPLOY_PARALLELISM` override | Wall-time matches slice-6 baseline (auto-detect resolves to ≥4 on the container) |
+| `defensive-hardening` | `f8a7f01` | 9 audit findings: silent DBNull → 0 corruption (`MetadataSnapshotRunner.readInt`); infinite `CommandTimeout=0` at 5 sites → new `CommandTimeoutPolicy`; defensive cast-switch on Time/Guid/Binary; empty-result diagnostic in `readColumnRows`; `executeBatchParallel` pool-cap; `readRows` List.head fallback; FK `SCHEMA_NAME()` DBNull guard; Docker `UserProfile` empty-string guard | Correctness; no perf delta |
+
+**New canonical surfaces** (the next slice can compose with these):
+
+- `src/Projection.Core/TopologicalOrder.fs:levels` — parallel-safety primitive (every same-level pair has no FK edge between them; property-tested)
+- `src/Projection.Targets.Data/DataEmissionComposer.fs:composeRenderedLeveled` + `LeveledDeploymentText` record
+- `src/Projection.Pipeline/Deploy.fs`:
+  - `acquireEphemeralContainer : unit → Task<EphemeralContainerHandle>` (handle-based; sibling to `useEphemeralContainer`)
+  - `executeBatchParallel : connString → sql → parallelism → Task<unit>` (caller contract: segment-ordering independence)
+  - `detectParallelism` / `resolveParallelism` (env-adaptive)
+  - `capParallelismToPool` (defensive against pool exhaustion)
+- `src/Projection.Adapters.Sql/SqlPolicy.fs:CommandTimeoutPolicy.resolve` — defensive-fallback module for SQL realization policies
+- `tests/Projection.Tests/EphemeralContainerFixture.fs` — shared Docker-gated fixture (xUnit `IClassFixture`); now passes both `cnn` AND `connString` to body (per chapter-4.7 sibling-wrapper discipline lift)
+- `tests/Projection.Tests/ComprehensiveCanaryTests.fs` — production-scale operator-reality canary (300×100MB; gated)
+- `tests/Projection.Tests/Fixtures/OssysFixtureSynthesizer.fs` — `GeneratedFixture` → OSSYS-shape INSERTs
+- `tests/Projection.Tests/ExecuteBatchParallelTests.fs` — parallel primitive validation + microbench
+
+**Environment-tunable knobs introduced:**
+- `PROJECTION_RUN_COMPREHENSIVE_CANARY=1` — gates the production-scale canary (~3-4 min wall)
+- `PROJECTION_DEPLOY_PARALLELISM=<n>` — overrides auto-detected parallelism
+- `PROJECTION_COMMAND_TIMEOUT_SEC=<n>` — overrides 300s default command timeout (`0` = unlimited)
+
+**Cross-references:**
+- `PERF_OPPORTUNITIES.md` (header section "PERF-SWEEP ARC RESULTS") — per-finding status table
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.perf-sweep-6 composer-levels)` — the wall-time-moving slice's rationale + the parallel-safety invariant proof
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.defensive-hardening)` — 9 audit findings + the high-bar `tryProbeServerCpus` template
+- `HANDOFF.md` 2026-05-19 letter — the next-agent-facing summary of the arc
+
+**Refreshed deferral triggers (after this arc):**
+- **Schema-side level grouping in SSDT** — would enable parallel schema deploy. Trigger: schema deploy becomes a visible bottleneck (it's ~14s of the 132s canary deploy today; not yet hot).
+- **`bench/baseline-canary.json` refresh** — 83 new labels not yet baselined; perf-gate accepts new labels with soft warning. Trigger: per-commit gate becomes flaky on new-label false-positives; record fresh baseline via `PERF_GATE_RECORD=1`.
+
+---
+
+### Rows 11 + 53 — 2026-05-19 (XXXXXL arc: slice A.4.7'-prelude.row53-source-side wires V1 #ColumnReality into Attribute.Computed + Attribute.DefaultName)
+
+**Original framing.** Slice 5.13.ossys-rowsets-cluster (2026-05-18)
+shipped the typed `OssysColumnRealityRow` (rowset 6 — `#ColumnReality`,
+matrix row 11). Slice 5.3.α.column-axis-deferral-closeout (2026-05-18)
+shipped `Attribute.DefaultName : Name option` + emitter wiring for
+LR4 (computed columns) — but left the source-side populations as
+carriage-only deferrals ("source-side population of
+`Attribute.DefaultName` + `Attribute.Computed` via rowset/sys
+.computed_columns lifts").
+
+**Reclassified (slice A.4.7'-prelude.row53-source-side, 2026-05-19):**
+
+| Row | Prior status | Updated status | What shipped |
+|---|---|---|---|
+| 11 | 🔵 V2-EXTENSION (typed rowset; no IR consumer yet) | 🟢 PARITY (IR consumer wired) | `MetadataSnapshotRunner.toBundle` joins `OssysColumnRealityRow` by `AttrId` and surfaces `IsComputed` + `ComputedDefinition` + `DefaultConstraintName` into the `CatalogReader.AttributeRow`. The 3-step JOIN pattern mirrors slice 5.13.fk-reality-join (Maps once at toBundle entry; walk per-attribute; defaults to empty when no reality row exists). |
+| 53 | 🟢 PARITY (partial — Name carriage closed; population deferred) | 🟢 PARITY (Name + Computed source-side population wired end-to-end) | `CatalogReader.parseAttributeRow` consumes the three new fields and populates `Attribute.DefaultName` (`Name.create` wrap) + `Attribute.Computed` (`ComputedColumnConfig.create` with `IsPersisted = false` default). |
+
+**Per pillar 9: pure DataIntent — no new TransformRegistry Sites.**
+The work amplifies existing `rowsetAggregateParsing` Site within
+`CatalogReader.registeredMetadata`; the Site's Rationale prose
+amended to name the `#ColumnReality` join + the three new fields
+surfaced. No new operator-intent overlay; the projection is V1
+deployed-target evidence → V2 IR translation only.
+
+**What this does NOT close (named deferrals refreshed):**
+
+- **`DefaultDefinition` source-side population** (the actual default
+  *value*) — V1's `#ColumnReality.DefaultDefinition` carries the
+  expression text with outer parens (e.g., `((0))`, `(getdate())`).
+  V2's `Attribute.DefaultValue : SqlLiteral option` is
+  typed-literal-only; doesn't handle expression-shaped defaults
+  (function calls, computed expressions). Per matrix row 53's
+  prior named trigger: "expression-shaped defaults flow via raw-
+  string pass-through at the realization boundary." Cash-out shape:
+  introduce `DefaultExpression : string option` field alongside
+  `DefaultValue` OR extend `SqlLiteral` with an `ExpressionLit`
+  variant. Trigger: a fixture surfaces with `getdate()` /
+  `newid()` / `((0))` defaults that V2 must round-trip.
+- **`IsPersisted` source-side detection** — V1's `#ColumnReality`
+  doesn't query `sys.computed_columns.is_persisted`. V2 defaults
+  to `false`; when V2 emission demands PERSISTED keyword for
+  round-trip, extend the V1 SQL rowset to surface `is_persisted`,
+  then thread through.
+
+**Coverage tests (6 new in `ColumnRealitySourceSidePopulationTests.fs`):**
+- `rowset path populates Attribute.Computed from V1 ColumnReality
+  when IsComputed = true`
+- `rowset path leaves Attribute.Computed = None when IsComputed = false`
+- `IsComputed = true with empty ComputedDefinition produces
+  Attribute.Computed = None (ComputedColumnConfig.create rejects blank)`
+- `rowset path populates Attribute.DefaultName from V1 ColumnReality`
+- `rowset path leaves Attribute.DefaultName = None when V1 carries
+  no DefaultConstraintName`
+- `rowsetAggregateParsing Site classifies as DataIntent and
+  Rationale names ColumnReality`
+
+**Cross-references.**
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude.row53-source-side) —
+  V1 #ColumnReality source-side population: Attribute.Computed +
+  Attribute.DefaultName brought in end-to-end`
+- Matrix row 11 prior amendment (slice 5.13.ossys-rowsets-cluster)
+  + row 53 prior amendment (slice 5.3.α.column-axis-deferral-closeout)
+- Pillar 9 (`DECISIONS 2026-05-15 (late)`) — this slice classifies
+  every new translation as DataIntent within the existing
+  `rowsetAggregateParsing` Site; no new OperatorIntent overlay
+- V1 SQL source: `outsystems_metadata_rowsets.sql:375-407`
+  (`#ColumnReality` build); join `sys.computed_columns cc` (L403-404)
+  + `sys.default_constraints dc` (L405-406)
+
+---
+
+### A.4.7'-prelude — 2026-05-19 (XXXXXL arc: Pipeline-level RegisteredAllTransforms.all surface + bidirectional property tests + CDC-silence shape sweep)
+
+**Original framing.** Pillar 9 (DataIntent / OperatorIntent
+classification) is structurally enforced via two co-equal load-bearing
+property tests per A41 candidate + L3-CC-Transform-Totality:
+**skeleton-purity** (`Compose.runSkeleton` emits zero OperatorIntent
+events) and **overlay-exercise** (every registered OperatorIntent site
+fires when its policy is set). Prior slices shipped:
+
+- `LineageEvent.Classification : Classification` field
+  (`Projection.Core/Lineage.fs:247-253`; the type-system shape)
+- `Compose.runSkeleton` entry-point (`Projection.Pipeline/Pipeline.fs:180`)
+- Skeleton-purity test for `sampleCatalog`
+  (`SkeletonPurityTests.fs:46-71`)
+- Overlay-exercise tests for VisibilityMask (Selection) +
+  TableRename (Emission)
+  (`TransformRegistryCompletenessTests.fs:165-179`)
+- CDC-silence example test for single-fixture happy path +
+  sensitivity counter-test (`CdcSilenceTests.fs`); cross-emitter
+  CDC-silence (`CdcSilenceCrossEmitterTests.fs`)
+
+**This arc** adds the three missing pieces:
+
+1. **`RegisteredAllTransforms.all` Pipeline-level surface**
+   (`src/Projection.Pipeline/RegisteredAllTransforms.fs`).
+   Concatenates Core passes + ordering policies + OSSYS adapter +
+   sibling-Π emitters (SSDT / Json / Distributions /
+   StaticPopulation) + Data-axis surfaces (composer + 3 emitters).
+   Per-project registry surfaces remain canonical; this is the
+   *call-site assembly* downstream consumers (CLI / canary /
+   property tests) reach for. Pipeline.fsproj gains
+   `Projection.Targets.Data` reference (the missing project from
+   the previous 4-target chain).
+
+2. **`RegisteredAllTransformsBidirectionalTests.fs`** (10 tests):
+   - Totality: registry validates through `TransformRegistry.create`
+   - Stage-binding coverage (Adapter/Pass/Emitter/Pipeline required;
+     OrderingPolicy structurally available)
+   - Domain coverage (all declared domains are in the closed DU)
+   - Skeleton-purity sweep: 5 fixture variants (customer-only /
+     order+customer / country-only / two-modules / full-sample) —
+     every variant produces a non-empty skeleton trail with zero
+     OperatorIntent events
+   - Overlay-exercise per axis: NullabilityPass (Tightening),
+     TopologicalOrderPass.registeredWith (Ordering),
+     UserFkReflowPass (Selection) — extends the VisibilityMask +
+     TableRename precedent to cover all four axes currently in use
+   - Skeleton + overlay views partition the registry exactly
+
+3. **`CdcSilencePropertyTests.fs`** (3 Docker-gated variants):
+   - Single-row fixture: minimal MERGE WHEN MATCHED predicate test
+   - Multi-type row (Int + Text + Boolean + Decimal): exercises
+     change-detection across V2's typed SqlLiteral surface
+   - 10-row fixture: stress-tests row-count interactions; baseline
+     ≥ 10 captures from initial INSERTs; idempotent redeploy adds
+     zero
+   - Each variant asserts the load-bearing invariant:
+     `baseline = post-redeploy capture count`
+
+**Functional surface (primary deliverable):**
+
+- `Projection.Pipeline.RegisteredAllTransforms.all` reaches every V2
+  transformation site through one canonical surface
+  (≥21 entries: 12 Core passes + ordering policies + 1 OSSYS adapter
+  + 4 sibling Π emitters + 4 Data-axis surfaces). Consumers that
+  needed `RegisteredTransforms.all @ [ssdt; json; dist] @
+  RegisteredDataTransforms.all` at every call site now reach for the
+  unified surface.
+
+**Verification depth (secondary deliverable per user directive):**
+
+- Skeleton-purity verified across 5 catalog shapes (was 1)
+- Overlay-exercise verified for 4 OperatorIntent axes (Selection,
+  Emission, Tightening, Ordering) — was 2 (Selection + Emission only)
+- CDC-silence verified across 3 row-shape variants (was 1)
+
+**Cross-references.**
+- `DECISIONS 2026-05-19 (slice A.4.7'-prelude+pipeline-registry) —
+  Pipeline-level unified registry + bidirectional property tests +
+  CDC-silence shape sweep`
+- `V2_DRIVER.md` per-axis stakes — CDC-silence on idempotent redeploy
+  is the highest-leverage single deliverable; this slice extends
+  verification depth across realistic shape variants
+- The Pipeline-level registry was named as a deferred follow-up at
+  the prior sibling-emitter-registry-helper-extraction amendment
+  (rows 11-23 cluster A1 closure section); trigger fired here
+- Skeleton-purity property test was named as the load-bearing
+  bidirectional contract in CLAUDE.md's load-bearing commitments
+  section ("Bidirectional property tests: skeleton-purity (`Compose
+  .runWithSkeleton` emits zero `OperatorIntent` events) + overlay-
+  exercise (every registered `OperatorIntent` fires in canary)")
+
+---
+
+### Rows 53 + 182 — 2026-05-18 (XXXXXL arc: slice 5.3.α.column-axis-deferral-closeout cashes out LR3 + LR4 + row 53 partial)
+
+**Original classifications (immediately prior to this arc):**
+- Row 53 (slice 5.2.α.attribute, 2026-05-18; amended above by 5.3.α.smo-audit): 🟠 NOT-MAPPED. V2's `Attribute.DefaultValue : SqlLiteral option` carried only the typed value; constraint metadata (Name + IsNotTrusted) dropped at adapter boundary.
+- Row 182 (slice 5.3.α.smo-audit, 2026-05-18): 🟢 PARITY (97%); 2 deferred axes remained — LR3 (single-column PK inline) + LR4 (computed columns).
+
+**Reclassified (slice 5.3.α.column-axis-deferral-closeout, 2026-05-18):**
+
+| Row | Updated status | What shipped |
+|---|---|---|
+| 53 | 🟢 PARITY (partial — Name carriage closed; IsNotTrusted axis deferred-with-trigger) | `Attribute.DefaultName : Name option` added to V2 IR (Catalog.fs); `Attribute.create` defaults to None; SsdtDdlEmitter.columnDef threads through (replacing hardcoded None); ScriptDomBuild already supports named DEFAULT constraints — emission of `CONSTRAINT [DF_…] DEFAULT (value)` now active when Name is Some. The remaining `IsNotTrusted` axis stays deferred (WITH NOCHECK on default constraints is a rarely-used post-create operator state; trigger: V2 emission needs to round-trip a NOCHECK'd DEFAULT). |
+| 182 | 🟢 PARITY (99%); 0 V1-CreateTable deferred axes remain | LR3 + LR4 closed. The remaining 1% is `IsNotTrusted` on column DEFAULT constraints (V1 carries but doesn't emit at column level — same axis as row 53 partial deferral). |
+
+**LR3 cash-out (single-column PK inline emission):**
+
+V1 `CreateTableStatementBuilder.cs:67-78` attaches `UniqueConstraintDefinition { IsPrimaryKey = true; Clustered = true; ConstraintIdentifier = … }` to the single PK column's `Constraints` instead of as a table-level `TableConstraints` entry. V2 now mirrors via `ScriptDomBuild.attachInlinePrimaryKey` (single-column case) + the existing `primaryKeyConstraint` builder (multi-column case). The dispatch lives in `buildCreateTable`:
+
+```fsharp
+match p.Columns with
+| [ _ ] -> attachInlinePrimaryKey def.ColumnDefinitions p
+| _     -> def.TableConstraints.Add(primaryKeyConstraint p)
+```
+
+Single-column PKs emit as `[ID] INT NOT NULL CONSTRAINT [PK_dbo_Customer] PRIMARY KEY` (V1-equivalent shape); multi-column PKs continue to emit as table-level `CONSTRAINT [PK_…] PRIMARY KEY ([col1], [col2])`. **Pillar 1 + pillar 7 confirmation:** the typed `ColumnDefinition.Constraints` collection is ScriptDom's canonical surface for the inline form; no string composition required.
+
+**LR4 cash-out (computed column emission):**
+
+V1 `CreateTableStatementBuilder.cs:362-365` sets `definition.ComputedColumnExpression` when `column.IsComputed && column.ComputedExpression.HasValue`; the column's DataType is null (L296), no NullableConstraintDefinition (L299-302), no IdentityOptions (L304-311). V2 now mirrors:
+
+- `Statement.fs` `ColumnDef` extended with `Computed : ComputedColumnConfig option` (V2 IR's existing type per `Catalog.fs:152`).
+- `ScriptDomBuild.columnDefinition` branches on `c.Computed`: when `Some config`, set `col.ComputedColumnExpression` (parsed via `TSql160Parser.ParseExpression`) + `col.IsPersisted` (from `config.IsPersisted`); skip Type / Length / Precision / Scale / Identity / Nullability / DEFAULT material.
+- `SsdtDdlEmitter.columnDef` (Attribute → ColumnDef projection) threads `Computed = a.Computed`.
+- Parse-failure fallback wraps the raw expression text in a `StringLiteral` (preserves emission surface even when the parser rejects the input; real V1-source expressions parse cleanly).
+
+**Row 53 partial cash-out (DefaultName carriage):**
+
+V1 `AttributeOnDiskDefaultConstraint.Name` carries the deployed-target's named DEFAULT constraint identifier (e.g., `DF_Customer_CreatedAt`). V2 now mirrors:
+
+- `Catalog.fs` `Attribute` extended with `DefaultName : Name option` field; `Attribute.create` defaults to None.
+- `SsdtDdlEmitter.columnDef` threads `DefaultName = a.DefaultName |> Option.map Name.value` (replacing the previously-hardcoded `None`).
+- `ScriptDomBuild.columnDefinition` already supports the named-DEFAULT branch (slice 5.13.column-features-emit shipped it); the IR field now actually feeds it.
+- Adapter sites updated: `Projection.Adapters.Osm/CatalogReader.fs` (JSON path + rowset path) + `Projection.Adapters.Sql/ReadSide.fs` default `DefaultName = None`. Source-side wiring (parsing from `#ColumnReality.DefaultConstraintName` rowset) deferred to a follow-up rowset slice; carriage-only today.
+
+**Coverage tests (5 new + 2 Skip-stubs flipped to active):**
+- `SsdtSchemaFidelityPropertyTests.5.3.α.create-table LR3: single-column PK emits inline at column definition` (active; was Skip)
+- `SsdtSchemaFidelityPropertyTests.5.3.α.create-table LR3: multi-column PK still emits as table-level CONSTRAINT`
+- `SsdtSchemaFidelityPropertyTests.5.3.α.create-table LR4: computed columns emit AS (expression) clause` (active; was Skip)
+- `SsdtSchemaFidelityPropertyTests.5.3.α.create-table LR4: persisted computed columns emit PERSISTED keyword`
+- `SsdtSchemaFidelityPropertyTests.5.3.α.create-table row 53 partial: named DEFAULT constraint surfaces in CREATE TABLE`
+- `ScriptDomRoundTripTests.ScriptDom CreateTable carries the primary-key constraint` (updated to check both inline + table-level surfaces; LR3-aware)
+
+**Deferred (after this slice):**
+- **Row 53 `IsNotTrusted` axis** — V1 `AttributeOnDiskDefaultConstraint.IsNotTrusted` tracks whether the DEFAULT constraint is currently NOCHECK'd on the deployed target. V2 carries no axis today; emission would require `Statement.AlterTableNoCheckDefault` parallel to the existing `Statement.AlterTableNoCheckConstraint` (matrix row 59 pattern). **Trigger**: V2 emission must round-trip a NOCHECK'd DEFAULT constraint (rare; usually a remediation-time concern).
+- **Row 56 partition-scheme cluster (LR6 + LR7)** — unchanged from the prior amendment; remains the only non-trivial SCHEMA-axis residual (needs closed-DU `DataSpace = Filegroup | PartitionScheme of name × columns` IR design).
+
+**Cross-references.**
+- `DECISIONS 2026-05-18 (slice 5.3.α.column-axis-deferral-closeout) — Column-axis deferrals cash-out: LR3 inline-PK + LR4 computed columns + row 53 DefaultName carriage` (the slice's discipline codification)
+- V1 source: `src/Osm.Smo/PerTableEmission/CreateTableStatementBuilder.cs:67-78` (LR3), `:362-365` (LR4), `:319-335` (named-DEFAULT)
+- The prior 5.3.α.smo-audit amendment established the per-file audit baseline; this slice closes the named-deferred axes that audit identified
+- Row 53 was originally classified at slice 5.2.α.attribute (2026-05-18); the Name half closes here while IsNotTrusted defers with a fresh trigger
+
+---
+
+### Rows 120 + 182 + 183 — 2026-05-18 (XXXXXL arc: slice 5.3.α.smo-audit completes the SMO PerTableEmission cluster line-by-line walk)
+
+**Original classifications:**
+- Row 120 (slice 5.3.α, 2026-05-18): 🟡 DIVERGENCE — `Osm.Smo/SmoEntityEmitter.cs` + 44-file SMO scripter cluster vs V2 `Projection.Targets.SSDT/SsdtDdlEmitter.fs` + ScriptDom typed-AST builders. Foundational architecture choice codified in chapter 4.1.A close arc.
+- Row 182 (slice 5.3.β, 2026-05-18): 🟢 PARITY (95%) for `CreateTableStatementBuilder.cs` (~558 LOC). Deferred axes named at time of audit: single-column PK inline + column defaults + CHECK constraints + computed columns.
+- Row 183 (slice 5.3.β, 2026-05-18): 🟢 PARITY (70%) for `IndexScriptBuilder.cs` (~451 LOC). Deferred axes named: IgnoreDupKey + DataCompression partition-range collapse + FileGroup/PartitionScheme dataspace.
+
+**Reclassified (slice 5.3.α.smo-audit, 2026-05-18):**
+
+| Row | Prior status | Updated status | Closure source |
+|---|---|---|---|
+| 120 | 🟡 DIVERGENCE (cluster-level architecture choice) | 🟡 DIVERGENCE (per-file audit complete; 7 files classified at rows 182 + 183 + 186-190) | This slice + the 5 new rows extend the audit from 2 files (CreateTable + Index) to all 7 V1 SMO PerTableEmission files |
+| 182 | 🟢 PARITY (95%); 4 deferred axes | 🟢 PARITY (97%); 2 deferred axes (LR3 single-column PK inline + LR4 computed columns) | DEFAULT + CHECK closed by slice `5.13.column-features-emit` (matrix row 12 + 53 amendments); IDENTITY seed/increment + collation already shipped. Remaining 2 axes deferred-with-trigger per skip-stubs in `SsdtSchemaFidelityPropertyTests` (LR3 + LR4) |
+| 183 | 🟢 PARITY (70%); 3 deferred axes | 🟢 PARITY (90%); 2 deferred axes (LR6 partition-range DataCompression + LR7 FileGroup/PartitionScheme) | IgnoreDupKey closed by slice `5.13.index-features-emit` (matrix row 55 amendment); DataCompression single-value shipped; IsDisabled shipped. Remaining 2 axes form the matrix row 56 partition-scheme cluster, deferred-with-trigger (partitioned-index fixture in operator-reality canary) |
+
+**New rows appended (5 previously-unaudited V1 SMO files):**
+
+| New row | V1 file | LOC | Classification | Why |
+|---|---|---|---|---|
+| 186 | `CreateTableFormatter.cs` | ~235 | 🟡 DIVERGENCE | V1 post-render whitespace normalization; V2 ScriptDom emits canonical SQL at typed-AST boundary (no post-render pass needed) |
+| 187 | `ConstraintFormatter.cs` | ~313 | 🟡 DIVERGENCE | V1 post-render FK + PK constraint formatting; V2's `ForeignKeyConstraintDefinition` + `Statement.AlterTableNoCheckConstraint` carry the same content structurally |
+| 188 | `StatementBatchFormatter.cs` | ~60 | 🟡 DIVERGENCE | V1 GO-batch assembly; V2 splits the concern — per-kind file body carries one logical block, GO-batching happens at realization layer (`Deploy.executeStream`); `BatchSplitter` handles the inverse parsing direction |
+| 189 | `IdentifierFormatter.cs` | ~146 | 🟡 DIVERGENCE | V1 operator-configurable quote strategy + post-render constraint-name rename; V2 pins bracket form structurally + handles rename at IR-rewrite time (`TableRename.applyRenames`) |
+| 190 | `ExtendedPropertyScriptBuilder.cs` | ~142 | 🟢 PARITY | V1 EXEC sp_addextendedproperty emission; V2 mirrors via typed `ExecuteStatement` + `ExecuteParameter` at `ScriptDomBuild.buildSetExtendedPropertyCore`. V2 adds Schema-level beyond V1's three. |
+
+**Aggregate cluster classification (post-arc):**
+
+| Cluster axis | Status | Verification |
+|---|---|---|
+| **Structural emission (Create Table / Create Index / FK / PK / Check / Default / Extended Properties)** | 🟢 PARITY | Slices 5.13.{column,fk,index}-features-emit (2026-05-18) + 5.3.α.smo-audit per-file walk + property tests in `SsdtSchemaFidelityPropertyTests` (12 passing) |
+| **Post-render formatting (whitespace / inline-clause splitting / FK ON DELETE-UPDATE synthesis / trust comments / GO-batching)** | 🟡 DIVERGENCE | V2's ScriptDom-canonical emission replaces V1's SMO + post-render two-pass; documented architecture choice per row 120 + DECISIONS 2026-05-10 (Text-builder-as-first-instinct) |
+| **Identifier quoting (bracket form pinned)** | 🟢 PARITY | V2 uses ScriptDom's `Identifier(QuoteType.SquareBracket)` constructors; pinned via `Sql160ScriptGenerator` options; property test verifies consistency |
+| **Constraint-name rename on table rename** | 🟡 DIVERGENCE | V1 post-render substring substitution; V2 IR-rewrite-time via `TableRename.applyRenames` (chapter 4.1.A) — same logical content via different architectural layer |
+
+**Cash-out summary.** The SMO PerTableEmission cluster (1905 LOC across 7 V1 files) is now fully audited. **Structural emission axes hold parity**; **post-render formatting axes diverge** — V2's typed-AST canonical output replaces V1's hand-rolled text post-processing as a load-bearing architectural choice (row 120 + DECISIONS 2026-05-10). Two named SCHEMA-axis residuals remain (LR3 single-column-PK-inline + LR4 computed-columns) plus the row 56 partition-scheme cluster (LR6 + LR7) — all deferred-with-trigger per skip-stubs in `SsdtSchemaFidelityPropertyTests`.
+
+**Coverage tests (12 new + 4 skip-stubs):**
+- `SsdtSchemaFidelityPropertyTests.5.3.α.create-table: every catalog kind emits exactly one CREATE TABLE statement`
+- `SsdtSchemaFidelityPropertyTests.5.3.α.create-table: every emitted column appears in catalog kind's Attributes list`
+- `SsdtSchemaFidelityPropertyTests.5.3.α.create-table: schema-qualified table identifier appears bracket-quoted`
+- `SsdtSchemaFidelityPropertyTests.5.3.α.pk-and-fk: every kind with primary-key attribute emits PRIMARY KEY clause`
+- `SsdtSchemaFidelityPropertyTests.5.3.α.pk-and-fk: every kind with references emits FOREIGN KEY clauses matching reference count`
+- `SsdtSchemaFidelityPropertyTests.5.3.α.index: PK-marked indexes do not produce CREATE INDEX statements`
+- `SsdtSchemaFidelityPropertyTests.5.3.α.formatting: emitted SQL parses back via TSql160Parser without errors`
+- `SsdtSchemaFidelityPropertyTests.5.3.α.formatting: emitted SQL does not require V1-style trailing-comma fixup`
+- `SsdtSchemaFidelityPropertyTests.5.3.α.identifier: emitted column references use bracket-quoting consistently`
+- `SsdtSchemaFidelityPropertyTests.5.3.α.identifier: schema and table identifiers escape closing bracket if present`
+- `SsdtSchemaFidelityPropertyTests.5.3.α.extended-properties: emission uses sys.sp_addextendedproperty for description carriage`
+- `SsdtSchemaFidelityPropertyTests.5.3.α.statement-batch: per-kind file body does not contain GO separator`
+
+**Skip-stubs reserving contract names for deferred axes:**
+- `5.3.α.create-table LR3: single-column PK emits inline at column definition` — trigger: operator-pressure for byte-identity to V1
+- `5.3.α.create-table LR4: computed columns emit AS (expression) clause` — trigger: V2 IR refinement adds `Attribute.ComputedExpression : string option`
+- `5.3.α.index LR6: DataCompression emits per-partition-range clauses` — trigger: partitioned-index fixture in canary
+- `5.3.α.index LR7: filegroup and partition-scheme ON clauses emit` — trigger: paired with LR6
+
+**Cross-references.**
+- `DECISIONS 2026-05-10 — Text-builder-as-first-instinct discipline` (the load-bearing architectural choice; ScriptDom over post-render text manipulation)
+- `DECISIONS 2026-05-18 (slice 5.3.α.smo) — Schema emission via ScriptDom typed-AST over SMO scripter` (cluster-level codification)
+- `HANDOFF 2026-05-18` "Highest-leverage next moves" item B (SMO → ScriptDom emission audit); this arc is the cash-out
+- The 4 deferred axes (LR3 / LR4 / LR6 / LR7) are surfaced structurally as `[<Fact(Skip = "…")>]` test stubs per the "Make divergences visible" operating discipline; the trigger prose is in the Skip string
+
+---
+
+### TransformRegistry Emitter-stage coverage (continued — sibling chorus closure) — 2026-05-18 (XXXXXL arc: slices 5.13.sibling-emitter-registry-{json,distributions,static-population,helper-extraction})
+
+**Original framing (HANDOFF 2026-05-18 — emit-features arc closing):**
+"Sibling emitter `registeredMetadata` lifts — propagate the SSDT precedent. Five emitters await (`JsonEmitter` / `DistributionsEmitter` / `StaticPopulationEmitter` / `StaticSeedsEmitter` / `MigrationDependenciesEmitter`). Each is ~30 LOC of Sites enumeration + 6 mirror tests. After the second registration, extract a shared `emitterMetadataBuilder` helper. After the third, the helper is principled. Closes pillar-9 totality coverage to the full sibling chorus."
+
+**Discovery upon opening the arc.** Two of the five named emitters
+(`StaticSeedsEmitter`, `MigrationDependenciesEmitter`) plus two
+**unmentioned** emitters (`DataEmissionComposer`, `BootstrapEmitter`)
+had **already** lifted `registeredMetadata` via slice
+`5.13.data-emission-registry` (Status-history amendment at row 160
+above). They live in `Projection.Targets.Data/RegisteredDataTransforms.fs`'s
+`all` aggregation surface (4 entries). The HANDOFF was stale on
+those; only **3 emitters truly pending** (`JsonEmitter`,
+`DistributionsEmitter`, `StaticPopulationEmitter`).
+
+**Closed by XXXXXL arc (4 slices, 2026-05-18):**
+
+| Slice | Emitter | Domain | Sites | Classification |
+|---|---|---|---|---|
+| 5.13.sibling-emitter-registry-json | `JsonEmitter.registeredMetadata` | Schema | 6 (catalogDocument / kindJson / attributeJson / referenceJson / modalityProjection / emitSlices) | All DataIntent — A18 amended (Catalog only) |
+| 5.13.sibling-emitter-registry-distributions | `DistributionsEmitter.registeredMetadata` | Diagnostics | 7 (catalogDocument / kindJson / attributeDistributionJson / writeCategorical / writeNumeric / writeProbeStatus / emitSlices) | All DataIntent — Profile is evidence per pillar 9 |
+| 5.13.sibling-emitter-registry-static-population | `StaticPopulationEmitter.registeredMetadata` | Data | 5 (kindStatements / rowToCellValues / identityToggle / topologicalOrder / statements) | All DataIntent — Static rows live in `Kind.Modality`; catalog-resident evidence |
+| 5.13.sibling-emitter-registry-helper-extraction | `TransformSite.dataIntent` + `TransformSite.operatorIntent` + `RegisteredTransformMetadata.emitter` + `RegisteredTransformMetadata.adapter` helpers in `Projection.Core/TransformRegistry.fs`; sweep of 9 existing registrations (3 new + 4 data-axis siblings + SsdtDdl + CatalogReader) | n/a (Core helper) | n/a | n/a |
+
+**Helper extraction (slice 4) rationale.** Position A (full extraction per `DECISIONS 2026-05-13 — Anticipation vs. speculation in abstraction extraction`) earned at the 3rd consumer: shape visibility ✓ (9 registrations share the literal record syntax) + concrete second consumer ✓ (this arc lifted 3 new ones). The two helpers:
+
+- `TransformSite.dataIntent (name, rationale)` — DataIntent arm.
+- `TransformSite.operatorIntent (name, axis, rationale)` — OperatorIntent arm; the `OverlayAxis` is explicit (Selection / Emission / Insertion / Tightening / Ordering).
+- `RegisteredTransformMetadata.emitter (name, domain, sites)` — fixes `StageBinding = Emitter` + `Status = Active`.
+- `RegisteredTransformMetadata.adapter (name, domain, sites)` — sibling to `emitter`; fixes `StageBinding = Adapter`.
+
+The helpers put the load-bearing **classification axis** in the function name rather than nested in a record literal field. Pass / OrderingPolicy / Pipeline bindings continue to flow through the typed `RegisteredTransform<'In, 'Out>` shell (those bindings carry `Run`); the metadata-only helpers cover the Emitter + Adapter "no typed shell" cases (per the `CatalogReader.registeredMetadata` cherry-pick precedent).
+
+**`NotImplementedInV2` carve-out.** `BootstrapEmitter` ships `Status = NotImplementedInV2 "..."` (slice ζ MVP) and stays in record-literal form for the outer envelope while still using `TransformSite.operatorIntent` for the inner site. `DataEmissionComposer` ships `StageBinding = Pipeline` (composer-stage, not Emitter) and stays in record-literal form for the outer envelope while still using `TransformSite.dataIntent / operatorIntent` for the 5 inner sites.
+
+**Full sibling chorus after the arc (10 registrations across 4 stages):**
+
+| Project | Registration | Stage | Status |
+|---|---|---|---|
+| `Projection.Core` | (12 entries via `RegisteredTransforms.all` — passes + ordering policies) | Pass / OrderingPolicy | Active |
+| `Projection.Adapters.Osm` | `CatalogReader.registeredMetadata` (6 sites) | Adapter | Active |
+| `Projection.Targets.SSDT` | `SsdtDdlEmitter.registeredMetadata` (11 sites) | Emitter | Active |
+| `Projection.Targets.Json` | `JsonEmitter.registeredMetadata` (6 sites) | Emitter | Active |
+| `Projection.Targets.Distributions` | `DistributionsEmitter.registeredMetadata` (7 sites) | Emitter | Active |
+| `Projection.Targets.Data` | `DataEmissionComposer.registeredMetadata` (5 sites) | Pipeline | Active |
+| `Projection.Targets.Data` | `StaticSeedsEmitter.registeredMetadata` (3 sites) | Emitter | Active |
+| `Projection.Targets.Data` | `StaticPopulationEmitter.registeredMetadata` (5 sites) | Emitter | Active |
+| `Projection.Targets.Data` | `MigrationDependenciesEmitter.registeredMetadata` (3 sites) | Emitter | Active |
+| `Projection.Targets.Data` | `BootstrapEmitter.registeredMetadata` (1 site) | Emitter | NotImplementedInV2 |
+
+**Classification breakdown (47 classified sites across the arc-touched + adjacent emitters):**
+- **DataIntent (39 sites)** — every JsonEmitter site (6), every DistributionsEmitter site (7), every StaticPopulationEmitter site (5), every CatalogReader site (6), every SsdtDdlEmitter site (11), every StaticSeedsEmitter site (3), DataEmissionComposer's 2 structural sites (globalPhaseOrdering / partitionAssertion), MigrationDependenciesEmitter's deferredFkPhase2.
+- **OperatorIntent (8 sites)** — DataEmissionComposer's 3 routing sites (compositionDispatch = Emission; migrationContextThreading / userRemapContextThreading = Insertion); MigrationDependenciesEmitter's 2 row-source sites (migrationRowEmission / userRemapRewrite = Insertion); BootstrapEmitter's userRemapBootstrap (Insertion).
+
+The split is structurally honest: the **routing surfaces** (DataEmissionComposer thread operator-supplied context) and **content-injection surfaces** (MigrationDependenciesEmitter consumes operator-published rows; BootstrapEmitter consumes operator-supplied UserRemapContext) carry OperatorIntent; the **projection surfaces** (every emitter that takes Catalog-or-Profile and produces an artifact) carry DataIntent. A18 amended holds structurally: no emitter site classifies as OperatorIntent except where the routing layer threads operator-supplied context.
+
+**Coverage tests (18 new emitter-registration tests across the 3 lifts + sweep):**
+- 6 mirror tests per lift (Name / Domain / StageBinding / Sites enumeration / DataIntent classification / non-empty Rationale)
+- 1 TransformRegistry.create validation test per lift
+- 1 joint-registry assembly test per lift (asserts the SSDT + new siblings + Core passes form a valid registry)
+- `EmitterRegistrationsTests.fs` grows from 6 → 24 tests (6 + 6 + 6 + 6).
+
+**Two-consumer extraction precedent codified.** This arc validates the operating-disciplines table entry "Anticipation vs. speculation in abstraction extraction (Position A/B/C)" at scale: 9 emitter + adapter registrations sharing the same literal record syntax triggered the Position A full extraction the moment shape visibility + concrete 3rd consumer were both met. The helpers + the sweep landed in one commit; future emitter / adapter lifts default to the helper form.
+
+**Cross-references.**
+- `DECISIONS 2026-05-15 (late) — Pillar 9: harvest-dichotomy classification` (the load-bearing discipline).
+- `DECISIONS 2026-05-13 — Anticipation vs. speculation in abstraction extraction` (the two-consumer threshold refined with Position A/B/C; Position A earned in slice 4).
+- `DECISIONS 2026-05-13 — Two-consumer threshold for emergent primitives` (the canonical extraction discipline).
+- `RegisteredDataTransforms.all` precedent (slice `5.13.data-emission-registry`): per-project registry surface; consumer concatenates at call site.
+- The unified Pipeline-level registry assembly (a `RegisteredEmitterTransforms.all` parallel to `RegisteredDataTransforms.all` but for non-Data emitters) **deferred**. Trigger: when the canary / CLI / skeleton-purity property test needs a one-stop "every emitter known to the project" iteration surface. Today, consumers concatenate `[ SsdtDdlEmitter.registeredMetadata; JsonEmitter.registeredMetadata; DistributionsEmitter.registeredMetadata ] @ RegisteredDataTransforms.all @ RegisteredTransforms.all` at the call site — explicit, type-checked, no new surface required.
+- `HANDOFF 2026-05-18` "Highest-leverage next moves" item #2 (sibling-emitter `registeredMetadata` lifts); this arc is the cash-out.
+
+---
+
+### Rows 12 + 53 + 55 + 58 + 59 + 182 — 2026-05-18 (verification depth upgraded by slice 5.13.schema-axis-property-sweep)
+
+**Original classifications (slices 5.13.column-features-emit, 5.13.fk-features-emit, 5.13.index-features-emit, all 2026-05-18):**
+All six rows shipped at 🟢 PARITY with example-based canary tests
+(`SsdtDdlEmitterTests.fs` slice-tagged tests; one fixture variant value
+per axis). The classification establishes structural-type-level
+enforcement (closed-DU + record-field extensions through ScriptDom).
+
+**Verification depth upgraded (slice 5.13.schema-axis-property-sweep,
+2026-05-18):** 🟢 PARITY (status unchanged) — verification depth lifts
+from example-based to property-based for every axis the 2026-05-18
+emit-features arc shipped. Closes the SCHEMA-axis V2-driver gate's
+"per-axis property tests" requirement per `V2_DRIVER.md` per-axis stakes
+table (verification depth: Highest).
+
+**Rationale.** V2_DRIVER's bar for SCHEMA-axis V2-driver mode is
+*structural-type-level enforcement plus per-axis property tests*. The
+shipped 2026-05-18 arc satisfied the structural-type half; canary
+coverage was example-based (one fixture per axis). This slice adds 21
+FsCheck property tests (`SsdtDdlEmitterPropertyTests.fs`, ~430 LOC)
+across the seven shipped axes — three pinned properties per axis: T1
+byte-determinism (P1), Modules-list permutation invariance (P2), and
+V1-emission-clause coverage across the variant space (P3). The (P1 +
+P2) pair codifies the algebraic surface that operator-reality canary
+cannot exercise (PhysicalSchema-diff asserts deployed shape, not
+byte-determinism of SQL text). The (P3) pair amplifies the canary
+tests' single-variant coverage across the full variant space (e.g.,
+every `ReferenceAction option` value for OnUpdate; both Boolean values
+for IsConstraintTrusted / IsDisabled / IgnoreDuplicateKey; every
+`DataCompressionLevel option` value).
+
+**Coverage axes (21 properties × 7 axes):**
+
+| Axis | Matrix row(s) | P1 (T1) | P2 (permutation) | P3 (V1 shape) |
+|---|---|---|---|---|
+| DEFAULT (column) | 53 + 182 | ✓ | ✓ | ✓ |
+| CHECK (table-level) | 12 + 182 | ✓ | ✓ | ✓ |
+| OnUpdate (FK) | 58 | ✓ | ✓ | ✓ |
+| IsConstraintTrusted (FK NOCHECK) | 59 | ✓ | ✓ | ✓ |
+| IGNORE_DUP_KEY (index) | 55 | ✓ | ✓ | ✓ |
+| DATA_COMPRESSION (single-value) | 55 + 56 (partial; partition-scheme deferred) | ✓ | ✓ | ✓ |
+| IsDisabled (index) | 55 | ✓ | ✓ | ✓ |
+
+**Structural finding surfaced by P3 (recorded inline):** the DEFAULT
+text-literal generator initially included `""` (empty raw); this
+falsified P3 immediately. Tracing the failure to `SqlLiteral.ofRaw`
+(`SqlLiteral.fs:75-76`) confirmed V2's IR convention: empty raw is
+the NULL sentinel (renders as `DEFAULT NULL`, not `DEFAULT N''`).
+The property correctly surfaced the convention; the generator was
+narrowed to non-empty text strings with a comment naming the
+NULL-as-default axis as a structurally-distinct surface (covered by
+V2's "no DefaultValue → no DEFAULT clause" semantic; out of the
+2026-05-18 arc's scope). Pillar-1 confirmation: the typed IR ↔ emitter
+seam holds — the property test catches a real semantic invariant the
+example-based canary missed.
+
+**Coverage tests now passing (21 new, all under
+`Projection.Tests.SsdtDdlEmitterPropertyTests`):**
+- `5.13.schema-axis-property-sweep: DEFAULT (P1) T1 byte-determinism`
+- `5.13.schema-axis-property-sweep: DEFAULT (P2) permutation invariance on Modules`
+- `5.13.schema-axis-property-sweep: DEFAULT (P3) V1 emission clause surfaces`
+- `5.13.schema-axis-property-sweep: CHECK (P1) T1 byte-determinism`
+- `5.13.schema-axis-property-sweep: CHECK (P2) permutation invariance on Modules`
+- `5.13.schema-axis-property-sweep: CHECK (P3) named constraint surfaces`
+- `5.13.schema-axis-property-sweep: OnUpdate (P1) T1 byte-determinism`
+- `5.13.schema-axis-property-sweep: OnUpdate (P2) permutation invariance on Modules`
+- `5.13.schema-axis-property-sweep: OnUpdate (P3) ON UPDATE clause surfaces (or absent for None)`
+- `5.13.schema-axis-property-sweep: NOCHECK (P1) T1 byte-determinism`
+- `5.13.schema-axis-property-sweep: NOCHECK (P2) permutation invariance on Modules`
+- `5.13.schema-axis-property-sweep: NOCHECK (P3) ALTER WITH NOCHECK present iff not trusted`
+- `5.13.schema-axis-property-sweep: IGNORE_DUP_KEY (P1) T1 byte-determinism`
+- `5.13.schema-axis-property-sweep: IGNORE_DUP_KEY (P2) permutation invariance on Modules`
+- `5.13.schema-axis-property-sweep: IGNORE_DUP_KEY (P3) clause present iff true`
+- `5.13.schema-axis-property-sweep: DATA_COMPRESSION (P1) T1 byte-determinism`
+- `5.13.schema-axis-property-sweep: DATA_COMPRESSION (P2) permutation invariance on Modules`
+- `5.13.schema-axis-property-sweep: DATA_COMPRESSION (P3) clause surfaces (or absent for None)`
+- `5.13.schema-axis-property-sweep: IsDisabled (P1) T1 byte-determinism`
+- `5.13.schema-axis-property-sweep: IsDisabled (P2) permutation invariance on Modules`
+- `5.13.schema-axis-property-sweep: IsDisabled (P3) ALTER INDEX DISABLE present iff true`
+
+**Deferred (named with explicit triggers):**
+- **Row 56 partition-scheme axis** — P-suite scope is single-value
+  `DataCompressionLevel` (None / Row / Page); partition-scheme +
+  per-partition-compression remains the only SCHEMA-axis residual
+  needing non-trivial IR design (closed-DU `DataSpace = Filegroup |
+  PartitionScheme of name × columns` per row 56 cash-out shape).
+  Trigger: partitioned-index fixture surfaces in operator-reality
+  canary.
+- **NULL-as-default axis** — `Attribute.DefaultValue = None` is V2's
+  "no DEFAULT clause" semantic, structurally distinct from a
+  `Some NullLit` default. The current emit-features arc does not
+  exercise NullLit defaults; the deferral is consistent with
+  IR-grows-under-evidence (no V2 consumer produces NullLit defaults
+  today).
+- **Permutation depth beyond Modules-level** — Kinds-within-Module
+  shuffle and Indexes-within-Kind shuffle (the emitter sorts indexes
+  by SsKey per `SsdtDdlEmitter.fs:306`) are not exercised in this
+  pass. Both are covered structurally by P2's "shuffled traversal is
+  byte-identical" claim when the Modules-level seam is the source of
+  ordering nondeterminism, but a richer permutation invariance suite
+  is a natural follow-on when the next sibling-emitter property-test
+  sweep lands.
+
+**Cross-references.**
+- `DECISIONS 2026-05-10 — V2-driver as destination KPI` (the KPI).
+- `V2_DRIVER.md` per-axis stakes table — SCHEMA-axis verification
+  depth = Highest; "structural-type-level enforcement plus per-axis
+  property tests."
+- `HANDOFF 2026-05-18` "Highest-leverage next moves" item #1
+  ("Per-axis property test sweep on SCHEMA emission ~200 LOC"); this
+  slice is the cash-out.
+- Sibling pattern precedent: `UserFkReflowPropertyTests.fs` (slice
+  5.13.identity-axis-closure) — the canonical FsCheck Arbitrary +
+  per-axiom property layout.
+- The sibling `Render.fs StringBuilder retirement` and `TransformRegistry
+  Emitter-stage coverage` amendments (also 2026-05-18) sit alongside
+  this one — together they close the SCHEMA-axis V2-driver gate's
+  structural-emission half (one canonical typed-AST pipeline; one
+  registered emitter metadata surface; per-axis property coverage).
 
 ---
 

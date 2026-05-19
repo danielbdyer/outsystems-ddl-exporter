@@ -60,6 +60,15 @@ type ColumnDef =
         /// clause then omits the identifier and SQL Server
         /// auto-names the constraint).
         DefaultName : string option
+        /// Computed column expression + persistence flag. When `Some`,
+        /// the column is computed and the realization layer emits
+        /// `[col] AS (expression) [PERSISTED]`; the `Type` / `Length` /
+        /// `Precision` / `Scale` / `IsIdentity` / `Nullable` material
+        /// is omitted (server-inferred from the expression). Slice
+        /// 5.3.α.column-axis-deferral-closeout (LR4); V1 source:
+        /// `CreateTableStatementBuilder.cs:362-365` (column.IsComputed
+        /// + column.ComputedExpression).
+        Computed : ComputedColumnConfig option
         /// The originating attribute's display name + SsKey root,
         /// preserved so `Render.toText` can keep the diffable-form
         /// trailing comment that the v1 emitter carried.
@@ -149,6 +158,19 @@ type IndexDataCompressionSql =
     | RowCompressionSql
     | PageCompressionSql
 
+/// Realization-layer mirror of `Catalog.DataSpace`. Slice
+/// A.4.7'-prelude.row56-dataspace (LR7). The emitter consumes this
+/// closed DU to build ScriptDom's `FileGroupOrPartitionScheme` —
+/// both variants share that ScriptDom type modulo the partition-
+/// column list, so the realization-layer DU is the cleaner seam
+/// than passing the variants directly.
+type IndexDataSpaceSql =
+    /// Index resides on a named filegroup. Emitted as `ON [name]`.
+    | FilegroupDataSpaceSql of name: string
+    /// Index uses a partition scheme keyed by named partition
+    /// columns. Emitted as `ON [name]([col1], [col2], ...)`.
+    | PartitionSchemeDataSpaceSql of name: string * columns: string list
+
 type IndexDef =
     {
         Name : string
@@ -191,6 +213,12 @@ type IndexDef =
         /// `None` omits the option from the WITH clause (server-
         /// default applies).
         DataCompression : IndexDataCompressionSql option
+        /// Slice A.4.7'-prelude.row56-dataspace (LR7 closure) —
+        /// realization-layer mirror of `Index.DataSpace`. `None`
+        /// omits the `ON` clause; `Some` populates ScriptDom's
+        /// `CreateIndexStatement.OnFileGroupOrPartitionScheme`
+        /// (filegroup name + optional partition-column list).
+        DataSpace : IndexDataSpaceSql option
     }
 
 /// One column's value within an `InsertRow`. `Raw` is the V2 IR

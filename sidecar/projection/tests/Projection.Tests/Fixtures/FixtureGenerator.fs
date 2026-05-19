@@ -54,6 +54,50 @@ type StaticTableSeed =
         Rows : CellValue list list
     }
 
+/// One attribute (column) on a generated entity. Captured here so the
+/// comprehensive canary's OSSYS-metadata synthesizer can describe the
+/// same schema the DDL declares — single source of truth, byte-for-byte
+/// determinism is preserved because the DDL emitter and the structural
+/// emitter walk the same RNG sequence in the same order.
+/// Slice A.4.7'-prelude.comprehensive-canary (2026-05-19).
+type GeneratedAttribute =
+    {
+        /// Physical column name (uppercase per OutSystems convention).
+        PhysicalName : string
+        /// SQL Server type (e.g., `NVARCHAR(100)`, `INT`, `BIT`).
+        SqlType : string
+        /// `true` when the column is NOT NULL.
+        IsMandatory : bool
+        /// `true` for the entity's `[ID]` primary-key column.
+        IsIdentifier : bool
+        /// `true` for IDENTITY(1,1) columns (typically the PK).
+        IsAutoNumber : bool
+        /// When this attribute is a FK, the physical table name it
+        /// references (resolved at generation time). `None` for
+        /// non-FK columns.
+        ReferencedTable : string option
+    }
+
+/// One generated entity (regular or static). The OSSYS-metadata
+/// synthesizer (`OssysFixtureSynthesizer`) consumes this list to
+/// emit `ossys_Espace` / `ossys_Entity` / `ossys_Entity_Attr` rows
+/// describing the same schema FixtureGenerator's DDL declares.
+type GeneratedEntityModel =
+    {
+        /// Zero-based module index (round-robin distribution).
+        ModuleIndex : int
+        /// Module short code (e.g., `M01`).
+        ModuleCode : string
+        /// Human entity name (e.g., `Customer`, `Status`).
+        EntityName : string
+        /// Physical SQL table name (e.g., `OSUSR_M01_CUSTOMER`).
+        PhysicalTable : string
+        /// `true` for static (lookup) entities.
+        IsStatic : bool
+        /// Column-order list of attributes. Mirrors the DDL.
+        Attributes : GeneratedAttribute list
+    }
+
 /// Generated artifact: schema DDL + static-seed data, both as text
 /// (for the historical executeBatch path) and as typed bulk seeds
 /// (for the SqlBulkCopy path).
@@ -69,6 +113,14 @@ type GeneratedFixture =
         /// entry per static table; rows are `CellValue` lists in
         /// column order. Empty when `StaticEntities = 0`.
         BulkSeeds : StaticTableSeed list
+        /// Per slice A.4.7'-prelude.comprehensive-canary — structural
+        /// view of every generated entity (regular + static) in
+        /// emission order. The OSSYS-metadata synthesizer consumes
+        /// this to emit `ossys_*` INSERTs describing the same schema
+        /// the DDL declares. Empty when the generator hasn't been
+        /// extended for a given path (defensive — defaults to []
+        /// so legacy callers don't break).
+        Entities : GeneratedEntityModel list
         /// Total tables in the generated fixture.
         TableCount : int
         /// Total static-seed rows (sum across all static entities).
@@ -137,6 +189,36 @@ module GenerateSpec =
     let bulk1k : GenerateSpec = bulkSpec 1_000
     let bulk10k : GenerateSpec = bulkSpec 10_000
     let bulk100k : GenerateSpec = bulkSpec 100_000
+
+    /// **Comprehensive canary fixture** — slice A.4.7'-prelude.
+    /// comprehensive-canary (2026-05-19). The pre-perf-sweep baseline
+    /// canary; smaller than `operatorReality` because it exercises a
+    /// *wider* pipeline (OSSYS adapter extract + parse + Catalog
+    /// construction + Policy + tightening passes + topological order
+    /// + data emission + dual deploy + diff). Wall-time target <60s
+    /// warm; coverage matters more than scale.
+    ///
+    /// **Shape:** 8 modules × (25 regular + ~12-13 static) = 300 tables;
+    /// 5000 rows × 100 static = ~500k static rows ≈ 100MB of seed data.
+    /// Matches `operatorReality` topology + 10× the row volume for the
+    /// "production scenario" baseline. Variegated via the same RNG-driven
+    /// attribute / FK density.
+    ///
+    /// Per slice A.4.7'-prelude.canary-production-scale (2026-05-19):
+    /// the comprehensive canary now exercises bench labels at production
+    /// cardinality so per-iteration distribution (P50/P95/P99) surfaces
+    /// real timings (vs the prior 100-table scale where most labels
+    /// reported sub-millisecond per-iteration means).
+    let comprehensiveCanary : GenerateSpec =
+        {
+            Modules = 8
+            Entities = 200
+            StaticEntities = 100
+            AvgAttrsPerEntity = 10
+            FkDensity = 0.2
+            StaticRowsPerEntity = 5000
+            Seed = 42
+        }
 
     /// **Operator-reality fixture** — 300 tables (200 regular + 100
     /// static) × 50k total rows (500 rows × 100 static tables), with
@@ -249,34 +331,40 @@ module FixtureGenerator =
         if suffix = 0 then baseNoun.ToUpperInvariant()
         else sprintf "%s%d" (baseNoun.ToUpperInvariant()) (suffix + 1)
 
+    /// Audit columns common to every regular entity (slice
+    /// A.4.7'-prelude.comprehensive-canary — extracted so the OSSYS-
+    /// metadata synthesizer can describe them structurally).
+    let private auditAttributes : GeneratedAttribute list =
+        [
+            { PhysicalName = "ID";        SqlType = "INT";                IsMandatory = true; IsIdentifier = true;  IsAutoNumber = true;  ReferencedTable = None }
+            { PhysicalName = "TENANT_ID"; SqlType = "INT";                IsMandatory = true; IsIdentifier = false; IsAutoNumber = false; ReferencedTable = None }
+            { PhysicalName = "SS_KEY";    SqlType = "UNIQUEIDENTIFIER";   IsMandatory = true; IsIdentifier = false; IsAutoNumber = false; ReferencedTable = None }
+            { PhysicalName = "CREATEDON"; SqlType = "DATETIME2";          IsMandatory = true; IsIdentifier = false; IsAutoNumber = false; ReferencedTable = None }
+            { PhysicalName = "UPDATEDON"; SqlType = "DATETIME2";          IsMandatory = true; IsIdentifier = false; IsAutoNumber = false; ReferencedTable = None }
+        ]
+
     /// Generate one table's CREATE TABLE statement plus its FK
     /// ADD CONSTRAINT (if any). The `priorEntities` list contains
-    /// the `(physicalName)` tuples of tables emitted earlier in
-    /// topological order; FKs target one of these to guarantee
-    /// acyclicity.
+    /// the physical names of tables emitted earlier in topological
+    /// order; FKs target one of these to guarantee acyclicity.
+    ///
+    /// Returns the structural model so the OSSYS-metadata synthesizer
+    /// can describe the same columns + FK relationships.
     let private generateTable
         (rng: Random)
         (spec: GenerateSpec)
+        (modIdx: int)
         (modCode: string)
         (entityName: string)
         (priorEntities: string list)
         (sb: StringBuilder)
-        : unit =
+        : GeneratedEntityModel =
         let tableName = sprintf "OSUSR_%s_%s" modCode (entityName.ToUpperInvariant())
         let attrCount =
             let varied = rng.Next(spec.AvgAttrsPerEntity / 2, spec.AvgAttrsPerEntity * 3 / 2 + 1)
             max 3 varied
-        // Audit columns + the entity-specific columns.
-        let auditCols =
-            [
-                "[ID] INT NOT NULL IDENTITY(1,1)"
-                "[TENANT_ID] INT NOT NULL"
-                "[SS_KEY] UNIQUEIDENTIFIER NOT NULL"
-                "[CREATEDON] DATETIME2 NOT NULL"
-                "[UPDATEDON] DATETIME2 NOT NULL"
-            ]
         // FK column (when this entity has an outgoing FK)
-        let fkColumn, fkConstraint =
+        let fkColumnModel, fkColumnDecl, fkConstraint =
             if not (List.isEmpty priorEntities) && rng.NextDouble() < spec.FkDensity then
                 let target = priorEntities[rng.Next priorEntities.Length]
                 let fkColumnName = sprintf "PARENT_%d_ID" (rng.Next 1000)
@@ -288,22 +376,54 @@ module FixtureGenerator =
                         fkName
                         fkColumnName
                         target
-                Some fkColumnDecl, Some fkClause
+                let model =
+                    {
+                        PhysicalName    = fkColumnName
+                        SqlType         = "INT"
+                        IsMandatory     = false
+                        IsIdentifier    = false
+                        IsAutoNumber    = false
+                        ReferencedTable = Some target
+                    }
+                Some model, Some fkColumnDecl, Some fkClause
             else
-                None, None
-        // Generate non-audit user columns.
-        let userCols =
+                None, None, None
+        // Generate non-audit user columns. Capture the random draws
+        // so the structural-model output mirrors what the DDL declares
+        // byte-for-byte.
+        let userCols : (string * GeneratedAttribute) list =
             [
                 for i in 0 .. attrCount - 1 ->
                     let col = columnName rng i
                     let typ = pickColumnType rng
-                    let nullness = if rng.NextDouble() < 0.4 then "NULL" else "NOT NULL"
-                    sprintf "[%s] %s %s" col typ nullness
+                    let mandatory = not (rng.NextDouble() < 0.4)
+                    let nullness = if mandatory then "NOT NULL" else "NULL"
+                    let decl = sprintf "[%s] %s %s" col typ nullness
+                    let model =
+                        {
+                            PhysicalName    = col
+                            SqlType         = typ
+                            IsMandatory     = mandatory
+                            IsIdentifier    = false
+                            IsAutoNumber    = false
+                            ReferencedTable = None
+                        }
+                    decl, model
+            ]
+        // Audit-col text + user-col text + FK-col text — matching the
+        // DDL declarations order so attribute layout is consistent.
+        let auditColTexts =
+            [
+                "[ID] INT NOT NULL IDENTITY(1,1)"
+                "[TENANT_ID] INT NOT NULL"
+                "[SS_KEY] UNIQUEIDENTIFIER NOT NULL"
+                "[CREATEDON] DATETIME2 NOT NULL"
+                "[UPDATEDON] DATETIME2 NOT NULL"
             ]
         // Compose
         sb.AppendLine(sprintf "CREATE TABLE [dbo].[%s] (" tableName) |> ignore
         let allCols =
-            auditCols @ userCols @ (Option.toList fkColumn)
+            auditColTexts @ (userCols |> List.map fst) @ (Option.toList fkColumnDecl)
         let lastIdx = allCols.Length - 1
         allCols
         |> List.iteri (fun i col ->
@@ -322,14 +442,39 @@ module FixtureGenerator =
             sb.AppendLine() |> ignore
         sb.AppendLine(");") |> ignore
         sb.AppendLine() |> ignore
+        // Compose structural model: audit + user + FK.
+        let attrs =
+            auditAttributes
+            @ (userCols |> List.map snd)
+            @ (Option.toList fkColumnModel)
+        {
+            ModuleIndex   = modIdx
+            ModuleCode    = modCode
+            EntityName    = entityName
+            PhysicalTable = tableName
+            IsStatic      = false
+            Attributes    = attrs
+        }
+
+    /// Schema of a static (lookup) entity. Fixed per the
+    /// `generateStaticTable` DDL emission.
+    let private staticAttributes : GeneratedAttribute list =
+        [
+            { PhysicalName = "ID";        SqlType = "INT";              IsMandatory = true; IsIdentifier = true;  IsAutoNumber = false; ReferencedTable = None }
+            { PhysicalName = "LABEL";     SqlType = "NVARCHAR(100)";    IsMandatory = true; IsIdentifier = false; IsAutoNumber = false; ReferencedTable = None }
+            { PhysicalName = "CODE";      SqlType = "NVARCHAR(50)";     IsMandatory = true; IsIdentifier = false; IsAutoNumber = false; ReferencedTable = None }
+            { PhysicalName = "IS_ACTIVE"; SqlType = "BIT";              IsMandatory = true; IsIdentifier = false; IsAutoNumber = false; ReferencedTable = None }
+            { PhysicalName = "SS_KEY";    SqlType = "UNIQUEIDENTIFIER"; IsMandatory = true; IsIdentifier = false; IsAutoNumber = false; ReferencedTable = None }
+        ]
 
     /// Generate one static entity (lookup table) with simpler shape:
     /// no audit columns, no FKs, just (ID, LABEL, SS_KEY).
     let private generateStaticTable
+        (modIdx: int)
         (modCode: string)
         (entityName: string)
         (sb: StringBuilder)
-        : string =
+        : GeneratedEntityModel =
         let tableName = sprintf "OSUSR_%s_%s" modCode (entityName.ToUpperInvariant())
         sb.AppendLine(sprintf "CREATE TABLE [dbo].[%s] (" tableName) |> ignore
         sb.AppendLine("    [ID] INT NOT NULL,") |> ignore
@@ -340,7 +485,14 @@ module FixtureGenerator =
         sb.AppendLine(sprintf "    CONSTRAINT [PK_dbo_%s] PRIMARY KEY ([ID])" tableName) |> ignore
         sb.AppendLine(");") |> ignore
         sb.AppendLine() |> ignore
-        tableName
+        {
+            ModuleIndex   = modIdx
+            ModuleCode    = modCode
+            EntityName    = entityName
+            PhysicalTable = tableName
+            IsStatic      = true
+            Attributes    = staticAttributes
+        }
 
     // -----------------------------------------------------------------
     // Variegated production-like value generators. Per session-33
@@ -462,17 +614,21 @@ module FixtureGenerator =
         ddlSb.AppendLine() |> ignore
 
         // Generate regular entities in topological order — entity i can
-        // FK-reference any entity 0..i-1.
+        // FK-reference any entity 0..i-1. Capture structural models so
+        // the OSSYS-metadata synthesizer (slice
+        // A.4.7'-prelude.comprehensive-canary) can describe the same
+        // schema declaratively.
         let mutable priorEntities : string list = []
         let mutable totalTables = 0
+        let entityModels = ResizeArray<GeneratedEntityModel>(spec.Entities + spec.StaticEntities)
 
         for i in 0 .. spec.Entities - 1 do
             let modIdx = i % spec.Modules
             let modCode = moduleCode modIdx
             let ename = entityName rng i
-            let tableName = sprintf "OSUSR_%s_%s" modCode (ename.ToUpperInvariant())
-            generateTable rng spec modCode ename priorEntities ddlSb
-            priorEntities <- tableName :: priorEntities
+            let model = generateTable rng spec modIdx modCode ename priorEntities ddlSb
+            priorEntities <- model.PhysicalTable :: priorEntities
+            entityModels.Add model
             totalTables <- totalTables + 1
 
         // Static entities — independent of regular entities; emitted
@@ -485,12 +641,13 @@ module FixtureGenerator =
             let modIdx = i % spec.Modules
             let modCode = moduleCode modIdx
             let sname = staticEntityName i
-            let tableName = generateStaticTable modCode sname ddlSb
-            let rows = generateStaticSeed rng spec.StaticRowsPerEntity tableName dataSb
+            let model = generateStaticTable modIdx modCode sname ddlSb
+            entityModels.Add model
+            let rows = generateStaticSeed rng spec.StaticRowsPerEntity model.PhysicalTable dataSb
             if not (List.isEmpty rows) then
                 bulkSeeds.Add
                     {
-                        Table = { Schema = "dbo"; Table = tableName; Catalog = None }
+                        Table = { Schema = "dbo"; Table = model.PhysicalTable; Catalog = None }
                         Rows = rows
                     }
             totalTables <- totalTables + 1
@@ -512,6 +669,7 @@ module FixtureGenerator =
             SeedData = seedData
             Combined = combined
             BulkSeeds = List.ofSeq bulkSeeds
+            Entities = List.ofSeq entityModels
             TableCount = totalTables
             SeedRowCount = seedRowCount
         }

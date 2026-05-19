@@ -312,3 +312,33 @@ module DistributionsEmitter =
     /// uncurry; this is the convenience.
     let emitFromInput (input: ProjectionInput) : string =
         emit input.Catalog input.Profile
+
+    // -----------------------------------------------------------------------
+    // Slice 5.13.sibling-emitter-registry-distributions —
+    // `registeredMetadata` entry for the DistributionsEmitter sibling Π.
+    // Mirrors JsonEmitter / SsdtDdlEmitter on the Profile-evidence axis.
+    //
+    // **Classification.** All Sites carry `DataIntent`. Profile is
+    // *evidence* per A18 amended (Profile-driven observations are
+    // DataIntent per pillar 9). The emitter signature
+    // `Catalog → Profile → string` honors A18: Catalog + Profile flow
+    // through; Policy does not. Distribution evidence projections are
+    // observation-shaped, never operator-supplied policy.
+    // -----------------------------------------------------------------------
+
+    let registeredMetadata : RegisteredTransformMetadata =
+        RegisteredTransformMetadata.emitter "distributionsEmitter" Diagnostics
+            [ TransformSite.dataIntent "catalogDocument"
+                "Top-level emit assembles `{ emitter, version, modules : [...] }` via `Utf8JsonWriter` with pinned `JsonOptions.indented` (T1 byte-determinism). Catalog × Profile → string projection; per-module envelope wraps `attributeJson` outputs in SsKey-sorted order (T11 sibling commutativity)."
+              TransformSite.dataIntent "kindJson"
+                "Project Kind → JsonNode via `writeKind` — ssKey / name / attributes[]. Path flows through `kindJsonNode` (`Utf8JsonWriter` → `MemoryStream` → `byte[]` → `JsonNode.Parse`) so the typed JsonNode is the canonical sibling-Π port value (pillar 1)."
+              TransformSite.dataIntent "attributeDistributionJson"
+                "Per-attribute projection looks up distribution evidence in `Profile.Distributions`; emits `distribution: null` when absent (T4 / T11 — output enumerates every catalog attribute regardless of profile coverage). Profile is evidence (A18 amended); the lookup is a pure projection of observation, not an operator policy decision."
+              TransformSite.dataIntent "writeCategorical"
+                "Project `CategoricalDistribution` → JsonNode — kind / distinctCount / isTruncated / frequencies / probe. Frequencies array preserves capture order (the IR carries them as `(string * int64) list`); probe status flattens to `outcome / sampleSize / capturedAtUtc` (ISO-8601 round-trip). Categorical evidence is observation-shaped per pillar 9."
+              TransformSite.dataIntent "writeNumeric"
+                "Project `NumericDistribution` → JsonNode — kind / min / p25 / p50 / p75 / p95 / p99 / max / sampleSize / probe. All percentile fields are `decimal` (T1 byte-determinism per `DECISIONS 2026-05-13 — Decimal as default for continuous statistical evidence`). Closed-DU `AttributeDistribution` exhaustively dispatches Categorical / Numeric."
+              TransformSite.dataIntent "writeProbeStatus"
+                "Project `ProbeStatus` → JsonNode — outcome / sampleSize / capturedAtUtc. Closed-DU `ProbeOutcome` flattens via `outcomeString` (5 variants: Succeeded / FallbackTimeout / Cancelled / TrustedConstraint / AmbiguousMapping). The probe status IS the per-distribution capture provenance; observation-shaped."
+              TransformSite.dataIntent "emitSlices"
+                "Π port realization — `Catalog → Profile → Result<ArtifactByKind<JsonNode>, EmitError>` (A35 stream-realization pattern on the Profile-evidence axis). The `EmitterWithProfile<JsonNode>` wide signature honors A18 amended (Catalog × Profile both flow); per-kind `JsonNode` carries the typed structure at the port boundary." ]

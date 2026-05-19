@@ -358,8 +358,18 @@ module MetadataSnapshotRunner =
         // V1 sometimes returns int via flexible widening (Int16 / Int64);
         // SqlDataReader.GetInt32 throws on type mismatch. Use Convert to
         // tolerate width variation.
-        let value = reader.GetValue(ordinal)
-        System.Convert.ToInt32(value)
+        //
+        // Defensive-fallback (slice A.4.7'-prelude.defensive-hardening,
+        // 2026-05-19): mirror `readString`'s explicit DBNull guard.
+        // `Convert.ToInt32 DBNull.Value` silently returns 0 — which is
+        // the WORST failure shape (silent identity/FK corruption in the
+        // produced Catalog). Raise on NULL so the caller's snapshot
+        // contract is honored (any required-int column with NULL is a
+        // V1-source data integrity issue, not a V2 adapter problem).
+        if reader.IsDBNull(ordinal) then
+            invalidOp (sprintf "MetadataSnapshotRunner: required int column at ordinal %d was NULL" ordinal)
+        else
+            System.Convert.ToInt32(reader.GetValue(ordinal))
 
     let private readIntOpt (reader: SqlDataReader) (ordinal: int) : int option =
         if reader.IsDBNull(ordinal) then None
@@ -622,6 +632,7 @@ module MetadataSnapshotRunner =
             (options: RunOptions)
             : Task<Result<MetadataSnapshot>> =
         task {
+            use _ = Bench.scope "adapter.osm.extract"
             try
                 let script = MetadataExtractionSql.read()
                 use command = new SqlCommand(script, cnn)
@@ -709,6 +720,8 @@ module MetadataSnapshotRunner =
                 // #RelJson, #IdxJson, #TriggerJson, #ModuleJson).
                 let read (name: string) (mapper: SqlDataReader -> 'T) : Task<'T list> =
                     task {
+                        use _ = Bench.scope "adapter.osm.extract.rowset"
+                        use _ = Bench.scope (sprintf "adapter.osm.extract.rowset.%s" name)
                         let! _ = advanceNext ()
                         let! rows = readResultSet name reader mapper
                         report name rows.Length
@@ -716,14 +729,22 @@ module MetadataSnapshotRunner =
                     }
                 let skip (name: string) : Task<unit> =
                     task {
+                        use _ = Bench.scope "adapter.osm.extract.rowset"
+                        use _ = Bench.scope (sprintf "adapter.osm.extract.rowset.%s" name)
                         let! _ = advanceNext ()
                         do! skipResultSet reader
                         report name 0
                     }
 
                 // Rowset 0 — modules (no advance; reader opens here).
-                let! modules = readResultSet "modules" reader mapModuleRow
-                report "modules" modules.Length
+                let! modules =
+                    task {
+                        use _ = Bench.scope "adapter.osm.extract.rowset"
+                        use _ = Bench.scope "adapter.osm.extract.rowset.modules"
+                        let! rows = readResultSet "modules" reader mapModuleRow
+                        report "modules" rows.Length
+                        return rows
+                    }
 
                 // Rowsets 1–4 — already-lifted V2-consumed surface.
                 let! entities       = read "entities"       mapEntityRow
@@ -870,7 +891,62 @@ module MetadataSnapshotRunner =
                 | _          -> None
         with _ -> None
 
+    /// Slice A.4.7'-prelude.row56-dataspace (LR7 closure): parse
+    /// V1's `#AllIdx.PartitionColumnsJson` into a `string list`.
+    /// JSON shape per V1's SQL is `[{"ordinal":1,"name":"PartitionKey"}, …]`
+    /// — one entry per partition column. Returns the column names
+    /// in ordinal order (V1's SQL already sorts by `partition_ordinal`).
+    /// `None` when the JSON is malformed; `Some []` when the JSON
+    /// is an empty array (legal for filegroup-backed indexes).
+    let private tryParsePartitionColumns (json: string) : string list option =
+        try
+            use doc = System.Text.Json.JsonDocument.Parse(json)
+            if doc.RootElement.ValueKind <> System.Text.Json.JsonValueKind.Array then
+                None
+            else
+                let names =
+                    seq {
+                        for entry in doc.RootElement.EnumerateArray() do
+                            let mutable nameEl = Unchecked.defaultof<System.Text.Json.JsonElement>
+                            if entry.TryGetProperty("name", &nameEl) then
+                                match Option.ofObj (nameEl.GetString()) with
+                                | Some s when not (System.String.IsNullOrWhiteSpace s) -> yield s
+                                | _ -> ()
+                    }
+                    |> Seq.toList
+                Some names
+        with _ -> None
+
+    /// Slice A.4.7'-prelude.row56-dataspace (LR7 closure): project
+    /// V1's `#AllIdx.DataSpaceName` + `DataSpaceType` (+
+    /// `PartitionColumnsJson` for partition schemes) into V2's
+    /// closed-DU `DataSpace option`. Returns `None` for the default
+    /// case (no dataspace name OR unrecognized type) — V2 omits
+    /// the `ON` clause in that case rather than emitting an
+    /// unsupported shape. V1's `type_desc` values are
+    /// `'ROWS_FILEGROUP'` (mapping to Filegroup) and
+    /// `'PARTITION_SCHEME'` (mapping to PartitionScheme).
+    let private tryProjectDataSpace
+        (name: string option)
+        (typeDesc: string option)
+        (partitionColumnsJson: string option)
+        : DataSpace option =
+        match name, typeDesc with
+        | Some n, Some t when not (System.String.IsNullOrWhiteSpace n) ->
+            match t.ToUpperInvariant() with
+            | "ROWS_FILEGROUP" ->
+                Some (DataSpace.Filegroup n)
+            | "PARTITION_SCHEME" ->
+                let cols =
+                    partitionColumnsJson
+                    |> Option.bind tryParsePartitionColumns
+                    |> Option.defaultValue []
+                Some (DataSpace.PartitionScheme (n, cols))
+            | _ -> None
+        | _ -> None
+
     let toBundle (snapshot: MetadataSnapshot) : CatalogReader.RowsetBundle =
+        use _ = Bench.scope "adapter.osm.extract.toBundle"
         let physicalByEntity =
             snapshot.PhysicalTables
             |> List.map (fun pt -> pt.EntityId, pt)
@@ -914,9 +990,27 @@ module MetadataSnapshotRunner =
                     Description       = e.Description
                 } : CatalogReader.KindRow)
 
+        // Slice A.4.7'-prelude.row53-source-side — join
+        // `OssysColumnRealityRow` by AttrId so each AttributeRow
+        // surfaces V1's deployed-target reflection (IsComputed +
+        // ComputedDefinition + DefaultConstraintName). The 3-step
+        // JOIN pattern mirrors slice 5.13.fk-reality-join — Maps
+        // once at toBundle entry; walk per-attribute; defaults to
+        // empty fields when no ColumnReality row exists (attribute
+        // never reflected against deployed schema; rowset path's
+        // source-side reflection didn't fire).
+        let columnRealityByAttrId =
+            snapshot.ColumnReality
+            |> List.map (fun cr -> cr.AttrId, cr)
+            |> Map.ofList
+
         let attributes =
             snapshot.Attributes
             |> List.map (fun a ->
+                let realityIsComputed, realityComputedDef, realityDefaultName =
+                    match Map.tryFind a.AttrId columnRealityByAttrId with
+                    | Some cr -> cr.IsComputed, cr.ComputedDefinition, cr.DefaultConstraintName
+                    | None    -> false, None, None
                 {
                     AttrId               = a.AttrId
                     EntityId             = a.EntityId
@@ -934,6 +1028,9 @@ module MetadataSnapshotRunner =
                     Description          = a.Description
                     OriginalName         = a.OriginalName
                     ExternalDatabaseType = a.ExternalDbType
+                    IsComputed            = realityIsComputed
+                    ComputedDefinition    = realityComputedDef
+                    DefaultConstraintName = realityDefaultName
                 } : CatalogReader.AttributeRow)
 
         // Slice 5.13.fk-reality-join — JOIN OssysReferenceRow with
@@ -1009,6 +1106,16 @@ module MetadataSnapshotRunner =
                 let dataCompression =
                     i.DataCompressionJson
                     |> Option.bind tryParseUniformDataCompression
+                // Slice A.4.7'-prelude.row56-dataspace (LR7 closure)
+                // — project V1's three dataspace fields into the
+                // closed-DU; unknown type_desc values silently degrade
+                // to None (V2 omits the ON clause for unrecognized
+                // shapes rather than emitting a guess).
+                let dataSpace =
+                    tryProjectDataSpace
+                        i.DataSpaceName
+                        i.DataSpaceType
+                        i.PartitionColumnsJson
                 {
                     EntityId         = i.EntityId
                     IndexName        = i.IndexName
@@ -1023,6 +1130,7 @@ module MetadataSnapshotRunner =
                     IsDisabled       = i.IsDisabled
                     IgnoreDupKey     = i.IgnoreDupKey
                     DataCompression  = dataCompression
+                    DataSpace        = dataSpace
                 } : CatalogReader.IndexRow)
 
         let indexColumns =

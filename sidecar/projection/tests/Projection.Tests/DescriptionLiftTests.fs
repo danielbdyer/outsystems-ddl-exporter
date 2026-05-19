@@ -271,6 +271,9 @@ let private idAttrRowWith (description: string option) : CatalogReader.Attribute
         Description  = description
         OriginalName = None
         ExternalDatabaseType = None
+        IsComputed = false
+        ComputedDefinition = None
+        DefaultConstraintName = None
     }
 
 [<Fact>]

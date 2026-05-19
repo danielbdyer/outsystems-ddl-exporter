@@ -535,12 +535,103 @@ module CdcAwareness =
 /// (`UserPopulation<SourceUserId>` vs `UserPopulation<TargetUserId>`)
 /// extends slice α's identity-orientation safety to the population
 /// level.
+/// Per-attribute deployed-target reflection — V2's mirror of V1's
+/// `AttributeReality.cs`. Carries the five reflection axes the
+/// LiveProfiler captures by probing the deployed SQL Server:
+///
+///   - `IsNullableInDatabase` — `sys.columns.is_nullable`. May differ
+///     from `Attribute.Column.IsNullable` (which reflects the OS
+///     logical model). The deployed reality is operator-meaningful
+///     when remediation passes decide whether to enforce NOT NULL.
+///   - `HasNulls` — `EXISTS (… WHERE col IS NULL)` evidence. Drives
+///     `NullabilityRules`'s mandatory-relaxation decision.
+///   - `HasDuplicates` — `EXISTS (… GROUP BY col HAVING COUNT > 1)`.
+///     Drives `UniqueIndexRules`'s candidate-unique-index gating.
+///   - `HasOrphans` — `EXISTS (FK source WHERE PK target absent)`.
+///     Drives `ForeignKeyRules`'s constraint-enforcement decision.
+///   - `IsPresentButInactive` — physical column exists at the
+///     deployed target AND the OS logical attribute is `IsActive
+///     = false`. Drives remediation-emitter guidance ("inactive
+///     column with deployed data; consider preserving").
+///
+/// Per A18 amended + A34: `AttributeReality` is Profile-resident
+/// evidence (observation, not policy). Tightening passes consume it
+/// to refine their `Outcome` variants; emitters never read it
+/// directly (Profile reaches emitters only via the
+/// `EmitterWithProfile<'a>` wide signature).
+///
+/// Per pillar 9: this entire surface is DataIntent — V2's deployed-
+/// target reflection has no operator-overlay role. The LiveProfiler
+/// captures by probing; the rowset path (`OssysColumnRealityRow`)
+/// surfaces a partial subset (`IsNullableInDatabase` only) when V1's
+/// source-side adapter runs. The full live-probe payload comes from
+/// `Projection.Adapters.Sql.LiveProfiler`.
+///
+/// Matrix row 49 cash-out (slice A.4.7'-prelude.live-profiler,
+/// 2026-05-19). V1 source: `AttributeReality.cs` (5 reflection fields).
+type AttributeReality = {
+    /// Identity of the Attribute whose deployed reflection this is.
+    /// Per A4 (identity-by-SsKey): consumers look up by SsKey, not
+    /// by (schema, table, column) coordinate.
+    AttributeKey         : SsKey
+    /// Deployed-target nullability (`sys.columns.is_nullable`). `true`
+    /// when the column is declared NULL at the deployed target.
+    IsNullableInDatabase : bool
+    /// Deployed evidence: at least one row carries NULL in this column.
+    /// `false` when no row has NULL (the column behaves NOT NULL in
+    /// practice regardless of its declared nullability).
+    HasNulls             : bool
+    /// Deployed evidence: at least one value appears in two or more
+    /// rows. `false` when every observed value is distinct (the
+    /// column behaves uniquely in practice).
+    HasDuplicates        : bool
+    /// Deployed evidence: at least one FK source row references a
+    /// target PK value that doesn't exist at the deployed target.
+    /// `false` when every FK source row resolves to a present
+    /// target row. Computed per-Reference where the attribute
+    /// participates as `SourceAttribute`; aggregated to the
+    /// attribute level by `Profile.AttributeReality.create`.
+    HasOrphans           : bool
+    /// Deployed evidence: the physical column exists at the deployed
+    /// target AND the corresponding OS logical attribute carries
+    /// `IsActive = false`. `false` when either the column is absent
+    /// (no deployed presence to flag) or the attribute is active
+    /// (no inactive-state to flag).
+    IsPresentButInactive : bool
+}
+
+[<RequireQualifiedAccess>]
+module AttributeReality =
+
+    /// Build an `AttributeReality` with minimum-evidence defaults.
+    /// All bool fields default to `false` (the no-evidence-yet
+    /// shape — the LiveProfiler hasn't probed; downstream consumers
+    /// must treat absent reality as no-evidence rather than positive
+    /// evidence). Required: `attributeKey`. Consumers override via
+    /// record-update.
+    let create (attributeKey: SsKey) : AttributeReality =
+        {
+            AttributeKey         = attributeKey
+            IsNullableInDatabase = false
+            HasNulls             = false
+            HasDuplicates        = false
+            HasOrphans           = false
+            IsPresentButInactive = false
+        }
+
 type Profile = {
     Columns                   : ColumnProfile list
     UniqueCandidates          : UniqueCandidateProfile list
     CompositeUniqueCandidates : CompositeUniqueCandidateProfile list
     ForeignKeys               : ForeignKeyReality list
     Distributions             : AttributeDistribution list
+    /// Per-attribute deployed-target reflection. Empty when the
+    /// LiveProfiler hasn't run (chapter 4.1.B / chapter 5.4.δ
+    /// trigger condition). Tightening passes consume this evidence
+    /// to refine their decisions; emitters never read it directly.
+    /// Slice A.4.7'-prelude.live-profiler (2026-05-19; matrix row 49
+    /// cash-out).
+    AttributeRealities        : AttributeReality list
     CdcAwareness              : CdcAwareness
     SourceUsers               : UserPopulation<SourceUserId>
     TargetUsers               : UserPopulation<TargetUserId>
@@ -557,6 +648,7 @@ module Profile =
         CompositeUniqueCandidates = []
         ForeignKeys               = []
         Distributions             = []
+        AttributeRealities        = []
         CdcAwareness              = CdcAwareness.empty
         SourceUsers               = UserPopulation.empty
         TargetUsers               = UserPopulation.empty

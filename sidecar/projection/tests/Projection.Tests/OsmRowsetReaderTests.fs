@@ -84,6 +84,9 @@ let private idAttrRow (sskey: System.Guid option) : CatalogReader.AttributeRow =
         Description  = None
         OriginalName = None
         ExternalDatabaseType = None
+        IsComputed = false
+        ComputedDefinition = None
+        DefaultConstraintName = None
     }
 
 let private emailAttrRow (sskey: System.Guid option) : CatalogReader.AttributeRow =
@@ -104,6 +107,9 @@ let private emailAttrRow (sskey: System.Guid option) : CatalogReader.AttributeRo
         Description  = None
         OriginalName = None
         ExternalDatabaseType = None
+        IsComputed = false
+        ComputedDefinition = None
+        DefaultConstraintName = None
     }
 
 // ---------------------------------------------------------------------------
@@ -430,6 +436,9 @@ let private accountIdRow (sskey: System.Guid option) : CatalogReader.AttributeRo
         Description  = None
         OriginalName = None
         ExternalDatabaseType = None
+        IsComputed = false
+        ComputedDefinition = None
+        DefaultConstraintName = None
     }
 
 /// User has Id (PK + IDENTITY) and AccountId (FK to Account); the
@@ -456,6 +465,9 @@ let private userAccountIdRow : CatalogReader.AttributeRow =
         Description  = None
         OriginalName = None
         ExternalDatabaseType = None
+        IsComputed = false
+        ComputedDefinition = None
+        DefaultConstraintName = None
     }
 
 let private userAccountRefRow : CatalogReader.ReferenceRow =
@@ -696,6 +708,9 @@ let private billingAccountIdRow : CatalogReader.AttributeRow =
         Description  = None
         OriginalName = None
         ExternalDatabaseType = Some "int"
+        IsComputed = false
+        ComputedDefinition = None
+        DefaultConstraintName = None
     }
 
 let private externalBundle (espaceKind: string option) : CatalogReader.RowsetBundle =
@@ -868,6 +883,9 @@ let private systemAuditIdRow : CatalogReader.AttributeRow =
         Description  = None
         OriginalName = None
         ExternalDatabaseType = None
+        IsComputed = false
+        ComputedDefinition = None
+        DefaultConstraintName = None
     }
 
 let private systemBundle : CatalogReader.RowsetBundle =
