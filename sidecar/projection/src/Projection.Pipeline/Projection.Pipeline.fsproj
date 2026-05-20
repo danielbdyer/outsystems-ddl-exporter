@@ -17,6 +17,7 @@
     <Compile Include="SpecialCircumstancesDiagnostics.fs" />
     <Compile Include="EmissionFoldersBinding.fs" />
     <Compile Include="TransformGroupsBinding.fs" />
+    <Compile Include="InsertionPolicyBinding.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="RegisteredAllTransforms.fs" />
     <Compile Include="Bulk.fs" />

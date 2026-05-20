@@ -46,6 +46,7 @@
     <Compile Include="EmissionFoldersOverlayTests.fs" />
     <Compile Include="TransformGroupsBindingTests.fs" />
     <Compile Include="TransformGroupsFilterTests.fs" />
+    <Compile Include="InsertionPolicyBindingTests.fs" />
     <Compile Include="ComposeAtomicWriteTests.fs" />
     <Compile Include="SqlTypeCorrespondenceTests.fs" />
     <Compile Include="SqlLiteralTests.fs" />

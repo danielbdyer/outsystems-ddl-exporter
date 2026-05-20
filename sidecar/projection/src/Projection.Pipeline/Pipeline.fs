@@ -520,18 +520,27 @@ module Compose =
                     |> Error)
 
     /// Build the full `Policy` aggregate from a parsed `Config` and
-    /// the loaded `Catalog`. Today only the tightening axis is wired
-    /// (Chapter C slice C.1); Selection / Emission / Insertion /
-    /// UserMatching axes are dormant per the dormant-config-section
-    /// sweep — Chapter C slices C.2-C.6 wire those.
+    /// the loaded `Catalog`. Wires the tightening axis (Chapter C
+    /// slice C.1) + insertion axis (Chapter C slice C.5); Selection /
+    /// Emission / UserMatching axes remain dormant pending operator-
+    /// pull triggers per the dormant-config-section sweep.
     let private buildPolicyFromConfig
         (cfg: Config.Config)
         (catalog: Catalog)
         : Result<Policy> =
-        match TighteningBinding.fromConfig catalog cfg.Policy.Tightening with
-        | Error es -> Error es
-        | Ok tightening ->
-            Result.success { Policy.empty with Tightening = tightening }
+        let tighteningR = TighteningBinding.fromConfig catalog cfg.Policy.Tightening
+        let insertionR  = InsertionPolicyBinding.fromConfig cfg
+        match tighteningR, insertionR with
+        | Ok tightening, Ok insertion ->
+            Result.success {
+                Policy.empty with
+                    Tightening = tightening
+                    Insertion  = insertion
+            }
+        | _ ->
+            let tighteningErrs = match tighteningR with Ok _ -> [] | Error es -> es
+            let insertionErrs  = match insertionR  with Ok _ -> [] | Error es -> es
+            Result.failure (tighteningErrs @ insertionErrs)
 
     /// Full end-to-end driven by a parsed `Config`. Reads `Model.Path`,
     /// applies config-driven catalog rewrites (rename), binds operator
