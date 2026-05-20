@@ -18653,3 +18653,86 @@ Halves deploy + reflection cost. Preserves the FK-density envelope (variegated `
 - `CLAUDE.md` Canary operating-discipline row — updated counts + timings + Stop-hook note.
 - `DECISIONS 2026-05-09 — Operator-reality canary as the production-baseline perf gate` (the original framing this tuning amends; the framing's rationale stands; only the absolute numbers shift).
 - `DECISIONS 2026-05-10 — Perf-gate μ+σ statistical baseline` (the baseline-as-model discipline; re-record cycle followed verbatim).
+
+## 2026-05-20 (slice B.4.7 — full-export CLI) — `projection full-export --config <path> [--output <dir>] [--verbose]` ships the Phase B *structural* exit gate; THIN scope per chapter-mid rescope; wraps today's three live `Pipeline.Config` consumers + slices 6 + 6.5; Argu per §15.2 lands as V2's F#-native CLI library
+
+### What shipped
+
+`src/Projection.Cli/FullExportArgs.fs` — Argu closed-DU surface (`FullExportArg = Config of path | Output of dir | Verbose`), one mandatory + two optional flags, with `IArgParserTemplate.Usage` strings carrying the slice-7 scope rationale (which `Pipeline.Config` consumers are wired today; which parse-but-ignore for Chapter C).
+
+`src/Projection.Cli/Program.fs` — `runFullExport` orchestration, `dispatchFullExport` Argu dispatcher, argv-pattern routing for `full-export` (matches both bare-no-args + arg-bearing forms). Wraps the existing `Compose.runWithConfig` (which already does read → rename → project → write); slice 7 adds the LogSink emission discipline around it:
+
+- `LogSink.reset ()` at entry; `Bench.reset ()` to start with a clean per-run timing surface.
+- `LogSink.setVerbose verbose` per the `--verbose` flag (defaults false; suppresses Trace/Debug per §4).
+- `config.runStart` event at run start with command + configPath + effectiveOutputDir.
+- `config.connectionResolved` event naming `SnapshotJson` source (the only connectivity slice 7 supports — `LiveOssysConnection` is a follow-up chapter).
+- On `Compose.runWithConfig` Ok: `recordStage "pipeline" Succeeded durationMs` + per-artifact `LogSink.recordArtifact` calls; success exit 0; stdout narration for operator-visibility parity with the pre-existing `emit` subcommand.
+- On `Compose.runWithConfig` Error: one `transform.diagnostic` event per ValidationError (level=Error; phase=ErrorPhase); outcome=Failed; exit 2.
+- On `Config.fromFile` Error: one `config.validationFailed` event per error; outcome=Failed; exit 6.
+- On any caught exception: one synthesized `config.validationFailed` event; outcome=Failed; exit 2.
+- **Mandatory** `finally`-block `LogSink.runComplete outcome "projection full-export" benchStats` per §10 ("Even on failure, runSummary emits."). Stops with the terminal envelope as the last line of stderr on every exit path.
+
+`src/Projection.Cli/Projection.Cli.fsproj` — `PackageReference Include="Argu" Version="6.2.5"`. Per §15.2 banned alternatives: no `System.CommandLine` (V1's choice, C#-shaped); no raw argv parsing for the new subcommand (the existing `emit` / `deploy` / `canary` subcommands stay on raw argv until Chapter C consolidates the surface).
+
+### Tests
+
+`tests/Projection.Tests/FullExportCliTests.fs` — 10 integration tests; all passing. Tests run in-process by mirroring `Program.fs.runFullExport`'s orchestration shape and capturing LogSink output via a `StringWriter`. This catches the same conformance regressions an out-of-process integration test would catch, at unit-test speed (no Docker; no subprocess). Coverage:
+
+- **Happy path:** full-export against minimal V1 fixture produces 4 artifacts + emits ≥4-line conforming NDJSON event stream.
+- **§3 envelope:** every emitted line carries mandatory runId / ts / level / category / code / phase / payload fields.
+- **§7 ordering:** first event is `config.runStart`; last event is `summary.runComplete` with `phase=end`.
+- **§10 outcome:** runSummary.payload.outcome = succeeded on happy path; = failed on missing-config / malformed-config / pass-error cases.
+- **§10 stages:** runSummary.payload.stages contains the pipeline stage with succeeded outcome.
+- **§10 artifacts:** runSummary.payload.artifacts lists every artifact path under Output.Dir; paths exist on disk post-run.
+- **CLI flag:** `--output` override takes precedence over config Output.Dir; config-supplied dir is NOT created when override is supplied.
+- **Failure paths:** missing config file → exit 6 + `config.validationFailed` event + outcome=failed; malformed config → exit 6 + structured event + outcome=failed.
+- **§11 rollup:** runSummary.payload.aggregates carries a `summary.stageCompleted` entry; aggregates non-empty.
+- **§10 eventCounts:** Info ≥ 3 on happy path (config.runStart + config.connectionResolved + summary.stageCompleted at minimum); Error = 0.
+
+End-to-end CLI smoke (run via `dotnet projection.dll full-export --config ...`) produced: exit 0, 4 artifacts (3 SSDT + manifest), `outcome=succeeded`, 74 aggregate entries (3 V2 events + 71 Bench labels), NDJSON envelopes conforming to §3 verbatim.
+
+### Out of scope (per chapter B.4 spec)
+
+- **`LiveOssysConnection`** — deferred; the operator's V1 corporate-network HEAD owns the live path. Slice 7 reads `SnapshotJson` / `SnapshotRowsets` only.
+- **Standalone `extract` + `profile` subcommands** — dropped at chapter-mid rescope per `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)`.
+- **`--pretty` + Spectre TtyRenderer + `--json-out` routing** — deferred to its own micro-chapter per §15.3 + the 2026-05-20 gap-audit entry. Trigger: operator reports NDJSON-only stderr as unfriendly for interactive runs.
+- **DACPAC binary emission + `data-twin` CLI verb** — separate chapter; `DockerImageEmitter` substrate already shipped at chapter 3.x close.
+- **Dormant Pipeline.Config sections** (`Profile` / `Cache` / `Profiler` / `TypeMapping` / `Emission` booleans / `Policy.{Selection, Insertion, UserMatching}` / `Overrides.{MigrationDependencies, StaticData, CircularDependencies}`) — parse-but-ignore; Chapter C wires them.
+- **`config.toggleResolved` per-toggle events** (§7.1) — slice 7 emits only the two structural config events (runStart + connectionResolved). Per-toggle events arrive when Chapter C wires the toggle surface; this slice doesn't synthesize toggles that aren't operative.
+
+### Discipline reinforced
+
+**THIN scope shipped THIN.** Slice 7 added ~150 LOC of new code (`FullExportArgs.fs` + the `runFullExport` block in Program.fs) + ~280 LOC of integration tests. Reused 100% of `Compose.runWithConfig`'s existing orchestration (no new pipeline plumbing). The deliberate non-expansion matches the chapter-mid rescope discipline + the handoff letter's "Slice 7 is THIN" emphasis. Chapter C will widen; chapter B.4 closes the structural arm.
+
+**LogSink wiring at the CLI boundary, not in Core.** `runFullExport` is the only site that calls `LogSink.emit` / `recordStage` / `recordArtifact` / `runComplete`. Core stays I/O-free; Pipeline's `Compose.runWithConfig` continues to be a pure orchestration (Lineage / Diagnostics writers); slice 7 projects the boundary emission. This preserves the no-I/O-in-Core load-bearing commitment.
+
+**`finally` block as §10 enforcement mechanism.** The terminal `summary.runComplete` event is mandatory per §10 ("Even on failure, runSummary emits."). `runFullExport`'s `try / finally` shape structurally guarantees the terminal event even on unhandled exception, exit-code-2 paths, exit-code-6 paths. The `outcome` variable threads the exit-path classification (Succeeded / Failed) into the terminal envelope.
+
+**Argu adoption sets the pattern for Chapter C.** Per §15.2: Argu IS V2's F#-native CLI library; `System.CommandLine` (V1's C#-shaped choice) is banned. Slice 7's Argu DU (`FullExportArg`) is the template Chapter C extends with additional subcommands; the existing `emit` / `deploy` / `canary` subcommands stay on raw argv during the transition (no breakage; no Chapter C scope creep into slice 7).
+
+### Phase B structural exit gate — gate status
+
+Slice 7 closes the **structural** arm of Phase B's exit criterion per `V2_PRODUCTION_CUTOVER §8.2`:
+
+| Exit criterion | Status post-slice-7 |
+|---|---|
+| L3 catalog reaches target bucket (L3-X11 + L3-X12) | DONE at chapter-close ritual (this PR's chapter-close commit lands the catalog entries) |
+| V2 `full-export` CLI subcommand exists | DONE (this slice) |
+| V2 emits SSDT + JSON + Distributions + actionable diagnostics from config | DONE (this slice; via `Compose.runWithConfig` + slice-6 actionable enrichment) |
+| V2 logging-format contract documented | DONE (slice 1) |
+| V2 emits conforming events end-to-end | DONE (this slice + slice 6.5 LogSink) |
+| Functional-equivalence vs V1 osm_model.json against live OSSYS | NOT THIS CHAPTER — waits on `LiveOssysConnection` (deferred) |
+| ≥1 full end-to-end production dry-run | NOT THIS CHAPTER — waits on operator scheduling |
+
+The **functional-equivalence arm** + production dry-run move to a follow-up chapter when the operator's corporate-network access path opens. Chapter B.4's close ritual finalizes the structural arm.
+
+### Cross-references
+
+- `docs/logging-format.md` §3 (envelope), §4 (verbosity gate), §5 (sink discipline), §7 (codes — `config.*` + `transform.*` + `summary.*`), §10 (terminal runComplete), §11 (roll-up algorithm), §14 (sink implementation), §15.1 (two-channel pattern), §15.2 (Argu + System.Text.Json + banned alternatives).
+- `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` — the rescope that narrowed slice 7 to THIN.
+- `DECISIONS 2026-05-20 (slice B.4.6.5 — LogSink + §11 roll-up emission)` — the substrate this slice consumes.
+- `DECISIONS 2026-05-20 (logging-format implementation gap audit)` — the audit that inserted slice 6.5 + framed slice 7's emission discipline.
+- `src/Projection.Pipeline/LogSink.fs` — the slice-6.5 substrate.
+- `src/Projection.Pipeline/Pipeline.fs:384` — `Compose.runWithConfig` (the orchestration slice 7 wraps).
+- `src/Projection.Pipeline/Config.fs:156` — `Pipeline.Config.Config` record (the three live consumers + the dormant sections).
+- `V2_PRODUCTION_CUTOVER.md §8.2` — Phase B exit criterion (structural arm closes here; functional-equivalence arm waits on `LiveOssysConnection`).
