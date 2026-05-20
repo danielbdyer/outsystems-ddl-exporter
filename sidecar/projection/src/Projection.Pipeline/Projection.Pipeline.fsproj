@@ -17,6 +17,7 @@
     <Compile Include="Bulk.fs" />
     <Compile Include="Deploy.fs" />
     <Compile Include="BenchSink.fs" />
+    <Compile Include="LogSink.fs" />
   </ItemGroup>
 
   <ItemGroup>

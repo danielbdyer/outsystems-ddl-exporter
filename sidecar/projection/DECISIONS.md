@@ -18537,3 +18537,66 @@ This decomposition aligns with V2's pillar 9 + L3-CC-Transform-Totality framing:
 - `src/Projection.Core/Policy.fs:139` — `NullabilityTighteningConfig.NullBudget` (the per-finding-type emission gate; structurally where "fewer findings" lives).
 - `CHAPTER_B_4_OPEN.md` slice 6 row updated to reflect reshape + no-occlusion invariant.
 - Chapter C slice C.1 (tightening axis priority slice) — operator-config wiring for per-finding-type emission gates; the principled answer to "reduce diagnostic-artifact noise" at the source layer.
+
+## 2026-05-20 (slice B.4.6.5 — LogSink + §11 roll-up emission) — `Projection.Pipeline.LogSink` ships the structural emission substrate the chapter B.4 close gate requires; hand-rolled per §15.2; NDJSON to stderr per §5; §11 roll-up aggregator built ONCE during emission; Bench.Stats surface in runSummary aggregates
+
+### Context
+
+Slice 1 (`docs/logging-format.md`) specified the contract; slices 2-6 worked on adjacent concerns; the contract §11 (roll-up algorithm) + §15.1 (channel-1 NDJSON) + §15.2 (hand-rolled LogSink) had zero implementation. The 2026-05-20 logging-format implementation gap audit inserted slice 6.5 between slice 6 (actionable-diagnostics on JSON artifacts) and slice 7 (full-export CLI) to fill the gap.
+
+### What shipped
+
+**`src/Projection.Pipeline/LogSink.fs`** (~540 LOC F#; one module).
+
+- **§3 envelope.** Closed-DU `Level` / `Category` / `Phase` / `Source` / `Outcome`; `Envelope` record carrying every mandatory + optional field per the contract; canonical lowercase string projections (`levelToString` / `categoryToString` / `phaseToString` / `sourceToString` / `outcomeToString`).
+- **ULID generation.** `generateRunId : unit -> string` — 48-bit ms timestamp + 80-bit random encoded as 26-char Crockford base32 per §3 ("lexically sortable; `ls bench/<tag>/ | sort` and `grep runId` give the same chronological ordering"). `RandomNumberGenerator.Fill` for the random half; no external dependency.
+- **§5 channel-1 sink discipline.** Default writer is `Console.Error`; `setWriter` / `withWriter` allow tests + the future Spectre micro-chapter to redirect. No `--json-out` flag in slice 6.5 (that's the Spectre channel-2 micro-chapter's concern).
+- **§14 hand-rolled serialization per §15.2.** No `Microsoft.Extensions.Logging`, no `Serilog`, no third-party logger. `System.Text.Json.Utf8JsonWriter` writes envelope properties in canonical §3 field order; payload values flow through a `writePayloadValue` switch covering string / bool / int / int64 / float / decimal / DateTime + `JsonSerializer.Serialize` delegation for compound shapes. The reused `payloadOptions` mirrors the `BenchSink.persistJson` precedent.
+- **§11 roll-up aggregator.** `RunState` carries `Dictionary<(Category * string * SsKey option), GroupAccumulator>` built ONCE during `emit` per the §11 Big-O constraint (NOT re-scanned at `runComplete` time). Group key is the contract's 3-tuple; `Samples : Envelope list` capped at first three by chronological order per V1 verbatim (`CommandConsole.cs:2069-2078`); `Count` / `FirstTs` / `LastTs` rolled forward on every collapse hit. `aggregates ()` reads the dict + sorts (descending Count, ascending FirstTs) per §11 output ordering.
+- **§4 verbosity gate.** `setVerbose true` flips the `Trace`/`Debug` suppression check at the egress boundary. CLI `--verbose` / `--debug` flag wiring lives in slice 7 + Chapter C slice C.6.
+- **§10 terminal `summary.runComplete`.** `runComplete : Outcome -> command:string -> Bench.Stats list -> Envelope` builds the terminal envelope from accumulator state (stages / artifacts / event-counts / suggested-config-edit count) + interleaves `Bench.Stats` aggregates per §11 ("Bench.Stats surface in runSummary's aggregates array under `category=summary, code=bench.label`"). The terminal event emits even on `Outcome.Failed` / `Outcome.Aborted` per §10 ("Even on failure, runSummary emits.").
+- **§12 suggestedConfig signal counting.** Every emitted envelope whose `Payload` contains the `"suggestedConfig"` key increments `SuggestedConfigEdits`; the count surfaces in the terminal `runSummary.payload.suggestedConfigEdits` per §10.
+
+### Tests
+
+`tests/Projection.Tests/LogSinkTests.fs` (~430 LOC; 27 example + property tests; all passing).
+
+- **§3 envelope shape:** mandatory fields present on every emitted line; optional fields omitted when None and emitted when Some; error phase + error level both serialize correctly; ts is RFC 3339 with millisecond precision + trailing Z; runId is 26-char Crockford base32; runId is stable within a single run.
+- **§3 payload:** string + int + bool + nested map all serialize correctly.
+- **§4 levels:** trace + debug suppressed by default; both surface when `setVerbose true`.
+- **§13 ban 4:** serialization contains no ANSI ESC byte (0x1B) and no embedded newlines.
+- **§11 rollup:** events with identical (category, code, ssKey) collapse; events with different ssKey form distinct groups; events with no ssKey collapse into one ssKey=None group; samples capped at first three chronological events; firstTs and lastTs span the group; output ordered descending by count then ascending by firstTs.
+- **§10 runComplete:** emits exactly one summary.runComplete envelope; failure outcome still emits; aborted outcome emits with outcome=aborted; payload carries command + durationMs + stages + eventCounts + suggestedConfigEdits + artifacts + aggregates; suggestedConfigEdits counts events whose payload carries suggestedConfig.
+- **§11 bench:** `Bench.Stats` surface in runSummary aggregates under category=summary, code=bench.label.
+- **§3 + §7 code-categorization:** every emitted code's top-prefix matches its category (property over all 8 closed-DU categories).
+- **§5 sink:** withWriter restores prior writer on exit.
+- **§10:** eventCounts table includes all five levels with zero for unseen ones.
+
+### F# nullness adjustment
+
+`Map<string, obj>` payload type per the contract §14 widens to `Map<string, objnull>` (alias for `obj | null`) under F# 9 strict nullness — `box X` produces `obj | null` rather than `obj`, and the §11 aggregate entries legitimately need `null` for the `ssKey` field when the group's envelope.SsKey is None (per §11 example: `"ssKey": null` when the group's events carry no envelope-level SsKey). The widened type matches the contract's actual JSON semantic ("any JSON value including null") more honestly than the original strict `obj`.
+
+### Why slice 6.5 instead of absorbing into slice 7
+
+Per `DECISIONS 2026-05-20 (logging-format implementation gap audit)`: LogSink is structural emission substrate; full-export CLI is composition + orchestration. Different concerns; different testing surfaces (LogSink's rollup invariants are property-testable in isolation; full-export's end-to-end flow is Docker-gated integration). Separating into 6.5 + 7 gives each a clean test surface + lets slice 7 ship as a pure composition layer (consume LogSink; consume the slice-4/5/6 ports; emit). Mirrors the chapter-B.3 slice-6 / 6b split where structural substrate landed first then consumers built on it.
+
+### Discipline reinforced
+
+**Contract is the specification; tests verify the contract.** Every property test cites a contract section (`§3 envelope`, `§11 rollup`, `§5 sink`, etc.). The test file is itself a contract-conformance checker — a future agent extending the contract knows where to add tests by matching contract sections to test file sections.
+
+**Big-O constraint cashed at design time.** The aggregator's `Dictionary<(Category * string * SsKey option), GroupAccumulator>` is updated on every `emit` (O(1) per event); `aggregates ()` and `runComplete` read the dict + sort (O(M log M) for M ≤ N) without re-scanning the event stream. The §11 contract's "groups built once during stream emission, not re-scanned at runSummary time" is structurally enforced by the implementation shape — the alternative (scanning the envelope list at `runComplete`) would be O(N log N) but conceptually correct; the chosen shape is asymptotically equivalent but constant-factor better and matches the contract verbatim.
+
+**`Bench.Stats` surfacing closes the cross-cutting loop.** Bench is the iterator-logging substrate (chapter 3.6 cash-out); LogSink is the event-emission substrate (this slice); the runSummary's `aggregates` is the operator's terminal scroll target. By synthesizing per-label Bench aggregates as `category=summary, code=bench.label` entries in the aggregates array, V2's two observability streams converge at the operator-facing surface. Bench output remains separately accessible via `Bench.snapshot ()` + `BenchSink.persistJson` for cross-run analysis.
+
+### Active deferrals — unchanged
+
+Spectre.Console TtyRenderer + dual-channel routing micro-chapter remains deferred per the gap-audit entry; this slice ships channel-1-only LogSink as the substrate that the future TtyRenderer subscribes to.
+
+### Cross-references
+
+- `docs/logging-format.md` §3 (envelope), §4 (levels), §5 (sink discipline), §10 (terminal runComplete), §11 (roll-up algorithm), §12 (suggestedConfig), §14 (sink implementation surface), §15.1 (two-channel pattern), §15.2 (library choices — banned alternatives).
+- `DECISIONS 2026-05-20 (logging-format implementation gap audit)` — the audit that inserted slice 6.5.
+- `src/Projection.Core/Bench.fs:56` — `Bench` module; `Stats` record at line 61, `Run` at line 326.
+- `src/Projection.Pipeline/BenchSink.fs:54` — the reified non-determinism boundary precedent (wall-clock capture happens at the file-sink layer, not in Core).
+- `src/Projection.Core/Identity.fs:135` — `SsKey.rootOriginal` (envelope `ssKey` field rendering).
+- `CHAPTER_B_4_OPEN.md` slice 6.5 row.
