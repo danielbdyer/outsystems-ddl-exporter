@@ -18600,3 +18600,56 @@ Spectre.Console TtyRenderer + dual-channel routing micro-chapter remains deferre
 - `src/Projection.Pipeline/BenchSink.fs:54` — the reified non-determinism boundary precedent (wall-clock capture happens at the file-sink layer, not in Core).
 - `src/Projection.Core/Identity.fs:135` — `SsKey.rootOriginal` (envelope `ssKey` field rendering).
 - `CHAPTER_B_4_OPEN.md` slice 6.5 row.
+
+## 2026-05-20 (canary volume reduction) — operator-reality canary tuned 300 tables × 50k rows → 150 tables × 6.25k rows; wall time ~10-12s → ~5s warm; baseline-canary.json re-recorded; FK-density envelope preserved at the smaller scale
+
+### Context
+
+Principal operator framing: "We can tune down the canary by 3/4 of record quantity processed so that it's not a massive data set, I'm not sure we're getting the value of waiting for it all the time."
+
+The pre-tuning operator-reality canary baseline was `GenerateSpec.operatorReality` = 8 modules × 200 entities + 100 static × 500 rows/static = **300 tables × 50,000 total seed rows**, ~10-12s warm wall. This baseline ran on every Stop hook + every commit via `scripts/perf-gate.sh`. Agent-loop friction was real: the wait time on every iteration cycle compounded over a session.
+
+### Two-pass tuning
+
+**Pass 1 — row-count cut (StaticRowsPerEntity 500 → 125; total seed rows 50,000 → 12,500; 75% volume reduction).**
+
+Empirically validated: wall time dropped only ~25% (10-12s → ~9s). The row-count cut affected only static-data seed insertion, which turned out to be a small fraction of canary total wall time. The dominant cost driver is **DDL deploy + ReadSide reflection + bulk-loader container plumbing across 300 tables** — proportional to *table* count, not *row* count.
+
+**Pass 2 — table-count cut (Entities 200 → 100; StaticEntities 100 → 50; total tables 300 → 150; 50% table reduction).**
+
+Halves deploy + reflection cost. Preserves the FK-density envelope (variegated `FkDensity = 0.2`; AvgAttrsPerEntity = 10) at the smaller scale — the 150-table corpus still exercises cross-module FK chains, multi-table joins, mixed-modality dispositions. Empirically validated: wall time dropped ~9s → ~5s.
+
+**Net effect**: ~10-12s → ~5s warm (~55% real-world wall reduction; ~58% in the typical case). Agent-loop friction materially reduced. The operator-reality canary remains the production-shape baseline that catches FK-density regressions — just at a smaller absolute scale.
+
+### What stays load-bearing
+
+- **300-table forcing-function canary** (`PROJECTION_RUN_REALISTIC_CANARY=1`) is unchanged at 300 tables. It's the nightly / on-demand check; the dev-loop canary is now 150 tables.
+- **bulk100k canary** (`Generator bulk: 100k rows/table` in `GeneratorScaleTests`) is unchanged. It's the bulk-realization-path forcing function; not affected by the operator-reality tuning.
+- **Schema-only canary-gate.sql** (~1.5s) remains the SessionEnd-hook smoke. Unchanged.
+- **Statistical perf-gate model** (μ + Kσ_effective; K=5.0; σ_floor = μ×0.2) unchanged. Baseline re-recorded at the new floor via `PERF_GATE_RECORD=1 PERF_GATE_RECORD_RUNS=5 scripts/perf-gate.sh`; 5 warm captures; 230 labels in the new baseline.
+
+### What this changes structurally
+
+- `tests/Projection.Tests/Fixtures/FixtureGenerator.fs`: `GenerateSpec.operatorReality` updated (Entities 200→100; StaticEntities 100→50; StaticRowsPerEntity 500→125) with inline comments naming the two passes + this DECISIONS entry.
+- `tests/Projection.Tests/GeneratorScaleTests.fs`: test name `50k rows × 300 tables` → `6.25k rows × 150 tables`. The `Operator-reality` prefix is preserved so `scripts/perf-gate.sh`'s `FullyQualifiedName~Operator-reality` filter still matches.
+- `scripts/perf-gate.sh`: header comment + progress message updated to name 6.25k rows × 150 tables + cite this DECISIONS entry.
+- `CLAUDE.md` Canary-forcing-function operating discipline row: updated warm-time range (~10-12s → ~5-6s), updated table/row counts, updated Stop-hook timeout note (canary ~6s + analysis ~1s; 60s ceiling preserved for cold-cache + Docker-startup margin).
+- `bench/baseline-canary.json`: re-recorded against the new floor. The old baseline is overwritten (per the chapter-3.6 "baseline IS the model" discipline — no rolling history accumulator).
+
+### Discipline reinforced
+
+**Cost-driver identification is empirically required, not assumed.** The user's "reduce by 3/4 of record quantity" framing assumed row volume was the cost driver; empirical wall-time measurement showed it wasn't (~25% reduction from a 75% volume cut). Surfacing the empirical finding ("the dominant cost is DDL deploy + ReadSide reflection over the table count, not seed-row processing") was the right honest move before re-baselining; the user then redirected to the table-count lever which delivered the additional ~45% reduction. **Lesson**: when an operator asks for a perf tuning, validate the lever before assuming. The cost-driver framing matters more than the input parameter the operator initially named.
+
+**Baseline re-recording is paired with a DECISIONS entry naming the new floor's rationale.** Per the chapter-3.6 baseline discipline + `DECISIONS 2026-05-10 (μ+σ statistical baseline)`. This entry IS that pairing. The new `bench/baseline-canary.json` carries 230 labels × 5 warm captures.
+
+**Tiered canary structure preserved.** The discipline names three tiers (schema-only / operator-reality / realistic 300-table). This tuning moves the operator-reality middle tier closer to the schema-only smoke in wall time (~5s vs ~1.5s) while preserving its structural distinction (production-shape table envelope vs schema-only). The realistic 300-table tier remains the full forcing function on demand. Tiering rationale unchanged.
+
+### Cross-references
+
+- `tests/Projection.Tests/Fixtures/FixtureGenerator.fs:248` — `GenerateSpec.operatorReality` post-tuning shape.
+- `tests/Projection.Tests/GeneratorScaleTests.fs:215` — `Operator-reality canary: 6.25k rows × 150 tables, variegated` test.
+- `scripts/perf-gate.sh` — header + progress message updated.
+- `bench/baseline-canary.json` — re-recorded baseline (230 labels × 5 captures).
+- `CLAUDE.md` Canary operating-discipline row — updated counts + timings + Stop-hook note.
+- `DECISIONS 2026-05-09 — Operator-reality canary as the production-baseline perf gate` (the original framing this tuning amends; the framing's rationale stands; only the absolute numbers shift).
+- `DECISIONS 2026-05-10 — Perf-gate μ+σ statistical baseline` (the baseline-as-model discipline; re-record cycle followed verbatim).

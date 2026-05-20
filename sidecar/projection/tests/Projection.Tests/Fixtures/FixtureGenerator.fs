@@ -248,11 +248,25 @@ module GenerateSpec =
     let operatorReality : GenerateSpec =
         {
             Modules = 8
-            Entities = 200
-            StaticEntities = 100
+            // 2026-05-20 tuning (pass 2): table count 300 → 150
+            // (Entities 200→100; StaticEntities 100→50; preserved
+            // 2:1 non-static:static ratio). The row-count cut alone
+            // (pass 1, StaticRowsPerEntity 500→125) produced only
+            // ~25% wall-time reduction because the dominant cost is
+            // DDL deploy + ReadSide reflection over the table count,
+            // not seed-row processing. Cutting tables 300→150 halves
+            // deploy + reflection cost while preserving the FK-density
+            // envelope at the smaller scale. Operator framing: "we're
+            // not getting the value of waiting for it all the time."
+            // See DECISIONS 2026-05-20 (canary volume reduction).
+            Entities = 100
+            StaticEntities = 50
             AvgAttrsPerEntity = 10
             FkDensity = 0.2
-            StaticRowsPerEntity = 500
+            // 2026-05-20 tuning (pass 1): StaticRowsPerEntity 500 → 125
+            // (per-static-entity row volume cut 75%; total seed rows
+            // post-both-passes = 50 × 125 = 6,250).
+            StaticRowsPerEntity = 125
             Seed = 42
         }
 

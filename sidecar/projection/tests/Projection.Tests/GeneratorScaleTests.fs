@@ -212,7 +212,7 @@ let private runBulkCanary (label: string) (spec: GenerateSpec) : unit =
 /// snapshot under the "canary" tag and compare against the rolling
 /// history. Bench history at `bench/history-canary.jsonl`.
 [<Fact>]
-let ``Operator-reality canary: 50k rows × 300 tables, variegated, round-trips via bulk path`` () =
+let ``Operator-reality canary: 6.25k rows × 150 tables, variegated, round-trips via bulk path`` () =
     if not (Deploy.Docker.ensureRunning ()) then
         printfn
             "SKIP operator-reality canary: Docker daemon not reachable. Set DOCKER_HOST or start the daemon."
