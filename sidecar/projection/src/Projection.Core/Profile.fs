@@ -1036,6 +1036,16 @@ module Profile =
     let tryFindForeignKey (referenceKey: SsKey) (p: Profile) : ForeignKeyReality option =
         p.ForeignKeys |> List.tryFind (fun fk -> fk.ReferenceKey = referenceKey)
 
+    /// Look up FK cardinality evidence by reference identity (H-024).
+    /// Returns `None` when the LiveProfiler did not probe this reference
+    /// or when `Profile.isEmpty` (the common non-profiled path).
+    let tryFindForeignKeyCardinality (referenceKey: SsKey) (p: Profile) : ForeignKeyCardinality option =
+        p.ForeignKeyCardinalities |> List.tryFind (fun c -> c.ReferenceKey = referenceKey)
+
+    /// Look up FK selectivity evidence by reference identity (H-025).
+    let tryFindForeignKeySelectivity (referenceKey: SsKey) (p: Profile) : ForeignKeySelectivity option =
+        p.ForeignKeySelectivities |> List.tryFind (fun s -> s.ReferenceKey = referenceKey)
+
     /// Look up a single-column uniqueness probe by attribute identity.
     let tryFindUnique (attributeKey: SsKey) (p: Profile) : UniqueCandidateProfile option =
         p.UniqueCandidates |> List.tryFind (fun u -> u.AttributeKey = attributeKey)

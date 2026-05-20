@@ -106,6 +106,51 @@ module ForeignKeyPass =
             |> List.sortBy (fun r -> r.SsKey)
             |> List.map (fun r -> k, r))
 
+    /// H-024 — enrich `baseMetadata` with FK cardinality evidence when
+    /// present. `ForeignKeyCardinality.ChildCountDistribution.Moments.Mean`
+    /// is the average number of child rows per parent — a proxy for
+    /// relationship density. High mean: the FK is heavily used (dense
+    /// relationship); low mean: few children per parent (sparse). Surfaces
+    /// as `"meanChildCount"` in Metadata so downstream dashboard consumers
+    /// can distinguish these regimes without re-running the profiler.
+    let private cardinalityMetadata
+        (referenceKey: SsKey)
+        (profile: Profile)
+        (baseMetadata: Map<string, string>)
+        : Map<string, string> =
+        match Profile.tryFindForeignKeyCardinality referenceKey profile with
+        | None -> baseMetadata
+        | Some card ->
+            match card.ChildCountDistribution.Moments with
+            | None -> baseMetadata
+            | Some moments ->
+                baseMetadata
+                |> Map.add "meanChildCount"
+                       (moments.Mean.ToString("G4", System.Globalization.CultureInfo.InvariantCulture))
+
+    /// H-024 — when FK cardinality evidence shows a dense relationship
+    /// (`meanChildCount >= 1.0`) but policy has disabled creation,
+    /// suggest enabling `enableCreation` via a config edit. The operator
+    /// may have disabled creation during initial rollout; cardinality
+    /// evidence that the FK is actively used is a signal to re-enable.
+    let private cardinalitySuggestedConfig
+        (interventionId: string)
+        (referenceKey: SsKey)
+        (profile: Profile)
+        : SuggestedConfig option =
+        match Profile.tryFindForeignKeyCardinality referenceKey profile with
+        | None -> None
+        | Some card ->
+            match card.ChildCountDistribution.Moments with
+            | None -> None
+            | Some moments when moments.Mean >= 1.0m ->
+                Some {
+                    Path  = sprintf "$.tightening.interventions[?(@.id==\"%s\")].enableCreation" interventionId
+                    Value = "true"
+                    Note  = Some (sprintf "FK cardinality evidence shows %.4G average child rows per parent; relationship appears active. Re-enable to enforce the constraint." moments.Mean)
+                }
+            | Some _ -> None
+
     /// Map a `ForeignKeyDecision` to an opportunity-style diagnostic
     /// entry, or `None` if the decision is structurally clean (no
     /// observer-relevant caveat).
@@ -132,21 +177,18 @@ module ForeignKeyPass =
     ///     warrants observer attention.
     ///
     /// Code namespace: `tightening.foreignKey.<reason>`.
-    let private opportunityEntry (decision: ForeignKeyDecision) : DiagnosticEntry option =
-        let mkEntry severity code message =
-            { Source   = passName
-              Severity = severity
-              Code     = code
-              Message  = message
-              SsKey    = Some decision.ReferenceKey
-              Metadata =
-                  // Typed Outcome is structurally accessible via
-                  // DecisionSet; metadata carries only the
-                  // genuinely-string-typed intervention-id.
-                  Map.ofList [
-                      "interventionId", decision.InterventionId
-                  ]
-              SuggestedConfig = None }
+    let private opportunityEntry (profile: Profile) (decision: ForeignKeyDecision) : DiagnosticEntry option =
+        let baseMetadata =
+            Map.ofList [ "interventionId", decision.InterventionId ]
+            |> cardinalityMetadata decision.ReferenceKey profile
+        let mkEntry severity code message suggestedConfig =
+            { Source          = passName
+              Severity        = severity
+              Code            = code
+              Message         = message
+              SsKey           = Some decision.ReferenceKey
+              Metadata        = baseMetadata
+              SuggestedConfig = suggestedConfig }
 
         match decision.Outcome with
         | ForeignKeyOutcome.EnforceConstraint DatabaseConstraintPresent ->
@@ -155,59 +197,56 @@ module ForeignKeyPass =
             None
         | ForeignKeyOutcome.EnforceConstraint (ScriptWithNoCheck orphanCount) ->
             // Ok-with-caveat: V2's NoCheck-mode workaround.
-            // V1's `(CreateConstraint=true, ScriptWithNoCheck=true)`
-            // collapses to this evidence variant; the audit-trail
-            // concern V1 surfaced via rationale strings is V2's
-            // diagnostic emission.
             Some (mkEntry
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.scriptWithNoCheck"
                     (sprintf
                         "Foreign-key constraint scripted with NOCHECK because %d orphan row(s) were observed and operator policy allows it. Row-validation is deferred; remediate orphan rows before re-enabling enforcement."
-                        orphanCount))
+                        orphanCount)
+                    None)
         | ForeignKeyOutcome.DoNotEnforce PolicyDisabled ->
+            // H-024: if cardinality shows active use, suggest re-enabling.
             Some (mkEntry
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.policyDisabled"
-                    "Foreign-key constraint was not created. Enable policy support before enforcement can proceed.")
+                    "Foreign-key constraint was not created. Enable policy support before enforcement can proceed."
+                    (cardinalitySuggestedConfig decision.InterventionId decision.ReferenceKey profile))
         | ForeignKeyOutcome.DoNotEnforce (DataHasOrphans orphanCount) ->
             Some (mkEntry
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.dataHasOrphans"
                     (sprintf
                         "Foreign-key constraint was not created. Profile observed %d orphan row(s); remediate the data or enable AllowNoCheckCreation before enforcement can proceed."
-                        orphanCount))
+                        orphanCount)
+                    None)
         | ForeignKeyOutcome.DoNotEnforce CrossSchemaBlocked ->
             Some (mkEntry
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.crossSchemaBlocked"
-                    "Foreign-key constraint was not created. The reference crosses schema boundaries and AllowCrossSchema is disabled.")
+                    "Foreign-key constraint was not created. The reference crosses schema boundaries and AllowCrossSchema is disabled."
+                    None)
         | ForeignKeyOutcome.DoNotEnforce CrossCatalogBlocked ->
             // Reserved DU variant; unreachable from V2 fixtures
             // today (V2's IR has no Catalog field on Reference).
-            // Pattern-match completeness keeps the shape ready for
-            // the IR refinement (ADMIRE.md 2026-05-11).
             Some (mkEntry
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.crossCatalogBlocked"
-                    "Foreign-key constraint was not created. The reference crosses catalog boundaries and AllowCrossCatalog is disabled.")
+                    "Foreign-key constraint was not created. The reference crosses catalog boundaries and AllowCrossCatalog is disabled."
+                    None)
         | ForeignKeyOutcome.DoNotEnforce DeleteRuleIgnored ->
-            // Currently unreachable from V2 fixtures (V2's
-            // Reference.OnDelete DU has no Ignore variant; V1's
-            // "Ignore" maps to V2's NoAction semantically).
-            // Reserved-but-emit-when-reached so the audit chain is
-            // ready when the V2 catalog reader synthesizes a
-            // V1-equivalent representation. See session 13's Skip
-            // stub on this contract for the V1↔V2 mapping note.
+            // Currently unreachable from V2 fixtures (see V1↔V2 mapping
+            // note in the session-13 Skip stub for this contract).
             Some (mkEntry
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.deleteRuleIgnored"
-                    "Foreign-key constraint was not created. The reference's delete rule resolved to Ignore.")
+                    "Foreign-key constraint was not created. The reference's delete rule resolved to Ignore."
+                    None)
         | ForeignKeyOutcome.DoNotEnforce EvidenceMissing ->
             Some (mkEntry
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.evidenceMissing"
-                    "Foreign-key constraint was not created. Profile probe did not succeed reliably; collect evidence before enforcement can proceed.")
+                    "Foreign-key constraint was not created. Profile probe did not succeed reliably; collect evidence before enforcement can proceed."
+                    None)
         | ForeignKeyOutcome.DoNotEnforce MissingTarget ->
             // V2's audit dividend (session-8 refinement 3): V1
             // silently skipped references to missing targets; V2
@@ -215,7 +254,8 @@ module ForeignKeyPass =
             Some (mkEntry
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.missingTarget"
-                    "Foreign-key constraint was not created. The reference's target kind is absent from the catalog.")
+                    "Foreign-key constraint was not created. The reference's target kind is absent from the catalog."
+                    None)
 
     /// Run the ForeignKeyPass.
     ///
@@ -269,7 +309,7 @@ module ForeignKeyPass =
         // shape means per-iteration cost varies across outcomes).
         let entries =
             lineage.Value.Decisions
-            |> Bench.iterMap "pass.fk.reference" opportunityEntry
+            |> Bench.iterMap "pass.fk.reference" (opportunityEntry profile)
             |> List.choose id
         lineage
         |> LineageDiagnostics.ofLineage
