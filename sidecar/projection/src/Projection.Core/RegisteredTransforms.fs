@@ -87,6 +87,49 @@ module RegisteredTransforms =
             (UserFkReflowPass.registered Policy.empty Profile.empty)
             ComposeState.withUserRemap ]
 
+    /// Chapter C slice C.1 — factory variant of `allChainSteps` that
+    /// threads a caller-supplied `Policy` + `Profile` through the
+    /// four decision-set passes (NullabilityPass / UniqueIndexPass /
+    /// ForeignKeyPass / CategoricalUniquenessPass) instead of baking
+    /// `Policy.empty` + `Profile.empty` at module init.
+    ///
+    /// Used by `Compose.projectWith` (Pipeline.fs) — the slice-C.1
+    /// cash-out routes operator-supplied tightening interventions
+    /// through the existing pass chain by registering them per-call.
+    /// `allChainSteps` (the static version above) stays for the
+    /// skeleton-only / no-policy paths.
+    ///
+    /// Catalog-rewriting passes (entries 0-6 in the chain) are
+    /// policy-invariant; they reuse the same closures as the static
+    /// version. Only the 6 decision-set passes (TopologicalOrderPass
+    /// + 4 tightening passes + UserFkReflowPass) re-construct with the
+    /// caller's policy.
+    let allChainStepsFor (policy: Policy) (profile: Profile) : PassChainAdapter list =
+        [ PassChainAdapter.liftCatalogPass CanonicalizeIdentity.registered
+          PassChainAdapter.liftCatalogPass (VisibilityMask.registered emptyMask)
+          PassChainAdapter.liftCatalogPass (NamingMorphism.registered identityMorphism)
+          PassChainAdapter.liftCatalogPass NormalizeStaticPopulations.registered
+          PassChainAdapter.liftCatalogPass SymmetricClosure.registered
+          PassChainAdapter.liftCatalogPass (TableRename.registered [])
+          PassChainAdapter.liftDecisionPass
+            TopologicalOrderPass.registered
+            ComposeState.withTopologicalOrder
+          PassChainAdapter.liftDecisionPass
+            (NullabilityPass.registered policy profile)
+            ComposeState.withNullabilityDecisions
+          PassChainAdapter.liftDecisionPass
+            (UniqueIndexPass.registered policy profile)
+            ComposeState.withUniqueIndexDecisions
+          PassChainAdapter.liftDecisionPass
+            (ForeignKeyPass.registered policy profile)
+            ComposeState.withForeignKeyDecisions
+          PassChainAdapter.liftDecisionPass
+            (CategoricalUniquenessPass.registered policy profile)
+            ComposeState.withCategoricalUniquenessDecisions
+          PassChainAdapter.liftDecisionPass
+            (UserFkReflowPass.registered policy profile)
+            ComposeState.withUserRemap ]
+
     /// Chapter A.4.7' slice ε — `allChainSteps` filtered to entries
     /// whose corresponding metadata is in `TransformRegistry.skeletonView`
     /// (every Site classifies as `DataIntent`). Consumed by

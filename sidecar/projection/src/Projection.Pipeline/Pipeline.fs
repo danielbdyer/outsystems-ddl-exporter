@@ -157,6 +157,21 @@ module Compose =
     let project (policy: EmissionPolicy) (catalog: Catalog) : Outputs =
         projectFromChain RegisteredTransforms.allChainSteps policy catalog
 
+    /// Chapter C slice C.1 — production-shape project with caller-
+    /// supplied full `Policy` + `Profile` threaded through the four
+    /// tightening passes via `RegisteredTransforms.allChainStepsFor`.
+    /// Sibling to `project`; preserves the EmissionPolicy filter
+    /// behavior. Operator-tightening interventions registered in
+    /// `fullPolicy.Tightening.Interventions` fire here.
+    let projectWith
+        (fullPolicy: Policy)
+        (profile: Profile)
+        (emissionPolicy: EmissionPolicy)
+        (catalog: Catalog)
+        : Outputs =
+        let chain = RegisteredTransforms.allChainStepsFor fullPolicy profile
+        projectFromChain chain emissionPolicy catalog
+
     /// Skeleton-shape project: routes through
     /// `RegisteredTransforms.skeletonChainSteps` (per chapter A.4.7'
     /// slice ε; the four pure-DataIntent passes). Yields the baseline
@@ -376,11 +391,27 @@ module Compose =
                         ValidationError.createWithMetadata e.Code e.Message metadata)
                     |> Error)
 
+    /// Build the full `Policy` aggregate from a parsed `Config` and
+    /// the loaded `Catalog`. Today only the tightening axis is wired
+    /// (Chapter C slice C.1); Selection / Emission / Insertion /
+    /// UserMatching axes are dormant per the dormant-config-section
+    /// sweep — Chapter C slices C.2-C.6 wire those.
+    let private buildPolicyFromConfig
+        (cfg: Config.Config)
+        (catalog: Catalog)
+        : Result<Policy> =
+        match TighteningBinding.fromConfig catalog cfg.Policy.Tightening with
+        | Error es -> Error es
+        | Ok tightening ->
+            Result.success { Policy.empty with Tightening = tightening }
+
     /// Full end-to-end driven by a parsed `Config`. Reads `Model.Path`,
-    /// applies config-driven catalog rewrites (rename), projects, writes
-    /// to `Output.Dir`. Threading additional config sections
-    /// (`Emission`, `Policy`, `Overrides.MigrationDependencies`, etc.)
-    /// into project/write is the work of subsequent slices.
+    /// applies config-driven catalog rewrites (rename), binds operator
+    /// `Policy` (tightening — Chapter C slice C.1), projects through
+    /// the policy-aware chain, writes to `Output.Dir`. Threading the
+    /// remaining dormant sections (Selection / Insertion / Emission
+    /// folders / TagGroups) is the work of subsequent Chapter C
+    /// slices.
     let runWithConfig (cfg: Config.Config) : Task<Result<string list>> =
         task {
             let! parsed = read cfg.Model.Path
@@ -388,8 +419,13 @@ module Compose =
             | Ok catalog ->
                 match applyRenames cfg catalog with
                 | Ok renamedCatalog ->
-                    let outputs = project EmissionPolicy.empty renamedCatalog
-                    return write cfg.Output.Dir outputs
+                    match buildPolicyFromConfig cfg renamedCatalog with
+                    | Ok policy ->
+                        let outputs =
+                            projectWith policy Profile.empty EmissionPolicy.empty renamedCatalog
+                        return write cfg.Output.Dir outputs
+                    | Error errors ->
+                        return Result.failure errors
                 | Error errors ->
                     return Result.failure errors
             | Error errors ->
