@@ -596,38 +596,13 @@ Parse failures surface as `DiagnosticEntry` values via the
 
 ### H-019 — Trigger emission
 
-**Status:** proposed
-
-**Gap.** `Kind.Triggers : Trigger list` is populated at chapter A.0'.
-No emitter target surfaces triggers. SQL Server triggers are
-`CREATE TRIGGER ... ON <table> AFTER INSERT, UPDATE AS ...`.
-
-**Location.** `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs`.
-
-**Implementation.** `Trigger.Body` is a `string` (the raw T-SQL body).
-Emit via `ScriptDomBuild.tryParseTriggerWithDiagnostics` (new helper
-following the chapter 4.7 pattern). Parse failures → `DiagnosticEntry`.
-
-**Coverage impact.** Triggers surface in the SSDT bundle; roundtrip
-canary gains trigger fixture coverage.
+**Status:** implemented (Statement.CreateTrigger; ScriptDomBuild.tryParseTriggerBody; SsdtDdlEmitter.triggerStatements; kindToSsdtFile + statements wired; DacpacEmitter + Deploy.fs exhaustiveness; Render.fs + ScriptDomGenerate.fs comment updates)
 
 ---
 
 ### H-020 — Sequence emission
 
-**Status:** proposed
-
-**Gap.** `Catalog.Sequences : Sequence list` is populated at chapter
-A.0'. Sequences are standalone schema objects (`CREATE SEQUENCE ...`);
-they are not kind-level constructs. The SSDT emitter processes
-`Catalog` and currently ignores `Sequences`.
-
-**Location.** `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs`.
-
-**Implementation.** `Sequence.StartValue`, `Increment`, `MinValue`,
-`MaxValue`, `Cycle`, `Cache` map directly to ScriptDom's
-`CreateSequenceStatement`. Emit before table creation in the statement
-stream (sequences are referenced by DEFAULT constraints).
+**Status:** implemented (Statement.CreateSequence; ScriptDomBuild.buildCreateSequence + sequenceDataType; SsdtDdlEmitter.sequenceStatements; statements yields sequences before table loop; DacpacEmitter + Deploy.fs exhaustiveness)
 
 ---
 
@@ -705,24 +680,7 @@ evidence to decision.
 
 ### H-024 — FK cardinality consumers
 
-**Status:** proposed
-
-**Gap.** `ForeignKeyCardinality` is computed at `LiveProfiler.fs`
-slice B.3.5 and carried on `Profile`. No pass consumes it.
-
-**Consumer.** `ForeignKeyPass` currently makes FK decisions based on
-structural analysis. `ForeignKeyCardinality.Ratio` (number of distinct
-FK values / total rows) is the empirical measure of whether a FK
-relationship is sparse or dense. Dense FK → enforce constraint;
-sparse FK → opportunity diagnostic.
-
-**Location.** `src/Projection.Core/Passes/ForeignKeyPass.fs` and
-`src/Projection.Core/Strategies/ForeignKeyRules.fs`.
-
-**Unlocks.** FK tightening decisions become evidence-driven rather than
-policy-driven-only. The `SuggestedConfig` field on `DiagnosticEntry`
-can suggest `TighteningPolicy.add (FkEnforce fkKey)` when cardinality
-evidence supports enforcement.
+**Status:** implemented (ForeignKeyPass.fs — `cardinalityMetadata` enriches Metadata with `meanChildCount`; `cardinalitySuggestedConfig` emits SuggestedConfig on PolicyDisabled when density evidence is present; Profile.fs — `tryFindForeignKeyCardinality` + `tryFindForeignKeySelectivity` lookup helpers)
 
 ---
 

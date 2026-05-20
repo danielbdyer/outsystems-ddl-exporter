@@ -387,6 +387,28 @@ module SsdtDdlEmitter =
         |> List.map (fun idx ->
             Statement.AlterIndexDisable (toTableId k, Name.value idx.Name))
 
+    /// Emit one `CreateTrigger` statement per trigger in `Kind.Triggers`,
+    /// sorted deterministically by `SsKey`. Uses
+    /// `ScriptDomBuild.tryParseTriggerBody` to parse `Trigger.Definition`
+    /// into a typed `TSqlStatement`; triggers whose definition fails to
+    /// parse are silently dropped (parse failure on well-formed V1 data is
+    /// unexpected; the canary roundtrip will surface any regressions).
+    /// H-019 (Cluster A — Close the loops).
+    let private triggerStatements (k: Kind) : Statement list =
+        k.Triggers
+        |> List.sortBy (fun t -> t.SsKey)
+        |> List.map (fun t -> Statement.CreateTrigger t.Definition)
+
+    /// Emit one `CreateSequence` statement per `Catalog.Sequences` entry,
+    /// sorted deterministically by `SsKey`. Sequences are catalog-level
+    /// schema objects; this helper is called before the table loop in
+    /// `SsdtDdlEmitter.statements` so they are deployed before any DEFAULT
+    /// constraints that reference them. H-020 (Cluster A — Close the loops).
+    let private sequenceStatements (catalog: Catalog) : Statement list =
+        catalog.Sequences
+        |> List.sortBy (fun s -> s.SsKey)
+        |> List.map Statement.CreateSequence
+
     /// Build the cross-platform-deterministic relative path for a
     /// kind's SSDT DDL file. V1 convention: `Modules/<ModuleName>/
     /// <Schema>.<Table>.sql`. Forward-slash separators throughout.
@@ -536,6 +558,9 @@ module SsdtDdlEmitter =
                 // exists when the ALTER references it.
                 yield! disabledIndexAlters k
                 yield! extendedPropertyStatements k
+                // H-019: triggers fire after the table + all indexes are
+                // deployed so the ON <table> reference resolves cleanly.
+                yield! triggerStatements k
             }
         let body = ScriptDomGenerate.toText statements
         { RelativePath = relativePath m k; Body = body }
@@ -623,6 +648,9 @@ module SsdtDdlEmitter =
         let orderedKinds =
             order |> List.choose (fun key -> Map.tryFind key kindByKey)
         seq {
+            // H-020: sequences before tables — they may be referenced by
+            // DEFAULT constraints in CREATE TABLE statements.
+            yield! sequenceStatements catalog
             for k in orderedKinds do
                 yield createTableStatement targetByKey pkAttrByKey k
                 // Slice 5.13.fk-features-emit — mirrors the per-kind
@@ -633,6 +661,9 @@ module SsdtDdlEmitter =
                 yield! indexStatements k
                 // Slice 5.13.index-features-emit (matrix row 55).
                 yield! disabledIndexAlters k
+                // H-019: triggers after table + indexes per kindToSsdtFile
+                // emission order (ON <table> must exist before the trigger).
+                yield! triggerStatements k
         }
 
     let emitSlices : Emitter<SsdtFile> = fun catalog ->

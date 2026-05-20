@@ -25,9 +25,10 @@ open Projection.Core
 /// Typed-AST builders mapping V2's `Statement` DU to ScriptDom's
 /// `TSqlFragment` hierarchy. The mapping is total over the DU's
 /// SQL-bearing variants (`CreateTable`, `InsertRow`,
-/// `SetIdentityInsert`); non-SQL variants (`Comment`, `Blank`)
-/// are realization-layer concerns — the splice into the emitted
-/// text-stream lives in `ScriptDomGenerate.toText`.
+/// `SetIdentityInsert`, `CreateTrigger`, `CreateSequence`, etc.);
+/// non-SQL variants (`Comment`, `Blank`) are realization-layer
+/// concerns — the splice into the emitted text-stream lives in
+/// `ScriptDomGenerate.toText`.
 ///
 /// Every builder is pure (V2's contract): same input → same
 /// `TSqlFragment` shape, byte-for-byte. ScriptDom's
@@ -1277,6 +1278,117 @@ module ScriptDomBuild =
             : Diagnostics<ExecuteStatement> =
         Diagnostics.ofValue (buildSetExtendedPropertyCore owner propertyName propertyValue)
 
+    /// Parse a raw trigger `Definition` string into its `TSqlStatement`.
+    /// Returns `None` when the definition is blank, the parser reports
+    /// errors, or the result is not a `TSqlScript`. Follows the
+    /// `parseComputedExpression` pattern using the full-script parser
+    /// path: `TSql160Parser.Parse` → cast to `TSqlScript` → extract
+    /// the first statement in the first batch. H-019 (Cluster A).
+    let private tryParseTriggerBody (definition: string) : TSqlStatement option =
+        if System.String.IsNullOrWhiteSpace definition then
+            None
+        else
+            use reader = new System.IO.StringReader(definition)
+            let frag, errors = threadLocalParser.Value.Parse(reader)
+            let errorCount = if isNull errors then 0 else errors.Count
+            if errorCount > 0 then None
+            else
+                match frag with
+                | :? TSqlScript as s ->
+                    s.Batches
+                    |> Seq.tryHead
+                    |> Option.bind (fun batch ->
+                        batch.Statements |> Seq.tryHead)
+                | _ -> None
+
+    /// Map a sequence data type string (e.g. "bigint", "int",
+    /// "decimal(18,0)") to a `SqlDataTypeReference`. Handles the six
+    /// SQL Server sequence-legal numeric types; decimal/numeric with
+    /// precision+scale parameters use integer literals for P and S.
+    /// Falls back to `bigint` for unrecognised strings (V1 sequences
+    /// are almost exclusively `bigint`). H-020 (Cluster A).
+    let private sequenceDataType (rawType: string) : DataTypeReference =
+        let r = SqlDataTypeReference()
+        let lower = rawType.Trim().ToLowerInvariant()
+        // Detect parametric decimal/numeric: "decimal(18,0)" etc.
+        let parenIdx = lower.IndexOf('(')
+        let baseName = if parenIdx >= 0 then lower.[..parenIdx - 1].TrimEnd() else lower
+        let sqlOpt =
+            match baseName with
+            | "bigint"   -> SqlDataTypeOption.BigInt
+            | "int"      -> SqlDataTypeOption.Int
+            | "smallint" -> SqlDataTypeOption.SmallInt
+            | "tinyint"  -> SqlDataTypeOption.TinyInt
+            | "decimal"  -> SqlDataTypeOption.Decimal
+            | "numeric"  -> SqlDataTypeOption.Numeric
+            | _          -> SqlDataTypeOption.BigInt
+        r.SqlDataTypeOption <- sqlOpt
+        r.Name <- SchemaObjectName()
+        r.Name.Identifiers.Add(bracketed (baseName.ToLowerInvariant()))
+        // Parse precision and scale from "(P, S)" if present.
+        if parenIdx >= 0 && (sqlOpt = SqlDataTypeOption.Decimal || sqlOpt = SqlDataTypeOption.Numeric) then
+            let inner = lower.[parenIdx + 1..].TrimEnd([| ')'; ' ' |])
+            let parts = inner.Split(',')
+            match parts with
+            | [| p; s |] ->
+                let pLit = IntegerLiteral()
+                pLit.Value <- p.Trim()
+                r.Parameters.Add(pLit)
+                let sLit = IntegerLiteral()
+                sLit.Value <- s.Trim()
+                r.Parameters.Add(sLit)
+            | _ -> ()
+        r :> DataTypeReference
+
+    /// Build a `CreateSequenceStatement` from a V2 `Sequence` IR record.
+    /// Maps `Schema`/`Name` to a bracketed `SchemaObjectName`; maps each
+    /// populated IR field to the corresponding `SequenceOption`. Emits
+    /// AS, START WITH, INCREMENT BY, MINVALUE, MAXVALUE, CYCLE/NO CYCLE,
+    /// and CACHE/NO CACHE clauses. H-020 (Cluster A).
+    let buildCreateSequence (seq: Sequence) : CreateSequenceStatement =
+        let stmt = CreateSequenceStatement()
+        stmt.Name <- schemaObjectName seq.Schema (Name.value seq.Name)
+        // AS <type>
+        let dtOpt = DataTypeSequenceOption()
+        dtOpt.OptionKind <- SequenceOptionKind.As
+        dtOpt.DataType <- sequenceDataType seq.DataType
+        stmt.SequenceOptions.Add(dtOpt)
+        // Numeric scalar options helper.
+        let addDecimal (kind: SequenceOptionKind) (v: decimal) =
+            let opt = ScalarExpressionSequenceOption()
+            opt.OptionKind <- kind
+            let lit = NumericLiteral()
+            lit.Value <- v.ToString("G", System.Globalization.CultureInfo.InvariantCulture)
+            opt.OptionValue <- lit
+            stmt.SequenceOptions.Add(opt)
+        seq.StartValue |> Option.iter (addDecimal SequenceOptionKind.Start)
+        seq.Increment  |> Option.iter (addDecimal SequenceOptionKind.Increment)
+        seq.Minimum    |> Option.iter (addDecimal SequenceOptionKind.MinValue)
+        seq.Maximum    |> Option.iter (addDecimal SequenceOptionKind.MaxValue)
+        // CYCLE / NO CYCLE — ScalarExpressionSequenceOption with NoValue flag.
+        let cycleOpt = ScalarExpressionSequenceOption()
+        cycleOpt.OptionKind <- SequenceOptionKind.Cycle
+        cycleOpt.NoValue <- not seq.IsCycleEnabled
+        stmt.SequenceOptions.Add(cycleOpt)
+        // CACHE / NO CACHE.
+        match seq.CacheMode with
+        | Unspecified -> ()
+        | NoCache ->
+            let noCache = ScalarExpressionSequenceOption()
+            noCache.OptionKind <- SequenceOptionKind.Cache
+            noCache.NoValue <- true
+            stmt.SequenceOptions.Add(noCache)
+        | Cache ->
+            let cacheOpt = ScalarExpressionSequenceOption()
+            cacheOpt.OptionKind <- SequenceOptionKind.Cache
+            cacheOpt.NoValue <- false
+            seq.CacheSize |> Option.iter (fun n ->
+                let lit = IntegerLiteral()
+                lit.Value <- string n
+                cacheOpt.OptionValue <- lit)
+            stmt.SequenceOptions.Add(cacheOpt)
+        stmt
+
     /// Returns `None` for non-SQL variants (`Comment`, `Blank`) so
     /// the realization layer can splice them through the text
     /// stream directly. Closed-DU dispatch — adding a new variant
@@ -1299,3 +1411,7 @@ module ScriptDomBuild =
             Some (buildAlterTableNoCheckConstraint table constraintName :> TSqlStatement)
         | AlterIndexDisable (table, indexName) ->
             Some (buildAlterIndexDisable table indexName :> TSqlStatement)
+        | CreateTrigger definition ->
+            tryParseTriggerBody definition
+        | CreateSequence seqIR ->
+            Some (buildCreateSequence seqIR :> TSqlStatement)

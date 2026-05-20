@@ -782,6 +782,20 @@ module Deploy =
                     // same realization shape as the other DDL arms.
                     do! flushBulk ()
                     appendDdl s
+                | CreateTrigger _ ->
+                    // H-019: CREATE TRIGGER is DDL; flush any pending
+                    // bulk inserts before issuing. Render.toSql delegates
+                    // to ScriptDomBuild.tryParseTriggerBody; if the
+                    // definition fails to parse, the statement produces
+                    // no SQL and the flush is a no-op.
+                    do! flushBulk ()
+                    appendDdl s
+                | CreateSequence _ ->
+                    // H-020: CREATE SEQUENCE is DDL; sequences precede
+                    // tables in the statement stream so they must flush
+                    // any stale bulk state before executing.
+                    do! flushBulk ()
+                    appendDdl s
                 | InsertRow (table, values) ->
                     let shape = values |> List.map (fun v -> v.Column)
                     let canAppend =
