@@ -114,7 +114,29 @@ module NullabilityPass =
     /// decisions; sub-prefix `nullability.*` distinguishes from
     /// `uniqueIndex.*` and `foreignKey.*` (when those passes activate
     /// their own diagnostic emission per the same codification).
-    let private opportunityEntry (decision: NullabilityDecision) : DiagnosticEntry option =
+    /// H-029 — derive `coefficientOfVariation` from the attribute's
+    /// numeric distribution when present. CV (σ/μ) is the dimensionless
+    /// ratio of spread to central tendency; a high CV signals that the
+    /// column's non-null values vary widely (sparse / anomalous nulls),
+    /// whereas a low CV indicates uniform values (structurally-intended
+    /// nullable column). Surfaces in Metadata as `"cv"` so operators
+    /// and downstream dashboard consumers can distinguish the two
+    /// regimes without re-running the profiler.
+    let private cvMetadata
+        (attributeKey: SsKey)
+        (profile: Profile)
+        (baseMetadata: Map<string, string>)
+        : Map<string, string> =
+        match Profile.tryFindNumeric attributeKey profile with
+        | None -> baseMetadata
+        | Some dist ->
+            match NumericDistribution.coefficientOfVariation dist with
+            | None    -> baseMetadata
+            | Some cv ->
+                baseMetadata
+                |> Map.add "cv" (cv.ToString("G4", System.Globalization.CultureInfo.InvariantCulture))
+
+    let private opportunityEntry (profile: Profile) (decision: NullabilityDecision) : DiagnosticEntry option =
         match decision.Outcome with
         | NullabilityOutcome.EnforceNotNull _ ->
             None
@@ -139,11 +161,13 @@ module NullabilityPass =
                 // string-encoded duplicate in Metadata violates
                 // the discipline. Metadata carries only the
                 // intervention-id (genuinely string-typed; not a
-                // duplicate of structured data).
+                // duplicate of structured data). The `cv` entry is
+                // profile-derived (H-029) — not a duplicate of the
+                // decision's typed outcome; it is new evidence about
+                // the column's value distribution shape.
                 Metadata =
-                    Map.ofList [
-                        "interventionId", decision.InterventionId
-                    ]
+                    Map.ofList [ "interventionId", decision.InterventionId ]
+                    |> cvMetadata decision.AttributeKey profile
                 SuggestedConfig = None
             }
         | NullabilityOutcome.RequireOperatorApproval (MandatoryButHasNullsBeyondBudget (nulls, rows, budget)) ->
@@ -163,11 +187,11 @@ module NullabilityPass =
                 // string-encoded duplicate in Metadata violates
                 // the discipline. Metadata carries only the
                 // intervention-id (genuinely string-typed; not a
-                // duplicate of structured data).
+                // duplicate of structured data). The `cv` entry is
+                // profile-derived (H-029) — see cvMetadata above.
                 Metadata =
-                    Map.ofList [
-                        "interventionId", decision.InterventionId
-                    ]
+                    Map.ofList [ "interventionId", decision.InterventionId ]
+                    |> cvMetadata decision.AttributeKey profile
                 SuggestedConfig =
                     // Ceiling to 4 decimal places: tightest budget that
                     // makes observed <= allowed, turning the outcome to
@@ -236,7 +260,7 @@ module NullabilityPass =
         // bounds the diagnostic-mapping cost).
         let entries =
             lineage.Value.Decisions
-            |> Bench.iterMap "pass.nullability.attribute" opportunityEntry
+            |> Bench.iterMap "pass.nullability.attribute" (opportunityEntry profile)
             |> List.choose id
         lineage
         |> LineageDiagnostics.ofLineage
