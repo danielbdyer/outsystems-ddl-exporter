@@ -18736,3 +18736,130 @@ The **functional-equivalence arm** + production dry-run move to a follow-up chap
 - `src/Projection.Pipeline/Pipeline.fs:384` — `Compose.runWithConfig` (the orchestration slice 7 wraps).
 - `src/Projection.Pipeline/Config.fs:156` — `Pipeline.Config.Config` record (the three live consumers + the dormant sections).
 - `V2_PRODUCTION_CUTOVER.md §8.2` — Phase B exit criterion (structural arm closes here; functional-equivalence arm waits on `LiveOssysConnection`).
+
+## 2026-05-20 (test-failure capture protocol) — TRX-first when `dotnet test` reports `Failed!`; codified to retire a recurring agent failure mode (grep-against-interleaved-console output across multiple sessions)
+
+### Context
+
+Operator surfaced a recurring agent failure mode: "I've seen you fail at grepping like this consistently across sessions and it wastes a lot of cycles on rerunning tests." Concrete instance: chapter C slice C.1 sweep reported 3 failures; the agent ran `grep -E "FAIL|Failed " | head -20`, got empty output, re-ran without --logger getting `Failed: 0` (transient flake), then re-ran again to reproduce; took 3 sweep cycles to identify the failure.
+
+Root cause: `dotnet test` console output is **interleaved across parallel test classes**. Per-test `[FAIL]` markers appear inline with successful test output; the final-summary line (`Failed: N, Passed: M`) appears after the parallel streams finish. When piped through `tail -N`, the per-test failures scroll past; when piped through `grep`, the patterns can match successful tests with "fail" substrings in skip messages (e.g., "ParsePredicate silent-failure"). The console output is **best-effort UX**, not a deterministic interface.
+
+### Resolution
+
+**Default protocol when `dotnet test` reports `Failed: N` with N > 0**:
+
+1. Re-run the failing command with the TRX logger appended:
+   ```
+   --logger "trx;LogFileName=test-results.trx" -- RunConfiguration.ResultsDirectory=/tmp/test-results
+   ```
+2. Extract the failure names from the deterministic XML:
+   ```
+   grep -oE 'testName="[^"]*"' /tmp/test-results/test-results.trx | sort -u
+   ```
+3. Extract per-failure details (Error Message + Stack Trace):
+   ```
+   grep -A 30 'outcome="Failed"' /tmp/test-results/test-results.trx
+   ```
+
+The TRX file is XML with `<UnitTestResult testName="..." outcome="Failed">` entries each containing nested `<Output><ErrorInfo><Message>` and `<StackTrace>` blocks. The structure is stable across xUnit versions.
+
+### When to apply
+
+**Triggers** (any of):
+- `dotnet test` reports `Failed: N` with N > 0
+- A failure is suspected but `grep "fail"` against console output returns ambiguous results
+- A test is suspected as flaky (the TRX confirms whether it reproduces deterministically)
+
+**Skip** the protocol when:
+- Tests pass cleanly (`Failed: 0`); the summary line carries the information
+- Running a single test by exact filter (the failure detail is the only thing the console shows)
+
+### Discipline reinforced
+
+**Console output is best-effort UX; structured artifacts are the contract.** This pattern repeats across V2's tooling: the canary's `PhysicalSchema` diff is the contract (not the console-rendered table); `bench/baseline-canary.json` is the perf contract (not the bench-table console output); `summary.runComplete` envelope's `aggregates` array is the operator's terminal scroll target (not the per-event NDJSON stream). Each substrate has its structured surface PLUS a UX-shaped console rendering. Agents should reach for the structured surface when the console output's interleaving costs more than the structured surface's one-flag overhead.
+
+**Recurring agent failure modes get structural enforcement.** The operator's framing ("consistently across sessions") names a class of problem: agent retries 2-3 times then succeeds via brute force, costing tokens + wall time + operator patience. The fix is structural (an operating-discipline table row that names the protocol) rather than aspirational (an agent self-improvement note). Pairs with the canary forcing-function discipline + the bench-driven optimization protocol: each retired a recurring agent failure mode by naming a structured substrate over the console UX layer.
+
+### Cross-references
+
+- `CLAUDE.md` operating-disciplines table — new row "Test-failure capture protocol — TRX-first when `dotnet test` reports `Failed!`".
+- `tests/Projection.Tests/Projection.Tests.fsproj` — emits TRX naturally when `--logger trx;...` flag passed.
+- Chapter C slice C.1 commit — first session where the protocol was applied (TRX revealed `BenchTests.Bench: repeated scopes accumulate samples and compute percentiles` racing with new LogSink + FullExportCli tests sharing global `Bench` state; fix was adding `[<Xunit.Collection("Global-MutableState")>]` to BenchTests + LogSinkTests + FullExportCliTests + the corresponding `CollectionDefinition` in `TestCollections.fs`).
+
+
+## 2026-05-20 (slice C.1 — tightening axis config wiring) — operator config now drives `Policy.TighteningPolicy` end-to-end; first Chapter C slice ships the four-intervention binding layer + parameterized chain factory + tightening-aware projection path
+
+### Context
+
+Per chapter B.4 close + `DECISIONS 2026-05-19 (chapter B.4 mid-chapter strategic exploration)`: Chapter C wires the dormant `Pipeline.Config` sections that chapter B.4's slice 7 left parse-but-ignore. C.1 is the priority slice — wires the tightening axis (operator's day-to-day cutover tightest-feedback-loop knob).
+
+The `Policy.TighteningPolicy` + `TighteningOverride` + 4 `TighteningIntervention` variants substrate exists structurally in `Projection.Core/Policy.fs`. The four tightening passes (`NullabilityPass` / `UniqueIndexPass` / `ForeignKeyPass` / `CategoricalUniquenessPass`) already filter against the policy. What was missing: (a) config-binding layer mapping operator JSON entries → typed `TighteningIntervention list`; (b) a way to thread non-empty `Policy` through `Compose.project` (the static `RegisteredTransforms.allChainSteps` bakes `Policy.empty` at module init); (c) `runWithConfig` constructing the policy from the parsed config + loaded catalog.
+
+### What shipped
+
+**`src/Projection.Pipeline/Config.fs` (~110 LOC added)** — three new types:
+- `TighteningAttributeOverride` — `{ AttributeRef : string; Action : string }`. Operator-readable per-attribute override row; the binder resolves `AttributeRef` against the loaded catalog at bind time.
+- `TighteningInterventionEntry` — one record carrying every field across the four intervention kinds (Nullability + UniqueIndex + ForeignKey + CategoricalUniqueness), with per-kind fields as `option`. Single shape lets operators author all four kinds with a uniform JSON pattern.
+- `TighteningSection` — `{ Interventions : TighteningInterventionEntry list }`. The `policy.tightening` config section.
+
+Plus three new option parsers (`getOptionalBool` / `getOptionalDecimal` / `getOptionalInt64`) and the `parseTighteningIntervention` / `parseTightening` parser pipeline. `PolicySection` extended with `Tightening : TighteningSection option` (default `None`); `parsePolicy` wires it through.
+
+**`src/Projection.Pipeline/TighteningBinding.fs` (~190 LOC NEW)** — the boundary binder:
+- `resolveAttributeRef : Catalog -> string -> Result<SsKey>` — tries logical `Module.Entity.Attribute` form first, then physical `Schema.Table.Column` form. Structured `ValidationError` codes for shape errors (`pipeline.tightening.overrideRef.shape`) + unresolvable refs (`pipeline.tightening.overrideRef.unresolved`).
+- Per-kind binders: `bindNullability` / `bindUniqueIndex` / `bindForeignKey` / `bindCategoricalUniqueness`. Each maps the operator config record to its typed `TighteningIntervention` variant; supplies sensible defaults for omitted optional fields (NullBudget=0, AllowMandatoryRelaxation=false, etc.).
+- `bindEntry` dispatches on `entry.Kind`; unknown kinds surface as `pipeline.tightening.intervention.kindUnknown` ValidationError.
+- `fromConfig : Catalog -> TighteningSection option -> Result<TighteningPolicy>` — top-level entry. `None` → `TighteningPolicy.empty`; `Some s` aggregates per-entry binding via `Result.aggregate`.
+
+**`src/Projection.Core/RegisteredTransforms.fs`** — added `allChainStepsFor : Policy -> Profile -> PassChainAdapter list`. Mirrors the static `allChainSteps` but threads the caller-supplied `Policy` + `Profile` into the four decision-set tightening passes + `UserFkReflowPass` instead of baking `Policy.empty` + `Profile.empty` at module init. Catalog-rewriting passes (entries 0-6) are policy-invariant; they reuse the same closures.
+
+**`src/Projection.Pipeline/Pipeline.fs`**:
+- `Compose.projectWith : Policy -> Profile -> EmissionPolicy -> Catalog -> Outputs` — production-shape sibling to `project`; routes through `allChainStepsFor`. Preserves the EmissionPolicy filter behavior.
+- `buildPolicyFromConfig : Config.Config -> Catalog -> Result<Policy>` — currently wires only tightening; Selection / Emission / Insertion / UserMatching axes are dormant per the dormant-config-section sweep (Chapter C slices C.2–C.6 wire those).
+- `runWithConfig` now constructs Policy from config + threads it through `projectWith`. The terminal `summary.runComplete` envelope continues to fire per chapter B.4 slice 7 wiring.
+
+### Tests
+
+**`tests/Projection.Tests/TighteningBindingTests.fs`** — 14 tests; all passing. Covers:
+- Empty/None paths (Section=None → empty policy; empty Interventions → empty policy).
+- Per-variant binding (Nullability with defaults + explicit NullBudget/AllowMandatoryRelaxation; UniqueIndex defaults both flags true; ForeignKey threads all 5 flags; CategoricalUniqueness threads minDistinctCount).
+- Override resolution (logical Module.Entity.Attribute form; physical Schema.Table.Column form).
+- Structured-error cases (unresolvable ref; malformed ref shape; unknown action; unknown intervention kind).
+- Multi-intervention composition (all 4 kinds in one config produce 4 typed interventions in declaration order).
+
+### Test-collection hygiene fix (folded inline)
+
+Initial sweep surfaced 3 failures in adjacent tests (BenchTests + LogSinkTests + FullExportCliTests) racing on global mutable state. Root cause: `Projection.Core.Bench` is a process-scoped mutable singleton; `LogSink.runComplete` calls `Bench.snapshot()`; `FullExportCliTests.runFullExportInProcess` calls `Bench.reset()`. xUnit's default per-class parallelization races these.
+
+Fix: new `[<CollectionDefinition("Global-MutableState", DisableParallelization = true)>]` in `TestCollections.fs`. Tagged BenchTests + LogSinkTests + FullExportCliTests with `[<Xunit.Collection("Global-MutableState")>]`. Future slices touching `Bench` or `LogSink` state add the same tag. Scoped serialization (parallel-test-classes elsewhere still parallelize); only the global-state cluster runs serially.
+
+### Discipline reinforced
+
+**Operator-supplied refs resolve at bind time, not at use time.** The choice was: (a) carry textual refs through to the pass and resolve at decision time (each pass walks every override); or (b) resolve at config-bind time against the loaded catalog (one walk per ref; produces typed `SsKey` early). (b) wins because (i) errors surface at config-load time rather than pass-execution time; (ii) the typed `TighteningOverride.AttributeKey : SsKey` is the contract the pass already consumes; the binder absorbs the impedance match; (iii) operators get structured ValidationError codes (`overrideRef.unresolved` / `overrideRef.shape`) instead of opaque "this override never fired" silent skips.
+
+**Per-attribute refs accept both logical and physical paths.** Operators who think in OutSystems naming write `"AppCore.User.MiddleName"`; operators who think in SQL Server naming write `"dbo.OSUSR_APPCORE_USER.MIDDLENAME"`. The binder tries logical first (matches V2's domain-first naming bias per CLAUDE.md operating disciplines), then falls back to physical. Unresolvable refs name both attempts in the error message so operators see what was tried.
+
+**Single config entry shape across four DU variants.** `TighteningInterventionEntry` carries every field from every variant as `option`-typed. Trade-off: the binder must validate the Kind→fields pairing at runtime rather than at parse time; the upside is operators see one shape ("here's my interventions list") rather than four separate sections. Pillar 8 (domain-first naming): the `Kind` discriminator string ("nullability" / "uniqueIndex" / "foreignKey" / "categoricalUniqueness") is operator-facing; the typed DU is V2-internal. The binder is the boundary.
+
+**`allChainStepsFor` is the registry's policy-parameterized form.** Per `RegisteredTransforms.fs` line 33: "Slice γ / δ may add a factory variant of allChainSteps if two consumers demand it." C.1 is that second consumer. The static `allChainSteps` stays for the skeleton-only / no-policy paths (canary tests + `runWithConfig` for configs without tightening); the new `allChainStepsFor` is for the policy-aware production path.
+
+### Phase A1 status (operator-config wiring)
+
+Chapter C is six slices total. C.1 ships the tightening axis. Remaining: C.2 (special-circumstances — AllowMissingPrimaryKey + CircularDependencies consumer pass), C.3 (emission-folders — Overrides.EmissionFolders + RelativePath rewrite pass), C.4 (tag-groups — TransformGroup closed-DU + RegisteredTransform.Tags filter), C.5 (insertion semantics — Policy.InsertionPolicy config binding), C.6 (verbosity flags — --verbose/--debug per §4).
+
+Test baseline post-C.1: 1793/1793 non-Docker passing (was 1779 at chapter B.4 close; +14 from TighteningBindingTests). Build clean under TreatWarningsAsErrors=true.
+
+### Cross-references
+
+- `src/Projection.Core/Policy.fs:269` — `TighteningPolicy.Interventions` (the substrate this slice wires config into).
+- `src/Projection.Core/Policy.fs:118` — `TighteningOverride` + `OverrideAction.KeepNullable`.
+- `src/Projection.Core/Passes/{Nullability,UniqueIndex,ForeignKey,CategoricalUniqueness}Pass.fs` — the four passes whose `InterventionFilter` consumes the wired interventions.
+- `src/Projection.Core/RegisteredTransforms.fs` — new `allChainStepsFor` policy-parameterized chain factory.
+- `src/Projection.Pipeline/Pipeline.fs` — `Compose.projectWith` + `buildPolicyFromConfig` + updated `runWithConfig`.
+- `src/Projection.Pipeline/TighteningBinding.fs` — NEW boundary binder.
+- `tests/Projection.Tests/TighteningBindingTests.fs` — NEW 14-test coverage.
+- `tests/Projection.Tests/TestCollections.fs` — new `Global-MutableState` collection definition.
+- `DECISIONS 2026-05-19 (chapter B.4 mid-chapter strategic exploration)` — the chapter C 6-slice plan basis.
+- `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)` — revised 6-slice plan.
+- `DECISIONS 2026-05-20 (test-failure capture protocol)` — paired protocol entry; the chapter C slice C.1 sweep was the codifying instance.
+

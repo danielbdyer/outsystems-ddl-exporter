@@ -12,6 +12,7 @@
   <ItemGroup>
     <Compile Include="Config.fs" />
     <Compile Include="RenameBinding.fs" />
+    <Compile Include="TighteningBinding.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="RegisteredAllTransforms.fs" />
     <Compile Include="Bulk.fs" />

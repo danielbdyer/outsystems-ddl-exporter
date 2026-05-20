@@ -143,10 +143,70 @@ module Config =
         Fallback : string
     }
 
+    // -----------------------------------------------------------------------
+    // Tightening axis (Chapter C slice C.1). Operator-facing config surface
+    // for `Policy.TighteningPolicy.Interventions`. Each entry maps to one
+    // `TighteningIntervention` DU variant; the binder (`TighteningBinding
+    // .fromConfig`) converts these textual records into typed runtime
+    // values + resolves per-attribute overrides against the loaded
+    // catalog.
+    //
+    // Carries one record per intervention `kind` rather than one section
+    // per intervention type so operators authoring tightening configs
+    // see a single list shape ("here are my interventions") rather than
+    // four separate sections to fill out. The closed-DU enforcement is
+    // in the binder, not the parser — Config.fs stays in its textual-
+    // shape role per `D9 (secret-free by construction)`.
+    // -----------------------------------------------------------------------
+
+    /// One row of the override table inside a `nullability`
+    /// intervention. Keys identify attributes by the **logical**
+    /// `Module.Entity.Attribute` form (operator-readable; matches the
+    /// V1 config shape) OR the **physical** `Schema.Table.Column` form
+    /// (deployment-target nomenclature). The binder resolves these to
+    /// `SsKey` against the loaded catalog at bind time.
+    type TighteningAttributeOverride = {
+        AttributeRef : string
+        Action       : string
+    }
+
+    /// One operator-supplied tightening intervention. The `Kind` field
+    /// names the DU variant (`"nullability"` / `"uniqueIndex"` /
+    /// `"foreignKey"` / `"categoricalUniqueness"`); the per-variant
+    /// fields are populated when relevant + ignored otherwise. The
+    /// binder validates the Kind→fields pairing.
+    type TighteningInterventionEntry = {
+        Kind : string
+        Id   : string
+        // Nullability fields
+        NullBudget                   : decimal option
+        AllowMandatoryRelaxation     : bool option
+        NullabilityOverrides         : TighteningAttributeOverride list
+        // UniqueIndex fields
+        EnforceSingleColumnUnique    : bool option
+        EnforceMultiColumnUnique     : bool option
+        // ForeignKey fields
+        EnableCreation               : bool option
+        AllowCrossSchema             : bool option
+        AllowCrossCatalog            : bool option
+        TreatMissingDeleteRuleAsIgnore : bool option
+        AllowNoCheckCreation         : bool option
+        // CategoricalUniqueness fields
+        MinDistinctCountForUniqueness : int64 option
+    }
+
+    /// `policy.tightening` config section. Empty `Interventions` list
+    /// = no tightening interventions registered = V2's strict default
+    /// (no alterations).
+    type TighteningSection = {
+        Interventions : TighteningInterventionEntry list
+    }
+
     type PolicySection = {
         Selection    : string
         Insertion    : string
         UserMatching : UserMatchingSection
+        Tightening   : TighteningSection option
     }
 
     type OutputSection = {
@@ -224,6 +284,7 @@ module Config =
         Selection    = "IncludeAll"
         Insertion    = "SchemaOnly"
         UserMatching = defaultUserMatching
+        Tightening   = None
     }
 
     let private defaultOutput : OutputSection = {
@@ -802,6 +863,128 @@ module Config =
             Result.failureOf (
                 configError "typeMismatch" "policy.userMatching must be an object.")
 
+    let private getOptionalBool (element: JsonElement) (name: string) : Result<bool option> =
+        match element.TryGetProperty(name) with
+        | false, _ -> Result.success None
+        | true, v when v.ValueKind = JsonValueKind.True -> Result.success (Some true)
+        | true, v when v.ValueKind = JsonValueKind.False -> Result.success (Some false)
+        | _ ->
+            Result.failureOf (configError "typeMismatch" (sprintf "'%s' must be a boolean." name))
+
+    let private getOptionalDecimal (element: JsonElement) (name: string) : Result<decimal option> =
+        match element.TryGetProperty(name) with
+        | false, _ -> Result.success None
+        | true, v when v.ValueKind = JsonValueKind.Number ->
+            let mutable d : decimal = 0m
+            if v.TryGetDecimal(&d) then Result.success (Some d)
+            else
+                Result.failureOf (configError "typeMismatch" (sprintf "'%s' must be a decimal." name))
+        | _ ->
+            Result.failureOf (configError "typeMismatch" (sprintf "'%s' must be a numeric value." name))
+
+    let private getOptionalInt64 (element: JsonElement) (name: string) : Result<int64 option> =
+        match element.TryGetProperty(name) with
+        | false, _ -> Result.success None
+        | true, v when v.ValueKind = JsonValueKind.Number ->
+            let mutable n : int64 = 0L
+            if v.TryGetInt64(&n) then Result.success (Some n)
+            else
+                Result.failureOf (configError "typeMismatch" (sprintf "'%s' must be a 64-bit integer." name))
+        | _ ->
+            Result.failureOf (configError "typeMismatch" (sprintf "'%s' must be an integer." name))
+
+    let private parseTighteningAttributeOverride (element: JsonElement) : Result<TighteningAttributeOverride> =
+        match getString element "attributeRef" with
+        | Error es -> Error es
+        | Ok ref ->
+            match getString element "action" with
+            | Error es -> Error es
+            | Ok action -> Result.success { AttributeRef = ref; Action = action }
+
+    let private parseTighteningOverrides (element: JsonElement) : Result<TighteningAttributeOverride list> =
+        match element.TryGetProperty("overrides") with
+        | false, _ -> Result.success []
+        | true, v when v.ValueKind = JsonValueKind.Array ->
+            v.EnumerateArray()
+            |> Seq.toList
+            |> List.map parseTighteningAttributeOverride
+            |> Result.aggregate
+        | _ ->
+            Result.failureOf (
+                configError "typeMismatch" "tightening intervention 'overrides' must be an array.")
+
+    let private parseTighteningIntervention (element: JsonElement) : Result<TighteningInterventionEntry> =
+        match getString element "kind" with
+        | Error es -> Error es
+        | Ok kind ->
+            match getString element "id" with
+            | Error es -> Error es
+            | Ok id ->
+                match getOptionalDecimal element "nullBudget" with
+                | Error es -> Error es
+                | Ok nullBudget ->
+                    match getOptionalBool element "allowMandatoryRelaxation" with
+                    | Error es -> Error es
+                    | Ok allowMand ->
+                        match parseTighteningOverrides element with
+                        | Error es -> Error es
+                        | Ok overrides ->
+                            match getOptionalBool element "enforceSingleColumnUnique" with
+                            | Error es -> Error es
+                            | Ok ensSc ->
+                                match getOptionalBool element "enforceMultiColumnUnique" with
+                                | Error es -> Error es
+                                | Ok ensMc ->
+                                    match getOptionalBool element "enableCreation" with
+                                    | Error es -> Error es
+                                    | Ok enable ->
+                                        match getOptionalBool element "allowCrossSchema" with
+                                        | Error es -> Error es
+                                        | Ok crossSchema ->
+                                            match getOptionalBool element "allowCrossCatalog" with
+                                            | Error es -> Error es
+                                            | Ok crossCatalog ->
+                                                match getOptionalBool element "treatMissingDeleteRuleAsIgnore" with
+                                                | Error es -> Error es
+                                                | Ok missingDR ->
+                                                    match getOptionalBool element "allowNoCheckCreation" with
+                                                    | Error es -> Error es
+                                                    | Ok nocheck ->
+                                                        match getOptionalInt64 element "minDistinctCountForUniqueness" with
+                                                        | Error es -> Error es
+                                                        | Ok minDist ->
+                                                            Result.success {
+                                                                Kind = kind
+                                                                Id = id
+                                                                NullBudget = nullBudget
+                                                                AllowMandatoryRelaxation = allowMand
+                                                                NullabilityOverrides = overrides
+                                                                EnforceSingleColumnUnique = ensSc
+                                                                EnforceMultiColumnUnique = ensMc
+                                                                EnableCreation = enable
+                                                                AllowCrossSchema = crossSchema
+                                                                AllowCrossCatalog = crossCatalog
+                                                                TreatMissingDeleteRuleAsIgnore = missingDR
+                                                                AllowNoCheckCreation = nocheck
+                                                                MinDistinctCountForUniqueness = minDist
+                                                            }
+
+    let private parseTightening (root: JsonElement) : Result<TighteningSection option> =
+        match tryGetProperty root "tightening" with
+        | None -> Result.success None
+        | Some element ->
+            match element.TryGetProperty("interventions") with
+            | false, _ -> Result.success (Some { Interventions = [] })
+            | true, v when v.ValueKind = JsonValueKind.Array ->
+                v.EnumerateArray()
+                |> Seq.toList
+                |> List.map parseTighteningIntervention
+                |> Result.aggregate
+                |> Result.map (fun entries -> Some { Interventions = entries })
+            | _ ->
+                Result.failureOf (
+                    configError "typeMismatch" "tightening.interventions must be an array.")
+
     let private parsePolicy (root: JsonElement) : Result<PolicySection> =
         match tryGetProperty root "policy" with
         | None -> Result.success defaultPolicy
@@ -825,11 +1008,15 @@ module Config =
                     match parseUserMatching element with
                     | Error es -> Error es
                     | Ok userMatching ->
-                        Result.success {
-                            Selection    = selection
-                            Insertion    = insertion
-                            UserMatching = userMatching
-                        }
+                        match parseTightening element with
+                        | Error es -> Error es
+                        | Ok tightening ->
+                            Result.success {
+                                Selection    = selection
+                                Insertion    = insertion
+                                UserMatching = userMatching
+                                Tightening   = tightening
+                            }
 
     let private parseOutput (root: JsonElement) : Result<OutputSection> =
         match tryGetProperty root "output" with

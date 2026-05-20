@@ -1,3 +1,4 @@
+[<Xunit.Collection("Global-MutableState")>]
 module Projection.Tests.LogSinkTests
 
 open System
