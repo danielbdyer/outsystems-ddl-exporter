@@ -53,7 +53,8 @@ let private mkEntry
       Code = code
       Message = message
       SsKey = ssKey
-      Metadata = Map.empty }
+      Metadata = Map.empty
+      SuggestedConfig = None }
 
 let private kindCount (catalog: Catalog) : int =
     Catalog.allKinds catalog |> List.length

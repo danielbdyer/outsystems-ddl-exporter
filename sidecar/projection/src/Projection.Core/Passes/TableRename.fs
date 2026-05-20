@@ -225,6 +225,7 @@ module TableRename =
                               Code = e.Code
                               Message = e.Message
                               SsKey = None
-                              Metadata = Map.empty })
+                              Metadata = Map.empty
+                              SuggestedConfig = None })
                     Lineage.ofValue (Diagnostics.tellMany entries (Diagnostics.ofValue c))
           Status = Active }

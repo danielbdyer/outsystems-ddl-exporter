@@ -46,7 +46,8 @@ let private mkEntry (code: string) (ssKey: SsKey option) : DiagnosticEntry =
       Code = code
       Message = sprintf "entry with code %s" code
       SsKey = ssKey
-      Metadata = Map.empty }
+      Metadata = Map.empty
+      SuggestedConfig = None }
 
 // ---------------------------------------------------------------------------
 // Routing.route — per-entry classification.

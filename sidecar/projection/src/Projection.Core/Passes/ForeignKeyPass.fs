@@ -145,7 +145,8 @@ module ForeignKeyPass =
                   // genuinely-string-typed intervention-id.
                   Map.ofList [
                       "interventionId", decision.InterventionId
-                  ] }
+                  ]
+              SuggestedConfig = None }
 
         match decision.Outcome with
         | ForeignKeyOutcome.EnforceConstraint DatabaseConstraintPresent ->

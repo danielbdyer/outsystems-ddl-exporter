@@ -18475,3 +18475,65 @@ Spectre.Console + `Console.IsErrorRedirected` + dual-channel `--json-out` routin
 - `CHAPTER_B_4_OPEN.md` slice plan updated: slice 6.5 inserted; slice 7 dependency on 6.5 named; close-ritual updated to verify §11 + §15.1 disciplines.
 - Chapter C slice plan revised: 6 slices total; axis 7 narrowed to just verbosity flags (C.6); Spectre work leaves Chapter C.
 - Active deferrals: new `Spectre.Console TtyRenderer + dual-channel routing micro-chapter` row.
+
+## 2026-05-20 (slice B.4.6 reshape — drop occluding cluster-cap) — slice 6 reshaped mid-implementation: SuggestedConfig + severity-sort + axis-cluster ship as pure navigation enrichment; cluster-cap-with-overflow-marker dropped after principal-operator pushback against occluding source defects
+
+### What happened
+
+Initial slice-6 implementation shipped a `ClusterCap` mechanism: `MaxPerAxis = 10` default; entries beyond the cap dropped silently; overflow count surfaced as `axisOverflowCount` metadata on the last retained entry. The principal-operator asked: "Do you see this conflation too?" — and named the right framing: source defects (NULLs in NOT NULL columns; orphaned FKs; duplicate unique-index candidates) MUST NOT be occluded. Every dropped entry was a real source-data issue the operator needs to see. Cluster-capping was the wrong tool.
+
+### The conflation
+
+The original slice-6 design packed three distinct concerns under one mechanism:
+
+| Concern | Shape | Right layer |
+|---|---|---|
+| **§12 `suggestedConfig` payload** | Enrichment — every actionable entry carries `{path, value, note}` pointing at the config-edit fix | Diagnostic-emit layer (this slice) — pure DataIntent enrichment, no information loss |
+| **Severity sort + axis cluster** | Presentation — group same-axis entries together, sort by severity within axis | Same layer — no information loss; pure reshape for navigation |
+| **Cap with overflow marker** | **Occlusion** — drop entries beyond N per axis, surface only the suppressed count | **Wrong layer; wrong tool.** "Noisy axes" is reduced at the *source* (strategy/pass layer per-finding-type emission gates), not at the emit boundary. |
+
+The first two are pure DataIntent enrichment over the existing `DiagnosticEntry` stream. The third — cluster-cap with occlusion — was a structural mistake. Validations against invariant cases are *meant* to be many; each represents a real source-data condition the operator must address. Suppressing them at the emit boundary is signal loss disguised as "actionability."
+
+### Reshape
+
+**Dropped from the shipped code:**
+- `ClusterCap` type + `defaults` + `unlimited` shapes — entire abstraction retired.
+- `MaxPerAxis` field + the cap-with-overflow-marker logic.
+- The `applyDefaults` convenience wrapper.
+- The "overflow marker on last retained entry" metadata-amendment (`axisOverflowCount` + `axisRetainedCount` + `axis` keys).
+
+**Kept (the principled core):**
+- `SuggestedConfig` typed record + `SuggestedConfig.create` / `createWithNote` smart constructors.
+- `DiagnosticEntry.SuggestedConfig : SuggestedConfig option` field.
+- `DiagnosticEntry.create` smart constructor (slice 5.13.smart-constructor-lift pattern).
+- `Axis.tryFromCode` derivation (also useful for slice 6.5's roll-up group-key per §11 contract).
+- `ActionableDiagnostics.organize` (renamed from `apply`) — severity-sort + axis-cluster + unclustered-entries-tail; **no occlusion**: `(organize entries).Length = entries.Length` always.
+- JSON emit path's `suggestedConfig` field surfacing (present when `Some`; omitted when `None` for back-compat).
+
+**Tests reshape:** 26 → 28 net (dropped 3 cap/overflow-marker tests; added 2 stronger no-occlusion tests including a 187-entry property witness). 184/184 green in 454ms.
+
+### Where "fewer findings" properly lives
+
+The operator's underlying concern — "V1's diagnostic JSONs are noisy/cluttered" — has a principled answer that is NOT after-the-fact suppression:
+
+**Per-finding-type emission gates at the strategy / policy layer.** V2's `Policy.NullabilityTighteningConfig.NullBudget` (`Policy.fs:139`) already exists as the per-rule threshold — when the null-fraction is below budget, the rule emits no finding; when above, it fires. The "noisy axis" reduces at registration time, not at emit time. Each finding that DOES fire is a real source defect surfaced in full.
+
+This decomposition aligns with V2's pillar 9 + L3-CC-Transform-Totality framing: tightening thresholds are `OperatorIntent of Tightening` (per-finding-type config knobs that gate emission); the diagnostic-emit layer is pure DataIntent enrichment over whatever the strategies produced. The two stay structurally separate.
+
+**Cash-out path:** Chapter C slice C.1 (tightening axis; priority slice) wires operator config to the existing `Policy.TighteningPolicy` + `TighteningOverride` structures. When that ships, an operator who wants "fewer nullability findings" raises `NullBudget` in their config and V2's `NullabilityRules` emit fewer findings — because the threshold gate didn't fire, not because the diagnostic-emit layer suppressed anything. The right tool at the right layer.
+
+### Discipline reinforced
+
+**Reshape under principal-operator pushback is a valid slice path** when the pushback names a structural concern the initial design got wrong. The principal's question — "Do you see this conflation too?" — was the right framing: not "is your code broken" but "is your design conflating two concerns?" The discipline absorbs the reshape inside the slice rather than shipping the conflation + filing a follow-up. The reshape is cheap when caught mid-slice (drop one type + rename one function + delete some tests); it would be substantial if caught at chapter close (operator complaints about silent source-defect occlusion in production runs).
+
+**"Actionability" means enrichment + presentation, not suppression.** The slice 1 logging-format contract §12 (`suggestedConfig` discipline) is the canonical shape of actionability: every actionable entry carries the fix-suggestion. That's information ADDED to entries, not entries DROPPED. The contract specifies enrichment, not occlusion; the slice-6 reshape aligns the implementation with the contract's actual semantic.
+
+**Source defects are first-class signal.** Validations against invariant cases (`tightening.nullability.*`, `profiling.foreignKey.orphanSample`, `tightening.uniqueIndex.*`) each name a single source-data condition the operator must address before deploy. The diagnostic-emit layer carries them to the operator faithfully — no clustering, no capping, no overflow markers. Operators sort, filter, and triage downstream via `jq` / `grep` / future tooling (post-chapter `v2 suggest-config <runId>` consumer per §12); the emit layer's job is faithful surfacing, not curated suppression.
+
+### Cross-references
+
+- Initial slice-6 design (occluding cluster-cap shape): commit before this reshape; reverted within the slice.
+- `docs/logging-format.md` §12 — `suggestedConfig` discipline (the contract's specified shape of actionability).
+- `src/Projection.Core/Policy.fs:139` — `NullabilityTighteningConfig.NullBudget` (the per-finding-type emission gate; structurally where "fewer findings" lives).
+- `CHAPTER_B_4_OPEN.md` slice 6 row updated to reflect reshape + no-occlusion invariant.
+- Chapter C slice C.1 (tightening axis priority slice) — operator-config wiring for per-finding-type emission gates; the principled answer to "reduce diagnostic-artifact noise" at the source layer.

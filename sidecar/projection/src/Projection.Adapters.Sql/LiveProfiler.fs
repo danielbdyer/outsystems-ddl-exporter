@@ -916,7 +916,8 @@ module LiveProfiler =
                                                     sampled.Length.ToString System.Globalization.CultureInfo.InvariantCulture,
                                                     ".")
                                               SsKey    = Some reference.SsKey
-                                              Metadata = metadata }
+                                              Metadata = metadata
+                                              SuggestedConfig = None }
                                 | _ -> None
                             | _ -> None))
 

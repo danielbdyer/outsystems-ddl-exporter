@@ -19,8 +19,28 @@ module internal DiagnosticDocument =
         | DiagnosticSeverity.Warning -> "Warning"
         | DiagnosticSeverity.Error   -> "Error"
 
+    /// Render the `suggestedConfig` JSON object per logging-format
+    /// contract §12. Field order matches the contract's `{path,
+    /// value, note}` quoted shape. `note` is omitted when `None`
+    /// (the JSON shape carries it only when the operator-rationale
+    /// is meaningful).
+    let private writeSuggestedConfig (w: Utf8JsonWriter) (cfg: SuggestedConfig) : unit =
+        w.WriteStartObject()
+        w.WriteString("path",  cfg.Path)
+        w.WriteString("value", cfg.Value)
+        match cfg.Note with
+        | Some n -> w.WriteString("note", n)
+        | None   -> ()
+        w.WriteEndObject()
+
     /// Render one `DiagnosticEntry` as a JSON object. Field order is
     /// fixed by the write sequence for T1 byte-determinism.
+    /// **Chapter B.4 slice 6:** `suggestedConfig` field surfaces
+    /// after `metadata` when the entry carries `SuggestedConfig =
+    /// Some _`; omitted otherwise so default-shape entries stay
+    /// shape-equivalent to pre-slice-6 output (existing consumer
+    /// JSON-parse code that doesn't know about `suggestedConfig`
+    /// continues working).
     let private writeEntry (w: Utf8JsonWriter) (e: DiagnosticEntry) : unit =
         w.WriteStartObject()
         w.WriteString("source",   e.Source)
@@ -37,6 +57,13 @@ module internal DiagnosticDocument =
         for (k, v) in e.Metadata |> Map.toSeq |> Seq.sortBy fst do
             w.WriteString(k, (v: string))
         w.WriteEndObject()
+        // SuggestedConfig: written only when present so default
+        // shape stays back-compatible with pre-slice-6 consumers.
+        match e.SuggestedConfig with
+        | Some cfg ->
+            w.WritePropertyName("suggestedConfig")
+            writeSuggestedConfig w cfg
+        | None -> ()
         w.WriteEndObject()
 
     /// Render the per-kind document for one kind: ssKey, name, plus
@@ -137,12 +164,21 @@ module DecisionLogEmitter =
     /// composer applies the filter when slices β + γ ship sibling
     /// emitters). For callers that have NOT pre-filtered, this
     /// emit produces the full audit log.
+    /// **Chapter B.4 slice 6:** entries pass through
+    /// `ActionableDiagnostics.organize` first — severity-sorted +
+    /// clustered by axis for navigation. No occlusion: every input
+    /// entry surfaces in the output (the earlier "cap at N per
+    /// axis with overflow marker" design dropped source defects;
+    /// the right response to noise is per-finding-type emission
+    /// gates at the strategy layer, not after-the-fact suppression
+    /// at the emit boundary).
     let emit
         (catalog: Catalog)
         (entries: DiagnosticEntry list)
         : Result<ArtifactByKind<JsonNode>, EmitError> =
         use _ = Bench.scope "emit.decisionLog.emit"
-        DiagnosticDocument.buildArtifact catalog entries
+        let organized = ActionableDiagnostics.organize entries
+        DiagnosticDocument.buildArtifact catalog organized
 
     /// Π_DecisionLog emit with routing pre-applied. Slice β + γ
     /// callers (the three-emitter composition) route entries
@@ -172,7 +208,9 @@ module OpportunitiesEmitter =
     let version : int = 1
 
     /// Π_Opportunities emit. Routes entries through `Routing.route`;
-    /// only those classified as `Opportunities` survive.
+    /// only those classified as `Opportunities` survive. Then
+    /// `ActionableDiagnostics.organize` sorts by severity + clusters
+    /// by axis for navigation. No occlusion.
     let emit
         (catalog: Catalog)
         (entries: DiagnosticEntry list)
@@ -181,7 +219,8 @@ module OpportunitiesEmitter =
         let filtered =
             entries
             |> List.filter (fun e -> Routing.route e = Opportunities)
-        DiagnosticDocument.buildArtifact catalog filtered
+        let organized = ActionableDiagnostics.organize filtered
+        DiagnosticDocument.buildArtifact catalog organized
 
     /// Π_Opportunities emit with routing pre-applied. Slice β + γ
     /// callers route entries through `Routing.partition` first.
@@ -204,7 +243,12 @@ module ValidationsEmitter =
     let version : int = 1
 
     /// Π_Validations emit. Routes entries through `Routing.route`;
-    /// only those classified as `Validations` survive.
+    /// only those classified as `Validations` survive. Then
+    /// `ActionableDiagnostics.organize` sorts by severity + clusters
+    /// by axis for navigation. **No occlusion** — every invariant-
+    /// case violation surfaces in the output; operators must see each
+    /// one. (Per-finding-type emission gates that reduce noise at
+    /// the source live in the strategy/policy layer, not here.)
     let emit
         (catalog: Catalog)
         (entries: DiagnosticEntry list)
@@ -213,7 +257,8 @@ module ValidationsEmitter =
         let filtered =
             entries
             |> List.filter (fun e -> Routing.route e = Validations)
-        DiagnosticDocument.buildArtifact catalog filtered
+        let organized = ActionableDiagnostics.organize filtered
+        DiagnosticDocument.buildArtifact catalog organized
 
     /// Π_Validations emit with routing pre-applied.
     let emitRouted

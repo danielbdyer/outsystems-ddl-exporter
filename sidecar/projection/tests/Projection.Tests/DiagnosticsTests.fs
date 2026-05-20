@@ -16,7 +16,8 @@ let private entry source severity code message =
       Code     = code
       Message  = message
       SsKey    = None
-      Metadata = Map.empty }
+      Metadata = Map.empty
+      SuggestedConfig = None }
 
 let private entryFor key source severity code message =
     { Source   = source
@@ -24,7 +25,8 @@ let private entryFor key source severity code message =
       Code     = code
       Message  = message
       SsKey    = Some key
-      Metadata = Map.empty }
+      Metadata = Map.empty
+      SuggestedConfig = None }
 
 // ---------------------------------------------------------------------------
 // Diagnostics: smart constructors.
