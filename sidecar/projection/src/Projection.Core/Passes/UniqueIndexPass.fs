@@ -148,6 +148,7 @@ module UniqueIndexPass =
                     Map.ofList [
                         "interventionId", decision.InterventionId
                     ]
+                SuggestedConfig = None
             }
 
     /// Run the UniqueIndexPass.

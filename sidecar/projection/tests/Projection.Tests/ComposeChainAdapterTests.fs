@@ -66,7 +66,8 @@ let private fixtureDiagnostic : DiagnosticEntry =
       Code = "slice.alpha.witness"
       Message = "lifted-pass propagation witness"
       SsKey = None
-      Metadata = Map.empty }
+      Metadata = Map.empty
+      SuggestedConfig = None }
 
 // ---------------------------------------------------------------------------
 // ComposeState shape.

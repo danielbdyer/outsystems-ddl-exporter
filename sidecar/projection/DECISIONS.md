@@ -219,7 +219,14 @@ table before continuing.
 | **Type providers** (`JsonProvider` for `osm_model.json`) | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | OSSYS adapter ships and JSON-shape evolution becomes a maintenance burden | OSSYS adapter ships at session 18 with hand-written DTOs; JSON-shape evolution has not yet surfaced as a burden (session 25) |
 | **`ICatalogReader` interface** (Position B → A) | 2026-05-13 (Anticipation vs. speculation in abstraction extraction) | A second *catalog* source materializes (DACPAC, OData, in-memory test reader; distinct from a second *variant* of an existing OSSYS source) | **Reaffirmed at chapter 3.2 open (axis 6) / close (2026-05-10).** `SnapshotRowsets` is a second *variant* of the OSSYS source, not a second source — per `CHAPTER_3_2_OPEN.md` axis 6, the Position B → A trigger does NOT fire. `ReadSide.read` is a profile/data reader, not a catalog reader (out of scope). The trigger condition was sharpened at chapter 3.2 close to make the variant-vs-source distinction explicit. OSSYS adapter still uses `parse : SnapshotSource -> Task<Result<Catalog>>` (Position B); interface lift remains deferred until DACPAC / OData / in-memory test reader materializes (chapter 3.7 slice ξ candidate; chapter-3.x DacpacEmitter may surface the second source). |
 | **`SnapshotRowsets` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature, session-20 amendment) | The JSON-projection-lossiness class needs unblocking — A1 SsKey bound resolution; `EspaceKind` distinction; `isSystemEntity` evidence; future class members (per `DECISIONS 2026-05-19 — naming the two classes of resolution patterns explicitly`) | **Cashed out — chapter 3.2 (commits 6dab9cd / 0354727 / d5d1812 / 6eae21f / a74b904). Variant implemented end-to-end across five slices: (1) SnapshotRowsets variant + RowsetBundle DTO + SsKey at all three levels; (2) reference rowsets (`#RefResolved + #FkReality`); (3) `EspaceKind` activation (Origin three-way real); (4) `IsSystemEntity` → `ModalityMark.SystemOwned`; (5) cross-source parity tests. A1's JSON-projection-lossiness bound resolved structurally (`OssysOriginal` Guid carriage). Three class members landed: SsKey at every level; EspaceKind; IsSystemEntity. Future class members (per-table column structure rowset 6; check constraints rowset 7; triggers rowset 18 — documented not-carried-forward) surface under fixture pressure as further deferred slices. See cash-out entry `2026-05-10 — SnapshotRowsets variant chapter 3.2 close` below.** |
-| **`LiveOssysConnection` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature) | V2 needs to operate without V1's chain in the loop entirely (real DB-touching variant) | Reserved in `SnapshotSource` DU (`CatalogReader.fs:58-62`); chapter-3+ when canary's deployment-validation arc materializes (session 25) |
+| **`LiveOssysConnection` variant of `SnapshotSource` + cluster (multi-env + UAT-users + user-reflow strategy + extraction-time knobs)** | 2026-05-17 (OSSYS adapter parse signature) | V2 needs to operate without V1's chain in the loop entirely (real DB-touching variant) | Reserved in `SnapshotSource` DU (`CatalogReader.fs:58-62`); chapter-3+ when canary's deployment-validation arc materializes (session 25). **Updated 2026-05-19 (chapter B.4 rescope):** the operator's V1 corporate-network remote HEAD owns the live OSSYS path today; V2 picks this up under a follow-up chapter when the corporate-network access path is available, which also lights the functional-equivalence arm of Phase B's exit gate (the structural arm closes in chapter B.4 against `SnapshotJson` / `SnapshotRowsets`). **Updated 2026-05-19 (axis-survey supplement):** this chapter also absorbs axis 10 (user reflow strategy + `ManualOverride` CSV-loader; `Policy.UserMatchingStrategy` DU + `ManualOverride` already exist structurally at `Policy.fs:323+343`; missing the CSV file-format adapter at `Projection.Adapters.UserMap.UserMapLoader` per the chapter-4.2 deferral) + axis 14 (sampling threshold + command timeout + sampling cap — V1 has these on SqlOptions). The V1 corporate-network HEAD has multi-env + UAT-users + user-reflow-strategy + extraction-time-knobs all done together; V2 picks the cluster up as a unit. |
+| **Static-seed parent-handling behavior** (dispersed from struck DynamicDataSection) | 2026-05-19 (axis-survey supplement) | A real operator workflow surfaces with FK-parent handling requirements that diverge from V2's static-seed-emitter default. V1's `StaticSeedParentHandlingMode` enum (`Include` / etc.) lived under V1's `DynamicData` config umbrella — V2 stripped the umbrella per the conflation strike. If a workflow demands operator-configurable parent handling, the static-seed emitter gains an `Options` parameter at that slice time. Today V2's behavior is hardcoded. | Not an operator-overlay axis (not surfaced through Policy DU); internal-to-emitter. Surfaces under concrete operator demand. See `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)` entry below. |
+| **`Spectre.Console` TtyRenderer + dual-channel `--json-out` routing micro-chapter** | 2026-05-20 (logging-format implementation gap audit) | Operator runs the CLI + reports NDJSON-only stderr emission as unfriendly for interactive runs (verbatim from `docs/logging-format.md` §15.3 post-chapter framing). Substrate sketched in §15.1 (two-channel diagram) + §15.3 (`Projection.Cli/TtyRenderer.fs` F# adapter shape). The micro-chapter pairs with the `data-twin` CLI verb row above — both operator-facing UX-layer surfaces over established structural substrate. | Deferred at 2026-05-20. Slice 6.5 ships the channel-1-only `LogSink` (the structural commitment); channel-2 TtyRenderer is the optional layer on top. Per the contract: "Channel 2 (`--pretty`) is a quality-of-life feature on top of the structural commitment, never a substitute for it." See `DECISIONS 2026-05-20 (logging-format implementation gap audit)` entry below. |
+| **Standalone `projection extract` + `projection profile` CLI subcommands** | 2026-05-19 (chapter B.4 rescope — chapter-mid scope change) | A concrete operator-paced workflow surfaces that needs catalog-extract or profile-attach as a stand-alone step independent of `full-export` (e.g., a CI lane that materializes the snapshot without emitting; a profile-cache refresh job). The chapter-B.4-open's slice plan named both subcommands at slices 6 + 7; the rescope drops them after operator framing produced no workflow demand independent of full-export. | Deferred at chapter B.4 (2026-05-19). Today `full-export` is the only operator-touchable CLI subcommand. Reserved code paths in the logging-format contract still name `extract.*` + `profile.*` event categories (these fire from `full-export`'s orchestration); promoting them to standalone subcommands requires only a CLI surface (no Core change). See `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` entry below. |
+| **Multi-environment configuration (DEV / TEST / UAT / PROD) + UAT-users logic** | 2026-05-19 (chapter B.4 rescope) | V2 brings the operator's V1 corporate-network remote HEAD into V2's tree — both components are fully done in V1 today; the V2 carbon-copy path is gated on access to the V1 implementation. Pairs with the `LiveOssysConnection` deferral above (live OSSYS connectivity is the bridge that lets multi-environment / UAT-users be exercised end-to-end). | Deferred at chapter B.4. Today `full-export` uses a single-environment config shape; multi-environment + UAT-users carbon-copy lands when V1 remote HEAD is available. See `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` entry below. |
+| **`data-twin` CLI verb wrapping `DockerImageEmitter`** | 2026-05-19 (chapter B.4 rescope) | Operator's dev-team workflow surfaces concretely (one-click `docker pull` + `docker run` to stand up a SQL Server replica seeded from the projected schema). The substrate already shipped at chapter 3.x close — `DockerImageEmitter.emit : Catalog -> Result<DockerImageContext>` produces `{ Dockerfile; DacpacBytes; EntrypointScript; Readme }` ready for `docker build .`. The verb is a CLI wrapper over the existing emitter. | Deferred at chapter B.4. Surfaces under its own small chapter when the operator-paced dev-team workflow demands it; sequencing after the V1 corporate-network material lands so the verb is designed against the full operator-paced workflow context. The DACPAC binary emission lives under this verb (NOT under `full-export`'s output set per the rescope). See `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` entry below and `CHAPTER_3_X_CLOSE.md` for the DockerImageEmitter substrate. |
+| **`MetadataContractOverrides` wiring into V2 `MetadataSnapshotRunner` mappers** | 2026-05-19 (slice B.4.5.metadata-contract-overrides) | A real V1-source drift event surfaces a strict column in V2 production extraction producing NULL where V2's mapper expects non-NULL. Today V2 has zero direct wiring carry-over from V1 (V1's sole consumer `AttributeJsonResultSetProcessor.IsColumnOptional("AttributeJson", "AttributesJson")` reads the V1-SUNSET `attrJson` rowset that V2 skips at `MetadataSnapshotRunner.fs:778`). Per IR-grows-under-evidence: pick the relaxable column on real drift, not speculatively. | Mechanism shipped at slice 5 (`MetadataContractOverrides.fs`); structurally available + tested; wiring deferred. Cash-out shape: thread `MetadataContractOverrides` through `runAndParse` as a parameter; introduce `readStringRelaxable resultSet column ordinal overrides` helper that consults `isColumnOptional` and dispatches to `readString` or `readStringOpt`; refactor the affected mapper to use the helper. See `DECISIONS 2026-05-19 (slice B.4.5.metadata-contract-overrides)` entry below. |
+| **`OverlayAxis.Extraction` candidate (sixth variant)** | 2026-05-19 (slice B.4.5.metadata-contract-overrides) | A second consumer of operator-intent-at-the-extraction-boundary materializes beyond `MetadataContractOverrides`. Today the only candidate is `MetadataContractOverrides` itself; per chapter A.4.7 open Q9 trigger-fires discipline, a single candidate doesn't yet warrant a sixth `OverlayAxis` variant. Slice 7 decides at TransformRegistry wiring time whether to stretch `Tightening` with a docstring note OR add the sixth variant when the second consumer materializes. | Open. The MetadataContractOverrides `OverlayAxis` classification at slice 7 sets the precedent: either stretches `Tightening` (operator-decision-about-constraint-enforcement; explicit docstring note that extraction-time contract relaxation is structurally distinct from emission-time tightening) OR adds the sixth variant. The deferral records the open question so future agents see the deliberate ambiguity. |
 | **`Microsoft.SqlServer.Dac` (DacFx) adoption in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 3.x DacpacEmitter opens. **Hard requirement, not preference**: the .dacpac file format is a Microsoft-proprietary ZIP-with-manifest-XML structure — hand-rolling it via `System.IO.Compression.ZipArchive` + manual XML composition is the prototypical "text-builder-as-first-instinct" failure mode. DacFx (`Microsoft.SqlServer.Dac` NuGet) IS the canonical use-case-specific library; per pillar 7, no LINT-ALLOW will excuse a hand-rolled .dacpac. The chapter-3.x agent reads this entry at chapter open and writes the cash-out below the Active deferrals table on adoption. | **Cashed out — chapter 3.x slice α (2026-05-11) adopts `Microsoft.SqlServer.DacFx` v162.x in `Projection.Targets.SSDT`.** Pure F# wrapper (empirical condition: `use TSqlModel`, `model.AddObjects`, `DacPackageExtensions.BuildPackage` — four `IDisposable`-aware calls F# handles natively). No C# subproject; pre-scope §6.2 bias yielded under empirical pressure. See `2026-05-11 — Chapter 3.x DacpacEmitter open` entry below. |
 | **MigrationDependenciesEmitter + BootstrapEmitter typed-AST adoption from slice α** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 4.1.B slices ε (MigrationDependenciesEmitter) / ζ (BootstrapEmitter) open. **Hard requirement**: both emitters are MERGE / INSERT producers; per the Tier-1 #1 cash-out (`bface9a` — chapter 4.1.B StaticSeedsEmitter MERGE → ScriptDom MergeStatement), every new SQL-emitting consumer starts on the typed-AST library, not StringBuilder. `ScriptDomBuild.buildMergeStatement` + `ScriptDomBuild.buildInsertRow` + `SqlLiteral.ofRaw` are the precedent surface; cross-target dep on Projection.Targets.SSDT acceptable per the StaticSeedsEmitter precedent (single-line LINT-ALLOW with rationale). The chapter 4.1.B slice agent reads this entry at slice open. | **Cashed out — chapter 4.1.B slice ε (commit `0aa3761`) + slice ζ (commit `9544006`).** MigrationDependenciesEmitter ships the typed-AST MERGE + UPDATE shape mirroring StaticSeedsEmitter; BootstrapEmitter ships as structural stub (no SQL emission today; UserRemapContext slot pending chapter 4.2). See `CHAPTER_4_1_B_CLOSE.md` and `2026-05-11 — Chapter 4.1.B close` entry below. |
 | **Statement DU MERGE/UPDATE promotion** | 2026-05-11 (Chapter 4.1.B close) | A third MERGE/UPDATE consumer lands (e.g., chapter 3.x DacpacEmitter Phase-2 path; future Faker-style data emitter; future Profile-attached row source in chapter 4.3). Today `Projection.Core.Statement` carries SSDT DDL variants only (CreateTable / CreateIndex / InsertRow / SetIdentityInsert / Comment / Blank); MERGE + UPDATE are emitted directly via `ScriptDomBuild.buildMergeStatement` / `buildUpdateStatement` + `ScriptDomGenerate.generateOne` + LINT-ALLOW'd `;\nGO\n` text suffix. 6 LINT-ALLOWs total across StaticSeedsEmitter + MigrationDependenciesEmitter at terminal text concatenation boundaries. Promoting `Statement` to include `Merge of MergeBuildArgs \| Update of UpdateBuildArgs` lets `ScriptDomGenerate.toText` handle per-kind concat structurally + retire all 6. Cross-target lift required (MergeBuildArgs / UpdateBuildArgs from Projection.Targets.SSDT to Projection.Core). | Two consumers today (StaticSeeds + MigrationDeps); deferred per two-consumer threshold. See `2026-05-11 — Chapter 4.1.B close` entry. |
@@ -18072,3 +18079,461 @@ The chapter's V2-driver-axis-stakes contribution: **DATA axis silent-default cut
 - `ADMIRE.md` — Faker evidence chain; all four nodes shipped (categorical / numeric / cardinality / joint).
 - `DECISIONS Active deferrals — Faker emitter` — trigger structurally met; awaits explicit promotion at chapter B.4 / chapter 5 open.
 - V1 source: V1 had no direct FK-correlation surface; slice 8 is V2-growth per `ADMIRE.md`'s V2-growth admire mode.
+
+## 2026-05-19 (slice B.4.3.composite-pk-fk) — Composite-PK FK reality probe resolved as out-of-scope; the slice-1 `AmbiguousMapping` outcome is the right answer
+
+### Scope
+
+Chapter B.4 slice 3 was scoped (per `CHAPTER_B_4_OPEN.md`) as "cash out the slice-1 `ForeignKeyReality` composite-PK deferral via `projectTupleKeys`." The chapter B.3 close letter named this as an open question (line 115: "Composite-PK FK extension?"). At slice open, surfacing the design choice to the principal-PO produced the canonical answer: **composite primary keys are not an OutSystems use case the operator has ever encountered**; the slice's premise (that V2 needs to probe FK reality against composite-PK targets) does not match operator-reality demand.
+
+### What changes (documentation only; no code change)
+
+The `Cache.deriveForeignKeyRealitiesWith` branch that returns `ambiguous` for non-single-column-PK targets (`LiveProfiler.fs:802`) stands as the correct answer. Same for `Cache.deriveForeignKeyOrphanSamplesWith` (`LiveProfiler.fs:912`). A clarifying comment near each branch points at this DECISIONS entry so future readers see the operator-confirmed scope decision.
+
+No fixture, no test, no code path. The composite-PK FK probe is not a real consumer pressure; resolving it would over-engineer a degenerate case.
+
+### Why this isn't deferring the same deferral again
+
+The earlier deferral (`CHAPTER_B_3_CLOSE.md` open question; chapter B.3 slice 1) said the cash-out *was structurally trivial via* `projectTupleKeys` and awaited a "composite-PK fixture or consumer demand." Today's resolution closes the question via the second path: **the consumer demand does not exist**. This is not a re-deferral; it is an empirical determination that the degenerate case has no operator consumer.
+
+If composite PKs ever surface in a real OS-source catalog (e.g., a custom-defined entity with explicit multi-column PK declared via OS extension), the `Reference` IR's singular `SourceAttribute` constraint would block resolution anyway — the cross-module FK IR refinement deferral (Active deferrals row, "Cross-module FK IR refinement") covers that case under its own trigger. So even under hypothetical future composite-PK pressure, the work would land via the IR refinement deferral, not this one.
+
+### Discipline reinforced
+
+**Defer-then-resolve-as-out-of-scope is a valid resolution path for an open question.** Open questions can close by (a) cash-out under consumer pressure, (b) re-affirmation that the trigger has not fired, OR (c) operator-confirmed determination that the case is not a real consumer. Path (c) is the resolution today. The chapter-close-ritual's "Active deferrals scan" must permit (c) as a closure shape; the failure mode would be treating (c) as "still deferred" and re-scoping the same work at each chapter open.
+
+### Chapter B.4 slice count
+
+Chapter B.4 plan dropped from 8 slices to **7 effective slices** (slice 3 closes via documentation only). The chapter-close gate is unaffected — the four substantive deliverables (logging-format contract; capture retirement; ModuleFilter + MetadataContractOverrides ports; CLI subcommand triad) all proceed.
+
+### Cross-references
+
+- `CHAPTER_B_4_OPEN.md` slice 3 row marked DONE-AS-RESOLVED-OUT-OF-SCOPE with this DECISIONS entry as cross-reference.
+- `CHAPTER_B_3_CLOSE.md` open question 3 (line 115) closes via path (c).
+- `LiveProfiler.fs` clarifying comments at the two `ambiguous` branches.
+- Active deferrals index: this deferral was never formally added (it lived as a chapter B.3 close-letter open question); no removal required.
+
+
+## 2026-05-19 (slice B.4.{4-7}.rescope) — Chapter B.4 mid-chapter rescope: drop standalone extract+profile CLI subcommands; add actionable-diagnostics slice; rescope full-export; defer LiveOssysConnection + multi-env + UAT-users + data-twin verb to a follow-up chapter
+
+### What changed
+
+Chapter B.4 opened (2026-05-19) with 8 substantive slices and the framing "operator owns extract / profile / full-export subcommands end-to-end against snapshot connectivity; Phase B exit gate closes here." After slices 1 + 2 + 3 landed (logging-format contract; capture retirement; composite-PK FK resolved out-of-scope), a chapter-mid alignment with the operator narrowed the chapter's structural shape.
+
+**New shape (7 effective slices, 4 remaining post-rescope):**
+
+| # | Slice | Status |
+|---|---|---|
+| 1 | logging-format-contract | DONE |
+| 2 | capture-retirement | DONE |
+| 3 | composite-pk-fk (resolved out-of-scope) | DONE |
+| 4 | module-filter-port | next |
+| 5 | metadata-contract-overrides | next |
+| **6** | **actionable-diagnostics (NEW)** | next |
+| **7** | **full-export-cli (rescoped from old slice 8)** | next |
+
+**Dropped:** old slice 6 (`projection extract` standalone subcommand) + old slice 7 (`projection profile` standalone subcommand).
+
+**Added:** new slice 6 (`actionable-diagnostics` — operationalizes logging-format contract §12 on the JSON-artifact emitters with `suggestedConfig` payloads + filter/cluster/cap on noisy axes).
+
+**Rescoped:** new slice 7 (`full-export-cli`) — operator UX narrowed to **config + `--output` override only**; connectivity narrowed to **`SnapshotJson` / `SnapshotRowsets` only** (`LiveOssysConnection` deferred); output set narrowed to **SSDT project + seed/migration scripts + actionable diagnostic JSONs** (DACPAC binary deferred to a separate `data-twin` CLI verb chapter).
+
+### Operator framing
+
+The rescope reflects three operator inputs from the chapter-mid alignment conversation:
+
+1. **"Drop extract + profile standalone subcommands; just full-export."** No operator-paced workflow demands catalog-extract or profile-attach as a stand-alone step independent of full-export. Standalone subcommands would add CLI surface area without operator pull; the orchestrated `full-export` carries the same internal stages and emits the same events.
+
+2. **"DACPAC binary needs to be its own command — something like 'data-twin' — a one-shot SQL Server replica that's ready to be dockerized for the dev team."** The substrate already shipped at chapter 3.x close — `DockerImageEmitter.emit : Catalog -> Result<DockerImageContext>` produces `{ Dockerfile; DacpacBytes; EntrypointScript; Readme }` ready for `docker build .` (see `CHAPTER_3_X_CLOSE.md` slice δ_dock). What's missing is the CLI verb that surfaces it. That verb lives in its own chapter, not as a flag under `full-export`.
+
+3. **"Multi-environment + UAT-users are fully done in my V1 corporate-network remote HEAD; defer the environment concerns for now."** V2 picks them up via carbon-copy under a follow-up chapter when the V1 implementation is accessible. Pairs with `LiveOssysConnection` deferral (the bridge that lets multi-environment / UAT-users be exercised end-to-end). Chapter B.4's `full-export` uses a single-environment config shape against snapshot connectivity for now.
+
+4. **"V1's diagnostic JSONs are noisy and cluttered — V2's need to be actionable."** V2's chapter-4.3 Operational Diagnostics emitters (`DecisionLogEmitter` / `OpportunitiesEmitter` / `ValidationsEmitter`) write per-finding entries but inherit V1's noise: every finding emitted equally; no severity sort; no clustering by axis; no cap on noisy axes; no operator-targeted "here's the config edit that would address this" payload. The new slice 6 operationalizes the logging-format contract's §12 `suggestedConfig` discipline on the artifact side AND clusters/caps the output so operators can act on the JSONs without re-running the CLI.
+
+### Why this isn't slipping the schedule
+
+The chapter-open estimated "~2-3 weeks with hygiene close folded in" for 8 slices. The rescope drops two slices (extract + profile subcommands; each ~1-2 days of CLI surface work) and adds one slice (actionable-diagnostics; ~3-4 days of property-tested artifact enrichment). Net delta: roughly neutral. The chapter still closes inside the same estimated window; the structural deliverable shifts from "CLI subcommand triad" to "single CLI subcommand + actionable diagnostics" — a substitution of substance for breadth.
+
+### What this changes about Phase B's exit gate
+
+Phase B's exit criterion per `V2_PRODUCTION_CUTOVER.md §8.2` requires (a) L3 catalog reaches target bucket; (b) V2 `full-export` runs against OSSYS and produces functionally-equivalent `osm_model.json` to V1; (c) V2 profile probes produce functionally-equivalent Profile data; (d) V2 logging format documented; (e) ≥1 full end-to-end production dry-run completed.
+
+**The rescope splits the gate into two arms:**
+
+- **Structural arm (chapter B.4 closes this):** (a) L3 catalog includes L3-X11 + L3-X12; (d) logging format documented; (e structural) V2 `full-export` runs end-to-end against snapshot connectivity producing SSDT + seeds + migration + actionable diagnostics with conforming event stream + cluster-capped JSON artifacts. Verified by the Docker-gated `full-export` integration test + property tests on the actionable-diagnostics enrichment.
+- **Functional-equivalence arm (deferred to a follow-up chapter):** (b) V2 vs V1 `osm_model.json` byte-comparison against live OSSYS; (c) V2 vs V1 Profile JSON byte-comparison against live OSSYS; (e functional) production dry-run on a real OS instance. Gated on the `LiveOssysConnection` deferral closing — which gates on the operator's V1 corporate-network remote HEAD being accessible to V2.
+
+The structural arm is what chapter B.4 ships; the functional arm waits on the live OSSYS path. V2_PRODUCTION_CUTOVER's §8.2 exit-criterion language stands — the gate's two arms close in two chapters, not one.
+
+### Why splitting is the right call (and not "ship a half gate")
+
+The functional-equivalence arm is inherently gated on infrastructure outside V2's control: V1's corporate-network HEAD owns the live OSSYS connection, multi-environment config, UAT-users logic. Trying to land all of it in chapter B.4 would (a) front-load uncertainty on V2's structural commitments, (b) force speculative carbon-copy of V1 implementations the agent cannot read today, (c) create back-pressure on the structural deliverables (SSDT emit + actionable diagnostics) that ARE accessible today and that ARE the operator-touchable surface for the cutover dry-run. Splitting the gate lets the structural arm close on schedule; the functional arm closes when its blocker (corporate-network access path) lifts. Per the chapter-close-ritual discipline: closing a chapter with a partial exit gate is acceptable when the partial closure is structurally complete AND the deferred portion has a named blocker AND the deferred portion has its own re-open trigger (here: `LiveOssysConnection` row in the Active deferrals index).
+
+### Discipline reinforced
+
+**Chapter-mid scope changes earn a substantive DECISIONS entry, not just a chapter-open update.** The chapter-open document is the strategic frame; substantive scope changes (drop slices, add slices, rescope slices, defer phase-exit-gate arms) need a citation-bearing entry that future agents can find via the DECISIONS index. The chapter-open update is the index pointer; the DECISIONS entry is the resolution surface.
+
+**Substitution of substance for breadth is a valid rescope shape.** Dropping two CLI subcommands to add one actionable-diagnostics slice is not "less work" — it is "different work that operator pull says matters more." The chapter's structural commitment (V2 owns the operator-facing surface; logging contract operationalized; ports carbon-copied) is unchanged.
+
+### Cross-references
+
+- `CHAPTER_B_4_OPEN.md` updated to reflect new 7-slice plan, dropped subcommands, new actionable-diagnostics slice, rescoped full-export, expanded Out-of-scope section.
+- `sidecar/projection/docs/logging-format.md` §1 + §18 updated to reflect new consumer set + new slice table.
+- Active deferrals index — three new rows landed (standalone extract+profile subcommands; multi-environment + UAT-users; data-twin CLI verb); `LiveOssysConnection` row updated with the corporate-network-access framing.
+- `CHAPTER_3_X_CLOSE.md` already documents the `DockerImageEmitter` substrate (slice δ_dock) — the `data-twin` verb's chapter will pick that up as the wrapped surface.
+
+## 2026-05-19 (slice B.4.4.module-filter-port) — ModuleFilter carbon-copied from V1 to Projection.Core; V1's IsSystemModule per-module flag translates to V2's per-kind ModalityMark.SystemOwned aggregate; ValidationOverrides axis routed to slice 5 not here
+
+### What landed
+
+`src/Projection.Core/ModuleFilter.fs` (~330 LOC) — single F# file consolidating V1's three carbon-copy donor files:
+- `src/Osm.Pipeline/ModelIngestion/ModuleFilter.cs` (~140 LOC; the executor)
+- `src/Osm.Domain/Configuration/ModuleFilterOptions.cs` (~220 LOC; the operator-facing options)
+- `src/Osm.Domain/Configuration/ModuleEntityFilterOptions.cs` (~130 LOC; per-module entity restrictions)
+
+Plus 30 new tests at `tests/Projection.Tests/ModuleFilterTests.fs` (all passing; 76/76 green across the regression-critical surfaces — ModuleFilter + CatalogTests + ConfigTests — at 152ms total). Build clean under `TreatWarningsAsErrors=true`. File-header citation + ADMIRE entry per the V2 self-containment + carbon-copy editorial inheritance discipline.
+
+### V1-to-V2 vocabulary translation
+
+| V1 (C#) | V2 (F#) |
+|---|---|
+| `OsmModel` | `Catalog` |
+| `ModuleModel` | `Module` |
+| `EntityModel` | `Kind` |
+| `ModuleName` | `Name` |
+| `ImmutableArray<ModuleName>` | `Set<string>` (lowercase-normalized) + `string list` (original-case for diagnostics) |
+| `ImmutableDictionary<string, ModuleEntityFilterOptions>` | `Map<string, ModuleEntityFilter>` |
+| `ModuleModel.IsSystemModule` (per-module bit) | `Kind.Modality |> List.contains ModalityMark.SystemOwned` aggregated to module via `every kind is SystemOwned` |
+| `ModuleModel.IsActive` | `Module.IsActive` (same field; chapter A.0' slice β IR fidelity lift surfaced it) |
+| `Result<OsmModel>` | `Result<Catalog>` (V2's `Microsoft.FSharp.Core.Result<'a, ValidationError list>` alias) |
+
+### Three substantive translation decisions
+
+1. **`IsSystemModule` → per-kind `ModalityMark.SystemOwned` aggregate.** V1's per-module bit becomes V2's per-kind modality marked at adapter time per `CatalogReader.fs:2109` (`if kindRow.IsSystemEntity then yield SystemOwned`). The aggregate test "every kind in this module is SystemOwned" is the cleanest translation. A mixed-modality module (some system + some app kinds) passes the filter in V2 even when `IncludeSystemModules = false`; V1 would have dropped it if its per-module bit was set. Surface as a refined translation if a real V1 mixed-modality fixture round-trip surfaces divergence; otherwise the per-kind shape is the cleaner V2 invariant.
+
+2. **`ValidationOverrides` axis NOT ported here.** V1's `ModuleFilterOptions.ValidationOverrides` is a per-module validation suppression surface coupled to V1's monolithic model layer. Structurally it is a `MetadataContractOverrides` concern (operator-supplied override of metadata-contract validation per module); slice 5 (chapter B.4.5) is the natural home. The V2 port at this slice carries no `ValidationOverrides` field on `ModuleFilterOptions`; slice 5 lands the related surface separately.
+
+3. **Three-files-into-one F# consolidation.** V1's C# class-per-file convention separates `ModuleFilter` (executor) from `ModuleFilterOptions` (operator DTO) from `ModuleEntityFilterOptions` (per-module-entity DTO). V2's F# convention consolidates related types + the consuming operation under the bounded-context module name (`Projection.Core.ModuleFilter` carries `ModuleFilterOptions`, `ModuleEntityFilter`, and the `apply` operation). Same shape; cleaner navigation.
+
+### Pillar 9 — `OperatorIntent of Selection`
+
+Every axis in `ModuleFilterOptions` (module-name list; `IncludeSystemModules`; `IncludeInactiveModules`; per-module entity restrictions) expresses operator-supplied intent narrowing the universe of work the downstream pipeline operates against. None of these fields represent data intention; an empty-options instance (`ModuleFilter.empty`) is the identity transformation (DataIntent-preserving pass-through). The `ModuleFilter.apply` function short-circuits to `Ok input` when `hasFilter opts` returns false — the no-operator-intent path is the structural skeleton.
+
+### TransformRegistry wiring deferred to slice 7
+
+This slice ships the pure filter only. The `RegisteredTransform<ModuleFilterOptions, Catalog>` registration + `transform.applied` event emission per the logging-format contract §18 slice-4 cue (`config.toggleResolved` per resolved rule + `transform.applied` carrying `intent=OperatorIntent, overlayAxis=Selection`) land at slice 7 (`full-export` CLI) where the orchestrator invokes the filter against an operator-supplied config + emits the conforming events. Splitting the structural surface (Core) from the orchestration surface (CLI) follows the pillar 9 + L3-CC-Transform-Totality bidirectional contract: the filter is the structural seam; the registration is the type-witnessed-totality side. Both land in the chapter; the orchestration side waits for the consumer.
+
+### Discipline reinforced
+
+**Carbon-copy editorial inheritance is consolidate-friendly.** V2's F# convention consolidates three V1 C# files into one bounded-context module without losing structural fidelity. The carbon-copy is **partial-refactor at copy time** per the discipline — V2 vocabulary applied; structural shape preserved; deliberately-omitted V1 axis (`ValidationOverrides`) routed to its natural V2 home with cross-reference. Future agents reading `ModuleFilter.fs` see the V1 source cited in the file-header + the V2 translation decisions documented in the file's docstrings.
+
+**Big-O audit at construction time.** `apply` builds the catalog-index map once at the start; per-operator-name lookups are O(1) against the map; per-module entity-filter lookups are O(1) against the entity-filter map; per-kind name comparisons inside a module are O(k) where k is the entity-filter size (small constant). Total complexity: O(modules + filters + filtered-kinds). No naive O(modules × filters) scans.
+
+### Cross-references
+
+- `ADMIRE.md` — 2026-05-19 entry: `ModuleFilter` + `ModuleFilterOptions` + `ModuleEntityFilterOptions` carbon-copy log with three V1 source paths, V2 location, refactor status, citation comment.
+- `CHAPTER_B_4_OPEN.md` slice 4 row will flip to DONE referencing this entry.
+- `tests/Projection.Tests/ModuleFilterTests.fs` — 30 tests covering every axis + smart-constructor validation + algebraic properties.
+- `src/Projection.Pipeline/Config.fs` `ModelSection` already carries the operator-facing config record (`Modules`, `IncludeSystemModules`, `IncludeInactiveModules`, `ValidationOverrides`); slice 7 wires the config record through `ModuleFilter.createOptions` into `ModuleFilter.apply`.
+
+## 2026-05-19 (slice B.4.5.metadata-contract-overrides) — V1 MetadataContractOverrides mechanism carbon-copied to Projection.Adapters.OssysSql; wiring deferred (no current V2 consumer — V1's sole consumer reads a V1-SUNSET rowset V2 skips); per-attribute tightening overrides found to be already present structurally in V2 via Policy.TighteningOverride
+
+### What landed
+
+`src/Projection.Adapters.OssysSql/MetadataContractOverrides.fs` (~290 LOC) — F# port of V1's `Osm.Pipeline.SqlExtraction.MetadataContractOverrides` (~140 LOC). Plus 25 new tests at `tests/Projection.Tests/MetadataContractOverridesTests.fs` (all passing; 101/101 green across the regression-critical surfaces — MetadataContractOverrides + ModuleFilter + CatalogTests + ConfigTests — at 184ms total). Build clean under `TreatWarningsAsErrors=true`. File-header citation + ADMIRE entry per the V2 self-containment + carbon-copy editorial inheritance discipline.
+
+### V2 refactor from V1 (per the carbon-copy editorial discipline)
+
+| V1 (C#) | V2 (F#) |
+|---|---|
+| `MetadataContractOverrides` class with two constructors | Record + `[<RequireQualifiedAccess>] module MetadataContractOverrides` |
+| `IReadOnlyDictionary<string, HashSet<string>>` with `OrdinalIgnoreCase` comparer | `Map<string, Set<string>>` with explicit lowercase normalization at construction |
+| `Strict` static property (action-shaped name) | `MetadataContractOverrides.empty` (concept-shaped per pillar 8) |
+| Constructor throws `ArgumentException` on first blank input | Smart constructor returns `Result<MetadataContractOverrides>` accumulating per-entry validation errors |
+| `IsColumnOptional` throws on blank inputs | Returns `false` (safe "strict" default; mapper passing a blank name is a V2-side bug, not an operator-input issue) |
+| `OptionalColumns` getter materializes `IReadOnlyDictionary<string, IReadOnlyCollection<string>>` per call | `OptionalColumns : Map<string, Set<string>>` is the value type itself; no per-access materialization |
+| Original-case keys preserved by storing as the dictionary's key | Original-case names preserved separately in `ResultSetLabels` / `ColumnLabels` for diagnostic round-trip (mirrors slice-4 `ModuleFilter` convention) |
+
+### Three substantive findings
+
+1. **V1's `MetadataContractOverrides` is narrower than chapter B.4 open's framing.** The chapter B.4 open characterized this slice as "operator-supplied overrides for the metadata-contract surface (per-attribute tightening / emission overrides)." V1's actual `MetadataContractOverrides` is the **SQL-extraction column-relaxation surface** — declaring specific result-set columns as optional at extraction time. V1 has exactly one production consumer: `AttributeJsonResultSetProcessor.IsColumnOptional("AttributeJson", "AttributesJson")`. The chapter-open's framing reflected an imprecise mental model of what V1's component does; the carbon-copy here lands the V1-parity mechanism, not the broader per-attribute overrides surface.
+
+2. **V2 already has per-attribute tightening overrides structurally.** `Projection.Core.Policy.TighteningOverride` (`Policy.fs:118`) is SsKey-keyed with `OverrideAction.KeepNullable`, embedded in `NullabilityTighteningConfig.Overrides`. The mechanism the chapter B.4 open framed ("per-attribute tightening overrides") exists; what's missing is the operator-facing config wiring. Slice 7 wires the operator's config surface to the existing V2 mechanism — no new structural type is needed.
+
+3. **No V2 consumer for V1's `MetadataContractOverrides` today.** V1's single call site consults `IsColumnOptional("AttributeJson", "AttributesJson")` against the V1 JSON aggregation column `AttributesJson` in the `AttributeJson` rowset. V2's `MetadataSnapshotRunner.fs:778` SKIPS the `attrJson` rowset entirely (`do! skip "attrJson"`) because V2 reads the structured `attributes` rowset (rowset 3) directly — the V1 JSON aggregation is V1-SUNSET in V2. So V2 has zero direct carry-over wiring site for V1's override. This slice ships the **mechanism** (data type + smart constructor + lookup); the deferred wiring trigger is "a real V1-source drift event surfaces a strict column producing NULL in V2 production extraction."
+
+### Active deferral added (slice 7 wiring + OverlayAxis classification)
+
+Two related-but-distinct deferrals added to the Active deferrals index:
+
+- **`MetadataContractOverrides` wiring into V2 mappers**: Mechanism shipped at slice 5; wiring into specific `MetadataSnapshotRunner` mappers (relaxing a strict column to a `readStringRelaxable`-style variant under operator opt-in) defers until a real V1-source drift event surfaces a strict column producing NULL in production. The wiring requires either a per-mapper-parameter pass of the `MetadataContractOverrides` value OR a `readStringMaybeOptional` helper that consults the override at runtime. Per IR-grows-under-evidence: pick the relaxable column on real drift, not speculatively.
+
+- **`OverlayAxis.Extraction` candidate**: Operator intent in `MetadataContractOverrides` is "weaken the extraction-time metadata contract." None of V2's five existing `OverlayAxis` variants (`Selection | Emission | Insertion | Tightening | Ordering`) describe extraction-time contract relaxation cleanly. `Tightening` is the closest semantic stretch (operator decision about constraint enforcement) but V2 reserves that axis for catalog-*emit* constraint enforcement, not source-data-*read* tolerance. Per the chapter A.4.7 open's Q9 trigger-fires discipline: real evidence of an operator-intent axis not subsumed by the existing five would justify a sixth `OverlayAxis.Extraction` variant. Slice 7's TransformRegistry registration site decides at wiring time.
+
+### Pillar 9 — open classification at this slice
+
+The mechanism ships uncategorized at slice 5. The TransformRegistry registration + `transform.applied` event emission per the logging-format contract land at slice 7 alongside the operator-config-resolution surface. Splitting the structural surface (mechanism) from the orchestration surface (registration + classification) follows the pillar 9 + L3-CC-Transform-Totality bidirectional contract: the mechanism is the structural seam; the registration is the type-witnessed-totality side. Both land in the chapter; the orchestration side waits for the consumer-pressure decision at slice 7.
+
+### Discipline reinforced
+
+**Slice-open framing audit catches scope mischaracterizations.** The chapter B.4 open named slice 5 as "per-attribute tightening / emission overrides" — V1's actual `MetadataContractOverrides` is the extraction-time column-relaxation surface (narrower scope). Reading V1's source confirmed the scope before writing the V2 port; the slice ships V1's actual mechanism faithfully + documents that V2's per-attribute tightening overrides are already structurally present via `Policy.TighteningOverride`. The chapter-open mid-stream mischaracterization didn't propagate to V2 code because the V1 source check landed first.
+
+**Mechanism-before-consumer is a valid carbon-copy shape.** When V1 has a mechanism with one production consumer + V2 has no analogous consumer, the V2 port ships the mechanism + defers wiring under IR-grows-under-evidence. The structural surface is reusable; the wiring waits for real consumer pressure. Codifies the pattern for future V1↔V2 ports where V1's consumer is V1-SUNSET in V2.
+
+### Cross-references
+
+- `ADMIRE.md` — 2026-05-19 entry: `MetadataContractOverrides` carbon-copy log with V1 source path, V2 location, refactor status, citation comment.
+- `CHAPTER_B_4_OPEN.md` slice 5 row flips to DONE referencing this entry.
+- `tests/Projection.Tests/MetadataContractOverridesTests.fs` — 25 tests covering parsing + lookup + builder; case-insensitive normalization + original-case label preservation + error accumulation + V2 safe-default divergence from V1's throw.
+- `src/Projection.Core/Policy.fs:118` — `TighteningOverride` (the V2-native per-attribute override surface; slice 7 wires operator config to this).
+- Active deferrals index — two new rows: `MetadataContractOverrides` wiring into V2 mappers + `OverlayAxis.Extraction` candidate.
+
+## 2026-05-19 (chapter B.4 mid-chapter strategic exploration) — slice 7 ships thin (full-export CLI wrapper over today's 3 wired config sections); chapter C opens for the broader operator-facing surface (4 slices: tightening priority + special-circumstances + emission-folders + tag-groups-as-closed-DU); axis 3 (static seed data file format) deferred-with-trigger pending operator dataset pressure
+
+### Context
+
+After slices 4 + 5 landed (ModuleFilter port + MetadataContractOverrides mechanism), the principal operator surfaced six operator-facing axes they want available as a coherent whole: (1) rename a table, (2) move a table from one emission folder to another, (3) insert arbitrary data shaped like a given table, (4) tighten attributes per-column, (5) allow special circumstances (e.g., a table without a primary key), (6) feature-toggle tag groups (flip several related transforms on/off as a named group).
+
+A first-principles exploration dispatch surveyed the V1 CLI + config surface against V2's current state. Key surprise: V2's `Pipeline.Config` parser is shape-complete but **only 3 of ~15 sections have wired consumers** — `Model.Path`, `Overrides.TableRenames`, `Output.Dir`. The rest (`Profile`, `Cache`, `Profiler`, `TypeMapping`, `DynamicData`, `Emission` booleans, `Policy.Selection`, `Policy.Insertion`, `Policy.UserMatching`, `Overrides.MigrationDependencies` / `StaticData` / `CircularDependencies`) parse successfully but are silently ignored at compose time. Operator-typed entries for those sections produce no error, no warning, no behaviour.
+
+### Per-axis status (against V2 today)
+
+| Axis | V2 status | Gap shape |
+|---|---|---|
+| 1. Rename a table | ✓ wired | None |
+| 2. Move emission folder | gap | New `Overrides.EmissionFolders : Map<SsKey, string>` + `SsdtFile.RelativePath` rewrite pass |
+| 3. Insert arbitrary data | partial | `Modality.Static` + `StaticSeedsEmitter` exist; missing config-driven population path (file format + adapter + schema validation) |
+| 4. Tighten attributes | partial | `Policy.TighteningPolicy` + `TighteningOverride` exist structurally; missing config-binding layer |
+| 5. Special circumstances | partial | `Overrides.CircularDependencies` parses today; missing the pass that reads + suppresses diagnostics. No "allow missing PK" surface yet |
+| 6. Tag groups | novel | No V1 or V2 precedent. Requires `RegisteredTransform.Tags` field + filter at `Compose.runWithConfig` |
+
+### Four resolved decisions (this exploration)
+
+1. **Slice 7 ships THIN.** `full-export` CLI = wrapper over today's 3 wired sections (Model.Path, TableRenames, Output.Dir) plus the slice-6 actionable-diagnostics enrichment + the SnapshotJson / SnapshotRowsets connectivity per the chapter B.4 rescope. Dormant config sections continue to parse-but-ignore (operator hand-writing future-shaped configs gets no surprises). Chapter B.4 closes on its current 7-slice budget; the broader operator surface lands as a sibling chapter.
+
+2. **Chapter C opens for the broader operator-facing surface.** Four slices, sequenced by leverage:
+   - **C.1 (priority)** — wire **tightening axis (axis 4)**. `Policy.TighteningPolicy` + `TighteningOverride` already exist as F# types; the slice ships the config-binding layer mapping config strings (e.g., `"tightening.attributes": [{"ssKey": "...", "action": "ForceNotNull"}]`) → registered interventions. Highest leverage per the operator (tightest feedback loop with day-to-day cutover work).
+   - **C.2** — special-circumstances axis (axis 5). New consumer pass for `Overrides.CircularDependencies.AllowedCycles` (already parsed); extend the surface with `Overrides.AllowMissingPrimaryKey : SsKey list` allowlist + the suppress-diagnostic pass that reads it.
+   - **C.3** — emission-folder targeting axis (axis 2). New `Overrides.EmissionFolders : Map<SsKey, string>` config section + `SsdtFile.RelativePath` rewrite pass + emit-time validation (folder paths respect SSDT naming conventions).
+   - **C.4** — tag-groups axis (axis 6). Closed `TransformGroup` DU (preset list, no operator-defined custom groups — see decision 3 below) + `RegisteredTransform.Tags : Set<TransformGroup>` field + `Policy.TransformGroups : Map<TransformGroup, bool>` config + filter at `Compose.runWithConfig`.
+
+3. **Tag groups = fixed preset list, not operator-defined sets.** Per the operator's chapter-B.4 strategic exploration answer: V2 ships a closed `TransformGroup` DU (preliminary list: `CDC | UATUsers | MigrationDependencies | Bootstrap | RefactorLog | ... `) rather than allowing arbitrary operator-invented group names. Closed-DU forces structural totality at chapter close — preset membership is V2-owned + reviewed at each chapter close per the closed-DU expansion empirical-test discipline. Operators toggle named presets; they can't invent new ones. Trade-off: less flexibility but stronger structural guarantees + clearer surface area + no preset-vs-actual-transform divergence risk. The preset list seeds at C.4 slice land time based on the actual transform set that exists then; the closed DU grows under the same "trigger fires" discipline as `OverlayAxis` (real evidence of an operator-facing transform group not in the preset set warrants a new variant + DECISIONS entry).
+
+4. **Axis 3 (insert arbitrary data, operator-supplied seed file) DEFERRED-WITH-TRIGGER.** Per the operator's answer: don't ship in chapter B.4 OR chapter C; surface under concrete operator dataset pressure. Today V2 has `Modality.Static` + `StaticSeedsEmitter` for profile-derived seeds only. The deferred-trigger condition: a real operator workflow surfaces with a concrete dataset they want emitted as MERGE statements that didn't come from profile observation. Active deferral row added with this trigger; format decision (JSON-shaped-like-Kind vs CSV vs SQL) defers to the same trigger event.
+
+### Sequencing summary
+
+- **Chapter B.4 remaining**: slice 6 (actionable-diagnostics) → slice 7 (thin full-export CLI). Both ship inside the chapter B.4 budget.
+- **Chapter C (next chapter)**: 4 slices in leverage order — C.1 tightening → C.2 special-circumstances → C.3 emission-folders → C.4 tag-groups. Estimated 3–4 weeks; each slice is ~1 week.
+- **Out-of-scope across both chapters**: axis 3 (static seed data file format) deferred-with-trigger; surfaces under concrete operator dataset pressure with its own slice when the time comes.
+
+### Active deferrals added
+
+Two new rows in the Active deferrals index:
+
+- **Axis 3 — operator-supplied static seed data file format + consumer**: deferred at this exploration; trigger = concrete operator workflow surfaces with a dataset they want emitted as MERGE statements that didn't come from profile observation. Cash-out includes file-format decision (JSON-rows / CSV / something else), parsing adapter location, schema-validation discipline, and `Modality.Static` population path from the file.
+- **Dormant config-section wiring sweep**: of V2's ~15 `Pipeline.Config` sections, 12 are parsed-but-dormant today. Slice 7 doesn't wire the dormant sections (per the thin-slice-7 decision); chapter C wires axes 4 + 5 + 2 + 6 by way of new + existing sections. The remaining dormant sections (`Profile.Path`, `Cache.*`, `Profiler.*`, `TypeMapping.*`, `DynamicData.*`, `Emission.*`, `Policy.UserMatching.*`) wait for their respective consumer-pressure events. Each carries its own latent trigger; the meta-row here points at the sweep so future agents see the full dormant inventory at a glance.
+
+### Discipline reinforced
+
+**First-principles operator-surface exploration earns its place as a chapter-mid practice.** When the operator names "I want N things" and the existing slice plan was carbon-copying V1 components piecemeal, a first-principles dispatch surfaces the gap between the slice budget + the holistic operator need. The exploration produces a sequencing decision that's structurally honest about what fits in the current chapter vs. what needs its own chapter — same discipline as the chapter-mid-audit, applied to operator surface rather than consistency drift.
+
+**Operator-surface mapping = config-consumer audit.** The exploration discovered that V2's config parser is much further ahead of V2's config consumer wiring than anyone was tracking. This is a class of finding that doesn't surface in slice-by-slice work because each slice consumes the section it needs; the dormant sections never produce a failing test. Periodic config-consumer audits (per-chapter-close item?) would catch this earlier.
+
+### Cross-references
+
+- Active deferrals index — two new rows (axis 3 file format + dormant config-section wiring sweep).
+- Chapter B.4 slice plan — slice 7 row revised to reflect thin scope.
+- Future Chapter C opens against this DECISIONS entry as its slice-plan basis.
+
+## 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement) — DynamicDataSection struck from Pipeline.Config as a V1-acknowledged conflation; axes 7 (logging verbosity) + 8 (diagnostic actionability tuning) + 9-revised (insertion semantics wiring Policy.InsertionPolicy) added to Chapter C; axis 10 (user reflow strategy) placed under LiveOssysConnection chapter alongside multi-env + UAT-users; axes 11–15 catalogued as fold-into-existing or wait-for-trigger
+
+### What changed
+
+**Strike (commit `3e47fb5`, -49 LOC net):** Removed `Pipeline.Config.DynamicDataSection` (type + ConfigRecord field + default + parser + parser call site + 3 ConfigTests assertions). The V1 source's own unification work flagged DynamicData as redundant — `docs/architecture/entity-pipeline-unification-v2.md:1633` reads "DynamicData: Redundant with Bootstrap (INSERT of all entities), scheduled for deletion." V2's section was a dormant V1 transliteration of that already-condemned concept; zero V2 consumers; clean deletion.
+
+**Three sub-concerns dispersed to proper homes** (none lost; each routes to its structurally-correct V2 location):
+
+| Sub-field | V2 proper home |
+|---|---|
+| `InsertMode` (operator picks INSERT vs MERGE vs TRUNCATE+INSERT vs SchemaOnly) | `Policy.InsertionPolicy` DU at `Policy.fs:77` — 4-variant closed DU; exact match for unification doc Stage 6's `InsertionStrategy`. Operator-config wiring is Chapter C's revised axis 9 (insertion semantics). |
+| `StaticSeedParentMode` (FK parent handling at static seed emit time) | Internal to the static-seed emitter; not an operator-overlay concern at Policy granularity. Folds into the emitter's own behavior when consumer pressure surfaces. |
+| `DeferJunctionTables` (junction-table emission ordering) | `OverlayAxis.Ordering` at `Classification.fs:48` — already a closed-DU variant. Pairs with the `SelfLoopPolicy` precedent. |
+
+### Axis-survey supplement (additions to the 2026-05-19 strategic-exploration entry above)
+
+The principal endorsed three new axes and asked for a broader survey. Revised axis catalogue:
+
+**Confirmed operator-facing axes (added since the strategic exploration entry):**
+
+- **Axis 7 — Logging verbosity / sink redirection.** Operator controls `--verbose` / `--debug` flags; channel-1 NDJSON to stderr vs channel-2 Spectre pretty rendering. Slice-1 logging-format contract §15 already names the two-channel design + `LogSink.emit`. UX-tier (not an OverlayAxis); cheap to wire (one CLI flag → one LogSink config field). **Sequencing: Chapter C slice (probably C.5 or earlier).**
+
+- **Axis 8 — Diagnostic actionability tuning.** Cluster-cap N for slice-6's filter/cluster/cap; per-axis suppression (e.g., hide all FK-orphan findings this run). Companion to slice 6's actionable-diagnostics work. UX-tier (not an OverlayAxis). **Sequencing: probably absorbed into slice 6's design rather than a separate slice; the cluster-cap + axis-suppression knobs are intrinsic to slice 6's surface, not a separate axis.**
+
+- **Axis 9 (revised) — Insertion semantics.** Operator picks `Policy.InsertionPolicy` per emission target (SchemaOnly / InsertNew / Merge / TruncateAndInsert). The V2 DU exists structurally at `Policy.fs:77`; missing only the config-binding layer (same shape as Chapter C's tightening slice — config strings → registered intervention). **Sequencing: Chapter C slice as `OverlayAxis.Insertion` cash-out.** Replaces the now-struck "DynamicData" framing with the principled axis name.
+
+- **Axis 10 — User reflow strategy + manual override map.** Operator picks primary strategy (`ByEmail | BySsKey | Regex`) + fallback assignment + supplies a CSV override map. V2's substrate exists (`Policy.UserMatchingStrategy` DU + `ManualOverride` + the user-FK reflow pass); `Projection.Adapters.UserMap.UserMapLoader` is a chapter-4.2 deferral. **Sequencing: deferred to LiveOssysConnection chapter alongside multi-env + UAT-users (the V1 corporate-network HEAD has all three done together; V2 picks them up as a unit when the corporate-network access path is available).**
+
+**Lower-leverage axes catalogued (fold-into-existing or wait-for-trigger; not elevated to standalone slices):**
+
+- **Axis 11 — SSDT folder convention** (flat vs per-schema vs per-module whole-layout choice). Companion to axis 2 (move-a-table); folds into axis 2's slice as a granularity option.
+- **Axis 12 — Pre/post-emit hooks** (remediation pre-scripts; post-deploy verification). V1 has these via `TighteningOverrides.Remediation*`; folds into Chapter C's tightening slice (axis 4) since remediation IS the tightening cash-out.
+- **Axis 13 — Tolerance acceptance set** (S0.E taxonomy). Internal-to-canary concern; not operator daily knob; defers.
+- **Axis 14 — Sampling threshold + command timeout + sampling cap** (extraction-time knobs). Lives at the LiveOssysConnection layer; surfaces there alongside axis 10.
+- **Axis 15 — Manifest enrichment knobs** (optional fields per-emitter, per-version). Internal-to-V2; not operator-paced; defers.
+
+### Revised Chapter C slice plan (post-supplement)
+
+Six slices total (the four from the prior strategic-exploration entry + axes 7 + 9-revised):
+
+| Slice | Axis | Description |
+|---|---|---|
+| C.1 | Axis 4 (priority) | Wire tightening — config-binding layer for existing `Policy.TighteningPolicy` + `TighteningOverride` |
+| C.2 | Axis 5 | Special circumstances — consumer pass for `CircularDependencies` + `AllowMissingPrimaryKey` allowlist |
+| C.3 | Axis 2 | Emission-folder targeting — new `Overrides.EmissionFolders` section + `SsdtFile.RelativePath` rewrite pass |
+| C.4 | Axis 6 | Tag groups (closed-DU presets) — `TransformGroup` DU + `RegisteredTransform.Tags` + `Compose.runWithConfig` filter |
+| C.5 | Axis 9 (revised) | Insertion semantics — config-binding for existing `Policy.InsertionPolicy` DU (the legitimate concern formerly conflated under DynamicData) |
+| C.6 | Axis 7 | Logging verbosity / sink — `--verbose` / `--debug` flags + `LogSink` config |
+
+Axis 8 absorbed into slice 6 (actionable-diagnostics) design; axes 10 + 14 placed under LiveOssysConnection chapter; axes 11 + 12 fold into their parent slices; axes 13 + 15 wait for trigger.
+
+### Active deferrals — updates
+
+**Updated:** `LiveOssysConnection` row absorbs axis 10 (user reflow strategy + manual override map) + axis 14 (sampling threshold + command timeout) explicitly. The corporate-network V1 HEAD has multi-env + UAT-users + user-reflow-strategy + extraction-time-knobs all done together; V2 picks the cluster up as a unit when the access path is available.
+
+**New row:** `Static-seed parent-handling behavior` — V1's `StaticSeedParentHandlingMode` enum dispersed from the struck DynamicDataSection. Today V2's static-seed emitter has hardcoded behavior; if a real operator workflow surfaces with FK-parent handling requirements that diverge from V2's default, the trigger fires + the emitter gains an `Options` parameter. No operator-overlay axis (not surfaced through Policy DU); internal-to-emitter.
+
+### Discipline reinforced
+
+**V2 doesn't carry forward V1 amino-acid conflations even when dormant.** V1's own architecture work flagged DynamicData for deletion; V2's transliteration preserved the conflation by carelessness rather than by decision. Sweeping for "V1-acknowledged conflations that V2 transliterated without examination" is a class of finding worth a per-chapter-close audit step (alongside the existing dormant-config-section sweep).
+
+**The unification doc is V2's source-of-truth for dimensional decomposition.** Future chapter agents working on operator-facing surface design should consult `docs/architecture/entity-pipeline-unification-v2.md` Part III (Dimensional Decomposition) — the doc names V1's Stage 1/5/6 axes (Selection, Emission, Insertion) which map exactly to V2's `OverlayAxis` (with V2 adding Tightening + Ordering as additional axes). The doc is V1-archived but its axis-naming is canonical for V2's Pillar 9 framework.
+
+### Cross-references
+
+- Commit `3e47fb5` — the strike (DynamicDataSection retired).
+- `docs/architecture/entity-pipeline-unification-v2.md:1633` — V1's own deletion note for DynamicData.
+- `src/Projection.Core/Policy.fs:77` — `InsertionPolicy` DU (the proper home for axis 9-revised wiring).
+- `src/Projection.Core/Classification.fs:48` — `OverlayAxis.Ordering` (the proper home for junction-table ordering).
+- `docs/architecture/entity-pipeline-unification-v2.md` Part III — V1's canonical dimensional decomposition (Stage 1/5/6 → V2 OverlayAxis Selection/Emission/Insertion).
+
+## 2026-05-20 (logging-format implementation gap audit) — slice 6.5 inserted into chapter B.4 (LogSink + §11 roll-up emission as its own slice); Spectre TtyRenderer / channel-2 deferred to its own micro-chapter alongside data-twin; axis 7 narrowed to just verbosity flags in Chapter C
+
+### Context
+
+Principal operator asked where Spectre + the roll-up of information sit in the roadmap. Audit findings:
+
+1. **Slice-1 logging-format contract (`docs/logging-format.md`) specified two surfaces that have zero implementation in V2**:
+   - §11 Roll-up collapse algorithm — terminal `summary.runComplete` event with `aggregates` array, group key 3-tuple `(category, code, ssKey)`, first-three-chronological samples, `Bench.Stats` surfacing under `category=summary, code=bench.label`.
+   - §15 Two-channel pattern — channel 1 NDJSON to stderr (the always-on default); channel 2 Spectre.Console via `TtyRenderer` adapter, gated on `--pretty` + `Console.IsErrorRedirected = false`, with `--json-out <path>` routing channel 1 to a file when channel 2 is active.
+
+2. **Neither surface had explicit roadmap placement**:
+   - LogSink + rollup was implicit in slice 7's "emits conforming events" framing but never named as its own deliverable. Slice 7 cannot emit a `summary.runComplete` without an aggregator that runs during the event stream.
+   - Spectre TtyRenderer was folded into Chapter C's axis 7 (logging verbosity / sink redirection) — a conflation, since axis 7 as framed was just `--verbose` / `--debug` flags (cheap LogSink config), while TtyRenderer is a substantial channel-2 adapter + TTY detection + dual-channel routing.
+
+3. **Contract §15.3 already named the right framing for TtyRenderer**: "optional for chapter B.4; the chapter close gate does NOT require it — it's a post-chapter slice if operator feedback warrants." That guidance was never propagated into the chapter B.4 slice plan or Chapter C scope.
+
+### Resolution
+
+**Slice 6.5 inserted into chapter B.4** (between slice 6 actionable-diagnostics and slice 7 full-export-cli). Effective slice count: 7 → 8. Slice 6.5 scope:
+
+- `Projection.Pipeline/LogSink.fs` — hand-rolled per §15.2 ("no logger primitives; LogSink IS the logger").
+- NDJSON envelope serialization per §3 (mandatory fields: runId, ts, level, category, code, phase, source, ssKey, stepId, payload) via `System.Text.Json`.
+- Channel-1 sink discipline per §5: stderr only; `--json-out` deferred to the Spectre micro-chapter (slice 6.5 ships the channel-1-only default).
+- **§11 roll-up aggregator**: `Dictionary<(category: string, code: string, ssKey: string option), GroupAccumulator>` maintained during emission; collapse on `(category, code, ssKey)` 3-tuple; per-group `count`, `firstTs`, `lastTs`, first-three-chronological-order `samples`. Big-O: O(N) build during stream emission, O(M log M) output ordering (descending by count, ascending by first occurrence). Aggregator built ONCE during emission — not re-scanned at runSummary time.
+- `summary.runComplete` event emitted at end-of-run carrying the `aggregates` array.
+- `Bench.Stats` per-label aggregates (Count, MeanMs, P50, P95, P99, TotalMs, StdevMs from `Bench.fs:103-233`) surface under `category=summary, code=bench.label`, one entry per label.
+- Property tests: rollup algorithm correctness under FsCheck-generated event streams (group-key collapse + count accumulation + sample selection + ordering invariant); envelope-shape conformance per §3; bench-stat surfacing.
+
+**Slice 7's chapter-B.4 close gate** now explicitly verifies `summary.runComplete` rollup correctness alongside per-event NDJSON conformance — the contract §11 + §15.1 disciplines are operative end-to-end.
+
+**Spectre TtyRenderer deferred to its own micro-chapter** alongside the `data-twin` CLI verb micro-chapter — both operator-facing UX-layer surfaces. The deferral pairs with §15.3's explicit "post-chapter slice if operator feedback warrants" framing. Trigger condition (verbatim from §15.3): operator runs the CLI + reports the NDJSON-only stderr emission as unfriendly for interactive runs. Substrate is documented (§15.1 two-channel diagram + §15.3 `TtyRenderer` F# adapter sketch); slice opens when the trigger fires.
+
+**Chapter C axis 7 narrowed** to just verbosity flags. Axis 7a — `--verbose` / `--debug` CLI flags + LogSink config field that suppresses `Trace`/`Debug`-level events per §4 — stays as Chapter C slice C.6 (small; one CLI flag + one LogSink suppression check). The Spectre channel-2 work (formerly axis 7b in the strategic-exploration entry) leaves Chapter C entirely.
+
+### Why slice 6.5 instead of absorbing into slice 7
+
+LogSink is structural emission substrate; full-export CLI is composition + orchestration. Different concerns; different testing surfaces (LogSink's rollup invariants are property-testable in isolation; full-export's end-to-end flow is Docker-gated integration). Separating into 6.5 + 7 gives each a clean test surface + lets slice 7 ship as a pure composition layer (consume LogSink; consume the slice-4/5/6 ports; emit). Mirrors the chapter-B.3 slice-6 / 6b split where structural substrate landed first then consumers built on it.
+
+### Why Spectre as a micro-chapter, not Chapter C
+
+Spectre.Console + `Console.IsErrorRedirected` + dual-channel `--json-out` routing is a distinct UX-layer concern from Chapter C's operator-overlay axes (tightening, emission-folders, tag-groups, etc., which are all Policy-DU consumers). The micro-chapter framing pairs Spectre with `data-twin` — both are operator-UX-surface additions over established structural substrate. Both have explicit operator-pull triggers (data-twin: dev-team dockerized-replica workflow; Spectre: interactive-run unfriendliness). Both are speculatively designed today + open when pull surfaces.
+
+### Active deferrals — new row
+
+**`Spectre.Console TtyRenderer + dual-channel routing micro-chapter`**: per §15.3 contract guidance + this gap-audit entry. Trigger: operator runs the CLI + reports NDJSON-only stderr emission as unfriendly for interactive runs (per §15.3 verbatim). Substrate sketched in `docs/logging-format.md` §15.1 (two-channel diagram) + §15.3 (`TtyRenderer` F# adapter shape). Status: deferred-with-trigger; pairs with the `data-twin` CLI verb micro-chapter row.
+
+### Discipline reinforced
+
+**Contract-vs-implementation audit catches "specified-but-unbuilt" gaps.** Slice 1 shipped the contract; slices 2–5 worked on adjacent concerns; the contract's §11 + §15 implementation requirements went uncashed for four slices. The chapter-mid audit discipline catches drift; the chapter-close ritual catches "no implementation" findings. Adding "contract-vs-implementation walk on slice-1 contract surfaces" to the chapter B.4 close ritual checklist — codified in slice 7's chapter-close-gate expectation.
+
+**Implementation gaps surface when the operator asks where surfaces are in the roadmap.** Operator's question ("where is Spectre and the roll-up in our roadmap?") catalyzed this audit. Without the question, the gap would have surfaced at chapter close when the contract-vs-implementation walk fired. Operator-initiated audits are a valid source of chapter-mid course corrections — same shape as the strategic-exploration dispatch earlier today.
+
+### Cross-references
+
+- `docs/logging-format.md` §11 (roll-up algorithm), §15.1 (two-channel pattern), §15.3 (TtyRenderer post-chapter framing).
+- `CHAPTER_B_4_OPEN.md` slice plan updated: slice 6.5 inserted; slice 7 dependency on 6.5 named; close-ritual updated to verify §11 + §15.1 disciplines.
+- Chapter C slice plan revised: 6 slices total; axis 7 narrowed to just verbosity flags (C.6); Spectre work leaves Chapter C.
+- Active deferrals: new `Spectre.Console TtyRenderer + dual-channel routing micro-chapter` row.
+
+## 2026-05-20 (slice B.4.6 reshape — drop occluding cluster-cap) — slice 6 reshaped mid-implementation: SuggestedConfig + severity-sort + axis-cluster ship as pure navigation enrichment; cluster-cap-with-overflow-marker dropped after principal-operator pushback against occluding source defects
+
+### What happened
+
+Initial slice-6 implementation shipped a `ClusterCap` mechanism: `MaxPerAxis = 10` default; entries beyond the cap dropped silently; overflow count surfaced as `axisOverflowCount` metadata on the last retained entry. The principal-operator asked: "Do you see this conflation too?" — and named the right framing: source defects (NULLs in NOT NULL columns; orphaned FKs; duplicate unique-index candidates) MUST NOT be occluded. Every dropped entry was a real source-data issue the operator needs to see. Cluster-capping was the wrong tool.
+
+### The conflation
+
+The original slice-6 design packed three distinct concerns under one mechanism:
+
+| Concern | Shape | Right layer |
+|---|---|---|
+| **§12 `suggestedConfig` payload** | Enrichment — every actionable entry carries `{path, value, note}` pointing at the config-edit fix | Diagnostic-emit layer (this slice) — pure DataIntent enrichment, no information loss |
+| **Severity sort + axis cluster** | Presentation — group same-axis entries together, sort by severity within axis | Same layer — no information loss; pure reshape for navigation |
+| **Cap with overflow marker** | **Occlusion** — drop entries beyond N per axis, surface only the suppressed count | **Wrong layer; wrong tool.** "Noisy axes" is reduced at the *source* (strategy/pass layer per-finding-type emission gates), not at the emit boundary. |
+
+The first two are pure DataIntent enrichment over the existing `DiagnosticEntry` stream. The third — cluster-cap with occlusion — was a structural mistake. Validations against invariant cases are *meant* to be many; each represents a real source-data condition the operator must address. Suppressing them at the emit boundary is signal loss disguised as "actionability."
+
+### Reshape
+
+**Dropped from the shipped code:**
+- `ClusterCap` type + `defaults` + `unlimited` shapes — entire abstraction retired.
+- `MaxPerAxis` field + the cap-with-overflow-marker logic.
+- The `applyDefaults` convenience wrapper.
+- The "overflow marker on last retained entry" metadata-amendment (`axisOverflowCount` + `axisRetainedCount` + `axis` keys).
+
+**Kept (the principled core):**
+- `SuggestedConfig` typed record + `SuggestedConfig.create` / `createWithNote` smart constructors.
+- `DiagnosticEntry.SuggestedConfig : SuggestedConfig option` field.
+- `DiagnosticEntry.create` smart constructor (slice 5.13.smart-constructor-lift pattern).
+- `Axis.tryFromCode` derivation (also useful for slice 6.5's roll-up group-key per §11 contract).
+- `ActionableDiagnostics.organize` (renamed from `apply`) — severity-sort + axis-cluster + unclustered-entries-tail; **no occlusion**: `(organize entries).Length = entries.Length` always.
+- JSON emit path's `suggestedConfig` field surfacing (present when `Some`; omitted when `None` for back-compat).
+
+**Tests reshape:** 26 → 28 net (dropped 3 cap/overflow-marker tests; added 2 stronger no-occlusion tests including a 187-entry property witness). 184/184 green in 454ms.
+
+### Where "fewer findings" properly lives
+
+The operator's underlying concern — "V1's diagnostic JSONs are noisy/cluttered" — has a principled answer that is NOT after-the-fact suppression:
+
+**Per-finding-type emission gates at the strategy / policy layer.** V2's `Policy.NullabilityTighteningConfig.NullBudget` (`Policy.fs:139`) already exists as the per-rule threshold — when the null-fraction is below budget, the rule emits no finding; when above, it fires. The "noisy axis" reduces at registration time, not at emit time. Each finding that DOES fire is a real source defect surfaced in full.
+
+This decomposition aligns with V2's pillar 9 + L3-CC-Transform-Totality framing: tightening thresholds are `OperatorIntent of Tightening` (per-finding-type config knobs that gate emission); the diagnostic-emit layer is pure DataIntent enrichment over whatever the strategies produced. The two stay structurally separate.
+
+**Cash-out path:** Chapter C slice C.1 (tightening axis; priority slice) wires operator config to the existing `Policy.TighteningPolicy` + `TighteningOverride` structures. When that ships, an operator who wants "fewer nullability findings" raises `NullBudget` in their config and V2's `NullabilityRules` emit fewer findings — because the threshold gate didn't fire, not because the diagnostic-emit layer suppressed anything. The right tool at the right layer.
+
+### Discipline reinforced
+
+**Reshape under principal-operator pushback is a valid slice path** when the pushback names a structural concern the initial design got wrong. The principal's question — "Do you see this conflation too?" — was the right framing: not "is your code broken" but "is your design conflating two concerns?" The discipline absorbs the reshape inside the slice rather than shipping the conflation + filing a follow-up. The reshape is cheap when caught mid-slice (drop one type + rename one function + delete some tests); it would be substantial if caught at chapter close (operator complaints about silent source-defect occlusion in production runs).
+
+**"Actionability" means enrichment + presentation, not suppression.** The slice 1 logging-format contract §12 (`suggestedConfig` discipline) is the canonical shape of actionability: every actionable entry carries the fix-suggestion. That's information ADDED to entries, not entries DROPPED. The contract specifies enrichment, not occlusion; the slice-6 reshape aligns the implementation with the contract's actual semantic.
+
+**Source defects are first-class signal.** Validations against invariant cases (`tightening.nullability.*`, `profiling.foreignKey.orphanSample`, `tightening.uniqueIndex.*`) each name a single source-data condition the operator must address before deploy. The diagnostic-emit layer carries them to the operator faithfully — no clustering, no capping, no overflow markers. Operators sort, filter, and triage downstream via `jq` / `grep` / future tooling (post-chapter `v2 suggest-config <runId>` consumer per §12); the emit layer's job is faithful surfacing, not curated suppression.
+
+### Cross-references
+
+- Initial slice-6 design (occluding cluster-cap shape): commit before this reshape; reverted within the slice.
+- `docs/logging-format.md` §12 — `suggestedConfig` discipline (the contract's specified shape of actionability).
+- `src/Projection.Core/Policy.fs:139` — `NullabilityTighteningConfig.NullBudget` (the per-finding-type emission gate; structurally where "fewer findings" lives).
+- `CHAPTER_B_4_OPEN.md` slice 6 row updated to reflect reshape + no-occlusion invariant.
+- Chapter C slice C.1 (tightening axis priority slice) — operator-config wiring for per-finding-type emission gates; the principled answer to "reduce diagnostic-artifact noise" at the source layer.

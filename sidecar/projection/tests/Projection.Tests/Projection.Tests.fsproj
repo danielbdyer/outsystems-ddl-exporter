@@ -33,6 +33,9 @@
     <Compile Include="Fixtures.fs" />
     <Compile Include="ConfigTests.fs" />
     <Compile Include="CatalogTests.fs" />
+    <Compile Include="ModuleFilterTests.fs" />
+    <Compile Include="MetadataContractOverridesTests.fs" />
+    <Compile Include="ActionableDiagnosticsTests.fs" />
     <Compile Include="TableRenameTests.fs" />
     <Compile Include="ComposeAtomicWriteTests.fs" />
     <Compile Include="SqlTypeCorrespondenceTests.fs" />

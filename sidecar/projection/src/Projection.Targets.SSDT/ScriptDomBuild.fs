@@ -970,7 +970,8 @@ module ScriptDomBuild =
                       Metadata =
                         Map.ofList
                             [ "raw", raw
-                              "errorCount", string errorCount ] }
+                              "errorCount", string errorCount ]
+                      SuggestedConfig = None }
                 Diagnostics.ofValueWith entry None
             | Some _ when errorCount > 0 ->
                 let entry : DiagnosticEntry =
@@ -982,7 +983,8 @@ module ScriptDomBuild =
                       Metadata =
                         Map.ofList
                             [ "raw", raw
-                              "errorCount", string errorCount ] }
+                              "errorCount", string errorCount ]
+                      SuggestedConfig = None }
                 Diagnostics.ofValueWith entry None
             | Some f ->
                 // Wrap in BooleanParenthesisExpression for output

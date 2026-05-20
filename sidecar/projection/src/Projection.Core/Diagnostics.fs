@@ -57,14 +57,130 @@ type DiagnosticSeverity =
 /// numeric or compound payload (the structural-commitment pattern,
 /// AXIOMS.md operational principle: variants at meaningful inflection
 /// points beats parametric values at coarser variants).
+///
+/// **`SuggestedConfig` field** (chapter B.4 slice 6 actionable-
+/// diagnostics): operationalizes logging-format contract §12. Entries
+/// whose finding has an addressable config knob carry the structured
+/// payload naming the JSON path + value the operator could apply to
+/// fix the finding. `None` for entries whose remediation is not
+/// config-editable (e.g., source-data integrity violations, V1
+/// adapter parse failures, schema-evolution warnings). Pillar 9
+/// classification: pure data-intent enrichment — the suggestion
+/// derives from the finding's evidence, not from operator opinion.
 type DiagnosticEntry = {
-    Source   : string
-    Severity : DiagnosticSeverity
-    Code     : string
-    Message  : string
-    SsKey    : SsKey option
-    Metadata : Map<string, string>
+    Source          : string
+    Severity        : DiagnosticSeverity
+    Code            : string
+    Message         : string
+    SsKey           : SsKey option
+    Metadata        : Map<string, string>
+    SuggestedConfig : SuggestedConfig option
 }
+
+
+/// Operator-actionable config-edit suggestion attached to a
+/// `DiagnosticEntry`. Per logging-format contract §12: when V2
+/// detects a condition the operator could fix by editing config,
+/// the entry carries this payload naming the exact JSON path +
+/// value to apply. The downstream `v2 suggest-config <runId>`
+/// CLI consumer (chapter post-B.4) merges these into a single
+/// operator-facing config patch.
+///
+/// **Field shape mirrors contract §12 verbatim:**
+///   - `Path` — JSONPath-style selector (e.g.,
+///     `$.profiling.perTable["OSUSR_FOO.dbo.OrderHeader"].samplingCap`).
+///   - `Value` — serialized JSON value as a string (`"100000"` for
+///     a numeric; `"\"merge\""` for a string-shaped enum; `"true"`
+///     for a boolean). The string-typed slot defers JSON-value-shape
+///     typing until a consumer demands the lift (per the
+///     IR-grows-under-evidence discipline).
+///   - `Note` — human rationale; optional. Surfaces as `note` in
+///     the emitted JSON when `Some`.
+and SuggestedConfig = {
+    Path  : string
+    Value : string
+    Note  : string option
+}
+
+
+/// Construction helpers for `DiagnosticEntry`. Mirrors the
+/// `Attribute.create` / `Kind.create` / `Reference.create` /
+/// `Index.create` pattern (slice 5.13.smart-constructor-lift,
+/// 2026-05-18) — the smart constructor absorbs field extensions
+/// at one site so consumers stay stable when the IR grows.
+///
+/// **MVP shape** (chapter B.4 slice 6): required fields are the
+/// V1-parity quadruple (`source`, `severity`, `code`, `message`);
+/// `ssKey`, `metadata`, `suggestedConfig` default to their no-
+/// evidence forms (`None`, `Map.empty`, `None`). Consumers override
+/// via record-update: `{ DiagnosticEntry.create src sev code msg
+/// with SsKey = Some k; SuggestedConfig = Some cfg }`.
+[<RequireQualifiedAccess>]
+module DiagnosticEntry =
+
+    /// Build a `DiagnosticEntry` with minimum-evidence defaults.
+    /// Required: `source`, `severity`, `code`, `message`. Optional
+    /// axes default to:
+    ///   - `SsKey = None` (catalog-level diagnostic; per-kind
+    ///     diagnostics override via record-update)
+    ///   - `Metadata = Map.empty` (no structural payload)
+    ///   - `SuggestedConfig = None` (no actionable config edit)
+    let create
+        (source: string)
+        (severity: DiagnosticSeverity)
+        (code: string)
+        (message: string)
+        : DiagnosticEntry =
+        {
+            Source          = source
+            Severity        = severity
+            Code            = code
+            Message         = message
+            SsKey           = None
+            Metadata        = Map.empty
+            SuggestedConfig = None
+        }
+
+
+/// Construction helpers for `SuggestedConfig`. The smart constructor
+/// rejects blank `Path` (the operator-facing JSON-path selector must
+/// be non-empty for the suggestion to be actionable). Blank `Value`
+/// is permitted (some suggestions are "remove this entry" → empty
+/// value).
+[<RequireQualifiedAccess>]
+module SuggestedConfig =
+
+    /// Build a `SuggestedConfig` with a path + value. Rejects blank
+    /// `path` with `ValidationError "suggestedConfig.path.empty"`.
+    let create (path: string) (value: string) : Result<SuggestedConfig> =
+        if System.String.IsNullOrWhiteSpace path then
+            Result.failureOf (
+                ValidationError.create
+                    "suggestedConfig.path.empty"
+                    "SuggestedConfig path cannot be blank.")
+        else
+            Result.success {
+                Path  = path
+                Value = value
+                Note  = None
+            }
+
+    /// Build a `SuggestedConfig` with a path + value + note.
+    /// Same validation as `create`; the note adds operator-readable
+    /// rationale.
+    let createWithNote (path: string) (value: string) (note: string) : Result<SuggestedConfig> =
+        if System.String.IsNullOrWhiteSpace path then
+            Result.failureOf (
+                ValidationError.create
+                    "suggestedConfig.path.empty"
+                    "SuggestedConfig path cannot be blank.")
+        else
+            Result.success {
+                Path  = path
+                Value = value
+                Note  = if System.String.IsNullOrWhiteSpace note then None else Some note
+            }
+
 
 
 /// Writer-monadic carrier for diagnostic entries. Single channel for

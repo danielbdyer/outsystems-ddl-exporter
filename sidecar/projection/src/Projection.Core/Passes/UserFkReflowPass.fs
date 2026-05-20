@@ -108,7 +108,8 @@ module UserFkReflowPass =
           SsKey    = None
           Metadata =
               Map.ofList
-                  [ "sourceUserId", sprintf "%d" sourceUserValue ] }
+                  [ "sourceUserId", sprintf "%d" sourceUserValue ]
+          SuggestedConfig = None }
 
     // -----------------------------------------------------------------------
     // Per-strategy matching (slices δ + ε).
@@ -274,7 +275,8 @@ module UserFkReflowPass =
                   Code     = "userFkReflow.disjointnessViolated"
                   Message  = "pass-internal bug: UserRemapContext disjointness invariant violated"
                   SsKey    = None
-                  Metadata = Map.empty }
+                  Metadata = Map.empty
+                  SuggestedConfig = None }
             { Value =
                 { Value = UserRemapContext.empty
                   Entries = List.rev (bugEntry :: state.Entries) }

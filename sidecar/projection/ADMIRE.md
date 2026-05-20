@@ -2865,3 +2865,92 @@ multi-session, likely demanding refinements during validation
 agent inherits this entry as the starting point and follows the
 migration path outline above. Implementation does not start in
 this commit; the explicit framing is the deliverable.
+
+## 2026-05-19 — `ModuleFilter` + `ModuleFilterOptions` + `ModuleEntityFilterOptions` (`src/Osm.Pipeline/ModelIngestion/ModuleFilter.cs` + `src/Osm.Domain/Configuration/ModuleFilterOptions.cs` + `src/Osm.Domain/Configuration/ModuleEntityFilterOptions.cs`)
+**Status:** **carbon-copied (chapter B.4 slice 4)** — single F# file consolidating three V1 C# files; structural shape preserved; V2 vocabulary throughout. **Mode:** V1-migration (V1 has the canonical shape; V2 honors it).
+
+### What it does (algebraic terms)
+Operator-supplied selection seam over the catalog: filters `Catalog → Catalog` by module-name include list, system-modules toggle, inactive-modules toggle, and per-module entity restrictions. Pillar 9 classification: `OperatorIntent of Selection`. Pure function; no I/O; lives in `Projection.Core`.
+
+### V2 placement
+**Carbon-copied** to `src/Projection.Core/ModuleFilter.fs`. Three V1 files consolidated into one F# module-shaped surface per V2's "consolidate related types + consuming operation under the bounded-context module name" convention (V1 separated by C# class-per-file).
+
+### V2 placement — carbon-copy log
+- **V1 source paths** (at V1 HEAD V2 inherited from, 2026-05-19):
+  - `src/Osm.Pipeline/ModelIngestion/ModuleFilter.cs` (~140 LOC)
+  - `src/Osm.Domain/Configuration/ModuleFilterOptions.cs` (~220 LOC)
+  - `src/Osm.Domain/Configuration/ModuleEntityFilterOptions.cs` (~130 LOC)
+- **V2 location**: `sidecar/projection/src/Projection.Core/ModuleFilter.fs`.
+- **Date inherited**: 2026-05-19.
+- **Refactor status**: **partially refactored** — V2 vocabulary (Catalog / Module / Kind / Name / SsKey / ModalityMark) replaces V1 vocabulary (OsmModel / ModuleModel / EntityModel / ModuleName); structural shape preserved; V1's `ValidationOverrides` axis (per-module validation suppression) deliberately NOT ported (routes through slice 5's `MetadataContractOverrides` port). V1's per-module `IsSystemModule` bit translates to V2's per-kind `ModalityMark.SystemOwned` ("a module is treated as system-owned iff every kind in it carries SystemOwned").
+- **Citation comment**: at the top of `ModuleFilter.fs`, listing the three V1 source paths + chapter+slice ID + this ADMIRE entry pointer.
+
+### Existing test coverage (V1)
+- `tests/Osm.Pipeline.Tests/ModuleFilterTests.cs` — example scenarios for each filter axis + missing-name / empty-result failure modes.
+- `tests/Osm.Pipeline.Tests/ModuleFilterConsistencyTests.cs` — cross-pipeline invariance properties.
+- `tests/Osm.Domain.Tests/ModuleFilterOptionsTests.cs` — smart-constructor validation tests.
+
+### V2 test coverage
+- `tests/Projection.Tests/ModuleFilterTests.fs` — 30 tests covering: empty/identity behaviour; module-name filter; case-insensitive matching; missing-module error; system-modules filter via per-kind Modality; inactive-modules filter (module + kind level); per-module entity filters; smart-constructor validation (null/whitespace/dedup/trim/error-accumulation); idempotence + subset properties.
+
+### Edges / risks
+- **V2 translation of `IsSystemModule`**: V1 carries a per-module flag; V2 derives it from per-kind `ModalityMark.SystemOwned`. A V1 "mixed" module (some system kinds + some app kinds) was treated as non-system by V1 (single bit per module); V2 treats it as non-system iff at least one kind is non-SystemOwned. Same V1 behaviour for the all-system + all-app cases; differs on the mixed-modality edge (where V1 effectively held a per-module override and V2 does not). Surface as a `DECISIONS` entry if a real V1 mixed-modality fixture round-trip surfaces a divergence; otherwise the V2 translation is the cleaner shape.
+- **`ValidationOverrides` axis NOT ported here**: V1's `ModuleFilterOptions.ValidationOverrides` is a per-module validation suppression surface; that lands at slice 5 (`MetadataContractOverrides`) where it is the natural home structurally. The V2 port at this slice carries no validation-overrides field on `ModuleFilterOptions`.
+- **Operator-input case sensitivity**: matching is case-insensitive (lowercase-normalized at construction; matches V1 `OrdinalIgnoreCase` semantics). Original-case names preserved for diagnostic messages so operators see their own typing in error output.
+- **Pillar 9 / TransformRegistry wiring**: this slice ships the pure filter only; the `RegisteredTransform<ModuleFilterOptions, Catalog>` registration + `transform.applied` event emission per the logging-format contract land at slice 7 (`full-export` CLI) where the orchestrator invokes the filter.
+
+## 2026-05-19 — `MetadataContractOverrides` (`src/Osm.Pipeline/SqlExtraction/MetadataContractOverrides.cs`)
+**Status:** **carbon-copied (chapter B.4 slice 5)** — mechanism shipped at `src/Projection.Adapters.OssysSql/MetadataContractOverrides.fs`; wiring into specific V2 mappers deferred (no current V2 consumer; the V1 sole consumer reads a V1-SUNSET rowset V2 skips). **Mode:** V1-migration (V1 has the canonical shape; V2 ports the mechanism + defers wiring under IR-grows-under-evidence).
+
+### What it does (algebraic terms)
+Operator-supplied weakening of V2's strict metadata-contract enforcement at SQL extraction time. Each entry names a (result-set, column) pair where V2's strict mapper would normally fail-fast on a NULL value; the override declares the column as optional for that run. Pure value carrier — no I/O; consumed at runtime by `MetadataSnapshotRunner` mappers via `isColumnOptional resultSetName columnName overrides : bool` lookup.
+
+### V2 placement
+**Carbon-copied** to `src/Projection.Adapters.OssysSql/MetadataContractOverrides.fs`. Same project as V1's natural V2 location (V2's F# adapter for the OSSYS SQL extraction path); compiles before the `MetadataExtractionSql` / `MetadataSnapshotRunner` siblings so future wiring can consume the type without circular dependency.
+
+### V2 placement — carbon-copy log
+- **V1 source path** (at V1 HEAD V2 inherited from, 2026-05-19):
+  - `src/Osm.Pipeline/SqlExtraction/MetadataContractOverrides.cs` (~140 LOC)
+- **V2 location**: `sidecar/projection/src/Projection.Adapters.OssysSql/MetadataContractOverrides.fs`.
+- **Date inherited**: 2026-05-19.
+- **Refactor status**: **partially refactored** — V2 idioms (F# record + `[<RequireQualifiedAccess>]` module + `Result<_>`-returning smart constructor accumulating per-entry errors; V1 threw `ArgumentException` on first blank input). Set semantics for column lists (V1 used `HashSet<string>`-with-`OrdinalIgnoreCase`; V2 uses lowercase-normalized `Set<string>`). Case-insensitive normalization with original-case `ResultSetLabels` + `ColumnLabels` preserved for diagnostics (mirrors slice-4 `ModuleFilter` convention). `MetadataContractOverrides.empty` replaces V1's `Strict` property (concept-shaped naming per pillar 8).
+- **Citation comment**: at the top of `MetadataContractOverrides.fs`, citing the V1 source path + chapter+slice ID + this ADMIRE entry pointer.
+
+### Existing test coverage (V1)
+- V1 has implicit coverage through `AttributeJsonResultSetProcessor`'s tests (the sole consumer); no dedicated `MetadataContractOverridesTests.cs` file in the trunk.
+
+### V2 test coverage
+- `tests/Projection.Tests/MetadataContractOverridesTests.fs` — 25 tests covering: `empty` / `hasOverrides` baseline; smart-constructor parsing with case-insensitive normalization + original-case label preservation + trim + multiple-result-set merging + blank-column silent skip + null-input safety + error accumulation; `isColumnOptional` runtime lookup with case-insensitive matching + blank-input V2 safety (returns false rather than V1's throw); `withOptional` fluent additive with idempotence + multi-call accumulation + blank-input no-op + first-sight label preservation.
+
+### Edges / risks
+- **No V2 consumer at slice land.** V1's single production call site was `AttributeJsonResultSetProcessor.IsColumnOptional("AttributeJson", "AttributesJson")` — V2's `MetadataSnapshotRunner.fs:778` skips the V1-SUNSET `attrJson` rowset (`do! skip "attrJson"`) because V2 reads the structured `attributes` rowset directly. So V2 has zero direct carry-over of V1's single wiring site. Per IR-grows-under-evidence: pick the V2 mapper to make relaxable on real V1-source drift, not speculatively. Active deferral row added with trigger: "real V1-source drift event surfaces a strict column producing NULL in production."
+- **`OverlayAxis` classification deferred to slice 7.** Operator intent here is "weaken the extraction-time metadata contract" — none of V2's five existing `OverlayAxis` variants (`Selection | Emission | Insertion | Tightening | Ordering`) describe extraction-time contract relaxation cleanly. `Tightening` is the closest semantic stretch (operator decision about constraint enforcement) but V2 reserves that axis for catalog-emit constraint enforcement, not source-data-read tolerance. Slice 7 decides at TransformRegistry wiring time whether to add a sixth `OverlayAxis.Extraction` variant per the chapter A.4.7 open's Q9 trigger-fires discipline, or stretch `Tightening` with a docstring note.
+- **V1 throws; V2 returns safe defaults.** V1's `IsColumnOptional` throws `ArgumentException` on blank result-set / column inputs; V2 returns `false` (the safe "strict" default). Mapper passing a blank name is a V2-side bug, not an operator-input issue — fail-soft rather than crash the extraction.
+- **Slice-5 framing in chapter B.4 open ("per-attribute tightening / emission overrides") is broader than V1's actual `MetadataContractOverrides`.** V2's per-attribute tightening overrides already exist structurally as `Projection.Core.Policy.TighteningOverride` (`Policy.fs:118` — SsKey-keyed with `OverrideAction.KeepNullable`); slice 7 wires the operator-config surface to that pre-existing V2 mechanism. The slice-5 carbon-copy here covers the V1-parity extraction-contract surface only.
+
+## 2026-05-20 — `SuggestedConfig` actionable-payload + severity-sort + axis-cluster (slice B.4.6.actionable-diagnostics)
+**Status:** **extracted (V2-growth; no V1 carbon-copy donor for this exact shape)** — V2 ships a structural cash-out of logging-format contract §12 over the existing chapter-4.3 diagnostic-emit substrate. Mode: V2-growth (the surface is V2-native; V1's single example of an actionable→config-edit event at `CommandConsole.cs:2416-2503 — EmitNamingOverrideTemplate` is referenced in §12 as the prior-art lift but no carbon-copy applies).
+
+### What it does (algebraic terms)
+Pure DataIntent enrichment + presentation reshape over the existing `DiagnosticEntry` stream:
+1. **`SuggestedConfig` typed payload** attached to every actionable entry (operator-fix-suggestion as a structured `{path, value, note}` record per logging-format contract §12); surfaces as a `suggestedConfig` JSON object in the diagnostic artifacts.
+2. **Severity-sort + axis-cluster** for navigation: entries grouped by `Axis.tryFromCode` cluster key, sorted by severity descending within axis. **No occlusion** — every input entry surfaces in the output.
+
+### V2 placement
+**`Projection.Core/Diagnostics.fs`** gains `SuggestedConfig` type + `SuggestedConfig.create` / `createWithNote` smart constructors + `DiagnosticEntry.SuggestedConfig : SuggestedConfig option` field + `DiagnosticEntry.create` smart constructor (slice 5.13.smart-constructor-lift pattern, absorbing the field addition at one site).
+
+**`Projection.Targets.OperationalDiagnostics/ActionableDiagnostics.fs`** ships the `Axis.tryFromCode` derivation + `ActionableDiagnostics.organize` severity-sort-and-axis-cluster primitive. All three emitters (`DecisionLogEmitter` / `OpportunitiesEmitter` / `ValidationsEmitter`) wire `organize` into their `emit` entry points before `DiagnosticDocument.buildArtifact`.
+
+### Existing test coverage (V1)
+No V1 source for this exact shape. V1's `EmitNamingOverrideTemplate` is the single prior example referenced in logging-format contract §12; the elevation to "first-class envelope property on every event whose remediation is a config edit" is V2-growth.
+
+### V2 test coverage
+- `tests/Projection.Tests/ActionableDiagnosticsTests.fs` — 28 tests covering: `Axis.tryFromCode` derivation conventions (two-segment + single-segment fallback + blank rejection + tightening/profiling/adapter prefixes); `ActionableDiagnostics.organize` invariants (no occlusion = result.Length matches input.Length; severity-sort within axis; axis-cluster sorted ASC; unclustered entries at tail in input order; idempotence under reorder); `SuggestedConfig` smart-constructor validation (blank-path rejection; blank-note → None normalization); `DiagnosticEntry.create` defaults; JSON emit path (suggestedConfig surfaces when Some; omitted when None for back-compat).
+
+### Reshape note (mid-slice course correction)
+The initial slice-6 implementation packed a `ClusterCap` mechanism dropping entries beyond `MaxPerAxis = 10` and surfacing only the suppressed count. Principal-operator pushback identified this as occluding source defects (every dropped entry is a real source-data condition the operator must see). The reshape preserves enrichment + presentation; drops occlusion. See `DECISIONS 2026-05-20 (slice B.4.6 reshape — drop occluding cluster-cap)` for the full conflation analysis + the "where fewer findings properly lives" framing (Chapter C slice C.1 wires operator config to existing strategy-layer thresholds like `Policy.NullabilityTighteningConfig.NullBudget`).
+
+### Edges / risks
+- **Per-finding-type emission gates are a separate concern**, properly cashed out at Chapter C slice C.1 (tightening axis, operator-config wiring to existing `Policy.TighteningPolicy` / `TighteningOverride` / `NullBudget` structures). This slice ships enrichment + presentation only; "reduce diagnostic noise at the source" lands when C.1 wires the strategy-layer thresholds to operator config.
+- **The `Code`-prefix routing convention** (`tightening.* / profiling.* / adapter.* / emit.*`) is the load-bearing structural assumption behind `Axis.tryFromCode`. Codes that don't follow the dot-separated convention fall through to the unclustered tail (no harm; just less navigable). Future code-prefix conventions must keep the top.sub two-segment shape stable; otherwise axis-derivation needs an explicit cluster-key field on `DiagnosticEntry` (the "promote to typed DU when a consumer demands it" path).
+- **`SuggestedConfig.Value` is a `string`**, not a typed JSON value DU. Per IR-grows-under-evidence: until a consumer demands distinguishing string-shaped vs numeric-shaped vs boolean-shaped suggested values, the string slot suffices (operators paste the value into JSON config directly). Promote to a typed `SuggestedValue` DU when a real consumer (e.g., a future `v2 suggest-config <runId>` CLI consumer) demands the structural lift.

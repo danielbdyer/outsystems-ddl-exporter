@@ -31,6 +31,7 @@
     <Compile Include="SqlTypeCorrespondence.fs" />
     <Compile Include="SqlLiteral.fs" />
     <Compile Include="Catalog.fs" />
+    <Compile Include="ModuleFilter.fs" />
     <Compile Include="ArtifactByKind.fs" />
     <Compile Include="CatalogDiff.fs" />
     <Compile Include="PhysicalSchema.fs" />

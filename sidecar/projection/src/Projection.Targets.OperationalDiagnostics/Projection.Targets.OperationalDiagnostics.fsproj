@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <Compile Include="Routing.fs" />
+    <Compile Include="ActionableDiagnostics.fs" />
     <Compile Include="DecisionLogEmitter.fs" />
   </ItemGroup>
 

@@ -144,6 +144,7 @@ module NullabilityPass =
                     Map.ofList [
                         "interventionId", decision.InterventionId
                     ]
+                SuggestedConfig = None
             }
         | NullabilityOutcome.RequireOperatorApproval (MandatoryButHasNullsBeyondBudget (nulls, rows, budget)) ->
             Some {
@@ -167,6 +168,7 @@ module NullabilityPass =
                     Map.ofList [
                         "interventionId", decision.InterventionId
                     ]
+                SuggestedConfig = None
             }
 
     /// Run the NullabilityPass via the canonical `Composition.fanOut`
