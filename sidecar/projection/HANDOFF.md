@@ -1,3 +1,55 @@
+# Handoff letter — 2026-05-20 (mid-chapter B.4 — slices 1–6 DONE on `claude/chapter-b4-opening-vGe7J` at `667f179`; slices 6.5 + 7 are next; LogSink + roll-up emission inserted as new slice 6.5 per gap audit)
+
+---
+
+## 📍 Next-agent orientation — DO THIS FIRST
+
+> **You're picking up chapter B.4 mid-flight.** 6 of 8 slices have shipped; 2 remain. Branch is `claude/chapter-b4-opening-vGe7J` at commit `667f179`; tree is clean; CI green.
+>
+> **Read these, in this order (~25 min):**
+>
+> 1. **This letter** (the top of HANDOFF.md) — 5 min. Names what's done + what's left + the load-bearing discipline lessons from the slice-6 reshape.
+> 2. **`CHAPTER_B_4_OPEN.md`** — 10 min. Primary chapter status doc. The slice plan table is the source of truth — read the **slice 6.5** row + the **slice 7** row carefully; both carry the full scope + acceptance criteria. The chapter-close-ritual paragraph at the bottom names the eight items to run when slice 7 ships.
+> 3. **`docs/logging-format.md`** sections §3 (envelope), §4 (levels), §5 (sink discipline), **§11 (roll-up collapse algorithm — slice 6.5's substantive spec)**, §15.1–§15.2 (two-channel pattern + CLI library recommendations) — 10 min. The contract IS the specification for slice 6.5's `LogSink` implementation. §15.3 (TtyRenderer) is OUT OF SCOPE for chapter B.4 — see Active deferrals.
+> 4. **`DECISIONS.md`** — read the four most-recent entries:
+>    - `2026-05-19 (chapter B.4 mid-chapter strategic exploration)` — Chapter C 6-slice plan + axis catalogue.
+>    - `2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)` — DynamicData retired; revised axes 7/8/9/10; Chapter C slice plan revision.
+>    - `2026-05-20 (logging-format implementation gap audit)` — why slice 6.5 exists + the Spectre micro-chapter deferral.
+>    - `2026-05-20 (slice B.4.6 reshape — drop occluding cluster-cap)` — the load-bearing discipline lesson from slice 6: actionability = enrichment + presentation, NOT occlusion.
+>
+> **Then orient on slice 6.5** by re-reading `CHAPTER_B_4_OPEN.md`'s slice-6.5 row + the §11 + §15 sections of `docs/logging-format.md`. Slice 6.5 ships `Projection.Pipeline/LogSink.fs` (hand-rolled per §15.2 — no `Microsoft.Extensions.Logging`, no `Serilog`); NDJSON envelope serialization to stderr via `System.Text.Json`; the §11 roll-up aggregator (`Dictionary<(category, code, ssKey option), GroupAccumulator>` built ONCE during emission, NOT re-scanned at runSummary time per the §11 Big-O constraint); terminal `summary.runComplete` event with `aggregates` array (first-three-by-chronological-order samples; `Bench.Stats` surfacing under `category=summary, code=bench.label`). Property tests are required — group-key collapse + count accumulation + sample selection + bench-stat surfacing. The substrate is required by slice 7's chapter-B.4 close gate ("the default behavior emits conforming events" per §15.1 closing line).
+
+## What's load-bearing (mid-chapter posture)
+
+- **Slice 1's logging-format contract is the spec.** `docs/logging-format.md` is canonical; slice 6.5's `LogSink` implements §3 + §5 + §11 + §15.1; slice 7's CLI emits conforming events. Read §11's group-key 3-tuple + Big-O note carefully — the aggregator is built **during** emission, not at runSummary time.
+- **No `Microsoft.Extensions.Logging` / `Serilog` / any third-party logger.** Per §15.2 banned alternatives: introducing a logger primitive re-introduces V1's mess where `_logger.LogInformation` writes to stdout alongside `console.Out.Write`. `LogSink` IS the logger; hand-rolled `System.Text.Json` serialization is the path.
+- **No `Spectre.Console` in slice 6.5 or slice 7.** TtyRenderer + dual-channel `--json-out` routing is post-chapter per §15.3 — surfaces as its own micro-chapter alongside `data-twin` when operator-pull demand materializes. Trigger condition: operator runs the CLI + reports NDJSON-only stderr as unfriendly for interactive runs. Substrate is sketched in §15.1 + §15.3; do NOT implement here.
+- **Slice 6's reshape lesson — "actionability" is enrichment, not occlusion.** Per `DECISIONS 2026-05-20 (slice B.4.6 reshape — drop occluding cluster-cap)`: the initial `ClusterCap` design dropped entries beyond `MaxPerAxis = 10` per axis. Principal-operator pushback identified the conflation — every dropped entry is a real source defect (NULL in NOT NULL column; orphaned FK; duplicate unique candidate) the operator MUST see. Suppression at the emit boundary is signal loss. The principled answer to "fewer findings" is per-finding-type emission gates at the strategy layer (e.g., `Policy.NullabilityTighteningConfig.NullBudget` already exists at `Policy.fs:139`); Chapter C slice C.1 wires operator config to those existing knobs. **For slice 6.5: the runSummary's `aggregates` array carries per-(category, code, ssKey) COUNTS plus first-three SAMPLES — it doesn't drop entries from the event stream; it summarizes them.** Read §11 carefully.
+- **`SuggestedConfig` is V2's first-class actionability primitive.** Slice 6 lifted §12's discipline onto every actionable `DiagnosticEntry`. `LogSink`'s envelope must carry `payload.suggestedConfig` when the event is actionable — the contract §10 + §12 specify this shape verbatim. The runSummary's `suggestedConfigEdits` count surfaces in `aggregates` as the operator's "you have N events whose fix is a config edit" signal.
+- **Slice 7 is THIN.** Per the slice-7 row: wraps today's 3 wired `Pipeline.Config` consumers (`Model.Path` → `CatalogReader.parse`; `Overrides.TableRenames` → `TableRename.registered`; `Output.Dir` → `Compose.write`) + slice 6 actionable-diagnostics enrichment + slice 6.5 `LogSink` + `SnapshotJson` / `SnapshotRowsets` connectivity. Dormant config sections (Profile / Cache / Profiler / TypeMapping / Emission booleans / Policy.{Selection, Insertion, UserMatching} / Overrides.{MigrationDependencies, StaticData, CircularDependencies}) parse-but-ignore; they cash out at Chapter C, NOT here. CLI library: **`Argu`** per §15.2 (F#-native; closed-DU subcommand definition); NOT `System.CommandLine`.
+- **Chapter-close gate runs after slice 7.** Eight items per the chapter-close ritual (full list in `CHAPTER_B_4_OPEN.md` final paragraph). The **contract-vs-implementation walk on slice-1's contract surfaces** is added explicitly per the 2026-05-20 gap audit — verify §11 rollup + §15.1 channel-1 NDJSON disciplines are operative in `LogSink`. Phase B's **structural** exit gate runs here; the functional-equivalence arm waits on a future `LiveOssysConnection` chapter (deferred).
+
+## What's deferred (Active deferrals — newly added this chapter)
+
+Verify each at chapter close. See `DECISIONS.md` Active deferrals index for the canonical list with trigger conditions.
+
+- **`LiveOssysConnection` variant of `SnapshotSource` + cluster** — multi-env + UAT-users + axis 10 (user reflow + `ManualOverride` CSV-loader) + axis 14 (extraction-time knobs). Trigger: operator's V1 corporate-network HEAD becomes accessible. Light the functional-equivalence arm of Phase B's exit gate.
+- **Standalone `projection extract` + `projection profile` CLI subcommands** — Dropped at chapter-mid rescope; reserved code paths in §6 event categories still fire from `full-export`'s orchestration.
+- **`data-twin` CLI verb micro-chapter** — Wraps the existing `DockerImageEmitter`; surfaces as its own micro-chapter when dev-team dockerized-replica workflow demands.
+- **`Spectre.Console` TtyRenderer + dual-channel `--json-out` routing micro-chapter** — Per §15.3 post-chapter framing + the 2026-05-20 gap audit. Slice 6.5 ships channel-1-only `LogSink`; TtyRenderer is the optional channel-2 layer on top. Trigger: operator reports NDJSON-only stderr emission as unfriendly for interactive runs.
+- **Static-seed parent-handling behavior** — Dispersed from the struck `DynamicDataSection`; surfaces under concrete operator demand as an emitter `Options` parameter.
+- **CSV adapter for `ManualOverride` (`UserMapLoader`)** — Chapter 4.2 deferral; surfaces under concrete operator workflow demand.
+
+## Branch protocol
+
+This session worked on `claude/chapter-b4-opening-vGe7J`. Continue on the same branch through slices 6.5 + 7 + chapter close. Each slice ships its own commit + DECISIONS entry; chapter-close ships the close letter at `HANDOFF.md` (rotate the current letter to `HANDOFF_CHAPTER_3.md` per convention) + `CHAPTER_B_4_CLOSE.md` synthesis + the eight chapter-close-ritual deliverables. Confirm chapter-close cadence with the principal-operator before opening Chapter C — chapter-open decisions are theirs.
+
+## Test baseline + verification
+
+Current baseline on this branch (chapters 1–6 of B.4): build clean across full solution under `TreatWarningsAsErrors=true`; 184/184 passed on touched surfaces (Config + ModuleFilter + MetadataContract + Diagnostics + DecisionLogEmitter + OperationalDiagnosticsRouting + ActionableDiagnostics + Catalog) in 454ms; non-Docker total is ~1700+; Docker-gated integration test count adds at slice 7 (1 end-to-end `full-export` flow). Expected close: ~1725–1740 non-Docker + ~34 Docker-gated; build clean. Each new slice's tests land alongside the implementation; regression sweep on adjacent surfaces runs before each commit.
+
+---
+
 # Handoff letter — 2026-05-19 (chapter B.3 CLOSES) (FK correlation triplet ships; Faker emitter's deferred trigger structurally met; chapter B.3 complete 8/8 slices)
 
 ---
