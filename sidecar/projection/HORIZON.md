@@ -1602,6 +1602,1210 @@ read, review, and attach to a deployment sign-off.
 
 ---
 
+---
+
+## Group XI — Deeper categorical structure
+
+The first ten kernel items name the existing categorical structure and
+add new composition operators. This group goes one layer further: the
+structures between structures — natural transformations, profunctors,
+comonads, and the limits/colimits that govern how schemas combine.
+
+---
+
+### H-060 — Natural transformation between PolicyExpr and Policy record
+
+**Status:** proposed
+
+**Gap.** H-016 proposes a `PolicyExpr` combinator language whose
+`eval : PolicyExpr -> Policy` produces the familiar `Policy` record.
+This is a natural transformation between two functors over the policy
+domain — the free combinator functor and the record functor. The
+natural transformation laws (composition preservation, identity
+preservation) are not stated and not tested.
+
+**Location.** `src/Projection.Core/PolicyExpr.fs` (H-016).
+
+**Implementation.** Add a `PolicyExpr.naturalTransform` module with
+the two laws as property tests:
+
+```fsharp
+// naturality square: eval (fmap f expr) = fmap' f (eval expr)
+// identity:          eval PolicyExpr.identity = Policy.empty
+```
+
+**Unlocks.** The `eval` function is not just a convenient converter; it
+is a structure-preserving map. The laws make it impossible to write a
+combinator that evaluates to a different policy depending on which
+`eval` path is taken. Round-trip tests for the config parser follow
+from the natural transformation laws.
+
+---
+
+### H-061 — Profunctor for bidirectional pass transformation
+
+**Status:** proposed
+
+**Gap.** A pass `Catalog → Lineage<Diagnostics<Catalog>>` can be
+composed forward (map the output) or backward (contramap the input).
+There is no `Profunctor` abstraction expressing both directions
+simultaneously, so adapters that need to reshape inputs before a pass
+and outputs after it must do so in two separate expressions.
+
+**Implementation sketch.**
+
+```fsharp
+type Profunctor<'a, 'b> = {
+    DiMap : ('c -> 'a) -> ('b -> 'd) -> Profunctor<'c, 'd>
+}
+
+val passAsProfunctor : Pass<'a, 'b> -> Profunctor<'a, 'b>
+```
+
+**Location.** New module `src/Projection.Core/Profunctor.fs`.
+
+**Unlocks.** Pass adaptation — reshaping a pass to fit a different
+input/output type without losing the lineage — becomes a single
+`diMap` call. The adapter layer in `Projection.Adapters.*` has several
+sites where input reshaping and output reshaping are currently split
+across two `|> map` calls; `diMap` unifies them.
+
+---
+
+### H-062 — Reader comonad for Policy + Profile context propagation
+
+**Status:** proposed
+
+**Gap.** Every pass takes `Policy` and `Profile` as parameters. This
+is the reader monad pattern applied at the parameter level. The dual
+of a reader monad is a reader comonad — a value `'a` paired with the
+context `Policy * Profile` that produced it, with `extract` projecting
+out the value and `extend` threading context through a chain of
+computations.
+
+**Implementation sketch.**
+
+```fsharp
+type PassContext<'a> = {
+    Value   : 'a
+    Policy  : Policy
+    Profile : Profile
+}
+
+val extend  : (PassContext<'a> -> 'b) -> PassContext<'a> -> PassContext<'b>
+val extract : PassContext<'a> -> 'a
+```
+
+**Location.** New module `src/Projection.Core/PassContext.fs`.
+
+**Unlocks.** A pass chain written with `extend` carries `Policy` and
+`Profile` through the chain implicitly; each pass sees the full context
+without taking it as an explicit parameter. The comonad laws (left
+identity, right identity, associativity of `extend`) are
+property-testable. This is the context-propagation dual of the
+Lineage writer monad; together they characterize the full algebraic
+structure of the pipeline.
+
+---
+
+### H-063 — Free monad for pass scheduling as a first-class DSL
+
+**Status:** proposed
+
+**Gap.** The pass chain in `Compose.fs` is a fixed sequence of
+`PassChainAdapter.compose` calls. A free monad over the pass DSL
+would allow the pass chain to be described as a data structure (an
+AST) and interpreted in multiple ways: sequentially (the current
+default), in parallel (H-006), or as a dependency-ordered graph
+(H-011).
+
+**Implementation sketch.**
+
+```fsharp
+type PassF<'a> =
+    | RunPass  of Pass<Catalog, Catalog> * 'a
+    | Parallel of PassF<'a> list * 'a
+    | Done     of 'a
+
+type PassProgram<'a> = Free<PassF, 'a>
+
+val sequential : PassProgram<Catalog> -> Lineage<Diagnostics<Catalog>>
+val parallel   : PassProgram<Catalog> -> Lineage<Diagnostics<Catalog>>
+val dryRun     : PassProgram<Catalog> -> string list  // pass names in order
+```
+
+**Location.** New module `src/Projection.Pipeline/PassProgram.fs`.
+
+**Unlocks.** The three interpreters — sequential, parallel, dry-run —
+are the same `PassProgram<Catalog>` value evaluated differently. `dryRun`
+becomes the implementation of `osm explain`: it lists the pass chain
+without executing it. H-006 (parallel composition) becomes a derived
+interpreter rather than a new composition operator.
+
+---
+
+### H-064 — Colimits in the schema category (coproduct and pushout)
+
+**Status:** proposed
+
+**Gap.** H-042 proposes `Catalog.union / intersect / subtract` as
+schema algebra. The categorical underpinning is that `Catalog.union`
+is a pushout (the amalgamation of two schemas over a shared sub-schema)
+and `Catalog.intersect` is a pullback (the common structure). These
+operations are currently proposed as ad-hoc functions; naming the
+categorical structure they instantiate makes composition laws provable.
+
+**Implementation.** `CatalogAlgebra.pushout` takes two Catalogs and a
+shared sub-Catalog (their overlap) and produces the amalgamated result.
+`CatalogAlgebra.pullback` computes the intersection. Both satisfy
+universal-property laws testable as property tests.
+
+**Location.** `src/Projection.Core/CatalogAlgebra.fs` (H-042).
+
+**Unlocks.** Multi-module schema composition becomes a sequence of
+pushouts. Schema decomposition (extract a sub-module) becomes a
+pullback. The laws guarantee that composed schemas are consistent and
+that decomposition is the left inverse of composition.
+
+---
+
+### H-065 — Yoneda embedding applied to the TransformRegistry
+
+**Status:** proposed
+
+**Gap.** The Yoneda lemma states that a functor `F` is completely
+determined by its set of natural transformations from the representable
+functor `Hom(A, -)`. Applied to the registry: every registered
+transform is completely determined by how it maps every possible
+`Catalog` to a lineage-annotated result. The registry's SHA256 digest
+is a Yoneda-style proof: it identifies the transform uniquely by its
+metadata, not by its function pointer.
+
+**Implementation.** A `TransformRegistry.yonedaProbe` function that,
+given a probe `Catalog`, runs every registered transform and records
+the lineage events produced. The resulting table is a Yoneda embedding
+of the registry: two registries are equivalent iff their probe results
+are identical on every possible probe catalog.
+
+**Location.** `src/Projection.Core/TransformRegistry.fs`.
+
+**Unlocks.** The probe table is a stronger equivalence certificate than
+the SHA256 digest alone (which is sensitive to metadata string changes
+but not to behavioral equivalence). Two differently-named transforms
+that produce identical lineage traces on every probe catalog are
+behaviorally identical — a fact the digest cannot express but the
+Yoneda probe can detect.
+
+---
+
+## Group XII — Advanced F# type system
+
+---
+
+### H-066 — Recursive descent parser CE for Policy config
+
+**Status:** proposed
+
+**Gap.** `Policy.fs`'s config parser is approximately 700 lines of
+nested `match` / `Result.bind` chains. It is the largest single
+function in the codebase and the hardest to extend: adding a new
+policy axis requires threading through N layers of `match`.
+
+**Implementation.** A recursive descent parser computation expression:
+
+```fsharp
+type Parser<'a> = JsonNode -> Result<'a, ParseError list>
+
+let parser = ParserBuilder()
+
+let parsePolicy : Parser<Policy> = parser {
+    let! selection  = parseSelectionPolicy
+    let! emission   = parseEmissionPolicy
+    let! tightening = parseTighteningPolicy
+    let! insertion  = parseInsertionPolicy
+    return Policy.create selection emission tightening insertion
+}
+```
+
+The builder supports `let!` (bind), `return` (lift), and `yield!`
+(collect errors applicatively rather than failing fast).
+
+**Location.** `src/Projection.Core/Policy.fs`.
+
+**Unlocks.** Adding a new policy axis is a new `let!` binding in
+`parsePolicy` plus a new `parseFooAxis` leaf function. The blast
+radius drops from N match-arm sites to 1. Error collection becomes
+applicative: all parse errors surface together rather than stopping at
+the first failure.
+
+---
+
+### H-067 — Statically-resolved type parameters for zero-overhead pass composition
+
+**Status:** proposed
+
+**Gap.** `PassChainAdapter.compose` takes pass functions as first-class
+values. Each composition step introduces an indirect function call
+through a closure. On the operator-reality canary (300 tables, 12
+passes), this is approximately 3600 indirect calls per pipeline run —
+small but measurable in the bench output.
+
+**Implementation.** Inline-able composition via SRTP constraints:
+
+```fsharp
+let inline compose
+    (^P1 : (member Run : Catalog -> Lineage<Diagnostics<Catalog>>))
+    (^P2 : (member Run : Catalog -> Lineage<Diagnostics<Catalog>>))
+    = ...
+```
+
+F# specializes the inline at each call site; the composition becomes
+a direct call chain with no closure allocations.
+
+**Location.** `src/Projection.Pipeline/PassChainAdapter.fs`.
+
+**Trigger.** When bench data shows function-call overhead in the pass
+composition hot path. Currently not a bottleneck; this is a
+bench-driven optimization item per the protocol.
+
+---
+
+### H-068 — Measure-polymorphic statistical aggregation helpers
+
+**Status:** proposed
+
+**Gap.** H-013 proposes units of measure on Profile numerics. Once
+adopted, statistical aggregation helpers (`mean`, `variance`,
+`percentile`) become measure-polymorphic: `mean : 'a<[<Measure>]'u>
+list -> 'a<[<Measure>]'u>`. The aggregation preserves the unit;
+mixing units is a compile error.
+
+**Implementation.**
+
+```fsharp
+let inline mean (xs : decimal<'u> list) : decimal<'u> =
+    List.sum xs / decimal<'u> xs.Length
+
+let inline variance (xs : decimal<'u> list) : decimal<'u ^ 2> = ...
+```
+
+**Location.** `src/Projection.Core/Profile.fs`.
+
+**Unlocks.** Every statistical computation in `NullabilityRules`,
+`CategoricalUniquenessRules`, and future rules is dimensionally safe.
+The helpers are a thin wrapper over the standard `List` functions; the
+cost is zero at runtime; the benefit is type-checked dimensional
+consistency.
+
+---
+
+### H-069 — SqlIdentifier value object (constrained string VO)
+
+**Status:** proposed
+
+**Gap.** SQL identifiers (table names, column names, schema names) are
+represented as `string` throughout the codebase. Nothing prevents
+passing a column name where a schema name is expected. `Name` is a
+presentation-only VO; `SsKey` is an identity VO. There is no VO
+specifically for the SQL-level identifier that must satisfy SQL Server
+identifier rules (max 128 chars, no embedded NUL, bracket-escapable).
+
+**Implementation.**
+
+```fsharp
+type SqlIdentifier = private SqlIdentifier of string
+
+module SqlIdentifier =
+    val create    : string -> Result<SqlIdentifier, IdentifierError>
+    val bracket   : SqlIdentifier -> string   // [identifier]
+    val unescaped : SqlIdentifier -> string
+```
+
+**Location.** New module `src/Projection.Core/SqlIdentifier.fs`.
+
+**Unlocks.** Every site that today passes a bare `string` to
+`buildCreateTable` or `buildCreateIndex` becomes a `SqlIdentifier`
+parameter. SQL injection via schema names at the boundary becomes a
+compile-time impossibility (the adapter must create a `SqlIdentifier`
+via `create`, which validates the string). Bracket-escaping is
+centralized in one place.
+
+---
+
+### H-070 — Refinement-type lite: constrained IR field invariants
+
+**Status:** proposed
+
+**Gap.** Several IR field values have domain constraints that smart
+constructors currently enforce at construction time but cannot be
+expressed in the type signature:
+- `ColumnProfile.RowCount >= 0`
+- `NumericDistribution.P50 <= P95 <= P99`
+- `CategoricalDistribution.Categories` has at least 1 entry
+
+These are checked at construction time (smart constructors return
+`Result`) but there is no type-level notation that makes the
+constraint visible at the call site.
+
+**Implementation.** A `Refined<'a, 'constraint>` newtype:
+
+```fsharp
+type NonNegative
+type Monotone
+
+type Refined<'a, 'c> = private Refined of 'a
+
+module Refined =
+    val create : ('a -> bool) -> 'a -> Result<Refined<'a, 'c>, string>
+    val value  : Refined<'a, 'c> -> 'a
+```
+
+Field types become `Refined<int64, NonNegative>` and
+`Refined<decimal list, Monotone>`. The constraint is visible in the
+field type; consumers know at a glance that the value has been
+validated.
+
+**Location.** New module `src/Projection.Core/Refined.fs`.
+
+---
+
+## Group XIII — Schema intelligence features
+
+These items extend the pipeline's analytical depth — from graph
+metrics to profile anomaly detection to structural complexity scoring.
+
+---
+
+### H-071 — Schema centrality metrics (PageRank over the FK graph)
+
+**Status:** proposed
+
+**Gap.** The FK graph is computed by `TopologicalOrderPass` but no
+centrality measure is derived from it. A table's centrality in the FK
+graph is the strongest single predictor of: migration risk (high
+centrality = many dependents), query performance (high centrality =
+likely join hub), and schema evolution cost (high centrality = many
+cascading changes).
+
+**Implementation.** Personalized PageRank over the FK adjacency matrix
+(`kind_i → kind_j` edge for each FK in `kind_i.References` pointing to
+`kind_j`). The stationary distribution assigns a centrality score to
+each `SsKey`. Convergence is guaranteed (the FK graph is finite and
+typically sparse).
+
+**Location.** New pass `src/Projection.Core/Passes/CentralityPass.fs`.
+
+**Unlocks.** The manifest gains a `CentralityRanking` section — the
+top-N most central tables by schema. The `osm report` verb (H-059)
+includes centrality in the topology section. Policy suggestions for
+high-centrality tables are flagged with elevated urgency.
+
+---
+
+### H-072 — Subgraph extraction for bounded context discovery
+
+**Status:** proposed
+
+**Gap.** A "bounded context" in Domain-Driven Design terms is a
+self-consistent subset of the schema — a set of tables that are more
+connected to each other than to the rest of the schema. The FK graph
+encodes this structure; the community detection algorithm over it would
+identify natural module boundaries.
+
+**Implementation.** Louvain community detection (or Girvan-Newman edge
+betweenness) over the FK graph. Each community is a candidate bounded
+context. `Catalog.extractSubgraph(ssk set)` (a prerequisite: H-042
+schema algebra) extracts the sub-catalog containing exactly those
+`SsKey` values and the FK references between them.
+
+**Location.** New pass `src/Projection.Core/Passes/BoundedContextPass.fs`.
+
+**Unlocks.** `osm report` includes a "Suggested module boundaries"
+section. The pipeline can be run on a sub-catalog extracted by bounded
+context — enabling module-by-module migration strategies rather than
+all-or-nothing deployments.
+
+---
+
+### H-073 — Anomaly detection in Profile (outlier column identification)
+
+**Status:** proposed
+
+**Gap.** The `Profile` carries per-column statistical evidence.
+Columns whose statistical profile is anomalous relative to their peers
+(unexpectedly high null rate, extreme cardinality, unusual value
+distribution shape) are currently invisible. The statistical evidence
+to detect them is present; no pass compares columns within the same
+table or module.
+
+**Implementation.** A `ProfileAnomalyPass` that, for each `Kind`:
+1. Computes the inter-column null rate distribution
+2. Flags columns whose null rate is more than 2σ above the table mean
+3. Flags columns whose `coefficientOfVariation` is anomalously high
+   relative to peer columns of the same data type
+4. Emits `DiagnosticEntry` at `Severity = Info` per anomaly
+
+**Location.** New pass `src/Projection.Core/Passes/ProfileAnomalyPass.fs`.
+
+---
+
+### H-074 — Multi-column functional dependency detection
+
+**Status:** proposed
+
+**Gap.** H-026 proposes consuming `JointDistribution` for pairwise
+dependency detection. Multi-column functional dependencies (A, B → C)
+require hypergraph analysis: a subset of columns determines another
+column. These are the preconditions for database normalization
+recommendations.
+
+**Implementation.** A `FunctionalDependencyPass` that tests Armstrong's
+axioms (reflexivity, augmentation, transitivity) empirically against
+the profile data. When a candidate FD `X → Y` is detected with
+statistical confidence above a threshold, the pass emits a
+`DiagnosticEntry` suggesting normalization.
+
+**Location.** New pass `src/Projection.Core/Passes/FunctionalDependencyPass.fs`.
+
+**Unlocks.** Automated normalization advice. The pass is the
+statistical dual of the static normalization checks in
+`CategoricalUniquenessRules`; together they form a two-layer
+normalization advisor (static structure + empirical evidence).
+
+---
+
+### H-075 — Schema complexity scoring
+
+**Status:** proposed
+
+**Gap.** There is no single metric that characterizes schema
+complexity. Operators making migration decisions and schema evolution
+trade-offs have no quantitative baseline.
+
+**Implementation.** A composite `SchemaComplexity` record:
+
+```fsharp
+type SchemaComplexity = {
+    CyclomaticComplexity  : decimal   // FK cycle count weighted by SCC size
+    CouplingIndex         : decimal   // average FK fan-in per table
+    CohesionIndex         : decimal   // FK density within each community (H-072)
+    DepthOfInheritance    : decimal   // longest FK chain from leaf to root
+    NullabilityRatio      : decimal   // fraction of columns that are nullable
+    OverallScore          : decimal   // weighted composite
+}
+```
+
+Computed by a `SchemaComplexityPass` from the topological order and
+FK graph already available after `TopologicalOrderPass`.
+
+**Location.** New pass `src/Projection.Core/Passes/SchemaComplexityPass.fs`.
+
+**Unlocks.** Complexity appears in the manifest and in `osm report`.
+Operators can track complexity over time (H-077) and correlate
+complexity spikes with schema evolution events.
+
+---
+
+### H-076 — Query plan hint annotation emission
+
+**Status:** proposed
+
+**Gap.** The statistical evidence in `Profile` — FK selectivity,
+cardinality, join distribution — is exactly the evidence SQL Server's
+query optimizer uses to select query plans. V2 can emit `WITH
+(INDEX(...))`, `NOLOCK`, and query store hints as extended properties
+on high-traffic tables when evidence justifies them.
+
+**Location.** New pass `src/Projection.Core/Passes/QueryHintPass.fs`
++ `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs` (emit extended
+properties).
+
+**Implementation.** When `ForeignKeySelectivity.EstimatedCost` exceeds
+a threshold AND `Index.FillFactor` is default (80), the pass suggests
+a lower fill factor via `SuggestedConfig` and emits a query-store hint
+extended property.
+
+---
+
+### H-077 — Time-series profiling (schema evolution over multiple runs)
+
+**Status:** proposed
+
+**Gap.** Every pipeline run produces a fresh `Profile`. There is no
+model of how the profile changes over time. Trending null rates, growing
+cardinality, shifting distributions — these are the signals that
+indicate schema health deterioration or data quality drift.
+
+**Implementation.**
+
+```fsharp
+type ProfileTimeSeries = {
+    At      : DateTimeOffset
+    Profile : Profile
+}
+
+val trend : ProfileTimeSeries list -> Map<SsKey, TrendSummary>
+
+type TrendSummary = {
+    NullRateTrend    : Trend   // Rising | Stable | Falling
+    CardinalityTrend : Trend
+    DistributionDrift: decimal // KL divergence between first and last profile
+}
+```
+
+**Location.** New module `src/Projection.Core/ProfileTimeSeries.fs`.
+
+**Unlocks.** The `osm report` verb gains a "Schema health trends"
+section. Alerts when `DistributionDrift` exceeds a threshold (data
+quality regression). Pairs with H-091 (pipeline audit log) to build a
+complete historical record.
+
+---
+
+## Group XIV — Multi-format emission targets
+
+These items add new output formats. Each is a new sibling Π — a
+target that consumes `Catalog × Profile` and emits a structured
+artifact. The existing T11 (sibling-Π commutativity) and A18 amended
+(no Policy in emitters) apply to all of them.
+
+---
+
+### H-078 — Entity Framework model generation
+
+**Status:** proposed
+
+**Gap.** The `Catalog` IR is a complete description of a relational
+schema. Entity Framework's code-first model is a C# representation of
+the same schema. The mapping is mechanical: `Kind` → `DbSet<TEntity>`,
+`Attribute` → property, `Reference` → navigation property, `Index` →
+`HasIndex` fluent call.
+
+**Location.** New project `Projection.Targets.EntityFramework/`.
+
+**Implementation.** A Roslyn `SyntaxFactory`-based emitter (C# AST,
+not text) producing `DbContext` + per-entity class files. EF Core's
+`HasColumnType`, `IsRequired`, `HasForeignKey` fluent API maps
+directly from V2's IR fields. The emitter is a sibling Π; it never
+touches `Policy`; all decisions about which entities to include were
+already made by the selection passes.
+
+**Unlocks.** From a V2 pipeline run, generate the Entity Framework
+scaffolding for the schema. An OutSystems schema becomes a typed C#
+model in one command. Pairs with H-080 (dbt) and H-081 (OpenAPI) for
+multi-layer schema documentation.
+
+---
+
+### H-079 — dbt model generation
+
+**Status:** proposed
+
+**Gap.** dbt (data build tool) models are YAML `sources` + SQL `SELECT`
+stubs. The `Catalog` IR carries everything needed: table names, column
+names, types, descriptions, FK relationships.
+
+**Location.** New project `Projection.Targets.Dbt/`.
+
+**Implementation.** A YAML emitter (using `YamlDotNet` or
+`Utf8JsonWriter` with YAML output) producing:
+- `sources.yml`: one entry per `Module` with one table per `Kind`
+- `schema.yml`: per-column descriptions from `Attribute.Description`
+- `stg_<table>.sql`: passthrough SELECT stubs referencing source table
+
+**Unlocks.** From a V2 pipeline run, generate the dbt staging layer
+for a data warehouse that consumes the OutSystems transactional schema.
+No manual scaffolding; schema evolution in V2 propagates to dbt via
+a pipeline re-run.
+
+---
+
+### H-080 — Liquibase changelog generation
+
+**Status:** proposed
+
+**Gap.** `SchemaDelta` (H-007) describes the change between two
+Catalogs. Liquibase's XML changelog format is a sequence of
+`<changeSet>` elements that express the same delta. The mapping is
+direct: `Added Kind` → `<createTable>`, `Removed Kind` → `<dropTable>`,
+`Modified Attribute` → `<addColumn>` / `<modifyDataType>`.
+
+**Location.** New project `Projection.Targets.Liquibase/`.
+
+**Implementation.** A delta emitter (consumes `SchemaDelta`, not
+`Catalog`; a delta pass, not a snapshot pass). The XML is produced via
+`XDocument` / `XElement` (typed XML AST, per text-builder-as-first-
+instinct discipline). Each `<changeSet>` carries an `id` derived from
+the `SsKey` of the changed kind + the `RegistryDigest` as the `author`.
+
+---
+
+### H-081 — OpenAPI / JSON Schema emission
+
+**Status:** proposed
+
+**Gap.** REST APIs built on OutSystems schemas expose resources whose
+shape matches the underlying tables. The `Catalog` IR describes these
+shapes. An OpenAPI 3.1 spec with JSON Schema components is generatable
+from `Kind` + `Attribute` + `Reference`.
+
+**Location.** New project `Projection.Targets.OpenApi/`.
+
+**Implementation.** `Kind` → `components/schemas/<Kind.Name>` with
+properties derived from `Attribute` types. `Reference` → `$ref`
+links between schemas. `Index.Filter` → `readOnly: true` hint for
+filtered-index columns. The emitter uses `Utf8JsonWriter` (per A18:
+no Policy consumed). The JSON Schema type mapping follows V2's
+`SqlTypeCorrespondence` in reverse.
+
+---
+
+### H-082 — GraphQL schema emission
+
+**Status:** proposed
+
+**Gap.** GraphQL SDL (Schema Definition Language) is an alternative
+type system for the same relational structure. `Kind` → `type`, `Attribute`
+→ field, `Reference` → field of related type, nullable `Attribute` →
+`FieldType` vs `FieldType!`.
+
+**Location.** New project `Projection.Targets.GraphQL/`.
+
+**Implementation.** A SDL text emitter. Unlike SQL DDL, GraphQL SDL
+has no established typed-AST library for .NET; raw string construction
+via `StringBuilder` is acceptable here (LINT-ALLOW substantive
+rationale: no typed-AST library exists for SDL in the .NET ecosystem).
+All `SsKey`-sorted, deterministic (T1).
+
+---
+
+### H-083 — Data Vault 2.0 Hub / Satellite / Link decomposition
+
+**Status:** proposed
+
+**Gap.** Data Vault 2.0 is a modeling methodology that decomposes
+relational schemas into Hubs (business keys), Satellites (descriptive
+attributes), and Links (relationships). The decomposition is
+algorithmically derivable from the Catalog: each `Kind` with a primary
+key becomes a Hub; its non-key attributes become a Satellite; each FK
+`Reference` becomes a Link. The FK graph and `CentralityPass` (H-071)
+inform which Hubs are load-bearing.
+
+**Location.** New project `Projection.Targets.DataVault/`.
+
+**Implementation.** A transformation pass (DataVault decomposition) +
+a SSDT emitter for the Hub / Satellite / Link DDL. The pass is
+`OperatorIntent Emission` (it restructures the schema; it is not in the
+DataIntent skeleton). The resulting DDL is a sibling Π alongside the
+regular SSDT emission.
+
+---
+
+### H-084 — Flyway versioned migration scripts
+
+**Status:** proposed
+
+**Gap.** Flyway uses versioned SQL scripts (`V1__description.sql`,
+`V2__description.sql`) to manage schema evolution. `SchemaDelta`
+(H-007) is the natural input: each delta produces one versioned script.
+The script content is ScriptDom-generated DDL (per text-builder-as-
+first-instinct discipline); the version number is derived from the
+`RegistryDigest` prefix.
+
+**Location.** New project `Projection.Targets.Flyway/`.
+
+**Implementation.** A delta emitter: `SchemaDelta → string * DDLScript`
+where the string is the Flyway filename and the DDLScript is the
+ScriptDom-generated SQL. The emitter produces one script per
+`SchemaDelta.Modified` + `Added` + `Removed` group, ordered by
+topological dependency (H-038).
+
+---
+
+## Group XV — Operator experience
+
+---
+
+### H-085 — Policy versioning with SemVer
+
+**Status:** proposed
+
+**Gap.** A policy file is a static document with no version. When a
+policy is updated, there is no record of what changed or when. The
+pipeline can produce different DDL outputs from the same `Catalog`
+under two policy versions, but this is invisible to the operator.
+
+**Implementation.**
+
+```fsharp
+type VersionedPolicy = {
+    Version : SemVer
+    At      : DateTimeOffset
+    Policy  : Policy
+    ChangeLog : string option
+}
+```
+
+The `SemVer` is computed from the hash of the serialized policy: a
+changed policy produces a new version automatically. Major version bump
+= removal or restriction of an existing axis; minor = addition; patch
+= clarification (rationale string change only).
+
+**Location.** New module `src/Projection.Core/VersionedPolicy.fs`.
+
+**Unlocks.** The manifest records `PolicyVersion` alongside
+`RegistryDigest`. Two manifests can be compared by policy version to
+understand whether DDL differences are from schema changes or policy
+changes.
+
+---
+
+### H-086 — Operator approval workflow for SuggestedConfigs
+
+**Status:** proposed
+
+**Gap.** `SuggestedConfig` (H-031 / H-032) emits a policy suggestion.
+There is no workflow for an operator to accept, reject, or annotate the
+suggestion. Accepted suggestions silently change the policy; rejected
+suggestions are forgotten.
+
+**Implementation.** An `ApprovalRecord` type:
+
+```fsharp
+type ApprovalDecision = Accept | Reject | Defer of DateTimeOffset
+type ApprovalRecord = {
+    DiagnosticCode : string
+    SsKey          : SsKey
+    Decision       : ApprovalDecision
+    Note           : string option
+    At             : DateTimeOffset
+}
+```
+
+`osm approve <approval-record.json>` reads the approval record and
+produces an updated policy file. Rejected suggestions are preserved as
+`Skip`-equivalent entries in the policy: the diagnostic fires but
+`SuggestedConfig` is suppressed for this key.
+
+**Location.** New module `src/Projection.Core/ApprovalWorkflow.fs`
++ CLI verb in `src/Projection.Cli/Program.fs`.
+
+---
+
+### H-087 — Interactive policy tuning REPL
+
+**Status:** proposed
+
+**Gap.** Policy configuration today requires editing a TOML/JSON file,
+re-running the pipeline, and inspecting the diagnostics. For a complex
+policy, this loop may require dozens of iterations. An interactive REPL
+would let the operator try a policy change, see the effect on
+diagnostics, and commit or revert without leaving the terminal.
+
+**Implementation.** A `Spectre.Console`-driven TUI:
+- Display the current diagnostic summary (grouped by SsKey)
+- Let the operator select a diagnostic and apply the SuggestedConfig
+- Re-run the relevant pass (H-011 incremental computation) and update
+  the display
+- Output the final policy diff as a TOML stanza on exit
+
+**Location.** New project `Projection.Cli.Tui/` (or extension of
+`Projection.Cli`).
+
+**Trigger.** When the operator workflow demands faster iteration than
+the current edit-run-inspect cycle.
+
+---
+
+### H-088 — Schema diff viewer (terminal and HTML)
+
+**Status:** proposed
+
+**Gap.** `SchemaDelta` (H-007) produces a structured description of
+changes between two Catalogs. There is no human-readable rendering of
+this delta.
+
+**Implementation.** Two renderers:
+
+1. **Terminal:** `Spectre.Console` table with color coding (green =
+   added, red = removed, yellow = modified). Per-column diff shows
+   which fields changed.
+
+2. **HTML:** A self-contained HTML file using inline CSS. Suitable for
+   embedding in PR descriptions or deployment documentation.
+
+**Location.** New module `src/Projection.Targets.SchemaDiff/`.
+
+**CLI verb.** `osm diff --before before.json --after after.json
+--format [terminal|html]`
+
+---
+
+### H-089 — Migration preview (dry-run with human-readable change list)
+
+**Status:** proposed
+
+**Gap.** Before running a migration, operators need to understand what
+DDL will execute and in what order. The current pipeline produces DDL
+without a preview mode.
+
+**Implementation.** A `--dry-run` flag on `osm emit` that:
+1. Runs the full pipeline
+2. Produces the DDL as a statement stream (A35)
+3. Renders each statement as a one-line summary: `CREATE TABLE [dbo].[Kind]`,
+   `ALTER TABLE [dbo].[Kind] ADD [attr] INT NOT NULL`, etc.
+4. Groups by topological batch (H-038) with batch numbers
+5. Reports estimated risk per statement (DROP = High; ALTER = Medium;
+   CREATE = Low) based on SsKey centrality from H-071
+
+**Location.** `src/Projection.Cli/Program.fs` + new
+`src/Projection.Targets.MigrationPreview/PreviewEmitter.fs`.
+
+---
+
+### H-090 — Pipeline audit log (full reproducibility record)
+
+**Status:** proposed
+
+**Gap.** There is no persistent record of pipeline runs. An operator
+who ran `osm emit` last Tuesday cannot reconstruct which `Catalog`,
+`Policy`, `Profile`, and registry were in effect without manually
+saving each artifact.
+
+**Implementation.** An `AuditLog` record written alongside the DDL
+bundle:
+
+```fsharp
+type AuditRecord = {
+    RunAt         : DateTimeOffset
+    CatalogDigest : string         // SHA256 of serialized Catalog
+    PolicyVersion : SemVer         // H-085
+    ProfileDigest : string option  // SHA256 of Profile (None if Profile.empty)
+    RegistryDigest: string         // from manifest
+    OutputDigest  : string         // SHA256 of emitted DDL bundle
+}
+```
+
+Given an `AuditRecord`, any operator with the same inputs can
+reproduce the exact DDL output.
+
+**Location.** `src/Projection.Pipeline/AuditLog.fs` +
+`src/Projection.Cli/Program.fs` (write audit record on each emit).
+
+---
+
+## Group XVI — Infrastructure, extensibility, and scale
+
+---
+
+### H-091 — Plugin architecture for custom passes
+
+**Status:** proposed
+
+**Gap.** All passes are statically linked. An operator who needs a
+custom pass (e.g., an org-specific naming convention enforcer, a
+compliance check for a particular regulatory standard) must modify and
+recompile the core codebase.
+
+**Implementation.** A plugin contract:
+
+```fsharp
+type PassPlugin = {
+    Name        : string
+    Version     : string
+    Stage       : StageBinding
+    Run         : Catalog -> Policy -> Profile -> Lineage<Diagnostics<Catalog>>
+}
+```
+
+The CLI discovers plugins from a configured directory
+(`~/.osm/plugins/*.dll`). Each DLL exposes one or more `PassPlugin`
+values. The registry loads them via reflection (out of scope for Core;
+the plugin host lives in the CLI layer). Plugin passes are registered
+in the `TransformRegistry` at startup; their `RegistryDigest` entry
+changes when a plugin is added or removed.
+
+**Location.** New module `src/Projection.Cli/PluginHost.fs`.
+
+---
+
+### H-092 — Streaming catalog loading for large schemas
+
+**Status:** proposed
+
+**Gap.** `Catalog.create` loads the full schema into memory. At 300
+tables (the operator-reality canary), this is fine. At 10,000 tables
+(enterprise-scale OutSystems installations), the full in-memory Catalog
+may exhaust available memory before the pipeline begins.
+
+**Implementation.** A streaming `CatalogReader` that emits
+`CatalogChunk` values — bounded subsets of the Catalog (e.g., one
+Module at a time) — via `AsyncStream`. Passes that operate on the full
+Catalog (e.g., topological sort) buffer the full graph; passes that
+operate per-Kind (e.g., NullabilityPass) process chunks without
+materializing the full Catalog.
+
+**Location.** `src/Projection.Adapters.Sql/StreamingCatalogReader.fs`.
+
+**Trigger.** When a real schema exceeds available memory at 300-table
+canary scale. Currently not a bottleneck; this is a capacity planning
+item.
+
+---
+
+### H-093 — Manifest signing (Ed25519 signature over manifest digest)
+
+**Status:** proposed
+
+**Gap.** The manifest records a `RegistryDigest` (SHA256) and
+`OutputDigest` (SHA256 of DDL bundle). These are integrity checks, not
+authenticity checks. An adversary who can modify the manifest can
+update the digests to match tampered content.
+
+**Implementation.** An Ed25519 signature over the canonical JSON
+serialization of the manifest. The signing key is operator-managed
+(stored in a hardware token or secrets manager). `osm verify
+<manifest.json> --key <public-key.pem>` checks the signature.
+
+**Location.** `src/Projection.Cli/ManifestSigner.fs`.
+
+**Unlocks.** Deployment pipelines can verify that the DDL bundle they
+are about to execute was produced by an authorized pipeline run with
+an unmodified registry. Compliance requirements that demand an audit
+trail of DDL changes are satisfied structurally.
+
+---
+
+### H-094 — Schema registry integration
+
+**Status:** proposed
+
+**Gap.** The `Catalog` IR is V2's internal schema representation. Many
+organizations maintain a schema registry (Confluent Schema Registry,
+AWS Glue Data Catalog, Azure Purview) as the enterprise-wide schema
+source of truth. V2 currently has no adapter for these registries.
+
+**Implementation.** A new adapter family:
+
+```fsharp
+// src/Projection.Adapters.SchemaRegistry/
+module ConfluentAdapter =
+    val readCatalog : ConfluentConfig -> Task<Result<Catalog, AdapterError>>
+
+module GlueAdapter =
+    val readCatalog : GlueConfig -> Task<Result<Catalog, AdapterError>>
+```
+
+Each adapter maps the registry's schema representation to the V2
+`Catalog` IR, following the same translation disciplines as the OSSYS
+adapter (trace-before-fixture, three-class typology, ADMIRE entry per
+adapter).
+
+---
+
+### H-095 — Deterministic build artifacts (bit-for-bit reproducible DDL)
+
+**Status:** proposed
+
+**Gap.** T1 (byte-determinism) asserts that `Project(catalog, policy,
+profile)` is deterministic: the same inputs always produce the same
+outputs. This is tested via the canary's `PhysicalSchema` roundtrip.
+It is not tested in isolation as a property: "given the same inputs
+on two different machines, with two different .NET runtimes, at two
+different times, the output is byte-identical."
+
+**Implementation.** A reproducibility test suite that:
+1. Records the output of a pipeline run to a fixture file
+2. Runs the pipeline again (different process, possibly different
+   machine via CI) on the same inputs
+3. Asserts byte-for-byte equality of the two outputs
+
+The test is the structural proof of T1; the canary tests correctness;
+the reproducibility test tests determinism.
+
+**Location.** `tests/Projection.Tests/ReproducibilityTests.fs`.
+
+**Known risks.** `DateTimeOffset` sources in `AuditRecord` (H-090)
+must be injected, not sourced from `DateTimeOffset.UtcNow`. The
+`Clock` abstraction already exists in the boundary layer; this test
+will surface any remaining `Now` calls in the pipeline.
+
+---
+
+### H-096 — Mutation testing for strategy rules
+
+**Status:** proposed
+
+**Gap.** Property tests and example tests verify that strategies
+produce correct outputs for given inputs. They do not verify that the
+test suite would catch a subtle strategy bug — a reversed comparison
+operator, an off-by-one in a threshold. Mutation testing inserts these
+bugs and verifies the test suite kills the mutant.
+
+**Implementation.** Stryker.NET (`dotnet-stryker`) over the
+`src/Projection.Core/Strategies/` directory. Mutation operators: value
+replacement (`>` → `>=`), branch negation, operator swap. A mutation
+score of ≥80% killed mutants is the target.
+
+**Location.** `bench/stryker-config.json` + CI step.
+
+**Unlocks.** Confidence that the strategy test suite is not just green
+but detecting. The strategy layer is the most semantically dense code
+in the codebase; mutation testing is the appropriate verification
+instrument for it.
+
+---
+
+### H-097 — Fuzz testing for the Policy config parser
+
+**Status:** proposed
+
+**Gap.** The Policy config parser (H-066 proposes replacing it;
+regardless of implementation, it is a boundary function). Fuzz testing
+exercises the parser with arbitrary byte sequences to find crashes,
+hangs, and unexpected exceptions before adversarial inputs do.
+
+**Implementation.** SharpFuzz + libFuzzer over
+`Policy.parseFromString : string -> Result<Policy, ParseError list>`.
+The fuzzer is seeded with valid policy fixtures; mutations explore the
+boundary between valid and invalid inputs.
+
+**Location.** `tests/Projection.FuzzTests/PolicyParserFuzz.fsx`.
+
+**Unlocks.** Parser robustness against malformed operator-supplied
+config files. The parser is the largest function in the codebase and
+the most likely attack surface for a config-injection bug.
+
+---
+
+### H-098 — Model-based testing for the policy system
+
+**Status:** proposed
+
+**Gap.** H-054 proposes property tests for specific policy simulation
+laws. Model-based testing is the generalization: define a simple model
+of the policy system (a state machine over `PolicyExpr` transitions),
+generate random sequences of policy operations, run both the model and
+the real implementation, and assert they agree.
+
+**Implementation.** `FsCheck.StateMachine` over the policy state
+machine:
+- States: `Policy` record values
+- Transitions: `applyAxis`, `removeAxis`, `compose`, `reset`
+- Model: a `Map<OverlayAxis, bool>` (axis present or absent)
+- Agreement: `model.ActiveAxes = Set.ofList (Policy.activeAxes real)`
+
+**Location.** `tests/Projection.Tests/PolicyStateMachineTests.fs`.
+
+---
+
+### H-099 — Remote pass execution (offload compute-intensive passes to a worker)
+
+**Status:** proposed
+
+**Gap.** The pipeline runs entirely in-process. For very large schemas
+or compute-intensive passes (topological sort over 10k-table graphs,
+multi-column functional dependency detection over large profiles),
+offloading passes to a remote worker or a serverless function would
+reduce local execution time.
+
+**Implementation.** A `RemotePass<'In, 'Out>` adapter that serializes
+the input, calls a remote endpoint, and deserializes the result back
+into the Kleisli pipeline:
+
+```fsharp
+val remotePass :
+    Uri -> Pass<Catalog, Catalog> -> Pass<Catalog, Catalog>
+```
+
+The remote endpoint is an `osm-worker` process that exposes a simple
+HTTP API accepting serialized `Catalog` and returning serialized
+`Lineage<Diagnostics<Catalog>>`.
+
+**Location.** New project `Projection.Adapters.Remote/`.
+
+**Trigger.** When bench data shows that a specific pass takes more than
+50% of pipeline wall time at operator-reality canary scale and the pass
+is embarrassingly parallelizable across independent `SsKey` sets.
+
+---
+
+### H-100 — AXIOMS.md executable type-checker (L3 axioms as runnable specs)
+
+**Status:** proposed
+
+**Gap.** `AXIOMS.md` is the formal system — A1–A41+ and T1–T11.
+`PRODUCT_AXIOMS.md` is the product axiom layer. The
+verifiability-triangle audit classifies each axiom into Bucket A
+(fully underwritten) through Bucket D (named but unverified). Bucket D
+axioms are aspirational statements with no executable witness.
+
+**Implementation.** A `tests/Projection.Tests/AxiomTests.fs` suite
+that maps every named axiom to a test:
+- Bucket A axioms: test already exists, cross-referenced by name
+- Bucket B axioms: property test generated from axiom statement
+- Bucket C/D axioms: `Skip = "Axiom A<N>: pending — <axiom statement>"`
+
+The test file is the executable form of AXIOMS.md. When a Bucket D
+axiom is promoted to Bucket A, the `Skip` becomes a `[<Fact>]` or
+`[<Property>]`. The audit cadence (verifiability-triangle audit) is
+what keeps the two documents in sync.
+
+**Location.** `tests/Projection.Tests/AxiomTests.fs`.
+
+**Unlocks.** The formal system is no longer just documentation; it is
+a live test suite. A contributor who reads `AXIOMS.md` can run the
+axiom tests to see which claims are verified, which are aspirational,
+and which are pending. The gap between documentation and behavior
+becomes structurally visible.
+
+---
+
+## Cross-cutting notes (updated)
+
+**Dependency order** (additions to the original list):
+
+- H-016 (Policy DSL) → H-060 (natural transformation), H-085
+  (policy versioning)
+- H-007 (SchemaDelta) → H-080 (Liquibase), H-084 (Flyway), H-088
+  (diff viewer)
+- H-042 (schema algebra) → H-064 (colimits), H-072 (subgraph
+  extraction)
+- H-071 (centrality) → H-072 (bounded contexts), H-075 (complexity
+  scoring), H-089 (migration preview risk)
+- H-066 (parser CE) → H-097 (fuzz testing)
+- H-093 (manifest signing) → H-090 (audit log, provides the
+  artifact being signed)
+- H-031 (SuggestedConfig) → H-086 (approval workflow)
+- H-005 (branching lineage) → H-063 (free monad scheduling)
+
+**Priority tiers** (extended):
+
+- **Tier 1 — Immediate craft dividend:** H-001 through H-003,
+  H-012, H-031, H-036, H-037, H-038 (original list). From the
+  extension: H-066 (parser CE — highest single-function leverage
+  in the codebase), H-069 (SqlIdentifier VO — closes a security
+  surface), H-100 (axiom tests — makes the formal system live).
+
+- **Tier 2 — Statistical evidence closure + intelligence features:**
+  H-024 through H-030, H-033, H-071, H-073, H-074, H-075. The
+  LiveProfiler computes the evidence; these items are the consumers
+  and analysts.
+
+- **Tier 3 — Kernel growth:** H-005 through H-011, H-016, H-060
+  through H-065. Each adds new formal machinery — new types, new
+  composition operators, new categorical structures.
+
+- **Tier 4 — Multi-format targets:** H-078 through H-084. Each is
+  a new sibling Π; they share the Catalog/Profile evidence and
+  produce output for a different consumer ecosystem.
+
+- **Tier 5 — Operator experience and infrastructure:** H-085
+  through H-099. These complete the system as a production-grade
+  platform: reproducibility, audit trails, plugins, signing, scale.
+
+---
+
 *Maintained alongside `BACKLOG.md`. Items progress through the same
 status vocabulary. New items arrive via `proposed` entries; scheduled
 items cite the chapter that claims them. This document is the ceiling;
