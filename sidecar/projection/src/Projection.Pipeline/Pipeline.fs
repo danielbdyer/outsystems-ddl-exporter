@@ -62,6 +62,19 @@ module Compose =
             Distributions : JsonNode
         }
 
+    /// Chapter C slice C.2 — run-shape value returned by
+    /// `runWithConfig`. Carries the written artifact paths AND the
+    /// post-run diagnostic stream (today: the special-circumstances
+    /// scan emissions for missing-PK targets + unresolved cycles,
+    /// with operator-allowlist `Metadata.acceptedVia` annotations
+    /// applied). CLI consumers (`runFullExport`) emit each
+    /// diagnostic as a LogSink envelope; other consumers (older
+    /// `emit --config` surface) may ignore.
+    type RunReport = {
+        Paths       : string list
+        Diagnostics : DiagnosticEntry list
+    }
+
     /// Per-artifact relative path. Centralized so tests and the CLI
     /// agree on naming.
     [<RequireQualifiedAccess>]
@@ -100,23 +113,27 @@ module Compose =
     /// unconditionally; decision-set passes write back evidence the
     /// emitters do not yet consume (decision-set consumption is a
     /// future-chapter concern).
-    let private projectFromChain
+    /// Chapter C slice C.2 — state-capturing project. Returns both
+    /// the `Outputs` and the post-chain `ComposeState` so downstream
+    /// consumers (today: `SpecialCircumstancesDiagnostics.emit`) can
+    /// observe per-pass evidence without re-running the chain.
+    /// `projectFromChain` is now a thin wrapper that drops the state.
+    let private projectFromChainWithState
         (chain: PassChainAdapter list)
         (policy: EmissionPolicy)
         (catalog: Catalog)
-        : Outputs =
+        : Outputs * ComposeState =
         use _ = Bench.scope "compose.project"
-        let composedCatalog =
+        let composedState =
             (use _ = Bench.scope "compose.runChain"
              PassChainAdapter.compose chain (ComposeState.initial catalog)
-             |> LineageDiagnostics.payload
-             |> fun state -> state.Catalog)
+             |> LineageDiagnostics.payload)
         // Chapter 4.9 slice δ — apply EmissionPolicy.filterPlatformAutoIndexes
         // at the post-chain seam. The filter is `OperatorIntent of Emission`
         // per pillar 9; lives outside the registered pass chain because
         // its evidence is policy, not catalog-derived. Identity when
         // `IncludePlatformAutoIndexes = true` (V1 parity default).
-        let emittedCatalog = EmissionPolicy.filterPlatformAutoIndexes policy composedCatalog
+        let emittedCatalog = EmissionPolicy.filterPlatformAutoIndexes policy composedState.Catalog
         let bundle =
             (use _ = Bench.scope "emit.ssdtBundle.compose"
              match SsdtDdlEmitter.emitSlices emittedCatalog with
@@ -143,11 +160,19 @@ module Compose =
              match JsonNode.Parse(DistributionsEmitter.emit emittedCatalog Profile.empty) with
              | null -> invalidOp "Compose.project: DistributionsEmitter.emit produced unparseable text (unreachable)"
              | n    -> n)
-        {
+        let outputs = {
             SsdtBundle    = bundle
             Json          = json
             Distributions = distributions
         }
+        outputs, composedState
+
+    let private projectFromChain
+        (chain: PassChainAdapter list)
+        (policy: EmissionPolicy)
+        (catalog: Catalog)
+        : Outputs =
+        projectFromChainWithState chain policy catalog |> fst
 
     /// Production-shape project: routes through
     /// `RegisteredTransforms.allChainSteps`. The hand-coded "emit raw
@@ -171,6 +196,19 @@ module Compose =
         : Outputs =
         let chain = RegisteredTransforms.allChainStepsFor fullPolicy profile
         projectFromChain chain emissionPolicy catalog
+
+    /// Chapter C slice C.2 — `projectWith` sibling that returns the
+    /// post-chain `ComposeState` alongside the outputs. Used by
+    /// `runWithConfig` to feed `SpecialCircumstancesDiagnostics`
+    /// without re-running the registered chain.
+    let projectWithState
+        (fullPolicy: Policy)
+        (profile: Profile)
+        (emissionPolicy: EmissionPolicy)
+        (catalog: Catalog)
+        : Outputs * ComposeState =
+        let chain = RegisteredTransforms.allChainStepsFor fullPolicy profile
+        projectFromChainWithState chain emissionPolicy catalog
 
     /// Skeleton-shape project: routes through
     /// `RegisteredTransforms.skeletonChainSteps` (per chapter A.4.7'
@@ -407,25 +445,36 @@ module Compose =
 
     /// Full end-to-end driven by a parsed `Config`. Reads `Model.Path`,
     /// applies config-driven catalog rewrites (rename), binds operator
-    /// `Policy` (tightening — Chapter C slice C.1), projects through
-    /// the policy-aware chain, writes to `Output.Dir`. Threading the
-    /// remaining dormant sections (Selection / Insertion / Emission
-    /// folders / TagGroups) is the work of subsequent Chapter C
-    /// slices.
-    let runWithConfig (cfg: Config.Config) : Task<Result<string list>> =
+    /// `Policy` (tightening — Chapter C slice C.1) + operator
+    /// `SpecialCircumstances` (missing-PK / circular-deps
+    /// acknowledgements — Chapter C slice C.2), projects through the
+    /// policy-aware chain capturing the post-chain `ComposeState`,
+    /// emits special-circumstances diagnostics with operator-allowlist
+    /// `Metadata.acceptedVia` annotation, writes to `Output.Dir`,
+    /// returns the paths + the diagnostic stream as a `RunReport`.
+    let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
         task {
             let! parsed = read cfg.Model.Path
             match parsed with
             | Ok catalog ->
                 match applyRenames cfg catalog with
                 | Ok renamedCatalog ->
-                    match buildPolicyFromConfig cfg renamedCatalog with
-                    | Ok policy ->
-                        let outputs =
-                            projectWith policy Profile.empty EmissionPolicy.empty renamedCatalog
-                        return write cfg.Output.Dir outputs
-                    | Error errors ->
-                        return Result.failure errors
+                    let policyR     = buildPolicyFromConfig cfg renamedCatalog
+                    let overridesR  = SpecialCircumstancesBinding.fromConfig renamedCatalog cfg
+                    match policyR, overridesR with
+                    | Ok policy, Ok overrides ->
+                        let outputs, finalState =
+                            projectWithState policy Profile.empty EmissionPolicy.empty renamedCatalog
+                        let diagnostics =
+                            SpecialCircumstancesDiagnostics.emit overrides finalState
+                        match write cfg.Output.Dir outputs with
+                        | Ok paths ->
+                            return Result.success { Paths = paths; Diagnostics = diagnostics }
+                        | Error errors ->
+                            return Result.failure errors
+                    | Error es1, Error es2 -> return Result.failure (es1 @ es2)
+                    | Error errors, _      -> return Result.failure errors
+                    | _, Error errors      -> return Result.failure errors
                 | Error errors ->
                     return Result.failure errors
             | Error errors ->

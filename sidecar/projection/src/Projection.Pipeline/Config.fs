@@ -43,7 +43,6 @@ module Config =
         | WithEntities of name: string * entities: string list
 
     type ValidationOverrides = {
-        AllowMissingPrimaryKey : string list
         AllowMissingSchema     : string list
     }
 
@@ -123,6 +122,15 @@ module Config =
         MigrationDependencies  : FilePathOverride option
         StaticData             : FilePathOverride option
         CircularDependencies   : CircularDependenciesSection option
+        /// Chapter C slice C.2 — operator allowlist of kinds whose
+        /// missing primary key is acknowledged. Entries are typed
+        /// `(Module, Entity)` logical pairs (operator-readable);
+        /// the binder resolves each to a `SsKey` against the loaded
+        /// catalog at bind time. Downstream diagnostics still fire
+        /// for matching kinds but carry `Metadata.acceptedVia =
+        /// "config:overrides.allowMissingPrimaryKey"` per the
+        /// annotate-don't-suppress discipline.
+        AllowMissingPrimaryKey : LogicalName list
     }
 
     type EmissionSection = {
@@ -230,7 +238,6 @@ module Config =
     // -----------------------------------------------------------------------
 
     let private defaultValidationOverrides : ValidationOverrides = {
-        AllowMissingPrimaryKey = []
         AllowMissingSchema     = []
     }
 
@@ -256,10 +263,11 @@ module Config =
     }
 
     let private defaultOverrides : OverridesSection = {
-        TableRenames          = []
-        MigrationDependencies = None
-        StaticData            = None
-        CircularDependencies  = None
+        TableRenames           = []
+        MigrationDependencies  = None
+        StaticData             = None
+        CircularDependencies   = None
+        AllowMissingPrimaryKey = []
     }
 
     let private defaultEmission : EmissionSection = {
@@ -537,13 +545,10 @@ module Config =
             | JsonValueKind.Null | JsonValueKind.Undefined ->
                 Result.success defaultValidationOverrides
             | JsonValueKind.Object ->
-                match getStringListOrEmpty v "allowMissingPrimaryKey" with
+                match getStringListOrEmpty v "allowMissingSchema" with
                 | Error es -> Error es
-                | Ok pks ->
-                    match getStringListOrEmpty v "allowMissingSchema" with
-                    | Error es -> Error es
-                    | Ok schemas ->
-                        Result.success { AllowMissingPrimaryKey = pks; AllowMissingSchema = schemas }
+                | Ok schemas ->
+                    Result.success { AllowMissingSchema = schemas }
             | _ ->
                 Result.failureOf (
                     configError "typeMismatch" "model.validationOverrides must be an object.")
@@ -767,6 +772,33 @@ module Config =
                 | Ok strict ->
                     Result.success (Some { AllowedCycles = cycles; StrictMode = strict })
 
+    /// Parse `overrides.allowMissingPrimaryKey` as a list of typed
+    /// `{ module, entity }` objects (Chapter C slice C.2). Operator
+    /// chose typed tuples over bare strings (DECISIONS 2026-05-20 —
+    /// special-circumstances axis scope). Each entry resolves to a
+    /// Kind `SsKey` at bind time via `SpecialCircumstancesBinding`.
+    let private parseAllowMissingPrimaryKey (element: JsonElement) : Result<LogicalName list> =
+        match element.TryGetProperty("allowMissingPrimaryKey") with
+        | false, _ -> Result.success []
+        | true, v ->
+            match v.ValueKind with
+            | JsonValueKind.Null | JsonValueKind.Undefined -> Result.success []
+            | JsonValueKind.Array ->
+                v.EnumerateArray()
+                |> Seq.toList
+                |> List.map (fun e ->
+                    if e.ValueKind = JsonValueKind.Object then
+                        parseLogicalName e
+                    else
+                        Result.failureOf (
+                            configError
+                                "typeMismatch"
+                                "overrides.allowMissingPrimaryKey entries must be { module, entity } objects."))
+                |> Result.aggregate
+            | _ ->
+                Result.failureOf (
+                    configError "typeMismatch" "overrides.allowMissingPrimaryKey must be an array.")
+
     let private parseOverrides (root: JsonElement) : Result<OverridesSection> =
         match tryGetProperty root "overrides" with
         | None -> Result.success defaultOverrides
@@ -783,12 +815,16 @@ module Config =
                         match parseCircularDependencies element with
                         | Error es -> Error es
                         | Ok cycles ->
-                            Result.success {
-                                TableRenames          = renames
-                                MigrationDependencies = migDeps
-                                StaticData            = staticData
-                                CircularDependencies  = cycles
-                            }
+                            match parseAllowMissingPrimaryKey element with
+                            | Error es -> Error es
+                            | Ok allowedPks ->
+                                Result.success {
+                                    TableRenames           = renames
+                                    MigrationDependencies  = migDeps
+                                    StaticData             = staticData
+                                    CircularDependencies   = cycles
+                                    AllowMissingPrimaryKey = allowedPks
+                                }
 
     let private parseEmission (root: JsonElement) : Result<EmissionSection> =
         match tryGetProperty root "emission" with

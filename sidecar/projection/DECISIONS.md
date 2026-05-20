@@ -18915,3 +18915,95 @@ The two failure modes share a root cause family: **defaulting to structured/dest
 - `sidecar/projection/HANDOFF.md` — restored to carry slice-C.1 mid-chapter letter PLUS the preserved chapter-B.4 close letter (which the prior commit had clobbered); the slice-C.1 letter rewritten as prose addressed to the next agent.
 - `DECISIONS 2026-05-20 (test-failure capture protocol)` — sibling codification from the same session; same shape (recurring agent failure mode → structural protocol in CLAUDE.md operating disciplines).
 
+
+## 2026-05-20 (slice C.2 — special-circumstances axis full lift) — operator allowlists for missing-PK targets + circular-dependency cycles bind from config, structural scan emits typed DiagnosticEntries through the LogSink envelope stream, matching findings carry Metadata.acceptedVia annotation per the annotate-don't-suppress discipline
+
+### Context
+
+Per the chapter-C slice queue + `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)`: C.2 is the special-circumstances axis — operator config publishes "I've already acknowledged these source defects." Two findings: missing primary keys on referenced kinds; unresolved circular FK dependencies. Both signals exist internally in V2 today (`SymmetricClosure` skips inverse-creation with `ClosureSkipped TargetHasNoPrimaryKey`; `TopologicalOrderPass.runWith` returns `TopologicalOrder.Cycles : CycleDiagnostic list`) but neither flows to the operator-visible `DiagnosticEntry` stream or to LogSink. The dormant `Overrides.CircularDependencies.AllowedCycles` config section parses but has no consumer; `Model.ValidationOverrides.AllowMissingPrimaryKey` lives in the wrong location (Model vs Overrides) and parses as bare strings rather than typed entries.
+
+### Two principal-PO scope decisions at slice open
+
+(a) **AllowMissingPrimaryKey ref shape.** Three options — copy `TighteningBinding`'s logical-or-physical `SsKey` ref form (uniform Chapter C surface; ~20 LOC more); typed `(Module × Entity)` tuples at parse time (lighter, no physical fallback, divergent from C.1); bare-string `"Module.Entity"` form (simplest). **Decision: typed `(Module × Entity)` tuples** (`Config.LogicalName list`) — V2 already names this shape (`LogicalName`); operator-readable; no physical-fallback complexity. Resolution to typed `SsKey` happens at bind time via a new `SpecialCircumstancesBinding` mirror of TighteningBinding.
+
+(b) **CircularDependencies + AllowMissingPrimaryKey consumer disposition.** Three options — annotate as accepted + keep diagnostic visible (per slice-6 reshape lesson "actionability = enrichment + presentation, NOT occlusion"); suppress outright when allowlisted; bifurcate. **Decision: annotate-don't-suppress** for both axes — the diagnostic stream still carries the source-defect finding; matching entries receive `Metadata.acceptedVia = "config:overrides.<axis>"` so downstream consumers see the acceptance state without occluding the underlying defect.
+
+### Scope adjustment at slice open
+
+The principal-PO's annotate-don't-suppress decision presumed a DiagnosticEntry stream that **doesn't exist today** for these signals (missing-PK lives in `LineageEvent.Annotated`; cycles in `TopologicalOrder.Cycles`; neither routes to LogSink). Three scope options — binder + pure-F# reconciliation function only (lightest); binder + structured-payload Acceptance field extension (medium); full lift including new DiagnosticEntry emission sites + LogSink routing (largest). **Decision: full lift**, accepting the slice budget overrun risk (5-7h vs the architect's 3-5h target). The full lift is what makes the operator-visible "accepted" surface actually operator-visible.
+
+### What shipped
+
+**Approach decision (load-bearing).** Rather than reshape every pass's return type (would cascade through ~70 consumer sites for `TopologicalOrderPass` alone, plus ~19 for `SymmetricClosure`), C.2 adds a **new pure-additive scan step** that observes the post-chain `Catalog` + `ComposeState` and emits `DiagnosticEntry`s with acceptance annotation in one pass. Zero pass-internal changes; mirrors the "consumer pass" framing the slice-C.1 architect's HANDOFF letter named.
+
+**`src/Projection.Pipeline/Config.fs` (~50 LOC delta)** — schema reshape:
+- `Model.ValidationOverrides.AllowMissingPrimaryKey` (parse-only `string list`) **removed**; replaced by `Overrides.AllowMissingPrimaryKey : LogicalName list`. The old location was structurally wrong (Model owns catalog source; Overrides owns operator-driven catalog rewrites/annotations); the new location matches the architect's mental model in the slice-C.1 HANDOFF letter + matches `Overrides.CircularDependencies`'s neighborhood. Reshaping the type from bare strings to typed `LogicalName` per the operator decision.
+- New `parseAllowMissingPrimaryKey` parser — reads array of `{ module, entity }` objects via the existing `parseLogicalName` helper; structured `pipeline.config.typeMismatch` errors for non-object entries / non-array roots.
+
+**`src/Projection.Pipeline/SpecialCircumstancesBinding.fs` (~150 LOC NEW)** — the binder + the typed runtime value:
+- `type AcceptanceState = NotAccepted | AcceptedByConfig of source: string`.
+- `type SpecialCircumstances = { AllowedMissingPrimaryKeys : Set<SsKey>; AllowedCycles : Set<Set<SsKey>> }` + `SpecialCircumstances.empty`.
+- `resolveKindByLogical : Catalog -> LogicalName -> Result<SsKey>` — module-then-entity lookup; `pipeline.specialCircumstances.allowMissingPk.unresolved` on miss.
+- `resolveKindByPhysicalTable : Catalog -> string -> Result<SsKey>` — for cycle entries (V1's `CircularDependencyEntry.TableName` is physical); `pipeline.specialCircumstances.allowedCycle.unresolved` on miss. Schema disambiguation deferred — current cycles config doesn't carry schema (IR-grows-under-evidence).
+- `bindCycle` — resolves each `TableOrdering` entry's `TableName` and folds into a `Set<SsKey>` (set semantics so cycle-matching is order-independent).
+- `bindAllowMissingPrimaryKey` + `bindAllowedCycles` — typed-set producers from config sections.
+- `fromConfig : Catalog -> Config.Config -> Result<SpecialCircumstances>` — aggregates per-axis errors so the operator sees every malformed entry in one pass.
+
+**`src/Projection.Pipeline/SpecialCircumstancesDiagnostics.fs` (~140 LOC NEW)** — the scan + annotation step:
+- `kindHasNoPrimaryKey` predicate (mirrors the SymmetricClosure `buildInverse` skip-with-`TargetHasNoPrimaryKey` predicate; reuses `Kind.primaryKey`).
+- `emitMissingPrimaryKeyDiagnostics` — for every catalog reference whose target kind has no PK, emits ONE `DiagnosticEntry` per **unique target** (deduplicated across the N references pointing at it). Source = `specialCircumstancesScan`; Code = `structural.targetMissingPrimaryKey`; Severity = Warning; SsKey = Some target.SsKey; Metadata carries `targetKind` (rendered SsKey) + `acceptedVia` when the target is in `AllowedMissingPrimaryKeys`.
+- `emitCycleDiagnostics` — for every unresolved `CycleDiagnostic` in `state.TopologicalOrder`, emits one `DiagnosticEntry`. Source / Code / Severity as above; SsKey = None (catalog-level diagnostic — cycles have multiple members with no canonical single identity); Metadata carries `members` (semicolon-separated rendered SsKeys) + `reason` (V1-style human prose) + `acceptedVia` when `Set.ofList cycle.Members` matches an entry in `AllowedCycles`. Cycle-matching is set-equality (order-independent per the test fixture).
+- `emit : SpecialCircumstances -> ComposeState -> DiagnosticEntry list` — composes both emissions. `state.TopologicalOrder = None` (catalog without topo evidence yet) yields zero cycle entries cleanly.
+
+**`src/Projection.Pipeline/Pipeline.fs` (~70 LOC delta)** — threading:
+- New `Compose.RunReport = { Paths : string list; Diagnostics : DiagnosticEntry list }`. CLI consumers (full-export's LogSink emission; legacy `emit --config`'s stderr narration) consume the diagnostics field; tests inspect both.
+- New `projectFromChainWithState` factored out of `projectFromChain` — returns `(Outputs * ComposeState)` rather than discarding the writer at the post-chain seam. `projectFromChain` is now a thin wrapper that drops the state for callers (`Compose.project` / `Compose.projectWith`) that don't need it.
+- New `Compose.projectWithState : Policy -> Profile -> EmissionPolicy -> Catalog -> Outputs * ComposeState` — `projectWith` sibling.
+- `runWithConfig` widened — its return type changes from `Task<Result<string list>>` to `Task<Result<RunReport>>`. The body now binds `SpecialCircumstances` via `SpecialCircumstancesBinding.fromConfig`, calls `projectWithState`, runs `SpecialCircumstancesDiagnostics.emit` against the final state, and returns the diagnostics alongside the written paths. Aggregates Policy + SpecialCircumstances binder errors so the operator sees both axes' malformed entries together.
+
+**`src/Projection.Cli/Program.fs`** — emission:
+- New `emitSpecialCircumstancesDiagnostics` helper — maps each `DiagnosticEntry.Severity` to the corresponding `LogSink.Level` and emits a `transform.diagnostic` envelope per entry (Category = `LogSink.Transform`; Phase = `LogSink.End`). The entry's typed `Metadata` flattens into the envelope payload, so `acceptedVia` (when present) lands as a top-level payload key visible to LogSink rollup consumers.
+- `runFullExport` updated — pattern-match changes from `| Ok paths` to `| Ok report`; calls `emitSpecialCircumstancesDiagnostics` before recording artifacts so the diagnostic envelopes precede the artifact-path narration in the NDJSON stream.
+- `runEmitFromConfig` (legacy `emit --config`) updated — emits diagnostics to stderr in a one-line-per-finding `diagnostic [Severity] code: message [accepted]` form (the legacy surface pre-dates LogSink and uses Console).
+
+**`tests/Projection.Tests/FullExportCliTests.fs`** — mirror the production `runFullExport` LogSink emission path so the in-process test harness sees the same envelope stream the CLI does.
+
+### Tests
+
+**`tests/Projection.Tests/SpecialCircumstancesBindingTests.fs` (7 facts)** — mirrors the `TighteningBindingTests` structure. Covers: empty overrides yield `SpecialCircumstances.empty`; valid `LogicalName` resolves to the kind's SsKey; unresolved `LogicalName` surfaces `pipeline.specialCircumstances.allowMissingPk.unresolved`; multiple unresolved entries aggregate (no short-circuit); valid `TableName` cycle entries resolve to a `Set<SsKey>`; unresolved `TableName` surfaces `pipeline.specialCircumstances.allowedCycle.unresolved`; errors aggregate across both axes in one binder call.
+
+**`tests/Projection.Tests/SpecialCircumstancesDiagnosticsTests.fs` (10 facts)** — covers: missing-PK scan yields no entries when every referenced kind has a PK (the `sampleCatalog` Customer-with-PK case); scan emits one entry per missing-PK *target* kind (Audit-no-PK referenced by Logger); deduplication holds (Audit referenced by N kinds → one entry); allowlisted target carries `Metadata.acceptedVia = "config:overrides.allowMissingPrimaryKey"`; unreferenced missing-PK kinds are ignored (the scan only fires on referenced targets — V1 / SymmetricClosure parity); no cycle entries when `state.TopologicalOrder = None`; one cycle entry per unresolved `CycleDiagnostic` in the topo; allowlisted cycle carries `Metadata.acceptedVia = "config:overrides.circularDependencies"`; cycle-allowlist matching is set-equality (order-independent: members `[A;B]` allowlisted as `Set [B;A]` still match); cycle entry carries `members` + `reason` in `Metadata`.
+
+Total new test count: **17 facts**. Test baseline post-C.2: **1871 passing / 0 failed / 172 skipped** (was 1854 post-housekeeping pre-C.2; +17 from the new test files). Build clean under `TreatWarningsAsErrors=true`; 0 warnings.
+
+### Disciplines reinforced
+
+**Pure-additive scan over IR-traversal cascade.** The architect's HANDOFF letter implicitly assumed `SymmetricClosure` + `TopologicalOrderPass` would grow `DiagnosticEntry` emission via return-type widening (`Lineage<Catalog>` → `Lineage<Diagnostics<Catalog>>`). That route cascades through ~90 consumer sites across emitters, tests, and pass orchestration. The pure-additive scan-step alternative: observe the same structural conditions from outside the passes (`Kind.primaryKey k = []` for missing-PK; `state.TopologicalOrder.Cycles` for cycles); zero pass-internal changes. Trade-off: missing-PK detection logic exists in two places (`SymmetricClosure.buildInverse` skip predicate + `SpecialCircumstancesDiagnostics.kindHasNoPrimaryKey`); both consult `Kind.primaryKey` so the underlying invariant has one source of truth. The duplicate predicate is acceptable; the alternative — threading writer through every pass for one new emission — is not. **When a new operator-visible signal needs lifting from internal pass state, prefer a post-chain scan step over pass-internal writer extension** unless the new signal requires per-pass attribution.
+
+**`Metadata.acceptedVia` as the annotation surface.** Per `Diagnostics.fs:55-60`: `DiagnosticEntry.Metadata : Map<string, string>` is the structural-payload field; the slice-6 actionable-diagnostics work added `SuggestedConfig`. C.2 adds `acceptedVia` as a new convention key naming the config-source path that allowlists the finding. Per the slice-6 reshape lesson ("actionability = enrichment + presentation, NOT occlusion"): the entry remains in the stream + downstream consumers see the annotation. The key namespace (`config:overrides.<axis>` strings) is conventional, not typed; promote to a typed `Acceptance : AcceptanceState option` field on `DiagnosticEntry` when a second annotation source (e.g., per-tenant override; per-PR exception) demands the lift (IR-grows-under-evidence).
+
+**Aggregated binder errors across axes.** `SpecialCircumstancesBinding.fromConfig` returns `Result<SpecialCircumstances>` aggregating `bindAllowMissingPrimaryKey` + `bindAllowedCycles` errors so the operator sees both axes' malformed entries in one pass. `runWithConfig` further aggregates Policy + SpecialCircumstances binder errors (the four-arm match). Mirrors the C.1 `TighteningBinding.fromConfig` per-entry aggregation discipline; consistency across Chapter C boundary surfaces.
+
+**Catalog-level diagnostic for inherently-multi-key findings.** `DiagnosticEntry.SsKey = None` is the convention per `Diagnostics.fs:50-53` for diagnostics that don't point at a specific IR node. Cycles have multiple members; picking one as canonical (e.g., the alphabetically-first SsKey) would be misleading — the cycle is the unit, not its members. Convention applied: `SsKey = None`; `Metadata.members` carries the semicolon-separated member list. The convention pairs naturally with the operator's allowlist shape (cycles are allowlisted as member-sets, not as single-key references).
+
+### Phase A1 status (operator-config wiring)
+
+Chapter C is six slices total. **C.1 + C.2 shipped.** Remaining: C.3 (emission-folders — `Overrides.EmissionFolders` + `RelativePath` rewrite pass), C.4 (tag-groups — `TransformGroup` closed-DU + `RegisteredTransform.Tags` filter), C.5 (insertion semantics — `Policy.InsertionPolicy` config binding), C.6 (verbosity flags — `--verbose` / `--debug` per §4 + per-category filters).
+
+The C.2 scan-step pattern generalizes for future slices that need to surface internal pass state without reshaping return types: define a typed runtime overlay (e.g., `EmissionFolders` for C.3), bind from config, run a post-chain consumer step that observes the relevant `ComposeState` slots and emits `DiagnosticEntry`s with operator-allowlist annotations.
+
+### Cross-references
+
+- `src/Projection.Pipeline/Config.fs` — `Overrides.AllowMissingPrimaryKey : LogicalName list` (relocated from `Model.ValidationOverrides`); `parseAllowMissingPrimaryKey` typed-tuple parser.
+- `src/Projection.Pipeline/SpecialCircumstancesBinding.fs` — NEW typed runtime value + binder + `pipeline.specialCircumstances.*` error code namespace.
+- `src/Projection.Pipeline/SpecialCircumstancesDiagnostics.fs` — NEW post-chain scan + acceptance-annotation step.
+- `src/Projection.Pipeline/Pipeline.fs` — `Compose.RunReport`; `projectFromChainWithState`; `projectWithState`; widened `runWithConfig`.
+- `src/Projection.Cli/Program.fs` — `emitSpecialCircumstancesDiagnostics`; updated `runFullExport` + `runEmitFromConfig`.
+- `tests/Projection.Tests/FullExportCliTests.fs` — mirror LogSink emission for in-process tests.
+- `tests/Projection.Tests/SpecialCircumstancesBindingTests.fs` — NEW 7-fact binder coverage.
+- `tests/Projection.Tests/SpecialCircumstancesDiagnosticsTests.fs` — NEW 10-fact scan + annotation coverage.
+- `DECISIONS 2026-05-20 (slice C.1 — tightening axis config wiring)` — the template C.2 mirrors at the binder layer; the disciplines (operator-supplied-ref resolution; per-attribute aggregation) carry forward.
+- `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)` — Chapter C 6-slice plan; named `Overrides.AllowMissingPrimaryKey` + `Overrides.CircularDependencies` as C.2 scope.
+- `src/Projection.Core/Passes/SymmetricClosure.fs:162` — `Skip (ClosureSkipped TargetHasNoPrimaryKey)` — the structural source of the missing-PK predicate the scan mirrors.
+- `src/Projection.Core/TopologicalOrder.fs:59` — `CycleDiagnostic` — the structural source the cycle scan reads.
+

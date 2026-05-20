@@ -143,7 +143,6 @@ let private fullConfigJson = """{
         "includeInactiveModules": false,
         "onlyActiveAttributes": true,
         "validationOverrides": {
-            "allowMissingPrimaryKey": [ "Mod::Ent" ],
             "allowMissingSchema": [ "Mod::*" ]
         }
     },
@@ -170,7 +169,10 @@ let private fullConfigJson = """{
                 ] }
             ],
             "strictMode": false
-        }
+        },
+        "allowMissingPrimaryKey": [
+            { "module": "AppCore", "entity": "LegacyAuditLog" }
+        ]
     },
     "dynamicData": {
         "insertMode": "PerEntity",

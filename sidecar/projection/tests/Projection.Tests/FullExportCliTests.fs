@@ -162,7 +162,7 @@ let private runFullExportInProcess
                 let result = task.GetAwaiter().GetResult()
                 sw.Stop()
                 match result with
-                | Ok paths ->
+                | Ok report ->
                     LogSink.recordStage "pipeline" sw.ElapsedMilliseconds LogSink.Succeeded
                     let stagePayload : Map<string, objnull> =
                         Map.ofList [
@@ -174,7 +174,33 @@ let private runFullExportInProcess
                         { LogSink.envelope LogSink.Info LogSink.Summary "summary.stageCompleted" stagePayload with
                             Phase = LogSink.End
                             StepId = Some "pipeline" }
-                    paths
+                    // Chapter C slice C.2 — mirror the production
+                    // `runFullExport` path: emit each special-circumstances
+                    // diagnostic as a `transform.diagnostic` envelope so
+                    // the test harness sees the same stream the CLI does.
+                    for entry in report.Diagnostics do
+                        let level =
+                            match entry.Severity with
+                            | DiagnosticSeverity.Info    -> LogSink.Info
+                            | DiagnosticSeverity.Warning -> LogSink.Warn
+                            | DiagnosticSeverity.Error   -> LogSink.Error
+                        let basePayload : Map<string, objnull> =
+                            Map.ofList [
+                                "source",  box entry.Source
+                                "code",    box entry.Code
+                                "message", box entry.Message
+                            ]
+                        let withSsKey =
+                            match entry.SsKey with
+                            | Some k -> basePayload |> Map.add "ssKey" (box (SsKey.rootOriginal k))
+                            | None   -> basePayload
+                        let payload =
+                            entry.Metadata
+                            |> Map.fold (fun acc k v -> Map.add k (box v) acc) withSsKey
+                        LogSink.emit
+                            { LogSink.envelope level LogSink.Transform "transform.diagnostic" payload with
+                                Phase = LogSink.End }
+                    report.Paths
                     |> List.iter (fun p ->
                         let info = FileInfo p
                         LogSink.recordArtifact {
