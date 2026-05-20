@@ -6,6 +6,7 @@ open Projection.Targets.SSDT
 open Projection.Targets.Json
 open Projection.Targets.Distributions
 open Projection.Targets.Data
+open Projection.Targets.OperationalDiagnostics
 
 /// Pipeline-level unified registry assembly. Concatenates every
 /// `RegisteredTransformMetadata` surface V2 ships:
@@ -54,6 +55,14 @@ module RegisteredAllTransforms =
           DacpacEmitter.registeredMetadata
           JsonEmitter.registeredMetadata
           DistributionsEmitter.registeredMetadata
-          StaticPopulationEmitter.registeredMetadata ]
+          StaticPopulationEmitter.registeredMetadata
+          // Chapter 5+ slices 5.13.remediation-emitter +
+          // 5.13.summary-formatter — operator-UX projections under
+          // Projection.Targets.OperationalDiagnostics; both classify
+          // as DataIntent (the projections derive from DecisionSet
+          // outcomes carrying observed evidence; no operator opinion
+          // enters the projection).
+          RemediationEmitter.registeredMetadata
+          SummaryFormatter.registeredMetadata ]
         @ RegisteredDataTransforms.all
         @ RegisteredTransforms.all

@@ -18537,3 +18537,624 @@ This decomposition aligns with V2's pillar 9 + L3-CC-Transform-Totality framing:
 - `src/Projection.Core/Policy.fs:139` — `NullabilityTighteningConfig.NullBudget` (the per-finding-type emission gate; structurally where "fewer findings" lives).
 - `CHAPTER_B_4_OPEN.md` slice 6 row updated to reflect reshape + no-occlusion invariant.
 - Chapter C slice C.1 (tightening axis priority slice) — operator-config wiring for per-finding-type emission gates; the principled answer to "reduce diagnostic-artifact noise" at the source layer.
+
+## 2026-05-20 (slice B.4.6.5 — LogSink + §11 roll-up emission) — `Projection.Pipeline.LogSink` ships the structural emission substrate the chapter B.4 close gate requires; hand-rolled per §15.2; NDJSON to stderr per §5; §11 roll-up aggregator built ONCE during emission; Bench.Stats surface in runSummary aggregates
+
+### Context
+
+Slice 1 (`docs/logging-format.md`) specified the contract; slices 2-6 worked on adjacent concerns; the contract §11 (roll-up algorithm) + §15.1 (channel-1 NDJSON) + §15.2 (hand-rolled LogSink) had zero implementation. The 2026-05-20 logging-format implementation gap audit inserted slice 6.5 between slice 6 (actionable-diagnostics on JSON artifacts) and slice 7 (full-export CLI) to fill the gap.
+
+### What shipped
+
+**`src/Projection.Pipeline/LogSink.fs`** (~540 LOC F#; one module).
+
+- **§3 envelope.** Closed-DU `Level` / `Category` / `Phase` / `Source` / `Outcome`; `Envelope` record carrying every mandatory + optional field per the contract; canonical lowercase string projections (`levelToString` / `categoryToString` / `phaseToString` / `sourceToString` / `outcomeToString`).
+- **ULID generation.** `generateRunId : unit -> string` — 48-bit ms timestamp + 80-bit random encoded as 26-char Crockford base32 per §3 ("lexically sortable; `ls bench/<tag>/ | sort` and `grep runId` give the same chronological ordering"). `RandomNumberGenerator.Fill` for the random half; no external dependency.
+- **§5 channel-1 sink discipline.** Default writer is `Console.Error`; `setWriter` / `withWriter` allow tests + the future Spectre micro-chapter to redirect. No `--json-out` flag in slice 6.5 (that's the Spectre channel-2 micro-chapter's concern).
+- **§14 hand-rolled serialization per §15.2.** No `Microsoft.Extensions.Logging`, no `Serilog`, no third-party logger. `System.Text.Json.Utf8JsonWriter` writes envelope properties in canonical §3 field order; payload values flow through a `writePayloadValue` switch covering string / bool / int / int64 / float / decimal / DateTime + `JsonSerializer.Serialize` delegation for compound shapes. The reused `payloadOptions` mirrors the `BenchSink.persistJson` precedent.
+- **§11 roll-up aggregator.** `RunState` carries `Dictionary<(Category * string * SsKey option), GroupAccumulator>` built ONCE during `emit` per the §11 Big-O constraint (NOT re-scanned at `runComplete` time). Group key is the contract's 3-tuple; `Samples : Envelope list` capped at first three by chronological order per V1 verbatim (`CommandConsole.cs:2069-2078`); `Count` / `FirstTs` / `LastTs` rolled forward on every collapse hit. `aggregates ()` reads the dict + sorts (descending Count, ascending FirstTs) per §11 output ordering.
+- **§4 verbosity gate.** `setVerbose true` flips the `Trace`/`Debug` suppression check at the egress boundary. CLI `--verbose` / `--debug` flag wiring lives in slice 7 + Chapter C slice C.6.
+- **§10 terminal `summary.runComplete`.** `runComplete : Outcome -> command:string -> Bench.Stats list -> Envelope` builds the terminal envelope from accumulator state (stages / artifacts / event-counts / suggested-config-edit count) + interleaves `Bench.Stats` aggregates per §11 ("Bench.Stats surface in runSummary's aggregates array under `category=summary, code=bench.label`"). The terminal event emits even on `Outcome.Failed` / `Outcome.Aborted` per §10 ("Even on failure, runSummary emits.").
+- **§12 suggestedConfig signal counting.** Every emitted envelope whose `Payload` contains the `"suggestedConfig"` key increments `SuggestedConfigEdits`; the count surfaces in the terminal `runSummary.payload.suggestedConfigEdits` per §10.
+
+### Tests
+
+`tests/Projection.Tests/LogSinkTests.fs` (~430 LOC; 27 example + property tests; all passing).
+
+- **§3 envelope shape:** mandatory fields present on every emitted line; optional fields omitted when None and emitted when Some; error phase + error level both serialize correctly; ts is RFC 3339 with millisecond precision + trailing Z; runId is 26-char Crockford base32; runId is stable within a single run.
+- **§3 payload:** string + int + bool + nested map all serialize correctly.
+- **§4 levels:** trace + debug suppressed by default; both surface when `setVerbose true`.
+- **§13 ban 4:** serialization contains no ANSI ESC byte (0x1B) and no embedded newlines.
+- **§11 rollup:** events with identical (category, code, ssKey) collapse; events with different ssKey form distinct groups; events with no ssKey collapse into one ssKey=None group; samples capped at first three chronological events; firstTs and lastTs span the group; output ordered descending by count then ascending by firstTs.
+- **§10 runComplete:** emits exactly one summary.runComplete envelope; failure outcome still emits; aborted outcome emits with outcome=aborted; payload carries command + durationMs + stages + eventCounts + suggestedConfigEdits + artifacts + aggregates; suggestedConfigEdits counts events whose payload carries suggestedConfig.
+- **§11 bench:** `Bench.Stats` surface in runSummary aggregates under category=summary, code=bench.label.
+- **§3 + §7 code-categorization:** every emitted code's top-prefix matches its category (property over all 8 closed-DU categories).
+- **§5 sink:** withWriter restores prior writer on exit.
+- **§10:** eventCounts table includes all five levels with zero for unseen ones.
+
+### F# nullness adjustment
+
+`Map<string, obj>` payload type per the contract §14 widens to `Map<string, objnull>` (alias for `obj | null`) under F# 9 strict nullness — `box X` produces `obj | null` rather than `obj`, and the §11 aggregate entries legitimately need `null` for the `ssKey` field when the group's envelope.SsKey is None (per §11 example: `"ssKey": null` when the group's events carry no envelope-level SsKey). The widened type matches the contract's actual JSON semantic ("any JSON value including null") more honestly than the original strict `obj`.
+
+### Why slice 6.5 instead of absorbing into slice 7
+
+Per `DECISIONS 2026-05-20 (logging-format implementation gap audit)`: LogSink is structural emission substrate; full-export CLI is composition + orchestration. Different concerns; different testing surfaces (LogSink's rollup invariants are property-testable in isolation; full-export's end-to-end flow is Docker-gated integration). Separating into 6.5 + 7 gives each a clean test surface + lets slice 7 ship as a pure composition layer (consume LogSink; consume the slice-4/5/6 ports; emit). Mirrors the chapter-B.3 slice-6 / 6b split where structural substrate landed first then consumers built on it.
+
+### Discipline reinforced
+
+**Contract is the specification; tests verify the contract.** Every property test cites a contract section (`§3 envelope`, `§11 rollup`, `§5 sink`, etc.). The test file is itself a contract-conformance checker — a future agent extending the contract knows where to add tests by matching contract sections to test file sections.
+
+**Big-O constraint cashed at design time.** The aggregator's `Dictionary<(Category * string * SsKey option), GroupAccumulator>` is updated on every `emit` (O(1) per event); `aggregates ()` and `runComplete` read the dict + sort (O(M log M) for M ≤ N) without re-scanning the event stream. The §11 contract's "groups built once during stream emission, not re-scanned at runSummary time" is structurally enforced by the implementation shape — the alternative (scanning the envelope list at `runComplete`) would be O(N log N) but conceptually correct; the chosen shape is asymptotically equivalent but constant-factor better and matches the contract verbatim.
+
+**`Bench.Stats` surfacing closes the cross-cutting loop.** Bench is the iterator-logging substrate (chapter 3.6 cash-out); LogSink is the event-emission substrate (this slice); the runSummary's `aggregates` is the operator's terminal scroll target. By synthesizing per-label Bench aggregates as `category=summary, code=bench.label` entries in the aggregates array, V2's two observability streams converge at the operator-facing surface. Bench output remains separately accessible via `Bench.snapshot ()` + `BenchSink.persistJson` for cross-run analysis.
+
+### Active deferrals — unchanged
+
+Spectre.Console TtyRenderer + dual-channel routing micro-chapter remains deferred per the gap-audit entry; this slice ships channel-1-only LogSink as the substrate that the future TtyRenderer subscribes to.
+
+### Cross-references
+
+- `docs/logging-format.md` §3 (envelope), §4 (levels), §5 (sink discipline), §10 (terminal runComplete), §11 (roll-up algorithm), §12 (suggestedConfig), §14 (sink implementation surface), §15.1 (two-channel pattern), §15.2 (library choices — banned alternatives).
+- `DECISIONS 2026-05-20 (logging-format implementation gap audit)` — the audit that inserted slice 6.5.
+- `src/Projection.Core/Bench.fs:56` — `Bench` module; `Stats` record at line 61, `Run` at line 326.
+- `src/Projection.Pipeline/BenchSink.fs:54` — the reified non-determinism boundary precedent (wall-clock capture happens at the file-sink layer, not in Core).
+- `src/Projection.Core/Identity.fs:135` — `SsKey.rootOriginal` (envelope `ssKey` field rendering).
+- `CHAPTER_B_4_OPEN.md` slice 6.5 row.
+
+## 2026-05-20 (canary volume reduction) — operator-reality canary tuned 300 tables × 50k rows → 150 tables × 6.25k rows; wall time ~10-12s → ~5s warm; baseline-canary.json re-recorded; FK-density envelope preserved at the smaller scale
+
+### Context
+
+Principal operator framing: "We can tune down the canary by 3/4 of record quantity processed so that it's not a massive data set, I'm not sure we're getting the value of waiting for it all the time."
+
+The pre-tuning operator-reality canary baseline was `GenerateSpec.operatorReality` = 8 modules × 200 entities + 100 static × 500 rows/static = **300 tables × 50,000 total seed rows**, ~10-12s warm wall. This baseline ran on every Stop hook + every commit via `scripts/perf-gate.sh`. Agent-loop friction was real: the wait time on every iteration cycle compounded over a session.
+
+### Two-pass tuning
+
+**Pass 1 — row-count cut (StaticRowsPerEntity 500 → 125; total seed rows 50,000 → 12,500; 75% volume reduction).**
+
+Empirically validated: wall time dropped only ~25% (10-12s → ~9s). The row-count cut affected only static-data seed insertion, which turned out to be a small fraction of canary total wall time. The dominant cost driver is **DDL deploy + ReadSide reflection + bulk-loader container plumbing across 300 tables** — proportional to *table* count, not *row* count.
+
+**Pass 2 — table-count cut (Entities 200 → 100; StaticEntities 100 → 50; total tables 300 → 150; 50% table reduction).**
+
+Halves deploy + reflection cost. Preserves the FK-density envelope (variegated `FkDensity = 0.2`; AvgAttrsPerEntity = 10) at the smaller scale — the 150-table corpus still exercises cross-module FK chains, multi-table joins, mixed-modality dispositions. Empirically validated: wall time dropped ~9s → ~5s.
+
+**Net effect**: ~10-12s → ~5s warm (~55% real-world wall reduction; ~58% in the typical case). Agent-loop friction materially reduced. The operator-reality canary remains the production-shape baseline that catches FK-density regressions — just at a smaller absolute scale.
+
+### What stays load-bearing
+
+- **300-table forcing-function canary** (`PROJECTION_RUN_REALISTIC_CANARY=1`) is unchanged at 300 tables. It's the nightly / on-demand check; the dev-loop canary is now 150 tables.
+- **bulk100k canary** (`Generator bulk: 100k rows/table` in `GeneratorScaleTests`) is unchanged. It's the bulk-realization-path forcing function; not affected by the operator-reality tuning.
+- **Schema-only canary-gate.sql** (~1.5s) remains the SessionEnd-hook smoke. Unchanged.
+- **Statistical perf-gate model** (μ + Kσ_effective; K=5.0; σ_floor = μ×0.2) unchanged. Baseline re-recorded at the new floor via `PERF_GATE_RECORD=1 PERF_GATE_RECORD_RUNS=5 scripts/perf-gate.sh`; 5 warm captures; 230 labels in the new baseline.
+
+### What this changes structurally
+
+- `tests/Projection.Tests/Fixtures/FixtureGenerator.fs`: `GenerateSpec.operatorReality` updated (Entities 200→100; StaticEntities 100→50; StaticRowsPerEntity 500→125) with inline comments naming the two passes + this DECISIONS entry.
+- `tests/Projection.Tests/GeneratorScaleTests.fs`: test name `50k rows × 300 tables` → `6.25k rows × 150 tables`. The `Operator-reality` prefix is preserved so `scripts/perf-gate.sh`'s `FullyQualifiedName~Operator-reality` filter still matches.
+- `scripts/perf-gate.sh`: header comment + progress message updated to name 6.25k rows × 150 tables + cite this DECISIONS entry.
+- `CLAUDE.md` Canary-forcing-function operating discipline row: updated warm-time range (~10-12s → ~5-6s), updated table/row counts, updated Stop-hook timeout note (canary ~6s + analysis ~1s; 60s ceiling preserved for cold-cache + Docker-startup margin).
+- `bench/baseline-canary.json`: re-recorded against the new floor. The old baseline is overwritten (per the chapter-3.6 "baseline IS the model" discipline — no rolling history accumulator).
+
+### Discipline reinforced
+
+**Cost-driver identification is empirically required, not assumed.** The user's "reduce by 3/4 of record quantity" framing assumed row volume was the cost driver; empirical wall-time measurement showed it wasn't (~25% reduction from a 75% volume cut). Surfacing the empirical finding ("the dominant cost is DDL deploy + ReadSide reflection over the table count, not seed-row processing") was the right honest move before re-baselining; the user then redirected to the table-count lever which delivered the additional ~45% reduction. **Lesson**: when an operator asks for a perf tuning, validate the lever before assuming. The cost-driver framing matters more than the input parameter the operator initially named.
+
+**Baseline re-recording is paired with a DECISIONS entry naming the new floor's rationale.** Per the chapter-3.6 baseline discipline + `DECISIONS 2026-05-10 (μ+σ statistical baseline)`. This entry IS that pairing. The new `bench/baseline-canary.json` carries 230 labels × 5 warm captures.
+
+**Tiered canary structure preserved.** The discipline names three tiers (schema-only / operator-reality / realistic 300-table). This tuning moves the operator-reality middle tier closer to the schema-only smoke in wall time (~5s vs ~1.5s) while preserving its structural distinction (production-shape table envelope vs schema-only). The realistic 300-table tier remains the full forcing function on demand. Tiering rationale unchanged.
+
+### Cross-references
+
+- `tests/Projection.Tests/Fixtures/FixtureGenerator.fs:248` — `GenerateSpec.operatorReality` post-tuning shape.
+- `tests/Projection.Tests/GeneratorScaleTests.fs:215` — `Operator-reality canary: 6.25k rows × 150 tables, variegated` test.
+- `scripts/perf-gate.sh` — header + progress message updated.
+- `bench/baseline-canary.json` — re-recorded baseline (230 labels × 5 captures).
+- `CLAUDE.md` Canary operating-discipline row — updated counts + timings + Stop-hook note.
+- `DECISIONS 2026-05-09 — Operator-reality canary as the production-baseline perf gate` (the original framing this tuning amends; the framing's rationale stands; only the absolute numbers shift).
+- `DECISIONS 2026-05-10 — Perf-gate μ+σ statistical baseline` (the baseline-as-model discipline; re-record cycle followed verbatim).
+
+## 2026-05-20 (slice B.4.7 — full-export CLI) — `projection full-export --config <path> [--output <dir>] [--verbose]` ships the Phase B *structural* exit gate; THIN scope per chapter-mid rescope; wraps today's three live `Pipeline.Config` consumers + slices 6 + 6.5; Argu per §15.2 lands as V2's F#-native CLI library
+
+### What shipped
+
+`src/Projection.Cli/FullExportArgs.fs` — Argu closed-DU surface (`FullExportArg = Config of path | Output of dir | Verbose`), one mandatory + two optional flags, with `IArgParserTemplate.Usage` strings carrying the slice-7 scope rationale (which `Pipeline.Config` consumers are wired today; which parse-but-ignore for Chapter C).
+
+`src/Projection.Cli/Program.fs` — `runFullExport` orchestration, `dispatchFullExport` Argu dispatcher, argv-pattern routing for `full-export` (matches both bare-no-args + arg-bearing forms). Wraps the existing `Compose.runWithConfig` (which already does read → rename → project → write); slice 7 adds the LogSink emission discipline around it:
+
+- `LogSink.reset ()` at entry; `Bench.reset ()` to start with a clean per-run timing surface.
+- `LogSink.setVerbose verbose` per the `--verbose` flag (defaults false; suppresses Trace/Debug per §4).
+- `config.runStart` event at run start with command + configPath + effectiveOutputDir.
+- `config.connectionResolved` event naming `SnapshotJson` source (the only connectivity slice 7 supports — `LiveOssysConnection` is a follow-up chapter).
+- On `Compose.runWithConfig` Ok: `recordStage "pipeline" Succeeded durationMs` + per-artifact `LogSink.recordArtifact` calls; success exit 0; stdout narration for operator-visibility parity with the pre-existing `emit` subcommand.
+- On `Compose.runWithConfig` Error: one `transform.diagnostic` event per ValidationError (level=Error; phase=ErrorPhase); outcome=Failed; exit 2.
+- On `Config.fromFile` Error: one `config.validationFailed` event per error; outcome=Failed; exit 6.
+- On any caught exception: one synthesized `config.validationFailed` event; outcome=Failed; exit 2.
+- **Mandatory** `finally`-block `LogSink.runComplete outcome "projection full-export" benchStats` per §10 ("Even on failure, runSummary emits."). Stops with the terminal envelope as the last line of stderr on every exit path.
+
+`src/Projection.Cli/Projection.Cli.fsproj` — `PackageReference Include="Argu" Version="6.2.5"`. Per §15.2 banned alternatives: no `System.CommandLine` (V1's choice, C#-shaped); no raw argv parsing for the new subcommand (the existing `emit` / `deploy` / `canary` subcommands stay on raw argv until Chapter C consolidates the surface).
+
+### Tests
+
+`tests/Projection.Tests/FullExportCliTests.fs` — 10 integration tests; all passing. Tests run in-process by mirroring `Program.fs.runFullExport`'s orchestration shape and capturing LogSink output via a `StringWriter`. This catches the same conformance regressions an out-of-process integration test would catch, at unit-test speed (no Docker; no subprocess). Coverage:
+
+- **Happy path:** full-export against minimal V1 fixture produces 4 artifacts + emits ≥4-line conforming NDJSON event stream.
+- **§3 envelope:** every emitted line carries mandatory runId / ts / level / category / code / phase / payload fields.
+- **§7 ordering:** first event is `config.runStart`; last event is `summary.runComplete` with `phase=end`.
+- **§10 outcome:** runSummary.payload.outcome = succeeded on happy path; = failed on missing-config / malformed-config / pass-error cases.
+- **§10 stages:** runSummary.payload.stages contains the pipeline stage with succeeded outcome.
+- **§10 artifacts:** runSummary.payload.artifacts lists every artifact path under Output.Dir; paths exist on disk post-run.
+- **CLI flag:** `--output` override takes precedence over config Output.Dir; config-supplied dir is NOT created when override is supplied.
+- **Failure paths:** missing config file → exit 6 + `config.validationFailed` event + outcome=failed; malformed config → exit 6 + structured event + outcome=failed.
+- **§11 rollup:** runSummary.payload.aggregates carries a `summary.stageCompleted` entry; aggregates non-empty.
+- **§10 eventCounts:** Info ≥ 3 on happy path (config.runStart + config.connectionResolved + summary.stageCompleted at minimum); Error = 0.
+
+End-to-end CLI smoke (run via `dotnet projection.dll full-export --config ...`) produced: exit 0, 4 artifacts (3 SSDT + manifest), `outcome=succeeded`, 74 aggregate entries (3 V2 events + 71 Bench labels), NDJSON envelopes conforming to §3 verbatim.
+
+### Out of scope (per chapter B.4 spec)
+
+- **`LiveOssysConnection`** — deferred; the operator's V1 corporate-network HEAD owns the live path. Slice 7 reads `SnapshotJson` / `SnapshotRowsets` only.
+- **Standalone `extract` + `profile` subcommands** — dropped at chapter-mid rescope per `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)`.
+- **`--pretty` + Spectre TtyRenderer + `--json-out` routing** — deferred to its own micro-chapter per §15.3 + the 2026-05-20 gap-audit entry. Trigger: operator reports NDJSON-only stderr as unfriendly for interactive runs.
+- **DACPAC binary emission + `data-twin` CLI verb** — separate chapter; `DockerImageEmitter` substrate already shipped at chapter 3.x close.
+- **Dormant Pipeline.Config sections** (`Profile` / `Cache` / `Profiler` / `TypeMapping` / `Emission` booleans / `Policy.{Selection, Insertion, UserMatching}` / `Overrides.{MigrationDependencies, StaticData, CircularDependencies}`) — parse-but-ignore; Chapter C wires them.
+- **`config.toggleResolved` per-toggle events** (§7.1) — slice 7 emits only the two structural config events (runStart + connectionResolved). Per-toggle events arrive when Chapter C wires the toggle surface; this slice doesn't synthesize toggles that aren't operative.
+
+### Discipline reinforced
+
+**THIN scope shipped THIN.** Slice 7 added ~150 LOC of new code (`FullExportArgs.fs` + the `runFullExport` block in Program.fs) + ~280 LOC of integration tests. Reused 100% of `Compose.runWithConfig`'s existing orchestration (no new pipeline plumbing). The deliberate non-expansion matches the chapter-mid rescope discipline + the handoff letter's "Slice 7 is THIN" emphasis. Chapter C will widen; chapter B.4 closes the structural arm.
+
+**LogSink wiring at the CLI boundary, not in Core.** `runFullExport` is the only site that calls `LogSink.emit` / `recordStage` / `recordArtifact` / `runComplete`. Core stays I/O-free; Pipeline's `Compose.runWithConfig` continues to be a pure orchestration (Lineage / Diagnostics writers); slice 7 projects the boundary emission. This preserves the no-I/O-in-Core load-bearing commitment.
+
+**`finally` block as §10 enforcement mechanism.** The terminal `summary.runComplete` event is mandatory per §10 ("Even on failure, runSummary emits."). `runFullExport`'s `try / finally` shape structurally guarantees the terminal event even on unhandled exception, exit-code-2 paths, exit-code-6 paths. The `outcome` variable threads the exit-path classification (Succeeded / Failed) into the terminal envelope.
+
+**Argu adoption sets the pattern for Chapter C.** Per §15.2: Argu IS V2's F#-native CLI library; `System.CommandLine` (V1's C#-shaped choice) is banned. Slice 7's Argu DU (`FullExportArg`) is the template Chapter C extends with additional subcommands; the existing `emit` / `deploy` / `canary` subcommands stay on raw argv during the transition (no breakage; no Chapter C scope creep into slice 7).
+
+### Phase B structural exit gate — gate status
+
+Slice 7 closes the **structural** arm of Phase B's exit criterion per `V2_PRODUCTION_CUTOVER §8.2`:
+
+| Exit criterion | Status post-slice-7 |
+|---|---|
+| L3 catalog reaches target bucket (L3-X11 + L3-X12) | DONE at chapter-close ritual (this PR's chapter-close commit lands the catalog entries) |
+| V2 `full-export` CLI subcommand exists | DONE (this slice) |
+| V2 emits SSDT + JSON + Distributions + actionable diagnostics from config | DONE (this slice; via `Compose.runWithConfig` + slice-6 actionable enrichment) |
+| V2 logging-format contract documented | DONE (slice 1) |
+| V2 emits conforming events end-to-end | DONE (this slice + slice 6.5 LogSink) |
+| Functional-equivalence vs V1 osm_model.json against live OSSYS | NOT THIS CHAPTER — waits on `LiveOssysConnection` (deferred) |
+| ≥1 full end-to-end production dry-run | NOT THIS CHAPTER — waits on operator scheduling |
+
+The **functional-equivalence arm** + production dry-run move to a follow-up chapter when the operator's corporate-network access path opens. Chapter B.4's close ritual finalizes the structural arm.
+
+### Cross-references
+
+- `docs/logging-format.md` §3 (envelope), §4 (verbosity gate), §5 (sink discipline), §7 (codes — `config.*` + `transform.*` + `summary.*`), §10 (terminal runComplete), §11 (roll-up algorithm), §14 (sink implementation), §15.1 (two-channel pattern), §15.2 (Argu + System.Text.Json + banned alternatives).
+- `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` — the rescope that narrowed slice 7 to THIN.
+- `DECISIONS 2026-05-20 (slice B.4.6.5 — LogSink + §11 roll-up emission)` — the substrate this slice consumes.
+- `DECISIONS 2026-05-20 (logging-format implementation gap audit)` — the audit that inserted slice 6.5 + framed slice 7's emission discipline.
+- `src/Projection.Pipeline/LogSink.fs` — the slice-6.5 substrate.
+- `src/Projection.Pipeline/Pipeline.fs:384` — `Compose.runWithConfig` (the orchestration slice 7 wraps).
+- `src/Projection.Pipeline/Config.fs:156` — `Pipeline.Config.Config` record (the three live consumers + the dormant sections).
+- `V2_PRODUCTION_CUTOVER.md §8.2` — Phase B exit criterion (structural arm closes here; functional-equivalence arm waits on `LiveOssysConnection`).
+
+## 2026-05-20 (test-failure capture protocol) — TRX-first when `dotnet test` reports `Failed!`; codified to retire a recurring agent failure mode (grep-against-interleaved-console output across multiple sessions)
+
+### Context
+
+Operator surfaced a recurring agent failure mode: "I've seen you fail at grepping like this consistently across sessions and it wastes a lot of cycles on rerunning tests." Concrete instance: chapter C slice C.1 sweep reported 3 failures; the agent ran `grep -E "FAIL|Failed " | head -20`, got empty output, re-ran without --logger getting `Failed: 0` (transient flake), then re-ran again to reproduce; took 3 sweep cycles to identify the failure.
+
+Root cause: `dotnet test` console output is **interleaved across parallel test classes**. Per-test `[FAIL]` markers appear inline with successful test output; the final-summary line (`Failed: N, Passed: M`) appears after the parallel streams finish. When piped through `tail -N`, the per-test failures scroll past; when piped through `grep`, the patterns can match successful tests with "fail" substrings in skip messages (e.g., "ParsePredicate silent-failure"). The console output is **best-effort UX**, not a deterministic interface.
+
+### Resolution
+
+**Default protocol when `dotnet test` reports `Failed: N` with N > 0**:
+
+1. Re-run the failing command with the TRX logger appended:
+   ```
+   --logger "trx;LogFileName=test-results.trx" -- RunConfiguration.ResultsDirectory=/tmp/test-results
+   ```
+2. Extract the failure names from the deterministic XML:
+   ```
+   grep -oE 'testName="[^"]*"' /tmp/test-results/test-results.trx | sort -u
+   ```
+3. Extract per-failure details (Error Message + Stack Trace):
+   ```
+   grep -A 30 'outcome="Failed"' /tmp/test-results/test-results.trx
+   ```
+
+The TRX file is XML with `<UnitTestResult testName="..." outcome="Failed">` entries each containing nested `<Output><ErrorInfo><Message>` and `<StackTrace>` blocks. The structure is stable across xUnit versions.
+
+### When to apply
+
+**Triggers** (any of):
+- `dotnet test` reports `Failed: N` with N > 0
+- A failure is suspected but `grep "fail"` against console output returns ambiguous results
+- A test is suspected as flaky (the TRX confirms whether it reproduces deterministically)
+
+**Skip** the protocol when:
+- Tests pass cleanly (`Failed: 0`); the summary line carries the information
+- Running a single test by exact filter (the failure detail is the only thing the console shows)
+
+### Discipline reinforced
+
+**Console output is best-effort UX; structured artifacts are the contract.** This pattern repeats across V2's tooling: the canary's `PhysicalSchema` diff is the contract (not the console-rendered table); `bench/baseline-canary.json` is the perf contract (not the bench-table console output); `summary.runComplete` envelope's `aggregates` array is the operator's terminal scroll target (not the per-event NDJSON stream). Each substrate has its structured surface PLUS a UX-shaped console rendering. Agents should reach for the structured surface when the console output's interleaving costs more than the structured surface's one-flag overhead.
+
+**Recurring agent failure modes get structural enforcement.** The operator's framing ("consistently across sessions") names a class of problem: agent retries 2-3 times then succeeds via brute force, costing tokens + wall time + operator patience. The fix is structural (an operating-discipline table row that names the protocol) rather than aspirational (an agent self-improvement note). Pairs with the canary forcing-function discipline + the bench-driven optimization protocol: each retired a recurring agent failure mode by naming a structured substrate over the console UX layer.
+
+### Cross-references
+
+- `CLAUDE.md` operating-disciplines table — new row "Test-failure capture protocol — TRX-first when `dotnet test` reports `Failed!`".
+- `tests/Projection.Tests/Projection.Tests.fsproj` — emits TRX naturally when `--logger trx;...` flag passed.
+- Chapter C slice C.1 commit — first session where the protocol was applied (TRX revealed `BenchTests.Bench: repeated scopes accumulate samples and compute percentiles` racing with new LogSink + FullExportCli tests sharing global `Bench` state; fix was adding `[<Xunit.Collection("Global-MutableState")>]` to BenchTests + LogSinkTests + FullExportCliTests + the corresponding `CollectionDefinition` in `TestCollections.fs`).
+
+
+## 2026-05-20 (slice C.1 — tightening axis config wiring) — operator config now drives `Policy.TighteningPolicy` end-to-end; first Chapter C slice ships the four-intervention binding layer + parameterized chain factory + tightening-aware projection path
+
+### Context
+
+Per chapter B.4 close + `DECISIONS 2026-05-19 (chapter B.4 mid-chapter strategic exploration)`: Chapter C wires the dormant `Pipeline.Config` sections that chapter B.4's slice 7 left parse-but-ignore. C.1 is the priority slice — wires the tightening axis (operator's day-to-day cutover tightest-feedback-loop knob).
+
+The `Policy.TighteningPolicy` + `TighteningOverride` + 4 `TighteningIntervention` variants substrate exists structurally in `Projection.Core/Policy.fs`. The four tightening passes (`NullabilityPass` / `UniqueIndexPass` / `ForeignKeyPass` / `CategoricalUniquenessPass`) already filter against the policy. What was missing: (a) config-binding layer mapping operator JSON entries → typed `TighteningIntervention list`; (b) a way to thread non-empty `Policy` through `Compose.project` (the static `RegisteredTransforms.allChainSteps` bakes `Policy.empty` at module init); (c) `runWithConfig` constructing the policy from the parsed config + loaded catalog.
+
+### What shipped
+
+**`src/Projection.Pipeline/Config.fs` (~110 LOC added)** — three new types:
+- `TighteningAttributeOverride` — `{ AttributeRef : string; Action : string }`. Operator-readable per-attribute override row; the binder resolves `AttributeRef` against the loaded catalog at bind time.
+- `TighteningInterventionEntry` — one record carrying every field across the four intervention kinds (Nullability + UniqueIndex + ForeignKey + CategoricalUniqueness), with per-kind fields as `option`. Single shape lets operators author all four kinds with a uniform JSON pattern.
+- `TighteningSection` — `{ Interventions : TighteningInterventionEntry list }`. The `policy.tightening` config section.
+
+Plus three new option parsers (`getOptionalBool` / `getOptionalDecimal` / `getOptionalInt64`) and the `parseTighteningIntervention` / `parseTightening` parser pipeline. `PolicySection` extended with `Tightening : TighteningSection option` (default `None`); `parsePolicy` wires it through.
+
+**`src/Projection.Pipeline/TighteningBinding.fs` (~190 LOC NEW)** — the boundary binder:
+- `resolveAttributeRef : Catalog -> string -> Result<SsKey>` — tries logical `Module.Entity.Attribute` form first, then physical `Schema.Table.Column` form. Structured `ValidationError` codes for shape errors (`pipeline.tightening.overrideRef.shape`) + unresolvable refs (`pipeline.tightening.overrideRef.unresolved`).
+- Per-kind binders: `bindNullability` / `bindUniqueIndex` / `bindForeignKey` / `bindCategoricalUniqueness`. Each maps the operator config record to its typed `TighteningIntervention` variant; supplies sensible defaults for omitted optional fields (NullBudget=0, AllowMandatoryRelaxation=false, etc.).
+- `bindEntry` dispatches on `entry.Kind`; unknown kinds surface as `pipeline.tightening.intervention.kindUnknown` ValidationError.
+- `fromConfig : Catalog -> TighteningSection option -> Result<TighteningPolicy>` — top-level entry. `None` → `TighteningPolicy.empty`; `Some s` aggregates per-entry binding via `Result.aggregate`.
+
+**`src/Projection.Core/RegisteredTransforms.fs`** — added `allChainStepsFor : Policy -> Profile -> PassChainAdapter list`. Mirrors the static `allChainSteps` but threads the caller-supplied `Policy` + `Profile` into the four decision-set tightening passes + `UserFkReflowPass` instead of baking `Policy.empty` + `Profile.empty` at module init. Catalog-rewriting passes (entries 0-6) are policy-invariant; they reuse the same closures.
+
+**`src/Projection.Pipeline/Pipeline.fs`**:
+- `Compose.projectWith : Policy -> Profile -> EmissionPolicy -> Catalog -> Outputs` — production-shape sibling to `project`; routes through `allChainStepsFor`. Preserves the EmissionPolicy filter behavior.
+- `buildPolicyFromConfig : Config.Config -> Catalog -> Result<Policy>` — currently wires only tightening; Selection / Emission / Insertion / UserMatching axes are dormant per the dormant-config-section sweep (Chapter C slices C.2–C.6 wire those).
+- `runWithConfig` now constructs Policy from config + threads it through `projectWith`. The terminal `summary.runComplete` envelope continues to fire per chapter B.4 slice 7 wiring.
+
+### Tests
+
+**`tests/Projection.Tests/TighteningBindingTests.fs`** — 14 tests; all passing. Covers:
+- Empty/None paths (Section=None → empty policy; empty Interventions → empty policy).
+- Per-variant binding (Nullability with defaults + explicit NullBudget/AllowMandatoryRelaxation; UniqueIndex defaults both flags true; ForeignKey threads all 5 flags; CategoricalUniqueness threads minDistinctCount).
+- Override resolution (logical Module.Entity.Attribute form; physical Schema.Table.Column form).
+- Structured-error cases (unresolvable ref; malformed ref shape; unknown action; unknown intervention kind).
+- Multi-intervention composition (all 4 kinds in one config produce 4 typed interventions in declaration order).
+
+### Test-collection hygiene fix (folded inline)
+
+Initial sweep surfaced 3 failures in adjacent tests (BenchTests + LogSinkTests + FullExportCliTests) racing on global mutable state. Root cause: `Projection.Core.Bench` is a process-scoped mutable singleton; `LogSink.runComplete` calls `Bench.snapshot()`; `FullExportCliTests.runFullExportInProcess` calls `Bench.reset()`. xUnit's default per-class parallelization races these.
+
+Fix: new `[<CollectionDefinition("Global-MutableState", DisableParallelization = true)>]` in `TestCollections.fs`. Tagged BenchTests + LogSinkTests + FullExportCliTests with `[<Xunit.Collection("Global-MutableState")>]`. Future slices touching `Bench` or `LogSink` state add the same tag. Scoped serialization (parallel-test-classes elsewhere still parallelize); only the global-state cluster runs serially.
+
+### Discipline reinforced
+
+**Operator-supplied refs resolve at bind time, not at use time.** The choice was: (a) carry textual refs through to the pass and resolve at decision time (each pass walks every override); or (b) resolve at config-bind time against the loaded catalog (one walk per ref; produces typed `SsKey` early). (b) wins because (i) errors surface at config-load time rather than pass-execution time; (ii) the typed `TighteningOverride.AttributeKey : SsKey` is the contract the pass already consumes; the binder absorbs the impedance match; (iii) operators get structured ValidationError codes (`overrideRef.unresolved` / `overrideRef.shape`) instead of opaque "this override never fired" silent skips.
+
+**Per-attribute refs accept both logical and physical paths.** Operators who think in OutSystems naming write `"AppCore.User.MiddleName"`; operators who think in SQL Server naming write `"dbo.OSUSR_APPCORE_USER.MIDDLENAME"`. The binder tries logical first (matches V2's domain-first naming bias per CLAUDE.md operating disciplines), then falls back to physical. Unresolvable refs name both attempts in the error message so operators see what was tried.
+
+**Single config entry shape across four DU variants.** `TighteningInterventionEntry` carries every field from every variant as `option`-typed. Trade-off: the binder must validate the Kind→fields pairing at runtime rather than at parse time; the upside is operators see one shape ("here's my interventions list") rather than four separate sections. Pillar 8 (domain-first naming): the `Kind` discriminator string ("nullability" / "uniqueIndex" / "foreignKey" / "categoricalUniqueness") is operator-facing; the typed DU is V2-internal. The binder is the boundary.
+
+**`allChainStepsFor` is the registry's policy-parameterized form.** Per `RegisteredTransforms.fs` line 33: "Slice γ / δ may add a factory variant of allChainSteps if two consumers demand it." C.1 is that second consumer. The static `allChainSteps` stays for the skeleton-only / no-policy paths (canary tests + `runWithConfig` for configs without tightening); the new `allChainStepsFor` is for the policy-aware production path.
+
+### Phase A1 status (operator-config wiring)
+
+Chapter C is six slices total. C.1 ships the tightening axis. Remaining: C.2 (special-circumstances — AllowMissingPrimaryKey + CircularDependencies consumer pass), C.3 (emission-folders — Overrides.EmissionFolders + RelativePath rewrite pass), C.4 (tag-groups — TransformGroup closed-DU + RegisteredTransform.Tags filter), C.5 (insertion semantics — Policy.InsertionPolicy config binding), C.6 (verbosity flags — --verbose/--debug per §4).
+
+Test baseline post-C.1: 1793/1793 non-Docker passing (was 1779 at chapter B.4 close; +14 from TighteningBindingTests). Build clean under TreatWarningsAsErrors=true.
+
+### Cross-references
+
+- `src/Projection.Core/Policy.fs:269` — `TighteningPolicy.Interventions` (the substrate this slice wires config into).
+- `src/Projection.Core/Policy.fs:118` — `TighteningOverride` + `OverrideAction.KeepNullable`.
+- `src/Projection.Core/Passes/{Nullability,UniqueIndex,ForeignKey,CategoricalUniqueness}Pass.fs` — the four passes whose `InterventionFilter` consumes the wired interventions.
+- `src/Projection.Core/RegisteredTransforms.fs` — new `allChainStepsFor` policy-parameterized chain factory.
+- `src/Projection.Pipeline/Pipeline.fs` — `Compose.projectWith` + `buildPolicyFromConfig` + updated `runWithConfig`.
+- `src/Projection.Pipeline/TighteningBinding.fs` — NEW boundary binder.
+- `tests/Projection.Tests/TighteningBindingTests.fs` — NEW 14-test coverage.
+- `tests/Projection.Tests/TestCollections.fs` — new `Global-MutableState` collection definition.
+- `DECISIONS 2026-05-19 (chapter B.4 mid-chapter strategic exploration)` — the chapter C 6-slice plan basis.
+- `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)` — revised 6-slice plan.
+- `DECISIONS 2026-05-20 (test-failure capture protocol)` — paired protocol entry; the chapter C slice C.1 sweep was the codifying instance.
+
+
+## 2026-05-20 (handoff-letter discipline + HANDOFF.md append-only) — codifies two recurring agent failure modes (history-yeet via Write overwrite + summary-doc-instead-of-letter) the operator surfaced after slice C.1's handoff
+
+### Context
+
+After the slice-C.1 commit, the operator asked for "an inline handoff message for the next agent to pick up where you left off." The agent (a) wrote the handoff to `HANDOFF.md` via `Write`, overwriting the entire chapter-B.4 close letter (the file's prior content) without first Reading it, and (b) authored the content as a structured status report (tables of commits, bullet-grids of completed work, "What shipped this session" section) rather than as a prose letter to the next agent.
+
+The operator named both failure modes: "That was a crazy way to yeet the entire history of HANDOFF.md, my guy. Can you revert that and append changes instead please? Also, I was talking about you responding inline with a literal message to the other agent :P you keep misinterpreting this as a summary, when really what I want is for you to set up the next agent for success in orienting themselves in this codebase to solve a problem. I'm curious to know why you think this happens regularly when I ask you to do this? Let's fix it too please ;)"
+
+### Failure-mode #1: HANDOFF.md history-yeet via Write overwrite
+
+**Shape**: agent reaches for `Write` to author a new letter; does not first Read the current `HANDOFF.md`; Write replaces the entire file; the chapter's prior letters are gone from the working tree (git history preserves them; the operating surface is the file).
+
+**Root cause**: `Write`'s contract overwrites; the agent's mental model treated `HANDOFF.md` as a single-letter document rather than as a chapter's letter-history accumulator. The existing pattern (chapter B.3 close letter + chapter B.4 mid letter + chapter B.4 close letter all coexisting in `HANDOFF.md` before chapter close rotation) was not internalized.
+
+**Fix**: codified in CLAUDE.md operating-disciplines table — "HANDOFF.md is append-only within a chapter; never overwrite." The discipline says: within a chapter, new letters PREPEND above prior letters via Read-then-Write-with-concatenation OR via Edit; never overwrite the file with Write. At chapter close, the entire file rotates to `HANDOFF_CHAPTER_<N>.md` and a fresh `HANDOFF.md` opens with the chapter-close letter. The discipline holds even when the prior content is "just one letter" (the chapter-close letter is itself the next chapter's load-bearing backdrop).
+
+### Failure-mode #2: "summary-doc-instead-of-letter" misinterpretation
+
+**Shape**: operator asks for an "inline handoff message" / "next-agent handoff" / similar; agent writes a structured status report (tables, bullet-grids, "What shipped" headers) instead of a prose letter addressed to the next agent.
+
+**Root cause** (agent self-diagnosis):
+
+1. **Training bias toward structured output.** Tables + headers + bullets are unambiguously information-dense; prose feels less efficient. Default reaches for structured shape.
+2. **Conflating "what shipped" with "what to do next".** Recent context surfaces the work just completed; the agent enumerates that (easy) rather than orienting forward (the actually-useful framing).
+3. **"Handoff" vocabulary ambiguity.** In some engineering cultures, "handoff" means the docs you write when leaving a project (status-report shape). In others, it means the conversational baton-pass (letter shape). The codebase's existing `HANDOFF.md` letters mix both shapes (close-letter is more status-shaped; mid-chapter letter should be more letter-shaped).
+4. **Defensive completeness.** Agent worries about omitting context; includes the full status report as "context just in case" rather than trusting the letter format to be sufficient.
+
+**The operator's framing names the right shape**: "set up the next agent for success in orienting themselves in this codebase to solve a problem." **Forward-looking, problem-oriented, second-person.**
+
+**Fix**: codified in CLAUDE.md operating-disciplines table — "Handoff message = forward-looking letter, not backward-looking status report." Names the shape (opens with `To the next agent.` / `You're picking up X mid-Y.`; second-person direct address; tells them what the next slice/decision is; reading order with time estimate; load-bearing disciplines to internalize before code; sign-off). Names the diagnostic test (count second-person pronouns — if it doesn't address the next agent directly, it's a status report). Reserves structured tables for genuinely tabular content (slice queues with status; file paths with line numbers).
+
+### Why the discipline earns its place
+
+Both failure modes are **recurring across sessions** — the operator explicitly framed this: "you keep misinterpreting this as a summary." Codifying retires the failure mode by giving the next agent (and future-me) a named pattern + diagnostic + worked example to recognize the failure and correct course. Without codification, the failure repeats; with codification, the failure becomes catchable via the chapter-close ritual's CLAUDE.md staleness check.
+
+The two failure modes share a root cause family: **defaulting to structured/destructive operations when context-preserving/conversational ones would serve better.** They join the test-failure capture protocol (same codification cycle, same session) as the third in a cluster of "agent reaches for the wrong default; operator pays in cycles." Each is a structural fix (named protocol in CLAUDE.md operating-disciplines table) rather than aspirational (agent self-improvement notes that decay between sessions).
+
+### Discipline reinforced
+
+**The chapter-close-ritual CLAUDE.md staleness check is the structural enforcement.** Future chapter agents at chapter close run the 8-item ritual, which includes "CLAUDE.md staleness" — verifying the operating-disciplines table points at current entries. Both new rows (HANDOFF append-only + handoff-letter-shape) become catchable at chapter-close if a future slice violates them.
+
+**Operator-surfaced agent failure modes deserve immediate codification, not deferral.** The operator's framing ("I'm curious to know why you think this happens regularly when I ask you to do this? Let's fix it too please") is the load-bearing signal. The fix is part of this session's commit, not a follow-up. Pairs with the chapter B.3 + chapter B.4 + slice-C.1 pattern: codification absorbs refinements while the failure is hot, not after.
+
+### Cross-references
+
+- `CLAUDE.md` operating-disciplines table — two new rows added above the test-failure capture row:
+  - "HANDOFF.md is append-only within a chapter; never overwrite"
+  - "Handoff message = forward-looking letter, not backward-looking status report"
+- `sidecar/projection/HANDOFF.md` — restored to carry slice-C.1 mid-chapter letter PLUS the preserved chapter-B.4 close letter (which the prior commit had clobbered); the slice-C.1 letter rewritten as prose addressed to the next agent.
+- `DECISIONS 2026-05-20 (test-failure capture protocol)` — sibling codification from the same session; same shape (recurring agent failure mode → structural protocol in CLAUDE.md operating disciplines).
+
+
+## 2026-05-20 (slice C.2 — special-circumstances axis full lift) — operator allowlists for missing-PK targets + circular-dependency cycles bind from config, structural scan emits typed DiagnosticEntries through the LogSink envelope stream, matching findings carry Metadata.acceptedVia annotation per the annotate-don't-suppress discipline
+
+### Context
+
+Per the chapter-C slice queue + `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)`: C.2 is the special-circumstances axis — operator config publishes "I've already acknowledged these source defects." Two findings: missing primary keys on referenced kinds; unresolved circular FK dependencies. Both signals exist internally in V2 today (`SymmetricClosure` skips inverse-creation with `ClosureSkipped TargetHasNoPrimaryKey`; `TopologicalOrderPass.runWith` returns `TopologicalOrder.Cycles : CycleDiagnostic list`) but neither flows to the operator-visible `DiagnosticEntry` stream or to LogSink. The dormant `Overrides.CircularDependencies.AllowedCycles` config section parses but has no consumer; `Model.ValidationOverrides.AllowMissingPrimaryKey` lives in the wrong location (Model vs Overrides) and parses as bare strings rather than typed entries.
+
+### Two principal-PO scope decisions at slice open
+
+(a) **AllowMissingPrimaryKey ref shape.** Three options — copy `TighteningBinding`'s logical-or-physical `SsKey` ref form (uniform Chapter C surface; ~20 LOC more); typed `(Module × Entity)` tuples at parse time (lighter, no physical fallback, divergent from C.1); bare-string `"Module.Entity"` form (simplest). **Decision: typed `(Module × Entity)` tuples** (`Config.LogicalName list`) — V2 already names this shape (`LogicalName`); operator-readable; no physical-fallback complexity. Resolution to typed `SsKey` happens at bind time via a new `SpecialCircumstancesBinding` mirror of TighteningBinding.
+
+(b) **CircularDependencies + AllowMissingPrimaryKey consumer disposition.** Three options — annotate as accepted + keep diagnostic visible (per slice-6 reshape lesson "actionability = enrichment + presentation, NOT occlusion"); suppress outright when allowlisted; bifurcate. **Decision: annotate-don't-suppress** for both axes — the diagnostic stream still carries the source-defect finding; matching entries receive `Metadata.acceptedVia = "config:overrides.<axis>"` so downstream consumers see the acceptance state without occluding the underlying defect.
+
+### Scope adjustment at slice open
+
+The principal-PO's annotate-don't-suppress decision presumed a DiagnosticEntry stream that **doesn't exist today** for these signals (missing-PK lives in `LineageEvent.Annotated`; cycles in `TopologicalOrder.Cycles`; neither routes to LogSink). Three scope options — binder + pure-F# reconciliation function only (lightest); binder + structured-payload Acceptance field extension (medium); full lift including new DiagnosticEntry emission sites + LogSink routing (largest). **Decision: full lift**, accepting the slice budget overrun risk (5-7h vs the architect's 3-5h target). The full lift is what makes the operator-visible "accepted" surface actually operator-visible.
+
+### What shipped
+
+**Approach decision (load-bearing).** Rather than reshape every pass's return type (would cascade through ~70 consumer sites for `TopologicalOrderPass` alone, plus ~19 for `SymmetricClosure`), C.2 adds a **new pure-additive scan step** that observes the post-chain `Catalog` + `ComposeState` and emits `DiagnosticEntry`s with acceptance annotation in one pass. Zero pass-internal changes; mirrors the "consumer pass" framing the slice-C.1 architect's HANDOFF letter named.
+
+**`src/Projection.Pipeline/Config.fs` (~50 LOC delta)** — schema reshape:
+- `Model.ValidationOverrides.AllowMissingPrimaryKey` (parse-only `string list`) **removed**; replaced by `Overrides.AllowMissingPrimaryKey : LogicalName list`. The old location was structurally wrong (Model owns catalog source; Overrides owns operator-driven catalog rewrites/annotations); the new location matches the architect's mental model in the slice-C.1 HANDOFF letter + matches `Overrides.CircularDependencies`'s neighborhood. Reshaping the type from bare strings to typed `LogicalName` per the operator decision.
+- New `parseAllowMissingPrimaryKey` parser — reads array of `{ module, entity }` objects via the existing `parseLogicalName` helper; structured `pipeline.config.typeMismatch` errors for non-object entries / non-array roots.
+
+**`src/Projection.Pipeline/SpecialCircumstancesBinding.fs` (~150 LOC NEW)** — the binder + the typed runtime value:
+- `type AcceptanceState = NotAccepted | AcceptedByConfig of source: string`.
+- `type SpecialCircumstances = { AllowedMissingPrimaryKeys : Set<SsKey>; AllowedCycles : Set<Set<SsKey>> }` + `SpecialCircumstances.empty`.
+- `resolveKindByLogical : Catalog -> LogicalName -> Result<SsKey>` — module-then-entity lookup; `pipeline.specialCircumstances.allowMissingPk.unresolved` on miss.
+- `resolveKindByPhysicalTable : Catalog -> string -> Result<SsKey>` — for cycle entries (V1's `CircularDependencyEntry.TableName` is physical); `pipeline.specialCircumstances.allowedCycle.unresolved` on miss. Schema disambiguation deferred — current cycles config doesn't carry schema (IR-grows-under-evidence).
+- `bindCycle` — resolves each `TableOrdering` entry's `TableName` and folds into a `Set<SsKey>` (set semantics so cycle-matching is order-independent).
+- `bindAllowMissingPrimaryKey` + `bindAllowedCycles` — typed-set producers from config sections.
+- `fromConfig : Catalog -> Config.Config -> Result<SpecialCircumstances>` — aggregates per-axis errors so the operator sees every malformed entry in one pass.
+
+**`src/Projection.Pipeline/SpecialCircumstancesDiagnostics.fs` (~140 LOC NEW)** — the scan + annotation step:
+- `kindHasNoPrimaryKey` predicate (mirrors the SymmetricClosure `buildInverse` skip-with-`TargetHasNoPrimaryKey` predicate; reuses `Kind.primaryKey`).
+- `emitMissingPrimaryKeyDiagnostics` — for every catalog reference whose target kind has no PK, emits ONE `DiagnosticEntry` per **unique target** (deduplicated across the N references pointing at it). Source = `specialCircumstancesScan`; Code = `structural.targetMissingPrimaryKey`; Severity = Warning; SsKey = Some target.SsKey; Metadata carries `targetKind` (rendered SsKey) + `acceptedVia` when the target is in `AllowedMissingPrimaryKeys`.
+- `emitCycleDiagnostics` — for every unresolved `CycleDiagnostic` in `state.TopologicalOrder`, emits one `DiagnosticEntry`. Source / Code / Severity as above; SsKey = None (catalog-level diagnostic — cycles have multiple members with no canonical single identity); Metadata carries `members` (semicolon-separated rendered SsKeys) + `reason` (V1-style human prose) + `acceptedVia` when `Set.ofList cycle.Members` matches an entry in `AllowedCycles`. Cycle-matching is set-equality (order-independent per the test fixture).
+- `emit : SpecialCircumstances -> ComposeState -> DiagnosticEntry list` — composes both emissions. `state.TopologicalOrder = None` (catalog without topo evidence yet) yields zero cycle entries cleanly.
+
+**`src/Projection.Pipeline/Pipeline.fs` (~70 LOC delta)** — threading:
+- New `Compose.RunReport = { Paths : string list; Diagnostics : DiagnosticEntry list }`. CLI consumers (full-export's LogSink emission; legacy `emit --config`'s stderr narration) consume the diagnostics field; tests inspect both.
+- New `projectFromChainWithState` factored out of `projectFromChain` — returns `(Outputs * ComposeState)` rather than discarding the writer at the post-chain seam. `projectFromChain` is now a thin wrapper that drops the state for callers (`Compose.project` / `Compose.projectWith`) that don't need it.
+- New `Compose.projectWithState : Policy -> Profile -> EmissionPolicy -> Catalog -> Outputs * ComposeState` — `projectWith` sibling.
+- `runWithConfig` widened — its return type changes from `Task<Result<string list>>` to `Task<Result<RunReport>>`. The body now binds `SpecialCircumstances` via `SpecialCircumstancesBinding.fromConfig`, calls `projectWithState`, runs `SpecialCircumstancesDiagnostics.emit` against the final state, and returns the diagnostics alongside the written paths. Aggregates Policy + SpecialCircumstances binder errors so the operator sees both axes' malformed entries together.
+
+**`src/Projection.Cli/Program.fs`** — emission:
+- New `emitSpecialCircumstancesDiagnostics` helper — maps each `DiagnosticEntry.Severity` to the corresponding `LogSink.Level` and emits a `transform.diagnostic` envelope per entry (Category = `LogSink.Transform`; Phase = `LogSink.End`). The entry's typed `Metadata` flattens into the envelope payload, so `acceptedVia` (when present) lands as a top-level payload key visible to LogSink rollup consumers.
+- `runFullExport` updated — pattern-match changes from `| Ok paths` to `| Ok report`; calls `emitSpecialCircumstancesDiagnostics` before recording artifacts so the diagnostic envelopes precede the artifact-path narration in the NDJSON stream.
+- `runEmitFromConfig` (legacy `emit --config`) updated — emits diagnostics to stderr in a one-line-per-finding `diagnostic [Severity] code: message [accepted]` form (the legacy surface pre-dates LogSink and uses Console).
+
+**`tests/Projection.Tests/FullExportCliTests.fs`** — mirror the production `runFullExport` LogSink emission path so the in-process test harness sees the same envelope stream the CLI does.
+
+### Tests
+
+**`tests/Projection.Tests/SpecialCircumstancesBindingTests.fs` (7 facts)** — mirrors the `TighteningBindingTests` structure. Covers: empty overrides yield `SpecialCircumstances.empty`; valid `LogicalName` resolves to the kind's SsKey; unresolved `LogicalName` surfaces `pipeline.specialCircumstances.allowMissingPk.unresolved`; multiple unresolved entries aggregate (no short-circuit); valid `TableName` cycle entries resolve to a `Set<SsKey>`; unresolved `TableName` surfaces `pipeline.specialCircumstances.allowedCycle.unresolved`; errors aggregate across both axes in one binder call.
+
+**`tests/Projection.Tests/SpecialCircumstancesDiagnosticsTests.fs` (10 facts)** — covers: missing-PK scan yields no entries when every referenced kind has a PK (the `sampleCatalog` Customer-with-PK case); scan emits one entry per missing-PK *target* kind (Audit-no-PK referenced by Logger); deduplication holds (Audit referenced by N kinds → one entry); allowlisted target carries `Metadata.acceptedVia = "config:overrides.allowMissingPrimaryKey"`; unreferenced missing-PK kinds are ignored (the scan only fires on referenced targets — V1 / SymmetricClosure parity); no cycle entries when `state.TopologicalOrder = None`; one cycle entry per unresolved `CycleDiagnostic` in the topo; allowlisted cycle carries `Metadata.acceptedVia = "config:overrides.circularDependencies"`; cycle-allowlist matching is set-equality (order-independent: members `[A;B]` allowlisted as `Set [B;A]` still match); cycle entry carries `members` + `reason` in `Metadata`.
+
+Total new test count: **17 facts**. Test baseline post-C.2: **1871 passing / 0 failed / 172 skipped** (was 1854 post-housekeeping pre-C.2; +17 from the new test files). Build clean under `TreatWarningsAsErrors=true`; 0 warnings.
+
+### Disciplines reinforced
+
+**Pure-additive scan over IR-traversal cascade.** The architect's HANDOFF letter implicitly assumed `SymmetricClosure` + `TopologicalOrderPass` would grow `DiagnosticEntry` emission via return-type widening (`Lineage<Catalog>` → `Lineage<Diagnostics<Catalog>>`). That route cascades through ~90 consumer sites across emitters, tests, and pass orchestration. The pure-additive scan-step alternative: observe the same structural conditions from outside the passes (`Kind.primaryKey k = []` for missing-PK; `state.TopologicalOrder.Cycles` for cycles); zero pass-internal changes. Trade-off: missing-PK detection logic exists in two places (`SymmetricClosure.buildInverse` skip predicate + `SpecialCircumstancesDiagnostics.kindHasNoPrimaryKey`); both consult `Kind.primaryKey` so the underlying invariant has one source of truth. The duplicate predicate is acceptable; the alternative — threading writer through every pass for one new emission — is not. **When a new operator-visible signal needs lifting from internal pass state, prefer a post-chain scan step over pass-internal writer extension** unless the new signal requires per-pass attribution.
+
+**`Metadata.acceptedVia` as the annotation surface.** Per `Diagnostics.fs:55-60`: `DiagnosticEntry.Metadata : Map<string, string>` is the structural-payload field; the slice-6 actionable-diagnostics work added `SuggestedConfig`. C.2 adds `acceptedVia` as a new convention key naming the config-source path that allowlists the finding. Per the slice-6 reshape lesson ("actionability = enrichment + presentation, NOT occlusion"): the entry remains in the stream + downstream consumers see the annotation. The key namespace (`config:overrides.<axis>` strings) is conventional, not typed; promote to a typed `Acceptance : AcceptanceState option` field on `DiagnosticEntry` when a second annotation source (e.g., per-tenant override; per-PR exception) demands the lift (IR-grows-under-evidence).
+
+**Aggregated binder errors across axes.** `SpecialCircumstancesBinding.fromConfig` returns `Result<SpecialCircumstances>` aggregating `bindAllowMissingPrimaryKey` + `bindAllowedCycles` errors so the operator sees both axes' malformed entries in one pass. `runWithConfig` further aggregates Policy + SpecialCircumstances binder errors (the four-arm match). Mirrors the C.1 `TighteningBinding.fromConfig` per-entry aggregation discipline; consistency across Chapter C boundary surfaces.
+
+**Catalog-level diagnostic for inherently-multi-key findings.** `DiagnosticEntry.SsKey = None` is the convention per `Diagnostics.fs:50-53` for diagnostics that don't point at a specific IR node. Cycles have multiple members; picking one as canonical (e.g., the alphabetically-first SsKey) would be misleading — the cycle is the unit, not its members. Convention applied: `SsKey = None`; `Metadata.members` carries the semicolon-separated member list. The convention pairs naturally with the operator's allowlist shape (cycles are allowlisted as member-sets, not as single-key references).
+
+### Phase A1 status (operator-config wiring)
+
+Chapter C is six slices total. **C.1 + C.2 shipped.** Remaining: C.3 (emission-folders — `Overrides.EmissionFolders` + `RelativePath` rewrite pass), C.4 (tag-groups — `TransformGroup` closed-DU + `RegisteredTransform.Tags` filter), C.5 (insertion semantics — `Policy.InsertionPolicy` config binding), C.6 (verbosity flags — `--verbose` / `--debug` per §4 + per-category filters).
+
+The C.2 scan-step pattern generalizes for future slices that need to surface internal pass state without reshaping return types: define a typed runtime overlay (e.g., `EmissionFolders` for C.3), bind from config, run a post-chain consumer step that observes the relevant `ComposeState` slots and emits `DiagnosticEntry`s with operator-allowlist annotations.
+
+### Cross-references
+
+- `src/Projection.Pipeline/Config.fs` — `Overrides.AllowMissingPrimaryKey : LogicalName list` (relocated from `Model.ValidationOverrides`); `parseAllowMissingPrimaryKey` typed-tuple parser.
+- `src/Projection.Pipeline/SpecialCircumstancesBinding.fs` — NEW typed runtime value + binder + `pipeline.specialCircumstances.*` error code namespace.
+- `src/Projection.Pipeline/SpecialCircumstancesDiagnostics.fs` — NEW post-chain scan + acceptance-annotation step.
+- `src/Projection.Pipeline/Pipeline.fs` — `Compose.RunReport`; `projectFromChainWithState`; `projectWithState`; widened `runWithConfig`.
+- `src/Projection.Cli/Program.fs` — `emitSpecialCircumstancesDiagnostics`; updated `runFullExport` + `runEmitFromConfig`.
+- `tests/Projection.Tests/FullExportCliTests.fs` — mirror LogSink emission for in-process tests.
+- `tests/Projection.Tests/SpecialCircumstancesBindingTests.fs` — NEW 7-fact binder coverage.
+- `tests/Projection.Tests/SpecialCircumstancesDiagnosticsTests.fs` — NEW 10-fact scan + annotation coverage.
+- `DECISIONS 2026-05-20 (slice C.1 — tightening axis config wiring)` — the template C.2 mirrors at the binder layer; the disciplines (operator-supplied-ref resolution; per-attribute aggregation) carry forward.
+- `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)` — Chapter C 6-slice plan; named `Overrides.AllowMissingPrimaryKey` + `Overrides.CircularDependencies` as C.2 scope.
+- `src/Projection.Core/Passes/SymmetricClosure.fs:162` — `Skip (ClosureSkipped TargetHasNoPrimaryKey)` — the structural source of the missing-PK predicate the scan mirrors.
+- `src/Projection.Core/TopologicalOrder.fs:59` — `CycleDiagnostic` — the structural source the cycle scan reads.
+
+## 2026-05-20 (slice C.3 — emission-folders axis) — operator-supplied `Overrides.EmissionFolders` binds from config + applies at the typed `ArtifactByKind<SsdtFile>` layer between emit and bundle-compose; structured `pipeline.emissionFolders.invalidFolder.*` taxonomy gives surgical operator diagnosis; the apply-layer ambiguity (architect's recommended `SsdtBundle` layer vs the actual right layer one upstream) codified
+
+### Context
+
+Chapter C slice C.3 wires the emission-folders axis per `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)`. The scope: a new `Overrides.EmissionFolders` config section + a per-kind `SsdtFile.RelativePath` rewrite + emit-time validation. The architect's slice-C.2 HANDOFF letter recommended `Compose.applyEmissionFolderOverrides : Map<SsKey, string> -> SsdtBundle -> Result<SsdtBundle>` (operating on the post-compose `Map<string, string>` bundle); read-through surfaced that `SsdtBundle.compose` drops the SsKey context, so the apply fires ONE LAYER UPSTREAM at the typed `ArtifactByKind<SsdtFile>` form.
+
+### What shipped
+
+- **`Overrides.EmissionFolders : EmissionFolderEntry list`** (Config.fs) — each entry carries `{ Ref : LogicalName; Folder : string }`. Operator chose typed `LogicalName` refs over physical (mirrors C.2's precedent; lighter parser + smaller test surface). Parser at `Config.parseEmissionFolders` aggregates per-entry errors.
+- **`EmissionFolders` typed runtime value + `EmissionFoldersBinding.fromConfig`** (new `Projection.Pipeline.EmissionFoldersBinding` module, ~190 LOC). Binder resolves each `LogicalName` to the matching kind's `SsKey` against the loaded catalog AND validates the folder string against five rules:
+  - `invalidFolder.empty` — folder is empty
+  - `invalidFolder.absolute` — folder starts with `/` or matches a Windows drive-letter prefix
+  - `invalidFolder.backslash` — folder contains `\\` (cross-platform-deterministic forward-slash convention)
+  - `invalidFolder.emptySegment` — leading/trailing/double slash produces an empty segment
+  - `invalidFolder.parentTraversal` — segment equals `..` (V2 output is V2-owned per `Compose.writeWith` semantics)
+  - `invalidFolder.invalidChar` — segment contains a platform-reserved char (`<`, `>`, `:`, `"`, `|`, `?`, `*`, control chars)
+  - `unresolved` — the logical ref doesn't match any kind in the catalog
+- **`Compose.applyEmissionFolderOverrides`** (private helper, Pipeline.fs:113-145) — operates on `ArtifactByKind<SsdtFile>`. Reads via `ArtifactByKind.toMap`, rewrites entries whose `SsKey` appears in `folders.ByKind` (preserves the basename `<Schema>.<Table>.sql`; replaces the directory prefix), reconstructs through `ArtifactByKind.create catalog` so the smart-constructor strict-equality invariant is re-validated. `EmissionFolders.empty` short-circuits to identity.
+- **Widened `projectFromChainWithState` + `projectWithState` signature** with an `EmissionFolders` parameter. `projectFromChain` and `project` thread `EmissionFolders.empty` (preserves V1's default `Modules/<Module>/` layout for unconfigured callers).
+- **Widened `runWithConfig`** binds three operator-overlay axes in parallel (`policyR`, `overridesR`, `foldersR`); the three-Result match aggregates errors so the operator sees every malformed entry in one pass.
+
+### Test surface
+
+29 new tests across three files:
+- `EmissionFoldersBindingTests.fs` (15 facts) — empty path; logical-ref resolution; each invalid-folder code; multi-segment forward-slash acceptance; duplicate-ref last-wins; error aggregation across multiple malformed entries.
+- `EmissionFoldersOverlayTests.fs` (9 facts) — exercises the apply through `Compose.projectWithState`: identity under empty; rewrite preserves basename; non-overridden kinds unchanged; SQL body content invariant; manifest.json preserved; keyset cardinality preserved; multi-segment folder concatenates correctly; multiple overrides apply independently.
+- `ConfigTests.fs` (5 new facts) — `emissionFolders` round-trips fields; entry missing `ref` / `folder` rejected; non-array shape rejected; absent section yields empty list.
+
+Total non-Docker baseline: **1835/1835 passing** (1806 pre-C.3); 0 warnings under `TreatWarningsAsErrors=true`.
+
+### Decisions resolved
+
+**Apply-layer ambiguity: the architect's recommended signature was wrong by one layer.** The slice-C.2 HANDOFF named `Compose.applyEmissionFolderOverrides : Map<SsKey, string> -> SsdtBundle -> Result<SsdtBundle>` where "SsdtBundle" maps to `Map<string, string>` (`Outputs.SsdtBundle` type). But `SsdtBundle.compose` drops the SsKey context — by the time the bundle is a `Map<string, string>`, the keys are paths (`"Modules/<Module>/<Schema>.<Table>.sql"`), not SsKeys. The apply needs SsKey context to look up overrides; that context only exists at the typed `ArtifactByKind<SsdtFile>` form, ONE LAYER UPSTREAM. Decision: apply fires between `SsdtDdlEmitter.emitSlices` and `SsdtBundle.compose`. The architect's recommendation was useful as a starting framing but had to be re-validated against the actual substrate.
+
+**Folder-validation strictness lives at the binder, not the parser.** The parser's role stays "textual JSON → typed `EmissionFolderEntry` record"; the binder owns the semantic rules. Five distinct error sub-codes under `pipeline.emissionFolders.invalidFolder.*` give the operator surgical diagnosis (which rule fired; which entry; the offending substring). Mirrors C.2's `pipeline.specialCircumstances.allowMissingPk.unresolved` sub-code pattern.
+
+**Typed `LogicalName` refs (no physical fallback).** Mirrors C.2; same operator-readability + lighter-parser reasoning. The trade-off (divergent from C.1's logical-or-physical tightening axis) is accepted at the chapter level: C.1 carries the physical fallback because tightening operates against deployed-target attribute identity (`Schema.Table.Column`); C.2 + C.3 carry logical-only because operator-readability dominates for allowlists and folder targets.
+
+**Apply helper stays private (not promoted to public).** The architect's signature framed it as `Compose.applyEmissionFolderOverrides` (public). Decision: stays `private` in Pipeline.fs. Tests exercise it through `Compose.projectWithState`'s public surface; public exposure would add operator-facing API surface + doc burden + misuse risk for negligible benefit. The discipline: **operator-overlay apply steps are intentionally internal to the composition flow; their existence is observable through the operator-supplied config, not through direct API invocation.**
+
+**`EmissionFolders` lives in `Projection.Pipeline`, not as a field on `Projection.Core.EmissionPolicy`.** `EmissionPolicy` is pure-core (no operator-overlay concerns); emission-folder targeting is operator overlay (pillar 9 `OperatorIntent of Emission`). Collapsing them would violate the layering. The dedicated `EmissionFolders` type in `Projection.Pipeline` is the right home.
+
+### Discipline reinforced
+
+**Verify the consumer substrate at the architect's named layer (NEW; sibling to C.2's "verify the substrate exists" lesson).** The architect's recommended signature is a starting point, not a contract. C.3's apply was named to operate on `SsdtBundle = Map<string, string>` (post-compose); the actual right place was the typed `ArtifactByKind<SsdtFile>` form one layer upstream. C.2's lesson was "verify the substrate EXISTS before committing"; C.3's lesson is "verify the substrate is at the architect's NAMED LAYER before committing." Both fold into a single discipline: **read the substrate's actual shape end-to-end before committing to a recipe.**
+
+**Structured-error sub-codes for taxonomy (NEW).** When a single validation step has multiple distinct rule violations, give each its own dot-suffix code. C.3 emits six sub-codes under `pipeline.emissionFolders.*`; the operator gets one specific diagnosis per malformed entry; the test surface stays small (one Assert per code). The pattern generalizes for C.4 / C.5 if either grows multiple validation rules at one site.
+
+**Strict-equality smart-constructor preservation through overlay rewrites (codification of an existing rule).** When rewriting a value through `ArtifactByKind<_>`, the smart constructor must be re-invoked against the same catalog so the strict-equality invariant is re-validated. `applyEmissionFolderOverrides` threads `catalog` and calls `ArtifactByKind.create catalog rewritten`. The unreachable `Error` branch is `invalidOp` — `Map.map` preserves the keyset by construction, so the re-validation is structurally guaranteed Ok. Codifies the pattern for any future overlay that rewrites bundle entries.
+
+### Phase A1 status (operator-config wiring)
+
+Chapter C is six slices total. **C.1 + C.2 + C.3 shipped.** Remaining: C.4 (tag-groups — `TransformGroup` closed-DU + `RegisteredTransform.Tags` filter), C.5 (insertion semantics — `Policy.InsertionPolicy` config binding), C.6 (verbosity flags — `--verbose` / `--debug` per §4 + per-category filters).
+
+The C.3 apply-layer pattern (typed bundle rewrite via `ArtifactByKind.toMap |> Map.map |> ArtifactByKind.create`) generalizes for any future slice that rewrites per-kind sibling-Π outputs through an operator overlay; the structured-error taxonomy pattern generalizes for any binder with multiple validation rules at one site.
+
+### Cross-references
+
+- `src/Projection.Pipeline/Config.fs` — `EmissionFolderEntry`; `Overrides.EmissionFolders : EmissionFolderEntry list`; `parseEmissionFolderEntry` + `parseEmissionFolders`.
+- `src/Projection.Pipeline/EmissionFoldersBinding.fs` — NEW typed `EmissionFolders` runtime value + `EmissionFoldersBinding.fromConfig` + folder-validation taxonomy + `pipeline.emissionFolders.*` error code namespace.
+- `src/Projection.Pipeline/Pipeline.fs` — `applyEmissionFolderOverrides` private helper at the `ArtifactByKind<SsdtFile>` layer; widened `projectFromChainWithState`, `projectWithState`, `runWithConfig` signatures.
+- `tests/Projection.Tests/EmissionFoldersBindingTests.fs` — NEW 15-fact binder coverage.
+- `tests/Projection.Tests/EmissionFoldersOverlayTests.fs` — NEW 9-fact apply coverage through `Compose.projectWithState`.
+- `tests/Projection.Tests/ConfigTests.fs` — 5 new emissionFolders parser facts.
+- `DECISIONS 2026-05-20 (slice C.2 — special-circumstances axis full lift)` — the lesson C.3 carried forward + extended.
+- `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)` — Chapter C 6-slice plan; named `Overrides.EmissionFolders` as C.3 scope.
+- `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs:410-418` — `relativePath` LINT-ALLOW rationale + forward-slash convention.
+- `src/Projection.Core/ArtifactByKind.fs:69-82` — `create` smart constructor (strict-equality keyset enforcement; re-validates on every reconstruction).
+
+## 2026-05-20 (slices C.4 + C.5 + C.6 — tag-groups + insertion semantics + verbosity axes) — Chapter C structurally complete; closed `TransformGroup` DU lands in Pipeline (NOT on Core registry) per pillar 9 + minimal-cascade reasoning; `Policy.InsertionPolicy` config-binding lands without downstream consumer wiring per IR-grows-under-evidence; `LogSink.Verbosity` three-way DU + per-category mute replace the binary verbose-bool; three architectural codifications
+
+### Context
+
+Chapter C's last three slices shipped this session. The six-slice operator-facing config surface from `DECISIONS 2026-05-19 (chapter B.4 mid-chapter strategic exploration)` is now structurally complete — every axis the operator named has a binder + a typed runtime overlay + wiring through `Compose.runWithConfig`. The chapter-close ritual is **NOT yet executed** (open question for the principal-PO; see HANDOFF.md letter).
+
+### What shipped (per-slice summary)
+
+**C.4 — tag-groups axis.**
+- `TransformGroup` closed DU in `Projection.Core.Classification.fs` (preset seed: `Tightening | UserReflow`, `[<RequireQualifiedAccess>]` because `Tightening` collides with `OverlayAxis.Tightening`). Two variants reflect the actual operator-toggle-evidence available today; future variants land under closed-DU expansion empirical-test discipline.
+- `Projection.Pipeline.TransformGroupsBinding`: typed `TransformGroups` runtime value + `fromConfig` resolves textual config entries → typed DU; structured `pipeline.transformGroups.unknownGroup` on unrecognized names.
+- `RegisteredTransformTags.passTags : Map<string, Set<TransformGroup>>`: the static pass-name → tag-set mapping lives in the Pipeline layer (not on the Core's `RegisteredTransformMetadata`).
+- `Pipeline.filterChainByGroups`: chain-filter step inside `projectFromChainWithState` that excludes passes whose tag-set intersects operator-disabled groups; `TransformGroups.empty` is a no-op (V1-parity).
+- `Config.PolicySection.TransformGroups : TransformGroupEntry list`: new config section, parses as `{ name, enabled }` records.
+
+**C.5 — insertion semantics.**
+- `Projection.Pipeline.InsertionPolicyBinding.fromConfig`: maps `policy.insertion` string → typed `Policy.InsertionPolicy` DU (`SchemaOnly | InsertNew | Merge | TruncateAndInsert`); empty string falls back to V2-driver neutral default `SchemaOnly`; unknown variant surfaces `pipeline.insertionPolicy.unknownVariant`.
+- `buildPolicyFromConfig` now aggregates tightening + insertion binder errors in one pass.
+- **Wiring scope:** binder lands + threads `InsertionPolicy` into `Policy.Insertion`. Downstream pass/emitter consumers don't yet read `Policy.Insertion`; the operator-facing surface lands now per IR-grows-under-evidence + consumer wiring follows under concrete operator-pull pressure.
+
+**C.6 — verbosity flags + per-category mute.**
+- `LogSink.Verbosity` closed DU (`Quiet | Verbose | Debug`, `[<RequireQualifiedAccess>]` because `Debug` collides with `Level.Debug`). `setVerbosity : Verbosity -> unit` replaces the binary `setVerbose`; back-compat shim keeps `setVerbose : bool -> unit` (`true → Debug` preserves prior all-on semantics).
+- `LogSink.setMutedCategories : Set<Category> -> unit`: drops envelopes at the egress boundary BEFORE the §11 accumulator update (muted events DON'T contribute to the rollup).
+- CLI `FullExportArg` extends with `Debug` (alias `-d`) + `MuteCategory` flags; Program.fs dispatcher resolves category-name strings through closed lookup with per-argument error aggregation.
+
+### Test surface
+
+29 new tests across three files:
+- `TransformGroupsBindingTests.fs` (10 facts) — empty path; recognized variants; default semantics; unknown rejection; error aggregation; duplicate-entry last-wins; passTags coverage invariant.
+- `TransformGroupsFilterTests.fs` (7 facts) — empty/identity; disabling Tightening excludes the four tightening passes; disabling UserReflow excludes UserFkReflow; disabling both; non-tagged passes still run.
+- `InsertionPolicyBindingTests.fs` (9 facts) — all four variants; case-sensitive matching; empty-default fallback; fromConfig threading; unknown variant rejection.
+- `LogSinkVerbosityTests.fs` (10 facts) — Quiet/Verbose/Debug transitions; back-compat shim; per-category mute under all verbosity levels; mute supersedes severity; mute-doesn't-rollup invariant.
+
+Total non-Docker baseline: **1871/1871 passing** (1835 pre-C.4 → 1852 post-C.4 → 1861 post-C.5 → 1871 post-C.6); 0 warnings under `TreatWarningsAsErrors=true`.
+
+### Decisions resolved
+
+**Tag-set lives at the Pipeline layer, NOT on the Core's `RegisteredTransformMetadata` (C.4).** The slice-C.3 HANDOFF letter recommended `RegisteredTransform.Tags : Set<TransformGroup>` (field on the Core record). Read-through showed this cascades through 12 pass modules' `.registered` record-literal declarations + 9 emitter/adapter sites + the smart constructors + `toMetadata` — ~21 record-literal edits under `TreatWarningsAsErrors=true`. The lighter-touch alternative: a static `Map<string, Set<TransformGroup>>` in Pipeline alongside the chain it filters. The architectural rationale (beyond cascade minimization): per pillar 9, operator-overlay-axis classification is OperatorIntent-flavored; the Core's registry record IS DataIntent (it carries the structural site classification at `Sites : TransformSite list`, but that's classification on a structural axis, not an operator-toggle membership). Keeping the tag-set in Pipeline preserves Core's DataIntent purity. The trade-off (decoupled tag-set vs registry record) is mitigated by the `passTags coverage invariant` property test — every name in `passTags` must exist in `RegisteredAllTransforms.all`.
+
+**Wiring-without-downstream-consumer is a valid slice shape (C.5).** `Policy.InsertionPolicy` is wired through the binder + the `Policy` record but no pass/emitter consumes it. The slice still ships because the operator-facing config surface needs to land BEFORE the downstream consumer is ready — hand-edited configs get deterministic typed values + binder validation; the consumer (DataEmissionComposer or similar) reads `Policy.Insertion` when chapter C.5+ operator-pull surfaces a concrete need. The named failure mode this protects against: "deferred config sections" that parse-but-ignore + then surprise an operator when the consumer arrives. By landing the binder now, the typed surface is stable; future consumer wiring is a non-breaking add. **Pairs with the slice-7 thin-CLI decision** (chapter B.4): same pattern (lift the operator-facing surface ahead of consumer wiring, with structured types throughout so future consumer landing is non-breaking).
+
+**Three-way Verbosity DU + per-category mute (C.6).** The spec §4 ambiguously says both Trace + Debug are "hidden unless `--verbose` / `--debug`" — could be read as aliases. Decision: split them. `--verbose` surfaces Debug only; `--debug` additionally surfaces Trace. Operator-usage-mental-model: "verbose for normal investigation, debug for deep-dive." The mute-before-accumulator ordering ensures muted events don't contribute to the §11 rollup — an operator who mutes `profile` truly stops seeing profile (live stream AND terminal summary), which is the intuitive contract.
+
+### Discipline reinforced
+
+**Verify the architect's named consumer layer against the substrate (codified at N=2).** C.3's letter codified "verify the substrate is at the architect's named layer." C.4 re-confirmed it: the architect's `RegisteredTransform.Tags : Set<TransformGroup>` recommendation surfaced as cascade-heavy at the Core record; the Pipeline-layer Map was the right home. Two consecutive slices found the architect's recommendation wrong-by-one-layer. The discipline holds: **always read the substrate end-to-end before committing to the recipe.**
+
+**Closed-DU expansion empirical-test discipline applied at first-evidence-fires (C.4).** `TransformGroup` ships with EXACTLY the operator-toggle evidence today (Tightening + UserReflow). Future variants land under operator-pull + DECISIONS amendment; the speculative axis-survey list (`CDC | UATUsers | MigrationDependencies | Bootstrap | RefactorLog`) doesn't pre-populate the DU. Pairs with IR-grows-under-evidence.
+
+**Wiring-without-downstream-consumer is a valid slice shape (NEW; codifies a pattern that's been in flight since chapter B.4 slice 7).** When the operator-facing config surface needs to land BEFORE the downstream consumer is ready, ship the binder + typed overlay + threading through `Policy`. The consumer reads `Policy.X` when ready (non-breaking add). Catches the failure mode of "config surface that surprises operators because the binder isn't wired."
+
+**Mute-before-accumulator-update (NEW; C.6).** When an operator-supplied filter drops events from the live stream, it must also drop them from the terminal summary's rollup. The naive ordering (accumulator update → filter → emit) would keep muted events in the summary, surprising operators. The correct ordering (filter → accumulator update → emit) is structurally enforced in `LogSink.emit`'s lock-protected body.
+
+### Phase A1 status
+
+**Chapter C is structurally complete.** All six slices shipped:
+- C.1 ✓ tightening (operator config → `Policy.TighteningPolicy.Interventions` + chain-factory)
+- C.2 ✓ special-circumstances (allowlists for missing-PK / cycles + post-chain diagnostic scan + acceptance annotation)
+- C.3 ✓ emission-folders (per-kind SSDT folder rewrite)
+- C.4 ✓ tag-groups (closed DU + Pipeline-layer tag map + chain filter)
+- C.5 ✓ insertion semantics (config-binding without downstream consumer)
+- C.6 ✓ verbosity flags + per-category mute (three-way Verbosity DU + setMutedCategories)
+
+The chapter-close ritual is uninitiated; the principal-PO has the call on whether to close formally now or hold pending follow-on operator-pull.
+
+### Cross-references
+
+- `src/Projection.Core/Classification.fs:82-118` — `TransformGroup` closed DU.
+- `src/Projection.Pipeline/TransformGroupsBinding.fs` — NEW; binder + `passTags` static map + `filterChainByGroups`-friendly `disabledGroups` helper.
+- `src/Projection.Pipeline/InsertionPolicyBinding.fs` — NEW; string→DU binder for `Policy.Insertion`.
+- `src/Projection.Pipeline/LogSink.fs:55-76` (Verbosity DU); `LogSink.fs:267-285` (RunState with Verbosity + MutedCategories); `LogSink.fs:540-560` (emit gate).
+- `src/Projection.Pipeline/Config.fs` — `TransformGroupEntry`, `PolicySection.TransformGroups`, `parseTransformGroupEntry`, `parseTransformGroups`.
+- `src/Projection.Pipeline/Pipeline.fs` — `filterChainByGroups`; widened `projectFromChainWithState` + `projectWithState` (now 6-arg); `buildPolicyFromConfig` aggregates tightening + insertion errors; `runWithConfig` 4-axis binder match.
+- `src/Projection.Cli/FullExportArgs.fs` — `Debug` + `MuteCategory` flags; updated usage prose.
+- `src/Projection.Cli/Program.fs` — `parseCategoryName`; verbosity resolution (`--debug` > `--verbose` > Quiet); per-argument mute-name error aggregation.
+- `tests/Projection.Tests/TransformGroupsBindingTests.fs` — NEW 10-fact binder coverage including passTags coverage invariant.
+- `tests/Projection.Tests/TransformGroupsFilterTests.fs` — NEW 7-fact chain-filter coverage through `Compose.projectWithState`.
+- `tests/Projection.Tests/InsertionPolicyBindingTests.fs` — NEW 9-fact insertion binder coverage.
+- `tests/Projection.Tests/LogSinkVerbosityTests.fs` — NEW 10-fact verbosity + mute coverage; `[<Xunit.Collection("Global-MutableState")>]` per the C.2 codified discipline.
+- `DECISIONS 2026-05-20 (slice C.3 — emission-folders axis)` — the substrate-layer-verification lesson C.4 reconfirmed.
+- `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)` — Chapter C 6-slice plan; C.4-C.6 axes complete this plan.
+

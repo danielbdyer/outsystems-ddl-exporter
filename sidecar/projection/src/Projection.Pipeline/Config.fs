@@ -43,7 +43,6 @@ module Config =
         | WithEntities of name: string * entities: string list
 
     type ValidationOverrides = {
-        AllowMissingPrimaryKey : string list
         AllowMissingSchema     : string list
     }
 
@@ -118,11 +117,38 @@ module Config =
         Path : string
     }
 
+    /// Chapter C slice C.3 — one row of `Overrides.EmissionFolders`.
+    /// `Ref` names the kind in operator-readable `(Module, Entity)`
+    /// logical form (matches C.2's typed-tuple precedent); `Folder`
+    /// is the cross-platform-deterministic relative folder string
+    /// (forward-slash separators only; binder rejects `..`, absolute
+    /// paths, backslashes, and empty segments before the rewrite
+    /// fires).
+    type EmissionFolderEntry = {
+        Ref    : LogicalName
+        Folder : string
+    }
+
     type OverridesSection = {
         TableRenames           : TableRename list
         MigrationDependencies  : FilePathOverride option
         StaticData             : FilePathOverride option
         CircularDependencies   : CircularDependenciesSection option
+        /// Chapter C slice C.2 — operator allowlist of kinds whose
+        /// missing primary key is acknowledged. Entries are typed
+        /// `(Module, Entity)` logical pairs (operator-readable);
+        /// the binder resolves each to a `SsKey` against the loaded
+        /// catalog at bind time. Downstream diagnostics still fire
+        /// for matching kinds but carry `Metadata.acceptedVia =
+        /// "config:overrides.allowMissingPrimaryKey"` per the
+        /// annotate-don't-suppress discipline.
+        AllowMissingPrimaryKey : LogicalName list
+        /// Chapter C slice C.3 — operator-supplied emission-folder
+        /// targeting. Each entry remaps a kind's SSDT `.sql` file
+        /// from its default `Modules/<Module>/` directory to the
+        /// operator-named folder. The basename (`<Schema>.<Table>.sql`)
+        /// is preserved; only the directory prefix is rewritten.
+        EmissionFolders        : EmissionFolderEntry list
     }
 
     type EmissionSection = {
@@ -143,10 +169,85 @@ module Config =
         Fallback : string
     }
 
+    // -----------------------------------------------------------------------
+    // Tightening axis (Chapter C slice C.1). Operator-facing config surface
+    // for `Policy.TighteningPolicy.Interventions`. Each entry maps to one
+    // `TighteningIntervention` DU variant; the binder (`TighteningBinding
+    // .fromConfig`) converts these textual records into typed runtime
+    // values + resolves per-attribute overrides against the loaded
+    // catalog.
+    //
+    // Carries one record per intervention `kind` rather than one section
+    // per intervention type so operators authoring tightening configs
+    // see a single list shape ("here are my interventions") rather than
+    // four separate sections to fill out. The closed-DU enforcement is
+    // in the binder, not the parser — Config.fs stays in its textual-
+    // shape role per `D9 (secret-free by construction)`.
+    // -----------------------------------------------------------------------
+
+    /// One row of the override table inside a `nullability`
+    /// intervention. Keys identify attributes by the **logical**
+    /// `Module.Entity.Attribute` form (operator-readable; matches the
+    /// V1 config shape) OR the **physical** `Schema.Table.Column` form
+    /// (deployment-target nomenclature). The binder resolves these to
+    /// `SsKey` against the loaded catalog at bind time.
+    type TighteningAttributeOverride = {
+        AttributeRef : string
+        Action       : string
+    }
+
+    /// One operator-supplied tightening intervention. The `Kind` field
+    /// names the DU variant (`"nullability"` / `"uniqueIndex"` /
+    /// `"foreignKey"` / `"categoricalUniqueness"`); the per-variant
+    /// fields are populated when relevant + ignored otherwise. The
+    /// binder validates the Kind→fields pairing.
+    type TighteningInterventionEntry = {
+        Kind : string
+        Id   : string
+        // Nullability fields
+        NullBudget                   : decimal option
+        AllowMandatoryRelaxation     : bool option
+        NullabilityOverrides         : TighteningAttributeOverride list
+        // UniqueIndex fields
+        EnforceSingleColumnUnique    : bool option
+        EnforceMultiColumnUnique     : bool option
+        // ForeignKey fields
+        EnableCreation               : bool option
+        AllowCrossSchema             : bool option
+        AllowCrossCatalog            : bool option
+        TreatMissingDeleteRuleAsIgnore : bool option
+        AllowNoCheckCreation         : bool option
+        // CategoricalUniqueness fields
+        MinDistinctCountForUniqueness : int64 option
+    }
+
+    /// `policy.tightening` config section. Empty `Interventions` list
+    /// = no tightening interventions registered = V2's strict default
+    /// (no alterations).
+    type TighteningSection = {
+        Interventions : TighteningInterventionEntry list
+    }
+
+    /// Chapter C slice C.4 — one row of `policy.transformGroups`. The
+    /// `Name` field carries the closed-DU `TransformGroup` case name
+    /// textually (`"Tightening"` / `"UserReflow"`); the binder
+    /// (`TransformGroupsBinding.fromConfig`) resolves to the typed DU
+    /// and surfaces structural errors on unknown names.
+    type TransformGroupEntry = {
+        Name    : string
+        Enabled : bool
+    }
+
     type PolicySection = {
-        Selection    : string
-        Insertion    : string
-        UserMatching : UserMatchingSection
+        Selection       : string
+        Insertion       : string
+        UserMatching    : UserMatchingSection
+        Tightening      : TighteningSection option
+        /// Chapter C slice C.4 — operator-supplied feature-toggle
+        /// groupings (`Map<TransformGroup, bool>`). Missing groups
+        /// default to enabled (V1-parity). Empty list = no operator
+        /// overrides = all groups enabled.
+        TransformGroups : TransformGroupEntry list
     }
 
     type OutputSection = {
@@ -170,7 +271,6 @@ module Config =
     // -----------------------------------------------------------------------
 
     let private defaultValidationOverrides : ValidationOverrides = {
-        AllowMissingPrimaryKey = []
         AllowMissingSchema     = []
     }
 
@@ -196,10 +296,12 @@ module Config =
     }
 
     let private defaultOverrides : OverridesSection = {
-        TableRenames          = []
-        MigrationDependencies = None
-        StaticData            = None
-        CircularDependencies  = None
+        TableRenames           = []
+        MigrationDependencies  = None
+        StaticData             = None
+        CircularDependencies   = None
+        AllowMissingPrimaryKey = []
+        EmissionFolders        = []
     }
 
     let private defaultEmission : EmissionSection = {
@@ -221,9 +323,11 @@ module Config =
     }
 
     let private defaultPolicy : PolicySection = {
-        Selection    = "IncludeAll"
-        Insertion    = "SchemaOnly"
-        UserMatching = defaultUserMatching
+        Selection       = "IncludeAll"
+        Insertion       = "SchemaOnly"
+        UserMatching    = defaultUserMatching
+        Tightening      = None
+        TransformGroups = []
     }
 
     let private defaultOutput : OutputSection = {
@@ -476,13 +580,10 @@ module Config =
             | JsonValueKind.Null | JsonValueKind.Undefined ->
                 Result.success defaultValidationOverrides
             | JsonValueKind.Object ->
-                match getStringListOrEmpty v "allowMissingPrimaryKey" with
+                match getStringListOrEmpty v "allowMissingSchema" with
                 | Error es -> Error es
-                | Ok pks ->
-                    match getStringListOrEmpty v "allowMissingSchema" with
-                    | Error es -> Error es
-                    | Ok schemas ->
-                        Result.success { AllowMissingPrimaryKey = pks; AllowMissingSchema = schemas }
+                | Ok schemas ->
+                    Result.success { AllowMissingSchema = schemas }
             | _ ->
                 Result.failureOf (
                     configError "typeMismatch" "model.validationOverrides must be an object.")
@@ -706,6 +807,73 @@ module Config =
                 | Ok strict ->
                     Result.success (Some { AllowedCycles = cycles; StrictMode = strict })
 
+    /// Parse `overrides.allowMissingPrimaryKey` as a list of typed
+    /// `{ module, entity }` objects (Chapter C slice C.2). Operator
+    /// chose typed tuples over bare strings (DECISIONS 2026-05-20 —
+    /// special-circumstances axis scope). Each entry resolves to a
+    /// Kind `SsKey` at bind time via `SpecialCircumstancesBinding`.
+    let private parseAllowMissingPrimaryKey (element: JsonElement) : Result<LogicalName list> =
+        match element.TryGetProperty("allowMissingPrimaryKey") with
+        | false, _ -> Result.success []
+        | true, v ->
+            match v.ValueKind with
+            | JsonValueKind.Null | JsonValueKind.Undefined -> Result.success []
+            | JsonValueKind.Array ->
+                v.EnumerateArray()
+                |> Seq.toList
+                |> List.map (fun e ->
+                    if e.ValueKind = JsonValueKind.Object then
+                        parseLogicalName e
+                    else
+                        Result.failureOf (
+                            configError
+                                "typeMismatch"
+                                "overrides.allowMissingPrimaryKey entries must be { module, entity } objects."))
+                |> Result.aggregate
+            | _ ->
+                Result.failureOf (
+                    configError "typeMismatch" "overrides.allowMissingPrimaryKey must be an array.")
+
+    /// Parse `overrides.emissionFolders` as a list of typed
+    /// `{ ref: { module, entity }, folder: string }` objects (Chapter
+    /// C slice C.3). Per the C.2 precedent (typed tuples over bare
+    /// strings): the ref shape mirrors `allowMissingPrimaryKey`'s
+    /// logical-name form. The folder validation (segment shape,
+    /// absolute/parent-traversal rejection) lives in the binder, not
+    /// the parser — Config.fs stays in its textual-shape role.
+    let private parseEmissionFolderEntry (element: JsonElement) : Result<EmissionFolderEntry> =
+        match getProperty element "ref" with
+        | Error es -> Error es
+        | Ok refElement ->
+            match parseLogicalName refElement with
+            | Error es -> Error es
+            | Ok logical ->
+                match getString element "folder" with
+                | Error es -> Error es
+                | Ok folder -> Result.success { Ref = logical; Folder = folder }
+
+    let private parseEmissionFolders (element: JsonElement) : Result<EmissionFolderEntry list> =
+        match element.TryGetProperty("emissionFolders") with
+        | false, _ -> Result.success []
+        | true, v ->
+            match v.ValueKind with
+            | JsonValueKind.Null | JsonValueKind.Undefined -> Result.success []
+            | JsonValueKind.Array ->
+                v.EnumerateArray()
+                |> Seq.toList
+                |> List.map (fun e ->
+                    if e.ValueKind = JsonValueKind.Object then
+                        parseEmissionFolderEntry e
+                    else
+                        Result.failureOf (
+                            configError
+                                "typeMismatch"
+                                "overrides.emissionFolders entries must be { ref, folder } objects."))
+                |> Result.aggregate
+            | _ ->
+                Result.failureOf (
+                    configError "typeMismatch" "overrides.emissionFolders must be an array.")
+
     let private parseOverrides (root: JsonElement) : Result<OverridesSection> =
         match tryGetProperty root "overrides" with
         | None -> Result.success defaultOverrides
@@ -722,12 +890,20 @@ module Config =
                         match parseCircularDependencies element with
                         | Error es -> Error es
                         | Ok cycles ->
-                            Result.success {
-                                TableRenames          = renames
-                                MigrationDependencies = migDeps
-                                StaticData            = staticData
-                                CircularDependencies  = cycles
-                            }
+                            match parseAllowMissingPrimaryKey element with
+                            | Error es -> Error es
+                            | Ok allowedPks ->
+                                match parseEmissionFolders element with
+                                | Error es -> Error es
+                                | Ok folders ->
+                                    Result.success {
+                                        TableRenames           = renames
+                                        MigrationDependencies  = migDeps
+                                        StaticData             = staticData
+                                        CircularDependencies   = cycles
+                                        AllowMissingPrimaryKey = allowedPks
+                                        EmissionFolders        = folders
+                                    }
 
     let private parseEmission (root: JsonElement) : Result<EmissionSection> =
         match tryGetProperty root "emission" with
@@ -802,6 +978,162 @@ module Config =
             Result.failureOf (
                 configError "typeMismatch" "policy.userMatching must be an object.")
 
+    let private getOptionalBool (element: JsonElement) (name: string) : Result<bool option> =
+        match element.TryGetProperty(name) with
+        | false, _ -> Result.success None
+        | true, v when v.ValueKind = JsonValueKind.True -> Result.success (Some true)
+        | true, v when v.ValueKind = JsonValueKind.False -> Result.success (Some false)
+        | _ ->
+            Result.failureOf (configError "typeMismatch" (sprintf "'%s' must be a boolean." name))
+
+    let private getOptionalDecimal (element: JsonElement) (name: string) : Result<decimal option> =
+        match element.TryGetProperty(name) with
+        | false, _ -> Result.success None
+        | true, v when v.ValueKind = JsonValueKind.Number ->
+            let mutable d : decimal = 0m
+            if v.TryGetDecimal(&d) then Result.success (Some d)
+            else
+                Result.failureOf (configError "typeMismatch" (sprintf "'%s' must be a decimal." name))
+        | _ ->
+            Result.failureOf (configError "typeMismatch" (sprintf "'%s' must be a numeric value." name))
+
+    let private getOptionalInt64 (element: JsonElement) (name: string) : Result<int64 option> =
+        match element.TryGetProperty(name) with
+        | false, _ -> Result.success None
+        | true, v when v.ValueKind = JsonValueKind.Number ->
+            let mutable n : int64 = 0L
+            if v.TryGetInt64(&n) then Result.success (Some n)
+            else
+                Result.failureOf (configError "typeMismatch" (sprintf "'%s' must be a 64-bit integer." name))
+        | _ ->
+            Result.failureOf (configError "typeMismatch" (sprintf "'%s' must be an integer." name))
+
+    let private parseTighteningAttributeOverride (element: JsonElement) : Result<TighteningAttributeOverride> =
+        match getString element "attributeRef" with
+        | Error es -> Error es
+        | Ok ref ->
+            match getString element "action" with
+            | Error es -> Error es
+            | Ok action -> Result.success { AttributeRef = ref; Action = action }
+
+    let private parseTighteningOverrides (element: JsonElement) : Result<TighteningAttributeOverride list> =
+        match element.TryGetProperty("overrides") with
+        | false, _ -> Result.success []
+        | true, v when v.ValueKind = JsonValueKind.Array ->
+            v.EnumerateArray()
+            |> Seq.toList
+            |> List.map parseTighteningAttributeOverride
+            |> Result.aggregate
+        | _ ->
+            Result.failureOf (
+                configError "typeMismatch" "tightening intervention 'overrides' must be an array.")
+
+    let private parseTighteningIntervention (element: JsonElement) : Result<TighteningInterventionEntry> =
+        match getString element "kind" with
+        | Error es -> Error es
+        | Ok kind ->
+            match getString element "id" with
+            | Error es -> Error es
+            | Ok id ->
+                match getOptionalDecimal element "nullBudget" with
+                | Error es -> Error es
+                | Ok nullBudget ->
+                    match getOptionalBool element "allowMandatoryRelaxation" with
+                    | Error es -> Error es
+                    | Ok allowMand ->
+                        match parseTighteningOverrides element with
+                        | Error es -> Error es
+                        | Ok overrides ->
+                            match getOptionalBool element "enforceSingleColumnUnique" with
+                            | Error es -> Error es
+                            | Ok ensSc ->
+                                match getOptionalBool element "enforceMultiColumnUnique" with
+                                | Error es -> Error es
+                                | Ok ensMc ->
+                                    match getOptionalBool element "enableCreation" with
+                                    | Error es -> Error es
+                                    | Ok enable ->
+                                        match getOptionalBool element "allowCrossSchema" with
+                                        | Error es -> Error es
+                                        | Ok crossSchema ->
+                                            match getOptionalBool element "allowCrossCatalog" with
+                                            | Error es -> Error es
+                                            | Ok crossCatalog ->
+                                                match getOptionalBool element "treatMissingDeleteRuleAsIgnore" with
+                                                | Error es -> Error es
+                                                | Ok missingDR ->
+                                                    match getOptionalBool element "allowNoCheckCreation" with
+                                                    | Error es -> Error es
+                                                    | Ok nocheck ->
+                                                        match getOptionalInt64 element "minDistinctCountForUniqueness" with
+                                                        | Error es -> Error es
+                                                        | Ok minDist ->
+                                                            Result.success {
+                                                                Kind = kind
+                                                                Id = id
+                                                                NullBudget = nullBudget
+                                                                AllowMandatoryRelaxation = allowMand
+                                                                NullabilityOverrides = overrides
+                                                                EnforceSingleColumnUnique = ensSc
+                                                                EnforceMultiColumnUnique = ensMc
+                                                                EnableCreation = enable
+                                                                AllowCrossSchema = crossSchema
+                                                                AllowCrossCatalog = crossCatalog
+                                                                TreatMissingDeleteRuleAsIgnore = missingDR
+                                                                AllowNoCheckCreation = nocheck
+                                                                MinDistinctCountForUniqueness = minDist
+                                                            }
+
+    let private parseTightening (root: JsonElement) : Result<TighteningSection option> =
+        match tryGetProperty root "tightening" with
+        | None -> Result.success None
+        | Some element ->
+            match element.TryGetProperty("interventions") with
+            | false, _ -> Result.success (Some { Interventions = [] })
+            | true, v when v.ValueKind = JsonValueKind.Array ->
+                v.EnumerateArray()
+                |> Seq.toList
+                |> List.map parseTighteningIntervention
+                |> Result.aggregate
+                |> Result.map (fun entries -> Some { Interventions = entries })
+            | _ ->
+                Result.failureOf (
+                    configError "typeMismatch" "tightening.interventions must be an array.")
+
+    /// Parse one `policy.transformGroups[]` entry — a `{ name, enabled }`
+    /// pair. The binder (`TransformGroupsBinding.fromConfig`) resolves
+    /// the string `name` to the closed-DU `TransformGroup` value at
+    /// bind time.
+    let private parseTransformGroupEntry (element: JsonElement) : Result<TransformGroupEntry> =
+        match getString element "name" with
+        | Error es -> Error es
+        | Ok name ->
+            match getBoolOr element "enabled" true with
+            | Error es -> Error es
+            | Ok enabled -> Result.success { Name = name; Enabled = enabled }
+
+    let private parseTransformGroups (element: JsonElement) : Result<TransformGroupEntry list> =
+        match element.TryGetProperty("transformGroups") with
+        | false, _ -> Result.success []
+        | true, v ->
+            match v.ValueKind with
+            | JsonValueKind.Null | JsonValueKind.Undefined -> Result.success []
+            | JsonValueKind.Array ->
+                v.EnumerateArray()
+                |> Seq.toList
+                |> List.map (fun e ->
+                    if e.ValueKind = JsonValueKind.Object then
+                        parseTransformGroupEntry e
+                    else
+                        Result.failureOf (
+                            configError
+                                "typeMismatch"
+                                "policy.transformGroups entries must be { name, enabled } objects."))
+                |> Result.aggregate
+            | _ ->
+                Result.failureOf (
+                    configError "typeMismatch" "policy.transformGroups must be an array.")
+
     let private parsePolicy (root: JsonElement) : Result<PolicySection> =
         match tryGetProperty root "policy" with
         | None -> Result.success defaultPolicy
@@ -825,11 +1157,19 @@ module Config =
                     match parseUserMatching element with
                     | Error es -> Error es
                     | Ok userMatching ->
-                        Result.success {
-                            Selection    = selection
-                            Insertion    = insertion
-                            UserMatching = userMatching
-                        }
+                        match parseTightening element with
+                        | Error es -> Error es
+                        | Ok tightening ->
+                            match parseTransformGroups element with
+                            | Error es -> Error es
+                            | Ok transformGroups ->
+                                Result.success {
+                                    Selection       = selection
+                                    Insertion       = insertion
+                                    UserMatching    = userMatching
+                                    Tightening      = tightening
+                                    TransformGroups = transformGroups
+                                }
 
     let private parseOutput (root: JsonElement) : Result<OutputSection> =
         match tryGetProperty root "output" with

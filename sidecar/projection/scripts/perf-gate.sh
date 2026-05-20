@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 #
 # V2 sidecar perf-regression gate — runs the operator-reality canary
-# (50k rows × 300 tables × variegated, the production-shape baseline),
+# (6.25k rows × 150 tables × variegated, the production-shape baseline),
 # captures the resulting bench JSON, and gates per-label TotalMs
 # against a tracked μ+σ statistical baseline.
 #
 # Operator decision (2026-05-09): schema-only canary-gate.sql is
 # inappropriate for the production-use-case baseline. The Stop hook +
-# pre-commit gate must exercise the production envelope (300 tables,
-# 50k rows, variegated FK density) so feature additions can't silently
-# regress under operator-reality conditions.
+# pre-commit gate must exercise the production envelope (150 tables,
+# 6.25k rows, variegated FK density; tuned down 2026-05-20 from
+# 300 tables × 50k rows to reduce agent-loop friction while preserving
+# the FK-density envelope at the smaller scale — see DECISIONS
+# 2026-05-20 (canary volume reduction)) so feature additions can't
+# silently regress under operator-reality conditions.
 #
 # Soft-skips (exit 0) when Docker / dotnet are unreachable so docs-
 # only commits and dev hosts without the canary stack don't hard-
@@ -100,7 +103,7 @@ fi
 # ---------------------------------------------------------------------
 
 run_canary() {
-    log "running operator-reality canary (50k rows × 300 tables, variegated)..."
+    log "running operator-reality canary (6.25k rows × 150 tables, variegated)..."
     cd "$ROOT"
     set +e
     PROJECTION_BENCH_DIR="$ROOT" dotnet test "$TEST_PROJECT" \

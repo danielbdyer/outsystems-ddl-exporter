@@ -472,6 +472,20 @@ When policy diverges between environments (different `UserMatchingStrategy` per 
 - Verifiability: gated on chapter 4.1.A M4.
 - Failure mode if violated: operator deploys with different policy in UAT than PROD without noticing.
 
+**L3-X11: Every CLI run emits a structured event stream conforming to the LOGGING-FORMAT contract.**
+Every V2 CLI subcommand emits to stderr as NDJSON; every emitted event conforms to the envelope of `docs/logging-format.md` §3 (runId / ts / level / category / code / phase / payload mandatory; source / ssKey / stepId optional); every event's `code` is in §7's taxonomy or an additive extension landed under DECISIONS; every `summary.runComplete` is the last line of stderr.
+- Tier 1 (cutover blocker — operator's primary surface).
+- Currently named: yes (`docs/logging-format.md` §3-§15; promoted to Bucket A at chapter B.4 close 2026-05-20).
+- Verifiability: `LogSinkTests` property + example suite (27 tests covering envelope shape, NDJSON conformance, level suppression, ts format, ULID runId, no-ANSI invariant, code-categorization across all 8 categories); `FullExportCliTests` end-to-end suite (10 tests covering the `projection full-export` orchestration's event-stream conformance).
+- Failure mode if violated: operator cannot reliably parse V2's output; downstream tooling (dashboards, alerting, `jq` pipelines) cannot be built on V2's surface.
+
+**L3-X12: Every actionable event carries a `suggestedConfig` payload pointing at the JSON-path edit that would address it.**
+Every event whose code is in the "MUST carry suggestedConfig" list of `docs/logging-format.md` §12 carries `payload.suggestedConfig`; the runSummary's `suggestedConfigEdits` count names the operator's prioritized to-do list. Slice 6's artifact-side cash-out routes `SuggestedConfig` through `DiagnosticEntry` for the decision-log / opportunities / validation emitters; slice 6.5's event-stream side counts the signal at egress and surfaces it in the terminal envelope.
+- Tier 2 (strongly desired — operator's high-leverage shortcut).
+- Currently named: yes (`docs/logging-format.md` §12; promoted to Bucket A at chapter B.4 close 2026-05-20).
+- Verifiability: `LogSinkTests` (suggestedConfig counting on emission; runSummary surfacing); `ActionableDiagnosticsTests` (artifact-side enrichment per slice 6).
+- Failure mode if violated: operator gets an actionable warning with no path to the fix; falls back to prose-parsing JSON artifacts.
+
 ### 3.5 Cutover safety (L3-C)
 
 **L3-C1: Canary asserts V1 ≈ V2 modulo named tolerances.**
@@ -1239,6 +1253,8 @@ This is the integrated view: every L3 product axiom in Part III mapped to the L2
 | L3-X8 (tolerance taxonomy logged) | R6 + Tolerance | — | gated | Bucket B |
 | L3-X9 (config errors structured) | D9 | `Config.parse` | `ConfigTests` | Bucket A |
 | L3-X10 (multi-env policy diffs) | — | — | gated | **Bucket D (Tier 2)** |
+| L3-X11 (structured event-stream conformance) | proposed (chapter B.4 close) | `LogSink.fs` envelope + NDJSON serialization | `LogSinkTests` + `FullExportCliTests` | **Bucket A** |
+| L3-X12 (actionable events carry suggestedConfig) | proposed (chapter B.4 close) | `DiagnosticEntry.SuggestedConfig` + `LogSink` payload counting | `LogSinkTests` + `ActionableDiagnosticsTests` | **Bucket A** |
 
 ### 10.5 Cutover safety concern coverage
 
@@ -1358,7 +1374,7 @@ When the next round of agents is dispatched (per Part XI.3's annual cadence), ap
 Schema:           L3-S1 through L3-S10
 Data:             L3-D1 through L3-D10
 Identity:         L3-I1 through L3-I10
-Diagnostics:      L3-X1 through L3-X10
+Diagnostics:      L3-X1 through L3-X12  (X11 + X12 promoted at chapter B.4 close 2026-05-20)
 Cutover safety:   L3-C1 through L3-C10
 Cross-cutting:    L3-CC1 through L3-CC6
 ```

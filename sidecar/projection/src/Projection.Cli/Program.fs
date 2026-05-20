@@ -1,10 +1,13 @@
 module Projection.Cli.Program
 
 open System
+open System.Diagnostics
 open System.IO
+open Argu
 open Projection.Core
 open Projection.Pipeline
 open Projection.Targets.SSDT
+open Projection.Cli.FullExportArgs
 
 /// Usage lines. Per chapter 3.5 deep audit (2026-05-09): the lines
 /// are a typed `string list` carrying the structured help-page
@@ -17,12 +20,24 @@ let private usageLines : string list =
         "projection — V2 sidecar end-to-end pipeline."
         ""
         "USAGE:"
+        "    projection full-export --config <path> [--output <dir>] [--verbose]"
         "    projection emit --config <path>"
         "    projection emit [--skeleton-only] <input-osm-model.json> <output-dir>"
         "    projection deploy <input-osm-model.json>"
         "    projection canary <source-ddl-file>"
         ""
         "SUBCOMMANDS:"
+        "    full-export   Phase B structural-exit subcommand (chapter B.4 slice 7)."
+        "                  Reads a unified config, projects through V2's pass chain,"
+        "                  writes SSDT + JSON + Distributions + actionable diagnostic"
+        "                  artifacts, and emits a structured NDJSON event stream to"
+        "                  stderr conforming to docs/logging-format.md. Wraps today's"
+        "                  three live config consumers (Model.Path; Overrides"
+        "                  .TableRenames; Output.Dir); other config sections parse-"
+        "                  but-ignore (Chapter C wires them). Runs against SnapshotJson"
+        "                  / SnapshotRowsets connectivity only — LiveOssysConnection"
+        "                  is a follow-up chapter."
+        ""
         "    emit    Parse V1 JSON, project through three sibling Π's,"
         "            and write SSDT / JSON / Distributions artifacts."
         "            Three argument forms:"
@@ -103,6 +118,217 @@ let private dumpBench (tag: string) : unit =
         with ex ->
             eprintfn "  WARNING: failed to persist bench snapshot: %s" ex.Message
 
+// ----------------------------------------------------------------------
+// `full-export` (chapter B.4 slice 7) — Phase B structural-exit
+// subcommand. Per chapter B.4 mid-rescope + `DECISIONS 2026-05-19
+// (slice B.4.{4-7}.rescope)`: THIN scope; wraps today's three live
+// `Pipeline.Config` consumers + slice 6's actionable-diagnostics + slice
+// 6.5's LogSink emission. NDJSON event stream to stderr conforms to
+// `docs/logging-format.md` §3-§13 + §15.1; runSummary terminal event
+// per §10.
+// ----------------------------------------------------------------------
+
+/// Map a stage's `Bench.scope` duration to a `LogSink.recordStage` +
+/// `summary.stageCompleted` envelope pair. Pure boundary helper —
+/// emits both ends so the runSummary's stage table is populated
+/// alongside the stream's per-stage end events.
+let private recordStage
+    (stageName: string)
+    (outcome: LogSink.Outcome)
+    (durationMs: int64)
+    : unit =
+    LogSink.recordStage stageName durationMs outcome
+    let payload : Map<string, objnull> =
+        Map.ofList [
+            "stage",      box stageName
+            "durationMs", box durationMs
+            "outcome",    box (LogSink.outcomeToString outcome)
+        ]
+    LogSink.emit
+        { LogSink.envelope LogSink.Info LogSink.Summary "summary.stageCompleted" payload with
+            Phase  = LogSink.End
+            StepId = Some stageName }
+
+/// Emit a structured config-error envelope per the §7.1 contract
+/// (`config.validationFailed`). One event per ValidationError so the
+/// operator can grep + jq each independently.
+let private emitConfigErrors (errors: ValidationError list) : unit =
+    for e in errors do
+        let payload : Map<string, objnull> =
+            Map.ofList [
+                "code",    box e.Code
+                "reason",  box e.Message
+            ]
+        LogSink.emit
+            { LogSink.envelope LogSink.Error LogSink.Config "config.validationFailed" payload with
+                Phase = LogSink.ErrorPhase }
+
+/// Render an emit-phase ValidationError stream as one
+/// `transform.diagnostic` event per error (per §7.4 — level matches
+/// severity; Error → `error`). Slice 7's THIN scope routes
+/// pass-produced errors through this projection.
+let private emitTransformErrors (errors: ValidationError list) : unit =
+    for e in errors do
+        let payload : Map<string, objnull> =
+            Map.ofList [
+                "code",    box e.Code
+                "message", box e.Message
+            ]
+        LogSink.emit
+            { LogSink.envelope LogSink.Error LogSink.Transform "transform.diagnostic" payload with
+                Phase = LogSink.ErrorPhase }
+
+/// Chapter C slice C.2 — emit each `SpecialCircumstancesDiagnostics`
+/// entry as a `transform.diagnostic` LogSink envelope. Per §7.4 the
+/// envelope level mirrors the entry's `Severity`; the entry's typed
+/// `Metadata` (including `acceptedVia` on operator-allowlisted
+/// findings) flattens into the envelope payload so downstream LogSink
+/// consumers (the `summary.runComplete` rollup; future operator
+/// dashboards) see the acceptance state without re-walking the
+/// catalog.
+let private emitSpecialCircumstancesDiagnostics (entries: DiagnosticEntry list) : unit =
+    for entry in entries do
+        let level =
+            match entry.Severity with
+            | DiagnosticSeverity.Info    -> LogSink.Info
+            | DiagnosticSeverity.Warning -> LogSink.Warn
+            | DiagnosticSeverity.Error   -> LogSink.Error
+        let basePayload : Map<string, objnull> =
+            Map.ofList [
+                "source",  box entry.Source
+                "code",    box entry.Code
+                "message", box entry.Message
+            ]
+        let withSsKey =
+            match entry.SsKey with
+            | Some k -> basePayload |> Map.add "ssKey" (box (SsKey.rootOriginal k))
+            | None   -> basePayload
+        let payload =
+            entry.Metadata
+            |> Map.fold (fun acc k v -> Map.add k (box v) acc) withSsKey
+        LogSink.emit
+            { LogSink.envelope level LogSink.Transform "transform.diagnostic" payload with
+                Phase = LogSink.End }
+
+/// Resolve the effective output directory: CLI `--output` override
+/// wins over the config's `Output.Dir`. Defaults to the config value.
+let private resolveOutputDir
+    (cfg: Config.Config)
+    (outputOverride: string option)
+    : string =
+    match outputOverride with
+    | Some dir when not (String.IsNullOrWhiteSpace dir) -> dir
+    | _ -> cfg.Output.Dir
+
+/// Emit a config-resolved snapshot at run start per §7.1: one
+/// `config.runStart` with command + configPath, then one
+/// `config.connectionResolved` naming the SnapshotJson source
+/// (per D9; secrets absent by construction in V2's config).
+let private emitConfigSnapshot
+    (cfg: Config.Config)
+    (configPath: string)
+    (effectiveOutput: string)
+    : unit =
+    let startPayload : Map<string, objnull> =
+        Map.ofList [
+            "command",    box "projection full-export"
+            "configPath", box configPath
+            "outputDir",  box effectiveOutput
+        ]
+    LogSink.emit
+        { LogSink.envelope LogSink.Info LogSink.Config "config.runStart" startPayload with
+            Phase = LogSink.Start }
+    let connPayload : Map<string, objnull> =
+        Map.ofList [
+            "kind",      box "SnapshotJson"
+            "modelPath", box cfg.Model.Path
+        ]
+    LogSink.emit
+        { LogSink.envelope LogSink.Info LogSink.Config "config.connectionResolved" connPayload with
+            Phase  = LogSink.Start
+            Source = Some LogSink.Configuration }
+
+/// `projection full-export` entry. Parses config, emits config events,
+/// runs the existing `Compose.runWithConfig` orchestration (which
+/// reads → renames → projects → writes), times each stage via
+/// `Bench.scope`, and emits `summary.stageCompleted` + the terminal
+/// `summary.runComplete` event. The NDJSON stream goes to stderr per
+/// §5; artifact-path narration goes to stdout for operator visibility
+/// at the CLI surface (matching the pre-existing `emit` subcommand).
+let private runFullExport
+    (configPath: string)
+    (outputOverride: string option)
+    (verbosity: LogSink.Verbosity)
+    (mutedCategories: Set<LogSink.Category>)
+    : int =
+    LogSink.reset ()
+    LogSink.setVerbosity verbosity
+    LogSink.setMutedCategories mutedCategories
+    Bench.reset ()
+    let mutable outcome : LogSink.Outcome = LogSink.Succeeded
+    let exitCode =
+        try
+            try
+                match Config.fromFile configPath with
+                | Error errors ->
+                    emitConfigErrors errors
+                    outcome <- LogSink.Failed
+                    6
+                | Ok cfg ->
+                    let effectiveOutput = resolveOutputDir cfg outputOverride
+                    let cfgForRun = { cfg with Output = { Dir = effectiveOutput } }
+                    emitConfigSnapshot cfgForRun configPath effectiveOutput
+                    // Stage timings — wrap the orchestration so each named
+                    // stage emits a summary.stageCompleted event. We
+                    // delegate to `Compose.runWithConfig` for the full
+                    // composition (read + rename + project + write) and
+                    // record the aggregate stage timing under `pipeline`.
+                    let sw = Stopwatch.StartNew()
+                    let task = Compose.runWithConfig cfgForRun
+                    let result = task.GetAwaiter().GetResult()
+                    sw.Stop()
+                    match result with
+                    | Ok report ->
+                        recordStage "pipeline" LogSink.Succeeded sw.ElapsedMilliseconds
+                        emitSpecialCircumstancesDiagnostics report.Diagnostics
+                        printfn "projection: wrote %d artifact(s) to %s" report.Paths.Length effectiveOutput
+                        report.Paths
+                        |> List.iter (fun p ->
+                            let info = FileInfo p
+                            LogSink.recordArtifact {
+                                Kind      = Path.GetFileName p |> nonNull
+                                Path      = p
+                                SizeBytes = Some info.Length
+                                FileCount = None
+                            }
+                            printfn "  %s (%d bytes)" p info.Length)
+                        0
+                    | Error errors ->
+                        recordStage "pipeline" LogSink.Failed sw.ElapsedMilliseconds
+                        emitTransformErrors errors
+                        outcome <- LogSink.Failed
+                        Console.Error.WriteLine "projection: full-export failed:"
+                        printErrors Console.Error errors
+                        2
+            with ex ->
+                outcome <- LogSink.Failed
+                let payload : Map<string, objnull> =
+                    Map.ofList [
+                        "exception", box (ex.GetType().Name)
+                        "message",   box ex.Message
+                    ]
+                LogSink.emit
+                    { LogSink.envelope LogSink.Error LogSink.Config "config.validationFailed" payload with
+                        Phase = LogSink.ErrorPhase }
+                Console.Error.WriteLine ("projection: full-export aborted: " + ex.Message)
+                2
+        finally
+            // §10 mandatory: runSummary emits on every exit path.
+            let benchStats = Bench.snapshot ()
+            LogSink.runComplete outcome "projection full-export" benchStats |> ignore
+            dumpBench "full-export"
+    exitCode
+
 let private runEmit (inputPath: string) (outputDir: string) : int =
     if not (File.Exists inputPath) then
         die 1 (sprintf "projection: input file not found: %s" inputPath)
@@ -179,12 +405,22 @@ let private runEmitFromConfig (configPath: string) : int =
         let result = task.GetAwaiter().GetResult()
         let exitCode =
             match result with
-            | Ok paths ->
-                printfn "projection: wrote %d artifact(s) to %s" paths.Length config.Output.Dir
-                paths
+            | Ok report ->
+                printfn "projection: wrote %d artifact(s) to %s" report.Paths.Length config.Output.Dir
+                report.Paths
                 |> List.iter (fun p ->
                     let info = FileInfo p
                     printfn "  %s (%d bytes)" p info.Length)
+                // Chapter C slice C.2 — surface special-circumstances
+                // findings to stderr (the legacy `emit --config` surface
+                // pre-dates LogSink and uses Console for narration).
+                for entry in report.Diagnostics do
+                    let accepted =
+                        if Map.containsKey "acceptedVia" entry.Metadata then " [accepted]"
+                        else ""
+                    Console.Error.WriteLine (
+                        sprintf "  diagnostic [%s] %s: %s%s"
+                            (string entry.Severity) entry.Code entry.Message accepted)
                 0
             | Error errors ->
                 Console.Error.WriteLine "projection: emit failed:"
@@ -277,9 +513,79 @@ let private runCanary (sourceDdlPath: string) : int =
         dumpBench "canary"
         exitCode
 
+/// Dispatch `full-export` via the Argu surface (`FullExportArgs`).
+/// Argument-parse failures surface as exit code 1 with a usage hint;
+/// successful parses route to `runFullExport`.
+let private parseCategoryName (raw: string) : Result<LogSink.Category, string> =
+    match raw.ToLowerInvariant() with
+    | "config"    -> Ok LogSink.Config
+    | "extract"   -> Ok LogSink.Extract
+    | "profile"   -> Ok LogSink.Profile
+    | "transform" -> Ok LogSink.Transform
+    | "emit"      -> Ok LogSink.Emit
+    | "deploy"    -> Ok LogSink.Deploy
+    | "canary"    -> Ok LogSink.Canary
+    | "summary"   -> Ok LogSink.Summary
+    | other       ->
+        Error (
+            sprintf
+                "projection: --mute-category '%s' is not a recognized category. Known: config | extract | profile | transform | emit | deploy | canary | summary."
+                other)
+
+let private dispatchFullExport (argv: string[]) : int =
+    let parser =
+        ArgumentParser.Create<FullExportArg>(
+            programName = "projection full-export",
+            errorHandler = ProcessExiter())
+    try
+        let parsed = parser.Parse(argv, raiseOnUsage = false)
+        if parsed.IsUsageRequested then
+            // ProcessExiter handles --help itself, but the explicit
+            // check guards against future Argu shape changes.
+            0
+        else
+            let configPath = parsed.GetResult Config
+            let outputOverride = parsed.TryGetResult Output
+            let verbose = parsed.Contains Verbose
+            let debug = parsed.Contains Debug
+            // Chapter C slice C.6 — verbosity DU resolution. --debug
+            // takes precedence over --verbose (the union maximum).
+            let verbosity =
+                if debug then LogSink.Verbosity.Debug
+                elif verbose then LogSink.Verbosity.Verbose
+                else LogSink.Verbosity.Quiet
+            // Resolve --mute-category arguments to a Set<Category>.
+            // Aggregates per-argument errors so the operator sees
+            // every malformed name in one pass.
+            let muteResults =
+                parsed.GetResults MuteCategory
+                |> List.map parseCategoryName
+            let muteErrors =
+                muteResults |> List.choose (function Error e -> Some e | Ok _ -> None)
+            if not (List.isEmpty muteErrors) then
+                for err in muteErrors do Console.Error.WriteLine err
+                1
+            else
+                let mutedCategories =
+                    muteResults
+                    |> List.choose (function Ok c -> Some c | Error _ -> None)
+                    |> Set.ofList
+                runFullExport configPath outputOverride verbosity mutedCategories
+    with
+    | :? ArguParseException as ex ->
+        Console.Error.WriteLine ex.Message
+        1
+
 [<EntryPoint>]
 let main argv =
     match argv with
+    | [| "full-export" |] ->
+        Console.Error.WriteLine "projection full-export: --config <path> required"
+        Console.Error.WriteLine ""
+        Console.Error.WriteLine "Run `projection full-export --help` for usage."
+        1
+    | arr when arr.Length >= 1 && arr.[0] = "full-export" ->
+        dispatchFullExport (Array.skip 1 arr)
     | [| "emit"; "--config"; configPath |] ->
         runEmitFromConfig configPath
     | [| "emit"; "--skeleton-only"; inputPath; outputDir |] ->
