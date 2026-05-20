@@ -267,7 +267,14 @@ module SsdtDdlEmitter =
         // rowset path lifting #ColumnCheckReality) through the
         // realization layer's CHECK-constraint emission.
         let checks = k.ColumnChecks |> List.map columnCheckDef
-        Statement.CreateTable (toTableId k, columns, pk, fks, checks)
+        // H-022: extract TemporalConfig from Kind.Modality if the kind is
+        // a system-versioned temporal table. `tryPick` returns None for
+        // non-temporal kinds; None is the `TemporalConfig option` default.
+        let temporal =
+            k.Modality |> List.tryPick (function
+                | ModalityMark.Temporal tc -> Some tc
+                | _ -> None)
+        Statement.CreateTable (toTableId k, columns, pk, fks, checks, temporal)
 
     /// Yield one `AlterTableNoCheckConstraint` statement per
     /// `IsConstraintTrusted = false` FK on this kind. Emitted AFTER

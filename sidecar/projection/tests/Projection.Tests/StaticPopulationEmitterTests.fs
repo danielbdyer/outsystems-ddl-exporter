@@ -251,7 +251,7 @@ let ``StaticPopulationEmitter.statements topological-table order matches SsdtDdl
     let catalog = mkCatalog [ mkCountryKind (); mkLanguageKind () ]
     let ddlTables =
         SsdtDdlEmitter.statements catalog
-        |> Seq.choose (function CreateTable (t, _, _, _, _) -> Some t | _ -> None)
+        |> Seq.choose (function CreateTable (t, _, _, _, _, _) -> Some t | _ -> None)
         |> Seq.toList
     let dmlTables =
         StaticPopulationEmitter.statements catalog

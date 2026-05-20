@@ -432,12 +432,22 @@ module ScriptDomBuild =
             | None -> ()
         | _ -> ()
 
+    /// Map V2's `TemporalRetentionUnit` DU to ScriptDom's
+    /// `TemporalRetentionPeriodUnit`. H-022 (Cluster A).
+    let private temporalRetentionUnit (u: TemporalRetentionUnit) : TemporalRetentionPeriodUnit =
+        match u with
+        | Days   -> TemporalRetentionPeriodUnit.Days
+        | Weeks  -> TemporalRetentionPeriodUnit.Weeks
+        | Months -> TemporalRetentionPeriodUnit.Months
+        | Years  -> TemporalRetentionPeriodUnit.Years
+
     let buildCreateTable
         (table: TableId)
         (columns: ColumnDef list)
         (pk: PrimaryKeyDef option)
         (fks: ForeignKeyDef list)
         (checks: ColumnCheckDef list)
+        (temporal: TemporalConfig option)
         : Diagnostics<CreateTableStatement> =
         use _ = Bench.scope "emit.scriptDom.build.createTable"
         let stmt = CreateTableStatement()
@@ -465,6 +475,34 @@ module ScriptDomBuild =
         |> Bench.iterDo "emit.scriptDom.build.createTable.check" (fun chk ->
             def.TableConstraints.Add(checkConstraint chk))
         stmt.Definition <- def
+        // H-022: `ModalityMark.Temporal` — emit PERIOD FOR SYSTEM_TIME
+        // inside the table definition and WITH (SYSTEM_VERSIONING = ON)
+        // as a table option. Both are required for SQL Server temporal
+        // table creation; partial emission is not meaningful.
+        match temporal with
+        | None -> ()
+        | Some tc ->
+            match tc.PeriodStart, tc.PeriodEnd with
+            | Some ps, Some pe ->
+                let period = SystemTimePeriodDefinition()
+                period.StartTimeColumn <- bracketed (Name.value ps)
+                period.EndTimeColumn   <- bracketed (Name.value pe)
+                def.SystemTimePeriod <- period
+            | _ -> ()
+            let sv = SystemVersioningTableOption()
+            sv.OptionState <- OptionState.On
+            match tc.HistorySchema, tc.HistoryTable with
+            | Some hs, Some ht ->
+                sv.HistoryTable <- schemaObjectName hs ht
+            | _ -> ()
+            match tc.Retention with
+            | Infinite -> ()
+            | Limited (value, unit) ->
+                let ret = RetentionPeriodDefinition()
+                ret.Duration <- IntegerLiteral(Value = string value)
+                ret.Units <- temporalRetentionUnit unit
+                sv.RetentionPeriod <- ret
+            stmt.Options.Add(sv)
         Diagnostics.ofValue stmt
 
     // -----------------------------------------------------------------------
@@ -1397,8 +1435,8 @@ module ScriptDomBuild =
         match stmt with
         | Blank -> None
         | Comment _ -> None
-        | CreateTable (table, cols, pk, fks, checks) ->
-            Some ((buildCreateTable table cols pk fks checks).Value :> TSqlStatement)
+        | CreateTable (table, cols, pk, fks, checks, temporal) ->
+            Some ((buildCreateTable table cols pk fks checks temporal).Value :> TSqlStatement)
         | CreateIndex idx ->
             Some ((buildCreateIndex idx).Value :> TSqlStatement)
         | InsertRow (table, cells) ->

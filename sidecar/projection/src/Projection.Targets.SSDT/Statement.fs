@@ -262,7 +262,7 @@ type ExtendedPropertyOwner =
 type Statement =
     | Blank
     | Comment of text: string
-    | CreateTable of TableId * ColumnDef list * PrimaryKeyDef option * ForeignKeyDef list * ColumnCheckDef list
+    | CreateTable of TableId * ColumnDef list * PrimaryKeyDef option * ForeignKeyDef list * ColumnCheckDef list * TemporalConfig option
     /// Chapter 4.1.A slice 3: CREATE INDEX statement for non-PK
     /// indexes. PK-marked indexes are inlined in CREATE TABLE per
     /// V1 convention; the SsdtDdlEmitter filters them before

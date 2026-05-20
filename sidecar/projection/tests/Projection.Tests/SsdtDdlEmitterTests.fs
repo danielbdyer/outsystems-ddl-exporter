@@ -173,7 +173,7 @@ let ``SsdtDdlEmitter.statements yields one CreateTable per catalog kind`` () =
         stmts
         |> List.choose (fun s ->
             match s with
-            | CreateTable (table, _, _, _, _) -> Some table
+            | CreateTable (table, _, _, _, _, _) -> Some table
             | _ -> None)
     Assert.Equal (List.length allKinds, List.length createTables)
 
@@ -755,7 +755,7 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
         statements
         |> List.findIndex (fun stmt ->
             match stmt with
-            | Statement.CreateTable (table, _, _, _, _) ->
+            | Statement.CreateTable (table, _, _, _, _, _) ->
                 table.Schema + "." + table.Table =
                     (Catalog.tryFindKind kindKey enriched
                      |> Option.map (fun k -> k.Physical.Schema + "." + k.Physical.Table)
