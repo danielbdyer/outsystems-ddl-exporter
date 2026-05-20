@@ -13,6 +13,8 @@
     <Compile Include="Routing.fs" />
     <Compile Include="ActionableDiagnostics.fs" />
     <Compile Include="DecisionLogEmitter.fs" />
+    <Compile Include="RemediationEmitter.fs" />
+    <Compile Include="SummaryFormatter.fs" />
   </ItemGroup>
 
   <ItemGroup>

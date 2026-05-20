@@ -79,6 +79,7 @@ let private emptyOverrides : Config.OverridesSection = {
     StaticData             = None
     CircularDependencies   = None
     AllowMissingPrimaryKey = []
+    EmissionFolders        = []
 }
 
 let private mkConfig (overrides: Config.OverridesSection) : Config.Config =
@@ -102,10 +103,11 @@ let private mkConfig (overrides: Config.OverridesSection) : Config.Config =
             DecisionLog = true; Opportunities = true; Validations = true
         }
         Policy      = {
-            Selection    = "IncludeAll"
-            Insertion    = "SchemaOnly"
-            UserMatching = { Strategy = "ByEmail"; Fallback = "NoFallback" }
-            Tightening   = None
+            Selection       = "IncludeAll"
+            Insertion       = "SchemaOnly"
+            UserMatching    = { Strategy = "ByEmail"; Fallback = "NoFallback" }
+            Tightening      = None
+            TransformGroups = []
         }
         Output      = { Dir = "out/" }
     }

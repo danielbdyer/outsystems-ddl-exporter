@@ -15,6 +15,9 @@
     <Compile Include="TighteningBinding.fs" />
     <Compile Include="SpecialCircumstancesBinding.fs" />
     <Compile Include="SpecialCircumstancesDiagnostics.fs" />
+    <Compile Include="EmissionFoldersBinding.fs" />
+    <Compile Include="TransformGroupsBinding.fs" />
+    <Compile Include="InsertionPolicyBinding.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="RegisteredAllTransforms.fs" />
     <Compile Include="Bulk.fs" />
@@ -36,6 +39,7 @@
     <ProjectReference Include="..\Projection.Targets.Json\Projection.Targets.Json.fsproj" />
     <ProjectReference Include="..\Projection.Targets.Distributions\Projection.Targets.Distributions.fsproj" />
     <ProjectReference Include="..\Projection.Targets.Data\Projection.Targets.Data.fsproj" />
+    <ProjectReference Include="..\Projection.Targets.OperationalDiagnostics\Projection.Targets.OperationalDiagnostics.fsproj" />
   </ItemGroup>
 
 </Project>

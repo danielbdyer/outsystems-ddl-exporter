@@ -8,6 +8,7 @@ open Projection.Adapters.Osm
 open Projection.Targets.SSDT
 open Projection.Targets.Json
 open Projection.Targets.Distributions
+open Projection.Targets.OperationalDiagnostics
 
 /// End-to-end pipeline composition: V1 `osm_model.json` →
 /// `Projection.Adapters.Osm.CatalogReader.parse` → V2 Catalog →
@@ -60,6 +61,19 @@ module Compose =
             /// not yet thread profile evidence end-to-end. Same
             /// JsonNode-at-the-seam treatment as `Json` above.
             Distributions : JsonNode
+            /// Chapter 5+ slice `5.13.remediation-emitter` —
+            /// per-decision remediation SQL (UPDATE/DELETE/SELECT
+            /// options for operator-attention findings: nullability
+            /// conflicts + FK orphans + unique-index duplicates).
+            /// Operator-safety contract: only SELECT active; UPDATE
+            /// + DELETE commented-out by default. Written as
+            /// `manifest.remediation.sql` alongside the SSDT bundle.
+            RemediationSql : string
+            /// Chapter 5+ slice `5.13.summary-formatter` — 6-bucket
+            /// rollup prose (PrimaryKey / Physical / Mandatory /
+            /// ForeignKey / Unique / Remediation). Written as
+            /// `manifest.summary.txt` alongside the SSDT bundle.
+            SummaryText : string
         }
 
     /// Chapter C slice C.2 — run-shape value returned by
@@ -83,6 +97,14 @@ module Compose =
         let json = "projection.json"
         [<Literal>]
         let distributions = "distributions.json"
+        /// Chapter 5+ slice 5.13.remediation-emitter — per-finding
+        /// UPDATE/DELETE/SELECT options for operator-attention findings.
+        [<Literal>]
+        let remediation = "manifest.remediation.sql"
+        /// Chapter 5+ slice 5.13.summary-formatter — 6-bucket rollup
+        /// prose for operator review of tightening decisions.
+        [<Literal>]
+        let summary = "manifest.summary.txt"
 
     /// Aggregate the SSDT bundle's per-table SQL files into one
     /// concatenated SQL string (manifest.json excluded; iterates the
@@ -113,20 +135,96 @@ module Compose =
     /// unconditionally; decision-set passes write back evidence the
     /// emitters do not yet consume (decision-set consumption is a
     /// future-chapter concern).
+    /// Chapter C slice C.3 — apply operator-supplied emission-folder
+    /// overrides to the typed per-kind SSDT bundle. The rewrite
+    /// preserves each `SsdtFile`'s basename (the cross-platform-
+    /// deterministic `<Schema>.<Table>.sql` suffix) and replaces the
+    /// directory prefix with the operator-named folder.
+    /// `EmissionFolders.empty` short-circuits to the input unchanged.
+    ///
+    /// The rewrite fires at the typed `ArtifactByKind<SsdtFile>` layer
+    /// — operator overlay sits outside Π (pillar 9: emitters are
+    /// `DataIntent`; operator opinion enters at the Pipeline-layer
+    /// realization boundary). Reconstructs through
+    /// `ArtifactByKind.create` against the same catalog so the
+    /// strict-equality keyset invariant is preserved.
+    let private applyEmissionFolderOverrides
+        (folders: EmissionFolders)
+        (catalog: Catalog)
+        (files: ArtifactByKind<SsdtDdlEmitter.SsdtFile>)
+        : ArtifactByKind<SsdtDdlEmitter.SsdtFile> =
+        if EmissionFolders.isEmpty folders then files
+        else
+            use _ = Bench.scope "compose.applyEmissionFolderOverrides"
+            let rewritten =
+                files
+                |> ArtifactByKind.toMap
+                |> Map.map (fun key file ->
+                    match Map.tryFind key folders.ByKind with
+                    | None        -> file
+                    | Some folder ->
+                        let segments = file.RelativePath.Split('/')
+                        let basename = segments.[segments.Length - 1]
+                        { file with
+                            RelativePath = System.String.Concat(folder, "/", basename) })
+            match ArtifactByKind.create catalog rewritten with
+            | Ok a -> a
+            | Error err ->
+                // Unreachable: we Map.map preserving keys; the input
+                // keyset equals Catalog.allKinds by construction
+                // (input came from SsdtDdlEmitter.emitSlices which
+                // smart-constructed against the same catalog).
+                invalidOp (sprintf "Compose.applyEmissionFolderOverrides: %A" err)
+
+    /// Chapter C slice C.4 — filter the pass chain by operator-supplied
+    /// `TransformGroups`. Each chain entry's name is looked up against
+    /// `RegisteredTransformTags.passTags`; if the entry's tag set
+    /// intersects any group the operator has disabled, the entry is
+    /// excluded. Empty `TransformGroups.disabledGroups` (no operator
+    /// override, or all groups enabled) returns the chain unchanged.
+    ///
+    /// Per pillar 9: the filter expresses operator intent at the
+    /// realization-layer boundary; passes self-identify their group
+    /// membership via the static `passTags` map alongside the chain
+    /// they participate in.
+    let private filterChainByGroups
+        (groups: TransformGroups)
+        (chain: PassChainAdapter list)
+        : PassChainAdapter list =
+        let disabled = TransformGroups.disabledGroups groups
+        if Set.isEmpty disabled then chain
+        else
+            chain
+            |> List.filter (fun adapter ->
+                let tags = RegisteredTransformTags.tagsFor adapter.Name
+                Set.intersect tags disabled |> Set.isEmpty)
+
     /// Chapter C slice C.2 — state-capturing project. Returns both
     /// the `Outputs` and the post-chain `ComposeState` so downstream
     /// consumers (today: `SpecialCircumstancesDiagnostics.emit`) can
     /// observe per-pass evidence without re-running the chain.
     /// `projectFromChain` is now a thin wrapper that drops the state.
+    ///
+    /// Chapter C slice C.3 — accepts `EmissionFolders` and applies the
+    /// folder overrides at the typed per-kind SSDT bundle layer
+    /// (post-emit, pre-compose). `EmissionFolders.empty` is a no-op.
+    ///
+    /// Chapter C slice C.4 — accepts `TransformGroups` and filters the
+    /// chain to exclude passes whose tag-set intersects any disabled
+    /// group. `TransformGroups.empty` is a no-op (V1-parity: all
+    /// transforms run).
     let private projectFromChainWithState
         (chain: PassChainAdapter list)
         (policy: EmissionPolicy)
+        (folders: EmissionFolders)
+        (groups: TransformGroups)
         (catalog: Catalog)
         : Outputs * ComposeState =
+        let filteredChain = filterChainByGroups groups chain
         use _ = Bench.scope "compose.project"
         let composedState =
             (use _ = Bench.scope "compose.runChain"
-             PassChainAdapter.compose chain (ComposeState.initial catalog)
+             PassChainAdapter.compose filteredChain (ComposeState.initial catalog)
              |> LineageDiagnostics.payload)
         // Chapter 4.9 slice δ — apply EmissionPolicy.filterPlatformAutoIndexes
         // at the post-chain seam. The filter is `OperatorIntent of Emission`
@@ -138,8 +236,9 @@ module Compose =
             (use _ = Bench.scope "emit.ssdtBundle.compose"
              match SsdtDdlEmitter.emitSlices emittedCatalog with
              | Ok ssdtFiles ->
+                 let rewritten = applyEmissionFolderOverrides folders emittedCatalog ssdtFiles
                  let manifest = ManifestEmitter.emit emittedCatalog
-                 SsdtBundle.compose ssdtFiles manifest
+                 SsdtBundle.compose rewritten manifest
              | Error err ->
                  // Unreachable in production paths: Catalog.allKinds is
                  // the keyset by construction; SsdtDdlEmitter.emitSlices
@@ -160,10 +259,33 @@ module Compose =
              match JsonNode.Parse(DistributionsEmitter.emit emittedCatalog Profile.empty) with
              | null -> invalidOp "Compose.project: DistributionsEmitter.emit produced unparseable text (unreachable)"
              | n    -> n)
+        // Chapter 5+ slices 5.13.remediation-emitter +
+        // 5.13.summary-formatter — per-decision remediation SQL +
+        // 6-bucket summary prose. Pull DecisionSets from the
+        // post-chain ComposeState; empty defaults when a decision
+        // set wasn't produced (no interventions registered for the
+        // axis). Bench-scoped at each emitter's boundary.
+        let nullabilityDecisions =
+            composedState.NullabilityDecisions
+            |> Option.defaultValue NullabilityRules.emptyDecisionSet
+        let uniqueIndexDecisions =
+            composedState.UniqueIndexDecisions
+            |> Option.defaultValue UniqueIndexRules.emptyDecisionSet
+        let foreignKeyDecisions =
+            composedState.ForeignKeyDecisions
+            |> Option.defaultValue ForeignKeyRules.emptyDecisionSet
+        let remediationSql =
+            RemediationEmitter.emit
+                composedState.Catalog nullabilityDecisions uniqueIndexDecisions foreignKeyDecisions
+        let summaryText =
+            SummaryFormatter.formatText
+                nullabilityDecisions uniqueIndexDecisions foreignKeyDecisions
         let outputs = {
-            SsdtBundle    = bundle
-            Json          = json
-            Distributions = distributions
+            SsdtBundle     = bundle
+            Json           = json
+            Distributions  = distributions
+            RemediationSql = remediationSql
+            SummaryText    = summaryText
         }
         outputs, composedState
 
@@ -172,7 +294,7 @@ module Compose =
         (policy: EmissionPolicy)
         (catalog: Catalog)
         : Outputs =
-        projectFromChainWithState chain policy catalog |> fst
+        projectFromChainWithState chain policy EmissionFolders.empty TransformGroups.empty catalog |> fst
 
     /// Production-shape project: routes through
     /// `RegisteredTransforms.allChainSteps`. The hand-coded "emit raw
@@ -201,14 +323,27 @@ module Compose =
     /// post-chain `ComposeState` alongside the outputs. Used by
     /// `runWithConfig` to feed `SpecialCircumstancesDiagnostics`
     /// without re-running the registered chain.
+    ///
+    /// Chapter C slice C.3 — accepts `EmissionFolders` and applies
+    /// the operator-supplied folder overrides at the typed per-kind
+    /// SSDT bundle layer (post-emit, pre-compose). Pass
+    /// `EmissionFolders.empty` for the no-overrides path (preserves
+    /// V1's default `Modules/<Module>/` layout).
+    ///
+    /// Chapter C slice C.4 — accepts `TransformGroups` and filters
+    /// the chain to exclude passes whose tag-set intersects any
+    /// disabled group. Pass `TransformGroups.empty` for the
+    /// no-overrides path (preserves V1-parity: all transforms run).
     let projectWithState
         (fullPolicy: Policy)
         (profile: Profile)
         (emissionPolicy: EmissionPolicy)
+        (folders: EmissionFolders)
+        (groups: TransformGroups)
         (catalog: Catalog)
         : Outputs * ComposeState =
         let chain = RegisteredTransforms.allChainStepsFor fullPolicy profile
-        projectFromChainWithState chain emissionPolicy catalog
+        projectFromChainWithState chain emissionPolicy folders groups catalog
 
     /// Skeleton-shape project: routes through
     /// `RegisteredTransforms.skeletonChainSteps` (per chapter A.4.7'
@@ -307,10 +442,20 @@ module Compose =
         // Distributions
         let distributionsStaging = Path.Combine(stagingDir, ArtifactPath.distributions)
         writeFile distributionsStaging (outputs.Distributions.ToJsonString(jsonOpts))
+        // Chapter 5+ slice 5.13.remediation-emitter — per-finding
+        // UPDATE/DELETE/SELECT (SQL text artifact, not JSON).
+        let remediationStaging = Path.Combine(stagingDir, ArtifactPath.remediation)
+        writeFile remediationStaging outputs.RemediationSql
+        // Chapter 5+ slice 5.13.summary-formatter — 6-bucket rollup
+        // prose (plain-text artifact).
+        let summaryStaging = Path.Combine(stagingDir, ArtifactPath.summary)
+        writeFile summaryStaging outputs.SummaryText
         // Final-path projection (under the eventual outputDir, post-swap)
         let jsonFinal = Path.Combine(outputDir, ArtifactPath.json)
         let distributionsFinal = Path.Combine(outputDir, ArtifactPath.distributions)
-        bundleFinalPaths @ [ jsonFinal; distributionsFinal ]
+        let remediationFinal = Path.Combine(outputDir, ArtifactPath.remediation)
+        let summaryFinal = Path.Combine(outputDir, ArtifactPath.summary)
+        bundleFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal ]
 
     let private safeCleanupStaging (stagingDir: string) : unit =
         if Directory.Exists stagingDir then
@@ -430,28 +575,39 @@ module Compose =
                     |> Error)
 
     /// Build the full `Policy` aggregate from a parsed `Config` and
-    /// the loaded `Catalog`. Today only the tightening axis is wired
-    /// (Chapter C slice C.1); Selection / Emission / Insertion /
-    /// UserMatching axes are dormant per the dormant-config-section
-    /// sweep — Chapter C slices C.2-C.6 wire those.
+    /// the loaded `Catalog`. Wires the tightening axis (Chapter C
+    /// slice C.1) + insertion axis (Chapter C slice C.5); Selection /
+    /// Emission / UserMatching axes remain dormant pending operator-
+    /// pull triggers per the dormant-config-section sweep.
     let private buildPolicyFromConfig
         (cfg: Config.Config)
         (catalog: Catalog)
         : Result<Policy> =
-        match TighteningBinding.fromConfig catalog cfg.Policy.Tightening with
-        | Error es -> Error es
-        | Ok tightening ->
-            Result.success { Policy.empty with Tightening = tightening }
+        let tighteningR = TighteningBinding.fromConfig catalog cfg.Policy.Tightening
+        let insertionR  = InsertionPolicyBinding.fromConfig cfg
+        match tighteningR, insertionR with
+        | Ok tightening, Ok insertion ->
+            Result.success {
+                Policy.empty with
+                    Tightening = tightening
+                    Insertion  = insertion
+            }
+        | _ ->
+            let tighteningErrs = match tighteningR with Ok _ -> [] | Error es -> es
+            let insertionErrs  = match insertionR  with Ok _ -> [] | Error es -> es
+            Result.failure (tighteningErrs @ insertionErrs)
 
     /// Full end-to-end driven by a parsed `Config`. Reads `Model.Path`,
     /// applies config-driven catalog rewrites (rename), binds operator
     /// `Policy` (tightening — Chapter C slice C.1) + operator
     /// `SpecialCircumstances` (missing-PK / circular-deps
-    /// acknowledgements — Chapter C slice C.2), projects through the
-    /// policy-aware chain capturing the post-chain `ComposeState`,
-    /// emits special-circumstances diagnostics with operator-allowlist
-    /// `Metadata.acceptedVia` annotation, writes to `Output.Dir`,
-    /// returns the paths + the diagnostic stream as a `RunReport`.
+    /// acknowledgements — Chapter C slice C.2) + operator
+    /// `EmissionFolders` (per-kind SSDT folder overrides — Chapter C
+    /// slice C.3), projects through the policy-aware chain capturing
+    /// the post-chain `ComposeState`, emits special-circumstances
+    /// diagnostics with operator-allowlist `Metadata.acceptedVia`
+    /// annotation, writes to `Output.Dir`, returns the paths + the
+    /// diagnostic stream as a `RunReport`.
     let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
         task {
             let! parsed = read cfg.Model.Path
@@ -461,10 +617,12 @@ module Compose =
                 | Ok renamedCatalog ->
                     let policyR     = buildPolicyFromConfig cfg renamedCatalog
                     let overridesR  = SpecialCircumstancesBinding.fromConfig renamedCatalog cfg
-                    match policyR, overridesR with
-                    | Ok policy, Ok overrides ->
+                    let foldersR    = EmissionFoldersBinding.fromConfig renamedCatalog cfg
+                    let groupsR     = TransformGroupsBinding.fromConfig cfg
+                    match policyR, overridesR, foldersR, groupsR with
+                    | Ok policy, Ok overrides, Ok folders, Ok groups ->
                         let outputs, finalState =
-                            projectWithState policy Profile.empty EmissionPolicy.empty renamedCatalog
+                            projectWithState policy Profile.empty EmissionPolicy.empty folders groups renamedCatalog
                         let diagnostics =
                             SpecialCircumstancesDiagnostics.emit overrides finalState
                         match write cfg.Output.Dir outputs with
@@ -472,9 +630,12 @@ module Compose =
                             return Result.success { Paths = paths; Diagnostics = diagnostics }
                         | Error errors ->
                             return Result.failure errors
-                    | Error es1, Error es2 -> return Result.failure (es1 @ es2)
-                    | Error errors, _      -> return Result.failure errors
-                    | _, Error errors      -> return Result.failure errors
+                    | _ ->
+                        let policyErrs    = match policyR    with Ok _ -> [] | Error es -> es
+                        let overridesErrs = match overridesR with Ok _ -> [] | Error es -> es
+                        let foldersErrs   = match foldersR   with Ok _ -> [] | Error es -> es
+                        let groupsErrs    = match groupsR    with Ok _ -> [] | Error es -> es
+                        return Result.failure (policyErrs @ overridesErrs @ foldersErrs @ groupsErrs)
                 | Error errors ->
                     return Result.failure errors
             | Error errors ->

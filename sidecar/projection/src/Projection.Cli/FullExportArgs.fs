@@ -24,6 +24,8 @@ type FullExportArg =
     | [<Mandatory; AltCommandLine("-c")>] Config of path: string
     | [<AltCommandLine("-o")>] Output of dir: string
     | Verbose
+    | [<AltCommandLine("-d")>] Debug
+    | MuteCategory of category: string
 
     interface IArgParserTemplate with
         member this.Usage =
@@ -37,6 +39,16 @@ type FullExportArg =
                 "Override the config's Output.Dir. When supplied, takes precedence "
                 + "over the config's Output.Dir value at write time."
             | Verbose ->
-                "Emit Trace and Debug level events to stderr in addition to Info / "
-                + "Warn / Error. Default suppresses Trace/Debug per logging-format "
+                "Emit Debug-level events to stderr in addition to Info / Warn / "
+                + "Error. Default suppresses Trace/Debug per logging-format "
                 + "contract §4."
+            | Debug ->
+                "Emit Trace AND Debug level events to stderr (broader than "
+                + "--verbose: Trace surfaces function-entry/exit + iteration-level "
+                + "bench samples). Implies --verbose."
+            | MuteCategory _ ->
+                "Suppress events from the named category at the egress boundary. "
+                + "Accepts: config | extract | profile | transform | emit | deploy "
+                + "| canary | summary. May be specified multiple times to mute "
+                + "several categories. Muted envelopes don't contribute to the "
+                + "§11 rollup."
