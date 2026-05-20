@@ -476,6 +476,20 @@ module ManifestEmitter =
     [<Literal>]
     let version : int = 1
 
+    /// Per-column statistical moments summary. Emitted when
+    /// `Profile` carries a `NumericDistribution` with `Moments`
+    /// for the corresponding attribute (H-027). Absent when the
+    /// attribute has no numeric profiling data or no moments
+    /// (profile was `Profile.empty` or the profiler ran without
+    /// `AVG`/`STDEVP` aggregates).
+    type ColumnProfileSummary = {
+        Schema  : string
+        Table   : string
+        Column  : string
+        Mean    : decimal
+        StdDev  : decimal
+    }
+
     /// Per-table manifest entry. Concept-shaped per pillar 8: the
     /// entry IS the table's per-kind summary in the manifest.
     /// Mirrors V1's `TableManifestEntry` (V1 source
@@ -547,15 +561,22 @@ module ManifestEmitter =
             /// axis. Mirrors V1's `Unsupported : IReadOnlyList<string>`
             /// shape.
             Unsupported : string list
+            /// **H-027** — per-column statistical moments (Mean +
+            /// StdDev) derived from `NumericDistribution.Moments`.
+            /// Empty when `Profile.isEmpty` (default for non-LiveProfiler
+            /// pipeline paths). Sorted by Schema → Table → Column for
+            /// T1 byte-determinism.
+            ColumnProfiles : ColumnProfileSummary list
         }
 
-    /// Build the manifest from a Catalog + explicit registry-metadata
-    /// list. The `registry` parameter feeds the slice-ζ
+    /// Build the manifest from a Profile + Catalog + explicit registry-
+    /// metadata list. The `registry` parameter feeds the slice-ζ
     /// `RegistryDigest` field; production callers use
     /// `RegisteredTransforms.all`; the 5th bidirectional property test
     /// supplies a perturbed list to exercise digest sensitivity.
-    /// Per A18 amended: Catalog only, no Profile, no Policy.
-    let buildWith (registry: RegisteredTransformMetadata list) (catalog: Catalog) : Manifest =
+    /// `profile` provides per-column statistical moments (H-027);
+    /// pass `Profile.empty` when no profiling data is available.
+    let buildWith (profile: Profile) (registry: RegisteredTransformMetadata list) (catalog: Catalog) : Manifest =
         use _ = Bench.scope "emit.manifest.build"
         let entries =
             catalog.Modules
@@ -585,6 +606,25 @@ module ManifestEmitter =
                         IndexCount = nonPkIndexCount
                         ForeignKeyCount = List.length k.References
                     }))
+        let columnProfiles =
+            catalog.Modules
+            |> List.collect (fun m ->
+                m.Kinds
+                |> List.collect (fun k ->
+                    k.Attributes
+                    |> List.choose (fun a ->
+                        match Profile.tryFindNumeric a.SsKey profile with
+                        | None -> None
+                        | Some dist ->
+                            match dist.Moments with
+                            | None -> None
+                            | Some moments ->
+                                Some { Schema = k.Physical.Schema
+                                       Table  = k.Physical.Table
+                                       Column = a.Column.ColumnName
+                                       Mean   = moments.Mean
+                                       StdDev = moments.StdDev })))
+            |> List.sortBy (fun cp -> cp.Schema, cp.Table, cp.Column)
         {
             Tables = entries
             EmitterVersion = version
@@ -592,6 +632,7 @@ module ManifestEmitter =
             Coverage = Coverage.compute catalog
             PredicateCoverage = PredicateCoverage.compute catalog
             Unsupported = Unsupported.compute ()
+            ColumnProfiles = columnProfiles
         }
 
     /// Build with the canonical production registry
@@ -607,7 +648,7 @@ module ManifestEmitter =
     /// adapter.
     let build (catalog: Catalog) : Manifest =
         let registry = SsdtDdlEmitter.registeredMetadata :: RegisteredTransforms.all
-        buildWith registry catalog
+        buildWith Profile.empty registry catalog
 
     let private requireValue (label: string) (v: JsonValue | null) : JsonNode =
         match Option.ofObj v with
@@ -699,6 +740,19 @@ module ManifestEmitter =
         // PreRemediation stays empty-array per V2_DRIVER §154
         // (RemediationEmitter deferred to chapter 5+).
         doc.Add("preRemediation", JsonArray() :> JsonNode)
+        // H-027 — per-column statistical moments. Empty array when
+        // Profile.empty (no profiling data available); non-empty when
+        // LiveProfiler ran and Moments are present on numeric columns.
+        let columnProfilesArr = JsonArray()
+        for cp in manifest.ColumnProfiles do
+            let cpObj = JsonObject()
+            cpObj.Add("schema", requireValue "columnProfiles.schema" (JsonValue.Create(cp.Schema)))
+            cpObj.Add("table",  requireValue "columnProfiles.table"  (JsonValue.Create(cp.Table)))
+            cpObj.Add("column", requireValue "columnProfiles.column" (JsonValue.Create(cp.Column)))
+            cpObj.Add("mean",   requireValue "columnProfiles.mean"   (JsonValue.Create(cp.Mean)))
+            cpObj.Add("stdDev", requireValue "columnProfiles.stdDev" (JsonValue.Create(cp.StdDev)))
+            columnProfilesArr.Add(cpObj)
+        doc.Add("columnProfiles", columnProfilesArr)
         doc :> JsonNode
 
     /// Render the manifest to JSON text. The terminal serialization

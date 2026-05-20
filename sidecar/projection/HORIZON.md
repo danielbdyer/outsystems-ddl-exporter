@@ -574,7 +574,7 @@ populated in the IR and never emitted. These items close the loop.
 
 ### H-018 — CHECK constraint emission
 
-**Status:** proposed
+**Status:** implemented (SsdtDdlEmitter.fs `columnCheckDef` + `ALTER TABLE ADD CONSTRAINT CHECK`; slice 5.13.column-features-emit)
 
 **Gap.** `Kind.ColumnChecks : ColumnCheck list` is populated by the
 OSSYS and SQL adapters. `SsdtDdlEmitter` does not emit CHECK
@@ -633,7 +633,7 @@ stream (sequences are referenced by DEFAULT constraints).
 
 ### H-021 — ExtendedProperty emission across all four IR levels
 
-**Status:** proposed
+**Status:** implemented (SsdtDdlEmitter.fs `extendedPropertyStatements` lines 443–471; all four levels: Kind/Module/Attribute/Index)
 
 **Gap.** `Module.ExtendedProperties`, `Kind.ExtendedProperties`,
 `Attribute.ExtendedProperties`, and `Index.ExtendedProperties` are all
@@ -762,7 +762,7 @@ unique constraint on the pair.
 
 ### H-027 — Statistical moments emission (Mean and StdDev to manifest and diagnostics)
 
-**Status:** proposed
+**Status:** implemented (ManifestEmitter.fs — `ColumnProfileSummary` type + `ColumnProfiles` field; `buildWith` accepts `Profile`; `toNode` emits `columnProfiles` JSON array sorted Schema→Table→Column)
 
 **Gap.** `StatisticalMoments` (`Mean : decimal`, `StdDev : decimal`) is
 computed inside `NumericDistribution` and never surfaced. It is the
@@ -782,7 +782,7 @@ without re-running the profiler.
 
 ### H-028 — IsPresentButInactive surfacing in diagnostics
 
-**Status:** proposed
+**Status:** implemented (Projection.Pipeline/InactiveAttributeDiagnostics.fs; wired in Pipeline.fs `runWithConfigCore`; Source `selectionScan`, Code `selection.inactive-attribute`, Severity Warning)
 
 **Gap.** `AttributeReality.IsPresentButInactive` is detected in the
 OSSYS adapter (the attribute exists in the schema but is inactive in
@@ -802,7 +802,7 @@ diagnostic flag.
 
 ### H-029 — coefficientOfVariation usage
 
-**Status:** proposed
+**Status:** implemented (NullabilityPass.fs — `cvMetadata` helper; `opportunityEntry` takes `Profile`; CV surfaced in Metadata as `"cv"` key on `RelaxedUnderEvidence` and `MandatoryButHasNullsBeyondBudget` arms; G4 invariant-culture formatting)
 
 **Gap.** `Profile.coefficientOfVariation` is a helper function
 (`StdDev / Mean`, normalized dispersion) that is written and never
@@ -864,7 +864,7 @@ it tests the profiler's invertibility.
 
 ### H-031 — SuggestedConfig population in NullabilityPass
 
-**Status:** proposed
+**Status:** implemented (NullabilityPass.fs — `MandatoryButHasNullsBeyondBudget` arm; JSONPath `$.tightening.interventions[?(@.id=="<id>")].nullBudget`; ceiling-4dp null fraction as suggested value)
 
 **Gap.** `DiagnosticEntry.SuggestedConfig : SuggestedConfig option` is
 the designed-in socket for policy suggestion. It was set to `None` when
@@ -894,7 +894,7 @@ change that would resolve it.
 
 ### H-032 — v2 suggest-config CLI verb
 
-**Status:** proposed
+**Status:** implemented (Projection.Targets.OperationalDiagnostics/SuggestConfigEmitter.fs; `collect` deduplicates by Path (max Value); `emit` returns JsonNode; wired into `Compose.Outputs.SuggestConfigJson` + written as `suggest-config.json`)
 
 **Gap.** The `SuggestedConfig` infrastructure in `DiagnosticEntry` was
 designed for a `v2 suggest-config` verb that emits a policy document
