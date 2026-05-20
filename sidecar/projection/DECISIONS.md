@@ -18863,3 +18863,55 @@ Test baseline post-C.1: 1793/1793 non-Docker passing (was 1779 at chapter B.4 cl
 - `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)` — revised 6-slice plan.
 - `DECISIONS 2026-05-20 (test-failure capture protocol)` — paired protocol entry; the chapter C slice C.1 sweep was the codifying instance.
 
+
+## 2026-05-20 (handoff-letter discipline + HANDOFF.md append-only) — codifies two recurring agent failure modes (history-yeet via Write overwrite + summary-doc-instead-of-letter) the operator surfaced after slice C.1's handoff
+
+### Context
+
+After the slice-C.1 commit, the operator asked for "an inline handoff message for the next agent to pick up where you left off." The agent (a) wrote the handoff to `HANDOFF.md` via `Write`, overwriting the entire chapter-B.4 close letter (the file's prior content) without first Reading it, and (b) authored the content as a structured status report (tables of commits, bullet-grids of completed work, "What shipped this session" section) rather than as a prose letter to the next agent.
+
+The operator named both failure modes: "That was a crazy way to yeet the entire history of HANDOFF.md, my guy. Can you revert that and append changes instead please? Also, I was talking about you responding inline with a literal message to the other agent :P you keep misinterpreting this as a summary, when really what I want is for you to set up the next agent for success in orienting themselves in this codebase to solve a problem. I'm curious to know why you think this happens regularly when I ask you to do this? Let's fix it too please ;)"
+
+### Failure-mode #1: HANDOFF.md history-yeet via Write overwrite
+
+**Shape**: agent reaches for `Write` to author a new letter; does not first Read the current `HANDOFF.md`; Write replaces the entire file; the chapter's prior letters are gone from the working tree (git history preserves them; the operating surface is the file).
+
+**Root cause**: `Write`'s contract overwrites; the agent's mental model treated `HANDOFF.md` as a single-letter document rather than as a chapter's letter-history accumulator. The existing pattern (chapter B.3 close letter + chapter B.4 mid letter + chapter B.4 close letter all coexisting in `HANDOFF.md` before chapter close rotation) was not internalized.
+
+**Fix**: codified in CLAUDE.md operating-disciplines table — "HANDOFF.md is append-only within a chapter; never overwrite." The discipline says: within a chapter, new letters PREPEND above prior letters via Read-then-Write-with-concatenation OR via Edit; never overwrite the file with Write. At chapter close, the entire file rotates to `HANDOFF_CHAPTER_<N>.md` and a fresh `HANDOFF.md` opens with the chapter-close letter. The discipline holds even when the prior content is "just one letter" (the chapter-close letter is itself the next chapter's load-bearing backdrop).
+
+### Failure-mode #2: "summary-doc-instead-of-letter" misinterpretation
+
+**Shape**: operator asks for an "inline handoff message" / "next-agent handoff" / similar; agent writes a structured status report (tables, bullet-grids, "What shipped" headers) instead of a prose letter addressed to the next agent.
+
+**Root cause** (agent self-diagnosis):
+
+1. **Training bias toward structured output.** Tables + headers + bullets are unambiguously information-dense; prose feels less efficient. Default reaches for structured shape.
+2. **Conflating "what shipped" with "what to do next".** Recent context surfaces the work just completed; the agent enumerates that (easy) rather than orienting forward (the actually-useful framing).
+3. **"Handoff" vocabulary ambiguity.** In some engineering cultures, "handoff" means the docs you write when leaving a project (status-report shape). In others, it means the conversational baton-pass (letter shape). The codebase's existing `HANDOFF.md` letters mix both shapes (close-letter is more status-shaped; mid-chapter letter should be more letter-shaped).
+4. **Defensive completeness.** Agent worries about omitting context; includes the full status report as "context just in case" rather than trusting the letter format to be sufficient.
+
+**The operator's framing names the right shape**: "set up the next agent for success in orienting themselves in this codebase to solve a problem." **Forward-looking, problem-oriented, second-person.**
+
+**Fix**: codified in CLAUDE.md operating-disciplines table — "Handoff message = forward-looking letter, not backward-looking status report." Names the shape (opens with `To the next agent.` / `You're picking up X mid-Y.`; second-person direct address; tells them what the next slice/decision is; reading order with time estimate; load-bearing disciplines to internalize before code; sign-off). Names the diagnostic test (count second-person pronouns — if it doesn't address the next agent directly, it's a status report). Reserves structured tables for genuinely tabular content (slice queues with status; file paths with line numbers).
+
+### Why the discipline earns its place
+
+Both failure modes are **recurring across sessions** — the operator explicitly framed this: "you keep misinterpreting this as a summary." Codifying retires the failure mode by giving the next agent (and future-me) a named pattern + diagnostic + worked example to recognize the failure and correct course. Without codification, the failure repeats; with codification, the failure becomes catchable via the chapter-close ritual's CLAUDE.md staleness check.
+
+The two failure modes share a root cause family: **defaulting to structured/destructive operations when context-preserving/conversational ones would serve better.** They join the test-failure capture protocol (same codification cycle, same session) as the third in a cluster of "agent reaches for the wrong default; operator pays in cycles." Each is a structural fix (named protocol in CLAUDE.md operating-disciplines table) rather than aspirational (agent self-improvement notes that decay between sessions).
+
+### Discipline reinforced
+
+**The chapter-close-ritual CLAUDE.md staleness check is the structural enforcement.** Future chapter agents at chapter close run the 8-item ritual, which includes "CLAUDE.md staleness" — verifying the operating-disciplines table points at current entries. Both new rows (HANDOFF append-only + handoff-letter-shape) become catchable at chapter-close if a future slice violates them.
+
+**Operator-surfaced agent failure modes deserve immediate codification, not deferral.** The operator's framing ("I'm curious to know why you think this happens regularly when I ask you to do this? Let's fix it too please") is the load-bearing signal. The fix is part of this session's commit, not a follow-up. Pairs with the chapter B.3 + chapter B.4 + slice-C.1 pattern: codification absorbs refinements while the failure is hot, not after.
+
+### Cross-references
+
+- `CLAUDE.md` operating-disciplines table — two new rows added above the test-failure capture row:
+  - "HANDOFF.md is append-only within a chapter; never overwrite"
+  - "Handoff message = forward-looking letter, not backward-looking status report"
+- `sidecar/projection/HANDOFF.md` — restored to carry slice-C.1 mid-chapter letter PLUS the preserved chapter-B.4 close letter (which the prior commit had clobbered); the slice-C.1 letter rewritten as prose addressed to the next agent.
+- `DECISIONS 2026-05-20 (test-failure capture protocol)` — sibling codification from the same session; same shape (recurring agent failure mode → structural protocol in CLAUDE.md operating disciplines).
+
