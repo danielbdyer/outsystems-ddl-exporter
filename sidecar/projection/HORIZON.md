@@ -2806,6 +2806,612 @@ becomes structurally visible.
 
 ---
 
+## Group XVII — Deferred IR completions and semantic gaps
+
+Items in this group correspond to features that are explicitly named
+in `BACKLOG.md`'s Active deferrals index — work that the V2 cutover
+deliberately deferred with a named trigger. They land here as
+HORIZON items because they are not cutover-blocking but represent
+genuine schema fidelity gaps.
+
+---
+
+### H-101 — Column default value emission
+
+**Status:** proposed
+
+**Gap.** `Attribute.DefaultValue` (chapter A.0' slice γ/δ/ε) is
+populated in the IR. `DEFAULT` constraint emission is deferred per
+the Active deferrals index (`DECISIONS 2026-05-11`). The ScriptDom
+`DefaultConstraintDefinition` is already used at the read side
+(via `tryParseFilterWithDiagnostics`'s precedent); the emit side is
+a symmetric gap.
+
+**Location.** `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs`.
+
+**Trigger.** Operator surfacing a table whose DEFAULT constraints are
+silently dropped from the SSDT bundle. Currently the manifest's
+`Unsupported` list would catch this, but only if the tolerance is
+registered — which it is not yet.
+
+---
+
+### H-102 — Cross-module FK IR refinement
+
+**Status:** proposed
+
+**Gap.** Chapter 4.1.A slice 6 is deferred per the Active deferrals
+index (`DECISIONS 2026-05-19`). Cross-module FKs (a table in
+`Module A` references a table in `Module B`) require a
+`Reference.TargetModule : SsKey option` field to unambiguously locate
+the referent. Today the OSSYS adapter derives the target by
+`SsKey` lookup within the same `Module`; cross-module references
+silently resolve only if the `Kind.SsKey` is globally unique.
+
+**Location.** `src/Projection.Core/Catalog.fs` (IR field addition) +
+`src/Projection.Adapters.Osm/CatalogReader.fs` (populate) +
+`src/Projection.Adapters.Sql/ReadSide.fs` (read back).
+
+**Unlocks.** Cross-module FK roundtrip in the canary without relying
+on SsKey global uniqueness. Also required for H-072 (bounded context
+discovery) — the algorithm needs to know which FK edges cross module
+boundaries.
+
+---
+
+### H-103 — Logical FK (without DB constraint) as first-class IR concept
+
+**Status:** proposed
+
+**Gap.** `HasLogicalForeignKeyWithoutDbConstraint` is one of the four
+always-false `PredicateName` variants from chapter 4.4 (the other
+three were resolved in chapters 4.5–4.7). A logical FK is a
+relationship that exists semantically (by OutSystems platform
+convention) but has no corresponding `FOREIGN KEY` constraint in the
+database. The IR has no field for this distinction; the manifest
+cannot evaluate the predicate.
+
+**Location.** `src/Projection.Core/Catalog.fs` — add
+`Reference.IsLogical : bool` field. Adapter: derive from OutSystems
+model metadata (logical FKs appear in `osm_model.json` but not in
+`INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS`).
+
+**Unlocks.** The last always-false `PredicateName` variant resolves.
+Logical FKs are also the precondition for selective constraint
+enforcement in the Tightening axis: an operator may want to enforce
+a logical FK as a physical constraint, which is precisely the
+purpose of `TighteningPolicy`.
+
+---
+
+### H-104 — Description consumers beyond IR storage
+
+**Status:** proposed
+
+**Gap.** `Kind.Description` and `Attribute.Description` were added at
+chapter A.0' slice α and are populated by both adapters. Their only
+consumer today is the `ExtendedProperty` emitter (module-level
+descriptions emit as SQL Server extended properties). Column-level
+and table-level descriptions do not yet appear in the JSON emitter
+or in any diagnostic output.
+
+**Location.** `src/Projection.Targets.Json/JsonEmitter.fs` (add
+`"description"` field to column and table objects) +
+`src/Projection.Targets.OperationalDiagnostics/SchemaReportEmitter.fs`
+(H-059, use descriptions in the human-readable schema report).
+
+**Unlocks.** The JSON target becomes a self-documenting data
+dictionary — every column carries its description alongside its type.
+The schema report gains prose descriptions without requiring the
+operator to supply them separately.
+
+---
+
+### H-105 — CDC awareness in delta passes
+
+**Status:** proposed
+
+**Gap.** Chapter 4.1.B established CDC-silence-on-idempotent-redeploy
+as the highest-leverage property. `Profile.CdcAwareness` carries
+per-table CDC enrollment status. The `SchemaDelta` type (H-007) has
+no CDC-aware ordering layer: when a CDC-tracked table changes
+structure, the delta must include a CDC disable / re-enable cycle.
+Without this, applying a `SchemaDelta` to a CDC-tracked table breaks
+CDC enrollment.
+
+**Location.** New `SchemaDelta.withCdcOrdering : CdcAwareness ->
+SchemaDelta -> SchemaDelta` function. The CDC ordering is a
+`DataIntent` enrichment (it preserves database behavior, not operator
+intent).
+
+**Unlocks.** The Liquibase (H-080) and Flyway (H-084) emitters produce
+CDC-correct migration scripts without requiring operator knowledge
+of CDC implications.
+
+---
+
+### H-106 — Schema normalization advisor
+
+**Status:** proposed
+
+**Gap.** The functional dependency pass (H-074) detects FDs from
+evidence. The normalization advisor combines FD detection with static
+structural analysis (PK shape, attribute dependencies) to classify
+each `Kind` by normal form (1NF through BCNF) and emit recommendations
+for each violation.
+
+**Implementation.** A `NormalizationPass` that:
+1. Detects repeating groups (1NF violations) from `CategoricalDistribution`
+   showing array-encoded data
+2. Detects partial key dependencies (2NF violations) from FKs where
+   non-key attributes depend on a PK subset
+3. Detects transitive dependencies (3NF violations) from the FD pass
+4. Emits `DiagnosticEntry` per violation with `SuggestedConfig` naming
+   the split that would resolve it
+
+**Location.** New pass `src/Projection.Core/Passes/NormalizationPass.fs`.
+
+---
+
+### H-107 — Schema semantic versioning (breaking vs non-breaking classification)
+
+**Status:** proposed
+
+**Gap.** `SchemaDelta` (H-007) describes changes. It does not classify
+them. Some changes are backward-compatible (adding a nullable column,
+adding an index); others are breaking (dropping a column, narrowing a
+type, adding a NOT NULL without a default). The classification is
+deterministic from the delta.
+
+**Implementation.**
+
+```fsharp
+type ChangeKind =
+    | Breaking        of reason: string
+    | NonBreaking
+    | Conditional     of condition: string  // breaking only if consumers exist
+
+val classify : SchemaDelta -> Map<SsKey, ChangeKind>
+```
+
+The classification produces a `SemVer` bump recommendation:
+`Breaking` → major; new attributes → minor; pure metadata → patch.
+Pairs with H-085 (policy versioning) and H-093 (manifest signing).
+
+**Location.** `src/Projection.Core/SchemaDelta.fs` (H-007).
+
+---
+
+### H-108 — CI/CD integration templates
+
+**Status:** proposed
+
+**Gap.** The pipeline is a CLI tool. There are no canonical examples
+of using it in a CI/CD pipeline. An operator setting up `osm emit`
+in GitHub Actions, Azure DevOps, or GitLab CI must build the
+integration from scratch.
+
+**Implementation.** A `templates/` directory containing:
+- `github-actions/schema-emit.yml` — run `osm emit`, commit the DDL
+  bundle, fail if the manifest digest changed unexpectedly
+- `azure-devops/schema-emit.yml` — equivalent for Azure Pipelines
+- `gitlab-ci/schema-emit.yml` — equivalent for GitLab
+- `Makefile` targets — `make emit`, `make verify`, `make diff`
+
+Each template embeds the three key gates: verify the manifest digest
+matches the registry, check for breaking changes (H-107), assert the
+canary is green.
+
+**Location.** New `templates/` directory at the `sidecar/projection`
+root.
+
+---
+
+### H-109 — Schema lint rules (named structural conventions)
+
+**Status:** proposed
+
+**Gap.** The pipeline detects violations of structural invariants
+(referential integrity, nullability, FK consistency). It does not
+detect violations of naming or structural conventions (e.g., "all
+PKs should be named `Id`", "all audit columns should be present on
+every table", "no table should exceed 100 columns"). These are
+operator-supplied conventions, not structural axioms.
+
+**Implementation.** A `LintRule` type and a `LintPass`:
+
+```fsharp
+type LintRule = {
+    Name    : string
+    Check   : Kind -> Attribute list -> LintViolation option
+}
+
+type LintViolation = {
+    Rule    : string
+    Message : string
+    Severity: DiagnosticSeverity
+}
+```
+
+Rules are registered via the Policy system (OperatorIntent) and run
+in `LintPass`. The operator supplies rules via config; the pass emits
+`DiagnosticEntry` values for each violation.
+
+**Location.** New pass `src/Projection.Core/Passes/LintPass.fs` +
+`src/Projection.Core/Policy.fs` (LintPolicy axis).
+
+---
+
+### H-110 — Cross-environment schema consistency verification
+
+**Status:** proposed
+
+**Gap.** The canary asserts V1 ≈ V2 within one environment. The
+operator runs V2 across four environments (Dev / Test / UAT / Prod).
+There is no tool for asserting that the schema in Dev matches the
+schema in Test modulo known environment-specific differences.
+
+**Implementation.** `osm cross-env-verify` reads two manifests
+(one per environment), computes the symmetric difference of their
+`Coverage` and `RegistryDigest` sections, and classifies each
+difference as either a known `ToleratedDivergence` or an unexpected
+gap.
+
+**Location.** New verb in `src/Projection.Cli/Program.fs` +
+`src/Projection.Pipeline/CrossEnvVerifier.fs`.
+
+---
+
+## Grand synthesis: what this system is becoming
+
+*This section is not a list of items. It is the argument for why the
+items above form a coherent whole — what the ceiling looks like from
+the inside.*
+
+---
+
+### I. The thesis
+
+This system is not a schema exporter. A schema exporter takes a
+database and produces DDL text. The defining property of an exporter
+is that the output is correct if and only if it looks right. There is
+no proof, no certificate, no trail. The operator checks the output by
+eye and ships it.
+
+This system occupies a fundamentally different position. It takes a
+schema (`Catalog`), a behavioral contract (`Policy`), and statistical
+evidence (`Profile`), and produces a **certified artifact**: DDL
+plus a manifest that proves — at the level of SHA256 digests,
+typed lineage events, and coverage measurements — that the emitted
+DDL is the correct, complete, and justified translation of the
+inputs. The manifest is the proof. The lineage trail is the
+derivation. The pass chain is the formal system.
+
+The closest analogy is a type checker. A type checker does not run
+your program; it reasons about it. It tells you what is impossible,
+what is required, and what can be safely omitted. Its output is a
+certificate of type-correctness. This system does the same for
+database schemas. The proof structure is there. Most of the items
+in this document are about making that structure visible, tested,
+and extended — not about building it from scratch.
+
+---
+
+### II. What is at stake
+
+**At the craft level**, the question is whether F# and functional
+programming's genuine advantages — algebraic types, monadic
+composition, equational reasoning, law-driven testing — are being
+fully exploited or merely gestured at. The answer today is: the
+structure is correct, the exploitation is partial. The Kleisli
+category exists but isn't named. The monad laws hold but aren't
+tested. The writer monad is load-bearing but has no CE builder.
+The policy system is well-typed but parsed by a 700-line match tree.
+Every item in Groups I and II is a step toward a codebase that not
+only uses functional programming but makes its functional nature
+legible. When the CE builders exist, when the Kleisli structure is
+named, when the policy DSL is typed, a reader can see the algebra
+directly in the code. That is the craft dividend.
+
+**At the system level**, the question is whether the pipeline
+reasons about schemas or merely transforms them. The distinction is
+this: a transformation takes an input and produces an output. A
+reasoning system takes an input, makes decisions with evidence, and
+produces an output together with an explanation of how the decisions
+were made. The evidence layer — FK cardinality, selectivity,
+statistical moments, joint distributions — is already computed.
+None of it reaches the decision layer. Five IR types are populated
+and never emitted. Five statistical constructs are computed and
+never consumed. The policy simulation infrastructure is wired to
+within one function of being usable. The items in Groups III–VI
+close these open loops. This is not new capability; it is completing
+circuits that are already drawn.
+
+**At the organizational level**, the question is whether DDL can be
+treated with the same discipline that test-driven development brought
+to application code. TDD's key insight was not "write tests before
+code" — it was "make the correctness proof visible and executable."
+Every passing test is evidence that the system behaves as claimed.
+Every schema change processed by this pipeline produces a manifest
+that is evidence of the same kind: the DDL is what it is because the
+pipeline ran with these inputs, this policy, this registry, and
+produced this coverage. The manifest is DDL's test suite. The items
+in Groups VIII, IX, and XVI — signing, audit logs, reproducibility
+tests, CI/CD templates — are what make the manifest trustworthy as
+an organizational artifact, not just as a technical one.
+
+---
+
+### III. The three movements
+
+**Movement One — Foundation.** Groups I and II. Make the existing
+algebraic structure visible and tested. Name the Kleisli category.
+Add the CE builders. Test the monad laws. Replace the 700-line
+parse tree with a typed combinator language. Add units of measure
+to Profile numerics. Make phantom types enforce pipeline stage
+ordering at compile time. None of this adds behavior; all of it
+makes the existing behavior legible and verifiable. The cost is
+low. The dividend compounds: every item built on the foundation
+thereafter is built on ground that has been stated clearly and
+tested formally.
+
+**Movement Two — Intelligence.** Groups III–VII plus Group XIII.
+Close the open loops. Emit the five IR types. Consume the five
+statistical constructs. Populate `SuggestedConfig`. Wire the
+skeleton verb. Detect schema islands. Surface deployment batches.
+Compute centrality. Detect anomalies. Identify bounded contexts.
+The thesis of this movement is: the evidence is already here.
+The codebase computes it, carries it, and discards it at the
+boundary. The intelligence is latent; what's missing is the final
+mile of wiring that connects evidence to decision, decision to
+suggestion, suggestion to operator action. The items in this
+movement have unusually high ROI precisely because the infrastructure
+cost is already paid — they are consumers of work that is already
+done.
+
+**Movement Three — Platform.** Groups XIV–XVI plus Group XVII.
+Build on the intelligence layer to create something operators
+would recognize as a platform, not a tool. Multiple output formats
+(EF, dbt, Liquibase, OpenAPI, GraphQL, Data Vault). A signed,
+reproducible, auditable artifact trail. A plugin system so
+organizations can extend the pipeline without forking it. An
+interactive REPL for policy exploration. CI/CD templates so
+adoption doesn't require re-inventing the integration. Schema
+registries so the catalog can be sourced from enterprise-wide
+infrastructure. This movement is where the system becomes something
+you'd architect a company's schema practice around.
+
+---
+
+### IV. The unlock graph
+
+The items in this document are not independent. Some unlock
+clusters of other items; some are unlocked by a single predecessor.
+Understanding the dependency structure makes sequencing tractable.
+
+**The five most-unlocking items:**
+
+1. **H-007 (SchemaDelta)** is the most structurally unlocking item
+   in the document. It opens: H-043 (delta passes), H-064 (pushout/
+   pullback), H-080 (Liquibase), H-084 (Flyway), H-088 (diff
+   viewer), H-089 (migration preview), H-107 (semantic versioning),
+   H-105 (CDC-aware deltas). Every feature that reasons about
+   *change* rather than *state* requires `SchemaDelta`. It is also
+   the most underspecified major feature — the implementation is
+   clear (a record with `Added / Removed / Modified`), the scope is
+   narrow (one new module, `SchemaDelta.fs`), and the return is
+   enormous.
+
+2. **H-031 (SuggestedConfig population)** is the item with the
+   highest immediate operator-facing ROI. The LiveProfiler computes
+   the evidence; the diagnostics carry the socket; the only missing
+   piece is the function that fills it. Once populated, H-032
+   (suggest-config verb), H-086 (approval workflow), and the full
+   policy-advisor loop become usable. The operator experience
+   transforms from "the pipeline tells me what is wrong" to "the
+   pipeline tells me what to do about it."
+
+3. **H-005 (branching lineage)** unlocks the entire speculative-
+   execution cluster: H-033 (policy diff), H-034 (cross-pass
+   conflict detection), H-063 (free monad scheduling), and any
+   "what-if" query over policy space. The Lineage monad today is
+   linear; making it a tree opens a qualitatively different class
+   of pipeline use.
+
+4. **H-016 (Policy DSL)** unlocks H-060 (natural transformation
+   laws), H-085 (policy versioning), H-086 (approval workflow), and
+   H-066 (parser CE). More importantly, it transforms the policy
+   system from a parsed configuration into a composable algebra.
+   Two policies can be `&&&`'d; a policy can be diffed against
+   `Policy.empty`; illegal combinations fail at construction time
+   rather than at runtime. The policy system today is correct; with
+   H-016 it becomes composable.
+
+5. **H-071 (schema centrality)** unlocks the schema intelligence
+   cluster: H-072 (bounded contexts), H-075 (complexity scoring),
+   H-089 (migration preview risk). The FK graph is already
+   computed; centrality is a pure-F# derivation over it. Once the
+   centrality scores exist, every operator-facing feature that needs
+   to rank tables by importance has a principled metric to use.
+
+**The five tightest dependency chains:**
+
+```
+H-007 → H-043 → H-080 / H-084 / H-088
+H-031 → H-032 → H-086 → H-087
+H-005 → H-033 → H-036
+H-071 → H-072 → bounded-context-aware targets (H-083 Data Vault)
+H-001 → H-002 → H-003 (CE builders make the Kleisli category legible)
+```
+
+**The items that share no significant dependencies (can be done in
+any order):**
+
+H-018/H-019/H-020/H-021/H-022 (IR surface completion) are all
+independent of each other. H-024 through H-029 (statistical
+evidence consumers) are independent of each other. H-037 (island
+detection) and H-038 (deployment batches) are independent of each
+other and of the statistical evidence cluster. H-066 (parser CE) is
+independent of all other items.
+
+---
+
+### V. Natural clusters
+
+The 110 items fall into seven natural clusters that correspond to
+coherent work packages — sequences of items that share a substrate
+and pay off together.
+
+**Cluster A — "Close the loops"** (H-018 through H-022, H-024
+through H-029, H-031, H-032). These items share a single property:
+the infrastructure is already built, the evidence is already
+computed, and the only missing piece is the wire between source and
+sink. Estimated total effort: 3–4 weeks at session cadence. Return:
+the pipeline becomes self-recommending and the IR emits its full
+schema. This is the highest-ROI cluster in the document.
+
+**Cluster B — "Make the structure legible"** (H-001, H-002, H-003,
+H-012, H-013, H-053, H-100). CE builders, Kleisli naming, active
+patterns, monad law tests, axiom test suite. These items make the
+existing algebraic structure visible in code and in tests. No new
+behavior; pure craft dividend. Estimated total effort: 1–2 weeks.
+Prerequisite for everything in Groups XI–XII.
+
+**Cluster C — "Policy intelligence"** (H-005, H-016, H-033, H-034,
+H-035, H-036, H-060, H-085, H-086, H-087). The policy simulation
+cluster. Requires H-005 (branching lineage) and H-016 (Policy DSL)
+as prerequisites. Once those exist, the rest of the cluster flows
+naturally. Estimated total effort: 5–7 weeks. Return: the pipeline
+becomes a policy advisor — operators can explore policy space and
+get concrete, evidence-backed configuration recommendations.
+
+**Cluster D — "Schema graph intelligence"** (H-037, H-038, H-039,
+H-040, H-041, H-071, H-072, H-073, H-075, H-076). The graph
+analysis cluster. `TopologicalOrderPass` already computes most of
+the needed graph structure; these items derive higher-level metrics
+from it. H-071 (centrality) is the keystone; the others build on
+it or on the topological structure directly. Estimated total effort:
+3–4 weeks. Return: the operator report gains a topology section that
+actually characterizes the schema's risk and complexity profile.
+
+**Cluster E — "Multi-format output"** (H-057, H-078 through H-084).
+The sibling-Π cluster. Each is a new target consuming the same
+`Catalog × Profile` inputs. They share no internal dependencies and
+can be built in any order. H-057 (DacFx DACPAC) is the highest
+priority because it closes a Tier-3 hard-requirement deferral.
+H-079 (dbt) and H-081 (OpenAPI) likely have the broadest operator
+demand. Estimated total effort: 6–10 weeks for the full cluster.
+Return: the pipeline becomes the source of truth for all schema-
+derived artifacts in an organization's stack.
+
+**Cluster F — "Formal verification"** (H-050 through H-054, H-096
+through H-100). Property tests for adjunction laws, Kleisli laws,
+monad laws, policy simulation laws, reproducibility, mutation
+testing, fuzz testing, model-based testing, and the AXIOMS
+executable checker. These items collectively make the formal claims
+in `AXIOMS.md` runnable rather than aspirational. Estimated total
+effort: 4–6 weeks. Return: the distinction between "we believe the
+pipeline is correct" and "the pipeline is provably correct" becomes
+a matter of test output rather than argument.
+
+**Cluster G — "Platform hardening"** (H-085 through H-095,
+H-108 through H-110). Policy versioning, approval workflow, audit
+logs, manifest signing, CI/CD templates, schema lint, cross-env
+verification. These items make the system trustworthy as an
+organizational artifact — not just technically correct but
+operationally reliable in a production engineering environment.
+Estimated total effort: 6–8 weeks. Return: adoption by teams
+beyond the original operator; the pipeline becomes an
+organizational practice, not an individual tool.
+
+---
+
+### VI. What unlocks what: the ROI ladder
+
+From lowest effort and highest immediate return to highest effort
+and highest long-term leverage:
+
+**Rung 1 — The quick close** (Cluster A + Cluster B together):
+Approximately 4–6 weeks of work that transforms the pipeline from
+"structurally correct but partially emitting" into "structurally
+visible and fully emitting." The CE builders make the algebra
+legible. The IR emission items close the five open loops. The
+statistical consumers surface the evidence that's been computed
+since chapter B.3. The `SuggestedConfig` population makes every
+diagnostic self-documenting. The skeleton verb makes the DataIntent
+baseline runnable from the CLI. At the end of Rung 1, the pipeline
+is qualitatively different to use: it tells you what it found,
+what it recommends, and why.
+
+**Rung 2 — The intelligence layer** (Clusters D + C prerequisites):
+H-007 (SchemaDelta) is the keystone. Once it exists, the graph
+intelligence cluster (H-037 through H-041, H-071 through H-076)
+follows naturally. The topology features require only the existing
+graph computation; the schema intelligence features require only the
+existing statistical evidence. H-031/H-032 (SuggestedConfig + CLI
+verb) is the other keystone: it activates the policy advisor. At
+the end of Rung 2, the pipeline is a schema intelligence system:
+it reasons about schemas structurally, statistically, and
+topologically, and it surfaces recommendations with evidence.
+
+**Rung 3 — The composition layer** (Cluster C in full + Cluster F):
+H-005 (branching lineage) and H-016 (Policy DSL) open the policy
+simulation cluster. The formal verification cluster makes the
+claims in `AXIOMS.md` executable. At the end of Rung 3, the
+pipeline is a formally verified, policy-composable schema reasoner.
+The distinction from today: every law that `AXIOMS.md` states is
+now a test that passes, and the policy system composes algebraically
+rather than parses imperatively.
+
+**Rung 4 — The platform layer** (Clusters E + G):
+The multi-format targets and platform hardening items. At the end
+of Rung 4, the pipeline is an organizational schema practice
+platform: it sources schemas from registries, signs and audits its
+output, integrates with CI/CD, supports extension via plugins, and
+emits artifacts for every schema-consuming tool in the engineering
+stack. This is where individual technical excellence becomes
+organizational infrastructure.
+
+---
+
+### VII. The mission
+
+*What is this codebase ultimately trying to be?*
+
+The mission is to make schema evolution as disciplined as code
+evolution. Code evolution has: version control, typed interfaces,
+compile-time checking, automated tests, code review, and
+deployment pipelines. Schema evolution has, at most, migration
+scripts that are checked by eye and executed by hand.
+
+This pipeline closes that gap. It introduces a formal reasoning
+layer between the schema and its DDL representation — a layer that
+checks types (via smart constructors), enforces axioms (via
+AXIOMS.md), carries evidence (via Profile), records every decision
+(via Lineage), and certifies the output (via Manifest). When fully
+realized, every schema change passes through this layer. The operator
+never touches DDL directly; they express intent via Policy and the
+pipeline derives the correct DDL from evidence.
+
+The mission does not require any item in this document to be
+implemented. The foundation is already built. What this document
+names is the distance between the current system and its full
+expression — the remaining distance between a well-engineered
+exporter and a proof-carrying schema intelligence platform.
+
+Most of that distance is short. Most of the items in Cluster A
+are one function away from existing. The statistical evidence is
+computed. The IR types are populated. The policy simulation socket
+is wired. The graph structure is computed. The lineage trail is
+correct.
+
+The opportunity is to complete what's already been started —
+to close the circuits that are drawn, test the laws that are
+claimed, and surface the intelligence that is already latent in
+the data the pipeline carries.
+
+---
+
 *Maintained alongside `BACKLOG.md`. Items progress through the same
 status vocabulary. New items arrive via `proposed` entries; scheduled
 items cite the chapter that claims them. This document is the ceiling;
