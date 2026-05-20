@@ -53,6 +53,28 @@ module LogSink =
         | Warn
         | Error
 
+    /// Chapter C slice C.6 — operator-facing verbosity gate. Three-way
+    /// closed enum keyed by which low-level severities surface:
+    ///   - `Quiet` (default) — only Info / Warn / Error surface.
+    ///   - `Verbose` — additionally Debug surfaces.
+    ///   - `Debug` — additionally Trace surfaces (function-entry /
+    ///     exit + iteration-level bench probes).
+    ///
+    /// CLI mapping per §4: `--verbose` → `Verbose`; `--debug` →
+    /// `Debug`; absence of both → `Quiet`. Operator may supply both
+    /// flags safely; the union maximum wins (i.e., `--verbose --debug`
+    /// is equivalent to `--debug`).
+    ///
+    /// `[<RequireQualifiedAccess>]` because `Debug` collides with the
+    /// `Level.Debug` case — consumers disambiguate as
+    /// `Verbosity.Debug` vs `Debug` (the Level case; unqualified
+    /// resolution remains for Level uses).
+    [<RequireQualifiedAccess>]
+    type Verbosity =
+        | Quiet
+        | Verbose
+        | Debug
+
     /// §6 event categories — closed eight-way enum, top-prefix of
     /// every `code` matches its category.
     type Category =
@@ -263,6 +285,19 @@ module LogSink =
         | Trace | Debug -> true
         | _             -> false
 
+    /// Chapter C slice C.6 — true iff the given `Level` is surfaced
+    /// under the named `Verbosity`. Quiet hides Trace + Debug;
+    /// Verbose surfaces Debug but still hides Trace; Verbosity.Debug
+    /// surfaces both Trace + Debug. Info / Warn / Error always
+    /// surface regardless of verbosity.
+    let private isLevelVisible (verbosity: Verbosity) (level: Level) : bool =
+        match level, verbosity with
+        | (Info | Warn | Error), _             -> true
+        | Debug, Verbosity.Quiet               -> false
+        | Debug, _                             -> true
+        | Trace, Verbosity.Debug               -> true
+        | Trace, _                             -> false
+
     // -----------------------------------------------------------------
     // §11 / §10 — RunAccumulator (per-process state)
     // -----------------------------------------------------------------
@@ -274,7 +309,8 @@ module LogSink =
         {
             mutable RunId               : string
             mutable StartedAt           : DateTime
-            mutable Verbose             : bool
+            mutable Verbosity           : Verbosity
+            mutable MutedCategories     : Set<Category>
             Envelopes                   : ResizeArray<Envelope>
             Groups                      : Dictionary<Category * string * SsKey option, GroupAccumulator>
             EventCounts                 : Dictionary<Level, int>
@@ -287,7 +323,8 @@ module LogSink =
         {
             RunId                = generateRunId ()
             StartedAt            = DateTime.UtcNow
-            Verbose              = false
+            Verbosity            = Verbosity.Quiet
+            MutedCategories      = Set.empty
             Envelopes            = ResizeArray()
             Groups               = Dictionary()
             EventCounts          = Dictionary()
@@ -347,8 +384,27 @@ module LogSink =
             setWriter prior
 
     /// Enable Trace/Debug emission. Off by default per §4.
+    ///
+    /// **Back-compat shim** (Chapter C slice C.6): mapped to the
+    /// richer `Verbosity` DU — `true` → `Verbosity.Debug` (preserves
+    /// the prior all-on semantics); `false` → `Verbosity.Quiet`.
+    /// New consumers should use `setVerbosity` directly.
     let setVerbose (v: bool) : unit =
-        lock lockObj (fun () -> state.Value.Verbose <- v)
+        lock lockObj (fun () ->
+            state.Value.Verbosity <- if v then Verbosity.Debug else Verbosity.Quiet)
+
+    /// Chapter C slice C.6 — set the per-process verbosity gate.
+    /// Replaces the binary `setVerbose` with a three-way enum;
+    /// `setVerbose` lives on as a back-compat shim.
+    let setVerbosity (v: Verbosity) : unit =
+        lock lockObj (fun () -> state.Value.Verbosity <- v)
+
+    /// Chapter C slice C.6 — mute the given categories from the
+    /// emission stream. Muted envelopes are dropped at the egress
+    /// boundary (do NOT contribute to the §11 rollup either).
+    /// Empty set (default) → no per-category filtering.
+    let setMutedCategories (cats: Set<Category>) : unit =
+        lock lockObj (fun () -> state.Value.MutedCategories <- cats)
 
     /// Current runId; read-only accessor. Returns the empty string
     /// only when called before `beginRun` (which freshState always
@@ -494,11 +550,17 @@ module LogSink =
 
     /// Emit one envelope to the configured writer + update the run
     /// accumulator. Per §5 the writer is channel-1 stderr by default.
-    /// Per §4 Trace/Debug events are suppressed unless `setVerbose
-    /// true` flipped the gate.
+    /// Per §4 Trace/Debug events are suppressed under
+    /// `Verbosity.Quiet` (the default); `--verbose` raises to
+    /// `Verbosity.Verbose` (surfaces Debug); `--debug` raises to
+    /// `Verbosity.Debug` (additionally surfaces Trace). Per Chapter
+    /// C slice C.6, envelopes whose Category appears in
+    /// `MutedCategories` are dropped at this boundary.
     let emit (env: Envelope) : unit =
         lock lockObj (fun () ->
-            if isHiddenByDefault env.Level && not state.Value.Verbose then
+            if not (isLevelVisible state.Value.Verbosity env.Level) then
+                ()
+            elif Set.contains env.Category state.Value.MutedCategories then
                 ()
             else
                 updateAccumulator env

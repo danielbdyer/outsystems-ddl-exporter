@@ -258,10 +258,12 @@ let private emitConfigSnapshot
 let private runFullExport
     (configPath: string)
     (outputOverride: string option)
-    (verbose: bool)
+    (verbosity: LogSink.Verbosity)
+    (mutedCategories: Set<LogSink.Category>)
     : int =
     LogSink.reset ()
-    LogSink.setVerbose verbose
+    LogSink.setVerbosity verbosity
+    LogSink.setMutedCategories mutedCategories
     Bench.reset ()
     let mutable outcome : LogSink.Outcome = LogSink.Succeeded
     let exitCode =
@@ -514,6 +516,22 @@ let private runCanary (sourceDdlPath: string) : int =
 /// Dispatch `full-export` via the Argu surface (`FullExportArgs`).
 /// Argument-parse failures surface as exit code 1 with a usage hint;
 /// successful parses route to `runFullExport`.
+let private parseCategoryName (raw: string) : Result<LogSink.Category, string> =
+    match raw.ToLowerInvariant() with
+    | "config"    -> Ok LogSink.Config
+    | "extract"   -> Ok LogSink.Extract
+    | "profile"   -> Ok LogSink.Profile
+    | "transform" -> Ok LogSink.Transform
+    | "emit"      -> Ok LogSink.Emit
+    | "deploy"    -> Ok LogSink.Deploy
+    | "canary"    -> Ok LogSink.Canary
+    | "summary"   -> Ok LogSink.Summary
+    | other       ->
+        Error (
+            sprintf
+                "projection: --mute-category '%s' is not a recognized category. Known: config | extract | profile | transform | emit | deploy | canary | summary."
+                other)
+
 let private dispatchFullExport (argv: string[]) : int =
     let parser =
         ArgumentParser.Create<FullExportArg>(
@@ -529,7 +547,30 @@ let private dispatchFullExport (argv: string[]) : int =
             let configPath = parsed.GetResult Config
             let outputOverride = parsed.TryGetResult Output
             let verbose = parsed.Contains Verbose
-            runFullExport configPath outputOverride verbose
+            let debug = parsed.Contains Debug
+            // Chapter C slice C.6 — verbosity DU resolution. --debug
+            // takes precedence over --verbose (the union maximum).
+            let verbosity =
+                if debug then LogSink.Verbosity.Debug
+                elif verbose then LogSink.Verbosity.Verbose
+                else LogSink.Verbosity.Quiet
+            // Resolve --mute-category arguments to a Set<Category>.
+            // Aggregates per-argument errors so the operator sees
+            // every malformed name in one pass.
+            let muteResults =
+                parsed.GetResults MuteCategory
+                |> List.map parseCategoryName
+            let muteErrors =
+                muteResults |> List.choose (function Error e -> Some e | Ok _ -> None)
+            if not (List.isEmpty muteErrors) then
+                for err in muteErrors do Console.Error.WriteLine err
+                1
+            else
+                let mutedCategories =
+                    muteResults
+                    |> List.choose (function Ok c -> Some c | Error _ -> None)
+                    |> Set.ofList
+                runFullExport configPath outputOverride verbosity mutedCategories
     with
     | :? ArguParseException as ex ->
         Console.Error.WriteLine ex.Message
