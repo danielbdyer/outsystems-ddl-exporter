@@ -626,7 +626,7 @@ add `Kind`, `Attribute`, and `Index` arms and their corresponding
 
 ### H-022 — TemporalConfig emission
 
-**Status:** proposed
+**Status:** implemented (Statement.CreateTable 6th arg `TemporalConfig option`; ScriptDomBuild.buildCreateTable emits SystemTimePeriodDefinition + SystemVersioningTableOption; SsdtDdlEmitter.createTableStatement extracts ModalityMark.Temporal)
 
 **Gap.** `ModalityMark.Temporal` carries temporal table configuration
 (`SystemTimeColumn`, `HistoryTableName`, `RetentionPolicy`). Temporal
@@ -686,7 +686,7 @@ evidence to decision.
 
 ### H-025 — FK selectivity consumers
 
-**Status:** proposed
+**Status:** implemented (FkSelectivityDiagnostics.fs — `emit : Profile -> DiagnosticEntry list`; Info entry per high-selectivity FK reference; meanMatchCount < 2.0 threshold with minDistinctCount ≥ 10 guard; wired in Pipeline.fs diagnostics list)
 
 **Gap.** `ForeignKeySelectivity` (estimated FK lookup cost, derived
 from index statistics) is computed and carried on `Profile` with no
@@ -703,7 +703,7 @@ exceeds a threshold, the pass emits a `DiagnosticEntry` with
 
 ### H-026 — JointDistribution consumers
 
-**Status:** proposed
+**Status:** implemented (JointDependencyDiagnostics.fs — `emit : Profile -> DiagnosticEntry list`; Info entry per kind with near-unique FK tuple co-occurrence; uniquenessRatio ≥ 0.95 threshold with minDistinctCount ≥ 5 guard; wired in Pipeline.fs diagnostics list)
 
 **Gap.** `JointDistribution` (co-occurrence counts for column pairs,
 used to detect functional dependencies) is fully computed and carried

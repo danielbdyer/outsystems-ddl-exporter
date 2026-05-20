@@ -643,6 +643,8 @@ module Compose =
                     let diagnostics =
                         SpecialCircumstancesDiagnostics.emit overrides finalState
                         @ InactiveAttributeDiagnostics.emit profile
+                        @ FkSelectivityDiagnostics.emit profile    // H-025
+                        @ JointDependencyDiagnostics.emit profile   // H-026
                     match write cfg.Output.Dir outputs with
                     | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics }
                     | Error errors -> Result.failure errors
