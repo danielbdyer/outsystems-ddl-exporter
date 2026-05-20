@@ -43,13 +43,13 @@ let private extractDigest (manifestJson: string) : string =
 
 [<Fact>]
 let ``A41 (digest round-trip): identical registry yields identical digest across two emits`` () =
-    let manifest1 = ManifestEmitter.buildWith RegisteredTransforms.all sampleCatalog
-    let manifest2 = ManifestEmitter.buildWith RegisteredTransforms.all sampleCatalog
+    let manifest1 = ManifestEmitter.buildWith Profile.empty RegisteredTransforms.all sampleCatalog
+    let manifest2 = ManifestEmitter.buildWith Profile.empty RegisteredTransforms.all sampleCatalog
     Assert.Equal(manifest1.RegistryDigest, manifest2.RegistryDigest)
 
 [<Fact>]
 let ``A41 (digest round-trip): digest survives JSON serialize → parse → extract`` () =
-    let manifest = ManifestEmitter.buildWith RegisteredTransforms.all sampleCatalog
+    let manifest = ManifestEmitter.buildWith Profile.empty RegisteredTransforms.all sampleCatalog
     let json = ManifestEmitter.toJson manifest
     let extracted = extractDigest json
     Assert.Equal(manifest.RegistryDigest, extracted)
@@ -82,9 +82,10 @@ let ``A41 (digest round-trip): perturbing a Sites.Rationale changes the digest``
 
 [<Fact>]
 let ``A41 (digest round-trip): perturbed registry surfaces a different digest in the manifest JSON`` () =
-    let baseline = ManifestEmitter.buildWith RegisteredTransforms.all sampleCatalog
+    let baseline = ManifestEmitter.buildWith Profile.empty RegisteredTransforms.all sampleCatalog
     let perturbed =
         ManifestEmitter.buildWith
+            Profile.empty
             (perturbFirstRationale RegisteredTransforms.all)
             sampleCatalog
     let baselineJson = ManifestEmitter.toJson baseline

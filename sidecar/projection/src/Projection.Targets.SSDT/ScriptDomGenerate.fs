@@ -187,8 +187,9 @@ module ScriptDomGenerate =
                 | Some fragment ->
                     sb.Append(generateOne fragment) |> ignore
                 | None ->
-                    // Unreachable: only Blank / Comment return None
-                    // from `buildStatement`, and they're handled
-                    // explicitly above.
+                    // `Blank` / `Comment` return None and are handled
+                    // explicitly above. `CreateTrigger` also returns
+                    // None when the definition fails to parse (H-019);
+                    // silently skipping is intentional in that case.
                     ()
         sb.ToString()

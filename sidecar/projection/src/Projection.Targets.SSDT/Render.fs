@@ -71,7 +71,8 @@ module Render =
     /// delegation. The single delegation arm now handles every
     /// SQL-bearing variant (CreateTable / CreateIndex /
     /// SetExtendedProperty / AlterTableNoCheckConstraint /
-    /// AlterIndexDisable / InsertRow / SetIdentityInsert). `Blank`
+    /// AlterIndexDisable / InsertRow / SetIdentityInsert /
+    /// CreateTrigger / CreateSequence). `Blank`
     /// + `Comment` remain as the only non-SQL variants — they're
     /// terminal text-formatting (Blank is a newline; Comment carries
     /// a `-- ` prefix). Pillar 7 four-question analysis stands: the
@@ -89,12 +90,10 @@ module Render =
             | Some fragment ->
                 sb.Append(ScriptDomGenerate.generateOne fragment).AppendLine() |> ignore
             | None ->
-                // Unreachable: every SQL-bearing Statement variant
-                // builds a typed fragment via `ScriptDomBuild
-                // .buildStatement`. The closed-DU dispatcher returns
-                // `None` only for `Blank` + `Comment`, both handled
-                // above. Future Statement variants must add their
-                // ScriptDom builder before reaching this arm.
+                // `Blank` + `Comment` return None and are handled above.
+                // `CreateTrigger` also returns None when its definition
+                // fails to parse (H-019) — silently skipping is correct
+                // in that case (canary roundtrip surfaces regressions).
                 ()
 
     /// Fold a statement stream into a single SQL-text artifact. The

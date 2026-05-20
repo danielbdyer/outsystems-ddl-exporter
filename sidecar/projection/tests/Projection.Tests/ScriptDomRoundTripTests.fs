@@ -95,7 +95,7 @@ let private sampleTable : TableId =
 let ``T1: ScriptDom CreateTable emit is byte-identical across repeat invocations`` () =
     let fragment =
         (ScriptDomBuild.buildCreateTable
-            sampleTable sampleColumns (Some samplePk) [] []).Value
+            sampleTable sampleColumns (Some samplePk) [] [] None).Value
     let runs =
         [ for _ in 1 .. 25 -> ScriptDomGenerate.generateOne fragment ]
     let head = List.head runs
@@ -105,7 +105,7 @@ let ``T1: ScriptDom CreateTable emit is byte-identical across repeat invocations
 let ``Parse-roundtrip: ScriptDom CreateTable emit re-parses cleanly`` () =
     let fragment =
         (ScriptDomBuild.buildCreateTable
-            sampleTable sampleColumns (Some samplePk) [] []).Value
+            sampleTable sampleColumns (Some samplePk) [] [] None).Value
     let emitted = ScriptDomGenerate.generateOne fragment
     let reparsed, errors = parseSql emitted
     Assert.Empty(errors)
@@ -123,7 +123,7 @@ let ``Parse-roundtrip: ScriptDom CreateTable emit re-parses cleanly`` () =
 let ``ScriptDom CreateTable emit names the schema and table`` () =
     let fragment =
         (ScriptDomBuild.buildCreateTable
-            sampleTable sampleColumns (Some samplePk) [] []).Value
+            sampleTable sampleColumns (Some samplePk) [] [] None).Value
     let emitted = ScriptDomGenerate.generateOne fragment
     // Re-parse and inspect the typed AST — no substring search per
     // the no-string-concatenation discipline.
@@ -140,7 +140,7 @@ let ``ScriptDom CreateTable emit names the schema and table`` () =
 let ``ScriptDom CreateTable emit carries every column with its data type`` () =
     let fragment =
         (ScriptDomBuild.buildCreateTable
-            sampleTable sampleColumns (Some samplePk) [] []).Value
+            sampleTable sampleColumns (Some samplePk) [] [] None).Value
     let emitted = ScriptDomGenerate.generateOne fragment
     let reparsed, _ = parseSql emitted
     let script = reparsed :?> TSqlScript
@@ -170,7 +170,7 @@ let ``ScriptDom CreateTable emit carries every column with its data type`` () =
 let ``ScriptDom CreateTable carries the primary-key constraint`` () =
     let fragment =
         (ScriptDomBuild.buildCreateTable
-            sampleTable sampleColumns (Some samplePk) [] []).Value
+            sampleTable sampleColumns (Some samplePk) [] [] None).Value
     let emitted = ScriptDomGenerate.generateOne fragment
     let reparsed, _ = parseSql emitted
     let script = reparsed :?> TSqlScript
@@ -286,7 +286,7 @@ let ``T1: ScriptDomGenerate.toText is byte-identical across repeat invocations``
         [
             Comment "Customer table"
             Blank
-            CreateTable (sampleTable, sampleColumns, Some samplePk, [], [])
+            CreateTable (sampleTable, sampleColumns, Some samplePk, [], [], None)
             Blank
             SetIdentityInsert (sampleTable, true)
             InsertRow (sampleTable, sampleCells)
@@ -302,7 +302,7 @@ let ``ScriptDomGenerate.toText splices comments through with -- prefix`` () =
     let stmts =
         [
             Comment "header line"
-            CreateTable (sampleTable, sampleColumns, Some samplePk, [], [])
+            CreateTable (sampleTable, sampleColumns, Some samplePk, [], [], None)
         ]
     let emitted = ScriptDomGenerate.toText stmts
     // Split on \n and filter the comment line; assert it carries the
@@ -316,7 +316,7 @@ let ``ScriptDomGenerate.toText splices comments through with -- prefix`` () =
 let ``ScriptDomGenerate.toText emits all SQL statements through ScriptDom`` () =
     let stmts =
         [
-            CreateTable (sampleTable, sampleColumns, Some samplePk, [], [])
+            CreateTable (sampleTable, sampleColumns, Some samplePk, [], [], None)
             InsertRow (sampleTable, sampleCells)
             SetIdentityInsert (sampleTable, true)
         ]

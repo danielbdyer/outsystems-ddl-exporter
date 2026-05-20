@@ -243,14 +243,13 @@ let ``M1: Compose.write writes the same bytes Compose.project produced`` () =
             | Error errs ->
                 let codes = errs |> List.map (fun e -> e.Code) |> String.concat ", "
                 failwithf "Compose.write failed: %s" codes
-        // Per Tier-1 #2: the bundle path count + the four top-level
-        // artifacts (json + distributions + remediation + summary).
-        // Bundle has 1 .sql per catalog kind + 1 manifest.json.
-        // Chapter 5+ slices 5.13.remediation-emitter + 5.13.summary-formatter
-        // add `manifest.remediation.sql` + `manifest.summary.txt` to the
-        // write set; both are operator-UX projections of the post-chain
-        // DecisionSets.
-        let expectedCount = Map.count outputs.SsdtBundle + 4
+        // Per Tier-1 #2: the bundle path count + the five top-level
+        // artifacts (json + distributions + remediation + summary +
+        // suggest-config). Bundle has 1 .sql per catalog kind + 1
+        // manifest.json. Chapter 5+ slices 5.13.remediation-emitter +
+        // 5.13.summary-formatter add `manifest.remediation.sql` +
+        // `manifest.summary.txt`; H-032 adds `suggest-config.json`.
+        let expectedCount = Map.count outputs.SsdtBundle + 5
         Assert.Equal(expectedCount, List.length paths)
         // Each bundle entry round-trips byte-for-byte.
         for KeyValue(relPath, body) in outputs.SsdtBundle do
@@ -271,6 +270,10 @@ let ``M1: Compose.write writes the same bytes Compose.project produced`` () =
         let summaryOnDisk =
             File.ReadAllText(Path.Combine(outputDir, Compose.ArtifactPath.summary))
         Assert.Equal<string>(outputs.SummaryText, summaryOnDisk)
+        // suggest-config.json round-trips via canonical JsonNode string.
+        let suggestConfigOnDisk =
+            File.ReadAllText(Path.Combine(outputDir, Compose.ArtifactPath.suggestConfig))
+        Assert.Equal<string>(outputs.SuggestConfigJson.ToJsonString(jsonOpts), suggestConfigOnDisk)
     finally
         if Directory.Exists outputDir then
             Directory.Delete(outputDir, recursive = true)

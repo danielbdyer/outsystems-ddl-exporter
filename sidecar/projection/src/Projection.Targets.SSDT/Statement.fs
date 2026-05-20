@@ -262,7 +262,7 @@ type ExtendedPropertyOwner =
 type Statement =
     | Blank
     | Comment of text: string
-    | CreateTable of TableId * ColumnDef list * PrimaryKeyDef option * ForeignKeyDef list * ColumnCheckDef list
+    | CreateTable of TableId * ColumnDef list * PrimaryKeyDef option * ForeignKeyDef list * ColumnCheckDef list * TemporalConfig option
     /// Chapter 4.1.A slice 3: CREATE INDEX statement for non-PK
     /// indexes. PK-marked indexes are inlined in CREATE TABLE per
     /// V1 convention; the SsdtDdlEmitter filters them before
@@ -296,3 +296,16 @@ type Statement =
     /// (V1's invariant — primary keys are always enforced). Slice
     /// 5.13.index-features-emit (matrix row 55).
     | AlterIndexDisable of table: TableId * indexName: string
+    /// `CREATE TRIGGER` statement. Emitted by `SsdtDdlEmitter` after a
+    /// kind's extended property statements. Carries the raw T-SQL
+    /// `Trigger.Definition` string; `ScriptDomBuild.buildStatement`
+    /// parses it via `tryParseTriggerBody` and returns `None` on
+    /// failure (silently dropping unparseable definitions).
+    /// H-019 (Cluster A — Close the loops).
+    | CreateTrigger of definition: string
+    /// `CREATE SEQUENCE` statement. Emitted before table creation in
+    /// the catalog-wide statement stream (sequences are schema objects
+    /// referenced by DEFAULT constraints). Carries the V2 `Sequence`
+    /// IR record; `ScriptDomBuild.buildStatement` delegates to
+    /// `buildCreateSequence`. H-020 (Cluster A — Close the loops).
+    | CreateSequence of seq: Sequence

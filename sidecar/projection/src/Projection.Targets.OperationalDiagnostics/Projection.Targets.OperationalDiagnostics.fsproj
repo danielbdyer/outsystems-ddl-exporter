@@ -15,6 +15,7 @@
     <Compile Include="DecisionLogEmitter.fs" />
     <Compile Include="RemediationEmitter.fs" />
     <Compile Include="SummaryFormatter.fs" />
+    <Compile Include="SuggestConfigEmitter.fs" />
   </ItemGroup>
 
   <ItemGroup>
