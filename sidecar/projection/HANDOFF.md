@@ -1,3 +1,61 @@
+# Handoff letter — 2026-05-20 (Chapter C slice 2 of 6 done; mid-chapter)
+
+To the next agent.
+
+You're picking up V2 with **Chapter C two slices in** and the substrate doing more work for you than the slice queue length suggests. C.1 (tightening axis) shipped earlier today and set the binder + chain-factory template; C.2 (special-circumstances axis — `AllowMissingPrimaryKey` + `CircularDependencies` consumer) shipped this session as the **first non-binder-only Chapter C slice** — operator allowlists now bind from config + a post-chain scan emits the missing-PK / cycle findings as typed `DiagnosticEntry`s through the LogSink envelope stream, with `Metadata.acceptedVia` annotation on allowlist matches per the annotate-don't-suppress discipline. Four Chapter C slices remain. **Your next slice is C.3 (emission-folders)** unless the principal-PO redirects.
+
+## What C.2 changed that C.3 inherits
+
+The big load-bearing shape C.2 introduced is the **pure-additive post-chain scan pattern**, generalizable across the remaining slices. Rather than reshape pass return types (the architect's slice-C.1 HANDOFF letter implicitly assumed this; would cascade through ~90 consumer sites for `TopologicalOrderPass` + `SymmetricClosure` alone), C.2 added `src/Projection.Pipeline/SpecialCircumstancesDiagnostics.fs` — a 140-LOC scan step that observes the post-chain `Catalog` + `ComposeState` (read via the new `Compose.projectFromChainWithState` factored out of `projectFromChain`) and emits `DiagnosticEntry`s with operator-allowlist annotations applied in one pass. **Future slices needing to surface internal pass state without return-type cascade should mirror this shape.**
+
+The other big surface change is **`runWithConfig` widened** — return type went from `Task<Result<string list>>` to `Task<Result<Compose.RunReport>>` where `RunReport = { Paths : string list; Diagnostics : DiagnosticEntry list }`. The three consumers (`Program.fs runFullExport` + `Program.fs runEmitFromConfig` + `FullExportCliTests.runFullExportInProcess`) all updated; the diagnostic stream flows to LogSink envelopes in full-export, to stderr text in legacy `emit --config`, to the test harness's captured envelope stream in tests.
+
+## Two principal-PO scope decisions C.2 surfaced (read these — they generalize for C.3-C.6)
+
+(a) **Operator config ref shape: typed tuples over full SsKey-ref form.** The architect's slice-C.1 letter recommended copying `TighteningBinding`'s logical-or-physical `SsKey` ref shape verbatim for C.2. The operator chose typed `(Module × Entity)` tuples (`Config.LogicalName list`) instead — lighter parser, smaller test surface, no physical-name fallback. The trade-off: divergent surface from C.1's tightening axis (which DOES carry the logical-or-physical shape). The principle: **slice-by-slice scope decisions belong to the principal-PO at slice open, not pre-decided by HANDOFF recommendations.** Bring C.3's `EmissionFolders` ref shape decision (likely `Map<SsKey, string>` with the SsKey resolved at bind time from a `LogicalName`) to the principal-PO; don't presume.
+
+(b) **Annotate vs suppress, and what depth the annotation lives at.** Operator decision: annotate, not suppress, per the slice-6 reshape lesson ("actionability = enrichment + presentation, NOT occlusion"). What surprised me: the architect's HANDOFF letter assumed the annotation surface was `DiagnosticEntry.Metadata.acceptedVia` — but missing-PK and cycle signals **don't reach the DiagnosticEntry stream at all today** (missing-PK lives in `LineageEvent.Annotated`; cycles live in `TopologicalOrder.Cycles : CycleDiagnostic list`). So C.2's "annotate" actually required FIRST lifting these signals into operator-visible `DiagnosticEntry` emissions (new emission sites) BEFORE annotation could land. That's the "full lift" scope option I brought to the principal-PO; operator accepted the budget overrun (~5-7h instead of 3-5h). **C.3 may have a similar discovery — emission folders likely don't have an existing operator-visible diagnostic surface either; budget accordingly.**
+
+## Where you are in the spine
+
+C.3 wires the **emission-folders axis** per `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)`. The scope: a new `Overrides.EmissionFolders : Map<SsKey, string>` config section + an `SsdtFile.RelativePath` rewrite pass + emit-time validation. Touchpoints per the architect's slice-C.1 letter: `src/Projection.Targets.SSDT/SsdtFile.fs` for the `RelativePath` shape; `src/Projection.Pipeline/Pipeline.fs` around line 120 for the `SsdtBundle.compose` site; `src/Projection.Pipeline/Config.fs` for the new section. The rewrite fires **after** SSDT emit produces the bundle but before write. Architect's recommendation: add `Compose.applyEmissionFolderOverrides : Map<SsKey, string> -> SsdtBundle -> Result<SsdtBundle>` as a post-emit step in `runWithConfig`; validate target folder paths at the binder layer (no `..`; no absolute paths; no path-separator chars in segment names) before the rewrite fires.
+
+## Read order (~30 min) — same shape as the C.1 letter below
+
+1. **This letter + the slice-C.1 architect letter below** (the "What to know about the V2 shape" + "Per-slice guide" sections specifically — they're still the operator's-manual for the next 2-3 weeks).
+2. **`DECISIONS 2026-05-20 (slice C.2 — special-circumstances axis full lift)`** — names the binder shape, the pure-additive scan pattern, the `acceptedVia` annotation convention, the scope-adjustment rationale, the disciplines reinforced.
+3. **`src/Projection.Pipeline/SpecialCircumstancesBinding.fs` (~150 LOC)** — read alongside `TighteningBinding.fs`; the binder shape generalizes for C.3 (typed `EmissionFolders` resolution).
+4. **`src/Projection.Pipeline/SpecialCircumstancesDiagnostics.fs` (~140 LOC)** — read for the post-chain scan pattern. C.3's `Compose.applyEmissionFolderOverrides` is a sibling but operates on `SsdtBundle` (not `DiagnosticEntry list`).
+5. **The five operating disciplines below** before writing code (same four as C.1's letter + one new from C.2).
+
+## Disciplines internalized this session (C.2 contribution + carry-forward from C.1)
+
+**Pure-additive scan over IR-traversal cascade (C.2 contribution)** — when a new operator-visible signal needs lifting from internal pass state, prefer a post-chain scan step over pass-internal writer-extension unless the new signal requires per-pass attribution. Trade-off: small predicate duplication is acceptable (both consult the same primitive — e.g., `Kind.primaryKey k = []`); the alternative — threading the `Diagnostics` writer through every pass for one new emission — is not. Mirrors the C.1 "factory shape" pattern (`allChainStepsFor` policy-parameterized chain) one layer up: structural observability without invasive rewiring.
+
+**The four C.1-era disciplines carry forward unchanged.** Operator-supplied-ref resolution (resolve at bind time, not at use time; structured ValidationError on miss); single-entry-shape pattern across DU variants (apply if C.5 goes per-target Insertion); Global-MutableState xUnit collection (any test touching Bench/LogSink state); TRX-first test-failure capture protocol (mandatory when dotnet test reports `Failed:` > 0).
+
+**HANDOFF append-only-within-chapter + handoff-as-prose-letter disciplines** — read the CLAUDE.md operating-disciplines table rows. C.2 honored both (this letter prepends above the C.1 + B.4 close letters via Edit, not Write overwrite; addresses you in second person).
+
+## Test baseline + branch state
+
+**1871/1871 non-Docker passing; 0 warnings under TreatWarningsAsErrors=true.** Was 1854 pre-C.2 (post-housekeeping baseline above the architect's 1793 starting point); +17 from the two new C.2 test files (7 binder facts + 10 scan facts). Operator-reality canary unchanged from C.1 (no chain-factory touch this slice; the new scan runs once at `runWithConfig` boundary, costs ~1 catalog walk for missing-PK + one `Set.contains` per cycle). Branch stays `claude/v2-chapter-c-continue-XGxAL`; PR #552 has merged the prior C.1 + B.4 work into `main` — this session's commit lives on the continuation branch.
+
+## Pitfalls C.2 hit that you can avoid
+
+- **Don't presume the HANDOFF letter's recommended consumer shape exists.** The slice-C.1 architect letter recommended `DiagnosticEntry.Metadata.acceptedVia` as the annotation surface. The signals being annotated turned out to NOT flow through `DiagnosticEntry` at all. Verify the consumer substrate exists BEFORE committing to the architect's recipe; bring scope-adjustment options to the principal-PO if the substrate is missing.
+- **Don't widen pass return types speculatively.** I almost reshaped `SymmetricClosure` + `TopologicalOrderPass` from `Lineage<_>` to `Lineage<Diagnostics<_>>` to absorb the new emissions. The cascade is ~90 consumer sites. The pure-additive scan-step alternative is structurally equivalent + zero cascade. Run the blast-radius `grep` before any return-type widening.
+- **`Model.ValidationOverrides` vs `Overrides`.** The dormant `AllowMissingPrimaryKey` field lived in the wrong section pre-C.2 (`Model.ValidationOverrides` rather than `Overrides`). Moving was correct — `Overrides` is the operator-driven-catalog-rewrites/annotations neighborhood; `Model` owns the catalog source. C.3 may face a similar location question if `EmissionFolders` parses anywhere else today; verify.
+
+## Open questions for chapter close (C.6+)
+
+Same as the C.1 letter's chapter-close section. The C.2 contribution to the list: when C.6 ships, the chapter-close ritual's "Promote any new L3 axioms" step should consider an **L3-CC-AcceptanceAnnotation** axiom (every operator-visible structural finding with an addressable acceptance path carries the annotation in `Metadata.acceptedVia`; the diagnostic remains visible). The annotate-don't-suppress discipline is operative for all of C.3-C.5 as the special-circumstances pattern generalizes.
+
+Hold the spine. The Chapter C arc is mechanical wiring against a substrate that already exists, plus the occasional discovery that a recommended consumer surface doesn't exist (C.2's case) — bring those scope-adjustments to the principal-PO at slice open. Each slice earned, one at a time.
+
+— The slice-C.2 architect.
+
+---
+
 # Handoff letter — 2026-05-20 (Chapter C slice 1 of 6 done; mid-chapter)
 
 To the next agent.

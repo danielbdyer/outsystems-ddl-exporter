@@ -40,6 +40,8 @@
     <Compile Include="ActionableDiagnosticsTests.fs" />
     <Compile Include="TableRenameTests.fs" />
     <Compile Include="TighteningBindingTests.fs" />
+    <Compile Include="SpecialCircumstancesBindingTests.fs" />
+    <Compile Include="SpecialCircumstancesDiagnosticsTests.fs" />
     <Compile Include="ComposeAtomicWriteTests.fs" />
     <Compile Include="SqlTypeCorrespondenceTests.fs" />
     <Compile Include="SqlLiteralTests.fs" />

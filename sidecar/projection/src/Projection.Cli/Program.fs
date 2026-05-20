@@ -178,6 +178,38 @@ let private emitTransformErrors (errors: ValidationError list) : unit =
             { LogSink.envelope LogSink.Error LogSink.Transform "transform.diagnostic" payload with
                 Phase = LogSink.ErrorPhase }
 
+/// Chapter C slice C.2 — emit each `SpecialCircumstancesDiagnostics`
+/// entry as a `transform.diagnostic` LogSink envelope. Per §7.4 the
+/// envelope level mirrors the entry's `Severity`; the entry's typed
+/// `Metadata` (including `acceptedVia` on operator-allowlisted
+/// findings) flattens into the envelope payload so downstream LogSink
+/// consumers (the `summary.runComplete` rollup; future operator
+/// dashboards) see the acceptance state without re-walking the
+/// catalog.
+let private emitSpecialCircumstancesDiagnostics (entries: DiagnosticEntry list) : unit =
+    for entry in entries do
+        let level =
+            match entry.Severity with
+            | DiagnosticSeverity.Info    -> LogSink.Info
+            | DiagnosticSeverity.Warning -> LogSink.Warn
+            | DiagnosticSeverity.Error   -> LogSink.Error
+        let basePayload : Map<string, objnull> =
+            Map.ofList [
+                "source",  box entry.Source
+                "code",    box entry.Code
+                "message", box entry.Message
+            ]
+        let withSsKey =
+            match entry.SsKey with
+            | Some k -> basePayload |> Map.add "ssKey" (box (SsKey.rootOriginal k))
+            | None   -> basePayload
+        let payload =
+            entry.Metadata
+            |> Map.fold (fun acc k v -> Map.add k (box v) acc) withSsKey
+        LogSink.emit
+            { LogSink.envelope level LogSink.Transform "transform.diagnostic" payload with
+                Phase = LogSink.End }
+
 /// Resolve the effective output directory: CLI `--output` override
 /// wins over the config's `Output.Dir`. Defaults to the config value.
 let private resolveOutputDir
@@ -254,10 +286,11 @@ let private runFullExport
                     let result = task.GetAwaiter().GetResult()
                     sw.Stop()
                     match result with
-                    | Ok paths ->
+                    | Ok report ->
                         recordStage "pipeline" LogSink.Succeeded sw.ElapsedMilliseconds
-                        printfn "projection: wrote %d artifact(s) to %s" paths.Length effectiveOutput
-                        paths
+                        emitSpecialCircumstancesDiagnostics report.Diagnostics
+                        printfn "projection: wrote %d artifact(s) to %s" report.Paths.Length effectiveOutput
+                        report.Paths
                         |> List.iter (fun p ->
                             let info = FileInfo p
                             LogSink.recordArtifact {
@@ -370,12 +403,22 @@ let private runEmitFromConfig (configPath: string) : int =
         let result = task.GetAwaiter().GetResult()
         let exitCode =
             match result with
-            | Ok paths ->
-                printfn "projection: wrote %d artifact(s) to %s" paths.Length config.Output.Dir
-                paths
+            | Ok report ->
+                printfn "projection: wrote %d artifact(s) to %s" report.Paths.Length config.Output.Dir
+                report.Paths
                 |> List.iter (fun p ->
                     let info = FileInfo p
                     printfn "  %s (%d bytes)" p info.Length)
+                // Chapter C slice C.2 — surface special-circumstances
+                // findings to stderr (the legacy `emit --config` surface
+                // pre-dates LogSink and uses Console for narration).
+                for entry in report.Diagnostics do
+                    let accepted =
+                        if Map.containsKey "acceptedVia" entry.Metadata then " [accepted]"
+                        else ""
+                    Console.Error.WriteLine (
+                        sprintf "  diagnostic [%s] %s: %s%s"
+                            (string entry.Severity) entry.Code entry.Message accepted)
                 0
             | Error errors ->
                 Console.Error.WriteLine "projection: emit failed:"
