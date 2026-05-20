@@ -78,3 +78,50 @@ type OverlayAxis =
 type Classification =
     | DataIntent
     | OperatorIntent of OverlayAxis
+
+
+/// Chapter C slice C.4 — operator-facing **feature-toggle groupings**
+/// of registered transformations. Distinct from `OverlayAxis` (which
+/// names *whose intent* a transform expresses): `TransformGroup` names
+/// *which named preset* the transform belongs to so the operator can
+/// flip several related transforms on/off as a unit
+/// (`Policy.TransformGroups : Map<TransformGroup, bool>`).
+///
+/// **Closed DU; preset seed (no operator-defined custom groups)** per
+/// `DECISIONS 2026-05-19 (chapter B.4 mid-chapter strategic
+/// exploration)` decision 3. Variants land under the closed-DU
+/// expansion empirical-test discipline (`DECISIONS 2026-05-13`): a real
+/// operator-pull for an unrepresented grouping triggers a new variant
+/// + a DECISIONS entry naming the trigger. Today's seed list is the
+/// minimum set of pass-chain groupings with concrete operator-toggle
+/// pull:
+///
+///   - **`Tightening`** — the four tightening passes
+///     (`NullabilityPass`, `UniqueIndexPass`, `ForeignKeyPass`,
+///     `CategoricalUniquenessPass`). Operator may toggle the entire
+///     tightening surface off without uninstalling per-intervention
+///     config.
+///   - **`UserReflow`** — `UserFkReflowPass`. Operator may disable
+///     user-FK reflow when user-migration is out of scope for the
+///     run (e.g., schema-only canary; non-user-touching deploys).
+///
+/// Per pillar 9: TransformGroup is an `OperatorIntent`-flavored
+/// concept (operator-supplied feature-toggle); the binder + filter
+/// live in `Projection.Pipeline` so the Core's registry types stay
+/// `DataIntent`-pure (the registry record itself doesn't carry tags —
+/// the tag map lives at the Pipeline-realization layer alongside the
+/// chain it filters).
+///
+/// `[<RequireQualifiedAccess>]` because `Tightening` collides with
+/// `OverlayAxis.Tightening` — call sites disambiguate as
+/// `TransformGroup.Tightening` vs `Tightening` (the OverlayAxis case;
+/// unqualified resolution remains).
+[<RequireQualifiedAccess>]
+type TransformGroup =
+    /// The four tightening passes. Operator toggles the entire
+    /// tightening surface off without uninstalling per-intervention
+    /// config.
+    | Tightening
+    /// `UserFkReflowPass`. Operator disables user-FK reflow when
+    /// user-migration is out of scope for the run.
+    | UserReflow

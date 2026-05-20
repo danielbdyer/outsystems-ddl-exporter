@@ -154,6 +154,29 @@ module Compose =
                 // smart-constructed against the same catalog).
                 invalidOp (sprintf "Compose.applyEmissionFolderOverrides: %A" err)
 
+    /// Chapter C slice C.4 — filter the pass chain by operator-supplied
+    /// `TransformGroups`. Each chain entry's name is looked up against
+    /// `RegisteredTransformTags.passTags`; if the entry's tag set
+    /// intersects any group the operator has disabled, the entry is
+    /// excluded. Empty `TransformGroups.disabledGroups` (no operator
+    /// override, or all groups enabled) returns the chain unchanged.
+    ///
+    /// Per pillar 9: the filter expresses operator intent at the
+    /// realization-layer boundary; passes self-identify their group
+    /// membership via the static `passTags` map alongside the chain
+    /// they participate in.
+    let private filterChainByGroups
+        (groups: TransformGroups)
+        (chain: PassChainAdapter list)
+        : PassChainAdapter list =
+        let disabled = TransformGroups.disabledGroups groups
+        if Set.isEmpty disabled then chain
+        else
+            chain
+            |> List.filter (fun adapter ->
+                let tags = RegisteredTransformTags.tagsFor adapter.Name
+                Set.intersect tags disabled |> Set.isEmpty)
+
     /// Chapter C slice C.2 — state-capturing project. Returns both
     /// the `Outputs` and the post-chain `ComposeState` so downstream
     /// consumers (today: `SpecialCircumstancesDiagnostics.emit`) can
@@ -163,16 +186,23 @@ module Compose =
     /// Chapter C slice C.3 — accepts `EmissionFolders` and applies the
     /// folder overrides at the typed per-kind SSDT bundle layer
     /// (post-emit, pre-compose). `EmissionFolders.empty` is a no-op.
+    ///
+    /// Chapter C slice C.4 — accepts `TransformGroups` and filters the
+    /// chain to exclude passes whose tag-set intersects any disabled
+    /// group. `TransformGroups.empty` is a no-op (V1-parity: all
+    /// transforms run).
     let private projectFromChainWithState
         (chain: PassChainAdapter list)
         (policy: EmissionPolicy)
         (folders: EmissionFolders)
+        (groups: TransformGroups)
         (catalog: Catalog)
         : Outputs * ComposeState =
+        let filteredChain = filterChainByGroups groups chain
         use _ = Bench.scope "compose.project"
         let composedState =
             (use _ = Bench.scope "compose.runChain"
-             PassChainAdapter.compose chain (ComposeState.initial catalog)
+             PassChainAdapter.compose filteredChain (ComposeState.initial catalog)
              |> LineageDiagnostics.payload)
         // Chapter 4.9 slice δ — apply EmissionPolicy.filterPlatformAutoIndexes
         // at the post-chain seam. The filter is `OperatorIntent of Emission`
@@ -219,7 +249,7 @@ module Compose =
         (policy: EmissionPolicy)
         (catalog: Catalog)
         : Outputs =
-        projectFromChainWithState chain policy EmissionFolders.empty catalog |> fst
+        projectFromChainWithState chain policy EmissionFolders.empty TransformGroups.empty catalog |> fst
 
     /// Production-shape project: routes through
     /// `RegisteredTransforms.allChainSteps`. The hand-coded "emit raw
@@ -254,15 +284,21 @@ module Compose =
     /// SSDT bundle layer (post-emit, pre-compose). Pass
     /// `EmissionFolders.empty` for the no-overrides path (preserves
     /// V1's default `Modules/<Module>/` layout).
+    ///
+    /// Chapter C slice C.4 — accepts `TransformGroups` and filters
+    /// the chain to exclude passes whose tag-set intersects any
+    /// disabled group. Pass `TransformGroups.empty` for the
+    /// no-overrides path (preserves V1-parity: all transforms run).
     let projectWithState
         (fullPolicy: Policy)
         (profile: Profile)
         (emissionPolicy: EmissionPolicy)
         (folders: EmissionFolders)
+        (groups: TransformGroups)
         (catalog: Catalog)
         : Outputs * ComposeState =
         let chain = RegisteredTransforms.allChainStepsFor fullPolicy profile
-        projectFromChainWithState chain emissionPolicy folders catalog
+        projectFromChainWithState chain emissionPolicy folders groups catalog
 
     /// Skeleton-shape project: routes through
     /// `RegisteredTransforms.skeletonChainSteps` (per chapter A.4.7'
@@ -518,10 +554,11 @@ module Compose =
                     let policyR     = buildPolicyFromConfig cfg renamedCatalog
                     let overridesR  = SpecialCircumstancesBinding.fromConfig renamedCatalog cfg
                     let foldersR    = EmissionFoldersBinding.fromConfig renamedCatalog cfg
-                    match policyR, overridesR, foldersR with
-                    | Ok policy, Ok overrides, Ok folders ->
+                    let groupsR     = TransformGroupsBinding.fromConfig cfg
+                    match policyR, overridesR, foldersR, groupsR with
+                    | Ok policy, Ok overrides, Ok folders, Ok groups ->
                         let outputs, finalState =
-                            projectWithState policy Profile.empty EmissionPolicy.empty folders renamedCatalog
+                            projectWithState policy Profile.empty EmissionPolicy.empty folders groups renamedCatalog
                         let diagnostics =
                             SpecialCircumstancesDiagnostics.emit overrides finalState
                         match write cfg.Output.Dir outputs with
@@ -533,7 +570,8 @@ module Compose =
                         let policyErrs    = match policyR    with Ok _ -> [] | Error es -> es
                         let overridesErrs = match overridesR with Ok _ -> [] | Error es -> es
                         let foldersErrs   = match foldersR   with Ok _ -> [] | Error es -> es
-                        return Result.failure (policyErrs @ overridesErrs @ foldersErrs)
+                        let groupsErrs    = match groupsR    with Ok _ -> [] | Error es -> es
+                        return Result.failure (policyErrs @ overridesErrs @ foldersErrs @ groupsErrs)
                 | Error errors ->
                     return Result.failure errors
             | Error errors ->

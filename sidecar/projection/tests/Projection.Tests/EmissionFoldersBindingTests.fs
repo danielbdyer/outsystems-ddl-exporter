@@ -103,10 +103,11 @@ let private mkConfig (overrides: Config.OverridesSection) : Config.Config =
             DecisionLog = true; Opportunities = true; Validations = true
         }
         Policy      = {
-            Selection    = "IncludeAll"
-            Insertion    = "SchemaOnly"
-            UserMatching = { Strategy = "ByEmail"; Fallback = "NoFallback" }
-            Tightening   = None
+            Selection       = "IncludeAll"
+            Insertion       = "SchemaOnly"
+            UserMatching    = { Strategy = "ByEmail"; Fallback = "NoFallback" }
+            Tightening      = None
+            TransformGroups = []
         }
         Output      = { Dir = "out/" }
     }
