@@ -19076,3 +19076,85 @@ The C.3 apply-layer pattern (typed bundle rewrite via `ArtifactByKind.toMap |> M
 - `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs:410-418` — `relativePath` LINT-ALLOW rationale + forward-slash convention.
 - `src/Projection.Core/ArtifactByKind.fs:69-82` — `create` smart constructor (strict-equality keyset enforcement; re-validates on every reconstruction).
 
+## 2026-05-20 (slices C.4 + C.5 + C.6 — tag-groups + insertion semantics + verbosity axes) — Chapter C structurally complete; closed `TransformGroup` DU lands in Pipeline (NOT on Core registry) per pillar 9 + minimal-cascade reasoning; `Policy.InsertionPolicy` config-binding lands without downstream consumer wiring per IR-grows-under-evidence; `LogSink.Verbosity` three-way DU + per-category mute replace the binary verbose-bool; three architectural codifications
+
+### Context
+
+Chapter C's last three slices shipped this session. The six-slice operator-facing config surface from `DECISIONS 2026-05-19 (chapter B.4 mid-chapter strategic exploration)` is now structurally complete — every axis the operator named has a binder + a typed runtime overlay + wiring through `Compose.runWithConfig`. The chapter-close ritual is **NOT yet executed** (open question for the principal-PO; see HANDOFF.md letter).
+
+### What shipped (per-slice summary)
+
+**C.4 — tag-groups axis.**
+- `TransformGroup` closed DU in `Projection.Core.Classification.fs` (preset seed: `Tightening | UserReflow`, `[<RequireQualifiedAccess>]` because `Tightening` collides with `OverlayAxis.Tightening`). Two variants reflect the actual operator-toggle-evidence available today; future variants land under closed-DU expansion empirical-test discipline.
+- `Projection.Pipeline.TransformGroupsBinding`: typed `TransformGroups` runtime value + `fromConfig` resolves textual config entries → typed DU; structured `pipeline.transformGroups.unknownGroup` on unrecognized names.
+- `RegisteredTransformTags.passTags : Map<string, Set<TransformGroup>>`: the static pass-name → tag-set mapping lives in the Pipeline layer (not on the Core's `RegisteredTransformMetadata`).
+- `Pipeline.filterChainByGroups`: chain-filter step inside `projectFromChainWithState` that excludes passes whose tag-set intersects operator-disabled groups; `TransformGroups.empty` is a no-op (V1-parity).
+- `Config.PolicySection.TransformGroups : TransformGroupEntry list`: new config section, parses as `{ name, enabled }` records.
+
+**C.5 — insertion semantics.**
+- `Projection.Pipeline.InsertionPolicyBinding.fromConfig`: maps `policy.insertion` string → typed `Policy.InsertionPolicy` DU (`SchemaOnly | InsertNew | Merge | TruncateAndInsert`); empty string falls back to V2-driver neutral default `SchemaOnly`; unknown variant surfaces `pipeline.insertionPolicy.unknownVariant`.
+- `buildPolicyFromConfig` now aggregates tightening + insertion binder errors in one pass.
+- **Wiring scope:** binder lands + threads `InsertionPolicy` into `Policy.Insertion`. Downstream pass/emitter consumers don't yet read `Policy.Insertion`; the operator-facing surface lands now per IR-grows-under-evidence + consumer wiring follows under concrete operator-pull pressure.
+
+**C.6 — verbosity flags + per-category mute.**
+- `LogSink.Verbosity` closed DU (`Quiet | Verbose | Debug`, `[<RequireQualifiedAccess>]` because `Debug` collides with `Level.Debug`). `setVerbosity : Verbosity -> unit` replaces the binary `setVerbose`; back-compat shim keeps `setVerbose : bool -> unit` (`true → Debug` preserves prior all-on semantics).
+- `LogSink.setMutedCategories : Set<Category> -> unit`: drops envelopes at the egress boundary BEFORE the §11 accumulator update (muted events DON'T contribute to the rollup).
+- CLI `FullExportArg` extends with `Debug` (alias `-d`) + `MuteCategory` flags; Program.fs dispatcher resolves category-name strings through closed lookup with per-argument error aggregation.
+
+### Test surface
+
+29 new tests across three files:
+- `TransformGroupsBindingTests.fs` (10 facts) — empty path; recognized variants; default semantics; unknown rejection; error aggregation; duplicate-entry last-wins; passTags coverage invariant.
+- `TransformGroupsFilterTests.fs` (7 facts) — empty/identity; disabling Tightening excludes the four tightening passes; disabling UserReflow excludes UserFkReflow; disabling both; non-tagged passes still run.
+- `InsertionPolicyBindingTests.fs` (9 facts) — all four variants; case-sensitive matching; empty-default fallback; fromConfig threading; unknown variant rejection.
+- `LogSinkVerbosityTests.fs` (10 facts) — Quiet/Verbose/Debug transitions; back-compat shim; per-category mute under all verbosity levels; mute supersedes severity; mute-doesn't-rollup invariant.
+
+Total non-Docker baseline: **1871/1871 passing** (1835 pre-C.4 → 1852 post-C.4 → 1861 post-C.5 → 1871 post-C.6); 0 warnings under `TreatWarningsAsErrors=true`.
+
+### Decisions resolved
+
+**Tag-set lives at the Pipeline layer, NOT on the Core's `RegisteredTransformMetadata` (C.4).** The slice-C.3 HANDOFF letter recommended `RegisteredTransform.Tags : Set<TransformGroup>` (field on the Core record). Read-through showed this cascades through 12 pass modules' `.registered` record-literal declarations + 9 emitter/adapter sites + the smart constructors + `toMetadata` — ~21 record-literal edits under `TreatWarningsAsErrors=true`. The lighter-touch alternative: a static `Map<string, Set<TransformGroup>>` in Pipeline alongside the chain it filters. The architectural rationale (beyond cascade minimization): per pillar 9, operator-overlay-axis classification is OperatorIntent-flavored; the Core's registry record IS DataIntent (it carries the structural site classification at `Sites : TransformSite list`, but that's classification on a structural axis, not an operator-toggle membership). Keeping the tag-set in Pipeline preserves Core's DataIntent purity. The trade-off (decoupled tag-set vs registry record) is mitigated by the `passTags coverage invariant` property test — every name in `passTags` must exist in `RegisteredAllTransforms.all`.
+
+**Wiring-without-downstream-consumer is a valid slice shape (C.5).** `Policy.InsertionPolicy` is wired through the binder + the `Policy` record but no pass/emitter consumes it. The slice still ships because the operator-facing config surface needs to land BEFORE the downstream consumer is ready — hand-edited configs get deterministic typed values + binder validation; the consumer (DataEmissionComposer or similar) reads `Policy.Insertion` when chapter C.5+ operator-pull surfaces a concrete need. The named failure mode this protects against: "deferred config sections" that parse-but-ignore + then surprise an operator when the consumer arrives. By landing the binder now, the typed surface is stable; future consumer wiring is a non-breaking add. **Pairs with the slice-7 thin-CLI decision** (chapter B.4): same pattern (lift the operator-facing surface ahead of consumer wiring, with structured types throughout so future consumer landing is non-breaking).
+
+**Three-way Verbosity DU + per-category mute (C.6).** The spec §4 ambiguously says both Trace + Debug are "hidden unless `--verbose` / `--debug`" — could be read as aliases. Decision: split them. `--verbose` surfaces Debug only; `--debug` additionally surfaces Trace. Operator-usage-mental-model: "verbose for normal investigation, debug for deep-dive." The mute-before-accumulator ordering ensures muted events don't contribute to the §11 rollup — an operator who mutes `profile` truly stops seeing profile (live stream AND terminal summary), which is the intuitive contract.
+
+### Discipline reinforced
+
+**Verify the architect's named consumer layer against the substrate (codified at N=2).** C.3's letter codified "verify the substrate is at the architect's named layer." C.4 re-confirmed it: the architect's `RegisteredTransform.Tags : Set<TransformGroup>` recommendation surfaced as cascade-heavy at the Core record; the Pipeline-layer Map was the right home. Two consecutive slices found the architect's recommendation wrong-by-one-layer. The discipline holds: **always read the substrate end-to-end before committing to the recipe.**
+
+**Closed-DU expansion empirical-test discipline applied at first-evidence-fires (C.4).** `TransformGroup` ships with EXACTLY the operator-toggle evidence today (Tightening + UserReflow). Future variants land under operator-pull + DECISIONS amendment; the speculative axis-survey list (`CDC | UATUsers | MigrationDependencies | Bootstrap | RefactorLog`) doesn't pre-populate the DU. Pairs with IR-grows-under-evidence.
+
+**Wiring-without-downstream-consumer is a valid slice shape (NEW; codifies a pattern that's been in flight since chapter B.4 slice 7).** When the operator-facing config surface needs to land BEFORE the downstream consumer is ready, ship the binder + typed overlay + threading through `Policy`. The consumer reads `Policy.X` when ready (non-breaking add). Catches the failure mode of "config surface that surprises operators because the binder isn't wired."
+
+**Mute-before-accumulator-update (NEW; C.6).** When an operator-supplied filter drops events from the live stream, it must also drop them from the terminal summary's rollup. The naive ordering (accumulator update → filter → emit) would keep muted events in the summary, surprising operators. The correct ordering (filter → accumulator update → emit) is structurally enforced in `LogSink.emit`'s lock-protected body.
+
+### Phase A1 status
+
+**Chapter C is structurally complete.** All six slices shipped:
+- C.1 ✓ tightening (operator config → `Policy.TighteningPolicy.Interventions` + chain-factory)
+- C.2 ✓ special-circumstances (allowlists for missing-PK / cycles + post-chain diagnostic scan + acceptance annotation)
+- C.3 ✓ emission-folders (per-kind SSDT folder rewrite)
+- C.4 ✓ tag-groups (closed DU + Pipeline-layer tag map + chain filter)
+- C.5 ✓ insertion semantics (config-binding without downstream consumer)
+- C.6 ✓ verbosity flags + per-category mute (three-way Verbosity DU + setMutedCategories)
+
+The chapter-close ritual is uninitiated; the principal-PO has the call on whether to close formally now or hold pending follow-on operator-pull.
+
+### Cross-references
+
+- `src/Projection.Core/Classification.fs:82-118` — `TransformGroup` closed DU.
+- `src/Projection.Pipeline/TransformGroupsBinding.fs` — NEW; binder + `passTags` static map + `filterChainByGroups`-friendly `disabledGroups` helper.
+- `src/Projection.Pipeline/InsertionPolicyBinding.fs` — NEW; string→DU binder for `Policy.Insertion`.
+- `src/Projection.Pipeline/LogSink.fs:55-76` (Verbosity DU); `LogSink.fs:267-285` (RunState with Verbosity + MutedCategories); `LogSink.fs:540-560` (emit gate).
+- `src/Projection.Pipeline/Config.fs` — `TransformGroupEntry`, `PolicySection.TransformGroups`, `parseTransformGroupEntry`, `parseTransformGroups`.
+- `src/Projection.Pipeline/Pipeline.fs` — `filterChainByGroups`; widened `projectFromChainWithState` + `projectWithState` (now 6-arg); `buildPolicyFromConfig` aggregates tightening + insertion errors; `runWithConfig` 4-axis binder match.
+- `src/Projection.Cli/FullExportArgs.fs` — `Debug` + `MuteCategory` flags; updated usage prose.
+- `src/Projection.Cli/Program.fs` — `parseCategoryName`; verbosity resolution (`--debug` > `--verbose` > Quiet); per-argument mute-name error aggregation.
+- `tests/Projection.Tests/TransformGroupsBindingTests.fs` — NEW 10-fact binder coverage including passTags coverage invariant.
+- `tests/Projection.Tests/TransformGroupsFilterTests.fs` — NEW 7-fact chain-filter coverage through `Compose.projectWithState`.
+- `tests/Projection.Tests/InsertionPolicyBindingTests.fs` — NEW 9-fact insertion binder coverage.
+- `tests/Projection.Tests/LogSinkVerbosityTests.fs` — NEW 10-fact verbosity + mute coverage; `[<Xunit.Collection("Global-MutableState")>]` per the C.2 codified discipline.
+- `DECISIONS 2026-05-20 (slice C.3 — emission-folders axis)` — the substrate-layer-verification lesson C.4 reconfirmed.
+- `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)` — Chapter C 6-slice plan; C.4-C.6 axes complete this plan.
+

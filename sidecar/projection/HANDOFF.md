@@ -1,3 +1,66 @@
+# Handoff letter — 2026-05-20 (Chapter C complete; 6 of 6 slices done; mid-session)
+
+To the next agent.
+
+You're picking up V2 with **Chapter C complete**. C.4 (tag-groups), C.5 (insertion semantics), and C.6 (verbosity flags + per-category mute) all shipped this session on top of the prior C.1 (tightening) / C.2 (special-circumstances) / C.3 (emission-folders). The six-slice operator-facing config surface that opened against `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)` is now structurally complete — every axis the operator named has an operator-driven config path through `Compose.runWithConfig`, with structured `pipeline.<axis>.*` error codes at each binder + a typed runtime overlay carrying the result. **The chapter-close ritual is NOT yet executed** — the principal-PO has the call on whether to (a) close the chapter formally now (open `CHAPTER_C_CLOSE.md`, dispatch the verifiability-triangle audit, rotate `HANDOFF.md` to `HANDOFF_CHAPTER_C.md`) or (b) hold the close pending operator-pull on the open follow-on threads. Read the "Open questions for chapter close" section below before answering.
+
+## What the three new slices added
+
+**C.4 — tag-groups axis.** Closed `TransformGroup` DU in `Projection.Core.Classification.fs` (preset seed: `Tightening | UserReflow`, `[<RequireQualifiedAccess>]` because `Tightening` collides with `OverlayAxis.Tightening`). New `Projection.Pipeline.TransformGroupsBinding` carries the typed `TransformGroups` runtime value + `fromConfig` resolving textual entries → typed DU + structured `pipeline.transformGroups.unknownGroup` on unknown names. **Tag-set lives at Pipeline, NOT on the Core's `RegisteredTransformMetadata`** — the architect's HANDOFF letter recommended putting `Tags : Set<TransformGroup>` on the Core record; read-through surfaced that this cascades through 12 pass modules' `.registered` declarations + 9 emitter/adapter sites (~21 record-literal edits under `TreatWarningsAsErrors`). The lighter-touch alternative: a static `Map<string, Set<TransformGroup>>` (pass name → tags) lives in `RegisteredTransformTags.passTags` in the Pipeline layer alongside the chain it filters; chain filter at `filterChainByGroups` does the name lookup. A `passTags coverage invariant` property test asserts every name in the map exists in `RegisteredAllTransforms.all` (catches refactor drift). Trade-off accepted: tag-set is decoupled from the typed registry record (operator-overlay concern lives at Pipeline-realization layer per pillar 9, which is arguably MORE correct than co-locating on the Core's DataIntent-pure record).
+
+**C.5 — insertion semantics.** `Policy.InsertionPolicy` was already a closed DU at `Projection.Core.Policy.fs` (`SchemaOnly | InsertNew | Merge | TruncateAndInsert`); only the config-binding was missing. New `Projection.Pipeline.InsertionPolicyBinding.fromConfig` maps the `policy.insertion` string to the typed DU; empty string falls back to V2-driver neutral default `SchemaOnly`; unknown variant surfaces `pipeline.insertionPolicy.unknownVariant`. Wires through `buildPolicyFromConfig` (now aggregates tightening + insertion errors so the operator sees both axes' malformed entries in one pass). **Wiring scope: binder lands + threads `InsertionPolicy` into `Policy.Insertion`; downstream pass/emitter consumers don't yet read `Policy.Insertion`** — this is per IR-grows-under-evidence: the operator-facing surface lands now so hand-editing produces no surprises, consumer wiring follows under concrete operator-pull pressure. Today's effect is observable through the `Policy` record (manifest emission; tests; future consumers that already consume `Policy`).
+
+**C.6 — verbosity + per-category mute.** New `LogSink.Verbosity` closed DU (`Quiet | Verbose | Debug`, `[<RequireQualifiedAccess>]` because `Debug` collides with `Level.Debug`). `setVerbosity : Verbosity -> unit` replaces the binary `setVerbose`; back-compat shim keeps `setVerbose : bool -> unit` (`true → Debug`; `false → Quiet`). New `setMutedCategories : Set<Category> -> unit` drops envelopes at the egress boundary BEFORE the §11 accumulator update (muted events DO NOT contribute to the rollup — an operator who mutes `profile` doesn't see profile in either the live stream or the terminal summary). CLI `FullExportArg` extends with `Debug` (also `-d`) and `MuteCategory` flags; the Program.fs dispatcher resolves category-name strings through a closed lookup (`config | extract | profile | transform | emit | deploy | canary | summary`) with per-argument error aggregation.
+
+## Disciplines internalized this session
+
+**Architect's recommended consumer-shape gets re-validated against the substrate (C.4 contribution).** Sibling to the C.3 "verify the architect's named layer" lesson. The slice-C.3 HANDOFF named `RegisteredTransform.Tags : Set<TransformGroup>` as the field shape; the actual right place was a static Map in the Pipeline layer. Two consecutive slices (C.3 + C.4) found the architect's recommendation wrong-by-one-layer; the discipline is generalizing: **always read through the consumer substrate end-to-end before committing to the architect's recipe.**
+
+**Closed-DU expansion empirical-test discipline applied at first-evidence-fires (C.4 contribution).** `TransformGroup` ships with two variants (`Tightening | UserReflow`) — exactly the operator-toggle-evidence that exists today. The codebase's discipline ("IR grows under evidence, not speculation") means future variants (`Bootstrap`, `MigrationDependencies`, `CDC`, `RefactorLog` etc.) land on operator-pull pressure + a DECISIONS amendment, not on speculation about what operators MIGHT want.
+
+**Wiring-without-downstream-consumer is a valid slice shape (C.5 contribution).** Codifies the pattern for future slices where the operator-facing config surface needs to land BEFORE the downstream consumer is ready. The operator hand-writing the config gets a deterministic typed value (the binder validates + types); the consumer (`Compose.runWithConfig`'s emitters / passes) reads `Policy.Insertion` when ready. The trade-off (visible config setting that has no observable effect today) is acceptable because the alternative ("wait for the consumer") delays the operator-facing surface that hand-edited configs need.
+
+**The four C.3-era disciplines carry forward unchanged.** Pure-additive scan over IR-traversal cascade; operator-supplied-ref resolution at bind time; single-entry-shape pattern; Global-MutableState xUnit collection for any test touching Bench/LogSink state; TRX-first test-failure capture protocol.
+
+## Where you are in the spine
+
+**Chapter C is structurally complete.** The six-slice operator-facing config surface from `DECISIONS 2026-05-19 (chapter B.4 mid-chapter strategic exploration)` is in place; every axis has a binder + typed runtime overlay + wiring through `runWithConfig`. **The chapter-close ritual remains uninitiated.** Per the chapter-close discipline (CLAUDE.md operating-disciplines table), the close ritual is eight load-bearing items:
+1. Active deferrals scan
+2. Contract-vs-implementation walk
+3. CLAUDE.md / README.md staleness check
+4. `HANDOFF.md` rotation to `HANDOFF_CHAPTER_C.md` + fresh chapter-close letter
+5. Fresh-eye walk
+6. Operating-disciplines table currency
+7. V1-input-envelope walk (only for V1↔V2 translation chapters — N/A here)
+8. `CHAPTER_C_CLOSE.md` synthesis document
+
+This is a non-trivial workload (~1-2h of focused audit work). Bring the close-or-hold decision to the principal-PO at session start.
+
+## Reading order (~30 min)
+
+1. **This letter + the slice-C.3 letter below** — read both for the "what shipped + why the architecture lands where it does" framing.
+2. **The three slice-C.4/C.5/C.6 DECISIONS entry below** (added this session) — names the binder shapes, the tag-set-locality decision, the wiring-without-consumer pattern, the Verbosity DU rationale.
+3. **`src/Projection.Pipeline/TransformGroupsBinding.fs` (~120 LOC)** — read alongside `EmissionFoldersBinding.fs`; the `RegisteredTransformTags.passTags` static map IS the new operator-overlay pattern; future slices that need operator-toggle filtering of named units of work should mirror it.
+4. **`src/Projection.Pipeline/LogSink.fs:50-76` (Verbosity DU) + `LogSink.fs:267-285` (RunState) + `LogSink.fs:540-560` (emit)** — the three-step gate (verbosity check → category mute → emit + accumulator update). Note the ordering: mute drops BEFORE the accumulator update.
+
+## Open questions for chapter close (the close-or-hold decision)
+
+(a) **C.5 downstream consumer wiring.** `Policy.Insertion` flows through the config + the binder + ends up in the `Policy` record but no pass/emitter reads it yet. The natural chapter close question: do we ship `Compose.runWithConfig` consuming `Policy.Insertion` through `DataEmissionComposer` (chapter 4.1.B's slice η composer dispatch already takes `EmissionPolicy.DataComposition` — extending to read `Policy.Insertion` is a small slice if the operator-pull is concrete)? Or hold pending real operator-pull?
+
+(b) **C.4 tag-groups DU expansion.** Two variants (`Tightening`, `UserReflow`) ship. The DECISIONS axis-survey hinted at more (`CDC | UATUsers | MigrationDependencies | Bootstrap | RefactorLog`). Most of these don't have a chain-level pass to filter (they're emitter-level). If operator-pull surfaces for "toggle migration-dependencies emission entirely off without using EmissionPolicy.EmitData=false," that's a new TransformGroup variant + new emitter-level filtering (the chain-only filter today doesn't touch emitters).
+
+(c) **Per-emitter group filtering.** Today's C.4 chain-filter only excludes PASSES whose tags intersect disabled groups. Emitter filtering (e.g., `--mute-emitter=staticSeeds`) is a sibling concern that uses `EmissionPolicy` booleans today; if operator-pull surfaces for unified "filter via TransformGroup across passes AND emitters" semantics, this is one structural slice.
+
+(d) **L3-CC-AcceptanceAnnotation axiom (carried forward from C.2 letter).** Should the chapter close promote this to PRODUCT_AXIOMS? The annotate-don't-suppress discipline is operative for all of C.3-C.6 — each operator-overlay axis preserves the underlying structural finding in the diagnostic stream while annotating the operator-acceptance via metadata. Codifying as L3 means future axes inherit the constraint as a contract, not a convention.
+
+(e) **L3-CC-ApplyLayerLocality axiom (carried forward from C.3 letter).** Two slices (C.3, C.4) confirmed the pattern: operator overlays apply at the layer carrying the typed identity the override is keyed by. Worth codifying.
+
+Hold the spine. Chapter C earned its place; the close ritual decides if it's also formally closed.
+
+— The slice-C.4/C.5/C.6 architect.
+
+---
+
 # Handoff letter — 2026-05-20 (Chapter C slice 3 of 6 done; mid-chapter)
 
 To the next agent.
