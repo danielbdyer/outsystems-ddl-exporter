@@ -113,14 +113,60 @@ module Compose =
     /// unconditionally; decision-set passes write back evidence the
     /// emitters do not yet consume (decision-set consumption is a
     /// future-chapter concern).
+    /// Chapter C slice C.3 — apply operator-supplied emission-folder
+    /// overrides to the typed per-kind SSDT bundle. The rewrite
+    /// preserves each `SsdtFile`'s basename (the cross-platform-
+    /// deterministic `<Schema>.<Table>.sql` suffix) and replaces the
+    /// directory prefix with the operator-named folder.
+    /// `EmissionFolders.empty` short-circuits to the input unchanged.
+    ///
+    /// The rewrite fires at the typed `ArtifactByKind<SsdtFile>` layer
+    /// — operator overlay sits outside Π (pillar 9: emitters are
+    /// `DataIntent`; operator opinion enters at the Pipeline-layer
+    /// realization boundary). Reconstructs through
+    /// `ArtifactByKind.create` against the same catalog so the
+    /// strict-equality keyset invariant is preserved.
+    let private applyEmissionFolderOverrides
+        (folders: EmissionFolders)
+        (catalog: Catalog)
+        (files: ArtifactByKind<SsdtDdlEmitter.SsdtFile>)
+        : ArtifactByKind<SsdtDdlEmitter.SsdtFile> =
+        if EmissionFolders.isEmpty folders then files
+        else
+            use _ = Bench.scope "compose.applyEmissionFolderOverrides"
+            let rewritten =
+                files
+                |> ArtifactByKind.toMap
+                |> Map.map (fun key file ->
+                    match Map.tryFind key folders.ByKind with
+                    | None        -> file
+                    | Some folder ->
+                        let segments = file.RelativePath.Split('/')
+                        let basename = segments.[segments.Length - 1]
+                        { file with
+                            RelativePath = System.String.Concat(folder, "/", basename) })
+            match ArtifactByKind.create catalog rewritten with
+            | Ok a -> a
+            | Error err ->
+                // Unreachable: we Map.map preserving keys; the input
+                // keyset equals Catalog.allKinds by construction
+                // (input came from SsdtDdlEmitter.emitSlices which
+                // smart-constructed against the same catalog).
+                invalidOp (sprintf "Compose.applyEmissionFolderOverrides: %A" err)
+
     /// Chapter C slice C.2 — state-capturing project. Returns both
     /// the `Outputs` and the post-chain `ComposeState` so downstream
     /// consumers (today: `SpecialCircumstancesDiagnostics.emit`) can
     /// observe per-pass evidence without re-running the chain.
     /// `projectFromChain` is now a thin wrapper that drops the state.
+    ///
+    /// Chapter C slice C.3 — accepts `EmissionFolders` and applies the
+    /// folder overrides at the typed per-kind SSDT bundle layer
+    /// (post-emit, pre-compose). `EmissionFolders.empty` is a no-op.
     let private projectFromChainWithState
         (chain: PassChainAdapter list)
         (policy: EmissionPolicy)
+        (folders: EmissionFolders)
         (catalog: Catalog)
         : Outputs * ComposeState =
         use _ = Bench.scope "compose.project"
@@ -138,8 +184,9 @@ module Compose =
             (use _ = Bench.scope "emit.ssdtBundle.compose"
              match SsdtDdlEmitter.emitSlices emittedCatalog with
              | Ok ssdtFiles ->
+                 let rewritten = applyEmissionFolderOverrides folders emittedCatalog ssdtFiles
                  let manifest = ManifestEmitter.emit emittedCatalog
-                 SsdtBundle.compose ssdtFiles manifest
+                 SsdtBundle.compose rewritten manifest
              | Error err ->
                  // Unreachable in production paths: Catalog.allKinds is
                  // the keyset by construction; SsdtDdlEmitter.emitSlices
@@ -172,7 +219,7 @@ module Compose =
         (policy: EmissionPolicy)
         (catalog: Catalog)
         : Outputs =
-        projectFromChainWithState chain policy catalog |> fst
+        projectFromChainWithState chain policy EmissionFolders.empty catalog |> fst
 
     /// Production-shape project: routes through
     /// `RegisteredTransforms.allChainSteps`. The hand-coded "emit raw
@@ -201,14 +248,21 @@ module Compose =
     /// post-chain `ComposeState` alongside the outputs. Used by
     /// `runWithConfig` to feed `SpecialCircumstancesDiagnostics`
     /// without re-running the registered chain.
+    ///
+    /// Chapter C slice C.3 — accepts `EmissionFolders` and applies
+    /// the operator-supplied folder overrides at the typed per-kind
+    /// SSDT bundle layer (post-emit, pre-compose). Pass
+    /// `EmissionFolders.empty` for the no-overrides path (preserves
+    /// V1's default `Modules/<Module>/` layout).
     let projectWithState
         (fullPolicy: Policy)
         (profile: Profile)
         (emissionPolicy: EmissionPolicy)
+        (folders: EmissionFolders)
         (catalog: Catalog)
         : Outputs * ComposeState =
         let chain = RegisteredTransforms.allChainStepsFor fullPolicy profile
-        projectFromChainWithState chain emissionPolicy catalog
+        projectFromChainWithState chain emissionPolicy folders catalog
 
     /// Skeleton-shape project: routes through
     /// `RegisteredTransforms.skeletonChainSteps` (per chapter A.4.7'
@@ -447,11 +501,13 @@ module Compose =
     /// applies config-driven catalog rewrites (rename), binds operator
     /// `Policy` (tightening — Chapter C slice C.1) + operator
     /// `SpecialCircumstances` (missing-PK / circular-deps
-    /// acknowledgements — Chapter C slice C.2), projects through the
-    /// policy-aware chain capturing the post-chain `ComposeState`,
-    /// emits special-circumstances diagnostics with operator-allowlist
-    /// `Metadata.acceptedVia` annotation, writes to `Output.Dir`,
-    /// returns the paths + the diagnostic stream as a `RunReport`.
+    /// acknowledgements — Chapter C slice C.2) + operator
+    /// `EmissionFolders` (per-kind SSDT folder overrides — Chapter C
+    /// slice C.3), projects through the policy-aware chain capturing
+    /// the post-chain `ComposeState`, emits special-circumstances
+    /// diagnostics with operator-allowlist `Metadata.acceptedVia`
+    /// annotation, writes to `Output.Dir`, returns the paths + the
+    /// diagnostic stream as a `RunReport`.
     let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
         task {
             let! parsed = read cfg.Model.Path
@@ -461,10 +517,11 @@ module Compose =
                 | Ok renamedCatalog ->
                     let policyR     = buildPolicyFromConfig cfg renamedCatalog
                     let overridesR  = SpecialCircumstancesBinding.fromConfig renamedCatalog cfg
-                    match policyR, overridesR with
-                    | Ok policy, Ok overrides ->
+                    let foldersR    = EmissionFoldersBinding.fromConfig renamedCatalog cfg
+                    match policyR, overridesR, foldersR with
+                    | Ok policy, Ok overrides, Ok folders ->
                         let outputs, finalState =
-                            projectWithState policy Profile.empty EmissionPolicy.empty renamedCatalog
+                            projectWithState policy Profile.empty EmissionPolicy.empty folders renamedCatalog
                         let diagnostics =
                             SpecialCircumstancesDiagnostics.emit overrides finalState
                         match write cfg.Output.Dir outputs with
@@ -472,9 +529,11 @@ module Compose =
                             return Result.success { Paths = paths; Diagnostics = diagnostics }
                         | Error errors ->
                             return Result.failure errors
-                    | Error es1, Error es2 -> return Result.failure (es1 @ es2)
-                    | Error errors, _      -> return Result.failure errors
-                    | _, Error errors      -> return Result.failure errors
+                    | _ ->
+                        let policyErrs    = match policyR    with Ok _ -> [] | Error es -> es
+                        let overridesErrs = match overridesR with Ok _ -> [] | Error es -> es
+                        let foldersErrs   = match foldersR   with Ok _ -> [] | Error es -> es
+                        return Result.failure (policyErrs @ overridesErrs @ foldersErrs)
                 | Error errors ->
                     return Result.failure errors
             | Error errors ->

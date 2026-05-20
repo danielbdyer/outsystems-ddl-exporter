@@ -1,3 +1,69 @@
+# Handoff letter — 2026-05-20 (Chapter C slice 3 of 6 done; mid-chapter)
+
+To the next agent.
+
+You're picking up V2 with **Chapter C three slices in**. C.3 (emission-folders axis) shipped this session as the **first targets-layer-touching Chapter C slice** — a new `Overrides.EmissionFolders` config section lets the operator remap a kind's SSDT `.sql` file from its default `Modules/<Module>/` directory to an operator-named folder; the rewrite fires at the typed `ArtifactByKind<SsdtFile>` layer between `SsdtDdlEmitter.emitSlices` and `SsdtBundle.compose`, preserving the `<Schema>.<Table>.sql` basename + the smart-constructor strict-equality invariant. Three Chapter C slices remain. **Your next slice is C.4 (tag-groups — closed `TransformGroup` DU + `RegisteredTransform.Tags` filter)** unless the principal-PO redirects.
+
+## What C.3 confirmed (and what changed at the apply seam)
+
+The handoff letter's "pure-additive scan pattern" generalization held without modification on the read-only side — but C.3's case is structurally different from C.2's: it's a **rewrite**, not a scan + emission. The architect's recommended signature `Compose.applyEmissionFolderOverrides : Map<SsKey, string> -> SsdtBundle -> Result<SsdtBundle>` framed the apply as operating on the post-compose `Map<string, string>` bundle; what surfaced during read-through was that the **SsKey context is dropped at `SsdtBundle.compose`**, so the apply has to fire ONE LAYER UPSTREAM — at the typed `ArtifactByKind<SsdtFile>` form, where each entry is still keyed by `SsKey` + carries the typed `RelativePath` field. This is the same pattern as the C.2 lesson restated for the apply-side: **verify the consumer substrate exists at the layer the architect names, BEFORE committing to the recipe.** Here the substrate was one layer earlier than recommended; no scope-adjustment to the principal-PO needed (it's a stylistic difference, not a budget overrun) but the pattern is worth carrying: the architect's recommended signature is a starting point, not a contract.
+
+Concretely: the new `applyEmissionFolderOverrides : EmissionFolders -> Catalog -> ArtifactByKind<SsdtFile> -> ArtifactByKind<SsdtFile>` is a private helper in `Pipeline.fs`. It reads the typed bundle via `ArtifactByKind.toMap`, rewrites only entries whose `SsKey` appears in `folders.ByKind` (Map.map preserves the keyset), and reconstructs through `ArtifactByKind.create catalog` so the strict-equality smart-constructor invariant is re-validated. The catalog threading is necessary because of the smart constructor; that's a structural cost worth knowing for C.4 + C.5 if they touch the bundle too.
+
+## What C.3 changed that C.4-C.6 inherit
+
+**`projectWithState` widened a fifth time** — signature is now `Policy -> Profile -> EmissionPolicy -> EmissionFolders -> Catalog -> Outputs * ComposeState`. The five-parameter shape is approaching the threshold where a parameter-bag record (`ComposeInput`?) would earn its place; one more parameter and the case is concrete. Don't extract preemptively (two-consumer threshold for emergent primitives + IR-grows-under-evidence), but C.4's `TransformGroup` filter is the most likely sixth-parameter forcing event — if it surfaces, that's the slice to lift the parameter bag at.
+
+**`runWithConfig` now binds three operator-overlay axes in parallel** (`policyR`, `overridesR`, `foldersR`). The match-of-three-Results aggregates errors across all axes so the operator sees every malformed entry in one parse pass. The pattern is becoming repetitive; a small `Result.bind3` / `Result.zip3` primitive would earn its place if C.4 adds a fourth axis at this site. Today the explicit per-axis `match` + `match policyR with Ok _ -> [] | Error es -> es` extraction is bearable but watch for the third addition.
+
+## Two scope decisions C.3 surfaced (read these — they'll generalize for C.4-C.6)
+
+(a) **Folder-validation strictness landed at the binder, not the parser** — the parser's job stays "textual shape to typed record"; the binder owns semantic rules (no `..`, no absolute, no `\\`, no empty segments, no platform-reserved chars). Five distinct error codes under `pipeline.emissionFolders.invalidFolder.*` give the operator surgical diagnosis on which rule fired. The principal-PO decision earlier in chapter C was "structured-error codes carry sub-reasons in dot-separated suffixes" — C.3 honors this. For C.4's `TransformGroup` filter, the equivalent question is "where does closed-DU membership validation fire?" — closed DUs are F#-compiler-checked at construction, so it's structurally automatic; but if C.4 takes a string→DU shape (operator strings → `TransformGroup` enum), the validation lives at the binder layer.
+
+(b) **Typed `LogicalName` refs over physical** — C.3 follows C.2's precedent (typed `(Module × Entity)` tuples, no physical-name fallback). Same trade-off (divergent surface from C.1's tightening axis which carries the logical-or-physical shape); same reasoning (lighter parser, smaller test surface). C.4's `RegisteredTransform.Tags` config layer doesn't carry per-kind refs at all (it's a global `Map<TransformGroup, bool>`), so this question doesn't recur there. C.5's `Policy.InsertionPolicy` carries a per-kind shape — that's where the question resurfaces.
+
+## Where you are in the spine
+
+C.4 wires the **tag-groups axis** per `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)`. The scope per the chapter-C plan: closed `TransformGroup` DU (preset list seeded by examining the actual transform set that exists then — chapter-3 said "CDC | UATUsers | MigrationDependencies | Bootstrap | RefactorLog | ...") + `RegisteredTransform.Tags : Set<TransformGroup>` field + `Policy.TransformGroups : Map<TransformGroup, bool>` config + filter at `Compose.runWithConfig`. The closed-DU expansion empirical-test discipline means preset additions trigger F# compile errors at match sites — exactly the structural forcing function chapter close needs.
+
+Touchpoints likely: `src/Projection.Core/TransformRegistry.fs` for the `Tags` field on `RegisteredTransform<'In, 'Out>`; `src/Projection.Pipeline/RegisteredAllTransforms.fs` for tagging the existing chain entries; `src/Projection.Pipeline/Config.fs` for the new section; `src/Projection.Pipeline/Pipeline.fs` for the filter at `Compose.runWithConfig`.
+
+## Read order (~30 min) — same shape as the C.2 letter below
+
+1. **This letter + the slice-C.2 architect letter below** (the "What to know about the V2 shape" + the C.2 lessons sections specifically — they're still load-bearing for the next two slices).
+2. **`DECISIONS 2026-05-20 (slice C.3 — emission-folders axis)`** (added this session) — names the binder shape, the folder-validation taxonomy, the apply-layer choice (one-layer-upstream of the architect's recommendation), the discipline reinforced.
+3. **`src/Projection.Pipeline/EmissionFoldersBinding.fs` (~190 LOC)** — read alongside `SpecialCircumstancesBinding.fs`; the structured-folder-validation pattern + the `bindEntry` per-row aggregation might generalize for C.5.
+4. **The `applyEmissionFolderOverrides` private helper in `Pipeline.fs:113-145`** — the typed-bundle rewrite shape. C.4's filter at `Compose.runWithConfig` operates on a different surface (the chain entries themselves, not the bundle), so the pattern doesn't carry directly — but the parameter-threading approach (new axis appended to `projectWithState`) does.
+5. **The five operating disciplines below** (carry-forward from C.2 — unchanged this slice).
+
+## Disciplines internalized this session (C.3 contribution + carry-forward from C.2)
+
+**Verify the consumer substrate at the architect's named layer (C.3 contribution)** — the architect's recommended signature is a starting point, not a contract. C.3's apply was named to operate on `SsdtBundle = Map<string, string>` (post-compose); the actual right place was the typed `ArtifactByKind<SsdtFile>` form one layer upstream. The pattern is structurally identical to C.2's lesson ("emission folders likely don't have an existing operator-visible diagnostic surface either; budget accordingly" — here the surface DOES exist; it's just at a different layer). Always read the bundle composition site BEFORE committing to the apply layer.
+
+**Structured-error sub-codes for taxonomy (C.3 contribution)** — when a single validation step has multiple distinct rule violations, give each its own dot-suffix code. C.3 emits five sub-codes under `pipeline.emissionFolders.invalidFolder.*` (`empty`, `absolute`, `backslash`, `parentTraversal`, `emptySegment`, `invalidChar`). The operator gets one specific diagnosis per malformed entry; the test surface stays small (one Assert per code). Generalizes to C.4 if any tag-group input shape grows multiple validation rules.
+
+**The four C.2-era disciplines carry forward unchanged.** Pure-additive scan over IR-traversal cascade; operator-supplied-ref resolution at bind time; single-entry-shape pattern across DU variants; Global-MutableState xUnit collection for any test touching Bench/LogSink state; TRX-first test-failure capture protocol.
+
+## Test baseline + branch state
+
+**1835/1835 non-Docker passing; 0 warnings under TreatWarningsAsErrors=true.** Was 1806 pre-C.3 (post-C.2 baseline); +29 from the three new C.3 test files (15 binder facts + 9 overlay facts + 5 Config parser facts). Operator-reality canary unchanged from C.2 (the new apply step fires once at the `projectWithState` boundary, costs one `Map.map` over the per-kind SSDT slices and one `ArtifactByKind.create` smart-constructor pass — both O(kinds), no SQL surface). Branch is `claude/add-emission-folders-overrides-Y9oGn`; PR #553 merged the prior C.2 work into `main` — this session's commit lives on the continuation branch.
+
+## Pitfalls C.3 hit that you can avoid
+
+- **Don't pre-promote the apply helper to public visibility.** The architect's recommended signature was `Compose.applyEmissionFolderOverrides` (public); I kept it `private` because the apply is intentionally internal to the composition flow + tests cover it through `Compose.projectWithState`'s public surface. Three-way trade-off (public API vs unit-test access vs internal cohesion) — the public-API costs (operator-facing surface area; doc burden; potential misuse via direct invocation outside the project chain) outweighed the unit-test convenience. Validate the same trade-off at C.4's filter site.
+- **Don't add the `EmissionFolders` axis to `EmissionPolicy`.** `EmissionPolicy` lives in `Projection.Core` (pure-core; no operator-overlay concerns); `EmissionFolders` is operator overlay (pillar 9 `OperatorIntent of Emission`). Putting it on `EmissionPolicy` would have collapsed two distinct architectural layers. The new dedicated `EmissionFolders` type in `Projection.Pipeline` is the right home; carry the same discipline for C.4's `TransformGroups`.
+- **Cross-platform-deterministic forward slash check.** V2's SSDT bundle uses `/` separators throughout (per `SsdtDdlEmitter.relativePath` LINT-ALLOW rationale — T1 byte-determinism requires it). C.3's folder validator rejects `\\` to keep this invariant. If C.4 / C.5 introduce any path-shaped operator input, the same rule applies.
+
+## Open questions for chapter close (C.6+)
+
+Same as the C.2 letter's chapter-close section. The C.3 contribution to the list: **the apply-layer ambiguity** — when an operator-overlay axis touches a multi-stage realization (parse → typed bundle → bundle map), the architect's recommended layer might be wrong. Chapter close could promote a **L3-CC-ApplyLayerLocality** axiom (operator overlays apply at the layer carrying the typed identity the override is keyed by — for path-shaped overrides, that's the typed `ArtifactByKind<_>` layer, not the path-keyed `Map<string, _>` layer). Pair with L3-CC-AcceptanceAnnotation candidate from C.2's letter.
+
+Hold the spine. Three slices to go; the substrate is doing the work.
+
+— The slice-C.3 architect.
+
+---
+
 # Handoff letter — 2026-05-20 (Chapter C slice 2 of 6 done; mid-chapter)
 
 To the next agent.

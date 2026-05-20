@@ -117,6 +117,18 @@ module Config =
         Path : string
     }
 
+    /// Chapter C slice C.3 — one row of `Overrides.EmissionFolders`.
+    /// `Ref` names the kind in operator-readable `(Module, Entity)`
+    /// logical form (matches C.2's typed-tuple precedent); `Folder`
+    /// is the cross-platform-deterministic relative folder string
+    /// (forward-slash separators only; binder rejects `..`, absolute
+    /// paths, backslashes, and empty segments before the rewrite
+    /// fires).
+    type EmissionFolderEntry = {
+        Ref    : LogicalName
+        Folder : string
+    }
+
     type OverridesSection = {
         TableRenames           : TableRename list
         MigrationDependencies  : FilePathOverride option
@@ -131,6 +143,12 @@ module Config =
         /// "config:overrides.allowMissingPrimaryKey"` per the
         /// annotate-don't-suppress discipline.
         AllowMissingPrimaryKey : LogicalName list
+        /// Chapter C slice C.3 — operator-supplied emission-folder
+        /// targeting. Each entry remaps a kind's SSDT `.sql` file
+        /// from its default `Modules/<Module>/` directory to the
+        /// operator-named folder. The basename (`<Schema>.<Table>.sql`)
+        /// is preserved; only the directory prefix is rewritten.
+        EmissionFolders        : EmissionFolderEntry list
     }
 
     type EmissionSection = {
@@ -268,6 +286,7 @@ module Config =
         StaticData             = None
         CircularDependencies   = None
         AllowMissingPrimaryKey = []
+        EmissionFolders        = []
     }
 
     let private defaultEmission : EmissionSection = {
@@ -799,6 +818,46 @@ module Config =
                 Result.failureOf (
                     configError "typeMismatch" "overrides.allowMissingPrimaryKey must be an array.")
 
+    /// Parse `overrides.emissionFolders` as a list of typed
+    /// `{ ref: { module, entity }, folder: string }` objects (Chapter
+    /// C slice C.3). Per the C.2 precedent (typed tuples over bare
+    /// strings): the ref shape mirrors `allowMissingPrimaryKey`'s
+    /// logical-name form. The folder validation (segment shape,
+    /// absolute/parent-traversal rejection) lives in the binder, not
+    /// the parser — Config.fs stays in its textual-shape role.
+    let private parseEmissionFolderEntry (element: JsonElement) : Result<EmissionFolderEntry> =
+        match getProperty element "ref" with
+        | Error es -> Error es
+        | Ok refElement ->
+            match parseLogicalName refElement with
+            | Error es -> Error es
+            | Ok logical ->
+                match getString element "folder" with
+                | Error es -> Error es
+                | Ok folder -> Result.success { Ref = logical; Folder = folder }
+
+    let private parseEmissionFolders (element: JsonElement) : Result<EmissionFolderEntry list> =
+        match element.TryGetProperty("emissionFolders") with
+        | false, _ -> Result.success []
+        | true, v ->
+            match v.ValueKind with
+            | JsonValueKind.Null | JsonValueKind.Undefined -> Result.success []
+            | JsonValueKind.Array ->
+                v.EnumerateArray()
+                |> Seq.toList
+                |> List.map (fun e ->
+                    if e.ValueKind = JsonValueKind.Object then
+                        parseEmissionFolderEntry e
+                    else
+                        Result.failureOf (
+                            configError
+                                "typeMismatch"
+                                "overrides.emissionFolders entries must be { ref, folder } objects."))
+                |> Result.aggregate
+            | _ ->
+                Result.failureOf (
+                    configError "typeMismatch" "overrides.emissionFolders must be an array.")
+
     let private parseOverrides (root: JsonElement) : Result<OverridesSection> =
         match tryGetProperty root "overrides" with
         | None -> Result.success defaultOverrides
@@ -818,13 +877,17 @@ module Config =
                             match parseAllowMissingPrimaryKey element with
                             | Error es -> Error es
                             | Ok allowedPks ->
-                                Result.success {
-                                    TableRenames           = renames
-                                    MigrationDependencies  = migDeps
-                                    StaticData             = staticData
-                                    CircularDependencies   = cycles
-                                    AllowMissingPrimaryKey = allowedPks
-                                }
+                                match parseEmissionFolders element with
+                                | Error es -> Error es
+                                | Ok folders ->
+                                    Result.success {
+                                        TableRenames           = renames
+                                        MigrationDependencies  = migDeps
+                                        StaticData             = staticData
+                                        CircularDependencies   = cycles
+                                        AllowMissingPrimaryKey = allowedPks
+                                        EmissionFolders        = folders
+                                    }
 
     let private parseEmission (root: JsonElement) : Result<EmissionSection> =
         match tryGetProperty root "emission" with

@@ -19007,3 +19007,72 @@ The C.2 scan-step pattern generalizes for future slices that need to surface int
 - `src/Projection.Core/Passes/SymmetricClosure.fs:162` — `Skip (ClosureSkipped TargetHasNoPrimaryKey)` — the structural source of the missing-PK predicate the scan mirrors.
 - `src/Projection.Core/TopologicalOrder.fs:59` — `CycleDiagnostic` — the structural source the cycle scan reads.
 
+## 2026-05-20 (slice C.3 — emission-folders axis) — operator-supplied `Overrides.EmissionFolders` binds from config + applies at the typed `ArtifactByKind<SsdtFile>` layer between emit and bundle-compose; structured `pipeline.emissionFolders.invalidFolder.*` taxonomy gives surgical operator diagnosis; the apply-layer ambiguity (architect's recommended `SsdtBundle` layer vs the actual right layer one upstream) codified
+
+### Context
+
+Chapter C slice C.3 wires the emission-folders axis per `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)`. The scope: a new `Overrides.EmissionFolders` config section + a per-kind `SsdtFile.RelativePath` rewrite + emit-time validation. The architect's slice-C.2 HANDOFF letter recommended `Compose.applyEmissionFolderOverrides : Map<SsKey, string> -> SsdtBundle -> Result<SsdtBundle>` (operating on the post-compose `Map<string, string>` bundle); read-through surfaced that `SsdtBundle.compose` drops the SsKey context, so the apply fires ONE LAYER UPSTREAM at the typed `ArtifactByKind<SsdtFile>` form.
+
+### What shipped
+
+- **`Overrides.EmissionFolders : EmissionFolderEntry list`** (Config.fs) — each entry carries `{ Ref : LogicalName; Folder : string }`. Operator chose typed `LogicalName` refs over physical (mirrors C.2's precedent; lighter parser + smaller test surface). Parser at `Config.parseEmissionFolders` aggregates per-entry errors.
+- **`EmissionFolders` typed runtime value + `EmissionFoldersBinding.fromConfig`** (new `Projection.Pipeline.EmissionFoldersBinding` module, ~190 LOC). Binder resolves each `LogicalName` to the matching kind's `SsKey` against the loaded catalog AND validates the folder string against five rules:
+  - `invalidFolder.empty` — folder is empty
+  - `invalidFolder.absolute` — folder starts with `/` or matches a Windows drive-letter prefix
+  - `invalidFolder.backslash` — folder contains `\\` (cross-platform-deterministic forward-slash convention)
+  - `invalidFolder.emptySegment` — leading/trailing/double slash produces an empty segment
+  - `invalidFolder.parentTraversal` — segment equals `..` (V2 output is V2-owned per `Compose.writeWith` semantics)
+  - `invalidFolder.invalidChar` — segment contains a platform-reserved char (`<`, `>`, `:`, `"`, `|`, `?`, `*`, control chars)
+  - `unresolved` — the logical ref doesn't match any kind in the catalog
+- **`Compose.applyEmissionFolderOverrides`** (private helper, Pipeline.fs:113-145) — operates on `ArtifactByKind<SsdtFile>`. Reads via `ArtifactByKind.toMap`, rewrites entries whose `SsKey` appears in `folders.ByKind` (preserves the basename `<Schema>.<Table>.sql`; replaces the directory prefix), reconstructs through `ArtifactByKind.create catalog` so the smart-constructor strict-equality invariant is re-validated. `EmissionFolders.empty` short-circuits to identity.
+- **Widened `projectFromChainWithState` + `projectWithState` signature** with an `EmissionFolders` parameter. `projectFromChain` and `project` thread `EmissionFolders.empty` (preserves V1's default `Modules/<Module>/` layout for unconfigured callers).
+- **Widened `runWithConfig`** binds three operator-overlay axes in parallel (`policyR`, `overridesR`, `foldersR`); the three-Result match aggregates errors so the operator sees every malformed entry in one pass.
+
+### Test surface
+
+29 new tests across three files:
+- `EmissionFoldersBindingTests.fs` (15 facts) — empty path; logical-ref resolution; each invalid-folder code; multi-segment forward-slash acceptance; duplicate-ref last-wins; error aggregation across multiple malformed entries.
+- `EmissionFoldersOverlayTests.fs` (9 facts) — exercises the apply through `Compose.projectWithState`: identity under empty; rewrite preserves basename; non-overridden kinds unchanged; SQL body content invariant; manifest.json preserved; keyset cardinality preserved; multi-segment folder concatenates correctly; multiple overrides apply independently.
+- `ConfigTests.fs` (5 new facts) — `emissionFolders` round-trips fields; entry missing `ref` / `folder` rejected; non-array shape rejected; absent section yields empty list.
+
+Total non-Docker baseline: **1835/1835 passing** (1806 pre-C.3); 0 warnings under `TreatWarningsAsErrors=true`.
+
+### Decisions resolved
+
+**Apply-layer ambiguity: the architect's recommended signature was wrong by one layer.** The slice-C.2 HANDOFF named `Compose.applyEmissionFolderOverrides : Map<SsKey, string> -> SsdtBundle -> Result<SsdtBundle>` where "SsdtBundle" maps to `Map<string, string>` (`Outputs.SsdtBundle` type). But `SsdtBundle.compose` drops the SsKey context — by the time the bundle is a `Map<string, string>`, the keys are paths (`"Modules/<Module>/<Schema>.<Table>.sql"`), not SsKeys. The apply needs SsKey context to look up overrides; that context only exists at the typed `ArtifactByKind<SsdtFile>` form, ONE LAYER UPSTREAM. Decision: apply fires between `SsdtDdlEmitter.emitSlices` and `SsdtBundle.compose`. The architect's recommendation was useful as a starting framing but had to be re-validated against the actual substrate.
+
+**Folder-validation strictness lives at the binder, not the parser.** The parser's role stays "textual JSON → typed `EmissionFolderEntry` record"; the binder owns the semantic rules. Five distinct error sub-codes under `pipeline.emissionFolders.invalidFolder.*` give the operator surgical diagnosis (which rule fired; which entry; the offending substring). Mirrors C.2's `pipeline.specialCircumstances.allowMissingPk.unresolved` sub-code pattern.
+
+**Typed `LogicalName` refs (no physical fallback).** Mirrors C.2; same operator-readability + lighter-parser reasoning. The trade-off (divergent from C.1's logical-or-physical tightening axis) is accepted at the chapter level: C.1 carries the physical fallback because tightening operates against deployed-target attribute identity (`Schema.Table.Column`); C.2 + C.3 carry logical-only because operator-readability dominates for allowlists and folder targets.
+
+**Apply helper stays private (not promoted to public).** The architect's signature framed it as `Compose.applyEmissionFolderOverrides` (public). Decision: stays `private` in Pipeline.fs. Tests exercise it through `Compose.projectWithState`'s public surface; public exposure would add operator-facing API surface + doc burden + misuse risk for negligible benefit. The discipline: **operator-overlay apply steps are intentionally internal to the composition flow; their existence is observable through the operator-supplied config, not through direct API invocation.**
+
+**`EmissionFolders` lives in `Projection.Pipeline`, not as a field on `Projection.Core.EmissionPolicy`.** `EmissionPolicy` is pure-core (no operator-overlay concerns); emission-folder targeting is operator overlay (pillar 9 `OperatorIntent of Emission`). Collapsing them would violate the layering. The dedicated `EmissionFolders` type in `Projection.Pipeline` is the right home.
+
+### Discipline reinforced
+
+**Verify the consumer substrate at the architect's named layer (NEW; sibling to C.2's "verify the substrate exists" lesson).** The architect's recommended signature is a starting point, not a contract. C.3's apply was named to operate on `SsdtBundle = Map<string, string>` (post-compose); the actual right place was the typed `ArtifactByKind<SsdtFile>` form one layer upstream. C.2's lesson was "verify the substrate EXISTS before committing"; C.3's lesson is "verify the substrate is at the architect's NAMED LAYER before committing." Both fold into a single discipline: **read the substrate's actual shape end-to-end before committing to a recipe.**
+
+**Structured-error sub-codes for taxonomy (NEW).** When a single validation step has multiple distinct rule violations, give each its own dot-suffix code. C.3 emits six sub-codes under `pipeline.emissionFolders.*`; the operator gets one specific diagnosis per malformed entry; the test surface stays small (one Assert per code). The pattern generalizes for C.4 / C.5 if either grows multiple validation rules at one site.
+
+**Strict-equality smart-constructor preservation through overlay rewrites (codification of an existing rule).** When rewriting a value through `ArtifactByKind<_>`, the smart constructor must be re-invoked against the same catalog so the strict-equality invariant is re-validated. `applyEmissionFolderOverrides` threads `catalog` and calls `ArtifactByKind.create catalog rewritten`. The unreachable `Error` branch is `invalidOp` — `Map.map` preserves the keyset by construction, so the re-validation is structurally guaranteed Ok. Codifies the pattern for any future overlay that rewrites bundle entries.
+
+### Phase A1 status (operator-config wiring)
+
+Chapter C is six slices total. **C.1 + C.2 + C.3 shipped.** Remaining: C.4 (tag-groups — `TransformGroup` closed-DU + `RegisteredTransform.Tags` filter), C.5 (insertion semantics — `Policy.InsertionPolicy` config binding), C.6 (verbosity flags — `--verbose` / `--debug` per §4 + per-category filters).
+
+The C.3 apply-layer pattern (typed bundle rewrite via `ArtifactByKind.toMap |> Map.map |> ArtifactByKind.create`) generalizes for any future slice that rewrites per-kind sibling-Π outputs through an operator overlay; the structured-error taxonomy pattern generalizes for any binder with multiple validation rules at one site.
+
+### Cross-references
+
+- `src/Projection.Pipeline/Config.fs` — `EmissionFolderEntry`; `Overrides.EmissionFolders : EmissionFolderEntry list`; `parseEmissionFolderEntry` + `parseEmissionFolders`.
+- `src/Projection.Pipeline/EmissionFoldersBinding.fs` — NEW typed `EmissionFolders` runtime value + `EmissionFoldersBinding.fromConfig` + folder-validation taxonomy + `pipeline.emissionFolders.*` error code namespace.
+- `src/Projection.Pipeline/Pipeline.fs` — `applyEmissionFolderOverrides` private helper at the `ArtifactByKind<SsdtFile>` layer; widened `projectFromChainWithState`, `projectWithState`, `runWithConfig` signatures.
+- `tests/Projection.Tests/EmissionFoldersBindingTests.fs` — NEW 15-fact binder coverage.
+- `tests/Projection.Tests/EmissionFoldersOverlayTests.fs` — NEW 9-fact apply coverage through `Compose.projectWithState`.
+- `tests/Projection.Tests/ConfigTests.fs` — 5 new emissionFolders parser facts.
+- `DECISIONS 2026-05-20 (slice C.2 — special-circumstances axis full lift)` — the lesson C.3 carried forward + extended.
+- `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)` — Chapter C 6-slice plan; named `Overrides.EmissionFolders` as C.3 scope.
+- `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs:410-418` — `relativePath` LINT-ALLOW rationale + forward-slash convention.
+- `src/Projection.Core/ArtifactByKind.fs:69-82` — `create` smart constructor (strict-equality keyset enforcement; re-validates on every reconstruction).
+

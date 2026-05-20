@@ -79,6 +79,7 @@ let private emptyOverrides : Config.OverridesSection = {
     StaticData             = None
     CircularDependencies   = None
     AllowMissingPrimaryKey = []
+    EmissionFolders        = []
 }
 
 let private mkConfig (overrides: Config.OverridesSection) : Config.Config =

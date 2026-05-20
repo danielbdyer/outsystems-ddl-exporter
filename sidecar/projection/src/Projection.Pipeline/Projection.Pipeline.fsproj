@@ -15,6 +15,7 @@
     <Compile Include="TighteningBinding.fs" />
     <Compile Include="SpecialCircumstancesBinding.fs" />
     <Compile Include="SpecialCircumstancesDiagnostics.fs" />
+    <Compile Include="EmissionFoldersBinding.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="RegisteredAllTransforms.fs" />
     <Compile Include="Bulk.fs" />

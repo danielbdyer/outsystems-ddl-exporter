@@ -172,6 +172,10 @@ let private fullConfigJson = """{
         },
         "allowMissingPrimaryKey": [
             { "module": "AppCore", "entity": "LegacyAuditLog" }
+        ],
+        "emissionFolders": [
+            { "ref": { "module": "AppCore", "entity": "User" }, "folder": "Static/Reference" },
+            { "ref": { "module": "AppCore", "entity": "Organization" }, "folder": "Static/Tenant" }
         ]
     },
     "dynamicData": {
@@ -259,6 +263,57 @@ let ``Config.parse: overrides.migrationDependencies and staticData carry distinc
     Assert.True(cfg.Overrides.StaticData.IsSome)
     Assert.Equal("overrides/mig.json",    cfg.Overrides.MigrationDependencies.Value.Path)
     Assert.Equal("overrides/static.json", cfg.Overrides.StaticData.Value.Path)
+
+[<Fact>]
+let ``Config.parse: overrides.emissionFolders round-trips ref + folder fields`` () =
+    let cfg = Config.parse fullConfigJson |> mustOk
+    let folders = cfg.Overrides.EmissionFolders
+    Assert.Equal(2, folders.Length)
+    Assert.Equal("AppCore",          folders.[0].Ref.Module)
+    Assert.Equal("User",             folders.[0].Ref.Entity)
+    Assert.Equal("Static/Reference", folders.[0].Folder)
+    Assert.Equal("AppCore",          folders.[1].Ref.Module)
+    Assert.Equal("Organization",     folders.[1].Ref.Entity)
+    Assert.Equal("Static/Tenant",    folders.[1].Folder)
+
+[<Fact>]
+let ``Config.parse: emissionFolders entry missing ref surfaces structured error`` () =
+    let json = """{
+        "model": { "path": "m.json" },
+        "overrides": {
+            "emissionFolders": [ { "folder": "Static" } ]
+        }
+    }"""
+    let errors = Config.parse json |> mustFail
+    Assert.True(hasCode "pipeline.config.missingProperty" errors)
+
+[<Fact>]
+let ``Config.parse: emissionFolders entry missing folder surfaces structured error`` () =
+    let json = """{
+        "model": { "path": "m.json" },
+        "overrides": {
+            "emissionFolders": [ { "ref": { "module": "M", "entity": "E" } } ]
+        }
+    }"""
+    let errors = Config.parse json |> mustFail
+    Assert.True(hasCode "pipeline.config.missingProperty" errors)
+
+[<Fact>]
+let ``Config.parse: emissionFolders non-array shape surfaces structured error`` () =
+    let json = """{
+        "model": { "path": "m.json" },
+        "overrides": {
+            "emissionFolders": "not-an-array"
+        }
+    }"""
+    let errors = Config.parse json |> mustFail
+    Assert.True(hasCode "pipeline.config.typeMismatch" errors)
+
+[<Fact>]
+let ``Config.parse: emissionFolders absent yields empty list`` () =
+    let json = """{ "model": { "path": "m.json" } }"""
+    let cfg = Config.parse json |> mustOk
+    Assert.Empty(cfg.Overrides.EmissionFolders)
 
 [<Fact>]
 let ``Config.parse: emission gates round-trip as booleans`` () =

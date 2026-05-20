@@ -42,6 +42,8 @@
     <Compile Include="TighteningBindingTests.fs" />
     <Compile Include="SpecialCircumstancesBindingTests.fs" />
     <Compile Include="SpecialCircumstancesDiagnosticsTests.fs" />
+    <Compile Include="EmissionFoldersBindingTests.fs" />
+    <Compile Include="EmissionFoldersOverlayTests.fs" />
     <Compile Include="ComposeAtomicWriteTests.fs" />
     <Compile Include="SqlTypeCorrespondenceTests.fs" />
     <Compile Include="SqlLiteralTests.fs" />
