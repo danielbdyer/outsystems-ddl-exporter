@@ -39,6 +39,7 @@
     <ProjectReference Include="..\Projection.Targets.Json\Projection.Targets.Json.fsproj" />
     <ProjectReference Include="..\Projection.Targets.Distributions\Projection.Targets.Distributions.fsproj" />
     <ProjectReference Include="..\Projection.Targets.Data\Projection.Targets.Data.fsproj" />
+    <ProjectReference Include="..\Projection.Targets.OperationalDiagnostics\Projection.Targets.OperationalDiagnostics.fsproj" />
   </ItemGroup>
 
 </Project>

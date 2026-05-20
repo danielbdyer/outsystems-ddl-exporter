@@ -8,6 +8,7 @@ open Projection.Adapters.Osm
 open Projection.Targets.SSDT
 open Projection.Targets.Json
 open Projection.Targets.Distributions
+open Projection.Targets.OperationalDiagnostics
 
 /// End-to-end pipeline composition: V1 `osm_model.json` →
 /// `Projection.Adapters.Osm.CatalogReader.parse` → V2 Catalog →
@@ -60,6 +61,19 @@ module Compose =
             /// not yet thread profile evidence end-to-end. Same
             /// JsonNode-at-the-seam treatment as `Json` above.
             Distributions : JsonNode
+            /// Chapter 5+ slice `5.13.remediation-emitter` —
+            /// per-decision remediation SQL (UPDATE/DELETE/SELECT
+            /// options for operator-attention findings: nullability
+            /// conflicts + FK orphans + unique-index duplicates).
+            /// Operator-safety contract: only SELECT active; UPDATE
+            /// + DELETE commented-out by default. Written as
+            /// `manifest.remediation.sql` alongside the SSDT bundle.
+            RemediationSql : string
+            /// Chapter 5+ slice `5.13.summary-formatter` — 6-bucket
+            /// rollup prose (PrimaryKey / Physical / Mandatory /
+            /// ForeignKey / Unique / Remediation). Written as
+            /// `manifest.summary.txt` alongside the SSDT bundle.
+            SummaryText : string
         }
 
     /// Chapter C slice C.2 — run-shape value returned by
@@ -83,6 +97,14 @@ module Compose =
         let json = "projection.json"
         [<Literal>]
         let distributions = "distributions.json"
+        /// Chapter 5+ slice 5.13.remediation-emitter — per-finding
+        /// UPDATE/DELETE/SELECT options for operator-attention findings.
+        [<Literal>]
+        let remediation = "manifest.remediation.sql"
+        /// Chapter 5+ slice 5.13.summary-formatter — 6-bucket rollup
+        /// prose for operator review of tightening decisions.
+        [<Literal>]
+        let summary = "manifest.summary.txt"
 
     /// Aggregate the SSDT bundle's per-table SQL files into one
     /// concatenated SQL string (manifest.json excluded; iterates the
@@ -237,10 +259,33 @@ module Compose =
              match JsonNode.Parse(DistributionsEmitter.emit emittedCatalog Profile.empty) with
              | null -> invalidOp "Compose.project: DistributionsEmitter.emit produced unparseable text (unreachable)"
              | n    -> n)
+        // Chapter 5+ slices 5.13.remediation-emitter +
+        // 5.13.summary-formatter — per-decision remediation SQL +
+        // 6-bucket summary prose. Pull DecisionSets from the
+        // post-chain ComposeState; empty defaults when a decision
+        // set wasn't produced (no interventions registered for the
+        // axis). Bench-scoped at each emitter's boundary.
+        let nullabilityDecisions =
+            composedState.NullabilityDecisions
+            |> Option.defaultValue NullabilityRules.emptyDecisionSet
+        let uniqueIndexDecisions =
+            composedState.UniqueIndexDecisions
+            |> Option.defaultValue UniqueIndexRules.emptyDecisionSet
+        let foreignKeyDecisions =
+            composedState.ForeignKeyDecisions
+            |> Option.defaultValue ForeignKeyRules.emptyDecisionSet
+        let remediationSql =
+            RemediationEmitter.emit
+                composedState.Catalog nullabilityDecisions uniqueIndexDecisions foreignKeyDecisions
+        let summaryText =
+            SummaryFormatter.formatText
+                nullabilityDecisions uniqueIndexDecisions foreignKeyDecisions
         let outputs = {
-            SsdtBundle    = bundle
-            Json          = json
-            Distributions = distributions
+            SsdtBundle     = bundle
+            Json           = json
+            Distributions  = distributions
+            RemediationSql = remediationSql
+            SummaryText    = summaryText
         }
         outputs, composedState
 
@@ -397,10 +442,20 @@ module Compose =
         // Distributions
         let distributionsStaging = Path.Combine(stagingDir, ArtifactPath.distributions)
         writeFile distributionsStaging (outputs.Distributions.ToJsonString(jsonOpts))
+        // Chapter 5+ slice 5.13.remediation-emitter — per-finding
+        // UPDATE/DELETE/SELECT (SQL text artifact, not JSON).
+        let remediationStaging = Path.Combine(stagingDir, ArtifactPath.remediation)
+        writeFile remediationStaging outputs.RemediationSql
+        // Chapter 5+ slice 5.13.summary-formatter — 6-bucket rollup
+        // prose (plain-text artifact).
+        let summaryStaging = Path.Combine(stagingDir, ArtifactPath.summary)
+        writeFile summaryStaging outputs.SummaryText
         // Final-path projection (under the eventual outputDir, post-swap)
         let jsonFinal = Path.Combine(outputDir, ArtifactPath.json)
         let distributionsFinal = Path.Combine(outputDir, ArtifactPath.distributions)
-        bundleFinalPaths @ [ jsonFinal; distributionsFinal ]
+        let remediationFinal = Path.Combine(outputDir, ArtifactPath.remediation)
+        let summaryFinal = Path.Combine(outputDir, ArtifactPath.summary)
+        bundleFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal ]
 
     let private safeCleanupStaging (stagingDir: string) : unit =
         if Directory.Exists stagingDir then

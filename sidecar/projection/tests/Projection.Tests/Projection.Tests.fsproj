@@ -48,6 +48,8 @@
     <Compile Include="TransformGroupsFilterTests.fs" />
     <Compile Include="InsertionPolicyBindingTests.fs" />
     <Compile Include="LogSinkVerbosityTests.fs" />
+    <Compile Include="RemediationEmitterTests.fs" />
+    <Compile Include="SummaryFormatterTests.fs" />
     <Compile Include="ComposeAtomicWriteTests.fs" />
     <Compile Include="SqlTypeCorrespondenceTests.fs" />
     <Compile Include="SqlLiteralTests.fs" />
