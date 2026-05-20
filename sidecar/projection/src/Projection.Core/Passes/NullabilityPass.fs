@@ -168,7 +168,22 @@ module NullabilityPass =
                     Map.ofList [
                         "interventionId", decision.InterventionId
                     ]
-                SuggestedConfig = None
+                SuggestedConfig =
+                    // Ceiling to 4 decimal places: tightest budget that
+                    // makes observed <= allowed, turning the outcome to
+                    // EnforceNotNull(LogicalMandatoryWithinBudget).
+                    // To keep the column nullable instead, the operator
+                    // should set allowMandatoryRelaxation: true.
+                    let frac =
+                        if rows = 0L then 1.0m
+                        else decimal nulls / decimal rows
+                    let suggested =
+                        System.Math.Ceiling(frac * 10000m) / 10000m
+                    Some {
+                        Path  = sprintf "$.tightening.interventions[?(@.id==\"%s\")].nullBudget" decision.InterventionId
+                        Value = suggested.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)
+                        Note  = Some "Raises nullBudget to the observed null fraction; tightening then proceeds under LogicalMandatoryWithinBudget. To keep the column nullable, set allowMandatoryRelaxation: true instead."
+                    }
             }
 
     /// Run the NullabilityPass via the canonical `Composition.fanOut`

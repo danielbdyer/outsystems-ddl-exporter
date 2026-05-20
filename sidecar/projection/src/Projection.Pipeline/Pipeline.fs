@@ -74,6 +74,12 @@ module Compose =
             /// ForeignKey / Unique / Remediation). Written as
             /// `manifest.summary.txt` alongside the SSDT bundle.
             SummaryText : string
+            /// H-032 — operator-facing config-edit suggestions derived
+            /// from the pass-chain diagnostic stream. Every
+            /// `DiagnosticEntry` whose `SuggestedConfig = Some _` is
+            /// deduplicated by `Path` and emitted here. Written as
+            /// `suggest-config.json` alongside the SSDT bundle.
+            SuggestConfigJson : JsonNode
         }
 
     /// Chapter C slice C.2 — run-shape value returned by
@@ -105,6 +111,11 @@ module Compose =
         /// prose for operator review of tightening decisions.
         [<Literal>]
         let summary = "manifest.summary.txt"
+        /// H-032 — config-edit suggestions document. JSON array of
+        /// deduplicated `SuggestedConfig` payloads from the diagnostic
+        /// stream; operator reviews and applies to their config file.
+        [<Literal>]
+        let suggestConfig = "suggest-config.json"
 
     /// Aggregate the SSDT bundle's per-table SQL files into one
     /// concatenated SQL string (manifest.json excluded; iterates the
@@ -222,10 +233,11 @@ module Compose =
         : Outputs * ComposeState =
         let filteredChain = filterChainByGroups groups chain
         use _ = Bench.scope "compose.project"
-        let composedState =
-            (use _ = Bench.scope "compose.runChain"
-             PassChainAdapter.compose filteredChain (ComposeState.initial catalog)
-             |> LineageDiagnostics.payload)
+        let composed =
+            use _ = Bench.scope "compose.runChain"
+            PassChainAdapter.compose filteredChain (ComposeState.initial catalog)
+        let composedState   = LineageDiagnostics.payload composed
+        let passEntries     = LineageDiagnostics.entries composed
         // Chapter 4.9 slice δ — apply EmissionPolicy.filterPlatformAutoIndexes
         // at the post-chain seam. The filter is `OperatorIntent of Emission`
         // per pillar 9; lives outside the registered pass chain because
@@ -280,12 +292,16 @@ module Compose =
         let summaryText =
             SummaryFormatter.formatText
                 nullabilityDecisions uniqueIndexDecisions foreignKeyDecisions
+        let suggestConfigJson =
+            (use _ = Bench.scope "emit.suggestConfig"
+             SuggestConfigEmitter.emit passEntries)
         let outputs = {
-            SsdtBundle     = bundle
-            Json           = json
-            Distributions  = distributions
-            RemediationSql = remediationSql
-            SummaryText    = summaryText
+            SsdtBundle        = bundle
+            Json              = json
+            Distributions     = distributions
+            RemediationSql    = remediationSql
+            SummaryText       = summaryText
+            SuggestConfigJson = suggestConfigJson
         }
         outputs, composedState
 
@@ -450,12 +466,16 @@ module Compose =
         // prose (plain-text artifact).
         let summaryStaging = Path.Combine(stagingDir, ArtifactPath.summary)
         writeFile summaryStaging outputs.SummaryText
+        // H-032 — config-edit suggestion document (JSON).
+        let suggestConfigStaging = Path.Combine(stagingDir, ArtifactPath.suggestConfig)
+        writeFile suggestConfigStaging (outputs.SuggestConfigJson.ToJsonString(jsonOpts))
         // Final-path projection (under the eventual outputDir, post-swap)
-        let jsonFinal = Path.Combine(outputDir, ArtifactPath.json)
+        let jsonFinal          = Path.Combine(outputDir, ArtifactPath.json)
         let distributionsFinal = Path.Combine(outputDir, ArtifactPath.distributions)
-        let remediationFinal = Path.Combine(outputDir, ArtifactPath.remediation)
-        let summaryFinal = Path.Combine(outputDir, ArtifactPath.summary)
-        bundleFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal ]
+        let remediationFinal   = Path.Combine(outputDir, ArtifactPath.remediation)
+        let summaryFinal       = Path.Combine(outputDir, ArtifactPath.summary)
+        let suggestConfigFinal = Path.Combine(outputDir, ArtifactPath.suggestConfig)
+        bundleFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal ]
 
     let private safeCleanupStaging (stagingDir: string) : unit =
         if Directory.Exists stagingDir then
@@ -597,6 +617,42 @@ module Compose =
             let insertionErrs  = match insertionR  with Ok _ -> [] | Error es -> es
             Result.failure (tighteningErrs @ insertionErrs)
 
+    /// Synchronous core for `runWithConfig`. Extracted from the `task { }`
+    /// block to keep the async surface minimal and allow static state-machine
+    /// compilation (avoids FS3511 — deeply nested matches inside `task { }`
+    /// prevent static compilation of the resumable state machine).
+    let private runWithConfigCore
+        (cfg: Config.Config)
+        (parsed: Result<Catalog>)
+        : Result<RunReport> =
+        match parsed with
+        | Error errors -> Result.failure errors
+        | Ok catalog ->
+            match applyRenames cfg catalog with
+            | Error errors -> Result.failure errors
+            | Ok renamedCatalog ->
+                let policyR    = buildPolicyFromConfig cfg renamedCatalog
+                let overridesR = SpecialCircumstancesBinding.fromConfig renamedCatalog cfg
+                let foldersR   = EmissionFoldersBinding.fromConfig renamedCatalog cfg
+                let groupsR    = TransformGroupsBinding.fromConfig cfg
+                match policyR, overridesR, foldersR, groupsR with
+                | Ok policy, Ok overrides, Ok folders, Ok groups ->
+                    let profile = Profile.empty  // wired to LiveProfiler when full-export path lands
+                    let outputs, finalState =
+                        projectWithState policy profile EmissionPolicy.empty folders groups renamedCatalog
+                    let diagnostics =
+                        SpecialCircumstancesDiagnostics.emit overrides finalState
+                        @ InactiveAttributeDiagnostics.emit profile
+                    match write cfg.Output.Dir outputs with
+                    | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics }
+                    | Error errors -> Result.failure errors
+                | _ ->
+                    let policyErrs    = match policyR    with Ok _ -> [] | Error es -> es
+                    let overridesErrs = match overridesR with Ok _ -> [] | Error es -> es
+                    let foldersErrs   = match foldersR   with Ok _ -> [] | Error es -> es
+                    let groupsErrs    = match groupsR    with Ok _ -> [] | Error es -> es
+                    Result.failure (policyErrs @ overridesErrs @ foldersErrs @ groupsErrs)
+
     /// Full end-to-end driven by a parsed `Config`. Reads `Model.Path`,
     /// applies config-driven catalog rewrites (rename), binds operator
     /// `Policy` (tightening — Chapter C slice C.1) + operator
@@ -604,40 +660,11 @@ module Compose =
     /// acknowledgements — Chapter C slice C.2) + operator
     /// `EmissionFolders` (per-kind SSDT folder overrides — Chapter C
     /// slice C.3), projects through the policy-aware chain capturing
-    /// the post-chain `ComposeState`, emits special-circumstances
-    /// diagnostics with operator-allowlist `Metadata.acceptedVia`
-    /// annotation, writes to `Output.Dir`, returns the paths + the
-    /// diagnostic stream as a `RunReport`.
+    /// the post-chain `ComposeState`, emits special-circumstances and
+    /// inactive-attribute diagnostics, writes to `Output.Dir`, returns
+    /// the paths + diagnostic stream as a `RunReport`.
     let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
         task {
             let! parsed = read cfg.Model.Path
-            match parsed with
-            | Ok catalog ->
-                match applyRenames cfg catalog with
-                | Ok renamedCatalog ->
-                    let policyR     = buildPolicyFromConfig cfg renamedCatalog
-                    let overridesR  = SpecialCircumstancesBinding.fromConfig renamedCatalog cfg
-                    let foldersR    = EmissionFoldersBinding.fromConfig renamedCatalog cfg
-                    let groupsR     = TransformGroupsBinding.fromConfig cfg
-                    match policyR, overridesR, foldersR, groupsR with
-                    | Ok policy, Ok overrides, Ok folders, Ok groups ->
-                        let outputs, finalState =
-                            projectWithState policy Profile.empty EmissionPolicy.empty folders groups renamedCatalog
-                        let diagnostics =
-                            SpecialCircumstancesDiagnostics.emit overrides finalState
-                        match write cfg.Output.Dir outputs with
-                        | Ok paths ->
-                            return Result.success { Paths = paths; Diagnostics = diagnostics }
-                        | Error errors ->
-                            return Result.failure errors
-                    | _ ->
-                        let policyErrs    = match policyR    with Ok _ -> [] | Error es -> es
-                        let overridesErrs = match overridesR with Ok _ -> [] | Error es -> es
-                        let foldersErrs   = match foldersR   with Ok _ -> [] | Error es -> es
-                        let groupsErrs    = match groupsR    with Ok _ -> [] | Error es -> es
-                        return Result.failure (policyErrs @ overridesErrs @ foldersErrs @ groupsErrs)
-                | Error errors ->
-                    return Result.failure errors
-            | Error errors ->
-                return Result.failure errors
+            return runWithConfigCore cfg parsed
         }
