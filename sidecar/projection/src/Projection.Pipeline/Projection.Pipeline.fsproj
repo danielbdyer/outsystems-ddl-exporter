@@ -22,6 +22,8 @@
     <Compile Include="TransformGroupsBinding.fs" />
     <Compile Include="InsertionPolicyBinding.fs" />
     <Compile Include="Pipeline.fs" />
+    <Compile Include="PolicyDiff.fs" />
+    <Compile Include="ConflictDetector.fs" />
     <Compile Include="RegisteredAllTransforms.fs" />
     <Compile Include="Bulk.fs" />
     <Compile Include="Deploy.fs" />

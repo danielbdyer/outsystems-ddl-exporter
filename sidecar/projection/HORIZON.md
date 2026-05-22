@@ -668,7 +668,7 @@ the consumer-pull pressure.
 
 ### H-016 — Policy as a typed combinator language
 
-**Status:** proposed
+**Status:** shipped (Cluster C, 2026-05-22)
 
 **Gap.** Policy is currently a `Policy` record produced by parsing a
 config file (TOML / JSON). The parsing is a 700+ line nested match
@@ -1041,7 +1041,7 @@ The pipeline becomes a policy advisor.
 
 ### H-033 — Policy diff: compare two pipeline runs under different policies
 
-**Status:** proposed
+**Status:** shipped (Cluster C, 2026-05-22)
 
 **Gap.** There is no way to compare what the pipeline would produce
 under two different policies. The operator cannot see "what changes if
@@ -1069,7 +1069,7 @@ from the two lineage trails, not from the two DDL outputs.
 
 ### H-034 — Cross-pass conflict detection
 
-**Status:** proposed
+**Status:** shipped (Cluster C, 2026-05-22)
 
 **Gap.** Multiple passes may emit competing `DiagnosticEntry` values for
 the same `SsKey`. `NullabilityPass` and a hypothetical `TighteningPass`
@@ -1101,7 +1101,7 @@ Conflicts surface as a dedicated section in the manifest.
 
 ### H-035 — Policy regression testing framework
 
-**Status:** proposed
+**Status:** shipped (Cluster C, 2026-05-22)
 
 **Gap.** There is no way to assert that a policy change does not
 inadvertently change the DDL surface for `SsKey` values unrelated to
@@ -1127,7 +1127,7 @@ let ``policy change on axis X does not affect SsKey outside axis X's scope``
 
 ### H-036 — v2 skeleton-only CLI verb (osm skeleton)
 
-**Status:** proposed
+**Status:** shipped (Cluster C, 2026-05-22)
 
 **Gap.** `Compose.runSkeleton` is functionally complete — it runs the
 DataIntent-only pipeline (4 passes, `Policy.empty`, no operator
@@ -1753,7 +1753,7 @@ comonads, and the limits/colimits that govern how schemas combine.
 
 ### H-060 — Natural transformation between PolicyExpr and Policy record
 
-**Status:** proposed
+**Status:** shipped (Cluster C, 2026-05-22)
 
 **Gap.** H-016 proposes a `PolicyExpr` combinator language whose
 `eval : PolicyExpr -> Policy` produces the familiar `Policy` record.
@@ -2492,7 +2492,7 @@ topological dependency (H-038).
 
 ### H-085 — Policy versioning with SemVer
 
-**Status:** proposed
+**Status:** shipped (Cluster C, 2026-05-22)
 
 **Gap.** A policy file is a static document with no version. When a
 policy is updated, there is no record of what changed or when. The
@@ -2526,7 +2526,7 @@ changes.
 
 ### H-086 — Operator approval workflow for SuggestedConfigs
 
-**Status:** proposed
+**Status:** shipped (Cluster C, 2026-05-22)
 
 **Gap.** `SuggestedConfig` (H-031 / H-032) emits a policy suggestion.
 There is no workflow for an operator to accept, reject, or annotate the

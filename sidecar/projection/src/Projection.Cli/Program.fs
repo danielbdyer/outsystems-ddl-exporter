@@ -23,8 +23,10 @@ let private usageLines : string list =
         "    projection full-export --config <path> [--output <dir>] [--verbose]"
         "    projection emit --config <path>"
         "    projection emit [--skeleton-only] <input-osm-model.json> <output-dir>"
+        "    projection skeleton <input-osm-model.json> <output-dir>"
         "    projection deploy <input-osm-model.json>"
         "    projection canary <source-ddl-file>"
+        "    projection approve <policy-version> --approver <name> [--rationale <text>]"
         ""
         "SUBCOMMANDS:"
         "    full-export   Phase B structural-exit subcommand (chapter B.4 slice 7)."
@@ -46,6 +48,15 @@ let private usageLines : string list =
         "                                  only (the four pure-DataIntent passes; per"
         "                                  chapter A.4.7' slice ζ)."
         "              <input> <out>       legacy positional form (kept during A.1 transition)."
+        ""
+        "    skeleton  Project through skeletonChainSteps only (the four pure-"
+        "              DataIntent passes). Equivalent to `emit --skeleton-only`."
+        "              Top-level verb for operator convenience (H-036)."
+        ""
+        "    approve   Record an approval decision for a policy version (H-086)."
+        "              Prints the `ApprovalRecord` JSON to stdout. The policy"
+        "              version is the hex SHA-256 digest produced by"
+        "              `VersionedPolicy.versionOf`. Exit 0 on success."
         ""
         "    deploy  Parse V1 JSON, project SSDT, spin up an ephemeral"
         "            SQL Server container, deploy the SSDT, count tables,"
@@ -513,6 +524,36 @@ let private runCanary (sourceDdlPath: string) : int =
         dumpBench "canary"
         exitCode
 
+/// H-036: `projection skeleton <input> <output>` top-level verb. Identical
+/// semantics to `emit --skeleton-only`; the top-level verb is the ergonomic
+/// form for operator automation (H-036, Cluster C policy intelligence).
+let private runSkeleton (inputPath: string) (outputDir: string) : int =
+    runEmitSkeletonOnly inputPath outputDir
+
+/// H-086: `projection approve <policyVersion> --approver <name> [--rationale <text>]`.
+/// Creates an `ApprovalRecord` for the given policy version, prints it as a
+/// structured summary to stdout, and exits 0. The policy version string is
+/// the hex SHA-256 digest from `VersionedPolicy.versionOf` (or any opaque
+/// version identifier the operator tracks). This verb does not persist the
+/// record — piping stdout to a JSON store is the operator's responsibility.
+let private runApprove
+    (policyVersion: string)
+    (approver: string)
+    (rationale: string option)
+    : int =
+    let record =
+        ApprovalWorkflow.pending policyVersion
+        |> ApprovalWorkflow.approveNow approver rationale
+    printfn "projection: approved policy version %s" policyVersion
+    printfn "  approver  : %s" approver
+    printfn "  decision  : Approved"
+    printfn "  at        : %s" (record.At.ToString "o")
+    match rationale with
+    | Some r -> printfn "  rationale : %s" r
+    | None   -> ()
+    dumpBench "approve"
+    0
+
 /// Dispatch `full-export` via the Argu surface (`FullExportArgs`).
 /// Argument-parse failures surface as exit code 1 with a usage hint;
 /// successful parses route to `runFullExport`.
@@ -592,6 +633,12 @@ let main argv =
         runEmitSkeletonOnly inputPath outputDir
     | [| "emit"; inputPath; outputDir |] ->
         runEmit inputPath outputDir
+    | [| "skeleton"; inputPath; outputDir |] ->
+        runSkeleton inputPath outputDir
+    | [| "approve"; policyVersion; "--approver"; approver |] ->
+        runApprove policyVersion approver None
+    | [| "approve"; policyVersion; "--approver"; approver; "--rationale"; rationale |] ->
+        runApprove policyVersion approver (Some rationale)
     | [| "deploy"; inputPath |] ->
         runDeploy inputPath
     | [| "canary"; sourceDdlPath |] ->

@@ -48,6 +48,9 @@
     <Compile Include="Strategies/CategoricalUniquenessRules.fs" />
     <Compile Include="ComposeState.fs" />
     <Compile Include="Classification.fs" />
+    <Compile Include="PolicyExpr.fs" />
+    <Compile Include="VersionedPolicy.fs" />
+    <Compile Include="ApprovalWorkflow.fs" />
     <Compile Include="Lineage.fs" />
     <Compile Include="LineageBuffer.fs" />
     <Compile Include="Diagnostics.fs" />
