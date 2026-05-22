@@ -610,34 +610,59 @@ pipeline where each step's output type is the next step's input type.
 
 ### H-015 — Lens / optic library for Catalog navigation
 
-**Status:** proposed
+**Status:** shipped (Cluster B follow-on, 2026-05-22).
 
-**Gap.** Deep updates in `Catalog` — modifying a specific
-`Attribute.NullabilityDecision` inside a specific `Kind` inside a
-specific `Module` — require three nested record-update expressions.
-The path `catalog.Modules.[i].Kinds.[j].Attributes.[k]` is not
-addressable as a value.
+**Gap (resolved).** A minimal `Lens<'s, 'a>` primitive now ships at
+`src/Projection.Core/Diagnostics.fs` (alongside `Prism<'a, 'b>` — they
+form the optics duo).
 
-**Implementation.** A minimal optic layer (no external dependency):
-
+**Shipped surface.**
 ```fsharp
 type Lens<'s, 'a> = {
     Get : 's -> 'a
     Set : 'a -> 's -> 's
 }
 
-val kindAtKey    : SsKey -> Lens<Catalog, Kind option>
-val attrAtKey    : SsKey -> Lens<Kind, Attribute option>
-val nullability  : Lens<Attribute, NullabilityDecision>
+module Lens =
+    val get      : Lens<'s, 'a> -> 's -> 'a
+    val set      : Lens<'s, 'a> -> 'a -> 's -> 's
+    val over     : Lens<'s, 'a> -> ('a -> 'a) -> 's -> 's
+    val identity : Lens<'a, 'a>
+    val compose  : Lens<'s, 'a> -> Lens<'a, 'b> -> Lens<'s, 'b>
 ```
 
-Composed as `kindAtKey key >=> attrAtKey attrKey >=> nullability`.
+Plus canonical Catalog lenses in `module CatalogLenses`:
+`modules`, `sequences`, `kindsOf`, `attributesOf`, `referencesOf`,
+`indexesOf`. Consumers compose these via `Lens.compose` to reach
+arbitrary depth without re-deriving boilerplate.
 
-**Location.** New module `src/Projection.Core/Optics.fs`.
+**Algebra (optics duo).** Where `Prism<'a, 'b>` (H-010) is the
+**partial** bidirectional accessor (Get always succeeds; ReverseGet
+may fail), `Lens<'s, 'a>` is the **total** bidirectional accessor
+(both Get and Set always succeed). Together they cover the standard
+optics use cases:
+- **Lens** for fields that always exist (`Catalog.Modules`)
+- **Prism** for fields that may not exist (`Catalog.tryFindKind`)
 
-**Trigger.** When pass implementations write three or more nested
-record-update expressions targeting the same deep path. The Tightening
-pass family is the most likely trigger point.
+The trinity completes when an `Iso<'a, 'b>` (lossless bidirectional)
+arrives — but no consumer demand surfaces today.
+
+**Three lens laws (property-tested in `DiagnosticsTests.fs`):**
+- **Get-Set:** `set (get s) s = s` — round-trip preserves source.
+- **Set-Get:** `get (set a s) = a` — set value is gettable.
+- **Set-Set:** `set a' (set a s) = set a' s` — second set overwrites.
+
+Plus `over` equivalence with `set ∘ f ∘ get` and `compose` law
+preservation.
+
+**Unlocks.** Deep-nested updates in passes (Policy.fs's
+`filterPlatformAutoIndexes`, SymmetricClosure.fs's `withInverses`)
+have a typed primitive available. Future deep-update sites compose
+the existing canonical lenses without reinventing the boilerplate.
+Current refactor of existing sites defers until a slice opens with
+the consumer-pull pressure.
+
+---
 
 ---
 

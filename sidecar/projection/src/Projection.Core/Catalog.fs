@@ -1203,6 +1203,54 @@ module Module =
 [<RequireQualifiedAccess>]
 module Catalog =
 
+    // ===========================================================================
+    // Catalog traversal primitives (chapter-Cluster-B compression; 2026-05-22).
+    //
+    // Cross-cutting workhorse functions for "walk every Kind in the catalog"
+    // patterns. Replaces 5+ inline `c.Modules |> List.collect (fun m -> m.Kinds)
+    // |> ...` boilerplate sites with named primitives. Pairs with the existing
+    // `CatalogTraversal.mapKinds` in `LineageBuffer.fs` (which carries Lineage
+    // emission); these primitives are pure (no Lineage carrier). The existing
+    // `allKinds` (defined later in this module with Bench instrumentation per
+    // the iterator-logging discipline) is the public scan accessor; the
+    // primitives below add fold / iter / map / update shapes for the
+    // recurring traversal patterns that `allKinds` alone doesn't capture.
+    //
+    // **Naming convention:** `*Kinds` for kind-level traversals;
+    // `*ModulesKinds` if the owning Module is needed alongside the Kind.
+    // ===========================================================================
+
+    /// Every (Module, Kind) pair in the catalog. Used by traversals
+    /// that need to know which Module owns each Kind (e.g.,
+    /// `kindOwnershipIndex` builds a `SsKey -> Module` map).
+    let allModulesKinds (c: Catalog) : (Module * Kind) list =
+        c.Modules |> List.collect (fun m -> m.Kinds |> List.map (fun k -> (m, k)))
+
+    /// Fold over every Kind in the catalog with access to the owning
+    /// Module. Used to build SsKey-indexed maps and accumulate
+    /// per-kind state in one pass.
+    let foldKinds (f: Module -> Kind -> 'acc -> 'acc) (initial: 'acc) (c: Catalog) : 'acc =
+        c.Modules |> List.fold (fun a m -> m.Kinds |> List.fold (fun a' k -> f m k a') a) initial
+
+    /// Iterate over every Kind with side effects (rare in pure-core
+    /// code; used by benchmarks and audit consumers).
+    let iterKinds (f: Module -> Kind -> unit) (c: Catalog) : unit =
+        c.Modules |> List.iter (fun m -> m.Kinds |> List.iter (f m))
+
+    /// Map every Kind through a pure transformation (Module ownership
+    /// preserved). Sibling to `CatalogTraversal.mapKinds` (which
+    /// emits Lineage); this form is for callers that don't need
+    /// trail emission.
+    let mapKinds (f: Kind -> Kind) (c: Catalog) : Catalog =
+        { c with Modules = c.Modules |> List.map (fun m -> { m with Kinds = m.Kinds |> List.map f }) }
+
+    /// Update Kinds matching a predicate; non-matching kinds pass
+    /// through unchanged. Compresses the recurring
+    /// `Catalog -> Modules.map(fun m -> {m with Kinds = m.Kinds.map(if pred then update else id)})`
+    /// pattern in pass drivers that touch a single Kind's fields.
+    let updateKindsWhere (predicate: Kind -> bool) (updater: Kind -> Kind) (c: Catalog) : Catalog =
+        mapKinds (fun k -> if predicate k then updater k else k) c
+
     /// Per-Catalog kind-index cache. Per slice
     /// A.4.7'-prelude.perf-sweep-2 (`PERF_OPPORTUNITIES.md` Rank 1 —
     /// highest single-finding leverage): `tryFindKind` is the hottest
@@ -1226,11 +1274,7 @@ module Catalog =
         match kindIndexCache.TryGetValue(c) with
         | true, idx -> idx
         | false, _ ->
-            let idx =
-                c.Modules
-                |> List.collect (fun m -> m.Kinds)
-                |> List.map (fun k -> k.SsKey, k)
-                |> Map.ofList
+            let idx = foldKinds (fun _ k acc -> Map.add k.SsKey k acc) Map.empty c
             kindIndexCache.GetValue(
                 c,
                 System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Map<SsKey, Kind>>.CreateValueCallback(fun _ -> idx))
@@ -1239,10 +1283,7 @@ module Catalog =
         match kindOwnershipIndexCache.TryGetValue(c) with
         | true, idx -> idx
         | false, _ ->
-            let idx =
-                c.Modules
-                |> List.collect (fun m -> m.Kinds |> List.map (fun k -> k.SsKey, m))
-                |> Map.ofList
+            let idx = foldKinds (fun m k acc -> Map.add k.SsKey m acc) Map.empty c
             kindOwnershipIndexCache.GetValue(
                 c,
                 System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Map<SsKey, Module>>.CreateValueCallback(fun _ -> idx))
@@ -1281,30 +1322,31 @@ module Catalog =
     /// violation in one Result.
     let create (modules: Module list) (sequences: Sequence list) : Result<Catalog> =
         use _ = Bench.scope "ir.catalog.create"
+        // Chapter-Cluster-B compression (2026-05-22): the three
+        // duplicate-key partitions (modules / kinds / sequences) share
+        // the same algorithmic shape and now go through
+        // `Validation.duplicateKeyErrors`. The reference / index
+        // dangling-key checks have a richer per-error shape (per-Kind
+        // attrKeys context) and stay inline.
+
         let moduleDupes =
             modules
-            |> List.groupBy (fun m -> m.SsKey)
-            |> List.filter (fun (_, ms) -> List.length ms > 1)
-            |> List.map fst
-            |> List.map (fun k ->
-                ValidationError.create
-                    "catalog.modules.duplicateKey"
-                    (sprintf
-                        "Catalog has duplicate Module SsKey %A; A11 requires disjoint modules."
-                        k))
+            |> Validation.duplicateKeyErrors
+                "catalog.modules.duplicateKey"
+                (sprintf
+                    "Catalog has duplicate Module SsKey %A; A11 requires disjoint modules.")
+                (fun m -> m.SsKey)
 
-        let allKindList = modules |> List.collect (fun m -> m.Kinds)
+        let allKindList =
+            modules |> List.collect (fun m -> m.Kinds)
+
         let kindDupes =
             allKindList
-            |> List.groupBy (fun k -> k.SsKey)
-            |> List.filter (fun (_, ks) -> List.length ks > 1)
-            |> List.map fst
-            |> List.map (fun k ->
-                ValidationError.create
-                    "catalog.kinds.duplicateKey"
-                    (sprintf
-                        "Catalog has Kind SsKey %A duplicated across modules; A4 requires Kind identity to be globally unique."
-                        k))
+            |> Validation.duplicateKeyErrors
+                "catalog.kinds.duplicateKey"
+                (sprintf
+                    "Catalog has Kind SsKey %A duplicated across modules; A4 requires Kind identity to be globally unique.")
+                (fun k -> k.SsKey)
 
         let kindKeySet =
             allKindList |> List.map (fun k -> k.SsKey) |> Set.ofList
@@ -1360,15 +1402,11 @@ module Catalog =
         // collisions are not structurally possible.
         let sequenceDupes =
             sequences
-            |> List.groupBy (fun s -> s.SsKey)
-            |> List.filter (fun (_, ss) -> List.length ss > 1)
-            |> List.map fst
-            |> List.map (fun k ->
-                ValidationError.create
-                    "catalog.sequences.duplicateKey"
-                    (sprintf
-                        "Catalog has duplicate Sequence SsKey %A; A4 requires unique sequence identity."
-                        k))
+            |> Validation.duplicateKeyErrors
+                "catalog.sequences.duplicateKey"
+                (sprintf
+                    "Catalog has duplicate Sequence SsKey %A; A4 requires unique sequence identity.")
+                (fun s -> s.SsKey)
 
         let allErrors =
             moduleDupes @ kindDupes @ referenceErrors @ indexErrors @ sequenceDupes

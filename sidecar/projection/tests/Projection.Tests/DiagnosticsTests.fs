@@ -917,3 +917,140 @@ let ``H-062 PassContext.applyEnv: applies environment-aware function`` () =
     let result = PassContext.applyEnv (fun env v -> env + v) ctx
     Assert.Equal(15, result.Value)
     Assert.Equal(10, result.Environment)
+
+// ---------------------------------------------------------------------------
+// H-015: Lens — total bidirectional accessor. Three lens laws + composition.
+// ---------------------------------------------------------------------------
+
+let private testRecord (a: int) (b: int) =
+    { Source = "p"; Severity = DiagnosticSeverity.Info; Code = "code"; Message = "msg"; SsKey = None; Metadata = Map.empty; SuggestedConfig = None }, (a, b)
+
+[<Property>]
+let ``H-015 Lens law: get-set (set (get s) s = s)`` (env: int) (v: int) =
+    let lens : Lens<PassContext<int, int>, int> = {
+        Get = fun ctx -> ctx.Value
+        Set = fun a ctx -> { ctx with Value = a }
+    }
+    let s = PassContext.ofValue env v
+    Lens.set lens (Lens.get lens s) s = s
+
+[<Property>]
+let ``H-015 Lens law: set-get (get (set a s) = a)`` (env: int) (v: int) (a: int) =
+    let lens : Lens<PassContext<int, int>, int> = {
+        Get = fun ctx -> ctx.Value
+        Set = fun x ctx -> { ctx with Value = x }
+    }
+    let s = PassContext.ofValue env v
+    Lens.get lens (Lens.set lens a s) = a
+
+[<Property>]
+let ``H-015 Lens law: set-set (set a' (set a s) = set a' s)`` (env: int) (v: int) (a: int) (a': int) =
+    let lens : Lens<PassContext<int, int>, int> = {
+        Get = fun ctx -> ctx.Value
+        Set = fun x ctx -> { ctx with Value = x }
+    }
+    let s = PassContext.ofValue env v
+    Lens.set lens a' (Lens.set lens a s) = Lens.set lens a' s
+
+[<Property>]
+let ``H-015 Lens.over: modify equals get-modify-set`` (env: int) (v: int) =
+    let lens : Lens<PassContext<int, int>, int> = {
+        Get = fun ctx -> ctx.Value
+        Set = fun x ctx -> { ctx with Value = x }
+    }
+    let s = PassContext.ofValue env v
+    let f x = x + 7
+    Lens.over lens f s = Lens.set lens (f (Lens.get lens s)) s
+
+[<Property>]
+let ``H-015 Lens.identity: get s = s and set a _ = a`` (v: int) =
+    Lens.get Lens.identity<int> v = v
+    && Lens.set Lens.identity<int> 42 v = 42
+
+[<Fact>]
+let ``H-015 Lens.compose: outer ∘ inner reaches the inner substructure`` () =
+    // Compose: PassContext<int, (int, int)>.Value.fst
+    let outer : Lens<PassContext<int, (int * int)>, (int * int)> = {
+        Get = fun ctx -> ctx.Value
+        Set = fun pair ctx -> { ctx with Value = pair }
+    }
+    let inner : Lens<int * int, int> = {
+        Get = fst
+        Set = fun a (_, b) -> (a, b)
+    }
+    let composed = Lens.compose outer inner
+    let s = PassContext.ofValue 0 (10, 20)
+    Assert.Equal(10, Lens.get composed s)
+    let updated = Lens.set composed 99 s
+    Assert.Equal((99, 20), updated.Value)
+    Assert.Equal(0, updated.Environment)
+
+[<Property>]
+let ``H-015 Lens.compose: laws preserve through composition`` (a: int) (b: int) (a': int) =
+    let outer : Lens<int * int, int> = {
+        Get = fst
+        Set = fun a (_, b) -> (a, b)
+    }
+    let composed = Lens.compose Lens.identity<int * int> outer
+    let s = (a, b)
+    // set-get
+    Lens.get composed (Lens.set composed a' s) = a'
+    // get-set
+    && Lens.set composed (Lens.get composed s) s = s
+
+// --- Catalog canonical lenses ---
+
+[<Fact>]
+let ``H-015 CatalogLenses.modules: get + set roundtrip`` () =
+    let catalog = { Modules = []; Sequences = [] }
+    Assert.Equal<Module list>([], Lens.get CatalogLenses.modules catalog)
+    let result = Lens.set CatalogLenses.modules [] catalog
+    Assert.Equal(catalog, result)
+
+[<Fact>]
+let ``H-015 CatalogLenses.sequences: get + set roundtrip`` () =
+    let catalog = { Modules = []; Sequences = [] }
+    Assert.Equal<Sequence list>([], Lens.get CatalogLenses.sequences catalog)
+
+// ---------------------------------------------------------------------------
+// Validation.duplicateKeyErrors — chapter-Cluster-B algebraic compression
+// primitive. Replaces the recurring groupBy + filter > 1 + map error
+// boilerplate in Catalog.create (3 sites collapsed).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Validation.duplicateKeyErrors: empty input produces no errors`` () =
+    let errors = Validation.duplicateKeyErrors "test.dup" (fun k -> sprintf "%A" k) id []
+    Assert.Empty(errors)
+
+[<Fact>]
+let ``Validation.duplicateKeyErrors: unique keys produce no errors`` () =
+    let errors = Validation.duplicateKeyErrors "test.dup" (fun k -> sprintf "%A" k) id [1; 2; 3]
+    Assert.Empty(errors)
+
+[<Fact>]
+let ``Validation.duplicateKeyErrors: one duplicate key produces one error`` () =
+    let errors = Validation.duplicateKeyErrors "test.dup" (sprintf "duplicate: %d") id [1; 2; 2; 3]
+    Assert.Single(errors) |> ignore
+    Assert.Equal("test.dup", errors.[0].Code)
+    Assert.Equal("duplicate: 2", errors.[0].Message)
+
+[<Fact>]
+let ``Validation.duplicateKeyErrors: triplicate produces one error per key`` () =
+    let errors = Validation.duplicateKeyErrors "test.dup" (sprintf "dup: %d") id [1; 2; 2; 2; 3; 3]
+    Assert.Equal(2, errors.Length)
+    let messages = errors |> List.map (fun e -> e.Message) |> List.sort
+    Assert.Equal<string list>(["dup: 2"; "dup: 3"], messages)
+
+[<Property>]
+let ``Validation.duplicateKeyErrors: preserves first-occurrence order across duplicates`` (xs: NonEmptyArray<int>) =
+    // For deterministic Catalog-create error ordering: keys appear in
+    // the order of their FIRST occurrence in the input.
+    let items = xs.Get |> Array.toList
+    let errors = Validation.duplicateKeyErrors "c" (sprintf "%d") id items
+    let dupKeys = items |> List.groupBy id |> List.filter (fun (_, g) -> g.Length > 1) |> List.map fst
+    let firstOccurrenceOrder =
+        dupKeys
+        |> List.sortBy (fun k -> List.findIndex ((=) k) items)
+    let errorOrder = errors |> List.map (fun e -> e.Message |> int)
+    firstOccurrenceOrder = errorOrder

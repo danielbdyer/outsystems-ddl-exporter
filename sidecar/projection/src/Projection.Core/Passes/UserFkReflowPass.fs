@@ -257,30 +257,38 @@ module UserFkReflowPass =
     /// invariant per slice γ; the algorithm-internal invariant
     /// (each source user is added to AT MOST ONE of `Mapping` /
     /// `Unmatched`) ensures the smart constructor succeeds.
+    ///
+    /// **Writer-fidelity (chapter-Cluster-B compression; 2026-05-22):**
+    /// builds the dual-writer via canonical primitives
+    /// (`LineageDiagnostics.ofValue` + `Lineage.tellMany` +
+    /// `LineageDiagnostics.tellDiagnostics`) instead of hand-rolling
+    /// the nested `{ Value = { Value = ...; Entries = ... }; Trail = ... }`
+    /// record. The prior form was a writer-fidelity violation
+    /// (DECISIONS 2026-05-30); the CE-syntactic enforcement
+    /// (`lineageDiagnostics { ... }`) lands as part of the H-002 cash-out.
     let private projectState (state: State) : Lineage<Diagnostics<UserRemapContext>> =
-        match UserRemapContext.create state.Mapping state.Unmatched (List.rev state.RemapDiagnostics) with
-        | Ok ctx ->
-            { Value = { Value = ctx; Entries = List.rev state.Entries }
-              Trail = List.rev state.Events }
-        | Error _ ->
-            // Defensive: the algorithm enforces disjointness by
-            // construction (each source user is added to AT MOST
-            // ONE of Mapping/Unmatched per the single-pass walk).
-            // If we ever reach here, it's a pass-internal bug;
-            // surface as an Error diagnostic and return an empty
-            // UserRemapContext.
-            let bugEntry =
-                { Source   = passName
-                  Severity = DiagnosticSeverity.Error
-                  Code     = "userFkReflow.disjointnessViolated"
-                  Message  = "pass-internal bug: UserRemapContext disjointness invariant violated"
-                  SsKey    = None
-                  Metadata = Map.empty
-                  SuggestedConfig = None }
-            { Value =
-                { Value = UserRemapContext.empty
-                  Entries = List.rev (bugEntry :: state.Entries) }
-              Trail = List.rev state.Events }
+        let resultValue, extraEntries =
+            match UserRemapContext.create state.Mapping state.Unmatched (List.rev state.RemapDiagnostics) with
+            | Ok ctx -> ctx, []
+            | Error _ ->
+                // Defensive: the algorithm enforces disjointness by
+                // construction (each source user is added to AT MOST
+                // ONE of Mapping/Unmatched per the single-pass walk).
+                // If we ever reach here, it's a pass-internal bug;
+                // surface as an Error diagnostic and return an empty
+                // UserRemapContext.
+                let bugEntry =
+                    { Source   = passName
+                      Severity = DiagnosticSeverity.Error
+                      Code     = "userFkReflow.disjointnessViolated"
+                      Message  = "pass-internal bug: UserRemapContext disjointness invariant violated"
+                      SsKey    = None
+                      Metadata = Map.empty
+                      SuggestedConfig = None }
+                UserRemapContext.empty, [bugEntry]
+        LineageDiagnostics.ofValue resultValue
+        |> Lineage.tellMany (List.rev state.Events)
+        |> LineageDiagnostics.tellDiagnostics (List.rev state.Entries @ extraEntries)
 
     /// Walk source users sequentially under the strategy walker.
     /// One pass over sources; index builds are `lazy` so a strategy
