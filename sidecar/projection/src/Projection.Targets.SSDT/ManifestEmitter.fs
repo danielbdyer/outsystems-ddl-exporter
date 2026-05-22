@@ -567,16 +567,26 @@ module ManifestEmitter =
             /// pipeline paths). Sorted by Schema → Table → Column for
             /// T1 byte-determinism.
             ColumnProfiles : ColumnProfileSummary list
+            /// **H-038** — FK-safe parallel deployment batches. Each
+            /// inner list is one Kahn-level from `TopologicalOrder
+            /// .levels`; kinds within a batch have no FK dependency on
+            /// each other and may be deployed in parallel. Empty when
+            /// `TopologicalOrder` is not available (e.g., no pass was
+            /// run). Outer list ordered dependency-depth ascending;
+            /// inner lists sorted by SsKey for T1 byte-determinism.
+            DeploymentBatches : SsKey list list
         }
 
-    /// Build the manifest from a Profile + Catalog + explicit registry-
-    /// metadata list. The `registry` parameter feeds the slice-ζ
-    /// `RegistryDigest` field; production callers use
-    /// `RegisteredTransforms.all`; the 5th bidirectional property test
-    /// supplies a perturbed list to exercise digest sensitivity.
-    /// `profile` provides per-column statistical moments (H-027);
-    /// pass `Profile.empty` when no profiling data is available.
-    let buildWith (profile: Profile) (registry: RegisteredTransformMetadata list) (catalog: Catalog) : Manifest =
+    /// Build the manifest from a Profile + optional TopologicalOrder +
+    /// registry metadata list + Catalog. The `topology` parameter
+    /// feeds the H-038 `DeploymentBatches` field; pass `None` when no
+    /// pass has been run (the field will be empty).
+    let buildWithTopology
+        (profile: Profile)
+        (registry: RegisteredTransformMetadata list)
+        (topology: TopologicalOrder option)
+        (catalog: Catalog)
+        : Manifest =
         use _ = Bench.scope "emit.manifest.build"
         let entries =
             catalog.Modules
@@ -625,6 +635,10 @@ module ManifestEmitter =
                                        Mean   = moments.Mean
                                        StdDev = moments.StdDev })))
             |> List.sortBy (fun cp -> cp.Schema, cp.Table, cp.Column)
+        let deploymentBatches =
+            topology
+            |> Option.map TopologicalOrder.levels
+            |> Option.defaultValue []
         {
             Tables = entries
             EmitterVersion = version
@@ -633,7 +647,20 @@ module ManifestEmitter =
             PredicateCoverage = PredicateCoverage.compute catalog
             Unsupported = Unsupported.compute ()
             ColumnProfiles = columnProfiles
+            DeploymentBatches = deploymentBatches
         }
+
+    /// Build the manifest from a Profile + Catalog + explicit registry-
+    /// metadata list. The `registry` parameter feeds the slice-ζ
+    /// `RegistryDigest` field; production callers use
+    /// `RegisteredTransforms.all`; the 5th bidirectional property test
+    /// supplies a perturbed list to exercise digest sensitivity.
+    /// `profile` provides per-column statistical moments (H-027);
+    /// pass `Profile.empty` when no profiling data is available.
+    /// Topology-unaware callers use this overload; topology-aware
+    /// callers use `buildWithTopology` directly.
+    let buildWith (profile: Profile) (registry: RegisteredTransformMetadata list) (catalog: Catalog) : Manifest =
+        buildWithTopology profile registry None catalog
 
     /// Build with the canonical production registry
     /// (`RegisteredTransforms.all` prepended with the SSDT emitter's
@@ -753,6 +780,18 @@ module ManifestEmitter =
             cpObj.Add("stdDev", requireValue "columnProfiles.stdDev" (JsonValue.Create(cp.StdDev)))
             columnProfilesArr.Add(cpObj)
         doc.Add("columnProfiles", columnProfilesArr)
+        // H-038 / H-041 — FK-safe parallel deployment batches.
+        // Each inner array is one Kahn level from `TopologicalOrder
+        // .levels`; SsKeys rendered via `SsKey.rootOriginal` for
+        // operator-facing readability. Empty outer array when
+        // topology was not computed.
+        let batchesArr = JsonArray()
+        for batch in manifest.DeploymentBatches do
+            let batchArr = JsonArray()
+            for key in batch do
+                batchArr.Add(requireValue "deploymentBatches.key" (JsonValue.Create(SsKey.rootOriginal key)))
+            batchesArr.Add(batchArr)
+        doc.Add("deploymentBatches", batchesArr)
         doc :> JsonNode
 
     /// Render the manifest to JSON text. The terminal serialization

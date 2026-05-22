@@ -22,7 +22,7 @@ open Projection.Tests.Fixtures
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``A.4.7' slice ε: skeletonChainSteps contains the four pure-DataIntent passes`` () =
+let ``A.4.7' slice ε: skeletonChainSteps contains the nine pure-DataIntent passes`` () =
     // `namingMorphism` lands in the skeleton because its Sites
     // classify as DataIntent — the act of carrying a logical→
     // physical name correspondence is data-intention; an operator-
@@ -31,6 +31,10 @@ let ``A.4.7' slice ε: skeletonChainSteps contains the four pure-DataIntent pass
     // Symmetric with `canonicalizeIdentity` (identity rewrite as
     // structural canonicalization) and `symmetricClosure` /
     // `normalizeStaticPopulations` (algorithm-internal closures).
+    // Cluster D adds five graph-analytics passes (H-071 through
+    // H-076): `centrality`, `boundedContext`, `profileAnomaly`,
+    // `schemaComplexity`, and `queryHint`. All five are purely
+    // evidence-driven with no operator opinion (DataIntent Sites).
     let names =
         RegisteredTransforms.skeletonChainSteps
         |> List.map (fun adapter -> adapter.Name)
@@ -40,7 +44,12 @@ let ``A.4.7' slice ε: skeletonChainSteps contains the four pure-DataIntent pass
             [ "canonicalizeIdentity"
               "namingMorphism"
               "normalizeStaticPopulations"
-              "symmetricClosure" ]
+              "symmetricClosure"
+              "centrality"
+              "boundedContext"
+              "profileAnomaly"
+              "schemaComplexity"
+              "queryHint" ]
     Assert.Equal<Set<string>>(expected, names)
 
 [<Fact>]

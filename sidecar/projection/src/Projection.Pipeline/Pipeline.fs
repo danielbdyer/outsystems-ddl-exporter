@@ -249,7 +249,10 @@ module Compose =
              match SsdtDdlEmitter.emitSlices emittedCatalog with
              | Ok ssdtFiles ->
                  let rewritten = applyEmissionFolderOverrides folders emittedCatalog ssdtFiles
-                 let manifest = ManifestEmitter.emit emittedCatalog
+                 let manifest =
+                     let registry = SsdtDdlEmitter.registeredMetadata :: RegisteredTransforms.all
+                     ManifestEmitter.buildWithTopology
+                         Profile.empty registry composedState.TopologicalOrder emittedCatalog
                  SsdtBundle.compose rewritten manifest
              | Error err ->
                  // Unreachable in production paths: Catalog.allKinds is

@@ -1155,7 +1155,7 @@ surfaces. These items expose the latent graph intelligence.
 
 ### H-037 — Schema island detection
 
-**Status:** proposed
+**Status:** shipped (Cluster D)
 
 **Gap.** `TopologicalOrderPass.tarjanScc` runs the full Tarjan
 strongly-connected-component algorithm. Single-node SCCs (isolated
@@ -1178,7 +1178,7 @@ should be formalized or a FK relationship is missing.
 
 ### H-038 — Parallel deployment batch surface
 
-**Status:** proposed
+**Status:** shipped (Cluster D)
 
 **Gap.** `TopologicalOrder.levels` already computes the set of
 `SsKey` values at each topological level (tables that can be deployed
@@ -1200,7 +1200,7 @@ deploy time by the number of parallelisable levels.
 
 ### H-039 — Cascade shock zone detection
 
-**Status:** proposed
+**Status:** shipped (Cluster D)
 
 **Gap.** `CycleResolution.classify` tags FK edges as `Cascade`,
 `Weak`, or `Other`. A cascade shock zone is a subgraph where a DELETE
@@ -1218,7 +1218,7 @@ shock zone exceeding a threshold (default: fan-out ≥ 3).
 
 ### H-040 — JunctionDeferred mode surface
 
-**Status:** proposed
+**Status:** shipped (Cluster D)
 
 **Gap.** `JunctionDeferred` is a topological sort policy for junction
 tables (many-to-many tables with two FK references). In `JunctionDeferred`
@@ -1234,7 +1234,7 @@ to `EmissionPolicy`) and `src/Projection.Core/Passes/TopologicalOrderPass.fs`
 
 ### H-041 — Topological level emission in manifest
 
-**Status:** proposed
+**Status:** shipped (Cluster D)
 
 **Gap.** The deployment batch structure from H-038 is useful to tools
 beyond the SSDT emitter. It should appear in the JSON manifest as a
@@ -2142,7 +2142,7 @@ metrics to profile anomaly detection to structural complexity scoring.
 
 ### H-071 — Schema centrality metrics (PageRank over the FK graph)
 
-**Status:** proposed
+**Status:** shipped (Cluster D)
 
 **Gap.** The FK graph is computed by `TopologicalOrderPass` but no
 centrality measure is derived from it. A table's centrality in the FK
@@ -2168,7 +2168,7 @@ high-centrality tables are flagged with elevated urgency.
 
 ### H-072 — Subgraph extraction for bounded context discovery
 
-**Status:** proposed
+**Status:** shipped (Cluster D)
 
 **Gap.** A "bounded context" in Domain-Driven Design terms is a
 self-consistent subset of the schema — a set of tables that are more
@@ -2193,7 +2193,7 @@ all-or-nothing deployments.
 
 ### H-073 — Anomaly detection in Profile (outlier column identification)
 
-**Status:** proposed
+**Status:** shipped (Cluster D)
 
 **Gap.** The `Profile` carries per-column statistical evidence.
 Columns whose statistical profile is anomalous relative to their peers
@@ -2240,7 +2240,7 @@ normalization advisor (static structure + empirical evidence).
 
 ### H-075 — Schema complexity scoring
 
-**Status:** proposed
+**Status:** shipped (Cluster D)
 
 **Gap.** There is no single metric that characterizes schema
 complexity. Operators making migration decisions and schema evolution
@@ -2272,7 +2272,7 @@ complexity spikes with schema evolution events.
 
 ### H-076 — Query plan hint annotation emission
 
-**Status:** proposed
+**Status:** shipped (Cluster D)
 
 **Gap.** The statistical evidence in `Profile` — FK selectivity,
 cardinality, join distribution — is exactly the evidence SQL Server's

@@ -97,6 +97,14 @@
     <Compile Include="NormalizeStaticPopulationsTests.fs" />
     <Compile Include="SymmetricClosureTests.fs" />
     <Compile Include="TopologicalOrderPassTests.fs" />
+    <Compile Include="IslandDetectionTests.fs" />
+    <Compile Include="CascadeShockZoneTests.fs" />
+    <Compile Include="JunctionDeferredTests.fs" />
+    <Compile Include="CentralityPassTests.fs" />
+    <Compile Include="BoundedContextPassTests.fs" />
+    <Compile Include="ProfileAnomalyPassTests.fs" />
+    <Compile Include="SchemaComplexityPassTests.fs" />
+    <Compile Include="QueryHintPassTests.fs" />
     <Compile Include="CycleResolutionTests.fs" />
     <Compile Include="StaticAdapterDifferentialTests.fs" />
     <Compile Include="OsmCatalogReaderDifferentialTests.fs" />

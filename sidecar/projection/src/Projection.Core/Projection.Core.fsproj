@@ -46,6 +46,14 @@
     <Compile Include="Strategies/UniqueIndexRules.fs" />
     <Compile Include="Strategies/ForeignKeyRules.fs" />
     <Compile Include="Strategies/CategoricalUniquenessRules.fs" />
+    <!-- H-071 through H-076 result types — compiled before ComposeState
+         so ComposeState can carry them as optional evidence fields.
+         Pattern mirrors TopologicalOrder.fs / TopologicalOrderPass.fs. -->
+    <Compile Include="Centrality.fs" />
+    <Compile Include="BoundedContext.fs" />
+    <Compile Include="ProfileAnomaly.fs" />
+    <Compile Include="SchemaComplexityMetrics.fs" />
+    <Compile Include="QueryHints.fs" />
     <Compile Include="ComposeState.fs" />
     <Compile Include="Classification.fs" />
     <Compile Include="PolicyExpr.fs" />
@@ -66,6 +74,13 @@
     <Compile Include="Passes/SymmetricClosure.fs" />
     <Compile Include="Passes/TableRename.fs" />
     <Compile Include="Passes/TopologicalOrderPass.fs" />
+    <!-- H-071 through H-076 pass implementations — compiled after
+         ComposeState.fs; return types from the files above. -->
+    <Compile Include="Passes/CentralityPass.fs" />
+    <Compile Include="Passes/BoundedContextPass.fs" />
+    <Compile Include="Passes/ProfileAnomalyPass.fs" />
+    <Compile Include="Passes/SchemaComplexityPass.fs" />
+    <Compile Include="Passes/QueryHintPass.fs" />
     <Compile Include="Passes/NullabilityPass.fs" />
     <Compile Include="Passes/UniqueIndexPass.fs" />
     <Compile Include="Passes/ForeignKeyPass.fs" />
