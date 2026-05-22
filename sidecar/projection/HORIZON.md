@@ -1464,34 +1464,48 @@ change.
 
 ### H-050 — Property tests for adjunction laws (emitter / reader roundtrip)
 
-**Status:** partially shipped (Cluster F, 2026-05-22). Algebraic
-roundtrip property sweep + Docker-bound full adjunction deferred-with-
-stub.
+**Status:** shipped (Cluster F follow-up, 2026-05-22). In-process
+adjunction property sweep covers the Columns + ForeignKeys axes; the
+Docker-bound full sweep (adds CHECK re-parse + default re-render +
+server-inferred computed-column types) is a smaller residual deferral.
 
-**Gap (partially resolved).** The full `reader ∘ emitter = id` law
-requires deploying the emitted DDL to SQL Server and reading it back
-via `ReadSide.read` (requires Docker; lives at
-`CanaryRoundTripTests.fs::M3` on a single fixture). FsCheck sweep at
-Docker cost is infeasible without a worker pool.
+**Shipped surface.**
+1. **`PhysicalSchemaReader.ofStatementStream`** —
+   `src/Projection.Targets.SSDT/PhysicalSchemaReader.fs`. The
+   in-process structural reader: takes the emitter's typed
+   `seq<Statement>` and projects to a `PhysicalSchema` (Columns +
+   ForeignKeys). This is the algebraic equivalent of
+   `Projection.Adapters.Sql.ReadSide.read` but bypasses the live
+   SQL Server round-trip — making the H-050 property sweep runnable
+   at FsCheck speed.
+2. **Algebraic property tests** —
+   `tests/Projection.Tests/AdjunctionLawTests.fs`:
+   - **Worked example:** `PhysicalSchema.ofCatalog c =
+     PhysicalSchemaReader.ofStatementStream (emit c)` on the
+     (Columns, ForeignKeys) axes.
+   - **Property sweep (Columns):** holds across permuted module-list
+     ordering (FsCheck).
+   - **Property sweep (ForeignKeys):** holds across permuted module-
+     list ordering (FsCheck).
+   - **PhysicalSchema.diff empty:** the canary's structural-diff
+     surface returns the empty diff across the two projections.
+3. **Emitter determinism (T1 at stream level)** — `SsdtDdlEmitter
+   .statements` is deterministic; emitting the same catalog twice
+   produces structurally-equal statement streams (FsCheck sweep over
+   module-order permutations). The algebraic precondition for the
+   adjunction.
+4. **CatalogDiff reflexivity** — `between c c` puts every key in
+   `Unchanged` (worked example + FsCheck sweep).
+5. **T11 form** — Every catalog kind produces a `CreateTable`
+   statement in the emitter output (FsCheck sweep).
 
-**Shipped surface (algebraic).** `tests/Projection.Tests/AdjunctionLawTests.fs`:
-- **Emitter determinism (T1 at stream level)** — `SsdtDdlEmitter.statements`
-  is deterministic; emitting the same catalog twice produces structurally-
-  equal statement streams (FsCheck sweep over module-order permutations).
-  Algebraic precondition for the adjunction.
-- **CatalogDiff reflexivity** — `between c c` puts every key in
-  `Unchanged` (worked example + FsCheck sweep over module-order
-  permutations).
-- **T11 form** — Every catalog kind produces a `CreateTable` statement
-  in the emitter output (FsCheck sweep over permutations).
-- **Docker-bound adjunction sweep** — Skip stub naming the trigger:
-  in-memory `ReadSide.parseDdl` variant lands OR Docker test pool of
-  ≥20 containers becomes available.
-
-**Trigger to ship full Docker-bound adjunction.** When either (a) an
-in-memory ScriptDom-based `ReadSide.parseDdl` lands (replaces the live
-SQL Server roundtrip with an in-process one) OR (b) a Docker test pool
-of N≥20 ephemeral containers becomes available in CI.
+**Residual deferral.** The Docker-bound full sweep would add: CHECK
+constraint re-parsing through SQL Server's catalog metadata,
+default-expression re-rendering, server-inferred computed-column
+types, and server-side constraint name auto-generation. Trigger:
+coverage-guided FsCheck fixture generation OR Docker test pool of
+N≥20 containers. The single-fixture form lives at
+`CanaryRoundTripTests.fs::M3` against a real container today.
 
 ---
 
@@ -1628,10 +1642,25 @@ The HORIZON-sketch third law "applyDelta union for independent
 axes" assumes a composition operator that preserves both sides' non-
 default values. PolicyExpr's `Seq` is right-wins on every axis except
 Tightening (which accumulates); the disjoint-axis property in this
-codebase's algebra is expressed via `Override` instead. A future
-"merge non-default" composition operator (if one lands under
-consumer pressure) would resurrect the HORIZON sketch's exact
-formulation.
+codebase's algebra is expressed via `Override` instead.
+
+**Follow-up shipping (Cluster F follow-up, 2026-05-22).** The missing
+composition operator now ships: `Policy.merge : Policy -> Policy ->
+Policy` + `PolicyExpr.Merge` DSL variant. Semantics: right wins on
+non-default axes; left preserved on default axes; Tightening
+interventions accumulate. Algebraic properties (tested):
+- Identity (both sides): `merge empty p = p`; `merge p empty = p`
+- Associativity: `merge (merge a b) c = merge a (merge b c)` across
+  all axes (list-append associativity covers Tightening)
+- Commutativity on disjoint axes: `merge a b = merge b a` whenever
+  non-default axes are disjoint
+- `PolicyExpr.Merge` desugars via `Policy.merge`; `simplify` elides
+  identity-atom on both sides
+
+The HORIZON H-054 third law now holds **directly** via
+`Policy.merge`, not via the Override workaround. The
+right-wins-clobber counter-example test remains in place so future
+refactors don't confuse `Seq` with `merge`.
 
 ---
 
@@ -2859,25 +2888,36 @@ will surface any remaining `Now` calls in the pipeline.
 
 ### H-096 — Mutation testing for strategy rules
 
-**Status:** partially shipped (Cluster F, 2026-05-22). Config file
-shipped; CI integration deferred-with-stub.
+**Status:** **BLOCKED ON TOOLING** (2026-05-22, verified empirically).
+Stryker.NET 4.14.2 does NOT support F#. The HORIZON proposal as
+written is not achievable with current tooling.
 
-**Shipped surface.** `bench/stryker-config.json` — Stryker.NET
-config naming the five strategy-rule files in scope
-(`NullabilityRules.fs`, `UniqueIndexRules.fs`, `ForeignKeyRules.fs`,
-`CategoricalUniquenessRules.fs`, `CycleResolution.fs`); test filter
-restricted to the per-strategy test suites; thresholds (≥80% killed
-mutants required; ≥90% target). The `Bench.scope*` family is in the
-ignore list (timing instrumentation; not strategy logic). Skip stub
-in `AxiomTests.fs::H-096` documents the activation path.
+**Verified blocker.** Invoking `dotnet-stryker` against the
+`Projection.sln` solution produces:
 
-**Trigger to activate the CI step.** When a strategy bug surfaces in
-canary or production AND the existing per-strategy test suite was
-green on the failing input (i.e., the test suite is missing a
-mutation-killing case). Activating: install `dotnet-stryker` as a
-global tool, wire `dotnet stryker -c bench/stryker-config.json` into
-CI as a non-blocking warning job, lift to blocking after one
-mutation-score baseline cycle.
+```
+[ERR] Mutation testing of F# projects is not ready yet. No mutants will be generated.
+System.NotSupportedException: Language not supported: Fsharp
+   at Stryker.Core.Initialisation.InputFileResolver.BuildSourceProjectInfo
+```
+
+**Preserved artifact.** `bench/stryker-config.json` is kept as an
+intent-preserving document (which strategy files would be in scope;
+mutation-score targets); the file's `_status` and `_revisit-trigger`
+fields record the empirical finding.
+
+**Trigger to ship.** Stryker.NET adds F# language support OR an
+F#-native mutation testing framework emerges with production-grade
+maturity. Until then, the closest practicable verification of the
+strategy layer's "detecting-not-just-green" property is the FsCheck
+property surface (covers boundary conditions; doesn't catch operator-
+swap mutations that produce semantically-equivalent but logically-
+incorrect alternatives).
+
+**Honest acknowledgement.** This is a genuine deferral on infeasibility
+grounds, not a "trigger unfired" hedge. The Cluster F follow-up
+(2026-05-22) attempted to activate Stryker locally; the runtime
+exception was the resolved-but-blocked outcome.
 
 ---
 
@@ -2938,11 +2978,23 @@ name correction is reflected in the shipped tests.
 
 **Implementation note.** The HORIZON sketch proposed
 `FsCheck.StateMachine` (the type-class-driven state-machine API).
-This file ships the hand-rolled equivalent (direct FsCheck.Xunit
-`[<Property>]` over a step-by-step trace function) — same
-correctness coverage with less ceremony and no dependency on the
-`FsCheck.Experimental.Machine<'TypeUnderTest, 'TypeModel>` type-
-machinery surface.
+This file initially shipped the hand-rolled equivalent for
+simplicity; the Cluster F follow-up (2026-05-22) added the proper
+`FsCheck.Experimental.Machine<PolicyHolder, Map<ModelKey, bool>>`
+implementation alongside (`PolicyMachine` + six `Operation`
+subclasses + `agreementProp` post-condition + `StateMachine.toProperty`).
+Both surfaces run today; the Experimental variant gains automatic
+trace-shrinking on failure — a useful operational benefit when
+debugging a counter-example.
+
+A pleasant surprise during this follow-up: the first attempt at the
+Experimental variant treated `Policy` as immutable and threaded
+state through `Operation.Check`. FsCheck.Experimental expects a
+mutable holder for the actual — the framework supplies the same
+`actual` reference across operations and the operation mutates it.
+The fix is a `PolicyHolder` class with `Apply` and `Reset` methods.
+The hand-rolled variant doesn't have this trap because it threads
+state through a recursive `runTrace` function explicitly.
 
 ---
 

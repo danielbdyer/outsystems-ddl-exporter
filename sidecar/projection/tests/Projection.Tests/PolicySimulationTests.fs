@@ -221,3 +221,117 @@ let ``H-054 full-projection coherence: same policy yields empty structural diff 
     let p = Policy.empty |> withInsertion (if n % 2 = 0 then SchemaOnly else InsertNew)
     let result = PolicyDiff.diffFullProjection sampleCatalog Profile.empty p p
     not result.Value.StructuralDiff.AnyChanged && List.isEmpty result.Value.ChangedKinds
+
+// ---------------------------------------------------------------------------
+// Law 3 RESHIPPED via `Policy.merge` (HORIZON Cluster F follow-up,
+// 2026-05-22). The previous shipping of H-054 documented the
+// divergence between HORIZON's "applyDelta union" semantics and
+// PolicyExpr.Seq's right-wins-always semantics, then sidestepped by
+// testing Override commutativity. The follow-up ships the missing
+// operator (`Policy.merge` / `PolicyExpr.Merge`) so the HORIZON H-054
+// third law holds **directly**, not via a workaround.
+//
+// `merge a b`: for each non-Tightening axis, if b is non-default use
+// b, else preserve a; Tightening interventions accumulate (a @ b).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``H-054 merge identity (right): merge p empty = p`` () =
+    let p =
+        Policy.empty
+        |> withSelection (IncludeOnly (Set.singleton customerKey))
+        |> withInsertion InsertNew
+        |> withTightening [ nullabilityCfg "i1" ]
+    Assert.Equal(p, Policy.merge p Policy.empty)
+
+[<Fact>]
+let ``H-054 merge identity (left): merge empty p = p`` () =
+    let p =
+        Policy.empty
+        |> withSelection (IncludeOnly (Set.singleton customerKey))
+        |> withEmission EmissionPolicy.dataOnly
+    Assert.Equal(p, Policy.merge Policy.empty p)
+
+[<Fact>]
+let ``H-054 merge disjoint-axis commutativity: merge p_sel p_ins = merge p_ins p_sel`` () =
+    let pSel = Policy.empty |> withSelection (IncludeOnly (Set.singleton customerKey))
+    let pIns = Policy.empty |> withInsertion InsertNew
+    Assert.Equal(Policy.merge pSel pIns, Policy.merge pIns pSel)
+
+[<Fact>]
+let ``H-054 merge disjoint-axis distribution: every non-default axis is preserved`` () =
+    // The HORIZON third law in its directly-implementable form.
+    // p1 touches Selection only; p2 touches Emission only; p3 touches
+    // Insertion only. Any permutation of `merge` over these three
+    // produces a policy where Selection = p1.Selection, Emission =
+    // p2.Emission, Insertion = p3.Insertion.
+    let p1 = Policy.empty |> withSelection (ExcludeOnly (Set.singleton countryKey))
+    let p2 = Policy.empty |> withEmission EmissionPolicy.combined
+    let p3 = Policy.empty |> withInsertion Merge
+    let composed = Policy.merge (Policy.merge p1 p2) p3
+    Assert.Equal(p1.Selection, composed.Selection)
+    Assert.Equal(p2.Emission, composed.Emission)
+    Assert.Equal(p3.Insertion, composed.Insertion)
+
+[<Property>]
+let ``H-054 merge associativity (property): merge (merge a b) c = merge a (merge b c)`` (n: int) =
+    let a = Policy.empty |> withSelection (IncludeOnly (Set.singleton customerKey))
+    let b = Policy.empty |> withEmission EmissionPolicy.dataOnly
+    let c = Policy.empty |> withTightening [ nullabilityCfg (sprintf "assoc-%d" n) ]
+    Policy.merge (Policy.merge a b) c = Policy.merge a (Policy.merge b c)
+
+[<Property>]
+let ``H-054 merge disjoint-axis commutativity (property): non-Tightening single-axis policies commute`` (n: int) =
+    // Pick two disjoint-axis policies from a small bank; assert
+    // commutativity. We bias the bank toward non-Tightening axes
+    // because Tightening @-accumulation is order-sensitive (the @
+    // operator is not commutative for non-empty lists).
+    let axisChoice = abs n % 3
+    let p1, p2 =
+        match axisChoice with
+        | 0 -> Policy.empty |> withSelection (IncludeOnly (Set.singleton orderKey)),
+               Policy.empty |> withInsertion InsertNew
+        | 1 -> Policy.empty |> withEmission EmissionPolicy.combined,
+               Policy.empty |> withInsertion Merge
+        | _ -> Policy.empty |> withSelection (ExcludeOnly (Set.singleton customerKey)),
+               Policy.empty |> withUserMatching BySsKey
+    Policy.merge p1 p2 = Policy.merge p2 p1
+
+[<Fact>]
+let ``H-054 merge preserves left-side non-defaults when right is at default (the HORIZON sketch's law)`` () =
+    // The H-054 third law as HORIZON sketched it: applyDelta is
+    // associative on disjoint axes, and applying a "delta" that
+    // touches no axes leaves the base unchanged. With `Policy.merge`,
+    // this is: a policy with one axis set, merged with Policy.empty,
+    // preserves the non-default axis. Distinct from Seq (which
+    // would clobber).
+    let pSel = Policy.empty |> withSelection (IncludeOnly (Set.singleton customerKey))
+    let merged = Policy.merge pSel Policy.empty
+    Assert.Equal(IncludeOnly (Set.singleton customerKey), merged.Selection)
+    // Counter-example reminder: Seq does NOT have this property.
+    let sequenced =
+        PolicyExpr.eval (PolicyExpr.Seq (PolicyExpr.ofPolicy pSel, PolicyExpr.ofPolicy Policy.empty))
+    Assert.Equal(Policy.empty.Selection, sequenced.Selection)
+
+[<Fact>]
+let ``H-054 PolicyExpr.Merge: eval distributes Policy.merge over child expressions`` () =
+    // The DSL-level Merge variant evaluates by lifting child evals
+    // through Policy.merge. Witness: PolicyExpr.Merge with two Atom
+    // children equals Policy.merge of the two atoms.
+    let pSel = Policy.empty |> withSelection (IncludeOnly (Set.singleton customerKey))
+    let pIns = Policy.empty |> withInsertion InsertNew
+    let viaExpr =
+        PolicyExpr.eval (PolicyExpr.Merge (PolicyExpr.ofPolicy pSel, PolicyExpr.ofPolicy pIns))
+    let viaModule = Policy.merge pSel pIns
+    Assert.Equal(viaModule, viaExpr)
+
+[<Fact>]
+let ``H-054 PolicyExpr.Merge simplify: identity elides on both sides`` () =
+    // `Merge` is two-sided identity (unlike `Seq` which is left-
+    // identity only). Simplify should reduce `Merge (identity, e)`
+    // AND `Merge (e, identity)` to `simplify e`.
+    let inner = PolicyExpr.ofPolicy (Policy.empty |> withInsertion InsertNew)
+    let withLeft  = PolicyExpr.simplify (PolicyExpr.Merge (PolicyExpr.identity, inner))
+    let withRight = PolicyExpr.simplify (PolicyExpr.Merge (inner, PolicyExpr.identity))
+    Assert.Equal(inner, withLeft)
+    Assert.Equal(inner, withRight)

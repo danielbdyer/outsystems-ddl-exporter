@@ -1,6 +1,8 @@
 {
   "stryker-config": {
-    "_comment": "H-096 (HORIZON Cluster F): mutation-testing configuration for the strategy layer. Stryker.NET inserts subtle mutations (operator swaps, boundary shifts, constant replacement) into the strategy rule modules and verifies the test suite kills each mutant. A mutation score >= 80% killed is the target — meaning the strategy tests are not just green, they are detecting.",
+    "_comment": "H-096 (HORIZON Cluster F): mutation-testing configuration. **CAVEAT (verified 2026-05-22):** Stryker.NET 4.14.2 does NOT support F# — invoking it on this solution raises `System.NotSupportedException: Language not supported: Fsharp`. The config file preserves the INTENT (which strategy files would be in scope; what mutation score thresholds would target) for the day F# support lands in Stryker OR an F#-aware mutation tool emerges. The HORIZON H-096 proposal as written is NOT achievable with current tooling.",
+    "_status": "blocked-on-tooling: Stryker.NET does not support F#; no F#-aware mutation testing tool currently exists",
+    "_revisit-trigger": "Stryker.NET F# support lands (https://github.com/stryker-mutator/stryker-net/issues — track F# language support issue), OR an F#-native mutation testing framework emerges with at least the same level of maturity as Stryker.NET for C#.",
     "project": "../src/Projection.Core/Projection.Core.fsproj",
     "test-projects": [
       "../tests/Projection.Tests/Projection.Tests.fsproj"

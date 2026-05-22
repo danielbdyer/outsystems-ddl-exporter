@@ -145,21 +145,75 @@ let ``H-050 T11 form (property): emitter mentions every kind across module-order
     expected = mentioned
 
 // ---------------------------------------------------------------------------
-// H-050 Docker-bound adjunction sweep (deferred-with-stub). The true
-// `reader ∘ emitter = id` law requires deploying the emitted DDL to
-// SQL Server, reading it back via ReadSide, and comparing. That sweep
-// lives at `CanaryRoundTripTests.fs::M3` on a single fixture today;
-// property-based sweep at Docker cost is infeasible without a worker
-// pool. Trigger to ship: when an in-memory ScriptDom-based read-side
-// reader lands (would replace the live SQL Server roundtrip with an
-// in-process one) OR a Docker test pool of N>=20 ephemeral containers
-// becomes available in CI.
+// H-050 in-process adjunction sweep (Cluster F follow-up, 2026-05-22).
+// `PhysicalSchemaReader.ofStatementStream` lifts the emitter's typed
+// `seq<Statement>` directly to a `PhysicalSchema` — bypassing the live
+// SQL Server round-trip. The full canary still runs against a real
+// container at `CanaryRoundTripTests.fs::M3` (additional axes —
+// SqlServer's interpretation of CHECK constraints, default expression
+// re-rendering, computed-column server-inference). The in-process
+// variant gives us the FsCheck property sweep across the
+// (Columns, ForeignKeys) axes that the canary asserts on.
 // ---------------------------------------------------------------------------
 
-[<Fact(Skip = "H-050 Docker-bound adjunction sweep: requires either an \
-in-memory ReadSide.parseDdl variant (would replace the live SQL Server \
-roundtrip with an in-process one) OR a Docker test pool of N>=20 ephemeral \
-containers for property-test parallelism. The single-fixture form lives at \
-CanaryRoundTripTests.fs::M3 (runs against a real container). FsCheck sweep \
-at Docker cost is infeasible today.")>]
-let ``H-050 emitter-reader adjunction sweep: reader (emit catalog) = catalog under PhysicalSchema (FsCheck)`` () = ()
+[<Fact>]
+let ``H-050 in-process adjunction (worked example): ofCatalog c = ofStatementStream (emit c) on Columns + FKs`` () =
+    let viaCatalog = PhysicalSchema.ofCatalog sampleCatalog
+    let viaStream =
+        PhysicalSchemaReader.ofStatementStream (SsdtDdlEmitter.statements sampleCatalog)
+    Assert.Equal<Set<PhysicalColumn>>(viaCatalog.Columns, viaStream.Columns)
+    Assert.Equal<Set<PhysicalForeignKey>>(viaCatalog.ForeignKeys, viaStream.ForeignKeys)
+
+[<Property>]
+let ``H-050 in-process adjunction (property): permuted module order preserves PhysicalSchema columns`` (seed: int) =
+    let permuted = shuffleModules seed sampleCatalog
+    let viaCatalog = PhysicalSchema.ofCatalog permuted
+    let viaStream =
+        PhysicalSchemaReader.ofStatementStream (SsdtDdlEmitter.statements permuted)
+    viaCatalog.Columns = viaStream.Columns
+
+[<Property>]
+let ``H-050 in-process adjunction (property): permuted module order preserves PhysicalSchema FKs`` (seed: int) =
+    let permuted = shuffleModules seed sampleCatalog
+    let viaCatalog = PhysicalSchema.ofCatalog permuted
+    let viaStream =
+        PhysicalSchemaReader.ofStatementStream (SsdtDdlEmitter.statements permuted)
+    viaCatalog.ForeignKeys = viaStream.ForeignKeys
+
+[<Fact>]
+let ``H-050 in-process adjunction: PhysicalSchema.diff is empty across the two projections`` () =
+    let viaCatalog = PhysicalSchema.ofCatalog sampleCatalog
+    let viaStream =
+        PhysicalSchemaReader.ofStatementStream (SsdtDdlEmitter.statements sampleCatalog)
+    let diff = PhysicalSchema.diff viaCatalog viaStream
+    // Columns + FKs must agree across the two projections. Rows and
+    // RowDigests are deliberately not populated by ofStatementStream
+    // (the Statement stream doesn't carry static-row content the way
+    // a populated Catalog does); those axes are out of scope for the
+    // structural adjunction.
+    Assert.Empty diff.MissingColumns
+    Assert.Empty diff.ExtraColumns
+    Assert.Empty diff.MissingForeignKeys
+    Assert.Empty diff.ExtraForeignKeys
+
+// ---------------------------------------------------------------------------
+// H-050 Docker-bound full adjunction (single-fixture; deferred-with-stub).
+// The in-process variant above covers (Columns, ForeignKeys). The full
+// roundtrip exercises additional axes that only a real SQL Server
+// engine can verify: CHECK constraint re-parsing, default-expression
+// re-rendering, server-inferred computed-column types, server-side
+// constraint name auto-generation. That sweep at FsCheck-property
+// scale would need either coverage-guided fixture generation (so each
+// FsCheck iteration is a meaningfully-different input) OR a Docker
+// test pool. Single-fixture form runs at CanaryRoundTripTests.fs::M3.
+// ---------------------------------------------------------------------------
+
+[<Fact(Skip = "H-050 Docker-bound full adjunction sweep: in-process \
+variant above ships the (Columns, ForeignKeys) axes. The Docker-bound \
+full roundtrip adds CHECK constraint re-parsing, default-expression \
+re-rendering, and server-inferred computed-column types. Trigger: \
+coverage-guided FsCheck fixture generation (so each iteration exercises \
+a meaningfully-different DDL shape) OR a Docker test pool of N>=20 \
+ephemeral containers. Single-fixture form lives at \
+CanaryRoundTripTests.fs::M3.")>]
+let ``H-050 emitter-reader adjunction sweep: full Docker-bound roundtrip (FsCheck)`` () = ()

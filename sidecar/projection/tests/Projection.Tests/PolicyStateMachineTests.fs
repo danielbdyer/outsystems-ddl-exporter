@@ -2,23 +2,23 @@ module Projection.Tests.PolicyStateMachineTests
 
 // H-098 (HORIZON Cluster F): model-based testing for the policy system.
 //
-// **Model.** A `Map<OverlayAxis, bool>` tracks which axes have been
+// **Two surfaces:**
+//   1. **Hand-rolled trace property** (original Cluster F shipping) —
+//      direct FsCheck.Xunit `[<Property>]` over a `runTrace` function.
+//      Simple; no Machine ceremony.
+//   2. **FsCheck.Experimental.Machine** (Cluster F follow-up) — the
+//      object-oriented state-machine API the HORIZON sketch named. The
+//      operational advantage of the Machine variant is **shrinking**:
+//      when the agreement property fails, FsCheck shrinks the failing
+//      trace to a minimum reproducer.
+//
+// Both surfaces cover the same property — at every step, the model's
+// "touched axes" projection equals the real Policy's "axes differing
+// from Policy.empty" projection.
+//
+// **Model.** A `Map<ModelKey, bool>` tracks which axes have been
 // touched (i.e., set to a non-default value) at any point in the
 // trace.
-//
-// **Implementation.** The real `Policy` record. After every
-// transition, the model's "touched axes" projection must equal the
-// real Policy's "axes differing from Policy.empty" projection.
-//
-// **Transitions.** Closed DU `PolicyOp` covering the five axes the
-// operator can address: SetSelection, SetEmission, SetInsertion,
-// AddTightening, SetUserMatching, Reset.
-//
-// **Generated traces.** FsCheck generates lists of operations of
-// arbitrary length; the agreement property is checked at every step.
-// A divergence between the model and the real Policy means either
-// (1) a Policy mutator silently changes another axis (axis-isolation
-// violation), or (2) the model's bookkeeping has drifted.
 //
 // **Pillar 9 / A12 connection.** This is the executable witness of
 // the orthogonality axiom: changing axis X must not perturb other
@@ -26,6 +26,7 @@ module Projection.Tests.PolicyStateMachineTests
 
 open Xunit
 open FsCheck
+open FsCheck.Experimental
 open FsCheck.Xunit
 open Projection.Core
 open Projection.Tests.Fixtures
@@ -211,3 +212,112 @@ let ``H-098 monotone growth: touched axes grow across non-Reset sequences`` (ind
             if Set.isSubset prev nextTouched then loop next nextTouched rest
             else false
     loop Policy.empty Set.empty nonReset
+
+// ---------------------------------------------------------------------------
+// H-098 FsCheck.Experimental.Machine variant (Cluster F follow-up).
+//
+// Object-oriented state-machine API. Same agreement property as the
+// hand-rolled variant above; the operational advantage is automatic
+// shrinking — when a generated trace fails, FsCheck searches for a
+// minimum reproducer (fewest operations + simplest parameters).
+//
+// Actual: Policy (the production type under test).
+// Model:  Map<ModelKey, bool> (the touched-axis bookkeeper).
+//
+// Each operation: extends both actual and model; the agreement
+// post-condition (touchedAxes actual = modelTouched model) is the
+// invariant checked after every step.
+// ---------------------------------------------------------------------------
+
+/// Mutable holder for the actual `Policy` value across operation
+/// invocations. FsCheck.Experimental.Machine's `Check` method receives
+/// the actual by reference; for immutable record types like `Policy`,
+/// we wrap the value in a class with mutable state so each operation
+/// can advance the actual forward by calling `Apply`.
+///
+/// This is the canonical FsCheck.Experimental shape for immutable
+/// types: actual = stateful wrapper; model = immutable map updated by
+/// `Run`. Without this wrapper, every `Check` invocation receives the
+/// Setup-value actual and the property fails on any multi-step trace.
+type private PolicyHolder() =
+    let mutable value : Policy = Policy.empty
+    member _.Value = value
+    member _.Apply (op: PolicyOp) : unit = value <- apply op value
+    member _.Reset () : unit = value <- Policy.empty
+
+let private agreementProp (actual: Policy) (model: Map<ModelKey, bool>) : FsCheck.Property =
+    let touchedActual = touchedAxes actual
+    let touchedModel = modelTouched model
+    (touchedActual = touchedModel)
+    |@ sprintf "expected touched-axes %A (model), got %A (actual)" touchedModel touchedActual
+
+type private SetSelectionOp() =
+    inherit Operation<PolicyHolder, Map<ModelKey, bool>>()
+    override _.Run model = Map.add (Axis Selection) true model
+    override _.Check (holder, model) : FsCheck.Property =
+        holder.Apply (SetSelection (IncludeOnly (Set.singleton customerKey)))
+        agreementProp holder.Value model
+    override _.ToString() = "SetSelection"
+
+type private SetEmissionOp() =
+    inherit Operation<PolicyHolder, Map<ModelKey, bool>>()
+    override _.Run model = Map.add (Axis Emission) true model
+    override _.Check (holder, model) : FsCheck.Property =
+        holder.Apply (SetEmission EmissionPolicy.dataOnly)
+        agreementProp holder.Value model
+    override _.ToString() = "SetEmission"
+
+type private SetInsertionOp() =
+    inherit Operation<PolicyHolder, Map<ModelKey, bool>>()
+    override _.Run model = Map.add (Axis Insertion) true model
+    override _.Check (holder, model) : FsCheck.Property =
+        holder.Apply (SetInsertion InsertNew)
+        agreementProp holder.Value model
+    override _.ToString() = "SetInsertion"
+
+type private AddTighteningOp(label: string) =
+    inherit Operation<PolicyHolder, Map<ModelKey, bool>>()
+    override _.Run model = Map.add (Axis Tightening) true model
+    override _.Check (holder, model) : FsCheck.Property =
+        holder.Apply (AddTightening (nullabilityCfg label))
+        agreementProp holder.Value model
+    override _.ToString() = sprintf "AddTightening(%s)" label
+
+type private SetUserMatchingOp() =
+    inherit Operation<PolicyHolder, Map<ModelKey, bool>>()
+    override _.Run model = Map.add UserMatchingKey true model
+    override _.Check (holder, model) : FsCheck.Property =
+        holder.Apply (SetUserMatching BySsKey)
+        agreementProp holder.Value model
+    override _.ToString() = "SetUserMatching"
+
+type private ResetOp() =
+    inherit Operation<PolicyHolder, Map<ModelKey, bool>>()
+    override _.Run _ = Map.empty
+    override _.Check (holder, model) : FsCheck.Property =
+        holder.Reset()
+        agreementProp holder.Value model
+    override _.ToString() = "Reset"
+
+let private opGen : Gen<Operation<PolicyHolder, Map<ModelKey, bool>>> =
+    Gen.frequency
+        [ 2, Gen.constant (SetSelectionOp()    :> Operation<_, _>)
+          2, Gen.constant (SetEmissionOp()     :> Operation<_, _>)
+          2, Gen.constant (SetInsertionOp()    :> Operation<_, _>)
+          2, Gen.map (fun n -> AddTighteningOp(sprintf "fc-%d" n) :> Operation<_, _>) (Gen.choose (0, 1000))
+          2, Gen.constant (SetUserMatchingOp() :> Operation<_, _>)
+          1, Gen.constant (ResetOp()           :> Operation<_, _>) ]
+
+type private PolicyMachine() =
+    inherit Machine<PolicyHolder, Map<ModelKey, bool>>()
+    override _.Setup =
+        { new Setup<PolicyHolder, Map<ModelKey, bool>>() with
+            override _.Actual() = PolicyHolder()
+            override _.Model() = Map.empty }
+        |> Gen.constant
+        |> Arb.fromGen
+    override _.Next _model = opGen
+
+[<Property>]
+let ``H-098 FsCheck.Experimental.Machine: model-impl agreement under generated traces (shrinks on failure)`` () =
+    StateMachine.toProperty (PolicyMachine())

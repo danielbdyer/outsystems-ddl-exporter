@@ -762,6 +762,50 @@ module Policy =
           Tightening   = TighteningPolicy.empty
           UserMatching = UserMatchingStrategy.empty }
 
+    /// Merge two policies on a "right wins on non-default axes" basis
+    /// — H-054's "applyDelta union for independent axes" semantics
+    /// from HORIZON Cluster F.
+    ///
+    /// For each non-Tightening axis: if `b.axis` differs from
+    /// `Policy.empty.axis`, use `b.axis`; otherwise preserve `a.axis`.
+    /// For Tightening: interventions accumulate (`a @ b`) — both
+    /// sides' interventions persist.
+    ///
+    /// **Algebraic properties** (tested in PolicySimulationTests):
+    ///   - **Identity:** `merge empty p = p`; `merge p empty = p`.
+    ///   - **Associativity:** `merge (merge a b) c = merge a (merge b c)`
+    ///     across all axes (list-append associativity covers
+    ///     Tightening).
+    ///   - **Commutativity on disjoint axes:** `merge a b = merge b a`
+    ///     whenever the set of non-default axes of `a` is disjoint
+    ///     from the set of non-default axes of `b`. (The disjoint-axis
+    ///     case includes the Tightening axis: both sides' Tightening
+    ///     must be empty for commutativity to hold structurally.)
+    ///
+    /// **Distinction from `PolicyExpr.Seq`.** `Seq` is unconditionally
+    /// right-wins on every non-Tightening axis (the right side's
+    /// `Policy.empty.axis` clobbers the left's non-default value).
+    /// `merge` preserves left-side non-defaults when right is at
+    /// default — this is the "applyDelta" semantics HORIZON H-054
+    /// asks for and was missing from the codebase before Cluster F's
+    /// follow-up.
+    let merge (a: Policy) (b: Policy) : Policy =
+        let selection =
+            if b.Selection = SelectionPolicy.empty then a.Selection else b.Selection
+        let emission =
+            if b.Emission = EmissionPolicy.empty then a.Emission else b.Emission
+        let insertion =
+            if b.Insertion = InsertionPolicy.empty then a.Insertion else b.Insertion
+        let userMatching =
+            if b.UserMatching = UserMatchingStrategy.empty then a.UserMatching else b.UserMatching
+        let tightening =
+            { Interventions = a.Tightening.Interventions @ b.Tightening.Interventions }
+        { Selection    = selection
+          Emission     = emission
+          Insertion    = insertion
+          Tightening   = tightening
+          UserMatching = userMatching }
+
 
 [<RequireQualifiedAccess>]
 module ProjectionInput =

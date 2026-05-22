@@ -893,7 +893,7 @@ let ``H-070: refinement-type lite (no escaping constraint)`` () = ()
 //   - H-099 (deferred-with-stub; explicit perf-driven trigger)
 
 [<Fact>]
-let ``H-050 adjunction law: emitter determinism + CatalogDiff reflexivity (algebraic)`` () =
+let ``H-050 adjunction law: in-process reader + emitter determinism + CatalogDiff reflexivity`` () =
     citationOf
         "tests/Projection.Tests/AdjunctionLawTests.fs"
         "H-050 emitter determinism: SsdtDdlEmitter.statements is deterministic on sampleCatalog"
@@ -906,10 +906,26 @@ let ``H-050 adjunction law: emitter determinism + CatalogDiff reflexivity (algeb
     citationOf
         "tests/Projection.Tests/AdjunctionLawTests.fs"
         "H-050 T11 form: every kind in sampleCatalog produces a CreateTable in the emitter output"
-    // The full Docker-bound `reader ∘ emitter = id` sweep is the
-    // deferred-with-stub `H-050 emitter-reader adjunction sweep` in
-    // the same file; single-fixture form runs at
-    // `CanaryRoundTripTests.fs::M3` against a real container.
+    citationOf
+        "tests/Projection.Tests/AdjunctionLawTests.fs"
+        "H-050 in-process adjunction (worked example): ofCatalog c = ofStatementStream (emit c) on Columns + FKs"
+    citationOf
+        "tests/Projection.Tests/AdjunctionLawTests.fs"
+        "H-050 in-process adjunction (property): permuted module order preserves PhysicalSchema columns"
+    citationOf
+        "tests/Projection.Tests/AdjunctionLawTests.fs"
+        "H-050 in-process adjunction (property): permuted module order preserves PhysicalSchema FKs"
+    citationOf
+        "tests/Projection.Tests/AdjunctionLawTests.fs"
+        "H-050 in-process adjunction: PhysicalSchema.diff is empty across the two projections"
+    // The Cluster F follow-up shipped `PhysicalSchemaReader.ofStatementStream`
+    // (src/Projection.Targets.SSDT) — the in-process structural inverse
+    // of `Projection.Adapters.Sql.ReadSide.read`. The (Columns, FKs)
+    // axes of the adjunction law `reader ∘ emitter = id` now hold
+    // at property-sweep speed. The full Docker-bound sweep adds
+    // CHECK re-parsing + default re-rendering + computed-column
+    // server-inference; that residual sweep is the Skip stub in the
+    // same file.
     ()
 
 [<Fact>]
@@ -943,7 +959,7 @@ let ``H-052 bidirectional pillar 9: skeleton-purity + overlay-exercise (full)`` 
     ()
 
 [<Fact>]
-let ``H-054 policy simulation laws: reflexivity, from-empty, Seq associativity / left identity`` () =
+let ``H-054 policy simulation laws: reflexivity, from-empty, Seq laws, merge composition operator`` () =
     citationOf
         "tests/Projection.Tests/PolicySimulationTests.fs"
         "H-054 reflexivity (property): diff p p is empty for any populated policy"
@@ -959,14 +975,35 @@ let ``H-054 policy simulation laws: reflexivity, from-empty, Seq associativity /
     citationOf
         "tests/Projection.Tests/PolicySimulationTests.fs"
         "H-054 right-wins clobber (counterexample): naive Seq does NOT distribute over disjoint Atom-lifted axes"
-    // The "applyDelta union" law from HORIZON H-054 doesn't apply
-    // directly to PolicyExpr's Seq (right-wins, not union-with-default).
-    // The right composition operator for disjoint-axis stacking is
-    // `Override`; the file ships an Override-based commutativity test.
+    // Cluster F follow-up (2026-05-22): the missing composition
+    // operator `Policy.merge` ships in `src/Projection.Core/Policy.fs`
+    // + `PolicyExpr.Merge` DSL variant. The HORIZON H-054 third law
+    // "applyDelta union for independent axes" now holds directly:
+    citationOf
+        "tests/Projection.Tests/PolicySimulationTests.fs"
+        "H-054 merge identity (right): merge p empty = p"
+    citationOf
+        "tests/Projection.Tests/PolicySimulationTests.fs"
+        "H-054 merge identity (left): merge empty p = p"
+    citationOf
+        "tests/Projection.Tests/PolicySimulationTests.fs"
+        "H-054 merge disjoint-axis commutativity: merge p_sel p_ins = merge p_ins p_sel"
+    citationOf
+        "tests/Projection.Tests/PolicySimulationTests.fs"
+        "H-054 merge disjoint-axis distribution: every non-default axis is preserved"
+    citationOf
+        "tests/Projection.Tests/PolicySimulationTests.fs"
+        "H-054 merge associativity (property): merge (merge a b) c = merge a (merge b c)"
+    citationOf
+        "tests/Projection.Tests/PolicySimulationTests.fs"
+        "H-054 merge preserves left-side non-defaults when right is at default (the HORIZON sketch's law)"
+    citationOf
+        "tests/Projection.Tests/PolicySimulationTests.fs"
+        "H-054 PolicyExpr.Merge: eval distributes Policy.merge over child expressions"
     ()
 
 [<Fact>]
-let ``H-098 policy state machine: model-impl agreement on touched axes`` () =
+let ``H-098 policy state machine: model-impl agreement (hand-rolled + FsCheck.Experimental)`` () =
     citationOf
         "tests/Projection.Tests/PolicyStateMachineTests.fs"
         "H-098 model-impl agreement: trace-step touched axes equal at every step"
@@ -976,9 +1013,14 @@ let ``H-098 policy state machine: model-impl agreement on touched axes`` () =
     citationOf
         "tests/Projection.Tests/PolicyStateMachineTests.fs"
         "H-098 monotone growth: touched axes grow across non-Reset sequences"
-    // The model (Map<OverlayAxis, bool>) tracks which axes were
-    // touched; the real Policy is queried for which axes differ from
-    // Policy.empty. The two views must agree at every transition.
+    // Cluster F follow-up (2026-05-22): the FsCheck.Experimental.Machine
+    // variant ships alongside the hand-rolled trace-property variant.
+    // The Experimental variant gains automatic trace-shrinking on
+    // failure — a useful operational benefit for debugging future
+    // counter-examples.
+    citationOf
+        "tests/Projection.Tests/PolicyStateMachineTests.fs"
+        "H-098 FsCheck.Experimental.Machine: model-impl agreement under generated traces (shrinks on failure)"
     ()
 
 [<Fact>]
@@ -999,15 +1041,19 @@ let ``H-097 policy parser fuzz: FsCheck sweep + truncation / byte-swap mutations
     // facing API surface.
     ()
 
-[<Fact(Skip = "H-096 Mutation testing for strategy rules — Stryker.NET config \
-file shipped at `bench/stryker-config.json`. Activating the test requires \
-the .NET tool install (`dotnet tool install -g dotnet-stryker`) plus a CI \
-step. The structural surface (which strategies are in scope) is named in \
-the config file. Trigger to activate: when a strategy bug surfaces in \
-canary or production AND the existing per-strategy test suite was green \
-on the failing input (i.e., the test suite is missing a mutation-killing \
-case). Mutation score target per HORIZON: >=80% killed mutants.")>]
-let ``H-096: mutation testing for strategy rules (config shipped; CI activation deferred)`` () = ()
+[<Fact(Skip = "H-096 Mutation testing for strategy rules — **BLOCKED ON TOOLING** \
+(verified 2026-05-22). Stryker.NET 4.14.2 does NOT support F# — invoking it on \
+this solution raises `System.NotSupportedException: Language not supported: \
+Fsharp` at the InputFileResolver step. The original HORIZON proposal assumed \
+Stryker had F# support; it does not, and no equivalent F#-native mutation \
+testing framework currently ships at production maturity. The intent-preserving \
+config file lives at `bench/stryker-config.json` (records which strategy files \
+would be in scope; mutation-score targets) for the day F# support lands. \
+Revisit trigger: Stryker.NET F# support lands OR an F#-aware mutation testing \
+tool emerges. Until then this Skip rationale is the correct state; the \
+shipped FsCheck property surface over the strategy layer is the closest \
+practicable verification.")>]
+let ``H-096: mutation testing for strategy rules (BLOCKED: Stryker.NET lacks F# support)`` () = ()
 
 [<Fact(Skip = "H-099 Remote pass execution — large infrastructure work \
 (new `Projection.Adapters.Remote` project + HTTP API + osm-worker process). \
