@@ -52,6 +52,55 @@ module ValidationError =
         { e with Message = message }
 
 
+/// Validation combinators for aggregate-root smart constructors.
+/// Compresses recurring `groupBy + filter > 1 + map error` and
+/// `if Set.contains then [] else [error]` shapes into named primitives.
+///
+/// **Algebraic content.** Validation errors aggregate (per the
+/// `Result<'a, ValidationError list>` shape) — these primitives
+/// produce ValidationError lists that the smart constructor
+/// concatenates via `@` and inspects via `List.isEmpty`. No new
+/// algebra; the combinators name the recurring shapes.
+///
+/// **Why this primitive earns its place.** The `Catalog.create` smart
+/// constructor carried 70+ LOC of duplicate-key-detection boilerplate
+/// across module / kind / sequence partitions; the recurring shape
+/// (`groupBy + List.filter (>1) + List.map (fst >> error)`) ran at
+/// 5+ sites with identical structure. Lifting to `duplicateKeyErrors`
+/// collapses the boilerplate to one-line calls without changing
+/// behavior.
+[<RequireQualifiedAccess>]
+module Validation =
+
+    /// For a list of items, return one `ValidationError` per duplicated
+    /// key. `keySelector` extracts the identity-bearing field;
+    /// `msgOf` builds the per-duplicate-key human message. The error's
+    /// code is shared across the duplicates (one code, many messages).
+    ///
+    /// **Algebra.** Equivalent to `xs |> List.groupBy keySelector
+    /// |> List.choose (fun (k, group) -> if List.length group > 1
+    /// then Some (ValidationError.create code (msgOf k)) else None)`.
+    /// Stable order: keys appear in the order of first occurrence in
+    /// the input.
+    ///
+    /// **Worked example (Catalog.create — chapter-Cluster-B compression).**
+    /// Module / Kind / Sequence duplicate-key checks share this shape;
+    /// the primitive collapses each from ~10 LOC of inline boilerplate
+    /// to a single line.
+    let duplicateKeyErrors
+        (code: string)
+        (msgOf: 'k -> string)
+        (keySelector: 'a -> 'k)
+        (items: 'a list)
+        : ValidationError list =
+        items
+        |> List.groupBy keySelector
+        |> List.choose (fun (key, group) ->
+            if List.length group > 1 then
+                Some (ValidationError.create code (msgOf key))
+            else None)
+
+
 /// `Result<'a>` is a type alias for `FSharp.Core.Result<'a, ValidationError list>`.
 /// Chapter-3.6 cash-out of the user's "be bold" directive (2026-05-09):
 /// the prior custom DU (`Success of 'a | Failure of ValidationError list`) is

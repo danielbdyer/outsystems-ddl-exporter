@@ -38,8 +38,11 @@ module FkSelectivityDiagnostics =
 
     // Threshold: if average rows per FK value < 2.0, the FK column
     // is highly selective — B-tree lookup returns very few rows.
-    [<Literal>]
-    let private meanMatchThreshold = 2.0m
+    // `[<Literal>]` is not used on `decimal` — F# / .NET 9 emit a
+    // `DecimalConstantAttribute` that the CLR rejects at cctor time
+    // (`InvalidProgramException`); the discipline is "Literal only for
+    // CLR-primitive constants" and `decimal` is a struct, not a primitive.
+    let private meanMatchThreshold : decimal = 2.0m
 
     // Guard: suppress noise on tables with fewer than 10 distinct FK values.
     [<Literal>]

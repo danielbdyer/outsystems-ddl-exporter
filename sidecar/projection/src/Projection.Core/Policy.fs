@@ -647,80 +647,95 @@ module TighteningPolicy =
         List.isEmpty policy.Interventions
 
     /// Find a Nullability intervention's config by intervention id.
+    /// **Variant-filtering combinator (chapter-Cluster-B compression;
+    /// 2026-05-22).** Generic primitive for "extract every intervention
+    /// matching a typed variant predicate." Each per-axis accessor
+    /// (`nullabilityInterventions`, `uniqueIndexInterventions`, etc.)
+    /// supplies the variant-specific extractor; the combinator threads
+    /// the registration-order traversal. The same combinator handles
+    /// the singular "find by id" pattern via `List.tryPick`.
+    ///
+    /// **Algebra.** This is the closed-DU filtering primitive — `'extract`
+    /// chooses which variant + sub-fields to expose; the combinator
+    /// drops non-matching interventions. Collapses 8 sites of identical
+    /// `List.choose (fun i -> match i with | Variant (...) -> Some (...)
+    /// | _ -> None)` to one-liners.
+    let private filterIntervention
+        (extract: TighteningIntervention -> 'a option)
+        (policy: TighteningPolicy)
+        : 'a list =
+        policy.Interventions |> List.choose extract
+
+    /// Sibling combinator for the "find first matching" case. Same
+    /// extractor shape; uses `List.tryPick` for early termination.
+    let private tryFindIntervention
+        (extract: TighteningIntervention -> 'a option)
+        (policy: TighteningPolicy)
+        : 'a option =
+        policy.Interventions |> List.tryPick extract
+
+    // Per-variant extractors. Each names the variant + sub-fields the
+    // accessor exposes; reuse across `tryFind*` (id-keyed) and
+    // `*Interventions` (full list) accessors.
+    let private extractNullability =
+        function Nullability (id, cfg) -> Some (id, cfg) | _ -> None
+
+    let private extractUniqueIndex =
+        function UniqueIndex (id, cfg) -> Some (id, cfg) | _ -> None
+
+    let private extractForeignKey =
+        function ForeignKey (id, cfg) -> Some (id, cfg) | _ -> None
+
+    let private extractCategoricalUniqueness =
+        function CategoricalUniqueness (id, cfg) -> Some (id, cfg) | _ -> None
+
+    /// Find a Nullability intervention's config by intervention id.
     /// Returns `None` if no Nullability intervention has that id (or
     /// if no Nullability intervention is registered at all).
     let tryFindNullability (id: string) (policy: TighteningPolicy) : NullabilityTighteningConfig option =
-        policy.Interventions
-        |> List.tryPick (fun intervention ->
-            match intervention with
-            | Nullability (i, cfg) when i = id -> Some cfg
-            | _                                -> None)
+        policy
+        |> tryFindIntervention (extractNullability >> Option.filter (fst >> (=) id) >> Option.map snd)
 
     /// All registered Nullability interventions, paired with their ids,
     /// in registration order. Useful for passes that may apply more
     /// than one intervention (composing multiple nullability rules).
     let nullabilityInterventions (policy: TighteningPolicy) : (string * NullabilityTighteningConfig) list =
-        policy.Interventions
-        |> List.choose (fun intervention ->
-            match intervention with
-            | Nullability (id, cfg) -> Some (id, cfg)
-            | _                     -> None)
+        policy |> filterIntervention extractNullability
 
     /// Find a UniqueIndex intervention's config by intervention id.
     /// Returns `None` if no UniqueIndex intervention has that id (or
     /// if no UniqueIndex intervention is registered at all).
     let tryFindUniqueIndex (id: string) (policy: TighteningPolicy) : UniqueIndexTighteningConfig option =
-        policy.Interventions
-        |> List.tryPick (fun intervention ->
-            match intervention with
-            | UniqueIndex (i, cfg) when i = id -> Some cfg
-            | _                                -> None)
+        policy
+        |> tryFindIntervention (extractUniqueIndex >> Option.filter (fst >> (=) id) >> Option.map snd)
 
     /// All registered UniqueIndex interventions, paired with their ids,
     /// in registration order.
     let uniqueIndexInterventions (policy: TighteningPolicy) : (string * UniqueIndexTighteningConfig) list =
-        policy.Interventions
-        |> List.choose (fun intervention ->
-            match intervention with
-            | UniqueIndex (id, cfg) -> Some (id, cfg)
-            | _                     -> None)
+        policy |> filterIntervention extractUniqueIndex
 
     /// Find a ForeignKey intervention's config by intervention id.
     /// Returns `None` if no ForeignKey intervention has that id (or
     /// if no ForeignKey intervention is registered at all).
     let tryFindForeignKey (id: string) (policy: TighteningPolicy) : ForeignKeyTighteningConfig option =
-        policy.Interventions
-        |> List.tryPick (fun intervention ->
-            match intervention with
-            | ForeignKey (i, cfg) when i = id -> Some cfg
-            | _                               -> None)
+        policy
+        |> tryFindIntervention (extractForeignKey >> Option.filter (fst >> (=) id) >> Option.map snd)
 
     /// All registered ForeignKey interventions, paired with their ids,
     /// in registration order.
     let foreignKeyInterventions (policy: TighteningPolicy) : (string * ForeignKeyTighteningConfig) list =
-        policy.Interventions
-        |> List.choose (fun intervention ->
-            match intervention with
-            | ForeignKey (id, cfg) -> Some (id, cfg)
-            | _                    -> None)
+        policy |> filterIntervention extractForeignKey
 
     /// Find a CategoricalUniqueness intervention's config by id.
     /// Returns `None` if no matching intervention is registered.
     let tryFindCategoricalUniqueness (id: string) (policy: TighteningPolicy) : CategoricalUniquenessConfig option =
-        policy.Interventions
-        |> List.tryPick (fun intervention ->
-            match intervention with
-            | CategoricalUniqueness (i, cfg) when i = id -> Some cfg
-            | _                                          -> None)
+        policy
+        |> tryFindIntervention (extractCategoricalUniqueness >> Option.filter (fst >> (=) id) >> Option.map snd)
 
     /// All registered CategoricalUniqueness interventions, paired with
     /// their ids, in registration order.
     let categoricalUniquenessInterventions (policy: TighteningPolicy) : (string * CategoricalUniquenessConfig) list =
-        policy.Interventions
-        |> List.choose (fun intervention ->
-            match intervention with
-            | CategoricalUniqueness (id, cfg) -> Some (id, cfg)
-            | _                               -> None)
+        policy |> filterIntervention extractCategoricalUniqueness
 
 
 [<RequireQualifiedAccess>]

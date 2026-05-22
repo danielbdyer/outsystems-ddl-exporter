@@ -171,6 +171,65 @@ let ``fixture: sample catalog has three kinds in one module`` () =
     Assert.Equal(1, sampleCatalog.Modules.Length)
     Assert.Equal(3, (Catalog.allKinds sampleCatalog).Length)
 
+// ---------------------------------------------------------------------------
+// Chapter-Cluster-B Catalog traversal primitives (2026-05-22).
+// Tests for the named compression primitives: allModulesKinds, foldKinds,
+// mapKinds, updateKindsWhere.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Catalog.allModulesKinds: pairs every Kind with its owning Module`` () =
+    let pairs = Catalog.allModulesKinds sampleCatalog
+    Assert.Equal(3, pairs.Length)
+    // Every kind's owner is the sample catalog's single module.
+    let expectedModule = sampleCatalog.Modules.[0]
+    Assert.True(pairs |> List.forall (fun (m, _) -> m = expectedModule))
+
+[<Fact>]
+let ``Catalog.foldKinds: counts every kind across modules`` () =
+    let kindCount = Catalog.foldKinds (fun _ _ acc -> acc + 1) 0 sampleCatalog
+    Assert.Equal(3, kindCount)
+
+[<Fact>]
+let ``Catalog.foldKinds: passes owning Module to the accumulator`` () =
+    let modulesEncountered =
+        Catalog.foldKinds
+            (fun m _ acc -> Set.add m.SsKey acc)
+            Set.empty
+            sampleCatalog
+    Assert.Equal(1, Set.count modulesEncountered)  // single-module fixture
+
+[<Fact>]
+let ``Catalog.iterKinds: visits every kind once`` () =
+    let visited = ResizeArray<SsKey>()
+    Catalog.iterKinds (fun _ k -> visited.Add(k.SsKey)) sampleCatalog
+    Assert.Equal(3, visited.Count)
+
+[<Fact>]
+let ``Catalog.mapKinds: identity transformation preserves the catalog`` () =
+    let result = Catalog.mapKinds id sampleCatalog
+    Assert.Equal(sampleCatalog, result)
+
+[<Fact>]
+let ``Catalog.updateKindsWhere: non-matching kinds pass through unchanged`` () =
+    // Update no kinds (predicate matches nothing)
+    let result = Catalog.updateKindsWhere (fun _ -> false) (fun k -> k) sampleCatalog
+    Assert.Equal(sampleCatalog, result)
+
+[<Fact>]
+let ``Catalog.updateKindsWhere: matching kind is transformed; siblings preserved`` () =
+    let renamed =
+        Catalog.updateKindsWhere
+            (fun k -> k.SsKey = customerKey)
+            (fun k -> { k with Name = Name.create "Customer_Renamed" |> Result.value })
+            sampleCatalog
+    let renamedKind = Catalog.tryFindKind customerKey renamed |> Option.get
+    Assert.Equal("Customer_Renamed", Name.value renamedKind.Name)
+    // Other kinds unchanged: SsKey set is preserved (A4).
+    let originalKeys = sampleCatalog |> Catalog.allKinds |> List.map (fun k -> k.SsKey) |> Set.ofList
+    let updatedKeys = renamed |> Catalog.allKinds |> List.map (fun k -> k.SsKey) |> Set.ofList
+    Assert.Equal<Set<SsKey>>(originalKeys, updatedKeys)
+
 [<Fact>]
 let ``fixture: Order references Customer by SsKey`` () =
     let ref = order.References |> List.exactlyOne
