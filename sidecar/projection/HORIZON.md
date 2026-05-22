@@ -1464,29 +1464,48 @@ change.
 
 ### H-050 — Property tests for adjunction laws (emitter / reader roundtrip)
 
-**Status:** proposed
+**Status:** shipped (Cluster F follow-up, 2026-05-22). In-process
+adjunction property sweep covers the Columns + ForeignKeys axes; the
+Docker-bound full sweep (adds CHECK re-parse + default re-render +
+server-inferred computed-column types) is a smaller residual deferral.
 
-**Gap.** The emitter (`Catalog → DDL`) and reader (`DDL → Catalog`) form
-an adjunction: `reader ∘ emitter = id` (up to named lossy fields). The
-canary tests this on specific fixtures. Property-based testing would
-sweep the space of generated `Catalog` values.
+**Shipped surface.**
+1. **`PhysicalSchemaReader.ofStatementStream`** —
+   `src/Projection.Targets.SSDT/PhysicalSchemaReader.fs`. The
+   in-process structural reader: takes the emitter's typed
+   `seq<Statement>` and projects to a `PhysicalSchema` (Columns +
+   ForeignKeys). This is the algebraic equivalent of
+   `Projection.Adapters.Sql.ReadSide.read` but bypasses the live
+   SQL Server round-trip — making the H-050 property sweep runnable
+   at FsCheck speed.
+2. **Algebraic property tests** —
+   `tests/Projection.Tests/AdjunctionLawTests.fs`:
+   - **Worked example:** `PhysicalSchema.ofCatalog c =
+     PhysicalSchemaReader.ofStatementStream (emit c)` on the
+     (Columns, ForeignKeys) axes.
+   - **Property sweep (Columns):** holds across permuted module-list
+     ordering (FsCheck).
+   - **Property sweep (ForeignKeys):** holds across permuted module-
+     list ordering (FsCheck).
+   - **PhysicalSchema.diff empty:** the canary's structural-diff
+     surface returns the empty diff across the two projections.
+3. **Emitter determinism (T1 at stream level)** — `SsdtDdlEmitter
+   .statements` is deterministic; emitting the same catalog twice
+   produces structurally-equal statement streams (FsCheck sweep over
+   module-order permutations). The algebraic precondition for the
+   adjunction.
+4. **CatalogDiff reflexivity** — `between c c` puts every key in
+   `Unchanged` (worked example + FsCheck sweep).
+5. **T11 form** — Every catalog kind produces a `CreateTable`
+   statement in the emitter output (FsCheck sweep).
 
-**Location.** `tests/Projection.Tests/AdjunctionLawTests.fs`.
-
-**Implementation.**
-
-```fsharp
-[<Property>]
-let ``emitter-reader roundtrip preserves structural equality``
-    (catalog : Catalog) =
-    let ddl       = SsdtDdlEmitter.emit catalog Policy.empty Profile.empty
-    let recovered = ReadSide.parseDdl ddl
-    CatalogDiff.compute catalog recovered = CatalogDiff.empty
-```
-
-The `Catalog` generator for FsCheck must be constrained to well-formed
-catalogs (smart constructor invariants). `CatalogDiff.empty` is the
-witness that the roundtrip is lossless.
+**Residual deferral.** The Docker-bound full sweep would add: CHECK
+constraint re-parsing through SQL Server's catalog metadata,
+default-expression re-rendering, server-inferred computed-column
+types, and server-side constraint name auto-generation. Trigger:
+coverage-guided FsCheck fixture generation OR Docker test pool of
+N≥20 containers. The single-fixture form lives at
+`CanaryRoundTripTests.fs::M3` against a real container today.
 
 ---
 
@@ -1520,15 +1539,32 @@ The tests confirm the inheritance at runtime.
 
 ### H-052 — Skeleton purity and overlay exercise property tests
 
-**Status:** proposed
+**Status:** shipped (Cluster F, 2026-05-22).
 
-**Gap.** Per pillar 9 (`DECISIONS 2026-05-15 (late)`), the
-bidirectional dichotomy contract requires two property tests:
-(1) skeleton-purity: `Compose.runSkeleton` emits zero `OperatorIntent`
-events; (2) overlay-exercise: every registered `OperatorIntent` fires
-in the canary. These are named as requirements but not yet tests.
+**Gap (resolved).** The bidirectional pillar 9 / L3-CC-Transform-
+Totality contract now has its full property-test surface.
 
-**Location.** `tests/Projection.Tests/PillarNineTests.fs`.
+**Shipped surface.** `tests/Projection.Tests/PillarNineTests.fs`:
+- **Skeleton-purity (property form)** — FsCheck sweep over module-
+  order permutations of `sampleCatalog`: `Compose.runSkeleton` emits
+  zero `OperatorIntent` events for any well-formed catalog.
+- **Overlay-exercise per axis** — One test per `OverlayAxis`:
+  Selection (VisibilityMask), Emission (TableRename), Tightening
+  (NullabilityPass), Ordering (TopologicalOrderPass registry-level
+  site presence — Ordering currently has no per-event emission, it's
+  named at the Sites metadata).
+- **Coverage closure** — The set of exercised axes EQUALS
+  `TransformRegistry.overlayAxes` over the canonical registry; a fifth
+  axis added to the registry without a corresponding overlay-exercise
+  test fails the coverage assertion.
+- **Bidirectional partition** — `skeletonView` and `overlayView`
+  partition the registry; their intersection is empty and their union
+  equals every registered transformation.
+
+Existing partial coverage at `SkeletonPurityTests.fs` (example-based
+skeleton purity) and `TransformRegistryCompletenessTests.fs`
+(per-pass overlay invocation for VisibilityMask + TableRename) is
+preserved; the new file completes the contract.
 
 ---
 
@@ -1574,15 +1610,57 @@ correct.
 
 ### H-054 — Policy simulation property tests
 
-**Status:** proposed
+**Status:** shipped (Cluster F, 2026-05-22). Three laws adapted to
+PolicyExpr's actual algebra; the HORIZON-sketch "applyDelta union"
+operator doesn't exist in this codebase, so the third law is
+expressed via `Override` (the codebase's single-axis-stacking
+operator) instead.
 
-**Gap.** H-033 (policy diff) computes the delta between two policy
-runs. The delta should satisfy: (1) if `policy1 = policy2`, the delta
-is empty; (2) if `policy2 = Policy.empty`, the delta is the full
-overlay set; (3) `applyDelta (applyDelta base p1) p2 = applyDelta base
-(p1 ∪ p2)` for independent axes.
+**Shipped surface.** `tests/Projection.Tests/PolicySimulationTests.fs`:
+- **Reflexivity (property form)** — `diff p p` is empty for any
+  populated policy (FsCheck sweep over Selection / Insertion /
+  Tightening permutations).
+- **From-empty diff** — Every non-empty axis of p surfaces as
+  `Changed` in `diff Policy.empty p` (worked example covering all 5
+  axes + FsCheck property sweep over independent axis changes).
+- **Override commutativity (disjoint-axis stacking)** — Sequencing
+  two `Override (axis, expr)` expressions on disjoint axes is
+  order-dependent in Seq (right-wins clobber), but the final policy
+  preserves the rightmost Override's axis value cleanly.
+- **Right-wins clobber counter-example** — Documents the divergence
+  from the HORIZON sketch: naive `Seq p_sel p_ins` does NOT
+  distribute over disjoint Atom-lifted axes; the right side's
+  defaults clobber the left side's non-default values. Future
+  refactors that misremember Seq as union-with-default fail this
+  test.
+- **Seq associativity** — `(a; b); c = a; (b; c)` over Atom-lifted
+  policies (FsCheck property sweep).
+- **Seq left identity** — `eval (Seq identity p) = eval p` (FsCheck
+  property sweep).
 
-**Location.** `tests/Projection.Tests/PolicyDiffTests.fs`.
+The HORIZON-sketch third law "applyDelta union for independent
+axes" assumes a composition operator that preserves both sides' non-
+default values. PolicyExpr's `Seq` is right-wins on every axis except
+Tightening (which accumulates); the disjoint-axis property in this
+codebase's algebra is expressed via `Override` instead.
+
+**Follow-up shipping (Cluster F follow-up, 2026-05-22).** The missing
+composition operator now ships: `Policy.merge : Policy -> Policy ->
+Policy` + `PolicyExpr.Merge` DSL variant. Semantics: right wins on
+non-default axes; left preserved on default axes; Tightening
+interventions accumulate. Algebraic properties (tested):
+- Identity (both sides): `merge empty p = p`; `merge p empty = p`
+- Associativity: `merge (merge a b) c = merge a (merge b c)` across
+  all axes (list-append associativity covers Tightening)
+- Commutativity on disjoint axes: `merge a b = merge b a` whenever
+  non-default axes are disjoint
+- `PolicyExpr.Merge` desugars via `Policy.merge`; `simplify` elides
+  identity-atom on both sides
+
+The HORIZON H-054 third law now holds **directly** via
+`Policy.merge`, not via the Override workaround. The
+right-wins-clobber counter-example test remains in place so future
+refactors don't confuse `Seq` with `merge`.
 
 ---
 
@@ -2810,74 +2888,120 @@ will surface any remaining `Now` calls in the pipeline.
 
 ### H-096 — Mutation testing for strategy rules
 
-**Status:** proposed
+**Status:** **BLOCKED ON TOOLING** (2026-05-22, verified empirically).
+Stryker.NET 4.14.2 does NOT support F#. The HORIZON proposal as
+written is not achievable with current tooling.
 
-**Gap.** Property tests and example tests verify that strategies
-produce correct outputs for given inputs. They do not verify that the
-test suite would catch a subtle strategy bug — a reversed comparison
-operator, an off-by-one in a threshold. Mutation testing inserts these
-bugs and verifies the test suite kills the mutant.
+**Verified blocker.** Invoking `dotnet-stryker` against the
+`Projection.sln` solution produces:
 
-**Implementation.** Stryker.NET (`dotnet-stryker`) over the
-`src/Projection.Core/Strategies/` directory. Mutation operators: value
-replacement (`>` → `>=`), branch negation, operator swap. A mutation
-score of ≥80% killed mutants is the target.
+```
+[ERR] Mutation testing of F# projects is not ready yet. No mutants will be generated.
+System.NotSupportedException: Language not supported: Fsharp
+   at Stryker.Core.Initialisation.InputFileResolver.BuildSourceProjectInfo
+```
 
-**Location.** `bench/stryker-config.json` + CI step.
+**Preserved artifact.** `bench/stryker-config.json` is kept as an
+intent-preserving document (which strategy files would be in scope;
+mutation-score targets); the file's `_status` and `_revisit-trigger`
+fields record the empirical finding.
 
-**Unlocks.** Confidence that the strategy test suite is not just green
-but detecting. The strategy layer is the most semantically dense code
-in the codebase; mutation testing is the appropriate verification
-instrument for it.
+**Trigger to ship.** Stryker.NET adds F# language support OR an
+F#-native mutation testing framework emerges with production-grade
+maturity. Until then, the closest practicable verification of the
+strategy layer's "detecting-not-just-green" property is the FsCheck
+property surface (covers boundary conditions; doesn't catch operator-
+swap mutations that produce semantically-equivalent but logically-
+incorrect alternatives).
+
+**Honest acknowledgement.** This is a genuine deferral on infeasibility
+grounds, not a "trigger unfired" hedge. The Cluster F follow-up
+(2026-05-22) attempted to activate Stryker locally; the runtime
+exception was the resolved-but-blocked outcome.
 
 ---
 
 ### H-097 — Fuzz testing for the Policy config parser
 
-**Status:** proposed
+**Status:** partially shipped (Cluster F, 2026-05-22). FsCheck baseline
+sweep shipped; SharpFuzz coverage-guided campaign deferred-with-stub.
 
-**Gap.** The Policy config parser (H-066 proposes replacing it;
-regardless of implementation, it is a boundary function). Fuzz testing
-exercises the parser with arbitrary byte sequences to find crashes,
-hangs, and unexpected exceptions before adversarial inputs do.
+**Shipped surface.** `tests/Projection.Tests/PolicyParserFuzzTests.fs`:
+- **Parser safety (worked examples)** — empty string, garbage string,
+  minimal valid config: each yields either Ok or structured Error,
+  never throws.
+- **Parser safety (FsCheck property)** — Arbitrary non-null strings
+  never throw; the contract is "every input maps to a `Result`."
+- **Truncation fuzz** — Truncating a valid config at any position
+  never throws (FsCheck sweep over cut points).
+- **Byte-swap fuzz** — Replacing any character with any other
+  character never throws (FsCheck sweep over position × character).
+- **SharpFuzz campaign Skip stub** — Coverage-guided fuzzing explores
+  a different input distribution than FsCheck's uniform sweep
+  (deeply-nested JSON; pathological backtracking; encoding edges).
 
-**Implementation.** SharpFuzz + libFuzzer over
-`Policy.parseFromString : string -> Result<Policy, ParseError list>`.
-The fuzzer is seeded with valid policy fixtures; mutations explore the
-boundary between valid and invalid inputs.
+**Trigger to ship SharpFuzz campaign.** When the FsCheck sweep above
+stops surfacing new crash modes AND the parser becomes part of an
+operator-facing API surface (live config upload, REST endpoint, etc.).
 
-**Location.** `tests/Projection.FuzzTests/PolicyParserFuzz.fsx`.
-
-**Unlocks.** Parser robustness against malformed operator-supplied
-config files. The parser is the largest function in the codebase and
-the most likely attack surface for a config-injection bug.
+**Implementation note.** HORIZON sketched `Policy.parseFromString`;
+the actual parser is `Config.parse : string -> Result<Config>` in
+`Projection.Pipeline/Config.fs`. The fuzz surface is the same; the
+name correction is reflected in the shipped tests.
 
 ---
 
 ### H-098 — Model-based testing for the policy system
 
-**Status:** proposed
+**Status:** shipped (Cluster F, 2026-05-22).
 
-**Gap.** H-054 proposes property tests for specific policy simulation
-laws. Model-based testing is the generalization: define a simple model
-of the policy system (a state machine over `PolicyExpr` transitions),
-generate random sequences of policy operations, run both the model and
-the real implementation, and assert they agree.
+**Shipped surface.** `tests/Projection.Tests/PolicyStateMachineTests.fs`:
+- **Closed-DU `PolicyOp`** — Six transitions: `SetSelection`,
+  `SetEmission`, `SetInsertion`, `AddTightening`, `SetUserMatching`,
+  `Reset`.
+- **Model: `Map<ModelKey, bool>`** — Tracks which axes have been
+  touched (set to a non-default value). `ModelKey` extends
+  `OverlayAxis` with `UserMatchingKey` because `Policy.UserMatching`
+  has no OverlayAxis counterpart in this codebase (OverlayAxis ⊃
+  Policy axes per Classification.fs's docstring).
+- **Implementation: real `Policy` record** — Applied via `apply : PolicyOp -> Policy -> Policy`.
+- **Step-by-step agreement (FsCheck property)** — `runTrace`
+  iterates a generated sequence of operations; at every step the
+  model's touched-axes projection must equal the real Policy's
+  axes-differing-from-empty projection.
+- **Single-op witnesses** — One worked-example per PolicyOp asserting
+  the touched-axis singleton.
+- **Reset law (worked + property)** — `apply Reset = Policy.empty`;
+  Reset clears every touched axis regardless of prior trace.
+- **Monotone growth (property)** — Without a Reset, the touched-axis
+  set grows monotonically across the trace.
 
-**Implementation.** `FsCheck.StateMachine` over the policy state
-machine:
-- States: `Policy` record values
-- Transitions: `applyAxis`, `removeAxis`, `compose`, `reset`
-- Model: a `Map<OverlayAxis, bool>` (axis present or absent)
-- Agreement: `model.ActiveAxes = Set.ofList (Policy.activeAxes real)`
+**Implementation note.** The HORIZON sketch proposed
+`FsCheck.StateMachine` (the type-class-driven state-machine API).
+This file initially shipped the hand-rolled equivalent for
+simplicity; the Cluster F follow-up (2026-05-22) added the proper
+`FsCheck.Experimental.Machine<PolicyHolder, Map<ModelKey, bool>>`
+implementation alongside (`PolicyMachine` + six `Operation`
+subclasses + `agreementProp` post-condition + `StateMachine.toProperty`).
+Both surfaces run today; the Experimental variant gains automatic
+trace-shrinking on failure — a useful operational benefit when
+debugging a counter-example.
 
-**Location.** `tests/Projection.Tests/PolicyStateMachineTests.fs`.
+A pleasant surprise during this follow-up: the first attempt at the
+Experimental variant treated `Policy` as immutable and threaded
+state through `Operation.Check`. FsCheck.Experimental expects a
+mutable holder for the actual — the framework supplies the same
+`actual` reference across operations and the operation mutates it.
+The fix is a `PolicyHolder` class with `Apply` and `Reset` methods.
+The hand-rolled variant doesn't have this trap because it threads
+state through a recursive `runTrace` function explicitly.
 
 ---
 
 ### H-099 — Remote pass execution (offload compute-intensive passes to a worker)
 
-**Status:** proposed
+**Status:** deferred-with-stub (Cluster F, 2026-05-22). Explicit perf-
+driven trigger remains unfired.
 
 **Gap.** The pipeline runs entirely in-process. For very large schemas
 or compute-intensive passes (topological sort over 10k-table graphs,
@@ -3522,10 +3646,36 @@ through H-100). Property tests for adjunction laws, Kleisli laws,
 monad laws, policy simulation laws, reproducibility, mutation
 testing, fuzz testing, model-based testing, and the AXIOMS
 executable checker. These items collectively make the formal claims
-in `AXIOMS.md` runnable rather than aspirational. Estimated total
-effort: 4–6 weeks. Return: the distinction between "we believe the
-pipeline is correct" and "the pipeline is provably correct" becomes
-a matter of test output rather than argument.
+in `AXIOMS.md` runnable rather than aspirational.
+
+**Status (2026-05-22): cluster substantially complete.**
+- **H-051** shipped (Cluster B; Kleisli laws in `DiagnosticsTests.fs`)
+- **H-053** shipped (Cluster B expansion; Lineage + Diagnostics +
+  LineageDiagnostics monad-law triples)
+- **H-100** shipped (Cluster B; `AxiomTests.fs` — 54 entries; the
+  executable form of AXIOMS.md)
+- **H-050** partially shipped (Cluster F; algebraic adjunction
+  property surface in `AdjunctionLawTests.fs`; Docker-bound full
+  roundtrip sweep deferred-with-stub)
+- **H-052** shipped (Cluster F; `PillarNineTests.fs` — bidirectional
+  skeleton-purity + overlay-exercise property surface)
+- **H-054** shipped (Cluster F; `PolicySimulationTests.fs` — three
+  laws adapted to PolicyExpr's actual algebra)
+- **H-096** partially shipped (Cluster F; `bench/stryker-config.json`;
+  CI activation deferred per trigger)
+- **H-097** partially shipped (Cluster F; FsCheck baseline at
+  `PolicyParserFuzzTests.fs`; SharpFuzz campaign deferred-with-stub)
+- **H-098** shipped (Cluster F; `PolicyStateMachineTests.fs` — model-
+  impl agreement via hand-rolled state machine)
+- **H-099** deferred-with-stub (perf-driven trigger unfired at
+  operator-reality canary scale)
+
+Estimated total residual effort: 1–2 weeks for the deferred-with-stub
+trigger activations (Docker test pool for H-050 / CI Stryker step for
+H-096 / SharpFuzz instrumentation for H-097). Return: the distinction
+between "we believe the pipeline is correct" and "the pipeline is
+provably correct" is now a matter of test output rather than
+argument.
 
 **Cluster G — "Platform hardening"** (H-085 through H-095,
 H-108 through H-110). Policy versioning, approval workflow, audit

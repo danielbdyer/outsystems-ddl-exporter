@@ -1,0 +1,40 @@
+{
+  "stryker-config": {
+    "_comment": "H-096 (HORIZON Cluster F): mutation-testing configuration. **CAVEAT (verified 2026-05-22):** Stryker.NET 4.14.2 does NOT support F# — invoking it on this solution raises `System.NotSupportedException: Language not supported: Fsharp`. The config file preserves the INTENT (which strategy files would be in scope; what mutation score thresholds would target) for the day F# support lands in Stryker OR an F#-aware mutation tool emerges. The HORIZON H-096 proposal as written is NOT achievable with current tooling.",
+    "_status": "blocked-on-tooling: Stryker.NET does not support F#; no F#-aware mutation testing tool currently exists",
+    "_revisit-trigger": "Stryker.NET F# support lands (https://github.com/stryker-mutator/stryker-net/issues — track F# language support issue), OR an F#-native mutation testing framework emerges with at least the same level of maturity as Stryker.NET for C#.",
+    "project": "../src/Projection.Core/Projection.Core.fsproj",
+    "test-projects": [
+      "../tests/Projection.Tests/Projection.Tests.fsproj"
+    ],
+    "language-version": "Default",
+    "mutate": [
+      "../src/Projection.Core/Strategies/NullabilityRules.fs",
+      "../src/Projection.Core/Strategies/UniqueIndexRules.fs",
+      "../src/Projection.Core/Strategies/ForeignKeyRules.fs",
+      "../src/Projection.Core/Strategies/CategoricalUniquenessRules.fs",
+      "../src/Projection.Core/Strategies/CycleResolution.fs"
+    ],
+    "test-case-filter": "FullyQualifiedName~Strategies | FullyQualifiedName~NullabilityRulesTests | FullyQualifiedName~UniqueIndexRulesTests | FullyQualifiedName~ForeignKeyRulesTests | FullyQualifiedName~CategoricalUniquenessRulesTests | FullyQualifiedName~CycleResolutionTests",
+    "thresholds": {
+      "high": 90,
+      "low": 80,
+      "break": 60
+    },
+    "concurrency": 4,
+    "reporters": [
+      "html",
+      "progress",
+      "json"
+    ],
+    "ignore-methods": [
+      "Bench.scope*",
+      "Bench.iterDo*",
+      "Bench.iterMap*",
+      "Bench.recordSample*"
+    ],
+    "ignored-mutations": [
+      "string"
+    ]
+  }
+}

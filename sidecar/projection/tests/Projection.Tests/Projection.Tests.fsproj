@@ -60,6 +60,7 @@
     <Compile Include="AxiomTests.fs" />
     <Compile Include="ArtifactByKindTests.fs" />
     <Compile Include="CatalogDiffTests.fs" />
+    <Compile Include="AdjunctionLawTests.fs" />
     <Compile Include="RefactorLogEmitterTests.fs" />
     <Compile Include="RefactorLogRenderTests.fs" />
     <Compile Include="ScriptDomRoundTripTests.fs" />
@@ -82,6 +83,9 @@
     <Compile Include="VersionedPolicyTests.fs" />
     <Compile Include="ApprovalWorkflowTests.fs" />
     <Compile Include="PolicyDiffTests.fs" />
+    <Compile Include="PolicySimulationTests.fs" />
+    <Compile Include="PolicyStateMachineTests.fs" />
+    <Compile Include="PolicyParserFuzzTests.fs" />
     <Compile Include="UserMatchingStrategyTests.fs" />
     <Compile Include="UserPopulationTests.fs" />
     <Compile Include="UserRemapContextTests.fs" />
@@ -161,6 +165,7 @@
     <Compile Include="RegisteredTransformsTests.fs" />
     <Compile Include="PassChainAdapterComposeTests.fs" />
     <Compile Include="SkeletonPurityTests.fs" />
+    <Compile Include="PillarNineTests.fs" />
     <Compile Include="RegisteredAllTransformsBidirectionalTests.fs" />
     <Compile Include="RegistryDigestRoundTripTests.fs" />
     <Compile Include="SsdtExtendedPropertyEmissionTests.fs" />

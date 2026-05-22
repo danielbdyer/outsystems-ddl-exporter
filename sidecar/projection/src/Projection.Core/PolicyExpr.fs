@@ -37,6 +37,14 @@ type PolicyExpr =
     /// Sequential composition: right side overrides left on all axes.
     /// Tightening interventions accumulate (left then right).
     | Seq      of PolicyExpr * PolicyExpr
+    /// Merge composition (HORIZON Cluster F follow-up): right wins on
+    /// **non-default** axes only — left-side non-default values are
+    /// preserved when the right side carries the axis at its
+    /// `Policy.empty` default. Tightening interventions accumulate
+    /// (left then right). The HORIZON H-054 "applyDelta union for
+    /// independent axes" semantics: commutative on disjoint-axis
+    /// policies, associative across all axes.
+    | Merge    of PolicyExpr * PolicyExpr
     /// Apply only the named axis from the child expression; all other
     /// axes remain at `Policy.empty`. `Override (Ordering, _)` produces
     /// `Policy.empty` because `Ordering` has no corresponding Policy axis.
@@ -128,6 +136,8 @@ module PolicyExpr =
                 Selection = unionSelection pa.Selection pb.Selection }
         | Seq (a, b) ->
             mergePolicy (eval a) (eval b)
+        | Merge (a, b) ->
+            Policy.merge (eval a) (eval b)
         | Override (axis, child) ->
             let p = eval child
             match axis with
@@ -154,6 +164,14 @@ module PolicyExpr =
             match simplify a, simplify b with
             | Atom p, sb when p = Policy.empty -> sb   // left identity only
             | sa, sb                           -> Seq (sa, sb)
+        | Merge (a, b)     ->
+            // Merge is two-sided identity: empty on either side
+            // elides. The unconditional `Policy.merge` makes both
+            // directions of the identity law sound.
+            match simplify a, simplify b with
+            | Atom p, sb when p = Policy.empty -> sb
+            | sa, Atom p when p = Policy.empty -> sa
+            | sa, sb                           -> Merge (sa, sb)
         | Override (axis, child) ->
             Override (axis, simplify child)
 
