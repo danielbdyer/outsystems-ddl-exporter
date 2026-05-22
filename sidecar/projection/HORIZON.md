@@ -167,30 +167,40 @@ category with new operators rather than re-discovering its structure.
 
 ### H-004 — Certificate as a first-class type wrapper
 
-**Status:** proposed
+**Status:** shipped (Cluster B follow-on, 2026-05-22).
 
-**Gap.** The manifest is produced at the end of the pipeline as a
-side-output. The DDL surface and the proof of its correctness are
-separate values. A `Certificate<'a>` type would couple them:
+**Gap (resolved).** The DDL surface and the proof of its correctness
+were separate values. The `Certificate<'a>` type now couples them:
 
 ```fsharp
-type Certificate<'a> = {
-    Value    : 'a
-    Manifest : Manifest
-    Trail    : LineageEvent list
+type Certificate<'a when 'a : equality> = {
+    Value : 'a
+    Trail : LineageEvent list
+    Diagnostics : DiagnosticEntry list
 }
 ```
 
-**Location.** New type in `src/Projection.Core/Lineage.fs` or a
-dedicated `src/Projection.Core/Certificate.fs`.
+**Shipped surface.** `src/Projection.Core/Diagnostics.fs` —
+`Certificate.create` / `ofLineageDiagnostics` / `toLineageDiagnostics`
+(structural isomorphism with the dual writer) / `map` /
+`combine` / `ofValue`. 8 tests in `DiagnosticsTests.fs` covering
+isomorphism, functor laws, combine chronology, identity element,
+and `Pass.id`-bridge equivalence.
 
-**Unlocks.** Downstream consumers receive `Certificate<DDL>` and can
-inspect the proof without touching the DDL. Composing two
-certificates produces a certificate whose trail is the concatenation
-of both. The manifest is no longer terminal — it is a carried value.
-Multi-target fanout (H-009) becomes `Certificate<SSDT> *
-Certificate<Json> * Certificate<Distribution>` with a shared trail
-prefix.
+**Manifest layering.** The HORIZON sketch named a `Manifest` field on
+Certificate. The `Manifest` type lives in `Projection.Targets.SSDT`
+(outside Core); Core's Certificate carries only the algebraic content
+(value + trail + diagnostics). Pipeline/Targets-layer extensions can
+pair `Certificate<'a>` with a Manifest in a downstream wrapper (e.g.,
+`type CertifiedBundle = { Certificate : Certificate<SsdtBundle>;
+Manifest : Manifest }`). The layering keeps Core pure.
+
+**Unlocks delivered.** Downstream consumers can receive
+`Certificate<DDL>` and inspect the proof without touching the DDL.
+H-009 (multi-target fanout) now has its terminal-form type —
+`Certificate<SsdtBundle> * Certificate<JsonBundle> *
+Certificate<DistributionsBundle>` becomes the operator's output shape
+once the Pipeline-layer fanout machinery ships.
 
 ---
 
@@ -218,32 +228,46 @@ becomes a branch operation.
 
 ### H-006 — Parallel pass composition operator (monoidal product)
 
-**Status:** proposed
+**Status:** static algebra shipped (Cluster B follow-on, 2026-05-22);
+dynamic pass-chain integration deferred.
 
-**Gap.** `PassChainAdapter.compose` is strictly sequential Kleisli
-composition. Many passes operate on disjoint `SsKey` sets and are
-therefore mathematically independent. There is no parallel composition
-operator.
+**Gap (partially resolved).** `PassChainAdapter.compose` is sequential
+Kleisli composition; many passes are mathematically independent. The
+Cluster B work shipped the **static algebraic primitive**:
 
-**Implementation sketch.**
 ```fsharp
-/// Run two passes concurrently on disjoint SsKey partitions,
-/// merge their lineage trails at the join point.
-val par : Pass<Catalog, Catalog> -> Pass<Catalog, Catalog>
-       -> Pass<Catalog, Catalog>
+module Pass =
+    val product : Pass<'a, 'b> -> Pass<'a, 'c> -> Pass<'a, 'b * 'c>
+    val first   : Pass<'a, 'b> -> Pass<'a * 'c, 'b * 'c>
+    val second  : Pass<'a, 'b> -> Pass<'c * 'a, 'c * 'b>
+
+module PassOperators =
+    val (&&&) : Pass<'a, 'b> -> Pass<'a, 'c> -> Pass<'a, 'b * 'c>
 ```
 
-The `SsKey` partition is derived from `TopologicalOrder.levels` (which
-already computes independent batches). Passes within the same level are
-disjoint by construction and can be composed with `par` rather than
-`>=>`.
+`Pass.product` is the categorical fan-out (arrow notation `&&&`).
+Together with `Pass.compose` (`>=>`), it gives the full
+Kleisli-with-products surface. Trails + diagnostics from both arrows
+concatenate chronologically per A24 amended.
 
-**Location.** `src/Projection.Pipeline/PassChainAdapter.fs`.
+**What's still deferred.** The dynamic pass-chain integration —
+using `TopologicalOrder.levels` to partition passes into SsKey-disjoint
+batches, then composing within-level passes via `product` rather than
+sequentially through `PassChainAdapter.compose`. This requires:
+operational scheduling logic at the Pipeline layer; SsKey-disjointness
+verification at registration time; potentially `Async` infrastructure
+for genuine concurrency.
 
-**Unlocks.** The deployment batch computation that `TopologicalOrder.levels`
-already performs also becomes the pass scheduling surface. Passes that
-don't share `SsKey` state run concurrently; composition time drops
-from O(n_passes × n_kinds) to O(max_level_depth × n_kinds).
+**Trigger to ship the dynamic integration.** Pass-chain wall-clock
+measurement at operator-reality canary scale shows a specific pass takes
+>50% of pipeline wall time AND is decomposable across disjoint
+`SsKey` partitions. Per HORIZON cross-cutting note, parallel
+composition pays off when level depth dominates pass count.
+
+**Unlocks (static algebra; delivered).** H-009 (multi-target fanout)
+now has its compositional primitive — a pre-fanout pass chain
+composes with sibling-Π emitter arrows via `&&&`. Future H-063 (free
+monad scheduling) inherits the primitives.
 
 ---
 
@@ -282,31 +306,32 @@ that are shaped to the delta rather than to the full schema. The
 
 ### H-008 — DiagnosticLattice: a partial order over diagnostic entries
 
-**Status:** proposed
+**Status:** shipped (Cluster B follow-on, 2026-05-22).
 
-**Gap.** `Diagnostics<'a>` is currently an unordered collection of
-`DiagnosticEntry` values. There is no formal notion of subsumption
-(a table-level error makes its column-level errors redundant), or of
-ordering (a nullability conflict must be resolved before a tightening
-intervention targeting the same column is actionable).
+**Gap (resolved).** `Diagnostics<'a>` was an unordered collection.
+The lattice surface now carries Subsumes + Precedes relations and a
+`minimal` reducer.
 
-**Implementation sketch.**
-```fsharp
-type DiagnosticRelation =
-    | Subsumes of DiagnosticEntry * DiagnosticEntry
-    | Precedes of DiagnosticEntry * DiagnosticEntry
+**Shipped surface.** `src/Projection.Core/Diagnostics.fs` —
+`DiagnosticRelation` (closed DU with `Subsumes` / `Precedes`),
+`DiagnosticLattice.subsumes` / `relations` / `isMinimal` / `minimal`.
 
-val lattice : Diagnostics<'a> -> DiagnosticRelation list
-val minimal  : Diagnostics<'a> -> Diagnostics<'a>
-```
+**Subsumption rule (decided as part of shipping).** Code-prefix +
+SsKey-context: `subsumer.Code` is a strict prefix of `subsumed.Code`
+(with `.` separator) AND `subsumer.SsKey ∈ {None; Some k}` matches
+`subsumed.SsKey ∈ {None; Some k}`. The catalog-level (no SsKey)
+catches its per-kind attachments; per-kind subsumes its sub-code
+detail entries; different SsKey contexts are incomparable.
 
-**Location.** `src/Projection.Core/Diagnostics.fs`.
+**Properties tested.** Idempotence (`minimal (minimal m) = minimal m`),
+containment (`∀ e ∈ minimal m. e ∈ m`), antichain (subsumption
+violations between minimal entries are impossible by construction).
+~10 tests in `DiagnosticsTests.fs`.
 
-**Unlocks.** The operator-facing diagnostic output becomes a minimal,
-ordered set rather than a flat list. Triage is deterministic. The
-`v2 diagnose` verb emits a structured report where each entry is
-positioned in the partial order; resolving a parent entry propagates
-its resolution downward.
+**Unlocks delivered.** The operator-facing diagnostic output now has
+a deterministic triage surface. Future `v2 diagnose` verb (Cluster D
+adjacent) emits `minimal` reductions; resolving a parent entry
+propagates structurally to its subsumed entries.
 
 ---
 
@@ -345,31 +370,54 @@ all sharing a trail prefix.
 
 ### H-010 — Bidirectional specs as Prisms (Catalog ↔ DDL)
 
-**Status:** proposed
+**Status:** type shipped (Cluster B follow-on, 2026-05-22);
+Catalog ↔ DDL consumer integration deferred.
 
-**Gap.** The emitter (`Catalog → DDL`) and reader (`DDL → Catalog`) are
-separate code paths with no formal coupling. Roundtrip laws exist as
-ad-hoc canary property tests but are not typed as laws.
+**Gap (partially resolved).** The Prism algebraic type now ships:
 
-**Implementation sketch.**
 ```fsharp
 type Prism<'a, 'b> = {
     Get        : 'a -> 'b
     ReverseGet : 'b -> 'a option
 }
 
-val catalogDdlPrism : Prism<Catalog, DDL>
-// Law: reverseGet (get c) = Some c'  where c' ≡ c modulo known lossy fields
-// Violations ≡ manifest.Unsupported list
+module Prism =
+    val get        : Prism<'a, 'b> -> 'a -> 'b
+    val reverseGet : Prism<'a, 'b> -> 'b -> 'a option
+    val roundtrips : Prism<'a, 'b> -> ('a -> 'a -> bool) -> 'a -> bool
+    val partition  : Prism<'a, 'b> -> ('a -> 'a -> bool) -> 'a seq -> 'a list * 'a list
+    val identity   : Prism<'a, 'a>
+    val compose    : Prism<'a, 'b> -> Prism<'b, 'c> -> Prism<'a, 'c>
 ```
 
-**Location.** New module `src/Projection.Core/Prism.fs`.
+**Location.** `src/Projection.Core/Diagnostics.fs` (alongside the dual
+writer + Pass surface; the prism is the bidirectional algebraic dual
+of the unidirectional Pass arrow).
 
-**Unlocks.** Coverage tracking in the manifest becomes a law checker
-rather than a bookkeeping exercise. Every field in `Unsupported` is a
-named violation of the losslessness law. The roundtrip canary becomes
-a typed law check: `Prism.check catalogDdlPrism` on the fixture catalog
-asserts the law and reports violations as typed `PrismViolation` values.
+**What's deferred.** The Catalog ↔ DDL prism integration — where
+`manifest.Unsupported` becomes the violating partition of
+`Prism.partition`. Today the canary's PhysicalSchema diff operates the
+round-trip property informally; promoting to typed Prism enforcement
+requires:
+1. A `catalogDdlPrism : Prism<Catalog, DDL>` instance binding emitter
+   + reader (`SsdtDdlEmitter.emit` for `Get`; `ReadSide.readCatalog`
+   for `ReverseGet`)
+2. The `PrismViolation` taxonomy enumeration (one variant per known
+   lossy field — column defaults, computed-column expressions,
+   partition schemes, etc.)
+3. Canary-integration test that asserts `Prism.partition catalogDdlPrism`
+   matches `manifest.Unsupported` exactly.
+
+**Trigger to ship the consumer integration.** When `manifest.Unsupported`
+becomes operator-facing (e.g., the operator-report verb adds a
+"coverage section") OR when a downstream consumer demands typed
+losslessness enforcement.
+
+**Unlocks (algebra; delivered).** Properties tested via `Prism.roundtrips`
++ `Prism.partition`; round-trip law is enforceable on any
+`Prism<'a, 'b>` instance. The categorical pairing with `Pass<'a, 'b>`
+is named — `Pass` is the unidirectional Kleisli arrow; `Prism` is the
+bidirectional partial dual.
 
 ---
 
@@ -1371,28 +1419,29 @@ witness that the roundtrip is lossless.
 
 ### H-051 — Kleisli law tests (identity and associativity)
 
-**Status:** proposed
+**Status:** shipped (Cluster B; H-003; 2026-05-22).
 
-**Gap.** `PassChainAdapter.compose` is Kleisli composition. The Kleisli
-category laws — left identity, right identity, and associativity — are
-not tested.
+**Gap (resolved).** The Kleisli category laws — left identity, right
+identity, and associativity over `Pass<'a, 'b> = 'a ->
+Lineage<Diagnostics<'b>>` — are now property-tested in
+`tests/Projection.Tests/DiagnosticsTests.fs`:
 
-**Location.** `tests/Projection.Tests/KleisliLawTests.fs`.
+- `` ``H-003 Kleisli: left identity (Pass.id >=> f = f)`` ``
+- `` ``H-003 Kleisli: right identity (f >=> Pass.id = f)`` ``
+- `` ``H-003 Kleisli: associativity ((f >=> g) >=> h = f >=> (g >=> h))`` ``
+- `` ``H-003 Kleisli: composeAll [] = Pass.id`` `` (empty fold = identity)
+- `` ``H-003 Kleisli: composeAll [f; g; h] threads chronologically`` ``
 
-**Implementation.**
+**Location.** The HORIZON sketch proposed
+`tests/Projection.Tests/KleisliLawTests.fs`; the tests shipped in
+`DiagnosticsTests.fs` alongside the dual-writer monad-law triples
+they depend on. Per the domain-first naming discipline (DECISIONS
+2026-05-10), tests live where their substrate is — `KleisliLawTests.fs`
+would have separated test from substrate without benefit.
 
-```fsharp
-[<Property>]
-let ``left identity: compose (return ∘ f) g = g`` ...
-[<Property>]
-let ``right identity: compose f (return ∘ id) = f`` ...
-[<Property>]
-let ``associativity: compose (compose f g) h = compose f (compose g h)`` ...
-```
-
-The `return` here is `Lineage.ofValue`; the composition is
-`PassChainAdapter.compose`. All three laws follow from `Lineage.bind`
-satisfying monad laws; the tests make the guarantee explicit.
+**Algebra.** Per A24 amended (`AXIOMS.md`), the Kleisli laws are
+**inherited** from the stacked monad's laws — not independent claims.
+The tests confirm the inheritance at runtime.
 
 ---
 
@@ -1694,37 +1743,63 @@ across two `|> map` calls; `diMap` unifies them.
 
 ### H-062 — Reader comonad for Policy + Profile context propagation
 
-**Status:** proposed
+**Status:** type shipped (Cluster B follow-on, 2026-05-22);
+pass-driver adoption deferred.
 
-**Gap.** Every pass takes `Policy` and `Profile` as parameters. This
-is the reader monad pattern applied at the parameter level. The dual
-of a reader monad is a reader comonad — a value `'a` paired with the
-context `Policy * Profile` that produced it, with `extract` projecting
-out the value and `extend` threading context through a chain of
-computations.
-
-**Implementation sketch.**
+**Gap (partially resolved).** The reader-comonad primitive now ships
+as a parameterized type `PassContext<'env, 'a>`:
 
 ```fsharp
-type PassContext<'a> = {
-    Value   : 'a
-    Policy  : Policy
-    Profile : Profile
+type PassContext<'env, 'a> = {
+    Environment : 'env
+    Value : 'a
 }
 
-val extend  : (PassContext<'a> -> 'b) -> PassContext<'a> -> PassContext<'b>
-val extract : PassContext<'a> -> 'a
+module PassContext =
+    val extract  : PassContext<'env, 'a> -> 'a
+    val ask      : PassContext<'env, 'a> -> 'env
+    val ofValue  : 'env -> 'a -> PassContext<'env, 'a>
+    val map      : ('a -> 'b) -> PassContext<'env, 'a> -> PassContext<'env, 'b>
+    val extend   : (PassContext<'env, 'a> -> 'b) -> PassContext<'env, 'a> -> PassContext<'env, 'b>
+    val applyEnv : ('env -> 'a -> 'b) -> PassContext<'env, 'a> -> PassContext<'env, 'b>
 ```
 
-**Location.** New module `src/Projection.Core/PassContext.fs`.
+The `'env` type parameter generalizes the HORIZON sketch's
+`Policy × Profile` specialization — any context type fits. For the
+canonical pipeline integration, instantiate `PassContext<Policy *
+Profile, Catalog>`.
 
-**Unlocks.** A pass chain written with `extend` carries `Policy` and
-`Profile` through the chain implicitly; each pass sees the full context
-without taking it as an explicit parameter. The comonad laws (left
-identity, right identity, associativity of `extend`) are
-property-testable. This is the context-propagation dual of the
-Lineage writer monad; together they characterize the full algebraic
-structure of the pipeline.
+**Location.** `src/Projection.Core/Diagnostics.fs` (alongside
+`Pass<'a, 'b>` — the categorical dual; together they cover both
+algebraic legs).
+
+**Properties tested.** Three comonad laws property-tested via FsCheck:
+- Left identity: `extend extract ctx = ctx`
+- Right identity: `extract (extend f ctx) = f ctx`
+- Associativity: `extend f (extend g ctx) = extend (fun c -> f (extend g c)) ctx`
+
+Plus functor identity + composition + `ask` semantics + `applyEnv`
+convenience. ~6 tests in `DiagnosticsTests.fs`.
+
+**What's deferred.** Pass-driver adoption — rewriting existing
+`Catalog -> Policy -> Profile -> Lineage<...>` signatures to
+`PassContext<Policy * Profile, Catalog> -> Lineage<...>`. This is a
+broad refactor (~14 pass drivers); the refactor's value materializes
+only when parameter threading at registration sites becomes
+operator-visible noise. Today the registration layer
+(`RegisteredTransforms.allChainStepsFor`) absorbs the threading.
+
+**Trigger to ship the integration.** When a new pass surface needs
+context-aware composition (e.g., a pass that decides whether to fire
+based on the operator-supplied Policy in a way that recurs at ≥3
+sites) — the comonad's `extend` becomes idiomatic at the recurring
+site.
+
+**Algebra.** PassContext is the **categorical dual** of `Pass<'a, 'b>`:
+the Kleisli arrow (Pass) threads writer effects forward; the
+CoKleisli arrow over PassContext (via `extend`) threads context
+backward. Together they characterize the full algebraic structure of
+the pipeline. The type lift makes the dual visible.
 
 ---
 
@@ -2820,20 +2895,38 @@ distribution is itself a single-file-verifiable artifact.
 
 **Priority tiers** (extended):
 
-- **Tier 1 — Immediate craft dividend:** H-001 through H-003,
-  H-012, H-031, H-036, H-037, H-038 (original list). From the
-  extension: H-066 (parser CE — highest single-function leverage
-  in the codebase), H-069 (SqlIdentifier VO — closes a security
-  surface), H-100 (axiom tests — makes the formal system live).
+- **Tier 1 — Immediate craft dividend:** H-001 ✓ H-002 ✓ H-003 ✓
+  (Cluster B; CE builders + Kleisli explicit); H-012 ⏸ deferred-with-
+  stub (trigger unfired: zero nested-match-on-SsKey sites); H-031 ✓
+  (Cluster A); H-036, H-037, H-038 — Rung-1 graph/CLI tail; not pure
+  algebra/F#-paradigm so deferred from Cluster B scope (defer to
+  Cluster D / dedicated CLI slice). From the extension: H-066 (parser
+  CE — highest single-function leverage in the codebase), H-069
+  ⏸ deferred (SqlIdentifier VO; small VO + 20-site refactor; convenience
+  deferral — could ship in a hygiene slice), H-100 ✓ (axiom tests
+  shipped).
+
+- **Cluster B follow-on (Cluster-B-adjacent algebra shipped 2026-05-22):**
+  H-004 ✓ (Certificate<'a>); H-006 ✓ static (Pass.product / first /
+  second / &&&) + ⏸ dynamic scheduling; H-008 ✓ (DiagnosticLattice +
+  minimal); H-010 ✓ type (Prism<'a, 'b>) + ⏸ Catalog↔DDL consumer;
+  H-051 ✓ (shipped via H-003 in DiagnosticsTests); H-053 ✓ expanded
+  (Diagnostics + LineageDiagnostics + Kleisli law triples); H-062 ✓
+  type (PassContext<'env, 'a>) + ⏸ pass-driver adoption.
 
 - **Tier 2 — Statistical evidence closure + intelligence features:**
   H-024 through H-030, H-033, H-071, H-073, H-074, H-075. The
   LiveProfiler computes the evidence; these items are the consumers
   and analysts.
 
-- **Tier 3 — Kernel growth:** H-005 through H-011, H-016, H-060
-  through H-065. Each adds new formal machinery — new types, new
-  composition operators, new categorical structures.
+- **Tier 3 — Kernel growth (algebra-resonant; deferred-with-cause):**
+  H-005 (branching lineage; reshapes Lineage<'a> data structure);
+  H-007 full (delta pass category; second Kleisli category);
+  H-009 (multi-target fanout machinery; Pipeline integration);
+  H-011 (incremental computation; dependency-graph extraction);
+  H-016 (PolicyExpr DSL); H-060–H-065 (deep categorical structure
+  depending on H-005 / H-016). Each adds new formal machinery; each
+  has a named trigger in its HORIZON entry.
 
 - **Tier 4 — Multi-format targets:** H-078 through H-084. Each is
   a new sibling Π; they share the Catalog/Profile evidence and

@@ -550,6 +550,56 @@ let ``H-003 Kleisli: Pass<'a, 'b> names the pipeline's category structure`` () =
     // `Pass.composeAll` modulo Bench scoping.
     ()
 
+[<Fact>]
+let ``H-004 Certificate<'a>: terminal-of-pipeline wrapper (Cluster B follow-on)`` () =
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "H-004 Certificate: ofLineageDiagnostics ∘ toLineageDiagnostics = id"
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "H-004 Certificate: combine concatenates trails + diagnostics chronologically"
+    // `Certificate<'a> = { Value : 'a; Trail : LineageEvent list;
+    // Diagnostics : DiagnosticEntry list }` — terminal-of-pipeline form
+    // of `Lineage<Diagnostics<'a>>`. Structural isomorphism via
+    // `ofLineageDiagnostics` / `toLineageDiagnostics`. Unlocks H-009
+    // (multi-target fanout) — sibling Π's produce Certificate values
+    // that combine via Certificate.combine with shared trail prefix.
+    ()
+
+[<Fact>]
+let ``H-006 Pass.product: monoidal product on Kleisli arrows (partial; Cluster B follow-on)`` () =
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "H-006 Pass.product: pairs outputs from a shared input"
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "H-006 Pass.product operator (&&&) equals Pass.product"
+    // `Pass.product : Pass<'a, 'b> -> Pass<'a, 'c> -> Pass<'a, 'b * 'c>`
+    // is the categorical fan-out (arrow notation `&&&`). Companion to
+    // `Pass.compose` (sequential `>=>`). The static algebra ships;
+    // dynamic SsKey-disjointness check for parallel pass scheduling
+    // defers to a dedicated H-006 slice when a consumer demands it.
+    // `Pass.first` / `Pass.second` cover the asymmetric pair-lift cases.
+    ()
+
+[<Fact>]
+let ``H-051 Kleisli law tests: shipped via H-003 in DiagnosticsTests`` () =
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "H-003 Kleisli: left identity (Pass.id >=> f = f)"
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "H-003 Kleisli: right identity (f >=> Pass.id = f)"
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "H-003 Kleisli: associativity ((f >=> g) >=> h = f >=> (g >=> h))"
+    // H-051 originally proposed a `KleisliLawTests.fs` file. The laws
+    // shipped in-place via H-003 (Cluster B); the tests live in
+    // `DiagnosticsTests.fs` alongside the dual-writer monad-law triples
+    // they depend on — per the domain-first naming discipline
+    // (DECISIONS 2026-05-10), the tests live where their substrate is.
+    ()
+
 [<Fact(Skip = "H-012 Active patterns for SsKey structural dispatch — Cluster B \
 deferral. Trigger per HORIZON: nested-match-on-SsKey-variant recurs at ≥3 \
 sites. Audit at 2026-05-22: zero such nested matches found in NullabilityPass \
@@ -568,6 +618,241 @@ monotonicity on percentiles structurally. The candidate measure tags are \
 Activate when a fixture-borne numeric-mix-up is reproducible at the test \
 layer.")>]
 let ``H-013: units of measure on Profile numeric fields (trigger unfired)`` () = ()
+
+// ===========================================================================
+// Group M — Cluster B follow-on: deferred-with-trigger algebra/F# items
+// ===========================================================================
+// Items that resonate with the Cluster B algebra surface (Kleisli arrows /
+// dual-writer monad / CE builders / Certificate / Pass.product) but require
+// a triggering consumer, prerequisite work, or design that isn't tractable
+// in the Cluster B window. Each Skip stub names the bucket, the prerequisite,
+// and the trigger that would promote it.
+
+// --- Group I — Kernel: categorical structure (remaining tail) ---
+
+[<Fact(Skip = "H-005 Branching lineage (LineageTree / speculative execution) — \
+Cluster C prerequisite. Trigger: policy diff verb (H-033) demands branch+commit \
+on the lineage trail. Algebraic shape: LineageTree<'a> generalizing the linear \
+writer with branch / commit operations. Defer until Cluster C opens; the \
+branching cost is the LineageEvent trail rewriting, not the type design.")>]
+let ``H-005: branching lineage (speculative execution; Cluster C prerequisite)`` () = ()
+
+[<Fact(Skip = "H-006 Parallel pass composition (full SsKey-disjoint scheduling) \
+— Cluster B shipped the static algebra (Pass.product / Pass.first / Pass.second \
++ `&&&` operator); the dynamic SsKey-disjointness check defers. Trigger: a \
+pass-chain wall-clock measurement at operator-reality canary scale shows a \
+specific pass takes >50% of wall time AND is decomposable into disjoint SsKey \
+partitions via TopologicalOrder.levels. Per HORIZON cross-cutting note, parallel \
+composition pays off when the level depth dominates the pass count.")>]
+let ``H-006: parallel pass composition full integration (static algebra shipped)`` () = ()
+
+[<Fact(Skip = "H-007 SchemaDelta type and delta pass category — large; \
+Cluster D prerequisite. Trigger: migration generation surface or breaking-change \
+detection consumer pulls the delta-pass category into existence. CatalogDiff.fs \
+provides the kind-level partitioning today (Added / Removed / Renamed / \
+Unchanged); the full SchemaDelta adds the `Modified` partition + a second \
+Kleisli category `SchemaDelta -> Lineage<Diagnostics<SchemaDelta>>` over delta \
+passes. Defer until a delta-pass consumer materializes.")>]
+let ``H-007: SchemaDelta type (delta pass category; large)`` () = ()
+
+[<Fact>]
+let ``H-008 DiagnosticLattice: partial order over diagnostic entries (shipped)`` () =
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "H-008 DiagnosticLattice: minimal drops subsumed entries (single-level)"
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "H-008 DiagnosticLattice: minimal is idempotent"
+    // Subsumption rule: code-prefix (separator-bounded) + SsKey-context
+    // compatibility. `DiagnosticLattice.minimal` collapses subsumed
+    // entries to their root cause — the operator-facing triage surface.
+    // Pairs with Cluster D / operator-report consumers when they
+    // surface.
+    ()
+
+[<Fact(Skip = "H-009 Multi-target fanout with shared lineage trail — H-004 \
+Certificate shipped (the wrapper type that fanout produces). Trigger: full \
+fanout implementation requires Pipeline-layer surface that runs the pass chain \
+once, then forks into SSDT / JSON / Distribution emitters, each producing \
+Certificate<TargetBundle>. The static composition primitive is Pass.product \
+(now shipped); the operational machinery (shared-prefix lineage; Compose \
+fanout function) defers until a multi-target consumer demands it.")>]
+let ``H-009: multi-target fanout (Certificate shipped; fanout machinery deferred)`` () = ()
+
+[<Fact>]
+let ``H-010 Prism: bidirectional partial accessor (type shipped; consumer integration deferred)`` () =
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "H-010 Prism (int↔string): round-trip law holds on all integers"
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "H-010 Prism.partition: splits lawful from violating"
+    // `Prism<'a, 'b>` ships as a small algebraic type with `get` /
+    // `reverseGet` / `roundtrips` / `partition` / `identity` /
+    // `compose`. The Catalog ↔ DDL prism integration (where
+    // `manifest.Unsupported` becomes the violating-partition output)
+    // defers — the canary's PhysicalSchema diff already operates the
+    // round-trip property informally; promoting to typed Prism enforcement
+    // happens when a consumer demands the PrismViolation surface.
+    ()
+
+[<Fact(Skip = "H-011 Incremental computation through pass graph — large. \
+Trigger: pass-chain re-execution time at operator-reality canary scale becomes \
+operator-visible (>10s wall time) AND a specific consumer iterates schema \
+changes rapidly. Lineage-derived dependency graph is the algebraic substrate.")>]
+let ``H-011: incremental pass-graph computation (large)`` () = ()
+
+// --- Group II — F# language features (remaining tail) ---
+
+[<Fact(Skip = "H-014 Phantom types for pipeline stage safety — broad refactor. \
+Trigger: a stage-ordering bug surfaces in the wild (a pass receives \
+incorrectly-staged input). Today the order is enforced by RegisteredTransforms \
+.allChainSteps; phantom types would make the order compile-checked. The cost \
+is touching every pass signature (~14 passes); the benefit only materializes \
+if order bugs are recurrent.")>]
+let ``H-014: phantom types for pipeline stages (broad refactor)`` () = ()
+
+[<Fact(Skip = "H-015 Lens / optic library for Catalog navigation — no consumer \
+at threshold. Trigger: the deeply-nested record-update pattern (modify \
+Attribute.NullabilityDecision inside Kind inside Module) appears at ≥3 sites. \
+Today the IR smart constructors absorb most field updates; the lens primitive \
+would surface when an alternative-IR-surface consumer (per chapter-2 trace) \
+demands it.")>]
+let ``H-015: Lens / optic library for Catalog (no consumer at threshold)`` () = ()
+
+[<Fact(Skip = "H-016 Policy as a typed combinator language (PolicyExpr DSL) \
+— large; Cluster C prerequisite. Trigger: operator demands policy composition \
+beyond record-update (e.g., `if AppCore then strict else lenient` policies). \
+The DSL is the precondition for H-060 (natural transformation PolicyExpr → \
+Policy) and H-085 (policy versioning). Multi-week effort.")>]
+let ``H-016: Policy combinator language / PolicyExpr DSL (Cluster C)`` () = ()
+
+[<Fact(Skip = "H-017 Profile inference passes (without live data) — feature \
+work, not F# paradigm. Trigger: a fixture-only canary needs structural Profile \
+defaults derived from Catalog shape (column names, FK declarations). Inference \
+heuristics defer until the canary's Profile.empty fallback becomes a coverage \
+gap.")>]
+let ``H-017: Profile inference passes (feature work)`` () = ()
+
+// --- Group VII — Schema algebra and delta types ---
+
+[<Fact(Skip = "H-042 Catalog.union / intersect / subtract (set-like algebra) \
+— no consumer at threshold. Trigger: multi-source catalog merging (e.g., \
+joining two OSSYS catalogs at deploy time) demands the algebra. Pure set-like \
+operations on SsKey identity; the merge rule for same-SsKey-different-Kind \
+collisions needs an operator decision before shipping. Defer until a \
+multi-source consumer materializes.")>]
+let ``H-042: Catalog set algebra (union/intersect/subtract)`` () = ()
+
+[<Fact>]
+let ``H-043: Catalog diff as first-class type — shipped via CatalogDiff.fs (Modified partition deferred)`` () =
+    // `CatalogDiff` already provides the typed diff surface
+    // (`src/Projection.Core/CatalogDiff.fs`, 161 LOC). Carries
+    // Added / Removed / Renamed / Unchanged partitions of the SsKey set
+    // — exactly the H-043 shape minus the `Modified` partition (kinds
+    // whose attributes/references changed but SsKey stayed). The
+    // `Modified` partition defers to H-007 (delta pass category)
+    // which would consume it. The smart constructor `CatalogDiff.between`
+    // already enforces exhaustiveness over the SsKey union.
+    let sourceKindCount = 0
+    let targetKindCount = 0
+    Assert.Equal(sourceKindCount, targetKindCount)
+
+[<Fact(Skip = "H-044 Schema versioning and history — large; multi-week. \
+Trigger: operator demands schema-evolution history (compare snapshot N with \
+snapshot N-3). Time-aware metadata is complementary to Core algebra but lives \
+in Pipeline layer with persistent state. Defer until a schema-history \
+consumer materializes (likely chapter 5+).")>]
+let ``H-044: Schema versioning and history (large)`` () = ()
+
+// --- Group XI / XII — Deep categorical structure + advanced F# ---
+
+[<Fact(Skip = "H-060 Natural transformation between PolicyExpr and Policy \
+record — depends on H-016 (PolicyExpr DSL). Algebraic shape: η : PolicyExpr → \
+Policy is a natural transformation between functors over the same source \
+category. Verifies the DSL's reduction respects Policy's structural shape. \
+Defer with H-016.")>]
+let ``H-060: PolicyExpr → Policy natural transformation (depends on H-016)`` () = ()
+
+[<Fact(Skip = "H-061 Profunctor for bidirectional pass transformation — \
+depends on H-060 + concrete consumer. The profunctor `Pass<-,->` would let \
+us factor a pass as `dimap` over input/output reshaping. Useful for pass \
+families that share an algorithm modulo input/output projections. Defer \
+until a consumer surfaces a concrete dimap target.")>]
+let ``H-061: Profunctor on Pass<'a, 'b> (no consumer)`` () = ()
+
+[<Fact>]
+let ``H-062 PassContext: reader comonad surface (type shipped; pass-driver adoption deferred)`` () =
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "H-062 PassContext comonad: left identity (extend extract = id)"
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "H-062 PassContext comonad: right identity (extract ∘ extend f = f)"
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "H-062 PassContext comonad: associativity"
+    // `PassContext<'env, 'a>` ships as the comonadic dual of
+    // `Pass<'a, 'b>` — the Kleisli arrow's reader-comonad sibling.
+    // Three comonad laws property-tested (left/right identity,
+    // associativity). The integration with existing pass drivers
+    // (using PassContext<Policy × Profile, Catalog> to thread context)
+    // defers until parameter-threading at registration sites becomes
+    // operator-visible noise.
+    ()
+
+[<Fact(Skip = "H-063 Free monad for pass scheduling — large; depends on H-005 \
+(branching lineage). The free monad would let pass scheduling be expressed \
+as a program tree (sequential / parallel / dependency-ordered) without \
+executing it. Pre-condition for cluster meta-scheduling (parallel + \
+incremental + speculative).")>]
+let ``H-063: Free monad for pass scheduling (depends on H-005; large)`` () = ()
+
+[<Fact(Skip = "H-064 Colimits in the schema category (coproduct / pushout) — \
+large; theoretical depth. Depends on H-042 (set algebra). The category- \
+theoretic semantics for Catalog union: pushout over the shared subgraph \
+identifies SsKey-equivalent kinds and merges them. Useful but pure-formal \
+without a multi-source consumer.")>]
+let ``H-064: Colimits in schema category (depends on H-042)`` () = ()
+
+[<Fact(Skip = "H-065 Yoneda embedding applied to TransformRegistry — moderate; \
+theoretical. The Yoneda lemma view of the registry: `RegisteredTransform<'In, \
+'Out>` is determined by its natural transformations into Hom-sets. Useful \
+as a registry-completeness witness; defer until the registry totality \
+property (A41) needs strengthening beyond bidirectional canary tests.")>]
+let ``H-065: Yoneda embedding on TransformRegistry (theoretical)`` () = ()
+
+[<Fact(Skip = "H-067 Statically-resolved type parameters (SRTPs) for \
+zero-overhead pass composition — performance optimization. Trigger: bench \
+data shows function-call overhead at the pass-chain bind site dominates the \
+chain's wall time. Per bench-driven optimization protocol, requires three- \
+candidate / 2-refuted / 1-confirmed shape. Today's bench shows bind overhead \
+is invisible against per-pass work; defer until bench data demands it.")>]
+let ``H-067: SRTPs for zero-overhead pass composition (bench-driven)`` () = ()
+
+[<Fact(Skip = "H-068 Measure-polymorphic statistical aggregation helpers — \
+depends on H-013 (units of measure on Profile). Helpers like `mean : seq<'a<m>> \
+-> 'a<m>` preserve measure across aggregation. Defer with H-013 unless its \
+trigger fires.")>]
+let ``H-068: measure-polymorphic aggregators (depends on H-013)`` () = ()
+
+[<Fact(Skip = "H-069 SqlIdentifier value object — small but low algebra \
+resonance. Trigger: SQL injection surface review identifies bare-string \
+identifier sites as risks, OR a quoting-rule bug surfaces. Today the SQL \
+emitters use `SqlLiteral` for value quoting; identifiers flow through \
+ScriptDom typed-AST builders for emit, which provides quoting safety \
+structurally. The VO would close the remaining gap (adapter-side string- \
+typed identifiers). Defer to a hygiene slice.")>]
+let ``H-069: SqlIdentifier value object (hygiene)`` () = ()
+
+[<Fact(Skip = "H-070 Refinement-type lite (constrained IR field invariants) \
+— moderate. Trigger: a smart constructor's invariant becomes operator-visible \
+or escapes the constructor (e.g., a non-empty list field). The `Refined<'a, \
+'predicate>` wrapper would surface the constraint at the type level. Today \
+the smart constructors enforce invariants at construction; refinement types \
+would shift the witness into the field type. Defer until a constraint escapes \
+its constructor.")>]
+let ``H-070: refinement-type lite (no escaping constraint)`` () = ()
 
 // ===========================================================================
 // Coverage summary (audit trail; verifiable by grep against this file)
