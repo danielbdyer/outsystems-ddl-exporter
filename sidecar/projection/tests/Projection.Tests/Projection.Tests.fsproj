@@ -78,6 +78,10 @@
     <Compile Include="ProfileTests.fs" />
     <Compile Include="AttributeDistributionTests.fs" />
     <Compile Include="PolicyTests.fs" />
+    <Compile Include="PolicyExprTests.fs" />
+    <Compile Include="VersionedPolicyTests.fs" />
+    <Compile Include="ApprovalWorkflowTests.fs" />
+    <Compile Include="PolicyDiffTests.fs" />
     <Compile Include="UserMatchingStrategyTests.fs" />
     <Compile Include="UserPopulationTests.fs" />
     <Compile Include="UserRemapContextTests.fs" />
