@@ -291,6 +291,24 @@ wanting to break one, write the amendment first.
   operators rather than re-discovering its structure. Tests:
   `DiagnosticsTests.fs` Kleisli-law triple (left/right identity,
   associativity; empty-list = identity).
+- **A24 amended — chronological-bind extends to the WriterT-stacked
+  dual writer (chapter-Cluster-B; 2026-05-22).** The chronological-bind
+  law (A24 original — "when `f >>= g`, the trail is `f.Trail ++
+  g.Trail`") generalizes to every writer monad over a list-monoid:
+  `Lineage`, `Diagnostics`, and the dual writer `LineageDiagnostics`.
+  The dual writer is **`WriterT`-stacked** — `WriterT[LineageEvent]
+  (WriterT[DiagnosticEntry] Identity)` in monad-transformer notation —
+  and is itself a writer monad over the product monoid `(LineageEvent
+  list × DiagnosticEntry list, ⊕, ([], []))`. The monad-law triple
+  (left identity, right identity, associativity) holds layer-wise; the
+  Kleisli laws over `Pass<'a, 'b>` are *inherited* from the stacked
+  monad's laws. **When a third writer is introduced** (perf-trace
+  channel; constraint-set channel for `Tolerance`; etc.), stacking it
+  atop `LineageDiagnostics` inherits A24 by the same construction —
+  the chapter-close ritual adds the new writer's monad-law triple in
+  the same commit. See `AXIOMS.md` "A24 amended (2026-05-22)" for the
+  full statement; tested in `DiagnosticsTests.fs` (Diagnostics +
+  LineageDiagnostics monad-law triples + Kleisli laws).
 - **V2 owns no production write path during dual-track (R6).** Per
   `DECISIONS 2026-05-22 — R6`, V2 emits-but-doesn't-ship while V1
   owns the production write path. The canary asserts V1 ≈ V2 modulo

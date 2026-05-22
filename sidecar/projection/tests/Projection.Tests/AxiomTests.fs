@@ -279,6 +279,36 @@ let ``A24: lineage composition is chronological — verified by LineageTests`` (
     ()
 
 [<Fact>]
+let ``A24 amended: chronological-bind extends to LineageDiagnostics + Diagnostics + Kleisli`` () =
+    // A24 amended (2026-05-22; chapter-Cluster-B) — the chronological-
+    // bind law generalizes to every writer monad over a list-monoid
+    // (`Lineage`, `Diagnostics`, the WriterT-stacked `LineageDiagnostics`)
+    // and the Kleisli laws over `Pass<'a, 'b>` are inherited from the
+    // stacked monad's laws. Verified across:
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "Diagnostics monad: left identity"
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "Diagnostics monad: right identity"
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "Diagnostics monad: associativity"
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "LineageDiagnostics monad: left identity"
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "LineageDiagnostics monad: right identity"
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "LineageDiagnostics monad: associativity"
+    citationOf
+        "tests/Projection.Tests/DiagnosticsTests.fs"
+        "H-003 Kleisli: associativity ((f >=> g) >=> h = f >=> (g >=> h))"
+    ()
+
+[<Fact>]
 let ``A25: every transformation runs inside Lineage<_> — verified by CanonicalizeIdentityTests`` () =
     citationOf
         "tests/Projection.Tests/CanonicalizeIdentityTests.fs"

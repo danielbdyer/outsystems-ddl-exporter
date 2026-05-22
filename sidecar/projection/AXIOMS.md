@@ -19,12 +19,13 @@ chapter-close amendments.
 
 The original V1 algebraic spec stated thirty-one axioms (A1–A31)
 generating ten theorems (T1–T10). V2 has extended the system: A6, A12,
-A17, A18, and T1 carry amendments (recorded under "V2 Amendments"
-below); A32, A33, A34, and T11 are new. The current count is **A1–A34
-generating T1–T11** with five amended originals. The axioms are grouped
-into eight thematic clusters; the theorems cluster by what falls out of
-the construction. Code and tests cite the **amended** form when both
-exist; the original form is the historical lineage of the amendment.
+A17, A18, A24, and T1 carry amendments (recorded under "V2 Amendments"
+below); A32, A33, A34, A35, A36, A39, A40, A41, and T11 are new.
+The current count is **A1–A41 generating T1–T11** with six amended
+originals. The axioms are grouped into eight thematic clusters; the
+theorems cluster by what falls out of the construction. Code and tests
+cite the **amended** form when both exist; the original form is the
+historical lineage of the amendment.
 
 ---
 
@@ -265,6 +266,14 @@ passes and all readers rely on it.
   *Enforcement.* The `bind` implementation in `Lineage.fs` documents and
   encodes this. Reversed-trail bugs are subtle and expensive; the test
   `` ``A24: lineage trail is chronological under bind`` `` guards it.
+
+  *Amended (2026-05-22).* See "A24 amended — chronological-bind extends
+  to the WriterT-stacked dual writer" near the end of this file. The
+  amendment generalizes the law to `Diagnostics<'a>` and to
+  `LineageDiagnostics<'a>` (the dual writer), names the WriterT-stacking
+  algebra explicitly, and notes that the Kleisli laws over
+  `Pass<'a, 'b>` (H-003) are inherited from the stacked monad's laws.
+  Code and tests cite the amended form when both exist.
 
 **A25. Lineage is constitutive, not observed.** Every IR transformation runs
 inside the lineage monad. Lineage exists for every transformation, not as
@@ -606,6 +615,121 @@ load-bearing.
   `DistributionsEmitter.emit : Catalog -> Profile -> string`.
   *Property test.* `A18 amended: emitter signatures take no Policy
   parameter`.
+
+---
+
+## A24 amended (2026-05-22) — chronological-bind extends to the WriterT-stacked dual writer
+
+**Empirical refinement surfaced by chapter-Cluster-B** (per
+`HORIZON.md` H-001 / H-002 / H-053-expansion / H-003 shipped commit
+`4c1b994`). The original A24 (chronological-bind law) named the
+convention for `Lineage<'a>` alone. The amendment makes explicit that
+the same law holds for **`Diagnostics<'a>`** and for the **dual writer
+`LineageDiagnostics<'a> = Lineage<Diagnostics<'a>>`** — both
+operationally, in code, and structurally, in the algebra.
+
+  **For every writer monad over a list-monoid `(L, ++, [])`,
+  `bind f m` produces a carrier whose log is
+  `m.log ++ (f m.value).log` — earliest-first.** `Lineage` (over
+  `LineageEvent list`), `Diagnostics` (over `DiagnosticEntry list`),
+  and `LineageDiagnostics` (the dual writer) all satisfy A24
+  symmetrically. The dual writer is itself a writer monad over the
+  product monoid
+  `(LineageEvent list × DiagnosticEntry list, ⊕, ([], []))`;
+  A24 holds layer-wise AND at the product level.
+
+The algebraic reasoning, not just the rule:
+
+  - **`LineageDiagnostics` is `WriterT`-stacked.** In monad-transformer
+    notation,
+    `LineageDiagnostics<'a> = WriterT[LineageEvent] (WriterT[DiagnosticEntry] Identity) 'a`.
+    Both layers carry the same shape of monoid `(List, ++, [])`; the
+    bind composes both logs chronologically by virtue of the
+    underlying monoids' associativity. The dual writer is itself a
+    writer monad over the product monoid — equivalent to a
+    `Writer<(LineageEvent list × DiagnosticEntry list)>` carrier —
+    and `LineageDiagnostics.bind` is the writer's bind under that
+    product monoid.
+
+  - **Monad-law preservation under stacking.** The monad-law triple
+    (left identity, right identity, associativity) holds for the
+    stacked writer because it holds for each layer. The proof flows
+    layer-wise: `LineageDiagnostics.bind` is defined as nested
+    `Lineage.bind` over `Diagnostics.bind`; each underlying `bind`
+    preserves its layer's laws; composition preserves them at the
+    product. The dual-writer's laws are not "additionally true" — they
+    are *necessarily* true given the layer-wise truth.
+
+  - **A24 is not specific to `LineageEvent`.** The chronological-bind
+    law is a property of the writer monad over any list-monoid (or
+    more generally, any monoid where the operation is associative,
+    has an identity, and the convention is "first arg first" — which
+    list-concat satisfies definitionally). The discipline holds for
+    every writer the codebase introduces over the same shape.
+
+  - **Why the stacked-writer naming matters.** Without naming the
+    stacking, a future agent extending `Diagnostics<'a>` (e.g.,
+    splitting into operator / auditor / developer channels per
+    `DECISIONS 2026-05-06`) might assume the stacking generates new
+    invariants. It doesn't — the new layer inherits A24
+    automatically. The amendment makes that inheritance structural.
+
+  - **Kleisli laws are inherited from the stacked monad's laws.** The
+    Kleisli arrow type `Pass<'a, 'b> = 'a -> Lineage<Diagnostics<'b>>`
+    (H-003) is the Kleisli arrow over the stacked writer. The Kleisli
+    category's identity and associativity laws follow from the
+    underlying monad's laws — they are not independent claims.
+    `Pass.composeAll`'s correctness (the operational shape of
+    `PassChainAdapter.compose`) follows from A24-amended applied at
+    the dual-writer's bind.
+
+**Operational consequences delivered in chapter-Cluster-B.**
+
+  - The `Diagnostics` monad-law triple (left identity, right identity,
+    associativity) tested for the first time in
+    `tests/Projection.Tests/DiagnosticsTests.fs`. Previously only
+    `bind`'s chronological-concat shape was tested; the laws
+    themselves were aspirational.
+  - The `LineageDiagnostics` monad-law triple tested for the first
+    time in `DiagnosticsTests.fs` via the `byValueAndBothTrails`
+    predicate — asserts payload + lineage-trail + diagnostics-entries
+    all match under the law's substitution.
+  - The Kleisli laws over `Pass<'a, 'b>` (H-003) tested for the first
+    time in `DiagnosticsTests.fs`: identity left/right, associativity,
+    empty-list = identity arrow, three-step composition threads both
+    writers chronologically.
+  - The `lineage { ... }` / `diagnostics { ... }` / `lineageDiagnostics
+    { ... }` CE builders (H-001 / H-002) are syntactically safe
+    because they desugar to law-preserving primitives — every
+    `let!` is `Bind`, every `do!` is `Bind` with a `unit` continuation,
+    every `return` is `ofValue`. The CE-equivalence property tests
+    in `LineageTests.fs` and `DiagnosticsTests.fs` confirm.
+
+  *Enforcement.* The `bind` implementations in `Lineage.fs` and
+  `Diagnostics.fs` use `@` (list concat) for both layers' logs.
+  `LineageDiagnostics.bind` in `Diagnostics.fs` threads both layers'
+  bind via the standard nested form. The `Lineage<'a>` carrier uses
+  `[<CustomEquality; NoComparison>]` projecting through `Value` only
+  (A26); the bind's algebraic content is the trail concat operation,
+  which the test `` ``A24: bind composes trails as m.Trail ++ f.Trail`` ``
+  guards directly. The dual-writer's equivalent —
+  `` ``A24-equivalent: LineageDiagnostics.bind concatenates both
+  trails chronologically`` `` — guards the stacked shape.
+
+  *Property tests.* Monad-law triples on `Lineage` (chapter-3.1) +
+  `Diagnostics` (chapter-Cluster-B) + `LineageDiagnostics`
+  (chapter-Cluster-B) + Kleisli laws on `Pass<'a, 'b>`
+  (chapter-Cluster-B; H-003). Tests are property-based via FsCheck
+  over arbitrary integer payloads (the laws are payload-agnostic).
+
+**Future-extensibility note.** When a third writer is introduced (e.g.,
+a perf-trace writer separating `Bench` samples from `Lineage` events;
+a constraint-set writer for the typed `Tolerance` taxonomy), the
+amendment generalizes: stacking the new writer atop
+`LineageDiagnostics` inherits A24 by the same construction. The
+chapter-close ritual should add the new writer's monad-law triple in
+the same commit that introduces the writer; the law tests are
+template-shaped because the underlying algebra is uniform.
 
 ---
 
