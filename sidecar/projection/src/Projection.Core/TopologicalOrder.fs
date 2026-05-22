@@ -52,6 +52,44 @@ type SelfLoopPolicy =
     | SkipSelfEdges
 
 
+/// How `TopologicalOrderPass` handles junction (bridge) kinds in the
+/// output ordering. H-040 — JunctionDeferred mode.
+///
+/// `EmitInTopologicalOrder` (default) places junction kinds at their
+/// FK-safe topological position alongside non-junction kinds. This
+/// preserves pre-H-040 semantics for all callers.
+///
+/// `DeferJunctionKinds` pushes junction kinds — those with ≥2 FK
+/// references and ≤2 non-PK non-system attributes — to the end of
+/// the output order, producing `Mode = JunctionDeferred`. The
+/// non-junction prefix is topologically sorted; the deferred suffix
+/// is sorted alphabetically by SsKey for determinism.
+type JunctionDeferralPolicy =
+    | EmitInTopologicalOrder
+    | DeferJunctionKinds
+
+
+/// Combined ordering configuration for the topological-order pass.
+/// Bundles the two orthogonal ordering axes — self-loop handling and
+/// junction deferral — so callers that need to configure one axis
+/// don't have to change the call site for the other
+/// (harmonization-via-parameterization per A40). The default config
+/// reproduces pre-H-040 behaviour.
+type OrderingConfig = {
+    SelfLoops        : SelfLoopPolicy
+    JunctionDeferral : JunctionDeferralPolicy
+}
+
+[<RequireQualifiedAccess>]
+module OrderingConfig =
+
+    /// Default ordering configuration: treat self-edges as cycles and
+    /// emit junction kinds at their topological position.
+    let defaultConfig : OrderingConfig =
+        { SelfLoops        = TreatAsCycle
+          JunctionDeferral = EmitInTopologicalOrder }
+
+
 /// Diagnostic for a strongly-connected component the resolver could not
 /// break. Members and breakable-edges are keyed by `SsKey` (strongly
 /// typed; no name lookup required). The `Reason` field is human-readable
@@ -195,3 +233,22 @@ module TopologicalOrder =
         |> List.sortBy fst
         |> List.map (fun (_, pairs) ->
             pairs |> List.map fst |> List.sort)
+
+
+/// H-037 — result of schema island detection. Each inner list is one
+/// weakly-connected component of the undirected FK graph with ≥2
+/// members, sorted by SsKey. Components with a single member are not
+/// reported (single-kind islands are unremarkable).
+type IslandReport = {
+    Islands : SsKey list list
+}
+
+
+/// H-039 — one cascade shock zone: the root kind and the set of
+/// kinds reachable from it by following Cascade-tagged FK edges
+/// depth-first. Zones with |Reachable| ≥ 3 are reported.
+type CascadeShockZone = {
+    Root      : SsKey
+    /// Sorted by SsKey; excludes Root.
+    Reachable : SsKey list
+}

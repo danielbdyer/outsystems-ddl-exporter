@@ -53,6 +53,18 @@ module PolicyExpr =
     /// Lift a concrete policy into the expression language.
     let ofPolicy (p: Policy) : PolicyExpr = Atom p
 
+    /// **`fromPolicy = ofPolicy`** — the inverse direction of the natural
+    /// transformation between `PolicyExpr` and `Policy`. Together with
+    /// `eval`, satisfies the round-trip law: `eval (fromPolicy p) = p`
+    /// for every `Policy` value. This is the second leg of H-060's
+    /// natural-transformation contract (H-060 ↔ H-016).
+    ///
+    /// The implementation is the same `Atom` lift as `ofPolicy`; the
+    /// distinct name makes the round-trip direction explicit at call
+    /// sites and documents the law's symmetry. The two-leg pairing
+    /// `(fromPolicy, eval)` IS the natural transformation.
+    let fromPolicy (p: Policy) : PolicyExpr = Atom p
+
     // -----------------------------------------------------------------
     // Selection-axis lattice helpers
     // -----------------------------------------------------------------

@@ -540,3 +540,253 @@ module TopologicalOrderPass =
     let registeredWith (selfLoops: SelfLoopPolicy) : RegisteredTransform<Catalog, TopologicalOrder> =
         { registered with
             Run = fun c -> runWith selfLoops c |> Lineage.map Diagnostics.ofValue }
+
+    // -----------------------------------------------------------------------
+    // H-040 — JunctionDeferred mode.
+    //
+    // A "junction kind" (bridge / join table) is a Kind with ≥2 FK
+    // References AND ≤2 non-PK Attributes. When DeferJunctionKinds is
+    // requested the pass partitions the topological order into non-junction
+    // kinds (FK-safe topological sequence) and junction kinds (appended
+    // alphabetically), producing Mode = JunctionDeferred.
+    // -----------------------------------------------------------------------
+
+    /// True iff `k` is a junction kind: ≥2 FK references and ≤2
+    /// non-PK attributes. Non-PK attributes that serve as FK columns
+    /// are included in the count — junctions typically have no
+    /// payload columns beyond their FK pair.
+    let internal isJunctionKind (k: Kind) : bool =
+        let fkCount = List.length k.References
+        let nonPkAttrCount =
+            k.Attributes |> List.filter (fun a -> not a.IsPrimaryKey) |> List.length
+        fkCount >= 2 && nonPkAttrCount <= 2
+
+    /// Full-config variant of the pass. The two axes (`SelfLoops` and
+    /// `JunctionDeferral`) are independent; `runWithConfig` threads
+    /// both through a single call. `runWith selfLoops` is equivalent
+    /// to `runWithConfig { SelfLoops = selfLoops; JunctionDeferral =
+    /// EmitInTopologicalOrder }`.
+    let runWithConfig (config: OrderingConfig) (c: Catalog) : Lineage<TopologicalOrder> =
+        let base_ = runWith config.SelfLoops c
+        match config.JunctionDeferral with
+        | EmitInTopologicalOrder -> base_
+        | DeferJunctionKinds ->
+            // Apply junction deferral as a post-processing step on the
+            // already-computed topological order. The partitioning is
+            // pure on Order and the catalog's kind list.
+            base_
+            |> Lineage.map (fun t ->
+                let allKindsByKey =
+                    Catalog.allKinds c
+                    |> List.map (fun k -> k.SsKey, k)
+                    |> Map.ofList
+                let junctions, nonJunctions =
+                    t.Order
+                    |> List.partition (fun key ->
+                        Map.tryFind key allKindsByKey
+                        |> Option.map isJunctionKind
+                        |> Option.defaultValue false)
+                let deferredOrder =
+                    nonJunctions @ (List.sort junctions)
+                { t with
+                    Mode  = JunctionDeferred
+                    Order = deferredOrder })
+
+    /// Configurable registered variant — exposes both ordering axes.
+    /// The Sites list mirrors `registered`; the Run closure captures
+    /// the supplied config.
+    let registeredWithConfig (config: OrderingConfig) : RegisteredTransform<Catalog, TopologicalOrder> =
+        { registered with
+            Run = fun c -> runWithConfig config c |> Lineage.map Diagnostics.ofValue }
+
+    // -----------------------------------------------------------------------
+    // H-037 — Schema island detection.
+    //
+    // An "island" is a maximal weakly-connected component of the FK
+    // graph with no edges to any other component. Islands indicate
+    // isolated sub-schemas that share no FK relationships with the
+    // rest of the catalog — likely integration seams or orphaned legacy
+    // tables. One Warning DiagnosticEntry is emitted per island of
+    // size ≥ 2 (single-kind components are unremarkable).
+    //
+    // Algorithm: BFS over the undirected projection of t.Edges. Each
+    // connected component is one island. Function-local mutable
+    // HashSet for visited tracking (O(1) per lookup; same discipline
+    // as Tarjan/Kahn above).
+    // -----------------------------------------------------------------------
+
+    /// Detect schema islands: maximal weakly-connected components of
+    /// the undirected FK graph. Takes a pre-computed `TopologicalOrder`
+    /// (carries the edge set) and the full list of catalog kind keys.
+    ///
+    /// One Warning `DiagnosticEntry` is emitted per island of ≥2
+    /// members. DiagnosticCode: `"topology.island"`.
+    let runIslandDetection
+        (allKeys: SsKey list)
+        (t: TopologicalOrder)
+        : Lineage<Diagnostics<IslandReport>> =
+        use _ = Bench.scope "pass.islandDetection"
+
+        // Build undirected adjacency from t.Edges.
+        let addNeighbor (m: Map<SsKey, SsKey list>) (a: SsKey) (b: SsKey) =
+            let existing = Map.tryFind a m |> Option.defaultValue []
+            Map.add a (b :: existing) m
+        let undirected =
+            t.Edges
+            |> List.fold (fun acc (src, tgt) ->
+                addNeighbor (addNeighbor acc src tgt) tgt src)
+                Map.empty
+
+        let visited = HashSet<SsKey>()
+        let components = ResizeArray<SsKey list>()
+
+        for key in List.sort allKeys do
+            if not (visited.Contains key) then
+                // BFS from key.
+                let queue = Queue<SsKey>()
+                let nodeMembers = ResizeArray<SsKey>()
+                queue.Enqueue(key)
+                visited.Add(key) |> ignore
+                while queue.Count > 0 do
+                    let v = queue.Dequeue()
+                    nodeMembers.Add(v)
+                    let neighbors =
+                        Map.tryFind v undirected |> Option.defaultValue []
+                    for n in neighbors do
+                        if not (visited.Contains n) then
+                            visited.Add(n) |> ignore
+                            queue.Enqueue(n)
+                components.Add(nodeMembers |> List.ofSeq |> List.sort)
+
+        // A schema "island" implies isolation from the rest. When the
+        // catalog is one big component, there are no islands — the
+        // catalog is fully connected. When the catalog splits into
+        // multiple components, each non-singleton component is an
+        // island. Singletons are excluded per the test contract.
+        let nonSingletonComponents =
+            components
+            |> Seq.filter (fun c -> List.length c >= 2)
+            |> Seq.toList
+            |> List.sortBy List.head
+
+        let islands =
+            if List.length nonSingletonComponents <= 1 && Seq.length components <= 1 then []
+            else nonSingletonComponents
+
+        let report = { Islands = islands }
+
+        let diagnostics =
+            islands
+            |> List.mapi (fun i members ->
+                let memberStr =
+                    members
+                    |> List.map SsKey.rootOriginal
+                    |> String.concat ", "
+                DiagnosticEntry.create passName DiagnosticSeverity.Warning
+                    "topology.island"
+                    (sprintf "Schema island #%d: %d kinds with no FK path to the rest of the catalog: [%s]"
+                        (i + 1) (List.length members) memberStr))
+
+        let events = allKeys |> List.map touchedEvent
+        Lineage.ofValueAndEvents events { Value = report; Entries = diagnostics }
+
+    // -----------------------------------------------------------------------
+    // H-039 — Cascade shock zone detection.
+    //
+    // A "cascade shock zone" is a set of tables reachable by following
+    // Cascade-tagged FK edges depth-first from a root kind. A zone with
+    // ≥3 reachable kinds is a potential cascading-delete / cascading-update
+    // risk. One Warning DiagnosticEntry is emitted per qualifying zone.
+    //
+    // Algorithm: for each kind k, DFS following only Cascade-strength
+    // edges. The Cascade subset of t.Edges is derived by looking up each
+    // (src, tgt) pair's `Reference` on the source kind via the catalog
+    // and running `CycleResolution.classify`.
+    // -----------------------------------------------------------------------
+
+    /// Detect cascade shock zones: sets of kinds reachable by chasing
+    /// Cascade-strength FK edges from a root, with |Reachable| ≥ 3.
+    ///
+    /// Takes the `Catalog` (to classify each edge) and the pre-computed
+    /// `TopologicalOrder` (carries the edge set to avoid re-running the
+    /// graph build). Returns one Warning `DiagnosticEntry` per qualifying
+    /// zone. DiagnosticCode: `"topology.cascadeShock"`.
+    let runCascadeShockZones
+        (catalog: Catalog)
+        (t: TopologicalOrder)
+        : Lineage<Diagnostics<CascadeShockZone list>> =
+        use _ = Bench.scope "pass.cascadeShockZones"
+
+        // Build a lookup from (source SsKey) → Kind for classify calls.
+        let kindByKey =
+            Catalog.allKinds catalog
+            |> List.map (fun k -> k.SsKey, k)
+            |> Map.ofList
+
+        // Derive cascade-only adjacency from t.Edges by classifying each edge.
+        let cascadeAdj =
+            t.Edges
+            |> List.fold (fun (acc: Map<SsKey, SsKey list>) (src, tgt) ->
+                match Map.tryFind src kindByKey with
+                | None -> acc
+                | Some srcKind ->
+                    let isCascade =
+                        srcKind.References
+                        |> List.exists (fun r ->
+                            r.TargetKind = tgt &&
+                            CycleResolution.classify srcKind r = EdgeStrength.Cascade)
+                    if isCascade then
+                        let existing = Map.tryFind src acc |> Option.defaultValue []
+                        Map.add src (tgt :: existing) acc
+                    else acc)
+                Map.empty
+        // Normalize adjacency lists (sort for determinism).
+        let cascadeAdj =
+            cascadeAdj |> Map.map (fun _ children -> List.sort children)
+
+        // DFS reachability from each root via cascade edges.
+        let reachableFrom (root: SsKey) : SsKey list =
+            let visited = System.Collections.Generic.HashSet<SsKey>()
+            visited.Add(root) |> ignore
+            let stack = System.Collections.Generic.Stack<SsKey>()
+            stack.Push(root)
+            while stack.Count > 0 do
+                let v = stack.Pop()
+                let children =
+                    Map.tryFind v cascadeAdj |> Option.defaultValue []
+                for c in children do
+                    if not (visited.Contains c) then
+                        visited.Add(c) |> ignore
+                        stack.Push(c)
+            visited
+            |> Seq.filter (fun k -> k <> root)
+            |> Seq.toList
+            |> List.sort
+
+        let allKeys =
+            Catalog.allKinds catalog |> List.map (fun k -> k.SsKey) |> List.sort
+
+        let zones =
+            allKeys
+            |> List.choose (fun root ->
+                let reachable = reachableFrom root
+                if List.length reachable >= 3 then
+                    Some { Root = root; Reachable = reachable }
+                else None)
+            |> List.sortBy (fun z -> z.Root)
+
+        let diagnostics =
+            zones
+            |> List.map (fun z ->
+                let reachStr =
+                    z.Reachable
+                    |> List.map SsKey.rootOriginal
+                    |> String.concat ", "
+                { DiagnosticEntry.create passName DiagnosticSeverity.Warning
+                    "topology.cascadeShock"
+                    (sprintf "Cascade shock zone rooted at %s: %d kinds reachable via CASCADE FK edges: [%s]"
+                        (SsKey.rootOriginal z.Root) (List.length z.Reachable) reachStr)
+                  with SsKey = Some z.Root })
+
+        let events = allKeys |> List.map touchedEvent
+        Lineage.ofValueAndEvents events { Value = zones; Entries = diagnostics }

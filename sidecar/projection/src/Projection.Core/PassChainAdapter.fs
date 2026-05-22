@@ -50,6 +50,26 @@ module PassChainAdapter =
                 |> LineageDiagnostics.map (fun decision ->
                     writeBack decision state) }
 
+    /// Lift a pass that consumes `TopologicalOrder` (rather than
+    /// `Catalog`) from ComposeState. Used by Cluster D graph-analytics
+    /// passes (CentralityPass, BoundedContextPass) whose input is the
+    /// pre-computed topology. Falls back to `TopologicalOrder.empty`
+    /// when topology has not yet been computed (e.g., in unit tests
+    /// that don't run the topological-order pass first).
+    let liftTopologyPass
+        (rt: RegisteredTransform<TopologicalOrder, 'Decision>)
+        (writeBack: 'Decision -> ComposeState -> ComposeState)
+        : PassChainAdapter =
+        { Name = rt.Name
+          Apply =
+            fun state ->
+                let topo =
+                    state.TopologicalOrder
+                    |> Option.defaultValue TopologicalOrder.empty
+                rt.Run topo
+                |> LineageDiagnostics.map (fun decision ->
+                    writeBack decision state) }
+
     /// Chapter A.4.7' slice γ — fold a `PassChainAdapter list` into
     /// one composed Apply step.
     ///

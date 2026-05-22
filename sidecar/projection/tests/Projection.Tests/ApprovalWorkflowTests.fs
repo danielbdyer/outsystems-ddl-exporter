@@ -6,7 +6,7 @@ open System
 open Xunit
 open Projection.Core
 
-let private sampleVersion = VersionedPolicy.versionOf Policy.empty
+let private sampleVersion = VersionedPolicy.digestOf Policy.empty
 
 // ---------------------------------------------------------------------------
 // pending
@@ -21,10 +21,10 @@ let ``H-086: pending creates a Pending record`` () =
     Assert.Equal(None, record.Rationale)
 
 [<Fact>]
-let ``H-086: pendingFor extracts the version from VersionedPolicy`` () =
+let ``H-086: pendingFor uses the VersionedPolicy's content Digest as the approval anchor`` () =
     let vp = VersionedPolicy.now Policy.empty None
     let record = ApprovalWorkflow.pendingFor vp
-    Assert.Equal(vp.Version, record.PolicyVersion)
+    Assert.Equal(vp.Digest, record.PolicyVersion)
     Assert.Equal(Pending, record.Decision)
 
 // ---------------------------------------------------------------------------
@@ -113,3 +113,85 @@ let ``H-086: decision can be overridden from Approved to Rejected`` () =
         |> ApprovalWorkflow.reject "second-reviewer" (Some "reverted") at
     Assert.Equal(Rejected, record.Decision)
     Assert.Equal(Some "second-reviewer", record.ApprovedBy)
+
+// ---------------------------------------------------------------------------
+// H-086 audit remediation: ApprovalRegistry — indexed store of approval
+// records (the loop-closure surface).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``H-086 registry: empty registry has no records`` () =
+    Assert.Equal<Map<string, ApprovalRecord>>(Map.empty, ApprovalRegistry.empty.ByDigest)
+    Assert.False(ApprovalRegistry.isApprovedFor sampleVersion ApprovalRegistry.empty)
+    Assert.False(ApprovalRegistry.isRejectedFor sampleVersion ApprovalRegistry.empty)
+
+[<Fact>]
+let ``H-086 registry: record inserts an approval record keyed by PolicyVersion`` () =
+    let record =
+        ApprovalWorkflow.pending sampleVersion
+        |> ApprovalWorkflow.approveNow "reviewer" None
+    let registry =
+        ApprovalRegistry.empty |> ApprovalRegistry.record record
+    Assert.Equal(Some record, ApprovalRegistry.tryFind sampleVersion registry)
+
+[<Fact>]
+let ``H-086 registry: isApprovedFor returns true after recording an Approved record`` () =
+    let record =
+        ApprovalWorkflow.pending sampleVersion
+        |> ApprovalWorkflow.approveNow "reviewer" None
+    let registry =
+        ApprovalRegistry.empty |> ApprovalRegistry.record record
+    Assert.True(ApprovalRegistry.isApprovedFor sampleVersion registry)
+
+[<Fact>]
+let ``H-086 registry: isRejectedFor returns true after recording a Rejected record`` () =
+    let record =
+        ApprovalWorkflow.pending sampleVersion
+        |> ApprovalWorkflow.rejectNow "reviewer" None
+    let registry =
+        ApprovalRegistry.empty |> ApprovalRegistry.record record
+    Assert.True(ApprovalRegistry.isRejectedFor sampleVersion registry)
+    Assert.False(ApprovalRegistry.isApprovedFor sampleVersion registry)
+
+[<Fact>]
+let ``H-086 registry: isSuppressed gates SuggestedConfig surface — true iff rejected`` () =
+    let approvedRecord =
+        ApprovalWorkflow.pending sampleVersion
+        |> ApprovalWorkflow.approveNow "reviewer" None
+    let approvedRegistry =
+        ApprovalRegistry.empty |> ApprovalRegistry.record approvedRecord
+    Assert.False(ApprovalRegistry.isSuppressed sampleVersion approvedRegistry)
+    let rejectedRecord =
+        ApprovalWorkflow.pending sampleVersion
+        |> ApprovalWorkflow.rejectNow "reviewer" (Some "do not surface")
+    let rejectedRegistry =
+        ApprovalRegistry.empty |> ApprovalRegistry.record rejectedRecord
+    Assert.True(ApprovalRegistry.isSuppressed sampleVersion rejectedRegistry)
+
+[<Fact>]
+let ``H-086 registry: last-write-wins on the same PolicyVersion`` () =
+    let first =
+        ApprovalWorkflow.pending sampleVersion
+        |> ApprovalWorkflow.approveNow "first" None
+    let second =
+        ApprovalWorkflow.pending sampleVersion
+        |> ApprovalWorkflow.rejectNow "second" (Some "revoking")
+    let registry =
+        ApprovalRegistry.empty
+        |> ApprovalRegistry.record first
+        |> ApprovalRegistry.record second
+    Assert.True(ApprovalRegistry.isRejectedFor sampleVersion registry)
+    Assert.False(ApprovalRegistry.isApprovedFor sampleVersion registry)
+
+[<Fact>]
+let ``H-086 registry: approvedRecords and rejectedRecords project correctly`` () =
+    let v1 = VersionedPolicy.digestOf Policy.empty
+    let v2 = VersionedPolicy.digestOf { Policy.empty with Insertion = InsertNew }
+    let approved = ApprovalWorkflow.pending v1 |> ApprovalWorkflow.approveNow "a" None
+    let rejected = ApprovalWorkflow.pending v2 |> ApprovalWorkflow.rejectNow "b" None
+    let registry =
+        ApprovalRegistry.empty
+        |> ApprovalRegistry.record approved
+        |> ApprovalRegistry.record rejected
+    Assert.Single(ApprovalRegistry.approvedRecords registry) |> ignore
+    Assert.Single(ApprovalRegistry.rejectedRecords registry) |> ignore

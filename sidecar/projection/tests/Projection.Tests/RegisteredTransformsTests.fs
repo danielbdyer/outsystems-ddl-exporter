@@ -9,12 +9,14 @@ open Projection.Core
 //
 // Slice β ships:
 //   - `RegisteredTransforms.all : RegisteredTransformMetadata list`
-//     populated with the 17 Core-resident entries (12 pass + 5
-//     strategy).
+//     populated with the 22 Core-resident entries (17 pass + 5
+//     strategy). The 17 passes include 5 Cluster D graph-analytics
+//     passes added in H-071 through H-076.
 //   - `RegisteredTransforms.allChainSteps : PassChainAdapter list`
-//     populated with the 12 pass entries lifted through the slice-α
+//     populated with the 17 pass entries lifted through the slice-α
 //     `PassChainAdapter` adapter (6 Catalog-chainable +
-//     6 decision-set).
+//     1 TopologicalOrder ordering + 5 Cluster D analytics +
+//     5 decision-set).
 //
 // The OSSYS adapter's `CatalogReader.registeredMetadata` is project-
 // layered out of `Projection.Core`; the 18-entry production registry
@@ -26,12 +28,12 @@ open Projection.Core
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``A.4.7' slice β: RegisteredTransforms.all carries 17 Core-resident entries (12 pass + 5 strategy)`` () =
-    Assert.Equal(17, List.length RegisteredTransforms.all)
+let ``A.4.7' slice β: RegisteredTransforms.all carries 22 Core-resident entries (17 pass + 5 strategy)`` () =
+    Assert.Equal(22, List.length RegisteredTransforms.all)
 
 [<Fact>]
-let ``A.4.7' slice β: RegisteredTransforms.allChainSteps carries 12 PassChainAdapter entries`` () =
-    Assert.Equal(12, List.length RegisteredTransforms.allChainSteps)
+let ``A.4.7' slice β: RegisteredTransforms.allChainSteps carries 17 PassChainAdapter entries`` () =
+    Assert.Equal(17, List.length RegisteredTransforms.allChainSteps)
 
 [<Fact>]
 let ``A.4.7' slice β: every PassChainAdapter Name matches a Pass-stage entry in RegisteredTransforms.all`` () =
@@ -54,7 +56,7 @@ let ``A.4.7' slice β: every PassChainAdapter Name matches a Pass-stage entry in
 [<Fact>]
 let ``A41: RegisteredTransforms.all validates through TransformRegistry.create (uniqueness + rationale + status invariants)`` () =
     match TransformRegistry.create RegisteredTransforms.all with
-    | Ok entries -> Assert.Equal(17, List.length entries)
+    | Ok entries -> Assert.Equal(22, List.length entries)
     | Error es -> failwithf "expected RegisteredTransforms.all to validate; got %A" es
 
 [<Fact>]

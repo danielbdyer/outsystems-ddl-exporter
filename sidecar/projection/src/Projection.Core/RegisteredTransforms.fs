@@ -37,10 +37,12 @@ module RegisteredTransforms =
     let private emptyMask : VisibilityMask.Mask = { Hide = [] }
     let private identityMorphism : NamingMorphism.Morphism = NamingMorphism.identity
 
-    /// 17 Core-resident `RegisteredTransformMetadata` entries — 12
+    /// 22 Core-resident `RegisteredTransformMetadata` entries — 17
     /// pass + 5 strategy. Validates through `TransformRegistry.create`
     /// (uniqueness of Name; non-empty Site.Rationale; substantive
     /// `NotImplementedInV2` rationale where applicable) per A41.
+    /// Cluster D adds 5 graph-analytics passes (H-071 through H-076,
+    /// H-073 through H-075 share a single pass count with H-073/H-076).
     let all : RegisteredTransformMetadata list =
         [ RegisteredTransform.toMetadata CanonicalizeIdentity.registered
           RegisteredTransform.toMetadata (VisibilityMask.registered emptyMask)
@@ -49,6 +51,11 @@ module RegisteredTransforms =
           RegisteredTransform.toMetadata SymmetricClosure.registered
           RegisteredTransform.toMetadata (TableRename.registered [])
           RegisteredTransform.toMetadata TopologicalOrderPass.registered
+          RegisteredTransform.toMetadata CentralityPass.registered
+          RegisteredTransform.toMetadata BoundedContextPass.registered
+          RegisteredTransform.toMetadata (ProfileAnomalyPass.registered Profile.empty)
+          RegisteredTransform.toMetadata (SchemaComplexityPass.registered None)
+          RegisteredTransform.toMetadata (QueryHintPass.registered Profile.empty)
           RegisteredTransform.toMetadata (NullabilityPass.registered Policy.empty Profile.empty)
           RegisteredTransform.toMetadata (UniqueIndexPass.registered Policy.empty Profile.empty)
           RegisteredTransform.toMetadata (ForeignKeyPass.registered Policy.empty Profile.empty)
@@ -56,11 +63,18 @@ module RegisteredTransforms =
           RegisteredTransform.toMetadata (UserFkReflowPass.registered Policy.empty Profile.empty) ]
         @ StrategyRegistrations.all
 
-    /// 12 `PassChainAdapter` entries — the typed execution surface
-    /// for slice γ's `runChain` kernel. Order matches `all`'s pass
-    /// segment: 6 Catalog-chainable passes first, then 6 decision-
-    /// set-producing passes. Each decision-set pass writes back via
+    /// 17 `PassChainAdapter` entries — the typed execution surface
+    /// for slice γ's `runChain` kernel. Order: 6 catalog-rewriting
+    /// passes, then the topological-order pass, then 5 Cluster D
+    /// graph-analytics passes (H-071 through H-076), then 6 decision-
+    /// set passes. Each analytics and decision-set pass writes back via
     /// the matching `ComposeState.with*` setter.
+    ///
+    /// Cluster D analytics passes run after TopologicalOrderPass so
+    /// CentralityPass and BoundedContextPass have topology available
+    /// in ComposeState. The H-073 / H-076 profile-driven passes use
+    /// `Profile.empty` as default; supply a non-empty profile via
+    /// `allChainStepsFor` for LiveProfiler-enabled paths.
     let allChainSteps : PassChainAdapter list =
         [ PassChainAdapter.liftCatalogPass CanonicalizeIdentity.registered
           PassChainAdapter.liftCatalogPass (VisibilityMask.registered emptyMask)
@@ -71,6 +85,23 @@ module RegisteredTransforms =
           PassChainAdapter.liftDecisionPass
             TopologicalOrderPass.registered
             ComposeState.withTopologicalOrder
+          // Cluster D graph-analytics passes — run after topology is
+          // populated in ComposeState.
+          PassChainAdapter.liftTopologyPass
+            CentralityPass.registered
+            ComposeState.withCentralityRanking
+          PassChainAdapter.liftTopologyPass
+            BoundedContextPass.registered
+            ComposeState.withBoundedContexts
+          PassChainAdapter.liftDecisionPass
+            (ProfileAnomalyPass.registered Profile.empty)
+            ComposeState.withProfileAnomalies
+          PassChainAdapter.liftDecisionPass
+            (SchemaComplexityPass.registered None)
+            ComposeState.withSchemaComplexity
+          PassChainAdapter.liftDecisionPass
+            (QueryHintPass.registered Profile.empty)
+            ComposeState.withQueryHints
           PassChainAdapter.liftDecisionPass
             (NullabilityPass.registered Policy.empty Profile.empty)
             ComposeState.withNullabilityDecisions
@@ -114,6 +145,23 @@ module RegisteredTransforms =
           PassChainAdapter.liftDecisionPass
             TopologicalOrderPass.registered
             ComposeState.withTopologicalOrder
+          // Cluster D analytics passes — profile-aware variants use the
+          // caller-supplied profile rather than Profile.empty.
+          PassChainAdapter.liftTopologyPass
+            CentralityPass.registered
+            ComposeState.withCentralityRanking
+          PassChainAdapter.liftTopologyPass
+            BoundedContextPass.registered
+            ComposeState.withBoundedContexts
+          PassChainAdapter.liftDecisionPass
+            (ProfileAnomalyPass.registered profile)
+            ComposeState.withProfileAnomalies
+          PassChainAdapter.liftDecisionPass
+            (SchemaComplexityPass.registered None)
+            ComposeState.withSchemaComplexity
+          PassChainAdapter.liftDecisionPass
+            (QueryHintPass.registered profile)
+            ComposeState.withQueryHints
           PassChainAdapter.liftDecisionPass
             (NullabilityPass.registered policy profile)
             ComposeState.withNullabilityDecisions
