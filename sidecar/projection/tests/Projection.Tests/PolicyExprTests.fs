@@ -263,6 +263,48 @@ let ``H-060: eval Or is a Selection-lattice homomorphism`` () =
             // Union: a kind is in Or iff it's in either a or b
             Assert.Equal(inA || inB, inAB)
 
+// ---------------------------------------------------------------------------
+// H-060: Natural-transformation round-trip law.
+//
+// The pair `(fromPolicy, eval)` IS the natural transformation between
+// `Policy` and `PolicyExpr`. The round-trip law states:
+//   - `eval (fromPolicy p) = p` for every Policy p
+// This makes `eval` a left inverse of `fromPolicy` on the image of `Atom`.
+// Cluster C audit remediation deliverable.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``H-060: round-trip law — eval (fromPolicy p) = p for Policy.empty`` () =
+    Assert.Equal(Policy.empty, PolicyExpr.eval (PolicyExpr.fromPolicy Policy.empty))
+
+[<Fact>]
+let ``H-060: round-trip law — eval (fromPolicy p) = p for a Selection-bearing policy`` () =
+    let p = Policy.empty |> withIncludeOnly [customerKey; orderKey]
+    Assert.Equal(p, PolicyExpr.eval (PolicyExpr.fromPolicy p))
+
+[<Fact>]
+let ``H-060: round-trip law — eval (fromPolicy p) = p for a Tightening-bearing policy`` () =
+    let p = Policy.empty |> withNullabilityIntervention "id-x"
+    Assert.Equal(p, PolicyExpr.eval (PolicyExpr.fromPolicy p))
+
+[<Fact>]
+let ``H-060: round-trip law — eval (fromPolicy p) = p for a multi-axis policy`` () =
+    let p =
+        Policy.empty
+        |> withInsertNew
+        |> withDataOnly
+        |> withIncludeOnly [customerKey]
+        |> withNullabilityIntervention "id-multi"
+    Assert.Equal(p, PolicyExpr.eval (PolicyExpr.fromPolicy p))
+
+[<Property>]
+let ``H-060: round-trip law holds under axis toggling`` (insertNew: bool) (dataOnly: bool) =
+    let p =
+        Policy.empty
+        |> (if insertNew then withInsertNew else id)
+        |> (if dataOnly  then withDataOnly  else id)
+    p = PolicyExpr.eval (PolicyExpr.fromPolicy p)
+
 /// `simplify` is semantics-preserving: `eval (simplify e) = eval e`.
 /// Tests a left-identity chain with a nested Seq (the case simplify can
 /// actually elide). The trailing identity is intentionally absent here

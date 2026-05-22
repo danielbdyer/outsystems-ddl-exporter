@@ -575,6 +575,23 @@ module ManifestEmitter =
             /// run). Outer list ordered dependency-depth ascending;
             /// inner lists sorted by SsKey for T1 byte-determinism.
             DeploymentBatches : SsKey list list
+            /// **H-085** — Policy version stamp. The `VersionedPolicy`
+            /// captures both the content digest and the SemVer of the
+            /// policy that drove this projection. `None` for
+            /// projection paths that did not carry a versioned policy
+            /// (e.g., `build` overload with no policy argument);
+            /// `Some vp` when the caller threaded a versioned policy
+            /// through. Consumers can diff two manifests by digest to
+            /// determine whether DDL deltas trace to schema changes or
+            /// policy changes.
+            PolicyVersion : VersionedPolicy option
+            /// **H-034** — `PolicyConflict` entries detected by
+            /// `ConflictDetector.detectConflicts` over the projection's
+            /// lineage trail and diagnostics. Empty when no conflicts
+            /// were detected or the caller did not request the scan.
+            /// Sorted by `SsKey` for T1 byte-determinism (PolicyConflict
+            /// DU ordering provides stable comparison).
+            PolicyConflicts : PolicyConflict list
         }
 
     /// Build the manifest from a Profile + optional TopologicalOrder +
@@ -648,7 +665,27 @@ module ManifestEmitter =
             Unsupported = Unsupported.compute ()
             ColumnProfiles = columnProfiles
             DeploymentBatches = deploymentBatches
+            PolicyVersion = None
+            PolicyConflicts = []
         }
+
+    /// Build the full manifest including the H-085 PolicyVersion stamp
+    /// and the H-034 PolicyConflict entries. Pipeline-level callers that
+    /// have a `VersionedPolicy` and a conflict scan result use this
+    /// overload; topology-only callers continue to use
+    /// `buildWithTopology`.
+    let buildFull
+        (profile: Profile)
+        (registry: RegisteredTransformMetadata list)
+        (topology: TopologicalOrder option)
+        (policyVersion: VersionedPolicy option)
+        (policyConflicts: PolicyConflict list)
+        (catalog: Catalog)
+        : Manifest =
+        let manifest = buildWithTopology profile registry topology catalog
+        { manifest with
+            PolicyVersion   = policyVersion
+            PolicyConflicts = policyConflicts }
 
     /// Build the manifest from a Profile + Catalog + explicit registry-
     /// metadata list. The `registry` parameter feeds the slice-ζ
@@ -792,6 +829,45 @@ module ManifestEmitter =
                 batchArr.Add(requireValue "deploymentBatches.key" (JsonValue.Create(SsKey.rootOriginal key)))
             batchesArr.Add(batchArr)
         doc.Add("deploymentBatches", batchesArr)
+        // H-085 — Policy version stamp. Emits `{digest, version[, changeLog]}`
+        // or omits the `policy` key when no versioned policy was
+        // supplied. **`At` is intentionally excluded** — including it
+        // would break T1 byte-determinism because `VersionedPolicy.now`
+        // captures `DateTimeOffset.UtcNow` and two repeat runs would
+        // emit different manifests for the same policy. The digest +
+        // SemVer pair is byte-stable; the in-memory `VersionedPolicy`
+        // retains `At` for operator queries that don't flow through the
+        // manifest JSON.
+        match manifest.PolicyVersion with
+        | None -> ()
+        | Some vp ->
+            let policyObj = JsonObject()
+            policyObj.Add("digest",  requireValue "policy.digest"  (JsonValue.Create(vp.Digest)))
+            policyObj.Add("version", requireValue "policy.version" (JsonValue.Create(SemVer.toString vp.Version)))
+            match vp.ChangeLog with
+            | Some log -> policyObj.Add("changeLog", requireValue "policy.changeLog" (JsonValue.Create(log)))
+            | None     -> ()
+            doc.Add("policy", policyObj :> JsonNode)
+        // H-034 — PolicyConflict entries. Emits a `policyConflicts`
+        // array (empty when no conflicts were detected). Each entry is
+        // `{kind, key, code?, message?, passName?}` — the variant
+        // discriminator names the conflict shape.
+        let conflictsArr = JsonArray()
+        for conflict in manifest.PolicyConflicts do
+            let conflictObj = JsonObject()
+            match conflict with
+            | UnreachableTransform (passName, ssKey) ->
+                conflictObj.Add("kind",     requireValue "conflict.kind"     (JsonValue.Create("UnreachableTransform")))
+                conflictObj.Add("passName", requireValue "conflict.passName" (JsonValue.Create(passName)))
+                conflictObj.Add("ssKey",    requireValue "conflict.ssKey"    (JsonValue.Create(SsKey.rootOriginal ssKey)))
+            | AxisContradiction (axis, ssKey, code, message) ->
+                conflictObj.Add("kind",    requireValue "conflict.kind"    (JsonValue.Create("AxisContradiction")))
+                conflictObj.Add("axis",    requireValue "conflict.axis"    (JsonValue.Create(sprintf "%A" axis)))
+                conflictObj.Add("ssKey",   requireValue "conflict.ssKey"   (JsonValue.Create(SsKey.rootOriginal ssKey)))
+                conflictObj.Add("code",    requireValue "conflict.code"    (JsonValue.Create(code)))
+                conflictObj.Add("message", requireValue "conflict.message" (JsonValue.Create(message)))
+            conflictsArr.Add(conflictObj)
+        doc.Add("policyConflicts", conflictsArr)
         doc :> JsonNode
 
     /// Render the manifest to JSON text. The terminal serialization

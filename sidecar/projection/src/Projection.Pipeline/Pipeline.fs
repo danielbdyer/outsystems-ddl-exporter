@@ -224,11 +224,19 @@ module Compose =
     /// chain to exclude passes whose tag-set intersects any disabled
     /// group. `TransformGroups.empty` is a no-op (V1-parity: all
     /// transforms run).
+    /// Build a `VersionedPolicy` snapshot of the policy that drove the
+    /// chain. Always at the genesis version (1.0.0); evolution across
+    /// runs is a downstream consumer concern (the manifest captures the
+    /// version of *this* projection, not the history).
+    let private versionPolicy (policy: Policy) : VersionedPolicy =
+        VersionedPolicy.now policy None
+
     let private projectFromChainWithState
         (chain: PassChainAdapter list)
         (policy: EmissionPolicy)
         (folders: EmissionFolders)
         (groups: TransformGroups)
+        (versionedPolicy: VersionedPolicy option)
         (catalog: Catalog)
         : Outputs * ComposeState =
         let filteredChain = filterChainByGroups groups chain
@@ -238,6 +246,13 @@ module Compose =
             PassChainAdapter.compose filteredChain (ComposeState.initial catalog)
         let composedState   = LineageDiagnostics.payload composed
         let passEntries     = LineageDiagnostics.entries composed
+        // H-034 — detect policy conflicts from the chain's lineage trail
+        // and diagnostics. The detector gates on Selection-removal
+        // evidence; normal `tightening.*` outcomes on visible kinds are
+        // NOT flagged (per the post-audit fix).
+        let policyConflicts =
+            use _ = Bench.scope "compose.conflictDetect"
+            ConflictDetector.detectConflicts composed.Trail passEntries
         // Chapter 4.9 slice δ — apply EmissionPolicy.filterPlatformAutoIndexes
         // at the post-chain seam. The filter is `OperatorIntent of Emission`
         // per pillar 9; lives outside the registered pass chain because
@@ -251,8 +266,13 @@ module Compose =
                  let rewritten = applyEmissionFolderOverrides folders emittedCatalog ssdtFiles
                  let manifest =
                      let registry = SsdtDdlEmitter.registeredMetadata :: RegisteredTransforms.all
-                     ManifestEmitter.buildWithTopology
-                         Profile.empty registry composedState.TopologicalOrder emittedCatalog
+                     ManifestEmitter.buildFull
+                         Profile.empty
+                         registry
+                         composedState.TopologicalOrder
+                         versionedPolicy
+                         policyConflicts
+                         emittedCatalog
                  SsdtBundle.compose rewritten manifest
              | Error err ->
                  // Unreachable in production paths: Catalog.allKinds is
@@ -313,7 +333,14 @@ module Compose =
         (policy: EmissionPolicy)
         (catalog: Catalog)
         : Outputs =
-        projectFromChainWithState chain policy EmissionFolders.empty TransformGroups.empty catalog |> fst
+        projectFromChainWithState
+            chain
+            policy
+            EmissionFolders.empty
+            TransformGroups.empty
+            None
+            catalog
+        |> fst
 
     /// Production-shape project: routes through
     /// `RegisteredTransforms.allChainSteps`. The hand-coded "emit raw
@@ -362,7 +389,21 @@ module Compose =
         (catalog: Catalog)
         : Outputs * ComposeState =
         let chain = RegisteredTransforms.allChainStepsFor fullPolicy profile
-        projectFromChainWithState chain emissionPolicy folders groups catalog
+        // H-085 — stamp the manifest with a VersionedPolicy snapshot of
+        // the full policy that drove the chain when the operator
+        // supplied a non-default policy. `Policy.empty` callers (no
+        // operator opinion) produce no stamp — keeps `projectWithState
+        // Policy.empty` byte-identical to `project` for T1 determinism.
+        let versionedPolicy =
+            if fullPolicy = Policy.empty then None
+            else Some (versionPolicy fullPolicy)
+        projectFromChainWithState
+            chain
+            emissionPolicy
+            folders
+            groups
+            versionedPolicy
+            catalog
 
     /// Skeleton-shape project: routes through
     /// `RegisteredTransforms.skeletonChainSteps` (per chapter A.4.7'

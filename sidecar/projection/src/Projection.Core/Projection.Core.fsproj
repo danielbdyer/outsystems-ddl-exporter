@@ -62,6 +62,10 @@
     <Compile Include="Lineage.fs" />
     <Compile Include="LineageBuffer.fs" />
     <Compile Include="Diagnostics.fs" />
+    <!-- H-034 ConflictDetector — moved from Pipeline so the SSDT manifest
+         can carry PolicyConflict entries without a Pipeline dependency.
+         Pure over LineageEvent + DiagnosticEntry + OverlayAxis. -->
+    <Compile Include="ConflictDetector.fs" />
     <Compile Include="TransformRegistry.fs" />
     <Compile Include="StrategyRegistrations.fs" />
     <Compile Include="PassChainAdapter.fs" />

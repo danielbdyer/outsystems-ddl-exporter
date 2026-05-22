@@ -56,7 +56,7 @@ let private usageLines : string list =
         "    approve   Record an approval decision for a policy version (H-086)."
         "              Prints the `ApprovalRecord` JSON to stdout. The policy"
         "              version is the hex SHA-256 digest produced by"
-        "              `VersionedPolicy.versionOf`. Exit 0 on success."
+        "              `VersionedPolicy.digestOf`. Exit 0 on success."
         ""
         "    deploy  Parse V1 JSON, project SSDT, spin up an ephemeral"
         "            SQL Server container, deploy the SSDT, count tables,"
@@ -533,7 +533,7 @@ let private runSkeleton (inputPath: string) (outputDir: string) : int =
 /// H-086: `projection approve <policyVersion> --approver <name> [--rationale <text>]`.
 /// Creates an `ApprovalRecord` for the given policy version, prints it as a
 /// structured summary to stdout, and exits 0. The policy version string is
-/// the hex SHA-256 digest from `VersionedPolicy.versionOf` (or any opaque
+/// the hex SHA-256 digest from `VersionedPolicy.digestOf` (or any opaque
 /// version identifier the operator tracks). This verb does not persist the
 /// record — piping stdout to a JSON store is the operator's responsibility.
 let private runApprove

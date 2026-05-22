@@ -668,7 +668,7 @@ the consumer-pull pressure.
 
 ### H-016 — Policy as a typed combinator language
 
-**Status:** shipped (Cluster C, 2026-05-22)
+**Status:** shipped (Cluster C, 2026-05-22) + audit-remediation (2026-05-22): `PolicyExpr.fromPolicy` shipped as the inverse leg of the H-060 natural transformation with round-trip law tests. The full HORIZON outcome — replacing `Projection.Pipeline/Config.fs`'s 700-line `parsePolicy` chain with `PolicyExpr.parse >>= PolicyExpr.eval` — is a chapter-level refactor and remains pending. The DSL surface (`eval`, `simplify`, `fromPolicy`, `diff`) is ready for that refactor to consume.
 
 **Gap.** Policy is currently a `Policy` record produced by parsing a
 config file (TOML / JSON). The parsing is a 700+ line nested match
@@ -1041,7 +1041,7 @@ The pipeline becomes a policy advisor.
 
 ### H-033 — Policy diff: compare two pipeline runs under different policies
 
-**Status:** shipped (Cluster C, 2026-05-22)
+**Status:** shipped (Cluster C, 2026-05-22) + audit-remediation (2026-05-22): `PolicyDiff.diffFullProjection` runs the registered chain twice (under `policyBefore` and `policyAfter`) and joins the lineage trails and diagnostics on `SsKey` to produce `FullProjectionDiff { StructuralDiff; KindDeltas; ChangedKinds }`. The `Lineage` carrier concatenates both runs' trails. The audit-flagged "signature lie" (unused `catalog`/`profile` parameters in the prior `diffPolicy`) is resolved: the structural `diffPolicy` takes only the two policies; the lineage-trail variant `diffFullProjection` consumes both `catalog` and `profile`. CLI verb (`projection diff-policy`) remains pending.
 
 **Gap.** There is no way to compare what the pipeline would produce
 under two different policies. The operator cannot see "what changes if
@@ -1069,7 +1069,7 @@ from the two lineage trails, not from the two DDL outputs.
 
 ### H-034 — Cross-pass conflict detection
 
-**Status:** shipped (Cluster C, 2026-05-22)
+**Status:** shipped (Cluster C, 2026-05-22) + audit-remediation (2026-05-22): the false-positive defect (any `tightening.*` / `selection.*` diagnostic flagged as `AxisContradiction`) is fixed. `axisContradictions` now gates on Selection-removal evidence — a diagnostic is flagged only when its `SsKey` was removed by `OperatorIntent Selection`. Normal evidence-based outcomes on visible kinds (e.g. `tightening.nullability.relaxedUnderEvidence` on a still-selected kind) are no longer flagged. The detector module moved from `Projection.Pipeline` to `Projection.Core` so the SSDT manifest can carry `PolicyConflict` entries without a Pipeline-layer dependency. `Compose.projectFromChainWithState` invokes the detector internally; `Manifest.PolicyConflicts` carries the result and is emitted under the `policyConflicts` JSON array.
 
 **Gap.** Multiple passes may emit competing `DiagnosticEntry` values for
 the same `SsKey`. `NullabilityPass` and a hypothetical `TighteningPass`
@@ -1101,7 +1101,11 @@ Conflicts surface as a dedicated section in the manifest.
 
 ### H-035 — Policy regression testing framework
 
-**Status:** shipped (Cluster C, 2026-05-22)
+**Status:** shipped (Cluster C, 2026-05-22) + audit-remediation (2026-05-22): the prior tests only exercised `PolicyDiff.compare` (axis-label attribution). The audit-remediation tests in `PolicyDiffTests.fs` now actually run the registered pipeline twice and assert pipeline-level axis isolation:
+- `H-035 pipeline: running the same policy twice produces identical lineage` (T1 determinism baseline).
+- `H-035 pipeline: changing Tightening produces lineage deltas` (chain-wired axis sensitivity).
+- `H-035 pipeline: Selection-only delta leaves the chain trail unchanged` (Selection is applied outside the registered chain — `SelectionPolicy.filterCatalog` is a `projectWith`-side filter, not a registered pass).
+- `H-035 pipeline: changing one chain-wired axis preserves the other axes' decision-set Option shape` (orthogonality at the ComposeState level).
 
 **Gap.** There is no way to assert that a policy change does not
 inadvertently change the DDL surface for `SsKey` values unrelated to
@@ -2492,7 +2496,15 @@ topological dependency (H-038).
 
 ### H-085 — Policy versioning with SemVer
 
-**Status:** shipped (Cluster C, 2026-05-22)
+**Status:** shipped (Cluster C, 2026-05-22) + audit-remediation (2026-05-22): the prior implementation was a flat SHA-256 digest with no SemVer semantics — the title claimed SemVer but the type carried only `Version : string`. The remediation introduces:
+- `SemVer = { Major: int; Minor: int; Patch: int }` with `applyBump` and `toString`.
+- `SemVerBump` DU classifying axis-change shape (`NoBump | PatchBump | MinorBump | MajorBump`).
+- `VersionedPolicy { Digest; Version; At; Policy; ChangeLog }` carrying both content digest AND SemVer.
+- `bumpKind : Policy -> Policy -> SemVerBump` implementing the HORIZON contract (major = removal/restriction; minor = addition/widening; patch = representational delta without structural change).
+- `evolve` produces the next `VersionedPolicy` from a predecessor + new policy.
+- `versionOf` renamed to `digestOf` (was a misnomer for a content digest).
+- Manifest integration: `Manifest.PolicyVersion : VersionedPolicy option`, emitted as JSON `{policy: {digest, version}}`. `At` is intentionally excluded from the JSON projection to preserve T1 byte-determinism (the in-memory record retains it for operator queries).
+- `Compose.projectWithState` auto-stamps the manifest when the operator passes a non-empty `Policy`; `Policy.empty` callers produce no stamp (preserves byte-identity with the no-policy path).
 
 **Gap.** A policy file is a static document with no version. When a
 policy is updated, there is no record of what changed or when. The
@@ -2526,7 +2538,7 @@ changes.
 
 ### H-086 — Operator approval workflow for SuggestedConfigs
 
-**Status:** shipped (Cluster C, 2026-05-22)
+**Status:** shipped (Cluster C, 2026-05-22) + audit-remediation (2026-05-22): `ApprovalRegistry` ships as the indexed store the audit found missing. The type is `{ ByDigest : Map<string, ApprovalRecord> }` with `record / tryFind / isApprovedFor / isRejectedFor / isSuppressed / approvedRecords / rejectedRecords`. `isSuppressed` is the HORIZON `Skip`-equivalent gate — true when an operator has rejected a policy version. `pendingFor` now uses the `VersionedPolicy.Digest` as the approval anchor (stable identity that survives rationale-only `Patch` bumps). The full HORIZON outcome — re-emitting the operator policy file with approval decisions baked in — needs a policy-file writer (Config.fs sibling) and remains pending; the registry surface (1) + (2) ship now so consumers can suppress hints in-process.
 
 **Gap.** `SuggestedConfig` (H-031 / H-032) emits a policy suggestion.
 There is no workflow for an operator to accept, reject, or annotate the
