@@ -1,0 +1,38 @@
+{
+  "stryker-config": {
+    "_comment": "H-096 (HORIZON Cluster F): mutation-testing configuration for the strategy layer. Stryker.NET inserts subtle mutations (operator swaps, boundary shifts, constant replacement) into the strategy rule modules and verifies the test suite kills each mutant. A mutation score >= 80% killed is the target — meaning the strategy tests are not just green, they are detecting.",
+    "project": "../src/Projection.Core/Projection.Core.fsproj",
+    "test-projects": [
+      "../tests/Projection.Tests/Projection.Tests.fsproj"
+    ],
+    "language-version": "Default",
+    "mutate": [
+      "../src/Projection.Core/Strategies/NullabilityRules.fs",
+      "../src/Projection.Core/Strategies/UniqueIndexRules.fs",
+      "../src/Projection.Core/Strategies/ForeignKeyRules.fs",
+      "../src/Projection.Core/Strategies/CategoricalUniquenessRules.fs",
+      "../src/Projection.Core/Strategies/CycleResolution.fs"
+    ],
+    "test-case-filter": "FullyQualifiedName~Strategies | FullyQualifiedName~NullabilityRulesTests | FullyQualifiedName~UniqueIndexRulesTests | FullyQualifiedName~ForeignKeyRulesTests | FullyQualifiedName~CategoricalUniquenessRulesTests | FullyQualifiedName~CycleResolutionTests",
+    "thresholds": {
+      "high": 90,
+      "low": 80,
+      "break": 60
+    },
+    "concurrency": 4,
+    "reporters": [
+      "html",
+      "progress",
+      "json"
+    ],
+    "ignore-methods": [
+      "Bench.scope*",
+      "Bench.iterDo*",
+      "Bench.iterMap*",
+      "Bench.recordSample*"
+    ],
+    "ignored-mutations": [
+      "string"
+    ]
+  }
+}

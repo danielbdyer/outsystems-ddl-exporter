@@ -31,3 +31,4 @@ bench/
 !sidecar/projection/bench/
 sidecar/projection/bench/*
 !sidecar/projection/bench/baseline-*.json
+!sidecar/projection/bench/stryker-config.json

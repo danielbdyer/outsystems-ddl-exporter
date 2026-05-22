@@ -876,6 +876,151 @@ its constructor.")>]
 let ``H-070: refinement-type lite (no escaping constraint)`` () = ()
 
 // ===========================================================================
+// Group N — Cluster F (formal verification): adjunction laws, pillar 9
+// bidirectional contract, policy simulation laws, model-based testing,
+// fuzz testing, mutation testing, AXIOMS-as-executable-spec.
+// ===========================================================================
+// Cluster F per HORIZON.md §VI ROI ladder "Rung 3 — The composition layer."
+// Items H-051 (Kleisli laws), H-053 (Lineage / Diagnostics / LineageDiagnostics
+// monad laws), and H-100 (AxiomTests.fs itself) shipped at Cluster B (2026-05-22).
+// This commit (2026-05-22) ships the remaining Cluster F items:
+//   - H-050 (adjunction laws, partial; Docker sweep deferred)
+//   - H-052 (skeleton-purity + overlay-exercise, complete bidirectional)
+//   - H-054 (policy simulation laws — reflexivity, from-empty, Seq laws)
+//   - H-096 (Stryker.NET config file shipped; CI integration deferred)
+//   - H-097 (FsCheck fuzz baseline; SharpFuzz coverage-guided deferred)
+//   - H-098 (PolicyStateMachineTests model-impl agreement)
+//   - H-099 (deferred-with-stub; explicit perf-driven trigger)
+
+[<Fact>]
+let ``H-050 adjunction law: emitter determinism + CatalogDiff reflexivity (algebraic)`` () =
+    citationOf
+        "tests/Projection.Tests/AdjunctionLawTests.fs"
+        "H-050 emitter determinism: SsdtDdlEmitter.statements is deterministic on sampleCatalog"
+    citationOf
+        "tests/Projection.Tests/AdjunctionLawTests.fs"
+        "H-050 emitter determinism (property): permuting modules produces the same statement stream"
+    citationOf
+        "tests/Projection.Tests/AdjunctionLawTests.fs"
+        "H-050 CatalogDiff reflexivity: between c c puts every key in Unchanged"
+    citationOf
+        "tests/Projection.Tests/AdjunctionLawTests.fs"
+        "H-050 T11 form: every kind in sampleCatalog produces a CreateTable in the emitter output"
+    // The full Docker-bound `reader ∘ emitter = id` sweep is the
+    // deferred-with-stub `H-050 emitter-reader adjunction sweep` in
+    // the same file; single-fixture form runs at
+    // `CanaryRoundTripTests.fs::M3` against a real container.
+    ()
+
+[<Fact>]
+let ``H-052 bidirectional pillar 9: skeleton-purity + overlay-exercise (full)`` () =
+    citationOf
+        "tests/Projection.Tests/PillarNineTests.fs"
+        "H-052 skeleton-purity: runSkeleton emits zero OperatorIntent events for any module ordering"
+    citationOf
+        "tests/Projection.Tests/PillarNineTests.fs"
+        "H-052 overlay-exercise: Selection axis fires when VisibilityMask hides at least one kind"
+    citationOf
+        "tests/Projection.Tests/PillarNineTests.fs"
+        "H-052 overlay-exercise: Emission axis fires when TableRename has at least one spec"
+    citationOf
+        "tests/Projection.Tests/PillarNineTests.fs"
+        "H-052 overlay-exercise: Tightening axis fires when NullabilityPass has an intervention"
+    citationOf
+        "tests/Projection.Tests/PillarNineTests.fs"
+        "H-052 overlay-exercise: Ordering axis is named at the TopologicalOrderPass registry site"
+    citationOf
+        "tests/Projection.Tests/PillarNineTests.fs"
+        "H-052 overlay-exercise coverage: every registry-known OverlayAxis has a corresponding overlay-exercise test above"
+    citationOf
+        "tests/Projection.Tests/PillarNineTests.fs"
+        "H-052 bidirectional contract: skeletonView and overlayView partition the registry"
+    // The bidirectional pillar 9 contract is the structural exit gate
+    // per V2_PRODUCTION_CUTOVER.md §6.4.7 task 7. Skeleton purity
+    // (every DataIntent pass emits zero OperatorIntent events) +
+    // overlay exercise (every OperatorIntent axis fires when its
+    // overlay is exercised) cover the L3-CC-Transform-Totality axiom.
+    ()
+
+[<Fact>]
+let ``H-054 policy simulation laws: reflexivity, from-empty, Seq associativity / left identity`` () =
+    citationOf
+        "tests/Projection.Tests/PolicySimulationTests.fs"
+        "H-054 reflexivity (property): diff p p is empty for any populated policy"
+    citationOf
+        "tests/Projection.Tests/PolicySimulationTests.fs"
+        "H-054 from-empty: every non-empty axis flips Changed"
+    citationOf
+        "tests/Projection.Tests/PolicySimulationTests.fs"
+        "H-054 Seq associativity: (a; b); c = a; (b; c) over Atom-lifted policies"
+    citationOf
+        "tests/Projection.Tests/PolicySimulationTests.fs"
+        "H-054 Seq left identity: eval (Seq identity p) = eval p"
+    citationOf
+        "tests/Projection.Tests/PolicySimulationTests.fs"
+        "H-054 right-wins clobber (counterexample): naive Seq does NOT distribute over disjoint Atom-lifted axes"
+    // The "applyDelta union" law from HORIZON H-054 doesn't apply
+    // directly to PolicyExpr's Seq (right-wins, not union-with-default).
+    // The right composition operator for disjoint-axis stacking is
+    // `Override`; the file ships an Override-based commutativity test.
+    ()
+
+[<Fact>]
+let ``H-098 policy state machine: model-impl agreement on touched axes`` () =
+    citationOf
+        "tests/Projection.Tests/PolicyStateMachineTests.fs"
+        "H-098 model-impl agreement: trace-step touched axes equal at every step"
+    citationOf
+        "tests/Projection.Tests/PolicyStateMachineTests.fs"
+        "H-098 reset (property): Reset clears the touched axis set"
+    citationOf
+        "tests/Projection.Tests/PolicyStateMachineTests.fs"
+        "H-098 monotone growth: touched axes grow across non-Reset sequences"
+    // The model (Map<OverlayAxis, bool>) tracks which axes were
+    // touched; the real Policy is queried for which axes differ from
+    // Policy.empty. The two views must agree at every transition.
+    ()
+
+[<Fact>]
+let ``H-097 policy parser fuzz: FsCheck sweep + truncation / byte-swap mutations (parser never throws)`` () =
+    citationOf
+        "tests/Projection.Tests/PolicyParserFuzzTests.fs"
+        "H-097 parser safety (property): arbitrary non-null strings never throw"
+    citationOf
+        "tests/Projection.Tests/PolicyParserFuzzTests.fs"
+        "H-097 truncation fuzz: truncating a valid config at any position never throws"
+    citationOf
+        "tests/Projection.Tests/PolicyParserFuzzTests.fs"
+        "H-097 byte-swap fuzz: replacing a character at any position never throws"
+    // SharpFuzz coverage-guided campaign is deferred — see the Skip
+    // stub in the same file. FsCheck sweep is the low-friction
+    // baseline; SharpFuzz triggers when the baseline stops surfacing
+    // new failure modes AND the parser becomes part of an operator-
+    // facing API surface.
+    ()
+
+[<Fact(Skip = "H-096 Mutation testing for strategy rules — Stryker.NET config \
+file shipped at `bench/stryker-config.json`. Activating the test requires \
+the .NET tool install (`dotnet tool install -g dotnet-stryker`) plus a CI \
+step. The structural surface (which strategies are in scope) is named in \
+the config file. Trigger to activate: when a strategy bug surfaces in \
+canary or production AND the existing per-strategy test suite was green \
+on the failing input (i.e., the test suite is missing a mutation-killing \
+case). Mutation score target per HORIZON: >=80% killed mutants.")>]
+let ``H-096: mutation testing for strategy rules (config shipped; CI activation deferred)`` () = ()
+
+[<Fact(Skip = "H-099 Remote pass execution — large infrastructure work \
+(new `Projection.Adapters.Remote` project + HTTP API + osm-worker process). \
+Explicit perf-driven trigger per HORIZON: bench data shows a specific pass \
+takes >50% of pipeline wall time at operator-reality canary scale AND the \
+pass is embarrassingly parallelizable across independent SsKey sets. \
+Trigger remains unfired at operator-reality canary scale (150 tables, \
+6.25k rows; ~5-6s warm wall — no single pass dominates). The static \
+algebra primitive (Pass.product / `&&&`) shipped at Cluster B (H-006) for \
+when the trigger eventually fires.")>]
+let ``H-099: remote pass execution (perf trigger unfired)`` () = ()
+
+// ===========================================================================
 // Coverage summary (audit trail; verifiable by grep against this file)
 // ===========================================================================
 //
