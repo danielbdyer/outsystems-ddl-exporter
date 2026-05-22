@@ -238,3 +238,78 @@ let ``A26: Lineage equality and hash are consistent under Trail divergence`` () 
     Assert.True (Lineage.byValue m1 m2)
     Assert.Equal (hash m1, hash m2)
     Assert.False (Lineage.byValueAndTrail m1 m2)
+
+// ---------------------------------------------------------------------------
+// H-001: `lineage { ... }` CE builder. The CE form must produce values
+// algebraically equivalent to the explicit `bind` chain. These tests are
+// the structural underwriting that the CE preserves the monad-law-bearing
+// algebra.
+//
+// CE form `lineage { let! x = m; do! Lineage.write e; return x }` must
+// equal (Value × Trail) `Lineage.bind (fun x -> Lineage.write e |> Lineage.bind (fun () -> Lineage.ofValue x)) m`.
+// ---------------------------------------------------------------------------
+
+[<Property>]
+let ``H-001 CE: lineage { return x } equals Lineage.ofValue x`` (x: int) =
+    Lineage.byValueAndTrail (lineage { return x }) (Lineage.ofValue x)
+
+[<Property>]
+let ``H-001 CE: lineage { let! x = m; return x } equals m`` (x: int) =
+    let m = Lineage.ofValueWith (touched "p" 1 customerKey) x
+    Lineage.byValueAndTrail (lineage { let! y = m in return y }) m
+
+[<Fact>]
+let ``H-001 CE: do! Lineage.write threads the event chronologically`` () =
+    let e1 = touched "p1" 1 customerKey
+    let e2 = touched "p2" 1 orderKey
+    let m = Lineage.ofValueWith e1 0
+    let actual =
+        lineage {
+            let! x = m
+            do! Lineage.write e2
+            return x + 1
+        }
+    let expected =
+        m
+        |> Lineage.bind (fun x ->
+            Lineage.write e2
+            |> Lineage.bind (fun () -> Lineage.ofValue (x + 1)))
+    Lineage.byValueAndTrail actual expected |> Assert.True
+    Assert.Equal<LineageEvent list>([e1; e2], actual.Trail)
+    Assert.Equal(1, actual.Value)
+
+[<Fact>]
+let ``H-001 CE: multi-step let! + do! preserves A24 chronological ordering`` () =
+    let e1 = touched "p1" 1 customerKey
+    let e2 = touched "p2" 1 orderKey
+    let e3 = touched "p3" 1 countryKey
+    let mA = Lineage.ofValueWith e1 10
+    let mB y = Lineage.ofValueWith e3 (y * 2)
+    let actual =
+        lineage {
+            let! a = mA
+            do! Lineage.write e2
+            let! b = mB a
+            return b + 1
+        }
+    Assert.Equal<LineageEvent list>([e1; e2; e3], actual.Trail)
+    Assert.Equal(21, actual.Value)
+
+[<Property>]
+let ``H-001 CE: lineage { do! write e; return () } equals Lineage.write e`` () =
+    let e = touched "p" 1 customerKey
+    let actual = lineage { do! Lineage.write e }
+    Lineage.byValueAndTrail actual (Lineage.write e)
+
+[<Fact>]
+let ``H-001 CE: Lineage.writeMany threads events as one carrier`` () =
+    let e1 = touched "p" 1 customerKey
+    let e2 = annotated "p" 1 customerKey "x"
+    let e3 = touched "p" 1 orderKey
+    let actual =
+        lineage {
+            do! Lineage.writeMany [e1; e2; e3]
+            return 42
+        }
+    Assert.Equal<LineageEvent list>([e1; e2; e3], actual.Trail)
+    Assert.Equal(42, actual.Value)

@@ -57,6 +57,7 @@
     <Compile Include="SqlLiteralTests.fs" />
     <Compile Include="LineageTests.fs" />
     <Compile Include="DiagnosticsTests.fs" />
+    <Compile Include="AxiomTests.fs" />
     <Compile Include="ArtifactByKindTests.fs" />
     <Compile Include="CatalogDiffTests.fs" />
     <Compile Include="RefactorLogEmitterTests.fs" />

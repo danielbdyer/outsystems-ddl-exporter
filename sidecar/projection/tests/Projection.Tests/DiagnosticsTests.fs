@@ -1,7 +1,10 @@
 module Projection.Tests.DiagnosticsTests
 
 open Xunit
+open FsCheck
+open FsCheck.Xunit
 open Projection.Core
+open Projection.Core.PassOperators
 open Projection.Tests.Fixtures
 
 // ---------------------------------------------------------------------------
@@ -288,3 +291,251 @@ let ``DiagnosticEntry.SsKey carries the IR node for pass-level diagnostics`` () 
     let key = mkKey "AppCore.User.Email"
     let e = entryFor key "UniqueIndexPass" DiagnosticSeverity.Warning "tightening.uniqueIndex.opportunity" "Unique index not enforced"
     Assert.Equal(Some key, e.SsKey)
+
+// ---------------------------------------------------------------------------
+// H-053 expansion — `Diagnostics<'a>` monad laws. Mirrors the LineageTests
+// triple. Diagnostics is a writer monad over the `(DiagnosticEntry list, @, [])`
+// monoid; the laws hold for any underlying value type.
+//
+//   left identity   : bind f (ofValue x)  =  f x
+//   right identity  : bind ofValue m      =  m
+//   associativity   : bind g (bind f m)   =  bind (fun x -> bind g (f x)) m
+//
+// Together with `LineageTests`'s Lineage triple, this asserts that the
+// `LineageDiagnostics` stack (tested below) inherits monad-law correctness
+// from both factors.
+// ---------------------------------------------------------------------------
+
+[<Property>]
+let ``Diagnostics monad: left identity`` (x: int) =
+    let f y = Diagnostics.ofValueWith (entry "f" DiagnosticSeverity.Info "code" "msg") (y + 1)
+    let lhs = Diagnostics.bind f (Diagnostics.ofValue x)
+    let rhs = f x
+    lhs = rhs
+
+[<Property>]
+let ``Diagnostics monad: right identity`` (x: int) =
+    let m = Diagnostics.ofValueWith (entry "obs" DiagnosticSeverity.Info "code" "msg") x
+    let lhs = Diagnostics.bind Diagnostics.ofValue m
+    lhs = m
+
+[<Property>]
+let ``Diagnostics monad: associativity`` (x: int) =
+    let f y = Diagnostics.ofValueWith (entry "f" DiagnosticSeverity.Info "c1" "m1") (y + 1)
+    let g y = Diagnostics.ofValueWith (entry "g" DiagnosticSeverity.Warning "c2" "m2") (y * 3)
+    let m = Diagnostics.ofValue x
+    let lhs = Diagnostics.bind g (Diagnostics.bind f m)
+    let rhs = Diagnostics.bind (fun y -> Diagnostics.bind g (f y)) m
+    lhs = rhs
+
+[<Property>]
+let ``Diagnostics functor: identity`` (x: int) =
+    let m = Diagnostics.ofValueWith (entry "p" DiagnosticSeverity.Info "c" "m") x
+    Diagnostics.map id m = m
+
+[<Property>]
+let ``Diagnostics functor: composition`` (x: int) =
+    let m = Diagnostics.ofValueWith (entry "p" DiagnosticSeverity.Info "c" "m") x
+    let f (y: int) = y + 7
+    let g (y: int) = y * 11
+    Diagnostics.map (g << f) m = Diagnostics.map g (Diagnostics.map f m)
+
+[<Fact>]
+let ``Diagnostics.write produces a unit value with one entry`` () =
+    let e = entry "p" DiagnosticSeverity.Warning "c" "m"
+    let m = Diagnostics.write e
+    Assert.Equal((), m.Value)
+    Assert.Equal<DiagnosticEntry list>([e], m.Entries)
+
+// ---------------------------------------------------------------------------
+// H-002: `diagnostics { ... }` CE builder equivalence with the bind chain.
+// ---------------------------------------------------------------------------
+
+[<Property>]
+let ``H-002 CE: diagnostics { return x } equals Diagnostics.ofValue x`` (x: int) =
+    diagnostics { return x } = Diagnostics.ofValue x
+
+[<Fact>]
+let ``H-002 CE: do! write threads entries chronologically`` () =
+    let e1 = entry "p1" DiagnosticSeverity.Info "first" "a"
+    let e2 = entry "p2" DiagnosticSeverity.Warning "second" "b"
+    let actual =
+        diagnostics {
+            do! Diagnostics.write e1
+            do! Diagnostics.write e2
+            return 42
+        }
+    Assert.Equal(42, actual.Value)
+    Assert.Equal<DiagnosticEntry list>([e1; e2], actual.Entries)
+
+// ---------------------------------------------------------------------------
+// H-053 expansion — `LineageDiagnostics<'a> = Lineage<Diagnostics<'a>>`
+// monad laws. The dual writer is itself a writer monad over the product
+// monoid `(LineageEvent list × DiagnosticEntry list, ⊕, ([],[]))`; the
+// laws thread through both projections (Trail and Entries).
+//
+// Asserting these laws explicitly is the writer-fidelity discipline's
+// formal underwriting (DECISIONS 2026-05-30): if a pass driver uses the
+// canonical primitives, both writers compose correctly by construction.
+// ---------------------------------------------------------------------------
+
+let private dualEvent (key: SsKey) =
+    { PassName       = "Test"
+      PassVersion    = 1
+      SsKey          = key
+      TransformKind  = Touched
+      Classification = DataIntent }
+
+let private byValueAndBothTrails (m1: Lineage<Diagnostics<'a>>) (m2: Lineage<Diagnostics<'a>>) : bool =
+    LineageDiagnostics.payload m1 = LineageDiagnostics.payload m2
+    && m1.Trail = m2.Trail
+    && LineageDiagnostics.entries m1 = LineageDiagnostics.entries m2
+
+[<Property>]
+let ``LineageDiagnostics monad: left identity`` (x: int) =
+    let f y =
+        LineageDiagnostics.ofValue (y + 1)
+        |> LineageDiagnostics.tellLineage (dualEvent customerKey)
+        |> LineageDiagnostics.tellDiagnostic (entry "f" DiagnosticSeverity.Info "c" "m")
+    byValueAndBothTrails
+        (LineageDiagnostics.bind f (LineageDiagnostics.ofValue x))
+        (f x)
+
+[<Property>]
+let ``LineageDiagnostics monad: right identity`` (x: int) =
+    let m =
+        LineageDiagnostics.ofValue x
+        |> LineageDiagnostics.tellLineage (dualEvent customerKey)
+        |> LineageDiagnostics.tellDiagnostic (entry "obs" DiagnosticSeverity.Info "c" "m")
+    byValueAndBothTrails
+        (LineageDiagnostics.bind LineageDiagnostics.ofValue m)
+        m
+
+[<Property>]
+let ``LineageDiagnostics monad: associativity`` (x: int) =
+    let f y =
+        LineageDiagnostics.ofValue (y + 1)
+        |> LineageDiagnostics.tellLineage (dualEvent customerKey)
+        |> LineageDiagnostics.tellDiagnostic (entry "f" DiagnosticSeverity.Info "c1" "m1")
+    let g y =
+        LineageDiagnostics.ofValue (y * 3)
+        |> LineageDiagnostics.tellLineage (dualEvent orderKey)
+        |> LineageDiagnostics.tellDiagnostic (entry "g" DiagnosticSeverity.Warning "c2" "m2")
+    let m = LineageDiagnostics.ofValue x
+    byValueAndBothTrails
+        (LineageDiagnostics.bind g (LineageDiagnostics.bind f m))
+        (LineageDiagnostics.bind (fun y -> LineageDiagnostics.bind g (f y)) m)
+
+// ---------------------------------------------------------------------------
+// H-002: `lineageDiagnostics { ... }` CE — algebraic equivalence with the
+// bind chain. The CE inherits the dual-writer's monad laws by construction;
+// these tests verify the syntactic form preserves the algebra.
+// ---------------------------------------------------------------------------
+
+[<Property>]
+let ``H-002 CE: lineageDiagnostics { return x } equals LineageDiagnostics.ofValue x`` (x: int) =
+    byValueAndBothTrails
+        (lineageDiagnostics { return x })
+        (LineageDiagnostics.ofValue x)
+
+[<Fact>]
+let ``H-002 CE: do! writeLineage + do! writeDiagnostic thread both trails`` () =
+    let e = dualEvent customerKey
+    let d = entry "P" DiagnosticSeverity.Info "c" "m"
+    let actual =
+        lineageDiagnostics {
+            do! LineageDiagnostics.writeLineage e
+            do! LineageDiagnostics.writeDiagnostic d
+            return 7
+        }
+    Assert.Equal(7, LineageDiagnostics.payload actual)
+    Assert.Equal<LineageEvent list>([e], actual.Trail)
+    Assert.Equal<DiagnosticEntry list>([d], LineageDiagnostics.entries actual)
+
+[<Fact>]
+let ``H-002 CE: bind chains compose both trails chronologically`` () =
+    let e1 = dualEvent customerKey
+    let e2 = dualEvent orderKey
+    let d1 = entry "P1" DiagnosticSeverity.Info "first" "a"
+    let d2 = entry "P2" DiagnosticSeverity.Warning "second" "b"
+    let mStart =
+        LineageDiagnostics.ofValue 10
+        |> LineageDiagnostics.tellLineage e1
+        |> LineageDiagnostics.tellDiagnostic d1
+    let actual =
+        lineageDiagnostics {
+            let! x = mStart
+            do! LineageDiagnostics.writeLineage e2
+            do! LineageDiagnostics.writeDiagnostic d2
+            return x + 1
+        }
+    Assert.Equal(11, LineageDiagnostics.payload actual)
+    Assert.Equal<LineageEvent list>([e1; e2], actual.Trail)
+    Assert.Equal<DiagnosticEntry list>([d1; d2], LineageDiagnostics.entries actual)
+
+// ---------------------------------------------------------------------------
+// H-003: Kleisli laws for `Pass<'a, 'b>`. The pipeline IS a Kleisli
+// category over the dual-writer monad; these tests assert the category
+// laws (identity left/right, associativity) on the named primitives.
+//
+// The laws are theorems over `LineageDiagnostics.bind`'s monad laws —
+// asserting them at the Kleisli surface verifies that `Pass.compose` is
+// the correct Kleisli composition operator, and `Pass.id` is the correct
+// identity arrow. `PassChainAdapter.compose`'s fold is `Pass.composeAll`
+// modulo Bench scoping; if these laws hold, the registered chain composes
+// correctly by construction.
+// ---------------------------------------------------------------------------
+
+let private wrapPass (event: LineageEvent) (entry: DiagnosticEntry) (delta: int) : Pass<int, int> =
+    fun n ->
+        LineageDiagnostics.ofValue (n + delta)
+        |> LineageDiagnostics.tellLineage event
+        |> LineageDiagnostics.tellDiagnostic entry
+
+[<Property>]
+let ``H-003 Kleisli: left identity (Pass.id >=> f = f)`` (x: int) =
+    let f = wrapPass (dualEvent customerKey) (entry "f" DiagnosticSeverity.Info "c" "m") 1
+    let lhs = (Pass.id >=> f) x
+    let rhs = f x
+    byValueAndBothTrails lhs rhs
+
+[<Property>]
+let ``H-003 Kleisli: right identity (f >=> Pass.id = f)`` (x: int) =
+    let f = wrapPass (dualEvent customerKey) (entry "f" DiagnosticSeverity.Info "c" "m") 1
+    let lhs = (f >=> Pass.id) x
+    let rhs = f x
+    byValueAndBothTrails lhs rhs
+
+[<Property>]
+let ``H-003 Kleisli: associativity ((f >=> g) >=> h = f >=> (g >=> h))`` (x: int) =
+    let f = wrapPass (dualEvent customerKey) (entry "f" DiagnosticSeverity.Info "c1" "m1") 1
+    let g = wrapPass (dualEvent orderKey)    (entry "g" DiagnosticSeverity.Info "c2" "m2") 2
+    let h = wrapPass (dualEvent countryKey)  (entry "h" DiagnosticSeverity.Info "c3" "m3") 3
+    let lhs = ((f >=> g) >=> h) x
+    let rhs = (f >=> (g >=> h)) x
+    byValueAndBothTrails lhs rhs
+
+[<Fact>]
+let ``H-003 Kleisli: composeAll [] = Pass.id`` () =
+    // The empty pass chain is the identity arrow. This is the equivalent
+    // of PassChainAdapter.compose [] state = LineageDiagnostics.ofValue state.
+    let lhs = (Pass.composeAll<int> []) 42
+    let rhs = Pass.id 42
+    byValueAndBothTrails lhs rhs |> Assert.True
+
+[<Fact>]
+let ``H-003 Kleisli: composeAll [f; g; h] threads chronologically`` () =
+    let e1 = dualEvent customerKey
+    let e2 = dualEvent orderKey
+    let e3 = dualEvent countryKey
+    let d1 = entry "P1" DiagnosticSeverity.Info "c1" "m1"
+    let d2 = entry "P2" DiagnosticSeverity.Warning "c2" "m2"
+    let d3 = entry "P3" DiagnosticSeverity.Info "c3" "m3"
+    let f = wrapPass e1 d1 1
+    let g = wrapPass e2 d2 10
+    let h = wrapPass e3 d3 100
+    let composed = Pass.composeAll [f; g; h]
+    let result = composed 0
+    Assert.Equal(111, LineageDiagnostics.payload result)
+    Assert.Equal<LineageEvent list>([e1; e2; e3], result.Trail)
+    Assert.Equal<DiagnosticEntry list>([d1; d2; d3], LineageDiagnostics.entries result)

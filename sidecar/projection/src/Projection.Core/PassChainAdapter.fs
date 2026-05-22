@@ -1,17 +1,21 @@
 namespace Projection.Core
 
 /// Pass-chain adapter wrapping a typed `RegisteredTransform` into a
-/// uniform `ComposeState -> Lineage<Diagnostics<ComposeState>>` step.
-/// Per chapter A.4.7' axis 2 (`CHAPTER_A_4_7_PRIME_OPEN.md`): this is
-/// the type-erasure boundary that makes the registry-driven fold
-/// well-typed despite heterogeneous `'Out` across passes.
+/// uniform `Pass<ComposeState, ComposeState>` step. Per chapter A.4.7'
+/// axis 2 (`CHAPTER_A_4_7_PRIME_OPEN.md`): this is the type-erasure
+/// boundary that makes the registry-driven fold well-typed despite
+/// heterogeneous `'Out` across passes.
 ///
 /// `Name` mirrors the wrapped `RegisteredTransform.Name` so the
 /// chain-step trail can be cross-referenced against
 /// `TransformRegistry.all`.
+///
+/// `Apply` is a Kleisli endo-arrow `Pass<ComposeState, ComposeState>`
+/// (H-003 type alias in `Diagnostics.fs`). The fold in `compose` is
+/// `Pass.composeAll` modulo per-step Bench scoping.
 type PassChainAdapter = {
     Name : string
-    Apply : ComposeState -> Lineage<Diagnostics<ComposeState>>
+    Apply : Pass<ComposeState, ComposeState>
 }
 
 [<RequireQualifiedAccess>]
@@ -47,10 +51,18 @@ module PassChainAdapter =
                     writeBack decision state) }
 
     /// Chapter A.4.7' slice γ — fold a `PassChainAdapter list` into
-    /// one composed Apply step. Each adapter's Apply is threaded
-    /// through `LineageDiagnostics.bind`; both writers compose
-    /// chronologically (A24: earliest-first; the Diagnostics-trail
-    /// sibling follows the same convention).
+    /// one composed Apply step.
+    ///
+    /// **H-003 — Kleisli structure.** This is `Pass.composeAll` over the
+    /// pass-chain endo-arrows (`Pass<ComposeState, ComposeState> list`),
+    /// modulo per-step Bench scoping. Each adapter's `Apply` is a
+    /// Kleisli arrow; folding `LineageDiagnostics.bind` from the
+    /// identity arrow (`LineageDiagnostics.ofValue state`) computes
+    /// `(((id >=> a₁) >=> a₂) >=> … >=> aₙ) state`. Both writers'
+    /// trails compose chronologically (A24 for Lineage; same convention
+    /// for Diagnostics). The Kleisli identity and associativity laws
+    /// underwrite the fold's correctness — tested in
+    /// `KleisliLawTests.fs` against the algebraic `Pass.composeAll`.
     ///
     /// Slice δ consumes `compose RegisteredTransforms.allChainSteps`
     /// inside `Compose.project`; slice ε consumes

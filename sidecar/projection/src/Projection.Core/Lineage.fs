@@ -352,6 +352,64 @@ module Lineage =
         let next = f m.Value
         { Value = next.Value; Trail = m.Trail @ next.Trail }
 
+    /// Write a single event under the unit value. The "writer-primitive"
+    /// form — distinct from `tell` (the operational form which augments
+    /// an existing carrier) — `write event` is a `Lineage<unit>` whose
+    /// trail is `[event]`. This is the primitive that the `lineage` CE
+    /// builder uses to desugar `do! Lineage.write event` (H-001).
+    let write (event: LineageEvent) : Lineage<unit> =
+        { Value = (); Trail = [event] }
+
+    /// Write several events under the unit value. Pairs with `write`;
+    /// algebraically equivalent to `events |> List.map write` folded
+    /// through `bind`, but emits a single carrier (matches the
+    /// `ofValueAndEvents` shape).
+    let writeMany (events: LineageEvent list) : Lineage<unit> =
+        { Value = (); Trail = events }
+
+
+/// `lineage { ... }` computation expression builder. Encodes the writer
+/// monad's algebra in F# syntax. `let!` is `bind`; `return` is `ofValue`;
+/// `do! Lineage.write event` appends an event to the implicit accumulator.
+/// The CE is H-001: the same algebra the pass drivers already use, in a
+/// surface form that reads as the pipeline it is.
+///
+/// **Worked equivalence (CE ≡ bind chain):**
+/// ```
+/// lineage {                            m >>= fun x ->
+///     let! x = m                       Lineage.write e >>= fun () ->
+///     do! Lineage.write e          ≡   Lineage.ofValue x
+///     return x
+/// }
+/// ```
+///
+/// **Writer-fidelity discipline holds:** the CE produces values via the
+/// canonical primitives (`bind` / `ofValue` / `write`); manual record-
+/// building is impossible inside `lineage { ... }`. Every pass that
+/// adopts the CE inherits A24 chronological ordering by construction.
+type LineageBuilder() =
+    member _.Return(x: 'a) : Lineage<'a> = Lineage.ofValue x
+    member _.ReturnFrom(m: Lineage<'a>) : Lineage<'a> = m
+    member _.Bind(m: Lineage<'a>, f: 'a -> Lineage<'b>) : Lineage<'b> =
+        Lineage.bind f m
+    member _.Zero() : Lineage<unit> = Lineage.ofValue ()
+    /// Sequence two writer carriers: `m1 >> m2` discards the unit value
+    /// from `m1` and threads `m2`. Trails compose chronologically (A24).
+    member _.Combine(m1: Lineage<unit>, m2: Lineage<'a>) : Lineage<'a> =
+        Lineage.bind (fun () -> m2) m1
+    /// Eager `Delay`: writer monad has no laziness obligation (Core is
+    /// synchronous-by-design per CLAUDE.md "purity-first"). Evaluating
+    /// the thunk immediately preserves the algebraic identities.
+    member _.Delay(f: unit -> Lineage<'a>) : Lineage<'a> = f ()
+    member _.Run(m: Lineage<'a>) : Lineage<'a> = m
+
+[<AutoOpen>]
+module LineageBuilders =
+    /// The `lineage { ... }` CE entry point (H-001). Open `Projection.Core`
+    /// to bring into scope; pass drivers and tests use the CE form when
+    /// the bind chain has structural complexity (`let!` + `do!` + `return`).
+    let lineage = LineageBuilder()
+
 
 /// Infix operators for `Lineage<_>`. Open this module at call sites that
 /// benefit from `>>=` (the algebra reads more like the formal system).

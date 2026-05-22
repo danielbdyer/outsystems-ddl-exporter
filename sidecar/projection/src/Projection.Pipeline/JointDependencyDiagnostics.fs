@@ -39,8 +39,11 @@ module JointDependencyDiagnostics =
     // Threshold: if uniquenessRatio >= 0.95, the tuple combination is
     // nearly unique across observed rows → composite unique constraint
     // may be valid.
-    [<Literal>]
-    let private uniquenessThreshold = 0.95m
+    // `[<Literal>]` is not used on `decimal` — F# / .NET 9 emit a
+    // `DecimalConstantAttribute` that the CLR rejects at cctor time
+    // (`InvalidProgramException`); the discipline is "Literal only for
+    // CLR-primitive constants" and `decimal` is a struct, not a primitive.
+    let private uniquenessThreshold : decimal = 0.95m
 
     // Guard: suppress noise on very small probe results.
     [<Literal>]

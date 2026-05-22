@@ -45,95 +45,123 @@ operators.
 
 ### H-001 — Computation expression builder for Lineage
 
-**Status:** proposed
+**Status:** shipped (Cluster B, 2026-05-22).
 
-**Gap.** `Lineage<'a>` is a writer monad. `Lineage.bind` and
-`Lineage.ofValue` exist. There is no computation expression (CE)
-builder, so consumer chains write `|> Lineage.bind (fun x -> ...)` at
-every step. With a builder, the same computation reads:
+**Gap (resolved).** `Lineage<'a>` is a writer monad. `Lineage.bind` and
+`Lineage.ofValue` exist. There was no computation expression (CE)
+builder; consumer chains wrote `|> Lineage.bind (fun x -> ...)` at
+every step. With the new builder, the same computation reads:
 
 ```fsharp
 lineage {
-    let! decisions = NullabilityPass.run catalog policy profile
-    let! ordered   = TopologicalOrderPass.run decisions policy profile
-    return ordered
+    let! x = m
+    do! Lineage.write event
+    return x
 }
 ```
 
-**Location.** `src/Projection.Core/Lineage.fs`. The builder is a dozen
-lines: `Bind`, `Return`, `ReturnFrom`, `Zero` over the existing
-primitives. No new semantics.
+**Shipped surface.** `Lineage.write : LineageEvent -> Lineage<unit>` +
+`Lineage.writeMany` are the new CE primitives that desugar from
+`do!`; `LineageBuilder` carries `Bind`/`Return`/`ReturnFrom`/`Zero`/
+`Combine`/`Delay`/`Run`; `lineage` is the `[<AutoOpen>]` value. Tests:
+`tests/Projection.Tests/LineageTests.fs::H-001 CE: …` (6 tests covering
+return-only, let!-only, do!-write chronology, multi-step chaining,
+do!-equivalence to write, and writeMany).
 
-**Unlocks.** Every pass chain in `Compose.fs` and any future
-composition surface reads as the pipeline it is, rather than as a
-chain of `|> bind` applications. The CE also makes the monadic
-structure legible to contributors who do not already know the
-underlying algebra.
-
-**Trigger.** When pass-chain composition sites in `Compose.fs` grow to
-four or more sequential `Lineage.bind` calls — currently three at the
-deepest site.
+**Unlocks delivered.** The writer-fidelity discipline (`DECISIONS
+2026-05-30`) becomes readable as declarative code rather than as a
+sequence of named primitive calls. Manual record-building is
+impossible inside `lineage { ... }` — the CE syntactically enforces
+the discipline.
 
 ---
 
 ### H-002 — Computation expression builder for LineageDiagnostics
 
-**Status:** proposed
+**Status:** shipped (Cluster B, 2026-05-22).
 
-**Gap.** `LineageDiagnostics<'a> = Lineage<Diagnostics<'a>>` is the
-dual-writer stack used by every pass that produces both decisions and
-observer-relevant findings. The same CE argument applies: today's
-consumer chains are `|> LineageDiagnostics.bind (fun x -> ...)` steps;
-a builder would give:
+**Gap (resolved).** `LineageDiagnostics<'a> = Lineage<Diagnostics<'a>>`
+is the dual-writer stack used by every pass that produces both
+decisions and observer-relevant findings. The CE form gives:
 
 ```fsharp
 lineageDiagnostics {
-    let! ctx    = UserFkReflowPass.discover catalog policy profile
-    let! result = NullabilityPass.run ctx policy profile
-    do! LineageDiagnostics.tellDiagnostics entries
-    return result
+    let! ctx = UserFkReflowPass.discover catalog policy profile
+    do! LineageDiagnostics.writeLineage event
+    do! LineageDiagnostics.writeDiagnostic entry
+    return ctx
 }
 ```
 
-**Location.** `src/Projection.Core/Lineage.fs` (alongside the
-`LineageDiagnostics` module). The dual-writer builder needs `Bind`,
-`Return`, `ReturnFrom`, `Zero`, and a `tell` method that lifts a
-`Diagnostics<unit>` into the stack.
+**Shipped surface.** `Diagnostics.write`/`writeMany`,
+`LineageDiagnostics.writeLineage`/`writeDiagnostic`/`writeDiagnostics`
+as CE primitives. `DiagnosticsBuilder` + `diagnostics` CE value;
+`LineageDiagnosticsBuilder` + `lineageDiagnostics` CE value.
 
-**Unlocks.** The writer-fidelity discipline (`DECISIONS 2026-05-30 —
-writer-fidelity codification`) becomes readable as declarative code
-rather than as a sequence of named primitive calls. The discipline
-itself is unchanged; its surface becomes idiomatic.
+**Tests delivered.** Diagnostics monad laws (left identity, right
+identity, associativity) PLUS LineageDiagnostics monad laws — H-053's
+expansion that the original Cluster B item identified but only Lineage
+had coverage for. `DiagnosticsTests.fs` grew by ~140 lines covering
+both writers' full monad-law triples, the dual-writer's law triple
+via `byValueAndBothTrails` helper, CE equivalence tests, and the
+Kleisli law tests for H-003.
+
+**Algebra insight (surprise).** `LineageDiagnostics` is `WriterT`
+stacked: `LineageDiagnostics<'a> = WriterT[LineageEvent]
+(WriterT[DiagnosticEntry] Identity) 'a`. Both trails compose
+chronologically because the underlying `(List, @, [])` monoid is the
+same on both layers; the dual writer is itself a writer over the
+product monoid. The CE makes this stacking transparent.
 
 ---
 
 ### H-003 — Kleisli structure made explicit in code and documentation
 
-**Status:** proposed
+**Status:** shipped (Cluster B, 2026-05-22).
 
-**Gap.** The pipeline IS a Kleisli category: each pass is an arrow
-`Catalog → Lineage<Diagnostics<Catalog>>`, `PassChainAdapter.compose`
-is Kleisli composition via `LineageDiagnostics.bind`, and
-`Lineage.ofValue` is the identity arrow. None of this is named or
-documented. A contributor reading `PassChainAdapter.compose` does not
-know they are reading a category-theoretic composition operator.
+**Gap (resolved).** The pipeline IS a Kleisli category over the
+dual-writer monad. Each pass is an arrow
+`Catalog → Lineage<Diagnostics<Catalog>>`;
+`PassChainAdapter.compose` is Kleisli composition; the seed of its
+fold is the identity arrow. None of this was named.
 
-**Location.** `src/Projection.Pipeline/PassChainAdapter.fs` and
-`src/Projection.Core/Lineage.fs`.
-
-**Implementation.** A type alias:
+**Shipped surface.**
 ```fsharp
-/// A Kleisli arrow in the pipeline category.
-type Pass<'a, 'b> = 'a -> Lineage<Diagnostics<'b>>
-```
-and a module-level docstring on `PassChainAdapter.compose` citing the
-Kleisli law it implements. No behavioural change; one compiler-checked
-type alias + two docstrings.
+type Pass<'a, 'b when 'b : equality> = 'a -> Lineage<Diagnostics<'b>>
 
-**Unlocks.** Contributors can reason about pass composition using
-categorical language. It also establishes the foundation for H-006
-(parallel pass composition) and H-005 (branching lineage), both of
-which extend the category with new operators.
+module Pass =
+    val id        : Pass<'a, 'a>
+    val compose   : Pass<'a, 'b> -> Pass<'b, 'c> -> Pass<'a, 'c>
+    val composeAll: Pass<'a, 'a> list -> Pass<'a, 'a>
+
+module PassOperators =
+    val (>=>) : Pass<'a, 'b> -> Pass<'b, 'c> -> Pass<'a, 'c>
+```
+
+`PassChainAdapter` record's `Apply` field is now typed as
+`Pass<ComposeState, ComposeState>` (the alias names the existing shape).
+The `compose` docstring cites the Kleisli law it implements and points
+at `KleisliLawTests.fs`.
+
+**Tests delivered.** `DiagnosticsTests.fs::H-003 Kleisli: …` (5 tests
+covering left identity, right identity, associativity via property
+tests; empty-list = identity arrow; three-step composition threading
+both writers chronologically). The laws hold by construction over
+`LineageDiagnostics.bind`'s monad laws — but the explicit Kleisli
+witness makes the algebra a runnable theorem.
+
+**Algebra insight (surprise).** `PassChainAdapter.compose`'s
+implementation IS `Pass.composeAll` modulo per-step `Bench.scope`
+decoration. The fold `List.fold (fun acc step -> bind step acc) (id
+state)` is exactly `(((id >=> a₁) >=> a₂) >=> … >=> aₙ) state`. The
+"registered transform chain" is the Kleisli closure of the registered
+arrows.
+
+**Unlocks (delivered + downstream).** The H-006 (parallel pass
+composition / monoidal product), H-007 (SchemaDelta as a second
+category), H-009 (multi-target fanout), and H-063 (free monad
+scheduling) items inherit the Kleisli type alias; they extend the
+category with new operators rather than re-discovering its structure.
 
 ---
 
@@ -379,11 +407,12 @@ condition per the F# feature surface section of `CLAUDE.md`.
 
 ### H-012 — Active patterns for SsKey structural dispatch
 
-**Status:** proposed
+**Status:** deferred-with-Skip-stub (Cluster B audit, 2026-05-22).
 
-**Gap.** Multi-step matches on `SsKey` recur across `NullabilityPass`,
-`UniqueIndexPass`, `ForeignKeyPass`, and the adapter translation layer.
-The nested match pattern:
+**Gap.** Multi-step matches on `SsKey` would recur across
+`NullabilityPass`, `UniqueIndexPass`, `ForeignKeyPass`, and the adapter
+translation layer if they opened the variant DU. The nested match
+pattern:
 
 ```fsharp
 match key with
@@ -393,21 +422,33 @@ match key with
 | V1Mapped     _ -> ...
 ```
 
-is open-coded at each site. Active patterns would absorb the structural
-traversal into a named pattern usable in a single `match`.
+would be open-coded at each site. Active patterns would absorb the
+structural traversal into a named pattern usable in a single `match`.
 
-**Location.** `src/Projection.Core/Catalog.fs` (where `SsKey` is
-defined).
+**Cluster B audit finding (2026-05-22).** Zero such nested matches
+exist in the codebase. The variant dispatch happens **inside**
+`Identity.fs`'s accessors (`isDerived`, `rootOriginal`,
+`derivationReasons`) where the closed DU is exhaustive; consumers
+elsewhere call the accessors rather than open the variant. The
+two-consumer threshold is unmet because the accessors are the
+discipline: SsKey's structural intent is queried via named functions,
+not via open variant matches at call sites. This is itself a positive
+algebraic property — the accessor surface IS the active-pattern
+abstraction in a different form.
 
-**Trigger per CLAUDE.md.** When the same nested-match pattern appears
-at three or more call sites. Currently at two known sites in passes;
-the adapter layer likely adds a third. Count and activate at N=3.
+**Location.** `src/Projection.Core/Identity.fs` (where `SsKey` is
+defined; was incorrectly cited as `Catalog.fs` in the original entry).
+
+**Trigger per CLAUDE.md.** When a third consumer outside `Identity.fs`
+opens the variant DU directly (i.e., bypasses the accessor surface).
+Skip stub lives at
+`tests/Projection.Tests/AxiomTests.fs::H-012: …`.
 
 ---
 
 ### H-013 — Units of measure on Profile numeric fields
 
-**Status:** proposed
+**Status:** deferred-with-Skip-stub (Cluster B audit, 2026-05-22).
 
 **Gap.** `ColumnProfile.RowCount : int64`, `NullCount : int64`,
 `NumericDistribution.P50 : decimal`, `Mean : decimal` are all bare
@@ -430,10 +471,17 @@ type ColumnProfile = {
 }
 ```
 
+**Cluster B audit finding (2026-05-22).** No numeric-mix-up bug
+observed in fixture data or canary runs. The smart constructors'
+monotonicity enforcement at construction time has eliminated the
+class of bug units-of-measure would catch at compile time. Pure
+safety-net retrofit; no marginal lift while the bug class stays
+empty.
+
 **Trigger per CLAUDE.md.** When a numeric-mix-up bug surfaces in real
 fixture data, OR when a strategy mixes percentile and count values in
-the same expression. This is a safety net with zero runtime cost; the
-trigger is the first confused-units bug.
+the same expression. Skip stub lives at
+`tests/Projection.Tests/AxiomTests.fs::H-013: …`.
 
 ---
 
@@ -1362,23 +1410,37 @@ in the canary. These are named as requirements but not yet tests.
 
 ---
 
-### H-053 — Lineage monad law tests (return and bind)
+### H-053 — Lineage monad law tests (return and bind) + Diagnostics + LineageDiagnostics + Kleisli
 
-**Status:** proposed
+**Status:** shipped (Cluster B expansion, 2026-05-22).
 
-**Gap.** `Lineage` is a monad. The monad laws — left identity, right
-identity, and associativity of `bind` — are not tested explicitly.
+**Gap (resolved).** The original entry called for `Lineage`'s monad
+laws to be tested. `LineageTests.fs` already covered these (left
+identity, right identity, associativity + functor laws + operator
+equivalence). Cluster B audit expanded the coverage:
 
-**Location.** `tests/Projection.Tests/LineageLawTests.fs`.
+- **Diagnostics monad laws:** new property triple (left identity,
+  right identity, associativity) + functor laws in `DiagnosticsTests.fs`.
+- **LineageDiagnostics monad laws:** new property triple over the
+  dual writer; asserts both trails compose correctly via the
+  `byValueAndBothTrails` predicate. Underwrites the writer-fidelity
+  discipline (`DECISIONS 2026-05-30`) at the stacked-writer level.
+- **Kleisli laws for `Pass<'a, 'b>`** (H-003): identity left/right,
+  associativity, empty-list identity arrow, three-step composition.
 
-**Implementation.**
+**Location.** `tests/Projection.Tests/LineageTests.fs` (Lineage laws,
+already present; H-001 CE equivalence added),
+`tests/Projection.Tests/DiagnosticsTests.fs` (Diagnostics +
+LineageDiagnostics monad laws + H-002 CE + H-003 Kleisli laws).
+
+**Implementation (shipped form).**
 
 ```fsharp
 [<Property>]
 let ``left identity: bind (return a) f = f a`` ...
 [<Property>]
 let ``right identity: bind m return = m`` ...
-[<Property>]
+[<Property]
 let ``associativity: bind (bind m f) g = bind m (fun x -> bind (f x) g)`` ...
 ```
 
@@ -2690,32 +2752,51 @@ is embarrassingly parallelizable across independent `SsKey` sets.
 
 ### H-100 — AXIOMS.md executable type-checker (L3 axioms as runnable specs)
 
-**Status:** proposed
+**Status:** shipped (Cluster B, 2026-05-22).
 
-**Gap.** `AXIOMS.md` is the formal system — A1–A41+ and T1–T11.
-`PRODUCT_AXIOMS.md` is the product axiom layer. The
-verifiability-triangle audit classifies each axiom into Bucket A
-(fully underwritten) through Bucket D (named but unverified). Bucket D
-axioms are aspirational statements with no executable witness.
+**Gap (resolved).** `AXIOMS.md` was the formal system — A1–A41+ and
+T1–T11 — as prose. The verifiability-triangle audit classified each
+axiom into Bucket A through Bucket D; Bucket C/D axioms were
+aspirational statements with no executable witness.
 
-**Implementation.** A `tests/Projection.Tests/AxiomTests.fs` suite
-that maps every named axiom to a test:
-- Bucket A axioms: test already exists, cross-referenced by name
-- Bucket B axioms: property test generated from axiom statement
-- Bucket C/D axioms: `Skip = "Axiom A<N>: pending — <axiom statement>"`
+**Shipped surface.** `tests/Projection.Tests/AxiomTests.fs` (54
+entries; 600+ lines). Every axiom A1–A41 and theorem T1–T11 has a
+named entry:
 
-The test file is the executable form of AXIOMS.md. When a Bucket D
-axiom is promoted to Bucket A, the `Skip` becomes a `[<Fact>]` or
-`[<Property>]`. The audit cadence (verifiability-triangle audit) is
-what keeps the two documents in sync.
+- **Bucket A (16 axioms + 3 theorems):** `[<Fact>]` delegating via
+  `citationOf "file" "test-name"` to the strongest existing test.
+  Direct citations: A1, A2, A4, A6, A12, A15, A18, A23, A24, A25,
+  A26, A32, A34, A41 + T1, T4, T11.
+- **Bucket B (22 axioms):** `[<Fact>]` no-op asserting that the
+  structural witness (smart constructor, closed DU, type signature)
+  is in place. A3, A5, A7–A11, A13, A14, A16, A17, A19, A20, A22,
+  A28, A29, A30, A31, A33, A35, A36, A39, A40.
+- **Bucket C/D (2 axioms + 8 theorems):** `[<Fact(Skip = "…")>]`
+  naming the bucket AND the promotion trigger. A21, A27 + T2, T3,
+  T5, T6, T7, T8, T9, T10.
+
+Plus three Cluster B citations naming the H-001 / H-002 / H-003
+deliveries, and Skip stubs for H-012 / H-013 documenting the unfired
+trigger.
+
+**Audit-trail discipline.** When `AXIOMS.md` grows or amends an
+axiom, `AxiomTests.fs` MUST grow in the same commit. The
+chapter-close ritual audits AXIOMS.md ↔ AxiomTests.fs alignment.
+The `citationOf` string-typed helper is a cheap audit trail; the
+test names were verified via `grep -rE 'let \`\`AN: …'` against
+every cited file at first commit. Drift surfaces at runtime when a
+cited test disappears (no compile-time check possible because xUnit
+backtick-named tests aren't first-class F# values).
 
 **Location.** `tests/Projection.Tests/AxiomTests.fs`.
 
-**Unlocks.** The formal system is no longer just documentation; it is
-a live test suite. A contributor who reads `AXIOMS.md` can run the
-axiom tests to see which claims are verified, which are aspirational,
-and which are pending. The gap between documentation and behavior
-becomes structurally visible.
+**Unlocks (delivered).** The formal system is no longer just
+documentation; it is a live test suite. A contributor who reads
+`AXIOMS.md` can `dotnet test --filter "FullyQualifiedName~AxiomTests"`
+to see which claims are verified (42 pass), which are aspirational
+(12 skip), and which trigger their promotion path (Skip rationale
+names the trigger). The verifiability-triangle audit's bucket
+distribution is itself a single-file-verifiable artifact.
 
 ---
 

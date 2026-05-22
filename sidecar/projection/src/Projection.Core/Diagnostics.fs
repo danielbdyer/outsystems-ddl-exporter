@@ -242,6 +242,16 @@ module Diagnostics =
         let next = f m.Value
         { Value = next.Value; Entries = m.Entries @ next.Entries }
 
+    /// Write a single entry under the unit value. Mirrors `Lineage.write`
+    /// — distinct from `tell` (operational) — `write entry` is the
+    /// `Diagnostics<unit>` whose entries are `[entry]`. The CE primitive.
+    let write (entry: DiagnosticEntry) : Diagnostics<unit> =
+        { Value = (); Entries = [entry] }
+
+    /// Write several entries under the unit value.
+    let writeMany (entries: DiagnosticEntry list) : Diagnostics<unit> =
+        { Value = (); Entries = entries }
+
     /// True iff no entries have been emitted. Useful for tests asserting
     /// "this pass produces no diagnostics on the empty-policy path."
     let isClean (m: Diagnostics<'a>) : bool =
@@ -254,11 +264,56 @@ module Diagnostics =
         m.Entries |> List.filter (fun e -> e.Severity = severity)
 
 
+/// `diagnostics { ... }` CE — same algebraic shape as `lineage { ... }`,
+/// over `Diagnostics<'a>` (writer over the `(DiagnosticEntry list, @, [])`
+/// monoid). Pairs with `lineageDiagnostics { ... }` for the dual writer.
+///
+/// Single-channel; the three-channel split (operator / auditor /
+/// developer) lands when a real consumer demands differentiation per
+/// `DECISIONS 2026-05-06`.
+type DiagnosticsBuilder() =
+    member _.Return(x: 'a) : Diagnostics<'a> = Diagnostics.ofValue x
+    member _.ReturnFrom(m: Diagnostics<'a>) : Diagnostics<'a> = m
+    member _.Bind(m: Diagnostics<'a>, f: 'a -> Diagnostics<'b>) : Diagnostics<'b> =
+        Diagnostics.bind f m
+    member _.Zero() : Diagnostics<unit> = Diagnostics.ofValue ()
+    member _.Combine(m1: Diagnostics<unit>, m2: Diagnostics<'a>) : Diagnostics<'a> =
+        Diagnostics.bind (fun () -> m2) m1
+    member _.Delay(f: unit -> Diagnostics<'a>) : Diagnostics<'a> = f ()
+    member _.Run(m: Diagnostics<'a>) : Diagnostics<'a> = m
+
+[<AutoOpen>]
+module DiagnosticsBuilders =
+    /// The `diagnostics { ... }` CE entry point. Open `Projection.Core`
+    /// to bring into scope.
+    let diagnostics = DiagnosticsBuilder()
+
+
 /// Composition helpers for the dual writer `Lineage<Diagnostics<_>>`.
 /// A pass that emits both lineage and diagnostics returns a value of
 /// this shape; this module provides the dual bind that threads both
 /// trails chronologically (A24 holds for the Lineage trail; the
 /// Diagnostics entries follow the same earliest-first convention).
+///
+/// **Algebra (chapter-Cluster-B contribution).** `Lineage<Diagnostics<'a>>`
+/// is a **WriterT-stacked** writer monad — `WriterT[LineageEvent]
+/// (WriterT[DiagnosticEntry] Identity) 'a` in monad-transformer terms.
+/// Both layers carry `(List, ++, [])` monoids; both compose chronologically
+/// because the monoid is the same. The dual writer is itself a writer
+/// monad over the product monoid `(LineageEvent list × DiagnosticEntry
+/// list, ⊕, ([],[]))`; `bind` threads through both layers in one step.
+/// This is why the monad laws (LineageDiagnostics:left identity, right
+/// identity, associativity in `DiagnosticsTests.fs`) hold by construction
+/// from the underlying `Lineage` and `Diagnostics` laws — the stacking
+/// preserves them.
+///
+/// **Why this matters.** The writer-fidelity discipline (`DECISIONS
+/// 2026-05-30`) requires pass drivers to use `tellDiagnostics` /
+/// `Lineage.ofValueAndEvents` rather than manual record-building. The
+/// `lineageDiagnostics { ... }` CE (H-002) is the syntactic enforcement:
+/// inside the CE, manual record-building is impossible — every value
+/// flows through `bind` / `Return` / `write*`. The discipline IS the
+/// monad-law-preserving syntactic surface.
 [<RequireQualifiedAccess>]
 module LineageDiagnostics =
 
@@ -325,3 +380,130 @@ module LineageDiagnostics =
     /// both payload and entries together but do not care about the
     /// lineage trail.
     let diagnostics (m: Lineage<Diagnostics<'a>>) : Diagnostics<'a> = m.Value
+
+    /// Write a single lineage event under the unit value (dual-writer
+    /// form of `Lineage.write`). The CE primitive: `do! writeLineage e`.
+    let writeLineage (event: LineageEvent) : Lineage<Diagnostics<unit>> =
+        Lineage.ofValueWith event (Diagnostics.ofValue ())
+
+    /// Write a single diagnostic entry under the unit value. CE primitive
+    /// `do! writeDiagnostic entry` — the dual-writer counterpart to
+    /// `Diagnostics.write`.
+    let writeDiagnostic (entry: DiagnosticEntry) : Lineage<Diagnostics<unit>> =
+        Lineage.ofValue (Diagnostics.ofValueWith entry ())
+
+    /// Write several diagnostic entries under the unit value.
+    let writeDiagnostics (entries: DiagnosticEntry list) : Lineage<Diagnostics<unit>> =
+        Lineage.ofValue { Value = (); Entries = entries }
+
+
+/// `lineageDiagnostics { ... }` CE for the dual writer. Same algebraic
+/// shape as `lineage { ... }`, over `Lineage<Diagnostics<'a>>`. The
+/// writer-fidelity discipline (DECISIONS 2026-05-30) is structurally
+/// inherited: bind composes both trails chronologically via
+/// `LineageDiagnostics.bind`; manual record-building is impossible
+/// inside the CE. (H-002)
+///
+/// **Worked equivalence (dual-writer):**
+/// ```
+/// lineageDiagnostics {                       m |> LineageDiagnostics.bind (fun x ->
+///     let! x = m                             LineageDiagnostics.writeLineage e
+///     do! LineageDiagnostics.writeLineage e  |> LineageDiagnostics.bind (fun () ->
+///     do! LineageDiagnostics.writeDiagnostic d   LineageDiagnostics.writeDiagnostic d
+///     return x                          ≡    |> LineageDiagnostics.bind (fun () ->
+/// }                                              LineageDiagnostics.ofValue x)))
+/// ```
+type LineageDiagnosticsBuilder() =
+    member _.Return(x: 'a) : Lineage<Diagnostics<'a>> = LineageDiagnostics.ofValue x
+    member _.ReturnFrom(m: Lineage<Diagnostics<'a>>) : Lineage<Diagnostics<'a>> = m
+    member _.Bind
+        ( m: Lineage<Diagnostics<'a>>,
+          f: 'a -> Lineage<Diagnostics<'b>>)
+        : Lineage<Diagnostics<'b>> =
+        LineageDiagnostics.bind f m
+    member _.Zero() : Lineage<Diagnostics<unit>> = LineageDiagnostics.ofValue ()
+    member _.Combine
+        ( m1: Lineage<Diagnostics<unit>>,
+          m2: Lineage<Diagnostics<'a>>)
+        : Lineage<Diagnostics<'a>> =
+        LineageDiagnostics.bind (fun () -> m2) m1
+    member _.Delay(f: unit -> Lineage<Diagnostics<'a>>) : Lineage<Diagnostics<'a>> = f ()
+    member _.Run(m: Lineage<Diagnostics<'a>>) : Lineage<Diagnostics<'a>> = m
+
+[<AutoOpen>]
+module LineageDiagnosticsBuilders =
+    /// The `lineageDiagnostics { ... }` CE entry point (H-002).
+    let lineageDiagnostics = LineageDiagnosticsBuilder()
+
+
+/// **H-003: Kleisli arrow.** The pipeline IS a Kleisli category over the
+/// dual-writer monad `Lineage<Diagnostics<_>>`. Each pass is an arrow
+/// `Pass<'a, 'b>`; composition is `Pass.compose` (the `>=>` operator);
+/// the identity arrow is `Pass.id`.
+///
+/// **Algebraic content.** The Kleisli laws hold by construction:
+///   - Left identity:  `Pass.id >=> f      = f`
+///   - Right identity: `f      >=> Pass.id = f`
+///   - Associativity:  `(f >=> g) >=> h    = f >=> (g >=> h)`
+///
+/// Tested in `KleisliLawTests.fs`; the laws are theorems over
+/// `LineageDiagnostics.bind` (Lineage's A24 + Diagnostics' chronological
+/// concat).
+///
+/// **Operational meaning.** The pass-chain fold in
+/// `PassChainAdapter.compose` (line 61) is exactly `Pass.composeAll`:
+/// folding `bind` over a list of arrows starting from the identity.
+/// Naming the alias makes the algebra legible without changing behavior.
+///
+/// **A18 amended bound.** `Pass<'a, 'b>` is the structural witness that
+/// passes consume only `'a` (typically `Catalog` or `ComposeState`) —
+/// never `Policy` directly. Policy enters at registration time (see
+/// `RegisteredTransforms.allChainStepsFor`) and is closed over before
+/// the arrow shape appears. Per A18 amended, Policy is operator intent
+/// reified at the registry; the Kleisli arrow carries data intent only.
+type Pass<'a, 'b when 'b : equality> = 'a -> Lineage<Diagnostics<'b>>
+
+/// Companion module for the Kleisli arrow type. Names the category-
+/// theoretic operations the pipeline already uses. No behavioural
+/// change; the alias and module make the structure legible to
+/// contributors reading the composition fold for the first time.
+[<RequireQualifiedAccess>]
+module Pass =
+
+    /// The identity arrow: `'a -> Lineage<Diagnostics<'a>>` produces an
+    /// empty trail and no diagnostics. Kleisli law: `id >=> f = f` and
+    /// `f >=> id = f` for every `Pass<_, _>`. Operational shape: the
+    /// seed of `PassChainAdapter.compose`'s fold. Eta-expanded to dodge
+    /// F#'s value restriction on polymorphic value definitions.
+    let id<'a when 'a : equality> (a: 'a) : Lineage<Diagnostics<'a>> =
+        LineageDiagnostics.ofValue a
+
+    /// Kleisli composition of two arrows: `(f >=> g) a = f a |> bind g`.
+    /// Both writers' trails compose chronologically (A24 for Lineage;
+    /// same convention for Diagnostics). Associative by the underlying
+    /// `bind`'s associativity.
+    let compose
+        (f: Pass<'a, 'b>)
+        (g: Pass<'b, 'c>)
+        : Pass<'a, 'c> =
+        fun a -> LineageDiagnostics.bind g (f a)
+
+    /// Compose a list of endo-arrows into one. Folds with `compose` over
+    /// `Pass.id`; the empty list reduces to `Pass.id`. This is the
+    /// algebraic content of `PassChainAdapter.compose` minus the per-
+    /// step Bench scoping — the registry-driven pass chain IS this
+    /// fold under different operational decoration.
+    let composeAll<'a when 'a : equality> (steps: Pass<'a, 'a> list) : Pass<'a, 'a> =
+        steps |> List.fold (fun acc step -> compose acc step) id
+
+/// Kleisli infix operators. `f >=> g` is `Pass.compose f g`; open this
+/// module at sites where the Kleisli structure should read like the
+/// algebra.
+module PassOperators =
+
+    /// Kleisli composition. `f >=> g` is `Pass.compose f g`.
+    let inline (>=>)
+        (f: Pass<'a, 'b>)
+        (g: Pass<'b, 'c>)
+        : Pass<'a, 'c> =
+        Pass.compose f g
