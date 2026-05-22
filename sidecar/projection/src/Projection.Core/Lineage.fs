@@ -422,3 +422,283 @@ module LineageOperators =
     /// Map: `f <!> m` is `Lineage.map f m`.
     let inline (<!>) (f: 'a -> 'b) (m: Lineage<'a>) : Lineage<'b> =
         Lineage.map f m
+
+
+/// **H-005: LineageTree (branching writer monad; 2026-05-22).** The
+/// speculative-execution sibling of `Lineage<'a>`. Where `Lineage<'a>`
+/// is the **linear** writer monad (append-only trail) and
+/// `Certificate<'a>` is the **terminal** projection of a pipeline,
+/// `LineageTree<'a>` is the **branching** form — a tree of writer
+/// carriers where the same `Catalog` can fork through multiple policies
+/// (or any speculative computation) and all branches' lineages are
+/// retained for later comparison.
+///
+/// **Algebra (Cluster B writer-monad trinity completion).**
+/// `LineageTree<'a>` is the **free monad over the branching-list
+/// functor** applied to `Lineage<'a>`:
+///
+///   - `Leaf m` — a single linear branch carrying a `Lineage<'a>`.
+///     Algebraically the `Pure` constructor of the free monad.
+///   - `Fork branches` — a labeled list of subtrees. Each branch
+///     carries a name (for diff / select semantics) and a subtree.
+///     Algebraically the `Free F` constructor where F is the
+///     labeled-list functor.
+///
+/// **Inheritance from `Lineage`.** Each leaf is a full `Lineage<'a>`;
+/// A24-amended (chronological-bind) holds within each leaf. The tree's
+/// `bind` substitutes at every leaf — the new branch's prefix
+/// (existing leaf trail) is preserved chronologically; the
+/// continuation appends. The monad laws hold for `LineageTree<'a>`
+/// because they hold for each leaf's `Lineage<'a>` AND the
+/// branching-list functor preserves them by free-monad construction.
+///
+/// **Two foundational operations** (per H-005 HORIZON sketch):
+///   - `branch : Lineage<'a> -> LineageTree<'a>` — lift a linear
+///     carrier into a single-leaf tree. The right adjoint of `commit`.
+///   - `commit : LineageTree<'a> -> Lineage<'a>` — collapse a tree to
+///     one branch via a caller-supplied selector. The left adjoint of
+///     `branch`. Round-trip: `commit selector (branch m) = m` for any
+///     selector that picks the only leaf.
+///
+/// **Unlocks (downstream).**
+///   - H-033 (policy diff verb): run two policies against the same
+///     `Catalog` as a `Fork [policyA; policyB]`; diff the resulting
+///     leaves on `SsKey × Classification` to produce the policy delta.
+///   - H-035 (policy regression testing): same shape, comparing one
+///     policy's output across time-evolution of fixtures.
+///   - H-063 (free monad for pass scheduling) inherits the tree
+///     structure as its program shape.
+///   - Cluster C (policy intelligence) opens once this primitive
+///     lands.
+///
+/// **Why a labeled tree, not a bare list?** Labels make branch diff
+/// structural — `paths` returns `(string list, Lineage<'a>) list`
+/// where the string list is the label path from root to leaf. Two
+/// trees with the same label structure can be diffed leaf-by-leaf
+/// without alignment heuristics.
+[<CustomEquality; NoComparison>]
+type LineageTree<'a when 'a : equality> =
+    | Leaf of Lineage<'a>
+    | Fork of LineageBranch<'a> list
+
+    override this.Equals(other: obj) : bool =
+        match other with
+        | :? LineageTree<'a> as o ->
+            match this, o with
+            | Leaf a, Leaf b -> a = b  // Lineage equality (A26: value-only)
+            | Fork a, Fork b -> a = b  // structural equality on branches
+            | _ -> false
+        | _ -> false
+    override this.GetHashCode() : int =
+        match this with
+        | Leaf m -> hash m
+        | Fork bs -> hash bs
+
+/// A single branch within a `Fork`. Carries an operator-readable label
+/// and the continuation subtree. The label is the diff/select key.
+and [<CustomEquality; NoComparison>] LineageBranch<'a when 'a : equality> =
+    {
+        Label : string
+        Tree : LineageTree<'a>
+    }
+    override this.Equals(other: obj) : bool =
+        match other with
+        | :? LineageBranch<'a> as o ->
+            this.Label = o.Label && this.Tree = o.Tree
+        | _ -> false
+    override this.GetHashCode() : int = hash (this.Label, this.Tree)
+
+
+/// Construction, projection, and composition for `LineageTree<'a>`.
+[<RequireQualifiedAccess>]
+module LineageTree =
+
+    /// Lift a linear `Lineage<'a>` into a single-leaf tree. The
+    /// H-005-named "branch" operation; named here as `ofLineage`
+    /// because the HORIZON-sketch "branch" verb conflicts with
+    /// `bifurcate` / `Fork` semantics. The `branch` alias below
+    /// preserves the sketch's vocabulary at the call site.
+    let ofLineage (m: Lineage<'a>) : LineageTree<'a> = Leaf m
+
+    /// Lift a plain value into a single-leaf tree with an empty trail.
+    /// The unit of the LineageTree monad (Pure of the free monad).
+    let ofValue (value: 'a) : LineageTree<'a> = Leaf (Lineage.ofValue value)
+
+    /// HORIZON-sketch alias: `branch m` reads as "promote a linear
+    /// carrier into a branchable tree." Identical to `ofLineage`.
+    let branch (m: Lineage<'a>) : LineageTree<'a> = ofLineage m
+
+    /// Build a Fork from a list of (label, subtree) pairs. The labels
+    /// must be unique within the Fork; the smart constructor doesn't
+    /// enforce this (consumer responsibility) because uniqueness is a
+    /// USE-SITE invariant — some consumers (e.g., property tests) want
+    /// to model arbitrary branchings including duplicates.
+    let fork (branches: (string * LineageTree<'a>) list) : LineageTree<'a> =
+        Fork (branches |> List.map (fun (l, t) -> { Label = l; Tree = t }))
+
+    /// Two-branch convenience: `bifurcate (label1, t1) (label2, t2)`.
+    /// The canonical shape for policy-diff (`bifurcate ("A", treeA)
+    /// ("B", treeB)`).
+    let bifurcate
+        (left: string * LineageTree<'a>)
+        (right: string * LineageTree<'a>)
+        : LineageTree<'a> =
+        fork [left; right]
+
+    /// All leaves in left-to-right traversal order. The terminal carriers
+    /// of every path in the tree.
+    let rec leaves (tree: LineageTree<'a>) : Lineage<'a> list =
+        match tree with
+        | Leaf m -> [m]
+        | Fork branches ->
+            branches |> List.collect (fun b -> leaves b.Tree)
+
+    /// All leaves paired with their label-path from root. For a single-
+    /// leaf tree, the path is `[]`; for a Fork containing labeled
+    /// subtrees, each label prepends to its subtree's paths.
+    /// Useful for policy-diff which wants `(["policyA"], lineageA)`
+    /// and `(["policyB"], lineageB)` from a top-level bifurcation.
+    let rec paths (tree: LineageTree<'a>) : (string list * Lineage<'a>) list =
+        match tree with
+        | Leaf m -> [([], m)]
+        | Fork branches ->
+            branches
+            |> List.collect (fun b ->
+                paths b.Tree
+                |> List.map (fun (path, leaf) -> (b.Label :: path, leaf)))
+
+    /// Functor map over every leaf's value. Trail structure preserved.
+    let rec map (f: 'a -> 'b) (tree: LineageTree<'a>) : LineageTree<'b> =
+        match tree with
+        | Leaf m -> Leaf (Lineage.map f m)
+        | Fork branches ->
+            Fork (branches |> List.map (fun b ->
+                { Label = b.Label; Tree = map f b.Tree }))
+
+    /// Prepend events to every leaf's trail. The internal primitive
+    /// that `bind` uses to thread the existing-leaf's trail into the
+    /// f-produced subtree.
+    let rec private prepend (events: LineageEvent list) (tree: LineageTree<'a>) : LineageTree<'a> =
+        match tree with
+        | Leaf m -> Leaf { Value = m.Value; Trail = events @ m.Trail }
+        | Fork branches ->
+            Fork (branches |> List.map (fun b ->
+                { Label = b.Label; Tree = prepend events b.Tree }))
+
+    /// Monadic bind. For each leaf, apply f to produce a new subtree;
+    /// the existing leaf's trail prepends to every continuation leaf
+    /// (A24 chronological).
+    ///
+    /// **Algebra.** This is the free-monad bind. The substitution
+    /// preserves both the branching structure (Forks of f-results) AND
+    /// the linear-writer trail chronology (existing trail prefixes
+    /// every continuation).
+    let rec bind (f: 'a -> LineageTree<'b>) (tree: LineageTree<'a>) : LineageTree<'b> =
+        match tree with
+        | Leaf m ->
+            // Substitute f m.Value; prepend m.Trail to every continuation.
+            prepend m.Trail (f m.Value)
+        | Fork branches ->
+            Fork (branches |> List.map (fun b ->
+                { Label = b.Label; Tree = bind f b.Tree }))
+
+    /// Collapse a tree to a single `Lineage<'a>` via a caller-supplied
+    /// selector over all leaves. The H-005-named "commit" operation:
+    /// choose one branch's lineage as the canonical output.
+    ///
+    /// **Pre-condition.** The tree must contain at least one leaf.
+    /// `Fork []` is degenerate (no leaves); `commit` on a leaf-less
+    /// tree fails. The smart constructor `fork` doesn't enforce
+    /// non-emptiness because algebraically Fork [] is still a valid
+    /// (terminal) tree — it's `commit` that has the precondition.
+    let commit
+        (selector: Lineage<'a> list -> Lineage<'a>)
+        (tree: LineageTree<'a>)
+        : Lineage<'a> =
+        match leaves tree with
+        | [] ->
+            invalidArg "tree" "LineageTree.commit: tree contains no leaves"
+        | xs -> selector xs
+
+    /// Commit by first leaf in left-to-right traversal. The simplest
+    /// selector; useful when the consumer doesn't care which branch
+    /// (or knows the tree is single-leaf).
+    let commitFirst (tree: LineageTree<'a>) : Lineage<'a> =
+        commit List.head tree
+
+    /// Commit by label path. Walks the tree following the label
+    /// sequence; returns `None` if the path doesn't terminate at a
+    /// leaf (e.g., the label isn't present or the subtree is a Fork
+    /// at the path's end). Caller-error semantics: the consumer
+    /// supplies a path it knows exists.
+    let rec tryCommitByPath
+        (path: string list)
+        (tree: LineageTree<'a>)
+        : Lineage<'a> option =
+        match path, tree with
+        | [], Leaf m -> Some m
+        | [], Fork _ -> None  // Path terminated at a Fork (not a leaf)
+        | label :: rest, Fork branches ->
+            branches
+            |> List.tryFind (fun b -> b.Label = label)
+            |> Option.bind (fun b -> tryCommitByPath rest b.Tree)
+        | _ :: _, Leaf _ -> None  // Path has more labels but tree is a Leaf
+
+    /// True if the tree contains exactly one leaf. The single-branch
+    /// case where `LineageTree<'a>` is structurally equivalent to
+    /// `Lineage<'a>`; round-trip `commitFirst (ofLineage m) = m` holds.
+    let rec isLinear (tree: LineageTree<'a>) : bool =
+        match tree with
+        | Leaf _ -> true
+        | Fork [b] -> isLinear b.Tree  // Single-branch Fork still linear
+        | Fork _ -> false  // Multi-branch Fork OR empty Fork is not linear
+
+    /// True if the tree has no leaves (degenerate). Useful for
+    /// asserting `commit` preconditions before calling.
+    let rec isEmpty (tree: LineageTree<'a>) : bool =
+        match tree with
+        | Leaf _ -> false
+        | Fork [] -> true
+        | Fork branches -> branches |> List.forall (fun b -> isEmpty b.Tree)
+
+    /// Number of leaves in the tree.
+    let leafCount (tree: LineageTree<'a>) : int =
+        leaves tree |> List.length
+
+    /// Functor identity equivalence helper for property tests.
+    /// `byValueAndStructure t1 t2` returns true iff both trees have the
+    /// same branching structure AND every corresponding leaf carries
+    /// the same `(Value, Trail)` pair. This is the full structural
+    /// equality used by property tests — distinct from F#-default
+    /// equality which projects through `Value` only at the leaf level
+    /// (via the inner `Lineage<'a>`'s `[<CustomEquality>]`).
+    let rec byValueAndStructure (t1: LineageTree<'a>) (t2: LineageTree<'a>) : bool =
+        match t1, t2 with
+        | Leaf m1, Leaf m2 -> Lineage.byValueAndTrail m1 m2
+        | Fork bs1, Fork bs2 when bs1.Length = bs2.Length ->
+            List.zip bs1 bs2
+            |> List.forall (fun (b1, b2) ->
+                b1.Label = b2.Label && byValueAndStructure b1.Tree b2.Tree)
+        | _ -> false
+
+
+/// `lineageTree { ... }` computation expression builder. The branching-
+/// writer-monad analog of `lineage { ... }`. Uses the LineageTree's
+/// `Bind` / `Return` over leaf substitution.
+type LineageTreeBuilder() =
+    member _.Return(x: 'a) : LineageTree<'a> = LineageTree.ofValue x
+    member _.ReturnFrom(t: LineageTree<'a>) : LineageTree<'a> = t
+    member _.Bind(t: LineageTree<'a>, f: 'a -> LineageTree<'b>) : LineageTree<'b> =
+        LineageTree.bind f t
+    member _.Zero() : LineageTree<unit> = LineageTree.ofValue ()
+    member _.Combine(t1: LineageTree<unit>, t2: LineageTree<'a>) : LineageTree<'a> =
+        LineageTree.bind (fun () -> t2) t1
+    member _.Delay(f: unit -> LineageTree<'a>) : LineageTree<'a> = f ()
+    member _.Run(t: LineageTree<'a>) : LineageTree<'a> = t
+
+[<AutoOpen>]
+module LineageTreeBuilders =
+    /// The `lineageTree { ... }` CE entry point. Used at speculative-
+    /// execution sites where the consumer wants the natural F# syntax
+    /// for branching writer computations.
+    let lineageTree = LineageTreeBuilder()

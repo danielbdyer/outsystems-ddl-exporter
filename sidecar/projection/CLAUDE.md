@@ -309,6 +309,29 @@ wanting to break one, write the amendment first.
   the same commit. See `AXIOMS.md` "A24 amended (2026-05-22)" for the
   full statement; tested in `DiagnosticsTests.fs` (Diagnostics +
   LineageDiagnostics monad-law triples + Kleisli laws).
+- **Writer-monad trinity (chapter-Cluster-B; 2026-05-22).** Three
+  algebraic carriers cover the pipeline's structural needs:
+  - **`Lineage<'a>`** — the **linear** writer monad. Append-only
+    trail per A24-amended. Used by every in-flight pass to record
+    its transformation.
+  - **`LineageTree<'a>`** — the **branching** writer monad (H-005;
+    the free monad over the labeled-list functor applied to
+    `Lineage<'a>`). Used by speculative execution: a single
+    Catalog forks through multiple policies (or any alternative
+    computation); both branches' lineages are retained for
+    later comparison via `paths` / `tryCommitByPath`. Prerequisite
+    for Cluster C (policy intelligence; H-033 / H-035).
+  - **`Certificate<'a>`** — the **terminal** projection (H-004; the
+    end-of-pipeline output type pairing a value with its proof —
+    trail + diagnostics). Used by consumers receiving artifacts
+    plus their witness chain; structural isomorphism with
+    `Lineage<Diagnostics<'a>>` via `ofLineageDiagnostics` /
+    `toLineageDiagnostics`.
+  
+  A24-amended holds across all three. The trinity is closed: every
+  writer-carrier role in the pipeline has a named type. Future
+  carriers (perf-trace, constraint-set, etc.) extend by stacking
+  atop these — not by introducing parallel structures.
 - **V2 owns no production write path during dual-track (R6).** Per
   `DECISIONS 2026-05-22 — R6`, V2 emits-but-doesn't-ship while V1
   owns the production write path. The canary asserts V1 ≈ V2 modulo
@@ -592,7 +615,12 @@ re-open the question. The general meta-rule:
 | **`SHA256.HashData` (allocation-free)** | `PhysicalSchema.hashStaticRowBytes`; `RowDigester.hashRowBytes`. | Replaces `SHA256.Create() + ComputeHash` to drop instance allocations on the per-row hashing hot path. |
 | **`SqlBulkCopy` realization** (`Bulk.copyRows` + `Deploy.executeStream`) | `Projection.Pipeline.Bulk` + `Deploy.executeStream` folds consecutive `InsertRow` runs. | A36 realization. Bulk-vs-incremental is realization-layer policy; same algebra. |
 | **Computation-expression builders** for `Lineage`, `Diagnostics`, `LineageDiagnostics` (chapter-Cluster-B; H-001 / H-002; 2026-05-22) | `lineage { ... }` (writer over `(LineageEvent list, @, [])`); `diagnostics { ... }` (writer over `(DiagnosticEntry list, @, [])`); `lineageDiagnostics { ... }` (dual-writer / WriterT-stacked). Each builder carries `Bind` / `Return` / `ReturnFrom` / `Zero` / `Combine` / `Delay` / `Run`. CE primitives: `Lineage.write` / `writeMany`, `Diagnostics.write` / `writeMany`, `LineageDiagnostics.writeLineage` / `writeDiagnostic` / `writeDiagnostics`. | Writer-fidelity is enforced syntactically inside the CE (manual record-building is impossible). The discipline graduates from "pass drivers follow" to "type-level guarantee at adoption sites." Equivalence with the explicit `bind` chain is law-checked by H-001 + H-002 CE-equivalence property tests in `LineageTests.fs` + `DiagnosticsTests.fs`. |
-| **`Pass<'a, 'b>` Kleisli arrow type** (chapter-Cluster-B; H-003; 2026-05-22) | `src/Projection.Core/Diagnostics.fs` (`type Pass<'a, 'b when 'b : equality> = 'a -> Lineage<Diagnostics<'b>>`); `module Pass` with `id` / `compose` / `composeAll`; `module PassOperators` with `>=>`; `PassChainAdapter.Apply` field typed as `Pass<ComposeState, ComposeState>`. | The pipeline IS a Kleisli category over the dual-writer monad. The fold in `PassChainAdapter.compose` IS `Pass.composeAll` modulo per-step `Bench.scope`. Kleisli laws (left/right identity, associativity) are property-tested in `DiagnosticsTests.fs`. Unlocks H-006 (parallel composition / monoidal product), H-007 (SchemaDelta category), H-009 (multi-target fanout), H-063 (free-monad scheduling). |
+| **`Pass<'a, 'b>` Kleisli arrow type** (chapter-Cluster-B; H-003; 2026-05-22) | `src/Projection.Core/Diagnostics.fs` (`type Pass<'a, 'b when 'b : equality> = 'a -> Lineage<Diagnostics<'b>>`); `module Pass` with `id` / `compose` / `composeAll` / `product` / `first` / `second`; `module PassOperators` with `>=>` and `&&&`; `PassChainAdapter.Apply` field typed as `Pass<ComposeState, ComposeState>`. | The pipeline IS a Kleisli category over the dual-writer monad. The fold in `PassChainAdapter.compose` IS `Pass.composeAll` modulo per-step `Bench.scope`. Kleisli laws (left/right identity, associativity) + monoidal-product algebra property-tested in `DiagnosticsTests.fs`. Unlocks H-007 (SchemaDelta category), H-063 (free-monad scheduling). |
+| **`LineageTree<'a>` branching writer monad** (chapter-Cluster-B finale; H-005; 2026-05-22) | `src/Projection.Core/Lineage.fs` — closed DU `Leaf of Lineage<'a>` + `Fork of LineageBranch<'a> list`; companion module with `ofLineage` / `branch` / `fork` / `bifurcate` / `leaves` / `paths` / `map` / `bind` / `commit` / `commitFirst` / `tryCommitByPath` / `isLinear` / `byValueAndStructure`. Plus `lineageTree { ... }` CE builder. | The **free monad over the labeled-list functor** applied to `Lineage<'a>` — speculative execution for policy diff (H-033), regression testing (H-035), Cluster C. Completes the writer-monad trinity (Lineage linear / LineageTree branching / Certificate terminal). 26 property + example tests in `LineageTests.fs`. |
+| **`Certificate<'a>` terminal-of-pipeline wrapper** (chapter-Cluster-B; H-004; 2026-05-22) | `src/Projection.Core/Diagnostics.fs` — `type Certificate<'a> = { Value : 'a; Trail : LineageEvent list; Diagnostics : DiagnosticEntry list }`; companion module with `create` / `ofLineageDiagnostics` / `toLineageDiagnostics` / `map` / `combine` / `ofValue`. | Structural isomorphism with `Lineage<Diagnostics<'a>>` — naming the role at the consumer boundary. Multi-target fanout (H-009) produces `Certificate<SsdtBundle> * Certificate<JsonBundle> * Certificate<DistributionsBundle>`. Tested in `DiagnosticsTests.fs`. |
+| **`DiagnosticLattice` partial order** (chapter-Cluster-B follow-on; H-008; 2026-05-22) | `src/Projection.Core/Diagnostics.fs` — `DiagnosticRelation` DU (`Subsumes` / `Precedes`) + `module DiagnosticLattice` with `subsumes` / `relations` / `isMinimal` / `minimal`. | Subsumption rule: code-prefix (separator-bounded) + SsKey-context compatibility. Operator-facing triage surface — `minimal` collapses subsumed entries to root cause. Properties: idempotence, containment, antichain. |
+| **`Prism<'a, 'b>` bidirectional partial accessor** (chapter-Cluster-B follow-on; H-010; 2026-05-22) | `src/Projection.Core/Diagnostics.fs` — `type Prism<'a, 'b> = { Get : 'a -> 'b; ReverseGet : 'b -> 'a option }` + `module Prism` with `get` / `reverseGet` / `roundtrips` / `partition` / `identity` / `compose`. | Bidirectional dual of unidirectional `Pass<'a, 'b>`. Round-trip law enforced via `partition` — lawful vs violating split. Catalog ↔ DDL integration defers; the algebraic surface ships. |
+| **`PassContext<'env, 'a>` reader comonad** (chapter-Cluster-B follow-on; H-062; 2026-05-22) | `src/Projection.Core/Diagnostics.fs` — `type PassContext<'env, 'a> = { Environment : 'env; Value : 'a }` + `module PassContext` with `extract` / `ask` / `ofValue` / `map` / `extend` / `applyEnv`. | Categorical dual of `Pass<'a, 'b>` — Pass threads writer effects forward; PassContext threads context backward via comonadic `extend`. Three comonad laws property-tested. Pass-driver adoption defers; the algebraic surface ships. |
 
 ### Aligned but underused (candidates whose trigger has not fired)
 

@@ -313,3 +313,310 @@ let ``H-001 CE: Lineage.writeMany threads events as one carrier`` () =
         }
     Assert.Equal<LineageEvent list>([e1; e2; e3], actual.Trail)
     Assert.Equal(42, actual.Value)
+
+// ---------------------------------------------------------------------------
+// H-005: LineageTree<'a> — branching writer monad. The speculative-
+// execution sibling of Lineage<'a>. Tests cover:
+//   - Construction (ofLineage / ofValue / branch / fork / bifurcate)
+//   - Projection (leaves / paths / commit / tryCommitByPath)
+//   - Functor laws (identity, composition)
+//   - Monad laws (left identity, right identity, associativity)
+//   - Round-trip: commit (ofLineage m) = m (single-leaf isomorphism)
+//   - Branch preservation: bind distributes over Fork
+//   - Free-monad structure: bind over Fork preserves structure
+// ---------------------------------------------------------------------------
+
+// LineageTree property tests use full structural equivalence via
+// `LineageTree.byValueAndStructure` because F#-default `=` on the tree
+// projects leaves through Value only (per A26 / Lineage<'a>'s custom
+// equality); the structural-equality form makes algebraic
+// substitutions exactly checkable.
+
+[<Fact>]
+let ``H-005 LineageTree.ofLineage produces a single-leaf tree`` () =
+    let m = Lineage.ofValueWith (touched "p" 1 customerKey) 42
+    let tree = LineageTree.ofLineage m
+    Assert.Equal<Lineage<int> list>([m], LineageTree.leaves tree)
+    Assert.True(LineageTree.isLinear tree)
+
+[<Fact>]
+let ``H-005 LineageTree.ofValue produces empty-trail single leaf`` () =
+    let tree = LineageTree.ofValue 7
+    let leaves = LineageTree.leaves tree
+    Assert.Single(leaves) |> ignore
+    Assert.Equal(7, leaves.[0].Value)
+    Assert.Empty(leaves.[0].Trail)
+
+[<Fact>]
+let ``H-005 LineageTree.bifurcate carries both branches in leaves`` () =
+    let mA = Lineage.ofValueWith (touched "A" 1 customerKey) 10
+    let mB = Lineage.ofValueWith (touched "B" 1 orderKey) 20
+    let tree =
+        LineageTree.bifurcate
+            ("policyA", LineageTree.ofLineage mA)
+            ("policyB", LineageTree.ofLineage mB)
+    Assert.Equal(2, LineageTree.leafCount tree)
+    let leaves = LineageTree.leaves tree
+    Assert.Equal<Lineage<int> list>([mA; mB], leaves)
+
+[<Fact>]
+let ``H-005 LineageTree.paths labels each leaf with its root-to-leaf path`` () =
+    let mA = Lineage.ofValueWith (touched "A" 1 customerKey) 10
+    let mB = Lineage.ofValueWith (touched "B" 1 orderKey) 20
+    let tree =
+        LineageTree.bifurcate
+            ("policyA", LineageTree.ofLineage mA)
+            ("policyB", LineageTree.ofLineage mB)
+    let pathsResult = LineageTree.paths tree
+    Assert.Equal<(string list * Lineage<int>) list>(
+        [(["policyA"], mA); (["policyB"], mB)],
+        pathsResult)
+
+[<Fact>]
+let ``H-005 LineageTree.paths handles nested Forks (root-to-leaf label path)`` () =
+    let m = Lineage.ofValueWith (touched "p" 1 customerKey) 1
+    let nested =
+        LineageTree.fork
+            [ ("outer",
+                LineageTree.fork
+                    [ ("innerA", LineageTree.ofLineage m)
+                      ("innerB", LineageTree.ofLineage m) ]) ]
+    let pathsResult = LineageTree.paths nested
+    Assert.Equal<string list list>(
+        [["outer"; "innerA"]; ["outer"; "innerB"]],
+        pathsResult |> List.map fst)
+
+[<Fact>]
+let ``H-005 LineageTree.commitFirst returns the leftmost leaf`` () =
+    let mA = Lineage.ofValueWith (touched "A" 1 customerKey) 10
+    let mB = Lineage.ofValueWith (touched "B" 1 orderKey) 20
+    let tree =
+        LineageTree.bifurcate
+            ("a", LineageTree.ofLineage mA)
+            ("b", LineageTree.ofLineage mB)
+    Assert.Equal(mA, LineageTree.commitFirst tree)
+
+[<Fact>]
+let ``H-005 LineageTree.tryCommitByPath walks the labeled path`` () =
+    let mA = Lineage.ofValueWith (touched "A" 1 customerKey) 10
+    let mB = Lineage.ofValueWith (touched "B" 1 orderKey) 20
+    let tree =
+        LineageTree.bifurcate
+            ("policyA", LineageTree.ofLineage mA)
+            ("policyB", LineageTree.ofLineage mB)
+    Assert.Equal(Some mA, LineageTree.tryCommitByPath ["policyA"] tree)
+    Assert.Equal(Some mB, LineageTree.tryCommitByPath ["policyB"] tree)
+    Assert.Equal<Lineage<int> option>(None, LineageTree.tryCommitByPath ["unknown"] tree)
+
+[<Fact>]
+let ``H-005 LineageTree round-trip: commitFirst (ofLineage m) = m`` () =
+    let m = Lineage.ofValueWith (touched "p" 1 customerKey) 42
+    Assert.True(Lineage.byValueAndTrail m (LineageTree.commitFirst (LineageTree.ofLineage m)))
+
+[<Property>]
+let ``H-005 LineageTree round-trip (property): commitFirst ∘ ofLineage = id`` (x: int) =
+    let m = Lineage.ofValueWith (touched "p" 1 customerKey) x
+    Lineage.byValueAndTrail m (LineageTree.commitFirst (LineageTree.ofLineage m))
+
+[<Fact>]
+let ``H-005 LineageTree.isLinear: single-leaf tree is linear`` () =
+    let m = Lineage.ofValue 1
+    Assert.True(LineageTree.isLinear (LineageTree.ofLineage m))
+    Assert.True(LineageTree.isLinear (LineageTree.fork [("only", LineageTree.ofLineage m)]))
+
+[<Fact>]
+let ``H-005 LineageTree.isLinear: multi-branch tree is not linear`` () =
+    let m = Lineage.ofValue 1
+    let multi =
+        LineageTree.fork
+            [ ("a", LineageTree.ofLineage m)
+              ("b", LineageTree.ofLineage m) ]
+    Assert.False(LineageTree.isLinear multi)
+
+[<Fact>]
+let ``H-005 LineageTree.isEmpty detects degenerate trees`` () =
+    Assert.True(LineageTree.isEmpty (LineageTree.fork []))
+    Assert.False(LineageTree.isEmpty (LineageTree.ofValue 1))
+
+[<Fact>]
+let ``H-005 LineageTree.commit fails on leaf-less tree (precondition)`` () =
+    let empty = LineageTree.fork []
+    Assert.Throws<System.ArgumentException>(fun () ->
+        LineageTree.commit List.head empty |> ignore) |> ignore
+
+// --- LineageTree functor laws ---
+
+[<Property>]
+let ``H-005 LineageTree functor: identity (map id = id)`` (x: int) =
+    let m = Lineage.ofValueWith (touched "p" 1 customerKey) x
+    let tree = LineageTree.ofLineage m
+    LineageTree.byValueAndStructure tree (LineageTree.map id tree)
+
+[<Property>]
+let ``H-005 LineageTree functor: composition (map (g << f) = map g << map f)`` (x: int) =
+    let m = Lineage.ofValueWith (touched "p" 1 customerKey) x
+    let tree =
+        LineageTree.bifurcate
+            ("a", LineageTree.ofLineage m)
+            ("b", LineageTree.ofLineage m)
+    let f (y: int) = y + 7
+    let g (y: int) = y * 11
+    LineageTree.byValueAndStructure
+        (LineageTree.map (g << f) tree)
+        (LineageTree.map g (LineageTree.map f tree))
+
+// --- LineageTree monad laws ---
+// The branching writer monad's laws hold over the leaves (each carrying
+// a Lineage<'a> whose own monad laws are tested above) AND over the
+// tree structure (Fork preserves shape under bind).
+//
+//   left identity   : bind f (ofValue x)  =  f x   (modulo trail prefix)
+//   right identity  : bind ofLineage tree =  tree
+//   associativity   : bind g (bind f t)   =  bind (fun x -> bind g (f x)) t
+
+[<Property>]
+let ``H-005 LineageTree monad: left identity`` (x: int) =
+    let f y =
+        LineageTree.ofLineage (Lineage.ofValueWith (touched "f" 1 customerKey) (y + 1))
+    let lhs = LineageTree.bind f (LineageTree.ofValue x)
+    let rhs = f x
+    LineageTree.byValueAndStructure lhs rhs
+
+[<Property>]
+let ``H-005 LineageTree monad: right identity (bind ofLineage tree = tree)`` (x: int) =
+    // For a leaf carrying Lineage<int>, `bind ofLineage` substitutes
+    // `ofLineage (ofValue m.Value)` then prepends m.Trail. The result
+    // is structurally identical to the original leaf.
+    let m = Lineage.ofValueWith (touched "p" 1 customerKey) x
+    let tree =
+        LineageTree.bifurcate
+            ("a", LineageTree.ofLineage m)
+            ("b", LineageTree.ofLineage m)
+    let result = LineageTree.bind (fun v -> LineageTree.ofValue v) tree
+    LineageTree.byValueAndStructure tree result
+
+[<Property>]
+let ``H-005 LineageTree monad: associativity`` (x: int) =
+    let f y =
+        LineageTree.ofLineage (Lineage.ofValueWith (touched "f" 1 customerKey) (y + 1))
+    let g y =
+        LineageTree.ofLineage (Lineage.ofValueWith (touched "g" 2 orderKey) (y * 3))
+    let m = LineageTree.ofValue x
+    LineageTree.byValueAndStructure
+        (LineageTree.bind g (LineageTree.bind f m))
+        (LineageTree.bind (fun y -> LineageTree.bind g (f y)) m)
+
+[<Fact>]
+let ``H-005 LineageTree.bind distributes over Fork (preserves branching structure)`` () =
+    // Bind on Fork should produce a Fork with the same labels;
+    // each branch's continuation is the f-result.
+    let mA = Lineage.ofValueWith (touched "A" 1 customerKey) 1
+    let mB = Lineage.ofValueWith (touched "B" 1 orderKey) 2
+    let tree =
+        LineageTree.bifurcate
+            ("policyA", LineageTree.ofLineage mA)
+            ("policyB", LineageTree.ofLineage mB)
+    let f n =
+        LineageTree.ofLineage (Lineage.ofValueWith (touched "f" 1 countryKey) (n * 10))
+    let result = LineageTree.bind f tree
+    // Labels preserved
+    let labels =
+        match result with
+        | Fork branches -> branches |> List.map (fun b -> b.Label)
+        | _ -> []
+    Assert.Equal<string list>(["policyA"; "policyB"], labels)
+    // Values transformed (10 and 20); leaf count unchanged
+    let values = LineageTree.leaves result |> List.map (fun l -> l.Value)
+    Assert.Equal<int list>([10; 20], values)
+
+[<Fact>]
+let ``H-005 LineageTree.bind: leaf trail prepends to continuation (A24 chronological)`` () =
+    // The substitution must prepend the existing leaf's trail to every
+    // continuation leaf — preserving chronological ordering across the
+    // bind boundary.
+    let e1 = touched "before" 1 customerKey
+    let e2 = touched "after" 1 orderKey
+    let leafTree = LineageTree.ofLineage (Lineage.ofValueWith e1 1)
+    let f n =
+        LineageTree.ofLineage (Lineage.ofValueWith e2 (n + 10))
+    let result = LineageTree.bind f leafTree
+    match result with
+    | Leaf m ->
+        Assert.Equal(11, m.Value)
+        Assert.Equal<LineageEvent list>([e1; e2], m.Trail)
+    | _ -> failwith "expected Leaf result"
+
+// --- Worked example: speculative execution (policy diff shape) ---
+
+[<Fact>]
+let ``H-005 LineageTree worked example: bifurcate retains both branches' lineages`` () =
+    // The use case that motivates LineageTree: run the same input
+    // through two alternative paths; retain both for comparison.
+    let baseInput = 10
+
+    let policyA n =
+        Lineage.ofValueWith (touched "policyA-applied" 1 customerKey) (n * 2)
+    let policyB n =
+        Lineage.ofValueWith (touched "policyB-applied" 1 orderKey) (n + 5)
+
+    let tree =
+        LineageTree.bifurcate
+            ("policyA", LineageTree.ofLineage (policyA baseInput))
+            ("policyB", LineageTree.ofLineage (policyB baseInput))
+
+    // Both branches' values are visible via paths.
+    let pathsResult = LineageTree.paths tree
+    let asMap = pathsResult |> List.map (fun (p, l) -> (List.head p, l.Value)) |> Map.ofList
+    Assert.Equal(20, asMap.["policyA"])
+    Assert.Equal(15, asMap.["policyB"])
+
+    // Both branches' trails are retained — the diff consumer compares
+    // by trail event.
+    let trailsByLabel =
+        pathsResult |> List.map (fun (p, l) -> (List.head p, l.Trail |> List.map (fun e -> e.PassName)))
+        |> Map.ofList
+    Assert.Equal<string list>(["policyA-applied"], trailsByLabel.["policyA"])
+    Assert.Equal<string list>(["policyB-applied"], trailsByLabel.["policyB"])
+
+// --- lineageTree CE builder equivalence ---
+
+[<Property>]
+let ``H-005 CE: lineageTree { return x } = LineageTree.ofValue x`` (x: int) =
+    LineageTree.byValueAndStructure
+        (lineageTree { return x })
+        (LineageTree.ofValue x)
+
+[<Fact>]
+let ``H-005 CE: lineageTree let! threads through Leaf trees`` () =
+    let m = Lineage.ofValueWith (touched "p" 1 customerKey) 10
+    let actual =
+        lineageTree {
+            let! x = LineageTree.ofLineage m
+            return x * 2
+        }
+    let expected =
+        LineageTree.bind
+            (fun x -> LineageTree.ofValue (x * 2))
+            (LineageTree.ofLineage m)
+    Assert.True(LineageTree.byValueAndStructure actual expected)
+    match actual with
+    | Leaf result ->
+        Assert.Equal(20, result.Value)
+        Assert.Equal<LineageEvent list>([touched "p" 1 customerKey], result.Trail)
+    | _ -> failwith "expected Leaf"
+
+[<Fact>]
+let ``H-005 CE: lineageTree preserves branching structure under bind`` () =
+    let mA = Lineage.ofValueWith (touched "A" 1 customerKey) 1
+    let mB = Lineage.ofValueWith (touched "B" 1 orderKey) 2
+    let tree =
+        LineageTree.bifurcate
+            ("a", LineageTree.ofLineage mA)
+            ("b", LineageTree.ofLineage mB)
+    let actual =
+        lineageTree {
+            let! x = tree
+            return x + 100
+        }
+    let leafValues = LineageTree.leaves actual |> List.map (fun l -> l.Value)
+    Assert.Equal<int list>([101; 102], leafValues)

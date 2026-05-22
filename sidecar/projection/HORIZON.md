@@ -206,23 +206,67 @@ once the Pipeline-layer fanout machinery ships.
 
 ### H-005 — Branching lineage (speculative execution)
 
-**Status:** proposed
+**Status:** shipped (Cluster B finale, 2026-05-22).
 
-**Gap.** The current lineage trail is linear and append-only. There is
-no way to run a pass speculatively, inspect the resulting trail, and
-discard it if the result is undesirable. Policy simulation and the
-`v2 diff-policy` verb (H-036) require this.
+**Gap (resolved).** The lineage trail was linear; speculative execution
+required a branching analog. `LineageTree<'a>` now ships as the
+**free monad over the labeled-list functor** applied to `Lineage<'a>`.
 
-**Location.** `src/Projection.Core/Lineage.fs`. The existing linear
-writer monad becomes a special case of a `LineageTree<'a>` that
-supports `branch: Lineage<'a> -> LineageTree<'a>` and
-`commit: LineageTree<'a> -> Lineage<'a>`.
+**Shipped surface.** `src/Projection.Core/Lineage.fs` —
+`LineageTree<'a>` closed DU with `Leaf of Lineage<'a>` + `Fork of
+LineageBranch<'a> list`; `LineageBranch<'a>` carrying `Label : string`
++ `Tree : LineageTree<'a>`. Companion module operations:
 
-**Unlocks.** `Compose.runSkeleton` (already functionally complete) and
-the full-policy pipeline can be run against the same `Catalog`; the
-resulting trees are diffed on `SsKey × Classification` to produce the
-policy delta. Every "what would happen if..." query over policy space
-becomes a branch operation.
+```fsharp
+module LineageTree =
+    val ofLineage      : Lineage<'a> -> LineageTree<'a>
+    val ofValue        : 'a -> LineageTree<'a>
+    val branch         : Lineage<'a> -> LineageTree<'a>   // sketch-vocabulary alias
+    val fork           : (string * LineageTree<'a>) list -> LineageTree<'a>
+    val bifurcate      : (string * LineageTree<'a>) -> (string * LineageTree<'a>) -> LineageTree<'a>
+    val leaves         : LineageTree<'a> -> Lineage<'a> list
+    val paths          : LineageTree<'a> -> (string list * Lineage<'a>) list
+    val map            : ('a -> 'b) -> LineageTree<'a> -> LineageTree<'b>
+    val bind           : ('a -> LineageTree<'b>) -> LineageTree<'a> -> LineageTree<'b>
+    val commit         : (Lineage<'a> list -> Lineage<'a>) -> LineageTree<'a> -> Lineage<'a>
+    val commitFirst    : LineageTree<'a> -> Lineage<'a>
+    val tryCommitByPath: string list -> LineageTree<'a> -> Lineage<'a> option
+    val isLinear       : LineageTree<'a> -> bool
+    val isEmpty        : LineageTree<'a> -> bool
+    val leafCount      : LineageTree<'a> -> int
+    val byValueAndStructure : LineageTree<'a> -> LineageTree<'a> -> bool
+```
+
+Plus `lineageTree { ... }` CE builder for natural-syntax branching
+computation. Tests: 26 entries in `LineageTests.fs` covering monad
+laws (left identity, right identity, associativity), functor laws,
+round-trip isomorphism (`commitFirst (ofLineage m) = m`), branch
+preservation under bind, A24 chronological-bind across the
+substitution boundary, and a worked policy-diff-shape example.
+
+**Algebra (writer-monad trinity completed).**
+- `Lineage<'a>` — **linear** writer (Cluster B foundation; A24 amended)
+- `LineageTree<'a>` — **branching** writer (this slice; free monad
+  over labeled-list functor)
+- `Certificate<'a>` — **terminal** writer projection (Cluster B
+  follow-on)
+
+A24 amended holds at every leaf AND across the substitution boundary:
+when `bind f leaf` substitutes, the existing leaf's trail prepends to
+every continuation leaf. The monad-law preservation is the free-monad
+construction's standard property — confirmed by the property-test
+triple.
+
+**Unlocks (downstream).**
+- **H-033 (policy diff verb):** `LineageTree.bifurcate ("policyA",
+  treeA) ("policyB", treeB) |> LineageTree.paths` yields the
+  branch-labeled lineages ready for SsKey × Classification comparison.
+- **H-035 (policy regression testing):** same shape, comparing one
+  policy's output across fixtures.
+- **H-063 (free monad for pass scheduling):** inherits the tree
+  structure as its program shape.
+- **Cluster C (policy intelligence):** the prerequisite primitive
+  is now in place; the policy-simulation slice can open.
 
 ---
 

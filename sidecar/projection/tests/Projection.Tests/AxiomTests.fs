@@ -630,12 +630,33 @@ let ``H-013: units of measure on Profile numeric fields (trigger unfired)`` () =
 
 // --- Group I — Kernel: categorical structure (remaining tail) ---
 
-[<Fact(Skip = "H-005 Branching lineage (LineageTree / speculative execution) — \
-Cluster C prerequisite. Trigger: policy diff verb (H-033) demands branch+commit \
-on the lineage trail. Algebraic shape: LineageTree<'a> generalizing the linear \
-writer with branch / commit operations. Defer until Cluster C opens; the \
-branching cost is the LineageEvent trail rewriting, not the type design.")>]
-let ``H-005: branching lineage (speculative execution; Cluster C prerequisite)`` () = ()
+[<Fact>]
+let ``H-005 LineageTree: branching writer monad (Cluster B finale; 2026-05-22)`` () =
+    citationOf
+        "tests/Projection.Tests/LineageTests.fs"
+        "H-005 LineageTree monad: left identity"
+    citationOf
+        "tests/Projection.Tests/LineageTests.fs"
+        "H-005 LineageTree monad: right identity (bind ofLineage tree = tree)"
+    citationOf
+        "tests/Projection.Tests/LineageTests.fs"
+        "H-005 LineageTree monad: associativity"
+    citationOf
+        "tests/Projection.Tests/LineageTests.fs"
+        "H-005 LineageTree.bind: leaf trail prepends to continuation (A24 chronological)"
+    citationOf
+        "tests/Projection.Tests/LineageTests.fs"
+        "H-005 LineageTree worked example: bifurcate retains both branches' lineages"
+    // `LineageTree<'a>` is the **free monad over the labeled-list
+    // functor** applied to `Lineage<'a>`. Completes the writer-monad
+    // trinity (Lineage linear / LineageTree branching / Certificate
+    // terminal). A24-amended (chronological-bind) holds within each
+    // leaf AND across the substitution boundary (existing leaf's trail
+    // prepends to every continuation leaf). Monad laws + functor laws
+    // property-tested. Unlocks Cluster C (policy intelligence) — H-033
+    // (policy diff), H-035 (regression testing) consume the bifurcated
+    // tree's `paths` for branch-by-branch comparison.
+    ()
 
 [<Fact(Skip = "H-006 Parallel pass composition (full SsKey-disjoint scheduling) \
 — Cluster B shipped the static algebra (Pass.product / Pass.first / Pass.second \

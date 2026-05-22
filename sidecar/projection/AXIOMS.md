@@ -722,14 +722,47 @@ The algebraic reasoning, not just the rule:
   (chapter-Cluster-B; H-003). Tests are property-based via FsCheck
   over arbitrary integer payloads (the laws are payload-agnostic).
 
+**Writer-monad trinity (chapter-Cluster-B finale; 2026-05-22).** A24
+amended characterizes three structurally-related writer carriers, each
+satisfying the chronological-bind law:
+
+- **`Lineage<'a>` — the linear writer.** Append-only trail; the
+  in-flight carrier every pass returns. A24 is the original law over
+  this shape.
+
+- **`LineageTree<'a>` — the branching writer** (H-005; the **free
+  monad over the labeled-list functor** applied to `Lineage<'a>`).
+  Leaves are `Lineage<'a>` carriers; Forks are labeled lists of
+  subtrees. A24 holds within each leaf AND across the substitution
+  boundary: when `LineageTree.bind f leaf` substitutes, the existing
+  leaf's trail prepends to every continuation leaf in `f m.Value`
+  via the `prepend` primitive — preserving chronological ordering
+  across the bind. The bind operation is the free-monad bind:
+  recursive leaf-substitution that preserves Fork structure. Monad-law
+  preservation under the free-monad construction is standard;
+  property-tested in `LineageTests.fs::H-005 LineageTree monad: ...`.
+
+- **`Certificate<'a>` — the terminal projection** (H-004). Structural
+  isomorphism with `Lineage<Diagnostics<'a>>` via `ofLineageDiagnostics`
+  / `toLineageDiagnostics`. The role at the consumer boundary: a
+  `Certificate<SsdtBundle>` is a value plus its witness chain, where
+  the witness chain satisfies A24-amended by inheritance from the
+  isomorphic dual-writer carrier.
+
+The trinity is closed: every writer-carrier role in the pipeline has
+a named type. A24-amended holds across all three.
+
 **Future-extensibility note.** When a third writer is introduced (e.g.,
 a perf-trace writer separating `Bench` samples from `Lineage` events;
 a constraint-set writer for the typed `Tolerance` taxonomy), the
 amendment generalizes: stacking the new writer atop
-`LineageDiagnostics` inherits A24 by the same construction. The
-chapter-close ritual should add the new writer's monad-law triple in
-the same commit that introduces the writer; the law tests are
-template-shaped because the underlying algebra is uniform.
+`LineageDiagnostics` inherits A24 by the same construction. New
+carriers similarly extend by stacking atop the trinity (e.g., a
+`LineageTreeDiagnostics<'a>` would be `LineageTree<Diagnostics<'a>>`,
+inheriting branching + dual-writer chronology). The chapter-close
+ritual adds the new writer's monad-law triple in the same commit that
+introduces the writer; the law tests are template-shaped because the
+underlying algebra is uniform.
 
 ---
 
