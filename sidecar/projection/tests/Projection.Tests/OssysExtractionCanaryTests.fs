@@ -61,9 +61,11 @@ let ``Slice ε canary: OSSYS seed fixture extracts to a V2 Catalog with 3 module
         | Error errors ->
             Assert.Fail (sprintf "OSSYS canary extraction failed: %A" errors)
         | Ok catalog ->
-            // V1 fixture INSERTs 3 modules: AppCore (100), Ops (200), SystemUsers (300).
-            // All three carry IsActive=1; AppCore + Ops are user modules; SystemUsers is system.
-            Assert.Equal(3, List.length catalog.Modules)
+            // The seed defines 7 modules: AppCore (100), Ops (200),
+            // SystemUsers (300, system), Sales (400), Inventory (500),
+            // Integration (600, Extension), RefData (700). The original
+            // three are preserved; the comprehensive expansion adds four.
+            Assert.Equal(7, List.length catalog.Modules)
 
 [<Fact>]
 let ``Slice ε canary: OSSYS seed fixture extracts the AppCore module with 3 entities`` () =
