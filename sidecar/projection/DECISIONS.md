@@ -19439,3 +19439,70 @@ D.2.a's HANDOFF surfaced four operator-visible shapes the initial carbon-copy di
 - `src/Projection.Targets.SSDT/ConstraintFormatter.fs:283-320` — updated `tryFormatLine` dispatch.
 - V1 reference fixture (extended-property shape): `tests/Fixtures/emission/edge-case/Modules/AppCore/dbo.Customer.sql:34-43`.
 - V1 reference fixture (CHECK shape): `tests/Fixtures/emission-matrix/temporal-audit/Modules/Matrix/dbo.TemporalOrder.sql`.
+
+## 2026-05-23 (slice D.2.c + D.2.d + D.3.b + D.3.c codification — XXXXXL combined slice) — `ConstraintFormatter` registered as `OperatorIntent Emission` metadata; new `Statement.BatchSeparator` variant emits GO at terminal text boundary; new `Statement.AlterTableDisableTrigger` variant + per-trigger metadata Comment lines; realization-layer-overlay registration discipline codified; temporal emission audit confirmed complete (H-022)
+
+### Context
+
+Chapter D's emission-aesthetics arc continues. The prior session surfaced a discipline gap: the slice-D.2.a `ConstraintFormatter` (a text post-processor at the `Render.toText` boundary) was operator-intent emission policy with no `RegisteredTransformMetadata` entry. Pillar 9 totality requires every transformation to carry a `Classification`; the formatter didn't. The chapter-D emission-aesthetics work risked compounding the discipline gap with each new realization-layer overlay (`ConstraintFormatter`, `BatchSeparator` insertion, future formatters).
+
+The operator-PO chose Path C from the prior session's three-paths offer: register the realization-layer overlays alongside the operator-visible polish work, so each new overlay lands already-classified. This slice closes that.
+
+### What shipped
+
+**D.3.b — `ConstraintFormatter` registered as emission-overlay metadata.**
+- New `ConstraintFormatter.Mode = Enabled | Disabled` (mirrors slice-D.1.a `LogicalTableEmission.Mode`).
+- New `ConstraintFormatter.registeredMetadata : RegisteredTransformMetadata` with `StageBinding = Emitter`, eight sites enumerated under `OperatorIntent Emission` per pillar 9.
+- `Render.toText` threads `Mode` through the formatter call site (production-wiring: `Enabled`).
+- Appended to `RegisteredAllTransforms.all` so the canary manifest's `applied-transforms` field surfaces it.
+
+**D.2.c — `Statement.BatchSeparator` + GO emission.**
+- New closed-DU variant on `Statement`; `ScriptDomBuild.buildStatement` returns `None` (sqlcmd directive — no ScriptDom AST equivalent); `Render.toSql` emits `[blank line]\nGO\n`.
+- `SsdtDdlEmitter.statements` wraps every top-level statement with trailing `BatchSeparator` via a `yieldWithSeparator` helper.
+- `Deploy.executeStream` adds explicit no-op match arm (the per-statement DDL flush happens before BatchSeparator emits; the canary deploy path's `BatchSplitter` handles GO recognition).
+- `DacpacEmitter.isSchemaStatement` excludes BatchSeparator from schema-statement classification.
+
+**D.2.d — `Statement.AlterTableDisableTrigger` + trigger metadata comments.**
+- New closed-DU variant on `Statement`; `ScriptDomBuild.buildAlterTableDisableTrigger` produces `AlterTableTriggerModificationStatement` with `TriggerEnforcement.Disable` (sibling shape to `buildAlterTableNoCheckConstraint`).
+- `SsdtDdlEmitter.triggerStatements` extends from "emit one CreateTrigger per trigger" to "emit `Comment(trigger metadata) + CreateTrigger + (optional) AlterTableDisableTrigger`" when `Trigger.IsDisabled = true`.
+- `Deploy.executeStream` + `DacpacEmitter.isSchemaStatement` extend to dispatch.
+
+**D.2.f — Temporal emission audit (no change).**
+- Confirmed `ScriptDomBuild.buildCreateTable` already emits PERIOD FOR SYSTEM_TIME + WITH (SYSTEM_VERSIONING = ON) including HistoryTable + RetentionPeriod via the H-022 implementation at lines 478-505. No work needed; subagent's "partial emission" flag was a false alarm.
+
+### Decisions resolved
+
+**Realization-layer transformations DO carry pillar-9 classification, but as METADATA-ONLY registrations.** The full `RegisteredTransform<'In, 'Out>` shape requires `Run : 'In -> Lineage<Diagnostics<'Out>>`; realization-layer transformations operate on `string -> string` which doesn't fit. Per the SSDT emitter precedent (`SsdtDdlEmitter.registeredMetadata`), realization-layer overlays register as metadata only — the totality-coverage scan + manifest's `applied-transforms` field see them; per-invocation execution happens at the realization-layer call site (e.g., `Render.toText`). This preserves pillar 9's classification contract WITHOUT forcing every text-level transformation through the writer-monad shell.
+
+**Mode parameter on realization-layer overlays mirrors slice-D.1.a's pattern.** `LogicalTableEmission.Mode = Enabled | Disabled`; `LogicalColumnEmission.Mode = Enabled | Disabled`; `ConstraintFormatter.Mode = Enabled | Disabled`. Production wiring captures `Enabled` (default-on; matches operator's 2026 intent). `Disabled` is the diagnostic / V1-parity-bisect surface. Same shape across catalog-level + realization-level overlays.
+
+**GO as a typed Statement variant, not a text post-processor.** Closed-DU widening adds structural information to the stream — the canary deploy path's `BatchSplitter` can rely on it; the Render layer's emission contract is typed; the dispatch path remains type-safe. Alternative (text-level post-processor inserting `\nGO\n` between rendered statements) was considered and rejected per the closed-DU expansion discipline + A35 (typed statement stream is canonical).
+
+**Trigger disable + comment as two statements, not one composite.** `Statement.Comment` already exists; reusing it for the metadata line keeps the variant count stable. `Statement.AlterTableDisableTrigger` is new (no equivalent in existing variants); the type-system surface for future ENABLE TRIGGER if an operator-pull surfaces it stays open via the `TriggerEnforcement` enum.
+
+**Lineage events on formatter sites: deferred-with-rationale.** The registered metadata describes the formatter's sites + classification; per-invocation lineage emission would require either a writer-monad refactor of `Render.toText` (currently `string → string`) or a side-channel. Pillar 9's classification gap is closed; the per-invocation event-emission gap is a separate concern named for a future slice when a consumer demands the lineage detail.
+
+### Discipline reinforced
+
+**Closed-DU expansion empirical-test discipline (worked example).** Adding two new variants to the `Statement` DU (`BatchSeparator`, `AlterTableDisableTrigger`) produced exactly two exhaustiveness errors at `Deploy.executeStream`'s match site. All other match sites had `_` wildcards or shape-based dispatch that absorbed the new variants. The discipline holds at N+1: closed-DU widening DOES preserve the "exhaustiveness errors light up only at match sites that genuinely care" property.
+
+**Carbon-copy with citation (extended).** Trigger emission shape carbon-copied from V1's `tests/Fixtures/emission/edge-case-untrusted/Modules/Ops/dbo.JobRun.sql` lines 17-19. ADMIRE.md entry on `ConstraintFormatter` updated to note the trigger-emission delta as additional V1-parity work.
+
+**Pillar 9 totality WITHOUT forcing the typed-Run shell.** The metadata-only registration pattern (precedent: SSDT emitter; precedent extended this slice: ConstraintFormatter) IS the canonical fit for realization-layer transformations. The registry sees them; the manifest sees them; the executable typed-Run surface stays where the writer-monad makes sense. Future realization-layer overlays follow the same shape — Mode parameter + `registeredMetadata` per `RegisteredTransformMetadata.emitter` smart-constructor.
+
+### Test surface
+
+- **2370 pass, 0 fail, 207 skipped** — unchanged from D.2.b baseline. All snapshot tests absorbed the additional emission (GO separators + trigger comments are structurally additive; ScriptDom re-parses identically).
+- All Docker-bound canary tests pass green — M3 V2-internal closure (`Deploy.runWithReadback` path with new GO separators) + M3 wide canary + D.1.c triangle canary. `BatchSplitter` handles GO recognition; ReadSide deploy + readback round-trips identically.
+
+### Cross-references
+
+- `SLICE_D_2_C_D_2_D_D_3_B.md` — combined slice doc.
+- `src/Projection.Targets.SSDT/ConstraintFormatter.fs` — Mode + registeredMetadata.
+- `src/Projection.Targets.SSDT/Render.fs:122-135` — Mode threaded through `toText`.
+- `src/Projection.Targets.SSDT/Statement.fs:262-321` — new variants.
+- `src/Projection.Targets.SSDT/ScriptDomBuild.fs:1291-1310,1437-1473` — dispatch + `buildAlterTableDisableTrigger`.
+- `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs:397-417,672-712` — trigger emission + `yieldWithSeparator`.
+- `src/Projection.Pipeline/Deploy.fs:745-805` — `executeStream` dispatch.
+- `src/Projection.Pipeline/RegisteredAllTransforms.fs:53-59` — formatter metadata registered.
+- V1 references: `src/Osm.Smo/PerTableEmission/ConstraintFormatter.cs`; `tests/Fixtures/emission/edge-case-untrusted/Modules/Ops/dbo.JobRun.sql`.

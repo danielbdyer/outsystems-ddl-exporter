@@ -1,3 +1,70 @@
+# Handoff letter — 2026-05-23 (slice D.2.c + D.2.d + D.3.b XXXXXL combined slice CLOSED)
+
+To the next agent.
+
+You're picking up V2 mid-Chapter D with the emission-aesthetics arc significantly advanced and the architectural-totality gap that opened during the prior session now closed. Three sub-slices landed as one XXXXXL combined slice this session: D.3.b registered `ConstraintFormatter` as `OperatorIntent Emission` metadata; D.2.c added `Statement.BatchSeparator` (typed GO emission); D.2.d added `Statement.AlterTableDisableTrigger` + per-trigger metadata comments. Test suite 2370/0/207 green throughout. The realization-layer-overlay registration discipline is now the canonical shape for every future emission-aesthetic transformation.
+
+## Where you are in the spine of the work
+
+Read `SLICE_D_2_C_D_2_D_D_3_B.md` first (~7 min) — combined slice doc covering all three sub-slices + the realization-layer-boundary discipline they share. Then the DECISIONS entry (~4 min) for the canonical decisions including the metadata-only registration pattern that resolves the pillar-9 totality question for `string -> string` transformations.
+
+## Architectural posture you inherit
+
+Pillar 9 totality holds at the realization layer via the **metadata-only registration pattern**: realization-layer overlays (text post-processors operating on rendered SQL) register as `RegisteredTransformMetadata` only (no `RegisteredTransform.Run`); their per-invocation execution happens at the realization-layer call site (e.g., `Render.toText`); the registry's totality-coverage scan + the canary manifest's `applied-transforms` field see them. This preserves the classification contract WITHOUT forcing every text-level transformation through the writer-monad shell.
+
+Mode parameter precedent established at slice-D.1.a (`LogicalTableEmission.Mode = Enabled | Disabled`) now extends to realization-layer overlays uniformly: `ConstraintFormatter.Mode = Enabled | Disabled`. Production wiring captures `Enabled`; `Disabled` is the diagnostic / V1-parity-bisect surface. Every future emission-aesthetic transformation lands with the same Mode + registeredMetadata shape — that's the architectural surface you inherit.
+
+## What's still in D.2.b's deferred queue
+
+From the operator-PO subagent harvest at session open:
+
+1. **D.2.e — ALTER WITH NOCHECK ADD CONSTRAINT semantic rework** (Large; HIGH visibility). V2 currently emits untrusted FKs as `FK inside CREATE TABLE` + `post-ALTER TABLE WITH NOCHECK CHECK CONSTRAINT` (semantically equivalent to V1's deployed state). V1 emits `FK as standalone ALTER WITH NOCHECK ADD CONSTRAINT` (different textual shape; same end-state). Deferred unless an operator surfaces preference for the textual divergence; V2's structurally correct, just textually different. Rework would touch emission-order rework + a new `Statement.AlterTableNoCheckAddForeignKey` variant.
+
+2. **Lineage events on formatter sites** (Medium; LOW visibility). Per-invocation `LineageEvent` emission would surface in the operator's lineage trail when the formatter reshapes a CONSTRAINT line. Requires either a writer-monad refactor of `Render.toText` (currently `string → string`) or a side-channel. Pillar 9's classification gap is closed (the formatter has registered metadata + sites); the per-invocation event-emission gap is a separate concern named for a future slice when a consumer demands the lineage detail.
+
+3. **Extended properties beyond MS_Description / V2.LogicalName** — confirmed by subagent that V1 only emits MS_Description in production; the V2.LogicalName slot D.1.b added is V2-growth. Closed.
+
+4. **Header / footer banners** — explicitly out of scope per the `IgnoreHeaderComments` tolerance.
+
+## What you might open next
+
+The chapter D arc has clean closure surfaces:
+
+- **D.4.a — Chapter-mid audit of pillar 9 totality across all sibling emitters**. Now that ConstraintFormatter ships registered, dispatch the parallel walk: every emitter / formatter / overlay that V2 ships should appear in `RegisteredAllTransforms.all`. The audit produces a coverage map (registered vs not) and surfaces any remaining drift. ~2-3 hours; dispatchable to a subagent.
+- **D.5 — AdjunctionLawTests' H-050 widening for the new Statement variants**. `BatchSeparator` + `AlterTableDisableTrigger` should preserve the adjunction `PhysicalSchema.ofCatalog c = ofStatementStream (SsdtDdlEmitter.statements c)` on the new variants. Likely already does (the variants don't affect column / FK / extended-property projections); add explicit property-test coverage to make the property structural. ~1 hour.
+- **D.6 — Perf-gate baseline re-record**. Chapter D added ~2-3k extra statements per canary (GO separators + V2.LogicalName extended properties + trigger comments). No observed regression in unit tests; production-scale operator-reality canary may drift. Run `PERF_GATE_RECORD=1 ./scripts/perf-gate.sh` + commit new baseline + DECISIONS amendment. ~30 minutes.
+- **D.2.e if the operator-PO surfaces the preference** (per #1 above).
+
+## What's load-bearing
+
+Carried-forward, still load-bearing:
+- **Metadata-only registration pattern for realization-layer transformations**. New emission-aesthetic overlays follow `ConstraintFormatter`'s shape exactly: Mode parameter + `registeredMetadata` per `RegisteredTransformMetadata.emitter` + append to `RegisteredAllTransforms.all`. Don't try to force `string -> string` transformations through the typed `RegisteredTransform<'In, 'Out>` shell.
+- **Closed-DU expansion empirical-test discipline (extended at N=N+1)**. Adding `BatchSeparator` + `AlterTableDisableTrigger` to `Statement` produced exactly TWO exhaustiveness errors (both at `Deploy.executeStream`'s match site). The pattern holds — exhaustiveness errors light up only at match sites that genuinely care.
+- **Mode parameter mirrors `LogicalTableEmission.Mode` precedent across catalog + realization layers**. Every operator-toggleable overlay uses `Enabled | Disabled`; production captures `Enabled`; `Disabled` is the diagnostic / V1-parity-bisect surface.
+
+New from this slice:
+- **The realization-layer-overlay registration discipline**. Per the DECISIONS entry — realization-layer transformations carry pillar-9 classification via metadata-only registration; the per-invocation typed-Run is preserved for catalog-level transformations where the writer-monad makes sense.
+
+## Reading order (~20 min)
+
+1. **`SLICE_D_2_C_D_2_D_D_3_B.md`** — combined slice doc; covers all three sub-slices + the metadata-only registration pattern. ~7 min.
+2. **`DECISIONS 2026-05-23 (slice D.2.c + D.2.d + D.3.b + D.3.c codification)`** — canonical decisions; the realization-layer-boundary discipline codified. ~4 min.
+3. **`src/Projection.Targets.SSDT/ConstraintFormatter.fs:55-107`** — Mode + registeredMetadata; the canonical realization-layer-overlay shape. ~3 min.
+4. **`src/Projection.Targets.SSDT/Statement.fs:262-321`** — the new closed-DU variants for `BatchSeparator` + `AlterTableDisableTrigger`. ~3 min.
+5. **`src/Projection.Pipeline/RegisteredAllTransforms.fs:53-59`** — where `ConstraintFormatter.registeredMetadata` lands in the totality surface. ~2 min.
+
+## Pitfalls this slice hit that you can avoid
+
+- **`TransformSite.operatorIntent` argument order**: signature is `(name: string) (axis: OverlayAxis) (rationale: string)`, NOT `(axis) (name) (rationale)`. F# positional inference helps but is occasionally misleading — caught at compile time by the type error "expected string, got OverlayAxis" but worth knowing.
+- **Adding Statement variants requires Deploy.executeStream dispatch**. The `executeStream` function's match against `Statement` is the one place exhaustiveness fires; treat the no-op + DDL-flush dispatch branches as the canonical extension shape.
+- **Don't over-engineer realization-layer registration**. The temptation is to wrap `ConstraintFormatter.format` as a `RegisteredTransform<string, string>` with `Run : string -> Lineage<Diagnostics<string>>`. Resist. The metadata-only registration pattern is the canonical fit; the typed-Run shell is for catalog-level transformations where the writer-monad makes sense.
+
+Hold the spine. The chapter-D emission-aesthetics arc has structural-totality on the architectural axis AND operator-visibility-near-parity on the V1-parity axis. Whatever opens next inherits a substrate where every emission-aesthetic transformation is registered + classified by construction.
+
+— The slice D.2.c + D.2.d + D.3.b architect.
+
+---
+
 # Handoff letter — 2026-05-23 (slice D.2.a CLOSED; chapter D's emission-aesthetics arc opens)
 
 To the next agent.

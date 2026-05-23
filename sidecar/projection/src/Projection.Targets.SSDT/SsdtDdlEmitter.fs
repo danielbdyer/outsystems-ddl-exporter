@@ -394,17 +394,29 @@ module SsdtDdlEmitter =
         |> List.map (fun idx ->
             Statement.AlterIndexDisable (toTableId k, Name.value idx.Name))
 
-    /// Emit one `CreateTrigger` statement per trigger in `Kind.Triggers`,
-    /// sorted deterministically by `SsKey`. Uses
-    /// `ScriptDomBuild.tryParseTriggerBody` to parse `Trigger.Definition`
-    /// into a typed `TSqlStatement`; triggers whose definition fails to
-    /// parse are silently dropped (parse failure on well-formed V1 data is
-    /// unexpected; the canary roundtrip will surface any regressions).
-    /// H-019 (Cluster A — Close the loops).
+    /// Emit per trigger: a `Comment` line carrying trigger metadata
+    /// (name + disabled state, mirroring V1's `-- Trigger: <name>
+    /// (disabled: true/false)` shape), then the `CreateTrigger`
+    /// statement, then (when `Trigger.IsDisabled = true`) a post-
+    /// CREATE `AlterTableDisableTrigger` statement. Sorted
+    /// deterministically by `SsKey`. Slice D.2.d extends H-019's
+    /// CreateTrigger emission with the disable-state axis +
+    /// metadata-comment per V1 fixture parity.
     let private triggerStatements (k: Kind) : Statement list =
         k.Triggers
         |> List.sortBy (fun t -> t.SsKey)
-        |> List.map (fun t -> Statement.CreateTrigger t.Definition)
+        |> List.collect (fun t ->
+            let triggerName = Name.value t.Name
+            let metadataComment =
+                System.String.Concat(  // LINT-ALLOW: terminal text-emission boundary; segments are typed (Name.value Trigger.Name + bool→string projection); BCL `String.Concat` is the use-case-specific library for the four-segment audit-narration comment
+                    "Trigger: ", triggerName,
+                    " (disabled: ", (if t.IsDisabled then "true" else "false"), ")")
+            let createStmt = Statement.CreateTrigger t.Definition
+            let baseStatements = [ Statement.Comment metadataComment; createStmt ]
+            if t.IsDisabled then
+                baseStatements @ [ Statement.AlterTableDisableTrigger (k.Physical, triggerName) ]
+            else
+                baseStatements)
 
     /// Emit one `CreateSequence` statement per `Catalog.Sequences` entry,
     /// sorted deterministically by `SsKey`. Sequences are catalog-level
@@ -671,19 +683,30 @@ module SsdtDdlEmitter =
         let orderedKinds =
             order |> List.choose (fun key -> Map.tryFind key kindByKey)
         seq {
+            // Slice D.2.c — insert `BatchSeparator` after every
+            // top-level statement so deploy paths split into
+            // per-statement `ExecuteNonQueryAsync` round-trips
+            // (BatchSplitter handles GO recognition) AND so the
+            // rendered text matches V1's per-statement-group
+            // emission convention (every top-level statement
+            // followed by a blank line + GO + blank line).
+            let yieldWithSeparator (stmt: Statement) =
+                seq { yield stmt; yield BatchSeparator }
+            let yieldAllWithSeparator (stmts: seq<Statement>) =
+                stmts |> Seq.collect yieldWithSeparator
             // H-020: sequences before tables — they may be referenced by
             // DEFAULT constraints in CREATE TABLE statements.
-            yield! sequenceStatements catalog
+            yield! yieldAllWithSeparator (sequenceStatements catalog)
             for k in orderedKinds do
-                yield createTableStatement targetByKey pkAttrByKey k
+                yield! yieldWithSeparator (createTableStatement targetByKey pkAttrByKey k)
                 // Slice 5.13.fk-features-emit — mirrors the per-kind
                 // emission order in `kindToSsdtFile`: post-CREATE-TABLE
                 // ALTER for untrusted FKs, then indexes, then post-
                 // CREATE-INDEX ALTER for disabled indexes.
-                yield! untrustedFkAlters targetByKey pkAttrByKey k
-                yield! indexStatements k
+                yield! yieldAllWithSeparator (untrustedFkAlters targetByKey pkAttrByKey k)
+                yield! yieldAllWithSeparator (indexStatements k)
                 // Slice 5.13.index-features-emit (matrix row 55).
-                yield! disabledIndexAlters k
+                yield! yieldAllWithSeparator (disabledIndexAlters k)
                 // Slice D.1.c — match `kindToSsdtFile`'s per-kind
                 // emission order so the flat-stream surface carries
                 // the same SetExtendedProperty entries (including the
@@ -691,10 +714,10 @@ module SsdtDdlEmitter =
                 // roundtrip read). Without this, `Render.toText`-based
                 // deploys (Deploy.runWithReadback / runWithLoader) lose
                 // logical-name recovery and the M3 closure breaks.
-                yield! extendedPropertyStatements k
+                yield! yieldAllWithSeparator (extendedPropertyStatements k)
                 // H-019: triggers after table + indexes per kindToSsdtFile
                 // emission order (ON <table> must exist before the trigger).
-                yield! triggerStatements k
+                yield! yieldAllWithSeparator (triggerStatements k)
         }
 
     let emitSlices : Emitter<SsdtFile> = fun catalog ->

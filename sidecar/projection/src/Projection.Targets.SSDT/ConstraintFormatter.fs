@@ -54,6 +54,58 @@ open Projection.Core
 [<RequireQualifiedAccess>]
 module ConstraintFormatter =
 
+    /// Operator-toggleable mode mirroring `LogicalTableEmission.Mode`
+    /// (slice D.1.a). `Enabled` is the production default — V2 emits
+    /// V1's elegant multi-line shape. `Disabled` short-circuits to
+    /// ScriptDom's compact column-inline default, preserving the
+    /// operator's option to fall back for diagnostic / V1-parity
+    /// reasons (e.g., a regression bisect that wants to inspect the
+    /// raw ScriptDom output).
+    type Mode =
+        /// Reformat ScriptDom's column-inline constraints into V1's
+        /// multi-line elegant shape (PK / DEFAULT / CHECK / FK with
+        /// multi-level indentation + EXEC sys.sp_addextendedproperty
+        /// multi-line wrap).
+        | Enabled
+        /// Pass-through; ScriptDom's compact default emission.
+        | Disabled
+
+    /// Slice D.3.b — registry metadata for the realization-layer
+    /// overlay. Carries `OperatorIntent Emission` classification per
+    /// pillar 9: the multi-line elegant shape IS the operator's
+    /// emission-axis preference (V1 parity over ScriptDom default).
+    /// Default-on production wiring IS the operator's intent in 2026
+    /// per the same framing as `LogicalTableEmission` / `LogicalColumnEmission`.
+    ///
+    /// Metadata-only registration (no `RegisteredTransform.Run`)
+    /// mirrors the SSDT emitter precedent — the `string -> string`
+    /// shape doesn't fit the typed `RegisteredTransform<'In, 'Out>
+    /// .Run : 'In -> Lineage<Diagnostics<'Out>>` shell because
+    /// realization-layer transformations operate on rendered text,
+    /// not on the typed Catalog / Statement-stream surfaces. The
+    /// metadata view is what the registry's totality-coverage scan +
+    /// manifest emission need; per-invocation execution happens
+    /// inside `Render.toText` when Mode = Enabled.
+    let registeredMetadata : RegisteredTransformMetadata =
+        RegisteredTransformMetadata.emitter
+            "ssdtConstraintFormatter" Schema
+            [ TransformSite.operatorIntent "columnInlinePrimaryKey" Emission
+                "Split column-inline `[col] type CONSTRAINT [PK_*] PRIMARY KEY [CLUSTERED]` into V1's 3-line shape (column / CONSTRAINT [name] at +4 / PRIMARY KEY body at +8). Operator emission-axis intent — V1 parity over ScriptDom default."
+              TransformSite.operatorIntent "columnInlineNamedDefault" Emission
+                "Split column-inline `[col] type CONSTRAINT [DF_*] DEFAULT value` into 2-line shape (column / CONSTRAINT [name] DEFAULT value at +4). Operator emission-axis intent."
+              TransformSite.operatorIntent "columnInlineAnonymousDefault" Emission
+                "Split column-inline `[col] type DEFAULT (value)` (no CONSTRAINT prefix) into 2-line shape. Fires when V2's `Attribute.DefaultName = None`. Operator emission-axis intent."
+              TransformSite.operatorIntent "columnInlineCheck" Emission
+                "Split column-inline `[col] type CONSTRAINT [CK_*] CHECK (expr)` into 2-line shape. Operator emission-axis intent."
+              TransformSite.operatorIntent "tableLevelForeignKey" Emission
+                "Split table-level `CONSTRAINT [FK_*] FOREIGN KEY (cols) REFERENCES table (cols) [ON DELETE x] [ON UPDATE y]` into multi-line shape (CONSTRAINT name / FOREIGN KEY body at +4 / ON DELETE-UPDATE at +8). V1's NO ACTION normalization preserved. Operator emission-axis intent."
+              TransformSite.operatorIntent "tableLevelPrimaryKey" Emission
+                "Split table-level `CONSTRAINT [PK_*] PRIMARY KEY ([cols])` (composite or single-column) into 2-line shape (constraint name / PRIMARY KEY body at +4). Operator emission-axis intent."
+              TransformSite.operatorIntent "tableLevelCheck" Emission
+                "Split table-level `CONSTRAINT [CK_*] CHECK (expr)` into 2-line shape (constraint name / CHECK body at +4). V2 emits `Kind.ColumnChecks` at the table-constraint section. Operator emission-axis intent."
+              TransformSite.operatorIntent "extendedPropertyExecWrap" Emission
+                "Wrap `EXEC sys.sp_addextendedproperty` calls at @level0type / @level1type / @level2type boundaries with 4-space continuation indent. Mirrors V1's MS_Description emission shape. Operator emission-axis intent." ]
+
     let private newLine = Environment.NewLine
 
     /// True iff the (already-trimmed) text starts with `CONSTRAINT [`
@@ -428,20 +480,25 @@ module ConstraintFormatter =
         else
             false
 
-    /// Format a rendered T-SQL script. Reformats CREATE TABLE inline
-    /// constraints into V1's multi-line elegant shape; passes other
-    /// lines through unchanged.
-    let format (script: string) : string =
+    /// Format a rendered T-SQL script. When `mode = Enabled`,
+    /// reformats CREATE TABLE inline constraints into V1's multi-line
+    /// elegant shape; when `mode = Disabled`, returns the input
+    /// unchanged (operator opt-out for diagnostic / V1-parity-bisect
+    /// reasons).
+    let format (mode: Mode) (script: string) : string =
         use _ = Bench.scope "ssdt.constraintFormatter.format"
-        let lines = script.Split([| '\n' |], StringSplitOptions.None)
-        let sb = StringBuilder(script.Length + 256)
-        for raw in lines do
-            // Normalize CR before the LF was stripped (handles \r\n input).
-            let line =
-                if raw.Length > 0 && raw.[raw.Length - 1] = '\r' then
-                    raw.Substring(0, raw.Length - 1)
-                else
-                    raw
-            if not (tryFormatLine sb line) then
-                sb.Append(line).Append(newLine) |> ignore
-        sb.ToString()
+        match mode with
+        | Disabled -> script
+        | Enabled ->
+            let lines = script.Split([| '\n' |], StringSplitOptions.None)
+            let sb = StringBuilder(script.Length + 256)
+            for raw in lines do
+                // Normalize CR before the LF was stripped (handles \r\n input).
+                let line =
+                    if raw.Length > 0 && raw.[raw.Length - 1] = '\r' then
+                        raw.Substring(0, raw.Length - 1)
+                    else
+                        raw
+                if not (tryFormatLine sb line) then
+                    sb.Append(line).Append(newLine) |> ignore
+            sb.ToString()

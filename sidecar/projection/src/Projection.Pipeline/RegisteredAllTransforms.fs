@@ -52,6 +52,14 @@ module RegisteredAllTransforms =
     let all : RegisteredTransformMetadata list =
         [ CatalogReader.registeredMetadata
           SsdtDdlEmitter.registeredMetadata
+          // Slice D.3.b — `ConstraintFormatter.registeredMetadata`
+          // is the realization-layer overlay sibling to the SSDT
+          // emitter. Classified `OperatorIntent Emission` per pillar
+          // 9; pairs with `LogicalTableEmission` / `LogicalColumnEmission`
+          // (catalog-level) on the same Emission axis but operates at
+          // the rendered-text boundary (Mode parameter at `Render.toText`
+          // call site; default-on production wiring).
+          ConstraintFormatter.registeredMetadata
           DacpacEmitter.registeredMetadata
           JsonEmitter.registeredMetadata
           DistributionsEmitter.registeredMetadata

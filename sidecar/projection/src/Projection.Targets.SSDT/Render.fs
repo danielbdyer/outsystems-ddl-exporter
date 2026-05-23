@@ -85,6 +85,12 @@ module Render =
             sb.AppendLine() |> ignore
         | Comment text ->
             sb.Append("-- ").AppendLine(text) |> ignore
+        | BatchSeparator ->
+            // Slice D.2.c — emit `GO` on its own line, preceded by a
+            // blank line per V1's per-statement-group convention. The
+            // trailing newline closes the GO line; the leading blank
+            // line is V1's elegant inter-statement separator.
+            sb.AppendLine().Append("GO").AppendLine() |> ignore  // LINT-ALLOW: sqlcmd directive at terminal text-emission boundary; GO is not T-SQL syntax (no ScriptDom AST equivalent), so the literal `GO` IS the canonical form per BatchSplitter's recognition rule (`^GO$` case-insensitive)
         | _ ->
             match ScriptDomBuild.buildStatement s with
             | Some fragment ->
@@ -128,4 +134,11 @@ module Render =
         // V1's multi-line elegant shape (PK + DEFAULT split across
         // column / constraint name / body lines; table-level FK with
         // ON DELETE / ON UPDATE on indented clause lines).
-        ConstraintFormatter.format (sb.ToString())
+        //
+        // Slice D.3.b — Mode parameter captured at the production
+        // wiring as `Enabled` (default-on; matches `LogicalTableEmission` /
+        // `LogicalColumnEmission` precedent). The classification IS
+        // `OperatorIntent Emission`; `ConstraintFormatter.registeredMetadata`
+        // surfaces it in the registry's totality-coverage scan + the
+        // canary manifest's `applied-transforms` field.
+        ConstraintFormatter.format ConstraintFormatter.Enabled (sb.ToString())
