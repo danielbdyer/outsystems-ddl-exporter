@@ -18,12 +18,15 @@ open Projection.Core
 /// supply explicit `{ source → target }` pairs authoring new physical
 /// names.
 ///
-/// **Order in the chain (slice D.1.a).** Runs AFTER `TableRename` so
-/// operator-supplied physical pinnings dominate the logical-name
-/// substitution (if an operator pinned `Customer.PhysicalName = "CUSTOMER_FOO"`,
-/// the logical substitution leaves it alone — the pass is a no-op
-/// whenever `Name.value k.Name = k.Physical.Table`, which is exactly
-/// the case after the operator's pinning has landed).
+/// **Order in the chain (slice D.1.b correction).** Runs BEFORE
+/// `TableRename` so operator-supplied physical pinnings dominate.
+/// `TableRename` is the LAST writer to `Kind.Physical`; the logical
+/// substitution lands first and the operator override applies on top
+/// when present. Reverses the D.1.a-as-shipped ordering, which had the
+/// substitution running last and silently overwriting operator pins —
+/// caught during D.1.b planning when the conflict between the
+/// docstring's "operator pins dominate" claim and the actual chain
+/// order became visible.
 ///
 /// **Identity preservation (A1).** Only `Kind.Physical.Table` is
 /// rewritten. `Kind.SsKey`, `Kind.Name`, `Kind.Physical.Catalog`,

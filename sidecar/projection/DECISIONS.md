@@ -19222,3 +19222,66 @@ Each sub-slice is independently shippable, builds on prior, and has its own slic
 - `src/Projection.Core/RegisteredTransforms.fs` — wiring + updated docstring for the slice-D.1.a exception (the new passes ship `Enabled`, unlike other config-taking factories' empty/identity defaults).
 - `tests/Projection.Tests/LogicalNameEmissionTests.fs` — NEW; 16 facts.
 - `tests/Projection.Tests/AxiomTests.fs` — `L3-Emission-Logical (slice D.1.a)` citation entry.
+
+## 2026-05-23 (slice D.1.b — V2.LogicalName extended-property roundtrip) — V2 emits a `V2.LogicalName` extended property on every CREATE TABLE + every column; ReadSide hydrates `Kind.Name` / `Attribute.Name` from `sys.extended_properties` on roundtrip read; backward-compat fallback to deployed-name when property absent; D.1.a chain order corrected so operator pins dominate
+
+### Context
+
+D.1.a closed the substitution mechanism (V2 emits logical-shaped CREATE TABLE) but the logical-vs-physical divergence didn't survive a deploy → read roundtrip — `ReadSide.fs:640`'s `Name.create table` derives `Kind.Name` directly from the deployed name with no record of the original divergence. D.1.b carries the logical name through the deployed schema via a SQL Server extended property and recovers it on readback. The principal-PO question that opened the slice was: "when I deploy a V2-emitted SSDT bundle and read it back, do I get my catalog?"
+
+### What shipped
+
+**Emitter (`Projection.Targets.SSDT/SsdtDdlEmitter.fs`).** `extendedPropertyStatements` extended to emit two new unconditional statements per kind:
+- Table-level: `EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'<logical-name>'` at SCHEMA → TABLE scope.
+- Column-level (per attribute): same property at SCHEMA → TABLE → COLUMN scope.
+
+The value carried is `Name.value k.Name` / `Name.value a.Name` — the LOGICAL name; `Kind.Name` is untouched by D.1.a's substitution so it survives the pass chain unchanged.
+
+**Reader (`Projection.Adapters.Sql/ReadSide.fs`).** Three changes:
+1. `readSchemaCombined` gains a 5th SQL batch joining `sys.extended_properties` (`class = 1` for OBJECT_OR_COLUMN; `name = N'V2.LogicalName'`) with `sys.tables` + `LEFT JOIN sys.columns`. Table-level (`minor_id = 0`) and column-level rows arrive in one round-trip envelope. Result-set walker partitions into `tableLogicalNames : Map<(schema, table), string>` and `columnLogicalNames : Map<(schema, table, column), string>` via `IsDBNull` on the column-name column.
+2. `buildKind` accepts both maps; hydrates `Kind.Name` from the property when present, falls back to `Name.create table` (the prior behavior) when absent.
+3. `buildAttribute` accepts `columnLogicalNames`; hydrates `Attribute.Name` from the per-column entry, falls back to `Name.create row.Column` otherwise.
+
+The chapter-3.6 single-round-trip optimization is preserved — the property query lands as a fifth batch on the existing combined `SqlCommand`, not as a separate connection round-trip.
+
+**Chain-order correction.** D.1.a wired `LogicalTableEmission` + `LogicalColumnEmission` AFTER `TableRename`, which silently overwrote operator-supplied physical pinnings despite the docstring's "operator pins dominate" claim. Both passes now run BEFORE `TableRename` in `allChainSteps` + `allChainStepsFor`; the substitution lands first; `TableRename` writes last and dominates for operator-pinned kinds. No tests exercised the conflict; the correction landed without test failures.
+
+### Decisions resolved
+
+**Property name `V2.LogicalName`.** The `V2.` namespace prefix prevents collision with operator-supplied extended properties (the SQL Server reserved system-property prefix is `MS_`; `V2.` is safely distinct). Short canonical name; reads naturally in `sys.extended_properties` queries; future V2-internal extended properties extend the namespace (e.g., `V2.<axis>`).
+
+**Emit unconditionally, not conditionally.** Every CREATE TABLE adds 1 + N V2.LogicalName entries (1 table + N columns) regardless of whether the logical name differs from the deployed name. Trade: emission size. Benefit: ReadSide doesn't need to distinguish "property absent → fallback" from "property absent → genuinely no divergence" — absence always means "pre-D.1.b deployment or non-V2-emitted schema." Robustness > emission size.
+
+**5th batch on `readSchemaCombined`, not a separate query.** Preserves the chapter-3.6 single-round-trip optimization. The query's LEFT JOIN against `sys.columns` lets table-level + column-level entries arrive in one result set, partitioned client-side by `IsDBNull` on the column-name slot. Bench impact expected negligible; D.1.c's perf-gate re-record will confirm under canary load.
+
+**Backward-compat fallback to `Name.create deployed_name`.** Pre-D.1.b deployed schemas + non-V2-emitted schemas continue to round-trip via the prior behavior. ReadSide's contract widens (lookup property first, fall back second); no V1-shape catalog stops working. Tested directly via the `Slice D.1.b roundtrip: backward-compat fallback when V2.LogicalName property absent` Docker-bound test.
+
+**Chain reorder for `LogicalTableEmission` / `LogicalColumnEmission` to run BEFORE `TableRename`.** Corrects D.1.a's stated-but-not-implemented "operator pins dominate" contract. Substitution lands first (catalog-driven default); operator `TableRename` writes last and dominates where present. No tests exercise the conflict today (TableRename ships with empty default specs); future tests find it correctly ordered.
+
+### Discipline reinforced
+
+**Read-the-substrate-before-committing (chapter C codification; reconfirmed at N=3).** D.1.a documented "operator pins dominate" without verifying the chain order. D.1.b's pre-work walk through `RegisteredTransforms.allChainSteps` surfaced the contradiction immediately. Apply the discipline pre-emptively: when a slice docstring asserts a structural property (ordering, dominance, precedence, layer-locality), walk the substrate to confirm before the slice lands. Chapter C's "verify the architect's named consumer layer against the substrate" codification (N=2 at chapter close) extends to N=3 with this slice's catch.
+
+**Wiring-without-downstream-consumer is a valid slice shape (Chapter C codification).** D.1.b's emission of `V2.LogicalName` is consumed by ReadSide-recovery in tests, but the production-shape consumer (the canary's triangle assertion) arrives at D.1.c. The unit-level + integration-level tests validate the mechanism end-to-end; the canary-shape consumer follows under D.1.c's pressure. Same shape as chapter C slice C.5 (`Policy.Insertion` binder landed without downstream pass/emitter wiring).
+
+**Test-failure capture protocol — TRX-first.** Four failures surfaced after the emission change (assertions on "no `sp_addextendedproperty` present" + counts of `@level0type = N'SCHEMA'` occurrences). TRX log identified them in seconds; classified into two clusters (descriptive narrowing + count narrowing); both fixable inline. Codified discipline operating as designed.
+
+### Test surface
+
+- `tests/Projection.Tests/LogicalNameRoundtripTests.fs` — NEW; 6 facts.
+  - 3 unit-level: SSDT body contains V2.LogicalName at table + column scope; emits unconditionally even when logical = physical.
+  - 3 Docker-bound integration: full source → emit (with substitution Disabled to preserve divergence) → deploy → ReadSide read → assert recovered logical name; backward-compat fallback for non-V2-emitted plain CREATE TABLE.
+- `tests/Projection.Tests/AxiomTests.fs` — `L3-Emission-LogicalRoundtrip (slice D.1.b)` citation entry.
+- Updated tests: `SsdtExtendedPropertyEmissionTests` (2 facts narrowed); `ModuleExtendedPropertyEmissionTests` (2 facts updated to isolate module-property signal from table-level segments).
+- **Full test suite**: 2365 pass, 0 fail, 207 skipped (+6 from prior baseline of 2359).
+
+### Cross-references
+
+- `SLICE_D_1_B.md` — slice doc; full mechanism + boundaries + carve-out of D.1.c.
+- `DECISIONS 2026-05-23 (slice D.1.a — logical-name emission as default)` — the predecessor slice's substitution mechanism (the input to D.1.b's roundtrip).
+- `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs:472-500` — V2.LogicalName table-level + column-level emission.
+- `src/Projection.Adapters.Sql/ReadSide.fs:300-345,622-664,727-895` — buildAttribute + buildKind + readSchemaCombined extensions.
+- `src/Projection.Core/RegisteredTransforms.fs:80-99,138-160` — chain reorder (logical emission BEFORE TableRename).
+- `src/Projection.Core/Passes/LogicalTableEmission.fs:14-22` — docstring updated to reflect corrected ordering.
+- `tests/Projection.Tests/LogicalNameRoundtripTests.fs` — NEW; 6 facts.
+- `tests/Projection.Tests/AxiomTests.fs` — `L3-Emission-LogicalRoundtrip (slice D.1.b)` citation entry.

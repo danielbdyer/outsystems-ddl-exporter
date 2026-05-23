@@ -298,6 +298,7 @@ module ReadSide =
         }
 
     let private buildAttribute
+        (columnLogicalNames: Map<string * string * string, string>)
         (row: ColumnRow)
         (primaryKeySet: Set<string * string * string>)
         (identitySet: Set<string * string * string>)
@@ -309,7 +310,13 @@ module ReadSide =
             match attributeSsKey row.Schema row.Table row.Column with
             | Error errors -> Result.failure errors
             | Ok attrKey ->
-                match Name.create row.Column with
+                // Slice D.1.b — hydrate Attribute.Name from the
+                // `V2.LogicalName` extended property when present;
+                // backward-compat fallback to the deployed column name.
+                let nameSource =
+                    Map.tryFind (row.Schema, row.Table, row.Column) columnLogicalNames
+                    |> Option.defaultValue row.Column
+                match Name.create nameSource with
                 | Error errors -> Result.failure errors
                 | Ok attrName ->
                     let coord = (row.Schema, row.Table, row.Column)
@@ -620,6 +627,8 @@ module ReadSide =
         }
 
     let private buildKind
+        (tableLogicalNames: Map<string * string, string>)
+        (columnLogicalNames: Map<string * string * string, string>)
         (schema: string)
         (table: string)
         (columnRows: list<ColumnRow>)
@@ -633,11 +642,17 @@ module ReadSide =
         let attrResults =
             columnRows
             |> Bench.iterMap "readside.buildAttribute" (fun row ->
-                buildAttribute row primaryKeySet identitySet)
+                buildAttribute columnLogicalNames row primaryKeySet identitySet)
         result {
             let! attributes = Result.aggregate attrResults
             let! kKey = kindSsKey schema table
-            let! kName = Name.create table
+            // Slice D.1.b — hydrate Kind.Name from the `V2.LogicalName`
+            // extended property when present; backward-compat fallback
+            // to the deployed table name.
+            let nameSource =
+                Map.tryFind (schema, table) tableLogicalNames
+                |> Option.defaultValue table
+            let! kName = Name.create nameSource
             return
                 {
                     SsKey = kKey
@@ -724,33 +739,50 @@ module ReadSide =
                 return { k with References = refs }
             }
 
-    /// Combined-query variant of the four schema-readback queries
+    /// Combined-query variant of the five schema-readback queries
     /// (`readColumnRows` + `readPrimaryKeys` + `readIdentityColumns`
-    /// + `readForeignKeys`). Sends ONE `SqlCommand` containing four
-    /// SQL batches separated by `;`, then walks the four result sets
-    /// via `NextResultAsync`. **Perf-implications (pillar 7):**
-    /// eliminates 3 of the 4 round-trips per `read` call —
-    /// per-canary-readback ~150-300ms shaved on the warm container
-    /// (chapter-3.6 perf-aware close-out optimization). The
-    /// individual single-query helpers (`readColumnRows`,
-    /// `readPrimaryKeys`, `readIdentityColumns`,
-    /// `readForeignKeys`) are preserved so tests can exercise each
-    /// projection independently.
+    /// + `readForeignKeys` + `readLogicalNameProperties`). Sends ONE
+    /// `SqlCommand` containing five SQL batches separated by `;`,
+    /// then walks the five result sets via `NextResultAsync`.
+    /// **Perf-implications (pillar 7):** eliminates 4 of the 5
+    /// round-trips per `read` call — per-canary-readback ~150-300ms
+    /// shaved on the warm container (chapter-3.6 perf-aware close-out
+    /// optimization; slice D.1.b extends the same single-batch
+    /// envelope).
     ///
     /// Big-O: same as the prior sum (one query per projection); the
     /// win is round-trip reduction, not asymptotic.
+    ///
+    /// **Slice D.1.b — 5th batch (`V2.LogicalName` extended-property
+    /// recovery).** Joins `sys.extended_properties` with `sys.tables`
+    /// (table-level when `minor_id = 0`) and `sys.columns` (column-
+    /// level when `minor_id > 0`) for the property named
+    /// `V2.LogicalName`. Two result tuples emerge:
+    ///   - `(schema, table, value)` per table-level row (column = NULL)
+    ///   - `(schema, table, column, value)` per column-level row
+    /// Returned as two maps so `buildKind` / `buildAttribute` can
+    /// hydrate `Kind.Name` / `Attribute.Name` from the property
+    /// value when present (backward-compat fallback to the deployed
+    /// name when absent — pre-D.1.b deployed schemas + non-V2-
+    /// emitted schemas continue to round-trip via the deployed name).
     let private readSchemaCombined (cnn: SqlConnection)
-        : Task<list<ColumnRow> * Set<string * string * string> * Set<string * string * string> * list<string * string * string * string * string * string>> =
+        : Task<list<ColumnRow>
+              * Set<string * string * string>
+              * Set<string * string * string>
+              * list<string * string * string * string * string * string>
+              * Map<string * string, string>
+              * Map<string * string * string, string>> =
         task {
             use _ = Bench.scope "readside.readSchemaCombined"
             use cmd = cnn.CreateCommand()
             cmd.CommandText <-
-                // Four batches separated by `;`. Order matters — the
+                // Five batches separated by `;`. Order matters — the
                 // `NextResultAsync` walk below depends on it.
-                //   1. columns       (INFORMATION_SCHEMA.COLUMNS)
-                //   2. primary keys  (INFORMATION_SCHEMA.TABLE_CONSTRAINTS join)
-                //   3. identity cols (sys.columns)
-                //   4. foreign keys  (sys.foreign_keys join)
+                //   1. columns          (INFORMATION_SCHEMA.COLUMNS)
+                //   2. primary keys     (INFORMATION_SCHEMA.TABLE_CONSTRAINTS join)
+                //   3. identity cols    (sys.columns)
+                //   4. foreign keys     (sys.foreign_keys join)
+                //   5. logical-name xps (sys.extended_properties; slice D.1.b)
                 "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE, \
                         CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE \
                  FROM INFORMATION_SCHEMA.COLUMNS \
@@ -781,7 +813,17 @@ module ReadSide =
                  JOIN sys.columns rc \
                    ON rc.object_id = rt.object_id AND rc.column_id = fkc.referenced_column_id \
                  WHERE t.is_ms_shipped = 0 \
-                 ORDER BY SCHEMA_NAME(t.schema_id), t.name, c.column_id"
+                 ORDER BY SCHEMA_NAME(t.schema_id), t.name, c.column_id; \
+                 SELECT \
+                    SCHEMA_NAME(t.schema_id), t.name, c.name, \
+                    CAST(ep.value AS NVARCHAR(MAX)) \
+                 FROM sys.extended_properties ep \
+                 JOIN sys.tables t ON t.object_id = ep.major_id \
+                 LEFT JOIN sys.columns c \
+                   ON c.object_id = ep.major_id AND c.column_id = ep.minor_id \
+                 WHERE ep.class = 1 \
+                   AND ep.name = N'V2.LogicalName' \
+                   AND t.is_ms_shipped = 0"
             use! reader = cmd.ExecuteReaderAsync()
 
             // Result set 1: column rows (matches readColumnRows shape).
@@ -860,7 +902,34 @@ module ReadSide =
                         reader.GetString 5)
                 else hasMore4 <- false
 
-            return List.ofSeq columnRows, Set.ofSeq primaryKeySet, Set.ofSeq identitySet, List.ofSeq fkRows
+            // Result set 5: V2.LogicalName extended properties
+            // (slice D.1.b). Column 2 (sys.columns.name) is NULL for
+            // table-level entries (LEFT JOIN); when present, the row
+            // is column-level. Two maps emerge for the consumers.
+            let! _ = reader.NextResultAsync()
+            let tableLogical = System.Collections.Generic.Dictionary<string * string, string>()
+            let columnLogical = System.Collections.Generic.Dictionary<string * string * string, string>()
+            let mutable hasMore5 = true
+            while hasMore5 do
+                let! more = reader.ReadAsync()
+                if more then
+                    let schema = reader.GetString 0
+                    let table = reader.GetString 1
+                    let value = reader.GetString 3
+                    if reader.IsDBNull 2 then
+                        tableLogical[(schema, table)] <- value
+                    else
+                        let column = reader.GetString 2
+                        columnLogical[(schema, table, column)] <- value
+                else hasMore5 <- false
+
+            return
+                List.ofSeq columnRows,
+                Set.ofSeq primaryKeySet,
+                Set.ofSeq identitySet,
+                List.ofSeq fkRows,
+                tableLogical |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq,
+                columnLogical |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
         }
 
     let read (cnn: SqlConnection) : Task<Result<Catalog>> =
@@ -872,12 +941,13 @@ module ReadSide =
                 // by one `SqlCommand` instead of 4 separate
                 // `ExecuteReaderAsync` calls. ~150-300ms saved per
                 // canary-readback on the warm container.
-                let! columnRows, primaryKeySet, identitySet, fkRows = readSchemaCombined cnn
+                let! columnRows, primaryKeySet, identitySet, fkRows, tableLogicalNames, columnLogicalNames =
+                    readSchemaCombined cnn
                 let kindResults =
                     columnRows
                     |> List.groupBy (fun row -> row.Schema, row.Table)
                     |> Bench.iterMap "readside.kindGroup" (fun ((schema, table), rows) ->
-                        buildKind schema table rows primaryKeySet identitySet)
+                        buildKind tableLogicalNames columnLogicalNames schema table rows primaryKeySet identitySet)
                 match Result.aggregate kindResults with
                 | Error errors -> return Result.failure errors
                 | Ok kinds ->

@@ -1,3 +1,64 @@
+# Handoff letter — 2026-05-23 (slice D.1.b CLOSED; only D.1.c remaining in chapter D's first arc)
+
+To the next agent.
+
+You're picking up V2 with **two of three sub-slices in chapter D's logical-name-emission arc shipped green**. D.1.a (substitution mechanism) and D.1.b (V2.LogicalName extended-property roundtrip) are landed; you own D.1.c — the canary triangle assertion that closes the arc and makes the operator-reality canary verifiably bite on logical-name semantics. The substrate D.1.b leaves you is **clean** (2365 pass, 0 fail, 207 skip) and the end-to-end mechanism is **verified** (the 3 Docker-bound roundtrip tests at `LogicalNameRoundtripTests.fs` exercise source → emit → deploy → ReadSide read with full divergence recovery).
+
+## Where you are in the spine of the work
+
+Read `SLICE_D_1_B.md` first (~6 min). It documents the V2.LogicalName extended-property mechanism and the chain-order correction landed mid-D.1.b. Then read `SLICE_D_1_A.md` (~5 min) for the substitution-vs-rename framing carried into both slices. The full chapter D opening conversation that led here is in the `HANDOFF.md` letter below this one (the D.1.a closing letter); read that for the original three-sub-slice carve-out.
+
+## D.1.c — your next slice
+
+**Scope.** The operator-reality canary today uses a pure-physical fixture (`fixtures/canary-gate.sql` + `Projection.Tests.SourceFixtures.SourceSchema.realistic`). After D.1.a + D.1.b's mechanism is in place, the canary STILL passes trivially on that fixture because the substitution is a no-op when logical = physical from the source. D.1.c augments the canary to actually verify the logical-name emission triangle property.
+
+**Three ends of the change.**
+
+1. **Canary fixture augmentation (`fixtures/canary-gate.sql` + the realistic-generator source).** Add `EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'<logical>'` calls for every table + every column in the source DDL. The fixture's source catalog (after ReadSide reads it through D.1.b's recovery path) now has `Kind.Name = "Customer"` distinct from `Kind.Physical.Table = "OSUSR_S1S_CUSTOMER"`. This makes the fixture exercise the divergent case the substitution is designed to address. Same change to `GenerateSpec.operatorReality` (or wherever the 150-table fixture is generated) so the live perf-gate canary has the divergence too.
+
+2. **`PhysicalSchema` widening (`src/Projection.Core/PhysicalSchema.fs`).** Add a fifth field: `LogicalNameBindings : Set<{ PhysicalTable: string; LogicalName: string }>` (or per-column equivalent — pick at slice open based on what the triangle assertion needs). The `ofCatalog` projection populates from `Kind.Name` + `Kind.Physical.Table`; the `ofPhysicalSchema` projection from the deployed schema reads the V2.LogicalName extended property via D.1.b's hydration path. Diff comparator extends set-difference to the fifth field.
+
+3. **Triangle assertion in the canary test (`tests/Projection.Tests/CanaryRoundTripTests.fs` wide-canary path).** The current canary asserts `PhysicalSchema.isEqual source target`. Extend to assert the triangle on the LogicalNameBindings axis: for every binding in the source, the target has a binding with the same logical name; for every binding in the target, the physical-table value equals the logical-name value (this is what V2 substitution produces in the deployed schema). The comparator computes the diff; the canary applies the property predicate over the diff output.
+
+**What to verify before committing the slice.** The triangle assertion must FAIL on a deliberately-broken catalog (mutate `Kind.Name` to something not equal to anything in the deployed schema before re-emitting) to confirm the property has bite. Then revert and confirm it passes on the genuine roundtrip.
+
+**Pitfall the slice will surface.** The perf-gate baseline needs re-recording. D.1.b's extended-property emission adds 1 + N statements per kind; D.1.c's fixture augmentation adds the same on the source side; the live canary's deploy + read cycle gets longer. Run `PERF_GATE_RECORD=1 ./scripts/perf-gate.sh` after the fixture lands; commit the new `bench/baseline-canary.json`; pair the re-record with a DECISIONS amendment naming the new floor's rationale per the existing perf-gate protocol.
+
+**Pitfall to avoid.** Don't try to extend `PhysicalSchema` to carry the full Kind catalog (`Kind.Name` + `Kind.Physical` as a structured pair). The existing shape (`Columns / ForeignKeys / Rows / RowDigests` as flat sets) is the pattern; mirror it (`LogicalNameBindings` as a flat set of `{ PhysicalTable; LogicalName }` records). The diff comparator stays as set-difference per field; the triangle property is applied AT THE CANARY (read the diff, apply the predicate). Keep concerns separated.
+
+## What's load-bearing from D.1.a + D.1.b
+
+Carried across both sub-slices, still load-bearing:
+- **Substitution-vs-rename naming distinction.** Modules that AUTHOR new names share `*Rename` suffix (`TableRename`); modules that SUBSTITUTE pre-existing axes share `*Emission` suffix (`LogicalTableEmission` / `LogicalColumnEmission`). D.1.c might add `LogicalNameBindings` or `LogicalNameRecovery` — concept-shaped, sibling-friendly.
+- **Default-on is operator intent in 2026.** Production chain wires `Enabled` for both logical-emission passes; `Disabled` mode preserves diagnostic / V1-parity emission. Both classified `OperatorIntent Emission`. Apply the same framing to any D.1.c operator-toggle: the production default IS the operator's intent; toggle is for narrow non-production scenarios.
+- **Chain order matters for operator-pin dominance.** D.1.b corrected D.1.a's wiring. `LogicalTableEmission` + `LogicalColumnEmission` run BEFORE `TableRename` in the chain; the substitution lands first, the operator-supplied override writes last and dominates. D.1.c shouldn't touch this order; if it adds new passes, slot them after the existing logical-emission block but before TableRename (or after TableRename if the new pass shouldn't be overridden by operator pins).
+- **`V2.` namespace prefix for V2-internal extended properties.** D.1.c's fixture augmentation uses the same `V2.LogicalName` property name. If D.1.c needs to add a NEW V2-internal property type (e.g., `V2.LogicalSchema` for schema-level recovery, currently out of scope), follow the same `V2.<axis>` convention.
+
+New from D.1.b:
+- **Read-the-substrate-before-committing (N=3 codification).** Chapter C codified this at N=2 (the "verify the architect's named layer against the substrate" discipline). D.1.b extends to N=3 — slice docstrings that assert structural properties (chain order, dominance, precedence, layer-locality) must be VERIFIED against the substrate before the slice closes. D.1.c will likely assert "the triangle property holds end-to-end through the canary"; walk the canary's full source → emit → deploy → read → diff pipeline to confirm before claiming the property.
+- **`readSchemaCombined`'s single-round-trip envelope.** D.1.b extended the existing 4-batch combined command to 5 batches. If D.1.c needs additional schema-side queries (extended-property reads for the new fifth `PhysicalSchema` field, etc.), prefer adding a 6th batch over a separate `SqlCommand` — the round-trip cost is the constraint, not the batch count.
+
+## Reading order (~25 min before you cut code)
+
+1. **`SLICE_D_1_B.md`** — D.1.b's mechanism + the chain-order correction + what's deferred to D.1.c. ~6 min.
+2. **`SLICE_D_1_A.md`** — substitution mechanism + the substitution-vs-rename framing. ~5 min.
+3. **`DECISIONS 2026-05-23 (slice D.1.b — V2.LogicalName extended-property roundtrip)`** — canonical decisions. ~3 min.
+4. **`src/Projection.Core/PhysicalSchema.fs:134-410`** — the type shape + diff comparator + Tolerance mechanism. ~5 min.
+5. **`tests/Projection.Tests/CanaryRoundTripTests.fs`** — the wide-canary path; where the triangle assertion lands. ~3 min.
+6. **`fixtures/canary-gate.sql` + `tests/Projection.Tests/SourceFixtures.fs` (`SourceSchema.realistic`)** — what to augment with `V2.LogicalName` calls. ~3 min.
+
+## Pitfalls D.1.b hit that you can avoid
+
+- **Be careful with bulk-sed on test fixtures.** D.1.b touched 4 failing tests; one of them required separating the fixture's `physicalName` field (preserved as OSSYS-shape) from the assertion strings (updated to logical names). D.1.b's sed-broadness pitfall recurred during the EmissionFoldersOverlayTests fix; the recovery was straightforward but the discipline is: when fixture-vs-assertion distinction matters, use per-file Edits with surrounding context.
+- **Don't assume `Assert.DoesNotContain("sp_addextendedproperty", body)` survives D.1.b.** Every CREATE TABLE now carries `V2.LogicalName` statements. Two existing tests asserted absence of the call as proxy for "no extended properties emitted." Narrow such assertions to the specific property name you actually mean (e.g., `Assert.DoesNotContain("MS_Description", body)`).
+- **`@level0type = N'SCHEMA'` count assertions need to isolate per-axis contribution.** D.1.b's table-level extended properties all carry SCHEMA segments. Tests that counted `@level0type = N'SCHEMA'` occurrences as proxy for "module-level properties" needed to count the module-property's distinctive VALUE instead. D.1.c's `PhysicalSchema` widening might surface similar count-assertion fragility in other test classes; prefer counting the distinctive value.
+
+Hold the spine. Slice D.1.c is the closing arc — it's where logical-name emission becomes a verifiable property of every canary run, not just a unit-tested mechanism. The triangle assertion is the structural artifact that turns the slice's product claim ("V2 emits logical names through the operator-visible roundtrip") into a forcing function that fires on every commit.
+
+— The slice D.1.b architect.
+
+---
+
 # Handoff letter — 2026-05-23 (slice D.1.a CLOSED; sub-slices D.1.b + D.1.c open)
 
 To the next agent.

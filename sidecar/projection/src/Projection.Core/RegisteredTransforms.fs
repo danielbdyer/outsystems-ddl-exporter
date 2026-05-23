@@ -97,13 +97,15 @@ module RegisteredTransforms =
           PassChainAdapter.liftCatalogPass (NamingMorphism.registered identityMorphism)
           PassChainAdapter.liftCatalogPass NormalizeStaticPopulations.registered
           PassChainAdapter.liftCatalogPass SymmetricClosure.registered
-          PassChainAdapter.liftCatalogPass (TableRename.registered [])
           // Slice D.1.a — logical-name emission as default. Both run
-          // AFTER TableRename so operator-supplied physical pinnings
-          // (if any) take precedence; both classified
+          // BEFORE TableRename so operator-supplied physical pinnings
+          // dominate (TableRename writes to Kind.Physical last; the
+          // logical substitution runs first and TableRename overrides
+          // when an operator pins). Both classified
           // OperatorIntent Emission.
           PassChainAdapter.liftCatalogPass (LogicalTableEmission.registered LogicalTableEmission.Enabled)
           PassChainAdapter.liftCatalogPass (LogicalColumnEmission.registered LogicalColumnEmission.Enabled)
+          PassChainAdapter.liftCatalogPass (TableRename.registered [])
           PassChainAdapter.liftDecisionPass
             TopologicalOrderPass.registered
             ComposeState.withTopologicalOrder
@@ -163,12 +165,13 @@ module RegisteredTransforms =
           PassChainAdapter.liftCatalogPass (NamingMorphism.registered identityMorphism)
           PassChainAdapter.liftCatalogPass NormalizeStaticPopulations.registered
           PassChainAdapter.liftCatalogPass SymmetricClosure.registered
-          PassChainAdapter.liftCatalogPass (TableRename.registered [])
           // Slice D.1.a — logical-name emission as default; same wiring
           // as allChainSteps (the policy/profile axis doesn't gate the
-          // logical-emission default).
+          // logical-emission default). Runs BEFORE TableRename so
+          // operator pins dominate.
           PassChainAdapter.liftCatalogPass (LogicalTableEmission.registered LogicalTableEmission.Enabled)
           PassChainAdapter.liftCatalogPass (LogicalColumnEmission.registered LogicalColumnEmission.Enabled)
+          PassChainAdapter.liftCatalogPass (TableRename.registered [])
           PassChainAdapter.liftDecisionPass
             TopologicalOrderPass.registered
             ComposeState.withTopologicalOrder

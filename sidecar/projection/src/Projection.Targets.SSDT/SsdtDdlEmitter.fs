@@ -478,6 +478,15 @@ module SsdtDdlEmitter =
                     TableProperty table, "MS_Description", Some desc)
             | None -> ()
 
+            // Slice D.1.b — V2.LogicalName extended property at the
+            // table level. Carries `Name.value k.Name` (the logical
+            // entity name; `Kind.Name` is untouched by the slice-D.1.a
+            // substitution). ReadSide queries this on roundtrip read
+            // to hydrate `Kind.Name` from the deployed schema, so the
+            // logical-vs-physical divergence survives deploy → read.
+            yield Statement.SetExtendedProperty (
+                TableProperty table, "V2.LogicalName", Some (Name.value k.Name))
+
             for ep in k.ExtendedProperties do
                 yield Statement.SetExtendedProperty (
                     TableProperty table, ep.Name, ep.Value)
@@ -489,6 +498,13 @@ module SsdtDdlEmitter =
                     yield Statement.SetExtendedProperty (
                         ColumnProperty (table, columnName), "MS_Description", Some desc)
                 | None -> ()
+
+                // Slice D.1.b — V2.LogicalName extended property at
+                // the column level. Same roundtrip-recovery role as
+                // the table-level sibling above.
+                yield Statement.SetExtendedProperty (
+                    ColumnProperty (table, columnName), "V2.LogicalName", Some (Name.value attr.Name))
+
                 for ep in attr.ExtendedProperties do
                     yield Statement.SetExtendedProperty (
                         ColumnProperty (table, columnName), ep.Name, ep.Value)

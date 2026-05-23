@@ -456,6 +456,23 @@ let ``L3-Emission-Logical (slice D.1.a): the physical-realization slot adopts th
     // (SsKey) untouched per A1.
     ()
 
+[<Fact>]
+let ``L3-Emission-LogicalRoundtrip (slice D.1.b): logical names survive deploy → ReadSide round-trip via V2.LogicalName extended property — verified by LogicalNameRoundtripTests`` () =
+    citationOf
+        "tests/Projection.Tests/LogicalNameRoundtripTests.fs"
+        "Slice D.1.b roundtrip: ReadSide recovers Kind.Name from V2.LogicalName property when deployed physical differs"
+    // Bucket A — V2 emits a `V2.LogicalName` extended property on
+    // every CREATE TABLE + every column carrying the catalog's
+    // logical name (`Name.value k.Name` / `Name.value a.Name`).
+    // ReadSide queries `sys.extended_properties` for the property
+    // and hydrates `Kind.Name` / `Attribute.Name` from its value.
+    // Backward-compat fallback: when the property is absent
+    // (pre-D.1.b deployed schemas; non-V2-emitted schemas),
+    // ReadSide falls back to `Name.create deployed_name`. The
+    // logical-vs-physical divergence survives the deploy → read
+    // roundtrip end-to-end — verified through ephemeral SQL Server.
+    ()
+
 // ===========================================================================
 // Theorems (T1–T11)
 // ===========================================================================
