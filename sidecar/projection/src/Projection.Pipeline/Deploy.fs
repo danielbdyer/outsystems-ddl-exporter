@@ -744,6 +744,13 @@ module Deploy =
             for s in Bench.streamProbe "deploy.executeStream.input" statements do
                 match s with
                 | Blank | Comment _ -> ()
+                | BatchSeparator ->
+                    // Slice D.2.c — `BatchSeparator` materialises as
+                    // `GO` in the rendered text; the streaming deploy
+                    // path treats it the same as Blank (no DDL effect),
+                    // because the per-statement DDL flushes already
+                    // segment-by-segment via `appendDdl` / `flushBulk`.
+                    ()
                 | CreateTable _ ->
                     do! flushBulk ()
                     appendDdl s
@@ -788,6 +795,14 @@ module Deploy =
                     // to ScriptDomBuild.tryParseTriggerBody; if the
                     // definition fails to parse, the statement produces
                     // no SQL and the flush is a no-op.
+                    do! flushBulk ()
+                    appendDdl s
+                | AlterTableDisableTrigger _ ->
+                    // Slice D.2.d — ALTER TABLE ... DISABLE TRIGGER is
+                    // DDL; same realization shape as the CreateTrigger
+                    // sibling above. Flush bulk inserts; route through
+                    // Render.toSql which delegates to ScriptDomBuild's
+                    // AlterTableTriggerModificationStatement builder.
                     do! flushBulk ()
                     appendDdl s
                 | CreateSequence _ ->

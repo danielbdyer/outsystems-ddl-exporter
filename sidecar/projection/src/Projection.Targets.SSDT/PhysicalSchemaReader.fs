@@ -104,9 +104,36 @@ module PhysicalSchemaReader =
                     toPhysicalForeignKeys table fks :> seq<_>
                 | _ -> Seq.empty)
             |> Set.ofSeq
+        // Slice D.1.c — recover logical-name bindings from the
+        // `V2.LogicalName` SetExtendedProperty statements V2 emits
+        // (slice D.1.b). The adjunction holds on this axis too: the
+        // statement-stream projection produces the same bindings as
+        // `PhysicalSchema.ofCatalog` does from the source catalog.
+        let logicalNameBindings =
+            statements
+            |> Seq.choose (fun stmt ->
+                match stmt with
+                | SetExtendedProperty (owner, "V2.LogicalName", Some value) ->
+                    match owner with
+                    | TableProperty table ->
+                        Some
+                            { Schema = table.Schema
+                              Table = table.Table
+                              Column = None
+                              LogicalName = value }
+                    | ColumnProperty (table, col) ->
+                        Some
+                            { Schema = table.Schema
+                              Table = table.Table
+                              Column = Some col
+                              LogicalName = value }
+                    | _ -> None
+                | _ -> None)
+            |> Set.ofSeq
         {
             Columns = columns
             ForeignKeys = foreignKeys
             Rows = Set.empty
             RowDigests = Set.empty
+            LogicalNameBindings = logicalNameBindings
         }

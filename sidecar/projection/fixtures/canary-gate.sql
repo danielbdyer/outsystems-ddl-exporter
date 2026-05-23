@@ -63,3 +63,32 @@ CREATE TABLE [dbo].[OSUSR_M3_CUSTOMER] (
     [SS_KEY] UNIQUEIDENTIFIER NOT NULL,
     CONSTRAINT [PK_dbo_OSUSR_M3_CUSTOMER] PRIMARY KEY ([ID])
 );
+
+-- Slice D.1.c — V2.LogicalName extended properties on every table +
+-- every column. ReadSide's slice-D.1.b hydration query reads these
+-- and populates `Kind.Name` / `Attribute.Name` from the operator-
+-- meaningful logical name, so the source-side catalog has divergent
+-- Kind.Name (logical) vs Kind.Physical.Table (deployed OSSYS shape).
+-- The canary then exercises the recovery path end-to-end.
+
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'User',       @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_USER';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'Id',         @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_USER', @level2type = N'COLUMN', @level2name = N'ID';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'Username',   @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_USER', @level2type = N'COLUMN', @level2name = N'USERNAME';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'Email',      @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_USER', @level2type = N'COLUMN', @level2name = N'EMAIL';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'TenantId',   @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_USER', @level2type = N'COLUMN', @level2name = N'TENANT_ID';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'SsKey',      @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_USER', @level2type = N'COLUMN', @level2name = N'SS_KEY';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'CreatedOn',  @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_USER', @level2type = N'COLUMN', @level2name = N'CREATEDON';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'UpdatedOn',  @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_USER', @level2type = N'COLUMN', @level2name = N'UPDATEDON';
+
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'Customer',   @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_CUSTOMER';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'Id',         @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_CUSTOMER', @level2type = N'COLUMN', @level2name = N'ID';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'Name',       @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_CUSTOMER', @level2type = N'COLUMN', @level2name = N'NAME';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'TenantId',   @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_CUSTOMER', @level2type = N'COLUMN', @level2name = N'TENANT_ID';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'Balance',    @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_CUSTOMER', @level2type = N'COLUMN', @level2name = N'BALANCE';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'IsActive',   @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_CUSTOMER', @level2type = N'COLUMN', @level2name = N'IS_ACTIVE';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'CreatedBy',  @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_CUSTOMER', @level2type = N'COLUMN', @level2name = N'CREATEDBY';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'UpdatedBy',  @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_CUSTOMER', @level2type = N'COLUMN', @level2name = N'UPDATEDBY';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'CreatedOn',  @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_CUSTOMER', @level2type = N'COLUMN', @level2name = N'CREATEDON';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'UpdatedOn',  @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_CUSTOMER', @level2type = N'COLUMN', @level2name = N'UPDATEDON';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'SignedOn',   @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_CUSTOMER', @level2type = N'COLUMN', @level2name = N'SIGNED_ON';
+EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'SsKey',      @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'OSUSR_M3_CUSTOMER', @level2type = N'COLUMN', @level2name = N'SS_KEY';

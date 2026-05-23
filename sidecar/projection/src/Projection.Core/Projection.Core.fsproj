@@ -77,6 +77,8 @@
     <Compile Include="Passes/NormalizeStaticPopulations.fs" />
     <Compile Include="Passes/SymmetricClosure.fs" />
     <Compile Include="Passes/TableRename.fs" />
+    <Compile Include="Passes/LogicalTableEmission.fs" />
+    <Compile Include="Passes/LogicalColumnEmission.fs" />
     <Compile Include="Passes/TopologicalOrderPass.fs" />
     <!-- H-071 through H-076 pass implementations — compiled after
          ComposeState.fs; return types from the files above. -->

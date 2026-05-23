@@ -39,6 +39,8 @@
     <Compile Include="MetadataContractOverridesTests.fs" />
     <Compile Include="ActionableDiagnosticsTests.fs" />
     <Compile Include="TableRenameTests.fs" />
+    <Compile Include="LogicalNameEmissionTests.fs" />
+    <Compile Include="LogicalNameRoundtripTests.fs" />
     <Compile Include="TighteningBindingTests.fs" />
     <Compile Include="SpecialCircumstancesBindingTests.fs" />
     <Compile Include="SpecialCircumstancesDiagnosticsTests.fs" />
@@ -212,6 +214,7 @@
     <Compile Include="Fixtures/FixtureGenerator.fs" />
     <Compile Include="Fixtures/OssysFixtureSynthesizer.fs" />
     <Compile Include="CanaryRoundTripTests.fs" />
+    <Compile Include="LogicalNameTriangleCanaryTests.fs" />
     <Compile Include="GeneratorScaleTests.fs" />
     <Compile Include="ComprehensiveCanaryTests.fs" />
     <Compile Include="ExecuteBatchParallelTests.fs" />

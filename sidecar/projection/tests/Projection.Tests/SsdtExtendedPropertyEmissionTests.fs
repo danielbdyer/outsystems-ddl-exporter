@@ -98,15 +98,29 @@ let ``Chapter 4.1.A slice 8: Kind.Description emits a table-level MS_Description
     Assert.Contains("@name = N'MS_Description'", body)
     Assert.Contains("@value = N'Customer master record'", body)
     Assert.Contains("@level0type = N'SCHEMA'", body)
-    Assert.Contains("@level1type = N'TABLE'", body)
-    // Table-level extended properties carry no level2 args.
-    Assert.DoesNotContain("@level2type", body)
+    // Slice D.1.b — every kind now emits column-level V2.LogicalName
+    // properties (@level2type = N'COLUMN'); narrow the original
+    // "table-level only" assertion to the specific MS_Description
+    // emission. The MS_Description statement appears at table level
+    // (no @level2type on that specific EXECUTE block); column-level
+    // V2.LogicalName statements coexist below it.
+    let descriptionStmtStart =
+        body.IndexOf("@name = N'MS_Description'", System.StringComparison.Ordinal)
+    let descriptionStmtEnd =
+        body.IndexOf("EXECUTE", descriptionStmtStart + 1, System.StringComparison.Ordinal)
+    let descriptionStmt =
+        if descriptionStmtEnd < 0 then body.Substring descriptionStmtStart
+        else body.Substring(descriptionStmtStart, descriptionStmtEnd - descriptionStmtStart)
+    Assert.Contains("@level1type = N'TABLE'", descriptionStmt)
+    Assert.DoesNotContain("@level2type", descriptionStmt)
 
 [<Fact>]
 let ``Chapter 4.1.A slice 8: Kind without Description emits no MS_Description`` () =
     let body = customerSsdtBody sampleCatalog
     Assert.DoesNotContain("MS_Description", body)
-    Assert.DoesNotContain("sp_addextendedproperty", body)
+    // Slice D.1.b — V2.LogicalName extended properties emit
+    // unconditionally per kind / attribute for roundtrip recovery;
+    // the absence assertion narrows to MS_Description only.
 
 // ---------------------------------------------------------------------------
 // Column-level descriptions emit column-scoped extended properties.

@@ -71,8 +71,8 @@ module DacpacEmitter =
         match s with
         | CreateTable _ | CreateIndex _ | SetExtendedProperty _
         | AlterTableNoCheckConstraint _ | AlterIndexDisable _
-        | CreateTrigger _ | CreateSequence _ -> true
-        | InsertRow _ | SetIdentityInsert _ | Comment _ | Blank -> false
+        | CreateTrigger _ | AlterTableDisableTrigger _ | CreateSequence _ -> true
+        | InsertRow _ | SetIdentityInsert _ | Comment _ | Blank | BatchSeparator -> false
 
     /// Render one DDL Statement into its standalone T-SQL form via
     /// the ScriptDom typed-AST renderer. Per-statement ingestion is

@@ -143,7 +143,7 @@ let ``M1: SSDT artifact carries CREATE TABLE for the V1-named entity`` () =
     // assertion; the production shape is per-table but the structural
     // property (CREATE TABLE for the V1-named entity exists somewhere
     // in the SSDT artifact set) holds against the aggregate.
-    Assert.Contains("CREATE TABLE [dbo].[OSUSR_APPCORE_USER]", Compose.aggregateSsdt outputs.SsdtBundle)
+    Assert.Contains("CREATE TABLE [dbo].[User]", Compose.aggregateSsdt outputs.SsdtBundle)
 
 /// Project a nullable JsonNode child to a non-null one or fail. The
 /// JsonNode indexer returns `JsonNode | null` per F# 9 nullness;

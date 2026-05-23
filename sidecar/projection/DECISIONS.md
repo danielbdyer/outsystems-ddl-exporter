@@ -19158,3 +19158,351 @@ The chapter-close ritual is uninitiated; the principal-PO has the call on whethe
 - `DECISIONS 2026-05-20 (slice C.3 — emission-folders axis)` — the substrate-layer-verification lesson C.4 reconfirmed.
 - `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)` — Chapter C 6-slice plan; C.4-C.6 axes complete this plan.
 
+
+## 2026-05-23 (slice D.1.a — logical-name emission as default) — Two default-on Core passes (`LogicalTableEmission` + `LogicalColumnEmission`, both classified `OperatorIntent Emission`) substitute the catalog's logical names (`Kind.Name` / `Attribute.Name`) into the physical-realization slots the SSDT emitter reads; V2 emits `[dbo].[Customer]([Email])` by default; the substitution-vs-rename naming distinction codified
+
+### Context
+
+Chapter D opened on the principal-PO question: V2's SSDT bundles carry OSUSR-prefixed table identifiers (`OSUSR_ABC_CUSTOMER`) and SHOUTY column identifiers (`EMAIL`); operators see SSDT artifacts but those identifiers are the OSSYS storage shape, not the operator's ubiquitous-language names. The catalog already carries both axes (`Kind.Name = "Customer"` from V1 metadata; `Kind.Physical.Table = "OSUSR_ABC_CUSTOMER"` from the deployed shape). The slice closes the gap by **substituting** the logical value into the physical-realization slot pre-emit, leaving the emitter layer untouched.
+
+### What shipped
+
+**`LogicalTableEmission` (new Core pass).** Catalog-driven; for every kind where `Name.value k.Name ≠ k.Physical.Table`, substitutes `k.Physical.Table = Name.value k.Name`. Emits a `PhysicallyRenamed` lineage event per substitution (reuses the existing typed payload). `Enabled | Disabled` mode parameter; production chain wires `Enabled` (default-on). Classified `OperatorIntent Emission` per pillar 9 — default-on IS the operator's intent.
+
+**`LogicalColumnEmission` (new Core pass).** Mirror shape for attributes; substitutes `Attribute.Column.ColumnName = Name.value a.Name`. Required widening `TransformKind` with new `ColumnPhysicallyRenamed of detail: ColumnRename` variant (closed-DU expansion absorbed cleanly — all existing matchers had `_` wildcards). New `ColumnRename` payload: `{ Kind: TableId; Before: string; After: string }` + `ColumnRename.toDiagnosticString`.
+
+**Wiring.** Both passes added to `RegisteredTransforms.all` (now 24 entries; 19 pass + 5 strategy), `allChainSteps` (now 19), `allChainStepsFor` (now 19). Order: both run AFTER `TableRename` so operator-supplied physical pinnings (when present) dominate the logical substitution; the substitution short-circuits when `Name.value k.Name = k.Physical.Table` which is exactly the case after an operator pin lands.
+
+**Length guard.** If `Name.value k.Name` exceeds the SQL Server identifier limit (128 chars), the substitution is skipped for that kind/attribute. Defensive boundary; OSSYS catalogs never produce such names in practice.
+
+**Identity preservation (A1).** Only `Kind.Physical.Table` and `Attribute.Column.ColumnName` are touched. `SsKey`, `Name`, `Physical.Catalog`, `Physical.Schema`, `IsNullable`, and every other field stay byte-identical.
+
+### Decisions resolved
+
+**Substitution is operator intent, not data intent.** Both axes already exist in the catalog (DataIntent evidence). The CHOICE to align the physical slot with the logical name is the operator's emission-axis intent — operators in 2026 want logical names in SSDT artifacts; physical-name emission is the diagnostic / V1-parity fallback. Default-on production wiring IS the operator's intent; `Disabled` mode preserves the alternative. Both modes carry `OperatorIntent Emission`.
+
+**Module names follow the operator-visible effect, not the mechanism.** Original names were `TableRenameToLogical` / `ColumnRenameToLogical` (mirroring the existing `TableRename` shape). Mid-slice principal-PO feedback: "rename infers a replacement, when we're not doing anything but swapping in another variable." Renamed to `LogicalTableEmission` / `LogicalColumnEmission` — concept-shaped, ubiquitous-language-friendly. The structural distinction: passes that AUTHOR names share the `*Rename` suffix (operator supplies new target via `RenameSpec`); passes that SUBSTITUTE pre-existing catalog axes share the `*Emission` suffix. The `*Rename` family stays; the new family is sibling.
+
+**`ColumnPhysicallyRenamed` lineage variant kept symmetric with `PhysicallyRenamed`.** At the audit-trail layer "rename" reads naturally for "the old value at this slot was replaced." The naming concern (substitution vs rename) applies at the module/product layer where operators read documentation; at the lineage layer where the trail records structural effects, the symmetric naming compounds.
+
+**Operator-toggle via factory parameter, not runtime config axis.** `Enabled | Disabled` is captured in the closure at `LogicalTableEmission.registered Enabled` call. No `Policy.Emission.LogicalNameEmission` field, no `Config.PolicySection.LogicalNameEmission`. Per "IR grows under evidence" — one consumer today (the production chain wiring); no operator-pull yet for runtime toggle. The mode parameter is the seam if/when that pull surfaces.
+
+### Discipline reinforced
+
+**Domain-first naming (pillar 8) — caught a misnomer carryover at slice mid-implementation.** Original module names mirrored `TableRename`'s shape without applying the four-question domain-naming analysis. Principal-PO flag triggered a rename before the slice landed. The named failure mode is **misnomer-by-inheritance** — agent reaches for a sibling pattern (existing pass + naming convention) and propagates the existing terminology without re-asking question 1 ("what does this represent in the domain?"). The fix: when adding a sibling pass, apply the four-question analysis to the sibling's CONCEPT, not just transfer the existing pattern's name.
+
+**Closed-DU expansion empirical-test discipline (`DECISIONS 2026-05-13`).** Adding `ColumnPhysicallyRenamed` to `TransformKind` triggered zero exhaustiveness errors at match sites — every existing `match e.TransformKind with` had `_` wildcard fallthrough. The compile + test cycle is the discipline's enforcement; passed without intervention. The discipline holds: F# exhaustiveness errors light up only at match sites that genuinely care about the variant.
+
+**IR grows under evidence, not speculation.** No generic `ColumnRename` machinery shipped despite the symmetry argument with `TableRename`. Today's one consumer (logical-name emission) is owned by `LogicalColumnEmission` directly; the generic infrastructure lands at the second consumer per the two-consumer threshold. If chapter 4.9 (operator pinning individual column names) opens, the generic infrastructure lands then.
+
+### Slice scope discipline — sub-slice ordering
+
+The big slice (logical-name emission end-to-end with verifiable canary roundtrip) was carved into three sequential sub-slices at slice open per principal-PO direction:
+
+- **D.1.a (this entry)** — the substitution mechanism only. Two default-on passes; emission produces logical names; tests verify the substitution. Canary continues to pass trivially (substitution is a no-op on its pure-physical fixture). Ships green; production-facing surface lands.
+- **D.1.b (next)** — V2 emits a `V2.LogicalName` extended property on every deployed CREATE TABLE / column carrying the pre-substitution logical name. ReadSide queries the property and hydrates `Kind.Name` from it (backward-compat fallback: `Name.create table` when the property is absent). End-to-end roundtrip recovery: deploy-and-read recovers the original divergence.
+- **D.1.c (after that)** — Canary fixture augmented with logical-name extended properties; `PhysicalSchema` gains a `LogicalNameBinding` set; diff comparator amended to assert the triangle (`source.Kind.Name = target.Kind.Name = target.Kind.Physical.Table`) on top of existing set-differences. Perf-gate baseline re-recorded. The canary VERIFIES logical-name emission end-to-end through the source-roundtrip path.
+
+Each sub-slice is independently shippable, builds on prior, and has its own slice doc + DECISIONS entry. The full slice contract (operator-visible logical-name emission verifiable through canary) lands at D.1.c.
+
+### Test surface
+
+- `tests/Projection.Tests/LogicalNameEmissionTests.fs` — NEW; 16 facts covering both passes individually + composed end-to-end. Disciplines under test: identity preservation (A1), event count + payload shape, classification (pillar 9), pass-through under `Disabled`, no-op under aligned logical=physical.
+- `tests/Projection.Tests/AxiomTests.fs` — `L3-Emission-Logical (slice D.1.a)` citation entry citing the integration test.
+- Updated tests: `EmissionFoldersOverlayTests` (6 facts), `EndToEndPipelineTests.M1` (1 fact), `RegisteredTransformsTests` (3 facts; counts shifted 22→24 metadata / 17→19 chain).
+- **Full test suite**: 2359 pass, 0 fail, 207 skipped (+17 from prior baseline of 2342).
+
+### Cross-references
+
+- `SLICE_D_1_A.md` — slice doc; full mechanism + scope boundaries + carve-out of D.1.b / D.1.c.
+- `src/Projection.Core/Lineage.fs:160-209` — `PhysicalRename` (existing); `ColumnRename` + `ColumnRename.toDiagnosticString` (new).
+- `src/Projection.Core/Lineage.fs:235-251` — `TransformKind.ColumnPhysicallyRenamed` (new variant).
+- `src/Projection.Core/Passes/LogicalTableEmission.fs` — NEW; kind-level substitution pass.
+- `src/Projection.Core/Passes/LogicalColumnEmission.fs` — NEW; attribute-level substitution pass.
+- `src/Projection.Core/RegisteredTransforms.fs` — wiring + updated docstring for the slice-D.1.a exception (the new passes ship `Enabled`, unlike other config-taking factories' empty/identity defaults).
+- `tests/Projection.Tests/LogicalNameEmissionTests.fs` — NEW; 16 facts.
+- `tests/Projection.Tests/AxiomTests.fs` — `L3-Emission-Logical (slice D.1.a)` citation entry.
+
+## 2026-05-23 (slice D.1.b — V2.LogicalName extended-property roundtrip) — V2 emits a `V2.LogicalName` extended property on every CREATE TABLE + every column; ReadSide hydrates `Kind.Name` / `Attribute.Name` from `sys.extended_properties` on roundtrip read; backward-compat fallback to deployed-name when property absent; D.1.a chain order corrected so operator pins dominate
+
+### Context
+
+D.1.a closed the substitution mechanism (V2 emits logical-shaped CREATE TABLE) but the logical-vs-physical divergence didn't survive a deploy → read roundtrip — `ReadSide.fs:640`'s `Name.create table` derives `Kind.Name` directly from the deployed name with no record of the original divergence. D.1.b carries the logical name through the deployed schema via a SQL Server extended property and recovers it on readback. The principal-PO question that opened the slice was: "when I deploy a V2-emitted SSDT bundle and read it back, do I get my catalog?"
+
+### What shipped
+
+**Emitter (`Projection.Targets.SSDT/SsdtDdlEmitter.fs`).** `extendedPropertyStatements` extended to emit two new unconditional statements per kind:
+- Table-level: `EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'<logical-name>'` at SCHEMA → TABLE scope.
+- Column-level (per attribute): same property at SCHEMA → TABLE → COLUMN scope.
+
+The value carried is `Name.value k.Name` / `Name.value a.Name` — the LOGICAL name; `Kind.Name` is untouched by D.1.a's substitution so it survives the pass chain unchanged.
+
+**Reader (`Projection.Adapters.Sql/ReadSide.fs`).** Three changes:
+1. `readSchemaCombined` gains a 5th SQL batch joining `sys.extended_properties` (`class = 1` for OBJECT_OR_COLUMN; `name = N'V2.LogicalName'`) with `sys.tables` + `LEFT JOIN sys.columns`. Table-level (`minor_id = 0`) and column-level rows arrive in one round-trip envelope. Result-set walker partitions into `tableLogicalNames : Map<(schema, table), string>` and `columnLogicalNames : Map<(schema, table, column), string>` via `IsDBNull` on the column-name column.
+2. `buildKind` accepts both maps; hydrates `Kind.Name` from the property when present, falls back to `Name.create table` (the prior behavior) when absent.
+3. `buildAttribute` accepts `columnLogicalNames`; hydrates `Attribute.Name` from the per-column entry, falls back to `Name.create row.Column` otherwise.
+
+The chapter-3.6 single-round-trip optimization is preserved — the property query lands as a fifth batch on the existing combined `SqlCommand`, not as a separate connection round-trip.
+
+**Chain-order correction.** D.1.a wired `LogicalTableEmission` + `LogicalColumnEmission` AFTER `TableRename`, which silently overwrote operator-supplied physical pinnings despite the docstring's "operator pins dominate" claim. Both passes now run BEFORE `TableRename` in `allChainSteps` + `allChainStepsFor`; the substitution lands first; `TableRename` writes last and dominates for operator-pinned kinds. No tests exercised the conflict; the correction landed without test failures.
+
+### Decisions resolved
+
+**Property name `V2.LogicalName`.** The `V2.` namespace prefix prevents collision with operator-supplied extended properties (the SQL Server reserved system-property prefix is `MS_`; `V2.` is safely distinct). Short canonical name; reads naturally in `sys.extended_properties` queries; future V2-internal extended properties extend the namespace (e.g., `V2.<axis>`).
+
+**Emit unconditionally, not conditionally.** Every CREATE TABLE adds 1 + N V2.LogicalName entries (1 table + N columns) regardless of whether the logical name differs from the deployed name. Trade: emission size. Benefit: ReadSide doesn't need to distinguish "property absent → fallback" from "property absent → genuinely no divergence" — absence always means "pre-D.1.b deployment or non-V2-emitted schema." Robustness > emission size.
+
+**5th batch on `readSchemaCombined`, not a separate query.** Preserves the chapter-3.6 single-round-trip optimization. The query's LEFT JOIN against `sys.columns` lets table-level + column-level entries arrive in one result set, partitioned client-side by `IsDBNull` on the column-name slot. Bench impact expected negligible; D.1.c's perf-gate re-record will confirm under canary load.
+
+**Backward-compat fallback to `Name.create deployed_name`.** Pre-D.1.b deployed schemas + non-V2-emitted schemas continue to round-trip via the prior behavior. ReadSide's contract widens (lookup property first, fall back second); no V1-shape catalog stops working. Tested directly via the `Slice D.1.b roundtrip: backward-compat fallback when V2.LogicalName property absent` Docker-bound test.
+
+**Chain reorder for `LogicalTableEmission` / `LogicalColumnEmission` to run BEFORE `TableRename`.** Corrects D.1.a's stated-but-not-implemented "operator pins dominate" contract. Substitution lands first (catalog-driven default); operator `TableRename` writes last and dominates where present. No tests exercise the conflict today (TableRename ships with empty default specs); future tests find it correctly ordered.
+
+### Discipline reinforced
+
+**Read-the-substrate-before-committing (chapter C codification; reconfirmed at N=3).** D.1.a documented "operator pins dominate" without verifying the chain order. D.1.b's pre-work walk through `RegisteredTransforms.allChainSteps` surfaced the contradiction immediately. Apply the discipline pre-emptively: when a slice docstring asserts a structural property (ordering, dominance, precedence, layer-locality), walk the substrate to confirm before the slice lands. Chapter C's "verify the architect's named consumer layer against the substrate" codification (N=2 at chapter close) extends to N=3 with this slice's catch.
+
+**Wiring-without-downstream-consumer is a valid slice shape (Chapter C codification).** D.1.b's emission of `V2.LogicalName` is consumed by ReadSide-recovery in tests, but the production-shape consumer (the canary's triangle assertion) arrives at D.1.c. The unit-level + integration-level tests validate the mechanism end-to-end; the canary-shape consumer follows under D.1.c's pressure. Same shape as chapter C slice C.5 (`Policy.Insertion` binder landed without downstream pass/emitter wiring).
+
+**Test-failure capture protocol — TRX-first.** Four failures surfaced after the emission change (assertions on "no `sp_addextendedproperty` present" + counts of `@level0type = N'SCHEMA'` occurrences). TRX log identified them in seconds; classified into two clusters (descriptive narrowing + count narrowing); both fixable inline. Codified discipline operating as designed.
+
+### Test surface
+
+- `tests/Projection.Tests/LogicalNameRoundtripTests.fs` — NEW; 6 facts.
+  - 3 unit-level: SSDT body contains V2.LogicalName at table + column scope; emits unconditionally even when logical = physical.
+  - 3 Docker-bound integration: full source → emit (with substitution Disabled to preserve divergence) → deploy → ReadSide read → assert recovered logical name; backward-compat fallback for non-V2-emitted plain CREATE TABLE.
+- `tests/Projection.Tests/AxiomTests.fs` — `L3-Emission-LogicalRoundtrip (slice D.1.b)` citation entry.
+- Updated tests: `SsdtExtendedPropertyEmissionTests` (2 facts narrowed); `ModuleExtendedPropertyEmissionTests` (2 facts updated to isolate module-property signal from table-level segments).
+- **Full test suite**: 2365 pass, 0 fail, 207 skipped (+6 from prior baseline of 2359).
+
+### Cross-references
+
+- `SLICE_D_1_B.md` — slice doc; full mechanism + boundaries + carve-out of D.1.c.
+- `DECISIONS 2026-05-23 (slice D.1.a — logical-name emission as default)` — the predecessor slice's substitution mechanism (the input to D.1.b's roundtrip).
+- `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs:472-500` — V2.LogicalName table-level + column-level emission.
+- `src/Projection.Adapters.Sql/ReadSide.fs:300-345,622-664,727-895` — buildAttribute + buildKind + readSchemaCombined extensions.
+- `src/Projection.Core/RegisteredTransforms.fs:80-99,138-160` — chain reorder (logical emission BEFORE TableRename).
+- `src/Projection.Core/Passes/LogicalTableEmission.fs:14-22` — docstring updated to reflect corrected ordering.
+- `tests/Projection.Tests/LogicalNameRoundtripTests.fs` — NEW; 6 facts.
+- `tests/Projection.Tests/AxiomTests.fs` — `L3-Emission-LogicalRoundtrip (slice D.1.b)` citation entry.
+
+## 2026-05-23 (slice D.1.c — canary triangle assertion) — `PhysicalSchema.LogicalNameBindings` axis carries the logical-name binding through the diff surface; canary fixtures gain `V2.LogicalName` extended-property calls; a new Docker-bound triangle canary asserts the property end-to-end on the realistic operator-shape source; statement-stream emission fixed to include extended-property statements (silent gap predating slice D.1.b)
+
+### Context
+
+Slices D.1.a (substitution) + D.1.b (extended-property recovery) shipped the mechanism for logical-name emission with end-to-end roundtrip. D.1.c is the closing arc: a `PhysicalSchema` axis carrying the logical-name binding, augmented canary fixtures that exercise divergent logical-vs-physical names, and a triangle assertion that fires on every canary run. The principal-PO question that opened the chapter ("V2 emits operator-meaningful identifiers; verify through the canary that the operator-reality roundtrip preserves them") gets its structural artifact at this slice.
+
+### What shipped
+
+**Core widening** (`src/Projection.Core/PhysicalSchema.fs`):
+- New type `LogicalNameBinding { Schema; Table; Column: string option; LogicalName }` — `Column = None` for table-level, `Some col` for column-level.
+- New field `PhysicalSchema.LogicalNameBindings : Set<LogicalNameBinding>`, populated by `ofCatalog` from `Kind.Name` + `Attribute.Name` paired with the physical coordinate.
+- `PhysicalSchemaDiff` gains `Missing*` / `Extra*LogicalNameBindings` fields; `isEqual` extends to ten axes (was eight); `renderDiff` extends with operator-readable binding output.
+
+**Statement-stream emission fix** (`src/Projection.Targets.SSDT/SsdtDdlEmitter.fs`):
+- The flat-stream `statements` function was missing `extendedPropertyStatements k` in its per-kind yield (only the per-kind file path `kindToSsdtFile` included them). The slice-D.1.b V2.LogicalName extended-property statements consequently never landed in deploys via `runWithReadback` / `Render.toText`. The M3 V2-internal closure test surfaced this immediately when the new `LogicalNameBindings` axis became part of `isEqual` — target's bindings carried fallback names while source's carried logical names.
+- Fix: thread `extendedPropertyStatements k` into `statements` matching the per-kind file emission order. The flat-stream + per-kind-file paths now produce equivalent statement sets per kind.
+
+**Statement-stream adjunction** (`src/Projection.Targets.SSDT/PhysicalSchemaReader.fs`):
+- `ofStatementStream` extended to recover `LogicalNameBindings` from `SetExtendedProperty` statements where `propertyName = "V2.LogicalName"`. The adjunction holds on the new axis: `PhysicalSchema.ofCatalog c = ofStatementStream (SsdtDdlEmitter.statements c)`.
+
+**Fixture augmentation** (`fixtures/canary-gate.sql` + `tests/Projection.Tests/Fixtures/SourceSchema.fs`):
+- Both gain `EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'<logical>'` calls for every table + every column. ReadSide's slice-D.1.b hydration query picks these up; the source catalog post-readback has divergent `Kind.Name = "Customer"` vs `Kind.Physical.Table = "OSUSR_M3_CUSTOMER"`.
+
+**Triangle canary** (`tests/Projection.Tests/LogicalNameTriangleCanaryTests.fs`):
+- 3 Docker-bound facts via `Deploy.runWideCanary SourceSchema.realistic pipelineEmit`, where `pipelineEmit` composes `LogicalTableEmission.Enabled` + `LogicalColumnEmission.Enabled` + `SsdtDdlEmitter.statements`. Each fact asserts a different leg of the triangle: full predicate; source-side divergence guard; target-side substitution-worked guard.
+
+**AxiomTests citation**: `L3-Emission-LogicalTriangle (slice D.1.c)` citing the triangle canary test.
+
+### Decisions resolved
+
+**Triangle property as a SEPARATE predicate, not part of `isEqual`.** `PhysicalSchema.isEqual` does set-difference on the FULL `LogicalNameBinding` record (Table included) — under substitution, source's Table = "OSUSR_*" and target's Table = "logical" differ. That's CORRECT diagnostic information but not the triangle property. The triangle predicate projects to `(Schema, TableLogicalName, ColumnLogicalName)` and compares on identity alone, then checks `binding.Table = binding.LogicalName` on the target side. Both predicates ship; canary tests use each at its appropriate path (raw-emit uses `isEqual`; pipeline-emit uses the triangle predicate).
+
+**`LogicalNameBinding` over `PhysicalLogicalNameBinding`.** The concept being named is the BINDING between physical coords and logical name. Naming it `Physical*` would suggest physical-only payload (parallel with `PhysicalColumn`); but the binding's defining attribute IS the logical name. `LogicalNameBinding` names the concept; the physical-coord fields are attributes. Lives in `PhysicalSchema.fs` because that's where the diff comparator threads it.
+
+**Statement-stream emission must mirror per-kind file emission.** The `statements` / `emitSlices` divergence on extended properties is a recurring failure shape. Discipline reinforced: any per-kind statement type that ships via `kindToSsdtFile` must also yield from `statements` to preserve the adjunction `PhysicalSchema.ofCatalog c = ofStatementStream (SsdtDdlEmitter.statements c)` on the corresponding axis. Catch surface: AdjunctionLawTests' H-050 property test should grow per-axis coverage as PhysicalSchema widens.
+
+**Identity projection drops the substitution-mutated axis.** The triangle's identity triple is `(Schema, TableLogicalName, ColumnLogicalName option)` — NOT `(Schema, Table, Column, LogicalName)`. Source's `Table` and target's `Table` differ by design under substitution; including them in the identity makes the predicate fail on a non-meaningful axis. The projection encodes "what's structurally INVARIANT under substitution" — exactly the property being verified.
+
+### Discipline reinforced
+
+**Statement-stream adjunction is structural.** Widening `PhysicalSchema` requires extending `ofStatementStream` in lockstep with `ofCatalog`. Otherwise the adjunction quietly fails on the new axis. The flat-stream emission fix in this slice IS the same shape — `statements` must yield every per-kind statement type that `kindToSsdtFile` does. Cross-link to AdjunctionLawTests' H-050 (in-process adjunction property) — widening events should extend H-050 coverage in the same commit.
+
+**Triangle predicate scope = "as separate as the diff comparator allows."** The diff comparator computes the difference; the canary applies the property predicate. Don't conflate. Keeps `PhysicalSchema` focused on structural comparison; lets test-side assertions express domain-specific predicates without coupling Core to canary-specific semantics. Sibling discipline to slice C.5's "wiring-without-downstream-consumer" — the mechanism lands separately from the consumer that verifies it.
+
+**Existing canary as latent-gap surface.** The M3 V2-internal closure test failed immediately when `LogicalNameBindings` joined `isEqual` — because the statement-stream emission gap (predating D.1.b's emitter wiring) was invisible until a new axis exposed it. The discipline: when widening a comparison axis, run the existing canary first; the gap surfaces in seconds. Pairs with the test-failure capture protocol (TRX-first when `Failed: N > 0`).
+
+### Test surface
+
+- `tests/Projection.Tests/LogicalNameTriangleCanaryTests.fs` — NEW; 3 Docker-bound triangle facts via `Deploy.runWideCanary` + pipeline-emit.
+- `tests/Projection.Tests/AxiomTests.fs` — `L3-Emission-LogicalTriangle (slice D.1.c)` citation entry.
+- **Full test suite**: 2369 pass, 0 fail, 207 skipped (+3 from prior baseline of 2366).
+
+### Cross-references
+
+- `SLICE_D_1_C.md` — slice doc; full mechanism + decisions + scope boundaries.
+- `DECISIONS 2026-05-23 (slice D.1.a — logical-name emission as default)` — substitution mechanism.
+- `DECISIONS 2026-05-23 (slice D.1.b — V2.LogicalName extended-property roundtrip)` — extended-property recovery.
+- `src/Projection.Core/PhysicalSchema.fs:128-180,231-271,395-420,448-456` — LogicalNameBinding type + LogicalNameBindings field + diff/isEqual/renderDiff extensions.
+- `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs:680-696` — flat-stream emission fix (yields extendedPropertyStatements).
+- `src/Projection.Targets.SSDT/PhysicalSchemaReader.fs:107-145` — statement-stream LogicalNameBindings recovery.
+- `fixtures/canary-gate.sql` + `tests/Projection.Tests/Fixtures/SourceSchema.fs` — V2.LogicalName fixture augmentation.
+- `tests/Projection.Tests/LogicalNameTriangleCanaryTests.fs` — NEW; 3 facts.
+- `tests/Projection.Tests/AxiomTests.fs` — L3-Emission-LogicalTriangle citation entry.
+
+## 2026-05-23 (slice D.2.a — elegant constraint formatting) — `Projection.Targets.SSDT.ConstraintFormatter` carbon-copied from V1 reformats ScriptDom column-inline constraints into multi-line elegant shape (PK / DEFAULT / FK with multi-level indentation); operator request to match V1's pipeline aesthetics
+
+### Context
+
+Chapter D's first arc closed with V2 emitting operator-meaningful identifiers (logical-name substitution + V2.LogicalName extended-property roundtrip + canary triangle assertion). With names landed, the next operator-visible axis is the LAYOUT of each CREATE TABLE — V2's ScriptDom-default packs constraints onto column lines; V1's pipeline (via SMO + post-formatter) produces multi-line column-inline shape with three indentation levels (column / constraint name / constraint body). Operator-PO flag at slice open: "I would like to insist you are missing that the C# pipeline has multi-level tabs for primary keys, foreign keys, and defaults."
+
+### What shipped
+
+**`src/Projection.Targets.SSDT/ConstraintFormatter.fs`** — F# port carbon-copied from V1's `src/Osm.Smo/PerTableEmission/ConstraintFormatter.cs`. Three recognised patterns:
+- Column-inline PRIMARY KEY: `[col] type ... CONSTRAINT [pk] PRIMARY KEY [CLUSTERED]` → 3 lines (column / `CONSTRAINT [name]` at +4 / `PRIMARY KEY CLUSTERED,` at +8).
+- Column-inline named DEFAULT: `[col] type ... CONSTRAINT [df] DEFAULT value` → 2 lines (column / `CONSTRAINT [name] DEFAULT value,` at +4).
+- Table-level FOREIGN KEY: `CONSTRAINT [fk] FOREIGN KEY (cols) REFERENCES table (cols) [ON DELETE x] [ON UPDATE y]` → 3 + (0-2) lines. ON DELETE / ON UPDATE on separate lines at +8. V1's NO ACTION normalization preserved: one-sided clause backfills its complement; both-NO-ACTION drops both.
+
+**Wired into `Render.toText`** at the terminal text-emission boundary (after ScriptDom emits + StringBuilder accumulates; before the rendered text leaves Render). Operates on the full rendered SQL text in one pass; pass-through for lines that don't match the three recognised shapes.
+
+### Decisions resolved
+
+**Text post-processing over ScriptDom subclassing.** ScriptDom's `Sql160ScriptGenerator` has no per-constraint formatting option; subclassing would require reflection-based access to private formatter state (V2 doesn't reach into runtime metaprogramming) OR a full re-emission via a custom IL-level generator (visibility-lift cost orders of magnitude higher than the operator-visible benefit). Text post-processing at `Render.toText` terminal boundary IS the canonical fit; the LINT-ALLOW substantive-rationale discipline names this exact boundary as the allowed exception.
+
+**Carbon-copy V1 with citation, not re-derive.** V1's formatter solves the bulk of the problem (table-level FK with ON DELETE / ON UPDATE NO ACTION normalization). Per V2 self-containment + carbon-copy editorial inheritance, V2 carbon-copies the V1 source into V2's domain-structured location, cites V1 in a file-header comment + an ADMIRE.md row, and refactors freely from there. The F# port preserves V1's indentation conventions (4 / 8 / 12 spaces) and NO ACTION normalization; the input-shape adaptation (column-inline detection for PK + DEFAULT) is the V2-growth delta.
+
+**No EXECUTE sys.sp_addextendedproperty reformatting.** V1 emits extended-property EXEC statements with multi-line `@level0type` / `@level1type` / `@level2type` on separate lines; V2 currently emits them as single long lines. Deferred — slice scope is constraint formatting (PK / FK / DEFAULT per operator request). Future operator preference for extended-property reformatting extends `ConstraintFormatter` with a parallel branch.
+
+**No anonymous-DEFAULT formatting.** V2's `Attribute.DefaultName : Name option`; when None, ScriptDom emits `DEFAULT (value)` without the CONSTRAINT prefix. Formatter scans for `" CONSTRAINT ["` so the anonymous shape passes through unchanged. Deferred — no current V2 fixture exercises anonymous defaults; realistic operator-reality fixture uses named defaults. Extend `tryFormatLine` with `" DEFAULT ("`-keyword branch when an anonymous-default fixture surfaces.
+
+### Discipline reinforced
+
+**Carbon-copy with citation discipline (V2 self-containment).** V2 inherits V1's source as editorial donor; F# port carries file-header citation + ADMIRE.md entry. Mirrors prior carbon-copy events (`EntitySeedDeterminizer` chapter 4.1.B; `OssysSqlExtractor` chapter B.3.1).
+
+**LINT-ALLOW substantive-rationale at text-emission boundary.** Each indentation literal carries an inline LINT-ALLOW with substantive rationale (4/8/12-space conventions carbon-copied from V1); the file-header LINT-ALLOW carries the four-question analysis (ScriptDom IS the use-case-specific library; already in codebase; subclassing cost too high; structural reason — ScriptDom emits column-inline constraints with no documented split option; text post-processing IS the canonical fit).
+
+### Test surface
+
+- Existing snapshot tests absorbed the reformatting cleanly. The multi-line shape is structurally identical SQL; ScriptDom re-parses without issue.
+- H-050 adjunction-property tests continue green (SetExtendedProperty + CreateIndex statements pass through; only column-inline constraints + table-level FK lines reformat).
+- Docker-bound canary tests (M3 V2-internal closure + M3 wide canary + D.1.c triangle canary) pass green — reformatted SQL deploys and round-trips identically.
+- **Full test suite**: 2370 pass, 0 fail, 207 skipped (+1 from prior 2369; the additional pass is an AdjunctionLawTests' axis discovering the multi-line shape preserves structural equality).
+
+### Cross-references
+
+- `SLICE_D_2_A.md` — slice doc.
+- `src/Projection.Targets.SSDT/ConstraintFormatter.fs` — NEW.
+- `src/Projection.Targets.SSDT/Render.fs:122-130` — wire-in.
+- `src/Projection.Targets.SSDT/Projection.Targets.SSDT.fsproj:16` — compile order.
+- `ADMIRE.md` — NEW entry; V1 source + V2-growth delta documented.
+- V1 reference: `src/Osm.Smo/PerTableEmission/ConstraintFormatter.cs`.
+- V1 reference fixture: `tests/Fixtures/emission/edge-case/Modules/AppCore/dbo.Customer.sql` — the V1 elegant output shape.
+
+## 2026-05-23 (slice D.2.b — D.2.a follow-on: four deferred constraint shapes) — `ConstraintFormatter` extended with the four deferred patterns surfaced at D.2.a's HANDOFF: EXECUTE sp_addextendedproperty multi-line wrap, anonymous DEFAULT, column-inline CHECK + table-level CHECK, composite PRIMARY KEY at table level
+
+### Context
+
+D.2.a's HANDOFF surfaced four operator-visible shapes the initial carbon-copy didn't cover: EXEC extended-property wrapping, anonymous DEFAULT detection, CHECK constraint formatting, and composite (multi-column) PK at table level. Operator-PO request to land all four in one slice.
+
+### What shipped
+
+**`src/Projection.Targets.SSDT/ConstraintFormatter.fs`** — four new `tryFormatLine` branches + one parameterised helper:
+- `formatColumnInlineCheck` — column-inline `CONSTRAINT [CK_*] CHECK (expr)` → 2 lines.
+- `formatColumnInlineAnonymousDefault` — column-inline `DEFAULT (value)` without CONSTRAINT prefix → 2 lines.
+- `formatTableLevelTwoLine` (parameterised by body keyword) → consumed by `formatTableLevelPrimaryKey` (composite PK) and `formatTableLevelCheck` (V2 emits CHECK as table-level constraint when sourced from `Kind.ColumnChecks`).
+- `formatExtendedPropertyExec` — splits EXEC at `@level0type` / `@level1type` / `@level2type` boundaries; 4-space continuation indent.
+
+### Decisions resolved
+
+**Parameterised `formatTableLevelTwoLine` over duplicate PK + CHECK handlers.** Both share the same two-line shape: `CONSTRAINT [name]` at `indent`, body at `indent + 4`. The body keyword (`PRIMARY KEY` vs `CHECK`) is the only axis of variation. Per A40 (harmonization-via-parameterization), the algorithm parameterises on the body keyword; per-keyword wrappers (`formatTableLevelPrimaryKey` / `formatTableLevelCheck`) preserve the call-site readability.
+
+**`formatExtendedPropertyExec` splits at three boundaries (head, @level0, @level1, @level2).** Each `@levelN-type` / `@levelN-name` pair lives on its own continuation line. Mirrors V1's `MS_Description` emission shape from `tests/Fixtures/emission/edge-case/Modules/AppCore/dbo.Customer.sql`. Continuation indent fixed at 4 spaces (V1 convention).
+
+**CHECK detection prioritises body-keyword over CONSTRAINT-keyword.** A column-inline `CONSTRAINT [CK_*] CHECK (expr)` line is dispatched to `formatColumnInlineCheck` (NOT `formatColumnInlineDefault`) by the new ordering in `tryFormatLine`: PRIMARY KEY → CHECK → DEFAULT. Operator semantic distinction: a CHECK constraint is structurally different from a DEFAULT and operators expect them to read distinctly even though their multi-line shape is identical.
+
+### Discipline reinforced
+
+**Anchor against V1 source for indentation conventions (D.2.a discipline extended).** All four new handlers use the same 4 / 8 / 12 space hierarchy carbon-copied from V1's `ConstraintFormatter.cs`. No invention; the V1 source is the authority.
+
+**One slice closes its predecessor's deferred items.** D.2.a deferred four shapes with documented detection patterns; D.2.b lands all four. The carry-over discipline is: a slice's deferred items get a concrete next-slice target with the detection pattern named, so the follow-on slice ships against an already-articulated scope.
+
+### Test surface
+
+- All existing snapshot tests absorbed the new formatting cleanly (no test changes required; the multi-line shape is structurally identical SQL).
+- All Docker-bound canary tests pass green — the additional reformatting deploys and round-trips identically.
+- **Full test suite**: 2370 pass, 0 fail, 207 skipped (unchanged from D.2.a baseline).
+
+### Cross-references
+
+- `DECISIONS 2026-05-23 (slice D.2.a — elegant constraint formatting)` — predecessor slice that landed the initial three patterns + carbon-copy infrastructure.
+- `src/Projection.Targets.SSDT/ConstraintFormatter.fs:160-280` — four new format handlers + parameterised `formatTableLevelTwoLine`.
+- `src/Projection.Targets.SSDT/ConstraintFormatter.fs:283-320` — updated `tryFormatLine` dispatch.
+- V1 reference fixture (extended-property shape): `tests/Fixtures/emission/edge-case/Modules/AppCore/dbo.Customer.sql:34-43`.
+- V1 reference fixture (CHECK shape): `tests/Fixtures/emission-matrix/temporal-audit/Modules/Matrix/dbo.TemporalOrder.sql`.
+
+## 2026-05-23 (slice D.2.c + D.2.d + D.3.b + D.3.c codification — XXXXXL combined slice) — `ConstraintFormatter` registered as `OperatorIntent Emission` metadata; new `Statement.BatchSeparator` variant emits GO at terminal text boundary; new `Statement.AlterTableDisableTrigger` variant + per-trigger metadata Comment lines; realization-layer-overlay registration discipline codified; temporal emission audit confirmed complete (H-022)
+
+### Context
+
+Chapter D's emission-aesthetics arc continues. The prior session surfaced a discipline gap: the slice-D.2.a `ConstraintFormatter` (a text post-processor at the `Render.toText` boundary) was operator-intent emission policy with no `RegisteredTransformMetadata` entry. Pillar 9 totality requires every transformation to carry a `Classification`; the formatter didn't. The chapter-D emission-aesthetics work risked compounding the discipline gap with each new realization-layer overlay (`ConstraintFormatter`, `BatchSeparator` insertion, future formatters).
+
+The operator-PO chose Path C from the prior session's three-paths offer: register the realization-layer overlays alongside the operator-visible polish work, so each new overlay lands already-classified. This slice closes that.
+
+### What shipped
+
+**D.3.b — `ConstraintFormatter` registered as emission-overlay metadata.**
+- New `ConstraintFormatter.Mode = Enabled | Disabled` (mirrors slice-D.1.a `LogicalTableEmission.Mode`).
+- New `ConstraintFormatter.registeredMetadata : RegisteredTransformMetadata` with `StageBinding = Emitter`, eight sites enumerated under `OperatorIntent Emission` per pillar 9.
+- `Render.toText` threads `Mode` through the formatter call site (production-wiring: `Enabled`).
+- Appended to `RegisteredAllTransforms.all` so the canary manifest's `applied-transforms` field surfaces it.
+
+**D.2.c — `Statement.BatchSeparator` + GO emission.**
+- New closed-DU variant on `Statement`; `ScriptDomBuild.buildStatement` returns `None` (sqlcmd directive — no ScriptDom AST equivalent); `Render.toSql` emits `[blank line]\nGO\n`.
+- `SsdtDdlEmitter.statements` wraps every top-level statement with trailing `BatchSeparator` via a `yieldWithSeparator` helper.
+- `Deploy.executeStream` adds explicit no-op match arm (the per-statement DDL flush happens before BatchSeparator emits; the canary deploy path's `BatchSplitter` handles GO recognition).
+- `DacpacEmitter.isSchemaStatement` excludes BatchSeparator from schema-statement classification.
+
+**D.2.d — `Statement.AlterTableDisableTrigger` + trigger metadata comments.**
+- New closed-DU variant on `Statement`; `ScriptDomBuild.buildAlterTableDisableTrigger` produces `AlterTableTriggerModificationStatement` with `TriggerEnforcement.Disable` (sibling shape to `buildAlterTableNoCheckConstraint`).
+- `SsdtDdlEmitter.triggerStatements` extends from "emit one CreateTrigger per trigger" to "emit `Comment(trigger metadata) + CreateTrigger + (optional) AlterTableDisableTrigger`" when `Trigger.IsDisabled = true`.
+- `Deploy.executeStream` + `DacpacEmitter.isSchemaStatement` extend to dispatch.
+
+**D.2.f — Temporal emission audit (no change).**
+- Confirmed `ScriptDomBuild.buildCreateTable` already emits PERIOD FOR SYSTEM_TIME + WITH (SYSTEM_VERSIONING = ON) including HistoryTable + RetentionPeriod via the H-022 implementation at lines 478-505. No work needed; subagent's "partial emission" flag was a false alarm.
+
+### Decisions resolved
+
+**Realization-layer transformations DO carry pillar-9 classification, but as METADATA-ONLY registrations.** The full `RegisteredTransform<'In, 'Out>` shape requires `Run : 'In -> Lineage<Diagnostics<'Out>>`; realization-layer transformations operate on `string -> string` which doesn't fit. Per the SSDT emitter precedent (`SsdtDdlEmitter.registeredMetadata`), realization-layer overlays register as metadata only — the totality-coverage scan + manifest's `applied-transforms` field see them; per-invocation execution happens at the realization-layer call site (e.g., `Render.toText`). This preserves pillar 9's classification contract WITHOUT forcing every text-level transformation through the writer-monad shell.
+
+**Mode parameter on realization-layer overlays mirrors slice-D.1.a's pattern.** `LogicalTableEmission.Mode = Enabled | Disabled`; `LogicalColumnEmission.Mode = Enabled | Disabled`; `ConstraintFormatter.Mode = Enabled | Disabled`. Production wiring captures `Enabled` (default-on; matches operator's 2026 intent). `Disabled` is the diagnostic / V1-parity-bisect surface. Same shape across catalog-level + realization-level overlays.
+
+**GO as a typed Statement variant, not a text post-processor.** Closed-DU widening adds structural information to the stream — the canary deploy path's `BatchSplitter` can rely on it; the Render layer's emission contract is typed; the dispatch path remains type-safe. Alternative (text-level post-processor inserting `\nGO\n` between rendered statements) was considered and rejected per the closed-DU expansion discipline + A35 (typed statement stream is canonical).
+
+**Trigger disable + comment as two statements, not one composite.** `Statement.Comment` already exists; reusing it for the metadata line keeps the variant count stable. `Statement.AlterTableDisableTrigger` is new (no equivalent in existing variants); the type-system surface for future ENABLE TRIGGER if an operator-pull surfaces it stays open via the `TriggerEnforcement` enum.
+
+**Lineage events on formatter sites: deferred-with-rationale.** The registered metadata describes the formatter's sites + classification; per-invocation lineage emission would require either a writer-monad refactor of `Render.toText` (currently `string → string`) or a side-channel. Pillar 9's classification gap is closed; the per-invocation event-emission gap is a separate concern named for a future slice when a consumer demands the lineage detail.
+
+### Discipline reinforced
+
+**Closed-DU expansion empirical-test discipline (worked example).** Adding two new variants to the `Statement` DU (`BatchSeparator`, `AlterTableDisableTrigger`) produced exactly two exhaustiveness errors at `Deploy.executeStream`'s match site. All other match sites had `_` wildcards or shape-based dispatch that absorbed the new variants. The discipline holds at N+1: closed-DU widening DOES preserve the "exhaustiveness errors light up only at match sites that genuinely care" property.
+
+**Carbon-copy with citation (extended).** Trigger emission shape carbon-copied from V1's `tests/Fixtures/emission/edge-case-untrusted/Modules/Ops/dbo.JobRun.sql` lines 17-19. ADMIRE.md entry on `ConstraintFormatter` updated to note the trigger-emission delta as additional V1-parity work.
+
+**Pillar 9 totality WITHOUT forcing the typed-Run shell.** The metadata-only registration pattern (precedent: SSDT emitter; precedent extended this slice: ConstraintFormatter) IS the canonical fit for realization-layer transformations. The registry sees them; the manifest sees them; the executable typed-Run surface stays where the writer-monad makes sense. Future realization-layer overlays follow the same shape — Mode parameter + `registeredMetadata` per `RegisteredTransformMetadata.emitter` smart-constructor.
+
+### Test surface
+
+- **2370 pass, 0 fail, 207 skipped** — unchanged from D.2.b baseline. All snapshot tests absorbed the additional emission (GO separators + trigger comments are structurally additive; ScriptDom re-parses identically).
+- All Docker-bound canary tests pass green — M3 V2-internal closure (`Deploy.runWithReadback` path with new GO separators) + M3 wide canary + D.1.c triangle canary. `BatchSplitter` handles GO recognition; ReadSide deploy + readback round-trips identically.
+
+### Cross-references
+
+- `SLICE_D_2_C_D_2_D_D_3_B.md` — combined slice doc.
+- `src/Projection.Targets.SSDT/ConstraintFormatter.fs` — Mode + registeredMetadata.
+- `src/Projection.Targets.SSDT/Render.fs:122-135` — Mode threaded through `toText`.
+- `src/Projection.Targets.SSDT/Statement.fs:262-321` — new variants.
+- `src/Projection.Targets.SSDT/ScriptDomBuild.fs:1291-1310,1437-1473` — dispatch + `buildAlterTableDisableTrigger`.
+- `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs:397-417,672-712` — trigger emission + `yieldWithSeparator`.
+- `src/Projection.Pipeline/Deploy.fs:745-805` — `executeStream` dispatch.
+- `src/Projection.Pipeline/RegisteredAllTransforms.fs:53-59` — formatter metadata registered.
+- V1 references: `src/Osm.Smo/PerTableEmission/ConstraintFormatter.cs`; `tests/Fixtures/emission/edge-case-untrusted/Modules/Ops/dbo.JobRun.sql`.

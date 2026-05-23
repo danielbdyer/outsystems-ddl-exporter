@@ -1288,6 +1288,23 @@ module ScriptDomBuild =
         stmt.ConstraintEnforcement <- ConstraintEnforcement.Check
         stmt
 
+    /// Build `ALTER TABLE <table> DISABLE TRIGGER <name>` via
+    /// ScriptDom's `AlterTableTriggerModificationStatement` with
+    /// `TriggerEnforcement.Disable`. Preserves the deployed target's
+    /// trigger-disabled state when V1's
+    /// `IndexOnDiskMetadata`-equivalent `Trigger.IsDisabled = true`.
+    /// Slice D.2.d (chapter D's emission-aesthetics arc).
+    let buildAlterTableDisableTrigger
+            (table: TableId)
+            (triggerName: string)
+            : AlterTableTriggerModificationStatement =
+        use _ = Bench.scope "emit.scriptDom.build.alterTableDisableTrigger"
+        let stmt = AlterTableTriggerModificationStatement()
+        stmt.SchemaObjectName <- schemaObjectFromTableId table
+        stmt.TriggerNames.Add(bracketed triggerName)
+        stmt.TriggerEnforcement <- TriggerEnforcement.Disable
+        stmt
+
     /// Build `ALTER INDEX <indexName> ON <table> DISABLE` via
     /// ScriptDom's `AlterIndexStatement` with
     /// `AlterIndexType.Disable`. Preserves a deployed target's
@@ -1435,6 +1452,7 @@ module ScriptDomBuild =
         match stmt with
         | Blank -> None
         | Comment _ -> None
+        | BatchSeparator -> None  // Slice D.2.c — sqlcmd directive; no ScriptDom AST equivalent
         | CreateTable (table, cols, pk, fks, checks, temporal) ->
             Some ((buildCreateTable table cols pk fks checks temporal).Value :> TSqlStatement)
         | CreateIndex idx ->
@@ -1451,5 +1469,7 @@ module ScriptDomBuild =
             Some (buildAlterIndexDisable table indexName :> TSqlStatement)
         | CreateTrigger definition ->
             tryParseTriggerBody definition
+        | AlterTableDisableTrigger (table, triggerName) ->
+            Some (buildAlterTableDisableTrigger table triggerName :> TSqlStatement)
         | CreateSequence seqIR ->
             Some (buildCreateSequence seqIR :> TSqlStatement)

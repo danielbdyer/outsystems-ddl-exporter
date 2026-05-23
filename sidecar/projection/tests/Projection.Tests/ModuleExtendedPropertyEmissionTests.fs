@@ -102,14 +102,16 @@ let ``Slice ε: emits Module.ExtendedProperties per distinct schema in the modul
             i <- text.IndexOf(needle, i + 1)
             if i >= 0 then n <- n + 1
         n
-    let totalSchemaEmits =
-        bodies |> List.sumBy (countOccurrences "@level0type = N'SCHEMA'")
-    // Each kind has 1 emit (the SCHEMA-level module statement is on
-    // the first kind of each schema only, but every kind has its own
-    // @level0=SCHEMA from its TABLE-level statements... wait, neither
-    // kind has a Description here, so the only @level0=SCHEMA emits
-    // are the two module-level ones).
-    Assert.Equal(2, totalSchemaEmits)
+    // Slice D.1.b — every table also emits SCHEMA-level segments
+    // via its V2.LogicalName extended property (table-level properties
+    // are SCHEMA → TABLE), so counting raw @level0=SCHEMA hits no
+    // longer isolates the module-property contribution. The
+    // distinguishing signal: how many times the module-property's
+    // distinctive value ("Module-level annotation A") appears across
+    // all bundle bodies — once per distinct schema the module spans.
+    let totalModuleAnnotationEmits =
+        bodies |> List.sumBy (countOccurrences "Module-level annotation A")
+    Assert.Equal(2, totalModuleAnnotationEmits)
 
 [<Fact>]
 let ``Slice ε: emits Module.ExtendedProperties exactly once per (module, schema)`` () =
@@ -161,6 +163,23 @@ let ``Slice ε: Module with empty ExtendedProperties emits no SCHEMA-only statem
         |> Map.toList
         |> List.head
         |> fun (_, f) -> f.Body
-    // No @level0 emission at all (kind has no Description and no
-    // ExtendedProperties; module has no ExtendedProperties).
-    Assert.DoesNotContain("sp_addextendedproperty", body)
+    // Slice D.1.b — V2.LogicalName extended properties emit
+    // unconditionally per kind / attribute; sp_addextendedproperty
+    // calls always appear in the body. The narrower-by-D.1.b assertion:
+    // no SCHEMA-only (table-omitted) statements appear, i.e., every
+    // sp_addextendedproperty call has a `@level1type = N'TABLE'`
+    // segment in the same statement. Walk the body and confirm.
+    let mutable cursor = 0
+    let mutable allHaveLevel1 = true
+    while cursor >= 0 do
+        cursor <- body.IndexOf("sp_addextendedproperty", cursor + 1, System.StringComparison.Ordinal)
+        if cursor >= 0 then
+            let stmtEnd =
+                let next = body.IndexOf("EXECUTE", cursor + 1, System.StringComparison.Ordinal)
+                if next < 0 then body.Length else next
+            let stmt = body.Substring(cursor, stmtEnd - cursor)
+            if not (stmt.Contains("@level1type = N'TABLE'")) then
+                allHaveLevel1 <- false
+    Assert.True(
+        allHaveLevel1,
+        "every sp_addextendedproperty call should target a TABLE (SCHEMA-only forms require module-level ExtendedProperties, which this fixture omits)")

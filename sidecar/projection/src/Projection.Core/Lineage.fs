@@ -190,6 +190,38 @@ module PhysicalRename =
             rename.After.Schema; "."; rename.After.Table
         ]
 
+/// Typed payload for `TransformKind.ColumnPhysicallyRenamed` — the
+/// per-attribute physical column-name rewrite as a structural triple.
+/// Mirrors `PhysicalRename` (kind-level) one axis down: `Kind` carries
+/// the owning kind's physical coordinate (so audit readers can locate
+/// the column without re-resolving SsKeys); `Before` / `After` carry
+/// the prior and new `ColumnRealization.ColumnName` strings. Slice D.1
+/// introduces this variant for `ColumnRenameToLogicalPass`.
+///
+/// Invariant: `Before <> After` (a no-op rename emits no event). Not
+/// enforced by smart constructor because emitting passes short-circuit
+/// at the visitor before constructing the payload.
+type ColumnRename = {
+    Kind   : TableId
+    Before : string
+    After  : string
+}
+
+/// Companion module for `ColumnRename`. Diagnostic-string projection
+/// matches the existing `<schema>.<table>[<col>]` rendering convention
+/// readers expect.
+[<RequireQualifiedAccess>]
+module ColumnRename =
+
+    /// Render as `"<schema>.<table>[<before> -> <after>]"`. Strings
+    /// emerge ONLY here (and at any future writer-boundary consumer),
+    /// per the supreme operating discipline at the top of `DECISIONS.md`.
+    let toDiagnosticString (rename: ColumnRename) : string =
+        String.concat "" [  // LINT-ALLOW: terminal diagnostic projection; typed `ColumnRename` record IS the structure
+            rename.Kind.Schema; "."; rename.Kind.Table; "["
+            rename.Before; " -> "; rename.After; "]"
+        ]
+
 /// The kind of transformation a lineage event records. The set is small
 /// and additive — extend rather than reshape when new pass categories
 /// appear, so historical lineage trails stay readable.
@@ -227,6 +259,14 @@ type TransformKind =
     /// pattern-match on the typed value rather than parsing a rendered
     /// string.
     | PhysicallyRenamed of detail: PhysicalRename
+    /// The pass rewrote a column's physical name
+    /// (`Attribute.Column.ColumnName`). Identity (`Attribute.SsKey`) is
+    /// untouched (A1); only the per-column physical realization
+    /// changes. Slice D.1 introduces this variant for
+    /// `ColumnRenameToLogicalPass`; the typed `ColumnRename` payload
+    /// carries the kind coordinate plus before/after column-name
+    /// strings.
+    | ColumnPhysicallyRenamed of detail: ColumnRename
 
 
 /// One step in the provenance chain. Per A23, every event carries a

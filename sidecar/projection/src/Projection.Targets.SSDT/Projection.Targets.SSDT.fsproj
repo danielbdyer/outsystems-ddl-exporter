@@ -13,6 +13,7 @@
     <Compile Include="Statement.fs" />
     <Compile Include="ScriptDomBuild.fs" />
     <Compile Include="ScriptDomGenerate.fs" />
+    <Compile Include="ConstraintFormatter.fs" />
     <Compile Include="Render.fs" />
     <Compile Include="SsdtDdlEmitter.fs" />
     <Compile Include="PhysicalSchemaReader.fs" />

@@ -262,6 +262,15 @@ type ExtendedPropertyOwner =
 type Statement =
     | Blank
     | Comment of text: string
+    /// Slice D.2.c — `GO` batch separator. Sqlcmd directive (not T-SQL
+    /// syntax); recognised by `BatchSplitter` so deploy paths split at
+    /// this boundary into separate `ExecuteNonQueryAsync` round-trips.
+    /// Mirrors V1's per-statement-group emission convention (every
+    /// top-level statement followed by a blank line + `GO` + blank
+    /// line). `ScriptDomBuild.buildStatement` returns `None` for this
+    /// variant (sqlcmd directives have no ScriptDom AST equivalent);
+    /// `Render.toSql` handles it directly.
+    | BatchSeparator
     | CreateTable of TableId * ColumnDef list * PrimaryKeyDef option * ForeignKeyDef list * ColumnCheckDef list * TemporalConfig option
     /// Chapter 4.1.A slice 3: CREATE INDEX statement for non-PK
     /// indexes. PK-marked indexes are inlined in CREATE TABLE per
@@ -303,6 +312,14 @@ type Statement =
     /// failure (silently dropping unparseable definitions).
     /// H-019 (Cluster A — Close the loops).
     | CreateTrigger of definition: string
+    /// `ALTER TABLE <table> DISABLE TRIGGER <name>`. Emitted by
+    /// `SsdtDdlEmitter` after the owning `CreateTrigger` when
+    /// `Trigger.IsDisabled = true`. Preserves the deployed target's
+    /// trigger-disabled state across emit → deploy → readback.
+    /// ScriptDom builds via `AlterTableTriggerModificationStatement`
+    /// with `TriggerEnforcement.Disable`. Slice D.2.d (chapter D's
+    /// emission-aesthetics arc).
+    | AlterTableDisableTrigger of table: TableId * triggerName: string
     /// `CREATE SEQUENCE` statement. Emitted before table creation in
     /// the catalog-wide statement stream (sequences are schema objects
     /// referenced by DEFAULT constraints). Carries the V2 `Sequence`

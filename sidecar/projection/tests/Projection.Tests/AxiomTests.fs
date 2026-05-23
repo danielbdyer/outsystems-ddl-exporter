@@ -440,6 +440,64 @@ let ``A41: registry totality + bidirectional property tests — verified by Regi
     // OperatorIntent events) + overlay-exercise.
     ()
 
+[<Fact>]
+let ``L3-Emission-Logical (slice D.1.a): the physical-realization slot adopts the logical name under default emission — verified by LogicalNameEmissionTests`` () =
+    citationOf
+        "tests/Projection.Tests/LogicalNameEmissionTests.fs"
+        "Slice D.1.a end-to-end: after both passes, every Kind.Physical.Table and Column.ColumnName equals the logical name"
+    // Bucket A — V2 emits each kind's `Name` and each attribute's `Name`
+    // as the physical realization the SSDT emitter reads. The pass is
+    // substitution (not rename — no new name authored); both axes
+    // (`Kind.Name` / `Kind.Physical`, `Attribute.Name` /
+    // `Attribute.Column.ColumnName`) already exist in the catalog. The
+    // pass aligns physical with logical. Classified
+    // `OperatorIntent Emission`; default-on; `Disabled` mode preserves
+    // physical-emission for diagnostic / V1-parity fallback. Identity
+    // (SsKey) untouched per A1.
+    ()
+
+[<Fact>]
+let ``L3-Emission-LogicalTriangle (slice D.1.c): canary roundtrip preserves logical-name identity AND substitutes physical = logical — verified by LogicalNameTriangleCanaryTests`` () =
+    citationOf
+        "tests/Projection.Tests/LogicalNameTriangleCanaryTests.fs"
+        "Slice D.1.c triangle: pipeline-emit on realistic source preserves logical identity AND substitutes physical = logical"
+    // Bucket A — the chapter D arc's closing predicate. Canary runs:
+    //   1. Source DDL with V2.LogicalName extended properties deploys
+    //      and ReadSide hydrates `Kind.Name` from the property, producing
+    //      a source catalog with divergent `Kind.Name = "Customer"` vs
+    //      `Kind.Physical.Table = "OSUSR_*"`.
+    //   2. Pipeline-emit (LogicalTableEmission + LogicalColumnEmission
+    //      both Enabled, slice D.1.a) substitutes the logical name
+    //      into the physical-realization slot before SsdtDdlEmitter.statements.
+    //   3. V2 emits SSDT with logical-shaped CREATE TABLE + V2.LogicalName
+    //      extended properties carrying the logical names.
+    //   4. Deploy to target; ReadSide hydrates Kind.Name from the
+    //      property; target catalog has Kind.Name = Kind.Physical.Table.
+    //   5. Triangle predicate over PhysicalSchema.LogicalNameBindings:
+    //      (a) every source (Schema, TableLogicalName, ColumnLogicalName)
+    //          triple appears in target — logical identity preserved.
+    //      (b) every target binding satisfies Table = LogicalName at
+    //          the table level and Column = Some LogicalName at the
+    //          column level — substitution worked.
+    ()
+
+[<Fact>]
+let ``L3-Emission-LogicalRoundtrip (slice D.1.b): logical names survive deploy → ReadSide round-trip via V2.LogicalName extended property — verified by LogicalNameRoundtripTests`` () =
+    citationOf
+        "tests/Projection.Tests/LogicalNameRoundtripTests.fs"
+        "Slice D.1.b roundtrip: ReadSide recovers Kind.Name from V2.LogicalName property when deployed physical differs"
+    // Bucket A — V2 emits a `V2.LogicalName` extended property on
+    // every CREATE TABLE + every column carrying the catalog's
+    // logical name (`Name.value k.Name` / `Name.value a.Name`).
+    // ReadSide queries `sys.extended_properties` for the property
+    // and hydrates `Kind.Name` / `Attribute.Name` from its value.
+    // Backward-compat fallback: when the property is absent
+    // (pre-D.1.b deployed schemas; non-V2-emitted schemas),
+    // ReadSide falls back to `Name.create deployed_name`. The
+    // logical-vs-physical divergence survives the deploy → read
+    // roundtrip end-to-end — verified through ephemeral SQL Server.
+    ()
+
 // ===========================================================================
 // Theorems (T1–T11)
 // ===========================================================================
