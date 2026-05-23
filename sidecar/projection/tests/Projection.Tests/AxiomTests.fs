@@ -457,6 +457,31 @@ let ``L3-Emission-Logical (slice D.1.a): the physical-realization slot adopts th
     ()
 
 [<Fact>]
+let ``L3-Emission-LogicalTriangle (slice D.1.c): canary roundtrip preserves logical-name identity AND substitutes physical = logical — verified by LogicalNameTriangleCanaryTests`` () =
+    citationOf
+        "tests/Projection.Tests/LogicalNameTriangleCanaryTests.fs"
+        "Slice D.1.c triangle: pipeline-emit on realistic source preserves logical identity AND substitutes physical = logical"
+    // Bucket A — the chapter D arc's closing predicate. Canary runs:
+    //   1. Source DDL with V2.LogicalName extended properties deploys
+    //      and ReadSide hydrates `Kind.Name` from the property, producing
+    //      a source catalog with divergent `Kind.Name = "Customer"` vs
+    //      `Kind.Physical.Table = "OSUSR_*"`.
+    //   2. Pipeline-emit (LogicalTableEmission + LogicalColumnEmission
+    //      both Enabled, slice D.1.a) substitutes the logical name
+    //      into the physical-realization slot before SsdtDdlEmitter.statements.
+    //   3. V2 emits SSDT with logical-shaped CREATE TABLE + V2.LogicalName
+    //      extended properties carrying the logical names.
+    //   4. Deploy to target; ReadSide hydrates Kind.Name from the
+    //      property; target catalog has Kind.Name = Kind.Physical.Table.
+    //   5. Triangle predicate over PhysicalSchema.LogicalNameBindings:
+    //      (a) every source (Schema, TableLogicalName, ColumnLogicalName)
+    //          triple appears in target — logical identity preserved.
+    //      (b) every target binding satisfies Table = LogicalName at
+    //          the table level and Column = Some LogicalName at the
+    //          column level — substitution worked.
+    ()
+
+[<Fact>]
 let ``L3-Emission-LogicalRoundtrip (slice D.1.b): logical names survive deploy → ReadSide round-trip via V2.LogicalName extended property — verified by LogicalNameRoundtripTests`` () =
     citationOf
         "tests/Projection.Tests/LogicalNameRoundtripTests.fs"

@@ -126,6 +126,40 @@ type PhysicalRowDigest =
         AggregateHash : string
     }
 
+/// A binding from a deployed physical coordinate to its logical
+/// name. Slice D.1.c addition — closes the chapter-D logical-name-
+/// emission arc by giving the canary's PhysicalSchema diff a fifth
+/// axis that carries the V2.LogicalName extended-property identity.
+///
+/// **Semantics.** `Column = None` is a table-level binding (the kind's
+/// logical name); `Column = Some col` is a column-level binding (the
+/// attribute's logical name). `Table` carries the deployed physical
+/// table name; `LogicalName` carries the logical name (recovered
+/// from `sys.extended_properties` via slice D.1.b's ReadSide hydration
+/// in roundtrip flows, or from `Kind.Name` / `Attribute.Name` in
+/// direct projection flows).
+///
+/// **Triangle property** (slice D.1.c's verification target).
+/// Source-side binding `(Schema, Table = OSUSR_*, Column = None,
+/// LogicalName = X)` and target-side binding `(Schema, Table = X,
+/// Column = None, LogicalName = X)` represent the same kind under
+/// the substitution-then-recovery chain: source's Table is the
+/// OSSYS-shape, target's Table equals its LogicalName (V2 substituted
+/// the logical name into the physical-realization slot), and both
+/// carry the same LogicalName (the recovery preserved logical
+/// identity end-to-end). Per-target check: `binding.Table =
+/// binding.LogicalName` ∧ (for column-level) `binding.Column =
+/// Some binding.LogicalName`.
+type LogicalNameBinding =
+    {
+        Schema : string
+        Table : string
+        /// `Some col` for column-level bindings; `None` for
+        /// table-level (kind-level) bindings.
+        Column : string option
+        LogicalName : string
+    }
+
 /// Structural-fidelity view of a Catalog: columns + FKs + per-row
 /// hashes (small tables) + per-table digests (large tables). The
 /// two row axes are complementary: small tables get granular diff
@@ -137,9 +171,15 @@ type PhysicalSchema =
         ForeignKeys : Set<PhysicalForeignKey>
         Rows : Set<PhysicalRow>
         RowDigests : Set<PhysicalRowDigest>
+        /// Slice D.1.c — logical-name bindings (the kind's / attribute's
+        /// `Name` projected alongside the deployed physical coordinate).
+        /// Populated from `Kind.Name` + `Attribute.Name` in `ofCatalog`;
+        /// recovered from `sys.extended_properties` via slice D.1.b's
+        /// ReadSide hydration in roundtrip flows.
+        LogicalNameBindings : Set<LogicalNameBinding>
     }
 
-/// The diff between two `PhysicalSchema` values. All eight fields
+/// The diff between two `PhysicalSchema` values. All ten fields
 /// empty means structural-and-data intent matches; anything
 /// populated is a canary-blocking divergence under R6.
 type PhysicalSchemaDiff =
@@ -152,6 +192,14 @@ type PhysicalSchemaDiff =
         ExtraRows : PhysicalRow list
         MissingRowDigests : PhysicalRowDigest list
         ExtraRowDigests : PhysicalRowDigest list
+        /// Slice D.1.c — logical-name bindings that appear in source
+        /// but not target (Missing) / target but not source (Extra).
+        /// Set-difference on the binding's full record (Schema + Table
+        /// + Column + LogicalName); the triangle property (separate
+        /// predicate) projects out the Table to compare on logical
+        /// identity alone.
+        MissingLogicalNameBindings : LogicalNameBinding list
+        ExtraLogicalNameBindings : LogicalNameBinding list
     }
 
 /// Streaming aggregate row-hash builder. Per session-35 — folds an
@@ -218,6 +266,31 @@ module RowDigester =
 
 [<RequireQualifiedAccess>]
 module PhysicalSchema =
+
+    /// Slice D.1.c — project one kind's logical-name bindings:
+    /// one table-level entry (Column = None) carrying `Kind.Name`,
+    /// plus one column-level entry per attribute carrying
+    /// `Attribute.Name`. Mirrors the V2.LogicalName extended-property
+    /// emission shape (slice D.1.b) so the readside-recovered
+    /// catalog and the in-memory catalog produce the same bindings.
+    let private toLogicalNameBindings (k: Kind) : LogicalNameBinding list =
+        let tableBinding =
+            {
+                Schema = k.Physical.Schema
+                Table = k.Physical.Table
+                Column = None
+                LogicalName = Name.value k.Name
+            }
+        let columnBindings =
+            k.Attributes
+            |> List.map (fun a ->
+                {
+                    Schema = k.Physical.Schema
+                    Table = k.Physical.Table
+                    Column = Some a.Column.ColumnName
+                    LogicalName = Name.value a.Name
+                })
+        tableBinding :: columnBindings
 
     let private toPhysicalColumns (k: Kind) : PhysicalColumn list =
         k.Attributes
@@ -366,11 +439,16 @@ module PhysicalSchema =
             kinds
             |> List.collect toPhysicalRows
             |> Set.ofList
+        let logicalNameBindings =
+            kinds
+            |> List.collect toLogicalNameBindings
+            |> Set.ofList
         {
             Columns = columns
             ForeignKeys = foreignKeys
             Rows = rows
             RowDigests = Set.empty
+            LogicalNameBindings = logicalNameBindings
         }
 
     /// Layer per-table aggregate row digests onto an existing
@@ -396,17 +474,19 @@ module PhysicalSchema =
     let diff (source: PhysicalSchema) (target: PhysicalSchema) : PhysicalSchemaDiff =
         use _ = Bench.scope "physicalSchema.diff"
         {
-            MissingColumns       = setDifference source.Columns       target.Columns
-            ExtraColumns         = setDifference target.Columns       source.Columns
-            MissingForeignKeys   = setDifference source.ForeignKeys   target.ForeignKeys
-            ExtraForeignKeys     = setDifference target.ForeignKeys   source.ForeignKeys
-            MissingRows          = setDifference source.Rows          target.Rows
-            ExtraRows            = setDifference target.Rows          source.Rows
-            MissingRowDigests    = setDifference source.RowDigests    target.RowDigests
-            ExtraRowDigests      = setDifference target.RowDigests    source.RowDigests
+            MissingColumns             = setDifference source.Columns             target.Columns
+            ExtraColumns               = setDifference target.Columns             source.Columns
+            MissingForeignKeys         = setDifference source.ForeignKeys         target.ForeignKeys
+            ExtraForeignKeys           = setDifference target.ForeignKeys         source.ForeignKeys
+            MissingRows                = setDifference source.Rows                target.Rows
+            ExtraRows                  = setDifference target.Rows                source.Rows
+            MissingRowDigests          = setDifference source.RowDigests          target.RowDigests
+            ExtraRowDigests            = setDifference target.RowDigests          source.RowDigests
+            MissingLogicalNameBindings = setDifference source.LogicalNameBindings target.LogicalNameBindings
+            ExtraLogicalNameBindings   = setDifference target.LogicalNameBindings source.LogicalNameBindings
         }
 
-    /// True iff the diff is empty across all eight axes.
+    /// True iff the diff is empty across all ten axes.
     let isEqual (d: PhysicalSchemaDiff) : bool =
         List.isEmpty d.MissingColumns
         && List.isEmpty d.ExtraColumns
@@ -416,6 +496,8 @@ module PhysicalSchema =
         && List.isEmpty d.ExtraRows
         && List.isEmpty d.MissingRowDigests
         && List.isEmpty d.ExtraRowDigests
+        && List.isEmpty d.MissingLogicalNameBindings
+        && List.isEmpty d.ExtraLogicalNameBindings
 
     /// Render a diff as a human-readable multi-line string. Used by
     /// canary failure messages so the operator sees exactly which
@@ -464,6 +546,16 @@ module PhysicalSchema =
                 d.Table
                 d.Count
                 (d.AggregateHash.Substring(0, min 16 d.AggregateHash.Length))
+        let renderBinding (b: LogicalNameBinding) : string =
+            match b.Column with
+            | None ->
+                sprintf
+                    "  [%s].[%s] (table) logical=%s"
+                    b.Schema b.Table b.LogicalName
+            | Some col ->
+                sprintf
+                    "  [%s].[%s].[%s] logical=%s"
+                    b.Schema b.Table col b.LogicalName
         let block (label: string) (renderer: 'a -> string) (xs: 'a list) : string =
             if List.isEmpty xs then sprintf "%s:\n  (none)" label
             else
@@ -506,4 +598,6 @@ module PhysicalSchema =
                 truncatedBlock "Extra rows in target (target has, source did not)" renderRow d.ExtraRows
                 truncatedBlock "Missing row digests in target (source had, target lost)" renderDigest d.MissingRowDigests
                 truncatedBlock "Extra row digests in target (target has, source did not)" renderDigest d.ExtraRowDigests
+                truncatedBlock "Missing logical-name bindings in target (source had, target lost)" renderBinding d.MissingLogicalNameBindings
+                truncatedBlock "Extra logical-name bindings in target (target has, source did not)" renderBinding d.ExtraLogicalNameBindings
             ]

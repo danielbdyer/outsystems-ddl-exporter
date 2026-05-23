@@ -19285,3 +19285,67 @@ The chapter-3.6 single-round-trip optimization is preserved — the property que
 - `src/Projection.Core/Passes/LogicalTableEmission.fs:14-22` — docstring updated to reflect corrected ordering.
 - `tests/Projection.Tests/LogicalNameRoundtripTests.fs` — NEW; 6 facts.
 - `tests/Projection.Tests/AxiomTests.fs` — `L3-Emission-LogicalRoundtrip (slice D.1.b)` citation entry.
+
+## 2026-05-23 (slice D.1.c — canary triangle assertion) — `PhysicalSchema.LogicalNameBindings` axis carries the logical-name binding through the diff surface; canary fixtures gain `V2.LogicalName` extended-property calls; a new Docker-bound triangle canary asserts the property end-to-end on the realistic operator-shape source; statement-stream emission fixed to include extended-property statements (silent gap predating slice D.1.b)
+
+### Context
+
+Slices D.1.a (substitution) + D.1.b (extended-property recovery) shipped the mechanism for logical-name emission with end-to-end roundtrip. D.1.c is the closing arc: a `PhysicalSchema` axis carrying the logical-name binding, augmented canary fixtures that exercise divergent logical-vs-physical names, and a triangle assertion that fires on every canary run. The principal-PO question that opened the chapter ("V2 emits operator-meaningful identifiers; verify through the canary that the operator-reality roundtrip preserves them") gets its structural artifact at this slice.
+
+### What shipped
+
+**Core widening** (`src/Projection.Core/PhysicalSchema.fs`):
+- New type `LogicalNameBinding { Schema; Table; Column: string option; LogicalName }` — `Column = None` for table-level, `Some col` for column-level.
+- New field `PhysicalSchema.LogicalNameBindings : Set<LogicalNameBinding>`, populated by `ofCatalog` from `Kind.Name` + `Attribute.Name` paired with the physical coordinate.
+- `PhysicalSchemaDiff` gains `Missing*` / `Extra*LogicalNameBindings` fields; `isEqual` extends to ten axes (was eight); `renderDiff` extends with operator-readable binding output.
+
+**Statement-stream emission fix** (`src/Projection.Targets.SSDT/SsdtDdlEmitter.fs`):
+- The flat-stream `statements` function was missing `extendedPropertyStatements k` in its per-kind yield (only the per-kind file path `kindToSsdtFile` included them). The slice-D.1.b V2.LogicalName extended-property statements consequently never landed in deploys via `runWithReadback` / `Render.toText`. The M3 V2-internal closure test surfaced this immediately when the new `LogicalNameBindings` axis became part of `isEqual` — target's bindings carried fallback names while source's carried logical names.
+- Fix: thread `extendedPropertyStatements k` into `statements` matching the per-kind file emission order. The flat-stream + per-kind-file paths now produce equivalent statement sets per kind.
+
+**Statement-stream adjunction** (`src/Projection.Targets.SSDT/PhysicalSchemaReader.fs`):
+- `ofStatementStream` extended to recover `LogicalNameBindings` from `SetExtendedProperty` statements where `propertyName = "V2.LogicalName"`. The adjunction holds on the new axis: `PhysicalSchema.ofCatalog c = ofStatementStream (SsdtDdlEmitter.statements c)`.
+
+**Fixture augmentation** (`fixtures/canary-gate.sql` + `tests/Projection.Tests/Fixtures/SourceSchema.fs`):
+- Both gain `EXEC sys.sp_addextendedproperty @name = N'V2.LogicalName', @value = N'<logical>'` calls for every table + every column. ReadSide's slice-D.1.b hydration query picks these up; the source catalog post-readback has divergent `Kind.Name = "Customer"` vs `Kind.Physical.Table = "OSUSR_M3_CUSTOMER"`.
+
+**Triangle canary** (`tests/Projection.Tests/LogicalNameTriangleCanaryTests.fs`):
+- 3 Docker-bound facts via `Deploy.runWideCanary SourceSchema.realistic pipelineEmit`, where `pipelineEmit` composes `LogicalTableEmission.Enabled` + `LogicalColumnEmission.Enabled` + `SsdtDdlEmitter.statements`. Each fact asserts a different leg of the triangle: full predicate; source-side divergence guard; target-side substitution-worked guard.
+
+**AxiomTests citation**: `L3-Emission-LogicalTriangle (slice D.1.c)` citing the triangle canary test.
+
+### Decisions resolved
+
+**Triangle property as a SEPARATE predicate, not part of `isEqual`.** `PhysicalSchema.isEqual` does set-difference on the FULL `LogicalNameBinding` record (Table included) — under substitution, source's Table = "OSUSR_*" and target's Table = "logical" differ. That's CORRECT diagnostic information but not the triangle property. The triangle predicate projects to `(Schema, TableLogicalName, ColumnLogicalName)` and compares on identity alone, then checks `binding.Table = binding.LogicalName` on the target side. Both predicates ship; canary tests use each at its appropriate path (raw-emit uses `isEqual`; pipeline-emit uses the triangle predicate).
+
+**`LogicalNameBinding` over `PhysicalLogicalNameBinding`.** The concept being named is the BINDING between physical coords and logical name. Naming it `Physical*` would suggest physical-only payload (parallel with `PhysicalColumn`); but the binding's defining attribute IS the logical name. `LogicalNameBinding` names the concept; the physical-coord fields are attributes. Lives in `PhysicalSchema.fs` because that's where the diff comparator threads it.
+
+**Statement-stream emission must mirror per-kind file emission.** The `statements` / `emitSlices` divergence on extended properties is a recurring failure shape. Discipline reinforced: any per-kind statement type that ships via `kindToSsdtFile` must also yield from `statements` to preserve the adjunction `PhysicalSchema.ofCatalog c = ofStatementStream (SsdtDdlEmitter.statements c)` on the corresponding axis. Catch surface: AdjunctionLawTests' H-050 property test should grow per-axis coverage as PhysicalSchema widens.
+
+**Identity projection drops the substitution-mutated axis.** The triangle's identity triple is `(Schema, TableLogicalName, ColumnLogicalName option)` — NOT `(Schema, Table, Column, LogicalName)`. Source's `Table` and target's `Table` differ by design under substitution; including them in the identity makes the predicate fail on a non-meaningful axis. The projection encodes "what's structurally INVARIANT under substitution" — exactly the property being verified.
+
+### Discipline reinforced
+
+**Statement-stream adjunction is structural.** Widening `PhysicalSchema` requires extending `ofStatementStream` in lockstep with `ofCatalog`. Otherwise the adjunction quietly fails on the new axis. The flat-stream emission fix in this slice IS the same shape — `statements` must yield every per-kind statement type that `kindToSsdtFile` does. Cross-link to AdjunctionLawTests' H-050 (in-process adjunction property) — widening events should extend H-050 coverage in the same commit.
+
+**Triangle predicate scope = "as separate as the diff comparator allows."** The diff comparator computes the difference; the canary applies the property predicate. Don't conflate. Keeps `PhysicalSchema` focused on structural comparison; lets test-side assertions express domain-specific predicates without coupling Core to canary-specific semantics. Sibling discipline to slice C.5's "wiring-without-downstream-consumer" — the mechanism lands separately from the consumer that verifies it.
+
+**Existing canary as latent-gap surface.** The M3 V2-internal closure test failed immediately when `LogicalNameBindings` joined `isEqual` — because the statement-stream emission gap (predating D.1.b's emitter wiring) was invisible until a new axis exposed it. The discipline: when widening a comparison axis, run the existing canary first; the gap surfaces in seconds. Pairs with the test-failure capture protocol (TRX-first when `Failed: N > 0`).
+
+### Test surface
+
+- `tests/Projection.Tests/LogicalNameTriangleCanaryTests.fs` — NEW; 3 Docker-bound triangle facts via `Deploy.runWideCanary` + pipeline-emit.
+- `tests/Projection.Tests/AxiomTests.fs` — `L3-Emission-LogicalTriangle (slice D.1.c)` citation entry.
+- **Full test suite**: 2369 pass, 0 fail, 207 skipped (+3 from prior baseline of 2366).
+
+### Cross-references
+
+- `SLICE_D_1_C.md` — slice doc; full mechanism + decisions + scope boundaries.
+- `DECISIONS 2026-05-23 (slice D.1.a — logical-name emission as default)` — substitution mechanism.
+- `DECISIONS 2026-05-23 (slice D.1.b — V2.LogicalName extended-property roundtrip)` — extended-property recovery.
+- `src/Projection.Core/PhysicalSchema.fs:128-180,231-271,395-420,448-456` — LogicalNameBinding type + LogicalNameBindings field + diff/isEqual/renderDiff extensions.
+- `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs:680-696` — flat-stream emission fix (yields extendedPropertyStatements).
+- `src/Projection.Targets.SSDT/PhysicalSchemaReader.fs:107-145` — statement-stream LogicalNameBindings recovery.
+- `fixtures/canary-gate.sql` + `tests/Projection.Tests/Fixtures/SourceSchema.fs` — V2.LogicalName fixture augmentation.
+- `tests/Projection.Tests/LogicalNameTriangleCanaryTests.fs` — NEW; 3 facts.
+- `tests/Projection.Tests/AxiomTests.fs` — L3-Emission-LogicalTriangle citation entry.

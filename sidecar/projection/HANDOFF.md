@@ -1,3 +1,76 @@
+# Handoff letter — 2026-05-23 (slice D.1.c CLOSED; chapter D's first arc complete)
+
+To the next agent.
+
+You're picking up V2 with **chapter D's logical-name-emission arc closed** — all three sub-slices shipped green this session, 2369 tests passing, 0 failures. D.1.a closed the substitution mechanism; D.1.b closed the extended-property recovery; D.1.c closed the canary triangle assertion. The operator-reality canary now exercises and verifies the full property — source DDL with logical-name extended properties → V2 substitutes + emits → deploys → reads back → triangle predicate fires green. V2's "operator-meaningful identifiers in deployed SSDT" claim is a structural artifact now, not aspirational.
+
+The natural next question is **what chapter opens after chapter D's first arc**. The principal-PO has the call. This letter sets up the strategic decision and names the substantive follow-on candidates surfaced during the arc.
+
+## Where you are in the spine of the work
+
+Read `SLICE_D_1_C.md` first (~6 min) for the closing slice's mechanism + the triangle property's structural form. Then `SLICE_D_1_B.md` (~6 min) for the extended-property recovery path and the chain-order correction that landed mid-arc. Then `SLICE_D_1_A.md` (~5 min) for the substitution-vs-rename naming framing that's now structurally codified. The three DECISIONS entries (2026-05-23, sequential) carry the canonical decisions.
+
+## What the chapter D arc shipped
+
+**Three sub-slices, end-to-end:**
+- **D.1.a**: `LogicalTableEmission` + `LogicalColumnEmission` (default-on Core passes, classified `OperatorIntent Emission`). V2 emits `[dbo].[Customer]([Email])` instead of `[dbo].[OSUSR_ABC_CUSTOMER]([EMAIL])`.
+- **D.1.b**: `V2.LogicalName` extended-property emission per CREATE TABLE + per column. ReadSide's `readSchemaCombined` extended with a 5th batch joining `sys.extended_properties`; `buildKind` / `buildAttribute` hydrate `Kind.Name` / `Attribute.Name` from the property. Backward-compat fallback to deployed-name when absent.
+- **D.1.c**: `PhysicalSchema.LogicalNameBindings` axis carries the logical-name binding through the diff surface. Canary fixtures (`canary-gate.sql` + `SourceSchema.realistic`) gain V2.LogicalName extended-property calls. New Docker-bound triangle canary asserts the property end-to-end.
+
+**Plus mid-arc structural fixes:**
+- **Chain order corrected** (D.1.b): both logical-emission passes now run BEFORE `TableRename` so operator pins dominate. D.1.a's stated-but-not-implemented contract.
+- **Statement-stream emission gap closed** (D.1.c): the flat `statements` function was missing `extendedPropertyStatements` (only per-kind file emission included them). V2.LogicalName extended properties consequently never landed in `runWithReadback` / `Render.toText` deploys until D.1.c. Surfaced when the new `LogicalNameBindings` axis joined `isEqual` and the M3 V2-internal closure test failed immediately. The discipline: the adjunction `PhysicalSchema.ofCatalog c = ofStatementStream (SsdtDdlEmitter.statements c)` is structural; widening a PhysicalSchema axis requires extending both `ofCatalog` AND `ofStatementStream` AND the statement-stream emitter in lockstep.
+
+## What's load-bearing for whatever opens next
+
+Carried-forward, still load-bearing:
+- **Substitution-vs-rename naming distinction.** Modules that AUTHOR new names share `*Rename` suffix; modules that SUBSTITUTE pre-existing catalog axes share `*Emission` suffix. Applies to any future pass that "expresses one catalog axis through another."
+- **Default-on is operator intent.** Production chain wires the substitution passes Enabled by default; `Disabled` mode preserves diagnostic / V1-parity fallback. Both classified `OperatorIntent Emission`. Apply the framing to any future operator-overlay axis where the production default IS the operator's intent.
+- **V2-namespace prefix on V2-internal extended properties.** `V2.LogicalName` is the first; future V2-internal annotations (`V2.<axis>`) follow the same naming convention. SQL Server reserves `MS_*` for system properties; the `V2.` namespace is safely distinct from operator-supplied properties.
+- **Statement-stream emission must mirror per-kind file emission.** The `statements` / `emitSlices` divergence is a recurring failure shape. Adjunction is structural; the AdjunctionLawTests' H-050 surface should grow per-axis coverage as PhysicalSchema widens.
+
+New from chapter D's arc (read the corresponding DECISIONS entries):
+- **Read-the-substrate-before-committing (N=3 codification).** Slice docstrings that assert structural properties (chain order, dominance, precedence, layer-locality, adjunction) must be VERIFIED against the substrate before the slice closes. D.1.b caught the chain-order contradiction; D.1.c caught the statement-stream emission gap. Apply pre-emptively when claiming a structural property.
+- **Triangle predicate scope = "as separate as the diff comparator allows."** The diff comparator computes the difference; the canary applies the property predicate. Don't conflate. Generalizes: when adding a new comparison axis to PhysicalSchema, the property assertions live in the canary tests, not in `PhysicalSchema.isEqual`.
+
+## Candidate next-chapter opens (read at chapter-open)
+
+These are the substantive forward signals surfaced during the chapter D arc. The principal-PO call is which to open first.
+
+1. **Operator-overlay surface for the substitution toggle.** Today's logical-emission passes are wired Enabled at module-init in `RegisteredTransforms.allChainSteps`. Operators who want physical-name emission (diagnostic / V1-parity / specific-table fallback) need a config knob. Shape: `Config.PolicySection.LogicalNameEmission` taking values `Enabled | Disabled | PerKind of Map<SsKey, Mode>`. ~3-5 days; mirrors chapter C's binder-then-wire pattern.
+
+2. **AdjunctionLawTests' H-050 widening.** Chapter D's slice D.1.c surfaced the adjunction's per-axis fragility. Today H-050 covers Columns + ForeignKeys axes; widening to include Rows, RowDigests, AND LogicalNameBindings would make the structural-property test catch future axis-emission gaps before they reach the canary. ~2-3 days; pure F# (no Docker dependency); high-leverage for forward-stability.
+
+3. **Perf-gate baseline re-record.** Chapter D added ~17 extended-property statements per canary deploy (one per table + per column). No observable perf regression in the green test run, but the operator-reality 150-table canary at production scale adds ~2.5k extra EXEC statements per deploy. Run `PERF_GATE_RECORD=1 ./scripts/perf-gate.sh` to re-baseline; pair with a DECISIONS amendment naming the new floor. ~30 minutes; mechanical.
+
+4. **CDC-silence verification for V2.LogicalName emissions.** Per chapter 4.1.B's CDC-silence-on-idempotent-redeploy property: V2 emits unchanged SSDT → no CDC captures fire. The V2.LogicalName extended-property emissions should be IDEMPOTENT (re-deploying the same V2.LogicalName value shouldn't fire CDC), but the test surface doesn't yet cover this axis. ~2-3 days; adds property test to existing `CdcSilenceCrossEmitterTests`.
+
+5. **Tolerance taxonomy extension for non-V2-emitted schemas.** Pre-D.1.b deployed schemas (and non-V2-emitted schemas) have no V2.LogicalName extended properties; ReadSide's fallback derives `Kind.Name = deployed_name`. Canary comparisons against such schemas would show source's logical-name bindings (recovered from D.1.b extended-property hydration on the V2-emitted side) differing from target's fallback-derived bindings. A `Tolerance.LogicalNameRecoveryAbsent` variant + canary-side tolerance acceptance would let the canary compare V2-shape against legacy-shape gracefully. ~1 week; touches the chapter-4 Tolerance taxonomy.
+
+## Reading order before chapter-D-arc-close conversation with the PO (~30 min)
+
+1. **`SLICE_D_1_C.md`** — closing slice; triangle property structural form. ~6 min.
+2. **`SLICE_D_1_B.md`** — recovery mechanism; chain-order correction. ~6 min.
+3. **`SLICE_D_1_A.md`** — substitution mechanism; naming framing. ~5 min.
+4. **The three DECISIONS entries** (2026-05-23, slice D.1.a / D.1.b / D.1.c) — canonical decisions. ~5 min.
+5. **`tests/Projection.Tests/LogicalNameTriangleCanaryTests.fs`** — the triangle assertion shape; lives below the existing canary's M3 facts. ~3 min.
+6. **`src/Projection.Core/PhysicalSchema.fs:128-180,231-271,395-420,448-456`** — the structural extension landed by D.1.c. ~5 min.
+
+## Pitfalls D.1.c hit that you can avoid
+
+- **F# namespace resolution doesn't auto-import child modules from the parent namespace.** D.1.c's `LogicalNameTriangleCanaryTests.fs` initially used `namespace Projection.Tests` + tried `SourceFixtures.SourceSchema.realistic` — compile failed because `SourceFixtures` is a namespace, not a module the namespace declaration brought in. The fix: use `module Projection.Tests.LogicalNameTriangleCanaryTests` at file level (mirrors `CanaryRoundTripTests.fs`), then `open Projection.Tests.SourceFixtures` (which makes the SourceSchema module visible). Generalizes: test files that consume `SourceFixtures.SourceSchema.*` should be module-shaped, not namespace-shaped.
+- **fsproj compile order matters.** `LogicalNameTriangleCanaryTests` was initially placed at line 44 of the .fsproj — alphabetical placement put it before `Fixtures/SourceSchema.fs` (line 214). F# compile order is fsproj-order, not file-system-order. Tests that depend on shared fixtures must be listed AFTER the fixture files. Place new canary tests near `CanaryRoundTripTests.fs` (around line 216-218 in the current fsproj).
+- **Triangle identity projection must drop the substitution-mutated axis.** Initial projection used `(Schema, Column, LogicalName)` — failed immediately because source's `Column = Some "ID"` differs from target's `Column = Some "Id"` under substitution. The correct projection is `(Schema, TableLogicalName, ColumnLogicalName option)` — drop the OSSYS-shape Column, use the table-level binding's LogicalName for table-identity, use the column-level binding's own LogicalName for column-identity.
+- **The fixture augmentation surfaces operator-reality cleanly; the test surface needs guards.** D.1.c shipped two guard tests (source-side divergence; target-side substitution worked) alongside the main triangle test. Without the guards, the main test could pass trivially if the fixture-augmentation got reverted (no divergence to verify) or if the pipeline-emit silently fell through to raw-emit (no substitution to verify).
+
+## Closing posture
+
+Chapter D's first arc is the cleanest 3-sub-slice closure the project has shipped: each sub-slice ships green, builds on the prior, and the closing slice produces a structural artifact (the triangle predicate) that turns the product claim into a continuous verification surface. Hold the spine — the next chapter inherits a substrate where logical-name emission is verifiably correct on every canary run, and the operator-reality canary has a new axis of bite. Whatever opens next, this arc's discipline + structural patterns are now load-bearing for the chapters to come.
+
+— The chapter-D-arc-close architect.
+
+---
+
 # Handoff letter — 2026-05-23 (slice D.1.b CLOSED; only D.1.c remaining in chapter D's first arc)
 
 To the next agent.

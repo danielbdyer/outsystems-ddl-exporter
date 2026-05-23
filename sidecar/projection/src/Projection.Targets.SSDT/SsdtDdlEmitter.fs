@@ -684,6 +684,14 @@ module SsdtDdlEmitter =
                 yield! indexStatements k
                 // Slice 5.13.index-features-emit (matrix row 55).
                 yield! disabledIndexAlters k
+                // Slice D.1.c — match `kindToSsdtFile`'s per-kind
+                // emission order so the flat-stream surface carries
+                // the same SetExtendedProperty entries (including the
+                // D.1.b V2.LogicalName bindings ReadSide hydrates on
+                // roundtrip read). Without this, `Render.toText`-based
+                // deploys (Deploy.runWithReadback / runWithLoader) lose
+                // logical-name recovery and the M3 closure breaks.
+                yield! extendedPropertyStatements k
                 // H-019: triggers after table + indexes per kindToSsdtFile
                 // emission order (ON <table> must exist before the trigger).
                 yield! triggerStatements k
