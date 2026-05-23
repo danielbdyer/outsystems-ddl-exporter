@@ -1,3 +1,53 @@
+# Handoff letter — 2026-05-23 (slice D.2.a CLOSED; chapter D's emission-aesthetics arc opens)
+
+To the next agent.
+
+You're picking up V2 with **chapter D's first arc closed (D.1.a/b/c — logical-name emission end-to-end) and the second arc opened (D.2.a — elegant constraint formatting just shipped)**. The operator-PO flagged the emission-layout gap immediately after the logical-name arc landed: V1's C# pipeline produces multi-level-tab elegance for PK / FK / DEFAULT; V2's ScriptDom-default emission packs constraints onto column lines. D.2.a carbon-copies V1's `ConstraintFormatter` as F# and wires it into `Render.toText` as a terminal post-processor. Test suite 2370/0/207 green.
+
+## Where you are in the spine of the work
+
+D.2.a is the first slice of chapter D's emission-aesthetics arc. The arc's framing: V2 now has structurally-correct emission (logical names; verified roundtrip; canary triangle). The remaining axis is **operator-visible layout** — each CREATE TABLE's shape, the indentation conventions, the deferred extended-property formatting, anonymous-default handling. The arc closes when V2's emission matches V1's elegance across every operator-visible shape in the realistic-fixture's output.
+
+Read `SLICE_D_2_A.md` first (~6 min) for the constraint-formatter carbon-copy mechanism + the three patterns recognised. Then `ADMIRE.md`'s newly-appended entry (~3 min) for the V1 → V2 input-shape adaptation. The DECISIONS entry (~3 min) carries the resolved questions including the deferred extended-property + anonymous-default branches.
+
+## D.2.b candidates — pick what the operator surfaces
+
+D.2.a opens the arc; D.2.b's specifics depend on what aesthetic gaps the operator notices next. Most likely-surfaced gaps:
+
+1. **`EXECUTE sys.sp_addextendedproperty` multi-line formatting.** V1 emits each EXEC with `@name=N'...', @value=N'...',` on the head line and `@level0type=N'SCHEMA',@level0name=N'dbo',` / `@level1type=N'TABLE',@level1name=N'X',` on indented continuation lines. V2 currently emits the entire EXEC as a single long line. Most visible operator-aesthetic gap remaining; high signal-to-noise ratio for the slice (one new pattern in `ConstraintFormatter.tryFormatLine`).
+
+2. **Anonymous DEFAULT (no constraint name).** V2's IR has `Attribute.DefaultName : Name option`; the None case lands as ScriptDom-emitted `[col] type NULL DEFAULT (value)` without the CONSTRAINT prefix. The current formatter scans for `" CONSTRAINT ["` so anonymous defaults pass through unchanged. V1's fixture shows multi-line anonymous default — extend `tryFormatLine` with a `" DEFAULT ("`-keyword detection branch. ~30 min.
+
+3. **CHECK constraint formatting.** V2 emits column-inline `CHECK (expr)` today; V1's fixture pattern for CHECK isn't visible in the canonical edge-case fixture but probably follows the same multi-line shape. Detect when an operator surfaces it.
+
+4. **Composite PK / multi-column constraint.** V2's emitter uses ScriptDom's `UniqueConstraintDefinition`; for multi-column PK, the constraint emits at the table level (not column-inline) with column list. The current formatter handles single-column PK (column-inline detection) but not multi-column (the table-level `CONSTRAINT [PK] PRIMARY KEY ([col1], [col2])` line). Extend the table-level FK detection to also catch PRIMARY KEY at the line start. ~30 min.
+
+## What's load-bearing from D.2.a
+
+Carried-forward, still load-bearing:
+- **Carbon-copy V1 with citation + ADMIRE row.** The slice's mechanism is the V1-self-containment + editorial-inheritance discipline operating at slice scope. Future emission-aesthetic slices that draw on V1 logic follow the same shape: file-header citation comment + ADMIRE.md entry + refactor freely from carbon-copy state.
+- **Text post-processing at `Render.toText` terminal boundary is the canonical fit when ScriptDom's formatter can't express the desired shape.** Don't try to subclass `Sql160ScriptGenerator`; don't reach into reflection. The LINT-ALLOW substantive-rationale discipline names this boundary as the allowed exception, with substantive rationale.
+- **V1's indentation conventions (4 / 8 / 12 spaces) are the unifying axis.** Every multi-line emission across the SSDT bundle (constraint formatting, future extended-property formatting, future CHECK formatting) follows the same 4-space-step hierarchy. The constraint formatter's `bodyIndent = indent + "    "` / `clauseIndent = indent + "        "` pattern is the precedent.
+
+## Pitfalls D.2.a hit that you can avoid
+
+- **The flat-stream emission gap (slice D.1.c finding) STILL applies if you add new statement types.** `SsdtDdlEmitter.statements` and `kindToSsdtFile` are two emission paths; per-kind statement types must yield from BOTH or the adjunction H-050 breaks. If you add new emission shapes for D.2.b (extended-property reformatting, etc.), confirm the new statements appear in both paths.
+- **The 4 / 8 / 12 space conventions are CARBON-COPIED, not invented.** D.2.a's initial off-by-4 (16 spaces for ON DELETE/ON UPDATE instead of 12) was caught by sample emission inspection; the fix used V1's `ownerIndent + 4` formula directly. When extending the formatter, anchor against V1's source (`src/Osm.Smo/PerTableEmission/ConstraintFormatter.cs`) for indentation, not against your aesthetic intuition.
+- **The formatter operates AFTER `Render.toText` accumulates ScriptDom-rendered text.** It's a STRING TRANSFORMATION; no access to ScriptDom AST state. Input is whatever ScriptDom produces; output is whatever V1's shape requires. When ScriptDom's emission changes (e.g., a future ScriptDom version produces different column-inline formatting), the formatter's input detection patterns need to update.
+
+## Reading order (~15 min)
+
+1. **`SLICE_D_2_A.md`** — slice doc; three patterns recognised; deferred items. ~6 min.
+2. **`src/Projection.Targets.SSDT/ConstraintFormatter.fs`** — the F# port; file-header LINT-ALLOW + carbon-copy citation; three pattern handlers. ~5 min.
+3. **`ADMIRE.md`** newly-appended entry — V1 source location + V2-growth delta documented. ~2 min.
+4. **`tests/Fixtures/emission/edge-case/Modules/AppCore/dbo.Customer.sql`** (V1 reference fixture) — the elegant V1 output shape the F# port targets. ~2 min.
+
+Hold the spine. Chapter D's emission-aesthetics arc is operator-visible polish on top of the structurally-correct emission D.1's three sub-slices delivered. The arc closes when V2's output matches V1's elegance across the operator's full set of canonical fixtures.
+
+— The slice D.2.a architect.
+
+---
+
 # Handoff letter — 2026-05-23 (slice D.1.c CLOSED; chapter D's first arc complete)
 
 To the next agent.

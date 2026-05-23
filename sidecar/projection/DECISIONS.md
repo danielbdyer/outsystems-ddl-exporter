@@ -19349,3 +19349,51 @@ Slices D.1.a (substitution) + D.1.b (extended-property recovery) shipped the mec
 - `fixtures/canary-gate.sql` + `tests/Projection.Tests/Fixtures/SourceSchema.fs` — V2.LogicalName fixture augmentation.
 - `tests/Projection.Tests/LogicalNameTriangleCanaryTests.fs` — NEW; 3 facts.
 - `tests/Projection.Tests/AxiomTests.fs` — L3-Emission-LogicalTriangle citation entry.
+
+## 2026-05-23 (slice D.2.a — elegant constraint formatting) — `Projection.Targets.SSDT.ConstraintFormatter` carbon-copied from V1 reformats ScriptDom column-inline constraints into multi-line elegant shape (PK / DEFAULT / FK with multi-level indentation); operator request to match V1's pipeline aesthetics
+
+### Context
+
+Chapter D's first arc closed with V2 emitting operator-meaningful identifiers (logical-name substitution + V2.LogicalName extended-property roundtrip + canary triangle assertion). With names landed, the next operator-visible axis is the LAYOUT of each CREATE TABLE — V2's ScriptDom-default packs constraints onto column lines; V1's pipeline (via SMO + post-formatter) produces multi-line column-inline shape with three indentation levels (column / constraint name / constraint body). Operator-PO flag at slice open: "I would like to insist you are missing that the C# pipeline has multi-level tabs for primary keys, foreign keys, and defaults."
+
+### What shipped
+
+**`src/Projection.Targets.SSDT/ConstraintFormatter.fs`** — F# port carbon-copied from V1's `src/Osm.Smo/PerTableEmission/ConstraintFormatter.cs`. Three recognised patterns:
+- Column-inline PRIMARY KEY: `[col] type ... CONSTRAINT [pk] PRIMARY KEY [CLUSTERED]` → 3 lines (column / `CONSTRAINT [name]` at +4 / `PRIMARY KEY CLUSTERED,` at +8).
+- Column-inline named DEFAULT: `[col] type ... CONSTRAINT [df] DEFAULT value` → 2 lines (column / `CONSTRAINT [name] DEFAULT value,` at +4).
+- Table-level FOREIGN KEY: `CONSTRAINT [fk] FOREIGN KEY (cols) REFERENCES table (cols) [ON DELETE x] [ON UPDATE y]` → 3 + (0-2) lines. ON DELETE / ON UPDATE on separate lines at +8. V1's NO ACTION normalization preserved: one-sided clause backfills its complement; both-NO-ACTION drops both.
+
+**Wired into `Render.toText`** at the terminal text-emission boundary (after ScriptDom emits + StringBuilder accumulates; before the rendered text leaves Render). Operates on the full rendered SQL text in one pass; pass-through for lines that don't match the three recognised shapes.
+
+### Decisions resolved
+
+**Text post-processing over ScriptDom subclassing.** ScriptDom's `Sql160ScriptGenerator` has no per-constraint formatting option; subclassing would require reflection-based access to private formatter state (V2 doesn't reach into runtime metaprogramming) OR a full re-emission via a custom IL-level generator (visibility-lift cost orders of magnitude higher than the operator-visible benefit). Text post-processing at `Render.toText` terminal boundary IS the canonical fit; the LINT-ALLOW substantive-rationale discipline names this exact boundary as the allowed exception.
+
+**Carbon-copy V1 with citation, not re-derive.** V1's formatter solves the bulk of the problem (table-level FK with ON DELETE / ON UPDATE NO ACTION normalization). Per V2 self-containment + carbon-copy editorial inheritance, V2 carbon-copies the V1 source into V2's domain-structured location, cites V1 in a file-header comment + an ADMIRE.md row, and refactors freely from there. The F# port preserves V1's indentation conventions (4 / 8 / 12 spaces) and NO ACTION normalization; the input-shape adaptation (column-inline detection for PK + DEFAULT) is the V2-growth delta.
+
+**No EXECUTE sys.sp_addextendedproperty reformatting.** V1 emits extended-property EXEC statements with multi-line `@level0type` / `@level1type` / `@level2type` on separate lines; V2 currently emits them as single long lines. Deferred — slice scope is constraint formatting (PK / FK / DEFAULT per operator request). Future operator preference for extended-property reformatting extends `ConstraintFormatter` with a parallel branch.
+
+**No anonymous-DEFAULT formatting.** V2's `Attribute.DefaultName : Name option`; when None, ScriptDom emits `DEFAULT (value)` without the CONSTRAINT prefix. Formatter scans for `" CONSTRAINT ["` so the anonymous shape passes through unchanged. Deferred — no current V2 fixture exercises anonymous defaults; realistic operator-reality fixture uses named defaults. Extend `tryFormatLine` with `" DEFAULT ("`-keyword branch when an anonymous-default fixture surfaces.
+
+### Discipline reinforced
+
+**Carbon-copy with citation discipline (V2 self-containment).** V2 inherits V1's source as editorial donor; F# port carries file-header citation + ADMIRE.md entry. Mirrors prior carbon-copy events (`EntitySeedDeterminizer` chapter 4.1.B; `OssysSqlExtractor` chapter B.3.1).
+
+**LINT-ALLOW substantive-rationale at text-emission boundary.** Each indentation literal carries an inline LINT-ALLOW with substantive rationale (4/8/12-space conventions carbon-copied from V1); the file-header LINT-ALLOW carries the four-question analysis (ScriptDom IS the use-case-specific library; already in codebase; subclassing cost too high; structural reason — ScriptDom emits column-inline constraints with no documented split option; text post-processing IS the canonical fit).
+
+### Test surface
+
+- Existing snapshot tests absorbed the reformatting cleanly. The multi-line shape is structurally identical SQL; ScriptDom re-parses without issue.
+- H-050 adjunction-property tests continue green (SetExtendedProperty + CreateIndex statements pass through; only column-inline constraints + table-level FK lines reformat).
+- Docker-bound canary tests (M3 V2-internal closure + M3 wide canary + D.1.c triangle canary) pass green — reformatted SQL deploys and round-trips identically.
+- **Full test suite**: 2370 pass, 0 fail, 207 skipped (+1 from prior 2369; the additional pass is an AdjunctionLawTests' axis discovering the multi-line shape preserves structural equality).
+
+### Cross-references
+
+- `SLICE_D_2_A.md` — slice doc.
+- `src/Projection.Targets.SSDT/ConstraintFormatter.fs` — NEW.
+- `src/Projection.Targets.SSDT/Render.fs:122-130` — wire-in.
+- `src/Projection.Targets.SSDT/Projection.Targets.SSDT.fsproj:16` — compile order.
+- `ADMIRE.md` — NEW entry; V1 source + V2-growth delta documented.
+- V1 reference: `src/Osm.Smo/PerTableEmission/ConstraintFormatter.cs`.
+- V1 reference fixture: `tests/Fixtures/emission/edge-case/Modules/AppCore/dbo.Customer.sql` — the V1 elegant output shape.

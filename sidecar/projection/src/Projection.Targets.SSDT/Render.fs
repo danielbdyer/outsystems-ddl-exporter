@@ -123,4 +123,9 @@ module Render =
         statements
         |> Bench.streamProbe "render.toText.stream"
         |> Seq.iter (toSql sb)
-        sb.ToString()
+        // Slice D.2.a — terminal text-emission post-processor that
+        // reformats ScriptDom-emitted column-inline constraints into
+        // V1's multi-line elegant shape (PK + DEFAULT split across
+        // column / constraint name / body lines; table-level FK with
+        // ON DELETE / ON UPDATE on indented clause lines).
+        ConstraintFormatter.format (sb.ToString())

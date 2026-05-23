@@ -2954,3 +2954,33 @@ The initial slice-6 implementation packed a `ClusterCap` mechanism dropping entr
 - **Per-finding-type emission gates are a separate concern**, properly cashed out at Chapter C slice C.1 (tightening axis, operator-config wiring to existing `Policy.TighteningPolicy` / `TighteningOverride` / `NullBudget` structures). This slice ships enrichment + presentation only; "reduce diagnostic noise at the source" lands when C.1 wires the strategy-layer thresholds to operator config.
 - **The `Code`-prefix routing convention** (`tightening.* / profiling.* / adapter.* / emit.*`) is the load-bearing structural assumption behind `Axis.tryFromCode`. Codes that don't follow the dot-separated convention fall through to the unclustered tail (no harm; just less navigable). Future code-prefix conventions must keep the top.sub two-segment shape stable; otherwise axis-derivation needs an explicit cluster-key field on `DiagnosticEntry` (the "promote to typed DU when a consumer demands it" path).
 - **`SuggestedConfig.Value` is a `string`**, not a typed JSON value DU. Per IR-grows-under-evidence: until a consumer demands distinguishing string-shaped vs numeric-shaped vs boolean-shaped suggested values, the string slot suffices (operators paste the value into JSON config directly). Promote to a typed `SuggestedValue` DU when a real consumer (e.g., a future `v2 suggest-config <runId>` CLI consumer) demands the structural lift.
+
+## 2026-05-23 — `ConstraintFormatter` (`src/Osm.Smo/PerTableEmission/ConstraintFormatter.cs`)
+
+**Mode: V1-migration (carbon-copy with input-shape adaptation).**
+
+### What V1 does
+V1's post-processor reformats SMO's per-table emitted SQL: detects lines starting with `CONSTRAINT [` that contain `PRIMARY KEY` or `FOREIGN KEY` and re-emits them with multi-level indentation. PK: name on its own line, body indented +4 spaces below. FK: name on its own line, `FOREIGN KEY (...) REFERENCES ...` body at +4 spaces, `ON DELETE` / `ON UPDATE` clauses on separate lines at +8 spaces. Trailing commas threaded across the multi-line shape so the column definition list stays syntactically valid.
+
+The V1 input shape (SMO's `Scripter` output) already places `CONSTRAINT` on its own line; V1's formatter handles the splitting from there. V1's optional `foreignKeyTrustLookup` parameter appends a `-- Source constraint was not trusted (WITH NOCHECK)` comment line below FKs whose source was V1's `#FkReality.IsNoCheck = 1`.
+
+### V1 → V2 adaptation
+V2 emits via ScriptDom's `Sql160ScriptGenerator`, which produces a DIFFERENT input shape: column-inline constraints (PK, named DEFAULT) appear on the SAME LINE as the column definition (`[Id] INT NOT NULL CONSTRAINT [PK_*] PRIMARY KEY CLUSTERED,`); table-level FK constraints DO emit on their own line (`CONSTRAINT [FK_*] FOREIGN KEY ...`).
+
+The F# port carbon-copies V1's logic for the table-level FK case (where input shapes match) and adds new column-inline detection for PK + DEFAULT (where V1's formatter wouldn't fire because CONSTRAINT isn't at the line start). Result: V1's elegant multi-line column-inline output shape from V2's ScriptDom-flat input.
+
+### V2 placement
+**`src/Projection.Targets.SSDT/ConstraintFormatter.fs`** — F# port. Wired into `Render.toText` as a terminal post-processor (operates on the full rendered SQL text after ScriptDom emits it).
+
+### Existing test coverage (V1)
+V1 has `tests/Osm.Smo.Tests/PerTableEmission/ConstraintFormatterTests.cs` covering PK / FK / multi-clause shape; V2's port inherits the same shape via the snapshot tests under `tests/Projection.Tests/` (all 2370 tests pass cleanly after the formatter wire-in).
+
+### V2 test coverage
+- Existing emitter snapshot tests (SsdtSerializationTests, edge-case bundle tests) absorb the reformatting without any test changes — the multi-line shape is structurally identical SQL.
+- The `H-050` adjunction-property tests continue to hold (the SetExtendedProperty + CreateTable / CreateIndex statements pass through unchanged; only column-inline + table-level FK lines get reformatted).
+- All Docker-bound canary tests pass (M3 V2-internal closure + M3 wide canary + slice-D.1.c triangle canary) — the reformatted SQL deploys and round-trips identically.
+
+### Edges / risks
+- **Anonymous DEFAULT** (no name on the constraint) is not yet detected by V2's formatter. V2's IR has `Attribute.DefaultName : Name option`; when None, ScriptDom may emit `DEFAULT (value)` directly without the `CONSTRAINT [name]` prefix. The formatter's column-inline detection scans for `" CONSTRAINT ["` which would miss this shape. Defer — no current V2 fixture exercises anonymous DEFAULTs (the realistic source uses named defaults).
+- **CHECK constraints** are out of scope. V1's formatter doesn't handle them either; V2's emission today is column-inline `CHECK (expr)`. If operator preference surfaces for multi-line CHECK formatting, extend `tryFormatLine` with a `CHECK` detection branch.
+- **EXEC sys.sp_addextendedproperty** statements still emit on a single long line (V2 hasn't applied the V1 multi-line shape for extended properties). Visible in the before/after demo. Defer to a follow-up if the operator surfaces the preference; the formatter would need a parallel branch for `EXECUTE ... sp_addextendedproperty`.
