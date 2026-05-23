@@ -608,11 +608,12 @@ module FixtureGenerator =
     /// Generate a fixture matching the spec. Deterministic per
     /// `spec.Seed`: same spec → same DDL byte-for-byte.
     let generate (spec: GenerateSpec) : GeneratedFixture =
-        // Note: Guid.NewGuid is non-deterministic. For static seed
-        // data we tolerate this — the canary's PhysicalSchema
-        // comparison doesn't include row data. If a future
-        // round-trip data canary requires byte-determinism, swap
-        // to a deterministic UUIDv5 per (spec.Seed, table, row).
+        // Fully deterministic: every random draw — structure, names,
+        // types, FK targets, AND static-seed-row SS_Key GUIDs (via
+        // `nextGuid`, which pulls from this same seeded `rng`) — flows
+        // from `spec.Seed`. No `Guid.NewGuid`, clock, or ambient state.
+        // Same spec → byte-identical `Ddl`, `SeedData`, and `Combined`
+        // (asserted by the determinism test in `GeneratorScaleTests`).
         let rng = Random(spec.Seed)
         let ddlSb = StringBuilder(64 * 1024)
         let dataSb = StringBuilder(16 * 1024)

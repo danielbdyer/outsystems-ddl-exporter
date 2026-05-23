@@ -508,6 +508,18 @@ type Attribute = {
     /// reconstruction and future external-entity DDL paths.
     /// Chapter 4.9 slice β.
     ExternalDatabaseType : string option
+    /// Concrete SQL Server storage type when source evidence names it.
+    /// `Type` (the semantic `PrimitiveType`) is always present; this
+    /// field carries the *concrete realization* the OSSYS adapter
+    /// resolves from `ossys_EntityAttr.Type` (`rtLongInteger` →
+    /// `BigInt`, `rtDateTime` → `DateTime`, ...) or from an
+    /// `external_dbType` override. `None` for sources that carry only
+    /// the semantic category (test fixtures; `ReadSide`'s structural
+    /// reflection); emitters then fall back to the `PrimitiveType` →
+    /// `SqlDataTypeOption` mapping. Invariant:
+    /// `SqlStorageType.toPrimitiveType storage = Type` whenever
+    /// `Some storage`.
+    SqlStorage : SqlStorageType option
 }
 
 
@@ -909,6 +921,7 @@ module Attribute =
     ///   - `DefaultValue = None`; `DefaultName = None`; `Computed = None`
     ///   - `ExtendedProperties = []`
     ///   - `OriginalName = None`; `ExternalDatabaseType = None`
+    ///   - `SqlStorage = None` (semantic fallback; emitters use `Type`)
     ///
     /// Consumers override via record-update: `{ Attribute.create k n
     /// Integer with IsPrimaryKey = true; IsMandatory = true }`.
@@ -932,6 +945,7 @@ module Attribute =
             ExtendedProperties   = []
             OriginalName         = None
             ExternalDatabaseType = None
+            SqlStorage           = None
         }
 
 

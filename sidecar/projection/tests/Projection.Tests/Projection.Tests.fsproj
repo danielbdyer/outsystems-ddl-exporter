@@ -56,6 +56,7 @@
     <Compile Include="SummaryFormatterTests.fs" />
     <Compile Include="ComposeAtomicWriteTests.fs" />
     <Compile Include="SqlTypeCorrespondenceTests.fs" />
+    <Compile Include="SqlStorageTypeTests.fs" />
     <Compile Include="SqlLiteralTests.fs" />
     <Compile Include="LineageTests.fs" />
     <Compile Include="DiagnosticsTests.fs" />
@@ -185,6 +186,9 @@
     <Compile Include="EndToEndDifferentialTests.fs" />
     <Compile Include="V1NullabilityParityTests.fs" />
     <Compile Include="SsdtDdlEmitterTests.fs" />
+    <Compile Include="SqlStorageEmissionTests.fs" />
+    <Compile Include="BtReferenceFkFlowTests.fs" />
+    <Compile Include="OssysComprehensiveFixtureTests.fs" />
     <Compile Include="SsdtDdlEmitterPropertyTests.fs" />
     <Compile Include="SsdtSchemaFidelityPropertyTests.fs" />
     <Compile Include="DacpacEmitterTests.fs" />

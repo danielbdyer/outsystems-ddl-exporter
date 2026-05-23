@@ -981,7 +981,19 @@ module MetadataSnapshotRunner =
                     EntityName        = e.EntityName
                     PhysicalTableName = e.PhysicalTableName
                     DbSchema          = dbSchema
-                    IsStatic          = false
+                    // V1 classifies static (lookup) entities via
+                    // `ossys_Entity.Data_Kind = 'staticEntity'`; derive
+                    // `IsStatic` from it so the rowset path marks
+                    // `Modality.Static` (matching the JSON path's
+                    // `isStatic` projection). Previously hardcoded false,
+                    // which silently dropped static-entity classification.
+                    IsStatic          =
+                        match e.DataKind with
+                        | Some dk ->
+                            System.String.Equals(
+                                dk, "staticEntity",
+                                System.StringComparison.OrdinalIgnoreCase)
+                        | None -> false
                     IsExternal        = e.IsExternal
                     IsSystemEntity    = e.IsSystemEntity
                     IsActive          = e.IsActive

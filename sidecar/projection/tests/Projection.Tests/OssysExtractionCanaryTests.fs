@@ -61,9 +61,11 @@ let ``Slice ε canary: OSSYS seed fixture extracts to a V2 Catalog with 3 module
         | Error errors ->
             Assert.Fail (sprintf "OSSYS canary extraction failed: %A" errors)
         | Ok catalog ->
-            // V1 fixture INSERTs 3 modules: AppCore (100), Ops (200), SystemUsers (300).
-            // All three carry IsActive=1; AppCore + Ops are user modules; SystemUsers is system.
-            Assert.Equal(3, List.length catalog.Modules)
+            // The seed defines 7 modules: AppCore (100), Ops (200),
+            // SystemUsers (300, system), Sales (400), Inventory (500),
+            // Integration (600, Extension), RefData (700). The original
+            // three are preserved; the comprehensive expansion adds four.
+            Assert.Equal(7, List.length catalog.Modules)
 
 [<Fact>]
 let ``Slice ε canary: OSSYS seed fixture extracts the AppCore module with 3 entities`` () =
@@ -118,8 +120,9 @@ let ``Slice ε canary: Customer entity carries six attributes including FK to Ci
                 appCore.Kinds
                 |> List.find (fun k -> Name.value k.Name = "Customer")
             Assert.Equal(6, List.length customer.Attributes)
-            // CityId attribute carries Referenced_Entity_Id=2001 (City);
-            // V2's RowsetBundle composes this into a Reference.
+            // CityId carries a `bt<espace>*<entity>` binding type in the
+            // `Type` column with a NULL Referenced_Entity_Id; the rowset
+            // CTE resolves the bt-code to City and V2 composes a Reference.
             let hasCityRef =
                 customer.References
                 |> List.exists (fun r ->

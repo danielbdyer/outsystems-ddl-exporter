@@ -310,6 +310,34 @@ let ``Generator: deterministic output — same seed produces byte-identical DDL`
     Assert.Equal(f1.TableCount, f2.TableCount)
 
 [<Fact>]
+let ``Generator: deterministic seed data — same seed produces byte-identical INSERTs and GUIDs`` () =
+    // The static-seed rows carry SS_Key GUIDs drawn from the seeded RNG
+    // (`nextGuid`). Byte-identity of `SeedData` / `Combined` proves the
+    // GUIDs (and every INSERT) are deterministic, not just the DDL.
+    let f1 = FixtureGenerator.generate GenerateSpec.medium
+    let f2 = FixtureGenerator.generate GenerateSpec.medium
+    Assert.Equal(f1.SeedData, f2.SeedData)
+    Assert.Equal(f1.Combined, f2.Combined)
+    Assert.Equal(f1.SeedRowCount, f2.SeedRowCount)
+
+[<Fact>]
+let ``Generator: deterministic OSSYS-metadata synthesis — byte-identical across runs`` () =
+    // The synthesized `ossys_*` seed (entity IDs + SS_Key GUIDs via
+    // SHA256-derived `deterministicGuid`) must be byte-identical so the
+    // generated comprehensive fixture is reproducible end-to-end.
+    let f1 = FixtureGenerator.generate GenerateSpec.medium
+    let f2 = FixtureGenerator.generate GenerateSpec.medium
+    Assert.Equal(OssysFixtureSynthesizer.synthesize f1, OssysFixtureSynthesizer.synthesize f2)
+
+[<Fact>]
+let ``Generator: distinct seeds produce distinct output`` () =
+    // Determinism is seed-keyed, not constant: a different seed must
+    // perturb the generated schema (otherwise the seed is inert).
+    let a = FixtureGenerator.generate GenerateSpec.medium
+    let b = FixtureGenerator.generate { GenerateSpec.medium with Seed = GenerateSpec.medium.Seed + 1 }
+    Assert.NotEqual<string>(a.Combined, b.Combined)
+
+[<Fact>]
 let ``Generator: spec scaling — table count matches Entities + StaticEntities`` () =
     let small = FixtureGenerator.generate GenerateSpec.small
     Assert.Equal(GenerateSpec.small.Entities + GenerateSpec.small.StaticEntities, small.TableCount)
