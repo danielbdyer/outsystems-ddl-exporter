@@ -388,6 +388,14 @@ module ReadSide =
                             // V1-source values where present.
                             OriginalName = None
                             ExternalDatabaseType = None
+                            // ReadSide reflects the deployed schema
+                            // structurally; the concrete storage type
+                            // is recoverable but unused here. The
+                            // semantic `Type` drives the canary's
+                            // PhysicalSchema comparison; `SqlStorage`
+                            // stays `None` (semantic fallback) so this
+                            // path's emission is unchanged.
+                            SqlStorage = None
                         }
 
     /// Format a SQL Server scalar value as the canonical raw

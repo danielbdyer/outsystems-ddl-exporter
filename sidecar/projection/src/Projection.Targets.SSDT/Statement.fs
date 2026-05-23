@@ -37,6 +37,13 @@ type ColumnDef =
     {
         Name : string
         Type : PrimitiveType
+        /// Concrete SQL Server storage type when source evidence named
+        /// it (carried from `Attribute.SqlStorage`). The realization
+        /// layer prefers this over the `Type` / `Length` / `Precision`
+        /// / `Scale` fallback so `BIGINT` / `DATETIME` / `NVARCHAR(MAX)`
+        /// emit faithfully. `None` falls back to the `PrimitiveType` →
+        /// `SqlDataTypeOption` mapping.
+        SqlStorage : SqlStorageType option
         Length : int option
         Precision : int option
         Scale : int option

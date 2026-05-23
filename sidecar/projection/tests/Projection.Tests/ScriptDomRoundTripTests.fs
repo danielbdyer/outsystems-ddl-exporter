@@ -59,6 +59,7 @@ let private sampleColumns : ColumnDef list =
         {
             Name = "Id"
             Type = Integer
+            SqlStorage = None
             Length = None; Precision = None; Scale = None
             Nullable = false; IsIdentity = true; IsPrimaryKey = true
             DefaultValue = None; DefaultName = None
@@ -68,6 +69,7 @@ let private sampleColumns : ColumnDef list =
         {
             Name = "Name"
             Type = Text
+            SqlStorage = None
             Length = Some 100; Precision = None; Scale = None
             Nullable = false; IsIdentity = false; IsPrimaryKey = false
             DefaultValue = None; DefaultName = None
@@ -77,6 +79,7 @@ let private sampleColumns : ColumnDef list =
         {
             Name = "Score"
             Type = Decimal
+            SqlStorage = None
             Length = None; Precision = Some 18; Scale = Some 4
             Nullable = true; IsIdentity = false; IsPrimaryKey = false
             DefaultValue = None; DefaultName = None

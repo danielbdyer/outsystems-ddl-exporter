@@ -698,33 +698,139 @@ module CatalogReader =
     // Subsequent fixtures extend the table.
     // -----------------------------------------------------------------------
 
-    let private parsePrimitiveType (dataType: string) : Result<PrimitiveType> =
-        // V1's `OutsystemsAttribute.DataType` carries the OutSystems
-        // domain-type name (not the SQL type). Chapter 5.0 slice γ
-        // extends the mapping to cover the data types V1's
-        // `model.edge-case.seed.sql` fixture uses (Identifier / Text /
-        // Boolean / DateTime / Integer / Decimal). The mapping is
-        // V1-derived per the OSSYS adapter translation rule index
-        // (`DECISIONS 2026-05-15 — OSSYS adapter translation rules`).
-        match dataType with
-        | "Identifier"        -> Result.success Integer
-        | "Integer"           -> Result.success Integer
-        | "LongInteger"       -> Result.success Integer
-        | "Text"              -> Result.success Text
-        | "Email"             -> Result.success Text
-        | "PhoneNumber"       -> Result.success Text
-        | "Boolean"           -> Result.success Boolean
-        | "DateTime"          -> Result.success DateTime
-        | "Date"              -> Result.success Date
-        | "Time"              -> Result.success Time
-        | "Decimal"           -> Result.success Decimal
-        | "Currency"          -> Result.success Decimal
-        | "BinaryData"        -> Result.success Binary
+    /// Normalize an `ossys_EntityAttr.Type` value to its mapping key.
+    /// V1's `Osm.Smo/TypeMappingKeyNormalizer` is the donor: strip the
+    /// `rt` runtime-type prefix (`rtText` → `Text`), drop separators
+    /// (`_`, `-`, space), lowercase. Both the runtime form (`rtText`,
+    /// `rtLongInteger`, `rtPhoneNumber`) and the bare domain form
+    /// (`Text`, `LongInteger`) collapse to one key.
+    let private normalizeAttributeType (rawType: string) : string =
+        let trimmed = rawType.Trim()
+        let withoutRt =
+            if trimmed.Length > 2
+               && System.String.Equals(
+                    trimmed.Substring(0, 2), "rt",
+                    System.StringComparison.OrdinalIgnoreCase)
+            then trimmed.Substring(2)
+            else trimmed
+        withoutRt
+            .Replace("_", System.String.Empty)
+            .Replace("-", System.String.Empty)
+            .Replace(" ", System.String.Empty)
+            .ToLowerInvariant()
+
+    /// `Text` / `VarChar` width: OutSystems treats a declared length at
+    /// or above the unicode-text threshold (V1's `maxLengthThreshold =
+    /// 2000`) as open-ended `(MAX)`; a positive sub-threshold length is
+    /// `Bounded`; absence is `(MAX)`.
+    let private textLength (length: int option) : SqlLength =
+        match length with
+        | Some n when n >= 2000 -> Max
+        | Some n when n > 0     -> Bounded n
+        | _                     -> Max
+
+    let private boundedOr (fallback: SqlLength) (length: int option) : SqlLength =
+        match length with
+        | Some n when n > 0 -> Bounded n
+        | _                 -> fallback
+
+    /// Resolve an OSSYS attribute's semantic category AND its concrete
+    /// SQL Server storage type from `ossys_EntityAttr.Type` plus the
+    /// declared length / precision / scale. The mapping is V1-derived
+    /// from `config/type-mapping.default.json` (the donor table; see
+    /// `DECISIONS 2026-05-15 — OSSYS adapter translation rules`):
+    ///   - `longinteger` → `BIGINT` (not `INT` — the semantic category
+    ///     `Integer` collapses both; the concrete storage keeps them
+    ///     apart);
+    ///   - `datetime` → `DATETIME` (not `DATETIME2` — V1's `datetime`
+    ///     maps to the legacy type; `rtDateTime2` is the path to
+    ///     `DATETIME2`).
+    /// Returns the semantic `PrimitiveType` paired with the concrete
+    /// `SqlStorageType` so the attribute carries both consistently.
+    let private parseSemanticType
+        (normalizedType: string)
+        (length: int option)
+        (precision: int option)
+        (scale: int option)
+        : Result<PrimitiveType * SqlStorageType> =
+        match normalizedType with
+        | "identifier"     -> Result.success (Integer, SqlStorageType.BigInt)
+        | "autonumber"     -> Result.success (Integer, SqlStorageType.BigInt)
+        | "integer"        -> Result.success (Integer, SqlStorageType.Int)
+        | "longinteger"    -> Result.success (Integer, SqlStorageType.BigInt)
+        | "boolean"        -> Result.success (Boolean, SqlStorageType.Bit)
+        | "datetime"       -> Result.success (DateTime, SqlStorageType.DateTime)
+        | "datetime2"      -> Result.success (DateTime, SqlStorageType.DateTime2 (Some 7))
+        | "datetimeoffset" -> Result.success (DateTime, SqlStorageType.DateTimeOffset (Some 7))
+        | "date"           -> Result.success (Date, SqlStorageType.Date)
+        | "time"           -> Result.success (Time, SqlStorageType.Time (Some 7))
+        | "decimal"        ->
+            Result.success
+                (Decimal,
+                 SqlStorageType.Decimal
+                    (Option.defaultValue 18 precision, Option.defaultValue 0 scale))
+        | "currency"       -> Result.success (Decimal, SqlStorageType.Decimal (37, 8))
+        | "double" | "float" -> Result.success (Decimal, SqlStorageType.Float)
+        | "real"           -> Result.success (Decimal, SqlStorageType.Real)
+        | "binarydata" | "longbinarydata" ->
+            Result.success (Binary, SqlStorageType.VarBinary Max)
+        | "binary"         -> Result.success (Binary, SqlStorageType.VarBinary (boundedOr Max length))
+        | "varbinary"      -> Result.success (Binary, SqlStorageType.VarBinary (boundedOr Max length))
+        | "image"          -> Result.success (Binary, SqlStorageType.Image)
+        | "longtext"       -> Result.success (Text, SqlStorageType.NVarChar Max)
+        | "text"           -> Result.success (Text, SqlStorageType.NVarChar (textLength length))
+        | "email"          -> Result.success (Text, SqlStorageType.VarChar (boundedOr (Bounded 250) length))
+        | "phonenumber" | "phone" ->
+            Result.success (Text, SqlStorageType.VarChar (boundedOr (Bounded 20) length))
+        | "url" | "password" | "username" | "identifiertext" ->
+            Result.success (Text, SqlStorageType.NVarChar (textLength length))
+        | "guid" | "uniqueidentifier" -> Result.success (Guid, SqlStorageType.UniqueIdentifier)
+        | "xml"            -> Result.success (Text, SqlStorageType.Xml)
+        // Entity-reference attribute (FK). `ossys_EntityAttr.Type`
+        // encodes references either as the logical `rtEntityReference`
+        // code or as the structural `bt<EspaceSsKey>*<EntitySsKey>`
+        // form (the binding-type encoding; the GUID hyphens are
+        // stripped by `normalizeAttributeType` but the `bt` prefix and
+        // `*` separator survive). The attribute's own storage is the
+        // *target entity's identifier* — Long Integer (`BIGINT`) by
+        // OutSystems convention. The reference itself (target kind, FK
+        // constraint) is wired separately via `isReference` /
+        // `refEntityId`.
+        | "entityreference" -> Result.success (Integer, SqlStorageType.BigInt)
+        | other when other.StartsWith("bt", System.StringComparison.Ordinal)
+                     && other.Contains("*") ->
+            Result.success (Integer, SqlStorageType.BigInt)
         | other ->
             Result.failureOf (
                 adapterError
                     "unmappedDataType"
                     (sprintf "DataType '%s' has no V2 PrimitiveType mapping yet." other))
+
+    /// Full attribute-type resolution: semantic category + concrete
+    /// storage, with the optional `external_dbType` override applied.
+    /// V1's `TypeMappingPolicy.Resolve` priority is preserved — an
+    /// `external_dbType` SQL-type string overrides the OSSYS-derived
+    /// storage EXCEPT for `identifier` / `autonumber` / `longinteger`,
+    /// which force the runtime mapping (so a `longinteger` stays
+    /// `BIGINT` regardless of any external override).
+    let private resolveAttributeType
+        (rawType: string)
+        (length: int option)
+        (precision: int option)
+        (scale: int option)
+        (externalDbType: string option)
+        : Result<PrimitiveType * SqlStorageType> =
+        let normalized = normalizeAttributeType rawType
+        parseSemanticType normalized length precision scale
+        |> Result.map (fun (pt, ossysStorage) ->
+            let storage =
+                match normalized with
+                | "identifier" | "autonumber" | "longinteger" -> ossysStorage
+                | _ ->
+                    match externalDbType |> Option.bind (fun raw -> SqlStorageType.ofSqlType raw None None None) with
+                    | Some overridden -> overridden
+                    | None -> ossysStorage
+            pt, storage)
 
     /// V1 reference_deleteRuleCode → V2 ReferenceAction. Mirrors the
     /// V1 mapping in `Osm.Smo/SmoEntityEmitter.cs`:
@@ -814,7 +920,6 @@ module CatalogReader =
           Ok mandatory, Ok identifier ->
             let nameDU       = Name.create rawName
             let key          = attributeSsKey moduleName entityName rawName
-            let primitive    = parsePrimitiveType rawDataType
             let description  =
                 match descriptionResult with
                 | Ok d -> d
@@ -836,6 +941,16 @@ module CatalogReader =
             let lengthOpt    = getOptionalInt attrJson "length"
             let precisionOpt = getOptionalInt attrJson "precision"
             let scaleOpt     = getOptionalInt attrJson "scale"
+            // Resolve the semantic category + concrete SQL Server
+            // storage type from the OutSystems type name (rt-prefix
+            // aware) plus the declared length / precision / scale, with
+            // the optional `external_dbType` override applied. The
+            // semantic `PrimitiveType` stays canonical for the IR's
+            // `Type` field; the concrete `SqlStorageType` carries the
+            // emission evidence (`rtLongInteger` → BIGINT, etc.).
+            let typeEvidence =
+                resolveAttributeType
+                    rawDataType lengthOpt precisionOpt scaleOpt externalDatabaseType
             // Identity = isAutoNumber per V1 convention (only
             // primary-key columns marked isAutoNumber=true map to
             // SQL Server IDENTITY).
@@ -851,9 +966,9 @@ module CatalogReader =
             // upstream (the parent record error path handles the
             // primitive's Error case).
             let defaultValue : SqlLiteral option =
-                match primitive with
+                match typeEvidence with
                 | Error _ -> None
-                | Ok p ->
+                | Ok (p, _) ->
                     match attrJson.TryGetProperty("default") with
                     | true, value when value.ValueKind <> JsonValueKind.Null ->
                         let rawOpt =
@@ -868,8 +983,8 @@ module CatalogReader =
                             | _ -> None
                         rawOpt |> Option.map (SqlLiteral.ofRaw p)
                     | _ -> None
-            match nameDU, key, primitive with
-            | Ok n, Ok k, Ok p ->
+            match nameDU, key, typeEvidence with
+            | Ok n, Ok k, Ok (p, storage) ->
                 Result.success
                     { SsKey        = k
                       Name         = n
@@ -895,16 +1010,17 @@ module CatalogReader =
                       // properties at the boundary today.
                       ExtendedProperties = []
                       OriginalName       = originalName
-                      ExternalDatabaseType = externalDatabaseType }
+                      ExternalDatabaseType = externalDatabaseType
+                      SqlStorage         = Some storage }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 // Substantive causes (e.g., `adapter.osm.unmappedDataType`
-                // from `parsePrimitiveType`) survive the attribute-level
+                // from `resolveAttributeType`) survive the attribute-level
                 // wrap.
                 propagateOrFallback
                     [ Result.errors nameDU
                       Result.errors key
-                      Result.errors primitive ]
+                      Result.errors typeEvidence ]
                     (fun () ->
                         adapterError
                             "attributeBuild"
@@ -1606,9 +1722,15 @@ module CatalogReader =
         : Result<Attribute> =
         let nameDU    = Name.create row.AttrName
         let key       = attributeSsKeyFromRow moduleName entityName row
-        let primitive = parsePrimitiveType row.DataType
-        match nameDU, key, primitive with
-        | Ok n, Ok k, Ok p ->
+        // Resolve semantic category + concrete SQL Server storage from
+        // the rowset's `Type` value (rt-prefix aware), the declared
+        // length / precision / scale, and any `ExternalColumnType`
+        // override. Same resolution as the JSON path.
+        let typeEvidence =
+            resolveAttributeType
+                row.DataType row.Length row.Precision row.Scale row.ExternalDatabaseType
+        match nameDU, key, typeEvidence with
+        | Ok n, Ok k, Ok (p, storage) ->
             Result.success
                 { SsKey        = k
                   Name         = n
@@ -1664,13 +1786,14 @@ module CatalogReader =
                           None
                   ExtendedProperties = []
                   OriginalName = row.OriginalName
-                  ExternalDatabaseType = row.ExternalDatabaseType }
+                  ExternalDatabaseType = row.ExternalDatabaseType
+                  SqlStorage   = Some storage }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`.
             propagateOrFallback
                 [ Result.errors nameDU
                   Result.errors key
-                  Result.errors primitive ]
+                  Result.errors typeEvidence ]
                 (fun () ->
                     adapterError
                         "attributeRowBuild"

@@ -29,6 +29,7 @@
     <Compile Include="PrimitiveType.fs" />
     <Compile Include="RawValueCodec.fs" />
     <Compile Include="SqlTypeCorrespondence.fs" />
+    <Compile Include="SqlStorageType.fs" />
     <Compile Include="SqlLiteral.fs" />
     <Compile Include="Catalog.fs" />
     <Compile Include="ModuleFilter.fs" />

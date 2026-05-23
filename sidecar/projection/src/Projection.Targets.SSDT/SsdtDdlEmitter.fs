@@ -98,6 +98,11 @@ module SsdtDdlEmitter =
         {
             Name         = a.Column.ColumnName
             Type         = a.Type
+            // Concrete SQL storage evidence (BIGINT / DATETIME /
+            // NVARCHAR(MAX)) when the OSSYS adapter resolved it from
+            // `ossys_EntityAttr.Type`; `None` falls back to the
+            // `PrimitiveType` mapping at the realization layer.
+            SqlStorage   = a.SqlStorage
             Length       = a.Length
             Precision    = a.Precision
             Scale        = a.Scale

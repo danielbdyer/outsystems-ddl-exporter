@@ -155,6 +155,91 @@ module ScriptDomBuild =
         | _ -> ()
         r :> DataTypeReference
 
+    /// Map a concrete `SqlStorageType` to its ScriptDom
+    /// `SqlDataTypeOption`. Closed-DU dispatch — adding a storage
+    /// variant lights up an exhaustiveness error here. `Xml` is absent
+    /// (it has no `SqlDataTypeOption`; `dataTypeReferenceFromStorage`
+    /// builds an `XmlDataTypeReference` instead).
+    let private storageDataTypeOption (st: SqlStorageType) : SqlDataTypeOption =
+        match st with
+        | SqlStorageType.BigInt           -> SqlDataTypeOption.BigInt
+        | SqlStorageType.Int              -> SqlDataTypeOption.Int
+        | SqlStorageType.SmallInt         -> SqlDataTypeOption.SmallInt
+        | SqlStorageType.TinyInt          -> SqlDataTypeOption.TinyInt
+        | SqlStorageType.Bit              -> SqlDataTypeOption.Bit
+        | SqlStorageType.Decimal _        -> SqlDataTypeOption.Decimal
+        | SqlStorageType.Numeric _        -> SqlDataTypeOption.Numeric
+        | SqlStorageType.Money            -> SqlDataTypeOption.Money
+        | SqlStorageType.SmallMoney       -> SqlDataTypeOption.SmallMoney
+        | SqlStorageType.Float            -> SqlDataTypeOption.Float
+        | SqlStorageType.Real             -> SqlDataTypeOption.Real
+        | SqlStorageType.NVarChar _       -> SqlDataTypeOption.NVarChar
+        | SqlStorageType.VarChar _        -> SqlDataTypeOption.VarChar
+        | SqlStorageType.NChar _          -> SqlDataTypeOption.NChar
+        | SqlStorageType.Char _           -> SqlDataTypeOption.Char
+        | SqlStorageType.NText            -> SqlDataTypeOption.NText
+        | SqlStorageType.Text             -> SqlDataTypeOption.Text
+        | SqlStorageType.DateTime         -> SqlDataTypeOption.DateTime
+        | SqlStorageType.DateTime2 _      -> SqlDataTypeOption.DateTime2
+        | SqlStorageType.DateTimeOffset _ -> SqlDataTypeOption.DateTimeOffset
+        | SqlStorageType.SmallDateTime    -> SqlDataTypeOption.SmallDateTime
+        | SqlStorageType.Date             -> SqlDataTypeOption.Date
+        | SqlStorageType.Time _           -> SqlDataTypeOption.Time
+        | SqlStorageType.VarBinary _      -> SqlDataTypeOption.VarBinary
+        | SqlStorageType.Binary _         -> SqlDataTypeOption.Binary
+        | SqlStorageType.Image            -> SqlDataTypeOption.Image
+        | SqlStorageType.UniqueIdentifier -> SqlDataTypeOption.UniqueIdentifier
+        | SqlStorageType.Xml              -> SqlDataTypeOption.None  // unreachable; Xml builds XmlDataTypeReference before this call
+
+    /// Build a `DataTypeReference` from a concrete `SqlStorageType` —
+    /// the evidence-bearing emission path. Preferred over
+    /// `dataTypeReference` (the `PrimitiveType` fallback) whenever the
+    /// source named the concrete type. `XML` builds an
+    /// `XmlDataTypeReference`; everything else builds a
+    /// `SqlDataTypeReference` carrying length / precision / scale
+    /// parameters faithful to the storage type (`NVARCHAR(MAX)` vs
+    /// `NVARCHAR(100)`; `DECIMAL(18,2)`; `DATETIME2(7)` vs bare
+    /// `DATETIME2`).
+    let dataTypeReferenceFromStorage (st: SqlStorageType) : DataTypeReference =
+        match st with
+        | SqlStorageType.Xml ->
+            // ScriptDom models XML separately (no SqlDataTypeOption).
+            XmlDataTypeReference() :> DataTypeReference
+        | _ ->
+            let r = SqlDataTypeReference()
+            r.SqlDataTypeOption <- storageDataTypeOption st
+            r.Name <- SchemaObjectName()
+            r.Name.Identifiers.Add(bracketed (string r.SqlDataTypeOption))
+            let addInt (n: int) =
+                let lit = IntegerLiteral()
+                lit.Value <- string n
+                r.Parameters.Add(lit)
+            let addLength (len: SqlLength) =
+                match len with
+                | Bounded n -> addInt n
+                | Max ->
+                    let mx = MaxLiteral()
+                    mx.Value <- "MAX"
+                    r.Parameters.Add(mx)
+            let addScale (scale: int option) =
+                match scale with
+                | Some n -> addInt n
+                | None   -> ()
+            match st with
+            | SqlStorageType.NVarChar len
+            | SqlStorageType.VarChar len
+            | SqlStorageType.VarBinary len -> addLength len
+            | SqlStorageType.NChar n
+            | SqlStorageType.Char n
+            | SqlStorageType.Binary n -> addInt n
+            | SqlStorageType.Decimal (p, s)
+            | SqlStorageType.Numeric (p, s) -> addInt p; addInt s
+            | SqlStorageType.DateTime2 scale
+            | SqlStorageType.DateTimeOffset scale
+            | SqlStorageType.Time scale -> addScale scale
+            | _ -> ()
+            r :> DataTypeReference
+
     /// Map a typed `SqlLiteral` value to a ScriptDom `ScalarExpression`
     /// (specifically a `Literal` subclass projected to its supertype
     /// for use in `RowValue.ColumnValues` + DEFAULT clauses). Per the
@@ -249,7 +334,14 @@ module ScriptDomBuild =
             if config.IsPersisted then
                 col.IsPersisted <- true
         | None ->
-            col.DataType <- dataTypeReference c.Type c.Length c.Precision c.Scale
+            // Prefer the concrete `SqlStorageType` evidence (faithful
+            // BIGINT / DATETIME / NVARCHAR(MAX)); fall back to the
+            // `PrimitiveType` → `SqlDataTypeOption` mapping when the
+            // source carried only the semantic category.
+            col.DataType <-
+                match c.SqlStorage with
+                | Some storage -> dataTypeReferenceFromStorage storage
+                | None         -> dataTypeReference c.Type c.Length c.Precision c.Scale
             // Nullability — ScriptDom NULL/NOT NULL constraint is a
             // `NullableConstraintDefinition` on `Constraints`.
             let nullCons = NullableConstraintDefinition()
