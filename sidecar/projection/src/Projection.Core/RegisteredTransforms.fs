@@ -31,18 +31,28 @@ open Projection.Core.Passes
 /// non-default-config consumers (Compose.project at slice δ) call
 /// the factories directly. Slice γ / δ may add a factory variant
 /// of `allChainSteps` if two consumers demand it.
+///
+/// **Slice D.1.a exception — logical-name emission ships Enabled.**
+/// `LogicalTableEmission.registered Enabled` + `LogicalColumnEmission.registered Enabled`
+/// are the production defaults (V2 emits logical names — `Customer`
+/// not `OSUSR_ABC_CUSTOMER` — out of the box). Operators that want
+/// physical-name emission for diagnostic / V1-parity reasons wire
+/// `Disabled` mode explicitly. Both modes carry `OperatorIntent Emission`
+/// (the operator chose either way; default-on IS the operator's intent).
 [<RequireQualifiedAccess>]
 module RegisteredTransforms =
 
     let private emptyMask : VisibilityMask.Mask = { Hide = [] }
     let private identityMorphism : NamingMorphism.Morphism = NamingMorphism.identity
 
-    /// 22 Core-resident `RegisteredTransformMetadata` entries — 17
+    /// 24 Core-resident `RegisteredTransformMetadata` entries — 19
     /// pass + 5 strategy. Validates through `TransformRegistry.create`
     /// (uniqueness of Name; non-empty Site.Rationale; substantive
     /// `NotImplementedInV2` rationale where applicable) per A41.
     /// Cluster D adds 5 graph-analytics passes (H-071 through H-076,
     /// H-073 through H-075 share a single pass count with H-073/H-076).
+    /// Slice D.1.a adds `LogicalTableEmission` + `LogicalColumnEmission`
+    /// (default-on emission-axis logical-name substitution passes).
     let all : RegisteredTransformMetadata list =
         [ RegisteredTransform.toMetadata CanonicalizeIdentity.registered
           RegisteredTransform.toMetadata (VisibilityMask.registered emptyMask)
@@ -50,6 +60,8 @@ module RegisteredTransforms =
           RegisteredTransform.toMetadata NormalizeStaticPopulations.registered
           RegisteredTransform.toMetadata SymmetricClosure.registered
           RegisteredTransform.toMetadata (TableRename.registered [])
+          RegisteredTransform.toMetadata (LogicalTableEmission.registered LogicalTableEmission.Enabled)
+          RegisteredTransform.toMetadata (LogicalColumnEmission.registered LogicalColumnEmission.Enabled)
           RegisteredTransform.toMetadata TopologicalOrderPass.registered
           RegisteredTransform.toMetadata CentralityPass.registered
           RegisteredTransform.toMetadata BoundedContextPass.registered
@@ -63,11 +75,15 @@ module RegisteredTransforms =
           RegisteredTransform.toMetadata (UserFkReflowPass.registered Policy.empty Profile.empty) ]
         @ StrategyRegistrations.all
 
-    /// 17 `PassChainAdapter` entries — the typed execution surface
+    /// 19 `PassChainAdapter` entries — the typed execution surface
     /// for slice γ's `runChain` kernel. Order: 6 catalog-rewriting
-    /// passes, then the topological-order pass, then 5 Cluster D
-    /// graph-analytics passes (H-071 through H-076), then 6 decision-
-    /// set passes. Each analytics and decision-set pass writes back via
+    /// passes (CanonicalizeIdentity / VisibilityMask / NamingMorphism /
+    /// NormalizeStaticPopulations / SymmetricClosure / TableRename),
+    /// then 2 default-on logical-name emission-axis substitutions
+    /// (LogicalTableEmission / LogicalColumnEmission; slice D.1.a),
+    /// then the topological-order pass, then 5 Cluster D graph-
+    /// analytics passes (H-071 through H-076), then 6 decision-set
+    /// passes. Each analytics and decision-set pass writes back via
     /// the matching `ComposeState.with*` setter.
     ///
     /// Cluster D analytics passes run after TopologicalOrderPass so
@@ -82,6 +98,12 @@ module RegisteredTransforms =
           PassChainAdapter.liftCatalogPass NormalizeStaticPopulations.registered
           PassChainAdapter.liftCatalogPass SymmetricClosure.registered
           PassChainAdapter.liftCatalogPass (TableRename.registered [])
+          // Slice D.1.a — logical-name emission as default. Both run
+          // AFTER TableRename so operator-supplied physical pinnings
+          // (if any) take precedence; both classified
+          // OperatorIntent Emission.
+          PassChainAdapter.liftCatalogPass (LogicalTableEmission.registered LogicalTableEmission.Enabled)
+          PassChainAdapter.liftCatalogPass (LogicalColumnEmission.registered LogicalColumnEmission.Enabled)
           PassChainAdapter.liftDecisionPass
             TopologicalOrderPass.registered
             ComposeState.withTopologicalOrder
@@ -142,6 +164,11 @@ module RegisteredTransforms =
           PassChainAdapter.liftCatalogPass NormalizeStaticPopulations.registered
           PassChainAdapter.liftCatalogPass SymmetricClosure.registered
           PassChainAdapter.liftCatalogPass (TableRename.registered [])
+          // Slice D.1.a — logical-name emission as default; same wiring
+          // as allChainSteps (the policy/profile axis doesn't gate the
+          // logical-emission default).
+          PassChainAdapter.liftCatalogPass (LogicalTableEmission.registered LogicalTableEmission.Enabled)
+          PassChainAdapter.liftCatalogPass (LogicalColumnEmission.registered LogicalColumnEmission.Enabled)
           PassChainAdapter.liftDecisionPass
             TopologicalOrderPass.registered
             ComposeState.withTopologicalOrder

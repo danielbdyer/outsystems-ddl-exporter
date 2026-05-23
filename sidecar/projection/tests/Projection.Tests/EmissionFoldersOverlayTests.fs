@@ -97,8 +97,8 @@ let ``C.3: empty EmissionFolders preserves V1 default Modules/<Module>/ layout``
     let catalog = loadCatalog ()
     let outputs = projectFor EmissionFolders.empty catalog
     let paths = sqlPaths outputs
-    Assert.Contains("Modules/AppCore/dbo.OSUSR_APPCORE_USER.sql", paths)
-    Assert.Contains("Modules/AppCore/dbo.OSUSR_APPCORE_ORG.sql", paths)
+    Assert.Contains("Modules/AppCore/dbo.User.sql", paths)
+    Assert.Contains("Modules/AppCore/dbo.Organization.sql", paths)
 
 [<Fact>]
 let ``C.3: empty EmissionFolders yields byte-identical outputs to no-override projection`` () =
@@ -128,8 +128,8 @@ let ``C.3: single override rewrites the targeted kind's path; basename preserved
     }
     let outputs = projectFor folders catalog
     let paths = sqlPaths outputs
-    Assert.Contains("Static/Reference/dbo.OSUSR_APPCORE_USER.sql", paths)
-    Assert.DoesNotContain("Modules/AppCore/dbo.OSUSR_APPCORE_USER.sql", paths)
+    Assert.Contains("Static/Reference/dbo.User.sql", paths)
+    Assert.DoesNotContain("Modules/AppCore/dbo.User.sql", paths)
 
 [<Fact>]
 let ``C.3: override leaves non-overridden kinds' paths unchanged`` () =
@@ -141,7 +141,7 @@ let ``C.3: override leaves non-overridden kinds' paths unchanged`` () =
     let outputs = projectFor folders catalog
     let paths = sqlPaths outputs
     // Only User overridden; Organization stays in default location.
-    Assert.Contains("Modules/AppCore/dbo.OSUSR_APPCORE_ORG.sql", paths)
+    Assert.Contains("Modules/AppCore/dbo.Organization.sql", paths)
 
 [<Fact>]
 let ``C.3: multi-segment folder concatenates correctly`` () =
@@ -152,7 +152,7 @@ let ``C.3: multi-segment folder concatenates correctly`` () =
     }
     let outputs = projectFor folders catalog
     let paths = sqlPaths outputs
-    Assert.Contains("Static/Reference/Lookup/dbo.OSUSR_APPCORE_USER.sql", paths)
+    Assert.Contains("Static/Reference/Lookup/dbo.User.sql", paths)
 
 [<Fact>]
 let ``C.3: SQL body content unchanged by folder override (only path is rewritten)`` () =
@@ -164,9 +164,9 @@ let ``C.3: SQL body content unchanged by folder override (only path is rewritten
     }
     let overridden = projectFor folders catalog
     let baselineUserBody =
-        Map.find "Modules/AppCore/dbo.OSUSR_APPCORE_USER.sql" baseline.SsdtBundle
+        Map.find "Modules/AppCore/dbo.User.sql" baseline.SsdtBundle
     let overriddenUserBody =
-        Map.find "Static/dbo.OSUSR_APPCORE_USER.sql" overridden.SsdtBundle
+        Map.find "Static/dbo.User.sql" overridden.SsdtBundle
     Assert.Equal(baselineUserBody, overriddenUserBody)
 
 [<Fact>]
@@ -211,5 +211,5 @@ let ``C.3: multiple overrides apply independently per SsKey`` () =
     }
     let outputs = projectFor folders catalog
     let paths = sqlPaths outputs
-    Assert.Contains("Static/Reference/dbo.OSUSR_APPCORE_USER.sql", paths)
-    Assert.Contains("Static/Tenant/dbo.OSUSR_APPCORE_ORG.sql", paths)
+    Assert.Contains("Static/Reference/dbo.User.sql", paths)
+    Assert.Contains("Static/Tenant/dbo.Organization.sql", paths)

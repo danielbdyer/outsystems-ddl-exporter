@@ -19158,3 +19158,67 @@ The chapter-close ritual is uninitiated; the principal-PO has the call on whethe
 - `DECISIONS 2026-05-20 (slice C.3 — emission-folders axis)` — the substrate-layer-verification lesson C.4 reconfirmed.
 - `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)` — Chapter C 6-slice plan; C.4-C.6 axes complete this plan.
 
+
+## 2026-05-23 (slice D.1.a — logical-name emission as default) — Two default-on Core passes (`LogicalTableEmission` + `LogicalColumnEmission`, both classified `OperatorIntent Emission`) substitute the catalog's logical names (`Kind.Name` / `Attribute.Name`) into the physical-realization slots the SSDT emitter reads; V2 emits `[dbo].[Customer]([Email])` by default; the substitution-vs-rename naming distinction codified
+
+### Context
+
+Chapter D opened on the principal-PO question: V2's SSDT bundles carry OSUSR-prefixed table identifiers (`OSUSR_ABC_CUSTOMER`) and SHOUTY column identifiers (`EMAIL`); operators see SSDT artifacts but those identifiers are the OSSYS storage shape, not the operator's ubiquitous-language names. The catalog already carries both axes (`Kind.Name = "Customer"` from V1 metadata; `Kind.Physical.Table = "OSUSR_ABC_CUSTOMER"` from the deployed shape). The slice closes the gap by **substituting** the logical value into the physical-realization slot pre-emit, leaving the emitter layer untouched.
+
+### What shipped
+
+**`LogicalTableEmission` (new Core pass).** Catalog-driven; for every kind where `Name.value k.Name ≠ k.Physical.Table`, substitutes `k.Physical.Table = Name.value k.Name`. Emits a `PhysicallyRenamed` lineage event per substitution (reuses the existing typed payload). `Enabled | Disabled` mode parameter; production chain wires `Enabled` (default-on). Classified `OperatorIntent Emission` per pillar 9 — default-on IS the operator's intent.
+
+**`LogicalColumnEmission` (new Core pass).** Mirror shape for attributes; substitutes `Attribute.Column.ColumnName = Name.value a.Name`. Required widening `TransformKind` with new `ColumnPhysicallyRenamed of detail: ColumnRename` variant (closed-DU expansion absorbed cleanly — all existing matchers had `_` wildcards). New `ColumnRename` payload: `{ Kind: TableId; Before: string; After: string }` + `ColumnRename.toDiagnosticString`.
+
+**Wiring.** Both passes added to `RegisteredTransforms.all` (now 24 entries; 19 pass + 5 strategy), `allChainSteps` (now 19), `allChainStepsFor` (now 19). Order: both run AFTER `TableRename` so operator-supplied physical pinnings (when present) dominate the logical substitution; the substitution short-circuits when `Name.value k.Name = k.Physical.Table` which is exactly the case after an operator pin lands.
+
+**Length guard.** If `Name.value k.Name` exceeds the SQL Server identifier limit (128 chars), the substitution is skipped for that kind/attribute. Defensive boundary; OSSYS catalogs never produce such names in practice.
+
+**Identity preservation (A1).** Only `Kind.Physical.Table` and `Attribute.Column.ColumnName` are touched. `SsKey`, `Name`, `Physical.Catalog`, `Physical.Schema`, `IsNullable`, and every other field stay byte-identical.
+
+### Decisions resolved
+
+**Substitution is operator intent, not data intent.** Both axes already exist in the catalog (DataIntent evidence). The CHOICE to align the physical slot with the logical name is the operator's emission-axis intent — operators in 2026 want logical names in SSDT artifacts; physical-name emission is the diagnostic / V1-parity fallback. Default-on production wiring IS the operator's intent; `Disabled` mode preserves the alternative. Both modes carry `OperatorIntent Emission`.
+
+**Module names follow the operator-visible effect, not the mechanism.** Original names were `TableRenameToLogical` / `ColumnRenameToLogical` (mirroring the existing `TableRename` shape). Mid-slice principal-PO feedback: "rename infers a replacement, when we're not doing anything but swapping in another variable." Renamed to `LogicalTableEmission` / `LogicalColumnEmission` — concept-shaped, ubiquitous-language-friendly. The structural distinction: passes that AUTHOR names share the `*Rename` suffix (operator supplies new target via `RenameSpec`); passes that SUBSTITUTE pre-existing catalog axes share the `*Emission` suffix. The `*Rename` family stays; the new family is sibling.
+
+**`ColumnPhysicallyRenamed` lineage variant kept symmetric with `PhysicallyRenamed`.** At the audit-trail layer "rename" reads naturally for "the old value at this slot was replaced." The naming concern (substitution vs rename) applies at the module/product layer where operators read documentation; at the lineage layer where the trail records structural effects, the symmetric naming compounds.
+
+**Operator-toggle via factory parameter, not runtime config axis.** `Enabled | Disabled` is captured in the closure at `LogicalTableEmission.registered Enabled` call. No `Policy.Emission.LogicalNameEmission` field, no `Config.PolicySection.LogicalNameEmission`. Per "IR grows under evidence" — one consumer today (the production chain wiring); no operator-pull yet for runtime toggle. The mode parameter is the seam if/when that pull surfaces.
+
+### Discipline reinforced
+
+**Domain-first naming (pillar 8) — caught a misnomer carryover at slice mid-implementation.** Original module names mirrored `TableRename`'s shape without applying the four-question domain-naming analysis. Principal-PO flag triggered a rename before the slice landed. The named failure mode is **misnomer-by-inheritance** — agent reaches for a sibling pattern (existing pass + naming convention) and propagates the existing terminology without re-asking question 1 ("what does this represent in the domain?"). The fix: when adding a sibling pass, apply the four-question analysis to the sibling's CONCEPT, not just transfer the existing pattern's name.
+
+**Closed-DU expansion empirical-test discipline (`DECISIONS 2026-05-13`).** Adding `ColumnPhysicallyRenamed` to `TransformKind` triggered zero exhaustiveness errors at match sites — every existing `match e.TransformKind with` had `_` wildcard fallthrough. The compile + test cycle is the discipline's enforcement; passed without intervention. The discipline holds: F# exhaustiveness errors light up only at match sites that genuinely care about the variant.
+
+**IR grows under evidence, not speculation.** No generic `ColumnRename` machinery shipped despite the symmetry argument with `TableRename`. Today's one consumer (logical-name emission) is owned by `LogicalColumnEmission` directly; the generic infrastructure lands at the second consumer per the two-consumer threshold. If chapter 4.9 (operator pinning individual column names) opens, the generic infrastructure lands then.
+
+### Slice scope discipline — sub-slice ordering
+
+The big slice (logical-name emission end-to-end with verifiable canary roundtrip) was carved into three sequential sub-slices at slice open per principal-PO direction:
+
+- **D.1.a (this entry)** — the substitution mechanism only. Two default-on passes; emission produces logical names; tests verify the substitution. Canary continues to pass trivially (substitution is a no-op on its pure-physical fixture). Ships green; production-facing surface lands.
+- **D.1.b (next)** — V2 emits a `V2.LogicalName` extended property on every deployed CREATE TABLE / column carrying the pre-substitution logical name. ReadSide queries the property and hydrates `Kind.Name` from it (backward-compat fallback: `Name.create table` when the property is absent). End-to-end roundtrip recovery: deploy-and-read recovers the original divergence.
+- **D.1.c (after that)** — Canary fixture augmented with logical-name extended properties; `PhysicalSchema` gains a `LogicalNameBinding` set; diff comparator amended to assert the triangle (`source.Kind.Name = target.Kind.Name = target.Kind.Physical.Table`) on top of existing set-differences. Perf-gate baseline re-recorded. The canary VERIFIES logical-name emission end-to-end through the source-roundtrip path.
+
+Each sub-slice is independently shippable, builds on prior, and has its own slice doc + DECISIONS entry. The full slice contract (operator-visible logical-name emission verifiable through canary) lands at D.1.c.
+
+### Test surface
+
+- `tests/Projection.Tests/LogicalNameEmissionTests.fs` — NEW; 16 facts covering both passes individually + composed end-to-end. Disciplines under test: identity preservation (A1), event count + payload shape, classification (pillar 9), pass-through under `Disabled`, no-op under aligned logical=physical.
+- `tests/Projection.Tests/AxiomTests.fs` — `L3-Emission-Logical (slice D.1.a)` citation entry citing the integration test.
+- Updated tests: `EmissionFoldersOverlayTests` (6 facts), `EndToEndPipelineTests.M1` (1 fact), `RegisteredTransformsTests` (3 facts; counts shifted 22→24 metadata / 17→19 chain).
+- **Full test suite**: 2359 pass, 0 fail, 207 skipped (+17 from prior baseline of 2342).
+
+### Cross-references
+
+- `SLICE_D_1_A.md` — slice doc; full mechanism + scope boundaries + carve-out of D.1.b / D.1.c.
+- `src/Projection.Core/Lineage.fs:160-209` — `PhysicalRename` (existing); `ColumnRename` + `ColumnRename.toDiagnosticString` (new).
+- `src/Projection.Core/Lineage.fs:235-251` — `TransformKind.ColumnPhysicallyRenamed` (new variant).
+- `src/Projection.Core/Passes/LogicalTableEmission.fs` — NEW; kind-level substitution pass.
+- `src/Projection.Core/Passes/LogicalColumnEmission.fs` — NEW; attribute-level substitution pass.
+- `src/Projection.Core/RegisteredTransforms.fs` — wiring + updated docstring for the slice-D.1.a exception (the new passes ship `Enabled`, unlike other config-taking factories' empty/identity defaults).
+- `tests/Projection.Tests/LogicalNameEmissionTests.fs` — NEW; 16 facts.
+- `tests/Projection.Tests/AxiomTests.fs` — `L3-Emission-Logical (slice D.1.a)` citation entry.

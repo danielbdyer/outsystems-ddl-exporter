@@ -39,6 +39,7 @@
     <Compile Include="MetadataContractOverridesTests.fs" />
     <Compile Include="ActionableDiagnosticsTests.fs" />
     <Compile Include="TableRenameTests.fs" />
+    <Compile Include="LogicalNameEmissionTests.fs" />
     <Compile Include="TighteningBindingTests.fs" />
     <Compile Include="SpecialCircumstancesBindingTests.fs" />
     <Compile Include="SpecialCircumstancesDiagnosticsTests.fs" />
