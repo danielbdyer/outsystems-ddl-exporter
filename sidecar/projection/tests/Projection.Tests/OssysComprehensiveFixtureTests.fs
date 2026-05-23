@@ -157,6 +157,17 @@ let ``Product covers Decimal / Currency / Date / VARBINARY(MAX) / NVARCHAR(MAX) 
         Assert.Equal(Some (SqlStorageType.VarBinary Max), (attrNamed "Photo" p).SqlStorage)
         Assert.Equal(Some (SqlStorageType.NVarChar Max), (attrNamed "Notes" p).SqlStorage))
 
+// --- Index combinations ---------------------------------------------
+
+[<Fact>]
+let ``SalesOrder carries a unique composite (multi-column) index`` () =
+    withCatalog "comp-unique-composite-index" (fun catalog ->
+        let order = kindNamed "SalesOrder" catalog
+        let uniqueComposite =
+            order.Indexes
+            |> List.exists (fun ix -> ix.IsUnique && List.length ix.Columns >= 2)
+        Assert.True(uniqueComposite, "expected a unique multi-column index on SalesOrder"))
+
 [<Fact>]
 let ``SyncLog carries an XML-typed column`` () =
     withCatalog "comp-xml" (fun catalog ->

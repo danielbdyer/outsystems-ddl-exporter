@@ -367,6 +367,14 @@ CREATE TABLE [dbo].[OSUSR_SAL_ORDER]
 );
 GO
 
+-- Unique COMPOSITE (multi-column) index — the one index combination the
+-- fixture otherwise lacked. Complements the unique single-column
+-- (IDX_CUSTOMER_EMAIL / IDX_BILLINGACCOUNT_ACCTNUM) and the non-unique
+-- composite (IDX_CUSTOMER_NAME). Both key columns are NOT NULL.
+CREATE UNIQUE NONCLUSTERED INDEX [IDX_ORDER_CUSTOMER_CATEGORY]
+ON [dbo].[OSUSR_SAL_ORDER]([CUSTOMERID] ASC, [CATEGORYID] ASC);
+GO
+
 CREATE TABLE [dbo].[OSUSR_SAL_ORDERLINE]
 (
     [ORDERID] INT NOT NULL,
