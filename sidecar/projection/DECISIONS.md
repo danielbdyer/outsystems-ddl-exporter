@@ -19397,3 +19397,45 @@ Chapter D's first arc closed with V2 emitting operator-meaningful identifiers (l
 - `ADMIRE.md` — NEW entry; V1 source + V2-growth delta documented.
 - V1 reference: `src/Osm.Smo/PerTableEmission/ConstraintFormatter.cs`.
 - V1 reference fixture: `tests/Fixtures/emission/edge-case/Modules/AppCore/dbo.Customer.sql` — the V1 elegant output shape.
+
+## 2026-05-23 (slice D.2.b — D.2.a follow-on: four deferred constraint shapes) — `ConstraintFormatter` extended with the four deferred patterns surfaced at D.2.a's HANDOFF: EXECUTE sp_addextendedproperty multi-line wrap, anonymous DEFAULT, column-inline CHECK + table-level CHECK, composite PRIMARY KEY at table level
+
+### Context
+
+D.2.a's HANDOFF surfaced four operator-visible shapes the initial carbon-copy didn't cover: EXEC extended-property wrapping, anonymous DEFAULT detection, CHECK constraint formatting, and composite (multi-column) PK at table level. Operator-PO request to land all four in one slice.
+
+### What shipped
+
+**`src/Projection.Targets.SSDT/ConstraintFormatter.fs`** — four new `tryFormatLine` branches + one parameterised helper:
+- `formatColumnInlineCheck` — column-inline `CONSTRAINT [CK_*] CHECK (expr)` → 2 lines.
+- `formatColumnInlineAnonymousDefault` — column-inline `DEFAULT (value)` without CONSTRAINT prefix → 2 lines.
+- `formatTableLevelTwoLine` (parameterised by body keyword) → consumed by `formatTableLevelPrimaryKey` (composite PK) and `formatTableLevelCheck` (V2 emits CHECK as table-level constraint when sourced from `Kind.ColumnChecks`).
+- `formatExtendedPropertyExec` — splits EXEC at `@level0type` / `@level1type` / `@level2type` boundaries; 4-space continuation indent.
+
+### Decisions resolved
+
+**Parameterised `formatTableLevelTwoLine` over duplicate PK + CHECK handlers.** Both share the same two-line shape: `CONSTRAINT [name]` at `indent`, body at `indent + 4`. The body keyword (`PRIMARY KEY` vs `CHECK`) is the only axis of variation. Per A40 (harmonization-via-parameterization), the algorithm parameterises on the body keyword; per-keyword wrappers (`formatTableLevelPrimaryKey` / `formatTableLevelCheck`) preserve the call-site readability.
+
+**`formatExtendedPropertyExec` splits at three boundaries (head, @level0, @level1, @level2).** Each `@levelN-type` / `@levelN-name` pair lives on its own continuation line. Mirrors V1's `MS_Description` emission shape from `tests/Fixtures/emission/edge-case/Modules/AppCore/dbo.Customer.sql`. Continuation indent fixed at 4 spaces (V1 convention).
+
+**CHECK detection prioritises body-keyword over CONSTRAINT-keyword.** A column-inline `CONSTRAINT [CK_*] CHECK (expr)` line is dispatched to `formatColumnInlineCheck` (NOT `formatColumnInlineDefault`) by the new ordering in `tryFormatLine`: PRIMARY KEY → CHECK → DEFAULT. Operator semantic distinction: a CHECK constraint is structurally different from a DEFAULT and operators expect them to read distinctly even though their multi-line shape is identical.
+
+### Discipline reinforced
+
+**Anchor against V1 source for indentation conventions (D.2.a discipline extended).** All four new handlers use the same 4 / 8 / 12 space hierarchy carbon-copied from V1's `ConstraintFormatter.cs`. No invention; the V1 source is the authority.
+
+**One slice closes its predecessor's deferred items.** D.2.a deferred four shapes with documented detection patterns; D.2.b lands all four. The carry-over discipline is: a slice's deferred items get a concrete next-slice target with the detection pattern named, so the follow-on slice ships against an already-articulated scope.
+
+### Test surface
+
+- All existing snapshot tests absorbed the new formatting cleanly (no test changes required; the multi-line shape is structurally identical SQL).
+- All Docker-bound canary tests pass green — the additional reformatting deploys and round-trips identically.
+- **Full test suite**: 2370 pass, 0 fail, 207 skipped (unchanged from D.2.a baseline).
+
+### Cross-references
+
+- `DECISIONS 2026-05-23 (slice D.2.a — elegant constraint formatting)` — predecessor slice that landed the initial three patterns + carbon-copy infrastructure.
+- `src/Projection.Targets.SSDT/ConstraintFormatter.fs:160-280` — four new format handlers + parameterised `formatTableLevelTwoLine`.
+- `src/Projection.Targets.SSDT/ConstraintFormatter.fs:283-320` — updated `tryFormatLine` dispatch.
+- V1 reference fixture (extended-property shape): `tests/Fixtures/emission/edge-case/Modules/AppCore/dbo.Customer.sql:34-43`.
+- V1 reference fixture (CHECK shape): `tests/Fixtures/emission-matrix/temporal-audit/Modules/Matrix/dbo.TemporalOrder.sql`.
