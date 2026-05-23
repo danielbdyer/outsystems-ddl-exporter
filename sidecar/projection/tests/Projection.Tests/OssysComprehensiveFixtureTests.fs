@@ -157,6 +157,12 @@ let ``Product covers Decimal / Currency / Date / VARBINARY(MAX) / NVARCHAR(MAX) 
         Assert.Equal(Some (SqlStorageType.VarBinary Max), (attrNamed "Photo" p).SqlStorage)
         Assert.Equal(Some (SqlStorageType.NVarChar Max), (attrNamed "Notes" p).SqlStorage))
 
+[<Fact>]
+let ``SyncLog carries an XML-typed column`` () =
+    withCatalog "comp-xml" (fun catalog ->
+        let syncLog = kindNamed "SyncLog" catalog
+        Assert.Equal(Some SqlStorageType.Xml, (attrNamed "RawXml" syncLog).SqlStorage))
+
 // --- Extension module origin ----------------------------------------
 
 [<Fact>]

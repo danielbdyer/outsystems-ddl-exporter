@@ -213,3 +213,8 @@ let ``Emission: rtText with no length renders NVARCHAR (MAX)`` () =
 let ``Emission: external_dbType override renders the concrete type`` () =
     let body = emitBody (singleAttrJson "rtText" "null" "\"NVARCHAR(4000)\"")
     Assert.Contains ("4000", body)
+
+[<Fact>]
+let ``Emission: xml renders XML (via XmlDataTypeReference)`` () =
+    let body = emitBody (singleAttrJson "xml" "null" "null")
+    Assert.Contains ("XML", body)
