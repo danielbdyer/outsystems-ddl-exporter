@@ -66,6 +66,11 @@ CREATE TABLE [dbo].[ossys_Entity_Attr]
     [Delete_Rule] NVARCHAR(50) NULL,
     [Physical_Column_Name] NVARCHAR(200) NULL,
     [Database_Name] NVARCHAR(200) NULL,
+    -- `Type` is the OutSystems runtime/binding-type column: scalar attrs
+    -- carry `rt`-codes (rtText, ...) and reference attrs carry the
+    -- `bt<EspaceSsKey>*<EntitySsKey>` binding code. The extraction reads
+    -- it into the bt-resolving CTE (`#RefResolved`).
+    [Type] NVARCHAR(200) NULL,
     [Legacy_Type] NVARCHAR(200) NULL,
     [Decimals] INT NULL,
     [Original_Type] NVARCHAR(200) NULL,
@@ -91,24 +96,33 @@ VALUES
 GO
 
 INSERT INTO [dbo].[ossys_Entity_Attr]
-    ([Id], [Entity_Id], [Name], [SS_Key], [Data_Type], [Length], [Precision], [Scale], [Default_Value], [Is_Mandatory], [Is_Active], [Is_AutoNumber], [Is_Identifier], [Referenced_Entity_Id], [Original_Name], [External_Column_Type], [Delete_Rule], [Physical_Column_Name], [Database_Name], [Legacy_Type], [Decimals], [Original_Type], [Description])
+    ([Id], [Entity_Id], [Name], [SS_Key], [Data_Type], [Length], [Precision], [Scale], [Default_Value], [Is_Mandatory], [Is_Active], [Is_AutoNumber], [Is_Identifier], [Referenced_Entity_Id], [Original_Name], [External_Column_Type], [Delete_Rule], [Physical_Column_Name], [Database_Name], [Type], [Legacy_Type], [Decimals], [Original_Type], [Description])
 VALUES
-    (10001, 1000, N'Id', 'cccccccc-0000-0000-0000-000000000001', N'Identifier', NULL, NULL, NULL, NULL, 1, 1, 1, 1, NULL, NULL, NULL, NULL, N'ID', NULL, NULL, NULL, NULL, N'Customer identifier'),
-    (10002, 1000, N'Email', 'cccccccc-0000-0000-0000-000000000002', N'Text', 255, NULL, NULL, NULL, 1, 1, 0, 0, NULL, N'EmailAddress', NULL, NULL, N'EMAIL', NULL, NULL, NULL, NULL, N'Customer email'),
-    (10003, 1000, N'FirstName', 'cccccccc-0000-0000-0000-000000000003', N'Text', 100, NULL, NULL, N'''''' , 0, 1, 0, 0, NULL, NULL, NULL, NULL, N'FIRSTNAME', NULL, NULL, NULL, NULL, N'Customer first name'),
-    (10004, 1000, N'LastName', 'cccccccc-0000-0000-0000-000000000004', N'Text', 100, NULL, NULL, N'''''' , 0, 1, 0, 0, NULL, NULL, NULL, NULL, N'LASTNAME', NULL, NULL, NULL, NULL, N'Customer last name'),
-    (10005, 1000, N'CityId', 'cccccccc-0000-0000-0000-000000000005', N'Identifier', NULL, NULL, NULL, NULL, 1, 1, 0, 0, 2001, NULL, NULL, N'Protect', N'CITYID', NULL, NULL, NULL, NULL, N'FK to City'),
-    (10006, 1000, N'LegacyCode', 'cccccccc-0000-0000-0000-000000000006', N'Text', 50, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, NULL, NULL, N'LEGACYCODE', NULL, NULL, NULL, NULL, NULL),
-    (20011, 2001, N'Id', 'dddddddd-0000-0000-0000-000000000001', N'Identifier', NULL, NULL, NULL, NULL, 1, 1, 1, 1, NULL, NULL, NULL, NULL, N'ID', NULL, NULL, NULL, NULL, NULL),
-    (20012, 2001, N'Name', 'dddddddd-0000-0000-0000-000000000002', N'Text', 200, NULL, NULL, NULL, 1, 1, 0, 0, NULL, NULL, NULL, NULL, N'NAME', NULL, NULL, NULL, NULL, NULL),
-    (20013, 2001, N'IsActive', 'dddddddd-0000-0000-0000-000000000003', N'Boolean', NULL, NULL, NULL, N'1', 1, 1, 0, 0, NULL, NULL, NULL, NULL, N'ISACTIVE', NULL, NULL, NULL, NULL, NULL),
-    (30021, 2002, N'Id', 'eeeeeeee-0000-0000-0000-000000000001', N'Identifier', NULL, NULL, NULL, NULL, 1, 1, 1, 1, NULL, NULL, N'int', NULL, N'ID', NULL, NULL, NULL, NULL, NULL),
-    (30022, 2002, N'AccountNumber', 'eeeeeeee-0000-0000-0000-000000000002', N'Text', 50, NULL, NULL, NULL, 1, 1, 0, 0, NULL, NULL, N'varchar(50)', NULL, N'ACCOUNTNUMBER', NULL, NULL, NULL, NULL, NULL),
-    (30023, 2002, N'ExtRef', 'eeeeeeee-0000-0000-0000-000000000003', N'Text', 50, NULL, NULL, NULL, 0, 1, 0, 0, NULL, NULL, N'varchar(50)', NULL, N'EXTREF', NULL, NULL, NULL, NULL, NULL),
-    (40031, 4000, N'Id', 'ffffffff-0000-0000-0000-000000000001', N'Identifier', NULL, NULL, NULL, NULL, 1, 1, 1, 1, NULL, NULL, NULL, NULL, N'ID', NULL, NULL, NULL, NULL, NULL),
-    (40032, 4000, N'TriggeredByUserId', 'ffffffff-0000-0000-0000-000000000002', N'Identifier', NULL, NULL, NULL, NULL, 0, 1, 0, 0, 3001, NULL, NULL, N'Ignore', N'TRIGGEREDBYUSERID', NULL, NULL, NULL, NULL, NULL),
-    (40033, 4000, N'CreatedOn', 'ffffffff-0000-0000-0000-000000000003', N'DateTime', NULL, NULL, NULL, N'getutcdate()', 1, 1, 0, 0, NULL, NULL, NULL, NULL, N'CREATEDON', NULL, NULL, NULL, NULL, NULL),
-    (50041, 3001, N'Id', '99999999-0000-0000-0000-000000000001', N'Identifier', NULL, NULL, NULL, NULL, 1, 1, 1, 1, NULL, NULL, NULL, NULL, N'ID', NULL, NULL, NULL, NULL, NULL);
+    (10001, 1000, N'Id', 'cccccccc-0000-0000-0000-000000000001', N'Identifier', NULL, NULL, NULL, NULL, 1, 1, 1, 1, NULL, NULL, NULL, NULL, N'ID', NULL, NULL, NULL, NULL, NULL, N'Customer identifier'),
+    (10002, 1000, N'Email', 'cccccccc-0000-0000-0000-000000000002', N'Text', 255, NULL, NULL, NULL, 1, 1, 0, 0, NULL, N'EmailAddress', NULL, NULL, N'EMAIL', NULL, NULL, NULL, NULL, NULL, N'Customer email'),
+    (10003, 1000, N'FirstName', 'cccccccc-0000-0000-0000-000000000003', N'Text', 100, NULL, NULL, N'''''' , 0, 1, 0, 0, NULL, NULL, NULL, NULL, N'FIRSTNAME', NULL, NULL, NULL, NULL, NULL, N'Customer first name'),
+    (10004, 1000, N'LastName', 'cccccccc-0000-0000-0000-000000000004', N'Text', 100, NULL, NULL, N'''''' , 0, 1, 0, 0, NULL, NULL, NULL, NULL, N'LASTNAME', NULL, NULL, NULL, NULL, NULL, N'Customer last name'),
+    -- CityId: same-module FK (AppCore Customer -> AppCore City). The
+    -- `Type` column carries the `bt<EspaceSsKey>*<EntitySsKey>` binding
+    -- code and `Referenced_Entity_Id` is NULL, so the rowset CTE must
+    -- resolve the target by parsing the bt-code (the real OSSYS shape).
+    -- `Data_Type` keeps the resolved scalar (Identifier -> BIGINT).
+    (10005, 1000, N'CityId', 'cccccccc-0000-0000-0000-000000000005', N'Identifier', NULL, NULL, NULL, NULL, 1, 1, 0, 0, NULL, NULL, NULL, N'Protect', N'CITYID', NULL, N'bt11111111-1111-1111-1111-111111111111*bbbbbbbb-0000-0000-0000-000000000002', NULL, NULL, NULL, N'FK to City'),
+    (10006, 1000, N'LegacyCode', 'cccccccc-0000-0000-0000-000000000006', N'Text', 50, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, NULL, NULL, N'LEGACYCODE', NULL, NULL, NULL, NULL, NULL, NULL),
+    (20011, 2001, N'Id', 'dddddddd-0000-0000-0000-000000000001', N'Identifier', NULL, NULL, NULL, NULL, 1, 1, 1, 1, NULL, NULL, NULL, NULL, N'ID', NULL, NULL, NULL, NULL, NULL, NULL),
+    (20012, 2001, N'Name', 'dddddddd-0000-0000-0000-000000000002', N'Text', 200, NULL, NULL, NULL, 1, 1, 0, 0, NULL, NULL, NULL, NULL, N'NAME', NULL, NULL, NULL, NULL, NULL, NULL),
+    (20013, 2001, N'IsActive', 'dddddddd-0000-0000-0000-000000000003', N'Boolean', NULL, NULL, NULL, N'1', 1, 1, 0, 0, NULL, NULL, NULL, NULL, N'ISACTIVE', NULL, NULL, NULL, NULL, NULL, NULL),
+    (30021, 2002, N'Id', 'eeeeeeee-0000-0000-0000-000000000001', N'Identifier', NULL, NULL, NULL, NULL, 1, 1, 1, 1, NULL, NULL, N'int', NULL, N'ID', NULL, NULL, NULL, NULL, NULL, NULL),
+    (30022, 2002, N'AccountNumber', 'eeeeeeee-0000-0000-0000-000000000002', N'Text', 50, NULL, NULL, NULL, 1, 1, 0, 0, NULL, NULL, N'varchar(50)', NULL, N'ACCOUNTNUMBER', NULL, NULL, NULL, NULL, NULL, NULL),
+    (30023, 2002, N'ExtRef', 'eeeeeeee-0000-0000-0000-000000000003', N'Text', 50, NULL, NULL, NULL, 0, 1, 0, 0, NULL, NULL, N'varchar(50)', NULL, N'EXTREF', NULL, NULL, NULL, NULL, NULL, NULL),
+    (40031, 4000, N'Id', 'ffffffff-0000-0000-0000-000000000001', N'Identifier', NULL, NULL, NULL, NULL, 1, 1, 1, 1, NULL, NULL, NULL, NULL, N'ID', NULL, NULL, NULL, NULL, NULL, NULL),
+    -- TriggeredByUserId: cross-module FK (Ops JobRun -> SystemUsers User).
+    -- The `Type` column's bt-code names a DIFFERENT espace (SystemUsers,
+    -- 300) than the source (Ops, 200) with a NULL Referenced_Entity_Id,
+    -- so resolving it exercises the cross-module reference path end-to-end.
+    (40032, 4000, N'TriggeredByUserId', 'ffffffff-0000-0000-0000-000000000002', N'Identifier', NULL, NULL, NULL, NULL, 0, 1, 0, 0, NULL, NULL, NULL, N'Ignore', N'TRIGGEREDBYUSERID', NULL, N'bt33333333-3333-3333-3333-333333333333*bbbbbbbb-0000-0000-0000-000000000005', NULL, NULL, NULL, NULL),
+    (40033, 4000, N'CreatedOn', 'ffffffff-0000-0000-0000-000000000003', N'DateTime', NULL, NULL, NULL, N'getutcdate()', 1, 1, 0, 0, NULL, NULL, NULL, NULL, N'CREATEDON', NULL, NULL, NULL, NULL, NULL, NULL),
+    (50041, 3001, N'Id', '99999999-0000-0000-0000-000000000001', N'Identifier', NULL, NULL, NULL, NULL, 1, 1, 1, 1, NULL, NULL, NULL, NULL, N'ID', NULL, NULL, NULL, NULL, NULL, NULL);
 GO
 
 CREATE TABLE [dbo].[OSUSR_DEF_CITY]

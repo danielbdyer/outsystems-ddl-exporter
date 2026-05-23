@@ -187,6 +187,7 @@
     <Compile Include="V1NullabilityParityTests.fs" />
     <Compile Include="SsdtDdlEmitterTests.fs" />
     <Compile Include="SqlStorageEmissionTests.fs" />
+    <Compile Include="BtReferenceFkFlowTests.fs" />
     <Compile Include="SsdtDdlEmitterPropertyTests.fs" />
     <Compile Include="SsdtSchemaFidelityPropertyTests.fs" />
     <Compile Include="DacpacEmitterTests.fs" />

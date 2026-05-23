@@ -1810,6 +1810,7 @@ module CatalogReader =
     /// Cross-module FK lifts the same deferral.
     let private parseReferenceRowFor
         (kindKeysByEntityId: Map<int, SsKey>)
+        (kindKeysByEntityName: Map<string, SsKey>)
         (moduleName: string)
         (entityName: string)
         (attrRow: AttributeRow)
@@ -1818,20 +1819,33 @@ module CatalogReader =
         let refKey     = referenceSsKey moduleName entityName attrRow.AttrName
         let refName    = Name.create attrRow.AttrName
         let srcAttrKey = attributeSsKeyFromRow moduleName entityName attrRow
-        // Chapter 5.0 slice γ — when the bundle carries the target's
-        // RefEntityId AND the target entity row has a resolved kind key
-        // in the global lookup, use it directly. This handles GUID-based
-        // EntitySsKey targets correctly (the fallback synthesized key
-        // produces a different SsKey shape that breaks the
-        // danglingTarget invariant). Falls back to the prior synthesized
-        // shape when the target ID is absent or unresolvable.
+        // Target-kind resolution for the reference (FK). The primary key
+        // is the CTE-resolved `RefEntityId` against the GLOBAL
+        // `kindKeysByEntityId` map — cross-module-correct, including for
+        // `bt<espace>*<entity>`-encoded references the rowset CTE
+        // resolves (the espace GUID names the target's module, the
+        // entity GUID its entity). Chapter 5.0 slice γ: this also handles
+        // GUID-based EntitySsKey targets, where the synthesized
+        // `(module, name)` key would have a different shape and break the
+        // danglingTarget invariant.
+        //
+        // Fallback when `RefEntityId` is absent: resolve by entity name
+        // across EVERY module (`kindKeysByEntityName`) rather than
+        // assuming the source module — a cross-module reference whose ID
+        // didn't resolve still finds its target by name. Only when the
+        // name is unknown bundle-wide does it degrade to same-module
+        // synthesis.
+        let resolveByName () : Result<SsKey> =
+            match Map.tryFind refRow.RefEntityName kindKeysByEntityName with
+            | Some key -> Result.success key
+            | None     -> kindSsKey moduleName refRow.RefEntityName
         let tgtKindKey =
             match refRow.RefEntityId with
             | Some id ->
                 match Map.tryFind id kindKeysByEntityId with
                 | Some key -> Result.success key
-                | None -> kindSsKey moduleName refRow.RefEntityName
-            | None -> kindSsKey moduleName refRow.RefEntityName
+                | None     -> resolveByName ()
+            | None -> resolveByName ()
         let onDelete   = parseDeleteRule refRow.DeleteRuleCode
         // Slice A.4.7'-prelude.row17-18-rowset-roundtrip — `OnUpdate`
         // carries SQL Server's `sys.foreign_keys.update_referential_action
@@ -1892,6 +1906,16 @@ module CatalogReader =
             /// synthesized identity per `kindSsKeyFromRow`). Used by
             /// `parseReferenceRowFor` for cross-module FK resolution.
             KindKeysByEntityId : Map<int, SsKey>
+            /// Entity NAME → kind's resolved V2 SsKey, spanning every
+            /// module in the bundle. The cross-module fallback for
+            /// `parseReferenceRowFor` when the resolved `RefEntityId`
+            /// is absent: a `bt<espace>*<entity>` reference whose target
+            /// lives in a different module resolves by name across the
+            /// whole bundle rather than being mis-synthesized into the
+            /// source module. Last-write-wins on the rare cross-module
+            /// name collision (deterministic in bundle order); the
+            /// primary `RefEntityId` path is unambiguous and preferred.
+            KindKeysByEntityName : Map<string, SsKey>
             /// EspaceId → kinds belonging to that module. Owned by
             /// `parseModuleRow`'s walk.
             KindsByEspace : Map<int, KindRow list>
@@ -2186,7 +2210,7 @@ module CatalogReader =
             |> List.collect (fun a ->
                 Map.tryFind a.AttrId ctx.ReferencesByAttr
                 |> Option.defaultValue []
-                |> List.map (parseReferenceRowFor ctx.KindKeysByEntityId moduleName kindRow.EntityName a))
+                |> List.map (parseReferenceRowFor ctx.KindKeysByEntityId ctx.KindKeysByEntityName moduleName kindRow.EntityName a))
         let foldedRefs = Result.aggregate refResults
         // Slice 5.13.ossys-rowsets-cluster — per-Kind index assembly
         // from `IndexesByEntity` × `IndexColumnsByIndex`. The JOIN
@@ -2362,8 +2386,18 @@ module CatalogReader =
                     | Ok key -> Some (k.EntityId, key)
                     | Error _ -> None)
             |> Map.ofList
+        // Global entity-name → kind-key map (spans every module). The
+        // cross-module fallback for `parseReferenceRowFor` when a
+        // bt-resolved reference carries no `RefEntityId`.
+        let kindKeysByEntityName =
+            bundle.Kinds
+            |> List.choose (fun k ->
+                Map.tryFind k.EntityId kindKeysByEntityId
+                |> Option.map (fun key -> k.EntityName, key))
+            |> Map.ofList
         let ctx : RowsetParseContext =
             { KindKeysByEntityId   = kindKeysByEntityId
+              KindKeysByEntityName = kindKeysByEntityName
               KindsByEspace        = kindsByEspace
               AttributesByEntity   = attributesByEntity
               ReferencesByAttr     = referencesByAttr

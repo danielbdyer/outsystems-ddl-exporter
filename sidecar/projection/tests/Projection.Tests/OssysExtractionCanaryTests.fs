@@ -118,8 +118,9 @@ let ``Slice ε canary: Customer entity carries six attributes including FK to Ci
                 appCore.Kinds
                 |> List.find (fun k -> Name.value k.Name = "Customer")
             Assert.Equal(6, List.length customer.Attributes)
-            // CityId attribute carries Referenced_Entity_Id=2001 (City);
-            // V2's RowsetBundle composes this into a Reference.
+            // CityId carries a `bt<espace>*<entity>` binding type in the
+            // `Type` column with a NULL Referenced_Entity_Id; the rowset
+            // CTE resolves the bt-code to City and V2 composes a Reference.
             let hasCityRef =
                 customer.References
                 |> List.exists (fun r ->
