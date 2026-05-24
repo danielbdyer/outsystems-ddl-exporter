@@ -19801,17 +19801,23 @@ which is a slow or flaky individual test (every class passes in isolation):
    OOM (pure-unlimited *concurrent* with the Docker pool). `-1` is therefore
    applied per-pool by the script, where the pure pool runs alone.
 
-### Recommended categorical hardening (deferred — operator call)
+### Categorical hardening — LANDED same day
 
-The `-1`-via-script fix prevents the recurrence for anyone using `test.sh`, but
-a raw bounded `dotnet test` still deadlocks. The durable fix is to **eliminate
-the sync-over-async anti-pattern**: convert the ~34 blocking test bodies to
-async `Task`-returning tests (xUnit awaits them natively — no blocking, no
-deadlock), or route each blocking site through a shared `Task.Run`-offload
-helper (the continuation then runs free of xUnit's sync context). With the
-anti-pattern gone, bounded parallelism is safe and a global `xunit.runner.json`
-can cap memory. Tracked as an Active deferral; trigger = the next time the test
-suite is touched broadly, or operator go-ahead.
+The durable fix shipped: **`TaskSync.run`** (`tests/Projection.Tests/TaskSync.fs`)
+routes a `Task`-returning operation's blocking wait through `Task.Run`, so the
+operation executes on a thread-pool thread (null `SynchronizationContext`) and
+its `await` continuations resume off xUnit's capped sync context — the deadlock
+cannot form. Every sync-over-async site in the **pure pool** (21 files) was
+converted to `TaskSync.run` (the Docker-pool files were left as-is: their
+serial `DisableParallelization` collection never installs the throttling sync
+context, so their `GetAwaiter().GetResult()` is harmless). With the anti-pattern
+gone, **bounded parallelism is safe** — the full pure pool runs green at xUnit's
+default thread cap (2568 tests, ~50s, 2/2 repeats; it deadlocked before). So
+`scripts/test.sh` dropped the `MaxParallelThreads=-1` workaround. Pool
+separation stays (the OOM is a memory/concurrency fact independent of the
+deadlock). A raw bounded `dotnet test` of the pure pool no longer deadlocks;
+the full suite should still go through `test.sh` (pool separation) to avoid the
+OOM.
 
 ### Cross-references
 

@@ -124,7 +124,7 @@ let private v1FixtureWithDirections : string =
 }"""
 
 let private parseSync (source: CatalogReader.SnapshotSource) : Result<Catalog> =
-    (CatalogReader.parse source).GetAwaiter().GetResult()
+    TaskSync.run (fun () -> CatalogReader.parse source)
 
 [<Fact>]
 let ``Slice γ: JSON adapter carries IndexColumnDirection.Descending when source declares DESC`` () =

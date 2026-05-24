@@ -46,8 +46,8 @@ let private v1Json : string =
 }"""
 
 let private loadCatalog () : Catalog =
-    let task = Compose.readJson v1Json
-    match task.GetAwaiter().GetResult() with
+    let task () = Compose.readJson v1Json
+    match TaskSync.run task with
     | Ok c -> c
     | Error errs -> failwithf "test fixture invalid: %A" errs
 

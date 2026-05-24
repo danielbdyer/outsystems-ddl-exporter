@@ -127,7 +127,7 @@ let ``5.1.γ row 34: retry pipeline retries until the operation succeeds`` () =
                 raise (TransientTestException (sprintf "attempt %d transient" attempts.Value))
             return "ok"
         }
-    let result = (Retry.runOnPipeline pipeline operation).GetAwaiter().GetResult()
+    let result = TaskSync.run (fun () -> Retry.runOnPipeline pipeline operation)
     Assert.Equal("ok", result)
     Assert.Equal(3, attempts.Value)
 
@@ -154,7 +154,7 @@ let ``5.1.γ row 34: retry pipeline surfaces the final exception after retries e
         }
     let ex =
         Assert.Throws<TransientTestException>(Action(fun () ->
-            (Retry.runOnPipeline pipeline operation).GetAwaiter().GetResult() |> ignore))
+            TaskSync.run (fun () -> Retry.runOnPipeline pipeline operation) |> ignore))
     Assert.Equal("attempt 4", ex.Message)
     Assert.Equal(4, attempts.Value)
 
@@ -179,7 +179,7 @@ let ``5.1.γ row 34: retry pipeline does not retry on non-matching exceptions`` 
         }
     let _ =
         Assert.Throws<InvalidOperationException>(Action(fun () ->
-            (Retry.runOnPipeline pipeline operation).GetAwaiter().GetResult() |> ignore))
+            TaskSync.run (fun () -> Retry.runOnPipeline pipeline operation) |> ignore))
     Assert.Equal(1, attempts.Value)
 
 // -----------------------------------------------------------------

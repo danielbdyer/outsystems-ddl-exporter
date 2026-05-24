@@ -19,7 +19,7 @@ open Projection.Adapters.Osm
 // ---------------------------------------------------------------------------
 
 let private parseSync (source: CatalogReader.SnapshotSource) : Result<Catalog> =
-    (CatalogReader.parse source).GetAwaiter().GetResult()
+    TaskSync.run (fun () -> CatalogReader.parse source)
 
 let private parseOk (json: string) : Catalog =
     match parseSync (CatalogReader.SnapshotJson json) with

@@ -93,17 +93,17 @@ build_once() {
 
 # run_pool <label> <filter> [maxParallelThreads]
 #   One sequential dotnet test process, streamed. `maxParallelThreads`,
-#   when set, is passed as an xUnit RunSetting.
+#   when set, is passed as an xUnit RunSetting (default: xUnit's own
+#   default — core count).
 #
-#   The pure pool passes `-1` (unlimited). This is load-bearing, not a
-#   tuning knob: many test bodies are sync-over-async
-#   (`task.GetAwaiter().GetResult()`), and xUnit's *bounded* concurrency
-#   uses a `MaxConcurrencySyncContext` that starves those tasks'
-#   continuations → intermittent deadlock (idle CPU, "goes unresponsive").
-#   `-1` lets the thread pool schedule continuations, so the deadlock
-#   cannot form. The Docker pool does NOT need it — its
-#   `Docker-SqlServer` collection is `DisableParallelization` (serial,
-#   no sync-context throttle, and no concurrent CREATE/DROP livelock).
+#   Parallelism note: the sync-over-async deadlock that used to wedge the
+#   pure pool is fixed at the source — test bodies route their blocking
+#   waits through `TaskSync.run` (Task.Run offload, so continuations
+#   resume off xUnit's capped sync context). Bounded parallelism is
+#   therefore safe; no `-1` workaround is needed. The two pools are still
+#   run as separate sequential processes (see dispatch below) so the
+#   parallel pure pool never piles onto the serial Docker pool + SQL
+#   container and OOM-kills the host on this 4-core / no-swap box.
 run_pool() {
     local label="$1" filter="$2" maxpar="${3:-}"
     local trx="$RESULTS_DIR/$label.trx"
@@ -167,7 +167,7 @@ case "$CMD" in
         ;;
     fast)
         build_once
-        run_pool fast "$(pure_filter)" -1
+        run_pool fast "$(pure_filter)"
         exit $?
         ;;
     docker)
@@ -184,7 +184,7 @@ case "$CMD" in
         build_once
         # Sequential, separate processes — pools never run concurrently, so
         # the host is never over-subscribed (the OOM-crash fix).
-        run_pool fast "$(pure_filter)" -1;  fast_code=$?
+        run_pool fast "$(pure_filter)";     fast_code=$?
         run_pool docker "$(docker_filter)"; docker_code=$?
         echo
         bold "──────── summary ────────"

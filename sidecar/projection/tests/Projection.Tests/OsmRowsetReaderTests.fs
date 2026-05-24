@@ -30,7 +30,7 @@ open Projection.Tests.Fixtures
 let private mkName s = Name.create s |> Result.value
 
 let private parseSync (source: CatalogReader.SnapshotSource) : Result<Catalog> =
-    (CatalogReader.parse source).GetAwaiter().GetResult()
+    TaskSync.run (fun () -> CatalogReader.parse source)
 
 // ---------------------------------------------------------------------------
 // Minimal-fixture rowset bundle. Mirrors `v1MinimalFixture` in

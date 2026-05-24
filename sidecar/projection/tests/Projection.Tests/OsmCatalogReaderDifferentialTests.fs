@@ -143,7 +143,7 @@ let private expectedCatalog : Catalog =
 // ---------------------------------------------------------------------------
 
 let private parseSync (source: CatalogReader.SnapshotSource) : Result<Catalog> =
-    (CatalogReader.parse source).GetAwaiter().GetResult()
+    TaskSync.run (fun () -> CatalogReader.parse source)
 
 // ---------------------------------------------------------------------------
 // Differential test — minimal slice.

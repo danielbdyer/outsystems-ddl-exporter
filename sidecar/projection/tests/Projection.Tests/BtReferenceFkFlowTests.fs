@@ -58,7 +58,7 @@ let private kindNamed (name: string) (c: Catalog) : Kind =
 
 let private withCatalog (label: string) (assertion: Catalog -> unit) : unit =
     if skipIfNoDocker label then
-        match (extractFromSeed ()).GetAwaiter().GetResult() with
+        match TaskSync.run extractFromSeed with
         | Error errors -> Assert.Fail (sprintf "bt-ref extraction failed: %A" errors)
         | Ok catalog   -> assertion catalog
 

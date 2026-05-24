@@ -85,8 +85,8 @@ let private buildBundle (attrs: CatalogReader.AttributeRow list) : CatalogReader
         Attributes = attrs }
 
 let private parseToCatalog (bundle: CatalogReader.RowsetBundle) : Catalog =
-    let task = CatalogReader.parse (CatalogReader.SnapshotRowsets bundle)
-    let result = task.GetAwaiter().GetResult()
+    let task () = CatalogReader.parse (CatalogReader.SnapshotRowsets bundle)
+    let result = TaskSync.run task
     mustOk result
 
 let private findAttribute (cat: Catalog) (attrName: string) : Attribute =
