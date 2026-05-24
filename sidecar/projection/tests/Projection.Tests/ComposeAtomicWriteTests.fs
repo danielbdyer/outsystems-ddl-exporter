@@ -55,6 +55,7 @@ let private trivialOutputs () : Compose.Outputs =
             RemediationSql    = "-- no remediation candidates"
             SummaryText       = "Tightening decision summary\n(empty fixture)"
             SuggestConfigJson = sc
+            Manifest          = Projection.Targets.SSDT.ManifestEmitter.build Fixtures.sampleCatalog
         }
 
 let private listAllFiles (dir: string) : string list =

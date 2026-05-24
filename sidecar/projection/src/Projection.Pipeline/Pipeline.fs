@@ -3,6 +3,7 @@ namespace Projection.Pipeline
 open System.IO
 open System.Text.Json.Nodes
 open System.Threading.Tasks
+open Microsoft.Data.SqlClient
 open Projection.Core
 open Projection.Adapters.Osm
 open Projection.Targets.SSDT
@@ -56,10 +57,11 @@ module Compose =
             /// Distinct from `manifest.json` (the V1-mirror SSDT
             /// manifest in `SsdtBundle`).
             Json : JsonNode
-            /// Distributions JSON from `DistributionsEmitter`,
-            /// consuming `Profile.empty` since the dogfood frame does
-            /// not yet thread profile evidence end-to-end. Same
-            /// JsonNode-at-the-seam treatment as `Json` above.
+            /// Distributions JSON from `DistributionsEmitter`, consuming
+            /// the acquired `Profile` (live source-environment evidence
+            /// when `profiler.provider = "live"`; `Profile.empty`
+            /// otherwise). Same JsonNode-at-the-seam treatment as `Json`
+            /// above.
             Distributions : JsonNode
             /// Chapter 5+ slice `5.13.remediation-emitter` —
             /// per-decision remediation SQL (UPDATE/DELETE/SELECT
@@ -80,6 +82,14 @@ module Compose =
             /// deduplicated by `Path` and emitted here. Written as
             /// `suggest-config.json` alongside the SSDT bundle.
             SuggestConfigJson : JsonNode
+            /// The typed SSDT manifest built during projection (the same
+            /// value serialized into `manifest.json` within `SsdtBundle`).
+            /// Surfaced here so consumers — `runWithConfig`'s `RunReport`,
+            /// drift detection — read the structured manifest (coverage,
+            /// `ColumnProfiles`, deployment batches) without re-parsing
+            /// the serialized JSON. `ColumnProfiles` is non-empty exactly
+            /// when the acquired `Profile` carries numeric moments.
+            Manifest : ManifestEmitter.Manifest
         }
 
     /// Chapter C slice C.2 — run-shape value returned by
@@ -93,6 +103,12 @@ module Compose =
     type RunReport = {
         Paths       : string list
         Diagnostics : DiagnosticEntry list
+        /// The typed manifest emitted by this run. `Manifest.ColumnProfiles`
+        /// is non-empty when the run acquired a live source-environment
+        /// `Profile` (`profiler.provider = "live"` + an accessible database
+        /// via the out-of-band connection); empty for the `Profile.empty`
+        /// base case.
+        Manifest    : ManifestEmitter.Manifest
     }
 
     /// Per-artifact relative path. Centralized so tests and the CLI
@@ -233,6 +249,7 @@ module Compose =
 
     let private projectFromChainWithState
         (chain: PassChainAdapter list)
+        (profile: Profile)
         (policy: EmissionPolicy)
         (folders: EmissionFolders)
         (groups: TransformGroups)
@@ -259,7 +276,7 @@ module Compose =
         // its evidence is policy, not catalog-derived. Identity when
         // `IncludePlatformAutoIndexes = true` (V1 parity default).
         let emittedCatalog = EmissionPolicy.filterPlatformAutoIndexes policy composedState.Catalog
-        let bundle =
+        let bundle, manifest =
             (use _ = Bench.scope "emit.ssdtBundle.compose"
              match SsdtDdlEmitter.emitSlices emittedCatalog with
              | Ok ssdtFiles ->
@@ -267,13 +284,13 @@ module Compose =
                  let manifest =
                      let registry = SsdtDdlEmitter.registeredMetadata :: RegisteredTransforms.all
                      ManifestEmitter.buildFull
-                         Profile.empty
+                         profile
                          registry
                          composedState.TopologicalOrder
                          versionedPolicy
                          policyConflicts
                          emittedCatalog
-                 SsdtBundle.compose rewritten manifest
+                 SsdtBundle.compose rewritten manifest, manifest
              | Error err ->
                  // Unreachable in production paths: Catalog.allKinds is
                  // the keyset by construction; SsdtDdlEmitter.emitSlices
@@ -291,7 +308,7 @@ module Compose =
              | n    -> n)
         let distributions =
             (use _ = Bench.scope "emit.distributions"
-             match JsonNode.Parse(DistributionsEmitter.emit emittedCatalog Profile.empty) with
+             match JsonNode.Parse(DistributionsEmitter.emit emittedCatalog profile) with
              | null -> invalidOp "Compose.project: DistributionsEmitter.emit produced unparseable text (unreachable)"
              | n    -> n)
         // Chapter 5+ slices 5.13.remediation-emitter +
@@ -325,16 +342,19 @@ module Compose =
             RemediationSql    = remediationSql
             SummaryText       = summaryText
             SuggestConfigJson = suggestConfigJson
+            Manifest          = manifest
         }
         outputs, composedState
 
     let private projectFromChain
         (chain: PassChainAdapter list)
+        (profile: Profile)
         (policy: EmissionPolicy)
         (catalog: Catalog)
         : Outputs =
         projectFromChainWithState
             chain
+            profile
             policy
             EmissionFolders.empty
             TransformGroups.empty
@@ -348,7 +368,7 @@ module Compose =
     /// is canonical. Chapter 4.9 slice δ — accepts an `EmissionPolicy`
     /// driving the platform-auto-indexes filter.
     let project (policy: EmissionPolicy) (catalog: Catalog) : Outputs =
-        projectFromChain RegisteredTransforms.allChainSteps policy catalog
+        projectFromChain RegisteredTransforms.allChainSteps Profile.empty policy catalog
 
     /// Chapter C slice C.1 — production-shape project with caller-
     /// supplied full `Policy` + `Profile` threaded through the four
@@ -363,7 +383,7 @@ module Compose =
         (catalog: Catalog)
         : Outputs =
         let chain = RegisteredTransforms.allChainStepsFor fullPolicy profile
-        projectFromChain chain emissionPolicy catalog
+        projectFromChain chain profile emissionPolicy catalog
 
     /// Chapter C slice C.2 — `projectWith` sibling that returns the
     /// post-chain `ComposeState` alongside the outputs. Used by
@@ -399,6 +419,7 @@ module Compose =
             else Some (versionPolicy fullPolicy)
         projectFromChainWithState
             chain
+            profile
             emissionPolicy
             folders
             groups
@@ -413,7 +434,7 @@ module Compose =
     /// uses `EmissionPolicy.defaults` (no filtering) because the
     /// skeleton view is operator-free by definition.
     let projectSkeleton (catalog: Catalog) : Outputs =
-        projectFromChain RegisteredTransforms.skeletonChainSteps EmissionPolicy.empty catalog
+        projectFromChain RegisteredTransforms.skeletonChainSteps Profile.empty EmissionPolicy.empty catalog
 
     /// Chapter A.4.7' slice ε — registry-driven traversal restricted
     /// to the skeleton view (every Site classifies as `DataIntent`).
@@ -661,13 +682,65 @@ module Compose =
             let insertionErrs  = match insertionR  with Ok _ -> [] | Error es -> es
             Result.failure (tighteningErrs @ insertionErrs)
 
+    /// Open the out-of-band source connection and enrich `Profile.empty`
+    /// via the `LiveProfiler` adapter. An unreachable / malformed
+    /// connection is a *named failure* (`pipeline.profiler.connectionFailed`),
+    /// never a silent fallback to empty.
+    let private profileFromLiveConnection
+        (connectionString: string)
+        (catalog: Catalog)
+        : Task<Result<Profile>> =
+        task {
+            try
+                use cnn = new SqlConnection(connectionString)
+                do! cnn.OpenAsync()
+                return! Projection.Adapters.Sql.LiveProfiler.attach cnn catalog Profile.empty
+            with ex ->
+                return
+                    Result.failureOf
+                        (ValidationError.create
+                            "pipeline.profiler.connectionFailed"
+                            (sprintf "live profiling could not reach the source database: %s" ex.Message))
+        }
+
+    /// Acquire the source-environment `Profile` for a run. When
+    /// `profiler.provider = "live"` (`Config.LiveProfilerProvider`), opens
+    /// the out-of-band source connection (`Config.SourceConnectionStringEnvVar`;
+    /// D9 — never from the config document) and profiles against the
+    /// *source* catalog, whose physical coordinates match the live
+    /// database. `SsKey` identity is rename-invariant (A1), so the
+    /// resulting profile keys still resolve when the manifest is built
+    /// from the renamed catalog. Any other provider carries `Profile.empty`
+    /// forward as the no-evidence base case; a `"live"` provider with a
+    /// missing connection is a named failure.
+    let private acquireProfile (cfg: Config.Config) (catalog: Catalog) : Task<Result<Profile>> =
+        task {
+            if cfg.Profiler.Provider <> Config.LiveProfilerProvider then
+                return Result.success Profile.empty
+            else
+                match System.Environment.GetEnvironmentVariable Config.SourceConnectionStringEnvVar with
+                | null | "" ->
+                    return
+                        Result.failureOf
+                            (ValidationError.create
+                                "pipeline.profiler.connectionMissing"
+                                (sprintf
+                                    "profiler.provider = \"%s\" requires the %s environment variable (D9: connection sources are out-of-band)."
+                                    Config.LiveProfilerProvider
+                                    Config.SourceConnectionStringEnvVar))
+                | connectionString ->
+                    return! profileFromLiveConnection connectionString catalog
+        }
+
     /// Synchronous core for `runWithConfig`. Extracted from the `task { }`
     /// block to keep the async surface minimal and allow static state-machine
     /// compilation (avoids FS3511 — deeply nested matches inside `task { }`
-    /// prevent static compilation of the resumable state machine).
+    /// prevent static compilation of the resumable state machine). The
+    /// acquired `Profile` is threaded in by the async caller.
     let private runWithConfigCore
         (cfg: Config.Config)
         (parsed: Result<Catalog>)
+        (profile: Profile)
         : Result<RunReport> =
         match parsed with
         | Error errors -> Result.failure errors
@@ -681,7 +754,6 @@ module Compose =
                 let groupsR    = TransformGroupsBinding.fromConfig cfg
                 match policyR, overridesR, foldersR, groupsR with
                 | Ok policy, Ok overrides, Ok folders, Ok groups ->
-                    let profile = Profile.empty  // wired to LiveProfiler when full-export path lands
                     let outputs, finalState =
                         projectWithState policy profile EmissionPolicy.empty folders groups renamedCatalog
                     let diagnostics =
@@ -690,7 +762,7 @@ module Compose =
                         @ FkSelectivityDiagnostics.emit profile    // H-025
                         @ JointDependencyDiagnostics.emit profile   // H-026
                     match write cfg.Output.Dir outputs with
-                    | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics }
+                    | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest }
                     | Error errors -> Result.failure errors
                 | _ ->
                     let policyErrs    = match policyR    with Ok _ -> [] | Error es -> es
@@ -712,5 +784,9 @@ module Compose =
     let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
         task {
             let! parsed = read cfg.Model.Path
-            return runWithConfigCore cfg parsed
+            match parsed with
+            | Error errors -> return Result.failure errors
+            | Ok catalog ->
+                let! profileResult = acquireProfile cfg catalog
+                return profileResult |> Result.bind (runWithConfigCore cfg (Ok catalog))
         }

@@ -70,6 +70,21 @@ module Config =
         MockFolder : string option
     }
 
+    /// `profiler.provider` value that selects live source-environment
+    /// profiling against an accessible SQL database (the `LiveProfiler`
+    /// adapter). Any other value (default `"fixture"`) carries
+    /// `Profile.empty` forward as the no-evidence base case.
+    [<Literal>]
+    let LiveProfilerProvider = "live"
+
+    /// D9 (secret-free by construction): the connection string for live
+    /// profiling is sourced out-of-band from this environment variable,
+    /// never from the config document. Same source the warm-container /
+    /// deploy path reads (`Deploy.WarmConnStringEnvVar`) — the source
+    /// environment IS the operator's single MSSQL connection.
+    [<Literal>]
+    let SourceConnectionStringEnvVar = "PROJECTION_MSSQL_CONN_STR"
+
     type TypeMappingSection = {
         Path      : string option
         Default   : string option
