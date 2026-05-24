@@ -28,6 +28,7 @@
     <Compile Include="Deploy.fs" />
     <Compile Include="BenchSink.fs" />
     <Compile Include="LogSink.fs" />
+    <Compile Include="FullExportRun.fs" />
   </ItemGroup>
 
   <ItemGroup>
