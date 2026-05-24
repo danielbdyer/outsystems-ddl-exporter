@@ -873,15 +873,27 @@ module ComprehensiveCanaryTests =
                     for seed in generatedFixture.BulkSeeds do
                         do! Bulk.copyRows cnn seed.Table seed.Rows
                     let! ossysCatalogResult, readSideCatalogResult = extractBoth cnn
-                    return ossysCatalogResult, readSideCatalogResult
+                    // Full switchover (2026-05-24): acquire the source-environment
+                    // Profile *live* from the deployed DB — real null-counts,
+                    // numeric moments, FK realities — instead of fabricating it.
+                    // `buildProfile` now supplies only the cross-environment base
+                    // a single-DB scan cannot (CdcAwareness + Source/Target user
+                    // populations); `LiveProfiler.attach` overwrites the probe axes
+                    // with real evidence and preserves those siblings.
+                    let! profileResult =
+                        match readSideCatalogResult with
+                        | Ok rsCatalog -> LiveProfiler.attach cnn rsCatalog (buildProfile rsCatalog)
+                        | Error _ -> Task.FromResult (Result.success Profile.empty)
+                    return ossysCatalogResult, readSideCatalogResult, profileResult
                 })
                 |> fun t -> t.GetAwaiter().GetResult()
 
-            let catalogOssys, catalogReadSide =
+            let catalogOssys, catalogReadSide, profile =
                 match result with
-                | (Ok c1, Ok c2) -> c1, c2
-                | (Error e1, _) -> Assert.Fail(sprintf "OSSYS adapter parse failed: %A" e1); Unchecked.defaultof<_>, Unchecked.defaultof<_>
-                | (_, Error e2) -> Assert.Fail(sprintf "ReadSide.read failed: %A" e2); Unchecked.defaultof<_>, Unchecked.defaultof<_>
+                | (Ok c1, Ok c2, Ok p) -> c1, c2, p
+                | (Error e1, _, _) -> Assert.Fail(sprintf "OSSYS adapter parse failed: %A" e1); Unchecked.defaultof<_>, Unchecked.defaultof<_>, Unchecked.defaultof<_>
+                | (_, Error e2, _) -> Assert.Fail(sprintf "ReadSide.read failed: %A" e2); Unchecked.defaultof<_>, Unchecked.defaultof<_>, Unchecked.defaultof<_>
+                | (_, _, Error ep) -> Assert.Fail(sprintf "LiveProfiler.attach failed: %A" ep); Unchecked.defaultof<_>, Unchecked.defaultof<_>, Unchecked.defaultof<_>
             printfn "Source extraction complete: %d ossys modules, %d ossys kinds, %d readside modules, %d readside kinds"
                 catalogOssys.Modules.Length
                 (Catalog.allKinds catalogOssys |> List.length)
@@ -894,14 +906,28 @@ module ComprehensiveCanaryTests =
             assertOssysEquivalentToReadSide catalogOssys catalogReadSide
 
             // ---------------------------------------------------------
-            // Build Policy + Profile; run tightening passes; compose
-            // schema + data emission. Use the readside catalog as the
-            // primary input (it's the source-of-truth representation
-            // of the deployed reality) so the target round-trip
-            // assertion is structurally meaningful.
+            // Assertion A2 (realism guard): the Profile was acquired LIVE,
+            // not fabricated. `buildProfile` leaves AttributeRealities empty
+            // — only `LiveProfiler.attach` populates it (one reality per
+            // probed attribute) — so a non-empty list proves real probing
+            // ran. The preserved Source/Target user populations prove the
+            // attach composed onto the synthetic cross-environment base
+            // rather than discarding it. Guards against a silent regression
+            // to Profile.empty.
+            // ---------------------------------------------------------
+            Assert.NotEmpty(profile.AttributeRealities)
+            Assert.False(UserPopulation.isEmpty profile.SourceUsers, "live profile must preserve the synthetic SourceUsers base")
+            Assert.False(UserPopulation.isEmpty profile.TargetUsers, "live profile must preserve the synthetic TargetUsers base")
+
+            // ---------------------------------------------------------
+            // Build Policy; run tightening passes; compose schema + data
+            // emission. The `profile` was acquired LIVE from the source DB
+            // above (real evidence, not synthetic). Use the readside catalog
+            // as the primary input (the source-of-truth representation of the
+            // deployed reality) so the target round-trip assertion is
+            // structurally meaningful.
             // ---------------------------------------------------------
             let policy = buildPolicy ()
-            let profile = buildProfile catalogReadSide
 
             // ---------------------------------------------------------
             // Feature-rich emit phase: emit from a catalog that
