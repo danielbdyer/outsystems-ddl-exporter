@@ -9,7 +9,7 @@ namespace Projection.Core
 // formatting is the right primitive.
 
 /// Vocabulary of the bidirectional control plane (Transfer prescope —
-/// `PRESCOPE_REVERSE_IMPORT.md`). The pipeline mediates between a logical
+/// `PRESCOPE_TRANSFER.md`). The pipeline mediates between a logical
 /// `Catalog` (the schema contract) and physical database substrates.
 /// **Projection** lowers the Catalog (and rows) onto a substrate; its
 /// named peer **Ingestion** lifts a substrate back into the Catalog (and

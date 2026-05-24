@@ -65,6 +65,7 @@ the operational *what and when* is here.
   - [Phase 8 — Path to T-30 green (the cutover-ladder gate)](#phase-8--path-to-t-30-green-the-cutover-ladder-gate)
   - [Phase 9 — V2-driver operator workflow (post-T-30; cutover-window operator UX)](#phase-9--v2-driver-operator-workflow-post-t-30-cutover-window-operator-ux)
   - [Phase 10 — V1 sunset (cutover+30 onward)](#phase-10--v1-sunset-cutover30-onward)
+  - [Phase 11 — Transfer / bidirectional pipeline (epic; prescoped)](#phase-11--transfer--bidirectional-pipeline-epic-prescoped)
 - [IV. V1 inheritance log](#iv-v1-inheritance-log)
 - [V. Cross-cutting infrastructure work](#v-cross-cutting-infrastructure-work)
 - [VI. Risk register](#vi-risk-register)
@@ -1033,6 +1034,48 @@ surfaces them.
 **Per-phase risks:**
 - *V1 sunset deferred indefinitely* → chapter close ritual evaluates ladder reachability; if V2-augmented mode persists past cutover+90, principal-PO decision on whether to extend V1 warm window or invest in remaining cash-outs
 - *Post-cutover regression in V2 emissions* → V1 stays warm; operator falls back per environment; named in operator runbook
+
+---
+
+### Phase 11 — Transfer / bidirectional pipeline (epic; prescoped)
+
+**Status:** prescoped; **slice 1 shipped**. Off the cutover ladder — a
+preview/migration capability, not a cutover-gate dependency. Develops on
+`claude/bidirectional-exporter-pipeline-4XN4Q`. Full prescope:
+`PRESCOPE_TRANSFER.md`; governing decisions: `DECISIONS 2026-05-24`.
+
+**What it is.** A *Transfer* loads row data from one database substrate into
+another over one shared schema: `Ingestion(Source) → Projection(Sink)`. The
+motivating instance is the operator's blank-UAT preview — ingest from the
+staging SQL Server (re-bound as Source) and project into an OutSystems Cloud
+UAT database (Sink), as a temporary pre-eject preview. It is the **H-050
+adjunction extended from schema to data across two substrates** — not a new
+pipeline, but a re-source + re-sink of the existing direction-neutral
+two-phase plan (A35/A36).
+
+**North Star.** The data-level extension of H-050:
+`Ingestion(Projection(rows)) ≈ rows` up to named identity-remap tolerances,
+earned by a **data-level canary** (the data analog of the schema canary).
+
+**Slice queue:**
+
+| Slice | Scope | Status |
+|---|---|---|
+| 1 | Vocabulary reification — `Transfer.fs` (`SubstrateRole`, `SourceKey`/`AssignedKey`, `IdentityDisposition` + `ofKind`, `SurrogateRemapContext`); 11 tests | ✅ shipped |
+| A | `SchemaContract` on-disk persistence (`SsKey` + FK graph + physical-coordinate index); round-trip property test | 🔵 scheduled |
+| B | Pure two-phase identity-aware Transfer plan + `Ingestion` row-stream adapter (reuse `ReadSide.readRowsStream`) | 🔵 scheduled |
+| C | `PreservedFromSource` Projection-onto-Sink + Transfer orchestrator (dry-run) + **data-level canary** | 🔵 scheduled (highest-leverage) |
+| D | `--execute` against UAT, gated behind R6 amendment, dry-run default, preview row cap, CDC-safety check | 🟡 gated (operator sign-off) |
+| E | `AssignedBySink` — assigned-key capture (`OUTPUT`/correlation) feeding `SurrogateRemapContext`, catalog-wide FK re-point | ⚪ later chapter |
+
+**Per-phase risks:**
+- *Platform write surface (OPEN-2)* → whether the OutSystems Cloud UAT DB
+  permits direct SQL writes to entity-backing tables is the single biggest
+  external dependency; confirm before Slice D.
+- *R6 boundary* → the execute path is a new write path; stays UAT-preview +
+  dry-run-default and requires the R6 amendment before Slice D ships.
+- *Identity collision* → `PreservedFromSource` assumes a blank Sink; a
+  non-empty / managed-identity target forces `AssignedBySink` (Slice E).
 
 ---
 

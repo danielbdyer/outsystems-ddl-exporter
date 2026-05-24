@@ -19506,3 +19506,137 @@ The operator-PO chose Path C from the prior session's three-paths offer: registe
 - `src/Projection.Pipeline/Deploy.fs:745-805` — `executeStream` dispatch.
 - `src/Projection.Pipeline/RegisteredAllTransforms.fs:53-59` — formatter metadata registered.
 - V1 references: `src/Osm.Smo/PerTableEmission/ConstraintFormatter.cs`; `tests/Fixtures/emission/edge-case-untrusted/Modules/Ops/dbo.JobRun.sql`.
+
+---
+
+## 2026-05-24 (Transfer epic — vocabulary reification, slice 1) — the bidirectional pipeline's lexicon is locked: Projection / Ingestion / Transfer / Source / Sink / SchemaContract / SurrogateRemapContext / IdentityDisposition
+
+### Context
+
+The pipeline runs one leg today — Projection (Π) lowering a `Catalog` onto a
+staging SQL Server. The operator wants to freeze that schema, hand it to the
+partner team as usual, and then use the *same* schema to pull rows from
+staging and load them into an OutSystems Cloud UAT database as a temporary,
+pre-eject preview. The original feasibility study framed this as "reverse
+import" (`PRESCOPE_REVERSE_IMPORT.md`).
+
+The reified understanding rejects "reverse." The capability is not a bolt-on
+to a one-directional tool; it is the other leg of an adjunction the codebase
+**already names and partially proves** — H-050 (`AdjunctionLawTests.fs`):
+`Ingestion ∘ Projection = id` up to named lossy fields, at the schema level.
+A "reverse import" is that adjunction run across two substrates and extended
+from schema to data. Naming it "reverse" obscured that the hard machinery
+(two-phase Tarjan plan, `ReadSide` reader, `Bulk.copyRows` writer,
+`RawValueCodec`, the read-back canary, `UserRemapContext`) already exists.
+
+### Decisions resolved
+
+1. **The lexicon is locked** (pillar 8 — domain-first naming + ubiquitous
+   language across Core / Adapters / Pipeline / CLI):
+   - **Projection** (Π) — lower a `Catalog` (+ rows) onto a substrate. The
+     existing emitter direction; unchanged.
+   - **Ingestion** — Π's *named peer*: lift a substrate back into a `Catalog`
+     (+ rows). The reader leg of the H-050 adjunction; `ReadSide` is today's
+     schema-level Ingestion.
+   - **Transfer** — `Ingestion(Source)` then `Projection(Sink)` over one
+     shared `SchemaContract`. The flow concept. No direction is canonical;
+     today's export and the staging→UAT load are both Transfers, differing
+     only in the bound adapters.
+   - **Source / Sink** — the flow-relative role a substrate plays in a
+     Transfer (`SubstrateRole`). A binding, not an identity: staging is a Sink
+     on export and a Source on the UAT load. Mirrors the canary's
+     `Source_`/`Target_` ephemeral databases.
+   - **SchemaContract** — the frozen, reloadable schema artifact carrying
+     `SsKey` + the FK edge graph + physical coordinates; the contract both
+     legs share. The in-memory `Catalog` is already a complete contract; the
+     on-disk artifact is not (it omits `SsKey` / FK graph) — closing that is a
+     scoped slice, not yet built.
+   - **IdentityDisposition** — per kind: `AssignedBySink` (identity PK; the
+     sink mints the surrogate) vs `PreservedFromSource` (business / non-identity
+     PK; the source key is written directly). Derived from the PK's `IsIdentity`
+     flag via `ofKind` — `DataIntent` (reads structure, no operator opinion).
+   - **SourceKey / AssignedKey** — orientation-typed surrogate raw values; the
+     surrogate-remap analog of `SourceUserId` / `TargetUserId`.
+   - **SurrogateRemapContext** — per-kind `Source → Sink-assigned` surrogate
+     map (`Map<SsKey, Map<SourceKey, AssignedKey>>`), captured during phase-1
+     insert; the per-kind generalization of `UserRemapContext`.
+
+2. **DML-only sink rights are the governing constraint** for the OutSystems
+   Cloud target: the sink may not force-insert identity-PK keys. This is what
+   makes `IdentityDisposition` load-bearing — identity-PK kinds are
+   `AssignedBySink` (capture + remap), business-key kinds are
+   `PreservedFromSource` (written directly). The recommended first cut is
+   `PreservedFromSource` against a blank sink (`KeepIdentity` eliminates remap
+   entirely); `AssignedBySink` via `SurrogateRemapContext` is the harder, later
+   capability for non-empty / managed targets.
+
+3. **The epic's North Star is the data-level extension of H-050**: a Transfer
+   is correct when `Ingestion(Projection(rows)) ≈ rows` up to named
+   identity-remap tolerances, proven by a **data-level canary** — the data
+   analog of the schema canary, asserting `PhysicalSchema` + row-digest
+   equality across a forward-emit → ingest → plan → project → ingest loop
+   *before* any UAT write. This is squarely on the V2-driver KPI (provably
+   correct per axis = structural types + per-axis canary/property test).
+
+4. **The `transfer` CLI verb** (not `import`) names the flow concept; the
+   two connection endpoints live **outside `Config`** (D9) as env vars
+   (`PROJECTION_TRANSFER_SOURCE_CONN_STR` / `..._SINK_CONN_STR`) or
+   CLI-flag file paths; dry-run is the default and `--execute` is gated behind
+   an R6 amendment (UAT-preview, not production write path).
+
+5. **The doc is renamed** `PRESCOPE_REVERSE_IMPORT.md → PRESCOPE_TRANSFER.md`
+   and rewritten around this vocabulary; it is the epic's epistemic anchor
+   (North Star, holistic feature backlog Slices A–E, governance, reuse
+   surface).
+
+### What shipped (slice 1)
+
+- `src/Projection.Core/Transfer.fs` — pure Core reification: `SubstrateRole`
+  (`Source | Sink`), `SourceKey` / `AssignedKey` newtypes, `IdentityDisposition`
+  (`AssignedBySink | PreservedFromSource`) + `ofKind`, `SurrogateRemapContext`
+  (`empty` / `capture` / `tryFindAssigned` / `assignmentCount` / `kindCount`).
+  Smart-constructor invariant on `capture`: one `SourceKey` maps to at most one
+  `AssignedKey` per kind (a second capture of the same source surrogate is a
+  phase-1 double-insert, rejected). No I/O; PRJ001-clean.
+- 11 unit tests in `tests/Projection.Tests/SurrogateRemapContextTests.fs`.
+
+### Discipline reinforced
+
+- **IR grows under evidence.** Slice 1 ships only the type-level spine the
+  later slices demand. `SurrogateRemapContext`'s diagnostic side (orphan-FK
+  variants) and the `UserRemapContext` subsumption are deferred with named
+  triggers — they land when `AssignedBySink` (Slice E) gives them a second
+  consumer.
+- **Connect to existing prior art, don't reinvent.** The adjunction is H-050;
+  the optic is H-010 (the Catalog↔DDL `Prism`); the remap template is
+  `UserRemapContext`. The Transfer epic extends named structures rather than
+  introducing parallel ones.
+- **Axioms scaffolded, not cashed mid-flight.** The data-level adjunction is
+  named as an axiom *candidate* (sibling to H-050 / A35 / A36) to scaffold at
+  the Transfer chapter's open and cash at its close — not promoted now.
+
+### Active deferrals — additions
+
+| Deferral | Opened | Trigger to cash | Status |
+|---|---|---|---|
+| **`SchemaContract` on-disk persistence (SsKey + FK graph + physical-coordinate index)** | 2026-05-24 (Transfer epic) | A *later-run* Transfer (separate process from the live `Catalog`) or `AssignedBySink` needs identity recovered from disk; today only `V2.LogicalName` round-trips, not `SsKey` | Deferred (Transfer Slice A). In-memory `Catalog` is already a complete contract; same-run Transfer needs nothing. |
+| **`AssignedBySink` realization (assigned-key capture + catalog-wide FK re-point)** | 2026-05-24 (Transfer epic) | UAT sink is non-empty / platform-managed identity; needs `OUTPUT`/`SCOPE_IDENTITY` capture (or natural-key correlation) feeding `SurrogateRemapContext.capture` | Deferred (Transfer Slice E). Type foundation shipped in slice 1; the realization-layer capture wiring is the missing piece, not the type. |
+| **Subsume `UserRemapContext` into `SurrogateRemapContext`** | 2026-05-24 (Transfer epic) | `AssignedBySink` lands AND a second consumer of the general context exists (two-consumer threshold) | Deferred. `UserRemapContext` is the single-kind, pre-matched special case; the two coexist with cross-referencing prose until the trigger fires. |
+| **Data-level adjunction promoted to a numbered axiom** | 2026-05-24 (Transfer epic) | Transfer chapter close, once the data-level canary (Slice C) is green | Scaffolded candidate (sibling to H-050). Not cashed. |
+
+### Cross-references
+
+- `PRESCOPE_TRANSFER.md` — the epic's epistemic anchor (renamed from
+  `PRESCOPE_REVERSE_IMPORT.md`); North Star §0, vocabulary §4, identity §6,
+  `SchemaContract` §7, governance §8, seams §9, backlog §10, codebase-shift
+  evaluation §11.
+- `src/Projection.Core/Transfer.fs` — slice 1 reification.
+- `tests/Projection.Tests/SurrogateRemapContextTests.fs` — 11 tests.
+- H-050 (`HORIZON.md:1465`; `tests/Projection.Tests/AdjunctionLawTests.fs`) —
+  the schema-level adjunction the epic extends to data.
+- H-010 (`HORIZON.md:415`) — the Catalog↔DDL `Prism`; Ingestion is its reverse
+  leg carrying identity.
+- `UserRemap.fs` / `UserFkReflowPass.fs` — the remap template
+  `SurrogateRemapContext` generalizes.
+- `DECISIONS 2026-05-22 — R6` — the production-write-path guardrail the
+  `transfer` execute path is scoped around.

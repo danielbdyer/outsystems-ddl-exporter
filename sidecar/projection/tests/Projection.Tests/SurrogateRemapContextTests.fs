@@ -4,7 +4,7 @@ open Xunit
 open Projection.Core
 
 // ---------------------------------------------------------------------------
-// Transfer prescope (`PRESCOPE_REVERSE_IMPORT.md`) — the bidirectional
+// Transfer prescope (`PRESCOPE_TRANSFER.md`) — the bidirectional
 // control-plane vocabulary reified in Core: SubstrateRole, the orientation-
 // typed surrogate keys (SourceKey / AssignedKey), IdentityDisposition
 // (per-kind, derived from the PK's IDENTITY property), and
