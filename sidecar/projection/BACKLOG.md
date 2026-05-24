@@ -1046,16 +1046,31 @@ preview/migration capability, not a cutover-gate dependency. Develops on
 
 **What it is.** A *Transfer* loads row data from one database substrate into
 another over one shared schema: `Ingestion(Source) → Projection(Sink)`. The
-motivating instance is the operator's blank-UAT preview — ingest from the
-staging SQL Server (re-bound as Source) and project into an OutSystems Cloud
-UAT database (Sink), as a temporary pre-eject preview. It is the **H-050
-adjunction extended from schema to data across two substrates** — not a new
-pipeline, but a re-source + re-sink of the existing direction-neutral
-two-phase plan (A35/A36).
+motivating instances: (a) the blank-UAT preview — ingest from the staging SQL
+Server (re-bound as Source) and project into an OutSystems Cloud UAT database
+(Sink); and (b) the **Dev→UAT User re-key** — load Dev data into UAT,
+re-keying every User-FK from the Dev surrogate to the *pre-existing* UAT
+surrogate (operator's headline case). It is the **H-050 adjunction extended
+from schema to data across two substrates** — not a new pipeline, but a
+re-source + re-sink of the existing direction-neutral two-phase plan (A35/A36).
 
 **North Star.** The data-level extension of H-050:
 `Ingestion(Projection(rows)) ≈ rows` up to named identity-remap tolerances,
 earned by a **data-level canary** (the data analog of the schema canary).
+
+**Three identity dispositions** (`IdentityDisposition`): `PreservedFromSource`
+(source key written directly), `AssignedBySink` (sink mints a new key; capture
+during insert), `ReconciledByRule` (match a pre-existing sink identity by
+operator ruleset *before* insert — the User re-key). The `ReconciledByRule`
+engine is **already built**: `UserFkReflowPass.discover` + `UserMatchingStrategy`
+(`ByEmail`/`BySsKey`/`ManualOverride`/`FallbackToSystemUser`) + dual
+`Profile.SourceUsers`/`TargetUsers`. See `DECISIONS 2026-05-24 (refinement)`.
+
+**Deferral unification.** Phase 11 Slice C′ **subsumes** the previously
+free-floating deferrals *"Multi-environment config (DEV/TEST/UAT/PROD) +
+UAT-users"* (Phase 4 neighbourhood) and *"LiveOssysConnection variant"* — they
+are the same convergent capability (the connection apparatus + live
+dual-environment profiling).
 
 **Slice queue:**
 
@@ -1065,17 +1080,22 @@ earned by a **data-level canary** (the data analog of the schema canary).
 | A | `SchemaContract` on-disk persistence (`SsKey` + FK graph + physical-coordinate index); round-trip property test | 🔵 scheduled |
 | B | Pure two-phase identity-aware Transfer plan + `Ingestion` row-stream adapter (reuse `ReadSide.readRowsStream`) | 🔵 scheduled |
 | C | `PreservedFromSource` Projection-onto-Sink + Transfer orchestrator (dry-run) + **data-level canary** | 🔵 scheduled (highest-leverage) |
-| D | `--execute` against UAT, gated behind R6 amendment, dry-run default, preview row cap, CDC-safety check | 🟡 gated (operator sign-off) |
+| C′ | **Connection apparatus** (`Environment`/`Substrate`/`TransferConnections`) + `ReconciledByRule` — live dual-environment user profiling → `UserFkReflowPass` → phase-2 reflow; `--user-map` CSV loader. **Unifies the multi-env + LiveOssysConnection deferrals.** Adds the `ReconciledByRule` DU variant | 🔵 scheduled (operator headline case) |
+| D | `--execute` against UAT, gated behind R6 amendment, dry-run default, preview row cap, CDC-safety check; a real load mixes dispositions per kind | 🟡 gated (operator sign-off) |
 | E | `AssignedBySink` — assigned-key capture (`OUTPUT`/correlation) feeding `SurrogateRemapContext`, catalog-wide FK re-point | ⚪ later chapter |
 
 **Per-phase risks:**
 - *Platform write surface (OPEN-2)* → whether the OutSystems Cloud UAT DB
   permits direct SQL writes to entity-backing tables is the single biggest
   external dependency; confirm before Slice D.
+- *Connection apparatus scope (OPEN-7)* → environment count + platform/license
+  concurrency (V1's "four connections, two concurrent") gates how rich
+  `TransferConnections` must be; confirm before Slice C′.
 - *R6 boundary* → the execute path is a new write path; stays UAT-preview +
   dry-run-default and requires the R6 amendment before Slice D ships.
-- *Identity collision* → `PreservedFromSource` assumes a blank Sink; a
-  non-empty / managed-identity target forces `AssignedBySink` (Slice E).
+- *Identity disposition mix* → a realistic UAT load mixes `PreservedFromSource`
+  (business keys), `ReconciledByRule` (Users; Slice C′), and possibly
+  `AssignedBySink` (platform-minted keys; Slice E) across kinds.
 
 ---
 

@@ -237,17 +237,56 @@ These names are the same across Core / Adapters / Pipeline / CLI (pillar 8).
 | **Projection** (Π) | Lower a `Catalog` (+ rows) onto a substrate. The existing emitter direction. | Built (forward path). |
 | **Ingestion** | Π's named peer: lift a substrate back into a `Catalog` (+ rows). The reader leg of the adjunction; `ReadSide` is today's schema-level Ingestion. | Reader exists; row-stream Ingestion adapter is a slice. |
 | **Transfer** | `Ingestion(Source)` then `Projection(Sink)` over one shared `SchemaContract`. The flow. | Orchestrator is a slice. |
-| **Source / Sink** | The flow-relative role a substrate plays in a Transfer (`SubstrateRole`). Not intrinsic — staging is a Sink on export, a Source on the UAT load. | Built (`SubstrateRole`, slice 1). |
+| **Source / Sink** | The flow-relative role a substrate plays in a Transfer (`SubstrateRole`). Not intrinsic — staging is a Sink on export, a Source on the UAT load. **A Sink is not write-only:** a reconcile Transfer *reads* (profiles) the Sink's identity population before writing it. | Built (`SubstrateRole`, slice 1). |
+| **Substrate / Environment / TransferConnections** | The reified **connection apparatus** (§4.1): an `Environment` (DEV/TEST/UAT/PROD or named); a `Substrate` binding an environment to a `SubstrateRole` with credentials resolved out-of-band (D9); `TransferConnections` the set a Transfer binds, expressing which are profiled and which are concurrent. | Concept; a slice (unifies the multi-env + LiveOssysConnection deferrals). |
 | **SchemaContract** | The frozen, reloadable schema artifact carrying `SsKey` + the FK edge graph + physical coordinates — the contract both legs share. Today the in-memory `Catalog` is a complete contract; the on-disk artifact is not (§7). | In-memory complete; on-disk artifact is a slice. |
-| **IdentityDisposition** | Per-kind: `AssignedBySink` (identity PK; sink mints the surrogate → capture + remap) vs `PreservedFromSource` (business/non-identity PK; source key written directly). Derived from `IsIdentity` via `ofKind`. | Built (slice 1). |
+| **IdentityDisposition** | Per-kind, three variants: `PreservedFromSource` (business/non-identity PK; source key written directly), `AssignedBySink` (identity PK; sink mints a *new* surrogate → capture-during-insert + remap), and `ReconciledByRule` (the referenced rows already exist in the Sink; match source↔sink identity by operator ruleset *before* insert → remap). `ofKind` derives `PreservedFromSource` vs `AssignedBySink` from `IsIdentity`; `ReconciledByRule` is an operator-chosen override. | `AssignedBySink` / `PreservedFromSource` built (slice 1); **`ReconciledByRule` is a planned third variant** (its engine — `UserFkReflowPass` — exists). |
 | **SourceKey / AssignedKey** | Orientation-typed surrogate raw values — the surrogate-remap analog of `SourceUserId` / `TargetUserId`. | Built (slice 1). |
-| **SurrogateRemapContext** | Per-kind `Source → Sink-assigned` surrogate map, captured during phase-1 insert; the per-kind generalization of `UserRemapContext`. | Built (slice 1). |
+| **SurrogateRemapContext** | Per-kind `Source → Sink` surrogate map; the per-kind generalization of `UserRemapContext`. Carries both the `AssignedBySink` (captured-during-insert) and `ReconciledByRule` (matched-by-rule) mappings — the carrier is the same; only how the `AssignedKey` is *discovered* differs. | Built (slice 1). |
 
-**Relationship to `UserRemapContext`.** `UserRemapContext` is the User-kind
-special case of `SurrogateRemapContext`: one kind, matched by email/SsKey
-ahead of time. The general context captures *any* kind's surrogate during
-insert. The two are not yet unified in code (IR grows under evidence); §11
-records the subsumption as a candidate, not a commitment.
+**Relationship to `UserRemapContext` / `UserFkReflowPass`.** These are not a
+separate feature — they are the **`ReconciledByRule` engine for the User
+kind**, already built and tested. `UserFkReflowPass.discover (sourceUsers)
+(targetUsers)` matches a source population against the Sink's population by
+operator ruleset (`UserMatchingStrategy = ByEmail | BySsKey | ManualOverride |
+FallbackToSystemUser`) and produces a `UserRemapContext` — the single-kind
+instance of `SurrogateRemapContext`. The Transfer epic generalizes it along two
+axes: from User-only to any kind, and from static model populations to **live
+dual-environment profiling** (§4.1). §11 records the subsumption of
+`UserRemapContext` into `SurrogateRemapContext` as a trigger-gated candidate.
+
+### 4.1 The connection apparatus
+
+Today the forward path has exactly **one** connection
+(`PROJECTION_MSSQL_CONN_STR` → a single server's `master`). A Transfer needs a
+*set* of environment-bound connections, and the `ReconciledByRule` case proves
+why a thin two-endpoint env-var seam is insufficient: to re-key Dev data into
+UAT (user Id 280 in Dev, 18 in UAT), the apparatus must **profile both
+environments' identity populations concurrently** *before* writing — the Sink
+is read first, then written. The reified shape (credentials always out-of-band
+per D9):
+
+- **`Environment`** — a logical environment identity (DEV / TEST / UAT / PROD,
+  or a named string). The multi-environment dimension the V1 corporate remote
+  already carries (the deferred "Multi-environment config" cluster).
+- **`Substrate`** — an `Environment` bound to a `SubstrateRole` (`Source` /
+  `Sink`) with a `ConnectionRef` (a *reference* — env-var name or file path —
+  not the secret). The thing you open.
+- **`TransferConnections`** — the set a Transfer binds: which substrate is the
+  data Source, which is the write Sink, which substrates are **profiled for
+  identity reference** (for `ReconciledByRule`, both ends are profiled), and
+  the concurrency they require (the operator's V1 "two concurrent connections"
+  — Source + Sink open at once during reconcile-profiling). The V1 "up to four
+  source connections" maps to the four environments; a single Transfer binds a
+  pair.
+
+This apparatus is the convergence point of three concerns the backlog
+previously logged separately — the Transfer epic, the deferred
+*Multi-environment config (DEV/TEST/UAT/PROD) + UAT-users*, and the deferred
+*LiveOssysConnection* (the live read path). The `ReconciledByRule` UAT-user
+re-key is the use case that unifies them: it needs live reads of two
+environments, the multi-env connection set, and the `UserFkReflowPass` engine
+in one operation.
 
 ---
 
@@ -396,11 +435,13 @@ an excellent `SchemaContract` **in memory** — see §7 for the persistence gap.
 
 ---
 
-## 6. Identity: the two dispositions (the crux)
+## 6. Identity: the three dispositions (the crux)
 
 Loading row data **into** OutSystems Cloud raises the only genuinely deep
-question: **whose surrogate keys win?** Slice 1 reified the answer as a
-per-kind `IdentityDisposition`.
+question: **whose surrogate keys win?** The answer is a per-kind
+`IdentityDisposition` with three variants — `PreservedFromSource` and
+`AssignedBySink` (reified in slice 1) and `ReconciledByRule` (the
+cross-environment match; planned variant whose engine already exists).
 
 ### 6.1 `PreservedFromSource` (recommended first cut)
 
@@ -462,12 +503,53 @@ this from `IsIdentity`.
 The `PreservedFromSource` first cut delivers the operator's preview without it,
 and slice 1 already lays the type-level foundation it will stand on.
 
-### 6.3 Decision to surface
+### 6.3 `ReconciledByRule` (cross-environment match by operator ruleset)
+
+**When:** the referenced rows **already exist** in the Sink, independently of
+the Transfer — the dominant case being **Users**. The same human is user Id
+280 in Dev and Id 18 in UAT; loading Dev data into UAT requires every User-FK
+to be re-keyed from the Dev surrogate to the *pre-existing* UAT surrogate. This
+is neither `PreservedFromSource` (280 is wrong in UAT) nor `AssignedBySink`
+(UAT does not mint a fresh key — Id 18 already exists). It is an operator-chosen
+disposition, not derivable from `IsIdentity`.
+
+**How — discover-by-profiling-both-ends, then match:**
+
+1. **Profile both environments' identity populations** via the connection
+   apparatus (§4.1): read the Source population (Dev users) and the Sink
+   population (UAT users) — the Sink is *read first*, concurrently with the
+   Source. This is why a reconcile Transfer needs ≥2 concurrent connections.
+2. **Match by operator ruleset.** `UserMatchingStrategy = ByEmail | BySsKey |
+   ManualOverride of Map<SourceUserId,TargetUserId> | FallbackToSystemUser`
+   reconciles source identities to pre-existing sink identities. This is the
+   "operator-configured rulesets" the V1 corporate remote already implements.
+3. **Build the remap into `SurrogateRemapContext`** — same carrier as
+   `AssignedBySink`; the difference is *when* and *how* the `AssignedKey` is
+   discovered (matched-before-insert here vs captured-during-insert there).
+4. **Phase 2 re-points** every reconciled FK to the matched sink key,
+   **skipping-and-diagnosing unmatched** source identities (no match → orphan
+   diagnostic, the row is skipped — V1's "diagnostic + skip" behavior).
+
+**The engine already exists.** `UserFkReflowPass.discover (sourceUsers:
+UserPopulation<SourceUserId>) (targetUsers: UserPopulation<TargetUserId>)`
+produces exactly this remap (`UserRemapContext`), consumed today by
+`MigrationDependenciesEmitter.rewriteUserFkColumns` in the *forward* path. The
+Transfer's `ReconciledByRule` is that pass fed from **live dual-environment
+profiling** instead of static model populations, and generalized from the User
+kind to any kind the operator marks reconcilable. So `ReconciledByRule` is
+mostly a *wiring* effort over built machinery, plus the live-profiling
+connection apparatus — not a from-scratch capability.
+
+### 6.4 Decision to surface
 
 > **OPEN-1.** For the UAT preview, is the target guaranteed blank, and does the
 > OutSystems Cloud UAT DB permit direct writes / `IDENTITY_INSERT` on the
-> entity-backing tables? If yes → `PreservedFromSource` is sufficient. If no →
-> `AssignedBySink` is required and assigned-key capture must be wired.
+> entity-backing tables? If yes → `PreservedFromSource` is sufficient. If the
+> target is **non-empty with pre-existing Users** (the realistic UAT case) →
+> `ReconciledByRule` for the User kind (live dual-profile + ruleset match) is
+> required; if the platform mints its own keys for newly-loaded entity rows →
+> `AssignedBySink` with assigned-key capture. A real UAT load may mix all three
+> dispositions across kinds.
 
 ---
 
@@ -626,21 +708,34 @@ following are the remaining seams.
    rows → plan → project two-phase → diagnostics`. Where Source + Sink endpoints
    meet; `Pipeline.fs` is untouched.
 
-5. **Two-endpoint connection seam (outside `Config`).** Env vars
-   (`PROJECTION_TRANSFER_SOURCE_CONN_STR`, `PROJECTION_TRANSFER_SINK_CONN_STR`)
-   and/or `--source-connection-file` / `--sink-connection-file` CLI flags.
-   Respects D9.
+5. **Connection apparatus (outside `Config`).** The reified `Environment` /
+   `Substrate` / `TransferConnections` set (§4.1): a multi-environment,
+   role-bound, concurrency-aware connection set with credentials resolved
+   out-of-band (env vars keyed by environment / `--*-connection-file` flags;
+   D9). For `PreservedFromSource` it degenerates to two endpoints (Source +
+   Sink, write-only Sink); for `ReconciledByRule` both ends are opened for
+   *profiling* concurrently before the Sink is written. This unifies the
+   deferred "Multi-environment config (DEV/TEST/UAT/PROD)" + "LiveOssysConnection"
+   concerns.
 
-6. **CLI verb `transfer` (`Projection.Cli`).** One `match` arm + a
+6. **`ReconciledByRule` identity profiling + reflow.** Profile the Source and
+   Sink identity populations via the apparatus, apply the operator
+   `UserMatchingStrategy` ruleset (reusing `UserFkReflowPass.discover`),
+   generalize from the User kind to any reconcilable kind, and feed the result
+   into the phase-2 FK re-point through `SurrogateRemapContext`. Mostly wiring
+   over built machinery + the live-profiling apparatus.
+
+7. **CLI verb `transfer` (`Projection.Cli`).** One `match` arm + a
    `TransferArgs.fs` (mirror `FullExportArgs`), with `--contract`,
-   `--disposition preserve|assign` (default preserve), `--dry-run` (default) /
-   `--execute`, `--preview-row-cap`.
+   `--disposition preserve|assign|reconcile` (per-kind override; default
+   preserve), `--user-map <file>` (the `ManualOverride` ruleset),
+   `--dry-run` (default) / `--execute`, `--preview-row-cap`.
 
-7. **`SchemaContract` persistence (`Targets.SSDT`).** `V2.SsKey` extended
+8. **`SchemaContract` persistence (`Targets.SSDT`).** `V2.SsKey` extended
    property and/or the serialized re-loadable `SchemaContract` artifact (§7).
    Enables *later-run* Transfer and is the prerequisite for `AssignedBySink`.
 
-8. **(`AssignedBySink`, later chapter.)** Assigned-key capture (`OUTPUT` or
+9. **(`AssignedBySink`, later chapter.)** Assigned-key capture (`OUTPUT` or
    natural-key correlation) feeding `SurrogateRemapContext`, catalog-wide FK
    re-pointing in phase 2. The type foundation shipped in slice 1.
 
@@ -674,17 +769,35 @@ Slices sized to the repo's cadence. **Slice 1 is shipped.**
   extended H-050 proof and the highest-confidence deliverable: it proves the
   Transfer reconstructs source data faithfully before any UAT write.*
 
+- **Slice C′ — connection apparatus + `ReconciledByRule` (cross-environment
+  User re-key).** The reified `Environment` / `Substrate` / `TransferConnections`
+  apparatus (§4.1) + live dual-environment identity profiling feeding
+  `UserFkReflowPass.discover` + the operator `UserMatchingStrategy` ruleset
+  (and the `ManualOverride` CSV loader), generalized from the User kind into the
+  Transfer phase-2 reflow via `SurrogateRemapContext`. *This is the realistic
+  UAT case* (UAT has pre-existing Users); it **unifies the deferred
+  "Multi-environment config (DEV/TEST/UAT/PROD) + UAT-users" and
+  "LiveOssysConnection" concerns** into the epic. Prerequisite for a useful
+  Slice D against a non-blank UAT.
+
 - **Slice D — execute against UAT (gated).** `--execute` against a real UAT
   connection, behind the R6 governance amendment, dry-run default, preview row
-  cap, CDC-safety check. Operator sign-off gate.
+  cap, CDC-safety check. Operator sign-off gate. A real UAT load mixes
+  dispositions: `PreservedFromSource` for business-key kinds, `ReconciledByRule`
+  for Users (Slice C′), and — if the platform mints keys — `AssignedBySink`
+  (Slice E).
 
-- **Slice E (later chapter) — `AssignedBySink`.** Assigned-key capture, FK
-  re-pointing via `SurrogateRemapContext`. Its own prescope; slice 1 shipped
-  its type foundation.
+- **Slice E (later chapter) — `AssignedBySink`.** Assigned-key capture
+  (`OUTPUT` / natural-key correlation), FK re-pointing via `SurrogateRemapContext`.
+  Its own prescope; slice 1 shipped its type foundation. Distinct from C′:
+  here the sink mints a *new* key (discover-during-insert), where C′ matches a
+  *pre-existing* sink key (discover-by-profiling).
 
 The data-level canary in Slice C is the load-bearing deliverable — it earns
 the epic's North Star (the data-level adjunction) the same way the schema
-canary earns emitter fidelity.
+canary earns emitter fidelity. Slice C′ is the operator's headline case (the
+Dev→UAT User re-key) and the unification point for the multi-environment
+connection concerns.
 
 ---
 
@@ -707,14 +820,26 @@ evidence."
   leaving the on-disk contract implicit in the manifest.
 - The **data-level canary** as the sibling of the schema canary (Slice C) — the
   single highest-leverage verification surface for the epic.
+- **The third disposition `ReconciledByRule`** + the **connection apparatus**
+  (`Environment` / `Substrate` / `TransferConnections`, §4.1) are now recorded
+  (this refresh): the operator's Dev→UAT User re-key is the headline case
+  (Slice C′), and the apparatus is its enabling reification. When Slice C′
+  opens, `IdentityDisposition` gains the `ReconciledByRule` variant (closed-DU
+  expansion; exhaustiveness lights up at match sites).
+- **Unify the deferrals.** The previously-separate "Multi-environment config
+  (DEV/TEST/UAT/PROD) + UAT-users" and "LiveOssysConnection" deferrals are
+  **subsumed into the Transfer epic** as Slice C′'s connection apparatus +
+  live dual-profiling. They are no longer free-floating; `DECISIONS 2026-05-24`
+  cross-references them.
 
 **Candidates (trigger named; do not pre-build):**
-- **Subsume `UserRemapContext` into `SurrogateRemapContext`.** The User remap is
-  the single-kind, pre-matched special case. *Trigger:* when `AssignedBySink`
-  (Slice E) lands and a second consumer of the general context exists, evaluate
-  collapsing `UserFkReflowPass`'s output onto `SurrogateRemapContext` (the
-  two-consumer threshold). Until then they coexist; the prose in `Transfer.fs`
-  and `UserRemap.fs` cross-references the relationship.
+- **Subsume `UserRemapContext` into `SurrogateRemapContext`.** `UserFkReflowPass`
+  is the `ReconciledByRule` engine for the User kind; `UserRemapContext` is the
+  single-kind instance of the general context. *Trigger:* when Slice C′ wires
+  `UserFkReflowPass` output into the Transfer reflow (a second consumer of the
+  general context), evaluate collapsing them (the two-consumer threshold). Until
+  then they coexist; the prose in `Transfer.fs` and `UserRemap.fs`
+  cross-references the relationship.
 - **Promote the data-level adjunction to a numbered axiom.** *Trigger:* the
   Transfer chapter open scaffolds it (§8.6); the chapter close cashes it once
   the data-level canary is green. Sibling to H-050 / A35 / A36.
@@ -767,9 +892,14 @@ cleanly onto existing structural prior art:
 
 ## 13. Open questions / risks
 
-- **OPEN-1 (identity).** Is the UAT target blank, and does it permit direct
-  writes / `IDENTITY_INSERT`? (Gates `PreservedFromSource` vs `AssignedBySink`
-  — §6.3.)
+- **OPEN-1 (identity).** Is the UAT target blank, or non-empty with
+  pre-existing Users? And does it permit direct writes / `IDENTITY_INSERT`?
+  (Gates the per-kind disposition mix — `PreservedFromSource` /
+  `AssignedBySink` / `ReconciledByRule` — §6.4.)
+- **OPEN-7 (connection apparatus scope).** How many environments must the
+  apparatus bind, and what concurrency does the platform/license permit (the
+  V1 "four connections, two concurrent")? Gates how rich the `TransferConnections`
+  reification needs to be (§4.1).
 - **OPEN-2 (platform write surface).** Does the OutSystems Cloud UAT DB expose
   a writable connection to the entity-backing tables at all, or must the load
   go through a platform API? The whole approach assumes direct SQL write access

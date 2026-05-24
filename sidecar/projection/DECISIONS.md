@@ -19640,3 +19640,104 @@ from schema to data. Naming it "reverse" obscured that the hard machinery
   `SurrogateRemapContext` generalizes.
 - `DECISIONS 2026-05-22 — R6` — the production-write-path guardrail the
   `transfer` execute path is scoped around.
+
+---
+
+## 2026-05-24 (Transfer epic — refinement) — the third identity disposition (`ReconciledByRule`) + the connection apparatus; the multi-env + LiveOssysConnection deferrals are subsumed into the epic
+
+### Context
+
+The first Transfer entry (above) modeled identity as two dispositions —
+`PreservedFromSource` and `AssignedBySink`. Operator review surfaced the
+canonical real case those two miss: **cross-environment User re-key**. The same
+human is user Id 280 in Dev and Id 18 in UAT; loading Dev data into UAT must
+re-key every User-FK from the Dev surrogate to the *pre-existing* UAT surrogate.
+That is neither preservation (280 is wrong in UAT) nor sink-assignment (UAT
+mints no new key — Id 18 already exists). The operator's V1 corporate remote
+already implements this: up to four source-database connections, two
+concurrent, fully profiling both environments' users and matching them by
+operator-configured rulesets.
+
+### Decisions resolved
+
+1. **`IdentityDisposition` is three variants, not two.** Add **`ReconciledByRule`**:
+   the referenced rows already exist in the Sink (dominantly Users); match
+   source↔sink identity by an operator ruleset *before* insert, then re-point
+   FKs. Distinct from `AssignedBySink` in *discovery timing*:
+   - `AssignedBySink` — sink mints a new key; discover the mapping **during**
+     insert (`OUTPUT` capture).
+   - `ReconciledByRule` — sink key pre-exists; discover the mapping **before**
+     insert by **profiling both environments' identity populations** and
+     applying the ruleset.
+   `ReconciledByRule` is an operator-chosen disposition (not derivable from
+   `IsIdentity`). The type gains the variant when Slice C′ opens (docs-only
+   now, per operator direction — closed-DU expansion).
+
+2. **The Sink is not write-only.** A reconcile Transfer *reads* (profiles) the
+   Sink's identity population before writing it. This breaks the binary
+   Source-reads / Sink-writes model and is the architectural reason ≥2
+   concurrent connections are required — both ends open for profiling at once.
+
+3. **The connection apparatus is reified as a concept** (alongside
+   `SubstrateRole`), superseding the earlier "thin two-endpoint env-var seam":
+   - **`Environment`** — a logical environment identity (DEV/TEST/UAT/PROD or
+     named).
+   - **`Substrate`** — an `Environment` bound to a `SubstrateRole` with a
+     `ConnectionRef` (env-var name or file path — a *reference*, never the
+     secret; D9 holds).
+   - **`TransferConnections`** — the set a Transfer binds: data Source, write
+     Sink, the substrates profiled for identity, and the concurrency required.
+     The V1 "four connections / two concurrent" maps to four environments with a
+     pair bound per Transfer.
+
+4. **`UserFkReflowPass` is the `ReconciledByRule` engine, already built.**
+   `discover (sourceUsers: UserPopulation<SourceUserId>) (targetUsers:
+   UserPopulation<TargetUserId>)` + `UserMatchingStrategy = ByEmail | BySsKey |
+   ManualOverride | FallbackToSystemUser` + `Profile.SourceUsers` /
+   `TargetUsers` are exactly the operator-configured cross-environment user
+   matching. The Transfer feeds this pass from **live dual-environment
+   profiling** (instead of static model populations) and generalizes it from
+   the User kind to any reconcilable kind, threading the result into the
+   phase-2 reflow via `SurrogateRemapContext`. So `ReconciledByRule` is largely
+   a *wiring* effort over built machinery plus the live-profiling apparatus.
+
+5. **Two deferrals are subsumed into the Transfer epic.** The previously
+   free-floating *"Multi-environment configuration (DEV/TEST/UAT/PROD) +
+   UAT-users logic"* and *"LiveOssysConnection variant + cluster"* deferrals are
+   the same convergent capability as Slice C′'s connection apparatus + live
+   dual-profiling. They are recorded under the epic (BACKLOG Phase 11 Slice C′);
+   their original rows stay (append-only) but now cross-reference the epic.
+
+6. **CLI surface.** `--disposition preserve|assign|reconcile` (per-kind
+   override; default preserve); `--user-map <file>` supplies the
+   `ManualOverride` ruleset (cashes the deferred `UserMapLoader` CSV adapter).
+
+### Discipline reinforced
+
+- **Connect to built machinery before scoping new work.** The operator's
+  headline case turned out to be 80% built (`UserFkReflowPass` + dual
+  `UserPopulation` + `UserMatchingStrategy`); the gap is live profiling + the
+  connection apparatus + Transfer wiring, not a new matching engine.
+- **The carrier generalizes; the discovery mechanism is what varies.**
+  `SurrogateRemapContext` (slice 1) holds both the captured-during-insert and
+  matched-before-insert mappings; only *how* the `AssignedKey` is discovered
+  differs across `AssignedBySink` vs `ReconciledByRule`. No new carrier type.
+
+### Active deferrals — amendments
+
+| Deferral | Amendment |
+|---|---|
+| **Multi-environment configuration (DEV/TEST/UAT/PROD) + UAT-users logic** (opened 2026-05-19) | **Subsumed into the Transfer epic** (Phase 11 Slice C′). The connection apparatus (`Environment`/`Substrate`/`TransferConnections`) + live dual-environment user profiling is where it lands; no longer free-floating. |
+| **`LiveOssysConnection` variant + cluster** (opened 2026-05-17) | **Subsumed into the Transfer epic** (Phase 11 Slice C′) as the live read path for dual-environment identity profiling. The Transfer is the write-direction cousin the original row anticipated. |
+| **`ReconciledByRule` disposition variant + connection apparatus types** (opened 2026-05-24) | Docs/backlog only for now (operator direction). `IdentityDisposition` gains `ReconciledByRule` and Core gains `Environment`/`Substrate`/`TransferConnections` when Slice C′ opens. |
+
+### Cross-references
+
+- `PRESCOPE_TRANSFER.md` §4.1 (connection apparatus), §6.3 (`ReconciledByRule`),
+  §10 (Slice C′), §11 (deferral unification), OPEN-7.
+- `src/Projection.Core/Passes/UserFkReflowPass.fs` (`discover`),
+  `src/Projection.Core/Policy.fs` (`UserMatchingStrategy`),
+  `src/Projection.Core/Profile.fs` (`SourceUsers` / `TargetUsers`) — the
+  built `ReconciledByRule` engine for the User kind.
+- `DECISIONS 2026-05-24 (Transfer epic — vocabulary reification, slice 1)` —
+  the entry this refines.
