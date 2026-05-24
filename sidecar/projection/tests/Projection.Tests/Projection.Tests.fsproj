@@ -92,6 +92,7 @@
     <Compile Include="UserMatchingStrategyTests.fs" />
     <Compile Include="UserPopulationTests.fs" />
     <Compile Include="UserRemapContextTests.fs" />
+    <Compile Include="SurrogateRemapContextTests.fs" />
     <Compile Include="UserFkReflowPassTests.fs" />
     <Compile Include="UserFkReflowPropertyTests.fs" />
     <Compile Include="UserFkReflowIntegrationTests.fs" />
