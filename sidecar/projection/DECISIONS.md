@@ -19741,3 +19741,82 @@ operator-configured rulesets.
   built `ReconciledByRule` engine for the User kind.
 - `DECISIONS 2026-05-24 (Transfer epic — vocabulary reification, slice 1)` —
   the entry this refines.
+
+---
+
+## 2026-05-24 — Test runner: tiered pools, sync-over-async deadlock, and the OOM crash (`scripts/test.sh`)
+
+### Context — the recurring "tests time out / go unresponsive"
+
+A binary-search investigation of the recurring "tests hang / we never recover
+the next step" failure found **two distinct, compounding causes**, neither of
+which is a slow or flaky individual test (every class passes in isolation):
+
+1. **Sync-over-async deadlock under xUnit's bounded concurrency.** ~34 test
+   files block on `task.GetAwaiter().GetResult()` (sync-over-async — driving an
+   adapter `Task` to completion from a synchronous test body). xUnit's default
+   *bounded* parallelism installs a `MaxConcurrencySyncContext` that caps the
+   number of concurrently-running test tasks; a blocked sync-over-async task
+   holds its slot while its own continuation is queued **to that same capped
+   context** → the continuation can never be scheduled → deadlock. It is
+   **intermittent** (it forms only when enough sync-over-async tasks are
+   in-flight to saturate the slots), which is why it reads as "recurring
+   constantly" rather than a clean repro. Signature: idle CPU (threads blocked,
+   not computing); hangs at *bounded* parallelism (default 4-wide, `aggressive`,
+   AND serial `MaxParallelThreads=1`); **passes at `MaxParallelThreads=-1`**
+   (unlimited — the thread pool, not the capped sync context, schedules
+   continuations). Forcing `ThreadPool` min threads does **not** help (the cap
+   is xUnit's sync context, not the thread pool). Confirmed empirically: 4
+   SQL-touching classes that each pass alone deadlock together at default;
+   pass at `-1`.
+
+2. **Full-suite OOM on the constrained host.** A single `dotnet test` runs the
+   ~2540-test PURE pool (parallel) *concurrently* with the ~110-test
+   `Docker-SqlServer` collection (serial) **and** the SQL Server container, on
+   a **4-core / 15 GiB / no-swap** box. That over-subscribes memory until the
+   test host is OOM-killed mid-run ("the active test run was aborted because
+   the host process exited unexpectedly" + a ~700 MB hang dump). Each crash can
+   kill Docker tests mid-`CREATE`/`DROP DATABASE`, compounding the instability.
+
+### Decisions
+
+1. **`scripts/test.sh` is the canonical developer test entry point.** It runs
+   the pools as **separate, sequential `dotnet test` processes — never
+   concurrently** (the OOM fix), tiers by speed, and streams per-test results
+   (`console;verbosity=normal`, so a long run never *looks* hung). Tiers:
+   `fast` (pure pool, ~55s — the inner dev loop, the default), `docker`
+   (Docker-SqlServer collection, serial, ~4m), `canary` (round-trip canaries),
+   `all` (fast then docker, sequential), `list`. The Docker-pool filter is
+   derived from the `Collection("Docker-SqlServer")` markers, so it stays
+   correct as classes are added.
+2. **The pure pool runs at `xUnit.MaxParallelThreads=-1`.** This is
+   load-bearing, not tuning: it removes the bounded sync context, so the
+   sync-over-async deadlock cannot form. Verified safe on this host — the full
+   pure pool completes in ~55s with ~6.4 GiB peak working set (of 15 GiB). The
+   Docker pool keeps its serial `DisableParallelization` collection (no
+   sync-context throttle → no deadlock; serial CREATE/DROP → no instance
+   livelock) — it does **not** take `-1`.
+3. **Do not run the whole suite as one bounded `dotnet test`.** A *global*
+   `xunit.runner.json` with `-1` would dodge the deadlock but reintroduce the
+   OOM (pure-unlimited *concurrent* with the Docker pool). `-1` is therefore
+   applied per-pool by the script, where the pure pool runs alone.
+
+### Recommended categorical hardening (deferred — operator call)
+
+The `-1`-via-script fix prevents the recurrence for anyone using `test.sh`, but
+a raw bounded `dotnet test` still deadlocks. The durable fix is to **eliminate
+the sync-over-async anti-pattern**: convert the ~34 blocking test bodies to
+async `Task`-returning tests (xUnit awaits them natively — no blocking, no
+deadlock), or route each blocking site through a shared `Task.Run`-offload
+helper (the continuation then runs free of xUnit's sync context). With the
+anti-pattern gone, bounded parallelism is safe and a global `xunit.runner.json`
+can cap memory. Tracked as an Active deferral; trigger = the next time the test
+suite is touched broadly, or operator go-ahead.
+
+### Cross-references
+
+- `scripts/test.sh` (the runner); `tests/Projection.Tests/TestCollections.fs`
+  (`Docker-SqlServer` DisableParallelization — the serial-pool definition).
+- `DECISIONS 2026-05-20 (test-failure capture protocol)` — sibling test-runner
+  discipline (TRX-first on failure); `test.sh` emits TRX + extracts failed
+  names automatically.
