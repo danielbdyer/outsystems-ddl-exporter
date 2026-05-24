@@ -49,7 +49,7 @@ let private v1MinimalFixture : string =
               "name": "Id",
               "physicalName": "ID",
               "originalName": null,
-              "dataType": "Identifier",
+              "dataType": "rtIdentifier",
               "length": null,
               "precision": null,
               "scale": null,
