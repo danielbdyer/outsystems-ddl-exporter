@@ -1078,7 +1078,7 @@ dual-environment profiling).
 |---|---|---|
 | 1 | Vocabulary reification — `Transfer.fs` (`SubstrateRole`, `SourceKey`/`AssignedKey`, `IdentityDisposition` + `ofKind`, `SurrogateRemapContext`); 11 tests | ✅ shipped |
 | A | `SchemaContract` on-disk persistence (`SsKey` + FK graph + physical-coordinate index); round-trip property test | 🔵 scheduled |
-| B | Pure two-phase identity-aware Transfer plan + `Ingestion` row-stream adapter (reuse `ReadSide.readRowsStream`) | 🔵 scheduled |
+| B | Pure two-phase identity-aware Transfer plan (`Core/TransferPlan.fs`) + `Ingestion` row-stream adapter (`Adapters.Sql/Ingestion.fs` over `ReadSide.readRowsStream`); shared deferred-FK predicate extracted to `TopologicalOrder.deferredFkColumns` | ✅ shipped |
 | C | `PreservedFromSource` Projection-onto-Sink + Transfer orchestrator (dry-run) + **data-level canary** | 🔵 scheduled (highest-leverage) |
 | C′ | **Connection apparatus** (`Environment`/`Substrate`/`TransferConnections`) + `ReconciledByRule` — live dual-environment user profiling → `UserFkReflowPass` → phase-2 reflow; `--user-map` CSV loader. **Unifies the multi-env + LiveOssysConnection deferrals.** Adds the `ReconciledByRule` DU variant | 🔵 scheduled (operator headline case) |
 | D | `--execute` against UAT, gated behind R6 amendment, dry-run default, preview row cap, CDC-safety check; a real load mixes dispositions per kind | 🟡 gated (operator sign-off) |

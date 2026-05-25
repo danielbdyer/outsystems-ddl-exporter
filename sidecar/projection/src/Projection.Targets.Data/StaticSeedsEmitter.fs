@@ -82,9 +82,7 @@ module StaticSeedsEmitter =
     /// per pillar 8: names *what is in cycles*, not the act of
     /// computing membership.
     let private cycleMembersOf (topo: TopologicalOrder) : Set<SsKey> =
-        topo.Cycles
-        |> List.collect (fun c -> c.Members)
-        |> Set.ofList
+        TopologicalOrder.cycleMembers topo
 
     /// The (attribute-name) columns on `k` that must be NULLed in
     /// Phase-1 and populated in Phase-2. A column is deferred iff:
@@ -100,16 +98,7 @@ module StaticSeedsEmitter =
         (cycleMembers: Set<SsKey>)
         (k: Kind)
         : Set<Name> =
-        if not (Set.contains k.SsKey cycleMembers) then Set.empty
-        else
-            k.References
-            |> List.choose (fun r ->
-                if Set.contains r.TargetKind cycleMembers then
-                    Kind.tryFindAttribute r.SourceAttribute k
-                    |> Option.bind (fun a ->
-                        if a.Column.IsNullable then Some a.Name else None)
-                else None)
-            |> Set.ofList
+        TopologicalOrder.deferredFkColumns cycleMembers k
 
     /// Project a StaticRow's `Map<Name, string>` raw values into the
     /// typed `Map<Name, SqlLiteral>` form `DataInsertRow.Values`

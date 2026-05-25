@@ -43,6 +43,7 @@
     <Compile Include="UserRemap.fs" />
     <Compile Include="Transfer.fs" />
     <Compile Include="TopologicalOrder.fs" />
+    <Compile Include="TransferPlan.fs" />
     <Compile Include="Strategies/CycleResolution.fs" />
     <Compile Include="Strategies/NullabilityRules.fs" />
     <Compile Include="Strategies/UniqueIndexRules.fs" />

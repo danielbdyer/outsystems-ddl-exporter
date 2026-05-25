@@ -208,6 +208,33 @@ module TopologicalOrder =
     /// parent levels)`. Parents not yet seen — broken edges where
     /// the cycle-resolved arrival of the cycle-participating kind
     /// precedes its broken parent in `t.Order` — contribute 0.
+    /// The set of kinds participating in an (unbroken) dependency cycle,
+    /// flattened from `Cycles`. Compute once, then pass to
+    /// `deferredFkColumns` per kind.
+    let cycleMembers (t: TopologicalOrder) : Set<SsKey> =
+        t.Cycles
+        |> List.collect (fun c -> c.Members)
+        |> Set.ofList
+
+    /// The FK columns of `k` that must be deferred across the two-phase
+    /// nulls-then-FKs load: `k` is in a cycle, the FK targets a same-cycle
+    /// kind, and the source column is nullable (so phase 1 can NULL it and
+    /// phase 2 re-points it). A non-nullable cycle FK cannot defer — that
+    /// is the consuming layer's diagnostic, not represented here. Shared
+    /// by the forward data emitters (`StaticSeedsEmitter` /
+    /// `MigrationDependenciesEmitter`) and the Transfer plan.
+    let deferredFkColumns (cycleMembers: Set<SsKey>) (k: Kind) : Set<Name> =
+        if not (Set.contains k.SsKey cycleMembers) then Set.empty
+        else
+            k.References
+            |> List.choose (fun r ->
+                if Set.contains r.TargetKind cycleMembers then
+                    Kind.tryFindAttribute r.SourceAttribute k
+                    |> Option.bind (fun a ->
+                        if a.Column.IsNullable then Some a.Name else None)
+                else None)
+            |> Set.ofList
+
     let levels (t: TopologicalOrder) : SsKey list list =
         let parentsOf =
             t.Edges

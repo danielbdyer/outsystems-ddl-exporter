@@ -137,16 +137,7 @@ module MigrationDependenciesEmitter =
         (cycleMembers: Set<SsKey>)
         (k: Kind)
         : Set<Name> =
-        if not (Set.contains k.SsKey cycleMembers) then Set.empty
-        else
-            k.References
-            |> List.choose (fun r ->
-                if Set.contains r.TargetKind cycleMembers then
-                    Kind.tryFindAttribute r.SourceAttribute k
-                    |> Option.bind (fun a ->
-                        if a.Column.IsNullable then Some a.Name else None)
-                else None)
-            |> Set.ofList
+        TopologicalOrder.deferredFkColumns cycleMembers k
 
     /// Project a `MigrationDependencyRow`'s raw `Map<Name, string>`
     /// into the typed `Map<Name, SqlLiteral>` shape
@@ -416,10 +407,7 @@ module MigrationDependenciesEmitter =
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         use _ = Bench.scope "emit.migrationDeps.emitWithTopo"
         let cdc = profile.CdcAwareness
-        let cycleMembers =
-            topo.Cycles
-            |> List.collect (fun c -> c.Members)
-            |> Set.ofList
+        let cycleMembers = TopologicalOrder.cycleMembers topo
         let rowsByKind = MigrationDependencyContext.rowsByKind context
         let allKinds = Catalog.allKinds catalog
         let slices =
