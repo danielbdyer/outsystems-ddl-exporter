@@ -123,6 +123,7 @@
     <Compile Include="FkRealityRowsetRoundTripTests.fs" />
     <Compile Include="LiveProfilerIntegrationTests.fs" />
     <Compile Include="IngestionIntegrationTests.fs" />
+    <Compile Include="TransferCanaryTests.fs" />
     <Compile Include="RunWithConfigProfileTests.fs" />
     <Compile Include="DescriptionLiftTests.fs" />
     <Compile Include="OriginalNameAndExternalDbTypeLiftTests.fs" />
