@@ -95,3 +95,22 @@ module TransferPlan =
     /// two-phase load with no unsatisfiable FK.
     let isSatisfiable (plan: TransferPlan) : bool =
         List.isEmpty plan.UnbreakableCycleFks
+
+    /// Registry metadata (pillar 9). The pure plan builder classifies
+    /// entirely as `DataIntent`: disposition is derived from `IsIdentity`,
+    /// deferral from the cycle graph, ordering from the supplied topology —
+    /// no operator opinion. The per-kind `--disposition` override (Slice D)
+    /// and the `ReconciledByRule` ruleset (Slice C′) land as separate
+    /// `OperatorIntent` sites when they ship.
+    let registeredMetadata : RegisteredTransformMetadata =
+        { Name         = "transferPlan"
+          Domain       = Data
+          StageBinding = Pipeline
+          Sites =
+            [ TransformSite.dataIntent "identityDisposition"
+                "Classify each kind's IdentityDisposition (AssignedBySink vs PreservedFromSource) via ofKind, derived from the PK's IsIdentity flag. No operator opinion enters."
+              TransformSite.dataIntent "deferredFkSelection"
+                "Select cycle-deferred FK columns per kind via TopologicalOrder.deferredFkColumns (in-cycle + same-cycle target + nullable). Structural cycle-break; reachable without operator opinion."
+              TransformSite.dataIntent "rowAttachment"
+                "Attach the ingested rows to each kind in topological order. Pure data carriage; no operator filtering or insertion." ]
+          Status = Active }

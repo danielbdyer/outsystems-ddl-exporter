@@ -7,6 +7,7 @@ open Projection.Targets.Json
 open Projection.Targets.Distributions
 open Projection.Targets.Data
 open Projection.Targets.OperationalDiagnostics
+open Projection.Adapters.Sql
 
 /// Pipeline-level unified registry assembly. Concatenates every
 /// `RegisteredTransformMetadata` surface V2 ships:
@@ -40,10 +41,11 @@ module RegisteredAllTransforms =
     /// Iteration order: Core passes + ordering policies (12) →
     /// OSSYS adapter (1) → SSDT emitter (1) → Json emitter (1) →
     /// Distributions emitter (1) → Data-axis surfaces (4: composer +
-    /// 3 emitters) → StaticPopulation emitter (1). Total: 21
-    /// registrations as of slice A.4.7' overlay-exercise (this slice
-    /// builds the surface and ships the FsCheck-driven bidirectional
-    /// property tests against it).
+    /// 3 emitters) → StaticPopulation emitter (1) → operator-UX
+    /// projections → **Transfer epic (3: ingestion adapter + plan +
+    /// Projection-onto-Sink)**. The bidirectional property tests (stage /
+    /// domain coverage, validate-through-create, both classifications
+    /// present) project from this single source — no hardcoded count.
     ///
     /// **Skeleton-view consumers** use `TransformRegistry.skeletonView`
     /// to filter to DataIntent-only entries; **overlay-exercise
@@ -74,3 +76,11 @@ module RegisteredAllTransforms =
           SummaryFormatter.registeredMetadata ]
         @ RegisteredDataTransforms.all
         @ RegisteredTransforms.all
+        // Transfer epic (bidirectional data load) — the reader leg
+        // (Ingestion adapter), the pure two-phase plan, and the
+        // Projection-onto-Sink realization. All DataIntent today; the
+        // operator `--disposition` / `ReconciledByRule` overlays (Slices
+        // C′/D) will add OperatorIntent sites in place.
+        @ [ Ingestion.registeredMetadata
+            TransferPlan.registeredMetadata
+            Transfer.registeredMetadata ]

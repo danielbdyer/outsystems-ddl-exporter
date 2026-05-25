@@ -23,13 +23,13 @@
     <Compile Include="InsertionPolicyBinding.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="PolicyDiff.fs" />
-    <Compile Include="RegisteredAllTransforms.fs" />
     <Compile Include="Bulk.fs" />
     <Compile Include="Deploy.fs" />
     <Compile Include="BenchSink.fs" />
     <Compile Include="LogSink.fs" />
     <Compile Include="FullExportRun.fs" />
     <Compile Include="TransferRun.fs" />
+    <Compile Include="RegisteredAllTransforms.fs" />
   </ItemGroup>
 
   <ItemGroup>

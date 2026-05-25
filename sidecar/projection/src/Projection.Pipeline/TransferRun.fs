@@ -148,3 +148,16 @@ module Transfer =
                           Kinds = reportKinds mode plan
                           UnbreakableCycleFks = plan.UnbreakableCycleFks }
         }
+
+    /// Registry metadata (pillar 9). The Projection-onto-Sink realization
+    /// classifies entirely as `DataIntent`: how a plan deploys is
+    /// realization-layer policy (A36), and `PreservedFromSource` writes the
+    /// Source keys directly. The `Execute` gate is an R6 safety control, not
+    /// a transformation axis. `AssignedBySink` (Slice E) will add an
+    /// OUTPUT-capture site.
+    let registeredMetadata : RegisteredTransformMetadata =
+        RegisteredTransformMetadata.emitter "transferProjection" Data
+            [ TransformSite.dataIntent "phase1BulkInsert"
+                "Phase 1: bulk-insert each kind's rows (deferred FK columns NULLed), preserving the Source surrogate keys via SqlBulkCopy KeepIdentity. Realization of the plan (A36); DataIntent."
+              TransformSite.dataIntent "phase2FkRepoint"
+                "Phase 2: UPDATE the cycle-deferred FK columns to their Source values, keyed by PK, in topological order. Deterministic from the plan; no operator opinion." ]

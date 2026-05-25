@@ -48,3 +48,13 @@ module Ingestion =
                 acc <- Map.add key rows acc
             return acc
         }
+
+    /// Registry metadata (pillar 9). The ingestion adapter leg classifies
+    /// entirely as `DataIntent` — lifting a substrate's rows is observation,
+    /// not operator opinion (mirrors the OSSYS `CatalogReader` adapter).
+    let registeredMetadata : RegisteredTransformMetadata =
+        RegisteredTransformMetadata.adapter "transferIngestion" Data
+            [ TransformSite.dataIntent "rowStreamRead"
+                "Lift each kind's rows from the Source substrate via ReadSide.readRowsStream, mapping columns positionally onto attribute Names. Observation only — the rows are what the Source holds; no operator opinion enters."
+              TransformSite.dataIntent "topologicalStreamOrder"
+                "Stream kinds in the precomputed TopologicalOrder (FK-safe, dependency-first) so a two-phase load consumes them in order. The order derives from the catalog's FK graph; no operator-supplied ordering at this site." ]

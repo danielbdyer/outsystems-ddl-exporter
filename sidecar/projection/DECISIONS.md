@@ -19826,3 +19826,58 @@ OOM.
 - `DECISIONS 2026-05-20 (test-failure capture protocol)` — sibling test-runner
   discipline (TRX-first on failure); `test.sh` emits TRX + extracts failed
   names automatically.
+
+---
+
+## 2026-05-25 — The Transfer epic routes through the `TransformRegistry` (pillar 9)
+
+### Context
+
+The Transfer epic (Slices B–C) introduced new transformation sites — the
+`Ingestion` adapter leg (Source → rows), the pure `TransferPlan.build`
+(catalog + rows → two-phase plan), and `Transfer.projectOntoSink` (the
+Projection-onto-Sink realization). Operator review flagged that these must
+route through the `TransformRegistry` rather than sit outside it.
+
+### Decision
+
+**Agreed and done.** Per the pillar-9 load-bearing commitment ("every
+transformation site in V2 carries an explicit `DataIntent` / `OperatorIntent`
+classification; the registry is the canonical totality"), each Transfer
+transform exposes a co-located `registeredMetadata`:
+
+- `Ingestion.registeredMetadata` — `Adapter` stage, `Data` domain, all
+  `DataIntent` (lifting a substrate's rows is observation; mirrors the OSSYS
+  `CatalogReader`).
+- `TransferPlan.registeredMetadata` — `Pipeline` stage, `Data`, all
+  `DataIntent` (disposition derived from `IsIdentity`, deferral from the cycle
+  graph, ordering from the supplied topology — no operator opinion).
+- `Transfer.registeredMetadata` — `Emitter` stage, `Data`, all `DataIntent`
+  (how a plan deploys is realization policy, A36; `PreservedFromSource` writes
+  Source keys directly).
+
+All three join the grand-union `RegisteredAllTransforms.all`, so the **existing**
+bidirectional totality property tests cover them automatically (validate-through-
+`TransformRegistry.create`, stage/domain coverage, skeleton-purity). A focused
+`TransferRegistrationsTests` pins the stages + classifications. Two leaf files
+were reordered to satisfy compile order (`TransferPlan.fs` after
+`TransformRegistry.fs`; `RegisteredAllTransforms.fs` after `TransferRun.fs`) —
+no consumers in between.
+
+**Why it matters / what's deferred.** Transfer is the first epic that mixes
+DataIntent (ingest/plan/project) with operator intent at the *same* surface:
+the per-kind `--disposition` override (Slice D) and the `ReconciledByRule`
+matching ruleset (Slice C′) are operator choices. Registering Transfer now —
+while it is purely DataIntent — makes that DataIntent↔OperatorIntent boundary
+an explicit, audited registry fact rather than a blind spot. When C′/D ship,
+they add `OperatorIntent` sites (Insertion/Selection axes) in place rather than
+introducing unregistered transforms.
+
+### Cross-references
+
+- `src/Projection.Adapters.Sql/Ingestion.fs`, `src/Projection.Core/TransferPlan.fs`,
+  `src/Projection.Pipeline/TransferRun.fs` (`registeredMetadata`);
+  `src/Projection.Pipeline/RegisteredAllTransforms.fs` (grand union);
+  `tests/Projection.Tests/TransferRegistrationsTests.fs`.
+- Pillar 9 — `DECISIONS 2026-05-15 (late)`; `RegisteredAllTransformsBidirectionalTests`
+  (the totality property tests that now cover Transfer).
