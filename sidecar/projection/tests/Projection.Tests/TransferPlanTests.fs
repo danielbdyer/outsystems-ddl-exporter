@@ -110,3 +110,11 @@ let ``TransferPlan: ingested rows attach by kind; un-ingested kinds are empty`` 
 let ``TransferPlan: deferredLoads lists only the cycle-broken kinds`` () =
     let plan = build Map.empty
     Assert.Equal<SsKey list>([ aKey ], TransferPlan.deferredLoads plan |> List.map (fun l -> l.Kind))
+
+[<Fact>]
+let ``TransferPlan: reclassifyReconciled overrides only the named kinds to ReconciledByRule`` () =
+    let plan = build Map.empty |> TransferPlan.reclassifyReconciled (Set.singleton customerKey)
+    Assert.Equal(IdentityDisposition.ReconciledByRule, (loadFor customerKey plan).Disposition)
+    // ofKind-derived dispositions on the other kinds are untouched.
+    Assert.Equal(IdentityDisposition.AssignedBySink, (loadFor invoiceKey plan).Disposition)
+    Assert.Equal(IdentityDisposition.PreservedFromSource, (loadFor aKey plan).Disposition)

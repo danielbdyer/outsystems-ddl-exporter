@@ -47,6 +47,29 @@ module private TransferCanaryFixtures =
         "INSERT INTO [dbo].[OSUSR_XF_EMP] ([ID],[NAME],[MANAGER_ID]) VALUES " +
         "(1,N'CEO',NULL),(2,N'VP',1),(3,N'Mgr',2);"
 
+    /// User (business-keyed for the test) + Order with a NOT-NULL FK to
+    /// User. The reconciling Transfer matches Source users to the
+    /// pre-existing Sink users by EMAIL and re-keys every Order's USER_ID.
+    let reKeyDdl =
+        "CREATE TABLE [dbo].[OSUSR_RC_USER] (" +
+        "[ID] INT NOT NULL PRIMARY KEY, [EMAIL] NVARCHAR(100) NULL); " +
+        "CREATE TABLE [dbo].[OSUSR_RC_ORDER] (" +
+        "[ID] INT NOT NULL PRIMARY KEY, [USER_ID] INT NOT NULL, [AMOUNT] INT NULL, " +
+        "CONSTRAINT [FK_RcOrder_User] FOREIGN KEY ([USER_ID]) " +
+        "REFERENCES [dbo].[OSUSR_RC_USER] ([ID]));"
+
+    // Dev users 280/281/999; 999 (ghost@x) has no UAT counterpart. Order 12
+    // references 999 → it (and only it) is skipped-and-diagnosed.
+    let reKeySourceSeed =
+        "INSERT INTO [dbo].[OSUSR_RC_USER] ([ID],[EMAIL]) VALUES " +
+        "(280,N'alice@x'),(281,N'bob@x'),(999,N'ghost@x'); " +
+        "INSERT INTO [dbo].[OSUSR_RC_ORDER] ([ID],[USER_ID],[AMOUNT]) VALUES " +
+        "(10,280,100),(11,281,200),(12,999,300);"
+
+    // Pre-existing Sink (UAT) users — same emails, DIFFERENT surrogates.
+    let reKeySinkSeed =
+        "INSERT INTO [dbo].[OSUSR_RC_USER] ([ID],[EMAIL]) VALUES (18,N'alice@x'),(19,N'bob@x');"
+
     let value (r: Result<'a>) : 'a = Result.value r
 
     /// Count rows in a table on the given connection.
@@ -103,6 +126,59 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
     [<Fact>]
     member this.``data canary: deferred self-referential FK is re-pointed in phase 2`` () =
         this.RoundTrips "XferSelf" TransferCanaryFixtures.selfRefDdl TransferCanaryFixtures.selfRefSeed
+
+    [<Fact>]
+    member _.``data canary: reconciling Transfer re-keys FKs to pre-existing Sink identities (Dev->UAT User re-key)`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferReKey") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferReKeySrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.reKeyDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.reKeySourceSeed
+                    return!
+                        fixture.WithEphemeralDatabase "XferReKeySink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.reKeyDdl
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.reKeySinkSeed
+
+                                // Contract = the Source's reconstructed schema.
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+                                let kindByTable (t: string) =
+                                    Catalog.allModulesKinds contract |> List.map snd |> List.find (fun k -> k.Physical.Table = t)
+                                let userKind = kindByTable "OSUSR_RC_USER"
+                                let orderKind = kindByTable "OSUSR_RC_ORDER"
+                                let emailName =
+                                    userKind.Attributes |> List.find (fun a -> a.Column.ColumnName = "EMAIL") |> (fun a -> a.Name)
+
+                                let reconciliation =
+                                    Map.ofList [ userKind.SsKey, ReconciliationStrategy.MatchByColumn emailName ]
+
+                                let! reportR = Transfer.runReconciling Transfer.Execute src sink contract reconciliation
+                                let report = TransferCanaryFixtures.value reportR
+
+                                // The reconciled kind skips its insert (its rows are already in the Sink).
+                                let userOutcome = report.Kinds |> List.find (fun k -> k.Kind = userKind.SsKey)
+                                Assert.Equal(IdentityDisposition.ReconciledByRule, userOutcome.Disposition)
+                                Assert.Equal(0, userOutcome.RowsWritten)
+
+                                // ghost@x (Source 999) had no Sink identity; Order 12 referencing it is dropped.
+                                Assert.Contains(report.UnmatchedIdentities, fun (k, s) -> k = userKind.SsKey && s = SourceKey.ofString "999")
+                                Assert.Contains(report.SkippedReferences, fun (owner, r: UnresolvedReference) ->
+                                    owner = orderKind.SsKey && r.Target = userKind.SsKey && r.UnresolvedSource = SourceKey.ofString "999")
+
+                                // Sink holds the 2 pre-existing users (none added) and 2 re-keyed orders.
+                                let! users = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_RC_USER]"
+                                let! orders = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_RC_ORDER]"
+                                Assert.Equal(2, users)
+                                Assert.Equal(2, orders)
+
+                                // No inserted Order carries a Source surrogate — every FK was re-pointed.
+                                let! sourceValued =
+                                    TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_RC_ORDER] WHERE [USER_ID] IN (280,281,999)"
+                                Assert.Equal(0, sourceValued)
+                            })
+                }))
 
     [<Fact>]
     member _.``data canary: dry-run reports the plan and writes nothing to the Sink`` () =

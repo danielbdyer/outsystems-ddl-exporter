@@ -41,6 +41,14 @@ module Transfer =
             Mode                : Mode
             Kinds               : KindOutcome list
             UnbreakableCycleFks : UnbreakableCycleFk list
+            /// Reconciled-kind Source surrogates with no matched Sink
+            /// identity (the per-identity skip-and-diagnose from
+            /// `reconcileKind`). Empty for a non-reconciling Transfer.
+            UnmatchedIdentities : (SsKey * SourceKey) list
+            /// Source rows dropped because an FK targeted a reconciled
+            /// identity that has no Sink home — paired with the owning
+            /// kind. Empty for a non-reconciling Transfer.
+            SkippedReferences   : (SsKey * UnresolvedReference) list
         }
 
     // -- Projection-onto-Sink realization -----------------------------------
@@ -82,38 +90,145 @@ module Transfer =
                     (deferredAttrs |> List.map clause |> String.concat ", ")
                     (pkAttrs |> List.map clause |> String.concat " AND "))
 
-    /// Realize the plan onto an open Sink connection. Phase 1: every kind
-    /// in topological order, bulk-insert with deferred FKs NULLed. Phase 2:
-    /// the cycle-broken kinds, in topological order, UPDATE the deferred
-    /// FKs to their source values.
-    let projectOntoSink (sink: SqlConnection) (catalog: Catalog) (plan: TransferPlan) : Task<unit> =
-        task {
-            for load in plan.Loads do
-                match Catalog.tryFindKind load.Kind catalog with
-                | Some kind when not (List.isEmpty load.Rows) ->
-                    do! Bulk.copyRows sink kind.Physical (toCellRows kind load.DeferredFkColumns load.Rows)
-                | _ -> ()
+    /// A non-reconciled kind's load with its FK values already re-pointed
+    /// through the reconciliation remap (`Reconciliation.remapRowFks`) and
+    /// its unresolvable rows dropped. Reconciled kinds are excluded — their
+    /// rows already exist in the Sink, so their phase-1 insert is skipped.
+    type private PreparedLoad =
+        {
+            Load     : TransferKindLoad
+            Kind     : Kind
+            Remapped : RemappedRows
+        }
 
-            for load in plan.Loads do
-                if not (Set.isEmpty load.DeferredFkColumns) then
-                    match Catalog.tryFindKind load.Kind catalog with
-                    | Some kind ->
-                        let updates = load.Rows |> List.choose (phase2UpdateSql kind load.DeferredFkColumns)
-                        if not (List.isEmpty updates) then
-                            do! Deploy.executeBatch sink (String.concat "\n" updates)
-                    | None -> ()
+    /// Re-point every non-reconciled load's FK values that target a
+    /// reconciled kind through the remap, dropping rows whose referenced
+    /// identity has no Sink home (skip-and-diagnose). Pure; consumed by
+    /// both `DryRun` (preview) and `Execute` (the write). When the
+    /// reconciliation set is empty this is the identity over the loads.
+    let private prepare
+        (catalog: Catalog)
+        (reconciledKinds: Set<SsKey>)
+        (remap: SurrogateRemapContext)
+        (plan: TransferPlan)
+        : PreparedLoad list =
+        plan.Loads
+        |> List.choose (fun load ->
+            if load.Disposition = IdentityDisposition.ReconciledByRule then None
+            else
+                Catalog.tryFindKind load.Kind catalog
+                |> Option.map (fun kind ->
+                    let fkTargets = Reconciliation.reconciledFkColumns reconciledKinds kind
+                    { Load     = load
+                      Kind     = kind
+                      Remapped = Reconciliation.remapRowFks fkTargets remap load.Rows }))
+
+    /// Realize the prepared loads onto an open Sink connection. Phase 1:
+    /// every prepared kind in topological order, bulk-insert with deferred
+    /// FKs NULLed. Phase 2: the cycle-broken kinds, in topological order,
+    /// UPDATE the deferred FKs to their (already remapped) source values.
+    let private writePrepared (sink: SqlConnection) (prepared: PreparedLoad list) : Task<unit> =
+        task {
+            for p in prepared do
+                if not (List.isEmpty p.Remapped.Rows) then
+                    do! Bulk.copyRows sink p.Kind.Physical (toCellRows p.Kind p.Load.DeferredFkColumns p.Remapped.Rows)
+
+            for p in prepared do
+                if not (Set.isEmpty p.Load.DeferredFkColumns) then
+                    let updates = p.Remapped.Rows |> List.choose (phase2UpdateSql p.Kind p.Load.DeferredFkColumns)
+                    if not (List.isEmpty updates) then
+                        do! Deploy.executeBatch sink (String.concat "\n" updates)
+        }
+
+    // -- reconciliation orchestration ---------------------------------------
+
+    /// Reconcile each operator-chosen kind's Source surrogates to the
+    /// pre-existing Sink identities. Reads the Sink rows for each reconciled
+    /// kind (the Sink is not write-only) and folds the per-kind results into
+    /// one remap + the combined unmatched list. A read-only step — safe in
+    /// `DryRun`. Re-captures through `SurrogateRemapContext.capture` so the
+    /// merged context carries the construction-time invariant.
+    let private reconcileAgainstSink
+        (sink: SqlConnection)
+        (catalog: Catalog)
+        (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        (sourceRows: Map<SsKey, StaticRow list>)
+        : Task<ReconciledIdentity> =
+        task {
+            let mutable remap = SurrogateRemapContext.empty
+            let mutable unmatched : (SsKey * SourceKey) list = []
+            for KeyValue (kind, strategy) in reconciliation do
+                match Catalog.tryFindKind kind catalog with
+                | None -> ()
+                | Some k ->
+                    match Kind.primaryKey k with
+                    | pk :: _ ->
+                        let srcRows = Map.tryFind kind sourceRows |> Option.defaultValue []
+                        let! sinkRows = AsyncStream.toList (Ingestion.streamKind sink k)
+                        let result = Reconciliation.reconcileKind kind pk.Name strategy srcRows sinkRows
+                        for KeyValue (rk, inner) in result.Remap.Assignments do
+                            for KeyValue (src, assigned) in inner do
+                                match SurrogateRemapContext.capture rk src assigned remap with
+                                | Ok r    -> remap <- r
+                                | Error _ -> ()
+                        unmatched <- unmatched @ result.Unmatched
+                    | [] -> ()
+            return { Remap = remap; Unmatched = unmatched }
         }
 
     // -- orchestration ------------------------------------------------------
 
-    let private reportKinds (mode: Mode) (plan: TransferPlan) : KindOutcome list =
+    let private reportKinds (mode: Mode) (plan: TransferPlan) (prepared: PreparedLoad list) : KindOutcome list =
+        let writtenByKind =
+            match mode with
+            | DryRun  -> Map.empty
+            | Execute -> prepared |> List.map (fun p -> p.Load.Kind, p.Remapped.Rows.Length) |> Map.ofList
         plan.Loads
         |> List.map (fun l ->
             { Kind              = l.Kind
               Disposition       = l.Disposition
               RowsIngested      = l.Rows.Length
               DeferredFkColumns = l.DeferredFkColumns
-              RowsWritten       = (match mode with Execute -> l.Rows.Length | DryRun -> 0) })
+              RowsWritten       = Map.tryFind l.Kind writtenByKind |> Option.defaultValue 0 })
+
+    let private runCore
+        (mode: Mode)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (catalog: Catalog)
+        (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        : Task<Result<TransferReport>> =
+        task {
+            let topoLineage : Lineage<TopologicalOrder> = TopologicalOrderPass.runWith TreatAsCycle catalog
+            let topo = topoLineage.Value
+            let! rows = Ingestion.collectInOrder source catalog topo
+            let! reconciled = reconcileAgainstSink sink catalog reconciliation rows
+            let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+            let plan =
+                TransferPlan.build catalog topo rows
+                |> TransferPlan.reclassifyReconciled reconciledKinds
+            if mode = Execute && not (TransferPlan.isSatisfiable plan) then
+                return
+                    Result.failureOf
+                        (ValidationError.create
+                            "transfer.unbreakableCycleFk"
+                            (sprintf
+                                "%d non-deferrable cycle FK(s) — cannot execute a clean two-phase load"
+                                plan.UnbreakableCycleFks.Length))
+            else
+                let prepared = prepare catalog reconciledKinds reconciled.Remap plan
+                if mode = Execute then do! writePrepared sink prepared
+                return
+                    Result.success
+                        { Mode                = mode
+                          Kinds               = reportKinds mode plan prepared
+                          UnbreakableCycleFks = plan.UnbreakableCycleFks
+                          UnmatchedIdentities = reconciled.Unmatched
+                          SkippedReferences   =
+                            prepared
+                            |> List.collect (fun p ->
+                                p.Remapped.Skipped |> List.map (fun s -> p.Load.Kind, s)) }
+        }
 
     /// Run a Transfer over one shared `Catalog` (the schema contract):
     /// ingest rows from the Source, build the identity-aware two-phase
@@ -127,27 +242,23 @@ module Transfer =
         (sink: SqlConnection)
         (catalog: Catalog)
         : Task<Result<TransferReport>> =
-        task {
-            let topoLineage : Lineage<TopologicalOrder> = TopologicalOrderPass.runWith TreatAsCycle catalog
-            let topo = topoLineage.Value
-            let! rows = Ingestion.collectInOrder source catalog topo
-            let plan = TransferPlan.build catalog topo rows
-            if mode = Execute && not (TransferPlan.isSatisfiable plan) then
-                return
-                    Result.failureOf
-                        (ValidationError.create
-                            "transfer.unbreakableCycleFk"
-                            (sprintf
-                                "%d non-deferrable cycle FK(s) — cannot execute a clean two-phase load"
-                                plan.UnbreakableCycleFks.Length))
-            else
-                if mode = Execute then do! projectOntoSink sink catalog plan
-                return
-                    Result.success
-                        { Mode = mode
-                          Kinds = reportKinds mode plan
-                          UnbreakableCycleFks = plan.UnbreakableCycleFks }
-        }
+        runCore mode source sink catalog Map.empty
+
+    /// Run a *reconciling* Transfer — the operator's headline case
+    /// (Dev→UAT User re-key). `reconciliation` names, per kind, how its
+    /// Source surrogates reconcile to the *pre-existing* Sink identities
+    /// (`ReconciledByRule`): those kinds skip their phase-1 insert, and
+    /// every FK pointing at them is re-pointed through the matched remap.
+    /// References to identities with no Sink home are dropped and reported
+    /// in `SkippedReferences`.
+    let runReconciling
+        (mode: Mode)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (catalog: Catalog)
+        (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        : Task<Result<TransferReport>> =
+        runCore mode source sink catalog reconciliation
 
     /// Registry metadata (pillar 9). The Projection-onto-Sink realization
     /// classifies entirely as `DataIntent`: how a plan deploys is

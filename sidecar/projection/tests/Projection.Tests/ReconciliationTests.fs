@@ -47,6 +47,55 @@ let ``reconcileKind ManualOverride maps explicit Source->Sink; sources outside t
     Assert.Equal(Some (AssignedKey.ofString "18"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "280") result.Remap)
     Assert.Equal<(SsKey * SourceKey) list>([ userKey, SourceKey.ofString "281" ], result.Unmatched)
 
+// -- FK re-pointing through the remap --------------------------------------
+
+/// An Order kind with a nullable USER_ID FK to the User kind, so a Transfer
+/// can re-point USER_ID from the Source surrogate to the reconciled Sink one.
+let private orderKey = mkKey [ "Order" ]
+let private userIdKey = mkKey [ "Order"; "USER_ID" ]
+let private orderUserRef =
+    { Reference.create (mkKey [ "Order"; "UserRef" ]) (mkName "UserRef") userIdKey userKey with
+        HasDbConstraint = true }
+let private orderKind : Kind =
+    { Kind.create orderKey (mkName "Order") { Schema = "dbo"; Table = "OSUSR_ORDER"; Catalog = None }
+        [ { Attribute.create (mkKey [ "Order"; "ID" ]) (mkName "ID") Integer with
+              Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+          { Attribute.create userIdKey (mkName "USER_ID") Integer with
+              Column = { ColumnName = "USER_ID"; IsNullable = true } } ]
+      with References = [ orderUserRef ]; Indexes = []; ColumnChecks = [] }
+
+[<Fact>]
+let ``reconciledFkColumns selects only FK columns whose target is reconciled`` () =
+    Assert.Equal<Map<Name, SsKey>>(
+        Map.ofList [ mkName "USER_ID", userKey ],
+        Reconciliation.reconciledFkColumns (Set.singleton userKey) orderKind)
+    Assert.True(Map.isEmpty (Reconciliation.reconciledFkColumns Set.empty orderKind))
+
+[<Fact>]
+let ``remapRowFks re-points a reconciled FK value to the matched Sink surrogate`` () =
+    let fkTargets = Map.ofList [ mkName "USER_ID", userKey ]
+    let remap = SurrogateRemapContext.capture userKey (SourceKey.ofString "280") (AssignedKey.ofString "18") SurrogateRemapContext.empty |> mustOk
+    let result = Reconciliation.remapRowFks fkTargets remap [ row "10" [ "USER_ID", "280" ] ]
+    Assert.Empty result.Skipped
+    Assert.Equal(Some "18", Map.tryFind (mkName "USER_ID") result.Rows.Head.Values)
+
+[<Fact>]
+let ``remapRowFks drops a row whose reconciled FK has no Sink match (skip-and-diagnose)`` () =
+    let fkTargets = Map.ofList [ mkName "USER_ID", userKey ]
+    let result = Reconciliation.remapRowFks fkTargets SurrogateRemapContext.empty [ row "10" [ "USER_ID", "999" ] ]
+    Assert.Empty result.Rows
+    let s = List.exactlyOne result.Skipped
+    Assert.Equal(mkName "USER_ID", s.Column)
+    Assert.Equal(userKey, s.Target)
+    Assert.Equal(SourceKey.ofString "999", s.UnresolvedSource)
+
+[<Fact>]
+let ``remapRowFks leaves a NULL FK untouched and keeps the row`` () =
+    let fkTargets = Map.ofList [ mkName "USER_ID", userKey ]
+    let result = Reconciliation.remapRowFks fkTargets SurrogateRemapContext.empty [ row "10" [ "USER_ID", "" ] ]
+    Assert.Empty result.Skipped
+    Assert.Equal(1, result.Rows.Length)
+
 // -- connection apparatus --------------------------------------------------
 
 let private srcSub = { Environment = Environment.Dev; Role = SubstrateRole.Source; ConnectionRef = ConnectionRef.EnvVar "DEV_CONN" }

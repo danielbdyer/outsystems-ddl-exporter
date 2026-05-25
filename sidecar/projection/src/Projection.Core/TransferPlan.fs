@@ -85,6 +85,21 @@ module TransferPlan =
 
         { Loads = loads; UnbreakableCycleFks = unbreakable }
 
+    /// Override the disposition of the reconciled kinds to
+    /// `ReconciledByRule`. `ofKind` (pure over `IsIdentity`) never returns
+    /// `ReconciledByRule` — it is operator-chosen — so the realization marks
+    /// it as a post-build step from the operator's reconciliation spec. A
+    /// reconciled kind's rows already exist in the Sink, so its phase-1
+    /// insert is skipped; FKs targeting it are re-pointed through the remap.
+    let reclassifyReconciled (reconciledKinds: Set<SsKey>) (plan: TransferPlan) : TransferPlan =
+        { plan with
+            Loads =
+                plan.Loads
+                |> List.map (fun l ->
+                    if Set.contains l.Kind reconciledKinds
+                    then { l with Disposition = IdentityDisposition.ReconciledByRule }
+                    else l) }
+
     /// The kinds whose phase-1 insert must NULL one or more FK columns and
     /// be re-pointed in phase 2 (the cycle-broken kinds). Convenience for
     /// a realization that wants the phase-2 work list.
