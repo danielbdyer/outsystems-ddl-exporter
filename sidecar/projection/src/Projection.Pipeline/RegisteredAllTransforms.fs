@@ -83,4 +83,8 @@ module RegisteredAllTransforms =
         // C′/D) will add OperatorIntent sites in place.
         @ [ Ingestion.registeredMetadata
             TransferPlan.registeredMetadata
-            Transfer.registeredMetadata ]
+            Transfer.registeredMetadata
+            // Slice C′ — the ReconciledByRule matching ruleset is the
+            // Transfer epic's first OperatorIntent site (Selection axis,
+            // mirroring the forward UserFkReflowPass).
+            Reconciliation.registeredMetadata ]

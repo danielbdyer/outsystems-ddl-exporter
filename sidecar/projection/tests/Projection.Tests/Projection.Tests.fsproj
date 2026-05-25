@@ -96,6 +96,7 @@
     <Compile Include="SurrogateRemapContextTests.fs" />
     <Compile Include="TransferPlanTests.fs" />
     <Compile Include="TransferRegistrationsTests.fs" />
+    <Compile Include="ReconciliationTests.fs" />
     <Compile Include="UserFkReflowPassTests.fs" />
     <Compile Include="UserFkReflowPropertyTests.fs" />
     <Compile Include="UserFkReflowIntegrationTests.fs" />

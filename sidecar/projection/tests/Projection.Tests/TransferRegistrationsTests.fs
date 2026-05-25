@@ -5,49 +5,56 @@ open Projection.Core
 open Projection.Adapters.Sql
 open Projection.Pipeline
 
-// Pillar-9 TransformRegistry coverage for the Transfer epic. The three
-// Transfer transforms — the Ingestion adapter leg, the pure two-phase
-// plan, and the Projection-onto-Sink realization — route through the
-// registry like every other V2 transform: classified, validated, and
-// enumerated in the grand-union RegisteredAllTransforms.all (so the
-// existing bidirectional totality property tests cover them too).
+// Pillar-9 TransformRegistry coverage for the Transfer epic. The DataIntent
+// core — Ingestion adapter leg, the pure two-phase plan, the Projection-
+// onto-Sink realization — plus the operator-intent reconciliation ruleset
+// (Slice C′), all routed through the registry: classified, validated, and
+// enumerated in the grand-union RegisteredAllTransforms.all (so the existing
+// bidirectional totality property tests cover them too).
 
-let private transferEntries : RegisteredTransformMetadata list =
+let private dataIntentEntries : RegisteredTransformMetadata list =
     [ Ingestion.registeredMetadata
       TransferPlan.registeredMetadata
       Transfer.registeredMetadata ]
+
+let private allTransferEntries : RegisteredTransformMetadata list =
+    dataIntentEntries @ [ Reconciliation.registeredMetadata ]
 
 [<Fact>]
 let ``Transfer transforms bind to the expected stages`` () =
     Assert.Equal(Adapter,  Ingestion.registeredMetadata.StageBinding)
     Assert.Equal(Pipeline, TransferPlan.registeredMetadata.StageBinding)
     Assert.Equal(Emitter,  Transfer.registeredMetadata.StageBinding)
+    Assert.Equal(Pipeline, Reconciliation.registeredMetadata.StageBinding)
 
 [<Fact>]
-let ``every Transfer transform is in the Data domain`` () =
-    for rt in transferEntries do
+let ``the DataIntent core (ingest / plan / project) carries only DataIntent sites in the Data domain`` () =
+    for rt in dataIntentEntries do
         Assert.Equal(Data, rt.Domain)
-
-[<Fact>]
-let ``every Transfer transform site classifies as DataIntent (no operator overlay yet)`` () =
-    for rt in transferEntries do
         Assert.NotEmpty rt.Sites
         for site in rt.Sites do
             Assert.Equal(DataIntent, site.Classification)
-            Assert.False(System.String.IsNullOrWhiteSpace site.Rationale)
+
+[<Fact>]
+let ``the reconciliation ruleset is an OperatorIntent Selection site (Identity domain)`` () =
+    let rt = Reconciliation.registeredMetadata
+    Assert.Equal(Identity, rt.Domain)
+    Assert.NotEmpty rt.Sites
+    for site in rt.Sites do
+        Assert.Equal(OperatorIntent Selection, site.Classification)
+        Assert.False(System.String.IsNullOrWhiteSpace site.Rationale)
 
 [<Fact>]
 let ``Transfer transforms validate through TransformRegistry.create`` () =
-    match TransformRegistry.create transferEntries with
-    | Ok entries -> Assert.Equal(3, List.length entries)
+    match TransformRegistry.create allTransferEntries with
+    | Ok entries -> Assert.Equal(4, List.length entries)
     | Error es   -> Assert.Fail(sprintf "expected validation; got: %A" es)
 
 [<Fact>]
 let ``Transfer transforms are enumerated in the grand-union RegisteredAllTransforms.all`` () =
     let names = RegisteredAllTransforms.all |> List.map (fun rt -> rt.Name) |> Set.ofList
-    Assert.True(Set.contains "transferIngestion" names, "transferIngestion missing from the registry")
-    Assert.True(Set.contains "transferPlan" names, "transferPlan missing from the registry")
-    Assert.True(Set.contains "transferProjection" names, "transferProjection missing from the registry")
+    for n in [ "transferIngestion"; "transferPlan"; "transferProjection"; "transferReconciliation" ] do
+        Assert.True(Set.contains n names, sprintf "%s missing from the registry" n)
 
 [<Fact>]
 let ``the whole grand-union registry still validates with the Transfer transforms in it`` () =

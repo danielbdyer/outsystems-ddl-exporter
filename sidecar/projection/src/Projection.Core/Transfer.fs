@@ -62,10 +62,17 @@ module AssignedKey =
 ///   - `PreservedFromSource` — the source key is written directly (a
 ///     business / non-identity PK). No remap; the original FK value stays
 ///     correct because the referenced key is preserved.
+///   - `ReconciledByRule` — the referenced rows already exist in the Sink
+///     (dominantly Users). Match the Source surrogate to the *pre-existing*
+///     Sink surrogate by an operator ruleset *before* insert, then re-point
+///     FKs. Neither preservation (the source key is wrong in the Sink) nor
+///     sink-assignment (the Sink mints no new key). Operator-chosen — NOT
+///     derivable from `IsIdentity`; `ofKind` never returns it.
 [<RequireQualifiedAccess>]
 type IdentityDisposition =
     | AssignedBySink
     | PreservedFromSource
+    | ReconciledByRule
 
 [<RequireQualifiedAccess>]
 module IdentityDisposition =
@@ -164,3 +171,82 @@ module SurrogateRemapContext =
     /// assignment.
     let kindCount (ctx: SurrogateRemapContext) : int =
         Map.count ctx.Assignments
+
+
+// ---------------------------------------------------------------------------
+// The connection apparatus (§4.1) — a multi-environment, role-bound,
+// concurrency-aware connection set with credentials resolved out-of-band
+// (D9: a `ConnectionRef` names where the secret lives, never the secret).
+// ---------------------------------------------------------------------------
+
+/// A logical environment identity. The multi-environment dimension the V1
+/// corporate remote carries (the four named environments) plus an open
+/// `Named` escape hatch.
+[<RequireQualifiedAccess>]
+type Environment =
+    | Dev
+    | Test
+    | Uat
+    | Prod
+    | Named of string
+
+[<RequireQualifiedAccess>]
+module Environment =
+    let name (e: Environment) : string =
+        match e with
+        | Environment.Dev     -> "DEV"
+        | Environment.Test    -> "TEST"
+        | Environment.Uat     -> "UAT"
+        | Environment.Prod    -> "PROD"
+        | Environment.Named n -> n
+
+/// A *reference* to where a substrate's credentials live — never the
+/// secret (D9). Either an environment-variable name or a file path the
+/// operator supplies out of band.
+[<RequireQualifiedAccess>]
+type ConnectionRef =
+    | EnvVar of name: string
+    | File of path: string
+
+/// An `Environment` bound to the `SubstrateRole` it plays in a Transfer,
+/// with its out-of-band `ConnectionRef`. The thing you open.
+type Substrate =
+    {
+        Environment   : Environment
+        Role          : SubstrateRole
+        ConnectionRef : ConnectionRef
+    }
+
+/// The connection set a Transfer binds: which substrate is the data
+/// `Source`, which is the write `Sink`, and which substrates are profiled
+/// for identity reference. For a `ReconciledByRule` Transfer the Sink is
+/// profiled too — "the Sink is not write-only" — which is why a reconcile
+/// needs ≥2 concurrent connections.
+type TransferConnections =
+    {
+        Source              : Substrate
+        Sink                : Substrate
+        ProfiledForIdentity : Substrate list
+    }
+
+[<RequireQualifiedAccess>]
+module TransferConnections =
+
+    let private roleMismatch (which: string) (expected: SubstrateRole) (got: SubstrateRole) : ValidationError =
+        ValidationError.create
+            "transfer.connections.roleMismatch"
+            (sprintf "%s substrate must carry SubstrateRole.%A, got %A." which expected got)
+
+    /// Bind a Source + Sink into a `TransferConnections`, validating that
+    /// each substrate carries the matching role. The Source is always
+    /// profiled for identity; the Sink is added to the profiled set only
+    /// when the Transfer carries a `ReconciledByRule` kind (`reconcile`).
+    let create (source: Substrate) (sink: Substrate) (reconcile: bool) : Result<TransferConnections> =
+        let errs =
+            [ if source.Role <> SubstrateRole.Source then roleMismatch "Source" SubstrateRole.Source source.Role
+              if sink.Role <> SubstrateRole.Sink then roleMismatch "Sink" SubstrateRole.Sink sink.Role ]
+        match errs with
+        | [] ->
+            let profiled = if reconcile then [ source; sink ] else [ source ]
+            Result.success { Source = source; Sink = sink; ProfiledForIdentity = profiled }
+        | es -> Result.failure es

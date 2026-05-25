@@ -70,6 +70,7 @@
     <Compile Include="ConflictDetector.fs" />
     <Compile Include="TransformRegistry.fs" />
     <Compile Include="TransferPlan.fs" />
+    <Compile Include="Reconciliation.fs" />
     <Compile Include="StrategyRegistrations.fs" />
     <Compile Include="PassChainAdapter.fs" />
     <Compile Include="Types.fs" />
