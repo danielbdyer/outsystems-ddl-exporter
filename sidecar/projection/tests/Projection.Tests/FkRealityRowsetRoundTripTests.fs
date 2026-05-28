@@ -147,8 +147,8 @@ let private buildBundle (refRow: CatalogReader.ReferenceRow) : CatalogReader.Row
         References = [ refRow ] }
 
 let private parseToCatalog (bundle: CatalogReader.RowsetBundle) : Catalog =
-    let task = CatalogReader.parse (CatalogReader.SnapshotRowsets bundle)
-    let result = task.GetAwaiter().GetResult()
+    let task () = CatalogReader.parse (CatalogReader.SnapshotRowsets bundle)
+    let result = TaskSync.run task
     mustOk result
 
 let private findOrderReference (cat: Catalog) : Reference =

@@ -19506,3 +19506,378 @@ The operator-PO chose Path C from the prior session's three-paths offer: registe
 - `src/Projection.Pipeline/Deploy.fs:745-805` — `executeStream` dispatch.
 - `src/Projection.Pipeline/RegisteredAllTransforms.fs:53-59` — formatter metadata registered.
 - V1 references: `src/Osm.Smo/PerTableEmission/ConstraintFormatter.cs`; `tests/Fixtures/emission/edge-case-untrusted/Modules/Ops/dbo.JobRun.sql`.
+
+---
+
+## 2026-05-24 (Transfer epic — vocabulary reification, slice 1) — the bidirectional pipeline's lexicon is locked: Projection / Ingestion / Transfer / Source / Sink / SchemaContract / SurrogateRemapContext / IdentityDisposition
+
+### Context
+
+The pipeline runs one leg today — Projection (Π) lowering a `Catalog` onto a
+staging SQL Server. The operator wants to freeze that schema, hand it to the
+partner team as usual, and then use the *same* schema to pull rows from
+staging and load them into an OutSystems Cloud UAT database as a temporary,
+pre-eject preview. The original feasibility study framed this as "reverse
+import" (`PRESCOPE_REVERSE_IMPORT.md`).
+
+The reified understanding rejects "reverse." The capability is not a bolt-on
+to a one-directional tool; it is the other leg of an adjunction the codebase
+**already names and partially proves** — H-050 (`AdjunctionLawTests.fs`):
+`Ingestion ∘ Projection = id` up to named lossy fields, at the schema level.
+A "reverse import" is that adjunction run across two substrates and extended
+from schema to data. Naming it "reverse" obscured that the hard machinery
+(two-phase Tarjan plan, `ReadSide` reader, `Bulk.copyRows` writer,
+`RawValueCodec`, the read-back canary, `UserRemapContext`) already exists.
+
+### Decisions resolved
+
+1. **The lexicon is locked** (pillar 8 — domain-first naming + ubiquitous
+   language across Core / Adapters / Pipeline / CLI):
+   - **Projection** (Π) — lower a `Catalog` (+ rows) onto a substrate. The
+     existing emitter direction; unchanged.
+   - **Ingestion** — Π's *named peer*: lift a substrate back into a `Catalog`
+     (+ rows). The reader leg of the H-050 adjunction; `ReadSide` is today's
+     schema-level Ingestion.
+   - **Transfer** — `Ingestion(Source)` then `Projection(Sink)` over one
+     shared `SchemaContract`. The flow concept. No direction is canonical;
+     today's export and the staging→UAT load are both Transfers, differing
+     only in the bound adapters.
+   - **Source / Sink** — the flow-relative role a substrate plays in a
+     Transfer (`SubstrateRole`). A binding, not an identity: staging is a Sink
+     on export and a Source on the UAT load. Mirrors the canary's
+     `Source_`/`Target_` ephemeral databases.
+   - **SchemaContract** — the frozen, reloadable schema artifact carrying
+     `SsKey` + the FK edge graph + physical coordinates; the contract both
+     legs share. The in-memory `Catalog` is already a complete contract; the
+     on-disk artifact is not (it omits `SsKey` / FK graph) — closing that is a
+     scoped slice, not yet built.
+   - **IdentityDisposition** — per kind: `AssignedBySink` (identity PK; the
+     sink mints the surrogate) vs `PreservedFromSource` (business / non-identity
+     PK; the source key is written directly). Derived from the PK's `IsIdentity`
+     flag via `ofKind` — `DataIntent` (reads structure, no operator opinion).
+   - **SourceKey / AssignedKey** — orientation-typed surrogate raw values; the
+     surrogate-remap analog of `SourceUserId` / `TargetUserId`.
+   - **SurrogateRemapContext** — per-kind `Source → Sink-assigned` surrogate
+     map (`Map<SsKey, Map<SourceKey, AssignedKey>>`), captured during phase-1
+     insert; the per-kind generalization of `UserRemapContext`.
+
+2. **DML-only sink rights are the governing constraint** for the OutSystems
+   Cloud target: the sink may not force-insert identity-PK keys. This is what
+   makes `IdentityDisposition` load-bearing — identity-PK kinds are
+   `AssignedBySink` (capture + remap), business-key kinds are
+   `PreservedFromSource` (written directly). The recommended first cut is
+   `PreservedFromSource` against a blank sink (`KeepIdentity` eliminates remap
+   entirely); `AssignedBySink` via `SurrogateRemapContext` is the harder, later
+   capability for non-empty / managed targets.
+
+3. **The epic's North Star is the data-level extension of H-050**: a Transfer
+   is correct when `Ingestion(Projection(rows)) ≈ rows` up to named
+   identity-remap tolerances, proven by a **data-level canary** — the data
+   analog of the schema canary, asserting `PhysicalSchema` + row-digest
+   equality across a forward-emit → ingest → plan → project → ingest loop
+   *before* any UAT write. This is squarely on the V2-driver KPI (provably
+   correct per axis = structural types + per-axis canary/property test).
+
+4. **The `transfer` CLI verb** (not `import`) names the flow concept; the
+   two connection endpoints live **outside `Config`** (D9) as env vars
+   (`PROJECTION_TRANSFER_SOURCE_CONN_STR` / `..._SINK_CONN_STR`) or
+   CLI-flag file paths; dry-run is the default and `--execute` is gated behind
+   an R6 amendment (UAT-preview, not production write path).
+
+5. **The doc is renamed** `PRESCOPE_REVERSE_IMPORT.md → PRESCOPE_TRANSFER.md`
+   and rewritten around this vocabulary; it is the epic's epistemic anchor
+   (North Star, holistic feature backlog Slices A–E, governance, reuse
+   surface).
+
+### What shipped (slice 1)
+
+- `src/Projection.Core/Transfer.fs` — pure Core reification: `SubstrateRole`
+  (`Source | Sink`), `SourceKey` / `AssignedKey` newtypes, `IdentityDisposition`
+  (`AssignedBySink | PreservedFromSource`) + `ofKind`, `SurrogateRemapContext`
+  (`empty` / `capture` / `tryFindAssigned` / `assignmentCount` / `kindCount`).
+  Smart-constructor invariant on `capture`: one `SourceKey` maps to at most one
+  `AssignedKey` per kind (a second capture of the same source surrogate is a
+  phase-1 double-insert, rejected). No I/O; PRJ001-clean.
+- 11 unit tests in `tests/Projection.Tests/SurrogateRemapContextTests.fs`.
+
+### Discipline reinforced
+
+- **IR grows under evidence.** Slice 1 ships only the type-level spine the
+  later slices demand. `SurrogateRemapContext`'s diagnostic side (orphan-FK
+  variants) and the `UserRemapContext` subsumption are deferred with named
+  triggers — they land when `AssignedBySink` (Slice E) gives them a second
+  consumer.
+- **Connect to existing prior art, don't reinvent.** The adjunction is H-050;
+  the optic is H-010 (the Catalog↔DDL `Prism`); the remap template is
+  `UserRemapContext`. The Transfer epic extends named structures rather than
+  introducing parallel ones.
+- **Axioms scaffolded, not cashed mid-flight.** The data-level adjunction is
+  named as an axiom *candidate* (sibling to H-050 / A35 / A36) to scaffold at
+  the Transfer chapter's open and cash at its close — not promoted now.
+
+### Active deferrals — additions
+
+| Deferral | Opened | Trigger to cash | Status |
+|---|---|---|---|
+| **`SchemaContract` on-disk persistence (SsKey + FK graph + physical-coordinate index)** | 2026-05-24 (Transfer epic) | A *later-run* Transfer (separate process from the live `Catalog`) or `AssignedBySink` needs identity recovered from disk; today only `V2.LogicalName` round-trips, not `SsKey` | Deferred (Transfer Slice A). In-memory `Catalog` is already a complete contract; same-run Transfer needs nothing. |
+| **`AssignedBySink` realization (assigned-key capture + catalog-wide FK re-point)** | 2026-05-24 (Transfer epic) | UAT sink is non-empty / platform-managed identity; needs `OUTPUT`/`SCOPE_IDENTITY` capture (or natural-key correlation) feeding `SurrogateRemapContext.capture` | Deferred (Transfer Slice E). Type foundation shipped in slice 1; the realization-layer capture wiring is the missing piece, not the type. |
+| **Subsume `UserRemapContext` into `SurrogateRemapContext`** | 2026-05-24 (Transfer epic) | `AssignedBySink` lands AND a second consumer of the general context exists (two-consumer threshold) | Deferred. `UserRemapContext` is the single-kind, pre-matched special case; the two coexist with cross-referencing prose until the trigger fires. |
+| **Data-level adjunction promoted to a numbered axiom** | 2026-05-24 (Transfer epic) | Transfer chapter close, once the data-level canary (Slice C) is green | Scaffolded candidate (sibling to H-050). Not cashed. |
+
+### Cross-references
+
+- `PRESCOPE_TRANSFER.md` — the epic's epistemic anchor (renamed from
+  `PRESCOPE_REVERSE_IMPORT.md`); North Star §0, vocabulary §4, identity §6,
+  `SchemaContract` §7, governance §8, seams §9, backlog §10, codebase-shift
+  evaluation §11.
+- `src/Projection.Core/Transfer.fs` — slice 1 reification.
+- `tests/Projection.Tests/SurrogateRemapContextTests.fs` — 11 tests.
+- H-050 (`HORIZON.md:1465`; `tests/Projection.Tests/AdjunctionLawTests.fs`) —
+  the schema-level adjunction the epic extends to data.
+- H-010 (`HORIZON.md:415`) — the Catalog↔DDL `Prism`; Ingestion is its reverse
+  leg carrying identity.
+- `UserRemap.fs` / `UserFkReflowPass.fs` — the remap template
+  `SurrogateRemapContext` generalizes.
+- `DECISIONS 2026-05-22 — R6` — the production-write-path guardrail the
+  `transfer` execute path is scoped around.
+
+---
+
+## 2026-05-24 (Transfer epic — refinement) — the third identity disposition (`ReconciledByRule`) + the connection apparatus; the multi-env + LiveOssysConnection deferrals are subsumed into the epic
+
+### Context
+
+The first Transfer entry (above) modeled identity as two dispositions —
+`PreservedFromSource` and `AssignedBySink`. Operator review surfaced the
+canonical real case those two miss: **cross-environment User re-key**. The same
+human is user Id 280 in Dev and Id 18 in UAT; loading Dev data into UAT must
+re-key every User-FK from the Dev surrogate to the *pre-existing* UAT surrogate.
+That is neither preservation (280 is wrong in UAT) nor sink-assignment (UAT
+mints no new key — Id 18 already exists). The operator's V1 corporate remote
+already implements this: up to four source-database connections, two
+concurrent, fully profiling both environments' users and matching them by
+operator-configured rulesets.
+
+### Decisions resolved
+
+1. **`IdentityDisposition` is three variants, not two.** Add **`ReconciledByRule`**:
+   the referenced rows already exist in the Sink (dominantly Users); match
+   source↔sink identity by an operator ruleset *before* insert, then re-point
+   FKs. Distinct from `AssignedBySink` in *discovery timing*:
+   - `AssignedBySink` — sink mints a new key; discover the mapping **during**
+     insert (`OUTPUT` capture).
+   - `ReconciledByRule` — sink key pre-exists; discover the mapping **before**
+     insert by **profiling both environments' identity populations** and
+     applying the ruleset.
+   `ReconciledByRule` is an operator-chosen disposition (not derivable from
+   `IsIdentity`). The type gains the variant when Slice C′ opens (docs-only
+   now, per operator direction — closed-DU expansion).
+
+2. **The Sink is not write-only.** A reconcile Transfer *reads* (profiles) the
+   Sink's identity population before writing it. This breaks the binary
+   Source-reads / Sink-writes model and is the architectural reason ≥2
+   concurrent connections are required — both ends open for profiling at once.
+
+3. **The connection apparatus is reified as a concept** (alongside
+   `SubstrateRole`), superseding the earlier "thin two-endpoint env-var seam":
+   - **`Environment`** — a logical environment identity (DEV/TEST/UAT/PROD or
+     named).
+   - **`Substrate`** — an `Environment` bound to a `SubstrateRole` with a
+     `ConnectionRef` (env-var name or file path — a *reference*, never the
+     secret; D9 holds).
+   - **`TransferConnections`** — the set a Transfer binds: data Source, write
+     Sink, the substrates profiled for identity, and the concurrency required.
+     The V1 "four connections / two concurrent" maps to four environments with a
+     pair bound per Transfer.
+
+4. **`UserFkReflowPass` is the `ReconciledByRule` engine, already built.**
+   `discover (sourceUsers: UserPopulation<SourceUserId>) (targetUsers:
+   UserPopulation<TargetUserId>)` + `UserMatchingStrategy = ByEmail | BySsKey |
+   ManualOverride | FallbackToSystemUser` + `Profile.SourceUsers` /
+   `TargetUsers` are exactly the operator-configured cross-environment user
+   matching. The Transfer feeds this pass from **live dual-environment
+   profiling** (instead of static model populations) and generalizes it from
+   the User kind to any reconcilable kind, threading the result into the
+   phase-2 reflow via `SurrogateRemapContext`. So `ReconciledByRule` is largely
+   a *wiring* effort over built machinery plus the live-profiling apparatus.
+
+5. **Two deferrals are subsumed into the Transfer epic.** The previously
+   free-floating *"Multi-environment configuration (DEV/TEST/UAT/PROD) +
+   UAT-users logic"* and *"LiveOssysConnection variant + cluster"* deferrals are
+   the same convergent capability as Slice C′'s connection apparatus + live
+   dual-profiling. They are recorded under the epic (BACKLOG Phase 11 Slice C′);
+   their original rows stay (append-only) but now cross-reference the epic.
+
+6. **CLI surface.** `--disposition preserve|assign|reconcile` (per-kind
+   override; default preserve); `--user-map <file>` supplies the
+   `ManualOverride` ruleset (cashes the deferred `UserMapLoader` CSV adapter).
+
+### Discipline reinforced
+
+- **Connect to built machinery before scoping new work.** The operator's
+  headline case turned out to be 80% built (`UserFkReflowPass` + dual
+  `UserPopulation` + `UserMatchingStrategy`); the gap is live profiling + the
+  connection apparatus + Transfer wiring, not a new matching engine.
+- **The carrier generalizes; the discovery mechanism is what varies.**
+  `SurrogateRemapContext` (slice 1) holds both the captured-during-insert and
+  matched-before-insert mappings; only *how* the `AssignedKey` is discovered
+  differs across `AssignedBySink` vs `ReconciledByRule`. No new carrier type.
+
+### Active deferrals — amendments
+
+| Deferral | Amendment |
+|---|---|
+| **Multi-environment configuration (DEV/TEST/UAT/PROD) + UAT-users logic** (opened 2026-05-19) | **Subsumed into the Transfer epic** (Phase 11 Slice C′). The connection apparatus (`Environment`/`Substrate`/`TransferConnections`) + live dual-environment user profiling is where it lands; no longer free-floating. |
+| **`LiveOssysConnection` variant + cluster** (opened 2026-05-17) | **Subsumed into the Transfer epic** (Phase 11 Slice C′) as the live read path for dual-environment identity profiling. The Transfer is the write-direction cousin the original row anticipated. |
+| **`ReconciledByRule` disposition variant + connection apparatus types** (opened 2026-05-24) | Docs/backlog only for now (operator direction). `IdentityDisposition` gains `ReconciledByRule` and Core gains `Environment`/`Substrate`/`TransferConnections` when Slice C′ opens. |
+
+### Cross-references
+
+- `PRESCOPE_TRANSFER.md` §4.1 (connection apparatus), §6.3 (`ReconciledByRule`),
+  §10 (Slice C′), §11 (deferral unification), OPEN-7.
+- `src/Projection.Core/Passes/UserFkReflowPass.fs` (`discover`),
+  `src/Projection.Core/Policy.fs` (`UserMatchingStrategy`),
+  `src/Projection.Core/Profile.fs` (`SourceUsers` / `TargetUsers`) — the
+  built `ReconciledByRule` engine for the User kind.
+- `DECISIONS 2026-05-24 (Transfer epic — vocabulary reification, slice 1)` —
+  the entry this refines.
+
+---
+
+## 2026-05-24 — Test runner: tiered pools, sync-over-async deadlock, and the OOM crash (`scripts/test.sh`)
+
+### Context — the recurring "tests time out / go unresponsive"
+
+A binary-search investigation of the recurring "tests hang / we never recover
+the next step" failure found **two distinct, compounding causes**, neither of
+which is a slow or flaky individual test (every class passes in isolation):
+
+1. **Sync-over-async deadlock under xUnit's bounded concurrency.** ~34 test
+   files block on `task.GetAwaiter().GetResult()` (sync-over-async — driving an
+   adapter `Task` to completion from a synchronous test body). xUnit's default
+   *bounded* parallelism installs a `MaxConcurrencySyncContext` that caps the
+   number of concurrently-running test tasks; a blocked sync-over-async task
+   holds its slot while its own continuation is queued **to that same capped
+   context** → the continuation can never be scheduled → deadlock. It is
+   **intermittent** (it forms only when enough sync-over-async tasks are
+   in-flight to saturate the slots), which is why it reads as "recurring
+   constantly" rather than a clean repro. Signature: idle CPU (threads blocked,
+   not computing); hangs at *bounded* parallelism (default 4-wide, `aggressive`,
+   AND serial `MaxParallelThreads=1`); **passes at `MaxParallelThreads=-1`**
+   (unlimited — the thread pool, not the capped sync context, schedules
+   continuations). Forcing `ThreadPool` min threads does **not** help (the cap
+   is xUnit's sync context, not the thread pool). Confirmed empirically: 4
+   SQL-touching classes that each pass alone deadlock together at default;
+   pass at `-1`.
+
+2. **Full-suite OOM on the constrained host.** A single `dotnet test` runs the
+   ~2540-test PURE pool (parallel) *concurrently* with the ~110-test
+   `Docker-SqlServer` collection (serial) **and** the SQL Server container, on
+   a **4-core / 15 GiB / no-swap** box. That over-subscribes memory until the
+   test host is OOM-killed mid-run ("the active test run was aborted because
+   the host process exited unexpectedly" + a ~700 MB hang dump). Each crash can
+   kill Docker tests mid-`CREATE`/`DROP DATABASE`, compounding the instability.
+
+### Decisions
+
+1. **`scripts/test.sh` is the canonical developer test entry point.** It runs
+   the pools as **separate, sequential `dotnet test` processes — never
+   concurrently** (the OOM fix), tiers by speed, and streams per-test results
+   (`console;verbosity=normal`, so a long run never *looks* hung). Tiers:
+   `fast` (pure pool, ~55s — the inner dev loop, the default), `docker`
+   (Docker-SqlServer collection, serial, ~4m), `canary` (round-trip canaries),
+   `all` (fast then docker, sequential), `list`. The Docker-pool filter is
+   derived from the `Collection("Docker-SqlServer")` markers, so it stays
+   correct as classes are added.
+2. **The pure pool runs at `xUnit.MaxParallelThreads=-1`.** This is
+   load-bearing, not tuning: it removes the bounded sync context, so the
+   sync-over-async deadlock cannot form. Verified safe on this host — the full
+   pure pool completes in ~55s with ~6.4 GiB peak working set (of 15 GiB). The
+   Docker pool keeps its serial `DisableParallelization` collection (no
+   sync-context throttle → no deadlock; serial CREATE/DROP → no instance
+   livelock) — it does **not** take `-1`.
+3. **Do not run the whole suite as one bounded `dotnet test`.** A *global*
+   `xunit.runner.json` with `-1` would dodge the deadlock but reintroduce the
+   OOM (pure-unlimited *concurrent* with the Docker pool). `-1` is therefore
+   applied per-pool by the script, where the pure pool runs alone.
+
+### Categorical hardening — LANDED same day
+
+The durable fix shipped: **`TaskSync.run`** (`tests/Projection.Tests/TaskSync.fs`)
+routes a `Task`-returning operation's blocking wait through `Task.Run`, so the
+operation executes on a thread-pool thread (null `SynchronizationContext`) and
+its `await` continuations resume off xUnit's capped sync context — the deadlock
+cannot form. Every sync-over-async site in the **pure pool** (21 files) was
+converted to `TaskSync.run` (the Docker-pool files were left as-is: their
+serial `DisableParallelization` collection never installs the throttling sync
+context, so their `GetAwaiter().GetResult()` is harmless). With the anti-pattern
+gone, **bounded parallelism is safe** — the full pure pool runs green at xUnit's
+default thread cap (2568 tests, ~50s, 2/2 repeats; it deadlocked before). So
+`scripts/test.sh` dropped the `MaxParallelThreads=-1` workaround. Pool
+separation stays (the OOM is a memory/concurrency fact independent of the
+deadlock). A raw bounded `dotnet test` of the pure pool no longer deadlocks;
+the full suite should still go through `test.sh` (pool separation) to avoid the
+OOM.
+
+### Cross-references
+
+- `scripts/test.sh` (the runner); `tests/Projection.Tests/TestCollections.fs`
+  (`Docker-SqlServer` DisableParallelization — the serial-pool definition).
+- `DECISIONS 2026-05-20 (test-failure capture protocol)` — sibling test-runner
+  discipline (TRX-first on failure); `test.sh` emits TRX + extracts failed
+  names automatically.
+
+---
+
+## 2026-05-25 — The Transfer epic routes through the `TransformRegistry` (pillar 9)
+
+### Context
+
+The Transfer epic (Slices B–C) introduced new transformation sites — the
+`Ingestion` adapter leg (Source → rows), the pure `TransferPlan.build`
+(catalog + rows → two-phase plan), and `Transfer.projectOntoSink` (the
+Projection-onto-Sink realization). Operator review flagged that these must
+route through the `TransformRegistry` rather than sit outside it.
+
+### Decision
+
+**Agreed and done.** Per the pillar-9 load-bearing commitment ("every
+transformation site in V2 carries an explicit `DataIntent` / `OperatorIntent`
+classification; the registry is the canonical totality"), each Transfer
+transform exposes a co-located `registeredMetadata`:
+
+- `Ingestion.registeredMetadata` — `Adapter` stage, `Data` domain, all
+  `DataIntent` (lifting a substrate's rows is observation; mirrors the OSSYS
+  `CatalogReader`).
+- `TransferPlan.registeredMetadata` — `Pipeline` stage, `Data`, all
+  `DataIntent` (disposition derived from `IsIdentity`, deferral from the cycle
+  graph, ordering from the supplied topology — no operator opinion).
+- `Transfer.registeredMetadata` — `Emitter` stage, `Data`, all `DataIntent`
+  (how a plan deploys is realization policy, A36; `PreservedFromSource` writes
+  Source keys directly).
+
+All three join the grand-union `RegisteredAllTransforms.all`, so the **existing**
+bidirectional totality property tests cover them automatically (validate-through-
+`TransformRegistry.create`, stage/domain coverage, skeleton-purity). A focused
+`TransferRegistrationsTests` pins the stages + classifications. Two leaf files
+were reordered to satisfy compile order (`TransferPlan.fs` after
+`TransformRegistry.fs`; `RegisteredAllTransforms.fs` after `TransferRun.fs`) —
+no consumers in between.
+
+**Why it matters / what's deferred.** Transfer is the first epic that mixes
+DataIntent (ingest/plan/project) with operator intent at the *same* surface:
+the per-kind `--disposition` override (Slice D) and the `ReconciledByRule`
+matching ruleset (Slice C′) are operator choices. Registering Transfer now —
+while it is purely DataIntent — makes that DataIntent↔OperatorIntent boundary
+an explicit, audited registry fact rather than a blind spot. When C′/D ship,
+they add `OperatorIntent` sites (Insertion/Selection axes) in place rather than
+introducing unregistered transforms.
+
+### Cross-references
+
+- `src/Projection.Adapters.Sql/Ingestion.fs`, `src/Projection.Core/TransferPlan.fs`,
+  `src/Projection.Pipeline/TransferRun.fs` (`registeredMetadata`);
+  `src/Projection.Pipeline/RegisteredAllTransforms.fs` (grand union);
+  `tests/Projection.Tests/TransferRegistrationsTests.fs`.
+- Pillar 9 — `DECISIONS 2026-05-15 (late)`; `RegisteredAllTransformsBidirectionalTests`
+  (the totality property tests that now cover Transfer).

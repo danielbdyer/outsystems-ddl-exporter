@@ -36,7 +36,7 @@ open Projection.Adapters.Osm
 let private mkName s = Name.create s |> Result.value
 
 let private parseSync (source: CatalogReader.SnapshotSource) : Result<Catalog> =
-    (CatalogReader.parse source).GetAwaiter().GetResult()
+    TaskSync.run (fun () -> CatalogReader.parse source)
 
 let private firstModule (c: Catalog) : Module = c.Modules |> List.head
 

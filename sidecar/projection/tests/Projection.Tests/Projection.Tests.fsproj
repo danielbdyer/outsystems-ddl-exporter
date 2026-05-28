@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <Compile Include="TestCollections.fs" />
+    <Compile Include="TaskSync.fs" />
     <Compile Include="EphemeralContainerFixture.fs" />
     <Compile Include="ScaffoldingTests.fs" />
     <Compile Include="ResultTests.fs" />
@@ -92,6 +93,10 @@
     <Compile Include="UserMatchingStrategyTests.fs" />
     <Compile Include="UserPopulationTests.fs" />
     <Compile Include="UserRemapContextTests.fs" />
+    <Compile Include="SurrogateRemapContextTests.fs" />
+    <Compile Include="TransferPlanTests.fs" />
+    <Compile Include="TransferRegistrationsTests.fs" />
+    <Compile Include="ReconciliationTests.fs" />
     <Compile Include="UserFkReflowPassTests.fs" />
     <Compile Include="UserFkReflowPropertyTests.fs" />
     <Compile Include="UserFkReflowIntegrationTests.fs" />
@@ -119,6 +124,9 @@
     <Compile Include="ColumnRealitySourceSidePopulationTests.fs" />
     <Compile Include="FkRealityRowsetRoundTripTests.fs" />
     <Compile Include="LiveProfilerIntegrationTests.fs" />
+    <Compile Include="IngestionIntegrationTests.fs" />
+    <Compile Include="TransferCanaryTests.fs" />
+    <Compile Include="RunWithConfigProfileTests.fs" />
     <Compile Include="DescriptionLiftTests.fs" />
     <Compile Include="OriginalNameAndExternalDbTypeLiftTests.fs" />
     <Compile Include="IndexColumnDirectionTests.fs" />

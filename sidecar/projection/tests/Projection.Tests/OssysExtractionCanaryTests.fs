@@ -56,7 +56,7 @@ let private extractFromSeed () : Task<Result<Catalog>> =
 [<Fact>]
 let ``Slice ε canary: OSSYS seed fixture extracts to a V2 Catalog with 3 modules`` () =
     if skipIfNoDocker "ossys-canary-modules" then
-        let result = (extractFromSeed ()).GetAwaiter().GetResult()
+        let result = TaskSync.run extractFromSeed
         match result with
         | Error errors ->
             Assert.Fail (sprintf "OSSYS canary extraction failed: %A" errors)
@@ -70,7 +70,7 @@ let ``Slice ε canary: OSSYS seed fixture extracts to a V2 Catalog with 3 module
 [<Fact>]
 let ``Slice ε canary: OSSYS seed fixture extracts the AppCore module with 3 entities`` () =
     if skipIfNoDocker "ossys-canary-entities" then
-        let result = (extractFromSeed ()).GetAwaiter().GetResult()
+        let result = TaskSync.run extractFromSeed
         match result with
         | Error errors ->
             Assert.Fail (sprintf "OSSYS canary extraction failed: %A" errors)
@@ -85,7 +85,7 @@ let ``Slice ε canary: OSSYS seed fixture extracts the AppCore module with 3 ent
 [<Fact>]
 let ``Slice ε canary: OSSYS seed fixture preserves cross-schema BillingAccount external entity`` () =
     if skipIfNoDocker "ossys-canary-billing" then
-        let result = (extractFromSeed ()).GetAwaiter().GetResult()
+        let result = TaskSync.run extractFromSeed
         match result with
         | Error errors ->
             Assert.Fail (sprintf "OSSYS canary extraction failed: %A" errors)
@@ -104,7 +104,7 @@ let ``Slice ε canary: OSSYS seed fixture preserves cross-schema BillingAccount 
 [<Fact>]
 let ``Slice ε canary: Customer entity carries six attributes including FK to City`` () =
     if skipIfNoDocker "ossys-canary-customer-attrs" then
-        let result = (extractFromSeed ()).GetAwaiter().GetResult()
+        let result = TaskSync.run extractFromSeed
         match result with
         | Error errors ->
             Assert.Fail (sprintf "OSSYS canary extraction failed: %A" errors)
@@ -132,8 +132,8 @@ let ``Slice ε canary: Customer entity carries six attributes including FK to Ci
 [<Fact>]
 let ``Slice ε canary: extraction is deterministic across repeated runs`` () =
     if skipIfNoDocker "ossys-canary-determinism" then
-        let r1 = (extractFromSeed ()).GetAwaiter().GetResult()
-        let r2 = (extractFromSeed ()).GetAwaiter().GetResult()
+        let r1 = TaskSync.run extractFromSeed
+        let r2 = TaskSync.run extractFromSeed
         match r1, r2 with
         | Ok c1, Ok c2 ->
             // Each run uses a fresh database (uniqueDatabaseName ensures
@@ -161,16 +161,16 @@ let ``Slice 5.13.progress-callback canary: progress fires for every observed row
             fun obs -> lock observations (fun () -> observations.Add obs)
         let seed = MetadataExtractionSql.readEdgeCaseSeed()
         let result =
-            Deploy.withBootstrappedDatabase "OssysProgressCanary" seed (fun cnn ->
-                task {
-                    return!
-                        MetadataSnapshotRunner.runAsyncWithOptions
-                            cnn
-                            MetadataSnapshotRunner.defaultParameters
-                            { MetadataSnapshotRunner.defaultOptions with
-                                OnRowsetComplete = onComplete }
-                })
-            |> fun t -> t.GetAwaiter().GetResult()
+            TaskSync.run (fun () ->
+                Deploy.withBootstrappedDatabase "OssysProgressCanary" seed (fun cnn ->
+                    task {
+                        return!
+                            MetadataSnapshotRunner.runAsyncWithOptions
+                                cnn
+                                MetadataSnapshotRunner.defaultParameters
+                                { MetadataSnapshotRunner.defaultOptions with
+                                    OnRowsetComplete = onComplete }
+                    }))
         match result with
         | Error errors ->
             Assert.Fail (sprintf "OSSYS progress-callback extraction failed: %A" errors)
@@ -214,7 +214,7 @@ let ``Slice 5.13.progress-callback canary: progress fires for every observed row
 [<Fact>]
 let ``Slice 5.13.ossys-rowsets-cluster: indexes lift via rowset path (matrix rows 15 + 16)`` () =
     if skipIfNoDocker "ossys-canary-indexes" then
-        let result = (extractFromSeed ()).GetAwaiter().GetResult()
+        let result = TaskSync.run extractFromSeed
         match result with
         | Error errors ->
             Assert.Fail (sprintf "OSSYS canary extraction failed: %A" errors)
@@ -257,7 +257,7 @@ let ``Slice 5.13.ossys-rowsets-cluster: indexes lift via rowset path (matrix row
 [<Fact>]
 let ``Slice 5.13.ossys-rowsets-cluster: triggers lift via rowset path (matrix row 23)`` () =
     if skipIfNoDocker "ossys-canary-triggers" then
-        let result = (extractFromSeed ()).GetAwaiter().GetResult()
+        let result = TaskSync.run extractFromSeed
         match result with
         | Error errors ->
             Assert.Fail (sprintf "OSSYS canary extraction failed: %A" errors)

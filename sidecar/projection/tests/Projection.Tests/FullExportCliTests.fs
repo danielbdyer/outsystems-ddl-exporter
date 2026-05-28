@@ -49,7 +49,7 @@ let private v1MinimalFixture : string =
               "name": "Id",
               "physicalName": "ID",
               "originalName": null,
-              "dataType": "Identifier",
+              "dataType": "rtIdentifier",
               "length": null,
               "precision": null,
               "scale": null,
@@ -111,128 +111,22 @@ let private prop (e: JsonElement) (name: string) : JsonElement =
 let private getStr (e: JsonElement) : string =
     nonNull (e.GetString())
 
-/// Mirror of Program.fs `runFullExport` minus the dumpBench surface +
-/// process-exit shape. Returns the captured NDJSON text + exit code
-/// so tests can assert on both.
+/// Drives the *real* `FullExportRun.execute` (the same Pipeline
+/// orchestration the CLI's `runFullExport` consumes) under a captured
+/// LogSink writer, so the test asserts on the production NDJSON stream
+/// rather than a re-implemented mirror that could drift. Returns the
+/// captured NDJSON + exit code. `Verbosity.Quiet` matches the CLI
+/// default (no `--verbose` / `--debug`); `execute` resets the sink +
+/// bench state and emits the terminal `summary.runComplete` itself.
 let private runFullExportInProcess
     (configPath: string)
     (outputOverride: string option)
     : int * string =
-    LogSink.reset ()
-    Bench.reset ()
     use captured = new StringWriter()
-    LogSink.setWriter captured
-    let mutable outcome : LogSink.Outcome = LogSink.Succeeded
-    let mutable exitCode = 0
-    try
-        try
-            match Config.fromFile configPath with
-            | Error errors ->
-                for e in errors do
-                    let payload : Map<string, objnull> =
-                        Map.ofList [ "code", box e.Code; "reason", box e.Message ]
-                    LogSink.emit
-                        { LogSink.envelope LogSink.Error LogSink.Config "config.validationFailed" payload with
-                            Phase = LogSink.ErrorPhase }
-                outcome <- LogSink.Failed
-                exitCode <- 6
-            | Ok cfg ->
-                let effectiveOutput =
-                    match outputOverride with
-                    | Some dir when not (String.IsNullOrWhiteSpace dir) -> dir
-                    | _ -> cfg.Output.Dir
-                let cfgForRun = { cfg with Output = { Dir = effectiveOutput } }
-                let startPayload : Map<string, objnull> =
-                    Map.ofList [
-                        "command",    box "projection full-export"
-                        "configPath", box configPath
-                        "outputDir",  box effectiveOutput
-                    ]
-                LogSink.emit
-                    { LogSink.envelope LogSink.Info LogSink.Config "config.runStart" startPayload with
-                        Phase = LogSink.Start }
-                let connPayload : Map<string, objnull> =
-                    Map.ofList [ "kind", box "SnapshotJson"; "modelPath", box cfg.Model.Path ]
-                LogSink.emit
-                    { LogSink.envelope LogSink.Info LogSink.Config "config.connectionResolved" connPayload with
-                        Phase  = LogSink.Start
-                        Source = Some LogSink.Configuration }
-                let sw = System.Diagnostics.Stopwatch.StartNew()
-                let task = Compose.runWithConfig cfgForRun
-                let result = task.GetAwaiter().GetResult()
-                sw.Stop()
-                match result with
-                | Ok report ->
-                    LogSink.recordStage "pipeline" sw.ElapsedMilliseconds LogSink.Succeeded
-                    let stagePayload : Map<string, objnull> =
-                        Map.ofList [
-                            "stage", box "pipeline"
-                            "durationMs", box sw.ElapsedMilliseconds
-                            "outcome", box "succeeded"
-                        ]
-                    LogSink.emit
-                        { LogSink.envelope LogSink.Info LogSink.Summary "summary.stageCompleted" stagePayload with
-                            Phase = LogSink.End
-                            StepId = Some "pipeline" }
-                    // Chapter C slice C.2 — mirror the production
-                    // `runFullExport` path: emit each special-circumstances
-                    // diagnostic as a `transform.diagnostic` envelope so
-                    // the test harness sees the same stream the CLI does.
-                    for entry in report.Diagnostics do
-                        let level =
-                            match entry.Severity with
-                            | DiagnosticSeverity.Info    -> LogSink.Info
-                            | DiagnosticSeverity.Warning -> LogSink.Warn
-                            | DiagnosticSeverity.Error   -> LogSink.Error
-                        let basePayload : Map<string, objnull> =
-                            Map.ofList [
-                                "source",  box entry.Source
-                                "code",    box entry.Code
-                                "message", box entry.Message
-                            ]
-                        let withSsKey =
-                            match entry.SsKey with
-                            | Some k -> basePayload |> Map.add "ssKey" (box (SsKey.rootOriginal k))
-                            | None   -> basePayload
-                        let payload =
-                            entry.Metadata
-                            |> Map.fold (fun acc k v -> Map.add k (box v) acc) withSsKey
-                        LogSink.emit
-                            { LogSink.envelope level LogSink.Transform "transform.diagnostic" payload with
-                                Phase = LogSink.End }
-                    report.Paths
-                    |> List.iter (fun p ->
-                        let info = FileInfo p
-                        LogSink.recordArtifact {
-                            Kind      = Path.GetFileName p |> nonNull
-                            Path      = p
-                            SizeBytes = Some info.Length
-                            FileCount = None
-                        })
-                    exitCode <- 0
-                | Error errors ->
-                    LogSink.recordStage "pipeline" sw.ElapsedMilliseconds LogSink.Failed
-                    for e in errors do
-                        let payload : Map<string, objnull> =
-                            Map.ofList [ "code", box e.Code; "message", box e.Message ]
-                        LogSink.emit
-                            { LogSink.envelope LogSink.Error LogSink.Transform "transform.diagnostic" payload with
-                                Phase = LogSink.ErrorPhase }
-                    outcome <- LogSink.Failed
-                    exitCode <- 2
-        with ex ->
-            outcome <- LogSink.Failed
-            let payload : Map<string, objnull> =
-                Map.ofList [ "exception", box (ex.GetType().Name); "message", box ex.Message ]
-            LogSink.emit
-                { LogSink.envelope LogSink.Error LogSink.Config "config.validationFailed" payload with
-                    Phase = LogSink.ErrorPhase }
-            exitCode <- 2
-    finally
-        let stats = Bench.snapshot ()
-        LogSink.runComplete outcome "projection full-export" stats |> ignore
-        LogSink.setWriter Console.Error
-    exitCode, captured.ToString()
+    let outcome =
+        LogSink.withWriter captured (fun () ->
+            FullExportRun.execute configPath outputOverride LogSink.Verbosity.Quiet Set.empty)
+    FullExportRun.exitCode outcome, captured.ToString()
 
 let private safeRm (dir: string) : unit =
     if Directory.Exists dir then

@@ -93,8 +93,8 @@ let private v1MinimalFixture : string =
 }"""
 
 let private parseAndProject () : Compose.Outputs =
-    let task = Compose.readJson v1MinimalFixture
-    let parsed = task.GetAwaiter().GetResult()
+    let task () = Compose.readJson v1MinimalFixture
+    let parsed = TaskSync.run task
     let catalog =
         match parsed with
         | Ok c -> c
@@ -285,8 +285,8 @@ let ``M1: Compose.write writes the same bytes Compose.project produced`` () =
 
 [<Fact>]
 let ``M1: malformed V1 JSON surfaces as Error with adapter validation errors`` () =
-    let task = Compose.readJson "{ this is not valid JSON"
-    let parsed = task.GetAwaiter().GetResult()
+    let task () = Compose.readJson "{ this is not valid JSON"
+    let parsed = TaskSync.run task
     match parsed with
     | Error errors ->
         Assert.NotEmpty(errors)

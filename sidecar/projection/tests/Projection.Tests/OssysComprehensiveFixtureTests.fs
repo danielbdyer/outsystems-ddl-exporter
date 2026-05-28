@@ -55,7 +55,7 @@ let private refNamed (name: string) (k: Kind) : Reference =
 
 let private withCatalog (label: string) (assertion: Catalog -> unit) : unit =
     if skipIfNoDocker label then
-        match (extractFromSeed ()).GetAwaiter().GetResult() with
+        match TaskSync.run extractFromSeed with
         | Error errors -> Assert.Fail (sprintf "comprehensive fixture extraction failed: %A" errors)
         | Ok catalog   -> assertion catalog
 
