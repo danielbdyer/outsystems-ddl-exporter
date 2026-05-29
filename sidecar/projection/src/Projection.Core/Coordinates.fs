@@ -163,33 +163,18 @@ type TableId =
 [<RequireQualifiedAccess>]
 module TableId =
 
-    let private schemaBlank =
-        ValidationError.create
-            "tableId.schema.empty"
-            "TableId schema cannot be blank."
-
-    let private tableBlank =
-        ValidationError.create
-            "tableId.table.empty"
-            "TableId table cannot be blank."
-
-    let private catalogBlank =
-        ValidationError.create
-            "tableId.catalog.empty"
-            "TableId catalog, when present, cannot be blank or whitespace."
-
     /// Build a `TableId` from raw strings. Rejects blanks; aggregates
     /// errors when fields are blank. `Catalog` defaults to `None`
     /// (implicit-current-database scope; V1's
     /// `db_catalog: null` parity).
     let create (schema: string) (table: string) : Result<TableId> =
-        let schemaErr =
-            if System.String.IsNullOrWhiteSpace schema then [ schemaBlank ] else []
-        let tableErr =
-            if System.String.IsNullOrWhiteSpace table then [ tableBlank ] else []
-        match schemaErr @ tableErr with
-        | [] -> Result.success { Catalog = None; Schema = schema; Table = table }
-        | errs -> Result.failure errs
+        let errors =
+            Validation.nonBlank "tableId.schema.empty" "TableId schema cannot be blank or whitespace." schema
+            @ Validation.nonBlank "tableId.table.empty" "TableId table cannot be blank or whitespace." table
+        if List.isEmpty errors then
+            Result.success { Catalog = None; Schema = schema; Table = table }
+        else
+            Result.failure errors
 
     /// Build a `TableId` that carries an explicit catalog coordinate.
     /// Chapter A.0' slice θ — used by future adapters that surface
@@ -198,15 +183,14 @@ module TableId =
     /// whitespace `catalog` is rejected; pass `TableId.create` for
     /// the implicit-current-database scope instead.
     let createWithCatalog (catalog: string) (schema: string) (table: string) : Result<TableId> =
-        let catalogErr =
-            if System.String.IsNullOrWhiteSpace catalog then [ catalogBlank ] else []
-        let schemaErr =
-            if System.String.IsNullOrWhiteSpace schema then [ schemaBlank ] else []
-        let tableErr =
-            if System.String.IsNullOrWhiteSpace table then [ tableBlank ] else []
-        match catalogErr @ schemaErr @ tableErr with
-        | [] -> Result.success { Catalog = Some catalog; Schema = schema; Table = table }
-        | errs -> Result.failure errs
+        let errors =
+            Validation.nonBlank "tableId.catalog.empty" "TableId catalog, when present, cannot be blank or whitespace." catalog
+            @ Validation.nonBlank "tableId.schema.empty" "TableId schema cannot be blank or whitespace." schema
+            @ Validation.nonBlank "tableId.table.empty" "TableId table cannot be blank or whitespace." table
+        if List.isEmpty errors then
+            Result.success { Catalog = Some catalog; Schema = schema; Table = table }
+        else
+            Result.failure errors
 
     // Per chapter 3.5 deep audit (2026-05-09): the bracket-quoted
     // SQL identifier form `[schema].[table]` is a SQL-rendering

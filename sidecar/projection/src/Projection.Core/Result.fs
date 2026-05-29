@@ -100,6 +100,48 @@ module Validation =
                 Some (ValidationError.create code (msgOf key))
             else None)
 
+    /// `[]` iff `value` is non-blank (a non-null, non-whitespace string);
+    /// otherwise a single `ValidationError`. The blank-string check is
+    /// the most common boundary invariant on string-shaped value-objects
+    /// (`SchemaName.create`, `TableName.create`, `ColumnName.create`,
+    /// `Name.create`, `Email.create`, `SsKey.original`); this collapses
+    /// the 6-site `if String.IsNullOrWhiteSpace ... then ... else []`
+    /// boilerplate to one call.
+    let nonBlank
+        (code: string)
+        (message: string)
+        (value: string)
+        : ValidationError list =
+        if System.String.IsNullOrWhiteSpace value then
+            [ ValidationError.create code message ]
+        else []
+
+    /// `[]` iff `items` is non-empty; otherwise a single
+    /// `ValidationError`. The non-empty-collection check at aggregate-
+    /// root smart constructors (`Module.create` requires kinds;
+    /// `ModuleEntityFilter.create` requires entities).
+    let nonEmpty
+        (code: string)
+        (message: string)
+        (items: 'a list)
+        : ValidationError list =
+        if List.isEmpty items then
+            [ ValidationError.create code message ]
+        else []
+
+    /// `[]` iff `value` is non-negative (≥ 0); otherwise a single
+    /// `ValidationError`. The non-negative invariant on counts /
+    /// thresholds (`ColumnProfile.rowCount`, `ColumnProfile.nullCount`,
+    /// `CategoricalUniquenessConfig` thresholds).
+    let nonNegative
+        (code: string)
+        (message: string)
+        (value: int64)
+        : ValidationError list =
+        if value < 0L then
+            [ ValidationError.create code message ]
+        else []
+
 
 /// `Result<'a>` is a type alias for `FSharp.Core.Result<'a, ValidationError list>`.
 /// Chapter-3.6 cash-out of the user's "be bold" directive (2026-05-09):

@@ -89,13 +89,7 @@ module UniqueIndexPass =
     /// preserves it). This is the per-index analogue of
     /// `NullabilityPass.sortedAttributes`.
     let private sortedIndexes (catalog: Catalog) : (Kind * Index) list =
-        catalog.Modules
-        |> List.collect (fun m -> m.Kinds)
-        |> List.sortBy (fun k -> k.SsKey)
-        |> List.collect (fun k ->
-            k.Indexes
-            |> List.sortBy (fun ix -> ix.SsKey)
-            |> List.map (fun ix -> k, ix))
+        Catalog.kindContexts (fun k -> k.Indexes) (fun ix -> ix.SsKey) catalog
 
     /// V1's `OpportunityBuilder.TryCreate` (UniqueIndex flavor) emits
     /// an Opportunity record for every decision that does not enforce

@@ -31,7 +31,7 @@ open Projection.Core
 module JointDependencyDiagnostics =
 
     [<Literal>]
-    let private source = "functionalDependency"
+    let private source = "emitter:functionalDependency"
 
     [<Literal>]
     let private code = "profiling.jointDistribution.nearUniqueComposite"

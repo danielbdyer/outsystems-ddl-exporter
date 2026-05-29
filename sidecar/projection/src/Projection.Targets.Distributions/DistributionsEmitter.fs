@@ -49,9 +49,9 @@ module DistributionsEmitter =
     [<Literal>]
     let private emitterName : string = "Projection.Targets.Distributions"
 
-    let private renderSsKey (key: SsKey) : string =
-        let root = SsKey.rootOriginal key
-        if SsKey.isDerived key then sprintf "%s [derived]" root else root
+    // SsKey rendering moved to `Projection.Core.SsKey.display` (sibling
+    // to `rootOriginal` / `isDerived`); call sites reference the
+    // canonical projection directly.
 
     let private outcomeString (o: ProbeOutcome) : string =
         match o with
@@ -111,7 +111,7 @@ module DistributionsEmitter =
         (a: Attribute)
         : unit =
         w.WriteStartObject()
-        w.WriteString("ssKey", renderSsKey a.SsKey)
+        w.WriteString("ssKey", SsKey.display a.SsKey)
         w.WriteString("name", Name.value a.Name)
         w.WriteString("column", a.Column.ColumnName)
         // Variant-agnostic lookup; the emitter renders whatever
@@ -133,7 +133,7 @@ module DistributionsEmitter =
         : unit =
         use _ = Bench.scope "emit.distributions.kind"
         w.WriteStartObject()
-        w.WriteString("ssKey", renderSsKey k.SsKey)
+        w.WriteString("ssKey", SsKey.display k.SsKey)
         w.WriteString("name", Name.value k.Name)
         w.WriteString("schema", k.Physical.Schema)
         w.WriteString("table", k.Physical.Table)
@@ -155,7 +155,7 @@ module DistributionsEmitter =
         : unit =
         use _ = Bench.scope "emit.distributions.module"
         w.WriteStartObject()
-        w.WriteString("ssKey", renderSsKey m.SsKey)
+        w.WriteString("ssKey", SsKey.display m.SsKey)
         w.WriteString("name", Name.value m.Name)
         w.WritePropertyName("kinds")
         w.WriteStartArray()
@@ -282,7 +282,7 @@ module DistributionsEmitter =
                 for m in sortedModules do
                     use _ = Bench.scope "emit.distributions.catalogModule"
                     w.WriteStartObject()
-                    w.WriteString("ssKey", renderSsKey m.SsKey)
+                    w.WriteString("ssKey", SsKey.display m.SsKey)
                     w.WriteString("name", Name.value m.Name)
                     w.WritePropertyName("kinds")
                     w.WriteStartArray()

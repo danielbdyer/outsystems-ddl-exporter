@@ -422,17 +422,7 @@ let private parseCategoryName (raw: string) : Result<LogSink.Category, string> =
                 other)
 
 let private dispatchFullExport (argv: string[]) : int =
-    let parser =
-        ArgumentParser.Create<FullExportArg>(
-            programName = "projection full-export",
-            errorHandler = ProcessExiter())
-    try
-        let parsed = parser.Parse(argv, raiseOnUsage = false)
-        if parsed.IsUsageRequested then
-            // ProcessExiter handles --help itself, but the explicit
-            // check guards against future Argu shape changes.
-            0
-        else
+    argv |> VerbArgs.parse<FullExportArg> "projection full-export" (fun parsed ->
             let configPath = parsed.GetResult Config
             let outputOverride = parsed.TryGetResult Output
             let verbose = parsed.Contains Verbose
@@ -459,11 +449,7 @@ let private dispatchFullExport (argv: string[]) : int =
                     muteResults
                     |> List.choose (function Ok c -> Some c | Error _ -> None)
                     |> Set.ofList
-                runFullExport configPath outputOverride verbosity mutedCategories
-    with
-    | :? ArguParseException as ex ->
-        Console.Error.WriteLine ex.Message
-        1
+                runFullExport configPath outputOverride verbosity mutedCategories)
 
 // ----------------------------------------------------------------------
 // `transfer` (Phase 11 Slice D) — bidirectional data-load CLI verb.
@@ -621,23 +607,12 @@ let private runTransfer
     exitCode
 
 let private dispatchTransfer (argv: string[]) : int =
-    let parser =
-        ArgumentParser.Create<TransferArgs.TransferArg>(
-            programName = "projection transfer",
-            errorHandler = ProcessExiter())
-    try
-        let parsed = parser.Parse(argv, raiseOnUsage = false)
-        if parsed.IsUsageRequested then 0
-        else
-            let sourceSpec    = parsed.GetResult TransferArgs.Source_Conn
-            let sinkSpec      = parsed.GetResult TransferArgs.Sink_Conn
-            let reconcileList = parsed.GetResults TransferArgs.Reconcile
-            let execute       = parsed.Contains TransferArgs.Execute
-            runTransfer sourceSpec sinkSpec reconcileList execute
-    with
-    | :? ArguParseException as ex ->
-        Console.Error.WriteLine ex.Message
-        1
+    argv |> VerbArgs.parse<TransferArgs.TransferArg> "projection transfer" (fun parsed ->
+        let sourceSpec    = parsed.GetResult TransferArgs.Source_Conn
+        let sinkSpec      = parsed.GetResult TransferArgs.Sink_Conn
+        let reconcileList = parsed.GetResults TransferArgs.Reconcile
+        let execute       = parsed.Contains TransferArgs.Execute
+        runTransfer sourceSpec sinkSpec reconcileList execute)
 
 [<EntryPoint>]
 let main argv =

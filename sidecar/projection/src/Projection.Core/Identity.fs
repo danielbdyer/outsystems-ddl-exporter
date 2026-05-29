@@ -167,3 +167,15 @@ module SsKey =
         | V1Mapped _ -> []
         | DerivedFrom (parent, reason) ->
             derivationReasons parent @ [ reason ]
+
+    /// Canonical display projection for an `SsKey` — the flat string an
+    /// emitter writes when it needs to surface identity to the operator.
+    /// The root original is the leftmost segment; `[derived]` suffix
+    /// surfaces derivation provenance when present. Sibling accessor to
+    /// `rootOriginal` / `isDerived` (compose them here so consumers don't
+    /// re-derive the format). Three emitters (JSON, Distributions, SSDT-
+    /// adjacent) share this projection; the named accessor keeps them
+    /// from re-implementing it locally.
+    let display (key: SsKey) : string =
+        let root = rootOriginal key
+        if isDerived key then sprintf "%s [derived]" root else root

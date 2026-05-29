@@ -98,13 +98,7 @@ module ForeignKeyPass =
     /// preserves it). The shape mirrors `sortedAttributes` /
     /// `sortedIndexes`; only the inner field changes.
     let private sortedReferences (catalog: Catalog) : (Kind * Reference) list =
-        catalog.Modules
-        |> List.collect (fun m -> m.Kinds)
-        |> List.sortBy (fun k -> k.SsKey)
-        |> List.collect (fun k ->
-            k.References
-            |> List.sortBy (fun r -> r.SsKey)
-            |> List.map (fun r -> k, r))
+        Catalog.kindContexts (fun k -> k.References) (fun r -> r.SsKey) catalog
 
     /// H-024 — enrich `baseMetadata` with FK cardinality evidence when
     /// present. `ForeignKeyCardinality.ChildCountDistribution.Moments.Mean`

@@ -24,9 +24,9 @@ module JsonEmitter =
     // mechanical (A18).
     // -----------------------------------------------------------------------
 
-    let private renderSsKey (key: SsKey) : string =
-        let root = SsKey.rootOriginal key
-        if SsKey.isDerived key then sprintf "%s [derived]" root else root
+    // SsKey rendering moved to `Projection.Core.SsKey.display` (sibling
+    // to `rootOriginal` / `isDerived`); call sites reference the
+    // canonical projection directly.
 
     let private originString (o: Origin) : string =
         match o with
@@ -69,7 +69,7 @@ module JsonEmitter =
 
     let private writeAttribute (w: Utf8JsonWriter) (a: Attribute) : unit =
         w.WriteStartObject()
-        w.WriteString("ssKey",     renderSsKey a.SsKey)
+        w.WriteString("ssKey",     SsKey.display a.SsKey)
         w.WriteString("name",      Name.value a.Name)
         w.WriteString("type",      primitiveString a.Type)
         w.WriteString("column",    a.Column.ColumnName)
@@ -80,10 +80,10 @@ module JsonEmitter =
 
     let private writeReference (w: Utf8JsonWriter) (r: Reference) : unit =
         w.WriteStartObject()
-        w.WriteString("ssKey",           renderSsKey r.SsKey)
+        w.WriteString("ssKey",           SsKey.display r.SsKey)
         w.WriteString("name",            Name.value r.Name)
-        w.WriteString("sourceAttribute", renderSsKey r.SourceAttribute)
-        w.WriteString("targetKind",      renderSsKey r.TargetKind)
+        w.WriteString("sourceAttribute", SsKey.display r.SourceAttribute)
+        w.WriteString("targetKind",      SsKey.display r.TargetKind)
         w.WriteString("onDelete",        actionString r.OnDelete)
         w.WriteEndObject()
 
@@ -101,7 +101,7 @@ module JsonEmitter =
     let private writeKind (w: Utf8JsonWriter) (k: Kind) : unit =
         use _ = Bench.scope "emit.json.kind"
         w.WriteStartObject()
-        w.WriteString("ssKey",  renderSsKey k.SsKey)
+        w.WriteString("ssKey",  SsKey.display k.SsKey)
         w.WriteString("name",   Name.value k.Name)
         w.WriteString("origin", originString k.Origin)
         w.WritePropertyName("modality"); writeModality w k.Modality
@@ -119,7 +119,7 @@ module JsonEmitter =
     let private writeModule (w: Utf8JsonWriter) (m: Module) : unit =
         use _ = Bench.scope "emit.json.module"
         w.WriteStartObject()
-        w.WriteString("ssKey", renderSsKey m.SsKey)
+        w.WriteString("ssKey", SsKey.display m.SsKey)
         w.WriteString("name",  Name.value m.Name)
         w.WritePropertyName("kinds")
         w.WriteStartArray()
@@ -217,7 +217,7 @@ module JsonEmitter =
                 for m in catalog.Modules do
                     use _ = Bench.scope "emit.json.catalogModule"
                     writer.WriteStartObject()
-                    writer.WriteString("ssKey", renderSsKey m.SsKey)
+                    writer.WriteString("ssKey", SsKey.display m.SsKey)
                     writer.WriteString("name",  Name.value m.Name)
                     writer.WritePropertyName("kinds")
                     writer.WriteStartArray()
@@ -264,7 +264,7 @@ module JsonEmitter =
               TransformSite.dataIntent "kindJson"
                 "Project Kind → JsonNode via `writeKind` — ssKey / name / origin / modality / physical / attributes[] / references[] in fixed property order. Path flows through `kindJsonNode` (`Utf8JsonWriter` → `MemoryStream` → `byte[]` → `JsonNode.Parse(ReadOnlySpan<byte>)`) so the typed JsonNode is the canonical sibling-Π port value (pillar 1; chapter 3.7 slice ε)."
               TransformSite.dataIntent "attributeJson"
-                "Project Attribute → JsonNode via `writeAttribute` — ssKey / name / type / column / nullable / primaryKey / mandatory. Closed-DU `PrimitiveType` flattens to `primitiveString` (9 variants); ssKey flattens via `renderSsKey` (root + optional `[derived]` marker)."
+                "Project Attribute → JsonNode via `writeAttribute` — ssKey / name / type / column / nullable / primaryKey / mandatory. Closed-DU `PrimitiveType` flattens to `primitiveString` (9 variants); ssKey flattens via `SsKey.display` (root + optional `[derived]` marker)."
               TransformSite.dataIntent "referenceJson"
                 "Project Reference → JsonNode via `writeReference` — ssKey / name / sourceAttribute / targetKind / onDelete. Closed-DU `ReferenceAction` flattens to `actionString` (4 variants). `OnUpdate` + `IsConstraintTrusted` (slice 5.13.fk-features-emit IR lifts) carriage-deferred pending JSON consumer demand."
               TransformSite.dataIntent "modalityProjection"

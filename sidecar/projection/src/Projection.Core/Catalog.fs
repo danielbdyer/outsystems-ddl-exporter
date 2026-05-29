@@ -1184,34 +1184,29 @@ module Module =
         // in transformation passes — a module with zero kinds is
         // semantically meaningless at every consumer (emitter / pass /
         // diagnostic) but was silently constructible.
-        if List.isEmpty kinds then
-            Result.failureOf (
-                ValidationError.create
-                    "module.kinds.empty"
-                    (sprintf "Module %A must contain at least one Kind." ssKey))
-        else
-        let duplicates =
-            kinds
-            |> List.groupBy (fun k -> k.SsKey)
-            |> List.filter (fun (_, ks) -> List.length ks > 1)
-            |> List.map fst
-        if not (List.isEmpty duplicates) then
-            duplicates
-            |> List.map (fun k ->
-                ValidationError.create
-                    "module.kinds.duplicateKey"
-                    (sprintf
+        let errors =
+            Validation.nonEmpty
+                "module.kinds.empty"
+                (sprintf "Module %A must contain at least one Kind." ssKey)
+                kinds
+            @ Validation.duplicateKeyErrors
+                "module.kinds.duplicateKey"
+                (fun (dupKey: SsKey) ->
+                    sprintf
                         "Module %A has duplicate Kind SsKey %A; A11 (coproduct cell) requires disjoint kinds."
                         ssKey
-                        k))
-            |> Result.failure
-        else
+                        dupKey)
+                (fun (k: Kind) -> k.SsKey)
+                kinds
+        if List.isEmpty errors then
             Result.success
                 { SsKey              = ssKey
                   Name               = name
                   Kinds              = kinds
                   IsActive           = isActive
                   ExtendedProperties = extendedProperties }
+        else
+            Result.failure errors
 
 
 [<RequireQualifiedAccess>]
@@ -1239,6 +1234,28 @@ module Catalog =
     /// `kindOwnershipIndex` builds a `SsKey -> Module` map).
     let allModulesKinds (c: Catalog) : (Module * Kind) list =
         c.Modules |> List.collect (fun m -> m.Kinds |> List.map (fun k -> (m, k)))
+
+    /// The Cartesian product `(Kind × Context)` of the catalog's kinds
+    /// with each kind's `extract`-derived contexts (attributes /
+    /// references / indexes / any kind-owned typed list), ordered
+    /// deterministically by `(Kind.SsKey, sortKey context)` so T1
+    /// byte-determinism holds without per-call sorting at consumers.
+    /// The canonical iteration primitive for `Composition.fanOut`-style
+    /// pass drivers (four Tightening passes — Nullability / UniqueIndex
+    /// / ForeignKey / CategoricalUniqueness — share this exact shape;
+    /// the named primitive prevents per-pass open-coding).
+    let kindContexts
+        (extract: Kind -> 'ctx list)
+        (sortKey: 'ctx -> SsKey)
+        (c: Catalog)
+        : (Kind * 'ctx) list =
+        c.Modules
+        |> List.collect (fun m -> m.Kinds)
+        |> List.sortBy (fun k -> k.SsKey)
+        |> List.collect (fun k ->
+            extract k
+            |> List.sortBy sortKey
+            |> List.map (fun ctx -> k, ctx))
 
     /// Fold over every Kind in the catalog with access to the owning
     /// Module. Used to build SsKey-indexed maps and accumulate
