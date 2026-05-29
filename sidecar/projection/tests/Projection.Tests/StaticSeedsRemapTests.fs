@@ -5,12 +5,13 @@ open Projection.Core
 open Projection.Core.Passes
 open Projection.Targets.Data
 
-// Static-artifact consumer of the generic `SurrogateRemapContext`. The
-// full-export emission path can now re-point FK values in static rows
-// through an operator-supplied remap, with the same evidentiary shape
-// every other consumer reads (Transfer realization, future MERGE re-
-// pointing). Empty remap → no-op (skeleton-purity preserved). Rows
-// whose targeted FK has no matched assigned identity are dropped.
+// The static-artifact emit path realized through the converged data-load
+// algebra. `DataLoadPlan.build` applies the operator-supplied
+// `SurrogateRemapContext` at plan-construction (the one OperatorIntent
+// Insertion site for the entire family); `StaticSeedsEmitter.emitFromPlan`
+// consumes the post-substitution plan. Empty remap → identity over rows
+// (skeleton-purity); rows whose targeted FK has no matched assigned
+// identity are dropped at plan-build and surface in `plan.SkippedReferences`.
 
 let private mustOk r =
     match r with
@@ -104,69 +105,76 @@ let private userIdLiteralOf (row: Map<Name, SqlLiteral>) : string =
     |> Option.map SqlLiteral.toString
     |> Option.defaultValue "<missing>"
 
+let private rawRowsFor (orderRow: StaticRow) : Map<SsKey, StaticRow list> =
+    Map.ofList [ orderKey, [ orderRow ] ]
+
+let private planFor (catalog: Catalog) (rows: Map<SsKey, StaticRow list>) (remap: SurrogateRemapContext) : DataLoadPlan =
+    DataLoadPlan.build catalog (topoFor catalog) rows remap
+
 // -- the consumer's contract ---------------------------------------------
 
 [<Fact>]
-let ``emitWithTopoAndRemap re-points a targeted FK value in a static row`` () =
-    let catalog = mkCatalog [ userKind; mkOrderKind [ mkOrderRow "r1" "1" "280" ] ]
+let ``DataLoadPlan.build re-points a targeted FK value at the canonical OperatorIntent Insertion site`` () =
+    let catalog = mkCatalog [ userKind; mkOrderKind [] ]
     let remap =
         SurrogateRemapContext.empty
         |> SurrogateRemapContext.capture userKey (SourceKey.ofString "280") (AssignedKey.ofString "18")
         |> mustOk
-    let artifact =
-        StaticSeedsEmitter.emitWithTopoAndRemap (topoFor catalog) catalog Profile.empty remap
-        |> mustOkEmit
+    let plan = planFor catalog (rawRowsFor (mkOrderRow "r1" "1" "280")) remap
+    let artifact = StaticSeedsEmitter.emitFromPlan catalog Profile.empty plan |> mustOkEmit
     let values = orderScript artifact |> singleRowValuesOf
     Assert.Equal("18", userIdLiteralOf values)
 
 [<Fact>]
-let ``emitWithTopoAndRemap with the empty remap is the identity (skeleton-purity)`` () =
-    let catalog = mkCatalog [ userKind; mkOrderKind [ mkOrderRow "r1" "1" "280" ] ]
-    let artifact =
-        StaticSeedsEmitter.emitWithTopoAndRemap
-            (topoFor catalog) catalog Profile.empty SurrogateRemapContext.empty
-        |> mustOkEmit
+let ``DataLoadPlan.build with the empty remap is the identity over rows (skeleton-purity)`` () =
+    let catalog = mkCatalog [ userKind; mkOrderKind [] ]
+    let plan = planFor catalog (rawRowsFor (mkOrderRow "r1" "1" "280")) SurrogateRemapContext.empty
+    let artifact = StaticSeedsEmitter.emitFromPlan catalog Profile.empty plan |> mustOkEmit
     let values = orderScript artifact |> singleRowValuesOf
     Assert.Equal("280", userIdLiteralOf values)
 
 [<Fact>]
-let ``emitWithTopo (no remap) matches emitWithTopoAndRemap with the empty remap`` () =
-    let catalog = mkCatalog [ userKind; mkOrderKind [ mkOrderRow "r1" "1" "280" ] ]
-    let topo = topoFor catalog
-    let viaShim =
-        StaticSeedsEmitter.emitWithTopo topo catalog Profile.empty |> mustOkEmit
-    let viaExplicit =
-        StaticSeedsEmitter.emitWithTopoAndRemap topo catalog Profile.empty SurrogateRemapContext.empty
-        |> mustOkEmit
-    Assert.Equal((orderScript viaShim).Rendered, (orderScript viaExplicit).Rendered)
-
-[<Fact>]
-let ``emitWithTopoAndRemap drops a row whose targeted FK has no matched assigned identity`` () =
+let ``DataLoadPlan.build drops a row whose targeted FK has no matched assigned identity and surfaces it in SkippedReferences`` () =
     // Remap targets User but only carries 999 → 18; the row references 280 → no match → drop.
-    let catalog = mkCatalog [ userKind; mkOrderKind [ mkOrderRow "r1" "1" "280" ] ]
+    let catalog = mkCatalog [ userKind; mkOrderKind [] ]
     let remap =
         SurrogateRemapContext.empty
         |> SurrogateRemapContext.capture userKey (SourceKey.ofString "999") (AssignedKey.ofString "18")
         |> mustOk
-    let artifact =
-        StaticSeedsEmitter.emitWithTopoAndRemap (topoFor catalog) catalog Profile.empty remap
-        |> mustOkEmit
+    let plan = planFor catalog (rawRowsFor (mkOrderRow "r1" "1" "280")) remap
+    // The plan surfaces the dropped row at the build site.
+    Assert.Contains(
+        plan.SkippedReferences,
+        fun (owner, r: UnresolvedReference) ->
+            owner = orderKey
+            && r.Target = userKey
+            && r.UnresolvedSource = SourceKey.ofString "280")
+    // The realization just consumes the plan; no script for the dropped row.
+    let artifact = StaticSeedsEmitter.emitFromPlan catalog Profile.empty plan |> mustOkEmit
     let script = orderScript artifact
     Assert.Empty script.Phase1Merges
     Assert.Equal("", script.RenderedPhase1)
 
 [<Fact>]
-let ``emitWithTopoAndRemap leaves rows of non-targeted kinds untouched`` () =
-    // Remap targets User, but the row's FK target IS User and resolves — independently,
-    // a kind whose FKs don't target anything in the remap set must pass through unchanged.
-    // This test exercises the no-FK-target-overlap branch via a second-order kind.
-    let catalog = mkCatalog [ userKind; mkOrderKind [ mkOrderRow "r1" "1" "280" ] ]
+let ``DataLoadPlan.build leaves rows of non-targeted kinds untouched`` () =
+    // Remap targets an unrelated kind; the Order row's USER_ID column targets User,
+    // which is NOT in the remap → no substitution applied → value preserved.
+    let catalog = mkCatalog [ userKind; mkOrderKind [] ]
     let remap =
         SurrogateRemapContext.empty
         |> SurrogateRemapContext.capture (mkKey ["UnrelatedKind"]) (SourceKey.ofString "0") (AssignedKey.ofString "0")
         |> mustOk
-    let artifact =
-        StaticSeedsEmitter.emitWithTopoAndRemap (topoFor catalog) catalog Profile.empty remap
-        |> mustOkEmit
+    let plan = planFor catalog (rawRowsFor (mkOrderRow "r1" "1" "280")) remap
+    let artifact = StaticSeedsEmitter.emitFromPlan catalog Profile.empty plan |> mustOkEmit
+    let values = orderScript artifact |> singleRowValuesOf
+    Assert.Equal("280", userIdLiteralOf values)
+
+[<Fact>]
+let ``StaticSeedsEmitter.emit (legacy convenience) routes through DataLoadPlan.build with the empty remap`` () =
+    // Backward-compatible convenience: extracts rows from Kind.staticPopulations
+    // and builds the plan with empty remap. The Order kind's static populations
+    // hold the row carrying USER_ID=280; no substitution applied; value preserved.
+    let catalog = mkCatalog [ userKind; mkOrderKind [ mkOrderRow "r1" "1" "280" ] ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
     let values = orderScript artifact |> singleRowValuesOf
     Assert.Equal("280", userIdLiteralOf values)

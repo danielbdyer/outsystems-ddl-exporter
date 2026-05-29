@@ -130,23 +130,21 @@ module MigrationDependenciesEmitter =
         |> List.filter (fun a -> not a.IsPrimaryKey)
         |> List.map (fun a -> a.Column.ColumnName)
 
-    /// Cycle-membership-aware deferred-FK predicate. Per slice δ /
-    /// `StaticSeedsEmitter.deferredColumns`: in-cycle + nullable.
-    /// V1 reference: `IdentifyNullableFKColumns:184`.
-    let private deferredColumns
-        (cycleMembers: Set<SsKey>)
-        (k: Kind)
-        : Set<Name> =
-        TopologicalOrder.deferredFkColumns cycleMembers k
+    // Deferred-FK selection moved to `DataLoadPlan.build` — the plan's
+    // `Loads[i].DeferredFkColumns` carries the result. The historical
+    // private helper retired at the convergence.
 
     /// Project a `MigrationDependencyRow`'s raw `Map<Name, string>`
     /// into the typed `Map<Name, SqlLiteral>` shape
     /// `DataInsertRow.Values` expects (slice κ pillar 1 lift).
-    /// Mirror of `StaticSeedsEmitter.staticRowToTypedValues`.
-    let private migrationRowToTypedValues
+    /// Project a `StaticRow` (the plan's row carrier — `DataLoadPlan`
+    /// converged both the migration and static row shapes into one)
+    /// into typed `Map<Name, SqlLiteral>`. Mirror of
+    /// `StaticSeedsEmitter.staticRowToTypedValues`.
+    let private rowToTypedValues
         (typeLookup: Map<Name, PrimitiveType>)
         (attributes: Attribute list)
-        (row: MigrationDependencyRow)
+        (row: StaticRow)
         : Map<Name, SqlLiteral> =
         attributes
         |> List.map (fun a ->
@@ -269,119 +267,68 @@ module MigrationDependenciesEmitter =
     // silently drops the row).
     // -------------------------------------------------------------------
 
-    /// Set of (attribute-name) columns on `k` that resolve to User-
-    /// FK references — i.e., references with `IsUserFk = true`. Each
-    /// reference's `SourceAttribute` SsKey is resolved to its
-    /// `Attribute.Name` via `Kind.tryFindAttribute` (slice δ
-    /// improvement #5 cash-out; second consumer after slice δ's
-    /// deferredColumns). Empty set for kinds with no User-FKs.
-    let private userFkColumnNames (k: Kind) : Set<Name> =
-        k.References
-        |> List.choose (fun r ->
-            if r.IsUserFk then
-                Kind.tryFindAttribute r.SourceAttribute k
-                |> Option.map (fun a -> a.Name)
-            else None)
-        |> Set.ofList
+    /// Convert a `MigrationDependencyRow` to the `StaticRow` shape the
+    /// converged `DataLoadPlan` carries. Drops `KindKey` (already
+    /// indexed by the per-kind grouping) and preserves `Identifier` +
+    /// `Values` verbatim — both row shapes share the same raw-value
+    /// surface.
+    let private toStaticRow (row: MigrationDependencyRow) : StaticRow =
+        { Identifier = row.Identifier
+          Values     = row.Values }
 
-    /// Apply the User-FK remap to one migration row's raw values.
-    /// Returns `Some` row with target-side values substituted for
-    /// each User-FK column whose source value matched in
-    /// `UserRemapContext.Mapping`; returns `None` if any User-FK
-    /// column's source value is unmatched (V1 "diagnostic + skip"
-    /// parity). Non-integer User-FK values (NULL sentinel; raw
-    /// empty string per `RawValueCodec`) pass through unrewritten.
-    let private rewriteUserFkColumns
-        (userRemap: UserRemapContext)
-        (userFks: Set<Name>)
-        (row: MigrationDependencyRow)
-        : MigrationDependencyRow option =
-        if Set.isEmpty userFks then Some row
-        else
-            let folder
-                (acc: Map<Name, string> option)
-                (colName: Name)
-                : Map<Name, string> option =
-                match acc with
-                | None -> None
-                | Some values ->
-                    match Map.tryFind colName values with
-                    | None -> Some values  // column absent from row
-                    | Some raw ->
-                        // Empty raw = NULL sentinel (per
-                        // RawValueCodec); pass through.
-                        if System.String.IsNullOrWhiteSpace raw then
-                            Some values
-                        else
-                            match System.Int32.TryParse raw with
-                            | true, n ->
-                                let source = SourceUserId.ofInt n
-                                match UserRemapContext.tryFindTarget source userRemap with
-                                | Some target ->
-                                    let targetRaw = sprintf "%d" (TargetUserId.value target)  // LINT-ALLOW: terminal integer-to-raw projection at the row-Values boundary; `sprintf "%d"` formats the typed `TargetUserId` integer into the raw IR-string slot that `migrationRowToTypedValues` consumes downstream; same architectural shape as `Render.formatSqlLiteral`'s typed-value-to-raw projection
-                                    Some (Map.add colName targetRaw values)
-                                | None ->
-                                    // Source user unmatched →
-                                    // skip the entire row. The
-                                    // diagnostic was already
-                                    // emitted by UserFkReflowPass.
-                                    None
-                            | false, _ ->
-                                // Non-integer User-FK value
-                                // (unexpected but defensive).
-                                Some values
-            userFks
-            |> Set.fold folder (Some row.Values)
-            |> Option.map (fun vs -> { row with Values = vs })
+    /// Discover the user kind's `SsKey` from the catalog by scanning
+    /// for any reference with `IsUserFk = true`. Per the
+    /// `Reference.IsUserFk` docstring the flag is set iff `TargetKind`
+    /// resolves to the platform user kind, so the first hit's target
+    /// kind names the user kind. `None` when no such reference exists
+    /// (the dominant case in V2 today, since the OSSYS adapter's
+    /// IsUserFk-from-V1 detection is a chapter-4.2 deferral —
+    /// `CatalogReader.fs:1164`).
+    let private tryDiscoverUserKind (catalog: Catalog) : SsKey option =
+        Catalog.allKinds catalog
+        |> List.tryPick (fun k ->
+            k.References
+            |> List.tryPick (fun r ->
+                if r.IsUserFk then Some r.TargetKind else None))
 
-    /// Build one `DataInsertScript` for a kind's migration rows.
-    /// Empty per-kind context produces a no-op script (T11
-    /// preserved). Cycle-aware Phase-1/Phase-2 dispatch identical
-    /// to `StaticSeedsEmitter.kindToScript` (the slice δ shape).
-    /// Slice η: User-FK columns rewritten via `UserRemapContext`;
-    /// rows with unmatched source users are filtered out (V1
-    /// "diagnostic + skip" parity).
+    /// Render one plan load. The plan carries POST-substitution rows
+    /// (User-FK values rewritten at plan-build via the
+    /// `UserRemap.toSurrogate`→`DataLoadPlan.build` route) and the
+    /// deferred-FK set; this function just type-lifts and renders.
+    /// Mirrors `StaticSeedsEmitter.kindToScript` exactly — both
+    /// emitters realize the same algebra over the same plan shape.
     let private kindToScript
         (cdc: CdcAwareness)
-        (cycleMembers: Set<SsKey>)
-        (userRemap: UserRemapContext)
-        (rowsByKind: Map<SsKey, MigrationDependencyRow list>)
-        (k: Kind)
+        (kind: Kind)
+        (load: DataLoadKind)
         : DataInsertScript =
-        let rawRows = Map.tryFind k.SsKey rowsByKind |> Option.defaultValue []
-        let userFks = userFkColumnNames k
-        // Slice η: apply User-FK rewrite per row; rows with
-        // unmatched source users drop out.
-        let rows = rawRows |> List.choose (rewriteUserFkColumns userRemap userFks)
-        if List.isEmpty rows then
+        if List.isEmpty load.Rows then
             { Phase1Merges  = []
               Phase2Updates = []
               RenderedPhase1 = ""
               RenderedPhase2 = ""
               Rendered      = "" }
         else
-            let cdcAware = CdcAwareness.isEnabled k.SsKey cdc
-            let deferred = deferredColumns cycleMembers k
-            let typeLookup = columnTypeLookup k
-            // Slice κ pillar 1 lift: project raw rows into typed
-            // SqlLiteral form once at construction.
+            let cdcAware = CdcAwareness.isEnabled kind.SsKey cdc
+            let deferred = load.DeferredFkColumns
+            let typeLookup = columnTypeLookup kind
             let typedRows =
-                rows
+                load.Rows
                 |> List.map (fun row ->
                     row.Identifier,
-                    migrationRowToTypedValues typeLookup k.Attributes row)
+                    rowToTypedValues typeLookup kind.Attributes row)
             let renderedPhase1 =
-                renderMerge cdcAware deferred k (typedRows |> List.map snd)
+                renderMerge cdcAware deferred kind (typedRows |> List.map snd)
             let renderedPhase2 =
                 if Set.isEmpty deferred then ""
                 else
                     typedRows
-                    |> Bench.iterMap "emit.migrationDeps.phase2Row" (fun (_, vs) -> renderUpdate cdcAware k deferred vs)
+                    |> Bench.iterMap "emit.migrationDeps.phase2Row" (fun (_, vs) -> renderUpdate cdcAware kind deferred vs)
                     |> System.String.Concat  // LINT-ALLOW: terminal Phase-2 cross-row UPDATE concatenation (chapter 4.1.B slice ι; mirror of StaticSeedsEmitter); each segment is the ScriptDom-rendered + GO-batched UPDATE for one row; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary
             let rendered =
                 System.String.Concat(renderedPhase1, renderedPhase2)  // LINT-ALLOW: terminal per-kind concatenation of ScriptDom-rendered Phase-1 + Phase-2 strings (chapter 4.1.B slice κ; mirror of StaticSeedsEmitter); both segments are typed-AST outputs already terminated by `;\nGO\n`
             let mkRow (identifier: SsKey) (values: Map<Name, SqlLiteral>) : DataInsertRow =
-                { KindKey       = k.SsKey
+                { KindKey       = kind.SsKey
                   Identifier    = identifier
                   Values        = values
                   DeferredFkSet = deferred }
@@ -395,9 +342,61 @@ module MigrationDependenciesEmitter =
               RenderedPhase2 = renderedPhase2
               Rendered       = rendered }
 
+    /// Π_MigrationDependencies emit (canonical; plan-consuming).
+    /// Realizes the supplied `DataLoadPlan` as per-kind MERGE/UPDATE
+    /// scripts; the plan carries post-substitution rows (the User-FK
+    /// remap was applied at `DataLoadPlan.build`). DataIntent
+    /// end-to-end — operator opinion landed once at plan-build.
+    let emitFromPlan
+        (catalog: Catalog)
+        (profile: Profile)
+        (plan: DataLoadPlan)
+        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
+        use _ = Bench.scope "emit.migrationDeps.emitFromPlan"
+        let cdc = profile.CdcAwareness
+        let loadByKind = plan.Loads |> List.map (fun l -> l.Kind, l) |> Map.ofList
+        let emptyScript : DataInsertScript =
+            { Phase1Merges = []; Phase2Updates = []; RenderedPhase1 = ""; RenderedPhase2 = ""; Rendered = "" }
+        let slices =
+            Catalog.allKinds catalog
+            |> Bench.iterMap "emit.migrationDeps.kind" (fun k ->
+                let script =
+                    match Map.tryFind k.SsKey loadByKind with
+                    | Some load -> kindToScript cdc k load
+                    | None      -> emptyScript
+                k.SsKey, script)
+            |> Map.ofList
+        ArtifactByKind.create catalog slices
+
+    /// Build the `DataLoadPlan` from the supplied `MigrationDependency
+    /// Context` (operator-supplied rows) and `UserRemapContext`
+    /// (acquired evidence). Converts the per-kind rows to `StaticRow`
+    /// and the `UserRemapContext` to a `SurrogateRemapContext` keyed
+    /// under the discovered user kind; then routes through the
+    /// single `DataLoadPlan.build` site (the one `OperatorIntent
+    /// Insertion` altitude in the data-load family).
+    let private buildPlan
+        (catalog: Catalog)
+        (topo: TopologicalOrder)
+        (context: MigrationDependencyContext)
+        (userRemap: UserRemapContext)
+        : DataLoadPlan =
+        let rawRows =
+            MigrationDependencyContext.rowsByKind context
+            |> Map.map (fun _ rows -> rows |> List.map toStaticRow)
+        let remap =
+            match tryDiscoverUserKind catalog with
+            | Some userKindKey ->
+                match UserRemapContext.toSurrogate userKindKey userRemap with
+                | Ok r    -> r
+                | Error _ -> SurrogateRemapContext.empty
+            | None -> SurrogateRemapContext.empty
+        DataLoadPlan.build catalog topo rawRows remap
+
     /// Π_MigrationDependencies emit (composer-facing; hoisted topo).
-    /// Per A18 amended (`Catalog × Profile` × sibling-evidence input,
-    /// never `Policy`) and T11 (every kind in the keyset).
+    /// Builds the plan from the migration row source + the
+    /// `UserRemapContext`-derived `SurrogateRemapContext`, then
+    /// delegates to `emitFromPlan`.
     let emitWithTopo
         (topo: TopologicalOrder)
         (catalog: Catalog)
@@ -406,23 +405,13 @@ module MigrationDependenciesEmitter =
         (userRemap: UserRemapContext)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         use _ = Bench.scope "emit.migrationDeps.emitWithTopo"
-        let cdc = profile.CdcAwareness
-        let cycleMembers = TopologicalOrder.cycleMembers topo
-        let rowsByKind = MigrationDependencyContext.rowsByKind context
-        let allKinds = Catalog.allKinds catalog
-        let slices =
-            allKinds
-            |> Bench.iterMap "emit.migrationDeps.kind" (fun k -> k.SsKey, kindToScript cdc cycleMembers userRemap rowsByKind k)
-            |> Map.ofList
-        ArtifactByKind.create catalog slices
+        let plan = buildPlan catalog topo context userRemap
+        emitFromPlan catalog profile plan
 
     /// Π_MigrationDependencies emit (standalone). Convenience for
     /// callers that don't go through the `DataEmissionComposer`.
     /// Computes the topological order internally and delegates to
-    /// `emitWithTopo` — same algebra, one extra `TopologicalOrderPass`
-    /// invocation per call. `userRemap` defaults to empty (slice η:
-    /// emitter integration is structurally complete but most callers
-    /// don't yet supply a populated remap context).
+    /// `emitWithTopo` with `UserRemapContext.empty`.
     let emit
         (catalog: Catalog)
         (profile: Profile)
@@ -431,13 +420,6 @@ module MigrationDependenciesEmitter =
         use _ = Bench.scope "emit.migrationDeps.emit"
         let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
         emitWithTopo topo catalog profile context UserRemapContext.empty
-
-    // Chapter 4.7 cleanup: `emitWithUserRemap` retired as
-    // overdifferentiated middle-tier. Callers run
-    // `TopologicalOrderPass.runWith TreatAsCycle` explicitly and use
-    // `emitWithTopo` directly (which takes the precomputed topo +
-    // both contexts). The composer (`DataEmissionComposer.composeFull`)
-    // is the canonical pipeline entry point; hoists the topo once.
 
     /// Harvest-discipline classification per pillar 9 (chapter 5.13
     /// slice data-emission-registry). Three sites — the structural
@@ -452,8 +434,6 @@ module MigrationDependenciesEmitter =
     let registeredMetadata : RegisteredTransformMetadata =
         RegisteredTransformMetadata.emitter "migrationDependenciesEmitter" Data
             [ TransformSite.operatorIntent "migrationRowEmission" Insertion
-                "`MigrationDependencyContext.Rows` is operator-published legacy-domain row inventory (pre-scope §2.2: 'environment-specific evidence the migration team supplies'). Each row's `(KindKey, Identifier, Values)` is operator-supplied content that wouldn't be reachable from `Project(catalog, Policy.empty, profile)` — it lands via the operator-supplied context. OverlayAxis = Insertion (what content the catalog gains beyond source evidence)."
-              TransformSite.operatorIntent "userRemapRewrite" Insertion
-                "`UserRemapContext.Mapping` rewrites User-FK column values on migration rows from source-environment IDs to target-environment IDs (chapter 4.2 slice γ refinement). The remap mapping is operator-supplied evidence (pre-scope IDENTITY axis); applying it to migration rows is an operator-intent transformation. OverlayAxis = Insertion (the remap inserts the target-side ID where the source-side ID was)."
+                "`MigrationDependencyContext.Rows` is operator-published legacy-domain row inventory (pre-scope §2.2: 'environment-specific evidence the migration team supplies'). Each row's `(KindKey, Identifier, Values)` is operator-supplied content that wouldn't be reachable from `Project(catalog, Policy.empty, profile)` — it lands via the operator-supplied context. OverlayAxis = Insertion (what content the catalog gains beyond source evidence). Note: identity-substitution within those rows landed at `DataLoadPlan.identitySubstitution` (the canonical site); this site classifies the *inclusion of the rows themselves*, not their value-rewriting."
               TransformSite.dataIntent "deferredFkPhase2"
-                "Two-phase cycle-breaking parallel to `StaticSeedsEmitter` — Phase-1 emits MERGEs with deferred FK columns NULLed; Phase-2 UPDATEs populate them. Cycle membership is structural (topology-derived); the deferral is the same algebra as the static-rows emitter. DataIntent because the cycle-resolution is structural, not operator-supplied." ]
+                "Two-phase cycle-breaking parallel to `StaticSeedsEmitter` — Phase-1 emits MERGEs with deferred FK columns NULLed; Phase-2 UPDATEs populate them. Cycle membership is structural (topology-derived from `DataLoadPlan.Loads[i].DeferredFkColumns`); the deferral is the same algebra as the static-rows emitter. DataIntent because the cycle-resolution is structural, not operator-supplied." ]

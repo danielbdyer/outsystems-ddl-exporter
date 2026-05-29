@@ -95,7 +95,7 @@
     <Compile Include="UserPopulationTests.fs" />
     <Compile Include="UserRemapContextTests.fs" />
     <Compile Include="SurrogateRemapContextTests.fs" />
-    <Compile Include="TransferPlanTests.fs" />
+    <Compile Include="DataLoadPlanTests.fs" />
     <Compile Include="TransferRegistrationsTests.fs" />
     <Compile Include="ReconciliationTests.fs" />
     <Compile Include="ConnectionResolverTests.fs" />

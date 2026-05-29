@@ -64,28 +64,47 @@ module BootstrapEmitter =
           RenderedPhase2 = ""
           Rendered       = "" }
 
-    /// Π_Bootstrap emit (composer-facing; hoisted-topo + UserRemap
-    /// context). Slice ζ MVP returns the empty no-op artifact for
-    /// every kind. Future chapters fill in:
-    ///   - Chapter 4.2 (UserFkReflowPass): populate
-    ///     `UserRemapContext` so Bootstrap can rewrite User FKs in
-    ///     the rows it emits.
-    ///   - Chapter 4.3 (Diagnostics emitters): if Bootstrap gains
-    ///     a per-kind row source from Profile evidence, surface it
-    ///     here.
-    let emitWithTopo
-        (_topo: TopologicalOrder)
+    /// Π_Bootstrap emit (canonical; plan-consuming). Realizes the
+    /// supplied `DataLoadPlan`. Slice ζ MVP scope: Bootstrap has no
+    /// row source today (the plan's `Loads[i].Rows` are empty for
+    /// every kind in the current call paths), so emission is
+    /// uniformly the empty no-op script per T11 keyset coverage.
+    /// Chapter 4.2 slice η lands the per-kind row source (system
+    /// users + default policies) routed through `DataLoadPlan.build`
+    /// — at which point this same `emitFromPlan` body materializes
+    /// real content without signature churn.
+    let emitFromPlan
         (catalog: Catalog)
         (_profile: Profile)
-        (_userRemap: UserRemapContext)
+        (_plan: DataLoadPlan)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        use _ = Bench.scope "emit.bootstrap.emitWithTopo"
-        let allKinds = Catalog.allKinds catalog
+        use _ = Bench.scope "emit.bootstrap.emitFromPlan"
         let slices =
-            allKinds
+            Catalog.allKinds catalog
             |> List.map (fun k -> k.SsKey, emptyScript)
             |> Map.ofList
         ArtifactByKind.create catalog slices
+
+    /// Π_Bootstrap emit (composer-facing; hoisted-topo + UserRemap
+    /// context). Builds the (currently empty) plan and delegates to
+    /// `emitFromPlan`; `UserRemapContext` flows in by signature but
+    /// substitution lands at `DataLoadPlan.build` (the canonical
+    /// site). The composer's external interface preserves the
+    /// existing arity for zero-churn through this slice.
+    let emitWithTopo
+        (topo: TopologicalOrder)
+        (catalog: Catalog)
+        (profile: Profile)
+        (userRemap: UserRemapContext)
+        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
+        use _ = Bench.scope "emit.bootstrap.emitWithTopo"
+        // Slice ζ MVP: no row source yet (Map.empty). When chapter
+        // 4.2 slice η lands the per-kind row source, discover the
+        // user kind here and convert UserRemap → SurrogateRemap so
+        // the plan-build applies the substitution.
+        let _ = userRemap
+        let plan = DataLoadPlan.build catalog topo Map.empty SurrogateRemapContext.empty
+        emitFromPlan catalog profile plan
 
     /// Π_Bootstrap emit (standalone). Convenience for callers that
     /// don't go through the `DataEmissionComposer`. Slice ζ MVP

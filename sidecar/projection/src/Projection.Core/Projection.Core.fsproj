@@ -40,8 +40,8 @@
     <Compile Include="UserIdentity.fs" />
     <Compile Include="Profile.fs" />
     <Compile Include="Policy.fs" />
-    <Compile Include="UserRemap.fs" />
     <Compile Include="SurrogateRemap.fs" />
+    <Compile Include="UserRemap.fs" />
     <Compile Include="Transfer.fs" />
     <Compile Include="TopologicalOrder.fs" />
     <Compile Include="Strategies/CycleResolution.fs" />
@@ -70,7 +70,7 @@
          Pure over LineageEvent + DiagnosticEntry + OverlayAxis. -->
     <Compile Include="ConflictDetector.fs" />
     <Compile Include="TransformRegistry.fs" />
-    <Compile Include="TransferPlan.fs" />
+    <Compile Include="DataLoadPlan.fs" />
     <Compile Include="Reconciliation.fs" />
     <Compile Include="StrategyRegistrations.fs" />
     <Compile Include="PassChainAdapter.fs" />

@@ -165,3 +165,36 @@ module UserRemapContext =
             |> Set.toList
             |> List.map (fun s -> overlap (SourceUserId.value s))
             |> Result.failure
+
+    /// Project the typed `SourceUserId → TargetUserId` mapping into
+    /// the generic `SurrogateRemapContext` shape, keyed under the
+    /// supplied user kind's `SsKey`. Both sides format via the
+    /// `RawValueCodec` integer-to-raw convention (`sprintf "%d"`),
+    /// mirroring `MigrationDependenciesEmitter`'s historical inline
+    /// projection. Preserves the "skip unmatched" semantic: source
+    /// users in `Unmatched` are *absent* from the returned context,
+    /// so downstream `SurrogateRemap.remapRowFks` drops their
+    /// referencing rows the same way the old `rewriteUserFkColumns`
+    /// returned `None` — bit-exact parity. Returns `Error` only if
+    /// `SurrogateRemapContext.capture` ever fires its double-bind
+    /// invariant (which can't here, since `Mapping`'s F# `Map` is
+    /// key-unique by construction; the `Result` is mechanical
+    /// faithfulness to `capture`'s signature).
+    let toSurrogate
+        (userKindKey: SsKey)
+        (ctx: UserRemapContext)
+        : Result<SurrogateRemapContext> =
+        ctx.Mapping
+        |> Map.fold
+            (fun acc source target ->
+                match acc with
+                | Error _ -> acc
+                | Ok remap ->
+                    let sourceRaw = sprintf "%d" (SourceUserId.value source)
+                    let targetRaw = sprintf "%d" (TargetUserId.value target)
+                    SurrogateRemapContext.capture
+                        userKindKey
+                        (SourceKey.ofString sourceRaw)
+                        (AssignedKey.ofString targetRaw)
+                        remap)
+            (Result.success SurrogateRemapContext.empty)

@@ -2,7 +2,7 @@ namespace Projection.Tests
 
 // Docker-gated integration test for the Slice-B `Ingestion` adapter: lift
 // a Source substrate's rows back into `StaticRow`s per kind in
-// topological order, then compose with the pure `TransferPlan.build`.
+// topological order, then compose with the pure `DataLoadPlan.build`.
 // Serial via the Docker-SqlServer collection. Per the test-runner
 // discipline, the blocking wait is routed through `TaskSync.run`.
 
@@ -70,7 +70,7 @@ type IngestionIntegrationTests(fixture: EphemeralContainerFixture) =
     interface IClassFixture<EphemeralContainerFixture>
 
     [<Fact>]
-    member _.``Ingestion.collectInOrder lifts Source rows per kind; composes with TransferPlan`` () =
+    member _.``Ingestion.collectInOrder lifts Source rows per kind; composes with DataLoadPlan`` () =
         if not (IngestionFixtures.skipIfNoDocker "ingestion-collect-in-order") then () else
         TaskSync.run (fun () ->
             fixture.WithEphemeralDatabase "Ingest" (fun cnn _ ->
@@ -99,9 +99,9 @@ type IngestionIntegrationTests(fixture: EphemeralContainerFixture) =
 
                     // Seam 1 + 2 compose: the ingested rows flow into the plan,
                     // which classifies the (non-identity) PK as PreservedFromSource.
-                    let plan = TransferPlan.build IngestionFixtures.catalog topo rowsByKind
+                    let plan = DataLoadPlan.build IngestionFixtures.catalog topo rowsByKind SurrogateRemapContext.empty
                     let load = plan.Loads |> List.find (fun l -> l.Kind = IngestionFixtures.itemsKey)
                     Assert.Equal(3, load.Rows.Length)
                     Assert.Equal(IdentityDisposition.PreservedFromSource, load.Disposition)
-                    Assert.True(TransferPlan.isSatisfiable plan)
+                    Assert.True(DataLoadPlan.isSatisfiable plan)
                 }))
