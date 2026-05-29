@@ -5,6 +5,7 @@ open System.Diagnostics
 open System.IO
 open Argu
 open Projection.Core
+open Projection.Adapters.Sql
 open Projection.Pipeline
 open Projection.Targets.SSDT
 open Projection.Cli.FullExportArgs
@@ -27,6 +28,8 @@ let private usageLines : string list =
         "    projection deploy <input-osm-model.json>"
         "    projection canary <source-ddl-file>"
         "    projection approve <policy-version> --approver <name> [--rationale <text>]"
+        "    projection transfer --source-conn <env|file:ref> --sink-conn <env|file:ref>"
+        "                        [--reconcile <table>:<match-column>]... [--execute]"
         ""
         "SUBCOMMANDS:"
         "    full-export   Phase B structural-exit subcommand (chapter B.4 slice 7)."
@@ -69,6 +72,18 @@ let private usageLines : string list =
         "            axis. Per DECISIONS 2026-05-23, this is V2's primary"
         "            wide integration surface."
         ""
+        "    transfer  Bidirectional data-load — ingest rows from a Source"
+        "              substrate and project them onto a Sink over one shared"
+        "              schema (the Source's reconstructed catalog). Default"
+        "              is a safe DryRun preview reporting the plan + the"
+        "              skip-and-diagnose; `--execute` writes to the Sink and"
+        "              is gated behind PROJECTION_ALLOW_EXECUTE=1 (R6 — V2"
+        "              owns no production write path until the gate is lowered)."
+        "              Per `--reconcile` entry: the named kind's rows are NOT"
+        "              re-inserted (already in the Sink) and FKs targeting it"
+        "              are re-pointed via the matched Sink surrogate; rows that"
+        "              reference an unmatched identity are dropped + reported."
+        ""
         "All commands print a Bench table at exit and persist a JSON"
         "snapshot to bench/<command>/<utc-iso>.json under the current"
         "working directory. Per session-29 framing, this puts the perf"
@@ -78,11 +93,12 @@ let private usageLines : string list =
         "Exit codes:"
         "    0  command succeeded"
         "    1  argv error (wrong arg count, missing input)"
-        "    2  parse error (V1 JSON did not satisfy V2's adapter contract)"
-        "    3  deploy error (SQL Server rejected the SSDT)"
+        "    2  parse error (V1 JSON did not satisfy V2's adapter contract; transfer spec error)"
+        "    3  deploy / transfer-execution error (SQL Server rejected the SSDT; unbreakable cycle)"
         "    4  Docker unavailable (deploy/canary requires a running daemon)"
         "    5  canary divergence (PhysicalSchema diff non-empty)"
-        "    6  config error (config file missing / unparseable / D9 violation)"
+        "    6  config error (config file missing / unparseable / D9 violation; transfer connection ref)"
+        "    7  R6 gate refusal (transfer --execute without PROJECTION_ALLOW_EXECUTE=1)"
     ]
 
 /// Print each usage line directly to the writer via the BCL
@@ -449,6 +465,180 @@ let private dispatchFullExport (argv: string[]) : int =
         Console.Error.WriteLine ex.Message
         1
 
+// ----------------------------------------------------------------------
+// `transfer` (Phase 11 Slice D) — bidirectional data-load CLI verb.
+// Default DryRun (no Sink writes); `--execute` is gated behind
+// PROJECTION_ALLOW_EXECUTE=1 (R6). Reconciliation per `--reconcile
+// <table>:<match-column>` (MatchByColumn) — rows whose FK targets an
+// unmatched identity are skip-and-diagnosed (the C′.2a default; the
+// operator's headline Dev→UAT User re-key shape).
+// ----------------------------------------------------------------------
+
+let private dispositionName (d: IdentityDisposition) : string =
+    match d with
+    | IdentityDisposition.ReconciledByRule    -> "ReconciledByRule"
+    | IdentityDisposition.AssignedBySink      -> "AssignedBySink"
+    | IdentityDisposition.PreservedFromSource -> "PreservedFromSource"
+
+let private narrateTransferReport (report: Transfer.TransferReport) : unit =
+    let modeName =
+        match report.Mode with
+        | Transfer.DryRun  -> "DryRun (preview only — no Sink writes)"
+        | Transfer.Execute -> "Execute (Sink wrote)"
+    printfn "projection transfer: mode = %s" modeName
+    printfn ""
+    printfn "Plan (%d kind(s)):" report.Kinds.Length
+    for k in report.Kinds do
+        printfn "  %-40s %-22s ingested=%d written=%d deferredFkCols=%d"
+            (SsKey.rootOriginal k.Kind)
+            (dispositionName k.Disposition)
+            k.RowsIngested
+            k.RowsWritten
+            (Set.count k.DeferredFkColumns)
+    if not (List.isEmpty report.UnbreakableCycleFks) then
+        printfn ""
+        printfn
+            "Unbreakable cycle FKs (%d) — plan is unsatisfiable for Execute:"
+            report.UnbreakableCycleFks.Length
+        for u in report.UnbreakableCycleFks do
+            printfn
+                "  %s.%s -> %s"
+                (SsKey.rootOriginal u.Kind)
+                (Name.value u.Column)
+                (SsKey.rootOriginal u.Target)
+    if not (List.isEmpty report.UnmatchedIdentities) then
+        printfn ""
+        printfn
+            "Unmatched identities (%d) — reconciled-kind sources with no Sink match:"
+            report.UnmatchedIdentities.Length
+        for (k, s) in report.UnmatchedIdentities do
+            printfn "  %s source '%s'" (SsKey.rootOriginal k) (SourceKey.value s)
+    if not (List.isEmpty report.SkippedReferences) then
+        printfn ""
+        printfn
+            "Skipped references (%d) — rows dropped (FK targets an unmatched identity):"
+            report.SkippedReferences.Length
+        for (owner, r) in report.SkippedReferences do
+            printfn
+                "  %s.%s -> %s (unresolved source '%s')"
+                (SsKey.rootOriginal owner)
+                (Name.value r.Column)
+                (SsKey.rootOriginal r.Target)
+                (SourceKey.value r.UnresolvedSource)
+
+let private runTransfer
+    (sourceSpec: string)
+    (sinkSpec: string)
+    (reconcileSpecs: string list)
+    (executeRequested: bool)
+    : int =
+    let collect = function Ok _ -> [] | Error es -> es
+    let parsedSource    = TransferSpec.parseConnectionSpec sourceSpec
+    let parsedSink      = TransferSpec.parseConnectionSpec sinkSpec
+    let parsedReconciles = reconcileSpecs |> List.map TransferSpec.parseReconcileSpec
+    let specErrors =
+        collect parsedSource
+        @ collect parsedSink
+        @ (parsedReconciles |> List.collect collect)
+    if not (List.isEmpty specErrors) then
+        Console.Error.WriteLine "projection transfer: argument error:"
+        printErrors Console.Error specErrors
+        dumpBench "transfer"
+        2
+    else
+
+    let executeGated =
+        if executeRequested then
+            System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1"
+        else false
+    if executeRequested && not executeGated then
+        Console.Error.WriteLine
+            "projection transfer: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
+        dumpBench "transfer"
+        7
+    else
+
+    let sourceRef = Result.value parsedSource
+    let sinkRef   = Result.value parsedSink
+    let entries   = parsedReconciles |> List.map Result.value
+    let srcStrR   = ConnectionResolver.resolve "Source" sourceRef
+    let sinkStrR  = ConnectionResolver.resolve "Sink"   sinkRef
+    let connErrors = collect srcStrR @ collect sinkStrR
+    if not (List.isEmpty connErrors) then
+        Console.Error.WriteLine "projection transfer: connection error:"
+        printErrors Console.Error connErrors
+        dumpBench "transfer"
+        6
+    else
+
+    // Bind the apparatus for vocabulary + role validation (D9 + Substrate roles
+    // are operative even before live profiling lands).
+    let sourceSub : Substrate =
+        { Environment   = Projection.Core.Environment.Named "Source"
+          Role          = SubstrateRole.Source
+          ConnectionRef = sourceRef }
+    let sinkSub : Substrate =
+        { Environment   = Projection.Core.Environment.Named "Sink"
+          Role          = SubstrateRole.Sink
+          ConnectionRef = sinkRef }
+    match TransferConnections.create sourceSub sinkSub (not (List.isEmpty entries)) with
+    | Error es ->
+        Console.Error.WriteLine "projection transfer: apparatus invariant violation:"
+        printErrors Console.Error es
+        dumpBench "transfer"
+        3
+    | Ok _ ->
+
+    let mode = if executeGated then Transfer.Execute else Transfer.DryRun
+    let work =
+        task {
+            use source = new Microsoft.Data.SqlClient.SqlConnection(Result.value srcStrR)
+            use sink   = new Microsoft.Data.SqlClient.SqlConnection(Result.value sinkStrR)
+            do! source.OpenAsync()
+            do! sink.OpenAsync()
+            let! contractR = ReadSide.read source
+            match contractR with
+            | Error es -> return Result.failure es
+            | Ok contract ->
+                match TransferSpec.resolveReconciliation contract entries with
+                | Error es -> return Result.failure es
+                | Ok reconciliation ->
+                    return! Transfer.runReconciling mode source sink contract reconciliation
+        }
+    let result = work.GetAwaiter().GetResult()
+    let exitCode =
+        match result with
+        | Ok report ->
+            narrateTransferReport report
+            0
+        | Error errors ->
+            Console.Error.WriteLine "projection transfer: failed:"
+            printErrors Console.Error errors
+            if errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith "transfer.reconcile.")
+            then 2
+            else 3
+    dumpBench "transfer"
+    exitCode
+
+let private dispatchTransfer (argv: string[]) : int =
+    let parser =
+        ArgumentParser.Create<TransferArgs.TransferArg>(
+            programName = "projection transfer",
+            errorHandler = ProcessExiter())
+    try
+        let parsed = parser.Parse(argv, raiseOnUsage = false)
+        if parsed.IsUsageRequested then 0
+        else
+            let sourceSpec    = parsed.GetResult TransferArgs.Source_Conn
+            let sinkSpec      = parsed.GetResult TransferArgs.Sink_Conn
+            let reconcileList = parsed.GetResults TransferArgs.Reconcile
+            let execute       = parsed.Contains TransferArgs.Execute
+            runTransfer sourceSpec sinkSpec reconcileList execute
+    with
+    | :? ArguParseException as ex ->
+        Console.Error.WriteLine ex.Message
+        1
+
 [<EntryPoint>]
 let main argv =
     match argv with
@@ -475,6 +665,13 @@ let main argv =
         runDeploy inputPath
     | [| "canary"; sourceDdlPath |] ->
         runCanary sourceDdlPath
+    | [| "transfer" |] ->
+        Console.Error.WriteLine "projection transfer: --source-conn and --sink-conn required"
+        Console.Error.WriteLine ""
+        Console.Error.WriteLine "Run `projection transfer --help` for usage."
+        1
+    | arr when arr.Length >= 1 && arr.[0] = "transfer" ->
+        dispatchTransfer (Array.skip 1 arr)
     | [||]
     | [| "--help" |]
     | [| "-h" |] ->
