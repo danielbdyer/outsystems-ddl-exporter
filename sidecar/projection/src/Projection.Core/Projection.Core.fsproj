@@ -41,6 +41,7 @@
     <Compile Include="Profile.fs" />
     <Compile Include="Policy.fs" />
     <Compile Include="UserRemap.fs" />
+    <Compile Include="SurrogateRemap.fs" />
     <Compile Include="Transfer.fs" />
     <Compile Include="TopologicalOrder.fs" />
     <Compile Include="Strategies/CycleResolution.fs" />

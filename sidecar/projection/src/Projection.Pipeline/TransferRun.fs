@@ -91,7 +91,7 @@ module Transfer =
                     (pkAttrs |> List.map clause |> String.concat " AND "))
 
     /// A non-reconciled kind's load with its FK values already re-pointed
-    /// through the reconciliation remap (`Reconciliation.remapRowFks`) and
+    /// through the reconciliation remap (`SurrogateRemap.remapRowFks`) and
     /// its unresolvable rows dropped. Reconciled kinds are excluded — their
     /// rows already exist in the Sink, so their phase-1 insert is skipped.
     type private PreparedLoad =
@@ -118,10 +118,10 @@ module Transfer =
             else
                 Catalog.tryFindKind load.Kind catalog
                 |> Option.map (fun kind ->
-                    let fkTargets = Reconciliation.reconciledFkColumns reconciledKinds kind
+                    let fkTargets = SurrogateRemap.fkColumnsTargeting reconciledKinds kind
                     { Load     = load
                       Kind     = kind
-                      Remapped = Reconciliation.remapRowFks fkTargets remap load.Rows }))
+                      Remapped = SurrogateRemap.remapRowFks fkTargets remap load.Rows }))
 
     /// Realize the prepared loads onto an open Sink connection. Phase 1:
     /// every prepared kind in topological order, bulk-insert with deferred

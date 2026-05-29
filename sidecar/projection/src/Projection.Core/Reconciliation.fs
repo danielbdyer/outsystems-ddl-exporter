@@ -1,10 +1,18 @@
 namespace Projection.Core
 
+/// Reconciliation is one *acquisition* of a `SurrogateRemapContext` —
+/// the sink-row-matching method specialized for Transfer flows where
+/// Source surrogates reconcile to pre-existing Sink identities. The
+/// produced remap is the same generic shape (`SurrogateRemap.fs`) every
+/// other consumer (static-artifact emit, future MERGE re-pointing, etc.)
+/// reads from; this file does NOT carry the consumption primitives —
+/// those live in `SurrogateRemap` so emitters are not coupled to the
+/// reconciliation semantics.
+
 /// One kind's reconciliation outcome: the matched Source→Sink surrogate
 /// remap, plus the Source surrogates the ruleset could not match to a
-/// pre-existing Sink identity (phase 2 skips-and-diagnoses these). The
-/// per-kind, any-kind generalization of `UserFkReflowPass.discover` /
-/// `UserRemapContext` — `SurrogateRemapContext` is the carrier (slice 1).
+/// pre-existing Sink identity (downstream re-point skips-and-diagnoses
+/// these). Generalizes `UserFkReflowPass.discover` to any kind.
 type ReconciledIdentity =
     {
         Remap     : SurrogateRemapContext
@@ -21,29 +29,6 @@ type ReconciledIdentity =
 type ReconciliationStrategy =
     | MatchByColumn of column: Name
     | ManualOverride of map: Map<SourceKey, AssignedKey>
-
-/// One Source row reference the reconciliation could not re-point: its FK
-/// `Column` targeted a reconciled kind, but the referenced Source surrogate
-/// (`UnresolvedSource`) had no matched Sink identity (unmatched at reconcile
-/// time, or absent from the reconciled set entirely). The owning row is
-/// dropped — skip-and-diagnose, the row analog of `reconcileKind`'s
-/// per-identity `Unmatched`.
-type UnresolvedReference =
-    {
-        Column           : Name
-        Target           : SsKey
-        UnresolvedSource : SourceKey
-    }
-
-/// The outcome of re-pointing one kind's FK values through a reconciliation
-/// remap: the rows kept (with reconciled-FK values re-pointed to the Sink
-/// surrogate) and the references dropped because the Sink had no matched
-/// identity.
-type RemappedRows =
-    {
-        Rows    : StaticRow list
-        Skipped : UnresolvedReference list
-    }
 
 [<RequireQualifiedAccess>]
 module Reconciliation =
@@ -98,67 +83,19 @@ module Reconciliation =
         { Remap     = remap
           Unmatched = unmatched |> List.sortBy (fun (_, SourceKey s) -> s) }
 
-    /// The FK columns on `kind` whose target is a reconciled kind, keyed by
-    /// the column `Name` (the key `StaticRow.Values` uses) → the reconciled
-    /// target's `SsKey` (the key the `SurrogateRemapContext` uses). The set
-    /// of columns whose value must be re-pointed from the Source surrogate
-    /// to the matched Sink surrogate. Pure over the kind's FK graph.
-    let reconciledFkColumns (reconciledKinds: Set<SsKey>) (kind: Kind) : Map<Name, SsKey> =
-        kind.References
-        |> List.choose (fun r ->
-            if Set.contains r.TargetKind reconciledKinds then
-                Kind.tryFindAttribute r.SourceAttribute kind
-                |> Option.map (fun a -> a.Name, r.TargetKind)
-            else None)
-        |> Map.ofList
-
-    /// Re-point a kind's FK values that target reconciled kinds through the
-    /// remap. For each row, every `fkTargets` column carrying a non-NULL
-    /// Source surrogate is resolved against the remap: a hit re-points the
-    /// value to the Sink-assigned surrogate; a miss drops the row
-    /// (skip-and-diagnose — the referenced identity has no Sink home). A
-    /// NULL / absent FK is left untouched (it references nothing). Pure and
-    /// order-preserving (T1 determinism).
-    let remapRowFks
-        (fkTargets: Map<Name, SsKey>)
-        (remap: SurrogateRemapContext)
-        (rows: StaticRow list)
-        : RemappedRows =
-        let mutable kept : StaticRow list = []
-        let mutable skipped : UnresolvedReference list = []
-        for row in rows do
-            let resolved =
-                fkTargets
-                |> Map.fold
-                    (fun acc col target ->
-                        match acc with
-                        | Error _ -> acc
-                        | Ok values ->
-                            match Map.tryFind col values with
-                            | None -> Ok values
-                            | Some v when v = "" -> Ok values
-                            | Some v ->
-                                match SurrogateRemapContext.tryFindAssigned target (SourceKey.ofString v) remap with
-                                | Some assigned -> Ok (Map.add col (AssignedKey.value assigned) values)
-                                | None ->
-                                    Error { Column = col; Target = target; UnresolvedSource = SourceKey.ofString v })
-                    (Ok row.Values)
-            match resolved with
-            | Ok values  -> kept <- { row with Values = values } :: kept
-            | Error uref -> skipped <- uref :: skipped
-        { Rows    = List.rev kept
-          Skipped = List.rev skipped }
-
     /// Registry metadata (pillar 9). The reconciliation ruleset is operator
     /// intent — which Source identities reconcile to which pre-existing Sink
     /// identities. Classified `OperatorIntent Selection`, mirroring the
     /// forward `UserFkReflowPass` ("re-direction reads as Selection"); the
-    /// Transfer epic's first `OperatorIntent` site.
+    /// Transfer epic's first `OperatorIntent` site. The downstream
+    /// consumption (re-pointing FK values via `SurrogateRemap.remapRowFks`)
+    /// registers separately on each consuming emitter, so this entry covers
+    /// only the acquisition.
     let registeredMetadata : RegisteredTransformMetadata =
         { Name         = "transferReconciliation"
           Domain       = Identity
           StageBinding = Pipeline
           Sites =
             [ TransformSite.operatorIntent "matchByRule" Selection
-                "Match each Source surrogate to a pre-existing Sink surrogate by the operator-supplied ruleset (match column or manual override), producing the per-kind SurrogateRemapContext that phase 2 re-points reconciled FKs through. Operator intent — which identities reconcile; generalizes UserFkReflowPass.discover from the User kind. Unmatched Source surrogates skip-and-diagnose." ]
+                "Match each Source surrogate to a pre-existing Sink surrogate by the operator-supplied ruleset (match column or manual override), producing the per-kind SurrogateRemapContext that downstream consumers (Transfer realization, static-artifact emit) re-point FKs through. Operator intent — which identities reconcile; generalizes UserFkReflowPass.discover from the User kind. Unmatched Source surrogates skip-and-diagnose." ]
           Status = Active }

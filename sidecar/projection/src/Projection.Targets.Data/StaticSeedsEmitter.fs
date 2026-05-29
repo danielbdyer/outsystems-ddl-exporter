@@ -12,8 +12,11 @@ open Projection.Targets.SSDT  // LINT-ALLOW: cross-target dependency for ScriptD
 /// two-phase insertion / cycle-breaking pattern lands at slice δ per
 /// V1's `PhasedDynamicEntityInsertGenerator.cs:88-148`).
 ///
-/// **A18 amended.** The signature carries `Catalog × Profile`; Profile
-/// is reserved for the slice-β `CdcAwareness` field consumption. No
+/// **A18 amended.** The signature carries `Catalog × Profile × sibling-
+/// evidence input` (the sibling evidence is a `SurrogateRemapContext` —
+/// operator-supplied identity remap, acquired by a Pass and consumed
+/// here for FK re-pointing; same evidentiary shape as
+/// `MigrationDependenciesEmitter`'s `UserRemapContext` parameter). No
 /// `Policy` parameter — DataComposition dispatch happens in the
 /// composer (slice η), not here.
 ///
@@ -269,6 +272,8 @@ module StaticSeedsEmitter =
     let private kindToScript
         (cdc: CdcAwareness)
         (cycleMembers: Set<SsKey>)
+        (remapTargets: Set<SsKey>)
+        (remap: SurrogateRemapContext)
         (k: Kind)
         : DataInsertScript =
         let populations = Kind.staticPopulations k
@@ -282,12 +287,33 @@ module StaticSeedsEmitter =
             let cdcAware = CdcAwareness.isEnabled k.SsKey cdc
             let deferred = deferredColumns cycleMembers k
             let typeLookup = columnTypeLookup k
+            // Apply the operator-supplied SurrogateRemapContext to FK
+            // values targeting kinds in the remap set (OperatorIntent
+            // Insertion — the remap inserts the assigned-side identity
+            // where the source-side identity was). Empty remap → no-op
+            // (no targets → empty fkTargets → identity over rows; the
+            // skeleton path is preserved). Rows whose targeted FK has
+            // no matched assigned surrogate are dropped — skip-and-
+            // diagnose per the operator's supply discipline.
+            let remappedPopulations =
+                if Set.isEmpty remapTargets then populations
+                else
+                    let fkTargets = SurrogateRemap.fkColumnsTargeting remapTargets k
+                    if Map.isEmpty fkTargets then populations
+                    else (SurrogateRemap.remapRowFks fkTargets remap populations).Rows
+            if List.isEmpty remappedPopulations then
+                { Phase1Merges  = []
+                  Phase2Updates = []
+                  RenderedPhase1 = ""
+                  RenderedPhase2 = ""
+                  Rendered      = "" }
+            else
             // Slice κ pillar 1 lift: project raw `Map<Name, string>`
             // populations into typed `Map<Name, SqlLiteral>` once at
             // construction time. Both Phase-1 MERGE rendering and
             // Phase-2 UPDATE rendering consume the typed shape.
             let typedRows =
-                populations
+                remappedPopulations
                 |> List.map (fun row ->
                     row.Identifier,
                     staticRowToTypedValues typeLookup k.Attributes row)
@@ -335,20 +361,39 @@ module StaticSeedsEmitter =
     /// MERGE variant. Slice δ (cycle-breaking): kinds in
     /// `topo.Cycles` defer their nullable same-SCC FK columns across
     /// the two-phase MERGE/UPDATE pattern.
+    /// Π_StaticSeeds emit (composer-facing; full-explicit). Threads an
+    /// operator-supplied `SurrogateRemapContext` through MERGE
+    /// construction — every FK column whose target is a remap key is
+    /// re-pointed from the Source surrogate to the assigned target
+    /// surrogate. Empty remap → no-op (skeleton-purity preserved). Per
+    /// the sibling-wrapper discipline, this is the full-explicit
+    /// surface; `emitWithTopo` (no-remap default) and `emit` (no-topo +
+    /// no-remap default) delegate here with `SurrogateRemapContext.empty`.
+    let emitWithTopoAndRemap
+        (topo: TopologicalOrder)
+        (catalog: Catalog)
+        (profile: Profile)
+        (surrogateRemap: SurrogateRemapContext)
+        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
+        use _ = Bench.scope "emit.staticSeeds.emitWithTopoAndRemap"
+        let cdc = profile.CdcAwareness
+        let cycleMembers = cycleMembersOf topo
+        let remapTargets =
+            surrogateRemap.Assignments |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+        let allKinds = Catalog.allKinds catalog
+        let slices =
+            allKinds
+            |> Bench.iterMap "emit.staticSeeds.kind" (fun k ->
+                k.SsKey, kindToScript cdc cycleMembers remapTargets surrogateRemap k)
+            |> Map.ofList
+        ArtifactByKind.create catalog slices
+
     let emitWithTopo
         (topo: TopologicalOrder)
         (catalog: Catalog)
         (profile: Profile)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        use _ = Bench.scope "emit.staticSeeds.emitWithTopo"
-        let cdc = profile.CdcAwareness
-        let cycleMembers = cycleMembersOf topo
-        let allKinds = Catalog.allKinds catalog
-        let slices =
-            allKinds
-            |> Bench.iterMap "emit.staticSeeds.kind" (fun k -> k.SsKey, kindToScript cdc cycleMembers k)
-            |> Map.ofList
-        ArtifactByKind.create catalog slices
+        emitWithTopoAndRemap topo catalog profile SurrogateRemapContext.empty
 
     /// Π_StaticSeeds emit (standalone). Convenience for callers that
     /// don't go through the `DataEmissionComposer` (canary tests,
@@ -389,4 +434,6 @@ module StaticSeedsEmitter =
               TransformSite.dataIntent "cdcAwareChangeDetection"
                 "Per-kind MERGE WHEN MATCHED predicate gates UPDATE on actual column-level differences when `Profile.CdcAwareness.CdcEnabled` carries the kind. Profile is *evidence* (A18 amended; pillar 9 — Profile-driven observations are DataIntent); the CDC predicate IS the data-intent shape, not an operator override. Slice β (chapter 4.1.B) cash-out."
               TransformSite.dataIntent "deferredFkPhase2"
-                "Two-phase cycle-breaking — Phase-1 emits MERGEs with deferred FK columns NULLed; Phase-2 UPDATEs populate them once all Phase-1 inserts complete. Cycle membership is structural (from `TopologicalOrder.Cycles`); the deferral is topology-derived, not operator-supplied. Slice δ (chapter 4.1.B) cash-out." ]
+                "Two-phase cycle-breaking — Phase-1 emits MERGEs with deferred FK columns NULLed; Phase-2 UPDATEs populate them once all Phase-1 inserts complete. Cycle membership is structural (from `TopologicalOrder.Cycles`); the deferral is topology-derived, not operator-supplied. Slice δ (chapter 4.1.B) cash-out."
+              TransformSite.operatorIntent "staticRowSurrogateRemap" Insertion
+                "Apply an operator-supplied `SurrogateRemapContext` (acquired by `Reconciliation` / `UserFkReflowPass` / any future acquisition method) to FK column values in static rows before MERGE rendering. Every FK column whose target is in the remap is re-pointed from the Source surrogate to the assigned-side surrogate; rows whose targeted FK has no matched assigned counterpart are dropped (skip-and-diagnose at the operator's supply discipline). Operator intent — which Source identities reconcile to which target identities; OverlayAxis = Insertion (the remap inserts the assigned-side identity where the source-side identity was, mirroring the MigrationDependenciesEmitter precedent). Empty remap → no-op (skeleton-purity preserved)." ]

@@ -71,6 +71,7 @@
     <Compile Include="TypesTests.fs" />
     <Compile Include="ToleranceTests.fs" />
     <Compile Include="StaticSeedsEmitterTests.fs" />
+    <Compile Include="StaticSeedsRemapTests.fs" />
     <Compile Include="MigrationDependenciesEmitterTests.fs" />
     <Compile Include="BootstrapEmitterTests.fs" />
     <Compile Include="DataEmissionComposerTests.fs" />

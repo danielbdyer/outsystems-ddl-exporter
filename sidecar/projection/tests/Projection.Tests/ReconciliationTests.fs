@@ -65,24 +65,24 @@ let private orderKind : Kind =
       with References = [ orderUserRef ]; Indexes = []; ColumnChecks = [] }
 
 [<Fact>]
-let ``reconciledFkColumns selects only FK columns whose target is reconciled`` () =
+let ``fkColumnsTargeting selects only FK columns whose target is in the remap set`` () =
     Assert.Equal<Map<Name, SsKey>>(
         Map.ofList [ mkName "USER_ID", userKey ],
-        Reconciliation.reconciledFkColumns (Set.singleton userKey) orderKind)
-    Assert.True(Map.isEmpty (Reconciliation.reconciledFkColumns Set.empty orderKind))
+        SurrogateRemap.fkColumnsTargeting (Set.singleton userKey) orderKind)
+    Assert.True(Map.isEmpty (SurrogateRemap.fkColumnsTargeting Set.empty orderKind))
 
 [<Fact>]
-let ``remapRowFks re-points a reconciled FK value to the matched Sink surrogate`` () =
+let ``remapRowFks re-points a targeted FK value through the matched assigned surrogate`` () =
     let fkTargets = Map.ofList [ mkName "USER_ID", userKey ]
     let remap = SurrogateRemapContext.capture userKey (SourceKey.ofString "280") (AssignedKey.ofString "18") SurrogateRemapContext.empty |> mustOk
-    let result = Reconciliation.remapRowFks fkTargets remap [ row "10" [ "USER_ID", "280" ] ]
+    let result = SurrogateRemap.remapRowFks fkTargets remap [ row "10" [ "USER_ID", "280" ] ]
     Assert.Empty result.Skipped
     Assert.Equal(Some "18", Map.tryFind (mkName "USER_ID") result.Rows.Head.Values)
 
 [<Fact>]
-let ``remapRowFks drops a row whose reconciled FK has no Sink match (skip-and-diagnose)`` () =
+let ``remapRowFks drops a row whose targeted FK has no assigned counterpart (skip-and-diagnose)`` () =
     let fkTargets = Map.ofList [ mkName "USER_ID", userKey ]
-    let result = Reconciliation.remapRowFks fkTargets SurrogateRemapContext.empty [ row "10" [ "USER_ID", "999" ] ]
+    let result = SurrogateRemap.remapRowFks fkTargets SurrogateRemapContext.empty [ row "10" [ "USER_ID", "999" ] ]
     Assert.Empty result.Rows
     let s = List.exactlyOne result.Skipped
     Assert.Equal(mkName "USER_ID", s.Column)
@@ -92,7 +92,7 @@ let ``remapRowFks drops a row whose reconciled FK has no Sink match (skip-and-di
 [<Fact>]
 let ``remapRowFks leaves a NULL FK untouched and keeps the row`` () =
     let fkTargets = Map.ofList [ mkName "USER_ID", userKey ]
-    let result = Reconciliation.remapRowFks fkTargets SurrogateRemapContext.empty [ row "10" [ "USER_ID", "" ] ]
+    let result = SurrogateRemap.remapRowFks fkTargets SurrogateRemapContext.empty [ row "10" [ "USER_ID", "" ] ]
     Assert.Empty result.Skipped
     Assert.Equal(1, result.Rows.Length)
 

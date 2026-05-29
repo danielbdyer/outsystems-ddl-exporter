@@ -103,16 +103,20 @@ let ``5.13.data-emission-registry: composer's partitionAssertion site classifies
     Assert.Equal<Classification>(DataIntent, partition.Classification)
 
 [<Fact>]
-let ``5.13.data-emission-registry: StaticSeedsEmitter sites all classify DataIntent`` () =
-    // The static-seeds emitter consumes Catalog × Profile only (per
-    // A18 amended); Profile.CdcAwareness is evidence-shaped (not
-    // operator-supplied policy). Every site is DataIntent — the
-    // skeleton-purity property at `composeRendered Policy.empty
-    // catalog Profile.empty` includes this emitter without leaking
-    // operator intent.
+let ``5.13.data-emission-registry: StaticSeedsEmitter splits DataIntent emission from OperatorIntent remap input`` () =
+    // The static-seeds emitter consumes `Catalog × Profile × sibling-
+    // evidence input` per A18 amended — the sibling evidence is the
+    // generic `SurrogateRemapContext`. The base sites (rows projection,
+    // CDC predicate, deferred FK phase 2) are DataIntent; the remap-
+    // consumer site is OperatorIntent Insertion (matching the
+    // MigrationDependenciesEmitter precedent). Empty-remap call paths
+    // preserve skeleton purity at the value level (no event fires).
     let emitter = StaticSeedsEmitter.registeredMetadata
-    for site in emitter.Sites do
-        Assert.Equal<Classification>(DataIntent, site.Classification)
+    let bySite = emitter.Sites |> List.map (fun s -> s.SiteName, s.Classification) |> Map.ofList
+    Assert.Equal<Classification>(DataIntent, bySite.["staticRowsProjection"])
+    Assert.Equal<Classification>(DataIntent, bySite.["cdcAwareChangeDetection"])
+    Assert.Equal<Classification>(DataIntent, bySite.["deferredFkPhase2"])
+    Assert.Equal<Classification>(OperatorIntent Insertion, bySite.["staticRowSurrogateRemap"])
 
 [<Fact>]
 let ``5.13.data-emission-registry: MigrationDependenciesEmitter splits DataIntent emission from OperatorIntent inputs`` () =
@@ -140,29 +144,36 @@ let ``5.13.data-emission-registry: BootstrapEmitter is NotImplementedInV2 at sli
         Assert.Fail("BootstrapEmitter expected to be NotImplementedInV2 at slice ζ MVP")
 
 [<Fact>]
-let ``5.13.data-emission-registry: skeletonView excludes operator-intent entries (composer + Migration); preserves DataIntent baseline`` () =
+let ``5.13.data-emission-registry: skeletonView excludes every entry carrying an OperatorIntent site`` () =
     // The pillar 9 bidirectional property: an entry whose Sites
     // contain ANY OperatorIntent classification excludes from the
     // skeleton view. The composer (compositionDispatch is
-    // OperatorIntent Emission) + MigrationDependenciesEmitter
-    // (migrationRowEmission is OperatorIntent Insertion) drop out;
-    // StaticSeedsEmitter (all DataIntent) stays.
+    // OperatorIntent Emission), MigrationDependenciesEmitter
+    // (migrationRowEmission + userRemapRewrite are OperatorIntent
+    // Insertion), and (after the SurrogateRemap full-export consumer
+    // landed) StaticSeedsEmitter (staticRowSurrogateRemap is
+    // OperatorIntent Insertion) all drop out. Skeleton purity is
+    // preserved at the value level — empty-remap call paths fire no
+    // event — but the registry-classification view filters at the
+    // site granularity.
     let skeleton = TransformRegistry.skeletonView RegisteredDataTransforms.all
     let skeletonNames = skeleton |> List.map (fun rt -> rt.Name)
     Assert.DoesNotContain("dataEmissionComposer", skeletonNames)
     Assert.DoesNotContain("migrationDependenciesEmitter", skeletonNames)
     Assert.DoesNotContain("bootstrapEmitter", skeletonNames)
-    Assert.Contains("staticSeedsEmitter", skeletonNames)
+    Assert.DoesNotContain("staticSeedsEmitter", skeletonNames)
 
 [<Fact>]
-let ``5.13.data-emission-registry: overlayView includes operator-intent entries`` () =
+let ``5.13.data-emission-registry: overlayView includes every entry carrying an OperatorIntent site`` () =
     let overlay = TransformRegistry.overlayView RegisteredDataTransforms.all
     let overlayNames = overlay |> List.map (fun rt -> rt.Name)
     Assert.Contains("dataEmissionComposer", overlayNames)
     Assert.Contains("migrationDependenciesEmitter", overlayNames)
     Assert.Contains("bootstrapEmitter", overlayNames)
-    // StaticSeedsEmitter has zero OperatorIntent sites → not in overlay.
-    Assert.DoesNotContain("staticSeedsEmitter", overlayNames)
+    // StaticSeedsEmitter now carries `staticRowSurrogateRemap`
+    // (OperatorIntent Insertion) — the full-export consumer of the
+    // generic `SurrogateRemapContext`.
+    Assert.Contains("staticSeedsEmitter", overlayNames)
 
 [<Fact>]
 let ``5.13.data-emission-registry: overlayAxes returns Emission + Insertion`` () =
