@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <Compile Include="Result.fs" />
+    <Compile Include="Message.fs" />
     <Compile Include="Bench.fs" />
     <Compile Include="PinnedWriting.fs" />
     <Compile Include="Identity.fs" />
@@ -40,6 +41,7 @@
     <Compile Include="UserIdentity.fs" />
     <Compile Include="Profile.fs" />
     <Compile Include="Policy.fs" />
+    <Compile Include="SurrogateRemap.fs" />
     <Compile Include="UserRemap.fs" />
     <Compile Include="Transfer.fs" />
     <Compile Include="TopologicalOrder.fs" />
@@ -69,7 +71,7 @@
          Pure over LineageEvent + DiagnosticEntry + OverlayAxis. -->
     <Compile Include="ConflictDetector.fs" />
     <Compile Include="TransformRegistry.fs" />
-    <Compile Include="TransferPlan.fs" />
+    <Compile Include="DataLoadPlan.fs" />
     <Compile Include="Reconciliation.fs" />
     <Compile Include="StrategyRegistrations.fs" />
     <Compile Include="PassChainAdapter.fs" />

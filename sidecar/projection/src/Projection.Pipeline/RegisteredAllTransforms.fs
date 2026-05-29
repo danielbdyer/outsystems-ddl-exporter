@@ -82,7 +82,7 @@ module RegisteredAllTransforms =
         // operator `--disposition` / `ReconciledByRule` overlays (Slices
         // C′/D) will add OperatorIntent sites in place.
         @ [ Ingestion.registeredMetadata
-            TransferPlan.registeredMetadata
+            DataLoadPlan.registeredMetadata
             Transfer.registeredMetadata
             // Slice C′ — the ReconciledByRule matching ruleset is the
             // Transfer epic's first OperatorIntent site (Selection axis,

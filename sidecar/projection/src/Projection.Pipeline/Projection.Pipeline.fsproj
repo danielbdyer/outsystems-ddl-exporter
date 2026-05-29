@@ -29,6 +29,7 @@
     <Compile Include="LogSink.fs" />
     <Compile Include="FullExportRun.fs" />
     <Compile Include="TransferRun.fs" />
+    <Compile Include="TransferSpec.fs" />
     <Compile Include="RegisteredAllTransforms.fs" />
   </ItemGroup>
 

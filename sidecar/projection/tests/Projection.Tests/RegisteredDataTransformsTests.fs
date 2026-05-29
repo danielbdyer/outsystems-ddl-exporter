@@ -103,24 +103,32 @@ let ``5.13.data-emission-registry: composer's partitionAssertion site classifies
     Assert.Equal<Classification>(DataIntent, partition.Classification)
 
 [<Fact>]
-let ``5.13.data-emission-registry: StaticSeedsEmitter sites all classify DataIntent`` () =
-    // The static-seeds emitter consumes Catalog × Profile only (per
-    // A18 amended); Profile.CdcAwareness is evidence-shaped (not
-    // operator-supplied policy). Every site is DataIntent — the
-    // skeleton-purity property at `composeRendered Policy.empty
-    // catalog Profile.empty` includes this emitter without leaking
-    // operator intent.
+let ``5.13.data-emission-registry: StaticSeedsEmitter is pure DataIntent (substitution moved to DataLoadPlan)`` () =
+    // Post-convergence: the operator-supplied SurrogateRemapContext is
+    // applied at `DataLoadPlan.build` (the canonical OperatorIntent
+    // Insertion altitude); the static-seeds emitter consumes the plan's
+    // post-substitution rows and classifies entirely DataIntent.
     let emitter = StaticSeedsEmitter.registeredMetadata
-    for site in emitter.Sites do
-        Assert.Equal<Classification>(DataIntent, site.Classification)
+    let bySite = emitter.Sites |> List.map (fun s -> s.SiteName, s.Classification) |> Map.ofList
+    Assert.Equal<Classification>(DataIntent, bySite.["staticRowsProjection"])
+    Assert.Equal<Classification>(DataIntent, bySite.["cdcAwareChangeDetection"])
+    Assert.Equal<Classification>(DataIntent, bySite.["deferredFkPhase2"])
+    Assert.False(Map.containsKey "staticRowSurrogateRemap" bySite,
+                 "staticRowSurrogateRemap retired at the data-load convergence; substitution lives at DataLoadPlan.identitySubstitution")
 
 [<Fact>]
-let ``5.13.data-emission-registry: MigrationDependenciesEmitter splits DataIntent emission from OperatorIntent inputs`` () =
+let ``5.13.data-emission-registry: MigrationDependenciesEmitter keeps row-emission OperatorIntent but retires the remap site`` () =
+    // Post-convergence: the `userRemapRewrite` site retires (substitution
+    // landed at `DataLoadPlan.identitySubstitution`). `migrationRowEmission`
+    // stays OperatorIntent Insertion because it classifies the *inclusion
+    // of operator-supplied rows*, not their value-rewriting — distinct
+    // operator-intent surfaces, distinct sites.
     let emitter = MigrationDependenciesEmitter.registeredMetadata
     let bySite = emitter.Sites |> List.map (fun s -> s.SiteName, s.Classification) |> Map.ofList
     Assert.Equal<Classification>(OperatorIntent Insertion, bySite.["migrationRowEmission"])
-    Assert.Equal<Classification>(OperatorIntent Insertion, bySite.["userRemapRewrite"])
     Assert.Equal<Classification>(DataIntent, bySite.["deferredFkPhase2"])
+    Assert.False(Map.containsKey "userRemapRewrite" bySite,
+                 "userRemapRewrite retired at the data-load convergence; substitution lives at DataLoadPlan.identitySubstitution")
 
 [<Fact>]
 let ``5.13.data-emission-registry: BootstrapEmitter is NotImplementedInV2 at slice ζ MVP`` () =
@@ -140,13 +148,17 @@ let ``5.13.data-emission-registry: BootstrapEmitter is NotImplementedInV2 at sli
         Assert.Fail("BootstrapEmitter expected to be NotImplementedInV2 at slice ζ MVP")
 
 [<Fact>]
-let ``5.13.data-emission-registry: skeletonView excludes operator-intent entries (composer + Migration); preserves DataIntent baseline`` () =
+let ``5.13.data-emission-registry: skeletonView excludes every entry carrying an OperatorIntent site`` () =
     // The pillar 9 bidirectional property: an entry whose Sites
     // contain ANY OperatorIntent classification excludes from the
-    // skeleton view. The composer (compositionDispatch is
-    // OperatorIntent Emission) + MigrationDependenciesEmitter
-    // (migrationRowEmission is OperatorIntent Insertion) drop out;
-    // StaticSeedsEmitter (all DataIntent) stays.
+    // skeleton view. Post-convergence: the composer
+    // (compositionDispatch is OperatorIntent Emission),
+    // MigrationDependenciesEmitter (migrationRowEmission stays
+    // OperatorIntent Insertion), and Bootstrap (userRemapBootstrap
+    // OperatorIntent Insertion deferred) drop out.
+    // StaticSeedsEmitter is BACK in skeleton — the
+    // `staticRowSurrogateRemap` site retired at the data-load
+    // convergence, so all its sites are DataIntent.
     let skeleton = TransformRegistry.skeletonView RegisteredDataTransforms.all
     let skeletonNames = skeleton |> List.map (fun rt -> rt.Name)
     Assert.DoesNotContain("dataEmissionComposer", skeletonNames)
@@ -155,13 +167,15 @@ let ``5.13.data-emission-registry: skeletonView excludes operator-intent entries
     Assert.Contains("staticSeedsEmitter", skeletonNames)
 
 [<Fact>]
-let ``5.13.data-emission-registry: overlayView includes operator-intent entries`` () =
+let ``5.13.data-emission-registry: overlayView includes every entry carrying an OperatorIntent site`` () =
     let overlay = TransformRegistry.overlayView RegisteredDataTransforms.all
     let overlayNames = overlay |> List.map (fun rt -> rt.Name)
     Assert.Contains("dataEmissionComposer", overlayNames)
     Assert.Contains("migrationDependenciesEmitter", overlayNames)
     Assert.Contains("bootstrapEmitter", overlayNames)
-    // StaticSeedsEmitter has zero OperatorIntent sites → not in overlay.
+    // StaticSeedsEmitter retired its `staticRowSurrogateRemap` site at
+    // the data-load convergence (substitution now at
+    // `DataLoadPlan.identitySubstitution`) — drops out of overlay.
     Assert.DoesNotContain("staticSeedsEmitter", overlayNames)
 
 [<Fact>]

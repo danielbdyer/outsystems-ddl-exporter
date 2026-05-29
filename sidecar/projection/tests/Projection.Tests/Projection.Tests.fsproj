@@ -71,6 +71,7 @@
     <Compile Include="TypesTests.fs" />
     <Compile Include="ToleranceTests.fs" />
     <Compile Include="StaticSeedsEmitterTests.fs" />
+    <Compile Include="StaticSeedsRemapTests.fs" />
     <Compile Include="MigrationDependenciesEmitterTests.fs" />
     <Compile Include="BootstrapEmitterTests.fs" />
     <Compile Include="DataEmissionComposerTests.fs" />
@@ -94,9 +95,11 @@
     <Compile Include="UserPopulationTests.fs" />
     <Compile Include="UserRemapContextTests.fs" />
     <Compile Include="SurrogateRemapContextTests.fs" />
-    <Compile Include="TransferPlanTests.fs" />
+    <Compile Include="DataLoadPlanTests.fs" />
     <Compile Include="TransferRegistrationsTests.fs" />
     <Compile Include="ReconciliationTests.fs" />
+    <Compile Include="ConnectionResolverTests.fs" />
+    <Compile Include="TransferSpecTests.fs" />
     <Compile Include="UserFkReflowPassTests.fs" />
     <Compile Include="UserFkReflowPropertyTests.fs" />
     <Compile Include="UserFkReflowIntegrationTests.fs" />

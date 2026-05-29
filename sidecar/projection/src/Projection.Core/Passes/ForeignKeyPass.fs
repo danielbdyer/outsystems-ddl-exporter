@@ -98,13 +98,7 @@ module ForeignKeyPass =
     /// preserves it). The shape mirrors `sortedAttributes` /
     /// `sortedIndexes`; only the inner field changes.
     let private sortedReferences (catalog: Catalog) : (Kind * Reference) list =
-        catalog.Modules
-        |> List.collect (fun m -> m.Kinds)
-        |> List.sortBy (fun k -> k.SsKey)
-        |> List.collect (fun k ->
-            k.References
-            |> List.sortBy (fun r -> r.SsKey)
-            |> List.map (fun r -> k, r))
+        Catalog.kindContexts (fun k -> k.References) (fun r -> r.SsKey) catalog
 
     /// H-024 — enrich `baseMetadata` with FK cardinality evidence when
     /// present. `ForeignKeyCardinality.ChildCountDistribution.Moments.Mean`
@@ -209,21 +203,24 @@ module ForeignKeyPass =
             Some (mkEntry
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.policyDisabled"
-                    "Foreign-key constraint was not created. Enable policy support before enforcement can proceed."
+                    (Message.foreignKeyNotCreated
+                        "Enable policy support before enforcement can proceed.")
                     (cardinalitySuggestedConfig decision.InterventionId decision.ReferenceKey profile))
         | ForeignKeyOutcome.DoNotEnforce (DataHasOrphans orphanCount) ->
             Some (mkEntry
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.dataHasOrphans"
-                    (sprintf
-                        "Foreign-key constraint was not created. Profile observed %d orphan row(s); remediate the data or enable AllowNoCheckCreation before enforcement can proceed."
-                        orphanCount)
+                    (Message.foreignKeyNotCreated
+                        (sprintf
+                            "Profile observed %d orphan row(s); remediate the data or enable AllowNoCheckCreation before enforcement can proceed."
+                            orphanCount))
                     None)
         | ForeignKeyOutcome.DoNotEnforce CrossSchemaBlocked ->
             Some (mkEntry
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.crossSchemaBlocked"
-                    "Foreign-key constraint was not created. The reference crosses schema boundaries and AllowCrossSchema is disabled."
+                    (Message.foreignKeyNotCreated
+                        "The reference crosses schema boundaries and AllowCrossSchema is disabled.")
                     None)
         | ForeignKeyOutcome.DoNotEnforce CrossCatalogBlocked ->
             // Reserved DU variant; unreachable from V2 fixtures
@@ -231,7 +228,8 @@ module ForeignKeyPass =
             Some (mkEntry
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.crossCatalogBlocked"
-                    "Foreign-key constraint was not created. The reference crosses catalog boundaries and AllowCrossCatalog is disabled."
+                    (Message.foreignKeyNotCreated
+                        "The reference crosses catalog boundaries and AllowCrossCatalog is disabled.")
                     None)
         | ForeignKeyOutcome.DoNotEnforce DeleteRuleIgnored ->
             // Currently unreachable from V2 fixtures (see V1↔V2 mapping
@@ -239,13 +237,15 @@ module ForeignKeyPass =
             Some (mkEntry
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.deleteRuleIgnored"
-                    "Foreign-key constraint was not created. The reference's delete rule resolved to Ignore."
+                    (Message.foreignKeyNotCreated
+                        "The reference's delete rule resolved to Ignore.")
                     None)
         | ForeignKeyOutcome.DoNotEnforce EvidenceMissing ->
             Some (mkEntry
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.evidenceMissing"
-                    "Foreign-key constraint was not created. Profile probe did not succeed reliably; collect evidence before enforcement can proceed."
+                    (Message.foreignKeyNotCreated
+                        "Profile probe did not succeed reliably; collect evidence before enforcement can proceed.")
                     None)
         | ForeignKeyOutcome.DoNotEnforce MissingTarget ->
             // V2's audit dividend (session-8 refinement 3): V1
@@ -254,7 +254,8 @@ module ForeignKeyPass =
             Some (mkEntry
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.missingTarget"
-                    "Foreign-key constraint was not created. The reference's target kind is absent from the catalog."
+                    (Message.foreignKeyNotCreated
+                        "The reference's target kind is absent from the catalog.")
                     None)
 
     /// Run the ForeignKeyPass.

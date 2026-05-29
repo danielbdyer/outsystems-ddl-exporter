@@ -12,15 +12,19 @@
 
   <ItemGroup>
     <Compile Include="FullExportArgs.fs" />
+    <Compile Include="TransferArgs.fs" />
+    <Compile Include="VerbArgs.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Argu" Version="6.2.5" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Projection.Core\Projection.Core.fsproj" />
+    <ProjectReference Include="..\Projection.Adapters.Sql\Projection.Adapters.Sql.fsproj" />
     <ProjectReference Include="..\Projection.Pipeline\Projection.Pipeline.fsproj" />
     <ProjectReference Include="..\Projection.Targets.SSDT\Projection.Targets.SSDT.fsproj" />
   </ItemGroup>

@@ -575,11 +575,6 @@ module UniqueIndexTighteningConfig =
 [<RequireQualifiedAccess>]
 module CategoricalUniquenessConfig =
 
-    let private negativeFloor =
-        ValidationError.create
-            "categoricalUniquenessConfig.minDistinctCountForUniqueness.negative"
-            "MinDistinctCountForUniqueness must be non-negative."
-
     /// Construct a `CategoricalUniquenessConfig`. Validates
     /// `MinDistinctCountForUniqueness >= 0`. Caller chooses the
     /// floor explicitly per V2's strict-default discipline
@@ -587,11 +582,16 @@ module CategoricalUniquenessConfig =
     /// interventions).
     let create (minDistinctCountForUniqueness: int64) : Result<CategoricalUniquenessConfig> =
         use _ = Bench.scope "ir.policy.categoricalUniqueness.create"
-        if minDistinctCountForUniqueness < 0L then
-            Result.failureOf negativeFloor
-        else
+        let errors =
+            Validation.nonNegative
+                "categoricalUniquenessConfig.minDistinctCountForUniqueness.negative"
+                "MinDistinctCountForUniqueness must be non-negative."
+                minDistinctCountForUniqueness
+        if List.isEmpty errors then
             Result.success
                 { MinDistinctCountForUniqueness = minDistinctCountForUniqueness }
+        else
+            Result.failure errors
 
 
 [<RequireQualifiedAccess>]

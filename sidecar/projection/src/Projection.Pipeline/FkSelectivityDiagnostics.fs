@@ -31,7 +31,7 @@ open Projection.Core
 module FkSelectivityDiagnostics =
 
     [<Literal>]
-    let private source = "indexAdvisor"
+    let private source = "emitter:indexAdvisor"
 
     [<Literal>]
     let private code = "profiling.fkSelectivity.highSelectivityCandidate"

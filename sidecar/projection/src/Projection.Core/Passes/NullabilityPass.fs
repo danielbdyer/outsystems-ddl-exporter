@@ -83,13 +83,7 @@ module NullabilityPass =
     /// in registration order (the caller chose the order; the pass
     /// preserves it).
     let private sortedAttributes (catalog: Catalog) : (Kind * Attribute) list =
-        catalog.Modules
-        |> List.collect (fun m -> m.Kinds)
-        |> List.sortBy (fun k -> k.SsKey)
-        |> List.collect (fun k ->
-            k.Attributes
-            |> List.sortBy (fun a -> a.SsKey)
-            |> List.map (fun a -> k, a))
+        Catalog.kindContexts (fun k -> k.Attributes) (fun a -> a.SsKey) catalog
 
     /// V1's `NullabilityEvaluator.Analyze` produces an opportunity
     /// record for every column whose decision needs operator

@@ -83,17 +83,11 @@ module CategoricalUniquenessPass =
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// attributes by `SsKey` within each kind. Interventions are taken
     /// in registration order. The shape mirrors `sortedAttributes`
-    /// from `NullabilityPass` exactly — per-attribute granularity,
-    /// per-attribute granularity sort. (Acknowledged duplication;
-    /// session 11 commit 4 evaluates whether it earns extraction.)
+    /// from `NullabilityPass`; both delegate to `Catalog.kindContexts`
+    /// (the named primitive that absorbed the four-pass duplication at
+    /// the convergence).
     let private sortedAttributes (catalog: Catalog) : (Kind * Attribute) list =
-        catalog.Modules
-        |> List.collect (fun m -> m.Kinds)
-        |> List.sortBy (fun k -> k.SsKey)
-        |> List.collect (fun k ->
-            k.Attributes
-            |> List.sortBy (fun a -> a.SsKey)
-            |> List.map (fun a -> k, a))
+        Catalog.kindContexts (fun k -> k.Attributes) (fun a -> a.SsKey) catalog
 
     /// Run the CategoricalUniquenessPass.
     ///

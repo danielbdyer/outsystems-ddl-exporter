@@ -1,11 +1,11 @@
-module Projection.Tests.TransferPlanTests
+module Projection.Tests.DataLoadPlanTests
 
 open Xunit
 open Projection.Core
 
 // Pure (DB-free) tests for the Slice-B Transfer plan: identity-aware,
 // topologically ordered, deferred-FK-selecting, with non-deferrable cycle
-// FKs surfaced as diagnostics. `TransferPlan.build` takes a precomputed
+// FKs surfaced as diagnostics. `DataLoadPlan.build` takes a precomputed
 // `TopologicalOrder`, so these fixtures construct one directly — no pass,
 // fully deterministic.
 
@@ -67,32 +67,33 @@ let private rowOf (ident: string) (values: (string * string) list) : StaticRow =
     { Identifier = mkKey [ident]
       Values     = values |> List.map (fun (k, v) -> mkName k, v) |> Map.ofList }
 
-let private build (rows: Map<SsKey, StaticRow list>) = TransferPlan.build catalog topo rows
+let private build (rows: Map<SsKey, StaticRow list>) =
+    DataLoadPlan.build catalog topo rows SurrogateRemapContext.empty
 
-let private loadFor (key: SsKey) (plan: TransferPlan) : TransferKindLoad =
+let private loadFor (key: SsKey) (plan: DataLoadPlan) : DataLoadKind =
     plan.Loads |> List.find (fun l -> l.Kind = key)
 
 [<Fact>]
-let ``TransferPlan: Loads follow the topological order`` () =
+let ``DataLoadPlan: Loads follow the topological order`` () =
     let plan = build Map.empty
     Assert.Equal<SsKey list>([ customerKey; invoiceKey; aKey; bKey ], plan.Loads |> List.map (fun l -> l.Kind))
 
 [<Fact>]
-let ``TransferPlan: identity PK is AssignedBySink, business PK is PreservedFromSource`` () =
+let ``DataLoadPlan: identity PK is AssignedBySink, business PK is PreservedFromSource`` () =
     let plan = build Map.empty
     Assert.Equal(IdentityDisposition.PreservedFromSource, (loadFor customerKey plan).Disposition)
     Assert.Equal(IdentityDisposition.AssignedBySink, (loadFor invoiceKey plan).Disposition)
 
 [<Fact>]
-let ``TransferPlan: nullable same-cycle FK is deferred, non-nullable is not`` () =
+let ``DataLoadPlan: nullable same-cycle FK is deferred, non-nullable is not`` () =
     let plan = build Map.empty
     Assert.Equal<Set<Name>>(Set.singleton (mkName "B_ID"), (loadFor aKey plan).DeferredFkColumns)
     Assert.True(Set.isEmpty (loadFor bKey plan).DeferredFkColumns)
 
 [<Fact>]
-let ``TransferPlan: non-nullable same-cycle FK surfaces as an unbreakable diagnostic`` () =
+let ``DataLoadPlan: non-nullable same-cycle FK surfaces as an unbreakable diagnostic`` () =
     let plan = build Map.empty
-    Assert.False(TransferPlan.isSatisfiable plan)
+    Assert.False(DataLoadPlan.isSatisfiable plan)
     Assert.Contains(
         plan.UnbreakableCycleFks,
         fun (u: UnbreakableCycleFk) -> u.Kind = bKey && u.Column = mkName "A_ID" && u.Target = aKey)
@@ -100,20 +101,20 @@ let ``TransferPlan: non-nullable same-cycle FK surfaces as an unbreakable diagno
     Assert.DoesNotContain(plan.UnbreakableCycleFks, fun (u: UnbreakableCycleFk) -> u.Kind = aKey)
 
 [<Fact>]
-let ``TransferPlan: ingested rows attach by kind; un-ingested kinds are empty`` () =
+let ``DataLoadPlan: ingested rows attach by kind; un-ingested kinds are empty`` () =
     let rows = Map.ofList [ customerKey, [ rowOf "c1" [ "ID", "1" ]; rowOf "c2" [ "ID", "2" ] ] ]
     let plan = build rows
     Assert.Equal(2, (loadFor customerKey plan).Rows.Length)
     Assert.Empty((loadFor invoiceKey plan).Rows)
 
 [<Fact>]
-let ``TransferPlan: deferredLoads lists only the cycle-broken kinds`` () =
+let ``DataLoadPlan: deferredLoads lists only the cycle-broken kinds`` () =
     let plan = build Map.empty
-    Assert.Equal<SsKey list>([ aKey ], TransferPlan.deferredLoads plan |> List.map (fun l -> l.Kind))
+    Assert.Equal<SsKey list>([ aKey ], DataLoadPlan.deferredLoads plan |> List.map (fun l -> l.Kind))
 
 [<Fact>]
-let ``TransferPlan: reclassifyReconciled overrides only the named kinds to ReconciledByRule`` () =
-    let plan = build Map.empty |> TransferPlan.reclassifyReconciled (Set.singleton customerKey)
+let ``DataLoadPlan: reclassifyReconciled overrides only the named kinds to ReconciledByRule`` () =
+    let plan = build Map.empty |> DataLoadPlan.reclassifyReconciled (Set.singleton customerKey)
     Assert.Equal(IdentityDisposition.ReconciledByRule, (loadFor customerKey plan).Disposition)
     // ofKind-derived dispositions on the other kinds are untouched.
     Assert.Equal(IdentityDisposition.AssignedBySink, (loadFor invoiceKey plan).Disposition)

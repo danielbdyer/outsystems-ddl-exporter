@@ -104,7 +104,7 @@ module UserFkReflowPass =
         { Source   = passName
           Severity = DiagnosticSeverity.Warning
           Code     = code
-          Message  = sprintf "source user %d: %s" sourceUserValue messageDetail
+          Message  = Message.unmatchedSourceUser sourceUserValue messageDetail
           SsKey    = None
           Metadata =
               Map.ofList
