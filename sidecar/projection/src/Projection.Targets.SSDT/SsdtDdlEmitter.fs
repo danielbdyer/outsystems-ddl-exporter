@@ -538,6 +538,15 @@ module SsdtDdlEmitter =
             yield Statement.SetExtendedProperty (
                 TableProperty table, "V2.LogicalName", Some (Name.value k.Name))
 
+            // Wave 4.1 — V2.SsKey extended property at the table level.
+            // Carries the round-trippable serialization of the kind's
+            // identity (A1: identity survives rename). ReadSide reads this
+            // on roundtrip and `SsKey.deserialize`s it, recovering the
+            // original key instead of synthesizing `READSIDE_KIND` from
+            // physical coordinates. Sibling to V2.LogicalName.
+            yield Statement.SetExtendedProperty (
+                TableProperty table, "V2.SsKey", Some (SsKey.serialize k.SsKey))
+
             for ep in k.ExtendedProperties do
                 yield Statement.SetExtendedProperty (
                     TableProperty table, ep.Name, ep.Value)
