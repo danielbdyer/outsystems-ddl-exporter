@@ -94,11 +94,14 @@ module SsdtDdlEmitter =
     /// empty for SSDT DDL emission — per chapter pre-scope §10
     /// `Tolerance.IgnoreHeaderComments = true` initially, V2 omits
     /// V1's `/* Source: ... */` per-table header block.
-    // Wave-2 slice 2.2 — `overlay` is threaded as a curried prefix argument
-    // but NOT yet consumed (byte-identical to pre-overlay emission; the T1
-    // safety net proving the seam is open without changing bytes). Slice 2.3
-    // consumes `overlay.EnforceNotNull` here to apply NOT NULL tightening.
-    let private columnDef (_overlay: DecisionOverlay) (a: Attribute) : ColumnDef =
+    // Wave-2 slice 2.3 — apply the NOT NULL tightening decision at emission.
+    // **Additive-only** (`field && not enforce`, never `field = decision`):
+    // a column is emitted NOT NULL iff the source already made it NOT NULL
+    // OR a registered Nullability intervention decided `EnforceNotNull` for
+    // it. A non-enforce decision never loosens source truth. A18-amended
+    // holds — the overlay carries the decision (evidence), not Policy.
+    let private columnDef (overlay: DecisionOverlay) (a: Attribute) : ColumnDef =
+        let enforceNotNull = Set.contains a.SsKey overlay.EnforceNotNull
         {
             Name         = a.Column.ColumnName
             Type         = a.Type
@@ -110,7 +113,9 @@ module SsdtDdlEmitter =
             Length       = a.Length
             Precision    = a.Precision
             Scale        = a.Scale
-            Nullable     = a.Column.IsNullable
+            // Additive-only tightening: source NULL ∧ ¬enforce stays NULL;
+            // source NOT NULL stays NOT NULL regardless; enforce ⇒ NOT NULL.
+            Nullable     = a.Column.IsNullable && not enforceNotNull
             IsIdentity   = a.IsIdentity
             IsPrimaryKey = a.IsPrimaryKey
             // Slice 5.13.column-features-emit: DEFAULT clause carriage
@@ -337,9 +342,12 @@ module SsdtDdlEmitter =
     /// skipped (PK is inlined in CREATE TABLE per V1 convention);
     /// remaining indexes are sorted by SsKey for deterministic
     /// emission ordering (A33).
-    // Wave-2 slice 2.3 consumes `overlay.EnforceUnique` here to promote an
-    // index to UNIQUE; 2.2 threads the prefix arg unused (byte-identical).
-    let private indexStatements (_overlay: DecisionOverlay) (k: Kind) : Statement list =
+    // Wave-2 slice 2.3 — apply the UNIQUE tightening decision at emission.
+    // Additive-only (`field || enforce`): an index is emitted UNIQUE iff the
+    // source already declared it unique OR a registered UniqueIndex
+    // intervention decided `EnforceUnique`. A non-enforce decision never
+    // un-uniques a source-unique index.
+    let private indexStatements (overlay: DecisionOverlay) (k: Kind) : Statement list =
         k.Indexes
         |> List.filter (fun idx -> not idx.IsPrimaryKey)
         |> List.sortBy (fun idx -> idx.SsKey)
@@ -381,7 +389,7 @@ module SsdtDdlEmitter =
                     Name     = Name.value idx.Name
                     Table    = toTableId k
                     Columns  = keyColumns
-                    IsUnique = idx.IsUnique
+                    IsUnique = idx.IsUnique || Set.contains idx.SsKey overlay.EnforceUnique
                     Filter   = idx.Filter
                     IncludedColumns = includedColumnNames
                     // Chapter 4.8 slice β — on-disk index options.

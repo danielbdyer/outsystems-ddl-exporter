@@ -220,6 +220,7 @@
     <Compile Include="FilterParseDiagnosticTests.fs" />
     <Compile Include="BuildCreateIndexDiagnosticsTests.fs" />
     <Compile Include="DecisionOverlayTests.fs" />
+    <Compile Include="DecisionEmissionTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />
     <Compile Include="SiblingEmitterContractTests.fs" />

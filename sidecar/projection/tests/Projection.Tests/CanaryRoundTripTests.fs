@@ -427,3 +427,59 @@ let ``Slice 1.3 / L3-S7: PERSISTED computed column round-trips through emit / de
             |> List.choose (fun c -> c.Computed)
         Assert.True((not (List.isEmpty computedCols)),
             "PhysicalColumn.Computed axis is empty after round-trip.")
+
+// ---------------------------------------------------------------------
+// Wave-2 slice 2.3 — A42 (candidate) at the CANARY: an EnforceNotNull
+// tightening decision, applied at emission via the DecisionOverlay, SURVIVES
+// emit → deploy → ReadSide as a NOT NULL column. This is the payoff of the
+// Wave-1 un-hollowing: the canary's PhysicalSchema.Nullable axis can now
+// observe that the decision reached the deployed schema.
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``A42 (2.3 canary): EnforceNotNull tightening survives emit / deploy / ReadSide as NOT NULL`` () =
+    if skipIfNoDocker "decision-notnull-roundtrip" then
+        // A kind with a source-NULLABLE column `Note`.
+        let kindKeyV = ssKeySafe "OS_KIND_DEC_Ticket"
+        let noteKey = ssKeySafe "OS_ATTR_DEC_Ticket_Note"
+        let mkAttr (k: SsKey) (col: string) (isPk: bool) (nullable: bool) : Attribute =
+            { Attribute.create k (nameSafe col) (if isPk then Integer else Text) with
+                Column = { ColumnName = col.ToUpperInvariant(); IsNullable = nullable }
+                IsPrimaryKey = isPk; IsMandatory = isPk }
+        let kind =
+            { Kind.create kindKeyV (nameSafe "Ticket")
+                { Schema = "dbo"; Table = "OSUSR_DEC_TICKET"; Catalog = None }
+                [ mkAttr (ssKeySafe "OS_ATTR_DEC_Ticket_Id") "Id" true false
+                  mkAttr noteKey "Note" false true ] with Indexes = [] }
+        let catalog =
+            match Catalog.create [ { SsKey = ssKeySafe "OS_MOD_DEC"; Name = nameSafe "DecMod"; Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] } ] [] with
+            | Ok c -> c | Error e -> failwithf "catalog %A" e
+
+        // Sanity: with the empty overlay, Note deploys NULLABLE.
+        let baselineSql = SsdtDdlEmitter.statements catalog |> Render.toText
+        let baseline = (Deploy.runWithReadback baselineSql).GetAwaiter().GetResult()
+        Assert.True(baseline.Report.Ok, sprintf "baseline deploy: %A" baseline.Report.Errors)
+        let baselineNote =
+            match baseline.Reconstructed with
+            | Some c ->
+                Catalog.allKinds c |> List.collect (fun k -> k.Attributes)
+                |> List.tryFind (fun a -> a.Column.ColumnName = "NOTE")
+            | None -> None
+        match baselineNote with
+        | Some a -> Assert.True(a.Column.IsNullable, "baseline: Note should round-trip NULLABLE")
+        | None -> Assert.Fail("baseline: Note column not recovered")
+
+        // Tighten: EnforceNotNull(Note) → emit with overlay → deploy → read.
+        let overlay = { DecisionOverlay.empty with EnforceNotNull = Set.singleton noteKey }
+        let tightenedSql = SsdtDdlEmitter.statementsWith overlay catalog |> Render.toText
+        let tightened = (Deploy.runWithReadback tightenedSql).GetAwaiter().GetResult()
+        Assert.True(tightened.Report.Ok, sprintf "tightened deploy: %A" tightened.Report.Errors)
+        let tightenedNote =
+            match tightened.Reconstructed with
+            | Some c ->
+                Catalog.allKinds c |> List.collect (fun k -> k.Attributes)
+                |> List.tryFind (fun a -> a.Column.ColumnName = "NOTE")
+            | None -> None
+        match tightenedNote with
+        | Some a -> Assert.False(a.Column.IsNullable, "EnforceNotNull(Note) must deploy + read back as NOT NULL")
+        | None -> Assert.Fail("tightened: Note column not recovered")
