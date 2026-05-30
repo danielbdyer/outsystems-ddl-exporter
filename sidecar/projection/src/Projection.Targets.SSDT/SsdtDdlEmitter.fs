@@ -201,8 +201,10 @@ module SsdtDdlEmitter =
     /// 4.4 RemediationEmitter — would justify a shared
     /// `CatalogResolution` module). Returns `None` when the FK target
     /// kind isn't in the catalog (cross-catalog FKs; chapter 3.2
-    /// territory) — the FK is silently dropped, with a future
-    /// Diagnostics scaffolding (slice μ deferral) naming the drop.
+    /// territory) — the inline FK is dropped. The drop is no longer
+    /// silent: `foreignKeyDropDiagnostics` (Wave-2 slice 2.5(b), retiring
+    /// the slice-μ deferral) produces a Warning witness per unresolved-
+    /// target drop.
     ///
     /// **Naming convention (chapter 4.1.A pre-scope §3 + V1
     /// `ForeignKeyNameFactory.cs:17-60`):**
@@ -800,6 +802,63 @@ module SsdtDdlEmitter =
     /// Π port realization (the `empty`-overlay default). Byte-identical to
     /// pre-Wave-2 emission. See `emitSlicesWith`.
     let emitSlices : Emitter<SsdtFile> = emitSlicesWith DecisionOverlay.empty
+
+    /// Wave-2 slice 2.5(b) — the FK silent-drop WITNESS (retires the slice-μ
+    /// deferral). `fkDef` returns `None` (the inline FK is dropped) for two
+    /// reachable reasons; both were SILENT. This sibling produces one
+    /// `Warning` `DiagnosticEntry` per drop so the loss is observable.
+    ///
+    ///   - **unresolved target** (`emit.ssdt.foreignKey.unresolvedTargetDropped`):
+    ///     the reference's target kind is absent from the catalog. NB:
+    ///     `Catalog.create` already *rejects* this at construction
+    ///     (`catalog.reference.danglingTarget`) — a stronger guarantee than a
+    ///     witness — so this fires only for a catalog that reached the emitter
+    ///     bypassing the aggregate-root smart constructor (defense in depth).
+    ///   - **target missing PK** (`emit.ssdt.foreignKey.targetMissingPrimaryKeyDropped`):
+    ///     the target kind resolves but declares no primary key, so there is
+    ///     no column to reference. This IS reachable through `Catalog.create`
+    ///     (a PK-less kind is valid) — the genuinely-reachable silent drop.
+    ///
+    /// **Pure sibling output (A18 holds).** The `statements` / `emitSlices`
+    /// Emitter port stays `Catalog`-only and byte-identical — the witness
+    /// rides a separate `Diagnostics` channel, never a `Policy` parameter.
+    let foreignKeyDropDiagnostics (catalog: Catalog) : DiagnosticEntry list =
+        let allKinds, targetByKey, pkAttrByKey = buildLookups catalog
+        // Pillar 1 (data-structure-oriented): the structural detail rides the
+        // typed `Metadata` map; the `Message` is a constant per reason. No
+        // string composition at the diagnostic boundary.
+        let witness (k: Kind) (r: Reference) (code: string) (message: string) : DiagnosticEntry =
+            { DiagnosticEntry.create
+                "emitter:ssdtDdlEmitter" DiagnosticSeverity.Warning code message
+              with
+                SsKey = Some r.SsKey
+                Metadata =
+                    Map.ofList
+                        [ "sourceSchema", k.Physical.Schema
+                          "sourceTable", k.Physical.Table
+                          "reference", Name.value r.Name ] }
+        allKinds
+        |> List.collect (fun k ->
+            k.References
+            |> List.choose (fun r ->
+                match fkDef targetByKey pkAttrByKey k r with
+                | Some _ -> None
+                | None ->
+                    match Map.tryFind r.TargetKind targetByKey with
+                    | None ->
+                        Some (witness k r
+                                "emit.ssdt.foreignKey.unresolvedTargetDropped"
+                                "Foreign key dropped: its target kind is not present in the catalog (cross-catalog or dangling target). No inline FK constraint emitted.")
+                    | Some _ ->
+                        // Target resolves; the drop is a missing PK (no column
+                        // to reference) — unless the source attribute itself is
+                        // missing, which `Catalog.create` forbids (unreachable).
+                        match Map.tryFind r.TargetKind pkAttrByKey with
+                        | None ->
+                            Some (witness k r
+                                    "emit.ssdt.foreignKey.targetMissingPrimaryKeyDropped"
+                                    "Foreign key dropped: its target kind declares no primary key to reference. No inline FK constraint emitted.")
+                        | Some _ -> None))
 
     /// Slice 5.13.emit-features-registry (2026-05-18) — the SSDT
     /// emitter's `RegisteredTransform` surface. Metadata-only per the

@@ -19912,12 +19912,23 @@ existing byte. The proof rides Wave-1's canary un-hollowing: the un-hollowed
 `PhysicalSchema.Nullable` / `.ForeignKeys` axes let the Docker canary observe
 that the decision reached the deployed schema.
 
-**Scope / open follow-on.** A42 is decision→emission fidelity. The FK
-silent-drop witness for *unresolved* targets (a cross-catalog FK that `fkDef`
-drops to `None` — distinct from an overlay `DoNotEnforce` decision) is the
-slice-μ retirement: it needs a `Diagnostics` channel on the emitter port and is
-a separate slice (`L3-Boundary-NoSilentDrop` for the FK case). A42 does not
-depend on it.
+**Scope.** A42 is decision→emission fidelity (a `DoNotEnforce` overlay decision
+is part of A42).
+
+**FK silent-drop witness — slice-μ retired at 2.5b (2026-05-30).**
+`SsdtDdlEmitter.foreignKeyDropDiagnostics` is a **pure sibling** of the emitter
+port (the witness rides the `Diagnostics` channel — `statements`/`emitSlices`
+stay `Catalog`-only + byte-identical; A18 holds), wired into the manifest
+diagnostics. It distinguishes two `fkDef`-None drop reasons:
+`targetMissingPrimaryKeyDropped` (reachable through `Catalog.create`) and
+`unresolvedTargetDropped`. **Finding:** `Catalog.create` *already* rejects the
+dangling-target case at construction (`catalog.reference.danglingTarget`) — a
+*stronger* guarantee than a witness — so `unresolvedTargetDropped` is
+defense-in-depth for a smart-constructor bypass; the genuinely-reachable silent
+drop is the missing-PK case. Pillar 1: the structural detail rides the typed
+`DiagnosticEntry.Metadata` map; the `Message` is a constant per reason (no
+string composition at the diagnostic boundary). `L3-X7` /
+`L3-Boundary-NoSilentDrop` for the FK case.
 
 ### Cross-references
 

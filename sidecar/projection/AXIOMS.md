@@ -1692,13 +1692,18 @@ wrappers; `statementsWith` / `emitSlicesWith` carry the overlay).
   precondition — the canary can observe the decision reached the
   deployed schema on the Nullable / ForeignKeys axes.
 
-**Open follow-on (slice-μ retirement; tracked, not part of A42).** When
-`fkDef` returns `None` for an *unresolved* target (a cross-catalog FK,
-not an overlay `DoNotEnforce` decision), the drop is still silent. The
-FK silent-drop witness — routing that drop through a sibling
-`Diagnostics` output — is `L3-Boundary-NoSilentDrop` for the FK case;
-it requires a Diagnostics-channel design on the emitter port and is a
-separate slice. A42 (decision→emission fidelity) does not depend on it.
+**FK silent-drop witness (slice-μ retired at 2.5b).** When `fkDef`
+returns `None` (the inline FK is dropped) the loss is no longer silent:
+`SsdtDdlEmitter.foreignKeyDropDiagnostics` — a **pure sibling** of the
+emitter port (the witness rides the `Diagnostics` channel, so
+`statements`/`emitSlices` stay `Catalog`-only and byte-identical; A18
+holds) — produces a `Warning` per drop, distinguishing
+`targetMissingPrimaryKeyDropped` (reachable through `Catalog.create`)
+from `unresolvedTargetDropped` (which `Catalog.create` already *rejects*
+via `catalog.reference.danglingTarget` — a stronger guarantee, so this
+code is defense-in-depth for a smart-constructor bypass). Wired into the
+production manifest diagnostics. This is the FK case of
+`L3-Boundary-NoSilentDrop` (see `AxiomTests.fs::L3-X7`).
 
 ## A32 cash-out — chapter 4.2 close (2026-05-11)
 

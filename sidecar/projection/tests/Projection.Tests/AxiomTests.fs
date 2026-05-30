@@ -456,9 +456,29 @@ let ``A42 (Wave 2): emitted DDL is a faithful projection of the tightening decis
     // (CanaryRoundTripTests: EnforceNotNull survives deploy→ReadSide as NOT NULL;
     // DoNotEnforce keeps the FK out of the deployed schema — vs real SQL Server).
     // Observable identity: empty overlay = byte-identical to pre-Wave-2 emission.
-    // Open follow-on (NOT part of A42): the FK silent-drop witness for
-    // UNRESOLVED targets (slice-μ retirement) needs a Diagnostics channel on
-    // the emitter port — see L3-Boundary-NoSilentDrop.
+    // The FK silent-drop witness (slice-μ) is now closed by 2.5(b) — see the
+    // L3-X7 entry below.
+    ()
+
+[<Fact>]
+let ``L3-X7 (Wave-2 slice 2.5b): an unresolvable FK drop emits a Diagnostics witness (slice-μ retired) — verified by DecisionEmissionTests`` () =
+    citationOf
+        "tests/Projection.Tests/DecisionEmissionTests.fs"
+        "L3-X7: an FK whose target kind has no PK emits the targetMissingPrimaryKey witness (reachable via Catalog.create)"
+    // Bucket A (Wave-2 slice 2.5b, 2026-05-30). `SsdtDdlEmitter
+    // .foreignKeyDropDiagnostics` is a PURE SIBLING of the emitter port
+    // (statements/emitSlices stay Catalog-only + byte-identical; the witness
+    // rides the Diagnostics channel, A18 holds). It reports every `fkDef`-None
+    // drop with a distinguishing Code:
+    //   - `emit.ssdt.foreignKey.targetMissingPrimaryKeyDropped` — target
+    //     resolves but has no PK; REACHABLE through Catalog.create (the
+    //     genuinely-reachable silent drop the slice-μ deferral worried about).
+    //   - `emit.ssdt.foreignKey.unresolvedTargetDropped` — target absent from
+    //     the catalog; Catalog.create already REJECTS this
+    //     (`catalog.reference.danglingTarget`, a stronger guarantee), so the
+    //     witness is defense-in-depth for a smart-constructor bypass.
+    // Wired into the production manifest diagnostics (Pipeline.fs). This is the
+    // FK case of L3-Boundary-NoSilentDrop.
     ()
 
 [<Fact>]

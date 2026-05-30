@@ -171,3 +171,68 @@ let ``A42 (2.4): a ScriptWithNoCheck FK decision keeps the FK and emits WITH NOC
     Assert.Equal(1, emittedFkCount overlay sampleCatalog)
     // Plus the untrusting NOCHECK alter.
     Assert.Equal(1, emittedNoCheckCount overlay sampleCatalog)
+
+// ---------------------------------------------------------------------
+// Wave-2 slice 2.5(b) — the FK silent-drop WITNESS (L3-X7; slice-μ retired).
+// `SsdtDdlEmitter.foreignKeyDropDiagnostics` is a PURE SIBLING of the
+// emitter port (statements/emitSlices stay byte-identical). Two drop reasons:
+//   - target-missing-PK: REACHABLE through Catalog.create (a PK-less kind is
+//     valid) — the genuinely-reachable silent drop.
+//   - unresolved-target: Catalog.create already REJECTS this
+//     (catalog.reference.danglingTarget) — stronger than a witness; the
+//     witness is defense-in-depth for a smart-constructor bypass.
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``L3-X7: an FK whose target kind has no PK emits the targetMissingPrimaryKey witness (reachable via Catalog.create)`` () =
+    // Target A declares NO primary key; B references A.
+    let aKey = kkey "A"
+    let bKey = kkey "B"
+    let refKeyV = akey "B.refToA"
+    let mkAttr (k: SsKey) (col: string) (isPk: bool) : Attribute =
+        { Attribute.create k (nm col) Integer with
+            Column = { ColumnName = col.ToUpperInvariant(); IsNullable = not isPk }
+            IsPrimaryKey = isPk; IsMandatory = isPk }
+    let a = Kind.create aKey (nm "A") { Schema = "dbo"; Table = "OSUSR_X7_A"; Catalog = None } [ mkAttr (akey "A.Val") "Val" false ]
+    let b =
+        { Kind.create bKey (nm "B") { Schema = "dbo"; Table = "OSUSR_X7_B"; Catalog = None }
+            [ mkAttr (akey "B.Id") "Id" true; mkAttr (akey "B.AId") "AId" false ]
+          with References = [ Reference.create refKeyV (nm "A") (akey "B.AId") aKey ] }
+    let catalog =
+        match Catalog.create [ { SsKey = kkey "Mod"; Name = nm "X7Mod"; Kinds = [ a; b ]; IsActive = true; ExtendedProperties = [] } ] [] with
+        | Ok c -> c | Error e -> failwithf "catalog %A" e
+    let diags = SsdtDdlEmitter.foreignKeyDropDiagnostics catalog
+    Assert.Equal(1, List.length diags)
+    let d = List.head diags
+    Assert.Equal("emit.ssdt.foreignKey.targetMissingPrimaryKeyDropped", d.Code)
+    Assert.Equal(DiagnosticSeverity.Warning, d.Severity)
+    Assert.Equal("emitter:ssdtDdlEmitter", d.Source)
+    Assert.Equal(Some refKeyV, d.SsKey)
+
+[<Fact>]
+let ``L3-X7: an FK to a target kind absent from the catalog emits the unresolvedTarget witness (defense-in-depth)`` () =
+    // Bypass Catalog.create (which would REJECT a dangling target) to exercise
+    // the defensive witness: B references a kind "Ghost" not in the catalog.
+    let bKey = kkey "B"
+    let ghostKey = kkey "Ghost"
+    let refKeyV = akey "B.refToGhost"
+    let mkAttr (k: SsKey) (col: string) (isPk: bool) : Attribute =
+        { Attribute.create k (nm col) Integer with
+            Column = { ColumnName = col.ToUpperInvariant(); IsNullable = not isPk }
+            IsPrimaryKey = isPk; IsMandatory = isPk }
+    let b =
+        { Kind.create bKey (nm "B") { Schema = "dbo"; Table = "OSUSR_X7_B"; Catalog = None }
+            [ mkAttr (akey "B.Id") "Id" true; mkAttr (akey "B.GId") "GId" false ]
+          with References = [ Reference.create refKeyV (nm "Ghost") (akey "B.GId") ghostKey ] }
+    // Direct record construction — NOT through Catalog.create.
+    let catalog : Catalog =
+        { Modules = [ { SsKey = kkey "Mod"; Name = nm "X7Mod"; Kinds = [ b ]; IsActive = true; ExtendedProperties = [] } ]
+          Sequences = [] }
+    let diags = SsdtDdlEmitter.foreignKeyDropDiagnostics catalog
+    Assert.Equal(1, List.length diags)
+    Assert.Equal("emit.ssdt.foreignKey.unresolvedTargetDropped", (List.head diags).Code)
+
+[<Fact>]
+let ``L3-X7: a fully-resolvable FK emits no drop witness`` () =
+    // sampleCatalog's Order → Customer FK resolves cleanly.
+    Assert.Empty(SsdtDdlEmitter.foreignKeyDropDiagnostics sampleCatalog)

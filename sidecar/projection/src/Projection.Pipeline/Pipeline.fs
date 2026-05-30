@@ -769,6 +769,10 @@ module Compose =
                         @ InactiveAttributeDiagnostics.emit profile
                         @ FkSelectivityDiagnostics.emit profile    // H-025
                         @ JointDependencyDiagnostics.emit profile   // H-026
+                        // Wave-2 slice 2.5(b) — the FK silent-drop witness over
+                        // the emitted catalog (slice-μ retired). Pure sibling of
+                        // the emitter port; A18 holds.
+                        @ SsdtDdlEmitter.foreignKeyDropDiagnostics finalState.Catalog
                     match write cfg.Output.Dir outputs with
                     | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest }
                     | Error errors -> Result.failure errors
