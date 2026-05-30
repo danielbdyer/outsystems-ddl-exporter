@@ -118,6 +118,94 @@ module SsKey =
     let fromV1 (v1: System.Guid) (v2Namespace: System.Guid) : SsKey =
         V1Mapped (v1, v2Namespace)
 
+    // ---- Wave 4.1 — round-trippable codec for V2.SsKey persistence ----
+    // `display`/`rootOriginal` are lossy projections. `serialize` is the
+    // *recoverable* form written to the frozen schema's `V2.SsKey` extended
+    // property so a later-run Transfer reads identity from disk instead of
+    // re-synthesizing `Synthesized ("READSIDE_KIND", …)` from physical names
+    // (A1: identity survives rename). Encoding is tag-prefixed; each field is
+    // length-prefixed `<len>:<content>`, so it stays unambiguous under nesting
+    // (`DerivedFrom` carries a parent key; `Synthesized` carries a list) with
+    // no delimiter-escaping.
+
+    let private deserErr (detail: string) : ValidationError =
+        ValidationError.create "sskey.deserialize" detail
+
+    let private field (s: string) : string =
+        String.concat "" [ string s.Length; ":"; s ]
+
+    /// Consume one `<len>:<content>` field; return (content, remainder).
+    let private readField (s: string) : Result<string * string> =
+        let colon = s.IndexOf ':'
+        if colon < 0 then Result.failureOf (deserErr "missing field-length delimiter")
+        else
+            match System.Int32.TryParse (s.Substring(0, colon)) with
+            | false, _ -> Result.failureOf (deserErr "non-numeric field length")
+            | true, len ->
+                let start = colon + 1
+                if len < 0 || start + len > s.Length then
+                    Result.failureOf (deserErr "field length out of range")
+                else
+                    Result.success (s.Substring(start, len), s.Substring(start + len))
+
+    let private parseGuid (s: string) : Result<System.Guid> =
+        match System.Guid.TryParse s with
+        | true, g -> Result.success g
+        | false, _ -> Result.failureOf (deserErr (String.concat "" [ "malformed GUID '"; s; "'" ]))
+
+    /// Total over the four variants; round-trips through `deserialize`.
+    let rec serialize (key: SsKey) : string =
+        match key with
+        | OssysOriginal g -> String.concat "" [ "O"; field (g.ToString "N") ]
+        | Synthesized (source, basisParts) ->
+            String.concat "" (
+                [ "S"; field source; field (string (List.length basisParts)) ]
+                @ (basisParts |> List.map field))
+        | DerivedFrom (parent, reason) ->
+            String.concat "" [ "D"; field reason; field (serialize parent) ]
+        | V1Mapped (v1, v2) ->
+            String.concat "" [ "V"; field (v1.ToString "N"); field (v2.ToString "N") ]
+
+    let rec private readFields (n: int) (acc: string list) (s: string) : Result<string list * string> =
+        if n <= 0 then Result.success (List.rev acc, s)
+        else
+            readField s |> Result.bind (fun (part, rest) -> readFields (n - 1) (part :: acc) rest)
+
+    let rec private parse (s: string) : Result<SsKey> =
+        if s.Length = 0 then Result.failureOf (deserErr "empty input")
+        else
+            let body = s.Substring 1
+            let noTrailing rest ok =
+                if rest <> "" then Result.failureOf (deserErr "trailing data after key")
+                else Result.success ok
+            match s.[0] with
+            | 'O' ->
+                readField body |> Result.bind (fun (g, rest) ->
+                    parseGuid g |> Result.bind (fun guid -> noTrailing rest (OssysOriginal guid)))
+            | 'S' ->
+                readField body |> Result.bind (fun (source, r1) ->
+                    readField r1 |> Result.bind (fun (countStr, r2) ->
+                        match System.Int32.TryParse countStr with
+                        | false, _ -> Result.failureOf (deserErr "non-numeric basisParts count")
+                        | true, count ->
+                            readFields count [] r2 |> Result.bind (fun (parts, rest) ->
+                                noTrailing rest (Synthesized (source, parts)))))
+            | 'D' ->
+                readField body |> Result.bind (fun (reason, r1) ->
+                    readField r1 |> Result.bind (fun (parentStr, rest) ->
+                        if rest <> "" then Result.failureOf (deserErr "trailing data after derived key")
+                        else parse parentStr |> Result.map (fun parent -> DerivedFrom (parent, reason))))
+            | 'V' ->
+                readField body |> Result.bind (fun (v1s, r1) ->
+                    readField r1 |> Result.bind (fun (v2s, rest) ->
+                        parseGuid v1s |> Result.bind (fun v1 ->
+                            parseGuid v2s |> Result.bind (fun v2 -> noTrailing rest (V1Mapped (v1, v2))))))
+            | other ->
+                Result.failureOf (deserErr (String.concat "" [ "unknown variant tag '"; string other; "'" ]))
+
+    /// Inverse of `serialize`; total parser returning a structured error.
+    let deserialize (s: string) : Result<SsKey> = parse s
+
 
     /// Walk back to the originating identifier of a key, surfaced as a
     /// string for diagnostics. Variant-specific surfacing:
