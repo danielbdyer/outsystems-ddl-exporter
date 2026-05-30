@@ -276,9 +276,14 @@ module SsdtDdlEmitter =
         : Statement =
         let columns = k.Attributes |> List.map (columnDef overlay)
         let pk = pkDef k
-        // Wave-2 slice 2.4 consumes `overlay.DropFk` here to suppress an
-        // inline FK; 2.2 leaves the resolution unchanged (byte-identical).
-        let fks = k.References |> List.choose (fkDef targetByKey pkAttrByKey k)
+        // Wave-2 slice 2.4 — suppress the inline FK when the reference was
+        // decided `DoNotEnforce` (overlay.DropFk). Additive-only on the drop
+        // axis: a reference NOT in DropFk resolves exactly as before
+        // (byte-identical with the empty overlay).
+        let fks =
+            k.References
+            |> List.filter (fun r -> not (Set.contains r.SsKey overlay.DropFk))
+            |> List.choose (fkDef targetByKey pkAttrByKey k)
         // Slice 5.13.column-features-emit: thread Kind.ColumnChecks
         // (chapter A.0' slice ε IR; now populated via cluster A1's
         // rowset path lifting #ColumnCheckReality) through the
@@ -304,19 +309,25 @@ module SsdtDdlEmitter =
     /// here too — the corresponding CREATE TABLE inline FK is absent
     /// by the same predicate, so the ALTER would be referencing a
     /// non-existent constraint anyway.
-    // Wave-2 slice 2.4 consumes `overlay.NoCheckFk` here (an additional
-    // source of untrusted FKs alongside `IsConstraintTrusted`); 2.2 threads
-    // the prefix arg unused (byte-identical).
+    // Wave-2 slice 2.4 — emit the NOCHECK alter for a reference decided
+    // `EnforceConstraint (ScriptWithNoCheck _)` (overlay.NoCheckFk), in
+    // addition to the source's own `IsConstraintTrusted = false` state.
+    // References decided `DoNotEnforce` (overlay.DropFk) are excluded — their
+    // inline FK was suppressed in `createTableStatement`, so there is no
+    // constraint to NOCHECK. The two FK overlay axes are mutually exclusive
+    // by construction (DoNotEnforce vs EnforceConstraint), so the DropFk
+    // exclusion only guards the defensive case.
     let private untrustedFkAlters
-        (_overlay: DecisionOverlay)
+        (overlay: DecisionOverlay)
         (targetByKey: Map<SsKey, Kind>)
         (pkAttrByKey: Map<SsKey, Attribute>)
         (k: Kind)
         : Statement list =
         k.References
+        |> List.filter (fun r -> not (Set.contains r.SsKey overlay.DropFk))
         |> List.choose (fun r ->
             match fkDef targetByKey pkAttrByKey k r with
-            | Some fk when not fk.IsConstraintTrusted ->
+            | Some fk when not fk.IsConstraintTrusted || Set.contains r.SsKey overlay.NoCheckFk ->
                 Some (Statement.AlterTableNoCheckConstraint (toTableId k, fk.Name))
             | _ -> None)
 

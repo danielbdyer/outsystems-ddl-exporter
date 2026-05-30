@@ -5,6 +5,7 @@ open FsCheck
 open FsCheck.Xunit
 open Projection.Core
 open Projection.Targets.SSDT
+open Projection.Tests.Fixtures
 
 // Wave-2 slice 2.3 — A42 (candidate) at the emission layer: the SSDT
 // emitter applies the NOT NULL + UNIQUE tightening decisions carried by a
@@ -130,3 +131,43 @@ let ``A42 (2.3): every EnforceNotNull decision NOT-NULLs its column, and only th
     (cols.["ALPHA"] = not enforceAlpha)
     && (cols.["BETA"] = not enforceBeta)
     && (cols.["ID"] = false)
+
+// ---------------------------------------------------------------------
+// Wave-2 slice 2.4 — FK gating + NOCHECK at emission. `sampleCatalog` has
+// exactly one FK (Order → Customer, keyed `orderRefToCustomer`). A
+// `DoNotEnforce` decision (DropFk) suppresses the inline FK; a
+// `ScriptWithNoCheck` decision (NoCheckFk) keeps the FK but adds the
+// `AlterTableNoCheckConstraint` (untrusted).
+// ---------------------------------------------------------------------
+
+let private emittedFkCount (overlay: DecisionOverlay) (catalog: Catalog) : int =
+    SsdtDdlEmitter.statementsWith overlay catalog
+    |> Seq.sumBy (function
+        | Statement.CreateTable (_, _, _, fks, _, _) -> List.length fks
+        | _ -> 0)
+
+let private emittedNoCheckCount (overlay: DecisionOverlay) (catalog: Catalog) : int =
+    SsdtDdlEmitter.statementsWith overlay catalog
+    |> Seq.sumBy (function
+        | Statement.AlterTableNoCheckConstraint _ -> 1
+        | _ -> 0)
+
+[<Fact>]
+let ``A42 (2.4): baseline empty overlay emits the inline FK and no NOCHECK alter`` () =
+    Assert.Equal(1, emittedFkCount DecisionOverlay.empty sampleCatalog)
+    Assert.Equal(0, emittedNoCheckCount DecisionOverlay.empty sampleCatalog)
+
+[<Fact>]
+let ``A42 (2.4): a DoNotEnforce FK decision suppresses the inline constraint`` () =
+    let overlay = { DecisionOverlay.empty with DropFk = Set.singleton orderRefToCustomer }
+    Assert.Equal(0, emittedFkCount overlay sampleCatalog)
+    // The dropped FK has no constraint to NOCHECK.
+    Assert.Equal(0, emittedNoCheckCount overlay sampleCatalog)
+
+[<Fact>]
+let ``A42 (2.4): a ScriptWithNoCheck FK decision keeps the FK and emits WITH NOCHECK`` () =
+    let overlay = { DecisionOverlay.empty with NoCheckFk = Set.singleton orderRefToCustomer }
+    // Inline FK still emitted (the constraint must exist for the ALTER).
+    Assert.Equal(1, emittedFkCount overlay sampleCatalog)
+    // Plus the untrusting NOCHECK alter.
+    Assert.Equal(1, emittedNoCheckCount overlay sampleCatalog)

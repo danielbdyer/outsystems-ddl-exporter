@@ -483,3 +483,56 @@ let ``A42 (2.3 canary): EnforceNotNull tightening survives emit / deploy / ReadS
         match tightenedNote with
         | Some a -> Assert.False(a.Column.IsNullable, "EnforceNotNull(Note) must deploy + read back as NOT NULL")
         | None -> Assert.Fail("tightened: Note column not recovered")
+
+// ---------------------------------------------------------------------
+// Wave-2 slice 2.4 — A42 (candidate) at the CANARY: a DoNotEnforce FK
+// decision (DropFk), applied at emission, means the FK is ABSENT from the
+// deployed schema (emit → deploy → ReadSide → no PhysicalForeignKey). A
+// silently-emitted FK that the decision said to drop would be a real cutover
+// hazard; the un-hollowed canary's ForeignKeys axis catches it.
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``A42 (2.4 canary): a DoNotEnforce FK decision keeps the FK out of the deployed schema`` () =
+    if skipIfNoDocker "decision-dropfk-roundtrip" then
+        // Customer (PK Id) ← Order (FK CustomerId → Customer).
+        let custKey = ssKeySafe "OS_KIND_DROP_Customer"
+        let orderKey = ssKeySafe "OS_KIND_DROP_Order"
+        let custIdKey = ssKeySafe "OS_ATTR_DROP_Customer_Id"
+        let orderIdKey = ssKeySafe "OS_ATTR_DROP_Order_Id"
+        let orderCustFkAttr = ssKeySafe "OS_ATTR_DROP_Order_CustomerId"
+        let refKeyV = ssKeySafe "OS_REF_DROP_Order_Customer"
+        let mkAttr (k: SsKey) (col: string) (isPk: bool) : Attribute =
+            { Attribute.create k (nameSafe col) Integer with
+                Column = { ColumnName = col.ToUpperInvariant(); IsNullable = not isPk }
+                IsPrimaryKey = isPk; IsMandatory = isPk }
+        let customer =
+            Kind.create custKey (nameSafe "Customer")
+                { Schema = "dbo"; Table = "OSUSR_DROP_CUSTOMER"; Catalog = None }
+                [ mkAttr custIdKey "Id" true ]
+        let order =
+            { Kind.create orderKey (nameSafe "Order")
+                { Schema = "dbo"; Table = "OSUSR_DROP_ORDER"; Catalog = None }
+                [ mkAttr orderIdKey "Id" true; mkAttr orderCustFkAttr "CustomerId" false ]
+              with References = [ Reference.create refKeyV (nameSafe "Customer") orderCustFkAttr custKey ] }
+        let catalog =
+            match Catalog.create [ { SsKey = ssKeySafe "OS_MOD_DROP"; Name = nameSafe "DropMod"; Kinds = [ customer; order ]; IsActive = true; ExtendedProperties = [] } ] [] with
+            | Ok c -> c | Error e -> failwithf "catalog %A" e
+
+        let fkCount (cat: Catalog option) =
+            match cat with
+            | Some c -> (PhysicalSchema.ofCatalog c).ForeignKeys |> Set.count
+            | None -> -1
+
+        // Baseline: empty overlay → the FK deploys and reads back.
+        let baseSql = SsdtDdlEmitter.statements catalog |> Render.toText
+        let baseline = (Deploy.runWithReadback baseSql).GetAwaiter().GetResult()
+        Assert.True(baseline.Report.Ok, sprintf "baseline deploy: %A" baseline.Report.Errors)
+        Assert.Equal(1, fkCount baseline.Reconstructed)
+
+        // DropFk: emit with the decision → the FK is absent from the deployed schema.
+        let overlay = { DecisionOverlay.empty with DropFk = Set.singleton refKeyV }
+        let droppedSql = SsdtDdlEmitter.statementsWith overlay catalog |> Render.toText
+        let dropped = (Deploy.runWithReadback droppedSql).GetAwaiter().GetResult()
+        Assert.True(dropped.Report.Ok, sprintf "dropped deploy: %A" dropped.Report.Errors)
+        Assert.Equal(0, fkCount dropped.Reconstructed)
