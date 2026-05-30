@@ -282,39 +282,8 @@ let ``M3 wide canary: enterprise OutSystems-shaped source (3 modules / 10 tables
 // canary both sees and agrees on the default.
 // ---------------------------------------------------------------------
 
-let private defaultBearingCatalog : Catalog =
-    let key = ssKeySafe "OS_KIND_DEF_Account"
-    let mkAttr (column: string) (ptype: PrimitiveType) (nullable: bool) (isPk: bool) (def: SqlLiteral option) : Attribute =
-        { Attribute.create (ssKeySafe (sprintf "OS_ATTR_DEF_Account_%s" column)) (nameSafe column) ptype with
-            Column = { ColumnName = column.ToUpperInvariant(); IsNullable = nullable }
-            IsPrimaryKey = isPk
-            IsMandatory = not nullable
-            DefaultValue = def }
-    let kind : Kind =
-        {
-            SsKey = key
-            Name = nameSafe "Account"
-            Origin = OsNative
-            Modality = []
-            Physical = { Schema = "dbo"; Table = "OSUSR_DEF_ACCOUNT"; Catalog = None }
-            Attributes =
-                [
-                    mkAttr "Id" Integer false true None
-                    // The DEFAULT under test: an integer default 0.
-                    mkAttr "Balance" Integer false false (Some (SqlLiteral.IntegerLit "0"))
-                    mkAttr "Status" Integer false false (Some (SqlLiteral.IntegerLit "1"))
-                ]
-            References = []
-            Indexes = []
-            Description = None
-            IsActive = true
-            Triggers = []
-            ColumnChecks = []
-            ExtendedProperties = []
-        }
-    let m : Module =
-        { SsKey = ssKeySafe "OS_MOD_DEF"; Name = nameSafe "DefMod"; Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
-    { Modules = [ m ]; Sequences = [] }
+// Fixture lifted to `Projection.Tests.Fixtures.defaultBearingCatalog`
+// (Wave-1 fixture-extraction; reused across feature-verticals).
 
 [<Fact>]
 let ``Slice 1.2: integer DEFAULT round-trips through emit / deploy / ReadSide with empty PhysicalSchema diff`` () =
@@ -349,3 +318,60 @@ let ``Slice 1.2: integer DEFAULT round-trips through emit / deploy / ReadSide wi
         Assert.True(
             PhysicalSchema.isEqual diff,
             sprintf "DEFAULT round-trip PhysicalSchema diff non-empty:\n%s" (PhysicalSchema.renderDiff diff))
+
+// ---------------------------------------------------------------------
+// Wave-1 slice 1.3 — un-hollow the canary's ANNOTATION axis (triggers /
+// CHECK constraints / sequences / extended properties). Before this slice
+// ReadSide returned `Triggers=[]`, `ColumnChecks=[]`, `Sequences=[]`,
+// `ExtendedProperties=[]` for everything, so the canary was BLIND to a
+// dropped/changed instance of any of the four. The test below builds a
+// Catalog carrying one of each, round-trips through emit → deploy →
+// ReadSide, and asserts each feature is RECOVERED (the core un-hollowing
+// claim) and surfaces on the PhysicalSchema.Annotations axis.
+//
+// Scope honesty: triggers + sequences carry server-reformattable bodies,
+// so the assertion is RECOVERY + per-kind presence (the canary can now see
+// them), with a normalized-body tolerance. A full byte-tight body diff is
+// the in-feature follow-on; the structural un-hollowing — the canary is no
+// longer blind — is what this slice closes.
+// ---------------------------------------------------------------------
+
+// Fixture lifted to `Projection.Tests.Fixtures.annotationBearingCatalog`
+// (Wave-1 fixture-extraction; reused across feature-verticals).
+
+[<Fact>]
+let ``Slice 1.3: triggers / checks / sequences / extended properties are RECOVERED through emit / deploy / ReadSide`` () =
+    if skipIfNoDocker "annotation-roundtrip" then
+        let source = annotationBearingCatalog
+        let emitted = SsdtDdlEmitter.statements source |> Render.toText
+        let result = (Deploy.runWithReadback emitted).GetAwaiter().GetResult()
+        Assert.True(result.Report.Ok, sprintf "deploy failed: %s" (String.concat "\n" result.Report.Errors))
+
+        let target =
+            match result.Reconstructed with
+            | Some c -> c
+            | None -> Assert.Fail("ReadSide.read returned None"); Unchecked.defaultof<_>
+
+        // The core un-hollowing claim: each feature is RECOVERED (was always
+        // empty before slice 1.3).
+        let kinds = Catalog.allKinds target
+        let recoveredTriggers = kinds |> List.collect (fun k -> k.Triggers)
+        let recoveredChecks = kinds |> List.collect (fun k -> k.ColumnChecks)
+        let recoveredEps =
+            kinds |> List.collect (fun k -> k.ExtendedProperties @ (k.Attributes |> List.collect (fun a -> a.ExtendedProperties)))
+            |> List.filter (fun ep -> ep.Name <> "V2.LogicalName")
+        Assert.True((not (List.isEmpty recoveredTriggers)), "ReadSide recovered ZERO triggers (1.3 trigger probe regressed).")
+        Assert.True((not (List.isEmpty recoveredChecks)), "ReadSide recovered ZERO CHECK constraints (1.3 check probe regressed).")
+        Assert.True((not (List.isEmpty recoveredEps)), "ReadSide recovered ZERO non-LogicalName extended properties (1.3 ext-prop probe regressed).")
+        Assert.True((not (List.isEmpty target.Sequences)), "ReadSide recovered ZERO sequences (1.3 sequence probe regressed).")
+
+        // And each surfaces on the PhysicalSchema.Annotations axis, by kind.
+        let annKinds =
+            (PhysicalSchema.ofCatalog target).Annotations
+            |> Set.toList
+            |> List.map (fun a -> a.Kind)
+            |> Set.ofList
+        Assert.Contains(TriggerAnnotation, annKinds)
+        Assert.Contains(CheckAnnotation, annKinds)
+        Assert.Contains(SequenceAnnotation, annKinds)
+        Assert.Contains(ExtendedPropertyAnnotation, annKinds)

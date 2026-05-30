@@ -1199,12 +1199,12 @@ This is the integrated view: every L3 product axiom in Part III mapped to the L2
 | L3-S1 (byte-determinism) | T1 (partial: doesn't cover cross-platform) | No I/O in Core; sorting by SsKey | 44 tests | **Bucket A modulo cross-platform extension** |
 | L3-S2 (DACPAC round-trip) | T1 binary + T11 | `ArtifactByKind` keyset; DacFx symmetry | `DacpacRoundTripTests.fs` (**shipped 2026-05-30, Wave-1 slice 1.1**) + `AxiomTests.fs::L3-S2` | Bucket A modulo A37 erasure (now declared in-code: Origin.xml wall-clock / constraint auto-names / identifier quoting). **NB: this row claimed Bucket A from 2026-05-12 but the cited test did not exist until 2026-05-30 — a phantom-A corrected by slice 1.1; the verifiability gate `scripts/verifiability-gate.sh` now guards the class.** |
 | L3-S3 (SSDT/DACPAC agreement) | T11 | `ArtifactByKind` smart constructor | `SiblingEmitterContractTests` | Bucket A |
-| L3-S4 (Trigger definitions) | — | — (gated on A.0') | — | **Bucket D (Tier 1) until A.0' lifts** |
-| L3-S5 (Sequence definitions) | — | — (gated on A.0') | — | **Bucket D (Tier 1)** |
+| L3-S4 (Trigger definitions) | — | `PhysicalSchema.Annotations` (Trigger); `Trigger.create`; normalized-body tolerance | `CanaryRoundTripTests` "Slice 1.3" + `AxiomTests.fs::L3-S4/S5/S8/S9` | **Bucket A as of 2026-05-30 (Wave-1 slice 1.3; recovery verified vs real SQL Server)** |
+| L3-S5 (Sequence definitions) | — | `PhysicalSchema.Annotations` (Sequence); `Sequence.create` | `CanaryRoundTripTests` "Slice 1.3" | **Bucket A as of 2026-05-30 (Wave-1 slice 1.3; recovery verified vs real SQL Server)** |
 | L3-S6 (DEFAULT values) | — | `PhysicalColumn.Default`; `normalizeDefault` (A37 tolerance) | `CanaryRoundTripTests` "Slice 1.2" + `AxiomTests.fs::L3-S6` | **Bucket A as of 2026-05-30 (Wave-1 slice 1.2; integer DEFAULT verified vs real SQL Server; text/temporal follow-on)** |
-| L3-S7 (Computed columns) | — | — (gated on A.0') | — | **Bucket D (Tier 1)** |
-| L3-S8 (CHECK constraints) | — | — (gated on A.0') | — | **Bucket D (Tier 1)** |
-| L3-S9 (ExtendedProperties) | — | — (gated on A.0') | — | **Bucket D (Tier 2)** |
+| L3-S7 (Computed columns) | — | `PhysicalColumn.Computed`; in-process AST reader | `AxiomTests.fs::L3-S7` (Skip) | **Bucket C as of 2026-05-30 (Wave-1 slice 1.3; IR + emit + PhysicalSchema + H-050 AST reader done; real-SQL ReadSide `sys.computed_columns` probe pending)** |
+| L3-S8 (CHECK constraints) | — | `PhysicalSchema.Annotations` (Check); `ColumnCheck.create`; paren-normalized | `CanaryRoundTripTests` "Slice 1.3" | **Bucket A as of 2026-05-30 (Wave-1 slice 1.3; recovery verified vs real SQL Server)** |
+| L3-S9 (ExtendedProperties) | — | `PhysicalSchema.Annotations` (ExtendedProperty); `ExtendedProperty.create`; V2.LogicalName excluded | `CanaryRoundTripTests` "Slice 1.3" | **Bucket A as of 2026-05-30 (Wave-1 slice 1.3; recovery verified vs real SQL Server; MS_Description↔Description follow-on)** |
 | L3-S10 (Catalog coordinates) | — | — (gated on A.0') | — | **Bucket D (Tier 2)** |
 
 **Critical pattern**: L3-S4 through L3-S10 are *all* gated on the A.0' IR-fidelity workstream. Until that workstream ships, V2 can pass T1 byte-determinism for the kinds it carries while silently dropping kinds V1 has but V2 doesn't represent. This is L3-Boundary-NoSilentDrop's underwriting — Campaign A.2 makes this axiom enforceable.

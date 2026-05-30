@@ -45,13 +45,13 @@ The axioms are grouped by **core concern** (the operator's mental partition of V
 
 **L3-S4. Trigger definitions are complete.** Every Trigger in `Catalog.Triggers` with `IsDisabled = false` appears in emitted DDL as a `CREATE TRIGGER` statement with identical `Definition` text. Disabled triggers emit with disabled state preserved.
 
-  *Underwriting.* — (no L2 axiom; gated on Phase A.0' Trigger IR lift).
+  *Underwriting.* **Bucket A as of 2026-05-30 (Wave-1 slice 1.3).** `ReadSide.readTriggers` + `attachAnnotations` recover triggers (incl. disabled state); `PhysicalSchema.Annotations` (Trigger) compares them on a normalized-body tolerance. Verified vs real SQL Server by `CanaryRoundTripTests` "Slice 1.3".
   *Failure mode.* V2 emits DDL omitting triggers; data-validation triggers silently disappear; constraint checks applications relied on are gone.
   *Tier.* 1.
 
 **L3-S5. Sequence definitions are complete.** Every Sequence in `Catalog.Sequences` appears in emitted DDL as a `CREATE SEQUENCE` statement with StartValue, Increment, Min, Max, IsCycleEnabled, CacheMode preserved.
 
-  *Underwriting.* — (gated on Phase A.0' Sequence IR lift).
+  *Underwriting.* **Bucket A as of 2026-05-30 (Wave-1 slice 1.3).** `ReadSide.readSequences` + `buildSequences` recover the full sequence shape; `PhysicalSchema.Annotations` (Sequence) compares it. Verified vs real SQL Server by `CanaryRoundTripTests` "Slice 1.3".
   *Failure mode.* Applications depending on sequence-generated IDs fail at cutover; sequences missing from target schema.
   *Tier.* 1.
 
@@ -63,19 +63,19 @@ The axioms are grouped by **core concern** (the operator's mental partition of V
 
 **L3-S7. Computed columns render correctly.** Every Attribute with `IsComputed = true` and `ComputedDefinition` renders as a computed-column DDL; round-trip restores computed state and definition.
 
-  *Underwriting.* — (gated on Phase A.0' Computed IR lift).
+  *Underwriting.* **Bucket C as of 2026-05-30 (Wave-1 slice 1.3).** IR (`Attribute.Computed`), SSDT emission, `PhysicalColumn.Computed`, and the H-050 in-process AST reader round-trip computed columns; the real-SQL leg (ReadSide `sys.computed_columns` probe) is the remaining gap — `AxiomTests.fs::L3-S7` Skip carries the trigger.
   *Failure mode.* Computed columns become regular nullable columns at cutover.
   *Tier.* 1.
 
 **L3-S8. CHECK constraints are emitted.** Every `ColumnCheck` in `Kind.ColumnChecks` appears as a CHECK constraint in emitted DDL. Orphaned checks (naming nonexistent columns) fail at validation, not emit time.
 
-  *Underwriting.* — (gated on Phase A.0' CHECK IR lift).
+  *Underwriting.* **Bucket A as of 2026-05-30 (Wave-1 slice 1.3).** `ReadSide.readCheckConstraints` + `attachAnnotations` recover CHECK constraints; `PhysicalSchema.Annotations` (Check) compares the paren-normalized expression. Verified vs real SQL Server by `CanaryRoundTripTests` "Slice 1.3".
   *Failure mode.* Business-logic constraints disappear; applications relying on database-side validation start accepting invalid data.
   *Tier.* 1.
 
 **L3-S9. ExtendedProperties round-trip.** Every ExtendedProperty on Module/Kind/Attribute/Index appears in SSDT extended-property comments and round-trips via DacFx.
 
-  *Underwriting.* — (gated on Phase A.0' ExtendedProperties IR lift).
+  *Underwriting.* **Bucket A as of 2026-05-30 (Wave-1 slice 1.3).** `ReadSide.readExtendedProperties` + `attachAnnotations` recover non-`V2.LogicalName` extended properties (table + column); `PhysicalSchema.Annotations` (ExtendedProperty) compares them. Verified vs real SQL Server by `CanaryRoundTripTests` "Slice 1.3". (`MS_Description`↔`Description` recovery is an in-feature follow-on.)
   *Failure mode.* Documentation embedded as extended properties (MS_Description and custom keys) disappears; institutional knowledge lost.
   *Tier.* 2.
 

@@ -270,6 +270,136 @@ module ReadSide =
             return result |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
         }
 
+    /// Wave-1 slice 1.3 — read DML triggers from `sys.triggers`, keyed by
+    /// `(schema, table)`. Each value is `(triggerName, isDisabled, body)`;
+    /// the body is the `OBJECT_DEFINITION` text (PhysicalSchema normalizes
+    /// it). Single round-trip.
+    let private readTriggers (cnn: SqlConnection)
+        : Task<Map<string * string, (string * bool * string) list>> =
+        task {
+            use _ = Bench.scope "readside.readTriggers"
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT SCHEMA_NAME(t.schema_id), t.name, tr.name, \
+                        tr.is_disabled, OBJECT_DEFINITION(tr.object_id) \
+                 FROM sys.triggers tr \
+                 JOIN sys.tables t ON t.object_id = tr.parent_id \
+                 WHERE tr.is_ms_shipped = 0 AND t.is_ms_shipped = 0"
+            use! reader = cmd.ExecuteReaderAsync()
+            let acc = System.Collections.Generic.Dictionary<string * string, ResizeArray<string * bool * string>>()
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then
+                    let key = (reader.GetString 0, reader.GetString 1)
+                    let body = if reader.IsDBNull 4 then "" else reader.GetString 4
+                    let entry = (reader.GetString 2, reader.GetBoolean 3, body)
+                    match acc.TryGetValue key with
+                    | true, lst -> lst.Add entry
+                    | false, _ ->
+                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst
+                else hasMore <- false
+            return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
+        }
+
+    /// Wave-1 slice 1.3 — read CHECK constraints from `sys.check_constraints`,
+    /// keyed by `(schema, table)`. Value is `(constraintName, definition,
+    /// isNotTrusted)`. Single round-trip.
+    let private readCheckConstraints (cnn: SqlConnection)
+        : Task<Map<string * string, (string * string * bool) list>> =
+        task {
+            use _ = Bench.scope "readside.readCheckConstraints"
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT SCHEMA_NAME(t.schema_id), t.name, cc.name, \
+                        cc.definition, cc.is_not_trusted \
+                 FROM sys.check_constraints cc \
+                 JOIN sys.tables t ON t.object_id = cc.parent_object_id \
+                 WHERE t.is_ms_shipped = 0"
+            use! reader = cmd.ExecuteReaderAsync()
+            let acc = System.Collections.Generic.Dictionary<string * string, ResizeArray<string * string * bool>>()
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then
+                    let key = (reader.GetString 0, reader.GetString 1)
+                    let entry = (reader.GetString 2, reader.GetString 3, reader.GetBoolean 4)
+                    match acc.TryGetValue key with
+                    | true, lst -> lst.Add entry
+                    | false, _ ->
+                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst
+                else hasMore <- false
+            return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
+        }
+
+    /// Wave-1 slice 1.3 — read SEQUENCE objects from `sys.sequences`.
+    /// Each row carries the full shape (type, start/increment/min/max,
+    /// cycle, cache). Single round-trip; small result set.
+    let private readSequences (cnn: SqlConnection)
+        : Task<(string * string * string * decimal option * decimal option * decimal option * decimal option * bool * bool * int option) list> =
+        task {
+            use _ = Bench.scope "readside.readSequences"
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT SCHEMA_NAME(s.schema_id), s.name, TYPE_NAME(s.system_type_id), \
+                        s.start_value, s.increment, s.minimum_value, s.maximum_value, \
+                        s.is_cycling, s.is_cached, s.cache_size \
+                 FROM sys.sequences s"
+            use! reader = cmd.ExecuteReaderAsync()
+            let optDec (i: int) : decimal option =
+                if reader.IsDBNull i then None else Some (System.Convert.ToDecimal(reader.GetValue i))
+            let optInt (i: int) : int option =
+                if reader.IsDBNull i then None else Some (System.Convert.ToInt32(reader.GetValue i))
+            let rows = ResizeArray<_>()
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then
+                    rows.Add(
+                        reader.GetString 0, reader.GetString 1, reader.GetString 2,
+                        optDec 3, optDec 4, optDec 5, optDec 6,
+                        reader.GetBoolean 7, reader.GetBoolean 8, optInt 9)
+                else hasMore <- false
+            return List.ofSeq rows
+        }
+
+    /// Wave-1 slice 1.3 — read NON-`V2.LogicalName` extended properties on
+    /// tables + columns from `sys.extended_properties`, keyed by
+    /// `(schema, table, columnOrNull)`. The `V2.LogicalName` property is
+    /// excluded — it is the emitter's own round-trip scaffolding, covered by
+    /// the LogicalNameBindings axis. Value is `(propName, propValue) list`.
+    let private readExtendedProperties (cnn: SqlConnection)
+        : Task<Map<string * string * string option, (string * string) list>> =
+        task {
+            use _ = Bench.scope "readside.readExtendedProperties"
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT SCHEMA_NAME(t.schema_id), t.name, c.name, \
+                        ep.name, CAST(ep.value AS NVARCHAR(MAX)) \
+                 FROM sys.extended_properties ep \
+                 JOIN sys.tables t ON t.object_id = ep.major_id \
+                 LEFT JOIN sys.columns c \
+                   ON c.object_id = ep.major_id AND c.column_id = ep.minor_id \
+                 WHERE ep.class = 1 AND t.is_ms_shipped = 0 \
+                   AND ep.name <> N'V2.LogicalName'"
+            use! reader = cmd.ExecuteReaderAsync()
+            let acc = System.Collections.Generic.Dictionary<string * string * string option, ResizeArray<string * string>>()
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then
+                    let col = if reader.IsDBNull 2 then None else Some (reader.GetString 2)
+                    let key = (reader.GetString 0, reader.GetString 1, col)
+                    let value = if reader.IsDBNull 4 then "" else reader.GetString 4
+                    let entry = (reader.GetString 3, value)
+                    match acc.TryGetValue key with
+                    | true, lst -> lst.Add entry
+                    | false, _ ->
+                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst
+                else hasMore <- false
+            return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
+        }
+
     /// Read the set of FK relationships across every user table.
     /// Returns rows of `(srcSchema, srcTable, srcCol, tgtSchema, tgtTable,
     /// tgtCol)`. Composite FKs surface as multiple rows. Uses sys.* directly;
@@ -800,6 +930,79 @@ module ReadSide =
                     | None -> a)
             { k with Attributes = attrs }
 
+    /// Wave-1 slice 1.3 — attach recovered triggers + CHECK constraints +
+    /// extended properties to a Kind. Uses the Core smart constructors
+    /// (`Trigger.create` / `ColumnCheck.create` / `ExtendedProperty.create`)
+    /// so the reconstructed IR carries the same invariants as the forward
+    /// path; a constructor failure (e.g. blank definition) is skipped
+    /// (best-effort recovery — a malformed deployed object should not abort
+    /// the whole readback). `attrEpByCol` maps a column name to its recovered
+    /// extended properties. SsKeys synthesized from the deployed coordinates.
+    let private attachAnnotations
+        (triggers: Map<string * string, (string * bool * string) list>)
+        (checks: Map<string * string, (string * string * bool) list>)
+        (extProps: Map<string * string * string option, (string * string) list>)
+        (k: Kind)
+        : Kind =
+        let schema, table = k.Physical.Schema, k.Physical.Table
+        let recoveredTriggers =
+            Map.tryFind (schema, table) triggers
+            |> Option.defaultValue []
+            |> List.choose (fun (name, disabled, body) ->
+                match SsKey.synthesized "READSIDE_TRIGGER" (sprintf "%s.%s.%s" schema table name),
+                      Name.create name with
+                | Ok sk, Ok nm ->
+                    match Trigger.create sk nm disabled body with
+                    | Ok t -> Some t
+                    | Error _ -> None
+                | _ -> None)
+        let recoveredChecks =
+            Map.tryFind (schema, table) checks
+            |> Option.defaultValue []
+            |> List.choose (fun (name, definition, notTrusted) ->
+                match SsKey.synthesized "READSIDE_CHECK" (sprintf "%s.%s.%s" schema table name) with
+                | Ok sk ->
+                    let nm = match Name.create name with | Ok n -> Some n | Error _ -> None
+                    match ColumnCheck.create sk nm definition notTrusted with
+                    | Ok c -> Some c
+                    | Error _ -> None
+                | Error _ -> None)
+        let mkEps (col: string option) : ExtendedProperty list =
+            Map.tryFind (schema, table, col) extProps
+            |> Option.defaultValue []
+            |> List.choose (fun (name, value) ->
+                match ExtendedProperty.create name (Some value) with
+                | Ok ep -> Some ep
+                | Error _ -> None)
+        let attrs =
+            k.Attributes
+            |> List.map (fun a ->
+                { a with ExtendedProperties = a.ExtendedProperties @ mkEps (Some a.Column.ColumnName) })
+        { k with
+            Triggers = k.Triggers @ recoveredTriggers
+            ColumnChecks = k.ColumnChecks @ recoveredChecks
+            ExtendedProperties = k.ExtendedProperties @ mkEps None
+            Attributes = attrs }
+
+    /// Wave-1 slice 1.3 — reconstruct catalog-level `Sequence` values from
+    /// the `sys.sequences` rows via the `Sequence.create` smart constructor.
+    let private buildSequences
+        (rows: (string * string * string * decimal option * decimal option * decimal option * decimal option * bool * bool * int option) list)
+        : Sequence list =
+        rows
+        |> List.choose (fun (schema, name, dataType, start, incr, minV, maxV, cycle, isCached, cacheSize) ->
+            let cacheMode =
+                if not isCached then NoCache
+                elif Option.isSome cacheSize then Cache
+                else Unspecified
+            match SsKey.synthesized "READSIDE_SEQUENCE" (sprintf "%s.%s" schema name),
+                  Name.create name with
+            | Ok sk, Ok nm ->
+                match Sequence.create sk nm schema dataType start incr minV maxV cycle cacheMode cacheSize with
+                | Ok s -> Some s
+                | Error _ -> None
+            | _ -> None)
+
     /// Combined-query variant of the five schema-readback queries
     /// (`readColumnRows` + `readPrimaryKeys` + `readIdentityColumns`
     /// + `readForeignKeys` + `readLogicalNameProperties`). Sends ONE
@@ -1027,8 +1230,19 @@ module ReadSide =
                         // canary's PhysicalSchema.Default axis is no longer
                         // blind to a dropped/changed DEFAULT clause.
                         let! defaults = readDefaultConstraints cnn
+                        // Wave-1 slice 1.3 — recover the four table/catalog-
+                        // scoped annotation features (triggers / checks /
+                        // sequences / extended properties) so the canary's
+                        // Annotations axis is no longer blind to them.
+                        let! triggers = readTriggers cnn
+                        let! checks = readCheckConstraints cnn
+                        let! extProps = readExtendedProperties cnn
+                        let! sequenceRows = readSequences cnn
+                        let recoveredSequences = buildSequences sequenceRows
                         let kindsWithRefs =
-                            kindsWithRefs0 |> List.map (attachDefaults defaults)
+                            kindsWithRefs0
+                            |> List.map (attachDefaults defaults)
+                            |> List.map (attachAnnotations triggers checks extProps)
                         // Per session-34 — threshold lifted to 100k.
                         // Below that, rows materialize into V2 IR
                         // (`Modality.Static`) for the per-row PhysicalSchema
@@ -1073,11 +1287,10 @@ module ReadSide =
                                                         ExtendedProperties = []
                                                     }
                                                 ]
-                                            // Chapter A.0' slice δ —
-                                            // ReadSide does not yet pick up
-                                            // schema-level sequences from the
-                                            // deployed database. Empty default.
-                                            Sequences = []
+                                            // Wave-1 slice 1.3 — sequences
+                                            // recovered from sys.sequences via
+                                            // readSequences + buildSequences.
+                                            Sequences = recoveredSequences
                                         }
             with
             | ex ->

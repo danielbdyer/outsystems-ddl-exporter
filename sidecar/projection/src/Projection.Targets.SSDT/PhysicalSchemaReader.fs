@@ -58,6 +58,7 @@ module PhysicalSchemaReader =
                 Default =
                     col.DefaultValue
                     |> Option.map (fun lit -> PhysicalSchema.normalizeDefault (SqlLiteral.toString lit))
+                Computed = col.Computed |> Option.map PhysicalSchema.encodeComputed
             })
 
     let private toPhysicalForeignKeys
@@ -139,4 +140,15 @@ module PhysicalSchemaReader =
             Rows = Set.empty
             RowDigests = Set.empty
             LogicalNameBindings = logicalNameBindings
+            // Wave-1 slice 1.3 — the in-process AST reader projects the
+            // SCHEMA adjunction (columns + FKs + logical names + computed,
+            // all column/table-shape recoverable from the typed statement
+            // stream). The annotation axis (triggers / checks / sequences /
+            // extended properties) is verified through the REAL SQL Server
+            // canary (ReadSide path), which is the authoritative round-trip;
+            // statement-stream recovery of annotation bodies is deferred to
+            // a follow-on (no consumer needs the AST-side annotation diff
+            // today — the two-consumer threshold gates it). Empty here keeps
+            // the H-050 in-process adjunction green on the axes it owns.
+            Annotations = Set.empty
         }

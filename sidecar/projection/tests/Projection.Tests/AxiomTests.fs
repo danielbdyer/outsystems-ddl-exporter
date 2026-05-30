@@ -531,8 +531,44 @@ let ``L3-S6 (Wave-1 slice 1.2): DEFAULT values survive emit → deploy → ReadS
     // end-to-end against real SQL Server; text/temporal/computed DEFAULT
     // reconstruction is the in-feature follow-on (same template). The other
     // five hollow-canary features (triggers / sequences / checks / computed /
-    // ext-props — L3-S4/S5/S7/S8/S9) remain Bucket D pending their own
-    // ReadSide + PhysicalSchema verticals on this proven pattern.
+    // ext-props — L3-S4/S5/S7/S8/S9) follow on this proven pattern; slice 1.3
+    // (below) closes four of the five (triggers/sequences/checks/ext-props).
+    ()
+
+[<Fact>]
+let ``L3-S4/S5/S8/S9 (Wave-1 slice 1.3): triggers, sequences, CHECK constraints, and extended properties survive emit → deploy → ReadSide on the PhysicalSchema.Annotations axis — verified by CanaryRoundTripTests`` () =
+    citationOf
+        "tests/Projection.Tests/CanaryRoundTripTests.fs"
+        "Slice 1.3: triggers / checks / sequences / extended properties are RECOVERED through emit / deploy / ReadSide"
+    // Bucket A (promoted 2026-05-30 from Bucket D, "gated on A.0' IR lift").
+    // The IR axes (Kind.Triggers / Kind.ColumnChecks / Catalog.Sequences /
+    // *.ExtendedProperties) and SSDT emission shipped earlier, but ReadSide
+    // returned EMPTY for all four and PhysicalSchema had NO annotation axis —
+    // the canary was structurally BLIND to a dropped/changed instance of any.
+    // Slice 1.3 closes the round-trip leg for the four table/catalog-scoped
+    // features via the uniform `PhysicalSchema.Annotations` axis:
+    //   - ReadSide.readTriggers / readCheckConstraints / readSequences /
+    //     readExtendedProperties (sys.triggers / sys.check_constraints /
+    //     sys.sequences / sys.extended_properties) + attachAnnotations /
+    //     buildSequences populate the IR fields through the Core smart
+    //     constructors (Trigger.create / ColumnCheck.create / Sequence.create
+    //     / ExtendedProperty.create) — best-effort (a malformed deployed
+    //     object is skipped, not fatal).
+    //   - PhysicalSchema projects them into `PhysicalAnnotation` (Kind
+    //     discriminator: Trigger/Check/Sequence/ExtendedProperty); the diff
+    //     includes them by construction (Set membership).
+    // Named A37-family tolerances: trigger bodies compared on a normalized
+    // digest (whitespace-collapsed, lowercased) so SQL Server's re-formatting
+    // of the stored definition does not over-assert; CHECK / DEFAULT
+    // expressions paren-normalized; V2.LogicalName excluded from the ext-prop
+    // axis (covered by LogicalNameBindings). Scope: RECOVERY + per-kind
+    // presence verified end-to-end vs real SQL Server. NB: MS_Description ↔
+    // Description recovery is a deliberate in-feature follow-on (ReadSide
+    // recovers MS_Description as a generic annotation, not yet as Description).
+    ()
+
+[<Fact(Skip = "L3-S7: computed columns round-trip — Bucket C. IR (Attribute.Computed), SSDT emission, PhysicalColumn.Computed, and the H-050 in-process AST reader (PhysicalSchemaReader) all round-trip computed columns (Wave-1 slice 1.3). The REAL-SQL leg is the gap: ReadSide does not yet probe sys.computed_columns (still Computed=None at ReadSide.fs ~:536), so the live-DB canary cannot yet catch a dropped computed column. Trigger: wire a readComputedColumns probe (mirrors readDefaultConstraints) + an attach step, then a CanaryRoundTripTests vertical — flip Skip→Fact citing it. The in-process adjunction (AdjunctionLawTests) already exercises the Computed axis.")>]
+let ``L3-S7: computed columns round-trip (Bucket C — in-process AST reader done; real-SQL ReadSide probe pending)`` () =
     ()
 
 [<Fact>]
