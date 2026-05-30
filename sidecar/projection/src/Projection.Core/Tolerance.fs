@@ -108,6 +108,24 @@ module ToleratedDivergence =
                 coverage ToleratedDivergence.StaticPopulationsUnreflected
             ]
 
+    /// Canonical string name for a divergence — the operator-facing token a
+    /// per-environment config uses (Wave-3 slice 3.4). Exhaustive match: a
+    /// new variant fires FS0025 here under `TreatWarningsAsErrors`, forcing
+    /// the author to give it a config token. `name` is the single source of
+    /// truth; `tryParse` is its inverse.
+    let name (d: ToleratedDivergence) : string =
+        match d with
+        | ToleratedDivergence.HeaderCommentsOmitted        -> "HeaderCommentsOmitted"
+        | ToleratedDivergence.PostDeployForeignKeysSplit   -> "PostDeployForeignKeysSplit"
+        | ToleratedDivergence.IndexesUnreflected           -> "IndexesUnreflected"
+        | ToleratedDivergence.StaticPopulationsUnreflected -> "StaticPopulationsUnreflected"
+
+    /// Parse a config token to its divergence, or `None` for an unrecognized
+    /// token. Derived from `name` so the round-trip `name >> tryParse` is the
+    /// identity on every known variant (asserted in `ToleranceTests`).
+    let tryParse (token: string) : ToleratedDivergence option =
+        allKnown |> Set.toList |> List.tryFind (fun d -> name d = token)
+
 /// The equivalence-class definition for the canary's V1≈V2 and
 /// source-deploy≈target-deploy comparisons. A `Tolerance` is the
 /// SET of accepted divergences; membership says "this divergence
@@ -126,6 +144,15 @@ module ToleratedDivergence =
 /// Divergence`, `tolerates`, `divergences`). Per the AXIOMS.md
 /// operational principle (structural-commitment-via-construction
 /// -validation), every value carries its own truth.
+/// Failure of `Tolerance.parse` — an environment config named a divergence
+/// token V2 does not recognize (Wave-3 slice 3.4). Carries the offending
+/// token so the operator sees exactly which name to fix. The **fail-closed**
+/// safety property: an unrecognized token is an `Error`, never a silently-
+/// ignored entry — silently widening (or narrowing) tolerance from a typo'd
+/// config would corrupt the canary's R6 gate semantics.
+type ToleranceError =
+    | UnknownDivergence of token: string
+
 type Tolerance = private Tolerance of Set<ToleratedDivergence>
 
 /// Operations on `Tolerance` values. The two named constructors
@@ -169,3 +196,25 @@ module Tolerance =
     /// True iff zero divergences are tolerated. Equivalent to
     /// `t = Tolerance.strict` under structural equality.
     let isStrict (Tolerance s) : bool = Set.isEmpty s
+
+    /// Parse a per-environment config — a list of divergence tokens — into a
+    /// `Tolerance`, **fail-closed** (Wave-3 slice 3.4). Every non-blank token
+    /// must validate against `ToleratedDivergence.allKnown`; the first
+    /// unrecognized token short-circuits to `Error (UnknownDivergence token)`.
+    /// Blank / whitespace-only tokens are skipped (a trailing comma in config
+    /// is not an error and does not widen tolerance). The empty list parses to
+    /// `strict` — the safe default. This is the operator decision surface R6's
+    /// flip gate reads; an unknown name silently widening would corrupt the
+    /// canary's equivalence semantics, so it MUST fail rather than default.
+    let parse (tokens: string list) : Result<Tolerance, ToleranceError> =
+        let rec loop (acc: Set<ToleratedDivergence>) (remaining: string list) =
+            match remaining with
+            | [] -> Ok (ofSet acc)
+            | raw :: rest ->
+                let token = raw.Trim()
+                if token = "" then loop acc rest
+                else
+                    match ToleratedDivergence.tryParse token with
+                    | Some d -> loop (Set.add d acc) rest
+                    | None -> Error (UnknownDivergence token)
+        loop Set.empty tokens

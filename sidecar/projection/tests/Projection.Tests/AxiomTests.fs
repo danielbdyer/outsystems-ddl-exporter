@@ -482,6 +482,26 @@ let ``L3-X7 (Wave-2 slice 2.5b): an unresolvable FK drop emits a Diagnostics wit
     ()
 
 [<Fact>]
+let ``L3-C1 (Wave-3 slice 3.4): per-environment Tolerance config is fail-closed — verified by ToleranceTests`` () =
+    citationOf
+        "tests/Projection.Tests/ToleranceTests.fs"
+        "3.4: an unknown tolerance name fails closed"
+    // Bucket A for the fail-closed parse primitive (Wave-3 slice 3.4).
+    // `Tolerance.parse : string list -> Result<Tolerance, ToleranceError>`
+    // validates every non-blank token against `ToleratedDivergence.allKnown`;
+    // an unrecognized token short-circuits to `Error (UnknownDivergence _)` —
+    // it can never silently widen (or narrow) the canary's R6 equivalence
+    // semantics. Empty config = `strict` (safe default); `name`/`tryParse`
+    // round-trip on every variant (closed-DU exhaustiveness forces a token per
+    // future variant). NB: this is the operator DECISION surface (the tokens
+    // R6's flip gate reads). Wiring the parsed Tolerance INTO the canary diff
+    // (making the comparison tolerance-aware) is a separate slice — today the
+    // PhysicalSchema diff is exact (`isEqual`) and consumes no Tolerance, so a
+    // Config field would be a parsed-then-discarded value (dead-overlay /
+    // two-consumer discipline). The primitive ships; the consumer is gated.
+    ()
+
+[<Fact>]
 let ``L3-Emission-Logical (slice D.1.a): the physical-realization slot adopts the logical name under default emission — verified by LogicalNameEmissionTests`` () =
     citationOf
         "tests/Projection.Tests/LogicalNameEmissionTests.fs"
