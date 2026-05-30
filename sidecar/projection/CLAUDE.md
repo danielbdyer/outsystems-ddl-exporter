@@ -15,11 +15,16 @@ substantive surfaces are unchanged.
 
 `KICKOFF.md` is the fresh-agent first-message brief — read it first as a
 5-minute orientation that points at the canonical surfaces in the order
-below. Per `DECISIONS 2026-05-22 — CLAUDE.md reading-order update`,
-`VISION.md` is item 2 (the strategic frame for the cutover); the
-companion strategic surfaces (`SPINE.md`, `PLAYBOOK.md`, `STAGING.md`)
-are **on-demand** references — read when the relevant work surfaces
-them, not as part of the canonical first-read pass.
+below. **`NORTH_STAR.md` is the apex vision — read it before `VISION.md`.**
+It states the bullseye (the Total Projection: the adjunction made total,
+executable, and self-describing — fidelity as a theorem the engine proves
+about itself) and **supersedes `VISION.md`'s strategic frame**; `VISION.md`
+remains valid as the cutover-era operational vision (the first ring of the
+bullseye). Per `DECISIONS 2026-05-22 — CLAUDE.md reading-order update` (now
+amended for the apex), `VISION.md` follows `NORTH_STAR.md`; the companion
+strategic surfaces (`SPINE.md`, `PLAYBOOK.md`, `STAGING.md`) are
+**on-demand** references — read when the relevant work surfaces them, not
+as part of the canonical first-read pass.
 
 **`V2_DRIVER.md`** (codified 2026-05-10 chapter 3.7 sidebar; principal-PO
 discussion) is the destination-KPI document — the *why* the cutover
@@ -42,7 +47,8 @@ before any chapter open; BACKLOG before any chapter-mid status review.
    chapter. Short on purpose. Names what is load-bearing and what
    is deferred. Older chapters' handoff letters preserved at
    `HANDOFF_CHAPTER_<N>.md` (currently `HANDOFF_CHAPTER_1.md`).
-2. **`VISION.md`** — strategic frame for V2: cutover as forcing
+2. **`VISION.md`** — *cutover-era* strategic frame (superseded as apex by
+   `NORTH_STAR.md`; read that first): cutover as forcing
    function; sibling chorus + verification posture; acceptance
    criteria; cutover fallback ladder. Read for the *why*. Companion
    strategic surfaces (`SPINE.md` for the categorical structure;

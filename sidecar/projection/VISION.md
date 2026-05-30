@@ -1,5 +1,12 @@
 # V2 — Vision
 
+> **SUPERSEDED AS APEX (2026-05-30).** The truest north star now lives in
+> [`NORTH_STAR.md`](NORTH_STAR.md) — the bullseye stated as a falsifiable matrix
+> (the Total Projection: fidelity as a self-verified theorem). This document
+> remains valid as the **cutover-era operational vision** — the first ring of
+> the bullseye. Read `NORTH_STAR.md` first for the *why*; read this for the
+> cutover-scoped strategy, acceptance criteria, and fallback ladder it preserves.
+
 > **Documentation map.** This is the canonical vision document for V2 (the F# sidecar of the OutSystems DDL exporter). The current vision is the body of this file; the original revision-1 vision is preserved verbatim at the end as historical context. The four-subagent review that produced revision 2 — synthesis, reasoning resolutions R1–R8, and eight verbatim subagent reports (Appendices A–H) — lives in `VISION_REVIEW.md`. Tactical decisions live in `DECISIONS.md`; algebraic claims in `AXIOMS.md`; chapter-bridge context in `HANDOFF.md`; V1↔V2 placement in `ADMIRE.md`.
 >
 > **Companion strategic surfaces** (added 2026-05-08):

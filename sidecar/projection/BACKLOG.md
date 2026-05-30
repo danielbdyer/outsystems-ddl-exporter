@@ -15,6 +15,12 @@
 
 See § VII Sequencing graph for the current fan-out and Phase 8 for the structured path.
 
+**Update 2026-05-30 — apex vision + execution plan + self-verification seed** (branch `claude/sidecar-projection-v2-direction-V5CCP`).
+- `NORTH_STAR.md` authored — the **apex vision**, superseding `VISION.md`'s strategic frame. Bullseye = the **Total Projection**: the adjunction `Ingest ∘ Project = id` made *total* (schema/data/identity/time/decision), *executable*, and *self-describing*. Reading order rewired (`KICKOFF.md`, `CLAUDE.md`); `VISION.md` banner-marks itself as the cutover-era operational vision (the first ring).
+- `EXECUTION_PLAN.md` authored — six cross-thread waves, ~25 per-slice specs (files/signatures/acceptance/governance), dependency graph, critical path, and the endgame backlog (E1–E5).
+- **Slice E1 shipped** — `scripts/verifiability-gate.sh`: executable-axiom totality over `AxiomTests.fs` (no Skipped axiom may claim Bucket A/B; every Skip must name its bucket C/D). **E2 seed** — `scripts/matrix-status.sh` → generated `NORTH_STAR.matrix.generated.md`; round-trip witnesses present for **Schema + Data**, open for Identity/Time/Decision. The vision now reports its own distance to the bullseye.
+- **Doc-reality reconciliation (this ledger was itself stale).** Verified against source: **RemediationEmitter + SummaryFormatter + LiveProfiler are shipped** (were marked deferred → DIAGNOSTICS axis is flip-eligible, 🟢); `CHAPTER_A_4_7_PRIME` is **closed** (its OPEN doc was stale); the CLI dispatches ~7 verbs (not 4). Open integrity gaps confirmed: the DACPAC round-trip was claimed "Bucket A" with **no test** (phantom — the class E1+E2/E5 close); `ReadSide` reads back triggers/sequences/defaults/computed/checks/ext-props as empty → the canary is **hollow for six schema features** (Wave 1). Per-row reconciliation of the Phase-8 cash-out table is EXECUTION_PLAN slice 0.1.
+
 **Strategic relationship:**
 
 - **`V2_DRIVER.md`** is the strategic destination — the *why* the
