@@ -440,6 +440,10 @@ let ``A41: registry totality + bidirectional property tests — verified by Regi
     // OperatorIntent events) + overlay-exercise.
     ()
 
+[<Fact(Skip = "A42 (candidate): decision→emission fidelity — Bucket C, scaffolded at Wave-2 slice 2.1. DecisionOverlay + observable-identity-on-empty are LANDED and verified (DecisionOverlayTests.fs: `ofComposeState (ComposeState.initial c) = empty`, FsCheck totality). The emitter does NOT yet apply the decisions (slices 2.2 thread the curried-prefix arg byte-identically; 2.3 applies NOT NULL + UNIQUE; 2.4 applies FK drop + NOCHECK). Trigger: at slice 2.5, flip Skip→Fact citing the canary tests that prove EnforceNotNull→NOT NULL / EnforceUnique→UNIQUE / DoNotEnforce→suppressed / ScriptWithNoCheck→untrusted reached the emitted DDL, and promote candidate→numbered A42 in AXIOMS.md.")>]
+let ``A42 (candidate, Wave 2): emitted DDL is a faithful projection of the tightening decision sets`` () =
+    ()
+
 [<Fact>]
 let ``L3-Emission-Logical (slice D.1.a): the physical-realization slot adopts the logical name under default emission — verified by LogicalNameEmissionTests`` () =
     citationOf

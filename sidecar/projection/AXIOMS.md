@@ -856,6 +856,43 @@ burst (per `DECISIONS 2026-05-22 — Stage 0 foundation phase ships as
 one coherent unit`); the bodies fill at the chapters named in each
 heading.
 
+## A42 candidate — decision→emission fidelity (Wave 2, 2026-05-30)
+
+**Scaffolded at Wave-2 slice 2.1 open.** The body fills at slice 2.5
+(`EXECUTION_PLAN.md` Wave 2) once the SSDT emitter applies the
+tightening decisions and the canary proves they reached the emitted DDL.
+
+**A42 (candidate).** The emitted DDL is a faithful projection of the
+tightening decision sets. Formally, for a `ComposeState` whose decision
+sets are projected by `DecisionOverlay.ofComposeState`:
+- every `NullabilityOutcome.EnforceNotNull` attribute is emitted `NOT NULL`,
+  and only those (additive-only — a non-enforce decision never loosens
+  source truth);
+- every `UniqueIndexOutcome.EnforceUnique` index is emitted `UNIQUE`, and
+  only those;
+- every `ForeignKeyOutcome.DoNotEnforce` reference is suppressed (no inline
+  FK), and every `EnforceConstraint (ScriptWithNoCheck _)` reference is
+  emitted `WITH NOCHECK` (untrusted).
+
+**Observable identity (the 2.2 safety net).** `DecisionOverlay.empty`
+threaded through the emitter is byte-identical to pre-overlay emission —
+`ofComposeState (ComposeState.initial c) = empty` (proved in
+`DecisionOverlayTests.fs`), so emission with no registered interventions is
+unchanged.
+
+**A18 ↔ A42 relationship.** A42 is what A18-amended *permits*: the emitter
+consumes `DecisionOverlay` (decisions = evidence-derived facts), never
+`Policy` (intent). The curried-prefix threading shape keeps the `Emitter`
+port `Catalog`-only. The decision was discharged from intent into evidence
+by the passes; the emitter projects the fact.
+
+**Underwriting plan.** Slice 2.1 — `DecisionOverlay` + observable identity
+(`DecisionOverlayTests.fs`, landed). Slice 2.2 — curried-prefix threading,
+byte-identical with `empty`. Slice 2.3 — NOT NULL + UNIQUE application,
+canary-proved via the un-hollowed `PhysicalSchema` (Wave 1). Slice 2.4 — FK
+gating + NOCHECK. Slice 2.5 — promote candidate → numbered A42 + cash the
+`AxiomTests.fs` body + a `PRODUCT_AXIOMS.md` L3 entry.
+
 ## T1 amended (binary normal-form composition) — chapter 3.x close (2026-05-11)
 
 **Cashed at chapter 3.x close** (DacpacEmitter + DockerImageEmitter
