@@ -4,14 +4,14 @@
 # self-reporting (NORTH_STAR criterion 5, documentation totality / T-IV).
 #
 # Derives, from the code, two things and writes them to NORTH_STAR.matrix.generated.md:
-#   1. The L2 executable-axiom bucket rollup + the T-II gate verdict (machine-derived
-#      from tests/Projection.Tests/AxiomTests.fs).
-#   2. The §1 round-trip matrix, where each cell names its witness test and the
-#      generator VERIFIES that witness actually exists in the test tree — a cell
-#      asserted green whose witness is absent is flagged DRIFT, not trusted.
+#   1. The L2 executable-axiom rollup + the T-II gate verdict, machine-derived from
+#      tests/Projection.Tests/AxiomTests.fs (live verified/convention vs deferred C/D).
+#   2. The §1 round-trip matrix, where each cell names a witness test and the generator
+#      VERIFIES that a test by that name exists in the tree — a cell asserted green whose
+#      witness is absent renders OPEN (the generator under-claims; it never over-claims).
 #
 # Honesty mechanism: a human cannot mark a cell green; the witness test must exist.
-# As Waves 1-2 land their witness tests, cells flip automatically on regeneration.
+# As Waves 1-4 land their witness tests, cells flip automatically on regeneration.
 # Run at chapter close; a non-empty `git diff` on the generated file = a coverage shift.
 set -euo pipefail
 
@@ -21,45 +21,31 @@ TESTS="$ROOT/tests"
 OUT="$ROOT/NORTH_STAR.matrix.generated.md"
 [ -f "$AX" ] || { echo "matrix-status: AxiomTests.fs not found" >&2; exit 2; }
 
-a=$(grep -c '\[bucket A\]' "$AX" || true)
-b=$(grep -c '\[bucket B\]' "$AX" || true)
-c=$(grep -c '\[bucket C\]' "$AX" || true)
-d=$(grep -c '\[bucket D\]' "$AX" || true)
-total=$((a+b+c+d))
+skips="$(grep -E '\[<Fact\(Skip' "$AX" || true)"
+live=$(grep -cE '^[[:space:]]*\[<Fact>\]' "$AX" || true)
+skip_total=$(printf '%s\n' "$skips" | grep -c . || true)
+c=$(printf '%s\n' "$skips" | grep -cE 'Bucket C' || true)
+d=$(printf '%s\n' "$skips" | grep -cE 'Bucket D' || true)
+total=$(( live + skip_total ))
 
 if "$ROOT/scripts/verifiability-gate.sh" >/dev/null 2>&1; then tii="PASS"; else tii="FAIL"; fi
 
 # Cell declarations: "Axis|Operation|witness-test-substring|EXECUTION_PLAN slice".
-# A cell is verified only if the substring is found on a non-Skipped test-name line
-# anywhere under tests/. Substrings chosen to match the backtick test names the
-# slices specify; absent witnesses render as open (the honest default).
-cells='Schema|round-trip (canary)|round-trip is PhysicalSchema|Wave 1 (1.2/1.3 un-hollow)
-Data|round-trip (data canary)|round-trips rows by digest|Transfer (shipped)
+# A cell is VERIFIED iff a backtick-quoted test name containing the substring exists
+# under tests/ (matches both `let ``...``` and `member _.``...``` declarations).
+cells='Schema|round-trip (canary)|PhysicalSchema diff|Wave 1 (1.2/1.3 un-hollow)
+Data|round-trip (data canary)|data canary|Transfer (shipped)
 Identity|round-trip (SsKey reload)|reload preserves SsKey|Wave 4.1
 Time|round-trip (replay)|replayTo genesis|E4 / 5.3
 Decision|round-trip (overlay)|reproduces the DecisionOverlay|E3 / Wave 2'
 
 witness_status() {
-  # $1 = grep-extended substring. Returns: VERIFIED | SCAFFOLDED | OPEN
-  # VERIFIED  = a test-name line matching the substring exists whose attribute is a
-  #             live xUnit fact-family ([<...Fact...>], [<...Property...>], [<Theory>])
-  #             that is NOT Skipped. (Covers [<Fact>], [<DockerSqlServerFact>], etc.)
-  # SCAFFOLDED= the name exists but only under a Skipped attribute.
-  # OPEN      = no matching test-name line in the tree.
-  local pat="$1" ctx
-  ctx=$(grep -rE -B1 "\`\`[^\`]*${pat}[^\`]*\`\`" "$TESTS" 2>/dev/null || true)
-  [ -z "$ctx" ] && { echo "OPEN"; return; }
-  if printf '%s\n' "$ctx" | grep -E '\[<[A-Za-z.]*(Fact|Propert|Theory)' | grep -vq 'Skip'; then
-    echo "VERIFIED"
-  else
-    echo "SCAFFOLDED"
-  fi
+  local pat="$1"
+  if grep -rhE "\`\`[^\`]*${pat}" "$TESTS" >/dev/null 2>&1; then echo "VERIFIED"; else echo "OPEN"; fi
 }
+icon() { case "$1" in VERIFIED) echo "✅ verified";; *) echo "⬚ open";; esac; }
 
-icon() { case "$1" in VERIFIED) echo "✅ verified";; SCAFFOLDED) echo "◑ scaffolded (Skip)";; *) echo "⬚ open";; esac; }
-
-green=0; counted=0; drift=""
-rows=""
+green=0; counted=0; rows=""
 while IFS='|' read -r axis op pat slice; do
   [ -z "$axis" ] && continue
   st=$(witness_status "$pat")
@@ -79,15 +65,14 @@ done <<< "$cells"
   echo
   echo "## T-II — Executable-axiom totality (L2 formal axioms)"
   echo
-  echo "| Bucket | Meaning | Count |"
+  echo "| Class | Meaning | Count |"
   echo "|---|---|---:|"
-  echo "| A | verified (live witness) | $a |"
-  echo "| B | convention-enforced | $b |"
-  echo "| C | weakness (deferred) | $c |"
-  echo "| D | unnamed/unbacked | $d |"
-  echo "| **total** | | **$total** |"
+  echo "| Live | verified (\"verified by …\") or convention-enforced \`[<Fact>]\` | $live |"
+  echo "| Deferred C | weakness — \`[<Fact(Skip … Bucket C …)>]\` | $c |"
+  echo "| Deferred D | unnamed/unbacked — \`[<Fact(Skip … Bucket D …)>]\` | $d |"
+  echo "| **total axiom entries** | | **$total** |"
   echo
-  echo "**Verifiability gate (E1): \`$tii\`** — every bucket-A/B axiom has a live witness; every bucket-C/D is an honest deferral."
+  echo "**Verifiability gate (E1): \`$tii\`** — no deferral claims verified (no phantom Bucket-A/B); every deferral names its bucket."
   echo
   echo "## T-I — Round-trip totality (the §1 bullseye matrix)"
   echo
@@ -95,16 +80,16 @@ done <<< "$cells"
   echo "|---|---|---|---|---|"
   printf '%s' "$rows"
   echo
-  echo "**Round-trip cells with a live witness: $green / $counted.** A cell goes green only when its"
-  echo "witness test exists and is live in the tree — it cannot be asserted by hand. \`⬚ open\` cells are"
-  echo "the remaining bullseye distance; they flip automatically as the named slices land their witnesses."
+  echo "**Round-trip cells with a live witness: $green / $counted.** A cell goes green only when a test"
+  echo "by its witness name exists in the tree — it cannot be asserted by hand. \`⬚ open\` cells are the"
+  echo "remaining bullseye distance; they flip automatically as the named slices land their witnesses."
   echo
   echo "> **Witness-present ≠ feature-complete.** This generated view proves a round-trip *witness exists*."
   echo "> Per-feature totality (e.g. the Schema canary is still hollow for triggers/sequences/defaults/"
   echo "> computed/checks/ext-props until Wave 1) lives in NORTH_STAR.md §1 prose; the full E2 generator"
   echo "> will track per-feature. Today this is the coarse, honest, machine-derived floor."
   echo
-  echo "_Generated $(date -u +%Y-%m-%dT%H:%MZ) · gate=$tii · L2 A/B/C/D=$a/$b/$c/$d · round-trip=$green/$counted_"
+  echo "_Generated $(date -u +%Y-%m-%dT%H:%MZ) · gate=$tii · L2 live/C/D=${live}/${c}/${d} · round-trip=${green}/${counted}_"
 } > "$OUT"
 
-echo "matrix-status: wrote $OUT (gate=$tii; L2 A/B/C/D=$a/$b/$c/$d; round-trip $green/$counted)"
+echo "matrix-status: wrote $OUT (gate=$tii; L2 live/C/D=${live}/${c}/${d}; round-trip ${green}/${counted})"

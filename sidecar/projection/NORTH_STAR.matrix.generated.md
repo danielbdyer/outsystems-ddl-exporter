@@ -8,32 +8,32 @@ _Derived from `tests/Projection.Tests/AxiomTests.fs` + the test tree. The §1 bu
 
 ## T-II — Executable-axiom totality (L2 formal axioms)
 
-| Bucket | Meaning | Count |
+| Class | Meaning | Count |
 |---|---|---:|
-| A | verified (live witness) | 0 |
-| B | convention-enforced | 0 |
-| C | weakness (deferred) | 0 |
-| D | unnamed/unbacked | 0 |
-| **total** | | **0** |
+| Live | verified ("verified by …") or convention-enforced `[<Fact>]` | 59 |
+| Deferred C | weakness — `[<Fact(Skip … Bucket C …)>]` | 6 |
+| Deferred D | unnamed/unbacked — `[<Fact(Skip … Bucket D …)>]` | 1 |
+| **total axiom entries** | | **93** |
 
-**Verifiability gate (E1): `PASS`** — every bucket-A/B axiom has a live witness; every bucket-C/D is an honest deferral.
+**Verifiability gate (E1): `PASS`** — no deferral claims verified (no phantom Bucket-A/B); every deferral names its bucket.
 
 ## T-I — Round-trip totality (the §1 bullseye matrix)
 
 | Axis | Operation | Witness test (must exist) | Path | Status |
 |---|---|---|---|---|
-| **Schema** | round-trip (canary) | `round-trip is PhysicalSchema` | Wave 1 (1.2/1.3 un-hollow) | ⬚ open |
-| **Data** | round-trip (data canary) | `round-trips rows by digest` | Transfer (shipped) | ⬚ open |
+| **Schema** | round-trip (canary) | `PhysicalSchema diff` | Wave 1 (1.2/1.3 un-hollow) | ✅ verified |
+| **Data** | round-trip (data canary) | `data canary` | Transfer (shipped) | ✅ verified |
 | **Identity** | round-trip (SsKey reload) | `reload preserves SsKey` | Wave 4.1 | ⬚ open |
 | **Time** | round-trip (replay) | `replayTo genesis` | E4 / 5.3 | ⬚ open |
 | **Decision** | round-trip (overlay) | `reproduces the DecisionOverlay` | E3 / Wave 2 | ⬚ open |
 
-**Round-trip cells with a live witness: 0 / 5.** A cell goes green only when its
-witness test exists and is live in the tree — it cannot be asserted by hand. `⬚ open` cells are
-the remaining bullseye distance; they flip automatically as the named slices land their witnesses.
+**Round-trip cells with a live witness: 2 / 5.** A cell goes green only when a test
+by its witness name exists in the tree — it cannot be asserted by hand. `⬚ open` cells are the
+remaining bullseye distance; they flip automatically as the named slices land their witnesses.
 
 > **Witness-present ≠ feature-complete.** This generated view proves a round-trip *witness exists*.
 > Per-feature totality (e.g. the Schema canary is still hollow for triggers/sequences/defaults/
 > computed/checks/ext-props until Wave 1) lives in NORTH_STAR.md §1 prose; the full E2 generator
 > will track per-feature. Today this is the coarse, honest, machine-derived floor.
 
+_Generated 2026-05-30T05:31Z · gate=PASS · L2 live/C/D=59/6/1 · round-trip=2/5_

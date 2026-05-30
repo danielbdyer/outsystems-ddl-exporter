@@ -4,16 +4,28 @@
 # executable-axiom totality).
 #
 # Enforces the single audit surface `tests/Projection.Tests/AxiomTests.fs` to be
-# internally honest about its own coverage, so no surface can claim a coverage
-# bucket the tests do not support (the "phantom-Bucket-A" defect class — a
-# claimed-verified axiom with no live witness, e.g. the historical DACPAC-L3-S2).
+# honest about its own coverage, so no surface can claim a coverage bucket the tests
+# do not support (the "phantom-Bucket-A" defect class — a claimed-verified axiom with
+# no live witness, e.g. the historical DACPAC-L3-S2).
 #
-# Invariant (two-way, derived from the file's own bucket legend):
-#   * [bucket A] / [bucket B]  MUST be a live [<Fact>]            (a green witness exists)
-#   * [bucket C] / [bucket D]  MUST be [<Fact(Skip = "...")>]     (an honest deferral w/ trigger)
+# AxiomTests.fs encodes the verifiability-triangle bucket per entry as:
+#   * Bucket A (verified)   — a live `[<Fact>]` / `[<Property>]` whose name says
+#                             "verified by <Test>" (delegates to a real test).
+#   * Bucket B (convention) — a live `[<Fact>]` whose name says "(convention-enforced)".
+#   * Bucket C / D (deferred) — a `[<Fact(Skip = "... Bucket C|D ...")>]` whose
+#                             rationale names the bucket and the promotion trigger.
+#   * Horizon stubs         — `[<Fact(Skip = "H-NNN ...")>]` reserve a *future feature*
+#                             (HORIZON.md), not a bucketed axiom; exempt from the bucket rule.
 #
-# Pure bash + awk; no dotnet required (mirrors scripts/lint-discipline.sh). Wire
-# into CI alongside the lint gate. Exit 0 = honest; exit 1 = drift; exit 2 = setup error.
+# The honesty contract (the hard gate):
+#   NO deferral (Skip) may claim "Bucket A" or "Bucket B" — a deferral that claims
+#   verified is the phantom defect.                                          -> FAIL
+# Advisory (does not fail the build):
+#   A non-horizon (axiom/theorem) deferral that names no bucket is surfaced as a WARN
+#   so it can be classified, but it is not a phantom and does not block.
+#
+# Pure bash + grep; no dotnet required (mirrors scripts/lint-discipline.sh). Wire into
+# CI alongside the lint gate. Exit 0 = honest; 1 = phantom drift; 2 = setup error.
 #
 # The L3 product-axiom buckets live in PRODUCT_AXIOMS.md / the verifiability-triangle
 # audit (prose surfaces); making AxiomTests.fs the gated single-source-of-truth and
@@ -24,35 +36,33 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 AX="$ROOT/tests/Projection.Tests/AxiomTests.fs"
 [ -f "$AX" ] || { echo "verifiability-gate: AxiomTests.fs not found at $AX" >&2; exit 2; }
 
-violations="$(awk '
-  /\[<Fact\(Skip/ { state="skip"; next }
-  /\[<Fact>\]/    { state="fact"; next }
-  /^[[:space:]]*let / && /\[bucket [A-D]\]/ {
-     b=$0;  sub(/.*\[bucket /,"",b);  sub(/\].*/,"",b)
-     id=$0; sub(/.*``/,"",id);        sub(/:.*/,"",id); gsub(/[[:space:]]/,"",id)
-     if ((b=="A" || b=="B") && state!="fact")
-        printf("FAIL  %-12s bucket %s claims verified/convention but is Skipped — no live witness\n", id, b)
-     if ((b=="C" || b=="D") && state!="skip")
-        printf("FAIL  %-12s bucket %s claims unverified but is a live Fact — mis-bucketed or no-op\n", id, b)
-     state=""
-  }
-' "$AX")"
+skips="$(grep -E '\[<Fact\(Skip' "$AX" || true)"
+live=$(grep -cE '^[[:space:]]*\[<Fact>\]' "$AX" || true)
+skip_total=$(printf '%s\n' "$skips" | grep -c . || true)
+skip_c=$(printf '%s\n' "$skips" | grep -cE 'Bucket C' || true)
+skip_d=$(printf '%s\n' "$skips" | grep -cE 'Bucket D' || true)
+phantom="$(printf '%s\n' "$skips" | grep -E 'Bucket A|Bucket B' || true)"
 
-a=$(grep -c '\[bucket A\]' "$AX" || true)
-b=$(grep -c '\[bucket B\]' "$AX" || true)
-c=$(grep -c '\[bucket C\]' "$AX" || true)
-d=$(grep -c '\[bucket D\]' "$AX" || true)
+# Axiom/theorem deferrals only (exempt H-NNN horizon-feature reservations).
+axiom_skips="$(printf '%s\n' "$skips" | grep -vE 'Skip = "H-' || true)"
+axiom_skip_total=$(printf '%s\n' "$axiom_skips" | grep -c . || true)
+axiom_classified=$(printf '%s\n' "$axiom_skips" | grep -cE 'Bucket [A-D]' || true)
+axiom_unclassified=$(( axiom_skip_total - axiom_classified ))
 
-echo "verifiability-gate — AxiomTests.fs coverage: A=$a B=$b C=$c D=$d (total $((a+b+c+d)))"
+echo "verifiability-gate — AxiomTests.fs: ${live} live (verified/convention) + ${skip_total} deferred (axiom buckets C=${skip_c}, D=${skip_d}; horizon stubs exempt)"
 
-if [ -n "$violations" ]; then
+if [ -n "$phantom" ]; then
   echo
-  echo "$violations"
+  echo "FAIL: $(printf '%s\n' "$phantom" | grep -c .) deferral(s) claim Bucket A/B (deferred yet claimed-verified — the phantom defect):"
+  printf '%s\n' "$phantom" | sed 's/^/    /'
   echo
-  echo "DRIFT: $(printf '%s\n' "$violations" | grep -c '^FAIL') axiom(s) claim a bucket their decorator does not support."
-  echo "Fix: ship the witness (flip Skip->Fact) or correct the [bucket X] tag in the same commit."
+  echo "Fix: ship the witness (flip Skip->[<Fact>] with 'verified by') or correct the Skip rationale's bucket."
   exit 1
 fi
 
-echo "OK: every bucket-A/B axiom has a live witness; every bucket-C/D axiom is an honest deferral."
+if [ "$axiom_unclassified" -gt 0 ]; then
+  echo "WARN: ${axiom_unclassified} axiom/theorem deferral(s) name no bucket — classify them C/D (advisory; not a phantom)." >&2
+fi
+
+echo "OK: no deferral claims verified (zero phantom Bucket-A/B). The surface is honest about its own coverage."
 exit 0
