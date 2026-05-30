@@ -818,8 +818,8 @@ The next-highest-leverage V1 inheritance candidates surface via the
 
 | Slice | Matrix row | Cash-out shape | Trigger | Est. LOC |
 |---|---|---|---|---|
-| 5.13.remediation-emitter | 83 | `RemediationEmitter` sibling Π consuming `Diagnostics<DecisionSet>`; emits `manifest.remediation.sql` with 3-option UPDATE/DELETE/SELECT per diagnostic | V2_DRIVER §154 chapter 5+ deferred; **operator UX degraded without it** | ~400 |
-| 5.13.summary-formatter | 81 | `SummaryFormatter` consumer taking `Diagnostics<DecisionSet> × NullabilityMode`; produces per-bucket prose mirroring V1's 6-bucket classification | V2 CLI standardizes summary output format pre-cutover OR operator demands V1-compatible review surface | ~300 |
+| ~~5.13.remediation-emitter~~ | ~~83~~ | **SHIPPED (reconciled 2026-05-30, Wave-0 slice 0.1).** `RemediationEmitter.emit` wired at `Pipeline.fs:330` → `manifest.remediation.sql`; registered `RegisteredAllTransforms.fs:75`; `RemediationEmitterTests.fs`. | ~~V2_DRIVER §154 chapter 5+ deferred~~ — closed | ~~400~~ |
+| ~~5.13.summary-formatter~~ | ~~81~~ | **SHIPPED (reconciled 2026-05-30, Wave-0 slice 0.1).** `SummaryFormatter.formatText` wired at `Pipeline.fs:333` → `manifest.summary.txt`; registered `RegisteredAllTransforms.fs:76`; `SummaryFormatterTests.fs`. | ~~CLI summary-format standardization~~ — closed | ~~300~~ |
 | 5.13.opportunities-report | 79 | `OpportunitiesReport` projection at `Projection.Targets.OperationalDiagnostics`; aggregates Diagnostics + DecisionSet → per-axis summary metrics | Operator dashboard demands per-axis rollup OR ManifestEmitter surface expansion | ~200 |
 | 5.13.risk-classification | 76 | `Projection.Targets.OperationalDiagnostics.RiskClassification` module: `riskOf : NullabilityOutcome -> RiskLevel` + sibling functions; emitter-boundary placement per A36 | V2 emitter demands risk-stratified output (manifest / operator report / cutover dry-run) | ~150 |
 | 5.13.osm-analyze | 111 | `osm analyze <model> [--profile <path>] [--policy <path>] --out <report-dir>` CLI verb; PassDriver + decision-log writer; no SSDT emission | Operators iterate on tightening policy pre-emission (typical pre-cutover workflow) | ~300 |
@@ -832,7 +832,7 @@ The next-highest-leverage V1 inheritance candidates surface via the
 
 | Slice | Matrix row | Cash-out shape | Trigger | Est. LOC |
 |---|---|---|---|---|
-| 5.13.live-profiler | 85–89 | `LiveProfiler` adapter in `Projection.Adapters.Sql`; `readProfileAsync : SqlConnection -> Catalog -> Task<Result<Profile>>` + 4 probe modules (NullCount / UniqueCandidate / FK-orphan-count / FK-orphan-sample) | Chapter 4.1.B § 4 or later — live SQL Server profile capture demanded | ~600 |
+| ~~5.13.live-profiler~~ | ~~85–89~~ | **SHIPPED (reconciled 2026-05-30, Wave-0 slice 0.1).** `LiveProfiler` adapter in `Projection.Adapters.Sql`; wired at `Pipeline.fs:697` (`LiveProfiler.attach`); `LiveProfilerIntegrationTests.fs`. | ~~live SQL Server profile capture demanded~~ — closed | ~~600~~ |
 | 5.13.osm-profile | 108 | `osm profile <model> <connection-string> --out <profile.json>` CLI verb; wraps LiveProfiler | Operators demand profile-only execution for diagnostic/tuning iteration | ~30 |
 | 5.13.osm-extract | 107 | `osm extract <connection-string> --modules <csv> --out <path>` CLI verb; wraps `MetadataSnapshotRunner.runAsync` | V2 production CLI surface ships; operators need extraction as CLI step | ~50 |
 | ~~5.13.result-set-contract~~ | ~~35~~ | **SHIPPED 2026-05-18 (slice 5.13.production-wiring-classification).** `[<Literal>] let ExpectedResultSets = 23` (empirical, not the V1-doc'd 22 — the canary observes a leading validation projection V1 skipped) + post-loop `resultSetContractCheck` + `MetadataExtractionError.ResultSetMissing` variant + `adapter.ossysSql.resultSetContractBreach` code. Bundled with rows 32 + 34. | ~~V2 canary fails parity assertion tracing to SQL contract drift~~ — closed pre-emptively | ~~30~~ |

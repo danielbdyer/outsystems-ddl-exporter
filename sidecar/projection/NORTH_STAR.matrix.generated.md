@@ -36,4 +36,4 @@ remaining bullseye distance; they flip automatically as the named slices land th
 > computed/checks/ext-props until Wave 1) lives in NORTH_STAR.md §1 prose; the full E2 generator
 > will track per-feature. Today this is the coarse, honest, machine-derived floor.
 
-_Generated 2026-05-30T05:31Z · gate=PASS · L2 live/C/D=59/6/1 · round-trip=2/5_
+_Generated 2026-05-30T10:46Z · gate=PASS · L2 live/C/D=59/6/1 · round-trip=2/5_
