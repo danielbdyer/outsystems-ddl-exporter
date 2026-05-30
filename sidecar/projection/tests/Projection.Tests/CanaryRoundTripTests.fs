@@ -536,3 +536,42 @@ let ``A42 (2.4 canary): a DoNotEnforce FK decision keeps the FK out of the deplo
         let dropped = (Deploy.runWithReadback droppedSql).GetAwaiter().GetResult()
         Assert.True(dropped.Report.Ok, sprintf "dropped deploy: %A" dropped.Report.Errors)
         Assert.Equal(0, fkCount dropped.Reconstructed)
+
+/// Wave 4.1 — V2.SsKey persistence round-trip. `sampleSourceCatalog`
+/// builds every kind/attribute with an `OssysOriginal` identity; after
+/// deploy → read the recovered SsKeys must still be `OssysOriginal`
+/// (recovered from the persisted `V2.SsKey` extended property), NOT
+/// `Synthesized "READSIDE_KIND"` synthesized from physical coordinates.
+/// This is the executable witness for A1 across the process boundary.
+[<Fact>]
+let ``4.1: V2.SsKey persistence — ReadSide recovers OssysOriginal identities (A1 across deploy->read)`` () =
+    CanaryTestGuard.runWhenEnabled (fun () ->
+        task {
+            let sourceCatalog = sampleSourceCatalog ()
+            // The GUIDs the source assigned, keyed by physical coordinates.
+            let sourceKeyByCoord =
+                sourceCatalog.Modules
+                |> List.collect (fun m -> m.Kinds)
+                |> List.map (fun k -> (k.Physical.Schema, k.Physical.Table), k.SsKey)
+                |> Map.ofList
+            let! readback = CanaryHarness.deployAndReadback sourceCatalog
+            match readback with
+            | Ok (reconstructed, _) ->
+                let recoveredKinds =
+                    reconstructed.Modules |> List.collect (fun m -> m.Kinds)
+                Assert.NotEmpty(recoveredKinds)
+                for k in recoveredKinds do
+                    // Recovered identity is the persisted OssysOriginal, not a
+                    // READSIDE_KIND synthesis.
+                    match k.SsKey with
+                    | OssysOriginal _ -> ()
+                    | other ->
+                        Assert.Fail(
+                            sprintf "kind %s.%s recovered as %A; expected OssysOriginal (V2.SsKey recovery)"
+                                k.Physical.Schema k.Physical.Table other)
+                    // And it equals the exact GUID the source assigned.
+                    match Map.tryFind (k.Physical.Schema, k.Physical.Table) sourceKeyByCoord with
+                    | Some original -> Assert.Equal<SsKey>(original, k.SsKey)
+                    | None -> ()  // ReadSide may surface system tables; ignore.
+            | Error e -> Assert.Fail(e)
+        })

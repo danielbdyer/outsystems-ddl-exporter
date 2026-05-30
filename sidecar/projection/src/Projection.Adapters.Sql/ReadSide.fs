@@ -415,7 +415,8 @@ module ReadSide =
                  LEFT JOIN sys.columns c \
                    ON c.object_id = ep.major_id AND c.column_id = ep.minor_id \
                  WHERE ep.class = 1 AND t.is_ms_shipped = 0 \
-                   AND ep.name <> N'V2.LogicalName'"
+                   AND ep.name <> N'V2.LogicalName' \
+                   AND ep.name <> N'V2.SsKey'"
             use! reader = cmd.ExecuteReaderAsync()
             let acc = System.Collections.Generic.Dictionary<string * string * string option, ResizeArray<string * string>>()
             let mutable hasMore = true
@@ -826,6 +827,7 @@ module ReadSide =
     let private buildKind
         (tableLogicalNames: Map<string * string, string>)
         (columnLogicalNames: Map<string * string * string, string>)
+        (tableSsKeys: Map<string * string, string>)
         (schema: string)
         (table: string)
         (columnRows: list<ColumnRow>)
@@ -842,7 +844,20 @@ module ReadSide =
                 buildAttribute columnLogicalNames row primaryKeySet identitySet)
         result {
             let! attributes = Result.aggregate attrResults
-            let! kKey = kindSsKey schema table
+            // Wave 4.1 — recover the persisted SsKey from the `V2.SsKey`
+            // extended property when present (A1: identity survives rename);
+            // fall back to `READSIDE_KIND` synthesis when absent (schemas
+            // deployed before V2.SsKey emission, or non-V2 sources) or when
+            // the stored value is malformed (a synthesized key is always a
+            // valid identity, so a bad value degrades gracefully rather than
+            // failing the whole read).
+            let! kKey =
+                match Map.tryFind (schema, table) tableSsKeys with
+                | Some serialized ->
+                    match SsKey.deserialize serialized with
+                    | Ok recovered -> Result.success recovered
+                    | Error _ -> kindSsKey schema table
+                | None -> kindSsKey schema table
             // Slice D.1.b — hydrate Kind.Name from the `V2.LogicalName`
             // extended property when present; backward-compat fallback
             // to the deployed table name.
@@ -1146,6 +1161,15 @@ module ReadSide =
                    ON c.object_id = ep.major_id AND c.column_id = ep.minor_id \
                  WHERE ep.class = 1 \
                    AND ep.name = N'V2.LogicalName' \
+                   AND t.is_ms_shipped = 0; \
+                 SELECT \
+                    SCHEMA_NAME(t.schema_id), t.name, \
+                    CAST(ep.value AS NVARCHAR(MAX)) \
+                 FROM sys.extended_properties ep \
+                 JOIN sys.tables t ON t.object_id = ep.major_id \
+                 WHERE ep.class = 1 \
+                   AND ep.name = N'V2.SsKey' \
+                   AND ep.minor_id = 0 \
                    AND t.is_ms_shipped = 0"
             use! reader = cmd.ExecuteReaderAsync()
 
@@ -1246,13 +1270,28 @@ module ReadSide =
                         columnLogical[(schema, table, column)] <- value
                 else hasMore5 <- false
 
+            // Result set 6: V2.SsKey extended properties (Wave 4.1).
+            // Table-level only (minor_id = 0); the serialized identity
+            // recovered here lets buildKind deserialize the original SsKey
+            // instead of synthesizing READSIDE_KIND (A1: identity survives
+            // rename).
+            let! _ = reader.NextResultAsync()
+            let tableSsKeys = System.Collections.Generic.Dictionary<string * string, string>()
+            let mutable hasMore6 = true
+            while hasMore6 do
+                let! more = reader.ReadAsync()
+                if more then
+                    tableSsKeys[(reader.GetString 0, reader.GetString 1)] <- reader.GetString 2
+                else hasMore6 <- false
+
             return
                 List.ofSeq columnRows,
                 Set.ofSeq primaryKeySet,
                 Set.ofSeq identitySet,
                 List.ofSeq fkRows,
                 tableLogical |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq,
-                columnLogical |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+                columnLogical |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq,
+                tableSsKeys |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
         }
 
     /// Wave-3 slice 3.1 — names every user table the deployed database is
@@ -1287,13 +1326,13 @@ module ReadSide =
                 // by one `SqlCommand` instead of 4 separate
                 // `ExecuteReaderAsync` calls. ~150-300ms saved per
                 // canary-readback on the warm container.
-                let! columnRows, primaryKeySet, identitySet, fkRows, tableLogicalNames, columnLogicalNames =
+                let! columnRows, primaryKeySet, identitySet, fkRows, tableLogicalNames, columnLogicalNames, tableSsKeys =
                     readSchemaCombined cnn
                 let kindResults =
                     columnRows
                     |> List.groupBy (fun row -> row.Schema, row.Table)
                     |> Bench.iterMap "readside.kindGroup" (fun ((schema, table), rows) ->
-                        buildKind tableLogicalNames columnLogicalNames schema table rows primaryKeySet identitySet)
+                        buildKind tableLogicalNames columnLogicalNames tableSsKeys schema table rows primaryKeySet identitySet)
                 match Result.aggregate kindResults with
                 | Error errors -> return Result.failure errors
                 | Ok kinds ->
