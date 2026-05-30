@@ -27,7 +27,7 @@ let private usageLines : string list =
         "    projection skeleton <input-osm-model.json> <output-dir>"
         "    projection deploy <input-osm-model.json>"
         "    projection canary <source-ddl-file>"
-        "    projection approve <policy-version> --approver <name> [--rationale <text>]"
+        "    projection approve <policy-version> --approver <name> [--rationale <text>] [--store <path>]"
         "    projection transfer --source-conn <env|file:ref> --sink-conn <env|file:ref>"
         "                        [--reconcile <table>:<match-column>]... [--execute]"
         ""
@@ -378,16 +378,19 @@ let private runCanary (sourceDdlPath: string) : int =
 let private runSkeleton (inputPath: string) (outputDir: string) : int =
     runEmitSkeletonOnly inputPath outputDir
 
-/// H-086: `projection approve <policyVersion> --approver <name> [--rationale <text>]`.
-/// Creates an `ApprovalRecord` for the given policy version, prints it as a
-/// structured summary to stdout, and exits 0. The policy version string is
-/// the hex SHA-256 digest from `VersionedPolicy.digestOf` (or any opaque
-/// version identifier the operator tracks). This verb does not persist the
-/// record — piping stdout to a JSON store is the operator's responsibility.
+/// H-086 / Wave-3 slice 3.2: `projection approve <policyVersion> --approver
+/// <name> [--rationale <text>] [--store <path>]`. Creates an `ApprovalRecord`
+/// for the given policy version and prints it. When `--store <path>` is given,
+/// the record is *persisted* (load → `ApprovalRegistry.record` → save) so R6
+/// operator sign-off is recorded and consultable across runs — closing the
+/// prior "constructs and discards" gap. Without `--store`, prints only
+/// (backward-compatible). The policy version string is the hex SHA-256 digest
+/// from `VersionedPolicy.digestOf` (or any opaque version the operator tracks).
 let private runApprove
     (policyVersion: string)
     (approver: string)
     (rationale: string option)
+    (store: string option)
     : int =
     let record =
         ApprovalWorkflow.pending policyVersion
@@ -399,8 +402,21 @@ let private runApprove
     match rationale with
     | Some r -> printfn "  rationale : %s" r
     | None   -> ()
-    dumpBench "approve"
-    0
+    let persisted =
+        match store with
+        | None -> Ok ()
+        | Some path ->
+            match ApprovalStore.load path with
+            | Error e -> Error (sprintf "%A" e)
+            | Ok registry ->
+                match ApprovalStore.save path (ApprovalRegistry.record record registry) with
+                | Ok () -> printfn "  store     : %s (recorded)" path; Ok ()
+                | Error e -> Error (sprintf "%A" e)
+    match persisted with
+    | Ok () -> dumpBench "approve"; 0
+    | Error msg ->
+        Console.Error.WriteLine(sprintf "projection approve: store failed: %s" msg)
+        6
 
 /// Dispatch `full-export` via the Argu surface (`FullExportArgs`).
 /// Argument-parse failures surface as exit code 1 with a usage hint;
@@ -633,9 +649,13 @@ let main argv =
     | [| "skeleton"; inputPath; outputDir |] ->
         runSkeleton inputPath outputDir
     | [| "approve"; policyVersion; "--approver"; approver |] ->
-        runApprove policyVersion approver None
+        runApprove policyVersion approver None None
     | [| "approve"; policyVersion; "--approver"; approver; "--rationale"; rationale |] ->
-        runApprove policyVersion approver (Some rationale)
+        runApprove policyVersion approver (Some rationale) None
+    | [| "approve"; policyVersion; "--approver"; approver; "--store"; store |] ->
+        runApprove policyVersion approver None (Some store)
+    | [| "approve"; policyVersion; "--approver"; approver; "--rationale"; rationale; "--store"; store |] ->
+        runApprove policyVersion approver (Some rationale) (Some store)
     | [| "deploy"; inputPath |] ->
         runDeploy inputPath
     | [| "canary"; sourceDdlPath |] ->

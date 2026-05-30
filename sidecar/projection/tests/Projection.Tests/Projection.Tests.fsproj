@@ -87,6 +87,7 @@
     <Compile Include="PolicyExprTests.fs" />
     <Compile Include="VersionedPolicyTests.fs" />
     <Compile Include="ApprovalWorkflowTests.fs" />
+    <Compile Include="ApprovalStoreTests.fs" />
     <Compile Include="PolicyDiffTests.fs" />
     <Compile Include="PolicySimulationTests.fs" />
     <Compile Include="PolicyStateMachineTests.fs" />
