@@ -1197,7 +1197,7 @@ This is the integrated view: every L3 product axiom in Part III mapped to the L2
 | L3 axiom | L2 | L1 commitment | Test | Status |
 |---|---|---|---|---|
 | L3-S1 (byte-determinism) | T1 (partial: doesn't cover cross-platform) | No I/O in Core; sorting by SsKey | 44 tests | **Bucket A modulo cross-platform extension** |
-| L3-S2 (DACPAC round-trip) | T1 binary + T11 | `ArtifactByKind` keyset; DacFx symmetry | `DacpacRoundTripTests` | Bucket A modulo A37 erasure declaration |
+| L3-S2 (DACPAC round-trip) | T1 binary + T11 | `ArtifactByKind` keyset; DacFx symmetry | `DacpacRoundTripTests.fs` (**shipped 2026-05-30, Wave-1 slice 1.1**) + `AxiomTests.fs::L3-S2` | Bucket A modulo A37 erasure (now declared in-code: Origin.xml wall-clock / constraint auto-names / identifier quoting). **NB: this row claimed Bucket A from 2026-05-12 but the cited test did not exist until 2026-05-30 — a phantom-A corrected by slice 1.1; the verifiability gate `scripts/verifiability-gate.sh` now guards the class.** |
 | L3-S3 (SSDT/DACPAC agreement) | T11 | `ArtifactByKind` smart constructor | `SiblingEmitterContractTests` | Bucket A |
 | L3-S4 (Trigger definitions) | — | — (gated on A.0') | — | **Bucket D (Tier 1) until A.0' lifts** |
 | L3-S5 (Sequence definitions) | — | — (gated on A.0') | — | **Bucket D (Tier 1)** |

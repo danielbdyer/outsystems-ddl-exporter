@@ -482,6 +482,31 @@ let ``L3-Emission-LogicalTriangle (slice D.1.c): canary roundtrip preserves logi
     ()
 
 [<Fact>]
+let ``L3-S2 (Wave-1 slice 1.1): DACPAC round-trips a Catalog's tables + columns + FK shape modulo named DacFx erasure (A37) — verified by DacpacRoundTripTests`` () =
+    citationOf
+        "tests/Projection.Tests/DacpacRoundTripTests.fs"
+        "L3-S2: single-Kind Catalog round-trips through DACPAC modulo named erasure"
+    // Bucket A (promoted 2026-05-30 from PHANTOM). The verifiability-triangle
+    // audit (~:1200) recorded L3-S2 as "Bucket A modulo A37" citing a
+    // `DacpacRoundTripTests` file that DID NOT EXIST and an
+    // `equalModuloDacpacErasure` predicate that was never defined — a
+    // claimed-verified axiom with no executable witness (the phantom defect
+    // the verifiability gate, slice E1, forbids). Wave-1 slice 1.1 ships the
+    // real witness: `DacpacEmitter.emit` → DacFx `.dacpac` bytes →
+    // `TSqlModel.LoadFromDacpac` → project the model back to a schema summary
+    // (tables; per-table column name + nullability; FK shape referrer→referenced)
+    // and assert equality with the summary derived from the source Catalog,
+    // MODULO the closed, code-named A37 erasure set: Origin.xml wall-clock (E1),
+    // constraint/index auto-names (E2 — FK SHAPE compared, not the constraint
+    // identifier), identifier quoting/case-fold (E3 — normalized parts). No
+    // Docker: DacFx operates on the in-memory model, so the witness runs in the
+    // pure pool. A full `DacpacReadSide.toCatalog` (rebuilding a complete V2
+    // Catalog) remains a larger, separately-consumer-gated slice; this witness
+    // covers exactly the axes L3-S2 asserts and that PhysicalSchema (the
+    // production canary surface) covers structurally.
+    ()
+
+[<Fact>]
 let ``L3-Emission-LogicalRoundtrip (slice D.1.b): logical names survive deploy → ReadSide round-trip via V2.LogicalName extended property — verified by LogicalNameRoundtripTests`` () =
     citationOf
         "tests/Projection.Tests/LogicalNameRoundtripTests.fs"
