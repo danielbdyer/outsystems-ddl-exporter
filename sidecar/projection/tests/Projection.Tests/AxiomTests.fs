@@ -507,6 +507,35 @@ let ``L3-S2 (Wave-1 slice 1.1): DACPAC round-trips a Catalog's tables + columns 
     ()
 
 [<Fact>]
+let ``L3-S6 (Wave-1 slice 1.2): DEFAULT values survive emit → deploy → ReadSide round-trip on the PhysicalSchema.Default axis — verified by CanaryRoundTripTests`` () =
+    citationOf
+        "tests/Projection.Tests/CanaryRoundTripTests.fs"
+        "Slice 1.2: integer DEFAULT round-trips through emit / deploy / ReadSide with empty PhysicalSchema diff"
+    // Bucket A (promoted 2026-05-30 from Bucket D, "gated on A.0' IR lift").
+    // The IR axis (`Attribute.DefaultValue`) and SSDT emission (`DEFAULT`
+    // clause) shipped earlier, but `ReadSide` returned `DefaultValue = None`
+    // for EVERY column and `PhysicalColumn` carried NO Default axis — so the
+    // canary was structurally BLIND to a dropped/changed DEFAULT (the
+    // hollow-canary class). Slice 1.2 closes the round-trip leg:
+    //   1. `ReadSide.readDefaultConstraints` reads `sys.default_constraints`
+    //      and `attachDefaults` reconstructs `Attribute.DefaultValue` via
+    //      `SqlLiteral.ofRaw attr.Type (normalizeDefault definition)`.
+    //   2. `PhysicalColumn.Default : string option` projects from both the
+    //      emitter-IR side (`PhysicalSchema.ofCatalog`) and the AST reader
+    //      (`PhysicalSchemaReader`), both through `normalizeDefault`.
+    //   3. `PhysicalSchema.diff` now includes Default by construction (the
+    //      column tuple is in a Set), so a DEFAULT divergence surfaces.
+    // The named A37-family tolerance: `normalizeDefault` erases SQL Server's
+    // redundant outer-paren canonicalization (`((0))` ↔ `0`) ONLY — the inner
+    // expression must still match exactly. Scope: integer DEFAULT verified
+    // end-to-end against real SQL Server; text/temporal/computed DEFAULT
+    // reconstruction is the in-feature follow-on (same template). The other
+    // five hollow-canary features (triggers / sequences / checks / computed /
+    // ext-props — L3-S4/S5/S7/S8/S9) remain Bucket D pending their own
+    // ReadSide + PhysicalSchema verticals on this proven pattern.
+    ()
+
+[<Fact>]
 let ``L3-Emission-LogicalRoundtrip (slice D.1.b): logical names survive deploy → ReadSide round-trip via V2.LogicalName extended property — verified by LogicalNameRoundtripTests`` () =
     citationOf
         "tests/Projection.Tests/LogicalNameRoundtripTests.fs"

@@ -68,6 +68,16 @@ type PhysicalColumn =
         /// IDENTITY column property. Catches drift in identity-ness
         /// (source had IDENTITY, target dropped it, or vice versa).
         IsIdentity : bool
+        /// DEFAULT-constraint expression in normalized form (Wave-1
+        /// slice 1.2). `None` when the column has no DEFAULT. Catches
+        /// the canary's blindness to a dropped/changed DEFAULT clause
+        /// through the emit → deploy → read round-trip. Normalized via
+        /// `PhysicalSchema.normalizeDefault` (strip matched outer parens
+        /// SQL Server adds) so the emitter-IR side
+        /// (`SqlLiteral.toString`) and the ReadSide side
+        /// (`sys.default_constraints.definition`) compare equal — the
+        /// named DEFAULT round-trip tolerance (A37-family).
+        Default : string option
     }
 
 /// A foreign-key relationship in physical-schema coordinates. Per
@@ -292,6 +302,35 @@ module PhysicalSchema =
                 })
         tableBinding :: columnBindings
 
+    /// Normalize a DEFAULT-constraint expression for round-trip
+    /// comparison (Wave-1 slice 1.2). SQL Server canonicalizes a
+    /// `DEFAULT 0` clause to `((0))` in `sys.default_constraints
+    /// .definition`, while V2's emitter renders `SqlLiteral.toString`
+    /// (`0`). Stripping matched outer parens + trimming whitespace
+    /// brings both to a common form. This is a NAMED tolerance: it
+    /// erases SQL Server's redundant-paren canonicalization only —
+    /// the inner expression must still match exactly, so a changed or
+    /// dropped DEFAULT is still caught. Idempotent; stops at the first
+    /// unmatched paren so `((0)+1)` is not over-stripped.
+    let normalizeDefault (expr: string) : string =
+        let rec strip (s: string) =
+            let t = s.Trim()
+            if t.Length >= 2 && t.[0] = '(' && t.[t.Length - 1] = ')' then
+                // Only strip when the leading '(' matches the trailing ')'
+                // (i.e. the whole string is parenthesized), not when they
+                // are two independent groups like `(a)+(b)`.
+                let mutable depth = 0
+                let mutable matchedAtEnd = true
+                for i in 0 .. t.Length - 1 do
+                    if t.[i] = '(' then depth <- depth + 1
+                    elif t.[i] = ')' then
+                        depth <- depth - 1
+                        if depth = 0 && i < t.Length - 1 then matchedAtEnd <- false
+                if matchedAtEnd then strip (t.Substring(1, t.Length - 2))
+                else t
+            else t
+        strip expr
+
     let private toPhysicalColumns (k: Kind) : PhysicalColumn list =
         k.Attributes
         |> Bench.iterMap "physicalSchema.attribute" (fun a ->
@@ -306,6 +345,9 @@ module PhysicalSchema =
                 Precision = a.Precision
                 Scale = a.Scale
                 IsIdentity = a.IsIdentity
+                Default =
+                    a.DefaultValue
+                    |> Option.map (fun lit -> normalizeDefault (SqlLiteral.toString lit))
             })
 
     /// Hash a static row deterministically. Concatenates

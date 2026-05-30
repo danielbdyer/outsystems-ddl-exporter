@@ -235,19 +235,44 @@ module ReadSide =
             return Set.ofSeq result
         }
 
+    /// Wave-1 slice 1.2 — read each column's DEFAULT-constraint definition
+    /// from `sys.default_constraints`, keyed by `(schema, table, column)`.
+    /// The `definition` column is SQL Server's canonical parenthesized form
+    /// (e.g. `((0))`, `('foo')`, `(getdate())`); `DefaultExpr.normalize`
+    /// (in PhysicalSchema) strips the redundant outer-paren wrapping SQL
+    /// Server adds so the read-back value compares equal to the emitter's
+    /// `SqlLiteral.toString` form. Single round-trip; small result set;
+    /// mirrors `readIdentityColumns`.
+    let private readDefaultConstraints (cnn: SqlConnection)
+        : Task<Map<string * string * string, string>> =
+        task {
+            use _ = Bench.scope "readside.readDefaultConstraints"
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT SCHEMA_NAME(t.schema_id), t.name, c.name, dc.definition \
+                 FROM sys.default_constraints dc \
+                 JOIN sys.columns c \
+                   ON c.object_id = dc.parent_object_id \
+                  AND c.column_id = dc.parent_column_id \
+                 JOIN sys.tables t ON t.object_id = dc.parent_object_id \
+                 WHERE t.is_ms_shipped = 0"
+            use! reader = cmd.ExecuteReaderAsync()
+            let result =
+                System.Collections.Generic.Dictionary<string * string * string, string>()
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then
+                    let key = (reader.GetString 0, reader.GetString 1, reader.GetString 2)
+                    result.[key] <- reader.GetString 3
+                else
+                    hasMore <- false
+            return result |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+        }
+
     /// Read the set of FK relationships across every user table.
-    /// Returns rows of `(srcSchema, srcTable, srcCol, tgtSchema,
-    /// tgtTable, tgtCol)`. Composite FKs surface as multiple rows
-    /// with the same constraint object_id but different column
-    /// pairs — `read` aggregates them per-table for `Kind.References`.
-    ///
-    /// Per session-31 Session B — adds FK round-trip to the
-    /// canary's structural fidelity surface. Without this query,
-    /// FK CONSTRAINTs (the actual referential constraints) would
-    /// silently be dropped through the round-trip while the
-    /// underlying columns survive.
-    ///
-    /// Uses sys.* directly for FK metadata since INFORMATION_SCHEMA's
+    /// Returns rows of `(srcSchema, srcTable, srcCol, tgtSchema, tgtTable,
+    /// tgtCol)`. Composite FKs surface as multiple rows. Uses sys.* directly;
     /// REFERENTIAL_CONSTRAINTS / KEY_COLUMN_USAGE shape is awkward
     /// for the source/target column-pair join we need.
     let private readForeignKeys (cnn: SqlConnection)
@@ -747,6 +772,34 @@ module ReadSide =
                 return { k with References = refs }
             }
 
+    /// Wave-1 slice 1.2 — attach recovered DEFAULT-constraint values to a
+    /// Kind's attributes. `defaults` maps `(schema, table, column)` to the
+    /// raw `sys.default_constraints.definition`. For each attribute with a
+    /// recovered default, normalize SQL Server's parenthesization
+    /// (`PhysicalSchema.normalizeDefault`) and reconstruct a typed
+    /// `SqlLiteral` via `SqlLiteral.ofRaw attr.Type` — the inverse of the
+    /// emitter's `SqlLiteral.toString`. Because both the emitter-IR side
+    /// (`PhysicalSchema.ofCatalog`) and this read-side both pass through
+    /// `normalizeDefault`, the DEFAULT survives the emit → deploy → read
+    /// round-trip on the `PhysicalColumn.Default` axis. Attributes without a
+    /// recovered default keep `DefaultValue = None`.
+    let private attachDefaults
+        (defaults: Map<string * string * string, string>)
+        (k: Kind)
+        : Kind =
+        if Map.isEmpty defaults then k
+        else
+            let attrs =
+                k.Attributes
+                |> List.map (fun a ->
+                    let coord = (k.Physical.Schema, k.Physical.Table, a.Column.ColumnName)
+                    match Map.tryFind coord defaults with
+                    | Some definition ->
+                        let normalized = PhysicalSchema.normalizeDefault definition
+                        { a with DefaultValue = Some (SqlLiteral.ofRaw a.Type normalized) }
+                    | None -> a)
+            { k with Attributes = attrs }
+
     /// Combined-query variant of the five schema-readback queries
     /// (`readColumnRows` + `readPrimaryKeys` + `readIdentityColumns`
     /// + `readForeignKeys` + `readLogicalNameProperties`). Sends ONE
@@ -968,7 +1021,14 @@ module ReadSide =
                         |> Bench.iterMap "readside.attachReferences" (attachReferences fkGroups)
                     match Result.aggregate kindsWithRefsResults with
                     | Error errors -> return Result.failure errors
-                    | Ok kindsWithRefs ->
+                    | Ok kindsWithRefs0 ->
+                        // Wave-1 slice 1.2 — recover DEFAULT constraints
+                        // (one extra round-trip) and attach them so the
+                        // canary's PhysicalSchema.Default axis is no longer
+                        // blind to a dropped/changed DEFAULT clause.
+                        let! defaults = readDefaultConstraints cnn
+                        let kindsWithRefs =
+                            kindsWithRefs0 |> List.map (attachDefaults defaults)
                         // Per session-34 — threshold lifted to 100k.
                         // Below that, rows materialize into V2 IR
                         // (`Modality.Static`) for the per-row PhysicalSchema

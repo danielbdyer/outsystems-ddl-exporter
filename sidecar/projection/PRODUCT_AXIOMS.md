@@ -57,7 +57,7 @@ The axioms are grouped by **core concern** (the operator's mental partition of V
 
 **L3-S6. DEFAULT values round-trip.** Every Attribute with `DefaultValue` present produces a column definition with `DEFAULT` clause in DDL; round-tripped Catalog restores `DefaultValue`.
 
-  *Underwriting.* — (gated on Phase A.0' DEFAULT IR lift).
+  *Underwriting.* **Bucket A as of 2026-05-30 (Wave-1 slice 1.2).** `ReadSide.readDefaultConstraints` + `attachDefaults` recover `Attribute.DefaultValue` from `sys.default_constraints`; `PhysicalColumn.Default` projects it (both producers via `PhysicalSchema.normalizeDefault`); the canary diff includes it. Verified end-to-end against real SQL Server by `CanaryRoundTripTests` "Slice 1.2: integer DEFAULT round-trips …"; executable as `AxiomTests.fs::L3-S6`. Named A37-family tolerance: `normalizeDefault` erases only SQL Server's redundant outer-paren canonicalization. Scope: integer DEFAULT; text/temporal follow-on on the same template.
   *Failure mode.* Column defaults silently disappear at cutover; subsequent INSERTs that relied on defaults produce NULLs or fail.
   *Tier.* 1.
 

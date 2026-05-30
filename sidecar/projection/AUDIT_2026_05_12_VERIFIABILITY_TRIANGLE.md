@@ -1201,7 +1201,7 @@ This is the integrated view: every L3 product axiom in Part III mapped to the L2
 | L3-S3 (SSDT/DACPAC agreement) | T11 | `ArtifactByKind` smart constructor | `SiblingEmitterContractTests` | Bucket A |
 | L3-S4 (Trigger definitions) | — | — (gated on A.0') | — | **Bucket D (Tier 1) until A.0' lifts** |
 | L3-S5 (Sequence definitions) | — | — (gated on A.0') | — | **Bucket D (Tier 1)** |
-| L3-S6 (DEFAULT values) | — | — (gated on A.0') | — | **Bucket D (Tier 1)** |
+| L3-S6 (DEFAULT values) | — | `PhysicalColumn.Default`; `normalizeDefault` (A37 tolerance) | `CanaryRoundTripTests` "Slice 1.2" + `AxiomTests.fs::L3-S6` | **Bucket A as of 2026-05-30 (Wave-1 slice 1.2; integer DEFAULT verified vs real SQL Server; text/temporal follow-on)** |
 | L3-S7 (Computed columns) | — | — (gated on A.0') | — | **Bucket D (Tier 1)** |
 | L3-S8 (CHECK constraints) | — | — (gated on A.0') | — | **Bucket D (Tier 1)** |
 | L3-S9 (ExtendedProperties) | — | — (gated on A.0') | — | **Bucket D (Tier 2)** |

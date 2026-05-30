@@ -270,3 +270,82 @@ let ``M3 wide canary: enterprise OutSystems-shaped source (3 modules / 10 tables
             sprintf
                 "wide canary enterprise structural-fidelity failed:\n%s"
                 (PhysicalSchema.renderDiff report.Diff))
+
+// ---------------------------------------------------------------------
+// Wave-1 slice 1.2 — DEFAULT round-trip (un-hollow the canary's
+// PhysicalSchema.Default axis). Before this slice ReadSide returned
+// `DefaultValue = None` for every column, so the canary was BLIND to a
+// dropped/changed DEFAULT clause. Now: a Catalog carrying an integer
+// DEFAULT round-trips through emit → deploy → ReadSide; the recovered
+// catalog must (a) re-expose the DEFAULT on the attribute, and (b)
+// produce an EMPTY PhysicalSchema diff against the source — proving the
+// canary both sees and agrees on the default.
+// ---------------------------------------------------------------------
+
+let private defaultBearingCatalog : Catalog =
+    let key = ssKeySafe "OS_KIND_DEF_Account"
+    let mkAttr (column: string) (ptype: PrimitiveType) (nullable: bool) (isPk: bool) (def: SqlLiteral option) : Attribute =
+        { Attribute.create (ssKeySafe (sprintf "OS_ATTR_DEF_Account_%s" column)) (nameSafe column) ptype with
+            Column = { ColumnName = column.ToUpperInvariant(); IsNullable = nullable }
+            IsPrimaryKey = isPk
+            IsMandatory = not nullable
+            DefaultValue = def }
+    let kind : Kind =
+        {
+            SsKey = key
+            Name = nameSafe "Account"
+            Origin = OsNative
+            Modality = []
+            Physical = { Schema = "dbo"; Table = "OSUSR_DEF_ACCOUNT"; Catalog = None }
+            Attributes =
+                [
+                    mkAttr "Id" Integer false true None
+                    // The DEFAULT under test: an integer default 0.
+                    mkAttr "Balance" Integer false false (Some (SqlLiteral.IntegerLit "0"))
+                    mkAttr "Status" Integer false false (Some (SqlLiteral.IntegerLit "1"))
+                ]
+            References = []
+            Indexes = []
+            Description = None
+            IsActive = true
+            Triggers = []
+            ColumnChecks = []
+            ExtendedProperties = []
+        }
+    let m : Module =
+        { SsKey = ssKeySafe "OS_MOD_DEF"; Name = nameSafe "DefMod"; Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
+    { Modules = [ m ]; Sequences = [] }
+
+[<Fact>]
+let ``Slice 1.2: integer DEFAULT round-trips through emit / deploy / ReadSide with empty PhysicalSchema diff`` () =
+    if skipIfNoDocker "default-roundtrip" then
+        let source = defaultBearingCatalog
+        let emitted = SsdtDdlEmitter.statements source |> Render.toText
+        let result = (Deploy.runWithReadback emitted).GetAwaiter().GetResult()
+        Assert.True(result.Report.Ok, sprintf "deploy failed: %s" (String.concat "\n" result.Report.Errors))
+
+        let target =
+            match result.Reconstructed with
+            | Some c -> c
+            | None -> Assert.Fail("ReadSide.read returned None despite successful deploy"); Unchecked.defaultof<_>
+
+        // (a) The DEFAULT is recovered onto the attribute (was always None
+        //     before slice 1.2 — the hollow-canary defect).
+        let recoveredDefaults =
+            Catalog.allKinds target
+            |> List.collect (fun k -> k.Attributes)
+            |> List.choose (fun a -> a.DefaultValue |> Option.map (fun d -> a.Column.ColumnName, SqlLiteral.toString d))
+            |> List.sortBy fst
+        Assert.True(
+            (not (List.isEmpty recoveredDefaults)),
+            "ReadSide recovered ZERO DEFAULT constraints — the hollow-canary defect (slice 1.2 regressed).")
+
+        // (b) Source and round-tripped target agree on PhysicalSchema,
+        //     INCLUDING the new Default axis (normalized both sides).
+        let diff =
+            PhysicalSchema.diff
+                (PhysicalSchema.ofCatalog source)
+                (PhysicalSchema.ofCatalog target)
+        Assert.True(
+            PhysicalSchema.isEqual diff,
+            sprintf "DEFAULT round-trip PhysicalSchema diff non-empty:\n%s" (PhysicalSchema.renderDiff diff))

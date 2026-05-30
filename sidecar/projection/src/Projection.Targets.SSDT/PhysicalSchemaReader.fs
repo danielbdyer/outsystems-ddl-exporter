@@ -55,6 +55,9 @@ module PhysicalSchemaReader =
                 Precision = col.Precision
                 Scale = col.Scale
                 IsIdentity = col.IsIdentity
+                Default =
+                    col.DefaultValue
+                    |> Option.map (fun lit -> PhysicalSchema.normalizeDefault (SqlLiteral.toString lit))
             })
 
     let private toPhysicalForeignKeys
