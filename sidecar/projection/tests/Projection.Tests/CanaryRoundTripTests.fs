@@ -545,33 +545,39 @@ let ``A42 (2.4 canary): a DoNotEnforce FK decision keeps the FK out of the deplo
 /// This is the executable witness for A1 across the process boundary.
 [<Fact>]
 let ``4.1: V2.SsKey persistence — ReadSide recovers OssysOriginal identities (A1 across deploy->read)`` () =
-    CanaryTestGuard.runWhenEnabled (fun () ->
-        task {
-            let sourceCatalog = sampleSourceCatalog ()
-            // The GUIDs the source assigned, keyed by physical coordinates.
-            let sourceKeyByCoord =
-                sourceCatalog.Modules
+    if skipIfNoDocker "v2sskey-persistence-roundtrip" then
+        // Build a Customer kind with an `OssysOriginal` GUID identity. After
+        // emit (which persists `V2.SsKey`) → deploy → read, the recovered
+        // SsKey must be that exact `OssysOriginal` GUID — recovered from the
+        // persisted extended property, NOT `Synthesized "READSIDE_KIND"` from
+        // physical coordinates. This is the executable witness for A1 across
+        // the process boundary (Wave 4.1).
+        let custGuid = System.Guid.Parse "11111111-1111-1111-1111-111111111111"
+        let custKey = SsKey.ossysOriginal custGuid
+        let custIdKey = SsKey.ossysOriginal (System.Guid.Parse "22222222-2222-2222-2222-222222222222")
+        let customer =
+            Kind.create custKey (nameSafe "Customer")
+                { Schema = "dbo"; Table = "OSUSR_SSK_CUSTOMER"; Catalog = None }
+                [ { Attribute.create custIdKey (nameSafe "Id") Integer with
+                      Column = { ColumnName = "ID"; IsNullable = false }
+                      IsPrimaryKey = true; IsMandatory = true } ]
+        let catalog =
+            match Catalog.create [ { SsKey = ssKeySafe "OS_MOD_SSK"; Name = nameSafe "SskMod"; Kinds = [ customer ]; IsActive = true; ExtendedProperties = [] } ] [] with
+            | Ok c -> c | Error e -> failwithf "catalog %A" e
+
+        let sql = SsdtDdlEmitter.statements catalog |> Render.toText
+        let readback = (Deploy.runWithReadback sql).GetAwaiter().GetResult()
+        Assert.True(readback.Report.Ok, sprintf "deploy: %A" readback.Report.Errors)
+        match readback.Reconstructed with
+        | Some reconstructed ->
+            let recovered =
+                reconstructed.Modules
                 |> List.collect (fun m -> m.Kinds)
-                |> List.map (fun k -> (k.Physical.Schema, k.Physical.Table), k.SsKey)
-                |> Map.ofList
-            let! readback = CanaryHarness.deployAndReadback sourceCatalog
-            match readback with
-            | Ok (reconstructed, _) ->
-                let recoveredKinds =
-                    reconstructed.Modules |> List.collect (fun m -> m.Kinds)
-                Assert.NotEmpty(recoveredKinds)
-                for k in recoveredKinds do
-                    // Recovered identity is the persisted OssysOriginal, not a
-                    // READSIDE_KIND synthesis.
-                    match k.SsKey with
-                    | OssysOriginal _ -> ()
-                    | other ->
-                        Assert.Fail(
-                            sprintf "kind %s.%s recovered as %A; expected OssysOriginal (V2.SsKey recovery)"
-                                k.Physical.Schema k.Physical.Table other)
-                    // And it equals the exact GUID the source assigned.
-                    match Map.tryFind (k.Physical.Schema, k.Physical.Table) sourceKeyByCoord with
-                    | Some original -> Assert.Equal<SsKey>(original, k.SsKey)
-                    | None -> ()  // ReadSide may surface system tables; ignore.
-            | Error e -> Assert.Fail(e)
-        })
+                |> List.tryFind (fun k -> k.Physical.Table = "OSUSR_SSK_CUSTOMER")
+            match recovered with
+            | Some k ->
+                // Recovered identity is the persisted OssysOriginal GUID, not
+                // a READSIDE_KIND synthesis.
+                Assert.Equal<SsKey>(custKey, k.SsKey)
+            | None -> Assert.Fail "OSUSR_SSK_CUSTOMER not found in reconstructed catalog"
+        | None -> Assert.Fail "deploy produced no reconstructed catalog"

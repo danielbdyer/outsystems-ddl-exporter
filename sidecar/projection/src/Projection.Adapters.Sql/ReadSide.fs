@@ -1109,7 +1109,8 @@ module ReadSide =
               * Set<string * string * string>
               * list<string * string * string * string * string * string>
               * Map<string * string, string>
-              * Map<string * string * string, string>> =
+              * Map<string * string * string, string>
+              * Map<string * string, string>> =
         task {
             use _ = Bench.scope "readside.readSchemaCombined"
             use cmd = cnn.CreateCommand()
