@@ -19939,3 +19939,46 @@ string composition at the diagnostic boundary). `L3-X7` /
 - `tests/Projection.Tests/DecisionOverlayTests.fs`, `DecisionEmissionTests.fs`,
   `CanaryRoundTripTests.fs` (A42 canary proofs), `AdjunctionLawTests.fs` (byte-identical seam).
 - `AXIOMS.md` A42; `PRODUCT_AXIOMS.md` L3-S11; `AxiomTests.fs` A42; `EXECUTION_PLAN.md` Wave 2.
+
+---
+
+## 2026-05-30 — PROPOSED (pending operator sign-off): R6 amendment for the Transfer `--execute` write path
+
+> **STATUS: PROPOSAL — NOT YET ENACTED.** This entry drafts the missing formal
+> R6 authorization for `transfer --execute` so it is ready for operator review.
+> It is **not load-bearing until the operator confirms the UAT-preview framing**
+> (the OPEN-4 dependency). The defensive engineering half (the CDC pre-flight)
+> is built and verified now (Wave-3 slice 3.1); the authorization half waits on
+> sign-off. Until enacted, the status quo holds: `--execute` is gated only by
+> the `PROJECTION_ALLOW_EXECUTE=1` env var + exit-7 refusal, with no superseding
+> R6 authorization.
+
+**The gap.** R6 (`DECISIONS 2026-05-22 — R6: Split-brain governance`) says V2
+owns **no** production write path during dual-track. `transfer --execute` is a
+write path. Today it is permitted by an env-var gate alone — there is no
+DECISIONS entry that authorizes it *within* R6. That is an unscoped exception to
+a non-negotiable rule.
+
+**Proposed scope (for sign-off).** `transfer --execute` is authorized **only**
+for **UAT-preview** use, under all of:
+1. **Dry-run default.** `transfer` defaults to `DryRun` (no sink writes); `--execute` is opt-in. *(shipped)*
+2. **Env gate.** `--execute` requires `PROJECTION_ALLOW_EXECUTE=1` (exit-7 refusal otherwise). *(shipped)*
+3. **CDC precondition.** An `--execute` run pre-flights the sink for
+   `sys.tables.is_tracked_by_cdc` and **refuses** if any table is tracked,
+   unless `--allow-cdc` is passed — writing against a CDC-tracked sink during a
+   preview would generate unintended capture instances. *(shipped — Wave-3 slice 3.1;
+   `Transfer.cdcTrackedTables` + the `transfer.cdcTrackedSink` refusal;
+   `TransferCanaryTests` "3.1: CDC pre-flight …" verifies refusal + override vs real SQL Server.)*
+4. **Per-run operator sign-off.** Each `--execute` against a real UAT sink is a
+   recorded decision keyed to (env × artifact-type), reusing the `approve` verb +
+   `ApprovalStore` (Wave-3 slice 3.2) — NOT a standing grant. *(mechanism shipped;
+   the policy that --execute consult it is part of THIS proposal.)*
+5. **Production write path remains V1's.** This authorization covers UAT-preview
+   only; it does not move the production write path to V2. The four-environment
+   cutover and the N=10-green + sign-off flip gate are unchanged.
+
+**What sign-off unblocks.** With operator confirmation of the UAT-preview
+framing, this entry becomes the enacted R6 amendment, the `transfer --execute`
+exception is formally scoped, and slice 3.1's `AXIOMS.md` data-level-adjunction
+candidate can promote. Without it, `--execute` should be treated as
+test-and-dry-run-only regardless of the env gate.

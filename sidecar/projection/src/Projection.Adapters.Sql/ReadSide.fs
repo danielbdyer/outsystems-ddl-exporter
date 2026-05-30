@@ -1255,6 +1255,29 @@ module ReadSide =
                 columnLogical |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
         }
 
+    /// Wave-3 slice 3.1 — names every user table the deployed database is
+    /// tracking with Change Data Capture (`sys.tables.is_tracked_by_cdc = 1`).
+    /// Lives in the SQL adapter (the read-side's domain is deployed-schema
+    /// metadata); the Transfer pre-flight (`Projection.Pipeline.Transfer`)
+    /// consults it to refuse an `Execute` write against a CDC-tracked sink.
+    /// Returns `[schema].[table]`-style names, ordered.
+    let cdcTrackedTables (cnn: SqlConnection) : Task<string list> =
+        task {
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT SCHEMA_NAME(t.schema_id) + '.' + t.name \
+                 FROM sys.tables t \
+                 WHERE t.is_tracked_by_cdc = 1 AND t.is_ms_shipped = 0 \
+                 ORDER BY 1"
+            use! reader = cmd.ExecuteReaderAsync()
+            let names = ResizeArray<string>()
+            let mutable more = true
+            while more do
+                let! has = reader.ReadAsync()
+                if has then names.Add(reader.GetString 0) else more <- false
+            return List.ofSeq names
+        }
+
     let read (cnn: SqlConnection) : Task<Result<Catalog>> =
         task {
             use _ = Bench.scope "readside.read"

@@ -893,6 +893,20 @@ canary-proved via the un-hollowed `PhysicalSchema` (Wave 1). Slice 2.4 — FK
 gating + NOCHECK. Slice 2.5 — promote candidate → numbered A42 + cash the
 `AxiomTests.fs` body + a `PRODUCT_AXIOMS.md` L3 entry.
 
+## A-DataAdjunction candidate — data-level adjunction (Wave 3, 2026-05-30)
+
+**Scaffolded at Wave-3 slice 3.1.** The data sibling of H-050's schema
+adjunction. For `PreservedFromSource` rows transferred onto a blank Sink:
+`Ingestion(Projection(rows)) = rows` on the **row-digest axis** (per-row
+SHA-256 `PhysicalRow` hashes), modulo the named identity remap
+(`SurrogateRemapContext` — the one `OperatorIntent Insertion` site). Already
+witnessed (Bucket A) by `TransferCanaryTests` — the data canary asserts
+Source ≈ Sink on `PhysicalSchema` including per-row hashes after a Transfer.
+Promote to a numbered axiom when the Ingestion/Projection legs are stated as a
+formal adjoint pair (§V E3 data half). The CDC pre-flight (slice 3.1) guards
+the Execute write path this adjunction rides; the R6 `--execute` authorization
+is a PROPOSAL pending operator sign-off (`DECISIONS 2026-05-30`).
+
 ## T1 amended (binary normal-form composition) — chapter 3.x close (2026-05-11)
 
 **Cashed at chapter 3.x close** (DacpacEmitter + DockerImageEmitter

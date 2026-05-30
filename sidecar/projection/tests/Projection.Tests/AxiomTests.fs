@@ -502,6 +502,34 @@ let ``L3-C1 (Wave-3 slice 3.4): per-environment Tolerance config is fail-closed 
     ()
 
 [<Fact>]
+let ``A-DataAdjunction (candidate, Wave-3 slice 3.1): Ingestion ∘ Projection = id on the row-digest axis — verified by TransferCanaryTests`` () =
+    citationOf
+        "tests/Projection.Tests/TransferCanaryTests.fs"
+        "data canary: multi-table FK chain round-trips with empty PhysicalSchema diff"
+    // Bucket A for the data-level adjunction (the data sibling of H-050's
+    // schema adjunction). The Transfer ingests Source rows, builds the
+    // identity-aware two-phase plan, projects onto a blank Sink, then the data
+    // canary asserts Source ≈ Sink on `PhysicalSchema` INCLUDING per-row
+    // SHA-256 hashes (`PhysicalRow`) — i.e. `Ingestion(Projection(rows)) = rows`
+    // on the row-digest axis, modulo the named identity remap. Scaffolded as an
+    // AXIOMS candidate at Wave-3 slice 3.1; the CDC pre-flight (3.1) guards the
+    // Execute write path that this adjunction rides.
+    ()
+
+[<Fact>]
+let ``L3-C5 (Wave-3 slice 3.1): an Execute Transfer pre-flights the sink for CDC and refuses unless allowed — verified by TransferCanaryTests`` () =
+    citationOf
+        "tests/Projection.Tests/TransferCanaryTests.fs"
+        "3.1: CDC pre-flight refuses --execute against a CDC-tracked sink, allow-cdc overrides"
+    // Bucket A. `Transfer.cdcTrackedTables` queries `sys.tables.is_tracked_by_cdc`;
+    // `runCore` refuses an Execute run (`transfer.cdcTrackedSink`) against a
+    // CDC-tracked sink unless `allowCdc = true` (`--allow-cdc`). Fail-loud, never
+    // a silent proceed. Verified vs real SQL Server (refusal + override). This is
+    // the defensive half of the R6 `--execute` amendment (the authorization half
+    // is a PROPOSAL pending operator sign-off — see DECISIONS 2026-05-30).
+    ()
+
+[<Fact>]
 let ``L3-Emission-Logical (slice D.1.a): the physical-realization slot adopts the logical name under default emission — verified by LogicalNameEmissionTests`` () =
     citationOf
         "tests/Projection.Tests/LogicalNameEmissionTests.fs"

@@ -16,6 +16,7 @@ type TransferArg =
     | [<Mandatory>] Sink_Conn of spec: string
     | Reconcile of spec: string
     | Execute
+    | Allow_Cdc
 
     interface IArgParserTemplate with
         member this.Usage =
@@ -35,3 +36,5 @@ type TransferArg =
                 "Actually write to the Sink. Default is a DryRun preview. "
                 + "Requires PROJECTION_ALLOW_EXECUTE=1 in the environment "
                 + "(the R6 gate); --execute without it is refused."
+            | Allow_Cdc ->
+                "Permit --execute against a Sink that has CDC-tracked tables. Default: an Execute run pre-flights the Sink for sys.tables.is_tracked_by_cdc and REFUSES if any are tracked (writing would generate unintended CDC capture during a UAT-preview). Pass this flag to override that refusal."

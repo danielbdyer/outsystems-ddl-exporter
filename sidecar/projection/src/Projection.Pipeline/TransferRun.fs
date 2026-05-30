@@ -173,12 +173,37 @@ module Transfer =
 
     let private runCore
         (mode: Mode)
+        (allowCdc: bool)
         (source: SqlConnection)
         (sink: SqlConnection)
         (catalog: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         : Task<Result<TransferReport>> =
         task {
+            // Wave-3 slice 3.1 — CDC pre-flight gate. Only an Execute run that
+            // writes to the sink is at risk; DryRun and `allowCdc = true` skip
+            // the check. The refusal is fail-loud (a structured error), never a
+            // silent proceed — writing against a CDC-tracked sink during a
+            // UAT-preview is exactly the surprise R6 guards against.
+            let! cdcGate =
+                task {
+                    if mode = Execute && not allowCdc then
+                        let! tracked = ReadSide.cdcTrackedTables sink
+                        if List.isEmpty tracked then return Ok ()
+                        else
+                            return
+                                Result.failureOf
+                                    (ValidationError.create
+                                        "transfer.cdcTrackedSink"
+                                        (sprintf
+                                            "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
+                                            (List.length tracked)
+                                            (tracked |> List.truncate 3 |> String.concat ", ")))
+                    else return Ok ()
+                }
+            match cdcGate with
+            | Error e -> return Result.failure e
+            | Ok () ->
             let topoLineage : Lineage<TopologicalOrder> = TopologicalOrderPass.runWith TreatAsCycle catalog
             let topo = topoLineage.Value
             let! rows = Ingestion.collectInOrder source catalog topo
@@ -218,11 +243,12 @@ module Transfer =
     /// caller-supplied and open.
     let run
         (mode: Mode)
+        (allowCdc: bool)
         (source: SqlConnection)
         (sink: SqlConnection)
         (catalog: Catalog)
         : Task<Result<TransferReport>> =
-        runCore mode source sink catalog Map.empty
+        runCore mode allowCdc source sink catalog Map.empty
 
     /// Run a *reconciling* Transfer — the operator's headline case
     /// (Dev→UAT User re-key). `reconciliation` names, per kind, how its
@@ -233,12 +259,13 @@ module Transfer =
     /// plan-build and reported in `SkippedReferences`.
     let runReconciling
         (mode: Mode)
+        (allowCdc: bool)
         (source: SqlConnection)
         (sink: SqlConnection)
         (catalog: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         : Task<Result<TransferReport>> =
-        runCore mode source sink catalog reconciliation
+        runCore mode allowCdc source sink catalog reconciliation
 
     /// Registry metadata (pillar 9). The Transfer realization classifies
     /// entirely as `DataIntent`: the operator's identity substitution

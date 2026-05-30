@@ -533,6 +533,7 @@ let private runTransfer
     (sinkSpec: string)
     (reconcileSpecs: string list)
     (executeRequested: bool)
+    (allowCdc: bool)
     : int =
     let collect = function Ok _ -> [] | Error es -> es
     let parsedSource    = TransferSpec.parseConnectionSpec sourceSpec
@@ -605,7 +606,7 @@ let private runTransfer
                 match TransferSpec.resolveReconciliation contract entries with
                 | Error es -> return Result.failure es
                 | Ok reconciliation ->
-                    return! Transfer.runReconciling mode source sink contract reconciliation
+                    return! Transfer.runReconciling mode allowCdc source sink contract reconciliation
         }
     let result = work.GetAwaiter().GetResult()
     let exitCode =
@@ -628,7 +629,8 @@ let private dispatchTransfer (argv: string[]) : int =
         let sinkSpec      = parsed.GetResult TransferArgs.Sink_Conn
         let reconcileList = parsed.GetResults TransferArgs.Reconcile
         let execute       = parsed.Contains TransferArgs.Execute
-        runTransfer sourceSpec sinkSpec reconcileList execute)
+        let allowCdc      = parsed.Contains TransferArgs.Allow_Cdc
+        runTransfer sourceSpec sinkSpec reconcileList execute allowCdc)
 
 [<EntryPoint>]
 let main argv =
