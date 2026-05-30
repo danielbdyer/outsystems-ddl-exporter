@@ -52,6 +52,16 @@ single matrix, fully green and self-checked:
 | **Decision** (evidence-gated tightening verdicts + their classification) | ✗ decided, not emitted | ✗ not recovered | **the deepest cell** — proves the engine's *opinions* survive the round-trip |
 | **— meta —** | | | **Self-verification:** a proof that every cell above has a witness, and that the engine's own coverage map is generated from those witnesses |
 
+> **This matrix is self-reported.** `scripts/matrix-status.sh` regenerates
+> [`NORTH_STAR.matrix.generated.md`](NORTH_STAR.matrix.generated.md) from
+> `AxiomTests.fs` + the test tree — a round-trip cell goes green **only** when its
+> witness test actually exists and is live (it cannot be asserted by hand). And
+> `scripts/verifiability-gate.sh` (slice E1) fails the build if any axiom claims a
+> coverage bucket its tests do not support. So criterion 5 (§5) is already
+> partially live: **the vision measures its own distance to the bullseye.** Today's
+> machine reading: L2 axioms 69·A / 8·B / 6·C / 11·D (gate PASS); round-trip
+> witnesses present for Schema + Data, open for Identity, Time, and Decision.
+
 Two properties hold *across every cell*, by construction:
 - **Determinism (T1).** Same inputs → byte-identical text/JSON, model-equivalent binary. No clock, no randomness, no I/O in the core.
 - **Classification totality (pillar 9).** Every transformation is `DataIntent` (the factual skeleton) or `OperatorIntent` (a named, recorded overlay). Nothing is unclassified; nothing is silent.
