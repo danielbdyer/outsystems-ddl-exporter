@@ -375,3 +375,55 @@ let ``Slice 1.3: triggers / checks / sequences / extended properties are RECOVER
         Assert.Contains(CheckAnnotation, annKinds)
         Assert.Contains(SequenceAnnotation, annKinds)
         Assert.Contains(ExtendedPropertyAnnotation, annKinds)
+
+// ---------------------------------------------------------------------
+// Slice 1.3 / L3-S7 — computed-column round-trip (the LAST hollow-canary
+// feature). Before the real-SQL leg, ReadSide returned `Computed=None` for
+// every column, so the live canary could not catch a dropped computed
+// column. The test builds a Catalog with a PERSISTED computed column,
+// round-trips it through emit → deploy → ReadSide, and asserts the computed
+// state AND definition are restored (the L3-S7 axiom statement), normalized
+// through the same `encodeComputed` both producers use.
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``Slice 1.3 / L3-S7: PERSISTED computed column round-trips through emit / deploy / ReadSide with state + definition restored`` () =
+    if skipIfNoDocker "computed-roundtrip" then
+        let source = computedBearingCatalog
+        let emitted = SsdtDdlEmitter.statements source |> Render.toText
+        let result = (Deploy.runWithReadback emitted).GetAwaiter().GetResult()
+        Assert.True(result.Report.Ok, sprintf "deploy failed: %s" (String.concat "\n" result.Report.Errors))
+
+        let target =
+            match result.Reconstructed with
+            | Some c -> c
+            | None -> Assert.Fail("ReadSide.read returned None"); Unchecked.defaultof<_>
+
+        // (a) The computed config is recovered (was always None before this leg).
+        let recovered =
+            Catalog.allKinds target
+            |> List.collect (fun k -> k.Attributes)
+            |> List.choose (fun a -> a.Computed |> Option.map (fun c -> a.Column.ColumnName, c))
+        Assert.True((not (List.isEmpty recovered)),
+            "ReadSide recovered ZERO computed columns — the hollow-canary defect (L3-S7 real-SQL leg regressed).")
+
+        // (b) State + definition restored: the recovered computed column,
+        //     normalized through encodeComputed, equals the source's.
+        let sourceComputed =
+            Catalog.allKinds source
+            |> List.collect (fun k -> k.Attributes)
+            |> List.choose (fun a -> a.Computed |> Option.map (fun c -> a.Column.ColumnName, PhysicalSchema.encodeComputed c))
+            |> Map.ofList
+        for (col, cc) in recovered do
+            match Map.tryFind col sourceComputed with
+            | Some srcEnc ->
+                Assert.Equal(srcEnc, PhysicalSchema.encodeComputed cc)
+            | None -> Assert.Fail(sprintf "recovered computed column %s not in source" col)
+
+        // (c) Surfaces on the PhysicalColumn.Computed axis.
+        let computedCols =
+            (PhysicalSchema.ofCatalog target).Columns
+            |> Set.toList
+            |> List.choose (fun c -> c.Computed)
+        Assert.True((not (List.isEmpty computedCols)),
+            "PhysicalColumn.Computed axis is empty after round-trip.")

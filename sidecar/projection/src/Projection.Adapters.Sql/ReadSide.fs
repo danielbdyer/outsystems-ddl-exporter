@@ -270,6 +270,40 @@ module ReadSide =
             return result |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
         }
 
+    /// Wave-1 slice 1.3 (L3-S7 real-SQL leg) — read computed-column
+    /// definitions from `sys.computed_columns`, keyed by `(schema, table,
+    /// column)`. Value is `(definition, isPersisted)`. The `definition` is
+    /// SQL Server's canonical parenthesized expression (e.g. `([QTY]*(100))`);
+    /// `PhysicalSchema.encodeComputed` (via `ComputedColumnConfig`) carries
+    /// the paren-normalization tolerance. Single round-trip; mirrors
+    /// `readDefaultConstraints`. Closes the last hollow-canary feature.
+    let private readComputedColumns (cnn: SqlConnection)
+        : Task<Map<string * string * string, string * bool>> =
+        task {
+            use _ = Bench.scope "readside.readComputedColumns"
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT SCHEMA_NAME(t.schema_id), t.name, c.name, \
+                        cc.definition, cc.is_persisted \
+                 FROM sys.computed_columns cc \
+                 JOIN sys.columns c \
+                   ON c.object_id = cc.object_id AND c.column_id = cc.column_id \
+                 JOIN sys.tables t ON t.object_id = cc.object_id \
+                 WHERE t.is_ms_shipped = 0"
+            use! reader = cmd.ExecuteReaderAsync()
+            let result =
+                System.Collections.Generic.Dictionary<string * string * string, string * bool>()
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then
+                    let key = (reader.GetString 0, reader.GetString 1, reader.GetString 2)
+                    result.[key] <- (reader.GetString 3, reader.GetBoolean 4)
+                else
+                    hasMore <- false
+            return result |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+        }
+
     /// Wave-1 slice 1.3 — read DML triggers from `sys.triggers`, keyed by
     /// `(schema, table)`. Each value is `(triggerName, isDisabled, body)`;
     /// the body is the `OBJECT_DEFINITION` text (PhysicalSchema normalizes
@@ -930,6 +964,31 @@ module ReadSide =
                     | None -> a)
             { k with Attributes = attrs }
 
+    /// Wave-1 slice 1.3 (L3-S7) — attach recovered computed-column configs to
+    /// a Kind's attributes. `computed` maps `(schema, table, column)` to the
+    /// raw `sys.computed_columns.definition` + `is_persisted`. Reconstructs
+    /// `Attribute.Computed` via the `ComputedColumnConfig.create` smart
+    /// constructor (best-effort: a blank definition is skipped). The
+    /// expression normalization (paren-stripping) is shared with the
+    /// PhysicalSchema projection through `ComputedColumnConfig` → `encodeComputed`.
+    let private attachComputed
+        (computed: Map<string * string * string, string * bool>)
+        (k: Kind)
+        : Kind =
+        if Map.isEmpty computed then k
+        else
+            let attrs =
+                k.Attributes
+                |> List.map (fun a ->
+                    let coord = (k.Physical.Schema, k.Physical.Table, a.Column.ColumnName)
+                    match Map.tryFind coord computed with
+                    | Some (definition, isPersisted) ->
+                        match ComputedColumnConfig.create definition isPersisted with
+                        | Ok cc -> { a with Computed = Some cc }
+                        | Error _ -> a
+                    | None -> a)
+            { k with Attributes = attrs }
+
     /// Wave-1 slice 1.3 — attach recovered triggers + CHECK constraints +
     /// extended properties to a Kind. Uses the Core smart constructors
     /// (`Trigger.create` / `ColumnCheck.create` / `ExtendedProperty.create`)
@@ -1230,6 +1289,9 @@ module ReadSide =
                         // canary's PhysicalSchema.Default axis is no longer
                         // blind to a dropped/changed DEFAULT clause.
                         let! defaults = readDefaultConstraints cnn
+                        // Wave-1 slice 1.3 (L3-S7 real-SQL leg) — recover
+                        // computed-column configs from sys.computed_columns.
+                        let! computed = readComputedColumns cnn
                         // Wave-1 slice 1.3 — recover the four table/catalog-
                         // scoped annotation features (triggers / checks /
                         // sequences / extended properties) so the canary's
@@ -1242,6 +1304,7 @@ module ReadSide =
                         let kindsWithRefs =
                             kindsWithRefs0
                             |> List.map (attachDefaults defaults)
+                            |> List.map (attachComputed computed)
                             |> List.map (attachAnnotations triggers checks extProps)
                         // Per session-34 — threshold lifted to 100k.
                         // Below that, rows materialize into V2 IR

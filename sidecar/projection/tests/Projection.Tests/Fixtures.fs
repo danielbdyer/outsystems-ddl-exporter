@@ -238,3 +238,30 @@ let annotationBearingCatalog : Catalog =
             (Some 1000M) (Some 1M) (Some 1000M) (Some 9999999M) false NoCache None
         |> mustOkLocal
     { mkCatalog [ mkModule (modKey "AnnMod") (name "AnnMod") [ kind ] ] with Sequences = [ seq_ ] }
+
+/// A Catalog whose `Gadget` kind carries a PERSISTED computed column
+/// (slice 1.3 / L3-S7's round-trip bed). `TotalCents AS ([QTY]*(100))
+/// PERSISTED`. The source expression is given WITHOUT SQL Server's outer
+/// paren-wrap so both halves normalize equal under
+/// `PhysicalSchema.encodeComputed` (`((expr))` ↔ `expr`). `Qty` is the
+/// non-computed base column the expression references.
+let computedBearingCatalog : Catalog =
+    let mustOkC r = match r with | Ok v -> v | Error _ -> failwith "computedBearingCatalog fixture"
+    let mkAttr (column: string) (isPk: bool) (computed: ComputedColumnConfig option) : Attribute =
+        { mkFixtureAttribute (attrKey ["Gadget"; column]) column Integer isPk with
+            Column = { ColumnName = column.ToUpperInvariant(); IsNullable = not isPk }
+            Computed = computed }
+    let totalCents = ComputedColumnConfig.create "[QTY]*(100)" true |> mustOkC
+    let kind : Kind =
+        { customer with
+            SsKey = kindKey ["Gadget"]
+            Name = name "Gadget"
+            Physical = { Schema = "dbo"; Table = "OSUSR_CMP_GADGET"; Catalog = None }
+            Attributes =
+                [ mkAttr "Id" true None
+                  mkAttr "Qty" false None
+                  mkAttr "TotalCents" false (Some totalCents) ]
+            References = []
+            Indexes = []
+            Modality = [] }
+    mkCatalog [ mkModule (modKey "CmpMod") (name "CmpMod") [ kind ] ]

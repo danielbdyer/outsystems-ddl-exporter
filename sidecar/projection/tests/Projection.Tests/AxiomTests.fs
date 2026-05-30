@@ -567,8 +567,22 @@ let ``L3-S4/S5/S8/S9 (Wave-1 slice 1.3): triggers, sequences, CHECK constraints,
     // recovers MS_Description as a generic annotation, not yet as Description).
     ()
 
-[<Fact(Skip = "L3-S7: computed columns round-trip — Bucket C. IR (Attribute.Computed), SSDT emission, PhysicalColumn.Computed, and the H-050 in-process AST reader (PhysicalSchemaReader) all round-trip computed columns (Wave-1 slice 1.3). The REAL-SQL leg is the gap: ReadSide does not yet probe sys.computed_columns (still Computed=None at ReadSide.fs ~:536), so the live-DB canary cannot yet catch a dropped computed column. Trigger: wire a readComputedColumns probe (mirrors readDefaultConstraints) + an attach step, then a CanaryRoundTripTests vertical — flip Skip→Fact citing it. The in-process adjunction (AdjunctionLawTests) already exercises the Computed axis.")>]
-let ``L3-S7: computed columns round-trip (Bucket C — in-process AST reader done; real-SQL ReadSide probe pending)`` () =
+[<Fact>]
+let ``L3-S7 (Wave-1 slice 1.3 real-SQL leg): computed columns round-trip — emit → deploy → ReadSide restores computed state + definition — verified by CanaryRoundTripTests`` () =
+    citationOf
+        "tests/Projection.Tests/CanaryRoundTripTests.fs"
+        "Slice 1.3 / L3-S7: PERSISTED computed column round-trips through emit / deploy / ReadSide with state + definition restored"
+    // Bucket A (promoted 2026-05-30 from Bucket C). The real-SQL leg closes
+    // the LAST hollow-canary feature: `ReadSide.readComputedColumns` (sys.
+    // computed_columns) + `attachComputed` reconstruct `Attribute.Computed`
+    // via the `ComputedColumnConfig.create` smart constructor; `PhysicalColumn
+    // .Computed` projects it (both producers via `PhysicalSchema.encodeComputed`,
+    // sharing the paren-normalization tolerance with DEFAULT). The L3-S7 axiom
+    // statement ("round-trip restores computed state and definition") is now
+    // verified end-to-end vs real SQL Server, not just the H-050 in-process
+    // AST reader. With this, all six former hollow-canary features
+    // (DEFAULT/triggers/sequences/checks/ext-props/computed = L3-S4/5/6/7/8/9)
+    // are Bucket A.
     ()
 
 [<Fact>]

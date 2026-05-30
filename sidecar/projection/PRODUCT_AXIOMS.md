@@ -63,7 +63,7 @@ The axioms are grouped by **core concern** (the operator's mental partition of V
 
 **L3-S7. Computed columns render correctly.** Every Attribute with `IsComputed = true` and `ComputedDefinition` renders as a computed-column DDL; round-trip restores computed state and definition.
 
-  *Underwriting.* **Bucket C as of 2026-05-30 (Wave-1 slice 1.3).** IR (`Attribute.Computed`), SSDT emission, `PhysicalColumn.Computed`, and the H-050 in-process AST reader round-trip computed columns; the real-SQL leg (ReadSide `sys.computed_columns` probe) is the remaining gap — `AxiomTests.fs::L3-S7` Skip carries the trigger.
+  *Underwriting.* **Bucket A as of 2026-05-30 (Wave-1 slice 1.3 real-SQL leg).** `ReadSide.readComputedColumns` + `attachComputed` recover `Attribute.Computed` from `sys.computed_columns`; `PhysicalColumn.Computed` projects it (both producers via `PhysicalSchema.encodeComputed`). Round-trip restores computed state + definition — verified vs real SQL Server by `CanaryRoundTripTests` "Slice 1.3 / L3-S7". Closes the last hollow-canary feature.
   *Failure mode.* Computed columns become regular nullable columns at cutover.
   *Tier.* 1.
 
