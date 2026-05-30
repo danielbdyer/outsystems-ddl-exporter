@@ -19982,3 +19982,50 @@ framing, this entry becomes the enacted R6 amendment, the `transfer --execute`
 exception is formally scoped, and slice 3.1's `AXIOMS.md` data-level-adjunction
 candidate can promote. Without it, `--execute` should be treated as
 test-and-dry-run-only regardless of the env gate.
+
+---
+
+## 2026-05-30 — `uat-users` is NOT a standalone verb: collapse into `full-export` + `transfer` as opt-in
+
+**Resolved (operator directive).** The planned standalone `osm uat-users` verb
+(EXECUTION_PLAN slice 3.3, matrix row 113) is **retired before being built**.
+The Dev→UAT user-FK reflow is not a verb — it is a *configurable, opt-in
+behavior* of the two verbs that already own its inputs:
+
+- **`transfer` — the live re-key (canonical path).** `transfer --reconcile
+  <UserTable>:<emailColumn>` reconciles Source users to the *live* Sink (UAT)
+  users by the match column, skips re-inserting matched users, and re-points
+  every FK through the matched remap. The Sink connection IS the target-user
+  inventory — so the originally-planned `InventoryCsvReader` (an external CSV
+  of target users) is **obviated and dropped**: you don't read a CSV of UAT
+  users when you can read the UAT database. Live-only.
+
+- **`full-export` — the config-driven reflow, OPT-IN.** `UserFkReflowPass` is
+  already in the pass chain, but it is now **opt-in (off by default)** via
+  `policy.transformGroups: [{ name: "UserReflow", enabled: true }]`. Without
+  that switch, `userFkReflowPass` is excluded from the chain entirely
+  (`TransformGroupsBinding.fromConfig` injects `UserReflow = false` when the
+  operator does not name it). `policy.userMatching` configures the *strategy*
+  (ByEmail / …) used **when** the reflow is opted in.
+
+**Why opt-in for UserReflow specifically** (vs `Tightening`, which stays
+opt-out / V1-parity): user migration is a deliberate, environment-specific act
+(Dev→UAT), not a default transform. Running it silently on every export is the
+wrong default; the operator must ask for it. This is the first per-group
+opt-in default in the `TransformGroups` mechanism (the rest default-on).
+
+**Why no standalone verb.** A verb for what is really a reconciliation *mode*
+duplicates the connection-handling, profiling, and emission already in
+`transfer` / `full-export`. The capability has no inputs the two verbs lack
+(transfer has a live sink; full-export has the profile + userMatching config).
+A standalone verb would be a parallel surface to maintain for zero new
+capability.
+
+### Cross-references
+
+- `src/Projection.Pipeline/TransformGroupsBinding.fs` (`fromConfig` opt-in flip);
+  `src/Projection.Core/RegisteredTransforms.fs` (`userFkReflowPass` in the chain);
+  `src/Projection.Pipeline/Pipeline.fs` (`filterChainByGroups`).
+- `tests/Projection.Tests/TransformGroupsBindingTests.fs` (opt-in semantics).
+- Supersedes `EXECUTION_PLAN.md` slice 3.3 (standalone verb + InventoryCsvReader +
+  UatUsersArgs — all retired); matrix row 113 reframed.

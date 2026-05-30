@@ -104,7 +104,7 @@ Per `V2_DRIVER.md` per-axis correctness stakes. For each axis: where V2 stands; 
 **Gated for flip:**
 - ~~**Remaining matching strategies** (BySsKey / Regex / FallbackToSystemUser)~~ **CLOSED 2026-05-18** by slice 5.13.identity-axis-closure. All four `UserMatchingStrategy` DU variants (ByEmail, BySsKey, ManualOverride, FallbackToSystemUser) ship in `UserFkReflowPass.applyStrategy`; the slice 5.13.identity-axis-closure pin pins five property-test families (totality + per-source-diagnostic-count + diagnostics-cardinality + permutation-invariance + idempotence + FallbackToSystemUser safety net) across 13 FsCheck properties. V1's `Regex` strategy collapses to `ManualOverride` per `Policy.fs` pre-scope rationale (structurally indistinguishable for V2's algebraic purposes).
 - **UAT verification surface** (row 177) — V1 has 3 verifiers + report; V2 verification deferred post-cutover; canary's round-trip diff + tolerance table cover dual-track mode
-- **`osm uat-users` CLI verb** (row 113) — cash-out ~1500 LOC; trigger: cutover enters UAT phase
+- ~~**`osm uat-users` CLI verb** (row 113) — cash-out ~1500 LOC~~ **COLLAPSED 2026-05-30** (`DECISIONS — uat-users is NOT a standalone verb`). No standalone verb: the Dev→UAT user-FK reflow is opt-in in `transfer --reconcile <UserTable>:<emailColumn>` (live re-key, no CSV) + `full-export` (`policy.transformGroups: [{name:"UserReflow", enabled:true}]`). Zero remaining engineering; the UAT *run* is access-gated only.
 - **Per-FK orphan-sample diagnostics** (row 89) — V2 carries orphan COUNT but not row identifiers; cash-out: add `OrphanSamples` field to `Profile.ForeignKeys` when consumer demands
 
 **Acceptance criterion for flip:** chapter 4.2 slice ε ships remaining matching strategies + UAT dry-run on real inventory CSVs surfaces zero unmatched orphans (or operator-acknowledged manual overrides).
@@ -162,7 +162,7 @@ Per `V2_DRIVER.md` per-axis correctness stakes. For each axis: where V2 stands; 
 | `osm profile` | Row 85 LiveProfiler lands | 30 | Med |
 | `osm analyze` | Operator pre-emission iteration workflow | 300 | Med (cutover dry-run) |
 | `osm policy explain` | CLI-based decision drill-down | 300 | Low |
-| `osm uat-users` | Chapter 4.2 slice ε + UAT phase | 1500 | High (axis 3 dependency) |
+| ~~`osm uat-users`~~ (collapsed → `transfer --reconcile` + `full-export` opt-in) | LANDED 2026-05-30 | 0 | n/a (no standalone verb) |
 | `osm verify-data` | Chapter 4.3+ post-deploy verification | 200 | High (post-deploy quality gate) |
 | `--open-report` flag | Operator demand for integrated reports | 150 | Low |
 | `compare` verb (DMM concept harvest) | Operator ad-hoc schema-diff demand | 500 | Low |

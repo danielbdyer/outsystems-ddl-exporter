@@ -505,26 +505,25 @@ runner `scripts/test.sh` (never one `dotnet test`); TRX-first failure capture.
   the store is `CutoverSafety` cross-cutting, not a transform site.
 - **Risks:** keep all I/O in Pipeline/CLI; the `ApprovalRegistry` algebra in Core is already pure.
 
-#### 3.3 — `osm uat-users` verb (drives the dry-run)
-- **Wave/Effort/Status/Deps:** 3 / M / buildable-now (the *dry-run* it enables is blocked on UAT access + real CSVs) / none
-- **Goal:** The one genuinely cutover-critical unbuilt verb: CSV inventory → the shipped `UserFkReflowPass`
-  (all four strategies) → remap SQL + verification report.
-- **Files:** `src/Projection.Cli/Program.fs` (`runUatUsers`); new `src/Projection.Cli/UatUsersArgs.fs`
-  (Argu binder mirroring `TransferArgs.fs`); new `src/Projection.Adapters.Osm/InventoryCsvReader.fs` (D9 —
-  CSV path is an arg, not embedded creds); new fixture `fixtures/uat-inventory-sample.csv`; reuse
-  `src/Projection.Core/UserRemap.fs` + `Passes/UserFkReflowPass.fs`.
-- **Types & signatures:**
-  ```fsharp
-  val runUatUsers : modelPath:string -> inventoryPath:string -> outDir:string -> int
-  module InventoryCsvReader = val read : path:string -> Result<UserInventory, AdapterError>
-  ```
-- **Acceptance:** golden-file `` ``osm uat-users emits deterministic remap SQL + zero-unmatched report`` ``
-  on the sample fixture; FsCheck citing the chapter-4.2 totality axiom (every source user → exactly one
-  `RemapDiagnostic`); T1 re-run determinism.
-- **Governance:** `DECISIONS` gist — *"osm uat-users verb: CSV-driven UAT dry-run surface; earns its place
-  under the named T-30 dry-run demand."* Matrix row 113 → 🟢.
-- **Risks:** BACKLOG's ~1500 LOC estimate is stale — most logic is shipped; realistic delta ~400-600 LOC
-  (CSV ingest + CLI wiring + report formatter). The dry-run *itself* is access-gated (Wave 5 §5.x).
+#### 3.3 — User-FK reflow as opt-in behavior of `full-export` + `transfer` (NOT a standalone verb) — DONE
+- **Wave/Effort/Status/Deps:** 3 / S / **LANDED 2026-05-30** / none
+- **Decision (operator directive; supersedes the original standalone-verb plan).** There is no
+  `osm uat-users` verb, no `UatUsersArgs.fs`, no `InventoryCsvReader.fs`, no sample CSV. The Dev→UAT
+  user-FK reflow is a *configurable, opt-in behavior* of the two verbs that already own its inputs.
+  See `DECISIONS 2026-05-30 — uat-users is NOT a standalone verb`.
+- **`transfer` — the live re-key (canonical).** `transfer --reconcile <UserTable>:<emailColumn>`
+  reconciles Source users to the *live* Sink (UAT) by the match column. The Sink connection IS the
+  target-user inventory, so the planned CSV reader is **obviated and dropped** (live-only).
+- **`full-export` — config-driven reflow, OPT-IN.** `UserFkReflowPass` is in the chain but now
+  opt-in (off by default): `policy.transformGroups: [{ name: "UserReflow", enabled: true }]` enables it;
+  absent ⇒ `userFkReflowPass` excluded from the chain (`TransformGroupsBinding.fromConfig` injects
+  `UserReflow = false`). `policy.userMatching` configures the strategy when opted in.
+- **Acceptance (landed):** `TransformGroupsBindingTests` — UserReflow defaults OFF (opt-in); enabled only
+  when the operator names it; the existing `--reconcile` path covers the transfer re-key. Full pure pool
+  green (the pass was a no-op-by-default, so excluding it changed nothing except the toggle semantics).
+- **Risks retired:** the ~400-1500 LOC estimate vanishes — the machinery was already in both verbs; the
+  delta was a one-line opt-in default flip + test updates + this decision. The UAT *dry-run* itself stays
+  access-gated (Wave 5 §5.x), but no engineering remains to make it runnable.
 
 #### 3.4 — Tolerance per-environment config, fail-closed
 - **Wave/Effort/Status/Deps:** 3 / S-M / buildable-now / none
@@ -776,7 +775,7 @@ Wave 2 (core loop):  2.1 ─► 2.2 ─► 2.3 ─► 2.4 ─► 2.5   (strict c
 Wave 3 (cutover)
   3.2 approval store ─► R6 sign-off ─► 3.5 flip-ledger ; ─► 5.6 VersionedPolicy.evolve
   3.1 R6 amendment ──► 5.1 D-exec
-  3.3 uat-users ─────► UAT dry-run (access-blocked)
+  3.3 user-reflow opt-in (transfer --reconcile / full-export transformGroups) ─► UAT dry-run (access-blocked)
 
 Wave 4
   4.1 V2.SsKey persistence ─► 5.2 Slice E
@@ -792,7 +791,7 @@ returns empty for nullability's neighbors. Integrity enables the core-loop proof
 
 **Critical path to V2-driver cutover:**
 `0.1` (steer by reality) → `1.2`+`1.3` (canary actually verifies) → `2.1→2.5` (V2 emits *tightened* schema) →
-`3.3`+`3.1`+`3.2` (dry-run runnable + legitimate) → **UAT dry-run** (access-blocked, last ⏳ T-30 item) → `4.2`
+`3.3` (user-reflow opt-in, landed) +`3.1`+`3.2` (dry-run runnable + legitimate) → **UAT dry-run** (access-blocked, last ⏳ T-30 item) → `4.2`
 (Phase B functional-equivalence → V1 sunset). Everything else is capability extension or hygiene.
 
 **Recommended opening wave (~2 sessions, all buildable-now, zero-to-low risk):**
@@ -880,7 +879,7 @@ that point "replace V1" is not a promise — it is a continuously-checked theore
 **Open external gates (organizational, not engineering):**
 - **OPEN-2** (the big one): does OutSystems Cloud UAT expose a writable SQL connection to entity-backing tables, or
   is it platform-API-only? Gates Transfer D-exec (5.1) + real-UAT Slice E. **Resolve first** via the ops spike (5.1).
-- **UAT access + real inventory CSVs:** gates the T-30 dry-run itself (the verb 3.3 is buildable now; the run is not).
+- **UAT access + a live UAT database connection:** gates the T-30 dry-run itself (the reflow capability — slice 3.3 — is LANDED as opt-in in transfer/full-export; the run against a real UAT sink is access-blocked). No CSV inventory needed: transfer reads the live UAT sink.
 - **OPEN-1 / OPEN-3 / OPEN-6:** disposition mix (blank vs pre-existing), UAT CDC-tracking, CHECK/trigger collisions
   — all secondary to OPEN-2.
 

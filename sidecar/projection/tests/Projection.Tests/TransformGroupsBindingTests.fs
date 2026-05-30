@@ -54,12 +54,16 @@ let private hasErrorCode (code: string) (errs: ValidationError list) : bool =
 // ----------------------------------------------------------------------
 
 [<Fact>]
-let ``C.4: empty TransformGroups yields TransformGroups.empty`` () =
+let ``C.4: empty config opts UserReflow OFF (opt-in default); Tightening stays opt-out`` () =
+    // Wave-3 uat-users collapse: UserReflow is OPT-IN (off by default), so an
+    // empty config injects it as disabled; Tightening keeps its opt-out default
+    // (enabled, V1-parity, absent from the map).
     let cfg = mkConfig []
     match TransformGroupsBinding.fromConfig cfg with
     | Ok groups ->
-        Assert.True(TransformGroups.isEmpty groups)
-        Assert.True(Map.isEmpty groups.ByGroup)
+        Assert.Equal(Some false, Map.tryFind TransformGroup.UserReflow groups.ByGroup)
+        Assert.True(TransformGroups.isEnabled TransformGroup.Tightening groups)
+        Assert.False(TransformGroups.isEnabled TransformGroup.UserReflow groups)
     | Error errs -> Assert.Fail(sprintf "expected Ok, got %A" errs)
 
 // ----------------------------------------------------------------------
@@ -87,12 +91,12 @@ let ``C.4: known UserReflow group resolves to typed DU`` () =
 // ----------------------------------------------------------------------
 
 [<Fact>]
-let ``C.4: isEnabled defaults to true for groups absent from config`` () =
+let ``C.4: Tightening defaults enabled (opt-out); UserReflow defaults disabled (opt-in)`` () =
     let cfg = mkConfig []
     match TransformGroupsBinding.fromConfig cfg with
     | Ok groups ->
         Assert.True(TransformGroups.isEnabled TransformGroup.Tightening groups)
-        Assert.True(TransformGroups.isEnabled TransformGroup.UserReflow groups)
+        Assert.False(TransformGroups.isEnabled TransformGroup.UserReflow groups)
     | Error errs -> Assert.Fail(sprintf "expected Ok, got %A" errs)
 
 [<Fact>]
@@ -101,7 +105,24 @@ let ``C.4: isEnabled returns explicit value for groups present in config`` () =
     match TransformGroupsBinding.fromConfig cfg with
     | Ok groups ->
         Assert.False(TransformGroups.isEnabled TransformGroup.Tightening groups)
+        // UserReflow absent → opt-in default is OFF (was `true` under the
+        // pre-collapse opt-out semantics).
+        Assert.False(TransformGroups.isEnabled TransformGroup.UserReflow groups)
+    | Error errs -> Assert.Fail(sprintf "expected Ok, got %A" errs)
+
+[<Fact>]
+let ``C.4 (uat-users collapse): UserReflow runs only when explicitly opted in`` () =
+    // The opt-in switch: policy.transformGroups names UserReflow enabled.
+    let cfgOptIn = mkConfig [ { Name = "UserReflow"; Enabled = true } ]
+    match TransformGroupsBinding.fromConfig cfgOptIn with
+    | Ok groups ->
         Assert.True(TransformGroups.isEnabled TransformGroup.UserReflow groups)
+        Assert.False(Set.contains TransformGroup.UserReflow (TransformGroups.disabledGroups groups))
+    | Error errs -> Assert.Fail(sprintf "expected Ok, got %A" errs)
+    // Absent → disabled → userFkReflowPass filtered out of the chain.
+    match TransformGroupsBinding.fromConfig (mkConfig []) with
+    | Ok groups ->
+        Assert.True(Set.contains TransformGroup.UserReflow (TransformGroups.disabledGroups groups))
     | Error errs -> Assert.Fail(sprintf "expected Ok, got %A" errs)
 
 [<Fact>]
