@@ -94,7 +94,11 @@ module SsdtDdlEmitter =
     /// empty for SSDT DDL emission — per chapter pre-scope §10
     /// `Tolerance.IgnoreHeaderComments = true` initially, V2 omits
     /// V1's `/* Source: ... */` per-table header block.
-    let private columnDef (a: Attribute) : ColumnDef =
+    // Wave-2 slice 2.2 — `overlay` is threaded as a curried prefix argument
+    // but NOT yet consumed (byte-identical to pre-overlay emission; the T1
+    // safety net proving the seam is open without changing bytes). Slice 2.3
+    // consumes `overlay.EnforceNotNull` here to apply NOT NULL tightening.
+    let private columnDef (_overlay: DecisionOverlay) (a: Attribute) : ColumnDef =
         {
             Name         = a.Column.ColumnName
             Type         = a.Type
@@ -260,12 +264,15 @@ module SsdtDdlEmitter =
     /// whose target kind isn't in the catalog drop silently
     /// (cross-catalog territory; chapter 3.2).
     let private createTableStatement
+        (overlay: DecisionOverlay)
         (targetByKey: Map<SsKey, Kind>)
         (pkAttrByKey: Map<SsKey, Attribute>)
         (k: Kind)
         : Statement =
-        let columns = k.Attributes |> List.map columnDef
+        let columns = k.Attributes |> List.map (columnDef overlay)
         let pk = pkDef k
+        // Wave-2 slice 2.4 consumes `overlay.DropFk` here to suppress an
+        // inline FK; 2.2 leaves the resolution unchanged (byte-identical).
         let fks = k.References |> List.choose (fkDef targetByKey pkAttrByKey k)
         // Slice 5.13.column-features-emit: thread Kind.ColumnChecks
         // (chapter A.0' slice ε IR; now populated via cluster A1's
@@ -292,7 +299,11 @@ module SsdtDdlEmitter =
     /// here too — the corresponding CREATE TABLE inline FK is absent
     /// by the same predicate, so the ALTER would be referencing a
     /// non-existent constraint anyway.
+    // Wave-2 slice 2.4 consumes `overlay.NoCheckFk` here (an additional
+    // source of untrusted FKs alongside `IsConstraintTrusted`); 2.2 threads
+    // the prefix arg unused (byte-identical).
     let private untrustedFkAlters
+        (_overlay: DecisionOverlay)
         (targetByKey: Map<SsKey, Kind>)
         (pkAttrByKey: Map<SsKey, Attribute>)
         (k: Kind)
@@ -326,7 +337,9 @@ module SsdtDdlEmitter =
     /// skipped (PK is inlined in CREATE TABLE per V1 convention);
     /// remaining indexes are sorted by SsKey for deterministic
     /// emission ordering (A33).
-    let private indexStatements (k: Kind) : Statement list =
+    // Wave-2 slice 2.3 consumes `overlay.EnforceUnique` here to promote an
+    // index to UNIQUE; 2.2 threads the prefix arg unused (byte-identical).
+    let private indexStatements (_overlay: DecisionOverlay) (k: Kind) : Statement list =
         k.Indexes
         |> List.filter (fun idx -> not idx.IsPrimaryKey)
         |> List.sortBy (fun idx -> idx.SsKey)
@@ -569,6 +582,7 @@ module SsdtDdlEmitter =
         }
 
     let private kindToSsdtFile
+        (overlay: DecisionOverlay)
         (targetByKey: Map<SsKey, Kind>)
         (pkAttrByKey: Map<SsKey, Attribute>)
         (m: Module)
@@ -578,7 +592,7 @@ module SsdtDdlEmitter =
         let statements =
             seq {
                 yield! moduleSchemaPropertyStatements m k
-                yield createTableStatement targetByKey pkAttrByKey k
+                yield createTableStatement overlay targetByKey pkAttrByKey k
                 // Slice 5.13.fk-features-emit (matrix row 59):
                 // post-CREATE-TABLE ALTER statements preserve the
                 // deployed target's NOCHECK FK trust state. Emitted
@@ -589,8 +603,8 @@ module SsdtDdlEmitter =
                 // `IsConstraintTrusted = false`; this seam is
                 // structurally positioned for the rowset-path JOIN
                 // slice that wires `#FkReality.IsNoCheck`.
-                yield! untrustedFkAlters targetByKey pkAttrByKey k
-                yield! indexStatements k
+                yield! untrustedFkAlters overlay targetByKey pkAttrByKey k
+                yield! indexStatements overlay k
                 // Slice 5.13.index-features-emit (matrix row 55):
                 // post-CREATE-INDEX ALTER INDEX DISABLE statements
                 // preserve the deployed target's index disable state.
@@ -666,7 +680,14 @@ module SsdtDdlEmitter =
     /// not raw INSERTs). Schema-only emission is what V2's production
     /// canary surface needs; data goes through the chapter-4.1.B
     /// triumvirate.
-    let statements (catalog: Catalog) : seq<Statement> =
+    /// Wave-2 slice 2.2 — overlay-bearing form of `statements`. The
+    /// `DecisionOverlay` (the emitter-consumable projection of the tightening
+    /// decisions) is a curried prefix argument; A18-amended holds because the
+    /// overlay carries decisions (evidence-derived facts), never `Policy`.
+    /// `statements` is the principled `empty`-default wrapper (sibling-wrapper
+    /// discipline — `empty` is a default the caller couldn't otherwise
+    /// access). With `empty`, output is byte-identical to pre-overlay emission.
+    let statementsWith (overlay: DecisionOverlay) (catalog: Catalog) : seq<Statement> =
         use _ = Bench.scope "emit.ssdt.statements"
         let _, targetByKey, pkAttrByKey = buildLookups catalog
         // Topological order via `TopologicalOrderPass.runWith
@@ -703,13 +724,13 @@ module SsdtDdlEmitter =
             // DEFAULT constraints in CREATE TABLE statements.
             yield! yieldAllWithSeparator (sequenceStatements catalog)
             for k in orderedKinds do
-                yield! yieldWithSeparator (createTableStatement targetByKey pkAttrByKey k)
+                yield! yieldWithSeparator (createTableStatement overlay targetByKey pkAttrByKey k)
                 // Slice 5.13.fk-features-emit — mirrors the per-kind
                 // emission order in `kindToSsdtFile`: post-CREATE-TABLE
                 // ALTER for untrusted FKs, then indexes, then post-
                 // CREATE-INDEX ALTER for disabled indexes.
-                yield! yieldAllWithSeparator (untrustedFkAlters targetByKey pkAttrByKey k)
-                yield! yieldAllWithSeparator (indexStatements k)
+                yield! yieldAllWithSeparator (untrustedFkAlters overlay targetByKey pkAttrByKey k)
+                yield! yieldAllWithSeparator (indexStatements overlay k)
                 // Slice 5.13.index-features-emit (matrix row 55).
                 yield! yieldAllWithSeparator (disabledIndexAlters k)
                 // Slice D.1.c — match `kindToSsdtFile`'s per-kind
@@ -725,7 +746,15 @@ module SsdtDdlEmitter =
                 yield! yieldAllWithSeparator (triggerStatements k)
         }
 
-    let emitSlices : Emitter<SsdtFile> = fun catalog ->
+    /// Catalog-wide typed statement stream (the `empty`-overlay default).
+    /// Byte-identical to pre-Wave-2 emission. See `statementsWith`.
+    let statements (catalog: Catalog) : seq<Statement> =
+        statementsWith DecisionOverlay.empty catalog
+
+    /// Wave-2 slice 2.2 — overlay-bearing form of `emitSlices`. `emitSlices`
+    /// is the principled `empty`-default wrapper. With `empty`, every per-kind
+    /// `SsdtFile` body is byte-identical to pre-overlay emission.
+    let emitSlicesWith (overlay: DecisionOverlay) : Emitter<SsdtFile> = fun catalog ->
         use _ = Bench.scope "emit.ssdt.emitSlices"
         let modules = moduleByKindKey catalog
         let allKinds, targetByKey, pkAttrByKey = buildLookups catalog
@@ -738,7 +767,7 @@ module SsdtDdlEmitter =
             |> Bench.iterMap "emit.ssdt.emitSlices.kind" (fun k ->
                 match Map.tryFind k.SsKey modules with
                 | Some m ->
-                    k.SsKey, kindToSsdtFile targetByKey pkAttrByKey m k
+                    k.SsKey, kindToSsdtFile overlay targetByKey pkAttrByKey m k
                 | None ->
                     // Unreachable: `Catalog.allKinds` walks
                     // `c.Modules |> List.collect (fun m -> m.Kinds)`;
@@ -748,6 +777,10 @@ module SsdtDdlEmitter =
                     invalidOp (sprintf "SsdtDdlEmitter.emitSlices: kind %A has no owning module (unreachable; Catalog.allKinds invariant)" k.SsKey))
             |> Map.ofList
         ArtifactByKind.create catalog slices
+
+    /// Π port realization (the `empty`-overlay default). Byte-identical to
+    /// pre-Wave-2 emission. See `emitSlicesWith`.
+    let emitSlices : Emitter<SsdtFile> = emitSlicesWith DecisionOverlay.empty
 
     /// Slice 5.13.emit-features-registry (2026-05-18) — the SSDT
     /// emitter's `RegisteredTransform` surface. Metadata-only per the
