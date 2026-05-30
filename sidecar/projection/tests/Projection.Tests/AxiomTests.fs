@@ -440,8 +440,25 @@ let ``A41: registry totality + bidirectional property tests — verified by Regi
     // OperatorIntent events) + overlay-exercise.
     ()
 
-[<Fact(Skip = "A42 (candidate): decision→emission fidelity — Bucket C, scaffolded at Wave-2 slice 2.1. DecisionOverlay + observable-identity-on-empty are LANDED and verified (DecisionOverlayTests.fs: `ofComposeState (ComposeState.initial c) = empty`, FsCheck totality). The emitter does NOT yet apply the decisions (slices 2.2 thread the curried-prefix arg byte-identically; 2.3 applies NOT NULL + UNIQUE; 2.4 applies FK drop + NOCHECK). Trigger: at slice 2.5, flip Skip→Fact citing the canary tests that prove EnforceNotNull→NOT NULL / EnforceUnique→UNIQUE / DoNotEnforce→suppressed / ScriptWithNoCheck→untrusted reached the emitted DDL, and promote candidate→numbered A42 in AXIOMS.md.")>]
-let ``A42 (candidate, Wave 2): emitted DDL is a faithful projection of the tightening decision sets`` () =
+[<Fact>]
+let ``A42 (Wave 2): emitted DDL is a faithful projection of the tightening decision sets — verified by DecisionEmissionTests + CanaryRoundTripTests`` () =
+    citationOf
+        "tests/Projection.Tests/DecisionEmissionTests.fs"
+        "A42 (2.3): every EnforceNotNull decision NOT-NULLs its column, and only those"
+    // Bucket A (cashed at Wave-2 slices 2.1–2.4, 2026-05-30). DecisionOverlay
+    // (2.1) projects the three tightening decision sets into emitter-consumable
+    // Set<SsKey> lookups (A18-safe — decisions, never Policy). The emitter
+    // consumes them additively (2.2 byte-identical seam; 2.3 NOT NULL + UNIQUE;
+    // 2.4 FK drop + NOCHECK): Nullable = source ∧ ¬enforce; IsUnique = source ∨
+    // enforce; DoNotEnforce suppresses the inline FK; ScriptWithNoCheck emits
+    // WITH NOCHECK. Verified at the emission layer (DecisionEmissionTests: pure
+    // CreateTable/CreateIndex inspection + FsCheck) AND the canary layer
+    // (CanaryRoundTripTests: EnforceNotNull survives deploy→ReadSide as NOT NULL;
+    // DoNotEnforce keeps the FK out of the deployed schema — vs real SQL Server).
+    // Observable identity: empty overlay = byte-identical to pre-Wave-2 emission.
+    // Open follow-on (NOT part of A42): the FK silent-drop witness for
+    // UNRESOLVED targets (slice-μ retirement) needs a Diagnostics channel on
+    // the emitter port — see L3-Boundary-NoSilentDrop.
     ()
 
 [<Fact>]

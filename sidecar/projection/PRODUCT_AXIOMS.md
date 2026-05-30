@@ -85,6 +85,12 @@ The axioms are grouped by **core concern** (the operator's mental partition of V
   *Failure mode.* Multi-database architectures silently lose cross-DB constraints.
   *Tier.* 2.
 
+**L3-S11. Tightening decisions reach the emitted DDL (decision→emission fidelity).** Every NOT NULL / UNIQUE / FK-enforcement decision the passes make under operator intent is applied at emission, additively: an `EnforceNotNull` attribute emits `NOT NULL`; an `EnforceUnique` index emits `UNIQUE`; a `DoNotEnforce` FK is suppressed; a `ScriptWithNoCheck` FK emits `WITH NOCHECK`. A non-enforce decision never loosens source truth (`Nullable = source ∧ ¬enforce`, `IsUnique = source ∨ enforce`).
+
+  *Underwriting.* **Bucket A as of 2026-05-30 (Wave-2 slices 2.1–2.4; numbered axiom A42).** `DecisionOverlay.ofComposeState` projects the decision sets into emitter-consumable `Set<SsKey>` lookups (A18-safe — decisions, never Policy); the SSDT emitter consumes them via the `statementsWith` / `emitSlicesWith` curried-prefix seam. Verified at the emission layer (`DecisionEmissionTests.fs`: pure `CreateTable`/`CreateIndex` inspection + FsCheck) and the canary layer (`CanaryRoundTripTests.fs`: `EnforceNotNull` survives deploy→ReadSide as `NOT NULL`; `DoNotEnforce` keeps the FK out of the deployed schema — vs real SQL Server). Observable identity: the empty overlay is byte-identical to pre-Wave-2 emission. Wave-1's canary un-hollowing (S4–S9) is the precondition for the canary-layer proof.
+  *Failure mode.* V2 decides to tighten (e.g. NOT NULL on a column the profile shows has no nulls) but emits the untightened schema — the operator's data-quality intent silently never reaches the database. (This was the open state before Wave 2.)
+  *Tier.* 1.
+
 ---
 
 ## Group D — Data (L3-D1 through L3-D10)

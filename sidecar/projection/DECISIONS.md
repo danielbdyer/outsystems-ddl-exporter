@@ -19881,3 +19881,50 @@ introducing unregistered transforms.
   `tests/Projection.Tests/TransferRegistrationsTests.fs`.
 - Pillar 9 — `DECISIONS 2026-05-15 (late)`; `RegisteredAllTransformsBidirectionalTests`
   (the totality property tests that now cover Transfer).
+
+---
+
+## 2026-05-30 — Wave 2: consuming tightening decisions in the emitter is A18-safe (A42 cashed)
+
+**Resolved question.** Does threading the tightening decisions into the SSDT
+emitter violate A18-amended ("Π consumes `Catalog × Profile`, never `Policy`")?
+
+**No.** The emitter consumes a `DecisionOverlay` — the projection of the
+chain's `NullabilityDecisionSet` / `UniqueIndexDecisionSet` /
+`ForeignKeyDecisionSet` into `Set<SsKey>` lookups. A *decision* is a fact
+("this attribute was decided NOT NULL under the registered intervention given
+the observed null count"): the operator's intent (Policy) was already
+discharged into evidence by the passes. The emitter projects the fact, not the
+intent. The structural guardrail that keeps this honest: the overlay is a
+**curried prefix argument** (`statementsWith` / `emitSlicesWith`), never folded
+into the `Emitter` alias and never a `Policy` parameter. `statements` /
+`emitSlices` remain the `empty`-default wrappers (sibling-wrapper discipline —
+`DecisionOverlay.empty` is a default the caller couldn't otherwise access).
+
+**Why this earns its place.** Before Wave 2 the engine *decided* tightening
+correctly and then emitted the *untightened* schema — the central
+evidence-gated-tightening promise was open. A42 closes it: emission is now a
+faithful, additive projection of the decisions (`field ∧ ¬enforce` /
+`field ∨ enforce`, never `field = decision`, so emission can only tighten,
+never loosen source truth). Observable identity holds (empty overlay =
+byte-identical to pre-Wave-2 emission), so the seam opened without changing any
+existing byte. The proof rides Wave-1's canary un-hollowing: the un-hollowed
+`PhysicalSchema.Nullable` / `.ForeignKeys` axes let the Docker canary observe
+that the decision reached the deployed schema.
+
+**Scope / open follow-on.** A42 is decision→emission fidelity. The FK
+silent-drop witness for *unresolved* targets (a cross-catalog FK that `fkDef`
+drops to `None` — distinct from an overlay `DoNotEnforce` decision) is the
+slice-μ retirement: it needs a `Diagnostics` channel on the emitter port and is
+a separate slice (`L3-Boundary-NoSilentDrop` for the FK case). A42 does not
+depend on it.
+
+### Cross-references
+
+- `src/Projection.Core/DecisionOverlay.fs`; `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs`
+  (`statementsWith` / `emitSlicesWith` / `columnDef` / `indexStatements` /
+  `createTableStatement` / `untrustedFkAlters`); `src/Projection.Pipeline/Pipeline.fs`
+  (`projectFromChainWithState` passes `DecisionOverlay.ofComposeState composedState`).
+- `tests/Projection.Tests/DecisionOverlayTests.fs`, `DecisionEmissionTests.fs`,
+  `CanaryRoundTripTests.fs` (A42 canary proofs), `AdjunctionLawTests.fs` (byte-identical seam).
+- `AXIOMS.md` A42; `PRODUCT_AXIOMS.md` L3-S11; `AxiomTests.fs` A42; `EXECUTION_PLAN.md` Wave 2.

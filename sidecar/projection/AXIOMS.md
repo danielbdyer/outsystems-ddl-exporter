@@ -20,8 +20,8 @@ chapter-close amendments.
 The original V1 algebraic spec stated thirty-one axioms (A1–A31)
 generating ten theorems (T1–T10). V2 has extended the system: A6, A12,
 A17, A18, A24, and T1 carry amendments (recorded under "V2 Amendments"
-below); A32, A33, A34, A35, A36, A39, A40, A41, and T11 are new.
-The current count is **A1–A41 generating T1–T11** with six amended
+below); A32, A33, A34, A35, A36, A39, A40, A41, A42, and T11 are new.
+The current count is **A1–A42 generating T1–T11** with six amended
 originals. The axioms are grouped into eight thematic clusters; the
 theorems cluster by what falls out of the construction. Code and tests
 cite the **amended** form when both exist; the original form is the
@@ -856,11 +856,11 @@ burst (per `DECISIONS 2026-05-22 — Stage 0 foundation phase ships as
 one coherent unit`); the bodies fill at the chapters named in each
 heading.
 
-## A42 candidate — decision→emission fidelity (Wave 2, 2026-05-30)
+## A42 candidate — decision→emission fidelity (Wave 2, 2026-05-30) — CASHED
 
-**Scaffolded at Wave-2 slice 2.1 open.** The body fills at slice 2.5
-(`EXECUTION_PLAN.md` Wave 2) once the SSDT emitter applies the
-tightening decisions and the canary proves they reached the emitted DDL.
+**CASHED at Wave-2 slices 2.1–2.4 (2026-05-30).** Promoted to the numbered
+axiom **A42** (see "A42 — Decision→emission fidelity" in the main axiom
+body below). The scaffold remains as the historical placeholder record.
 
 **A42 (candidate).** The emitted DDL is a faithful projection of the
 tightening decision sets. Formally, for a `ComposeState` whose decision
@@ -1638,6 +1638,67 @@ whose every Site carries `Classification = DataIntent`). The
 property test (`SkeletonPurityTests.fs`) asserts the trail emitted
 by this fold carries zero `OperatorIntent _` events on a
 representative Catalog.
+
+## A42 — Decision→emission fidelity (Wave 2 close, 2026-05-30)
+
+**Promoted from candidate to A42 at Wave-2 slices 2.1–2.4** (the
+candidate scaffold under "Amendments scheduled" is now cashed).
+Underwrites `PRODUCT_AXIOMS.md` L3-S11 (decision→emission fidelity).
+
+**A42.** The emitted SSDT DDL is a faithful projection of the three
+tightening decision sets. With the decisions projected by
+`DecisionOverlay.ofComposeState` (an A18-safe value — decisions are
+evidence-derived facts, never `Policy`), the emitter applies them
+**additively**:
+
+- every `NullabilityOutcome.EnforceNotNull` attribute is emitted
+  `NOT NULL`, and only those — `Nullable = source.IsNullable ∧ ¬enforce`
+  (a non-enforce decision never loosens a source `NOT NULL`);
+- every `UniqueIndexOutcome.EnforceUnique` index is emitted `UNIQUE`,
+  and only those — `IsUnique = source.IsUnique ∨ enforce` (a non-enforce
+  decision never un-uniques a source-unique index);
+- every `ForeignKeyOutcome.DoNotEnforce` reference is suppressed (no
+  inline FK), and every `EnforceConstraint (ScriptWithNoCheck _)`
+  reference is emitted `WITH NOCHECK` (untrusted).
+
+The additive encoding (`∧ ¬enforce` / `∨ enforce`, never `= decision`)
+is structural: it makes A42 a *tightening* axiom — emission can only add
+constraint, never remove source truth.
+
+**Observable identity.** `DecisionOverlay.empty` threaded through the
+emitter is byte-identical to pre-Wave-2 emission
+(`ofComposeState (ComposeState.initial c) = empty`;
+`DecisionOverlayTests.fs` + the `statementsWith empty = statements`
+seam tests in `AdjunctionLawTests.fs`). The seam opens without changing
+bytes; only a populated overlay changes emission.
+
+**A18 ↔ A42.** A42 is what A18-amended *permits*: the emitter consumes
+`DecisionOverlay` (decisions) as a curried prefix argument, never
+`Policy` (intent). The intent was discharged into evidence by the passes;
+the emitter projects the resulting fact. The `Emitter` port stays
+`Catalog`-only (`statements` / `emitSlices` are the `empty`-default
+wrappers; `statementsWith` / `emitSlicesWith` carry the overlay).
+
+**Verification (the un-hollowed canary pays off).**
+- Emission-layer (pure, `DecisionEmissionTests.fs`): emit `statementsWith
+  overlay` and read the typed `CreateTable` / `CreateIndex` —
+  NOT NULL / UNIQUE / FK-drop / FK-nocheck land only for the keyed
+  elements; FsCheck "every EnforceNotNull NOT-NULLs its column, and only
+  those."
+- Canary-layer (Docker, `CanaryRoundTripTests.fs`): `EnforceNotNull`
+  survives emit → deploy → ReadSide as `NOT NULL`; a `DoNotEnforce` FK
+  decision keeps the FK out of the deployed schema
+  (`PhysicalSchema.ForeignKeys` empty). Wave-1's un-hollowing is the
+  precondition — the canary can observe the decision reached the
+  deployed schema on the Nullable / ForeignKeys axes.
+
+**Open follow-on (slice-μ retirement; tracked, not part of A42).** When
+`fkDef` returns `None` for an *unresolved* target (a cross-catalog FK,
+not an overlay `DoNotEnforce` decision), the drop is still silent. The
+FK silent-drop witness — routing that drop through a sibling
+`Diagnostics` output — is `L3-Boundary-NoSilentDrop` for the FK case;
+it requires a Diagnostics-channel design on the emitter port and is a
+separate slice. A42 (decision→emission fidelity) does not depend on it.
 
 ## A32 cash-out — chapter 4.2 close (2026-05-11)
 
