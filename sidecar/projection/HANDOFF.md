@@ -1,3 +1,90 @@
+# Handoff letter — 2026-05-31 (EXECUTION_PLAN Wave 4 CLOSED — 4.2–4.6 shipped)
+
+To the next agent.
+
+**Wave 4 is closed.** You're inheriting a green tree with all five remaining Wave-4 slices
+shipped and verified (the prior agent had closed 4.1; this session closed 4.2–4.6). Build is
+clean (`dotnet build Projection.sln`, 0/0); pure pool **2480 passed / 0 / 207 skipped**; the
+Docker-gated additions (verify-data ×3, the apparatus-driven reconcile canary, the full transfer
+canary ×8) are green against the warm container. Commit arc: `23e80de` (4.3) → `fcd8f52` (4.6) →
+`76ecb34` (4.5) → `6a3126c` (4.4) → `ded475b` (4.2). What each shipped, in one line:
+
+**One pre-existing Docker failure you'll inherit (NOT from Wave 4):** the full Docker pool reports
+`CanaryRoundTripTests.A42 (2.4 canary): a DoNotEnforce FK decision keeps the FK out of the deployed
+schema` failing at line 531 — the empty-overlay *baseline* deploys an FK but the readback
+reconstructs 0 (expected 1). I reproduced it **identically at the pre-session base commit `deb5853`**
+via a worktree, so it predates this session's work (the A42 fixture is all `Catalog = None`, which
+my 4.3 emission change leaves byte-identical). It looks like an FK-readback gap in this specific SQL
+container/version — worth a look, but it is not a Wave-4 regression. (`GeneratorScaleTests`
+deterministic-seed also flaked once under the full serial-Docker resource pressure but passes in
+isolation.)
+
+- **4.3** cross-DB FK — `schemaObjectFromTableId` emits a three-part `[db].[schema].[table]` when
+  `TableId.Catalog = Some`; `toTableId` carries `Physical.Catalog`. Additive (None ⇒ byte-identical).
+- **4.6** `Origin` rename — `OsNative→Native`, `ExternalViaIntegrationStudio→ExternalIndirect`
+  (variants AND rendered strings; V1 emits `isExternal`, so the regold was V2-only).
+- **4.5** DACPAC joins T11 — keyset agreement is *verified* (round-trip read of the DacFx model,
+  SsKey recovered via the Catalog's physical-coordinate bijection), not structural — it's
+  `Result<byte[]>`, not an `ArtifactByKind`. That verified-vs-structural distinction is the honest
+  framing; don't try to force the binary sibling into the ArtifactByKind shell.
+- **4.4** `osm verify-data` — `DataIntegrityChecker.compare` profiles two deployments via
+  `LiveProfiler.captureEvidenceCache` (×2) and diffs in pure F#. **The trap that cost me an hour:**
+  `LiveProfiler` skips `Modality.Static` kinds, and `ReadSide.read` marks *every* reconstructed table
+  that carries rows as `Static` (a canary per-row-reconstruction artifact) — so profiling a ReadSide
+  catalog yields an empty cache. `compare` clears the `Static` marking first. If you profile a
+  ReadSide-derived catalog anywhere else, you'll hit the same empty-cache surprise.
+- **4.2** Transfer C′-wire — `ConnectionResolver.openSubstrate` + `Transfer.runThroughConnections`
+  drive a run through the `TransferConnections` apparatus; `TransferSpec.parseUserMapCsv` /
+  `resolveUserMap` / `resolveAllReconciliation` land the `ManualOverride` CSV. The CLI's
+  `runTransfer` now opens nothing itself — it builds the apparatus and hands it to
+  `runThroughConnections`.
+
+## What you should NOT do next
+
+**Do not build Wave 5 speculatively.** This is the load-bearing call and it's deliberate (IR grows
+under evidence, not speculation). Wave 5 is either *blocked* or *defer-with-trigger*:
+- **5.1** (Transfer D-exec, real UAT load) is blocked on **OPEN-2** — does OutSystems Cloud UAT
+  expose a writable SQL connection to entity tables, or is it platform-API-only? That's an ops
+  spike, not an engineering task. The one buildable crumb is `--preview-row-cap` on `TransferArgs`.
+- **5.2–5.9** each carry a named trigger (5.2 AssignedBySink: a real sink-minted-key load; 5.3
+  Lifecycle: a stored-prior-catalog consumer; 5.5 applied-transforms manifest: an R6 audit reader;
+  5.6 policy-intelligence: a UAT dry-run diff; etc.). Build the slice when its trigger fires — not
+  before. `EXECUTION_PLAN.md` §III Wave 5 has the first-slice + trigger for each; the *Active
+  deferrals* index at the top of `DECISIONS.md` is where you check whether a trigger has fired.
+
+If you have appetite and no Wave-5 trigger has fired, the honest next frontier is the **endgame
+backlog** (`EXECUTION_PLAN.md` §V — E1 verifiability CI gate, E2 generated readiness map, E3
+decision-layer adjunction, E4 lifecycle operationalization, E5 registry-as-documentation). E1
+(wire `scripts/verifiability-gate.sh` into CI so a phantom-Bucket-A axiom can't merge) is the
+lowest-risk, highest-leverage of those and has no external gate.
+
+## Disciplines that bit this session (internalize before you write code)
+
+- **Solution-build-before-commit + `bash scripts/test.sh fast` before "done."** Still the only ground
+  truth. The pure/Docker pools must never run as one `dotnet test` (OOM on this host) — use
+  `scripts/test.sh`.
+- **Closed-DU rename = let the compiler drive the blast radius.** 4.6 touched ~36 files; I changed
+  the 6 source sites, built, and the exhaustiveness/undefined-name errors named every remaining
+  test/fixture. Don't hand-hunt; build and read the errors.
+- **ReadSide marks data tables `Static`** (the 4.4 trap above). Remember it.
+- **The lint inventory (`scripts/lint-discipline.sh`) exits 1 as a standing soft-floor** — it's an
+  inventory of pre-existing LINT-ALLOW sites, not a gate you broke. Confirm your files aren't in the
+  new output; don't chase the legacy entries.
+
+## Reading order (≈10 min)
+
+1. `EXECUTION_PLAN.md` §III Wave 4 (now all DONE with shipped-notes) + §III Wave 5 (triggers) — ~5 min.
+2. `git log --oneline ded475b~6..ded475b` — the Wave-4 close arc — ~2 min.
+3. `DECISIONS.md` *Active deferrals* index (top) — confirm no Wave-5 trigger has silently fired — ~3 min.
+
+Hold the spine. Wave 4 gave you a bidirectional frontier that's wired end-to-end (the apparatus
+drives; verify-data gates data fidelity; the DACPAC sibling is under the T11 contract). Wave 5 waits
+for evidence.
+
+— The Wave-4-close architect.
+
+---
+
 # Handoff letter — 2026-05-30 (EXECUTION_PLAN Wave 4.1 CLOSED + branch-red repair)
 
 To the next agent.

@@ -18,6 +18,7 @@
     <Compile Include="ProfileStatistics.fs" />
     <Compile Include="EvidenceCache.fs" />
     <Compile Include="LiveProfiler.fs" />
+    <Compile Include="DataIntegrityChecker.fs" />
     <Compile Include="ReadSide.fs" />
     <Compile Include="Ingestion.fs" />
   </ItemGroup>

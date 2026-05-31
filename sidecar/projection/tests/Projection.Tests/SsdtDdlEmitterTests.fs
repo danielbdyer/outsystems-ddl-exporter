@@ -233,7 +233,7 @@ let private allPrimitiveTypesKind : Kind =
     {
         SsKey = kindKey ["AllTypes"]
         Name = mkName "AllTypes"
-        Origin = OsNative
+        Origin = Native
         Modality = []
         Physical = { Schema = "dbo"; Table = "OSUSR_X_ALLTYPES"; Catalog = None }
         Attributes = [
@@ -326,7 +326,7 @@ let private compositePkKind : Kind =
     {
         SsKey = kindKey ["Composite"]
         Name = mkName "Composite"
-        Origin = OsNative
+        Origin = Native
         Modality = []
         Physical = { Schema = "dbo"; Table = "OSUSR_X_COMPOSITE"; Catalog = None }
         Attributes = [
@@ -415,7 +415,7 @@ let private indexedKind : Kind =
     {
         SsKey = indexedKindKey
         Name = mkName "Indexed"
-        Origin = OsNative
+        Origin = Native
         Modality = []
         Physical = { Schema = "dbo"; Table = "OSUSR_X_INDEXED"; Catalog = None }
         Attributes = [
@@ -536,7 +536,7 @@ let private parentKind : Kind =
     {
         SsKey = parentKindKey
         Name = mkName "Parent"
-        Origin = OsNative
+        Origin = Native
         Modality = []
         Physical = { Schema = "dbo"; Table = "OSUSR_X_PARENT"; Catalog = None }
         Attributes = [
@@ -554,7 +554,7 @@ let private childKind : Kind =
     {
         SsKey = childKindKey
         Name = mkName "Child"
-        Origin = OsNative
+        Origin = Native
         Modality = []
         Physical = { Schema = "dbo"; Table = "OSUSR_X_CHILD"; Catalog = None }
         Attributes = [
@@ -628,6 +628,71 @@ let ``Slice 5: T1 byte-determinism holds for FK fixture`` () =
     let childBody1 : SsdtDdlEmitter.SsdtFile = Map.find childKindKey r1
     let childBody2 : SsdtDdlEmitter.SsdtFile = Map.find childKindKey r2
     Assert.Equal<string> (childBody1.Body, childBody2.Body)
+
+// ---------------------------------------------------------------------------
+// Slice 4.3 — cross-DB FK emission (three-part name; L3-S10 / L3-I10).
+//
+// The only IR-present-but-unemitted feature pre-slice: when an FK's target
+// kind carries an explicit catalog coordinate (`Physical.Catalog = Some db`),
+// `toTableId` dropped it and `schemaObjectFromTableId` emitted a two-part
+// `[schema].[table]` name — a silent downgrade of the cross-database
+// reference. Slice 4.3 honors the coordinate: the FK REFERENCES clause emits
+// the three-part `[db].[schema].[table]`. The truly-external case (target
+// absent from the catalog) still drops via `foreignKeyDropDiagnostics`
+// (Warning witness), so neither cross-DB path is silent
+// (L3-Boundary-NoSilentDrop).
+// ---------------------------------------------------------------------------
+
+let private crossDbParentKind : Kind =
+    { parentKind with
+        Physical = { Schema = "dbo"; Table = "OSUSR_X_PARENT"; Catalog = Some "AnalyticsDb" } }
+
+let private crossDbFkCatalog : Catalog =
+    { fkCatalog with
+        Modules = [
+            { (List.head fkCatalog.Modules) with
+                Kinds = [ crossDbParentKind; childKind ] } ] }
+
+[<Fact>]
+let ``L3-S10: cross-DB FK emits a three-part name (no silent downgrade)`` () =
+    let enriched = enrich crossDbFkCatalog
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let childBody =
+        match Map.tryFind childKindKey (ArtifactByKind.toMap artifact) with
+        | Some f -> f.Body
+        | None -> Assert.Fail "expected slice for childKind"; ""
+    // The REFERENCES clause names the target with the explicit catalog
+    // coordinate as a three-part identifier — the honored cross-DB reference.
+    Assert.Contains ("REFERENCES", childBody)
+    Assert.Contains ("[AnalyticsDb].[dbo].[OSUSR_X_PARENT]", childBody)
+    // The FK was NOT silently dropped (the inline constraint is present).
+    Assert.Contains ("FOREIGN KEY", childBody)
+    Assert.Contains ("FK_OSUSR_X_CHILD_OSUSR_X_PARENT_PARENT_ID", childBody)
+
+[<Fact>]
+let ``L3-S10: catalog-bearing kind emits a three-part CREATE TABLE name`` () =
+    // `schemaObjectFromTableId` honors the catalog coordinate uniformly —
+    // the catalog-bearing kind's own CREATE TABLE names it three-part.
+    let enriched = enrich crossDbFkCatalog
+    let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
+    let parentBody =
+        match Map.tryFind parentKindKey (ArtifactByKind.toMap artifact) with
+        | Some f -> f.Body
+        | None -> Assert.Fail "expected slice for parentKind"; ""
+    Assert.Contains ("[AnalyticsDb].[dbo].[OSUSR_X_PARENT]", parentBody)
+
+[<Fact>]
+let ``L3-S10: Catalog = None FK emission stays two-part (additive)`` () =
+    // The two-part path is unchanged: a `Catalog = None` fixture emits the
+    // two-part `[dbo].[OSUSR_X_PARENT]` reference with no catalog prefix.
+    let enriched = enrich fkCatalog
+    let childBody =
+        match Map.tryFind childKindKey (SsdtDdlEmitter.emitSlices enriched |> mustOk |> ArtifactByKind.toMap) with
+        | Some f -> f.Body
+        | None -> Assert.Fail "expected slice for childKind"; ""
+    Assert.Contains ("[dbo].[OSUSR_X_PARENT]", childBody)
+    // No catalog coordinate leaks into the two-part path.
+    Assert.DoesNotContain ("AnalyticsDb", childBody)
 
 // ---------------------------------------------------------------------------
 // Chapter 4.1.A slice 10 — SsdtBundle.compose composition.
@@ -720,7 +785,7 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
     let aKind : Kind =
         { SsKey = aKindKey
           Name  = mkName "AKind"
-          Origin = OsNative
+          Origin = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
           Attributes =
@@ -731,7 +796,7 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
     let bKind : Kind =
         { SsKey = bKindKey
           Name  = mkName "BKind"
-          Origin = OsNative
+          Origin = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
           Attributes =
@@ -780,14 +845,14 @@ let ``Slice 6: cross-module FK emits inline FOREIGN KEY constraint`` () =
     let bFkAttr    = attrKey ["B"; "BKind"; "AId"]
     let crossRefKey = refKey ["B"; "BKind"; "AId"]
     let aKind : Kind =
-        { SsKey = aKindKey; Name = mkName "AKind"; Origin = OsNative
+        { SsKey = aKindKey; Name = mkName "AKind"; Origin = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
           Attributes =
               [ { Attribute.create aIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let bKind : Kind =
-        { SsKey = bKindKey; Name = mkName "BKind"; Origin = OsNative
+        { SsKey = bKindKey; Name = mkName "BKind"; Origin = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
           Attributes =
@@ -820,14 +885,14 @@ let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module F
     let bFkAttr    = attrKey ["B"; "BKind"; "AId"]
     let crossRefKey = refKey ["B"; "BKind"; "AId"]
     let aKind : Kind =
-        { SsKey = aKindKey; Name = mkName "AKind"; Origin = OsNative
+        { SsKey = aKindKey; Name = mkName "AKind"; Origin = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
           Attributes =
               [ { Attribute.create aIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let bKind : Kind =
-        { SsKey = bKindKey; Name = mkName "BKind"; Origin = OsNative
+        { SsKey = bKindKey; Name = mkName "BKind"; Origin = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
           Attributes =

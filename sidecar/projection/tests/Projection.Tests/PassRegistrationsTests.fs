@@ -91,7 +91,7 @@ let ``A.4.7 slice γ: NamingMorphism.registered factory produces DataIntent site
 
 [<Fact>]
 let ``A.4.7 slice γ: VisibilityMask.registered factory produces OperatorIntent Selection site`` () =
-    let mask : VisibilityMask.Mask = { Hide = [ VisibilityMask.hideOrigin Origin.OsNative ] }
+    let mask : VisibilityMask.Mask = { Hide = [ VisibilityMask.hideOrigin Origin.Native ] }
     let rt = VisibilityMask.registered mask
     Assert.Equal(Schema, rt.Domain)
     Assert.Equal(OperatorIntent Selection, (firstSite rt).Classification)

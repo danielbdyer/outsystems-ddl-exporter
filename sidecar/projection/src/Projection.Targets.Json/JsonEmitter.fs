@@ -30,9 +30,9 @@ module JsonEmitter =
 
     let private originString (o: Origin) : string =
         match o with
-        | OsNative                     -> "OsNative"
-        | ExternalViaIntegrationStudio -> "ExternalViaIntegrationStudio"
-        | ExternalDirect               -> "ExternalDirect"
+        | Native           -> "Native"
+        | ExternalIndirect -> "ExternalIndirect"
+        | ExternalDirect   -> "ExternalDirect"
 
     let private primitiveString (t: PrimitiveType) : string =
         match t with

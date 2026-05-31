@@ -112,7 +112,7 @@ let ``H-052 skeleton-purity (positive form): every skeleton trail event carries 
 [<Fact>]
 let ``H-052 overlay-exercise: Selection axis fires when VisibilityMask hides at least one kind`` () =
     let mask : VisibilityMask.Mask =
-        { Hide = [ VisibilityMask.hideOrigin Origin.OsNative ] }
+        { Hide = [ VisibilityMask.hideOrigin Origin.Native ] }
     let rt = VisibilityMask.registered mask
     let result = rt.Run sampleCatalog
     let axes = axesPresent result.Trail

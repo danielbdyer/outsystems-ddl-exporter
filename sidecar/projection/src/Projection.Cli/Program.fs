@@ -99,6 +99,7 @@ let private usageLines : string list =
         "    5  canary divergence (PhysicalSchema diff non-empty)"
         "    6  config error (config file missing / unparseable / D9 violation; transfer connection ref)"
         "    7  R6 gate refusal (transfer --execute without PROJECTION_ALLOW_EXECUTE=1)"
+        "    8  verify-data divergence (row-count / null-count diff non-empty)"
     ]
 
 /// Print each usage line directly to the writer via the BCL
@@ -528,10 +529,28 @@ let private narrateTransferReport (report: Transfer.TransferReport) : unit =
                 (SsKey.rootOriginal r.Target)
                 (SourceKey.value r.UnresolvedSource)
 
+/// Parse an optional `--source-env` / `--sink-env` label into the
+/// apparatus's `Environment`. The four named environments resolve
+/// case-insensitively; anything else is a `Named` escape hatch; absence
+/// keeps the default role-named label.
+let private parseEnvironment (defaultLabel: string) (label: string option) : Projection.Core.Environment =
+    match label with
+    | None -> Projection.Core.Environment.Named defaultLabel
+    | Some s ->
+        match s.Trim().ToUpperInvariant() with
+        | "DEV"  -> Projection.Core.Environment.Dev
+        | "TEST" -> Projection.Core.Environment.Test
+        | "UAT"  -> Projection.Core.Environment.Uat
+        | "PROD" -> Projection.Core.Environment.Prod
+        | _      -> Projection.Core.Environment.Named (s.Trim())
+
 let private runTransfer
     (sourceSpec: string)
     (sinkSpec: string)
+    (sourceEnv: string option)
+    (sinkEnv: string option)
     (reconcileSpecs: string list)
+    (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
     : int =
@@ -539,10 +558,21 @@ let private runTransfer
     let parsedSource    = TransferSpec.parseConnectionSpec sourceSpec
     let parsedSink      = TransferSpec.parseConnectionSpec sinkSpec
     let parsedReconciles = reconcileSpecs |> List.map TransferSpec.parseReconcileSpec
+    // Slice 4.2 — read + parse the optional --user-map CSV (boundary I/O).
+    let parsedUserMap : Result<TransferSpec.UserMapEntry list> =
+        match userMapPath with
+        | None -> Result.success []
+        | Some path ->
+            if not (System.IO.File.Exists path) then
+                Result.failureOf
+                    (ValidationError.create "transfer.userMap.fileMissing"
+                        (sprintf "user-map file '%s' not found." path))
+            else TransferSpec.parseUserMapCsv (System.IO.File.ReadAllText path)
     let specErrors =
         collect parsedSource
         @ collect parsedSink
         @ (parsedReconciles |> List.collect collect)
+        @ collect parsedUserMap
     if not (List.isEmpty specErrors) then
         Console.Error.WriteLine "projection transfer: argument error:"
         printErrors Console.Error specErrors
@@ -561,54 +591,37 @@ let private runTransfer
         7
     else
 
-    let sourceRef = Result.value parsedSource
-    let sinkRef   = Result.value parsedSink
-    let entries   = parsedReconciles |> List.map Result.value
-    let srcStrR   = ConnectionResolver.resolve "Source" sourceRef
-    let sinkStrR  = ConnectionResolver.resolve "Sink"   sinkRef
-    let connErrors = collect srcStrR @ collect sinkStrR
-    if not (List.isEmpty connErrors) then
-        Console.Error.WriteLine "projection transfer: connection error:"
-        printErrors Console.Error connErrors
-        dumpBench "transfer"
-        6
-    else
+    let sourceRef    = Result.value parsedSource
+    let sinkRef      = Result.value parsedSink
+    let entries      = parsedReconciles |> List.map Result.value
+    let userMapEntries = Result.value parsedUserMap
+    let reconcile    = not (List.isEmpty entries) || not (List.isEmpty userMapEntries)
 
-    // Bind the apparatus for vocabulary + role validation (D9 + Substrate roles
-    // are operative even before live profiling lands).
+    // Bind the apparatus and DRIVE the run through it (D9: openSubstrate
+    // resolves the OOB credentials; the apparatus validates roles + records
+    // the ProfiledForIdentity set — Source always; Sink too when reconciling).
     let sourceSub : Substrate =
-        { Environment   = Projection.Core.Environment.Named "Source"
+        { Environment   = parseEnvironment "Source" sourceEnv
           Role          = SubstrateRole.Source
           ConnectionRef = sourceRef }
     let sinkSub : Substrate =
-        { Environment   = Projection.Core.Environment.Named "Sink"
+        { Environment   = parseEnvironment "Sink" sinkEnv
           Role          = SubstrateRole.Sink
           ConnectionRef = sinkRef }
-    match TransferConnections.create sourceSub sinkSub (not (List.isEmpty entries)) with
+    match TransferConnections.create sourceSub sinkSub reconcile with
     | Error es ->
         Console.Error.WriteLine "projection transfer: apparatus invariant violation:"
         printErrors Console.Error es
         dumpBench "transfer"
         3
-    | Ok _ ->
+    | Ok connections ->
 
     let mode = if executeGated then Transfer.Execute else Transfer.DryRun
-    let work =
-        task {
-            use source = new Microsoft.Data.SqlClient.SqlConnection(Result.value srcStrR)
-            use sink   = new Microsoft.Data.SqlClient.SqlConnection(Result.value sinkStrR)
-            do! source.OpenAsync()
-            do! sink.OpenAsync()
-            let! contractR = ReadSide.read source
-            match contractR with
-            | Error es -> return Result.failure es
-            | Ok contract ->
-                match TransferSpec.resolveReconciliation contract entries with
-                | Error es -> return Result.failure es
-                | Ok reconciliation ->
-                    return! Transfer.runReconciling mode allowCdc source sink contract reconciliation
-        }
-    let result = work.GetAwaiter().GetResult()
+    let resolveReconciliation (contract: Catalog) =
+        TransferSpec.resolveAllReconciliation contract entries userMapEntries
+    let result =
+        (Transfer.runThroughConnections mode allowCdc connections resolveReconciliation)
+            .GetAwaiter().GetResult()
     let exitCode =
         match result with
         | Ok report ->
@@ -617,8 +630,10 @@ let private runTransfer
         | Error errors ->
             Console.Error.WriteLine "projection transfer: failed:"
             printErrors Console.Error errors
-            if errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith "transfer.reconcile.")
-            then 2
+            let anyCode (prefix: string) =
+                errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
+            if anyCode "transfer.connection." then 6
+            elif anyCode "transfer.reconcile." || anyCode "transfer.userMap." then 2
             else 3
     dumpBench "transfer"
     exitCode
@@ -627,10 +642,100 @@ let private dispatchTransfer (argv: string[]) : int =
     argv |> VerbArgs.parse<TransferArgs.TransferArg> "projection transfer" (fun parsed ->
         let sourceSpec    = parsed.GetResult TransferArgs.Source_Conn
         let sinkSpec      = parsed.GetResult TransferArgs.Sink_Conn
+        let sourceEnv     = parsed.TryGetResult TransferArgs.Source_Env
+        let sinkEnv       = parsed.TryGetResult TransferArgs.Sink_Env
         let reconcileList = parsed.GetResults TransferArgs.Reconcile
+        let userMap       = parsed.TryGetResult TransferArgs.User_Map
         let execute       = parsed.Contains TransferArgs.Execute
         let allowCdc      = parsed.Contains TransferArgs.Allow_Cdc
-        runTransfer sourceSpec sinkSpec reconcileList execute allowCdc)
+        runTransfer sourceSpec sinkSpec sourceEnv sinkEnv reconcileList userMap execute allowCdc)
+
+// ---------------------------------------------------------------------------
+// Slice 4.4 — `projection verify-data`: post-deploy data-integrity gate.
+// Compares two deployments of the same schema contract on exact per-table
+// row counts + per-column null counts (the data-fidelity complement to the
+// canary's structural equivalence). Read-only — no execute gate. The schema
+// contract is read from the before deployment via `ReadSide.read`.
+// ---------------------------------------------------------------------------
+
+let private narrateIntegrityReport (report: IntegrityReport) : unit =
+    if DataIntegrityChecker.isClean report then
+        printfn "projection verify-data: clean — no row-count or null-count divergence."
+    else
+        if not (List.isEmpty report.RowCountDeltas) then
+            printfn "Row-count divergences (%d):" report.RowCountDeltas.Length
+            for d in report.RowCountDeltas do
+                printfn "  %-40s before=%d after=%d (delta=%+d)"
+                    (SsKey.rootOriginal d.Kind) d.Before d.After (d.After - d.Before)
+        if not (List.isEmpty report.NullCountDeltas) then
+            printfn ""
+            printfn "Null-count divergences (%d):" report.NullCountDeltas.Length
+            for d in report.NullCountDeltas do
+                printfn "  %-40s %-30s before=%d after=%d (delta=%+d)"
+                    (SsKey.rootOriginal d.Kind) (SsKey.rootOriginal d.Attribute)
+                    d.Before d.After (d.After - d.Before)
+        if not (List.isEmpty report.Warnings) then
+            printfn ""
+            printfn "Warnings (%d) — schema drift between the two deployments:" report.Warnings.Length
+            for w in report.Warnings do
+                printfn "  %s: %s" w.Code w.Message
+
+let private runVerifyData (beforeSpec: string) (afterSpec: string) : int =
+    let collect = function Ok _ -> [] | Error es -> es
+    let parsedBefore = TransferSpec.parseConnectionSpec beforeSpec
+    let parsedAfter  = TransferSpec.parseConnectionSpec afterSpec
+    let specErrors = collect parsedBefore @ collect parsedAfter
+    if not (List.isEmpty specErrors) then
+        Console.Error.WriteLine "projection verify-data: argument error:"
+        printErrors Console.Error specErrors
+        dumpBench "verify-data"
+        2
+    else
+
+    let beforeRef = Result.value parsedBefore
+    let afterRef  = Result.value parsedAfter
+    let beforeStrR = ConnectionResolver.resolve "Before" beforeRef
+    let afterStrR  = ConnectionResolver.resolve "After"  afterRef
+    let connErrors = collect beforeStrR @ collect afterStrR
+    if not (List.isEmpty connErrors) then
+        Console.Error.WriteLine "projection verify-data: connection error:"
+        printErrors Console.Error connErrors
+        dumpBench "verify-data"
+        6
+    else
+
+    let work =
+        task {
+            use before = new Microsoft.Data.SqlClient.SqlConnection(Result.value beforeStrR)
+            use after  = new Microsoft.Data.SqlClient.SqlConnection(Result.value afterStrR)
+            do! before.OpenAsync()
+            do! after.OpenAsync()
+            // The schema contract is the before deployment's reconstructed
+            // catalog; both sides are profiled against it.
+            let! contractR = ReadSide.read before
+            match contractR with
+            | Error es -> return Result.failure es
+            | Ok contract -> return! DataIntegrityChecker.compare before after contract
+        }
+    let exitCode =
+        match work.GetAwaiter().GetResult() with
+        | Ok report ->
+            narrateIntegrityReport report
+            // The gate fails closed: any divergence is a non-zero exit so a
+            // CI step / cutover gate trips on data drift.
+            if DataIntegrityChecker.isClean report then 0 else 8
+        | Error errors ->
+            Console.Error.WriteLine "projection verify-data: failed:"
+            printErrors Console.Error errors
+            3
+    dumpBench "verify-data"
+    exitCode
+
+let private dispatchVerifyData (argv: string[]) : int =
+    argv |> VerbArgs.parse<VerifyDataArgs.VerifyDataArg> "projection verify-data" (fun parsed ->
+        let beforeSpec = parsed.GetResult VerifyDataArgs.Before_Conn
+        let afterSpec  = parsed.GetResult VerifyDataArgs.After_Conn
+        runVerifyData beforeSpec afterSpec)
 
 [<EntryPoint>]
 let main argv =
@@ -669,6 +774,13 @@ let main argv =
         1
     | arr when arr.Length >= 1 && arr.[0] = "transfer" ->
         dispatchTransfer (Array.skip 1 arr)
+    | [| "verify-data" |] ->
+        Console.Error.WriteLine "projection verify-data: --before-conn and --after-conn required"
+        Console.Error.WriteLine ""
+        Console.Error.WriteLine "Run `projection verify-data --help` for usage."
+        1
+    | arr when arr.Length >= 1 && arr.[0] = "verify-data" ->
+        dispatchVerifyData (Array.skip 1 arr)
     | [||]
     | [| "--help" |]
     | [| "-h" |] ->

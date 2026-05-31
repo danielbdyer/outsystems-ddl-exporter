@@ -128,7 +128,7 @@ let private expectedCatalogSynthesized : Catalog =
     let userKind : Kind =
         { SsKey    = userKindKey
           Name     = mkName "User"
-          Origin   = OsNative
+          Origin   = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
@@ -243,7 +243,7 @@ let ``A1 unbounded: rowset Catalog with Guid SsKeys mirrors JSON Catalog on ever
         Assert.Equal<Name>(mkName "AppCore", m.Name)
         let k = m.Kinds.[0]
         Assert.Equal<Name>(mkName "User", k.Name)
-        Assert.Equal<Origin>(OsNative, k.Origin)
+        Assert.Equal<Origin>(Native, k.Origin)
         Assert.Equal<ModalityMark list>([], k.Modality)
         let attrNames = k.Attributes |> List.map (fun a -> a.Name)
         Assert.Equal<Name list>([ mkName "Id"; mkName "Email" ], attrNames)
@@ -649,15 +649,15 @@ let ``slice 2: cross-source parity — rowset path mirrors JSON path's expectedR
 //
 // Mirrors session-20's v1ExternalFixture: external entity, this time
 // with EspaceKind carried on the ModuleRow. The translation refines
-// from the JSON-path placeholder (collapsing to ExternalViaIntegrationStudio
+// from the JSON-path placeholder (collapsing to ExternalIndirect
 // for all external entities) to the three-way real driven by the
 // EspaceKind marker.
 //
 // Tests cover:
-//   - EspaceKind = "Extension" + isExternal=true → ExternalViaIntegrationStudio
+//   - EspaceKind = "Extension" + isExternal=true → ExternalIndirect
 //   - EspaceKind ≠ "Extension" (e.g., "eSpace") + isExternal=true → ExternalDirect
 //   - EspaceKind = None + isExternal=true → ExternalDirect
-//   - isExternal=false (any EspaceKind) → OsNative
+//   - isExternal=false (any EspaceKind) → Native
 //   - Case-insensitive matching on the marker
 //   - Refinement vs JSON path: same fixture under both paths emits
 //     a divergent Origin when EspaceKind ≠ "Extension" — this is
@@ -727,14 +727,14 @@ let private externalBundle (espaceKind: string option) : CatalogReader.RowsetBun
 
 let private originOf (bundle: CatalogReader.RowsetBundle) : Origin =
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
-    | Error es -> Assert.Fail (sprintf "%A" es); OsNative
+    | Error es -> Assert.Fail (sprintf "%A" es); Native
     | Ok c     ->
         let kind = c.Modules.[0].Kinds.[0]
         kind.Origin
 
 [<Fact>]
-let ``slice 3: EspaceKind="Extension" + isExternal=true → ExternalViaIntegrationStudio`` () =
-    Assert.Equal<Origin>(ExternalViaIntegrationStudio, originOf (externalBundle (Some "Extension")))
+let ``slice 3: EspaceKind="Extension" + isExternal=true → ExternalIndirect`` () =
+    Assert.Equal<Origin>(ExternalIndirect, originOf (externalBundle (Some "Extension")))
 
 [<Fact>]
 let ``slice 3: EspaceKind="eSpace" + isExternal=true → ExternalDirect`` () =
@@ -742,7 +742,7 @@ let ``slice 3: EspaceKind="eSpace" + isExternal=true → ExternalDirect`` () =
     // model permits this combination (a Direct external entity in a
     // normal eSpace, bypassing the IS step). The rowset path's
     // three-way real surfaces it as ExternalDirect — the JSON path
-    // collapses it to ExternalViaIntegrationStudio (the load-bearing
+    // collapses it to ExternalIndirect (the load-bearing
     // empirical-evidence refinement).
     Assert.Equal<Origin>(ExternalDirect, originOf (externalBundle (Some "eSpace")))
 
@@ -753,11 +753,11 @@ let ``slice 3: EspaceKind=None + isExternal=true → ExternalDirect`` () =
     Assert.Equal<Origin>(ExternalDirect, originOf (externalBundle None))
 
 [<Fact>]
-let ``slice 3: isExternal=false → OsNative regardless of EspaceKind`` () =
-    // The OsNative branch is independent of EspaceKind. The
+let ``slice 3: isExternal=false → Native regardless of EspaceKind`` () =
+    // The Native branch is independent of EspaceKind. The
     // moduleRow helper sets EspaceKind = Some "eSpace"; the slice-1
     // fixture's User entity has isExternal = false; Origin must
-    // remain OsNative. Belt-and-suspenders check on the matrix.
+    // remain Native. Belt-and-suspenders check on the matrix.
     let bundle : CatalogReader.RowsetBundle =
         {
             Modules    = [ { externalModuleRow (Some "Extension") with EspaceName = "AppCore" } ]
@@ -772,23 +772,23 @@ let ``slice 3: isExternal=false → OsNative regardless of EspaceKind`` () =
             Triggers     = []
             ColumnChecks = []
         }
-    Assert.Equal<Origin>(OsNative, originOf bundle)
+    Assert.Equal<Origin>(Native, originOf bundle)
 
 [<Fact>]
 let ``slice 3: EspaceKind marker matches case-insensitively`` () =
     // V1's column is nvarchar(50); historical samples have varied
     // in capitalization across V1 versions. Both "Extension" and
-    // "EXTENSION" should resolve to ExternalViaIntegrationStudio.
-    Assert.Equal<Origin>(ExternalViaIntegrationStudio, originOf (externalBundle (Some "Extension")))
-    Assert.Equal<Origin>(ExternalViaIntegrationStudio, originOf (externalBundle (Some "EXTENSION")))
-    Assert.Equal<Origin>(ExternalViaIntegrationStudio, originOf (externalBundle (Some "extension")))
+    // "EXTENSION" should resolve to ExternalIndirect.
+    Assert.Equal<Origin>(ExternalIndirect, originOf (externalBundle (Some "Extension")))
+    Assert.Equal<Origin>(ExternalIndirect, originOf (externalBundle (Some "EXTENSION")))
+    Assert.Equal<Origin>(ExternalIndirect, originOf (externalBundle (Some "extension")))
 
 [<Fact>]
 let ``slice 3: refinement evidence — rowset path diverges from JSON path on EspaceKind="eSpace"+isExternal=true`` () =
     // Empirical evidence that the rowset path refines rule 17.
     // Same conceptual fixture (an external entity with no IS marker)
     // resolves to ExternalDirect under the rowset path but to
-    // ExternalViaIntegrationStudio under the JSON path. The
+    // ExternalIndirect under the JSON path. The
     // divergence is by design — it's the difference the chapter
     // closes.
     let rowsetOrigin = originOf (externalBundle (Some "eSpace"))
@@ -819,10 +819,10 @@ let ``slice 3: refinement evidence — rowset path diverges from JSON path on Es
     }"""
     let jsonOrigin =
         match parseSync (CatalogReader.SnapshotJson jsonFixture) with
-        | Error es -> Assert.Fail (sprintf "%A" es); OsNative
+        | Error es -> Assert.Fail (sprintf "%A" es); Native
         | Ok c     -> c.Modules.[0].Kinds.[0].Origin
     Assert.Equal<Origin>(ExternalDirect,                 rowsetOrigin)
-    Assert.Equal<Origin>(ExternalViaIntegrationStudio,   jsonOrigin)
+    Assert.Equal<Origin>(ExternalIndirect,   jsonOrigin)
     Assert.NotEqual<Origin>(jsonOrigin, rowsetOrigin)
 
 
@@ -964,7 +964,7 @@ let ``slice 4: SystemOwned is orthogonal to Origin axis`` () =
     // refinement choice (SystemOwned in Modality, NOT in Origin)
     // means Origin and SystemOwned compose freely. This test asserts
     // the orthogonality empirically — a system entity that is also
-    // marked isExternal carries BOTH Origin=ExternalViaIntegrationStudio
+    // marked isExternal carries BOTH Origin=ExternalIndirect
     // AND Modality=[SystemOwned], without conflict.
     let externalSystemKind : CatalogReader.KindRow =
         { systemKindRow with IsExternal = true }
@@ -983,7 +983,7 @@ let ``slice 4: SystemOwned is orthogonal to Origin axis`` () =
     | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
     | Ok actual ->
         let k = actual.Modules.[0].Kinds.[0]
-        Assert.Equal<Origin>(ExternalViaIntegrationStudio, k.Origin)
+        Assert.Equal<Origin>(ExternalIndirect, k.Origin)
         Assert.True (hasSystemOwnedMark k, "Expected SystemOwned mark on external+system kind")
 
 [<Fact>]
@@ -1043,11 +1043,11 @@ let ``slice 4: mixed catalog — system and non-system kinds coexist`` () =
 //   - Minimal (slice 1): one module, one kind, two attributes.
 //   - Reference (slice 2): two kinds, one Reference, same-module FK.
 //   - External (slice 3): external entity with EspaceKind="Extension"
-//     so Origin aligns (ExternalViaIntegrationStudio both sides).
+//     so Origin aligns (ExternalIndirect both sides).
 //
 // **Out of parity scope** (documented):
 //   - EspaceKind="eSpace" + isExternal=true — rowset emits ExternalDirect,
-//     JSON emits ExternalViaIntegrationStudio (slice 3's refinement
+//     JSON emits ExternalIndirect (slice 3's refinement
 //     evidence test asserts this divergence directly).
 //   - IsSystemEntity=true — rowset emits Modality=[SystemOwned]; JSON
 //     drops the bit (no corresponding JSON field). Tested via slice 4.
@@ -1264,7 +1264,7 @@ let private externalParityJsonFixture =
 }"""
 
 // External bundle aligned to JSON's Origin: EspaceKind="Extension"
-// produces ExternalViaIntegrationStudio under the rowset path,
+// produces ExternalIndirect under the rowset path,
 // matching the JSON path's two-way collapse for isExternal=true.
 let private externalParityRowsetBundle : CatalogReader.RowsetBundle =
     externalBundle (Some "Extension")

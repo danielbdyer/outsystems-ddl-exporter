@@ -72,7 +72,7 @@ module private CdcSilenceCrossEmitterFixtures =
                         mkName "Label", label ] }
         { SsKey    = kindKey
           Name     = mkName "Country"
-          Origin   = OsNative
+          Origin   = Native
           Modality = [ Static [ row "1" "United States"
                                 row "2" "Canada" ] ]
           Physical = { Schema = "dbo"; Table = "CDCX_COUNTRY"; Catalog = None }
@@ -103,7 +103,7 @@ module private CdcSilenceCrossEmitterFixtures =
         let refKey = mkKey ["LegacyOrder"; "RefSelf"]
         { SsKey    = legacyOrderKindKey
           Name     = mkName "LegacyOrder"
-          Origin   = OsNative
+          Origin   = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "CDCX_LEGACY_ORDER"; Catalog = None }
           Attributes =

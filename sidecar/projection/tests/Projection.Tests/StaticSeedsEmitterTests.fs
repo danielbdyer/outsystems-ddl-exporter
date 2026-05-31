@@ -45,7 +45,7 @@ let private mkCountryKind () : Kind =
     {
         SsKey    = kindKey
         Name     = mkName "Country"
-        Origin   = OsNative
+        Origin   = Native
         Modality = [ Static [ row "US" "United States"
                               row "CA" "Canada" ] ]
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
@@ -73,7 +73,7 @@ let private mkRegularKind () : Kind =
     {
         SsKey    = kindKey
         Name     = mkName "Customer"
-        Origin   = OsNative
+        Origin   = Native
         Modality = []  // not static
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER"; Catalog = None }
         Attributes =
@@ -393,7 +393,7 @@ let private mkTreeKind () : Kind =
     {
         SsKey    = kindKey
         Name     = mkName "Tree"
-        Origin   = OsNative
+        Origin   = Native
         Modality = [ Static [ row ] ]
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_TREE"; Catalog = None }
         Attributes =
@@ -533,7 +533,7 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
     let mkRef ssk name srcAttr tgt =
         Reference.create ssk (mkName name) srcAttr tgt
     let aKind : Kind =
-        { SsKey = aKey; Name = mkName "A"; Origin = OsNative
+        { SsKey = aKey; Name = mkName "A"; Origin = Native
           Modality = [ Static [ aRow ] ]
           Physical = { Schema = "dbo"; Table = "OSUSR_A"; Catalog = None }
           Attributes = [ mkAttr aIdK "Id"  Integer "ID"  true false
@@ -542,7 +542,7 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
           Indexes    = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let bKind : Kind =
-        { SsKey = bKey; Name = mkName "B"; Origin = OsNative
+        { SsKey = bKey; Name = mkName "B"; Origin = Native
           Modality = [ Static [ bRow ] ]
           Physical = { Schema = "dbo"; Table = "OSUSR_B"; Catalog = None }
           Attributes = [ mkAttr bIdK "Id"  Integer "ID"  true false

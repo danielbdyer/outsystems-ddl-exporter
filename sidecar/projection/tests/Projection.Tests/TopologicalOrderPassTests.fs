@@ -378,7 +378,7 @@ let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Ki
     let attrFk = mkKey (kindKey + "_Fk")
     { SsKey = mkKey kindKey
       Name = mkName kindKey
-      Origin = OsNative
+      Origin = Native
       Modality = []
       Physical = { Schema = "dbo"; Table = kindKey; Catalog = None }
       Attributes = [
@@ -424,7 +424,7 @@ let private kindWithRef
     let attrFk = mkKey (kindKey + "_Fk")
     { SsKey = mkKey kindKey
       Name = mkName kindKey
-      Origin = OsNative
+      Origin = Native
       Modality = []
       Physical = { Schema = "dbo"; Table = kindKey; Catalog = None }
       Attributes = [
@@ -438,7 +438,7 @@ let private noRefKind (kindKey: string) : Kind =
     let attrId = mkKey (kindKey + "_Id")
     { SsKey = mkKey kindKey
       Name = mkName kindKey
-      Origin = OsNative
+      Origin = Native
       Modality = []
       Physical = { Schema = "dbo"; Table = kindKey; Catalog = None }
       Attributes = [

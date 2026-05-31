@@ -13,6 +13,7 @@
   <ItemGroup>
     <Compile Include="FullExportArgs.fs" />
     <Compile Include="TransferArgs.fs" />
+    <Compile Include="VerifyDataArgs.fs" />
     <Compile Include="VerbArgs.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

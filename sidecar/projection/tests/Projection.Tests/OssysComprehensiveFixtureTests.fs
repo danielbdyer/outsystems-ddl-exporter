@@ -177,10 +177,10 @@ let ``SyncLog carries an XML-typed column`` () =
 // --- Extension module origin ----------------------------------------
 
 [<Fact>]
-let ``External entity in an Extension module resolves to ExternalViaIntegrationStudio`` () =
+let ``External entity in an Extension module resolves to ExternalIndirect`` () =
     withCatalog "comp-extension-origin" (fun catalog ->
         let syncLog = kindNamed "SyncLog" catalog
-        Assert.Equal(ExternalViaIntegrationStudio, syncLog.Origin))
+        Assert.Equal(ExternalIndirect, syncLog.Origin))
 
 // --- Static entities -------------------------------------------------
 

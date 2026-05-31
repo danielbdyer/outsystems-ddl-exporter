@@ -78,11 +78,30 @@ module ScriptDomBuild =
         n.Identifiers.Add(bracketed table)
         n
 
-    /// `[schema].[name]` for a `TableId` value. Goes through
-    /// `TableId.qualified` semantics (the canonical bracket-quoting)
-    /// but produces the typed AST form.
+    /// `[schema].[name]` for a `TableId` value (or
+    /// `[catalog].[schema].[name]` when the `TableId` carries an
+    /// explicit catalog coordinate). Goes through `TableId.qualified`
+    /// semantics (the canonical bracket-quoting) but produces the typed
+    /// AST form.
+    ///
+    /// **Slice 4.3 — cross-DB three-part name (L3-S10 / L3-I10).** When
+    /// `TableId.Catalog = Some db`, ScriptDom's `MultiPartIdentifier`
+    /// carries a third leading `Identifier` so the rendered name is the
+    /// three-part `[db].[schema].[table]`. Pre-slice the catalog axis
+    /// silently degraded to the two-part implicit-current-database form
+    /// (`schemaObjectFromTableId` dropped `.Catalog`). Additive: a
+    /// `Catalog = None` `TableId` (today's universal case) emits the
+    /// byte-identical two-part name.
     let private schemaObjectFromTableId (t: TableId) : SchemaObjectName =
-        schemaObjectName t.Schema t.Table
+        match t.Catalog with
+        | Some catalog ->
+            let n = SchemaObjectName()
+            n.Identifiers.Add(bracketed catalog)
+            n.Identifiers.Add(bracketed t.Schema)
+            n.Identifiers.Add(bracketed t.Table)
+            n
+        | None ->
+            schemaObjectName t.Schema t.Table
 
     /// Map V2's `PrimitiveType` to ScriptDom's `SqlDataTypeOption`.
     /// Closed-DU dispatch — adding a new variant lights up an

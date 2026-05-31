@@ -112,7 +112,7 @@ module private CdcSilencePropertyFixtures =
         let kind : Kind =
             { SsKey      = kindKey
               Name       = mkName "SingleRow"
-              Origin     = OsNative
+              Origin     = Native
               Modality   = [ Static [ row ] ]
               Physical   = { Schema = "dbo"; Table = "OSUSR_PCDC_ONE"; Catalog = None }
               Attributes =
@@ -154,7 +154,7 @@ module private CdcSilencePropertyFixtures =
         let kind : Kind =
             { SsKey      = kindKey
               Name       = mkName "MultiType"
-              Origin     = OsNative
+              Origin     = Native
               Modality   =
                   [ Static
                         [ row "10" "alpha" "true"  "1.50"
@@ -206,7 +206,7 @@ module private CdcSilencePropertyFixtures =
         let kind : Kind =
             { SsKey      = kindKey
               Name       = mkName "ManyRows"
-              Origin     = OsNative
+              Origin     = Native
               Modality   = [ Static rows ]
               Physical   = { Schema = "dbo"; Table = "OSUSR_PCDC_MANY"; Catalog = None }
               Attributes =

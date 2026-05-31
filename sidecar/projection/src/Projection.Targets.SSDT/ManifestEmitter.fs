@@ -150,7 +150,7 @@ type PredicateName =
     | HasTrigger
     /// Kind's `Modality` carries `ModalityMark.Static`.
     | IsStaticEntity
-    /// Kind's `Origin` is not `OsNative` (`ExternalViaIntegrationStudio`
+    /// Kind's `Origin` is not `Native` (`ExternalIndirect`
     /// or `ExternalDirect`).
     | IsExternalEntity
     /// Kind's `IsActive = false`.
@@ -266,8 +266,8 @@ module PredicateName =
                 | _ -> false)
         | PredicateName.IsExternalEntity ->
             match k.Origin with
-            | Origin.OsNative -> false
-            | Origin.ExternalViaIntegrationStudio
+            | Origin.Native -> false
+            | Origin.ExternalIndirect
             | Origin.ExternalDirect -> true
         | PredicateName.IsInactiveEntity ->
             not k.IsActive

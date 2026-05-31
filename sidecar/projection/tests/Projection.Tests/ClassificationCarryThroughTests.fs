@@ -237,11 +237,11 @@ let ``A.4.7 slice α: TopologicalOrderPass events carry DataIntent`` () =
 
 [<Fact>]
 let ``A.4.7 slice α: VisibilityMask events carry OperatorIntent Selection`` () =
-    // Mask filtering by Origin = OsNative removes every kind in the
-    // fixture (all three are OsNative-origin). Each removal emits a
+    // Mask filtering by Origin = Native removes every kind in the
+    // fixture (all three are Native-origin). Each removal emits a
     // Removed event classified OperatorIntent Selection — the filter
     // is operator intent on the Selection axis.
-    let mask : VisibilityMask.Mask = { Hide = [ VisibilityMask.hideOrigin Origin.OsNative ] }
+    let mask : VisibilityMask.Mask = { Hide = [ VisibilityMask.hideOrigin Origin.Native ] }
     let lineage = (VisibilityMask.registered mask).Run sampleCatalog
     assertAllClassifiedAs (OperatorIntent Selection) lineage.Trail
 

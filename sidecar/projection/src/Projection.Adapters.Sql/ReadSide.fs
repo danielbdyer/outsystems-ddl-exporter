@@ -39,7 +39,7 @@ open FsToolkit.ErrorHandling
 /// carry V2-IR-only metadata (Origin, Modality, Module names,
 /// static populations, comment-style audit metadata). The
 /// reconstructed Catalog assigns reasonable defaults
-/// (`Origin.OsNative`, empty `Modality`, single `Reconstructed`
+/// (`Origin.Native`, empty `Modality`, single `Reconstructed`
 /// module) — comparison surfaces (`PhysicalSchema`) ignore the
 /// V2-IR-only axes by construction.
 [<RequireQualifiedAccess>]
@@ -869,7 +869,7 @@ module ReadSide =
                 {
                     SsKey = kKey
                     Name = kName
-                    Origin = OsNative
+                    Origin = Native
                     Modality = []
                     Physical = { Schema = schema; Table = table; Catalog = None }
                     Attributes = attributes
@@ -894,7 +894,7 @@ module ReadSide =
     /// reconstruct a V2 `Catalog`. Returns the reconstructed Catalog
     /// or aggregated validation errors.
     ///
-    /// **Best-effort fields.** `Origin = OsNative` and `Modality = []`
+    /// **Best-effort fields.** `Origin = Native` and `Modality = []`
     /// for every reconstructed Kind (cannot be recovered from SQL).
     /// `References = []` and `Indexes = []` for M3 MVP — FK and index
     /// reconstruction defers to a follow-up slice.

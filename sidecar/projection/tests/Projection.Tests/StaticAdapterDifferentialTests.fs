@@ -62,7 +62,7 @@ let private cityActiveKey = attrKey ["City"; "IsActive"]
 let private cityKind : Kind =
     { SsKey    = cityKey
       Name     = mkName "City"
-      Origin   = OsNative
+      Origin   = Native
       Modality = [ Static [] ]   // empty populations; adapter fills these in
       Physical = { Schema = "dbo"; Table = "OSUSR_DEF_CITY"; Catalog = None }
       Attributes = [

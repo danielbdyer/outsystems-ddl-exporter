@@ -61,7 +61,7 @@ let private countryNameKey      = mkKey "OS_ATTR_E2E_Country_Name"
 let private parentKind : Kind =
     { SsKey    = parentKindKey
       Name     = mkName "Parent"
-      Origin   = OsNative
+      Origin   = Native
       Modality = []
       Physical = { Schema = "dbo"; Table = "OSUSR_P_PARENT"; Catalog = None }
       Attributes = [
@@ -71,7 +71,7 @@ let private parentKind : Kind =
 let private childKind : Kind =
     { SsKey    = childKindKey
       Name     = mkName "Child"
-      Origin   = OsNative
+      Origin   = Native
       Modality = []
       Physical = { Schema = "dbo"; Table = "OSUSR_C_CHILD"; Catalog = None }
       Attributes = [
@@ -85,7 +85,7 @@ let private childKind : Kind =
 let private countryKind : Kind =
     { SsKey    = countryKindKey
       Name     = mkName "Country"
-      Origin   = OsNative
+      Origin   = Native
       // Static modality with empty populations — the static adapter
       // will fill these in from V1 JSON.
       Modality = [ Static [] ]

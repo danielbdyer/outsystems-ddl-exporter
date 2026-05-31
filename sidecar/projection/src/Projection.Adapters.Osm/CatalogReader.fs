@@ -77,8 +77,8 @@ module CatalogReader =
     /// **Slice 3 extension:** `EspaceKind` lifts V1's `ossys_Espace.EspaceKind`
     /// string (rowset 1; `OutsystemsModuleRow.EspaceKind`). Refines
     /// rule 17's `Origin` translation from the JSON-path two-way
-    /// placeholder (`isExternal → ExternalViaIntegrationStudio`) to
-    /// the three-way real (OsNative / ExternalViaIntegrationStudio /
+    /// placeholder (`isExternal → ExternalIndirect`) to
+    /// the three-way real (Native / ExternalIndirect /
     /// ExternalDirect). Empirical V1 values observed in fixtures:
     /// `"eSpace"` for normal modules (V1 test seed at
     /// tests/Fixtures/sql/model.edge-case.seed.sql:97-99). The IS-
@@ -1046,10 +1046,10 @@ module CatalogReader =
     /// does NOT write to `osm_model.json`. The full distinction is
     /// **bound by the input path**:
     ///
-    ///   - `isExternal: false` → OsNative (clear)
-    ///   - `isExternal: true`  → ExternalViaIntegrationStudio (placeholder)
+    ///   - `isExternal: false` → Native (clear)
+    ///   - `isExternal: true`  → ExternalIndirect (placeholder)
     ///
-    /// The `ExternalViaIntegrationStudio` placeholder reflects that
+    /// The `ExternalIndirect` placeholder reflects that
     /// IS extensions are the standard V1 mechanism for external
     /// entities; most isExternal=true cases are IS-imported. Direct
     /// external entities (no IS step) exist but are rarer. The
@@ -1065,7 +1065,7 @@ module CatalogReader =
     /// surfaced the question; the placeholder updates under the
     /// pressure. Documented in the session-20 DECISIONS amendment.
     let private parseOrigin (isExternal: bool) : Origin =
-        if isExternal then ExternalViaIntegrationStudio else OsNative
+        if isExternal then ExternalIndirect else Native
 
     /// Three-way `Origin` translation for the rowset path (chapter
     /// 3.2 slice 3). Refines `parseOrigin`'s two-way placeholder
@@ -1079,8 +1079,8 @@ module CatalogReader =
     ///     marker until a production sample surfaces otherwise)
     ///
     /// The translation:
-    ///   - `isExternal: false`                          → OsNative
-    ///   - `isExternal: true` AND EspaceKind = "Extension" → ExternalViaIntegrationStudio
+    ///   - `isExternal: false`                          → Native
+    ///   - `isExternal: true` AND EspaceKind = "Extension" → ExternalIndirect
     ///   - `isExternal: true` otherwise                  → ExternalDirect
     ///
     /// Case-insensitive comparison on the marker (V1's column is
@@ -1090,20 +1090,20 @@ module CatalogReader =
     /// witnesses the absence of an IS step.
     ///
     /// Rule 17 now refines from the session-20 placeholder
-    /// (collapsing to ExternalViaIntegrationStudio for all external
+    /// (collapsing to ExternalIndirect for all external
     /// entities) to the empirically-rooted three-way real. The JSON
     /// path's `parseOrigin` is the still-bounded sibling — same
     /// signature, same JSON-projection-lossiness disposition.
     let private parseOriginFromRowset
         (isExternal: bool) (espaceKind: string option) : Origin =
-        if not isExternal then OsNative
+        if not isExternal then Native
         else
             let isIsExtension =
                 match espaceKind with
                 | Some kind ->
                     System.String.Equals(kind, "Extension", System.StringComparison.OrdinalIgnoreCase)
                 | None -> false
-            if isIsExtension then ExternalViaIntegrationStudio
+            if isIsExtension then ExternalIndirect
             else ExternalDirect
 
     /// Extract a Reference from a V1 attribute that carries

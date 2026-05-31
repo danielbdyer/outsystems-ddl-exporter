@@ -195,7 +195,7 @@ let private nullabilityCatalog : Catalog =
     let sample : Kind =
         { SsKey    = sampleKey
           Name     = name "Sample"
-          Origin   = OsNative
+          Origin   = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_DIAG_END_SAMPLE"; Catalog = None }
           Attributes = [
@@ -337,7 +337,7 @@ let private fkCatalog : Catalog =
     let target : Kind =
         { SsKey    = fkTargetEntityKey
           Name     = name "FkTarget"
-          Origin   = OsNative
+          Origin   = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_FK_END_TARGET"; Catalog = None }
           Attributes = [
@@ -346,7 +346,7 @@ let private fkCatalog : Catalog =
     let source : Kind =
         { SsKey    = fkSourceEntityKey
           Name     = name "FkSource"
-          Origin   = OsNative
+          Origin   = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_FK_END_SOURCE"; Catalog = None }
           Attributes = [

@@ -267,6 +267,45 @@ module Transfer =
         : Task<Result<TransferReport>> =
         runCore mode allowCdc source sink catalog reconciliation
 
+    /// Slice 4.2 — drive a Transfer through the `TransferConnections`
+    /// apparatus instead of caller-opened connections. Opens both
+    /// substrates via `ConnectionResolver.openSubstrate` (D9: credentials
+    /// resolved out of band at the apparatus boundary), reconstructs the
+    /// schema contract from the Source (`ReadSide.read`), resolves the
+    /// reconciliation against that contract, and runs. The apparatus
+    /// carries `ProfiledForIdentity` (Source always; Sink too when
+    /// reconciling — the Sink is read, not write-only): the Source open +
+    /// the Sink read happen here, one connection per substrate (no
+    /// per-table probes; the reconcile reads the Sink via the existing
+    /// `reconcileAgainstSink` path).
+    ///
+    /// `resolveReconciliation` is a function of the reconstructed contract
+    /// so the contract is read exactly once (the Source open is not
+    /// duplicated to resolve reconciliation specs).
+    let runThroughConnections
+        (mode: Mode)
+        (allowCdc: bool)
+        (connections: TransferConnections)
+        (resolveReconciliation: Catalog -> Result<Map<SsKey, ReconciliationStrategy>>)
+        : Task<Result<TransferReport>> =
+        task {
+            match! ConnectionResolver.openSubstrate connections.Source with
+            | Error es -> return Result.failure es
+            | Ok source ->
+                use source = source
+                match! ConnectionResolver.openSubstrate connections.Sink with
+                | Error es -> return Result.failure es
+                | Ok sink ->
+                    use sink = sink
+                    match! ReadSide.read source with
+                    | Error es -> return Result.failure es
+                    | Ok contract ->
+                        match resolveReconciliation contract with
+                        | Error es -> return Result.failure es
+                        | Ok reconciliation ->
+                            return! runCore mode allowCdc source sink contract reconciliation
+        }
+
     /// Registry metadata (pillar 9). The Transfer realization classifies
     /// entirely as `DataIntent`: the operator's identity substitution
     /// landed at `DataLoadPlan.build` (the canonical `OperatorIntent

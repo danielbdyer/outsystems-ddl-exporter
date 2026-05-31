@@ -92,7 +92,7 @@ module private CdcSilenceFixtures =
         let kind : Kind =
             { SsKey    = kindKey
               Name     = mkName "Country"
-              Origin   = OsNative
+              Origin   = Native
               Modality = [ Static [ row "1" "United States"
                                     row "2" "Canada" ] ]
               Physical = { Schema = "dbo"; Table = "OSUSR_CDC_COUNTRY"; Catalog = None }
@@ -166,7 +166,7 @@ module private CdcSilenceFixtures =
         let kind : Kind =
             { SsKey    = kindKey
               Name     = mkName "Country"
-              Origin   = OsNative
+              Origin   = Native
               Modality = [ Static [ row "1" "USA"          // <-- changed
                                     row "2" "Canada" ] ]
               Physical = { Schema = "dbo"; Table = "OSUSR_CDC_COUNTRY"; Catalog = None }
