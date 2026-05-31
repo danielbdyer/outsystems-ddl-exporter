@@ -221,3 +221,52 @@ let ``A1 stratification: DerivedFrom inherits the bound from its root`` () =
     let ossysRoot = SsKey.ossysOriginal (sampleGuid ())
     let ossysDerived = SsKey.derivedFrom ossysRoot "inverse" |> Result.value
     Assert.True(isA1Unconditional ossysDerived)
+
+// ---------------------------------------------------------------------
+// Wave 4.1 — serialize / deserialize round-trip (V2.SsKey persistence)
+// ---------------------------------------------------------------------
+
+let private roundtrips (key: SsKey) : bool =
+    match SsKey.deserialize (SsKey.serialize key) with
+    | Ok back -> back = key
+    | Error _ -> false
+
+[<Fact>]
+let ``4.1: serialize/deserialize round-trips OssysOriginal`` () =
+    Assert.True(roundtrips (SsKey.ossysOriginal (sampleGuid ())))
+
+[<Fact>]
+let ``4.1: serialize/deserialize round-trips V1Mapped`` () =
+    Assert.True(roundtrips (SsKey.fromV1 (sampleGuid ()) (sampleNamespace ())))
+
+[<Fact>]
+let ``4.1: serialize/deserialize round-trips Synthesized composite`` () =
+    let key = SsKey.synthesizedComposite "OS_KIND" [ "AppCore"; "User" ] |> Result.value
+    Assert.True(roundtrips key)
+
+[<Fact>]
+let ``4.1: serialize/deserialize round-trips DerivedFrom nested in Synthesized`` () =
+    let root = SsKey.synthesizedComposite "OS_KIND" [ "AppCore"; "User" ] |> Result.value
+    let derived = SsKey.derivedFrom root "inverse" |> Result.value
+    Assert.True(roundtrips derived)
+
+[<Fact>]
+let ``4.1: serialize is unambiguous across colliding renderings`` () =
+    // `Synthesized ("OS_KIND", ["AppCore_User"])` and
+    // `Synthesized ("OS_KIND", ["AppCore"; "User"])` render identically via
+    // rootOriginal but are distinct SsKeys; the codec must preserve the split.
+    let flat = SsKey.synthesizedComposite "OS_KIND" [ "AppCore_User" ] |> Result.value
+    let split = SsKey.synthesizedComposite "OS_KIND" [ "AppCore"; "User" ] |> Result.value
+    Assert.NotEqual<string>(SsKey.serialize flat, SsKey.serialize split)
+    Assert.True(roundtrips flat)
+    Assert.True(roundtrips split)
+
+[<Fact>]
+let ``4.1: deserialize rejects malformed input with structured error`` () =
+    match SsKey.deserialize "not-a-serialized-key" with
+    | Error errors -> Assert.Contains("sskey.deserialize", errors |> List.map (fun e -> e.Code))
+    | Ok k -> Assert.Fail(sprintf "expected Error on malformed input, got %A" k)
+
+[<Fact>]
+let ``4.1: deserialize rejects empty input`` () =
+    Assert.True(SsKey.deserialize "" |> Result.isFailure)

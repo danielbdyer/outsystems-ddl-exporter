@@ -217,3 +217,31 @@ a meaningfully-different DDL shape) OR a Docker test pool of N>=20 \
 ephemeral containers. Single-fixture form lives at \
 CanaryRoundTripTests.fs::M3.")>]
 let ``H-050 emitter-reader adjunction sweep: full Docker-bound roundtrip (FsCheck)`` () = ()
+
+// ---------------------------------------------------------------------
+// Wave-2 slice 2.2 — the overlay seam is open and byte-identical with the
+// empty overlay (the T1 safety net: threading DecisionOverlay through the
+// emitter as a curried prefix arg does not change emitted bytes until a
+// later slice consumes it).
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``T1 (slice 2.2): statementsWith DecisionOverlay.empty equals statements (byte-identical seam)`` () =
+    let viaWrapper = SsdtDdlEmitter.statements sampleCatalog |> Seq.toList
+    let viaEmpty = SsdtDdlEmitter.statementsWith DecisionOverlay.empty sampleCatalog |> Seq.toList
+    Assert.Equal<Statement list>(viaWrapper, viaEmpty)
+
+[<Fact>]
+let ``T1 (slice 2.2): emitSlicesWith DecisionOverlay.empty equals emitSlices (byte-identical bundle)`` () =
+    let viaWrapper =
+        match SsdtDdlEmitter.emitSlices sampleCatalog with
+        | Ok a -> a | Error e -> failwithf "emitSlices: %A" e
+    let viaEmpty =
+        match SsdtDdlEmitter.emitSlicesWith DecisionOverlay.empty sampleCatalog with
+        | Ok a -> a | Error e -> failwithf "emitSlicesWith: %A" e
+    // Compare the per-kind SSDT file bodies (the emitted bytes).
+    let bodies a =
+        ArtifactByKind.toMap a
+        |> Map.toList
+        |> List.map (fun (k, (f: SsdtDdlEmitter.SsdtFile)) -> k, f.Body)
+    Assert.Equal<(SsKey * string) list>(bodies viaWrapper, bodies viaEmpty)

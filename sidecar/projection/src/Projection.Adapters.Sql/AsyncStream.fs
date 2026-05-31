@@ -22,63 +22,16 @@ open Projection.Core
 /// inside `task { ... }`.
 type AsyncStream<'a> = unit -> Task<'a option>
 
-/// Pull-based streaming combinators. All operations are zero-buffer
-/// pass-through except where naming says otherwise (`bufferUpTo`,
-/// `toList`, `batchesOf`).
+/// Pull-based streaming combinators. The surface is consumer-justified
+/// per the two-consumer threshold: `toList` (the eager drain consumed by
+/// `ReadSide` / `Ingestion` / `TransferRun`) and `probe` (the
+/// bench-instrumented pass-through consumed by `ReadSide.readRowsStream`).
+/// The speculative combinators (`empty`/`ofList`/`map`/`mapAsync`/`iter`/
+/// `fold`/`bufferUpTo`/`batchesOf`) were retired 2026-05-30 (Wave-0 slice
+/// 0.2) — zero consumers across `src/` + `tests/`; re-introduce per the
+/// two-consumer threshold when a real second consumer arrives.
 [<RequireQualifiedAccess>]
 module AsyncStream =
-
-    let empty<'a> : AsyncStream<'a> = fun () -> Task.FromResult None
-
-    let ofList (xs: 'a list) : AsyncStream<'a> =
-        let mutable remaining = xs
-        fun () ->
-            task {
-                match remaining with
-                | [] -> return None
-                | x :: rest ->
-                    remaining <- rest
-                    return Some x
-            }
-
-    let map (f: 'a -> 'b) (next: AsyncStream<'a>) : AsyncStream<'b> =
-        fun () ->
-            task {
-                let! x = next ()
-                return Option.map f x
-            }
-
-    let mapAsync (f: 'a -> Task<'b>) (next: AsyncStream<'a>) : AsyncStream<'b> =
-        fun () ->
-            task {
-                match! next () with
-                | None -> return None
-                | Some x ->
-                    let! y = f x
-                    return Some y
-            }
-
-    let iter (f: 'a -> Task<unit>) (next: AsyncStream<'a>) : Task<unit> =
-        task {
-            let mutable cont = true
-            while cont do
-                match! next () with
-                | Some x -> do! f x
-                | None -> cont <- false
-        }
-
-    let fold (f: 's -> 'a -> Task<'s>) (seed: 's) (next: AsyncStream<'a>) : Task<'s> =
-        task {
-            let mutable state = seed
-            let mutable cont = true
-            while cont do
-                match! next () with
-                | Some x ->
-                    let! state' = f state x
-                    state <- state'
-                | None -> cont <- false
-            return state
-        }
 
     let toList (next: AsyncStream<'a>) : Task<'a list> =
         task {
@@ -89,26 +42,6 @@ module AsyncStream =
                 | Some x -> acc.Add x
                 | None -> cont <- false
             return List.ofSeq acc
-        }
-
-    /// Buffer up to `cap` elements. Returns `Some list` if the
-    /// upstream produced ≤ cap; `None` if it overflowed (used as
-    /// the "small enough to materialize" gate). Drains the stream
-    /// either way to keep the underlying reader's lifetime tidy.
-    let bufferUpTo (cap: int) (next: AsyncStream<'a>) : Task<'a list option> =
-        task {
-            let acc = ResizeArray<'a>()
-            let mutable cont = true
-            let mutable overflowed = false
-            while cont do
-                match! next () with
-                | Some x ->
-                    if acc.Count >= cap then
-                        overflowed <- true
-                    else
-                        acc.Add x
-                | None -> cont <- false
-            return if overflowed then None else Some (List.ofSeq acc)
         }
 
     /// Bench-instrumented pass-through. Records `<label>` (wall time
@@ -133,28 +66,4 @@ module AsyncStream =
                         Bench.recordSample label sw.ElapsedMilliseconds
                         Bench.recordSample (sprintf "%s.elements" label) count
                     return None
-            }
-
-    /// Group consecutive elements into batches of up to `n`.
-    /// Each pull yields the next batch (`'a list`) or `None` at
-    /// upstream end. Used by `Deploy.executeStream` to fold
-    /// `InsertRow` runs into `SqlBulkCopy` chunks without breaking
-    /// the streaming flow.
-    let batchesOf (n: int) (next: AsyncStream<'a>) : AsyncStream<'a list> =
-        if n <= 0 then invalidArg "n" "batch size must be positive"
-        let mutable upstreamDone = false
-        fun () ->
-            task {
-                if upstreamDone then return None
-                else
-                    let buf = ResizeArray<'a>()
-                    let mutable cont = true
-                    while cont && buf.Count < n do
-                        match! next () with
-                        | Some x -> buf.Add x
-                        | None ->
-                            upstreamDone <- true
-                            cont <- false
-                    if buf.Count = 0 then return None
-                    else return Some (List.ofSeq buf)
             }

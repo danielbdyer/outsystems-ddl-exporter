@@ -68,6 +68,50 @@ type PhysicalColumn =
         /// IDENTITY column property. Catches drift in identity-ness
         /// (source had IDENTITY, target dropped it, or vice versa).
         IsIdentity : bool
+        /// DEFAULT-constraint expression in normalized form (Wave-1
+        /// slice 1.2). `None` when the column has no DEFAULT. Catches
+        /// the canary's blindness to a dropped/changed DEFAULT clause
+        /// through the emit → deploy → read round-trip. Normalized via
+        /// `PhysicalSchema.normalizeDefault` (strip matched outer parens
+        /// SQL Server adds) so the emitter-IR side
+        /// (`SqlLiteral.toString`) and the ReadSide side
+        /// (`sys.default_constraints.definition`) compare equal — the
+        /// named DEFAULT round-trip tolerance (A37-family).
+        Default : string option
+        /// Computed-column expression in normalized form (Wave-1 slice
+        /// 1.3, L3-S7). `None` for non-computed columns. `IsPersisted`
+        /// rides the string (`"<expr>|persisted"` / `"<expr>"`) so the
+        /// round-trip catches both a dropped computation and a
+        /// persisted↔non-persisted drift. Normalized via
+        /// `PhysicalSchema.normalizeDefault` (same paren-stripping).
+        Computed : string option
+    }
+
+/// A schema annotation that lives at table or catalog scope rather than
+/// column scope — Wave-1 slice 1.3's uniform carrier for the four
+/// non-column hollow-canary features (triggers / CHECK constraints /
+/// sequences / extended properties). One axis with a `Kind`
+/// discriminator keeps the `PhysicalSchemaDiff` to a single Missing/Extra
+/// pair instead of four, while preserving per-feature attributability via
+/// `Kind`. Compared as a value: a dropped / added / changed annotation
+/// surfaces as a set-difference entry.
+///
+/// `Owner` is the qualified object the annotation hangs on
+/// (`[schema].[table]` for triggers/checks/ext-props; `[schema].[name]`
+/// for sequences). `Name` is the annotation's own identifier; `Payload`
+/// is the normalized definition / value that must round-trip.
+type PhysicalAnnotationKind =
+    | TriggerAnnotation
+    | CheckAnnotation
+    | SequenceAnnotation
+    | ExtendedPropertyAnnotation
+
+type PhysicalAnnotation =
+    {
+        Kind : PhysicalAnnotationKind
+        Owner : string
+        Name : string
+        Payload : string
     }
 
 /// A foreign-key relationship in physical-schema coordinates. Per
@@ -177,6 +221,13 @@ type PhysicalSchema =
         /// recovered from `sys.extended_properties` via slice D.1.b's
         /// ReadSide hydration in roundtrip flows.
         LogicalNameBindings : Set<LogicalNameBinding>
+        /// Wave-1 slice 1.3 — table/catalog-scoped annotations (triggers,
+        /// CHECK constraints, sequences, extended properties). Un-hollows
+        /// the canary on L3-S4 / S5 / S8 / S9. Populated from `Kind.Triggers`
+        /// / `Kind.ColumnChecks` / `Catalog.Sequences` / `*.ExtendedProperties`
+        /// in `ofCatalog`; recovered from `sys.triggers` / `sys.check_constraints`
+        /// / `sys.sequences` / `sys.extended_properties` by ReadSide.
+        Annotations : Set<PhysicalAnnotation>
     }
 
 /// The diff between two `PhysicalSchema` values. All ten fields
@@ -200,6 +251,11 @@ type PhysicalSchemaDiff =
         /// identity alone.
         MissingLogicalNameBindings : LogicalNameBinding list
         ExtraLogicalNameBindings : LogicalNameBinding list
+        /// Wave-1 slice 1.3 — annotations (triggers / checks / sequences /
+        /// extended properties) in source-not-target (Missing) /
+        /// target-not-source (Extra).
+        MissingAnnotations : PhysicalAnnotation list
+        ExtraAnnotations : PhysicalAnnotation list
     }
 
 /// Streaming aggregate row-hash builder. Per session-35 — folds an
@@ -292,6 +348,45 @@ module PhysicalSchema =
                 })
         tableBinding :: columnBindings
 
+    /// Normalize a DEFAULT-constraint expression for round-trip
+    /// comparison (Wave-1 slice 1.2). SQL Server canonicalizes a
+    /// `DEFAULT 0` clause to `((0))` in `sys.default_constraints
+    /// .definition`, while V2's emitter renders `SqlLiteral.toString`
+    /// (`0`). Stripping matched outer parens + trimming whitespace
+    /// brings both to a common form. This is a NAMED tolerance: it
+    /// erases SQL Server's redundant-paren canonicalization only —
+    /// the inner expression must still match exactly, so a changed or
+    /// dropped DEFAULT is still caught. Idempotent; stops at the first
+    /// unmatched paren so `((0)+1)` is not over-stripped.
+    let normalizeDefault (expr: string) : string =
+        let rec strip (s: string) =
+            let t = s.Trim()
+            if t.Length >= 2 && t.[0] = '(' && t.[t.Length - 1] = ')' then
+                // Only strip when the leading '(' matches the trailing ')'
+                // (i.e. the whole string is parenthesized), not when they
+                // are two independent groups like `(a)+(b)`.
+                let mutable depth = 0
+                let mutable matchedAtEnd = true
+                for i in 0 .. t.Length - 1 do
+                    if t.[i] = '(' then depth <- depth + 1
+                    elif t.[i] = ')' then
+                        depth <- depth - 1
+                        if depth = 0 && i < t.Length - 1 then matchedAtEnd <- false
+                if matchedAtEnd then strip (t.Substring(1, t.Length - 2))
+                else t
+            else t
+        strip expr
+
+    /// Encode a computed-column config into the normalized comparison
+    /// string the `PhysicalColumn.Computed` axis carries (Wave-1 slice 1.3).
+    /// `IsPersisted` rides the string so a persisted↔non-persisted drift
+    /// surfaces. Single definition site (consumed by both producers —
+    /// `ofCatalog` here and `PhysicalSchemaReader`) so the encoding cannot
+    /// drift between the two halves of the adjunction.
+    let encodeComputed (cc: ComputedColumnConfig) : string =
+        let expr = normalizeDefault cc.Expression
+        if cc.IsPersisted then System.String.Concat(expr, "|persisted") else expr
+
     let private toPhysicalColumns (k: Kind) : PhysicalColumn list =
         k.Attributes
         |> Bench.iterMap "physicalSchema.attribute" (fun a ->
@@ -306,7 +401,113 @@ module PhysicalSchema =
                 Precision = a.Precision
                 Scale = a.Scale
                 IsIdentity = a.IsIdentity
+                Default =
+                    a.DefaultValue
+                    |> Option.map (fun lit -> normalizeDefault (SqlLiteral.toString lit))
+                Computed = a.Computed |> Option.map encodeComputed
             })
+
+    /// Wave-1 slice 1.3 — project a Kind's table-scoped annotations
+    /// (triggers + CHECK constraints) into the uniform annotation axis.
+    /// Trigger payload is a normalized digest of the definition body
+    /// (whitespace-collapsed, lowercased) so the round-trip catches a
+    /// dropped/changed trigger without over-asserting on SQL Server's
+    /// re-formatting of the stored definition (a named A37-family
+    /// tolerance). CHECK payload is the normalized (paren-stripped)
+    /// expression.
+    let private normalizeBody (s: string) : string =
+        // Collapse all runs of whitespace to a single space, trim, lower.
+        let collapsed =
+            s.Split([| ' '; '\t'; '\r'; '\n' |], System.StringSplitOptions.RemoveEmptyEntries)
+            |> String.concat " "
+        collapsed.ToLowerInvariant()
+
+    let private toKindAnnotations (k: Kind) : PhysicalAnnotation list =
+        let owner = System.String.Concat("[", k.Physical.Schema, "].[", k.Physical.Table, "]")
+        let triggers =
+            k.Triggers
+            |> List.map (fun t ->
+                {
+                    Kind = TriggerAnnotation
+                    Owner = owner
+                    Name = Name.value t.Name
+                    // Disabled-state rides the payload so a disable/enable
+                    // drift surfaces; body digest is normalized.
+                    Payload =
+                        (if t.IsDisabled then "disabled|" else "enabled|")
+                        + normalizeBody t.Definition
+                })
+        let checks =
+            k.ColumnChecks
+            |> List.map (fun c ->
+                {
+                    Kind = CheckAnnotation
+                    Owner = owner
+                    // CHECK name is optional (SQL Server auto-names); when
+                    // absent the expression IS the identity, so key on it.
+                    Name = c.Name |> Option.map Name.value |> Option.defaultValue ""
+                    Payload = normalizeDefault c.Definition
+                })
+        triggers @ checks
+
+    /// Project the Catalog's sequences into annotations. Sequence shape
+    /// (start / increment / min / max / cycle / cache) rides the payload
+    /// so any shape drift surfaces.
+    let private toSequenceAnnotations (c: Catalog) : PhysicalAnnotation list =
+        c.Sequences
+        |> List.map (fun s ->
+            let optDec (d: decimal option) = d |> Option.map string |> Option.defaultValue "-"
+            let cache =
+                match s.CacheMode with
+                | Cache -> System.String.Concat("cache:", (s.CacheSize |> Option.map string |> Option.defaultValue "?"))
+                | NoCache -> "nocache"
+                | Unspecified -> "cache:default"
+            {
+                Kind = SequenceAnnotation
+                Owner = System.String.Concat("[", s.Schema, "].[", Name.value s.Name, "]")
+                Name = Name.value s.Name
+                Payload =
+                    String.concat "|"
+                        [ s.DataType.ToLowerInvariant()
+                          "start:" + optDec s.StartValue
+                          "incr:" + optDec s.Increment
+                          "min:" + optDec s.Minimum
+                          "max:" + optDec s.Maximum
+                          (if s.IsCycleEnabled then "cycle" else "nocycle")
+                          cache ]
+            })
+
+    /// Project extended properties (module / kind / attribute) into
+    /// annotations. The `V2.LogicalName` property is EXCLUDED — it is
+    /// already covered by the `LogicalNameBindings` axis, so including it
+    /// here would double-count and (worse) make the canary assert on the
+    /// emitter's own round-trip scaffolding.
+    let private toExtendedPropertyAnnotations (k: Kind) : PhysicalAnnotation list =
+        let tableOwner = System.String.Concat("[", k.Physical.Schema, "].[", k.Physical.Table, "]")
+        let isLogicalName (ep: ExtendedProperty) = ep.Name = "V2.LogicalName"
+        let kindEps =
+            k.ExtendedProperties
+            |> List.filter (not << isLogicalName)
+            |> List.map (fun ep ->
+                {
+                    Kind = ExtendedPropertyAnnotation
+                    Owner = tableOwner
+                    Name = ep.Name
+                    Payload = ep.Value |> Option.defaultValue ""
+                })
+        let attrEps =
+            k.Attributes
+            |> List.collect (fun a ->
+                a.ExtendedProperties
+                |> List.filter (not << isLogicalName)
+                |> List.map (fun ep ->
+                    {
+                        Kind = ExtendedPropertyAnnotation
+                        Owner = System.String.Concat(tableOwner, ".[", a.Column.ColumnName, "]")
+                        Name = ep.Name
+                        Payload = ep.Value |> Option.defaultValue ""
+                    }))
+        kindEps @ attrEps
 
     /// Hash a static row deterministically. Concatenates
     /// `<column-name>=<value>` pairs sorted by column name and
@@ -443,12 +644,18 @@ module PhysicalSchema =
             kinds
             |> List.collect toLogicalNameBindings
             |> Set.ofList
+        let annotations =
+            (kinds |> List.collect toKindAnnotations)
+            @ (kinds |> List.collect toExtendedPropertyAnnotations)
+            @ toSequenceAnnotations c
+            |> Set.ofList
         {
             Columns = columns
             ForeignKeys = foreignKeys
             Rows = rows
             RowDigests = Set.empty
             LogicalNameBindings = logicalNameBindings
+            Annotations = annotations
         }
 
     /// Layer per-table aggregate row digests onto an existing
@@ -484,6 +691,8 @@ module PhysicalSchema =
             ExtraRowDigests            = setDifference target.RowDigests          source.RowDigests
             MissingLogicalNameBindings = setDifference source.LogicalNameBindings target.LogicalNameBindings
             ExtraLogicalNameBindings   = setDifference target.LogicalNameBindings source.LogicalNameBindings
+            MissingAnnotations         = setDifference source.Annotations         target.Annotations
+            ExtraAnnotations           = setDifference target.Annotations         source.Annotations
         }
 
     /// True iff the diff is empty across all ten axes.
@@ -498,6 +707,8 @@ module PhysicalSchema =
         && List.isEmpty d.ExtraRowDigests
         && List.isEmpty d.MissingLogicalNameBindings
         && List.isEmpty d.ExtraLogicalNameBindings
+        && List.isEmpty d.MissingAnnotations
+        && List.isEmpty d.ExtraAnnotations
 
     /// Render a diff as a human-readable multi-line string. Used by
     /// canary failure messages so the operator sees exactly which
@@ -556,6 +767,15 @@ module PhysicalSchema =
                 sprintf
                     "  [%s].[%s].[%s] logical=%s"
                     b.Schema b.Table col b.LogicalName
+        let renderAnnotation (a: PhysicalAnnotation) : string =
+            let kind =
+                match a.Kind with
+                | TriggerAnnotation -> "trigger"
+                | CheckAnnotation -> "check"
+                | SequenceAnnotation -> "sequence"
+                | ExtendedPropertyAnnotation -> "extprop"
+            sprintf "  %s %s on %s = %s" kind a.Name a.Owner
+                (a.Payload.Substring(0, min 60 a.Payload.Length))
         let block (label: string) (renderer: 'a -> string) (xs: 'a list) : string =
             if List.isEmpty xs then sprintf "%s:\n  (none)" label
             else
@@ -600,4 +820,6 @@ module PhysicalSchema =
                 truncatedBlock "Extra row digests in target (target has, source did not)" renderDigest d.ExtraRowDigests
                 truncatedBlock "Missing logical-name bindings in target (source had, target lost)" renderBinding d.MissingLogicalNameBindings
                 truncatedBlock "Extra logical-name bindings in target (target has, source did not)" renderBinding d.ExtraLogicalNameBindings
+                truncatedBlock "Missing annotations in target (triggers/checks/sequences/extprops source had, target lost)" renderAnnotation d.MissingAnnotations
+                truncatedBlock "Extra annotations in target (target has, source did not)" renderAnnotation d.ExtraAnnotations
             ]

@@ -19881,3 +19881,163 @@ introducing unregistered transforms.
   `tests/Projection.Tests/TransferRegistrationsTests.fs`.
 - Pillar 9 — `DECISIONS 2026-05-15 (late)`; `RegisteredAllTransformsBidirectionalTests`
   (the totality property tests that now cover Transfer).
+
+---
+
+## 2026-05-30 — Wave 2: consuming tightening decisions in the emitter is A18-safe (A42 cashed)
+
+**Resolved question.** Does threading the tightening decisions into the SSDT
+emitter violate A18-amended ("Π consumes `Catalog × Profile`, never `Policy`")?
+
+**No.** The emitter consumes a `DecisionOverlay` — the projection of the
+chain's `NullabilityDecisionSet` / `UniqueIndexDecisionSet` /
+`ForeignKeyDecisionSet` into `Set<SsKey>` lookups. A *decision* is a fact
+("this attribute was decided NOT NULL under the registered intervention given
+the observed null count"): the operator's intent (Policy) was already
+discharged into evidence by the passes. The emitter projects the fact, not the
+intent. The structural guardrail that keeps this honest: the overlay is a
+**curried prefix argument** (`statementsWith` / `emitSlicesWith`), never folded
+into the `Emitter` alias and never a `Policy` parameter. `statements` /
+`emitSlices` remain the `empty`-default wrappers (sibling-wrapper discipline —
+`DecisionOverlay.empty` is a default the caller couldn't otherwise access).
+
+**Why this earns its place.** Before Wave 2 the engine *decided* tightening
+correctly and then emitted the *untightened* schema — the central
+evidence-gated-tightening promise was open. A42 closes it: emission is now a
+faithful, additive projection of the decisions (`field ∧ ¬enforce` /
+`field ∨ enforce`, never `field = decision`, so emission can only tighten,
+never loosen source truth). Observable identity holds (empty overlay =
+byte-identical to pre-Wave-2 emission), so the seam opened without changing any
+existing byte. The proof rides Wave-1's canary un-hollowing: the un-hollowed
+`PhysicalSchema.Nullable` / `.ForeignKeys` axes let the Docker canary observe
+that the decision reached the deployed schema.
+
+**Scope.** A42 is decision→emission fidelity (a `DoNotEnforce` overlay decision
+is part of A42).
+
+**FK silent-drop witness — slice-μ retired at 2.5b (2026-05-30).**
+`SsdtDdlEmitter.foreignKeyDropDiagnostics` is a **pure sibling** of the emitter
+port (the witness rides the `Diagnostics` channel — `statements`/`emitSlices`
+stay `Catalog`-only + byte-identical; A18 holds), wired into the manifest
+diagnostics. It distinguishes two `fkDef`-None drop reasons:
+`targetMissingPrimaryKeyDropped` (reachable through `Catalog.create`) and
+`unresolvedTargetDropped`. **Finding:** `Catalog.create` *already* rejects the
+dangling-target case at construction (`catalog.reference.danglingTarget`) — a
+*stronger* guarantee than a witness — so `unresolvedTargetDropped` is
+defense-in-depth for a smart-constructor bypass; the genuinely-reachable silent
+drop is the missing-PK case. Pillar 1: the structural detail rides the typed
+`DiagnosticEntry.Metadata` map; the `Message` is a constant per reason (no
+string composition at the diagnostic boundary). `L3-X7` /
+`L3-Boundary-NoSilentDrop` for the FK case.
+
+### Cross-references
+
+- `src/Projection.Core/DecisionOverlay.fs`; `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs`
+  (`statementsWith` / `emitSlicesWith` / `columnDef` / `indexStatements` /
+  `createTableStatement` / `untrustedFkAlters`); `src/Projection.Pipeline/Pipeline.fs`
+  (`projectFromChainWithState` passes `DecisionOverlay.ofComposeState composedState`).
+- `tests/Projection.Tests/DecisionOverlayTests.fs`, `DecisionEmissionTests.fs`,
+  `CanaryRoundTripTests.fs` (A42 canary proofs), `AdjunctionLawTests.fs` (byte-identical seam).
+- `AXIOMS.md` A42; `PRODUCT_AXIOMS.md` L3-S11; `AxiomTests.fs` A42; `EXECUTION_PLAN.md` Wave 2.
+
+---
+
+## 2026-05-30 — PROPOSED (pending operator sign-off): R6 amendment for the Transfer `--execute` write path
+
+> **STATUS: PROPOSAL — NOT YET ENACTED.** This entry drafts the missing formal
+> R6 authorization for `transfer --execute` so it is ready for operator review.
+> It is **not load-bearing until the operator confirms the UAT-preview framing**
+> (the OPEN-4 dependency). The defensive engineering half (the CDC pre-flight)
+> is built and verified now (Wave-3 slice 3.1); the authorization half waits on
+> sign-off. Until enacted, the status quo holds: `--execute` is gated only by
+> the `PROJECTION_ALLOW_EXECUTE=1` env var + exit-7 refusal, with no superseding
+> R6 authorization.
+
+**The gap.** R6 (`DECISIONS 2026-05-22 — R6: Split-brain governance`) says V2
+owns **no** production write path during dual-track. `transfer --execute` is a
+write path. Today it is permitted by an env-var gate alone — there is no
+DECISIONS entry that authorizes it *within* R6. That is an unscoped exception to
+a non-negotiable rule.
+
+**Proposed scope (for sign-off).** `transfer --execute` is authorized **only**
+for **UAT-preview** use, under all of:
+1. **Dry-run default.** `transfer` defaults to `DryRun` (no sink writes); `--execute` is opt-in. *(shipped)*
+2. **Env gate.** `--execute` requires `PROJECTION_ALLOW_EXECUTE=1` (exit-7 refusal otherwise). *(shipped)*
+3. **CDC precondition.** An `--execute` run pre-flights the sink for
+   `sys.tables.is_tracked_by_cdc` and **refuses** if any table is tracked,
+   unless `--allow-cdc` is passed — writing against a CDC-tracked sink during a
+   preview would generate unintended capture instances. *(shipped — Wave-3 slice 3.1;
+   `Transfer.cdcTrackedTables` + the `transfer.cdcTrackedSink` refusal;
+   `TransferCanaryTests` "3.1: CDC pre-flight …" verifies refusal + override vs real SQL Server.)*
+4. **Per-run operator sign-off.** Each `--execute` against a real UAT sink is a
+   recorded decision keyed to (env × artifact-type), reusing the `approve` verb +
+   `ApprovalStore` (Wave-3 slice 3.2) — NOT a standing grant. *(mechanism shipped;
+   the policy that --execute consult it is part of THIS proposal.)*
+5. **Production write path remains V1's.** This authorization covers UAT-preview
+   only; it does not move the production write path to V2. The four-environment
+   cutover and the N=10-green + sign-off flip gate are unchanged.
+
+**What sign-off unblocks.** With operator confirmation of the UAT-preview
+framing, this entry becomes the enacted R6 amendment, the `transfer --execute`
+exception is formally scoped, and slice 3.1's `AXIOMS.md` data-level-adjunction
+candidate can promote. Without it, `--execute` should be treated as
+test-and-dry-run-only regardless of the env gate.
+
+---
+
+## 2026-05-30 — `uat-users` is NOT a standalone verb: collapse into `full-export` + `transfer` as opt-in
+
+**Resolved (operator directive).** The planned standalone `osm uat-users` verb
+(EXECUTION_PLAN slice 3.3, matrix row 113) is **retired before being built**.
+The Dev→UAT user-FK reflow is not a verb — it is a *configurable, opt-in
+behavior* of the two verbs that already own its inputs:
+
+- **`transfer` — the live re-key (canonical path).** `transfer --reconcile
+  <UserTable>:<emailColumn>` reconciles Source users to the *live* Sink (UAT)
+  users by the match column, skips re-inserting matched users, and re-points
+  every FK through the matched remap. The Sink connection IS the target-user
+  inventory — so the originally-planned `InventoryCsvReader` (an external CSV
+  of target users) is **obviated and dropped**: you don't read a CSV of UAT
+  users when you can read the UAT database. Live-only.
+
+- **`full-export` — the config-driven reflow, OPT-IN.** `UserFkReflowPass` is
+  already in the pass chain, but it is now **opt-in (off by default)** via
+  `policy.transformGroups: [{ name: "UserReflow", enabled: true }]`. Without
+  that switch, `userFkReflowPass` is excluded from the chain entirely
+  (`TransformGroupsBinding.fromConfig` injects `UserReflow = false` when the
+  operator does not name it). `policy.userMatching` configures the *strategy*
+  (ByEmail / …) used **when** the reflow is opted in.
+
+**Why opt-in for UserReflow specifically** (vs `Tightening`, which stays
+opt-out / V1-parity): user migration is a deliberate, environment-specific act
+(Dev→UAT), not a default transform. Running it silently on every export is the
+wrong default; the operator must ask for it. This is the first per-group
+opt-in default in the `TransformGroups` mechanism (the rest default-on).
+
+**Why no standalone verb.** A verb for what is really a reconciliation *mode*
+duplicates the connection-handling, profiling, and emission already in
+`transfer` / `full-export`. The capability has no inputs the two verbs lack
+(transfer has a live sink; full-export has the profile + userMatching config).
+A standalone verb would be a parallel surface to maintain for zero new
+capability.
+
+### Cross-references
+
+- `src/Projection.Pipeline/TransformGroupsBinding.fs` (`fromConfig` opt-in flip);
+  `src/Projection.Core/RegisteredTransforms.fs` (`userFkReflowPass` in the chain);
+  `src/Projection.Pipeline/Pipeline.fs` (`filterChainByGroups`).
+- `tests/Projection.Tests/TransformGroupsBindingTests.fs` (opt-in semantics).
+- Supersedes `EXECUTION_PLAN.md` slice 3.3 (standalone verb + InventoryCsvReader +
+  UatUsersArgs — all retired); matrix row 113 reframed.
+
+---
+
+## 2026-05-30 — Wave 4.1 closed (`V2.SsKey` persistence) + solution-build-before-commit reinforced
+
+**Resolved.** EXECUTION_PLAN Wave 4.1 is shipped and verified end-to-end. `SsKey.serialize`/`deserialize` (`Identity.fs`) are total over all four variants (`OssysOriginal | Synthesized | DerivedFrom | V1Mapped`), encoded tag-prefixed with length-prefixed fields so nesting (`DerivedFrom` parent, `Synthesized` list) is unambiguous without delimiter-escaping; `deserialize` returns a structured `Result`. `SsdtDdlEmitter` persists `V2.SsKey` as a table-level extended property (sibling to `V2.LogicalName`). `ReadSide.buildKind` recovers identity from it (`deserialize`, falling back to `kindSsKey` synthesis on absent/malformed). The Docker-gated round-trip witnesses A1 across the process boundary: deploy an `OssysOriginal`-keyed catalog → read back → the recovered key IS the original GUID, not a `READSIDE_KIND` synthesis. This strengthens H-010 (the Catalog↔DDL Prism now carries *identity*, not just structure, across a deploy→read boundary) and is `DataIntent` per pillar 9.
+
+**Operating-discipline reinforcement — solution-build-before-commit.** Wave 4.1 part-2b (commit `aa7aa9a`) was pushed to the shared branch **red**: (1) `ReadSide.readSchemaCombined` returned a 7-tuple (the `V2.SsKey` batch added a 7th `Map`) while its return-type annotation stayed 6-wide; (2) the 4.1 acceptance test referenced three helpers that do not exist in the codebase (`CanaryTestGuard.runWhenEnabled`, `CanaryHarness.deployAndReadback`, `sampleSourceCatalog`). Both are mechanical, not logic, errors — and both slipped through because the authoring commit verified only the project it touched, not the whole solution. Repaired in `8dbcdfd` (widen the annotation; rewrite the test against the real `skipIfNoDocker` + `Deploy.runWithReadback` + inline-catalog surface used by the sibling A42 DropFk round-trip).
+
+**The rule (already implicit; now explicit):** before every commit, run `dotnet build Projection.sln` (the whole solution, not just the changed project) and `bash scripts/test.sh fast` before declaring a slice done. A per-project build is necessary but not sufficient — a tuple/signature change ripples across project boundaries the per-project build never sees. The compiler and the tiered test runner are the ground truth; a green per-project build is not a green branch.
+
+**Cross-references:** `src/Projection.Core/Identity.fs` (codec); `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs` (`V2.SsKey` emit); `src/Projection.Adapters.Sql/ReadSide.fs` (`buildKind` hydration + `readSchemaCombined` 7-tuple); `tests/Projection.Tests/SsKeyTests.fs` (8 round-trip tests); `tests/Projection.Tests/CanaryRoundTripTests.fs` (Docker-gated A1 witness); EXECUTION_PLAN.md §III 4.1 (marked DONE).

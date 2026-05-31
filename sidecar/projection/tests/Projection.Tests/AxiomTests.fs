@@ -441,6 +441,95 @@ let ``A41: registry totality + bidirectional property tests — verified by Regi
     ()
 
 [<Fact>]
+let ``A42 (Wave 2): emitted DDL is a faithful projection of the tightening decision sets — verified by DecisionEmissionTests + CanaryRoundTripTests`` () =
+    citationOf
+        "tests/Projection.Tests/DecisionEmissionTests.fs"
+        "A42 (2.3): every EnforceNotNull decision NOT-NULLs its column, and only those"
+    // Bucket A (cashed at Wave-2 slices 2.1–2.4, 2026-05-30). DecisionOverlay
+    // (2.1) projects the three tightening decision sets into emitter-consumable
+    // Set<SsKey> lookups (A18-safe — decisions, never Policy). The emitter
+    // consumes them additively (2.2 byte-identical seam; 2.3 NOT NULL + UNIQUE;
+    // 2.4 FK drop + NOCHECK): Nullable = source ∧ ¬enforce; IsUnique = source ∨
+    // enforce; DoNotEnforce suppresses the inline FK; ScriptWithNoCheck emits
+    // WITH NOCHECK. Verified at the emission layer (DecisionEmissionTests: pure
+    // CreateTable/CreateIndex inspection + FsCheck) AND the canary layer
+    // (CanaryRoundTripTests: EnforceNotNull survives deploy→ReadSide as NOT NULL;
+    // DoNotEnforce keeps the FK out of the deployed schema — vs real SQL Server).
+    // Observable identity: empty overlay = byte-identical to pre-Wave-2 emission.
+    // The FK silent-drop witness (slice-μ) is now closed by 2.5(b) — see the
+    // L3-X7 entry below.
+    ()
+
+[<Fact>]
+let ``L3-X7 (Wave-2 slice 2.5b): an unresolvable FK drop emits a Diagnostics witness (slice-μ retired) — verified by DecisionEmissionTests`` () =
+    citationOf
+        "tests/Projection.Tests/DecisionEmissionTests.fs"
+        "L3-X7: an FK whose target kind has no PK emits the targetMissingPrimaryKey witness (reachable via Catalog.create)"
+    // Bucket A (Wave-2 slice 2.5b, 2026-05-30). `SsdtDdlEmitter
+    // .foreignKeyDropDiagnostics` is a PURE SIBLING of the emitter port
+    // (statements/emitSlices stay Catalog-only + byte-identical; the witness
+    // rides the Diagnostics channel, A18 holds). It reports every `fkDef`-None
+    // drop with a distinguishing Code:
+    //   - `emit.ssdt.foreignKey.targetMissingPrimaryKeyDropped` — target
+    //     resolves but has no PK; REACHABLE through Catalog.create (the
+    //     genuinely-reachable silent drop the slice-μ deferral worried about).
+    //   - `emit.ssdt.foreignKey.unresolvedTargetDropped` — target absent from
+    //     the catalog; Catalog.create already REJECTS this
+    //     (`catalog.reference.danglingTarget`, a stronger guarantee), so the
+    //     witness is defense-in-depth for a smart-constructor bypass.
+    // Wired into the production manifest diagnostics (Pipeline.fs). This is the
+    // FK case of L3-Boundary-NoSilentDrop.
+    ()
+
+[<Fact>]
+let ``L3-C1 (Wave-3 slice 3.4): per-environment Tolerance config is fail-closed — verified by ToleranceTests`` () =
+    citationOf
+        "tests/Projection.Tests/ToleranceTests.fs"
+        "3.4: an unknown tolerance name fails closed"
+    // Bucket A for the fail-closed parse primitive (Wave-3 slice 3.4).
+    // `Tolerance.parse : string list -> Result<Tolerance, ToleranceError>`
+    // validates every non-blank token against `ToleratedDivergence.allKnown`;
+    // an unrecognized token short-circuits to `Error (UnknownDivergence _)` —
+    // it can never silently widen (or narrow) the canary's R6 equivalence
+    // semantics. Empty config = `strict` (safe default); `name`/`tryParse`
+    // round-trip on every variant (closed-DU exhaustiveness forces a token per
+    // future variant). NB: this is the operator DECISION surface (the tokens
+    // R6's flip gate reads). Wiring the parsed Tolerance INTO the canary diff
+    // (making the comparison tolerance-aware) is a separate slice — today the
+    // PhysicalSchema diff is exact (`isEqual`) and consumes no Tolerance, so a
+    // Config field would be a parsed-then-discarded value (dead-overlay /
+    // two-consumer discipline). The primitive ships; the consumer is gated.
+    ()
+
+[<Fact>]
+let ``A-DataAdjunction (candidate, Wave-3 slice 3.1): Ingestion ∘ Projection = id on the row-digest axis — verified by TransferCanaryTests`` () =
+    citationOf
+        "tests/Projection.Tests/TransferCanaryTests.fs"
+        "data canary: multi-table FK chain round-trips with empty PhysicalSchema diff"
+    // Bucket A for the data-level adjunction (the data sibling of H-050's
+    // schema adjunction). The Transfer ingests Source rows, builds the
+    // identity-aware two-phase plan, projects onto a blank Sink, then the data
+    // canary asserts Source ≈ Sink on `PhysicalSchema` INCLUDING per-row
+    // SHA-256 hashes (`PhysicalRow`) — i.e. `Ingestion(Projection(rows)) = rows`
+    // on the row-digest axis, modulo the named identity remap. Scaffolded as an
+    // AXIOMS candidate at Wave-3 slice 3.1; the CDC pre-flight (3.1) guards the
+    // Execute write path that this adjunction rides.
+    ()
+
+[<Fact>]
+let ``L3-C5 (Wave-3 slice 3.1): an Execute Transfer pre-flights the sink for CDC and refuses unless allowed — verified by TransferCanaryTests`` () =
+    citationOf
+        "tests/Projection.Tests/TransferCanaryTests.fs"
+        "3.1: CDC pre-flight refuses --execute against a CDC-tracked sink, allow-cdc overrides"
+    // Bucket A. `Transfer.cdcTrackedTables` queries `sys.tables.is_tracked_by_cdc`;
+    // `runCore` refuses an Execute run (`transfer.cdcTrackedSink`) against a
+    // CDC-tracked sink unless `allowCdc = true` (`--allow-cdc`). Fail-loud, never
+    // a silent proceed. Verified vs real SQL Server (refusal + override). This is
+    // the defensive half of the R6 `--execute` amendment (the authorization half
+    // is a PROPOSAL pending operator sign-off — see DECISIONS 2026-05-30).
+    ()
+
+[<Fact>]
 let ``L3-Emission-Logical (slice D.1.a): the physical-realization slot adopts the logical name under default emission — verified by LogicalNameEmissionTests`` () =
     citationOf
         "tests/Projection.Tests/LogicalNameEmissionTests.fs"
@@ -479,6 +568,110 @@ let ``L3-Emission-LogicalTriangle (slice D.1.c): canary roundtrip preserves logi
     //      (b) every target binding satisfies Table = LogicalName at
     //          the table level and Column = Some LogicalName at the
     //          column level — substitution worked.
+    ()
+
+[<Fact>]
+let ``L3-S2 (Wave-1 slice 1.1): DACPAC round-trips a Catalog's tables + columns + FK shape modulo named DacFx erasure (A37) — verified by DacpacRoundTripTests`` () =
+    citationOf
+        "tests/Projection.Tests/DacpacRoundTripTests.fs"
+        "L3-S2: single-Kind Catalog round-trips through DACPAC modulo named erasure"
+    // Bucket A (promoted 2026-05-30 from PHANTOM). The verifiability-triangle
+    // audit (~:1200) recorded L3-S2 as "Bucket A modulo A37" citing a
+    // `DacpacRoundTripTests` file that DID NOT EXIST and an
+    // `equalModuloDacpacErasure` predicate that was never defined — a
+    // claimed-verified axiom with no executable witness (the phantom defect
+    // the verifiability gate, slice E1, forbids). Wave-1 slice 1.1 ships the
+    // real witness: `DacpacEmitter.emit` → DacFx `.dacpac` bytes →
+    // `TSqlModel.LoadFromDacpac` → project the model back to a schema summary
+    // (tables; per-table column name + nullability; FK shape referrer→referenced)
+    // and assert equality with the summary derived from the source Catalog,
+    // MODULO the closed, code-named A37 erasure set: Origin.xml wall-clock (E1),
+    // constraint/index auto-names (E2 — FK SHAPE compared, not the constraint
+    // identifier), identifier quoting/case-fold (E3 — normalized parts). No
+    // Docker: DacFx operates on the in-memory model, so the witness runs in the
+    // pure pool. A full `DacpacReadSide.toCatalog` (rebuilding a complete V2
+    // Catalog) remains a larger, separately-consumer-gated slice; this witness
+    // covers exactly the axes L3-S2 asserts and that PhysicalSchema (the
+    // production canary surface) covers structurally.
+    ()
+
+[<Fact>]
+let ``L3-S6 (Wave-1 slice 1.2): DEFAULT values survive emit → deploy → ReadSide round-trip on the PhysicalSchema.Default axis — verified by CanaryRoundTripTests`` () =
+    citationOf
+        "tests/Projection.Tests/CanaryRoundTripTests.fs"
+        "Slice 1.2: integer DEFAULT round-trips through emit / deploy / ReadSide with empty PhysicalSchema diff"
+    // Bucket A (promoted 2026-05-30 from Bucket D, "gated on A.0' IR lift").
+    // The IR axis (`Attribute.DefaultValue`) and SSDT emission (`DEFAULT`
+    // clause) shipped earlier, but `ReadSide` returned `DefaultValue = None`
+    // for EVERY column and `PhysicalColumn` carried NO Default axis — so the
+    // canary was structurally BLIND to a dropped/changed DEFAULT (the
+    // hollow-canary class). Slice 1.2 closes the round-trip leg:
+    //   1. `ReadSide.readDefaultConstraints` reads `sys.default_constraints`
+    //      and `attachDefaults` reconstructs `Attribute.DefaultValue` via
+    //      `SqlLiteral.ofRaw attr.Type (normalizeDefault definition)`.
+    //   2. `PhysicalColumn.Default : string option` projects from both the
+    //      emitter-IR side (`PhysicalSchema.ofCatalog`) and the AST reader
+    //      (`PhysicalSchemaReader`), both through `normalizeDefault`.
+    //   3. `PhysicalSchema.diff` now includes Default by construction (the
+    //      column tuple is in a Set), so a DEFAULT divergence surfaces.
+    // The named A37-family tolerance: `normalizeDefault` erases SQL Server's
+    // redundant outer-paren canonicalization (`((0))` ↔ `0`) ONLY — the inner
+    // expression must still match exactly. Scope: integer DEFAULT verified
+    // end-to-end against real SQL Server; text/temporal/computed DEFAULT
+    // reconstruction is the in-feature follow-on (same template). The other
+    // five hollow-canary features (triggers / sequences / checks / computed /
+    // ext-props — L3-S4/S5/S7/S8/S9) follow on this proven pattern; slice 1.3
+    // (below) closes four of the five (triggers/sequences/checks/ext-props).
+    ()
+
+[<Fact>]
+let ``L3-S4/S5/S8/S9 (Wave-1 slice 1.3): triggers, sequences, CHECK constraints, and extended properties survive emit → deploy → ReadSide on the PhysicalSchema.Annotations axis — verified by CanaryRoundTripTests`` () =
+    citationOf
+        "tests/Projection.Tests/CanaryRoundTripTests.fs"
+        "Slice 1.3: triggers / checks / sequences / extended properties are RECOVERED through emit / deploy / ReadSide"
+    // Bucket A (promoted 2026-05-30 from Bucket D, "gated on A.0' IR lift").
+    // The IR axes (Kind.Triggers / Kind.ColumnChecks / Catalog.Sequences /
+    // *.ExtendedProperties) and SSDT emission shipped earlier, but ReadSide
+    // returned EMPTY for all four and PhysicalSchema had NO annotation axis —
+    // the canary was structurally BLIND to a dropped/changed instance of any.
+    // Slice 1.3 closes the round-trip leg for the four table/catalog-scoped
+    // features via the uniform `PhysicalSchema.Annotations` axis:
+    //   - ReadSide.readTriggers / readCheckConstraints / readSequences /
+    //     readExtendedProperties (sys.triggers / sys.check_constraints /
+    //     sys.sequences / sys.extended_properties) + attachAnnotations /
+    //     buildSequences populate the IR fields through the Core smart
+    //     constructors (Trigger.create / ColumnCheck.create / Sequence.create
+    //     / ExtendedProperty.create) — best-effort (a malformed deployed
+    //     object is skipped, not fatal).
+    //   - PhysicalSchema projects them into `PhysicalAnnotation` (Kind
+    //     discriminator: Trigger/Check/Sequence/ExtendedProperty); the diff
+    //     includes them by construction (Set membership).
+    // Named A37-family tolerances: trigger bodies compared on a normalized
+    // digest (whitespace-collapsed, lowercased) so SQL Server's re-formatting
+    // of the stored definition does not over-assert; CHECK / DEFAULT
+    // expressions paren-normalized; V2.LogicalName excluded from the ext-prop
+    // axis (covered by LogicalNameBindings). Scope: RECOVERY + per-kind
+    // presence verified end-to-end vs real SQL Server. NB: MS_Description ↔
+    // Description recovery is a deliberate in-feature follow-on (ReadSide
+    // recovers MS_Description as a generic annotation, not yet as Description).
+    ()
+
+[<Fact>]
+let ``L3-S7 (Wave-1 slice 1.3 real-SQL leg): computed columns round-trip — emit → deploy → ReadSide restores computed state + definition — verified by CanaryRoundTripTests`` () =
+    citationOf
+        "tests/Projection.Tests/CanaryRoundTripTests.fs"
+        "Slice 1.3 / L3-S7: PERSISTED computed column round-trips through emit / deploy / ReadSide with state + definition restored"
+    // Bucket A (promoted 2026-05-30 from Bucket C). The real-SQL leg closes
+    // the LAST hollow-canary feature: `ReadSide.readComputedColumns` (sys.
+    // computed_columns) + `attachComputed` reconstruct `Attribute.Computed`
+    // via the `ComputedColumnConfig.create` smart constructor; `PhysicalColumn
+    // .Computed` projects it (both producers via `PhysicalSchema.encodeComputed`,
+    // sharing the paren-normalization tolerance with DEFAULT). The L3-S7 axiom
+    // statement ("round-trip restores computed state and definition") is now
+    // verified end-to-end vs real SQL Server, not just the H-050 in-process
+    // AST reader. With this, all six former hollow-canary features
+    // (DEFAULT/triggers/sequences/checks/ext-props/computed = L3-S4/5/6/7/8/9)
+    // are Bucket A.
     ()
 
 [<Fact>]

@@ -94,7 +94,14 @@ module SsdtDdlEmitter =
     /// empty for SSDT DDL emission — per chapter pre-scope §10
     /// `Tolerance.IgnoreHeaderComments = true` initially, V2 omits
     /// V1's `/* Source: ... */` per-table header block.
-    let private columnDef (a: Attribute) : ColumnDef =
+    // Wave-2 slice 2.3 — apply the NOT NULL tightening decision at emission.
+    // **Additive-only** (`field && not enforce`, never `field = decision`):
+    // a column is emitted NOT NULL iff the source already made it NOT NULL
+    // OR a registered Nullability intervention decided `EnforceNotNull` for
+    // it. A non-enforce decision never loosens source truth. A18-amended
+    // holds — the overlay carries the decision (evidence), not Policy.
+    let private columnDef (overlay: DecisionOverlay) (a: Attribute) : ColumnDef =
+        let enforceNotNull = Set.contains a.SsKey overlay.EnforceNotNull
         {
             Name         = a.Column.ColumnName
             Type         = a.Type
@@ -106,7 +113,9 @@ module SsdtDdlEmitter =
             Length       = a.Length
             Precision    = a.Precision
             Scale        = a.Scale
-            Nullable     = a.Column.IsNullable
+            // Additive-only tightening: source NULL ∧ ¬enforce stays NULL;
+            // source NOT NULL stays NOT NULL regardless; enforce ⇒ NOT NULL.
+            Nullable     = a.Column.IsNullable && not enforceNotNull
             IsIdentity   = a.IsIdentity
             IsPrimaryKey = a.IsPrimaryKey
             // Slice 5.13.column-features-emit: DEFAULT clause carriage
@@ -192,8 +201,10 @@ module SsdtDdlEmitter =
     /// 4.4 RemediationEmitter — would justify a shared
     /// `CatalogResolution` module). Returns `None` when the FK target
     /// kind isn't in the catalog (cross-catalog FKs; chapter 3.2
-    /// territory) — the FK is silently dropped, with a future
-    /// Diagnostics scaffolding (slice μ deferral) naming the drop.
+    /// territory) — the inline FK is dropped. The drop is no longer
+    /// silent: `foreignKeyDropDiagnostics` (Wave-2 slice 2.5(b), retiring
+    /// the slice-μ deferral) produces a Warning witness per unresolved-
+    /// target drop.
     ///
     /// **Naming convention (chapter 4.1.A pre-scope §3 + V1
     /// `ForeignKeyNameFactory.cs:17-60`):**
@@ -260,13 +271,21 @@ module SsdtDdlEmitter =
     /// whose target kind isn't in the catalog drop silently
     /// (cross-catalog territory; chapter 3.2).
     let private createTableStatement
+        (overlay: DecisionOverlay)
         (targetByKey: Map<SsKey, Kind>)
         (pkAttrByKey: Map<SsKey, Attribute>)
         (k: Kind)
         : Statement =
-        let columns = k.Attributes |> List.map columnDef
+        let columns = k.Attributes |> List.map (columnDef overlay)
         let pk = pkDef k
-        let fks = k.References |> List.choose (fkDef targetByKey pkAttrByKey k)
+        // Wave-2 slice 2.4 — suppress the inline FK when the reference was
+        // decided `DoNotEnforce` (overlay.DropFk). Additive-only on the drop
+        // axis: a reference NOT in DropFk resolves exactly as before
+        // (byte-identical with the empty overlay).
+        let fks =
+            k.References
+            |> List.filter (fun r -> not (Set.contains r.SsKey overlay.DropFk))
+            |> List.choose (fkDef targetByKey pkAttrByKey k)
         // Slice 5.13.column-features-emit: thread Kind.ColumnChecks
         // (chapter A.0' slice ε IR; now populated via cluster A1's
         // rowset path lifting #ColumnCheckReality) through the
@@ -292,15 +311,25 @@ module SsdtDdlEmitter =
     /// here too — the corresponding CREATE TABLE inline FK is absent
     /// by the same predicate, so the ALTER would be referencing a
     /// non-existent constraint anyway.
+    // Wave-2 slice 2.4 — emit the NOCHECK alter for a reference decided
+    // `EnforceConstraint (ScriptWithNoCheck _)` (overlay.NoCheckFk), in
+    // addition to the source's own `IsConstraintTrusted = false` state.
+    // References decided `DoNotEnforce` (overlay.DropFk) are excluded — their
+    // inline FK was suppressed in `createTableStatement`, so there is no
+    // constraint to NOCHECK. The two FK overlay axes are mutually exclusive
+    // by construction (DoNotEnforce vs EnforceConstraint), so the DropFk
+    // exclusion only guards the defensive case.
     let private untrustedFkAlters
+        (overlay: DecisionOverlay)
         (targetByKey: Map<SsKey, Kind>)
         (pkAttrByKey: Map<SsKey, Attribute>)
         (k: Kind)
         : Statement list =
         k.References
+        |> List.filter (fun r -> not (Set.contains r.SsKey overlay.DropFk))
         |> List.choose (fun r ->
             match fkDef targetByKey pkAttrByKey k r with
-            | Some fk when not fk.IsConstraintTrusted ->
+            | Some fk when not fk.IsConstraintTrusted || Set.contains r.SsKey overlay.NoCheckFk ->
                 Some (Statement.AlterTableNoCheckConstraint (toTableId k, fk.Name))
             | _ -> None)
 
@@ -326,7 +355,12 @@ module SsdtDdlEmitter =
     /// skipped (PK is inlined in CREATE TABLE per V1 convention);
     /// remaining indexes are sorted by SsKey for deterministic
     /// emission ordering (A33).
-    let private indexStatements (k: Kind) : Statement list =
+    // Wave-2 slice 2.3 — apply the UNIQUE tightening decision at emission.
+    // Additive-only (`field || enforce`): an index is emitted UNIQUE iff the
+    // source already declared it unique OR a registered UniqueIndex
+    // intervention decided `EnforceUnique`. A non-enforce decision never
+    // un-uniques a source-unique index.
+    let private indexStatements (overlay: DecisionOverlay) (k: Kind) : Statement list =
         k.Indexes
         |> List.filter (fun idx -> not idx.IsPrimaryKey)
         |> List.sortBy (fun idx -> idx.SsKey)
@@ -368,7 +402,7 @@ module SsdtDdlEmitter =
                     Name     = Name.value idx.Name
                     Table    = toTableId k
                     Columns  = keyColumns
-                    IsUnique = idx.IsUnique
+                    IsUnique = idx.IsUnique || Set.contains idx.SsKey overlay.EnforceUnique
                     Filter   = idx.Filter
                     IncludedColumns = includedColumnNames
                     // Chapter 4.8 slice β — on-disk index options.
@@ -504,6 +538,15 @@ module SsdtDdlEmitter =
             yield Statement.SetExtendedProperty (
                 TableProperty table, "V2.LogicalName", Some (Name.value k.Name))
 
+            // Wave 4.1 — V2.SsKey extended property at the table level.
+            // Carries the round-trippable serialization of the kind's
+            // identity (A1: identity survives rename). ReadSide reads this
+            // on roundtrip and `SsKey.deserialize`s it, recovering the
+            // original key instead of synthesizing `READSIDE_KIND` from
+            // physical coordinates. Sibling to V2.LogicalName.
+            yield Statement.SetExtendedProperty (
+                TableProperty table, "V2.SsKey", Some (SsKey.serialize k.SsKey))
+
             for ep in k.ExtendedProperties do
                 yield Statement.SetExtendedProperty (
                     TableProperty table, ep.Name, ep.Value)
@@ -569,6 +612,7 @@ module SsdtDdlEmitter =
         }
 
     let private kindToSsdtFile
+        (overlay: DecisionOverlay)
         (targetByKey: Map<SsKey, Kind>)
         (pkAttrByKey: Map<SsKey, Attribute>)
         (m: Module)
@@ -578,7 +622,7 @@ module SsdtDdlEmitter =
         let statements =
             seq {
                 yield! moduleSchemaPropertyStatements m k
-                yield createTableStatement targetByKey pkAttrByKey k
+                yield createTableStatement overlay targetByKey pkAttrByKey k
                 // Slice 5.13.fk-features-emit (matrix row 59):
                 // post-CREATE-TABLE ALTER statements preserve the
                 // deployed target's NOCHECK FK trust state. Emitted
@@ -589,8 +633,8 @@ module SsdtDdlEmitter =
                 // `IsConstraintTrusted = false`; this seam is
                 // structurally positioned for the rowset-path JOIN
                 // slice that wires `#FkReality.IsNoCheck`.
-                yield! untrustedFkAlters targetByKey pkAttrByKey k
-                yield! indexStatements k
+                yield! untrustedFkAlters overlay targetByKey pkAttrByKey k
+                yield! indexStatements overlay k
                 // Slice 5.13.index-features-emit (matrix row 55):
                 // post-CREATE-INDEX ALTER INDEX DISABLE statements
                 // preserve the deployed target's index disable state.
@@ -666,7 +710,14 @@ module SsdtDdlEmitter =
     /// not raw INSERTs). Schema-only emission is what V2's production
     /// canary surface needs; data goes through the chapter-4.1.B
     /// triumvirate.
-    let statements (catalog: Catalog) : seq<Statement> =
+    /// Wave-2 slice 2.2 — overlay-bearing form of `statements`. The
+    /// `DecisionOverlay` (the emitter-consumable projection of the tightening
+    /// decisions) is a curried prefix argument; A18-amended holds because the
+    /// overlay carries decisions (evidence-derived facts), never `Policy`.
+    /// `statements` is the principled `empty`-default wrapper (sibling-wrapper
+    /// discipline — `empty` is a default the caller couldn't otherwise
+    /// access). With `empty`, output is byte-identical to pre-overlay emission.
+    let statementsWith (overlay: DecisionOverlay) (catalog: Catalog) : seq<Statement> =
         use _ = Bench.scope "emit.ssdt.statements"
         let _, targetByKey, pkAttrByKey = buildLookups catalog
         // Topological order via `TopologicalOrderPass.runWith
@@ -703,13 +754,13 @@ module SsdtDdlEmitter =
             // DEFAULT constraints in CREATE TABLE statements.
             yield! yieldAllWithSeparator (sequenceStatements catalog)
             for k in orderedKinds do
-                yield! yieldWithSeparator (createTableStatement targetByKey pkAttrByKey k)
+                yield! yieldWithSeparator (createTableStatement overlay targetByKey pkAttrByKey k)
                 // Slice 5.13.fk-features-emit — mirrors the per-kind
                 // emission order in `kindToSsdtFile`: post-CREATE-TABLE
                 // ALTER for untrusted FKs, then indexes, then post-
                 // CREATE-INDEX ALTER for disabled indexes.
-                yield! yieldAllWithSeparator (untrustedFkAlters targetByKey pkAttrByKey k)
-                yield! yieldAllWithSeparator (indexStatements k)
+                yield! yieldAllWithSeparator (untrustedFkAlters overlay targetByKey pkAttrByKey k)
+                yield! yieldAllWithSeparator (indexStatements overlay k)
                 // Slice 5.13.index-features-emit (matrix row 55).
                 yield! yieldAllWithSeparator (disabledIndexAlters k)
                 // Slice D.1.c — match `kindToSsdtFile`'s per-kind
@@ -725,7 +776,15 @@ module SsdtDdlEmitter =
                 yield! yieldAllWithSeparator (triggerStatements k)
         }
 
-    let emitSlices : Emitter<SsdtFile> = fun catalog ->
+    /// Catalog-wide typed statement stream (the `empty`-overlay default).
+    /// Byte-identical to pre-Wave-2 emission. See `statementsWith`.
+    let statements (catalog: Catalog) : seq<Statement> =
+        statementsWith DecisionOverlay.empty catalog
+
+    /// Wave-2 slice 2.2 — overlay-bearing form of `emitSlices`. `emitSlices`
+    /// is the principled `empty`-default wrapper. With `empty`, every per-kind
+    /// `SsdtFile` body is byte-identical to pre-overlay emission.
+    let emitSlicesWith (overlay: DecisionOverlay) : Emitter<SsdtFile> = fun catalog ->
         use _ = Bench.scope "emit.ssdt.emitSlices"
         let modules = moduleByKindKey catalog
         let allKinds, targetByKey, pkAttrByKey = buildLookups catalog
@@ -738,7 +797,7 @@ module SsdtDdlEmitter =
             |> Bench.iterMap "emit.ssdt.emitSlices.kind" (fun k ->
                 match Map.tryFind k.SsKey modules with
                 | Some m ->
-                    k.SsKey, kindToSsdtFile targetByKey pkAttrByKey m k
+                    k.SsKey, kindToSsdtFile overlay targetByKey pkAttrByKey m k
                 | None ->
                     // Unreachable: `Catalog.allKinds` walks
                     // `c.Modules |> List.collect (fun m -> m.Kinds)`;
@@ -748,6 +807,67 @@ module SsdtDdlEmitter =
                     invalidOp (sprintf "SsdtDdlEmitter.emitSlices: kind %A has no owning module (unreachable; Catalog.allKinds invariant)" k.SsKey))
             |> Map.ofList
         ArtifactByKind.create catalog slices
+
+    /// Π port realization (the `empty`-overlay default). Byte-identical to
+    /// pre-Wave-2 emission. See `emitSlicesWith`.
+    let emitSlices : Emitter<SsdtFile> = emitSlicesWith DecisionOverlay.empty
+
+    /// Wave-2 slice 2.5(b) — the FK silent-drop WITNESS (retires the slice-μ
+    /// deferral). `fkDef` returns `None` (the inline FK is dropped) for two
+    /// reachable reasons; both were SILENT. This sibling produces one
+    /// `Warning` `DiagnosticEntry` per drop so the loss is observable.
+    ///
+    ///   - **unresolved target** (`emit.ssdt.foreignKey.unresolvedTargetDropped`):
+    ///     the reference's target kind is absent from the catalog. NB:
+    ///     `Catalog.create` already *rejects* this at construction
+    ///     (`catalog.reference.danglingTarget`) — a stronger guarantee than a
+    ///     witness — so this fires only for a catalog that reached the emitter
+    ///     bypassing the aggregate-root smart constructor (defense in depth).
+    ///   - **target missing PK** (`emit.ssdt.foreignKey.targetMissingPrimaryKeyDropped`):
+    ///     the target kind resolves but declares no primary key, so there is
+    ///     no column to reference. This IS reachable through `Catalog.create`
+    ///     (a PK-less kind is valid) — the genuinely-reachable silent drop.
+    ///
+    /// **Pure sibling output (A18 holds).** The `statements` / `emitSlices`
+    /// Emitter port stays `Catalog`-only and byte-identical — the witness
+    /// rides a separate `Diagnostics` channel, never a `Policy` parameter.
+    let foreignKeyDropDiagnostics (catalog: Catalog) : DiagnosticEntry list =
+        let allKinds, targetByKey, pkAttrByKey = buildLookups catalog
+        // Pillar 1 (data-structure-oriented): the structural detail rides the
+        // typed `Metadata` map; the `Message` is a constant per reason. No
+        // string composition at the diagnostic boundary.
+        let witness (k: Kind) (r: Reference) (code: string) (message: string) : DiagnosticEntry =
+            { DiagnosticEntry.create
+                "emitter:ssdtDdlEmitter" DiagnosticSeverity.Warning code message
+              with
+                SsKey = Some r.SsKey
+                Metadata =
+                    Map.ofList
+                        [ "sourceSchema", k.Physical.Schema
+                          "sourceTable", k.Physical.Table
+                          "reference", Name.value r.Name ] }
+        allKinds
+        |> List.collect (fun k ->
+            k.References
+            |> List.choose (fun r ->
+                match fkDef targetByKey pkAttrByKey k r with
+                | Some _ -> None
+                | None ->
+                    match Map.tryFind r.TargetKind targetByKey with
+                    | None ->
+                        Some (witness k r
+                                "emit.ssdt.foreignKey.unresolvedTargetDropped"
+                                "Foreign key dropped: its target kind is not present in the catalog (cross-catalog or dangling target). No inline FK constraint emitted.")
+                    | Some _ ->
+                        // Target resolves; the drop is a missing PK (no column
+                        // to reference) — unless the source attribute itself is
+                        // missing, which `Catalog.create` forbids (unreachable).
+                        match Map.tryFind r.TargetKind pkAttrByKey with
+                        | None ->
+                            Some (witness k r
+                                    "emit.ssdt.foreignKey.targetMissingPrimaryKeyDropped"
+                                    "Foreign key dropped: its target kind declares no primary key to reference. No inline FK constraint emitted.")
+                        | Some _ -> None))
 
     /// Slice 5.13.emit-features-registry (2026-05-18) — the SSDT
     /// emitter's `RegisteredTransform` surface. Metadata-only per the

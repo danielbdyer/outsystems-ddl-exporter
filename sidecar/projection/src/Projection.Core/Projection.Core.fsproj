@@ -59,6 +59,7 @@
     <Compile Include="SchemaComplexityMetrics.fs" />
     <Compile Include="QueryHints.fs" />
     <Compile Include="ComposeState.fs" />
+    <Compile Include="DecisionOverlay.fs" />
     <Compile Include="Classification.fs" />
     <Compile Include="PolicyExpr.fs" />
     <Compile Include="VersionedPolicy.fs" />

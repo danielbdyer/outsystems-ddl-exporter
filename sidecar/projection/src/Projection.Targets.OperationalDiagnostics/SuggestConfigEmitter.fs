@@ -103,8 +103,32 @@ module SuggestConfigEmitter =
     ///
     /// The output is suitable for operator review and cherry-pick
     /// merging into the V2 config file.
-    let emit (diagnostics: DiagnosticEntry list) : JsonNode =
-        let suggestions = collect diagnostics
+    ///
+    /// **Wave-3 slice 3.2 — approval gating.** `emitWith` consults the R6
+    /// `ApprovalRegistry`: when the policy under review (`policyDigest`) has
+    /// been **rejected** (`ApprovalRegistry.isSuppressed`), the suggestions
+    /// are suppressed (empty `suggestedEdits`) — V2 does not keep nudging the
+    /// operator toward config edits derived from a policy version they already
+    /// turned down. `emit` is the `empty`-registry wrapper (sibling-wrapper
+    /// idiom — `ApprovalRegistry.empty` never suppresses, so `emit` is
+    /// byte-identical to the pre-gating output).
+    ///
+    /// **Design note (the investigation finding).** The gating is
+    /// **policy-level**, not per-suggestion. A `SuggestedConfig` carries only
+    /// `Path` / `Value` / `Note` — no policy-version identity — so it cannot be
+    /// matched against `isSuppressed (policyDigest)` individually; the only
+    /// coherent suppression keyed to the registry is "the source policy was
+    /// rejected ⇒ suppress its suggestions." Per-suggestion suppression would
+    /// require tagging each suggestion with the digest of the policy it would
+    /// produce, which the diagnostic producers do not model.
+    let emitWith
+        (approvals: ApprovalRegistry)
+        (policyDigest: string)
+        (diagnostics: DiagnosticEntry list)
+        : JsonNode =
+        let suggestions =
+            if ApprovalRegistry.isSuppressed policyDigest approvals then []
+            else collect diagnostics
         use stream = new MemoryStream()
         do
             use writer = new Utf8JsonWriter(stream, JsonOptions.compact ())
@@ -120,3 +144,8 @@ module SuggestConfigEmitter =
         match JsonNode.Parse(System.ReadOnlySpan<byte>(bytes)) with
         | null -> invalidOp "SuggestConfigEmitter.emit: produced unparseable JSON (unreachable)"
         | n    -> n
+
+    /// The `empty`-registry default: no approval gating (byte-identical to the
+    /// pre-Wave-3 output). See `emitWith`.
+    let emit (diagnostics: DiagnosticEntry list) : JsonNode =
+        emitWith ApprovalRegistry.empty "" diagnostics

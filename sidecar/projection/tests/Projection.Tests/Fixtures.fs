@@ -165,3 +165,103 @@ let salesModule : Module =
 
 let sampleCatalog : Catalog =
     mkCatalog [ salesModule ]
+
+// ---------------------------------------------------------------------------
+// Wave-1 round-trip fixtures (slice 1.2 / 1.3). Reusable feature-bearing
+// catalogs for the un-hollowed canary axes — DEFAULT constraints and the
+// table/catalog-scoped annotations (triggers / CHECK constraints /
+// sequences / extended properties). Lifted out of CanaryRoundTripTests
+// (per the "don't maintain synthetic catalogs inside business-logic-
+// adjacent test files" review) so every feature-vertical reuses ONE
+// definition rather than re-spelling 15-field record literals (which drift
+// when the IR grows — the exact pain that motivated IRBuilders).
+//
+// Built through the production smart constructors (Attribute.create /
+// Trigger.create / ColumnCheck.create / Sequence.create / ExtendedProperty
+// .create) so the fixtures carry the same invariants as the forward path.
+// ---------------------------------------------------------------------------
+
+/// A Catalog whose `Account` kind carries integer DEFAULT constraints
+/// (slice 1.2's round-trip bed). `Balance DEFAULT 0`, `Status DEFAULT 1`.
+let defaultBearingCatalog : Catalog =
+    let mkAttr (column: string) (isPk: bool) (def: SqlLiteral option) : Attribute =
+        { mkFixtureAttribute (attrKey ["DefAccount"; column]) column Integer isPk with
+            Column = { ColumnName = column.ToUpperInvariant(); IsNullable = false }
+            DefaultValue = def }
+    let kind : Kind =
+        { customer with
+            SsKey = kindKey ["DefAccount"]
+            Name = name "Account"
+            Physical = { Schema = "dbo"; Table = "OSUSR_DEF_ACCOUNT"; Catalog = None }
+            Attributes =
+                [ mkAttr "Id" true None
+                  mkAttr "Balance" false (Some (SqlLiteral.IntegerLit "0"))
+                  mkAttr "Status" false (Some (SqlLiteral.IntegerLit "1")) ]
+            References = []
+            Indexes = []
+            Modality = [] }
+    mkCatalog [ mkModule (modKey "DefMod") (name "DefMod") [ kind ] ]
+
+/// A Catalog whose `Widget` kind carries one of each table/catalog-scoped
+/// annotation (slice 1.3's round-trip bed): a trigger, a CHECK constraint,
+/// a column extended property, plus a catalog-level sequence. `Description`
+/// is deliberately left `None` — `MS_Description` ↔ `Description` recovery
+/// is a separate in-feature follow-on (ReadSide recovers MS_Description as a
+/// generic annotation, not yet as `Description`).
+let annotationBearingCatalog : Catalog =
+    let mustOkLocal r = match r with | Ok v -> v | Error _ -> failwith "annotationBearingCatalog fixture"
+    let mkAttr (column: string) (isPk: bool) (eps: ExtendedProperty list) : Attribute =
+        { mkFixtureAttribute (attrKey ["AnnWidget"; column]) column Integer isPk with
+            Column = { ColumnName = column.ToUpperInvariant(); IsNullable = false }
+            ExtendedProperties = eps }
+    let custEp = ExtendedProperty.create "Widget.Classification" (Some "operational") |> mustOkLocal
+    let chk =
+        ColumnCheck.create (testKey "OS_CHK_AnnWidget_Qty") (Some (name "CK_Widget_Qty")) "([QTY]>=(0))" false
+        |> mustOkLocal
+    let trg =
+        Trigger.create (testKey "OS_TRG_AnnWidget") (name "TR_Widget_Audit") false
+            "CREATE TRIGGER [dbo].[TR_Widget_Audit] ON [dbo].[OSUSR_ANN_WIDGET] AFTER INSERT AS BEGIN SET NOCOUNT ON; END"
+        |> mustOkLocal
+    let kind : Kind =
+        { customer with
+            SsKey = kindKey ["AnnWidget"]
+            Name = name "Widget"
+            Physical = { Schema = "dbo"; Table = "OSUSR_ANN_WIDGET"; Catalog = None }
+            Attributes = [ mkAttr "Id" true []; mkAttr "Qty" false [ custEp ] ]
+            References = []
+            Indexes = []
+            Modality = []
+            Triggers = [ trg ]
+            ColumnChecks = [ chk ] }
+    let seq_ =
+        Sequence.create (testKey "OS_SEQ_AnnTicket") (name "SEQ_Ticket") "dbo" "bigint"
+            (Some 1000M) (Some 1M) (Some 1000M) (Some 9999999M) false NoCache None
+        |> mustOkLocal
+    { mkCatalog [ mkModule (modKey "AnnMod") (name "AnnMod") [ kind ] ] with Sequences = [ seq_ ] }
+
+/// A Catalog whose `Gadget` kind carries a PERSISTED computed column
+/// (slice 1.3 / L3-S7's round-trip bed). `TotalCents AS ([QTY]*(100))
+/// PERSISTED`. The source expression is given WITHOUT SQL Server's outer
+/// paren-wrap so both halves normalize equal under
+/// `PhysicalSchema.encodeComputed` (`((expr))` ↔ `expr`). `Qty` is the
+/// non-computed base column the expression references.
+let computedBearingCatalog : Catalog =
+    let mustOkC r = match r with | Ok v -> v | Error _ -> failwith "computedBearingCatalog fixture"
+    let mkAttr (column: string) (isPk: bool) (computed: ComputedColumnConfig option) : Attribute =
+        { mkFixtureAttribute (attrKey ["Gadget"; column]) column Integer isPk with
+            Column = { ColumnName = column.ToUpperInvariant(); IsNullable = not isPk }
+            Computed = computed }
+    let totalCents = ComputedColumnConfig.create "[QTY]*(100)" true |> mustOkC
+    let kind : Kind =
+        { customer with
+            SsKey = kindKey ["Gadget"]
+            Name = name "Gadget"
+            Physical = { Schema = "dbo"; Table = "OSUSR_CMP_GADGET"; Catalog = None }
+            Attributes =
+                [ mkAttr "Id" true None
+                  mkAttr "Qty" false None
+                  mkAttr "TotalCents" false (Some totalCents) ]
+            References = []
+            Indexes = []
+            Modality = [] }
+    mkCatalog [ mkModule (modKey "CmpMod") (name "CmpMod") [ kind ] ]

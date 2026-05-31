@@ -1382,47 +1382,47 @@ module Catalog =
         let kindKeySet =
             allKindList |> List.map (fun k -> k.SsKey) |> Set.ofList
 
-        let referenceErrors =
-            allKindList
-            |> List.collect (fun k ->
+        // Wave-0 slice 0.4 (2026-05-30): single walk over `allKindList`
+        // computing each kind's `attrKeys` exactly once and accumulating
+        // the reference- and index-dangling errors into separate buffers.
+        // Behaviour is identical to the prior two `List.collect` passes
+        // (the final order stays `referenceErrors @ indexErrors`); the
+        // change halves the kind-walk count and removes the duplicate
+        // per-kind `attrKeys` Set construction on the `Catalog.create`
+        // hot path (bench label `ir.catalog.create`). Verified
+        // order-preserving by the existing pure `CatalogTests`
+        // dangling-key suite.
+        let referenceErrors, indexErrors =
+            let refAcc = ResizeArray<ValidationError>()
+            let idxAcc = ResizeArray<ValidationError>()
+            for k in allKindList do
                 let attrKeys =
                     k.Attributes |> List.map (fun a -> a.SsKey) |> Set.ofList
-                k.References
-                |> List.collect (fun r ->
-                    let danglingSource =
-                        if Set.contains r.SourceAttribute attrKeys then []
-                        else
-                            [ ValidationError.create
+                for r in k.References do
+                    if not (Set.contains r.SourceAttribute attrKeys) then
+                        refAcc.Add(
+                            ValidationError.create
                                 "catalog.reference.danglingSource"
                                 (sprintf
                                     "Reference %A on Kind %A has SourceAttribute %A absent from the kind's Attributes."
-                                    r.SsKey k.SsKey r.SourceAttribute) ]
-                    let danglingTarget =
-                        if Set.contains r.TargetKind kindKeySet then []
-                        else
-                            [ ValidationError.create
+                                    r.SsKey k.SsKey r.SourceAttribute))
+                    if not (Set.contains r.TargetKind kindKeySet) then
+                        refAcc.Add(
+                            ValidationError.create
                                 "catalog.reference.danglingTarget"
                                 (sprintf
                                     "Reference %A on Kind %A has TargetKind %A absent from the catalog."
-                                    r.SsKey k.SsKey r.TargetKind) ]
-                    danglingSource @ danglingTarget))
-
-        let indexErrors =
-            allKindList
-            |> List.collect (fun k ->
-                let attrKeys =
-                    k.Attributes |> List.map (fun a -> a.SsKey) |> Set.ofList
-                k.Indexes
-                |> List.collect (fun idx ->
-                    idx.Columns
-                    |> List.choose (fun col ->
-                        if Set.contains col.Attribute attrKeys then None
-                        else
-                            Some (ValidationError.create
-                                "catalog.index.danglingColumn"
-                                (sprintf
-                                    "Index %A on Kind %A references column SsKey %A absent from the kind's Attributes."
-                                    idx.SsKey k.SsKey col.Attribute)))))
+                                    r.SsKey k.SsKey r.TargetKind))
+                for idx in k.Indexes do
+                    for col in idx.Columns do
+                        if not (Set.contains col.Attribute attrKeys) then
+                            idxAcc.Add(
+                                ValidationError.create
+                                    "catalog.index.danglingColumn"
+                                    (sprintf
+                                        "Index %A on Kind %A references column SsKey %A absent from the kind's Attributes."
+                                        idx.SsKey k.SsKey col.Attribute))
+            List.ofSeq refAcc, List.ofSeq idxAcc
 
         // Sequence SsKey disjointness (chapter A.0' slice δ). Sequences
         // are top-level Catalog objects; their SsKeys must be unique

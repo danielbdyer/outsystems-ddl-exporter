@@ -133,3 +133,66 @@ let ``A.4.7' slice γ: trail length scales linearly with repeated adapter inclus
             (ComposeState.initial emptyCatalog)
     Assert.Equal(3, List.length result.Trail)
     Assert.Equal<LineageEvent list>([ fixtureEvent; fixtureEvent; fixtureEvent ], result.Trail)
+
+// ---------------------------------------------------------------------------
+// Wave-1 slice 1.4 — writeBack-correctness drift-guard.
+//
+// The hazard: a future `liftDecisionPass X.registered ComposeState.withY`
+// registration compiles even when the `writeBack` setter targets the WRONG
+// field — the type system cannot tell `withNullabilityDecisions` from
+// `withUniqueIndexDecisions` (both are `'set -> ComposeState -> ComposeState`
+// shaped after their decision-set argument). Such a mismatch would silently
+// route a pass's output into a sibling field; the canary would not catch it
+// because both fields are `Option`-shaped evidence.
+//
+// The structural witness below pins the contract that each `with*` decision
+// setter mutates EXACTLY its own field and leaves every other decision field
+// untouched. If a setter is ever re-pointed (the drift), the corresponding
+// assertion flips: the "own field" check fails (it no longer sets its field)
+// or a "no cross-write" check fails (it now also/instead sets another).
+//
+// Tactic: the five decision-set fields are all `_ option` and all `None` in
+// `initial`. We snapshot which fields are `Some` after applying ONE setter to
+// a sentinel value; the snapshot must contain exactly the setter's own field.
+// The decision sets carry smart-constructor invariants, so we use each
+// module's `emptyDecisionSet` (a valid empty value) as the sentinel.
+// ---------------------------------------------------------------------------
+
+/// The five decision-set fields of ComposeState, as `Some`/`None` flags, in a
+/// fixed order. The drift-guard asserts on this projection so a re-pointed
+/// setter surfaces as a changed flag vector.
+let private decisionFlags (s: ComposeState) : bool list =
+    [ s.NullabilityDecisions.IsSome
+      s.UniqueIndexDecisions.IsSome
+      s.ForeignKeyDecisions.IsSome
+      s.CategoricalUniquenessDecisions.IsSome
+      s.UserRemap.IsSome ]
+
+[<Fact>]
+let ``1.4 writeBack-guard: each decision setter populates exactly its own ComposeState field`` () =
+    let init = ComposeState.initial emptyCatalog
+    // Sanity: initial has no decision field set.
+    Assert.Equal<bool list>([ false; false; false; false; false ], decisionFlags init)
+
+    // (setter, expected-flag-vector) — exactly one `true`, in field order.
+    let cases : (ComposeState -> ComposeState) list * bool list list =
+        [ ComposeState.withNullabilityDecisions NullabilityRules.emptyDecisionSet
+          ComposeState.withUniqueIndexDecisions UniqueIndexRules.emptyDecisionSet
+          ComposeState.withForeignKeyDecisions ForeignKeyRules.emptyDecisionSet
+          ComposeState.withCategoricalUniquenessDecisions CategoricalUniquenessRules.emptyDecisionSet
+          ComposeState.withUserRemap UserRemapContext.empty ],
+        [ [ true;  false; false; false; false ]
+          [ false; true;  false; false; false ]
+          [ false; false; true;  false; false ]
+          [ false; false; false; true;  false ]
+          [ false; false; false; false; true  ] ]
+
+    let setters, expected = cases
+    List.zip setters expected
+    |> List.iteri (fun i (setter, exp) ->
+        let after = decisionFlags (setter init)
+        let msg =
+            sprintf
+                "decision setter #%d wrote fields %A but the contract is exactly %A — a writeBack drift (setter re-pointed to the wrong ComposeState field)."
+                i after exp
+        Assert.True((after = exp), msg))

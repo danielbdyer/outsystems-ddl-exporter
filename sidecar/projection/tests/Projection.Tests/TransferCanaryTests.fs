@@ -104,7 +104,7 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let! contractR = ReadSide.read src
                                 let contract = TransferCanaryFixtures.value contractR
 
-                                let! reportR = Transfer.run Transfer.Execute src sink contract
+                                let! reportR = Transfer.run Transfer.Execute true src sink contract
                                 let report = TransferCanaryFixtures.value reportR
                                 Assert.True(report.Kinds |> List.forall (fun k -> k.RowsWritten = k.RowsIngested))
 
@@ -126,6 +126,55 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
     [<Fact>]
     member this.``data canary: deferred self-referential FK is re-pointed in phase 2`` () =
         this.RoundTrips "XferSelf" TransferCanaryFixtures.selfRefDdl TransferCanaryFixtures.selfRefSeed
+
+    // Wave-3 slice 3.1 — the CDC pre-flight. An Execute transfer against a
+    // Sink with CDC-tracked tables is refused unless --allow-cdc. Gracefully
+    // skips if the container cannot enable CDC (the metadata flag is what the
+    // pre-flight reads; capture jobs need Agent but the flag is set regardless).
+    [<Fact>]
+    member _.``3.1: CDC pre-flight refuses --execute against a CDC-tracked sink, allow-cdc overrides`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferCdc") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferCdcSrc" (fun src _ ->
+                task {
+                    let ddl = "CREATE TABLE dbo.Widget (Id INT NOT NULL PRIMARY KEY, Name NVARCHAR(50) NULL);"
+                    do! Deploy.executeBatch src ddl
+                    do! Deploy.executeBatch src "INSERT INTO dbo.Widget (Id, Name) VALUES (1, N'a');"
+                    return!
+                        fixture.WithEphemeralDatabase "XferCdcSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink ddl
+                                let! enabled =
+                                    task {
+                                        try
+                                            do! Deploy.executeBatch sink "EXEC sys.sp_cdc_enable_db;"
+                                            do! Deploy.executeBatch sink "EXEC sys.sp_cdc_enable_table @source_schema = N'dbo', @source_name = N'Widget', @role_name = NULL, @supports_net_changes = 0;"
+                                            use cmd = sink.CreateCommand()
+                                            cmd.CommandText <- "SELECT COUNT(*) FROM sys.tables WHERE is_tracked_by_cdc = 1 AND name = N'Widget'"
+                                            let! c = cmd.ExecuteScalarAsync()
+                                            return System.Convert.ToInt32 c > 0
+                                        with _ -> return false
+                                    }
+                                if not enabled then
+                                    printfn "SKIP 3.1 CDC pre-flight: container did not enable CDC (flag not set)"
+                                else
+                                    let! contractR = ReadSide.read src
+                                    let contract = TransferCanaryFixtures.value contractR
+                                    // allowCdc = false → the pre-flight refuses.
+                                    let! refusedR = Transfer.run Transfer.Execute false src sink contract
+                                    match refusedR with
+                                    | Error es ->
+                                        Assert.True(
+                                            es |> List.exists (fun e -> e.Code = "transfer.cdcTrackedSink"),
+                                            sprintf "expected transfer.cdcTrackedSink, got %A" (es |> List.map (fun e -> e.Code)))
+                                    | Ok _ -> Assert.Fail("expected CDC pre-flight refusal against a CDC-tracked sink")
+                                    // allowCdc = true → the override proceeds and writes.
+                                    let! okR = Transfer.run Transfer.Execute true src sink contract
+                                    match okR with
+                                    | Ok _ -> ()
+                                    | Error es -> Assert.Fail(sprintf "--allow-cdc override should proceed; got %A" (es |> List.map (fun e -> e.Code)))
+                            })
+                }))
 
     [<Fact>]
     member _.``data canary: reconciling Transfer re-keys FKs to pre-existing Sink identities (Dev->UAT User re-key)`` () =
@@ -154,7 +203,7 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let reconciliation =
                                     Map.ofList [ userKind.SsKey, ReconciliationStrategy.MatchByColumn emailName ]
 
-                                let! reportR = Transfer.runReconciling Transfer.Execute src sink contract reconciliation
+                                let! reportR = Transfer.runReconciling Transfer.Execute true src sink contract reconciliation
                                 let report = TransferCanaryFixtures.value reportR
 
                                 // The reconciled kind skips its insert (its rows are already in the Sink).
@@ -196,7 +245,7 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let! contractR = ReadSide.read src
                                 let contract = TransferCanaryFixtures.value contractR
 
-                                let! reportR = Transfer.run Transfer.DryRun src sink contract
+                                let! reportR = Transfer.run Transfer.DryRun true src sink contract
                                 let report = TransferCanaryFixtures.value reportR
                                 Assert.Equal(Transfer.DryRun, report.Mode)
                                 // Rows were ingested + planned, but none written.

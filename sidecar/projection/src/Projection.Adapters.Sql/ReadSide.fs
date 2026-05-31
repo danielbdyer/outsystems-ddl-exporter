@@ -235,19 +235,209 @@ module ReadSide =
             return Set.ofSeq result
         }
 
+    /// Wave-1 slice 1.2 — read each column's DEFAULT-constraint definition
+    /// from `sys.default_constraints`, keyed by `(schema, table, column)`.
+    /// The `definition` column is SQL Server's canonical parenthesized form
+    /// (e.g. `((0))`, `('foo')`, `(getdate())`); `DefaultExpr.normalize`
+    /// (in PhysicalSchema) strips the redundant outer-paren wrapping SQL
+    /// Server adds so the read-back value compares equal to the emitter's
+    /// `SqlLiteral.toString` form. Single round-trip; small result set;
+    /// mirrors `readIdentityColumns`.
+    let private readDefaultConstraints (cnn: SqlConnection)
+        : Task<Map<string * string * string, string>> =
+        task {
+            use _ = Bench.scope "readside.readDefaultConstraints"
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT SCHEMA_NAME(t.schema_id), t.name, c.name, dc.definition \
+                 FROM sys.default_constraints dc \
+                 JOIN sys.columns c \
+                   ON c.object_id = dc.parent_object_id \
+                  AND c.column_id = dc.parent_column_id \
+                 JOIN sys.tables t ON t.object_id = dc.parent_object_id \
+                 WHERE t.is_ms_shipped = 0"
+            use! reader = cmd.ExecuteReaderAsync()
+            let result =
+                System.Collections.Generic.Dictionary<string * string * string, string>()
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then
+                    let key = (reader.GetString 0, reader.GetString 1, reader.GetString 2)
+                    result.[key] <- reader.GetString 3
+                else
+                    hasMore <- false
+            return result |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+        }
+
+    /// Wave-1 slice 1.3 (L3-S7 real-SQL leg) — read computed-column
+    /// definitions from `sys.computed_columns`, keyed by `(schema, table,
+    /// column)`. Value is `(definition, isPersisted)`. The `definition` is
+    /// SQL Server's canonical parenthesized expression (e.g. `([QTY]*(100))`);
+    /// `PhysicalSchema.encodeComputed` (via `ComputedColumnConfig`) carries
+    /// the paren-normalization tolerance. Single round-trip; mirrors
+    /// `readDefaultConstraints`. Closes the last hollow-canary feature.
+    let private readComputedColumns (cnn: SqlConnection)
+        : Task<Map<string * string * string, string * bool>> =
+        task {
+            use _ = Bench.scope "readside.readComputedColumns"
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT SCHEMA_NAME(t.schema_id), t.name, c.name, \
+                        cc.definition, cc.is_persisted \
+                 FROM sys.computed_columns cc \
+                 JOIN sys.columns c \
+                   ON c.object_id = cc.object_id AND c.column_id = cc.column_id \
+                 JOIN sys.tables t ON t.object_id = cc.object_id \
+                 WHERE t.is_ms_shipped = 0"
+            use! reader = cmd.ExecuteReaderAsync()
+            let result =
+                System.Collections.Generic.Dictionary<string * string * string, string * bool>()
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then
+                    let key = (reader.GetString 0, reader.GetString 1, reader.GetString 2)
+                    result.[key] <- (reader.GetString 3, reader.GetBoolean 4)
+                else
+                    hasMore <- false
+            return result |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+        }
+
+    /// Wave-1 slice 1.3 — read DML triggers from `sys.triggers`, keyed by
+    /// `(schema, table)`. Each value is `(triggerName, isDisabled, body)`;
+    /// the body is the `OBJECT_DEFINITION` text (PhysicalSchema normalizes
+    /// it). Single round-trip.
+    let private readTriggers (cnn: SqlConnection)
+        : Task<Map<string * string, (string * bool * string) list>> =
+        task {
+            use _ = Bench.scope "readside.readTriggers"
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT SCHEMA_NAME(t.schema_id), t.name, tr.name, \
+                        tr.is_disabled, OBJECT_DEFINITION(tr.object_id) \
+                 FROM sys.triggers tr \
+                 JOIN sys.tables t ON t.object_id = tr.parent_id \
+                 WHERE tr.is_ms_shipped = 0 AND t.is_ms_shipped = 0"
+            use! reader = cmd.ExecuteReaderAsync()
+            let acc = System.Collections.Generic.Dictionary<string * string, ResizeArray<string * bool * string>>()
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then
+                    let key = (reader.GetString 0, reader.GetString 1)
+                    let body = if reader.IsDBNull 4 then "" else reader.GetString 4
+                    let entry = (reader.GetString 2, reader.GetBoolean 3, body)
+                    match acc.TryGetValue key with
+                    | true, lst -> lst.Add entry
+                    | false, _ ->
+                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst
+                else hasMore <- false
+            return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
+        }
+
+    /// Wave-1 slice 1.3 — read CHECK constraints from `sys.check_constraints`,
+    /// keyed by `(schema, table)`. Value is `(constraintName, definition,
+    /// isNotTrusted)`. Single round-trip.
+    let private readCheckConstraints (cnn: SqlConnection)
+        : Task<Map<string * string, (string * string * bool) list>> =
+        task {
+            use _ = Bench.scope "readside.readCheckConstraints"
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT SCHEMA_NAME(t.schema_id), t.name, cc.name, \
+                        cc.definition, cc.is_not_trusted \
+                 FROM sys.check_constraints cc \
+                 JOIN sys.tables t ON t.object_id = cc.parent_object_id \
+                 WHERE t.is_ms_shipped = 0"
+            use! reader = cmd.ExecuteReaderAsync()
+            let acc = System.Collections.Generic.Dictionary<string * string, ResizeArray<string * string * bool>>()
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then
+                    let key = (reader.GetString 0, reader.GetString 1)
+                    let entry = (reader.GetString 2, reader.GetString 3, reader.GetBoolean 4)
+                    match acc.TryGetValue key with
+                    | true, lst -> lst.Add entry
+                    | false, _ ->
+                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst
+                else hasMore <- false
+            return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
+        }
+
+    /// Wave-1 slice 1.3 — read SEQUENCE objects from `sys.sequences`.
+    /// Each row carries the full shape (type, start/increment/min/max,
+    /// cycle, cache). Single round-trip; small result set.
+    let private readSequences (cnn: SqlConnection)
+        : Task<(string * string * string * decimal option * decimal option * decimal option * decimal option * bool * bool * int option) list> =
+        task {
+            use _ = Bench.scope "readside.readSequences"
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT SCHEMA_NAME(s.schema_id), s.name, TYPE_NAME(s.system_type_id), \
+                        s.start_value, s.increment, s.minimum_value, s.maximum_value, \
+                        s.is_cycling, s.is_cached, s.cache_size \
+                 FROM sys.sequences s"
+            use! reader = cmd.ExecuteReaderAsync()
+            let optDec (i: int) : decimal option =
+                if reader.IsDBNull i then None else Some (System.Convert.ToDecimal(reader.GetValue i))
+            let optInt (i: int) : int option =
+                if reader.IsDBNull i then None else Some (System.Convert.ToInt32(reader.GetValue i))
+            let rows = ResizeArray<_>()
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then
+                    rows.Add(
+                        reader.GetString 0, reader.GetString 1, reader.GetString 2,
+                        optDec 3, optDec 4, optDec 5, optDec 6,
+                        reader.GetBoolean 7, reader.GetBoolean 8, optInt 9)
+                else hasMore <- false
+            return List.ofSeq rows
+        }
+
+    /// Wave-1 slice 1.3 — read NON-`V2.LogicalName` extended properties on
+    /// tables + columns from `sys.extended_properties`, keyed by
+    /// `(schema, table, columnOrNull)`. The `V2.LogicalName` property is
+    /// excluded — it is the emitter's own round-trip scaffolding, covered by
+    /// the LogicalNameBindings axis. Value is `(propName, propValue) list`.
+    let private readExtendedProperties (cnn: SqlConnection)
+        : Task<Map<string * string * string option, (string * string) list>> =
+        task {
+            use _ = Bench.scope "readside.readExtendedProperties"
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT SCHEMA_NAME(t.schema_id), t.name, c.name, \
+                        ep.name, CAST(ep.value AS NVARCHAR(MAX)) \
+                 FROM sys.extended_properties ep \
+                 JOIN sys.tables t ON t.object_id = ep.major_id \
+                 LEFT JOIN sys.columns c \
+                   ON c.object_id = ep.major_id AND c.column_id = ep.minor_id \
+                 WHERE ep.class = 1 AND t.is_ms_shipped = 0 \
+                   AND ep.name <> N'V2.LogicalName' \
+                   AND ep.name <> N'V2.SsKey'"
+            use! reader = cmd.ExecuteReaderAsync()
+            let acc = System.Collections.Generic.Dictionary<string * string * string option, ResizeArray<string * string>>()
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then
+                    let col = if reader.IsDBNull 2 then None else Some (reader.GetString 2)
+                    let key = (reader.GetString 0, reader.GetString 1, col)
+                    let value = if reader.IsDBNull 4 then "" else reader.GetString 4
+                    let entry = (reader.GetString 3, value)
+                    match acc.TryGetValue key with
+                    | true, lst -> lst.Add entry
+                    | false, _ ->
+                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst
+                else hasMore <- false
+            return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
+        }
+
     /// Read the set of FK relationships across every user table.
-    /// Returns rows of `(srcSchema, srcTable, srcCol, tgtSchema,
-    /// tgtTable, tgtCol)`. Composite FKs surface as multiple rows
-    /// with the same constraint object_id but different column
-    /// pairs — `read` aggregates them per-table for `Kind.References`.
-    ///
-    /// Per session-31 Session B — adds FK round-trip to the
-    /// canary's structural fidelity surface. Without this query,
-    /// FK CONSTRAINTs (the actual referential constraints) would
-    /// silently be dropped through the round-trip while the
-    /// underlying columns survive.
-    ///
-    /// Uses sys.* directly for FK metadata since INFORMATION_SCHEMA's
+    /// Returns rows of `(srcSchema, srcTable, srcCol, tgtSchema, tgtTable,
+    /// tgtCol)`. Composite FKs surface as multiple rows. Uses sys.* directly;
     /// REFERENTIAL_CONSTRAINTS / KEY_COLUMN_USAGE shape is awkward
     /// for the source/target column-pair join we need.
     let private readForeignKeys (cnn: SqlConnection)
@@ -637,6 +827,7 @@ module ReadSide =
     let private buildKind
         (tableLogicalNames: Map<string * string, string>)
         (columnLogicalNames: Map<string * string * string, string>)
+        (tableSsKeys: Map<string * string, string>)
         (schema: string)
         (table: string)
         (columnRows: list<ColumnRow>)
@@ -653,7 +844,20 @@ module ReadSide =
                 buildAttribute columnLogicalNames row primaryKeySet identitySet)
         result {
             let! attributes = Result.aggregate attrResults
-            let! kKey = kindSsKey schema table
+            // Wave 4.1 — recover the persisted SsKey from the `V2.SsKey`
+            // extended property when present (A1: identity survives rename);
+            // fall back to `READSIDE_KIND` synthesis when absent (schemas
+            // deployed before V2.SsKey emission, or non-V2 sources) or when
+            // the stored value is malformed (a synthesized key is always a
+            // valid identity, so a bad value degrades gracefully rather than
+            // failing the whole read).
+            let! kKey =
+                match Map.tryFind (schema, table) tableSsKeys with
+                | Some serialized ->
+                    match SsKey.deserialize serialized with
+                    | Ok recovered -> Result.success recovered
+                    | Error _ -> kindSsKey schema table
+                | None -> kindSsKey schema table
             // Slice D.1.b — hydrate Kind.Name from the `V2.LogicalName`
             // extended property when present; backward-compat fallback
             // to the deployed table name.
@@ -747,6 +951,132 @@ module ReadSide =
                 return { k with References = refs }
             }
 
+    /// Wave-1 slice 1.2 — attach recovered DEFAULT-constraint values to a
+    /// Kind's attributes. `defaults` maps `(schema, table, column)` to the
+    /// raw `sys.default_constraints.definition`. For each attribute with a
+    /// recovered default, normalize SQL Server's parenthesization
+    /// (`PhysicalSchema.normalizeDefault`) and reconstruct a typed
+    /// `SqlLiteral` via `SqlLiteral.ofRaw attr.Type` — the inverse of the
+    /// emitter's `SqlLiteral.toString`. Because both the emitter-IR side
+    /// (`PhysicalSchema.ofCatalog`) and this read-side both pass through
+    /// `normalizeDefault`, the DEFAULT survives the emit → deploy → read
+    /// round-trip on the `PhysicalColumn.Default` axis. Attributes without a
+    /// recovered default keep `DefaultValue = None`.
+    let private attachDefaults
+        (defaults: Map<string * string * string, string>)
+        (k: Kind)
+        : Kind =
+        if Map.isEmpty defaults then k
+        else
+            let attrs =
+                k.Attributes
+                |> List.map (fun a ->
+                    let coord = (k.Physical.Schema, k.Physical.Table, a.Column.ColumnName)
+                    match Map.tryFind coord defaults with
+                    | Some definition ->
+                        let normalized = PhysicalSchema.normalizeDefault definition
+                        { a with DefaultValue = Some (SqlLiteral.ofRaw a.Type normalized) }
+                    | None -> a)
+            { k with Attributes = attrs }
+
+    /// Wave-1 slice 1.3 (L3-S7) — attach recovered computed-column configs to
+    /// a Kind's attributes. `computed` maps `(schema, table, column)` to the
+    /// raw `sys.computed_columns.definition` + `is_persisted`. Reconstructs
+    /// `Attribute.Computed` via the `ComputedColumnConfig.create` smart
+    /// constructor (best-effort: a blank definition is skipped). The
+    /// expression normalization (paren-stripping) is shared with the
+    /// PhysicalSchema projection through `ComputedColumnConfig` → `encodeComputed`.
+    let private attachComputed
+        (computed: Map<string * string * string, string * bool>)
+        (k: Kind)
+        : Kind =
+        if Map.isEmpty computed then k
+        else
+            let attrs =
+                k.Attributes
+                |> List.map (fun a ->
+                    let coord = (k.Physical.Schema, k.Physical.Table, a.Column.ColumnName)
+                    match Map.tryFind coord computed with
+                    | Some (definition, isPersisted) ->
+                        match ComputedColumnConfig.create definition isPersisted with
+                        | Ok cc -> { a with Computed = Some cc }
+                        | Error _ -> a
+                    | None -> a)
+            { k with Attributes = attrs }
+
+    /// Wave-1 slice 1.3 — attach recovered triggers + CHECK constraints +
+    /// extended properties to a Kind. Uses the Core smart constructors
+    /// (`Trigger.create` / `ColumnCheck.create` / `ExtendedProperty.create`)
+    /// so the reconstructed IR carries the same invariants as the forward
+    /// path; a constructor failure (e.g. blank definition) is skipped
+    /// (best-effort recovery — a malformed deployed object should not abort
+    /// the whole readback). `attrEpByCol` maps a column name to its recovered
+    /// extended properties. SsKeys synthesized from the deployed coordinates.
+    let private attachAnnotations
+        (triggers: Map<string * string, (string * bool * string) list>)
+        (checks: Map<string * string, (string * string * bool) list>)
+        (extProps: Map<string * string * string option, (string * string) list>)
+        (k: Kind)
+        : Kind =
+        let schema, table = k.Physical.Schema, k.Physical.Table
+        let recoveredTriggers =
+            Map.tryFind (schema, table) triggers
+            |> Option.defaultValue []
+            |> List.choose (fun (name, disabled, body) ->
+                match SsKey.synthesized "READSIDE_TRIGGER" (sprintf "%s.%s.%s" schema table name),
+                      Name.create name with
+                | Ok sk, Ok nm ->
+                    match Trigger.create sk nm disabled body with
+                    | Ok t -> Some t
+                    | Error _ -> None
+                | _ -> None)
+        let recoveredChecks =
+            Map.tryFind (schema, table) checks
+            |> Option.defaultValue []
+            |> List.choose (fun (name, definition, notTrusted) ->
+                match SsKey.synthesized "READSIDE_CHECK" (sprintf "%s.%s.%s" schema table name) with
+                | Ok sk ->
+                    let nm = match Name.create name with | Ok n -> Some n | Error _ -> None
+                    match ColumnCheck.create sk nm definition notTrusted with
+                    | Ok c -> Some c
+                    | Error _ -> None
+                | Error _ -> None)
+        let mkEps (col: string option) : ExtendedProperty list =
+            Map.tryFind (schema, table, col) extProps
+            |> Option.defaultValue []
+            |> List.choose (fun (name, value) ->
+                match ExtendedProperty.create name (Some value) with
+                | Ok ep -> Some ep
+                | Error _ -> None)
+        let attrs =
+            k.Attributes
+            |> List.map (fun a ->
+                { a with ExtendedProperties = a.ExtendedProperties @ mkEps (Some a.Column.ColumnName) })
+        { k with
+            Triggers = k.Triggers @ recoveredTriggers
+            ColumnChecks = k.ColumnChecks @ recoveredChecks
+            ExtendedProperties = k.ExtendedProperties @ mkEps None
+            Attributes = attrs }
+
+    /// Wave-1 slice 1.3 — reconstruct catalog-level `Sequence` values from
+    /// the `sys.sequences` rows via the `Sequence.create` smart constructor.
+    let private buildSequences
+        (rows: (string * string * string * decimal option * decimal option * decimal option * decimal option * bool * bool * int option) list)
+        : Sequence list =
+        rows
+        |> List.choose (fun (schema, name, dataType, start, incr, minV, maxV, cycle, isCached, cacheSize) ->
+            let cacheMode =
+                if not isCached then NoCache
+                elif Option.isSome cacheSize then Cache
+                else Unspecified
+            match SsKey.synthesized "READSIDE_SEQUENCE" (sprintf "%s.%s" schema name),
+                  Name.create name with
+            | Ok sk, Ok nm ->
+                match Sequence.create sk nm schema dataType start incr minV maxV cycle cacheMode cacheSize with
+                | Ok s -> Some s
+                | Error _ -> None
+            | _ -> None)
+
     /// Combined-query variant of the five schema-readback queries
     /// (`readColumnRows` + `readPrimaryKeys` + `readIdentityColumns`
     /// + `readForeignKeys` + `readLogicalNameProperties`). Sends ONE
@@ -779,7 +1109,8 @@ module ReadSide =
               * Set<string * string * string>
               * list<string * string * string * string * string * string>
               * Map<string * string, string>
-              * Map<string * string * string, string>> =
+              * Map<string * string * string, string>
+              * Map<string * string, string>> =
         task {
             use _ = Bench.scope "readside.readSchemaCombined"
             use cmd = cnn.CreateCommand()
@@ -831,6 +1162,15 @@ module ReadSide =
                    ON c.object_id = ep.major_id AND c.column_id = ep.minor_id \
                  WHERE ep.class = 1 \
                    AND ep.name = N'V2.LogicalName' \
+                   AND t.is_ms_shipped = 0; \
+                 SELECT \
+                    SCHEMA_NAME(t.schema_id), t.name, \
+                    CAST(ep.value AS NVARCHAR(MAX)) \
+                 FROM sys.extended_properties ep \
+                 JOIN sys.tables t ON t.object_id = ep.major_id \
+                 WHERE ep.class = 1 \
+                   AND ep.name = N'V2.SsKey' \
+                   AND ep.minor_id = 0 \
                    AND t.is_ms_shipped = 0"
             use! reader = cmd.ExecuteReaderAsync()
 
@@ -931,13 +1271,51 @@ module ReadSide =
                         columnLogical[(schema, table, column)] <- value
                 else hasMore5 <- false
 
+            // Result set 6: V2.SsKey extended properties (Wave 4.1).
+            // Table-level only (minor_id = 0); the serialized identity
+            // recovered here lets buildKind deserialize the original SsKey
+            // instead of synthesizing READSIDE_KIND (A1: identity survives
+            // rename).
+            let! _ = reader.NextResultAsync()
+            let tableSsKeys = System.Collections.Generic.Dictionary<string * string, string>()
+            let mutable hasMore6 = true
+            while hasMore6 do
+                let! more = reader.ReadAsync()
+                if more then
+                    tableSsKeys[(reader.GetString 0, reader.GetString 1)] <- reader.GetString 2
+                else hasMore6 <- false
+
             return
                 List.ofSeq columnRows,
                 Set.ofSeq primaryKeySet,
                 Set.ofSeq identitySet,
                 List.ofSeq fkRows,
                 tableLogical |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq,
-                columnLogical |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+                columnLogical |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq,
+                tableSsKeys |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+        }
+
+    /// Wave-3 slice 3.1 — names every user table the deployed database is
+    /// tracking with Change Data Capture (`sys.tables.is_tracked_by_cdc = 1`).
+    /// Lives in the SQL adapter (the read-side's domain is deployed-schema
+    /// metadata); the Transfer pre-flight (`Projection.Pipeline.Transfer`)
+    /// consults it to refuse an `Execute` write against a CDC-tracked sink.
+    /// Returns `[schema].[table]`-style names, ordered.
+    let cdcTrackedTables (cnn: SqlConnection) : Task<string list> =
+        task {
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT SCHEMA_NAME(t.schema_id) + '.' + t.name \
+                 FROM sys.tables t \
+                 WHERE t.is_tracked_by_cdc = 1 AND t.is_ms_shipped = 0 \
+                 ORDER BY 1"
+            use! reader = cmd.ExecuteReaderAsync()
+            let names = ResizeArray<string>()
+            let mutable more = true
+            while more do
+                let! has = reader.ReadAsync()
+                if has then names.Add(reader.GetString 0) else more <- false
+            return List.ofSeq names
         }
 
     let read (cnn: SqlConnection) : Task<Result<Catalog>> =
@@ -949,13 +1327,13 @@ module ReadSide =
                 // by one `SqlCommand` instead of 4 separate
                 // `ExecuteReaderAsync` calls. ~150-300ms saved per
                 // canary-readback on the warm container.
-                let! columnRows, primaryKeySet, identitySet, fkRows, tableLogicalNames, columnLogicalNames =
+                let! columnRows, primaryKeySet, identitySet, fkRows, tableLogicalNames, columnLogicalNames, tableSsKeys =
                     readSchemaCombined cnn
                 let kindResults =
                     columnRows
                     |> List.groupBy (fun row -> row.Schema, row.Table)
                     |> Bench.iterMap "readside.kindGroup" (fun ((schema, table), rows) ->
-                        buildKind tableLogicalNames columnLogicalNames schema table rows primaryKeySet identitySet)
+                        buildKind tableLogicalNames columnLogicalNames tableSsKeys schema table rows primaryKeySet identitySet)
                 match Result.aggregate kindResults with
                 | Error errors -> return Result.failure errors
                 | Ok kinds ->
@@ -968,7 +1346,29 @@ module ReadSide =
                         |> Bench.iterMap "readside.attachReferences" (attachReferences fkGroups)
                     match Result.aggregate kindsWithRefsResults with
                     | Error errors -> return Result.failure errors
-                    | Ok kindsWithRefs ->
+                    | Ok kindsWithRefs0 ->
+                        // Wave-1 slice 1.2 — recover DEFAULT constraints
+                        // (one extra round-trip) and attach them so the
+                        // canary's PhysicalSchema.Default axis is no longer
+                        // blind to a dropped/changed DEFAULT clause.
+                        let! defaults = readDefaultConstraints cnn
+                        // Wave-1 slice 1.3 (L3-S7 real-SQL leg) — recover
+                        // computed-column configs from sys.computed_columns.
+                        let! computed = readComputedColumns cnn
+                        // Wave-1 slice 1.3 — recover the four table/catalog-
+                        // scoped annotation features (triggers / checks /
+                        // sequences / extended properties) so the canary's
+                        // Annotations axis is no longer blind to them.
+                        let! triggers = readTriggers cnn
+                        let! checks = readCheckConstraints cnn
+                        let! extProps = readExtendedProperties cnn
+                        let! sequenceRows = readSequences cnn
+                        let recoveredSequences = buildSequences sequenceRows
+                        let kindsWithRefs =
+                            kindsWithRefs0
+                            |> List.map (attachDefaults defaults)
+                            |> List.map (attachComputed computed)
+                            |> List.map (attachAnnotations triggers checks extProps)
                         // Per session-34 — threshold lifted to 100k.
                         // Below that, rows materialize into V2 IR
                         // (`Modality.Static`) for the per-row PhysicalSchema
@@ -1013,11 +1413,10 @@ module ReadSide =
                                                         ExtendedProperties = []
                                                     }
                                                 ]
-                                            // Chapter A.0' slice δ —
-                                            // ReadSide does not yet pick up
-                                            // schema-level sequences from the
-                                            // deployed database. Empty default.
-                                            Sequences = []
+                                            // Wave-1 slice 1.3 — sequences
+                                            // recovered from sys.sequences via
+                                            // readSequences + buildSequences.
+                                            Sequences = recoveredSequences
                                         }
             with
             | ex ->

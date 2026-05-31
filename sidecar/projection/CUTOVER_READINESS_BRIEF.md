@@ -104,7 +104,7 @@ Per `V2_DRIVER.md` per-axis correctness stakes. For each axis: where V2 stands; 
 **Gated for flip:**
 - ~~**Remaining matching strategies** (BySsKey / Regex / FallbackToSystemUser)~~ **CLOSED 2026-05-18** by slice 5.13.identity-axis-closure. All four `UserMatchingStrategy` DU variants (ByEmail, BySsKey, ManualOverride, FallbackToSystemUser) ship in `UserFkReflowPass.applyStrategy`; the slice 5.13.identity-axis-closure pin pins five property-test families (totality + per-source-diagnostic-count + diagnostics-cardinality + permutation-invariance + idempotence + FallbackToSystemUser safety net) across 13 FsCheck properties. V1's `Regex` strategy collapses to `ManualOverride` per `Policy.fs` pre-scope rationale (structurally indistinguishable for V2's algebraic purposes).
 - **UAT verification surface** (row 177) — V1 has 3 verifiers + report; V2 verification deferred post-cutover; canary's round-trip diff + tolerance table cover dual-track mode
-- **`osm uat-users` CLI verb** (row 113) — cash-out ~1500 LOC; trigger: cutover enters UAT phase
+- ~~**`osm uat-users` CLI verb** (row 113) — cash-out ~1500 LOC~~ **COLLAPSED 2026-05-30** (`DECISIONS — uat-users is NOT a standalone verb`). No standalone verb: the Dev→UAT user-FK reflow is opt-in in `transfer --reconcile <UserTable>:<emailColumn>` (live re-key, no CSV) + `full-export` (`policy.transformGroups: [{name:"UserReflow", enabled:true}]`). Zero remaining engineering; the UAT *run* is access-gated only.
 - **Per-FK orphan-sample diagnostics** (row 89) — V2 carries orphan COUNT but not row identifiers; cash-out: add `OrphanSamples` field to `Profile.ForeignKeys` when consumer demands
 
 **Acceptance criterion for flip:** chapter 4.2 slice ε ships remaining matching strategies + UAT dry-run on real inventory CSVs surfaces zero unmatched orphans (or operator-acknowledged manual overrides).
@@ -115,9 +115,13 @@ Per `V2_DRIVER.md` per-axis correctness stakes. For each axis: where V2 stands; 
 
 **The question:** When V2's tightening passes contest a decision, do operators see equivalent guidance to V1's per-decision diagnostic + remediation surface?
 
-**Status: 🟡 V2-AUGMENTED (per-pass DiagnosticEntry contract shipped; SummaryFormatter + RemediationEmitter deferred).**
+**Status: 🟢 V2-DRIVER-READY (DIAGNOSTICS-axis flip-eligible). [Reconciled 2026-05-30 — Wave-0 slice 0.1.]**
+
+> **Reconciliation (2026-05-30, verified against source).** This axis was recorded 🟡 on the 2026-05-18 snapshot because `SummaryFormatter` + `RemediationEmitter` were "deferred to chapter 5+". **Both shipped after that snapshot** and are wired into the pipeline: `RemediationEmitter.emit` (`Pipeline.fs:330` → `manifest.remediation.sql`) and `SummaryFormatter.formatText` (`Pipeline.fs:333` → `manifest.summary.txt`), both registered in `RegisteredAllTransforms.fs:75-76` (pillar-9 `DataIntent`) and covered by `RemediationEmitterTests.fs` / `SummaryFormatterTests.fs`. `LiveProfiler` (rows 85-89) likewise shipped (`Pipeline.fs:697`). The "Gated for flip" / "Risk 2" / "Risk 3" prose below is preserved verbatim as the historical 2026-05-18 record; the two named blockers are **closed**. Residual "Gated for flip" items (`OpportunitiesReport` rollup, `RiskClassification`, extraction telemetry) remain genuine but are operator-tolerant soft-gates, not flip blockers.
 
 **Shipped:**
+- `RemediationEmitter` sibling Π (row 83) — `manifest.remediation.sql`, 3-option SELECT-active / UPDATE+DELETE-commented (**shipped; was "Gated for flip" below**)
+- `SummaryFormatter` consumer (row 81) — 6-bucket operator prose (**shipped; was "Gated for flip" below**)
 - Per-pass `DiagnosticEntry` contract (row 77; `DECISIONS 2026-05-18 (slice 5.4.γ.opportunities) — Per-pass DiagnosticEntry contract`)
 - Ternary outcome space across NullabilityOutcome / UniqueIndexOutcome / ForeignKeyOutcome (rows 65 + companion entries; `DECISIONS 2026-05-18 (slice 5.4.β.nullability)`)
 - FK exhaustive per-keep-reason emission (row 73; corrects V1's silent-skip bug; `DECISIONS 2026-05-18 (slice 5.4.γ.evaluators)`)
@@ -134,7 +138,7 @@ Per `V2_DRIVER.md` per-axis correctness stakes. For each axis: where V2 stands; 
 
 **Acceptance criterion for flip:** SummaryFormatter ships OR operator confirms DiagnosticEntry stream is sufficient for cutover-window decision review. RemediationEmitter ships OR fallback remediation doc substitutes.
 
-**Status indicator:** 🟡 **gating on SummaryFormatter + RemediationEmitter (chapter 5+).**
+**Status indicator:** 🟢 **flip-eligible (2026-05-30 reconciliation — SummaryFormatter + RemediationEmitter shipped; the chapter-5+ blockers are closed). Historical 🟡 indicator and its gating prose preserved above.**
 
 ### Axis 5 — OPERATOR-AFFORDANCE (CLI surface)
 
@@ -158,7 +162,7 @@ Per `V2_DRIVER.md` per-axis correctness stakes. For each axis: where V2 stands; 
 | `osm profile` | Row 85 LiveProfiler lands | 30 | Med |
 | `osm analyze` | Operator pre-emission iteration workflow | 300 | Med (cutover dry-run) |
 | `osm policy explain` | CLI-based decision drill-down | 300 | Low |
-| `osm uat-users` | Chapter 4.2 slice ε + UAT phase | 1500 | High (axis 3 dependency) |
+| ~~`osm uat-users`~~ (collapsed → `transfer --reconcile` + `full-export` opt-in) | LANDED 2026-05-30 | 0 | n/a (no standalone verb) |
 | `osm verify-data` | Chapter 4.3+ post-deploy verification | 200 | High (post-deploy quality gate) |
 | `--open-report` flag | Operator demand for integrated reports | 150 | Low |
 | `compare` verb (DMM concept harvest) | Operator ad-hoc schema-diff demand | 500 | Low |
@@ -209,7 +213,7 @@ Per `V2_DRIVER.md` per-axis correctness stakes. For each axis: where V2 stands; 
 | SCHEMA | 🟢 V2-DRIVER-READY | No | No |
 | DATA | 🟡 V2-AUGMENTED | Chapter 4.1.B closure + global phase ordering | Yes (until chapter 4.1.B CDC-silence + phase interleaving land) |
 | IDENTITY | 🟡 V2-AUGMENTED | Chapter 4.2 slice ε remaining matching strategies | Yes (until chapter 4.2 + UAT dry-run land) |
-| DIAGNOSTICS | 🟡 V2-AUGMENTED | SummaryFormatter for cutover-window decision review | Soft (operator-tolerant if DiagnosticEntry stream + Message field suffice) |
+| DIAGNOSTICS | 🟢 V2-DRIVER-READY _(reconciled 2026-05-30; SummaryFormatter + RemediationEmitter shipped)_ | No | No |
 | OPERATOR-AFFORDANCE | 🟡 V2-AUGMENTED | `osm uat-users` + `osm verify-data` for cutover workflow | Yes (per (verb × workflow) gating) |
 | PIPELINE-ORCHESTRATION | 🟢 V2-DRIVER-READY | No | No |
 

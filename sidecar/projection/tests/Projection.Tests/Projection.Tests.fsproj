@@ -87,6 +87,8 @@
     <Compile Include="PolicyExprTests.fs" />
     <Compile Include="VersionedPolicyTests.fs" />
     <Compile Include="ApprovalWorkflowTests.fs" />
+    <Compile Include="ApprovalStoreTests.fs" />
+    <Compile Include="SuggestConfigGatingTests.fs" />
     <Compile Include="PolicyDiffTests.fs" />
     <Compile Include="PolicySimulationTests.fs" />
     <Compile Include="PolicyStateMachineTests.fs" />
@@ -203,6 +205,7 @@
     <Compile Include="SsdtDdlEmitterPropertyTests.fs" />
     <Compile Include="SsdtSchemaFidelityPropertyTests.fs" />
     <Compile Include="DacpacEmitterTests.fs" />
+    <Compile Include="DacpacRoundTripTests.fs" />
     <Compile Include="DockerImageEmitterTests.fs" />
     <Compile Include="CoordinatesStage2Tests.fs" />
     <Compile Include="ManifestEmitterTests.fs" />
@@ -218,6 +221,8 @@
     <Compile Include="ReferenceHasDbConstraintTests.fs" />
     <Compile Include="FilterParseDiagnosticTests.fs" />
     <Compile Include="BuildCreateIndexDiagnosticsTests.fs" />
+    <Compile Include="DecisionOverlayTests.fs" />
+    <Compile Include="DecisionEmissionTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />
     <Compile Include="SiblingEmitterContractTests.fs" />

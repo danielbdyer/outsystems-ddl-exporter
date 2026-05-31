@@ -136,4 +136,17 @@ module TransformGroupsBinding =
             | Ok group -> Result.success (group, entry.Enabled))
         |> Result.aggregate
         |> Result.map (fun pairs ->
-            { ByGroup = Map.ofList pairs })
+            // Wave-3 (uat-users collapse, 2026-05-30) — `UserReflow` is
+            // OPT-IN (off by default), unlike `Tightening` (opt-out, V1-parity).
+            // There is no standalone `uat-users` verb; the Dev→UAT user-FK
+            // reflow collapses into `full-export` (this config switch) and
+            // `transfer` (`--reconcile <User>:<emailColumn>`, live source+sink).
+            // Unless the operator explicitly names UserReflow in
+            // `policy.transformGroups`, it is disabled — `userFkReflowPass` is
+            // excluded from the chain entirely. Operator entries (true OR
+            // false) are honored verbatim; only the *absent* case flips.
+            let explicit = pairs |> List.map fst |> Set.ofList
+            let withUserReflowOptIn =
+                if Set.contains TransformGroup.UserReflow explicit then pairs
+                else (TransformGroup.UserReflow, false) :: pairs
+            { ByGroup = Map.ofList withUserReflowOptIn })

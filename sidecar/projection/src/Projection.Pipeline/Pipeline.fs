@@ -276,9 +276,17 @@ module Compose =
         // its evidence is policy, not catalog-derived. Identity when
         // `IncludePlatformAutoIndexes = true` (V1 parity default).
         let emittedCatalog = EmissionPolicy.filterPlatformAutoIndexes policy composedState.Catalog
+        // Wave-2 slice 2.2 — thread the tightening decisions through the
+        // emitter seam. `DecisionOverlay.ofComposeState` projects the
+        // chain's NullabilityDecisions / UniqueIndexDecisions /
+        // ForeignKeyDecisions into emitter-consumable `Set<SsKey>` lookups.
+        // Byte-identical to pre-overlay emission in 2.2 (the emitter threads
+        // the prefix arg unused); slices 2.3 / 2.4 begin consuming it. A18
+        // holds — the overlay carries decisions (evidence), never Policy.
+        let decisionOverlay = DecisionOverlay.ofComposeState composedState
         let bundle, manifest =
             (use _ = Bench.scope "emit.ssdtBundle.compose"
-             match SsdtDdlEmitter.emitSlices emittedCatalog with
+             match SsdtDdlEmitter.emitSlicesWith decisionOverlay emittedCatalog with
              | Ok ssdtFiles ->
                  let rewritten = applyEmissionFolderOverrides folders emittedCatalog ssdtFiles
                  let manifest =
@@ -761,6 +769,10 @@ module Compose =
                         @ InactiveAttributeDiagnostics.emit profile
                         @ FkSelectivityDiagnostics.emit profile    // H-025
                         @ JointDependencyDiagnostics.emit profile   // H-026
+                        // Wave-2 slice 2.5(b) — the FK silent-drop witness over
+                        // the emitted catalog (slice-μ retired). Pure sibling of
+                        // the emitter port; A18 holds.
+                        @ SsdtDdlEmitter.foreignKeyDropDiagnostics finalState.Catalog
                     match write cfg.Output.Dir outputs with
                     | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest }
                     | Error errors -> Result.failure errors

@@ -45,37 +45,37 @@ The axioms are grouped by **core concern** (the operator's mental partition of V
 
 **L3-S4. Trigger definitions are complete.** Every Trigger in `Catalog.Triggers` with `IsDisabled = false` appears in emitted DDL as a `CREATE TRIGGER` statement with identical `Definition` text. Disabled triggers emit with disabled state preserved.
 
-  *Underwriting.* — (no L2 axiom; gated on Phase A.0' Trigger IR lift).
+  *Underwriting.* **Bucket A as of 2026-05-30 (Wave-1 slice 1.3).** `ReadSide.readTriggers` + `attachAnnotations` recover triggers (incl. disabled state); `PhysicalSchema.Annotations` (Trigger) compares them on a normalized-body tolerance. Verified vs real SQL Server by `CanaryRoundTripTests` "Slice 1.3".
   *Failure mode.* V2 emits DDL omitting triggers; data-validation triggers silently disappear; constraint checks applications relied on are gone.
   *Tier.* 1.
 
 **L3-S5. Sequence definitions are complete.** Every Sequence in `Catalog.Sequences` appears in emitted DDL as a `CREATE SEQUENCE` statement with StartValue, Increment, Min, Max, IsCycleEnabled, CacheMode preserved.
 
-  *Underwriting.* — (gated on Phase A.0' Sequence IR lift).
+  *Underwriting.* **Bucket A as of 2026-05-30 (Wave-1 slice 1.3).** `ReadSide.readSequences` + `buildSequences` recover the full sequence shape; `PhysicalSchema.Annotations` (Sequence) compares it. Verified vs real SQL Server by `CanaryRoundTripTests` "Slice 1.3".
   *Failure mode.* Applications depending on sequence-generated IDs fail at cutover; sequences missing from target schema.
   *Tier.* 1.
 
 **L3-S6. DEFAULT values round-trip.** Every Attribute with `DefaultValue` present produces a column definition with `DEFAULT` clause in DDL; round-tripped Catalog restores `DefaultValue`.
 
-  *Underwriting.* — (gated on Phase A.0' DEFAULT IR lift).
+  *Underwriting.* **Bucket A as of 2026-05-30 (Wave-1 slice 1.2).** `ReadSide.readDefaultConstraints` + `attachDefaults` recover `Attribute.DefaultValue` from `sys.default_constraints`; `PhysicalColumn.Default` projects it (both producers via `PhysicalSchema.normalizeDefault`); the canary diff includes it. Verified end-to-end against real SQL Server by `CanaryRoundTripTests` "Slice 1.2: integer DEFAULT round-trips …"; executable as `AxiomTests.fs::L3-S6`. Named A37-family tolerance: `normalizeDefault` erases only SQL Server's redundant outer-paren canonicalization. Scope: integer DEFAULT; text/temporal follow-on on the same template.
   *Failure mode.* Column defaults silently disappear at cutover; subsequent INSERTs that relied on defaults produce NULLs or fail.
   *Tier.* 1.
 
 **L3-S7. Computed columns render correctly.** Every Attribute with `IsComputed = true` and `ComputedDefinition` renders as a computed-column DDL; round-trip restores computed state and definition.
 
-  *Underwriting.* — (gated on Phase A.0' Computed IR lift).
+  *Underwriting.* **Bucket A as of 2026-05-30 (Wave-1 slice 1.3 real-SQL leg).** `ReadSide.readComputedColumns` + `attachComputed` recover `Attribute.Computed` from `sys.computed_columns`; `PhysicalColumn.Computed` projects it (both producers via `PhysicalSchema.encodeComputed`). Round-trip restores computed state + definition — verified vs real SQL Server by `CanaryRoundTripTests` "Slice 1.3 / L3-S7". Closes the last hollow-canary feature.
   *Failure mode.* Computed columns become regular nullable columns at cutover.
   *Tier.* 1.
 
 **L3-S8. CHECK constraints are emitted.** Every `ColumnCheck` in `Kind.ColumnChecks` appears as a CHECK constraint in emitted DDL. Orphaned checks (naming nonexistent columns) fail at validation, not emit time.
 
-  *Underwriting.* — (gated on Phase A.0' CHECK IR lift).
+  *Underwriting.* **Bucket A as of 2026-05-30 (Wave-1 slice 1.3).** `ReadSide.readCheckConstraints` + `attachAnnotations` recover CHECK constraints; `PhysicalSchema.Annotations` (Check) compares the paren-normalized expression. Verified vs real SQL Server by `CanaryRoundTripTests` "Slice 1.3".
   *Failure mode.* Business-logic constraints disappear; applications relying on database-side validation start accepting invalid data.
   *Tier.* 1.
 
 **L3-S9. ExtendedProperties round-trip.** Every ExtendedProperty on Module/Kind/Attribute/Index appears in SSDT extended-property comments and round-trips via DacFx.
 
-  *Underwriting.* — (gated on Phase A.0' ExtendedProperties IR lift).
+  *Underwriting.* **Bucket A as of 2026-05-30 (Wave-1 slice 1.3).** `ReadSide.readExtendedProperties` + `attachAnnotations` recover non-`V2.LogicalName` extended properties (table + column); `PhysicalSchema.Annotations` (ExtendedProperty) compares them. Verified vs real SQL Server by `CanaryRoundTripTests` "Slice 1.3". (`MS_Description`↔`Description` recovery is an in-feature follow-on.)
   *Failure mode.* Documentation embedded as extended properties (MS_Description and custom keys) disappears; institutional knowledge lost.
   *Tier.* 2.
 
@@ -84,6 +84,12 @@ The axioms are grouped by **core concern** (the operator's mental partition of V
   *Underwriting.* — (gated on Phase A.0' Catalog-coordinate IR lift).
   *Failure mode.* Multi-database architectures silently lose cross-DB constraints.
   *Tier.* 2.
+
+**L3-S11. Tightening decisions reach the emitted DDL (decision→emission fidelity).** Every NOT NULL / UNIQUE / FK-enforcement decision the passes make under operator intent is applied at emission, additively: an `EnforceNotNull` attribute emits `NOT NULL`; an `EnforceUnique` index emits `UNIQUE`; a `DoNotEnforce` FK is suppressed; a `ScriptWithNoCheck` FK emits `WITH NOCHECK`. A non-enforce decision never loosens source truth (`Nullable = source ∧ ¬enforce`, `IsUnique = source ∨ enforce`).
+
+  *Underwriting.* **Bucket A as of 2026-05-30 (Wave-2 slices 2.1–2.4; numbered axiom A42).** `DecisionOverlay.ofComposeState` projects the decision sets into emitter-consumable `Set<SsKey>` lookups (A18-safe — decisions, never Policy); the SSDT emitter consumes them via the `statementsWith` / `emitSlicesWith` curried-prefix seam. Verified at the emission layer (`DecisionEmissionTests.fs`: pure `CreateTable`/`CreateIndex` inspection + FsCheck) and the canary layer (`CanaryRoundTripTests.fs`: `EnforceNotNull` survives deploy→ReadSide as `NOT NULL`; `DoNotEnforce` keeps the FK out of the deployed schema — vs real SQL Server). Observable identity: the empty overlay is byte-identical to pre-Wave-2 emission. Wave-1's canary un-hollowing (S4–S9) is the precondition for the canary-layer proof.
+  *Failure mode.* V2 decides to tighten (e.g. NOT NULL on a column the profile shows has no nulls) but emits the untightened schema — the operator's data-quality intent silently never reaches the database. (This was the open state before Wave 2.)
+  *Tier.* 1.
 
 ---
 

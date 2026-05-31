@@ -123,3 +123,52 @@ let ``Compare<Tolerance> is inhabited (S0.A type-pattern instantiation)`` () =
     let stub : Compare<Tolerance> =
         fun _tolerance _left _right -> Diff.Pending
     Assert.NotNull (stub :> obj)
+
+// ---------------------------------------------------------------------------
+// Wave-3 slice 3.4 — per-environment Tolerance config, FAIL-CLOSED.
+// `Tolerance.parse` turns a list of operator-supplied divergence tokens into a
+// Tolerance; an unrecognized token is an Error (never silently ignored), so a
+// typo'd config cannot widen the canary's R6 equivalence semantics.
+// ---------------------------------------------------------------------------
+
+[<Property>]
+let ``3.4: every ToleratedDivergence name round-trips through tryParse`` () =
+    ToleratedDivergence.allKnown
+    |> Set.forall (fun d -> ToleratedDivergence.tryParse (ToleratedDivergence.name d) = Some d)
+
+[<Fact>]
+let ``3.4: parse accepts every known token and yields a tolerance that tolerates them`` () =
+    let tokens = ToleratedDivergence.allKnown |> Set.toList |> List.map ToleratedDivergence.name
+    match Tolerance.parse tokens with
+    | Ok t ->
+        Assert.Equal<Set<ToleratedDivergence>>(ToleratedDivergence.allKnown, Tolerance.divergences t)
+    | Error e -> Assert.Fail(sprintf "expected Ok, got %A" e)
+
+[<Fact>]
+let ``3.4: an unknown tolerance name fails closed`` () =
+    match Tolerance.parse [ "HeaderCommentsOmitted"; "NotARealDivergence" ] with
+    | Ok t -> Assert.Fail(sprintf "expected fail-closed Error; got Ok %A" (Tolerance.divergences t))
+    | Error (UnknownDivergence token) -> Assert.Equal("NotARealDivergence", token)
+
+[<Fact>]
+let ``3.4: empty config parses to strict (safe default); blank tokens are skipped`` () =
+    match Tolerance.parse [] with
+    | Ok t -> Assert.True(Tolerance.isStrict t)
+    | Error e -> Assert.Fail(sprintf "%A" e)
+    match Tolerance.parse [ "  "; "IndexesUnreflected"; "" ] with
+    | Ok t ->
+        Assert.True(Tolerance.tolerates ToleratedDivergence.IndexesUnreflected t)
+        Assert.Equal(1, Set.count (Tolerance.divergences t))
+    | Error e -> Assert.Fail(sprintf "%A" e)
+
+[<Fact>]
+let ``3.4: DEV tolerating HeaderCommentsOmitted passes the divergence; PROD strict fails it`` () =
+    let dev =
+        match Tolerance.parse [ "HeaderCommentsOmitted" ] with
+        | Ok t -> t | Error e -> failwithf "%A" e
+    let prod =
+        match Tolerance.parse [] with
+        | Ok t -> t | Error e -> failwithf "%A" e
+    // DEV accepts the divergence (does not block); PROD strict does not.
+    Assert.True(Tolerance.tolerates ToleratedDivergence.HeaderCommentsOmitted dev)
+    Assert.False(Tolerance.tolerates ToleratedDivergence.HeaderCommentsOmitted prod)
