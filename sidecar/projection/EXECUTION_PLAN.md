@@ -561,9 +561,22 @@ runner `scripts/test.sh` (never one `dotnet test`); TRX-first failure capture.
 ### Wave 4 — Bidirectional frontier + capability
 *Buildable-now capability extension; none gated on OPEN-2.*
 
-#### 4.1 — Transfer Slice A: `V2.SsKey` persistence
-- **Wave/Effort/Status/Deps:** 4 / M / buildable-now / none (prereq for §5.2 Slice E)
-- **Goal:** Persist rename-stable identity (`OssysOriginal` GUID, A1) into the frozen schema so a *later-run*
+#### 4.1 — Transfer Slice A: `V2.SsKey` persistence — ✅ DONE (2026-05-30, verified)
+- **Wave/Effort/Status/Deps:** 4 / M / **LANDED — commits `98fa616` (codec+tests) / `ea25b2a` (emit) / `aa7aa9a`
+  (ReadSide hydrate) / `8dbcdfd` (red-branch repair)** / none (prereq for §5.2 Slice E)
+- **Shipped:** `SsKey.serialize` / `SsKey.deserialize` (tag-prefixed, length-prefixed fields; total over all four
+  variants; round-trips through 8 example tests in `SsKeyTests.fs`). `SsdtDdlEmitter` emits a `V2.SsKey` extended
+  property at table level (sibling to `V2.LogicalName`). `ReadSide.buildKind` tries `V2.SsKey` → `deserialize` →
+  falls back to `kindSsKey` synthesis on absent/malformed. **Verified end-to-end:** the Docker-gated round-trip
+  `` ``4.1: V2.SsKey persistence — ReadSide recovers OssysOriginal identities (A1 across deploy->read)`` `` passes
+  (deploy an `OssysOriginal`-keyed catalog → read back → recovered key equals the original GUID, not a synthesis).
+- **Cautionary note for the next agent:** the part-2b commit (`aa7aa9a`) shipped **red** — a 6-wide return-type
+  annotation against a 7-tuple body, plus an acceptance test referencing three non-existent helpers
+  (`CanaryTestGuard.runWhenEnabled` / `CanaryHarness.deployAndReadback` / `sampleSourceCatalog`). `8dbcdfd` repaired
+  both (widen annotation; rewrite the test against the real `skipIfNoDocker` + `Deploy.runWithReadback` surface).
+  Lesson: **run `dotnet build Projection.sln` before every commit** — a commit that builds only its own project can
+  still break the solution.
+- **Goal (orig):** Persist rename-stable identity (`OssysOriginal` GUID, A1) into the frozen schema so a *later-run*
   Transfer recovers it from disk instead of `ReadSide` synthesizing `Synthesized("READSIDE_KIND",…)` from
   physical names (~`ReadSide.fs:68`).
 - **Files:** `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs` (emit a `V2.SsKey` extended property sibling to

@@ -1,3 +1,33 @@
+# Handoff letter — 2026-05-30 (EXECUTION_PLAN Wave 4.1 CLOSED + branch-red repair)
+
+To the next agent.
+
+You're picking up the EXECUTION_PLAN wave work mid-Wave-4. Waves 0–3 are done (git log `4fdeb1d`..`b80383c`; an audit this session confirmed ~26/31 slices BUILT, the rest org-gated or trivially-deferred). Wave 3.3 (`d20bebc`) collapsed the planned standalone `uat-users` verb into opt-in behavior of `transfer` + `full-export` — there is no `osm uat-users`, and that's deliberate (`DECISIONS 2026-05-30`). **Wave 4.1 (`V2.SsKey` persistence) is now CLOSED and verified end-to-end.** Your job is to keep going through Wave 4: **4.2** (connection apparatus + CSV loader / `LiveOssysConnection`), **4.3** (cross-DB FK three-part name), **4.4** (`osm verify-data` verb), **4.5** (DacpacEmitter joins the T11 sibling contract), **4.6** (`Origin` variant rename). Wave 5 is genuinely blocked (5.1 needs a writable UAT SQL connection — OPEN-2) or defer-with-trigger (5.2–5.9, no current consumer) — do NOT build Wave 5 speculatively; it violates "IR grows under evidence."
+
+## The most important thing to internalize before you write code
+
+**Run `dotnet build Projection.sln` (the whole solution) before every single commit, and `bash scripts/test.sh fast` before you call a slice done.** This session opened on a branch that had been pushed **red**: commit `aa7aa9a` (Wave 4.1 part-2b) didn't compile — a `readSchemaCombined` return-type annotation was 6-wide against a 7-tuple body, and the 4.1 acceptance test referenced three helpers that never existed (`CanaryTestGuard.runWhenEnabled`, `CanaryHarness.deployAndReadback`, `sampleSourceCatalog`). Both were mechanical, both repaired in `8dbcdfd`, but they slipped in because a prior commit verified only its own project, not the solution. The compiler and `scripts/test.sh` are the only ground truth here — trust them over any summary (including this letter).
+
+## What you inherit, working and verified
+
+`SsKey.serialize` / `deserialize` (`Identity.fs`) — total, round-trippable, tag+length-prefixed so nesting is unambiguous. `SsdtDdlEmitter` persists `V2.SsKey` as a table-level extended property (sibling to the existing `V2.LogicalName`). `ReadSide.buildKind` hydrates from it (`deserialize` → fall back to `kindSsKey` synthesis). The Docker-gated round-trip `` ``4.1: V2.SsKey persistence — ReadSide recovers OssysOriginal identities`` `` passes in ~8s (deploy `OssysOriginal`-keyed catalog → read back → recovered key IS the original GUID). Pure pool: **2462 passed / 0 / 207 skipped**.
+
+## How to do Wave 4.2 (your next slice)
+
+The `TransferConnections` apparatus already exists in `Transfer.fs` (`Substrate`, `Environment`, `ConnectionRef`, `TransferConnections.create` with role-mismatch validation). `ConnectionResolver.resolve` resolves an env-var/file ref to a connection string (D9: never hold a secret in `Config`). The deltas: thread `TransferConnections` through `TransferRun.runCore`; wire `Program.fs` `runTransfer` + `TransferArgs.fs` for `--environment` / named-substrate resolution; add a `--user-map` CSV loader for `ManualOverride`; add `openSubstrate : Substrate -> Task<Result<SqlConnection, _>>`. Acceptance: the reconcile canary stays green driven through `TransferConnections`; a `ManualOverride` CSV round-trips. Reuse the existing profiler — don't add per-table probes (see the EvidenceCache discipline).
+
+## Reading order (≈12 min)
+
+1. `EXECUTION_PLAN.md` §III Wave 4 (4.1 now marked DONE with the cautionary note; 4.2–4.6 specs intact) — ~6 min.
+2. The three `DECISIONS 2026-05-30` entries (uat-users collapse; and read the most-recent ten) — ~4 min.
+3. `git log --oneline d20bebc..HEAD` — the Wave 3.3 + 4.1 commit arc — ~2 min.
+
+Disciplines that bite in this wave: **solution-build-before-commit** (above); **`skipIfNoDocker` for Docker-gated tests** (the canary collection pattern — never `CanaryTestGuard`, which doesn't exist); **IR grows under evidence** (Wave 5 stays deferred); **D9** (connection strings via `ConnectionRef`, never `Config`).
+
+Hold the spine.
+
+---
+
 # Handoff letter — 2026-05-23 (slice D.2.c + D.2.d + D.3.b XXXXXL combined slice CLOSED)
 
 To the next agent.

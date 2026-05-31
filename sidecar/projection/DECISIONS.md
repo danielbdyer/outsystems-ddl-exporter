@@ -20029,3 +20029,15 @@ capability.
 - `tests/Projection.Tests/TransformGroupsBindingTests.fs` (opt-in semantics).
 - Supersedes `EXECUTION_PLAN.md` slice 3.3 (standalone verb + InventoryCsvReader +
   UatUsersArgs — all retired); matrix row 113 reframed.
+
+---
+
+## 2026-05-30 — Wave 4.1 closed (`V2.SsKey` persistence) + solution-build-before-commit reinforced
+
+**Resolved.** EXECUTION_PLAN Wave 4.1 is shipped and verified end-to-end. `SsKey.serialize`/`deserialize` (`Identity.fs`) are total over all four variants (`OssysOriginal | Synthesized | DerivedFrom | V1Mapped`), encoded tag-prefixed with length-prefixed fields so nesting (`DerivedFrom` parent, `Synthesized` list) is unambiguous without delimiter-escaping; `deserialize` returns a structured `Result`. `SsdtDdlEmitter` persists `V2.SsKey` as a table-level extended property (sibling to `V2.LogicalName`). `ReadSide.buildKind` recovers identity from it (`deserialize`, falling back to `kindSsKey` synthesis on absent/malformed). The Docker-gated round-trip witnesses A1 across the process boundary: deploy an `OssysOriginal`-keyed catalog → read back → the recovered key IS the original GUID, not a `READSIDE_KIND` synthesis. This strengthens H-010 (the Catalog↔DDL Prism now carries *identity*, not just structure, across a deploy→read boundary) and is `DataIntent` per pillar 9.
+
+**Operating-discipline reinforcement — solution-build-before-commit.** Wave 4.1 part-2b (commit `aa7aa9a`) was pushed to the shared branch **red**: (1) `ReadSide.readSchemaCombined` returned a 7-tuple (the `V2.SsKey` batch added a 7th `Map`) while its return-type annotation stayed 6-wide; (2) the 4.1 acceptance test referenced three helpers that do not exist in the codebase (`CanaryTestGuard.runWhenEnabled`, `CanaryHarness.deployAndReadback`, `sampleSourceCatalog`). Both are mechanical, not logic, errors — and both slipped through because the authoring commit verified only the project it touched, not the whole solution. Repaired in `8dbcdfd` (widen the annotation; rewrite the test against the real `skipIfNoDocker` + `Deploy.runWithReadback` + inline-catalog surface used by the sibling A42 DropFk round-trip).
+
+**The rule (already implicit; now explicit):** before every commit, run `dotnet build Projection.sln` (the whole solution, not just the changed project) and `bash scripts/test.sh fast` before declaring a slice done. A per-project build is necessary but not sufficient — a tuple/signature change ripples across project boundaries the per-project build never sees. The compiler and the tiered test runner are the ground truth; a green per-project build is not a green branch.
+
+**Cross-references:** `src/Projection.Core/Identity.fs` (codec); `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs` (`V2.SsKey` emit); `src/Projection.Adapters.Sql/ReadSide.fs` (`buildKind` hydration + `readSchemaCombined` 7-tuple); `tests/Projection.Tests/SsKeyTests.fs` (8 round-trip tests); `tests/Projection.Tests/CanaryRoundTripTests.fs` (Docker-gated A1 witness); EXECUTION_PLAN.md §III 4.1 (marked DONE).
