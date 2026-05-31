@@ -32,6 +32,7 @@
   - [Wave 3 — Cutover critical path](#wave-3--cutover-critical-path)
   - [Wave 4 — Bidirectional frontier + capability](#wave-4--bidirectional-frontier--capability)
   - [Wave 5 — Blocked / defer-with-trigger](#wave-5--blocked--defer-with-trigger)
+  - [Wave 6 — Substantiating the isomorphism (the A→B Total-Migration epic)](#wave-6--substantiating-the-isomorphism-the-ab-total-migration-epic)
 - [IV. Dependency graph, critical path, sequencing](#iv-dependency-graph-critical-path-sequencing)
 - [V. The endgame backlog — closing *that* gap](#v-the-endgame-backlog--closing-that-gap)
 - [VI. Decisions owed + open external gates](#vi-decisions-owed--open-external-gates)
@@ -142,6 +143,24 @@ BACKLOG status **from `AxiomTests.fs` bucket counts + the `RegisteredTransform` 
 same move the codebase already made for emission (typed AST over string-building) applied to
 its own governance. The registry, which already drives execution and provenance, becomes the
 single spine that also drives documentation.
+
+**C5 — Orthogonality (the axes are a basis, not a bundle).** *(Added by the 2026-05-31 red-team; NORTH_STAR T-V.)*
+Round-trip totality (C1) proves each axis round-trips; it does **not** prove the axes compose without hidden
+coupling. The red-team found two that secretly couple: a `Decision` NOT-NULL tightening breaks the `Data` transfer
+mid-load (no pre-flight), and an `Identity` rename diverges the physical coordinates `Data` matches on (no
+RefactorLog consumed by Transfer). *Closed when* each cross-axis dependency is a named pre-flight or typed input —
+**Wave 6.B**.
+
+**C6 — Spanning (the basis covers the operation).** *(Red-team; NORTH_STAR T-VI.)* The five axes do not span the
+operator's real A→B migration: three load-bearing dimensions live in **no** axis — Permissions/Security (a
+write-denied sink silently transfers zero rows), Transactionality/Rollback (a mid-transfer failure corrupts the
+target), Connection pre-flight. *Closed when* the missing dimensions are axes or pre-flight gates and the composed
+`migrate A B` is atomic-or-resumable — **Wave 6.C / 6.D**.
+
+The deeper red-team reading: C1's witnesses are the **L1 floor** (reached 5/5 on 2026-05-31), but the round-trips
+are *adjunctions, not equivalences* — partial isos with silent erasures (**L2** faithfulness is the open work), and
+the axes do not yet **compose** into the one-command migration (**L3**). The full buildable ladder is **Wave 6**;
+C5/C6 are its orthogonality and spanning legs.
 
 ### What it would take to close *that* gap
 
@@ -841,6 +860,219 @@ Bench-driven assessment against the operator-reality canary (150 tables × 6.25k
 #### 5.9 — Computed-column round-trip (L3-S7) — **defer (no source)**
 - **Trigger:** a source (DACPAC reader / rowset) that actually populates `Attribute.Computed` (none today). Its
   ReadSide leg can ride 1.2/1.3's mechanism opportunistically when built.
+
+---
+
+### Wave 6 — Substantiating the isomorphism (the A→B Total-Migration epic)
+
+*Source: the 2026-05-31 six-axis red-team — **full-fidelity record in `AUDIT_2026_05_31_FIVE_AXIS_REDTEAM.md`**
+(every per-axis finding, file:line, failure scenario, severity ranking, and the complete acceptance catalog §6);
+`DECISIONS 2026-05-31 — Five-axis red-team` is its summary. Read the audit before opening a slice. The NORTH_STAR matrix
+reached **L1 (witness-present) = 5/5** on 2026-05-31. This wave is the buildable climb to **L2 (faithful)** on
+every axis and **L3 (composed)** for the operator's one-command A→B migration — i.e. it substantiates NORTH_STAR
+§1's isomorphism ladder and closes totalities T-I (faithfulness), T-V (orthogonality), T-VI (spanning).*
+
+**The red-team verdict in one line.** The five round-trips are **adjunctions, not equivalences**: every axis is a
+*partial* iso with ≥1 **silent** erasure; two axis pairs **couple** (Decision→Data, Identity→Schema); the basis
+does **not span** the migration (no Permissions / Transactionality / Connection dimension); and the composed
+`migrate` operation **does not exist** (five verbs, manually sequenced; renames never reach Transfer). Each slice
+below names the gap, the first slice, the **acceptance witness** (a named test the matrix generator can see), and
+the **rung/totality** it raises. The governing discipline is unchanged: *every erasure becomes a `Tolerance` entry,
+a structured diagnostic, or a fail-loud refusal — never a silent drop* (T-I faithfulness).
+
+#### 6.A — Faithfulness: close the silent erasures (L1 → L2)
+
+##### 6.A.1 — Transfer fail-loud on the drop-set (Data → L2) — **the quick win**
+- **Gap (red-team Data #1):** `transfer` drops FK-orphan rows (`SkippedReferences`) but the CLI **exits 0**; a
+  refresh script sees "complete" while rows vanish. Violates *total decisions, named skips*.
+- **First slice:** `Program.fs runTransfer` returns a distinct non-zero exit (new code, e.g. `9` —
+  `transfer.droppedReferences`) when `report.SkippedReferences` (or write-time `UnmatchedIdentities`) is non-empty,
+  with a per-kind count to stderr. Add a `--allow-drops` override (mirrors `--allow-cdc`) for the operator who has
+  declared the drops acceptable. `TransferReport` already carries the data; this is wiring + a refusal.
+- **Acceptance:** `` ``data canary: transfer with an unmatched FK exits non-zero (drop is fail-loud, not exit-0)`` ``
+  — seed a referencer whose FK target has no match; assert non-zero exit + the diagnostic; assert `--allow-drops`
+  downgrades to exit 0. **~S.**
+
+##### 6.A.2 — Cyclic `AssignedBySink`: fail-loud or correct (Data → L2)
+- **Gap (red-team Data #2):** a self-referential IDENTITY kind's Phase-2 `UPDATE … WHERE <pk>=<sourceVal>` keys on
+  the **source** PK, which no longer exists after the sink mints → the deferred FK is left **silently wrong**.
+- **First slice:** detect the case in `TransferRun.writePlan` (an `AssignedBySink` load with a non-empty
+  `DeferredFkColumns`) and **refuse** with `transfer.cyclicAssignedBySink` rather than emit a no-op UPDATE. The
+  correct fix (re-point Phase-2 via the captured remap AND key the WHERE on the *assigned* PK) is the follow-on;
+  fail-loud first so the L2 erasure is named.
+- **Acceptance:** `` ``data canary: cyclic AssignedBySink is refused, not silently mis-keyed`` `` (self-ref IDENTITY
+  fixture). **~S** (refusal) / **~M** (correct re-point). **Closes the 5.2 named follow-on.**
+
+##### 6.A.3 — Composite-identity capture or fail-loud (Data → L2)
+- **Gap (red-team Data #3):** `insertCaptureRow` captures one `IsPrimaryKey && IsIdentity` column; `SourceKey`/
+  `AssignedKey` are single-string. A composite surrogate is silently truncated to one leg.
+- **First slice:** fail-loud (`transfer.compositeSurrogateUnsupported`) when an `AssignedBySink` kind's PK has >1
+  column. Representing composite keys (tuple `SourceKey`) is the follow-on under a real fixture.
+- **Acceptance:** `` ``data canary: composite-IDENTITY AssignedBySink is refused, not half-captured`` ``. **~S.**
+
+##### 6.A.4 — Empty-string ↔ NULL fidelity (Data → L2)
+- **Gap (red-team Data #4):** `toCellRows` maps deferred/missing → `""`; `Bulk.parseRaw` maps `""` → `DBNull`; so a
+  genuine empty-string Text value round-trips as NULL. Three distinct meanings collapse onto `""`.
+- **First slice:** decide the rule and make it explicit — either a sentinel distinguishing *absent* from
+  *empty-string* in `CellValue.Raw`, or a named `Tolerance` ("empty-string Text normalizes to NULL") so the
+  erasure is *closed*, not silent. Trace `RawValueCodec` to confirm the read-side already distinguishes them.
+- **Acceptance:** `` ``data canary: empty-string Text round-trips faithfully (or names the tolerance)`` ``. **~M.**
+
+##### 6.A.5 — Un-hollow `ReadSide`: indexes + FK-trust (Schema + Decision → L2) — **keystone for Decision**
+- **Gap (red-team Decision #1a/1b, Schema):** `ReadSide` hardcodes `Indexes = []` (M3 MVP) → unique indexes never
+  read back; FK recovery does not populate `IsConstraintTrusted` → a deployed `WITH NOCHECK` FK reads back trusted.
+- **First slice:** `ReadSide` reads `sys.indexes`/`sys.index_columns` → `Kind.Indexes`, and `sys.foreign_keys.is_not_trusted`
+  → `Reference.IsConstraintTrusted`. Extend `PhysicalSchema` to carry index + FK-trust facets (or name them as
+  closed tolerances if deferring). Note: pairs with the known A42 2.4 container FK-readback gap — fixing FK readback
+  here is the same surface.
+- **Acceptance:** `` ``schema round-trip: a UNIQUE index + a NOCHECK FK survive emit/deploy/ReadSide`` ``. **~M.**
+  **Unblocks 6.A.8.**
+
+##### 6.A.6 — Name the remaining schema erasures (Schema → L2)
+- **Gap (red-team Schema):** user-defined extended properties are in the IR but the emitter drops them; IDENTITY
+  seed/increment is hardcoded `(1,1)`. Today these are **silent**.
+- **First slice:** for each remaining silent facet, either emit it (ext-props via `ALTER … ADD EXTENDED PROPERTY`)
+  or land a `Tolerance` entry + a `Skip` witness naming the erasure (Wave 1's A37 erasure-axis mechanism is the
+  precedent). The goal is *closed*, not necessarily *zero* — L2 is "no silent loss," not "no loss."
+- **Acceptance:** the schema-canary erasure set is fully enumerated in `Tolerance` + `AxiomTests`; no facet is
+  dropped without a named home. **~M.**
+
+##### 6.A.7 — `Synthesized`-key rename: fail-loud or persist (Identity → L2)
+- **Gap (red-team Identity #4):** a first-import (non-V2 source) gives every kind a `Synthesized` SsKey from
+  `(schema, table)`; a rename changes the key → A1 identity is **silently** not preserved. The codec round-trips all
+  4 variants (✅), but the witness only tests `OssysOriginal`.
+- **First slice:** when a `migrate`/transfer renames a `Synthesized`-keyed kind, surface it
+  (`identity.synthesizedRenameUnstable`) — the operator is told identity cannot be threaded for a non-V2 source
+  without a reconciliation rule. Persisting a `V2.SsKey` on first import (so subsequent renames are stable) is the
+  follow-on. Add the missing `Synthesized`-variant rename witness either way.
+- **Acceptance:** `` ``A1: a Synthesized-key rename is surfaced, not silently re-keyed`` ``. **~M.**
+
+##### 6.A.8 — Decision uniqueness + FK-trust round-trip witnesses (Decision → L2) — *depends 6.A.5*
+- **Gap (red-team Decision):** the decision adjunction is witnessed on **nullability only**; `EnforceUnique` and
+  `DropFk`/`NoCheckFk` emit but never read back (1 of 3 sub-axes).
+- **First slice:** once 6.A.5 lands index + FK-trust readback, extend the §V E3 decision-adjunction witness to the
+  other two sub-axes — an overlay that `EnforceUnique` on a non-unique index and `DropFk` on a present FK, read back,
+  reproduces the overlay.
+- **Acceptance:** `` ``decision adjunction: read-back reproduces EnforceUnique and DropFk`` `` (raises the Decision
+  cell from 1/3 to 3/3 sub-axes). **~M.**
+
+##### 6.A.9 — `DropFk` audit trail (Decision → L2)
+- **Gap (red-team Decision #2b):** dropping an FK the source enforced is a safety change, applied **silently** at
+  emission (no diagnostic). `DropFk` is structurally a removal — it must surface.
+- **First slice:** emit a `DiagnosticEntry` (`decision.fkDropped`, Warning) per `DropFk` so the manifest/logs name
+  every constraint the engine removed. (Pairs with the existing `DecisionLogEmitter`.)
+- **Acceptance:** `` ``every DropFk decision surfaces a Warning diagnostic`` ``. **~S.**
+
+##### 6.A.10 — Attribute-level `CatalogDiff` (Time + Schema → L2) — **the structural keystone**
+- **Gap (red-team Schema + Time, independently):** `CatalogDiff` is **kind-level only** (`CatalogDiff.fs:26-32`,
+  explicitly deferred) → a column type/nullability/default change produces **no diff signal**. Without this there is
+  no "minimum viable touches" at all.
+- **First slice:** extend `CatalogDiff.between` to descend into attributes — per-kind `AttributeDiff`
+  (Added/Removed/Renamed/Changed columns, with the changed facet named). Closed-DU expansion; the prescope
+  (`CHAPTER_3_PRESCOPE_REFACTORLOG_AND_CATALOG_DIFF.md §2.1`) already specifies the shape.
+- **Acceptance:** `` ``CatalogDiff: a column type change surfaces as an attribute-level Changed entry`` ``. **~M.**
+  **Unblocks 6.A.12 and 6.D.1 — nothing in the A→B story is real without it.**
+
+##### 6.A.11 — `applyDiff` + the evolution round-trip law (Time → L2; H-007)
+- **Gap (red-team Time #1/2):** `replayTo` is a snapshot *fetch*, not a `fold applyDiff`; `applyDiff` does not exist;
+  `applyDiff (between A B) A = B` is unproven. The Time axis is a store, not an evolution algebra.
+- **First slice:** define `CatalogDiff.applyDiff : Catalog -> CatalogDiff -> Catalog` (the `between` peer; H-007),
+  consuming the attribute-level diff from 6.A.10. Prove the round-trip law as a property test; re-base `replayTo` to
+  `fold applyDiff genesis` so the Time witness becomes a real reconstruction.
+- **Acceptance:** `` ``Time: applyDiff (between A B) A = B (evolution round-trip law)`` ``. **~M.** *depends 6.A.10.*
+
+##### 6.A.12 — `diff → ALTER` minimal-touch emitter (Time → L3-precursor) — *depends 6.A.10*
+- **Gap (red-team Time #3):** the SSDT emitter emits **full CREATE TABLE only**; there is no ALTER path, so
+  "minimum viable touches" is structurally unsupported — the engine redeploys whole tables and leans on DacFx for
+  idempotence (tool-level, not engine-level).
+- **First slice:** an `EmitterOverDiff` that turns an attribute-level `CatalogDiff` into minimal
+  `ALTER TABLE … ADD/ALTER COLUMN` + the existing `RefactorLogEmitter` renames. Scope first slice to the safe,
+  additive ALTERs (add column, widen type, add DEFAULT); destructive/narrowing changes are fail-loud or
+  tolerance-gated.
+- **Acceptance:** `` ``migration: a column type change emits an ALTER, not a CREATE`` ``. **~L.**
+
+##### 6.A.13 — Schema-level CDC-silence on idempotent redeploy (Time → L2) — *depends 6.A.12*
+- **Gap (red-team Decision #3, Time #4):** CDC-silence is witnessed for **data** (`CdcSilenceTests`) but not
+  **schema** — an unchanged schema still redeploys via full CREATE, churning CDC. Promise 3 (zero-surprise redeploy)
+  needs engine-level schema idempotence.
+- **First slice:** with 6.A.12's diff→ALTER path, an empty `CatalogDiff` emits **zero** schema DDL. Add the
+  schema-side analog of the CDC pre-flight to `Compose`/`migrate` (the gate today guards only `transfer`).
+- **Acceptance:** `` ``CDC-silence: redeploying an unchanged schema emits zero DDL (engine-level, not DacFx)`` ``. **~M.**
+
+#### 6.B — Orthogonality: surface the couplings (T-V)
+
+##### 6.B.1 — Decision↔Data pre-flight (T-V)
+- **Gap (red-team Composition orthogonality #1):** a `Decision` NOT-NULL/UNIQUE tightening on a column whose source
+  data violates it makes the `Data` transfer fail mid-load; nothing validates schema-vs-data compatibility before
+  `--execute`.
+- **First slice:** a pre-flight that, given the tightened sink schema (`DecisionOverlay`) and a source-data probe
+  (`LiveProfiler` null-counts / uniqueness), reports incompatibilities (`migrate.dataViolatesTightening`) **before**
+  any write. The coupling becomes a named gate, not a mid-transfer crash.
+- **Acceptance:** `` ``migrate pre-flight: EnforceNotNull on a NULL-bearing column refuses before writing`` ``. **~M.**
+
+##### 6.B.2 — RefactorLog-aware Transfer (Identity↔Schema; T-V)
+- **Gap (red-team Identity #3 + Composition #2):** RefactorLog renames are applied at **project time** and never
+  reach Transfer; a renamed table/column diverges the physical coordinates Transfer matches on → silent column
+  mis-map risk. RefactorLog (in-place rename) and Transfer (cross-DB move) are unreconciled strategies.
+- **First slice:** thread the rename map (`CatalogDiff.Renamed` + attribute renames from 6.A.10) through the
+  `TransferConnections` apparatus so Transfer matches source-old ↔ sink-new by SsKey **and** projects columns through
+  the rename. Document the two strategies' composition (when each applies) in `PRESCOPE_TRANSFER`.
+- **Acceptance:** `` ``transfer: a renamed column is re-pointed by the rename map, not matched by ordinal`` ``. **~M.**
+
+#### 6.C — Spanning: the missing dimensions (T-VI)
+
+##### 6.C.1 — Connection + permission pre-flight (T-VI)
+- **Gap (red-team Spanning #1/#2):** no axis carries grants; a write-denied sink silently transfers zero rows; no
+  "both endpoints live + credentialed" check before mutation.
+- **First slice:** a `migrate`/`transfer` pre-flight that probes source `SELECT` + sink `INSERT`/`CREATE` (a no-op
+  round-trip against a temp object) and refuses (`migrate.insufficientGrants` / `connection.unreachable`) before any
+  write. Permissions as a full IR axis is the larger follow-on; the pre-flight gate is the T-VI floor.
+- **Acceptance:** `` ``migrate pre-flight: a write-denied sink refuses before transferring, not silently zero rows`` ``. **~M.**
+
+##### 6.C.2 — Transactional / resumable transfer (T-VI) — **production-critical**
+- **Gap (red-team Spanning #4):** `transfer` has no transaction boundary, no idempotent upsert, no checkpoint; a
+  mid-transfer failure leaves a half-populated target with no rollback or safe retry.
+- **First slice:** wrap the per-kind load in an explicit transaction with a checkpoint after each kind; make the
+  insert idempotent (upsert / logical dedup keyed on the surrogate) so a re-run resumes rather than duplicates. At
+  minimum, fail-loud with a precise "rolled back to kind K" position so retry is safe.
+- **Acceptance:** `` ``transfer: an injected mid-load failure leaves the target unchanged (atomic) or resumable`` ``. **~L.**
+
+##### 6.C.3 — Cross-database FK ordering (T-VI) — **defer-with-trigger**
+- **Gap (red-team Spanning #3):** cross-DB FKs (DACPAC scenarios) have no ordering support; `SsKey` is
+  `schema.table`-scoped, not `database.schema.table`.
+- **Trigger:** a real multi-database source (rides Wave 4.3 cross-DB FK emission). Single-DB (the OutSystems common
+  case) is unaffected. **Deferred.**
+
+#### 6.D — The composition: `migrate A B` (the L3 bullseye; Promise 8)
+
+##### 6.D.1 — `migrate` orchestrator + the A→B canary — *depends 6.A.10, 6.A.12, 6.B.*, 6.C.1/6.C.2*
+- **Gap (red-team Composition #1):** there is no single orchestrator — the operator manually sequences five verbs,
+  and renames never reach Transfer. "Nearly one command" is today five commands with a seam.
+- **First slice:** `projection migrate --source-conn <A> --target <B-config> [--execute]` that chains, in one
+  call: (i) `CatalogDiff.between A B` (attribute-level, 6.A.10); (ii) the Decision↔Data + permission + connection
+  pre-flights (6.B.1, 6.C.1) — refuse before any write; (iii) `diff→ALTER` minimal-touch deploy, CDC-silent on the
+  empty delta (6.A.12/6.A.13); (iv) RefactorLog-aware sink-minted transfer (6.B.2), transactional (6.C.2); (v)
+  `verify-data` + the round-trip canary. Each stage is an existing capability; `migrate` is the *composition* + the
+  pre-flight gates that make it safe.
+- **Acceptance (the headline):** `` ``migrate A B: one command moves A→B with minimum viable touches; B reproduces A
+  modulo the declared changes (atomic-or-resumable, fail-loud on violation)`` `` — the operator's stated use case as
+  the L3 bullseye canary. **~M once its dependencies land** (the orchestration is wiring; the dependencies are the work).
+
+#### 6.E — The self-report: matrix reports the ladder level (T-IV extension)
+
+##### 6.E.1 — `matrix-status.sh` emits L1/L2/L3 per axis
+- **Gap:** the generator reports witness-presence (L1) only; the red-team's L2/L3 distinction lives in prose.
+- **First slice:** extend the generator so each axis cell carries its rung — L1 (witness exists), L2 (a faithfulness
+  witness exists + the axis's erasures are all named in `Tolerance`/`AxiomTests`), L3 (the axis participates in the
+  green `migrate` canary). The vision then measures its *substantiation* distance, not just its witness floor.
+- **Acceptance:** `NORTH_STAR.matrix.generated.md` shows a per-axis ladder column; a regression (a new silent
+  erasure) drops a cell from L2 → L1 on regeneration. **~M.** *Closes the loop: the matrix self-reports the climb.*
+
+**Sequencing.** 6.A.1 / 6.A.9 are immediate quick wins (fail-loud + audit). **6.A.10 (attribute-level diff) is the
+critical-path keystone** — 6.A.11, 6.A.12, 6.A.13, 6.B.2, and 6.D.1 all depend on it. 6.A.5 unblocks 6.A.8. The
+orthogonality + spanning pre-flights (6.B, 6.C.1) and transactionality (6.C.2) are the safety floor for 6.D.1. The
+honest critical path to Promise 8: **6.A.10 → 6.A.12 → {6.B.1, 6.B.2, 6.C.1, 6.C.2} → 6.D.1**, with the per-axis
+L2 faithfulness slices (6.A.*) landing in parallel as confidence-builders and matrix-rung raisers.
 
 ---
 

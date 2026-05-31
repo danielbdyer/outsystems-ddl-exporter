@@ -20164,3 +20164,32 @@ capability.
 **No code change.** The disciplined outcome is *no speculative perf change*: the bench surface is the forcing function, and it shows the candidates are cold or unexercised. The deliverable is the data-backed assessment itself (mirrors the 2026-05-24 refuted-with-data precedent).
 
 **Cross-references:** EXECUTION_PLAN.md §5.7 (per-item measured table); `scripts/perf-gate.sh` + `bench/baseline-canary.json` (the bench surface); `src/Projection.Adapters.Osm/CatalogReader.fs` `parseRowsetBundle`; `src/Projection.Core/Passes/TopologicalOrderPass.fs` `internalEdgesOf`; `DECISIONS 2026-05-24` (bench-driven protocol precedent).
+
+---
+
+## 2026-05-31 — Five-axis red-team + the isomorphism-substantiation aim (NORTH_STAR elevated; Wave 6 opened)
+
+**Resolved (vision-level).** A six-agent adversarial red-team (one per axis + an integrator) tested the NORTH_STAR five-axis basis to destruction against the operator's stated future use case: a one-command A→B migration (RefactorLog renames + CDC-aware + sink-minted two-phase insert, minimum viable touches). The operator's framing: this *is* what the North Star should aim at, so the canonical docs now aim at it and lay out the comprehensive path. The deliverable is doc/governance (the technical evaluation + plan), not code.
+
+**The headline finding — adjunctions, not equivalences.** The 5/5 matrix (reached 2026-05-31) is a **witness-presence (L1) floor**. Below it, every axis is a *partial* iso:
+- **Schema** — a *retraction*: 6 facets erased **silently** (user ext-props, FK-trust, identity seed `(1,1)`); `CatalogDiff` is **kind-level only** → attribute changes (type/nullability/default) are invisible (the deepest single gap — "minimum viable touches" is a diff the engine can't compute).
+- **Data** — a *partial map with a silent drop-set*: `transfer` drops FK-orphan rows but **exits 0**; cyclic `AssignedBySink` Phase-2 keys on the source PK → silently wrong; composite IDENTITY truncated; empty-string↔NULL conflated.
+- **Identity** — faithful for `OssysOriginal`; a first-import (`Synthesized`) + rename loses identity **silently**; RefactorLog (in-place rename) and Transfer (cross-DB move) are **unreconciled strategies**.
+- **Time** — *trivial*: `replayTo` is a snapshot fetch, not `fold applyDiff`; `applyDiff` (H-007) unshipped → `applyDiff (between A B) A = B` unproven; **no diff→ALTER emitter** (full CREATE only); CDC-silence witnessed for data, not schema.
+- **Decision** — iso on **1 of 3** sub-axes (nullability); uniqueness + FK-trust **not read back** (`ReadSide` hardcodes `Indexes=[]`; FK reads back trusted). *Good news:* the data-level CDC-silence-on-idempotent-redeploy property is genuinely shipped + witnessed (`CdcSilenceTests`).
+
+**Two completeness conditions the original four totalities assumed but never named** (now T-V / T-VI; EXECUTION_PLAN C5 / C6):
+- **Orthogonality (T-V):** the axes couple. `Decision` NOT-NULL tightening breaks the `Data` load (no pre-flight); `Identity` rename diverges the coordinates `Data` matches on (no RefactorLog in Transfer).
+- **Spanning (T-VI):** the basis does not cover the operation. Three load-bearing dimensions live in **no** axis — Permissions/Security (write-denied sink silently transfers zero rows), Transactionality/Rollback (mid-transfer failure corrupts the target; no atomic boundary / resume), Connection pre-flight. And the composed `migrate A B` **does not exist** (five verbs, manually sequenced; renames never reach Transfer).
+
+**The isomorphism ladder (the new vocabulary).** Each matrix cell now has a rung, not a checkbox: **L1** witness present (the `matrix-status.sh` floor) → **L2** faithful (`Ingest ∘ Project = id` modulo a *named, closed* erasure — a `Tolerance`, a diagnostic, or a fail-loud refusal; **never a silent drop**) → **L3** composed (orthogonal + participating in the one-command `migrate`). The bullseye is the matrix at L3.
+
+**`migrate A B` is the L3 bullseye / operator Promise 8** — the forcing instance that exercises all six totalities at once: diff → rename → CDC-safe minimal deploy → sink-minted transfer (identity preserved-or-reconciled) → verify; atomic-or-resumable; refuses loudly rather than corrupting. The honest critical path: **6.A.10 (attribute-level `CatalogDiff`) → 6.A.12 (`diff→ALTER`) → {6.B.1, 6.B.2, 6.C.1, 6.C.2 pre-flights + transactionality} → 6.D.1 (`migrate`)**.
+
+**Docs updated.** `NORTH_STAR.md`: §1 matrix → the L1/L2/L3 ladder + the `migrate` operation row + the red-team's honest per-axis L2 position; §3 → T-I sharpened to the faithfulness ladder, **T-V (orthogonality) + T-VI (spanning) added** ("the six totalities"); §4 → **Promise 8** (one-command A→B); §5 → criteria 1/1b/1c (L2 faithful + orthogonal/spanning basis + composed `migrate`). `EXECUTION_PLAN.md`: **Wave 6 — Substantiating the isomorphism** (the full buildable epic: 6.A faithfulness per axis, 6.B orthogonality, 6.C spanning, 6.D the `migrate` orchestrator, 6.E matrix-reports-the-rung) + §I C5/C6.
+
+**Discipline preserved.** This is not vision-widening (NORTH_STAR §7): every addition is falsifiable with a named counterexample condition the red-team produced, and the buildable path is sequenced slices with named acceptance witnesses — exactly the "extend only when a new structural truth earns its place" clause. The quick wins (6.A.1 fail-loud transfer, 6.A.9 DropFk audit) are the immediate confidence-builders; 6.A.10 is the structural keystone.
+
+**The full-fidelity record is `AUDIT_2026_05_31_FIVE_AXIS_REDTEAM.md`** — the exhaustive per-axis findings (every file:line, finding table, failure scenario, severity ranking) + the complete acceptance-criteria catalog (audit §6) + the master severity table (audit §7). This DECISIONS entry and the NORTH_STAR / EXECUTION_PLAN edits are its **projections**; the audit is the source. Read the audit before opening any Wave 6 slice.
+
+**Cross-references:** `AUDIT_2026_05_31_FIVE_AXIS_REDTEAM.md` (the source of record); `NORTH_STAR.md` §1/§3/§4/§5 (iso-ladder + T-V/T-VI + Promise 8); `EXECUTION_PLAN.md` Wave 6 + §I C5/C6 (the buildable epic). Reconciliation note (audit §0.4): the integrator agent ran without the recent §5.x context and mis-stated Lifecycle/Decision/Identity as "unbuilt"; corrected against the axis specialists — they are **built but partial** (the L2 gap), not absent.
