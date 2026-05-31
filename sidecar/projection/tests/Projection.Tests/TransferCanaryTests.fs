@@ -7,6 +7,7 @@ namespace Projection.Tests
 // Source on `PhysicalSchema` (columns + FKs + per-row hashes). Serial via
 // the Docker-SqlServer collection; blocking wait via `TaskSync.run`.
 
+open System.IO
 open Xunit
 open Projection.Core
 open Projection.Adapters.Sql
@@ -226,6 +227,94 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let! sourceValued =
                                     TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_RC_ORDER] WHERE [USER_ID] IN (280,281,999)"
                                 Assert.Equal(0, sourceValued)
+                            })
+                }))
+
+    // Slice 4.2 — the reconcile canary driven THROUGH the TransferConnections
+    // apparatus (not caller-opened connections), with a ManualOverride CSV
+    // round-tripping into the reconcile path. The ephemeral per-DB connection
+    // strings are written to temp files and referenced via ConnectionRef.File
+    // (D9: the secret lives out of band); openSubstrate resolves + opens them;
+    // runThroughConnections reads the contract from the Source, resolves the
+    // CSV-derived ManualOverride against it, and runs. The reconcile outcome
+    // matches the MatchByColumn canary above: User reconciled (0 rows written),
+    // ghost 999 unmatched, Order 12 skipped, every FK re-pointed.
+    [<Fact>]
+    member _.``4.2: reconcile driven through TransferConnections + ManualOverride CSV round-trips`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferAppar") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferApparSrc" (fun src srcConnStr ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.reKeyDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.reKeySourceSeed
+                    return!
+                        fixture.WithEphemeralDatabase "XferApparSink" (fun sink sinkConnStr ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.reKeyDdl
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.reKeySinkSeed
+
+                                // D9: write the per-DB connection strings to temp files and
+                                // reference them out of band — the apparatus resolves them.
+                                let srcFile = Path.GetTempFileName()
+                                let sinkFile = Path.GetTempFileName()
+                                File.WriteAllText(srcFile, srcConnStr)
+                                File.WriteAllText(sinkFile, sinkConnStr)
+                                try
+                                    let srcSub : Substrate =
+                                        { Environment = Projection.Core.Environment.Dev
+                                          Role = SubstrateRole.Source
+                                          ConnectionRef = ConnectionRef.File srcFile }
+                                    let sinkSub : Substrate =
+                                        { Environment = Projection.Core.Environment.Uat
+                                          Role = SubstrateRole.Sink
+                                          ConnectionRef = ConnectionRef.File sinkFile }
+                                    let connections =
+                                        TransferConnections.create srcSub sinkSub true
+                                        |> TransferCanaryFixtures.value
+                                    // Reconcile ⇒ the Sink is profiled for identity too.
+                                    Assert.Equal(2, connections.ProfiledForIdentity.Length)
+
+                                    // The ManualOverride map arrives as a CSV that is parsed
+                                    // and resolved against the reconstructed contract — the
+                                    // full round-trip into the reconcile path.
+                                    let userMapCsv =
+                                        "table,source,assigned\n" +
+                                        "OSUSR_RC_USER,280,18\n" +
+                                        "OSUSR_RC_USER,281,19"
+                                    let resolveReconciliation (contract: Catalog) =
+                                        match TransferSpec.parseUserMapCsv userMapCsv with
+                                        | Error es -> Error es
+                                        | Ok entries -> TransferSpec.resolveAllReconciliation contract [] entries
+
+                                    let! reportR =
+                                        Transfer.runThroughConnections Transfer.Execute true connections resolveReconciliation
+                                    let report = TransferCanaryFixtures.value reportR
+
+                                    // Map tables → reconstructed SsKeys for the assertions.
+                                    let! contractR = ReadSide.read src
+                                    let contract = TransferCanaryFixtures.value contractR
+                                    let kindByTable (t: string) =
+                                        Catalog.allModulesKinds contract |> List.map snd |> List.find (fun k -> k.Physical.Table = t)
+                                    let userKind = kindByTable "OSUSR_RC_USER"
+                                    let orderKind = kindByTable "OSUSR_RC_ORDER"
+
+                                    let userOutcome = report.Kinds |> List.find (fun k -> k.Kind = userKind.SsKey)
+                                    Assert.Equal(IdentityDisposition.ReconciledByRule, userOutcome.Disposition)
+                                    Assert.Equal(0, userOutcome.RowsWritten)
+                                    Assert.Contains(report.UnmatchedIdentities, fun (k, s) -> k = userKind.SsKey && s = SourceKey.ofString "999")
+                                    Assert.Contains(report.SkippedReferences, fun (owner, r: UnresolvedReference) ->
+                                        owner = orderKind.SsKey && r.Target = userKind.SsKey && r.UnresolvedSource = SourceKey.ofString "999")
+
+                                    let! users = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_RC_USER]"
+                                    let! orders = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_RC_ORDER]"
+                                    Assert.Equal(2, users)
+                                    Assert.Equal(2, orders)
+                                    let! sourceValued =
+                                        TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_RC_ORDER] WHERE [USER_ID] IN (280,281,999)"
+                                    Assert.Equal(0, sourceValued)
+                                finally
+                                    try File.Delete srcFile with _ -> ()
+                                    try File.Delete sinkFile with _ -> ()
                             })
                 }))
 

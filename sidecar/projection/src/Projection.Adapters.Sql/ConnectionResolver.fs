@@ -2,6 +2,8 @@ namespace Projection.Adapters.Sql
 
 open System
 open System.IO
+open System.Threading.Tasks
+open Microsoft.Data.SqlClient
 open Projection.Core
 
 /// Resolve a `ConnectionRef` (the operator's OOB pointer at where the
@@ -36,3 +38,31 @@ module ConnectionResolver =
                 let value = (File.ReadAllText path).Trim()
                 if String.IsNullOrWhiteSpace value then Result.failureOf (blank label (sprintf "file '%s'" path))
                 else Result.success value
+
+    /// A diagnostic label for a substrate — `Role:ENVIRONMENT` — so a
+    /// resolution / open failure names which substrate failed.
+    let private substrateLabel (substrate: Substrate) : string =
+        sprintf "%A:%s" substrate.Role (Environment.name substrate.Environment)
+
+    /// Slice 4.2 — resolve a `Substrate`'s out-of-band `ConnectionRef` and
+    /// open the live `SqlConnection`. The single seam through which the
+    /// `TransferConnections` apparatus realizes a logical substrate into an
+    /// open connection (D9: the secret is read here and only here). The
+    /// caller owns disposal of the returned connection.
+    let openSubstrate (substrate: Substrate) : Task<Result<SqlConnection>> =
+        task {
+            let label = substrateLabel substrate
+            match resolve label substrate.ConnectionRef with
+            | Error es -> return Result.failure es
+            | Ok connectionString ->
+                try
+                    let cnn = new SqlConnection(connectionString)
+                    do! cnn.OpenAsync()
+                    return Result.success cnn
+                with ex ->
+                    return
+                        Result.failureOf
+                            (ValidationError.create
+                                "transfer.connection.openFailed"
+                                (sprintf "%s connection: failed to open — %s" label ex.Message))
+        }

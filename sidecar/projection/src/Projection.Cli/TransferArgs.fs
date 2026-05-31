@@ -14,13 +14,28 @@ open Argu
 type TransferArg =
     | [<Mandatory>] Source_Conn of spec: string
     | [<Mandatory>] Sink_Conn of spec: string
+    | Source_Env of name: string
+    | Sink_Env of name: string
     | Reconcile of spec: string
+    | User_Map of path: string
     | Execute
     | Allow_Cdc
 
     interface IArgParserTemplate with
         member this.Usage =
             match this with
+            | Source_Env _ ->
+                "Logical environment the Source substrate names (DEV | TEST | UAT | PROD | "
+                + "<custom>). Default: a Named \"Source\" label. Surfaces in apparatus "
+                + "diagnostics + the ProfiledForIdentity set."
+            | Sink_Env _ ->
+                "Logical environment the Sink substrate names (DEV | TEST | UAT | PROD | "
+                + "<custom>). Default: a Named \"Sink\" label."
+            | User_Map _ ->
+                "Path to a CSV of explicit Source->Sink surrogate overrides "
+                + "(ManualOverride reconciliation): 'table,sourceKey,assignedKey' per line "
+                + "(an optional 'table,...' header is skipped). Complements --reconcile "
+                + "(match-by-column); a kind named by both is rejected."
             | Source_Conn _ ->
                 "Source substrate connection — env:<VAR_NAME> | file:<PATH>. "
                 + "D9: the secret lives out of band; this flag points at where it lives."

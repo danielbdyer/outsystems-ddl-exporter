@@ -154,3 +154,83 @@ let ``resolveReconciliation rejects a kind specified twice`` () =
     with
     | Ok _    -> Assert.Fail "expected Error"
     | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.reconcile.duplicateKind")
+
+// -- parseUserMapCsv / resolveUserMap (slice 4.2) --------------------------
+
+[<Fact>]
+let ``parseUserMapCsv parses table,source,assigned rows`` () =
+    let rows =
+        TransferSpec.parseUserMapCsv "OSUSR_RC_USER,280,18\nOSUSR_RC_USER,281,19"
+        |> mustOk
+    Assert.Equal(2, rows.Length)
+    Assert.Equal("OSUSR_RC_USER", rows.[0].Table)
+    Assert.Equal("280", rows.[0].Source)
+    Assert.Equal("18", rows.[0].Assigned)
+
+[<Fact>]
+let ``parseUserMapCsv skips a leading header line and blank lines`` () =
+    let rows =
+        TransferSpec.parseUserMapCsv "table,source,assigned\n\nOSUSR_RC_USER,280,18\n\n"
+        |> mustOk
+    Assert.Equal(1, rows.Length)
+    Assert.Equal("280", (List.head rows).Source)
+
+[<Fact>]
+let ``parseUserMapCsv rejects a line without exactly three fields`` () =
+    match TransferSpec.parseUserMapCsv "OSUSR_RC_USER,280" with
+    | Ok _    -> Assert.Fail "expected Error"
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.userMap.shape")
+
+[<Fact>]
+let ``resolveUserMap resolves rows to a per-table ManualOverride strategy`` () =
+    let map =
+        TransferSpec.resolveUserMap catalog
+            [ { TransferSpec.UserMapEntry.Table = "OSUSR_RC_USER"; Source = "280"; Assigned = "18" }
+              { TransferSpec.UserMapEntry.Table = "OSUSR_RC_USER"; Source = "281"; Assigned = "19" } ]
+        |> mustOk
+    match Map.tryFind userKey map with
+    | Some (ReconciliationStrategy.ManualOverride overrides) ->
+        Assert.Equal(Some (AssignedKey.ofString "18"), Map.tryFind (SourceKey.ofString "280") overrides)
+        Assert.Equal(Some (AssignedKey.ofString "19"), Map.tryFind (SourceKey.ofString "281") overrides)
+    | other -> Assert.Fail(sprintf "expected ManualOverride; got %A" other)
+
+[<Fact>]
+let ``resolveUserMap surfaces tableNotFound for an unknown table`` () =
+    match
+        TransferSpec.resolveUserMap catalog
+            [ { TransferSpec.UserMapEntry.Table = "NOT_THERE"; Source = "1"; Assigned = "2" } ]
+    with
+    | Ok _    -> Assert.Fail "expected Error"
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.userMap.tableNotFound")
+
+[<Fact>]
+let ``resolveUserMap rejects a duplicate source key within one table`` () =
+    match
+        TransferSpec.resolveUserMap catalog
+            [ { TransferSpec.UserMapEntry.Table = "OSUSR_RC_USER"; Source = "280"; Assigned = "18" }
+              { TransferSpec.UserMapEntry.Table = "OSUSR_RC_USER"; Source = "280"; Assigned = "19" } ]
+    with
+    | Ok _    -> Assert.Fail "expected Error"
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.userMap.duplicateSource")
+
+[<Fact>]
+let ``resolveAllReconciliation merges MatchByColumn and ManualOverride across distinct kinds`` () =
+    let map =
+        TransferSpec.resolveAllReconciliation catalog
+            [ { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; MatchColumn = "EMAIL" } ]
+            [ { TransferSpec.UserMapEntry.Table = "OSUSR_RC_ORDER"; Source = "1"; Assigned = "9" } ]
+        |> mustOk
+    Assert.Equal(2, Map.count map)
+    match Map.tryFind userKey map with
+    | Some (ReconciliationStrategy.MatchByColumn _) -> ()
+    | other -> Assert.Fail(sprintf "expected MatchByColumn for User; got %A" other)
+
+[<Fact>]
+let ``resolveAllReconciliation rejects a kind reconciled by both strategies`` () =
+    match
+        TransferSpec.resolveAllReconciliation catalog
+            [ { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; MatchColumn = "EMAIL" } ]
+            [ { TransferSpec.UserMapEntry.Table = "OSUSR_RC_USER"; Source = "280"; Assigned = "18" } ]
+    with
+    | Ok _    -> Assert.Fail "expected Error"
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.reconcile.strategyConflict")
