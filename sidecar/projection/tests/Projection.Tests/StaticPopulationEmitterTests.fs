@@ -57,7 +57,7 @@ let private mkCountryKind () : Kind =
     {
         SsKey    = kindKey
         Name     = mkName "Country"
-        Origin   = OsNative
+        Origin   = Native
         Modality = [ Static [ row "1" "United States"
                               row "2" "Canada" ] ]
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
@@ -91,7 +91,7 @@ let private mkLanguageKind () : Kind =
     {
         SsKey    = kindKey
         Name     = mkName "Language"
-        Origin   = OsNative
+        Origin   = Native
         Modality = [ Static [ row "EN" "English"; row "FR" "French" ] ]
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_LANGUAGE"; Catalog = None }
         Attributes =
@@ -116,7 +116,7 @@ let private mkRegularKind () : Kind =
     {
         SsKey    = kindKey
         Name     = mkName "Customer"
-        Origin   = OsNative
+        Origin   = Native
         Modality = []
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER"; Catalog = None }
         Attributes =
@@ -142,7 +142,7 @@ let private mkEmptyStaticKind () : Kind =
     {
         SsKey    = kindKey
         Name     = mkName "Empty"
-        Origin   = OsNative
+        Origin   = Native
         Modality = [ Static [] ]
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_EMPTY"; Catalog = None }
         Attributes =

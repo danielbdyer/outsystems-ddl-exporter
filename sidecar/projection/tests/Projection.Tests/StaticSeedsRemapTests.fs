@@ -35,7 +35,7 @@ let private userKind : Kind =
     {
         SsKey      = userKey
         Name       = mkName "User"
-        Origin     = OsNative
+        Origin     = Native
         Modality   = []
         Physical   = { Schema = "dbo"; Table = "OSUSR_SR_USER"; Catalog = None }
         Attributes =
@@ -69,7 +69,7 @@ let private mkOrderKind (rows: StaticRow list) : Kind =
     {
         SsKey      = orderKey
         Name       = mkName "Order"
-        Origin     = OsNative
+        Origin     = Native
         Modality   = [ Static rows ]
         Physical   = { Schema = "dbo"; Table = "OSUSR_SR_ORDER"; Catalog = None }
         Attributes = [ orderIdAttr; orderUserIdAttr ]

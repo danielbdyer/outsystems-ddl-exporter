@@ -60,7 +60,7 @@ let private singleKindCatalog : Catalog =
     let widget : Kind = {
         SsKey    = widgetKey
         Name     = mkName "Widget"
-        Origin   = OsNative
+        Origin   = Native
         Modality = []
         Physical = { Schema = "dbo"; Table = "WIDGET"; Catalog = None }
         Attributes = [
@@ -227,7 +227,7 @@ let private indexedCatalog : Catalog =
     let widget : Kind = {
         SsKey    = widgetKey
         Name     = mkName "IndexedWidget"
-        Origin   = OsNative
+        Origin   = Native
         Modality = []
         Physical = { Schema = "dbo"; Table = "INDEXED_WIDGET"; Catalog = None }
         Attributes = [

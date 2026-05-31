@@ -62,7 +62,7 @@ let private mkOrderKind () : Kind =
     {
         SsKey    = kindKey
         Name     = mkName "Order"
-        Origin   = OsNative
+        Origin   = Native
         Modality = []
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_ORDER"; Catalog = None }
         Attributes =
@@ -170,7 +170,7 @@ let ``Slice η: kind with no User-FK references passes through unrewritten`` () 
     let country : Kind =
         { SsKey    = kindKey
           Name     = mkName "Country"
-          Origin   = OsNative
+          Origin   = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
           Attributes =

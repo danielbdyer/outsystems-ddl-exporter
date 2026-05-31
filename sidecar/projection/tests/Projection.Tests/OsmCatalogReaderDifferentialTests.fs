@@ -124,7 +124,7 @@ let private expectedCatalog : Catalog =
     let userKind : Kind =
         { SsKey    = userKindKey
           Name     = mkName "User"
-          Origin   = OsNative
+          Origin   = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
@@ -328,7 +328,7 @@ let private expectedReferenceCatalog : Catalog =
     let accountKind : Kind =
         { SsKey    = accountKindKey
           Name     = mkName "Account"
-          Origin   = OsNative
+          Origin   = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_ACCOUNT"; Catalog = None }
           Attributes = [
@@ -339,7 +339,7 @@ let private expectedReferenceCatalog : Catalog =
     let userKind : Kind =
         { SsKey    = userKindKey
           Name     = mkName "User"
-          Origin   = OsNative
+          Origin   = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
@@ -391,10 +391,10 @@ let ``differential: V1 reference-bearing fixture parses into a Catalog with the 
 //     OSSYS adapter translation rules`, session-20 amendment).
 //
 // Placeholder rule under the JSON path (this slice):
-//   - `isExternal: false` → OsNative
-//   - `isExternal: true`  → ExternalViaIntegrationStudio
+//   - `isExternal: false` → Native
+//   - `isExternal: true`  → ExternalIndirect
 //
-// The placeholder picks ExternalViaIntegrationStudio because IS
+// The placeholder picks ExternalIndirect because IS
 // extensions ARE the standard V1 mechanism for external entities;
 // most isExternal=true cases are IS-imported. Convention-bearing
 // example: V1's edge-case fixture has an "ExtBilling" module
@@ -467,7 +467,7 @@ let private expectedExternalCatalog : Catalog =
     let billingAccount : Kind =
         { SsKey    = billingAccountKindKey
           Name     = mkName "BillingAccount"
-          Origin   = ExternalViaIntegrationStudio
+          Origin   = ExternalIndirect
           Modality = []
           Physical = { Schema = "billing"; Table = "BILLING_ACCOUNT"; Catalog = None }
           Attributes = [
@@ -484,7 +484,7 @@ let private expectedExternalCatalog : Catalog =
           Kinds = [ billingAccount ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
 [<Fact>]
-let ``differential: V1 external-entity fixture parses with Origin = ExternalViaIntegrationStudio`` () =
+let ``differential: V1 external-entity fixture parses with Origin = ExternalIndirect`` () =
     let result = parseSync (CatalogReader.SnapshotJson v1ExternalFixture)
     match result with
     | Error errors ->
@@ -648,7 +648,7 @@ let private expectedMixedActiveCatalog : Catalog =
     let activeEntity : Kind =
         { SsKey    = activeEntityKindKey
           Name     = mkName "ActiveEntity"
-          Origin   = OsNative
+          Origin   = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_ACTIVE"; Catalog = None }
           Attributes = [
@@ -660,7 +660,7 @@ let private expectedMixedActiveCatalog : Catalog =
     let retiredEntity : Kind =
         { SsKey    = retiredEntityKindKey
           Name     = mkName "RetiredEntity"
-          Origin   = OsNative
+          Origin   = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_RETIRED"; Catalog = None }
           Attributes = [
@@ -876,7 +876,7 @@ let private expectedIndexCatalog : Catalog =
     let userKind : Kind =
         { SsKey    = userKindKey
           Name     = mkName "User"
-          Origin   = OsNative
+          Origin   = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
           Attributes = [
@@ -1001,7 +1001,7 @@ let private expectedStaticEntityCatalog : Catalog =
     let countryKind : Kind =
         { SsKey    = countryKindKey
           Name     = mkName "Country"
-          Origin   = OsNative
+          Origin   = Native
           // The static-entity translation rule (session 24): V1
           // `isStatic: true` → V2 `Modality = [Static []]`. Empty
           // population is intentional — the OSSYS adapter's

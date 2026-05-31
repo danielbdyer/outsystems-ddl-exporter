@@ -56,7 +56,7 @@ let private mkCountryKind () : Kind =
     {
         SsKey    = kindKey
         Name     = mkName "Country"
-        Origin   = OsNative
+        Origin   = Native
         Modality = [ Static [ row "US" "United States"; row "CA" "Canada" ] ]
         Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
         Attributes =
@@ -356,7 +356,7 @@ let ``Slice ι: composeRendered emits Phase-1 (MERGE) of every kind before Phase
         {
             SsKey    = kindKey
             Name     = mkName name
-            Origin   = OsNative
+            Origin   = Native
             Modality = [ Static [ row ] ]
             Physical = { Schema = "dbo"; Table = table; Catalog = None }
             Attributes =
@@ -475,7 +475,7 @@ let private mkLegacyKindForMigration (name: string) (table: string) : Kind =
     {
         SsKey    = kindKey
         Name     = mkName name
-        Origin   = OsNative
+        Origin   = Native
         Modality = []   // NOT Static — Migration populates instead
         Physical = { Schema = "dbo"; Table = table; Catalog = None }
         Attributes =

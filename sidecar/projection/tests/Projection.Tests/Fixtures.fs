@@ -7,9 +7,9 @@ open Projection.Tests.IRBuilders
 // Synthetic catalog used as the test bed for the entire pipeline.
 //
 // Three kinds:
-//   1. Customer  — OsNative, TenantScoped.
-//   2. Order     — OsNative, has a foreign key to Customer.
-//   3. Country   — OsNative, Static, with a populated row set.
+//   1. Customer  — Native, TenantScoped.
+//   2. Order     — Native, has a foreign key to Customer.
+//   3. Country   — Native, Static, with a populated row set.
 //
 // One module ("Sales") wraps all three kinds. No SQL involved.
 //

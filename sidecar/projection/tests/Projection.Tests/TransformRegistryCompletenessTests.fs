@@ -67,7 +67,7 @@ let private ciRun (c: Catalog) : Lineage<Catalog> =
 let private mkName (s: string) : Name = Name.create s |> Result.value
 let private emptyMask : VisibilityMask.Mask = { Hide = [] }
 let private hideOsNativeMask : VisibilityMask.Mask =
-    { Hide = [ VisibilityMask.hideOrigin Origin.OsNative ] }
+    { Hide = [ VisibilityMask.hideOrigin Origin.Native ] }
 let private identityMorphism : NamingMorphism.Morphism = NamingMorphism.identity
 let private appendUnderscoreV (n: Name) : Name =
     Name.create (System.String.Concat (Name.value n, "_v")) |> Result.value

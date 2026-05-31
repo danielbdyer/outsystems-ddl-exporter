@@ -233,7 +233,7 @@ let private allPrimitiveTypesKind : Kind =
     {
         SsKey = kindKey ["AllTypes"]
         Name = mkName "AllTypes"
-        Origin = OsNative
+        Origin = Native
         Modality = []
         Physical = { Schema = "dbo"; Table = "OSUSR_X_ALLTYPES"; Catalog = None }
         Attributes = [
@@ -326,7 +326,7 @@ let private compositePkKind : Kind =
     {
         SsKey = kindKey ["Composite"]
         Name = mkName "Composite"
-        Origin = OsNative
+        Origin = Native
         Modality = []
         Physical = { Schema = "dbo"; Table = "OSUSR_X_COMPOSITE"; Catalog = None }
         Attributes = [
@@ -415,7 +415,7 @@ let private indexedKind : Kind =
     {
         SsKey = indexedKindKey
         Name = mkName "Indexed"
-        Origin = OsNative
+        Origin = Native
         Modality = []
         Physical = { Schema = "dbo"; Table = "OSUSR_X_INDEXED"; Catalog = None }
         Attributes = [
@@ -536,7 +536,7 @@ let private parentKind : Kind =
     {
         SsKey = parentKindKey
         Name = mkName "Parent"
-        Origin = OsNative
+        Origin = Native
         Modality = []
         Physical = { Schema = "dbo"; Table = "OSUSR_X_PARENT"; Catalog = None }
         Attributes = [
@@ -554,7 +554,7 @@ let private childKind : Kind =
     {
         SsKey = childKindKey
         Name = mkName "Child"
-        Origin = OsNative
+        Origin = Native
         Modality = []
         Physical = { Schema = "dbo"; Table = "OSUSR_X_CHILD"; Catalog = None }
         Attributes = [
@@ -785,7 +785,7 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
     let aKind : Kind =
         { SsKey = aKindKey
           Name  = mkName "AKind"
-          Origin = OsNative
+          Origin = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
           Attributes =
@@ -796,7 +796,7 @@ let ``Slice 6: cross-module FK target kind precedes its source in statement orde
     let bKind : Kind =
         { SsKey = bKindKey
           Name  = mkName "BKind"
-          Origin = OsNative
+          Origin = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
           Attributes =
@@ -845,14 +845,14 @@ let ``Slice 6: cross-module FK emits inline FOREIGN KEY constraint`` () =
     let bFkAttr    = attrKey ["B"; "BKind"; "AId"]
     let crossRefKey = refKey ["B"; "BKind"; "AId"]
     let aKind : Kind =
-        { SsKey = aKindKey; Name = mkName "AKind"; Origin = OsNative
+        { SsKey = aKindKey; Name = mkName "AKind"; Origin = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
           Attributes =
               [ { Attribute.create aIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let bKind : Kind =
-        { SsKey = bKindKey; Name = mkName "BKind"; Origin = OsNative
+        { SsKey = bKindKey; Name = mkName "BKind"; Origin = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
           Attributes =
@@ -885,14 +885,14 @@ let ``Slice 6: T11 keyset holds across modules (every kind keyed; cross-module F
     let bFkAttr    = attrKey ["B"; "BKind"; "AId"]
     let crossRefKey = refKey ["B"; "BKind"; "AId"]
     let aKind : Kind =
-        { SsKey = aKindKey; Name = mkName "AKind"; Origin = OsNative
+        { SsKey = aKindKey; Name = mkName "AKind"; Origin = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_A_AKIND"; Catalog = None }
           Attributes =
               [ { Attribute.create aIdAttr (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let bKind : Kind =
-        { SsKey = bKindKey; Name = mkName "BKind"; Origin = OsNative
+        { SsKey = bKindKey; Name = mkName "BKind"; Origin = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_B_BKIND"; Catalog = None }
           Attributes =

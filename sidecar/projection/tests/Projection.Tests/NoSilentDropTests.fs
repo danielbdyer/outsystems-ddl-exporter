@@ -33,7 +33,7 @@ open Projection.Tests.IRBuilders
 // `V2_PRODUCTION_CUTOVER.md` §3.3 row): assert the JSON-path
 // `parseOrigin` and rowset-path `parseOriginFromRowset` mapping rules
 // preserve the V1 `isExternal=true → V2 Origin ∈
-// {ExternalViaIntegrationStudio, ExternalDirect}` invariant. The
+// {ExternalIndirect, ExternalDirect}` invariant. The
 // mapping is currently private; the property test exercises it
 // through `parseSync` on representative fixtures.
 //
@@ -175,7 +175,7 @@ let ``L3-Boundary-NoSilentDrop: TableId carries Catalog (L3-S10 / L3-I10 home)``
 //   - ExtendedProperties at entity level (ζ)
 //   - Descriptions (α)
 //   - IsActive at three levels (β)
-//   - IsExternal=true → Origin = ExternalViaIntegrationStudio (audit)
+//   - IsExternal=true → Origin = ExternalIndirect (audit)
 //   - All shipped lifts simultaneously
 //
 // The test asserts the full carriage across the JSON-path boundary in
@@ -252,10 +252,10 @@ let ``L3-Boundary-NoSilentDrop: kitchen-sink fixture carries every shipped axis 
         Assert.Equal(1, List.length k.ExtendedProperties)
         Assert.Equal("MS_Description", k.ExtendedProperties.[0].Name)
         Assert.Equal(Some "Platform user table", k.ExtendedProperties.[0].Value)
-        // Origin audit — isExternal=true → ExternalViaIntegrationStudio
+        // Origin audit — isExternal=true → ExternalIndirect
         // (JSON-path placeholder per session-20 amendment; the rowset
         // path's three-way refinement is exercised below).
-        Assert.Equal(ExternalViaIntegrationStudio, k.Origin)
+        Assert.Equal(ExternalIndirect, k.Origin)
 
 // ---------------------------------------------------------------------------
 // IsExternal / Origin mapping property tests (Bucket-B → A upgrade).
@@ -290,13 +290,13 @@ let private v1FixtureExternalEntity (isExternal: bool) : string =
 }""" isExternal
 
 [<Fact>]
-let ``Origin audit (JSON path): isExternal=false → OsNative`` () =
+let ``Origin audit (JSON path): isExternal=false → Native`` () =
     match parseSync (CatalogReader.SnapshotJson (v1FixtureExternalEntity false)) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
-    | Ok c -> Assert.Equal(OsNative, (firstKind c).Origin)
+    | Ok c -> Assert.Equal(Native, (firstKind c).Origin)
 
 [<Fact>]
-let ``Origin audit (JSON path): isExternal=true → ExternalViaIntegrationStudio (placeholder per session-20)`` () =
+let ``Origin audit (JSON path): isExternal=true → ExternalIndirect (placeholder per session-20)`` () =
     // The JSON path is bound by the JSON-projection-lossiness class:
     // V1's EspaceKind is dropped at the JSON projection layer, so V2
     // collapses external entities to the IS-extension placeholder.
@@ -305,10 +305,10 @@ let ``Origin audit (JSON path): isExternal=true → ExternalViaIntegrationStudio
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok c ->
         let k = firstKind c
-        Assert.Equal(ExternalViaIntegrationStudio, k.Origin)
+        Assert.Equal(ExternalIndirect, k.Origin)
         // Surjectivity into the external-Origin subset: isExternal=true
-        // never produces OsNative.
-        Assert.NotEqual<Origin>(OsNative, k.Origin)
+        // never produces Native.
+        Assert.NotEqual<Origin>(Native, k.Origin)
 
 // Rowset-path mappings exercise the three-way real driven by
 // `ModuleRow.EspaceKind`. Reuses the existing OssyRowsetReaderTests
@@ -334,16 +334,16 @@ let private rowsetWith (isExternal: bool) (espaceKind: string option) : CatalogR
       Attributes = [ idRow ]; References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = [] }
 
 [<Fact>]
-let ``Origin audit (rowset path): isExternal=false → OsNative regardless of EspaceKind`` () =
+let ``Origin audit (rowset path): isExternal=false → Native regardless of EspaceKind`` () =
     match parseSync (CatalogReader.SnapshotRowsets (rowsetWith false (Some "eSpace"))) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
-    | Ok c -> Assert.Equal(OsNative, (firstKind c).Origin)
+    | Ok c -> Assert.Equal(Native, (firstKind c).Origin)
 
 [<Fact>]
-let ``Origin audit (rowset path): isExternal=true + EspaceKind=Extension → ExternalViaIntegrationStudio`` () =
+let ``Origin audit (rowset path): isExternal=true + EspaceKind=Extension → ExternalIndirect`` () =
     match parseSync (CatalogReader.SnapshotRowsets (rowsetWith true (Some "Extension"))) with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
-    | Ok c -> Assert.Equal(ExternalViaIntegrationStudio, (firstKind c).Origin)
+    | Ok c -> Assert.Equal(ExternalIndirect, (firstKind c).Origin)
 
 [<Fact>]
 let ``Origin audit (rowset path): isExternal=true + EspaceKind absent → ExternalDirect`` () =
@@ -354,10 +354,10 @@ let ``Origin audit (rowset path): isExternal=true + EspaceKind absent → Extern
     | Ok c -> Assert.Equal(ExternalDirect, (firstKind c).Origin)
 
 [<Fact>]
-let ``Origin audit (rowset path): isExternal=true → never OsNative (Bucket-B → A invariant)`` () =
+let ``Origin audit (rowset path): isExternal=true → never Native (Bucket-B → A invariant)`` () =
     // The L3-S3 / IsExternal invariant: `isExternal=true → Origin ∈
-    // {ExternalViaIntegrationStudio, ExternalDirect}`, never
-    // `OsNative`. Asserted via the disjunction over the rowset path's
+    // {ExternalIndirect, ExternalDirect}`, never
+    // `Native`. Asserted via the disjunction over the rowset path's
     // three-way real.
     let extensionResult = parseSync (CatalogReader.SnapshotRowsets (rowsetWith true (Some "Extension")))
     let directResult    = parseSync (CatalogReader.SnapshotRowsets (rowsetWith true None))
@@ -367,4 +367,4 @@ let ``Origin audit (rowset path): isExternal=true → never OsNative (Bucket-B �
             | Ok c -> Some (firstKind c).Origin
             | Error _ -> None)
     Assert.Equal(2, List.length externalOrigins)
-    Assert.All(externalOrigins, fun o -> Assert.NotEqual<Origin>(OsNative, o))
+    Assert.All(externalOrigins, fun o -> Assert.NotEqual<Origin>(Native, o))

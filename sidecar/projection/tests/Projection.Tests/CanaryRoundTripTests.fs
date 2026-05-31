@@ -74,7 +74,7 @@ let private programmaticUserCatalog : Catalog =
         {
             SsKey = userKey
             Name = nameSafe "User"
-            Origin = OsNative
+            Origin = Native
             Modality = []
             Physical = { Schema = "dbo"; Table = "OSUSR_M3_USER"; Catalog = None }
             Attributes =

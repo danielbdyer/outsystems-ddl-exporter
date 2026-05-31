@@ -41,7 +41,7 @@ module RemovalReason =
     /// readers) that need a flat presentation form. Returns the same
     /// strings the prior `Removed of string` payload carried, so this
     /// is a structural seam, not a behavior change:
-    ///   - `OriginPredicate Origin.OsNative` → `"origin=OsNative"`
+    ///   - `OriginPredicate Origin.Native`    → `"origin=Native"`
     ///   - `ExplicitKeyList`                  → `"explicit-key-list"`
     ///   - `ModalityPredicate (Static [...])` → `"modality=[Static(N)]"`
     let toDiagnosticString (reason: RemovalReason) : string =

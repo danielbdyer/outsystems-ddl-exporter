@@ -58,7 +58,7 @@ let private buildCatalog (mandatoryColumnIsNullable: bool) (mandatoryColumnIsMan
     let kind : Kind =
         { SsKey    = sampleEntityKey
           Name     = mkName "SampleEntity"
-          Origin   = OsNative
+          Origin   = Native
           Modality = []
           Physical = { Schema = "dbo"; Table = "OSUSR_TEST_SAMPLE"; Catalog = None }
           Attributes = [

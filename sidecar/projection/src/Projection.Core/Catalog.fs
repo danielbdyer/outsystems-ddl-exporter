@@ -36,12 +36,22 @@ module Name =
 /// A9: closed three-way origin discriminant. Widen only when evidence forces
 /// it (a fourth source category would mean another reader and another set
 /// of axioms about its provenance).
+///
+/// **Slice 4.6 — algebraic variant names (decouple V1 vocabulary from Core).**
+/// The variants name *what the kind's provenance IS* in V2's algebra, not
+/// the V1 product surface that observes it: `Native` (originated within the
+/// platform), `ExternalIndirect` (external, exposed through an intermediating
+/// step — V1's Integration-Studio IS-functor is one such producer),
+/// `ExternalDirect` (external, exposed by a direct reader). The V1→V2
+/// translation (`CatalogReader.parseOrigin*`) reads V1's `isExternal` flag +
+/// EspaceKind; V1's product names never enter the Core DU.
 type Origin =
-    /// OutSystems-native kind originated within the platform.
-    | OsNative
-    /// External kind exposed via Integration Studio's IS-functor.
-    | ExternalViaIntegrationStudio
-    /// External kind exposed by direct reader, no IS step.
+    /// Kind originated within the platform (V1: `isExternal = false`).
+    | Native
+    /// External kind exposed through an intermediating step (V1: external +
+    /// IS-functor / Integration-Studio extension).
+    | ExternalIndirect
+    /// External kind exposed by a direct reader, no intermediating step.
     | ExternalDirect
 
 /// Typed structural display for `Origin`. Tag-only variants;
@@ -50,8 +60,8 @@ type Origin =
 module Origin =
     let toStructured (o: Origin) : StructuredString =
         match o with
-        | OsNative -> StructuredString.tag "OsNative"
-        | ExternalViaIntegrationStudio -> StructuredString.tag "ExternalViaIntegrationStudio"
+        | Native -> StructuredString.tag "Native"
+        | ExternalIndirect -> StructuredString.tag "ExternalIndirect"
         | ExternalDirect -> StructuredString.tag "ExternalDirect"
 
     let toDiagnosticString (o: Origin) : string =
@@ -1057,7 +1067,7 @@ module Kind =
 
     /// Build a `Kind` with minimum-evidence defaults. Required: `ssKey`,
     /// `name`, `physical`, `attributes`. Optional axes default to:
-    ///   - `Origin = OsNative`
+    ///   - `Origin = Native`
     ///   - `Modality = []`; `References = []`; `Indexes = []`
     ///   - `Description = None`; `IsActive = true`
     ///   - `Triggers = []`; `ColumnChecks = []`
@@ -1074,7 +1084,7 @@ module Kind =
         {
             SsKey              = ssKey
             Name               = name
-            Origin             = OsNative
+            Origin             = Native
             Modality           = []
             Physical           = physical
             Attributes         = attributes

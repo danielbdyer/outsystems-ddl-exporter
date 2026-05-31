@@ -234,7 +234,7 @@ GO
 --     Float, BinaryData->VARBINARY(MAX), Text->NVARCHAR(MAX), Integer,
 --     LongInteger->BIGINT, GUID
 --   * Extension module (EspaceKind='Extension') + external entity ->
---     ExternalViaIntegrationStudio origin (SyncLog)
+--     ExternalIndirect origin (SyncLog)
 --   * cross-module FK in a second direction (Sales -> AppCore)
 --   * static (lookup) entities (Country, CurrencyCode)
 --   * multiple triggers on one entity, one enabled + one disabled

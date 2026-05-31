@@ -118,7 +118,7 @@ let private childToParentRefKey = mkKey "OS_REF_Child_Parent"
 let private parentKind : Kind =
     { SsKey    = parentKindKey
       Name     = mkName "Parent"
-      Origin   = OsNative
+      Origin   = Native
       Modality = []
       Physical = { Schema = "dbo"; Table = "OSUSR_P_PARENT"; Catalog = None }
       Attributes = [
@@ -128,7 +128,7 @@ let private parentKind : Kind =
 let private childKind : Kind =
     { SsKey    = childKindKey
       Name     = mkName "Child"
-      Origin   = OsNative
+      Origin   = Native
       Modality = []
       Physical = { Schema = "dbo"; Table = "OSUSR_C_CHILD"; Catalog = None }
       Attributes = [

@@ -44,7 +44,7 @@ open Projection.Core.Passes
 /// **Tolerances (documented).** The OSSYS-extracted Catalog and the
 /// ReadSide-extracted Catalog will diverge on:
 ///   - **Origin axis** — OSSYS adapter derives Origin from EspaceKind
-///     (defaults to `OsNative`); ReadSide has no Origin signal and
+///     (defaults to `Native`); ReadSide has no Origin signal and
 ///     defaults differently. Asserted on entity-name overlap, not on
 ///     full structural equality.
 ///   - **Module assignment** — ReadSide doesn't see modules (everything
@@ -395,7 +395,7 @@ module ComprehensiveCanaryTests =
             let cyclicKind : Kind =
                 { SsKey = cyclicKindKey
                   Name  = mkSuppName "Cyclic"
-                  Origin = OsNative
+                  Origin = Native
                   Modality =
                       [ Static
                             [ suppRow "1" "1" "self-ref"

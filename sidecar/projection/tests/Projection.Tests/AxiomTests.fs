@@ -147,7 +147,7 @@ let ``A8: kinds carry a fixed shape (convention-enforced)`` () =
 [<Fact>]
 let ``A9: Origin is a closed three-way discriminant (convention-enforced)`` () =
     // Bucket B — `Origin` is a closed DU with exactly three variants
-    // (`OsNative` / `ExternalViaIntegrationStudio` / `ExternalDirect`);
+    // (`Native` / `ExternalIndirect` / `ExternalDirect`);
     // exhaustiveness errors light up at every match site if widened.
     ()
 

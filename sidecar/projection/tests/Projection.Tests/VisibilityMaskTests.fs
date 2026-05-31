@@ -34,28 +34,28 @@ let ``empty mask is the identity transformation`` () =
     Assert.Empty(result.Trail)
 
 // ---------------------------------------------------------------------------
-// Hide by origin — every OsNative kind is removed; non-matching kinds
+// Hide by origin — every Native kind is removed; non-matching kinds
 // (none in the fixture) survive.
 // ---------------------------------------------------------------------------
 
 [<Fact>]
 let ``hideOrigin removes every kind with that origin`` () =
-    let mask = { VisibilityMask.Hide = [ VisibilityMask.hideOrigin OsNative ] }
+    let mask = { VisibilityMask.Hide = [ VisibilityMask.hideOrigin Native ] }
     let result = vmRun mask sampleCatalog
     Assert.Empty(Catalog.allKinds result.Value)
 
 [<Fact>]
 let ``hideOrigin emits one Removed event per removed kind`` () =
     // Chapter-3.6 slice-α: typed `RemovalReason.OriginPredicate Origin`
-    // payload replaces the prior `"origin=OsNative"` built-name string.
+    // payload replaces the prior `"origin=Native"` built-name string.
     // Audit readers / tests pattern-match the typed payload directly.
-    let mask = { VisibilityMask.Hide = [ VisibilityMask.hideOrigin OsNative ] }
+    let mask = { VisibilityMask.Hide = [ VisibilityMask.hideOrigin Native ] }
     let result = vmRun mask sampleCatalog
     Assert.Equal(3, result.Trail.Length)
     Assert.All(result.Trail, fun e ->
         match e.TransformKind with
         | Removed (OriginPredicate origin) ->
-            Assert.Equal(OsNative, origin)
+            Assert.Equal(Native, origin)
         | other ->
             Assert.Fail(sprintf "Expected Removed (OriginPredicate _), got %A" other))
 
@@ -186,7 +186,7 @@ let ``T1: visibilityMask is deterministic`` () =
 
 [<Fact>]
 let ``A23: visibility events carry the pass version and name`` () =
-    let mask = { VisibilityMask.Hide = [ VisibilityMask.hideOrigin OsNative ] }
+    let mask = { VisibilityMask.Hide = [ VisibilityMask.hideOrigin Native ] }
     let result = vmRun mask sampleCatalog
     Assert.All(result.Trail, fun e ->
         Assert.Equal(VisibilityMask.version, e.PassVersion)
@@ -194,7 +194,7 @@ let ``A23: visibility events carry the pass version and name`` () =
 
 [<Fact>]
 let ``A25: emitted events reference SsKeys that existed in the input`` () =
-    let mask = { VisibilityMask.Hide = [ VisibilityMask.hideOrigin OsNative ] }
+    let mask = { VisibilityMask.Hide = [ VisibilityMask.hideOrigin Native ] }
     let result = vmRun mask sampleCatalog
     let inputKeys =
         Catalog.allKinds sampleCatalog

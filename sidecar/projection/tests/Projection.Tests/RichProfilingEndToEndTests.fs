@@ -84,7 +84,7 @@ let private countryNameKey      = mkKey "OS_ATTR_R9_Country_Name"
 let private parent : Kind =
     { SsKey    = parentKindKey
       Name     = mkName "Parent"
-      Origin   = OsNative
+      Origin   = Native
       Modality = []
       Physical = { Schema = "dbo"; Table = "OSUSR_R9_PARENT"; Catalog = None }
       Attributes = [
@@ -94,7 +94,7 @@ let private parent : Kind =
 let private child : Kind =
     { SsKey    = childKindKey
       Name     = mkName "Child"
-      Origin   = OsNative
+      Origin   = Native
       Modality = []
       Physical = { Schema = "dbo"; Table = "OSUSR_R9_CHILD"; Catalog = None }
       Attributes = [
@@ -108,7 +108,7 @@ let private child : Kind =
 let private country : Kind =
     { SsKey    = countryKindKey
       Name     = mkName "Country"
-      Origin   = OsNative
+      Origin   = Native
       Modality = []
       Physical = { Schema = "dbo"; Table = "OSUSR_R9_COUNTRY"; Catalog = None }
       Attributes = [
