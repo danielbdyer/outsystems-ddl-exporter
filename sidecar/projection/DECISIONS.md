@@ -20129,3 +20129,20 @@ capability.
 **Test baseline.** Pure pool **2510 passed / 0 / 208** (+2 `PolicyDiffCliTests` exercising the config→policy→diff glue: differing Insertion axis → `AnyChanged` with precise per-axis flags; identical configs → no change). `dotnet build Projection.sln` 0/0.
 
 **Cross-references:** `src/Projection.Pipeline/Pipeline.fs` (`Compose.buildPolicyFromConfig` exposed); `src/Projection.Pipeline/PolicyDiff.fs` (`diffConfigs`); `src/Projection.Cli/Program.fs` (`runPolicyDiff` + dispatch + usage); `tests/Projection.Tests/PolicyDiffCliTests.fs`; EXECUTION_PLAN.md §5.6.
+
+---
+
+## 2026-05-31 — NORTH_STAR round-trip matrix fully green (5/5): Identity + Decision witnesses
+
+**Resolved.** The §1 round-trip witness matrix is fully green (5/5). This session flipped three cells: Time (§5.3, earlier entry), and now **Identity** + **Decision** — both were open by *witness-name mismatch*, not capability gap (the capabilities shipped in Wave 4.1 + Wave 2 and are exercised by the A42 / SsKey-persistence canaries). The matrix generator keys each cell on a backtick-quoted test-name substring; the canonical witnesses now exist:
+
+- **Identity** (`reload preserves SsKey`) — `CanaryRoundTripTests.fs` `` ``Identity round-trip: reload preserves SsKey across emit / deploy / ReadSide`` ``. An `OssysOriginal` identity survives emit → deploy → ReadSide as itself (recovered from the `V2.SsKey` extended property, not a `READSIDE_KIND` synthesis). Witnesses NORTH_STAR §1 Identity round-trip; Wave 4.1's capability.
+- **Decision** (`reproduces the DecisionOverlay`) — `CanaryRoundTripTests.fs` `` ``decision adjunction: emitted-then-read-back schema reproduces the DecisionOverlay`` ``. `Ingest(deploy(Project(C, overlay)))` reproduces the overlay's tightening decisions: the overlay enforces NOT NULL on exactly one of two source-nullable columns; the read-back is **precise** — the decided column is NOT NULL, the undecided column stays NULL (the engine's opinion survived the round-trip, not a blanket apply). This is the §V E3 decision-layer adjunction + NORTH_STAR criterion 2 ("the engine's opinions survive the round-trip — the strongest 'stronger than V1' claim").
+
+**Witnessed on the nullability axis — honest bounding.** The decision adjunction is witnessed on **nullability**, the reliably-round-trippable tightening axis. FK readback has a known container gap (the pre-existing A42 2.4 failure HANDOFF flagged — the empty-overlay baseline itself reconstructs 0 FKs), and unique-index readback is deferred per the ReadSide scope boundary. So the Decision cell is green at the matrix's coarse witness-presence level (consistent with how the Schema cell is green despite being hollow for 6 features); the FK + uniqueness sub-axes of the decision adjunction remain follow-ons. NORTH_STAR §1 prose updated to state the per-axis caveat explicitly.
+
+**Matrix status.** `NORTH_STAR.matrix.generated.md`: round-trip **5/5**, gate **PASS**, L2 live/C/D 71/7/1. Witness-present ≠ feature-complete (the matrix's own disclaimer holds): the coarse witness floor is full; per-feature totality (the 6 hollow schema features; FK/uniqueness decision sub-axes) lives in NORTH_STAR §1 prose + the future E2 per-feature generator.
+
+**Test baseline.** Both witnesses green against the live container (2/2). `dotnet build Projection.sln` 0/0.
+
+**Cross-references:** `tests/Projection.Tests/CanaryRoundTripTests.fs` (both witnesses; reuse the A42 2.3 nullability + Wave 4.1 SsKey harnesses); `NORTH_STAR.matrix.generated.md` (5/5); `NORTH_STAR.md` §1 (self-report sentence updated); `src/Projection.Core/DecisionOverlay.fs` + `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs` (`statementsWith`); `src/Projection.Adapters.Sql/ReadSide.fs` (nullability + SsKey recovery).

@@ -23,11 +23,11 @@ _Derived from `tests/Projection.Tests/AxiomTests.fs` + the test tree. The §1 bu
 |---|---|---|---|---|
 | **Schema** | round-trip (canary) | `PhysicalSchema diff` | Wave 1 (1.2/1.3 un-hollow) | ✅ verified |
 | **Data** | round-trip (data canary) | `data canary` | Transfer (shipped) | ✅ verified |
-| **Identity** | round-trip (SsKey reload) | `reload preserves SsKey` | Wave 4.1 | ⬚ open |
+| **Identity** | round-trip (SsKey reload) | `reload preserves SsKey` | Wave 4.1 | ✅ verified |
 | **Time** | round-trip (replay) | `replayTo genesis` | E4 / 5.3 | ✅ verified |
-| **Decision** | round-trip (overlay) | `reproduces the DecisionOverlay` | E3 / Wave 2 | ⬚ open |
+| **Decision** | round-trip (overlay) | `reproduces the DecisionOverlay` | E3 / Wave 2 | ✅ verified |
 
-**Round-trip cells with a live witness: 3 / 5.** A cell goes green only when a test
+**Round-trip cells with a live witness: 5 / 5.** A cell goes green only when a test
 by its witness name exists in the tree — it cannot be asserted by hand. `⬚ open` cells are the
 remaining bullseye distance; they flip automatically as the named slices land their witnesses.
 
@@ -36,4 +36,4 @@ remaining bullseye distance; they flip automatically as the named slices land th
 > computed/checks/ext-props until Wave 1) lives in NORTH_STAR.md §1 prose; the full E2 generator
 > will track per-feature. Today this is the coarse, honest, machine-derived floor.
 
-_Generated 2026-05-31T19:15Z · gate=PASS · L2 live/C/D=71/7/1 · round-trip=3/5_
+_Generated 2026-05-31T19:45Z · gate=PASS · L2 live/C/D=71/7/1 · round-trip=5/5_

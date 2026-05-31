@@ -59,8 +59,12 @@ single matrix, fully green and self-checked:
 > `scripts/verifiability-gate.sh` (slice E1) fails the build if any axiom claims a
 > coverage bucket its tests do not support. So criterion 5 (§5) is already
 > partially live: **the vision measures its own distance to the bullseye.** Today's
-> machine reading: L2 axioms 69·A / 8·B / 6·C / 11·D (gate PASS); round-trip
-> witnesses present for Schema + Data, open for Identity, Time, and Decision.
+> machine reading (`NORTH_STAR.matrix.generated.md`, 2026-05-31): gate PASS; round-trip
+> witnesses present for **all five axes** — Schema, Data, Identity (Wave 4.1 SsKey reload),
+> Time (§5.3 `replayTo`), Decision (§V E3 decision-adjunction on the nullability axis).
+> **Witness-present ≠ feature-complete:** the coarse witness floor is full; per-feature gaps
+> remain (the Schema canary is still hollow for 6 features; the Decision adjunction is witnessed
+> on nullability — FK readback has a container gap, unique-index readback is deferred).
 
 Two properties hold *across every cell*, by construction:
 - **Determinism (T1).** Same inputs → byte-identical text/JSON, model-equivalent binary. No clock, no randomness, no I/O in the core.
