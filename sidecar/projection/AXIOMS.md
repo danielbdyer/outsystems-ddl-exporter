@@ -246,6 +246,42 @@ catalog under the same policy produce byte-identical snapshots.
 of its bytes. Identical content ⇒ identical hash. Two refreshes that produce
 identical content produce the same hash; the second is a no-op.
 
+### A-Lifecycle-1..4 — the temporal axis (operationalized 2026-05-31, §5.3)
+
+A `Lifecycle` is a monotone chain of `CatalogSnapshot`s along one `Timeline`
+(`src/Projection.Core/Lifecycle.fs`). It is the **outer envelope** over
+`Project` — the inner kernel `Catalog × Policy × Profile` is untouched
+(A6-amended / A17). These underwrite `PRODUCT_AXIOMS.md` Group Lifecycle
+(L3-L1 / L3-L2 / L3-L3).
+
+**A-Lifecycle-1 (↔ L3-L1). Schema evolution is replayable.** `replayTo`
+recovers the Catalog stored at any `Version` (materialized form; the
+diff-replay reconstruction `fold applyDiff C₀` awaits the `CatalogDiff`
+compose operator — H-007).
+
+  *Property test.* `` ``A-Lifecycle-1 (L3-L1): replayTo recovers the snapshotted catalog`` `` (`LifecycleTests.fs`).
+
+**A-Lifecycle-2 (↔ L3-L2). Refactor-log history is monotonic.** `append`
+enforces a strictly-increasing `Version` ordinal; a non-monotone append
+fails rather than reordering. Prior history is never altered.
+
+  *Property test.* `` ``A-Lifecycle-2 (L3-L2): append advances latest and never alters prior history`` ``.
+
+**A-Lifecycle-3 (↔ L3-L3). Per-timeline history is independent.** Each
+`Lifecycle` carries exactly one `Timeline`; histories on distinct timelines
+are independent values.
+
+  *Property test.* `` ``A-Lifecycle-3 (L3-L3): timelines are independent histories`` ``.
+
+**A-Lifecycle-4. evolutionChain composition is associative.** *(Bucket C —
+not yet operational.)* `evolutionChain` folds `CatalogDiff.between` into a
+per-edge diff list, but `CatalogDiff` has no compose operator (diff∘diff),
+so composition-associativity is not yet expressible. Promotes when H-007
+(SchemaDelta category) gives `CatalogDiff` an `apply`/`compose` peer to
+`between`.
+
+  *Skip stub.* `` ``A-Lifecycle-4: evolutionChain composition is associative`` `` (`AxiomTests.fs`).
+
 ---
 
 ## Group F — Lineage (A23–A26)

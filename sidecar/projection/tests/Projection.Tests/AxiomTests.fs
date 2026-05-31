@@ -255,6 +255,37 @@ let ``A22: snapshots are content-addressed (convention-enforced)`` () =
     // SnapshotStore contract guarantees this. Lives outside Core.
     ()
 
+// --- A-Lifecycle-1..4 — the temporal axis (PRODUCT_AXIOMS Group Lifecycle).
+// Operationalized at §5.3 (operator-as-consumer trigger fired). Three flip
+// to Bucket A here; A-Lifecycle-4 stays Bucket C until CatalogDiff gains a
+// compose operator (diff∘diff; H-007 SchemaDelta category).
+
+[<Fact>]
+let ``A-Lifecycle-1 (L3-L1): schema evolution is replayable`` () =
+    citationOf
+        "tests/Projection.Tests/LifecycleTests.fs"
+        "A-Lifecycle-1 (L3-L1): replayTo recovers the snapshotted catalog"
+
+[<Fact>]
+let ``A-Lifecycle-2 (L3-L2): refactor-log history is monotonic`` () =
+    citationOf
+        "tests/Projection.Tests/LifecycleTests.fs"
+        "A-Lifecycle-2 (L3-L2): append advances latest and never alters prior history"
+
+[<Fact>]
+let ``A-Lifecycle-3 (L3-L3): per-timeline history is independent`` () =
+    citationOf
+        "tests/Projection.Tests/LifecycleTests.fs"
+        "A-Lifecycle-3 (L3-L3): timelines are independent histories"
+
+[<Fact(Skip = "A-Lifecycle-4: evolutionChain composition is associative — Bucket C. \
+evolutionChain produces a per-edge CatalogDiff list, but CatalogDiff has no \
+compose operator (diff∘diff) today, so associativity of composition is not yet \
+expressible. Promoted to Bucket A when CatalogDiff gains an `apply`/`compose` \
+peer to `between` (H-007 SchemaDelta category) and replayTo's diff-replay form \
+lands.")>]
+let ``A-Lifecycle-4: evolutionChain composition is associative`` () = ()
+
 // ===========================================================================
 // Group F — Lineage (A23–A26)
 // ===========================================================================

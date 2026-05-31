@@ -64,6 +64,7 @@
     <Compile Include="AxiomTests.fs" />
     <Compile Include="ArtifactByKindTests.fs" />
     <Compile Include="CatalogDiffTests.fs" />
+    <Compile Include="LifecycleTests.fs" />
     <Compile Include="AdjunctionLawTests.fs" />
     <Compile Include="RefactorLogEmitterTests.fs" />
     <Compile Include="RefactorLogRenderTests.fs" />

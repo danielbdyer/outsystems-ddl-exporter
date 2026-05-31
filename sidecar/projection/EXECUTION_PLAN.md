@@ -737,8 +737,15 @@ runner `scripts/test.sh` (never one `dotnet test`); TRX-first failure capture.
 - **Acceptance (canary, ephemeral DB):** `` ``data adjunction: AssignedBySink round-trips modulo
   SurrogateRemapContext`` ``.
 
-#### 5.3 — Lifecycle axis (the fourth input) — **design-ready, defer-with-trigger**
-- **Status:** **defer** — *no production consumer today* (`CatalogDiff.between` is consumed only in the
+#### 5.3 — Lifecycle axis (the fourth input) — **SHIPPED 2026-05-31 (L-α→L-δ)**
+- **Status:** **shipped** — operator-as-consumer trigger fired (`DECISIONS 2026-05-31 — §5.3 Lifecycle axis
+  operationalized`). `src/Projection.Core/Lifecycle.fs` ships `Version`/`Timeline` VOs, the monotone `Lifecycle`
+  chain + `append`, `evolutionChain` (fold `CatalogDiff.between`), and `replayTo`. The §V E4 acceptance is green:
+  a 2-version `evolutionChain` drives `RefactorLogEmitter` to a correct `sp_rename` (`LifecycleTests.fs`).
+  A-Lifecycle-1/2/3 are Bucket A in `AxiomTests.fs`; **A-Lifecycle-4 (evolutionChain composition associativity)
+  stays Bucket C** pending a `CatalogDiff` compose operator (H-007), which also lands `replayTo`'s diff-replay
+  reconstruction form. The original defer rationale (no temporal-chain consumer) is preserved below for history.
+- **Prior status (now superseded):** *defer — no production consumer today* (`CatalogDiff.between` is consumed only in the
   single-round-trip sense by `RefactorLogEmitter` + tests; no path composes a temporal chain).
 - **Trigger:** the first time refactor-log emission needs a **stored prior deployed catalog** as the diff
   baseline, OR the cutover+30 schema-evolution-cycle sunset gate needs a stored C₀ to replay against.

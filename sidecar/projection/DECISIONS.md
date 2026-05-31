@@ -20041,3 +20041,27 @@ capability.
 **The rule (already implicit; now explicit):** before every commit, run `dotnet build Projection.sln` (the whole solution, not just the changed project) and `bash scripts/test.sh fast` before declaring a slice done. A per-project build is necessary but not sufficient — a tuple/signature change ripples across project boundaries the per-project build never sees. The compiler and the tiered test runner are the ground truth; a green per-project build is not a green branch.
 
 **Cross-references:** `src/Projection.Core/Identity.fs` (codec); `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs` (`V2.SsKey` emit); `src/Projection.Adapters.Sql/ReadSide.fs` (`buildKind` hydration + `readSchemaCombined` 7-tuple); `tests/Projection.Tests/SsKeyTests.fs` (8 round-trip tests); `tests/Projection.Tests/CanaryRoundTripTests.fs` (Docker-gated A1 witness); EXECUTION_PLAN.md §III 4.1 (marked DONE).
+
+---
+
+## 2026-05-31 — §5.3 Lifecycle axis operationalized (operator-as-consumer trigger fired)
+
+**Resolved.** The Lifecycle axis (EXECUTION_PLAN §5.3 / §V E4) ships its thin vertical L-α → L-δ. The defer-with-trigger condition was "no production consumer today" (BACKLOG §44; §5.3's named trigger was a stored-prior-catalog consumer for refactor-log baselining). The operator opened §5.2–5.9 declaring **themselves** the consumer — that IS the trigger. Lifecycle is the synthetically-testable, purest-Core member of the set (Core-only, no estate access), so it leads. IR-grows-under-evidence holds: the consumer is real (the E4 acceptance wires a stored prior catalog into `RefactorLogEmitter`), not speculative.
+
+**What shipped (`src/Projection.Core/Lifecycle.fs`, pure Core).**
+- **L-α.** `Version` (`private Version of ordinal:int * label:string`) + `Timeline` (`private Timeline of string`) value objects; smart constructors return `Result<'a>` (ValidationError list) per the structural-commitment idiom. Per PRJ001 the position is an **ordinal, not a clock** — Core holds no time.
+- **L-β.** `Lifecycle` = a monotone `CatalogSnapshot` chain along one `Timeline` (head = C₀). `genesis` is total; `append` enforces L3-L2 (strictly-increasing ordinal; a non-monotone append **fails** rather than silently reordering — prior history is never altered).
+- **L-γ.** `evolutionChain : Lifecycle -> Result<CatalogDiff list, EmitError>` folds `CatalogDiff.between` over consecutive snapshots (`[between C₀ C₁; between C₁ C₂; …]`); a genesis-only lifecycle has no edges.
+- **L-δ.** `replayTo : Version -> Lifecycle -> Result<Catalog>` recovers the stored catalog at a version (L3-L1, materialized form). The first real consumer is wired in test: a 2-version `evolutionChain` → `RefactorLogEmitter.emit` produces the correct `sp_rename` end-to-end (the §V E4 acceptance).
+
+**Error-type decision.** Lifecycle straddles two Result algebras and threads each honestly rather than coercing to one: VO/aggregate construction (`Version` / `Timeline` / `append` / `replayTo`) uses Core `Result<'a>` = `Result<'a, ValidationError list>` (matches `Name.create` / `Catalog.create`); `evolutionChain` returns `Result<CatalogDiff list, EmitError>` because it is literally a sequence of `CatalogDiff.between` calls and `between`'s error type is the Π-side `EmitError`. A private `sequenceEmit` is the `EmitError` peer of `Result.collect`. The two arities coexist exactly as `ArtifactByKind.fs` documents.
+
+**Lifecycle is an outer envelope, not a fourth input.** Per A6-amended / A17, the inner kernel stays `Catalog × Policy × Profile`; Lifecycle maps over a *chain* of `Project` invocations and feeds each per-edge `CatalogDiff` to the existing `RefactorLogEmitter`. No `ProjectionInput` field was added.
+
+**Axioms cashed.** `PRODUCT_AXIOMS.md` Group Lifecycle moves from placeholder → operationalized (L3-L1 replayability, L3-L2 monotonic history, L3-L3 per-timeline independence — all green). `AXIOMS.md` Group E gains A-Lifecycle-1..4. `AxiomTests.fs` flips three Skip→Fact (A-Lifecycle-1/2/3 cite `LifecycleTests.fs`); **A-Lifecycle-4 (evolutionChain composition associativity) stays Bucket C** — `CatalogDiff` has no compose operator (diff∘diff) today, so composition-associativity is not yet expressible. Its promotion trigger: `CatalogDiff` gains an `apply`/`compose` peer to `between` (H-007 SchemaDelta category), which also lands `replayTo`'s diff-replay reconstruction form (today's `replayTo` is the materialized-lookup form).
+
+**Test baseline.** Pure pool **2497 passed / 0 / 208 skipped** (was 2480 / 0 / 207; +17 Lifecycle tests, +1 deliberate A-Lifecycle-4 skip). `dotnet build Projection.sln` 0/0.
+
+**What this unblocks.** §5.6 policy-intelligence consumers (`VersionedPolicy.evolve` against a persisted prior version; `LineageTree` multi-policy fork over a timeline) — §5.3 is their gateway per the EXECUTION_PLAN dependency graph (`5.3 Lifecycle ─► 5.6 ─► §V E4`).
+
+**Cross-references:** `src/Projection.Core/Lifecycle.fs`; `tests/Projection.Tests/LifecycleTests.fs` (17 tests across L-α..L-δ + E4); `tests/Projection.Tests/AxiomTests.fs` (A-Lifecycle-1..4); `PRODUCT_AXIOMS.md` Group Lifecycle; `AXIOMS.md` Group E; EXECUTION_PLAN.md §5.3 / §V E4.
