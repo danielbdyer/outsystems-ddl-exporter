@@ -141,6 +141,13 @@ let ``A-Lifecycle-1 (L3-L1): replayTo fails on an absent version`` () =
     let es = Lifecycle.replayTo (ver 9 "9.9.9") devChain |> mustResultFail
     Assert.Contains(es, fun e -> e.Code = "lifecycle.version.notFound")
 
+// NORTH_STAR §1 Time-axis round-trip witness (matrix-status.sh keys the Time
+// cell on the `replayTo genesis` substring). §5.3 earns it: the genesis
+// catalog C₀ is recoverable by replaying to its Version.
+[<Fact>]
+let ``Time round-trip (replay): replayTo genesis recovers the genesis catalog`` () =
+    Assert.Equal<Catalog>(sampleCatalog, Lifecycle.replayTo (ver 0 "1.0.0") devChain |> mustResultOk)
+
 [<Fact>]
 let ``A-Lifecycle-3 (L3-L3): timelines are independent histories`` () =
     let uat = Lifecycle.genesis (tl "uat") c0
