@@ -592,6 +592,17 @@ module ManifestEmitter =
             /// Sorted by `SsKey` for T1 byte-determinism (PolicyConflict
             /// DU ordering provides stable comparison).
             PolicyConflicts : PolicyConflict list
+            /// **§5.5** — per-artifact overlay enumeration derived from the
+            /// composed pipeline's lineage trail (each `LineageEvent` carries
+            /// `SsKey` + `Classification`). `DataIntent → None` (skeleton-
+            /// only); `OperatorIntent axis → Some axis` (one row per distinct
+            /// overlay axis that touched the artifact). Sorted by
+            /// `(SsKey, OverlayAxis option)` for T1 byte-determinism. Empty
+            /// for the convenience builders (`build` / `buildWith`) that have
+            /// no pipeline trail; populated via `buildFull`. Cashes the PRIME
+            /// slice-ζ forward signal and completes the CLAUDE.md load-bearing
+            /// commitment "manifest names every applied overlay per artifact."
+            AppliedTransforms : (SsKey * OverlayAxis option) list
         }
 
     /// Build the manifest from a Profile + optional TopologicalOrder +
@@ -667,25 +678,56 @@ module ManifestEmitter =
             DeploymentBatches = deploymentBatches
             PolicyVersion = None
             PolicyConflicts = []
+            AppliedTransforms = []
         }
 
-    /// Build the full manifest including the H-085 PolicyVersion stamp
-    /// and the H-034 PolicyConflict entries. Pipeline-level callers that
-    /// have a `VersionedPolicy` and a conflict scan result use this
-    /// overload; topology-only callers continue to use
-    /// `buildWithTopology`.
+    /// **§5.5** — derive the per-artifact overlay enumeration from a
+    /// composed pipeline's lineage trail. Per pillar 9, each `LineageEvent`
+    /// carries an `SsKey` + a `Classification`: `DataIntent` is skeleton
+    /// (no operator overlay), `OperatorIntent axis` names the overlay that
+    /// touched the artifact. For each SsKey, emit one row per distinct
+    /// `OverlayAxis` that touched it, or a single `None` row when only
+    /// `DataIntent` events touched it. Sorted by `(SsKey, OverlayAxis
+    /// option)` for T1 byte-determinism. The `None`-rows make the surface
+    /// the manifest witness for skeleton-purity (a `Policy.empty` run yields
+    /// all-`None`); the `Some`-rows are the overlay-exercise witness.
+    let appliedTransforms (trail: LineageEvent list) : (SsKey * OverlayAxis option) list =
+        trail
+        |> List.groupBy (fun e -> e.SsKey)
+        |> List.collect (fun (ssKey, events) ->
+            let axes =
+                events
+                |> List.choose (fun e ->
+                    match e.Classification with
+                    | OperatorIntent axis -> Some axis
+                    | DataIntent -> None)
+                |> List.distinct
+            match axes with
+            | [] -> [ ssKey, None ]
+            | _  -> axes |> List.map (fun axis -> ssKey, Some axis))
+        |> List.sort
+
+    /// Build the full manifest including the H-085 PolicyVersion stamp,
+    /// the H-034 PolicyConflict entries, and the §5.5 per-artifact
+    /// `AppliedTransforms` overlay enumeration (derived from the composed
+    /// pipeline's lineage `trail`). Pipeline-level callers that have a
+    /// `VersionedPolicy`, a conflict scan result, and the lineage trail use
+    /// this overload; topology-only callers continue to use
+    /// `buildWithTopology` (which leaves `AppliedTransforms` empty).
     let buildFull
         (profile: Profile)
         (registry: RegisteredTransformMetadata list)
         (topology: TopologicalOrder option)
         (policyVersion: VersionedPolicy option)
         (policyConflicts: PolicyConflict list)
+        (trail: LineageEvent list)
         (catalog: Catalog)
         : Manifest =
         let manifest = buildWithTopology profile registry topology catalog
         { manifest with
-            PolicyVersion   = policyVersion
-            PolicyConflicts = policyConflicts }
+            PolicyVersion     = policyVersion
+            PolicyConflicts   = policyConflicts
+            AppliedTransforms = appliedTransforms trail }
 
     /// Build the manifest from a Profile + Catalog + explicit registry-
     /// metadata list. The `registry` parameter feeds the slice-ζ
@@ -868,6 +910,20 @@ module ManifestEmitter =
                 conflictObj.Add("message", requireValue "conflict.message" (JsonValue.Create(message)))
             conflictsArr.Add(conflictObj)
         doc.Add("policyConflicts", conflictsArr)
+        // §5.5 — per-artifact overlay enumeration. Each entry is
+        // `{ssKey, overlay}` where `overlay` is the OverlayAxis case name
+        // (rendered via `%A`, matching the AxisContradiction precedent above)
+        // or JSON `null` for a skeleton-only (DataIntent) artifact. Already
+        // sorted by `(SsKey, OverlayAxis option)` in `appliedTransforms`.
+        let appliedTransformsArr = JsonArray()
+        for (ssKey, axisOpt) in manifest.AppliedTransforms do
+            let entryObj = JsonObject()
+            entryObj.Add("ssKey", requireValue "appliedTransforms.ssKey" (JsonValue.Create(SsKey.rootOriginal ssKey)))
+            match axisOpt with
+            | Some axis -> entryObj.Add("overlay", requireValue "appliedTransforms.overlay" (JsonValue.Create(sprintf "%A" axis)))
+            | None      -> entryObj.Add("overlay", (null: JsonNode | null))
+            appliedTransformsArr.Add(entryObj)
+        doc.Add("appliedTransforms", appliedTransformsArr)
         doc :> JsonNode
 
     /// Render the manifest to JSON text. The terminal serialization

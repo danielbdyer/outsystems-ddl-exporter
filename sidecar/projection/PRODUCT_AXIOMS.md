@@ -445,16 +445,15 @@ Plus ~10 Tier-2 candidates from the audit's gap-hunt (Q1-Q30; see `AUDIT_2026_05
 
 ---
 
-## Group Lifecycle — Not yet operationalized
+## Group Lifecycle — Operationalized (2026-05-31, §5.3)
 
-`AXIOMS.md` A6-amended names Lifecycle as one of V2's three substantive aggregates (Catalog + Policy + Lifecycle). The temporal axis is **named but not operationalized** — the `Lifecycle` type doesn't exist yet. Product axioms in this group are pending the structural foundation.
+`AXIOMS.md` A6-amended names Lifecycle as one of V2's three substantive aggregates (Catalog + Policy + Lifecycle). The temporal axis is **operationalized** as of §5.3 (`src/Projection.Core/Lifecycle.fs`): `Version` / `Timeline` value objects, the monotone `Lifecycle` snapshot chain, `evolutionChain` (fold `CatalogDiff.between`), and `replayTo`. Lifecycle is an **outer envelope** over `Project`, not a fourth `ProjectionInput` field (A6-amended / A17).
 
-Expected axioms once Lifecycle ships (placeholders, not yet stated):
-- **L3-L1.** Schema evolution is replayable: given a sequence of Catalog versions C_0, C_1, ..., C_n, V2 can reproduce any C_i from C_0 plus the chain of evolutions.
-- **L3-L2.** Refactor-log history is monotonic: appending a new evolution to history doesn't alter prior history.
-- **L3-L3.** Per-environment timeline is independent: dev's evolution log is independent of UAT's.
+- **L3-L1.** Schema evolution is replayable: any snapshotted Catalog C_i is recoverable from its `Version` via `Lifecycle.replayTo` (materialized form; the diff-replay reconstruction form `fold applyDiff C₀` lands with the `CatalogDiff` compose operator, H-007). *Witness:* `LifecycleTests.fs` `` ``A-Lifecycle-1 (L3-L1): replayTo recovers the snapshotted catalog`` ``; `AxiomTests.fs` A-Lifecycle-1.
+- **L3-L2.** Refactor-log history is monotonic: `Lifecycle.append` requires a strictly-increasing `Version` ordinal; a non-monotone append fails rather than reordering, so prior history is never altered. *Witness:* `LifecycleTests.fs` `` ``A-Lifecycle-2 (L3-L2): append advances latest and never alters prior history`` ``; `AxiomTests.fs` A-Lifecycle-2.
+- **L3-L3.** Per-environment timeline is independent: each `Lifecycle` carries exactly one `Timeline`; histories on distinct timelines are independent values. *Witness:* `LifecycleTests.fs` `` ``A-Lifecycle-3 (L3-L3): timelines are independent histories`` ``; `AxiomTests.fs` A-Lifecycle-3.
 
-When Lifecycle lands, this section moves from placeholder to formal axioms.
+A fourth axiom — **A-Lifecycle-4** (evolutionChain composition is associative) — is **named but not yet operational** (Bucket C): it requires a `CatalogDiff` compose operator (diff∘diff) that does not exist today. It promotes when H-007 (the SchemaDelta category) lands.
 
 ---
 

@@ -20041,3 +20041,155 @@ capability.
 **The rule (already implicit; now explicit):** before every commit, run `dotnet build Projection.sln` (the whole solution, not just the changed project) and `bash scripts/test.sh fast` before declaring a slice done. A per-project build is necessary but not sufficient — a tuple/signature change ripples across project boundaries the per-project build never sees. The compiler and the tiered test runner are the ground truth; a green per-project build is not a green branch.
 
 **Cross-references:** `src/Projection.Core/Identity.fs` (codec); `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs` (`V2.SsKey` emit); `src/Projection.Adapters.Sql/ReadSide.fs` (`buildKind` hydration + `readSchemaCombined` 7-tuple); `tests/Projection.Tests/SsKeyTests.fs` (8 round-trip tests); `tests/Projection.Tests/CanaryRoundTripTests.fs` (Docker-gated A1 witness); EXECUTION_PLAN.md §III 4.1 (marked DONE).
+
+---
+
+## 2026-05-31 — §5.3 Lifecycle axis operationalized (operator-as-consumer trigger fired)
+
+**Resolved.** The Lifecycle axis (EXECUTION_PLAN §5.3 / §V E4) ships its thin vertical L-α → L-δ. The defer-with-trigger condition was "no production consumer today" (BACKLOG §44; §5.3's named trigger was a stored-prior-catalog consumer for refactor-log baselining). The operator opened §5.2–5.9 declaring **themselves** the consumer — that IS the trigger. Lifecycle is the synthetically-testable, purest-Core member of the set (Core-only, no estate access), so it leads. IR-grows-under-evidence holds: the consumer is real (the E4 acceptance wires a stored prior catalog into `RefactorLogEmitter`), not speculative.
+
+**What shipped (`src/Projection.Core/Lifecycle.fs`, pure Core).**
+- **L-α.** `Version` (`private Version of ordinal:int * label:string`) + `Timeline` (`private Timeline of string`) value objects; smart constructors return `Result<'a>` (ValidationError list) per the structural-commitment idiom. Per PRJ001 the position is an **ordinal, not a clock** — Core holds no time.
+- **L-β.** `Lifecycle` = a monotone `CatalogSnapshot` chain along one `Timeline` (head = C₀). `genesis` is total; `append` enforces L3-L2 (strictly-increasing ordinal; a non-monotone append **fails** rather than silently reordering — prior history is never altered).
+- **L-γ.** `evolutionChain : Lifecycle -> Result<CatalogDiff list, EmitError>` folds `CatalogDiff.between` over consecutive snapshots (`[between C₀ C₁; between C₁ C₂; …]`); a genesis-only lifecycle has no edges.
+- **L-δ.** `replayTo : Version -> Lifecycle -> Result<Catalog>` recovers the stored catalog at a version (L3-L1, materialized form). The first real consumer is wired in test: a 2-version `evolutionChain` → `RefactorLogEmitter.emit` produces the correct `sp_rename` end-to-end (the §V E4 acceptance).
+
+**Error-type decision.** Lifecycle straddles two Result algebras and threads each honestly rather than coercing to one: VO/aggregate construction (`Version` / `Timeline` / `append` / `replayTo`) uses Core `Result<'a>` = `Result<'a, ValidationError list>` (matches `Name.create` / `Catalog.create`); `evolutionChain` returns `Result<CatalogDiff list, EmitError>` because it is literally a sequence of `CatalogDiff.between` calls and `between`'s error type is the Π-side `EmitError`. A private `sequenceEmit` is the `EmitError` peer of `Result.collect`. The two arities coexist exactly as `ArtifactByKind.fs` documents.
+
+**Lifecycle is an outer envelope, not a fourth input.** Per A6-amended / A17, the inner kernel stays `Catalog × Policy × Profile`; Lifecycle maps over a *chain* of `Project` invocations and feeds each per-edge `CatalogDiff` to the existing `RefactorLogEmitter`. No `ProjectionInput` field was added.
+
+**Axioms cashed.** `PRODUCT_AXIOMS.md` Group Lifecycle moves from placeholder → operationalized (L3-L1 replayability, L3-L2 monotonic history, L3-L3 per-timeline independence — all green). `AXIOMS.md` Group E gains A-Lifecycle-1..4. `AxiomTests.fs` flips three Skip→Fact (A-Lifecycle-1/2/3 cite `LifecycleTests.fs`); **A-Lifecycle-4 (evolutionChain composition associativity) stays Bucket C** — `CatalogDiff` has no compose operator (diff∘diff) today, so composition-associativity is not yet expressible. Its promotion trigger: `CatalogDiff` gains an `apply`/`compose` peer to `between` (H-007 SchemaDelta category), which also lands `replayTo`'s diff-replay reconstruction form (today's `replayTo` is the materialized-lookup form).
+
+**Test baseline.** Pure pool **2497 passed / 0 / 208 skipped** (was 2480 / 0 / 207; +17 Lifecycle tests, +1 deliberate A-Lifecycle-4 skip). `dotnet build Projection.sln` 0/0.
+
+**What this unblocks.** §5.6 policy-intelligence consumers (`VersionedPolicy.evolve` against a persisted prior version; `LineageTree` multi-policy fork over a timeline) — §5.3 is their gateway per the EXECUTION_PLAN dependency graph (`5.3 Lifecycle ─► 5.6 ─► §V E4`).
+
+**Cross-references:** `src/Projection.Core/Lifecycle.fs`; `tests/Projection.Tests/LifecycleTests.fs` (17 tests across L-α..L-δ + E4); `tests/Projection.Tests/AxiomTests.fs` (A-Lifecycle-1..4); `PRODUCT_AXIOMS.md` Group Lifecycle; `AXIOMS.md` Group E; EXECUTION_PLAN.md §5.3 / §V E4.
+
+---
+
+## 2026-05-31 — §5.5 applied-transforms manifest field (operator-as-consumer trigger fired)
+
+**Resolved.** The per-artifact `applied-transforms` manifest field (EXECUTION_PLAN §5.5) ships. The defer-with-trigger condition was "an R6/audit reader demands per-artifact overlay enumeration"; the operator opened §5.2–5.9 as the consumer. This cashes the PRIME slice-ζ forward signal (`DECISIONS 2026-05-11 slice ζ` sketched `applied-transforms : SsKey list`; §5.5 upgraded it to carry the overlay axis) and completes the CLAUDE.md load-bearing-commitment row "manifest names every applied overlay per artifact."
+
+**What shipped (`src/Projection.Targets.SSDT/ManifestEmitter.fs`).**
+- `appliedTransforms : LineageEvent list -> (SsKey × OverlayAxis option) list` — a pure derivation over the composed pipeline's lineage trail. Per pillar 9, each `LineageEvent` carries an `SsKey` + a `Classification` (`DataIntent | OperatorIntent of OverlayAxis`). The derivation groups by `SsKey` and, per artifact, emits **one `Some axis` row per distinct `OverlayAxis`** that touched it, or **a single `None` row** when only `DataIntent` events touched it. Sorted by `(SsKey, OverlayAxis option)` for T1 byte-determinism.
+- `Manifest.AppliedTransforms : (SsKey × OverlayAxis option) list` field; `buildFull` gains a `trail: LineageEvent list` parameter and derives the field; `Pipeline.fs` threads `composed.Trail` (already accessible — the H-034 conflict detector consumes it at the same seam). The convenience builders (`build` / `buildWith` / `buildWithTopology`) have no pipeline trail and leave the field empty.
+- `toNode` serializes `appliedTransforms` as `[{ssKey, overlay}]`, where `overlay` is the `OverlayAxis` case name (via `%A`, matching the `AxisContradiction` precedent in the same function) or JSON `null` for a skeleton-only artifact.
+
+**Semantics decision — None collapses under an overlay.** The `option` is load-bearing: a `None` row means "no operator overlay touched this artifact" (skeleton-only). When an artifact is touched by *both* `DataIntent` and an `OperatorIntent` overlay (the common case — `CanonicalizeIdentity` emits `DataIntent` for every kind), the `None` is dropped so the row set is not a lie. This makes the field a **direct manifest witness for the bidirectional properties**: a `Policy.empty` / skeleton run yields all-`None` rows (skeleton-purity), and every fired overlay surfaces as a `Some axis` row (overlay-exercise). The alternative literal reading (one row per trail event) was rejected — it floods every artifact with a noise `None` row.
+
+**Scope held.** The 5th bidirectional property test (manifest-digest + applied-transforms round-trip through `ReadSide`) is now *unblocked* by the field's existence but remains its own slice (it needs manifest read-back, not just emission) — per the original `DECISIONS 2026-05-11 slice θ` deferral. Not built here; no over-reach.
+
+**Test baseline.** Pure pool **2506 passed / 0 / 208 skipped** (+9 §5.5 tests). The existing manifest tests use field-level assertions (not full-string golden), so the new JSON key required no regold. `dotnet build Projection.sln` 0/0.
+
+**Cross-references:** `src/Projection.Targets.SSDT/ManifestEmitter.fs` (`appliedTransforms` + `Manifest.AppliedTransforms` + `toNode`); `src/Projection.Pipeline/Pipeline.fs` (`composed.Trail` threaded to `buildFull`); `tests/Projection.Tests/AppliedTransformsTests.fs` (9 tests); EXECUTION_PLAN.md §5.5; `src/Projection.Core/Classification.fs` (OverlayAxis / Classification).
+
+---
+
+## 2026-05-31 — §5.2 Transfer Slice E: AssignedBySink sink-minted keys (operator-as-consumer trigger fired)
+
+**Resolved.** The `AssignedBySink` identity disposition — the Sink mints the surrogate (IDENTITY PK), so the source key cannot be force-inserted under DML-only rights — is now realized end-to-end (EXECUTION_PLAN §5.2 / PRESCOPE_TRANSFER §10 Slice E). The defer condition was "canary buildable now; no current consumer"; the operator opened §5.2–5.9 as the consumer. Deps 4.1 (done).
+
+**What shipped (`src/Projection.Pipeline/TransferRun.fs`).** `writePlan` now branches on `IdentityDisposition`:
+- **`AssignedBySink`** — per-row `INSERT … OUTPUT inserted.<pk>` (the new `insertCaptureRow`), omitting the IDENTITY column so the Sink mints the surrogate; each Source→assigned key is captured into a `SurrogateRemapContext` threaded through the **topological** Phase-1 loop, so every later referencer's FK targeting the kind re-points through `SurrogateRemap.remapRowFks` (skip-and-diagnose; write-time misses surface in `report.SkippedReferences` alongside plan-build misses).
+- **`PreservedFromSource` / `ReconciledByRule`** — byte-identical to the pre-§5.2 path. The re-point is a no-op when no `AssignedBySink` kind is in scope (`assignedBySinkKinds` empty), so all prior transfer canaries stay green unchanged.
+
+**Why the existing canaries were safe to touch.** Every pre-§5.2 transfer-canary fixture uses a **non-IDENTITY** PK (`[ID] INT NOT NULL PRIMARY KEY`) → `PreservedFromSource` (or operator-overridden `ReconciledByRule`). `AssignedBySink` was structurally derivable (`ofKind` reads `IsIdentity`) but **unexercised** by any canary. So the new path is purely additive; the disposition branch leaves the existing exact-`PhysicalSchema`-equality canaries on their original code path.
+
+**Classification decision — `assignedKeyCapture` is `OperatorIntent Insertion`, not `DataIntent`.** `DataLoadPlan.build` is the one OperatorIntent Insertion site for *operator-supplied* remaps (known pre-build; realizations are DataIntent). But the AssignedBySink remap is **discovered during the write** — the assigned identity does not exist until the Sink mints it — so the capture+re-point is a genuinely new realization-layer OperatorIntent Insertion site. Registered on `Transfer.registeredMetadata`. `TransferRegistrationsTests` updated: the Transfer realization is no longer "entirely DataIntent" (the prior invariant), it is DataIntent (phase1/phase2) **plus** the OperatorIntent Insertion capture.
+
+**Acceptance — round-trips MODULO the remap, not exact equality.** Unlike the `PreservedFromSource` canaries (which assert exact `PhysicalSchema` equality including PK values), AssignedBySink **changes** the surrogate values, so its canary (`data adjunction: AssignedBySink round-trips modulo SurrogateRemapContext`) asserts the identity-independent relationship: the Source seeds Users at 280/281 (via IDENTITY_INSERT), the empty Sink mints 1/2, and the `(Order → User-by-email)` projection is identical across Source and Sink while the Source surrogates (280/281) are provably absent from the Sink. Green against the live container (~7s).
+
+**Scope held — cyclic AssignedBySink deferred.** A self-referential IDENTITY kind (Phase-2 deferred FK) is out of scope: Phase-2's `UPDATE … WHERE <pk> = <sourceVal>` keys on the source PK, which no longer exists in the Sink once minted. The acyclic headline (parent IDENTITY + child FK) is the shipped worked example; the cyclic case is a named follow-on triggered by a real fixture.
+
+**Test baseline.** Pure pool **2507 passed / 0 / 208**; Docker pool — every transfer canary green (the new AssignedBySink + all prior). Two unrelated Docker-pool failures confirmed NOT regressions: `CanaryRoundTripTests.A42` is the pre-existing failure HANDOFF flagged (reproduced at base `deb5853`); `LiveProfilerIntegrationTests B.3.1` (a profiler test, untouched by this change) passes 4/4 in isolation — a serial-Docker resource-pressure flake. `dotnet build Projection.sln` 0/0.
+
+**Cross-references:** `src/Projection.Pipeline/TransferRun.fs` (`insertCaptureRow`, `writePlan` disposition branch, `assignedKeyCapture` site); `src/Projection.Core/SurrogateRemap.fs` (`capture` / `tryFindAssigned` / `remapRowFks` — consumed, not changed); `tests/Projection.Tests/TransferCanaryTests.fs` (the canary + fixtures); `tests/Projection.Tests/TransferRegistrationsTests.fs` (classification update); EXECUTION_PLAN.md §5.2; PRESCOPE_TRANSFER.md §10.
+
+---
+
+## 2026-05-31 — §5.6 leg 1: policy-diff CLI verb (operator-as-consumer; legs 2/3 held)
+
+**Resolved.** The `policy-diff` CLI verb — EXECUTION_PLAN §5.6 leg 1 — ships. `projection policy-diff <config-a> <config-b>` reads the shared Catalog from config-a's `Model.Path`, binds a `Policy` from each config, and renders the five-axis structural delta (`Selection / Emission / Insertion / Tightening / UserMatching` each `changed`/`same`, plus `AnyChanged`) + the changed-kind set. The operator opened §5.2–5.9 as the consumer; this fires leg 1's trigger ("pre-cutover diff policy A vs B").
+
+**What shipped.**
+- `Compose.buildPolicyFromConfig : Config -> Catalog -> Result<Policy>` lifted from `private` to public — the **second consumer** (two-consumer threshold; the `runWithConfigCore` emit path is the first). `policy-diff` binds two policies from two configs against one catalog; no duplication of the bind logic.
+- `PolicyDiff.diffConfigs : Config -> Config -> Task<Result<FullProjectionDiff>>` — the testable orchestrator (in `PolicyDiff.fs`, which compiles after `Compose`, so it can call `Compose.read` + `Compose.buildPolicyFromConfig`; the orchestrator could NOT live in `Compose` because `PolicyDiff` compiles later). Loads catalog once, binds both, runs `diffFullProjection` against `Profile.empty` (structural + lineage diff; no live DB).
+- `Program.fs` `policy-diff` verb dispatch + render + usage line. Exit codes: 0 success, 6 config error, 2 diff/bind failure (matches the established CLI exit-code map).
+
+**Estimate correction.** The plan's "~30 LOC when a consumer is named" undercounted: `diffFullProjection` needs `catalog + profile + 2 policies`, and a `Policy` is not directly loadable from a file — it binds from a `Config`'s textual `PolicySection` (catalog-aware, via `buildPolicyFromConfig`). The honest size is a proper CLI slice (orchestrator + binder exposure + verb + render + tests), not a thin wrapper.
+
+**Legs 2 and 3 held — distinct triggers, NOT fired by operator-as-consumer.** Per the §5.6 "honest two-consumer accounting":
+- **`LineageTree` multi-policy fork** — its trigger is **N≥3 simultaneous policy candidates** (the only point branching beats `diffFullProjection`'s run-twice). "Diff A vs B" is N=2; run-twice is correct. Held.
+- **`VersionedPolicy.evolve` + manifest history** — infrastructure exists (`evolve` + the 3.2 `ApprovalStore`), but its trigger is a real *SemVer-history* reader (evolve against a persisted prior). The `policy-diff` verb doesn't need it; wiring it now would be speculative SemVer plumbing. Held.
+
+**Minimal-CLI posture.** Per `DECISIONS 2026-05-18 (slice 5.7.α.cli)`, V2's CLI is deliberately minimal. `policy-diff` is a *deliberate, operator-pulled* addition (a named consumer surfaced), not posture drift — consistent with the posture's "verbs land as their workflow triggers fire" framing.
+
+**Test baseline.** Pure pool **2510 passed / 0 / 208** (+2 `PolicyDiffCliTests` exercising the config→policy→diff glue: differing Insertion axis → `AnyChanged` with precise per-axis flags; identical configs → no change). `dotnet build Projection.sln` 0/0.
+
+**Cross-references:** `src/Projection.Pipeline/Pipeline.fs` (`Compose.buildPolicyFromConfig` exposed); `src/Projection.Pipeline/PolicyDiff.fs` (`diffConfigs`); `src/Projection.Cli/Program.fs` (`runPolicyDiff` + dispatch + usage); `tests/Projection.Tests/PolicyDiffCliTests.fs`; EXECUTION_PLAN.md §5.6.
+
+---
+
+## 2026-05-31 — NORTH_STAR round-trip matrix fully green (5/5): Identity + Decision witnesses
+
+**Resolved.** The §1 round-trip witness matrix is fully green (5/5). This session flipped three cells: Time (§5.3, earlier entry), and now **Identity** + **Decision** — both were open by *witness-name mismatch*, not capability gap (the capabilities shipped in Wave 4.1 + Wave 2 and are exercised by the A42 / SsKey-persistence canaries). The matrix generator keys each cell on a backtick-quoted test-name substring; the canonical witnesses now exist:
+
+- **Identity** (`reload preserves SsKey`) — `CanaryRoundTripTests.fs` `` ``Identity round-trip: reload preserves SsKey across emit / deploy / ReadSide`` ``. An `OssysOriginal` identity survives emit → deploy → ReadSide as itself (recovered from the `V2.SsKey` extended property, not a `READSIDE_KIND` synthesis). Witnesses NORTH_STAR §1 Identity round-trip; Wave 4.1's capability.
+- **Decision** (`reproduces the DecisionOverlay`) — `CanaryRoundTripTests.fs` `` ``decision adjunction: emitted-then-read-back schema reproduces the DecisionOverlay`` ``. `Ingest(deploy(Project(C, overlay)))` reproduces the overlay's tightening decisions: the overlay enforces NOT NULL on exactly one of two source-nullable columns; the read-back is **precise** — the decided column is NOT NULL, the undecided column stays NULL (the engine's opinion survived the round-trip, not a blanket apply). This is the §V E3 decision-layer adjunction + NORTH_STAR criterion 2 ("the engine's opinions survive the round-trip — the strongest 'stronger than V1' claim").
+
+**Witnessed on the nullability axis — honest bounding.** The decision adjunction is witnessed on **nullability**, the reliably-round-trippable tightening axis. FK readback has a known container gap (the pre-existing A42 2.4 failure HANDOFF flagged — the empty-overlay baseline itself reconstructs 0 FKs), and unique-index readback is deferred per the ReadSide scope boundary. So the Decision cell is green at the matrix's coarse witness-presence level (consistent with how the Schema cell is green despite being hollow for 6 features); the FK + uniqueness sub-axes of the decision adjunction remain follow-ons. NORTH_STAR §1 prose updated to state the per-axis caveat explicitly.
+
+**Matrix status.** `NORTH_STAR.matrix.generated.md`: round-trip **5/5**, gate **PASS**, L2 live/C/D 71/7/1. Witness-present ≠ feature-complete (the matrix's own disclaimer holds): the coarse witness floor is full; per-feature totality (the 6 hollow schema features; FK/uniqueness decision sub-axes) lives in NORTH_STAR §1 prose + the future E2 per-feature generator.
+
+**Test baseline.** Both witnesses green against the live container (2/2). `dotnet build Projection.sln` 0/0.
+
+**Cross-references:** `tests/Projection.Tests/CanaryRoundTripTests.fs` (both witnesses; reuse the A42 2.3 nullability + Wave 4.1 SsKey harnesses); `NORTH_STAR.matrix.generated.md` (5/5); `NORTH_STAR.md` §1 (self-report sentence updated); `src/Projection.Core/DecisionOverlay.fs` + `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs` (`statementsWith`); `src/Projection.Adapters.Sql/ReadSide.fs` (nullability + SsKey recovery).
+
+---
+
+## 2026-05-31 — §5.7 perf: bench-driven assessment — all four items deferred (triggers unfired, with data)
+
+**Resolved (as a deferral with evidence).** EXECUTION_PLAN §5.7's four perf opportunities were assessed against the bench-driven optimization protocol (3-candidate / refutation-with-data; `DECISIONS 2026-05-24 — Bench surface caught two wrong-direction canary optimizations`). The honest finding: **none of the four triggers have fired.** Optimizing without hotness evidence would violate the protocol and risk T1 byte-determinism (parallelism / precompute reorderings) for zero measured gain. This entry records the data so a future agent doesn't re-litigate, and names exactly what would fire each trigger.
+
+**Evidence — operator-reality canary bench (150 tables × 6.25k rows, 2026-05-31).** Top labels by total: `deploy.executeStream` ~4.6s; `emit.staticPopulation.statements.stream` ~6.25s; `deploy.useContainer(.warm)` ~8.2s (container bring-up); `readside.read` ~1.7s. **The wall is deploy / IO / data-emission — not any §5.7 candidate.**
+
+**Per-item verdict:**
+- **`parseRowsetBundle` (8 sequential `Map.ofList` → `Array.Parallel.map`)** — the canary emits **zero** `adapter.osm.parse.*` labels: the operator-reality canary drives generated-DDL → `ReadSide`, never the OSSYS rowset adapter, so the parse path is not exercised. No hotness evidence exists; the trigger needs the rowset path run at 300-table scale first (a fixture/wiring concern). The path *is* already measurable (parent `adapter.osm.parse` scope + per-module `adapter.osm.parse.rowsetModule` `iterMap`) — no instrumentation gap; an exercise gap. Pure + order-preserving, so safe to parallelize *when evidence justifies it*. **Deferred.**
+- **`internalEdgesOf` O(|scc|²) → precomputed adjacency** — **refuted with data**: `pass.topologicalOrder.kind` = **2 ms total over 300 kinds**, and no `pass.topologicalOrder.scc` label fires at all (SCCs are 2-cycle-dominated, |scc|²=4 — negligible, exactly the plan's "2-cycle-dominated graphs see no change"). `internalEdgesOf` is cold. The precompute would add complexity for no measured benefit. **Deferred** until a catalog with large SCCs (≥5) surfaces `internalEdgesOf` as hot.
+- **schema-side level grouping → parallel schema deploy** — deploy time is dominated by container warmup + static-data emission, not schema DDL; the plan's trigger ("schema deploy becomes visible") is unfired. High architectural cost (parallel-deploy ordering / determinism) for an invisible win. **Deferred.**
+- **OSSYS 22-rowset single-cursor → parallel `SqlCommand`s** — extraction-side, upstream of the projection canary; not instrumented here and explicitly a "dedicated slice — HIGH cost" in the plan (the `SequentialAccess` cursor is single-threaded by construction; parallel connections add pool/sync/ordering risk). Needs its own measurement harness + an operator decision on whether the back-of-napkin 1.1s→280ms justifies the complexity. **Deferred (out of §5.7 scope).**
+
+**No code change.** The disciplined outcome is *no speculative perf change*: the bench surface is the forcing function, and it shows the candidates are cold or unexercised. The deliverable is the data-backed assessment itself (mirrors the 2026-05-24 refuted-with-data precedent).
+
+**Cross-references:** EXECUTION_PLAN.md §5.7 (per-item measured table); `scripts/perf-gate.sh` + `bench/baseline-canary.json` (the bench surface); `src/Projection.Adapters.Osm/CatalogReader.fs` `parseRowsetBundle`; `src/Projection.Core/Passes/TopologicalOrderPass.fs` `internalEdgesOf`; `DECISIONS 2026-05-24` (bench-driven protocol precedent).
+
+---
+
+## 2026-05-31 — Five-axis red-team + the isomorphism-substantiation aim (NORTH_STAR elevated; Wave 6 opened)
+
+**Resolved (vision-level).** A six-agent adversarial red-team (one per axis + an integrator) tested the NORTH_STAR five-axis basis to destruction against the operator's stated future use case: a one-command A→B migration (RefactorLog renames + CDC-aware + sink-minted two-phase insert, minimum viable touches). The operator's framing: this *is* what the North Star should aim at, so the canonical docs now aim at it and lay out the comprehensive path. The deliverable is doc/governance (the technical evaluation + plan), not code.
+
+**The headline finding — adjunctions, not equivalences.** The 5/5 matrix (reached 2026-05-31) is a **witness-presence (L1) floor**. Below it, every axis is a *partial* iso:
+- **Schema** — a *retraction*: 6 facets erased **silently** (user ext-props, FK-trust, identity seed `(1,1)`); `CatalogDiff` is **kind-level only** → attribute changes (type/nullability/default) are invisible (the deepest single gap — "minimum viable touches" is a diff the engine can't compute).
+- **Data** — a *partial map with a silent drop-set*: `transfer` drops FK-orphan rows but **exits 0**; cyclic `AssignedBySink` Phase-2 keys on the source PK → silently wrong; composite IDENTITY truncated; empty-string↔NULL conflated.
+- **Identity** — faithful for `OssysOriginal`; a first-import (`Synthesized`) + rename loses identity **silently**; RefactorLog (in-place rename) and Transfer (cross-DB move) are **unreconciled strategies**.
+- **Time** — *trivial*: `replayTo` is a snapshot fetch, not `fold applyDiff`; `applyDiff` (H-007) unshipped → `applyDiff (between A B) A = B` unproven; **no diff→ALTER emitter** (full CREATE only); CDC-silence witnessed for data, not schema.
+- **Decision** — iso on **1 of 3** sub-axes (nullability); uniqueness + FK-trust **not read back** (`ReadSide` hardcodes `Indexes=[]`; FK reads back trusted). *Good news:* the data-level CDC-silence-on-idempotent-redeploy property is genuinely shipped + witnessed (`CdcSilenceTests`).
+
+**Two completeness conditions the original four totalities assumed but never named** (now T-V / T-VI; EXECUTION_PLAN C5 / C6):
+- **Orthogonality (T-V):** the axes couple. `Decision` NOT-NULL tightening breaks the `Data` load (no pre-flight); `Identity` rename diverges the coordinates `Data` matches on (no RefactorLog in Transfer).
+- **Spanning (T-VI):** the basis does not cover the operation. Three load-bearing dimensions live in **no** axis — Permissions/Security (write-denied sink silently transfers zero rows), Transactionality/Rollback (mid-transfer failure corrupts the target; no atomic boundary / resume), Connection pre-flight. And the composed `migrate A B` **does not exist** (five verbs, manually sequenced; renames never reach Transfer).
+
+**The isomorphism ladder (the new vocabulary).** Each matrix cell now has a rung, not a checkbox: **L1** witness present (the `matrix-status.sh` floor) → **L2** faithful (`Ingest ∘ Project = id` modulo a *named, closed* erasure — a `Tolerance`, a diagnostic, or a fail-loud refusal; **never a silent drop**) → **L3** composed (orthogonal + participating in the one-command `migrate`). The bullseye is the matrix at L3.
+
+**`migrate A B` is the L3 bullseye / operator Promise 8** — the forcing instance that exercises all six totalities at once: diff → rename → CDC-safe minimal deploy → sink-minted transfer (identity preserved-or-reconciled) → verify; atomic-or-resumable; refuses loudly rather than corrupting. The honest critical path: **6.A.10 (attribute-level `CatalogDiff`) → 6.A.12 (`diff→ALTER`) → {6.B.1, 6.B.2, 6.C.1, 6.C.2 pre-flights + transactionality} → 6.D.1 (`migrate`)**.
+
+**Docs updated.** `NORTH_STAR.md`: §1 matrix → the L1/L2/L3 ladder + the `migrate` operation row + the red-team's honest per-axis L2 position; §3 → T-I sharpened to the faithfulness ladder, **T-V (orthogonality) + T-VI (spanning) added** ("the six totalities"); §4 → **Promise 8** (one-command A→B); §5 → criteria 1/1b/1c (L2 faithful + orthogonal/spanning basis + composed `migrate`). `EXECUTION_PLAN.md`: **Wave 6 — Substantiating the isomorphism** (the full buildable epic: 6.A faithfulness per axis, 6.B orthogonality, 6.C spanning, 6.D the `migrate` orchestrator, 6.E matrix-reports-the-rung) + §I C5/C6.
+
+**Discipline preserved.** This is not vision-widening (NORTH_STAR §7): every addition is falsifiable with a named counterexample condition the red-team produced, and the buildable path is sequenced slices with named acceptance witnesses — exactly the "extend only when a new structural truth earns its place" clause. The quick wins (6.A.1 fail-loud transfer, 6.A.9 DropFk audit) are the immediate confidence-builders; 6.A.10 is the structural keystone.
+
+**The full-fidelity record is `AUDIT_2026_05_31_FIVE_AXIS_REDTEAM.md`** — the exhaustive per-axis findings (every file:line, finding table, failure scenario, severity ranking) + the complete acceptance-criteria catalog (audit §6) + the master severity table (audit §7). This DECISIONS entry and the NORTH_STAR / EXECUTION_PLAN edits are its **projections**; the audit is the source. Read the audit before opening any Wave 6 slice.
+
+**Cross-references:** `AUDIT_2026_05_31_FIVE_AXIS_REDTEAM.md` (the source of record); `NORTH_STAR.md` §1/§3/§4/§5 (iso-ladder + T-V/T-VI + Promise 8); `EXECUTION_PLAN.md` Wave 6 + §I C5/C6 (the buildable epic). Reconciliation note (audit §0.4): the integrator agent ran without the recent §5.x context and mis-stated Lifecycle/Decision/Identity as "unbuilt"; corrected against the axis specialists — they are **built but partial** (the L2 gap), not absent.

@@ -787,11 +787,14 @@ Slices sized to the repo's cadence. **Slice 1 is shipped.**
   for Users (Slice C′), and — if the platform mints keys — `AssignedBySink`
   (Slice E).
 
-- **Slice E (later chapter) — `AssignedBySink`.** Assigned-key capture
-  (`OUTPUT` / natural-key correlation), FK re-pointing via `SurrogateRemapContext`.
-  Its own prescope; slice 1 shipped its type foundation. Distinct from C′:
-  here the sink mints a *new* key (discover-during-insert), where C′ matches a
-  *pre-existing* sink key (discover-by-profiling).
+- **Slice E — `AssignedBySink`. SHIPPED 2026-05-31 (acyclic; §5.2).** Assigned-key
+  capture via per-row `INSERT … OUTPUT inserted.<pk>` (the `OUTPUT` route — `SqlBulkCopy`
+  returns no ids), FK re-pointing via `SurrogateRemapContext` threaded through the
+  topological Phase-1 loop. Distinct from C′: here the sink mints a *new* key
+  (discover-during-insert), where C′ matches a *pre-existing* sink key
+  (discover-by-profiling). Canary: `data adjunction: AssignedBySink round-trips modulo
+  SurrogateRemapContext`. Cyclic AssignedBySink (self-ref IDENTITY) is a named follow-on
+  (Phase-2 keys on the source PK, gone once the Sink mints).
 
 The data-level canary in Slice C is the load-bearing deliverable — it earns
 the epic's North Star (the data-level adjunction) the same way the schema

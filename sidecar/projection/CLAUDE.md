@@ -26,6 +26,17 @@ strategic surfaces (`SPINE.md`, `PLAYBOOK.md`, `STAGING.md`) are
 **on-demand** references — read when the relevant work surfaces them, not
 as part of the canonical first-read pass.
 
+**`AUDIT_2026_05_31_FIVE_AXIS_REDTEAM.md`** is the apex's **substantiation
+audit** — the full-fidelity six-agent red-team that established the
+isomorphism ladder (L1 witness → L2 faithful → L3 composed), the two added
+totalities (T-V orthogonality, T-VI spanning), and the one-command A→B
+migration (Promise 8) as the L3 bullseye. It is the source of record for
+`EXECUTION_PLAN.md` **Wave 6** (the buildable climb to L2/L3) and the
+`NORTH_STAR.md` §1/§3/§4/§5 elevation. Read it before opening any Wave 6
+slice — it carries every per-axis finding (file:line), the master severity
+table, and the complete acceptance-criteria catalog. Pairs with the
+`AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` (the L1↔L2↔L3 bucket model).
+
 **`V2_DRIVER.md`** (codified 2026-05-10 chapter 3.7 sidebar; principal-PO
 discussion) is the destination-KPI document — the *why* the cutover
 ladder bends toward V2-driver mode, the per-axis correctness stakes,

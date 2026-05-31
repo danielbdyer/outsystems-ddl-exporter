@@ -27,6 +27,7 @@ let private usageLines : string list =
         "    projection skeleton <input-osm-model.json> <output-dir>"
         "    projection deploy <input-osm-model.json>"
         "    projection canary <source-ddl-file>"
+        "    projection policy-diff <config-a> <config-b>"
         "    projection approve <policy-version> --approver <name> [--rationale <text>] [--store <path>]"
         "    projection transfer --source-conn <env|file:ref> --sink-conn <env|file:ref>"
         "                        [--reconcile <table>:<match-column>]... [--execute]"
@@ -737,6 +738,43 @@ let private dispatchVerifyData (argv: string[]) : int =
         let afterSpec  = parsed.GetResult VerifyDataArgs.After_Conn
         runVerifyData beforeSpec afterSpec)
 
+/// §5.6 — `policy-diff <config-a> <config-b>`. Diff what two configs would
+/// project over the shared Catalog (read from config-a's Model.Path). Renders
+/// the five-axis structural delta + the changed-kind set. Pure/structural —
+/// no live DB (Profile.empty); the operator's "diff policy A vs B" question.
+let private runPolicyDiff (configAPath: string) (configBPath: string) : int =
+    match Config.fromFile configAPath, Config.fromFile configBPath with
+    | Error errors, _
+    | _, Error errors ->
+        Console.Error.WriteLine "projection policy-diff: config error:"
+        printErrors Console.Error errors
+        6
+    | Ok cfgA, Ok cfgB ->
+        let result = (PolicyDiff.diffConfigs cfgA cfgB).GetAwaiter().GetResult()
+        let exitCode =
+            match result with
+            | Error errors ->
+                Console.Error.WriteLine "projection policy-diff: failed:"
+                printErrors Console.Error errors
+                2
+            | Ok diff ->
+                let s = diff.StructuralDiff
+                printfn "projection policy-diff: %s"
+                    (if s.AnyChanged then "policies differ" else "policies identical")
+                let axis (name: string) (changed: bool) =
+                    printfn "  %-13s %s" name (if changed then "changed" else "same")
+                axis "selection"    s.Selection.Changed
+                axis "emission"     s.Emission.Changed
+                axis "insertion"    s.Insertion.Changed
+                axis "tightening"   s.Tightening.Changed
+                axis "userMatching" s.UserMatching.Changed
+                printfn "  changed kinds: %d" (List.length diff.ChangedKinds)
+                for k in diff.ChangedKinds do
+                    printfn "    - %s" (SsKey.rootOriginal k)
+                0
+        dumpBench "policy-diff"
+        exitCode
+
 [<EntryPoint>]
 let main argv =
     match argv with
@@ -767,6 +805,8 @@ let main argv =
         runDeploy inputPath
     | [| "canary"; sourceDdlPath |] ->
         runCanary sourceDdlPath
+    | [| "policy-diff"; configAPath; configBPath |] ->
+        runPolicyDiff configAPath configBPath
     | [| "transfer" |] ->
         Console.Error.WriteLine "projection transfer: --source-conn and --sink-conn required"
         Console.Error.WriteLine ""

@@ -581,3 +581,79 @@ let ``4.1: V2.SsKey persistence — ReadSide recovers OssysOriginal identities (
                 Assert.Equal<SsKey>(custKey, k.SsKey)
             | None -> Assert.Fail "OSUSR_SSK_CUSTOMER not found in reconstructed catalog"
         | None -> Assert.Fail "deploy produced no reconstructed catalog"
+
+// ---------------------------------------------------------------------
+// NORTH_STAR §1 Identity-axis round-trip witness. Wave 4.1 shipped V2.SsKey
+// persistence; this is the canonically-named witness the matrix keys on
+// (`reload preserves SsKey`): an OssysOriginal identity survives emit →
+// deploy → ReadSide as itself, not a READSIDE_KIND synthesis.
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``Identity round-trip: reload preserves SsKey across emit / deploy / ReadSide`` () =
+    if skipIfNoDocker "identity-reload-preserves-sskey" then
+        let acctKey = SsKey.ossysOriginal (System.Guid.Parse "33333333-3333-3333-3333-333333333333")
+        let acctIdKey = SsKey.ossysOriginal (System.Guid.Parse "44444444-4444-4444-4444-444444444444")
+        let account =
+            Kind.create acctKey (nameSafe "Account")
+                { Schema = "dbo"; Table = "OSUSR_RLD_ACCOUNT"; Catalog = None }
+                [ { Attribute.create acctIdKey (nameSafe "Id") Integer with
+                      Column = { ColumnName = "ID"; IsNullable = false }
+                      IsPrimaryKey = true; IsMandatory = true } ]
+        let catalog =
+            match Catalog.create [ { SsKey = ssKeySafe "OS_MOD_RLD"; Name = nameSafe "RldMod"; Kinds = [ account ]; IsActive = true; ExtendedProperties = [] } ] [] with
+            | Ok c -> c | Error e -> failwithf "catalog %A" e
+        let sql = SsdtDdlEmitter.statements catalog |> Render.toText
+        let readback = (Deploy.runWithReadback sql).GetAwaiter().GetResult()
+        Assert.True(readback.Report.Ok, sprintf "deploy: %A" readback.Report.Errors)
+        match readback.Reconstructed with
+        | Some reconstructed ->
+            match Catalog.allKinds reconstructed |> List.tryFind (fun k -> k.Physical.Table = "OSUSR_RLD_ACCOUNT") with
+            | Some k -> Assert.Equal<SsKey>(acctKey, k.SsKey)
+            | None   -> Assert.Fail "OSUSR_RLD_ACCOUNT not found in reconstructed catalog"
+        | None -> Assert.Fail "deploy produced no reconstructed catalog"
+
+// ---------------------------------------------------------------------
+// NORTH_STAR §1 Decision-axis round-trip witness (§V E3 — the decision-layer
+// adjunction). `Ingest(deploy(Project(C, overlay)))` reproduces the overlay's
+// tightening decisions. Witnessed on the NULLABILITY axis: it is the reliably-
+// round-trippable tightening axis (FK readback has a known container gap — see
+// the A42 2.4 canary; unique-index readback is deferred per the ReadSide scope
+// boundary). The overlay enforces NOT NULL on exactly one of two source-nullable
+// columns; the read-back must reproduce that precisely — enforced ⇒ NOT NULL,
+// un-enforced ⇒ still NULL (the decision is reproduced, not blanket-applied).
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``decision adjunction: emitted-then-read-back schema reproduces the DecisionOverlay`` () =
+    if skipIfNoDocker "decision-adjunction-roundtrip" then
+        let mkAttr (k: SsKey) (col: string) (isPk: bool) (nullable: bool) : Attribute =
+            { Attribute.create k (nameSafe col) (if isPk then Integer else Text) with
+                Column = { ColumnName = col.ToUpperInvariant(); IsNullable = nullable }
+                IsPrimaryKey = isPk; IsMandatory = isPk }
+        let enforcedKey = ssKeySafe "OS_ATTR_ADJ_Ticket_Note"
+        let kind =
+            { Kind.create (ssKeySafe "OS_KIND_ADJ_Ticket") (nameSafe "Ticket")
+                { Schema = "dbo"; Table = "OSUSR_ADJ_TICKET"; Catalog = None }
+                [ mkAttr (ssKeySafe "OS_ATTR_ADJ_Ticket_Id") "Id" true false
+                  mkAttr enforcedKey "Note" false true
+                  mkAttr (ssKeySafe "OS_ATTR_ADJ_Ticket_Memo") "Memo" false true ] with Indexes = [] }
+        let catalog =
+            match Catalog.create [ { SsKey = ssKeySafe "OS_MOD_ADJ"; Name = nameSafe "AdjMod"; Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] } ] [] with
+            | Ok c -> c | Error e -> failwithf "catalog %A" e
+        // The overlay IS the engine's opinion: enforce NOT NULL on Note only.
+        let overlay = { DecisionOverlay.empty with EnforceNotNull = Set.singleton enforcedKey }
+        let sql = SsdtDdlEmitter.statementsWith overlay catalog |> Render.toText
+        let rt = (Deploy.runWithReadback sql).GetAwaiter().GetResult()
+        Assert.True(rt.Report.Ok, sprintf "deploy: %A" rt.Report.Errors)
+        let colNullable (name: string) : bool option =
+            match rt.Reconstructed with
+            | Some c ->
+                Catalog.allKinds c |> List.collect (fun k -> k.Attributes)
+                |> List.tryFind (fun a -> a.Column.ColumnName = name)
+                |> Option.map (fun a -> a.Column.IsNullable)
+            | None -> None
+        // Read-back reproduces the overlay: the decided column tightened, the
+        // undecided column did not — the engine's opinion survived the round-trip.
+        Assert.Equal(Some false, colNullable "NOTE")
+        Assert.Equal(Some true,  colNullable "MEMO")

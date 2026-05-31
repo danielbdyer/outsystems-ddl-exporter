@@ -40,27 +40,47 @@ Law      : Ingest ∘ Project = identity       (modulo named, declared erasures)
 ```
 
 The north star is reached when that adjunction is **total** — true on every axis the engine
-owns, executable as a green test for each, and self-describing. Concretely, the bullseye is a
-single matrix, fully green and self-checked:
+owns, executable as a green test for each, and self-describing. But "a witness test exists for
+the round-trip" (L1) is not the same as "the round-trip is a faithful isomorphism" (L2), and
+neither is the same as "the axes compose into the operation the operator actually runs" (L3).
+The bullseye is the matrix at **L3 on every cell** — an **isomorphism ladder**, not a checkbox:
 
-| Axis the engine owns | Project (emit) | Ingest (read-back) | **Round-trip = identity** (the proof) |
+- **L1 — witness present.** A named round-trip test exists and is live (the `matrix-status.sh`
+  floor; reached 2026-05-31 at 5/5).
+- **L2 — faithful.** The round-trip loses nothing *silently*: `Ingest ∘ Project = id` modulo an
+  erasure set that is **named and closed** (a `Tolerance` entry, a structured diagnostic, or a
+  fail-loud refusal — never a silent drop). An axis that erases a feature with no surfaced trace
+  is L1-but-not-L2.
+- **L3 — composed.** The axis is **orthogonal** (no hidden coupling to another axis) and
+  participates in the engine's culminating operation: a one-command **A→B migration** with
+  minimum-viable touches (diff → rename → CDC-safe deploy → sink-minted transfer → verify).
+
+| Axis the engine owns | L1 — witness | L2 — faithful (erasure named + closed) | L3 — composed into `migrate A B` |
 |---|---|---|---|
-| **Schema** (tables, columns, types, indexes, FKs, triggers, sequences, defaults, computed, checks, ext-props) | ✅ shipped | ◑ hollow for 6 features | **the canary** — closes when Ingest is un-hollowed |
-| **Data** (static seeds, migration deps, bootstrap, transfer payloads) | ✅ shipped | ✅ row reader | **the data-level canary** (Transfer) |
-| **Identity** (SsKey rename-stable; surrogate keys; user remap) | ◑ display-name only | ◑ synthesized, not recovered | closes with `V2.SsKey` persistence |
-| **Time / Lifecycle** (version chains, refactor logs, evolution, drift) | ◑ single-diff only | ✗ no replay | closes when Lifecycle is operational |
-| **Decision** (evidence-gated tightening verdicts + their classification) | ✗ decided, not emitted | ✗ not recovered | **the deepest cell** — proves the engine's *opinions* survive the round-trip |
-| **— meta —** | | | **Self-verification:** a proof that every cell above has a witness, and that the engine's own coverage map is generated from those witnesses |
+| **Schema** | ✅ `PhysicalSchema diff` | ◑ *retraction* — 6 facets erased **silently** (user ext-props, FK-trust, identity seed); `CatalogDiff` is kind-level → attribute changes invisible | ⬚ no `diff→ALTER`; full CREATE only |
+| **Data** | ✅ `data canary` | ◑ *partial map* — `transfer` drops FK-orphan rows but **exits 0**; cyclic `AssignedBySink` silently wrong; empty-string↔NULL conflated | ⬚ not transactional / resumable |
+| **Identity** | ✅ `reload preserves SsKey` | ◑ faithful for `OssysOriginal`; a first-import (`Synthesized`) + rename loses identity **silently** | ⬚ RefactorLog (rename) and Transfer (move) are unreconciled strategies |
+| **Time** | ✅ `replayTo genesis` | ◑ *trivial* — `replayTo` is a fetch; `applyDiff` (H-007) unshipped → `applyDiff (between A B) A = B` unproven | ⬚ no minimal-touch emission |
+| **Decision** | ✅ `reproduces the DecisionOverlay` (nullability) | ◑ iso on **1 of 3** sub-axes; uniqueness + FK-trust **not read back** | ⬚ tightening can break the Data load (no pre-flight) |
+| **— the operation —** | | | **`migrate A B`** — one command, minimum viable touches. **Does not yet exist** (five verbs, manually sequenced; renames never reach Transfer). |
+| **— meta —** | | | **Self-verification:** the generator reports each cell's *ladder level*, not just witness-presence |
 
 > **This matrix is self-reported.** `scripts/matrix-status.sh` regenerates
 > [`NORTH_STAR.matrix.generated.md`](NORTH_STAR.matrix.generated.md) from
-> `AxiomTests.fs` + the test tree — a round-trip cell goes green **only** when its
+> `AxiomTests.fs` + the test tree — an **L1** cell goes green **only** when its
 > witness test actually exists and is live (it cannot be asserted by hand). And
 > `scripts/verifiability-gate.sh` (slice E1) fails the build if any axiom claims a
 > coverage bucket its tests do not support. So criterion 5 (§5) is already
 > partially live: **the vision measures its own distance to the bullseye.** Today's
-> machine reading: L2 axioms 69·A / 8·B / 6·C / 11·D (gate PASS); round-trip
-> witnesses present for Schema + Data, open for Identity, Time, and Decision.
+> machine reading (`NORTH_STAR.matrix.generated.md`, 2026-05-31): gate PASS; **L1 = 5/5**
+> (Schema, Data, Identity, Time, Decision all witnessed). **L2/L3 is the open work** — the
+> six-axis red-team (full record: `AUDIT_2026_05_31_FIVE_AXIS_REDTEAM.md`) measured the gap below
+> the floor: every axis is a *partial* iso with at least one **silent** erasure, two axes
+> **couple** (Decision→Data, Identity→Schema), the basis does **not span** the operator's
+> migration (no Permissions / Transactionality / Connection dimension), and the composed
+> `migrate` operation does not exist. The buildable path to L2/L3 is **Wave 6** in
+> `EXECUTION_PLAN.md`. **Witness-present ≠ faithful ≠ composed:** the L1 floor is full; the
+> ladder above it is the Total Projection's remaining climb.
 
 Two properties hold *across every cell*, by construction:
 - **Determinism (T1).** Same inputs → byte-identical text/JSON, model-equivalent binary. No clock, no randomness, no I/O in the core.
@@ -102,16 +122,26 @@ its coverage grows.
 
 ---
 
-## 3. The four totalities — the structural definition of "done"
+## 3. The six totalities — the structural definition of "done"
 
-The matrix in §1 is reached by closing four completeness conditions. These *are* the definition
-of done; each is falsifiable.
+The matrix in §1 is reached by closing six completeness conditions. The original four (T-I…T-IV)
+make the engine correct and self-describing; the 2026-05-31 five-axis red-team established two more
+(T-V orthogonality, T-VI spanning) that the original four assumed but did not name — they are the
+difference between five witnessed round-trips and a true, composable basis. These six *are* the
+definition of done; each is falsifiable.
 
-**T-I — Round-trip totality.** For every axis (schema, data, identity, time, decision),
-`Ingest ∘ Project = identity` modulo a **named, closed** erasure set. *Counterexample condition:*
-any axis the engine emits that `Ingest` cannot observe (today: six schema features the canary is
-blind to; the decision axis entirely). *Done when:* the canary's read-back is total and the
-decision-layer adjunction (read-back reproduces the `DecisionOverlay`) is green.
+**T-I — Round-trip totality (the faithfulness ladder).** For every axis (schema, data, identity,
+time, decision), `Ingest ∘ Project = identity` modulo a **named, closed** erasure set — and the
+adjunction is an *equivalence* (L2 faithful), not merely a one-sided *retraction* (L1 witnessed).
+The distinction is load-bearing: a round-trip can have a green witness yet still erase a feature
+**silently** — and a silent erasure is strictly worse than no claim, because it manufactures the
+illusion of fidelity. *Counterexample condition:* any axis the engine emits that `Ingest` cannot
+observe **without surfacing the loss** (today, per the 2026-05-31 red-team: six schema facets
+erased silently; `transfer` drops FK-orphan rows but exits 0; a `Synthesized`-key rename loses
+identity silently; `replayTo` is a fetch, not a `fold applyDiff`; uniqueness + FK-trust decisions
+are not read back). *Done when:* every erasure is a `Tolerance` entry, a structured diagnostic, or
+a fail-loud refusal — never a silent drop — and the matrix generator reports the per-axis **L2**
+level, not just L1.
 
 **T-II — Executable-axiom totality.** Every formal axiom (A1–A42+, T1–T11) and every product
 axiom (L3) has a green witness, a named convention-witness, or a `Skip` carrying its promotion
@@ -133,12 +163,34 @@ surface that disagrees with the code (today: three "shipped but docs say deferre
 "claimed-A with no test"). *Done when:* the surfaces are regenerated artifacts and a drift is a
 build failure.
 
+**T-V — Orthogonality totality (the axes are a basis, not a bundle).** The five axes compose
+without hidden coupling: operating on one does not silently perturb another, and where a genuine
+dependency exists it is **structural and surfaced**, not implicit. *Counterexample condition:* a
+pair of "independent" axes that secretly couple (today, per the red-team: a `Decision` NOT-NULL
+tightening on a column whose source rows carry NULLs makes the `Data` transfer fail mid-load with
+no pre-flight; an `Identity` rename diverges the physical coordinates the `Data` transfer matches
+on, with no RefactorLog consumed by Transfer). *Done when:* each cross-axis dependency is a named
+pre-flight or a typed input — a `migrate` that validates source data against the tightened sink
+schema *before* it writes; a Transfer that consumes the rename map.
+
+**T-VI — Spanning totality (the basis covers the operation).** The axes span what the operator's
+real operation requires — there is no load-bearing dimension the migration needs that lives in no
+axis. *Counterexample condition:* a dimension the A→B migration cannot proceed without that the
+engine cannot represent (today: **Permissions/Security** — no axis carries grants/roles/RLS, so a
+write-denied sink silently transfers zero rows; **Transactionality/Rollback** — a mid-transfer
+failure leaves a half-populated target with no atomic boundary, idempotent retry, or rollback;
+**Connection pre-flight** — no "both endpoints live + credentialed" check before mutation begins).
+*Done when:* the missing dimensions are represented as axes or enforced as pre-flight gates on the
+composed operation, and the one-command `migrate A B` is atomic-or-resumable end to end.
+
 **The unification:** T-I and T-III make the engine *correct on every axis, in both directions,
-across time*. T-II and T-IV make the engine *able to prove and describe its own correctness
-without a human re-auditing it*. Together they are the difference between a tool that is right and
-a tool that can **show** it is right, continuously. That difference is the entire reason "replace
-V1" is a stronger claim than "trust V1" — and it is why the north star is not "verify the cutover"
-but "make verification self-sufficient."
+across time*. T-V and T-VI make those axes a **true basis** — faithful and orthogonal enough to
+**compose** into the operator's one-command A→B migration (the L3 bullseye), which is the
+forcing instance that exercises all six totalities at once. T-II and T-IV make the engine *able to
+prove and describe its own correctness without a human re-auditing it*. Together they are the
+difference between a tool that is right and a tool that can **show** it is right, continuously.
+That difference is the entire reason "replace V1" is a stronger claim than "trust V1" — and it is
+why the north star is not "verify the cutover" but "make verification self-sufficient."
 
 ---
 
@@ -166,11 +218,20 @@ generalized, and it is falsifiable end to end.
    diagnostic, never a silent drop. *(no-silent-drop boundary axiom.)*
 7. **At every moment, the engine can show you which of these promises are proven and which are
    not.** The coverage map is generated, current, and machine-checked. *(self-verification.)*
+8. **Move the whole estate from A to B in one command, touching only what changed.** The composed
+   operation — `migrate A B` — diffs the two states, renames rather than drops, deploys only the
+   minimal delta CDC-silently, transfers the data with identity preserved-or-reconciled, and
+   verifies the result; it is atomic-or-resumable, and it refuses (loudly) rather than corrupting
+   the target. *(the L3 bullseye; composes promises 3/4/5/6 into one act. Today: unbuilt — see
+   the `migrate` slice in Wave 6.)*
 
-Promise 7 is the keystone and the genuinely new one. The other six are guarantees; promise 7 is
-the guarantee *about the guarantees*. It is what makes "we can't go wrong" literally true: the
-operator never has to wonder whether a promise holds — the engine answers, and the engine's answer
-is itself tested.
+Promise 7 is the keystone of *trust* (the guarantee about the guarantees); promise 8 is the keystone
+of *use* — the operator's actual day, reduced to one verb. Promise 8 is the L3 face of the whole
+matrix: it cannot hold until every axis is L2-faithful and T-V/T-VI orthogonality + spanning are
+closed, which is precisely why it is the forcing instance that pulls the entire ladder up. It is
+what makes "we can't go wrong" literally true: the operator never has to wonder whether a promise
+holds — the engine answers, the answer is itself tested, and the migration either completes
+verifiably or refuses without damage.
 
 ---
 
@@ -179,9 +240,21 @@ is itself tested.
 The north star is reached when all of the following hold simultaneously. Each is a test or a
 generated artifact, not a judgment.
 
-1. **The round-trip matrix is fully green.** Every (axis × round-trip) cell of §1 is a passing
-   property test at canary scale: schema (all features, not six-blind), data, identity, time, and
-   decision. Tracked as a green count with zero `Skip` on Tier-1 cells.
+1. **The round-trip matrix is fully green — at L2, not just L1.** Every (axis × round-trip) cell of
+   §1 is a passing property test at canary scale: schema (all features, not six-blind), data,
+   identity, time, decision. And each is **faithful (L2)**: the matrix generator reports the
+   ladder level, every erasure is a `Tolerance` / diagnostic / fail-loud refusal (no silent drop),
+   and the per-axis red-team counterexamples (silent schema erasures, exit-0 row drops,
+   `Synthesized`-rename identity loss, `replayTo`-is-a-fetch, unread uniqueness/FK-trust) are
+   closed. Tracked as a green count with zero `Skip` on Tier-1 cells.
+1b. **The axes are an orthogonal, spanning basis (T-V + T-VI).** No "independent" pair couples
+   silently (Decision↔Data and Identity↔Schema dependencies are surfaced pre-flights, not implicit
+   failures); and every dimension the migration needs is represented or gated — Permissions,
+   Transactionality/Rollback, Connection pre-flight.
+1c. **The composed operation exists and round-trips (L3).** `migrate A B` runs the full
+   diff→rename→deploy→transfer→verify in one command with minimum-viable touches, atomic-or-
+   resumable, and a green A→B canary witnesses that B reproduces A modulo the named, declared
+   changes. *(Promise 8; the L3 bullseye.)*
 2. **The decision adjunction holds.** `Ingest(deploy(Project(C, overlay)))` reproduces `overlay`
    on the tightening axes — the engine's opinions survive the round-trip. (The "stronger than V1"
    theorem; today unbuilt.)
@@ -198,8 +271,10 @@ generated artifact, not a judgment.
    rename-survives holds for every `OssysOriginal` SsKey; every emitter is `Emitter<'element>`; V1
    sunset is gated on a green canary across a full schema-evolution cycle.
 
-Criteria 1–5 are the *new* north star (the Total Projection). Criterion 7 is the rev-2 north star,
-now a **strict subset** — the cutover is the first ring of the bullseye, not the bullseye.
+Criteria 1–5 (including 1b/1c) are the *new* north star (the Total Projection); 1/1b/1c are the
+**isomorphism-substantiation climb** (L1 floor → L2 faithful → L3 composed) that the 2026-05-31
+red-team scoped and Wave 6 builds. Criterion 7 is the rev-2 north star, now a **strict subset** —
+the cutover is the first ring of the bullseye, not the bullseye.
 
 ---
 
@@ -253,7 +328,8 @@ then.
 - **Read it first.** It is the apex; `KICKOFF.md` and `CLAUDE.md` reading order should place it
   above `VISION.md` (a follow-up wiring change).
 - **Consult it when** a slice's purpose feels unmoored: ask which matrix cell it advances, or which
-  totality (T-I…T-IV) it closes. If it advances none, it is probably not on the path.
+  totality (T-I…T-VI) it closes, or which rung of the isomorphism ladder (L1→L2→L3) it raises. If
+  it advances none, it is probably not on the path.
 - **Extend it only** when a new structural truth earns its place — a new axis the engine genuinely
   owns, or a new corollary whose forcing function has fired. Append; preserve; never inflate.
 - **Hold it against itself.** This document's own legitimacy is criterion 5: when the coverage

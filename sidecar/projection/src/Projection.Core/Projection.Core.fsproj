@@ -36,6 +36,7 @@
     <Compile Include="ModuleFilter.fs" />
     <Compile Include="ArtifactByKind.fs" />
     <Compile Include="CatalogDiff.fs" />
+    <Compile Include="Lifecycle.fs" />
     <Compile Include="PhysicalSchema.fs" />
     <Compile Include="Tolerance.fs" />
     <Compile Include="UserIdentity.fs" />
