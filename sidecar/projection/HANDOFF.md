@@ -9,6 +9,16 @@ Docker-gated additions (verify-data ×3, the apparatus-driven reconcile canary, 
 canary ×8) are green against the warm container. Commit arc: `23e80de` (4.3) → `fcd8f52` (4.6) →
 `76ecb34` (4.5) → `6a3126c` (4.4) → `ded475b` (4.2). What each shipped, in one line:
 
+**One pre-existing Docker failure you'll inherit (NOT from Wave 4):** the full Docker pool reports
+`CanaryRoundTripTests.A42 (2.4 canary): a DoNotEnforce FK decision keeps the FK out of the deployed
+schema` failing at line 531 — the empty-overlay *baseline* deploys an FK but the readback
+reconstructs 0 (expected 1). I reproduced it **identically at the pre-session base commit `deb5853`**
+via a worktree, so it predates this session's work (the A42 fixture is all `Catalog = None`, which
+my 4.3 emission change leaves byte-identical). It looks like an FK-readback gap in this specific SQL
+container/version — worth a look, but it is not a Wave-4 regression. (`GeneratorScaleTests`
+deterministic-seed also flaked once under the full serial-Docker resource pressure but passes in
+isolation.)
+
 - **4.3** cross-DB FK — `schemaObjectFromTableId` emits a three-part `[db].[schema].[table]` when
   `TableId.Catalog = Some`; `toTableId` carries `Physical.Catalog`. Additive (None ⇒ byte-identical).
 - **4.6** `Origin` rename — `OsNative→Native`, `ExternalViaIntegrationStudio→ExternalIndirect`
