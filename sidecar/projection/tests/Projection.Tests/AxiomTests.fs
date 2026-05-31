@@ -278,12 +278,24 @@ let ``A-Lifecycle-3 (L3-L3): per-timeline history is independent`` () =
         "tests/Projection.Tests/LifecycleTests.fs"
         "A-Lifecycle-3 (L3-L3): timelines are independent histories"
 
+// 6.A.11 (H-007 apply-leg) — the evolution round-trip law. `applyDiff` is the
+// `between` peer; `applyDiff (between A B) A = B` (modulo the captured surface)
+// makes the Time axis an evolution algebra, not a snapshot store. Witnessed at
+// the CatalogDiff level and lifted to the Lifecycle chain via reconstructLatest.
+[<Fact>]
+let ``6.A.11: applyDiff (between A B) A = B — the evolution round-trip law`` () =
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "Time: applyDiff (between A B) A = B (evolution round-trip law)"
+
 [<Fact(Skip = "A-Lifecycle-4: evolutionChain composition is associative — Bucket C. \
-evolutionChain produces a per-edge CatalogDiff list, but CatalogDiff has no \
-compose operator (diff∘diff) today, so associativity of composition is not yet \
-expressible. Promoted to Bucket A when CatalogDiff gains an `apply`/`compose` \
-peer to `between` (H-007 SchemaDelta category) and replayTo's diff-replay form \
-lands.")>]
+NARROWED (6.A.11): CatalogDiff now has an `apply` peer (`applyDiff`) and the \
+diff-replay reconstruction form lands (`Lifecycle.reconstructLatest` = fold \
+applyDiff genesis); the evolution round-trip law `applyDiff (between A B) A = B` \
+is witnessed (`CatalogDiffTests`). What remains for THIS axiom is the `compose` \
+operator (diff∘diff : CatalogDiff -> CatalogDiff -> CatalogDiff) whose \
+associativity it asserts — not yet built (H-007 SchemaDelta category, the \
+delta-pass Kleisli closure). Promoted to Bucket A when `compose` lands.")>]
 let ``A-Lifecycle-4: evolutionChain composition is associative`` () = ()
 
 // ===========================================================================
@@ -959,12 +971,13 @@ composition pays off when the level depth dominates the pass count.")>]
 let ``H-006: parallel pass composition full integration (static algebra shipped)`` () = ()
 
 [<Fact(Skip = "H-007 SchemaDelta type and delta pass category — large; \
-Cluster D prerequisite. Trigger: migration generation surface or breaking-change \
-detection consumer pulls the delta-pass category into existence. CatalogDiff.fs \
-provides the kind-level partitioning today (Added / Removed / Renamed / \
-Unchanged); the full SchemaDelta adds the `Modified` partition + a second \
-Kleisli category `SchemaDelta -> Lineage<Diagnostics<SchemaDelta>>` over delta \
-passes. Defer until a delta-pass consumer materializes.")>]
+Cluster D prerequisite. NARROWED (6.A.10 + 6.A.11): CatalogDiff now carries the \
+`Modified` partition (per-kind `AttributeDiffs` naming the changed facets, \
+6.A.10) AND the `apply` peer (`applyDiff` + the round-trip law `applyDiff \
+(between A B) A = B`, 6.A.11). What remains is the second Kleisli category \
+`SchemaDelta -> Lineage<Diagnostics<SchemaDelta>>` over delta passes (+ the \
+`compose` operator). Defer until a delta-PASS consumer (not just diff/apply) \
+materializes.")>]
 let ``H-007: SchemaDelta type (delta pass category; large)`` () = ()
 
 [<Fact>]

@@ -243,3 +243,103 @@ let ``T1: attribute-level diff is deterministic across repeat invocations`` () =
     let runs = [ for _ in 1 .. 10 -> CatalogDiff.attributeDiffs (CatalogDiff.between sampleCatalog target |> mustOk) ]
     let head = List.head runs
     Assert.All(runs, fun r -> Assert.Equal<Map<SsKey, AttributeDiff>>(head, r))
+
+// ---------------------------------------------------------------------------
+// 6.A.11 — applyDiff + the evolution round-trip law (H-007). `between` is the
+// observation; `applyDiff` is the action. The law `applyDiff (between A B) A =
+// B` (modulo the captured surface) makes the Time axis an evolution algebra,
+// not a snapshot store. The law is witnessed order-insensitively by the diff's
+// own equality notion: `between B (applyDiff (between A B) A) |> isEmpty`.
+// ---------------------------------------------------------------------------
+
+let private nm (s: string) : Name = Name.create s |> Result.value
+
+/// A single-module catalog over the given kinds (reusing the Sales module).
+let private catalogOfKinds (kinds: Kind list) : Catalog =
+    let m = { salesModule with Kinds = kinds }
+    Catalog.create [ m ] [] |> Result.value
+
+[<Fact>]
+let ``Time: applyDiff (between A B) A = B (evolution round-trip law)`` () =
+    // B is A evolved across the whole captured surface at once: a renamed
+    // kind, a column type change, a nullability change, a dropped attribute,
+    // and an added attribute.
+    let a = sampleCatalog
+    let newAttrKey = attrKey ["Customer"; "Loyalty"]
+    let customer' =
+        { customer with
+            Name = nm "Client"   // kind rename
+            Attributes =
+                (customer.Attributes
+                 |> List.choose (fun at ->
+                     if at.SsKey = customerTenantKey then None                 // drop TenantId
+                     elif at.SsKey = customerNameKey then
+                         Some { at with Type = Integer }                       // type change
+                     elif at.SsKey = customerIdAttrKey then
+                         Some { at with Column = { at.Column with IsNullable = true } } // nullability change
+                     else Some at))
+                @ [ { Attribute.create newAttrKey (nm "Loyalty") Integer with
+                        Column = { ColumnName = "LOYALTY"; IsNullable = true } } ] } // add column
+    let b = catalogOfKinds [ customer'; order; country ]
+
+    let diff = CatalogDiff.between a b |> mustOk
+    let reconstructed = CatalogDiff.applyDiff a diff
+
+    // The round-trip law: the reconstruction has NO diff against B over the
+    // captured surface (kinds + names + attribute presence/name/facets).
+    let residual = CatalogDiff.between b reconstructed |> mustOk
+    Assert.True(CatalogDiff.isEmpty residual, "applyDiff (between A B) A must reproduce B (residual diff was non-empty)")
+
+[<Fact>]
+let ``applyDiff (between A A) A = A — the identity diff is identity`` () =
+    let a = sampleCatalog
+    let diff = CatalogDiff.between a a |> mustOk
+    let reconstructed = CatalogDiff.applyDiff a diff
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between a reconstructed |> mustOk))
+
+[<Fact>]
+let ``applyDiff: an in-place column type change reconstructs the exact target attribute`` () =
+    // A direct structural check (no ordering ambiguity — same kinds, same
+    // order, one patched facet): the reconstructed Customer.Name attribute
+    // equals B's.
+    let a = sampleCatalog
+    let b = catalogWithCustomerName (fun at -> { at with Type = Integer })
+    let reconstructed = CatalogDiff.applyDiff a (CatalogDiff.between a b |> mustOk)
+    let nameAttr (c: Catalog) =
+        (Catalog.tryFindKind customerKey c).Value.Attributes
+        |> List.find (fun at -> at.SsKey = customerNameKey)
+    Assert.Equal(nameAttr b, nameAttr reconstructed)
+
+[<Fact>]
+let ``applyDiff threads the passed-in catalog, not the recorded target (no-cheat)`` () =
+    // A = {Customer, Order}; B = {Customer} (Order removed). The diff records
+    // Target = B. Applying it to a DIFFERENT base that also carries Country
+    // must keep Country — proving applyDiff transforms the argument, and is
+    // not `fun _ d -> target d` (which would have dropped Country).
+    let a = catalogOfKinds [ customer; order ]
+    let b = catalogOfKinds [ customer ]
+    let diff = CatalogDiff.between a b |> mustOk
+
+    let baseWithExtra = catalogOfKinds [ customer; order; country ]
+    let result = CatalogDiff.applyDiff baseWithExtra diff
+
+    // Order was removed; Country (only in the passed-in base) survives.
+    Assert.True((Catalog.tryFindKind orderKey result).IsNone)
+    Assert.True((Catalog.tryFindKind countryKey result).IsSome)
+    // The recorded target carries NO Country — so the result differs from it.
+    Assert.True((Catalog.tryFindKind countryKey (CatalogDiff.target diff)).IsNone)
+
+[<Fact>]
+let ``applyDiff: a dropped attribute is removed from the reconstruction`` () =
+    let a = sampleCatalog
+    let b =
+        let customer' =
+            { customer with
+                Attributes = customer.Attributes |> List.filter (fun at -> at.SsKey <> customerTenantKey) }
+        catalogOfKinds [ customer'; order; country ]
+    let reconstructed = CatalogDiff.applyDiff a (CatalogDiff.between a b |> mustOk)
+    let customerAttrs =
+        (Catalog.tryFindKind customerKey reconstructed).Value.Attributes
+        |> List.map (fun at -> at.SsKey)
+        |> Set.ofList
+    Assert.DoesNotContain(customerTenantKey, customerAttrs)

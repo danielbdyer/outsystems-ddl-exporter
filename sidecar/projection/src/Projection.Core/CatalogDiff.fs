@@ -303,3 +303,129 @@ module CatalogDiff =
         && Set.isEmpty data.Added
         && Set.isEmpty data.Removed
         && Map.isEmpty data.AttributeDiffs
+
+    // -- 6.A.11: applyDiff — the `between` peer (H-007) -----------------------
+    //
+    // `between` is the *observation* (read a delta off two catalogs);
+    // `applyDiff` is the *action* (transform a catalog by a delta). Together
+    // they make the Time axis an evolution algebra, not a snapshot store: the
+    // round-trip law `applyDiff (between A B) A = B` (modulo the captured
+    // surface) is the Time faithfulness witness.
+    //
+    // **Faithful, not trivial.** `applyDiff base d` derives the result's
+    // keyset from `base ⊖ delta` — `(keys base \ Removed) ∪ Added` — and
+    // TRANSFORMS `base`'s kinds in place (rename + per-attribute facet patch).
+    // It reads the recorded `target d` ONLY to source genuinely-new content
+    // (an `Added` kind's full definition; the new value of a `Changed` facet).
+    // So the result depends on the passed-in `base`, not just the target — a
+    // diff applied to a *different* base preserves that base's extra kinds
+    // (the no-cheat property test). It is NOT `fun base d -> target d`.
+    //
+    // **Captured surface (the law's modulus).** The diff captures kind
+    // presence/name + attribute presence/name + the nine column-shape facets
+    // (`AttributeFacet`). It does NOT capture references, indexes, modality,
+    // module structure, or sequences — those ride through from `base`
+    // unchanged. The round-trip law therefore holds for A→B evolutions within
+    // the captured surface, witnessed order-insensitively by
+    // `between B (applyDiff (between A B) A) |> isEmpty`. A future
+    // self-contained diff (inline payloads, no stored source/target) would
+    // widen the surface; deferred under IR-grows-under-evidence.
+
+    /// Patch one column-shape facet of `dest` from `src` (the recorded
+    /// target's attribute). Only the named facet moves; every other field of
+    /// `dest` rides through — applyDiff's power exactly matches the facet set
+    /// `between` detects, so no un-captured field is silently reconstructed.
+    let private applyFacet (src: Attribute) (facet: AttributeFacet) (dest: Attribute) : Attribute =
+        match facet with
+        | AttributeFacet.DataType     -> { dest with Type = src.Type }
+        | AttributeFacet.Nullability  -> { dest with Column = { dest.Column with IsNullable = src.Column.IsNullable } }
+        | AttributeFacet.PrimaryKey   -> { dest with IsPrimaryKey = src.IsPrimaryKey }
+        | AttributeFacet.Length       -> { dest with Length = src.Length }
+        | AttributeFacet.Precision    -> { dest with Precision = src.Precision }
+        | AttributeFacet.Scale        -> { dest with Scale = src.Scale }
+        | AttributeFacet.Identity     -> { dest with IsIdentity = src.IsIdentity }
+        | AttributeFacet.DefaultValue -> { dest with DefaultValue = src.DefaultValue; DefaultName = src.DefaultName }
+        | AttributeFacet.Computed     -> { dest with Computed = src.Computed }
+
+    /// Apply a per-kind `AttributeDiff` to a kind's base attribute list,
+    /// sourcing new attributes / new facet values from the recorded target
+    /// kind. Removed attrs drop; surviving attrs are renamed (`Renamed`) and
+    /// facet-patched (`Changed`); `Added` attrs append in target order.
+    let private applyAttributeDiff
+        (ad: AttributeDiff)
+        (targetKind: Kind option)
+        (baseAttrs: Attribute list)
+        : Attribute list =
+        let tgtAttr (key: SsKey) : Attribute option =
+            targetKind |> Option.bind (fun k -> k.Attributes |> List.tryFind (fun a -> a.SsKey = key))
+        let survivors =
+            baseAttrs
+            |> List.filter (fun a -> not (Set.contains a.SsKey ad.Removed))
+            |> List.map (fun a ->
+                let renamed1 =
+                    match Map.tryFind a.SsKey ad.Renamed with
+                    | Some r -> { a with Name = r.NewName }
+                    | None -> a
+                match ad.Changed |> List.tryFind (fun c -> c.AttributeKey = a.SsKey), tgtAttr a.SsKey with
+                | Some change, Some src -> Set.fold (fun acc f -> applyFacet src f acc) renamed1 change.Facets
+                | _ -> renamed1)
+        let added =
+            match targetKind with
+            | Some tk -> tk.Attributes |> List.filter (fun a -> Set.contains a.SsKey ad.Added)
+            | None    -> []
+        survivors @ added
+
+    /// 6.A.11 — apply a `CatalogDiff` to a base `Catalog`, reconstructing the
+    /// target modulo the captured surface. Total: trusts the delta (no
+    /// re-validation), so the round-trip law is `between B (applyDiff
+    /// (between A B) A) |> isEmpty`. References / indexes / modality / module
+    /// structure / sequences ride through from `base` (not captured by the
+    /// diff). H-007: the `between` peer that makes Time an evolution algebra.
+    let applyDiff (baseCatalog: Catalog) (d: CatalogDiff) : Catalog =
+        let (CatalogDiff data) = d
+        let tgt = data.Target
+        let transformKind (k: Kind) : Kind =
+            let renamed1 =
+                match Map.tryFind k.SsKey data.Renamed with
+                | Some r -> { k with Name = r.NewName }
+                | None -> k
+            match Map.tryFind k.SsKey data.AttributeDiffs with
+            | Some ad ->
+                { renamed1 with Attributes = applyAttributeDiff ad (Catalog.tryFindKind k.SsKey tgt) renamed1.Attributes }
+            | None -> renamed1
+        // Transform base's modules: drop Removed kinds, transform survivors.
+        let survivingKeys =
+            Catalog.allKinds baseCatalog
+            |> List.map (fun k -> k.SsKey)
+            |> List.filter (fun key -> not (Set.contains key data.Removed))
+            |> Set.ofList
+        let baseModules =
+            baseCatalog.Modules
+            |> List.map (fun m ->
+                { m with
+                    Kinds =
+                        m.Kinds
+                        |> List.filter (fun k -> not (Set.contains k.SsKey data.Removed))
+                        |> List.map transformKind })
+        // Place Added kinds into their target-owning module (dedup against
+        // anything already surviving in base, for robustness on a base ≠ source).
+        let addedKinds =
+            data.Added
+            |> Set.toList
+            |> List.filter (fun key -> not (Set.contains key survivingKeys))
+            |> List.choose (fun key ->
+                match Catalog.tryFindKind key tgt, Catalog.tryFindOwningModule key tgt with
+                | Some k, Some owner -> Some (owner.SsKey, owner, k)
+                | _ -> None)
+        let modulesWithAdds =
+            // Append each added kind to the result module that owns it in the
+            // target; create the module from the target's record when absent.
+            addedKinds
+            |> List.fold
+                (fun (mods: Module list) (ownerKey, ownerModule, kind) ->
+                    if mods |> List.exists (fun m -> m.SsKey = ownerKey) then
+                        mods |> List.map (fun m -> if m.SsKey = ownerKey then { m with Kinds = m.Kinds @ [ kind ] } else m)
+                    else
+                        mods @ [ { ownerModule with Kinds = [ kind ] } ])
+                baseModules
+        { baseCatalog with Modules = modulesWithAdds }

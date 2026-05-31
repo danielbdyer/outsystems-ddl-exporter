@@ -148,6 +148,25 @@ let ``A-Lifecycle-1 (L3-L1): replayTo fails on an absent version`` () =
 let ``Time round-trip (replay): replayTo genesis recovers the genesis catalog`` () =
     Assert.Equal<Catalog>(sampleCatalog, Lifecycle.replayTo (ver 0 "1.0.0") devChain |> mustResultOk)
 
+// 6.A.11 (H-007) — replayability as a real reconstruction (fold applyDiff),
+// not a snapshot fetch. The chain-level round-trip law: reconstructLatest
+// derives the latest catalog from the per-edge deltas and agrees with the
+// stored snapshot modulo the diff's captured surface.
+[<Fact>]
+let ``A-Lifecycle (6.A.11 / H-007): reconstructLatest derives the latest snapshot via fold applyDiff`` () =
+    let reconstructed = Lifecycle.reconstructLatest devChain |> mustOk
+    let latest = (Lifecycle.latest devChain).Catalog
+    // The reconstruction (fold applyDiff genesis) reproduces the stored latest
+    // (the customer-rename evolution) over the captured surface.
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between latest reconstructed |> mustOk))
+    // And it is NOT genesis — the rename was actually applied.
+    Assert.False(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog reconstructed |> mustOk))
+
+[<Fact>]
+let ``reconstructLatest: a genesis-only lifecycle reconstructs C0`` () =
+    let reconstructed = Lifecycle.reconstructLatest devGenesis |> mustOk
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog reconstructed |> mustOk))
+
 [<Fact>]
 let ``A-Lifecycle-3 (L3-L3): timelines are independent histories`` () =
     let uat = Lifecycle.genesis (tl "uat") c0
