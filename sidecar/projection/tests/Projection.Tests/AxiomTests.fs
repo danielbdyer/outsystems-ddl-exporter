@@ -764,9 +764,18 @@ let ``T11: sibling Π's commute on shared E-attached values — verified by Json
     citationOf
         "tests/Projection.Tests/ArtifactByKindTests.fs"
         "T11: ArtifactByKind.keys equals Catalog.allKinds SsKey set by construction"
+    // Slice 4.5 — the DACPAC sibling joins the contract. It is a binary
+    // artifact (`Result<byte[]>`), not an ArtifactByKind, so its keyset
+    // agreement is VERIFIED (round-trip read of the DacFx model, SsKey
+    // recovered via the Catalog's physical-coordinate bijection) rather than
+    // structural — the binary-normal-form (T1 amendment) epistemic tier.
+    citationOf
+        "tests/Projection.Tests/SiblingEmitterContractTests.fs"
+        "T11: SSDT and DACPAC siblings agree on the SsKey keyset"
     // Bucket A — chapter-3.5 sibling-Π arc cash-out. `ArtifactByKind` is
     // the typed structural witness; SsKey-keyed agreement holds by
-    // construction.
+    // construction (SSDT / Json / Distributions) or by round-trip
+    // verification (DACPAC).
     ()
 
 // ===========================================================================

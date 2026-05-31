@@ -1,7 +1,10 @@
 module Projection.Tests.SiblingEmitterContractTests
 
+open System.IO
 open System.Text.Json.Nodes
 open Xunit
+open Microsoft.SqlServer.Dac
+open Microsoft.SqlServer.Dac.Model
 open Projection.Core
 open Projection.Core.Passes
 open Projection.Targets.SSDT
@@ -225,3 +228,76 @@ let ``JsonEmitter.emit doc tree contains every emitSlices kind by ssKey root`` (
         Assert.Equal<Set<string>>(expectedKeyStrings, docKeys)
     | Error err ->
         Assert.Fail(sprintf "JsonEmitter.emitSlices: %A" err)
+
+// ---------------------------------------------------------------------------
+// Slice 4.5 — DacpacEmitter joins the T11 sibling-Π contract.
+//
+// The SSDT / Json / Distributions siblings each return
+// `Result<ArtifactByKind<'element>, EmitError>`, so their SsKey keyset
+// equals `Catalog.allKinds` *by construction* (the ArtifactByKind smart
+// constructor binds it). The DACPAC sibling is `DacpacEmitter.emit :
+// Catalog -> Result<byte[]>` — a single binary artifact, not an
+// ArtifactByKind — so it cannot carry the keyset structurally. Its
+// sibling-agreement is therefore a *verified* property (the same epistemic
+// tier as the L3-S2 round-trip witness, not the structural tier the
+// ArtifactByKind siblings enjoy): emit the `.dacpac`, read the DacFx model
+// back, and recover each emitted table's SsKey through the Catalog's
+// physical-coordinate -> SsKey bijection. The recovered keyset must equal
+// `SsdtDdlEmitter`'s. DacFx operates on the in-memory model, so this stays
+// in the pure pool (no Docker), mirroring DacpacRoundTripTests.
+//
+// L3-S3 sibling-agreement now covers DACPAC; the T1 binary-normal-form
+// amendment names the binary sibling's equality tier (content-level via
+// round-trip, not byte-identity — see DacpacEmitterTests' content-determinism
+// test + DacpacEmitter.registeredMetadata).
+// ---------------------------------------------------------------------------
+
+let private mustOkBytes (r: Result<byte[]>) : byte[] =
+    match r with
+    | Ok v -> v
+    | Error errs ->
+        Assert.Fail(sprintf "DacpacEmitter.emit expected Ok; got %A" errs)
+        Unchecked.defaultof<byte[]>
+
+let private norm (s: string) : string = s.Trim('[', ']').ToLowerInvariant()
+
+/// The Catalog's physical-coordinate -> SsKey bijection. DacFx carries
+/// physical (schema, table) names, not V2 identity; the Catalog is the map
+/// that recovers each emitted table's SsKey.
+let private physicalToSsKey (c: Catalog) : Map<string * string, SsKey> =
+    Catalog.allKinds c
+    |> List.map (fun k -> (norm k.Physical.Schema, norm k.Physical.Table), k.SsKey)
+    |> Map.ofList
+
+/// Emit the catalog to `.dacpac`, read the DacFx model back, and project its
+/// user tables to the SsKey keyset via `physicalToSsKey`. Mirrors
+/// DacpacRoundTripTests' `schemaOfModel` table enumeration.
+let private dacpacKeyset (c: Catalog) : Set<SsKey> =
+    let bytes = DacpacEmitter.emit c |> mustOkBytes
+    use stream = new MemoryStream(bytes)
+    use model = TSqlModel.LoadFromDacpac(stream, ModelLoadOptions())
+    let phys = physicalToSsKey c
+    model.GetObjects(DacQueryScopes.UserDefined, Table.TypeClass)
+    |> Seq.choose (fun t ->
+        let parts = t.Name.Parts
+        let key =
+            if parts.Count >= 2 then norm parts.[0], norm parts.[1]
+            elif parts.Count = 1 then "dbo", norm parts.[0]
+            else "dbo", ""
+        Map.tryFind key phys)
+    |> Set.ofSeq
+
+[<Fact>]
+let ``T11 (verified): DacpacEmitter table-set recovers Catalog.allKinds SsKey keyset`` () =
+    let enriched = enrich sampleCatalog
+    let expected = expectedKeyset enriched
+    Assert.Equal<Set<SsKey>>(expected, dacpacKeyset enriched)
+
+[<Fact>]
+let ``T11: SSDT and DACPAC siblings agree on the SsKey keyset`` () =
+    let enriched = enrich sampleCatalog
+    let ssdtKeys =
+        match SsdtDdlEmitter.emitSlices enriched with
+        | Ok a -> ArtifactByKind.keys a
+        | Error err -> Assert.Fail(sprintf "SsdtDdl: %A" err); Set.empty
+    Assert.Equal<Set<SsKey>>(ssdtKeys, dacpacKeyset enriched)
