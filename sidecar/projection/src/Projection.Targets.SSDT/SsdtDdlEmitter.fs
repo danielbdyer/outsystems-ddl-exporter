@@ -86,8 +86,19 @@ module SsdtDdlEmitter =
     // their second consumer, the code stays inline.
     // -------------------------------------------------------------------
 
+    // Slice 4.3 — preserve the catalog coordinate (L3-S10 / L3-I10).
+    // Pre-slice this hard-coded `Catalog = None`, which silently
+    // downgraded a cross-database FK target (`k.Physical.Catalog =
+    // Some db`) to a two-part name. Carrying `k.Physical.Catalog`
+    // through lets `schemaObjectFromTableId` emit the three-part
+    // `[db].[schema].[table]` (honored reference) instead of the silent
+    // drop. Additive: `Physical.Catalog = None` (today's universal
+    // case — most V2 sources project `db_catalog: null`) is unchanged.
+    // The truly-external case (target kind absent from the catalog)
+    // still drops via `fkDef` → `foreignKeyDropDiagnostics` Warning, so
+    // neither cross-DB path is a *silent* drop (L3-Boundary-NoSilentDrop).
     let private toTableId (k: Kind) : TableId =
-        { Schema = k.Physical.Schema; Table = k.Physical.Table; Catalog = None }
+        { Schema = k.Physical.Schema; Table = k.Physical.Table; Catalog = k.Physical.Catalog }
 
     /// Derive a `ColumnDef` (the Statement-DU column shape from
     /// chapter 3.5) from a V2 `Attribute`. The `Provenance` field is
