@@ -99,6 +99,7 @@ let private usageLines : string list =
         "    5  canary divergence (PhysicalSchema diff non-empty)"
         "    6  config error (config file missing / unparseable / D9 violation; transfer connection ref)"
         "    7  R6 gate refusal (transfer --execute without PROJECTION_ALLOW_EXECUTE=1)"
+        "    8  verify-data divergence (row-count / null-count diff non-empty)"
     ]
 
 /// Print each usage line directly to the writer via the BCL
@@ -632,6 +633,93 @@ let private dispatchTransfer (argv: string[]) : int =
         let allowCdc      = parsed.Contains TransferArgs.Allow_Cdc
         runTransfer sourceSpec sinkSpec reconcileList execute allowCdc)
 
+// ---------------------------------------------------------------------------
+// Slice 4.4 — `projection verify-data`: post-deploy data-integrity gate.
+// Compares two deployments of the same schema contract on exact per-table
+// row counts + per-column null counts (the data-fidelity complement to the
+// canary's structural equivalence). Read-only — no execute gate. The schema
+// contract is read from the before deployment via `ReadSide.read`.
+// ---------------------------------------------------------------------------
+
+let private narrateIntegrityReport (report: IntegrityReport) : unit =
+    if DataIntegrityChecker.isClean report then
+        printfn "projection verify-data: clean — no row-count or null-count divergence."
+    else
+        if not (List.isEmpty report.RowCountDeltas) then
+            printfn "Row-count divergences (%d):" report.RowCountDeltas.Length
+            for d in report.RowCountDeltas do
+                printfn "  %-40s before=%d after=%d (delta=%+d)"
+                    (SsKey.rootOriginal d.Kind) d.Before d.After (d.After - d.Before)
+        if not (List.isEmpty report.NullCountDeltas) then
+            printfn ""
+            printfn "Null-count divergences (%d):" report.NullCountDeltas.Length
+            for d in report.NullCountDeltas do
+                printfn "  %-40s %-30s before=%d after=%d (delta=%+d)"
+                    (SsKey.rootOriginal d.Kind) (SsKey.rootOriginal d.Attribute)
+                    d.Before d.After (d.After - d.Before)
+        if not (List.isEmpty report.Warnings) then
+            printfn ""
+            printfn "Warnings (%d) — schema drift between the two deployments:" report.Warnings.Length
+            for w in report.Warnings do
+                printfn "  %s: %s" w.Code w.Message
+
+let private runVerifyData (beforeSpec: string) (afterSpec: string) : int =
+    let collect = function Ok _ -> [] | Error es -> es
+    let parsedBefore = TransferSpec.parseConnectionSpec beforeSpec
+    let parsedAfter  = TransferSpec.parseConnectionSpec afterSpec
+    let specErrors = collect parsedBefore @ collect parsedAfter
+    if not (List.isEmpty specErrors) then
+        Console.Error.WriteLine "projection verify-data: argument error:"
+        printErrors Console.Error specErrors
+        dumpBench "verify-data"
+        2
+    else
+
+    let beforeRef = Result.value parsedBefore
+    let afterRef  = Result.value parsedAfter
+    let beforeStrR = ConnectionResolver.resolve "Before" beforeRef
+    let afterStrR  = ConnectionResolver.resolve "After"  afterRef
+    let connErrors = collect beforeStrR @ collect afterStrR
+    if not (List.isEmpty connErrors) then
+        Console.Error.WriteLine "projection verify-data: connection error:"
+        printErrors Console.Error connErrors
+        dumpBench "verify-data"
+        6
+    else
+
+    let work =
+        task {
+            use before = new Microsoft.Data.SqlClient.SqlConnection(Result.value beforeStrR)
+            use after  = new Microsoft.Data.SqlClient.SqlConnection(Result.value afterStrR)
+            do! before.OpenAsync()
+            do! after.OpenAsync()
+            // The schema contract is the before deployment's reconstructed
+            // catalog; both sides are profiled against it.
+            let! contractR = ReadSide.read before
+            match contractR with
+            | Error es -> return Result.failure es
+            | Ok contract -> return! DataIntegrityChecker.compare before after contract
+        }
+    let exitCode =
+        match work.GetAwaiter().GetResult() with
+        | Ok report ->
+            narrateIntegrityReport report
+            // The gate fails closed: any divergence is a non-zero exit so a
+            // CI step / cutover gate trips on data drift.
+            if DataIntegrityChecker.isClean report then 0 else 8
+        | Error errors ->
+            Console.Error.WriteLine "projection verify-data: failed:"
+            printErrors Console.Error errors
+            3
+    dumpBench "verify-data"
+    exitCode
+
+let private dispatchVerifyData (argv: string[]) : int =
+    argv |> VerbArgs.parse<VerifyDataArgs.VerifyDataArg> "projection verify-data" (fun parsed ->
+        let beforeSpec = parsed.GetResult VerifyDataArgs.Before_Conn
+        let afterSpec  = parsed.GetResult VerifyDataArgs.After_Conn
+        runVerifyData beforeSpec afterSpec)
+
 [<EntryPoint>]
 let main argv =
     match argv with
@@ -669,6 +757,13 @@ let main argv =
         1
     | arr when arr.Length >= 1 && arr.[0] = "transfer" ->
         dispatchTransfer (Array.skip 1 arr)
+    | [| "verify-data" |] ->
+        Console.Error.WriteLine "projection verify-data: --before-conn and --after-conn required"
+        Console.Error.WriteLine ""
+        Console.Error.WriteLine "Run `projection verify-data --help` for usage."
+        1
+    | arr when arr.Length >= 1 && arr.[0] = "verify-data" ->
+        dispatchVerifyData (Array.skip 1 arr)
     | [||]
     | [| "--help" |]
     | [| "-h" |] ->
