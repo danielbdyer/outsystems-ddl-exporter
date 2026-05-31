@@ -15,6 +15,51 @@ type RenameRecord =
         PassVersion : int
     }
 
+/// 6.A.10 — a single facet of an attribute's emitted column shape. Mirrors
+/// the column-fidelity surface `PhysicalSchema.diff` compares (type,
+/// nullable, PK, length, precision, scale, identity, default, computed) —
+/// the facets a *minimum-viable-touch* ALTER must reproduce. Closed DU;
+/// widen when a consumer needs a finer facet (ext-props, external storage).
+/// Kind-level `CatalogDiff` was attribute-blind (a `TEXT → NVARCHAR(256)`
+/// produced no diff signal → no ALTER → silent full-redeploy); this names
+/// the changed facet so the delta is computable.
+[<RequireQualifiedAccess>]
+type AttributeFacet =
+    | DataType
+    | Nullability
+    | PrimaryKey
+    | Length
+    | Precision
+    | Scale
+    | Identity
+    | DefaultValue
+    | Computed
+
+/// An attribute present in BOTH source and target (same `SsKey`) whose
+/// emitted column shape differs. `Facets` names every facet that changed
+/// and is non-empty by construction — an attribute with no changed facet
+/// is structurally `Unchanged`, never `Changed`.
+type AttributeChange =
+    {
+        AttributeKey : SsKey
+        Facets       : Set<AttributeFacet>
+    }
+
+/// Per-kind attribute-level diff for a kind present in BOTH catalogs.
+/// `Added` / `Removed` are attribute `SsKey`s present in only the target /
+/// source; `Renamed` carries a same-`SsKey` `Name` change (edge-case-2 of
+/// the chapter-3.5 prescope — a renamed attribute on an unrenamed kind);
+/// `Changed` names attributes whose emitted column shape differs facet by
+/// facet. An empty `AttributeDiff` (all four empty) means the kind's
+/// attributes are identical; `between` stores only non-empty diffs.
+type AttributeDiff =
+    {
+        Added   : Set<SsKey>
+        Removed : Set<SsKey>
+        Renamed : Map<SsKey, RenameRecord>
+        Changed : AttributeChange list
+    }
+
 /// Total decomposition of `source ∪ target` SsKeys into four pairwise-
 /// disjoint partitions. The smart constructor `CatalogDiff.between`
 /// enforces exhaustiveness — every `SsKey` in `Catalog.allKinds source`
@@ -50,6 +95,13 @@ and CatalogDiffData =
         Added     : Set<SsKey>
         Removed   : Set<SsKey>
         Unchanged : Set<SsKey>
+        /// 6.A.10 — per-kind attribute-level diffs, keyed by the kind's
+        /// `SsKey`. Sparse: only kinds present in BOTH catalogs (i.e. in
+        /// `Renamed ∪ Unchanged`) AND carrying at least one attribute
+        /// difference appear. A kind whose attributes are identical
+        /// contributes no entry. Lets a consumer compute minimum-viable
+        /// touches (6.A.12 `diff → ALTER`) even when the kind name is stable.
+        AttributeDiffs : Map<SsKey, AttributeDiff>
     }
 
 [<RequireQualifiedAccess>]
@@ -72,6 +124,67 @@ module CatalogDiff =
         Catalog.allKinds c
         |> List.map (fun k -> k.SsKey)
         |> Set.ofList
+
+    /// 6.A.10 — the facets of an attribute's emitted column shape that
+    /// differ between source and target. Mirrors `PhysicalSchema.diff`'s
+    /// column comparison so the diff and the canary agree on "what counts
+    /// as a column change." Empty set ⇒ the attribute's shape is identical.
+    let private changedFacets (s: Attribute) (t: Attribute) : Set<AttributeFacet> =
+        [ if s.Type <> t.Type then AttributeFacet.DataType
+          if s.Column.IsNullable <> t.Column.IsNullable then AttributeFacet.Nullability
+          if s.IsPrimaryKey <> t.IsPrimaryKey then AttributeFacet.PrimaryKey
+          if s.Length <> t.Length then AttributeFacet.Length
+          if s.Precision <> t.Precision then AttributeFacet.Precision
+          if s.Scale <> t.Scale then AttributeFacet.Scale
+          if s.IsIdentity <> t.IsIdentity then AttributeFacet.Identity
+          if (s.DefaultValue, s.DefaultName) <> (t.DefaultValue, t.DefaultName) then AttributeFacet.DefaultValue
+          if s.Computed <> t.Computed then AttributeFacet.Computed ]
+        |> Set.ofList
+
+    let private emptyAttributeDiff : AttributeDiff =
+        { Added = Set.empty; Removed = Set.empty; Renamed = Map.empty; Changed = [] }
+
+    let private attributeDiffIsEmpty (d: AttributeDiff) : bool =
+        Set.isEmpty d.Added
+        && Set.isEmpty d.Removed
+        && Map.isEmpty d.Renamed
+        && List.isEmpty d.Changed
+
+    /// The attribute-level diff between a kind's source and target
+    /// realizations (the kind's `SsKey` is present in both catalogs).
+    /// Attributes match by `SsKey`: present-in-target-only → `Added`,
+    /// present-in-source-only → `Removed`; a shared `SsKey` whose `Name`
+    /// differs → `Renamed` (independent of facet changes), whose emitted
+    /// shape differs → `Changed`. Source-ordered `Changed` for determinism.
+    let private attributeDiff (sourceKind: Kind) (targetKind: Kind) : AttributeDiff =
+        let srcByKey = sourceKind.Attributes |> List.map (fun a -> a.SsKey, a) |> Map.ofList
+        let tgtByKey = targetKind.Attributes |> List.map (fun a -> a.SsKey, a) |> Map.ofList
+        let srcKeys = srcByKey |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+        let tgtKeys = tgtByKey |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+        let added = Set.difference tgtKeys srcKeys
+        let removed = Set.difference srcKeys tgtKeys
+        let renamed =
+            Set.intersect srcKeys tgtKeys
+            |> Set.fold
+                (fun acc key ->
+                    let s = Map.find key srcByKey
+                    let t = Map.find key tgtByKey
+                    if s.Name <> t.Name then
+                        Map.add key { OldName = s.Name; NewName = t.Name; PassVersion = version } acc
+                    else acc)
+                Map.empty
+        // Source order preserves determinism (T1) — the kind's attribute
+        // list is the canonical order, not the Set's hash order.
+        let changed =
+            sourceKind.Attributes
+            |> List.choose (fun s ->
+                match Map.tryFind s.SsKey tgtByKey with
+                | Some t ->
+                    let facets = changedFacets s t
+                    if Set.isEmpty facets then None
+                    else Some { AttributeKey = s.SsKey; Facets = facets }
+                | None -> None)
+        { Added = added; Removed = removed; Renamed = renamed; Changed = changed }
 
     /// Smart constructor — total partitioning of `source ∪ target`
     /// SsKeys. Every key in either Catalog is in exactly one of the
@@ -119,6 +232,20 @@ module CatalogDiff =
                     | _ ->
                         rn, Set.add key un)
                 (Map.empty, Set.empty)
+        // 6.A.10 — descend into attributes for every kind present in BOTH
+        // catalogs (the intersection = Renamed ∪ Unchanged). Store only
+        // non-empty diffs so an unchanged kind contributes nothing (and the
+        // diff stays empty for an idempotent redeploy → CDC-silence, 6.A.13).
+        let attributeDiffs =
+            intersect
+            |> Set.fold
+                (fun acc key ->
+                    match Catalog.tryFindKind key source, Catalog.tryFindKind key target with
+                    | Some sk, Some tk ->
+                        let d = attributeDiff sk tk
+                        if attributeDiffIsEmpty d then acc else Map.add key d acc
+                    | _ -> acc)
+                Map.empty
         Ok
             (CatalogDiff
                 {
@@ -128,6 +255,7 @@ module CatalogDiff =
                     Added = added
                     Removed = removed
                     Unchanged = unchanged
+                    AttributeDiffs = attributeDiffs
                 })
 
     let source (CatalogDiff d) : Catalog = d.Source
@@ -136,6 +264,15 @@ module CatalogDiff =
     let added (CatalogDiff d) : Set<SsKey> = d.Added
     let removed (CatalogDiff d) : Set<SsKey> = d.Removed
     let unchanged (CatalogDiff d) : Set<SsKey> = d.Unchanged
+
+    /// 6.A.10 — the per-kind attribute-level diffs (sparse: only kinds with
+    /// at least one attribute difference). Keyed by kind `SsKey`.
+    let attributeDiffs (CatalogDiff d) : Map<SsKey, AttributeDiff> = d.AttributeDiffs
+
+    /// The attribute-level diff for one kind, or `None` if the kind's
+    /// attributes are identical (or the kind is not present in both).
+    let attributeDiffOf (key: SsKey) (CatalogDiff d) : AttributeDiff option =
+        Map.tryFind key d.AttributeDiffs
 
     /// All SsKeys in scope of the diff — `source ∪ target`. Equal
     /// (by exhaustiveness invariant) to the disjoint union of the
@@ -154,8 +291,15 @@ module CatalogDiff =
     /// chapter 3.4 canary's `idempotentRedeploy` predicate: if a
     /// catalog's diff against itself is empty, a redeploy plan is
     /// trivially empty.
+    /// 6.A.10 — an empty diff now also requires zero attribute-level
+    /// changes. Before, a kind-name-stable column change (`TEXT →
+    /// NVARCHAR(256)`) reported `isEmpty = true` → no ALTER → silent
+    /// redeploy. With attribute descent, the diff is empty iff the catalogs
+    /// are structurally identical at both the kind and attribute level —
+    /// which is the predicate 6.A.13's schema CDC-silence rests on.
     let isEmpty (d: CatalogDiff) : bool =
         let (CatalogDiff data) = d
         Map.isEmpty data.Renamed
         && Set.isEmpty data.Added
         && Set.isEmpty data.Removed
+        && Map.isEmpty data.AttributeDiffs

@@ -149,3 +149,97 @@ let ``CatalogDiff is invariant under module-list permutation``
     && Set.isEmpty (CatalogDiff.removed diff)
     && Map.isEmpty (CatalogDiff.renamed diff)
     && (kindKeys original) = (CatalogDiff.unchanged diff)
+
+// ---------------------------------------------------------------------------
+// 6.A.10 — attribute-level diff (the structural keystone). Kind-level
+// `CatalogDiff` was attribute-blind: a `Customer.Name` column change left
+// the kind in `Unchanged` with no signal, so the operator's "minimum viable
+// touches" was impossible (no diff → no ALTER → silent full-redeploy with a
+// possible type coercion). `between` now descends into attributes and names
+// the changed facet. The kind-level partitions are PRESERVED: a kind whose
+// name is stable stays in `Unchanged`; the attribute change rides the new
+// per-kind `AttributeDiffs` map.
+// ---------------------------------------------------------------------------
+
+/// Rebuild `sampleCatalog` with Customer's `Name` attribute transformed.
+let private catalogWithCustomerName (f: Attribute -> Attribute) : Catalog =
+    let customer' =
+        { customer with
+            Attributes =
+                customer.Attributes
+                |> List.map (fun a -> if a.SsKey = customerNameKey then f a else a) }
+    let m = { salesModule with Kinds = [ customer'; order; country ] }
+    Catalog.create [ m ] [] |> Result.value
+
+[<Fact>]
+let ``CatalogDiff: a column type change surfaces as an attribute-level Changed entry`` () =
+    // Customer.Name: Text -> Integer (a DataType facet change). The kind
+    // name is unchanged, so kind-level diffing alone reports nothing.
+    let target = catalogWithCustomerName (fun a -> { a with Type = Integer })
+    let diff = CatalogDiff.between sampleCatalog target |> mustOk
+
+    // Kind-level contract preserved: Customer stays in Unchanged.
+    Assert.Contains(customerKey, CatalogDiff.unchanged diff)
+    Assert.DoesNotContain(customerKey, CatalogDiff.added diff)
+    Assert.DoesNotContain(customerKey, CatalogDiff.removed diff)
+
+    // The attribute change is now visible — and isEmpty is honest.
+    Assert.False(CatalogDiff.isEmpty diff)
+    match CatalogDiff.attributeDiffOf customerKey diff with
+    | None -> Assert.Fail "expected an AttributeDiff for Customer"
+    | Some ad ->
+        Assert.Empty(ad.Added)
+        Assert.Empty(ad.Removed)
+        Assert.Empty(ad.Renamed)
+        Assert.Equal(1, List.length ad.Changed)
+        let change = List.head ad.Changed
+        Assert.Equal(customerNameKey, change.AttributeKey)
+        Assert.Contains(AttributeFacet.DataType, change.Facets)
+
+[<Fact>]
+let ``CatalogDiff: a column widening (length change) names the Length facet (TEXT -> NVARCHAR(256))`` () =
+    // The audit's headline scenario: type category stable, declared length
+    // changes. Length None -> Some 256 is the IR shape of TEXT -> NVARCHAR(256).
+    let target = catalogWithCustomerName (fun a -> { a with Length = Some 256 })
+    let diff = CatalogDiff.between sampleCatalog target |> mustOk
+    let ad = (CatalogDiff.attributeDiffOf customerKey diff).Value
+    let change = List.head ad.Changed
+    Assert.Contains(AttributeFacet.Length, change.Facets)
+    Assert.DoesNotContain(AttributeFacet.DataType, change.Facets)
+
+[<Fact>]
+let ``CatalogDiff: a nullability change names the Nullability facet`` () =
+    let target =
+        catalogWithCustomerName (fun a ->
+            { a with Column = { a.Column with IsNullable = true } })
+    let diff = CatalogDiff.between sampleCatalog target |> mustOk
+    let ad = (CatalogDiff.attributeDiffOf customerKey diff).Value
+    Assert.Contains(AttributeFacet.Nullability, (List.head ad.Changed).Facets)
+
+[<Fact>]
+let ``CatalogDiff: a dropped attribute surfaces in AttributeDiff.Removed`` () =
+    // Remove Customer.TenantId from the target.
+    let target =
+        let customer' =
+            { customer with
+                Attributes =
+                    customer.Attributes |> List.filter (fun a -> a.SsKey <> customerTenantKey) }
+        let m = { salesModule with Kinds = [ customer'; order; country ] }
+        Catalog.create [ m ] [] |> Result.value
+    let diff = CatalogDiff.between sampleCatalog target |> mustOk
+    let ad = (CatalogDiff.attributeDiffOf customerKey diff).Value
+    Assert.Contains(customerTenantKey, ad.Removed)
+    Assert.False(CatalogDiff.isEmpty diff)
+
+[<Fact>]
+let ``CatalogDiff: identical catalogs carry no AttributeDiffs (empty diff is honest)`` () =
+    let diff = CatalogDiff.between sampleCatalog sampleCatalog |> mustOk
+    Assert.True(Map.isEmpty (CatalogDiff.attributeDiffs diff))
+    Assert.True(CatalogDiff.isEmpty diff)
+
+[<Fact>]
+let ``T1: attribute-level diff is deterministic across repeat invocations`` () =
+    let target = catalogWithCustomerName (fun a -> { a with Type = Integer; Length = Some 64 })
+    let runs = [ for _ in 1 .. 10 -> CatalogDiff.attributeDiffs (CatalogDiff.between sampleCatalog target |> mustOk) ]
+    let head = List.head runs
+    Assert.All(runs, fun r -> Assert.Equal<Map<SsKey, AttributeDiff>>(head, r))

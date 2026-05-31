@@ -1057,15 +1057,20 @@ multi-source consumer materializes.")>]
 let ``H-042: Catalog set algebra (union/intersect/subtract)`` () = ()
 
 [<Fact>]
-let ``H-043: Catalog diff as first-class type — shipped via CatalogDiff.fs (Modified partition deferred)`` () =
-    // `CatalogDiff` already provides the typed diff surface
-    // (`src/Projection.Core/CatalogDiff.fs`, 161 LOC). Carries
-    // Added / Removed / Renamed / Unchanged partitions of the SsKey set
-    // — exactly the H-043 shape minus the `Modified` partition (kinds
-    // whose attributes/references changed but SsKey stayed). The
-    // `Modified` partition defers to H-007 (delta pass category)
-    // which would consume it. The smart constructor `CatalogDiff.between`
-    // already enforces exhaustiveness over the SsKey union.
+let ``H-043: Catalog diff as first-class type — shipped via CatalogDiff.fs (attribute-level Changed landed, 6.A.10)`` () =
+    // `CatalogDiff` provides the typed diff surface
+    // (`src/Projection.Core/CatalogDiff.fs`). Carries Added / Removed /
+    // Renamed / Unchanged partitions of the kind-level SsKey set AND — as
+    // of 6.A.10 — the attribute-level `Modified` surface: per-kind
+    // `AttributeDiffs : Map<SsKey, AttributeDiff>` naming Added / Removed /
+    // Renamed attributes + `Changed` (the facet that differs — DataType,
+    // Nullability, Length, …). Witnessed by
+    // `CatalogDiffTests`::``CatalogDiff: a column type change surfaces as an
+    // attribute-level Changed entry``. The remaining gap is the *consuming*
+    // delta category — `applyDiff` / `compose` (H-007 / 6.A.11) — not the
+    // diff surface. The smart constructor `CatalogDiff.between` enforces
+    // exhaustiveness over the kind SsKey union; the attribute diffs are
+    // sparse (only kinds with a difference).
     let sourceKindCount = 0
     let targetKindCount = 0
     Assert.Equal(sourceKindCount, targetKindCount)
