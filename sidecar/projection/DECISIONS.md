@@ -20106,3 +20106,26 @@ capability.
 **Test baseline.** Pure pool **2507 passed / 0 / 208**; Docker pool — every transfer canary green (the new AssignedBySink + all prior). Two unrelated Docker-pool failures confirmed NOT regressions: `CanaryRoundTripTests.A42` is the pre-existing failure HANDOFF flagged (reproduced at base `deb5853`); `LiveProfilerIntegrationTests B.3.1` (a profiler test, untouched by this change) passes 4/4 in isolation — a serial-Docker resource-pressure flake. `dotnet build Projection.sln` 0/0.
 
 **Cross-references:** `src/Projection.Pipeline/TransferRun.fs` (`insertCaptureRow`, `writePlan` disposition branch, `assignedKeyCapture` site); `src/Projection.Core/SurrogateRemap.fs` (`capture` / `tryFindAssigned` / `remapRowFks` — consumed, not changed); `tests/Projection.Tests/TransferCanaryTests.fs` (the canary + fixtures); `tests/Projection.Tests/TransferRegistrationsTests.fs` (classification update); EXECUTION_PLAN.md §5.2; PRESCOPE_TRANSFER.md §10.
+
+---
+
+## 2026-05-31 — §5.6 leg 1: policy-diff CLI verb (operator-as-consumer; legs 2/3 held)
+
+**Resolved.** The `policy-diff` CLI verb — EXECUTION_PLAN §5.6 leg 1 — ships. `projection policy-diff <config-a> <config-b>` reads the shared Catalog from config-a's `Model.Path`, binds a `Policy` from each config, and renders the five-axis structural delta (`Selection / Emission / Insertion / Tightening / UserMatching` each `changed`/`same`, plus `AnyChanged`) + the changed-kind set. The operator opened §5.2–5.9 as the consumer; this fires leg 1's trigger ("pre-cutover diff policy A vs B").
+
+**What shipped.**
+- `Compose.buildPolicyFromConfig : Config -> Catalog -> Result<Policy>` lifted from `private` to public — the **second consumer** (two-consumer threshold; the `runWithConfigCore` emit path is the first). `policy-diff` binds two policies from two configs against one catalog; no duplication of the bind logic.
+- `PolicyDiff.diffConfigs : Config -> Config -> Task<Result<FullProjectionDiff>>` — the testable orchestrator (in `PolicyDiff.fs`, which compiles after `Compose`, so it can call `Compose.read` + `Compose.buildPolicyFromConfig`; the orchestrator could NOT live in `Compose` because `PolicyDiff` compiles later). Loads catalog once, binds both, runs `diffFullProjection` against `Profile.empty` (structural + lineage diff; no live DB).
+- `Program.fs` `policy-diff` verb dispatch + render + usage line. Exit codes: 0 success, 6 config error, 2 diff/bind failure (matches the established CLI exit-code map).
+
+**Estimate correction.** The plan's "~30 LOC when a consumer is named" undercounted: `diffFullProjection` needs `catalog + profile + 2 policies`, and a `Policy` is not directly loadable from a file — it binds from a `Config`'s textual `PolicySection` (catalog-aware, via `buildPolicyFromConfig`). The honest size is a proper CLI slice (orchestrator + binder exposure + verb + render + tests), not a thin wrapper.
+
+**Legs 2 and 3 held — distinct triggers, NOT fired by operator-as-consumer.** Per the §5.6 "honest two-consumer accounting":
+- **`LineageTree` multi-policy fork** — its trigger is **N≥3 simultaneous policy candidates** (the only point branching beats `diffFullProjection`'s run-twice). "Diff A vs B" is N=2; run-twice is correct. Held.
+- **`VersionedPolicy.evolve` + manifest history** — infrastructure exists (`evolve` + the 3.2 `ApprovalStore`), but its trigger is a real *SemVer-history* reader (evolve against a persisted prior). The `policy-diff` verb doesn't need it; wiring it now would be speculative SemVer plumbing. Held.
+
+**Minimal-CLI posture.** Per `DECISIONS 2026-05-18 (slice 5.7.α.cli)`, V2's CLI is deliberately minimal. `policy-diff` is a *deliberate, operator-pulled* addition (a named consumer surfaced), not posture drift — consistent with the posture's "verbs land as their workflow triggers fire" framing.
+
+**Test baseline.** Pure pool **2510 passed / 0 / 208** (+2 `PolicyDiffCliTests` exercising the config→policy→diff glue: differing Insertion axis → `AnyChanged` with precise per-axis flags; identical configs → no change). `dotnet build Projection.sln` 0/0.
+
+**Cross-references:** `src/Projection.Pipeline/Pipeline.fs` (`Compose.buildPolicyFromConfig` exposed); `src/Projection.Pipeline/PolicyDiff.fs` (`diffConfigs`); `src/Projection.Cli/Program.fs` (`runPolicyDiff` + dispatch + usage); `tests/Projection.Tests/PolicyDiffCliTests.fs`; EXECUTION_PLAN.md §5.6.

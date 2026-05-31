@@ -804,13 +804,21 @@ runner `scripts/test.sh` (never one `dotnet test`); TRX-first failure capture.
 - **Original first-slice spec (now realized):** in `ManifestEmitter.fs`, derive `applied-transforms : (SsKey ×
   OverlayAxis option) list` from `composed.Trail`; `DataIntent → None`, `OperatorIntent axis → Some axis`; sort by `SsKey` (T1).
 
-#### 5.6 — Policy-intelligence consumers — **defer-with-trigger (honest two-consumer accounting)**
-- **`policy-diff A B` CLI verb** — `PolicyDiff.diffFullProjection` is production-grade but unconsumed; verb is
-  ~30 LOC when a consumer is named. **Trigger:** UAT dry-run / pre-cutover "diff policy A vs B."
-- **`LineageTree`-backed multi-policy fork** — replace `diffFullProjection`'s run-twice with a `LineageTree`
-  fork. **Trigger:** N≥3 simultaneous policy candidates (the only point branching beats run-twice).
-- **`VersionedPolicy.evolve` + manifest history** — wire `evolve` against a persisted prior version (S, deps
-  3.2's store) so SemVer bumps are real instead of genesis-1.0.0. **Trigger:** the approval/version store (3.2) exists.
+#### 5.6 — Policy-intelligence consumers — **leg 1 SHIPPED 2026-05-31; legs 2/3 held (distinct triggers)**
+- **`policy-diff A B` CLI verb — SHIPPED** (`DECISIONS 2026-05-31 — §5.6 policy-diff`). `projection policy-diff
+  <config-a> <config-b>` reads the shared Catalog from config-a's `Model.Path`, binds a `Policy` from each config
+  via `Compose.buildPolicyFromConfig` (made public — the legitimate **second consumer** of the binder), and runs
+  `PolicyDiff.diffFullProjection` against `Profile.empty`. Renders the five-axis structural delta + the
+  changed-kind set. Orchestrator `PolicyDiff.diffConfigs` is the testable seam (the "~30 LOC" estimate undercounted
+  the catalog-load + per-axis policy binding). The operator-as-consumer fired this leg's trigger (pre-cutover "diff
+  policy A vs B").
+- **`LineageTree`-backed multi-policy fork — HELD.** Its trigger is **N≥3 simultaneous policy candidates** (the only
+  point branching beats `diffFullProjection`'s run-twice); the operator-as-consumer fires "diff A vs B" (N=2), not
+  N≥3. Run-twice is correct at N=2. Build when a third candidate materializes.
+- **`VersionedPolicy.evolve` + manifest history — HELD.** Infrastructure exists (`VersionedPolicy.evolve` + the 3.2
+  `ApprovalStore`), but its trigger is a real *SemVer-history* consumer (evolve against a persisted prior so bumps
+  are real, not genesis-1.0.0). The `policy-diff` verb does not need it; surfacing it would be speculative SemVer
+  plumbing. Build when a version-history reader demands it.
 - **All of these become load-bearing once Lifecycle (5.3) gives them a timeline to operate over** — that is the
   unification (§V E4).
 

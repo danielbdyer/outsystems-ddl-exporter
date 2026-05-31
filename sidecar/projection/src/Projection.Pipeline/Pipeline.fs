@@ -673,7 +673,10 @@ module Compose =
     /// slice C.1) + insertion axis (Chapter C slice C.5); Selection /
     /// Emission / UserMatching axes remain dormant pending operator-
     /// pull triggers per the dormant-config-section sweep.
-    let private buildPolicyFromConfig
+    /// **Second consumer (§5.6).** Made public for the `policy-diff` verb,
+    /// which binds two operator `Policy` values from two configs against a
+    /// shared catalog. Previously private to `runWithConfigCore`.
+    let buildPolicyFromConfig
         (cfg: Config.Config)
         (catalog: Catalog)
         : Result<Policy> =
