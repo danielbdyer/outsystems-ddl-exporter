@@ -91,30 +91,109 @@ module Transfer =
                     (deferredAttrs |> List.map clause |> String.concat ", ")
                     (pkAttrs |> List.map clause |> String.concat " AND "))
 
-    /// Realize the plan onto an open Sink connection. Phase 1: every
-    /// non-reconciled load (`Rows` non-empty) in topological order,
-    /// bulk-insert with deferred FKs NULLed. Phase 2: the cycle-broken
-    /// loads, in topological order, UPDATE the deferred FKs to their
-    /// (plan-side, already-remapped) values. Loads whose disposition is
-    /// `ReconciledByRule` carry empty `Rows` by plan-build; they are
-    /// naturally skipped.
-    let private writePlan (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) : Task<unit> =
+    /// Per-row INSERT for an `AssignedBySink` kind: omit the IDENTITY PK
+    /// column (let the Sink mint it) and capture the assigned surrogate via
+    /// `OUTPUT inserted.<pk>`. Returns the assigned key as its raw string,
+    /// or `None` if the insert produced no output row. `SqlBulkCopy` cannot
+    /// return assigned identities, so this is the per-row path §5.2 requires;
+    /// the value-literal rendering mirrors `phase2UpdateSql` (the existing
+    /// transfer text boundary).
+    let private insertCaptureRow
+        (sink: SqlConnection)
+        (kind: Kind)
+        (identityColumn: string)
+        (row: StaticRow)
+        : Task<string option> =
         task {
+            let insertCols = kind.Attributes |> List.filter (fun a -> not (a.IsPrimaryKey && a.IsIdentity))
+            let lit (a: Attribute) =
+                Map.tryFind a.Name row.Values
+                |> Option.defaultValue ""
+                |> SqlLiteral.ofRaw a.Type
+                |> SqlLiteral.toString
+            let sql =
+                if List.isEmpty insertCols then
+                    sprintf "INSERT INTO %s OUTPUT inserted.%s DEFAULT VALUES;"
+                        (Render.tableQualified kind.Physical) (Render.quote identityColumn)
+                else
+                    sprintf "INSERT INTO %s (%s) OUTPUT inserted.%s VALUES (%s);"
+                        (Render.tableQualified kind.Physical)
+                        (insertCols |> List.map (fun a -> Render.quote a.Column.ColumnName) |> String.concat ", ")
+                        (Render.quote identityColumn)
+                        (insertCols |> List.map lit |> String.concat ", ")
+            use cmd = sink.CreateCommand()
+            cmd.CommandText <- sql
+            let! scalar = cmd.ExecuteScalarAsync()
+            return
+                if isNull scalar || scalar = box System.DBNull.Value then None
+                else Some (string scalar)
+        }
+
+    /// Realize the plan onto an open Sink connection, returning any
+    /// write-time skip-and-diagnose references (FK values targeting an
+    /// `AssignedBySink` kind whose Source surrogate had no captured
+    /// assignment). Phase 1 runs in topological order so each
+    /// `AssignedBySink` kind's per-row OUTPUT captures feed the FK re-point
+    /// of every later referencer; Phase 2 re-points the cycle-deferred FKs
+    /// against the completed remap. `PreservedFromSource` /
+    /// `ReconciledByRule` loads are byte-identical to the pre-§5.2 path —
+    /// the re-point is a no-op when no `AssignedBySink` kind is in scope.
+    let private writePlan (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) : Task<(SsKey * UnresolvedReference) list> =
+        task {
+            let assignedBySinkKinds =
+                plan.Loads
+                |> List.choose (fun l ->
+                    if l.Disposition = IdentityDisposition.AssignedBySink then Some l.Kind else None)
+                |> Set.ofList
+            // The Source→Sink-minted surrogate map, accumulated as
+            // AssignedBySink kinds insert; threaded through the topological
+            // Phase-1 loop so referencers re-point against captures made by
+            // their (earlier-ordered) targets.
+            let mutable remap = SurrogateRemapContext.empty
+            let mutable writeSkips : (SsKey * UnresolvedReference) list = []
+
+            let repoint (kind: Kind) (rows: StaticRow list) : RemappedRows =
+                let fkTargets = SurrogateRemap.fkColumnsTargeting assignedBySinkKinds kind
+                if Map.isEmpty fkTargets then { Rows = rows; Skipped = [] }
+                else SurrogateRemap.remapRowFks fkTargets remap rows
+
             for load in plan.Loads do
                 if not (List.isEmpty load.Rows) then
                     match Catalog.tryFindKind load.Kind catalog with
                     | None      -> ()
                     | Some kind ->
-                        do! Bulk.copyRows sink kind.Physical (toCellRows kind load.DeferredFkColumns load.Rows)
+                        let remapped = repoint kind load.Rows
+                        writeSkips <- writeSkips @ (remapped.Skipped |> List.map (fun u -> load.Kind, u))
+                        match load.Disposition with
+                        | IdentityDisposition.AssignedBySink ->
+                            match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
+                            | Some idAttr ->
+                                for row in remapped.Rows do
+                                    let! assigned = insertCaptureRow sink kind idAttr.Column.ColumnName row
+                                    match Map.tryFind idAttr.Name row.Values, assigned with
+                                    | Some srcVal, Some assignedVal when srcVal <> "" ->
+                                        match SurrogateRemapContext.capture load.Kind (SourceKey.ofString srcVal) (AssignedKey.ofString assignedVal) remap with
+                                        | Ok r    -> remap <- r
+                                        | Error _ -> ()
+                                    | _ -> ()
+                            | None ->
+                                // ofKind only returns AssignedBySink for an IDENTITY PK, so this is
+                                // unreachable; fall back to the bulk path rather than drop the rows.
+                                do! Bulk.copyRows sink kind.Physical (toCellRows kind load.DeferredFkColumns remapped.Rows)
+                        | _ ->
+                            do! Bulk.copyRows sink kind.Physical (toCellRows kind load.DeferredFkColumns remapped.Rows)
 
             for load in plan.Loads do
                 if not (Set.isEmpty load.DeferredFkColumns) && not (List.isEmpty load.Rows) then
                     match Catalog.tryFindKind load.Kind catalog with
                     | None      -> ()
                     | Some kind ->
-                        let updates = load.Rows |> List.choose (phase2UpdateSql kind load.DeferredFkColumns)
+                        let rows2 = (repoint kind load.Rows).Rows
+                        let updates = rows2 |> List.choose (phase2UpdateSql kind load.DeferredFkColumns)
                         if not (List.isEmpty updates) then
                             do! Deploy.executeBatch sink (String.concat "\n" updates)
+
+            return writeSkips
         }
 
     // -- reconciliation orchestration ---------------------------------------
@@ -224,14 +303,20 @@ module Transfer =
                                 "%d non-deferrable cycle FK(s) — cannot execute a clean two-phase load"
                                 plan.UnbreakableCycleFks.Length))
             else
-                if mode = Execute then do! writePlan sink catalog plan
+                let! writeSkips =
+                    task {
+                        if mode = Execute then return! writePlan sink catalog plan
+                        else return []
+                    }
                 return
                     Result.success
                         { Mode                = mode
                           Kinds               = reportKinds mode plan
                           UnbreakableCycleFks = plan.UnbreakableCycleFks
                           UnmatchedIdentities = reconciled.Unmatched
-                          SkippedReferences   = plan.SkippedReferences }
+                          // Plan-build drops (reconcile misses) + write-time
+                          // drops (AssignedBySink FK misses) both surface here.
+                          SkippedReferences   = plan.SkippedReferences @ writeSkips }
         }
 
     /// Run a Transfer over one shared `Catalog` (the schema contract):
@@ -306,15 +391,16 @@ module Transfer =
                             return! runCore mode allowCdc source sink contract reconciliation
         }
 
-    /// Registry metadata (pillar 9). The Transfer realization classifies
-    /// entirely as `DataIntent`: the operator's identity substitution
-    /// landed at `DataLoadPlan.build` (the canonical `OperatorIntent
-    /// Insertion` site); this orchestrator just realizes the plan onto
-    /// the Sink. How a plan deploys is realization-layer policy (A36).
-    /// `AssignedBySink` (Slice E) will add an OUTPUT-capture site.
+    /// Registry metadata (pillar 9). Bulk/UPDATE realization of a
+    /// pre-substituted plan is `DataIntent` (the operator-supplied remap
+    /// landed at `DataLoadPlan.build`); the §5.2 `AssignedBySink` capture
+    /// site is `OperatorIntent Insertion` because the Sink-minted remap is
+    /// discovered *during* the write, not supplied to the plan.
     let registeredMetadata : RegisteredTransformMetadata =
         RegisteredTransformMetadata.emitter "transferProjection" Data
             [ TransformSite.dataIntent "phase1BulkInsert"
                 "Phase 1: bulk-insert each plan load's rows (deferred FK columns NULLed). Rows are already post-substitution (`DataLoadPlan.build` is the OperatorIntent Insertion site). Realization of the plan (A36); DataIntent."
               TransformSite.dataIntent "phase2FkRepoint"
-                "Phase 2: UPDATE the cycle-deferred FK columns to their plan-side values, keyed by PK, in topological order. Deterministic from the plan; no operator opinion." ]
+                "Phase 2: UPDATE the cycle-deferred FK columns to their plan-side values, keyed by PK, in topological order. Deterministic from the plan; no operator opinion."
+              TransformSite.operatorIntent "assignedKeyCapture" Insertion
+                "§5.2 Slice E: for `AssignedBySink` kinds (IDENTITY PK), insert per-row with `OUTPUT inserted.<pk>` (omitting the identity column so the Sink mints the surrogate) and capture each Source→assigned surrogate into a `SurrogateRemapContext`; every later referencer's FK targeting the kind is re-pointed via `tryFindAssigned`, skip-and-diagnose on miss. Unlike `DataLoadPlan.build`'s substitution (operator-supplied remap, known pre-build), this remap is discovered *during* the write — the assigned identity does not exist until the Sink mints it — so the site is OperatorIntent Insertion at the realization layer." ]

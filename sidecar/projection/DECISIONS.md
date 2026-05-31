@@ -20084,3 +20084,25 @@ capability.
 **Test baseline.** Pure pool **2506 passed / 0 / 208 skipped** (+9 §5.5 tests). The existing manifest tests use field-level assertions (not full-string golden), so the new JSON key required no regold. `dotnet build Projection.sln` 0/0.
 
 **Cross-references:** `src/Projection.Targets.SSDT/ManifestEmitter.fs` (`appliedTransforms` + `Manifest.AppliedTransforms` + `toNode`); `src/Projection.Pipeline/Pipeline.fs` (`composed.Trail` threaded to `buildFull`); `tests/Projection.Tests/AppliedTransformsTests.fs` (9 tests); EXECUTION_PLAN.md §5.5; `src/Projection.Core/Classification.fs` (OverlayAxis / Classification).
+
+---
+
+## 2026-05-31 — §5.2 Transfer Slice E: AssignedBySink sink-minted keys (operator-as-consumer trigger fired)
+
+**Resolved.** The `AssignedBySink` identity disposition — the Sink mints the surrogate (IDENTITY PK), so the source key cannot be force-inserted under DML-only rights — is now realized end-to-end (EXECUTION_PLAN §5.2 / PRESCOPE_TRANSFER §10 Slice E). The defer condition was "canary buildable now; no current consumer"; the operator opened §5.2–5.9 as the consumer. Deps 4.1 (done).
+
+**What shipped (`src/Projection.Pipeline/TransferRun.fs`).** `writePlan` now branches on `IdentityDisposition`:
+- **`AssignedBySink`** — per-row `INSERT … OUTPUT inserted.<pk>` (the new `insertCaptureRow`), omitting the IDENTITY column so the Sink mints the surrogate; each Source→assigned key is captured into a `SurrogateRemapContext` threaded through the **topological** Phase-1 loop, so every later referencer's FK targeting the kind re-points through `SurrogateRemap.remapRowFks` (skip-and-diagnose; write-time misses surface in `report.SkippedReferences` alongside plan-build misses).
+- **`PreservedFromSource` / `ReconciledByRule`** — byte-identical to the pre-§5.2 path. The re-point is a no-op when no `AssignedBySink` kind is in scope (`assignedBySinkKinds` empty), so all prior transfer canaries stay green unchanged.
+
+**Why the existing canaries were safe to touch.** Every pre-§5.2 transfer-canary fixture uses a **non-IDENTITY** PK (`[ID] INT NOT NULL PRIMARY KEY`) → `PreservedFromSource` (or operator-overridden `ReconciledByRule`). `AssignedBySink` was structurally derivable (`ofKind` reads `IsIdentity`) but **unexercised** by any canary. So the new path is purely additive; the disposition branch leaves the existing exact-`PhysicalSchema`-equality canaries on their original code path.
+
+**Classification decision — `assignedKeyCapture` is `OperatorIntent Insertion`, not `DataIntent`.** `DataLoadPlan.build` is the one OperatorIntent Insertion site for *operator-supplied* remaps (known pre-build; realizations are DataIntent). But the AssignedBySink remap is **discovered during the write** — the assigned identity does not exist until the Sink mints it — so the capture+re-point is a genuinely new realization-layer OperatorIntent Insertion site. Registered on `Transfer.registeredMetadata`. `TransferRegistrationsTests` updated: the Transfer realization is no longer "entirely DataIntent" (the prior invariant), it is DataIntent (phase1/phase2) **plus** the OperatorIntent Insertion capture.
+
+**Acceptance — round-trips MODULO the remap, not exact equality.** Unlike the `PreservedFromSource` canaries (which assert exact `PhysicalSchema` equality including PK values), AssignedBySink **changes** the surrogate values, so its canary (`data adjunction: AssignedBySink round-trips modulo SurrogateRemapContext`) asserts the identity-independent relationship: the Source seeds Users at 280/281 (via IDENTITY_INSERT), the empty Sink mints 1/2, and the `(Order → User-by-email)` projection is identical across Source and Sink while the Source surrogates (280/281) are provably absent from the Sink. Green against the live container (~7s).
+
+**Scope held — cyclic AssignedBySink deferred.** A self-referential IDENTITY kind (Phase-2 deferred FK) is out of scope: Phase-2's `UPDATE … WHERE <pk> = <sourceVal>` keys on the source PK, which no longer exists in the Sink once minted. The acyclic headline (parent IDENTITY + child FK) is the shipped worked example; the cyclic case is a named follow-on triggered by a real fixture.
+
+**Test baseline.** Pure pool **2507 passed / 0 / 208**; Docker pool — every transfer canary green (the new AssignedBySink + all prior). Two unrelated Docker-pool failures confirmed NOT regressions: `CanaryRoundTripTests.A42` is the pre-existing failure HANDOFF flagged (reproduced at base `deb5853`); `LiveProfilerIntegrationTests B.3.1` (a profiler test, untouched by this change) passes 4/4 in isolation — a serial-Docker resource-pressure flake. `dotnet build Projection.sln` 0/0.
+
+**Cross-references:** `src/Projection.Pipeline/TransferRun.fs` (`insertCaptureRow`, `writePlan` disposition branch, `assignedKeyCapture` site); `src/Projection.Core/SurrogateRemap.fs` (`capture` / `tryFindAssigned` / `remapRowFks` — consumed, not changed); `tests/Projection.Tests/TransferCanaryTests.fs` (the canary + fixtures); `tests/Projection.Tests/TransferRegistrationsTests.fs` (classification update); EXECUTION_PLAN.md §5.2; PRESCOPE_TRANSFER.md §10.

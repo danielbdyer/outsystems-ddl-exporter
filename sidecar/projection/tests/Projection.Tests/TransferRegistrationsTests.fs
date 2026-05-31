@@ -13,12 +13,11 @@ open Projection.Pipeline
 // register their own surfaces, classified, validated, and enumerated
 // in the grand-union `RegisteredAllTransforms.all`.
 
-let private pureDataIntentEntries : RegisteredTransformMetadata list =
-    [ Ingestion.registeredMetadata
-      Transfer.registeredMetadata ]
-
 let private allTransferEntries : RegisteredTransformMetadata list =
-    pureDataIntentEntries @ [ DataLoadPlan.registeredMetadata; Reconciliation.registeredMetadata ]
+    [ Ingestion.registeredMetadata
+      Transfer.registeredMetadata
+      DataLoadPlan.registeredMetadata
+      Reconciliation.registeredMetadata ]
 
 [<Fact>]
 let ``Transfer transforms bind to the expected stages`` () =
@@ -28,12 +27,24 @@ let ``Transfer transforms bind to the expected stages`` () =
     Assert.Equal(Pipeline, Reconciliation.registeredMetadata.StageBinding)
 
 [<Fact>]
-let ``the pure-DataIntent core (ingest + project) carries only DataIntent sites in the Data domain`` () =
-    for rt in pureDataIntentEntries do
-        Assert.Equal(Data, rt.Domain)
-        Assert.NotEmpty rt.Sites
-        for site in rt.Sites do
-            Assert.Equal(DataIntent, site.Classification)
+let ``the Ingestion adapter leg carries only DataIntent sites in the Data domain`` () =
+    let rt = Ingestion.registeredMetadata
+    Assert.Equal(Data, rt.Domain)
+    Assert.NotEmpty rt.Sites
+    for site in rt.Sites do
+        Assert.Equal(DataIntent, site.Classification)
+
+[<Fact>]
+let ``the Transfer realization is DataIntent except the §5.2 AssignedBySink capture (OperatorIntent Insertion)`` () =
+    // Bulk/UPDATE realization of a pre-substituted plan is DataIntent; the
+    // §5.2 sink-minted-key capture is OperatorIntent Insertion because the
+    // remap is discovered DURING the write (not supplied to the plan).
+    let rt = Transfer.registeredMetadata
+    Assert.Equal(Data, rt.Domain)
+    let bySite = rt.Sites |> List.map (fun s -> s.SiteName, s.Classification) |> Map.ofList
+    Assert.Equal<Classification>(DataIntent, bySite.["phase1BulkInsert"])
+    Assert.Equal<Classification>(DataIntent, bySite.["phase2FkRepoint"])
+    Assert.Equal<Classification>(OperatorIntent Insertion, bySite.["assignedKeyCapture"])
 
 [<Fact>]
 let ``DataLoadPlan splits four DataIntent sites from one OperatorIntent Insertion (identitySubstitution)`` () =

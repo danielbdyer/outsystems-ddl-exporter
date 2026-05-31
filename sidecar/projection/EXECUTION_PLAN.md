@@ -727,15 +727,23 @@ runner `scripts/test.sh` (never one `dotnet test`); TRX-first failure capture.
 - **Buildable now:** add `--preview-row-cap` to `TransferArgs.fs` so the first real run is bounded. The execute
   itself needs 3.1 (R6 amendment) + the OPEN-2 resolution.
 
-#### 5.2 — Transfer Slice E: `AssignedBySink` (sink-minted keys)
-- **Status:** defer (canary buildable now; real-UAT shares OPEN-2). **Deps: 4.1.**
-- **First slice:** in `src/Projection.Pipeline/TransferRun.fs`, for `AssignedBySink` loads replace bulk-insert
-  with per-row `INSERT … OUTPUT inserted.<pk>` (or natural-key post-correlation — `SqlBulkCopy` returns no ids),
-  feeding `SurrogateRemapContext.capture`; phase-2 re-points **every** FK via `tryFindAssigned`, skip-and-diagnose
-  on miss. New `OperatorIntent`-adjacent realization site → registers a pillar-9 `TransformSite`. Own prescope per
-  `PRESCOPE_TRANSFER.md` §10.
+#### 5.2 — Transfer Slice E: `AssignedBySink` (sink-minted keys) — **SHIPPED 2026-05-31 (acyclic)**
+- **Status:** **shipped** — operator-as-consumer trigger fired (`DECISIONS 2026-05-31 — §5.2 AssignedBySink`).
+  `TransferRun.writePlan` now branches on `IdentityDisposition`: `AssignedBySink` kinds insert per-row via
+  `INSERT … OUTPUT inserted.<pk>` (omitting the IDENTITY column so the Sink mints the surrogate), capture each
+  Source→assigned key into a `SurrogateRemapContext` threaded through the topological Phase-1 loop, and every later
+  referencer's FK targeting the kind is re-pointed via `SurrogateRemap.remapRowFks` (skip-and-diagnose surfaced in
+  `report.SkippedReferences`). New `assignedKeyCapture` site registers as `OperatorIntent Insertion` (the remap is
+  discovered *during* the write, unlike `DataLoadPlan.build`'s pre-supplied substitution). `PreservedFromSource` /
+  `ReconciledByRule` paths are byte-identical (the re-point no-ops when no `AssignedBySink` kind is in scope) — all
+  prior transfer canaries stay green.
 - **Acceptance (canary, ephemeral DB):** `` ``data adjunction: AssignedBySink round-trips modulo
-  SurrogateRemapContext`` ``.
+  SurrogateRemapContext`` `` — green against the live container (User IDENTITY PK seeded at 280/281; Sink mints
+  1/2; Order FKs re-pointed; the (Order→User-by-email) relationship is identical modulo the surrogate remap).
+- **Deferred follow-on (cyclic AssignedBySink):** a *self-referential* IDENTITY kind (Phase-2 deferred FK) is out
+  of scope — Phase-2's `WHERE <pk> = <sourceVal>` keys on the source PK, which no longer exists in the Sink once
+  minted. Trigger: a real cyclic sink-minted fixture. The acyclic headline (parent IDENTITY + child FK) is the
+  shipped worked example.
 
 #### 5.3 — Lifecycle axis (the fourth input) — **SHIPPED 2026-05-31 (L-α→L-δ)**
 - **Status:** **shipped** — operator-as-consumer trigger fired (`DECISIONS 2026-05-31 — §5.3 Lifecycle axis

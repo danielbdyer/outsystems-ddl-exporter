@@ -71,6 +71,26 @@ module private TransferCanaryFixtures =
     let reKeySinkSeed =
         "INSERT INTO [dbo].[OSUSR_RC_USER] ([ID],[EMAIL]) VALUES (18,N'alice@x'),(19,N'bob@x');"
 
+    /// AssignedBySink (§5.2): User's PK is IDENTITY, so the Sink mints new
+    /// surrogates at insert time; Order (business PK) has a NOT-NULL FK to
+    /// User. The Source seeds Users at 280/281 (via IDENTITY_INSERT) so the
+    /// Sink-minted IDs (1,2 in the empty Sink) necessarily DIFFER — the
+    /// round-trip can only hold if every Order's USER_ID was re-pointed
+    /// through the captured SurrogateRemapContext.
+    let assignedBySinkDdl =
+        "CREATE TABLE [dbo].[OSUSR_AS_USER] (" +
+        "[ID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY, [EMAIL] NVARCHAR(100) NULL); " +
+        "CREATE TABLE [dbo].[OSUSR_AS_ORDER] (" +
+        "[ID] INT NOT NULL PRIMARY KEY, [USER_ID] INT NOT NULL, [AMOUNT] INT NULL, " +
+        "CONSTRAINT [FK_AsOrder_User] FOREIGN KEY ([USER_ID]) " +
+        "REFERENCES [dbo].[OSUSR_AS_USER] ([ID]));"
+
+    let assignedBySinkSourceSeed =
+        "SET IDENTITY_INSERT [dbo].[OSUSR_AS_USER] ON; " +
+        "INSERT INTO [dbo].[OSUSR_AS_USER] ([ID],[EMAIL]) VALUES (280,N'alice@x'),(281,N'bob@x'); " +
+        "SET IDENTITY_INSERT [dbo].[OSUSR_AS_USER] OFF; " +
+        "INSERT INTO [dbo].[OSUSR_AS_ORDER] ([ID],[USER_ID],[AMOUNT]) VALUES (10,280,100),(11,281,200);"
+
     let value (r: Result<'a>) : 'a = Result.value r
 
     /// Count rows in a table on the given connection.
@@ -80,6 +100,24 @@ module private TransferCanaryFixtures =
             cmd.CommandText <- sprintf "SELECT COUNT_BIG(*) FROM %s;" table
             let! scalar = cmd.ExecuteScalarAsync()
             return int (unbox<int64> scalar)
+        }
+
+    /// The (Order ID → User EMAIL) join projection — the identity-
+    /// independent relationship the AssignedBySink round-trip must preserve.
+    let orderUserEmail (cnn: Microsoft.Data.SqlClient.SqlConnection) : System.Threading.Tasks.Task<(int * string) list> =
+        task {
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT o.[ID], u.[EMAIL] FROM [dbo].[OSUSR_AS_ORDER] o " +
+                "JOIN [dbo].[OSUSR_AS_USER] u ON o.[USER_ID] = u.[ID] ORDER BY o.[ID];"
+            use! reader = cmd.ExecuteReaderAsync()
+            let acc = System.Collections.Generic.List<int * string>()
+            let mutable go = true
+            while go do
+                let! has = reader.ReadAsync()
+                if has then acc.Add(reader.GetInt32 0, reader.GetString 1)
+                else go <- false
+            return List.ofSeq acc
         }
 
 
@@ -227,6 +265,59 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let! sourceValued =
                                     TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_RC_ORDER] WHERE [USER_ID] IN (280,281,999)"
                                 Assert.Equal(0, sourceValued)
+                            })
+                }))
+
+    // §5.2 Slice E — the data adjunction for AssignedBySink (sink-minted keys).
+    // User has an IDENTITY PK, so the Sink mints fresh surrogates per row; the
+    // capture (INSERT…OUTPUT) feeds a SurrogateRemapContext that re-points every
+    // Order's USER_ID. The round-trip holds MODULO that remap: the surrogate
+    // values differ, but the (Order → User-by-email) relationship is identical.
+    [<Fact>]
+    member _.``data adjunction: AssignedBySink round-trips modulo SurrogateRemapContext`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferAssigned") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferAssignedSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.assignedBySinkDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.assignedBySinkSourceSeed
+                    return!
+                        fixture.WithEphemeralDatabase "XferAssignedSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.assignedBySinkDdl   // same schema, empty
+
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+                                let userKind =
+                                    Catalog.allModulesKinds contract |> List.map snd
+                                    |> List.find (fun k -> k.Physical.Table = "OSUSR_AS_USER")
+                                // Precondition: the reconstructed contract classifies User as
+                                // AssignedBySink (its IDENTITY PK survives the ReadSide round-trip).
+                                Assert.Equal(IdentityDisposition.AssignedBySink, IdentityDisposition.ofKind userKind)
+
+                                let! reportR = Transfer.run Transfer.Execute true src sink contract
+                                let report = TransferCanaryFixtures.value reportR
+                                Assert.Empty(report.SkippedReferences)
+                                Assert.True(report.Kinds |> List.forall (fun k -> k.RowsWritten = k.RowsIngested))
+
+                                // Row counts preserved on both kinds.
+                                let! users  = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_AS_USER]"
+                                let! orders = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_AS_ORDER]"
+                                Assert.Equal(2, users)
+                                Assert.Equal(2, orders)
+
+                                // The Sink minted NEW surrogates — the Source IDs (280/281) are gone,
+                                // so the FK re-point was load-bearing (not an accidental ID collision).
+                                let! sourceIds =
+                                    TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_AS_USER] WHERE [ID] IN (280,281)"
+                                Assert.Equal(0, sourceIds)
+
+                                // …yet the (Order → User-by-email) relationship is identical:
+                                // round-trip holds MODULO the SurrogateRemapContext.
+                                let! srcPairs  = TransferCanaryFixtures.orderUserEmail src
+                                let! sinkPairs = TransferCanaryFixtures.orderUserEmail sink
+                                Assert.Equal<(int * string) list>(srcPairs, sinkPairs)
+                                Assert.Equal<(int * string) list>([ (10, "alice@x"); (11, "bob@x") ], sinkPairs)
                             })
                 }))
 
