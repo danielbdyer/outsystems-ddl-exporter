@@ -297,6 +297,7 @@ module Compose =
                          composedState.TopologicalOrder
                          versionedPolicy
                          policyConflicts
+                         composed.Trail
                          emittedCatalog
                  SsdtBundle.compose rewritten manifest, manifest
              | Error err ->

@@ -20065,3 +20065,22 @@ capability.
 **What this unblocks.** §5.6 policy-intelligence consumers (`VersionedPolicy.evolve` against a persisted prior version; `LineageTree` multi-policy fork over a timeline) — §5.3 is their gateway per the EXECUTION_PLAN dependency graph (`5.3 Lifecycle ─► 5.6 ─► §V E4`).
 
 **Cross-references:** `src/Projection.Core/Lifecycle.fs`; `tests/Projection.Tests/LifecycleTests.fs` (17 tests across L-α..L-δ + E4); `tests/Projection.Tests/AxiomTests.fs` (A-Lifecycle-1..4); `PRODUCT_AXIOMS.md` Group Lifecycle; `AXIOMS.md` Group E; EXECUTION_PLAN.md §5.3 / §V E4.
+
+---
+
+## 2026-05-31 — §5.5 applied-transforms manifest field (operator-as-consumer trigger fired)
+
+**Resolved.** The per-artifact `applied-transforms` manifest field (EXECUTION_PLAN §5.5) ships. The defer-with-trigger condition was "an R6/audit reader demands per-artifact overlay enumeration"; the operator opened §5.2–5.9 as the consumer. This cashes the PRIME slice-ζ forward signal (`DECISIONS 2026-05-11 slice ζ` sketched `applied-transforms : SsKey list`; §5.5 upgraded it to carry the overlay axis) and completes the CLAUDE.md load-bearing-commitment row "manifest names every applied overlay per artifact."
+
+**What shipped (`src/Projection.Targets.SSDT/ManifestEmitter.fs`).**
+- `appliedTransforms : LineageEvent list -> (SsKey × OverlayAxis option) list` — a pure derivation over the composed pipeline's lineage trail. Per pillar 9, each `LineageEvent` carries an `SsKey` + a `Classification` (`DataIntent | OperatorIntent of OverlayAxis`). The derivation groups by `SsKey` and, per artifact, emits **one `Some axis` row per distinct `OverlayAxis`** that touched it, or **a single `None` row** when only `DataIntent` events touched it. Sorted by `(SsKey, OverlayAxis option)` for T1 byte-determinism.
+- `Manifest.AppliedTransforms : (SsKey × OverlayAxis option) list` field; `buildFull` gains a `trail: LineageEvent list` parameter and derives the field; `Pipeline.fs` threads `composed.Trail` (already accessible — the H-034 conflict detector consumes it at the same seam). The convenience builders (`build` / `buildWith` / `buildWithTopology`) have no pipeline trail and leave the field empty.
+- `toNode` serializes `appliedTransforms` as `[{ssKey, overlay}]`, where `overlay` is the `OverlayAxis` case name (via `%A`, matching the `AxisContradiction` precedent in the same function) or JSON `null` for a skeleton-only artifact.
+
+**Semantics decision — None collapses under an overlay.** The `option` is load-bearing: a `None` row means "no operator overlay touched this artifact" (skeleton-only). When an artifact is touched by *both* `DataIntent` and an `OperatorIntent` overlay (the common case — `CanonicalizeIdentity` emits `DataIntent` for every kind), the `None` is dropped so the row set is not a lie. This makes the field a **direct manifest witness for the bidirectional properties**: a `Policy.empty` / skeleton run yields all-`None` rows (skeleton-purity), and every fired overlay surfaces as a `Some axis` row (overlay-exercise). The alternative literal reading (one row per trail event) was rejected — it floods every artifact with a noise `None` row.
+
+**Scope held.** The 5th bidirectional property test (manifest-digest + applied-transforms round-trip through `ReadSide`) is now *unblocked* by the field's existence but remains its own slice (it needs manifest read-back, not just emission) — per the original `DECISIONS 2026-05-11 slice θ` deferral. Not built here; no over-reach.
+
+**Test baseline.** Pure pool **2506 passed / 0 / 208 skipped** (+9 §5.5 tests). The existing manifest tests use field-level assertions (not full-string golden), so the new JSON key required no regold. `dotnet build Projection.sln` 0/0.
+
+**Cross-references:** `src/Projection.Targets.SSDT/ManifestEmitter.fs` (`appliedTransforms` + `Manifest.AppliedTransforms` + `toNode`); `src/Projection.Pipeline/Pipeline.fs` (`composed.Trail` threaded to `buildFull`); `tests/Projection.Tests/AppliedTransformsTests.fs` (9 tests); EXECUTION_PLAN.md §5.5; `src/Projection.Core/Classification.fs` (OverlayAxis / Classification).

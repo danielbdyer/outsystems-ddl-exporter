@@ -781,12 +781,20 @@ runner `scripts/test.sh` (never one `dotnet test`); TRX-first failure capture.
   (match sites only) but the *semantic redesign* (identity-origin for DACPAC) ripples into the reader design and
   the `v2Namespace` derivation — speculative without the consumer. Effort: **L**.
 
-#### 5.5 — `applied-transforms` per-artifact manifest field — **defer-with-trigger (R6)**
-- **Status:** defer. **Trigger:** an R6/audit reader demands per-artifact overlay enumeration.
-- **First slice:** in `ManifestEmitter.fs`, derive `applied-transforms : (SsKey × OverlayAxis option) list`
-  from `composed.Trail` (each `LineageEvent` carries `SsKey` + `Classification`); `DataIntent → None`,
-  `OperatorIntent axis → Some axis`; sort by `SsKey` (T1). Cashes the PRIME slice-ζ forward signal and completes
-  the CLAUDE.md load-bearing-commitment row "manifest names every applied overlay per artifact."
+#### 5.5 — `applied-transforms` per-artifact manifest field — **SHIPPED 2026-05-31**
+- **Status:** **shipped** — operator-as-consumer trigger fired (`DECISIONS 2026-05-31 — §5.5 applied-transforms`).
+  `ManifestEmitter.appliedTransforms : LineageEvent list -> (SsKey × OverlayAxis option) list` derives the field
+  from `composed.Trail`; `Manifest.AppliedTransforms` carries it; `buildFull` threads `composed.Trail` from the
+  pipeline; `toNode` serializes `{ssKey, overlay}` (overlay = OverlayAxis case name, or JSON `null` for skeleton-
+  only). Per-artifact semantics: `DataIntent`-only → one `None` row (skeleton-purity witness); `OperatorIntent
+  axis` → one `Some axis` row per distinct axis (overlay-exercise witness; the `None` collapses when an overlay
+  also touched the artifact); sorted by `(SsKey, OverlayAxis option)` for T1. Cashed the PRIME slice-ζ forward
+  signal and the CLAUDE.md load-bearing-commitment row "manifest names every applied overlay per artifact."
+- **Follow-on still open:** the 5th bidirectional property test (manifest-digest + applied-transforms round-trip
+  through ReadSide) — the field now exists, so the test is unblocked; it remains its own slice (needs manifest
+  read-back). Per the original `DECISIONS 2026-05-11 slice θ` deferral.
+- **Original first-slice spec (now realized):** in `ManifestEmitter.fs`, derive `applied-transforms : (SsKey ×
+  OverlayAxis option) list` from `composed.Trail`; `DataIntent → None`, `OperatorIntent axis → Some axis`; sort by `SsKey` (T1).
 
 #### 5.6 — Policy-intelligence consumers — **defer-with-trigger (honest two-consumer accounting)**
 - **`policy-diff A B` CLI verb** — `PolicyDiff.diffFullProjection` is production-grade but unconsumed; verb is
