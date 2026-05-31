@@ -599,7 +599,17 @@ runner `scripts/test.sh` (never one `dotnet test`); TRX-first failure capture.
   (Ingestion, §4.2) per IR-grows-under-evidence.
 
 #### 4.2 — Transfer C′-wire: connection apparatus + CSV loader (lands LiveOssysConnection)
-- **Wave/Effort/Status/Deps:** 4 / M / buildable-now / none
+- **Wave/Effort/Status/Deps:** 4 / M / **DONE (2026-05-31)** / none
+- **Shipped:** `ConnectionResolver.openSubstrate : Substrate -> Task<Result<SqlConnection>>`;
+  `Transfer.runThroughConnections` (opens both substrates via the apparatus, reads the contract from
+  the Source, resolves reconciliation against it, runs — Source open + Sink read are the
+  `ProfiledForIdentity` reads; no new per-table probes); `TransferSpec.parseUserMapCsv` /
+  `resolveUserMap` (per-table `ManualOverride`) / `resolveAllReconciliation` (merge MatchByColumn +
+  ManualOverride; reject a kind named by both); CLI `--user-map` + `--source-env`/`--sink-env`,
+  `runTransfer` rewired to drive through `runThroughConnections`. Acceptance green: the reconcile
+  canary driven through `TransferConnections` (D9 file-ref substrates) with a ManualOverride CSV
+  round-trip (`TransferCanaryTests` `4.2:`); `TransferSpec` pure tests 24/0; role-mismatch +
+  `ProfiledForIdentity` in `ReconciliationTests`.
 - **Goal:** Route the orchestrator + CLI through the reified-but-dormant `TransferConnections` apparatus,
   enabling concurrent dual-environment profiling — **the single slice that collapses three deferrals
   (LiveOssysConnection + multi-environment config + UAT-users) and closes Phase B's functional-equivalence arm.**
@@ -619,7 +629,13 @@ runner `scripts/test.sh` (never one `dotnet test`); TRX-first failure capture.
   is exercised against ephemeral/canary DBs first.
 
 #### 4.3 — Cross-DB FK emission (three-part name or structured error)
-- **Wave/Effort/Status/Deps:** 4 / M / buildable-now / none
+- **Wave/Effort/Status/Deps:** 4 / M / **DONE (2026-05-31)** / none
+- **Shipped:** `ScriptDomBuild.schemaObjectFromTableId` pushes a third leading `Identifier` when
+  `TableId.Catalog = Some db` (three-part `[db].[schema].[table]`); `SsdtDdlEmitter.toTableId`
+  carries `k.Physical.Catalog` instead of hard-coding `None`. Both additive (a `Catalog = None`
+  TableId emits the byte-identical two-part name). The truly-external case (target absent from the
+  catalog) still drops via `foreignKeyDropDiagnostics` — neither cross-DB path is a silent drop.
+  Tests in `SsdtDdlEmitterTests` (three-part REFERENCES + CREATE TABLE; two-part additive guard).
 - **Goal:** The only IR-present-but-unemitted feature: emit `[catalog].[schema].[table]` when
   `TableId.Catalog = Some db`; `schemaObjectFromTableId` currently drops `.Catalog`.
 - **Files:** `src/Projection.Targets.SSDT/ScriptDomBuild.fs` (`schemaObjectFromTableId` — push a third
@@ -632,7 +648,16 @@ runner `scripts/test.sh` (never one `dotnet test`); TRX-first failure capture.
 - **Risks:** keep orthogonal to the overlay FK filter (2.4).
 
 #### 4.4 — `osm verify-data` verb (post-deploy integrity gate)
-- **Wave/Effort/Status/Deps:** 4 / M / buildable-now / **check `Reconciliation.fs` overlap first**
+- **Wave/Effort/Status/Deps:** 4 / M / **DONE (2026-05-31)** / overlap checked — none
+- **Shipped:** Confirmed `Reconciliation.fs` does NOT overlap (identity-remap only). New
+  `Projection.Adapters.Sql/DataIntegrityChecker.fs`: `IntegrityReport` (RowCountDeltas /
+  NullCountDeltas / Warnings) + pure `diff` + `compare` (captures both deployments via
+  `LiveProfiler.captureEvidenceCache` — exact RowCount + per-attribute NullCounts — and diffs in
+  pure F#; clears ReadSide's `Static` modality so every table, including lookups, is profiled). CLI
+  `verify-data` verb (`VerifyDataArgs.fs` + `runVerifyData`; contract read from the before
+  deployment; fails closed at exit code 8). Tests: 5 pure-pool `diff`/`isClean` cases +
+  3 Docker-gated (`verify-data flags exactly the mutated row-count delta`, clean identical pair,
+  per-column null-count delta).
 - **Goal:** Post-deploy per-table row-count + per-column null-count diff (the data-fidelity complement to the
   canary's structural equivalence).
 - **Files:** `src/Projection.Cli/Program.fs` (`runVerifyData`); new `src/Projection.Adapters.Sql/
@@ -651,7 +676,13 @@ runner `scripts/test.sh` (never one `dotnet test`); TRX-first failure capture.
   building; reuse rather than duplicate.
 
 #### 4.5 — DacpacEmitter joins the T11 sibling-Π contract
-- **Wave/Effort/Status/Deps:** 4 / S / buildable-now / 1.1 (the `DacpacReadSide` projection helps)
+- **Wave/Effort/Status/Deps:** 4 / S / **DONE (2026-05-31)** / 1.1
+- **Shipped:** `SiblingEmitterContractTests` `dacpacKeyset` helper + two T11 tests (DACPAC table-set
+  recovers `Catalog.allKinds` SsKey keyset; SSDT and DACPAC siblings agree). The DACPAC sibling is
+  `Result<byte[]>` (not an `ArtifactByKind`), so its keyset agreement is VERIFIED at the
+  binary-normal-form tier (emit → `TSqlModel.LoadFromDacpac` → recover each table's SsKey via the
+  Catalog's physical-coordinate bijection) rather than structural. `AxiomTests` T11 cites it +
+  notes the verified-vs-structural distinction. Pure pool (DacFx in-memory; no Docker).
 - **Goal:** Bring the DACPAC sibling under structural sibling-agreement: its keyset agrees with
   `SsdtDdlEmitter`'s by SsKey (today T11 covers only SSDT + Json).
 - **Files:** `tests/Projection.Tests/SiblingEmitterContractTests.fs` (+ `ArtifactByKindTests.fs`); possibly a
@@ -661,7 +692,14 @@ runner `scripts/test.sh` (never one `dotnet test`); TRX-first failure capture.
 - **Risks:** none material.
 
 #### 4.6 — `Origin` variant rename (decouple V1 vocabulary from Core)
-- **Wave/Effort/Status/Deps:** 4 / S / buildable-now / none
+- **Wave/Effort/Status/Deps:** 4 / S / **DONE (2026-05-31)** / none
+- **Shipped:** `OsNative → Native`, `ExternalViaIntegrationStudio → ExternalIndirect`
+  (`ExternalDirect` unchanged) across the Origin DU + `toStructured`/`originString` rendered strings
+  (V2-growth — V1 emits `isExternal`, not an `origin` field; ReadSide never parses it back, so the
+  regold is V2-only). Closed-DU exhaustiveness fired only at the match sites (ManifestEmitter,
+  JsonEmitter); construction/default/doc sites updated across Core + adapters + ~30 test files.
+  Historical `OsNativeSystem` doc token preserved. Does NOT fix item-17 (`ExternalDirect` still
+  unreachable from the JSON-snapshot path) — noted, not regressed.
 - **Goal:** Replace V1-product-name DU variants with algebraic ones: `OsNative → Native`,
   `ExternalViaIntegrationStudio → ExternalIndirect` (`ExternalDirect` keeps its name). Separable from the
   expensive SsKey ripple.
