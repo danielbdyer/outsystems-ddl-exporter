@@ -20146,3 +20146,21 @@ capability.
 **Test baseline.** Both witnesses green against the live container (2/2). `dotnet build Projection.sln` 0/0.
 
 **Cross-references:** `tests/Projection.Tests/CanaryRoundTripTests.fs` (both witnesses; reuse the A42 2.3 nullability + Wave 4.1 SsKey harnesses); `NORTH_STAR.matrix.generated.md` (5/5); `NORTH_STAR.md` §1 (self-report sentence updated); `src/Projection.Core/DecisionOverlay.fs` + `src/Projection.Targets.SSDT/SsdtDdlEmitter.fs` (`statementsWith`); `src/Projection.Adapters.Sql/ReadSide.fs` (nullability + SsKey recovery).
+
+---
+
+## 2026-05-31 — §5.7 perf: bench-driven assessment — all four items deferred (triggers unfired, with data)
+
+**Resolved (as a deferral with evidence).** EXECUTION_PLAN §5.7's four perf opportunities were assessed against the bench-driven optimization protocol (3-candidate / refutation-with-data; `DECISIONS 2026-05-24 — Bench surface caught two wrong-direction canary optimizations`). The honest finding: **none of the four triggers have fired.** Optimizing without hotness evidence would violate the protocol and risk T1 byte-determinism (parallelism / precompute reorderings) for zero measured gain. This entry records the data so a future agent doesn't re-litigate, and names exactly what would fire each trigger.
+
+**Evidence — operator-reality canary bench (150 tables × 6.25k rows, 2026-05-31).** Top labels by total: `deploy.executeStream` ~4.6s; `emit.staticPopulation.statements.stream` ~6.25s; `deploy.useContainer(.warm)` ~8.2s (container bring-up); `readside.read` ~1.7s. **The wall is deploy / IO / data-emission — not any §5.7 candidate.**
+
+**Per-item verdict:**
+- **`parseRowsetBundle` (8 sequential `Map.ofList` → `Array.Parallel.map`)** — the canary emits **zero** `adapter.osm.parse.*` labels: the operator-reality canary drives generated-DDL → `ReadSide`, never the OSSYS rowset adapter, so the parse path is not exercised. No hotness evidence exists; the trigger needs the rowset path run at 300-table scale first (a fixture/wiring concern). The path *is* already measurable (parent `adapter.osm.parse` scope + per-module `adapter.osm.parse.rowsetModule` `iterMap`) — no instrumentation gap; an exercise gap. Pure + order-preserving, so safe to parallelize *when evidence justifies it*. **Deferred.**
+- **`internalEdgesOf` O(|scc|²) → precomputed adjacency** — **refuted with data**: `pass.topologicalOrder.kind` = **2 ms total over 300 kinds**, and no `pass.topologicalOrder.scc` label fires at all (SCCs are 2-cycle-dominated, |scc|²=4 — negligible, exactly the plan's "2-cycle-dominated graphs see no change"). `internalEdgesOf` is cold. The precompute would add complexity for no measured benefit. **Deferred** until a catalog with large SCCs (≥5) surfaces `internalEdgesOf` as hot.
+- **schema-side level grouping → parallel schema deploy** — deploy time is dominated by container warmup + static-data emission, not schema DDL; the plan's trigger ("schema deploy becomes visible") is unfired. High architectural cost (parallel-deploy ordering / determinism) for an invisible win. **Deferred.**
+- **OSSYS 22-rowset single-cursor → parallel `SqlCommand`s** — extraction-side, upstream of the projection canary; not instrumented here and explicitly a "dedicated slice — HIGH cost" in the plan (the `SequentialAccess` cursor is single-threaded by construction; parallel connections add pool/sync/ordering risk). Needs its own measurement harness + an operator decision on whether the back-of-napkin 1.1s→280ms justifies the complexity. **Deferred (out of §5.7 scope).**
+
+**No code change.** The disciplined outcome is *no speculative perf change*: the bench surface is the forcing function, and it shows the candidates are cold or unexercised. The deliverable is the data-backed assessment itself (mirrors the 2026-05-24 refuted-with-data precedent).
+
+**Cross-references:** EXECUTION_PLAN.md §5.7 (per-item measured table); `scripts/perf-gate.sh` + `bench/baseline-canary.json` (the bench surface); `src/Projection.Adapters.Osm/CatalogReader.fs` `parseRowsetBundle`; `src/Projection.Core/Passes/TopologicalOrderPass.fs` `internalEdgesOf`; `DECISIONS 2026-05-24` (bench-driven protocol precedent).

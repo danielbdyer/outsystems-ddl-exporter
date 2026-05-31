@@ -822,13 +822,15 @@ runner `scripts/test.sh` (never one `dotnet test`); TRX-first failure capture.
 - **All of these become load-bearing once Lifecycle (5.3) gives them a timeline to operate over** — that is the
   unification (§V E4).
 
-#### 5.7 — Remaining perf opportunities — **defer-with-trigger (bench-gated)**
-| Item | First slice | Trigger |
-|---|---|---|
-| `parseRowsetBundle` 8 sequential `Map.ofList` | `Array.Parallel.map` the independent groupings (`CatalogReader.fs`) | bench `adapter.osm.parse.*` materially hot at 300-table scale (must refute "parallelism loses on small input") |
-| `internalEdgesOf` O(\|scc\|²) | precompute adjacency `Map<SsKey,(SsKey×EdgeStrength) list>` (`TopologicalOrderPass.fs`) | real-world SCC sizes grow (2-cycle-dominated graphs see no change) |
-| schema-side level grouping → parallel schema deploy | mirror `composeRenderedLeveled` in `SsdtDdlEmitter` (~50 LOC) | schema deploy (~14s/132s) becomes visible |
-| OSSYS 22-rowset single-cursor extraction | split the carbon-copied SQL into parallel `SqlCommand`s on multiple connections (1.1s→~280ms) | **dedicated slice** — HIGH win, HIGH (architectural) cost; the `SequentialAccess` cursor is single-threaded by construction |
+#### 5.7 — Remaining perf opportunities — **ASSESSED with bench evidence 2026-05-31; all four deferred (triggers unfired)**
+Bench-driven assessment against the operator-reality canary (150 tables × 6.25k rows; `DECISIONS 2026-05-31 — §5.7 bench-driven assessment`). The hot paths are **deploy / IO / data-emission** (container warmup ~8.2s; static-data emission ~6.25s; `deploy.executeStream` ~4.6s) — none of the four candidates. Forcing any optimization without hotness evidence violates the bench-driven protocol (3-candidate / refutation-with-data) and risks T1 determinism for zero measured gain. Each item's trigger restated with the measured reason it has not fired:
+
+| Item | First slice | Trigger | Measured (2026-05-31) |
+|---|---|---|---|
+| `parseRowsetBundle` 8 sequential `Map.ofList` | `Array.Parallel.map` the independent groupings (`CatalogReader.fs`) | bench `adapter.osm.parse.*` materially hot at 300-table scale (must refute "parallelism loses on small input") | **Not exercised** — zero `adapter.osm.parse.*` labels in the canary (it uses generated DDL → ReadSide, not the OSSYS rowset adapter). No evidence; the path needs a rowset-scale fixture first. |
+| `internalEdgesOf` O(\|scc\|²) | precompute adjacency `Map<SsKey,(SsKey×EdgeStrength) list>` (`TopologicalOrderPass.fs`) | real-world SCC sizes grow (2-cycle-dominated graphs see no change) | **Refuted with data** — `pass.topologicalOrder.kind` = 2 ms total / 300 kinds; no `.scc` label fires (SCCs are 2-cycle-dominated). `internalEdgesOf` is cold. |
+| schema-side level grouping → parallel schema deploy | mirror `composeRenderedLeveled` in `SsdtDdlEmitter` (~50 LOC) | schema deploy (~14s/132s) becomes visible | **Invisible** — deploy time is dominated by container warmup + static-data emission, not schema DDL. Parallel schema deploy would not move the needle at this scale. |
+| OSSYS 22-rowset single-cursor extraction | split the carbon-copied SQL into parallel `SqlCommand`s on multiple connections (1.1s→~280ms) | **dedicated slice** — HIGH win, HIGH (architectural) cost; the `SequentialAccess` cursor is single-threaded by construction | **Out of scope** — extraction-side, upstream of the projection canary; needs its own measurement harness + operator decision (the connection-pool/sync cost vs the back-of-napkin 1.1s→280ms). |
 
 #### 5.8 — `osm extract`/`profile`/`analyze` verbs — **defer (minimal-CLI posture)**
 - `extract` (wraps shipped `MetadataSnapshotRunner`, ~50 LOC, "High" relevance) and `profile` (wraps shipped
