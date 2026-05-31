@@ -554,6 +554,7 @@ let private runTransfer
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
+    (allowDrops: bool)
     : int =
     let collect = function Ok _ -> [] | Error es -> es
     let parsedSource    = TransferSpec.parseConnectionSpec sourceSpec
@@ -627,7 +628,24 @@ let private runTransfer
         match result with
         | Ok report ->
             narrateTransferReport report
-            0
+            // 6.A.1 — the drop-set is fail-loud, not exit-0. A successful
+            // write that dropped FK-orphan rows or left reconciled-kind
+            // sources unmatched surfaces a distinct non-zero exit unless the
+            // operator declared the drops acceptable via --allow-drops.
+            let dropCode = Transfer.exitCodeForReport allowDrops report
+            if dropCode <> 0 then
+                Console.Error.WriteLine
+                    (sprintf
+                        "projection transfer: %d row(s) dropped (transfer.droppedReferences) — refusing exit 0. Pass --allow-drops to accept the loss."
+                        (Transfer.droppedRowCount report))
+                let kindCount (label: string) (keys: SsKey seq) =
+                    keys
+                    |> Seq.countBy SsKey.rootOriginal
+                    |> Seq.iter (fun (k, n) ->
+                        Console.Error.WriteLine (sprintf "  %s %s: %d" label k n))
+                kindCount "SkippedReferences" (report.SkippedReferences |> List.map fst)
+                kindCount "UnmatchedIdentities" (report.UnmatchedIdentities |> List.map fst)
+            dropCode
         | Error errors ->
             Console.Error.WriteLine "projection transfer: failed:"
             printErrors Console.Error errors
@@ -649,7 +667,8 @@ let private dispatchTransfer (argv: string[]) : int =
         let userMap       = parsed.TryGetResult TransferArgs.User_Map
         let execute       = parsed.Contains TransferArgs.Execute
         let allowCdc      = parsed.Contains TransferArgs.Allow_Cdc
-        runTransfer sourceSpec sinkSpec sourceEnv sinkEnv reconcileList userMap execute allowCdc)
+        let allowDrops    = parsed.Contains TransferArgs.Allow_Drops
+        runTransfer sourceSpec sinkSpec sourceEnv sinkEnv reconcileList userMap execute allowCdc allowDrops)
 
 // ---------------------------------------------------------------------------
 // Slice 4.4 — `projection verify-data`: post-deploy data-integrity gate.

@@ -391,6 +391,43 @@ module Transfer =
                             return! runCore mode allowCdc source sink contract reconciliation
         }
 
+    // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------
+    //
+    // The red-team's CRITICAL Data #1: a successful Execute that dropped
+    // FK-orphan rows (`SkippedReferences`) or left reconciled-kind source
+    // surrogates unmatched (`UnmatchedIdentities`) silently exited 0 — a
+    // refresh script saw "complete" while rows vanished. That violates
+    // *total decisions, named skips*: an erasure must surface. These pure
+    // functions name the drop-set and the exit-code policy so the CLI and
+    // the data canary witness the *same* decision.
+
+    /// The exit code a completed Transfer maps to when its drop-set is
+    /// non-empty and the operator has not declared the drops acceptable.
+    /// Distinct from the connection (6) / reconcile (2) / apparatus (3)
+    /// failure codes so a refresh script can branch on "rows were dropped."
+    [<Literal>]
+    let DroppedReferencesExit = 9
+
+    /// The rows a run dropped: FK-orphan referencers skipped at plan-build
+    /// or Phase-2 (`SkippedReferences`) plus reconciled-kind Source
+    /// surrogates with no Sink match (`UnmatchedIdentities`). Both are data
+    /// the Sink will not carry; both must be surfaced, never silently 0.
+    let droppedRowCount (report: TransferReport) : int =
+        report.SkippedReferences.Length + report.UnmatchedIdentities.Length
+
+    /// Whether a completed run lost any rows (the drop-set is non-empty).
+    let hasDrops (report: TransferReport) : bool =
+        not (List.isEmpty report.SkippedReferences)
+        || not (List.isEmpty report.UnmatchedIdentities)
+
+    /// The exit-code policy for a *completed* (Ok) Transfer. A clean run is
+    /// 0; a run that dropped rows is `DroppedReferencesExit` (fail-loud)
+    /// unless `allowDrops` (the operator's `--allow-drops`, mirroring
+    /// `--allow-cdc`) declares the loss acceptable. 6.A.1 — the silent
+    /// exit-0 erasure becomes a named refusal.
+    let exitCodeForReport (allowDrops: bool) (report: TransferReport) : int =
+        if (not allowDrops) && hasDrops report then DroppedReferencesExit else 0
+
     /// Registry metadata (pillar 9). Bulk/UPDATE realization of a
     /// pre-substituted plan is `DataIntent` (the operator-supplied remap
     /// landed at `DataLoadPlan.build`); the §5.2 `AssignedBySink` capture

@@ -20,6 +20,7 @@ type TransferArg =
     | User_Map of path: string
     | Execute
     | Allow_Cdc
+    | Allow_Drops
 
     interface IArgParserTemplate with
         member this.Usage =
@@ -53,3 +54,5 @@ type TransferArg =
                 + "(the R6 gate); --execute without it is refused."
             | Allow_Cdc ->
                 "Permit --execute against a Sink that has CDC-tracked tables. Default: an Execute run pre-flights the Sink for sys.tables.is_tracked_by_cdc and REFUSES if any are tracked (writing would generate unintended CDC capture during a UAT-preview). Pass this flag to override that refusal."
+            | Allow_Drops ->
+                "Accept a Transfer that drops rows. Default: a run that drops FK-orphan referencers (SkippedReferences) or leaves reconciled-kind sources unmatched (UnmatchedIdentities) exits non-zero (code 9, transfer.droppedReferences) so a refresh script cannot mistake silent data loss for success. Pass this flag once the drops have been reviewed and declared acceptable."

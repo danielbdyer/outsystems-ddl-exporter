@@ -880,6 +880,39 @@ module SsdtDdlEmitter =
                                     "Foreign key dropped: its target kind declares no primary key to reference. No inline FK constraint emitted.")
                         | Some _ -> None))
 
+    /// 6.A.9 — the DECISION-driven FK-drop audit trail (red-team Decision
+    /// #2b). `foreignKeyStatements` filters out every reference whose key is
+    /// in `overlay.DropFk` BEFORE `fkDef` is consulted, so a `Decision`-driven
+    /// removal (the operator/pass decided `DoNotEnforce` on an FK the source
+    /// enforced) never reaches `foreignKeyDropDiagnostics` — it was applied
+    /// SILENTLY at emission. This sibling surfaces one `Warning`
+    /// (`decision.fkDropped`) per dropped decision so the manifest/log names
+    /// every constraint the engine removed. Pure sibling of the emitter port
+    /// (A18 holds; `statements` / `emitSlices` stay byte-identical — the audit
+    /// rides the `Diagnostics` channel). Pairs with `DecisionLogEmitter`.
+    let foreignKeyDecisionDropDiagnostics
+        (overlay: DecisionOverlay)
+        (catalog: Catalog)
+        : DiagnosticEntry list =
+        Catalog.allKinds catalog
+        |> List.collect (fun k ->
+            k.References
+            |> List.choose (fun r ->
+                if Set.contains r.SsKey overlay.DropFk then
+                    Some
+                        { DiagnosticEntry.create
+                            "emitter:ssdtDdlEmitter" DiagnosticSeverity.Warning
+                            "decision.fkDropped"
+                            "Foreign key dropped by decision: a tightening Decision (DoNotEnforce) removed this FK constraint at emission. The source enforced it; the emitted schema does not."
+                          with
+                            SsKey = Some r.SsKey
+                            Metadata =
+                                Map.ofList
+                                    [ "sourceSchema", k.Physical.Schema
+                                      "sourceTable", k.Physical.Table
+                                      "reference", Name.value r.Name ] }
+                else None))
+
     /// Slice 5.13.emit-features-registry (2026-05-18) — the SSDT
     /// emitter's `RegisteredTransform` surface. Metadata-only per the
     /// OSSYS-adapter precedent (chapter A.4.7 slice δ): the emitter's

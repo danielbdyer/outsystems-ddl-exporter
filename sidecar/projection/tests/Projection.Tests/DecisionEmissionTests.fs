@@ -236,3 +236,78 @@ let ``L3-X7: an FK to a target kind absent from the catalog emits the unresolved
 let ``L3-X7: a fully-resolvable FK emits no drop witness`` () =
     // sampleCatalog's Order → Customer FK resolves cleanly.
     Assert.Empty(SsdtDdlEmitter.foreignKeyDropDiagnostics sampleCatalog)
+
+// ---------------------------------------------------------------------
+// 6.A.9 — the DECISION-driven FK-drop audit trail. A reference whose key is
+// in `overlay.DropFk` is filtered out of the emitted DDL BEFORE `fkDef` is
+// consulted, so `foreignKeyDropDiagnostics` (structural drops only) never
+// sees it — the removal was silent at emission. `foreignKeyDecisionDropDiagnostics`
+// surfaces one Warning (`decision.fkDropped`) per DropFk key so every
+// constraint the engine removed by decision is named. Witness for the
+// matrix: "every DropFk decision surfaces a Warning diagnostic".
+// ---------------------------------------------------------------------
+
+/// sampleCatalog's Order → Customer FK reference key (the only reference).
+let private orderToCustomerRefKey () : SsKey =
+    sampleCatalog
+    |> Catalog.allKinds
+    |> List.collect (fun k -> k.References)
+    |> List.head
+    |> (fun r -> r.SsKey)
+
+[<Fact>]
+let ``every DropFk decision surfaces a Warning diagnostic`` () =
+    let refKey = orderToCustomerRefKey ()
+    let overlay = { DecisionOverlay.empty with DropFk = Set.singleton refKey }
+
+    // The structurally-resolvable FK emits NO drop witness (it was dropped by
+    // decision, not by structure) — proving the decision drop would be silent
+    // without this audit.
+    Assert.Empty(SsdtDdlEmitter.foreignKeyDropDiagnostics sampleCatalog)
+
+    // The decision-drop audit surfaces exactly one Warning naming the removal.
+    let diags = SsdtDdlEmitter.foreignKeyDecisionDropDiagnostics overlay sampleCatalog
+    Assert.Equal(1, List.length diags)
+    let d = List.head diags
+    Assert.Equal("decision.fkDropped", d.Code)
+    Assert.Equal(DiagnosticSeverity.Warning, d.Severity)
+    Assert.Equal("emitter:ssdtDdlEmitter", d.Source)
+    Assert.Equal(Some refKey, d.SsKey)
+
+[<Fact>]
+let ``decision.fkDropped surfaces one Warning for every key in DropFk (no silent removal)`` () =
+    // Two references, both dropped by decision — each must surface.
+    let aKey = kkey "A"
+    let bKey = kkey "B"
+    let refToA = akey "B.refToA"
+    let refToA2 = akey "B.refToA2"
+    let mkAttr (k: SsKey) (col: string) (isPk: bool) : Attribute =
+        { Attribute.create k (nm col) Integer with
+            Column = { ColumnName = col.ToUpperInvariant(); IsNullable = not isPk }
+            IsPrimaryKey = isPk; IsMandatory = isPk }
+    let a =
+        Kind.create aKey (nm "A") { Schema = "dbo"; Table = "OSUSR_FD_A"; Catalog = None }
+            [ mkAttr (akey "A.Id") "Id" true ]
+    let b =
+        { Kind.create bKey (nm "B") { Schema = "dbo"; Table = "OSUSR_FD_B"; Catalog = None }
+            [ mkAttr (akey "B.Id") "Id" true
+              mkAttr (akey "B.AId") "AId" false
+              mkAttr (akey "B.AId2") "AId2" false ]
+          with References =
+                [ Reference.create refToA (nm "A") (akey "B.AId") aKey
+                  Reference.create refToA2 (nm "A") (akey "B.AId2") aKey ] }
+    let catalog =
+        match Catalog.create [ { SsKey = kkey "Mod"; Name = nm "FdMod"; Kinds = [ a; b ]; IsActive = true; ExtendedProperties = [] } ] [] with
+        | Ok c -> c | Error e -> failwithf "catalog %A" e
+    let overlay = { DecisionOverlay.empty with DropFk = Set.ofList [ refToA; refToA2 ] }
+    let diags = SsdtDdlEmitter.foreignKeyDecisionDropDiagnostics overlay catalog
+    Assert.Equal(2, List.length diags)
+    Assert.All(diags, fun d ->
+        Assert.Equal("decision.fkDropped", d.Code)
+        Assert.Equal(DiagnosticSeverity.Warning, d.Severity))
+    let keysSurfaced = diags |> List.choose (fun d -> d.SsKey) |> Set.ofList
+    Assert.Equal<Set<SsKey>>(Set.ofList [ refToA; refToA2 ], keysSurfaced)
+
+[<Fact>]
+let ``no DropFk decision emits no decision-drop diagnostic (empty overlay is silent-clean)`` () =
+    Assert.Empty(SsdtDdlEmitter.foreignKeyDecisionDropDiagnostics DecisionOverlay.empty sampleCatalog)
