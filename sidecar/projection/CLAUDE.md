@@ -54,6 +54,21 @@ ALTER repositioned as a lens; DacFx owns the schema ALTER, the engine owns the
 data movement measured by CDC). Read it before any Wave 6.A.10+/6.B/6.C/6.D/6.F
 slice — alongside the audit.
 
+**`WAVE_6_ALGEBRA.md`** (2026-06-01) is the ontology's **formal reification** —
+the change-ontology cast as the domain's algebra, postulated from first
+principles so every law is a *balanced equation* with variables in native
+form. The revealing move: **State is a torsor over Delta** (`⊖` = `between`,
+subtraction; `⊕` = `applyDiff`, the affine action) — so the round-trip /
+identity / composition laws are the three Weyl axioms of an affine space (they
+balance by construction); `Move`s generate `Delta`; the change-measure `‖·‖`
+(physically the CDC capture count) is the norm; `emit` is a norm-preserving
+functor; **T16 (the Project square commutes) is the master equation**, with
+the schema and data legs its two projections and the iso-ladder its
+faithfulness gradient. Reified into the formal system as `AXIOMS.md` **T12–T16
++ A43** (executable witnesses in `AxiomTests.fs`). Read it when you need the
+*equation* a slice must balance; read `WAVE_6_ONTOLOGY.md` for the
+*interpretation* and `AUDIT_2026_05_31` for *why the climb exists*.
+
 **`V2_DRIVER.md`** (codified 2026-05-10 chapter 3.7 sidebar; principal-PO
 discussion) is the destination-KPI document — the *why* the cutover
 ladder bends toward V2-driver mode, the per-axis correctness stakes,

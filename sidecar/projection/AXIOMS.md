@@ -1806,6 +1806,90 @@ structurally).
 
 ---
 
+## The Change Algebra — T12–T16 + A43 (Wave 6, 2026-06-01)
+
+The reification of the change-ontology into the domain's algebra. **Full
+derivation + native-form rationale: `WAVE_6_ALGEBRA.md`** (the calculus
+masterwork). The single revealing move: **State is a torsor (affine space)
+over Delta** — `between` is subtraction (`δ = B ⊖ A`), `apply` is the affine
+action (`B = A ⊕ δ`), and the round-trip / identity / composition laws are
+the three Weyl axioms of an affine space (so they balance by construction,
+not by assertion). `Move`s are the generators of `Delta`; the change-measure
+`‖·‖` (physically: the CDC capture count) is the norm; `emit` is a
+norm-preserving functor realizing the Delta-action on the Substrate, with the
+Project square (T16) the master equation. Each theorem is a balanced equation
+with an `AxiomTests.fs` discriminating witness.
+
+**T12 — the torsor axioms (round-trip · identity · composition).**
+`A ⊕ (B ⊖ A) = B`; `A ⊕ 0 = A` (`0 = A ⊖ A`); `(A ⊕ δ₁) ⊕ δ₂ = A ⊕ (δ₁ + δ₂)`.
+`⊖` (`CatalogDiff.between`) and `⊕` (`CatalogDiff.applyDiff`) are mutually
+inverse pointwise (W3). **State-dependence is forced:** `⊕` is a genuine
+action — `A ⊕ δ` depends on `A` — so `applyDiff base d = target d` (ignoring
+`base`) violates W3's uniqueness. Witness: `Time: applyDiff (between A B) A =
+B` + `applyDiff threads the passed-in catalog … (no-cheat)`.
+
+**T13 — evolution over time (Chasles along the timeline).**
+`replay(t) = genesis ⊕ (δ₀ + … + δ_t)` = `fold ⊕`. Composition of deltas IS
+the schema/data history. Witness: `Lifecycle.reconstructLatest` (fold
+applyDiff). The `compose : Delta → Delta → Delta` operator (diff∘diff) that
+would close A-Lifecycle-4's associativity is the remaining ⬚ (H-007).
+
+**T14 — channel decomposition (orthogonality as a direct sum).**
+`δ = ⊕_c π_c(δ)`, `π_c ∘ π_{c'} = 0` (c≠c'), `Σ_c π_c = id`, `‖δ‖ = Σ_c ‖π_c δ‖`.
+**Subsumes A38** (the kind-level `Renamed ⊎ Added ⊎ Removed ⊎ Unchanged`
+partition) and generalizes it to the attribute + data planes. T-V
+(orthogonality) IS this direct-sum decomposition. Witness: A38 exhaustiveness
++ `migration: a rename alone emits no ALTER` (Rename ⊥ Reshape).
+
+**T15 — norm conservation (CDC is the norm; minimality = isometry).**
+`‖δ‖ = |moves(δ)|`; on the data plane `‖δ‖_data = |capture(run(emit δ, Â))|`
+(the CDC capture count *is* the norm); **`emit` is an isometry: `‖emit(δ)‖ =
+‖δ‖`.** CDC-silence is the `‖δ‖ = 0 ⟹ |capture| = 0` instance; the CDC-aware
+minimum data diff is isometric emission; complete-replace is non-isometric
+(`2·|table| ≫ ‖δ‖`) — correct but norm-inflating, hence the fallback. Witness:
+`Slice γ: CDC-silence …` (the `=0` instance) + `Slice γ sensitivity …` (the
+norm is not vacuously zero). ⬚ the general `‖δ‖ = k` (6.F.3-data).
+
+**T16 — the Project square (the master equation; the adjunction lifted to
+displacements).** `run( emit(B ⊖ A), realize(A) ) = realize(B)` modulo
+residual `= (erasure ⊎ tolerance)`. A change computed in the Model and
+realized on the Substrate lands at the same point. The **schema and data legs
+are its two projections**; `emit` is partial (refusals) + lossy (warnings);
+the **iso-ladder L1/L2/L3 is the totality/faithfulness of `emit`**; the
+residual is the intent-filter's tolerated summand. This is H-050
+(`Ingest ∘ Project = id`) lifted from points to arrows: `between`/`apply` are
+Ingest/Project on displacements. Witness (sub-squares): `migration canary: a
+widening ALTER COLUMN executes on SQL Server and preserves data` (schema move
+realized, data conserved); `Slice γ` (data sub-square). ⬚ the full square =
+the `migrate A B` canary (6.D.1).
+
+**A43 — Identity is the conserved charge (and the refactorlog is *derived*).**
+Under every move, `SsKey` is conserved, with one creation/annihilation pair:
+Rename changes `Designation`, conserves `Identity`; Reshape/Update conserve
+`Identity` (+`Designation`); Reidentify reconstructs the Identity-correspondence
+across substrates; Add/Insert create a charge; Remove/Delete annihilate one.
+**[policy] `Realization := Designation`.** **Cross-plane corollary (the
+algebraic *why* of the refactorlog):** a faithful schema Rename induces ZERO
+data moves — `‖emit(π_Rename δ)‖_data = 0` — because `sp_rename` conserves the
+rows, whereas DROP+ADD induces `‖·‖_data = 2·|table|`. So "use the refactorlog
+for renames" is **forced** by Identity-conservation across the schema→data
+coupling, not adopted as convention. The data norm-conservation (T15) and the
+schema identity-conservation (A43) meet exactly at the refactorlog. Witness:
+`RefactorLogEmitter: a column rename produces a SqlSimpleColumn entry`
+(Designation changes, Identity conserved, emitted as sp_rename) + the
+AssignedBySink re-key canary (Reidentify). ⬚ the `‖rename‖_data = 0` canary.
+
+**Relationship to the prior catalog.** T16 is H-050 lifted to displacements;
+T14 subsumes A38; T15 generalizes the CDC-silence property (chapter 4.1.B) to
+a norm-conservation law; A43 generalizes A1 (identity-survives-rename) to "all
+moves" and supplies the algebraic derivation of the SSDT refactorlog
+requirement; A35/A36 (stream output / realization-policy) are the shape of
+`emit`'s codomain, and A36's "bulk-vs-incremental is realization policy" is
+T15's "isometric vs non-isometric emission" reading. These deepen and unify;
+none is superseded.
+
+---
+
 ## On the scaffolding discipline
 
 The scheduled amendments span chapters 3.3, 3.4, 3.5, 4.2, and the

@@ -36,6 +36,11 @@ and each is pinned by the predicate that *discriminates* the correct function fr
 name cannot drift from its function without breaking the correspondence — which a witness catches. Isomorphism
 turns a discipline of vigilance into a property of structure.
 
+**Reified into algebra.** This ontology's entities and laws are cast as the domain's algebra in
+**`WAVE_6_ALGEBRA.md`** (the calculus) — *State is a torsor over Delta*; the laws become balanced equations
+(the Weyl axioms + a norm + the Project square), reified into `AXIOMS.md` **T12–T16 + A43** with executable
+witnesses. Read this ontology for the *interpretation*; read the algebra for the *equation*.
+
 ---
 
 ## 1. The microscope — five layers, continuous, each generates the one above

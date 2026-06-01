@@ -20319,3 +20319,27 @@ capability.
 **Decision owed (data leg):** is the incremental data plan a *post-deployment script* (SSIS-consumer/eject publication flow) or a *transfer-verb execution* (Dev→UAT rekey)? They share the MERGE algebra but differ in artifact + ordering. Likely both; name the seam before 6.F.3-data(a) emits.
 
 **Cross-references:** `WAVE_6_ONTOLOGY.md` §12 (the addendum); `EXECUTION_PLAN.md` Wave 6.F.3-data; `AUDIT_2026_05_31` §1.3 (CDC-silence is the one genuinely-solid result) + Data #4 (empty/NULL); `DECISIONS 2026-06-01 — Wave 6 ontology + premise re-prioritization` (the schema-leg parent entry this extends).
+
+---
+
+## 2026-06-01 — Wave 6 reified into the change algebra (T12–T16 + A43; State is a torsor over Delta)
+
+**Resolved (formal-system level; the masterwork reification).** The change-ontology (`WAVE_6_ONTOLOGY.md`, both legs) is reified into the **domain's algebra** — `WAVE_6_ALGEBRA.md` (the calculus) + the numbered theorems **T12–T16 + A43** in `AXIOMS.md`, each an executable entry in `AxiomTests.fs`. The brief was to express the laws as *balanced equations with variables in their most revealing native form*; the native form is an **affine space (torsor)**.
+
+**The revealing move — State is a torsor over Delta.** A `Delta` is not a "diff record" — it is the *difference of two States*. Postulate `⊖` (= `CatalogDiff.between`, subtraction: `δ = B ⊖ A`) and `⊕` (= `CatalogDiff.applyDiff`, the affine action: `B = A ⊕ δ`). Then **the round-trip, identity, and composition laws are not three facts — they are the three Weyl axioms of an affine space**, so they balance *by construction*, not by assertion. This is why the equation balances and why the variables are in native form: change is *displacement*, a database state is a *point*, the move-alphabet generates the displacement group, the change-measure is the norm, and emission is a norm-preserving functor realizing the action on the substrate.
+
+**The theorems (each a balanced equation; witness or trigger):**
+- **T12 — torsor axioms.** `A ⊕ (B ⊖ A) = B`; `A ⊕ 0 = A`; `(A⊕δ₁)⊕δ₂ = A⊕(δ₁+δ₂)`. State-dependence is *forced* by W3 uniqueness → the no-cheat law (`applyDiff base d = target d` violates it). ✅ witnessed (round-trip + no-cheat + identity-diff).
+- **T13 — evolution over time.** `replay(t) = genesis ⊕ Σδ` = `fold ⊕` (Chasles along the timeline). ✅ `reconstructLatest`; ⬚ the `compose` operator (A-Lifecycle-4 / H-007).
+- **T14 — orthogonality as a direct sum.** `δ = ⊕_c π_c(δ)`, disjoint+covering, `‖δ‖ = Σ‖π_c δ‖`. **Subsumes A38** (kind-level partition); generalizes to attribute + data planes. T-V *is* this decomposition. ✅ A38 + Rename⊥Reshape.
+- **T15 — CDC is the norm; emit is an isometry.** `‖δ‖_data = |capture|`; `‖emit(δ)‖ = ‖δ‖`. CDC-silence = the `‖δ‖=0` instance; minimum data diff = isometric emission; complete-replace = non-isometric (`2·|table|`) → the fallback. ✅ CDC-silence floor + sensitivity; ⬚ general `‖δ‖=k` (6.F.3-data).
+- **T16 — the Project square (master equation).** `run(emit(B⊖A), realize(A)) = realize(B)` modulo (erasure ⊎ tolerance) — H-050's adjunction lifted from points to displacements; schema + data legs are its two projections; the iso-ladder L1/L2/L3 is the totality/faithfulness of `emit`. ◑ sub-squares witnessed; ⬚ the full square = the `migrate A B` canary (6.D.1). Bucket C until then.
+- **A43 — Identity is the conserved charge.** `SsKey` conserved under every move (Add creates, Remove annihilates); Rename perturbs Designation conserving Identity; `Realization := Designation` (policy). **Cross-plane corollary — the algebraic *why* of the refactorlog:** a faithful schema Rename induces `‖·‖_data = 0` (sp_rename conserves rows), DROP+ADD induces `2·|table|` — so the refactorlog is *forced* by Identity-conservation across the schema→data coupling, not adopted as convention. ✅ column-rename + re-key; ⬚ `‖rename‖_data=0` canary.
+
+**Relationship to the prior catalog (deepen + unify; none superseded):** T16 = H-050 lifted to arrows; T14 subsumes A38; T15 generalizes the chapter-4.1.B CDC-silence property to a norm-conservation law; A43 generalizes A1 (identity-survives-rename) to all moves and *derives* the SSDT refactorlog requirement; A35/A36 describe `emit`'s codomain and A36's bulk-vs-incremental is T15's isometric-vs-non-isometric reading.
+
+**Why this is the right reification (right by function, not by name):** every law is an equation `LHS = RHS` in the carriers' native operations (`⊕ ⊖ + ‖·‖ π emit realize`) — no one-sided assertion. The torsor framing fuses round-trip/identity/composition into one structure (you cannot state one without the others), which is the "most revealing native expression." CDC = the norm makes "minimum viable touches" a measured equality. T16 is the single master equation; the others are its facets; the schema and data legs are its projections; the iso-ladder is its faithfulness gradient — the engine is right-by-function exactly when these balance with the smallest residual.
+
+**Verification.** AxiomTests green (79 live / 8 C / 1 D; the 5 new Fact theorems + T16 Skip-with-trigger); matrix gate PASS, round-trip 5/5; all 9 cited witnesses verified present.
+
+**Cross-references:** `WAVE_6_ALGEBRA.md` (the calculus — derivation + native-form rationale); `AXIOMS.md` "The Change Algebra — T12–T16 + A43"; `WAVE_6_ONTOLOGY.md` (the entities the algebra quantifies over); `tests/Projection.Tests/AxiomTests.fs` (the executable witnesses). Extends `DECISIONS 2026-06-01 — Wave 6 ontology + premise re-prioritization` and `… the data-leg addendum`.

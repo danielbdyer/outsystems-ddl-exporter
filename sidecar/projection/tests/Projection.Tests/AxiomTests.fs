@@ -840,6 +840,78 @@ let ``T11: sibling Π's commute on shared E-attached values — verified by Json
     ()
 
 // ===========================================================================
+// The Change Algebra — T12–T16 + A43 (Wave 6, 2026-06-01)
+// State is a torsor over Delta: ⊖ = between, ⊕ = applyDiff; round-trip /
+// identity / composition are the Weyl axioms; ‖·‖ (CDC count) is the norm;
+// emit is a norm-preserving functor; T16 (the Project square) is the master
+// equation. Full derivation: WAVE_6_ALGEBRA.md. Each entry is the theorem's
+// DISCRIMINATING witness (the input where a plausibly-named wrong version
+// breaks the equation), not a restatement of the name.
+// ===========================================================================
+
+[<Fact>]
+let ``T12: State is a torsor over Delta — A ⊕ (B ⊖ A) = B, and ⊕ is a genuine action (no-cheat)`` () =
+    // W3 round-trip + the forced state-dependence (apply must thread its base,
+    // else uniqueness collapses): applyDiff base d = target d is falsified.
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "Time: applyDiff (between A B) A = B (evolution round-trip law)"
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "applyDiff threads the passed-in catalog, not the recorded target (no-cheat)"
+    // W1 identity: A ⊕ 0 = A.
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "applyDiff (between A A) A = A — the identity diff is identity"
+
+[<Fact>]
+let ``T13: evolution over time is composition — replay = fold ⊕ along the timeline (Chasles)`` () =
+    citationOf
+        "tests/Projection.Tests/LifecycleTests.fs"
+        "A-Lifecycle (6.A.11 / H-007): reconstructLatest derives the latest snapshot via fold applyDiff"
+
+[<Fact>]
+let ``T14: orthogonality is a direct-sum decomposition — δ = ⊕_c π_c(δ) (subsumes A38)`` () =
+    // A38 kind-level partition (the direct sum at the kind plane) + the
+    // Rename ⊥ Reshape channel disjointness (a renamed element carries no
+    // shape facet, so the channels never touch the same element).
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "CatalogDiff exhaustiveness: scope equals disjoint union of partitions"
+    citationOf
+        "tests/Projection.Tests/SchemaMigrationEmitterTests.fs"
+        "migration: a rename alone emits no ALTER (renames are the RefactorLog channel)"
+
+[<Fact>]
+let ``T15: CDC is the norm — emit is an isometry; ‖δ‖=0 ⟹ zero capture (CDC-silence)`` () =
+    // The ‖δ‖ = 0 instance (silence) + the sensitivity proving the norm is
+    // not vacuously zero (changed content DOES capture). The general ‖δ‖ = k
+    // is the ⬚ trigger (EXECUTION_PLAN 6.F.3-data).
+    citationOf
+        "tests/Projection.Tests/CdcSilenceTests.fs"
+        "Slice γ: CDC-silence — V2 change-detection predicate emits zero CDC capture rows on idempotent redeploy"
+    citationOf
+        "tests/Projection.Tests/CdcSilenceTests.fs"
+        "Slice γ sensitivity: changed-content redeploy DOES fire CDC capture rows — proves the canary mechanism is real (not silent for unrelated reasons)"
+
+[<Fact(Skip = "T16: the Project square commutes — Bucket C. run(emit(B⊖A), realize(A)) = realize(B) \
+modulo (erasure ⊎ tolerance): the master equation; H-050 lifted from points to displacements. \
+Sub-squares are witnessed: `migration canary: a widening ALTER COLUMN executes on SQL Server and \
+preserves data` (schema move realized, data conserved) + CdcSilence (data sub-square). Promoted to \
+Bucket A when the one-command `migrate A B` canary (EXECUTION_PLAN 6.D.1) is green under T12–T15.")>]
+let ``T16: the Project square commutes (the master equation; migrate A B canary)`` () = ()
+
+[<Fact>]
+let ``A43: Identity is the conserved charge — Rename perturbs Designation, conserves SsKey, sp_rename (refactorlog) conserves data`` () =
+    // Rename: Designation changes, Identity (SsKey) conserved, realized as a
+    // SqlSimpleColumn refactorlog entry (sp_rename) — the cross-plane
+    // corollary ‖rename‖_data = 0 (data conserved) is why the refactorlog is
+    // FORCED, not adopted. The ‖rename‖_data=0 live canary is the ⬚ trigger.
+    citationOf
+        "tests/Projection.Tests/RefactorLogEmitterTests.fs"
+        "RefactorLogEmitter: a column rename produces a SqlSimpleColumn entry"
+
+// ===========================================================================
 // Group L — HORIZON H-001/H-002/H-003 (Cluster B) lifts
 // ===========================================================================
 // Cluster B promotes the Kleisli / writer-monad algebra from "discipline"
