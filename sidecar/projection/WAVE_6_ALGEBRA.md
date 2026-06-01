@@ -276,6 +276,75 @@ the same as saying the engine is structurally isomorphic to the shape of change.
 - **Reify discipline:** every theorem here has an `AxiomTests.fs` entry that is its *discriminating* witness (the
   input where a plausibly-named-but-wrong implementation breaks the equation), per `WAVE_6_ONTOLOGY.md` §8.
 
+---
+
+## 12. Addendum (2026-06-01) — the concern-movement field, and latent vs activated
+
+The four-agent structural research (`WAVE_6_MORPHOLOGY.md`) read the calculus *from* the codebase and sharpened
+three things. They extend the calculus without altering T12–T16/A43.
+
+### 12.1 The concern-movement field (a 2-D partial-derivative extension)
+
+A concern κ ∈ {Schema, Data, Identity, Time, Decision} occupies a position in a **2-D field**: an *emission
+coordinate* (which artifact) and an *episode coordinate* (which time-step). Its movement is two partial
+derivatives, each with an integral:
+
+```
+∂κ/∂(emission)              how κ distributes/changes across artifacts at a fixed episode
+   ∫ over emission space  = the MANIFEST                         (the emission-integral)
+
+∂κ/∂(episode)               how κ changes across episodes (the displacement between adjacent episodes)
+   ∫ over time            = the PROVENANCE (refactorlog + CDC log + snapshot chain = a LifecycleStore)
+   and the FTC (T13):       reconstructLatest = genesis ⊕ Σδ   (the integral of the derivative recovers state)
+
+∂²κ/∂(emission)∂(episode)   how κ's emission-distribution changes across episodes
+                          = the CHANGE-MANIFEST SERIES (the manifest-of-δ over time)
+```
+
+"Observe the movement of concerns during **multi-episodic recombination**" = observe `∂κ/∂(episode)` and the
+**cross-concern recombination** (κ₁ at episode i × κ₂ at episode j) — a *join* over a provenance store that
+co-records all five concerns per episode (a multi-plane `Episode`). Today only the `∂κ/∂(emission)`-of-*state*
+slice is lit; `∂κ/∂(episode)` is dark (no durable episode) and the manifest integrates *state*, not displacement
+δ (see `WAVE_6_MORPHOLOGY.md` §2–§3). T15's norm `‖δ‖` is the magnitude of the episode-derivative on the data
+plane; the CDC capture series is its time-integral.
+
+### 12.2 Latent vs activated (re-reading the status of every law)
+
+A law is **latent** when its equation is proven *in isolation* (a unit/canary witness over in-memory values) but
+its operations are **unwired** in production and/or its substrate is **not persisted**; it is **activated** when
+the operations are wired and the substrate durable, closing the residual. The research's finding: **the calculus
+is correct and latent.** Re-reading §9:
+- **T12** — activated (between/applyDiff wired into Lifecycle + the SchemaMigration/RefactorLog emitters exist).
+- **T13** — *latent*: `reconstructLatest` runs only over in-memory values in tests; **there is no durable episode
+  to integrate over**, and no `compose` (`+`) operator. *Activation:* the `Episode` + `LifecycleStore` +
+  `CatalogDiff.compose` (`WAVE_6_MORPHOLOGY.md` §4 F1–F3; `EXECUTION_PLAN.md` 6.H).
+- **T14 / T15** — *latent at the type level*: the channel projection `π` and the norm `‖·‖` have **no code
+  carrier** (witnessed only by test assertions). *Activation:* the verbs reify at the **second consumer**
+  (§12.3) — the data `RowDiff` (6.F.3-data / F4).
+- **T16** — dark differential leg: the engine ships `realize(B)`, not `emit(B ⊖ A)` (the diff emitters have zero
+  production callers). *Activation:* `migrate A B` (6.D.1).
+- **A43** — Identity survives an episode boundary (`V2.SsKey` round-trip), but only as a current value, not a
+  chain; the `‖rename‖_data = 0` corollary is unwitnessed live. *Activation:* the change-manifest + the rename
+  canary.
+
+### 12.3 The noun/verb reification principle (the spine rule, grounded)
+
+The codebase reifies the **carriers** (nouns of change — `Catalog`, `CatalogDiff`, `SsKey`, `Lifecycle`)
+eagerly, and leaves the **operators** (verbs — `Move`, an abstract `Delta`, the norm `‖·‖`, the channel `π`, the
+`Torsor`) as **functions and test-witnessed laws** with no type. This is *correct discipline* (§11; the
+two-consumer threshold), and the morphology research shows *why*: **the verbs are absent because the second
+consumer has not been built, not by oversight.** The principle, sharpened:
+
+> **Carriers reify eagerly; operator-verbs reify at the second consumer.** `Move` / abstract `Delta` / `‖·‖` /
+> `π` / `Torsor` earn a code home when the data leg becomes the second `comparison→apply→emit` (and `migrate`
+> composes the channels) — at `WAVE_6_MORPHOLOGY.md` §4 F4 — and **not before.** The **spine-breaker to refuse**
+> is the speculative torsor refactor (renaming `between`→`⊖`, a `Torsor` typeclass) ahead of F4. The algebra is
+> the *spec the witnesses check*, not a shape to force the code into; the engine must *behave* like the torsor
+> (proven by the discriminating witness), never be *named* like it on speculation.
+
+---
+
 — Recorded for the receiving agent. The algebra is the equation; `WAVE_6_ONTOLOGY.md` is its interpretation;
-`AXIOMS.md` T12–T16/A43 is its catalog entry; `EXECUTION_PLAN.md` Wave 6 is the route that shrinks each residual
-to zero; `NORTH_STAR.md` is the bullseye where every equation balances.
+`WAVE_6_MORPHOLOGY.md` is the territory it was drawn over (latent until activated); `AXIOMS.md` T12–T16/A43 is its
+catalog entry; `EXECUTION_PLAN.md` Wave 6 + 6.G/6.H is the route that shrinks each residual to zero;
+`NORTH_STAR.md` is the bullseye where every equation balances.

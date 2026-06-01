@@ -1833,6 +1833,12 @@ B` + `applyDiff threads the passed-in catalog … (no-cheat)`.
 the schema/data history. Witness: `Lifecycle.reconstructLatest` (fold
 applyDiff). The `compose : Delta → Delta → Delta` operator (diff∘diff) that
 would close A-Lifecycle-4's associativity is the remaining ⬚ (H-007).
+**Latent (2026-06-01 morphology research):** `reconstructLatest` runs only over
+**in-memory values in tests** — there is **no durable episode** to integrate
+over (`CatalogSnapshot` is schema-only, single-plane, never serialized). The
+FTC is proven, the substrate absent. *Activation:* the multi-plane `Episode` +
+`LifecycleStore` + `CatalogDiff.compose` (`EXECUTION_PLAN.md` 6.H;
+`WAVE_6_MORPHOLOGY.md` §4 F1–F3).
 
 **T14 — channel decomposition (orthogonality as a direct sum).**
 `δ = ⊕_c π_c(δ)`, `π_c ∘ π_{c'} = 0` (c≠c'), `Σ_c π_c = id`, `‖δ‖ = Σ_c ‖π_c δ‖`.
@@ -1848,7 +1854,12 @@ partition) and generalizes it to the attribute + data planes. T-V
 minimum data diff is isometric emission; complete-replace is non-isometric
 (`2·|table| ≫ ‖δ‖`) — correct but norm-inflating, hence the fallback. Witness:
 `Slice γ: CDC-silence …` (the `=0` instance) + `Slice γ sensitivity …` (the
-norm is not vacuously zero). ⬚ the general `‖δ‖ = k` (6.F.3-data).
+norm is not vacuously zero). ⬚ the general `‖δ‖ = k` (6.F.3-data). **Latent at
+the type level (2026-06-01 morphology research):** the norm `‖·‖` and the
+channel projection `π` (T14) have **no code carrier** — they are witnessed only
+by test assertions; they reify at the *second consumer* (the data `RowDiff`,
+6.F.3-data / `WAVE_6_MORPHOLOGY.md` §4 F4), per the noun/verb reification
+principle (`WAVE_6_ALGEBRA.md` §12.3) — not before.
 
 **T16 — the Project square (the master equation; the adjunction lifted to
 displacements).** `run( emit(B ⊖ A), realize(A) ) = realize(B)` modulo

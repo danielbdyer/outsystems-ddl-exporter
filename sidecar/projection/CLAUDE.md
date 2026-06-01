@@ -69,6 +69,22 @@ faithfulness gradient. Reified into the formal system as `AXIOMS.md` **T12–T16
 *equation* a slice must balance; read `WAVE_6_ONTOLOGY.md` for the
 *interpretation* and `AUDIT_2026_05_31` for *why the climb exists*.
 
+**`WAVE_6_MORPHOLOGY.md`** (2026-06-01) is the **territory** the ontology and
+algebra were drawn over — a four-agent structural research pass that read the
+calculus *from* the codebase. Its load-bearing finding: **the calculus is
+*latent*, not *activated*** — the carriers (nouns of change) are reified and
+mature, but the operator-verbs (`Move`/`Delta`/`‖·‖`/`π`/`Torsor`) have no code
+home; the diff-machinery (`between`/`applyDiff`/refactorlog/SchemaMigration/
+`Lifecycle`) has **zero production callers** (the engine ships `realize(B)`,
+not `emit(B ⊖ A)`); and there is **no durable episode** to integrate over (the
+FTC runs only in-memory in tests). It maps the **amino acids** (structural
+primitives + maturity + file:line), the **proteins** (concrete use cases), and
+the **concern-movement field** (the 2-D `∂κ/∂emission` × `∂κ/∂episode` field,
+mostly dark). Read it for the concrete *as-is* before building any Wave-6
+slice; it names the future-state substrate (`EXECUTION_PLAN.md` 6.H: the
+multi-plane `Episode`, the `LifecycleStore`, `CatalogDiff.compose`, the
+change-manifest).
+
 **`V2_DRIVER.md`** (codified 2026-05-10 chapter 3.7 sidebar; principal-PO
 discussion) is the destination-KPI document — the *why* the cutover
 ladder bends toward V2-driver mode, the per-axis correctness stakes,

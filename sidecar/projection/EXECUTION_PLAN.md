@@ -1220,6 +1220,56 @@ plausibly-named-but-wrong implementation breaks the equation — `WAVE_6_ONTOLOG
 is structurally isomorphic to the shape of change (`NORTH_STAR` Promise 8). The calculus is then not documented
 but *enforced*: a regression that breaks any equation drops its AxiomTests entry and a matrix cell, loudly.
 
+#### 6.H — Multi-episodic observability substrate (the durable provenance the calculus integrates over)
+
+*Source: the 2026-06-01 four-agent structural research (`WAVE_6_MORPHOLOGY.md`). The research's load-bearing
+finding: the calculus is **latent** — `between`/`applyDiff`/`reconstructLatest` (the FTC `genesis ⊕ Σδ`) are
+proven only over **in-memory values in tests**; no episode is durable; `CatalogSnapshot` is schema-only,
+single-plane, time-erased, ephemeral; only `V2.SsKey` survives an episode boundary. So "observe the movement of
+concerns during multi-episodic recombination" (the §2 premise's lattice) is unanswerable today. This family
+gives the proven algebra a durable substrate to integrate over — the time-axis of the concern-movement field
+(`WAVE_6_ALGEBRA.md` §12.1's `∂κ/∂(episode)`). It reuses proven amino acids; none is research.*
+
+##### 6.H.1 — The multi-plane `Episode` (the point of integration)
+- **Gap:** `CatalogSnapshot` (`Lifecycle.fs:45`) carries only a schema `Catalog` at a `Version` — no Profile, no
+  rows/CDC, no environment, no clock. The schema and data planes are never co-recorded, so cross-concern
+  recombination (Identity in episode i × Data in episode j) is inexpressible.
+- **First slice:** an `Episode` pairing, at one `Version` (extended with a boundary-supplied clock +
+  `(environment × release-time)` cell — Core stays clock-free; the Pipeline stamps it as `ApprovalRecord.At`
+  already does): the schema `Catalog`, the `Profile`, the emitted refactorlog reference, and the CDC capture
+  count/handle.
+- **Acceptance:** `` ``episode: co-records schema + profile + refactorlog + cdc-handle at one Version`` ``. **~M.**
+
+##### 6.H.2 — The `LifecycleStore` (the persisted time-integral)
+- **Gap:** nothing serializes a `Lifecycle`/`Episode`; `reconstructLatest` folds only in-memory test values.
+- **First slice:** a durable JSON store modeled on `ApprovalStore.fs` (the codebase's *only* proven across-runs
+  persistence — deterministic `Utf8JsonWriter`, T1-stable order, structured `Read/Parse/Write` failures). Turns
+  the FTC into reconstruction over durable provenance: load genesis + the persisted δ-chain, `fold applyDiff`.
+- **Acceptance:** `` ``lifecycle store: reconstructLatest over the persisted chain reproduces the stored episode (FTC, durable)`` ``. **~M.**
+
+##### 6.H.3 — `CatalogDiff.compose` (close the derivative algebra; T13/A-Lifecycle-4)
+- **Gap:** `CatalogDiff` has `between` (⊖) and `applyDiff` (⊕) but **no `compose` (`+`)** — so `δ₁ + δ₂` (the
+  cross-episode derivative) is inexpressible, and A-Lifecycle-4 (associativity) is Bucket-C (`AXIOMS.md`).
+- **First slice:** `compose : CatalogDiff → CatalogDiff → CatalogDiff` with `applyDiff (compose d₁ d₂) = applyDiff
+  d₂ ∘ applyDiff d₁` (the functor law). Flips A-Lifecycle-4 Skip→Fact; earns T13's `⬚ compose`.
+- **Acceptance:** `` ``CatalogDiff.compose: applyDiff (compose d1 d2) A = applyDiff d2 (applyDiff d1 A)`` ``. **~M.**
+
+##### 6.H.4 — The change-manifest (the emission-integral of δ; the mixed partial)
+- **Gap:** the `SsdtManifest` integrates *state* (`Coverage`/`PredicateCoverage`/`AppliedTransforms`) not
+  *displacement* δ: no per-move counts, no `‖δ‖`, no refactorlog cross-reference, no CDC series, `AppliedTransforms`
+  records the overlay *axis* not the *outcome*, `At`/version excluded. So the SSIS consumer cannot read "what
+  this sprint touched."
+- **First slice:** extend the manifest with a change section — per-channel move counts (`‖δ‖`: added/removed/
+  renamed/reshaped), the refactorlog digest cross-reference, the CDC capture series `k`, the per-run tolerance
+  *residual* (not the static vocabulary), and the `AppliedTransforms` *outcome* (carry the `LineageEvent`
+  `TransformKind`, not just the axis). A manifest-of-δ per episode is the change-manifest series.
+- **Acceptance:** `` ``change-manifest: the manifest records the displacement (move counts + refactorlog xref + cdc series), not just the target state`` ``. **~M.**
+
+**Sequencing within 6.H:** 6.H.3 (`compose`, pure, small) and 6.H.1 (`Episode`) are independent and first; 6.H.2
+(`LifecycleStore`) depends on 6.H.1; 6.H.4 (change-manifest) depends on the attribute-diff (6.A.10, shipped) and
+pairs with 6.F.1 (refactorlog-against-prior). The whole family is the activation of `∂κ/∂(episode)` and the
+durable side of the FTC; it is the substrate `migrate` (6.D.1) records each run into.
+
 ---
 
 ## IV. Dependency graph, critical path, sequencing
