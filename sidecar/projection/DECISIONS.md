@@ -20299,3 +20299,23 @@ capability.
 **Grounding the totalities (`WAVE_6_ONTOLOGY.md` §9).** T-I quantifies over the comparison (P-CMP) + the emission functor's partiality (faithful/lossy-warn/refuse); T-V over the channels (P-CH partition + P-ORD ordering); T-VI over the gates (P-GATE completeness = "spanning"). The ontology supplies the entities the totalities range over.
 
 **Cross-references:** `WAVE_6_ONTOLOGY.md` (the masterwork; the deep map); `EXECUTION_PLAN.md` Wave 6 + 6.F (the route); `AUDIT_2026_05_31_FIVE_AXIS_REDTEAM.md` (why the climb exists); `NORTH_STAR.md` §3 (the totalities this grounds). Reading-order amended (CLAUDE.md) to place `WAVE_6_ONTOLOGY.md` alongside the audit as a Wave-6 first-read.
+
+---
+
+## 2026-06-01 — Wave 6 ontology: the data-leg addendum (CDC-aware minimum data diff)
+
+**Resolved (ontology addendum; `WAVE_6_ONTOLOGY.md` §12).** Extends the change-ontology from schema to **data** — *how data is coerced to change over time*. The data leg is the **same shape of change one plane down**: the data moves are the row-level analog of the schema moves (§5 ∥ §12.3) — **Insert / Update / Unchanged(=silence) / Delete / Reidentify**. The operator's stated preference (CDC-aware minimum data diff over a complete replace) is the data-plane reading of "minimum viable touches."
+
+**Load-bearing parallels pinned (the §12.0 correspondence table):**
+- **Comparison:** `CatalogDiff.between` (schema) ∥ the row diff (data). The data comparison has two regimes — engine-computed at-source vs **MERGE change-detection at-target** — and **[policy] the at-target MERGE is the CDC-aware-minimum default** (the engine emits *the statement that is the diff*; SQL Server computes the delta at apply; CDC observes exactly the writes; no read of the live target needed).
+- **Delegation:** schema ALTER is *delegated to DacFx*; **data is 100% engine-owned** (DacFx does not move data) → the data diff is the engine's hardest-owned correctness, with CDC as its only external ruler.
+- **Provenance/ruler:** append-only refactorlog (schema) ∥ **the append-only CDC capture log** (data) — simultaneously the provenance (replays to reconstruct the data evolution from an earlier-A) and the ruler (the operator reads it to verify the deploy moved exactly the minimum). P-DM: `capture count = |true row delta|; idempotent ⇒ 0`.
+- **Emission modes:** fresh-replace (TRUNCATE+bulk reload; `2×|table|` captures; safety baseline) ⊕ CDC-aware minimum diff (the change-detecting MERGE; preferred), selected by the same `EmissionMode` as schema.
+
+**Right-by-function anchor.** The CDC-aware-minimum MERGE's correctness is *not* "it's a MERGE." The heart is the **change-detection predicate** — the null-safe distinctness `(Target.c <> Source.c) OR (Target.c IS NULL AND Source.c IS NOT NULL) OR (Target.c IS NOT NULL AND Source.c IS NULL)` over the comparable columns (`ScriptDomBuild.perColumnChangeDetection`), NOT a naive `<>` (which is `UNKNOWN` on NULL → misses NULL↔value transitions) and NOT an unconditional `WHEN MATCHED` (captures every matched row → `|matched|` not `|changed|`). Plus: the `ON` keys on **reconciled identity** not raw surrogate (else a re-keyed row splits into Delete+Insert); the comparable-column-set **excludes** computed + reconciled-surrogate + tolerated columns; the `DELETE` clause is **scope-gated**. Each is a discriminating predicate with a wrong-by-name failure (`WAVE_6_ONTOLOGY.md` §12.4, §12.7).
+
+**Built + witnessed:** `changeDetectionPredicate` (null-safe); CDC-silence floor (`CdcSilenceTests` Slice γ + sensitivity; `CdcSilenceCrossEmitterTests` C0–C4); reconciled re-key + two-phase FK + `DataLoadPlan` ordering; transfer CDC pre-flight; drop fail-loud (6.A.1). **⬚ (route in `EXECUTION_PLAN.md` 6.F.3-data):** P-DM general case (`capture=k`); the empty/NULL + padding/scale tolerance (6.A.4 + P-DIFF hardening); the DELETE-scope gate (P-DEL-SCOPE); the data-provenance surface; P-ATOMIC-DATA (deferred, PROD empty).
+
+**Decision owed (data leg):** is the incremental data plan a *post-deployment script* (SSIS-consumer/eject publication flow) or a *transfer-verb execution* (Dev→UAT rekey)? They share the MERGE algebra but differ in artifact + ordering. Likely both; name the seam before 6.F.3-data(a) emits.
+
+**Cross-references:** `WAVE_6_ONTOLOGY.md` §12 (the addendum); `EXECUTION_PLAN.md` Wave 6.F.3-data; `AUDIT_2026_05_31` §1.3 (CDC-silence is the one genuinely-solid result) + Data #4 (empty/NULL); `DECISIONS 2026-06-01 — Wave 6 ontology + premise re-prioritization` (the schema-leg parent entry this extends).

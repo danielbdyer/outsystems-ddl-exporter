@@ -314,8 +314,9 @@ rekey) reorders it:
 
 ## 11. How to use this document
 
-- **Opening a Wave 6 slice?** Read the move it realizes (§5), its discriminating predicate (§7), and the
-  premise it serves (§2) — *then* `EXECUTION_PLAN.md` Wave 6. The four are one chain.
+- **Opening a Wave 6 slice?** Read the move it realizes — **schema** moves in §5, **data** moves in §12.3 — its
+  discriminating predicate (§7 schema / §12.7 data), and the premise it serves (§2) — *then* `EXECUTION_PLAN.md`
+  Wave 6. The four are one chain. The schema and data legs are the *same shape of change one plane apart* (§12.0).
 - **Adding a type or function?** State its discriminating predicate first (§8). If you cannot name the input on
   which a plausibly-named wrong version would diverge, you do not yet understand the function.
 - **Closing a move's ⬚ cell?** The isomorphism (§5) is more complete by one cell; record the witness, and if the
@@ -324,5 +325,165 @@ rekey) reorders it:
   the engine is structurally isomorphic to the shape of change — the Total Projection's L3, substantiated for
   *this* premise. A fresh red-team re-runs against the then-current moves.
 
-— Recorded for the receiving agent. The ontology is the deep map; `EXECUTION_PLAN.md` Wave 6 is the route;
+---
+
+## 12. Addendum — the data leg: how data is coerced to change over time
+
+§§1–11 are the **schema** leg. The **data** leg is the *same shape of change, one plane down*: where the schema
+leg moves table/column structure, the data leg moves rows. The whole point of this addendum is that the data
+moves are the **row-level analog** of the schema moves (§5), so the ontology stays one instrument across both
+planes. The operator's stated preference — *CDC-aware minimum data diff statements over a complete replace* —
+is the data-plane reading of "minimum viable touches": touch only the rows that genuinely changed, and let CDC
+be the ruler that proves you did.
+
+### 12.0 The schema ∥ data correspondence (the isomorphism, both planes)
+
+| Aspect | Schema leg (§§1–11) | Data leg (this addendum) |
+|---|---|---|
+| **State** | a `Catalog` (structure) | a table's row-set, keyed by reconciled identity |
+| **Comparison** | `CatalogDiff.between A B` | the row diff — `Insert/Delete/Update/Unchanged` per key |
+| **Core moves** | Add / Remove / Rename / Reshape / Reidentify / Move / Accumulate | **Insert / Delete / Update / Unchanged(=silence) / Reidentify** |
+| **Emission — incremental** | CREATE + refactorlog (→ DacFx ALTER) | **CDC-aware MERGE** (post-deployment script) |
+| **Emission — fresh** | drop + CREATE | **TRUNCATE/DELETE-all + bulk reload** |
+| **Delegation** | schema ALTER **delegated to DacFx** | **none — 100% engine-owned** (DacFx does not move data) |
+| **Provenance / ruler** | append-only refactorlog (+ snapshots) | **the append-only CDC capture log** (`cdc.<table>_CT`) |
+| **Intent filter (noise)** | DacFx normalization, auto-named constraints | **empty-string↔NULL, ANSI-padding, decimal scale, collation, computed, surrogate** |
+| **Minimality predicate** | ALTER-not-CREATE; `isEmpty diff ⇒ 0 DDL` | **P-DM: CDC capture count = \|true row delta\|; idempotent ⇒ 0** |
+
+The most consequential row is **Delegation.** Schema leans on DacFx to compute the minimal ALTER from declarative
+inputs; **the data plane has no such crutch — the engine computes and emits the minimal row delta itself.** So
+the data diff is the engine's *hardest-owned* correctness, and CDC is its *only* external ruler.
+
+### 12.1 L0 — the physical floor for data
+
+1. **CDC writes one capture row per row-version change** (`__$operation`: 1=delete, 2=insert, 3/4=update
+   before/after). So the capture log *names which move happened to which row* — it is a typed record of data
+   change, not a side effect. *Root cause of P-DM and of CDC-as-provenance (§12.6).*
+2. **A `WHEN MATCHED THEN UPDATE` with no change predicate updates every matched row** → a capture per matched
+   row even when the row is byte-identical. *This is the trap: a MERGE that looks like a minimum-diff (it has
+   `WHEN MATCHED`) but captures `|matched|`, not `|changed|`.* The change-detection predicate is what closes it.
+3. **A complete replace (TRUNCATE + bulk reload, or DELETE-all + INSERT-all) captures `2 × |table|` rows** (a
+   delete per old row + an insert per new) **even if the data is identical.** Correct, but maximally noisy on
+   the ruler. *Root cause of the two-mode split (§12.5).*
+4. **Surrogate keys mint independently per substrate.** The same logical row is `Id=280` in Dev, `Id=18` in UAT.
+   *Root cause of Reidentify and the reconciled-key match (§12.4).*
+
+### 12.2 The data comparison differential — two regimes
+
+Like the schema comparison (§4), the data comparison is observational: classify each row, by reconciled
+identity, into `Insert | Delete | Update | Unchanged`. **Where** it is computed splits into two regimes:
+
+- **At-source (engine-computed):** the engine reads both earlier-A and target-A row-sets, computes the delta in
+  process, emits explicit `INSERT/UPDATE/DELETE` for exactly the changed rows. Faithful, but requires reading
+  *both* datasets (cost scales with both) — best when a prior snapshot is cheap to hold.
+- **At-target (MERGE change-detection) — the CDC-aware-minimum default.** The engine emits a `MERGE` carrying
+  the *candidate* (target) rows in a staging/`VALUES` source; SQL Server computes the delta *at apply time* via
+  the change-detection predicate, writing only the rows that differ. The engine need not know the target's
+  current state — the substrate does the diff, and CDC observes exactly the writes. This is what
+  `CdcSilenceTests` exercises and what the operator's preference selects.
+
+[policy] **The data plane prefers the at-target MERGE** (the engine emits the *statement that is the diff*, not
+the diff it pre-computed) because (a) it needs no read of the live target, (b) its minimality is checked by the
+substrate's own equality + CDC, and (c) it is the natural post-deployment-script shape (§4 DacFx seam: data is
+engine-owned, emitted as pre/post-deploy scripts).
+
+### 12.3 The core data moves (the row-level analog of §5)
+
+| Move | Realized by | Faithfulness class | Discriminating predicate | Engine surface | Status |
+|---|---|---|---|---|---|
+| **Insert** (key in target, not source) | `WHEN NOT MATCHED BY TARGET THEN INSERT` | additive; safe | P-DM (a genuine new row captures once) | StaticSeeds/Migration MERGE | ✅ witnessed |
+| **Update** (key in both, columns differ) | `WHEN MATCHED AND <change-detection> THEN UPDATE` | faithful; **never fires on no-op** | **P-NOOP** (idempotent ⇒ 0 captures) | `changeDetectionPredicate` (null-safe) | ✅ witnessed |
+| **Unchanged** (key in both, identical) | *(no clause fires)* | **silence** | P-DM floor (`\|delta\|=0 ⇒ 0`) | the `AND <predicate>` guard | ✅ witnessed (CdcSilence) |
+| **Delete** (key in source, not target) | `WHEN NOT MATCHED BY SOURCE [AND scope] THEN DELETE` | **destructive — gated** | **P-DEL-SCOPE** (delete only declared-in-scope rows) | ⬚ scope gate | ◑ gate ⬚ |
+| **Reidentify** (surrogate differs across substrates) | reconciled `ON` match + FK re-point (sink-minted, two-phase) | faithful by named rule, else drop+diagnose | **P-REKEY** (relationship preserved modulo surrogate) | `Transfer` reconciliation | ✅ witnessed (re-key canary) |
+
+### 12.4 The CDC-aware minimum-diff MERGE — anatomy (right-by-function)
+
+The deploy artifact for the data leg (incremental mode) is a `MERGE` per table, and its correctness is *not*
+"it's a MERGE." Four functional parts, each with a wrong-by-name failure:
+
+1. **The change-detection predicate is the heart.** `WHEN MATCHED AND (<predicate>) THEN UPDATE` where the
+   predicate is the **null-safe distinctness** over the updatable columns — per column
+   `(Target.c <> Source.c) OR (Target.c IS NULL AND Source.c IS NOT NULL) OR (Target.c IS NOT NULL AND Source.c
+   IS NULL)`, OR-folded (the `IS DISTINCT FROM` expansion; `src/Projection.Targets.SSDT/ScriptDomBuild.fs`
+   `perColumnChangeDetection`). *Wrong by name:* a naive `Target.c <> Source.c` is `UNKNOWN` when either side is
+   NULL → it **misses NULL↔value transitions** (a real change goes uncaptured) *and* an unconditional
+   `WHEN MATCHED` captures every matched row. *Discriminating witness:* `Slice γ: CDC-silence … emits zero CDC
+   capture rows on idempotent redeploy` + `Slice γ sensitivity: changed-content redeploy DOES fire`.
+2. **The `ON` clause keys on reconciled identity, not raw surrogate.** For the Dev→UAT rekey, match on the
+   business key (or the post-remap surrogate); a match on the raw surrogate would classify the same logical row
+   as `Delete`+`Insert` (surrogates differ by design) — double the captures and a broken relationship.
+   *Discriminating witness:* the AssignedBySink re-key canary's `(Order → User-by-email)` join projection.
+3. **The comparable-column-set excludes the non-comparable.** The change-detection predicate ranges over
+   `updatable columns − {computed (derived), the reconciled surrogate, columns under a declared tolerance}`.
+   *Wrong by name:* "compare all columns" fires on a computed column (a function of others) or on the surrogate
+   (expected to differ) → spurious captures → P-DM violated.
+4. **The `DELETE` clause is gated.** `WHEN NOT MATCHED BY SOURCE THEN DELETE` is the destructive data move
+   (analog of the schema drop-refusal). It fires only within a declared scope (a full-refresh of a bounded set),
+   never silently across the whole table. *Trigger:* P-DEL-SCOPE (§12.7).
+
+Two-phase realization (deferred-FK / self-referential / cyclic rows) rides the existing `Transfer` machinery
+(phase-1 insert with NULLed deferred FKs; phase-2 re-point) under the data ordering law (§12.7 P-ORD-DATA).
+
+### 12.5 The data intent filter — semantic value vs representation noise
+
+The schema intent filter (§4 P-IF) has a data twin: **a raw column difference is not always a true data
+change.** Representation noise that must be *tolerated* (or the change is spurious): empty-string↔NULL
+conflation (`AUDIT` Data #4 / 6.A.4 — three meanings collapse on `''`), ANSI-padding (`'abc' vs 'abc '`),
+decimal scale (`1.0 vs 1.00`), collation-equal-but-byte-different strings. The null-safe distinctness predicate
+(§12.4.1) already handles the NULL axis correctly; the *remaining* filter is the empty/NULL + padding/scale/
+collation normalization, which must be a **named tolerance** in the comparable-column treatment — emit on a
+genuine semantic change, tolerate a representation artifact, **silence on neither.** This is pillar 9 at the
+row-cell level. *Status:* the null axis is closed (in the predicate); empty/NULL + padding/scale are ⬚ (6.A.4 +
+this addendum's P-DIFF hardening).
+
+### 12.6 CDC as the data-provenance log (parallel to the refactorlog)
+
+The schema leg accumulates provenance in the **append-only refactorlog** (§5 Accumulate); the data leg
+accumulates it in the **append-only CDC capture log.** They are the same construct one plane down: a durable,
+append-only record of *every move that happened over time*, which is simultaneously (a) the **provenance** — replaying it reconstructs the data evolution from an earlier-A (the data analog of `reconstructLatest`), and
+(b) the **ruler** — the operator reads it to verify the deploy moved exactly the minimum. "Arrive at current-A
+from the provenance of an earlier-A with the minimum viable data movements" is, precisely: the incremental MERGE
+applied to earlier-A produces a CDC log whose row-count = `|true row delta|`. *The CDC log is both the history
+and the proof.*
+
+### 12.7 The discriminating predicates for data (the L3 layer, data leg)
+
+| Entity | Discriminating predicate | Why the happy path is insufficient | Witness / Trigger |
+|---|---|---|---|
+| **Data-minimality** | **P-DM [law]:** capture count = \|true row delta\|; idempotent ⇒ 0. | "data round-trips" passes on a full reload that captures `2×\|table\|`. | ✅ `Slice γ: CDC-silence …` + cross-emitter C1/C2; ⬚ `\|delta\|=k` (6.F.3) |
+| **No-op silence** | **P-NOOP [law]:** the `WHEN MATCHED` UPDATE fires only on genuine null-safe column difference. | an unconditional `WHEN MATCHED` looks like a diff but updates every matched row. | ✅ `Slice γ sensitivity …`; cross-emitter C4 |
+| **Reconciled diff** | **P-DIFF / P-REKEY [law]:** rows match by reconciled identity (not raw surrogate) and compare by *semantic* value (filtering representation noise); a re-keyed row is `Update`, not `Delete+Insert`. | matching on surrogate splits one logical row into delete+insert; comparing raw representation fires on noise. | ✅ re-key canary (`orderUserEmail`); ⬚ empty/NULL + padding/scale (6.A.4) |
+| **Data ordering** | **P-ORD-DATA [law]:** inserts precede their FK referrers; deferred/cyclic FKs go two-phase; deletes follow referrer removal. | "emit all DML" violates FK order → mid-load failure. | ✅ `DataLoadPlan` / two-phase transfer; cross-emitter C3 (Phase-2 redeploy silent) |
+| **Delete scope** | **P-DEL-SCOPE [law]:** `WHEN NOT MATCHED BY SOURCE` deletes only declared-in-scope rows, never silently table-wide. | "MERGE deletes unmatched" wipes rows outside the intended set. | ⬚ scope gate (this addendum) |
+| **Drop/loss surfacing** | **P-DROP [law]:** a dropped row (orphaned FK, unmatched reconciliation) is fail-loud, not exit-0. | a successful exit hides vanished rows. | ✅ `data canary: transfer with an unmatched FK exits non-zero` (6.A.1) |
+| **Atomicity** | **P-ATOMIC-DATA [target]:** the data movement is atomic-or-resumable. | a non-transactional load half-populates on failure. | ⬚ 6.C.2 — deferred (PROD empty), §10 |
+
+### 12.8 Two modes (data) — both first-class; minimum-diff preferred
+
+- **Complete replace** — TRUNCATE/DELETE-all + bulk reload. Always correct, never minimal (`2×|table|`
+  captures). The safety baseline; the fallback when the diff can't be trusted or the table is small.
+- **CDC-aware minimum diff** — the change-detecting MERGE (§12.4) → captures `|delta|`, silent on idempotent
+  redeploy. The operator's stated preference; the target mode. Selected by the same `EmissionMode` choice as the
+  schema leg (`EXECUTION_PLAN.md` 6.F.2) so schema and data switch modes together.
+
+### 12.9 What's built vs the ⬚ gaps (data leg)
+
+**Built + witnessed:** the null-safe change-detection predicate (`changeDetectionPredicate`); CDC-silence floor
+(`CdcSilenceTests` Slice γ + sensitivity; `CdcSilenceCrossEmitterTests` C0–C4); the transfer's reconciled
+re-key + two-phase FK + `DataLoadPlan` ordering; the transfer CDC pre-flight (`transfer.cdcTrackedSink`); drop
+fail-loud (6.A.1). **⬚ gaps (route in `EXECUTION_PLAN.md` 6.F.3 + adjacent):** P-DM general case (`capture = k`,
+not just 0); the empty/NULL + padding/scale **tolerance** in the comparable-column treatment (6.A.4 + P-DIFF
+hardening); the **DELETE-scope gate** (P-DEL-SCOPE); the **data-provenance surface** (the CDC log as a
+consumable evolution record, parallel to the refactorlog); P-ATOMIC-DATA (deferred, PROD empty).
+
+**Decision owed (data leg).** Is the incremental data plan a **post-deployment script** (declarative SSDT path,
+runs after DacFx's schema publish) or a **transfer-verb execution** (the `Transfer`/`UAT-users` path)? They
+share the MERGE algebra but differ in artifact + ordering. *Likely both* — post-deploy script for the SSIS-
+consumer/eject publication flow; transfer-verb for the Dev→UAT rekey — but name the seam before 6.F.3 emits.
+
+---
+
+— Recorded for the receiving agent. The ontology is the deep map across **both legs** — schema (§§1–11) and data
+(§12), the same shape of change one plane apart; `EXECUTION_PLAN.md` Wave 6 + 6.F is the route;
 `AUDIT_2026_05_31_FIVE_AXIS_REDTEAM.md` is why the climb exists; `NORTH_STAR.md` is the bullseye it serves.

@@ -1113,6 +1113,30 @@ sub-wave is the buildable projection of those moves (`WAVE_6_ONTOLOGY.md` §5).*
   plan into a post-deployment script artifact.
 - **Acceptance:** `` ``cdc ruler: applying the incremental data plan captures exactly the changed rows (k), zero for unchanged`` ``. **~M.** *builds on the shipped change-detecting MERGE.*
 
+##### 6.F.3-data — CDC-aware minimum-diff data leg (the data addendum; `WAVE_6_ONTOLOGY.md` §12)
+- **Frame:** the data leg is the *row-level analog* of the schema moves — Insert / Update / Unchanged(=silence)
+  / Delete / Reidentify (`WAVE_6_ONTOLOGY.md` §12.3). The deploy artifact (incremental mode) is a **CDC-aware
+  change-detecting MERGE** per table (the null-safe distinctness predicate; `ScriptDomBuild.changeDetectionPredicate`),
+  emitted as a **post-deployment script**. Unlike schema, the data plane is **100% engine-owned** (DacFx does
+  not move data) — so the data diff is the engine's hardest-owned correctness, and CDC is its only ruler.
+- **Built + witnessed:** the null-safe change-detection predicate; CDC-silence floor (`CdcSilenceTests` Slice γ
+  + sensitivity; `CdcSilenceCrossEmitterTests` C0–C4); reconciled re-key + two-phase FK + `DataLoadPlan`
+  ordering; drop fail-loud (6.A.1).
+- **⬚ slices (this addendum):**
+  - **(a) P-DM general case** — generalize the silence canary from `|delta|=0` to `|delta|=k`: deploy earlier-A,
+    apply the incremental MERGE, assert `cdc.<table>_CT` captured exactly the changed rows. *Acceptance:*
+    `` ``cdc ruler: the incremental MERGE captures exactly the changed rows (k), zero for unchanged`` ``.
+  - **(b) semantic-diff tolerance** — the comparable-column treatment must tolerate representation noise
+    (empty-string↔NULL — 6.A.4; ANSI-padding; decimal scale; collation) so a representation artifact is not a
+    spurious capture. *Acceptance:* `` ``cdc diff: an empty-string↔NULL representation artifact does not fire a capture (named tolerance)`` ``.
+  - **(c) DELETE-scope gate (P-DEL-SCOPE)** — `WHEN NOT MATCHED BY SOURCE THEN DELETE` fires only within a
+    declared scope, never silently table-wide. *Acceptance:* `` ``cdc merge: an out-of-scope row is not deleted unless the operator declared a full-refresh`` ``.
+  - **(d) data-provenance surface** — the CDC capture log as a consumable evolution record (parallel to the
+    refactorlog; the data analog of `reconstructLatest`).
+- **Decision owed (data leg):** is the incremental data plan a *post-deployment script* (SSIS-consumer/eject
+  publication flow) or a *transfer-verb execution* (Dev→UAT rekey)? Likely both; name the seam before (a) emits.
+  **~M each.**
+
 ##### 6.F.4 — The published-model + provenance surface (the SSIS consumer / the eject)
 - **Gap:** the external SSIS team consumes the *evolving relational model* to keep their legacy→our-shape
   mappings current; the eject freezes it. There is no consumer-facing rendering of "the model now + what changed
