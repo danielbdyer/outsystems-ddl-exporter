@@ -328,8 +328,14 @@ is correct and latent.** Re-reading §9:
   carrier over the *realized* delta — the CDC capture series on the data plane (6.F.3-data), the move-count on
   the schema plane; the value-level `π`/`Delta` reify (concretely as `CatalogDiff`) only at the temporal
   multi-version schema use (6.H), **not** the data leg, whose δ is substrate-fused (§12.4).
-- **T16** — dark differential leg: the engine ships `realize(B)`, not `emit(B ⊖ A)` (the diff emitters have zero
-  production callers). *Activation:* `migrate A B` (6.D.1).
+- **T16** — **activated (6.D.1, 2026-06-01).** The differential leg is lit: `Migration.plan A B = emit(B ⊖ A)` and
+  `MigrationRun.preview` is the production caller of the diff emitters (`SchemaMigrationEmitter` + `RefactorLog`),
+  composing the displacement into the minimum-viable ALTER + rename channels (T14 partition) under fail-loud
+  gating. The master equation `applyTo (plan A B) A ≡ B` (`run(emit(B⊖A), realize(A)) = realize(B)` modulo the
+  captured surface) is a live witness, and `MigrationRun.record` closes it into the durable substrate — the FTC
+  over the recorded chain reproduces B across a disk reload. T16 promoted Bucket C → A. *Remaining:* the live-SQL
+  `--execute` leg (read A from a deployed DB; deploy + transfer against real substrates) + the Docker A→B canary —
+  the *structural* square commutes; the *live* square is the last confirmation.
 - **A43** — Identity survives an episode boundary (`V2.SsKey` round-trip), but only as a current value, not a
   chain; the `‖rename‖_data = 0` corollary is unwitnessed live. *Activation:* the change-manifest + the rename
   canary.

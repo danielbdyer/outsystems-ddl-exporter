@@ -62,7 +62,7 @@ The bullseye is the matrix at **L3 on every cell** — an **isomorphism ladder**
 | **Identity** | ✅ `reload preserves SsKey` | ◑ faithful for `OssysOriginal`; a first-import (`Synthesized`) + rename loses identity **silently** | ⬚ RefactorLog (rename) and Transfer (move) are unreconciled strategies |
 | **Time** | ✅ `replayTo genesis` | ◑ *trivial* — `replayTo` is a fetch; `applyDiff` (H-007) unshipped → `applyDiff (between A B) A = B` unproven | ⬚ no minimal-touch emission |
 | **Decision** | ✅ `reproduces the DecisionOverlay` (nullability) | ◑ iso on **1 of 3** sub-axes; uniqueness + FK-trust **not read back** | ⬚ tightening can break the Data load (no pre-flight) |
-| **— the operation —** | | | **`migrate A B`** — one command, minimum viable touches. **Does not yet exist** (five verbs, manually sequenced; renames never reach Transfer). |
+| **— the operation —** | | | **`migrate A B`** — one command, minimum viable touches. **Composition + durable loop EXIST (2026-06-01, 6.D.1):** `Migration.plan A B = emit(B⊖A)`; `applyTo (plan A B) A ≡ B` (T16); previews the minimum-viable ALTER + RefactorLog, fail-loud on drops; records a durable episode whose FTC reproduces B. Remaining: the live-SQL `--execute` leg (read A from a deployed DB, deploy+transfer) + the Docker A→B canary. |
 | **— meta —** | | | **Self-verification:** the generator reports each cell's *ladder level*, not just witness-presence |
 
 > **This matrix is self-reported.** `scripts/matrix-status.sh` regenerates
@@ -264,7 +264,11 @@ generated artifact, not a judgment.
 1c. **The composed operation exists and round-trips (L3).** `migrate A B` runs the full
    diff→rename→deploy→transfer→verify in one command with minimum-viable touches, atomic-or-
    resumable, and a green A→B canary witnesses that B reproduces A modulo the named, declared
-   changes. *(Promise 8; the L3 bullseye.)*
+   changes. *(Promise 8; the L3 bullseye.* **Structural composition LANDED 2026-06-01, 6.D.1:**
+   `Migration`/`MigrationRun` reify `emit(B⊖A)`; `applyTo (plan A B) A ≡ B` is the master equation
+   (T16, promoted to a live witness); the orchestrator previews the minimum-viable differential
+   fail-loud and records a durable episode whose FTC reproduces B. The remaining gap is the
+   *live-SQL* `--execute` leg + its Docker A→B canary — the algebra and the durable loop are green.*)
 2. **The decision adjunction holds.** `Ingest(deploy(Project(C, overlay)))` reproduces `overlay`
    on the tightening axes — the engine's opinions survive the round-trip. (The "stronger than V1"
    theorem; today unbuilt.)

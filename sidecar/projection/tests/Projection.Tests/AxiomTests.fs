@@ -937,12 +937,24 @@ let ``T15: CDC is the norm — emit is an isometry; ‖δ‖=0 ⟹ zero capture 
         "tests/Projection.Tests/CdcSilenceTests.fs"
         "Slice γ sensitivity: changed-content redeploy DOES fire CDC capture rows — proves the canary mechanism is real (not silent for unrelated reasons)"
 
-[<Fact(Skip = "T16: the Project square commutes — Bucket C. run(emit(B⊖A), realize(A)) = realize(B) \
-modulo (erasure ⊎ tolerance): the master equation; H-050 lifted from points to displacements. \
-Sub-squares are witnessed: `migration canary: a widening ALTER COLUMN executes on SQL Server and \
-preserves data` (schema move realized, data conserved) + CdcSilence (data sub-square). Promoted to \
-Bucket A when the one-command `migrate A B` canary (EXECUTION_PLAN 6.D.1) is green under T12–T15.")>]
-let ``T16: the Project square commutes (the master equation; migrate A B canary)`` () = ()
+// T16 — PROMOTED to Bucket A (6.D.1, 2026-06-01): the one-command `migrate A B`
+// composition exists and round-trips. `Migration.applyTo (plan A B) A ≡ B` is
+// the master equation `run(emit(B⊖A), realize(A)) = realize(B)` modulo the
+// captured surface; the orchestrator composes it under T14 (channel partition:
+// renames→RefactorLog, reshapes→ALTER) + fail-loud gating, and records the run
+// as a durable episode whose FTC reconstruction reproduces B (6.H loop). The
+// schema sub-square executes on SQL Server (the widening-ALTER canary); the
+// data sub-square is CdcSilence. The structural master equation is green.
+[<Fact>]
+let ``T16: the Project square commutes (the master equation; migrate A B)`` () =
+    citationOf
+        "tests/Projection.Tests/MigrationTests.fs"
+        "T16: applyTo (plan A B) A = B — migrate A B reproduces the target (master equation)"
+    // The composition realizes the displacement minimum-viably (ALTER not CREATE;
+    // renames route to RefactorLog) and records it durably (the A→B loop closes).
+    citationOf
+        "tests/Projection.Tests/MigrationRunTests.fs"
+        "6.D.1: the full A->B loop — migrate, record, then reconstruct reproduces B (durable round-trip)"
 
 [<Fact>]
 let ``A43: Identity is the conserved charge — Rename perturbs Designation, conserves SsKey, sp_rename (refactorlog) conserves data`` () =

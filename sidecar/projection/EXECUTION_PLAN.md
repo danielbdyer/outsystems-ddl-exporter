@@ -1045,18 +1045,24 @@ a structured diagnostic, or a fail-loud refusal — never a silent drop* (T-I fa
 
 #### 6.D — The composition: `migrate A B` (the L3 bullseye; Promise 8)
 
-##### 6.D.1 — `migrate` orchestrator + the A→B canary — *depends 6.A.10, 6.A.12, 6.B.*, 6.C.1/6.C.2*
-- **Gap (red-team Composition #1):** there is no single orchestrator — the operator manually sequences five verbs,
-  and renames never reach Transfer. "Nearly one command" is today five commands with a seam.
-- **First slice:** `projection migrate --source-conn <A> --target <B-config> [--execute]` that chains, in one
-  call: (i) `CatalogDiff.between A B` (attribute-level, 6.A.10); (ii) the Decision↔Data + permission + connection
-  pre-flights (6.B.1, 6.C.1) — refuse before any write; (iii) `diff→ALTER` minimal-touch deploy, CDC-silent on the
-  empty delta (6.A.12/6.A.13); (iv) RefactorLog-aware sink-minted transfer (6.B.2), transactional (6.C.2); (v)
-  `verify-data` + the round-trip canary. Each stage is an existing capability; `migrate` is the *composition* + the
-  pre-flight gates that make it safe.
-- **Acceptance (the headline):** `` ``migrate A B: one command moves A→B with minimum viable touches; B reproduces A
-  modulo the declared changes (atomic-or-resumable, fail-loud on violation)`` `` — the operator's stated use case as
-  the L3 bullseye canary. **~M once its dependencies land** (the orchestration is wiring; the dependencies are the work).
+##### 6.D.1 — `migrate` orchestrator (the L3 composition) — **LANDED 2026-06-01 (composition + durable loop; live-execute leg deferred)**
+- **Gap (closed at the composition):** there was no single orchestrator — the operator manually sequenced five
+  verbs, and renames never reached the rename channel. "Nearly one command" was five commands with a seam.
+- **Shipped:** `Migration` (`Projection.Core/Migration.fs`) + `MigrationRun` (`Projection.Pipeline/MigrationRun.fs`)
+  — the composition reified. `Migration.plan A B = emit(B ⊖ A)` (T16, the master equation): it observes the
+  displacement (`CatalogDiff.between`, 6.A.10), produces the **preview** (the change-manifest of δ at plan time —
+  what it will touch, by channel), and detects the **fail-loud violations** (destructive drops, refused unless
+  `allowDrops`). `MigrationRun.preview` composes the minimum-viable schema differential (`diff → ALTER`, 6.A.12 —
+  never a CREATE) + the data-preserving renames (RefactorLog) in one call, refusing before any write on drops or
+  on the emitter's non-shape-facet `Error`s. `Migration.applyTo (plan A B) A ≡ B` is the structural round-trip
+  (T16); `MigrationRun.record` closes the loop by recording the run as a durable `Episode` (6.H) whose FTC
+  reconstruction reproduces B across a disk reload. **T16 promoted Skip→Fact** (Bucket C → A).
+- **Deferred (named-with-trigger — the live-execute leg):** the `projection migrate --source-conn <A> --target
+  <B-config> --execute` CLI that reads A from a live deployed DB (`ReadSide`), runs the connection/permission
+  pre-flights (6.C.1), and executes the differential against real substrates (deploy + RefactorLog-aware transfer,
+  transactional 6.C.2) — composes existing `Deploy`/`Transfer` with the shipped plan, lands with the Docker A→B
+  canary. The *algebra* + the *durable provenance loop* are green now; the live SQL execution is the remaining leg.
+- **Acceptance (the headline):** `` ``T16: applyTo (plan A B) A = B — migrate A B reproduces the target (master equation)`` `` + `` ``6.D.1: the full A->B loop — migrate, record, then reconstruct reproduces B (durable round-trip)`` `` — **LANDED** (the structural L3 bullseye; 18 witnesses incl. minimum-viable-touches, fail-loud, and the durable loop). **~M.** ✅
 
 #### 6.E — The self-report: matrix reports the ladder level (T-IV extension)
 

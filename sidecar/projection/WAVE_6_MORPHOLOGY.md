@@ -71,6 +71,19 @@ observable CDC series (§12.4, the Profile stays a per-run input). Residual dark
 (6.D.1) that *writes* runs into this substrate, and the SsdtManifest emission of the change section (6.H.4
 deferred leg).
 
+**Update (2026-06-01, the differential leg is wired — T16 RESOLVED at the composition).** The §0 findings "the
+diff-machinery has **zero production callers**" and "the engine ships `realize(B)`, not `emit(B ⊖ A)`; the
+differential leg of T16 is dark" are closed at the composition level. `Migration` (`Projection.Core/Migration.fs`)
++ `MigrationRun` (`Projection.Pipeline/MigrationRun.fs`) ARE the production caller: `Migration.plan A B =
+emit(B ⊖ A)` previews the minimum-viable differential (the `SchemaMigrationEmitter` ALTER channel + the
+`RefactorLog` rename channel — T14 partition), refuses destructive drops fail-loud, and `MigrationRun.record`
+writes the run as a durable `Episode` whose FTC reproduces B. `applyTo (plan A B) A ≡ B` is the master equation
+made executable (T16 promoted Bucket C → A); `‖δ‖` now lives in the `MigrationPreview` (no longer "in no
+artifact"). The §0 row `| migrate A B | does not exist |` is now `| migrate A B | composition + durable loop exist;
+live-execute leg deferred |`. Residual dark cell: the live-SQL `--execute` path (read A from a deployed DB; deploy
++ transfer against real substrates) + its Docker A→B canary — the structural square commutes; the live square is
+the last confirmation.
+
 **The synthesis:** the engine has built every *carrier* and proven every *law in isolation*, but the *proteins
 that would move concerns through emission space and across episodes are unbuilt.* The calculus is **correct and
 latent**; *activation* = wiring the differential leg + reifying the measurement verbs (where evidence now

@@ -67,6 +67,7 @@
     <Compile Include="LifecycleTests.fs" />
     <Compile Include="EpisodeTests.fs" />
     <Compile Include="ChangeManifestTests.fs" />
+    <Compile Include="MigrationTests.fs" />
     <Compile Include="AppliedTransformsTests.fs" />
     <Compile Include="PolicyDiffCliTests.fs" />
     <Compile Include="AdjunctionLawTests.fs" />
@@ -96,6 +97,7 @@
     <Compile Include="ApprovalWorkflowTests.fs" />
     <Compile Include="ApprovalStoreTests.fs" />
     <Compile Include="LifecycleStoreTests.fs" />
+    <Compile Include="MigrationRunTests.fs" />
     <Compile Include="SuggestConfigGatingTests.fs" />
     <Compile Include="PolicyDiffTests.fs" />
     <Compile Include="PolicySimulationTests.fs" />
