@@ -875,6 +875,38 @@ let ``T13: evolution over time is composition — replay = fold ⊕ along the ti
     citationOf
         "tests/Projection.Tests/LifecycleTests.fs"
         "6.H.3: netDiff equals fold compose over the evolution chain (3 snapshots)"
+    // 6.H.1/6.H.2 — the residual closed: the FTC now runs over a DURABLE chain.
+    // `EpisodicLifecycle.reconstructLatestSchema` over a chain loaded from the
+    // `LifecycleStore` reproduces the stored latest schema (fold ⊕ on disk).
+    citationOf
+        "tests/Projection.Tests/LifecycleStoreTests.fs"
+        "6.H.2: reconstructLatestSchema over the persisted chain reproduces the stored latest schema (FTC, durable)"
+
+// 6.H.1/6.H.2 — the durable provenance substrate (∂κ/∂episode). The Episode
+// co-records the five concerns at one coordinate; the LifecycleStore persists
+// the chain (composing CatalogCodec for the schema plane) so the time-integral
+// survives a run boundary — closing the morphology's "no durable episode" gap.
+[<Fact>]
+let ``6.H.1/6.H.2: the calculus integrates over a durable, multi-plane episode chain`` () =
+    citationOf
+        "tests/Projection.Tests/EpisodeTests.fs"
+        "6.H.1: episode co-records schema + profile + refactorlog + cdc-handle at one Version"
+    citationOf
+        "tests/Projection.Tests/LifecycleStoreTests.fs"
+        "6.H.2: save then load round-trips a durable-faithful chain exactly"
+
+// 6.H.4 — the change-manifest of δ (the emission-integral / mixed partial). The
+// manifest records the DISPLACEMENT an episode-edge made (move counts + ‖δ‖ +
+// refactorlog xref + CDC series), not the target state; the series is the
+// sprint-by-sprint record; path-length ≥ net-displacement exposes churn.
+[<Fact>]
+let ``6.H.4: the change-manifest records the displacement, not the target state`` () =
+    citationOf
+        "tests/Projection.Tests/ChangeManifestTests.fs"
+        "6.H.4: change-manifest records the displacement (move counts + refactorlog xref + cdc series)"
+    citationOf
+        "tests/Projection.Tests/ChangeManifestTests.fs"
+        "6.H.4: path length (sum of edge norms) exceeds net displacement under churn"
 
 [<Fact>]
 let ``T14: orthogonality is a direct-sum decomposition — δ = ⊕_c π_c(δ) (subsumes A38)`` () =

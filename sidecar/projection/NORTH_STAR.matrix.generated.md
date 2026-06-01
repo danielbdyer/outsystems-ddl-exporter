@@ -10,10 +10,10 @@ _Derived from `tests/Projection.Tests/AxiomTests.fs` + the test tree. The §1 bu
 
 | Class | Meaning | Count |
 |---|---|---:|
-| Live | verified ("verified by …") or convention-enforced `[<Fact>]` | 80 |
+| Live | verified ("verified by …") or convention-enforced `[<Fact>]` | 82 |
 | Deferred C | weakness — `[<Fact(Skip … Bucket C …)>]` | 7 |
 | Deferred D | unnamed/unbacked — `[<Fact(Skip … Bucket D …)>]` | 1 |
-| **total axiom entries** | | **115** |
+| **total axiom entries** | | **117** |
 
 **Verifiability gate (E1): `PASS`** — no deferral claims verified (no phantom Bucket-A/B); every deferral names its bucket.
 
@@ -36,4 +36,4 @@ remaining bullseye distance; they flip automatically as the named slices land th
 > computed/checks/ext-props until Wave 1) lives in NORTH_STAR.md §1 prose; the full E2 generator
 > will track per-feature. Today this is the coarse, honest, machine-derived floor.
 
-_Generated 2026-06-01T04:01Z · gate=PASS · L2 live/C/D=80/7/1 · round-trip=5/5_
+_Generated 2026-06-01T04:23Z · gate=PASS · L2 live/C/D=82/7/1 · round-trip=5/5_

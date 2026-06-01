@@ -315,13 +315,14 @@ its operations are **unwired** in production and/or its substrate is **not persi
 the operations are wired and the substrate durable, closing the residual. The research's finding: **the calculus
 is correct and latent.** Re-reading §9:
 - **T12** — activated (between/applyDiff wired into Lifecycle + the SchemaMigration/RefactorLog emitters exist).
-- **T13** — *partly activated (6.H.3)*: `CatalogDiff.compose` (the `+`) + `Lifecycle.netDiff` (the integral ∫δ)
-  are SHIPPED, and A-Lifecycle-4 is promoted to Bucket A. **Remaining latent:** `reconstructLatest`/`netDiff`
-  still run only over in-memory values — *no durable episode*. **Persistence keystone landed (2026-06-01):** the
-  `CatalogCodec` `Catalog↔JSON` round-trip — the schema-plane half of the durable substrate — is shipped, total,
-  and re-validating (the round-trip law is the adjunction applied to durability, §12.4); the residual is the
-  multi-plane episode envelope. *Activation:* the `Episode` + `LifecycleStore` (both now unblocked —
-  `WAVE_6_MORPHOLOGY.md` §4 F1–F2; `EXECUTION_PLAN.md` 6.H.1–6.H.2).
+- **T13** — **activated (6.H.1–6.H.4, 2026-06-01).** The full chain is live: `CatalogDiff.compose` (the `+`) +
+  `Lifecycle.netDiff` (the integral ∫δ) + the **durable substrate** — `Episode`/`EpisodicLifecycle` co-record the
+  multi-plane state, the `LifecycleStore` persists the chain (composing `CatalogCodec` for the schema plane), and
+  `EpisodicLifecycle.reconstructLatestSchema` runs the FTC `genesis ⊕ Σδ` **over a chain loaded from disk** — no
+  longer only over in-memory test values. A-Lifecycle-4 is Bucket A; the "no durable episode" residual is closed.
+  The `ChangeManifest` (6.H.4) makes the per-edge displacement a value (move counts + ‖δ‖ + refactorlog xref +
+  CDC series); `pathLength` vs net-displacement exposes churn. *Remaining:* wiring the change section into the
+  *emitted* SsdtManifest and the `migrate` orchestrator (6.D.1) that records runs into the substrate.
 - **T14 / T15** — *schema side activated (6.H.3)*: the schema norm `‖·‖` and channel projection `π` now have a
   concrete carrier — `CatalogDiff.norm` / `channelCounts`. **Remaining:** the **data** norm reifies as a measurement
   carrier over the *realized* delta — the CDC capture series on the data plane (6.F.3-data), the move-count on

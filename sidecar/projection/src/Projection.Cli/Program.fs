@@ -540,7 +540,7 @@ let private parseEnvironment (defaultLabel: string) (label: string option) : Pro
     | Some s ->
         match s.Trim().ToUpperInvariant() with
         | "DEV"  -> Projection.Core.Environment.Dev
-        | "TEST" -> Projection.Core.Environment.Test
+        | "QA"   -> Projection.Core.Environment.Qa
         | "UAT"  -> Projection.Core.Environment.Uat
         | "PROD" -> Projection.Core.Environment.Prod
         | _      -> Projection.Core.Environment.Named (s.Trim())

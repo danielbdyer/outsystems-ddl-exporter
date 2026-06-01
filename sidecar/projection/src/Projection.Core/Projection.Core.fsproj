@@ -45,6 +45,8 @@
     <Compile Include="SurrogateRemap.fs" />
     <Compile Include="UserRemap.fs" />
     <Compile Include="Transfer.fs" />
+    <Compile Include="Episode.fs" />
+    <Compile Include="ChangeManifest.fs" />
     <Compile Include="TopologicalOrder.fs" />
     <Compile Include="Strategies/CycleResolution.fs" />
     <Compile Include="Strategies/NullabilityRules.fs" />

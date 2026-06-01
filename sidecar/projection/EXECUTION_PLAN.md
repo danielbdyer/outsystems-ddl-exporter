@@ -1239,29 +1239,30 @@ across a run boundary — the gap 6.H.2 named. `CatalogCodec.serialize`/`deseria
 durability. It is the schema-plane persistence primitive the `Episode` (6.H.1) and `LifecycleStore` (6.H.2)
 rest on; both are now unblocked. (`DECISIONS 2026-06-01 — the Catalog↔JSON codec`.)
 
-##### 6.H.1 — The multi-plane `Episode` (the point of integration)
-- **Gap:** `CatalogSnapshot` (`Lifecycle.fs:45`) carries only a schema `Catalog` at a `Version` — no Profile, no
-  rows/CDC, no environment, no clock. The schema and data planes are never co-recorded, so cross-concern
-  recombination (Identity in episode i × Data in episode j) is inexpressible.
-- **First slice:** an `Episode` pairing, at one `Version` (extended with a boundary-supplied clock +
-  `(environment × release-time)` cell — Core stays clock-free; the Pipeline stamps it as `ApprovalRecord.At`
-  already does): the schema `Catalog`, the `Profile`, the emitted refactorlog reference, and the CDC capture
-  count/handle.
-- **Acceptance:** `` ``episode: co-records schema + profile + refactorlog + cdc-handle at one Version`` ``. **~M.**
+##### 6.H.1 — The multi-plane `Episode` (the point of integration) — **LANDED 2026-06-01**
+- **Gap (closed):** `CatalogSnapshot` (`Lifecycle.fs:45`) carries only a schema `Catalog` at a `Version` — no
+  Profile, no rows/CDC, no environment, no clock. The schema and data planes were never co-recorded.
+- **Shipped:** `Episode` (`Projection.Core/Episode.fs`) co-records, at one `EpisodeCoordinate`
+  (`Version × Environment × At` — the canonical `Environment` reused from `Transfer.fs`, **Dev→Qa→Uat** the
+  active rotation; `At` a boundary-supplied clock, Core stays clock-free): the schema `Catalog`, the `Profile`
+  (in-memory), the emitted refactorlog reference, and the `DataObservation` (CDC capture count + handle). The
+  `EpisodicLifecycle` is the monotone chain; its schema-plane FTC (`reconstructLatestSchema` / `netSchemaDiff` /
+  `schemaEvolutionChain`) is the same `CatalogDiff` algebra `Lifecycle` runs, projected onto `Episode.Schema`.
+- **Acceptance:** `` ``6.H.1: episode co-records schema + profile + refactorlog + cdc-handle at one Version`` `` — **LANDED** (+ monotone-append, schema-FTC, and `durableProjection` witnesses). **~M.** ✅
 
-##### 6.H.2 — The `LifecycleStore` (the persisted time-integral) — **UNBLOCKED 2026-06-01**
-- **Gap (codec leg closed):** nothing serialized a `Lifecycle`/`Episode`; `reconstructLatest` folds only
-  in-memory test values. The schema-plane half of that gap is now closed by `CatalogCodec` (above); the store's
-  remaining work is the *envelope* — the δ-chain framing + the non-`Catalog` planes (Profile, refactorlog
-  reference, CDC handle) per the `Episode` shape (6.H.1).
-- **First slice:** a durable JSON store modeled on `ApprovalStore.fs` (the codebase's proven across-runs
-  persistence pattern — deterministic `Utf8JsonWriter`, T1-stable order, structured `Read/Parse/Write` failures)
-  that composes `CatalogCodec` for each episode's schema plane. Turns the FTC into reconstruction over durable
-  provenance: load genesis + the persisted δ-chain, `fold applyDiff`. **Reuse the codec; do not re-encode the
-  `Catalog`** — and carry forward its totality discipline (the `{ X.create … with … }` default-substitution
-  hazard, `DECISIONS 2026-06-01 — totality-contract verification`) to every new IR-bearing record the envelope
-  serializes.
-- **Acceptance:** `` ``lifecycle store: reconstructLatest over the persisted chain reproduces the stored episode (FTC, durable)`` ``. **~M.**
+##### 6.H.2 — The `LifecycleStore` (the persisted time-integral) — **LANDED 2026-06-01**
+- **Gap (closed):** nothing serialized a `Lifecycle`/`Episode`; `reconstructLatest` folded only in-memory test
+  values — the morphology's "no durable episode."
+- **Shipped:** `LifecycleStore` (`Projection.Pipeline/LifecycleStore.fs`, modeled on `ApprovalStore.fs` —
+  deterministic `Utf8JsonWriter`, T1-stable order, structured fail-closed `Read/Parse/Write`) **composes
+  `CatalogCodec`** (`jw.WriteRawValue` on save; `schemaEl.GetRawText() |> CatalogCodec.deserialize` on load) for
+  each episode's schema plane, framing the chain (timeline + per-episode coordinate + data observation +
+  refactorlog ref). The FTC now runs over durable provenance: `load` → `reconstructLatestSchema`. The statistical
+  `Profile` is **not persisted** (§12.4 — the data δ is substrate-fused; a loaded episode = its
+  `Episode.durableProjection`); codec re-validation (A39) reaches through the boundary (a corrupt embedded
+  catalog fails the load). A missing/malformed file is a fail-closed `ParseFailure` (no empty-lifecycle default —
+  a lifecycle always opens at genesis).
+- **Acceptance:** `` ``6.H.2: reconstructLatestSchema over the persisted chain reproduces the stored latest schema (FTC, durable)`` `` — **LANDED** (+ exact round-trip, byte-determinism, Named-env round-trip, Profile-drop, and three fail-closed witnesses). **~M.** ✅
 
 ##### 6.H.3 — `CatalogDiff.compose` (close the derivative algebra; T13/A-Lifecycle-4) — **SHIPPED 2026-06-01**
 - **Gap:** `CatalogDiff` has `between` (⊖) and `applyDiff` (⊕) but **no `compose` (`+`)** — so `δ₁ + δ₂` (the
@@ -1270,21 +1271,24 @@ rest on; both are now unblocked. (`DECISIONS 2026-06-01 — the Catalog↔JSON c
   d₂ ∘ applyDiff d₁` (the functor law). Flips A-Lifecycle-4 Skip→Fact; earns T13's `⬚ compose`.
 - **Acceptance:** `` ``compose: applyDiff (compose d1 d2) A = applyDiff d2 (applyDiff d1 A) (functor law)`` `` — **LANDED** with the associativity witness (A-Lifecycle-4 flipped Skip→Fact), `Lifecycle.netDiff` (the integral ∫δ = fold compose), and `CatalogDiff.norm`/`channelCounts` (the concrete schema-side ‖·‖/π). **~M.** ✅
 
-##### 6.H.4 — The change-manifest (the emission-integral of δ; the mixed partial)
-- **Gap:** the `SsdtManifest` integrates *state* (`Coverage`/`PredicateCoverage`/`AppliedTransforms`) not
-  *displacement* δ: no per-move counts, no `‖δ‖`, no refactorlog cross-reference, no CDC series, `AppliedTransforms`
-  records the overlay *axis* not the *outcome*, `At`/version excluded. So the SSIS consumer cannot read "what
-  this sprint touched."
-- **First slice:** extend the manifest with a change section — per-channel move counts (`‖δ‖`: added/removed/
-  renamed/reshaped), the refactorlog digest cross-reference, the CDC capture series `k`, the per-run tolerance
-  *residual* (not the static vocabulary), and the `AppliedTransforms` *outcome* (carry the `LineageEvent`
-  `TransformKind`, not just the axis). A manifest-of-δ per episode is the change-manifest series.
-- **Acceptance:** `` ``change-manifest: the manifest records the displacement (move counts + refactorlog xref + cdc series), not just the target state`` ``. **~M.**
+##### 6.H.4 — The change-manifest of δ (the emission-integral; the mixed partial) — **LANDED 2026-06-01 (Core algebra)**
+- **Gap (closed at the algebra; SsdtManifest wiring deferred):** the `SsdtManifest` integrates *state*, not
+  *displacement* δ — no per-move counts, no `‖δ‖`, no refactorlog cross-reference, no CDC series. So the SSIS
+  consumer cannot read "what this sprint touched."
+- **Shipped:** `ChangeManifest` (`Projection.Core/ChangeManifest.fs`) — the per-edge displacement record:
+  `ChannelCounts` (the π channels) + `SchemaNorm` (`‖δ‖`) + the `To`-episode's refactorlog reference + the CDC
+  capture count (`‖data δ‖`). `ChangeManifest.between` computes it from two episodes (via `CatalogDiff.between`);
+  `series` is the per-edge manifest list over an `EpisodicLifecycle` (the sprint-by-sprint record); `pathLength`
+  (Σ edge norms) vs `netSchemaDiff |> norm` (net displacement) exposes a timeline's **churn**.
+- **Deferred (named-with-trigger):** wiring the change section into the *emitted* `SsdtManifest` (Pipeline) +
+  the tolerance-residual + `AppliedTransforms`-outcome — lands when a manifest consumer demands the on-disk form.
+- **Acceptance:** `` ``6.H.4: change-manifest records the displacement (move counts + refactorlog xref + cdc series)`` `` — **LANDED** (+ idempotent-edge, series-per-edge, and churn/path-length witnesses). **~M.** ✅
 
-**Sequencing within 6.H:** the codec prerequisite is satisfied (shipped 2026-06-01). 6.H.3 (`compose`, pure,
-small) is shipped; 6.H.1 (`Episode`) is now the next slice (independent, unblocked); 6.H.2
-(`LifecycleStore`) depends on 6.H.1 and composes the codec; 6.H.4 (change-manifest) depends on the attribute-diff (6.A.10, shipped) and
-pairs with 6.F.1 (refactorlog-against-prior). The whole family is the activation of `∂κ/∂(episode)` and the
+**Sequencing within 6.H:** the codec prerequisite, 6.H.1 (`Episode`), 6.H.2 (`LifecycleStore`), 6.H.3
+(`compose`), and 6.H.4 (`ChangeManifest`, Core algebra) are all **shipped (2026-06-01)** — the durable
+provenance substrate is live: a chain persists, reloads, and the FTC reconstructs over it. Remaining 6.H reach:
+the SsdtManifest *emission* wiring of the change section (6.H.4 deferred leg) and the `migrate` orchestrator
+(6.D.1) that records each run into this substrate. The whole family is the activation of `∂κ/∂(episode)` and the
 durable side of the FTC; it is the substrate `migrate` (6.D.1) records each run into.
 
 ---

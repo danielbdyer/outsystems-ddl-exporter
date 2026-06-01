@@ -59,6 +59,18 @@ against the IR inventory, not asserted* (the `{ X.create … with … }` default
 inputs are declarative edits of the producer's own output, never hand-authored wire format* — are codified at
 `DECISIONS 2026-06-01` and apply to every remaining 6.H/6.D slice that reconstructs or round-trips the IR.
 
+**Update (2026-06-01, the durable episode landed — the finding is RESOLVED).** "There is no durable episode to
+integrate over" is closed. `Episode`/`EpisodicLifecycle` (`Projection.Core/Episode.fs`) co-record the multi-plane
+state at one `EpisodeCoordinate` (`Version × Environment × At`); the `LifecycleStore`
+(`Projection.Pipeline/LifecycleStore.fs`) persists the chain across runs (composing `CatalogCodec` for the schema
+plane); and `EpisodicLifecycle.reconstructLatestSchema` runs the FTC over a chain **loaded from disk**. The
+`ChangeManifest` (`Projection.Core/ChangeManifest.fs`) is the per-edge change-manifest of δ — the displacement
+(move counts + ‖δ‖ + refactorlog xref + CDC series), with `pathLength` vs net-displacement surfacing churn.
+The §4-field's `∂κ/∂(episode)` axis is now lit: schema reconstructs durably; the data plane persists as its
+observable CDC series (§12.4, the Profile stays a per-run input). Residual dark cells: the `migrate` orchestrator
+(6.D.1) that *writes* runs into this substrate, and the SsdtManifest emission of the change section (6.H.4
+deferred leg).
+
 **The synthesis:** the engine has built every *carrier* and proven every *law in isolation*, but the *proteins
 that would move concerns through emission space and across episodes are unbuilt.* The calculus is **correct and
 latent**; *activation* = wiring the differential leg + reifying the measurement verbs (where evidence now
